@@ -59,7 +59,7 @@ fn zip_round_trip(bytes: Vec<u8>, kind: u32) -> uo_opc::Result<usize> {
     parse_all(&pkg, &preset)?;
     let text = pkg.require(main).map(|b| String::from_utf8_lossy(b).into_owned())?;
     let root = parse(text.as_str(), &preset)?.root().name().to_owned();
-    let edited = insert_child(&text, &root, "<uo:soak xmlns:uo=\"urn:uo\"/>", Insert::EndOfRoot)?.unwrap_or(text);
+    let edited = insert_child(&text, &root, "<uo:soak xmlns:uo=\"urn:uo\"/>", Insert::EndOfRoot, &Limits::DEFAULT)?.unwrap_or(text);
     pkg.set_part_text(main, edited);
     pkg.set_part_text("customXml/soak.xml", "<soak/>");
     let saved = pkg.save(&SaveOptions::default())?;
@@ -115,4 +115,25 @@ pub unsafe extern "C" fn uo_opc_memtest_round_trip(ptr: *mut u8, len: usize, kin
     let bytes = unsafe { Vec::from_raw_parts(ptr, len, len) };
     let r = if kind == 3 { cfb_read_all(&bytes) } else { zip_round_trip(bytes, kind) };
     r.map_or(-1.0, |n| n as f64)
+}
+
+/// Parses a buffer from [`crate::uo_alloc_bytes`] (filled with `len` bytes, taken back here) as
+/// XML in the strict mode with positions, within the default depth and element limits, as
+/// `Package::xml_part` would: the shape of the stage-6 finding M1, where the arena estimate
+/// wrapped on wasm32 and the parse reserved about 1.9 GB before failing at byte 1. Returns the
+/// elements parsed, or −1 when the input fails.
+///
+/// # Safety
+/// As [`uo_opc_memtest_round_trip`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_opc_memtest_parse_strict(ptr: *mut u8, len: usize) -> f64 {
+    if ptr.is_null() {
+        return -1.0;
+    }
+    // SAFETY: the caller guarantees the buffer came from uo_alloc_bytes(len) and holds len
+    // initialized bytes; it is taken back here exactly once.
+    let bytes = unsafe { Vec::from_raw_parts(ptr, len, len) };
+    let Ok(text) = String::from_utf8(bytes) else { return -1.0 };
+    let options = Limits::DEFAULT.bounded(&ParseOptions { positions: true, ..ParseOptions::STRICT });
+    parse(text, &options).map_or(-1.0, |d| d.element_count() as f64)
 }

@@ -1,6 +1,6 @@
 # uo-opc — the document container layer
 
-Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01**; stages 3 (port) and 4 (verification) done; **gate 2 approved 2026-11-01** (D1–D8), **D1–D8 implemented 2026-11-01** (see the last section); **stage 5 (evolution) done 2026-11-01** (see the last sections; result-changing proposals R1–R5 pending); next: stage 6.
+Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01**; stages 3 (port) and 4 (verification) done; **gate 2 approved 2026-11-01** (D1–D8), **D1–D8 implemented 2026-11-01** (see the last section); **stage 5 (evolution) done 2026-11-01** (result-changing proposals R1–R5 pending); **stage 6 (final review) done 2026-11-01, findings M1 and S1–S8 handled** (see "Stage 6 findings — handled", the last section); next: gate 3 (the findings, the numbers, and the maintainer's decision on R1–R5).
 
 ## Scope
 
@@ -866,6 +866,20 @@ corpus or the quirk corpus; every difference was an approved decision (G4, G5) o
 Not port rework: the `uo-alloc` self-tests failed in release (allocation elision); fixed in the
 harness with `black_box`.
 
+Stages 5–6 (Opus, as the rest of uo-opc):
+
+| Stage | Agent (model) | Time | Tool calls |
+|---|---|---|---|
+| 5 | simplification and algorithms (Opus) | 45.9 min | 158 |
+| 6 | final skeptic (Opus) | 12.8 min | 73 |
+| 6 | stage-6 findings M1, S1–S8 (Opus) | 28.0 min | 112 |
+
+| # | What | Why | Fixed by |
+|---|---|---|---|
+| R7 | Arena reservation wrapped on wasm32 (M1): a 256 MiB part grew wasm memory by 2.14 GB | stage-5 size estimate computed in `usize` | stage-6 fix (u64 saturating) |
+| R8 | Edit helpers parsed without the D2/D3 limits (S1) | helpers predate D3 | stage-6 fix (`Limits::bounded`) |
+| R9 | A contaminated benchmark run (three agents on the machine) | benchmark started while agents ran | orchestrator: re-run idle |
+
 ## Stage 5 — evolution (simplification and algorithms, 2026-11-01)
 
 Result-preserving changes applied one at a time, each measured before and after, with the parity
@@ -1045,3 +1059,181 @@ Checks run: `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -
 tests pass (209 before); the parity replay: 0 mismatches; the wasm build (`count,opc-memtest`)
 with `boundary.test.mjs` and `opc_memory.test.mjs`; WebKit 26.5 (`browser/run.mjs`); the
 1,000-iteration native soak; the cross readers with .NET; the fuzz fallback.
+
+## Stage 6 — final review (implementation skeptic, 2026-11-01)
+
+The whole crate at 36c1f83d (`src/` 6,589 lines, the tests, `core/fuzz`), read against G1–G7,
+D1–D8, the D5 follow-up and the stage-5 changes C1–C8. Every finding below was checked in the
+code and, where marked, measured (scratch crate outside the repository,
+`CARGO_TARGET_DIR=core/target/review`).
+
+**Verdict: not ready for gate 3 until M1 is fixed** (a one-line arithmetic fix plus tests). The
+should-fix items are mostly API shape that `uo-docx`, Sheet and Slides will consume; doing them
+before those crates start is cheaper than after.
+
+### Must fix before gate 3
+
+| # | Finding | Evidence | Change |
+|---|---|---|---|
+| M1 | **The C7 reservation guard wraps on wasm32.** `Parser::reserve` computes the bytes to reserve in `usize` (`xml/read.rs:321-326`). On wasm32 (`profile.wasm` inherits release: no overflow checks) a count above 4 GiB wraps, passes the `≤ 3 × source` test, and every `try_reserve_exact` the host can satisfy succeeds before the first byte is parsed. A debug wasm build panics on the same input. | Strict preset with `positions: true` through `xml_part`, within the 256 MiB XML cap and the 20,000,000-element cap: 20,000,000 × `<=` followed by `=` estimates 4,854,967,296 B, which wraps to 560,000,000 B ≤ 805,306,368 B (3 × source). It reserves about 1.87 GB (elements 320 MB, positions 320 MB, nodes 160 MB, namespace tables 1.07 GB; the 2.98 GB attribute arena is refused) and then fails at offset 1. The edit helpers parse with no element cap (S1), so any preset wraps there with ~165 MB of `<=`/`=`. Native 64-bit is not affected. | Compute in `u64` with saturating arithmetic (e.g. `fn reservation_bytes(&Estimate, positions, strict) -> u64`) and compare with `len as u64 * 3`. Unit test with the wrapping counts; a peak test that a document whose counts are inflated (one root, markup after it or in a comment) reserves at most 3 × its source. Measured natively today: `<r/>` + 16 MiB of `<a b="111111111111111">` reserves 1.57 × the source (26.3 MB, freed by `finish`), and with denser markup nothing is reserved; no test pins either. |
+
+### Should fix (before the format crates consume the API)
+
+| # | Finding | Evidence | Change |
+|---|---|---|---|
+| S1 | **The edit helpers bypass D2/D3.** They parse caller text with no element or depth cap: `insert_child` (`EndOfRoot`, `BeforeFirst`) hard-codes `ParseOptions::LENIENT` (reached by `rels::add_rel`, `content_types::add_default`/`add_override`); `remove_rels`, `set_rel_target`, `remove_override`/`remove_default`, `split_element`, `parse_rels` and `ContentTypes::parse` take the caller's preset (the TS presets have no caps). A `.rels` or content-types text up to the 256 MiB XML cap that was never parsed through `xml_part` builds a tree up to ~17 × its size, where a failed `Vec` growth aborts the process (the F7 class). Each call also copies the whole text into a new `Source`. | `rels.rs:116,210,243`, `content_types.rs:56,149`, `xml/raw.rs:47,264,275` | Make the lowering of `xml_part` (`package.rs:467-472`) a public `Limits::bounded(&ParseOptions) -> ParseOptions`; every helper takes `&ParseOptions` (no hard-coded `LENIENT`) and the format crates pass the bounded options; or give `Package` the edit entry points. |
+| S2 | **Stage-5 behaviour without a pinning test.** Nothing fixes C7's bound (M1) nor C3's contract: `xml_part` twice gives equal trees, counts the part once and keeps nothing (`part()` afterwards inflates again under the cap). `zip::archive_len` (a second copy of the writer's layout rules) is checked for exactness only on three non-zip64 saves (`package_budgets.rs:59,89,165`). | grep of `tests/` and `fuzz/src/lib.rs` | Add those tests; assert `capacity() == len()` in `zip_write`'s >65,535-entry test and in the `zip_roundtrip` fuzz target. Make `archive_len` `pub(crate)` unless a format crate needs it. |
+| S3 | **Content-type lookup does not follow the OPC rule.** `ContentTypes::override_of` (and `remove_override`) is the Slides exact match (`content_types.rs:80-82`): case-sensitive, and `PartName` (a percent-encoded URI) is compared with the unescaped zip name. The C# Editing API that moves here compares case-insensitively (`DocxDocument.GetContentType`, `RemoveContentTypeOverride`), and D6 resolves names with ASCII folding. | `dotnet/src/UniversalOffice.Docx/Editing/DocxDocument.cs:302-341` | A `content_type_of_part` with the D6 rule (`PartName` unescaped as `resolve_relationship_target` does, ASCII folding) for the Editing API and hosts; the exact one stays the Slides parity policy (or switches with R3). |
+| S4 | **Host API gaps around D3/D6.** A validator cannot see an entry's method, compressed and declared sizes through `Package` (the clickCompliance validator applies a compression-ratio rule), so it needs a second `zip::read`. XML errors from `xml_part` do not name the part (only `Limit` errors get it, `package.rs:473-476`). | — | `Package::entry(name) -> Option<&ZipEntry>` (already stored in `Content::Entry`); the part name on XML errors (field or wrapper), for the .NET `XmlException` message. |
+| S5 | **Large-part edits cost 3 × the part.** The bench (d) giant peak (95 MB for the 31.7 MB sheet) and its 31.7 MB "kept" are `part_text` cached by the package + the caller's copy + the new text. Sheet edits giant sheets. | stage-6 bench, (d) giant | `Package::take_part(name) -> Result<Vec<u8>>` (moves the cached bytes out, or inflates without caching), so an edit holds the old and the new text only. |
+| S6 | **CI misses two gate checks.** `m2_soak_1000` is `#[ignore]` and no job runs it (19 s release); `cargo audit` is not in `rust-core.yml`. Env-gated tests (`cfb_ts_parity`, `save_cross_readers`) report `ok` when skipped. | `.github/workflows/rust-core.yml` | A release job running the soak with `--ignored`, and `cargo audit` (or `cargo deny`, licenses too); `#[ignore = "…"]` on env-gated tests so a skip shows. |
+| S7 | **Small duplications.** `rels::remove_rels` builds a `Relationship` exactly as `from_document` (`rels.rs:214-221` and `:124-133`); `open_owned` uses a literal `1100` (`package.rs:222`) next to `MAX_DEFLATE_RATIO`; `save` checks the name length (`package.rs:653`) after deflating the entry, and `add_raw` checks it again. | — | One `fn relationship(Element) -> Relationship`; the constant; check the name before planning, or rely on `add_raw`. |
+| S8 | **CHANGELOG.** No 0.10 entry lists the decided behaviour changes (G5 fixes, D1 `Corrupt`, D2 and R5 limits on Sheet/Slides parts, D4, D5 raw copy keeping stored entries stored and rewriting lying ones, D7 wasm limits, the fixed zip time); the skill requires every break there. | `CHANGELOG.md` | A "0.10 (Rust core)" section, filled per module. |
+
+### Notes (no change required now)
+
+- **Reservation and wasm memory (C7):** inside the 3 × bound, the up-front reservation stays below
+  what a real dense tree reaches by doubling (measured peak 4.5–5.3 × the source for `<a b="1"/>`
+  shapes, which C7 never reserves), so no regression on 64-bit; on wasm a hostile part can raise
+  `byteLength` by up to 3 × the part, permanently: the same order as the D2 tree bound.
+- **`xml_part` without cache (C3):** costs CPU only (a second parse inflates again); memory and the
+  total behave as documented.
+- **`Send`, not `Sync`:** right for one package per request; the C# facade must serialize calls on
+  a handle (say so in the `SafeHandle` wrapper). If parallel part reads are wanted later,
+  `OnceLock` + `AtomicU64` make it `Sync` cheaply. `CfbFile` already uses `OnceLock` (inconsistent,
+  harmless). Verified: `Package` is `Send`; `Document`, `Source` and `CfbFile` are `Send + Sync`;
+  `Source` is 16 B.
+- **`Source` ownership** is sound for models (refcounted, no lifetime). A kept `Source` pins the
+  whole part (31.7 MB for the giant sheet), so format crates should keep it only where lossless
+  saving needs positions. There is no accessor for the source span of a text or attribute value
+  (only element positions); add `Source::offset_of(&str)` if a model needs one.
+- **Names held three times** per opened entry (`Part.name`, `ZipEntry.name` inside
+  `Content::Entry`, the index key, `package.rs:231-234`); `save` clones every name to order them
+  (`package.rs:630`). Small; drop `ZipEntry.name` from the stored entry when convenient.
+- `remove_part` stays O(parts) (stage-5 decision; `retain` is the bulk path).
+- `safe_relative_path` returns an owned copy of its input (`bool` or `Option<&str>` would do), and
+  does not check segment length (255) nor case collisions (`a.xml`/`A.xml` overwrite each other on
+  Windows and macOS): document both for extracting hosts.
+- **wasm32 element cap:** `Limits::WASM32` keeps the native 20,000,000 elements (~560 MB of tree at
+  the cap with the hostile shape); a phone dies first. A lower wasm cap (~5,000,000, 2.5 × the giant
+  sheet) is a maintainer call.
+- **.NET mapping:** `LimitKind::{Entries, XmlElements}` need values in the C# `OfficeLimit`, whose
+  `FieldsPerStory`/`FieldNesting` belong to `uo-docx`; decide now how `uo-ffi` maps the errors of
+  several crates to one exception type.
+- `Deflater::deflate_into` loops on `TDEFLStatus::Okay` with `read == 0` without a progress guard
+  (`flate.rs:778-786`); with `Finish` and an accepting callback miniz returns `Done`, but a guard
+  keeps termination local.
+- **uo-jsnum:** besides `chars::{js_space_len, is_js_space}` (planned), `is_js_word`,
+  `zip::array_index`/`js_object_order` (JS object key order: zip names and XML attributes, and the
+  uo-docx writers will need it) and the `TextDecoder`/`strFromU8` decoders are JS semantics that
+  belong there. `rels::next_rel_id_after_max` parses with `u64` where slides `nextRelId` uses
+  `Number()`: above 2^53 or 20 digits the ids differ (TS `rId100000000000000000000`, Rust
+  `rId18446744073709551615`); `to_number` + `Js` give exact parity (rels editing is not captured).
+  uo-opc calls none of the `std` string methods uo-jsnum plans to disallow (no `trim`,
+  `is_whitespace`, `split_whitespace`).
+- **Reuse still missing** for Sheet/Slides/converter: a pull reader for very large sheets (the tree
+  is 2.16 × the source) and `Package::rename_part`. The ODF/XPS/`.doc → .docx`/ODS writers and the
+  rels/content-type edits have no parity capture yet (add it with those crates). ODF `mimetype`
+  first relies on insertion order and no integer-like part names (as in the TS).
+- **Plan vs code:** the plan placed `package`, `part_name`, `rels`, `content_types` under an `opc`
+  module; they are at the crate root. Fine as is.
+- **Newer Rust:** `first_chunk::<4>()`/`as_chunks::<8>()` would remove the fixed indexing of
+  `cfb.rs` `u16_le`/`u32_at` and `flate.rs` `crc32_update`; `Cell::update` for the produced
+  counter. Optional.
+
+### Benchmarks main × rust-core (`tools/bench/results/2026-11-01-36c1f83d-stage6.md`)
+
+Native numbers match stage 5 (oracle 260 ms vs TS 561 ms; giant open + parse 172 vs 686 ms;
+inflate 1,175 vs 539 MB/s; docx edit + save 0.6 vs 2.4 ms). Slower than the TS: **giant edit +
+save**, native 759 ms and wasm 1,289 ms against 556 ms (miniz_oxide level 6; R4), with 31.7 MB kept
+after it against 3.1 MB (S5). The wasm times of this run are about 2 × the stage-5 ones (oracle
+490 vs 245 ms, inflate 580 vs 1,133 MB/s) while the allocation counts are identical: this review's
+release builds and test runs shared the machine during the run, so re-run the wasm column alone
+before accepting the numbers.
+
+### Proposals R1–R5
+
+- **R1 (Write target rule → D6): approve.** One real document changes (custom XML parts found), no
+  layout effect, and it is the rule of the C# port and of the clickCompliance validator. Name the
+  acceptance in `opc_parity.rs` like D1/D4.
+- **R2 (Sheet Unicode → ASCII folding): approve.** No observable difference; closes security P3.
+- **R3 (Sheet/Slides `resolveRelTarget` → D6): approve,** with S3 so content types follow the same
+  rule.
+- **R4 (save level): approve the goal, not the remapping.** Mapping `level: 6` to miniz level 4
+  makes the number lie (`deflate_raw`, `Deflater` and `zlib` take the same level); set
+  `WriteOptions::default().level = 4` (or a named enum) and keep levels as miniz levels.
+  Re-measure wasm; `uo-pdf` chooses its own level.
+- **R5 (depth 1,000 for Sheet/Slides): approve** (keep), and list it in the CHANGELOG (S8).
+
+### Checked and fine
+
+G1–G7 and D1–D8 each found in the code with a test that pins them (`flate::empty_stream`;
+`push_element` + `Limits::max_xml_elements`; `Package::xml_part`; the D4 acceptance in the
+replay; `Package::intact` + `overlapping`, whose sweep is right for nested and chained overlaps,
+and the `MAX_DEFLATE_RATIO` bound, which holds because every symbol costs at least one bit, so at
+most 1,032:1; `resolve_target`; `Limits::WASM32`; `safe_relative_path`). No `unsafe` (`forbid`);
+no `unwrap`/`expect`/`panic` outside tests (workspace lints); the 63 indexing and 14 slicing sites
+reported by `clippy::indexing_slicing` are behind length checks or at ASCII positions; the 14
+`u64 → usize` casts on wasm32 are bounded by the input or by the 64 KiB window; no recursion on
+data (CFB walk ≤ 32 levels); `Error::Limit` carries what the C# `OfficeLimitExceededException`
+needs (kind, max, part). `cargo test -p uo-opc --release`: all pass (parity replay: 10 tests, 0
+mismatches); `cargo fmt --check` and `cargo clippy -p uo-opc --all-targets --all-features -D
+warnings` clean; `cargo audit` (1,395 advisories): 0 for the 7 crates of `core/`;
+`miniz_oxide =0.9.1` is the latest release (`MIT OR Zlib OR Apache-2.0`), `adler2 2.0.1`
+(`0BSD OR MIT OR Apache-2.0`); the 70 files of the crate are LF. Not re-run here: wasm/WebKit, the
+cross readers, fuzzing (the record's runs stand).
+
+Process: implementation skeptic (Opus), about 35 min, ~55 tool calls.
+
+## Stage 6 findings — handled (2026-11-01)
+
+Every item of the final review except R1–R5 (result-changing, the maintainer decides; none is
+applied). Each change has tests that failed before it (an assertion of the old behaviour, a
+measured bound, or an API that did not exist); results within the limits are unchanged (parity
+replay: 0 mismatches against the committed capture).
+
+| # | What changed | Files | Tests and numbers |
+|---|---|---|---|
+| M1 | `Parser::reserve` asks `Estimate::fits`, which computes the arena bytes in `u64`, saturating (`Estimate::bytes`), and compares them with `len as u64 × 3` (`RESERVE_PER_SOURCE_BYTE` is a `u64`). The finding's input on wasm32 now reserves nothing | `src/xml/read.rs`; `uo-wasm/src/opc_memtest.rs` (test-only export `uo_opc_memtest_parse_strict`: strict + positions, `Limits::DEFAULT.bounded`) | unit `xml::read::tests::the_estimate_does_not_wrap` (the counts of the 256 MiB part of 20,000,000 × `<=` then `=`: 4,854,967,296 B, which is 560,000,000 B mod 2³² and passed the old bound; saturating counts); `xml_memory::reservation_never_exceeds_three_times_the_source` (16 MiB inputs with inflated counts, four presets: peak 1.57 × lenient, 2.26 × with positions, 2.61 × strict with positions, 0 for denser markup and the M1 shape; asserted ≤ 3 × + 64 KiB); wasm `opc_memory.test.mjs` "M1" (Node and WebKit): **before +2,142,371,840 B of wasm memory (7.98 × the source), after +268,500,992 B (1.00 ×: the source itself)** |
+| M1 audit | The 14 `u64 → usize` casts re-checked after the changes: inflate back-reference distance (≤ 32,768) and length (≤ 258), the 64 KiB window ring (masked) and its CRC flush (≤ 64 KiB), stored-block range (≤ the input), the first inflate reservation (≤ 64 MiB), zip data ranges (clamped to the archive), CFB sector sizes. The guards are all `u64` (zip entry count ≤ len / 46, CFB, inflate caps, `archive_len`). Three capacity hints multiplied counts in `usize` and could wrap on wasm32 into a `with_capacity` above `isize::MAX` (a panic, an abort in wasm): `rels::write_rels` (`rels × 128`), `part_name::escape_segment` (`len × 3`), `xml::write::el` (`name × 2`); now saturating with `try_reserve_exact` (a hint the host refuses is skipped; the same capacity otherwise). The other hints add lengths of strings in memory (each ≤ `isize::MAX`, so the sum fits) | `src/rels.rs`, `src/part_name.rs`, `src/xml/write.rs` | — |
+| S1 | `Limits::bounded(&ParseOptions) -> ParseOptions` (public: the D2/D3 lowering `xml_part` uses) and `Limits::parse` (crate): a text longer than `max_xml_part_bytes` is `Limit { PartBytes }` before it is copied, then the bounded parse. Every edit/parse helper takes the package's `&Limits`: `xml::raw::insert_child` (no hard-coded `LENIENT` limits: names as written, positions, within the limits) and `split_element`; `rels::parse_rels`, `add_rel`, `remove_rels`, `set_rel_target`; `ContentTypes::parse`, `content_types::add_default`, `add_override`, `remove_override`, `remove_default` (and the new `remove_overrides_of_part`). The helpers that take a preset keep it (bounded); callers pass `pkg.limits()` | `src/limits.rs`, `src/xml/raw.rs`, `src/rels.rs`, `src/content_types.rs`, `src/package.rs`; callers in the tests, `fuzz/src` (`FUZZ_LIMITS`), `uo-wasm/src/opc_memtest.rs` | `stage6_findings::s1_bounded_lowers_only_the_limits` (lowered, kept when lower, the same tree within the limits), `s1_every_edit_helper_refuses_a_text_over_the_limits` (the 12 helpers: `XmlElements` at 1,001 elements, depth, `PartBytes` with **0 B allocated**; one element less gives the unbounded results; the text-only anchors unchanged), `s1_a_hostile_text_is_a_limit_not_an_allocation` (1 MiB of `<a/>` through `add_override`: **peak 1.04 × the text with the element cap, 21.00 × without**) |
+| S2 | Pinning tests for stage 5; `zip::archive_len` is `pub(crate)` (only `Package::save` uses it) | `src/zip.rs`; `fuzz/src/lib.rs` | `stage6_findings::s2_xml_part_keeps_nothing_and_counts_the_part_once` (C3: equal trees, `produced_bytes` = the part once, a parse and its drop leave 0 B live, `part` afterwards inflates again and is not counted again, a part over the cap is refused by both reads each time); C7 by the M1 tests; `zip::tests::archive_len_is_the_written_length` (empty, stored and deflated with UTF-8 names, declared sizes of 4 GiB and above, 65,536 entries: length and capacity equal; offsets of 4 GiB are not built); `zip_write::zip64_when_more_than_65535_entries` also saves the 65,536 entries through `Package` (levels 0 and 6: `capacity() == len()`, level 0 byte-identical to `zip::write`); the `zip_roundtrip` fuzz target asserts `capacity() == len()` on every save |
+| S3 | `ContentTypes::override_of_part` / `content_type_of_part` (the D6 rule: each `PartName` resolved like an absolute target by `part_name::resolve_relationship_target`, `%XX` unescaped once, malformed names match nothing; ASCII case folding; the default by the extension of the last segment) and `content_types::remove_overrides_of_part` (every match, as the C# `RemoveContentTypeOverride`). The Slides exact rule is renamed `override_of_exact` / `content_type_of_exact` (`remove_override` stays exact and says so) | `src/content_types.rs`; `fuzz/src/lib.rs` (the `content_types` target calls them and checks that a generated override is found in any ASCII case) | `stage6_findings::s3_content_type_of_a_part_follows_the_opc_rule` (case, `%20`, `%E2%82%AC`, malformed `%ZZ`, defaults of the last segment, removal of both case variants) |
+| S4 | `Package::entry(name) -> Option<&ZipEntry>` (exact name: method, flags, CRC-32, declared compressed and uncompressed sizes; `None` for parts set by the caller). `Error::Xml` gains `part: Option<String>`, set by `xml_part` (as `Limit` already was) and shown by `Display`; the variant is the same, so the error classes do not change (the replay compares XML errors as `E`, zip errors by `error_class`) | `src/package.rs`, `src/error.rs`, `src/xml/{read,raw}.rs` | `stage6_findings::s4_entry_exposes_what_the_central_directory_declares`, `s4_xml_errors_from_xml_part_name_the_part` |
+| S5 | `Package::take_part(name) -> Result<Option<Vec<u8>>>`: an entry's inflated copy is moved out (0 B allocated), a never-read entry is inflated for the caller without caching (counted once), a stored one copied from the input; the entry stays readable from the archive. Bytes set by the caller are moved out and the part is empty until the next `set_part` (same position). The bench edit (d) uses it | `src/package.rs`; `tests/bench_support/mod.rs` | `stage6_findings::s5_take_part_hands_the_bytes_over`, `s5_an_edit_of_a_large_part_holds_it_twice` (4.9 MB part: **edit peak 3.00 × → 2.00 ×**). Bench (native, `opc_bench`): **giant edit + save peak 95,153,899 → 63,435,928 B (−33%)**, allocated 131,840,749 → 100,122,802 B, 782.6 → 748.6 ms; kept 31,718,822 B unchanged (the new text, owned by the package); sw-16-8 edit + save peak 703,177 → 514,907 B, allocated 1,498,332 → 1,310,062 B; scenarios (a)–(c) identical. The wasm bench was not re-run |
+| S6 | CI: job `soak` (`cargo test -p uo-opc --release --all-features --test package_soak -- --ignored m2_soak_1000`) and job `audit` (`cargo audit` on `core/Cargo.lock` and `fuzz/Cargo.lock`, installed with `taiki-e/install-action`). The opt-in tests stay plain tests (the documented commands do not pass `--ignored`) but call `uo_testkit::opt_in(var, what)`, which writes `SKIPPED: <what>: set <var>=1` to the process's stderr past libtest's capture: `cfb_ts_parity`, `save_cross_readers` and its .NET half | `.github/workflows/rust-core.yml`, `uo-testkit/src/lib.rs`, `tests/{cfb_ts_parity,opc_parity}.rs` | the two SKIPPED lines show in `cargo test --workspace`; `cargo audit` here: 0 of 1,395 advisories for the 7 crates of `core/` and the 14 of `fuzz/` |
+| S7 | `rels::remove_rels` builds each `Relationship` with the function of `from_document`; `open_owned` filters with `MAX_DEFLATE_RATIO`; `save` checks the name length first, before anything is compressed | `src/rels.rs`, `src/package.rs` | `stage6_findings::s7_a_name_too_long_fails_the_save_before_compressing` (an 8 MiB part under a 65,536-byte name: `NameTooLong` with < 256 KiB allocated; before, the part was deflated first) |
+| S8 | `CHANGELOG.md`: "Unreleased — 0.10 (Rust core)", container layer: the G5 fixes, D1, D2 and the XML cap of D3, the depth limit on Sheet/Slides parts (R5, marked pending), D4, D5 with the overlap rule and stored entries kept stored, D7, the fixed zip time, zip64, and the internal API changes | `CHANGELOG.md` | — |
+| note | `Deflater::deflate_into`: no real infinite-loop risk. With `TDEFLFlush::Finish` and a callback that takes every chunk, miniz_oxide's callback output reports `flush_remaining` 0 to its block loop, so `compress_normal`/`compress_fast`/`compress_stored` consume the whole input, the final `flush_block` sets `finished`, and the call returns `Done`: the `Okay` arm was unreachable. The loop is replaced by one call that is an error unless `Done` with the whole input read, so there is nothing to guard | `src/flate.rs` | `flate::tests::deflater_writes_the_bytes_of_deflate_raw` now also covers level 0 (stored blocks): levels 0–9 × 11 inputs up to 400 KB, one call each; the 31.7 MB giant sheet saves in the bench and `package_budgets` |
+
+API changes (crate not published): `Limits::bounded`; `&Limits` on the 12 edit/parse helpers;
+`ContentTypes::{override_of_part, content_type_of_part}`, `content_types::remove_overrides_of_part`;
+`override_of` → `override_of_exact`, `content_type_of` → `content_type_of_exact`;
+`Package::{entry, take_part}`; `Error::Xml { part }`; `zip::archive_len` crate-private;
+`uo_testkit::opt_in`. Wasm module: `opc-memtest` 266,269 → 268,226 B, `count,opc-memtest`
+266,760 → 268,717 B (the M1 export); the Safari 15 feature check passes.
+
+Not done here: R1–R5 (maintainer); the wasm column of the benchmark (the review asked for a
+re-run on a quiet machine, and S5 changes its (d) numbers too); the review's notes that need no
+change now (`Send` not `Sync`, names held three times, `remove_part` O(parts),
+`safe_relative_path` docs, the wasm32 element cap, the .NET error mapping, uo-jsnum, newer Rust
+APIs); the edit helpers still copy the caller's text into the tree's source (one copy per call,
+now bounded by the XML cap). "Process metrics" has no row for this round yet (the orchestrator
+times the agents).
+
+### Checks run
+
+`cargo fmt --all --check`; `cargo clippy --workspace --all-targets --all-features -- -D
+warnings` (and in `core/fuzz`); `cargo test --workspace --release --all-features`: **225 tests
+pass** (212 before; 1 ignored, the soak), the parity replay 0 mismatches; the 1,000-iteration
+native soak: 771,375 B × 21 flat, 12.5 s; the wasm build (`count,opc-memtest`) with
+`boundary.test.mjs` and `opc_memory.test.mjs` in Node (M2 1,000 iterations: 0 B live,
+`byteLength` 2,293,760 B flat, 12.9 s) and in WebKit 26.5 (`browser/run.mjs`, 15.3 s); the fuzz
+fallback, 10 s per target: 0 crashes (zip_open 91,842 execs, zip_roundtrip 234,955, zip_write
+161,210, inflate 511,823, cfb 4,628,999, xml_lenient 763,986, xml_strict 813,839,
+escape_roundtrip 279,843, raw_surgery 1,328,853, rels 226,448, content_types 201,933, caseless
+109,085, part_text 1,648,196, resolver 3,658,295); the cross readers (`UO_TS_PARITY=1
+UO_DOTNET_PARITY=1`): 10,053 saved archives read identically by fflate, uo-opc and .NET
+`ZipArchive`; `cargo audit`. The new tests take under 7 s per file in debug.
+
+New test file: `tests/stage6_findings.rs`.

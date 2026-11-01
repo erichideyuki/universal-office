@@ -17,6 +17,8 @@
 //!   the drop of the package; except through [`Package::xml_part`], whose tree takes the
 //!   inflated text as its source (no copy) and the package keeps nothing;
 //! - parts given by `set_part`/`from_parts` are owned by the package until replaced or removed;
+//! - [`Package::take_part`] hands a part's bytes to the caller without the package keeping a
+//!   copy (the inflated copy or the caller's bytes are moved out), for edits of large parts;
 //! - the case-insensitive indexes (one for the [`CaseFold`] policy, one ASCII index for
 //!   [`Package::resolve_target`]) are built on the first fallback lookup and dropped on any
 //!   change of the part set; each holds one folded name per part;
@@ -69,7 +71,8 @@ use crate::xml::{self, ParseOptions, Source};
 use crate::zip::{self, RawEntry, ZipEntry, ZipWriter};
 
 /// The most output a save checks per compressed byte of an entry (with 1 MiB at least): deflate
-/// cannot exceed 1,032:1, and Slides uses the same bound for its "impossible ratio" filter.
+/// cannot exceed 1,032:1, and Slides uses the same bound for its "impossible ratio" filter
+/// ([`OpenOptions::skip_impossible_ratio`]).
 pub const MAX_DEFLATE_RATIO: u64 = 1100;
 
 /// Options of a save: level, STORED names, timestamp (see [`zip::WriteOptions`]).
@@ -219,7 +222,9 @@ impl Package {
     /// Opens a zip package, keeping `bytes` as the source of its parts.
     pub fn open_owned(bytes: Vec<u8>, limits: &Limits, options: &OpenOptions) -> Result<Package> {
         let entries = if options.skip_impossible_ratio {
-            zip::read_filtered(&bytes, limits.max_entries, &mut |e| e.size <= (1u64 << 20).max(e.compressed_size.saturating_mul(1100)))?
+            zip::read_filtered(&bytes, limits.max_entries, &mut |e| {
+                e.size <= (1u64 << 20).max(e.compressed_size.saturating_mul(MAX_DEFLATE_RATIO))
+            })?
         } else {
             zip::read(&bytes, limits.max_entries)?
         };
@@ -284,6 +289,18 @@ impl Package {
     /// The exact name is a part.
     pub fn contains(&self, name: &str) -> bool {
         self.index.contains_key(name)
+    }
+
+    /// The zip entry a part is read from, by exact name: its method, flags, CRC-32 and declared
+    /// compressed and uncompressed sizes as the central directory states them (untrusted: reads
+    /// check the bytes they produce, a save checks them before copying an entry raw). For host
+    /// validators with rules of their own, such as a compression-ratio check, without a second
+    /// [`zip::read`] (stage-6 finding S4). `None` for a part set by the caller or missing.
+    pub fn entry(&self, name: &str) -> Option<&ZipEntry> {
+        match self.parts.get(*self.index.get(name)?).map(|p| &p.content) {
+            Some(Content::Entry { entry, .. }) => Some(entry),
+            _ => None,
+        }
     }
 
     /// The real name of a part: the exact name, else the first part (in order) whose folded name
@@ -445,8 +462,8 @@ impl Package {
     /// is found like [`Package::find`] (exact name, then the [`CaseFold`] policy) and read with
     /// `max_xml_part_bytes` whatever its name; its text is decoded like [`Package::part_text`]
     /// and parsed with `options`, whose depth and element limits are lowered to the package's
-    /// `max_xml_depth` and `max_xml_elements`. A missing part is `Error::MissingPart`; a limit
-    /// error names the part. A part inflated by this call is not kept by the package (the tree
+    /// `max_xml_depth` and `max_xml_elements` ([`Limits::bounded`]). A missing part is
+    /// `Error::MissingPart`; limit and XML errors name the part. A part inflated by this call is not kept by the package (the tree
     /// owns its text; a later read inflates it again, without counting it again toward the
     /// total); bytes the package already holds are copied into the tree.
     pub fn xml_part(&self, name: &str, options: &ParseOptions<'_>) -> Result<xml::Document> {
@@ -464,14 +481,9 @@ impl Package {
                 decode_text(bytes, self.options.utf16_text).into()
             }
         };
-        let lower = |own: Option<u32>, package: u32| Some(own.map_or(package, |o| o.min(package)));
-        let options = ParseOptions {
-            max_depth: lower(options.max_depth, self.limits.max_xml_depth),
-            max_elements: lower(options.max_elements, self.limits.max_xml_elements),
-            ..*options
-        };
-        xml::parse(text, &options).map_err(|e| match e {
+        xml::parse(text, &self.limits.bounded(options)).map_err(|e| match e {
             Error::Limit { kind, max, part: None } => Error::Limit { kind, max, part: Some(part.name.clone()) },
+            Error::Xml { offset, kind, part: None } => Error::Xml { offset, kind, part: Some(part.name.clone()) },
             e => e,
         })
     }
@@ -544,6 +556,35 @@ impl Package {
             total += n;
         }
         Ok(())
+    }
+
+    /// The bytes of a part by exact name, handed to the caller without the package keeping a
+    /// copy, so that an edit of a large part holds its old and new bytes only (stage-6 finding
+    /// S5; `part` keeps the inflated copy, and an edit then also holds its own copy and the new
+    /// text: 3 times the part):
+    /// - an entry of the input stays as it is (it reads again from the archive): its inflated
+    ///   copy is moved out if it has one, else it is inflated for the caller under the part cap
+    ///   and the total (counted once, as any read), or, stored, copied from the input;
+    /// - bytes set by the caller are moved out, and the part holds no bytes until the next
+    ///   [`Package::set_part`] of that name (which keeps its position).
+    ///
+    /// `None` when there is no such part.
+    pub fn take_part(&mut self, name: &str) -> Result<Option<Vec<u8>>> {
+        let Some(&i) = self.index.get(name) else { return Ok(None) };
+        match self.parts.get_mut(i).map(|p| &mut p.content) {
+            Some(Content::Owned(v)) => return Ok(Some(std::mem::take(v))),
+            Some(Content::Entry { inflated, .. }) => {
+                if let Some(v) = inflated.take() {
+                    return Ok(Some(v));
+                }
+            }
+            None => return Ok(None),
+        }
+        let Some(part) = self.parts.get(i) else { return Ok(None) };
+        Ok(Some(match self.read(part, self.limits.part_cap(&part.name))? {
+            Read::Held(b) => b.to_vec(),
+            Read::Inflated(v) => v,
+        }))
     }
 
     /// Drops the inflated copy of a part (it is inflated again on the next read, without
@@ -634,6 +675,10 @@ impl Package {
         let mut deflated: Vec<u8> = Vec::new();
         let mut plan: Vec<(String, Planned<'_>)> = Vec::with_capacity(order.len());
         for (name, part) in order {
+            // before anything is compressed: such a name fails the save whatever its bytes
+            if name.len() > 65_535 {
+                return Err(Error::NameTooLong { len: name.len() });
+            }
             let planned = match &part.content {
                 Content::Owned(data) => self.plan_bytes(&name, data, options, &mut deflater, &mut deflated)?,
                 Content::Entry { entry, .. } => {
@@ -650,9 +695,6 @@ impl Package {
                     }
                 }
             };
-            if name.len() > 65_535 {
-                return Err(Error::NameTooLong { len: name.len() });
-            }
             plan.push((name, planned));
         }
         drop(deflater);

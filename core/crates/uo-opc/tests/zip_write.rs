@@ -3,8 +3,9 @@
 #![allow(clippy::unwrap_used)] // helpers outside #[test] functions
 
 use uo_opc::flate;
+use uo_opc::package::{OpenOptions, Package, SaveOptions};
 use uo_opc::zip::{self, RawEntry, WriteOptions, ZipWriter};
-use uo_opc::{Error, LimitKind};
+use uo_opc::{Error, LimitKind, Limits};
 
 fn hex(s: &str) -> Vec<u8> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
@@ -76,6 +77,19 @@ fn zip64_when_more_than_65535_entries() {
     assert_eq!(entries.len(), 65_536);
     assert_eq!(entries[65_535].name, "p65535");
     assert_eq!(entries[65_535].compressed(&out), b"x");
+    // the same entries saved by a package, whose archive is reserved at its exact length (stage 5
+    // C6, `zip::archive_len`): the same bytes, no unused capacity, with the zip64 records too
+    let limits = Limits { max_entries: 70_000, ..Limits::DEFAULT };
+    let pkg = Package::from_parts(names.iter().map(|n| (n.clone(), b"x".to_vec())), &limits, &OpenOptions::default());
+    for level in [0, 6] {
+        let saved = pkg.save(&SaveOptions { level, ..SaveOptions::default() }).unwrap();
+        assert_eq!(saved.capacity(), saved.len(), "level {level}");
+        if level == 0 {
+            assert_eq!(saved, out);
+        } else {
+            assert_eq!(Package::open(&saved, &limits, &OpenOptions::default()).unwrap().len(), 65_536);
+        }
+    }
 }
 
 #[test]

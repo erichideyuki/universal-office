@@ -39,19 +39,24 @@ fn with_attrs_matches_lossless() {
 
 #[test]
 fn split_element_matches_lossless() {
-    let s = split_element("<w:rPr><w:b/>t<w:i/></w:rPr>", &DOCX).unwrap();
+    let s = split_element("<w:rPr><w:b/>t<w:i/></w:rPr>", &DOCX, &uo_opc::Limits::DEFAULT).unwrap();
     assert_eq!((s.open.as_str(), s.close.as_str()), ("<w:rPr>", "</w:rPr>"));
     assert_eq!(s.kids.iter().map(|k| (k.name.as_str(), k.raw.as_str())).collect::<Vec<_>>(), [("w:b", "<w:b/>"), ("w:i", "<w:i/>")]);
     assert_eq!(s.doc.element(s.kids[1].el.unwrap()).unwrap().name(), "w:i");
-    assert!(split_element("<w:rPr w:x=\"1\"  / >", &DOCX).is_err());
-    let e = split_element("<w:rPr/> ", &DOCX).unwrap();
+    assert!(split_element("<w:rPr w:x=\"1\"  / >", &DOCX, &uo_opc::Limits::DEFAULT).is_err());
+    let e = split_element("<w:rPr/> ", &DOCX, &uo_opc::Limits::DEFAULT).unwrap();
     assert_eq!((e.open.as_str(), e.close.as_str(), e.kids.len()), ("<w:rPr>", "</w:rPr>", 0));
-    let g = split_element("<w:rPr/>x", &DOCX).unwrap();
+    let g = split_element("<w:rPr/>x", &DOCX, &uo_opc::Limits::DEFAULT).unwrap();
     assert_eq!(g.open, "<w:rPr/>x");
     // the end tag uses the RENAMED name
-    let f = split_element("<ve:Fallback xmlns:ve=\"http://schemas.openxmlformats.org/markup-compatibility/2006\"/>", &DOCX).unwrap();
+    let f = split_element(
+        "<ve:Fallback xmlns:ve=\"http://schemas.openxmlformats.org/markup-compatibility/2006\"/>",
+        &DOCX,
+        &uo_opc::Limits::DEFAULT,
+    )
+    .unwrap();
     assert_eq!(f.close, "</mc:Fallback>");
-    let p = split_element("  <w:p><w:r/></w:p>  ", &DOCX).unwrap();
+    let p = split_element("  <w:p><w:r/></w:p>  ", &DOCX, &uo_opc::Limits::DEFAULT).unwrap();
     assert_eq!((p.open.as_str(), p.close.as_str()), ("  <w:p>", "</w:p>  "));
 }
 
@@ -87,33 +92,39 @@ fn container_inserts() {
     let ct = "<?xml?>\n<Types xmlns=\"t\"><Default Extension=\"xml\"/><Override PartName=\"/a\"/></Types>\r\n";
     let t = "<X/>";
     assert_eq!(
-        insert_child(ct, "Types", t, Insert::BeforeFirstClose).unwrap().unwrap(),
+        insert_child(ct, "Types", t, Insert::BeforeFirstClose, &uo_opc::Limits::DEFAULT).unwrap().unwrap(),
         "<?xml?>\n<Types xmlns=\"t\"><Default Extension=\"xml\"/><Override PartName=\"/a\"/><X/></Types>\r\n"
     );
     assert_eq!(
-        insert_child(ct, "Types", t, Insert::AfterRootOpen).unwrap().unwrap(),
+        insert_child(ct, "Types", t, Insert::AfterRootOpen, &uo_opc::Limits::DEFAULT).unwrap().unwrap(),
         "<?xml?>\n<Types xmlns=\"t\"><X/><Default Extension=\"xml\"/><Override PartName=\"/a\"/></Types>\r\n"
     );
     // `/<\/Types>\s*$/`: the trailing CRLF goes away
     assert_eq!(
-        insert_child(ct, "Types", t, Insert::BeforeLastCloseTrimmed).unwrap().unwrap(),
+        insert_child(ct, "Types", t, Insert::BeforeLastCloseTrimmed, &uo_opc::Limits::DEFAULT).unwrap().unwrap(),
         "<?xml?>\n<Types xmlns=\"t\"><Default Extension=\"xml\"/><Override PartName=\"/a\"/><X/></Types>"
     );
     assert_eq!(
-        insert_child(ct, "Types", t, Insert::EndOfRoot).unwrap().unwrap(),
+        insert_child(ct, "Types", t, Insert::EndOfRoot, &uo_opc::Limits::DEFAULT).unwrap().unwrap(),
         "<?xml?>\n<Types xmlns=\"t\"><Default Extension=\"xml\"/><Override PartName=\"/a\"/><X/></Types>\r\n"
     );
     assert_eq!(
-        insert_child(ct, "Types", t, Insert::BeforeFirst("Override")).unwrap().unwrap(),
+        insert_child(ct, "Types", t, Insert::BeforeFirst("Override"), &uo_opc::Limits::DEFAULT).unwrap().unwrap(),
         "<?xml?>\n<Types xmlns=\"t\"><Default Extension=\"xml\"/><X/><Override PartName=\"/a\"/></Types>\r\n"
     );
     // `<Types\b`: `<TypesX>` is not the root tag
-    assert_eq!(insert_child("<TypesX/><Types>", "Types", t, Insert::AfterRootOpen).unwrap().unwrap(), "<TypesX/><Types><X/>");
+    assert_eq!(
+        insert_child("<TypesX/><Types>", "Types", t, Insert::AfterRootOpen, &uo_opc::Limits::DEFAULT).unwrap().unwrap(),
+        "<TypesX/><Types><X/>"
+    );
     // missing anchors leave the text as the TS replace would
-    assert_eq!(insert_child("<Types/>", "Types", t, Insert::BeforeFirstClose).unwrap(), None);
-    assert_eq!(insert_child("<Types></Types>x", "Types", t, Insert::BeforeLastCloseTrimmed).unwrap(), None);
+    assert_eq!(insert_child("<Types/>", "Types", t, Insert::BeforeFirstClose, &uo_opc::Limits::DEFAULT).unwrap(), None);
+    assert_eq!(insert_child("<Types></Types>x", "Types", t, Insert::BeforeLastCloseTrimmed, &uo_opc::Limits::DEFAULT).unwrap(), None);
     // a self-closing root is opened (slides setInner)
-    assert_eq!(insert_child("<Types a=\"1\" />", "Types", t, Insert::EndOfRoot).unwrap().unwrap(), "<Types a=\"1\"><X/></Types>");
+    assert_eq!(
+        insert_child("<Types a=\"1\" />", "Types", t, Insert::EndOfRoot, &uo_opc::Limits::DEFAULT).unwrap().unwrap(),
+        "<Types a=\"1\"><X/></Types>"
+    );
     assert_eq!(
         expand_self_closing("<?x?><Relationships xmlns=\"r\"  />", "Relationships"),
         "<?x?><Relationships xmlns=\"r\"></Relationships>"

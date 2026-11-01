@@ -132,11 +132,11 @@ fn d3_rels_and_content_types_from_the_parsed_part() {
     .unwrap();
     let p = open(&bytes, &Limits::DEFAULT);
     let from_part = rels::from_document(&p.xml_part("word/_rels/document.xml.rels", &ParseOptions::LENIENT).unwrap());
-    assert_eq!(from_part, rels::parse_rels(rels_xml, &ParseOptions::LENIENT).unwrap());
+    assert_eq!(from_part, rels::parse_rels(rels_xml, &ParseOptions::LENIENT, &uo_opc::Limits::DEFAULT).unwrap());
     assert_eq!(from_part.len(), 2);
     let ct = ContentTypes::from_document(&p.xml_part("[Content_Types].xml", &ParseOptions::LENIENT).unwrap());
-    assert_eq!(ct, ContentTypes::parse(ct_xml, &ParseOptions::LENIENT).unwrap());
-    assert_eq!(ct.content_type_of("word/document.xml"), Some("x"));
+    assert_eq!(ct, ContentTypes::parse(ct_xml, &ParseOptions::LENIENT, &uo_opc::Limits::DEFAULT).unwrap());
+    assert_eq!(ct.content_type_of_exact("word/document.xml"), Some("x"));
     for (rels_part, source) in [
         ("word/_rels/document.xml.rels", Some("word/document.xml")),
         ("_rels/.rels", Some("")),

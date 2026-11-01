@@ -12,9 +12,10 @@
 use std::collections::HashSet;
 
 use crate::error::Result;
+use crate::limits::Limits;
 use crate::xml::raw::{Insert, expand_self_closing, insert_child};
-use crate::xml::read::{ParseOptions, parse};
-use crate::xml::tree::Document;
+use crate::xml::read::ParseOptions;
+use crate::xml::tree::{Document, Element};
 use crate::xml::write::{Escape, XML_DECL, escape_into};
 
 /// Namespace of `.rels` parts.
@@ -110,30 +111,30 @@ pub fn source_part_of(rels_part: &str) -> Option<String> {
 }
 
 /// The `Relationship` children of the root, in order (duplicates kept). `opts` is the
-/// caller's preset (sheet-core strips an `x:` prefix bound to the relationships namespace).
-/// The format crates read a `.rels` part with [`crate::Package::xml_part`] and
-/// [`from_document`] instead (gate 2, D3).
-pub fn parse_rels(xml: &str, opts: &ParseOptions<'_>) -> Result<Vec<Relationship>> {
-    Ok(from_document(&parse(xml, opts)?))
+/// caller's preset (sheet-core strips an `x:` prefix bound to the relationships namespace),
+/// applied within `limits` ([`Limits::bounded`]). The format crates read a `.rels` part with
+/// [`crate::Package::xml_part`] and [`from_document`] instead (gate 2, D3).
+pub fn parse_rels(xml: &str, opts: &ParseOptions<'_>, limits: &Limits) -> Result<Vec<Relationship>> {
+    Ok(from_document(&limits.parse(xml, opts)?))
 }
 
 /// The `Relationship` children of the root of a parsed `.rels` part, in order.
 pub fn from_document(doc: &Document) -> Vec<Relationship> {
-    doc.root()
-        .children_named("Relationship")
-        .map(|r| {
-            let id = r.attr("Id");
-            let target = r.attr("Target");
-            Relationship {
-                id: id.unwrap_or("").to_owned(),
-                type_: r.attr("Type").unwrap_or("").to_owned(),
-                target: target.unwrap_or("").to_owned(),
-                external: r.attr("TargetMode") == Some("External"),
-                has_id: id.is_some(),
-                has_target: target.is_some(),
-            }
-        })
-        .collect()
+    doc.root().children_named("Relationship").map(relationship).collect()
+}
+
+/// A `<Relationship>` element as read.
+fn relationship(r: Element<'_>) -> Relationship {
+    let id = r.attr("Id");
+    let target = r.attr("Target");
+    Relationship {
+        id: id.unwrap_or("").to_owned(),
+        type_: r.attr("Type").unwrap_or("").to_owned(),
+        target: target.unwrap_or("").to_owned(),
+        external: r.attr("TargetMode") == Some("External"),
+        has_id: id.is_some(),
+        has_target: target.is_some(),
+    }
 }
 
 /// The relationship an id resolves to: the LAST one with that id (the TS readers fill a `Map`,
@@ -149,7 +150,9 @@ pub fn find_by_type_suffix<'r>(rels: &'r [Relationship], suffix: &str) -> Option
 
 /// A whole `.rels` part (docx `PartRels.xml()`: declaration, root, the elements in order).
 pub fn write_rels(rels: &[Relationship], declaration: &str) -> String {
-    let mut out = String::with_capacity(declaration.len() + 96 + rels.len() * 128);
+    let mut out = String::new();
+    // a hint: a size that would wrap on wasm32 (or that the host refuses) only skips it
+    let _ = out.try_reserve_exact(rels.len().saturating_mul(128).saturating_add(declaration.len() + 96));
     out.push_str(declaration);
     out.push_str("<Relationships xmlns=\"");
     out.push_str(RELS_NS);
@@ -197,28 +200,28 @@ pub fn first_free_rel_id(rels: &[Relationship], prefix: &str, start: u64) -> Str
 /// Adds a relationship to the text of a `.rels` part (`None` = the part does not exist yet:
 /// an empty one with `XML_DECL` is used). `Insert::BeforeLastCloseTrimmed` first opens a
 /// self-closing root, as fonts `addRel`. Returns the new text, or the old one when the anchor
-/// is missing (the TS `replace` leaves it).
-pub fn add_rel(xml: Option<&str>, rel: &Relationship, at: Insert<'_>) -> Result<String> {
+/// is missing (the TS `replace` leaves it). The anchors that parse the text do it within
+/// `limits` ([`insert_child`]).
+pub fn add_rel(xml: Option<&str>, rel: &Relationship, at: Insert<'_>, limits: &Limits) -> Result<String> {
     let base = xml.map_or_else(empty_rels, str::to_owned);
     let base = if at == Insert::BeforeLastCloseTrimmed { expand_self_closing(&base, "Relationships") } else { base };
-    Ok(insert_child(&base, "Relationships", &rel.to_xml(), at)?.unwrap_or(base))
+    Ok(insert_child(&base, "Relationships", &rel.to_xml(), at, limits)?.unwrap_or(base))
 }
 
 /// Removes the relationships for which `drop` is true (slides `removeRels`, fonts
 /// `removeRelsOfType`, hf-ops `dropUnusedHfParts`); returns the new text and the removed ones.
-pub fn remove_rels(xml: &str, opts: &ParseOptions<'_>, mut drop: impl FnMut(&Relationship) -> bool) -> Result<(String, Vec<Relationship>)> {
-    let doc = parse(xml, &ParseOptions { positions: true, ..*opts })?;
+/// The text is parsed with `opts` within `limits`.
+pub fn remove_rels(
+    xml: &str,
+    opts: &ParseOptions<'_>,
+    limits: &Limits,
+    mut drop: impl FnMut(&Relationship) -> bool,
+) -> Result<(String, Vec<Relationship>)> {
+    let doc = limits.parse(xml, &ParseOptions { positions: true, ..*opts })?;
     let mut cut: Vec<(usize, usize)> = Vec::new();
     let mut removed = Vec::new();
     for r in doc.root().children_named("Relationship") {
-        let rel = Relationship {
-            id: r.attr("Id").unwrap_or("").to_owned(),
-            type_: r.attr("Type").unwrap_or("").to_owned(),
-            target: r.attr("Target").unwrap_or("").to_owned(),
-            external: r.attr("TargetMode") == Some("External"),
-            has_id: r.attr("Id").is_some(),
-            has_target: r.attr("Target").is_some(),
-        };
+        let rel = relationship(r);
         if drop(&rel)
             && let Some(p) = r.positions()
         {
@@ -238,9 +241,10 @@ pub fn remove_rels(xml: &str, opts: &ParseOptions<'_>, mut drop: impl FnMut(&Rel
     Ok((out, removed))
 }
 
-/// slides `setRelTarget`: the `Target` of the first relationship with `id` replaced.
-pub fn set_rel_target(xml: &str, opts: &ParseOptions<'_>, id: &str, target: &str) -> Result<String> {
-    let doc = parse(xml, &ParseOptions { positions: true, ..*opts })?;
+/// slides `setRelTarget`: the `Target` of the first relationship with `id` replaced. The text
+/// is parsed with `opts` within `limits`.
+pub fn set_rel_target(xml: &str, opts: &ParseOptions<'_>, limits: &Limits, id: &str, target: &str) -> Result<String> {
+    let doc = limits.parse(xml, &ParseOptions { positions: true, ..*opts })?;
     let Some(r) = doc.root().children_named("Relationship").find(|r| r.attr("Id") == Some(id)) else {
         return Ok(xml.to_owned());
     };

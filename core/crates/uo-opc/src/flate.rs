@@ -758,7 +758,7 @@ pub struct Deflater {
 }
 
 impl Deflater {
-    /// A compressor at `level` 1-9 (clamped to 9).
+    /// A compressor at `level` 0-9 (clamped to 9; 0 writes stored blocks).
     pub fn new(level: u8) -> Self {
         Deflater { level: level.min(9), state: None }
     }
@@ -773,17 +773,17 @@ impl Deflater {
             // the parameters of `compress_to_vec`: raw (window bits 0), default strategy
             None => self.state.insert(Box::new(CompressorOxide::new(create_comp_flags_from_zip_params(self.level.into(), 0, 0)))),
         };
-        let mut input = data;
-        loop {
-            let (status, read) = compress_to_output(state, input, TDEFLFlush::Finish, |chunk| {
-                out.extend_from_slice(chunk);
-                true
-            });
-            match status {
-                TDEFLStatus::Done => return Ok(()),
-                TDEFLStatus::Okay if read <= input.len() => input = input.get(read..).unwrap_or(&[]),
-                _ => return Err(Error::Corrupt("deflate failed")),
-            }
+        // one call: with `Finish` and a callback that takes every chunk, miniz_oxide consumes the
+        // whole input and ends the stream (its block loop flushes to the callback, which leaves
+        // nothing pending), so anything but `Done` with the input read is an error and there is
+        // no loop to guard (stage-6 note: the earlier loop on `Okay` had no progress check)
+        let (status, read) = compress_to_output(state, data, TDEFLFlush::Finish, |chunk| {
+            out.extend_from_slice(chunk);
+            true
+        });
+        match status {
+            TDEFLStatus::Done if read == data.len() => Ok(()),
+            _ => Err(Error::Corrupt("deflate failed")),
         }
     }
 }
@@ -934,7 +934,9 @@ mod tests {
             }
             inputs.push(text);
         }
-        for level in 1..=9 {
+        // level 0 too (stored blocks, miniz's `compress_stored`): every level ends the stream in
+        // the one call `deflate_into` makes, or it would be an error here
+        for level in 0..=9 {
             // one compressor for every input in turn: its reset leaves no trace of the previous one
             let mut d = Deflater::new(level);
             for data in &inputs {

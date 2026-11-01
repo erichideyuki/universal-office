@@ -2,8 +2,10 @@ name: Rust core
 
 # The Rust core of 0.10 (core/, branch rust-core) — the rust-port workflow's automatic
 # checks: format and clippy, tests on the three OSes, the memory gate (M1-M3 in the crates'
-# tests, M4 at the wasm and .NET boundaries, M6 with Miri and LeakSanitizer) and the wasm
-# build, and the fuzz targets (security, stage 4: core/fuzz). See .claude/skills/rust-port/SKILL.md.
+# tests, the M2 soaks, M4 at the wasm and .NET boundaries, M6 with Miri and LeakSanitizer) and
+# the wasm build, the fuzz targets (security, stage 4: core/fuzz) and the advisories of the
+# dependencies. Opt-in tests (TS and .NET parity) print a SKIPPED line here. See
+# .claude/skills/rust-port/SKILL.md.
 
 on:
   push:
@@ -46,6 +48,28 @@ jobs:
       - run: rustup toolchain install stable --profile minimal && rustup default stable
       # --all-features turns the counting allocator on: the memory tests (M1-M3) run here
       - run: cargo test --workspace --all-features
+
+  soak:
+    name: Memory soaks (M2, 1,000 iterations, release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      # uo-opc: open → parse → edit → save → reopen, 1,000 times, live bytes flat (#[ignore]d in
+      # the test job: about 190 s in debug)
+      - run: cargo test -p uo-opc --release --all-features --test package_soak -- --ignored m2_soak_1000 --nocapture
+
+  audit:
+    name: Advisories (cargo audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # the workspace and the fuzz crate (its own lock file)
+      - run: cargo audit
+      - run: cargo audit --file fuzz/Cargo.lock
 
   wasm:
     name: WebAssembly (build, Safari 15 features, boundary memory M2/M4, uo-opc M2, WebKit)

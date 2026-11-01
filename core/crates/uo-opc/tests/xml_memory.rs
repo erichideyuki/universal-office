@@ -48,20 +48,22 @@ fn m1_write_raw_rels_content_types() {
         w.finish()
     });
     assert_no_leak(|| {
-        let mut s = split_element("<w:rPr><w:b/><w:i/></w:rPr>", &DOCX).unwrap();
+        let mut s = split_element("<w:rPr><w:b/><w:i/></w:rPr>", &DOCX, &uo_opc::Limits::DEFAULT).unwrap();
         set_kid(&mut s.kids, &["w:b", "w:i", "w:u"], "w:u", Some("<w:u/>"));
         s
     });
-    assert_no_leak(|| split_element("<w:rPr", &DOCX).unwrap_err());
+    assert_no_leak(|| split_element("<w:rPr", &DOCX, &uo_opc::Limits::DEFAULT).unwrap_err());
     assert_no_leak(|| with_attrs("<w:x a=\"1\"/>", "w:x", &[("a", None), ("b", Some("2"))]));
     let rels = write_rels(&[Relationship::new("rId1", "t", "a.xml")], XML_DECL);
-    assert_no_leak(|| parse_rels(&rels, &DOCX).unwrap());
-    assert_no_leak(|| add_rel(Some(&rels), &Relationship::new("rId2", "t", "b.xml"), Insert::BeforeLastCloseTrimmed).unwrap());
-    assert_no_leak(|| remove_rels(&rels, &DOCX, |r| r.id == "rId1").unwrap());
+    assert_no_leak(|| parse_rels(&rels, &DOCX, &uo_opc::Limits::DEFAULT).unwrap());
+    assert_no_leak(|| {
+        add_rel(Some(&rels), &Relationship::new("rId2", "t", "b.xml"), Insert::BeforeLastCloseTrimmed, &uo_opc::Limits::DEFAULT).unwrap()
+    });
+    assert_no_leak(|| remove_rels(&rels, &DOCX, &uo_opc::Limits::DEFAULT, |r| r.id == "rId1").unwrap());
     let ct = "<Types><Default Extension=\"xml\" ContentType=\"x\"/><Override PartName=\"/a\" ContentType=\"y\"/></Types>";
-    assert_no_leak(|| ContentTypes::parse(ct, &DOCX).unwrap());
-    assert_no_leak(|| add_override(ct, "b", "z", Insert::EndOfRoot).unwrap());
-    assert_no_leak(|| remove_override(ct, &DOCX, "a").unwrap());
+    assert_no_leak(|| ContentTypes::parse(ct, &DOCX, &uo_opc::Limits::DEFAULT).unwrap());
+    assert_no_leak(|| add_override(ct, "b", "z", Insert::EndOfRoot, &uo_opc::Limits::DEFAULT).unwrap());
+    assert_no_leak(|| remove_override(ct, &DOCX, &uo_opc::Limits::DEFAULT, "a").unwrap());
 }
 
 /// A sheet part of `rows × cols` cells like Excel writes them.
@@ -107,4 +109,45 @@ fn m3_tree_bytes_per_element() {
     // the same with positions (docx lossless) for the record
     let (doc, usage) = measure(|| parse(src.clone(), &ParseOptions { positions: true, ..SHEET }).unwrap());
     println!("with positions: {:.1} B/element", usage.live_delta as f64 / doc.element_count() as f64);
+}
+
+/// Stage 5 (C7) and the stage-6 finding M1: whatever its counts, a parse reserves at most 3 ×
+/// its source before reading it. Inputs whose estimate is inflated (markup after a root that
+/// ends early, in a comment, in values) and the wrapping shape of M1 at a smaller size; the
+/// source is moved in (no copy), so the peak is the reservation and what the parse builds.
+#[test]
+fn reservation_never_exceeds_three_times_the_source() {
+    let markup = "<a b=\"111111111111111\">".repeat((16 << 20) / 23);
+    let dense = "<a b=\"1\"/>".repeat((16 << 20) / 10);
+    let inputs = [
+        // the review's measure: 1.57 × reserved, freed by `finish`
+        format!("<r/>{markup}"),
+        format!("<r><!--{markup}--></r>"),
+        format!("<r v=\"{}\"/>", markup.replace('"', "'")),
+        // denser markup: estimated above 3 × the source, nothing reserved
+        format!("<r/>{dense}"),
+        // M1's shape: `<=` then `=`
+        format!("{}{}", "<=".repeat(2_000_000), "=".repeat(12 << 20)),
+    ];
+    for input in &inputs {
+        let len = input.len() as i64;
+        for o in [
+            &ParseOptions::LENIENT,
+            &DOCX_POS,
+            &SHEET,
+            &ParseOptions { positions: true, max_elements: Some(20_000_000), ..ParseOptions::STRICT },
+        ] {
+            let src = input.clone();
+            let (_, u) = measure(|| drop(parse(src, o)));
+            println!("{len} B, {:?}, positions {}: peak {:.2} × the source", o.mode, o.positions, u.peak_above_start as f64 / len as f64);
+            assert!(
+                u.peak_above_start <= 3 * len + (64 << 10),
+                "{} B input, {:?}: peak {} B ({:.2} ×)",
+                len,
+                o.mode,
+                u.peak_above_start,
+                u.peak_above_start as f64 / len as f64
+            );
+        }
+    }
 }

@@ -40,7 +40,7 @@ fn m1_part_names() {
 
 #[test]
 fn m1_rels_helpers() {
-    let list = rels::parse_rels(RELS, &DOCX).unwrap();
+    let list = rels::parse_rels(RELS, &DOCX, &uo_opc::Limits::DEFAULT).unwrap();
     assert_no_leak(|| rels::rels_part_for("word/document.xml"));
     assert_no_leak(|| rels::rels_part_for_legacy("foo.xml"));
     assert_no_leak(|| rels::find_by_id(&list, "rId2").map(|r| r.target.clone()));
@@ -50,37 +50,48 @@ fn m1_rels_helpers() {
     assert_no_leak(|| rels::first_free_rel_id(&list, "rId", 1));
     assert_no_leak(|| Relationship::new("rId9", "t", "a&b.xml").external().to_xml());
     assert_no_leak(|| rels::write_rels(&list, write::XML_DECL_LF));
-    assert_no_leak(|| rels::add_rel(None, &Relationship::new("rId1", "t", "x.xml"), Insert::EndOfRoot).unwrap());
+    assert_no_leak(|| rels::add_rel(None, &Relationship::new("rId1", "t", "x.xml"), Insert::EndOfRoot, &uo_opc::Limits::DEFAULT).unwrap());
     assert_no_leak(|| {
-        rels::add_rel(Some("<Relationships/>"), &Relationship::new("rId1", "t", "x.xml"), Insert::BeforeLastCloseTrimmed).unwrap()
+        rels::add_rel(
+            Some("<Relationships/>"),
+            &Relationship::new("rId1", "t", "x.xml"),
+            Insert::BeforeLastCloseTrimmed,
+            &uo_opc::Limits::DEFAULT,
+        )
+        .unwrap()
     });
-    assert_no_leak(|| rels::set_rel_target(RELS, &DOCX, "rId1", "other.xml").unwrap());
-    assert_no_leak(|| rels::set_rel_target(RELS, &DOCX, "missing", "other.xml").unwrap());
+    assert_no_leak(|| rels::set_rel_target(RELS, &DOCX, &uo_opc::Limits::DEFAULT, "rId1", "other.xml").unwrap());
+    assert_no_leak(|| rels::set_rel_target(RELS, &DOCX, &uo_opc::Limits::DEFAULT, "missing", "other.xml").unwrap());
     // error paths: the parse fails after part of the tree was built
     let broken = &RELS[..RELS.len() - 30];
-    assert_no_leak(|| rels::parse_rels(broken, &DOCX).unwrap_err());
-    assert_no_leak(|| rels::remove_rels(broken, &DOCX, |_| true).unwrap_err());
-    assert_no_leak(|| rels::set_rel_target(broken, &DOCX, "rId1", "x").unwrap_err());
-    assert_no_leak(|| rels::add_rel(Some("<Relationships><a"), &Relationship::new("r", "t", "x"), Insert::EndOfRoot).unwrap_err());
+    assert_no_leak(|| rels::parse_rels(broken, &DOCX, &uo_opc::Limits::DEFAULT).unwrap_err());
+    assert_no_leak(|| rels::remove_rels(broken, &DOCX, &uo_opc::Limits::DEFAULT, |_| true).unwrap_err());
+    assert_no_leak(|| rels::set_rel_target(broken, &DOCX, &uo_opc::Limits::DEFAULT, "rId1", "x").unwrap_err());
+    assert_no_leak(|| {
+        rels::add_rel(Some("<Relationships><a"), &Relationship::new("r", "t", "x"), Insert::EndOfRoot, &uo_opc::Limits::DEFAULT)
+            .unwrap_err()
+    });
 }
 
 #[test]
 fn m1_content_types() {
-    let ct = ContentTypes::parse(TYPES, &DOCX).unwrap();
-    assert_no_leak(|| ct.override_of("word/document.xml").map(str::len));
+    let ct = ContentTypes::parse(TYPES, &DOCX, &uo_opc::Limits::DEFAULT).unwrap();
+    assert_no_leak(|| ct.override_of_exact("word/document.xml").map(str::len));
     assert_no_leak(|| ct.default_of("XML").map(str::len));
-    assert_no_leak(|| ct.content_type_of("word/styles.xml").map(str::len));
+    assert_no_leak(|| ct.content_type_of_exact("word/styles.xml").map(str::len));
     assert_no_leak(|| content_types::default_xml("png", "image/png"));
     assert_no_leak(|| content_types::override_xml("a&b.xml", "x\"y"));
-    assert_no_leak(|| content_types::add_default(TYPES, "png", "image/png", Insert::AfterRootOpen).unwrap());
-    assert_no_leak(|| content_types::add_default(TYPES, "png", "image/png", Insert::BeforeFirst("Override")).unwrap());
-    assert_no_leak(|| content_types::add_override(TYPES, "a.xml", "t", Insert::BeforeFirstClose).unwrap());
-    assert_no_leak(|| content_types::remove_default(TYPES, &DOCX, "xml").unwrap());
-    assert_no_leak(|| content_types::remove_default(TYPES, &DOCX, "bin").unwrap());
+    assert_no_leak(|| content_types::add_default(TYPES, "png", "image/png", Insert::AfterRootOpen, &uo_opc::Limits::DEFAULT).unwrap());
+    assert_no_leak(|| {
+        content_types::add_default(TYPES, "png", "image/png", Insert::BeforeFirst("Override"), &uo_opc::Limits::DEFAULT).unwrap()
+    });
+    assert_no_leak(|| content_types::add_override(TYPES, "a.xml", "t", Insert::BeforeFirstClose, &uo_opc::Limits::DEFAULT).unwrap());
+    assert_no_leak(|| content_types::remove_default(TYPES, &DOCX, &uo_opc::Limits::DEFAULT, "xml").unwrap());
+    assert_no_leak(|| content_types::remove_default(TYPES, &DOCX, &uo_opc::Limits::DEFAULT, "bin").unwrap());
     let broken = "<Types><Default Extension=\"xml\"";
-    assert_no_leak(|| ContentTypes::parse(broken, &DOCX).unwrap_err());
-    assert_no_leak(|| content_types::remove_override(broken, &DOCX, "a").unwrap_err());
-    assert_no_leak(|| content_types::add_default(broken, "png", "t", Insert::EndOfRoot).unwrap_err());
+    assert_no_leak(|| ContentTypes::parse(broken, &DOCX, &uo_opc::Limits::DEFAULT).unwrap_err());
+    assert_no_leak(|| content_types::remove_override(broken, &DOCX, &uo_opc::Limits::DEFAULT, "a").unwrap_err());
+    assert_no_leak(|| content_types::add_default(broken, "png", "t", Insert::EndOfRoot, &uo_opc::Limits::DEFAULT).unwrap_err());
 }
 
 #[test]
@@ -93,10 +104,10 @@ fn m1_raw_surgery_and_escapes() {
         raw::set_kid(&mut k, &["w:b", "w:i"], "w:i", Some("<w:i w:val=\"0\"/>"));
         k
     });
-    assert_no_leak(|| raw::insert_child(TYPES, "Types", "<x/>", Insert::BeforeLastCloseTrimmed).unwrap());
-    assert_no_leak(|| raw::insert_child("<Types/>", "Types", "<x/>", Insert::EndOfRoot).unwrap());
-    assert_no_leak(|| raw::insert_child("<Other/>", "Types", "<x/>", Insert::AfterRootOpen).unwrap());
-    assert_no_leak(|| raw::insert_child("<Types><a", "Types", "<x/>", Insert::BeforeFirst("a")).unwrap_err());
+    assert_no_leak(|| raw::insert_child(TYPES, "Types", "<x/>", Insert::BeforeLastCloseTrimmed, &uo_opc::Limits::DEFAULT).unwrap());
+    assert_no_leak(|| raw::insert_child("<Types/>", "Types", "<x/>", Insert::EndOfRoot, &uo_opc::Limits::DEFAULT).unwrap());
+    assert_no_leak(|| raw::insert_child("<Other/>", "Types", "<x/>", Insert::AfterRootOpen, &uo_opc::Limits::DEFAULT).unwrap());
+    assert_no_leak(|| raw::insert_child("<Types><a", "Types", "<x/>", Insert::BeforeFirst("a"), &uo_opc::Limits::DEFAULT).unwrap_err());
     assert_no_leak(|| raw::expand_self_closing("<Relationships xmlns=\"u\" />", "Relationships"));
     assert_no_leak(|| raw::remove_range(TYPES, 10, 20));
     assert_no_leak(|| raw::remove_range(TYPES, 10, 1 << 30));

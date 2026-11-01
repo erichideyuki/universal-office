@@ -8,6 +8,9 @@
 //! target and [`Limits::NATIVE`] elsewhere, so the limit error always comes before an
 //! allocation failure.
 
+use crate::error::{Error, LimitKind, Result};
+use crate::xml::{self, Document, ParseOptions};
+
 /// Limits applied while reading a package.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Limits {
@@ -65,6 +68,31 @@ impl Limits {
     /// parsed as XML gets the XML cap whatever its name ([`crate::Package::xml_part`], D3).
     pub fn part_cap(&self, name: &str) -> u64 {
         if is_xml_like(name) { self.max_xml_part_bytes } else { self.max_binary_part_bytes }
+    }
+
+    /// `options` with their depth and element limits lowered to [`Limits::max_xml_depth`] and
+    /// [`Limits::max_xml_elements`] (gate 2, D2/D3): what [`crate::Package::xml_part`] parses
+    /// with, and what a format crate passes to [`xml::parse`] for XML that does not come through
+    /// it. The rest of the options is kept, so a part within the limits gives the same tree.
+    pub fn bounded<'a>(&self, options: &ParseOptions<'a>) -> ParseOptions<'a> {
+        let lower = |own: Option<u32>, limit: u32| Some(own.map_or(limit, |o| o.min(limit)));
+        ParseOptions {
+            max_depth: lower(options.max_depth, self.max_xml_depth),
+            max_elements: lower(options.max_elements, self.max_xml_elements),
+            ..*options
+        }
+    }
+
+    /// Parses XML text given by the caller (the edit helpers of `rels`, `content_types` and
+    /// `xml::raw`) as [`crate::Package::xml_part`] parses a part: text longer than
+    /// [`Limits::max_xml_part_bytes`] is `Limit { PartBytes }`, and the options are
+    /// [`Limits::bounded`] (stage-6 finding S1: unbounded, a text up to the XML cap could build a
+    /// tree of up to ~17 times its size, where a failed growth aborts the process).
+    pub(crate) fn parse(&self, text: &str, options: &ParseOptions<'_>) -> Result<Document> {
+        if text.len() as u64 > self.max_xml_part_bytes {
+            return Err(Error::Limit { kind: LimitKind::PartBytes, max: self.max_xml_part_bytes, part: None });
+        }
+        xml::parse(text, &self.bounded(options))
     }
 }
 

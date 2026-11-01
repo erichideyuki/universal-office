@@ -8,10 +8,11 @@
 use std::borrow::Cow;
 
 use super::chars::is_js_space;
-use super::read::{ParseOptions, parse};
+use super::read::ParseOptions;
 use super::tree::{Document, ElementId};
 use super::write::{Escape, escape_into};
 use crate::error::{Error, Result, XmlErrorKind};
+use crate::limits::Limits;
 
 /// A child element of a split element.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,14 +40,14 @@ fn trim_js_end(s: &str) -> &str {
 }
 
 /// lossless.ts `splitElement`: parses `raw` (with `opts` — the caller's preset; positions are
-/// forced on), then the start tag, the child elements' raw text and the end tag. Text between
-/// children is dropped, as in the TS. A self-closing element gives `open` with
-/// `/\s*\/>\s*$/` → `>` and `close` = `</name>` (the renamed name).
-pub fn split_element(raw: &str, opts: &ParseOptions<'_>) -> Result<Split> {
-    let opts = ParseOptions { positions: true, ..*opts };
-    let doc = parse(raw, &opts)?;
+/// forced on — within `limits`, see [`Limits::bounded`]), then the start tag, the child
+/// elements' raw text and the end tag. Text between children is dropped, as in the TS. A
+/// self-closing element gives `open` with `/\s*\/>\s*$/` → `>` and `close` = `</name>` (the
+/// renamed name).
+pub fn split_element(raw: &str, opts: &ParseOptions<'_>, limits: &Limits) -> Result<Split> {
+    let doc = limits.parse(raw, &ParseOptions { positions: true, ..*opts })?;
     let root = doc.root();
-    let p = root.positions().ok_or(Error::Xml { offset: 0, kind: XmlErrorKind::Unexpected })?;
+    let p = root.positions().ok_or(Error::Xml { offset: 0, kind: XmlErrorKind::Unexpected, part: None })?;
     if p.content_start == p.end {
         let open = replace_self_close(raw).map_or_else(|| raw.to_owned(), |s| s.into_owned());
         let close = format!("</{}>", root.name());
@@ -232,8 +233,10 @@ pub enum Insert<'a> {
 }
 
 /// Inserts `text` into the root element named `root` of `xml`. Returns the new text, or
-/// `None` when the anchor is absent (the TS `replace` then leaves the text unchanged).
-pub fn insert_child(xml: &str, root: &str, text: &str, at: Insert<'_>) -> Result<Option<String>> {
+/// `None` when the anchor is absent (the TS `replace` then leaves the text unchanged). The
+/// anchors [`Insert::EndOfRoot`] and [`Insert::BeforeFirst`] parse `xml` (names as written)
+/// within `limits` (see [`Limits::bounded`]).
+pub fn insert_child(xml: &str, root: &str, text: &str, at: Insert<'_>, limits: &Limits) -> Result<Option<String>> {
     let splice = |pos: usize, cut: usize| -> String {
         let mut out = String::with_capacity(xml.len() + text.len());
         out.push_str(&xml[..pos]);
@@ -259,20 +262,24 @@ pub fn insert_child(xml: &str, root: &str, text: &str, at: Insert<'_>) -> Result
             out.push_str(&close);
             Ok(Some(out))
         }
-        Insert::EndOfRoot => end_of_root(xml, text),
+        Insert::EndOfRoot => end_of_root(xml, text, &positions(xml, limits)?),
         Insert::BeforeFirst(name) => {
-            let doc = parse(xml, &ParseOptions { positions: true, ..ParseOptions::LENIENT })?;
-            let r = doc.root();
-            match r.descend(name).and_then(|e| e.positions()) {
+            let doc = positions(xml, limits)?;
+            match doc.root().descend(name).and_then(|e| e.positions()) {
                 Some(p) => Ok(Some(splice(p.start, p.start))),
-                None => end_of_root(xml, text),
+                None => end_of_root(xml, text, &doc),
             }
         }
     }
 }
 
-fn end_of_root(xml: &str, text: &str) -> Result<Option<String>> {
-    let doc = parse(xml, &ParseOptions { positions: true, ..ParseOptions::LENIENT })?;
+/// `xml` parsed with element positions and the names as written (the TS edits match tags
+/// literally), within `limits`.
+fn positions(xml: &str, limits: &Limits) -> Result<Document> {
+    limits.parse(xml, &ParseOptions { positions: true, ..ParseOptions::LENIENT })
+}
+
+fn end_of_root(xml: &str, text: &str, doc: &Document) -> Result<Option<String>> {
     let r = doc.root();
     let Some(p) = r.positions() else { return Ok(None) };
     let mut out = String::with_capacity(xml.len() + text.len() + r.name().len() + 3);

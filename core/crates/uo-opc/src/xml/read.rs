@@ -143,7 +143,7 @@ pub fn parse(source: impl Into<Source>, opts: &ParseOptions<'_>) -> Result<Docum
 }
 
 fn xml_err(offset: usize, kind: XmlErrorKind) -> Error {
-    Error::Xml { offset, kind }
+    Error::Xml { offset, kind, part: None }
 }
 
 /// A pending attribute of the start tag being read.
@@ -227,7 +227,7 @@ struct Estimate {
 /// to 2.2 (sheet) times its source, so a real part is reserved whole, while an input whose
 /// counts are inflated (or whose tree ends early) reserves at most what a real part of its size
 /// holds anyway, far below the trees hostile shapes build (M5: up to 17 times).
-const RESERVE_PER_SOURCE_BYTE: usize = 3;
+const RESERVE_PER_SOURCE_BYTE: u64 = 3;
 
 const HIGH: u64 = 0x8080_8080_8080_8080;
 
@@ -248,6 +248,24 @@ fn equal(w: u64, x: u8) -> u64 {
 }
 
 impl Estimate {
+    /// The bytes the arenas take at these counts: in `u64` and saturating, since on wasm32 the
+    /// `usize` product of the counts of a part below 4 GiB wraps (stage-6 finding M1: a 256 MiB
+    /// part estimated at 4.85 GB reserved 1.9 GB as 560 MB passed the bound).
+    fn bytes(&self, positions: bool, strict: bool) -> u64 {
+        use std::mem::size_of;
+        let times = |n: usize, size: usize| (n as u64).saturating_mul(size as u64);
+        let element = size_of::<ElemRec>() + if positions { size_of::<[u32; 4]>() } else { 0 } + if strict { size_of::<u32>() } else { 0 };
+        let attr = size_of::<AttrRec>() + if strict { size_of::<u32>() } else { 0 };
+        times(self.elements, element).saturating_add(times(self.nodes, size_of::<NodeRec>())).saturating_add(times(self.attrs, attr))
+    }
+
+    /// Whether the arenas are reserved at these counts for a source of `len` bytes: within the
+    /// element limit and [`RESERVE_PER_SOURCE_BYTE`] times the source.
+    fn fits(&self, len: usize, positions: bool, strict: bool, max_elements: Option<u32>) -> bool {
+        max_elements.is_none_or(|m| self.elements as u64 <= u64::from(m))
+            && self.bytes(positions, strict) <= (len as u64).saturating_mul(RESERVE_PER_SOURCE_BYTE)
+    }
+
     fn count(b: &[u8]) -> Estimate {
         // u32 counts: `parse` takes sources below 4 GiB
         let (mut lt, mut close, mut text, mut eq) = (0u32, 0u32, 0u32, 0u32);
@@ -315,15 +333,8 @@ impl<'s, 'o> Parser<'s, 'o> {
     /// the doubling of its arenas (each step a copy, and up to twice the size before `finish`
     /// shrinks it); otherwise they grow by doubling. Same tree either way.
     fn reserve(&mut self) {
-        use std::mem::size_of;
         let e = Estimate::count(self.b);
-        let strict = self.ns.is_some();
-        let bytes = e.elements * (size_of::<ElemRec>() + if self.opts.positions { size_of::<[u32; 4]>() } else { 0 })
-            + e.nodes * size_of::<NodeRec>()
-            + e.attrs * size_of::<AttrRec>()
-            + if strict { (e.elements + e.attrs) * size_of::<u32>() } else { 0 };
-        let fits = self.opts.max_elements.is_none_or(|m| e.elements <= m as usize);
-        if !fits || bytes > self.b.len().saturating_mul(RESERVE_PER_SOURCE_BYTE) {
+        if !e.fits(self.b.len(), self.opts.positions, self.ns.is_some(), self.opts.max_elements) {
             return;
         }
         // a reservation the host refuses is skipped: the parse then grows as it needs
@@ -1315,5 +1326,35 @@ mod tests {
         }
         let sheet = "<row><c r=\"A1\"><v>1</v></c></row>".repeat(100);
         assert_eq!(Estimate::count(sheet.as_bytes()), Estimate { elements: 300, nodes: 400, attrs: 100 });
+    }
+
+    /// Stage-6 finding M1: a 256 MiB part (the XML cap) of 20,000,000 × `<=` and then `=`,
+    /// strict with positions, within the 20,000,000-element cap. In `usize` on wasm32 its
+    /// estimate wrapped to 560,000,000 B, below 3 × the source, and the parse reserved about
+    /// 1.9 GB before failing at byte 1 (`uo-wasm/tests/opc_memory.test.mjs`, M1).
+    #[test]
+    fn the_estimate_does_not_wrap() {
+        let len = 256usize << 20;
+        let mut b = vec![b'='; len];
+        for i in 0..20_000_000 {
+            b[2 * i] = b'<';
+        }
+        let e = Estimate::count(&b);
+        assert_eq!(e, Estimate { elements: 20_000_000, nodes: 20_000_000, attrs: len - 20_000_000 });
+        assert_eq!(e.bytes(true, true), 4_854_967_296);
+        // what the `usize` arithmetic gave on wasm32, which passed the bound
+        assert_eq!(e.bytes(true, true) % (1 << 32), 560_000_000);
+        assert!(560_000_000 <= 3 * len as u64);
+        assert!(!e.fits(len, true, true, Some(20_000_000)));
+        // the bound itself: a real part is reserved, the same counts in a smaller source are not
+        let real = Estimate { elements: 1000, nodes: 2000, attrs: 1000 };
+        assert_eq!(real.bytes(false, false), 1000 * 16 + 2000 * 8 + 1000 * 12);
+        assert!(real.fits(14_667, false, false, None));
+        assert!(!real.fits(14_666, false, false, None));
+        assert!(!real.fits(1 << 20, false, false, Some(999)));
+        // saturating: counts no source can have
+        let huge = Estimate { elements: usize::MAX, nodes: usize::MAX, attrs: usize::MAX };
+        assert_eq!(huge.bytes(true, true), u64::MAX);
+        assert!(!huge.fits(1 << 30, true, true, None));
     }
 }

@@ -61,7 +61,9 @@ pub fn escape_segment(segment: &str) -> String {
     if segment.chars().all(is_unreserved) {
         return segment.to_string();
     }
-    let mut out = String::with_capacity(segment.len() * 3);
+    let mut out = String::new();
+    // a hint: a size that would wrap on wasm32 (or that the host refuses) only skips it
+    let _ = out.try_reserve_exact(segment.len().saturating_mul(3));
     for b in segment.bytes() {
         if b.is_ascii() && is_unreserved(b as char) {
             out.push(b as char);

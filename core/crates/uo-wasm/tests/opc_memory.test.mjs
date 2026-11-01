@@ -105,3 +105,27 @@ test('S1: a tiny zip with an empty deflate stream and a declared size does not g
   assert.equal(r, -1);
   assert.equal(after, before, 'the wasm memory grew');
 });
+
+// stage-6 finding M1: the arena estimate of the XML parser was computed in `usize`, which wraps
+// on wasm32: a 256 MiB part (the XML cap) of 20,000,000 × `<=` and then `=` (strict, positions,
+// within the 20,000,000-element cap) estimated 4,854,967,296 B, wrapped to 560,000,000 B (below
+// 3 × the source) and reserved about 1.9 GB before failing at byte 1. Now nothing beyond 3 × the
+// source is ever reserved.
+test('M1: an inflated arena estimate never reserves more than 3 × the source in wasm32', () => {
+  const n = 20_000_000;
+  const len = 256 * 2 ** 20;
+  const before = w.memory.buffer.byteLength;
+  const liveBefore = live();
+  const p = w.uo_alloc_bytes(len);
+  const bytes = new Uint8Array(w.memory.buffer, p, len);
+  bytes.fill(0x3d);
+  for (let i = 0; i < n; i++) bytes[2 * i] = 0x3c;
+  const r = w.uo_opc_memtest_parse_strict(p, len);
+  const after = w.memory.buffer.byteLength;
+  console.log(`# M1: a ${len} B part of '<=' and '=' in strict mode with positions: result ${r}; wasm memory ${before} -> ${after} B ` +
+    `(+${after - before}, ${((after - before) / len).toFixed(2)} × the source, the source included)`);
+  assert.equal(r, -1);
+  assert.equal(live(), liveBefore);
+  // the source itself, plus at most 3 × it of arenas
+  assert.ok(after - before <= 4 * len, `the wasm memory grew by ${after - before} B`);
+});

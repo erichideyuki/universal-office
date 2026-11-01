@@ -95,18 +95,21 @@ pub fn edit(pkg: &mut Package, kind: Kind, i: usize) {
     let root = doc.root().name().to_owned();
     drop(doc);
     let child = format!("<uo:soak xmlns:uo=\"urn:uo\" n=\"{i}\"/>");
-    let edited = raw::insert_child(&text, &root, &child, Insert::EndOfRoot).unwrap().unwrap();
+    let edited = raw::insert_child(&text, &root, &child, Insert::EndOfRoot, &uo_opc::Limits::DEFAULT).unwrap().unwrap();
     pkg.set_part_text(main, edited);
     let rels_name = rels::rels_part_for(main);
     let rels_text = pkg.part_text(&rels_name).unwrap().map(|t| t.into_owned());
-    let list = rels_text.as_deref().map(|t| rels::parse_rels(t, &preset(kind, &rels_name)).unwrap()).unwrap_or_default();
+    let list =
+        rels_text.as_deref().map(|t| rels::parse_rels(t, &preset(kind, &rels_name), &uo_opc::Limits::DEFAULT).unwrap()).unwrap_or_default();
     let id = rels::next_rel_id_after_max(&list);
     let rel =
         Relationship::new(&id, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml", "../customXml/soak.xml");
-    let rels_new = rels::add_rel(rels_text.as_deref(), &rel, Insert::BeforeLastCloseTrimmed).unwrap();
+    let rels_new = rels::add_rel(rels_text.as_deref(), &rel, Insert::BeforeLastCloseTrimmed, &uo_opc::Limits::DEFAULT).unwrap();
     pkg.set_part_text(rels_name, rels_new);
     let ct = pkg.part_text(content_types::CONTENT_TYPES_PART).unwrap().unwrap().into_owned();
-    let ct = content_types::add_override(&ct, "customXml/soak.xml", "application/xml", Insert::BeforeLastCloseTrimmed).unwrap();
+    let ct =
+        content_types::add_override(&ct, "customXml/soak.xml", "application/xml", Insert::BeforeLastCloseTrimmed, &uo_opc::Limits::DEFAULT)
+            .unwrap();
     pkg.set_part_text(content_types::CONTENT_TYPES_PART, ct);
     pkg.set_part_text("customXml/soak.xml", format!("<soak n=\"{i}\"/>"));
 }

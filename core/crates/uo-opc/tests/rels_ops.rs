@@ -23,7 +23,7 @@ fn rels_part_paths() {
 
 #[test]
 fn parse_and_find() {
-    let r = parse_rels(RELS, &DOCX).unwrap();
+    let r = parse_rels(RELS, &DOCX, &uo_opc::Limits::DEFAULT).unwrap();
     assert_eq!(r.len(), 4);
     assert_eq!(r[1].target, "https://e.com/?a=1&b=2");
     assert!(r[1].external && !r[0].external);
@@ -34,8 +34,8 @@ fn parse_and_find() {
     assert_eq!(find_by_type_suffix(&r, "/styles").unwrap().target, "styles.xml");
     // sheet-core: the `x:` prefix of the relationships namespace is stripped
     let x = "<x:Relationships xmlns:x=\"http://schemas.openxmlformats.org/package/2006/relationships\"><x:Relationship Id=\"a\" Target=\"b\"/></x:Relationships>";
-    assert_eq!(parse_rels(x, &SHEET).unwrap().len(), 1);
-    assert_eq!(parse_rels(x, &DOCX).unwrap().len(), 0);
+    assert_eq!(parse_rels(x, &SHEET, &uo_opc::Limits::DEFAULT).unwrap().len(), 1);
+    assert_eq!(parse_rels(x, &DOCX, &uo_opc::Limits::DEFAULT).unwrap().len(), 0);
 }
 
 #[test]
@@ -46,8 +46,8 @@ fn write_and_ids() {
         x,
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://x/a\" Target=\"a&amp;b.xml\"/><Relationship Id=\"rId2\" Type=\"http://x/h\" Target=\"https://e/\" TargetMode=\"External\"/></Relationships>"
     );
-    assert_eq!(parse_rels(&x, &DOCX).unwrap(), rels);
-    let r = parse_rels(RELS, &DOCX).unwrap();
+    assert_eq!(parse_rels(&x, &DOCX, &uo_opc::Limits::DEFAULT).unwrap(), rels);
+    let r = parse_rels(RELS, &DOCX, &uo_opc::Limits::DEFAULT).unwrap();
     assert_eq!(next_rel_id_after_max(&r), "rId3");
     assert_eq!(next_rel_id_after_max(&[]), "rId1");
     assert_eq!(first_free_rel_id(&r, "rId", 1), "rId3");
@@ -57,23 +57,23 @@ fn write_and_ids() {
 #[test]
 fn edits() {
     let rel = Relationship::new("rId9", "http://x/n", "n.xml");
-    let before_close = add_rel(Some(RELS), &rel, Insert::BeforeFirstClose).unwrap();
+    let before_close = add_rel(Some(RELS), &rel, Insert::BeforeFirstClose, &uo_opc::Limits::DEFAULT).unwrap();
     assert!(before_close.ends_with("<Relationship Id=\"rId9\" Type=\"http://x/n\" Target=\"n.xml\"/></Relationships>"));
     // fonts addRel: a self-closing root is opened first, trailing whitespace dropped
-    let opened = add_rel(Some("<Relationships xmlns=\"r\"/>\n"), &rel, Insert::BeforeLastCloseTrimmed).unwrap();
+    let opened = add_rel(Some("<Relationships xmlns=\"r\"/>\n"), &rel, Insert::BeforeLastCloseTrimmed, &uo_opc::Limits::DEFAULT).unwrap();
     assert_eq!(opened, "<Relationships xmlns=\"r\"><Relationship Id=\"rId9\" Type=\"http://x/n\" Target=\"n.xml\"/></Relationships>");
     // a new part
-    let fresh = add_rel(None, &rel, Insert::EndOfRoot).unwrap();
-    assert_eq!(parse_rels(&fresh, &DOCX).unwrap(), vec![rel.clone()]);
+    let fresh = add_rel(None, &rel, Insert::EndOfRoot, &uo_opc::Limits::DEFAULT).unwrap();
+    assert_eq!(parse_rels(&fresh, &DOCX, &uo_opc::Limits::DEFAULT).unwrap(), vec![rel.clone()]);
     // remove by predicate, rest byte for byte
-    let (out, removed) = remove_rels(RELS, &DOCX, |r| r.id == "rId1").unwrap();
+    let (out, removed) = remove_rels(RELS, &DOCX, &uo_opc::Limits::DEFAULT, |r| r.id == "rId1").unwrap();
     assert_eq!(removed.len(), 2);
     assert_eq!(
         out,
         RELS.replace("<Relationship Id=\"rId1\" Type=\"http://x/styles\" Target=\"styles.xml\"/>", "")
             .replace("<Relationship Id=\"rId1\" Type=\"http://x/image\" Target=\"./media/i.png\"/>", "")
     );
-    let t = set_rel_target(RELS, &DOCX, "rId2", "https://new/?x=<").unwrap();
+    let t = set_rel_target(RELS, &DOCX, &uo_opc::Limits::DEFAULT, "rId2", "https://new/?x=<").unwrap();
     assert!(t.contains("<Relationship Id=\"rId2\" Type=\"http://x/hyperlink\" Target=\"https://new/?x=&lt;\" TargetMode=\"External\"/>"));
-    assert_eq!(set_rel_target(RELS, &DOCX, "nope", "x").unwrap(), RELS);
+    assert_eq!(set_rel_target(RELS, &DOCX, &uo_opc::Limits::DEFAULT, "nope", "x").unwrap(), RELS);
 }

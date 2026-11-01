@@ -321,9 +321,11 @@ fn every_record_is_replayed_by_one_test() {
 #[allow(clippy::needless_range_loop)] // the index names the files of the node and .NET runs
 fn save_cross_readers() {
     use std::process::Command;
-    use uo_testkit::env_flag;
-    if !env_flag("UO_TS_PARITY") {
-        eprintln!("skipped: set UO_TS_PARITY=1 and UO_TS_ROOT to read the saves back with fflate (and UO_DOTNET_PARITY=1 for .NET)");
+    use uo_testkit::opt_in;
+    if !opt_in(
+        "UO_TS_PARITY",
+        "opc_parity save_cross_readers, the saves read back by fflate (with UO_TS_ROOT; and .NET with UO_DOTNET_PARITY=1)",
+    ) {
         return;
     }
     let cap = capture();
@@ -381,7 +383,7 @@ fn save_cross_readers() {
         }
     }
     println!("{checked} saved archives read back by fflate and uo-opc ({n} packages: Rust raw, Rust rewritten, TS zipSync)");
-    if env_flag("UO_DOTNET_PARITY") {
+    if opt_in("UO_DOTNET_PARITY", "opc_parity save_cross_readers, the saves read back by .NET ZipArchive") {
         let cs = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity_support/save_readback.cs");
         let out = Command::new("dotnet").arg("run").arg(&cs).arg("--").arg(&dir).output().unwrap();
         assert!(out.status.success(), "dotnet failed: {}", String::from_utf8_lossy(&out.stderr));

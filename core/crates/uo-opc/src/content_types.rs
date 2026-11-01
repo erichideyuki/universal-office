@@ -1,4 +1,5 @@
-//! `[Content_Types].xml`: reading (defaults and overrides, `content_type_of`) and the edits the
+//! `[Content_Types].xml`: reading (defaults and overrides; the content type of a part by the OPC
+//! rule, `content_type_of_part`, or by the Slides rule, `content_type_of_exact`) and the edits the
 //! TS does as string replacements, as operations on the text so the rest of the part stays byte
 //! for byte:
 //! - docx-core `serialize.ts` (~181, 1649, 1663, 1749, 1812), `notes.ts` ~63, `rev-xml.ts` ~43,
@@ -17,9 +18,11 @@
 //! structured questions.
 
 use crate::error::Result;
+use crate::limits::Limits;
+use crate::part_name;
 use crate::xml::raw::{Insert, insert_child, remove_range};
-use crate::xml::read::{ParseOptions, parse};
-use crate::xml::tree::Document;
+use crate::xml::read::ParseOptions;
+use crate::xml::tree::{Document, Element};
 use crate::xml::write::{Escape, escape_into};
 
 /// The part name.
@@ -49,11 +52,11 @@ pub struct ContentTypes {
 }
 
 impl ContentTypes {
-    /// Reads the `Default` and `Override` children of the root. The format crates read
-    /// `[Content_Types].xml` with [`crate::Package::xml_part`] and
-    /// [`ContentTypes::from_document`] instead (gate 2, D3).
-    pub fn parse(xml: &str, opts: &ParseOptions<'_>) -> Result<Self> {
-        Ok(ContentTypes::from_document(&parse(xml, opts)?))
+    /// Reads the `Default` and `Override` children of the root (`opts` within `limits`, see
+    /// [`Limits::bounded`]). The format crates read `[Content_Types].xml` with
+    /// [`crate::Package::xml_part`] and [`ContentTypes::from_document`] instead (gate 2, D3).
+    pub fn parse(xml: &str, opts: &ParseOptions<'_>, limits: &Limits) -> Result<Self> {
+        Ok(ContentTypes::from_document(&limits.parse(xml, opts)?))
     }
 
     /// The `Default` and `Override` children of the root of a parsed `[Content_Types].xml`.
@@ -75,9 +78,10 @@ impl ContentTypes {
         ct
     }
 
-    /// The override of a part (`part` without the leading `/`; exact match, slides
-    /// `overrideOf`).
-    pub fn override_of(&self, part: &str) -> Option<&str> {
+    /// The override of a part by the Slides rule (`part` without the leading `/`; the
+    /// `PartName` compared as written, case-sensitive: slides `overrideOf`). A parity policy:
+    /// the Editing API and hosts use [`ContentTypes::override_of_part`].
+    pub fn override_of_exact(&self, part: &str) -> Option<&str> {
         self.overrides.iter().find(|o| o.part_name.strip_prefix('/') == Some(part)).map(|o| o.content_type.as_str())
     }
 
@@ -86,15 +90,42 @@ impl ContentTypes {
         self.defaults.iter().find(|d| d.extension.eq_ignore_ascii_case(extension)).map(|d| d.content_type.as_str())
     }
 
-    /// slides `contentTypeOf`: the override (exact part name), else the default of the extension
-    /// after the last `.` (the whole name when there is none, as `lastIndexOf` gives −1).
-    pub fn content_type_of(&self, part: &str) -> Option<&str> {
-        if let Some(t) = self.override_of(part) {
+    /// slides `contentTypeOf`: [`ContentTypes::override_of_exact`], else the default of the
+    /// extension after the last `.` (the whole name when there is none, as `lastIndexOf` gives
+    /// −1). A parity policy: the Editing API and hosts use [`ContentTypes::content_type_of_part`].
+    pub fn content_type_of_exact(&self, part: &str) -> Option<&str> {
+        if let Some(t) = self.override_of_exact(part) {
             return Some(t);
         }
         let ext = part.rfind('.').map_or(part, |i| &part[i + 1..]);
         self.default_of(ext)
     }
+
+    /// The override of a part by the OPC rule, the one of [`crate::Package::resolve_target`]
+    /// (gate 2, D6; stage-6 finding S3): `part` is a part name as the package stores it (no
+    /// leading `/`, unescaped), each `PartName` is a URI resolved like an absolute relationship
+    /// target ([`part_name::resolve_relationship_target`]: `%XX` unescaped once, malformed names
+    /// match nothing), and the two are compared with ASCII case folding. The first match wins.
+    pub fn override_of_part(&self, part: &str) -> Option<&str> {
+        self.overrides.iter().find(|o| names_part(&o.part_name, part)).map(|o| o.content_type.as_str())
+    }
+
+    /// The content type of a part by the OPC rule (the C# `DocxDocument.GetContentType`, with
+    /// the D6 name comparison): [`ContentTypes::override_of_part`], else the default of the
+    /// extension of its last segment (ASCII case-insensitive; none without a `.` there).
+    pub fn content_type_of_part(&self, part: &str) -> Option<&str> {
+        if let Some(t) = self.override_of_part(part) {
+            return Some(t);
+        }
+        let file = part.rsplit('/').next().unwrap_or(part);
+        let ext = file.rfind('.').map(|i| &file[i + 1..])?;
+        self.default_of(ext)
+    }
+}
+
+/// A `PartName` of `[Content_Types].xml` names the stored part `part` (the OPC rule, D6).
+fn names_part(part_name: &str, part: &str) -> bool {
+    part_name::resolve_relationship_target("", part_name).is_some_and(|n| n.eq_ignore_ascii_case(part))
 }
 
 fn attr_into(out: &mut String, name: &str, value: &str) {
@@ -124,29 +155,56 @@ pub fn override_xml(part: &str, content_type: &str) -> String {
 }
 
 /// Adds a Default to the text (no existence check: callers check as their TS did). Returns the
-/// text unchanged when the anchor is missing.
-pub fn add_default(xml: &str, extension: &str, content_type: &str, at: Insert<'_>) -> Result<String> {
-    Ok(insert_child(xml, "Types", &default_xml(extension, content_type), at)?.unwrap_or_else(|| xml.to_owned()))
+/// text unchanged when the anchor is missing. The anchors that parse the text do it within
+/// `limits` ([`insert_child`]).
+pub fn add_default(xml: &str, extension: &str, content_type: &str, at: Insert<'_>, limits: &Limits) -> Result<String> {
+    Ok(insert_child(xml, "Types", &default_xml(extension, content_type), at, limits)?.unwrap_or_else(|| xml.to_owned()))
 }
 
 /// Adds an Override for `part` (without leading `/`).
-pub fn add_override(xml: &str, part: &str, content_type: &str, at: Insert<'_>) -> Result<String> {
-    Ok(insert_child(xml, "Types", &override_xml(part, content_type), at)?.unwrap_or_else(|| xml.to_owned()))
+pub fn add_override(xml: &str, part: &str, content_type: &str, at: Insert<'_>, limits: &Limits) -> Result<String> {
+    Ok(insert_child(xml, "Types", &override_xml(part, content_type), at, limits)?.unwrap_or_else(|| xml.to_owned()))
 }
 
-/// Removes the FIRST Override of `part` (hf-ops `ct.replace(/<Override PartName="\/path"[^>]*\/>/, '')`,
-/// slides `removeOverride`); `None` when there is none.
-pub fn remove_override(xml: &str, opts: &ParseOptions<'_>, part: &str) -> Result<Option<String>> {
-    remove_first(xml, opts, "Override", |e| e.attr("PartName").and_then(|p| p.strip_prefix('/')) == Some(part))
+/// Removes the FIRST Override of `part` by the Slides rule (exact `PartName`, as
+/// [`ContentTypes::override_of_exact`]: hf-ops `ct.replace(/<Override PartName="\/path"[^>]*\/>/, '')`,
+/// slides `removeOverride`); `None` when there is none. The text is parsed with `opts` within
+/// `limits`.
+pub fn remove_override(xml: &str, opts: &ParseOptions<'_>, limits: &Limits, part: &str) -> Result<Option<String>> {
+    let doc = limits.parse(xml, &ParseOptions { positions: true, ..*opts })?;
+    let hit = doc.root().children_named("Override").find(|e| e.attr("PartName").and_then(|p| p.strip_prefix('/')) == Some(part));
+    Ok(hit.and_then(|e| e.positions()).map(|p| remove_range(xml, p.start, p.end)))
 }
 
-/// Removes the first Default of an extension (ASCII case-insensitive).
-pub fn remove_default(xml: &str, opts: &ParseOptions<'_>, extension: &str) -> Result<Option<String>> {
-    remove_first(xml, opts, "Default", |e| e.attr("Extension").is_some_and(|x| x.eq_ignore_ascii_case(extension)))
+/// Removes EVERY Override of `part` by the OPC rule ([`ContentTypes::override_of_part`]; the C#
+/// `RemoveContentTypeOverride`); `None` when there is none. The text is parsed with `opts`
+/// within `limits`.
+pub fn remove_overrides_of_part(xml: &str, opts: &ParseOptions<'_>, limits: &Limits, part: &str) -> Result<Option<String>> {
+    let doc = limits.parse(xml, &ParseOptions { positions: true, ..*opts })?;
+    let cut: Vec<(usize, usize)> = doc
+        .root()
+        .children_named("Override")
+        .filter(|e| e.attr("PartName").is_some_and(|p| names_part(p, part)))
+        .filter_map(|e| e.positions().map(|p| (p.start, p.end)))
+        .collect();
+    if cut.is_empty() {
+        return Ok(None);
+    }
+    let mut out = String::with_capacity(xml.len());
+    let mut last = 0;
+    for (s, e) in cut {
+        out.push_str(xml.get(last..s).unwrap_or(""));
+        last = e;
+    }
+    out.push_str(xml.get(last..).unwrap_or(""));
+    Ok(Some(out))
 }
 
-fn remove_first(xml: &str, opts: &ParseOptions<'_>, name: &str, pred: impl Fn(crate::xml::Element<'_>) -> bool) -> Result<Option<String>> {
-    let doc = parse(xml, &ParseOptions { positions: true, ..*opts })?;
-    let hit = doc.root().children_named(name).find(|e| pred(*e)).and_then(|e| e.positions());
-    Ok(hit.map(|p| remove_range(xml, p.start, p.end)))
+/// Removes the first Default of an extension (ASCII case-insensitive). The text is parsed with
+/// `opts` within `limits`.
+pub fn remove_default(xml: &str, opts: &ParseOptions<'_>, limits: &Limits, extension: &str) -> Result<Option<String>> {
+    let doc = limits.parse(xml, &ParseOptions { positions: true, ..*opts })?;
+    let hit =
+        doc.root().children_named("Default").find(|e: &Element<'_>| e.attr("Extension").is_some_and(|x| x.eq_ignore_ascii_case(extension)));
+    Ok(hit.and_then(|e| e.positions()).map(|p| remove_range(xml, p.start, p.end)))
 }

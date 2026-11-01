@@ -45,3 +45,16 @@ pub fn repo_root(manifest_dir: &str) -> PathBuf {
 pub fn env_flag(name: &str) -> bool {
     std::env::var(name).as_deref() == Ok("1")
 }
+
+/// Whether an opt-in test runs ([`env_flag`]). When it does not, a `SKIPPED: <what>: set
+/// <name>=1` line goes to the process's stderr past the test harness's capture (which only
+/// takes `print!`/`eprint!`), so a skipped opt-in test shows in the `cargo test` output instead
+/// of passing silently as `ok`.
+pub fn opt_in(name: &str, what: &str) -> bool {
+    if env_flag(name) {
+        return true;
+    }
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr().lock(), "SKIPPED: {what}: set {name}=1");
+    false
+}

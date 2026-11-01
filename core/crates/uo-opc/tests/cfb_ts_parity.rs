@@ -176,8 +176,7 @@ fn ts_sources() -> Vec<PathBuf> {
 
 #[test]
 fn matches_the_ts_readers() {
-    if std::env::var("UO_TS_PARITY").as_deref() != Ok("1") {
-        eprintln!("skipped: set UO_TS_PARITY=1 to compare with the TS readers through node");
+    if !uo_testkit::opt_in("UO_TS_PARITY", "cfb_ts_parity, the CFB readers against the three TS copies through node") {
         return;
     }
     let files = corpus();

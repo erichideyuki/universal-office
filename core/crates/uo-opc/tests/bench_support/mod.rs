@@ -106,11 +106,14 @@ pub fn inflate_entry(archive: &[u8], name: &str) -> (u64, Cost) {
 
 /// (d) the edit of the TS budgets (`ts_budgets.mjs` `edit`): an element inserted before the last
 /// end tag of `main` and a new part, then the save (the package is opened before). Output bytes.
+/// The text is taken out of the package (`take_part`, stage-6 finding S5), so the edit holds the
+/// old and the new text only.
 pub fn edit_and_save(pkg: &mut Package, main: &str) -> (u64, Cost) {
     let (n, u) = measure(|| {
-        let text = pkg.part_text(main).unwrap().unwrap().into_owned();
+        let text = String::from_utf8(pkg.take_part(main).unwrap().unwrap()).unwrap();
         let i = text.rfind("</").unwrap();
         let edited = [&text[..i], "<uo:soak xmlns:uo=\"urn:uo\" n=\"1\"/>", &text[i..]].concat();
+        drop(text);
         pkg.set_part_text(main, edited);
         pkg.set_part_text("customXml/soak.xml", "<soak n=\"1\"/>");
         pkg.save(&SaveOptions::default()).unwrap().len() as u64

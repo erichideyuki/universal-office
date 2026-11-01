@@ -489,8 +489,8 @@ fn check_name(name: &str) -> Result<&[u8]> {
 
 /// The length of the archive a [`ZipWriter`] writes for these entries, in order: (name length in
 /// bytes, method, compressed bytes, declared size). A caller that knows its entries before
-/// writing them reserves exactly this ([`ZipWriter::with_capacity`]).
-pub fn archive_len(entries: impl IntoIterator<Item = (usize, u16, u64, u64)>) -> u64 {
+/// writing them reserves exactly this ([`ZipWriter::with_capacity`]): `Package::save`.
+pub(crate) fn archive_len(entries: impl IntoIterator<Item = (usize, u16, u64, u64)>) -> u64 {
     let (mut offset, mut central, mut count, mut any64) = (0u64, 0u64, 0u64, false);
     for (n, method, csize, size) in entries {
         let n = n as u64;
@@ -514,4 +514,38 @@ pub fn write<'a>(files: impl IntoIterator<Item = (&'a str, &'a [u8])>, opts: Wri
         w.add(name, data)?;
     }
     Ok(w.finish())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// [`archive_len`] repeats the layout rules of the writer: it must give the length the writer
+    /// writes, zip64 records and extra fields included (offsets of 4 GiB are not built here).
+    #[test]
+    fn archive_len_is_the_written_length() {
+        let deflated = flate::deflate_raw(b"abcabcabc", 6);
+        let raw = |method, size, data| RawEntry { method, crc32: 1, size, data };
+        let cases: Vec<Vec<(String, RawEntry<'_>)>> = vec![
+            vec![],
+            vec![("a.xml".into(), raw(8, 9, &deflated)), ("é/ü.bin".into(), raw(0, 3, b"xyz"))],
+            // declared sizes of 4 GiB and more: zip64 extra fields, local and central
+            vec![
+                ("huge".into(), raw(8, 5 << 30, &deflated)),
+                ("edge".into(), raw(8, 0xFFFF_FFFF, &deflated)),
+                ("s".into(), raw(0, 1, b"s")),
+            ],
+            // more than 65,535 entries: the zip64 end records
+            (0..65_536).map(|i| (format!("p{i}"), raw(0, 1, b"x"))).collect(),
+        ];
+        for entries in cases {
+            let len = archive_len(entries.iter().map(|(n, r)| (n.len(), r.method, r.data.len() as u64, r.size)));
+            let mut w = ZipWriter::with_capacity(WriteOptions::default(), len);
+            for (n, r) in &entries {
+                w.add_raw(n, *r).unwrap();
+            }
+            let out = w.finish();
+            assert_eq!((out.len() as u64, out.capacity() as u64), (len, len), "{} entries", entries.len());
+        }
+    }
 }

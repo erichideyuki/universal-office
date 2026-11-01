@@ -176,6 +176,8 @@ pub fn zip_roundtrip(data: &[u8]) {
         Err(Error::Corrupt(_) | Error::Limit { .. }) if before.iter().any(|(_, b)| b.is_none()) => return,
         Err(e) => panic!("save failed: {e:?}"),
     };
+    // reserved at its exact length (stage 5 C6, stage-6 finding S2)
+    assert_eq!(saved.capacity(), saved.len());
     // D5: every entry written is well formed: it inflates exactly to its declared size and CRC
     for e in zip::read(&saved, u32::MAX).expect("a saved archive reads") {
         let raw = e.compressed(&saved);
@@ -542,7 +544,7 @@ pub fn raw_surgery(data: &[u8]) {
     let key = text(f.get(2).copied().unwrap_or(b"w:val"));
     let value = text(f.get(3).copied().unwrap_or(b"1"));
     let opts = lenient_preset(sel);
-    if let Ok(mut split) = raw::split_element(&xml, &opts) {
+    if let Ok(mut split) = raw::split_element(&xml, &opts, &FUZZ_LIMITS) {
         let order = ["w:b", "w:i", "w:sz", name.as_str()];
         raw::set_kid(&mut split.kids, &order, &name, if sel & 32 != 0 { None } else { Some(&value) });
         raw::set_kid(&mut split.kids, &[], "w:i", Some("<w:i/>"));
@@ -561,7 +563,7 @@ pub fn raw_surgery(data: &[u8]) {
     for at in
         [Insert::BeforeFirstClose, Insert::AfterRootOpen, Insert::BeforeLastCloseTrimmed, Insert::EndOfRoot, Insert::BeforeFirst(&name)]
     {
-        if let Ok(Some(out)) = raw::insert_child(&xml, &key, &value, at) {
+        if let Ok(Some(out)) = raw::insert_child(&xml, &key, &value, at, &FUZZ_LIMITS) {
             assert!(out.contains(value.as_str()));
         }
     }
@@ -577,7 +579,7 @@ pub fn rels(data: &[u8]) {
     let (sel, rest) = split1(data);
     let xml = text(rest);
     let opts = lenient_preset(sel);
-    if let Ok(list) = rels::parse_rels(&xml, &opts) {
+    if let Ok(list) = rels::parse_rels(&xml, &opts, &FUZZ_LIMITS) {
         let _ = rels::find_by_id(&list, "rId1");
         let _ = rels::find_by_type_suffix(&list, "/image");
         let _ = rels::next_rel_id_after_max(&list);
@@ -585,7 +587,7 @@ pub fn rels(data: &[u8]) {
         assert!(!list.iter().any(|r| r.id == id));
         // write, read back: values come back with invalid characters stripped
         let out = rels::write_rels(&list, write::XML_DECL);
-        let back = rels::parse_rels(&out, &ParseOptions::LENIENT).unwrap();
+        let back = rels::parse_rels(&out, &ParseOptions::LENIENT, &FUZZ_LIMITS).unwrap();
         assert_eq!(back.len(), list.len());
         for (a, b) in list.iter().zip(&back) {
             assert_eq!(write::strip_invalid(&a.id), b.id);
@@ -593,12 +595,12 @@ pub fn rels(data: &[u8]) {
             assert_eq!(write::strip_invalid(&a.target), b.target);
             assert_eq!(a.external, b.external);
         }
-        if let Ok((kept, removed)) = rels::remove_rels(&xml, &opts, |r| r.id.len() % 2 == 0) {
+        if let Ok((kept, removed)) = rels::remove_rels(&xml, &opts, &FUZZ_LIMITS, |r| r.id.len() % 2 == 0) {
             assert!(kept.len() <= xml.len());
             assert!(removed.iter().all(|r| r.id.len() % 2 == 0));
         }
         if let Some(first) = list.first() {
-            let _ = rels::set_rel_target(&xml, &opts, &first.id, "media/x&y.png");
+            let _ = rels::set_rel_target(&xml, &opts, &FUZZ_LIMITS, &first.id, "media/x&y.png");
         }
     }
     let rel = Relationship::new("rId9", "t", &xml).external();
@@ -609,8 +611,8 @@ pub fn rels(data: &[u8]) {
         Insert::EndOfRoot,
         Insert::BeforeFirst("Relationship"),
     ] {
-        let _ = rels::add_rel(Some(&xml), &rel, at);
-        let _ = rels::add_rel(None, &rel, at);
+        let _ = rels::add_rel(Some(&xml), &rel, at, &FUZZ_LIMITS);
+        let _ = rels::add_rel(None, &rel, at, &FUZZ_LIMITS);
     }
     let _ = (rels::rels_part_for(&xml), rels::rels_part_for_legacy(&xml));
 }
@@ -622,8 +624,9 @@ pub fn content_types(data: &[u8]) {
     let xml = text(f.first().copied().unwrap_or(&[]));
     let part = text(f.get(1).copied().unwrap_or(b"word/document.xml"));
     let opts = lenient_preset(sel);
-    if let Ok(ct) = ContentTypes::parse(&xml, &opts) {
-        let _ = (ct.content_type_of(&part), ct.override_of(&part), ct.default_of(&part));
+    if let Ok(ct) = ContentTypes::parse(&xml, &opts, &FUZZ_LIMITS) {
+        let _ = (ct.content_type_of_exact(&part), ct.override_of_exact(&part), ct.default_of(&part));
+        let _ = (ct.content_type_of_part(&part), ct.override_of_part(&part));
     }
     for at in [
         Insert::BeforeFirstClose,
@@ -632,16 +635,22 @@ pub fn content_types(data: &[u8]) {
         Insert::EndOfRoot,
         Insert::BeforeFirst("Override"),
     ] {
-        let _ = content_types::add_override(&xml, &part, "application/xml", at);
-        let _ = content_types::add_default(&xml, &part, "image/png", at);
+        let _ = content_types::add_override(&xml, &part, "application/xml", at, &FUZZ_LIMITS);
+        let _ = content_types::add_default(&xml, &part, "image/png", at, &FUZZ_LIMITS);
     }
-    let _ = content_types::remove_override(&xml, &opts, &part);
-    let _ = content_types::remove_default(&xml, &opts, &part);
+    let _ = content_types::remove_override(&xml, &opts, &FUZZ_LIMITS, &part);
+    let _ = content_types::remove_default(&xml, &opts, &FUZZ_LIMITS, &part);
+    let _ = content_types::remove_overrides_of_part(&xml, &opts, &FUZZ_LIMITS, &part);
     // the generated elements read back
     let x = format!("<Types>{}{}</Types>", content_types::default_xml(&part, "a&b"), content_types::override_xml(&part, "c<d"));
-    let ct = ContentTypes::parse(&x, &ParseOptions::LENIENT).unwrap();
+    let ct = ContentTypes::parse(&x, &ParseOptions::LENIENT, &FUZZ_LIMITS).unwrap();
     assert_eq!(ct.defaults[0].extension, part);
-    assert_eq!(ct.override_of(&part), Some("c<d"));
+    assert_eq!(ct.override_of_exact(&part), Some("c<d"));
+    // the OPC rule finds it too, in any ASCII case, when the name is a part name written as is
+    if part_name::resolve_relationship_target("", &format!("/{part}")).as_deref() == Some(part.as_str()) {
+        assert_eq!(ct.override_of_part(&part), Some("c<d"));
+        assert_eq!(ct.content_type_of_part(&part.to_ascii_uppercase()), Some("c<d"));
+    }
 }
 
 // ───────────────────────────── lookup / text / resolver ─────────────────────────────

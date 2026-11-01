@@ -4,6 +4,59 @@ Changes per version of the published UniversalOffice packages (npm
 `@universal-office/*` and NuGet `UniversalOffice.*`). How to publish:
 `docs/publishing.md`.
 
+## Unreleased — 0.10 (Rust core)
+
+0.10 replaces the TS engines and the .NET port with one Rust core (`core/`), module
+by module; the behaviour changes decided for each module are listed here. The crates
+are not published: their APIs are internal until the npm, wasm and NuGet APIs of
+0.10 are designed.
+
+### Container layer (`uo-opc`: zip, deflate, XML, OPC packages)
+
+- Sheet: an unclosed comment, CDATA section, processing instruction or tag at the
+  end of an XML part is an error; the 0.9 parser looped forever on it.
+- `&constructor;` and the other names of JavaScript object members stay literal
+  text in XML, like any named entity other than the five predefined ones (Sheet and
+  Slides replaced them with the JS member, as in `function Object() { [native code] }`).
+- An entry whose deflate stream is empty but declares a size is corrupt (0.9 read
+  it as that many zero bytes: a 132-byte file could make a reader allocate 256 MiB
+  for a part).
+- A part parsed as XML may hold at most 20,000,000 elements (about 10 times the
+  largest real part, `giant-1m.xlsx`): one hostile 256 MiB part could otherwise
+  become several GB of tree. The XML part cap (256 MiB) applies to every part
+  parsed as XML, whatever its name. The nesting limit of 1,000 levels, which Write
+  had, now applies to Sheet and Slides parts too (no real part is deeper than 25
+  levels; the 0.9 parsers overflowed the JS stack past about 8,000) — pending the
+  maintainer's confirmation.
+- Entries after one named `__proto__` are kept (0.9 dropped those whose names are
+  numbers that are not valid indices, such as `-1` or `1.5`).
+- Saving copies an untouched entry as is only when its data really is what the zip
+  declares (size, CRC-32, range inside the file); otherwise it is written again from
+  the bytes read (deflated, or stored if it was stored), and an entry that cannot be
+  read fails the save. An entry whose data overlaps another entry's is always read
+  and written again. A stored entry that is copied keeps its method (0.9 deflated
+  every entry again).
+- In the browser (wasm32) a package may hold at most 512 MiB per binary part and
+  1 GiB in total (2 GiB and 4 GiB natively), so the limit error comes before an
+  allocation failure.
+- Saved zips carry a fixed timestamp (2000-01-01 00:00) instead of the time of the
+  save, so the same package saves to the same bytes.
+- Saved zips use zip64 records when they need them (more than 65,535 entries, or a
+  size or offset of 4 GiB), which fflate, the zip writer of 0.9, does not write.
+- Internal API (`uo-opc`, not published): `Package::xml_part` is the one way to parse
+  a part as XML, and `Package::resolve_target` the one way to resolve a relationship
+  target (the OPC rule of the .NET `OpcPartName`, ASCII case folding);
+  `Limits::bounded` gives the parse options of a package's limits, and the
+  `.rels`/`[Content_Types].xml`/raw XML edit helpers take the package's `Limits`;
+  `Package::entry` exposes the declared method, sizes and CRC of an entry for host
+  validators; `Package::take_part` hands a part's bytes over without a copy (an edit
+  of a large part holds it twice instead of three times); XML errors from
+  `xml_part` name the part; `ContentTypes::content_type_of_part` and
+  `override_of_part` follow the OPC name rule (the Slides exact rule is
+  `content_type_of_exact`); `part_name::safe_relative_path` checks a part name before
+  a host extracts it to disk; `xml::parse` takes the text by value (`String` or
+  `Arc<str>`, kept by the tree without a copy).
+
 ## Unreleased
 
 ### Opening documents on slower machines

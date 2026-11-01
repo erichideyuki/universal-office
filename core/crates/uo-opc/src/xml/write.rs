@@ -139,7 +139,9 @@ pub fn write_attrs(out: &mut String, attrs: &[(&str, Option<&str>)]) {
 /// xmlw.ts `el`: `<name attrs/>` when `content` is empty, else `<name attrs>content</name>`
 /// (`content` is already XML).
 pub fn el(name: &str, attrs: &[(&str, Option<&str>)], content: &str) -> String {
-    let mut out = String::with_capacity(name.len() * 2 + content.len() + 8);
+    let mut out = String::new();
+    // a hint: a size that would wrap on wasm32 (or that the host refuses) only skips it
+    let _ = out.try_reserve_exact(name.len().saturating_mul(2).saturating_add(content.len()).saturating_add(8));
     out.push('<');
     out.push_str(name);
     write_attrs(&mut out, attrs);

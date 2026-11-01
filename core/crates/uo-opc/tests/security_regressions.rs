@@ -118,7 +118,7 @@ fn remove_rels_is_linear() {
     let list: Vec<Relationship> = (0..n).map(|i| Relationship::new(&format!("rId{i}"), "t", &format!("media/image{i}.png"))).collect();
     let xml = rels::write_rels(&list, "");
     let t = Instant::now();
-    let (out, removed) = rels::remove_rels(&xml, &ParseOptions::LENIENT, |r| r.id != "rId7").unwrap();
+    let (out, removed) = rels::remove_rels(&xml, &ParseOptions::LENIENT, &uo_opc::Limits::DEFAULT, |r| r.id != "rId7").unwrap();
     assert!(t.elapsed() < Duration::from_secs(10), "took {:?}", t.elapsed());
     assert_eq!(removed.len(), n - 1);
     assert_eq!(out, rels::write_rels(&list[7..8], ""));

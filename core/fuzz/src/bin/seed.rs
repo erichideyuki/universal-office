@@ -130,7 +130,9 @@ fn main() {
             if lower.ends_with(".rels") {
                 c.add_sel("rels", sel % 4, part);
                 let source = name.replace("_rels/", "").trim_end_matches(".rels").to_owned();
-                if let Ok(list) = rels::parse_rels(&String::from_utf8_lossy(part), &uo_opc::xml::ParseOptions::LENIENT) {
+                if let Ok(list) =
+                    rels::parse_rels(&String::from_utf8_lossy(part), &uo_opc::xml::ParseOptions::LENIENT, &uo_opc::Limits::DEFAULT)
+                {
                     for r in list.iter().take(8) {
                         c.add("resolver", format!("{source}\0{}", r.target).as_bytes());
                     }

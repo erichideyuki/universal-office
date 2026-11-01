@@ -30,8 +30,9 @@ pub enum Error {
     Limit { kind: LimitKind, max: u64, part: Option<String> },
     /// a required part is missing
     MissingPart(String),
-    /// malformed XML at a byte offset of the source
-    Xml { offset: usize, kind: XmlErrorKind },
+    /// malformed XML at a byte offset of the source; `part` names the part when it was parsed
+    /// through [`crate::Package::xml_part`] (as `Limit` does), for the host's messages
+    Xml { offset: usize, kind: XmlErrorKind, part: Option<String> },
     /// the compound file (CFB) is invalid
     Cfb(&'static str),
     /// writing: a zip entry name longer than the format allows (65,535 bytes of UTF-8)
@@ -76,7 +77,10 @@ impl fmt::Display for Error {
                 None => write!(f, "limit exceeded ({kind:?}, max {max})"),
             },
             Error::MissingPart(p) => write!(f, "missing part {p}"),
-            Error::Xml { offset, kind } => write!(f, "invalid XML at byte {offset}: {kind:?}"),
+            Error::Xml { offset, kind, part } => match part {
+                Some(p) => write!(f, "invalid XML at byte {offset} of {p}: {kind:?}"),
+                None => write!(f, "invalid XML at byte {offset}: {kind:?}"),
+            },
             Error::Cfb(what) => write!(f, "invalid compound file: {what}"),
             Error::NameTooLong { len } => write!(f, "zip entry name of {len} bytes (max 65,535)"),
         }
