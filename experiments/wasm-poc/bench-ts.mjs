@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { FONT_FILES } from './fonts.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../..');
+// UO_TS_ROOT: checkout whose TS engine (built dist) is measured — main, the frozen baseline
+const root = process.env.UO_TS_ROOT ? resolve(process.env.UO_TS_ROOT) : resolve(here, '../..');
 const core = await import(new URL('file:///' + join(root, 'write/packages/docx-core/dist/index.js').replace(/\\/g, '/')).href);
 const eng = await import(new URL('file:///' + join(root, 'write/packages/docx-layout/dist/index.js').replace(/\\/g, '/')).href);
 const catalog = readFileSync(join(root, 'shared/fonts/src/catalog.ts'), 'utf8');

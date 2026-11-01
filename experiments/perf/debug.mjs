@@ -6,7 +6,8 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../..');
+// UO_TS_ROOT: checkout whose TS engine (built dist) is measured — main, the frozen baseline
+const root = process.env.UO_TS_ROOT ? resolve(process.env.UO_TS_ROOT) : resolve(here, '../..');
 const { chromium } = await import(pathToFileURL(join(root, 'sheet/node_modules/playwright-core/index.mjs')).href);
 let url = process.argv[2];
 if (url.startsWith('site:')) {

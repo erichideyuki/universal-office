@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Boundary tests of the .NET facade (memory gate M4). Builds uo-ffi with the memory
+       counters (feature count) and copies the native library next to the tests. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <CoreDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../..'))</CoreDir>
+    <NativeName Condition="$([MSBuild]::IsOSPlatform('Windows'))">uo_ffi.dll</NativeName>
+    <NativeName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libuo_ffi.so</NativeName>
+    <NativeName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libuo_ffi.dylib</NativeName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UniversalOffice.Native\UniversalOffice.Native.csproj" />
+  </ItemGroup>
+  <Target Name="BuildRustCore" BeforeTargets="Build">
+    <Exec Command="cargo build -p uo-ffi --features count" WorkingDirectory="$(CoreDir)" />
+    <Copy SourceFiles="$(CoreDir)/target/debug/$(NativeName)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

@@ -1,0 +1,843 @@
+{
+ "date": "2026-11-01T02:38:57.765Z",
+ "main": {
+  "sha": "d0f45bc5"
+ },
+ "branch": {
+  "sha": "16d68844"
+ },
+ "suites": {
+  "fonts": {
+   "ts": {
+    "impl": "ts-node",
+    "parseMs": 220.53,
+    "measureMs": 15.82,
+    "glyphs": 230620,
+    "total": "23324283.216901",
+    "parity": {
+     "carlito-regular.ttf": [
+      171859,
+      0,
+      1,
+      2048,
+      "783117.332812"
+     ],
+     "carlito-bold.ttf": [
+      161520,
+      0,
+      1,
+      2048,
+      "800576.381250"
+     ],
+     "carlito-italic.ttf": [
+      140156,
+      0,
+      1,
+      2048,
+      "779302.603125"
+     ],
+     "carlito-bolditalic.ttf": [
+      133956,
+      0,
+      1,
+      2048,
+      "799516.584375"
+     ],
+     "caladea-regular.ttf": [
+      3034,
+      0,
+      1,
+      1000,
+      "819020.505600"
+     ],
+     "caladea-bold.ttf": [
+      3342,
+      0,
+      1,
+      1000,
+      "878714.668800"
+     ],
+     "caladea-italic.ttf": [
+      3473,
+      0,
+      1,
+      1000,
+      "796008.729600"
+     ],
+     "caladea-bolditalic.ttf": [
+      3526,
+      0,
+      1,
+      1000,
+      "858976.915200"
+     ],
+     "liberationsans-regular.ttf": [
+      2015,
+      0,
+      1,
+      2048,
+      "855778.321875"
+     ],
+     "liberationsans-bold.ttf": [
+      2015,
+      0,
+      1,
+      2048,
+      "921251.020313"
+     ],
+     "liberationsans-italic.ttf": [
+      1964,
+      0,
+      1,
+      2048,
+      "856172.592188"
+     ],
+     "liberationsans-bolditalic.ttf": [
+      1927,
+      0,
+      1,
+      2048,
+      "921586.964063"
+     ],
+     "liberationserif-regular.ttf": [
+      867,
+      0,
+      1,
+      2048,
+      "779242.875000"
+     ],
+     "liberationserif-bold.ttf": [
+      865,
+      0,
+      1,
+      2048,
+      "825357.946875"
+     ],
+     "liberationserif-italic.ttf": [
+      821,
+      0,
+      1,
+      2048,
+      "780049.312500"
+     ],
+     "liberationserif-bolditalic.ttf": [
+      845,
+      0,
+      1,
+      2048,
+      "799689.515625"
+     ],
+     "liberationmono-regular.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "liberationmono-bold.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "liberationmono-italic.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "liberationmono-bolditalic.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "embed-Ubuntu-regular.ttf": [
+      63148,
+      0,
+      1,
+      1000,
+      "872954.438400"
+     ],
+     "embed-Ubuntu-bold.ttf": [
+      77983,
+      0,
+      1,
+      1000,
+      "918351.360000"
+     ],
+     "embed-Ubuntu-italic.ttf": [
+      67940,
+      0,
+      1,
+      1000,
+      "842695.564800"
+     ],
+     "embed-Ubuntu-boldItalic.ttf": [
+      81682,
+      0,
+      1,
+      1000,
+      "894729.072000"
+     ],
+     "embed-Tahoma-regular.ttf": [
+      674,
+      0,
+      0,
+      2048,
+      "860787.075000"
+     ],
+     "embed-UbuntuMono-regular.ttf": [
+      0,
+      0,
+      1,
+      1000,
+      "979248.000000"
+     ]
+    }
+   },
+   "csharpNative": {
+    "impl": "csharp-native",
+    "parseMs": 47.38,
+    "measureMs": 13.82,
+    "glyphs": 230620,
+    "total": "23324283.216901",
+    "parity": {
+     "carlito-regular.ttf": [
+      171859,
+      0,
+      1,
+      2048,
+      "783117.332812"
+     ],
+     "carlito-bold.ttf": [
+      161520,
+      0,
+      1,
+      2048,
+      "800576.381250"
+     ],
+     "carlito-italic.ttf": [
+      140156,
+      0,
+      1,
+      2048,
+      "779302.603125"
+     ],
+     "carlito-bolditalic.ttf": [
+      133956,
+      0,
+      1,
+      2048,
+      "799516.584375"
+     ],
+     "caladea-regular.ttf": [
+      3034,
+      0,
+      1,
+      1000,
+      "819020.505600"
+     ],
+     "caladea-bold.ttf": [
+      3342,
+      0,
+      1,
+      1000,
+      "878714.668800"
+     ],
+     "caladea-italic.ttf": [
+      3473,
+      0,
+      1,
+      1000,
+      "796008.729600"
+     ],
+     "caladea-bolditalic.ttf": [
+      3526,
+      0,
+      1,
+      1000,
+      "858976.915200"
+     ],
+     "liberationsans-regular.ttf": [
+      2015,
+      0,
+      1,
+      2048,
+      "855778.321875"
+     ],
+     "liberationsans-bold.ttf": [
+      2015,
+      0,
+      1,
+      2048,
+      "921251.020313"
+     ],
+     "liberationsans-italic.ttf": [
+      1964,
+      0,
+      1,
+      2048,
+      "856172.592188"
+     ],
+     "liberationsans-bolditalic.ttf": [
+      1927,
+      0,
+      1,
+      2048,
+      "921586.964063"
+     ],
+     "liberationserif-regular.ttf": [
+      867,
+      0,
+      1,
+      2048,
+      "779242.875000"
+     ],
+     "liberationserif-bold.ttf": [
+      865,
+      0,
+      1,
+      2048,
+      "825357.946875"
+     ],
+     "liberationserif-italic.ttf": [
+      821,
+      0,
+      1,
+      2048,
+      "780049.312500"
+     ],
+     "liberationserif-bolditalic.ttf": [
+      845,
+      0,
+      1,
+      2048,
+      "799689.515625"
+     ],
+     "liberationmono-regular.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "liberationmono-bold.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "liberationmono-italic.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "liberationmono-bolditalic.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "embed-Ubuntu-regular.ttf": [
+      63148,
+      0,
+      1,
+      1000,
+      "872954.438400"
+     ],
+     "embed-Ubuntu-bold.ttf": [
+      77983,
+      0,
+      1,
+      1000,
+      "918351.360000"
+     ],
+     "embed-Ubuntu-italic.ttf": [
+      67940,
+      0,
+      1,
+      1000,
+      "842695.564800"
+     ],
+     "embed-Ubuntu-boldItalic.ttf": [
+      81682,
+      0,
+      1,
+      1000,
+      "894729.072000"
+     ],
+     "embed-Tahoma-regular.ttf": [
+      674,
+      0,
+      0,
+      2048,
+      "860787.075000"
+     ],
+     "embed-UbuntuMono-regular.ttf": [
+      0,
+      0,
+      1,
+      1000,
+      "979248.000000"
+     ]
+    }
+   },
+   "rustNative": {
+    "impl": "rust-native",
+    "parseMs": 39.76,
+    "measureMs": 4.29,
+    "glyphs": 230620,
+    "total": 23324283.216901,
+    "parity": {
+     "carlito-regular.ttf": [
+      171859,
+      0,
+      1,
+      2048,
+      783117.332812
+     ],
+     "carlito-bold.ttf": [
+      161520,
+      0,
+      1,
+      2048,
+      800576.38125
+     ],
+     "carlito-italic.ttf": [
+      140156,
+      0,
+      1,
+      2048,
+      779302.603125
+     ],
+     "carlito-bolditalic.ttf": [
+      133956,
+      0,
+      1,
+      2048,
+      799516.584375
+     ],
+     "caladea-regular.ttf": [
+      3034,
+      0,
+      1,
+      1000,
+      819020.5056
+     ],
+     "caladea-bold.ttf": [
+      3342,
+      0,
+      1,
+      1000,
+      878714.6688
+     ],
+     "caladea-italic.ttf": [
+      3473,
+      0,
+      1,
+      1000,
+      796008.7296
+     ],
+     "caladea-bolditalic.ttf": [
+      3526,
+      0,
+      1,
+      1000,
+      858976.9152
+     ],
+     "liberationsans-regular.ttf": [
+      2015,
+      0,
+      1,
+      2048,
+      855778.321875
+     ],
+     "liberationsans-bold.ttf": [
+      2015,
+      0,
+      1,
+      2048,
+      921251.020313
+     ],
+     "liberationsans-italic.ttf": [
+      1964,
+      0,
+      1,
+      2048,
+      856172.592188
+     ],
+     "liberationsans-bolditalic.ttf": [
+      1927,
+      0,
+      1,
+      2048,
+      921586.964063
+     ],
+     "liberationserif-regular.ttf": [
+      867,
+      0,
+      1,
+      2048,
+      779242.875
+     ],
+     "liberationserif-bold.ttf": [
+      865,
+      0,
+      1,
+      2048,
+      825357.946875
+     ],
+     "liberationserif-italic.ttf": [
+      821,
+      0,
+      1,
+      2048,
+      780049.3125
+     ],
+     "liberationserif-bolditalic.ttf": [
+      845,
+      0,
+      1,
+      2048,
+      799689.515625
+     ],
+     "liberationmono-regular.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      1175288.859375
+     ],
+     "liberationmono-bold.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      1175288.859375
+     ],
+     "liberationmono-italic.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      1175288.859375
+     ],
+     "liberationmono-bolditalic.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      1175288.859375
+     ],
+     "embed-Ubuntu-regular.ttf": [
+      63148,
+      0,
+      1,
+      1000,
+      872954.4384
+     ],
+     "embed-Ubuntu-bold.ttf": [
+      77983,
+      0,
+      1,
+      1000,
+      918351.36
+     ],
+     "embed-Ubuntu-italic.ttf": [
+      67940,
+      0,
+      1,
+      1000,
+      842695.5648
+     ],
+     "embed-Ubuntu-boldItalic.ttf": [
+      81682,
+      0,
+      1,
+      1000,
+      894729.072
+     ],
+     "embed-Tahoma-regular.ttf": [
+      674,
+      0,
+      0,
+      2048,
+      860787.075
+     ],
+     "embed-UbuntuMono-regular.ttf": [
+      0,
+      0,
+      1,
+      1000,
+      979248
+     ]
+    }
+   },
+   "rustWasm": {
+    "impl": "rust-wasm-fast-node",
+    "startMs": 0.95,
+    "parseMs": 55.76,
+    "measureMs": 5.91,
+    "glyphs": 230620,
+    "total": "23324283.216901",
+    "parity": {
+     "carlito-regular.ttf": [
+      171859,
+      0,
+      1,
+      2048,
+      "783117.332812"
+     ],
+     "carlito-bold.ttf": [
+      161520,
+      0,
+      1,
+      2048,
+      "800576.381250"
+     ],
+     "carlito-italic.ttf": [
+      140156,
+      0,
+      1,
+      2048,
+      "779302.603125"
+     ],
+     "carlito-bolditalic.ttf": [
+      133956,
+      0,
+      1,
+      2048,
+      "799516.584375"
+     ],
+     "caladea-regular.ttf": [
+      3034,
+      0,
+      1,
+      1000,
+      "819020.505600"
+     ],
+     "caladea-bold.ttf": [
+      3342,
+      0,
+      1,
+      1000,
+      "878714.668800"
+     ],
+     "caladea-italic.ttf": [
+      3473,
+      0,
+      1,
+      1000,
+      "796008.729600"
+     ],
+     "caladea-bolditalic.ttf": [
+      3526,
+      0,
+      1,
+      1000,
+      "858976.915200"
+     ],
+     "liberationsans-regular.ttf": [
+      2015,
+      0,
+      1,
+      2048,
+      "855778.321875"
+     ],
+     "liberationsans-bold.ttf": [
+      2015,
+      0,
+      1,
+      2048,
+      "921251.020313"
+     ],
+     "liberationsans-italic.ttf": [
+      1964,
+      0,
+      1,
+      2048,
+      "856172.592188"
+     ],
+     "liberationsans-bolditalic.ttf": [
+      1927,
+      0,
+      1,
+      2048,
+      "921586.964063"
+     ],
+     "liberationserif-regular.ttf": [
+      867,
+      0,
+      1,
+      2048,
+      "779242.875000"
+     ],
+     "liberationserif-bold.ttf": [
+      865,
+      0,
+      1,
+      2048,
+      "825357.946875"
+     ],
+     "liberationserif-italic.ttf": [
+      821,
+      0,
+      1,
+      2048,
+      "780049.312500"
+     ],
+     "liberationserif-bolditalic.ttf": [
+      845,
+      0,
+      1,
+      2048,
+      "799689.515625"
+     ],
+     "liberationmono-regular.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "liberationmono-bold.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "liberationmono-italic.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "liberationmono-bolditalic.ttf": [
+      0,
+      0,
+      0,
+      2048,
+      "1175288.859375"
+     ],
+     "embed-Ubuntu-regular.ttf": [
+      63148,
+      0,
+      1,
+      1000,
+      "872954.438400"
+     ],
+     "embed-Ubuntu-bold.ttf": [
+      77983,
+      0,
+      1,
+      1000,
+      "918351.360000"
+     ],
+     "embed-Ubuntu-italic.ttf": [
+      67940,
+      0,
+      1,
+      1000,
+      "842695.564800"
+     ],
+     "embed-Ubuntu-boldItalic.ttf": [
+      81682,
+      0,
+      1,
+      1000,
+      "894729.072000"
+     ],
+     "embed-Tahoma-regular.ttf": [
+      674,
+      0,
+      0,
+      2048,
+      "860787.075000"
+     ],
+     "embed-UbuntuMono-regular.ttf": [
+      0,
+      0,
+      1,
+      1000,
+      "979248.000000"
+     ]
+    }
+   }
+  },
+  "lines": {
+   "ts": {
+    "impl": "ts-node",
+    "lines": 13353,
+    "glyphs": 300247,
+    "mismatches": 0,
+    "bestMs": 98.74,
+    "medianMs": 127.17,
+    "cpuMsPerIter": 149.47,
+    "allocatedMB": 176.55,
+    "retainedMB": 30.57,
+    "peakRssMB": 1479.46,
+    "heapUsedMB": 325.88
+   },
+   "csharpNative": {
+    "impl": "csharp-native",
+    "lines": 13353,
+    "glyphs": 300247,
+    "mismatches": 0,
+    "bestMs": 41.55,
+    "medianMs": 57.03,
+    "cpuMsPerIter": 65.1,
+    "allocatedMB": 26.36,
+    "retainedMB": 19.75,
+    "peakRssMB": 791.44,
+    "heapMB": 551.55
+   },
+   "rustNative": {
+    "impl": "rust-native",
+    "lines": 13353,
+    "glyphs": 300247,
+    "mismatches": 0,
+    "bestMs": 11.14,
+    "medianMs": 12.2,
+    "cpuMsPerIter": 11.98,
+    "allocatedMB": 27.92,
+    "peakAboveBaseMB": 15.72,
+    "retainedMB": 15.21,
+    "peakRssMB": 90.09
+   },
+   "rustWasm": {
+    "impl": "rust-wasm-fast-node",
+    "lines": 13353,
+    "mismatches": 0,
+    "bestMs": 8.72,
+    "medianMs": 9.84,
+    "allocatedMB": 27.36,
+    "peakAboveBaseMB": 15.16,
+    "retainedMB": 14.8,
+    "wasmMemoryMB": 83.19,
+    "peakRssMB": 184.65
+   }
+  },
+  "engine": {
+   "ts": {
+    "build": "typescript-node",
+    "readMs": 54.8,
+    "firstLayoutMs": 258.9,
+    "pages": 8,
+    "warmBestMs": 120.3,
+    "warmMedianMs": 137,
+    "pdfMs": 46.3,
+    "pdfKB": 183
+   }
+  }
+ }
+}

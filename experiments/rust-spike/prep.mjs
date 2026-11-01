@@ -6,7 +6,8 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../..');
+// UO_TS_ROOT: checkout whose TS engine (built dist) is measured — main, the frozen baseline
+const root = process.env.UO_TS_ROOT ? resolve(process.env.UO_TS_ROOT) : resolve(here, '../..');
 const core = await import(pathToFileURL(join(root, 'write/packages/docx-core/dist/index.js')).href);
 const out = join(here, 'data');
 mkdirSync(join(out, 'fonts'), { recursive: true });

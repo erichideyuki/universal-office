@@ -1,0 +1,22 @@
+[package]
+name = "uo-ffi"
+description = "C ABI of the UniversalOffice Rust core, consumed by the .NET facade"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# memory counters exposed to the .NET tests (M4); never in the shipped library
+count = ["dep:uo-alloc", "uo-alloc/global"]
+
+[dependencies]
+uo-alloc = { path = "../uo-alloc", optional = true }
+
+[lints]
+workspace = true

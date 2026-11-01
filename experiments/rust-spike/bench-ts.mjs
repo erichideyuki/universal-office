@@ -6,7 +6,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const PARSE_ITERS = 10, MEASURE_ITERS = 20, SIZE_PT = 11;
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../..');
+// UO_TS_ROOT: checkout whose TS engine (built dist) is measured — main, the frozen baseline
+const root = process.env.UO_TS_ROOT ? resolve(process.env.UO_TS_ROOT) : resolve(here, '../..');
 const { SfntFont } = await import(pathToFileURL(join(root, 'write/packages/docx-layout/dist/index.js')).href);
 const dir = join(here, 'data');
 const names = readFileSync(join(dir, 'fonts.txt'), 'utf8').split('\n').filter(Boolean);

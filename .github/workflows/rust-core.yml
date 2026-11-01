@@ -1,0 +1,97 @@
+name: Rust core
+
+# The Rust core of 0.10 (core/, branch rust-core) — the rust-port workflow's automatic
+# checks: format and clippy, tests on the three OSes, the memory gate (M1-M3 in the crates'
+# tests, M4 at the wasm and .NET boundaries, M6 with Miri and LeakSanitizer) and the wasm
+# build. See .claude/skills/rust-port/SKILL.md.
+
+on:
+  push:
+    branches: [rust-core]
+  pull_request:
+    paths: ['core/**', '.github/workflows/rust-core.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-core-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: core
+    shell: bash
+
+jobs:
+  lint:
+    name: Format and clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal -c clippy,rustfmt && rustup default stable
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      # --all-features turns the counting allocator on: the memory tests (M1-M3) run here
+      - run: cargo test --workspace --all-features
+
+  wasm:
+    name: WebAssembly (build + boundary memory, M2/M4)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown && rustup default stable
+      - run: cargo build -p uo-wasm --features count --target wasm32-unknown-unknown --profile wasm
+      - run: node --expose-gc --test crates/uo-wasm/tests/boundary.test.mjs
+
+  dotnet:
+    name: .NET facade (boundary memory, M4) (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - run: dotnet test dotnet/UniversalOffice.Native.Tests
+
+  miri:
+    name: Miri (unsafe code, M6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install nightly --profile minimal -c miri,rust-src && rustup default nightly
+      - run: cargo miri setup
+      # every crate with unsafe code goes here as it arrives
+      - run: cargo miri test -p uo-alloc --features global
+      - run: cargo miri test -p uo-ffi
+      - run: cargo miri test -p uo-wasm
+
+  leak-sanitizer:
+    name: LeakSanitizer (M6)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -Zsanitizer=leak
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install nightly --profile minimal && rustup default nightly
+      - run: cargo test --workspace --all-features --target x86_64-unknown-linux-gnu

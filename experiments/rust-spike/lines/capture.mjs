@@ -12,7 +12,8 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../../..');
+// UO_TS_ROOT: checkout whose TS engine (built dist) is measured — main, the frozen baseline
+const root = process.env.UO_TS_ROOT ? resolve(process.env.UO_TS_ROOT) : resolve(here, '../../..');
 const imp = (p) => import(pathToFileURL(join(root, p)).href);
 const core = await imp('write/packages/docx-core/dist/index.js');
 const eng = await imp('write/packages/docx-layout/dist/index.js');

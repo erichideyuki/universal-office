@@ -8,7 +8,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import v8 from 'node:v8';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../../..');
+// UO_TS_ROOT: checkout whose TS engine (built dist) is measured — main, the frozen baseline
+const root = process.env.UO_TS_ROOT ? resolve(process.env.UO_TS_ROOT) : resolve(here, '../../..');
 const imp = (p) => import(pathToFileURL(join(root, p)).href);
 const { LineBreaker } = await imp('write/packages/docx-layout/dist/lines.js');
 const { createNodeFontProvider } = await imp('write/tools/corpus-lab/node-fonts.mjs');

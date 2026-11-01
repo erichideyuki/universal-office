@@ -1,0 +1,17 @@
+[package]
+name = "uo-alloc"
+description = "Counting allocator and the measured memory gate helpers (M1-M3) of the UniversalOffice Rust core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# Installs CountingAllocator as the global allocator of the final artifact. Enable it only in
+# test/bench builds (as a dev-dependency feature) — never in the shipped libraries.
+global = []
+
+[lints]
+workspace = true

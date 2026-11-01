@@ -17,7 +17,8 @@ import { brotliCompressSync, gzipSync, constants as zc } from 'node:zlib';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../..');
+// UO_TS_ROOT: checkout whose TS engine (built dist) is measured — main, the frozen baseline
+const root = process.env.UO_TS_ROOT ? resolve(process.env.UO_TS_ROOT) : resolve(here, '../..');
 const { chromium } = await import(pathToFileURL(join(root, 'sheet/node_modules/playwright-core/index.mjs')).href);
 
 const args = process.argv.slice(2);

@@ -27,6 +27,11 @@ maintainer to decide.
 - **.NET**: the deliverable is a C# NuGet package that is the interface to the Rust core
   (native library per runtime in `runtimes/<rid>/native/`, P/Invoke over a C ABI; Wasmtime is
   the alternative to weigh). The package stops being "pure .NET".
+- **APIs may change for the better**: there are no users to keep compatible with and the
+  project is before 1.0. The npm, wasm and NuGet APIs of 0.10 are designed fresh where the
+  current ones are awkward (the planner proposes, the maintainer approves); every break is
+  listed in `CHANGELOG.md`. Parity is about results (layout, PDF, saved files), not about
+  API shape.
 - **Dependencies**: crate vs own port is decided **case by case** in each module plan
   (license MIT-compatible, maintenance, size in wasm, `no_std`/wasm support, and above all the
   effect on parity).
@@ -102,8 +107,19 @@ All numbers come from tests that run in CI; "looks fine" is not a result.
   10,000 of them (explicit `free()`/`Dispose()` and the finalizer path) and checks the
   native live bytes return; .NET uses `SafeHandle`.
 - **M5 — caches**: every cache has a cap and is covered by a test that fills it past the cap.
-- **M6 — tools**: `dhat` for investigation, Miri for every `unsafe` block, LeakSanitizer on
-  the Linux CI for `uo-ffi` and the C# facade tests.
+- **M6 — tools**: `dhat` for investigation, Miri for every `unsafe` block (Miri also reports
+  leaked memory), LeakSanitizer on the Linux CI for `uo-ffi` and the C# facade tests. On
+  Windows run Miri as Linux — `cargo +nightly miri test -p <crate> --target
+  x86_64-unknown-linux-gnu` — because Stacked Borrows flags the Windows `System` allocator's
+  alignment header (a false positive outside our code).
+
+The infrastructure is in place since the foundation: `uo-alloc` (`assert_no_leak`,
+`measure`, `soak` + `assert_flat`; its own tests prove it catches a 512-byte leak and a
+growing soak), the M4 tests at both boundaries (`core/crates/uo-wasm/tests/boundary.test.mjs`,
+`core/dotnet/UniversalOffice.Native.Tests`), and the CI jobs in
+`.github/workflows/rust-core.yml`. A new crate adds its own M1–M5 tests with
+`uo-alloc` as a dev-dependency (`features = ["global"]`) and joins the Miri job if it has
+`unsafe`.
 
 ## Reuse (every stage, every agent)
 

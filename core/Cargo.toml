@@ -1,0 +1,40 @@
+# Rust core of UniversalOffice 0.10 (branch rust-core): one implementation of the engines
+# for the browser (wasm), Node and .NET. Workflow: .claude/skills/rust-port/SKILL.md.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.10.0-dev"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+repository = "https://github.com/erichideyuki/universal-office"
+publish = false
+
+# Memory and robustness rules from day one: no panicking shortcuts on data, no deliberate
+# leaks. Tests may unwrap (clippy.toml).
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+mem_forget = "deny"
+undocumented_unsafe_blocks = "deny"
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+# The browser build: speed beats size here (opt-level "s" was 2.2x slower in spike 2)
+[profile.wasm]
+inherits = "release"
+opt-level = 3
+panic = "abort"
+strip = true
