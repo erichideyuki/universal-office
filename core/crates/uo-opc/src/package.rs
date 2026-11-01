@@ -23,8 +23,8 @@
 //!   per entry, a few bytes, so a save verifies each entry once (D5).
 //!
 //! Limits: each raw read checks `Limits::part_cap(name)` on the bytes it produces, and the
-//! running total of produced bytes (each entry counted once, the first time it is read or
-//! verified by a save) against `max_total_bytes`. Declared sizes never reserve memory. Errors of
+//! running total of produced bytes (each entry counted once, the first time it is read) against
+//! `max_total_bytes`. Declared sizes never reserve memory. Errors of
 //! a damaged entry surface when that entry is read; [`Package::verify`] reproduces the TS
 //! behaviour of failing at load.
 //!
@@ -45,7 +45,13 @@
 //! archive. Anything else is written again from the bytes the reader produces (deflated at the
 //! save level, or stored if it was stored), and an entry that cannot be read fails the save with
 //! the read's error. Entries never read are verified by [`flate::check_raw`], which keeps no
-//! output, so the save of a package whose media were never read holds none of them.
+//! output, so the save of a package whose media were never read holds none of them. That check
+//! holds no memory, so it is not counted toward the total; its work is bounded instead by
+//! excluding overlaps: an entry whose compressed range overlaps another entry's (a crafted
+//! archive can point thousands of entries at one stream) is never verified nor copied raw, it is
+//! read under the normal limits; every other entry is checked once with the most deflate can
+//! produce from its bytes ([`MAX_DEFLATE_RATIO`]), so a save inflates at most that ratio times
+//! the archive.
 //!
 //! `Package` is `Send`, not `Sync` (the caches are `OnceCell`s): reads borrow `&self`, so several
 //! parts can be held at once.
@@ -60,6 +66,10 @@ use crate::limits::Limits;
 use crate::part_name;
 use crate::xml::{self, ParseOptions};
 use crate::zip::{self, RawEntry, ZipEntry, ZipWriter};
+
+/// The most output a save checks per compressed byte of an entry (with 1 MiB at least): deflate
+/// cannot exceed 1,032:1, and Slides uses the same bound for its "impossible ratio" filter.
+pub const MAX_DEFLATE_RATIO: u64 = 1100;
 
 /// Options of a save: level, STORED names, timestamp (see [`zip::WriteOptions`]).
 pub use crate::zip::WriteOptions as SaveOptions;
@@ -112,6 +122,8 @@ struct Part {
     content: Content,
     /// the bytes of this part were added to the running total
     counted: Cell<bool>,
+    /// its compressed range overlaps another entry's: a save reads it, never copies it raw
+    shared: bool,
 }
 
 /// An OPC (or ODF) package: ordered named parts. See the module comment.
@@ -190,15 +202,17 @@ impl Package {
         } else {
             zip::read(&bytes, limits.max_entries)?
         };
+        let shared = overlapping(&entries, bytes.len() as u64);
         let mut pkg = Package::with(bytes, limits.clone(), *options);
         pkg.parts.reserve_exact(entries.len());
         pkg.index.reserve(entries.len());
-        for entry in entries {
+        for (entry, shared) in entries.into_iter().zip(shared) {
             pkg.index.insert(entry.name.clone(), pkg.parts.len());
             pkg.parts.push(Part {
                 name: entry.name.clone(),
                 content: Content::Entry { entry, inflated: OnceCell::new(), known: Cell::new(None) },
                 counted: Cell::new(false),
+                shared,
             });
         }
         Ok(pkg)
@@ -419,32 +433,29 @@ impl Package {
     }
 
     /// Whether a save may copy the entry raw (D5): the stream is verified once and the result
-    /// kept. Verifying a never-read entry inflates it without keeping the output
-    /// ([`flate::check_raw`]) under the caps of a read, and counts toward the total as a read
-    /// does; its errors are the read's.
+    /// kept. An entry whose range overlaps another's is not (the save reads it under the
+    /// limits). Verifying a never-read entry inflates it without keeping the output
+    /// ([`flate::check_raw`]), up to [`MAX_DEFLATE_RATIO`] times its compressed bytes and not
+    /// counted toward the total (it holds no memory); a stream that would go past that ratio is
+    /// not intact, and the read that follows reports the limit. Other errors are the read's.
     fn intact(&self, part: &Part) -> Result<bool> {
         let Content::Entry { entry, inflated, known } = &part.content else { return Ok(false) };
+        if part.shared {
+            return Ok(false);
+        }
         let raw = entry.compressed(&self.source);
         let k = match known.get() {
             Some(k @ Known { crc32: Some(_), .. }) => k,
             Some(k) if let Some(out) = inflated.get() => Known { crc32: Some(flate::crc32(out)), ..k },
+            // a stored entry is read as its compressed bytes (see `load_capped`)
+            _ if entry.method == 0 => Known { len: raw.len() as u64, stream_len: raw.len() as u64, crc32: Some(flate::crc32(raw)) },
             _ => {
-                let (part_cap, cap) = self.cap_for(part, self.limits.part_cap(&part.name));
-                let k = if entry.method == 0 {
-                    // a stored entry is read as its compressed bytes (see `load_capped`)
-                    if raw.len() as u64 > cap {
-                        return Err(self.limit_error(&part.name, part_cap, cap));
-                    }
-                    Known { len: raw.len() as u64, stream_len: raw.len() as u64, crc32: Some(flate::crc32(raw)) }
-                } else {
-                    match flate::check_raw(raw, Some(entry.size), cap) {
-                        Ok(c) => Known { len: c.len, stream_len: c.stream_len, crc32: Some(c.crc32) },
-                        Err(Error::Limit { .. }) => return Err(self.limit_error(&part.name, part_cap, cap)),
-                        Err(e) => return Err(e),
-                    }
-                };
-                self.count(part, k.len as usize);
-                k
+                let cap = (raw.len() as u64).saturating_mul(MAX_DEFLATE_RATIO).max(1 << 20);
+                match flate::check_raw(raw, Some(entry.size), cap) {
+                    Ok(c) => Known { len: c.len, stream_len: c.stream_len, crc32: Some(c.crc32) },
+                    Err(Error::Limit { .. }) => return Ok(false),
+                    Err(e) => return Err(e),
+                }
             }
         };
         known.set(Some(k));
@@ -521,7 +532,7 @@ impl Package {
             }
             None => {
                 self.index.insert(name.clone(), self.parts.len());
-                self.parts.push(Part { name, content: Content::Owned(data), counted: Cell::new(true) });
+                self.parts.push(Part { name, content: Content::Owned(data), counted: Cell::new(true), shared: false });
                 self.caseless.take();
                 self.ascii.take();
             }
@@ -593,4 +604,35 @@ impl Package {
         }
         Ok(w.finish())
     }
+}
+
+/// Which entries have a compressed range that overlaps another entry's (empty ranges never do):
+/// one sweep over the ranges sorted by start, clamped to the archive as the reader clamps them.
+fn overlapping(entries: &[ZipEntry], len: u64) -> Vec<bool> {
+    let range = |e: &ZipEntry| {
+        let start = e.data_start.min(len);
+        (start, e.data_start.saturating_add(e.compressed_size).min(len).max(start))
+    };
+    let mut order: Vec<(u64, u64, usize)> =
+        entries.iter().enumerate().map(|(i, e)| (range(e), i)).filter(|((s, e), _)| s < e).map(|((s, e), i)| (s, e, i)).collect();
+    order.sort_unstable();
+    let mut shared = vec![false; entries.len()];
+    // the entry reaching furthest so far, and where it ends
+    let mut furthest: Option<(usize, u64)> = None;
+    for (start, end, i) in order {
+        match furthest {
+            Some((j, reach)) if start < reach => {
+                for k in [i, j] {
+                    if let Some(s) = shared.get_mut(k) {
+                        *s = true;
+                    }
+                }
+                if end > reach {
+                    furthest = Some((i, end));
+                }
+            }
+            _ => furthest = Some((i, end)),
+        }
+    }
+    shared
 }

@@ -232,13 +232,70 @@ fn d5_an_entry_that_cannot_be_read_fails_the_save() {
     w.add_raw("empty.bin", RawEntry { method: 8, crc32: 0, size: 64, data: &[] }).unwrap();
     let p = open(&w.finish(), &Limits::DEFAULT);
     assert_eq!(p.save(&SaveOptions::default()), Err(Error::Corrupt("empty deflate stream with a declared size")));
-    // over a cap: the read's limit error (verification counts toward the total as a read does)
+    // an entry that is not intact is read, under the caps of a read
     let big = vec![b'a'; 4096];
-    let bytes = zip::write([("a.bin", &big[..]), ("b.bin", &big[..])], WriteOptions::default()).unwrap();
-    let p = open(&bytes, &Limits { max_total_bytes: 6000, ..Limits::DEFAULT });
-    assert_eq!(p.save(&SaveOptions::default()), Err(Error::Limit { kind: LimitKind::TotalBytes, max: 6000, part: None }));
-    let p = open(&bytes, &Limits { max_binary_part_bytes: 1000, ..Limits::DEFAULT });
+    let mut w = ZipWriter::new(WriteOptions::default());
+    let comp = flate::deflate_raw(&big, 6);
+    w.add_raw("a.bin", RawEntry { method: 8, crc32: 0, size: 4096, data: &comp }).unwrap();
+    let p = open(&w.finish(), &Limits { max_binary_part_bytes: 1000, ..Limits::DEFAULT });
     assert_eq!(p.save(&SaveOptions::default()), Err(Error::Limit { kind: LimitKind::PartBytes, max: 1000, part: Some("a.bin".into()) }));
+}
+
+#[test]
+fn d5_intact_entries_save_under_any_limits_without_counting() {
+    // the check holds no memory: untouched media far over the part and total caps are verified
+    // and copied raw (a deck with a large video still saves on wasm32)
+    let zeros = vec![0u8; 8 << 20];
+    let bytes =
+        zip::write([("media/a.bin", &zeros[..]), ("media/b.bin", &zeros[..]), ("doc.xml", b"<doc/>")], WriteOptions::default()).unwrap();
+    drop(zeros);
+    let small = Limits { max_binary_part_bytes: 1 << 20, max_total_bytes: 2 << 20, ..Limits::DEFAULT };
+    let p = open(&bytes, &small);
+    let saved = p.save(&SaveOptions::default()).unwrap();
+    assert_eq!(p.produced_bytes(), 0, "verification is not counted");
+    let source = zip::read(&bytes, u32::MAX).unwrap();
+    let out = zip::read(&saved, u32::MAX).unwrap();
+    for (s, o) in source.iter().zip(&out) {
+        assert_eq!((s.crc32, s.size, s.compressed(&bytes)), (o.crc32, o.size, o.compressed(&saved)), "{} copied raw", s.name);
+    }
+    // reading them still hits the caps
+    assert!(matches!(p.part("media/a.bin"), Err(Error::Limit { kind: LimitKind::PartBytes, .. })));
+}
+
+#[test]
+fn d5_overlapping_entries_are_read_under_the_limits_never_verified() {
+    // a crafted archive points many entries at one stream: each would be verified at full cost;
+    // they are read instead, so the total bounds the work
+    let zeros = vec![0u8; 1 << 20];
+    let comp = flate::deflate_raw(&zeros, 9);
+    let crc = flate::crc32(&zeros);
+    let one = RawZipEntry { crc32: crc, ..RawZipEntry::deflated("first.bin", comp.clone(), 1 << 20) };
+    let first = build_zip(std::slice::from_ref(&one), &RawZipOptions::default());
+    // the data of "first.bin" starts after its local header (30 bytes + name)
+    let offset = 0u32;
+    let entries: Vec<RawZipEntry> = std::iter::once(one)
+        .chain((0..200).map(|i| RawZipEntry {
+            crc32: crc,
+            offset: Some(offset),
+            local_name: Some(b"first.bin".to_vec()),
+            ..RawZipEntry::deflated(format!("copy{i:03}.bin"), Vec::new(), 1 << 20).csize(comp.len() as u32)
+        }))
+        .collect();
+    let bytes = build_zip(&entries, &RawZipOptions::default());
+    assert!(bytes.len() < first.len() + 200 * 200, "the copies add no data");
+    let p = open(&bytes, &Limits { max_total_bytes: 16 << 20, ..Limits::DEFAULT });
+    assert_eq!(p.part("copy000.bin").unwrap().map(<[u8]>::len), Some(1 << 20), "every entry reads the one stream");
+    let p = open(&bytes, &Limits { max_total_bytes: 16 << 20, ..Limits::DEFAULT });
+    assert_eq!(p.save(&SaveOptions::default()), Err(Error::Limit { kind: LimitKind::TotalBytes, max: 16 << 20, part: None }));
+    // under a total that fits them, they are written again from the bytes read
+    let p = open(&bytes, &Limits { max_total_bytes: 512 << 20, ..Limits::DEFAULT });
+    let back = well_formed(&p.save(&SaveOptions::default()).unwrap());
+    assert_eq!(back.len(), 201);
+    assert!(back.iter().all(|(_, m, b)| *m == 8 && b.len() == 1 << 20));
+    // an entry next to them, not overlapping, is still copied raw
+    let lone = zip::write([("lone.bin", &zeros[..])], WriteOptions::default()).unwrap();
+    let p = open(&lone, &Limits { max_total_bytes: 1, ..Limits::DEFAULT });
+    assert!(p.save(&SaveOptions::default()).is_ok());
 }
 
 #[test]
@@ -250,7 +307,7 @@ fn d5_never_read_entries_are_verified_once_without_their_output() {
     let (first, u1) = measure(|| p.save(&SaveOptions::default()).unwrap());
     // the 8 MiB are verified through the 64 KiB window, never held
     assert!(u1.peak_above_start < 2 * first.len() as i64 + (256 << 10), "peak {}", u1.peak_above_start);
-    assert_eq!(p.produced_bytes(), (8 << 20) + 6, "verified bytes count toward the total");
+    assert_eq!(p.produced_bytes(), 0, "verification holds no memory and is not counted");
     // the result is kept: the second save allocates the output only (no window)
     let (second, u2) = measure(|| p.save(&SaveOptions::default()).unwrap());
     assert_eq!(first, second);

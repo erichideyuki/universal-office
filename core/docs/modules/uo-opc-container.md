@@ -803,3 +803,24 @@ cargo test -p uo-opc --release --test s1_empty_deflate -- --nocapture   # no lon
 UO_M3_RECORD=1 cargo test -p uo-opc --release --test package_budgets -- --nocapture --test-threads 1
 UO_TS_PARITY=1 UO_DOTNET_PARITY=1 UO_TS_ROOT=<checkout of main> cargo test -p uo-opc --release --test opc_parity save_cross_readers -- --nocapture
 ```
+
+### D5 follow-up: save verification excludes overlaps (approved 2026-11-01)
+
+Maintainer, verbatim: "Exclude overlaps". The first D5 implementation counted the verification of
+never-read entries toward `max_total_bytes`, so a package whose untouched media exceed the total
+(1 GiB on wasm32) could not be saved. Now:
+
+- the verification holds no memory (64 KiB window) and is **not** counted toward the total;
+- an entry whose compressed range overlaps another entry's (computed once at open, one sweep over
+  the sorted ranges) is never verified nor copied raw: the save reads it under the normal limits,
+  so a crafted archive pointing many entries at one stream is bounded by the total;
+- every other entry is checked at most to `MAX_DEFLATE_RATIO` (1,100) times its compressed bytes
+  (1 MiB at least), so a save inflates at most that ratio times the archive; a stream past it is
+  not intact and the read that follows reports the limit.
+
+Tests: `gate2_decisions::d5_intact_entries_save_under_any_limits_without_counting` (16 MiB of
+untouched media saved raw under a 1 MiB part cap and 2 MiB total, `produced_bytes` 0) and
+`d5_overlapping_entries_are_read_under_the_limits_never_verified` (201 entries on one 1 MiB stream:
+`Limit{TotalBytes}` under 16 MiB, written again under 512 MiB). The deck budget asserts the
+media are no longer counted. 209 workspace tests, wasm/WebKit, the .NET cross-read (10,053
+archives) and the fuzz fallback pass.

@@ -154,10 +154,9 @@ fn m3_deck_with_large_media() {
     // the output holds the media raw: about the input size
     println!("deck edit + save: output {} B, capacity {} B, {first_save:?}", saved.len(), saved.capacity());
     // gate 2, D5: before copying them raw the save verified the media (the 64 MiB part inflated
-    // through a 64 KiB window, the stored one by its CRC): they count toward the total as a
-    // read does, and nothing is held
-    let media = (DECK_DEFLATED_MEDIA + DECK_STORED_MEDIA) as u64;
-    assert!(pkg.produced_bytes() >= produced_before + media && pkg.produced_bytes() < produced_before + media + 300_000);
+    // through a 64 KiB window, the stored one by its CRC): nothing is held, so the check is not
+    // counted toward the total (the media are not overlapping entries); the edit's own parts are
+    assert!(pkg.produced_bytes() >= produced_before && pkg.produced_bytes() < produced_before + 300_000);
     // the save allocates only the growing output: each growth of the Vec counts as a new
     // allocation (at most 2× the final capacity, itself at most 2× the length), plus the
     // verification window; never the 64 MiB of zeros
