@@ -1,11 +1,95 @@
 //! The compact XML tree (gate 1, skeptic #4): one arena per document, element and attribute
-//! names interned, values and texts as spans into the owned source (`Arc<str>`) with a side
-//! table only for strings that decoding or normalization changed, children contiguous,
+//! names interned, values and texts as spans into the owned, shared source ([`Source`]) with a
+//! side table only for strings that decoding or normalization changed, children contiguous,
 //! positions only when asked. No lifetime parameter: a model may keep the `Document` (or just
-//! its `Arc<str>` source and spans) without copying.
+//! its [`Source`] and spans) without copying.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::Arc;
+
+/// The text a [`Document`] points into, shared by reference counting. Built from a `String` (or
+/// an `Arc<str>`) it takes that buffer as is: `Package::xml_part` hands the inflated bytes of a
+/// part over to the tree without copying them. Built from a borrowed `&str` it copies it once.
+#[derive(Clone)]
+pub struct Source(Repr);
+
+#[derive(Clone)]
+enum Repr {
+    Shared(Arc<str>),
+    Owned(Arc<String>),
+}
+
+impl Source {
+    /// Both handles share one buffer.
+    pub fn ptr_eq(a: &Source, b: &Source) -> bool {
+        a.as_ptr() == b.as_ptr() && a.len() == b.len()
+    }
+}
+
+impl Deref for Source {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &str {
+        match &self.0 {
+            Repr::Shared(s) => s,
+            Repr::Owned(s) => s,
+        }
+    }
+}
+
+impl AsRef<str> for Source {
+    fn as_ref(&self) -> &str {
+        self
+    }
+}
+
+impl std::fmt::Debug for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&**self, f)
+    }
+}
+
+impl From<String> for Source {
+    fn from(s: String) -> Self {
+        Source(Repr::Owned(Arc::new(s)))
+    }
+}
+
+impl From<&str> for Source {
+    fn from(s: &str) -> Self {
+        Source(Repr::Shared(Arc::from(s)))
+    }
+}
+
+impl From<&String> for Source {
+    fn from(s: &String) -> Self {
+        Source::from(s.as_str())
+    }
+}
+
+impl From<Cow<'_, str>> for Source {
+    fn from(s: Cow<'_, str>) -> Self {
+        match s {
+            Cow::Borrowed(s) => Source::from(s),
+            Cow::Owned(s) => Source::from(s),
+        }
+    }
+}
+
+impl From<Arc<str>> for Source {
+    fn from(s: Arc<str>) -> Self {
+        Source(Repr::Shared(s))
+    }
+}
+
+impl From<Box<str>> for Source {
+    fn from(s: Box<str>) -> Self {
+        Source::from(String::from(s))
+    }
+}
 
 /// Interned name (element or attribute qualified name, or a namespace URI in strict mode).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -135,7 +219,7 @@ impl Names {
 /// A parsed XML document.
 #[derive(Debug)]
 pub struct Document {
-    pub(crate) source: Arc<str>,
+    pub(crate) source: Source,
     pub(crate) side: String,
     pub(crate) names: Names,
     pub(crate) elements: Vec<ElemRec>,
@@ -149,7 +233,7 @@ pub struct Document {
 
 impl Document {
     /// The source text the spans point into.
-    pub fn source(&self) -> &Arc<str> {
+    pub fn source(&self) -> &Source {
         &self.source
     }
 

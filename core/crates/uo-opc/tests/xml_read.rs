@@ -306,8 +306,15 @@ fn huge_attributes() {
 fn source_is_shared_not_copied() {
     let src: std::sync::Arc<str> = "<a b=\"plain\">text</a>".into();
     let d = parse(src.clone(), &DOCX).unwrap();
-    assert!(std::sync::Arc::ptr_eq(d.source(), &src));
+    assert_eq!(d.source().as_ptr(), src.as_ptr());
     let v = d.root().attr("b").unwrap();
     // the value points into the source
     assert!(src.as_ptr() as usize <= v.as_ptr() as usize && (v.as_ptr() as usize) < src.as_ptr() as usize + src.len());
+    // a String is taken as is (stage 5: `Package::xml_part` hands the inflated text over)
+    let owned = String::from("<a b=\"plain\">text</a>");
+    let at = owned.as_ptr();
+    let d = parse(owned, &DOCX).unwrap();
+    assert_eq!(d.source().as_ptr(), at);
+    let shared = d.source().clone();
+    assert!(uo_opc::xml::Source::ptr_eq(&shared, d.source()));
 }

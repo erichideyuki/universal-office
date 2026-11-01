@@ -10,6 +10,19 @@
 #[cfg(feature = "opc-memtest")]
 pub mod opc_memtest;
 
+// the uo-opc benchmark (stage 5): its scenarios and the presets of the uo-opc tests
+#[cfg(feature = "opc-bench")]
+#[path = "../../uo-opc/tests/bench_support/mod.rs"]
+mod bench_support;
+#[cfg(feature = "opc-bench")]
+#[path = "../../uo-opc/tests/memory_support/mod.rs"]
+mod memory_support;
+#[cfg(feature = "opc-bench")]
+pub mod opc_bench;
+#[cfg(feature = "opc-bench")]
+#[path = "../../uo-opc/tests/xml_support/mod.rs"]
+mod xml_support;
+
 /// Placeholder resource owned by Rust (replaced by the real document type).
 #[derive(Debug, Default)]
 pub struct UoDocument {

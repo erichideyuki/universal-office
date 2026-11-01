@@ -10,4 +10,4 @@ pub mod write;
 
 pub use entities::CharRefPolicy;
 pub use read::{CanonicalPrefixes, ContentPi, Mode, ParseOptions, parse};
-pub use tree::{Attr, Document, Element, ElementId, NameId, Node, Positions};
+pub use tree::{Attr, Document, Element, ElementId, NameId, Node, Positions, Source};

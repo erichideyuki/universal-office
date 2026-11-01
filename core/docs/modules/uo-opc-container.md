@@ -1,6 +1,6 @@
 # uo-opc — the document container layer
 
-Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01**; stages 3 (port) and 4 (verification) done; **gate 2 approved 2026-11-01** (D1–D8), **D1–D8 implemented 2026-11-01** (see the last section); next: stage 5.
+Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01**; stages 3 (port) and 4 (verification) done; **gate 2 approved 2026-11-01** (D1–D8), **D1–D8 implemented 2026-11-01** (see the last section); **stage 5 (evolution) done 2026-11-01** (see the last sections; result-changing proposals R1–R5 pending); next: stage 6.
 
 ## Scope
 
@@ -824,3 +824,224 @@ untouched media saved raw under a 1 MiB part cap and 2 MiB total, `produced_byte
 `Limit{TotalBytes}` under 16 MiB, written again under 512 MiB). The deck budget asserts the
 media are no longer counted. 209 workspace tests, wasm/WebKit, the .NET cross-read (10,053
 archives) and the fuzz fallback pass.
+
+## Process metrics (baseline for the model comparison)
+
+Every role of uo-opc ran on **Opus** (the "Models" rule of the skill came after it), so this is
+the reference for the Sonnet ports. Times are the wall time of each agent; stages 3 and 4 ran
+their agents in parallel.
+
+| Stage | Agent (model) | Time | Tool calls |
+|---|---|---|---|
+| 1 | planner (Opus) | 6.7 min | 24 |
+| 1 | reuse specialist (Opus) | 4.8 min | 44 |
+| 2 | analysis skeptic (Opus) | 10.2 min | 49 |
+| 3 | port: flate, zip, lazy package (Opus) | 20.3 min + 3.0 min follow-up | 55 + 17 |
+| 3 | port: CFB (Opus) | 10.4 min | 30 |
+| 3 | port: XML, rels, content types (Opus) | 29.6 min | 99 |
+| 3 | part names and limits (orchestrator) | — | — |
+| 4 | parity verifier (Opus) | 54.5 min | 122 |
+| 4 | memory verifier (Opus) | 35.3 min | 107 |
+| 4 | security specialist (Opus) | 85.5 min | 118 |
+| gate 2 | D1–D8 implementation (Opus) | 40.1 min | 152 |
+
+Wall time per stage: plan + skeptic ≈ 17 min; port ≈ 30 min (+ 3 min follow-up); verification
+≈ 86 min; gate-2 decisions ≈ 40 min, plus the D5 follow-up by the orchestrator.
+
+**Parity rounds** (the parity verifier sending a port bug back): **0** — no port bug found in the
+corpus or the quirk corpus; every difference was an approved decision (G4, G5) or a new one
+(D4, D5).
+
+**Rework** (what had to be redone after an agent reported done):
+
+| # | What | Why | Fixed by |
+|---|---|---|---|
+| R1 | The fflate expectations of 4 test files had no generator in the repo | not reproducible; one generator was not deterministic (zip mtime) | port agent follow-up (3 min) |
+| R2 | Error for zip names over 65,535 bytes was `Corrupt` | wrong error class | orchestrator |
+| R3 | `Package` re-export missing at the crate root | stubs compiled in parallel | orchestrator |
+| R4 | Files committed with CRLF (stage 3 and security edits) | Windows editing, no `.gitattributes` | orchestrator (`core/.gitattributes`) |
+| R5 | Security F1–F7 (quadratic inflate tables inherited from fflate, quadratic rels/raw edits, a span underflow found by fuzzing, abort on an impossible allocation) | found in stage 4, each with a regression test | security specialist |
+| R6 | D5 counted the save verification toward the memory total | design consequence not raised before the change | orchestrator ("Exclude overlaps") |
+
+Not port rework: the `uo-alloc` self-tests failed in release (allocation elision); fixed in the
+harness with `black_box`.
+
+## Stage 5 — evolution (simplification and algorithms, 2026-11-01)
+
+Result-preserving changes applied one at a time, each measured before and after, with the parity
+replay (0 mismatches against the committed capture, unchanged), every test, the memory gate and
+the fuzz fallback as the safety net. Result-changing proposals are listed at the end with their
+evidence; none is applied.
+
+### Benchmark (`tools/bench/run.mjs --suites opc`)
+
+- `tools/bench/opc/ts.mjs`: the frozen 0.9.x packages and parsers (each app's own code, as the
+  parity capture), one node process per scenario; time = best run; memory = growth of the
+  maximum RSS on the first run and heapUsed + arrayBuffers kept after GC with the outputs alive
+  (the memory verifier's method).
+- `core/crates/uo-opc/examples/opc_bench.rs` (native, release) and the `uo-wasm` feature
+  `opc-bench` (`src/opc_bench.rs`, bench-only exports, never shipped) run with
+  `tools/bench/opc/wasm.mjs`; both run the same scenarios, `tests/bench_support/mod.rs`, and
+  count memory with `uo-alloc` (allocated bytes; peak live bytes above the start; bytes kept with
+  the outputs alive); wasm also reports the growth of `memory.buffer.byteLength` (a permanent
+  high-water mark).
+- Scenarios: (a) the 2,742 oracle docx, each opened, every XML-like part parsed with Write's
+  preset (positions on) through `xml_part`, every other part read (memory per document); (b) the
+  same on `giant-1m.xlsx` with the Sheet presets, the package kept; (c) `xl/worksheets/sheet1.xml`
+  of the giant inflated with its declared size (31.7 MB); (d) the edit of `ts_budgets.mjs` (an
+  element before the last end tag of the main part, a new part) and the save, on
+  `sw-16-8.docx` and on the giant (the 31.7 MB sheet deflated again). Every runner reports the
+  same parts, elements and bytes as the TS (checked in the tables).
+- Machine: Intel i5-14600KF, Windows 11, node 24.15, rustc 1.97.1; the native runner carries the
+  counting allocator. Results: `tools/bench/results/2026-11-01-9ac45738-dirty-baseline.md`
+  (the source of 9ac45738 with the bench tooling added) and
+  `2026-11-01-122ead8e-dirty-stage5.md` (with the changes below).
+
+### Baseline (before any change)
+
+| Scenario | | TS (V8) | Rust native | Rust wasm |
+|---|---|---|---|---|
+| (a) oracle, 2,742 docx | best | 584.5 ms | 259.6 ms | 279.6 ms |
+| | allocated / peak per doc | — / 29.3 MB RSS | 394.2 MB / 0.83 MB | 361.3 MB / 0.82 MB |
+| (b) giant open + read + parse | best | 742.4 ms | 165.2 ms | 185.4 ms |
+| | allocated / peak | — / 826.6 MB RSS | 355.4 MB / 146.1 MB | 355.4 MB / 146.1 MB |
+| | kept | 31.9 MB | 34.6 MB | 34.6 MB |
+| | wasm memory growth | — | — | 203.9 MB |
+| (c) inflate 31.7 MB | best | 60 ms (529 MB/s) | 38.5 ms (824 MB/s) | 42.7 ms (743 MB/s) |
+| | allocated / peak | — | 92.8 MB / 34.2 MB | 92.8 MB / 34.2 MB |
+| (d) sw-16-8 edit + save | best | 2.5 ms | 0.8 ms | 1.2 ms |
+| | allocated / peak | — / 5.0 MB RSS | 2.06 MB / 0.73 MB | 2.19 MB / 0.79 MB |
+| (d) giant edit + save | best | 575.5 ms | 818.5 ms | 1,007.9 ms |
+| | allocated / peak | — / 89.4 MB RSS | 181.5 MB / 95.2 MB | 181.7 MB / 95.2 MB |
+| wasm module | `opc-memtest` / `count,opc-memtest` / `opc-bench` | | | 252,423 / 252,914 / 270,853 B |
+
+### Changes applied (result-preserving)
+
+Numbers are native (`opc_bench`, allocation counts are deterministic) unless marked; M3 numbers
+are `tests/package_budgets.rs`.
+
+| # | Change | Before → after |
+|---|---|---|
+| C1 | **Inflate output growth bounded by the declared size** (`flate::try_grow`): it still starts at 3 × the input and doubles (never preallocated from a declared size), but a step never goes past min(declared, cap), so an output that fills its declared size ends exact, without the 2 × overshoot and the `shrink_to_fit` copy | (c) allocated 92.8 → 58.7 MB, peak 34.2 → 31.7 MB; M3 deck 64 MiB read 228.2 → 147.0 MB allocated, peak 81.2 → 67.1 MB; (a) 394.2 → 356.6 MB; (b) 355.4 → 321.3 MB |
+| C2 | **Inflate reads 4 bytes per bit fetch** (`flate::word`: one bounds check instead of 2–3 bytes with a `u64 → usize` conversion each; every mask is ≤ 15 bits, so the values are fflate's) and **back-reference copies by doubling slices** (`extend_from_within` of everything written since the start of the copy, the output being periodic there) instead of one byte at a time | (c) 36.9 → 27.9 ms (824 → 1,136 MB/s; wasm 743 → 1,133 MB/s at the end); (a) 263.9 → 238.9 ms; (b) 166.9 → 156.8 ms |
+| C3 | **`Package::xml_part` hands the inflated text to the tree**: a part inflated by the call is decoded in place (UTF-8 keeps the buffer, the BOM removed with `drain`) and becomes the tree's source; the package keeps nothing (a later read inflates again, not counted again toward the total). `xml::Source` replaces `Arc<str>` as the tree's source: `Arc<String>` or `Arc<str>`, cloned by reference count, `Deref<Target = str>` (`parse` takes `impl Into<Source>`: `String`, `Arc<str>` without a copy, `&str`/`Cow` with one) | (b) allocated 321.3 → 289.5 MB, peak 146.1 → 114.4 MB, kept 34.6 → 2.85 MB (the input copy only); (a) 356.6 → 324.9 MB, peak 0.83 → 0.63 MB, 238.9 → 222.8 ms |
+| C4 | **Huffman tables reused across blocks** (`h_map` writes into the stream's buffers; counts and first codes on the stack; code lengths in a 320-byte array) | (a) 324.9 → 318.3 MB; (c) 58.66 → 57.39 MB (peak +26 KB: the tables live through the stream) |
+| C5 | **CRC-32 by 8 bytes** (slicing by 8; the byte table is fflate's, the 7 others derived at compile time; test against the byte loop and the CRC-32 check value) | M3 deck first save (verifies 64 MiB + 16 MiB) 197 → 103 ms; giant save untouched (verifies the sheet) 71 → 37 ms; wasm +7,168 B (tables) |
+| C6 | **One compressor per writer, output streamed, exact archive**: `flate::Deflater` keeps miniz_oxide's state (allocated once, `reset` per entry) and appends to the caller's buffer through `compress_to_output` (no `input.len() / 2` zeroed buffer); the bytes are those of `deflate_raw` (test: 9 levels × 11 inputs through one compressor). `ZipWriter::add` deflates straight into the archive and patches the size. `Package::save` decides every entry first (raw, stored, or a range of one deflate buffer), computes the length with `zip::archive_len` and writes into `ZipWriter::with_capacity(len)`: capacity = length | M3 deck edit + save 54.4 → 17.8 MB allocated, peak 34.5 → 17.25 MB, capacity 34.5 MB → exact; giant save untouched 8.55 → 3.30 MB, peak 5.70 → 2.85 MB; giant save with the sheet deflated 25.0 → 11.0 MB, peak 18.7 → 6.6 MB; `ZipWriter` with 100 small entries 25.4 → 0.37 MB; (d) docx 1.79 → 1.50 MB, 0.8 → 0.5 ms; (d) giant 146.1 → 131.8 MB, 807 → 772 ms |
+| C7 | **XML arenas reserved from a byte count** (`read::Estimate`: start tags = `<` not followed by `/`, children = those + text runs (`>` not followed by `<`), attributes = `=`; counted 8 bytes at a time with SWAR, also without SIMD in wasm). Reserved only when the whole reservation fits in 3 × the source (`RESERVE_PER_SOURCE_BYTE`: real trees are 1.4–2.2 ×) and within `max_elements`; otherwise the arenas double as before. A real part is built without the doubling chain; inflated counts (markup in comments, values, a root that ends early) reserve at most what a real part of that size holds, below the M5 hostile shapes (7–17 ×). Same tree (`finish` still shrinks to fit) | (b) allocated 288.3 → 197.2 MB, peak 114.4 → 103.1 MB, **wasm memory growth 197.0 → 116.7 MB**; M3 sheet parse alone 259.7 → 168.7 MB, peak 111.5 → 100.2 MB; (a) 318.3 → 253.0 MB, peak 0.63 → 0.54 MB, wasm growth 0.85 → 0.59 MB; time: native (b) 148 → 151 ms, (a) 225 → 231 ms; wasm (b) 158 → 173 ms, (a) 242 → 252 ms (the count adds 15 ms on the giant in wasm with SWAR; a byte loop added 32 ms) |
+| C8 | Simplifications: `limits::is_xml_like` compares without lowercasing a copy (it runs on every read through `part_cap`); one JS array-index rule (`zip::array_index`) for zip names and XML attribute order instead of two; the canonical renaming reads attribute names as source spans instead of copying each one | (a) 253.03 → 252.80 MB; M3 stored-part read 9 B → 0 B |
+
+Wasm size: `opc-memtest` 252,423 → 266,269 B (+13,846: the CRC tables 7,168, the rest the
+streaming compressor, the planned save, `Source` and the estimate); `count,opc-memtest`
+252,914 → 266,760 B; `opc-bench` 270,853 → 284,701 B. Safari 15 baseline kept (no SIMD).
+
+API changes (crate not published yet): `xml::Document::source()` returns `&xml::Source`;
+`xml::parse` takes `impl Into<Source>`; added `xml::Source`, `flate::Deflater`,
+`zip::archive_len`, `ZipWriter::with_capacity`; `Package::xml_part` no longer caches the bytes
+it inflates.
+
+### After (all changes)
+
+| Scenario | | TS (V8) | Rust native | Rust wasm |
+|---|---|---|---|---|
+| (a) oracle, 2,742 docx | best | 559.4 ms | 226.9 ms | 244.6 ms |
+| | allocated / peak per doc | — / 28.7 MB RSS | 252.8 MB / 0.54 MB | 219.7 MB / 0.53 MB |
+| (b) giant open + read + parse | best | 699.1 ms | 149.6 ms | 172.9 ms |
+| | allocated / peak | — / 834.9 MB RSS | 197.2 MB / 103.1 MB | 197.2 MB / 103.1 MB |
+| | kept | 31.9 MB | 2.85 MB | 2.85 MB |
+| | wasm memory growth | — | — | 116.7 MB |
+| (c) inflate 31.7 MB | best | 59.4 ms (534 MB/s) | 27.6 ms (1,149 MB/s) | 28.0 ms (1,133 MB/s) |
+| | allocated / peak | — | 57.4 MB / 31.8 MB | 57.4 MB / 31.8 MB |
+| (d) sw-16-8 edit + save | best | 2.4 ms | 0.6 ms | 0.9 ms |
+| | allocated / peak | — / 5.2 MB RSS | 1.50 MB / 0.70 MB | 1.56 MB / 0.77 MB |
+| (d) giant edit + save | best | 554.4 ms | 792.3 ms | 957.1 ms |
+| | allocated / peak | — / 88.3 MB RSS | 131.8 MB / 95.2 MB | 131.9 MB / 95.2 MB |
+
+The giant save is the one scenario where the TS is faster: miniz_oxide at level 6 spends 735 ms
+on the 31.7 MB sheet against fflate's 669 ms (proposal R4). Its 95 MB peak is the bench's edit
+(the sheet read through `part_text`, cached by the package, copied and concatenated: 3 × 31.7 MB),
+not the save (M3: 6.6 MB).
+
+### Memory gate re-run
+
+- M1: every `assert_no_leak` test passes (`api_memory`, `package_memory`, `zip_memory`,
+  `flate_memory`, `xml_memory`, `gate2_decisions`, …).
+- M2: native 100 iterations 771,231 B flat; 1,000 iterations 771,375 B × 21 flat (12.6 s
+  release, was 20.3 s); wasm 1,000 iterations 0 B live, `byteLength` **2,293,760 B** high-water
+  (was 2,621,440 B), 13.4 s in Node (was 23 s), 15.2 s in WebKit 26.5.
+- M3 (`package_budgets.rs`, every budget lowered to the new number; capacity = length asserted
+  for the saves):
+
+| Operation | Allocated before → after | Peak before → after |
+|---|---|---|
+| giant open + read all + parse all | 355,418,000 → 197,243,000 | 146,113,000 → 103,061,000 |
+| giant kept after open + read + parse | 34,571,000 → 2,850,000 | — |
+| giant save untouched | 8,550,000 → 3,298,000 | 5,697,000 → 2,850,000 |
+| giant parse `sheet1.xml` alone | 259,726,000 → 168,703,000 | 111,543,000 → 100,211,000 |
+| giant save with the sheet deflated | 25,021,000 → 11,017,000 | 18,717,000 → 6,627,000 |
+| sw-16-8 open + read + parse `document.xml` | 2,311,000 → 1,331,000 | 822,000 → 724,000 |
+| sw-16-8 edit + save | 4,494,000 → 2,660,000 | 897,000 (unchanged: the edit's parse) |
+| deck `open_owned` + parse all XML | 1,189,000 → 848,000 | 148,000 → 146,000 |
+| deck edit + save | 54,422,000 → 17,769,000 | 34,479,000 → 17,255,000 |
+| deck read the 64 MiB deflated part | 228,154,000 → 146,998,000 | 81,157,000 → 67,110,000 |
+| `deflate_raw` of 4 bytes (one-shot API, unchanged) | 253,624 | 253,622 |
+| `ZipWriter`, 1 deflated entry / 100 entries (new) | 319,774 / 367,222 | — |
+
+- M5: unchanged (`cache_caps`; the tree factors 3.77 / 8.56 / 17.13 / 7.00 × and 40.4
+  B/element for the 100k-cell sheet are the same: the estimate never changes what is kept).
+- Fuzz fallback, 10 s per target: 0 crashes (zip_open 87,625 execs, zip_roundtrip 223,779,
+  zip_write 149,992, inflate 499,709, cfb 4,376,792, xml_lenient 725,167, xml_strict 824,804,
+  escape_roundtrip 277,876, raw_surgery 1,288,813, rels 227,271, content_types 214,555,
+  caseless 107,029, part_text 1,577,903, resolver 3,596,898). Cross readers
+  (`UO_TS_PARITY=1 UO_DOTNET_PARITY=1`): 10,053 saved archives read identically by fflate, uo-opc
+  and .NET `ZipArchive`.
+
+### Considered, not applied
+
+- `Package::remove_part` is O(parts) (a `Vec::remove` of ~170-byte parts and an index scan):
+  removing half of 10,000 parts one by one takes 115 ms, of 50,000 parts 7.4 s, where `retain`
+  takes 0.6 ms and 3.5 ms. Tombstones would make it O(1) but touch every index of the package;
+  the format crates remove a handful of parts per edit and `retain` is the bulk path. Left as is.
+- Inflate's initial capacity stays fflate's 3 × the input (a larger start bounded by the input
+  would save one growth step on XML that compresses more than 3 ×; small gain, not measured as
+  worth a departure).
+- `flate::deflate_raw` (one-shot, used by `zlib`) keeps `compress_to_vec`.
+
+### Result-changing proposals (not applied; maintainer decides each)
+
+Evidence: `cargo run --release -p uo-opc --example opc_rule_evidence [-- --all]` runs each app's
+own rule and lookup (the 0.9.x TS, as reproduced by `tests/parity_support` with 0 parity
+mismatches) against the D6 path (`Package::resolve_target`: the OPC rule of the C# `OpcPartName`
+plus ASCII case folding) over the parity corpus: 2,819 git-tracked OOXML packages (9,289
+relationships the apps keep, 19,745 XML parts) and the quirk corpus with the three apps (526
+packages, 22,704 relationships, 8,074 XML parts).
+
+| # | Proposal | Evidence | Recommendation |
+|---|---|---|---|
+| R1 | **Write's target rule** (`./` stripped, `/x` → `x`, else `word/${target}` without resolving `..`) → the D6 path | Real files: one document, two relationships: `site/assets/samples/demo.docx` (written by Microsoft Office Word, `docProps/app.xml`), `word/_rels/document.xml.rels` targets `../customXml/item1.xml` and `../customXml/item2.xml`: Write resolves `word/../customXml/item1.xml`, missing; D6 finds `customXml/item1.xml` and `item2.xml` (cover-page properties Word wrote there; OPC Part 2 resolves a relative target against the source part, RFC 3986). Write does not render custom XML parts (the reader only unwraps `w:customXml` elements), so no layout changes. No real relationship goes from found to missing. Quirks (Write): missing → found by parent segments 334, case 176 (OPC compares part names ASCII case-insensitively), fragments 168, percent-encoding 163; 1 found in another part (below) | switch to D6 |
+| R2 | **Sheet's lookup with Unicode lowercase** → ASCII folding (the OPC rule) | 0 lookups differ in the real files and in the quirk corpus; only the security P3 shape differs (U+212A KELVIN SIGN folds to `k` in Unicode, so Sheet opens a part the OPC rule does not name) | switch (no observable change, closes P3) |
+| R3 | **Sheet and Slides `resolveRelTarget`** (only leading `../`, no `./`, `%xx` or `#` handling; Slides exact lookup) → D6 | Real files: 0 differences. Quirks: Sheet dot segments 327, fragments 327, percent-encoding 161; Slides case 347, dot segments 328, fragments 328, percent-encoding 160; never found → missing | switch to D6 |
+| R1–R3 note | the one "another part" case per app (`quirk/010-percent-names`: both `word/media/image%201.png` and `word/media/image 1.png` exist; the apps take the literal `%20` name, D6 the decoded one) | artificial (Word does not write such pairs); D6 is the C# and clickCompliance validator behaviour | accept with R1/R3 |
+| R4 | **Save level**: `SaveOptions::level` 6 maps to miniz_oxide level 4 (or the default becomes 4) | giant sheet (31.7 MB): miniz 6 735 ms / 2,854,910 B, miniz 4 112 ms / 2,876,909 B (+0.8 %), fflate 6 (the TS) 669 ms / 2,846,338 B; 17,798 oracle parts: miniz 6 7,273,466 B in 254 ms, miniz 4 7,285,735 B (+0.17 %) in 240 ms; `document.xml` of sw-16-8: 2,788 vs 2,790 B (fflate 6: 2,792 B). Decompressed bytes are unchanged (the parity facets hold); archive sizes change | apply: 6.5 × faster large saves for +0.2–0.8 % size |
+| R5 | **Depth limit 1,000 for Sheet and Slides** (applied since D3 through `xml_part`; the TS presets had none) | deepest part: 25 in the real files, 7 in the quirks; 0 parts above 1,000. The TS parsers are recursive: docx-core stops at 1,000 (its limit), sheet-core overflows the V8 stack after 8,945 levels and slides-core after 8,353 (measured, node 24) | keep 1,000 (no real part near it; the TS ceiling is a stack accident) |
+
+Files: `src/{flate,limits,package,zip}.rs`, `src/xml/{mod,read,tree}.rs`;
+tests `package_budgets.rs`, `xml_read.rs` (`source_is_shared_not_copied` covers `String`
+sources), unit tests in `flate.rs` (Deflater bytes, CRC by 8, tables) and `xml/read.rs`
+(estimate); bench `tests/bench_support/mod.rs`, `examples/opc_bench.rs`,
+`examples/opc_rule_evidence.rs`, `uo-wasm` feature `opc-bench` (`src/opc_bench.rs`),
+`tools/bench/opc/{ts,wasm}.mjs`, `tools/bench/run.mjs` (suite `opc`, `--tag`, dirty runs named).
+
+```
+node tools/bench/run.mjs --main <built checkout of main> --suites opc [--tag <name>]
+cargo run --release -p uo-opc --example opc_bench [-- <runs>]
+cargo build -p uo-wasm --features opc-bench --target wasm32-unknown-unknown --profile wasm && node tools/bench/opc/wasm.mjs
+UO_TS_ROOT=<built checkout of main> node --expose-gc tools/bench/opc/ts.mjs
+cargo run --release -p uo-opc --example opc_rule_evidence [-- --all]
+```
+
+Checks run: `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --all-features
+-- -D warnings` (and on `core/fuzz`); `cargo test --workspace --release --all-features`: 212
+tests pass (209 before); the parity replay: 0 mismatches; the wasm build (`count,opc-memtest`)
+with `boundary.test.mjs` and `opc_memory.test.mjs`; WebKit 26.5 (`browser/run.mjs`); the
+1,000-iteration native soak; the cross readers with .NET; the fuzz fallback.

@@ -8,11 +8,10 @@
 //! prohibited, namespaces resolved, close tags checked, depth limit).
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use super::chars::{is_name_char, is_qname, is_xml_space, js_space_len};
 use super::entities::{CharRefPolicy, Norm, decode_lenient, decode_strict, needs_decoding};
-use super::tree::{AttrRec, Document, ElemRec, Kind, MAX_ATTR_SPAN, MAX_NODE_SPAN, NO_NS, Names, NodeRec, NsTables};
+use super::tree::{AttrRec, Document, ElemRec, Kind, MAX_ATTR_SPAN, MAX_NODE_SPAN, NO_NS, Names, NodeRec, NsTables, Source};
 use crate::error::{Error, LimitKind, Result, XmlErrorKind};
 
 /// Lenient (the TS parsers) or strict (System.Xml-like, gate 1 G6).
@@ -126,13 +125,15 @@ impl Default for ParseOptions<'static> {
 const XML_NS: &str = "http://www.w3.org/XML/1998/namespace";
 const XMLNS_NS: &str = "http://www.w3.org/2000/xmlns/";
 
-/// Parses `source` into a [`Document`].
-pub fn parse(source: impl Into<Arc<str>>, opts: &ParseOptions<'_>) -> Result<Document> {
-    let source: Arc<str> = source.into();
+/// Parses `source` into a [`Document`], which keeps it (a `String` or an `Arc<str>` without a
+/// copy, see [`Source`]).
+pub fn parse(source: impl Into<Source>, opts: &ParseOptions<'_>) -> Result<Document> {
+    let source: Source = source.into();
     if source.len() >= u32::MAX as usize {
         return Err(Error::Limit { kind: LimitKind::PartBytes, max: u64::from(u32::MAX) - 1, part: None });
     }
     let mut p = Parser::new(&source, opts);
+    p.reserve();
     if opts.mode == Mode::Strict {
         p.run_strict()?;
     } else {
@@ -211,6 +212,73 @@ struct Parser<'s, 'o> {
     root_done: bool,
 }
 
+/// The arena sizes of a document estimated from its bytes before parsing (stage 5): start tags
+/// (`<` not followed by `/`), children (those plus text runs, a `>` not followed by `<`) and
+/// attributes (`=`). Exact for most real parts; markup inside comments, CDATA or values only
+/// inflates them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Estimate {
+    elements: usize,
+    nodes: usize,
+    attrs: usize,
+}
+
+/// The most a parse reserves up front, per source byte: a real tree is 1.4 (docx with positions)
+/// to 2.2 (sheet) times its source, so a real part is reserved whole, while an input whose
+/// counts are inflated (or whose tree ends early) reserves at most what a real part of its size
+/// holds anyway, far below the trees hostile shapes build (M5: up to 17 times).
+const RESERVE_PER_SOURCE_BYTE: usize = 3;
+
+const HIGH: u64 = 0x8080_8080_8080_8080;
+
+/// The 8 bytes at `i`, little-endian.
+#[inline]
+fn word(b: &[u8], i: usize) -> Option<u64> {
+    match b.get(i..i.checked_add(8)?) {
+        Some(&[a, c, d, e, f, g, h, k]) => Some(u64::from_le_bytes([a, c, d, e, f, g, h, k])),
+        _ => None,
+    }
+}
+
+/// The high bit of each byte of `w` equal to `x`.
+#[inline]
+fn equal(w: u64, x: u8) -> u64 {
+    let v = w ^ (0x0101_0101_0101_0101 * u64::from(x));
+    !(((v & !HIGH).wrapping_add(!HIGH)) | v) & HIGH
+}
+
+impl Estimate {
+    fn count(b: &[u8]) -> Estimate {
+        // u32 counts: `parse` takes sources below 4 GiB
+        let (mut lt, mut close, mut text, mut eq) = (0u32, 0u32, 0u32, 0u32);
+        // 8 bytes at a time (SWAR: a byte equal to `x` is a zero byte of `w ^ x`), each with the
+        // 8 bytes from the next one; the rest byte by byte
+        let mut i = 0;
+        while let (Some(w), Some(w1)) = (word(b, i), word(b, i + 1)) {
+            let l = equal(w, b'<');
+            lt += l.count_ones();
+            close += (l & equal(w1, b'/')).count_ones();
+            text += (equal(w, b'>') & !equal(w1, b'<') & HIGH).count_ones();
+            eq += equal(w, b'=').count_ones();
+            i += 8;
+        }
+        let rest = b.get(i..).unwrap_or(&[]);
+        let next = rest.get(1..).unwrap_or(&[]);
+        for (&c, &n) in rest.iter().zip(next) {
+            lt += u32::from(c == b'<');
+            close += u32::from((c == b'<') & (n == b'/'));
+            text += u32::from((c == b'>') & (n != b'<'));
+            eq += u32::from(c == b'=');
+        }
+        if let Some(&c) = rest.last() {
+            lt += u32::from(c == b'<');
+            eq += u32::from(c == b'=');
+        }
+        let elements = (lt - close) as usize;
+        Estimate { elements, nodes: elements + text as usize, attrs: eq as usize }
+    }
+}
+
 impl<'s, 'o> Parser<'s, 'o> {
     fn new(src: &'s str, opts: &'o ParseOptions<'o>) -> Self {
         let mut names = Names::default();
@@ -242,7 +310,36 @@ impl<'s, 'o> Parser<'s, 'o> {
         }
     }
 
-    fn finish(mut self, source: Arc<str>) -> Document {
+    /// Reserves the arenas at the sizes [`Estimate`] counts when they fit in
+    /// [`RESERVE_PER_SOURCE_BYTE`] and the element limit, so that a real part is built without
+    /// the doubling of its arenas (each step a copy, and up to twice the size before `finish`
+    /// shrinks it); otherwise they grow by doubling. Same tree either way.
+    fn reserve(&mut self) {
+        use std::mem::size_of;
+        let e = Estimate::count(self.b);
+        let strict = self.ns.is_some();
+        let bytes = e.elements * (size_of::<ElemRec>() + if self.opts.positions { size_of::<[u32; 4]>() } else { 0 })
+            + e.nodes * size_of::<NodeRec>()
+            + e.attrs * size_of::<AttrRec>()
+            + if strict { (e.elements + e.attrs) * size_of::<u32>() } else { 0 };
+        let fits = self.opts.max_elements.is_none_or(|m| e.elements <= m as usize);
+        if !fits || bytes > self.b.len().saturating_mul(RESERVE_PER_SOURCE_BYTE) {
+            return;
+        }
+        // a reservation the host refuses is skipped: the parse then grows as it needs
+        let _ = self.elements.try_reserve_exact(e.elements);
+        let _ = self.nodes.try_reserve_exact(e.nodes);
+        let _ = self.attrs.try_reserve_exact(e.attrs);
+        if self.opts.positions {
+            let _ = self.positions.try_reserve_exact(e.elements);
+        }
+        if let Some(t) = self.ns.as_mut() {
+            let _ = t.elements.try_reserve_exact(e.elements);
+            let _ = t.attrs.try_reserve_exact(e.attrs);
+        }
+    }
+
+    fn finish(mut self, source: Source) -> Document {
         self.raw.sort_unstable_by_key(|r| r.0);
         self.elements.shrink_to_fit();
         self.attrs.shrink_to_fit();
@@ -441,14 +538,7 @@ impl<'s, 'o> Parser<'s, 'o> {
     /// (`<a b="1" 2="x" 1="y"/>` → `{1, 2, b}` in all three TS parsers).
     fn js_key_order(&mut self) {
         let names = &self.names;
-        let index_of = |id: u32| -> Option<u32> {
-            let s = names.get(id);
-            let b = s.as_bytes();
-            if b.is_empty() || !b.iter().all(u8::is_ascii_digit) || (b.len() > 1 && b[0] == b'0') {
-                return None;
-            }
-            s.parse::<u64>().ok().filter(|&v| v < u64::from(u32::MAX)).map(|v| v as u32)
-        };
+        let index_of = |id: u32| crate::zip::array_index(names.get(id));
         if !self.pattrs.iter().any(|a| index_of(a.name).is_some()) {
             return;
         }
@@ -657,13 +747,14 @@ impl<'s, 'o> Parser<'s, 'o> {
                 let mut changed = false;
                 for k in 0..self.pattrs.len() {
                     let a = self.pattrs[k];
-                    let lit = self.names.get(a.name).to_owned();
+                    // the name as written (a span of the source: no copy)
+                    let lit = self.lit(&a);
                     let is_decl =
                         if canon.default_namespace { lit == "xmlns" || lit.starts_with("xmlns:") } else { lit.starts_with("xmlns:") };
                     if is_decl {
                         continue;
                     }
-                    if let Some(n) = self.renamed(&lit, true, canon) {
+                    if let Some(n) = self.renamed(lit, true, canon) {
                         self.pattrs[k].name = self.names.intern(&n);
                         changed = true;
                     }
@@ -799,6 +890,7 @@ impl<'s, 'o> Parser<'s, 'o> {
         if let Some(t) = self.ns.as_mut() {
             t.attrs.extend(self.pattrs.iter().map(|a| a.ns));
         }
+
         Ok(elem)
     }
 
@@ -1184,5 +1276,44 @@ impl<'s, 'o> Parser<'s, 'o> {
             None if is_attr => Ok(NO_NS),
             None => Ok(self.binding_of("").map_or(NO_NS, |b| b.uri)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The definition of [`Estimate::count`], byte by byte.
+    fn count_bytes(b: &[u8]) -> Estimate {
+        let at = |i: usize| b.get(i).copied();
+        let (mut lt, mut close, mut text, mut eq) = (0, 0, 0, 0);
+        for (i, &c) in b.iter().enumerate() {
+            lt += usize::from(c == b'<');
+            close += usize::from(c == b'<' && at(i + 1) == Some(b'/'));
+            text += usize::from(c == b'>' && at(i + 1).is_some_and(|n| n != b'<'));
+            eq += usize::from(c == b'=');
+        }
+        Estimate { elements: lt - close, nodes: lt - close + text, attrs: eq }
+    }
+
+    #[test]
+    fn estimate_counts_like_the_byte_loop() {
+        let mut seed = 0x1234_5679u32;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        // the bytes that count, others, and the high bytes that could fool the SWAR test
+        let alphabet = b"<>/=a \x80\xFF\x7F\x01";
+        for len in 0..200 {
+            for _ in 0..20 {
+                let b: Vec<u8> = (0..len).map(|_| alphabet[(rnd() % alphabet.len() as u32) as usize]).collect();
+                assert_eq!(Estimate::count(&b), count_bytes(&b), "{b:?}");
+            }
+        }
+        let sheet = "<row><c r=\"A1\"><v>1</v></c></row>".repeat(100);
+        assert_eq!(Estimate::count(sheet.as_bytes()), Estimate { elements: 300, nodes: 400, attrs: 100 });
     }
 }

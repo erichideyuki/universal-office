@@ -47,15 +47,17 @@ fn m3_giant_xlsx() {
         (pkg, parts, elements)
     });
     println!("giant-1m: {parts} parts, {elements} elements, produced {} B, kept {} B", pkg.produced_bytes(), open_read_parse.live_delta);
-    check("giant-1m open + read all + parse all", open_read_parse, 355_418_000, 146_113_000);
-    // what the open package keeps: the input copy and the inflated parts
-    within("giant-1m kept after open + read + parse", open_read_parse.live_delta, 34_571_000);
-    // save untouched: every entry copied raw (nothing deflated again), after the CRC-32 of the
-    // parts already read (D5)
+    check("giant-1m open + read all + parse all", open_read_parse, 197_243_000, 103_061_000);
+    // what the open package keeps: the input copy (stage 5: the parts parsed through `xml_part`
+    // are owned by their trees, not kept by the package)
+    within("giant-1m kept after open + read + parse", open_read_parse.live_delta, 2_850_000);
+    // save untouched: every entry copied raw (nothing deflated again), after the verification
+    // of the entries (D5); the archive is reserved at its exact length (stage 5)
     let started = Instant::now();
     let (saved, save_raw) = measure(|| pkg.save(&SaveOptions::default()).unwrap());
     println!("giant-1m save untouched: output {} B, capacity {} B, {:?}", saved.len(), saved.capacity(), started.elapsed());
-    check("giant-1m save untouched", save_raw, 8_550_000, 5_697_000);
+    assert_eq!(saved.capacity(), saved.len());
+    check("giant-1m save untouched", save_raw, 3_298_000, 2_850_000);
     drop(saved);
     // the verification is kept: the same save without it (the time it costs)
     let started = Instant::now();
@@ -67,7 +69,7 @@ fn m3_giant_xlsx() {
     println!("giant-1m sheet1 tree: {} elements, heap {} B", doc.element_count(), doc.heap_bytes());
     // D2: the default element cap is about 10 × the largest real part of the repository
     assert!(u64::from(Limits::DEFAULT.max_xml_elements) >= 9 * doc.element_count() as u64);
-    check("giant-1m parse sheet1.xml", parse_sheet, 259_726_000, 111_543_000);
+    check("giant-1m parse sheet1.xml", parse_sheet, 168_703_000, 100_211_000);
     drop(doc);
     drop(text);
     drop(pkg);
@@ -84,7 +86,8 @@ fn m3_giant_xlsx_save_edited_sheet() {
     // the other entries were never read: the save verifies them without keeping them (D5)
     let (saved, u) = measure(|| pkg.save(&SaveOptions::default()).unwrap());
     println!("giant-1m save with sheet1 deflated: output {} B", saved.len());
-    check("giant-1m save edited sheet", u, 25_021_000, 18_717_000);
+    assert_eq!(saved.capacity(), saved.len());
+    check("giant-1m save edited sheet", u, 11_017_000, 6_627_000);
 }
 
 /// The largest `document.xml` of the oracle corpus (`justify4/sw-16-8.docx`, 188 KB).
@@ -104,7 +107,7 @@ fn m3_largest_oracle_document() {
         doc.heap_bytes(),
         open_read_parse.live_delta
     );
-    check("sw-16-8 open + read + parse document.xml", open_read_parse, 2_311_000, 822_000);
+    check("sw-16-8 open + read + parse document.xml", open_read_parse, 1_331_000, 724_000);
     drop(doc);
     let mut pkg = pkg;
     let (saved, save_edited) = measure(|| {
@@ -112,7 +115,7 @@ fn m3_largest_oracle_document() {
         pkg.save(&SaveOptions::default()).unwrap()
     });
     println!("sw-16-8 edit + save: output {} B", saved.len());
-    check("sw-16-8 edit + save", save_edited, 4_494_000, 897_000);
+    check("sw-16-8 edit + save", save_edited, 2_660_000, 897_000);
 }
 
 /// A deck with large media: `reference.pptx` plus 64 MiB of deflated zeros and a 16 MiB stored
@@ -142,7 +145,7 @@ fn m3_deck_with_large_media() {
     );
     // nothing near the media size was produced or allocated
     assert!(pkg.produced_bytes() < 200_000);
-    check("deck open_owned + parse all XML", open_parse, 1_189_000, 148_000);
+    check("deck open_owned + parse all XML", open_parse, 848_000, 146_000);
     let mut pkg = pkg;
     let produced_before = pkg.produced_bytes();
     let started = Instant::now();
@@ -157,14 +160,14 @@ fn m3_deck_with_large_media() {
     // through a 64 KiB window, the stored one by its CRC): nothing is held, so the check is not
     // counted toward the total (the media are not overlapping entries); the edit's own parts are
     assert!(pkg.produced_bytes() >= produced_before && pkg.produced_bytes() < produced_before + 300_000);
-    // the save allocates only the growing output: each growth of the Vec counts as a new
-    // allocation (at most 2× the final capacity, itself at most 2× the length), plus the
-    // verification window; never the 64 MiB of zeros
-    assert!(save_edited.allocated < 4 * saved.len() as u64);
-    assert!((save_edited.peak_above_start as usize) < 2 * saved.len() + (1 << 20));
+    // the save allocates the output once at its exact length (stage 5), plus the verification
+    // window and the edited parts; never the 64 MiB of zeros
+    assert_eq!(saved.capacity(), saved.len());
+    assert!(save_edited.allocated < saved.len() as u64 + (1 << 20));
+    assert!((save_edited.peak_above_start as usize) < saved.len() + (1 << 20));
     // holding the zeros would add 64 MiB to the peak
     assert!((save_edited.peak_above_start as usize) < DECK_DEFLATED_MEDIA);
-    check("deck edit + save", save_edited, 54_422_000, 34_479_000);
+    check("deck edit + save", save_edited, 17_769_000, 17_255_000);
     // the media were copied raw: the source bytes are in the output
     let zeros = uo_opc::zip::read(&saved, u32::MAX).unwrap().into_iter().find(|e| e.name == "ppt/media/zeros.bin").unwrap();
     assert_eq!(zeros.method, 8);
@@ -190,19 +193,35 @@ fn m3_deck_with_large_media() {
         "deck read zeros.bin: allocated {} B, peak {} B; read video.mp4 (stored): allocated {} B",
         read_media.allocated, read_media.peak_above_start, read_video.allocated
     );
-    // the stored part is a slice of the source (the only allocation is the lowercased extension
-    // checked by `Limits::part_cap`)
-    assert!(read_video.allocated < 64);
-    // inflating without trusting the declared size: the output Vec doubles from 3× the input up
-    // past 64 MiB and is shrunk to fit (each step a new allocation)
-    check("deck read 64 MiB deflated media", read_media, 228_154_000, 81_157_000);
+    // the stored part is a slice of the source: reading it allocates nothing (stage 5: the cap
+    // check no longer lowercases a copy of the extension)
+    assert_eq!(read_video.allocated, 0);
+    // inflating without trusting the declared size: the output Vec doubles from 3× the input,
+    // each step bounded by the declared size (stage 5), so it ends at exactly 64 MiB
+    check("deck read 64 MiB deflated media", read_media, 146_998_000, 67_110_000);
 }
 
-/// What one deflated entry costs regardless of its size: miniz_oxide's compressor state, which
-/// every `ZipWriter::add` of an edited part allocates (and frees) again. Explains most of the
-/// save numbers of small edits.
+/// What one deflated entry costs regardless of its size: miniz_oxide's compressor state. The
+/// one-shot `deflate_raw` allocates it per call; a `ZipWriter` (and `Package::save`) allocates
+/// it once and resets it for each entry (stage 5), so 100 small edited parts cost it once.
 #[test]
 fn m3_deflate_state_per_entry() {
     let (_, u) = measure(|| uo_opc::flate::deflate_raw(b"<a/>", 6));
     check("deflate of a 4-byte part", u, 253_624, 253_622);
+    let (one, u1) = measure(|| {
+        let mut w = uo_opc::zip::ZipWriter::new(SaveOptions::default());
+        w.add("p0.xml", b"<a/>").unwrap();
+        w.finish()
+    });
+    let (hundred, u100) = measure(|| {
+        let mut w = uo_opc::zip::ZipWriter::new(SaveOptions::default());
+        for i in 0..100 {
+            w.add(&format!("p{i}.xml"), b"<a/>").unwrap();
+        }
+        w.finish()
+    });
+    println!("zip writer: 1 deflated entry {} B allocated, 100 entries {} B", u1.allocated, u100.allocated);
+    assert!(one.len() < hundred.len());
+    // the state once: 99 more entries add their headers and output, not 99 states
+    assert!(u100.allocated < u1.allocated + 64 * 1024, "{} B for 100 entries, {} B for one", u100.allocated, u1.allocated);
 }

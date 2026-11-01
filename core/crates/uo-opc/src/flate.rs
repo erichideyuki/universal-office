@@ -17,6 +17,8 @@
 //! - Deflate goes through `miniz_oxide` (gate 1, G2: parity is on decompressed bytes); the zlib
 //!   framing (header and Adler-32) is fflate's `zlibSync`.
 
+use miniz_oxide::deflate::core::{CompressorOxide, TDEFLFlush, TDEFLStatus, compress_to_output, create_comp_flags_from_zip_params};
+
 use crate::error::{Error, LimitKind, Result};
 
 // ---- tables (browser.js:31-56) ----
@@ -66,38 +68,42 @@ fn rev(v: u32) -> u32 {
     (((x & 0xFF00) >> 8) | ((x & 0x00FF) << 8)) >> 1
 }
 
-/// `hMap(cd, mb, 1)`: the decoding table (index → `symbol << 4 | bits`). The same table as
-/// fflate's, including the u16 wrap of `le` and the lack of any tree validation.
-fn h_map(cd: &[u8], mb: u32) -> Vec<u16> {
-    let mbu = mb as usize;
-    let mut l = vec![0u16; mbu];
+/// `hMap(cd, mb, 1)`: the decoding table (index → `symbol << 4 | bits`), written into `co`
+/// (reused across the blocks of a stream). The same table as fflate's, including the u16 wrap of
+/// `le` and the lack of any tree validation.
+fn h_map(cd: &[u8], mb: u32, co: &mut Vec<u16>) {
+    // `l` and `le` are u16 arrays of `mb` entries (code lengths are at most 15)
+    let mbu = (mb as usize).min(16);
+    let mut l = [0u16; 16];
     for &c in cd {
         if c != 0
+            && (c as usize) <= mbu
             && let Some(x) = l.get_mut(c as usize - 1)
         {
             *x = x.wrapping_add(1);
         }
     }
-    let mut le = vec![0u16; mbu];
+    let mut le = [0u16; 16];
     for i in 1..mbu {
         let prev = u32::from(le.get(i - 1).copied().unwrap_or(0)) + u32::from(l.get(i - 1).copied().unwrap_or(0));
         if let Some(x) = le.get_mut(i) {
             *x = (prev << 1) as u16;
         }
     }
+    co.clear();
+    co.resize(1usize << mb, 0);
     // A complete tree makes 2^mb writes; an over-subscribed one up to 320 × 2^14 per table
     // (stage-4 finding F1: 35 bytes of input cost 2.1 million writes). Up to twice the table
     // size the literal loop runs (no extra memory); above it, the same table by ranges.
     let writes: u64 = cd.iter().filter(|&&c| c != 0 && u32::from(c) <= mb).map(|&c| 1u64 << (mb - u32::from(c))).sum();
-    if writes <= 2u64 << mb { co_by_loop(cd, mb, le) } else { co_by_ranges(cd, mb, le) }
+    if writes <= 2u64 << mb { co_by_loop(cd, mb, le, co) } else { co_by_ranges(cd, mb, le, co) }
 }
 
 /// fflate's loop: for each symbol, `co[rev(v) >> rvb] = sv` for v in `[slot << r1, (slot + 1) << r1)`.
-fn co_by_loop(cd: &[u8], mb: u32, mut le: Vec<u16>) -> Vec<u16> {
-    let mut co = vec![0u16; 1usize << mb];
+fn co_by_loop(cd: &[u8], mb: u32, mut le: [u16; 16], co: &mut [u16]) {
     let rvb = 15 - mb;
     for (i, &c) in cd.iter().enumerate() {
-        if c == 0 {
+        if c == 0 || u32::from(c) > mb {
             continue;
         }
         let sv = ((i << 4) | c as usize) as u16;
@@ -113,20 +119,19 @@ fn co_by_loop(cd: &[u8], mb: u32, mut le: Vec<u16>) -> Vec<u16> {
             v += 1;
         }
     }
-    co
 }
 
 /// The table of [`co_by_loop`] in O(2^mb + symbols). Below 2^15, `rev(v) >> rvb` is the mb-bit
 /// reversal of `u = v mod 2^mb`, so a symbol writes one aligned range of `u`; from 2^15 up `rev`
 /// gives 0, so it writes `co[0]` only (a range never straddles 2^15). Later writes win: the
 /// ranges are applied last to first, skipping cells already set.
-fn co_by_ranges(cd: &[u8], mb: u32, mut le: Vec<u16>) -> Vec<u16> {
+fn co_by_ranges(cd: &[u8], mb: u32, mut le: [u16; 16], co: &mut [u16]) {
     let size = 1usize << mb;
     let rvb = 15 - mb;
     // (value, first u, count): u < 2^15 and count <= 2^14 fit u16
     let mut ranges: Vec<(u16, u16, u16)> = Vec::with_capacity(cd.len());
     for (i, &c) in cd.iter().enumerate() {
-        if c == 0 {
+        if c == 0 || u32::from(c) > mb {
             continue;
         }
         let sv = ((i << 4) | c as usize) as u16;
@@ -136,7 +141,6 @@ fn co_by_ranges(cd: &[u8], mb: u32, mut le: Vec<u16>) -> Vec<u16> {
         *slot = slot.wrapping_add(1);
         ranges.push(if v >= 32768 { (sv, 0, 1) } else { (sv, (v as usize & (size - 1)) as u16, (1u32 << r1) as u16) });
     }
-    let mut co = vec![0u16; size];
     // next[u]: the first u at or after it not set yet (path-halving skip list; next[size] = size)
     let mut next: Vec<u16> = (0..=size).map(|u| u as u16).collect();
     for &(sv, start, len) in ranges.iter().rev() {
@@ -152,7 +156,6 @@ fn co_by_ranges(cd: &[u8], mb: u32, mut le: Vec<u16>) -> Vec<u16> {
             u = next_unset(&mut next, u + 1);
         }
     }
-    co
 }
 
 /// The first u at or after `u` not set yet.
@@ -170,18 +173,21 @@ fn next_unset(next: &mut [u16], mut u: usize) -> usize {
     }
 }
 
-fn fixed_maps() -> (Vec<u16>, Vec<u16>) {
-    let mut flt = [0u8; 288];
-    for (i, x) in flt.iter_mut().enumerate() {
-        *x = match i {
-            0..=143 => 8,
-            144..=255 => 9,
-            256..=279 => 7,
-            _ => 8,
-        };
+/// The fixed code lengths (`flt`, `fdt`, browser.js:57-68).
+const FLT: [u8; 288] = {
+    let mut t = [8u8; 288];
+    let mut i = 144;
+    while i < 256 {
+        t[i] = 9;
+        i += 1;
     }
-    (h_map(&flt, 9), h_map(&[5u8; 32], 5))
-}
+    while i < 280 {
+        t[i] = 7;
+        i += 1;
+    }
+    t
+};
+const FDT: [u8; 32] = [5; 32];
 
 // ---- bit reading (browser.js:146-156): bytes past the end read as 0 (`undefined | x`) ----
 
@@ -190,16 +196,28 @@ fn byte(d: &[u8], i: u64) -> u32 {
     usize::try_from(i).ok().and_then(|i| d.get(i)).map_or(0, |&b| u32::from(b))
 }
 
+/// The 4 bytes from `o` as a little-endian u32 (one load inside the data, bytes past the end 0).
 #[inline]
-fn bits(d: &[u8], p: u64, m: u32) -> u32 {
-    let o = p >> 3;
-    ((byte(d, o) | (byte(d, o + 1) << 8)) >> (p & 7)) & m
+fn word(d: &[u8], o: u64) -> u32 {
+    let at = usize::try_from(o).ok().and_then(|i| Some(i..i.checked_add(4)?));
+    if let Some(&[a, b, c, e]) = at.and_then(|r| d.get(r)) {
+        return u32::from_le_bytes([a, b, c, e]);
+    }
+    byte(d, o) | (byte(d, o + 1) << 8) | (byte(d, o + 2) << 16) | (byte(d, o + 3) << 24)
 }
 
+/// fflate's `bits`: 2 bytes shifted by up to 7, so at most 9 bits; every mask here is ≤ 127,
+/// so reading 4 bytes gives the same value.
+#[inline]
+fn bits(d: &[u8], p: u64, m: u32) -> u32 {
+    (word(d, p >> 3) >> (p & 7)) & m
+}
+
+/// fflate's `bits16`: 3 bytes shifted by up to 7 (17 bits); every caller masks to at most 15
+/// bits, so the fourth byte of [`word`] never shows.
 #[inline]
 fn bits16(d: &[u8], p: u64) -> u32 {
-    let o = p >> 3;
-    (byte(d, o) | (byte(d, o + 1) << 8) | (byte(d, o + 2) << 16)) >> (p & 7)
+    word(d, p >> 3) >> (p & 7)
 }
 
 #[inline]
@@ -219,23 +237,33 @@ fn limit(cap: u64) -> Error {
     Error::Limit { kind: LimitKind::PartBytes, max: cap, part: None }
 }
 
-/// Grows `buf` for `n` more bytes like `Vec::reserve` (same amortized sizes), but an allocation
-/// the host cannot make is `Error::Limit` instead of an abort: `Vec` panics on a capacity above
-/// `isize::MAX` (2 GiB on wasm32, below the default binary part cap) and aborts the process when
-/// the allocator fails, where the TS throws a catchable `RangeError` (stage-4 finding F7).
-fn try_grow(buf: &mut Vec<u8>, n: usize, cap: u64) -> Result<()> {
-    buf.try_reserve(n).map_err(|_| limit(cap))
+/// Grows `buf` for `n` more bytes like `Vec::reserve` (doubling), but never past `max`, the most
+/// the output can hold (the declared size and the cap: a declared size bounds the growth without
+/// being trusted for a preallocation), so the output of a stream that fills its declared size
+/// ends exact, without the shrinking copy. An allocation the host cannot make is `Error::Limit`
+/// instead of an abort: `Vec` panics on a capacity above `isize::MAX` (2 GiB on wasm32, below
+/// the default binary part cap) and aborts the process when the allocator fails, where the TS
+/// throws a catchable `RangeError` (stage-4 finding F7).
+fn try_grow(buf: &mut Vec<u8>, n: usize, max: u64, cap: u64) -> Result<()> {
+    if buf.capacity() - buf.len() >= n {
+        return Ok(());
+    }
+    let need = buf.len().saturating_add(n);
+    let doubled = buf.capacity().saturating_mul(2).max(need);
+    let target = usize::try_from(max).map_or(doubled, |m| doubled.min(m)).max(need);
+    buf.try_reserve_exact(target - buf.len()).map_err(|_| limit(cap))
 }
 
 /// Where `inflt` keeps the bytes it stores: the whole output (`Vec<u8>`) or only the last
-/// 64 KiB for back references ([`Window`]). The caller ([`Out`]) has checked the cap.
+/// 64 KiB for back references ([`Window`]). The caller ([`Out`]) has checked the cap; `max` is
+/// the most bytes the store will ever hold (min of the declared size and the cap).
 trait Store {
     /// bytes stored so far
     fn stored_len(&self) -> u64;
-    fn push(&mut self, b: u8, cap: u64) -> Result<()>;
+    fn push(&mut self, b: u8, max: u64, cap: u64) -> Result<()>;
     /// appends `n` bytes copied from `dist` back (`None`: zeros); `dist` ≤ the bytes stored
-    fn copy_back(&mut self, dist: Option<u64>, n: usize, cap: u64) -> Result<()>;
-    fn extend(&mut self, src: &[u8], cap: u64) -> Result<()>;
+    fn copy_back(&mut self, dist: Option<u64>, n: usize, max: u64, cap: u64) -> Result<()>;
+    fn extend(&mut self, src: &[u8], max: u64, cap: u64) -> Result<()>;
 }
 
 impl Store for Vec<u8> {
@@ -245,31 +273,36 @@ impl Store for Vec<u8> {
     }
 
     #[inline]
-    fn push(&mut self, b: u8, cap: u64) -> Result<()> {
+    fn push(&mut self, b: u8, max: u64, cap: u64) -> Result<()> {
         if self.len() == self.capacity() {
-            try_grow(self, 1, cap)?;
+            try_grow(self, 1, max, cap)?;
         }
         Vec::push(self, b);
         Ok(())
     }
 
-    fn copy_back(&mut self, dist: Option<u64>, n: usize, cap: u64) -> Result<()> {
-        try_grow(self, n, cap)?;
+    fn copy_back(&mut self, dist: Option<u64>, n: usize, max: u64, cap: u64) -> Result<()> {
+        try_grow(self, n, max, cap)?;
         match dist {
-            Some(d) => {
+            Some(d) if d > 0 => {
+                // `buf[bt] = buf[bt - dt]` byte by byte: from `start` the output repeats with
+                // period `d`, so each copy can take everything written since `start` (doubling)
                 let start = self.len().saturating_sub(d as usize);
-                for k in 0..n {
-                    let b = self.get(start + k).copied().unwrap_or(0);
-                    Vec::push(self, b);
+                let mut left = n;
+                while left > 0 {
+                    let k = left.min(self.len() - start);
+                    self.extend_from_within(start..start + k);
+                    left -= k;
                 }
             }
-            None => self.resize(self.len() + n, 0),
+            // a zero distance reads past the output: 0 (no stream reaches it, FD starts at 1)
+            _ => self.resize(self.len() + n, 0),
         }
         Ok(())
     }
 
-    fn extend(&mut self, src: &[u8], cap: u64) -> Result<()> {
-        try_grow(self, src.len(), cap)?;
+    fn extend(&mut self, src: &[u8], max: u64, cap: u64) -> Result<()> {
+        try_grow(self, src.len(), max, cap)?;
         self.extend_from_slice(src);
         Ok(())
     }
@@ -335,13 +368,13 @@ impl Store for Window {
     }
 
     #[inline]
-    fn push(&mut self, b: u8, _cap: u64) -> Result<()> {
+    fn push(&mut self, b: u8, _max: u64, _cap: u64) -> Result<()> {
         self.put(b);
         self.flush_if_due();
         Ok(())
     }
 
-    fn copy_back(&mut self, dist: Option<u64>, n: usize, _cap: u64) -> Result<()> {
+    fn copy_back(&mut self, dist: Option<u64>, n: usize, _max: u64, _cap: u64) -> Result<()> {
         for _ in 0..n {
             // a zero distance reads past the output in the `Vec` store: 0
             let b = match dist {
@@ -354,7 +387,7 @@ impl Store for Window {
         Ok(())
     }
 
-    fn extend(&mut self, src: &[u8], _cap: u64) -> Result<()> {
+    fn extend(&mut self, src: &[u8], _max: u64, _cap: u64) -> Result<()> {
         self.flush();
         self.crc = crc32_update(self.crc, src);
         // only the last 64 KiB can be referenced again
@@ -385,7 +418,7 @@ impl<S: Store> Out<S> {
             if self.store.stored_len() >= self.cap {
                 return Err(limit(self.cap));
             }
-            self.store.push(b, self.cap)?;
+            self.store.push(b, self.store_limit.min(self.cap), self.cap)?;
         }
         self.bt += 1;
         Ok(())
@@ -401,7 +434,7 @@ impl<S: Store> Out<S> {
                 return Err(limit(self.cap));
             }
             // below the store limit the bytes stored are `bt`
-            self.store.copy_back(dist, kept as usize, self.cap)?;
+            self.store.copy_back(dist, kept as usize, self.store_limit.min(self.cap), self.cap)?;
         }
         // writes past a declared size are dropped; `bt` still counts them
         self.bt += len;
@@ -418,7 +451,7 @@ impl<S: Store> Out<S> {
         if self.store.stored_len() + l > self.cap {
             return Err(limit(self.cap));
         }
-        self.store.extend(src, self.cap)?;
+        self.store.extend(src, self.store_limit.min(self.cap), self.cap)?;
         self.bt += l;
         Ok(())
     }
@@ -430,14 +463,14 @@ fn inflt<S: Store>(dat: &[u8], out: &mut Out<S>, resize: bool) -> Result<()> {
     let sl = dat.len() as u64;
     let tbts = sl * 8;
     let mut pos: u64 = 0;
-    let mut fixed: Option<(Vec<u16>, Vec<u16>)> = None;
+    // the decoding tables, rebuilt per block into the same buffers
+    let (mut lm, mut dm, mut clm) = (Vec::new(), Vec::new(), Vec::new());
     loop {
         // block header (browser.js:244-339)
         let final_ = bits(dat, pos, 1);
         let ty = bits(dat, pos + 1, 3);
         pos += 3;
-        let (dyn_l, dyn_d): (Vec<u16>, Vec<u16>);
-        let (lm, dm, lbt, dbt): (&[u16], &[u16], u32, u32);
+        let (lbt, dbt): (u32, u32);
         match ty {
             0 => {
                 // stored: LEN only, NLEN is skipped unchecked (browser.js:251-253)
@@ -456,9 +489,8 @@ fn inflt<S: Store>(dat: &[u8], out: &mut Out<S>, resize: bool) -> Result<()> {
                 continue;
             }
             1 => {
-                let (flrm, fdrm) = &*fixed.get_or_insert_with(fixed_maps);
-                lm = flrm;
-                dm = fdrm;
+                h_map(&FLT, 9, &mut lm);
+                h_map(&FDT, 5, &mut dm);
                 lbt = 9;
                 dbt = 5;
             }
@@ -467,7 +499,9 @@ fn inflt<S: Store>(dat: &[u8], out: &mut Out<S>, resize: bool) -> Result<()> {
                 let hc_len = bits(dat, pos + 10, 15) as usize + 4;
                 let tl = h_lit + bits(dat, pos + 5, 31) as usize + 1;
                 pos += 14;
-                let mut ldt = vec![0u8; tl];
+                // at most 288 + 32 lengths
+                let mut ldt_buf = [0u8; 320];
+                let ldt = ldt_buf.get_mut(..tl).unwrap_or(&mut []);
                 let mut clt = [0u8; 19];
                 for (i, &ci) in CLIM.iter().enumerate().take(hc_len) {
                     if let Some(x) = clt.get_mut(ci as usize) {
@@ -477,7 +511,7 @@ fn inflt<S: Store>(dat: &[u8], out: &mut Out<S>, resize: bool) -> Result<()> {
                 pos += hc_len as u64 * 3;
                 let clb = max_len(&clt);
                 let clbmsk = (1u32 << clb) - 1;
-                let clm = h_map(&clt, clb);
+                h_map(&clt, clb, &mut clm);
                 let mut i = 0usize;
                 while i < tl {
                     let r = u32::from(clm.get(bits(dat, pos, clbmsk) as usize).copied().unwrap_or(0));
@@ -520,10 +554,8 @@ fn inflt<S: Store>(dat: &[u8], out: &mut Out<S>, resize: bool) -> Result<()> {
                 let (lt, dt) = ldt.split_at(h_lit.min(ldt.len()));
                 lbt = max_len(lt);
                 dbt = max_len(dt);
-                dyn_l = h_map(lt, lbt);
-                dyn_d = h_map(dt, dbt);
-                lm = &dyn_l;
-                dm = &dyn_d;
+                h_map(lt, lbt, &mut lm);
+                h_map(dt, dbt, &mut dm);
             }
             _ => return Err(Error::Corrupt("invalid block type")),
         }
@@ -716,6 +748,46 @@ pub fn deflate_raw(data: &[u8], level: u8) -> Vec<u8> {
     miniz_oxide::deflate::compress_to_vec(data, level.min(9))
 }
 
+/// A raw DEFLATE compressor for many streams (the zip writers): miniz_oxide's state (about
+/// 250 KB) is allocated on the first stream and reset for the next ones, and the output is
+/// appended to the caller's buffer as it is produced (no intermediate buffer). The bytes are
+/// those of [`deflate_raw`] at the same level.
+pub struct Deflater {
+    level: u8,
+    state: Option<Box<CompressorOxide>>,
+}
+
+impl Deflater {
+    /// A compressor at `level` 1-9 (clamped to 9).
+    pub fn new(level: u8) -> Self {
+        Deflater { level: level.min(9), state: None }
+    }
+
+    /// Appends the raw DEFLATE stream of `data` to `out`.
+    pub fn deflate_into(&mut self, data: &[u8], out: &mut Vec<u8>) -> Result<()> {
+        let state = match &mut self.state {
+            Some(s) => {
+                s.reset();
+                s
+            }
+            // the parameters of `compress_to_vec`: raw (window bits 0), default strategy
+            None => self.state.insert(Box::new(CompressorOxide::new(create_comp_flags_from_zip_params(self.level.into(), 0, 0)))),
+        };
+        let mut input = data;
+        loop {
+            let (status, read) = compress_to_output(state, input, TDEFLFlush::Finish, |chunk| {
+                out.extend_from_slice(chunk);
+                true
+            });
+            match status {
+                TDEFLStatus::Done => return Ok(()),
+                TDEFLStatus::Okay if read <= input.len() => input = input.get(read..).unwrap_or(&[]),
+                _ => return Err(Error::Corrupt("deflate failed")),
+            }
+        }
+    }
+}
+
 /// zlib data like fflate's `zlibSync` (browser.js:1463, header `zlh` at 999): the header byte
 /// FLEVEL follows fflate (0 → 0, 1-5 → 1, 9 → 3, else 2), Adler-32 big-endian at the end.
 pub fn zlib(data: &[u8], level: u8) -> Vec<u8> {
@@ -752,8 +824,11 @@ pub fn adler32(data: &[u8]) -> u32 {
     ((b % 65521) << 16) | (a % 65521)
 }
 
-const CRC_TABLE: [u32; 256] = {
-    let mut t = [0u32; 256];
+/// The CRC-32 tables of slicing by 8: `CRC[0]` is fflate's byte table (browser.js:740), and
+/// `CRC[k][i]` is `CRC[k - 1][i]` advanced by one zero byte, so 8 bytes are folded per step
+/// (the same value as the byte loop).
+const CRC: [[u32; 256]; 8] = {
+    let mut t = [[0u32; 256]; 8];
     let mut i = 0;
     while i < 256 {
         let mut c = i as u32;
@@ -762,8 +837,18 @@ const CRC_TABLE: [u32; 256] = {
             c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
             k += 1;
         }
-        t[i] = c;
+        t[0][i] = c;
         i += 1;
+    }
+    let mut k = 1;
+    while k < 8 {
+        let mut i = 0;
+        while i < 256 {
+            let prev = t[k - 1][i];
+            t[k][i] = (prev >> 8) ^ t[0][(prev & 0xFF) as usize];
+            i += 1;
+        }
+        k += 1;
     }
     t
 };
@@ -771,8 +856,20 @@ const CRC_TABLE: [u32; 256] = {
 /// Continues a CRC-32 (start with `0`).
 pub fn crc32_update(crc: u32, data: &[u8]) -> u32 {
     let mut c = !crc;
-    for &b in data {
-        c = CRC_TABLE[((c ^ u32::from(b)) & 0xFF) as usize] ^ (c >> 8);
+    let mut words = data.chunks_exact(8);
+    for w in &mut words {
+        let lo = c ^ u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
+        c = CRC[7][(lo & 0xFF) as usize]
+            ^ CRC[6][((lo >> 8) & 0xFF) as usize]
+            ^ CRC[5][((lo >> 16) & 0xFF) as usize]
+            ^ CRC[4][(lo >> 24) as usize]
+            ^ CRC[3][w[4] as usize]
+            ^ CRC[2][w[5] as usize]
+            ^ CRC[1][w[6] as usize]
+            ^ CRC[0][w[7] as usize];
+    }
+    for &b in words.remainder() {
+        c = CRC[0][((c ^ u32::from(b)) & 0xFF) as usize] ^ (c >> 8);
     }
     !c
 }
@@ -819,6 +916,57 @@ mod tests {
     }
 
     #[test]
+    fn deflater_writes_the_bytes_of_deflate_raw() {
+        let mut seed = 0x9E37_79B9u32;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        let words: [&[u8]; 6] = [b"<w:p>", b"<w:r><w:t>", b"text ", b"</w:t></w:r>", b"</w:p>", b"\x00\xFF"];
+        let mut inputs: Vec<Vec<u8>> = vec![Vec::new(), b"a".to_vec(), vec![0; 300_000]];
+        for n in [10usize, 1_000, 70_000, 400_000] {
+            inputs.push((0..n).map(|_| (rnd() >> 7) as u8).collect());
+            let mut text = Vec::new();
+            while text.len() < n {
+                text.extend_from_slice(words[(rnd() % 6) as usize]);
+            }
+            inputs.push(text);
+        }
+        for level in 1..=9 {
+            // one compressor for every input in turn: its reset leaves no trace of the previous one
+            let mut d = Deflater::new(level);
+            for data in &inputs {
+                let mut out = vec![7u8];
+                d.deflate_into(data, &mut out).unwrap();
+                assert_eq!(out[1..], deflate_raw(data, level)[..], "level {level}, {} bytes", data.len());
+            }
+        }
+    }
+
+    #[test]
+    fn crc32_by_8_matches_the_byte_loop() {
+        let byte_loop = |crc: u32, data: &[u8]| {
+            let mut c = !crc;
+            for &b in data {
+                c = CRC[0][((c ^ u32::from(b)) & 0xFF) as usize] ^ (c >> 8);
+            }
+            !c
+        };
+        let data: Vec<u8> = (0..1000u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8).collect();
+        for start in 0..9 {
+            for end in [start, start + 1, start + 7, start + 8, start + 9, 500, 1000] {
+                let d = &data[start..end.max(start)];
+                assert_eq!(crc32_update(0x1234_5678, d), byte_loop(0x1234_5678, d));
+                assert_eq!(crc32(d), byte_loop(0, d));
+            }
+        }
+        // the check value of CRC-32/ISO-HDLC
+        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
+    }
+
+    #[test]
     fn h_map_matches_the_literal_port() {
         let mut seed = 0x2545_F491u32;
         let mut rnd = move || {
@@ -851,21 +999,27 @@ mod tests {
             let zero_rate = rnd() % 4;
             cases.push((0..n).map(|_| if rnd() % 4 < zero_rate { 0 } else { (rnd() % (max + 1)) as u8 }).collect());
         }
+        let mut co = Vec::new();
         for cd in &cases {
             let mb = max_len(cd);
             let expected = h_map_literal(cd, mb);
-            assert_eq!(h_map(cd, mb), expected, "{cd:?}");
+            h_map(cd, mb, &mut co);
+            assert_eq!(co, expected, "{cd:?}");
             // both paths, whatever the tree
-            let mut le = vec![0u16; mb as usize];
-            let mut l = vec![0u16; mb as usize];
+            let mut le = [0u16; 16];
+            let mut l = [0u16; 16];
             for &c in cd.iter().filter(|&&c| c != 0) {
                 l[c as usize - 1] = l[c as usize - 1].wrapping_add(1);
             }
             for i in 1..mb as usize {
                 le[i] = ((u32::from(le[i - 1]) + u32::from(l[i - 1])) << 1) as u16;
             }
-            assert_eq!(co_by_loop(cd, mb, le.clone()), expected, "{cd:?}");
-            assert_eq!(co_by_ranges(cd, mb, le), expected, "{cd:?}");
+            let mut by_loop = vec![0u16; 1 << mb];
+            co_by_loop(cd, mb, le, &mut by_loop);
+            assert_eq!(by_loop, expected, "{cd:?}");
+            let mut by_ranges = vec![0u16; 1 << mb];
+            co_by_ranges(cd, mb, le, &mut by_ranges);
+            assert_eq!(by_ranges, expected, "{cd:?}");
         }
     }
 }

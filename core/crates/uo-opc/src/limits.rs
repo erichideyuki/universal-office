@@ -76,8 +76,11 @@ impl Default for Limits {
 
 /// Parts whose content is parsed as XML (case-insensitive extension check).
 pub fn is_xml_like(name: &str) -> bool {
-    let lower = name.rsplit('/').next().unwrap_or(name).to_ascii_lowercase();
-    lower == "[content_types].xml" || [".xml", ".rels", ".vml", ".xaml", ".fdseq", ".fdoc", ".fpage"].iter().any(|e| lower.ends_with(e))
+    // compared without lowercasing a copy: every read checks its cap through here
+    let base = name.rsplit('/').next().unwrap_or(name).as_bytes();
+    let ends = |e: &str| base.len() >= e.len() && base.get(base.len() - e.len()..).is_some_and(|t| t.eq_ignore_ascii_case(e.as_bytes()));
+    base.eq_ignore_ascii_case(b"[content_types].xml")
+        || [".xml", ".rels", ".vml", ".xaml", ".fdseq", ".fdoc", ".fpage"].iter().any(|e| ends(e))
 }
 
 #[cfg(test)]

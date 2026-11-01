@@ -17,6 +17,8 @@ count = ["dep:uo-alloc", "uo-alloc/global"]
 # test-only export of the uo-opc round trip for the wasm memory gate (M2 of uo-opc,
 # tests/opc_memory.test.mjs); not the binding API, never in the shipped module
 opc-memtest = ["dep:uo-opc"]
+# bench-only exports of the uo-opc benchmark (stage 5, tools/bench/opc/wasm.mjs); never shipped
+opc-bench = ["opc-memtest", "count"]
 
 [dependencies]
 uo-alloc = { path = "../uo-alloc", optional = true }

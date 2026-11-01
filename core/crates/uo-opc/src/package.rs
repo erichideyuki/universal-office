@@ -14,7 +14,8 @@
 //! - a stored entry is read as a slice of the input (no copy);
 //! - a deflated entry is inflated on its first read into a per-entry cache, kept until
 //!   [`Package::release`], [`Package::release_all`], a `set_part`/`remove_part` of that name, or
-//!   the drop of the package;
+//!   the drop of the package; except through [`Package::xml_part`], whose tree takes the
+//!   inflated text as its source (no copy) and the package keeps nothing;
 //! - parts given by `set_part`/`from_parts` are owned by the package until replaced or removed;
 //! - the case-insensitive indexes (one for the [`CaseFold`] policy, one ASCII index for
 //!   [`Package::resolve_target`]) are built on the first fallback lookup and dropped on any
@@ -64,7 +65,7 @@ use crate::error::{Error, LimitKind, Result};
 use crate::flate;
 use crate::limits::Limits;
 use crate::part_name;
-use crate::xml::{self, ParseOptions};
+use crate::xml::{self, ParseOptions, Source};
 use crate::zip::{self, RawEntry, ZipEntry, ZipWriter};
 
 /// The most output a save checks per compressed byte of an entry (with 1 MiB at least): deflate
@@ -174,6 +175,26 @@ pub fn decode_text(bytes: &[u8], utf16: bool) -> Cow<'_, str> {
         }
     }
     zip::decode_utf8(bytes)
+}
+
+/// [`decode_text`] of bytes the caller gives up: UTF-8 keeps their buffer (the BOM removed in
+/// place), so only invalid UTF-8 and UTF-16 are copied.
+fn decode_text_owned(mut bytes: Vec<u8>, utf16: bool) -> String {
+    if utf16 && matches!(bytes.as_slice(), [0xFF, 0xFE, ..] | [0xFE, 0xFF, ..]) {
+        return decode_text(&bytes, true).into_owned();
+    }
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        bytes.drain(..3);
+    }
+    String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+}
+
+/// What [`Package::read`] found.
+enum Read<'a> {
+    /// bytes the package holds
+    Held(&'a [u8]),
+    /// bytes inflated by this read, not kept
+    Inflated(Vec<u8>),
 }
 
 impl Package {
@@ -375,14 +396,28 @@ impl Package {
         self.load_capped(part, self.limits.part_cap(&part.name))
     }
 
-    /// Reads `part`, inflating it (under `part_cap` and the total) if it was never read.
+    /// Reads `part`, inflating it (under `part_cap` and the total) if it was never read; the
+    /// inflated bytes are kept for the next reads.
     fn load_capped<'a>(&'a self, part: &'a Part, part_cap: u64) -> Result<&'a [u8]> {
+        match self.read(part, part_cap)? {
+            Read::Held(b) => Ok(b),
+            Read::Inflated(bytes) => match &part.content {
+                Content::Entry { inflated, .. } => Ok(inflated.get_or_init(|| bytes)),
+                Content::Owned(v) => Ok(v),
+            },
+        }
+    }
+
+    /// Reads `part` without keeping what it inflates: the bytes the package already holds (set
+    /// by the caller, inflated before, or a stored entry, a slice of the input), or the output
+    /// of an inflate that the caller takes. The part counts toward the total on its first read.
+    fn read<'a>(&'a self, part: &'a Part, part_cap: u64) -> Result<Read<'a>> {
         let (entry, inflated, known) = match &part.content {
-            Content::Owned(v) => return Ok(v),
+            Content::Owned(v) => return Ok(Read::Held(v)),
             Content::Entry { entry, inflated, known } => (entry, inflated, known),
         };
         if let Some(v) = inflated.get() {
-            return Ok(v);
+            return Ok(Read::Held(v));
         }
         let (part_cap, cap) = self.cap_for(part, part_cap);
         let raw = entry.compressed(&self.source);
@@ -392,7 +427,7 @@ impl Package {
                 return Err(self.limit_error(&part.name, part_cap, cap));
             }
             self.count(part, raw.len());
-            return Ok(raw);
+            return Ok(Read::Held(raw));
         }
         let (bytes, stream_len) = match flate::inflate_raw_counted(raw, Some(entry.size), cap) {
             Ok(b) => b,
@@ -403,7 +438,7 @@ impl Package {
         if known.get().is_none() {
             known.set(Some(Known { len: bytes.len() as u64, stream_len, crc32: None }));
         }
-        Ok(inflated.get_or_init(|| bytes))
+        Ok(Read::Inflated(bytes))
     }
 
     /// Parses a part as XML (gate 2, D3): the one way the format crates parse a part. The part
@@ -411,22 +446,31 @@ impl Package {
     /// `max_xml_part_bytes` whatever its name; its text is decoded like [`Package::part_text`]
     /// and parsed with `options`, whose depth and element limits are lowered to the package's
     /// `max_xml_depth` and `max_xml_elements`. A missing part is `Error::MissingPart`; a limit
-    /// error names the part.
+    /// error names the part. A part inflated by this call is not kept by the package (the tree
+    /// owns its text; a later read inflates it again, without counting it again toward the
+    /// total); bytes the package already holds are copied into the tree.
     pub fn xml_part(&self, name: &str, options: &ParseOptions<'_>) -> Result<xml::Document> {
         let part = self.find_index(name).and_then(|i| self.parts.get(i)).ok_or_else(|| Error::MissingPart(name.to_string()))?;
         let cap = self.limits.max_xml_part_bytes;
-        let bytes = self.load_capped(part, cap)?;
-        // read before through `part` with the binary cap of its name, or set by the caller
-        if bytes.len() as u64 > cap {
-            return Err(Error::Limit { kind: LimitKind::PartBytes, max: cap, part: Some(part.name.clone()) });
-        }
+        // an entry inflated here is not kept by the package: the tree takes its bytes as its
+        // source without a copy (the text is valid UTF-8 almost always)
+        let text: Source = match self.read(part, cap)? {
+            Read::Inflated(bytes) => decode_text_owned(bytes, self.options.utf16_text).into(),
+            Read::Held(bytes) => {
+                // read before through `part` with the binary cap of its name, or set by the caller
+                if bytes.len() as u64 > cap {
+                    return Err(Error::Limit { kind: LimitKind::PartBytes, max: cap, part: Some(part.name.clone()) });
+                }
+                decode_text(bytes, self.options.utf16_text).into()
+            }
+        };
         let lower = |own: Option<u32>, package: u32| Some(own.map_or(package, |o| o.min(package)));
         let options = ParseOptions {
             max_depth: lower(options.max_depth, self.limits.max_xml_depth),
             max_elements: lower(options.max_elements, self.limits.max_xml_elements),
             ..*options
         };
-        xml::parse(decode_text(bytes, self.options.utf16_text), &options).map_err(|e| match e {
+        xml::parse(text, &options).map_err(|e| match e {
             Error::Limit { kind, max, part: None } => Error::Limit { kind, max, part: Some(part.name.clone()) },
             e => e,
         })
@@ -584,26 +628,84 @@ impl Package {
     /// read's error.
     pub fn save(&self, options: &SaveOptions) -> Result<Vec<u8>> {
         let order = zip::js_object_order(self.parts.iter().map(|p| (p.name.clone(), p)).collect());
-        let mut w = ZipWriter::new(options.clone());
+        // what each entry writes, decided (and compressed) first so that the archive is reserved
+        // at its exact length: no growth by doubling, no unused capacity in the result
+        let mut deflater = flate::Deflater::new(options.level);
+        let mut deflated: Vec<u8> = Vec::new();
+        let mut plan: Vec<(String, Planned<'_>)> = Vec::with_capacity(order.len());
         for (name, part) in order {
-            match &part.content {
-                Content::Owned(data) => w.add(&name, data)?,
+            let planned = match &part.content {
+                Content::Owned(data) => self.plan_bytes(&name, data, options, &mut deflater, &mut deflated)?,
                 Content::Entry { entry, .. } => {
                     let restore = entry.method != 0 && options.stored.contains(&name);
                     if !restore && self.intact(part)? {
                         let raw = entry.compressed(&self.source);
-                        w.add_raw(&name, RawEntry { method: entry.method, crc32: entry.crc32, size: entry.size, data: raw })?;
+                        Planned::Raw(RawEntry { method: entry.method, crc32: entry.crc32, size: entry.size, data: raw })
                     } else if entry.method == 0 {
                         let data = self.load_capped(part, self.limits.part_cap(&part.name))?;
-                        w.add_raw(&name, RawEntry { method: 0, crc32: flate::crc32(data), size: data.len() as u64, data })?;
+                        Planned::Raw(RawEntry { method: 0, crc32: flate::crc32(data), size: data.len() as u64, data })
                     } else {
-                        w.add(&name, self.load_capped(part, self.limits.part_cap(&part.name))?)?;
+                        let data = self.load_capped(part, self.limits.part_cap(&part.name))?;
+                        self.plan_bytes(&name, data, options, &mut deflater, &mut deflated)?
                     }
                 }
+            };
+            if name.len() > 65_535 {
+                return Err(Error::NameTooLong { len: name.len() });
             }
+            plan.push((name, planned));
+        }
+        drop(deflater);
+        let compressed = |p: &Planned<'_>| match p {
+            Planned::Raw(r) => r.data.len() as u64,
+            Planned::Deflated { range, .. } => range.len() as u64,
+        };
+        let len = zip::archive_len(plan.iter().map(|(n, p)| {
+            let (method, size) = match p {
+                Planned::Raw(r) => (r.method, r.size),
+                Planned::Deflated { size, .. } => (8, *size),
+            };
+            (n.len(), method, compressed(p), size)
+        }));
+        let mut w = ZipWriter::with_capacity(options.clone(), len);
+        for (name, p) in &plan {
+            let raw = match p {
+                Planned::Raw(r) => *r,
+                Planned::Deflated { range, crc32, size } => {
+                    RawEntry { method: 8, crc32: *crc32, size: *size, data: deflated.get(range.clone()).unwrap_or(&[]) }
+                }
+            };
+            w.add_raw(name, raw)?;
         }
         Ok(w.finish())
     }
+
+    /// The entry of bytes written again: deflated into `deflated` at the save level, or stored
+    /// (level 0 or a `stored` name), as `ZipWriter::add` writes them.
+    fn plan_bytes<'a>(
+        &self,
+        name: &str,
+        data: &'a [u8],
+        options: &SaveOptions,
+        deflater: &mut flate::Deflater,
+        deflated: &mut Vec<u8>,
+    ) -> Result<Planned<'a>> {
+        let crc32 = flate::crc32(data);
+        let size = data.len() as u64;
+        if options.level == 0 || options.stored.iter().any(|s| s == name) {
+            return Ok(Planned::Raw(RawEntry { method: 0, crc32, size, data }));
+        }
+        let start = deflated.len();
+        deflater.deflate_into(data, deflated)?;
+        Ok(Planned::Deflated { range: start..deflated.len(), crc32, size })
+    }
+}
+
+/// What [`Package::save`] writes for an entry: compressed bytes held elsewhere (copied raw, or
+/// stored), or a range of the save's deflate output.
+enum Planned<'a> {
+    Raw(RawEntry<'a>),
+    Deflated { range: std::ops::Range<usize>, crc32: u32, size: u64 },
 }
 
 /// Which entries have a compressed range that overlaps another entry's (empty ranges never do):

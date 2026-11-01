@@ -93,8 +93,9 @@ pub fn decode_latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| char::from(b)).collect()
 }
 
-/// A JS array index ("0".."4294967294" in canonical form): such keys come first in an object.
-fn array_index(name: &str) -> Option<u32> {
+/// A JS array index ("0".."4294967294" in canonical form): such keys come first in an object
+/// (zip names here, attribute names in the XML reader).
+pub(crate) fn array_index(name: &str) -> Option<u32> {
     if name.is_empty() || name.len() > 10 || !name.bytes().all(|b| b.is_ascii_digit()) || (name.len() > 1 && name.starts_with('0')) {
         return None;
     }
@@ -310,49 +311,85 @@ const MAX32: u64 = 0xFFFF_FFFF;
 /// Writes a zip like fflate's `zipSync` (browser.js:2293, headers `wzh` at 1875): version 20,
 /// OS 0, external attributes 0, no data descriptor, no extra fields, flag 0x800 only for names
 /// that are not ASCII. Unlike fflate it writes zip64 records when there are more than 65,535
-/// entries or a size or offset reaches 4 GiB, and it uses a fixed timestamp.
+/// entries or a size or offset reaches 4 GiB, and it uses a fixed timestamp. Deflated entries
+/// are compressed straight into the archive by one [`flate::Deflater`] for the whole writer.
 pub struct ZipWriter {
     out: Vec<u8>,
     names: Vec<u8>,
     central: Vec<Central>,
     opts: WriteOptions,
+    deflater: flate::Deflater,
 }
 
 impl ZipWriter {
     pub fn new(opts: WriteOptions) -> Self {
-        ZipWriter { out: Vec::new(), names: Vec::new(), central: Vec::new(), opts }
+        ZipWriter::with_capacity(opts, 0)
+    }
+
+    /// A writer whose archive is reserved at `capacity` bytes (see [`archive_len`]); a capacity
+    /// the host cannot reserve is ignored (the archive grows as it is written).
+    pub fn with_capacity(opts: WriteOptions, capacity: u64) -> Self {
+        let mut out = Vec::new();
+        if let Ok(n) = usize::try_from(capacity) {
+            let _ = out.try_reserve_exact(n);
+        }
+        let deflater = flate::Deflater::new(opts.level);
+        ZipWriter { out, names: Vec::new(), central: Vec::new(), opts, deflater }
     }
 
     /// Adds an entry, deflated at the writer's level (or stored: level 0 or a `stored` name).
     pub fn add(&mut self, name: &str, data: &[u8]) -> Result<()> {
         let level = if self.opts.stored.iter().any(|s| s == name) { 0 } else { self.opts.level };
+        let crc32 = flate::crc32(data);
+        let size = data.len() as u64;
         if level == 0 {
-            self.add_raw(name, RawEntry { method: 0, crc32: flate::crc32(data), size: data.len() as u64, data })
-        } else {
-            let compressed = flate::deflate_raw(data, level);
-            self.add_raw(name, RawEntry { method: 8, crc32: flate::crc32(data), size: data.len() as u64, data: &compressed })
+            return self.add_raw(name, RawEntry { method: 0, crc32, size, data });
         }
+        let n = check_name(name)?;
+        let start = self.out.len();
+        // the compressed size is patched in after the data; zip64 fields if the size needs them
+        self.local_header(n, 8, crc32, 0, size, size >= MAX32);
+        let data_start = self.out.len();
+        self.deflater.deflate_into(data, &mut self.out)?;
+        let csize = (self.out.len() - data_start) as u64;
+        if size < MAX32 && csize >= MAX32 {
+            // deflate grew a part below 4 GiB past it: the header needs the zip64 fields
+            let compressed = self.out.split_off(data_start);
+            self.out.truncate(start);
+            self.local_header(n, 8, crc32, csize, size, true);
+            self.out.extend_from_slice(&compressed);
+        } else {
+            let at = if size >= MAX32 { start + 30 + n.len() + 12 } else { start + 18 };
+            let field: &[u8] = if size >= MAX32 { &csize.to_le_bytes() } else { &(csize as u32).to_le_bytes() };
+            if let Some(slot) = self.out.get_mut(at..at + field.len()) {
+                slot.copy_from_slice(field);
+            }
+        }
+        self.push_central(n, 8, crc32, csize, size, start as u64);
+        Ok(())
     }
 
     /// Adds an entry whose compressed bytes are given (copied raw).
     pub fn add_raw(&mut self, name: &str, raw: RawEntry<'_>) -> Result<()> {
-        let n = name.as_bytes();
-        if n.len() > 65_535 {
-            // fflate err(11) 'filename too long'
-            return Err(Error::NameTooLong { len: n.len() });
-        }
-        let utf8 = !name.is_ascii();
+        let n = check_name(name)?;
         let offset = self.out.len() as u64;
         let csize = raw.data.len() as u64;
         let usize_ = if raw.method == 0 { csize } else { raw.size };
-        let local64 = csize >= MAX32 || usize_ >= MAX32;
+        self.local_header(n, raw.method, raw.crc32, csize, usize_, csize >= MAX32 || usize_ >= MAX32);
+        self.out.extend_from_slice(raw.data);
+        self.push_central(n, raw.method, raw.crc32, csize, usize_, offset);
+        Ok(())
+    }
+
+    fn local_header(&mut self, n: &[u8], method: u16, crc: u32, csize: u64, usize_: u64, local64: bool) {
+        let utf8 = !n.is_ascii();
         let o = &mut self.out;
         o.extend_from_slice(&0x0403_4B50u32.to_le_bytes());
         o.extend_from_slice(&(if local64 { 45u16 } else { 20 }).to_le_bytes());
         o.extend_from_slice(&(if utf8 { 0x0800u16 } else { 0 }).to_le_bytes());
-        o.extend_from_slice(&raw.method.to_le_bytes());
+        o.extend_from_slice(&method.to_le_bytes());
         o.extend_from_slice(&self.opts.dos_time.to_le_bytes());
-        o.extend_from_slice(&raw.crc32.to_le_bytes());
+        o.extend_from_slice(&crc.to_le_bytes());
         o.extend_from_slice(&(if local64 { u32::MAX } else { csize as u32 }).to_le_bytes());
         o.extend_from_slice(&(if local64 { u32::MAX } else { usize_ as u32 }).to_le_bytes());
         o.extend_from_slice(&(n.len() as u16).to_le_bytes());
@@ -364,16 +401,17 @@ impl ZipWriter {
             o.extend_from_slice(&usize_.to_le_bytes());
             o.extend_from_slice(&csize.to_le_bytes());
         }
-        o.extend_from_slice(raw.data);
+    }
+
+    fn push_central(&mut self, n: &[u8], method: u16, crc: u32, csize: u64, usize_: u64, offset: u64) {
         let name_start = self.names.len();
         self.names.extend_from_slice(n);
-        self.central.push(Central { name_len: n.len(), name_start, utf8, method: raw.method, crc: raw.crc32, csize, usize_, offset });
-        Ok(())
+        self.central.push(Central { name_len: n.len(), name_start, utf8: !n.is_ascii(), method, crc, csize, usize_, offset });
     }
 
     /// Writes the central directory and the end records, and returns the archive.
     pub fn finish(self) -> Vec<u8> {
-        let ZipWriter { mut out, names, central, opts } = self;
+        let ZipWriter { mut out, names, central, opts, .. } = self;
         let cd_offset = out.len() as u64;
         let mut any64 = false;
         for c in &central {
@@ -438,6 +476,34 @@ impl ZipWriter {
         out.extend_from_slice(&[0; 2]);
         out
     }
+}
+
+/// A name as written, or fflate's err(11) 'filename too long'.
+fn check_name(name: &str) -> Result<&[u8]> {
+    let n = name.as_bytes();
+    if n.len() > 65_535 {
+        return Err(Error::NameTooLong { len: n.len() });
+    }
+    Ok(n)
+}
+
+/// The length of the archive a [`ZipWriter`] writes for these entries, in order: (name length in
+/// bytes, method, compressed bytes, declared size). A caller that knows its entries before
+/// writing them reserves exactly this ([`ZipWriter::with_capacity`]).
+pub fn archive_len(entries: impl IntoIterator<Item = (usize, u16, u64, u64)>) -> u64 {
+    let (mut offset, mut central, mut count, mut any64) = (0u64, 0u64, 0u64, false);
+    for (n, method, csize, size) in entries {
+        let n = n as u64;
+        let usize_ = if method == 0 { csize } else { size };
+        let local64 = csize >= MAX32 || usize_ >= MAX32;
+        let ext = 8 * (u64::from(usize_ >= MAX32) + u64::from(csize >= MAX32) + u64::from(offset >= MAX32));
+        any64 |= ext > 0;
+        central += 46 + n + if ext > 0 { ext + 4 } else { 0 };
+        offset += 30 + n + if local64 { 20 } else { 0 } + csize;
+        count += 1;
+    }
+    let zip64 = any64 || count > 65_535 || central >= MAX32 || offset >= MAX32;
+    offset + central + if zip64 { 56 + 20 } else { 0 } + 22
 }
 
 /// `zipSync(files, { level })`: writes `files` in the given order (callers that mirror a JS
