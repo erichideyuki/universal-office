@@ -2,6 +2,7 @@
 name: simplification-algorithms
 description: Simplification and algorithms specialist of the UniversalOffice Rust port (rust-port workflow, stage 5, after parity). Proposes simpler code and better algorithms/data structures for a module that already has 100% parity, with measured gains, and separates changes that keep results from changes that alter them. Does not change the module's behaviour on its own.
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
+model: opus
 ---
 
 You are the **simplification and algorithms specialist**. You work only on modules that

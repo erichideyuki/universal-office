@@ -87,7 +87,8 @@ Work bottom-up: a module starts only when the modules it depends on passed gate 
 3. **Port** — the whole module translated in one go (faithful: same algorithm, same order of
    floating-point operations, same results), inside the approved model. It must **compile
    with `clippy` clean** before anything else. Typescript is the source of behaviour; C# helps
-   with types where TS has unions/`any`.
+   with types where TS has unions/`any`. Runs on Sonnet for closed-scope modules and on Opus
+   for `uo-docx-layout` and the Sheet calc engine (see "Models").
 4. **Verification** (in parallel):
    - `parity-verifier`: 100% exact parity on the captured corpus + differential random
      documents;
@@ -100,6 +101,27 @@ Work bottom-up: a module starts only when the modules it depends on passed gate 
 6. **Final review** — `port-skeptic-implementation` reviews the whole module; benchmarks
    `main × rust-core` (`tools/bench`).
    **Gate 3 (maintainer): findings handled, numbers accepted.**
+
+## Models
+
+Each role runs on a fixed model. The agents in `.claude/agents/` carry it in their frontmatter
+(`model:`); when the orchestrator runs a role as a general-purpose agent (a session where the
+custom agents are not registered), it passes the same model explicitly.
+
+| Role | Model |
+|---|---|
+| Plan, reuse, both skeptics, simplification and algorithms, security (`port-planner`, `reuse-specialist`, `port-skeptic-analysis`, `port-skeptic-implementation`, `simplification-algorithms`, `security-specialist`) | Opus |
+| Stage 3 port of a module with a closed scope (no agent file: a general-purpose agent with `model: sonnet`) | Sonnet |
+| `parity-verifier`, `memory-verifier` | Sonnet |
+| **Every role** of `uo-docx-layout` and of the Sheet calc engine (formulas), implementation and verifiers included | Opus |
+
+"Closed scope" means the gate-1 plan fixes the module's API, data model and parity capture, so
+the port is a translation inside them. A Sonnet port always runs with the parity and memory
+verifiers on top; it does not pass to stage 4 until it compiles with clippy clean, and every
+round where the parity verifier sends a port bug back is recorded in the module record
+("Process metrics"), with the rework and the time of each stage, so the model choice can be
+compared across modules. The orchestrator may move a module (or one of its parts) to Opus when
+the Sonnet port needs repeated rounds on the same issue; it says so in the record.
 
 ## Memory gate (measured — a module cannot pass gate 2 without it)
 
@@ -155,5 +177,9 @@ there verbatim.
   gates, the TS and C# files, the record path and the commands.
 - Check every finding in the code before showing it; say what was discarded and why.
 - Specialists of the same stage run in parallel (one message, several Agent calls).
+- Every Agent call sets the model of its role (see "Models"), also for general-purpose agents.
+- Keep the module record's "Process metrics" current: per stage the wall time of each agent,
+  the rounds between the port and the verifiers, and every piece of rework (what, why, who
+  fixed it).
 - Repository rules still apply (`CLAUDE.md`): English in `.md`, no proprietary fonts in
   fixtures, MIT license, `CHANGELOG.md`.

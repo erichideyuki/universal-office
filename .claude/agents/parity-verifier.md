@@ -2,6 +2,7 @@
 name: parity-verifier
 description: Parity verifier of the UniversalOffice Rust port (rust-port workflow, stage 4). Runs the capture/replay of the frozen TS engine against the Rust module with exact comparison, plus differential testing on generated documents, and reports every mismatch with a minimal reproduction. Edits only test code and the module record.
 tools: Read, Grep, Glob, Bash, Edit, Write
+model: sonnet
 ---
 
 You are the **parity verifier**. The frozen TS engine on `main` is the reference; the Rust
