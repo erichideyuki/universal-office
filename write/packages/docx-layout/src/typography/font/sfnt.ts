@@ -46,6 +46,13 @@ import { parseGposKern, gposKernInLatin, kernKey, type KernMap, type KernClass0 
 import { parseGsubLigatures, applyLigatures, type GsubLigatures } from './gsub.js';
 import type { LayoutFont } from './layout-font.js';
 
+/** Kerning do GPOS já lido, por arquivo (o mesmo Uint8Array): a mesma fonte é aberta várias
+ *  vezes (o editor cria um SfntFont por registro da família — 71 leituras para 19 fontes ao
+ *  abrir o exemplo do site) e expandir o kerning por classes é a parte cara da leitura.
+ *  Os mapas só são lidos depois do construtor; WeakMap: some junto com os bytes. */
+interface GposKern { kernMap: KernMap; class0: KernClass0; kernInLatin: boolean | null }
+const gposCache = new WeakMap<Uint8Array, GposKern>();
+
 export class SfntFont implements LayoutFont {
   private view: DataView;
   private tables = new Map<string, { offset: number; length: number }>();
@@ -105,11 +112,19 @@ export class SfntFont implements LayoutFont {
     this.parseCmap();
     const gpos = this.tables.get('GPOS');
     if (gpos) {
-      try {
-        this.kernMap = parseGposKern(this.view, gpos.offset, this.kernClass0);
-        this.kernInLatin = gposKernInLatin(this.view, gpos.offset);
+      let k = gposCache.get(bytes);
+      if (!k) {
+        const class0: KernClass0 = new Map();
+        try {
+          const kernMap = parseGposKern(this.view, gpos.offset, class0);
+          k = { kernMap, class0, kernInLatin: gposKernInLatin(this.view, gpos.offset) };
+        } catch { k = { kernMap: new Map(), class0: new Map(), kernInLatin: null }; }
+        gposCache.set(bytes, k);
       }
-      catch { this.kernMap = new Map(); this.kernClass0.clear(); }
+      // GPOS ilegível: sem pares e kernInLatin no padrão (true), como antes
+      this.kernMap = k.kernMap.size ? k.kernMap : new Map();
+      this.kernClass0 = k.class0;
+      if (k.kernInLatin !== null) this.kernInLatin = k.kernInLatin;
     } else this.kernMap = new Map();
     // sem pares no GPOS: tabela 'kern' legada (formato 0) — Tahoma, Arial Narrow…
     const kernT = this.tables.get('kern');

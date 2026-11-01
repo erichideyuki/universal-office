@@ -4,6 +4,26 @@ Changes per version of the published UniversalOffice packages (npm
 `@universal-office/*` and NuGet `UniversalOffice.*`). How to publish:
 `docs/publishing.md`.
 
+## Unreleased
+
+### Opening documents on slower machines
+
+- `<universal-write>` lays the document out far fewer times while it opens
+  (15 → 5 for the site's sample): background re-layouts (a font arriving from the
+  network, hyphenation patterns, fonts the layout asked for) now wait 80 ms after
+  the last request (300 ms at most after the first) instead of one full layout per
+  arrival, and any direct `refresh()` covers a pending one.
+- The fonts embedded in a .docx are measured before the first layout: the text is
+  laid out with them from the start (no second layout when they arrive) and the
+  browser `FontFace` only triggers a repaint. This also fixes text laid out with the
+  fallback metrics and painted with the real font (uneven spacing in a title).
+  A font the browser rejects is removed and the layout redone, as before.
+- `SfntFont` keeps the GPOS kerning it read per font file (the same bytes were
+  parsed again for every registration — 71 reads for 19 fonts).
+- Measured with the CPU slowed down 4× (a mid-range machine): time until the
+  editor is interactive 11.2 s → 5.6 s, main thread blocked 7.7 s → 2.6 s, 3.7 MB
+  downloaded instead of 5.3 MB, JS heap 32 → 21 MB.
+
 ## 0.9.3 — 2026-10-31
 
 All npm and NuGet packages ship as 0.9.3 (the products depend on

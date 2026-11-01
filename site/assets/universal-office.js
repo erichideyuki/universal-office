@@ -30909,12 +30909,13 @@ function contoursToPath(contours) {
   }
   return out;
 }
-var SfntFont;
+var gposCache, SfntFont;
 var init_sfnt2 = __esm({
   "../docx-layout/src/typography/font/sfnt.ts"() {
     "use strict";
     init_gpos();
     init_gsub();
+    gposCache = /* @__PURE__ */ new WeakMap();
     SfntFont = class {
       view;
       tables = /* @__PURE__ */ new Map();
@@ -30969,13 +30970,20 @@ var init_sfnt2 = __esm({
         this.parseCmap();
         const gpos = this.tables.get("GPOS");
         if (gpos) {
-          try {
-            this.kernMap = parseGposKern(this.view, gpos.offset, this.kernClass0);
-            this.kernInLatin = gposKernInLatin(this.view, gpos.offset);
-          } catch {
-            this.kernMap = /* @__PURE__ */ new Map();
-            this.kernClass0.clear();
+          let k2 = gposCache.get(bytes);
+          if (!k2) {
+            const class0 = /* @__PURE__ */ new Map();
+            try {
+              const kernMap = parseGposKern(this.view, gpos.offset, class0);
+              k2 = { kernMap, class0, kernInLatin: gposKernInLatin(this.view, gpos.offset) };
+            } catch {
+              k2 = { kernMap: /* @__PURE__ */ new Map(), class0: /* @__PURE__ */ new Map(), kernInLatin: null };
+            }
+            gposCache.set(bytes, k2);
           }
+          this.kernMap = k2.kernMap.size ? k2.kernMap : /* @__PURE__ */ new Map();
+          this.kernClass0 = k2.class0;
+          if (k2.kernInLatin !== null) this.kernInLatin = k2.kernInLatin;
         } else this.kernMap = /* @__PURE__ */ new Map();
         const kernT = this.tables.get("kern");
         if (this.kernMap.size === 0 && kernT) {
@@ -73056,6 +73064,8 @@ function findItems(items, want, from = 0) {
 var parseIdList = (v2) => (v2 ?? "").split(/[\s,]+/).filter(Boolean);
 var PX_PER_TWIP = 96 / 72 / TWIPS_PER_PT;
 var HF_DIM_ALPHA = 0.5;
+var BACKGROUND_REFRESH_MS = 80;
+var BACKGROUND_REFRESH_MAX_MS = 300;
 var ENGINE_LAYOUT_OPTS = { hyphenationLanguages: ["pt-BR", "en", "es"] };
 var hyphenationLangs = (full) => documentHyphenationLanguages(full).filter((l3) => {
   const x3 = l3.toLowerCase();
@@ -73360,6 +73370,9 @@ var UniversalWriteElement = class _UniversalWriteElement extends HTMLElement {
    *  o PDF embute EXATAMENTE o arquivo cujas métricas posicionaram o texto. */
   fontFiles = /* @__PURE__ */ new WeakMap();
   refreshQueued = false;
+  /** layout de 2º plano pendente (queueRefresh): o timer e quando o 1º pedido chegou */
+  refreshTimer = 0;
+  refreshFirstAt = null;
   container;
   input;
   topbarEl;
@@ -73792,6 +73805,7 @@ var UniversalWriteElement = class _UniversalWriteElement extends HTMLElement {
     this.unsubscribeLang?.();
     this.unsubscribeLang = null;
     window.removeEventListener("resize", this.handleWindowResize);
+    this.cancelQueuedRefresh();
     for (const t6 of ["mousedown", "mouseup", "click"]) window.removeEventListener(t6, this.swallowLongPressClick, true);
     this.sideObserver?.disconnect();
     this.sideObserver = null;
@@ -74186,23 +74200,46 @@ var UniversalWriteElement = class _UniversalWriteElement extends HTMLElement {
     this.resetNumbering(this.pkg.getPartText(partByRelType(this.pkg, "numbering", "word/numbering.xml")) ?? null, numberingImages(this.pkg));
     this.loadedFormat = "docx";
     this.tracking = readTrackRevisions(this.pkg);
+    const embedded = this.registerEmbeddedFontMetrics(this.pkg);
     this.installFullDoc();
-    void this.registerEmbeddedFonts(this.pkg);
+    if (embedded.length) void this.loadEmbeddedFontFaces(embedded);
   }
-  /** Carrega as fontes EMBEDADAS do .docx (word/fonts/*.odttf desofuscadas): cria
-   *  o FontFace (render) e o SfntFont (métricas/layout), e repinta ao terminar.
-   *  Sem isto o render cairia no Aptos/Calibri em vez da fonte real (ex.: Lato). */
-  async registerEmbeddedFonts(pkg) {
+  /** Fontes EMBEDADAS do .docx (word/fonts/*.odttf desofuscadas). As métricas (SfntFont)
+   *  entram no Registry ANTES do 1º layout: o texto já sai diagramado com a fonte real (ex.:
+   *  Lato), sem o 2º layout completo de quando elas só chegavam depois do FontFace.
+   *  Devolve as faces registradas, para loadEmbeddedFontFaces. */
+  registerEmbeddedFontMetrics(pkg) {
     let fonts;
     try {
       fonts = readEmbeddedFonts(pkg);
     } catch {
-      return;
+      return [];
     }
-    if (!fonts.length || !this.fonts) return;
-    let added = false;
+    if (!fonts.length || !this.fonts) return [];
+    const out = [];
     for (const f3 of fonts) {
       if (this.loadedFamilies.has(`${f3.family} ${f3.variant}`)) continue;
+      this.loadedFamilies.add(`${f3.family} ${f3.variant}`);
+      this.loadedFamilyNames.add(f3.family);
+      let sf = null;
+      try {
+        sf = new SfntFont(f3.data);
+        this.fonts.register(f3.family, f3.variant, sf);
+        this.fontFiles.set(sf, { name: f3.family, bytes: f3.data });
+      } catch {
+      }
+      (this.fontBytes[f3.family] ??= {})[f3.variant] = f3.data;
+      out.push({ font: f3, sf });
+    }
+    return out;
+  }
+  /** O FontFace (pintura do canvas) das fontes embedadas: carregadas, só repinta — o layout
+   *  já usou as métricas. A que o navegador recusa sai do Registry (o texto volta ao
+   *  substituto, como quando ela nem era registrada) e o layout é refeito. */
+  async loadEmbeddedFontFaces(faces) {
+    const failed = /* @__PURE__ */ new Set();
+    await Promise.all(faces.map(async (e8) => {
+      const f3 = e8.font;
       const weight = f3.variant === "bold" || f3.variant === "boldItalic" ? "700" : "400";
       const style = f3.variant === "italic" || f3.variant === "boldItalic" ? "italic" : "normal";
       try {
@@ -74210,20 +74247,27 @@ var UniversalWriteElement = class _UniversalWriteElement extends HTMLElement {
         await face.load();
         document.fonts.add(face);
       } catch {
-        continue;
+        failed.add(e8);
       }
-      this.loadedFamilies.add(`${f3.family} ${f3.variant}`);
-      this.loadedFamilyNames.add(f3.family);
-      try {
-        const sf = new SfntFont(f3.data);
-        this.fonts.register(f3.family, f3.variant, sf);
-        this.fontFiles.set(sf, { name: f3.family, bytes: f3.data });
-      } catch {
+    }));
+    if (!failed.size) {
+      if (this.model) {
+        if (this.eng) this.paint();
+        else this.refresh();
       }
-      (this.fontBytes[f3.family] ??= {})[f3.variant] = f3.data;
-      added = true;
+      return;
     }
-    if (added && this.model) this.refresh();
+    for (const family of new Set([...failed].map((e8) => e8.font.family))) {
+      const kept = faces.filter((e8) => e8.font.family === family && !failed.has(e8));
+      this.fonts?.delete(family);
+      for (const e8 of kept) if (e8.sf) this.fonts?.register(family, e8.font.variant, e8.sf);
+      if (!kept.length) this.loadedFamilyNames.delete(family);
+    }
+    for (const e8 of failed) {
+      this.loadedFamilies.delete(`${e8.font.family} ${e8.font.variant}`);
+      delete this.fontBytes[e8.font.family]?.[e8.font.variant];
+    }
+    if (this.model) this.refresh();
   }
   /**
    * Carrega um .odt (OpenDocument Text). Não há pacote OOXML original — ao
@@ -75276,10 +75320,7 @@ var UniversalWriteElement = class _UniversalWriteElement extends HTMLElement {
       if (!this.engFontLoad) this.scheduleEngineFonts();
       if (!this.engFontLoad) break;
       await this.engFontLoad;
-      if (this.refreshQueued && this.model) {
-        this.refreshQueued = false;
-        this.refresh();
-      }
+      if (this.refreshQueued && this.model) this.refresh();
     }
   }
   /** Antes do PDF: famílias cujo arquivo a licença não deixa embutir ganham a
@@ -75303,13 +75344,27 @@ var UniversalWriteElement = class _UniversalWriteElement extends HTMLElement {
       }
     }
   }
+  /** Refaz o layout por trabalho de 2º plano (fonte que chegou, padrões de hifenização,
+   *  fontes que o motor pediu). As chegadas vêm em tarefas separadas da rede — eram um
+   *  layout completo por fonte (15 só para abrir o exemplo do site) — e agora se juntam:
+   *  o layout sai BACKGROUND_REFRESH_MS depois do último pedido, no máximo
+   *  BACKGROUND_REFRESH_MAX_MS depois do primeiro. Qualquer refresh() direto antes disso
+   *  já cobre o pendente. */
   queueRefresh() {
-    if (this.refreshQueued) return;
+    const now = performance.now();
+    this.refreshFirstAt ??= now;
     this.refreshQueued = true;
-    queueMicrotask(() => {
-      this.refreshQueued = false;
+    window.clearTimeout(this.refreshTimer);
+    const wait = Math.max(0, Math.min(BACKGROUND_REFRESH_MS, this.refreshFirstAt + BACKGROUND_REFRESH_MAX_MS - now));
+    this.refreshTimer = window.setTimeout(() => {
+      this.cancelQueuedRefresh();
       if (this.model) this.refresh();
-    });
+    }, wait);
+  }
+  cancelQueuedRefresh() {
+    window.clearTimeout(this.refreshTimer);
+    this.refreshQueued = false;
+    this.refreshFirstAt = null;
   }
   /** Cor da fonte: RRGGBB, cor do tema ({ themeColor, tint | shade }, como a paleta) ou
    *  undefined = Automática. */
@@ -93430,6 +93485,7 @@ var UniversalWriteElement = class _UniversalWriteElement extends HTMLElement {
   }
   // ───────────────────────── pintura ─────────────────────────
   refresh() {
+    this.cancelQueuedRefresh();
     this.layout();
     this.rebuildCanvases();
     if (this.view === "read") this.applyReadSpread();

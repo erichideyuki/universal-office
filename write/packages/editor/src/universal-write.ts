@@ -297,6 +297,11 @@ const PX_PER_TWIP = 96 / 72 / TWIPS_PER_PT;
 /** Opacidade da região "desabilitada" (o Word esmaece o que não está em foco:
  *  header/footer ao editar o corpo; corpo + outro HF ao editar um HF). */
 const HF_DIM_ALPHA = 0.5;
+/** Layout de 2º plano (queueRefresh): espera depois do último pedido e teto desde o primeiro (ms). */
+const BACKGROUND_REFRESH_MS = 80;
+const BACKGROUND_REFRESH_MAX_MS = 300;
+/** Fonte embutida no .docx (word/fonts), já desofuscada. */
+type DocxEmbeddedFont = ReturnType<typeof readEmbeddedFonts>[number];
 /** Hifenização automática nos idiomas que o Word pt-BR hifeniza (revisores que
  *  acompanham a instalação: pt-BR, inglês e espanhol — medido; pt-PT, fr, de, it
  *  não), como o corpus-lab. */
@@ -1280,6 +1285,9 @@ export class UniversalWriteElement extends HTMLElement {
    *  o PDF embute EXATAMENTE o arquivo cujas métricas posicionaram o texto. */
   private fontFiles = new WeakMap<LayoutFont, { name: string; bytes: Uint8Array }>();
   private refreshQueued = false;
+  /** layout de 2º plano pendente (queueRefresh): o timer e quando o 1º pedido chegou */
+  private refreshTimer = 0;
+  private refreshFirstAt: number | null = null;
   private container: HTMLDivElement;
   private input: HTMLTextAreaElement;
   private topbarEl!: HTMLDivElement;
@@ -1729,6 +1737,7 @@ export class UniversalWriteElement extends HTMLElement {
     this.unsubscribeLang?.();
     this.unsubscribeLang = null;
     window.removeEventListener('resize', this.handleWindowResize);
+    this.cancelQueuedRefresh();
     for (const t of ['mousedown', 'mouseup', 'click'] as const) window.removeEventListener(t, this.swallowLongPressClick, true);
     this.sideObserver?.disconnect();
     this.sideObserver = null;
@@ -2158,38 +2167,68 @@ export class UniversalWriteElement extends HTMLElement {
     this.loadedFormat = 'docx';
     // controle de alterações: o documento abre como foi salvo (w:trackRevisions)
     this.tracking = readTrackRevisions(this.pkg);
+    // fontes embedadas: as métricas antes do 1º layout, o FontFace (pintura) em seguida
+    const embedded = this.registerEmbeddedFontMetrics(this.pkg);
     this.installFullDoc();
-    void this.registerEmbeddedFonts(this.pkg); // fontes embedadas → FontFace + métricas
+    if (embedded.length) void this.loadEmbeddedFontFaces(embedded);
   }
 
-  /** Carrega as fontes EMBEDADAS do .docx (word/fonts/*.odttf desofuscadas): cria
-   *  o FontFace (render) e o SfntFont (métricas/layout), e repinta ao terminar.
-   *  Sem isto o render cairia no Aptos/Calibri em vez da fonte real (ex.: Lato). */
-  private async registerEmbeddedFonts(pkg: DocxPackage): Promise<void> {
-    let fonts;
-    try { fonts = readEmbeddedFonts(pkg); } catch { return; }
-    if (!fonts.length || !this.fonts) return;
-    let added = false;
+  /** Fontes EMBEDADAS do .docx (word/fonts/*.odttf desofuscadas). As métricas (SfntFont)
+   *  entram no Registry ANTES do 1º layout: o texto já sai diagramado com a fonte real (ex.:
+   *  Lato), sem o 2º layout completo de quando elas só chegavam depois do FontFace.
+   *  Devolve as faces registradas, para loadEmbeddedFontFaces. */
+  private registerEmbeddedFontMetrics(pkg: DocxPackage): { font: DocxEmbeddedFont; sf: SfntFont | null }[] {
+    let fonts: DocxEmbeddedFont[];
+    try { fonts = readEmbeddedFonts(pkg); } catch { return []; }
+    if (!fonts.length || !this.fonts) return [];
+    const out: { font: DocxEmbeddedFont; sf: SfntFont | null }[] = [];
     for (const f of fonts) {
       if (this.loadedFamilies.has(`${f.family} ${f.variant}`)) continue;
+      this.loadedFamilies.add(`${f.family} ${f.variant}`);
+      this.loadedFamilyNames.add(f.family);
+      let sf: SfntFont | null = null;
+      try {
+        sf = new SfntFont(f.data);
+        this.fonts.register(f.family, f.variant, sf);
+        this.fontFiles.set(sf, { name: f.family, bytes: f.data });
+      } catch { /* métrica opcional */ }
+      (this.fontBytes[f.family] ??= {})[f.variant] = f.data;
+      out.push({ font: f, sf });
+    }
+    return out;
+  }
+
+  /** O FontFace (pintura do canvas) das fontes embedadas: carregadas, só repinta — o layout
+   *  já usou as métricas. A que o navegador recusa sai do Registry (o texto volta ao
+   *  substituto, como quando ela nem era registrada) e o layout é refeito. */
+  private async loadEmbeddedFontFaces(faces: { font: DocxEmbeddedFont; sf: SfntFont | null }[]): Promise<void> {
+    const failed = new Set<{ font: DocxEmbeddedFont; sf: SfntFont | null }>();
+    await Promise.all(faces.map(async (e) => {
+      const f = e.font;
       const weight = f.variant === 'bold' || f.variant === 'boldItalic' ? '700' : '400';
       const style = f.variant === 'italic' || f.variant === 'boldItalic' ? 'italic' : 'normal';
       try {
         const face = new FontFace(f.family, f.data.slice().buffer, { weight, style });
         await face.load();
         document.fonts.add(face);
-      } catch { continue; } // fonte inválida: ignora (mantém fallback)
-      this.loadedFamilies.add(`${f.family} ${f.variant}`);
-      this.loadedFamilyNames.add(f.family);
-      try {
-        const sf = new SfntFont(f.data);
-        this.fonts.register(f.family, f.variant, sf);
-        this.fontFiles.set(sf, { name: f.family, bytes: f.data });
-      } catch { /* métrica opcional */ }
-      (this.fontBytes[f.family] ??= {})[f.variant] = f.data;
-      added = true;
+      } catch { failed.add(e); }
+    }));
+    if (!failed.size) {
+      // métricas iguais, glifos novos: repinta (o layout de antes do motor mede pelo canvas)
+      if (this.model) { if (this.eng) this.paint(); else this.refresh(); }
+      return;
     }
-    if (added && this.model) this.refresh();
+    for (const family of new Set([...failed].map((e) => e.font.family))) {
+      const kept = faces.filter((e) => e.font.family === family && !failed.has(e));
+      this.fonts?.delete(family);
+      for (const e of kept) if (e.sf) this.fonts?.register(family, e.font.variant, e.sf);
+      if (!kept.length) this.loadedFamilyNames.delete(family);
+    }
+    for (const e of failed) {
+      this.loadedFamilies.delete(`${e.font.family} ${e.font.variant}`);
+      delete this.fontBytes[e.font.family]?.[e.font.variant];
+    }
+    if (this.model) this.refresh();
   }
 
   /**
@@ -3320,7 +3359,7 @@ export class UniversalWriteElement extends HTMLElement {
       if (!this.engFontLoad) this.scheduleEngineFonts();
       if (!this.engFontLoad) break;
       await this.engFontLoad;
-      if (this.refreshQueued && this.model) { this.refreshQueued = false; this.refresh(); }
+      if (this.refreshQueued && this.model) this.refresh();
     }
   }
 
@@ -3345,13 +3384,28 @@ export class UniversalWriteElement extends HTMLElement {
     }
   }
 
+  /** Refaz o layout por trabalho de 2º plano (fonte que chegou, padrões de hifenização,
+   *  fontes que o motor pediu). As chegadas vêm em tarefas separadas da rede — eram um
+   *  layout completo por fonte (15 só para abrir o exemplo do site) — e agora se juntam:
+   *  o layout sai BACKGROUND_REFRESH_MS depois do último pedido, no máximo
+   *  BACKGROUND_REFRESH_MAX_MS depois do primeiro. Qualquer refresh() direto antes disso
+   *  já cobre o pendente. */
   private queueRefresh(): void {
-    if (this.refreshQueued) return;
+    const now = performance.now();
+    this.refreshFirstAt ??= now;
     this.refreshQueued = true;
-    queueMicrotask(() => {
-      this.refreshQueued = false;
+    window.clearTimeout(this.refreshTimer);
+    const wait = Math.max(0, Math.min(BACKGROUND_REFRESH_MS, this.refreshFirstAt + BACKGROUND_REFRESH_MAX_MS - now));
+    this.refreshTimer = window.setTimeout(() => {
+      this.cancelQueuedRefresh();
       if (this.model) this.refresh();
-    });
+    }, wait);
+  }
+
+  private cancelQueuedRefresh(): void {
+    window.clearTimeout(this.refreshTimer);
+    this.refreshQueued = false;
+    this.refreshFirstAt = null;
   }
   /** Cor da fonte: RRGGBB, cor do tema ({ themeColor, tint | shade }, como a paleta) ou
    *  undefined = Automática. */
@@ -21343,6 +21397,7 @@ export class UniversalWriteElement extends HTMLElement {
   // ───────────────────────── pintura ─────────────────────────
 
   refresh(): void {
+    this.cancelQueuedRefresh();
     this.layout();
     this.rebuildCanvases();
     if (this.view === 'read') this.applyReadSpread(); // só mostra o par atual
