@@ -1,9 +1,6 @@
 # uo-fonts — font files, OpenType kerning and ligatures, embedding, hyphenation
 
-Record of the rust-port workflow. Status: **stage 2 done (analysis skeptic); plan revised after
-the skeptic (S1–S19 written in); gate 1 pending.** With the recommended answers (G2: module 18
-`ooxml` deferred to the uo-docx/uo-pptx plans), stage 3 runs on **Sonnet** for every module of
-the crate (see "Sonnet readiness (revised after the skeptic)" and G10).
+Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01** (G1–G16 as the final recommendations); next: stage 3 (Sonnet port, modules 0–17).
 
 Dependencies on earlier gates: `uo-opc` passed gate 2 (D1–D8); `uo-testkit` and `uo-alloc` are
 in place. *(revised after the skeptic, S15)* uo-fonts does **not** wait for `uo-jsnum`: the JS
@@ -1086,6 +1083,8 @@ the same issue back twice (skill rule).
 
 ## Questions for the maintainer (gate 1)
 
+**Approved 2026-11-01.** Maintainer, verbatim: "Eu aprovo tudo" — every final recommendation accepted.
+
 *(revised after the skeptic)* One consolidated list: the planner's G1–G10 and the skeptic's
 G11–G16, with the skeptic's revision folded in and one **final recommendation** per question.
 
@@ -1185,9 +1184,9 @@ cmap reader (G6), one table-directory rule, the outline cache policy.
 
 | Stage | Agent (model) | Time | Tool calls |
 |---|---|---|---|
-| 1 | planner (Opus) | (orchestrator fills) | ≈ 50 |
-| 1 | reuse specialist (Opus) | 8.7 min | — |
-| 2 | analysis skeptic (Opus) | (orchestrator fills) | ≈ 45 |
-| 1 (revision) | planner (Opus): S1–S19 written in, consolidated gate-1 list | (orchestrator fills) | ≈ 45 |
+| 1 | planner (Opus) | 21.8 min | 59 |
+| 1 | reuse specialist (Opus) | 8.7 min | 58 |
+| 2 | analysis skeptic (Opus) | 14.8 min | 55 |
+| 1 (revision) | planner (Opus): S1–S19 written in, consolidated gate-1 list | 7.6 min | — |
 
 Parity rounds and rework: none yet.

@@ -1,10 +1,6 @@
 # uo-drawingml — presets, colour modifiers, raster effects, image adjustments
 
-Record of the rust-port workflow. Status: **stage 1 plan revised after the analysis skeptic
-(stage 2), gate 1 pending** (planner + reuse specialist + skeptic, 2026-11-01). Prerequisite: the
-shared crate `uo-jsnum` (question G1, record `core/docs/modules/uo-jsnum.md`) must pass its own
-gate 2 before stage 3 of this module starts. Revisions after the skeptic are marked
-"(revised after the skeptic, An)"; the skeptic's own section is kept unchanged below the plan.
+Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01** (G1–G15 as the final recommendations; G2 pow follows the uo-jsnum gate: option (a)); stage 3 waits for uo-jsnum increment A to pass gate 2.
 
 ## Scope
 
@@ -564,7 +560,9 @@ The same banding is the basis of the banded wasm call of G10 (r ≤ 8, σ ≤ 2.
 - **Opus**: the prerequisite `uo-jsnum` (its own plan, record and gate) and the stage-5 banding
   (G9) and pad-free EDT (G12).
 
-## Questions for the maintainer (gate 1) — consolidated (revised after the skeptic)
+## Questions for the maintainer (gate 1)
+
+**Approved 2026-11-01.** Maintainer, verbatim: "Eu aprovo tudo" — every final recommendation accepted. G2 (pow) = uo-jsnum G1 option (a). — consolidated (revised after the skeptic)
 
 One list, planner and skeptic together; the last column is the final recommendation.
 
@@ -656,6 +654,7 @@ Implementation skeptic findings and decisions. `tools/bench` table (main × rust
 
 | Stage | Agent (model) | Time | Tool calls | Rounds / rework |
 |---|---|---|---|---|
-| 1 | planner (Opus) | | | |
-| 1 | reuse specialist (Opus) | | | report: math probe `%TEMP%/uo-mathprobe` (Node 24.15 / V8 13.6, Windows) |
-| 2 | analysis skeptic (Opus) | | ≈45 | 15 findings (A1 blocking for Sonnet readiness; A2 blocking for the switch) |
+| 1 | planner (Opus) | 20.4 min | 64 | |
+| 1 | reuse specialist (Opus) | 8.8 min | 58 | report: math probe `%TEMP%/uo-mathprobe` (Node 24.15 / V8 13.6, Windows) |
+| 2 | analysis skeptic (Opus) | 15.4 min | 60 | 15 findings (A1 blocking for Sonnet readiness; A2 blocking for the switch) |
+| 1 (revision) | planner (Opus): A1–A15 written in | 4.5 min | 38 | |

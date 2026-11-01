@@ -1,12 +1,6 @@
 # uo-jsnum — JavaScript numerics
 
-Record of the rust-port workflow. Status: **stage 1 plan, revised after the analysis skeptic; gate 1
-pending** (planner and skeptic, 2026-11-01). Delivered in two increments (A now, B before
-uo-pdf/uo-docx/uo-charts; see "Increments").
-New shared crate, stage 1 of the dependency order: every engine crate (`uo-fonts`,
-`uo-drawingml`, `uo-docx`, `uo-docx-layout`, `uo-pdf`, `uo-charts`, Slides, Sheet calc) calls it
-instead of `f64` methods of `std`, so that native, wasm and .NET give the same bits as the frozen
-TS engine running in Node.
+Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01** (G1–G16 as the final recommendations: pow option (a), two increments); next: stage 3 of increment A.
 
 ## Why (evidence)
 
@@ -566,7 +560,9 @@ input (S1).
 | `to_fixed`/`to_precision`/`to_exponential` | B | **Opus** as designed (stack-bignum design: digit generation, exponent choice at power-of-ten boundaries, tie rule); **Sonnet** only if G13 turns it into a line-by-line port of V8's `DoubleToFixedCString`/`DoubleToPrecisionCString`/`DoubleToExponentialCString` + `fixed-dtoa`/`bignum-dtoa` | judgment vs translation |
 | `to_radix_string` (integers only) | B | Sonnet | trivial after S8 |
 
-## Questions for the maintainer (gate 1) — consolidated *(planner + skeptic)*
+## Questions for the maintainer (gate 1)
+
+**Approved 2026-11-01.** Maintainer, verbatim: "Eu aprovo tudo" — every final recommendation accepted. pow = option (a). — consolidated *(planner + skeptic)*
 
 | # | Question | Final recommendation |
 |---|---|---|
@@ -650,4 +646,6 @@ multiplication and an int64 path, else `std::pow` — not "repeated multiplicati
 
 | Stage | Agent / model | Wall time | Rounds | Rework |
 |---|---|---|---|---|
-| 1 plan | port-planner / Opus | | — | — |
+| 1 plan (+ reuse) | port-planner / Opus | 18.7 min | — | — |
+| 2 skeptic | port-skeptic-analysis / Opus | 16.7 min | — | — |
+| 1 revision | port-planner / Opus: S1–S15 written in | 4.2 min | — | — |

@@ -1,6 +1,6 @@
 # uo-opc — the document container layer
 
-Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01**; stages 3 (port) and 4 (verification) done; **gate 2 approved 2026-11-01** (D1–D8), **D1–D8 implemented 2026-11-01** (see the last section); **stage 5 (evolution) done 2026-11-01** (result-changing proposals R1–R5 pending); **stage 6 (final review) done 2026-11-01, findings M1 and S1–S8 handled** (see "Stage 6 findings — handled", the last section); next: gate 3 (the findings, the numbers, and the maintainer's decision on R1–R5).
+Record of the rust-port workflow. Status: **gate 3 approved 2026-11-01** (stage-6 findings, the numbers, and R1–R5: R1, R2, R3, R5 as proposed; R4 as the final skeptic revised it — default level 4, `level` keeps meaning the miniz level). Next: apply R1–R5.
 
 ## Scope
 
@@ -1237,3 +1237,13 @@ UO_DOTNET_PARITY=1`): 10,053 saved archives read identically by fflate, uo-opc a
 `ZipArchive`; `cargo audit`. The new tests take under 7 s per file in debug.
 
 New test file: `tests/stage6_findings.rs`.
+
+## Gate 3 — decision (approved 2026-11-01)
+
+Maintainer, verbatim: "Eu aprovo tudo" — every final recommendation accepted.
+
+- R1 Write's relationship rule → D6 (accepted difference: `site/assets/samples/demo.docx` customXml targets now found).
+- R2 Sheet case folding → ASCII.
+- R3 Sheet and Slides `resolveRelTarget` → D6, together with S3 (D6 content-type lookup).
+- R4 the final skeptic's version: the default save level becomes 4; an explicit level keeps meaning that miniz level.
+- R5 keep the depth limit of 1,000 for Sheet and Slides (CHANGELOG).
