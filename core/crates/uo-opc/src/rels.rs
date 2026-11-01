@@ -9,8 +9,10 @@
 //! which have the presence flags to reproduce each one. Editing works on the text, so the
 //! rest of the part stays byte for byte.
 
+use std::collections::HashSet;
+
 use crate::error::Result;
-use crate::xml::raw::{Insert, expand_self_closing, insert_child, remove_range};
+use crate::xml::raw::{Insert, expand_self_closing, insert_child};
 use crate::xml::read::{ParseOptions, parse};
 use crate::xml::write::{Escape, XML_DECL, escape_into};
 
@@ -160,13 +162,15 @@ pub fn next_rel_id_after_max(rels: &[Relationship]) -> String {
 /// `addRel` with `rId`/`ids + 1`; serialize.ts with `rIdUwImg`/1). The TS tests `Id="…"` on the
 /// text; ids are compared here, which is the same for well-formed parts.
 pub fn first_free_rel_id(rels: &[Relationship], prefix: &str, start: u64) -> String {
+    // hashed: comparing every candidate with every id was O(n²) (stage-4 finding F3)
+    let used: HashSet<&str> = rels.iter().map(|r| r.id.as_str()).collect();
     let mut n = start;
     loop {
         let id = format!("{prefix}{n}");
-        if !rels.iter().any(|r| r.id == id) {
+        if !used.contains(id.as_str()) {
             return id;
         }
-        n += 1;
+        n = n.wrapping_add(1);
     }
 }
 
@@ -202,10 +206,15 @@ pub fn remove_rels(xml: &str, opts: &ParseOptions<'_>, mut drop: impl FnMut(&Rel
             removed.push(rel);
         }
     }
-    let mut out = xml.to_owned();
-    for &(s, e) in cut.iter().rev() {
-        out = remove_range(&out, s, e);
+    // one pass over the ranges, which come in document order and do not overlap (stage-4
+    // finding F2: one `remove_range` per relationship was O(n²))
+    let mut out = String::with_capacity(xml.len());
+    let mut last = 0;
+    for &(s, e) in &cut {
+        out.push_str(xml.get(last..s).unwrap_or(""));
+        last = e;
     }
+    out.push_str(xml.get(last..).unwrap_or(""));
     Ok((out, removed))
 }
 

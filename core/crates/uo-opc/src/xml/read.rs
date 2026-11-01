@@ -362,7 +362,10 @@ impl<'s, 'o> Parser<'s, 'o> {
     }
 
     fn push_span_node(&mut self, kind: Kind, s: usize, e: usize) -> Result<()> {
-        let len = Self::u32_of(e - s)?;
+        // `<!-->` and `<?>`: the lenient search for the end starts at the `<` (as the TS
+        // `indexOf`), so the end can come before the content start; `slice` gives "" there
+        // (stage-4 finding F6: `e - s` overflowed)
+        let len = Self::u32_of(e.saturating_sub(s))?;
         if len > MAX_NODE_SPAN {
             return Err(Error::Limit { kind: LimitKind::PartBytes, max: u64::from(MAX_NODE_SPAN), part: None });
         }

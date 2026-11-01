@@ -18,7 +18,8 @@ report comes from a test that ran, with its numbers.
   be flat within the plan's tolerance and return to the start after `clear_caches()`. Run it
   natively AND in wasm (Node), where you also record `memory.buffer.byteLength`: it must
   stop growing after warm-up (wasm memory never shrinks, so the high-water mark is a
-  permanent cost — report it).
+  permanent cost — report it). The same wasm test also runs in WebKit (Playwright) in CI; judge
+  the high-water mark against a phone too (iOS kills tabs far below desktop limits).
 - **M3 — budgets**: allocated bytes and peak live bytes per operation; compare with the
   previous record and the TS reference (`experiments/rust-spike`, `tools/bench`). More than
   10% worse than the previous record fails unless the maintainer approves.

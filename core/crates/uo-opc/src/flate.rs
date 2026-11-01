@@ -61,8 +61,8 @@ fn rev(v: u32) -> u32 {
     (((x & 0xFF00) >> 8) | ((x & 0x00FF) << 8)) >> 1
 }
 
-/// `hMap(cd, mb, 1)`: the decoding table (index → `symbol << 4 | bits`). Ported literally,
-/// including the u16 wrap of `le` and the lack of any tree validation.
+/// `hMap(cd, mb, 1)`: the decoding table (index → `symbol << 4 | bits`). The same table as
+/// fflate's, including the u16 wrap of `le` and the lack of any tree validation.
 fn h_map(cd: &[u8], mb: u32) -> Vec<u16> {
     let mbu = mb as usize;
     let mut l = vec![0u16; mbu];
@@ -80,6 +80,15 @@ fn h_map(cd: &[u8], mb: u32) -> Vec<u16> {
             *x = (prev << 1) as u16;
         }
     }
+    // A complete tree makes 2^mb writes; an over-subscribed one up to 320 × 2^14 per table
+    // (stage-4 finding F1: 35 bytes of input cost 2.1 million writes). Up to twice the table
+    // size the literal loop runs (no extra memory); above it, the same table by ranges.
+    let writes: u64 = cd.iter().filter(|&&c| c != 0 && u32::from(c) <= mb).map(|&c| 1u64 << (mb - u32::from(c))).sum();
+    if writes <= 2u64 << mb { co_by_loop(cd, mb, le) } else { co_by_ranges(cd, mb, le) }
+}
+
+/// fflate's loop: for each symbol, `co[rev(v) >> rvb] = sv` for v in `[slot << r1, (slot + 1) << r1)`.
+fn co_by_loop(cd: &[u8], mb: u32, mut le: Vec<u16>) -> Vec<u16> {
     let mut co = vec![0u16; 1usize << mb];
     let rvb = 15 - mb;
     for (i, &c) in cd.iter().enumerate() {
@@ -100,6 +109,60 @@ fn h_map(cd: &[u8], mb: u32) -> Vec<u16> {
         }
     }
     co
+}
+
+/// The table of [`co_by_loop`] in O(2^mb + symbols). Below 2^15, `rev(v) >> rvb` is the mb-bit
+/// reversal of `u = v mod 2^mb`, so a symbol writes one aligned range of `u`; from 2^15 up `rev`
+/// gives 0, so it writes `co[0]` only (a range never straddles 2^15). Later writes win: the
+/// ranges are applied last to first, skipping cells already set.
+fn co_by_ranges(cd: &[u8], mb: u32, mut le: Vec<u16>) -> Vec<u16> {
+    let size = 1usize << mb;
+    let rvb = 15 - mb;
+    // (value, first u, count): u < 2^15 and count <= 2^14 fit u16
+    let mut ranges: Vec<(u16, u16, u16)> = Vec::with_capacity(cd.len());
+    for (i, &c) in cd.iter().enumerate() {
+        if c == 0 {
+            continue;
+        }
+        let sv = ((i << 4) | c as usize) as u16;
+        let r1 = mb - u32::from(c);
+        let Some(slot) = le.get_mut(c as usize - 1) else { continue };
+        let v = u32::from(*slot) << r1;
+        *slot = slot.wrapping_add(1);
+        ranges.push(if v >= 32768 { (sv, 0, 1) } else { (sv, (v as usize & (size - 1)) as u16, (1u32 << r1) as u16) });
+    }
+    let mut co = vec![0u16; size];
+    // next[u]: the first u at or after it not set yet (path-halving skip list; next[size] = size)
+    let mut next: Vec<u16> = (0..=size).map(|u| u as u16).collect();
+    for &(sv, start, len) in ranges.iter().rev() {
+        let end = usize::from(start) + usize::from(len);
+        let mut u = next_unset(&mut next, usize::from(start));
+        while u < end {
+            if let Some(x) = co.get_mut((rev(u as u32) >> rvb) as usize) {
+                *x = sv;
+            }
+            if let Some(n) = next.get_mut(u) {
+                *n = (u + 1) as u16;
+            }
+            u = next_unset(&mut next, u + 1);
+        }
+    }
+    co
+}
+
+/// The first u at or after `u` not set yet.
+fn next_unset(next: &mut [u16], mut u: usize) -> usize {
+    loop {
+        let p = next.get(u).map_or(u, |&p| usize::from(p));
+        if p == u {
+            return u;
+        }
+        let gp = next.get(p).map_or(p, |&g| usize::from(g));
+        if let Some(x) = next.get_mut(u) {
+            *x = gp as u16;
+        }
+        u = gp;
+    }
 }
 
 fn fixed_maps() -> (Vec<u16>, Vec<u16>) {
@@ -151,6 +214,14 @@ fn limit(cap: u64) -> Error {
     Error::Limit { kind: LimitKind::PartBytes, max: cap, part: None }
 }
 
+/// Grows `buf` for `n` more bytes like `Vec::reserve` (same amortized sizes), but an allocation
+/// the host cannot make is `Error::Limit` instead of an abort: `Vec` panics on a capacity above
+/// `isize::MAX` (2 GiB on wasm32, below the default binary part cap) and aborts the process when
+/// the allocator fails, where the TS throws a catchable `RangeError` (stage-4 finding F7).
+fn try_grow(buf: &mut Vec<u8>, n: usize, cap: u64) -> Result<()> {
+    buf.try_reserve(n).map_err(|_| limit(cap))
+}
+
 /// The output of `inflt`. `bt` is fflate's logical byte counter; `buf` holds
 /// `min(bt, store_limit)` bytes. With a declared size fflate writes into a fixed `Uint8Array`,
 /// where writes past the end are silently dropped while `bt` keeps counting.
@@ -167,6 +238,9 @@ impl Out {
         if self.bt < self.store_limit {
             if self.buf.len() as u64 >= self.cap {
                 return Err(limit(self.cap));
+            }
+            if self.buf.len() == self.buf.capacity() {
+                try_grow(&mut self.buf, 1, self.cap)?;
             }
             self.buf.push(b);
         }
@@ -185,10 +259,10 @@ impl Out {
             }
             // below the store limit `buf.len() == bt`
             let n = kept as usize;
+            try_grow(&mut self.buf, n, self.cap)?;
             match dist {
                 Some(d) => {
                     let start = self.buf.len().saturating_sub(d as usize);
-                    self.buf.reserve(n);
                     for k in 0..n {
                         let b = self.buf.get(start + k).copied().unwrap_or(0);
                         self.buf.push(b);
@@ -212,6 +286,7 @@ impl Out {
         if self.buf.len() as u64 + l > self.cap {
             return Err(limit(self.cap));
         }
+        try_grow(&mut self.buf, src.len(), self.cap)?;
         self.buf.extend_from_slice(src);
         self.bt += l;
         Ok(())
@@ -392,13 +467,21 @@ pub fn inflate_raw(data: &[u8], declared: Option<u64>, cap: u64) -> Result<Vec<u
         return match declared {
             None => Ok(Vec::new()),
             Some(n) if n > cap => Err(limit(cap)),
-            Some(n) => Ok(vec![0; usize::try_from(n).map_err(|_| limit(cap))?]),
+            Some(n) => {
+                let n = usize::try_from(n).map_err(|_| limit(cap))?;
+                let mut zeros = Vec::new();
+                zeros.try_reserve_exact(n).map_err(|_| limit(cap))?;
+                zeros.resize(n, 0);
+                Ok(zeros)
+            }
         };
     }
     let store_limit = declared.unwrap_or(u64::MAX);
     // fflate starts at 3 × the input (browser.js:224); bounded by what may be stored
     let start = (data.len() as u64).saturating_mul(3).min(cap).min(store_limit).min(1 << 26);
-    let mut out = Out { buf: Vec::with_capacity(start as usize), bt: 0, store_limit, cap };
+    let mut buf = Vec::new();
+    buf.try_reserve_exact(start as usize).map_err(|_| limit(cap))?;
+    let mut out = Out { buf, bt: 0, store_limit, cap };
     inflt(data, &mut out, declared.is_none())?;
     let mut buf = out.buf;
     buf.shrink_to_fit();
@@ -534,4 +617,92 @@ pub fn crc32_update(crc: u32, data: &[u8]) -> u32 {
 /// CRC-32 of zip entries (fflate `crc`, browser.js:752).
 pub fn crc32(data: &[u8]) -> u32 {
     crc32_update(0, data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// fflate's `hMap` loop, ported literally (the code before stage-4 finding F1).
+    fn h_map_literal(cd: &[u8], mb: u32) -> Vec<u16> {
+        let mbu = mb as usize;
+        let mut l = vec![0u16; mbu];
+        for &c in cd {
+            if c != 0 {
+                l[c as usize - 1] = l[c as usize - 1].wrapping_add(1);
+            }
+        }
+        let mut le = vec![0u16; mbu];
+        for i in 1..mbu {
+            le[i] = ((u32::from(le[i - 1]) + u32::from(l[i - 1])) << 1) as u16;
+        }
+        let mut co = vec![0u16; 1usize << mb];
+        let rvb = 15 - mb;
+        for (i, &c) in cd.iter().enumerate() {
+            if c == 0 {
+                continue;
+            }
+            let sv = ((i << 4) | c as usize) as u16;
+            let r1 = mb - u32::from(c);
+            let mut v = u32::from(le[c as usize - 1]) << r1;
+            le[c as usize - 1] = le[c as usize - 1].wrapping_add(1);
+            let m = v | ((1u32 << r1) - 1);
+            while v <= m {
+                co[(rev(v) >> rvb) as usize] = sv;
+                v += 1;
+            }
+        }
+        co
+    }
+
+    #[test]
+    fn h_map_matches_the_literal_port() {
+        let mut seed = 0x2545_F491u32;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        let mut cases: Vec<Vec<u8>> = vec![
+            vec![],
+            vec![0; 19],
+            vec![1; 288],
+            vec![15; 320],
+            (0..288)
+                .map(|i| {
+                    if i < 256 {
+                        2
+                    } else if i == 256 {
+                        1
+                    } else {
+                        15
+                    }
+                })
+                .collect(),
+            (0..288).map(|i| (i % 15 + 1) as u8).collect(),
+        ];
+        for _ in 0..3_000 {
+            let n = (rnd() % 321) as usize;
+            let max = rnd() % 16;
+            let zero_rate = rnd() % 4;
+            cases.push((0..n).map(|_| if rnd() % 4 < zero_rate { 0 } else { (rnd() % (max + 1)) as u8 }).collect());
+        }
+        for cd in &cases {
+            let mb = max_len(cd);
+            let expected = h_map_literal(cd, mb);
+            assert_eq!(h_map(cd, mb), expected, "{cd:?}");
+            // both paths, whatever the tree
+            let mut le = vec![0u16; mb as usize];
+            let mut l = vec![0u16; mb as usize];
+            for &c in cd.iter().filter(|&&c| c != 0) {
+                l[c as usize - 1] = l[c as usize - 1].wrapping_add(1);
+            }
+            for i in 1..mb as usize {
+                le[i] = ((u32::from(le[i - 1]) + u32::from(l[i - 1])) << 1) as u16;
+            }
+            assert_eq!(co_by_loop(cd, mb, le.clone()), expected, "{cd:?}");
+            assert_eq!(co_by_ranges(cd, mb, le), expected, "{cd:?}");
+        }
+    }
 }

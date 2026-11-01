@@ -1,0 +1,171 @@
+# Fuzz targets of the uo-opc container layer (rust-port workflow, stage 4 security).
+# Its own workspace: not a member of core/ (cargo-fuzz needs nightly; core/ builds on stable).
+#
+#   cargo +nightly fuzz run <target> -s none          # libFuzzer (Linux CI, or Windows MSVC)
+#   cargo run --release --no-default-features --features fallback --bin seed
+#   cargo run --release --no-default-features --features fallback --bin fallback -- --secs 60
+#
+# The targets are plain `fn(&[u8])` in src/lib.rs; the fallback driver runs them on stable with
+# a seeded mutation loop over the same corpus (see the module record, "Security (stage 4)").
+[package]
+name = "uo-opc-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[features]
+default = ["libfuzzer"]
+libfuzzer = ["dep:libfuzzer-sys"]
+# the stable-Rust driver and the seed builder (no libFuzzer)
+fallback = []
+
+[dependencies]
+uo-opc = { path = "../crates/uo-opc" }
+# differential oracle of the inflate target (the same pinned version uo-opc uses to deflate)
+miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
+libfuzzer-sys = { version = "0.4", optional = true }
+
+[lib]
+path = "src/lib.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "seed"
+path = "src/bin/seed.rs"
+required-features = ["fallback"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fallback"
+path = "src/bin/fallback.rs"
+required-features = ["fallback"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zip_open"
+path = "fuzz_targets/zip_open.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zip_roundtrip"
+path = "fuzz_targets/zip_roundtrip.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zip_write"
+path = "fuzz_targets/zip_write.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inflate"
+path = "fuzz_targets/inflate.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cfb"
+path = "fuzz_targets/cfb.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xml_lenient"
+path = "fuzz_targets/xml_lenient.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xml_strict"
+path = "fuzz_targets/xml_strict.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "escape_roundtrip"
+path = "fuzz_targets/escape_roundtrip.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "raw_surgery"
+path = "fuzz_targets/raw_surgery.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rels"
+path = "fuzz_targets/rels.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "content_types"
+path = "fuzz_targets/content_types.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "caseless"
+path = "fuzz_targets/caseless.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "part_text"
+path = "fuzz_targets/part_text.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "resolver"
+path = "fuzz_targets/resolver.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1
+# overflow checks stay on in the fuzz builds: an arithmetic overflow is a finding
+overflow-checks = true
+debug-assertions = true

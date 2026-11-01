@@ -1,3 +1,4 @@
 target/
 dotnet/**/bin/
 dotnet/**/obj/
+crates/uo-wasm/tests/browser/safari/results.jsonl

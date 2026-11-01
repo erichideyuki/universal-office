@@ -14,6 +14,8 @@ miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-
 
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# parity capture/replay (stage 4): tests/opc_parity.rs, examples/opc_quirk_corpus.rs
+uo-testkit = { path = "../uo-testkit" }
 
 [lints]
 workspace = true

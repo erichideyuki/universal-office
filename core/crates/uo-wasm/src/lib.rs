@@ -7,6 +7,9 @@
 //! wasm a panic aborts the module (the `wasm` profile uses `panic = "abort"`), so code
 //! reached from these exports must not panic on input.
 
+#[cfg(feature = "opc-memtest")]
+pub mod opc_memtest;
+
 /// Placeholder resource owned by Rust (replaced by the real document type).
 #[derive(Debug, Default)]
 pub struct UoDocument {

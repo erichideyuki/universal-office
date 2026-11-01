@@ -36,6 +36,18 @@ maintainer to decide.
   (license MIT-compatible, maintenance, size in wasm, `no_std`/wasm support, and above all the
   effect on parity).
 - **Memory leaks are a measured gate**, not an opinion: see "Memory gate".
+- **Browser baseline: Safari 15 / iOS 15** (and current Chrome, Edge, Firefox). The wasm uses
+  only the default features of the `wasm32-unknown-unknown` target (bulk memory, multivalue,
+  mutable globals, non-trapping float-to-int, reference types, sign extension), all in Safari
+  15. No SIMD (Safari 16.4), threads (need COOP/COEP headers, which break embedding in host
+  pages) or memory64 without a maintainer decision and a fallback build. CI validates the
+  `.wasm` against that feature set (`wasm-tools validate`) and runs the wasm tests in WebKit
+  (`core/crates/uo-wasm/tests/browser/run.mjs`, the same `*.test.mjs` files as Node); real
+  Safari (macOS 12 / Safari 15, iOS 15 and the current iOS on devices, BrowserStack) runs
+  before each gate 3. iOS Lockdown Mode disables WebAssembly: how the apps behave there is a
+  product decision, not covered by these tests.
+  iOS kills tabs far below the desktop limits, so memory budgets and `Limits` are also judged
+  against a phone.
 
 ## Layout of the code
 

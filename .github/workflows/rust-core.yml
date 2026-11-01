@@ -3,7 +3,7 @@ name: Rust core
 # The Rust core of 0.10 (core/, branch rust-core) — the rust-port workflow's automatic
 # checks: format and clippy, tests on the three OSes, the memory gate (M1-M3 in the crates'
 # tests, M4 at the wasm and .NET boundaries, M6 with Miri and LeakSanitizer) and the wasm
-# build. See .claude/skills/rust-port/SKILL.md.
+# build, and the fuzz targets (security, stage 4: core/fuzz). See .claude/skills/rust-port/SKILL.md.
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
       - run: cargo test --workspace --all-features
 
   wasm:
-    name: WebAssembly (build + boundary memory, M2/M4)
+    name: WebAssembly (build, Safari 15 features, boundary memory M2/M4, uo-opc M2, WebKit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -56,8 +56,29 @@ jobs:
         with:
           node-version: 24
       - run: rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown && rustup default stable
-      - run: cargo build -p uo-wasm --features count --target wasm32-unknown-unknown --profile wasm
+      # opc-memtest: the test-only export of the uo-opc round trip (soak in wasm, M2)
+      - run: cargo build -p uo-wasm --features count,opc-memtest --target wasm32-unknown-unknown --profile wasm
       - run: node --expose-gc --test crates/uo-wasm/tests/boundary.test.mjs
+      - run: node --test crates/uo-wasm/tests/opc_memory.test.mjs
+      # browser baseline Safari 15 / iOS 15 (rust-port skill): the module may use only the
+      # features Safari 15 has; the negative case proves the feature list rejects SIMD
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-tools
+      - name: Wasm features within Safari 15
+        run: |
+          features=-all,wasm1,mutable-global,saturating-float-to-int,sign-extension,reference-types,multi-value,bulk-memory
+          cargo build -p uo-wasm --target wasm32-unknown-unknown --profile wasm
+          wasm-tools validate --features "$features" target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          echo '(module (func (drop (v128.const i32x4 0 0 0 0))))' | wasm-tools parse -o /tmp/simd.wasm
+          ! wasm-tools validate --features "$features" /tmp/simd.wasm
+      # the same tests inside WebKit, the engine of Safari
+      - name: Wasm tests in WebKit
+        run: |
+          cargo build -p uo-wasm --features count,opc-memtest --target wasm32-unknown-unknown --profile wasm
+          npm install --prefix "$RUNNER_TEMP/pw" --no-save --no-package-lock playwright@1.61.0
+          npx --prefix "$RUNNER_TEMP/pw" playwright install --with-deps webkit
+          UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit
 
   dotnet:
     name: .NET facade (boundary memory, M4) (${{ matrix.os }})
@@ -95,3 +116,29 @@ jobs:
       - uses: actions/checkout@v7
       - run: rustup toolchain install nightly --profile minimal && rustup default nightly
       - run: cargo test --workspace --all-features --target x86_64-unknown-linux-gnu
+
+  fuzz:
+    name: Fuzz (uo-opc, libFuzzer)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core/fuzz
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install nightly --profile minimal && rustup default nightly
+      - run: cargo install cargo-fuzz --locked
+      # seed corpora from the repository's documents (corpus/ is not versioned)
+      - run: cargo run --release --no-default-features --features fallback --bin seed
+      - run: cargo fuzz build
+      # a short budget per target on every push; long runs are local (record, "Security")
+      - run: |
+          for t in $(ls fuzz_targets | sed 's/\.rs$//'); do
+            echo "::group::$t"
+            cargo fuzz run "$t" -- -max_total_time=60 -timeout=10 -rss_limit_mb=2048 -print_final_stats=1 || exit 1
+            echo "::endgroup::"
+          done
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: core/fuzz/artifacts

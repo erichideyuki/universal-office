@@ -30,3 +30,5 @@ you propose.
   A result-changing proposal needs evidence that the new result is closer to Word (the
   oracle in `write/packages/docx-layout/test/oracle`), and the maintainer decides each one.
 - Do not propose a change whose gain you cannot measure.
+- Stay within the browser baseline of the skill (Safari 15 / iOS 15): no wasm SIMD, threads or
+  memory64 unless the proposal includes a fallback build and the maintainer approves it.

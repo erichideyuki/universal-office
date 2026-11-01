@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>uo-wasm Safari check</title>
+<style>body{font:16px -apple-system,sans-serif;margin:16px}#s{font-size:28px;font-weight:700}pre{white-space:pre-wrap;font-size:12px}</style>
+<div id="s">running…</div><pre id="r"></pre>
+<script>
+(async function () {
+  var out = { ua: navigator.userAgent, steps: [] };
+  function step(name, ok, detail) { out.steps.push({ name: name, ok: ok, detail: detail }); document.getElementById('r').textContent = JSON.stringify(out, null, 1); }
+  try {
+    var simd = new Uint8Array([0,97,115,109,1,0,0,0,1,4,1,96,0,0,3,2,1,0,10,23,1,21,0,253,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,26,11]);
+    step('wasm SIMD available in this browser (info only)', true, WebAssembly.validate(simd));
+    var bytes = new Uint8Array(await (await fetch('/uo_wasm.wasm')).arrayBuffer());
+    var t0 = performance.now();
+    var inst = (await WebAssembly.instantiate(bytes)).instance, w = inst.exports;
+    step('instantiate (' + bytes.length + ' B)', true, Math.round(performance.now() - t0) + ' ms');
+    var live = function () { return Number(w.uo_memory_live_bytes()); };
+    // boundary: 10,000 documents created, filled and freed
+    var live0 = live(), sizes = [];
+    for (var round = 0; round < 10; round++) {
+      for (var i = 0; i < 1000; i++) {
+        var d = w.uo_document_new(), p = w.uo_alloc_bytes(256);
+        new Uint8Array(w.memory.buffer, p, 256).fill(i & 255);
+        if (w.uo_document_append_owned(d, p, 256) !== 0 || w.uo_document_len(d) !== 256) throw new Error('document api');
+        w.uo_document_free(d);
+      }
+      sizes.push(w.memory.buffer.byteLength);
+    }
+    step('boundary: 10,000 handles, live bytes back to start', live() === live0, live0 + ' -> ' + live());
+    step('boundary: wasm memory flat after warm-up', new Set(sizes.slice(2)).size === 1, sizes.join(','));
+    // uo-opc round trip (open, parse every XML part, edit, save, reopen, verify) on 4 repo files
+    var files = [];
+    for (var k = 0; k < 4; k++) files.push({ kind: k, bytes: new Uint8Array(await (await fetch('/f/' + k)).arrayBuffer()) });
+    var rt = function (f) { var q = w.uo_alloc_bytes(f.bytes.length); new Uint8Array(w.memory.buffer, q, f.bytes.length).set(f.bytes); return w.uo_opc_memtest_round_trip(q, f.bytes.length, f.kind); };
+    files.forEach(function (f) { var r = rt(f); step('opc round trip kind ' + f.kind + ' (' + f.bytes.length + ' B)', r > 0, r); });
+    var N = 200, lives = [live()], mem = [w.memory.buffer.byteLength];
+    t0 = performance.now();
+    for (var n = 1; n <= N; n++) { files.forEach(rt); if (n % 50 === 0) { lives.push(live()); mem.push(w.memory.buffer.byteLength); } }
+    step('opc soak ' + N + ' iterations: live bytes flat', new Set(lives).size === 1, lives.join(',') + ' in ' + Math.round(performance.now() - t0) + ' ms');
+    step('opc soak: wasm memory flat (high-water ' + mem[mem.length - 1] + ' B)', new Set(mem).size === 1, mem.join(','));
+  } catch (e) {
+    step('exception', false, String(e && e.stack || e));
+  }
+  var ok = out.steps.every(function (s) { return s.ok; });
+  out.ok = ok;
+  document.getElementById('s').textContent = ok ? 'PASS' : 'FAIL';
+  document.getElementById('s').style.color = ok ? 'green' : 'red';
+  document.getElementById('r').textContent = JSON.stringify(out, null, 1);
+  try { await fetch('/result', { method: 'POST', body: JSON.stringify(out) }); } catch (e) {}
+})();
+</script>

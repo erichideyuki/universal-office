@@ -34,11 +34,17 @@ version = "0.10.0-dev"
 dependencies = [
  "miniz_oxide",
  "uo-alloc",
+ "uo-testkit",
 ]
+
+[[package]]
+name = "uo-testkit"
+version = "0.10.0-dev"
 
 [[package]]
 name = "uo-wasm"
 version = "0.10.0-dev"
 dependencies = [
  "uo-alloc",
+ "uo-opc",
 ]

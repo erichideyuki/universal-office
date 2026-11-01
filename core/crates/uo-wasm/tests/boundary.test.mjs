@@ -33,7 +33,7 @@ class NativeDocument {
 
 const live = () => w.uo_memory_live_bytes();
 const settle = async () => {
-  for (let i = 0; i < 5; i++) { global.gc(); await new Promise((r) => setTimeout(r, 10)); }
+  for (let i = 0; i < 5; i++) { globalThis.gc?.(); await new Promise((r) => setTimeout(r, 10)); }
   return live();
 };
 
@@ -52,7 +52,7 @@ test('free() releases every native document (M4)', async () => {
   assert.equal(await settle(), before);
 });
 
-test('the FinalizationRegistry releases documents that were not freed (M4)', async () => {
+test('the FinalizationRegistry releases documents that were not freed (M4)', { skip: !globalThis.gc && 'needs node --expose-gc' }, async () => {
   const before = await settle();
   (() => { for (let i = 0; i < COUNT; i++) new NativeDocument().append(payload); })();
   assert.ok(live() > before, 'the abandoned documents are counted while alive');

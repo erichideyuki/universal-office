@@ -80,13 +80,13 @@ fn replace_self_close(raw: &str) -> Option<Cow<'_, str>> {
 pub fn set_kid(kids: &mut Vec<Kid>, order: &[&str], name: &str, xml: Option<&str>) {
     let at = kids.iter().position(|k| k.name == name);
     if let Some(at) = at {
-        let mut i = kids.len();
-        while i > at + 1 {
-            i -= 1;
-            if kids[i].name == name {
-                kids.remove(i);
-            }
-        }
+        // one pass (stage-4 finding F4: a `remove` per repeated kid was O(n²))
+        let mut i = 0;
+        kids.retain(|k| {
+            let keep = i <= at || k.name != name;
+            i += 1;
+            keep
+        });
         match xml {
             None => {
                 kids.remove(at);
@@ -318,12 +318,22 @@ fn find_open_tag(xml: &str, root: &str) -> Option<(usize, usize)> {
 pub fn expand_self_closing(xml: &str, root: &str) -> String {
     let open = format!("<{root}");
     let mut from = 0;
+    // the first `>` at or after the last search: reused while it lies ahead, and no `>` at all
+    // ends the search (stage-4 finding F5: a search from every `<root` was O(n²))
+    let mut next_gt: Option<usize> = None;
     while let Some(k) = xml[from..].find(&open) {
         let s = from + k;
         let after = s + open.len();
         let boundary = xml.as_bytes().get(after).is_none_or(|&c| !(c.is_ascii_alphanumeric() || c == b'_'));
-        if boundary && let Some(gt) = xml[after..].find('>') {
-            let gt = after + gt;
+        if boundary {
+            let gt = match next_gt {
+                Some(g) if g >= after => g,
+                _ => match xml[after..].find('>') {
+                    Some(g) => after + g,
+                    None => break,
+                },
+            };
+            next_gt = Some(gt);
             if gt > after && xml.as_bytes()[gt - 1] == b'/' {
                 let attrs = trim_js_end(&xml[after..gt - 1]);
                 return format!("{}<{root}{attrs}></{root}>{}", &xml[..s], &xml[gt + 1..]);

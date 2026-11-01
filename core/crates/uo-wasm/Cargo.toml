@@ -14,9 +14,13 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # memory counters exposed to the JS tests (M2/M4); never in the shipped module
 count = ["dep:uo-alloc", "uo-alloc/global"]
+# test-only export of the uo-opc round trip for the wasm memory gate (M2 of uo-opc,
+# tests/opc_memory.test.mjs); not the binding API, never in the shipped module
+opc-memtest = ["dep:uo-opc"]
 
 [dependencies]
 uo-alloc = { path = "../uo-alloc", optional = true }
+uo-opc = { path = "../uo-opc", optional = true }
 
 [lints]
 workspace = true
