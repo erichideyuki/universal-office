@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <!-- POC: o motor de layout do UniversalOffice.Docx rodando em WebAssembly no
+       navegador e no Node, sem Blazor. Fica fora do UniversalOffice.sln.
+       -p:Aot=true compila com AOT (exige a carga de trabalho wasm-tools). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <WasmEnableWebcil>true</WasmEnableWebcil>
+    <CompressionEnabled>true</CompressionEnabled>
+    <RunAOTCompilation Condition="'$(Aot)' == 'true'">true</RunAOTCompilation>
+  </PropertyGroup>
+  <!-- tamanho: poda total (o JSON da árvore é gerado na compilação, sem reflexão) e sem os
+       recursos do runtime que o motor não usa; -p:Lean=false volta ao padrão do SDK -->
+  <PropertyGroup Condition="'$(Lean)' != 'false'">
+    <TrimMode>full</TrimMode>
+    <InvariantTimezone>true</InvariantTimezone>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <EventSourceSupport>false</EventSourceSupport>
+    <DebuggerSupport>false</DebuggerSupport>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <WasmStripILAfterAOT>true</WasmStripILAfterAOT>
+    <EmccCompileOptimizationFlag>-Oz</EmccCompileOptimizationFlag>
+    <EmccLinkOptimizationFlag>-Oz</EmccLinkOptimizationFlag>
+    <WasmEmitSymbolMap>false</WasmEmitSymbolMap>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- a carga do spike de Rust, para comparar o mesmo trabalho no C# em WebAssembly -->
+    <Compile Include="..\..\rust-spike\csharp\FontWorkload.cs" />
+    <ProjectReference Include="..\..\..\dotnet\src\UniversalOffice.Docx\UniversalOffice.Docx.csproj" />
+  </ItemGroup>
+</Project>

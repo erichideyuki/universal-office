@@ -354,3 +354,15 @@ with `node tools/parallel/worktree-setup.mjs --build` and torn down with
 through `tools/parallel/word-lock.mjs`. Workstream sessions do not commit versioned
 bundles nor edit the BACKLOG: the coordinating session merges into main,
 rebuilds and updates the status.
+
+## Rust core (branch `rust-core`, version 0.10)
+
+The engines are being rewritten in Rust (workspace `core/`, crates `uo-*`) so that there is
+one implementation for the browser (wasm), Node and .NET (a C# NuGet facade over the native
+library). Write comes first; every module is designed for reuse by Sheet and Slides. All the
+work follows the `rust-port` skill (`.claude/skills/rust-port/SKILL.md`): plan, skeptics,
+faithful port, exact parity against the TS engine, a MEASURED memory-leak gate, security,
+then simplification/algorithms, with maintainer gates and a record per module in
+`core/docs/modules/`. The TS engine and the C# port on `main` are frozen (0.9.x) as the parity
+reference and the benchmark baseline; the measurements behind the decision are in
+`experiments/`.

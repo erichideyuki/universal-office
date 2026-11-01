@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POC: motor .NET em WebAssembly</title>
+  <style>
+    body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #e8eaed; color: #1b1b1f; }
+    header { position: sticky; top: 0; z-index: 2; background: #fff; border-bottom: 1px solid #ccc; padding: 10px 16px; }
+    h1 { font-size: 16px; margin: 0 0 6px; }
+    table { border-collapse: collapse; font-size: 12.5px; }
+    td { padding: 1px 12px 1px 0; }
+    td:last-child { font-variant-numeric: tabular-nums; }
+    #pages { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px; }
+    canvas { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.25); cursor: text; }
+    #caret { position: absolute; width: 2px; background: #1a73e8; pointer-events: none; z-index: 1; }
+    #hit { color: #555; margin-left: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>UniversalOffice.Docx (C#) em WebAssembly → pintor de canvas do motor TS</h1>
+    <table id="log"></table>
+    <button id="pdf" type="button">PDF gerado no WebAssembly</button><span id="hit">clique numa página: hit-test no C#</span>
+  </header>
+  <div id="caret" hidden></div>
+  <main id="pages"></main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
