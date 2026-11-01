@@ -1,0 +1,147 @@
+{
+ "date": "2026-11-01T07:56:11.472Z",
+ "main": {
+  "sha": "d0f45bc5"
+ },
+ "branch": {
+  "sha": "7c8ad72a",
+  "dirty": false
+ },
+ "suites": {
+  "opc": {
+   "ts": {
+    "corpus": {
+     "peakRss": 28639232,
+     "kept": 287584,
+     "ms": 557,
+     "docs": 2742,
+     "parts": 17798,
+     "elements": 729760,
+     "bytes": 210935
+    },
+    "giant": {
+     "peakRss": 829964288,
+     "kept": 31887112,
+     "ms": 676.5,
+     "docs": 1,
+     "parts": 6,
+     "elements": 2010047,
+     "bytes": 0
+    },
+    "inflate": {
+     "peakRss": 30306304,
+     "kept": 31836155,
+     "ms": 59.7,
+     "bytes": 31717947
+    },
+    "saveDocx": {
+     "peakRss": 4804608,
+     "kept": 272273,
+     "ms": 2.4,
+     "bytes": 5362
+    },
+    "saveGiant": {
+     "peakRss": 89784320,
+     "kept": 3095381,
+     "ms": 556,
+     "bytes": 2848422
+    }
+   },
+   "rustNative": {
+    "corpus": {
+     "ms": 228.4,
+     "docs": 2742,
+     "parts": 17798,
+     "elements": 729760,
+     "bytes": 210935,
+     "allocated": 252803469,
+     "peak": 535354,
+     "kept": 0
+    },
+    "giant": {
+     "ms": 151.7,
+     "docs": 1,
+     "parts": 6,
+     "elements": 2010047,
+     "bytes": 0,
+     "allocated": 197242427,
+     "peak": 103060294,
+     "kept": 2849667
+    },
+    "inflate": {
+     "ms": 27.1,
+     "docs": 1,
+     "parts": 0,
+     "elements": 0,
+     "bytes": 31717947,
+     "allocated": 57387633,
+     "peak": 31752915,
+     "kept": 0
+    },
+    "saveDocx": {
+     "ms": 0.5,
+     "docs": 1,
+     "parts": 0,
+     "elements": 0,
+     "bytes": 5358,
+     "allocated": 1310062,
+     "peak": 514907,
+     "kept": 189152
+    },
+    "saveGiant": {
+     "ms": 760.3,
+     "docs": 1,
+     "parts": 0,
+     "elements": 0,
+     "bytes": 2856998,
+     "allocated": 100122802,
+     "peak": 63435928,
+     "kept": 31718822
+    }
+   },
+   "rustWasm": {
+    "corpus": {
+     "ms": 242.5,
+     "checksum": 958493,
+     "allocated": 219694614,
+     "peak": 533306,
+     "kept": 0,
+     "memoryGrowth": 589824
+    },
+    "giant": {
+     "ms": 176,
+     "checksum": 2010053,
+     "allocated": 197236680,
+     "peak": 103059482,
+     "kept": 2849339,
+     "memoryGrowth": 116719616
+    },
+    "inflate": {
+     "ms": 28.3,
+     "checksum": 31717947,
+     "allocated": 57387330,
+     "peak": 31752915,
+     "kept": 0,
+     "memoryGrowth": 57409536
+    },
+    "saveDocx": {
+     "ms": 0.6,
+     "checksum": 5358,
+     "allocated": 1374842,
+     "peak": 577159,
+     "kept": 188960,
+     "memoryGrowth": 655360
+    },
+    "saveGiant": {
+     "ms": 941.1,
+     "checksum": 2856998,
+     "allocated": 100187582,
+     "peak": 63435928,
+     "kept": 31718630,
+     "memoryGrowth": 92012544
+    },
+    "wasmBytes": 288917
+   }
+  }
+ }
+}
