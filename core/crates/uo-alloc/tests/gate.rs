@@ -2,6 +2,8 @@
 //! the bytes of an operation. Run with `cargo test -p uo-alloc --features global`.
 #![cfg(feature = "global")]
 
+use std::hint::black_box;
+
 use uo_alloc::{MemoryCheck, assert_flat, assert_no_leak, check_flat, check_no_leak, is_counting, measure, soak};
 
 #[test]
@@ -12,7 +14,7 @@ fn counting_is_installed() {
 #[test]
 fn no_leak_passes_when_everything_is_dropped() {
     let usage = assert_no_leak(|| {
-        let v: Vec<u64> = (0..1000).collect();
+        let v: Vec<u64> = black_box((0..1000).collect());
         v.iter().sum::<u64>()
     });
     assert!(usage.allocated >= 8000, "the vector was counted: {usage:?}");
@@ -21,13 +23,13 @@ fn no_leak_passes_when_everything_is_dropped() {
 
 #[test]
 fn outputs_returned_by_the_operation_are_dropped_and_not_a_leak() {
-    assert_no_leak(|| vec![0u8; 4096]);
+    assert_no_leak(|| black_box(vec![0u8; 4096]));
 }
 
 #[test]
 fn a_leak_is_caught_with_its_size() {
     let mut leaked: *mut [u8; 512] = std::ptr::null_mut();
-    let r = check_no_leak(|| leaked = Box::into_raw(Box::new([0u8; 512])));
+    let r = check_no_leak(|| leaked = black_box(Box::into_raw(black_box(Box::new([0u8; 512])))));
     match r {
         Err(MemoryCheck::Leak { bytes, .. }) => assert_eq!(bytes, 512),
         other => panic!("expected a leak of 512 bytes, got {other:?}"),
@@ -39,7 +41,7 @@ fn a_leak_is_caught_with_its_size() {
 
 #[test]
 fn measure_reports_what_stays_alive() {
-    let (kept, usage) = measure(|| vec![0u8; 2048]);
+    let (kept, usage) = measure(|| black_box(vec![0u8; 2048]));
     assert_eq!(usage.live_delta, 2048);
     drop(kept);
 }
@@ -47,7 +49,7 @@ fn measure_reports_what_stays_alive() {
 #[test]
 fn a_flat_soak_passes() {
     let series = soak(500, 50, |i| {
-        let v = vec![i as u8; 1024];
+        let v = black_box(vec![i as u8; 1024]);
         std::hint::black_box(&v);
     });
     assert_eq!(series.len(), 11);

@@ -1,0 +1,19 @@
+[package]
+name = "uo-opc"
+description = "Document container layer of the UniversalOffice Rust core: zip, flate, CFB, XML, OPC packages and limits"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# deflate for saving (gate 1, G2): parity is on decompressed bytes; inflate is our own port of fflate (G3)
+miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+
+[lints]
+workspace = true

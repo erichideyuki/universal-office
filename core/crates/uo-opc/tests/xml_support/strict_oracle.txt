@@ -1,0 +1,929 @@
+"<a/>"	{}a[]{}
+"<a></a>"	{}a[]{}
+"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n<a b=\"1\">t</a>"	{}a[{}b="1"]{"t"}
+"﻿<a/>"	{}a[]{}
+"<!DOCTYPE a><a/>"	ERR
+"<!DOCTYPE a [<!ENTITY e \"z\">]><a>&e;</a>"	ERR
+"<a>&e;</a>"	ERR
+"<a>&amp;&lt;&gt;&quot;&apos;</a>"	{}a[]{"&<>\"'"}
+"<a>&#65;&#x41;&#X41;</a>"	ERR
+"<a>&#1;</a>"	ERR
+"<a>&#xD83D;&#xDE00;</a>"	ERR
+"<a>&#x1F600;</a>"	{}a[]{"😀"}
+"<a>&#0;</a>"	ERR
+"<a>&#xFFFE;</a>"	ERR
+"<a>&#x110000;</a>"	ERR
+"<a>&#;</a>"	ERR
+"<a>& b</a>"	ERR
+"<a b=\"&lt;\"/>"	{}a[{}b="<"]{}
+"<a b=\"<\"/>"	ERR
+"<a b=\"1\" b=\"2\"/>"	ERR
+"<a xmlns:p=\"u\" xmlns:q=\"u\" p:x=\"1\" q:x=\"2\"/>"	ERR
+"<a xmlns:p=\"u\" p:x=\"1\" x=\"2\"/>"	{}a[{u}x="1",{}x="2"]{}
+"<p:a/>"	ERR
+"<a p:b=\"1\"/>"	ERR
+"<p:a xmlns:p=\"u\"></p:a>"	{u}a[]{}
+"<p:a xmlns:p=\"u\"></q:a>"	ERR
+"<a></b>"	ERR
+"<a><b></a></b>"	ERR
+"<a>x</a>y"	ERR
+"<a/><b/>"	ERR
+"x<a/>"	ERR
+"<a/>  "	{}a[]{}
+"<a/><!-- c --><?pi x?>"	{}a[]{}
+"<?pi x?><!-- c --><a/>"	{}a[]{}
+"<a><?xml x?></a>"	ERR
+"<?xml version=\"1.0\"?><?xml version=\"1.0\"?><a/>"	ERR
+" <?xml version=\"1.0\"?><a/>"	ERR
+"<a><!-- a--b --></a>"	ERR
+"<a><!-- a- --></a>"	{}a[]{!" a- "}
+"<a><!----></a>"	{}a[]{!""}
+"<a>]]></a>"	ERR
+"<a>]]&gt;</a>"	{}a[]{"]]>"}
+"<a><![CDATA[<&]]>x</a>"	{}a[]{"<&","x"}
+"<a><![CDATA[a\r\nb\rc]]></a>"	{}a[]{"a\nb\nc"}
+"<a>a\r\nb\rc&#13;</a>"	{}a[]{"a\nb\nc\r"}
+"<a v=\"x\r\ny\tz&#10;&#9;\"/>"	{}a[{}v="x y z\n\t"]{}
+"<a b=\"1\"c=\"2\"/>"	ERR
+"<a b = \"1\" />"	{}a[{}b="1"]{}
+"<a b='\"'/>"	{}a[{}b="\""]{}
+"<1a/>"	ERR
+"<a:b:c/>"	ERR
+"<:a/>"	ERR
+"<a: xmlns:a=\"u\"/>"	ERR
+"<a\u0001/>"	ERR
+"<a>\u0001</a>"	ERR
+"<a>￿</a>"	ERR
+"<a xmlns:xml=\"http://www.w3.org/XML/1998/namespace\"/>"	{}a[]{}
+"<a xmlns:xml=\"u\"/>"	ERR
+"<a xmlns:xmlns=\"u\"/>"	ERR
+"<a xmlns:p=\"\"/>"	ERR
+"<a xmlns=\"\"/>"	{}a[]{}
+"<a xmlns=\"u\"><b xmlns=\"\"/></a>"	{u}a[]{{}b[]{}}
+"<a xml:space=\"preserve\"/>"	{}a[{http://www.w3.org/XML/1998/namespace}space="preserve"]{}
+"<a xmlns:p=\"http://www.w3.org/XML/1998/namespace\"/>"	ERR
+"<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t xml:space=\"preserve\"> a </w:t></w:r></w:p></w:body></w:document>"	{http://schemas.openxmlformats.org/wordprocessingml/2006/main}document[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}body[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t[{http://www.w3.org/XML/1998/namespace}space="preserve"]{" a "}}}}}
+"<a><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></a>"	{}a[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+"<a><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></a>"	{}a[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+"<a><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b>x</b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></a>"	{}a[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{"x"}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+"<a><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b>x</b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></a>"	DEPTH
+"<a><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><c/></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></a>"	DEPTH
+"<a><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><!--c--></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></a>"	{}a[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{{}b[]{!"c"}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+"<a><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><!--c--></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></a>"	DEPTH
+"<a><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b> </b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></b></a>"	DEPTH
+"<a"	ERR
+"<a b"	ERR
+"<a b="	ERR
+"<a b=\"x"	ERR
+"<a>"	ERR
+"<a><!--"	ERR
+"<a><![CDATA["	ERR
+"<a><?p"	ERR
+""	ERR
+"   "	ERR
+"<!-- only -->"	ERR
+"<a>&amp</a>"	ERR
+"<a>&#x41</a>"	ERR
+"<a b=x/>"	ERR
+"<a xml:space=\" preserve \"/>"	{}a[{http://www.w3.org/XML/1998/namespace}space=" preserve "]{}
+"<a xml:space=\"Preserve\"/>"	ERR
+"<a xml:space=\"\"/>"	ERR
+"<a xml:lang=\"zz zz\"/>"	{}a[{http://www.w3.org/XML/1998/namespace}lang="zz zz"]{}
+"<a xml:foo=\"1\"/>"	{}a[{http://www.w3.org/XML/1998/namespace}foo="1"]{}
+"<a/ >"	ERR
+"<a></a >"	{}a[]{}
+"</a>"	ERR
+"<a><!DOCTYPE b></a>"	ERR
+"<a><!ELEMENT></a>"	ERR
+"<a>é😀</a>"	{}a[]{"é😀"}
+"<x:z v=\"1\" r=\"x\r\ny\tz\" xmlns=''></x:z>"	ERR
+"<b xml:space=\"&bogus;\" xmlns:q='http://schemas.openxmlformats.org/wordprocessingml/2006/main'><!--k--></b>"	ERR
+"<?xml version=\"1.0\"?><x:z><c q:x='u' v='x\r\ny\tz'>y</c><![CDATA[c\r\nd]]></x:z>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é r=\"preserve\" r=\"&bogus;\">x </é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='&amp;' r='u' xml:space='x\r\ny\tz'>x<a></a><a/></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p p:x=\"2\" v='x\r\ny\tz' v=\"&amp;\"></w:p></root>"	ERR
+"<é><![CDATA[c\r\nd"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:w='&bogus;' xmlns:q='x\r\ny\tz'><c xmlns:p=\"u\" xmlns:p=\"1\" v='&amp;'/><?p q?>]]></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val=\"&#10;\" xmlns:p='1' r=\"\"></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b><w:p q:x='a b'/></b></root>"	{}root[]{{}b[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{v}x="a b"]{}}}
+"<b w:val=\"1\" r='&bogus;'/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val='&#xD83D;&#xDE00;' xml:space='&#xD83D;&#xDE00;'></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns:q=\"1\"/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b/></root>"	{}root[]{{}b[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r><a/><w:p xmlns:p='1'>y<a r=\"&#xD83D;&#xDE00;\"><q:y/>y</zz><a>y&#1;<é xmlns:q='1'/></a></w:p></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val='1' xml:space=\"u\"><é xmlns:q='preserve' xmlns:p='1' w:val=\"1\"/><w:r w:val=\"\"><a></a>&#x41;</w:r> z </a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:w='2'/></root>"	{}root[]{{}b[]{}}
+"<p:x w:val=\"1\">xa&amp;b</p:x>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z>\r\n<p:x xmlns=\"a b\" r='&bogus;' r='x\r\ny\tz'><?p q?>&#1;</p:x></x:z></root>"	ERR
+"<q:y xmlns=\"u\"></zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='http://schemas.openxmlformats.org/wordprocessingml/2006/main' r=\"v\" w:val=\"v\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y r=\"&bogus;\" xmlns=\"1\" v=\"a b\"><w:p>x z </w:p></q:y></root>"	ERR
+"<w:p><w:p xmlns:q=\"x\r\ny\tz\" xmlns=\"1\" q:x=\"&amp;\"><w:r r=\"1\" w:val='&bogus;'>y</w:r><c><w:r/>&#x41;<w:r v=\"preserve\" xmlns:q=\"2\" w:val='&#10;'/></zz></w:p><w:r q:x=\"\"/><é v='&#10;' xmlns:q='2' r=\"&#xD83D;&#xDE00;\">\r\n<a xmlns:q='preserve'></a></é></w:p>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a/></root>"	{}root[]{{}a[]{}}
+"<b xmlns:p=\"u\" xmlns:w='a b'>x]]></b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns:w='&#xD83D;&#xDE00;' xmlns:q='2'>]]></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xml:space=\"u\" w:val=\"1\"></w:p></root>"	ERR
+"<p:x w:val='1' r=''><w:r r=\"&amp;\" v=\"&#10;\" v=\"&bogus;\">x</w:r><w:p r='preserve' xmlns='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xml:space='1'/></p:x>"	ERR
+"<b q:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"1\"></b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x><a r='a b'><é w:val=\"preserve\"/> z </a><é xmlns:q='&bogus;'><a r=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" r=\"u\" xmlns:w='u'>x<?p q?></zz>x</é></p:x></root>"	ERR
+"<c xmlns:p=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xml:space='x\r\ny\tz'/>"	ERR
+"<é r='1' xmlns='a b'><b v=\"1\" w:val='2' xmlns=\"1\">x</b></é>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordproce"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w='a b' r='&#10;' p:x='v'/></root>"	{}root[]{{}a[{}r="\n",{u}x="v"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:w='' xmlns:q=\"\" w:val='http://schemas.openxmlformats.org/wordprocessingml/2006/main'></w:p></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns='' q:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:q='x\r\ny\tz'><?p q?></é></root>"	{}root[]{{}é[{x y z}x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{?p}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:q=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:p='&#10;' xmlns:p='preserve' xmlns=\"\"></x:z></é></root>"	ERR
+"<b v='&#10;' r='&#xD83D;&#xDE00;' xml:space='2'>\r\n</b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x q:x=\"a b\" w:val='http://schemas.openxmlformats.org/wordprocessingml/2006/main'></p:x></root>"	{}root[]{{u}x[{v}x="a b",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v=\"x\r\ny\tz\"><a r=\"preserve\"><w:p></zz></a></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wor"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:w=\"1\" w:val='2' w:val='a b'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p r='&#10;' xmlns:q=\"v\">&#x41;<!--k--></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}r="\n"]{"A",!"k"}}
+"<b q:x='u'><w:p xml:space='u' r=\"&amp;\"> z <?p q?></w:p><!--k--><a></a></zz>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é><?p q?><!--k--><w:r v=\"v\" r=\"v\"> z </w:r></é></root>"	{}root[]{{}é[]{?p,!"k",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{}v="v",{}r="v"]{" z "}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><b v='&amp;'/><![CDATA[c\r\nd]]></a></root>"	{}root[]{{}a[]{{}b[{}v="&"]{},"c\nd"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é q:x=\"&bogus;\"/></root>"	ERR
+"<é v=''>x</zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns:p=''>x<?p q?><![CDATA[c\r\nd]]></c></root>"	ERR
+"<a w:val=\"u\" v=\"&amp;\"><b> <w:r w:val='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xmlns:q=\"&bogus;\" q:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é r='v'/><?p q?></w:r>]]></b></a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xml:space=\"a b\" xmlns=\"a b\">x<c><a xmlns:w=\"2\" xml:space=\"&#10;\" w:val=\"1\"><w:p xml:space='a b' v=\"preserve\"/></a>]]></c></c></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w='&#10;' q:x=\"u\" w:val=''></a></root>"	{}root[]{{}a[{v}x="u",{\n}val=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a q:x='' v=\"preserve\" q:x=\"u\"></a></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w=\"u\"/></root>"	{}root[]{{}a[]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:q=\"u\" xmlns='v'>&#1;<?p q?></w:p></root>"	ERR
+"<w:r></zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns:w=''>x<!--k-->x</p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val='preserve' p:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="preserve",{u}x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}}
+"<b xmlns:w=\"1\" xmlns:p='2'></zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p p:x='&#10;' xmlns=\"x\r\ny\tz\">x<p:x><a><x:z xmlns:q=\"&bogus;\" xml:space=\"2\" r='a b'/></a></p:x><q:y w:val=\"&bogus;\" v='&amp;'>x</q:y></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x q:x=\"&#10;\" w:val=\"&#xD83D;&#xDE00;\">a&amp;b</p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><w:p q:x='1' xmlns:p=\"\"></w:p><w:p> z <p:x xmlns:p='&bogus;' r=\"1\"></p:x></w:p><x:z q:x='&bogus;'/></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:q=\"preserve\" v='x\r\ny\tz' w:val=\"&#10;\"><?p q?></q:y></root>"	{}root[]{{preserve}y[{}v="x y z",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="\n"]{?p}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:p='1' xmlns:p=\"a b\" r='a b'><![CDATA[c\r\nd]]><b xmlns:p=\"2\"/>&#x41;</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x p:x=\"a b\" v=\"u\"><w:r><![CDATA[c\r\nd]]></w:r>x</p:x></root>"	{}root[]{{u}x[{u}x="a b",{}v="u"]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{"c\nd"},"x"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns:p='x\r\ny\tz' r=\"&bogus;\"></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é></é></root>"	{}root[]{{}é[]{}}
+"<é w:val=\"1\" q:x='&amp;'>]]><x:z xml:space=\"1\"><b xmlns:q='v'> x</b>ya&amp;b</x:z></é>"	ERR
+"<a xmlns:w='1'><x:z>xx<x:z><q:y/><!--k--></x:z></zz></a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p>x&#1;<w:p xml:space=\"a b\" xmlns:q='1' v='&amp;'>y</w:p></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c> z <w:p>\r\n</w:p><c v=\"&bogus;\"></zz></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:q='&#xD83D;&#xDE00;'><a w:val=\"&bogus;\"><!--k--></a>\r\ny</b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:p='preserve' q:x=\"&#xD83D;&#xDE00;\">x]]>&#1;</a></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p r='preserve' q:x='1' w:val=\"u\"> </w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}r="preserve",{v}x="1",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{" "}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val=\"&bogus;\" p:x='v' w:val=\"&#10;\"><w:p w:val='&#10;'><a v=\"\" q:x=\"u\"><p:x/>a&amp;b </a>y</w:p></c></root>"	ERR
+"<w:r xmlns:p='u' w:val='&bogus;' r=\"&#10;\"/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y>xa&amp;b</q:y></root>"	{}root[]{{v}y[]{"xa&b"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a q:x=\"&bogus;\" xmlns='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>y</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c p:x=\"\" w:val=\"2\" p:x=\"u\"></c></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v='1' w:val=\"&#xD83D;&#xDE00;\">\r\n<w:p xmlns=\"1\" q:x=\"1\" p:x=\"1\">]]><w:r></w:r></w:p><?p q?></é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y v='1' v=\"2\"><é></é></q:y></root>"	ERR
+"<p:x xmlns:w=\"2\" xmlns:q='a b' r='2'><b q:x=\"x\r\ny\tz\" xmlns:p='a b' r=\"v\"/><?p q?></p:x>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y v=\"\"/></root>"	{}root[]{{v}y[{}v=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><c xmlns:q='u'><![CDATA[c\r\nd]]><w:r w:val='&#xD83D;&#xDE00;'><w:r w:val='&#10;'/>&#x41;</w:r><w:p r=\"&#xD83D;&#xDE00;\" p:x=\"x\r\ny\tz\"/></c>&#x41; z </w:p></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml"	ERR
+"<root xmlns:p=\"u\""	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c></c></root>"	{}root[]{{}c[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val='a b'><a v='&bogus;' r='u'/><p:x p:x='&#xD83D;&#xDE00;' xmlns:p='preserve'></p:x> </a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:q='&bogus;'><a r=\"a b\" q:x='1' r=\"&amp;\"/></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xml:space='v' p:x=\"&#10;\">&#1;</é></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x w:val='&bogus;'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:p=\"v\"><!--k--></a></root>"	{}root[]{{}a[]{!"k"}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:q=\"u\" v='&#10;'><x:z w:val='x\r\ny\tz'></x:z><a>xx</a></a></root>"	{}root[]{{}a[{}v="\n"]{{u}z[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="x y z"]{},{}a[]{"xx"}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v=\"preserve\" w:val='&amp;' w:val='1'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xml:space=\"u\" q:x='1' xmlns:q=\"&#10;\"/></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c p:x='&bogus;' xmlns=\"&bogus;\" xmlns:w=\"&amp;\"><w:r>\r\n</w:r></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z q:x='x\r\ny\tz' xmlns:q=\"&bogus;\" xmlns:q=\"&#xD83D;&#xDE00;\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns=\"1\" v='' xmlns:w='&#10;'></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é w:val='' xml:space=\"u\" w:val=\"x\r\ny\tz\"/></root>"	ERR
+"<w:p w:val='a b'><b><a w:val='&#xD83D;&#xDE00;' p:x='x\r\ny\tz'></a></zz><a></a></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y w:val=\"1\" w:val=\"a b\"></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:p=\"&bogus;\" xmlns:w=\"u\" xmlns:p=\"u\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v='1'/></root>"	{}root[]{{}a[{}v="1"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c v=\"1\"></c></root>"	{}root[]{{}c[{}v="1"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é p:x='&amp;' w:val=\"preserve\" v=\"u\"><p:x xmlns:p=\"u\"/><w:p v=\"&#xD83D;&#xDE00;\"/><a><w:r v=\"a b\" p:x=\"2\"/>y</a></é></root>"	ERR
+"<w:p/>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val='2' w:val=\"\"><!--k-->y</zz></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z/></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r r=\"x\r\ny\tz\" xmlns=\"a b\"><c xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" r='&#xD83D;&#xDE00;' v='v'>&#1;</c>&#1;</w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z r='v' v='&#xD83D;&#xDE00;' p:x='&#xD83D;&#xDE00;'><a v='&#10;'><a>]]><q:y w:val='1'/></a> <w:p xmlns:q=\"&#10;\" xml:space=\"&#10;\" r='preserve'/></a></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:q='a b' r='&amp;'/></root>"	{}root[]{{}b[{}r="&"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:q='u' w:val='v'><é p:x='&#10;' xml:space=\"v\"><b v=\"preserve\" xmlns:w='2' r=\"v\">&#x41;<q:y/></b><!--k--></é></é></root>"	ERR
+"<w:p r=\"x\r\ny\tz\">&#1;</w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xml:space='1'/></root>"	ERR
+"<b q:x=\"preserve\" w:val='&#xD83D;&#xDE00;'><?p q?> </b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns:w=\"1\" xmlns:p=\"1\" r='a b'><x:z><p:x xmlns:q=\"1\" v='&bogus;' r='1'></p:x></x:z></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r w:val='1' xml:space='2' v=\"preserve\"></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xml:space=\"1\" v='&amp;' v=\"&amp;\"> z </w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:w=\"v\"></w:p></root>"	{}root[]{{v}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r=\"preserve\" v='&#xD83D;&#xDE00;' xmlns:q='u'><?p q?><p:x v='' p:x=\"u\" v=\"1\"></p:x></zz></root>"	ERR
+"<x:z/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xml:space='a b' xmlns=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:p=\"v\" xmlns:w=\"&#10;\" w:val=\"2\">&#1;</zz></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xmlns:q=\"&bogus;\">y z </b></root>"	ERR
+"<a v=\"2\" xmlns:w=\"&bogus;\">x]]></a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y v='&#10;' v=\"x\r\ny\tz\">x<a xmlns='1' q:x=\"u\"/></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b p:x=\"1\" r=\"&amp;\" q:x='2'>\r\n<b v='&#10;'/><w:r q:x=\"&#xD83D;&#xDE00;\" w:val='u'><p:x>&#1;</p:x>&#x41;<é>]]></é></w:r></b></root>"	ERR
+"<b xmlns:q=\"1\"><w:r xmlns:q='x\r\ny\tz' w:val=\"a b\"></w:r><c xmlns:p='preserve'/> </b>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z></x:z></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a/></root>"	{}root[]{{}a[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v='u' xmlns:p='&#xD83D;&#xDE00;' r='2'></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns:q=\"u\" q:x='a b'><?p q?>a&amp;b</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x v='u'></p:x></root>"	{}root[]{{u}x[{}v="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xml"	ERR
+"<q:y></q:y>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z/></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:w='&#10;'><b xmlns=\"2\"></b></q:y></root>"	{}root[]{{v}y[]{{2}b[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x q:x='u'><b r='http://schemas.openxmlformats.org/wordprocessingml/2006/main' r='2'/>a&amp;b</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é p:x='u' w:val=\"a b\" v='&#10;'></é></root>"	{}root[]{{}é[{u}x="u",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="a b",{}v="\n"]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y v=\"1\"></q:y></root>"	{}root[]{{v}y[{}v="1"]{}}
+"<a/>"	{}a[]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><![CDATA[c\r\nd]]></a></root>"	{}root[]{{}a[]{"c\nd"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:w='a b' p:x=\"\" xmlns:p=\"2\"/></root>"	{}root[]{{}é[{2}x=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v=\"1\"></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}v="1"]{}}
+"<w:p v='2' v=\"&#xD83D;&#xDE00;\"/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:w='preserve' r='1'><w:p> </w:p>y<p:x><w:r></w:r></p:x></q:y></root>"	{}root[]{{v}y[{}r="1"]{{preserve}p[]{" "},"y",{u}x[]{{preserve}r[]{}}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xml:space=\"x\r\ny\tz\"></a></root>"	ERR
+"<x:z xmlns:q=\"&amp;\" xmlns:p=\"&amp;\"/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y><p:x r=\"&bogus;\" xmlns:p='v' p:x='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>]]>&#1;<![CDATA[c\r\nd]]></p:x></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v=\"1\"/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{}v="1"]{}}
+"<w:p v=\"u\" v=\"&#10;\" xmlns:w=\"2\"><w:p xmlns:p=\"&amp;\" w:val=\"2\"/><é xml:space='u'> z ]]></é><x:z p:x=\"&amp;\" q:x='2' r=\"a b\"></x:z></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x w:val='u'>]]></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val='&amp;' v='&bogus;'><w:p xmlns:p=\"&amp;\" xmlns:p='&amp;' xmlns=\"u\"></w:p><w:p w:val='1'><w:p>a&amp;b</w:p></zz></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns=\"&bogus;\"><a w:val='1' xmlns='v' xmlns='u'></a></x:z></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:q='u' w:val=\"u\" xmlns=\"a b\"/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y/></root>"	{}root[]{{v}y[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><c xmlns:q=\"2\" xmlns:w=\"\" xmlns:p=\"&#xD83D;&#xDE00;\"><w:p w:val='v'>x</w:p></c><a>&#x41;<![CDATA[c\r\nd]]></a><b p:x='1'><!--k-->x</b></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b r='&bogus;' v='v' xmlns:q=\"x\r\ny\tz\"></b></root>"	ERR
+"<w:p v='u' xmlns=\"http://s"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a>&#1;y</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r><c v=\"1\"/></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{{}c[{}v="1"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v='a b' xml:space=\"&bogus;\" xmlns:w='preserve'> z <w:p><w:p xmlns=\"u\" r=\"2\"><p:x/><?p q?></w:p></w:p>&#1;</w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c> </c></root>"	{}root[]{{}c[]{" "}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val='&#10;'></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b w:val=\"\"/></root>"	{}root[]{{}b[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b q:x='u'> </b></root>"	{}root[]{{}b[{v}x="u"]{" "}}
+"<w:p v=\"a b\" xml:space=''> z </w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y></q:y></root>"	{}root[]{{v}y[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x></p:x></root>"	{}root[]{{u}x[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v='&#xD83D;&#xDE00;'>\r\n</b></root>"	ERR
+"<a><c r=\"u\" v=''>a&amp;b</c></a>"	{}a[]{{}c[{}r="u",{}v=""]{"a&b"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xml:space='' p:x=\"&#10;\">\r\nx</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns=\"u\" r='preserve' r=\"&#xD83D;&#xDE00;\"><p:x xml:space=\"\" xmlns:w='&amp;'/>a&amp;b</p:x></root>"	ERR
+"<é q:x='preserve' xmlns:p='1'><a xmlns:q='1' xml:space=\"&bogus;\" xmlns:q=\"&bogus;\"/><c v='u' xmlns:q='a b' q"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v=\"&amp;\" r=''><x:z w:val=\"x\r\ny\tz\"/>x</a></root>"	{}root[]{{}a[{}v="&",{}r=""]{{u}z[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="x y z"]{},"x"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a q:x=\"&#10;\">a&amp;b<é r='&amp;' r=\"&#xD83D;&#xDE00;\"><b/>\r\n</é>&#x41;</a></root>"	ERR
+"<é r='2' p:x='2'/>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>x&#1;</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x>\r\n<?p q?></p:x></root>"	{}root[]{{u}x[]{"\n",?p}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v='v'></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{}v="v"]{}}
+"<root xmlns:p=\"u"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é r=\"u\" xml:space='v'><![CDATA[c\r\nd]]><b xmlns=\"u\"/></é></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"&amp;\">y</c></root>"	{}root[]{{}c[{}r="http://schemas.openxmlformats.org/wordprocessingml/2006/main",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="&"]{"y"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r p:x=\"&#10;\" w:val='x\r\ny\tz' r=\"preserve\">&#x41;</w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{u}x="\n",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="x y z",{}r="preserve"]{"A"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r='&amp;'/></root>"	{}root[]{{}c[{}r="&"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xml:space='1'><q:y q:x='x\r\ny\tz' w:val='u'><w:r xml:space=\"&amp;\"></zz></q:y>\r\n</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r=\"u\" xml:space='x\r\ny\tz'><w:r/><q:y w:val=\"u\" v='1'>y<b v=\"a b\" xml:space=\"1\"><w:r/></b><b v='2' xmlns:q='&amp;' w:val=\"a b\"/></q:y></zz></root>"	ERR
+"<w:p r='x\r\ny\tz' v='x\r\ny\tz' q:x=\"v\">y<é><w:r r='1'>]]><w:p v='&#xD83D;&#xDE00;' r='u' r='u'/><b/></w:r><w:p xmlns:p='1'>]]>]]><a xmlns:p='&#xD83D;&#xDE00;' v=\"&bogus;\" w:val=\"u\"/></w:p>x</é>\r\n</w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b r=\"1\"> </b></root>"	{}root[]{{}b[{}r="1"]{" "}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v=\"1\"><a xmlns:p=\"u\" v='u'/> z </w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}v="1"]{{}a[{}v="u"]{}," z "}}
+"<x:z xml:space='1'/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é p:x='v'><p:x xmlns=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/><b v=\"2\"></b></é></root>"	{}root[]{{}é[{u}x="v"]{{u}x[]{},{}b[{}v="2"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r=\"a b\"> z <w:r></w:r></a></root>"	{}root[]{{}a[{}r="a b"]{" z ",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:q=\"u\" xmlns:p='&bogus;' xmlns:p='v'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v=\"&#10;\"><a>\r\n<x:z xmlns:q=\"&#10;\"></x:z><c><c xmlns:q=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" r=\"2\" v='&bogu"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:w='u' xmlns:q=\"\"><w:p>&#x41;<w:p p:x='1' xmlns:w='u' v=\"preserve\"><q:y w:val='2' r=\"v\" xmlns:q=\"&bogus;\"/>&#x41;</w:p><a><x:z/></a></w:p></é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:w=\"u\" w:val='&#10;'><p:x/>]]></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:w=\"preserve\"><w:p/></q:y></root>"	{}root[]{{v}y[]{{preserve}p[]{}}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y> z </zz></root>"	ERR
+"<q:y xmlns:w='1'/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z v='v'><c></c><!--k--><w:p></w:p></x:z></root>"	{}root[]{{u}z[{}v="v"]{{}c[]{},!"k",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:q='&amp;' w:val='&bogus;'></é></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><w:r w:val='' xmlns='&bogus;'/>\r\n</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y v='&#10;' v=\"&#xD83D;&#xDE00;\" xmlns=\"&bogus;\">x</q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns:q=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><!--k--></c></root>"	{}root[]{{}c[]{!"k"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r p:x=\"u\" p:x='1' w:val='1'><w:p w:val=\"2\" w:val=\"&#10;\"><q:y xmlns:q=\"u\"/><!--k--></w:p></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x/></root>"	{}root[]{{u}x[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y><a v='u' xmlns:p=\"1\" v='u'/><a xmlns:q=\"a b\"><c v='1'/></a><q:y>a&amp;b<p:x w:val='v' xmlns:w='1' r='&amp;'/></q:y></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns=\"preserve\">x<?p q?></p:x></root>"	{}root[]{{u}x[]{"x",?p}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v='&#10;'/></root>"	{}root[]{{}b[{}v="\n"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns='1'/></root>"	{}root[]{{1}c[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r=\"2\" r=\"&#10;\"><![CDATA[c\r\nd]]></c></root>"	ERR
+"<w:r xmlns:q='2' w:val=\"&bogus;\" r=\"x\r\ny\tz\"> z </w:r>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org"	ERR
+"<w:p> </w:p>"	ERR
+"<q:y r=\"&amp;\"/>"	ERR
+"<?xml version=\"1.0\"?><c p:x='' p:x='a b' q:x=\"&amp;\">a&amp;b</c>"	ERR
+"<?xml version=\"1.0\"?><b p:x='v'><q:y r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'></q:y>\r\na&amp;b</b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xml:space='&#10;' v=\"preserve\" q:x='&amp;'>\r\n</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns:p='&#10;'>\r\n<w:r></w:r></p:x></root>"	{}root[]{{\n}x[]{"\n",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:p='preserve'>y<w:r xml:space='x\r\ny\tz' w:val=\"&#xD83D;&#xDE00;\"/></é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns:p='&#10;'><é>x</é></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{{}é[]{"x"}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z r='&#xD83D;&#xDE00;' r=\"v\"><c r=\"2\" xmlns='x\r\ny\tz'/> z <c>\r\n<!--k--></c></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b>x<x:z xmlns:q='x\r\ny\tz' w:val='&amp;'><w:p xmlns:p='1' xmlns:p='2'>&#x41;</w:p></x:z></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='&#xD83D;&#xDE00;'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xml:space='u' xmlns:w='&bogus;'><?p q?>&#1;<x:z v=\"&bogus;\" xmlns:q='2'><c/></x:z></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v=\"preserve\" r=\"u\" v='&#xD83D;&#xDE00;'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x v='preserve' r='u' v=\"v\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x/></root>"	{}root[]{{u}x[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns=\"2\"><?p q?><![CDATA[c\r\nd]]></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{?p,"c\nd"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v='' w:val='2' r='u'></b></root>"	{}root[]{{}b[{}v="",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="2",{}r="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlfo"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z q:x='1'><x:z/> </x:z></root>"	{}root[]{{u}z[{v}x="1"]{{u}z[]{}," "}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z v=\"preserve\" xmlns:p='&#xD83D;&#xDE00;' w:val='2'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w='a b' xmlns:p=\"&amp;\" xmlns:w='&bogus;'><w:p p:x='1' r='u'>&#x41;</w:p>]]></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y/></root>"	{}root[]{{v}y[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z p:x=\"a b\" xmlns:w=\"1\" q:x='&#xD83D;&#xDE00;'><w:r r='&bogus;'>x</w:r></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'/></root>"	{}root[]{{}a[{}r="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val=\"1\"><a w:val='http://schemas.openxmlformats.org/wordprocessingml/2006/main' v=\"&amp;\" r=''><a/>&#1;</a></w:p></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b w:val='&#10;' r='u'></b></root>"	{}root[]{{}b[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="\n",{}r="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z/></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b r=\"1\" p:x='1'/></root>"	{}root[]{{}b[{}r="1",{u}x="1"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y/></root>"	{}root[]{{v}y[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><é xmlns='a b' q:x=\"2\" xmlns=\"&amp;\"/><x:z p:x=\"&#10;\" r=\"\" xmlns=\"\"></x:z></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y r='a b' w:val='1' v=\"a b\"></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x p:x=\"1\">&#1;<w:p v=\"&amp;\" w:val=\"2\"/>x</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns='a b' v=\"1\" xml:space=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">yy</w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z w:val='x\r\ny\tz'/></root>"	{}root[]{{u}z[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="x y z"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x w:val=\"u\" xmlns:q='a b'> z ]]><?p q?></p:x></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><c><p:x xml:space=\"a b\"></zz></c><a xmlns:w=\"u\">x&#x41;</a><q:y xmlns:q='u' r='1'/></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a q:x='&#10;' xmlns='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>x</a></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}a[{v}x="\n"]{"x"}}
+"<a></a>"	{}a[]{}
+"<w:p><é p:x=''><c xml:space=\"a b\" v='' r=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/></é><w:r><b><a xmlns:w='x\r\ny\tz'/></b>a&amp;b</w:r></zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é>x</é></root>"	{}root[]{{}é[]{"x"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z v='2'/></root>"	{}root[]{{u}z[{}v="2"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r><c r=\"a b\"></c>a&amp;b</w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{{}c[{}r="a b"]{},"a&b"}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b p:x=\"a b\" p:x='u' xmlns:w='&bogus;'><!--k--><a></a>\r\n</b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:w=\"&#xD83D;&#xDE00;\" xmlns:p='u' v='&#10;'/></root>"	ERR
+"<c r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'></c>"	{}c[{}r="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<w:p xml:space='&#10;'></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v=\"&#xD83D;&#xDE00;\"><?p q?></w:r></root>"	ERR
+"<b xml:space='&amp;' xmlns='preserve'><a/>]]></b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val=''><b xmlns:p='&#xD83D;&#xDE00;' xmlns:w=\"u\" v='u'><é w:val=\"2\" p:x=\"a b\" xmlns:q='1'/><w:p p:x=\"1\" xml:space=\"\" xmlns:p=\"a b\"><w:r v=\"&bogus;\"/>\r\n</w:p></b></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><![CDATA[c\r\nd]]></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{"c\nd"}}
+"<w:p></w:p>"	ERR
+"<é></é>"	{}é[]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x></p:x></root>"	{}root[]{{u}x[]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v='1'></a></root>"	{}root[]{{}a[{}v="1"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:q=\"u\"><é xmlns='&#10;' q:x='1'><é xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xmlns='u'/></é></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns=\"u\" xmlns:p=\"&amp;\" xmlns:w='v'><q:y xmlns:p=\"u\">]]></q:y></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:w='&#10;' q:x=\"&#10;\" r=\"2\"><b p:x=\"u\" q:x='2' xmlns=\"&bogus;\"/>&#x41;</q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v=\"u\" w:val='&#10;'><w:r xmlns:w=\"\" q:x=\"preserve\"></w:r></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z><é xml:space=\"&amp;\"><![CDATA[c\r\nd]]>x<!--k--></é><?p q?><b>]]><?p q?></b></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:w=\"u\" w:val=\"\">&#1;</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é><?p q?><!--k--></é></root>"	{}root[]{{}é[]{?p,!"k"}}
+"<root xmlns:p=\"u\" xmlns:q=\""	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:q='http://schemas.openxmlformats.org/wordprocessingml/2006/main' r='1' v=\"u\"></a></root>"	{}root[]{{}a[{}r="1",{}v="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:q='2' r='2' xmlns:q='2'> <é/><?p q?></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns:q=\"&#10;\">]]></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r>a&amp;b&#x41;<q:y xmlns='http://schemas.openxmlformats.org/wordprocessingml/2006/main' w:val=\"v\" xmlns:w=\"preserve\"/></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{"a&bA",{v}y[{preserve}val="v"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xmlns:q='u'/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z><a/></x:z></root>"	{}root[]{{u}z[]{{}a[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val=\"v\" xmlns:p=\"x\r\ny\tz\">&#x41;<a p:x=\"preserve\"/></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="v"]{"A",{}a[{x y z}x="preserve"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r w:val=\"&#xD83D;&#xDE00;\"></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v='&amp;'><!--k--></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns='v' q:x=\"u\" xmlns:p=\"&bogus;\"></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r='2'> <x:z>x<é><b v='&#10;' v='&#xD83D;&#xDE00;' r='u'/><é/>&#x41;</é><b><w:p w:val=\"a b\" v=\"a b\"/></b></x:z></c></root>"	ERR
+"<a xmlns=\"\" w:val='2' w:val=\"\"> </a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w=\"\" xmlns=\"v\" xmlns:p='u'><![CDATA[c\r\nd]]></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns=\"&bogus;\" w:val='preserve'><é>x<w:p"	ERR
+"<c xml:space=\"u\" w:val=\"1\" r=\"u\">xy&#1;</c>"	ERR
+"<p:x w:val=\"&#xD83D;&#xDE00;\" xmlns:p='&#xD83D;&#xDE00;'><w:p xmlns:q='u' xmlns='&#10;'><w:p w:val=\"1\" xmlns:p=\"preserve\">&#1;<a v=\"\"/></w:p></w:p></p:x>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r=\"&#10;\" xmlns:q='&#10;' v='"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a/></root>"	{}root[]{{}a[]{}}
+"<p:x v='u'><p:x p:x='' xmlns='2' p:x=\"&amp;\"></p:x>&#1;<?p q?></p:x>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y r='&amp;' xml:space=\"u\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns:w='v' q:x='u'><w:r r='1' xmlns:p=\"\"/></c></root>"	ERR
+"<q:y>\r\n</q:y>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a/></root>"	{}root[]{{}a[]{}}
+"<?xml version=\"1.0\"?><w:r xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main'/>"	{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z>&#1;<a w:val=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:p='v'/></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x p:x='1'><q:y><?p q?>x<w:p p:x='u' xmlns:q='u' xmlns:p=\"u\"><?p q?><w:p w:val=\"1\" xml:space=\"a b\" w:val='1'/></w:p></q:y></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:p='v' w:val=\"x\r\ny\tz\" p:x=\"\"/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="x y z",{v}x=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b q:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xml:space=\"a b\" v='1'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v='2' xmlns=\"&bogus;\" w:val='http://schemas.openxmlformats.org/wordprocessingml/2006/main'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a>y</a></root>"	{}root[]{{}a[]{"y"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w=\"1\" v=\"u\"></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p>y</w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{"y"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b q:x=\"1\" r=\"&bogus;\" r=\"u\">&#x41;</b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é q:x=\"x\r\ny\tz\"></é></root>"	{}root[]{{}é[{v}x="x y z"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y w:val=\"v\" v='u' v='u'/></root>"	ERR
+"<q:y xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">]]><x:z><p:x xmlns:q=\"&#xD83D;&#xDE00;\" xmlns:q='2'/><p:x v='v'><é w:val='&bogus;'/></p:x>]]></x:z><b v=\"&#xD83D;&#xDE00;\"/></q:y>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v='&amp;' w:val='u' xmlns:q=\"2\"></a></root>"	{}root[]{{}a[{}v="&",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:p=''></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:p='&amp;' xmlns='u' xmlns:p=\"&#10;\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v=\"1\" v='1' xmlns='u'><b v='x\r\ny\tz' xmlns:q='&amp;'></b><?p q?></é></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:q=\"1\" xmlns='v' xml:space='u'>&#x41;<é q:x='preserve' xml:space=\"1\" r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'></é></w:p></root>"	ERR
+"<w:r p:x='&amp;' p:x='' xmlns='1'>a&amp;b&#x41;<a/></w:r>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p r='&#xD83D;&#xDE00;' xmlns:p=\"a b\">x<c><!--k-->x&#1;</c><w:r r='2' r=\"a b\" xmlns:q='1'/></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:q=\"v\" v='u' xml:space='a b'><?p q?></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r r=\"&bogus;\" q:x='&bogus;' xmlns:q=\"v\"></w:r></root>"	ERR
+"<b><b xmlns='2'></b><![CDATA[c\r\nd]]></b>"	{}b[]{{2}b[]{},"c\nd"}
+"<w:p r=\"&#xD83D;&#xDE00;\" v='v' xml:space=\"1\"/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xml:space='&#10;'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns='2'></c></root>"	{}root[]{{2}c[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:q=\"x\r\ny\tz\"><a></a><c xmlns=''/></a></root>"	{}root[]{{}a[]{{}a[]{},{}c[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><c v=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" q:x=\"a b\" w:val=\"\"></c></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{{}c[{}v="http://schemas.openxmlformats.org/wordprocessingml/2006/main",{v}x="a b",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val=""]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:w='&#10;' q:x='&amp;'> </é></root>"	{}root[]{{}é[{v}x="&"]{" "}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v=\"preserve\" w:val=\"\"><w:r xmlns:p='a b' r=\"1\"><w:p><c/></w:p>\r\n</w:r><é xmlns:q='2'/><w:p xmlns='&#10;'/></é></root>"	{}root[]{{}é[{}v="preserve",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val=""]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{}r="1"]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{{}c[]{}},"\n"},{}é[]{},{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='preserve' xmlns:p=\"&#10;\" xmlns:w='u'/></root>"	{}root[]{{}a[{}r="preserve"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val='1'/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="1"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val=\"a b\" xmlns:q='1' w:val='a b'>&#x41;</c></root>"	ERR
+"<x:z w:val=\"x\r\ny\tz\"/>"	ERR
+"<a r='&#10;'/>"	{}a[{}r="\n"]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x v=\"v\" xml:space='x\r\ny\tz'><w:p r='2' v='u'><é q:x='x\r\ny\tz' r=\"preserve\"/>\r\n&#x41;</w:p></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns=\"1\" xml:space='1'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><w:p><q:y> z </q:y> </zz></a></root>"	ERR
+"<a></a>"	{}a[]{}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:p='u' r=\"1\" r=\"\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:q=\"x\r\ny\tz\"></q:y></root>"	{}root[]{{x y z}y[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y w:val='&amp;' r='u'></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p>&#x41;</w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{"A"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:w='u' p:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v='u' xmlns='&amp;'></é></x:z></root>"	{}root[]{{u}z[{u}x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{{&}é[{}v="u"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r=\"&#xD83D;&#xDE00;\">xa&amp;b</c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns:q='u' p:x=\"&bogus;\" p:x=\"2\"><!--k--><w:r xmlns:w=\"\">x&#1;</w:r></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xml:space=\"\" v=\"v\">&#1;y</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r r=\"u\"><q:y r='a b'>]]></q:y></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v='&#10;' xmlns:w=''/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b r=\"&#xD83D;&#xDE00;\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é/></root>"	{}root[]{{}é[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z v='1' v=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns=\"x\r\ny\tz\" v=\"&#xD83D;&#xDE00;\" xmlns:q='&amp;'>]]><b r='a b'>y</b></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x='a b' w:val=\"x\r\ny\tz\" xmlns:p=\"u\"><w:p><b p:x=\"\" w:val=\"2\"/><b v=\"&bogus;\" xml:space=\"&amp;\" xmlns:w=\"a b\"><!--k-->x</b><q:y r=\"u\" xmlns:q='2' q:x='x\r\ny\tz'></q:y></w:p>\r\n</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r='&#xD83D;&#xDE00;' xmlns=\"&#10;\">&#x41;<![CDATA[c\r\nd]]><a w:val=\"&amp;\" xml:space='&amp;'>]]></a></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r='v' r=\"2\" p:x='&#xD83D;&#xDE00;'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><![CDATA[c\r\nd]]><p:x xmlns:w=\"&#10;\" w:val=\"&amp;\"></p:x></a></root>"	{}root[]{{}a[]{"c\nd",{u}x[{\n}val="&"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v=\"1\" q:x='&#xD83D;&#xDE00;' r='1'/></root>"	ERR
+"<a><w:r v=\"u\" xmlns:p='x\r\ny\tz' v='x\r\ny\tz'/><w:p></w:p><w:p xmlns:p=\"u\" xmlns:p='u'><p:x v=\"&bogus;\" q:x=\"\"><w:p w:val=\"1\" p:x=\"v\"/><a p:x=\"&amp;\" xmlns:p=\"\"/></p:x>a&amp;b</w:p></a>"	ERR
+"<a>x&#1;<a></a></a>"	ERR
+"<w:p w:val=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><?p q?></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a></a></root>"	{}root[]{{}a[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xml:space=\"u\"><q:y><![CDATA[c\r\nd]]><c/></q:y><w:r xml:space=\"v\" xmlns='&#xD83D;&#xDE00;' r='&#xD83D;&#xDE00;'></zz></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'><![CDATA[c\r\nd]]></é></root>"	{}root[]{{}é[{}r="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{"c\nd"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:q=\"&amp;\" xmlns=\"&bogus;\" xml:space='2'></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2"	ERR
+"<b xml:space=\"&amp;\" v=\"\" xml:space=''/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xml:space='http://schemas.openxmlformats.org/wordprocessingml/2006/main'></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:q=\"u\" w:val='a b'><q:y><!--k-->]]></q:y></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val=\"&amp;\" p:x=\"&#10;\" xmlns=\"preserve\"/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="&",{u}x="\n"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x=''></"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r r=\"\"/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{}r=""]{}}
+"<p:x w:val='v' xmlns:w=''></p:x>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b w:val='u'> z <c></c></b></root>"	{}root[]{{}b[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{" z ",{}c[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r='u' p:x=\"x\r\ny\tz\"/></root>"	{}root[]{{}c[{}r="u",{u}x="x y z"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v=\"&#xD83D;&#xDE00;\"><é r=\"2\">\r\n</é></w:r></root>"	ERR
+"<q:y xmlns:w=\"&#xD83D;&#xDE00;\">x<a v=\"&#xD83D;&#xDE00;\" w:val=\"v\"/><b xmlns=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"></b></q:y>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xml:space='' xmlns:w=''>y</w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p q:x=\"a b\" v='v'/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{v}x="a b",{}v="v"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c q:x='http://schemas.openxmlformats.org/wordprocessingml/2006/main' r=\"u\"/></root>"	{}root[]{{}c[{v}x="http://schemas.openxmlformats.org/wordprocessingml/2006/main",{}r="u"]{}}
+"<c xml:space=\"preserve\" w:val=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" p:x=\"&amp;\"/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:q='&#10;'/></root>"	{}root[]{{u}z[]{}}
+"<a xmlns:w='u'></zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a>&#x41;<w:r r=\"u\" xmlns:w='v'/>x</a></root>"	{}root[]{{}a[]{"A",{v}r[{}r="u"]{},"x"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r>x</w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{"x"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é></é></root>"	{}root[]{{}é[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v=\"2\"><x:z xmlns='&bogus;' xmlns:p='u'> z <c v=\"v\">\r\n&#x41;</c></x:z></w:r></root>"	ERR
+"<a xml:space='x\r\ny\tz' xmlns:w='x\r\ny\tz' xmlns:q='u'/>"	ERR
+"<a w:val='1' v='u' xmlns=\"\"><x:z w:val='1'>&#1;</x:z><a><a xmlns=\"2\" v=\"preserve\" v=\"1\"/><w:r r=\"u\" v=\"&amp;\" w:val=\"1\"></w:r></zz></a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b r='u'/></root>"	{}root[]{{}b[{}r="u"]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w='u' v='1'>a&amp;b]]></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/w"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v='preserve'><w:r v='preserve'> z a&amp;b&#x41;</w:r><c r=\"1\" w:val=\"&bogus;\" v=\"&#10;\"/></a></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><?p q?><!--k--></a></root>"	{}root[]{{}a[]{?p,!"k"}}
+"<c r=\"1\" w:val=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xml:space='&amp;'/></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val='2' xmlns:w='u'/></root>"	{}root[]{{}c[{u}val="2"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z r=\"&#xD83D;&#xDE00;\" w:val='' xml:space='u'></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b q:x=\"v\" w:val='&bogus;'><a><?p q?>a&amp;b</a></b></root>"	ERR
+"<q:y v='preserve' w:val=\"&amp;\" r=\"&#10;\"> z a&amp;b<p:x><x:z/><é w:val='u' xml:space=\"v\" r=\"1\"/></p:x></q:y>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a q:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/></root>"	{}root[]{{}a[{v}x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x w:val=\"a b\" v=\"&bogus;\" p:x='u'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c v='&amp;'><b v='&#10;' xmlns:w=\"x\r\ny\tz\"/></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:p=\"&amp;\" w:val=\"&#10;\" xmlns:q='&#10;'><b v=\"&#10;\" xml:space=\"&amp;\"/></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns=\"&#xD83D;&#xDE00;\">]]><w:r xmlns:w='preserve' w:val=''><x:z r='preserve' r='1'><w:r p:x=\"a b\"/><p:x/></x:z><w:p r=\"x\r\ny\tz\"/></w:r><!--k--></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a>y</a></root>"	{}root[]{{}a[]{"y"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xml:space=\"&amp;\" q:x='preserve' xmlns:w=\"preserve\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x></p:x></root>"	{}root[]{{u}x[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b p:x='u' v=\"v\">x</b></root>"	{}root[]{{}b[{u}x="u",{}v="v"]{"x"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns='u'></a></root>"	{}root[]{{u}a[]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c v='1' p:x=\"&#xD83D;&#xDE00;\" p:x='1'><a xml:space='v'/><w:p/> </c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y>&#1;<p:x w:val=\"1\"></p:x><a r='&#10;' w:val='1'>y<a p:x='&#10;'/>x</a></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v='1' p:x=\"1\" r=\"u\"></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xml:space=\"&#10;\" r=\"preserve\" r='&amp;'><?p q?><q:y w:val='' xmlns=\"1\" v='&#xD83D;&#xDE00;'>y</q:y></p:x></root>"	ERR
+"<p:x w:val='&amp;'></zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r w:val=\"preserve\"/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="preserve"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='&amp;' xml:space='u'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p>&#x41;<c><x:z r='a b' xmlns:w=''><b/></x:z></c><a>&#1;</a></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val='http://schemas.openxmlformats.org/wordprocessingml/2006/main' v='v'/></root>"	{}root[]{{}c[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="http://schemas.openxmlformats.org/wordprocessingml/2006/main",{}v="v"]{}}
+"<?xml version=\"1.0\"?><a></a>"	{}a[]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns=\"1\" w:val=\"v\" xml:space='2'><!--k-->x<a p:x=\"&bogus;\" q:x='u' w:val='u'><?p q?>&#x41;</a></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xml:space=\"1\" xmlns:p='u'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:q='&#10;' p:x=\"&#10;\" xml:space=\"1\"></é></root>"	ERR
+"<a w:val='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>y</a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns='&bogus;' xmlns=\"a b\"><w:r xmlns:q='&bogus;'> </w:r><é>y</é></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schema"	ERR
+"<?xml version=\"1.0\"?><é w:val='v'>x<w:r><b></b"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p r='&#10;' r='&#10;'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v=\"a b\"></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{}v="a b"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b><a r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>x<p:x xmlns:w=\"\"> </p:x><b></b></zz></zz></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v='u' r='v' r='1'/></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a>]]></a></root>"	ERR
+"<x:z xml:space='v'><a r='preserve'><?p q?></a><![CDATA[c\r\nd]]><?p q?></x:z>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x='u' v='u' xmlns:p=\"1\"><q:y xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">&#1;</q:y> </a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z r=\"1\"/></root>"	{}root[]{{u}z[{}r="1"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p q:x='preserve'>]]></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c><c v=\"&amp;\" xmlns:q='1' xmlns='u'/></c></root>"	{}root[]{{}c[]{{u}c[{}v="&"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><a w:val='1'><![CDATA[c\r\nd]]><w:r xmlns:q=\"1\"/></a><c xmlns:p='preserve' v='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>]]>]]><w:r></w:r></c></w:p></root>"	ERR
+"<w:p><x:z v='1' xml:space=\"&#10;\"><w:p></w:p><p:x></p:x></x:z>]]></w:p>"	ERR
+"<é/>"	{}é[]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c></c></root>"	{}root[]{{}c[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xml:space='1' p:x='1' v=\"&amp;\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a/></root>"	{}root[]{{}a[]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><w:p p:x='u' xmlns:p=\"x\r\ny\tz\" p:x=''><q:y/></w:p></zz></root>"	ERR
+"<?xml version=\"1.0\"?><é v=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w='&amp;' xmlns:q=\"x\r\ny\tz\"/>"	{}é[{}v="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v=\"u\"><b p:x='u'/><a xmlns:w='&#xD83D;&#xDE00;'><w:p>]]><w:p/></w:p></a></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns:w=\"&#xD83D;&#xDE00;\" xml:space='&amp;' xml:space='preserve'><w:p/></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é><c></c></é></root>"	{}root[]{{}é[]{{}c[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xml:space='1' p:x=\"1\"/></root>"	ERR
+"<w:p v='&#10;'><c xmlns:p=\"\" xmlns=\"u\" xmlns:q='1'/></w:p>"	ERR
+"<b r=\"2\" xmlns:p='&amp;' p:x='a b'>]]></b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xml:space='1' xmlns:q=\"&#xD83D;&#xDE00;\" p:x='&bogus;'><w:p></zz></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p p:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" r='&#xD83D;&#xDE00;' xmlns='x\r\ny\tz'></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z v='preserve' xmlns=\"&bogus;\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x w:val='&#10;'>a&amp;b</p:x></root>"	{}root[]{{u}x[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="\n"]{"a&b"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a q:x=\"&amp;\"></a></root>"	{}root[]{{}a[{v}x="&"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r=''><é><a xmlns:p='preserve' q:x=\"u\"><w:r xmlns:p=\"2\" xmlns:w='&#10;' xmlns='v'/><w:p w:val='u'/><![CDATA[c\r\nd]]></a> z </é></a></root>"	{}root[]{{}a[{}r=""]{{}é[]{{}a[{v}x="u"]{{\n}r[]{},{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{},"c\nd"}," z "}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:w=\"&#xD83D;&#xDE00;\" v=\"u\" xmlns:w='&#xD83D;&#xDE00;'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c></c></root>"	{}root[]{{}c[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:p=\"\" q:x=\"x\r\ny\tz\" v=''><?p q?></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns='x\r\ny\tz'><c/><a><é/><x:z v=\"u\"><é xml:space='v'/>\r\n<w:p/></x:z></a></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é>]]></é></root>"	ERR
+"<b xmlns:q=\"v\">&#1;</b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:p=\"1\"></b></root>"	{}root[]{{}b[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://s"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r>a&amp;b\r\n<?p q?></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{"a&b\n",?p}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x w:val=\"u\">&#x41;<b xml:space=\"&amp;\" r='&bogus;' w:val=\"x\r\ny\tz\"></b><x:z></x:z></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:p=\"1\" w:val=\"&amp;\" w:val='&#10;'>a&amp;b]]></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.or"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é p:x='2'></é></root>"	{}root[]{{}é[{u}x="2"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z><![CDATA[c\r\nd]]><c v='u' xmlns=\"v\" xmlns:p='&amp;'>&#1;</zz><a xmlns:p='http://schemas.openxmlformats.org/wordprocessingml/2006/main' r=\"&amp;\" xmlns:p=\"x\r\ny\tz\">xx</a></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p r='&#xD83D;&#xDE00;' xmlns='a b' xmlns:w=\"&#10;\"/></root>"	ERR
+"<?xml version=\"1.0\"?><é v=\"&#xD83D;&#xDE00;\" r='v'/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns='v' xmlns:q=\"1\"></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='&amp;'/></root>"	{}root[]{{}a[{}r="&"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns='x\r\ny\tz'> z  </w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{" z  "}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z q:x='u' xmlns=\"\" xmlns:p='1'></x:z></root>"	{}root[]{{u}z[{v}x="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y w:val='1' r='2' xmlns=\"v\"/></root>"	{}root[]{{v}y[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="1",{}r="2"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x q:x=\"\" w:val='x\r\ny\tz'><é w:val=\"\" xmlns:p='http://schemas.openxmlformats.org/wordprocessingml/2006/main' p:x='&bogus;'><w:r/>]]> </é>x</p:x></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='v' xmlns:q=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w='u'></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p r=\"&amp;\" xmlns='2' xmlns:p=\"1\"> z <?p q?></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}r="&"]{" z ",?p}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xml:space=\"&amp;\"><b v=\"1\" xmlns:p='2'/><c/><w:p><![CDATA[c\r\nd]]>&#x41;</w:p></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><c>x</zz></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y p:x='v' r='' xmlns:w='a b'></q:y></root>"	{}root[]{{v}y[{u}x="v",{}r=""]{}}
+"<a p:x='&#xD83D;&#xDE00;' p:x=\"v\" q:x=\"preserve\"></zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val=\"&amp;\"></a></root>"	{}root[]{{}a[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="&"]{}}
+"<w:p v=\"&#xD83D;&#xDE00;\" v=\"&amp;\" xml:space='http://schemas.openxmlformats.org/wordprocessingml/2006/main'/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:w='u'>&#1;</x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:p='u'><?p q?></é></root>"	{}root[]{{}é[]{?p}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r='1' xml:space='x\r\ny\tz'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x p:x=\"u\" w:val=\"\"><p:x xml:space='&#10;'> x</p:x></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:w='x\r\ny\tz'><w:r><![CDATA[c\r\nd]]></w:r><w:p p:x=\"a b\" q:x=\"u\"></w:p><é xmlns=\"1\">\r\n</é></é></root>"	{}root[]{{}é[]{{x y z}r[]{"c\nd"},{x y z}p[{u}x="a b",{v}x="u"]{},{1}é[]{"\n"}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z w:val='u' p:x=\"\" xmlns:q='1'/></root>"	{}root[]{{u}z[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u",{u}x=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é r='u' r=\"u\" w:val=\"2\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r r=\"u\"><a v=\"x\r\ny\tz\" p:x='1'/></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{}r="u"]{{}a[{}v="x y z",{u}x="1"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:p=\"v\"/></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v=\"x\r\ny\tz\" xmlns:q=\"&#xD83D;&#xDE00;\" xmlns:w='a b'/></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:p='&#xD83D;&#xDE00;' w:val=\"u\"> z </b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns=\"2\" r=\"&bogus;\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v='x\r\ny\tz' w:val=\"a b\">\r\n</w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}v="x y z",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="a b"]{"\n"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:q='u' w:val=\"a b\" q:x=''><w:p r=\"u\" v='x\r\ny\tz' w:val='&#xD83D;&#xDE00;'>x]]>x</w:p></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val=\"\" w:val="	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:p=\"u\"></x:z></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z></x:z></root>"	{}root[]{{u}z[]{}}
+"<a><p:x xml:space='&#xD83D;&#xDE00;' r=\"\" v=\"v\"><a></a><c q:x=\"\" p:x=\"&#xD83D;&#xDE00;\"/></p:x>&#x41;</zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xml:space='x\r\ny\tz'><![CDATA[c\r\nd]]><é xmlns='preserve' xmlns:q=\"&#10;\">y<![CDATA[c\r\nd]]><w:p w:val='u' r='&amp;'></w:p></é></a></root>"	ERR
+"<q:y w:val=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:q=\"\" v=\"a b\"><!--k--></q:y>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><é xmlns='u' w:val='u' xmlns:p='&#xD83D;&#xDE00;'> z  <é/></é>a&amp;b</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r p:x=\"&amp;\" w:val='1' w:val=\"v\"></w:r></root>"	ERR
+"<p:x v='preserve'><p:x r=\"1\" xmlns:w='u' xml:space=\"u\"><?p q?><a xml:space=\"preserve\"/></p:x>a&amp;b</p:x>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val=\"\" w:val=\"u\" xmlns:p=\"&bogus;\"></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x></p:x></root>"	{}root[]{{u}x[]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xml:space='&amp;' q:x='&bogus;'><w:r></w:r></é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns=\"2\" r='x\r\ny\tz' p:x=\"u\"><c><a p:x=\"x\r\ny\tz\" r='&amp;'><p:x/></zz></c><w:p></w:p></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é w:val=\"&bogus;\" w:val=\"preserve\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x r=\"u\" xmlns=\"&#10;\"><x:z xmlns:p='a b'><w:p p:x='1'></w:p>x</x:z><b xmlns:w='&bogus;'></zz>\r\n</p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x r=\"&amp;\"><p:x xml:space=\"1\"><a w:val='&#xD83D;&#xDE00;'/><a xmlns=\"2\" xmlns:w=\"&#10;\"/></zz><p:x xml:space=\"1\" v=\"v\"/></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns=\"&amp;\" xmlns:p=\"&amp;\"></b></root>"	{}root[]{{&}b[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns:p='1' v='2'><a xml:space='&amp;' w:val='a b'><w:p></w:p><a r='&amp;' xml:space='u'><é w:val=\"1\"/></a>&#x41;</zz><w:p v='&#10;'> </w:p></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p r='&bogus;' v=\"a b\"><b xml:space='http://schemas.openxmlformats.org/wordprocessingml/2006/main' r='&#xD83D;&#xDE00;'></b><é v=\"v\" r=\"x\r\ny\tz\" xmlns:w='&#xD83D;&#xDE00;'>\r\n</é><w:p "	ERR
+"<a xml:space=\"preserve\" p:x=\"u\" v='1'></a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:q=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=''/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns='u' p:x='v'>a&amp;b<![CDATA[c\r\nd]]></b></root>"	{}root[]{{u}b[{u}x="v"]{"a&b","c\nd"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z/></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val=\"&#10;\"/></root>"	{}root[]{{}c[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="\n"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a q:x=\"&#xD83D;&#xDE00;\"></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z r=\"&#xD83D;&#xDE00;\"><?p q?><![CDATA[c\r\nd]]></x:z></root>"	ERR
+"<?xml version=\"1.0\"?><é r=\"u\" xml:space=''></é>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b w:val=\"u\" xmlns=\"x\r\ny\tz\"><x:z v=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" v=\"u\"></x:z> z <b></b></zz></root>"	ERR
+"<w:p></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val='u'><w:r xml:space='' xmlns:p='2'/><w:p w:val='1' v='preserve'><a q:x='x\r\ny\tz' r=\"u\"><w:p xmlns:w=\"u\" v=\"&#10;\" xmlns:p=\"2\"/></a></w:p><![CDATA[c\r\nd]]></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xml:space=\"u\"></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x p:x=''/></root>"	{}root[]{{u}x[{u}x=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z r=\"a b\" q:x=\"\" w:val=\"&bogus;\"><q:y v='&amp;' xmlns:q='&bogus;' r=\"a b\"></q:y>\r\n<p:x r=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/></x:z></root>"	ERR
+"<?xml version=\"1.0\"?><p:x><a xml:space=\"&amp;\"><w:p><?p q?></w:p></a></p:x>"	ERR
+"<c p:x='2'/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z/></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r p:x=\"x\r\ny\tz\" xml:space=\"&amp;\" xmlns:w='v'><w:r w:val=\"1\"></zz></w:r></root>"	ERR
+"<?xml version=\"1.0\"?><w:p><x:z/></w:p>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b/></root>"	{}root[]{{}b[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:p=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w='1'/></root>"	{}root[]{{v}y[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c v=\"a b\" r='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xmlns:p=\"1\"><p:x w:val='u'/><q:y r='x\r\ny\tz' xmlns=\"1\"></q:y></c></root>"	{}root[]{{}c[{}v="a b",{}r="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{{1}x[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{},{v}y[{}r="x y z"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a q:x=\"x\r\ny\tz\"/></root>"	{}root[]{{}a[{v}x="x y z"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v='&amp;' v=\"1\" p:x=\"&amp;\"><x:z xmlns:p=\"preserve\">\r\n</x:z><q:y></zz></é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><a xml:space='2' xmlns:p=\"u\" xmlns:w='&bogus;'><?p q?><a p:x=\"v\" xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>&#1;</a><![CDATA[c\r\nd]]></a></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b/></root>"	{}root[]{{}b[]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p r='http://schemas.openxmlformats.org/wordprocessingml/2006/main' p:x='a b' xmlns:w=\"&bogus;\">a&amp;b<x:z xmlns:w=\"&amp;\"/></w:p></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/200"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r=\"preserve\"/></root>"	{}root[]{{}c[{}r="preserve"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v='u' xml:space=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" v='&#xD83D;&#xDE00;'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y r='x\r\ny\tz'><w:p xmlns:w='' v=\"v\"/></q:y></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é p:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" p:x=\"&bogus;\"></é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns:q=\"1\" w:val='u'> z </c></root>"	{}root[]{{}c[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{" z "}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b p:x=\"\"><q:y/></b></root>"	{}root[]{{}b[{u}x=""]{{v}y[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlfo"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b p:x='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xmlns:q='&#xD83D;&#xDE00;' xmlns:q=\"&#xD83D;&#xDE00;\"> <![CDATA[c\r\nd]]></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns='&#10;'>a&amp;by<p:x>]]><![CDATA[c\r\nd]]><c><?p q?><a p:x='u'/></c></p:x></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z v=\"2\" xmlns:p='preserve'/></root>"	{}root[]{{u}z[{}v="2"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xml:space=\"preserve\"><x:z xmlns:q=\"&bogus;\" w:val='http://schemas.openxmlformats.org/wordprocessingml/2006/main'/></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b p:x='&amp;' xmlns:p='a b'>\r\n]]>x</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r=\"u\"> z </a></root>"	{}root[]{{}a[{}r="u"]{" z "}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v=\"preserve\" v='1' p:x=\"&#xD83D;&#xDE00;\"><p:x v='u'><a/><w:p xml:space=\"1\"/></p:x><b xmlns:q='&#xD83D;&#xDE00;'></b>y</zz></root>"	ERR
+"<b v=\"&#xD83D;&#xDE00;\" xml:space='u' xmlns:q=\"u\"/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p q:x=\"a b\" q:x=\"&#xD83D;&#xDE00;\"/></root>"	ERR
+"<w:p xmlns:w='u'>x</w:p>"	{u}p[]{"x"}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a></a></root>"	{}root[]{{}a[]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é r='&bogus;'> z x</é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b p:x='u' p:x=\"&bogus;\"/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xml:space=\"a b\"><w:p xmlns:p='' xmlns:w=\"1\" p:x='x\r\ny\tz'></w:p><q:y>]]></q:y></p:x></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val=\"&#xD83D;&#xDE00;\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r q:x=\"&#xD83D;&#xDE00;\" xmlns:p=\"u\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p q:x=\"2\"/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{v}x="2"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x>y&#1;</p:x></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v='&#xD83D;&#xDE00;'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns='&amp;'/></root>"	{}root[]{{&}a[]{}}
+"<é v=\"&bogus;\">a&amp;b<![CDATA[c\r\nd]]></é>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a>a&amp;b<w:p r='&amp;'></w:p></a></root>"	{}root[]{{}a[]{"a&b",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}r="&"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:q=\"a b\" xmlns:q='v'><c v='' xmlns:q='&amp;' v='&#xD83D;&#xDE00;'><w:p v='&#10;'> <x:z w:val=\"&bogus;\" v='&#10;' xmlns:p=\"1\"/></w:p><c><q:y v='u'/>x</c></c></x:z></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x><?p q?></p:x></root>"	{}root[]{{u}x[]{?p}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xml:space='u' r=\"\" xmlns:p=\"v\"><p:x p:x=\"1\" r=\"u\" q:x='&amp;'/></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x r='&amp;' v='1' r='preserve'></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x=\"u\" w:val=\"a b\" xmlns:w=\"\"> </a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a></a></root>"	{}root[]{{}a[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<?xml version=\"1.0\"?><w:p p:x=''>&#x41;<x:z v=\"\">&#1;<?p q?> </x:z> </w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z></x:z></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c v='v' v='preserve' xml:space=\"1\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r><w:p v='&#10;'> \r\n</w:p></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}v="\n"]{" \n"}}}
+"<a w:val='&#xD83D;&#xDE00;' v='x\r\ny\tz' xmlns='&bogus;'></a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z><w:p/><p:x r='&#xD83D;&#xDE00;'></p:x><a><!--k--></a></x:z></root>"	ERR
+"<a w:val='' p:x=\"1\">]]></zz>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a> <é q:x='&bogus;'><?p q?><w:p><x:z xmlns:p='&#10;' p:x=\"&#10;\" w:val='1'/> </w:p>x</é></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x='1' v=\"1\" q:x=\"&bogus;\"></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns=\"u\"><a r='&#xD83D;&#xD"	ERR
+"<?xml version=\"1.0\"?><p:x xmlns=\"x\r\ny\tz\" xmlns:w='&amp;' v=\"x\r\ny\tz\"><w:p r='1'/>x</p:x>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:w='1' xml:space=\"x\r\ny\tz\" w:val=\"a b\">x</w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b><?p q?><!--k--></zz></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='1'>&#1;<é>]]></é>a&amp;b</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z><c><q:y>&#1;</q:y><é><a xmlns:w=\"x\r\ny\tz\" xmlns:q=\"&bogus;\" w:val=\"v\"/><x:z xmlns=\"\"/></é></c>&#x41;<q:y xmlns:w=\"1\" xmlns='&#xD83D;&#xDE00;'></q:y></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns=\"\"/></root>"	{}root[]{{}a[]{}}
+"<w:p r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'><q:y w:val='preserve' xmlns:w='preserve'><c><q:y/></c><w:p w:val='v' w:val=\"v\"><w:p r=\"u\" r=\"2\"/>a&amp;b</w:p></q:y><![CDATA[c\r\nd]]></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b q:x=\"&amp;\"></b></root>"	{}root[]{{}b[{v}x="&"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns:w=\"\" w:val='2' r=\"\"><c v=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"></c></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y><w:r r='v'><a r=\"&#10;\"></a>y</w:r><a w:val='1' w:val=\"&amp;\">]]></a></q:y></root>"	ERR
+"<c v='&bogus;'>x</c>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w='2' v='x\r\ny\tz'><q:y w:val=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>]]>x</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x p:x='&#10;' r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'></p:x></root>"	{}root[]{{u}x[{u}x="\n",{}r="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><a></a></a></root>"	{}root[]{{}a[]{{}a[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y w:val='2'/></root>"	{}root[]{{v}y[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="2"]{}}
+"<q:y xmlns=\"&bogus;\"><q:y xmlns:p='' r='http://schemas.openxmlformats.org/wordprocessingml/2006/main'/><x:z xmlns=\"&amp;\" w:val=\"u\" w:val=\"u\"/></q:y>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x/></root>"	{}root[]{{u}x[]{}}
+"<a><a w:val='a b' xmlns:w='a b'/></a>"	{}a[]{{}a[{a b}val="a b"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x v=\"&bogus;\">&#1;&#x41;</p:x></root>"	ERR
+"<b> x</b>"	{}b[]{" x"}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xml:space='u' v='&#10;' r='&#10;'><w:p r='preserve'></w:p><é/>y</b></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val='a b' xmlns:q=\"\" xmlns:q='&#xD83D;&#xDE00;'><x:z w:val='a b' v=\"u\" q:x=\"&#xD83D;&#xDE00;\"/>\r\n</a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><b r=\"v\" xmlns:q=\"preserve\"><é"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z w:val=\"u\" xml:space='2'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='x\r\ny\tz' xmlns:w='u' r='u'></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p q:x='1'>&#x41;<a>x</a></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{v}x="1"]{"A",{}a[]{"x"}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b w:val=\"&amp;\"><w:p r=\"1\" p:x=\"&#xD83D;&#xDE00;\" v='&#xD83D;&#xDE00;'><a w:val='v' v=\"http://schemas.openxmlformats.org/wordprocessingm"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xml:space=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" v='1'/></root>"	ERR
+"<w:p/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v='x\r\ny\tz'><w:p xmlns:q='a b' w:val=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" p:x='&bogus;'/><p:x></p:x></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:q='1' p:x=\"2\" xmlns:w=\"v\"><b xmlns:q=\"v\"/></w:p></root>"	{}root[]{{v}p[{u}x="2"]{{}b[]{}}}
+"<w:r></w:r>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é p:x=\"\" w:val=\"u\" w:val='v'><a r='&#xD83D;&#xDE00;' xmlns:w=\"a b\"/></é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z v='2' r='1' p:x='1'>&#x41;</x:z></root>"	{}root[]{{u}z[{}v="2",{}r="1",{u}x="1"]{"A"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y r=\"&bogus;\" xm"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p p:x=\"x\r\ny\tz\" w:val='1' w:val='x\r\ny\tz'>x</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c q:x=\"a b\"><w:p>x<x:z/></w:p><w:p><w:p p:x='&amp;' q:x='u'><q:y xmlns:w='&#10;'/><w:r xml:space=\"u\"/><é/></w:p> </w:p></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b></b></root>"	{}root[]{{}b[]{}}
+"<a w:val=\"u\"/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:w='u'><é xml:space='2' xmlns:q='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>]]><c>x</c>&#1;</é><![CDATA[c\r\nd]]></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns=\"&#xD83D;&#xDE00;\" r='x\r\ny\tz' w:val=''></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:p=\"2\" xmlns:w=\"1\" xml:space=\"2\"/></root>"	ERR
+"<x:z w:val=\"u\" xmlns:w='&#xD83D;&#xDE00;'/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a/></root>"	{}root[]{{}a[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:w='' xml:space='1'><c/></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a/></root>"	{}root[]{{}a[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xmlns:w=\"a b\"></a></root>"	{}root[]{{}a[{}r="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}}
+"<w:p xmlns:q=''></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val=\"&amp;\" xmlns:q=\"1\">]]><a r=\"a b\" q:x=\"2\"><c xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"2\"><é/></c>yx</a></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val=\"\"> z </zz></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r p:x=\"\" v=\"1\" xmlns:q=\"v\"><b xml:space='&amp;'><w:r r=\"u\"></zz></b><a p:x='v' v='a b' r='2'><a xmlns:w='1' xmlns:q=\"x\r\ny\tz\"></a><b p:x=\"1\"/>]]></a></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x=\"&#10;\"></a></root>"	{}root[]{{}a[{u}x="\n"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y v=\"v\" v=\"preserve\" xml:space=\"preserve\"><?p q?><é q:x=\"&amp;\" xmlns:p='preserve' xml:space=\"preserve\"><!--k--></é></q:y></root>"	ERR
+"<a>x<w:p p:x='1' xmlns:w='&#10;' xmlns:q='x\r\ny\tz'/><b xmlns=\"1\"><q:y/></b></a>"	ERR
+"<?xml version=\"1.0\"?><a v='http://schemas.openxmlformats.org/wordprocessingml/2006/main'></a>"	{}a[{}v="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}
+"<a w:val=\"&#10;\" xmlns:w='&#10;'>&#1;</a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y p:x='1' w:val='preserve' p:x=\"&#xD83D;&#xDE00;\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z w:val='&#10;' w:val='preserve'><b xmlns:q='x\r\ny\tz' xmlns:p='u' r=\"&amp;\"/></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:w=\"&#10;\" xml:space='&amp;' xmlns=\"&#10;\"></b></root>"	ERR
+"<é xmlns:w='1' w:val='preserve'></é>"	{}é[{1}val="preserve"]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a w:val=\"a b\"> z <x:z w:val='2' w:val=\"preserve\">a&amp;b</x:z></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v='x\r\ny\tz' p:x=\"\" w:val='u'/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}v="x y z",{u}x="",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{}}
+"<w:p xmlns:w='u'/>"	{u}p[]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r r=\"u\" v=\"1\" v=''/></root>"	ERR
+"<w:p r=\"u\" w:val='a b'><w:p r=\"x\r\ny\tz\" r=\"u\" xmlns:w='&#10;'/></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<q:y p:x='2' xmlns:q='&#10;' r=\"u\"></q:y>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v='x\r\ny\tz' q:x=\"1\"><w:p v='u' v=\"preserve\" r=\"v\"><é xmlns:w='a b' r='&#10;'/></w:p></é></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v='a b' w:val='x\r\ny\tz' r='v'><q:y xml:space=\"preserve\" xmlns=\"u\" p:x=\"1\"></q:y> z y</a></root>"	{}root[]{{}a[{}v="a b",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="x y z",{}r="v"]{{v}y[{http://www.w3.org/XML/1998/namespace}space="preserve",{u}x="1"]{}," z y"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns:q=\"\"> <b xmlns:p=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns=\"a b\"><b q:x='&bogus;'></b></b>]]></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p q:x=\"1\" p:x=\"\" xmlns=\"x\r\ny\tz\"></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{v}x="1",{u}x=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val=\"a b\" r='&bogus;' xmlns:p='1'><w:r w:val=\"2\" w:val=\"&bogus;\">\r\n<c w:val=\"u\" p:x=\"1\" xmlns:p=\"x\r\ny\tz\"><a/></c>\r\n</w:r><a p:x=\"2\"></zz></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:q=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w='2'> z <x:z xmlns:w='&bogus;'/></x:z></root>"	ERR
+"<é w:val=\"u\" v=\"v\" w:val='&#10;'>xx</é>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val='&bogus;' w:val='2' q:x=\"&#10;\">&#x41;<![CDATA[c\r\nd]]></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><w:p w:val=\"a b\" w:val='&#xD83D;&#xDE00;'><w:p/>]]><w:p xmlns:p='&#10;' xmlns:p='1'></w:p></w:p></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v='u' p:x='' w:val=\"2\">x</w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{}v="u",{u}x="",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="2"]{"x"}}
+"<c r=\"1\" p:x='u'>a&amp;b</c>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y><a v=\"u\" w:val='a b'/><![CDATA[c\r\nd]]> z </q:y></root>"	{}root[]{{v}y[]{{}a[{}v="u",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="a b"]{},"c\nd"," z "}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:q='u' xmlns:q=\"x\r\ny\tz\"></é></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é v=\"http://schemas.o"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x w:val='v' v=\"&amp;\">]]></p:x></root>"	ERR
+"<?xml version=\"1.0\"?><b q:x='v' xmlns:w='u' p:x=\"a b\">&#x41;</b>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x=\"preserve\" xmlns='&#xD83D;&#xDE00;' w:val=\"v\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x/></root>"	{}root[]{{u}x[]{}}
+"<?xml version=\"1.0\"?><é xmlns:p='' xml:space=''><b xmlns:p='' v=\"&bogus;\" xmlns=\"preserve\"/><w:r xmlns:q='x\r\ny\tz' xmlns:w=\"\">&#1;<a p:x=\"&#10;\"><![CDATA[c\r\nd]]><w:r w:val='1'/></a></w:r></é>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r><p:x v=\"a b\"><p:x v=\"v\" xmlns:w='2'></p:x></p:x><!--k--></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{{u}x[{}v="a b"]{{u}x[{}v="v"]{}},!"k"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b w:val=\"u\" q:x='&bogus;' xmlns=\"preserve\"><a><w:p xmlns='' xml:space=\"\" xmlns:q=\"u\"/><a xmlns:q=\"a b\">y<p:x v='&#10;' xmlns:p=\"&bogus;\" w:val=\"v\"/>a&amp;b</a>x</a></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v=\"v\" xml:space=\"u\">x<é></é> </zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a/></root>"	{}root[]{{}a[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xml:space='1'></é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='&bogus;' xmlns:w='a b' w:val='2'/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><w:r xmlns:w='1' xmlns:p='&#10;' v=\"1\"></zz> </w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns:p=\"&#10;\" w:val='preserve' q:x='a b'></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><?p q?><a xmlns:p=\"v\" xmlns=\"\"></a><b w:val=\"preserve\"/></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{?p,{}a[]{},{}b[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="preserve"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c xmlns='u' w:val='1'>y\r\n<x:z/></c></root>"	{}root[]{{u}c[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="1"]{"y\n",{u}z[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w"	ERR
+"<b r=\"preserve\" v='1' v=\"x\r\ny\tz\"></b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns:q='&#10;'></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:p=''>y<w:r w:val=\"u\"><![CDATA[c\r\nd]]>]]></w:r></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x><b xmlns:q='2'><w:r v='v'>\r\n<w:r q:x='1'/></w:r>x </b><p:x xmlns:w=\"u\" r=\"v\">\r\n<é xmlns:p=\"&#xD83D;&#xDE00;\" w:val='preserve' q:x=\"v\"/></p:x></p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xmlns:w='1' r='u'></q:y></root>"	{}root[]{{v}y[{}r="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r xmlns:p='2' q:x='v'><?p q?> </w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{v}x="v"]{?p," "}}
+"<a></a>"	{}a[]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns=\"1\" xml:space=\"u\" w:val=\"u\"/></root>"	ERR
+"<w:r><w:p xmlns:p='&#10;' xml:space='&bogus;'/><é r='x\r\ny\tz'></é></w:r>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c>x</c></root>"	{}root[]{{}c[]{"x"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b xmlns:w=\"&amp;\"/></root>"	{}root[]{{}b[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:p='2' w:val=''></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val=""]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z></x:z></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p r=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">&#1;</w:p></root>"	ERR
+"<a q:x='v' q:x='preserve' v=\"a b\">a&amp;b</a>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p>y</w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{"y"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:q='http://schemas.openxmlformats.org/wordprocessingml/2006/main'></a></root>"	{}root[]{{}a[{u}x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v=\"x\r\ny\tz\"/></root>"	{}root[]{{}a[{}v="x y z"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é r='a b' q:x='1'>xx<!--k--></é></root>"	{}root[]{{}é[{}r="a b",{v}x="1"]{"xx",!"k"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns=\"preserve\"></a></root>"	{}root[]{{preserve}a[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r p:x=\"v\" w:val='' xml:space=\"2\"></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b w:val=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val='x\r\ny\tz' xmlns:p='&amp;'></zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<a xmlns:w=\"a b\" xmlns:q=\"u\" xmlns:w='u'><c r=\"&amp;\" xmlns:p=\"&#10;\">&#1;<q:y xmlns:p='&#10;'> <x:z/><q:y xmlns:q=\"v\" r='u' xmlns=\"&#10;\"/></q:y></c>\r\n<a xml:space=\"a b\" r='1'/></zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='u' q:x=\"v\">&#x41;a&amp;b</zz></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns='&#10;' xml:space='1' v=\"1\"/></root>"	ERR
+"<q:y>&#x41;</q:y>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y><a><!--k--></a>xx</q:y></root>"	{}root[]{{v}y[]{{}a[]{!"k"},"xx"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y v='2' p:x=\"&#xD83D;&#xDE00;\"><w:p v=\"&#xD83D;&#xDE00;\" w:val='a b' r='&#10;'>\r\ny</w:p><x:z r='2' p:x='&#xD83D;&#xDE00;'></x:z></q:y></root>"	ERR
+"<w:r><q:y r='&bogus;' q:x=\"1\" w:val=\"1\">&#x41;</q:y>\r\n<c q:x=\"&#10;\">]]><c xmlns:q=\"&#10;\" v=\"1\"/><w:r xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:p='&#10;' w:val='v'></w:r></c></w:r>"	ERR
+"<q:y v='preserve'></q:y>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é xmlns:w='2' r=\"&amp;\"/></root>"	{}root[]{{}é[{}r="&"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p p:x=\"2\" p:x=\"1\"></w:p></root>"	ERR
+"<w:r xmlns:q='2' r='u'>ya&amp;b</w:r>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b p:x=\"u\"/></root>"	{}root[]{{}b[{u}x="u"]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b><w:r xml:space='u' r=\"\"></w:r><!--k--></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a>&#x41;</a></root>"	{}root[]{{}a[]{"A"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c>&#1;</c></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b w:val='2' w:val=\"preserve\" xmlns:w=\"&#10;\">y&#x41;<w:p xmlns:p='&amp;'><a v=\"&#10;\" xmlns:p='a b' r='&#10;'/><a/></w:p></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é></é></root>"	{}root[]{{}é[]{}}
+"<w:r xmlns=''></w:r>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x w:val=\"v\" r=\"x\r\ny\tz\"><c xmlns:w=\"&#xD83D;&#xDE00;\"></c><w:r><x:z/> z \r\n</zz></p:x></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z p:x='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xmlns:w='x\r\ny\tz'></x:z></root>"	{}root[]{{u}z[{u}x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val='x\r\ny\tz' xml:space=\"&amp;\" v=\"a b\"> z y</c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:w='preserve'/></root>"	{}root[]{{preserve}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b v=\"u\" xml:space=\"v\"><?p q?></b></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y/></root>"	{}root[]{{v}y[]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns='u'/></root>"	{}root[]{{u}x[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r><é xml:space=\"v\" r=\"2\" p:x='&#10;'>&#1;<p:x/></é>xx</w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c v=\"&amp;\" p:x='v' xml:space=\"preserve\"><p:x xmlns:q='v' v='&amp;'/><c w:val='&#xD83D;&#xDE00;' r=\"&#10;\" p:x=\"a b\"/></c></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:p=\"\" v=\"&bogus;\" w:val=\"\"></x:z></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val=\"1\" w:val='a b' r=\"u\"></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a>]]><?p q?></a></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p q:x='preserve' xmlns:q=\"1\" xmlns=\"&amp;\"><q:y><a xmlns:p=\"2\" v='x\r\ny\tz'></a></q:y></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{1}x="preserve"]{{1}y[]{{&}a[{}v="x y z"]{}}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r p:x='1' w:val='1'> &#x41;<b></b></w:r></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{u}x="1",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="1"]{" A",{}b[]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a>&#x41;</a></root>"	{}root[]{{}a[]{"A"}}
+"<w:p xmlns:q=\"preserve\" r=\"u\">x<a v=\"2\" r='preserve'>x<q:y v='&bogus;'> <c xml:space='a b'/></zz><w:p><c r='a b' xmlns=\"preserve\"/><p:x p:x=\"&bogus;\" p:x='u'/></w:p></a></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c/></root>"	{}root[]{{}c[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x='' w:val=\"\"><a r='&amp;'/>\r\n<q:y r='' xmlns:q=\"&#xD83D;&#xDE00;\" xml:space=''></q:y></zz></root>"	ERR
+"<é v='' q:x='&amp;'/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c w:val=\"a b\" xmlns:p='&#xD83D;&#xDE00;' xmlns:w=\"&bogus;\"> yx</c></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xm"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x r=\"\" w:val='2'/></root>"	{}root[]{{u}x[{}r="",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="2"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w=\"&amp;\" r=\"preserve\" xmlns:q='1'><a v='1' xml:space='1' xmlns:p='v'></a>  </a></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x v=\"x\r\ny\tz\">&#x41;x<!--k--></p:x></root>"	{}root[]{{u}x[{}v="x y z"]{"Ax",!"k"}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z v='http://schemas.openxmlformats.org/wordprocessingml/2006/main' xml:space='u' xmlns:p='u'><é xmlns:p=\"&amp;\" p:x=\"1\" v=\"x\r\ny\tz\"/></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r><q:y xmlns:p=\"u\"><a w:val=\"2\" r=\"1\" xmlns:p=\"&amp;\"></a><a v=\"x\r\ny\tz\" v='&#10;'>x<w:r xmlns:p=\"u\" v=\"&amp;\"/>&#x41;</a><p:x xmlns:p=\"u\"></p:x></q:y><?p q?></w:r></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a q:x='&amp;'><w:p q:x='&bogus;' r='1' xmlns:w=\"&#10;\"><![CDATA[c\r\nd]]><p:x v='x\r\ny\tz'></p:x>y</w:p></a></root>"	ERR
+"<w:p r='&amp;' xmlns:q=\"&#xD83D;&#xDE00;\" xmlns:p='&#10;'></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" "	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p v=\"1\" r='1'><p:x/><é xmlns=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"&amp;\" v=\"\"></é> z </w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{}v="1",{}r="1"]{{u}x[]{},{http://schemas.openxmlformats.org/wordprocessingml/2006/main}é[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="&",{}v=""]{}," z "}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z r=\"a b\" r=\"&amp;\"/></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x xmlns:w=\"u\"/></root>"	{}root[]{{u}x[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:p=\"v\"/></root>"	{}root[]{{u}z[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r v=\"u\" xmlns=\"\" q:x='1'/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r[{}v="u",{v}x="1"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c p:x='1'/></root>"	{}root[]{{}c[{u}x="1"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p/></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r=\"&amp;\" w:val=\"2\" xmlns='&#10;'/></root>"	{}root[]{{\n}a[{}r="&",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="2"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><?p q?></a></root>"	{}root[]{{}a[]{?p}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x v=\"1\" w:val='a b'></p:x></root>"	{}root[]{{u}x[{}v="1",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="a b"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xml:space=''></a></root>"	ERR
+"<?xml version=\"1.0\"?><w:p> <w:r xmlns='a b'> z <p:x xmlns=\"&#xD83D;&#xDE00;\"><w:r w:val=\"u\"/><p:x/><a r=\"\"/></p:x></w:r></w:p>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y xml:space=\"u\" w:val='1' xmlns:q=\"preserve\"></q:y></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x><a><p:x v='2'><q:y v='&amp;' q:x=\"2\"/><w:r xmlns:w=\"\"/></p:x><![CDATA[c\r\nd]]></a> z </p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p xmlns:q='preserve' q:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" v=\"2\"><a xmlns=\"u\"><a v=\"\" r=\"1\"/></a></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{preserve}x="http://schemas.openxmlformats.org/wordprocessingml/2006/main",{}v="2"]{{u}a[]{{u}a[{}v="",{}r="1"]{}}}}
+"<q:y xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"\" xmlns:p=''> <![CDATA[c\r\nd]]></q:y>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://sch"	ERR
+"<?xml version=\"1.0\"?><a/>"	{}a[]{}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns:w=\"a b\">&#1;<w:r><a></a>y</w:r></x:z></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p q:x='&amp;' w:val='u'><é xmlns:p='&#10;' v='v'>&#x41;</é></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{v}x="&",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{{}é[{}v="v"]{"A"}}}
+"<?xml version=\"1.0\"?><a><a><p:x></p:x><a/></zz><b xmlns:p='u'/>]]></a>"	ERR
+"<p:x w:val=\"\" p:x=\"&#xD83D;&#xDE00;\" w:val='u'/>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><q:y>]]><a r=\"\">\r\n<w:r xmlns:w=\"2\" xmlns=''>y]]></w:r><c v=\"preserve\" v=\"&#10;\" w:val=\"u\">\r\n</c></a></q:y></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é r=\"v\"><b q:x=\"\" r='1'>&#1;<p:x xmlns:p='1' w:val=\"u\" xmlns:w='v'/></b><p:x xmlns=\"&#10;\" xmlns='u'> </p:x></é></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a><q:y q:x=\"&#xD83D;&#xDE00;\" w:val='preserve' v=\"preserve\"><b p:x='&amp;' v=\"&#xD83D;&#xDE00;\"><b/></b>&#x41;</q:y></a></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><w:r xml:space='x\r\ny\tz' q:x=\"&bogus;\" xml:space=\"\"><c>&#x41;</c></w:r></w:p></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x v=\"v\" v='1' xml:space=\"x\r\ny\tz\"><![CDATA[c\r\nd]]>&#x41;</p:x></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c r='1' v=\"&#xD83D;&#xDE00;\"><c p:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z r=\"preserve\">\r\n&#x41;<![CDATA[c\r\nd]]></x:z>]]></c>&#x41;</zz></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><b><a w:val='&#xD83D;&#xDE00;' xmlns:p=\"1\" xmlns:p=\"1\">x<b></b></a></b></root>"	ERR
+"<b w:val=\"\" xmlns:w=\"1\"> <q:y w:val=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/><c xmlns=\"a b\" xmlns:w='1' v='1'><p:x xmlns:q=\"2\"></p:x></zz></b>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c><a w:val='&amp;' xmlns:p='a b' xmlns:q='a b'><w:r w:val='a b' xmlns:q=''>a&amp;by</w:r></a></c></root>"	ERR
+"<?xml version=\"1.0\"?><w:p xmlns:w=\"v\"/>"	{v}p[]{}
+"<?xml version=\"1.0\"?><x:z w:val=\"u\" xmlns=\"1\"></x:z>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p q:x=\"x\r\ny\tz\" q:x=''></w:p></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><x:z xmlns=\"&#xD83D;&#xDE00;\" xmlns:p='preserve'/></root>"	ERR
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a v='a b'/></root>"	{}root[]{{}a[{}v="a b"]{}}
+"<?xml version=\"1.0\"?><root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a r='&#10;'><![CDATA[c\r\nd]]><![CDATA[c\r\nd]]> z </a></root>"	{}root[]{{}a[{}r="\n"]{"c\nd","c\nd"," z "}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><é> z x<w:p p:x=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:q=\"1\"/></é></root>"	{}root[]{{}é[]{" z x",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{u}x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"]{}}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p w:val='u'></w:p></root>"	{}root[]{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p[{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p p:x='&#xD83D;&#xDE00;' q:x='&amp;'><![CDATA[c\r\nd]]><?p q?></w:p></root>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><p:x v='v' xmlns=\"v\" w:val='u'></p:x></root>"	{}root[]{{u}x[{}v="v",{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val="u"]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main' w:val=\"\" w:val='u'><![CDATA[c\r\nd]]> </a></root>"	ERR
+"<x:z>a&amp;b&#1;<?p q?></zz>"	ERR
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><c></c></root>"	{}root[]{{}c[]{}}
+"<root xmlns:p=\"u\" xmlns:q=\"v\" xmlns:x=\"u\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><a p:x='1'></a></root>"	{}root[]{{}a[{u}x="1"]{}}
+"<b v='2'><a v=\"2\" xmlns:p=\"&#10;\"></a></b>"	{}b[{}v="2"]{{}a[{}v="2"]{}}
