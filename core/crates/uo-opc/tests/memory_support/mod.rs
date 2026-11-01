@@ -60,15 +60,15 @@ pub fn preset(kind: Kind, part: &str) -> ParseOptions<'static> {
     }
 }
 
-/// Reads every part and parses every XML-like one with the app's preset; returns (parts read,
-/// elements parsed).
+/// Reads every part and parses every XML-like one with the app's preset, through
+/// `Package::xml_part` as the format crates do (gate 2, D3); returns (parts read, elements
+/// parsed).
 pub fn read_and_parse_all(pkg: &Package, kind: Kind) -> (usize, usize) {
     let names: Vec<String> = pkg.part_names().map(str::to_owned).collect();
     let mut elements = 0;
     for name in &names {
         if limits::is_xml_like(name) {
-            let text = pkg.part_text(name).unwrap().unwrap();
-            let doc = parse(text.as_ref(), &preset(kind, name)).unwrap();
+            let doc = pkg.xml_part(name, &preset(kind, name)).unwrap();
             elements += doc.element_count();
         } else {
             pkg.part(name).unwrap().unwrap();
@@ -243,7 +243,9 @@ pub fn deck_with_large_media() -> Vec<u8> {
         w.add(name, pkg.part(name).unwrap().unwrap()).unwrap();
     }
     let z = zeros_deflate(DECK_DEFLATED_MEDIA);
-    w.add_raw("ppt/media/zeros.bin", RawEntry { method: 8, crc32: 0, size: DECK_DEFLATED_MEDIA as u64, data: &z }).unwrap();
+    // the real CRC-32: a save copies the entry raw only when it verifies (gate 2, D5)
+    let crc = (0..DECK_DEFLATED_MEDIA >> 16).fold(0, |c, _| uo_opc::flate::crc32_update(c, &[0; 1 << 16]));
+    w.add_raw("ppt/media/zeros.bin", RawEntry { method: 8, crc32: crc, size: DECK_DEFLATED_MEDIA as u64, data: &z }).unwrap();
     let video = noise(DECK_STORED_MEDIA, 7);
     w.add_raw("ppt/media/video.mp4", RawEntry { method: 0, crc32: uo_opc::flate::crc32(&video), size: video.len() as u64, data: &video })
         .unwrap();

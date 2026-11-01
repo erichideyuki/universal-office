@@ -193,12 +193,13 @@ fn lenient_empty_comment_and_pi_shapes() {
 
 /// F7: inflate allocations the host cannot make return `Error::Limit` instead of aborting the
 /// process (`handle_alloc_error`) or panicking (`capacity overflow` above `isize::MAX`, which on
-/// wasm32 is below the default 2 GiB binary part cap). Here: an empty stream declaring 4 EiB
-/// with no cap (the S1 path) — before, the test process aborted.
+/// wasm32 is below the default 2 GiB binary part cap). The input was an empty stream declaring
+/// 4 EiB with no cap (the S1 path; before F7 the test process aborted). Since D1 that stream is
+/// `Corrupt` before any allocation; the output growth keeps `try_reserve` (F7), which only an
+/// output above the host's memory reaches.
 #[test]
 fn impossible_inflate_allocation_is_an_error() {
     let r = flate::inflate_raw(&[], Some(1 << 62), u64::MAX);
-    assert!(matches!(r, Err(uo_opc::Error::Limit { kind: uo_opc::LimitKind::PartBytes, .. })), "{r:?}");
-    // sizes that can be allocated are unchanged (S1 behaviour, until gate 2 decides)
-    assert_eq!(flate::inflate_raw(&[], Some(5), 10).unwrap(), vec![0; 5]);
+    assert!(matches!(r, Err(uo_opc::Error::Corrupt("empty deflate stream with a declared size"))), "{r:?}");
+    assert!(flate::inflate_raw(&[], Some(5), 10).is_err());
 }

@@ -183,6 +183,36 @@ pub fn load(app: App, bytes: &[u8]) -> Result<Package, String> {
     if has_main { Ok(pkg) } else { Err("err:main".into()) }
 }
 
+/// The entries fflate reads as zeros where uo-opc reports `Corrupt` (gate 2, D1): deflated,
+/// with an empty compressed range (clamped to the archive, as `subarray` does) and a declared
+/// size > 0.
+pub fn d1_entries(bytes: &[u8]) -> Vec<(String, u64)> {
+    let Ok(entries) = uo_opc::zip::read(bytes, u32::MAX) else { return Vec::new() };
+    entries.into_iter().filter(|e| e.method == 8 && e.size > 0 && e.compressed(bytes).is_empty()).map(|e| (e.name, e.size)).collect()
+}
+
+/// The package as the TS holds it when only D1 makes `load` fail: opened without the eager
+/// check, the D1 entries replaced by fflate's zeros, then `load`'s checks. `None` when D1 does
+/// not explain the failure.
+pub fn load_as_fflate_d1(app: App, bytes: &[u8]) -> Option<Package> {
+    let d1 = d1_entries(bytes);
+    if d1.is_empty() {
+        return None;
+    }
+    let mut pkg = Package::open(bytes, &Limits::DEFAULT, &app.open_options()).ok()?;
+    for (name, size) in d1 {
+        if pkg.contains(&name) && size <= Limits::DEFAULT.part_cap(&name) {
+            pkg.set_part(name, vec![0; usize::try_from(size).ok()?]);
+        }
+    }
+    pkg.verify().ok()?;
+    let has_main = match app {
+        App::Sheet => pkg.find_name(app.main_part()).is_some(),
+        _ => pkg.contains(app.main_part()),
+    };
+    has_main.then_some(pkg)
+}
+
 /// `in`: the digest of an input.
 pub fn input_digest(bytes: &[u8]) -> String {
     let mut s = Stream::new();
@@ -515,7 +545,7 @@ fn js_canonical_numeric(s: &str) -> bool {
 /// assignment makes the entry's bytes (a Uint8Array) the prototype of the result object, and a
 /// typed array's [[Set]] ignores a canonical numeric name that is not a valid index of it
 /// (ECMA-262 TypedArray [[Set]], receiver ≠ target), unless the result already owns that name.
-/// Reproduced here only to show that this is the whole difference (not adopted: see the record).
+/// Reproduced here only to show that this is the whole difference (uo-opc keeps them: gate 2, D4).
 pub fn js_proto_dropped(zip: &[u8]) -> Vec<String> {
     let Ok(list) = central_directory(zip) else { return Vec::new() };
     let mut own: std::collections::HashSet<String> = std::collections::HashSet::new();

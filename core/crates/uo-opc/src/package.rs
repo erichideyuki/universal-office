@@ -16,13 +16,36 @@
 //!   [`Package::release`], [`Package::release_all`], a `set_part`/`remove_part` of that name, or
 //!   the drop of the package;
 //! - parts given by `set_part`/`from_parts` are owned by the package until replaced or removed;
-//! - the case-insensitive index (only with a [`CaseFold`] policy) is built on the first fallback
-//!   lookup and dropped on any change of the part set; it holds one folded name per part.
+//! - the case-insensitive indexes (one for the [`CaseFold`] policy, one ASCII index for
+//!   [`Package::resolve_target`]) are built on the first fallback lookup and dropped on any
+//!   change of the part set; each holds one folded name per part;
+//! - what is known of an entry's stream (its output length, encoded length and CRC-32) is kept
+//!   per entry, a few bytes, so a save verifies each entry once (D5).
 //!
-//! Limits: each read checks `Limits::part_cap(name)` on the bytes it produces, and the running
-//! total of produced bytes (each entry counted once, the first time it is read) against
-//! `max_total_bytes`. Declared sizes never reserve memory. Errors of a damaged entry surface
-//! when that entry is read; [`Package::verify`] reproduces the TS behaviour of failing at load.
+//! Limits: each raw read checks `Limits::part_cap(name)` on the bytes it produces, and the
+//! running total of produced bytes (each entry counted once, the first time it is read or
+//! verified by a save) against `max_total_bytes`. Declared sizes never reserve memory. Errors of
+//! a damaged entry surface when that entry is read; [`Package::verify`] reproduces the TS
+//! behaviour of failing at load.
+//!
+//! The format crates and hosts go through two entry points (gate 2, D3 and D6), so that "the
+//! part checked" and "the part opened" are the same by construction:
+//! - [`Package::xml_part`] is the only way to parse a part as XML: the XML part cap applies
+//!   whatever the name (a main part may be `word/document.bin`; the content type decides), and
+//!   the package's `max_xml_depth` and `max_xml_elements` bound the tree; relationships and
+//!   content types are read from its result ([`crate::rels::from_document`],
+//!   [`crate::content_types::ContentTypes::from_document`]);
+//! - [`Package::resolve_target`] turns a relationship target into the exact name of the part the
+//!   package opens (the OPC rule: [`part_name::resolve_relationship_target`], then ASCII case
+//!   folding); a validator checks that name with [`Package::part`] or [`Package::xml_part`].
+//!
+//! Saving (gate 2, D5): an untouched entry is copied raw only when it is verified: the data the
+//! reader locates through the local header inflates (or, stored, is) exactly to the declared
+//! size, its CRC-32 is the declared one, and the declared compressed range lies inside the
+//! archive. Anything else is written again from the bytes the reader produces (deflated at the
+//! save level, or stored if it was stored), and an entry that cannot be read fails the save with
+//! the read's error. Entries never read are verified by [`flate::check_raw`], which keeps no
+//! output, so the save of a package whose media were never read holds none of them.
 //!
 //! `Package` is `Send`, not `Sync` (the caches are `OnceCell`s): reads borrow `&self`, so several
 //! parts can be held at once.
@@ -34,6 +57,8 @@ use std::collections::HashMap;
 use crate::error::{Error, LimitKind, Result};
 use crate::flate;
 use crate::limits::Limits;
+use crate::part_name;
+use crate::xml::{self, ParseOptions};
 use crate::zip::{self, RawEntry, ZipEntry, ZipWriter};
 
 /// Options of a save: level, STORED names, timestamp (see [`zip::WriteOptions`]).
@@ -64,9 +89,20 @@ pub struct OpenOptions {
     pub utf16_text: bool,
 }
 
+/// What is known of an entry's stream once it was inflated or checked (D5).
+#[derive(Debug, Clone, Copy)]
+struct Known {
+    /// the bytes the reader returns
+    len: u64,
+    /// the bytes the stream encodes (equal to `len` unless the declared size truncated it)
+    stream_len: u64,
+    /// CRC-32 of the bytes the reader returns (computed by a save or `verify`)
+    crc32: Option<u32>,
+}
+
 enum Content {
     /// an entry of the input archive, inflated on demand
-    Entry { entry: ZipEntry, inflated: OnceCell<Vec<u8>> },
+    Entry { entry: ZipEntry, inflated: OnceCell<Vec<u8>>, known: Cell<Option<Known>> },
     /// bytes given by the caller
     Owned(Vec<u8>),
 }
@@ -84,6 +120,9 @@ pub struct Package {
     parts: Vec<Part>,
     index: HashMap<String, usize>,
     caseless: OnceCell<HashMap<String, usize>>,
+    /// ASCII-folded names for [`Package::resolve_target`] (the `caseless` index serves when the
+    /// policy is `CaseFold::Ascii`)
+    ascii: OnceCell<HashMap<String, usize>>,
     limits: Limits,
     options: OpenOptions,
     produced: Cell<u64>,
@@ -127,7 +166,16 @@ pub fn decode_text(bytes: &[u8], utf16: bool) -> Cow<'_, str> {
 
 impl Package {
     fn with(source: Vec<u8>, limits: Limits, options: OpenOptions) -> Self {
-        Package { source, parts: Vec::new(), index: HashMap::new(), caseless: OnceCell::new(), limits, options, produced: Cell::new(0) }
+        Package {
+            source,
+            parts: Vec::new(),
+            index: HashMap::new(),
+            caseless: OnceCell::new(),
+            ascii: OnceCell::new(),
+            limits,
+            options,
+            produced: Cell::new(0),
+        }
     }
 
     /// Opens a zip package (copies `bytes`; see [`Package::open_owned`]).
@@ -149,7 +197,7 @@ impl Package {
             pkg.index.insert(entry.name.clone(), pkg.parts.len());
             pkg.parts.push(Part {
                 name: entry.name.clone(),
-                content: Content::Entry { entry, inflated: OnceCell::new() },
+                content: Content::Entry { entry, inflated: OnceCell::new(), known: Cell::new(None) },
                 counted: Cell::new(false),
             });
         }
@@ -214,16 +262,42 @@ impl Package {
             return Some(i);
         }
         let key = fold(self.options.case_fold, name)?;
-        let lower = self.caseless.get_or_init(|| {
+        self.folded(&self.caseless, self.options.case_fold).get(&key).copied()
+    }
+
+    /// The index of folded names under `policy`, built on first use: the first part (in order)
+    /// of each folded name.
+    fn folded<'a>(&'a self, cell: &'a OnceCell<HashMap<String, usize>>, policy: CaseFold) -> &'a HashMap<String, usize> {
+        cell.get_or_init(|| {
             let mut m = HashMap::with_capacity(self.parts.len());
             for (i, p) in self.parts.iter().enumerate() {
-                if let Some(k) = fold(self.options.case_fold, &p.name) {
+                if let Some(k) = fold(policy, &p.name) {
                     m.entry(k).or_insert(i);
                 }
             }
             m
-        });
-        lower.get(&key).copied()
+        })
+    }
+
+    /// The part a relationship `target` of `source_part` names (gate 2, D6): the OPC rule,
+    /// [`part_name::resolve_relationship_target`], then the exact name, else the first part (in
+    /// order) equal under ASCII case folding, whatever the [`CaseFold`] policy. Returns the name
+    /// as stored, the one [`Package::part`] and [`Package::xml_part`] open; `None` for a target
+    /// that names no part (external, malformed) or a part that does not exist.
+    ///
+    /// The one resolution path of format crates and hosts: a validator that checks the returned
+    /// part checks exactly what the library opens. (Until stage 5 the apps' legacy target rules
+    /// stay as parity policies in the tests.)
+    pub fn resolve_target(&self, source_part: &str, target: &str) -> Option<&str> {
+        let name = part_name::resolve_relationship_target(source_part, target)?;
+        let i = match self.index.get(&name) {
+            Some(&i) => i,
+            None => {
+                let cell = if self.options.case_fold == CaseFold::Ascii { &self.caseless } else { &self.ascii };
+                *self.folded(cell, CaseFold::Ascii).get(&part_name::fold_ascii(&name))?
+            }
+        };
+        self.parts.get(i).map(|p| p.name.as_str())
     }
 
     /// The bytes of a part by exact name (`getPart` of Write/Slides). Inflates on first read.
@@ -266,10 +340,9 @@ impl Package {
         }
     }
 
-    /// The cap of the next read of `part`: its part cap, and the rest of the total if it was
-    /// never counted.
-    fn cap_for(&self, part: &Part) -> (u64, u64) {
-        let part_cap = self.limits.part_cap(&part.name);
+    /// The cap of the next read of `part` with `part_cap`: the part cap, and the rest of the
+    /// total if it was never counted.
+    fn cap_for(&self, part: &Part, part_cap: u64) -> (u64, u64) {
         if part.counted.get() {
             return (part_cap, part_cap);
         }
@@ -285,14 +358,19 @@ impl Package {
 
     fn load(&self, i: usize) -> Result<&[u8]> {
         let Some(part) = self.parts.get(i) else { return Err(Error::MissingPart(String::new())) };
-        let (entry, inflated) = match &part.content {
+        self.load_capped(part, self.limits.part_cap(&part.name))
+    }
+
+    /// Reads `part`, inflating it (under `part_cap` and the total) if it was never read.
+    fn load_capped<'a>(&'a self, part: &'a Part, part_cap: u64) -> Result<&'a [u8]> {
+        let (entry, inflated, known) = match &part.content {
             Content::Owned(v) => return Ok(v),
-            Content::Entry { entry, inflated } => (entry, inflated),
+            Content::Entry { entry, inflated, known } => (entry, inflated, known),
         };
         if let Some(v) = inflated.get() {
             return Ok(v);
         }
-        let (part_cap, cap) = self.cap_for(part);
+        let (part_cap, cap) = self.cap_for(part, part_cap);
         let raw = entry.compressed(&self.source);
         if entry.method == 0 {
             // `slc(data, b, b + sc)`: the declared uncompressed size is ignored (browser.js:2682)
@@ -302,21 +380,88 @@ impl Package {
             self.count(part, raw.len());
             return Ok(raw);
         }
-        let bytes = match flate::inflate_raw(raw, Some(entry.size), cap) {
+        let (bytes, stream_len) = match flate::inflate_raw_counted(raw, Some(entry.size), cap) {
             Ok(b) => b,
             Err(Error::Limit { .. }) => return Err(self.limit_error(&part.name, part_cap, cap)),
             Err(e) => return Err(e),
         };
         self.count(part, bytes.len());
+        if known.get().is_none() {
+            known.set(Some(Known { len: bytes.len() as u64, stream_len, crc32: None }));
+        }
         Ok(inflated.get_or_init(|| bytes))
     }
 
-    /// Inflates every entry not read yet and drops the output, with the part caps and the total:
-    /// the TS inflates everything at load, so a damaged entry fails the whole package there.
+    /// Parses a part as XML (gate 2, D3): the one way the format crates parse a part. The part
+    /// is found like [`Package::find`] (exact name, then the [`CaseFold`] policy) and read with
+    /// `max_xml_part_bytes` whatever its name; its text is decoded like [`Package::part_text`]
+    /// and parsed with `options`, whose depth and element limits are lowered to the package's
+    /// `max_xml_depth` and `max_xml_elements`. A missing part is `Error::MissingPart`; a limit
+    /// error names the part.
+    pub fn xml_part(&self, name: &str, options: &ParseOptions<'_>) -> Result<xml::Document> {
+        let part = self.find_index(name).and_then(|i| self.parts.get(i)).ok_or_else(|| Error::MissingPart(name.to_string()))?;
+        let cap = self.limits.max_xml_part_bytes;
+        let bytes = self.load_capped(part, cap)?;
+        // read before through `part` with the binary cap of its name, or set by the caller
+        if bytes.len() as u64 > cap {
+            return Err(Error::Limit { kind: LimitKind::PartBytes, max: cap, part: Some(part.name.clone()) });
+        }
+        let lower = |own: Option<u32>, package: u32| Some(own.map_or(package, |o| o.min(package)));
+        let options = ParseOptions {
+            max_depth: lower(options.max_depth, self.limits.max_xml_depth),
+            max_elements: lower(options.max_elements, self.limits.max_xml_elements),
+            ..*options
+        };
+        xml::parse(decode_text(bytes, self.options.utf16_text), &options).map_err(|e| match e {
+            Error::Limit { kind, max, part: None } => Error::Limit { kind, max, part: Some(part.name.clone()) },
+            e => e,
+        })
+    }
+
+    /// Whether a save may copy the entry raw (D5): the stream is verified once and the result
+    /// kept. Verifying a never-read entry inflates it without keeping the output
+    /// ([`flate::check_raw`]) under the caps of a read, and counts toward the total as a read
+    /// does; its errors are the read's.
+    fn intact(&self, part: &Part) -> Result<bool> {
+        let Content::Entry { entry, inflated, known } = &part.content else { return Ok(false) };
+        let raw = entry.compressed(&self.source);
+        let k = match known.get() {
+            Some(k @ Known { crc32: Some(_), .. }) => k,
+            Some(k) if let Some(out) = inflated.get() => Known { crc32: Some(flate::crc32(out)), ..k },
+            _ => {
+                let (part_cap, cap) = self.cap_for(part, self.limits.part_cap(&part.name));
+                let k = if entry.method == 0 {
+                    // a stored entry is read as its compressed bytes (see `load_capped`)
+                    if raw.len() as u64 > cap {
+                        return Err(self.limit_error(&part.name, part_cap, cap));
+                    }
+                    Known { len: raw.len() as u64, stream_len: raw.len() as u64, crc32: Some(flate::crc32(raw)) }
+                } else {
+                    match flate::check_raw(raw, Some(entry.size), cap) {
+                        Ok(c) => Known { len: c.len, stream_len: c.stream_len, crc32: Some(c.crc32) },
+                        Err(Error::Limit { .. }) => return Err(self.limit_error(&part.name, part_cap, cap)),
+                        Err(e) => return Err(e),
+                    }
+                };
+                self.count(part, k.len as usize);
+                k
+            }
+        };
+        known.set(Some(k));
+        // the local header only gives where the data starts (its name and extra lengths): data
+        // found at a wrong place fails the size or CRC check; a compressed range cut by the end
+        // of the archive means the central record lies about it
+        let in_archive = entry.data_start.checked_add(entry.compressed_size).is_some_and(|end| end <= self.source.len() as u64);
+        Ok(in_archive && k.len == entry.size && k.stream_len == entry.size && k.crc32 == Some(entry.crc32))
+    }
+
+    /// Inflates every entry not read yet without keeping the output ([`flate::check_raw`]), with
+    /// the part caps and the total: the TS inflates everything at load, so a damaged entry fails
+    /// the whole package there. What it finds serves a later save (D5).
     pub fn verify(&self) -> Result<()> {
         let mut total = 0u64;
         for part in &self.parts {
-            let Content::Entry { entry, inflated } = &part.content else { continue };
+            let Content::Entry { entry, inflated, known } = &part.content else { continue };
             let part_cap = self.limits.part_cap(&part.name);
             let left = self.limits.max_total_bytes.saturating_sub(total);
             let cap = part_cap.min(left);
@@ -325,9 +470,15 @@ impl Package {
                 v.len() as u64
             } else if entry.method == 0 {
                 raw.len() as u64
+            } else if let Some(k) = known.get() {
+                k.len
             } else {
-                match flate::inflate_raw(raw, Some(entry.size), cap) {
-                    Ok(b) => b.len() as u64,
+                // inflated without keeping the output; what it found serves a later save (D5)
+                match flate::check_raw(raw, Some(entry.size), cap) {
+                    Ok(c) => {
+                        known.set(Some(Known { len: c.len, stream_len: c.stream_len, crc32: Some(c.crc32) }));
+                        c.len
+                    }
                     Err(Error::Limit { .. }) => return Err(self.limit_error(&part.name, part_cap, cap)),
                     Err(e) => return Err(e),
                 }
@@ -372,6 +523,7 @@ impl Package {
                 self.index.insert(name.clone(), self.parts.len());
                 self.parts.push(Part { name, content: Content::Owned(data), counted: Cell::new(true) });
                 self.caseless.take();
+                self.ascii.take();
             }
         }
     }
@@ -394,6 +546,7 @@ impl Package {
             }
         }
         self.caseless.take();
+        self.ascii.take();
         true
     }
 
@@ -407,13 +560,17 @@ impl Package {
                 self.index.insert(p.name.clone(), i);
             }
             self.caseless.take();
+            self.ascii.take();
         }
     }
 
     /// Writes the package as a zip like `zipSync(parts, { level: 6 })`: parts in JS object
     /// order (array-index names first, `zip::js_object_order`); parts set by the caller are
-    /// compressed, entries never set are copied raw (same method, bytes, CRC and declared size),
-    /// except `stored` names held deflated, which are inflated and stored.
+    /// compressed; entries never set are copied raw (same method, bytes, CRC and declared size)
+    /// when they are verified (D5, see the module comment), else written again from the bytes
+    /// the reader produces (deflated, or stored if they were stored); `stored` names held
+    /// deflated are inflated and stored. An entry that cannot be read fails the save with the
+    /// read's error.
     pub fn save(&self, options: &SaveOptions) -> Result<Vec<u8>> {
         let order = zip::js_object_order(self.parts.iter().map(|p| (p.name.clone(), p)).collect());
         let mut w = ZipWriter::new(options.clone());
@@ -421,12 +578,15 @@ impl Package {
             match &part.content {
                 Content::Owned(data) => w.add(&name, data)?,
                 Content::Entry { entry, .. } => {
-                    if entry.method != 0 && options.stored.contains(&name) {
-                        let i = self.index.get(&name).copied().unwrap_or(usize::MAX);
-                        w.add(&name, self.load(i)?)?;
-                    } else {
+                    let restore = entry.method != 0 && options.stored.contains(&name);
+                    if !restore && self.intact(part)? {
                         let raw = entry.compressed(&self.source);
                         w.add_raw(&name, RawEntry { method: entry.method, crc32: entry.crc32, size: entry.size, data: raw })?;
+                    } else if entry.method == 0 {
+                        let data = self.load_capped(part, self.limits.part_cap(&part.name))?;
+                        w.add_raw(&name, RawEntry { method: 0, crc32: flate::crc32(data), size: data.len() as u64, data })?;
+                    } else {
+                        w.add(&name, self.load_capped(part, self.limits.part_cap(&part.name))?)?;
                     }
                 }
             }

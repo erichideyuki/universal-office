@@ -31,7 +31,8 @@ pub struct ZipEntry {
     pub method: u16,
     /// general purpose flags of the central header
     pub flags: u16,
-    /// CRC-32 declared in the central header (never checked, kept for raw copies)
+    /// CRC-32 declared in the central header (never checked on read, as fflate; a save checks it
+    /// before copying the entry raw, gate 2 D5)
     pub crc32: u32,
     /// compressed size declared (zip64 aware)
     pub compressed_size: u64,

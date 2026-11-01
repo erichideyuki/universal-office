@@ -68,6 +68,10 @@ pub struct ParseOptions<'a> {
     /// limit, sheet-core and slides-core); strict: the `XmlReader.Depth` of any node (root = 0)
     /// must not exceed it (C# `DocxLimits.MaxXmlDepth`, 256)
     pub max_depth: Option<u32>,
+    /// elements allowed in the document (`None` = no limit, the TS); exceeding it is
+    /// `Error::Limit { kind: XmlElements }` (gate 2, D2). `Package::xml_part` applies
+    /// `Limits::max_xml_elements`
+    pub max_elements: Option<u32>,
     /// element names (after renaming) whose raw source is kept (docx-core `RAW_CAPTURE`)
     pub raw_capture: &'a [&'a str],
     /// record source positions of every element (docx lossless save)
@@ -88,6 +92,7 @@ impl ParseOptions<'static> {
         bad_char_ref: CharRefPolicy::Error,
         content_pi: ContentPi::AsElement,
         max_depth: None,
+        max_elements: None,
         raw_capture: &[],
         positions: false,
         keep_comments: false,
@@ -104,6 +109,7 @@ impl ParseOptions<'static> {
         bad_char_ref: CharRefPolicy::Error,
         content_pi: ContentPi::Skip,
         max_depth: Some(256),
+        max_elements: None,
         raw_capture: &[],
         positions: false,
         keep_comments: true,
@@ -779,6 +785,11 @@ impl<'s, 'o> Parser<'s, 'o> {
     }
 
     fn push_element(&mut self, name: u32) -> Result<u32> {
+        if let Some(m) = self.opts.max_elements
+            && self.elements.len() as u64 >= u64::from(m)
+        {
+            return Err(Error::Limit { kind: LimitKind::XmlElements, max: u64::from(m), part: None });
+        }
         let elem = Self::u32_of(self.elements.len())?;
         let attr_start = Self::u32_of(self.attrs.len())?;
         self.elements.push(ElemRec { name, attr_start, child_start: 0, child_len: 0 });

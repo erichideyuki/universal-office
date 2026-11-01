@@ -1,6 +1,6 @@
 # uo-opc — the document container layer
 
-Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01**; stages 3 (port) and 4 (verification) done; **gate 2 pending** (decisions D1–D8 below).
+Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01**; stages 3 (port) and 4 (verification) done; **gate 2 approved 2026-11-01** (D1–D8), **D1–D8 implemented 2026-11-01** (see the last section); next: stage 5.
 
 ## Scope
 
@@ -574,7 +574,9 @@ cargo run --release --no-default-features --features fallback --bin fallback -- 
 cargo run --release --no-default-features --features fallback --bin fallback -- --reproduce <target> <file>
 ```
 
-## Gate 2 — summary and decisions (pending)
+## Gate 2 — summary and decisions (approved 2026-11-01)
+
+Maintainer, verbatim: "Approve D1–D8" — all eight recommendations accepted.
 
 Verified by the orchestrator after the three verifiers (not only reported): all 191 workspace
 tests pass in release with all features; fmt and clippy clean; the parity capture regenerated from
@@ -602,3 +604,202 @@ Decisions (ids unique across the verifiers' reports; "Parity P1/P2" and "Securit
 | D8 | Security P5: a "safe relative path" helper for hosts that extract to disk (addition only) | approve |
 
 Not a gate-2 item: iOS Lockdown Mode disables WebAssembly (product decision before 0.10 ships).
+
+## Gate 2 decisions — implemented (2026-11-01)
+
+All eight decisions are in `src/`, each with tests that failed before the change (an assertion of
+the old behaviour or an API that did not exist). Parity differences they cause are accepted by
+name in the tests, never by loosening a comparison.
+
+### D1 — empty deflate stream with a declared size is `Corrupt`
+
+- `flate::inflate_raw` (and so `inflate_zlib`, `check_raw` and every package read): an empty
+  stream with `declared > 0` is `Error::Corrupt("empty deflate stream with a declared size")`,
+  before any allocation; no declared size or a declared 0 stay the empty output.
+- Measured: the 132 B docx declaring a 256 MiB `document.xml` allocates 12 B (was 256 MiB); the
+  340 B archive with three 2 GiB parts allocates 5 B per read and holds nothing (was 4 GiB; the
+  test is no longer `#[ignore]`d); `verify()` of two parts declaring 64 MiB allocates 5 B; a save
+  fails the same way. In wasm the S1 round trip leaves `memory.buffer.byteLength` at 2,621,440 B
+  (was +537,001,984 B, permanent); the test now asserts no growth.
+- Tests: `flate_fflate` `empty_input_with_a_declared_size_is_corrupt_d1` (was
+  `empty_input_returns_the_declared_buffer`), `s1_empty_deflate` (both tests assert `Corrupt` and
+  < 4 KiB), `uo-wasm/tests/opc_memory.test.mjs` (S1), `security_regressions`
+  `impossible_inflate_allocation_is_an_error` (its S1 input is now `Corrupt`; the `try_reserve`
+  growth of F7 stays, reachable only by an output above the host's memory).
+- Parity, accepted by name D1: `flate_differential` 16 of the 2,000 mutated streams (empty after
+  truncation, with a declared size); `zip_fflate` `lying_sizes`; `opc_parity` 6 packages
+  (`quirk/006-size-lies` and `quirk/025-bad-offset`, three apps each: the bad offset puts the data
+  range past the archive, so the stream is empty). The replay accepts only when replacing exactly
+  the D1 entries by fflate's zeros gives the captured package
+  (`parity_support::load_as_fflate_d1`), and compares every other facet on that package.
+
+### D2 — elements per parsed part
+
+- `LimitKind::XmlElements`; `ParseOptions::max_elements: Option<u32>` (`None` in `LENIENT` and
+  `STRICT`, the TS); `Limits::max_xml_elements`. The check is one comparison in `push_element`
+  before an element is created; it changes no tree and allocates nothing (asserted: same dump and
+  same allocated bytes with the cap at the element count, error one below).
+- Default **20,000,000**, about 10 × the largest real part. Measured over the 2,819 git-tracked
+  OOXML packages: `sheet/samples/giant-1m.xlsx` `xl/worksheets/sheet1.xml` **2,010,005**
+  elements (31.7 MB, the largest); `giant-200k.xlsx` 430,005; the largest oracle `document.xml`
+  (`justify4/sw-16-8.docx`, largest by bytes too, 188,270 B) **6,657**. At the cap, the minimal
+  hostile shape (`<a/>`, 7 × its source, M5) is about 560 MB of tree instead of ~1.9 GB for a
+  256 MiB part.
+- Tests: `gate2_decisions` `d2_element_cap_is_an_error_and_changes_no_tree` (docx positions,
+  sheet, strict, a 100,000-element flat part); `package_budgets` asserts the default ≥ 9 × the
+  giant sheet; D3 below applies it through the package.
+
+### D3 — one entry point for parsing a part
+
+- `Package::xml_part(name, &ParseOptions) -> Result<xml::Document>`: found like `find` (exact,
+  then the `CaseFold` policy); read with `max_xml_part_bytes` whatever the name, also for bytes
+  already read through `part` with a binary cap or set by the caller; decoded like `part_text`;
+  parsed with the options' depth and element limits lowered to `Limits::max_xml_depth` and
+  `max_xml_elements`; limit errors name the part; a missing part is `MissingPart`. The package
+  module documents that format crates parse parts only through it; `Limits::part_cap(name)` stays
+  for raw reads. `rels::from_document` and `ContentTypes::from_document` read relationships and
+  content types from its result (`parse_rels`/`ContentTypes::parse` delegate to them).
+- Behaviour to know: the TS sheet and slides presets have no depth limit; through `xml_part` they
+  get `max_xml_depth` (1,000). No corpus document is that deep; the parity replay still parses
+  with the presets directly.
+- The M2 soak (native and wasm) and the M3 scenarios now parse through `xml_part`
+  (`memory_support::read_and_parse_all`, `uo-wasm/src/opc_memtest.rs`): numbers unchanged (giant
+  open + read + parse 355,417,287 B allocated, was 355,417,360 B).
+- Tests: `gate2_decisions` `d3_xml_part_applies_the_xml_cap_whatever_the_name` (a 4.4 KB
+  `word/document.bin` under a 1,000 B XML cap: refused with a peak < 64 KiB, also after a raw
+  read), `d3_xml_part_applies_the_package_depth_and_elements`,
+  `d3_xml_part_finds_and_decodes_like_the_text_readers`,
+  `d3_rels_and_content_types_from_the_parsed_part` (with `rels::source_part_of`).
+
+### D4 — keep the entries fflate drops after `__proto__`
+
+No code change (uo-opc already keeps them): the replay's `PENDING` acceptance is now named
+`D4` (3 packages, `quirk/005-proto-then-numeric-names` in the three apps).
+
+### D5 — raw copy on save only when verified
+
+- `flate::check_raw(data, declared, cap) -> Result<StreamCheck { len, stream_len, crc32 }>`: the
+  same inflate (`inflt` is generic over its store: the `Vec<u8>` store has the same growth as
+  before, so every M3 number of a read is unchanged; the `Window` store is a 64 KiB ring, above
+  fflate's longest distance of 32,769, whose bytes enter the CRC every 32 KiB), the same results
+  and errors, no output kept.
+- `Package` keeps per entry what is known of its stream (`len`, `stream_len` = fflate's `bt`,
+  CRC-32): a read records the first two, the save or `verify()` the CRC (from the kept output if
+  there is one, else through `check_raw`). An entry is copied raw only when `len` and
+  `stream_len` equal the declared size, the CRC is the declared one, and the declared compressed
+  range lies inside the archive (the local header only gives the data start, through its name and
+  extra lengths: data found at a wrong place fails the size or CRC check). Otherwise the save
+  writes the bytes the reader produces: deflated at the save level, stored if the source was
+  stored (with the real CRC); `stored` names as before. An entry that cannot be read fails the
+  save with the read's error (before: copied raw as is) — the TS cannot open such a file at all.
+- Verification counts toward `max_total_bytes` like a read (each entry once): it keeps no output,
+  but the total bounds the work of archives whose entries overlap one stream; `produced_bytes`
+  after a save includes the entries it verified.
+- Numbers (`package_budgets`, re-recorded): deck (17.2 MB; 64 MiB deflated zeros, 16 MiB stored)
+  edit + save: allocated 54,421,635 B (was 54,282,370: the windows and Huffman tables), peak
+  34,478,909 B (the output's capacity, unchanged); the 64 MiB part is never held (peak < 64 MiB
+  and < 2 × output + 1 MiB, asserted), and the save copies it raw (same compressed bytes,
+  asserted). Time (release): first save 204–215 ms (verifying 64 MiB inflated + 80 MiB of CRC),
+  a second save 7 ms (verification kept, allocations without the windows). Giant save untouched
+  (every part read before): CRC only, allocations unchanged (8,549,574 B), 53–75 ms against
+  1.0–1.6 ms with the verification kept. Giant save with the sheet edited: 25,020,549 B (+1.3%,
+  the never-read entries verified); sw-16-8 edit + save 4,493,829 B (+4.7%); deck open + parse
+  1,188,339 B / peak 147,208 B (+1 KB: the per-entry record and the second index cell).
+- Memory gate re-run: M2 native 100 iterations 771,231 B flat, 1,000 iterations 771,375 B × 21
+  flat (20.3 s release); wasm 1,000 iterations 0 B live, `byteLength` 2,621,440 B flat (23 s,
+  was 16–18 s: the CRC of the save and of `verify`). M1: `gate2_decisions`
+  `new_entry_points_do_not_leak`, `flate_memory` (`check_raw`).
+- The deck fixture (`memory_support::deck_with_large_media`) declared CRC 0 for its zeros; it
+  now declares the real one (else D5 rewrites it, as it should).
+- Cross readers (`UO_TS_PARITY=1 UO_DOTNET_PARITY=1 … save_cross_readers`): 10,053 saved
+  archives (3,351 packages, the D1 ones saved as the replay compares them) read identically by
+  fflate, uo-opc and .NET `ZipArchive`: the **9 .NET differences (quirk/006, 025, 038) are
+  gone**. The test's "pending" category is removed: any .NET difference now fails it. G4 in the
+  replay is unchanged (324 raw saves keep a stored source entry stored: 10 other fixtures, 52
+  slides, 262 quirks); the parity save facets do not change, since a rewritten entry holds the
+  bytes the reader produced.
+- Tests: `gate2_decisions` `d5_verified_entries_are_copied_raw_and_lying_ones_written_again`
+  (good, CRC lie, truncated by the declared size, shorter than declared, stored CRC and size lies,
+  range past the archive; levels 6 and 0; every saved entry inflates to its declared size and
+  CRC), `d5_an_entry_that_cannot_be_read_fails_the_save`,
+  `d5_never_read_entries_are_verified_once_without_their_output`; `flate_fflate`
+  `check_raw_matches_inflate_raw_past_the_window` (3 MiB outputs at levels 0, 1, 6, 9, stored
+  blocks of 65,535 B, distance 32,769); `flate_differential` runs `check_raw` on all 4,000
+  inflations; `package_budgets` `m3_deck_with_large_media`.
+
+### D6 — one resolution path
+
+- `Package::resolve_target(source_part, target) -> Option<&str>`:
+  `part_name::resolve_relationship_target`, then the exact name, else the first part (in order)
+  equal under ASCII folding, whatever the `CaseFold` policy; returns the stored name `part` and
+  `xml_part` open (borrowed from the package instead of a `String`: no allocation per lookup).
+  The ASCII index is built on the first fallback and dropped on any change of the part set, and
+  is the caseless index itself under `CaseFold::Ascii`. For hosts: `rels::source_part_of` (the
+  part a `.rels` describes) with `xml_part` + `rels::from_document` + `resolve_target` is
+  everything a validator needs. The apps' legacy target rules stay as parity policies in
+  `parity_support` until stage 5.
+- Tests: `gate2_decisions` `d6_resolve_target_returns_the_name_the_package_opens` (the three
+  policies; the U+212A KELVIN SIGN target of security P3 resolves to nothing while Sheet's
+  Unicode `find` would open `k.png`; the index follows `set_part`, `remove_part`, `retain`);
+  `cache_caps` `m5_ascii_index_of_resolve_target` (4,000 parts: 365,263 B; 100,000 missing
+  lookups do not grow it; dropped on change; one index under `CaseFold::Ascii`).
+
+### D7 — wasm32 limits
+
+- `Limits::NATIVE` (2 GiB per binary part, 4 GiB total) and `Limits::WASM32` (512 MiB per binary
+  part, 1 GiB total, XML part min(256 MiB, 512 MiB) = 256 MiB); `Limits::DEFAULT` is one or the
+  other by `#[cfg(target_arch = "wasm32")]` on the constant.
+- Tests: `limits::tests::native_and_wasm32_defaults`; the `uo-wasm` export
+  `uo_opc_memtest_default_limit(field)` (feature `opc-memtest`, test-only) and the node test
+  "D7", which read `Limits::DEFAULT` as compiled for wasm32.
+
+### D8 — safe relative paths
+
+- `part_name::safe_relative_path(name) -> Option<String>`: refuses empty names, a leading `/`,
+  `\`, `:` (drive letters and alternate data streams), `< > " | ? *`, NUL and every control
+  character, empty segments (a trailing `/` included), `.` and `..`, segments ending in `.` or a
+  space, and the Windows device names (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`, `LPT0`–`LPT9`,
+  with ¹ ² ³, `CONIN$`, `CONOUT$`, `CLOCK$`, any case, any extension); returns the name.
+  Addition only.
+- Tests: `part_name::tests::safe_relative_paths` (15 safe, 47 hostile names);
+  `gate2_decisions` `d8_safe_relative_path_over_the_quirk_corpus` (151 distinct names, 120 safe,
+  31 refused: `./…`, `/abs.xml`, `a/../b.xml`, backslash names, trailing `/`).
+
+### Fuzzing
+
+`FUZZ_LIMITS.max_xml_elements` 20,000. `zip_open` parses every part through `xml_part`
+(within the XML cap, depth and element limits, errors naming the part), resolves names and
+checks `safe_relative_path`; `zip_roundtrip` accepts a failed save only when a part failed to
+read, and checks that every entry of a save inflates exactly to its declared size and CRC;
+`inflate` compares `check_raw` with `inflate_raw`; `caseless` checks `resolve_target` against a
+model; `resolver` checks the safe-path invariants. Fallback driver, 10 s per target: 0 crashes
+(zip_open 38,167 execs, zip_roundtrip 109,278, zip_write 70,686, inflate 251,690, cfb
+2,181,005, xml_lenient 455,899, xml_strict 513,431, escape_roundtrip 159,388, raw_surgery
+815,734, rels 119,469, content_types 127,910, caseless 57,092, part_text 817,037, resolver
+2,088,131). The 30-minute libFuzzer runs were not repeated.
+
+### Checks run
+
+`cargo fmt --all --check`; `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+(and on `core/fuzz`); `cargo test --workspace --release --all-features`: 207 tests pass (191
+before); the debug `cargo test -p uo-opc` takes 74 s; the parity replay: 0 mismatches; the wasm
+build (`count,opc-memtest`) with `boundary.test.mjs` and `opc_memory.test.mjs`; the 1,000-iteration
+native soak. Not run here: the WebKit runner (`playwright` is not installed in this worktree) and
+real Safari.
+
+Files: `src/{error,flate,limits,package,part_name,rels,content_types,zip}.rs`,
+`src/xml/read.rs`; tests `gate2_decisions.rs` (new), `flate_fflate.rs`, `flate_differential.rs`,
+`flate_memory.rs`, `s1_empty_deflate.rs`, `security_regressions.rs`, `zip_fflate.rs`,
+`cache_caps.rs`, `package_budgets.rs`, `opc_parity.rs`, `parity_support/mod.rs`,
+`memory_support/mod.rs`; `uo-wasm/src/opc_memtest.rs`, `uo-wasm/tests/opc_memory.test.mjs`;
+`fuzz/src/lib.rs`. Line endings: `flate_fflate.rs`, `flate_memory.rs` and `part_name.rs` were
+committed with CRLF and are LF now (five other files of the crate still are CRLF:
+`tests/cfb_memory.rs`, `tests/cfb_support/mod.rs`, `tests/zip_memory.rs`,
+`tests/xml_support/gen_strict_inputs.mjs`, `tests/xml_support/strict_oracle.cs`).
+
+```
+cargo test -p uo-opc --release --test gate2_decisions -- --nocapture
+cargo test -p uo-opc --release --test s1_empty_deflate -- --nocapture   # no longer ignored
+UO_M3_RECORD=1 cargo test -p uo-opc --release --test package_budgets -- --nocapture --test-threads 1
+UO_TS_PARITY=1 UO_DOTNET_PARITY=1 UO_TS_ROOT=<checkout of main> cargo test -p uo-opc --release --test opc_parity save_cross_readers -- --nocapture
+```

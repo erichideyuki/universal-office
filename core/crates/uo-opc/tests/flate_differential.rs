@@ -2,6 +2,10 @@
 //! and truncations of four base streams: dynamic, fixed, stored-truncated and stored). Each case
 //! is inflated without and with a declared size; fflate's result (length and CRC-32 of the
 //! output, or the error message) was recorded by `node` with the same xorshift32 mutations.
+//!
+//! Accepted by name: D1 (gate 2), an empty stream with a declared size > 0 is `Corrupt` where
+//! fflate returns that many zeros. Every case also runs `check_raw` (the window mode of D5),
+//! which must describe exactly what `inflate_raw` returns.
 #![allow(clippy::unwrap_used)] // helpers outside #[test] functions
 
 use uo_opc::Error;
@@ -2038,6 +2042,7 @@ fn mutated_streams_match_fflate() {
         x
     };
     let mut mismatches = Vec::new();
+    let mut accepted_d1 = 0;
     for (i, want) in EXPECTED.lines().enumerate() {
         let mut d = bases[i % 4].clone();
         let m = 1 + rnd() % 3;
@@ -2050,11 +2055,28 @@ fn mutated_streams_match_fflate() {
             d.truncate(n);
         }
         let decl = u64::from(rnd() % 700);
+        for declared in [None, Some(decl)] {
+            let full = flate::inflate_raw(&d, declared, 1 << 30);
+            let check = flate::check_raw(&d, declared, 1 << 30);
+            let same = match (&full, &check) {
+                (Ok(o), Ok(c)) => c.len == o.len() as u64 && c.crc32 == flate::crc32(o) && c.stream_len >= c.len,
+                (Err(a), Err(b)) => a == b,
+                _ => false,
+            };
+            assert!(same, "case {i}, declared {declared:?}: inflate_raw {full:?}, check_raw {check:?}");
+        }
         let got = format!("{}|{}", describe(flate::inflate_raw(&d, None, 1 << 30)), describe(flate::inflate_raw(&d, Some(decl), 1 << 30)));
+        // D1: fflate's zeros for an empty stream with a declared size
+        let d1 = format!("ok:0:0|ok:{decl}:{:x}", flate::crc32(&vec![0; decl as usize]));
+        if d.is_empty() && decl > 0 && want == d1 && got == "ok:0:0|err:empty deflate stream with a declared size" {
+            accepted_d1 += 1;
+            continue;
+        }
         if got != want {
             mismatches.push(format!("case {i}: got {got}, fflate {want}"));
         }
     }
+    println!("accepted by name, D1 (empty stream with a declared size is Corrupt): {accepted_d1} cases");
     assert!(
         mismatches.is_empty(),
         "{} mismatches:\n{}",

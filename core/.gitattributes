@@ -1,0 +1,2 @@
+# The Rust core is edited on Windows too: keep text files LF in the repository and checkouts.
+* text=auto eol=lf

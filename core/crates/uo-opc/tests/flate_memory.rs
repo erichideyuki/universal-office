@@ -18,7 +18,11 @@ fn inflate_and_deflate_do_not_leak() {
     assert_no_leak(|| flate::zlib(&d, 9));
     assert_no_leak(|| flate::inflate_raw(&raw, None, 1 << 30).unwrap());
     assert_no_leak(|| flate::inflate_raw(&raw, Some(1000), 1 << 30).unwrap());
-    assert_no_leak(|| flate::inflate_raw(&[], Some(1000), 1 << 30).unwrap());
+    assert_no_leak(|| flate::inflate_raw(&[], Some(1000), 1 << 30).unwrap_err());
+    assert_no_leak(|| flate::inflate_raw(&[], Some(0), 1 << 30).unwrap());
+    assert_no_leak(|| flate::check_raw(&raw, None, 1 << 30).unwrap());
+    assert_no_leak(|| flate::check_raw(&raw, Some(1000), 1 << 30).unwrap());
+    assert_no_leak(|| flate::check_raw(&raw, None, 1000).unwrap_err());
     assert_no_leak(|| flate::inflate_zlib(&z, None, 1 << 30).unwrap());
     assert_no_leak(|| flate::inflate_stream(&z, Framing::Zlib, 1 << 30).unwrap());
     assert_no_leak(|| flate::inflate_capped(&raw, 1 << 30).unwrap());

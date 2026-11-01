@@ -14,6 +14,8 @@ mod xml_support;
 use memory_support::{
     DECK_DEFLATED_MEDIA, DECK_STORED_MEDIA, Kind, deck_with_large_media, edit, open_options, preset, read_and_parse_all, read_repo_file,
 };
+use std::time::Instant;
+
 use uo_alloc::{Usage, measure};
 use uo_opc::Limits;
 use uo_opc::limits::is_xml_like;
@@ -48,15 +50,23 @@ fn m3_giant_xlsx() {
     check("giant-1m open + read all + parse all", open_read_parse, 355_418_000, 146_113_000);
     // what the open package keeps: the input copy and the inflated parts
     within("giant-1m kept after open + read + parse", open_read_parse.live_delta, 34_571_000);
-    // save untouched: every entry copied raw (nothing deflated again)
+    // save untouched: every entry copied raw (nothing deflated again), after the CRC-32 of the
+    // parts already read (D5)
+    let started = Instant::now();
     let (saved, save_raw) = measure(|| pkg.save(&SaveOptions::default()).unwrap());
-    println!("giant-1m save untouched: output {} B, capacity {} B", saved.len(), saved.capacity());
+    println!("giant-1m save untouched: output {} B, capacity {} B, {:?}", saved.len(), saved.capacity(), started.elapsed());
     check("giant-1m save untouched", save_raw, 8_550_000, 5_697_000);
     drop(saved);
+    // the verification is kept: the same save without it (the time it costs)
+    let started = Instant::now();
+    drop(pkg.save(&SaveOptions::default()).unwrap());
+    println!("giant-1m save untouched again (verification kept): {:?}", started.elapsed());
     // the parse of the 31.7 MB sheet alone (source copy + tree)
     let text = pkg.part_text("xl/worksheets/sheet1.xml").unwrap().unwrap();
     let (doc, parse_sheet) = measure(|| parse(text.as_ref(), &preset(Kind::Xlsx, "xl/worksheets/sheet1.xml")).unwrap());
     println!("giant-1m sheet1 tree: {} elements, heap {} B", doc.element_count(), doc.heap_bytes());
+    // D2: the default element cap is about 10 × the largest real part of the repository
+    assert!(u64::from(Limits::DEFAULT.max_xml_elements) >= 9 * doc.element_count() as u64);
     check("giant-1m parse sheet1.xml", parse_sheet, 259_726_000, 111_543_000);
     drop(doc);
     drop(text);
@@ -71,9 +81,10 @@ fn m3_giant_xlsx_save_edited_sheet() {
     let mut pkg = Package::open(&bytes, &Limits::DEFAULT, &open_options(Kind::Xlsx)).unwrap();
     let text = pkg.part_text("xl/worksheets/sheet1.xml").unwrap().unwrap().into_owned();
     pkg.set_part_text("xl/worksheets/sheet1.xml", text);
+    // the other entries were never read: the save verifies them without keeping them (D5)
     let (saved, u) = measure(|| pkg.save(&SaveOptions::default()).unwrap());
     println!("giant-1m save with sheet1 deflated: output {} B", saved.len());
-    check("giant-1m save edited sheet", u, 24_688_000, 18_717_000);
+    check("giant-1m save edited sheet", u, 25_021_000, 18_717_000);
 }
 
 /// The largest `document.xml` of the oracle corpus (`justify4/sw-16-8.docx`, 188 KB).
@@ -101,7 +112,7 @@ fn m3_largest_oracle_document() {
         pkg.save(&SaveOptions::default()).unwrap()
     });
     println!("sw-16-8 edit + save: output {} B", saved.len());
-    check("sw-16-8 edit + save", save_edited, 4_294_000, 897_000);
+    check("sw-16-8 edit + save", save_edited, 4_494_000, 897_000);
 }
 
 /// A deck with large media: `reference.pptx` plus 64 MiB of deflated zeros and a 16 MiB stored
@@ -131,21 +142,44 @@ fn m3_deck_with_large_media() {
     );
     // nothing near the media size was produced or allocated
     assert!(pkg.produced_bytes() < 200_000);
-    check("deck open_owned + parse all XML", open_parse, 1_188_000, 147_000);
+    check("deck open_owned + parse all XML", open_parse, 1_189_000, 148_000);
     let mut pkg = pkg;
+    let produced_before = pkg.produced_bytes();
+    let started = Instant::now();
     let (saved, save_edited) = measure(|| {
         edit(&mut pkg, Kind::Pptx, 1);
         pkg.save(&SaveOptions::default()).unwrap()
     });
+    let first_save = started.elapsed();
     // the output holds the media raw: about the input size
-    println!("deck edit + save: output {} B, capacity {} B", saved.len(), saved.capacity());
-    assert!(pkg.produced_bytes() < 300_000, "the media were inflated");
+    println!("deck edit + save: output {} B, capacity {} B, {first_save:?}", saved.len(), saved.capacity());
+    // gate 2, D5: before copying them raw the save verified the media (the 64 MiB part inflated
+    // through a 64 KiB window, the stored one by its CRC): they count toward the total as a
+    // read does, and nothing is held
+    let media = (DECK_DEFLATED_MEDIA + DECK_STORED_MEDIA) as u64;
+    assert!(pkg.produced_bytes() >= produced_before + media && pkg.produced_bytes() < produced_before + media + 300_000);
     // the save allocates only the growing output: each growth of the Vec counts as a new
-    // allocation (at most 2× the final capacity, itself at most 2× the length), never the 64 MiB
-    // of zeros (inflating them would raise `produced_bytes`, checked above)
+    // allocation (at most 2× the final capacity, itself at most 2× the length), plus the
+    // verification window; never the 64 MiB of zeros
     assert!(save_edited.allocated < 4 * saved.len() as u64);
     assert!((save_edited.peak_above_start as usize) < 2 * saved.len() + (1 << 20));
-    check("deck edit + save", save_edited, 54_283_000, 34_478_000);
+    // holding the zeros would add 64 MiB to the peak
+    assert!((save_edited.peak_above_start as usize) < DECK_DEFLATED_MEDIA);
+    check("deck edit + save", save_edited, 54_422_000, 34_479_000);
+    // the media were copied raw: the source bytes are in the output
+    let zeros = uo_opc::zip::read(&saved, u32::MAX).unwrap().into_iter().find(|e| e.name == "ppt/media/zeros.bin").unwrap();
+    assert_eq!(zeros.method, 8);
+    assert_eq!(zeros.compressed(&saved).len(), memory_support::zeros_deflate(DECK_DEFLATED_MEDIA).len());
+    drop(saved);
+    // the verification is kept per entry: a second save does not inflate the media again
+    let started = Instant::now();
+    let (saved, save_again) = measure(|| pkg.save(&SaveOptions::default()).unwrap());
+    let second_save = started.elapsed();
+    println!(
+        "deck save again (verification kept): allocated {} B, peak {} B, {second_save:?} (first save {first_save:?})",
+        save_again.allocated, save_again.peak_above_start
+    );
+    assert!(save_again.peak_above_start <= save_edited.peak_above_start);
     drop(saved);
     // the contrast: reading the deflated media inflates 64 MiB
     let (n, read_media) = measure(|| pkg.part("ppt/media/zeros.bin").unwrap().unwrap().len());

@@ -17,11 +17,21 @@
 //! - `cfb.doc/.xls/.ppt`: the three TS CFB readers (entries, `has`, every stream).
 //!
 //! Accepted differences, by decision (listed by name, counted in the output):
-//! - G4: the Rust package copies untouched entries raw on save, so a part stored in the source
-//!   stays stored where `zipSync` deflates everything; the save is compared on names, flags and
-//!   bytes, and the fully rewritten save (every part set again) on the method too;
+//! - G4: the Rust package copies untouched entries raw on save (since D5 only the verified ones;
+//!   a malformed entry is written again, keeping a stored entry stored), so a part stored in the
+//!   source stays stored where `zipSync` deflates everything; the save is compared on names,
+//!   flags and bytes, and the fully rewritten save (every part set again) on the method too;
 //! - G5: sheet-core hangs on some unclosed constructs (the capture lists them, `g5.*`); uo-opc
-//!   reports an unclosed-construct error there.
+//!   reports an unclosed-construct error there;
+//! - D1: a deflated entry with an empty stream and a declared size is `Corrupt` in uo-opc where
+//!   fflate returns that many zeros, so the eager load fails; accepted when replacing exactly
+//!   those entries by fflate's zeros gives the captured package, and the other facets are then
+//!   compared on that package;
+//! - D4: after an entry named `__proto__` fflate drops canonical numeric names that are not
+//!   indices of its bytes; uo-opc keeps them (accepted when that drop is the whole difference).
+//!
+//! D5 (an entry is copied raw on save only when verified) changes no facet: a rewritten entry
+//! holds the bytes the reader produced, which is what the save facets compare.
 //!
 //! Recapture (needs a built checkout of main and node ≥ 22):
 //! `UO_TS_ROOT=<checkout> node core/crates/uo-opc/tests/parity_support/capture_opc.mjs`.
@@ -36,14 +46,15 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use parity_support::{
-    App, G5, Tally, cfb_value, edit, input_digest, js_proto_dropped, load, load_value, quirks, rels_value, save_raw, save_rewritten,
-    save_value, xml_value,
+    App, G5, Tally, cfb_value, edit, input_digest, js_proto_dropped, load, load_as_fflate_d1, load_value, quirks, rels_value, save_raw,
+    save_rewritten, save_value, xml_value,
 };
 use uo_opc::cfb::is_cfb;
 use uo_testkit::{Capture, Replay, repo_root};
 
 const G4: &str = "G4: raw copy of untouched entries keeps the source method";
-const PROTO: &str = "PENDING (not approved): after a `__proto__` entry fflate drops canonical numeric names that are not indices of its bytes; uo-opc keeps them";
+const D1: &str = "D1: an empty deflate stream with a declared size is Corrupt (fflate: that many zeros)";
+const D4: &str = "D4: after a `__proto__` entry fflate drops canonical numeric names that are not indices of its bytes; uo-opc keeps them";
 
 fn capture() -> Capture {
     Capture::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity/opc.cap")).unwrap()
@@ -56,7 +67,8 @@ struct Counts {
     saves: u64,
     cfb: u64,
     g4_saves: u64,
-    proto: u64,
+    d1: u64,
+    d4: u64,
     edits: u64,
 }
 
@@ -113,27 +125,37 @@ fn replay(name: &str, keep: impl Fn(&str) -> bool) {
         for (i, &app) in apps.iter().enumerate() {
             let id = app.id();
             let lf = format!("load.{id}");
-            let mut pkg = match load(app, &bytes) {
-                Ok(p) => p,
-                Err(class) => {
-                    replay.check(key, &lf, &class);
-                    continue;
-                }
+            let (mut pkg, d1_class) = match load(app, &bytes) {
+                Ok(p) => (p, None),
+                Err(class) => match load_as_fflate_d1(app, &bytes) {
+                    Some(p) if cap.get(key, &lf).is_some_and(|v| v.starts_with("ok")) => (p, Some(class)),
+                    _ => {
+                        replay.check(key, &lf, &class);
+                        continue;
+                    }
+                },
             };
             counts.packages += 1;
             counts.parts += pkg.len() as u64;
             let (v, st) = load_value(&pkg, traced);
             show(&lf, &st);
             let dropped = js_proto_dropped(&bytes);
-            if cap.get(key, &lf) != Some(v.as_str()) && !dropped.is_empty() {
+            if let Some(class) = d1_class {
+                if cap.get(key, &lf) == Some(v.as_str()) {
+                    counts.d1 += 1;
+                    replay.accept(key, &lf, &class, D1);
+                } else {
+                    replay.check(key, &lf, &class);
+                }
+            } else if cap.get(key, &lf) != Some(v.as_str()) && !dropped.is_empty() {
                 // the rest of the record is compared on the package as fflate's object holds it
                 for d in &dropped {
                     pkg.remove_part(d);
                 }
                 let (emulated, _) = load_value(&pkg, false);
                 if cap.get(key, &lf) == Some(emulated.as_str()) {
-                    counts.proto += 1;
-                    replay.accept(key, &lf, &v, PROTO);
+                    counts.d4 += 1;
+                    replay.accept(key, &lf, &v, D4);
                 } else {
                     replay.check(key, &lf, &v);
                 }
@@ -199,7 +221,8 @@ fn replay(name: &str, keep: impl Fn(&str) -> bool) {
     println!(
         "{name}: {} inputs; {} packages loaded, {} parts, {} XML trees, {} parse errors on both sides (G5: {} sheet-core hangs \
          and {} garbage trees where uo-opc reports an unclosed construct), {} relationship parts, {} relationships, \
-         {} saves read back ({} raw saves with G4 methods, {} edited packages), {} CFB files, {} packages with the pending __proto__ difference",
+         {} saves read back ({} raw saves with G4 methods, {} edited packages), {} CFB files, {} packages with the D1 difference, \
+         {} with the D4 difference",
         cap.len(),
         counts.packages,
         counts.parts,
@@ -213,7 +236,8 @@ fn replay(name: &str, keep: impl Fn(&str) -> bool) {
         counts.g4_saves,
         counts.edits,
         counts.cfb,
-        counts.proto
+        counts.d1,
+        counts.d4
     );
     println!("{name}: {}", report.summary());
     println!(
@@ -323,7 +347,8 @@ fn save_cross_readers() {
         };
         for (facet, value) in &record.facets {
             let Some(app) = facet.strip_prefix("load.").and_then(App::from_id) else { continue };
-            let Ok(pkg) = load(app, &bytes).map_err(|_| ()).and_then(|p| if value.starts_with("ok") { Ok(p) } else { Err(()) }) else {
+            // the packages D1 stops at load are saved as the replay compares them (fflate's zeros)
+            let Some(pkg) = load(app, &bytes).ok().or_else(|| load_as_fflate_d1(app, &bytes)).filter(|_| value.starts_with("ok")) else {
                 continue;
             };
             std::fs::write(dir.join(format!("{n}.raw.zip")), save_raw(&pkg)).unwrap();
@@ -366,39 +391,20 @@ fn save_cross_readers() {
             .filter_map(|l| l.split_once('\t'))
             .map(|(a, b)| (a.to_owned(), b.to_owned()))
             .collect();
+        // no exception since D5 (gate 2): a malformed source entry is written again, not copied
+        // raw, so the raw saves read the same in .NET too (before, 9 did not: quirk/006, 025, 038)
         let mut dn = 0;
-        let mut pending = Vec::new();
         for i in 0..n {
-            let value = |kind: &str| {
+            for kind in ["raw", "rw", "ts"] {
                 let file = format!("{i}.{kind}.zip");
                 let rust = parity_support::names_bytes_value(&std::fs::read(dir.join(&file)).unwrap());
-                (dotnet.get(&file) == Some(&rust), file, rust)
-            };
-            let rewritten_ok = value("rw").0;
-            for kind in ["raw", "rw", "ts"] {
-                let (same, file, rust) = value(kind);
                 dn += 1;
-                if same {
-                    continue;
-                }
-                if kind == "raw" && rewritten_ok {
-                    // the same parts rewritten read the same in .NET: the difference is the source
-                    // entry copied raw (lying sizes, a bad offset, a stream only fflate accepts)
-                    pending.push(format!("{} (.NET {:?}, uo-opc {rust})", keys[i], dotnet.get(&file)));
-                } else {
+                if dotnet.get(&file) != Some(&rust) {
                     mismatches.push(format!("{file} {}: .NET {:?}, uo-opc {rust}", keys[i], dotnet.get(&file)));
                 }
             }
         }
         println!("{dn} saved archives read back by .NET ZipArchive and uo-opc (names and bytes)");
-        println!(
-            "{} raw saves read differently by .NET, PENDING (not approved): G4 copies a malformed source entry as is \
-             (the rewritten save of the same parts reads the same)",
-            pending.len()
-        );
-        for p in &pending {
-            println!("  {p}");
-        }
     }
     let _ = std::fs::remove_dir_all(&dir);
     assert!(

@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use crate::error::Result;
 use crate::xml::raw::{Insert, expand_self_closing, insert_child};
 use crate::xml::read::{ParseOptions, parse};
+use crate::xml::tree::Document;
 use crate::xml::write::{Escape, XML_DECL, escape_into};
 
 /// Namespace of `.rels` parts.
@@ -94,12 +95,31 @@ pub fn rels_part_for_legacy(part: &str) -> String {
     }
 }
 
+/// The part a `.rels` part describes, the inverse of [`rels_part_for`]
+/// (`word/_rels/document.xml.rels` → `word/document.xml`, `_rels/.rels` → `""`, the package);
+/// `None` for a name that is not a relationship part. With [`crate::Package::resolve_target`]
+/// it is what a host validator needs to check every relationship of a package.
+pub fn source_part_of(rels_part: &str) -> Option<String> {
+    let (folder, file) = match rels_part.rsplit_once('/') {
+        Some((dir, file)) => (dir, file),
+        None => return None,
+    };
+    let source = file.strip_suffix(".rels")?;
+    let folder = if folder == "_rels" { "" } else { folder.strip_suffix("/_rels")? };
+    if folder.is_empty() { Some(source.to_owned()) } else { Some(format!("{folder}/{source}")) }
+}
+
 /// The `Relationship` children of the root, in order (duplicates kept). `opts` is the
 /// caller's preset (sheet-core strips an `x:` prefix bound to the relationships namespace).
+/// The format crates read a `.rels` part with [`crate::Package::xml_part`] and
+/// [`from_document`] instead (gate 2, D3).
 pub fn parse_rels(xml: &str, opts: &ParseOptions<'_>) -> Result<Vec<Relationship>> {
-    let doc = parse(xml, opts)?;
-    Ok(doc
-        .root()
+    Ok(from_document(&parse(xml, opts)?))
+}
+
+/// The `Relationship` children of the root of a parsed `.rels` part, in order.
+pub fn from_document(doc: &Document) -> Vec<Relationship> {
+    doc.root()
         .children_named("Relationship")
         .map(|r| {
             let id = r.attr("Id");
@@ -113,7 +133,7 @@ pub fn parse_rels(xml: &str, opts: &ParseOptions<'_>) -> Result<Vec<Relationship
                 has_target: target.is_some(),
             }
         })
-        .collect())
+        .collect()
 }
 
 /// The relationship an id resolves to: the LAST one with that id (the TS readers fill a `Map`,

@@ -19,6 +19,7 @@
 use crate::error::Result;
 use crate::xml::raw::{Insert, insert_child, remove_range};
 use crate::xml::read::{ParseOptions, parse};
+use crate::xml::tree::Document;
 use crate::xml::write::{Escape, escape_into};
 
 /// The part name.
@@ -48,9 +49,15 @@ pub struct ContentTypes {
 }
 
 impl ContentTypes {
-    /// Reads the `Default` and `Override` children of the root.
+    /// Reads the `Default` and `Override` children of the root. The format crates read
+    /// `[Content_Types].xml` with [`crate::Package::xml_part`] and
+    /// [`ContentTypes::from_document`] instead (gate 2, D3).
     pub fn parse(xml: &str, opts: &ParseOptions<'_>) -> Result<Self> {
-        let doc = parse(xml, opts)?;
+        Ok(ContentTypes::from_document(&parse(xml, opts)?))
+    }
+
+    /// The `Default` and `Override` children of the root of a parsed `[Content_Types].xml`.
+    pub fn from_document(doc: &Document) -> Self {
         let mut ct = ContentTypes::default();
         for e in doc.root().child_elements() {
             match e.name() {
@@ -65,7 +72,7 @@ impl ContentTypes {
                 _ => {}
             }
         }
-        Ok(ct)
+        ct
     }
 
     /// The override of a part (`part` without the leading `/`; exact match, slides

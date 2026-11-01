@@ -54,6 +54,7 @@ pub const FUZZ_LIMITS: Limits = Limits {
     max_total_bytes: 4 << 20,
     max_entries: 4_096,
     max_xml_depth: 200,
+    max_xml_elements: 20_000,
 };
 
 /// Output cap of the inflate target.
@@ -90,7 +91,9 @@ fn open_options(sel: u8) -> OpenOptions {
 // ───────────────────────────── zip / package ─────────────────────────────
 
 /// Opens a package and reads everything: each part within its cap, the total within the
-/// budget, lookups consistent, `verify` and the text decoders without panics.
+/// budget, lookups consistent, `verify` and the text decoders without panics; every part parsed
+/// through `xml_part` within the XML cap, depth and element limits (D3); names resolved to parts
+/// the package holds (D6); the safe-path helper consistent (D8).
 pub fn zip_open(data: &[u8]) {
     let (sel, bytes) = split1(data);
     let limits = FUZZ_LIMITS;
@@ -115,6 +118,27 @@ pub fn zip_open(data: &[u8]) {
         let _ = pkg.part_text(name);
         let _ = pkg.find_name(&name.to_uppercase());
         let _ = pkg.find(&name.to_lowercase());
+        match pkg.xml_part(name, &lenient_preset(sel)) {
+            Ok(doc) => {
+                assert!(doc.element_count() <= limits.max_xml_elements as usize);
+                assert!(doc.source().len() as u64 <= limits.max_xml_part_bytes);
+            }
+            Err(Error::Limit { kind: LimitKind::PartBytes, max, part }) => {
+                assert!(max == limits.max_xml_part_bytes && part.as_deref() == Some(name.as_str()));
+            }
+            Err(Error::Limit { kind: LimitKind::XmlElements | LimitKind::XmlDepth, part, .. }) => {
+                assert_eq!(part.as_deref(), Some(name.as_str()))
+            }
+            Err(Error::Limit { kind: LimitKind::TotalBytes, .. } | Error::Corrupt(_) | Error::Xml { .. }) => {}
+            Err(e) => panic!("{name}: unexpected xml_part error {e:?}"),
+        }
+        assert!(pkg.produced_bytes() <= limits.max_total_bytes);
+        if let Some(found) = pkg.resolve_target("", &part_name::escape_segment(name).replace("%2F", "/")) {
+            assert!(pkg.contains(found));
+        }
+        if let Some(path) = part_name::safe_relative_path(name) {
+            assert_eq!(&path, name);
+        }
     }
 }
 
@@ -148,8 +172,21 @@ pub fn zip_roundtrip(data: &[u8]) {
     let saved = match pkg.save(&save) {
         Ok(s) => s,
         Err(Error::NameTooLong { .. }) => return,
+        // D5: an entry that cannot be read is not copied raw; the save fails with the read's error
+        Err(Error::Corrupt(_) | Error::Limit { .. }) if before.iter().any(|(_, b)| b.is_none()) => return,
         Err(e) => panic!("save failed: {e:?}"),
     };
+    // D5: every entry written is well formed: it inflates exactly to its declared size and CRC
+    for e in zip::read(&saved, u32::MAX).expect("a saved archive reads") {
+        let raw = e.compressed(&saved);
+        let (len, stream_len, crc) = if e.method == 0 {
+            (raw.len() as u64, raw.len() as u64, flate::crc32(raw))
+        } else {
+            let c = flate::check_raw(raw, Some(e.size), u64::MAX).expect("a saved entry inflates");
+            (c.len, c.stream_len, c.crc32)
+        };
+        assert_eq!((len, stream_len, crc), (e.size, e.size, e.crc32), "{}", e.name);
+    }
     // the same part caps; no total, since the edited part counts there now; no ratio filter,
     // since an entry whose data the archive cut short is saved with its real compressed size
     // and its declared size (and the filter compares the two)
@@ -228,6 +265,20 @@ pub fn zip_write(data: &[u8]) {
 
 // ───────────────────────────── flate ─────────────────────────────
 
+/// `check_raw` (D5) describes exactly what `inflate_raw` returns, or fails the same way.
+fn same_check(body: &[u8], declared: Option<u64>, cap: u64) {
+    let check = flate::check_raw(body, declared, cap);
+    match flate::inflate_raw(body, declared, cap) {
+        Ok(o) => {
+            let c = check.expect("check_raw fails where inflate_raw succeeds");
+            assert_eq!((c.len, c.crc32), (o.len() as u64, flate::crc32(&o)));
+            assert!(c.stream_len >= c.len);
+            assert!(declared.is_none_or(|d| c.len <= d));
+        }
+        Err(e) => assert_eq!(check, Err(e)),
+    }
+}
+
 /// Inflate in every mode with caps, differential against miniz_oxide on the streams it
 /// accepts, and the deflate/zlib round trips.
 pub fn inflate(data: &[u8]) {
@@ -250,6 +301,8 @@ pub fn inflate(data: &[u8]) {
         1 => {
             let declared = rest.get(..4).map_or(0, |b| u64::from(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))) % (2 * cap);
             let body = rest.get(4..).unwrap_or(&[]);
+            same_check(body, None, cap);
+            same_check(body, Some(declared), cap);
             match flate::inflate_raw(body, Some(declared), cap) {
                 Ok(o) => {
                     assert!(o.len() as u64 <= declared.min(cap));
@@ -646,6 +699,14 @@ pub fn caseless(data: &[u8]) {
         }
     }
     check(&pkg, &model, &queries);
+    // D6: the OPC rule (resolver, then the exact name or the first ASCII-folded match),
+    // whatever the package's policy
+    for q in &queries {
+        let expected = part_name::resolve_relationship_target("", q).and_then(|r| {
+            if model.contains(&r) { Some(r) } else { model.iter().find(|m| part_name::fold_ascii(m) == part_name::fold_ascii(&r)).cloned() }
+        });
+        assert_eq!(pkg.resolve_target("", q), expected.as_deref(), "target {q:?}");
+    }
 }
 
 /// Part text decoding (UTF-8 with BOM, UTF-16 with BOM).
@@ -700,4 +761,15 @@ pub fn resolver(data: &[u8]) {
         );
     }
     let _ = part_name::fold_ascii(&target);
+    // D8: what `safe_relative_path` accepts is a plain relative path
+    for name in [&source, &target] {
+        if let Some(path) = part_name::safe_relative_path(name) {
+            assert_eq!(&path, name);
+            assert!(!path.starts_with('/') && !path.contains(['\\', ':', '<', '>', '"', '|', '?', '*']), "{path:?}");
+            assert!(!path.chars().any(char::is_control), "{path:?}");
+            for s in path.split('/') {
+                assert!(!s.is_empty() && s != "." && s != ".." && !s.ends_with(['.', ' ']), "{path:?}");
+            }
+        }
+    }
 }

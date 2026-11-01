@@ -2,6 +2,10 @@
 //! `zipSync` and a raw writer for the quirks), and the parts fflate returned (`Object.entries`
 //! order) or its error. The package is lazy, so damaged streams surface on `verify()`, the eager
 //! check that matches the TS load.
+//!
+//! Accepted by name: D1 (gate 2), a deflated entry with an empty stream and a declared size is
+//! `Corrupt` where fflate returns that many zeros (`lying_sizes`): the package fails `verify()`
+//! and that entry fails its read; every other entry reads as fflate's.
 #![allow(clippy::unwrap_used)] // helpers outside #[test] functions
 
 use uo_opc::package::{OpenOptions, Package};
@@ -159,6 +163,7 @@ fn same_class(e: &Error, fflate: &str) -> bool {
 
 #[test]
 fn unzip_matches_fflate() {
+    let mut accepted_d1 = Vec::new();
     for (label, zip, ratio, want) in CASES {
         let opts = OpenOptions { skip_impossible_ratio: *ratio, ..OpenOptions::default() };
         let got = Package::open(&hex(zip), &Limits::DEFAULT, &opts).and_then(|p| p.verify().map(|()| p));
@@ -172,7 +177,24 @@ fn unzip_matches_fflate() {
                 }
             }
             (Err(e), Err(msg)) => assert!(same_class(&e, msg), "{label}: {e:?} vs fflate {msg}"),
+            (Err(Error::Corrupt(D1)), Ok(parts)) => {
+                let p = Package::open(&hex(zip), &Limits::DEFAULT, &opts).unwrap();
+                let mut d1 = 0;
+                for (n, h) in *parts {
+                    let fflate = hex(h);
+                    match p.part(n) {
+                        Err(Error::Corrupt(D1)) if !fflate.is_empty() && fflate.iter().all(|&b| b == 0) => d1 += 1,
+                        got => assert_eq!(got.unwrap().unwrap(), fflate.as_slice(), "{label}: {n}"),
+                    }
+                }
+                assert_eq!(d1, 1, "{label}: D1 explains one entry");
+                accepted_d1.push(*label);
+            }
             (got, want) => panic!("{label}: got {got:?}, fflate {want:?}"),
         }
     }
+    println!("accepted by name, D1 (empty stream with a declared size is Corrupt): {accepted_d1:?}");
+    assert_eq!(accepted_d1, ["lying_sizes"]);
 }
+
+const D1: &str = "empty deflate stream with a declared size";

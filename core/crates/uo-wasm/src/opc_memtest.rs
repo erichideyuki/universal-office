@@ -44,9 +44,8 @@ fn parse_all(pkg: &Package, preset: &ParseOptions<'_>) -> uo_opc::Result<usize> 
     let mut elements = 0;
     for name in &names {
         if limits::is_xml_like(name) {
-            if let Some(text) = pkg.part_text(name)? {
-                elements += parse(text.as_ref(), preset)?.element_count();
-            }
+            // the format crates' way (gate 2, D3): XML cap, depth and element limits of the package
+            elements += pkg.xml_part(name, preset)?.element_count();
         } else {
             pkg.part(name)?;
         }
@@ -79,6 +78,23 @@ fn cfb_read_all(bytes: &[u8]) -> uo_opc::Result<usize> {
         }
     }
     Ok(total)
+}
+
+/// A field of `Limits::DEFAULT` as compiled for this target (gate 2, D7: on wasm32 512 MiB per
+/// binary part and 1 GiB in total): 0 XML part, 1 binary part, 2 total, 3 entries, 4 XML depth,
+/// 5 XML elements; −1 for another index.
+#[unsafe(no_mangle)]
+pub extern "C" fn uo_opc_memtest_default_limit(field: u32) -> f64 {
+    let l = Limits::DEFAULT;
+    match field {
+        0 => l.max_xml_part_bytes as f64,
+        1 => l.max_binary_part_bytes as f64,
+        2 => l.max_total_bytes as f64,
+        3 => f64::from(l.max_entries),
+        4 => f64::from(l.max_xml_depth),
+        5 => f64::from(l.max_xml_elements),
+        _ => -1.0,
+    }
 }
 
 /// Runs the round trip on a buffer from [`crate::uo_alloc_bytes`] (filled with `len` bytes),

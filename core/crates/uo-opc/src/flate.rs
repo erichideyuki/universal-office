@@ -9,6 +9,11 @@
 //!   declared (zip entries: `inflateSync(data, { out: new u8(size) })`) the output is truncated
 //!   at that size, or shorter if the stream ends early; the buffer still grows from the bytes
 //!   actually produced, and passing `cap` is `Error::Limit`.
+//! - One departure from fflate (gate 2, D1): an EMPTY stream with a declared size > 0 is
+//!   `Error::Corrupt`, where fflate returns the whole declared buffer of zeros (a 132-byte zip
+//!   declaring 256 MiB made the library allocate 256 MiB).
+//! - [`check_raw`] runs the same inflate without keeping the output (a 64 KiB window that only
+//!   counts and computes the CRC-32): the save verifies untouched entries with it (gate 2, D5).
 //! - Deflate goes through `miniz_oxide` (gate 1, G2: parity is on decompressed bytes); the zlib
 //!   framing (header and Adler-32) is fflate's `zlibSync`.
 
@@ -222,27 +227,165 @@ fn try_grow(buf: &mut Vec<u8>, n: usize, cap: u64) -> Result<()> {
     buf.try_reserve(n).map_err(|_| limit(cap))
 }
 
-/// The output of `inflt`. `bt` is fflate's logical byte counter; `buf` holds
+/// Where `inflt` keeps the bytes it stores: the whole output (`Vec<u8>`) or only the last
+/// 64 KiB for back references ([`Window`]). The caller ([`Out`]) has checked the cap.
+trait Store {
+    /// bytes stored so far
+    fn stored_len(&self) -> u64;
+    fn push(&mut self, b: u8, cap: u64) -> Result<()>;
+    /// appends `n` bytes copied from `dist` back (`None`: zeros); `dist` ≤ the bytes stored
+    fn copy_back(&mut self, dist: Option<u64>, n: usize, cap: u64) -> Result<()>;
+    fn extend(&mut self, src: &[u8], cap: u64) -> Result<()>;
+}
+
+impl Store for Vec<u8> {
+    #[inline]
+    fn stored_len(&self) -> u64 {
+        self.len() as u64
+    }
+
+    #[inline]
+    fn push(&mut self, b: u8, cap: u64) -> Result<()> {
+        if self.len() == self.capacity() {
+            try_grow(self, 1, cap)?;
+        }
+        Vec::push(self, b);
+        Ok(())
+    }
+
+    fn copy_back(&mut self, dist: Option<u64>, n: usize, cap: u64) -> Result<()> {
+        try_grow(self, n, cap)?;
+        match dist {
+            Some(d) => {
+                let start = self.len().saturating_sub(d as usize);
+                for k in 0..n {
+                    let b = self.get(start + k).copied().unwrap_or(0);
+                    Vec::push(self, b);
+                }
+            }
+            None => self.resize(self.len() + n, 0),
+        }
+        Ok(())
+    }
+
+    fn extend(&mut self, src: &[u8], cap: u64) -> Result<()> {
+        try_grow(self, src.len(), cap)?;
+        self.extend_from_slice(src);
+        Ok(())
+    }
+}
+
+/// The ring of a [`Window`]: a power of two above fflate's longest distance (32,769, distance
+/// symbol 30) plus the bytes not in the CRC yet (fewer than `FLUSH` + 258 after each operation).
+const WINDOW: usize = 1 << 16;
+const FLUSH: u64 = 1 << 15;
+
+/// The store of [`check_raw`]: counts the bytes and computes their CRC-32, keeping only the last
+/// 64 KiB for back references.
+struct Window {
+    ring: Vec<u8>,
+    len: u64,
+    crc: u32,
+    /// bytes already in `crc`
+    crc_len: u64,
+}
+
+impl Window {
+    fn new() -> Self {
+        Window { ring: vec![0; WINDOW], len: 0, crc: 0, crc_len: 0 }
+    }
+
+    #[inline]
+    fn at(&self, pos: u64) -> u8 {
+        self.ring.get(pos as usize & (WINDOW - 1)).copied().unwrap_or(0)
+    }
+
+    #[inline]
+    fn put(&mut self, b: u8) {
+        if let Some(x) = self.ring.get_mut(self.len as usize & (WINDOW - 1)) {
+            *x = b;
+        }
+        self.len += 1;
+    }
+
+    /// Adds the bytes not in the CRC yet (all still in the ring).
+    fn flush(&mut self) {
+        let mut pos = self.crc_len;
+        while pos < self.len {
+            let start = pos as usize & (WINDOW - 1);
+            let n = ((self.len - pos) as usize).min(WINDOW - start);
+            self.crc = crc32_update(self.crc, self.ring.get(start..start + n).unwrap_or(&[]));
+            pos += n as u64;
+        }
+        self.crc_len = self.len;
+    }
+
+    #[inline]
+    fn flush_if_due(&mut self) {
+        if self.len - self.crc_len >= FLUSH {
+            self.flush();
+        }
+    }
+}
+
+impl Store for Window {
+    #[inline]
+    fn stored_len(&self) -> u64 {
+        self.len
+    }
+
+    #[inline]
+    fn push(&mut self, b: u8, _cap: u64) -> Result<()> {
+        self.put(b);
+        self.flush_if_due();
+        Ok(())
+    }
+
+    fn copy_back(&mut self, dist: Option<u64>, n: usize, _cap: u64) -> Result<()> {
+        for _ in 0..n {
+            // a zero distance reads past the output in the `Vec` store: 0
+            let b = match dist {
+                Some(d) if d > 0 => self.at(self.len - d),
+                _ => 0,
+            };
+            self.put(b);
+        }
+        self.flush_if_due();
+        Ok(())
+    }
+
+    fn extend(&mut self, src: &[u8], _cap: u64) -> Result<()> {
+        self.flush();
+        self.crc = crc32_update(self.crc, src);
+        // only the last 64 KiB can be referenced again
+        let skip = src.len().saturating_sub(WINDOW);
+        self.len += skip as u64;
+        for &b in src.get(skip..).unwrap_or(&[]) {
+            self.put(b);
+        }
+        self.crc_len = self.len;
+        Ok(())
+    }
+}
+
+/// The output of `inflt`. `bt` is fflate's logical byte counter; the store holds
 /// `min(bt, store_limit)` bytes. With a declared size fflate writes into a fixed `Uint8Array`,
 /// where writes past the end are silently dropped while `bt` keeps counting.
-struct Out {
-    buf: Vec<u8>,
+struct Out<S: Store> {
+    store: S,
     bt: u64,
     store_limit: u64,
     cap: u64,
 }
 
-impl Out {
+impl<S: Store> Out<S> {
     #[inline]
     fn push(&mut self, b: u8) -> Result<()> {
         if self.bt < self.store_limit {
-            if self.buf.len() as u64 >= self.cap {
+            if self.store.stored_len() >= self.cap {
                 return Err(limit(self.cap));
             }
-            if self.buf.len() == self.buf.capacity() {
-                try_grow(&mut self.buf, 1, self.cap)?;
-            }
-            self.buf.push(b);
+            self.store.push(b, self.cap)?;
         }
         self.bt += 1;
         Ok(())
@@ -254,22 +397,11 @@ impl Out {
     fn copy_back(&mut self, dist: Option<u64>, len: u64) -> Result<()> {
         let kept = len.min(self.store_limit.saturating_sub(self.bt));
         if kept > 0 {
-            if self.buf.len() as u64 + kept > self.cap {
+            if self.store.stored_len() + kept > self.cap {
                 return Err(limit(self.cap));
             }
-            // below the store limit `buf.len() == bt`
-            let n = kept as usize;
-            try_grow(&mut self.buf, n, self.cap)?;
-            match dist {
-                Some(d) => {
-                    let start = self.buf.len().saturating_sub(d as usize);
-                    for k in 0..n {
-                        let b = self.buf.get(start + k).copied().unwrap_or(0);
-                        self.buf.push(b);
-                    }
-                }
-                None => self.buf.resize(self.buf.len() + n, 0),
-            }
+            // below the store limit the bytes stored are `bt`
+            self.store.copy_back(dist, kept as usize, self.cap)?;
         }
         // writes past a declared size are dropped; `bt` still counts them
         self.bt += len;
@@ -283,11 +415,10 @@ impl Out {
         if !resize && self.bt + l > self.store_limit {
             return Err(Error::Corrupt("stored block exceeds the declared size"));
         }
-        if self.buf.len() as u64 + l > self.cap {
+        if self.store.stored_len() + l > self.cap {
             return Err(limit(self.cap));
         }
-        try_grow(&mut self.buf, src.len(), self.cap)?;
-        self.buf.extend_from_slice(src);
+        self.store.extend(src, self.cap)?;
         self.bt += l;
         Ok(())
     }
@@ -295,7 +426,7 @@ impl Out {
 
 /// `inflt(dat, { i: 2 }, buf)` without a dictionary: the synchronous mode, where running out of
 /// input is an error (`noSt` is truthy). `resize` is fflate's `noBuf || st.i != 2`.
-fn inflt(dat: &[u8], out: &mut Out, resize: bool) -> Result<()> {
+fn inflt<S: Store>(dat: &[u8], out: &mut Out<S>, resize: bool) -> Result<()> {
     let sl = dat.len() as u64;
     let tbts = sl * 8;
     let mut pos: u64 = 0;
@@ -459,33 +590,65 @@ fn inflt(dat: &[u8], out: &mut Out, resize: bool) -> Result<()> {
 /// Inflates raw DEFLATE data like fflate's `inflateSync`. `declared`: the size the container
 /// declares (`{ out: new u8(declared) }`): the output stops there, or is shorter if the data ends
 /// early, and a stored block that does not fit is an error. Never preallocates from `declared`;
-/// producing more than `cap` bytes is `Error::Limit` (kind `PartBytes`, no part name).
+/// producing more than `cap` bytes is `Error::Limit` (kind `PartBytes`, no part name). An empty
+/// stream with a declared size > 0 is `Error::Corrupt` (D1, see the module comment).
 pub fn inflate_raw(data: &[u8], declared: Option<u64>, cap: u64) -> Result<Vec<u8>> {
+    inflate_raw_counted(data, declared, cap).map(|(buf, _)| buf)
+}
+
+/// The empty stream (`if (!sl) return buf || new u8(0)`, browser.js:219): fflate returns the
+/// whole declared buffer, zeros; here a declared size > 0 is `Corrupt` (gate 2, D1), and no size
+/// or a declared 0 is the empty output.
+fn empty_stream(declared: Option<u64>) -> Result<()> {
+    match declared {
+        Some(n) if n > 0 => Err(Error::Corrupt("empty deflate stream with a declared size")),
+        _ => Ok(()),
+    }
+}
+
+/// [`inflate_raw`], also returning fflate's logical output length (`bt`): above a declared size
+/// the stream went on past it (the output was truncated there).
+pub(crate) fn inflate_raw_counted(data: &[u8], declared: Option<u64>, cap: u64) -> Result<(Vec<u8>, u64)> {
     if data.is_empty() {
-        // `if (!sl) return buf || new u8(0)` (browser.js:219): an empty stream returns the whole
-        // declared buffer, zeros
-        return match declared {
-            None => Ok(Vec::new()),
-            Some(n) if n > cap => Err(limit(cap)),
-            Some(n) => {
-                let n = usize::try_from(n).map_err(|_| limit(cap))?;
-                let mut zeros = Vec::new();
-                zeros.try_reserve_exact(n).map_err(|_| limit(cap))?;
-                zeros.resize(n, 0);
-                Ok(zeros)
-            }
-        };
+        empty_stream(declared)?;
+        return Ok((Vec::new(), 0));
     }
     let store_limit = declared.unwrap_or(u64::MAX);
     // fflate starts at 3 × the input (browser.js:224); bounded by what may be stored
     let start = (data.len() as u64).saturating_mul(3).min(cap).min(store_limit).min(1 << 26);
     let mut buf = Vec::new();
     buf.try_reserve_exact(start as usize).map_err(|_| limit(cap))?;
-    let mut out = Out { buf, bt: 0, store_limit, cap };
+    let mut out = Out { store: buf, bt: 0, store_limit, cap };
     inflt(data, &mut out, declared.is_none())?;
-    let mut buf = out.buf;
+    let mut buf = out.store;
     buf.shrink_to_fit();
-    Ok(buf)
+    Ok((buf, out.bt))
+}
+
+/// What [`check_raw`] found: what [`inflate_raw`] would return, without its bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamCheck {
+    /// the length of the output of [`inflate_raw`]
+    pub len: u64,
+    /// the bytes the stream encodes (fflate's `bt`); above a declared size the output was
+    /// truncated there
+    pub stream_len: u64,
+    /// CRC-32 of the output of [`inflate_raw`]
+    pub crc32: u32,
+}
+
+/// [`inflate_raw`] without keeping its output (gate 2, D5): the same result or error under the
+/// same cap, but whatever the size the memory is a 64 KiB window, and the output is described by
+/// its length and CRC-32. The save verifies the entries it copies raw with it.
+pub fn check_raw(data: &[u8], declared: Option<u64>, cap: u64) -> Result<StreamCheck> {
+    if data.is_empty() {
+        empty_stream(declared)?;
+        return Ok(StreamCheck { len: 0, stream_len: 0, crc32: 0 });
+    }
+    let mut out = Out { store: Window::new(), bt: 0, store_limit: declared.unwrap_or(u64::MAX), cap };
+    inflt(data, &mut out, declared.is_none())?;
+    out.store.flush();
+    Ok(StreamCheck { len: out.store.len, stream_len: out.bt, crc32: out.store.crc })
 }
 
 /// `zls`: checks a zlib header and returns where the deflate data starts (browser.js:1010).

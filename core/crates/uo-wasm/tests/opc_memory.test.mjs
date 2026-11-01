@@ -2,8 +2,8 @@
 // parse every XML part → edit → save → reopen → verify → parse again → drop) on real files of the
 // repository, through the test-only export of the feature `opc-memtest`. The module's live bytes
 // must be flat after warm-up and `memory.buffer.byteLength` must stop growing (wasm memory never
-// shrinks: the high-water mark is a permanent cost, printed). Last, the S1 measurement: what a
-// tiny crafted zip does to the wasm memory.
+// shrinks: the high-water mark is a permanent cost, printed). Then the wasm defaults of `Limits`
+// (gate 2, D7) and, last, S1: a tiny crafted zip must not grow the wasm memory (D1).
 //   cargo build -p uo-wasm --features count,opc-memtest --target wasm32-unknown-unknown --profile wasm
 //   node --test crates/uo-wasm/tests/opc_memory.test.mjs
 // UO_OPC_SOAK=<iterations> overrides the 1,000 iterations.
@@ -80,18 +80,28 @@ function crafted(name, size) {
   return out;
 }
 
-// runs last: wasm memory never shrinks, so this permanently raises the high-water mark
-test('S1: a tiny zip with an empty deflate stream and a declared size (measured)', () => {
+test('D7: the wasm32 defaults of Limits (512 MiB per binary part, 1 GiB in total)', () => {
+  const field = (i) => w.uo_opc_memtest_default_limit(i);
+  assert.equal(field(0), 256 * 2 ** 20, 'XML part: min(256 MiB, the binary cap)');
+  assert.equal(field(1), 512 * 2 ** 20, 'binary part');
+  assert.equal(field(2), 2 ** 30, 'total');
+  assert.equal(field(3), 65535);
+  assert.equal(field(4), 1000);
+  assert.equal(field(5), 20000000);
+});
+
+// before D1 this raised the wasm memory by about twice the declared size, permanently
+test('S1: a tiny zip with an empty deflate stream and a declared size does not grow the memory (D1)', () => {
   const size = 256 << 20;
   const zip = crafted('word/document.xml', size);
   const before = w.memory.buffer.byteLength;
   const liveBefore = live();
   const r = roundTrip(zip, 0);
   const after = w.memory.buffer.byteLength;
-  console.log(`# S1: a ${zip.length} B docx declaring a ${size} B document.xml: result ${r}; wasm memory ${before} -> ${after} B ` +
-    `(+${after - before} B, permanent); live bytes back to ${live()} (from ${liveBefore})`);
+  console.log(`# S1: a ${zip.length} B docx declaring a ${size} B document.xml: result ${r}; wasm memory ${before} -> ${after} B; ` +
+    `live bytes back to ${live()} (from ${liveBefore})`);
   assert.equal(live(), liveBefore);
-  // the reader returns the declared zeros and the parse copies them into its source: the memory
-  // grows by about twice the declared size (or not at all once S1 is fixed)
-  assert.ok(r === -1);
+  // rejected as corrupt before anything near the declared size is allocated
+  assert.equal(r, -1);
+  assert.equal(after, before, 'the wasm memory grew');
 });

@@ -93,11 +93,20 @@ fn declared_size_stored_block_must_fit() {
     assert_eq!(flate::inflate_raw(&d, None, CAP).unwrap(), b"ABCD");
 }
 
+/// fflate returns the whole declared buffer (zeros) for an empty stream; gate 2, D1: a declared
+/// size > 0 is `Corrupt` here, nothing allocated (no size and a declared 0 stay empty).
 #[test]
-fn empty_input_returns_the_declared_buffer() {
-    assert_eq!(flate::inflate_raw(&[], Some(5), CAP).unwrap(), [0; 5]);
+fn empty_input_with_a_declared_size_is_corrupt_d1() {
+    corrupt(flate::inflate_raw(&[], Some(5), CAP), "empty deflate stream with a declared size");
+    corrupt(flate::inflate_raw(&[], Some(1 << 40), 1 << 20), "empty deflate stream with a declared size");
     assert_eq!(flate::inflate_raw(&[], None, CAP).unwrap(), Vec::<u8>::new());
-    assert!(matches!(flate::inflate_raw(&[], Some(1 << 40), 1 << 20), Err(Error::Limit { kind: LimitKind::PartBytes, .. })));
+    assert_eq!(flate::inflate_raw(&[], Some(0), CAP).unwrap(), Vec::<u8>::new());
+    let (r, usage) = uo_alloc::measure(|| flate::inflate_raw(&[], Some(256 << 20), CAP));
+    assert!(r.is_err() && usage.allocated == 0, "allocated {}", usage.allocated);
+    assert!(matches!(flate::check_raw(&[], Some(5), CAP), Err(Error::Corrupt("empty deflate stream with a declared size"))));
+    assert_eq!(flate::check_raw(&[], Some(0), CAP).unwrap(), flate::StreamCheck { len: 0, stream_len: 0, crc32: 0 });
+    // the zlib framing with an empty body and a declared size goes the same way
+    corrupt(flate::inflate_zlib(&[0x78, 0x9c, 1, 2], Some(3), CAP), "empty deflate stream with a declared size");
 }
 
 #[test]
@@ -186,5 +195,117 @@ fn garbage_never_panics() {
         let _ = flate::inflate_raw(&d, Some(len as u64), 1 << 16);
         let _ = flate::inflate_zlib(&d, None, 1 << 16);
         let _ = flate::inflate_capped(&d, 1 << 16);
+    }
+}
+
+/// `check_raw` (D5) keeps a 64 KiB window: on outputs far larger, with stored blocks of up to
+/// 65,535 bytes, long distances and fflate's distance 32,769 (symbol 30), it must describe
+/// exactly what `inflate_raw` returns, with and without a declared size.
+#[test]
+fn check_raw_matches_inflate_raw_past_the_window() {
+    let mut x: u32 = 0x0BAD_5EED;
+    let mut data = Vec::with_capacity(3 << 20);
+    while data.len() < 3 << 20 {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        // runs copied from near and far back, and fresh bytes
+        let back = [1usize, 7, 300, 4096, 32_000, 32_768][(x % 6) as usize];
+        if data.len() > back && !x.is_multiple_of(3) {
+            let start = data.len() - back;
+            for k in 0..(x as usize >> 8) % 258 + 3 {
+                data.push(data[start + k % back]);
+            }
+        } else {
+            data.extend_from_slice(&x.to_le_bytes());
+        }
+    }
+    let same = |stream: &[u8], declared: Option<u64>| {
+        let check = flate::check_raw(stream, declared, CAP);
+        match flate::inflate_raw(stream, declared, CAP) {
+            Ok(out) => {
+                let c = check.unwrap();
+                assert_eq!((c.len, c.crc32), (out.len() as u64, flate::crc32(&out)), "declared {declared:?}");
+                Some(c)
+            }
+            Err(e) => {
+                assert_eq!(check, Err(e));
+                None
+            }
+        }
+    };
+    for level in [0, 1, 6, 9] {
+        let d = flate::deflate_raw(&data, level);
+        let c = same(&d, None).unwrap();
+        assert_eq!((c.len, c.stream_len), (data.len() as u64, data.len() as u64));
+        // stored blocks do not fit a smaller declared size (fflate's RangeError)
+        match same(&d, Some(1_000_003)) {
+            Some(c) => assert_eq!((c.len, c.stream_len), (1_000_003, data.len() as u64)),
+            None => assert_eq!(level, 0),
+        }
+        same(&d, Some(data.len() as u64 + 10)).unwrap();
+    }
+    // a stored block of 40,000 bytes, then a fixed block copying 3 bytes from 32,769 back
+    let mut w = BitWriter::default();
+    w.bits(0, 1);
+    w.bits(0, 2);
+    w.align();
+    let block: Vec<u8> = (0..40_000u32).map(|i| (i * 7 + i / 251) as u8).collect();
+    w.bytes(&(block.len() as u16).to_le_bytes());
+    w.bytes(&(!(block.len() as u16)).to_le_bytes());
+    w.bytes(&block);
+    w.bits(1, 1);
+    w.bits(1, 2);
+    w.code(0b000_0001, 7); // length 3
+    w.code(30, 5); // distance symbol 30: 32,769 in fflate
+    w.code(0, 7); // end of block
+    let stream = w.finish();
+    let out = flate::inflate_raw(&stream, None, CAP).unwrap();
+    assert_eq!(out.len(), 40_003);
+    assert_eq!(out[40_000..], block[40_000 - 32_769..40_003 - 32_769]);
+    same(&stream, None).unwrap();
+    same(&stream, Some(40_001)).unwrap();
+}
+
+/// DEFLATE bits, least significant first; Huffman codes most significant first.
+#[derive(Default)]
+struct BitWriter {
+    out: Vec<u8>,
+    acc: u32,
+    n: u32,
+}
+
+impl BitWriter {
+    fn bits(&mut self, v: u32, n: u32) {
+        for i in 0..n {
+            self.acc |= ((v >> i) & 1) << self.n;
+            self.n += 1;
+            if self.n == 8 {
+                self.out.push(self.acc as u8);
+                self.acc = 0;
+                self.n = 0;
+            }
+        }
+    }
+
+    fn code(&mut self, v: u32, n: u32) {
+        for i in (0..n).rev() {
+            self.bits((v >> i) & 1, 1);
+        }
+    }
+
+    fn align(&mut self) {
+        if self.n > 0 {
+            self.bits(0, 8 - self.n);
+        }
+    }
+
+    fn bytes(&mut self, b: &[u8]) {
+        self.out.extend_from_slice(b);
+    }
+
+    fn finish(mut self) -> Vec<u8> {
+        self.align();
+        self.out
     }
 }

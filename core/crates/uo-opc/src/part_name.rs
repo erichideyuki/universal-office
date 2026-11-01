@@ -86,6 +86,61 @@ pub fn fold_ascii(name: &str) -> String {
     name.to_ascii_lowercase()
 }
 
+/// A part name as a relative file path, for hosts that extract parts to disk (gate 2, D8):
+/// `None` unless every segment is a plain file or folder name on Windows, macOS and Linux. Part
+/// names are returned as written in the zip (TS parity), so a name may be `../x`, `/etc/x`,
+/// `C:\x` or `CON`.
+///
+/// Refused: empty names, absolute paths (leading `/`), backslashes (Windows separators, UNC
+/// `\\server`), `:` (drive letters `C:`, alternate data streams `a:b`), the other characters
+/// Windows refuses in names (`< > " | ? *`), NUL and every control character, empty segments
+/// (`a//b`, a trailing `/` of a folder entry), `.` and `..`, segments ending in `.` or a space
+/// (Windows drops them: `a.` would be `a`), and the Windows device names `CON`, `PRN`, `AUX`,
+/// `NUL`, `COM0`–`COM9`, `LPT0`–`LPT9` (and `COM`/`LPT` with ¹ ² ³), `CONIN$`, `CONOUT$`,
+/// `CLOCK$`, in any case and with any extension (`nul.txt`). Returns the segments joined by
+/// `/` (the name itself when it is safe).
+pub fn safe_relative_path(name: &str) -> Option<String> {
+    if name.is_empty() {
+        return None;
+    }
+    let mut out = String::with_capacity(name.len());
+    for segment in name.split('/') {
+        if !safe_segment(segment) {
+            return None;
+        }
+        if !out.is_empty() {
+            out.push('/');
+        }
+        out.push_str(segment);
+    }
+    Some(out)
+}
+
+fn safe_segment(segment: &str) -> bool {
+    if segment.is_empty() || segment == "." || segment == ".." || segment.ends_with(['.', ' ']) {
+        return false;
+    }
+    if segment.chars().any(|c| c.is_control() || matches!(c, '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*')) {
+        return false;
+    }
+    // Windows resolves a device name before the first dot, ignoring spaces before it
+    let stem = segment.split('.').next().unwrap_or(segment).trim_end_matches(' ');
+    !is_device_name(stem)
+}
+
+fn is_device_name(stem: &str) -> bool {
+    let upper = stem.to_uppercase();
+    if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" | "CLOCK$") {
+        return true;
+    }
+    let mut chars = upper.chars();
+    let prefix: String = chars.by_ref().take(3).collect();
+    let digit = chars.next();
+    (prefix == "COM" || prefix == "LPT")
+        && chars.next().is_none()
+        && digit.is_some_and(|d| d.is_ascii_digit() || matches!(d, '\u{B9}' | '\u{B2}' | '\u{B3}'))
+}
+
 /// The segment unescaped once; `None` if the escape is malformed or the result cannot be a
 /// segment.
 fn decode_segment(raw: &str) -> Option<String> {
@@ -231,6 +286,82 @@ mod tests {
         assert_eq!(escape_segment("100%"), "100%25");
         for s in ["my file.png", "café", "100%", "a~b-c_d.e"] {
             assert_eq!(r("", &escape_segment(s)).as_deref(), Some(s));
+        }
+    }
+
+    #[test]
+    fn safe_relative_paths() {
+        let safe = [
+            "word/document.xml",
+            "[Content_Types].xml",
+            "_rels/.rels",
+            "word/media/image 1.png",
+            "word/media/café.png",
+            ".hidden",
+            "a..b",
+            "...x",
+            "100%",
+            "%2e%2e/x",
+            "CONSOLE.xml",
+            "com10",
+            "lpt",
+            "xl/con_x.xml",
+            "Desktop.ini",
+        ];
+        for name in safe {
+            assert_eq!(safe_relative_path(name).as_deref(), Some(name), "{name:?}");
+        }
+        let hostile = [
+            "",
+            "/",
+            "/etc/passwd",
+            "//server/share/x",
+            "\\\\server\\share\\x",
+            "..\\..\\x",
+            "word\\media\\x.png",
+            "C:",
+            "C:x",
+            "c:/windows/x",
+            "a:stream",
+            "../x",
+            "a/../../x",
+            "a/./b",
+            "./a",
+            "a/..",
+            "a//b",
+            "word/",
+            "a\0b",
+            "a\nb",
+            "a\u{7f}b",
+            "a\u{85}b",
+            "a.",
+            "a/b./c",
+            "a ",
+            "a/b /c",
+            "CON",
+            "con",
+            "word/nul.xml",
+            "Aux.png",
+            "prn.",
+            "COM1",
+            "com9.txt",
+            "LPT1.xml",
+            "lpt0",
+            "COM\u{B9}",
+            "lpt\u{B2}.x",
+            "NUL .txt",
+            "CONIN$",
+            "conout$.x",
+            "clock$",
+            "a<b",
+            "a>b",
+            "a\"b",
+            "a|b",
+            "a?b",
+            "a*b",
+        ];
+        for name in hostile {
+            assert_eq!(safe_relative_path(name), None, "{name:?}");
         }
     }
 

@@ -5,7 +5,9 @@
 //! | cache | lives in | bound |
 //! |---|---|---|
 //! | caseless index (`CaseFold` fallback of `find`) | `Package` | one entry per part; parts of an opened archive ≤ `Limits::max_entries` |
+//! | ASCII index (`resolve_target`, gate 2 D6) | `Package` | the same as the caseless index (shared with it under `CaseFold::Ascii`) |
 //! | inflated parts (`OnceCell` per entry) | `Package` | `Limits::max_total_bytes` over all first reads, `part_cap` per part |
+//! | what a save verified (D5) | `Package` | a fixed record per entry |
 //! | mini stream (read once) and the path index | `CfbFile` | the length of the file |
 //! | interned names | `xml::Document` | distinct names of one document, ≤ its source length |
 #![allow(clippy::unwrap_used, clippy::panic)] // helpers outside #[test] functions
@@ -65,6 +67,35 @@ fn m5_caseless_index() {
     // the table is sized for the part count up front (8,192 buckets of 33 B here), the strings
     // for one key only: still bounded by the parts, and under the distinct-name index
     assert!((one.live_delta as usize) < 70 * N && one.live_delta < build.live_delta, "colliding names kept {} B", one.live_delta);
+}
+
+/// The ASCII index of `resolve_target` (D6): built on the first fallback, one entry per part,
+/// never grown by lookups, dropped when the part set changes; shared with the caseless index
+/// when the policy is already ASCII.
+#[test]
+fn m5_ascii_index_of_resolve_target() {
+    const N: usize = 4000;
+    let names: Vec<String> = (0..N).map(|i| format!("word/media/Image{i}.png")).collect();
+    let bytes = archive(&names, |_| b"png".to_vec());
+    let limits = Limits { max_entries: N as u32, ..Limits::DEFAULT };
+    let mut pkg = Package::open(&bytes, &limits, &OpenOptions::default()).unwrap();
+    let (hit, build) = measure(|| pkg.resolve_target("word/document.xml", "media/IMAGE7.PNG").map(str::to_owned));
+    assert_eq!(hit.as_deref(), Some("word/media/Image7.png"));
+    let name_bytes: usize = names.iter().map(String::len).sum();
+    println!("ASCII index of {N} parts ({name_bytes} B of names): {} B kept", build.live_delta);
+    assert!(build.live_delta > 0 && (build.live_delta as usize) < 2 * name_bytes + 48 * N, "index {} B", build.live_delta);
+    let before = thread_stats().live;
+    for i in 0..100_000 {
+        assert!(pkg.resolve_target("word/document.xml", &format!("media/Missing{i}.png")).is_none());
+    }
+    assert_eq!(thread_stats().live, before, "lookups grew the index");
+    let (_, dropped) = measure(|| pkg.remove_part("word/media/Image0.png"));
+    assert!(dropped.live_delta <= -build.live_delta + 64, "index not dropped: {} B", dropped.live_delta);
+    // one index only under `CaseFold::Ascii`
+    let ascii = Package::open(&bytes, &limits, &OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() }).unwrap();
+    let (_, first) = measure(|| ascii.find_name("WORD/media/image7.png").map(str::len));
+    let (_, second) = measure(|| ascii.resolve_target("", "WORD/media/image8.png").map(str::len));
+    assert!(first.live_delta > 0 && second.live_delta == 0, "{} then {}", first.live_delta, second.live_delta);
 }
 
 /// The inflated copies of the parts: capped by `max_total_bytes` over all first reads; releasing

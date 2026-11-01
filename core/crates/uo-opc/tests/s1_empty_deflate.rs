@@ -1,8 +1,8 @@
-//! Security proposal S1 of the module record, measured (stage 4): a deflated zip entry with an
-//! EMPTY compressed stream and a declared size returns that many zeros (fflate's
-//! `new u8(declared)`), up to the part cap. These tests measure what a tiny crafted archive makes
-//! the library allocate. They do not decide the behaviour: if S1 is fixed (an empty stream with a
-//! declared size becomes `Corrupt`), the same tests check that nothing is allocated instead.
+//! Security proposal S1 of the module record (stage 4): a deflated zip entry with an EMPTY
+//! compressed stream and a declared size returned that many zeros (fflate's `new u8(declared)`),
+//! up to the part cap: a 132-byte archive made the library allocate 256 MiB, 340 bytes held
+//! 4 GiB. Fixed by gate-2 decision D1: such a stream is `Corrupt`. These tests measure what the
+//! same crafted archives make the library allocate now: nothing near the declared size.
 #![allow(clippy::unwrap_used, clippy::panic)] // helpers outside #[test] functions
 
 use uo_alloc::measure;
@@ -36,15 +36,9 @@ fn s1_xml_part_at_the_cap() {
     let pkg = Package::open(&zip, &Limits::DEFAULT, &OpenOptions::default()).unwrap();
     let (n, allocated, peak) = read(&pkg, "word/document.xml");
     println!("S1: a {} B archive, XML part declaring {cap} B: produced {n:?}, allocated {allocated} B, peak {peak} B", zip.len());
-    match n {
-        // current behaviour: the whole declared size, zeros, in one allocation
-        Some(n) => {
-            assert_eq!(n as u64, cap);
-            assert!(allocated >= cap && allocated < cap + 4096);
-        }
-        // S1 fixed: rejected without allocating the declared size
-        None => assert!(allocated < 4096),
-    }
+    // D1: rejected without allocating the declared size
+    assert_eq!(n, None);
+    assert!(allocated < 4096);
     // one byte over the cap: refused before allocating
     let zip = crafted(&[("word/document.xml", cap + 1)]);
     let pkg = Package::open(&zip, &Limits::DEFAULT, &OpenOptions::default()).unwrap();
@@ -59,21 +53,25 @@ fn s1_xml_part_at_the_cap() {
     assert!(!slides.contains("ppt/slides/slide1.xml") && slides.contains("ppt/x.xml"));
     let (n, allocated, _) = read(&slides, "ppt/x.xml");
     println!("S1 with the Slides filter: the 1 MiB entry left in: produced {n:?}, allocated {allocated} B");
+    assert_eq!(n, None);
+    assert!(allocated < 4096);
     // verify() (the eager TS-like check) allocates the same zeros and drops them
     let zip = crafted(&[("a.xml", 64 << 20), ("b.xml", 64 << 20)]);
     let pkg = Package::open(&zip, &Limits::DEFAULT, &OpenOptions::default()).unwrap();
     let (r, u) = measure(|| pkg.verify());
     println!("S1: verify() of two XML parts declaring 64 MiB: {r:?}, allocated {} B, peak {} B", u.allocated, u.peak_above_start);
-    if r.is_ok() {
-        assert!(u.allocated >= 2 * (64 << 20) && u.peak_above_start < (64 << 20) + 4096);
-    }
+    assert_eq!(r, Err(Error::Corrupt("empty deflate stream with a declared size")));
+    assert!(u.allocated < 4096);
+    // and a save, which verifies the entries it would copy raw (D5), fails the same way
+    let (r, u) = measure(|| pkg.save(&uo_opc::package::SaveOptions::default()).map(|v| v.len()));
+    assert_eq!(r, Err(Error::Corrupt("empty deflate stream with a declared size")));
+    assert!(u.allocated < 4096);
 }
 
-/// The binary cap (2 GiB per part, 4 GiB in total): a ~200-byte archive holds 4 GiB of zeros
-/// live. Ignored by default: it commits 4 GiB (`alloc_zeroed`, fast, but CI runners may not have
-/// the memory). `cargo test -p uo-opc --release --test s1_empty_deflate -- --ignored --nocapture`.
+/// The binary cap (2 GiB per part, 4 GiB in total): before D1 a ~340-byte archive held 4 GiB of
+/// zeros live (the test was `#[ignore]`d for that); now each read is `Corrupt` and allocates
+/// nothing.
 #[test]
-#[ignore = "allocates 4 GiB; run by hand with --ignored"]
 fn s1_binary_parts_up_to_the_total() {
     let part = Limits::DEFAULT.max_binary_part_bytes;
     let zip = crafted(&[("ppt/media/a.bin", part), ("ppt/media/b.bin", part), ("ppt/media/c.bin", part)]);
@@ -87,8 +85,8 @@ fn s1_binary_parts_up_to_the_total() {
         pkg.produced_bytes(),
         u.allocated
     );
-    if a.is_some() {
-        assert_eq!(pkg.produced_bytes(), 2 * part);
-        assert!(matches!(r, Err(Error::Limit { kind: LimitKind::TotalBytes, .. })));
-    }
+    assert_eq!((a, b), (None, None));
+    assert!(alloc_a < 4096 && alloc_b < 4096 && u.allocated < 4096);
+    assert_eq!(pkg.produced_bytes(), 0);
+    assert_eq!(r, Err(Error::Corrupt("empty deflate stream with a declared size")));
 }

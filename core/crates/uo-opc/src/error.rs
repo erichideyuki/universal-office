@@ -14,6 +14,8 @@ pub enum LimitKind {
     Entries,
     /// XML nesting
     XmlDepth,
+    /// elements of one parsed XML part (gate 2, D2)
+    XmlElements,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
