@@ -1,6 +1,6 @@
 # uo-render — the display list (items, resources, per-page codec, painter helpers)
 
-Record of the rust-port workflow. Status: **architecture plan, milestone-1 gate pending** (hybrid
+Record of the rust-port workflow. Status: **milestone-1 gate approved 2026-11-03** (hybrid
 mode, `SKILL.md` "Hybrid mode"). Planner and reuse analysis together (one Opus agent, 2026-11-03),
 written after the uo-docx-layout architecture (its K1–K20 and LQ1–LQ22) and the uo-docx G15. Under
 the hybrid mode there is no separate analysis skeptic for this module: the milestone-1 skeptic and
@@ -489,3 +489,7 @@ Pending. `tools/bench`: encode + decode + paint per page (main: paint from objec
 | Stage | Agent (model) | Time | Tool calls |
 |---|---|---|---|
 | 1 | planner + reuse, architecture plan for uo-render and uo-pdf together (Opus) | (orchestrator) | ≈ 60 |
+
+## Milestone-1 gate — approved 2026-11-03
+
+Maintainer, verbatim: "Approve all" — every final recommendation of the milestone-1 questions accepted (RQ1–RQ13). Cross-record changes from the uo-render/uo-pdf plans (RQ1–RQ3, RQ13, PQ1, PQ8) apply to this record where listed there.

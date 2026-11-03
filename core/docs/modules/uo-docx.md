@@ -1,7 +1,6 @@
 # uo-docx — the Write document engine (model, reader, lossless writer, editing session, Editing API, `.doc`, exporters)
 
-Record of the rust-port workflow. Status: **umbrella plan revised after the skeptic (U1–U20) and the
-milestone-1 architecture written; milestone-1 gate pending** (hybrid mode, `SKILL.md` "Hybrid mode":
+Record of the rust-port workflow. Status: **milestone-1 gate approved 2026-11-03** (hybrid mode, `SKILL.md` "Hybrid mode":
 milestone 1 = the read path, uo-docx D1a → uo-docx-layout → uo-render → uo-pdf). Planner and reuse
 analysis together (one Opus agent), then the analysis skeptic (section "Analysis skeptic", kept as
 written), then this revision. *(revised after the skeptic)* Under the hybrid mode there are no
@@ -916,3 +915,7 @@ Pending.
 |---|---|---|---|
 | 1 | planner + reuse, umbrella plan (Opus) | (orchestrator) | ≈ 60 |
 | 1 (revision) | planner: U1–U20 written in, "Architecture (milestone 1)", consolidated milestone-1 gate list (Opus) | (orchestrator) | ≈ 20 |
+
+## Milestone-1 gate — approved 2026-11-03
+
+Maintainer, verbatim: "Approve all" — every final recommendation of the milestone-1 questions accepted (G1–G27). Cross-record changes from the uo-render/uo-pdf plans (RQ1–RQ3, RQ13, PQ1, PQ8) apply to this record where listed there.

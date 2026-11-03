@@ -1,6 +1,6 @@
 # uo-docx-layout — the Write layout engine (pages, lines, tables, floats, notes, fields, display list)
 
-Record of the rust-port workflow. Status: **architecture plan, milestone-1 gate pending** (hybrid
+Record of the rust-port workflow. Status: **milestone-1 gate approved 2026-11-03** (hybrid
 mode, `SKILL.md` "Hybrid mode"; every role of this module runs on Opus, implementation and verifiers
 included — "Models"). Planner and reuse analysis together (one Opus agent, 2026-11-03), then the
 analysis skeptic (K1–K20, section "Analysis skeptic", kept as written), then this revision: every
@@ -911,3 +911,7 @@ Node and WebKit, plus the editor keystroke budget in milestone 2.
 | 1 | planner + reuse, architecture plan (Opus) | (orchestrator) | ≈ 45 |
 | 2 | analysis skeptic, verified in the code (Opus) | (orchestrator) | ≈ 85 |
 | 1 (revision) | planner: K1–K20 written in, consolidated question list G15/G19/G21/LQ1–LQ22, order and estimate re-based (Opus) | (orchestrator) | ≈ 30 |
+
+## Milestone-1 gate — approved 2026-11-03
+
+Maintainer, verbatim: "Approve all" — every final recommendation of the milestone-1 questions accepted (G15, G19, G21, LQ1–LQ22). Cross-record changes from the uo-render/uo-pdf plans (RQ1–RQ3, RQ13, PQ1, PQ8) apply to this record where listed there.

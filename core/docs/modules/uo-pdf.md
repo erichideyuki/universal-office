@@ -1,6 +1,6 @@
 # uo-pdf — the PDF writer and the display-list PDF painter (viewer, editor and server PDF)
 
-Record of the rust-port workflow. Status: **architecture plan, milestone-1 gate pending** (hybrid
+Record of the rust-port workflow. Status: **milestone-1 gate approved 2026-11-03** (hybrid
 mode, `SKILL.md` "Hybrid mode"). Planner and reuse analysis together (one Opus agent, 2026-11-03),
 with the uo-render plan (`uo-render.md`, RQ1–RQ13) and after the uo-docx-layout architecture (K1–K20,
 LQ1–LQ22; this record decides its **LQ8(e)**). No separate analysis skeptic under the hybrid mode:
@@ -416,3 +416,7 @@ Pending. `tools/bench`: PDF export of the oracle corpus and of the 500-page and 
 | Stage | Agent (model) | Time | Tool calls |
 |---|---|---|---|
 | 1 | planner + reuse, architecture plan for uo-render and uo-pdf together (Opus) | (orchestrator) | ≈ 60 |
+
+## Milestone-1 gate — approved 2026-11-03
+
+Maintainer, verbatim: "Approve all" — every final recommendation of the milestone-1 questions accepted (PQ1–PQ12). Cross-record changes from the uo-render/uo-pdf plans (RQ1–RQ3, RQ13, PQ1, PQ8) apply to this record where listed there.
