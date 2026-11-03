@@ -1,0 +1,27 @@
+[package]
+name = "uo-pdf"
+description = "PDF writer of the UniversalOffice Rust core: objects, streams, xref, fonts (Type0/Identity-H with ToUnicode), images, shadings, links and outlines, streamed to a sink"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# fmt(), parseInt, trim, Math.round/min/max/cos/sin: every number and string rule of the TS (record PQ5, "Numbers")
+uo-jsnum = { path = "../uo-jsnum" }
+# the reusable zlib compressor (PQ5) and the inflate of the structural comparison in the tests
+uo-opc = { path = "../uo-opc" }
+# TrueType subsetting for the embedded fonts
+uo-fonts = { path = "../uo-fonts" }
+# the font and alpha-state maps (the same pinned version as uo-fonts)
+rustc-hash = "=2.1.3"
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# parity capture/replay and the seeded generators: tests/writer_parity.rs
+uo-testkit = { path = "../uo-testkit" }
+
+[lints]
+workspace = true

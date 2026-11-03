@@ -416,7 +416,127 @@ Pending. `tools/bench`: PDF export of the oracle corpus and of the 500-page and 
 | Stage | Agent (model) | Time | Tool calls |
 |---|---|---|---|
 | 1 | planner + reuse, architecture plan for uo-render and uo-pdf together (Opus) | (orchestrator) | ≈ 60 |
+| 3 | frontier W: writer port + PP0 differential + M1/streaming/no-panic tests + record (Sonnet, hybrid mode) | (not recorded; one session) | ≈ 125 (own tally) |
 
 ## Milestone-1 gate — approved 2026-11-03
 
 Maintainer, verbatim: "Approve all" — every final recommendation of the milestone-1 questions accepted (PQ1–PQ12). Cross-record changes from the uo-render/uo-pdf plans (RQ1–RQ3, RQ13, PQ1, PQ8) apply to this record where listed there.
+
+## Milestone 1 — frontier W (the writer)
+
+Hybrid mode, one Sonnet session, 2026-11-03. Scope: the app-neutral public writer of §3 — `PdfDocument`/`PageWriter`
+with both glyph modes, the object numbering and file order of the TS, streaming emission to a sink, fonts through
+uo-fonts, `PdfLimits`. The painter (`render_pdf`, frontier P) and uo-image (frontier I) are not here. Crate
+`core/crates/uo-pdf` (no dependency on uo-render or uo-docx; it depends on uo-jsnum, uo-opc, uo-fonts and `rustc-hash`).
+
+### Ported
+
+| TS (`write/packages/docx-layout/src/pdf-writer/`) | Lines | Rust (`uo-pdf/src/`) | Lines |
+|---|---|---|---|
+| `bytes.ts` (`ByteBuilder` is a `Vec<u8>`; `utf16beHex`) | 51 | `num.rs` (`fmt`, `Display` helpers, `latin1`, `utf16be_hex`) | 115 |
+| `writer.ts` (`PdfWriter`) | 92 | `writer.rs` (`PdfWriter<S>`, `StreamBody`), `sink.rs` | 310 + 81 |
+| `document.ts` `PdfPage` | ≈ 190 | `page.rs` (`PageWriter`) | 403 |
+| `document.ts` `PdfDocument`, `safePdfUri`, `rgb255`, `hexColor`, `fmt` and the types | ≈ 325 | `document.rs`, `uri.rs`, `color.rs`, `types.rs` | 471 + 39 + 26 + 158 |
+| `font.ts` (`EmbeddedFont`, the Symbol/Wingdings tables) | 161 | `font.rs` (`FontProgram`, `EmbeddedFont`) | 338 |
+| (limits, errors: new, PQ11) | — | `error.rs` | 88 |
+
+840 TS lines → 2,077 Rust lines (doc comments, the `Display` helpers and the sink layer included). Also: `ZlibDeflater` in
+`uo-opc/src/flate.rs` (PQ5, 30 lines + a test; every uo-opc test binary stays green).
+
+**What is the TS, kept**: every dictionary and content string is built in the TS order with the TS spacing (a stream with an
+empty dictionary is `<<  /Length n >>`, two spaces); numbers go through `fmt` (`Math.round` ties toward +Infinity, clamp to
+±1e9, NaN and -0 as `0`) and the JS `String(n)` of uo-jsnum (`Js`); `Math.round/min/max/cos/sin` come from uo_jsnum; colours
+are `parseInt(…, 16)` over UTF-16 code units; the TJ adjustments stay JS numbers and are written with `String(n)` (NaN,
+Infinity and exponents come out as in the TS); `fontFor`'s `ps_name`, the `/^[A-Z]{6}\+/` strip and the Symbol/Wingdings test
+are hand matchers with the JS `\s` and ASCII-only `i` semantics; the ToUnicode `String.fromCodePoint` throws (a code point past
+U+10FFFF) become `PdfError::Invalid`.
+
+**Numbering and order** (parity-relevant, PQ4): paint-time objects (soft mask before its image, shading function before its
+dictionary) take the next number when made and go out at once; at `build` the fonts (FontFile2, descriptor, CIDFont, ToUnicode,
+Type0 per font), then catalog, pages node, one number per page, then per page its content stream, its link annotations and the
+page object, then the outline root and items. The catalog is defined last, so everything after it waits in memory — the page
+contents, **compressed when their page ends** (the "more than 64 bytes and smaller" rule is decided there, with the writer's
+single reusable compressor).
+
+### Decisions outside the plan (each one declared)
+
+1. **API shape.** `PageWriter<'d, S>` borrows the document and is pushed to it at `finish()` (a page dropped without `finish`
+   is finished by `Drop`, an error is kept for `build`); resources created while a page is painted go through
+   `page.document()` (the TS `embedJpeg` during `paintItem`), which keeps the TS object numbers. Fonts are `FontId` handles on
+   documents that own the `EmbeddedFont`; `page.encode(font, cp)` is `font.encode`. `PdfImage`/`PdfShading` are `Copy` handles.
+   `with_alpha` takes a closure over the page.
+2. **`FontProgram`** is a trait with JS-number (`f64`) fields and optional `font_bbox`/`ascender`/`descender`/`italic_angle`
+   (the TS interface); implemented for `uo_fonts::Face` (what `fontFor` hands over: hhea ascent/descent, no box or angle) and
+   `uo_fonts::FontProgram` (the converter's). The painter implements it on its own wrapper for the symbol-font glyph fallback.
+   `embed_font` takes `impl FontProgram + Send + 'static` and the font bytes as `Arc<[u8]>` (shared, never copied).
+3. **Glyph ids are written with `{:04x}` of a `u32`**, not `to_radix_string` (no allocation per glyph): identical to
+   `gid.toString(16).padStart(4, '0')` for every `u32` — tested against `to_radix_string` over 0..=0xFFFF and the edges.
+4. **Arithmetic.** All geometry is `f64` with the JS operators in the TS order. Counters, indexes and sizes the TS holds as
+   doubles are integers (`u32` image sizes, `i64` page indices, `u32` outline levels) where the TS only ever holds integers
+   there; what a fraction or NaN there would write (`undefined 0 R`) is not supported. Rust `&str` has no lone surrogates: a
+   UTF-16 host converts lossily first, which is exactly what the TS `TextEncoder` does to a URI (`EF BF BD`); an outline title
+   with a lone surrogate would differ (the TS writes the unit, here U+FFFD).
+5. **`PdfError::Invalid(&'static str)`** exists for the places the TS throws or is silent: an object left undefined at
+   `build`, an object defined twice after it was written or before it was allocated (the TS overwrites or extends a sparse
+   array), and the ToUnicode `RangeError`. `LimitKind::Objects` guards the `u32` object number.
+6. **Limits (PQ11).** `max_ops_per_page` (a draw call counts one, `glyphs` counts its glyphs, a link counts one),
+   `max_content_bytes` per page, `max_output_bytes` (written plus waiting objects, ±25 bytes of framing per object, and the xref
+   at `build`), and `font: FontLimits` for the subsetter. The page limits are **sticky**: past the limit the page stops writing,
+   `PageWriter::failure()` tells a painter loop to stop, and `finish()` and `build` return the error. Defaults: 2·10⁶ ops, 256 MiB
+   of content, 1 GiB native; wasm32 64 MiB and 256 MiB.
+7. **`embed_rgba` refuses a width × height that claims more pixels than the data holds** (`Invalid`); the TS zero-pads. It
+   builds the soft mask first and drops it before the RGB (the TS keeps both arrays), and never allocates an alpha array for an
+   opaque image; the "any pixel not 255" scan runs over all of `rgba`, extra and cut-short pixels included, as the TS loop does.
+8. **`ChunkedSink`** hands over chunks of exactly `chunk` bytes (the last smaller) from one buffer allocated once per chunk;
+   `IoSink` wraps an `io::Write`; `&mut S` is a sink.
+9. Not ported: the standalone `PdfPage` without a document (no `gsFor`; opacity then draws opaque), the C# parallel `Build` and
+   `AddPage(PdfPage)` (PQ10), `decodeImage` and `PdfFontSource` (PQ6: they lived in the painter).
+
+### Parity (PP0 of the writer layer)
+
+`tests/parity_support/capture_writer.mjs` (committed, deterministic: the xorshift32 of uo-testkit, the open fonts of
+`shared/fonts/files`, pseudo-random image bytes) drives the frozen TS API from `UO_TS_ROOT` with 160 generated op scripts:
+fonts of three program kinds (face, symbol fallback, custom with every optional field, `NaN`/`0` units per em), RGBA and JPEG
+images with and without masks and decode arrays, axial and radial shadings, the whole `PdfPage` surface (rectangles, lines,
+glyphs in both modes with scale, synthetic bold and italic, paths with both fill rules, clips, transforms, images, nested
+`withAlpha`, links of every kind), resources created in the middle of a page, outlines (levels 0 to 7, blank titles, indices out of
+range), special values (NaN, ±Infinity, -0, 5e-324, 1e300, rounding ties) in every numeric slot. Frequencies in the capture:
+708 glyph calls, 805 paths, 404 links, 527 outline entries, 355 images, 172 shadings, 296 alpha scopes, 208 fonts on 322 pages.
+
+| Check | Result |
+|---|---|
+| `compress: false`, byte for byte (length and SHA-256) | **155 of 155 scripts identical** (3,428 objects) on the first run, no port bug found by it |
+| the 5 other scripts | the TS throws (`String.fromCodePoint` past U+10FFFF in ToUnicode); Rust returns `Invalid` for both modes |
+| `compress: true`, structural (same numbering, dictionaries equal apart from `/Filter`/`/Length`, inflated streams equal, xref/trailer valid) | **155 of 155 identical** |
+| streams deflated: TS (fflate) 812, Rust (miniz_oxide) 809 | the "only if smaller" rule flipped in 3 scripts (a stream near its edge); invisible to the comparison, counted and printed by the test |
+| `fmt` over 65,000 values (random bit patterns, ties, ±1e9 bounds, NaN, -0, subnormals), `hexColor` (3,000 strings with `#`, white space, signs, non-digits, astral characters), `safePdfUri` and `utf16beHex` (4,000 strings with the JS white space set, controls, `ſ`, BOM) | all four digests equal |
+| pdf.js 6.4 opens every Rust file (`check_pdfjs.mjs`) | 155 of 155 open, 309 pages, 3,520 text characters extracted |
+
+Not available here: `qpdf` (the CI validity job of §6 stays to be wired; the test parser validates every offset, object frame
+and trailer of each file, and pdf.js loads them). The corpus is synthetic by design; the oracle documents come with frontier H/P.
+
+### Memory (measured, `uo-alloc`)
+
+| Check | Result | Numbers |
+|---|---|---|
+| M1 per operation | green | scalars, writer (out-of-order define, streams, every error), sinks (broken, chunked), every `PdfDocument`/`PageWriter` method in both modes with fonts, images, shadings, links, outline, opacity and a dropped page, `embed_*` variants, each limit and the half-written build error, and **all 160 scripts × 2 modes**: live bytes return to the start exactly |
+| M2 soak | green | 1,000 documents (the scripts in turn, both modes), live bytes sampled every 50: **0 B** above the start (5,455,152 B at every sample: the test fonts and scripts) |
+| M3 streaming (PQ4) | green | 256×256 noisy images, chunked sink that drops the chunks: **peak 1.82 MB at 2, 8, 32 and 128 images** (files of 0.5, 2.1, 8.4 and 33.6 MB); the same render into a `Vec` peaks at 1.3, 2.9, 9.2 and 34.4 MB. The peak is one chunk buffer (1 MiB) plus the working set of one image |
+| M3 pages | green | 400-rectangle pages (12 KB of content) with a dropping sink: 10 / 100 / 500 pages → file 32 KB / 320 KB / 1.6 MB, peak 1.4 / 1.7 / 3.0 MB (compressed contents wait for the catalog); with `compress: false` the file is 0.12 / 1.2 / 6.2 MB and the peak 1.2 / 2.3 / 8.2 MB |
+| M3 one big image | green | 12 Mpx (4000×3000) noise, release: opaque peak 102 MB (8.53 N), allocated 203 MB; with alpha peak 80 MB (6.70 N), allocated 171 MB; file 36 MB. Within the plan's 9N + 4 MiB. The opaque case is higher because the deflate output of noise grows by doubling up to the input size: stopping the deflate once it passes the input size (the "only if smaller" rule would store it anyway) is a stage-5 candidate that also saves the time |
+| M4 / M5 / M6 | not applicable here | no handle crosses a boundary in this crate; no cross-call cache (`clear_caches` is a no-op); no `unsafe` (`#![forbid(unsafe_code)]`), so no Miri |
+| no-panic loops | green | 3,000 random hostile documents (NaN/Infinity/1e300 in every slot, garbage and mutated font bytes, handles of another document, tiny limits, failing sinks): 1,941 written, 639 stopped by a limit, 129 by the sink, 291 refused as `Invalid`, no panic; 1,000 files of the loop parse with a valid xref; 500 pages × 80 glyphs + 10,000 links + a 5,000-entry 9-level outline: 16,008 objects, 2.75 MB, valid; a chain of 20,000 outline levels does not recurse |
+
+Checks: `cargo fmt --check`, `cargo clippy -p uo-pdf -p uo-opc --all-targets -- -D warnings` (plus `deny(clippy::indexing_slicing)`
+in the library), `core/tests/grep-bans.sh`, `core/tests/float-casts.sh` clean; `cargo test -p uo-pdf` (4 test binaries, 47
+tests, one `#[ignore]`d) and `-p uo-opc` green; `cargo build -p uo-pdf --target wasm32-unknown-unknown --profile wasm` builds.
+Commands: `UO_TS_ROOT=… node core/crates/uo-pdf/tests/parity_support/capture_writer.mjs` regenerates `tests/parity/writer.cap`;
+`cargo test --release -p uo-pdf --test writer_memory -- --nocapture --test-threads=1 --include-ignored` prints the numbers.
+
+### Not done here
+
+The painter and uo-image (frontiers P and I); the fuzz targets `pdf_*` of §8 (the no-panic loops are the stable-Rust form of the
+writer ones); the wasm `memory.buffer` soak and the WebKit run of the chunked sink; `qpdf --check` in CI; the cancellation flag
+(PQ9, with the painter); the writer is not yet in `rust-core.yml` (the workspace-wide `lint` job already covers it). Worktree
+note: during this work other frontiers were editing uo-fonts and the workspace manifest, so the final runs were made in
+the real workspace once it built, and the intermediate ones in a snapshot of HEAD with this crate overlaid.

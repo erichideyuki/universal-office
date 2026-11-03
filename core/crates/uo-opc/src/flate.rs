@@ -792,6 +792,16 @@ impl Deflater {
 /// FLEVEL follows fflate (0 → 0, 1-5 → 1, 9 → 3, else 2), Adler-32 big-endian at the end.
 pub fn zlib(data: &[u8], level: u8) -> Vec<u8> {
     let level = level.min(9);
+    let body = deflate_raw(data, level);
+    let mut out = Vec::with_capacity(body.len() + 6);
+    out.extend_from_slice(&zlib_header(level));
+    out.extend_from_slice(&body);
+    out.extend_from_slice(&adler32(data).to_be_bytes());
+    out
+}
+
+/// The two header bytes of [`zlib`] at `level` (already clamped to 0-9).
+fn zlib_header(level: u8) -> [u8; 2] {
     let fl: u32 = match level {
         0 => 0,
         1..=5 => 1,
@@ -801,13 +811,31 @@ pub fn zlib(data: &[u8], level: u8) -> Vec<u8> {
     let c0: u32 = 120;
     let mut c1 = fl << 6;
     c1 |= 31 - ((c0 << 8) | c1) % 31;
-    let body = deflate_raw(data, level);
-    let mut out = Vec::with_capacity(body.len() + 6);
-    out.push(c0 as u8);
-    out.push(c1 as u8);
-    out.extend_from_slice(&body);
-    out.extend_from_slice(&adler32(data).to_be_bytes());
-    out
+    [c0 as u8, c1 as u8]
+}
+
+/// A zlib compressor for many streams (the PDF writer, PQ5 of the uo-pdf record): a [`Deflater`]
+/// (miniz_oxide's state, about 250 KB, allocated once and reset for each stream) plus the header
+/// and the Adler-32 of [`zlib`]. The bytes are those of [`zlib`] at the same level.
+pub struct ZlibDeflater {
+    level: u8,
+    raw: Deflater,
+}
+
+impl ZlibDeflater {
+    /// A compressor at `level` 0-9 (clamped to 9).
+    pub fn new(level: u8) -> Self {
+        let level = level.min(9);
+        ZlibDeflater { level, raw: Deflater::new(level) }
+    }
+
+    /// Appends the zlib stream of `data` to `out`.
+    pub fn zlib_into(&mut self, data: &[u8], out: &mut Vec<u8>) -> Result<()> {
+        out.extend_from_slice(&zlib_header(self.level));
+        self.raw.deflate_into(data, out)?;
+        out.extend_from_slice(&adler32(data).to_be_bytes());
+        Ok(())
+    }
 }
 
 /// Adler-32 (fflate `adler`, browser.js:777).
@@ -943,6 +971,25 @@ mod tests {
                 let mut out = vec![7u8];
                 d.deflate_into(data, &mut out).unwrap();
                 assert_eq!(out[1..], deflate_raw(data, level)[..], "level {level}, {} bytes", data.len());
+            }
+        }
+    }
+
+    #[test]
+    fn zlib_deflater_writes_the_bytes_of_zlib() {
+        let inputs: Vec<Vec<u8>> = vec![
+            Vec::new(),
+            b"a".to_vec(),
+            vec![0; 100_000],
+            (0..70_000u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8).collect(),
+            b"BT /F0 12 Tf 1 0 0 rg 10 20 Td <0001> Tj ET\n".repeat(500),
+        ];
+        for level in [0u8, 1, 6, 9, 200] {
+            let mut d = ZlibDeflater::new(level);
+            for data in &inputs {
+                let mut out = vec![9u8];
+                d.zlib_into(data, &mut out).unwrap();
+                assert_eq!(out[1..], zlib(data, level)[..], "level {level}, {} bytes", data.len());
             }
         }
     }
