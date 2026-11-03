@@ -154,7 +154,7 @@ pub extern "C" fn uo_fonts_memtest_hostile(kind: u32) -> f64 {
             Face::parse(Arc::from(b.to_vec()), l).map_or(0, |f| f.ligate(&[1, 2], &[Tag(*b"liga")]).map_or(0, |v| v.len() as u64))
         }),
         1 => (support::hostile_class0_gpos(), |b, l| Face::parse(Arc::from(b.to_vec()), l).map_or(0, |f| f.kern_units(1, 2) as u64)),
-        2 => (support::pair_map_font(2048), |b, l| Face::parse(Arc::from(b.to_vec()), l).map_or(0, |f| f.kern_units(1, 2) as u64)),
+        2 => (support::pair_map_font(1024), |b, l| Face::parse(Arc::from(b.to_vec()), l).map_or(0, |f| f.kern_units(1, 2) as u64)),
         3 => (support::hostile_outline_font(4, 16, 65_535), |b, l| {
             Face::parse(Arc::from(b.to_vec()), l).map_or(0, |f| (2..6u32).map(|g| f.glyph_outline(g).map_or(0, |o| o.len() as u64)).sum())
         }),

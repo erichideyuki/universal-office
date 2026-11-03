@@ -33,24 +33,24 @@ pub struct FontLimits {
 impl FontLimits {
     /// The native defaults: 2^24 kerning pairs (the V8 `Map` limit, exact parity; the largest
     /// real font, Gabriola, has 742,163), 2^26 units of work (the largest real GPOS needs 6.9
-    /// million), 4,096 component visits and 2^20 points per outline, 2,048 cached outlines, 2^27
+    /// million), 4,096 component visits and 2^16 points per outline (D3, gate 2: the largest real outline of 472 faces has about 1,200 commands), 2,048 cached outlines, 2^27
     /// cmap ranges (the JS array limit; the largest real cmap, Meiryo, has 14,335) and 256 MiB of
     /// output.
     pub const NATIVE: FontLimits = FontLimits {
         max_kern_pairs: 1 << 24,
         max_table_work: 1 << 26,
         max_outline_work: 4_096,
-        max_outline_points: 1 << 20,
+        max_outline_points: 1 << 16,
         outline_cache_entries: 2_048,
         max_cmap_ranges: 1 << 27,
         max_output_bytes: 256 << 20,
     };
 
-    /// The wasm32 defaults (G5): 2^22 kerning pairs (about 75 MB worst case, 5.6 times the
-    /// largest real font), 2^22 cmap ranges (16 MiB of index) and 64 MiB of output; the rest as
+    /// The wasm32 defaults (G5, D2 of gate 2): 2^20 kerning pairs (about 18 MB kept and 27 MB at
+    /// the peak, 1.4 times the largest real font), 2^22 cmap ranges (16 MiB of index) and 64 MiB of output; the rest as
     /// [`FontLimits::NATIVE`].
     pub const WASM32: FontLimits =
-        FontLimits { max_kern_pairs: 1 << 22, max_cmap_ranges: 1 << 22, max_output_bytes: 64 << 20, ..FontLimits::NATIVE };
+        FontLimits { max_kern_pairs: 1 << 20, max_cmap_ranges: 1 << 22, max_output_bytes: 64 << 20, ..FontLimits::NATIVE };
 
     /// The defaults of the target: [`FontLimits::WASM32`] with 32-bit pointers,
     /// [`FontLimits::NATIVE`] elsewhere.
@@ -121,11 +121,11 @@ mod tests {
         assert_eq!(FontLimits::NATIVE.max_kern_pairs, 1 << 24);
         assert_eq!(FontLimits::NATIVE.max_table_work, 1 << 26);
         assert_eq!(FontLimits::NATIVE.max_outline_work, 4_096);
-        assert_eq!(FontLimits::NATIVE.max_outline_points, 1 << 20);
+        assert_eq!(FontLimits::NATIVE.max_outline_points, 1 << 16);
         assert_eq!(FontLimits::NATIVE.outline_cache_entries, 2_048);
         assert_eq!(FontLimits::NATIVE.max_cmap_ranges, 1 << 27);
         assert_eq!(FontLimits::NATIVE.max_output_bytes, 256 << 20);
-        assert_eq!(FontLimits::WASM32.max_kern_pairs, 1 << 22);
+        assert_eq!(FontLimits::WASM32.max_kern_pairs, 1 << 20);
         assert_eq!(FontLimits::WASM32.max_cmap_ranges, 1 << 22);
         assert_eq!(FontLimits::WASM32.max_output_bytes, 64 << 20);
         assert_eq!(FontLimits::WASM32.max_table_work, FontLimits::NATIVE.max_table_work);

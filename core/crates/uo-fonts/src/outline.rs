@@ -25,8 +25,9 @@ pub enum OutlineCmd {
 
 /// The outlines of one face, only for `gid < num_glyphs`, cleared entirely when it holds
 /// `FontLimits::outline_cache_entries` or [`OUTLINE_CACHE_MAX_BYTES`] of commands and a new glyph is
-/// added. The cap in entries alone is no memory bound: a composite of a few hundred bytes can draw a
-/// million commands (40 MB), so 2,048 of them in a font of 330 KB would be 80 GB.
+/// added. The cap in entries alone is no memory bound: a composite of a few hundred bytes can draw as
+/// many commands as `max_outline_points` allows (65,536 commands, 2.5 MB, since D3 of gate 2; a million,
+/// 40 MB, before it), so 2,048 of them in a font of 330 KB would be 5 GB (80 GB before).
 #[derive(Debug, Clone, Default)]
 pub struct OutlineCache {
     pub map: FxHashMap<u32, Option<Arc<[OutlineCmd]>>>,

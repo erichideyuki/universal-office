@@ -679,8 +679,22 @@ fn worst_case_per_limit_with_hostile_fonts() {
 
 #[test]
 fn worst_case_of_one_outline_and_of_the_outline_cache() {
-    let font = hostile_outline_font(40, 16, 65_535);
     let limits = FontLimits::NATIVE;
+    // a composite that asks for 16 x 65,535 points (about a million path commands, 40 MB, before D3):
+    // the point cap of 2^16 stops it, and the peak is what was built before the stop
+    let font = hostile_outline_font(40, 16, 65_535);
+    let face = Face::parse(Arc::from(font.clone()), &limits).unwrap();
+    let (none, over) = measure(|| face.glyph_outline(2));
+    eprintln!(
+        "# worst case: one composite asking for 16 x 65,535 points of a {} KB file: {} at max_outline_points = 2^16, peak above start {}",
+        font.len() / 1024,
+        if none.is_none() { "None" } else { "an outline" },
+        mib(over.peak_above_start)
+    );
+    assert!(none.is_none(), "the composite is over the point cap");
+    assert!(over.live_delta <= 4096, "kept {} B after the refusal", over.live_delta);
+    // the largest outline the cap lets through: a 65,535-point glyph, alone and drawn by a composite
+    let font = hostile_outline_font(40, 1, 65_535);
     let face = Face::parse(Arc::from(font.clone()), &limits).unwrap();
     let (o, one) = measure(|| face.glyph_outline(2).unwrap());
     eprintln!(
@@ -698,7 +712,7 @@ fn worst_case_of_one_outline_and_of_the_outline_cache() {
     }
     let kept = thread_stats().live - base;
     eprintln!(
-        "# worst case: 40 distinct hostile glyphs of 40 MB each: the cache keeps {} (before the byte cap: 1560 MB, 80 GB at the 2,048-entry cap)",
+        "# worst case: 40 distinct hostile glyphs of 2.5 MB each: the cache keeps {} (before the byte cap: 1560 MB at 40 MB each, 80 GB at the 2,048-entry cap)",
         mib(kept)
     );
     assert_eq!(kept, 0, "an outline over 256 KiB of commands is not cached");

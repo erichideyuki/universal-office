@@ -18,7 +18,7 @@
 //!   point past the last point) is `None` (`outline.g4 nan`); a format-12 glyph id above `u32::MAX`
 //!   is saturated (`.g4 sat`);
 //! - G11 (hostile input): a `subset` output over `max_output_bytes` (accepted only when the facet equals the TS
-//!   with the cap lifted); a `gids` facet over the work budget of `glyph_ids_for` (same rule, `GIDS_BUDGET`); a `subset` case the TS never returns from (`subset.hang`, the S2 loop)
+//!   with the cap lifted); a `subset` case the TS never returns from (`subset.hang`, the S2 loop)
 //!   must give the input back; a facet the TS never returns from is `hang` and not compared.
 //!
 //! Recapture (needs a built checkout of main): see `capture_fonts.mjs`. Extended campaign (not committed):
@@ -37,7 +37,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use fonts_parity_support::corpus::{Entry, bytes_of, entries};
-use fonts_parity_support::facets::{depth_named, font_facets, gids_facet, subset_facet_with, ttc_facet};
+use fonts_parity_support::facets::{depth_named, font_facets, subset_facet_with, ttc_facet};
 use uo_fonts::FontLimits;
 use uo_testkit::{Capture, Replay, repo_root};
 
@@ -50,11 +50,6 @@ const NAMED_ACCEPTS: [(&str, &str, &str); 2] = [
     ("gen/h/names_budget", "info", "G11: `face_info` stops at its work budget (2^26 units) where the TS reads 8.8 x 10^7 characters"),
     ("gen/h/names_budget", "eot", "G11: `face_info` stops at its work budget, so there is no EOT where the TS builds one"),
 ];
-
-/// Fonts whose `gids` facet passes the work budget of `glyph_ids_for` (R-BUDGET, 2^26 units, G11) where the TS
-/// merely loops: the replay requires the facet to equal the TS once the budget is lifted. Real fonts do it too
-/// (Meiryo, 14,335 segments, over a 12,544-code-point block: 9 of the 620 local fonts).
-const GIDS_BUDGET: [&str; 1] = ["gen/h/cmap_many_ranges"];
 
 /// A `subset` facet that differs only because an output passes `max_output_bytes` (256 MiB, D4): the Rust gives
 /// the input back where the TS allocates the output (a mutant whose `loca` makes the glyphs 500 MB). The replay
@@ -120,11 +115,6 @@ fn compare_entry(shared: &Mutex<Shared<'_>>, cap: &Capture, e: &Entry, root: &Pa
             subset_facet_with(&bytes, &depth_named(e.depth), &hang, &lifted).0 == cap.get(key, facet).unwrap_or("")
         } {
             s.replay.accept(key, facet, actual, OUTPUT_CAP);
-        } else if facet == "gids" && GIDS_BUDGET.contains(&key) {
-            let lifted = FontLimits { max_table_work: u64::MAX, ..FontLimits::NATIVE };
-            let value = gids_facet(&bytes, &depth_named(e.depth), &lifted);
-            assert_ne!(&value, actual, "{key}: the budget no longer trips: drop it from GIDS_BUDGET");
-            s.replay.check(key, facet, &value);
         } else if let Some((_, _, why)) = NAMED_ACCEPTS.iter().find(|(k, f, _)| *k == key && f == facet) {
             s.replay.accept(key, facet, actual, why);
         } else {

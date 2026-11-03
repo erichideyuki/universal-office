@@ -393,13 +393,16 @@ pub fn embed_pool(root: &Path) -> Vec<(&'static str, Vec<u8>)> {
     ]
 }
 
-/// Fonts built to cost the TS far more than the port allows (G11): a `name` table of 5,400 records
-/// that all point at one 16,383-character string (the TS builds 8.8 x 10^7 characters, the port's
-/// `face_info` budget of 2^26 units stops it), and a simple glyph whose end points alternate
-/// `[59999, 0, ...]` so the contour walk re-emits 60,000 points for each pair (about 10^9 points in
-/// the TS, which runs out of memory; the port stops at `max_outline_points`), and a cmap of 20,000 one-code-point
-/// segments, where `glyph_ids_for` over a 12,544-code-point block costs the TS about 10^8 linear steps (0.3 s) and
-/// passes the port's work budget of 2^26 units (`gids` equals the TS once the budget is lifted).
+/// Fonts built to cost the TS far more than the port allows (G11), and one that used to: a `name` table of 5,400
+/// records that all point at one 16,383-character string (the TS builds 8.8 x 10^7 characters, the port's
+/// `face_info` budget of 2^26 units stops it), a simple glyph whose end points alternate `[59999, 0, ...]` so the
+/// contour walk re-emits 60,000 points for each pair (about 10^9 points in the TS, which runs out of memory; the
+/// port stops at `max_outline_points`), and a cmap of 20,000 sorted one-code-point segments, where `glyph_ids_for`
+/// over a 12,544-code-point block costs the TS about 10^8 linear steps (0.3 s). That last one passed the linear
+/// work budget of 2^26 units until gate 2 (D1): the port now bisects sorted ranges (about 15 steps per code point),
+/// so its `gids` facet equals the TS with no acceptance (it is the pin of D1: the capture is unchanged, the replay
+/// stopped needing the lifted budget). The linear path with the budget is pinned by Rust tests
+/// (`info_ttc.rs`, `d1_gids_binary_search.rs`).
 pub fn hostile_fonts() -> Vec<(&'static str, Vec<u8>)> {
     use crate::b_support::{font_with_glyphs, simple_glyph_ends};
     use uo_testkit::generate::sfnt::BeWriter;

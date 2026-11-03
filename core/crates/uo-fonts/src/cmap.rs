@@ -6,7 +6,7 @@
 //! are read whatever its score, then the format, then every segment or group in table order.
 
 use crate::error::{FontError, LimitKind, Result};
-use crate::limits::FontLimits;
+use crate::limits::{FontLimits, WorkBudget};
 use crate::read::{Tag, View};
 use crate::sfnt::table_of;
 
@@ -217,10 +217,18 @@ fn range_bounds(view: View<'_>, kind: &CmapKind, index: u32) -> (u32, u32) {
 
 /// Glyph ids of the code points for the embedding plan: its own cmap reader (score (3,10)=3,
 /// (3,1)=2, (0,*)=1, no (3,0); the offset of a record is read only when its score is better;
-/// formats 4 and 12; linear scans in table order), sorted, distinct, without 0. An unreadable
-/// cmap is an `Err` that fails the plan, as the TS throw does (G4, S13). Every segment or group
-/// visited per code point counts one unit of the work budget (`Err(Limit(TableWork))`, R-BUDGET).
-/// A format-12 id above `u32::MAX` is saturated.
+/// formats 4 and 12), sorted, distinct, without 0. An unreadable cmap is an `Err` that fails the
+/// plan, as the TS throw does (G4, S13). A format-12 id above `u32::MAX` is saturated.
+///
+/// The TS scans the segments or groups linearly, per code point, in table order, and takes the
+/// first match. When the ranges are in order (checked once per call, by `Index::build`, a
+/// single pass over the table that stops at the first violation) the port answers by binary search
+/// instead (D1, gate 2): the same segment or group, so the same result and the same errors, in
+/// `log2(n)` steps instead of `n` (Meiryo: 14,335 segments, 12,544 code points: 1.8 x 10^8 linear
+/// steps). Otherwise it keeps the TS scan. Either way each step (a segment or group visited by the
+/// scan, a probe of the search) counts one unit of the work budget (`Err(Limit(TableWork))`,
+/// R-BUDGET); the one-time order check is not counted (it reads the table once, as the parse
+/// does, and stops at the first read past the end).
 pub fn glyph_ids_for(bytes: &[u8], code_points: impl IntoIterator<Item = u32>, limits: &FontLimits) -> Result<Vec<u32>> {
     let view = View::new(bytes);
     let Some(cmap) = table_of(view, 0, Tag::CMAP)? else {
@@ -251,10 +259,12 @@ pub fn glyph_ids_for(bytes: &[u8], code_points: impl IntoIterator<Item = u32>, l
     let format = view.u16(best)?;
     let mut budget = limits.work();
     let mut out: Vec<u32> = Vec::new();
+    let mut index: Option<Index> = None;
     for cp in code_points {
+        let index = index.get_or_insert_with(|| Index::build(view, best, format));
         let g = match format {
-            4 => lookup_format4(view, best, cp, &mut budget)?,
-            12 => lookup_format12(view, best, cp, &mut budget)?,
+            4 => lookup_format4(view, best, cp, index, &mut budget)?,
+            12 => lookup_format12(view, best, cp, index, &mut budget)?,
             _ => 0,
         };
         if g != 0 {
@@ -266,7 +276,101 @@ pub fn glyph_ids_for(bytes: &[u8], code_points: impl IntoIterator<Item = u32>, l
     Ok(out)
 }
 
-fn lookup_format4(view: View<'_>, best: u64, cp: u32, budget: &mut crate::limits::WorkBudget) -> Result<u64> {
+/// How the lookups of one `glyph_ids_for` call find the segment or group: `Linear` is the TS scan;
+/// `Sorted` is the binary search over ranges whose order was checked (and whose reads all
+/// succeeded) once, with the number of segments or groups.
+///
+/// Why the search is the same as the scan. Format 4: the scan takes the first segment `s` with
+/// `end[s] >= cp`; when `end` is non-decreasing the predicate `end[s] < cp` is true for a prefix of
+/// the segments and false after it, so the first segment where it is false (the partition point,
+/// found by bisection) is that `s`; the checks after it (`cp < start`, the delta, the range
+/// offset) are the same code. Only the order of the ends matters: overlapping or empty segments
+/// do not change which one is first. Format 12: the scan takes the first group with
+/// `start <= cp <= end`; when every group has `start <= end` and each `end` is below the next
+/// `start`, at most one group contains `cp`, it is the first group with `end >= cp`, and every
+/// group before it ends below `cp` and every group after it starts above `cp`. A font that
+/// breaks the order (or whose table is cut so that a read fails: the scan returns early for some
+/// code points and throws for others, and that is kept) takes the scan.
+enum Index {
+    Linear,
+    Sorted(u64),
+}
+
+impl Index {
+    fn build(view: View<'_>, best: u64, format: u16) -> Index {
+        let sorted = match format {
+            4 => Self::sorted_format4(view, best),
+            12 => Self::sorted_format12(view, best),
+            _ => None,
+        };
+        sorted.map_or(Index::Linear, Index::Sorted)
+    }
+
+    fn sorted_format4(view: View<'_>, best: u64) -> Option<u64> {
+        let seg_x2 = u64::from(view.u16(best + 6).ok()?);
+        let ends = best + 14;
+        let count = seg_x2.div_ceil(2);
+        let mut previous = 0;
+        for i in 0..count {
+            let end = view.u16(ends + i * 2).ok()?;
+            if end < previous {
+                return None;
+            }
+            previous = end;
+        }
+        Some(count)
+    }
+
+    fn sorted_format12(view: View<'_>, best: u64) -> Option<u64> {
+        let groups = u64::from(view.u32(best + 12).ok()?);
+        let mut previous_end: Option<u32> = None;
+        for i in 0..groups {
+            let p = best + 16 + i * 12;
+            let a = view.u32(p).ok()?;
+            let b = view.u32(p + 4).ok()?;
+            if a > b || previous_end.is_some_and(|e| e >= a) {
+                return None;
+            }
+            previous_end = Some(b);
+        }
+        Some(groups)
+    }
+}
+
+/// The first index in `0..count` whose key is not below `cp` (`count` when none is): the
+/// bisection of D1, one unit of the work budget per probe.
+fn partition_point(count: u64, budget: &mut WorkBudget, mut below: impl FnMut(u64) -> Result<bool>) -> Result<u64> {
+    let (mut lo, mut hi) = (0, count);
+    while lo < hi {
+        budget.tick()?;
+        let mid = lo + (hi - lo) / 2;
+        if below(mid)? {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(lo)
+}
+
+/// Format 4 from the segment `s` (a byte offset into the arrays, `2 * index`) whose end is not
+/// below `cp`: the checks and the glyph of the TS.
+fn format4_segment(view: View<'_>, arrays: [u64; 3], s: u64, cp: u32) -> Result<u64> {
+    let [starts, deltas, ranges] = arrays;
+    let start = u32::from(view.u16(starts + s)?);
+    if cp < start {
+        return Ok(0);
+    }
+    let delta = i64::from(view.i16(deltas + s)?);
+    let range_offset = u64::from(view.u16(ranges + s)?);
+    if range_offset == 0 {
+        return Ok(u64::from(wrap16(i64::from(cp) + delta)));
+    }
+    let g = view.u16(ranges + s + range_offset + u64::from(cp - start) * 2)?;
+    Ok(if g != 0 { u64::from(wrap16(i64::from(g) + delta)) } else { 0 })
+}
+
+fn lookup_format4(view: View<'_>, best: u64, cp: u32, index: &Index, budget: &mut WorkBudget) -> Result<u64> {
     if cp > 0xFFFF {
         return Ok(0);
     }
@@ -275,6 +379,11 @@ fn lookup_format4(view: View<'_>, best: u64, cp: u32, budget: &mut crate::limits
     let starts = ends + seg_x2 + 2;
     let deltas = starts + seg_x2;
     let ranges = deltas + seg_x2;
+    let arrays = [starts, deltas, ranges];
+    if let Index::Sorted(count) = *index {
+        let s = partition_point(count, budget, |i| Ok(u32::from(view.u16(ends + i * 2)?) < cp))?;
+        return if s == count { Ok(0) } else { format4_segment(view, arrays, s * 2, cp) };
+    }
     let mut s = 0;
     while s < seg_x2 {
         budget.tick()?;
@@ -282,23 +391,22 @@ fn lookup_format4(view: View<'_>, best: u64, cp: u32, budget: &mut crate::limits
             s += 2;
             continue;
         }
-        let start = u32::from(view.u16(starts + s)?);
-        if cp < start {
-            return Ok(0);
-        }
-        let delta = i64::from(view.i16(deltas + s)?);
-        let range_offset = u64::from(view.u16(ranges + s)?);
-        if range_offset == 0 {
-            return Ok(u64::from(wrap16(i64::from(cp) + delta)));
-        }
-        let g = view.u16(ranges + s + range_offset + u64::from(cp - start) * 2)?;
-        return Ok(if g != 0 { u64::from(wrap16(i64::from(g) + delta)) } else { 0 });
+        return format4_segment(view, arrays, s, cp);
     }
     Ok(0)
 }
 
-fn lookup_format12(view: View<'_>, best: u64, cp: u32, budget: &mut crate::limits::WorkBudget) -> Result<u64> {
+fn lookup_format12(view: View<'_>, best: u64, cp: u32, index: &Index, budget: &mut WorkBudget) -> Result<u64> {
     let groups = u64::from(view.u32(best + 12)?);
+    if let Index::Sorted(count) = *index {
+        let i = partition_point(count, budget, |i| Ok(view.u32(best + 16 + i * 12 + 4)? < cp))?;
+        if i == count {
+            return Ok(0);
+        }
+        let p = best + 16 + i * 12;
+        let a = view.u32(p)?;
+        return if a <= cp { Ok(u64::from(view.u32(p + 8)?) + u64::from(cp - a)) } else { Ok(0) };
+    }
     for i in 0..groups {
         budget.tick()?;
         let p = best + 16 + i * 12;

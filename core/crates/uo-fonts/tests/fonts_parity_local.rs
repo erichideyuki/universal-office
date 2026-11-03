@@ -18,8 +18,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use fonts_parity_support::facets::{depth_named, digest_of, font_facets, gids_facet, ttc_facet};
-use uo_fonts::FontLimits;
+use fonts_parity_support::facets::{depth_named, digest_of, font_facets, ttc_facet};
 use uo_testkit::{Capture, Replay, opt_in};
 
 #[test]
@@ -98,23 +97,8 @@ fn local_fonts_match_the_ts() {
         report.summary(),
         tally.into_inner().unwrap()
     );
-    let mut unexplained = 0;
     for m in report.mismatches.iter().take(200) {
         eprintln!("MISMATCH {} [{}] ts {:?} rust {}", m.key, m.facet, m.expected, m.actual);
-        // `gids` over the 12,544-code-point block: the work budget of `glyph_ids_for` (R-BUDGET); with the budget
-        // lifted the facet must equal the TS
-        let explained = m.facet == "gids" && {
-            let path = {
-                let rest = m.key.strip_prefix("local").unwrap();
-                let (d, rel) = rest.split_once('/').unwrap();
-                std::path::Path::new(&dirs[d.parse::<usize>().unwrap()]).join(rel)
-            };
-            let bytes = std::fs::read(path).unwrap();
-            let lifted = FontLimits { max_table_work: u64::MAX, ..FontLimits::NATIVE };
-            Some(gids_facet(&bytes, &depth, &lifted)) == m.expected
-        };
-        eprintln!("  budget of glyph_ids_for explains it: {explained}");
-        unexplained += usize::from(!explained);
     }
-    assert_eq!(unexplained, 0, "mismatches the work budget does not explain");
+    assert!(report.mismatches.is_empty(), "{} mismatches", report.mismatches.len());
 }

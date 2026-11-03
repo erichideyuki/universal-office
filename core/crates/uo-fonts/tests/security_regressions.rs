@@ -167,8 +167,8 @@ fn dense_glyph(points: u32) -> Vec<u8> {
 }
 
 /// S4-5 (found by the memory verifier as well, and fixed there with the byte caps of
-/// `OutlineCache`): the outline cache was capped by entries only, while one outline can hold 2^20
-/// points (a composite of 16 copies of a 65,536-point glyph that costs 512 bytes): 2,048 cached
+/// `OutlineCache`): the outline cache was capped by entries only, while one outline could hold 2^20
+/// points before D3 lowered the limit to 2^16 (a composite of 16 copies of a 65,536-point glyph that costs 512 bytes): 2,048 cached
 /// outlines of 42 MB each is far beyond any memory (the wasm tab dies after about 100).
 #[test]
 fn s4_5_outline_cache_is_bounded_in_commands() {
@@ -191,7 +191,8 @@ fn s4_5_outline_cache_is_bounded_in_commands() {
     assert!(Arc::ptr_eq(&a, &b));
 }
 
-/// Evidence of proposal P1 (opt-in, reads the fonts of `UO_LOCAL_FONTS`, e.g. `C:\Windows\Fonts`;
+/// Evidence of proposal P1, resolved by D1 of gate 2 (sorted ranges are bisected: every character fits the
+/// budget now; the printed line says so; opt-in, reads the fonts of `UO_LOCAL_FONTS`, e.g. `C:\Windows\Fonts`;
 /// nothing is copied): `glyph_ids_for` scans the subtable linearly per code point, so the work
 /// budget fails the embedding plan of a legitimate CJK document from some thousands of distinct
 /// characters (Yu Gothic: 10,505 kanji; Malgun Gothic: all 27,133 characters).

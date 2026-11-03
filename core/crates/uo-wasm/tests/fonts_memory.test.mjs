@@ -107,7 +107,7 @@ test(`M2 long-lived in wasm, ${ROUNDS} rounds: bounded by the caches, byteLength
 });
 
 test('worst case per limit with the wasm32 limits: peak live bytes, and what the module keeps (never shrinks)', () => {
-  const names = ['gsub-30000-ligature-sets', 'gpos-1500-class0-entries', 'gpos-pair-map-to-the-cap (2048 x 2048)', 'outline-4-composites-of-40-MB',
+  const names = ['gsub-30000-ligature-sets', 'gpos-1500-class0-entries', 'gpos-pair-map-to-the-cap (1024 x 1024 = 2^20)', 'outline-4-composites-asking-for-1M-points (stopped at 2^16)',
     'subset-overlapping-glyphs (60 MB output)', 'ttc-every-table-is-the-whole-file'];
   assert.equal(w.uo_fonts_memtest_hostile_count(), names.length);
   const rows = [];

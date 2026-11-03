@@ -275,8 +275,9 @@ fn a_cmap_that_cannot_be_read_is_an_error_even_without_code_points() {
 }
 
 #[test]
-fn the_plan_reader_counts_every_segment_or_group_against_the_work_budget() {
-    let groups: Vec<(u32, u32, u32)> = (0..1000).map(|i| (i * 4, i * 4 + 1, i + 1)).collect();
+fn the_plan_reader_counts_every_segment_or_group_of_the_linear_scan_against_the_work_budget() {
+    let mut groups: Vec<(u32, u32, u32)> = (0..1000).map(|i| (i * 4, i * 4 + 1, i + 1)).collect();
+    groups.push((0, 1, 5000));
     let bytes = cmap_font(&[(3, 10, format12(&groups))]);
     let run = |work: u64, cp: u32| glyph_ids_for(&bytes, [cp], &FontLimits { max_table_work: work, ..FontLimits::DEFAULT });
     assert_eq!(run(1, 0), Ok(vec![1]));
@@ -284,11 +285,12 @@ fn the_plan_reader_counts_every_segment_or_group_against_the_work_budget() {
     assert_eq!(run(20, 80), Err(FontError::Limit(LimitKind::TableWork)));
     assert_eq!(run(999, 3996), Err(FontError::Limit(LimitKind::TableWork)));
     assert_eq!(run(1000, 3996), Ok(vec![1000]));
-    assert_eq!(run(999, 3999), Err(FontError::Limit(LimitKind::TableWork)), "a code point in no group visits all of them");
-    assert_eq!(run(1000, 3999), Ok(vec![]));
+    assert_eq!(run(1000, 3999), Err(FontError::Limit(LimitKind::TableWork)), "a code point in no group visits all of them");
+    assert_eq!(run(1001, 3999), Ok(vec![]));
     let two = glyph_ids_for(&bytes, [0, 0, 0], &FontLimits { max_table_work: 2, ..FontLimits::DEFAULT });
     assert_eq!(two, Err(FontError::Limit(LimitKind::TableWork)), "one budget for the whole call");
-    let segs: Vec<Seg> = (0..100).map(|i| seg(i * 8, i * 8 + 1, 0)).collect();
+    let mut segs: Vec<Seg> = (0..100).map(|i| seg(i * 8, i * 8 + 1, 0)).collect();
+    segs.push(seg(5, 0, 0));
     let b4 = cmap_font(&[(3, 1, format4(&segs, &[], None))]);
     let r = glyph_ids_for(&b4, [0x31F], &FontLimits { max_table_work: 99, ..FontLimits::DEFAULT });
     assert_eq!(r, Err(FontError::Limit(LimitKind::TableWork)));
