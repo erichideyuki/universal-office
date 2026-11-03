@@ -50,7 +50,7 @@ fn caseless_fallback_follows_the_policy() {
     let bytes = sample();
     let exact = open(&bytes);
     assert_eq!(exact.find("xl/worksheets/sheet1.xml").unwrap(), None);
-    let sheet = Package::open(&bytes, &Limits::DEFAULT, &OpenOptions { case_fold: CaseFold::Unicode, ..OpenOptions::default() }).unwrap();
+    let sheet = Package::open(&bytes, &Limits::DEFAULT, &OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() }).unwrap();
     assert_eq!(sheet.find("xl/worksheets/sheet1.xml").unwrap().unwrap(), b"<sheet/>");
     assert_eq!(sheet.find_name("XL/WORKSHEETS/SHEET1.XML"), Some("xl/worksheets/Sheet1.xml"));
     assert_eq!(sheet.part("xl/worksheets/sheet1.xml").unwrap(), None, "part() is exact");
@@ -59,22 +59,11 @@ fn caseless_fallback_follows_the_policy() {
 }
 
 #[test]
-fn unicode_and_ascii_folding_differ() {
-    // 'É' folds to 'é' in JS toLowerCase, not in ASCII folding
-    let bytes = zip::write([("É.xml", &b"x"[..]), ("A.xml", b"y")], WriteOptions::default()).unwrap();
-    let uni = Package::open(&bytes, &Limits::DEFAULT, &OpenOptions { case_fold: CaseFold::Unicode, ..OpenOptions::default() }).unwrap();
-    let ascii = Package::open(&bytes, &Limits::DEFAULT, &OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() }).unwrap();
-    assert_eq!(uni.find_name("é.xml"), Some("É.xml"));
-    assert_eq!(ascii.find_name("é.xml"), None);
-    assert_eq!(ascii.find_name("a.XML"), Some("A.xml"));
-}
-
-#[test]
 fn caseless_index_takes_the_first_part_and_is_rebuilt_after_edits() {
     let mut p = Package::from_parts(
         [("a/X.xml".to_string(), b"1".to_vec()), ("a/x.XML".to_string(), b"2".to_vec())],
         &Limits::DEFAULT,
-        &OpenOptions { case_fold: CaseFold::Unicode, ..OpenOptions::default() },
+        &OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() },
     );
     assert_eq!(p.find("A/X.XML").unwrap().unwrap(), b"1");
     assert!(p.remove_part("a/X.xml"));
@@ -284,7 +273,7 @@ fn hostile_inputs_never_panic() {
         if let Ok(p) = Package::open(
             &d,
             &Limits { max_total_bytes: 1 << 20, ..Limits::DEFAULT },
-            &OpenOptions { case_fold: CaseFold::Unicode, ..OpenOptions::default() },
+            &OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() },
         ) {
             let names: Vec<String> = p.part_names().map(str::to_string).collect();
             for n in &names {

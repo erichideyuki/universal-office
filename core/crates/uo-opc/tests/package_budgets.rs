@@ -87,7 +87,9 @@ fn m3_giant_xlsx_save_edited_sheet() {
     let (saved, u) = measure(|| pkg.save(&SaveOptions::default()).unwrap());
     println!("giant-1m save with sheet1 deflated: output {} B", saved.len());
     assert_eq!(saved.capacity(), saved.len());
-    check("giant-1m save edited sheet", u, 11_017_000, 6_627_000);
+    // gate 3, R4: deflated at level 4 the archive is 0.8% larger (2,878,818 B; 2,856,819 B at
+    // level 6), and so the output buffer (11,017,000 and 6,627,000 B at level 6)
+    check("giant-1m save edited sheet", u, 11_064_000, 6_662_000);
 }
 
 /// The largest `document.xml` of the oracle corpus (`justify4/sw-16-8.docx`, 188 KB).

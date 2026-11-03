@@ -112,7 +112,7 @@ fn d3_xml_part_finds_and_decodes_like_the_text_readers() {
     let bytes =
         zip::write([("xl/Workbook.xml", &b"\xEF\xBB\xBF<workbook/>"[..]), ("u16.xml", &utf16[..])], WriteOptions::default()).unwrap();
     let sheet =
-        Package::open(&bytes, &Limits::DEFAULT, &OpenOptions { case_fold: CaseFold::Unicode, utf16_text: true, ..OpenOptions::default() })
+        Package::open(&bytes, &Limits::DEFAULT, &OpenOptions { case_fold: CaseFold::Ascii, utf16_text: true, ..OpenOptions::default() })
             .unwrap();
     assert_eq!(sheet.xml_part("xl/workbook.xml", &SHEET).unwrap().root().name(), "workbook");
     assert_eq!(sheet.xml_part("u16.xml", &ParseOptions::LENIENT).unwrap().root().name(), "é");
@@ -338,7 +338,7 @@ fn d6_resolve_target_returns_the_name_the_package_opens() {
         ("A.xml", b"upper"),
     ];
     let bytes = zip::write(parts, WriteOptions::default()).unwrap();
-    for case_fold in [CaseFold::None, CaseFold::Unicode, CaseFold::Ascii] {
+    for case_fold in [CaseFold::None, CaseFold::Ascii] {
         let mut p = Package::open(&bytes, &Limits::DEFAULT, &OpenOptions { case_fold, ..OpenOptions::default() }).unwrap();
         let r = |p: &Package, t: &str| p.resolve_target("word/document.xml", t).map(str::to_owned);
         assert_eq!(r(&p, "media/image1.png").as_deref(), Some("word/media/Image1.PNG"));
@@ -352,9 +352,9 @@ fn d6_resolve_target_returns_the_name_the_package_opens() {
             assert_eq!(r(&p, none), None, "{none:?}");
         }
         // security P3: U+212A KELVIN SIGN lowercases to `k` in Unicode; the OPC rule folds ASCII
-        // only, so the target names no part, whatever the package's lookup policy
+        // only, so the target names no part, and since R2 (gate 3) no lookup policy opens it
         assert_eq!(r(&p, "media/\u{212A}.png"), None);
-        assert_eq!(p.find_name("word/media/\u{212A}.png").is_some(), case_fold == CaseFold::Unicode);
+        assert_eq!(p.find_name("word/media/\u{212A}.png"), None);
         // what the validator checks is what `part` opens
         let name = r(&p, "media/IMAGE1.png").unwrap();
         assert_eq!(p.part(&name).unwrap().unwrap(), b"png");

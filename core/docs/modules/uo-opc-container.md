@@ -1,6 +1,6 @@
 # uo-opc — the document container layer
 
-Record of the rust-port workflow. Status: **gate 3 approved 2026-11-01** (stage-6 findings, the numbers, and R1–R5: R1, R2, R3, R5 as proposed; R4 as the final skeptic revised it — default level 4, `level` keeps meaning the miniz level). Next: apply R1–R5.
+Record of the rust-port workflow. Status: **gate 3 approved and implemented; uo-opc done for 0.10** (gate 3 approved 2026-11-01: the stage-6 findings, the numbers, and R1–R5 — R1, R2, R3, R5 as proposed; R4 as the final skeptic revised it, default level 4 with `level` keeping its miniz meaning; implemented 2026-11-02, see "Gate 3 decisions — implemented").
 
 ## Scope
 
@@ -1247,3 +1247,142 @@ Maintainer, verbatim: "Eu aprovo tudo" — every final recommendation accepted.
 - R3 Sheet and Slides `resolveRelTarget` → D6, together with S3 (D6 content-type lookup).
 - R4 the final skeptic's version: the default save level becomes 4; an explicit level keeps meaning that miniz level.
 - R5 keep the depth limit of 1,000 for Sheet and Slides (CHANGELOG).
+
+## Gate 3 decisions — implemented (2026-11-02)
+
+All five decisions are in the crate. Parity differences they cause are accepted by name in the
+replay, with counts pinned to the stage-5 evidence; no comparison was loosened. The capture
+(`tests/parity/opc.cap`, the frozen TS) is unchanged.
+
+### What the format crates use from now on
+
+- **Relationship targets: D6 only.** `uo-docx`, Sheet and Slides resolve every relationship target
+  with `Package::resolve_target(source_part, target)` (the OPC rule of the C# `OpcPartName`, then
+  the exact name, else ASCII case folding) and open the name it returns. The 0.9.x rules (Write
+  `./` stripped, `/x` → `x`, else `word/${target}` with an exact lookup; Sheet/Slides
+  `resolveRelTarget` with a Unicode-lowercase or exact lookup) are gone from the policies of
+  `tests/parity_support/mod.rs`; `parity_support::legacy` reproduces them only to explain the
+  captured TS in the replay and in `examples/opc_rule_evidence.rs`. Content types: the D6 lookup
+  `ContentTypes::content_type_of_part` (S3); `content_type_of_exact` stays only where a crate
+  must match Slides 0.9 exactly.
+- **Case folding: ASCII only.** `CaseFold` is `None` (Write, Slides, ODF) or `Ascii` (Sheet).
+
+### R1 / R3 — the D6 path for Write, Sheet and Slides
+
+- `parity_support`: `App::resolve(pkg, owner, target)` is the D6 path for the three apps
+  (`RuleOutcome { name, found }`, streamed as `R` + the resolved name, or `U` when the target names
+  no part, then `F` + exact / `N`, the capture's encoding). `rels_value` also streams the facet with
+  `legacy::resolve` and lists every relationship whose outcome differs, classified by decision
+  (`Rule::{R1, R2, R3}`: Write → R1; Sheet with the same resolved name → R2; else R3) and by
+  outcome change.
+- `opc_parity.rs`: a `rels` facet that differs is accepted only when the 0.9.x rules give exactly
+  the captured value; the reason names the decisions (`R1`, `R3`, `R2`). Each test pins the
+  relationships changed per decision and, for real files, the inputs; every test also asserts that
+  no relationship goes from found to missing.
+
+| Share | R1 | R2 | R3 | Inputs |
+|---|---|---|---|---|
+| oracle docx (4 tests), sheet samples, slides samples | 0 | 0 | 0 | none |
+| other fixtures | 2 (missing → found) | 0 | 0 | `site/assets/samples/demo.docx`: `../customXml/item1.xml`, `item2.xml` (Word wrote them; 0.9 looked for `word/../customXml/…`) |
+| quirk corpus | 2,059 (851 missing → found, 1 another part, 1,207 another resolved name with the same outcome) | 0 | 7,568: Sheet 3,421 (825, 1, 2,595), Slides 4,147 (1,177, 1, 2,969) | 171 Write and 353 Sheet/Slides `rels` facets |
+
+- The evidence tool now reads the packages the replay compares (the six that D1 stops at load are
+  taken as fflate holds them, `load_as_fflate_d1`): quirk corpus 532 packages and 22,974
+  relationships (stage 5: 526 and 22,704), missing → found Write 851 (case 178, fragment 170,
+  parent segment 338, percent-encoding 165), Sheet 825 (dot segment 331, fragment 331,
+  percent-encoding 163), Slides 1,177 (case 351, dot segment 332, fragment 332, percent-encoding
+  162), one "another part" per app (`quirk/010-percent-names`), and per app the relationships whose
+  resolved name or part differs (Write 2,059, Sheet 3,421, Slides 4,147): the replay's counts.
+  Real files unchanged: 2,819 packages, 9,289 relationships, the two `demo.docx` targets.
+
+### R2 — Sheet folds ASCII
+
+- `CaseFold::Unicode` removed (no user left). `Package` keeps one ASCII index instead of two: the
+  fallback of `find` under `CaseFold::Ascii` and of `resolve_target` (`Package::folded`).
+- Sheet's open options in the parity policy, the memory support, the wasm `opc-memtest` export and
+  the fuzz targets use `CaseFold::Ascii`; the `caseless` fuzz target checks the two policies
+  against its model.
+- Parity: 0 differences (no `load`, `edit` or `rels` facet of any share changed; the R2 count is 0
+  in every test). Evidence tool: 0 Sheet lookups where Unicode and ASCII disagree, in real files
+  and quirks.
+- Tests: `gate3_decisions::r2_sheet_folds_ascii_only` (`É`/`é` and U+212A not folded, ASCII case
+  folded, the same index answering `resolve_target`); `gate2_decisions::d6_*` (no policy opens the
+  KELVIN SIGN target); `cache_caps::m5_caseless_index` (now through the ASCII index) and
+  `m5_ascii_index_of_resolve_target` (one index for both lookups); `package_ops` and `api_memory`
+  over the two policies.
+
+### R4 — default save level 4
+
+- `zip::DEFAULT_LEVEL = 4`; `WriteOptions::default()` (and so `SaveOptions::default()`) uses it. An
+  explicit `level` is passed to miniz_oxide as is, as by `flate::deflate_raw`, `Deflater` and
+  `zlib` (the `deflate_raw` doc said "fflate levels"; now "miniz_oxide level").
+- Test: `gate3_decisions::r4_default_level_is_4_and_a_level_is_the_miniz_level` (default 4; for
+  levels 1–9 the deflated stream of `Package::save`, `ZipWriter` and `zip::write` is
+  `deflate_raw(data, level)`; levels 4 and 6 differ on the sample; the contents read back equal).
+- Numbers (same machine, back to back; native `opc_bench`, best of 5):
+
+| | level 6 | level 4 (default) |
+|---|---|---|
+| giant edit + save, native | 789.1 ms, 2,856,998 B | **162.3 ms, 2,878,989 B (+0.77%)** |
+| giant edit + save, allocated / peak | 100,122,802 / 63,435,928 B | 100,169,716 / 63,435,928 B |
+| giant edit + save, wasm (`tools/bench/opc/wasm.mjs`) | 941.1 ms (gate-3 bench run) | **193.4 ms**, 2,878,989 B |
+| TS (V8, fflate 6; gate-3 bench run) | 556 ms, 2,848,422 B | — |
+| sw-16-8 edit + save | 5,358 B | 5,360 B |
+| 17,798 oracle parts, `deflate_raw` each | 7,273,466 B in 253.3 ms | 7,285,735 B (+0.17%) in 238.3 ms |
+| the 2,742 oracle docx rewritten and saved | 9,335,444 B | 9,347,713 B (+0.13%) |
+
+  The giant edit + save is now faster than the TS (162 / 193 ms against 556 ms); the other
+  scenarios are unchanged (oracle 240.4 ms, giant open + parse 175.6 ms, inflate 28.2 ms native).
+- M3 budgets: only `giant-1m save edited sheet` moved, by the larger output (2,856,819 →
+  2,878,818 B): allocated 11,017,000 → 11,064,000 B, peak 6,627,000 → 6,662,000 B (recorded in
+  `package_budgets.rs` with the reason). Every other budget measured as before (deck edit + save
+  17,768,362 B, sw-16-8 edit + save 2,659,849 B, giant save untouched 3,297,440 B). No time budget
+  exists in the tests.
+
+### R5 — depth 1,000 for Sheet and Slides
+
+- Unchanged behaviour (in place since D3); now pinned by
+  `gate3_decisions::r5_depth_limit_of_1000_for_sheet_and_slides`: `Limits::{NATIVE, WASM32,
+  DEFAULT}.max_xml_depth == 1_000`; through `xml_part` the `sheet`, `sheet-chart`, `slides` and
+  `docx-pos` presets parse 1,000 levels and refuse 1,001 with `Limit { XmlDepth, max: 1000, part }`;
+  the Sheet/Slides presets alone have no limit (1,001 levels parse). Evidence tool: deepest part 25
+  (real files) and 7 (quirks), none above 1,000. The CHANGELOG line is no longer "pending".
+
+### CHANGELOG
+
+"Unreleased — 0.10 (Rust core)", container layer: R5 marked decided; new entries for R1/R3 (one
+relationship rule for the three apps, the `demo.docx` example, no part lost), R2 (ASCII folding)
+and R4 (level 4 by default, 160 vs 790 ms, +0.8% / +0.13–0.17%, an explicit level is the
+miniz_oxide level); internal API: `CaseFold::Unicode` gone, `zip::DEFAULT_LEVEL`.
+
+### Checks run
+
+- `cargo fmt --check` (`-p uo-opc -p uo-wasm`, and `core/fuzz`): clean.
+- `cargo clippy -p uo-opc -p uo-testkit -p uo-wasm -p uo-alloc -p uo-ffi --all-targets
+  --all-features -- -D warnings` and `cargo clippy --all-targets -- -D warnings` in `core/fuzz`:
+  clean. The workspace-wide clippy fails only in `crates/uo-jsnum` (stage-3 port in progress by
+  another agent, not touched here).
+- `cargo test --release --all-features -p uo-opc -p uo-testkit -p uo-wasm`: 225 pass, 1 ignored
+  (the soak); the parity replay 0 mismatches, accepted by name G4, D1, D4, R1 (1 + 171 facets) and
+  R3 (353 facets). The 1,000-iteration native soak: 771,375 B × 21 flat.
+- Wasm (`count,opc-memtest`, 268,368 B, was 268,717 B; the Safari 15 feature check passes):
+  `node --expose-gc --test crates/uo-wasm/tests/boundary.test.mjs` 4/4,
+  `node --test crates/uo-wasm/tests/opc_memory.test.mjs` 5/5 (M2 1,000 iterations: 0 B live,
+  `byteLength` 2,293,760 B flat, 13.1 s; M1 +268,500,992 B, 1.00 × the source). `opc-bench`
+  module 288,568 B (was 288,917 B).
+- Fuzz fallback, 10 s per target: 0 crashes (zip_open 82,076 execs, zip_roundtrip 224,962,
+  zip_write 149,637, inflate 500,223, cfb 4,421,946, xml_lenient 729,211, xml_strict 788,698,
+  escape_roundtrip 273,731, raw_surgery 1,293,215, rels 216,236, content_types 191,996, caseless
+  120,746, part_text 1,609,845, resolver 3,503,993).
+- Cross readers (`UO_TS_PARITY=1 UO_DOTNET_PARITY=1`, `UO_TS_ROOT` = the clickcompliance-docx
+  checkout): 10,053 saved archives read identically by fflate, uo-opc and .NET `ZipArchive` (the
+  saves now at level 4).
+
+Not run here: the WebKit runner (`browser/run.mjs`) and real Safari; a full
+`tools/bench/run.mjs --main …` table (the Rust runners were re-run, the TS column is the gate-3
+run's). "Process metrics" has no row for this round (the orchestrator times the agents).
+
+Files: `src/{package,zip,flate}.rs`; tests `gate3_decisions.rs` (new), `opc_parity.rs`,
+`parity_support/mod.rs`, `gate2_decisions.rs`, `cache_caps.rs`, `package_ops.rs`,
+`package_budgets.rs`, `api_memory.rs`, `package_memory.rs`, `memory_support/mod.rs`;
+`examples/opc_rule_evidence.rs`; `uo-wasm/src/opc_memtest.rs`; `fuzz/src/lib.rs`; `CHANGELOG.md`.

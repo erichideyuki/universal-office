@@ -10,7 +10,8 @@
 //! - `load`: ordered part names and part bytes, or the error class (eager, as the TS load);
 //! - `xml`: every XML-like part parsed with the app's presets, canonical trees with positions
 //!   (UTF-8 offsets) where Write uses them;
-//! - `rels`: every relationship in the app's scope, the app's target rule and lookup outcome;
+//! - `rels`: every relationship in the app's scope, resolved by the decided rule (D6,
+//!   `Package::resolve_target`, for the three apps) and the lookup outcome;
 //! - `save`: the package saved, listed by an independent central directory reader and read back
 //!   by uo-opc (names, order, UTF-8 flag, method, decompressed bytes) — the TS side saved with
 //!   `zipSync` and read back with fflate;
@@ -28,7 +29,16 @@
 //!   those entries by fflate's zeros gives the captured package, and the other facets are then
 //!   compared on that package;
 //! - D4: after an entry named `__proto__` fflate drops canonical numeric names that are not
-//!   indices of its bytes; uo-opc keeps them (accepted when that drop is the whole difference).
+//!   indices of its bytes; uo-opc keeps them (accepted when that drop is the whole difference);
+//! - R1, R2, R3 (gate 3): every app resolves relationship targets by the D6 path (the OPC rule,
+//!   ASCII case folding) instead of its 0.9.x rule (R1 Write's `word/${target}`, R3 Sheet and
+//!   Slides `resolveRelTarget` and the Slides exact lookup) and Sheet folds part names ASCII only
+//!   (R2, JS `toLowerCase` in 0.9.x). A `rels` facet is accepted when the 0.9.x rules
+//!   (`parity_support::legacy`) give exactly the captured value; every relationship that differs
+//!   is counted by decision and outcome, and each test pins those counts to the stage-5
+//!   evidence (`examples/opc_rule_evidence.rs`): on real files only R1, the two `customXml`
+//!   targets of `site/assets/samples/demo.docx`, found by D6 where Write looked for
+//!   `word/../customXml/item1.xml`; R2 nowhere.
 //!
 //! D5 (an entry is copied raw on save only when verified) changes no facet: a rewritten entry
 //! holds the bytes the reader produced, which is what the save facets compare.
@@ -42,12 +52,12 @@
 mod parity_support;
 mod xml_support;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 use parity_support::{
-    App, G5, Tally, cfb_value, edit, input_digest, js_proto_dropped, load, load_as_fflate_d1, load_value, quirks, rels_value, save_raw,
-    save_rewritten, save_value, xml_value,
+    App, G5, Rule, Tally, cfb_value, edit, input_digest, js_proto_dropped, load, load_as_fflate_d1, load_value, quirks, rels_value,
+    save_raw, save_rewritten, save_value, xml_value,
 };
 use uo_opc::cfb::is_cfb;
 use uo_testkit::{Capture, Replay, repo_root};
@@ -55,6 +65,30 @@ use uo_testkit::{Capture, Replay, repo_root};
 const G4: &str = "G4: raw copy of untouched entries keeps the source method";
 const D1: &str = "D1: an empty deflate stream with a declared size is Corrupt (fflate: that many zeros)";
 const D4: &str = "D4: after a `__proto__` entry fflate drops canonical numeric names that are not indices of its bytes; uo-opc keeps them";
+const R1: &str = "R1: Write resolves relationship targets by the OPC rule (D6), not `word/${target}` with an exact lookup";
+const R2: &str = "R2: Sheet folds part names ASCII only (JS `toLowerCase` in 0.9)";
+const R3: &str =
+    "R3: Sheet and Slides resolve relationship targets by the OPC rule (D6), not `resolveRelTarget` (Slides: with an exact lookup)";
+
+fn reason(rule: Rule) -> &'static str {
+    match rule {
+        Rule::R1 => R1,
+        Rule::R2 => R2,
+        Rule::R3 => R3,
+    }
+}
+
+/// What a share of the capture must show for R1, R2 and R3 (the stage-5 evidence): the number
+/// of relationships each decision changes, and the inputs whose `rels` facet is accepted (when
+/// the share is of real files).
+struct Expected<'a> {
+    r1: u64,
+    r2: u64,
+    r3: u64,
+    inputs: Option<&'a [&'a str]>,
+}
+
+const NONE: Expected<'static> = Expected { r1: 0, r2: 0, r3: 0, inputs: Some(&[]) };
 
 fn capture() -> Capture {
     Capture::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity/opc.cap")).unwrap()
@@ -70,6 +104,16 @@ struct Counts {
     d1: u64,
     d4: u64,
     edits: u64,
+    /// relationships accepted per (decision, app, outcome change)
+    rules: BTreeMap<(Rule, &'static str, &'static str), u64>,
+    rule_inputs: BTreeSet<String>,
+    rule_examples: Vec<String>,
+}
+
+impl Counts {
+    fn rule(&self, rule: Rule) -> u64 {
+        self.rules.iter().filter(|((r, _, _), _)| *r == rule).map(|(_, n)| n).sum()
+    }
 }
 
 fn container(key: &str) -> &str {
@@ -80,7 +124,7 @@ fn bucket(key: &str, n: u32) -> u32 {
     container(key).bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(u32::from(b))) % n
 }
 
-fn replay(name: &str, keep: impl Fn(&str) -> bool) {
+fn replay(name: &str, keep: impl Fn(&str) -> bool, expected: &Expected<'_>) {
     let full = capture();
     let cap = full.subset(|k| keep(k));
     assert!(!cap.is_empty(), "{name}: nothing to replay");
@@ -169,9 +213,24 @@ fn replay(name: &str, keep: impl Fn(&str) -> bool) {
             let (v, st) = xml_value(app, &pkg, &g5, &mut tally, traced);
             show(&format!("xml.{id}"), &st);
             replay.check(key, &format!("xml.{id}"), &v);
-            let (v, st) = rels_value(app, &pkg, &g5, &mut tally, traced);
-            show(&format!("rels.{id}"), &st);
-            replay.check(key, &format!("rels.{id}"), &v);
+            let (v, st, rules) = rels_value(app, &pkg, &g5, &mut tally, traced);
+            let rf = format!("rels.{id}");
+            show(&rf, &st);
+            let captured = cap.get(key, &rf);
+            if !rules.diffs.is_empty() && captured != Some(v.as_str()) && captured == Some(rules.legacy_value.as_str()) {
+                // the 0.9.x rules give the captured facet: every difference is one of R1-R3
+                let decided: BTreeSet<Rule> = rules.diffs.iter().map(|(r, _, _)| *r).collect();
+                for (rule, kind, what) in &rules.diffs {
+                    *counts.rules.entry((*rule, id, kind)).or_default() += 1;
+                    if counts.rule_examples.len() < 12 {
+                        counts.rule_examples.push(format!("{rule:?} {key} [{id}] {what}"));
+                    }
+                }
+                counts.rule_inputs.insert(key.to_owned());
+                replay.accept(key, &rf, &v, &decided.into_iter().map(reason).collect::<Vec<_>>().join(" + "));
+            } else {
+                replay.check(key, &rf, &v);
+            }
 
             let mut saves = |pkg: &uo_opc::Package, facet: &str, replay: &mut Replay<'_>| {
                 let (rewritten, st) = save_value(&save_rewritten(pkg), traced);
@@ -240,59 +299,80 @@ fn replay(name: &str, keep: impl Fn(&str) -> bool) {
         counts.d4
     );
     println!("{name}: {}", report.summary());
-    println!(
-        "{name}: {} relationships kept by the app rule have another outcome under the C# rule (stage-5 evidence, not a parity target)",
-        tally.csharp_rule_differs
-    );
-    for e in &tally.csharp_examples {
+    for ((rule, app, kind), n) in &counts.rules {
+        println!("{name}: {rule:?} [{app}] {kind}: {n} relationships");
+    }
+    for e in &counts.rule_examples {
         println!("  {e}");
     }
     report.assert_clean();
+    // D6 never loses a part the 0.9.x rules found
+    assert!(!counts.rules.keys().any(|(_, _, kind)| *kind == "found → missing"), "{name}: a part found by 0.9 is missing under D6");
+    assert_eq!(
+        [counts.rule(Rule::R1), counts.rule(Rule::R2), counts.rule(Rule::R3)],
+        [expected.r1, expected.r2, expected.r3],
+        "{name}: relationships changed by R1, R2, R3"
+    );
+    if let Some(inputs) = expected.inputs {
+        assert_eq!(counts.rule_inputs.iter().map(String::as_str).collect::<Vec<_>>(), inputs, "{name}: inputs with R1-R3 differences");
+    }
 }
 
 #[test]
 fn oracle_docx_0() {
-    replay("oracle docx (1/4)", |k| k.starts_with("write/packages/docx-layout/test/oracle/") && bucket(k, 4) == 0);
+    replay("oracle docx (1/4)", |k| k.starts_with("write/packages/docx-layout/test/oracle/") && bucket(k, 4) == 0, &NONE);
 }
 
 #[test]
 fn oracle_docx_1() {
-    replay("oracle docx (2/4)", |k| k.starts_with("write/packages/docx-layout/test/oracle/") && bucket(k, 4) == 1);
+    replay("oracle docx (2/4)", |k| k.starts_with("write/packages/docx-layout/test/oracle/") && bucket(k, 4) == 1, &NONE);
 }
 
 #[test]
 fn oracle_docx_2() {
-    replay("oracle docx (3/4)", |k| k.starts_with("write/packages/docx-layout/test/oracle/") && bucket(k, 4) == 2);
+    replay("oracle docx (3/4)", |k| k.starts_with("write/packages/docx-layout/test/oracle/") && bucket(k, 4) == 2, &NONE);
 }
 
 #[test]
 fn oracle_docx_3() {
-    replay("oracle docx (4/4)", |k| k.starts_with("write/packages/docx-layout/test/oracle/") && bucket(k, 4) == 3);
+    replay("oracle docx (4/4)", |k| k.starts_with("write/packages/docx-layout/test/oracle/") && bucket(k, 4) == 3, &NONE);
 }
 
 #[test]
 fn sheet_samples() {
-    replay("sheet samples", |k| k.starts_with("sheet/"));
+    replay("sheet samples", |k| k.starts_with("sheet/"), &NONE);
 }
 
 #[test]
 fn slides_samples() {
-    replay("slides samples and legacy files", |k| k.starts_with("slides/"));
+    replay("slides samples and legacy files", |k| k.starts_with("slides/"), &NONE);
 }
 
 #[test]
 fn other_fixtures() {
-    replay("other fixtures", |k| {
-        !k.starts_with("write/packages/docx-layout/test/oracle/")
-            && !k.starts_with("sheet/")
-            && !k.starts_with("slides/")
-            && !k.starts_with("quirk/")
-    });
+    // R1 on real files: `word/_rels/document.xml.rels` of the sample Word wrote targets
+    // `../customXml/item1.xml` and `item2.xml` (cover-page properties), found by D6
+    let expected = Expected { r1: 2, r2: 0, r3: 0, inputs: Some(&["site/assets/samples/demo.docx"]) };
+    replay(
+        "other fixtures",
+        |k| {
+            !k.starts_with("write/packages/docx-layout/test/oracle/")
+                && !k.starts_with("sheet/")
+                && !k.starts_with("slides/")
+                && !k.starts_with("quirk/")
+        },
+        &expected,
+    );
 }
 
 #[test]
 fn quirk_corpus() {
-    replay("quirk corpus", |k| k.starts_with("quirk/"));
+    // the generated targets (`./`, `..`, `%xx`, `#fragment`, case, backslashes) of every app:
+    // Write 2,059 relationships (851 missing → found, 1 found in another part, 1,207 resolved to
+    // another name with the same outcome), Sheet 3,421 (825, 1, 2,595) and Slides 4,147 (1,177,
+    // 1, 2,969); `examples/opc_rule_evidence.rs` counts the same
+    let expected = Expected { r1: 2_059, r2: 0, r3: 3_421 + 4_147, inputs: None };
+    replay("quirk corpus", |k| k.starts_with("quirk/"), &expected);
 }
 
 #[test]

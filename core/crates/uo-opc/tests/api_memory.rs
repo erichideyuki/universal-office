@@ -207,7 +207,7 @@ fn m1_cfb_queries() {
 fn m1_package_queries_and_save_errors() {
     let parts: Vec<(String, Vec<u8>)> = (0..10).map(|i| (format!("Word/Part{i}.xml"), format!("<p>{i}</p>").into_bytes())).collect();
     let bytes = zip::write(parts.iter().map(|(n, d)| (n.as_str(), d.as_slice())), WriteOptions::default()).unwrap();
-    for fold in [CaseFold::None, CaseFold::Unicode, CaseFold::Ascii] {
+    for fold in [CaseFold::None, CaseFold::Ascii] {
         let opts = OpenOptions { case_fold: fold, utf16_text: true, skip_impossible_ratio: true };
         assert_no_leak(|| {
             let p = Package::open(&bytes, &Limits::DEFAULT, &opts).unwrap();

@@ -44,7 +44,7 @@ pub enum Kind {
 pub fn open_options(kind: Kind) -> OpenOptions {
     match kind {
         Kind::Docx => OpenOptions::default(),
-        Kind::Xlsx => OpenOptions { case_fold: CaseFold::Unicode, ..OpenOptions::default() },
+        Kind::Xlsx => OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() },
         Kind::Pptx => OpenOptions { skip_impossible_ratio: true, ..OpenOptions::default() },
     }
 }

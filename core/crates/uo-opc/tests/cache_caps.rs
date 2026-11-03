@@ -4,8 +4,7 @@
 //!
 //! | cache | lives in | bound |
 //! |---|---|---|
-//! | caseless index (`CaseFold` fallback of `find`) | `Package` | one entry per part; parts of an opened archive ≤ `Limits::max_entries` |
-//! | ASCII index (`resolve_target`, gate 2 D6) | `Package` | the same as the caseless index (shared with it under `CaseFold::Ascii`) |
+//! | ASCII index (fallback of `resolve_target`, gate 2 D6, and of `find` under `CaseFold::Ascii`) | `Package` | one entry per part; parts of an opened archive ≤ `Limits::max_entries` |
 //! | inflated parts (`OnceCell` per entry) | `Package` | `Limits::max_total_bytes` over all first reads, `part_cap` per part |
 //! | what a save verified (D5) | `Package` | a fixed record per entry |
 //! | mini stream (read once) and the path index | `CfbFile` | the length of the file |
@@ -27,15 +26,15 @@ fn archive(names: &[String], data: impl Fn(usize) -> Vec<u8>) -> Vec<u8> {
     zip::write(parts.iter().map(|(n, d)| (n.as_str(), d.as_slice())), WriteOptions { level: 1, ..WriteOptions::default() }).unwrap()
 }
 
-/// The caseless index: built once on the first fallback lookup, one entry per part (names that
-/// fold to the same key keep one), never grown by lookups, dropped when the part set changes;
-/// the parts of an opened archive are capped by `max_entries`.
+/// The ASCII index through `find` (`CaseFold::Ascii`): built once on the first fallback lookup,
+/// one entry per part (names that fold to the same key keep one), never grown by lookups, dropped
+/// when the part set changes; the parts of an opened archive are capped by `max_entries`.
 #[test]
 fn m5_caseless_index() {
     const N: usize = 4000;
     let names: Vec<String> = (0..N).map(|i| format!("xl/worksheets/Sheet{i}.xml")).collect();
     let bytes = archive(&names, |_| b"<x/>".to_vec());
-    let opts = OpenOptions { case_fold: CaseFold::Unicode, ..OpenOptions::default() };
+    let opts = OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() };
     // past the cap: one entry more than `max_entries` does not open
     let capped = Limits { max_entries: N as u32 - 1, ..Limits::DEFAULT };
     assert!(matches!(Package::open(&bytes, &capped, &opts), Err(Error::Limit { kind: LimitKind::Entries, .. })));
@@ -70,8 +69,8 @@ fn m5_caseless_index() {
 }
 
 /// The ASCII index of `resolve_target` (D6): built on the first fallback, one entry per part,
-/// never grown by lookups, dropped when the part set changes; shared with the caseless index
-/// when the policy is already ASCII.
+/// never grown by lookups, dropped when the part set changes; the same index as the fallback of
+/// `find` under `CaseFold::Ascii` (one index since R2, gate 3).
 #[test]
 fn m5_ascii_index_of_resolve_target() {
     const N: usize = 4000;
@@ -91,7 +90,7 @@ fn m5_ascii_index_of_resolve_target() {
     assert_eq!(thread_stats().live, before, "lookups grew the index");
     let (_, dropped) = measure(|| pkg.remove_part("word/media/Image0.png"));
     assert!(dropped.live_delta <= -build.live_delta + 64, "index not dropped: {} B", dropped.live_delta);
-    // one index only under `CaseFold::Ascii`
+    // one index for both lookups
     let ascii = Package::open(&bytes, &limits, &OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() }).unwrap();
     let (_, first) = measure(|| ascii.find_name("WORD/media/image7.png").map(str::len));
     let (_, second) = measure(|| ascii.resolve_target("", "WORD/media/image8.png").map(str::len));

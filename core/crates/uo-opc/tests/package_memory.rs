@@ -15,7 +15,7 @@ fn archive() -> Vec<u8> {
 }
 
 fn opts() -> OpenOptions {
-    OpenOptions { case_fold: CaseFold::Unicode, ..OpenOptions::default() }
+    OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() }
 }
 
 #[test]

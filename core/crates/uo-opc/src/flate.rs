@@ -743,7 +743,7 @@ pub fn inflate_capped(data: &[u8], cap: u64) -> Option<Vec<u8>> {
 
 // ---- deflate ----
 
-/// Raw DEFLATE at `level` 0-9 (fflate levels; higher values are clamped to 9).
+/// Raw DEFLATE at miniz_oxide `level` 0-9 (higher values are clamped to 9).
 pub fn deflate_raw(data: &[u8], level: u8) -> Vec<u8> {
     miniz_oxide::deflate::compress_to_vec(data, level.min(9))
 }

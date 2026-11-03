@@ -265,10 +265,18 @@ fn z64hs(d: &[u8], mut b: i64, l: i64, z: bool, sc: u32, su: u32, off: u32) -> R
 /// package saves stamp `Date.now()`, so zip bytes are never a parity target.
 pub const FIXED_DOS_TIME: u32 = (20 << 25) | (1 << 21) | (1 << 16);
 
+/// The deflate level of [`WriteOptions::default`] (gate 3, R4): miniz_oxide level 4. The TS
+/// saved with fflate's level 6, where miniz_oxide 6 is 6.5 times slower on large parts (the
+/// 31.7 MB sheet of `giant-1m.xlsx`: 735 ms against 112 ms) for 0.2–0.8% smaller archives; the
+/// decompressed bytes are the same at any level.
+pub const DEFAULT_LEVEL: u8 = 4;
+
 /// Options of [`ZipWriter`] and [`write`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteOptions {
-    /// deflate level 0-9 (`zipSync(…, { level: 6 })`); 0 stores every entry
+    /// miniz_oxide deflate level 0-9 (higher values are clamped to 9), [`DEFAULT_LEVEL`] by
+    /// default; 0 stores every entry. The number is passed to miniz_oxide as is, as by
+    /// [`crate::flate::deflate_raw`], [`crate::flate::Deflater`] and [`crate::flate::zlib`]
     pub level: u8,
     /// names written STORED regardless of `level` (ODF `mimetype`, which the caller adds first)
     pub stored: Vec<String>,
@@ -278,7 +286,7 @@ pub struct WriteOptions {
 
 impl Default for WriteOptions {
     fn default() -> Self {
-        WriteOptions { level: 6, stored: Vec::new(), dos_time: FIXED_DOS_TIME }
+        WriteOptions { level: DEFAULT_LEVEL, stored: Vec::new(), dos_time: FIXED_DOS_TIME }
     }
 }
 

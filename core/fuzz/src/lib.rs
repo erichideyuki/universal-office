@@ -78,11 +78,7 @@ fn fields(data: &[u8], n: usize) -> Vec<&[u8]> {
 
 fn open_options(sel: u8) -> OpenOptions {
     OpenOptions {
-        case_fold: match sel % 3 {
-            0 => CaseFold::None,
-            1 => CaseFold::Unicode,
-            _ => CaseFold::Ascii,
-        },
+        case_fold: if sel.is_multiple_of(2) { CaseFold::None } else { CaseFold::Ascii },
         skip_impossible_ratio: sel & 4 != 0,
         utf16_text: sel & 8 != 0,
     }
@@ -658,14 +654,9 @@ pub fn content_types(data: &[u8]) {
 /// The caseless index against a model, through a sequence of edits.
 pub fn caseless(data: &[u8]) {
     let (sel, rest) = split1(data);
-    let policy = match sel % 3 {
-        0 => CaseFold::None,
-        1 => CaseFold::Unicode,
-        _ => CaseFold::Ascii,
-    };
+    let policy = if sel.is_multiple_of(2) { CaseFold::None } else { CaseFold::Ascii };
     let fold = |s: &str| match policy {
         CaseFold::None => None,
-        CaseFold::Unicode => Some(s.to_lowercase()),
         CaseFold::Ascii => Some(part_name::fold_ascii(s)),
     };
     let names: Vec<String> = rest.split(|&b| b == 0).take(24).map(text).collect();

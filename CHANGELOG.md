@@ -25,9 +25,8 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
   largest real part, `giant-1m.xlsx`): one hostile 256 MiB part could otherwise
   become several GB of tree. The XML part cap (256 MiB) applies to every part
   parsed as XML, whatever its name. The nesting limit of 1,000 levels, which Write
-  had, now applies to Sheet and Slides parts too (no real part is deeper than 25
-  levels; the 0.9 parsers overflowed the JS stack past about 8,000) — pending the
-  maintainer's confirmation.
+  had, now applies to Sheet and Slides parts too (decided: no real part is deeper
+  than 25 levels; the 0.9 parsers overflowed the JS stack past about 8,000).
 - Entries after one named `__proto__` are kept (0.9 dropped those whose names are
   numbers that are not valid indices, such as `-1` or `1.5`).
 - Saving copies an untouched entry as is only when its data really is what the zip
@@ -43,6 +42,21 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
   save, so the same package saves to the same bytes.
 - Saved zips use zip64 records when they need them (more than 65,535 entries, or a
   size or offset of 4 GiB), which fflate, the zip writer of 0.9, does not write.
+- Relationship targets are resolved by one rule in Write, Sheet and Slides: the OPC
+  rule of the .NET `OpcPartName` (relative to the source part, `.` and `..`
+  segments resolved, `%xx` unescaped, the `#fragment` dropped) with part names
+  compared ignoring ASCII case. 0.9 had one rule per app: Write joined `word/` to
+  the target without resolving `..` and looked the name up exactly, so a Word
+  document's `../customXml/item1.xml` (the sample `demo.docx`) was not found;
+  Sheet and Slides only resolved leading `../`, and Slides looked names up
+  exactly. No part that 0.9 found is lost.
+- Sheet compares part names ignoring ASCII case only, the OPC rule; 0.9 used the
+  full Unicode lowercase, under which `K` (U+212A KELVIN SIGN) named a part `k`.
+  No real file is affected.
+- Saves deflate at level 4 by default instead of 6: saving a 31.7 MB sheet takes
+  160 ms instead of 790 ms, for an archive 0.8% larger (0.13–0.17% over ordinary
+  documents). The contents of the parts are the same. An explicit level is the
+  zlib level of the Rust compressor (miniz_oxide), 0–9.
 - Internal API (`uo-opc`, not published): `Package::xml_part` is the one way to parse
   a part as XML, and `Package::resolve_target` the one way to resolve a relationship
   target (the OPC rule of the .NET `OpcPartName`, ASCII case folding);
@@ -53,9 +67,10 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
   of a large part holds it twice instead of three times); XML errors from
   `xml_part` name the part; `ContentTypes::content_type_of_part` and
   `override_of_part` follow the OPC name rule (the Slides exact rule is
-  `content_type_of_exact`); `part_name::safe_relative_path` checks a part name before
-  a host extracts it to disk; `xml::parse` takes the text by value (`String` or
-  `Arc<str>`, kept by the tree without a copy).
+  `content_type_of_exact`); `CaseFold::Unicode` is gone (`None` or `Ascii`);
+  `zip::DEFAULT_LEVEL` is the default save level; `part_name::safe_relative_path`
+  checks a part name before a host extracts it to disk; `xml::parse` takes the text
+  by value (`String` or `Arc<str>`, kept by the tree without a copy).
 
 ## Unreleased
 

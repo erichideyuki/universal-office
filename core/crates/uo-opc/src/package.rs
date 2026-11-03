@@ -6,7 +6,8 @@
 //!
 //! The TS packages are a `Map<name, bytes>` filled by `unzipSync` (every part inflated at load)
 //! and saved by `zipSync(…, { level: 6 })`. Here the names, their order and the duplicate rules
-//! are the same (see `zip`), but nothing is inflated until it is read.
+//! are the same (see `zip`), but nothing is inflated until it is read, and a save deflates at
+//! miniz_oxide level 4 by default ([`zip::DEFAULT_LEVEL`], gate 3, R4).
 //!
 //! Memory scopes:
 //! - the input archive is retained for the life of the package (owned, `open` copies it and
@@ -19,9 +20,9 @@
 //! - parts given by `set_part`/`from_parts` are owned by the package until replaced or removed;
 //! - [`Package::take_part`] hands a part's bytes to the caller without the package keeping a
 //!   copy (the inflated copy or the caller's bytes are moved out), for edits of large parts;
-//! - the case-insensitive indexes (one for the [`CaseFold`] policy, one ASCII index for
-//!   [`Package::resolve_target`]) are built on the first fallback lookup and dropped on any
-//!   change of the part set; each holds one folded name per part;
+//! - the ASCII case-folded index (the fallback of [`Package::resolve_target`] and of
+//!   [`Package::find`] under [`CaseFold::Ascii`]) is built on the first fallback lookup and
+//!   dropped on any change of the part set; it holds one folded name per part;
 //! - what is known of an entry's stream (its output length, encoded length and CRC-32) is kept
 //!   per entry, a few bytes, so a save verifies each entry once (D5).
 //!
@@ -79,14 +80,14 @@ pub const MAX_DEFLATE_RATIO: u64 = 1100;
 pub use crate::zip::WriteOptions as SaveOptions;
 
 /// How [`Package::find`] folds names for its fallback lookup when the exact name is missing.
+/// Folding is ASCII only, the OPC rule (gate 3, R2: Sheet's `XlsxPackage.caseless` used the full
+/// Unicode lowercase of JS `toLowerCase`, under which U+212A KELVIN SIGN names `k`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CaseFold {
     /// exact names only (Write `DocxPackage`, Slides `PptxPackage`, ODF)
     #[default]
     None,
-    /// JS `toLowerCase` (full Unicode lowercase): Sheet `XlsxPackage.caseless`
-    Unicode,
-    /// ASCII only, the OPC rule (C# `OpcPartName`)
+    /// ASCII case folding, the OPC rule (C# `OpcPartName`): Sheet
     Ascii,
 }
 
@@ -135,9 +136,8 @@ pub struct Package {
     source: Vec<u8>,
     parts: Vec<Part>,
     index: HashMap<String, usize>,
-    caseless: OnceCell<HashMap<String, usize>>,
-    /// ASCII-folded names for [`Package::resolve_target`] (the `caseless` index serves when the
-    /// policy is `CaseFold::Ascii`)
+    /// ASCII-folded names: the fallback of [`Package::resolve_target`], and of
+    /// [`Package::find`] under [`CaseFold::Ascii`]
     ascii: OnceCell<HashMap<String, usize>>,
     limits: Limits,
     options: OpenOptions,
@@ -147,14 +147,6 @@ pub struct Package {
 impl std::fmt::Debug for Package {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Package").field("parts", &self.parts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>()).finish()
-    }
-}
-
-fn fold(policy: CaseFold, name: &str) -> Option<String> {
-    match policy {
-        CaseFold::None => None,
-        CaseFold::Unicode => Some(name.to_lowercase()),
-        CaseFold::Ascii => Some(name.to_ascii_lowercase()),
     }
 }
 
@@ -202,16 +194,7 @@ enum Read<'a> {
 
 impl Package {
     fn with(source: Vec<u8>, limits: Limits, options: OpenOptions) -> Self {
-        Package {
-            source,
-            parts: Vec::new(),
-            index: HashMap::new(),
-            caseless: OnceCell::new(),
-            ascii: OnceCell::new(),
-            limits,
-            options,
-            produced: Cell::new(0),
-        }
+        Package { source, parts: Vec::new(), index: HashMap::new(), ascii: OnceCell::new(), limits, options, produced: Cell::new(0) }
     }
 
     /// Opens a zip package (copies `bytes`; see [`Package::open_owned`]).
@@ -303,8 +286,8 @@ impl Package {
         }
     }
 
-    /// The real name of a part: the exact name, else the first part (in order) whose folded name
-    /// matches under the [`CaseFold`] policy (`XlsxPackage.caseless`).
+    /// The real name of a part: the exact name, else, under [`CaseFold::Ascii`], the first part
+    /// (in order) equal under ASCII case folding (Sheet's `XlsxPackage.caseless`, R2).
     pub fn find_name(&self, name: &str) -> Option<&str> {
         self.find_index(name).and_then(|i| self.parts.get(i)).map(|p| p.name.as_str())
     }
@@ -313,22 +296,23 @@ impl Package {
         if let Some(&i) = self.index.get(name) {
             return Some(i);
         }
-        let key = fold(self.options.case_fold, name)?;
-        self.folded(&self.caseless, self.options.case_fold).get(&key).copied()
+        match self.options.case_fold {
+            CaseFold::None => None,
+            CaseFold::Ascii => self.folded(name),
+        }
     }
 
-    /// The index of folded names under `policy`, built on first use: the first part (in order)
-    /// of each folded name.
-    fn folded<'a>(&'a self, cell: &'a OnceCell<HashMap<String, usize>>, policy: CaseFold) -> &'a HashMap<String, usize> {
-        cell.get_or_init(|| {
+    /// The first part (in order) equal to `name` under ASCII case folding, through the index of
+    /// folded names built on first use.
+    fn folded(&self, name: &str) -> Option<usize> {
+        let index = self.ascii.get_or_init(|| {
             let mut m = HashMap::with_capacity(self.parts.len());
             for (i, p) in self.parts.iter().enumerate() {
-                if let Some(k) = fold(policy, &p.name) {
-                    m.entry(k).or_insert(i);
-                }
+                m.entry(part_name::fold_ascii(&p.name)).or_insert(i);
             }
             m
-        })
+        });
+        index.get(&part_name::fold_ascii(name)).copied()
     }
 
     /// The part a relationship `target` of `source_part` names (gate 2, D6): the OPC rule,
@@ -337,17 +321,14 @@ impl Package {
     /// as stored, the one [`Package::part`] and [`Package::xml_part`] open; `None` for a target
     /// that names no part (external, malformed) or a part that does not exist.
     ///
-    /// The one resolution path of format crates and hosts: a validator that checks the returned
-    /// part checks exactly what the library opens. (Until stage 5 the apps' legacy target rules
-    /// stay as parity policies in the tests.)
+    /// The one resolution path of format crates and hosts, Write, Sheet and Slides alike (gate 3,
+    /// R1 and R3: the apps' own target rules of 0.9 are gone): a validator that checks the
+    /// returned part checks exactly what the library opens.
     pub fn resolve_target(&self, source_part: &str, target: &str) -> Option<&str> {
         let name = part_name::resolve_relationship_target(source_part, target)?;
         let i = match self.index.get(&name) {
             Some(&i) => i,
-            None => {
-                let cell = if self.options.case_fold == CaseFold::Ascii { &self.caseless } else { &self.ascii };
-                *self.folded(cell, CaseFold::Ascii).get(&part_name::fold_ascii(&name))?
-            }
+            None => self.folded(&name)?,
         };
         self.parts.get(i).map(|p| p.name.as_str())
     }
@@ -618,7 +599,6 @@ impl Package {
             None => {
                 self.index.insert(name.clone(), self.parts.len());
                 self.parts.push(Part { name, content: Content::Owned(data), counted: Cell::new(true), shared: false });
-                self.caseless.take();
                 self.ascii.take();
             }
         }
@@ -641,7 +621,6 @@ impl Package {
                 *v -= 1;
             }
         }
-        self.caseless.take();
         self.ascii.take();
         true
     }
@@ -655,12 +634,11 @@ impl Package {
             for (i, p) in self.parts.iter().enumerate() {
                 self.index.insert(p.name.clone(), i);
             }
-            self.caseless.take();
             self.ascii.take();
         }
     }
 
-    /// Writes the package as a zip like `zipSync(parts, { level: 6 })`: parts in JS object
+    /// Writes the package as a zip like `zipSync(parts, { level })`: parts in JS object
     /// order (array-index names first, `zip::js_object_order`); parts set by the caller are
     /// compressed; entries never set are copied raw (same method, bytes, CRC and declared size)
     /// when they are verified (D5, see the module comment), else written again from the bytes

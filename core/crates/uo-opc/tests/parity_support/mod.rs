@@ -1,19 +1,24 @@
 //! The Rust side of the package parity (tests/opc_parity.rs): the per-app policies and the
 //! canonical streams, item for item the same as `capture_opc.mjs`.
 //!
-//! The policies are what the format crates will own (uo-docx, uo-xlsx, uo-pptx) until stage 5
-//! (gate 1, G5): each app's open options, main part, XML presets per part, relationship scope,
-//! relationship filter, target rule and lookup, reproducing the TS of 0.9.x:
+//! The policies are what the format crates will own (uo-docx, uo-xlsx, uo-pptx): each app's open
+//! options, main part, XML presets per part, relationship scope and relationship filter, as in
+//! the TS of 0.9.x, and one target rule and lookup for the three apps, the D6 path (gate 3, R1,
+//! R2, R3):
 //!
 //! | | Write (`w`) | Sheet (`s`) | Slides (`p`) |
 //! |---|---|---|---|
-//! | open | exact names | `CaseFold::Unicode` fallback (`XlsxPackage.caseless`) | `skip_impossible_ratio` |
+//! | open | exact names | `CaseFold::Ascii` fallback (`XlsxPackage.caseless`; R2) | `skip_impossible_ratio` |
 //! | main part | `word/document.xml` | `xl/workbook.xml` (caseless) | `ppt/presentation.xml` |
 //! | XML preset | `docx-pos` | `sheet`, + `sheet-chart` for `xl/charts/`, `xl/drawings/` | `slides` |
 //! | rels read | `word/_rels/*.rels` only | every `.rels` | every `.rels` |
 //! | relationship kept | `Id` and `Target` non-empty, not external | same | `Id` and `Target` present, not external |
-//! | target rule | `./` stripped; `/x` → `x`, else `word/${target}` | `resolveRelTarget(owner, target)` | same as Sheet |
-//! | lookup | exact | exact, then Unicode-lowercase | exact |
+//! | target rule and lookup | `Package::resolve_target` (R1) | `Package::resolve_target` (R2, R3) | `Package::resolve_target` (R3) |
+//!
+//! The 0.9.x target rules and lookups (Write: `./` stripped, `/x` → `x`, else `word/${target}`,
+//! exact lookup; Sheet and Slides: `resolveRelTarget`, with a Unicode-lowercase (Sheet) or exact
+//! (Slides) lookup) are gone from the policies: [`legacy`] reproduces them only so that the
+//! replay can show they explain the whole difference of a `rels` facet, accepted by name.
 #![allow(dead_code, clippy::unwrap_used, clippy::panic)]
 
 pub mod quirks;
@@ -64,7 +69,7 @@ impl App {
     pub fn open_options(self) -> OpenOptions {
         match self {
             App::Write => OpenOptions::default(),
-            App::Sheet => OpenOptions { case_fold: CaseFold::Unicode, ..OpenOptions::default() },
+            App::Sheet => OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() },
             App::Slides => OpenOptions { skip_impossible_ratio: true, ..OpenOptions::default() },
         }
     }
@@ -108,9 +113,63 @@ impl App {
         }
     }
 
-    /// The app's own target rule (the TS of 0.9.x).
-    pub fn resolve(self, owner: &str, target: &str) -> String {
-        match self {
+    /// The decided rule (gate 3, R1/R3) for a relationship target of `owner`: the D6 path, the
+    /// same for the three apps.
+    pub fn resolve(self, pkg: &Package, owner: &str, target: &str) -> RuleOutcome {
+        RuleOutcome {
+            name: part_name::resolve_relationship_target(owner, target),
+            found: pkg.resolve_target(owner, target).map(str::to_owned),
+        }
+    }
+}
+
+/// What a target rule and lookup give for one relationship: the part name the rule resolves
+/// (`None`: the target names no part, such as a malformed `%` escape) and the part the lookup
+/// opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleOutcome {
+    pub name: Option<String>,
+    pub found: Option<String>,
+}
+
+impl RuleOutcome {
+    /// The stream items: `R` + the name (`U` when none), then `F` + whether the part found is
+    /// the name itself, or `N` (missing). The capture writes `R` and `F`/`N` the same way.
+    fn write(&self, st: &mut Stream) {
+        match &self.name {
+            Some(n) => st.tag(b'R').str(n),
+            None => st.tag(b'U'),
+        };
+        match &self.found {
+            Some(f) => st.tag(b'F').bool(Some(f) == self.name.as_ref()),
+            None => st.tag(b'N'),
+        };
+    }
+}
+
+/// The 0.9.x target rules and lookups, kept only to explain the captured TS (the R1, R2 and R3
+/// acceptances of the replay, and `examples/opc_rule_evidence.rs`); no policy uses them.
+pub mod legacy {
+    use super::{App, RuleOutcome};
+    use uo_opc::Package;
+
+    /// sheet-core and slides-core `resolveRelTarget` (package.ts), the same code in both.
+    pub fn resolve_rel_target(from_part: &str, target: &str) -> String {
+        if let Some(abs) = target.strip_prefix('/') {
+            return abs.to_owned();
+        }
+        let mut dir: &str = from_part.rfind('/').map_or("", |i| &from_part[..i]);
+        let mut t = target;
+        while let Some(rest) = t.strip_prefix("../") {
+            t = rest;
+            dir = dir.rfind('/').map_or("", |i| &dir[..i]);
+        }
+        if dir.is_empty() { t.to_owned() } else { format!("{dir}/{t}") }
+    }
+
+    /// The app's own target rule of 0.9.x.
+    pub fn resolve_name(app: App, owner: &str, target: &str) -> String {
+        match app {
             App::Write => {
                 let t = target.strip_prefix("./").unwrap_or(target);
                 match t.strip_prefix('/') {
@@ -122,27 +181,53 @@ impl App {
         }
     }
 
-    /// Whether the app finds `name`: `Some(exact)` when found.
-    pub fn lookup(self, pkg: &Package, name: &str) -> Option<bool> {
-        match self {
-            App::Sheet => pkg.find_name(name).map(|_| pkg.contains(name)),
-            _ => pkg.contains(name).then_some(true),
+    /// The app's own lookup of 0.9.x: exact (Write, Slides), or exact then the first part (in
+    /// order) equal under JS `toLowerCase` (Sheet `XlsxPackage.caseless`).
+    pub fn lookup(app: App, pkg: &Package, name: &str) -> Option<String> {
+        if pkg.contains(name) {
+            return Some(name.to_owned());
         }
+        if app != App::Sheet {
+            return None;
+        }
+        let folded = name.to_lowercase();
+        pkg.part_names().find(|n| n.to_lowercase() == folded).map(str::to_owned)
+    }
+
+    /// The app's rule and lookup of 0.9.x on one relationship.
+    pub fn resolve(app: App, pkg: &Package, owner: &str, target: &str) -> RuleOutcome {
+        let name = resolve_name(app, owner, target);
+        RuleOutcome { found: lookup(app, pkg, &name), name: Some(name) }
     }
 }
 
-/// sheet-core and slides-core `resolveRelTarget` (package.ts), the same code in both.
-pub fn resolve_rel_target(from_part: &str, target: &str) -> String {
-    if let Some(abs) = target.strip_prefix('/') {
-        return abs.to_owned();
-    }
-    let mut dir: &str = from_part.rfind('/').map_or("", |i| &from_part[..i]);
-    let mut t = target;
-    while let Some(rest) = t.strip_prefix("../") {
-        t = rest;
-        dir = dir.rfind('/').map_or("", |i| &dir[..i]);
-    }
-    if dir.is_empty() { t.to_owned() } else { format!("{dir}/{t}") }
+/// The gate-3 decisions that change the `rels` facet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Rule {
+    /// Write's target rule → D6
+    R1,
+    /// Sheet's Unicode case folding → ASCII
+    R2,
+    /// Sheet and Slides `resolveRelTarget` (and the Slides exact lookup) → D6
+    R3,
+}
+
+/// The decision that explains a relationship whose 0.9.x outcome differs from D6's, and how the
+/// outcome changed.
+pub fn rule_difference(app: App, legacy: &RuleOutcome, d6: &RuleOutcome) -> (Rule, &'static str) {
+    let rule = match app {
+        App::Write => Rule::R1,
+        // the same name, another lookup: Sheet's Unicode folding against ASCII
+        App::Sheet if legacy.name == d6.name => Rule::R2,
+        _ => Rule::R3,
+    };
+    let kind = match (&legacy.found, &d6.found) {
+        (None, Some(_)) => "missing → found",
+        (Some(_), None) => "found → missing",
+        (Some(a), Some(b)) if a != b => "another part",
+        _ => "same outcome, another resolved name",
+    };
+    (rule, kind)
 }
 
 /// `dir/_rels/file.rels` → `dir/file`; `_rels/.rels` → `` (the part a relationship part
@@ -275,10 +360,15 @@ pub struct Tally {
     pub g5_garbage: u64,
     pub rels_parts: u64,
     pub rels: u64,
-    /// relationships kept by the app rule whose found/not-found outcome differs under the C#
-    /// rule (`part_name::resolve_relationship_target` + ASCII case folding): evidence for stage 5
-    pub csharp_rule_differs: u64,
-    pub csharp_examples: Vec<String>,
+}
+
+/// The relationships of one `rels` facet whose D6 outcome differs from the 0.9.x rule's.
+#[derive(Debug, Default, Clone)]
+pub struct RuleDiffs {
+    /// the facet value with the 0.9.x rules (what the capture holds when they explain it)
+    pub legacy_value: String,
+    /// (decision, outcome change, description) per relationship
+    pub diffs: Vec<(Rule, &'static str, String)>,
 }
 
 /// The G5 cases the capture lists for an app (`g5.*`): `hang:<preset>:<part>` and
@@ -382,9 +472,12 @@ pub fn xml_value(app: App, pkg: &Package, g5: &G5, tally: &mut Tally, traced: bo
     (format!("{parsed}:{errors}:{}", st.digest().short()), st)
 }
 
-/// `rels.*`: every relationship of the parts in the app's scope, resolved by the app's rule.
-pub fn rels_value(app: App, pkg: &Package, g5: &G5, tally: &mut Tally, traced: bool) -> (String, Stream) {
+/// `rels.*`: every relationship of the parts in the app's scope, resolved by the D6 path; and the
+/// same facet with the 0.9.x rules, with every relationship where the two differ.
+pub fn rels_value(app: App, pkg: &Package, g5: &G5, tally: &mut Tally, traced: bool) -> (String, Stream, RuleDiffs) {
     let mut st = stream(traced);
+    let mut legacy_st = Stream::new();
+    let mut diffs = Vec::new();
     let (mut parts, mut count) = (0u64, 0u64);
     let mut scratch = Tally::default();
     for p in pkg.part_names() {
@@ -393,16 +486,19 @@ pub fn rels_value(app: App, pkg: &Package, g5: &G5, tally: &mut Tally, traced: b
         }
         parts += 1;
         st.str(p);
+        legacy_st.str(p);
         let text = pkg.part_text(p).unwrap().unwrap();
         let result = parse(text.as_ref(), &preset(app.rels_preset()));
         if app == App::Sheet && g5.lists_part(p) && g5_tag(g5, app.rels_preset(), p, &text, &result, &mut scratch).is_some() {
             st.tag(b'G');
+            legacy_st.tag(b'G');
             continue;
         }
         let doc = match result {
             Ok(d) => d,
             Err(_) => {
                 st.tag(b'X');
+                legacy_st.tag(b'X');
                 continue;
             }
         };
@@ -411,40 +507,33 @@ pub fn rels_value(app: App, pkg: &Package, g5: &G5, tally: &mut Tally, traced: b
             count += 1;
             let (id, target) = (rel.attr("Id"), rel.attr("Target"));
             let external = rel.attr("TargetMode") == Some("External");
-            st.tag(b'L').bool(id.is_some()).str(id.unwrap_or("")).bool(target.is_some()).str(target.unwrap_or("")).bool(external);
+            for s in [&mut st, &mut legacy_st] {
+                s.tag(b'L').bool(id.is_some()).str(id.unwrap_or("")).bool(target.is_some()).str(target.unwrap_or("")).bool(external);
+            }
             if !app.selected(id, target, external) {
                 st.tag(b'S');
+                legacy_st.tag(b'S');
                 continue;
             }
             let target = target.unwrap_or("");
-            let resolved = app.resolve(&owner, target);
-            st.tag(b'R').str(&resolved);
-            let found = app.lookup(pkg, &resolved);
-            match found {
-                Some(exact) => st.tag(b'F').bool(exact),
-                None => st.tag(b'N'),
-            };
-            // the C# rule on the same relationship, for the stage-5 evidence
-            let csharp = part_name::resolve_relationship_target(&owner, target).filter(|n| {
-                let folded = part_name::fold_ascii(n);
-                pkg.part_names().any(|x| part_name::fold_ascii(x) == folded)
-            });
-            if csharp.is_some() != found.is_some() {
-                tally.csharp_rule_differs += 1;
-                if tally.csharp_examples.len() < 12 {
-                    tally.csharp_examples.push(format!(
-                        "{} {p} {target:?}: app rule {resolved:?} {}, C# rule {}",
-                        app.id(),
-                        if found.is_some() { "found" } else { "missing" },
-                        csharp.as_deref().map_or("missing".into(), |c| format!("{c:?} found"))
-                    ));
-                }
+            let d6 = app.resolve(pkg, &owner, target);
+            d6.write(&mut st);
+            let old = legacy::resolve(app, pkg, &owner, target);
+            old.write(&mut legacy_st);
+            if old != d6 {
+                let (rule, kind) = rule_difference(app, &old, &d6);
+                diffs.push((
+                    rule,
+                    kind,
+                    format!("{p} Target={target:?}: 0.9 {:?} → {:?}, D6 {:?} → {:?}", old.name, old.found, d6.name, d6.found),
+                ));
             }
         }
     }
     tally.rels_parts += parts;
     tally.rels += count;
-    (format!("{parts}:{count}:{}", st.digest().short()), st)
+    let legacy_value = format!("{parts}:{count}:{}", legacy_st.digest().short());
+    (format!("{parts}:{count}:{}", st.digest().short()), st, RuleDiffs { legacy_value, diffs })
 }
 
 fn decode_name(raw: &[u8], flags: u16) -> String {

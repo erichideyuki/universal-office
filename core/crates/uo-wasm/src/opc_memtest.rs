@@ -33,7 +33,7 @@ const SLIDES: ParseOptions<'static> =
 fn product(kind: u32) -> Option<(OpenOptions, ParseOptions<'static>, &'static str)> {
     match kind {
         0 => Some((OpenOptions::default(), DOCX, "word/document.xml")),
-        1 => Some((OpenOptions { case_fold: CaseFold::Unicode, ..OpenOptions::default() }, SHEET, "xl/worksheets/sheet1.xml")),
+        1 => Some((OpenOptions { case_fold: CaseFold::Ascii, ..OpenOptions::default() }, SHEET, "xl/worksheets/sheet1.xml")),
         2 => Some((OpenOptions { skip_impossible_ratio: true, ..OpenOptions::default() }, SLIDES, "ppt/slides/slide1.xml")),
         _ => None,
     }
