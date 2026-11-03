@@ -368,3 +368,31 @@ impl GsubParser<'_> {
         Ok(())
     }
 }
+
+impl GsubLigatures {
+    /// The heap the ligature data and its index hold, from capacities (an estimate, see
+    /// `Face::heap_bytes`).
+    pub(crate) fn heap_bytes(&self) -> usize {
+        use crate::mem::{table_bytes, vec_bytes};
+        let features: usize = self.features.iter().map(|(_, l)| vec_bytes::<u16>(l.capacity())).sum();
+        let lookups: usize = self
+            .lookups
+            .values()
+            .map(|lookup| {
+                let lists: usize = lookup
+                    .values()
+                    .map(|list| vec_bytes::<Ligature>(list.capacity()) + list.iter().map(|l| l.rest.len() * 2).sum::<usize>())
+                    .sum();
+                table_bytes::<(u16, Vec<Ligature>)>(lookup.capacity()) + lists
+            })
+            .sum();
+        let singles: usize = self.singles.values().map(|m| table_bytes::<(u16, u16)>(m.capacity())).sum();
+        vec_bytes::<(Tag, Vec<u16>)>(self.features.capacity())
+            + features
+            + table_bytes::<(u16, LigLookup)>(self.lookups.capacity())
+            + lookups
+            + table_bytes::<(u16, FxHashMap<u16, u16>)>(self.singles.capacity())
+            + singles
+            + self.index.heap_bytes()
+    }
+}

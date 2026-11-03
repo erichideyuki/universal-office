@@ -253,4 +253,31 @@ impl Face {
     pub fn table(&self, tag: Tag) -> Option<TableRecord> {
         self.0.dir.last(tag)
     }
+
+    /// The bytes of heap this face holds besides [`Face::bytes`] (which the caller counts once,
+    /// the buffer being shared): the directory, the cmap index and whatever has been parsed so far
+    /// (kerning, ligatures, VDMX, cached outlines), taken from the capacities of the structures.
+    /// An estimate without the allocator's headers (`tests/registry_memory.rs` compares it with
+    /// the allocator's own count); it grows as the lazy parts are first used, so a cache that
+    /// budgets faces asks again when it trims.
+    pub fn heap_bytes(&self) -> usize {
+        use crate::mem::{table_bytes, vec_bytes};
+        let data = &*self.0;
+        let kerning = data.kerning.get().map_or(0, crate::gpos::Kerning::heap_bytes);
+        let gsub = data.gsub.get().and_then(Option::as_ref).map_or(0, GsubLigatures::heap_bytes);
+        let vdmx = data.vdmx.get().and_then(Option::as_ref).map_or(0, |t| table_bytes::<(u16, VdmxEntry)>(t.entries.capacity()));
+        let outlines = {
+            let cache = data.outlines.lock().unwrap_or_else(PoisonError::into_inner);
+            // an outline is an `Arc<[OutlineCmd]>`: the commands (`bytes`) and the two counters of the `Arc`
+            table_bytes::<(u32, Option<Arc<[OutlineCmd]>>)>(cache.map.capacity()) + cache.bytes + cache.map.len() * 2 * size_of::<usize>()
+        };
+        size_of::<FaceData>()
+            + 2 * size_of::<usize>()
+            + vec_bytes::<TableRecord>(data.dir.len())
+            + data.cmap.order.len() * size_of::<u32>()
+            + kerning
+            + gsub
+            + vdmx
+            + outlines
+    }
 }

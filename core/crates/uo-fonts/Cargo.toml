@@ -11,6 +11,8 @@ publish.workspace = true
 [features]
 # embeds the hyphenation pattern files of data/hyphen for native and .NET builds (never in the wasm)
 hyphen-data = []
+# the native system font index (`uo_fonts::system`): scans the font directories of the machine, never in the wasm
+system = []
 
 [dependencies]
 # the hash of the glyph-pair maps (gate 1): the v2 rotation keeps `g1 * 65536 + g2` keys from piling into one bucket

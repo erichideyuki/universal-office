@@ -1,0 +1,47 @@
+# the `oracle` provider policy: createNodeFontProvider of write/tools/corpus-lab/node-fonts.mjs; digests only
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+@ts-source write/tools/corpus-lab/node-fonts.mjs
+@ts-commit d0f45bc5
+@inputs 41 scenarios
+oracle/families	list=23:0c59e6496f58a25403714c3409fdd2cb
+oracle/0	stream=88:61f89050a41982fff765678a60171ca6
+oracle/1	stream=80:1af5d038d1402c8a95d547c766f1ebf7
+oracle/2	stream=90:32580fe9261a02e85238c99d73ef1716
+oracle/3	stream=68:67174a8d29a56b6ef28ba462a674f9a7
+oracle/4	stream=40:b6140f1555811e97e09a2b555da32dd1
+oracle/5	stream=98:c03038413bf597ef1346287f4bdaf5c0
+oracle/6	stream=84:4b838de7450b5a8b5f5e17e7ca0acd19
+oracle/7	stream=62:6505e30dee231d70d1994fa81a4b8a04
+oracle/8	stream=46:ae05874ab08d88d22ec23dba1f6f940d
+oracle/9	stream=40:3df1fa2fc569958a4e8dad561474393b
+oracle/10	stream=68:7b90f74cb0852a3818f38d2a7794ae0d
+oracle/11	stream=84:d40dd46a797782749ebc9a27b63fdad9
+oracle/12	stream=78:a91e57de8b91dc18017881270b028ca9
+oracle/13	stream=54:60b1303d9e47bf7c3d8fcffd607afb51
+oracle/14	stream=86:ec1760fa040a29598965aceed1832d0c
+oracle/15	stream=58:95cf420624599544d623430332f775c4
+oracle/16	stream=94:e0e2b62a630d2f5384f544ff8ee09064
+oracle/17	stream=86:dbd8f2a3f101bb4e6b33544a2bee7574
+oracle/18	stream=90:01eedb07e3be6c9bb2d96530274a58ec
+oracle/19	stream=68:7e89608c3e040bb4a084af939a9b7bc4
+oracle/20	stream=68:e114f10b7c123e240742d4164ee1bacd
+oracle/21	stream=80:9d60ef9ada242b054fbb11fbb425ca65
+oracle/22	stream=68:2f1d2a82bd9d9ca3b7a1068ae43a1fe7
+oracle/23	stream=46:43074101ecf896ba90bdb0f6ae67e9ca
+oracle/24	stream=58:45f6a208ad1ab89035ae8cb51e164733
+oracle/25	stream=98:75422fd9d61b3e01c1dfbb1d0e550c52
+oracle/26	stream=74:ebb3ca757f65db5a8120c30c2c0f66a0
+oracle/27	stream=90:397f4f558817ee9e6d2c2d1ff6581121
+oracle/28	stream=82:4c129636ac1bb05437d8770ee183c1fa
+oracle/29	stream=56:62954adef622c56161c8ec3ee526c3ac
+oracle/30	stream=98:2a28070b0d2014520a14f6aa7f7def2c
+oracle/31	stream=42:252aba80ece8cb0954aa936d24831b4c
+oracle/32	stream=58:d15943923cd167655088c6842e950d76
+oracle/33	stream=72:f1fb9d51aeb9a37df43e86f7ce902aa9
+oracle/34	stream=68:9a106e976aeb827586ebdd6f162fae92
+oracle/35	stream=86:2bc2a2e375a1dcc46f55f6a27c47d55e
+oracle/36	stream=92:8567aa2dfd5bac1cb99f404d9fb49b7a
+oracle/37	stream=68:d88c0355c93e0ca55f6ebec51abc93c0
+oracle/38	stream=62:570e2f22b3e85da604a17923040176d8
+oracle/39	stream=42:512c5aeef1d949151eb356fdaf547e92
+oracle/all	stream=488:a5387255f019262004f4e3e0d51a915c

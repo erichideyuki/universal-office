@@ -534,3 +534,18 @@ impl GposParser<'_> {
         Ok(())
     }
 }
+
+impl Kerning {
+    /// The heap the kerning data holds, from the capacities of its maps (an estimate, see
+    /// `Face::heap_bytes`).
+    pub(crate) fn heap_bytes(&self) -> usize {
+        use crate::mem::{table_bytes, vec_bytes};
+        let defs: usize =
+            self.class_defs.iter().map(|d| table_bytes::<(u32, u16)>(d.map.capacity()) + vec_bytes::<u32>(d.order.capacity())).sum();
+        table_bytes::<(u32, i16)>(self.pairs.map.capacity())
+            + table_bytes::<u16>(self.pairs.overflow.capacity())
+            + table_bytes::<(u16, Class0)>(self.class0.capacity())
+            + vec_bytes::<ClassDef>(self.class_defs.capacity())
+            + defs
+    }
+}

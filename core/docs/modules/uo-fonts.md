@@ -1711,6 +1711,7 @@ cmap reader (G6), one table-directory rule, the outline cache policy.
 | 4 | parity verifier (Sonnet) | ≈ 160 min | ≈ 180 |
 | gate 2 | D1–D3 (Sonnet) | ≈ 50 min | ≈ 100 |
 | 5 | simplification and algorithms (Opus 5.5): D5 here and D2 of uo-jsnum (the `js` module) in one session | ≈ 80 min for both | ≈ 120 for both |
+| M1, frontier P | registry, provider policies, system index and their three parity captures (Sonnet, hybrid mode) | ≈ 60 min | ≈ 170 |
 
 Stage 3 wall time ≈ 67 min (phase 1, then the three frontiers in parallel; B and D were
 restarted once after an API usage limit, the times above are the runs that did the work), against
@@ -1924,3 +1925,173 @@ warnings`, `cargo test --release --workspace --all-features`, the three ban scri
 tests above. Opt-in numbers: `UO_LOCAL_FONTS=1 cargo test --release -p uo-fonts --test d5_ligature_trie d5_numbers --
 --nocapture`. Not run: WebKit (CI), the local-fonts parity replay (`fonts_parity_local`: it replays the same `ligate`
 facet over local fonts; the committed replay and the 1,021,140 random comparisons cover the code path).
+
+## Milestone 1 — frontier P (registry, provider policies, system index), 2026-11-03
+
+Hybrid mode (Sonnet, one session, worktree `rust-core`, `CARGO_TARGET_DIR=core/target/fonts-p`). Scope: LQ8 of the uo-docx-layout plan,
+frontier P: (a) the registry with **named policies and answer identity**, (b) host-configurable **face budgets** with the desktop and
+phone profiles, (c) the **native system font index** deferred at G3, plus `Face::heap_bytes()` and the advance table of PQ1 (uo-pdf plan).
+Everything is new modules of `uo-fonts` (`registry`, `policy`, `system`, `mem`) and one method on `Face`; no existing module changed
+behaviour (the `heap_bytes` helpers added to `gpos.rs`, `gsub.rs` and `face.rs`; the `lib.rs` wiring; `clear_caches()` now clears the
+process-wide `FaceCache`). `tests/`: 9 new files, 3 committed captures, 3 capture scripts, the shared scenario generator. The existing
+tests and every parity replay of the crate are green (below).
+
+### API
+
+```rust
+// registry: the cache, the budgets, the pushed faces, the answers
+pub struct FontBudget { pub pinned_bytes: u64, pub cache_bytes: u64 }
+impl FontBudget { pub const WASM_DESKTOP: Self /*128/64 MiB*/; NATIVE_DESKTOP /*1 GiB/512 MiB*/; PHONE /*48/16 MiB*/;
+                  DESKTOP /*by pointer width*/; pub const fn of(FontProfile) -> Self }
+pub enum FontProfile { Desktop, Phone }                                   // chosen by the binding
+pub struct FaceCache;                                                      // per process or wasm instance; &self, Send + Sync
+impl FaceCache { new(FontBudget, FontLimits); shared() -> Arc<FaceCache>;
+    get_or_parse(Arc<[u8]>) -> Result<CachedFace, FontError>;             // dedup by content (len + SHA-256), one copy of the bytes
+    get_or_load(alias, || Option<Vec<u8>>) -> Option<CachedFace>;          // a source that names its files (path#face)
+    trim_now(); clear(); stats() -> CacheStats }
+pub struct CachedFace;  // a pin: the face stays in the cache while a handle lives. face(), bytes(), cost() = bytes.len() + heap_bytes()
+pub struct FaceLedger;  // what ONE document may pin; charge(ContentKey, cost) -> Option<Ticket>; once per content; released with the last Ticket
+pub struct FontRegistry;                                                   // the faces a host pushes (shared by Arc)
+impl FontRegistry { new(FontBudget, Arc<FaceCache>); with_profile(..); with_source(Arc<dyn FaceSource>);
+    push_family(family, FontSource, embeddable, Vec<HostFace>) -> Result<(), PushError>;   // what resolver.getWithFile(family) answers
+    push_asset(family, HostFace) -> Result<(), PushError>;                                 // the viewer's hosted asset files
+    remove_family / remove_asset / clear / generation();
+    missing() -> Vec<MissingFamily>; take_missing() -> Vec<MissingFamily> }               // the viewer's `missing` map / `loadMissing`
+pub struct HostFace { variant, bytes: Arc<[u8]>, ttc_index: Option<u32>, advances: Option<Arc<AdvanceTable>> }
+pub struct AdvanceTable;  // PQ1: parse_json(&str) / insert(); get(size_key = to_js_string(size), code_point) -> Option<f64>
+pub struct FontAnswer { id()->AnswerId, key, family, face()/bytes(), bold, italic, synth_bold, synth_italic, stand_in, advances, ticket() }
+pub trait FontProvider { fn face(&self, family, bold, italic) -> Option<Arc<FontAnswer>> }   // the engine FontProvider; Send + Sync
+pub trait FaceSource   { fn pick(&self, family, bold, italic) -> Option<SourceFace> }          // where oracle and server-substitute get faces
+pub fn ttc_face_by_index(&[u8], u32, &FontLimits) -> Result<Vec<u8>, FontError>             // Node Buffer semantics, not standalone_face
+
+// policy (K6)
+pub enum PolicyName { Viewer, ServerSubstitute, Oracle, Editor }  // as_str(): "viewer" | "server-substitute" | "oracle" | "editor"
+pub fn provider(&Arc<FontRegistry>, PolicyName) -> Result<Box<dyn FontProvider>, PolicyError>   // Editor: NotBuilt (milestone 2)
+pub struct ViewerProvider::new(Arc<FontRegistry>);                                   // one per layout call (K4, LQ19)
+pub struct SystemFontProvider::new(Arc<dyn FaceSource>, Option<Arc<FaceLedger>>);    // C# SystemFontProvider
+pub struct SubstituteFontProvider::new(Arc<dyn FontProvider>) (+ ::shared() native);  // C# SubstituteFontProvider
+pub struct OracleProvider::new(Arc<dyn FaceSource>, Option<Arc<FaceLedger>>, missing: &[&str]);   // node-fonts
+pub fn csharp_metric_substitute(&str) -> Option<&'static str>                        // FontCatalog.MetricSubstitute: Trim + ToLowerInvariant
+
+// system: feature `system`, never in the wasm
+pub struct SystemFontIndex;  // with_roots(Vec<PathBuf>, Arc<FaceCache>); create(extra_roots); shared(); rebuild_shared(..); release_shared();
+                             // entries() / families() / roots() / cache(); implements FaceSource
+pub fn default_roots(extra: &[PathBuf]) -> Vec<PathBuf>
+Face::heap_bytes(&self) -> usize
+```
+
+**How the layout uses it** (uo-docx-layout, per layout call): `let provider = policy::provider(&registry, PolicyName::Viewer)?` (or
+`SubstituteFontProvider::shared()` on the server); the engine resolver asks it per lower-case key (K4), maps `FontAnswer::id()` to its
+`FaceId` in first-use order (K2a, K6), keeps the `Arc<FontAnswer>`s for the life of the `Layout` (that is what pins the faces), and after the
+call asks `registry.take_missing()` and `registry.cache().trim_now()`. A face refused by the document budget is a miss of the provider
+(the resolver chain continues; the layout adds its `"font budget"` warning).
+
+### The policies
+
+- **`viewer`**: `ViewerFonts.provider()` (viewer `fonts.ts:90-137`) over what the host pushed. The host pushes the answer of `resolver.getWithFile(family)`
+  (`push_family`: source, `embeddable`, the faces by variant) and the hosted asset files (`push_asset`, the `ASSET_FILES` of the viewer, with the optional
+  `*-advances.json`). Order: assets, then the resolver entry; no entry gives `None` and notes the variant as missing; `source == Default` gives `None`; a
+  variant the family lacks is noted; the variants are tried in the order *wanted, bold or regular, italic or regular, regular*; a licence that forbids embedding
+  gives the metric substitute file of that variant (its regular one otherwise), noting the substitute when it is not there; a file that does not parse is skipped.
+  Key `family|variant` (`boldItalic` in camel case), `stand_in = source === 'substitute'`. **Identity**: one cache per provider object keyed by the family *as asked*
+  (case-sensitive) and the request, the `null`s included; the viewer makes one provider per layout call.
+- **`server-substitute`**: the C# `SubstituteFontProvider` over `SystemFontProvider` over the system index (**C# is the reference**; it exists nowhere in the TS). The inner
+  provider remembers answers per exact `(family, bold, italic)`; when it has none, the catalog metric substitute is asked of it and returned as a **fresh copy marked
+  `stand_in`** (a new identity every call, as the C# `new FontFace`); no substitute, or the inner has none: `None`. The catalog lookup is the C# one (`Trim()` of the
+  Unicode `White_Space` set, `ToLowerInvariant()`), not the TS `toLowerCase()`.
+- **`oracle`**: `createNodeFontProvider` of node-fonts.mjs: answers cached per `family.toLowerCase()|bold|italic`; `missing` families are treated as not installed.
+- **`editor`**: not built (milestone 2); the registry `generation()` is its `fonts.version`.
+
+### The system index (port of `SystemFonts.cs`, itself the port of node-fonts.mjs)
+
+The roots, the walk (depth first with a stack, files handled as met, subfolders last in first out, the entries of a folder in the order the OS lists them, no sorting),
+`.ttf`/`.otf`/`.ttc` in any case, reparse points and symlinks never followed, the `name`/`OS/2` reading with the semantics of a Node `Buffer` (a read outside the buffer
+fails the face, an odd-length name string fails it, any failure outside the reading of one face discards the file), the English (0x409) record preferred, the RIBBI name
+(ID 1) indexed first and the typographic name (ID 16) as a second index that never shadows it, one entry per (family, bold, italic, weight) per index, the pick by
+score (`4` bold, `2` italic, plus `|weight - 400 or 700| / 1000`; the first of the lowest in index order), `.ttc` faces extracted as standalone sfnt by index. Differences from the
+reference are listed in E1-E6 below. **Thread safety**: the index is read-only after the scan; loads go through the `FaceCache` (one lock, parses and file reads
+outside it, so the parallel conversions of clickCompliance block each other only for a dictionary operation); `SystemFontIndex::shared()` builds once under a lock.
+
+### Parity (exact; no accepted difference)
+
+| Facet | Reference | Inputs | Equal | Mismatches |
+|---|---|---|---|---|
+| `viewer` policy (`tests/parity/provider_viewer.cap`, `capture_viewer.mjs`) | the **real** `ViewerFonts` of `write/packages/viewer` (dist, TS `d0f45bc5`) over a stub resolver and a stub `fetch` | 600 scenarios: 5,309 asks (1,040 answered, 132 of them stand-ins), 915 `missing`/`loadMissing` dumps, hosted assets with and without advance tables, files that do not parse | 600 | 0 |
+| `oracle` policy (`provider_oracle.cap`, `capture_system.mjs`) | `createNodeFontProvider` of node-fonts.mjs (Node 24.15) over the generated folder and `shared/fonts/files` | 41 scenarios, 1,679 asks (813 answered), the family list | 42 | 0 |
+| C# index, `SystemFontProvider`, `SubstituteFontProvider`, `FontCatalog` (`provider_csharp.cap`, `provider_capture.cs`, .NET 10.0.5) | the C# classes themselves, run by a file-based `dotnet run` | 42 faces listed, 41 + 41 scenario streams over the same 1,679 asks, 61 catalog lookups (NBSP, NEL, U+2028, U+3000, U+FEFF, U+0130, full-width and Kelvin-sign spellings) | 85 | 0 |
+
+Cross-check of the two references with each other: the C# `SystemFontProvider` and node-fonts answer all 1,679 asks alike except for identity (217 differ only there: the
+C# cache is case-sensitive, the node-fonts one lower-case), which is why the Rust has both keyings. Sensitivity: swapping the bold and italic steps of the variant order fails 40 of
+600 viewer scenarios; returning the inner answer instead of a fresh stand-in fails 41 of the 85 C# facets. The font corpus is **generated** (`tests/provider_support`: 33 files,
+fonts with named families, weights, typographic names, a Catalan-first name table, vertical `@` names, odd-length and missing names, a face that does not open, two `.ttc`
+with a nameless face, a duplicate tuple and a weight tie, a subfolder, an uppercase extension) plus the open Carlito, Caladea and Liberation of `shared/fonts/files`;
+every (family, bold, italic, weight) is unique across files so that the result does not depend on the order the OS lists a folder in (ties live inside `.ttc` files). The viewer
+pool is small generated fonts (hashing the real ones a thousand times would cost seconds); real faces are in the unit tests. Regenerate: `cargo run --release -p uo-fonts
+--example provider_corpus -- <folder>`; `UO_TS_ROOT=<built main> node tests/parity_support/capture_viewer.mjs --corpus <folder>`; `... capture_system.mjs --corpus <folder>`;
+`dotnet run tests/parity_support/provider_capture.cs -- <folder> <shared/fonts/files> tests/parity/provider_scenarios.txt tests/parity/provider_csharp.cap`; the scenarios come from
+`gen_provider_scenarios.mjs`. `UO_PROVIDER_TRACE=<file>` writes the readable lines of a replay, to diff with the `--trace` of the captures.
+
+### Memory gate (measured; `tests/registry_memory.rs`, release, `uo-alloc`)
+
+| Gate | Result |
+|---|---|
+| **M1** | cache, ledger, advance table, `.ttc` extraction, the registry with the viewer policy, the three system-fed policies, the system index over the corpus and the open fonts (7.55 MB allocated, 4.5 MB peak, **0 B left**) and the shared index with `release_shared` + `clear_caches` (4.93 MB allocated, 0 B left): live bytes return **exactly** (the first version of the last one left 520 B: `clear()` kept the capacity of the hash tables; it now shrinks them) |
+| **M2** | viewer cycle (push 4 faces, 6 asks over 9 families, take the missing, trim) 1,000 rounds: live bytes flat at 18,224 B (series 18,224, 18,224, 18,224, 18,217, 18,224, 18,210; tolerance 128 KiB), back to the start after `reg.clear()` and `cache.clear()`; cache under budget pressure (a budget of 8 faces, 300 distinct faces cycled, 1,191 evictions): flat within 64 KiB |
+| **M3** | `Face::heap_bytes` against what the allocator saw, Carlito regular, bold, italic and bold italic (608-797 KiB): parse kept 1,528 B (estimate 1,348), **kerning 2,359,312 B (exact)**, ligatures 11,444 B (estimate 11,412), 64 outlines 99,840-102,720 B (**exact**). Operations over Carlito: `push_family` of 4 faces allocated 1,735 B (peak 1,228 B; the buffers are the host's, shared); the first answer 3,522 B allocated and 2,152 B kept (the parse); a repeated ask 7 B (the key string of the request); a new call's answer 3,276 B; a cache hit 0 B; SHA-256 of a face 0 B allocated, **397 MiB/s**. This is the first record: later changes at most 10% worse |
+| **M5** | face cache past its entry cap (4,096 unpinned faces) and its alias cap (16,384 names): held to the caps; answer caches of the system-fed policies: 8,192 + 8,192 slots kept after 3 x 8,192 distinct families asked, about 91 B per remembered miss; viewer per-call cache: 16,384 requests; missing notes: 4,096 families (then not recorded until the host takes them); attempts: 65,536 pairs, then the set starts again; advance table past 2^20 entries (11,500 sizes of 91 characters, 6.4 MB of JSON): refused, 26 MB peak above the start |
+| **Budgets filled with real faces** (phone profile) | 200 distinct Carlito files offered (608-797 KiB each) to a 48 MiB registry: **72 pushed, 128 refused, 47 MiB pinned**; asking for all 72 pins 72 faces, 47 MiB of bytes plus heap, nothing unpinned kept past the 16 MiB cache budget |
+| **This machine** (opt-in `UO_LOCAL_FONTS=1`, numbers only) | the default roots: 646 faces, 357 families scanned in **36.6 ms**; picking the regular face of every family loads 805 MiB of files in 2.8 s with the 512 MiB native cache budget below the working set (0 hits, 520 evictions: the LRU thrashes by design when one pass is larger than the cache); 8 threads picking in parallel 1.55 s |
+
+M4 (handles at the bindings) belongs to the bindings; there is no `unsafe` (`forbid(unsafe_code)` holds), so no Miri row.
+
+**No-panic loops** (`tests/registry_nopanic.rs`, all green): 1,200 mutated font files through the scan and the pick (862 faces indexed, 561 loaded), 8,400 extractions from
+mutated collections (3,145 extracted, 5,255 refused), 30,000 mutated `*-advances.json` (1,228 parsed, 28,772 refused; nesting up to 200 deep), 4,500 asks over 1,500 mutated
+fonts pushed into a registry with a 4 MiB budget (4,248 answered, 355 pushes refused, everything released afterwards).
+
+### Checks (`core/`, real workspace)
+
+`cargo fmt -p uo-fonts -- --check`; `cargo clippy -p uo-fonts --all-targets [--all-features] -- -D warnings` (both clean); `cargo test --release -p uo-fonts --all-features` (43 result
+lines, 0 failed: every existing replay still 0 mismatches); `bash tests/grep-bans.sh` passes; the float-to-int cast check run for `uo-fonts --lib` (no hit);
+`cargo build -p uo-fonts --target wasm32-unknown-unknown --release` (with and without `--all-features`: `system` is `cfg`-ed out of the wasm) and `-p uo-wasm --features
+fonts-memtest|fonts-selftest --profile wasm` build. Not run: WebKit; the Linux and macOS roots and the `cfg(unix)` symlink test (this machine is Windows; the code is portable `std`);
+`tests/float-casts.sh` over the whole workspace (other crates are under construction).
+
+### Decisions outside the plan (declared)
+
+Arithmetic semantics: **none changed** from the references. The pick score is `(int flags) + |weight - target| / 1000.0` in `f64`, in the C# and JS operation order; `Pad4` of the
+`.ttc` extraction is the JS `ToInt32` of `len + 3` (a length near 4 GiB wraps negative and fails as in the C#); the lower-case key is `uo_jsnum::text::to_lowercase` (JS) where the
+reference is JS, and the C# invariant simple mapping where it is the C#.
+
+| # | Decision | Why |
+|---|---|---|
+| R1 | `AnswerId` is a process-unique `u64` assigned when an answer is created; the layout maps it to its `FaceId` | the plan: `FaceId` follows the identity of the provider answer |
+| R2 | The answer caches of `SystemFontProvider` and `OracleProvider` hold answers **weakly**: while a layout holds an answer, asking again for the same request gives that answer (the identity the TS and C# caches give); once every holder dropped it, the next ask makes a new one. Misses are remembered | the C# and Node caches keep every face they ever resolved alive, which defeats the budget; nobody can compare an answer nobody holds |
+| R3 | **Pinning is the `Arc` count** of the cache entry (checked under the cache lock), not a pin API; the budget is applied on every use and by `trim_now`, so the cache can hold one face more than its budget until the next call | the `Layout` and its `FontAnswer`s pin by existing; no unpin call to forget |
+| R4 | `cost = bytes.len() + heap_bytes()` is read **when the budget is applied** (the lazy parts grow); the document ledger charges what is pushed by `bytes.len()` (the parse is lazy) and what the system-fed providers answer by `cost()` at the answer; a replacement push is charged while the old family is still held (`remove_family` first when it only fits without it) | the simplest rule that is atomic: a refused push changes nothing |
+| R5 | One document budget per `FontRegistry` (`registry.ledger()`), shared by the pushed faces and by the system-fed providers built from it; a provider may be given another ledger | the plan says per document; the layout engine owns the document |
+| R6 | SHA-256 written here (`registry/digest.rs`, 397 MiB/s), checked against the FIPS vectors and `uo_testkit::sha256` | the workspace takes no hashing crate; the cache key is content, so the digest must not be forgeable (a multi-tenant server) |
+| R7 | The caps of every cache (`MAX_UNPINNED_FACES` 4,096, `MAX_ALIASES` 16,384, `MAX_ANSWER_SLOTS` 8,192, `MAX_VIEWER_REQUESTS` 16,384, `MAX_MISSING_FAMILIES` 4,096, `MAX_ATTEMPTED` 65,536) and the behaviour past them (stop recording, compute again, start again) | M5 |
+| R8 | `FaceCache::clear()` drops only unpinned faces and shrinks its tables; `uo_fonts::clear_caches()` clears the process-wide cache | M1 returned 520 B without the shrink |
+| R9 | `AdvanceTable` has its own JSON reader (objects of objects of numbers; a value that is not a number is dropped, where the TS would hand the garbage to the caller; a character key counts only when it is exactly one code point, a lone surrogate included), limits 8 MiB of text and 2^20 entries | PQ1; no serde in the workspace |
+| R10 | The host must push the answer of **`getWithFile`** (the fallback with a file), not the by-name answer of the resolver; `FontSource::Default` and the unparsable-file rule are the viewer ones, kept | what the TS provider sees |
+| R11 | The viewer `attempted` set lives in the registry (the TS keeps it in `ViewerFonts`), emptied by `clear()` | one registry is one document view |
+| R12 | `ttc_face_by_index` is its own function with Node `Buffer` semantics (a copy clamps, a read or write outside fails), bounded by `FontLimits::max_output_bytes`, which the C# does not have (declared lengths from the file) | `standalone_face` picks by PostScript name and refuses a table outside the file: another rule |
+| R13 | Feature `system` (off by default) and `cfg(not(target_family = "wasm"))` on the module | G3: never in the wasm |
+
+System index differences from the reference:
+
+| # | Difference | Why |
+|---|---|---|
+| E1 | the path in a key is the host one (`PathBuf::display`), not the `path.win32.join` normalization of Node; the parity compares the file name | the key only identifies the face in a PDF |
+| E2 | a file over `max_output_bytes` (256 MiB native) is not read into memory | a bound the C# lacks |
+| E3 | a name with a lone UTF-16 surrogate becomes U+FFFD (Rust `String`) | a font with an unpaired surrogate in its family name |
+| E4 | the folders are listed in the order of the OS, as the reference; on Linux that is not sorted, so ties between *files* depend on the order there exactly as in the C# (the corpus avoids them; ties inside a `.ttc` are deterministic) | parity with the reference rather than a better rule; sorting is a one-line change if the maintainer prefers determinism |
+| E5 | `EXTRA_FONT_DIRS` is split on `;` on every OS, as the C# does | parity |
+| E6 | `SystemFontIndex::shared()` is replaceable (`rebuild_shared`, `release_shared`); the C# `Lazy` is not | tests, and a host that learns that a font was installed |
+
+### Not done
+
+The `editor` policy and its `fonts.version` cache (milestone 2); the JS side of the push model (the uo-wasm exports, the shell `FontResolver` pushing `getWithFile` answers and dropping
+its fetch buffer, which the phone number of K15 needs) and the .NET facade (`HyphenationLanguages`, `Now`, `SubstituteFontProvider.Shared` over this registry; `IFontProvider` and `PdfFontSource`
+dropped or wrapped, for CHANGELOG); the `"font budget"` warning (layout); libFuzzer targets for the index scan (the mutation loops stand in); WebKit, Linux and macOS runs. A stray folder
+`D:\tmp_provider_corpus` (the output of a mistyped first run of the corpus example, a few KB) could not be removed by the session; it is outside the repository.

@@ -2,8 +2,11 @@
 //! converter: sfnt files (table directory, cmap, metrics, hmtx, VDMX, COLR, outlines), the
 //! Office kerning emulation over GPOS and the legacy `kern` table, GSUB ligatures, the converter's
 //! PDF font program, TrueType subsetting, `.ttc` extraction, EOT writing, odttf obfuscation, the
-//! catalog of bundled and substitute fonts, the embedding plan and Liang hyphenation. Plan and
-//! decisions: `core/docs/modules/uo-fonts.md`.
+//! catalog of bundled and substitute fonts, the embedding plan and Liang hyphenation, and (milestone
+//! 1, frontier P) the font [`registry`] (face cache with budgets, document ledger, host-pushed faces),
+//! the named provider [`policy`] policies (`viewer`, `server-substitute`, `oracle`) and the native
+//! `system` font index (feature `system`, never in the wasm). Plan and decisions:
+//! `core/docs/modules/uo-fonts.md`.
 //!
 //! Reads follow the TS: every table is read through one view over the whole input, in the same
 //! order, and a failure is caught where the TS catches it. Nothing here panics on font data and
@@ -24,12 +27,17 @@ pub mod info;
 mod lig_trie;
 #[allow(dead_code)] // consumed by the hyphenation, variant, catalog, odttf and embedding ports
 pub mod limits;
+mod mem;
 pub mod odttf;
 pub mod outline;
+pub mod policy;
 pub mod program;
 pub mod read;
+pub mod registry;
 pub mod sfnt;
 pub mod subset;
+#[cfg(all(feature = "system", not(target_family = "wasm")))]
+pub mod system;
 pub mod ttc;
 pub mod variant;
 pub mod vdmx;
@@ -63,6 +71,10 @@ pub use ttc::standalone_face;
 pub use variant::{VARIANTS, Variant, is_bold_variant, is_italic_variant, variant_of, variant_of_style};
 pub use vdmx::VdmxEntry;
 
-/// No cache lives beyond its owner (a `Face` holds its own, a `HyphenSession` its own), so there
-/// is nothing process-wide to clear; kept for the memory-gate convention (M1).
-pub fn clear_caches() {}
+/// Clears what lives beyond its owner: the faces nobody holds in the process-wide
+/// [`registry::FaceCache`] (the one the shared system index and the default registries use). A
+/// `Face` holds its own lazy parts and a `HyphenSession` its own, so nothing else is process-wide;
+/// the memory-gate convention (M1).
+pub fn clear_caches() {
+    registry::FaceCache::shared().clear();
+}
