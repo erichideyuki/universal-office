@@ -18,7 +18,7 @@ use std::borrow::Cow;
 use std::hint::black_box;
 
 use uo_alloc::{assert_flat, measure, soak};
-use uo_jsnum::{conv, math, parse, text};
+use uo_jsnum::{conv, math, object, parse, text};
 
 /// Runs `$call` under `measure` with its output black-boxed; asserts 0 bytes allocated and no peak.
 macro_rules! zero {
@@ -207,6 +207,50 @@ fn m1_text_and_parsers_allocate_nothing_on_every_path() {
     for c in ['a', ' ', '\u{a0}', '\u{1680}', '\u{180e}', '\u{feff}', '\u{1f600}', '\u{10ffff}'] {
         zero!("text::is_js_space", text::is_js_space(black_box(c)));
     }
+}
+
+/// The helpers moved here from uo-opc and uo-fonts (stage 5, D2): the predicates, `lower_cp`,
+/// `parse_int_utf16`, `array_index`, `decode_utf8` of valid bytes and `js_object_order` without an
+/// array index allocate nothing; `to_lowercase`, `decode_latin1`, `decode_utf8` of invalid bytes
+/// and `js_object_order` with an index allocate their output only (nothing kept once it is dropped).
+#[test]
+fn m1_stage5_moved_helpers() {
+    uo_jsnum::clear_caches();
+    for u in [0u16, 0x20, 0x41, 0xA0, 0x180E, 0x2028, 0xD800, 0xDFFF, 0xFEFF, 0xFFFF] {
+        zero!("text::is_js_space_unit", text::is_js_space_unit(black_box(u)));
+    }
+    for b in [b'a', b'_', b'0', b' ', 0x80, 0xFF] {
+        zero!("text::is_js_word", text::is_js_word(black_box(b)));
+    }
+    for c in ['A', '\u{130}', '\u{3a3}', '\u{1e9e}', '\u{10400}', '\u{10ffff}'] {
+        zero!("text::lower_cp", text::lower_cp(black_box(c)));
+    }
+    for s in CORPUS {
+        let units: Vec<u16> = s.encode_utf16().chain([0xD83D, 0x31]).collect();
+        for radix in RADIXES {
+            zero!(format!("parse::parse_int_utf16({s:?}, {radix})"), parse::parse_int_utf16(black_box(&units), black_box(radix)));
+        }
+        zero!("object::array_index", object::array_index(black_box(s)));
+        zero!("text::decode_utf8 (valid)", text::decode_utf8(black_box(s.as_bytes())));
+        let (out, usage) = measure(|| black_box(text::to_lowercase(black_box(s))));
+        assert!(usage.allocated <= (out.capacity() as u64).max(1) * 2, "to_lowercase({s:?}) allocated {} B", usage.allocated);
+        drop(out);
+        let (out, usage) = measure(|| black_box(text::decode_latin1(black_box(s.as_bytes()))));
+        assert!(usage.allocated <= out.capacity() as u64 * 2 + 8, "decode_latin1({s:?}) allocated {} B", usage.allocated);
+        drop(out);
+    }
+    for key in ["4294967294", "4294967295", "01", "0", "-1", "1.5"] {
+        zero!("object::array_index", object::array_index(black_box(key)));
+    }
+    let (_, usage) = measure(|| black_box(text::decode_utf8(black_box(&[0x61, 0xFF, 0x62]))).len());
+    assert_eq!(usage.live_delta, 0);
+    let names: Vec<(String, ())> = ["b", "a", "c"].iter().map(|n| (n.to_string(), ())).collect();
+    let (out, usage) = measure(|| black_box(object::js_object_order(names)));
+    assert_eq!(usage.allocated, 0, "js_object_order without an index allocated");
+    drop(out);
+    let names: Vec<(String, ())> = ["b", "2", "a", "1"].iter().map(|n| (n.to_string(), ())).collect();
+    let (_, usage) = measure(|| black_box(object::js_object_order(names)).len());
+    assert!(usage.live_delta <= 0, "js_object_order kept {} B", usage.live_delta);
 }
 
 /// `unit` repeated up to `len` bytes (built outside `measure`).

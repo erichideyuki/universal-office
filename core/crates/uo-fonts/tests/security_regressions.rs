@@ -118,11 +118,13 @@ fn face_with(tag: &[u8; 4], table: Vec<u8>, limits: &FontLimits) -> Face {
     Face::parse(Arc::from(Font::basic().add(tag, table).build()), limits).unwrap()
 }
 
-/// S4-3: `ligate` compares every ligature of the first glyph's list at every position, so the
-/// work of one call is `positions x candidates` with nothing bounding it (8 subtables x 32,000
-/// records = 256,000 candidates for 1 KB of GSUB; under the default limits 8.4 million
-/// candidates fit the parse, and 1,000 glyphs then cost 8.4e9 comparisons). The query is counted
-/// against the face's work budget; over it the run gets no ligatures (`None`).
+/// S4-3: `ligate` compared every ligature of the first glyph's list at every position, so the
+/// work of one call was `positions x candidates` (8 subtables x 32,000 records = 256,000
+/// candidates for 1 KB of GSUB; under the default limits 8.4 million candidates fit the parse,
+/// and 1,000 glyphs then cost 8.4e9 comparisons). The query is counted against the face's work
+/// budget. Since the ligature trie (stage 5, D5) a position costs its depth, so the run that
+/// used to exhaust the budget (64 positions x 256,000 candidates) gets the TS result (no
+/// ligature: glyph 1 is not followed by 2); the budget stays a guard, met by a run long enough.
 #[test]
 fn s4_3_ligate_work_is_bounded_by_the_budget() {
     let limits = with_work(1 << 20);
@@ -130,8 +132,17 @@ fn s4_3_ligate_work_is_bounded_by_the_budget() {
     let face = face_with(b"GSUB", gsub, &limits);
     // within the budget the ligature applies (the parse itself fits: 8 x 64,001 units)
     assert_eq!(face.ligate(&[1, 2], &[LIGA]).map(|g| g.len()), Some(1));
-    // 64 positions of glyph 1 not followed by 2: 64 x 256,000 candidates
-    assert_eq!(face.ligate(&[1; 64], &[LIGA]), None);
+    // 64 positions of glyph 1 not followed by 2: the TS answer, 2 units per position (was None)
+    let unchanged: Vec<uo_fonts::gsub::LigGroup> = (0..64).map(|_| uo_fonts::gsub::LigGroup { gid: 1, len: 1 }).collect();
+    assert_eq!(face.ligate(&[1; 64], &[LIGA]), Some(unchanged));
+    let mut ligated = [1u32, 2].repeat(32);
+    assert_eq!(face.ligate(&ligated, &[LIGA]).map(|g| g.iter().map(|x| (x.gid, x.len)).collect::<Vec<_>>()), Some(vec![(9, 2); 32]));
+    // the walk costs 2 units per position (the group, one probe): 2^19 positions fit the face
+    // budget of 2^20 units, one more does not, and the run gets no ligatures
+    ligated = vec![1u32; 1 << 19];
+    assert!(face.ligate(&ligated, &[LIGA]).is_some_and(|g| g.len() == 1 << 19));
+    ligated.push(1);
+    assert!(face.ligate(&ligated, &[LIGA]).is_none());
 }
 
 /// S4-4: an end-point array that goes backwards makes empty contours that no limit counts: a

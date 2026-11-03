@@ -7,8 +7,10 @@
 //!   `clz32`, `fround`.
 //! - [`conv`]: ToInt32 and friends, typed-array element stores, `js_index`, NaN
 //!   canonicalization, truthiness.
-//! - [`text`]: the JS white space set, `trim`, `split(/\s+/)`, UTF-16 length and slice.
-//! - [`parse`]: `Number(s)`, `parseInt` and `parseFloat`.
+//! - [`text`]: the JS white space set, `\w`, `trim`, `split(/\s+/)`, UTF-16 length and slice,
+//!   `toLowerCase`, the `TextDecoder` (UTF-8) and Latin-1 byte decoders.
+//! - [`object`]: the key order of a JS object (array indices first).
+//! - [`parse`]: `Number(s)`, `parseInt` (also over UTF-16 code units) and `parseFloat`.
 //! - [`format`]: `String(x)`, `toFixed`, `toPrecision`, `toExponential` and `toString(radix)` of integers.
 //!
 //! This crate is the only place of the workspace where the `f64` methods that differ from JS
@@ -25,6 +27,7 @@ mod dtoa;
 mod fdlibm;
 pub mod format;
 pub mod math;
+pub mod object;
 pub mod parse;
 pub mod text;
 

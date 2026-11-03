@@ -76,7 +76,7 @@ mod tests {
         assert_eq!(PROBE_FAMILIES.last(), Some(&"Ubuntu Mono"));
         assert_eq!(PROBE_FAMILIES.iter().filter(|f| **f == "Rockwell").count(), 2);
         for (key, _) in BUNDLED {
-            assert_eq!(*key, crate::js::js_to_lowercase(key));
+            assert_eq!(*key, uo_jsnum::text::to_lowercase(key));
         }
     }
 
@@ -120,9 +120,9 @@ mod tests {
         let mut expected_bundled = Vec::new();
         for line in bundled_block.lines().filter(|l| l.contains("family:")) {
             let q = quoted(line);
-            let key = match crate::js::js_trim(line).strip_prefix('\'') {
+            let key = match uo_jsnum::text::trim(line).strip_prefix('\'') {
                 Some(_) => q[0].clone(),
-                None => crate::js::js_trim(line).split(':').next().unwrap().to_owned(),
+                None => uo_jsnum::text::trim(line).split(':').next().unwrap().to_owned(),
             };
             let values = &q[q.len() - 2..];
             expected_bundled.push((key, values[0].clone(), values[1].clone()));
@@ -135,9 +135,9 @@ mod tests {
         let mut expected_subs = Vec::new();
         for line in subs_block.lines().filter(|l| l.contains(':')) {
             let q = quoted(line);
-            let key = match crate::js::js_trim(line).strip_prefix('\'') {
+            let key = match uo_jsnum::text::trim(line).strip_prefix('\'') {
                 Some(_) => q[0].clone(),
-                None => crate::js::js_trim(line).split(':').next().unwrap().to_owned(),
+                None => uo_jsnum::text::trim(line).split(':').next().unwrap().to_owned(),
             };
             expected_subs.push((key, q[q.len() - 1].clone()));
         }

@@ -16,7 +16,6 @@
 //! central header) and stay within `Limits::max_entries`; fflate would read the missing entries
 //! as zeros (empty parts named "").
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::error::{Error, LimitKind, Result};
@@ -80,41 +79,11 @@ fn at(x: u64) -> i64 {
     i64::try_from(x).unwrap_or(i64::MAX)
 }
 
-/// Decodes UTF-8 like `new TextDecoder().decode(bytes)`: invalid sequences become U+FFFD per
-/// maximal subpart (the WHATWG rule, which `String::from_utf8_lossy` follows) and one leading
-/// UTF-8 BOM is removed.
-pub fn decode_utf8(bytes: &[u8]) -> Cow<'_, str> {
-    let body = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
-    String::from_utf8_lossy(body)
-}
-
-/// `String.fromCharCode` per byte (fflate `strFromU8(d, true)`).
-pub fn decode_latin1(bytes: &[u8]) -> String {
-    bytes.iter().map(|&b| char::from(b)).collect()
-}
-
-/// A JS array index ("0".."4294967294" in canonical form): such keys come first in an object
-/// (zip names here, attribute names in the XML reader).
-pub(crate) fn array_index(name: &str) -> Option<u32> {
-    if name.is_empty() || name.len() > 10 || !name.bytes().all(|b| b.is_ascii_digit()) || (name.len() > 1 && name.starts_with('0')) {
-        return None;
-    }
-    name.parse::<u64>().ok().filter(|&v| v < 4_294_967_295).map(|v| v as u32)
-}
-
-/// Orders names like the keys of a JS object built by inserting them in this order (the order
-/// of `Object.entries` and `for…in`): array indices first, ascending, then the rest in insertion
-/// order. `unzipSync` returns such an object and `zipSync` iterates one, so both reading and
-/// saving go through this.
-pub fn js_object_order<T>(items: Vec<(String, T)>) -> Vec<(String, T)> {
-    if !items.iter().any(|(n, _)| array_index(n).is_some()) {
-        return items;
-    }
-    let (mut ints, rest): (Vec<_>, Vec<_>) = items.into_iter().partition(|(n, _)| array_index(n).is_some());
-    ints.sort_by_key(|(n, _)| array_index(n));
-    ints.extend(rest);
-    ints
-}
+/// The byte decoders of the TS (`new TextDecoder().decode` and fflate `strFromU8(d, true)`)
+/// and the JS object key order of `unzipSync`/`zipSync` (array-index names first): one
+/// implementation, in `uo_jsnum` (stage 5, uo-jsnum D2).
+pub use uo_jsnum::object::js_object_order;
+pub use uo_jsnum::text::{decode_latin1, decode_utf8};
 
 /// Finds the end-of-central-directory record (browser.js:2654-2658).
 fn find_eocd(data: &[u8]) -> Result<i64> {
@@ -219,7 +188,7 @@ pub fn read_filtered(data: &[u8], max_entries: u32, filter: &mut dyn FnMut(&ZipE
         }
     }
     drop(index);
-    if out.iter().any(|x| array_index(&x.name).is_some()) {
+    if out.iter().any(|x| uo_jsnum::object::array_index(&x.name).is_some()) {
         let pairs = out.into_iter().map(|x| (x.name.clone(), x)).collect();
         out = js_object_order(pairs).into_iter().map(|(_, x)| x).collect();
     }

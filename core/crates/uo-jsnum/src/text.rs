@@ -1,6 +1,7 @@
 //! The JavaScript string primitives the numeric parsers and the engines depend on: the white
-//! space set of `trim`, `\s` and `Number()` (StrWhiteSpaceChar), `s.split(/\s+/)`, and UTF-16
-//! code unit length and slicing of Rust strings.
+//! space set of `trim`, `\s` and `Number()` (StrWhiteSpaceChar), `\w`, `s.split(/\s+/)`, UTF-16
+//! code unit length and slicing of Rust strings, `toLowerCase`, and the `TextDecoder` and
+//! `String.fromCharCode` byte decoders.
 //!
 //! Rust's `str::trim`, `split_whitespace` and `char::is_whitespace` use Unicode `White_Space`
 //! (they have U+0085 and lack U+FEFF), so they are banned in the workspace (clippy.toml).
@@ -10,6 +11,7 @@ use std::borrow::Cow;
 /// JavaScript `\s` for a char: TAB, LF, VT, FF, CR, SPACE, U+00A0, U+1680, U+2000–U+200A,
 /// U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF (not U+0085, not U+180E).
 #[must_use]
+#[inline]
 pub fn is_js_space(c: char) -> bool {
     matches!(
         c,
@@ -18,9 +20,26 @@ pub fn is_js_space(c: char) -> bool {
     )
 }
 
+/// [`is_js_space`] for one UTF-16 code unit: every JS space is in the BMP, and a lone
+/// surrogate is not a space.
+#[must_use]
+#[inline]
+pub fn is_js_space_unit(u: u16) -> bool {
+    char::from_u32(u32::from(u)).is_some_and(is_js_space)
+}
+
+/// JavaScript `\w` without the `u` and `i` flags, for one byte of UTF-8 (or one ASCII unit):
+/// `[A-Za-z0-9_]`; no byte of a non-ASCII character matches.
+#[must_use]
+#[inline]
+pub fn is_js_word(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_'
+}
+
 /// Byte length of the JS space starting at `b[i]` (0 if there is none). `i` must be a char
 /// boundary or an ASCII position; continuation bytes never match.
 #[must_use]
+#[inline]
 pub fn js_space_len(b: &[u8], i: usize) -> usize {
     let Some(&c) = b.get(i) else { return 0 };
     match c {
@@ -88,6 +107,47 @@ impl<'a> Iterator for SplitJsSpace<'a> {
         self.rest = Some(run);
         Some(rest.get(..start).unwrap_or(""))
     }
+}
+
+/// `s.toLowerCase()`: the full Unicode lowercase mapping with the Final_Sigma context (what
+/// `str::to_lowercase` implements). The Unicode versions of the Rust std and of V8 (ICU) can
+/// differ: `tests/text_v8.rs` compares every code point and the Final_Sigma contexts with Node
+/// 24.15 (Unicode 17.0) and names any difference.
+#[must_use]
+pub fn to_lowercase(s: &str) -> String {
+    s.to_lowercase()
+}
+
+/// The lowercase of one code point as liang.ts `lowerCp` takes it:
+/// `String.fromCodePoint(c).toLowerCase()`, kept when it is exactly one code point or when its
+/// length in UTF-16 units equals the original's (then its first code point); otherwise `c`
+/// itself (U+0130 stays U+0130: its lowercase is two code points, 2 units against 1).
+#[must_use]
+pub fn lower_cp(c: char) -> char {
+    let (mut first, mut count, mut units) = (c, 0usize, 0usize);
+    for l in c.to_lowercase() {
+        if count == 0 {
+            first = l;
+        }
+        count += 1;
+        units += l.len_utf16();
+    }
+    if units == c.len_utf16() || count == 1 { first } else { c }
+}
+
+/// `new TextDecoder().decode(bytes)`: UTF-8, a leading BOM removed, each maximal invalid
+/// subsequence replaced by one U+FFFD (the WHATWG rule, which `String::from_utf8_lossy` follows).
+/// Borrows when the bytes are valid.
+#[must_use]
+pub fn decode_utf8(bytes: &[u8]) -> Cow<'_, str> {
+    let body = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    String::from_utf8_lossy(body)
+}
+
+/// `String.fromCharCode` of each byte (Latin-1; fflate `strFromU8(d, true)`).
+#[must_use]
+pub fn decode_latin1(bytes: &[u8]) -> String {
+    bytes.iter().map(|&b| char::from(b)).collect()
 }
 
 /// `s.length`: the number of UTF-16 code units.

@@ -1,8 +1,9 @@
 //! Entity and character reference decoding, with the end-of-line and attribute-value
 //! normalization of the Sheet reader and of the strict mode.
 
-use super::chars::{is_js_word, is_xml_char};
+use super::chars::is_xml_char;
 use crate::error::XmlErrorKind;
+use uo_jsnum::text::is_js_word;
 
 /// What the TS presets do with a numeric reference outside Unicode (or not a number).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

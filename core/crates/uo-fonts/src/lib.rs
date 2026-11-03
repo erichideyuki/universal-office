@@ -21,8 +21,8 @@ pub mod gpos;
 pub mod gsub;
 pub mod hyphen;
 pub mod info;
+mod lig_trie;
 #[allow(dead_code)] // consumed by the hyphenation, variant, catalog, odttf and embedding ports
-pub(crate) mod js;
 pub mod limits;
 pub mod odttf;
 pub mod outline;

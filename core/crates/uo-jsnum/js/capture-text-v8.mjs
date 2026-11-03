@@ -1,8 +1,11 @@
-// Expected results of the private `js` module (src/js.rs) as V8 gives them: the JS whitespace
-// set, `trim`, the `lowerCp` rule of liang.ts, full-string `toLowerCase` (Final_Sigma included),
-// `parseInt(s, 16)` on UTF-16 code units, the `Uint8Array` store (ToUint8) and `split(/\s+/)`.
-// Deterministic (fixed seed): the committed js_expected.txt is what `cargo test` replays.
-//   node gen_js.mjs
+// V8 oracle of the string helpers of `uo_jsnum` that came from uo-fonts' private `js` module
+// (stage 5, D2): the JS whitespace set, `trim`, the `lowerCp` rule of liang.ts (`text::lower_cp`),
+// full-string `toLowerCase` (`text::to_lowercase`, Final_Sigma included), `parseInt(s, 16)` on
+// UTF-16 code units (`parse::parse_int_utf16`), the `Uint8Array` store (`conv::to_uint8`) and
+// `split(/\s+/)` (`text::split_js_space`, empty pieces skipped). Moved from
+// `uo-fonts/tests/js_support/gen_js.mjs` unchanged but for these comments and the output path.
+// Deterministic (fixed seed): the committed tests/captures/text_v8.txt is what `tests/text_v8.rs` replays.
+//   node crates/uo-jsnum/js/capture-text-v8.mjs
 import { writeFileSync } from 'node:fs';
 
 const hex = (n) => n.toString(16);
@@ -144,5 +147,5 @@ for (let i = 0; i < 700; i++) {
   lines.push(`split\t${enc(s)}\t${s.split(/\s+/).filter(Boolean).map(enc).join(';') || '-'}`);
 }
 
-writeFileSync(new URL('./js_expected.txt', import.meta.url), lines.join('\n') + '\n');
+writeFileSync(new URL('../tests/captures/text_v8.txt', import.meta.url), lines.join('\n') + '\n');
 console.log(`${lines.length} lines, node ${process.version}, unicode ${process.versions.unicode}`);

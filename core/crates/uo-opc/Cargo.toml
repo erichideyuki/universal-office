@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 # deflate for saving (gate 1, G2): parity is on decompressed bytes; inflate is our own port of fflate (G3)
 miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
+# the JS semantics the TS readers rely on (`\s`, `\w`, object key order, TextDecoder): one implementation (stage 5, uo-jsnum D2)
+uo-jsnum = { path = "../uo-jsnum" }
 
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }

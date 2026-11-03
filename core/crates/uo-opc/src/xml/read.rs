@@ -9,10 +9,11 @@
 
 use std::collections::HashMap;
 
-use super::chars::{is_name_char, is_qname, is_xml_space, js_space_len};
+use super::chars::{is_name_char, is_qname, is_xml_space};
 use super::entities::{CharRefPolicy, Norm, decode_lenient, decode_strict, needs_decoding};
 use super::tree::{AttrRec, Document, ElemRec, Kind, MAX_ATTR_SPAN, MAX_NODE_SPAN, NO_NS, Names, NodeRec, NsTables, Source};
 use crate::error::{Error, LimitKind, Result, XmlErrorKind};
+use uo_jsnum::text::js_space_len;
 
 /// Lenient (the TS parsers) or strict (System.Xml-like, gate 1 G6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -549,7 +550,7 @@ impl<'s, 'o> Parser<'s, 'o> {
     /// (`<a b="1" 2="x" 1="y"/>` → `{1, 2, b}` in all three TS parsers).
     fn js_key_order(&mut self) {
         let names = &self.names;
-        let index_of = |id: u32| crate::zip::array_index(names.get(id));
+        let index_of = |id: u32| uo_jsnum::object::array_index(names.get(id));
         if !self.pattrs.iter().any(|a| index_of(a.name).is_some()) {
             return;
         }

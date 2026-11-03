@@ -9,7 +9,8 @@
 
 use std::borrow::Cow;
 
-use crate::js::{parse_int_hex, to_uint8};
+use uo_jsnum::conv::to_uint8;
+use uo_jsnum::parse::parse_int_utf16;
 
 /// `fontKey.replace(/[{}-]/g, '')`, on code units.
 fn hex_units(font_key: &[u16]) -> Vec<u16> {
@@ -25,7 +26,7 @@ fn key_of(hex: &[u16]) -> [u8; 16] {
         let start = (i * 2).min(hex.len());
         let end = (i * 2 + 2).min(hex.len());
         let pair = hex.get(start..end).unwrap_or(&[]);
-        *slot = to_uint8(parse_int_hex(pair));
+        *slot = to_uint8(parse_int_utf16(pair, 16));
     }
     key.reverse();
     key

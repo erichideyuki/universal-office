@@ -7,12 +7,12 @@
 
 use std::borrow::Cow;
 
-use super::chars::is_js_space;
 use super::read::ParseOptions;
 use super::tree::{Document, ElementId};
 use super::write::{Escape, escape_into};
 use crate::error::{Error, Result, XmlErrorKind};
 use crate::limits::Limits;
+use uo_jsnum::text::is_js_space;
 
 /// A child element of a split element.
 #[derive(Debug, Clone, PartialEq, Eq)]

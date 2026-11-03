@@ -15,6 +15,9 @@ hyphen-data = []
 [dependencies]
 # the hash of the glyph-pair maps (gate 1): the v2 rotation keeps `g1 * 65536 + g2` keys from piling into one bucket
 rustc-hash = "=2.1.3"
+# the JS semantics of the TS (whitespace, trim, toLowerCase, the lowerCp rule, parseInt over code units, ToUint8):
+# one implementation, replayed against V8 there (stage 5, uo-jsnum D2; the private `js` module moved there)
+uo-jsnum = { path = "../uo-jsnum" }
 
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }

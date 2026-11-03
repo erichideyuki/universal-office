@@ -1,11 +1,38 @@
 //! String → number: `Number(s)` / unary `+s` (StringToNumber, V8 `InternalStringToDouble`) and
-//! `parseInt` (V8 `NumberParseIntHelper`, `src/numbers/conversions.cc`) and `parseFloat`. This is the only place
+//! `parseInt` (V8 `NumberParseIntHelper`, `src/numbers/conversions.cc`, over a Rust string or
+//! over UTF-16 code units, which may hold lone surrogates) and `parseFloat`. This is the only place
 //! of the workspace that may call `str::parse::<f64>` (it is correctly rounded like V8's
 //! `Strtod`; Rust's own grammar accepts `inf`, `nan` and rejects spaces, so every input is
 //! validated against the ECMA-262 grammar first).
 
 use crate::fdlibm::scalbn;
-use crate::text::{trim, trim_start};
+use crate::text::{is_js_space_unit, trim, trim_start};
+
+/// A unit of the input of the integer parsers: a UTF-8 byte or a UTF-16 code unit. Only ASCII
+/// units are digits, signs or prefix letters, so the parsers read each unit as an ASCII byte
+/// and any other unit as 0xFF, which none of them accepts.
+trait Unit: Copy {
+    fn ascii(self) -> u8;
+}
+
+impl Unit for u8 {
+    #[inline]
+    fn ascii(self) -> u8 {
+        self
+    }
+}
+
+impl Unit for u16 {
+    #[inline]
+    fn ascii(self) -> u8 {
+        u8::try_from(self).ok().filter(u8::is_ascii).unwrap_or(0xFF)
+    }
+}
+
+#[inline]
+fn ascii_at<T: Unit>(b: &[T], i: usize) -> Option<u8> {
+    b.get(i).map(|&c| c.ascii())
+}
 
 /// The value of `c` as a digit of `radix` (`0-9`, `a-z`, `A-Z`), `None` when it is not one.
 fn digit(c: u8, radix: u32) -> Option<u32> {
@@ -22,10 +49,10 @@ fn digit(c: u8, radix: u32) -> Option<u32> {
 /// the digits at the start of `b` (radix 2, 4, 8, 16 or 32), rounded to a double half to even
 /// when they exceed 53 bits. Reading stops at the first byte that is not a digit; junk after
 /// the digits is the caller's business.
-fn int_double(radix_log_2: u32, b: &[u8]) -> f64 {
+fn int_double<T: Unit>(radix_log_2: u32, b: &[T]) -> f64 {
     let radix = 1u32 << radix_log_2;
     let mut current = 0usize;
-    while b.get(current) == Some(&b'0') {
+    while ascii_at(b, current) == Some(b'0') {
         current += 1;
         if current == b.len() {
             return 0.0;
@@ -34,7 +61,7 @@ fn int_double(radix_log_2: u32, b: &[u8]) -> f64 {
 
     let mut number: i64 = 0;
     let mut exponent: i32 = 0;
-    while let Some(d) = b.get(current).and_then(|&c| digit(c, radix)) {
+    while let Some(d) = ascii_at(b, current).and_then(|c| digit(c, radix)) {
         number = number * i64::from(radix) + i64::from(d);
         let mut overflow = (number >> 53) as i32;
         if overflow != 0 {
@@ -52,8 +79,8 @@ fn int_double(radix_log_2: u32, b: &[u8]) -> f64 {
             let mut zero_tail = true;
             loop {
                 current += 1;
-                match b.get(current) {
-                    Some(&c) if digit(c, radix).is_some() => {
+                match ascii_at(b, current) {
+                    Some(c) if digit(c, radix).is_some() => {
                         zero_tail = zero_tail && c == b'0';
                         // V8's `int` wraps (radix 32 past 429,496,739 digits): the same here
                         exponent = exponent.wrapping_add(radix_log_2 as i32);
@@ -164,7 +191,24 @@ fn is_unsigned_decimal_literal(b: &[u8]) -> bool {
 /// other radices accumulate in doubles exactly as V8 does.
 #[must_use]
 pub fn parse_int(s: &str, radix: i32) -> f64 {
-    let b = trim_start(s).as_bytes();
+    parse_int_units(trim_start(s).as_bytes(), radix)
+}
+
+/// [`parse_int`] over the UTF-16 code units of a JS string (`parseInt(s, radix)` where `s` may
+/// hold lone surrogates, which are neither white space nor digits). Equal to [`parse_int`] of
+/// the same text when the units are valid UTF-16.
+#[must_use]
+#[inline]
+pub fn parse_int_utf16(units: &[u16], radix: i32) -> f64 {
+    let start = units.iter().take_while(|&&u| is_js_space_unit(u)).count();
+    parse_int_units(units.get(start..).unwrap_or(&[]), radix)
+}
+
+/// `parseInt` after the leading white space. Inlined so that a constant radix drops the paths of
+/// the other radices (uo-fonts parses hex only: without it the decimal parser came along, +50 KB
+/// of wasm).
+#[inline(always)]
+fn parse_int_units<T: Unit>(b: &[T], radix: i32) -> f64 {
     if b.is_empty() {
         return f64::NAN;
     }
@@ -175,7 +219,7 @@ pub fn parse_int(s: &str, radix: i32) -> f64 {
 
     let mut current = 0usize;
     let mut negative = false;
-    match b.first() {
+    match ascii_at(b, 0) {
         Some(b'+') => current = 1,
         Some(b'-') => {
             negative = true;
@@ -188,7 +232,7 @@ pub fn parse_int(s: &str, radix: i32) -> f64 {
     }
     let signed_zero = if negative { -0.0 } else { 0.0 };
 
-    let at = |i: usize| b.get(i).copied();
+    let at = |i: usize| ascii_at(b, i);
     let mut leading_zero = false;
     if radix == 0 {
         radix = 10;
@@ -249,20 +293,24 @@ pub fn parse_int(s: &str, radix: i32) -> f64 {
 
 /// `HandleBaseTenCase`: the leading ASCII digits, as a decimal (V8 keeps 310 of them: more than
 /// 309 digits is infinity, which the parse gives too).
-fn parse_base_ten(digits: &[u8]) -> f64 {
+fn parse_base_ten<T: Unit>(digits: &[T]) -> f64 {
     const MAX_SIGNIFICANT_DIGITS: usize = 309;
-    let len = digits.iter().take_while(|c| c.is_ascii_digit()).count();
+    let len = digits.iter().take_while(|c| c.ascii().is_ascii_digit()).count();
     if len > MAX_SIGNIFICANT_DIGITS + 1 {
         return f64::INFINITY;
     }
-    let text = digits.get(..len).and_then(|d| core::str::from_utf8(d).ok()).unwrap_or("0");
+    let mut buffer = [0u8; MAX_SIGNIFICANT_DIGITS + 1];
+    for (to, from) in buffer.iter_mut().zip(digits.iter().take(len)) {
+        *to = from.ascii();
+    }
+    let text = buffer.get(..len).and_then(|d| core::str::from_utf8(d).ok()).unwrap_or("0");
     text.parse::<f64>().unwrap_or(f64::NAN)
 }
 
 /// `HandleGenericCase`: radix 3, 5, 6, 7, 9, 11…36 except 16 and 32. Parts of up to 32 bits
 /// are accumulated as integers and combined in doubles, the (implementation dependent) rounding
 /// error of the spec for large values is V8's.
-fn parse_generic(digits: &[u8], radix: u32) -> f64 {
+fn parse_generic<T: Unit>(digits: &[T], radix: u32) -> f64 {
     const MAXIMUM_MULTIPLIER: u32 = 0xFFFF_FFFF / 36;
     let mut result = 0.0f64;
     let mut current = 0usize;
@@ -271,7 +319,7 @@ fn parse_generic(digits: &[u8], radix: u32) -> f64 {
         let mut part: u32 = 0;
         let mut multiplier: u32 = 1;
         loop {
-            let Some(d) = digits.get(current).and_then(|&c| digit(c, radix)) else {
+            let Some(d) = ascii_at(digits, current).and_then(|c| digit(c, radix)) else {
                 done = true;
                 break;
             };

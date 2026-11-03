@@ -9,7 +9,7 @@
 //! over any number of lines, an `[exceptions]` line and the exceptions likewise. [`parse_patterns`]
 //! reads it, for the shell's files as well as the embedded ones.
 
-use crate::js::js_trim;
+use uo_jsnum::text::trim;
 
 mod cache;
 mod liang;
@@ -41,9 +41,9 @@ pub fn parse_patterns(text: &str) -> Option<HyphenationPatterns<'_>> {
     let (mut id, mut left, mut right) = (None, None, None);
     for line in header.lines().filter(|l| !l.starts_with('#')) {
         match line.split_once(' ') {
-            Some(("id", v)) => id = Some(js_trim(v)),
-            Some(("left", v)) => left = js_trim(v).parse::<u32>().ok(),
-            Some(("right", v)) => right = js_trim(v).parse::<u32>().ok(),
+            Some(("id", v)) => id = Some(trim(v)),
+            Some(("left", v)) => left = trim(v).parse::<u32>().ok(),
+            Some(("right", v)) => right = trim(v).parse::<u32>().ok(),
             _ => {}
         }
     }

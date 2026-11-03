@@ -55,6 +55,7 @@ version = "0.10.0-dev"
 dependencies = [
  "rustc-hash",
  "uo-alloc",
+ "uo-jsnum",
  "uo-opc",
  "uo-testkit",
 ]
@@ -74,6 +75,7 @@ version = "0.10.0-dev"
 dependencies = [
  "miniz_oxide",
  "uo-alloc",
+ "uo-jsnum",
  "uo-testkit",
 ]
 

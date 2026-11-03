@@ -7,6 +7,11 @@
 //! index order from left to right, the first ligature of the font that matches wins, and a
 //! single substitution applies only to a glyph that no ligature has absorbed.
 //!
+//! The parse keeps the TS structure (`lookups`, the lists in font order) and indexes the lists
+//! longer than 8 entries once (stage 5, D5): their first match is found by walking a trie of the
+//! following glyphs (`lig_trie.rs`), so a position costs its depth instead of the length of the
+//! first glyph's list; shorter lists are scanned as in the TS.
+//!
 //! Any failure of the parse (a read past the end of the input, the work budget) is `None` for
 //! the life of the font, as the TS `try`/`catch` of `ligate` makes it. The work budget (R-BUDGET)
 //! counts each feature index appended, each subtable visited (stage 4, S4-2), each coverage entry,
@@ -20,6 +25,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::error::{FontError, LimitKind};
 use crate::gpos::Coverage;
+use crate::lig_trie::{self, LigIndex};
 use crate::limits::{FontLimits, WorkBudget};
 use crate::read::{Tag, View};
 use crate::sfnt::{TableDir, TableRecord};
@@ -34,6 +40,8 @@ pub struct Ligature {
 /// The ligatures of a lookup by first glyph, in font order (the first match wins).
 pub type LigLookup = FxHashMap<u16, Vec<Ligature>>;
 
+/// What the parse reads. The fields are the TS structure (read them; `ligate` uses an index of
+/// `lookups` built by the parse, so editing them does not change what `ligate` finds).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GsubLigatures {
     /// feature tag to its lookup indices, in the order of the tag's first insertion; a tag
@@ -41,6 +49,8 @@ pub struct GsubLigatures {
     pub features: Vec<(Tag, Vec<u16>)>,
     pub lookups: FxHashMap<u16, LigLookup>,
     pub singles: FxHashMap<u16, FxHashMap<u16, u16>>,
+    /// the tries of the lists of `lookups` longer than `lig_trie::SCAN_MAX` (D5)
+    index: LigIndex,
 }
 
 /// A run of source glyph ids that became one glyph: `gid` is the result and `len` how many of
@@ -70,6 +80,11 @@ impl GsubLigatures {
         parser.parse(off)
     }
 
+    /// Bytes held by the ligature index (D5) of every lookup, by capacity (the M3 record).
+    pub fn index_bytes(&self) -> usize {
+        self.index.heap_bytes()
+    }
+
     /// The lookup indices of a feature tag (empty when the font does not list it).
     pub fn lookups_of(&self, tag: Tag) -> &[u16] {
         self.features.iter().find(|(t, _)| *t == tag).map_or(&[], |(_, list)| list.as_slice())
@@ -84,9 +99,13 @@ impl GsubLigatures {
     }
 
     /// [`GsubLigatures::ligate`] with the work counted against `budget` (stage 4, S4-3): one unit
-    /// per group visited by each lookup, per ligature examined and per component compared. A
-    /// ligature list can hold millions of entries for one first glyph, so the TS work of one call
-    /// (positions x entries) has no bound; over the budget the run gets no ligatures (`None`,
+    /// per group visited by each lookup (a single substitution lookup counts the run once); for a
+    /// first glyph's list of up to 8 entries, one per candidate examined and per component
+    /// compared (the TS scan); for a longer list, one per probe of a child search in its trie (the
+    /// bit length of the number of children) and per further component compared. The TS compares
+    /// every entry of the list at every position (a list can hold millions); the trie (stage 5,
+    /// D5) finds the same ligature in time proportional to the depth, so the budget is a guard that
+    /// real and the known hostile fonts do not reach; over it the run gets no ligatures (`None`,
     /// what a GSUB that cannot be read gives).
     pub fn ligate_within(&self, gids: &[u32], features: &[Tag], budget: &mut WorkBudget) -> Option<Vec<LigGroup>> {
         if self.lookups.is_empty() && self.singles.is_empty() {
@@ -134,22 +153,10 @@ impl GsubLigatures {
             while let Some(&group) = out.get(i) {
                 budget.tick()?;
                 let mut hit: Option<&Ligature> = None;
-                if let Some(candidates) = u16::try_from(group.gid).ok().and_then(|g| lookup.get(&g)) {
-                    for c in candidates {
-                        budget.tick()?;
-                        let mut matches = true;
-                        for (k, &r) in c.rest.iter().enumerate() {
-                            budget.tick()?;
-                            if !out.get(i + 1 + k).is_some_and(|o| o.gid == u32::from(r)) {
-                                matches = false;
-                                break;
-                            }
-                        }
-                        if matches {
-                            hit = Some(c);
-                            break;
-                        }
-                    }
+                if let Some(first) = u16::try_from(group.gid).ok()
+                    && let Some(list) = lookup.get(&first)
+                {
+                    hit = lig_trie::first_match(&self.index, li, first, list, out.get(i + 1..).unwrap_or(&[]), budget)?;
                 }
                 let Some(hit) = hit else {
                     next.push(group);
@@ -279,6 +286,9 @@ impl GsubParser<'_> {
                 result.singles.insert(li, one);
             }
         }
+        // the index is capped at one node per 16 stored entries of the cap (2^20 nodes, 16 MiB,
+        // native; 2^16, 1 MiB, wasm32; the largest real index is about 850 nodes)
+        result.index = LigIndex::build(&result.lookups, usize::try_from(self.cap / 16).unwrap_or(usize::MAX))?;
         Ok(result)
     }
 

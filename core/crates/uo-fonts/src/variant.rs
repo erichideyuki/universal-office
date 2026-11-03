@@ -1,6 +1,6 @@
 //! The four RIBBI variants of a font family.
 
-use crate::js::{js_to_lowercase, split_js_space};
+use uo_jsnum::text::{split_js_space, to_lowercase};
 
 /// Regular, Bold, Italic or Bold Italic: the variants a family can have in a document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -37,9 +37,9 @@ pub fn is_italic_variant(v: Variant) -> bool {
 /// is regular. The name is lower-cased (Unicode), every run of JS whitespace becomes one space
 /// and the ends are trimmed, as the TS does.
 pub fn variant_of_style(style: Option<&str>) -> Option<Variant> {
-    let lowered = js_to_lowercase(style.unwrap_or("Regular"));
+    let lowered = to_lowercase(style.unwrap_or("Regular"));
     let mut name = String::with_capacity(lowered.len());
-    for (i, token) in split_js_space(&lowered).enumerate() {
+    for (i, token) in split_js_space(&lowered).filter(|t| !t.is_empty()).enumerate() {
         if i > 0 {
             name.push(' ');
         }

@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use super::liang::{HyphenationPatterns, Hyphenator};
-use crate::js::js_to_lowercase;
+use uo_jsnum::text::to_lowercase;
 
 /// The ids with patterns, in the TS order.
 pub const HYPHENATION_PATTERN_IDS: [&str; 7] = ["pt", "en-us", "es", "fr", "de-1996", "it", "nl"];
@@ -17,7 +17,7 @@ pub const HYPHENATION_PATTERN_IDS: [&str; 7] = ["pt", "en-us", "es", "fr", "de-1
 /// and cut at the first `-` or `_`.
 pub fn hyphenation_pattern_id(lang: Option<&str>) -> Option<&'static str> {
     let lang = lang.filter(|l| !l.is_empty())?;
-    let lowered = js_to_lowercase(lang);
+    let lowered = to_lowercase(lang);
     let base = lowered.split(['-', '_']).next().unwrap_or("");
     match base {
         "pt" => Some("pt"),

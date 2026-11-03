@@ -873,6 +873,7 @@ Stages 5–6 (Opus, as the rest of uo-opc):
 | 5 | simplification and algorithms (Opus) | 45.9 min | 158 |
 | 6 | final skeptic (Opus) | 12.8 min | 73 |
 | 6 | stage-6 findings M1, S1–S8 (Opus) | 28.0 min | 112 |
+| 5 (uo-jsnum D2) | simplification and algorithms (Opus 5.5): the JS helpers to uo-jsnum, in one session with uo-jsnum D2 and uo-fonts D5 | ≈ 80 min for the three | ≈ 120 for the three |
 
 | # | What | Why | Fixed by |
 |---|---|---|---|
@@ -1386,3 +1387,38 @@ Files: `src/{package,zip,flate}.rs`; tests `gate3_decisions.rs` (new), `opc_pari
 `parity_support/mod.rs`, `gate2_decisions.rs`, `cache_caps.rs`, `package_ops.rs`,
 `package_budgets.rs`, `api_memory.rs`, `package_memory.rs`, `memory_support/mod.rs`;
 `examples/opc_rule_evidence.rs`; `uo-wasm/src/opc_memtest.rs`; `fuzz/src/lib.rs`; `CHANGELOG.md`.
+
+## Stage 5 — evolution: the JS helpers moved to uo-jsnum (uo-jsnum D2, 2026-11-03)
+
+Simplification and algorithms specialist (Opus 5.5), worktree `rust-core`, `CARGO_TARGET_DIR=core/target/stage5-b`.
+The uo-jsnum items of the stage-6 notes ("Reuse", above): uo-opc now depends on `uo-jsnum` and keeps no copy of a JS
+semantic. Result-preserving; the table of the whole move (with uo-fonts' `js` module) is in `uo-jsnum.md`, "Stage 5 —
+evolution".
+
+| uo-opc before | Now |
+|---|---|
+| `xml/chars.rs` `js_space_len`, `is_js_space`, `is_js_word` (`pub(crate)`) | `uo_jsnum::text::{js_space_len, is_js_space, is_js_word}` (used by `xml/read.rs`, `xml/raw.rs`, `xml/entities.rs`); `chars.rs` keeps the XML 1.0 classes only |
+| `zip::array_index` (`pub(crate)`, also used by `xml/read.rs`), `zip::js_object_order` | `uo_jsnum::object::{array_index, js_object_order}`; `uo_opc::zip::js_object_order` is a re-export (API unchanged) |
+| `zip::decode_utf8`, `zip::decode_latin1` | `uo_jsnum::text::{decode_utf8, decode_latin1}`, re-exported from `uo_opc::zip` (API unchanged) |
+| `package::decode_text`, `decode_text_owned` | unchanged: the UTF-16 BOM option and the in-place BOM removal are uo-opc's |
+| `rels::next_rel_id_after_max` (`u64` where slides `nextRelId` uses `Number()`) | unchanged: `to_number` would change results above 2^53 (no capture covers rels editing), a maintainer decision, not part of D2 |
+
+**Numbers.** Wasm (`--profile wasm`): `opc-memtest` 267,877 → 255,310 B, `count,opc-memtest` 268,368 → 255,801 B,
+`opc-bench` 288,568 → 276,001 B (−12,567 B each, all in the code section: 242,372 → 229,801 B; the data section is
+unchanged; inlining differences, the cause was not traced). Time, `examples/opc_bench` (best of 7, two alternated runs;
+ms): corpus 229.5/228.7 → 228.4/226.3, giant 148.8/151.1 → 146.0/146.5, inflate 27.1/27.3 → 26.9/26.8, save docx 0.4
+→ 0.4, save giant 157.2/155.8 → 156.6/156.3; wasm in Node 24.15 (`tools/bench/opc/wasm.mjs`, best of 5): corpus
+238.6/239.9 → 237.9/238.6, giant 170.9/165.8 → 167.5/167.9, inflate 28.2/28.0 → 28.1/28.2, save giant 189.8/190.0 →
+191.0/189.9. Equal within the noise.
+
+**Parity and tests.** `opc_parity` 0 mismatches in every group: oracle docx 5,328 + 5,520 + 5,472 + 5,616 equal, the
+quirk corpus 3,545 equal and 795 accepted by name (as before), other fixtures 313 equal and 11 accepted, slides 328 and
+52 accepted, sheet 56; no capture file changed. Every uo-opc test passes (`cargo test --release --workspace
+--all-features`, including `zip_write::js_object_order_puts_array_indices_first` through the re-export);
+`opc_memory.test.mjs` 5/5 in Node with the new `count,opc-memtest` module (M2 1,000 iterations flat); the new modules
+validate with the Safari 15 feature list of CI. The JS helpers are now tested where they live: the V8 whitespace set
+over every code point and `js_space_len` against it, `\w` and the object key order by definition (`uo-jsnum/tests/
+text_v8.rs`), their allocation in `uo-jsnum/tests/memory_gate.rs`.
+
+**Process metrics.** Stage 5 (D2 for uo-opc), simplification and algorithms (Opus 5.5): one session with uo-jsnum D2
+and uo-fonts D5, about 80 minutes and about 120 tool calls for the three; rework: none in uo-opc.

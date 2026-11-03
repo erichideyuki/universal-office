@@ -6,7 +6,7 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::js::{js_to_lowercase, lower_cp, split_js_space};
+use uo_jsnum::text::{lower_cp, split_js_space, to_lowercase};
 
 /// The data of one language: the minimums before and after a hyphen, the patterns in TeX syntax
 /// (`1b2l`) and the exceptions (words with `-` at the break points), each separated by JS
@@ -124,11 +124,11 @@ impl Hyphenator {
     /// is the word without the dashes in lower case, and a repeated key keeps the last entry.
     pub fn new(p: &HyphenationPatterns<'_>) -> Hyphenator {
         let mut builder = TrieBuilder::new();
-        for pattern in split_js_space(p.patterns) {
+        for pattern in split_js_space(p.patterns).filter(|t| !t.is_empty()) {
             builder.add(pattern);
         }
         let mut exceptions: FxHashMap<String, Box<[u32]>> = FxHashMap::default();
-        for word in split_js_space(p.exceptions) {
+        for word in split_js_space(p.exceptions).filter(|t| !t.is_empty()) {
             let mut points: Vec<u32> = Vec::new();
             let mut n: u32 = 0;
             let mut bare = String::with_capacity(word.len());
@@ -140,7 +140,7 @@ impl Hyphenator {
                     bare.push(ch);
                 }
             }
-            exceptions.insert(js_to_lowercase(&bare), points.into_boxed_slice());
+            exceptions.insert(to_lowercase(&bare), points.into_boxed_slice());
         }
         Hyphenator { id: p.id.to_owned(), left: p.left, right: p.right, trie: builder.freeze(), exceptions }
     }

@@ -11,7 +11,8 @@
 
 use crate::error::Result;
 use crate::info::{FaceInfo, face_info};
-use crate::js::{parse_int_hex, to_uint8};
+use uo_jsnum::conv::to_uint8;
+use uo_jsnum::parse::parse_int_utf16;
 
 const TTEMBED_SUBSET: u32 = 0x1;
 
@@ -34,7 +35,7 @@ fn wrap32(n: usize) -> u32 {
 fn panose_byte(units: &[u16], i: usize) -> u8 {
     let start = (i * 2).min(units.len());
     let end = (i * 2 + 2).min(units.len());
-    to_uint8(parse_int_hex(units.get(start..end).unwrap_or(&[])))
+    to_uint8(parse_int_utf16(units.get(start..end).unwrap_or(&[]), 16))
 }
 
 fn push_u16(out: &mut Vec<u8>, v: u16) {

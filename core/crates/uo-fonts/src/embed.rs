@@ -11,10 +11,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::cmap::glyph_ids_for;
 use crate::error::Result;
 use crate::info::{FaceInfo, face_info, has_true_type_outlines, is_embeddable};
-use crate::js::js_to_lowercase;
 use crate::limits::FontLimits;
 use crate::subset::subset_true_type;
 use crate::variant::{VARIANTS, Variant};
+use uo_jsnum::text::to_lowercase;
 
 /// What a program embeds and what it leaves out, resolved by the caller from its own rules.
 #[derive(Debug, Clone, Copy)]
@@ -116,7 +116,7 @@ fn walk(usage: &[FontUsage<'_>], policy: &EmbeddingPolicy<'_>, already_embedded:
         if u.family.is_empty() {
             continue;
         }
-        let key = js_to_lowercase(u.family);
+        let key = to_lowercase(u.family);
         let entry = by_family.entry(key.clone()).or_insert_with(|| {
             order.push(key);
             Used { family: u.family.to_owned(), variants: [false; 4], chars: FxHashSet::default() }
@@ -129,7 +129,7 @@ fn walk(usage: &[FontUsage<'_>], policy: &EmbeddingPolicy<'_>, already_embedded:
         entry.chars.extend(u.text.chars().map(u32::from));
     }
 
-    let common: FxHashSet<String> = policy.common_fonts.iter().map(|f| js_to_lowercase(f)).collect();
+    let common: FxHashSet<String> = policy.common_fonts.iter().map(|f| to_lowercase(f)).collect();
     let mut steps = Vec::new();
     for key in order {
         let Some(used) = by_family.remove(&key) else { continue };
