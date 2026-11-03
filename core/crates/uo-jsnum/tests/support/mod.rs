@@ -9,6 +9,7 @@ use uo_testkit::generate::Rng;
 use uo_testkit::{Capture, PlatformSpec};
 
 pub mod adv;
+pub mod format;
 
 pub const CAPTURE: &str = include_str!("../captures/jsnum.capture");
 pub const INPUTS: &str = include_str!("../captures/inputs.txt");

@@ -42,6 +42,7 @@ function readCapture(name) {
 const jsnum = readCapture('jsnum.capture');
 const adv = readCapture('adv.capture');
 const pow = readCapture('pow.capture');
+const format = readCapture('format.capture');
 
 // ── the boundary: buffers owned by JS, plain numbers ────────────────────────────────────────────
 const IN = 1 << 16;
@@ -61,8 +62,14 @@ const digest = (group, index, n) => read(w.uo_jsnum_selftest_digest(group, index
 const number = (s) => read(w.uo_jsnum_selftest_number(inPtr, putString(s), outPtr));
 const parseInt_ = (s, radix) => read(w.uo_jsnum_selftest_parse_int(inPtr, putString(s), radix, outPtr));
 const textOp = (s, op) => read(w.uo_jsnum_selftest_text(inPtr, putString(s), op, outPtr, OUT));
+const parseFloat_ = (s) => read(w.uo_jsnum_selftest_parse_float(inPtr, putString(s), outPtr));
+const FORMAT_OPS = { js: 0, fixed: 1, precision: 2, exponential: 3, radix: 4, display: 5 };
+const formatOp = (op, x, n) => read(w.uo_jsnum_selftest_format(op, x, n, outPtr, OUT));
+const f64 = new Float64Array(1);
+const u64 = new BigUint64Array(f64.buffer);
+const fromHex = (h) => { u64[0] = BigInt(`0x${h}`); return f64[0]; };
 
-const GROUPS = { numeric: 0, adv: 1, ext: 2, pow: 3, conv: 4 };
+const GROUPS = { numeric: 0, adv: 1, ext: 2, pow: 3, conv: 4, format: 5, pfStrings: 6, sweeps: 7 };
 
 test('numeric records of jsnum.capture: wasm digests equal the capture (10^5 samples; 10^7 with UO_JSNUM_FULL=1)', () => {
   assert.equal(jsnum.meta.get('tiers-agree').includes('--no-opt --no-maglev'), true);
@@ -185,6 +192,102 @@ test('the exact midpoints of neighbouring doubles fed through the boundary: Numb
   assert.deepEqual(bad, [], `${bad.length} of ${checked} differ`);
   assert.ok(checked >= 1900);
   console.log(`# ${checked} midpoint comparisons equal`);
+});
+
+test('formatter records of format.capture (String(x), toFixed, toPrecision, toExponential, toString(radix)): wasm digests equal the capture', () => {
+  assert.equal(w.uo_jsnum_selftest_groups(), 8);
+  const count = w.uo_jsnum_selftest_count(GROUPS.format);
+  const bad = [];
+  let checked = 0;
+  for (let i = 0; i < count; i++) {
+    const k = key(GROUPS.format, i);
+    const rec = format.records.get(k);
+    assert.ok(rec, `${k} is not in the capture`);
+    const sizes = [['small', Number(rec.n_small)]];
+    if (FULL) sizes.push(['full', Number(rec.n_full)]);
+    for (const [facet, n] of sizes) {
+      const got = digest(GROUPS.format, i, n);
+      if (got !== rec[facet]) bad.push(`${k} ${facet}: wasm ${got}, capture ${rec[facet]}`);
+      checked++;
+    }
+  }
+  assert.deepEqual(bad, [], `${bad.length} of ${checked} digests differ`);
+  assert.equal(count, 51);
+  console.log(`# ${count} formatter records, ${checked} digests equal`);
+});
+
+test('parseFloat over random strings and the sweeps of powers of two and ten: wasm digests equal the capture', () => {
+  const bad = [];
+  let checked = 0;
+  const strings = w.uo_jsnum_selftest_count(GROUPS.pfStrings);
+  for (let i = 0; i < strings; i++) {
+    const k = key(GROUPS.pfStrings, i);
+    const rec = format.records.get(k);
+    assert.ok(rec, `${k} is not in the capture`);
+    const sizes = [['small', Number(rec.n_small)]];
+    if (FULL) sizes.push(['full', Number(rec.n_full)]);
+    for (const [facet, n] of sizes) {
+      const got = digest(GROUPS.pfStrings, i, n);
+      if (got !== rec[facet]) bad.push(`${k} ${facet}: wasm ${got}, capture ${rec[facet]}`);
+      checked++;
+    }
+  }
+  const sweeps = w.uo_jsnum_selftest_count(GROUPS.sweeps);
+  for (let i = 0; i < sweeps; i++) {
+    const k = key(GROUPS.sweeps, i);
+    const rec = format.records.get(k);
+    assert.ok(rec, `${k} is not in the capture`);
+    const got = digest(GROUPS.sweeps, i, 0);
+    if (got !== rec.digest) bad.push(`${k}: wasm ${got}, capture ${rec.digest}`);
+    checked++;
+  }
+  assert.deepEqual(bad, [], `${bad.length} of ${checked} digests differ`);
+  assert.equal(strings, 3);
+  assert.equal(sweeps, 6);
+  console.log(`# ${strings} parseFloat string records and ${sweeps} sweeps, ${checked} digests equal`);
+});
+
+test('the written-out edge values of format.capture fed through the boundary: every formatter and every digits argument', () => {
+  const bad = [];
+  let checked = 0;
+  for (const [k, rec] of format.records) {
+    if (!k.startsWith('edge/')) continue;
+    const op = k.split('/')[1];
+    const x = fromHex(rec.x);
+    for (const facet of Object.keys(rec)) {
+      if (facet === 'x') continue;
+      let got;
+      if (op === 'js') {
+        got = formatOp(FORMAT_OPS.js, x, 0);
+        if (formatOp(FORMAT_OPS.display, x, 0) !== got) bad.push(`${k} Display differs from to_js_string: ${formatOp(FORMAT_OPS.display, x, 0)} / ${got}`);
+      } else {
+        got = formatOp(FORMAT_OPS[op], x, Number(facet.slice(1)));
+      }
+      checked++;
+      if (got !== rec[facet]) bad.push(`${k} ${facet}: wasm ${got}, capture ${rec[facet]}`);
+    }
+  }
+  assert.deepEqual(bad, [], `${bad.length} of ${checked} differ`);
+  assert.ok(checked > 30_000);
+  console.log(`# ${checked} edge outputs equal`);
+});
+
+test('parseFloat of the corpus strings fed through the boundary', () => {
+  const bad = [];
+  let checked = 0;
+  for (const [k, rec] of format.records) {
+    if (!k.startsWith('pf/')) continue;
+    let s;
+    if (k.startsWith('pf/own/')) s = JSON.parse(rec.s);
+    else if (k.startsWith('pf/corpus/')) s = JSON.parse(jsnum.records.get(k.slice(3)).s);
+    else s = JSON.parse(adv.records.get(k.slice(3)).s);
+    const got = parseFloat_(s);
+    checked++;
+    if (got !== rec.pf) bad.push(`${k} ${JSON.stringify(s).slice(0, 60)}: wasm ${got}, capture ${rec.pf}`);
+  }
+  assert.deepEqual(bad, [], `${bad.length} of ${checked} differ`);
+  assert.ok(checked > 1200);
+  console.log(`# ${checked} parseFloat comparisons equal`);
 });
 
 test('the buffers are released', () => {

@@ -1,6 +1,6 @@
 # uo-jsnum — JavaScript numerics
 
-Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01** (G1–G16 as the final recommendations: pow option (a), two increments); next: stage 3 of increment A.
+Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01** (G1–G16 as the final recommendations: pow option (a), two increments); stage 3 and 4 of increment A done, gate 2 approved 2026-11-03; stage 3 of increment B done ("Stage 3 — port (increment B)" at the end), stage 4 of B pending.
 
 ## Why (evidence)
 
@@ -1179,6 +1179,7 @@ component, the `libfuzzer` wrappers are the same three lines as the uo-opc ones)
 | 1 revision | port-planner / Opus: S1–S15 written in | 4.2 min | — | — |
 | 3 | porter: pow (Opus) | not measured (interrupted once by a usage limit); ~60 tool calls | 0 (bit-exact on the first replay) | clippy `assign_op_pattern` rewritten without reordering; `gen` identifier (reserved in edition 2024) renamed; capture switched to uo-testkit `platform()`/`require_platform` when they landed |
 | 3 | porter: increment A without pow (Sonnet) | about 3 h over two sessions (one usage-limit interruption); about 110 tool calls | 0: every record was bit-exact on its first native replay; later edits were clippy and test tables only | clippy lints (`eq_op` on `x - x`, `needless_range_loop`, `needless_late_init`, `while_let_loop`, identical `if` blocks, `manual_is_multiple_of`, `collapsible_if` in the testkit `PlatformSpec::check`, found by the uo-fonts agent); a bad TOML escape in a ban reason broke the clippy config of every crate for a few minutes, and a bad Rust escape in an `#[expect]` reason broke `uo-opc` tests; invisible characters in the generator source re-escaped |
+| 3 | porter: increment B (Sonnet) | not measured; about 150 tool calls | 0: every record was bit-exact on its first native replay (51 formatter records at 10^5, then 10^6/10^7; the corpora; the sweeps) | one clippy name (`foo`), two test lints (`approx_constant`, `bool_assert_comparison`), a CRLF `Cargo.toml` from a Python rewrite, the M5 static count (4 to 5) and the public-function scan of `memory_gate.rs` (new `format` files, `parse_float`) updated; the first capture generator draft had raw invisible characters in string literals (re-escaped) and one distribution (`radix/r1e6`) that fed fractions to an integers-only function (renamed `int1e6`); a suspected out-of-bounds read in V8's `div` table was investigated and proved unreachable (decision 6) |
 | 4 | memory verifier (Sonnet) | not measured | 0 | none in the crate; one test-only feature in `uo-wasm` and a two-variable forward in `browser/run.mjs`; `clippy::disallowed_methods` caught `str::trim`/`trim_start` in the new test (replaced by `text::trim*`); the first wasm soak with 1.8 MB inputs took 40 s and was cut to 230 KB; about 45 tool calls |
 | 4 | security specialist (Opus) | about 2 h 40 min (four 30-minute libFuzzer runs in it, two in parallel); about 90 tool calls | 1 finding (J1), fixed by the specialist | J1 is rework of the stage-3 Sonnet port: `int_double` saturated the exponent (an unrecorded deviation from V8) and added the rounding carry unchecked (debug panic; release `Infinity` where V8 gives `0`); two lines, now `wrapping_add` as V8's `int`. In the fuzz crate: the pre-existing banned `f64::max` in `fallback.rs`; three oracle false positives (UCRT `atanh`, `hypot` at `MAX`, `sinh` near overflow) each checked in Node and the oracle widened |
 | 4 | parity verifier (Sonnet) | not measured (about 2 h, most of it runs: three 1-3 minute captures, a 3 minute full-size wasm replay in Node and in WebKit) | 0 (no port bug) | none in the crate; test side: the start value of `Iterator::sum` (-0.0) in the `js_index` model, `clippy::manual_is_multiple_of` in the new generators, raw invisible characters in the generator source re-escaped as backslash-u sequences; shared files touched: `tests/pow.rs` (two `pub fn`), `tests/support/mod.rs` (`pub mod adv`), `browser/run.mjs` (forwards `UO_JSNUM_FULL`), `uo-wasm` `Cargo.toml` and `lib.rs` (feature `jsnum-selftest`); about 175 tool calls |
@@ -1194,3 +1195,117 @@ memory gate green (nothing allocates except owned `utf16_slice`), security J1 fi
 |---|---|---|
 | D1 | S-J1: past 429,496,740 radix-32 digits V8 (and the port) returns 0 for a huge value; keep V8's result for parity, or return ±Infinity (correct, a listed divergence) | keep V8's result |
 | D2 | after gate 2, uo-opc moves its JS text helpers to `uo_jsnum::text` and uo-fonts' private `js` module moves here (G7 of gate 1 / uo-fonts G8) | approve (stage 5 of each) |
+
+## Stage 3 — port (increment B)
+
+Porter: Sonnet 5.5 (general-purpose agent), 2026-11-03, worktree `rust-core`, `CARGO_TARGET_DIR=core/target/jsnum-b`. The formatters
+and `parse_float` of increment B; gate 2 of B is not requested here. The shortest `Number::toString` is `ryu-js =1.0.3`
+(`default-features = false`, G4); `toFixed`, `toPrecision` and `toExponential` are V8's own routines, line by line (G13).
+
+### What was ported
+
+V8 tag `13.6.233.17`, fetched from GitHub raw (BSD-3, `LICENSE-V8`). In this tag the digit routines live in `src/base/numbers/` and the three
+entry points are named `Double{ToFixed,ToExponential,ToPrecision}StringView` (not `...CString`), in `src/numbers/conversions.cc`.
+
+| Rust | V8 source | Lines |
+|---|---|---|
+| `format::to_fixed`, `to_exponential`, `to_precision`, the exponent/fixed text building (`Text` = `SimpleStringBuilder`), argument order and ranges | `conversions.cc` `DoubleToFixedStringView`, `CreateExponentialRepresentation`, `DoubleToExponentialStringView`, `DoubleToPrecisionStringView`; the NaN/Infinity/range checks of `builtins-number.cc` (`NumberPrototypeToFixed`, `ToExponential`, `ToPrecision`) | 1024, 1094, 1121, 1163; 21–142 |
+| `format::to_radix_string` | `DoubleToRadixStringView` restricted to integral abs(x) < 2^53 (G14): its integer digit loop | 1230 |
+| `format::{Js, to_js_string}` | `ryu_js::Buffer::format` (`DoubleToStringView`, 944, is what ryu-js reproduces) | — |
+| `dtoa::double_to_ascii` | `dtoa.cc` `DoubleToAscii` | 31 |
+| `dtoa::fixed_dtoa` (`UInt128`, `fill_digits*`, `dtoa_round_up`, `fill_fractionals`, `trim_zeros`, `fast_fixed_dtoa`) | `fixed-dtoa.cc` | 98–371 |
+| `dtoa::fast_dtoa` (`round_weed_counted`, `fast_divmod`, `biggest_power_ten`, `digit_gen_counted`, `grisu3_counted`, `fast_dtoa_precision`) | `fast-dtoa.cc` | 155, 236, 256, 529, 674, 713 |
+| `dtoa::bignum_dtoa` (`bignum_dtoa`, `generate_counted_digits`, `bignum_to_fixed`, `estimate_power`, the three `initial_scaled_start_values`, `fixup_multiply10`) | `bignum-dtoa.cc` | 16, 61, 232, 273, 330, 362–577 |
+| `dtoa::bignum` | `bignum.cc` / `bignum.h` | 25–51, 180–264, 304–475, 560–700 |
+| `dtoa::diy_fp`, `dtoa::double`, `dtoa::cached_powers` | `diy-fp.h/.cc`, `double.h`, `cached-powers.cc` (the 87-entry table is generated from the C source, not typed) | 12, —, 83 |
+| `parse::parse_float` | ECMA-262 StrDecimalLiteral prefix (`parseFloat`), the same correctly rounded `str::parse` as `to_number` | — |
+
+About 1,540 non-comment lines of library code (`src/dtoa` 1,230, `src/format` 260, `parse_float` 40), about 1,450 lines of tests and capture generator.
+Files: `src/dtoa/{mod,double,diy_fp,cached_powers,bignum,bignum_dtoa,fixed_dtoa,fast_dtoa}.rs`, `src/format/{mod,radix}.rs`, `LICENSE-V8`,
+`js/capture-jsnum-b.mjs`, `tests/captures/format.capture` (1.9 MB), `tests/{format,memory_format}.rs`, `tests/support/format.rs`.
+
+The API is the plan's, with `Js` (`Display`, `Clone`, `Copy`, `Debug`), `RangeError` (`Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Display`, `Error`),
+`to_fixed(x, digits: u32)`, `to_precision`, `to_exponential`, `to_radix_string(x, radix: u32)`, `to_js_string`, `parse::parse_float`. As in V8,
+`to_fixed` checks the digits (0..=100) before the value (`NaN.toFixed(101)` throws) and `to_precision`/`to_exponential` answer NaN and the
+infinities before checking theirs (`NaN.toExponential(200)` is `"NaN"`); `to_precision` accepts 1..=100, `to_exponential` 0..=100.
+
+### Tests and results
+
+Capture: `js/capture-jsnum-b.mjs` (deterministic: FNV-1a seeds, no clock; `@platform`; `@tiers-agree 54 records` with a `--no-opt --no-maglev` child) writes
+`tests/captures/format.capture`. Taken on Windows x64, Node v24.15.0; the same script in WSL Ubuntu-24.04 (Node v24.15.0 linux-x64, glibc 2.39) wrote a
+file identical line for line apart from `@platform`, and a second Windows run was byte-identical. Generator time about 50 s.
+
+| Check | Result |
+|---|---|
+| `tests/format.rs` `fmt/*`: 51 records, `String(x)` on bits and on `k/10^d` (10^7 each) and 5 other distributions (10^6); `toFixed` (bits, ±1e21, ±1e6, `k/10^d`, integers to 2^53, abs(x) < 1, ties `k+0.5` at d = 0, dyadic ties `k/2^j` at d = j-1, and the constant digit counts 0, 1, 2, 3, 6, 20, 21, 100) over random digits arguments 0..=100; `toPrecision` (random 1..=100, ties at p = digits of k, constant p = 1, 2, 12, 15, 17, 21, 100); `toExponential` (random 0..=100, ties, constant d = 0, 1, 14, 20, 100); `toString(radix)` on 10^6 integers in (-2^53, 2^53) and in (-10^6, 10^6) with random radix 2..=36 | **equal at 10^5 (`cargo test`) and at the full size (`--include-ignored`): 69 x 10^6 formatter calls**, native, 4 s in release |
+| `edge/*`: 102 written-out values (±0, ±1, ties .5, 1.005, 2.675, 8.345, 10.235, the carries 9.5, 99.5, 999999.5, the 1e-7/1e-6 and 1e21/1e20 boundaries, 999999999999999868928, subnormals, MIN/MAX, 2^53 neighbours, 2^63, 2^64, NaN, ±Infinity) x every digits argument 0..=105, 1000, 4294967295 x 3 methods; `String(x)` and its `Display`; 25 integers x radix 2..=36 | **34,025 outputs equal** (strings compared, `RangeError` where JS throws) |
+| `sweep/*`: every power of two (both signs, 2^-1074..2^1023) and every 10^k (-323..308) with its two neighbouring doubles x every digits argument | **1,839,784 outputs equal** (digest) |
+| `pf/*`: `parseFloat` of the 199 corpus strings of `jsnum.capture`, the 990 exact midpoints of `adv.capture` and 131 written-out strings (S9 cases, `0x10`, `1e`, `.e3`, `Infinityx`, `+-1`, 800-digit halfway cases) | **1,320 equal** |
+| `rand/pf_*`: 3 alphabets (junk tokens, number tokens, number head + junk tail), 10^5 and 10^6 strings each | **equal** |
+| `parse_float_by_hand`; `formatters_by_hand` (88 cases of toFixed/toPrecision/toExponential with their Node results, among them the S7 cases `(-0).toFixed(2)` = `"0.00"`, `(-1e-10).toFixed(2)` = `"-0.00"`, `(-0).toPrecision(3)`, `(0.5).toFixed(0)`, `(-0.5).toFixed(0)`, `(25).toExponential(0)` = `"3e+1"`); `number_to_string_by_hand`; `radix_by_hand` (every out-of-contract argument is `Err`) | ok |
+| `no_panic_on_any_double_and_any_argument` (every biased exponent, 4 random mantissas, both signs, 15 digits arguments up to `u32::MAX`, all four formatters and `Js`) | ok, in debug (overflow and bounds checks) and in release |
+| the full replay in a release build with `overflow-checks` and `debug-assertions` | equal, no panic |
+| `dtoa` unit tests: `a_fast_result_is_the_exact_result` (whenever Grisu counted or the fast fixed algorithm claims a result it equals the bignum one: 100,000 random doubles x 12 digit counts, no other oracle), `fast_divmod` over 20,000 values per divisor, the `div` table against its libdivide rule, `DiyFp::times` against `Multiply`, the cached powers (consecutive exponents, exact small powers), `ten_to_the_nine_is_not_reachable` | ok |
+| wasm (`uo-wasm` feature `jsnum-selftest`, groups 5-7 and the exports `uo_jsnum_selftest_format` / `_parse_float`), Node 24.15 | **equal**: 51 formatter digests at 10^5 and at the full size (26 s), 3 string records, 6 sweeps, 34,025 edge outputs, 1,320 `parseFloat` strings; WebKit not run here |
+| memory (`tests/memory_format.rs`): M1 1,440 formatter calls under `measure` with inputs and outputs black-boxed: each `Ok` allocates exactly its length (capacity = length, one allocation, peak = allocated = live delta), each `Err` 0 B; `Js` formats into a stack writer with 0 B; live bytes return (`assert_no_leak`); M2 soak 1,000 x 200 batches (40,000 calls), tolerance 0, flat | ok; budgets: `to_fixed(1e20, 100)` 122 B (the longest), `to_radix_string(-(2^53-1), 2)` 54 B, `Js` 0 B |
+
+Mutation check of the replay (each in a scratch edit, reverted): the round-half-up of `generate_counted_digits` (`>=` to `>`) failed 4 tests; the fixed round-up
+condition (`point > 0` to `point > 1`) failed the digests and the sweeps; `round_weed_counted`'s `ten_kappa - unit <= unit` to `<` and its safe-round-down `>=` to `>`
+passed even at 10^6 (they only make Grisu decline more or less often: the digits are the exact ones either way, so no output can show them); a worse
+`divide_modulo_int_bignum` estimate (+2) and `exponent < -127` for `< -128` in the fast fixed path are equivalent mutants.
+
+`cargo fmt -p uo-jsnum -p uo-wasm -- --check`, `cargo clippy -p uo-jsnum -p uo-wasm --all-targets --all-features -- -D warnings` (also for `wasm32-unknown-unknown`),
+`cargo test --release -p uo-jsnum` (and with `--include-ignored` for `format` and the memory tests), `core/tests/grep-bans.sh`, `core/tests/float-casts.sh`,
+`core/tests/clippy-ban/check.sh` (88 of 88): clean/green. wasm32 build of `uo-wasm --features jsnum-selftest --profile wasm`: 212,161 B (154,584 B before; the difference is the
+formatters, `parse_float` and the new test generators; the real contribution is a stage-4 `twiggy` figure, the tool is not installed here).
+
+### Decisions taken outside the plan (the model comparison depends on them)
+
+1. **Layout**: `src/dtoa/` (V8's digit routines, one file per V8 file) and `src/format/{mod,radix}.rs` instead of the plan's `src/format/{mod,exact,radix}.rs`
+   (`exact.rs` was the stack-bignum design that G13 replaced). The names are V8's: in this tag the entry points are `...StringView`, the helpers are in `src/base/numbers/`.
+2. **Bignum**: V8's own `Bignum` (128 bigits of 28 bits = 3,584 bits, a `u32` array on the stack, about 520 B; `bignum_dtoa` holds four), not the plan's `[u32; 84]`.
+3. **Not ported** (never reached by the modes in use): the shortest modes of `FastDtoa` (`Grisu3`, `DigitGen`, `RoundWeed`) and `BignumDtoa` (`GenerateShortestDigits`, the boundary deltas
+   and every `need_boundary_deltas` branch), `Double::{NextDouble, NormalizedBoundaries, UpperBoundary, AsDiyFp, SignificandSizeForOrderOfMagnitude}`, `DiyFp::{Minus, Normalize}`,
+   the decimal/hex string assignment, `AddUInt64`/`AddBignum`, `MultiplyByPowerOfTen` and `ToHexString` of `Bignum`, `GetCachedPowerForDecimalExponent`, `DoubleToAscii`'s
+   `PRECISION` with 0 digits, `DoubleToExponentialStringView`'s `f == -1` form (the API has explicit digits, as the plan says), `DoubleToRadixStringView`'s fraction loop and its
+   "unrepresented digits" loop (G14: it never runs for integers below 2^53). `fixup_multiply10` keeps the two delta bignums as the zero values V8 passes when `need_boundary_deltas` is false.
+4. **Arithmetic semantics** (the J1 lesson): wherever the C code relies on unsigned wrap-around, the Rust uses `wrapping_*` (`Bignum` chunks and carries, `UInt128`, `fast_divmod`,
+   `fractionals`/`w_error` of `digit_gen_counted`, the `divide_modulo_int_bignum` result); there is **no saturating arithmetic** anywhere. Plain `+ - *` on `i32`/`u64` (which panic on overflow in debug and
+   wrap in release) are used where V8's preconditions make overflow impossible (`ten_kappa - rest` with `rest < ten_kappa`, digit counts, buffer positions); the full replay in a release build with
+   `overflow-checks` and `debug-assertions` and the no-panic loop ran without a panic. The widening casts V8 does implicitly (`(factor as u64)` of a non-negative `int`, `result as u64` of a non-negative
+   `int`) are written out.
+5. **Bounds**: V8 crashes (`UNREACHABLE`) when a `Bignum` outgrows its array and reads and writes the digit `Vector` with checked `operator[]`. Here the digit buffer (`Buffer`, 128 bytes) ignores accesses outside it
+   and the string builder (`Text`, 192 bytes) drops what does not fit, while `Bignum` indexes its array directly; the sizes follow from the argument ranges (121 digits for toFixed below 1e21, 100 for the others,
+   a bignum below 10^342 x 2^1127 x 10^121), and the no-panic loop covers every exponent x digits argument.
+6. **`div` table of `fast_divmod`**: V8's table has 9 entries (10^0..10^8) and the digit loop indexes it with the exponent of the biggest power of ten, which is 9 when the integral part reaches 10^9: an out-of-bounds read
+   in the C++ if that ever happened. It never does: the largest integral part after scaling (the largest significand at every exponent, subnormals included) is 798,336,123 (`ten_to_the_nine_is_not_reachable`), so
+   the entry is dead and not added; a lookup past the table takes entry 0 instead of reading out of bounds. (The first draft added a computed 10^9 entry; it was removed when the test showed it unreachable.)
+7. **`DiyFp::times`** is the `__SIZEOF_INT128__` branch (what Node x64 compiles), a `u128` multiplication; `Multiply` (the portable branch) is kept under `#[cfg(test)]` to check that the two round the same. `UInt128` of `fixed-dtoa.cc`
+   is ported as V8's struct, not replaced by `u128`.
+8. **`Js`**: `Display` writes with `write_str`, so width, fill and precision flags (`{:>10}`) are ignored (the text is never padded or truncated); `to_js_string` allocates exactly the text (`to_owned` of the ryu-js buffer)
+   instead of `Js(x).to_string()`, whose first allocation can be larger. `-0` prints `0` and NaN `NaN` (ryu-js; confirmed by the edge records).
+9. **`to_radix_string`** also answers `Err` for NaN and the infinities (the plan: "integral abs(x) < 2^53, else Err") and accepts radix 10 (the digits of the integer, same as `Js` for these values). Zero (and -0) is `"0"`.
+10. **`parse_float`** gets its own prefix scanner (`decimal_literal_prefix_len`, the structure of `is_unsigned_decimal_literal`) instead of refactoring `to_number`'s validator, so no increment A function changed; the literal slice goes
+    to the same `str::parse::<f64>`.
+11. **Digits arguments are `u32`**: JS negative or fractional digits (`toFixed(-1)`, `toFixed(2.7)`) are the caller's ToIntegerOrInfinity; `u32::MAX` and any value above 100 are `RangeError`.
+12. **Tests**: the plan's "each formatter on 10^6 inputs from bits, [-1e21, 1e21], dyadic ties and k/10^d" per digits count would be 4 x 10^8 calls per formatter; each sample draws its digits argument at random instead
+    (`bits_r`, `r21_r`, ...), plus records with a constant digit count (8 for toFixed, 7 for toPrecision, 5 for toExponential), the ties records (`half_*`, `dyadic_*`: digits = the tie position) and, written out or hashed,
+    every digits argument for 102 hand-picked values and for every power of two and ten. `String(x)` is 10^7 on bits and on `k/10^d`, 10^6 on the other distributions. The `rand/pf_*` strings come from the token alphabets of
+    `strings.rs`; `parseFloat` of the corpora reuses the strings of `jsnum.capture` and `adv.capture` (read by the script; only the results are stored in `format.capture`).
+13. **Existing test files touched** (increment A tests, no test logic removed): `tests/support/mod.rs` gets `pub mod format;`; `tests/memory_gate.rs` scans `format/mod.rs` and `format/radix.rs` for public functions, accepts
+    `tests/memory_format.rs` as a source of calls (the formatters allocate, so they are measured there as "exactly the output"), calls `parse::parse_float` in the two string grids, expects at least 65 functions and
+    5 static tables (the 87-entry `CACHED_POWERS` joins the four of `pow`).
+14. **`LICENSE-V8` was missing**: the increment A record says it holds the V8 BSD-3 text and the fdlibm notice, but the file was not in the crate. It is now (V8's `LICENSE` of the tag, the fdlibm notice of `ieee754.cc`, and
+    the list of V8 files translated, including the `double-conversion` origin of `src/base/numbers/`).
+15. **Lock files**: `core/Cargo.lock` has `ryu-js 1.0.3`; `core/fuzz/Cargo.lock` got the same package and the `uo-jsnum` dependency edge by hand (an offline `cargo check` there would have downgraded `libc` to the cached
+    version; the file now passes `cargo check --locked`).
+16. **Capture platform**: the new capture was taken on Windows x64 like most of increment A (no math function is involved: the digit routines are integer arithmetic plus one `ceil`), with the WSL linux-x64 run as the
+    cross-check above; `tests/format.rs` requires V8 `13.6.233.17`, `arch=x64` and Node `v24.15.0` through `require_platform`.
+
+### Not done
+
+- Stage 4 of increment B: the parity verifier's own corpora, the memory verifier's wasm soak and stack depth of the formatters (the stack of the bignum path is about 3 KB by size: four 520 B bignums plus 128 + 192 + 192 B of buffers; not painted),
+  `twiggy` figures, the security review, the fuzz target `jsnum_format` (plan) and `parse_float` in `jsnum_parse`.
+- WebKit/Chromium/Firefox runs of the new wasm self-test; `.github/workflows/rust-core.yml` is not touched (the existing `jsnum` job runs `--include-ignored` and picks the new tests up; the self-test CI step is still the open item of increment A).
+- `CHANGELOG.md`, the npm/NuGet `THIRD-PARTY-NOTICES.md` entries for ryu-js (Apache-2.0 OR BSL-1.0) and for the V8 dtoa code, and `cargo deny` (not installed here).
+- `UO_JSNUM_DUMP` for the new capture (`fmt/<key>`) exists in the script and in `tests/format.rs` but was never exercised on a real mismatch (there was none).

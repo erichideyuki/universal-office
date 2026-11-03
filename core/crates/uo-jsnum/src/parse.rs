@@ -1,5 +1,5 @@
 //! String → number: `Number(s)` / unary `+s` (StringToNumber, V8 `InternalStringToDouble`) and
-//! `parseInt` (V8 `NumberParseIntHelper`, `src/numbers/conversions.cc`). This is the only place
+//! `parseInt` (V8 `NumberParseIntHelper`, `src/numbers/conversions.cc`) and `parseFloat`. This is the only place
 //! of the workspace that may call `str::parse::<f64>` (it is correctly rounded like V8's
 //! `Strtod`; Rust's own grammar accepts `inf`, `nan` and rejects spaces, so every input is
 //! validated against the ECMA-262 grammar first).
@@ -286,4 +286,53 @@ fn parse_generic(digits: &[u8], radix: u32) -> f64 {
         result = result * f64::from(multiplier) + f64::from(part);
     }
     result
+}
+
+/// `parseFloat(s)`: leading white space is skipped, then the longest prefix that is a
+/// StrDecimalLiteral is the value (optional sign, `Infinity`, or digits with optional fraction
+/// and exponent; `5.`, `.5` and `1.e3` count, `1e` is `1`, `0x10` is `0`, `1_0` is `1`), correctly
+/// rounded like `Number()`; no such prefix is NaN. `-0` is -0 and `1e1000` is Infinity.
+#[must_use]
+pub fn parse_float(s: &str) -> f64 {
+    let t = trim_start(s);
+    let b = t.as_bytes();
+    let sign_len = usize::from(matches!(b.first(), Some(b'+' | b'-')));
+    let negative = b.first() == Some(&b'-');
+    let unsigned = b.get(sign_len..).unwrap_or(&[]);
+    if unsigned.starts_with(b"Infinity") {
+        return if negative { f64::NEG_INFINITY } else { f64::INFINITY };
+    }
+    let len = decimal_literal_prefix_len(unsigned);
+    if len == 0 {
+        return f64::NAN;
+    }
+    t.get(..sign_len + len).and_then(|literal| literal.parse::<f64>().ok()).unwrap_or(f64::NAN)
+}
+
+/// The length of the longest prefix of `b` that is a StrUnsignedDecimalLiteral without
+/// `Infinity` (`digits [. [digits]] [e [±] digits]` or `. digits [e [±] digits]`), 0 if none.
+/// An exponent part without digits is not part of the prefix.
+fn decimal_literal_prefix_len(b: &[u8]) -> usize {
+    let count = |from: usize| b.get(from..).map_or(0, |r| r.iter().take_while(|c| c.is_ascii_digit()).count());
+    let int_digits = count(0);
+    let mut i = int_digits;
+    let mut frac_digits = 0;
+    if b.get(i) == Some(&b'.') {
+        frac_digits = count(i + 1);
+        i += 1 + frac_digits;
+    }
+    if int_digits + frac_digits == 0 {
+        return 0;
+    }
+    if matches!(b.get(i), Some(b'e' | b'E')) {
+        let mut j = i + 1;
+        if matches!(b.get(j), Some(b'+' | b'-')) {
+            j += 1;
+        }
+        let exp_digits = count(j);
+        if exp_digits > 0 {
+            i = j + exp_digits;
+        }
+    }
+    i
 }

@@ -6,7 +6,8 @@
 //!   over a grid of inputs including every error path (junk, empty, out-of-range radix);
 //!   `m1_parsers_on_huge_and_hostile_strings_allocate_nothing` runs the parsers and text functions on
 //!   10 MB inputs; `m1_covers_every_public_function` fails when a `pub fn` of the crate is not
-//!   called (module-qualified) in `tests/memory.rs` or here.
+//!   called (module-qualified) in `tests/memory.rs`, `tests/memory_format.rs` (the formatters: they allocate
+//!   exactly their output) or here.
 //! - M3: `m3_utf16_slice_owned_output_is_the_output_plus_at_most_three_bytes` records the one path
 //!   that allocates.
 //! - M5: `m5_no_caches_no_interior_mutability` scans the sources.
@@ -171,6 +172,7 @@ fn m1_text_and_parsers_allocate_nothing_on_every_path() {
     for s in CORPUS {
         let s = black_box(s);
         zero!(format!("parse::to_number({s:?})"), parse::to_number(s));
+        zero!(format!("parse::parse_float({s:?})"), parse::parse_float(s));
         for radix in RADIXES {
             zero!(format!("parse::parse_int({s:?}, {radix})"), parse::parse_int(s, black_box(radix)));
         }
@@ -238,6 +240,7 @@ fn m1_parsers_on_huge_and_hostile_strings_allocate_nothing() {
     for (name, s) in &cases {
         let s = black_box(s.as_str());
         zero!(format!("to_number, {name}"), parse::to_number(s));
+        zero!(format!("parse_float, {name}"), parse::parse_float(s));
         for radix in [0, 2, 3, 7, 8, 10, 16, 32, 36, 37] {
             zero!(format!("parse_int radix {radix}, {name}"), parse::parse_int(s, black_box(radix)));
         }
@@ -282,6 +285,8 @@ fn public_functions() -> Vec<(String, String)> {
         ("conv", "conv.rs"),
         ("text", "text.rs"),
         ("parse", "parse.rs"),
+        ("format", "format/mod.rs"),
+        ("format", "format/radix.rs"),
     ] {
         let text = std::fs::read_to_string(root.join(file)).unwrap();
         for line in text.lines() {
@@ -303,8 +308,8 @@ fn public_functions() -> Vec<(String, String)> {
 #[test]
 fn m1_covers_every_public_function() {
     let functions = public_functions();
-    assert!(functions.len() >= 59, "the scan found only {} functions", functions.len());
-    let sources = [include_str!("memory.rs"), include_str!("memory_gate.rs")];
+    assert!(functions.len() >= 65, "the scan found only {} functions", functions.len());
+    let sources = [include_str!("memory.rs"), include_str!("memory_gate.rs"), include_str!("memory_format.rs")];
     let missing: Vec<String> = functions
         .iter()
         .filter(|(module, name)| {
@@ -362,7 +367,7 @@ fn m5_no_caches_no_interior_mutability() {
         }
     }
     println!("# {files} source files scanned; immutable lookup tables: {statics:?}");
-    assert_eq!(statics.len(), 4, "the four tables of pow, all arrays of plain numbers: {statics:?}");
+    assert_eq!(statics.len(), 5, "the four tables of pow and the powers of ten of dtoa, all arrays of plain numbers: {statics:?}");
 }
 
 fn hostile_batch(inputs: &[String]) -> f64 {
