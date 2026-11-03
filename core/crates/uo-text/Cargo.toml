@@ -1,0 +1,47 @@
+[package]
+name = "uo-text"
+description = "JavaScript text semantics over UTF-16 for the UniversalOffice Rust core: NFC, \\p{L} \\p{M} \\p{N} \\p{P}, toUpperCase/toLowerCase with SpecialCasing, JS \\s helpers and the Windows word-sort collation, with Unicode tables generated from Node 24.15"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# the Windows word-sort collation of Sheet and of Write's table sort (`compare_text`): needs the NFKD table
+collation = []
+
+[dependencies]
+# the JS white space set and the number formatting that collation_key needs: one implementation, not a copy
+uo-jsnum = { path = "../uo-jsnum" }
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+uo-testkit = { path = "../uo-testkit" }
+
+[lints]
+workspace = true
+
+# the build the wasm size of the tables is measured with (core/docs/modules/uo-text.md): each probe
+# calls one family of functions, so the linker keeps only the tables that family needs
+[[example]]
+name = "size_probe_base"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "size_probe_nfc"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "size_probe_case"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "size_probe_props"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "size_probe_all"
+crate-type = ["cdylib"]
+required-features = ["collation"]
