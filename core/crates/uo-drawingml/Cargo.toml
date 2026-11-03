@@ -1,0 +1,21 @@
+[package]
+name = "uo-drawingml"
+description = "DrawingML layer of the UniversalOffice Rust core: preset shapes and their guides, outlines, colour modifiers, raster effects, 3D light and bevel, image adjustments"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# every Math.* call, Number(), parseInt and typed-array store of the TS goes through it (R1)
+uo-jsnum = { path = "../uo-jsnum" }
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# parity capture/replay and the seeded generators: tests/preset_parity.rs
+uo-testkit = { path = "../uo-testkit" }
+
+[lints]
+workspace = true

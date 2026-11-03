@@ -24,8 +24,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
+name = "ryu-js"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04d056b875a9d2e6cb9a61d127afee9ac5999b9f87bcb32079d1318e505be714"
+
+[[package]]
 name = "uo-alloc"
 version = "0.10.0-dev"
+
+[[package]]
+name = "uo-drawingml"
+version = "0.10.0-dev"
+dependencies = [
+ "uo-alloc",
+ "uo-jsnum",
+ "uo-testkit",
+]
 
 [[package]]
 name = "uo-ffi"
@@ -48,6 +63,7 @@ dependencies = [
 name = "uo-jsnum"
 version = "0.10.0-dev"
 dependencies = [
+ "ryu-js",
  "uo-alloc",
  "uo-testkit",
 ]

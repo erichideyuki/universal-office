@@ -72,6 +72,29 @@ a module inside the owning crate.
 
 The C# facade lives in `dotnet/` (P/Invoke, `SafeHandle`s, the public API of the NuGet).
 
+## Hybrid mode (from 2026-11-03, the rest of Write)
+
+Maintainer, verbatim: "Faz o hibrido". The per-module stages below stay the reference, but the
+remaining Write work (uo-docx, uo-docx-layout, uo-render, uo-pdf, bindings) runs leaner, because
+the data so far showed the time going into ceremony, not translation (Sonnet ports were faithful:
+0 parity rounds; stage-4 defects came from plan gaps):
+
+1. **Architecture pass (Opus), only for the big shapes**: the document model types, the
+   session/undo, the layout data structures and the display list — where a 1:1 translation of
+   JS object graphs would leave `Rc<RefCell>`, clones and copies that are expensive to undo
+   later. No detailed per-module plan and no separate skeptic for small modules.
+2. **Mass 1:1 port (Sonnet)**, file by file, many frontiers in parallel, compiling, inside the
+   architecture; the parity harness is built alongside. Every decision outside the source
+   semantics (saturating vs wrapping vs truncating, data shape) is declared in the record.
+3. **Continuous automatic verification**: parity capture/replay, the memory gate (M1–M5 stay
+   measured tests in CI) and fuzzing run continuously and point at what to fix; they do not
+   block translation. Security review (Opus) and the final skeptic run once per milestone.
+4. **One maintainer gate per milestone**, not three per module. Milestone 1 is the read path:
+   uo-docx model + reader → uo-docx-layout → uo-render → uo-pdf (viewer and server PDF).
+   Module-level questions are batched into the milestone gate.
+
+`uo-docx-layout` and the Sheet calc engine stay on Opus for every role (see "Models").
+
 ## Stages of a module
 
 Work bottom-up: a module starts only when the modules it depends on passed gate 2.

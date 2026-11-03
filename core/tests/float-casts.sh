@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 status=0
 for crate in $(ls crates | grep -vE '^(uo-jsnum|uo-testkit|uo-alloc)$'); do
   touch "crates/$crate/src/lib.rs"
-  hits=$(cargo clippy -p "$crate" --lib --message-format=json -- -W clippy::cast_possible_truncation -W clippy::cast_sign_loss 2>/dev/null \
+  hits=$(cargo clippy -p "$crate" --lib --no-deps --message-format=json -- -W clippy::cast_possible_truncation -W clippy::cast_sign_loss 2>/dev/null \
     | grep -E '"message":"casting `f(32|64)` to' || true)
   if [ -n "$hits" ]; then
     echo "float -> int casts in $crate (use uo_jsnum::conv):"
