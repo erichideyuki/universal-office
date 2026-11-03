@@ -2,8 +2,7 @@
 //! live bytes exactly to their starting value, outputs `black_box`ed; the error paths allocate
 //! nothing before their check; the crate holds nothing between calls (10,000 distinct unknown
 //! preset names leave the live bytes unchanged); a soak of the preset engine is flat with a
-//! tolerance of 0 B. The operations of the modules still to be ported (phase 2) are included
-//! with their stage-3 placeholders so that the signatures are covered from the start.
+//! tolerance of 0 B. The phase-2 modules are covered here too (and in their own memory tests).
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::hint::black_box;
@@ -139,7 +138,7 @@ fn m1_modules_not_ported_yet() {
     assert_no_leak(|| black_box(shift_mask(&mask, 1.0, 1.0, Some((5, 5)), &limits)));
     assert_no_leak(|| black_box(warp_mask(&mask, &identity, 4, 4, &limits)));
     let mut target = mask.clone();
-    assert_no_leak(|| black_box(fill_polygons(&mut target, &Polygons::new(), false)));
+    assert_no_leak(|| black_box(fill_polygons(&mut target, &Polygons::new(), false, &limits)));
     let spec = ShadowSpec {
         blur_pt: 1.0,
         dist_pt: 1.0,
@@ -173,7 +172,6 @@ fn m1_modules_not_ported_yet() {
         apply_picture_adjust(&mut rgba, &PictureAdjust { alpha: Some(0.5), duotone: None, clr_change: None });
         black_box((effect_line(&fx), effect_decode(&fx, 3)))
     });
-    assert_no_leak(|| black_box(Error::NotPorted.to_string()));
 }
 
 #[test]

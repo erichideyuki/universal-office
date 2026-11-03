@@ -30,9 +30,6 @@ pub enum Error {
     BufferSize,
     /// an argument no result can be built from (the TS throws a `RangeError` on it)
     InvalidArgument,
-    /// the function is declared with its final signature but its port is not written yet
-    /// (stage 3, phase 1): the phase-2 port of the module removes every use of it
-    NotPorted,
 }
 
 /// The result of a fallible operation of this crate.
@@ -44,7 +41,6 @@ impl fmt::Display for Error {
             Error::Limit(kind) => write!(f, "limit exceeded ({kind:?})"),
             Error::BufferSize => write!(f, "the buffer length does not match the dimensions"),
             Error::InvalidArgument => write!(f, "invalid argument"),
-            Error::NotPorted => write!(f, "not ported yet"),
         }
     }
 }
@@ -65,7 +61,6 @@ mod tests {
             Error::Limit(LimitKind::ImagePixels),
             Error::BufferSize,
             Error::InvalidArgument,
-            Error::NotPorted,
         ];
         let texts: Vec<String> = all.iter().map(|e| e.to_string()).collect();
         for (i, a) in texts.iter().enumerate() {

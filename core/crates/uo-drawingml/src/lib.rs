@@ -9,10 +9,6 @@
 //! storage only (the arithmetic is `f64`, as in JS), and every `f64 -> integer` conversion is a
 //! `uo_jsnum::conv` helper (the cast lints below). Nothing here panics on document data, keeps
 //! state between calls or allocates from a size without checking it against [`Limits`] first.
-//!
-//! Stage 3 is written in two phases: phase 1 (the preset engine, `presetPath` and the outlines,
-//! the tables, errors and limits) is ported; the other modules have their final signatures and
-//! return a placeholder ([`Error::NotPorted`] and the like) until phase 2.
 #![forbid(unsafe_code)]
 #![deny(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 
