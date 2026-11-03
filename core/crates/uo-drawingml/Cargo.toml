@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 # every Math.* call, Number(), parseInt and typed-array store of the TS goes through it (R1)
 uo-jsnum = { path = "../uo-jsnum" }
+# the XML element the colour and theme readers take (uo-docx plan G12)
+uo-opc = { path = "../uo-opc" }
 
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }

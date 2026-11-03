@@ -254,6 +254,14 @@ fn main() {
     for (target, data) in uo_opc_fuzz::dml_seeds() {
         c.add(target, &data);
     }
+    // the schema-driven codec: valid messages of every schema (raw and framed), and seeds of the structure-aware round trip
+    for (target, data) in uo_opc_fuzz::codec_seeds() {
+        c.add(target, &data);
+    }
+    // uo-image: the small images of the generated pack, in the all-decoders mode
+    for (target, data) in uo_opc_fuzz::image_seeds(&repo) {
+        c.add(target, &data);
+    }
     for target in uo_opc_fuzz::TARGETS.iter().map(|(n, _)| *n) {
         c.add(target, b"");
     }

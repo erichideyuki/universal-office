@@ -2,7 +2,8 @@
 //! and of `uo-jsnum` (`jsnum_parse`, `jsnum_math` in `src/jsnum.rs`, record
 //! `core/docs/modules/uo-jsnum.md`), of `uo-fonts` (the `fonts_*` targets in `src/fonts.rs`,
 //! record `core/docs/modules/uo-fonts.md`) and of `uo-drawingml` (the `dml_*` targets in
-//! `src/drawingml.rs`, record `core/docs/modules/uo-drawingml.md`).
+//! `src/drawingml.rs`, record `core/docs/modules/uo-drawingml.md`) and of the schema-driven codec (`codec_decode`,
+//! `codec_roundtrip` in `src/codec.rs`, record `core/docs/modules/uo-render.md`, "Milestone 1 — frontier C").
 //!
 //! Every target is a plain `fn(&[u8])`: libFuzzer runs them through `fuzz_targets/*.rs`
 //! (`cargo +nightly fuzz run <name>`), the stable driver `src/bin/fallback.rs` through
@@ -33,11 +34,17 @@ use uo_opc::zip::{self, WriteOptions, ZipWriter};
 mod jsnum;
 pub use jsnum::{jsnum_math, jsnum_parse};
 
+mod codec;
+pub use codec::{CODEC_LIMITS, codec_decode, codec_roundtrip, codec_seeds};
+
 mod drawingml;
 pub use drawingml::{
     dml_adjust, dml_bevel, dml_blip, dml_color, dml_custom_guides, dml_effects, dml_flatten, dml_light, dml_patterns, dml_preset,
     dml_preset_path, dml_raster, dml_seeds,
 };
+
+mod image;
+pub use image::{image_decode, image_seeds};
 
 mod fonts;
 pub use fonts::{
@@ -95,6 +102,9 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("dml_effects", dml_effects),
     ("dml_light", dml_light),
     ("dml_bevel", dml_bevel),
+    ("image_decode", image_decode),
+    ("codec_decode", codec_decode),
+    ("codec_roundtrip", codec_roundtrip),
 ];
 
 /// Small limits: every check of `Limits` is exercised without slow executions.

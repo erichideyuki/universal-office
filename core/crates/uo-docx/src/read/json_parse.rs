@@ -1,0 +1,1 @@
+//! Frontier R4c (D1a reader, record "Milestone 1 — D1a foundation"): `JSON.parse` as V8 (the `wordnext:inline:` custom-inline tag): `JsonValue`, last duplicate key wins, JS object key order, depth limit.

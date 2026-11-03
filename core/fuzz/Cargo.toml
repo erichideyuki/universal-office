@@ -1,4 +1,4 @@
-# Fuzz targets of the uo-opc container layer, uo-jsnum, uo-fonts and uo-drawingml (rust-port workflow, stage 4 security).
+# Fuzz targets of the uo-opc container layer, uo-jsnum, uo-fonts, uo-drawingml and the schema-driven codec (rust-port workflow, stage 4 security).
 # Its own workspace: not a member of core/ (cargo-fuzz needs nightly; core/ builds on stable).
 #
 #   cargo +nightly fuzz run <target> -s none          # libFuzzer (Linux CI, or Windows MSVC)
@@ -32,6 +32,10 @@ uo-jsnum = { path = "../crates/uo-jsnum" }
 uo-drawingml = { path = "../crates/uo-drawingml" }
 # the shipped hyphenation patterns (fonts_hyphen_words)
 uo-fonts = { path = "../crates/uo-fonts", features = ["hyphen-data"] }
+# the codec targets (src/codec.rs): the runtime and the generated decoders of the display list and of Write's page section
+uo-codec = { path = "../crates/uo-codec" }
+# the image_decode target (src/image.rs)
+uo-image = { path = "../crates/uo-image" }
 # fonts built in code for the font targets and their seeds (no proprietary bytes)
 uo-testkit = { path = "../crates/uo-testkit" }
 # differential oracle of the inflate target (the same pinned version uo-opc uses to deflate)
@@ -414,6 +418,30 @@ bench = false
 [[bin]]
 name = "dml_bevel"
 path = "fuzz_targets/dml_bevel.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "image_decode"
+path = "fuzz_targets/image_decode.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codec_decode"
+path = "fuzz_targets/codec_decode.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codec_roundtrip"
+path = "fuzz_targets/codec_roundtrip.rs"
 required-features = ["libfuzzer"]
 test = false
 doc = false

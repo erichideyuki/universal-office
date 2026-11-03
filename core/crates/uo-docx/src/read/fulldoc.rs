@@ -1,0 +1,1 @@
+//! Frontier R5 (D1a reader, record "Milestone 1 — D1a foundation"): `fulldoc.ts`: tables, rows, cells (`unwrapRaw`, `readTable`), blocks, header/footer parts, notes, comments, sections, `linkVmlTextboxes`, `readFullDocument` (`read_document`), `readCoreProps`, `readSectionProps`, `readBodyFragment`.

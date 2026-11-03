@@ -12,6 +12,7 @@
 //! - [`object`]: the key order of a JS object (array indices first).
 //! - [`parse`]: `Number(s)`, `parseInt` (also over UTF-16 code units) and `parseFloat`.
 //! - [`format`]: `String(x)`, `toFixed`, `toPrecision`, `toExponential` and `toString(radix)` of integers.
+//! - [`json`]: `JSON.stringify` of numbers and strings (UTF-8 or UTF-16), for TS JSON keys and signatures.
 //!
 //! This crate is the only place of the workspace where the `f64` methods that differ from JS
 //! (`sin`, `ln`, `powf`, `round`, `max`, `signum`, `to_radians`, ...) may be called: they are
@@ -26,6 +27,7 @@ pub mod conv;
 mod dtoa;
 mod fdlibm;
 pub mod format;
+pub mod json;
 pub mod math;
 pub mod object;
 pub mod parse;

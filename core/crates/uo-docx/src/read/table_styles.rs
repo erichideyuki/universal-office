@@ -1,0 +1,1 @@
+//! Frontier R2 (D1a reader, record "Milestone 1 — D1a foundation"): `table-styles.ts` (read side): `themeHex`, `materializeStyleXml`, `styleDefOf`, `styleIdByName`, the built-in list over `data::table_styles_builtin`.

@@ -911,7 +911,259 @@ Node and WebKit, plus the editor keystroke budget in milestone 2.
 | 1 | planner + reuse, architecture plan (Opus) | (orchestrator) | ≈ 45 |
 | 2 | analysis skeptic, verified in the code (Opus) | (orchestrator) | ≈ 85 |
 | 1 (revision) | planner: K1–K20 written in, consolidated question list G15/G19/G21/LQ1–LQ22, order and estimate re-based (Opus) | (orchestrator) | ≈ 30 |
+| 3 — F0 | foundation + harness: crate skeleton, every shared type, uo-render types + IDL (frontier T), capture/replay harness proven on 2,755 TS layouts, codec wiring, reconciliation with uo-docx D1a and the uo-fonts registry, wave-1 briefs (Opus) | one session, built in parallel with uo-docx D1a, codec C and registry P | ≈ 165 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
 Maintainer, verbatim: "Approve all" — every final recommendation of the milestone-1 questions accepted (G15, G19, G21, LQ1–LQ22). Cross-record changes from the uo-render/uo-pdf plans (RQ1–RQ3, RQ13, PQ1, PQ8) apply to this record where listed there.
+
+## Milestone 1 — F0 (foundation and harness)
+
+Opus, 2026-11-03, hybrid mode. Built in parallel with uo-docx D1a (Opus), the uo-render codec
+generator (frontier C, Sonnet) and the uo-fonts registry (frontier P), against each as it landed.
+
+### What exists
+
+**Crate `core/crates/uo-docx-layout`** (`forbid(unsafe_code)`, `deny(cast_possible_truncation,
+cast_sign_loss, indexing_slicing)`; fmt, clippy `-D warnings` native and wasm32, the float-cast and
+grep ban scripts clean; builds for `wasm32-unknown-unknown`). Every shared type of the plan, the
+module layout of §1 and the stage entry points of every later frontier with their signatures:
+
+| Module | Content (F0) | Filled by |
+|---|---|---|
+| `model` | the only module naming uo-docx: re-exports of `DocView`, `RunRef` (+ `RunSub`), `CellKey`, `StoryRef`, `BlockPath`, `DocRef`, `NoteKind`, `HfWhich`, `FieldScope`, `HyphenSkips`, `HyphenCandidate`, ids, `Utf16`, `NumKey`, `Paragraph`/`Run`/`PPr`/`ParaProps`; `StoryChange` local until D2a | — |
+| `keys` | the LA3 keys: `LParaId`, `RunKey`, `TbKey`, `ChainId`, `TableLayoutId`, `ItemMeta`, `PageIx`, `CellContentId`, `LineSeq`, `ContainerId` (table of TS identity → key in the module doc) | — |
+| `ldoc` | `LDoc` with shallow `LPara` (`ParaSrc::Model{para,id}`/`Copy{base}`, overrides, `RunKey` list, `REV_JOINS`, `ParaFlags`, `FRAME_CARRY`), `RunSrc::Model{run, at: RunRef}` / `Slice{base, from}` (no text copied) / `Synth`, `LStory`, `LTextbox` + `FrameInfo`, `Chain`; `run_text` reads slices from the model text | F7a builds it (`derive::build`) |
+| `options` | `LayoutOptions` (defaults = the TS ones; `hyphenation_loaded`, `Clock` + `TimeZoneRule`, `RevisionView`, `ViewTransform`, `collect_fields`), `LayoutLimits` (first numbers), `WorkInput` + `Budget` (input-proportional, K16) | — |
+| `error` | `LayoutError::{Limit, Internal, NoFace, Unported}`, `LimitKind`, `Frontier`, `LResult` | `Unported` removed before gate 2 |
+| `output` | `Layout`, `LayoutPage` (uo-render `Page` + the Write section: `lines`, `content_lines`, `chars` SoA, `pfmts`, `objects`, `cells`, `item_meta` = `lineBox`/`lineNum`, `clip_src`), `LineGeom`, `LineRef`/`RefPath`/`LineStory` (HF slot + part, K13), `ImageOrigin` (K12), `PlacedObject`, `ObjectFrame`, `PlacedCell`, `LineParaFormat`/`TabStop` | — |
+| `items` | `PassItems` (uo-render `ItemList` + `ItemSide` per item: `ItemMeta`, glyph meta, clip src) and `PassLine` (line identity, K2e); `push_shifted` = `shiftItem` with the side data kept, `shifted`/`shifted_xy` = `shiftLine`/`shiftLineXY` | — |
+| `fonts` | the registry's `FontProvider`/`FontAnswer`/`AnswerId` (re-exported), `FaceMetrics`, `FaceEntry`, `FaceTable`, `FaceResolverCache` (per call, K4), `device_em_pt` (ported) | F1 |
+| `context` | `DocContext` (classified: carried `flow`, cache `resolver`, input `rev`, output `warnings`…), `FlowState`, `NoteFlow`, `NoteNumbering`; `save_flow`/`restore_flow`/`warn` | F1 |
+| `word` | facade over `uo_docx::word` with placeholders for `NumberingState` (+ `LevelCount`), `NumberMarker`, `StyleResolver`, `RevisionDisplay` | F2 (in uo-docx) |
+| `para` | `RunStyle`, `GlyphKind`, `Glyph` (face = `FaceId`, style = `StyleIx`, obj = `RunKey`, flags), `ParaMarker`, `PreparedPara`, `RevBars`, `ParaEnv` + `FieldSource` (the `field` closure as data), `prepare_paragraph`, `advance_twips` | F4, F1 |
+| `hyphenate`, `math` | `HyphenUnit`, `HyphenChoice`, `HyphenSessions` (+ `WORD_CACHE_CAP`); `MathBox`, `MathItem`, `MathAtom` | F4 |
+| `lines`, `underline`, `paint` | `PlacedGlyph` (+ `GlyphSrc`: paragraph, marker or automatic hyphen), `Line`, `LineFrame`, `BreakMark`, `LineBreaker::{new,next,reset}`, `line_box`; `UlMetrics`, `UlGeom`; `paint_line` | F5 |
+| `table` | `CellContent` (`nest` by index ranges), `NestRow`, `ParaSplitInfo`, `RowLayout` (all TS fields), `RowSplit` (the closure as data), `TableLayout`, `CellEnv`, `trait CellLayouter`, `layout_table`, `split_content` | F6 |
+| `engine` | `Engine` (every field classified, below), `Cx`, `PassInput`, `PassFindings`, `LayoutRun`, `BalanceSpec`/`BalanceInfo`/`LateTable`, `ChapterIndex`; `page` (`SectGeom`, `PageState`, `PageOut`, `ZObj`, `FloatBox`, `WrapFrame`), `flow` (`PrevPara`, `CellNeighbors`, `HiddenJoin`, `LastBox`), `tables` (`FloatFlow`, `FloatCarry`, `LastRowEmit`), `floats` (`Pinned`, `FloatReceipt`, `ZLayer`), `notes`, `hf`, `fields`; `layout_document`, `Engine::run` | F7a–c |
+| `derive`, `drawing`, `metafile` (`trait FaceLookup`, `render_emf`/`render_wmf`), `query` (`RunBox`, `RunFilter`, `Hit`, `CaretRect`, `LineHandle`, the `Layout` queries; `lines_of` ported) | stubs and doc | F7a, F3, F8 |
+| `json` | `JsonKey`, `JsonBuilder` (JS rules via `uo_jsnum::json`; model values through the uo-docx `JsonWriter` with `raw`) | F2/F4 use it |
+| `canon` | the Rust P1 writer (`canon_layout`, `CanonSink`, `CANON_VERSION`) | — |
+| `codec` | the generated Write-section codec (`core/schema/write.uos`, frontier C) | E wires it |
+| crate root | `LayoutEngine::{new, layout, relayout, last, clear_caches}` over a `&dyn FontProvider` | F7a/F8 |
+
+Stage-3 stubs (`Err(LayoutError::Unported(frontier, site))` for the fallible entry points; the
+infallible queries answer "nothing" and are listed in `query::PENDING`, the geometry in
+`uo_render::geom::PENDING`): `tests/f0.rs` asserts the lists only shrink. Never `todo!`/`panic!`.
+
+**Harness** (`tools/`, Node 24.15, no change to the frozen TS):
+
+- `capture-layout.mjs` — modes `ci` (seeded generated documents, open fonts only: node-fonts with
+  `WINDIR`/`LOCALAPPDATA` pointed at nothing and `EXTRA_FONT_DIRS` = the repository's open fonts),
+  `oracle` (installed fonts; refuses to run without Arial/Calibri/Times), `files`. Determinism: TZ=UTC
+  set before any `Date`, `now` = 2026-01-15T12:00:00Z, the 7 pattern sets loaded, every document read
+  again per run (K3), `mk-*` with revisions `all`. Facets per document: `p1`, `p2`, `p2first`,
+  `p3.prepare`, `p3.lines`, `pages`, `error`. `--dump` writes the raw P1 stream, the transcript and the
+  image payloads; `--docs-out` the generated `.docx`.
+- `lib/canon.mjs` — **the P1 walker; its header is the specification** of the stream `src/canon.rs`
+  writes (version 1): exact f64 bits, UTF-16 strings, faces/images/`lineBox.line` labelled by first
+  appearance, optional booleans by truthiness, refs as the TS strings, `PlacedObject.run` as the run's
+  model position (`b3/r0/c1/b0#2`, `hf<n>/…`, `fn<id>/…`, `…/tx/…`, `…/g<j>`).
+- `lib/transcript.mjs` (P2: every `provider.face` call and the answer identity; facets `p2` and
+  `p2first` = first request per lower-case key, LQ19; TSV transcript with digests and sources),
+  `lib/facets.mjs` + `lib/loader.mjs` (P3: an in-memory module-loader rewrite wraps exported
+  functions, prototype patching wraps classes; seeds `p3.prepare` and `p3.lines`), `lib/sink.mjs`,
+  `lib/gen-docx.mjs` (the seeded generator: paragraphs, runs, alignment, indents, spacing, tabs, page
+  breaks, tables, two-column continuous sections, header and footer with PAGE).
+- Rust: `tests/common` (the `StreamSink`, the transcript reader, the blob index by SHA-256 over the
+  repository fonts + transcript paths + dumped media — a face not found **fails**, LQ21 — and
+  `TranscriptProvider`, the replay policy implementing the registry's `FontProvider` with the TS
+  answer identities), `tests/common/decode.rs` (P1 stream → `Layout`), `tests/adapter.rs`,
+  `tests/layout_parity.rs` (opt-in replay; reports `pending` per frontier, `UO_LAYOUT_STRICT=1` for the
+  gate), `tests/f0.rs`.
+- CI job `layout-parity` (`.github/workflows/rust-core.yml`): checks out and builds main's TS, captures
+  200 generated documents (seed = run number), runs the adapter check and the replay.
+
+### Harness proven end to end (the adapter path of uo-render R-P2)
+
+The frozen TS layout of a document → raw P1 stream → decoded into the Rust types (`Layout`, uo-render
+pages and resources, the Write section) → `canon_layout` → the same `count:digest` as the TS:
+
+| Corpus | Equal | Not decodable | Mismatches |
+|---|---|---|---|
+| Word oracle, all 2,742 documents (installed fonts, local) | **2,741** | 1 (`emwidth/ew-emb`: embedded fonts come from the reader) | 0 |
+| .NET synthetic inputs (pictures, page fills, pattern, frame, tile, textboxes, text effects, synthetic) | **8** | 0 | 0 |
+| generated (CI mode), seed 1, 6 documents; committed fixture `tests/captures/f0` (2 of them) | **6** | 0 | 0 |
+
+So every field the TS engine emitted on the whole corpus has a Rust representation, and the Rust
+walker equals the TS walker item by item. TS capture of the full oracle: 33 s (2,742 documents,
+4,629 pages); Rust decode + canon of all of them: 16 s (release). Repeated captures are identical
+(determinism check). `layout_parity` runs and reports every document `pending` (`F7a`: reader +
+engine) until F7a wires the uo-docx reader into `rust_layout`.
+
+### Engine field classification (K18)
+
+Classes: **output** (what the pass produces), **carried** (flow state a milestone-2 page checkpoint must
+hold and compare), **cache** (memo of a pure function of the document within the pass), **finding**
+(read by the pass loop after the pass), **input** (`PassInput`: the constructor parameters and the
+guesses set by `layoutDocument`).
+
+| TS field (engine.ts line) | Rust | Class |
+|---|---|---|
+| `ctx` (ctor) | `ctx: DocContext` — `flow` carried, `resolver` cache, `rev` input, `warnings` output | mixed (split in `DocContext`) |
+| `full` (ctor; the endnotes swap its blocks, 1088) | `story: u32` | carried |
+| `totalPagesGuess`, `marksGuess`, `lateFloats`, `lateTables`, `balance`, `noteRefGuess` (ctor), `chaptersGuess` 376, `sectionPagesGuess` 345, `noteMarks` (context) | `PassInput` | input |
+| `pages` 327 | `pages: Vec<PageState>` (with `PageOut` + per-page working state) | output |
+| `cur` 328 | `cur: Option<PageIx>` | carried |
+| `col` 329, `y` 330, `colTop` 332, `atTop` 333, `topGapPrevAfter` 338, `prev` 339 | same names | carried |
+| `lastBox` 341 (`page?: object`) | `last_box: Option<LastBox>` (`ContainerId`, K2f) | carried |
+| `firstInDoc` 342 | `first_in_doc` | carried |
+| `usedNumPages` 343, `usedSectionPages` 346, `usedPageRef` 374, `usedChapter` 377, `usedNoteRef` 395 | `found.used_*` | finding |
+| `geoms` 347 | `geoms: Vec<SectGeom>` | cache |
+| `lnCount` 349, `lnPage` 350 (`PageState` → `PageIx`), `lnSect` 351 | same | carried |
+| `lastRowEmit` 353 | `last_row_emit` (owns a clone of the row) | carried |
+| `tblX0` 356, `inHf` 358 | same | carried |
+| `floatCarry` 360 | `float_carry: Vec<FloatCarry>` (owns the `TableLayout`) | carried |
+| `floatFlow` 363 (`WeakMap<TableLayout>`) | `float_flow: IndexMap<TableLayoutId, FloatFlow>` + `next_table_layout` | carried |
+| `onlyTextFloats` 369, `prePlaced` 371 (`Set<Run>`), `zSeq` 372 | `only_text_floats`, `pre_placed: IndexSet<RunKey>`, `z_seq` | carried |
+| `headingMarks` 379 | `found.heading_marks` | finding |
+| `balanceFound` 398, `lateFound` 416, `lateTablesFound` 417 | `found.*` | finding |
+| `colUsed` 400, `balanceSaved` 402, `balanceLastFree` 413 | same | carried |
+| `placedTables` 419, `lateSplit` 421 | `IndexSet<u32>` | carried |
+| `listTexts` 524 | `list_texts` | cache |
+| `colBottoms` 1052 | same | carried |
+| `coverPage` 1091, `firstPageNumber` 1092 (read at the start of `run()`) | same | cache |
+| `inCell` 1501, `hfFrameAfter` 1503, `hfFrameTbl` 1505, `staticDx` 1507, `cellMar` 1509, `colMaxY` 1511, `sectGapAfter` 1514 | same | carried |
+| `cellNb` 1560 (`WeakMap<TableCell>`) | `cell_nb: FxHashMap<CellKey, CellNeighbors>` | cache |
+| `pendingJoin` 1716, `pendingDel` 1718 (`Run[]`), `floatTableGap` 1721, `carryAnchorGap` 1723 | same (`RunKey`s) | carried |
+| `noteCache` 2218, `sepCache` 2301 | same | cache |
+| `noteCarry` 2389, `rowNoteCut` 2391, `flowFills` 2393, `enFlow` 2442, `curEndnote` 2444, `endnotesDone` 2446 | same | carried |
+| `pinnedFloats` 2891 (`Map<Run, {ps, y}>`) | `pinned_floats: IndexMap<RunKey, Pinned>` | carried |
+| `chains` 3261 (lazy `indexChains`) | `LDoc::chains` (once per call) | cache (moved) |
+| `chainSlices` 3263 | `chain_slices: IndexMap<ChainId, IndexMap<TbKey, CellContent>>` | carried (memo held by a checkpoint) |
+
+### Decisions beyond the plan (declared)
+
+| # | Decision | Why |
+|---|---|---|
+| F0-1 | `model` is the only module naming uo-docx; F0 started on placeholders with the A2/A4 names and switched to re-exports when D1a compiled (same session). `StoryChange` stays local until D2a | parallel construction; one place to reconcile |
+| F0-2 | uo-render `Item` uses **inline struct variants** (`Item::Rect { … }`), boxed `Image`/`Shape`, `XformPush { m: Option<Box<[f64; 6]>> }`: measured 48 B. A glyph run keeps `text`, `scaleX`, `alpha`, `fx` in a per-run side record (`RunSide`) | tuple variants over payload structs cannot place the tag in the padding: 56 B |
+| F0-3 | `OptF64`: optional numbers in 8 bytes, "absent" = a signalling-NaN payload JS cannot produce (values are NaN-canonicalized on entry, as the codec does) | `Option<f64>` is 16 B; RA1.2 needs absent ≠ NaN |
+| F0-4 | `ItemList` (items + glyph/run/text/path columns) is the storage of pages **and** of every intermediate item array; `push_shifted` implements `shiftItem` in uo-render (glyph x only when `dx` is truthy, a clip push without `y` untouched, `M'(p+d) = M(p)+d`) | items move between arrays by copying column ranges; the arithmetic is app-neutral |
+| F0-5 | `LineRef.path` is the **TS ref path** with the table cell by GRID column (`c${slot.lcol}`, table.ts:1060), a type of its own (`RefPath`), not uo-docx `BlockPath` (cell index in the row) | the shell resolves line refs with `cellAtGrid`; both meanings exist in the TS |
+| F0-6 | `LineStory::Note` carries the note id as `NumKey` (printed with `String(n)`); `HfWhich` is uo-docx's | the TS id is a number; no duplicate enum |
+| F0-7 | The provider is the registry's `FontProvider` (`&self`, `Send + Sync`); `FaceEntry` holds the `Arc<FontAnswer>` (pins the face while the layout is being built) | frontier P landed its trait first; one trait for every policy |
+| F0-8 | uo-render `FaceRes` = `face: Option<Face>` (TS `font`) + `bytes: Option<Arc<[u8]>>` (TS `bytes`, absent = not embeddable) + `advances` (PQ1); `ImageRes` gains `svg` and `width_twips`/`height_twips` | the TS objects have them and the painters or the page fill read them (`svg`: viewer:962) |
+| F0-9 | Engine exceptions to "TableLayout owned by its stack frame" (K18): `floatCarry` owns the `TableLayout` (the TS keeps it alive across pages), `lastRowEmit` owns a clone of the row; `chains` moved to `LDoc` (pure, per call); `full` (swapped by the endnotes) is the `story` index; `PartialEq` over the flow state is deferred to the milestone-2 checkpoints | follow the TS lifetimes exactly |
+| F0-10 | `SectGeom.headers/footers` hold the story index per slot `[default, first, even]` | K13: one part may serve several slots |
+| F0-11 | `PassItems`/`ItemSide`: `ItemMeta`, `lineBox`/`lineNum` and `ClipItem.src` travel next to each pass-scope item and are copied by `shiftItem` | the TS `shiftItem` copies `LATE_ITEMS` and spreads the fields (RQ2, K2e) |
+| F0-12 | The stage-3 placeholder is `LayoutError::Unported(Frontier, site)`; the infallible stubs are listed in `PENDING` consts | the brief: no `todo!`/`panic!`, exact signatures |
+| F0-13 | `JsonBuilder` writes the layout's own keys over `uo_jsnum::json`; model values come from the uo-docx `JsonWriter` (`raw`) | no second JSON implementation (K9, LQ20) |
+| F0-14 | Canonical stream decisions (canon.mjs header): faces and images labelled by first appearance with their description once; optional booleans by truthiness; strings as UTF-16 bytes; `PlacedObject.run` printed as the run's model position; the object's `drawing` is not in the stream (not a TS field) | exact, identity-aware, lone surrogates kept |
+| F0-15 | P3 facets by an in-memory ESM loader rewrite of the frozen dist (`module.register`) plus prototype patching | module functions cannot be patched from outside; nothing on disk changes |
+| F0-16 | CI mode font isolation through node-fonts' own roots (env) instead of a new provider | the oracle policy stays the TS one |
+| F0-17 | The transcript is TSV (percent-encoded strings), not JSON | no JSON parser in the Rust tests |
+| F0-18 | The Write section schema (`write.uos`) carries `run` as the run ref string and `pfmts` by value; `lineBox`/`lineNum` are not encoded (RQ2) | the shell's Write code reads strings; K20 |
+| F0-19 | `LayoutLimits` first numbers: 100,000 pages, 4·10⁶ cells per table, depth 192, parser depth 256, 10⁶ metafile records/items, 65,536-unit field texts; work = 5·10⁷ + 4,000 × glyphs × (5 + min(balanced, 20) × (⌈log₂ h⌉ + 2)) × 4^nesting(≤ 8) | K16 shape; replaced by measurements at gate 2 |
+
+### Wave-1 briefs (for the orchestrator)
+
+Common to every frontier (all Opus): work only in the files named; compile against the F0 types
+(change a shared type only with a line in this record); `fmt`, `clippy --no-deps -D warnings` (native
+and `--target wasm32-unknown-unknown`), `core/tests/float-casts.sh` and `grep-bans.sh` clean; no
+`todo!`/`panic!`/indexing; every `Math.*` through `uo_jsnum`; each removed stub leaves its
+`Unported`/`PENDING` entry. Declare in this record, section "Stage 3 — F<n>", the uo-docx A7 items
+1–9, the LA3 key of every identity site, every `json_key` site and every limit check with its TS
+behaviour. Facet parity (P3) runs as soon as the D1a reader reaches digest parity (LQ22); before
+that, unit facets over captured inputs. Capture tools: extend `tools/lib/facets.mjs` (the `WRAPS`
+table and a recorder) with the frontier's facet, and write its Rust twin next to the module. Record
+wall time, rounds and tool calls in "Process metrics".
+
+**F1 — fonts and the width model** (≈ 920 lines). TS: `fonts.ts` (355: `faceMetrics` 57, `VERT_TABLE`/
+`vertTable` 122, `superscriptRaiseFor`/`subscriptDropPt`/`superscriptRaisePt` 132–141,
+`isSymbolFont` 150, `parsePostScriptName` 170, `genericFor` 193, `FaceResolver` 224 — the Word
+substitution chain over the provider, its cache keyed `${family}|bi` per call (K4) — and
+`withEmbeddedFonts` 315 as a registry-side wrapper), `context.ts` (`DocContext` constructor,
+`saveFlow`/`restoreFlow`/`pure`, `beginNoteSection`/`beginNotePage`, `noteMark`/`noteMarkOf`/
+`allNoteMarks`; **not** `directRPr`/`directPPr`, which are F2), `typography/lineheight.ts`
+`deviceEmPt` (done), `typography/font/sfnt.ts` `kernTwips`/`kernGlyphsTwips` (198–213, K7), the
+width model of `para.ts` (`wordWidth` 349, `toWordUnit` 355, `scaledUnits` 365, `spacingTwips` 373,
+`advanceTwips` 378–405, `roundAdvance` 411, `kernGlyphs` 423, `kernTwips` 540) with `advanceEm`
+fixed to `'nominal'` and `advanceRound` to `'word'` (LQ12), `math.ts` `parseFont`/`infoCache` (43; a
+value on the face table, uo-fonts S14). Rust: `fonts.rs` (`face_metrics`, resolver, `FaceTable`
+growth: a new `AnswerId` gets the next `FaceId` and a `FaceRes` in `Resources`), `context.rs`,
+`para.rs` (`advance_twips` and the helpers), `math.rs` (font info). Inputs: the registry's
+`FontAnswer` (`face()`, `bytes()`, `advances`), `uo_fonts::Face` metrics/kerning/VDMX. Facets:
+`p2first` (the resolver's first request per key and answer identity, already captured) plus a new
+`p3.metrics` (`faceMetrics` per face) and `p3.advance` (`advanceTwips` per call). Pitfalls: the
+FaceResolver cache is **per call** and asks the provider once per key where the TS asks again in
+every pass; identity is `AnswerId`, never bytes; `withEmbeddedFonts` precedence ("variant not embedded
+but the family exists on the system → prefer the system"); the East Asian 1.3× rule; `metricsCache`
+is a `WeakMap` → per face entry.
+
+**F2 — Word semantics in `uo_docx::word`** (≈ 1,400 lines; LQ3). TS: `resolve.ts` (414:
+`StyleResolver`, `cascadeRPr`, `mergePPr`/`mergeRPr`/`mergeTblPr`/`mergeTcPr`, `resolveColor`,
+`resolveDrawingColor`, `shadingFill`, `highlightHex`, `fontOfSlot`, `COND_ORDER`), `paraformat.ts`
+(31; `CTX` WeakMap → per call, K3/LQ18), `context.ts` `directRPr` 245/`directPPr` 317 (+ `setFx`,
+`setOt`, `eq` → `json_eq`), `para.ts` `resolvePPr` 682, `numbering.ts` (236: `NumberingState`,
+`formatNumber`; `repeat` on huge counters → capped by `max_field_text`, K11b), `datefmt.ts` (103;
+local getters through `Clock`/`TimeZoneRule`, LQ10), `field-formula.ts` (129; `parseArithmetic`
+with a depth guard = `max_parse_depth`, K11c), `outline.ts` (185), `numpages.ts` (30),
+`revisions.ts` (178: `RevisionDisplay`, `revisionRanges`, `joinDeleted` data, `AUTHOR_PALETTE`),
+`hyphenate.ts` `documentHyphenationLanguages` 65–80 as an explicit list of every `lang` site (K5).
+Rust: `core/crates/uo-docx/src/word/` (module doc already there), then replace the placeholders of
+uo-docx-layout `src/word.rs` with re-exports. Inputs: the uo-docx model (`DocFormatting`, props with
+`KeyOrder` for `json_key`), `uo-text` (`case::to_uppercase`/`to_lowercase` over `&[u16]`, `space`),
+uo-jsnum (`parse_int`, `to_js_string`, `to_fixed`), uo-drawingml colour modifiers. Facets:
+`p3.style` (`StyleResolver` outputs per paragraph/run), `p3.numbering` (markers), `p3.datefmt`,
+`p3.formula`, `p3.hyphlangs` (the walk), each wrapped in `facets.mjs`. Pitfalls: plain-object key
+order (integer-like `styleId`s first — `Object.values(styles).find`), the `{ ...base.pBdr,
+...over.pBdr }` insertion order that `bdrKey` observes (K9), regex sites as hand matchers from a
+spec table (97 sites over the ported files), `Map` orders, numbering clones in `pure()` (the clone
+count is charged).
+
+**F3 — drawing values and metafiles** (≈ 1,100 lines after RQ1). TS: `geometry.ts` 356–475
+(`substPhClr`, `withThemeStyles`, `shapeExtras`, `groupChild`: build `uo_render::types::ShapeGeom`/
+`GradFill`/`ShapeShadow`/`Pattern`/`Blip`/`ShapeFx` — the path evaluation is `uo_render::geom`,
+frontier G), `picture.ts` `pictureLook` (≈ 75 → `PictureLook`), `page-fill.ts` `resolvePageFill`
+(34: a **derived image per pass**, RQ3), `imagePixelInfo`, `patternRowsFromImage`, `textfx.ts`
+`fxColor`, `fillOf`, `resolveTextFx` (→ `ResolvedTextFx`, registered in `Resources.text_fx`),
+`emf.ts` (633) and `wmf.ts` (148) → `metafile.rs` (`render_emf`/`render_wmf` over `FaceLookup`;
+bitmap records → BMP bytes and EMF+ images → `ImageRes` with `ImageOrigin::Derived`, K12; records
+and items bounded by `max_metafile_records`/`_items` with a warning). Rust: `drawing.rs`,
+`metafile.rs`. Inputs: uo-docx `ShapeStyle`/`DrawingGroup`/`PageBackground`/`TextEffects`/`Theme`,
+uo-drawingml (colour mods, `ImageEffects`), uo-image (`imagePixelSize`/decoders for page fills and
+blip natural sizes), F1 (faces for EMF text). Facets: `p3.shape` (`withThemeStyles` +
+`shapeExtras` outputs), `p3.picture`, `p3.pagefill`, `p3.textfx`, `p3.emf`/`p3.wmf` (items per
+metafile in the P1 item encoding). Pitfalls: colours stay the strings the document wrote (RQ6), the
+argument spreads of `emf.ts:289, 314` that throw `RangeError` in V8 succeed here (accepted, K11a),
+`ClipItem.src` goes to `ItemSide::clip_src`, image identity per TS object (one `ImageId` per drawing
+and per derived creation).
+
+**F5 — lines and paint** (≈ 1,380 lines; after F1). TS: `lines.ts` (689: `nextTab`, `moreTabs`,
+`lineBox` 107, `LineBreaker` 140 — seed `experiments/rust-spike/src/linebreak.rs`, 0 mismatches on
+13,353 lines, written against its own `linedata.rs`: re-target to `para::Glyph`/`PreparedPara` and
+`lines::Line`), `underline.ts` (184: `ulMetrics` 20, `ulGeometry` 36, `paintUnderlines` 74),
+`paint.ts` (504: `paintLine` 19, leaders, math, check boxes, inline objects, `o:hr`, decorations,
+`borderWidth` 290, `borderBands`, `borderPaintWidth`, `paintBorder` 368, `paintWave`,
+`paintParaBox` 430, `pageBorderItems` 478; `lineSeq` → `keys::LineSeq` per call). Rust: `lines.rs`,
+`underline.rs`, `paint.rs` (emit into `PassItems` with `GlyphMeta` for `lineBox`/`lineNum`; glyph
+runs merge only across the same `FaceId`, K2a; `LineDash` for border dashes, RQ13). Inputs: F1
+(`advance_twips` through `Cx`, hyphenation through `Cx.hyph`), F0 types. Facets: `p3.lines`
+(captured now: frame, every line field, placed x/w/leader) extended with glyph identity
+(`GlyphSrc`), plus `p3.paint` (items of each `paintLine` in the P1 item encoding). Pitfalls:
+`Math.max(...[])` = −∞ in `nextTab`; tabs relative to the frame's left edge with the default grid
+from 0 and the hanging indent as an implicit stop; the automatic hyphen is a synthetic glyph
+(`GlyphSrc::AutoHyphen`), not a paragraph glyph.
+
+### Not done (handed on)
+
+- The real replay (`tests/layout_parity.rs` `rust_layout`) waits for the D1a reader and F7a; the P2
+  and P3 facets are captured but not yet compared by Rust (their writers come with F1, F4, F5).
+- Embedded-font documents are not decodable in the adapter (bytes come from the reader): 1 of 2,742.
+- The production hyphenation sweep (`documentHyphenationLanguages` ∩ `['pt-BR','en','es']`, K5) needs
+  one process per document (loaded patterns only grow): a `--hyph app` mode for wave 1.
+- The São Paulo date facet (LQ10) and the per-counter maxima of the limits are not captured yet.
+- The CI job `layout-parity` is new and has not run on GitHub (its TS build commands follow `ci.yml`).
+- M1–M5 memory tests start with the first ported stage (no allocation path exists yet).
+- uo-drawingml does not host `CustPath` yet: uo-render defines it (to become a re-export).

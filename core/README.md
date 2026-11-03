@@ -11,6 +11,8 @@ workflow (`.claude/skills/rust-port/SKILL.md`): exact parity with the frozen TS 
 |---|---|
 | `crates/uo-alloc` | counting allocator and the memory gate helpers (M1–M3) used by every crate's tests |
 | `crates/uo-testkit` | parity tooling: hashed canonical streams, capture files and their exact replay, seeded generators (Node side in `js/testkit.mjs`) |
+| `crates/uo-codec` | runtime of the schema-driven codec (wire primitives, limits, typed errors; TS twin in `js/runtime.ts`) |
+| `tools/uo-schema` | the codec generator: `schema/*.uos` → the committed Rust and TypeScript encoders/decoders (`schema/manifest.txt`; `cargo run -p uo-schema -- generate` / `check`) |
 | `crates/uo-ffi` | C ABI for .NET (skeleton: handles, panic guard, memory counters) |
 | `crates/uo-wasm` | WebAssembly exports for JS (skeleton: handles, buffers, memory counters) |
 | `dotnet/` | the .NET facade (`UniversalOffice.Native`, `SafeHandle`s) and its boundary tests |
@@ -28,6 +30,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo build -p uo-wasm --features count --target wasm32-unknown-unknown --profile wasm
 node --expose-gc --test crates/uo-wasm/tests/boundary.test.mjs
 dotnet test dotnet/UniversalOffice.Native.Tests  # builds uo-ffi with the counters
+cargo run -p uo-schema -- check                  # the committed generated codec files match schema/*.uos (CI)
 cargo +nightly miri test -p uo-alloc --features global --target x86_64-unknown-linux-gnu
 node ../tools/bench/run.mjs --main <checkout of main>   # main × rust-core
 ```

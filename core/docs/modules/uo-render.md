@@ -489,7 +489,233 @@ Pending. `tools/bench`: encode + decode + paint per page (main: paint from objec
 | Stage | Agent (model) | Time | Tool calls |
 |---|---|---|---|
 | 1 | planner + reuse, architecture plan for uo-render and uo-pdf together (Opus) | (orchestrator) | ≈ 60 |
+| 3 — T | types, list container, resources, navigation, the small `geom` functions, `render.uos` + `write.uos` (Opus, inside uo-docx-layout F0) | (F0 session) | in the layout record's F0 row (≈ 165 for F0 + T) |
+| C | codec: generator `uo-schema`, runtime `uo-codec`, IDL grammar, R-P2 suites, fuzz targets, CI check (Sonnet, hybrid mode) | (orchestrator) | ≈ 165 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
 Maintainer, verbatim: "Approve all" — every final recommendation of the milestone-1 questions accepted (RQ1–RQ13). Cross-record changes from the uo-render/uo-pdf plans (RQ1–RQ3, RQ13, PQ1, PQ8) apply to this record where listed there.
+
+## Milestone 1 — frontier C (codec)
+
+Built 2026-11-03 (Sonnet, hybrid mode) from G15/RQ4. Files: `core/tools/uo-schema` (the generator, a workspace
+bin+lib crate, `publish = false`), `core/crates/uo-codec` (the Rust runtime, `js/runtime.ts` its TypeScript twin),
+`core/schema/manifest.txt` (what is generated from what), the generated files (committed), `core/fuzz/src/codec.rs`
+(two fuzz targets), the `codec` job of `.github/workflows/rust-core.yml`.
+
+### Generator design
+
+- **A Rust crate, not a Node script.** One toolchain for everyone who regenerates (the Rust and .NET developers need
+  no Node), deterministic by construction (no clock, no hash-map order, LF output), tested with the workspace's
+  `cargo test`, and under the same lints as the rest. No dependencies (the SHA-256 of the schema hash is 40 lines
+  with the NIST vectors in its tests; an independent Node `crypto` hash of the pinned canonical text agrees).
+  Node is needed only to *run* the TypeScript side of the tests.
+- **Pipeline**: `parse.rs` (lexer + recursive descent, errors with the line) → `model.rs` (names resolved, every rule
+  that keeps the emitted code valid and the decoder bounded checked, minimum wire sizes, recursion flags, canonical
+  text and hash) → four emitters: `rust.rs` (types + `encode`/`decode` + tables + messages), `ts.rs`,
+  and the test-support emitters `rust_support.rs` (canonical dump + seeded random messages) and `ts_support.rs`
+  (canonical dump). The emitters assume the model is valid, so adding a rule means adding it in `model.rs` once.
+- **Manifest** `core/schema/manifest.txt`: one line per schema, `schema/x.uos rust=… ts=… [rust_support=…] [ts_support=…]`,
+  paths relative to `core/`. `cargo run -p uo-schema -- generate` writes, `-- check` fails when a committed file differs
+  (CR ignored for Windows checkouts), `-- hash file.uos` prints the hash. CI runs `check`; `tests/generator.rs` runs the
+  same comparison, so a plain `cargo test` also fails on a stale file.
+- **Generated Rust types are the wire types**, separate from uo-render's hand-written `Page`/`Resources` (ranges into
+  side buffers, `OptF64`, `Sym` newtypes). Frontier E maps one to the other. A `columns<S>` is generated as a
+  struct-of-arrays `SColumns { cp: Vec<u32>, x: Vec<f64>, gid: Vec<Option<u32>> }` (decoded column by column straight
+  into the output vectors; no row struct and no temporary); in TypeScript it is an array of plain objects.
+
+### IDL grammar (`core/schema/*.uos`)
+
+```
+file     := doc* "schema" NAME "magic" STRING ";" item*
+item     := table | struct | message | enum
+table    := doc* "table" NAME ":" TYPE ";"                       -- entries are `TYPE` (a plain struct); ids are positions
+struct   := doc* "struct"  TYPE "{" [field ("," field)* [","]] "}"
+message  := doc* "message" TYPE "{" ... "}"                      -- a struct that is also a root: gets encode_/decode_ functions and an id
+field    := doc* NAME ":" type ["?"] ["ts" STRING]                -- `?` optional; `ts` overrides the TypeScript property name
+enum     := doc* "enum" TYPE ["tag" STRING] "{" variant ("," variant)* [","] "}"
+variant  := doc* TYPE ["=" STRING] ["(" type ")"]                 -- `= "x"` the TypeScript name; a payload is any type but optional
+type     := "bool" | "u8" | "u16" | "u32" | "i32" | "f64"
+          | "utf16"                                               -- UTF-16 code units (lone surrogates kept); TS string
+          | "sym"                                                 -- interned string: an id into the implicit symbol table; TS string
+          | "ref" "<" NAME ">"                                    -- an id into a declared table; TS number
+          | "bytes_ref"                                           -- a handle (varint id) to bytes the shell pulls separately; TS number
+          | "bytes" | "app_section"                               -- inline bytes (the producer's section is another schema's message); TS Uint8Array
+          | "list" "<" type ">" | "columns" "<" TYPE ">"          -- columns: a list of a struct stored column by column
+          | TYPE                                                  -- a struct or an enum
+NAME  := [a-z][a-z0-9_]*        TYPE := [A-Z][A-Za-z0-9]*        doc := "///" text        "//" is a comment
+```
+
+Rules checked by the generator (each has a test in `tests/generator.rs`): the magic is 4 printable ASCII characters;
+names are unique and not reserved by the generated code (`Tables`, `Delta`, `Vec`, `Option`, …); a Rust keyword as a
+field name becomes a raw identifier (`ref` → `r#ref`, `box` → `r#box`; `self`/`super`/`crate`/`Self` are refused);
+a struct has at least one field and at most 64 `bool`/optional fields (one bitmap); an enum has at least one variant;
+a type may contain itself **only through `list<>`** (a `Vec` is the indirection; the decoder counts depth only for
+these types); a message cannot be nested; `columns<>` needs a plain struct; at most 16 tables (the symbol table
+counts); TypeScript names are unique per struct/enum, printable ASCII, and reached with `["0"]` when not identifiers;
+a flattened payload struct must not have a field named like the tag property.
+
+TypeScript mapping: field names default to camelCase of the IDL name (`flip_h` → `flipH`), overridden by `ts`; a unit-only
+enum is a string union (`"dotted" | "dashDot"`); a payload enum is an object with the tag property (`tag "t"`, default
+`t`): `{ t: "glyphs" } & GlyphRun` when the payload is a struct (flattened, the `tree.ts` shape) and `{ t: "clip", v: number }`
+otherwise; an optional field is an absent property (`undefined`, never `null`); a `bool` is always `true`/`false` when
+decoded and `!!x` when encoded. The schema `hash` is the first 8 bytes of SHA-256 over a normalized text (names, types,
+order, optionality, magic; not docs, `ts` names or formatting; the form is pinned by a test, so changing it is a deliberate
+wire version bump).
+
+### Wire format as built
+
+Little-endian; **canonical** (the decoder refuses every other encoding, so `decode` then `encode` gives the input bytes).
+
+| Value | Encoding |
+|---|---|
+| `u32`, `u16`, counts, ids, enum tags, `bytes_ref` | LEB128, shortest form, at most 5 bytes, nothing over `u32::MAX` (`u16`: over 65535 refused) |
+| `i32` | zigzag, then LEB128 |
+| `u8`, `bool` as a payload | one byte (`bool` only 0 or 1) |
+| `f64` | 8 raw bytes; `-0` and the infinities kept; **every NaN is written as `0x7FF8000000000000`** and any other NaN is refused on decode |
+| `utf16` | number of code units, then 2 bytes each |
+| `bytes`, `list<u8>` | length, then the bytes |
+| struct | a bitmap of `ceil(n/8)` bytes with one bit per `bool` field and per optional field, in field order, bit 0 first, unused bits zero; then every field in order (a `bool` has nothing more, an absent optional has nothing more). No bitmap for a struct without such fields |
+| `list<T>` | count, then the elements; `list<bool>` is bit-packed after the count |
+| `columns<S>` | count, then column by column: a plain column is its values, a `bool` column is bit-packed, an optional column is its presence bit-packed and then the present values only |
+| enum | the tag as a varint, then the payload of that variant |
+| message | `magic[4]`, `hash[8]`, message id (varint), generation (varint); for each table `from` and `count` (varints); the entries of every table in table order (the symbol table first); then the body |
+
+Tables: a message carries only the entries the decoder has not seen (`from` = the entries before it); an id in a body or
+in an entry may refer to any entry up to `from + count`. The decoder requires `from` to equal its table's length
+(`TableGap` otherwise), a new generation drops the tables first, and a message that fails leaves the tables as they
+were (appended entries truncated, or the old tables restored after a reset). Pages may be pulled in any order as long
+as each view's encoder advances its own marks, as the plan says.
+
+Rust API (generated, per message `Page`): `encode_page(out: &mut Vec<u8>, delta: &Delta, msg: &Page) -> Result<(), EncodeError>`
+(appends; on error `out` is as it was), `decode_page(buf, tables: &mut Tables, limits: &Limits) -> Result<Page, DecodeError>`,
+`peek_header`, `Tables { generation, sym, <table>… }` (+ `lens`, `truncate`, `delta_since`, `sym_units`), `Delta { generation, <table>: TableDelta }`.
+Errors are typed (`BadMagic`, `VersionMismatch`, `WrongMessage`, `Truncated`, `BadVarint`, `BadTag`, `BadBool`, `BadRef`, `TableGap`,
+`NonCanonicalNaN`, `NonZeroPadding`, `Limit(what)`, `TrailingBytes`; encode: `TooLarge`, `ColumnLengths`).
+TypeScript: `decodePage(buf, tables, limits?)`, `encodePage(msg, state)` with `Tables` (`sym` is a `SymTable`: strings resolved
+on decode, interned on encode; other tables are arrays of decoded objects), `EncodeState { generation, tables, sent }`,
+`newTables`, `newEncodeState`, `tableLens`, `DecodeError` with the same `code`s.
+
+**Limits** (`Limits`, defaults in the runtime): depth 64 (recursive types only), list length 2^24, total elements 2^26,
+and **allocation 128 MiB** — counted before each `Vec` is reserved from the Rust size of its elements. The last one was added
+after a test showed the first three do not bound memory: a 10 MB message of one-byte `Item::Pop` asks for 1.84 GB (184 B
+per element in Rust). Every count is also checked against the bytes that remain (`count × min bits ≤ remaining × 8`, the
+minimum computed per type by the generator), so nothing is allocated for a count the message cannot back. The TypeScript decoder checks
+depth, list length and total elements but not bytes (it reads what the wasm module produced).
+
+### Verification and numbers
+
+| Check | Where | Result |
+|---|---|---|
+| R-P2a Rust encode → Rust decode: same values (dump: every `f64` by bits, every string by code units) and same bytes on re-encode | `tests/codec_fixture.rs`, `tests/codec_real.rs` (the suite is one macro run over the fixture's `Frame` and `Command`, `render.uos` `Page` and `write.uos` `WritePage`) | 400 random streams each (1–6 messages, tables, generations): fixture 270,266 + 82,810 B, render 1,078,419 B, write 2,401,057 B. Plus 10^5 glyphs in columns, empty page, `-0`/±∞/subnormal/NaN, lone surrogates, depth, lying counts |
+| R-P2b Rust encode → **TypeScript decode → TypeScript encode** identical bytes, and the TypeScript dump equals the Rust dump | the same macro, Node 24 (`tests/ts/cross.ts`) | 360 messages per schema, all identical: fixture 69,041 + 21,839 B, render 285,536 B, write 549,599 B |
+| Canonical form: every prefix of a message fails and leaves the tables; every single-byte change fails or decodes to a value that encodes back to exactly the changed bytes | the same macro | render: 35,189 refused / 59,463 canonical; write: 32,458 / 62,298; frame: 36,221 / 41,947; command: 18,709 / 11,355; no violation |
+| Runtime primitives (both languages): varints at every boundary, overlong/6-byte/over-`u32` refused, zigzag, NaN, strings, bitmaps and padding, limits, header | `crates/uo-codec/tests/runtime.rs` (12), `tests/ts/runtime.test.ts` (11, run under `node --test` by `tests/ts_runtime.rs`) | pass |
+| Generator: the committed files are current; deterministic; every rule above; hash pinned (`ebe79f884b66eb70` for a two-field schema, equal to an independent Node SHA-256) and insensitive to comments/docs/ts names | `tests/generator.rs` (12) | pass |
+| Generated code under uo-render's deny lints (`cast_possible_truncation`, `cast_sign_loss`, `indexing_slicing`), workspace clippy `-D warnings` (no unwrap/expect/panic), `cargo fmt`, ban lists (`clippy-ban`, `grep-bans`), float-cast scan | clippy over `--all-targets`, `tests/*.sh` | clean |
+| Generated TypeScript under `tsc 5.9 --strict --noUncheckedIndexedAccess --exactOptionalPropertyTypes --noUnusedLocals --noUnusedParameters --erasableSyntaxOnly --verbatimModuleSyntax` | CI `codec` job | clean |
+| wasm32 | `cargo build -p uo-codec --target wasm32-unknown-unknown --profile wasm`; the generated fixture/render/write codecs and the tests compile for wasm32 (`cargo check -p uo-schema --tests --target wasm32-unknown-unknown`) | builds. Not executed in wasm (the codec has no `unsafe`, no platform call, no hash-map; the TypeScript side is what runs in the browser) |
+
+Memory (M1–M3, `tests/memory.rs`, `crates/uo-codec/tests/runtime.rs`): **M1** encode + decode return live bytes exactly to the start on the
+fixture and on 20 render messages, and on several hundred error paths (every 7th prefix, 200 flipped bits, bad hash, trailing byte, a failure after the tables were
+appended to); the runtime's every operation and error path too. **M2** soak of 2,000 encode+decode iterations
+across generations, sampled every 100: flat, tolerance 0 (a codec keeps no state or cache; `clear_caches()` is a no-op). **M3** (fixture page of 10^5 glyphs
+`cp, x, gid?, joins, note?`): wire 1,055,337 B (10 B/glyph; the render glyph, cp + x only, is 9.1 B against 12 B in memory); encode allocates 4,194,296 B in
+total for a 2,097,152 B peak (the output doubles from empty: callers should reserve the previous page's size); decode allocates 4,500,364 B, exactly the
+columns, no temporary. A lying count allocates under 4 KB. M4/M5: no handles and no caches in this crate.
+
+Throughput (release, this Windows x64 machine, `tests/perf.rs`, not a gate): 100,000 glyphs in one run (912,577 B): encode 184 µs (≈ 5.0 GB/s), decode 334 µs (≈ 2.7 GB/s);
+a text page of 3,000 glyphs in 60 runs (28,793 B): encode 7.8 µs, decode 42.6 µs. The TypeScript side was not timed.
+
+Fuzz (`core/fuzz`, targets `codec_decode`, `codec_roundtrip`; the stable driver, libFuzzer runs in CI): `codec_decode` feeds arbitrary bytes, raw or behind the valid
+magic and hash, to four decoders and asserts no panic, no call over 1 s, an error leaves the tables empty, and **decode ∘ encode = identity** on whatever decodes;
+`codec_roundtrip` seeds a random valid message and checks encode/decode/re-encode and that every cut fails. 120 s each: 133,044,119 and 767,329 executions
+(1.1 M/s and 6.4 k/s), no crash, slowest call 11 ms and 37 ms; again after the allocation limit was added, 90 s each: 90,163,533 and 572,125 executions, no crash, slowest 7.7 ms and 45 ms. The decoders were fuzzed with the small `CODEC_LIMITS` (depth 16, 16 Ki elements, 64 Ki total, 16 MiB allocation).
+
+### Decisions outside the plan (declared)
+
+1. Runtime crate `uo-codec` (used by uo-render and the uo-docx session: more than one user), TypeScript twin in `crates/uo-codec/js/runtime.ts`; generated TypeScript imports it by a relative path with the `.ts` extension (erasable syntax only, so Node 24 runs it and a bundler needs no transform).
+2. Generated Rust types are wire types; the hand-written uo-render types stay (frontier E converts). Generated files are `generated.rs`: **`gen` is a reserved keyword in edition 2024**, so the plan's `codec/gen.rs` cannot be a module name.
+3. Canonical decoding as a rule (not in the plan), which makes `decode ∘ encode` a fuzz oracle and R-P2b exact; NaN canonicalization is done by the codec itself (no `uo-jsnum` dependency); a NaN with a payload does not survive a round trip by design.
+4. Integers: `u8` raw, `u16`/`u32` varint, `i32` zigzag; no 64-bit integers (a JS number cannot carry them; add with `bigint` if the session needs one).
+5. `sym` decodes to a string in TypeScript and to an id in Rust; `ref<T>` stays a number in both; `bytes_ref` is a varint handle; `app_section` is inline length-prefixed bytes holding another schema's complete message (own magic and hash).
+6. Table deltas are generic (`table` declarations), not render-specific: header `from`/`count` per table up front, entries after, atomic commit/rollback, the generation in every header.
+7. Recursion only through `list<>`; depth counted only for recursive types; the allocation limit (above) is an addition to the plan's "limits on decoded sizes".
+8. The generator crate allows `clippy::disallowed_methods` crate-wide (the ban list keeps JavaScript text semantics in the engines; this tool reads ASCII); the runtime and all generated code are clean under it.
+9. Generated Rust carries `#![cfg_attr(rustfmt, rustfmt::skip)]` (the compiler never sees it), so `cargo fmt --check` ignores the files wherever they are included (checked in the workspace and in the fuzz crate); generated test support (`*_support.rs`: dump, random) is a separate sibling module for `#[cfg(test)]`.
+10. `Box` is allowed as a type name (the generated code never uses `Box`); `render.uos` has a `Box` struct and a `box` field.
+
+### Not done / hand-offs
+
+- uo-render and uo-docx-layout do not declare the generated modules yet (their `lib.rs` are the Opus agent's): add `uo-codec` to their `Cargo.toml`, `pub mod codec;` with `codec/mod.rs` = `mod generated; pub use generated::*; #[cfg(test)] mod generated_support;`. The files are already in `crates/uo-render/src/codec/` and `crates/uo-docx-layout/src/codec/`, compiled and tested through `#[path]` in `core/tools/uo-schema/tests` and in the fuzz crate.
+- R-P2c (the frozen TS `LayoutResult` → generated TS encoder → Rust decode) is frontier D; the encoder it needs exists (`encodePage(msg, state)`; the adapter interns colour strings through `state.tables.sym` and fills `faces`, `images`, … itself).
+- The session schema of uo-docx D2a is not written; the generator covers what the plan lists for it (payload enums, nested lists, recursion through lists, optional fields).
+- Not run: the generated codec inside wasm (compiled only), in WebKit/real Safari, a TypeScript decode timing, `libFuzzer` itself (the stable driver ran; CI runs libFuzzer), a long fuzz run (minutes, not hours).
+- Open for the maintainer: the TypeScript decoder has no byte limit; if it ever reads bytes that did not come from the wasm module, add `maxAlloc` as in Rust.
+
+## Types (T)
+
+Frontier T, Opus, 2026-11-03, inside uo-docx-layout F0 (record there: "Milestone 1 — F0").
+
+### What exists (`core/crates/uo-render`)
+
+`forbid(unsafe_code)`, `deny(cast_possible_truncation, cast_sign_loss, indexing_slicing)`; fmt,
+clippy `-D warnings` (native and wasm32) and the ban scripts clean.
+
+- `ids`: `Sym`, `FaceId`, `ImageId`, `TextFxId`, `PageFillId`, `CustId` — dense, first-use order,
+  `NonZeroU32` (`index + 1`) so `Option<Id>` is 4 bytes; `from_index`/`index`/`raw`/`from_raw` for
+  the codec.
+- `sym::SymbolTable`: UTF-16 interning, lone surrogates kept, `since(n)` for the per-generation delta.
+- `opt::OptF64`: an optional number in 8 bytes (below).
+- `types`: `Page`, `Item` and every payload of RA2 field by field — `RunFlags`, `LineDash` (RQ13, with
+  `BORDER_DASHES`), `Stroke`, `PathCmd`, `Ltrb`, `ImageItem`, `PictureLook` (+ `PresetSpec`, `PicLine`,
+  `PicShadow`, `PicGlow`, `PicBevel`, `PicReflection`, `ClrChange`), `ShapeItem` with the `ShapeGeom`
+  spec and `GeomEval` (RQ1), `GradFill`/`GradStop`, `ShapeShadow`, `Pattern`, `Blip`/`BlipTile`,
+  `ShapeFx`, `CustPath`/`CustCmd`, `ResolvedFill`/`FxStop`/`ResolvedTextFx` (+ outline, shadow, glow,
+  reflection, `LineCap`/`LineJoin`), `PageFill`/`PageFillKind`.
+- `list`: `ItemList` (items + `GlyphColumns` `cp`/`x`/`gid`, `RunSide` per glyph run, UTF-16 `text`,
+  `path_cmds`), `Span`, `GlyphRunHead`, `push_glyphs`/`push_path`/`push_plain`, `push_shifted`/
+  `extend_shifted` (the TS `shiftItem`), `heap_bytes` (M3), `CapacityError`.
+- `resources`: `Resources` (symbols, faces, images, text effects, page fills, custom paths; `add_*`
+  and lookups), `FaceRes`, `ImageRes`.
+- `nav`: `Navigation`, `PageLink`, `PdfLink`, `LinkTarget`, `OutlineEntry` (points, as
+  pdf-navigation.ts).
+- `geom` (RQ1): `is_open_preset`, `map_path`, `path_bounds`, `rotate_path`, `line_path` (the canvas
+  twips and PDF points variants, `LineUnit`), `preset_path` (placement), `ShapeXf`, `CustPart`;
+  `preset_path_local`, `cust_paths`, `arc_to` are frontier G's, listed in `geom::PENDING`.
+- `paint`: module plan for frontier G and the shared `GradGeom`.
+- `codec`: the generated render codec (frontier C), wired here.
+- IDL (in the frontier-C grammar): `core/schema/render.uos` (the canvas page message: tables
+  `faces`, `images`, `text_fx`, `page_fills`, `cust`; `Page`, the `Item` union with the tree.ts names
+  through `ts`, the canvas hints of §3.3 — `parts`, `grad_geom`, `grad_samples`, `joins`, `remap`,
+  `outlines`, `box` — and `app: app_section`) and `core/schema/write.uos` (the Write section:
+  `WritePage` with `section`, `number`, `hfItems`, `lines` with `chars` as `columns`, `pfmts` by value,
+  `objects`, `cells`, `clipSrc`).
+
+Tests (`tests/types.rs`): `size_of::<Item>()` = 48 (≤ 48), `OptF64` against NaN/±0/±∞/the marker
+bits, the symbol table, and `push_shifted` against the `shiftItem` rules. The layout adapter check
+(uo-docx-layout `tests/adapter.rs`) decodes 2,755 frozen-TS layouts (the whole Word oracle but one
+embedded-font document, the 8 .NET synthetic inputs, generated documents) into these types and
+re-encodes them bit for bit through the P1 walker: every item field the TS produced on the corpus has
+a representation here.
+
+### Decisions beyond the plan (declared)
+
+| # | Decision | Why |
+|---|---|---|
+| T1 | `Item` has **inline struct variants** for the small items and boxes `Image`/`Shape`; `XformPush` boxes its matrix | RA2's `Item::Glyphs(GlyphRun)` with payload structs measures 56 B (the tag cannot use the payload's padding); inline variants measure 48 |
+| T2 | A glyph run keeps `text`, `scaleX`, `alpha`, `fx` in a side record `RunSide` (`list.runs[run]`) | the run item stays 40 B; those fields are rare or (RQ7) read only by the canonical stream |
+| T3 | `OptF64` for every optional number of an item (absent = a signalling-NaN payload JS never produces; values are NaN-canonicalized on entry, as the codec does) | `Option<f64>` is 16 B; RA1.2 needs absent apart from NaN |
+| T4 | `ItemList` is the storage of a page **and** of the producers' intermediate arrays (uo-docx-layout `PassItems`): moving an item copies its column ranges; `push_shifted` is the TS `shiftItem` (app-neutral arithmetic) | one container; the layout shifts items between arrays all the time |
+| T5 | `FaceRes` = `face: Option<uo_fonts::Face>` (TS `font`) + `bytes: Option<Arc<[u8]>>` (TS `bytes`, absent = not embeddable) + `advances: Option<Arc<AdvanceTable>>` (PQ1); manual `Debug` | RA2 merged `font` and `bytes`; the TS keeps them apart |
+| T6 | `ImageRes` gains `svg` and `width_twips`/`height_twips` | the viewer paints the SVG version (universal-document-viewer.ts:962); page fills build images from the twips sizes |
+| T7 | `CustPath`/`CustCmd` are defined here until uo-drawingml hosts them (§12 request open), then become re-exports | uo-drawingml had no `CustPath` when T was written |
+| T8 | `Clip` and `Xform` are split into push/pop variants (`ClipPush { x, y, w, h: OptF64 }`, `ClipPop`, `XformPush`, `XformPop`); the wire keeps the tree.ts `op` field | the push fields are optional in the TS; pops carry nothing |
+| T9 | The small pure functions of `geom` are ported now (with their TS arithmetic, `uo_jsnum` trig); the preset evaluator and custom paths stay frontier G's | RQ1 moves them here; F0 needed `map_path`/`rotate_path` shapes to fix the signatures |
+| T10 | IDL conventions: Rust field names with `ts "<tree.ts name>"`; numbers `f64`, optional numbers `f64?`, optional booleans `bool`; two-element arrays (`duotone`, `focusPosition`) as structs with fields `"0"`/`"1"`; `PictureLook.geom.adj` and `ShapeGeom.adj` as `list<AdjValue>` in the TS key order | the decoder materializes tree.ts objects (RQ5) |
+
+### Process
+
+| Stage | Agent (model) | Time | Tool calls |
+|---|---|---|---|
+| T | types + IDL, inside layout F0 (Opus) | (F0 session) | counted in the layout record's F0 row |

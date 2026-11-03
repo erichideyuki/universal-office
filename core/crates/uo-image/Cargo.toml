@@ -1,0 +1,23 @@
+[package]
+name = "uo-image"
+description = "Raster image codecs of the UniversalOffice Rust core: header reads (JPEG, PNG, GIF, BMP) and decoders to RGBA (PNG, GIF, BMP, TIFF) for the PDF writer and the read path, with limits for untrusted input"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# zlib inflate (PNG IDAT, TIFF deflate strips): the port of fflate's `unzlibSync` the TS uses
+uo-opc = { path = "../uo-opc" }
+# every Math.* call and typed-array store of the TS goes through it
+uo-jsnum = { path = "../uo-jsnum" }
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# parity capture/replay: tests/image_parity.rs
+uo-testkit = { path = "../uo-testkit" }
+
+[lints]
+workspace = true

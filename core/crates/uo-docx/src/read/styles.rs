@@ -1,0 +1,1 @@
+//! Frontier R2 (D1a reader, record "Milestone 1 — D1a foundation"): `styles.ts`: `readStyleRunProps`, `readStyleParaProps`, `readStyles`, `readStylesXml` (basedOn iterative, seen set, `max_based_on_chain`).

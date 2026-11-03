@@ -1,0 +1,8 @@
+# The generated files of the schema-driven codec (core/tools/uo-schema). One schema per line:
+#   <schema.uos> rust=<file> ts=<file> [rust_support=<file>] [ts_support=<file>] [ts_runtime=<file>]
+# Every path is relative to core/. `cargo run -p uo-schema -- generate` rewrites the files; CI runs
+# `cargo run -p uo-schema -- check` and fails when a committed file differs from what the schema generates.
+# rust_support goes beside rust (a sibling module, `#[cfg(test)]`): the canonical dump and the random messages of the tests.
+schema/render.uos rust=crates/uo-render/src/codec/generated.rs ts=crates/uo-wasm/js/gen/render.ts rust_support=crates/uo-render/src/codec/generated_support.rs ts_support=crates/uo-wasm/js/gen/render.support.ts
+schema/write.uos rust=crates/uo-docx-layout/src/codec/generated.rs ts=crates/uo-wasm/js/gen/write.ts rust_support=crates/uo-docx-layout/src/codec/generated_support.rs ts_support=crates/uo-wasm/js/gen/write.support.ts
+tools/uo-schema/tests/schemas/codec_test.uos rust=tools/uo-schema/tests/fixtures/codec_test.rs ts=tools/uo-schema/tests/fixtures/codec_test.ts rust_support=tools/uo-schema/tests/fixtures/codec_test_support.rs ts_support=tools/uo-schema/tests/fixtures/codec_test.support.ts

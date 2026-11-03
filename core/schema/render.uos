@@ -1,0 +1,629 @@
+/// The display list of one page as the TS canvas painter receives it (uo-render §3, G15, RQ4,
+/// RQ5): written by frontier T (types) in the grammar of frontier C (core/tools/uo-schema,
+/// record "Milestone 1 — frontier C", "IDL grammar"); the canvas encoder (frontier E) fills it
+/// from uo_render::Page + Resources.
+///
+/// Rules of this schema (record uo-render.md, "Types (T)"):
+/// - field names are the Rust ones; `ts` gives the tree.ts name the TS decoder materializes
+///   (RQ5: plain objects with the tree.ts field names, so canvas.ts keeps its code);
+/// - every number is f64 (LQ5); optional numbers are `f64?` (absent = the TS undefined);
+///   optional booleans are `bool` (absent = false, RA1.2);
+/// - colours and names are `sym` (the message's interned UTF-16 strings, sent as a
+///   per-generation delta like the tables below);
+/// - model objects are `ref<table>` ids, dense in first-use order (faces: the provider answer's
+///   identity, K2a; images: the TS InlineImage identity, RQ3);
+/// - what the canvas would have asked a font or a geometry function for is precomputed by the
+///   encoder in canvas units (uo-render §3.3) and travels next to the item (parts, grad_geom,
+///   grad_samples, joins, remap, outlines, box); zoom-dependent rasters are wasm exports, never
+///   encoded;
+/// - GlyphRun.text is not sent (RQ7) unless a debug flag asks; the Write section is the `app`
+///   payload, typed by core/schema/write.uos.
+schema render magic "UORP";
+
+/// FontFace as the painter env needs it (fontOf(faceId); bytes are pulled once per face).
+table faces: Face;
+/// InlineImage (bytes pulled once per image, image_bytes(view, id)).
+table images: Image;
+/// ResolvedTextFx, one per TS object.
+table text_fx: TextFx;
+/// PageFillPaint.
+table page_fills: PageFill;
+/// a:custGeom paths (the shape-effect masks need them through the wasm exports, RQ12).
+table cust: CustGeom;
+
+struct Face {
+  key: sym ts "key",
+  family: sym ts "family",
+  bold: bool ts "bold",
+  italic: bool ts "italic",
+  synth_bold: bool ts "synthBold",
+  synth_italic: bool ts "synthItalic",
+  stand_in: bool ts "standIn",
+  /// the TS `bytes` present (embeddable); the shell pulls them to register a FontFace
+  has_bytes: bool ts "hasBytes",
+  /// units per em, for the `outlines` of gid glyphs
+  upem: u32 ts "upem",
+}
+
+struct Image {
+  ext: sym ts "ext",
+  /// data.length
+  byte_len: u32 ts "byteLength",
+  /// an svg version exists (the viewer paints it)
+  has_svg: bool ts "hasSvg",
+  width_twips: f64 ts "widthTwips",
+  height_twips: f64 ts "heightTwips",
+  natural: PxSize? ts "natural",
+  effects: ImageEffects? ts "effects",
+}
+
+struct PxSize {
+  w: u32 ts "w",
+  h: u32 ts "h",
+}
+
+/// uo-drawingml ImageEffects (docx-core ImageEffects).
+struct ImageEffects {
+  gray: bool ts "gray",
+  gain: f64? ts "gain",
+  bright: f64? ts "bright",
+  floor: bool ts "floor",
+  bi_level: f64? ts "biLevel",
+}
+
+/// The page: the TS LayoutPage minus the Write fields (in `app`).
+message Page {
+  w: f64 ts "widthTw",
+  h: f64 ts "heightTw",
+  background: sym? ts "background",
+  background_fill: ref<page_fills>? ts "backgroundFill",
+  background_show: bool ts "backgroundShow",
+  items: list<Item> ts "items",
+  /// the producer's section (Write: write.uos WritePage)
+  app: app_section ts "app",
+}
+
+enum Item tag "t" {
+  Glyphs = "glyphs" (GlyphRun),
+  Rect = "rect" (Rect),
+  Line = "line" (Line),
+  Image = "image" (ImageItem),
+  Shape = "shape" (ShapeItem),
+  Path = "path" (PathItem),
+  Clip = "clip" (Clip),
+  Xform = "xform" (Xform),
+}
+
+struct GlyphRun {
+  face: ref<faces> ts "face",
+  size_pt: f64 ts "sizePt",
+  color: sym ts "color",
+  y: f64 ts "y",
+  glyphs: columns<Glyph> ts "glyphs",
+  scale_x: f64? ts "scaleX",
+  synth_bold: bool ts "synthBold",
+  synth_italic: bool ts "synthItalic",
+  alpha: f64? ts "alpha",
+  as_path: bool ts "asPath",
+  colr: bool ts "colr",
+  fx: ref<text_fx>? ts "fx",
+  /// RQ7: only with the debug flag
+  text: utf16? ts "text",
+  /// canvas hints (§3.3): one "joins the previous glyph" bit per glyph of a plain run, by the
+  /// TS batching rule (canvas.ts:350-385; used only when 'fontKerning' in ctx)
+  joins: list<bool>? ts "joins",
+  /// the drawn code point where the F0xx symbol remap changes it (canvas.ts:375)
+  remap: list<CpRemap>? ts "remap",
+  /// outlines of the gid glyphs, font units (canvas.ts:357-371; EMF text)
+  outlines: list<GlyphOutline>? ts "outlines",
+  /// runBox(it) of an fx run (canvas.ts:289)
+  box: Box? ts "box",
+}
+
+struct Glyph {
+  cp: u32 ts "cp",
+  x: f64 ts "x",
+  gid: u32? ts "gid",
+}
+
+struct CpRemap {
+  index: u32 ts "index",
+  cp: u32 ts "cp",
+}
+
+struct GlyphOutline {
+  index: u32 ts "index",
+  cmds: list<OutlineCmd> ts "cmds",
+}
+
+enum OutlineCmd tag "op" {
+  M = "M" (Pt),
+  L = "L" (Pt),
+  Q = "Q" (Quad),
+  C = "C" (Cubic),
+  Z = "Z",
+}
+
+struct Pt {
+  x: f64 ts "x",
+  y: f64 ts "y",
+}
+
+struct Quad {
+  x1: f64 ts "x1",
+  y1: f64 ts "y1",
+  x: f64 ts "x",
+  y: f64 ts "y",
+}
+
+struct Cubic {
+  x1: f64 ts "x1",
+  y1: f64 ts "y1",
+  x2: f64 ts "x2",
+  y2: f64 ts "y2",
+  x: f64 ts "x",
+  y: f64 ts "y",
+}
+
+struct Box {
+  x: f64 ts "x",
+  y: f64 ts "y",
+  w: f64 ts "w",
+  h: f64 ts "h",
+}
+
+struct Rect {
+  x: f64 ts "x",
+  y: f64 ts "y",
+  w: f64 ts "w",
+  h: f64 ts "h",
+  fill: sym ts "fill",
+  alpha: f64? ts "alpha",
+}
+
+/// RQ13: the dash kind (both painters expand it).
+enum LineDash {
+  Dotted = "dotted",
+  Dashed = "dashed",
+  DashDot = "dashDot",
+  DashDotDot = "dashDotDot",
+  BdrDot = "bdrDot",
+  BdrDash = "bdrDash",
+  BdrDashDot = "bdrDashDot",
+  BdrDashDotDot = "bdrDashDotDot",
+  BdrDashSmall = "bdrDashSmall",
+}
+
+struct Line {
+  x1: f64 ts "x1",
+  y1: f64 ts "y1",
+  x2: f64 ts "x2",
+  y2: f64 ts "y2",
+  color: sym ts "color",
+  width_pt: f64 ts "widthPt",
+  dash: LineDash? ts "dash",
+}
+
+struct Ltrb {
+  l: f64 ts "l",
+  t: f64 ts "t",
+  r: f64 ts "r",
+  b: f64 ts "b",
+}
+
+struct ImageItem {
+  x: f64 ts "x",
+  y: f64 ts "y",
+  w: f64 ts "w",
+  h: f64 ts "h",
+  image: ref<images> ts "image",
+  crop: Ltrb? ts "crop",
+  rot: f64? ts "rot",
+  flip_h: bool ts "flipH",
+  flip_v: bool ts "flipV",
+  pic: PictureLook? ts "pic",
+}
+
+struct AdjValue {
+  name: sym ts "name",
+  value: f64 ts "value",
+}
+
+/// { prst, adj? }; adj in the TS object's key order (materialized as a Record).
+struct PresetSpec {
+  prst: sym ts "prst",
+  adj: list<AdjValue>? ts "adj",
+}
+
+struct PicLine {
+  color: sym ts "color",
+  alpha: f64 ts "alpha",
+  width_pt: f64 ts "widthPt",
+  dash: sym? ts "dash",
+  cmpd: sym? ts "cmpd",
+  cap: sym? ts "cap",
+  join: sym? ts "join",
+}
+
+enum ShadowKind {
+  Outer = "outer",
+  Inner = "inner",
+}
+
+struct PicShadow {
+  kind: ShadowKind ts "kind",
+  color: sym ts "color",
+  alpha: f64 ts "alpha",
+  blur_pt: f64 ts "blurPt",
+  dist_pt: f64 ts "distPt",
+  dir_deg: f64 ts "dirDeg",
+  sx: f64? ts "sx",
+  sy: f64? ts "sy",
+  kx_deg: f64? ts "kxDeg",
+  ky_deg: f64? ts "kyDeg",
+  algn: sym? ts "algn",
+  rot_with_shape: bool ts "rotWithShape",
+}
+
+struct PicGlow {
+  color: sym ts "color",
+  alpha: f64 ts "alpha",
+  rad_pt: f64 ts "radPt",
+}
+
+struct PicBevel {
+  w_pt: f64 ts "wPt",
+  h_pt: f64 ts "hPt",
+  prst: sym? ts "prst",
+  rig: sym? ts "rig",
+  dir: sym? ts "dir",
+  material: sym? ts "material",
+}
+
+struct PicReflection {
+  blur_pt: f64 ts "blurPt",
+  st_a: f64 ts "stA",
+  st_pos: f64 ts "stPos",
+  end_a: f64 ts "endA",
+  end_pos: f64 ts "endPos",
+  dist_pt: f64 ts "distPt",
+  dir_deg: f64 ts "dirDeg",
+  sy: f64 ts "sy",
+  algn: sym? ts "algn",
+  rot_with_shape: bool ts "rotWithShape",
+}
+
+struct ClrChange {
+  from: sym ts "from",
+  to: sym ts "to",
+  to_alpha: f64 ts "toAlpha",
+}
+
+/// [colour, colour] (materialized as a two-element array by the TS adapter)
+struct Duotone {
+  first: sym ts "0",
+  second: sym ts "1",
+}
+
+struct PictureLook {
+  geom: PresetSpec? ts "geom",
+  line: PicLine? ts "line",
+  shadow: PicShadow? ts "shadow",
+  glow: PicGlow? ts "glow",
+  soft_edge_pt: f64? ts "softEdgePt",
+  bevel: PicBevel? ts "bevel",
+  reflection: PicReflection? ts "reflection",
+  alpha: f64? ts "alpha",
+  duotone: Duotone? ts "duotone",
+  clr_change: ClrChange? ts "clrChange",
+}
+
+struct Stroke {
+  color: sym ts "color",
+  width_pt: f64 ts "widthPt",
+  dash: sym? ts "dash",
+}
+
+struct GradStop {
+  pos: f64 ts "pos",
+  color: sym ts "color",
+}
+
+struct GradFill {
+  stops: list<GradStop> ts "stops",
+  angle_deg: f64 ts "angleDeg",
+  scaled: bool ts "scaled",
+  rot_with_shape: bool ts "rotWithShape",
+  path: sym? ts "path",
+  fill_to: Ltrb? ts "fillTo",
+}
+
+struct ShapeShadow {
+  dx: f64 ts "dx",
+  dy: f64 ts "dy",
+  color: sym ts "color",
+  alpha: f64? ts "alpha",
+  blur: f64? ts "blur",
+}
+
+struct Pattern {
+  prst: sym ts "prst",
+  fg: sym ts "fg",
+  bg: sym ts "bg",
+}
+
+struct BlipTile {
+  tx: f64 ts "tx",
+  ty: f64 ts "ty",
+  sx: f64 ts "sx",
+  sy: f64 ts "sy",
+  algn: sym ts "algn",
+  flip: sym ts "flip",
+}
+
+struct Blip {
+  image: ref<images> ts "image",
+  tile: BlipTile? ts "tile",
+  alpha: f64? ts "alpha",
+}
+
+struct ShapeFx {
+  shadow: PicShadow? ts "shadow",
+  glow: PicGlow? ts "glow",
+  soft_edge_pt: f64? ts "softEdgePt",
+  reflection: PicReflection? ts "reflection",
+}
+
+/// The shape spec (RQ1, ShapeItem.style replaced): what the painters and the shape-effect
+/// masks read.
+struct ShapeGeom {
+  geom: sym ts "geom",
+  adj: list<AdjValue>? ts "adj",
+  cust: ref<cust>? ts "cust",
+  flip_h: bool ts "flipH",
+  flip_v: bool ts "flipV",
+  rot: f64? ts "rot",
+  fill_alpha: f64? ts "fillAlpha",
+  line_alpha: f64? ts "lineAlpha",
+}
+
+/// One drawn part of a shape in canvas twips (canvas.ts:439-451, computed by uo_render::geom).
+struct ShapePart {
+  cmds: list<PathCmd> ts "cmds",
+  fill: bool ts "fill",
+  stroke: bool ts "stroke",
+  even_odd: bool ts "evenOdd",
+}
+
+/// GradGeom (geometry.ts:242), canvas twips.
+enum GradGeom tag "kind" {
+  Axial = "axial" (AxialGeom),
+  Radial = "radial" (RadialGeom),
+}
+
+struct AxialGeom {
+  x0: f64 ts "x0",
+  y0: f64 ts "y0",
+  x1: f64 ts "x1",
+  y1: f64 ts "y1",
+}
+
+struct RadialGeom {
+  x0: f64 ts "x0",
+  y0: f64 ts "y0",
+  r: f64 ts "r",
+}
+
+/// ShapeItem.line (geom line): points relative to the corner.
+struct Segment {
+  x1: f64 ts "x1",
+  y1: f64 ts "y1",
+  x2: f64 ts "x2",
+  y2: f64 ts "y2",
+}
+
+struct ShapeItem {
+  x: f64 ts "x",
+  y: f64 ts "y",
+  w: f64 ts "w",
+  h: f64 ts "h",
+  style: ShapeGeom ts "style",
+  fill: sym? ts "fill",
+  stroke: Stroke? ts "stroke",
+  line: Segment? ts "line",
+  grad: GradFill? ts "grad",
+  shadow: ShapeShadow? ts "shadow",
+  pattern: Pattern? ts "pattern",
+  blip: Blip? ts "blip",
+  fx: ShapeFx? ts "fx",
+  /// canvas hints (§3.3)
+  parts: list<ShapePart> ts "parts",
+  grad_geom: GradGeom? ts "gradGeom",
+  /// gradientSamples(stops, 64): 64 RGB triples
+  grad_samples: bytes? ts "gradSamples",
+}
+
+enum PathCmd tag "op" {
+  M = "M" (Pt),
+  L = "L" (Pt),
+  C = "C" (Cubic),
+  Z = "Z",
+}
+
+struct PathItem {
+  cmds: list<PathCmd> ts "cmds",
+  fill: sym? ts "fill",
+  stroke: Stroke? ts "stroke",
+  even_odd: bool ts "evenOdd",
+}
+
+enum StackOp {
+  Push = "push",
+  Pop = "pop",
+}
+
+struct Clip {
+  op: StackOp ts "op",
+  x: f64? ts "x",
+  y: f64? ts "y",
+  w: f64? ts "w",
+  h: f64? ts "h",
+}
+
+struct Xform {
+  op: StackOp ts "op",
+  /// [a, b, c, d, e, f]
+  m: list<f64>? ts "m",
+}
+
+/// ResolvedFill (textfx.ts:14).
+enum ResolvedFill tag "kind" {
+  None = "none",
+  Solid = "solid" (SolidFill),
+  Grad = "grad" (GradTextFill),
+}
+
+struct SolidFill {
+  hex: sym ts "hex",
+  alpha: f64 ts "alpha",
+}
+
+struct FxStop {
+  pos: f64 ts "pos",
+  hex: sym ts "hex",
+  alpha: f64 ts "alpha",
+}
+
+struct GradTextFill {
+  stops: list<FxStop> ts "stops",
+  angle_deg: f64 ts "angleDeg",
+  scaled: bool ts "scaled",
+  path: sym? ts "path",
+  fill_to: Ltrb? ts "fillTo",
+}
+
+enum LineCap {
+  Butt = "butt",
+  Round = "round",
+  Square = "square",
+}
+
+enum LineJoin {
+  Miter = "miter",
+  Round = "round",
+  Bevel = "bevel",
+}
+
+struct FxOutline {
+  width_pt: f64 ts "widthPt",
+  fill: ResolvedFill ts "fill",
+  dash: sym? ts "dash",
+  cap: LineCap ts "cap",
+  join: LineJoin ts "join",
+}
+
+struct FxShadow {
+  blur_pt: f64 ts "blurPt",
+  dist_pt: f64 ts "distPt",
+  dir_deg: f64 ts "dirDeg",
+  sx: f64 ts "sx",
+  sy: f64 ts "sy",
+  kx_deg: f64 ts "kxDeg",
+  ky_deg: f64 ts "kyDeg",
+  algn: sym ts "algn",
+  hex: sym ts "hex",
+  alpha: f64 ts "alpha",
+}
+
+struct FxGlow {
+  rad_pt: f64 ts "radPt",
+  hex: sym ts "hex",
+  alpha: f64 ts "alpha",
+}
+
+struct FxReflection {
+  blur_pt: f64 ts "blurPt",
+  st_a: f64 ts "stA",
+  st_pos: f64 ts "stPos",
+  end_a: f64 ts "endA",
+  end_pos: f64 ts "endPos",
+  dist_pt: f64 ts "distPt",
+  dir_deg: f64 ts "dirDeg",
+  algn: sym ts "algn",
+}
+
+struct TextFx {
+  fill: ResolvedFill? ts "fill",
+  outline: FxOutline? ts "outline",
+  shadow: FxShadow? ts "shadow",
+  glow: FxGlow? ts "glow",
+  reflection: FxReflection? ts "reflection",
+}
+
+enum PageFillKind {
+  Gradient = "gradient",
+  GradientRadial = "gradientRadial",
+  Pattern = "pattern",
+  Frame = "frame",
+  Tile = "tile",
+}
+
+struct ImagePx {
+  w: f64 ts "w",
+  h: f64 ts "h",
+  dpi: f64 ts "dpi",
+}
+
+/// [x, y] (materialized as a two-element array by the TS adapter)
+struct FocusPosition {
+  x: f64 ts "0",
+  y: f64 ts "1",
+}
+
+/// PageFillPaint (page-fill.ts:44).
+struct PageFill {
+  kind: PageFillKind ts "type",
+  c1: sym ts "c1",
+  c2: sym ts "c2",
+  stops: list<GradStop>? ts "stops",
+  angle: f64 ts "angle",
+  focus: f64 ts "focus",
+  focus_position: FocusPosition? ts "focusPosition",
+  gradient_center: bool ts "gradientCenter",
+  image: ref<images>? ts "image",
+  image_px: ImagePx? ts "imagePx",
+  pattern: list<f64>? ts "pattern",
+}
+
+/// docx-core CustCmd.
+enum CustCmd tag "op" {
+  M = "M" (Pt),
+  L = "L" (Pt),
+  C = "C" (CustPts),
+  Q = "Q" (CustPts),
+  A = "A" (CustArc),
+  Z = "Z",
+}
+
+struct CustPts {
+  pts: list<Pt> ts "pts",
+}
+
+struct CustArc {
+  w_r: f64 ts "wR",
+  h_r: f64 ts "hR",
+  st: f64 ts "st",
+  sw: f64 ts "sw",
+}
+
+struct CustPath {
+  w: f64 ts "w",
+  h: f64 ts "h",
+  fill: bool ts "fill",
+  stroke: bool ts "stroke",
+  cmds: list<CustCmd> ts "cmds",
+}
+
+struct CustGeom {
+  paths: list<CustPath> ts "paths",
+}

@@ -1,0 +1,1 @@
+//! Frontier R4c (D1a reader, record "Milestone 1 — D1a foundation"): `document.ts` lines 1583–2213: `ReadContext`, runs, fields (simple, complex, nested codes), custom inlines, math, `readSingleRun`, `readParagraph`, `collectInstrText`, `buildReadContext`.

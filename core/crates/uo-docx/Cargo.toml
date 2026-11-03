@@ -1,0 +1,46 @@
+[package]
+name = "uo-docx"
+description = "Write document engine of the UniversalOffice Rust core: the document model, the docx reader (milestone 1), and later the lossless writer, the editing session, the Editing API, .doc and the exporters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# G1 (milestone-1 gate): one crate, modules behind features. The read path (model, reader,
+# formatting, the layout-facing view) is always built; the rest is opt-in per host.
+[features]
+default = []
+# the canonical model digest (A6) and the JSON keys with the JS rules (LQ20): parity tooling and
+# uo-docx-layout's JSON keys; tests turn it on
+canon = []
+# the editing session and history (D2a/D2b, milestone 2)
+session = []
+# the Editing API for .NET hosts (D3)
+editing-api = []
+# .doc conversion (D4)
+doc = []
+# ODF read/write (D5)
+odf = []
+# HTML/Markdown export (D5)
+export = []
+# document comparison (D5)
+compare = []
+
+[dependencies]
+# TS Map/Set insertion order (ordered maps of the model, plan "Crate vs own port")
+indexmap = "2"
+uo-drawingml = { path = "../uo-drawingml" }
+uo-fonts = { path = "../uo-fonts" }
+uo-jsnum = { path = "../uo-jsnum" }
+uo-opc = { path = "../uo-opc" }
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+uo-testkit = { path = "../uo-testkit" }
+# the tests build with the canonical digest
+uo-docx = { path = ".", features = ["canon"] }
+
+[lints]
+workspace = true

@@ -915,7 +915,193 @@ Pending.
 |---|---|---|---|
 | 1 | planner + reuse, umbrella plan (Opus) | (orchestrator) | ≈ 60 |
 | 1 (revision) | planner: U1–U20 written in, "Architecture (milestone 1)", consolidated milestone-1 gate list (Opus) | (orchestrator) | ≈ 20 |
+| M1 D1a foundation | A2 model types, A4 view and `LayoutOracle`, `ReadCtx`, A6 digest (Rust + TS walker, self-test), G9 matcher templates, data generator, G12 colour/theme API with TS differentials, M1 tests, R1–R6 brief (Opus) | one session, ≈ 3 h | ≈ 130 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
 Maintainer, verbatim: "Approve all" — every final recommendation of the milestone-1 questions accepted (G1–G27). Cross-record changes from the uo-render/uo-pdf plans (RQ1–RQ3, RQ13, PQ1, PQ8) apply to this record where listed there.
+
+## Milestone 1 — D1a foundation
+
+*(Opus, 2026-11-03, hybrid mode.)* The prerequisites of A7, so that the Sonnet frontiers R1–R6 port
+the reader 1:1 inside fixed shapes. Crate `core/crates/uo-docx` (G1 features: `canon`, `session`,
+`editing-api`, `doc`, `odf`, `export`, `compare`; the read path is always built), plus additions to
+`uo-drawingml` (G12) and `uo-jsnum` (`json`). Nothing committed by this stage.
+
+### A. What exists
+
+| Piece | Where | Content |
+|---|---|---|
+| JS value plumbing | `src/js/` | `JsNumber` (`Num(f64)` \| `Null`), `Nullable<T>`, `NumKey` (SameValueZero `Map` key), `FieldMask` (cleared = explicit `undefined`), `KeyOrder` (insertion order), `JsRecord<V>` (plain-object dictionary in JS own-key order: integer-like keys first), `JsMap` (= `IndexMap`, TS `Map`), `JsonValue`, the `JsValue` trait (digest + `JSON.stringify`), the `js_object!` macro (`opt`/`req` fields under their TS names, `hidden {}` Rust-only fields, `custom_value:` for hand-written aliases; generates `JsObject` with compile-time sorted keys, `mark`/`mark_undefined`, the digest and the JSON) |
+| Model (A2) | `src/model/` | ≈ 165 TS types field by field: `props` (ooxml/props.ts), `effects` (text-effects.ts), `drawing` + `color` (drawing.ts), `picture` (picture-xml.ts read types), `run`, `para` (document.ts), `table`, `section`, `story`, `document` (fulldoc.ts), `formatting` (parts.ts, styles.ts), `background`, `media` (`MediaStore`, dedupe by full bytes, G24), `sources` (`SourceStore` with `SrcText` spans into the parts' text) |
+| Identity and text | `src/ids.rs`, `src/text.rs`, `src/pvec.rs` | `ParaId`/`TableId`/`DrawingId`/`HfPartId`/`MediaId`/`SectionBreakId`/`TxbxSrc` + `IdAlloc`; `SourceKey` (a value); `Utf16` (`Box<[u16]>`, lone surrogates kept, G6); `PVec<T>` (chunks of 64–128 `Arc<T>`, start index for O(log n) `get`, copy-on-write `make_mut`, `shared_chunks` for the U19 step cost) |
+| Layout-facing API (A4, G21) | `src/view.rs` | `DocView` (body, sections, `hf_part`/`hf_story`, `hf_slots(section, Header \| Footer)` = the K13 slot → part map, notes, comments, bookmarks, formatting, styles, core props, background, `media`/`media_arc`, `formatting_version`, `story(StoryRef)`, `block`/`paragraph(StoryRef, BlockPath)`, `run(RunRef)`, `find_table`/`cell(CellKey)`/`find_textbox` (O(document) walks), `revision_authors` = `revisions.ts`, iterative); `DocRef`, `StoryRef`, `BlockPath` (inline up to two table levels, `Display` = `b3/r0/c1/b0`), `RunRef` + `RunSub` (field result, group item), `CellKey`, `NoteKind`, `HfWhich`; `LayoutOracle { field_values, next_hyphenation }`, `FieldScope`, `HyphenSkips` (`(ParaId, offset)`), `HyphenCandidate`, `LayoutError` + kind |
+| Reader context (A5, G7, G20) | `src/read/ctx.rs`, `src/read/plain.rs`, `src/read/mod.rs`, `src/limits.rs`, `src/error.rs` | `ReadCtx` (limits, `IdAlloc`, `MediaStore`, per-read `wrapIds`/`blockSdtKeys`, `enter_nested`/`leave_nested` at `max_nesting` 64, per-part paragraph/run counts, `xml_part` with the docx presets, `rels`, `resolve_target` = uo-opc D6 only, `media_part`, `source_part`); `plain_paragraphs` (the G20 text fallback); the `DOCX`/`DOCX_POS` presets (`CANONICAL_PREFIX` table moved here from the uo-opc tests); `ReadOptions`; the `read_document` and `read_embedded_fonts` signatures (stubs until R5); `EmbeddedFont { data: Arc<[u8]> }`; `DocxLimits`, `DocxError`; one empty module per frontier file (§B), so that parallel frontiers never edit a shared Rust file |
+| Canonical digest (A6) | `src/canon.rs` (feature `canon`), `js/canon.mjs`, `js/canon-selftest.mjs`, `tests/canon_selftest.rs` | the item encoding (in `canon.rs`), `CanonWriter` (media, source parts, relabel spaces, key-order facet), `Document::canon_full` / `canon_sources`; the TS walker with the alias rules (`@views`: `synced` \| `phantom` \| `split`), relabelling, `at` UTF-16 → UTF-8 by the part where `raw` sits. **Self-test: the TS walker over a hand-built TS document (aliased views, Maps, explicit `undefined`, NaN, `-0`, a lone surrogate, bytes, colour specs, custom paths, integer-like record keys, source spans, wrap ids) and the Rust `Canon` of the equivalent hand-built model give identical streams: full 726 items, key-order facet 384, sources 196** |
+| Regex templates (G9) | `src/read/matchers.rs`, `js/regex-diff.mjs`, `js/regex-sites/templates.mjs`, `tests/regex_templates.rs` | `Cur` (literal, ASCII-`/i` literal, `\s*`, `\s+`, `\d+`, classes, `\b`, `$`) and the templates `is_one_of`, `find_word`, `find_lit_then_boundary`, `keep_ascii_digits`, `all_in`, `replace_char`, `newlines_to_space`, `self_closing_to_open`, `element_text` (dynamic from a constant), `find_attr_literal` (dynamic from data); the per-site template in the module doc. **12 template rows × 47 tricky inputs = 564 results, all equal to V8** |
+| Data tables | `tools/gen-data.mjs`, `src/data/` (generated, committed, `#[rustfmt::skip]`), `tests/data_tables.rs` | `word-styles.ts` (blank parts, `WORD_BUILTIN_STYLES`), `style-names-es.ts` (`BUILTIN_STYLE_NAMES_ES` evaluated, JS order), `table-styles-builtin.ts` (`BUILTIN_TABLE_STYLES`); deterministic (two runs, 0 changed); headers carry the sources' SHA-256 (`data_sources_unchanged`); opt-in `data_regenerates_identically` (`UO_TS_PARITY=1`, `--check`) passes |
+| JSON (LQ20) | `uo_jsnum::json` | `push_number` (`null` for NaN/±∞, `0` for `-0`, else `String(x)`), `push_string`, `push_string_utf16` (`QuoteJSONString`, lone surrogates as `\udxxx`); uo-docx `JsonWriter` + `JsValue::json` for every model type (insertion order through `KeyOrder`, `undefined` omitted, `Uint8Array` as V8 prints it, `Map`/`Set` → `{}`): the base of uo-docx-layout's `json_key`/`json_eq` |
+| Colour + theme (G12) | `uo_drawingml::{dml, theme, CustPath, CustCmd}` | §C |
+| Memory (M1) | `tests/memory.rs`, uo-drawingml `tests/memory_dml.rs` | every allocating operation of the foundation (values, `PVec`, model clone, view walks, digest, JSON, `ReadCtx` incl. error paths, `plain_paragraphs`, matchers; colour and theme readers): live bytes back to the start, 0 B |
+
+Sizes: ≈ 7.5k lines of Rust in uo-docx (model ≈ 2.7k), ≈ 0.5k lines of JS tooling, 0.49 MB of
+generated data; uo-drawingml +≈ 0.7k lines (colour, theme, custom paths, tests). Checks: `cargo fmt
+--check`; `cargo clippy -p uo-docx -p uo-drawingml -p uo-jsnum --all-targets --all-features -- -D
+warnings` (and for wasm32); the float-cast script and the grep bans on both crates; `cargo test -p
+uo-docx -p uo-drawingml --all-features`; the wasm32 build (`--profile wasm`): all clean.
+
+### Decisions taken beyond the architecture (for the milestone gate; none changes a result)
+
+| # | Decision | Why |
+|---|---|---|
+| F1 | Every TS `number` of the model is `JsNumber` (`Option<JsNumber>` for `?:`), not a per-field choice | `Option<JsNumber>` is 16 bytes like `Option<f64>`; every NaN/±∞ and the post-undo `null` is representable without a declaration; the frontiers still declare the NaN sites (item 3) |
+| F2 | TS string-literal unions are `Str`; a frontier narrows one only when its reader validates the value (item 9, Opus check) | the readers cast attributes with `as`: any string can be stored |
+| F3 | `RunProps`'s required booleans are `Option` | `Partial<RunProps>` (resolved styles, patches) is the same type; the reader always sets them |
+| F4 | Every model object carries `cleared: FieldMask` + `keys: KeyOrder` (24 B); field declaration order = the reader's fixed assignment order; data-dependent orders (`readRPr`, `readPPr`, `readSpPr` fills…) are recorded with `mark` after **every** assignment | K9/LQ20 need the insertion order; most objects never allocate a `KeyOrder` |
+| F5 | TS unions of object literals (`FxFill`, `MathNode`, `PageFill`…) are permissive structs (every variant key optional, `type` a `Str`) | every combination the reader or an edit builds is representable; the digest is the TS object's |
+| F6 | All ids are `u32` (`HfPartId` included) | no truncation decision |
+| F7 | Notes are keyed by `NumKey`, not `i32` | `parseInt` of a note id can be NaN, a valid TS `Map` key |
+| F8 | `Bookmarks` = `starts` (TS `bookmarks` + `bookmarkOffsets`: same keys, same order) + `ends` (its own order) | the TS keeps three maps; two orders are observable |
+| F9 | A section's header/footer slots are `JsRecord<HfPartId>` (slot type → part); parts stored once per path (`hfCache`) | the slot type is any string the file wrote; one part serves several slots and sections (K13) |
+| F10 | `TextboxView { Synced, Phantom, ParasOnly }`; the phantom empty paragraph of `textboxBlocks` is not stored | the TS `paras` of a textbox without paragraphs is a fresh object outside `blocks`; `ParasOnly` is the comments path (`readBlocks` absent) |
+| F11 | Digest specifics: synthetic `@views` key (last in the order facet); the `SourceStore` facet has the store's maps only (`paraRefs`/`tableRefs`/`memo` out); `at` compared in UTF-8 (the walker finds the part where `raw` sits) | A6 left the encoding open; fixed in `canon.rs` and `canon.mjs` |
+| F12 | Drawing colours are `DrawingColor(uo_drawingml::dml::WordSpec)` (the structured `srgbOf` output); digest and JSON write the TS spec string back. The picture-xml colour (`{kind, val, lastClr?, mods?}`, parsed numbers) stays its own type `PicColor` | G12 structured colours; the two TS colour shapes are two different values |
+| F13 | `CustPath` numbers are `f64` (uo-drawingml type, shared with uo-render); D2a normalisation maps NaN to 0.0 there | after an undo the TS holds `null`, which every use of these numbers (arithmetic) reads as 0 |
+| F14 | `SourceStore` raw strings are `SrcText` (a span into the part text the XML reader parsed, or owned when the TS builds the string); the store keeps the parts' text (`Arc<str>`) | A2 spans; the digest and the writer need the text |
+| F15 | `PVec` is public (`Story` exposes it); `uo_docx::history` (G5) builds on it | the layout reads stories |
+| F16 | `json` always compiled, `canon` behind the feature | the layout's JSON keys run in production; the digest is tooling |
+| F17 | Recursion across stories (cell → table → cell, textbox content) may stay recursive, bounded by `enter_nested` (64); walks inside a story are iterative | item 5 is "made iterative **or limited**"; the wasm stack test at the limit (G20) comes with R5 |
+| F18 | G20 fallback = every `w:p` below the element, in order, as one run of its text (`w:t`, TAB, LF for `w:br`/`w:cr`, U+2011, U+00AD) with `DEFAULT_RUN_PROPS` | U18 asked to state the outcome |
+| F19 | `LayoutOracle::next_hyphenation(view, &DocRef, &HyphenSkips) -> Result<Option<HyphenCandidate>, LayoutError>`, `HyphenCandidate { at }` = the line's `hyph` position (body only, as `nextManualHyphenation`) | the approved shape had no error path; layout errors are values (LQ2) |
+| F20 | `RunRef.sub` addresses one nesting level (`FieldResult(i)`, `GroupItem(i)`); deeper is an R4b declaration if it occurs | K1 reach without a path type per run |
+| F21 | New `DocxLimits`: `max_paragraphs_per_part` 4 M, `max_runs_per_part` 16 M, `max_numbering_levels` 9, `max_based_on_chain` 10 k (with `max_fields_per_story` 100 k and `max_field_depth` 64 from C#) | proposals for the milestone security review (a limit is an error, not a different result) |
+| F22 | `Document.styles` (TS `FullDocument.styles`) is top-level, next to `formatting` | the TS shape (A2 sketched it inside `DocFormatting`) |
+| F23 | The data generator imports the TS **sources** of the three self-contained data modules (Node 24 type stripping), not `dist/` | `style-names-es.js` is missing from the built `dist/` of main; the sources are the frozen truth; `TABLE_FIXED`/`TABLE_FAMILY` are code → R2 |
+| F24 | Theme: `uo_drawingml::theme::read` gives an app-neutral as-written view (`ThemePart`); Word's `readTheme` rules live in uo-docx (R2) | the same part serves Slides/Sheet with other rules; `readSpPr` is Word's |
+| F25 | uo-drawingml depends on uo-opc (the `Element` of `read_color`/`theme::read`) | G12 `color::read(&Element)` |
+| F26 | `srgbOf`'s `toUpperCase` uses Rust `to_uppercase` | identical on ASCII (every real colour value); a non-ASCII hex string could differ by Unicode version — listed, not measured |
+| F27 | Named difference (G12): the TS splits the spec string on `\|`, `,` and `=` when it resolves; a raw modifier value containing one of them resolves differently in Rust (the structure read from the XML) | accepted by name; R1's quirk corpus counts it |
+
+### B. Brief for the Sonnet reader frontiers R1–R6
+
+**Common to every frontier** (give this section, A2, A5, A7 and the TS files to the agent):
+
+- Worktree `rust-core`, no commit/push/stash, LF, `CARGO_TARGET_DIR=core/target/docx-<rN>`. Edit only
+  your files: your `src/read/<module>.rs` (already declared in `src/read/mod.rs`), your tests
+  (`tests/parity_<facet>.rs`, `tests/regex_<rN>.rs`, `tests/memory_<rN>.rs`), your scripts
+  (`js/capture-<facet>.mjs`, `js/regex-sites/<rN>.mjs`) and your declaration file
+  `core/docs/modules/uo-docx-d1a/<RN>.md` (pre-created with the nine sections). Never change a model
+  type: a needed change is an item-9 row and a stop for the Opus check.
+- Port 1:1 (same algorithm, same order of floating-point operations, same results). TS is the
+  behaviour source; C# `DocumentReader.cs`/`FullDoc.cs`/`Ooxml/*` only for types.
+- XML: `uo_opc::xml::Element` — `firstChild(el, n)` → `el.first_child(n)`, `childElements(el, n)` →
+  `el.children_named(n)`, `childElements(el)` → `el.child_elements()`, `el.attrs['x']` →
+  `el.attr("x")`, `el.s/cs/ce/e` → `el.positions()` (UTF-8), `el.raw` → `el.raw()`, `textContent` →
+  `text_content()`, `findDeep` → `descend`; `Object.entries(el.attrs)` is JS object order
+  (`uo_jsnum::object::js_object_order`). Parts through `ReadCtx::xml_part` (positions when reading
+  with sources) or `xml_part_plain`, relationships through `rels` + `resolve_target` (D6 only, no
+  `word/${target}` rules), media through `media_part`.
+- Numbers through uo-jsnum: `parseInt` → `parse::parse_int` (`parse_int_utf16` over units),
+  `Number()` → `parse::to_number`, `parseFloat` → `parse::parse_float`, `Math.*` → `math::*`,
+  `x || 0` → `conv::truthy`, `x | 0` → `conv::to_int32`, `String(n)` → `format::to_js_string`. Text:
+  `trim` → `text::trim`, `split(/\s+/)` → `text::split_js_space`, `toLowerCase` →
+  `text::to_lowercase`, UTF-16 lengths/slices → `text::utf16_len`/`utf16_slice`.
+- Regex sites → `read::matchers` (the per-site template in its module doc) + one row per site in
+  `js/regex-sites/<rN>.mjs` (`SITES`, optional `INPUTS`) and a Rust test `tests/regex_<rN>.rs` over
+  `tests/regex/<rN>.expected` / `<rN>.inputs.txt` (pattern: `tests/regex_templates.rs`); regenerate
+  with `node core/crates/uo-docx/js/regex-diff.mjs`.
+- Model writes: ids from `ctx.ids` (`para()`, `table()`, `drawing()`) when the TS creates the
+  object, in document order; `obj.mark("k")` after every assignment of a data-dependent order
+  (declared in item 4); `obj.mark_undefined("k")` for a key the TS writes as `undefined`
+  (`{ widthTwips: x ? … : undefined }`); `Arc::new` for `props`/`ppr`/`rpr`; colours through
+  `uo_drawingml::dml::word_spec` into `DrawingColor`.
+- Process-global TS counters: `ctx.next_wrap_id()`, `ctx.next_block_sdt_key()`. Nested stories:
+  `if ctx.enter_nested() { …; ctx.leave_nested() } else { plain::plain_paragraphs(el, &mut ctx.ids) }`.
+  Per part: `ctx.begin_part(name)`, `count_paragraph()`, `count_run()`.
+- No panic, no `unwrap`/`expect`/indexing that can panic on document data; a `try {…} catch {}`
+  keeps its partial result as a value (item 7); float → int only through `uo_jsnum::conv`.
+- Done = `cargo fmt --check`; `cargo clippy -p uo-docx --all-targets --all-features -- -D warnings`
+  (also `--target wasm32-unknown-unknown`); `bash core/tests/float-casts.sh` and
+  `bash core/tests/grep-bans.sh` clean for uo-docx; `cargo test -p uo-docx --all-features` green
+  (canon self-test, regex, data, memory, your parity replay at 0 mismatches or only named
+  acceptances); an M1 test per public function incl. error paths; the nine declaration sections
+  filled; wall time, rounds and rework in your declaration file's process metrics.
+
+**The nine declarations** (A7; one table per kind in `uo-docx-d1a/<RN>.md`, each row with the TS
+file:line): (1) numeric parse/rounding sites and the uo-jsnum function used; (2) regex sites and
+their matcher, the dynamic ones named; (3) fields that can store NaN/±∞ and keys stored as
+`undefined`; (4) `Map`/object orders relied on and key orders recorded; (5) recursions and how they
+are made iterative or bounded; (6) module-level/process-global state and its per-read replacement;
+(7) `try/catch` sites and the partial result kept; (8) aliasing (two model positions sharing one TS
+object) and how A2 gives the same observable result; (9) saturating/wrapping/truncating choices and
+data-shape deviations from A2 (Opus check first).
+
+**Parity** (Node 24.15 x64 only, G17; captures hold digests only):
+`UO_TS_ROOT=<built checkout of main> node core/crates/uo-docx/js/capture-<facet>.mjs` writes
+`core/crates/uo-docx/tests/parity/<facet>.capture` (uo-testkit `CaptureWriter`, `@platform`, keys
+`<docx path relative to the corpus>#<part>#<ordinal>`), each value the hex digest of the `Canon`
+walk (`js/canon.mjs`) of the TS function's output for that input; `tests/parity_<facet>.rs`
+replays with `uo_testkit::{Capture, Replay}` (`assert_clean`; `Replay::accept` only for differences
+accepted by name in this record). Corpus: `write/packages/docx-layout/test/oracle/**/*.docx` (2,742),
+the docx-core test fixtures, and the generated attribute-quirk corpus (G18: R1 writes
+`js/quirk-corpus.mjs`, a seeded generator of docx parts with `"1e3"`, `" 12 "`, `"12pt"`, `"0x10"`,
+`"-0"`, `"NaN"`, empty and missing attributes, integer-like keys, duplicate ids, nesting past 64,
+`basedOn` cycles and 10 k chains, non-BMP text and surrogate character references; the others
+extend it). Traces: `UO_PARITY_TRACE=<key>` on both sides (traced `Stream`s), as
+`tests/canon_selftest.rs` does with `UO_CANON_TRACE`.
+
+| Frontier | Rust files (`src/read/`) | TS source | Facet (input → digest of) | Notes |
+|---|---|---|---|---|
+| **R1** | `props.rs`, `text_effects.rs` | `ooxml/props.ts` (all readers, `int`, `measureTwips`, `onOffVal`), `text-effects.ts` read side (`readColor`, `readFill`, `readTextEffects`, `elementXml`) | `props`: every `w:rPr`, `w:pPr`, `w:tblPr`, `w:tblPrEx`, `w:trPr`, `w:tcPr` of document, styles, numbering, headers, footers, notes → the read object | `readRPr`/`readPPr`/`readTblPr`/`readTrPr`/`readTcPr` orders are data-dependent: `mark` every key; `measureTwips` is a `Cur` walk; also writes `js/quirk-corpus.mjs` |
+| **R2** | `parts.rs`, `styles.rs`, `table_styles.rs`, `style_names_es.rs` | `ooxml/parts.ts`, `styles.ts`, `table-styles.ts` read side, `style-names-es.ts` (the code; the tables are `data::`) | `parts`: `DocFormatting` per docx; `styles`: `StylesMap` per docx | theme = Word rules over `uo_drawingml::theme::read` (the mapping in uo-drawingml `tests/theme_parity.rs` is the reference to lift); `fillStyles`/`bgFillStyles`/`effectStyles` call R3's `drawing::read_sp_pr(sp_pr: Option<Element<'_>>, style_el: Option<Element<'_>>) -> ShapeStyle` (signature fixed here); `partByRelType` → D6; `basedOn` iterative with a seen set and `max_based_on_chain` |
+| **R3** | `drawing.rs`, `vml_shape.rs`, `page_background.rs`, `watermark.rs` | `drawing.ts` (all), `vml-shape.ts`, `page-background.ts` `readPageBackground`, `watermark.ts` `isWatermarkXml`/`readWatermarkXml` | `drawing`: every `wp:anchor`/`wp:inline` (anchor, spPr style), every VML shape style, the page background | `srgbOf` = `uo_drawingml::dml::word_spec` (validated on 1,500 cases); `readCustGeom` with uo-jsnum fdlibm trig into `uo_drawingml::CustPath`; `WatermarkInfo` is a result type R3 defines in its file (not part of `FullDocument`) |
+| **R4a** | `props_map.rs` | `document.ts`: `readBorderEdge`, `runPropsFromRPr`, `themeRefOf`, `revInfo`, `editBaseProps`, `paraPropsFromPPr`, `readSectPr` | `props-map`: every rPr/pPr/sectPr of the corpus → the editing props | `RunProps`/`ParaProps` are declared in these functions' assignment order; `fontAscii: rpr.rFonts.ascii` can write `undefined` (`mark_undefined`) |
+| **R4b** | `inline_objects.rs`, `picture_format.rs` | `document.ts` lines 185–1583 (images, textboxes, shapes, groups, SmartArt, VML runs, `sync*FromXml`, `blipFxImageEffects`); `picture-xml.ts` lines 100–556 (read side) | `drawing-runs`: every `w:drawing`/`w:pict`/`w:object`/`mc:AlternateContent` run → the `Run` | after R4a; textbox content through R5's block reader (`fulldoc::read_blocks_of`, grouped) inside `enter_nested`; `TextboxView` per F10; `rawSrc` (module state of picture-xml.ts) becomes a parameter |
+| **R4c** | `paragraph.rs`, `json_parse.rs` | `document.ts` lines 1583–2213 (`ReadContext` as a struct borrowing `ReadCtx`, `readRunsInto`, fields and nested field codes, custom inlines, math, `readSingleRun`, `readParagraph`, `collectInstrText`, `buildReadContext`); `JSON.parse` of the custom-inline tag | `paragraph`: every `w:p` of every story → the `Paragraph` | after R4a; callbacks (`onBookmark`, `resolveImage`, `readBlocks`…) become methods or returned events, never stored closures; the field stack is bounded by `max_field_depth`; `captureParagraph` is R6's (call it) |
+| **R5** | `fulldoc.rs`, `inspect.rs`, `blank.rs`, `fonts.rs` | `fulldoc.ts` (read side: tables, `unwrapRaw`, blocks, header/footer parts, notes, comments, sections, `linkVmlTextboxes`, `readFullDocument`, `readCoreProps`, `readSectionProps`, `readBodyFragment`), `inspect.ts`, `blank.ts`, `fonts.ts` | `full`: `Document::canon_full` per docx (sources off and on) | last (after R2, R3, R4c); `read_document`/`read_embedded_fonts` replace the stubs; `markSectionBreaks` is the session's (not ported here, A5); the wasm test at depth 65 (G20) |
+| **R6** | `sources.rs` | `source.ts` reader side (`id`, `addPara`/`addTable`/`addRow`/`addCell`/`addTextboxGroups`), `document.ts` `captureParagraph`, the source parts of fulldoc's `storyOf`/`groupOf`/`wrapOf` | `sources`: `Document::canon_sources` per docx | starts with R4c (shared `ReadCtx::sources`), finishes after R5; spans via `ReadCtx::source_part` + `positions()`; `openOf` = `matchers::self_closing_to_open` (owned `SrcText`); signatures excluded |
+
+**Order:** R1, R2, R3 and R4a in parallel; R4b and R4c after R4a; R6 with R4c; R5 last (R6
+finishes with it). The `parity-verifier` and `memory-verifier` (Sonnet) run on each frontier as it
+lands; the orchestrator folds the eight declaration files into this record at the milestone gate.
+
+### C. Colour and theme API (G12) — status
+
+**Implemented 1:1, with TS differentials** (uo-drawingml):
+- `dml::DmlColor` / `ColorMod` / `ColorKind` (as-written colour elements: name, `val`, `lastClr`,
+  every child; parsed at use), `read_color(el, attr_prefix)` (`""` for `a:`, `"w14:"` for Word's
+  text effects), `first_child_by_priority`, `first_child_in`, `SchemeColors` (+ impls for slices and
+  uo-docx's `JsRecord<Str>`), `NoScheme`.
+- The Word variant: `word_spec(parent, theme)` = `srgbOf` (priority srgb → scheme → sys → prst,
+  read-time theme lookup, `@key` references, alpha, raw modifiers), `WordSpec::to_ts_string` (the
+  TS spec string), `WordSpec::parsed_mods`, `resolve_word_spec` = `resolveDrawingColor`
+  (`THEME_ALIAS`, six-digit check, `apply_color_mods`, `toHex` including its `NAN` print),
+  `word_theme_slot`, `is_hex6`, `hex6_rgb`, `to_hex_upper`. **Differential
+  (`tools/capture-dml-color.mjs`): 1,500 seeded `a:spPr` fills through the frozen `readSpPr` and
+  `resolveDrawingColor` (every kind, priority pairs, invalid hex, missing/empty attributes, 19
+  modifier names with numeric, empty, `1e3`, `abc`, ` 5000` and fractional values): 1,500/1,500
+  equal** (spec string, alpha, resolved colour).
+- `theme::read(&Document) -> ThemePart` (font sets, scheme entries, line widths, style-list element
+  ids; `find` = `descend`). **Differential (`tools/capture-theme.mjs`): the distinct theme parts of
+  the oracle corpus (2) and 300 seeded synthetic themes through the frozen `readTheme`; the Word
+  rules applied to the view rebuild the TS theme exactly on all 302** (`tests/theme_parity.rs`).
+- `CustPath`/`CustCmd` (the custGeom value shared by the model and uo-render).
+
+**Stub list** (each with its first consumer; none is on milestone 1's read path):
+1. charts `dmlColor` (`shared/charts/src/dml-color.ts`: `#`-prefixed result, its own preset table and
+   modifier walk) — uo-charts;
+2. the Slides resolver (`slides-core/src/theme.ts`: `clrMap`, `phClr` substitution) — the Slides port;
+3. picture-xml `dmlColorSpec` (numeric modifiers into `resolve_word_spec`) — R4b/D2b, a few lines
+   over the existing API;
+4. the w14 `FxColor` resolution of text effects (layout `textfx.ts`) — uo-docx-layout, over
+   `apply_color_mods`.
+
+### D. Not done here (by design, or left)
+
+- The reader itself (R1–R6), its parity corpus and captures, the attribute-quirk generator (R1), the
+  G20 wasm stack test (R5), the D1a M2 soak and M3 budgets (memory-verifier once R5 lands).
+- `uo_docx::word` (LQ3) is an empty module for uo-docx-layout F2; `JSON.parse` for custom inlines is
+  R4c's; the session types of A3 come with milestone 2.
+- The CI workflow is unchanged: uo-docx joins `cargo test --workspace --all-features`, clippy and the
+  ban scripts by being a workspace member; the Node scripts (captures, canon self-test, regex
+  reference, data generator) are manual steps whose outputs are committed.

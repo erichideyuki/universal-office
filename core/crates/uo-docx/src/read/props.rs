@@ -1,0 +1,1 @@
+//! Frontier R1 (D1a reader, record "Milestone 1 — D1a foundation"): `ooxml/props.ts`: `readRevisionInfo`, `measureTwips`, `onOffVal`, `colorOf`, `readBorder`, `readShading`, `readWidth`, `readRPr`, `readPBdr`, `readPPr`, `readTblPr`, `readTrPr`, `readTcPr`.

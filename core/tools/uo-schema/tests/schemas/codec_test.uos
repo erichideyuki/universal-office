@@ -1,0 +1,138 @@
+// The generator's own test schema: every construct of the IDL, shaped like the display list.
+schema codec_test magic "UOCT";
+
+/// Resource tables (ids are positions; a message carries only the entries the decoder has not seen).
+table faces: Face;
+table images: Image;
+
+/// Border dash kinds: a fieldless enum is a string union in TypeScript.
+enum Dash { Dotted, DashDot = "dash-dot", Dashed }
+
+/// A face: strings are interned symbols, `bytes` is a handle the shell pulls separately.
+struct Face {
+    key: sym,
+    family: sym,
+    bold: bool,
+    italic: bool,
+    stand_in: bool,
+    bytes: bytes_ref?,
+}
+
+struct Image {
+    ext: sym,
+    natural_w: u32?,
+    natural_h: u32?,
+    length: u32,
+}
+
+/// One glyph; stored as columns in a run.
+struct Glyph {
+    cp: u32,
+    x: f64,
+    gid: u32?,
+    joins: bool,
+    note: utf16?,
+}
+
+struct Crop { l: f64, t: f64, r: f64, b: f64 }
+
+struct GlyphRun {
+    face: ref<faces>,
+    size_pt: f64 ts "sizePt",
+    color: sym,
+    y: f64,
+    glyphs: columns<Glyph>,
+    scale_x: f64?,
+    synth_bold: bool,
+    synth_italic: bool,
+    alpha: f64?,
+}
+
+struct Rect { x: f64, y: f64, w: f64, h: f64, fill: sym, alpha: f64? }
+
+struct Line { x1: f64, y1: f64, x2: f64, y2: f64, color: sym, width_pt: f64, dash: Dash? }
+
+struct ImageItem {
+    x: f64, y: f64, w: f64, h: f64,
+    image: ref<images>,
+    crop: Crop?,
+    rot: f64?,
+    flip_h: bool,
+    flip_v: bool,
+}
+
+struct Stroke { color: sym, width: f64 }
+
+/// A struct that contains itself through a list.
+struct Group {
+    name: utf16,
+    children: list<Group>,
+    counts: list<u32>,
+}
+
+struct Notes {
+    flags: list<bool>,
+    raw: list<u8>,
+    nums: list<f64>,
+    signed: list<i32>,
+    names: list<utf16>,
+    grid: list<list<u16>>,
+    syms: list<sym>,
+    refs: list<ref<faces>>,
+}
+
+/// A payload enum: the TypeScript form is an object with the tag property `t`.
+enum Item tag "t" {
+    Glyphs = "glyphs"(GlyphRun),
+    Rect = "rect"(Rect),
+    Line = "line"(Line),
+    Image = "image"(ImageItem),
+    Clip = "clip"(f64),
+    Path = "path"(list<f64>),
+    Group = "group"(Group),
+    Label = "label"(sym),
+    Count = "count"(i32),
+    Flag = "flag"(bool),
+    Dashes = "dashes"(Dash),
+    Pop = "pop",
+}
+
+struct Page {
+    index: u32,
+    w: f64,
+    h: f64,
+    background: sym?,
+    show: bool,
+    items: list<Item>,
+    notes: Notes?,
+    stroke: Stroke?,
+    small: u8,
+    word: u16,
+    signed: i32,
+    handle: bytes_ref,
+    title: utf16?,
+    /// The producer's own section: another schema's message, opaque here.
+    app: app_section,
+    first_dash: Dash,
+}
+
+/// The root of the display-list test messages.
+message Frame {
+    page: Page,
+    group: Group?,
+}
+
+/// A second root: a command with a payload enum and no tables of its own.
+enum Cmd tag "op" {
+    Insert = "insert"(utf16),
+    Delete = "delete"(Span),
+    Batch = "batch"(list<Cmd>),
+    Undo = "undo",
+}
+
+struct Span { from: u32, to: u32 }
+
+message Command {
+    id: u32,
+    cmd: Cmd,
+}

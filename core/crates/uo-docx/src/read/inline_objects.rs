@@ -1,0 +1,1 @@
+//! Frontier R4b (D1a reader, record "Milestone 1 — D1a foundation"): `document.ts` lines 185–1583: images, textboxes, shapes, groups, SmartArt, VML runs, `syncImageFromXml`/`syncShapeFromXml`/`syncGroupFromXml`, `blipFxImageEffects`.

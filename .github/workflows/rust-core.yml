@@ -44,6 +44,34 @@ jobs:
       - run: bash tests/float-casts.sh
       - run: bash tests/grep-bans.sh
 
+  codec:
+    name: Schema-driven codec (regeneration check, Rust and TypeScript round trips)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown && rustup default stable
+      # core/schema/*.uos -> the committed generated Rust and TypeScript (core/schema/manifest.txt): a schema edit
+      # without `cargo run -p uo-schema -- generate` fails here
+      - run: cargo run -p uo-schema --release -- check
+      # R-P2: Rust encode -> Rust decode, Rust encode -> TypeScript decode -> TypeScript encode = identical bytes,
+      # on the fixture schema and on render.uos and write.uos; the runtime tests of both languages; M1/M2/M3 of the
+      # codec. UO_REQUIRE_NODE makes a missing Node a failure instead of a SKIPPED line.
+      - run: cargo test -p uo-codec -p uo-schema --all-features
+        env:
+          UO_REQUIRE_NODE: '1'
+      # the generated TypeScript type-checks under the strictest flags (the shell's tsconfig is a superset)
+      - run: |
+          npm install --prefix "$RUNNER_TEMP/ts" --no-save --no-package-lock typescript@5.9.3
+          "$RUNNER_TEMP/ts/node_modules/.bin/tsc" --noEmit --strict --target es2022 --module esnext --moduleResolution bundler \
+            --allowImportingTsExtensions --noUncheckedIndexedAccess --noUnusedLocals --noUnusedParameters --noImplicitReturns \
+            --exactOptionalPropertyTypes --erasableSyntaxOnly --verbatimModuleSyntax --skipLibCheck \
+            crates/uo-codec/js/runtime.ts crates/uo-wasm/js/gen/*.ts tools/uo-schema/tests/fixtures/*.ts
+      # the runtime builds for the browser (the generated codec is compiled for wasm32 by the lint job's clippy)
+      - run: cargo build -p uo-codec --target wasm32-unknown-unknown --profile wasm
+
   test:
     name: Tests (${{ matrix.os }})
     strategy:
@@ -56,6 +84,45 @@ jobs:
       - run: rustup toolchain install stable --profile minimal && rustup default stable
       # --all-features turns the counting allocator on: the memory tests (M1-M3) run here
       - run: cargo test --workspace --all-features
+
+  layout-parity:
+    name: Layout parity (uo-docx-layout, same-run TS capture over generated documents)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # the frozen TS engine (main, 0.9.x) is the parity reference: built in the same run (LQ21)
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          path: ts-main
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.15
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Build the frozen TS engine
+        working-directory: ts-main
+        run: |
+          npm run install:converter
+          npm run install:fonts
+          npm run install:drawingml
+          npm install --prefix write
+          npm run build -w @universal-office/docx-core --prefix write
+          npm run build -w @universal-office/docx-layout --prefix write
+      # 200 generated documents with open fonts only (the Word oracle needs Office fonts: local
+      # gate run), P1 + P2 + P3 captured with the raw streams; the adapter check decodes every TS
+      # layout into the Rust types and must write the same canonical stream; the replay reports
+      # how far the port reaches (pending per frontier) until the engine is complete
+      - run: node crates/uo-docx-layout/tools/capture-layout.mjs --ts-root ../ts-main --mode ci --count 200 --seed ${{ github.run_number }} --out "$RUNNER_TEMP/layout/ci.capture" --dump "$RUNNER_TEMP/layout/dump" --docs-out "$RUNNER_TEMP/layout/docs"
+      - run: cargo test --release -p uo-docx-layout --test adapter -- --nocapture
+        env:
+          UO_LAYOUT_CAPTURE: ${{ runner.temp }}/layout/ci.capture
+          UO_LAYOUT_DUMP: ${{ runner.temp }}/layout/dump
+      - run: cargo test --release -p uo-docx-layout --test layout_parity -- --nocapture
+        env:
+          UO_LAYOUT_PARITY: "1"
+          UO_LAYOUT_CAPTURE: ${{ runner.temp }}/layout/ci.capture
+          UO_LAYOUT_DUMP: ${{ runner.temp }}/layout/dump
+          UO_LAYOUT_DOCS: ${{ runner.temp }}/layout/docs
 
   soak:
     name: Memory soaks (M2, 1,000 iterations, release)
@@ -192,7 +259,7 @@ jobs:
       - run: cargo test --workspace --all-features --target x86_64-unknown-linux-gnu
 
   fuzz:
-    name: Fuzz (uo-opc, uo-jsnum, uo-fonts, uo-drawingml, libFuzzer)
+    name: Fuzz (uo-opc, uo-jsnum, uo-fonts, uo-drawingml, uo-codec, libFuzzer)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -205,7 +272,7 @@ jobs:
       - run: cargo run --release --no-default-features --features fallback --bin seed
       - run: cargo fuzz build
       # a short budget per target on every push (every file of fuzz_targets: the uo-opc targets,
-      # jsnum_parse, jsnum_math, the 17 fonts_* targets and the 12 dml_* targets); long runs are
+      # jsnum_parse, jsnum_math, the 17 fonts_* targets, the 12 dml_* targets and codec_decode, codec_roundtrip); long runs are
       # local (module records, "Security" and "Continuous verification")
       - run: |
           for t in $(ls fuzz_targets | sed 's/\.rs$//'); do

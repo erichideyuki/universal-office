@@ -1,0 +1,150 @@
+/// The Write section of a page (layout LA5, K14, uo-render §3.4): the TS LayoutPage fields that
+/// are Write geometry, not display items. Carried as the `app` payload of render.uos Page; read
+/// by the shell's Write code (text layer, links, ruler, editor hit tests in milestone 2), never by
+/// the generic painter. Defined by uo-docx-layout frontier F0 in the frontier-C grammar.
+///
+/// Not encoded (RQ2): the glyph runs' lineBox (cull group of cullOffPage) and lineNum, read only
+/// by the layout itself; they live in the layout's ItemMeta side table and the P1 Canon.
+schema write_layout magic "UOWL";
+
+message WritePage {
+  /// section index
+  section: u32 ts "section",
+  /// the displayed number (PAGE): any JS number
+  number: f64 ts "number",
+  /// how many items at the start of the page's items belong to the header/footer layers
+  hf_items: u32 ts "hfItems",
+  lines: list<LaidOutLine> ts "lines",
+  /// the paragraph formats the lines point at (by value: the TS sharing is never observed, K20)
+  pfmts: list<LineParaFormat> ts "pfmts",
+  objects: list<PlacedObject> ts "objects",
+  cells: list<PlacedCell> ts "cells",
+  /// ClipItem.src: the vector image drawn inside a clip (the editor finds the EMF by its item)
+  clip_src: list<ClipSrc> ts "clipSrc",
+}
+
+struct LineChar {
+  o: u32 ts "o",
+  x: f64 ts "x",
+  w: f64 ts "w",
+}
+
+struct RevBar {
+  before: f64 ts "before",
+  after: f64 ts "after",
+}
+
+struct LineFrame {
+  l: f64 ts "l",
+  r: f64 ts "r",
+}
+
+/// LaidOutLine (tree.ts:171).
+struct LaidOutLine {
+  /// the TS ref string ("b12", "b3/r0/c1/b0", "hdr:default/b0", "txbx/b3")
+  ref: utf16 ts "ref",
+  start: u32 ts "start",
+  end: u32 ts "end",
+  x: f64 ts "x",
+  y: f64 ts "y",
+  height: f64 ts "height",
+  baseline: f64 ts "baseline",
+  width: f64 ts "width",
+  chars: columns<LineChar>? ts "chars",
+  hyph: u32? ts "hyph",
+  rev: RevBar? ts "rev",
+  frame: LineFrame? ts "frame",
+  /// index into WritePage.pfmts
+  pfmt: u32? ts "pfmt",
+}
+
+enum TabAlign {
+  Left = "left",
+  Center = "center",
+  Right = "right",
+  Decimal = "decimal",
+  Bar = "bar",
+  Clear = "clear",
+  Num = "num",
+}
+
+enum TabLeader {
+  None = "none",
+  Dot = "dot",
+  Hyphen = "hyphen",
+  Underscore = "underscore",
+  Heavy = "heavy",
+  MiddleDot = "middleDot",
+}
+
+struct TabSpec {
+  val: TabAlign ts "val",
+  pos: f64 ts "pos",
+  leader: TabLeader? ts "leader",
+}
+
+/// LineParaFormat (tree.ts:201).
+struct LineParaFormat {
+  left: f64 ts "left",
+  right: f64 ts "right",
+  first_line: f64 ts "firstLine",
+  tabs: list<TabSpec> ts "tabs",
+}
+
+enum Layer {
+  Behind = "behind",
+  Front = "front",
+}
+
+/// ObjectFrame (tree.ts:258).
+struct ObjectFrame {
+  col_x: f64 ts "colX",
+  col_w: f64 ts "colW",
+  para_top: f64 ts "paraTop",
+  page_w: f64 ts "pageW",
+  page_h: f64 ts "pageH",
+  mar_l: f64 ts "marL",
+  mar_r: f64 ts "marR",
+  mar_t: f64 ts "marT",
+  mar_b: f64 ts "marB",
+  body_top: f64 ts "bodyTop",
+}
+
+struct ObjectContent {
+  lines: list<LaidOutLine> ts "lines",
+  /// [a, b, c, d, e, f]: text -> page
+  xf: list<f64> ts "xf",
+}
+
+/// PlacedObject (tree.ts:242). The TS `run` (a model object) becomes the run's ref string
+/// (story path + run index) when it is a model run, absent for a synthetic one; `drawing` is the
+/// model's DrawingId.
+struct PlacedObject {
+  run: utf16? ts "run",
+  drawing: u32? ts "drawing",
+  x: f64 ts "x",
+  y: f64 ts "y",
+  w: f64 ts "w",
+  h: f64 ts "h",
+  layer: Layer ts "layer",
+  hf: bool ts "hf",
+  frame: ObjectFrame? ts "frame",
+  content: ObjectContent? ts "content",
+}
+
+/// PlacedCell (tree.ts:234).
+struct PlacedCell {
+  ref: utf16 ts "ref",
+  x: f64 ts "x",
+  y: f64 ts "y",
+  w: f64 ts "w",
+  h: f64 ts "h",
+  span: u32 ts "span",
+}
+
+struct ClipSrc {
+  /// index of the clip item in the page's items
+  item: u32 ts "item",
+  /// the image id in the render tables
+  image: u32 ts "image",
+}

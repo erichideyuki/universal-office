@@ -1,0 +1,26 @@
+# uo-docx D1a reader — frontier R4c: declarations
+
+Part of the record `core/docs/modules/uo-docx.md` ("Milestone 1 — D1a foundation", brief §B). One
+table row per site; every row names the TS file:line. Item 9 rows need an Opus check before they land.
+
+## 1. Numeric parse and rounding sites (uo-jsnum function used)
+
+## 2. Regex sites (template or matcher; dynamic ones named; row in `js/regex-sites/r4c.mjs`)
+
+## 3. Fields that can store NaN/±Infinity, keys stored as `undefined` (cleared bits)
+
+## 4. Map/object iteration orders relied on (and key orders recorded with `mark`)
+
+## 5. Recursions (made iterative, or bounded by `max_nesting`)
+
+## 6. Module-level / process-global state and its per-read replacement
+
+## 7. `try {…} catch {}` sites and the partial result kept
+
+## 8. Aliasing (two model positions sharing one TS object) and how A2 gives the same result
+
+## 9. Saturating/wrapping/truncating choices and data-shape deviations from A2
+
+## Parity and memory results
+
+## Process metrics (wall time, rounds with the verifiers, rework)

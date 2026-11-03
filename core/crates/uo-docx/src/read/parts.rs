@@ -1,0 +1,1 @@
+//! Frontier R2 (D1a reader, record "Milestone 1 — D1a foundation"): `ooxml/parts.ts`: `readStyleSheet`, `readNumbering`, `readTheme` (Word rules over `uo_drawingml::theme::read`), `readNoteProps`, `readSettings`, `readFontTable`, `partByRelType` (D6), `numberingImages`, `readDocFormatting`.

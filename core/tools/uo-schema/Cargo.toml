@@ -1,0 +1,18 @@
+[package]
+name = "uo-schema"
+description = "Schema-driven codec generator of the UniversalOffice Rust core (G15): reads core/schema/*.uos, emits the Rust and TypeScript encoders/decoders"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+uo-codec = { path = "../../crates/uo-codec" }
+uo-alloc = { path = "../../crates/uo-alloc", features = ["global"] }
+
+[lints]
+workspace = true

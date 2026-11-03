@@ -1,0 +1,15 @@
+[package]
+name = "uo-codec"
+description = "Runtime of the schema-driven codec of the UniversalOffice Rust core (G15): the wire primitives the code emitted by core/tools/uo-schema is written against"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+
+[lints]
+workspace = true

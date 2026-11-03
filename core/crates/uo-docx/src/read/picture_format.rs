@@ -1,0 +1,1 @@
+//! Frontier R4b (D1a reader, record "Milestone 1 — D1a foundation"): `picture-xml.ts` (read side, lines 100–556): `readDmlColor`, `partsOf`, `readPicLine`, `readShadow`, `readEffects`, `read3D`, `readBlip`, `readPictureFormat`.

@@ -9,6 +9,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "equivalent"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
+name = "indexmap"
+version = "2.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
+dependencies = [
+ "equivalent",
+ "hashbrown",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -34,11 +56,49 @@ name = "uo-alloc"
 version = "0.10.0-dev"
 
 [[package]]
+name = "uo-codec"
+version = "0.10.0-dev"
+dependencies = [
+ "uo-alloc",
+]
+
+[[package]]
+name = "uo-docx"
+version = "0.10.0-dev"
+dependencies = [
+ "indexmap",
+ "uo-alloc",
+ "uo-docx",
+ "uo-drawingml",
+ "uo-fonts",
+ "uo-jsnum",
+ "uo-opc",
+ "uo-testkit",
+]
+
+[[package]]
+name = "uo-docx-layout"
+version = "0.10.0-dev"
+dependencies = [
+ "indexmap",
+ "rustc-hash",
+ "uo-alloc",
+ "uo-codec",
+ "uo-docx",
+ "uo-drawingml",
+ "uo-fonts",
+ "uo-jsnum",
+ "uo-render",
+ "uo-testkit",
+]
+
+[[package]]
 name = "uo-drawingml"
 version = "0.10.0-dev"
 dependencies = [
  "uo-alloc",
  "uo-jsnum",
+ "uo-opc",
  "uo-testkit",
 ]
 
@@ -54,6 +114,16 @@ name = "uo-fonts"
 version = "0.10.0-dev"
 dependencies = [
  "rustc-hash",
+ "uo-alloc",
+ "uo-jsnum",
+ "uo-opc",
+ "uo-testkit",
+]
+
+[[package]]
+name = "uo-image"
+version = "0.10.0-dev"
+dependencies = [
  "uo-alloc",
  "uo-jsnum",
  "uo-opc",
@@ -80,8 +150,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "uo-pdf"
+version = "0.10.0-dev"
+dependencies = [
+ "rustc-hash",
+ "uo-alloc",
+ "uo-fonts",
+ "uo-jsnum",
+ "uo-opc",
+ "uo-testkit",
+]
+
+[[package]]
+name = "uo-render"
+version = "0.10.0-dev"
+dependencies = [
+ "rustc-hash",
+ "uo-alloc",
+ "uo-codec",
+ "uo-drawingml",
+ "uo-fonts",
+ "uo-jsnum",
+]
+
+[[package]]
+name = "uo-schema"
+version = "0.10.0-dev"
+dependencies = [
+ "uo-alloc",
+ "uo-codec",
+]
+
+[[package]]
 name = "uo-testkit"
 version = "0.10.0-dev"
+
+[[package]]
+name = "uo-text"
+version = "0.10.0-dev"
+dependencies = [
+ "uo-alloc",
+ "uo-jsnum",
+ "uo-testkit",
+]
 
 [[package]]
 name = "uo-wasm"

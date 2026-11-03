@@ -1,0 +1,1 @@
+//! Frontier R3 (D1a reader, record "Milestone 1 — D1a foundation"): `drawing.ts`: `readShapeFx`, `readPos`, `anchorChild`, `readWpAnchor`, `readSpPr` (`srgbOf` = `uo_drawingml::dml::word_spec`), `vmlLenTwips`, `parseVmlStyle`, `vmlAnchor`, `vmlColor`, `vmlShapeStyle`, `readCustGeom` (fdlibm trig through uo-jsnum).

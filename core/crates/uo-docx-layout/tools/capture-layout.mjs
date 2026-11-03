@@ -1,0 +1,170 @@
+// Layout parity capture of uo-docx-layout (record core/docs/modules/uo-docx-layout.md §5 and
+// "Milestone 1 — F0"): runs the frozen TS engine (`layoutDocument`, built dist of main) over a
+// corpus and writes, per document, the P1 canonical stream of the LayoutResult (the gate), the P2
+// provider transcript (answers and their identity) and the P3 per-stage facets.
+//
+//   node tools/capture-layout.mjs --ts-root <built checkout of main> [mode] [options]
+//
+// Modes:
+//   --mode ci --count N --seed S    N generated documents with open fonts only (CI layout parity,
+//                                   LQ21); --docs-out <dir> keeps the .docx for the Rust replay
+//   --mode oracle [--only g/c,…] [--max N]
+//                                   the Word oracle (write/packages/docx-layout/test/oracle) with the
+//                                   machine's installed fonts (never versioned). LQ21: for the gate
+//                                   the capture is regenerated in the same run as the Rust replay,
+//                                   on the same machine, and a face whose digest differs fails it
+//   --mode files <a.docx> …         the given files, installed fonts (the .NET synthetic inputs:
+//                                   dotnet/tests/fixtures/input/*.docx)
+// Options:
+//   --out <file>      capture file (default tests/captures/layout-<mode>.capture)
+//   --dump <dir>      per document: <key>.p1.bin (the raw P1 stream, for the Rust adapter check and
+//                     for locating a mismatch), <key>.transcript.tsv (P2 answers with digests and
+//                     sources, what the Rust replay loads its faces from), <key>.media/<sha256>.bin
+//                     (the image payloads, for the adapter check)
+//   --trace           also writes <key>.p1.trace (one item per line) into the dump dir
+//
+// Determinism (record §5): TZ=UTC (set below, before any Date), a fixed `now`, every document read
+// again for every run (K3: the TS frame caches are keyed by model objects), the 7 hyphenation
+// pattern sets loaded as in oracle.test.ts (the production host list is a separate sweep, written
+// in the record), `mk-*` oracle cases with `revisions: { mode: 'all' }`, one process per capture
+// (lineSeq is process-global; the walker relabels it anyway).
+process.env.TZ = 'UTC';
+
+const { mkdirSync, readFileSync, writeFileSync, existsSync } = await import('node:fs');
+const { join, dirname, basename } = await import('node:path');
+const { fileURLToPath } = await import('node:url');
+const { execFileSync } = await import('node:child_process');
+const { CaptureWriter, importFrom, tsRoot, walk, relPath } = await import('../../uo-testkit/js/testkit.mjs');
+const { installFacetHooks, facetRecorder } = await import('./lib/facets.mjs');
+const { canonLayout, CANON_VERSION } = await import('./lib/canon.mjs');
+const { Sink } = await import('./lib/sink.mjs');
+const { recordProvider } = await import('./lib/transcript.mjs');
+const { generateDocx } = await import('./lib/gen-docx.mjs');
+
+const here = dirname(fileURLToPath(import.meta.url));
+const argv = process.argv.slice(2);
+const opt = (name, d) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : d; };
+const flag = (name) => argv.includes(name);
+const root = tsRoot(argv);
+const mode = opt('--mode', 'ci');
+
+// the loader hook of the P3 facets must be in place before the engine is imported
+installFacetHooks(root);
+const core = await importFrom(root, 'write/packages/docx-core/dist/index.js');
+const eng = await importFrom(root, 'write/packages/docx-layout/dist/index.js');
+const { LineBreaker } = await importFrom(root, 'write/packages/docx-layout/dist/lines.js');
+const fflate = await importFrom(root, 'write/node_modules/fflate/esm/index.mjs');
+
+/** DATE/TIME and friends (LQ10): fixed instant, UTC. */
+export const NOW = new Date(Date.UTC(2026, 0, 15, 12, 0, 0));
+
+if (mode === 'ci') {
+  // open fonts only: node-fonts indexes WINDIR/Fonts, LOCALAPPDATA and EXTRA_FONT_DIRS — point the
+  // first two at nothing and the last at the repository's open fonts
+  process.env.WINDIR = join(here, '__no_system_fonts__');
+  process.env.LOCALAPPDATA = join(here, '__no_system_fonts__');
+  process.env.EXTRA_FONT_DIRS = [join(root, 'shared/fonts/files'), join(root, 'site/assets/fonts')].join(';');
+}
+const { createNodeFontProvider } = await importFrom(root, 'write/tools/corpus-lab/node-fonts.mjs');
+const provider = await createNodeFontProvider();
+await eng.loadHyphenation(eng.HYPHENATION_PATTERN_IDS);
+
+if (mode !== 'ci') {
+  const missing = ['Arial', 'Calibri', 'Times New Roman'].filter((f) => !provider.face(f, false, false));
+  if (missing.length) { console.error(`missing installed fonts (${missing.join(', ')}): the oracle needs them; nothing written`); process.exit(2); }
+}
+
+/** The documents: { key, bytes, opts }. */
+function corpus() {
+  if (mode === 'ci') {
+    const count = Number(opt('--count', '20')), seed = Number(opt('--seed', '1'));
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const s = (seed * 1000003 + i) >>> 0;
+      out.push({ key: `gen/${seed}/${i}`, bytes: generateDocx(s, fflate), opts: {} });
+    }
+    return out;
+  }
+  if (mode === 'oracle') {
+    const dir = join(root, 'write/packages/docx-layout/test/oracle');
+    const only = opt('--only') ? new Set(opt('--only').split(',').map((s) => s.trim().replace(/\.docx$/i, ''))) : null;
+    const max = Number(opt('--max', '1e9'));
+    return walk(dir, (p) => /\.docx$/i.test(p))
+      .map((p) => ({ key: relPath(dir, p).replace(/\.docx$/i, ''), path: p }))
+      .filter((c) => !only || only.has(c.key))
+      .slice(0, max)
+      .map((c) => ({ key: c.key, bytes: new Uint8Array(readFileSync(c.path)), opts: basename(c.key).startsWith('mk-') ? { revisions: { mode: 'all' } } : {} }));
+  }
+  const VALUED = new Set(['--ts-root', '--mode', '--out', '--dump', '--docs-out', '--count', '--seed', '--only', '--max']);
+  const files = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]) && a !== 'files');
+  return files.map((p) => ({ key: basename(p).replace(/\.docx$/i, ''), bytes: new Uint8Array(readFileSync(p)), opts: {} }));
+}
+
+const out = opt('--out', join(here, '..', 'tests', 'captures', `layout-${mode}.capture`));
+const dump = opt('--dump');
+const docsOut = opt('--docs-out');
+for (const d of [dump, docsOut, dirname(out)]) if (d) mkdirSync(d, { recursive: true });
+const safe = (key) => key.replace(/[\\/:]/g, '__');
+
+let commit = '';
+try { commit = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* not a git checkout */ }
+const cap = new CaptureWriter([
+  'uo-docx-layout layout parity capture: written by core/crates/uo-docx-layout/tools/capture-layout.mjs, replayed by tests/layout_parity.rs (record §5, "Milestone 1 — F0").',
+  'p1: the canonical stream of the LayoutResult (tools/lib/canon.mjs = src/canon.rs); p2/p2first: the provider transcript (tools/lib/transcript.mjs); p3.*: per-stage facets (tools/lib/facets.mjs); error: the TS exception, if the layout threw.',
+]);
+cap.meta('ts-commit', commit || 'unknown');
+cap.meta('mode', mode);
+cap.meta('canon-version', CANON_VERSION);
+cap.meta('now', NOW.toISOString());
+cap.meta('tz', process.env.TZ);
+cap.meta('hyphenation-loaded', eng.HYPHENATION_PATTERN_IDS.join(','));
+
+const facets = facetRecorder({ LineBreaker });
+let pages = 0, errors = 0;
+const docs = corpus();
+for (const doc of docs) {
+  let bytes = doc.bytes;
+  if (docsOut) writeFileSync(join(docsOut, `${safe(doc.key)}.docx`), bytes);
+  try {
+    if (core.isWordBinary(bytes)) bytes = core.convertDocToDocx(bytes);
+    // read again for every run (K3)
+    const pkg = core.DocxPackage.load(bytes);
+    const full = core.readFullDocument(pkg);
+    let embedded = [];
+    try { embedded = core.readEmbeddedFonts(pkg); } catch { /* unreadable embedded fonts: none */ }
+    const rec = recordProvider(eng.withEmbeddedFonts(provider, embedded, (b) => new eng.SfntFont(b)));
+    facets.start();
+    let res;
+    try { res = eng.layoutDocument(full, rec.provider, { now: NOW, ...doc.opts }); } finally { Object.assign(doc, { f3: facets.finish() }); }
+    const sink = new Sink({ raw: !!dump, trace: flag('--trace') });
+    const media = dump ? new Map() : null;
+    canonLayout(res, full, sink, media);
+    const p1 = sink.finish();
+    cap.set(doc.key, 'p1', p1.value);
+    const p2 = rec.facets();
+    cap.set(doc.key, 'p2', p2.p2);
+    cap.set(doc.key, 'p2first', p2.p2first);
+    for (const [k, v] of Object.entries(doc.f3)) cap.set(doc.key, k, v);
+    cap.set(doc.key, 'pages', String(res.pages.length));
+    pages += res.pages.length;
+    if (dump) {
+      writeFileSync(join(dump, `${safe(doc.key)}.p1.bin`), p1.bytes);
+      writeFileSync(join(dump, `${safe(doc.key)}.transcript.tsv`), rec.transcriptText());
+      if (media.size) {
+        const md = join(dump, `${safe(doc.key)}.media`);
+        mkdirSync(md, { recursive: true });
+        for (const [h, u8] of media) writeFileSync(join(md, `${h}.bin`), u8);
+      }
+      if (flag('--trace')) writeFileSync(join(dump, `${safe(doc.key)}.p1.trace`), p1.trace);
+    }
+  } catch (e) {
+    errors++;
+    cap.set(doc.key, 'error', String(e?.message ?? e).replace(/[\t\n\r]/g, ' ').slice(0, 300));
+  }
+}
+cap.meta('documents', docs.length);
+cap.meta('pages', pages);
+cap.meta('errors', errors);
+cap.write(out);
+console.log(`${docs.length} documents, ${pages} pages, ${errors} errors -> ${out}${dump ? ` (dump ${dump})` : ''}`);
+if (!existsSync(out)) process.exit(1);
