@@ -1,4 +1,4 @@
-# Fuzz targets of the uo-opc container layer (rust-port workflow, stage 4 security).
+# Fuzz targets of the uo-opc container layer, uo-jsnum and uo-fonts (rust-port workflow, stage 4 security).
 # Its own workspace: not a member of core/ (cargo-fuzz needs nightly; core/ builds on stable).
 #
 #   cargo +nightly fuzz run <target> -s none          # libFuzzer (Linux CI, or Windows MSVC)
@@ -27,6 +27,11 @@ fallback = []
 
 [dependencies]
 uo-opc = { path = "../crates/uo-opc" }
+uo-jsnum = { path = "../crates/uo-jsnum" }
+# the shipped hyphenation patterns (fonts_hyphen_words)
+uo-fonts = { path = "../crates/uo-fonts", features = ["hyphen-data"] }
+# fonts built in code for the font targets and their seeds (no proprietary bytes)
+uo-testkit = { path = "../crates/uo-testkit" }
 # differential oracle of the inflate target (the same pinned version uo-opc uses to deflate)
 miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
 libfuzzer-sys = { version = "0.4", optional = true }
@@ -159,6 +164,158 @@ bench = false
 [[bin]]
 name = "resolver"
 path = "fuzz_targets/resolver.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jsnum_parse"
+path = "fuzz_targets/jsnum_parse.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jsnum_math"
+path = "fuzz_targets/jsnum_math.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_parse"
+path = "fuzz_targets/fonts_parse.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_sfnt_dir"
+path = "fuzz_targets/fonts_sfnt_dir.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_cmap"
+path = "fuzz_targets/fonts_cmap.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_gpos"
+path = "fuzz_targets/fonts_gpos.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_gsub"
+path = "fuzz_targets/fonts_gsub.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_outline"
+path = "fuzz_targets/fonts_outline.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_colr_vdmx"
+path = "fuzz_targets/fonts_colr_vdmx.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_program"
+path = "fuzz_targets/fonts_program.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_info"
+path = "fuzz_targets/fonts_info.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_ttc"
+path = "fuzz_targets/fonts_ttc.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_subset"
+path = "fuzz_targets/fonts_subset.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_eot"
+path = "fuzz_targets/fonts_eot.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_odttf"
+path = "fuzz_targets/fonts_odttf.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_catalog"
+path = "fuzz_targets/fonts_catalog.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_hyphen_build"
+path = "fuzz_targets/fonts_hyphen_build.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_hyphen_words"
+path = "fuzz_targets/fonts_hyphen_words.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fonts_embed"
+path = "fuzz_targets/fonts_embed.rs"
 required-features = ["libfuzzer"]
 test = false
 doc = false

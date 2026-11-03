@@ -244,8 +244,69 @@ fn main() {
         1,
         b"<x:worksheet xmlns:x=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><x:c r=\"A1\">\r\n</x:c></x:worksheet>",
     );
+    jsnum_seeds(&mut c, &repo.join("core/crates/uo-jsnum/tests/captures"));
+    // uo-fonts: generated fonts, their tables and the open fonts of the repository, cut small
+    for (target, data) in uo_opc_fuzz::fonts_seeds(&repo) {
+        c.add(target, &data);
+    }
     for target in uo_opc_fuzz::TARGETS.iter().map(|(n, _)| *n) {
         c.add(target, b"");
     }
     println!("{} seeds in {}", c.count, c.root.display());
+}
+
+/// The JSON string of a capture facet (`s="…"`), decoded; a lone surrogate escape becomes U+FFFD.
+fn json_unescape(s: &str) -> String {
+    let inner = s.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(s);
+    let mut out = String::new();
+    let mut it = inner.chars();
+    while let Some(c) = it.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match it.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('b') => out.push('\u{8}'),
+            Some('f') => out.push('\u{c}'),
+            Some('u') => {
+                let code: String = it.by_ref().take(4).collect();
+                let unit = u32::from_str_radix(&code, 16).unwrap_or(0xFFFD);
+                out.push(char::from_u32(unit).unwrap_or('\u{FFFD}'));
+            }
+            Some(other) => out.push(other),
+            None => {}
+        }
+    }
+    out
+}
+
+/// Seeds of `jsnum_parse` (the 199 strings of the parity corpus, whose `Number`/`parseInt`
+/// results the capture holds) and `jsnum_math` (the special values and the fdlibm high-word
+/// thresholds of `inputs.txt`, in triples).
+fn jsnum_seeds(c: &mut Corpus, captures: &Path) {
+    let capture = fs::read_to_string(captures.join("jsnum.capture")).unwrap();
+    for line in capture.lines().filter(|l| l.starts_with("corpus/")) {
+        let Some(s) = line.split('\t').find_map(|f| f.strip_prefix("s=")) else { continue };
+        c.add_sel("jsnum_parse", 0, json_unescape(s).as_bytes());
+    }
+    for s in ["0x1fffffffffffff8", "0b1e1", "-0", "  +.5e-0010\u{feff}", "1e-400", "0o777", "1_0", "Infinityx"] {
+        c.add_sel("jsnum_parse", 0, s.as_bytes());
+    }
+    let inputs = fs::read_to_string(captures.join("inputs.txt")).unwrap();
+    let mut values: Vec<u64> = Vec::new();
+    for line in inputs.lines() {
+        if let Some(hex) = line.strip_prefix("special ") {
+            values.push(u64::from_str_radix(hex, 16).unwrap());
+        } else if let Some(hex) = line.strip_prefix("threshold ") {
+            let hi = u64::from_str_radix(hex, 16).unwrap();
+            values.extend([hi << 32, (hi.wrapping_sub(1) << 32) | 0xFFFF_FFFF, (hi | 0x8000_0000) << 32]);
+        }
+    }
+    for (k, triple) in values.chunks(3).enumerate() {
+        let bytes: Vec<u8> = triple.iter().flat_map(|v| v.to_le_bytes()).collect();
+        c.add_sel("jsnum_math", k as u8, &bytes);
+    }
 }

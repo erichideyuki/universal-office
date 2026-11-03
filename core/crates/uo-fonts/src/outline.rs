@@ -24,11 +24,23 @@ pub enum OutlineCmd {
 }
 
 /// The outlines of one face, only for `gid < num_glyphs`, cleared entirely when it holds
-/// `FontLimits::outline_cache_entries` and a new glyph is added.
+/// `FontLimits::outline_cache_entries` or [`OUTLINE_CACHE_MAX_BYTES`] of commands and a new glyph is
+/// added. The cap in entries alone is no memory bound: a composite of a few hundred bytes can draw a
+/// million commands (40 MB), so 2,048 of them in a font of 330 KB would be 80 GB.
 #[derive(Debug, Clone, Default)]
 pub struct OutlineCache {
     pub map: FxHashMap<u32, Option<Arc<[OutlineCmd]>>>,
+    /// bytes of the commands held by `map`
+    pub bytes: usize,
 }
+
+/// The commands one face keeps in its cache: 4 MiB (the 2,048 outlines of a Latin face are 1 to 2
+/// MB; a miss only decodes the glyph again).
+pub const OUTLINE_CACHE_MAX_BYTES: usize = 4 << 20;
+
+/// An outline above this many bytes of commands (6,500, no real glyph comes near) is returned but
+/// not kept.
+pub const OUTLINE_CACHE_MAX_ENTRY_BYTES: usize = 256 << 10;
 
 #[derive(Debug, Clone, Copy)]
 struct Point {
@@ -182,11 +194,11 @@ impl Walk<'_> {
         let mut s: u64 = 0;
         for &e in &ends {
             let e = u64::from(e);
-            if s <= e {
-                self.emitted_points += e - s + 1;
-                if self.emitted_points > self.max_points {
-                    return Err(Stop);
-                }
+            // an end point before the start makes an empty contour that costs no point but a
+            // vector: it counts one (stage 4, S4-4), so the contours of a call are bounded too
+            self.emitted_points += if s <= e { e - s + 1 } else { 1 };
+            if self.emitted_points > self.max_points {
+                return Err(Stop);
             }
             let mut c: Vec<Point> = Vec::new();
             let mut i = s;

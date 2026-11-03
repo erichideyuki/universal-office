@@ -150,12 +150,12 @@ fn script_and_feature_lists() {
 #[test]
 fn the_work_budget_counts_the_named_points() {
     // 1 feature index, then 2 + 7 + 5 (coverage, ligature records and components of the sets of
-    // the first subtable) and 2 + 2 + 2 of the second
+    // the first subtable) and 2 + 2 + 2 of the second, and 1 per subtable visited (stage 4, S4-2)
     let bytes = bytes_of("s_basic");
     let at = |work: u64| parse_font(&bytes, &FontLimits { max_table_work: work, ..FontLimits::NATIVE }).1;
-    assert_eq!(at(21), gsub("s_basic"));
-    assert!(at(21).is_some());
-    assert!(at(20).is_none());
+    assert_eq!(at(23), gsub("s_basic"));
+    assert!(at(23).is_some());
+    assert!(at(22).is_none());
     assert!(at(0).is_none());
     // singles count each set: 1 feature index, then per lookup the coverage and the sets
     let bytes = bytes_of("s_singles_and_extension");

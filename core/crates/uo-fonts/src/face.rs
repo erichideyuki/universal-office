@@ -182,10 +182,10 @@ impl Face {
     }
 
     /// Applies the requested GSUB features to a run of glyph ids; `None` when the font has none of
-    /// them.
+    /// them, or when the call passes the face's work budget (S4-3).
     pub fn ligate(&self, gids: &[u32], features: &[Tag]) -> Option<Vec<LigGroup>> {
         let gsub = self.0.gsub.get_or_init(|| GsubLigatures::of_font(&self.0.bytes, &self.0.dir, &self.0.limits));
-        gsub.as_ref()?.ligate(gids, features)
+        gsub.as_ref()?.ligate_within(gids, features, &mut self.0.limits.work())
     }
 
     /// Code page bit 31 (symbol) or a glyph for U+F020 (`isSymbolFont`).
@@ -222,7 +222,8 @@ impl Face {
     /// The outline of a glyph (`glyf`, simple and composite), y up; `None` for a font without
     /// `glyf`, a glyph that does not exist or cannot be read, or one past a limit of
     /// [`FontLimits`]. An empty glyph is `Some` of no commands. Kept per face up to
-    /// `outline_cache_entries` glyphs (the cache is cleared whole when it is full; 0 turns it off).
+    /// `outline_cache_entries` glyphs and 4 MiB of commands (the cache is cleared whole when it is full; 0 turns
+    /// it off; a glyph of more than 256 KiB of commands is not kept).
     pub fn glyph_outline(&self, glyph_id: u32) -> Option<Arc<[OutlineCmd]>> {
         if glyph_id >= u32::from(self.0.num_glyphs) {
             return None;
@@ -234,12 +235,16 @@ impl Face {
         let computed: Option<Arc<[OutlineCmd]>> =
             outline::glyph_outline(view, &self.0.dir, self.0.num_glyphs, &self.0.limits, glyph_id).map(Arc::from);
         let cap = usize::try_from(self.0.limits.outline_cache_entries).unwrap_or(usize::MAX);
-        if cap > 0 {
+        let size = computed.as_ref().map_or(0, |o| o.len().saturating_mul(size_of::<OutlineCmd>()));
+        if cap > 0 && size <= outline::OUTLINE_CACHE_MAX_ENTRY_BYTES {
             let mut cache = self.0.outlines.lock().unwrap_or_else(PoisonError::into_inner);
-            if cache.map.len() >= cap {
+            if cache.map.len() >= cap || cache.bytes.saturating_add(size) > outline::OUTLINE_CACHE_MAX_BYTES {
                 cache.map.clear();
+                cache.bytes = 0;
             }
-            cache.map.insert(glyph_id, computed.clone());
+            if cache.map.insert(glyph_id, computed.clone()).is_none() {
+                cache.bytes += size;
+            }
         }
         computed
     }

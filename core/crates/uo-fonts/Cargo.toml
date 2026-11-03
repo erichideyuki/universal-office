@@ -20,6 +20,8 @@ rustc-hash = "=2.1.3"
 uo-alloc = { path = "../uo-alloc", features = ["global"] }
 # test fonts built in code (generate::sfnt), never proprietary files
 uo-testkit = { path = "../uo-testkit" }
+# the fonts embedded in committed documents, extracted in memory by the stage-4 parity corpus
+uo-opc = { path = "../uo-opc" }
 
 [lints]
 workspace = true

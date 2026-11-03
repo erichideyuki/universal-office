@@ -329,12 +329,12 @@ fn pair_map_insertion() {
 
 #[test]
 fn the_work_budget_counts_the_named_points() {
-    // GPOS: 1 kern lookup index + 5 coverage + 5 + 6 class-definition entries + 9 matrix cells +
-    // 5 x 6 glyph pairs
+    // GPOS: 1 kern lookup index + 1 subtable visited (stage 4, S4-1) + 5 coverage + 5 + 6
+    // class-definition entries + 9 matrix cells + 5 x 6 glyph pairs
     let bytes = bytes_of("g_pp2_basic");
     let at = |work: u64| parse_font(&bytes, &FontLimits { max_table_work: work, ..FontLimits::NATIVE }).0;
-    assert_eq!(at(56).pairs.len(), 23, "56 units is exactly enough");
-    let starved = at(55);
+    assert_eq!(at(57).pairs.len(), 23, "57 units is exactly enough");
+    let starved = at(56);
     assert!(starved.pairs.is_empty() && starved.class0.is_empty() && starved.class_defs.is_empty() && starved.kern_in_latin);
     assert!(at(0).pairs.is_empty());
 

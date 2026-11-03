@@ -7,6 +7,22 @@
 //! wasm a panic aborts the module (the `wasm` profile uses `panic = "abort"`), so code
 //! reached from these exports must not panic on input.
 
+#[cfg(feature = "jsnum-memtest")]
+pub mod jsnum_memtest;
+
+#[cfg(feature = "jsnum-selftest")]
+pub mod jsnum_selftest;
+
+#[cfg(feature = "fonts-memtest")]
+pub mod fonts_memtest;
+
+#[cfg(feature = "fonts-selftest")]
+pub mod fonts_selftest;
+// the scenarios and hostile fonts of the uo-fonts native memory test, compiled here too
+#[cfg(feature = "fonts-memtest")]
+#[path = "../../uo-fonts/tests/memory_support/mod.rs"]
+mod fonts_memory_support;
+
 #[cfg(feature = "opc-memtest")]
 pub mod opc_memtest;
 

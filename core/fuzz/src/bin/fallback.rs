@@ -73,6 +73,34 @@ const TOKENS: &[&[u8]] = &[
     b"\xef\xbb\xbf",
     b"\0",
     b"\r\n",
+    // uo-jsnum: the numeric grammar and the JS white space
+    b"0x",
+    b"0b",
+    b"0o",
+    b"e-",
+    b"E+",
+    b".",
+    b"-",
+    b"Infinity",
+    b"9007199254740993",
+    b"\xe3\x80\x80",
+    b"\xe2\x80\xa8",
+    b"\xc2\xa0",
+    b"\xf0\x9f\x98\x80",
+    // uo-fonts: sfnt signatures and tags, values that point past the end
+    b"\x00\x01\x00\x00",
+    b"ttcf",
+    b"OTTO",
+    b"glyf",
+    b"loca",
+    b"GPOS",
+    b"GSUB",
+    b"kern",
+    b"cmap",
+    b"\xff\xff",
+    b"\x7f\xff",
+    b"\x80\x00",
+    b"\x00\x00\xff\xff",
 ];
 
 fn mutate(rng: &mut Rng, input: &mut Vec<u8>, pool: &[Vec<u8>], max_len: usize) {
@@ -291,7 +319,7 @@ fn main() {
             name,
             execs,
             el,
-            execs as f64 / el.max(1e-9),
+            execs as f64 / if el > 1e-9 { el } else { 1e-9 },
             seeds,
             crashes,
             slowest

@@ -91,10 +91,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
+name = "rustc-hash"
+version = "2.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "uo-fonts"
+version = "0.10.0-dev"
+dependencies = [
+ "rustc-hash",
+]
+
+[[package]]
+name = "uo-jsnum"
+version = "0.10.0-dev"
 
 [[package]]
 name = "uo-opc"
@@ -109,5 +126,12 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "miniz_oxide",
+ "uo-fonts",
+ "uo-jsnum",
  "uo-opc",
+ "uo-testkit",
 ]
+
+[[package]]
+name = "uo-testkit"
+version = "0.10.0-dev"

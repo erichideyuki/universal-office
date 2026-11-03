@@ -40,6 +40,7 @@ version = "0.10.0-dev"
 dependencies = [
  "rustc-hash",
  "uo-alloc",
+ "uo-opc",
  "uo-testkit",
 ]
 
@@ -69,6 +70,7 @@ name = "uo-wasm"
 version = "0.10.0-dev"
 dependencies = [
  "uo-alloc",
+ "uo-fonts",
  "uo-jsnum",
  "uo-opc",
  "uo-testkit",

@@ -1317,21 +1317,368 @@ parity verifier to fuzz them differentially against the TS. `ooxml` stays Opus, 
 
 ## Verification (gate 2 — pending)
 
-### Parity
+### Stage 4 — parity (parity verifier, Sonnet, 2026-11-03)
 
-### Memory (measured)
+Verifier: Sonnet, rust-port stage 4, worktree `rust-core` (`c869abfb` plus the stage-4 edits of the memory and security verifiers that landed meanwhile: F6–F10; the tests below were re-run after them). Everything below comes from tests that ran. **Result: 0 mismatches and 0 port bugs (0 parity rounds)**: 17,436 facets compared (17,366 equal, 70 accepted by name) over 536 committed fonts, the non-font inputs and the C# capture, plus 14,521 facets over 620 local proprietary fonts and 40,156 over 1,800 extra mutants; one finding for the maintainer (the work budget of `glyph_ids_for`, below) that is a design limit, not a port bug.
 
-| Check | Result | Numbers |
+**What exists** (all new files; nothing in `core/crates/uo-fonts/src` was touched):
+
+| File | What |
+|---|---|
+| `tests/parity_support/capture_fonts.mjs` (+ `capture_fonts_small.mjs`) | the capture: the frozen TS (`UO_TS_ROOT`, `@ts-commit d0f45bc5`, Node 24.15.0 / V8 13.6, `@platform`) over the corpus, digests of `uo-testkit` canonical streams only, written to `tests/parity/fonts.cap` (665 KB). The per-font work runs in a worker watched by the main thread (a facet silent for 120 s, or a worker that runs out of its 4 GiB heap, is recorded as `hang`; the subsetter's S2 loop is cut by a `vm` timeout per case and recorded in `subset.hang`). Modes: `--corpus <dir>` (the committed capture), `--dir a,b --out <cap>` (the opt-in local capture over proprietary fonts, never committed), `--only`. |
+| `tests/fonts_parity_support/{facets,corpus,legacy,legacy_corpus}.rs` | the facets of one font (the Rust side of every stream, the same items in the same order), the corpus (open fonts, embedded fonts extracted in memory through uo-opc, the three frontiers' generators, mutants, collections, hostile fonts, the embedding pool) and the G16 corpus |
+| `examples/fonts_corpus.rs`, `examples/legacy_kern_corpus.rs` | write the generated corpus (Rust is the only generator: no second font builder in JS) and a manifest for the capture scripts; the replay regenerates the same bytes and checks an `in` digest per font |
+| `tests/fonts_parity.rs` | replay of the fonts (3 tests by group, threaded over the cores; seconds in release) |
+| `tests/fonts_parity_small.rs` | replay of odttf, style, lang, variants, catalog, hyphenation, `loadHyphenation` and the embedding plan |
+| `tests/legacy_kern_parity.rs`, `tests/parity_support/legacy_kern.cs`, `tests/parity/legacy_kern.cap` | G16 |
+| `tests/fonts_parity_local.rs` | opt-in (`UO_LOCAL_FONTS=1`) replay of the local capture |
+| `tests/parity/fonts_oracle_words.txt`, `fonts_embed_scenarios.txt` (+ `gen_oracle_words.mjs`, `gen_embed_scenarios.mjs`) | shared inputs, read by both sides (1,567 letter runs of the 2,742 oracle documents; 772 seeded embedding scenarios) |
+| `uo-wasm`: feature `fonts-selftest`, `src/fonts_selftest.rs`, `tests/fonts_selftest.test.mjs` | the wasm replay (separate feature, file and test from the memory verifier's `fonts-memtest` and the uo-jsnum features) |
+
+**Corpus** (536 fonts; none proprietary): 22 open fonts of the repository (16 in `shared/fonts/files`, Liberation Sans ×4, Amatic SC ×2; the same bytes sit in several folders) and the 6 WOFF2 files plus the Chivo `.fntdata` as negative inputs; the 7 fonts embedded in `site/assets/samples/demo.docx` (Ubuntu ×4, Ubuntu Mono, Tahoma) and `emwidth/ew-emb.docx` (Amatic SC), extracted in memory; 128 generated fonts (frontier B's 20 quirk fonts, frontier C's 62 kerning and ligature fonts, 43 of frontier D's subset fonts, 3 hostile fonts); 12 `.ttc` collections (1, 4 faces, version 2, hostile `numFonts`, a first face past the end, table directories pointing at the whole file, tables past the end, truncated, mixed Mac/Unicode/lone-surrogate names, not a collection); 360 seeded mutants (8 of each of 45 bases: the 22 open fonts, the 20 quirk fonts, 3 composite fonts; half the mutations inside the first bytes of a table, some in the directory). Not committed and counted separately: the local capture and the extended mutant campaign.
+
+**Facets per font** (`items:digest` of canonical streams; floats by bits): `open` (ok or the error class) and `dir` (`Map` order), `metrics`, `numglyphs`, `cmap` (every code point 0..=0x10FFFF plus 0x110000 and 0xFFFFFFFF), `adv` (0..numGlyphs+16 and three larger ids), `kern` (every stored pair by key, keys past 2^32 as keys only, class 0 with the class definition in insertion order, `kernInLatin`), `twips` (`kernGlyphsTwips` at 6, 10.5, 11, 12 and 72 pt over every stored pair, 1,000 class-0 pairs and 10,000 seeded pairs; Rust replays the units with a test copy of the formula), `gsub` and `ligate` (every ligature as a sequence, 150 seeded sequences, 16 corpus words through the cmap, against `liga`, `liga+clig`, `liga+clig+dlig+hlig`, every feature tag, the empty set and an unknown tag), `vdmx` (0..=300; the TS also asks `p + 0.5`, which never answers), `colr`, `outline` (every glyph, numGlyphs, +1 and 0xFFFF), `symbol`, the converter `program` (open outcome, bbox, ascender, descender, italic angle bits, its own cmap sweep and advances; the TS copies in `pptx` and `xlsx` have identical code), `info` (`isFontFile`, `isEmbeddable`, `hasTrueTypeOutlines`, `faceInfo` with the names as code units), `gids` (`glyphIdsFor` over a 12,544-code-point block, the corpus text and 100 seeded sets), `subset` (`subsetTrueType` over all ids, the text's ids, {0}, ids at and past numGlyphs and 200 seeded sets, both `keepLayout` values, byte-exact digests), `eot` (both flags), `odttf` (3 keys, both directions) and `ttc` (`standaloneFace` of the font and of each probe). Per non-font input: 295 odttf keys, 119 style names, 266 language tags, the four variant combinations, the whole catalog tables, the 7 pattern files (id, minimums, every token) and `points`/`hyphenate(word, l, r)` for l, r in 1..=3 over 32,963 words (the oracle words, their upper-case and capitalized forms, every exception word) in 7 languages, 107 `loadHyphenation` lists (which pattern sets load), and **772 embedding scenarios** with a stub resolver (both apps, all settings, own file or not, document faces, already-embedded families, restricted/bitmap-only/editable licences, CFF, a cmap that fails when read, a cut directory, garbage, repeated families in different case, `İ`/`Σ` families): the sequence of `documentFace` calls (against `embedding_requests`: S13), of `loadFace` calls, and the plan (faces, subsetted flags, info digests, skipped reasons) or its rejection (27 rejected plans, all equal).
+
+**Results** (`cargo test --release -p uo-fonts`, from `core/`):
+
+| Replay | Inputs | Facets equal | Mismatches | Accepted by name |
+|---|---|---|---|---|
+| open + embedded fonts | 36 fonts | 759 | 0 | 0 |
+| generated fonts + collections | 140 | 2,949 | 0 | 10 (2 G11 `face_info` budget on `gen/h/names_budget`, 1 G11 hang, 7 G4 counters) |
+| mutants | 360 | 8,028 | 0 | 57 (1 G11 hang, 56 G4 counters) |
+| odttf, style, lang, variants, catalog, hyphenation, embedding plan | see above | 5,129 | 0 | 3 (G9) |
+| G16 legacy kern vs the C# reader (.NET 10.0.5) | 501 fonts (385 with pairs) | 501 | 0 | 0 |
+| **Total** | | **17,366** | **0** | 70 |
+| opt-in local capture (`C:\Windows\Fonts` 472 files + the Office cloud fonts 148, light depth) | 620 fonts, 605 open in the TS | 14,521 | 9, all one cause (below) | 0 |
+| wasm self-test (`fonts-selftest`), Node 24.15 and WebKit 26.5 (Playwright) | 82 generated fonts (1,942 facets), 6 open fonts at full depth (144), 51 G16 fonts, 7 languages x 3 hyphenation chunks (28) | all equal in both engines | 0 | |
+
+- **Accepted differences, by name, and what the capture counted.** G4 (lazy reads; the script writes the value the Rust must give and counts what it normalized in `<facet>.g4`): the TS throws on a read past the end during a query for 70 code points (generated fonts) and 698 (mutants) in `cmap`, 3 advances, and 6,570 in the converter program's cmap on mutants (the Rust gives 0); 1 + 11 outlines with an undefined coordinate (an end point past the last point), `None` in Rust; format-12 glyph ids above `u32::MAX` saturated (9 + 54 code points). **None of these occurs on a real font: the open, embedded and 620 local fonts have an empty G4 tally.** G11 (hostile input): 20 `subset` cases the TS never returns from on the S2 fonts (Rust gives the input back, asserted case by case), and two outlines on which the TS runs out of a 4 GiB heap (`gen/h/outline_explosion`, one mutant of Liberation Sans Bold: end points that re-emit the whole glyph for each pair), where Rust returns `None` at `max_outline_points`; `gen/h/names_budget` (5,400 name records pointing at one 16,383-character string: the TS builds 8.8 x 10^7 characters and answers, `face_info` stops at its work budget of 2^26 units: `info` and `eot` accepted by name); G9: 3 of the 107 `loadHyphenation` lists contain `constructor`, `toString` or `__proto__`, which the TS looks up in a plain object and rejects. Comparison is exact otherwise: no tolerance anywhere, floats by bits.
+- **Finding for the maintainer (not a port bug): the work budget of `glyph_ids_for` trips on real fonts.** On 9 of the 620 local fonts (Meiryo ×5, Meiryo UI, Yu Mincho, HGP Gothic E, HGP Mincho E, UD Digi Kyokasho, whose format-4 cmaps have 14,335 and similar ranges) the `gids` facet over a 12,544-code-point block gives `Err(Limit(TableWork))` where the TS answers: its linear scan costs about 1.8 x 10^8 steps (0.3 s) and the budget is 2^26 = 6.7 x 10^7 units (one per segment visited per code point). With the budget lifted the facet equals the TS on all 9 (the local test requires it; the committed corpus pins the same cause with `gen/h/cmap_many_ranges`, 20,000 one-code-point segments). Consequence in the product: an embedding plan (and `subset`'s caller) that asks for more than about 5,000 to 9,000 distinct code points in such a font is rejected where the TS embeds it; a document that uses the family needs that many distinct characters only in the CJK case. The scan is linear on purpose (overlapping and unsorted segments make the first match order-dependent), so the options are to raise the budget of this one call (it is time, not memory: a cmap cannot make it allocate) or to accept the limit by name. Not changed: the budget values were approved at gate 1.
+- **Not a mismatch but worth knowing.** The real fonts have no class-0 kerning (0 on the 22 + 620 here, as the skeptic measured): class 0 is covered by the generated fonts only (frontier C's 62, `gen/c`), which is exact.
+- **Differences that were mine.** Two bugs in the capture script, both found by the first replay and fixed before any result above: `sfntToEot` wrote its tag before the call that threw (`O` then `E`), and the 500 ms guard on a `subsetTrueType` call mistook a slow case for the S2 loop (a mutant of Carlito Bold whose subset is 135 MB takes 0.36 s in the TS under no load); the guard is now 4 s + 2 ms per KB.
+
+**Decision audit** (the porters' decisions outside the plan: phase 1: 8, frontier B: 15, C: 10, D: 16). *Equal* = verified equal against the TS by the facets named; *named* = a difference accepted by name or a typed-API restriction; *n/a* = no effect on results.
+
+| # | Decision | Verdict | Evidence |
+|---|---|---|---|
+| P1 | whitespace table checked against V8, not uo-opc | equal | `gen_js.mjs` re-run on Node 24.15 / Unicode 17.0: `js_expected.txt` byte-identical (8,965 lines); the unit replay is in `cargo test` |
+| P2 | data-model types declared in phase 1 | n/a | |
+| P3 | trivial pure code translated in stubs (`Variant`, `variant_of`, ...) | equal | `variant/*`, `style/*`, `catalog` facets |
+| P4 | `Tag::from_str` takes four Latin-1 characters | named | Latin-1 tags in `dir`/`subset` cases equal (`\xE9tag`); a feature string of another length cannot be asked in Rust (typed API), the TS matches nothing for it |
+| P5, P7, P8 | placement, re-exports, `allow(dead_code)` | n/a | |
+| P6 | `View::signed_offset` (hmtx index -1) | equal | `hmtx_zero` quirk font and mutants: `adv`, `program.adv` |
+| C1 | `Face` wiring (`kern_units`, `kern_in_latin`, `ligate`) | equal | `kern`, `twips`, `ligate` through `Face` on 536 fonts |
+| C2 | `ClassDef.order` (the TS `Map` order) | equal | class-0 entries with their class definition in insertion order, `gen/c` |
+| C3 | coverage kept as runs | equal | coverage formats 1, 2, 3 in `gen/c`, real fonts, mutants |
+| C4 | budget points as implemented | equal / named | no divergence on 536 + 620 fonts; the pinned counts are frontier C's tests; hostile outcomes are G11 |
+| C5 | caps on stored class definitions and ligature records | named (G11) | no corpus font comes near them (the largest real GSUB, Gabriola, is 460 times under the wasm32 cap) |
+| C6 | legacy `kern` reads a value only for an absent key | equal | `k_duplicate_value_cut`, `k_new_pair_value_cut`, `k_partial_failure` (TS `SfntFont`, `gen/c`); the C# reader is G16 |
+| C7 | the Latin test runs inside the atomic GPOS read | equal | `g_script_feature_index_oob` (`kern`, `kernInLatin`) |
+| C8 | `LigGroup.len` saturating add; `ligate(&[Tag])` | named | no TS counterpart above 2^32 groups; feature strings are four Latin-1 characters in practice |
+| C9, C10 | differential design; not done | n/a | the libFuzzer targets and Miri are the security and memory verifiers'; the wasm run is below |
+| D1 | `sfnt_to_eot` = `face_info` + layout | equal | `eot` facet, both flags, 536 fonts including the throws |
+| D2 | EOT sizes wrap (mod 2^32, mod 2^16) | not verified | needs an input of 4 GiB; a name cannot pass 65,534 bytes, so the 2^16 wrap is unreachable; Rust tests only |
+| D3 | the int32 rule of the subset | equal below 2 GiB, not verified above | all `subset` cases; the `len + 1 >= 2^31` branch needs a 2 GiB V8 allocation (frontier D's Rust test of the cap) |
+| D4 | cap accounting of the subset | named (G11/G3) | no corpus font reaches the 256 MiB cap; a 135 MB output (a Carlito mutant) is equal |
+| D5 | kept-glyph set (ids above `u16` ignored) | equal | sets with ids at and past numGlyphs (`[n, n+5, 0xFFFF, 0x10000]`) and 200 seeded sets with ids up to n+2 |
+| D6, D11, D14, D15 | differential design, additive API, shared files, capture metadata | n/a | |
+| D7 | odttf: the dash is gone before parsing | equal | 295 keys, 3 keys on every font, the 7 embedded fonts (`in` digest after `deobfuscate`) |
+| D8 | catalog tables as an included file | equal | the whole tables in insertion order |
+| D9 | hyphenation data format | equal | `fields` of the 7 files (minimums, every token), the TS `nfc` property is `true`, 32,963 words |
+| D10 | hyphenator details (no NFC, root values inert, ASCII digits) | equal | 32,963 words x 7 languages, points and 9 `hyphenate` minimums each |
+| D12 | `pattern_ids_to_load` own keys | equal / named (G9) | 107 lists; the 3 that the TS rejects are accepted by name |
+| D13 | `embed.rs` shape (one walk, sorted code points, lower-cased policy) | equal | 772 scenarios; `embedding_requests` equals the `documentFace` sequence (a rejected plan stops after a prefix of it) |
+| D16 | not done: TS differential of the plan, wasm run | done here | embedding scenarios; wasm below |
+| B1, B15 | `cmap.rs` shape, tests | n/a | |
+| B2 | cmap index building (stable sort, range cap after the reads) | equal | `cmap` sweep on 536 fonts (overlap, unsorted, odd `segX2`, arrays past the end, format 12); the cap is unreachable natively |
+| B3 | arithmetic in `u64`/`i64` | equal | every `adv`, `outline`, `cmap` value |
+| B4 | `advance_width_at` shared | equal | `adv`, `program.adv` |
+| B5 | outline cache semantics | equal / n/a | glyphs at and past numGlyphs are `None` (`outline` covers n, n+1, 0xFFFF); the cache is transparent |
+| B6 | outline limits (visits, two point totals) | named (G11) | 2 outlines where the TS exhausts 4 GiB; every other glyph of 536 + 620 fonts equal |
+| B7, B8 | `FontProgram` shape, `legacy_kern` outcomes | equal | G16: 501 of 501 against the C# reader |
+| B9 | budgets the plan did not list (`face_info`, the `.ttc` scan) | named (G11) | `gen/h/names_budget`; the `.ttc` scan budget is not reached by the 12 collections |
+| B10 | S10 unobservable | equal | `info` on mutants with short OS/2 |
+| B11 | `standalone_face` details | equal | `ttc` facet: bytes of the output for every probe of 12 collections, errors, and the input back for every plain font; the 2 GiB int32 wrap is not testable |
+| B12 | `glyph_ids_for` details | equal / finding | `gids`: saturation (`gids.g4 sat`), other formats, empty set; the work budget is the finding above |
+| B13 | the two accepted differences of the differential | confirmed | 12 outlines with an undefined coordinate and the saturation counted above (G4) |
+| B14 | wiring of C's types | equal | as C1 |
+
+**wasm.** `cargo build -p uo-wasm --features fonts-selftest --target wasm32-unknown-unknown --profile wasm` (369 KB module); the facets code of the native replay is included with `#[path]` (one copy). The module builds the 82 generated fonts itself and takes the real fonts and the pattern files from JS through `uo_alloc_bytes` buffers. `node --test crates/uo-wasm/tests/fonts_selftest.test.mjs` and `UO_PLAYWRIGHT=<playwright> UO_WASM_PATH=<wasm> node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/fonts_selftest.test.mjs`: all 5 tests pass in Node 24.15 and in WebKit 26.5 (the same file), 2,165 facets equal the capture (1.2 s and 1.5 s for the font tests). Not in wasm: the mutants, the embedding scenarios and the local capture (native only). CI: the wasm job of `.github/workflows/rust-core.yml` builds the feature and runs the file in Node and in WebKit (four lines added; the test skips itself when the module has no `fonts-selftest` exports, so the generic WebKit run over every test file does not fail on the other builds).
+
+**Extended mutant campaign (opt-in, not committed).** 40 mutants per base instead of 8 (1,800 mutants; the seeds of the first 8 are the committed ones), TS heap 2 GiB: **40,156 facets equal, 0 unexplained mismatches, 294 accepted**: 11 outlines the TS runs out of memory on (all `outline`), 282 G4 counters (2,755 `cmap` throws, 2,551 advance throws, 9 `colr` throws, 60 undefined-coordinate outlines, 295 saturated ids in `gids`), and one `subset` difference that the replay accepts by rule (`OUTPUT_CAP`): a mutant of Liberation Sans Bold Italic whose `loca` makes the TS allocate a 537 MB subset, where the Rust refuses an output over `max_output_bytes` (256 MiB, D4) and gives the input back; the rule accepts a `subset` facet only when it equals the TS with the cap lifted, and it does (the output lengths of all 20 cases are equal too). A first run of 4,500 mutants was abandoned (the process was killed after repeated 4 GiB out-of-memory restarts of the TS worker) and is not counted. The capture script and the replay take `UO_FONTS_MUTANTS_PER_BASE`, `UO_FONTS_CAP` and `UO_FONTS_HEAP_MB`.
+
+**Commands** (from `core/`, `CARGO_TARGET_DIR=core/target/fonts-parity`): `cargo test --release -p uo-fonts` (replay, seconds); recapture: `cargo run --release -p uo-fonts --example fonts_corpus -- <dir>`, then `UO_TS_ROOT=<built checkout of main> node crates/uo-fonts/tests/parity_support/capture_fonts.mjs --corpus <dir>` (about 3.5 minutes; two OOM restarts); G16: `cargo run --release -p uo-fonts --example legacy_kern_corpus -- <dir>` then `dotnet run crates/uo-fonts/tests/parity_support/legacy_kern.cs -- <dir> crates/uo-fonts/tests/parity/legacy_kern.cap`; local: `UO_LOCAL_FONTS=1 UO_LOCAL_FONTS_DIRS=<a>,<b> UO_LOCAL_FONTS_CAP=<cap> cargo test --release -p uo-fonts --test fonts_parity_local -- --nocapture` after `capture_fonts.mjs --dir <a>,<b> --out <cap>`.
+
+**Rounds:** 0. No port bug was sent back; `core/crates/uo-fonts/src` is untouched by this stage. Maintainer's decision requested on the `glyph_ids_for` budget (finding above).
+
+### Stage 4 — memory (measured)
+
+Verifier: Sonnet, rust-port stage 4. Everything below comes from tests that ran, on the worktree at `c869abfb` plus the stage-4 fix F6 (see "Findings"). All sizes are **MiB** printed as "MB" (the 218 / 371 MB of frontier C in stage 3 are the 208 / 354 MiB measured here). Native numbers are `uo-alloc` per-thread counts on a release build (Windows x64, `lto`; the machine was shared with other agents, so times vary by up to 2×, bytes never do); wasm numbers are `uo_memory_live_bytes` and `memory.buffer.byteLength` of the `wasm` profile build (Node 24.15 and WebKit 26.5 through Playwright 1.61, the engine of Safari; real Safari 15 / iOS 15 is still gate 3).
+
+How to run (from `core/`):
+
+```text
+cargo test --release -p uo-fonts --test stage4_memory -- --nocapture --test-threads=1      # M1, M2 (1,000 rounds, ~100 s), M3, M5, worst cases
+cargo test --release -p uo-fonts --test stage4_memory -- --ignored --nocapture             # opt-in: C:/Windows/Fonts (UO_LOCAL_FONTS), numbers only
+UO_TS_ROOT=<built main> node --expose-gc crates/uo-fonts/tests/memory_support/ts_budgets.mjs ../shared/fonts/files [extra .ttf]   # the TS reference
+cargo build -p uo-wasm --features fonts-memtest --target wasm32-unknown-unknown --profile wasm
+node --test crates/uo-wasm/tests/fonts_memory.test.mjs                                      # UO_FONTS_SOAK=<rounds> (default 300), UO_WASM_PATH
+node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/fonts_memory.test.mjs
+```
+
+Files: `tests/stage4_memory.rs` (the tests), `tests/memory_support/mod.rs` (scenarios and hostile fonts; compiled by the native test **and** by `uo-wasm` under the feature `fonts-memtest`, so both measure the same code), `tests/memory_support/ts_budgets.mjs`, `uo-wasm/src/fonts_memtest.rs`, `uo-wasm/tests/fonts_memory.test.mjs`; CI: two steps in the `wasm` job of `rust-core.yml` (Node and WebKit, 300 rounds).
+
+#### M1 — no leak per operation: pass
+
+Stage 3 already had `assert_no_leak` over the generated fonts (140+ assertions in the foundation, frontier B, C and D tests: parse, every query, every error and limit path of the plan). Stage 4 adds the same over the **22 faces of the corpus** (the 16 open fonts and 6 generated ones) and the hyphenators, one operation at a time, outputs folded into returned values so a release build cannot drop the allocation:
+
+| What | Test | Result |
 |---|---|---|
-| M1 no leak per operation | | |
-| M2 soak (native, fresh / long-lived) | | |
-| M2 soak (wasm) | | |
-| M3 budgets | | |
-| M4 boundaries | | |
-| M5 cache caps | | |
-| M6 Miri / LeakSanitizer | | |
+| `Face::parse`, 200 outlines (cold and warm), measure of the oracle text with kerning, ligation of 200 words, COLR, VDMX, `kern_units`, `ligate`; `face_info`, `glyph_ids_for`, `FontProgram`, both subsets, EOT (both modes), odttf round trip, `standalone_face` (sfnt, a 2-face `.ttc`, a cut `.ttc`, a missing PostScript name), `embedding_requests` + `plan_font_embedding`, on each of the 22 faces | `m1_every_operation_on_every_real_and_generated_face_leaks_nothing` | live bytes return exactly |
+| `Hyphenator::new`/`points`/`hyphenate`, `HyphenSession`, `HyphenationRegistry` (`register`, `for_lang`, `get`, `contains`, `ids`), `pattern_ids_to_load`, in the 7 languages | `m1_hyphenators_registry_and_sessions_of_the_seven_languages_leak_nothing` | exact |
+| Limit and error paths on Carlito and Liberation Mono: `max_table_work` over 12 values (0 to 10^6), `max_kern_pairs` (5 values), `max_outline_work`, `max_outline_points`, `max_cmap_ranges`, `outline_cache_entries` 0/1/7, `max_output_bytes`; 51 truncations of each file (directory, tables, the middle, the tail) | `m1_limit_and_error_paths_over_real_fonts_leak_nothing` | exact |
 
-### Security
+Not repeated: the budget points of GPOS, GSUB and legacy `kern`, the `Nan` loop of the subsetter and the other limit paths on generated fonts, which the stage-3 tests already pin (`gpos_gsub_memory.rs`, `subset.rs`, `frontier_b_memory.rs`).
+
+#### M2 — soak: pass
+
+| Scenario | Rounds | Result |
+|---|---|---|
+| native *fresh* (0 B tolerance): parse the 22 faces → measure the oracle text with kerning → ligate 200 words → 200 outlines → COLR/VDMX → info, glyph ids, program → both subsets → EOT → odttf round trip → `.ttc` extraction ×2 → 7 hyphenators and sessions, 10,000 words → embedding requests + plan → drop | 1,000 (55 ms per round on a quiet machine) | live bytes 0 above the start at every sample (21 samples); `clear_caches()` is a no-op and leaves live unchanged |
+| native *long-lived* engine (22 faces, 7 hyphenators and sessions kept; outline windows rotate so every outline cache fills past its cap, 10,000 new words per round) | 1,000 | sawtooth between 15 and 45 MB above the built engine (3.71 MB): the session caches fill to 50,001 words and clear; top of the second half 41.5 MB ≤ the caps (outline caches full of each face's 2,048 largest glyphs 39.7 MB + 7 full sessions 41.6 MB); last third peaks at 41.5 MB vs 42.9 MB in the middle (no trend, asserted within 4 MB); dropping the engine returns live to the start exactly |
+| wasm *fresh*, Node 24.15 | 1,000 (47 ms per round) | live 0 above the start; `memory.buffer.byteLength` 12.75 MB from the first sample to the last (one distinct size) |
+| wasm *long-lived*, Node | 1,000 | same sawtooth (13–42 MB); `byteLength` 56.4 → 58.6 MB (allocator fragmentation, asserted within 4 MB after the first half); engine dropped = start |
+| wasm *fresh*, WebKit 26.5 | 1,000 (157 ms per round, 3.3× Node) | identical numbers: live 0, `byteLength` 12.75 MB flat |
+| wasm *long-lived*, WebKit | 1,000 | identical to Node |
+
+The corpus (16 open fonts, 6 generated, 7 pattern files and a `.ttc`) is 6.0 MB live in the module; `memory.buffer.byteLength` after loading it is 8.6 MB.
+
+#### M3 — budgets: pass (first record; the +10% rule applies from here)
+
+TS reference measured with `ts_budgets.mjs` (`--expose-gc`, frozen `dist` of `main`, heap + array buffers after 4 gcs, the input bytes held outside): retained size of a parsed `SfntFont` (its constructor reads GPOS and `kern`) and of a `Hyphenator`. Rust: `Face::parse` + first `kern_units` + first `ligate`, live bytes kept above the shared `Arc<[u8]>` of the file.
+
+| Face | File KB | Glyphs | TS retained | Rust kept | Ratio | Rust parse + first kern |
+|---|---|---|---|---|---|---|
+| Carlito Regular / Bold / Italic / Bold Italic | 608–797 | 2,781–2,782 | 7.02–7.03 MB | **2.26 MB** (2,304 KB pair map, 9.4 KB GSUB, 1.4 KB face) | 3.1× | 5.1–6.0 ms (TS 28–51 ms) |
+| Caladea (×4) | 57–60 | 420 | 0.13–0.18 MB | 0.037 MB (36 KB pairs) | 3.5–4.9× | 0.05–0.1 ms |
+| Liberation Serif (×4) | 361–384 | ~2,600 | 0.02–0.06 MB | 0.015 MB | 1.4–4× | 0.01 ms |
+| Liberation Mono (×4, no kerning) | 274–312 | ~2,424 | 0.03 MB | **2.0 KB** (target ≤ 64 KB) | 15× | 0 |
+| Gabriola (742,163 pairs; opt-in, local) | 1,764 | 4,517 | 28.08 MB | **9.00 MB** (peak 13.6) | 3.1× | 24 ms (TS 285 ms) |
+| Calibri / Bold / Italic / Z / Light / Light Italic (opt-in; 347K / 336K / 230K / 223K / 536K / 426K pairs) | 1,041–1,612 | 4,881–7,152 | 14.35 / 14.36 / 7.24 / 7.22 / 28.31 / 14.25 MB | 4.50 / 4.50 / 4.50 / 2.25 / 9.00 / 4.50 MB | 3.2× | 5–15 ms (TS 72–155 ms) |
+| MS Gothic, Yu Gothic Regular, Microsoft YaHei, SimSun-ExtG (CJK, opt-in; 9.9–30K glyphs) | 3.4–18.7 MB | 9,852–30,209 | not measured (the TS `SfntFont` has no `.ttc`) | 0.8–56 KB beyond the file (compact cmap; kern 0 to 21K pairs, ≤ 0.3 MB) | | ≈ 0–1 ms |
+
+Targets of the plan: Carlito ≤ 2.5 MB kept: **2.26 MB, met**; fonts without GPOS ≤ 64 KB: 2 KB, met (the CJK cmap index 19–56 KB, met); parse + first kern ≤ 3 ms native: **not met, 5.1–6.0 ms** on this machine (3 quiet runs). Memory is not the cause (it is 171,859 inserts into the pair map) and it is 5–9× faster than the TS; the target goes to the gate-3 benchmarks. Meiryo is not installed on this machine; the four CJK files stand in for the cmap case.
+
+The pair map costs 18 B per pair at the cap (`FxHashMap<u32, i16>`: 9 B per bucket, 7/8 load, doubling) and 12.7 B per pair for Gabriola (742K pairs in 2^20 buckets).
+
+Per operation on Carlito Bold (674 KB), native limits:
+
+| Operation | Allocated | Peak above start | Kept |
+|---|---|---|---|
+| `Face::parse` | 2.8 KB | 1.4 KB | 1.4 KB |
+| first `kern_units` (GPOS parse) | 5,154 KB | 3,506 KB | 2,304 KB |
+| next `kern_units` | 0 | 0 | 0 |
+| first `ligate` (GSUB parse) | 28 KB | 11 KB | 9.4 KB |
+| measure the oracle text with kerning, 200 outlines | 1,903 KB | 307 KB | 300 KB (the outline cache) |
+| `glyph_ids_for` (oracle text) / `face_info` / `FontProgram::parse` | 8 / 1.2 / 2.1 KB | 4 / 0.6 / 0.9 KB | same |
+| `subset_true_type`, oracle text, keep layout / drop layout | 219 / 106 KB | 197 / 84 KB (output 161 / 46 KB; plan: ≤ 2 × output + loca) | |
+| `sfnt_to_eot` (whole file) | 676 KB | 675 KB | the output |
+| odttf obfuscate + deobfuscate | 1,349 KB | 1,349 KB | 0 |
+| `standalone_face`: sfnt (borrows) / 2-face `.ttc` | 0 / 58 KB | 0 / 58 KB | 0 |
+| `embedding_requests` + `plan_font_embedding` (2 variants, subset) | 103 KB | 51 KB | 0 |
+
+The baselines of Carlito's first kern (peak 3.59 MB, allocated 5.28 MB) and of the de-1996 hyphenator (2.19 MB kept) are asserted at +10% by `m3_per_operation_allocated_and_peak_on_carlito_and_the_hyphenators`.
+
+Hyphenators (kept after `Hyphenator::new`; TS = retained `Hyphenator`, the pattern data module in parentheses):
+
+| Language | Pattern file | Rust kept (peak while building) | TS | Ratio |
+|---|---|---|---|---|
+| pt | 4 KB | 19 KB (45 KB) | 0.18 MB (+0.04) | 9.7× |
+| it | 4 KB | 17 KB | 0.14 MB (+0.01) | 8.2× |
+| fr | 11 KB | 116 KB (357 KB) | 0.79 MB (+0.04) | 7.0× |
+| es | 42 KB | 250 KB (695 KB) | 2.04 MB (+0.08) | 8.3× |
+| en-us | 32 KB | 423 KB (1.2 MB) | 2.32 MB (+0.06) | 5.6× |
+| nl | 85 KB | 809 KB (2.3 MB) | 5.25 MB (+0.17) | 6.6× |
+| de-1996 (36,709 patterns) | 274 KB | **2.14 MB** (5.7 MB) | 15.93 MB (+0.52) | 7.6× |
+| all seven | | 3.68 MB | 26.7 MB (+0.9) | 7.2× |
+
+Target of the plan: de-1996 ≤ 4 MB kept: met. A session keeps 70–120 B per cached word (3.5 MB for 50,001 words of 12 characters, 5.9 MB for 36 characters).
+
+#### M5 — caches filled past their cap: pass, one fix (F6)
+
+| Cache | Cap | Test | Result |
+|---|---|---|---|
+| outline cache per face, entries | 2,048 | `m5_the_outline_cache_is_bounded_past_its_entry_cap` | a cap of 100 over 2,000 glyphs keeps ≤ 132 KB; Carlito's 2,782 glyphs at the default cap keep 1.35 MB; a full walk of 13 local faces (Latin, CJK, emoji) keeps 0.6–3.2 MB |
+| outline cache per face, **bytes** | none before F6 | `worst_case_of_one_outline_and_of_the_outline_cache` | a 326 KB font of composites kept 39 MB per cached glyph: **80 GB at the 2,048-entry cap** (F6). Now 4 MiB per face; 200 glyphs of 240 KB keep ≤ 3.89 MB; a glyph over 256 KiB of commands is returned and not cached |
+| `HyphenSession` | 50,001 words | `m5_the_hyphen_session_cache_holds_at_its_cap_and_drops_with_the_session` (+ `hyphen_data.rs`) | 120,000 distinct words: never above 50,001 entries; kept ≤ 3.5 MB; dropped with the session, live exact. Bounded in bytes only through the document (a word is a slice of its text) |
+| compact cmap index | `max_cmap_ranges` | `m5_the_compact_cmap_index_at_the_wasm32_cap_is_four_bytes_per_range` | 2^22 ranges (a 48 MB file): kept 16.00 MB exactly (4 B per range), peak 24 MB; the 2^22 + 1-th range is `Limit(CmapRanges)` with the same peak |
+| pair map | `max_kern_pairs` | `m5_the_pair_map_kept_at_its_cap` | wasm32 cap 4,194,304 pairs: kept **72 MB** (the 75 MB of G5), peak **108 MB** (the table doubles: old and new buckets); native cap 16.8M: kept 288 MB, peak 432 MB |
+| lazily parsed tables (GPOS, GSUB, VDMX, COLR) | the font, `max_table_work`, the stored-record caps of frontier C | `worst_case_per_limit_with_hostile_fonts` | see the next table |
+
+The TS advance cache and GPOS `WeakMap` do not exist in Rust; the `FaceCache` of the native provider is in uo-docx-layout (S16).
+
+#### Worst case per limit (hostile fonts; peak live bytes above the start, everything dropped afterwards)
+
+| Hostile font | File | Native limits | wasm32 limits (native run) | In wasm (Node = WebKit) |
+|---|---|---|---|---|
+| 30,000 ligature sets → one 30,000-record set (GSUB, `ligate`) | 117 KB | 208 MB (1.3–2.1 s) | 52 MB | **28 MB** |
+| 1,500 class-0 entries, each with a 65,536-entry class definition (GPOS, first `kern_units`) | 61 KB | 354 MB | 90 MB | **90 MB** |
+| class matrix filling the pair map to its cap (4096² native, 2048² wasm32) | < 1 KB | 432 MB (kept 288) | 108 MB (kept 72) | **108 MB** |
+| one pair past the cap (GPOS unreadable) | < 1 KB | 432 MB | 108 MB | |
+| one composite glyph of 16 × a 65,535-point glyph (1,048,592 commands = 40 MB; `glyph_outline` after F6) | 326 KB | 120 MB (not cached) | 120 MB (`max_outline_points` is 2^20 on both) | **120 MB** |
+| subset of 1,000 overlapping 60 KB glyphs (output 60 MB) | 60 KB | 57 MB | 57 MB (cap 64 MiB) | 57 MB |
+| `.ttc` of 400 tables each pointing at the whole file (output 25 MB) | 60 KB | 25 MB | 25 MB | 25 MB |
+
+`memory.buffer.byteLength` never shrinks: after the six hostile cases in one module it was 172 MB (58.6 MB after the long-lived soak); the high-water mark is the largest peak plus what stays live.
+
+**Phone verdict.** Judged for an iOS tab (the limit varies by device and is not published; these are the numbers a hostile document can force, not measurements on a device):
+
+- **The per-face limits are right for a desktop, not for a phone, and they are not summed.** A hostile document can embed N fonts of a few tens of KB, each costing its own 72–108 MB (pair map) or 90 MB (class-0 GPOS) for as long as its `Face` lives, and the wasm high-water mark is permanent. Nothing in `uo-fonts` bounds the total over the faces of a document; that is a policy of the layer that owns the faces (a budget of faces or kept bytes per document) and stays open for the layout and format crates.
+- `WASM32.max_kern_pairs = 2^22` (kept 72 MB, peak 108 MB; it also caps the stored class definitions and ligature records of frontier C, 90 MB) is 5.7× the largest real font (Gabriola, 742,163 pairs, the maximum over 472 local faces). **Recommend 2^20 on wasm32** (1,048,576 pairs: kept 18 MB, peak about 27 MB, 1.4× Gabriola; the hostile GPOS about 23 MB): results stay equal to the TS for every real font, only a font with more than 1M pairs would read as unkerned. A maintainer decision (it moves a G5 number); not applied.
+- `max_outline_points = 2^20` on both targets: one hostile `glyph_outline` peaks at **120 MB** (contours 24 B per point, commands 40 B per point, and the copy into the `Arc`), and the largest real outline over 472 faces is **1,200 commands** (46 KB), 870× under the limit. **Recommend 2^16 on wasm32** (peak about 7.5 MB, 54× the largest real glyph). A maintainer decision; not applied.
+- `max_cmap_ranges = 2^22` (16 MB kept, 24 MB peak), `max_output_bytes = 64 MiB` (57 MB peak, one copy) and the `.ttc` output cap are acceptable on a phone as single transient allocations.
+- Real use is far below all this: the 22 faces and 7 hyphenators live in 6 MB (shared file bytes included) plus at most 45 MB of caches, and the wasm module stays at 58 MB.
+
+#### M4, M6
+
+- **M4**: no handle crosses to JS or .NET yet (the bindings come with the format crates). The test-only wasm export takes byte buffers and returns numbers, as the plan says; `fonts_memory.test.mjs` also checks that loading the corpus and `uo_fonts_memtest_reset` bring the module's live bytes back to the start exactly.
+- **M6**: `uo-fonts` is `#![forbid(unsafe_code)]`, so there is no block for Miri. The only `unsafe` of this stage is the buffer take-over of the test-only `uo-wasm/src/fonts_memtest.rs` (`Vec::from_raw_parts`, documented, the pattern of `uo_document_append_owned`). `dhat` was not needed: no growth was left unexplained.
+
+#### Findings and fixes
+
+- **F6, fixed: the outline cache was bounded by entries, not bytes.** `Face::glyph_outline` kept up to 2,048 outlines per face with no limit on their size. A composite of 16 components of one 65,535-point glyph is 130 bytes of file and 1,048,592 commands (40 MB); 2,048 of them fit in a 330 KB font, and a document that draws those glyphs keeps 80 GB (measured: 39 MB per glyph, 1,560 MB for 40). Fix (minimal, results unchanged): `OutlineCache` counts the bytes of its commands; the cache is cleared at 2,048 entries **or** 4 MiB (`OUTLINE_CACHE_MAX_BYTES`), and an outline over 256 KiB (`OUTLINE_CACHE_MAX_ENTRY_BYTES`, 6,500 commands) is returned without being cached. No real face is affected (a full walk of 13 local faces keeps ≤ 3.2 MB, under the cap). Regression: `worst_case_of_one_outline_and_of_the_outline_cache` (the 40 hostile glyphs keep 0 B; 200 glyphs of 240 KB keep ≤ 3.9 MB). Counted as rework of the Sonnet port (Process metrics, F6).
+- **Open, for the maintainer**: the two phone recommendations (`WASM32.max_kern_pairs`, `max_outline_points`) and the missing per-document budget over faces.
+- **Not memory**: parse + first kern is 5.1–6.0 ms against the plan's 3 ms (gate 3); `glyph_ids_for` over 196,608 code points on a large cmap stops at the work budget (`Limit(TableWork)`) by design (R-BUDGET on the linear TS scan).
+- The M1 tests found no leak: every operation of every face returns to the exact start. The stage-3 numbers of frontier C reproduce (208 / 354 MiB native, 52 / 90 MiB with the wasm32 limits); in real wasm32 the GSUB case is 28 MB (smaller pointers), the others equal.
+
+#### What is not measured
+
+Real Safari 15 / iOS 15 and iPhone devices (WebKit 26.5 only; BrowserStack before gate 3); a document-level budget over many faces (no document layer yet); the C# facade and M4 handles (no bindings); the 1,000 rounds in CI (CI runs 300; 1,000 ran once in Node and WebKit); Meiryo (not installed); the TS memory of CJK fonts (the TS `SfntFont` does not read `.ttc`).
+
+### Stage 4 — security (security specialist, Opus, 2026-11-02)
+
+Review of every module of `src/` (`read`, `sfnt`, `cmap`, `face`, `gpos`, `gsub`, `outline`,
+`vdmx`, `colr`, `program`, `info`, `ttc`, `subset`, `eot`, `odttf`, `catalog`, `variant`,
+`hyphen/*`, `embed`, `js`) for panics, overflow of `u32`/`u64` offsets and `usize` on wasm32,
+quadratic or unbounded work, allocations sized by declared counts, limit bypasses, and the
+`Send`/`Sync` soundness of `Face`/`FontProgram`; fuzz targets in `core/fuzz`. Each finding below
+was reproduced by a failing test before the fix (`tests/security_regressions.rs`). Inside the
+limits the fixes change no result (the parity captures and every stage-3 test pass; three tests
+that pin exact work units or point counts moved with the new counted points, named below).
+`#![forbid(unsafe_code)]` holds, so there is nothing for Miri; `Face` and `FontProgram` are
+`Send + Sync` by construction (`Arc`, `OnceLock`, a `Mutex` whose poisoning is recovered, no raw
+pointer). `cargo audit` (RustSec, 1,402 advisories, 2026-11-02): no advisory for the 10 crates of
+`core/` nor the 18 of `core/fuzz`. uo-fonts has no FFI or wasm export of its own yet (only the
+test-only `fonts-memtest` of `uo-wasm`), so there is no binding boundary to review.
+
+#### Findings (fixed; regression tests in `tests/security_regressions.rs`)
+
+| # | Severity | Input | Effect before the fix | Fix | Test |
+|---|---|---|---|---|---|
+| S4-1 | high (DoS) | GPOS whose `kern` feature lists up to 65,535 lookup indices that all point at one lookup, whose up to 65,535 subtable offsets point at one subtable that reads nothing counted (PairPos format 3, an empty coverage, another lookup type, an extension to one) | the subtable loop was not a budget point (R-BUDGET counted lookup indices, not subtables): 4.3·10^9 visits outside `max_table_work`; 8,000 x 8,000 (a 48 KB table) took 0.48 s, the maximum (≈ 260 KB) ≈ 35 s native, more in wasm, on the first kerning query of the face. The TS loops the same way | one unit per subtable visited (`gpos.rs`) | `s4_1_gpos_subtable_visits_count_against_the_budget`; `gpos_kern::the_work_budget_counts_the_named_points` now 57 units (was 56: one subtable) |
+| S4-2 | high (DoS) | the same shape in GSUB (type-4 subtables that are not format 1, extension lookups to one) | the same, on the first `ligate` of the face | one unit per subtable visited (`gsub.rs`) | `s4_2_gsub_subtable_visits_count_against_the_budget`; `gsub_ligate::the_work_budget_counts_the_named_points` now 23 units (was 21: two subtables) |
+| S4-3 | high (DoS) | a GSUB whose ligature list for one first glyph holds millions of entries (262 subtables x 32,000 records pointing at one ligature: a 64 KB table that fits the default parse budget and the store cap, 8.4 million candidates) | `applyLigatures` compares every candidate at every position of the run and the query had no budget: `ligate` of 100 glyphs took 1.5 s, of 1,000 glyphs ≈ 15 s, for every call the layout makes. The TS has the same loop | `GsubLigatures::ligate_within(gids, features, &mut WorkBudget)`: one unit per group visited by each lookup, per candidate examined and per component compared; `Face::ligate` uses the face's `max_table_work`, `GsubLigatures::ligate`/`apply` the default. Over the budget the run gets no ligatures (`None`, what an unreadable GSUB gives; `apply` returns the groups unchanged). Real text costs groups x lookups x a few candidates | `s4_3_ligate_work_is_bounded_by_the_budget` |
+| S4-4 | high (abort) | a simple glyph with 32,767 end points all 0 (65 KB once), drawn through composites | an end point before the start makes an empty contour that no limit counted (`max_outline_points` counted points only): 64 x 32,767 empty contours = 50 MB peak for one composite level; two levels (4,032 visits within `max_outline_work`) make 1.3·10^8 contours, ≈ 3.2 GB on the way up: the wasm instance aborts, the native host swaps | an empty contour counts one against `max_outline_points` (`outline.rs`), so the contours of a call are bounded like its points | `s4_4_empty_contours_count_against_the_point_limit`; `outline::emitted_points_count_against_the_limit_even_when_ends_repeat_points` now 8 (was 7: one empty contour) |
+| S4-5 (= F6) | high (memory) | composites of 16 copies of a 65,536-point glyph (512 bytes): 2^20 points per outline | the outline cache was capped by entries only: 2,048 outlines of 42 MB each | found by the memory verifier as well and fixed there (F6: 4 MiB per face, outlines over 256 KiB not kept) | `s4_5_outline_cache_is_bounded_in_commands` (passes with F6), `stage4_memory.rs` |
+
+The four fixes are on Sonnet code that followed the plan where the plan had the gap (S4-1, S4-2:
+the R-BUDGET list; S4-4: the S1 point limit) or had no rule (S4-3: the plan budgeted the GSUB
+parse, not the query); they are counted as rework below (F7–F10) for the model comparison.
+
+#### Checked, no finding
+
+- Panics: no `unwrap`/`expect`/indexing on font data in `src/` (clippy `unwrap_used`/`expect_used`
+  deny; slices through `get`); `count.ilog2()` of the subset runs on at least four tables.
+- Arithmetic: every offset is `u64` built from `u32`/`u16` values plus bounded products (the
+  largest is `(c1 * c2n + c2) * rec_size < 2^37`); every `u64 → usize` is `try_from`; the outline
+  accumulates in `i64`; the binary searches run in `i64`; EOT sizes wrap as `setUint32` does. No
+  overflow in the fuzz builds (overflow checks on).
+- Declared counts: nothing is allocated from a count of the file except `loca_out` of the subset
+  (`(numGlyphs + 1) x 4` ≤ 256 KB, after every offset was read) and the `with_capacity` of the
+  outline coordinates (≤ the flags read). The cmap index, pair map, class definitions, GSUB store,
+  directory, name strings, `.ttc` and subset outputs are bounded by what is read or by a limit
+  checked before allocating.
+- Work: every loop is bounded by a `u16` count of reads that fail past the end, by a budget point
+  (with S4-1 to S4-3), or is linear in the input (cmap parse, embedding walk, odttf, catalog;
+  `glyph_ids_for` is budgeted per segment visited). `kern_in_latin`, VDMX, COLR and the legacy
+  `kern` (`length` 0 re-reads one subtable: budgeted per subtable) are fine. Recursion: only the
+  outline, depth ≤ 9.
+- Hyphenation: `points` is O(letters x the longest pattern); the shipped patterns are trusted
+  (longest 9 letters), words are untrusted and cost linear time. The session cache is bounded in
+  words (50,000) and in bytes by the document text it was given.
+- `glyph_ids_for` can fail a legitimate plan: P1.
+
+#### Proposals for gate 2 (behaviour changes, not applied)
+
+| # | Evidence | Recommendation |
+|---|---|---|
+| P1 — `glyph_ids_for` budget on CJK | the embedding plan's cmap reader scans segments/groups linearly per code point, one unit each, under one `max_table_work` (2^26) per call. Measured (opt-in `p1_glyph_ids_for_budget_on_local_cjk_fonts`, `C:\Windows\Fonts`, read only): **Yu Gothic fails from 10,505 distinct kanji, Malgun Gothic with all of its 27,133 characters** (`Err(Limit(TableWork))` fails the whole plan); asked for every character they map, 6 of the 454 local faces exceed the budget (Malgun Gothic regular and bold, Yu Gothic in four weights) | keep the TS answers, not its cost: when the end codes (format 4) or the groups (format 12) are sorted and do not overlap (checked once, O(n)), the first match in table order is the binary-search match, so search; scan only unsorted subtables (stage 5, results equal) |
+| P2 — ligatures without a budget outcome | S4-3 bounds each `ligate` call (2^26 units, 0.1–0.3 s) but not a document that calls it once per run | index the ligatures of each (lookup, first glyph) as a trie of the component sequences that keeps the lowest font index at each end: the first match of the TS is the lowest index met while walking the following glyphs, so the cost is the run length x the depth, results equal (stage 5); the S4-3 budget then never trips |
+| P3 — `max_outline_points` | the largest real outline over 454 local faces has 996 segments (Segoe UI Symbol; Calibri 831). The default 2^20 lets a 512-byte glyph and a composite cost 2^20 points per call (25–50 MB transient, ≈ 30 ms), and F6 no longer caches outlines over 256 KiB, so every paint of such a glyph pays it again | 2^16 (65 times the real maximum): a sixteenth of the time and memory per call; parity unchanged (no real or corpus glyph comes near) |
+| P4 — limits per document | every cap is per face and per call; a document embedding n hostile faces keeps n x (pair map + class definitions + GSUB store), 50–100 MB per face with the wasm32 limits (memory record: 94 MiB GPOS, 52 MiB GSUB) | a document-level byte budget in the layout provider's `FaceCache` (uo-docx-layout plan, S16), past which a face is rejected; until then the shell embeds few faces from untrusted documents |
+
+#### Fuzzing
+
+17 targets in `core/fuzz/src/fonts.rs` (plain `fn(&[u8])`, wrapped for libFuzzer by
+`fuzz_targets/fonts_*.rs`; the stable driver runs them from `TARGETS`): `fonts_parse` (any bytes,
+`Face::parse` and every query: cmap, advances, kerning, `ligate` covering its input, VDMX, COLR,
+outlines well formed `(M (L|Q)* Z)*` and cached identically), `fonts_sfnt_dir` (`TableDir`,
+`table_of`, the `Map` order), `fonts_cmap` (a hostile `cmap` through the face, the converter
+program and `glyph_ids_for`: sorted, distinct, no 0), `fonts_gpos` (a hostile GPOS or legacy
+`kern`: within the pair and class caps, `kern_units` equal to a model over the parsed pairs and
+class 0), `fonts_gsub` (`ligate`/`apply` cover the run, deterministic), `fonts_outline` (hostile
+`glyf`/`loca`/`numGlyphs`, both loca formats), `fonts_colr_vdmx`, `fonts_program` (with the C#-only
+legacy `kern`), `fonts_info` (`face_info`, licence, outline test, `glyph_ids_for`), `fonts_ttc`
+(`standalone_face` by name: the output within the cap, every table inside it, re-parsed and
+queried), `fonts_subset` (the input back, or an output within the cap whose kept glyphs hold the
+input's bytes), `fonts_eot` (sizes, version, magic, the font at the end), `fonts_odttf`
+(involution, only the first 32 bytes change, the key against an independent `parseInt` model,
+UTF-16 keys with lone surrogates), `fonts_catalog`, `fonts_hyphen_build` (arbitrary patterns,
+exceptions and words: points inside the word and sorted, `hyphenate` within the minimums, the
+session equal to the hyphenator, the file format round trip), `fonts_hyphen_words` (the seven
+shipped hyphenators), `fonts_embed` (the plan asks for exactly the requested faces, in order;
+faces answered with the base font, a hostile font or nothing). Every public call runs under small
+limits (2^16 units of work, 4,096 pairs, 256 outline visits, 2^14 points, 1 MiB of output; one
+selector in eight tighter still) and must finish within 1 s, so a loop outside the budget is a
+finding long before it hangs. Seeds (`--bin seed`, `fonts_seeds`): a base font built in code with
+every table the crate reads (cmap formats 4 and 12, glyf/loca in both formats with every composite
+form, GPOS pair formats 1 and 2 and an extension, GSUB ligatures and singles, legacy `kern`,
+COLR/CPAL, VDMX, name), a two-face collection, the shapes of S4-1, S4-2 and S4-4, and the 16 open
+fonts of `shared/fonts/files` subsetted to 48 glyphs plus their GPOS, GSUB, cmap and `kern` tables
+(at most 64 KB each). The CI fuzz job runs every file of `fuzz_targets` (now 33) for 60 s.
+
+| Target | libFuzzer execs (25 min) | Corpus after | Stable driver execs (60 s) |
+|---|---|---|---|
+| fonts_parse | 180,099 | 1,290 | 715,213 |
+| fonts_sfnt_dir | 14,891,505 | 200 | 6,419,365 |
+| fonts_cmap | 621,987 | 616 | 607,591 |
+| fonts_gpos | 130,011 | 689 | 273,273 |
+| fonts_gsub | 302,514 | 779 | 714,017 |
+| fonts_outline | 649,816 | 486 | 898,771 |
+| fonts_colr_vdmx | 3,364,003 | 244 | 1,458,447 |
+| fonts_program | 600,550 | 655 | 1,226,788 |
+| fonts_info | 3,058,314 | 583 | 8,477,000 |
+| fonts_ttc | 539,491 | 1,329 | 4,565,800 |
+| fonts_subset | 1,481,499 | 374 | 2,181,070 |
+| fonts_eot | 5,192,778 | 291 | 3,440,107 |
+| fonts_odttf | 9,122,768 | 475 | 8,984,783 |
+| fonts_catalog | 4,977,964 | 416 | 5,340,088 |
+| fonts_hyphen_build | 569,544 | 1,192 | 1,117,895 |
+| fonts_hyphen_words | 534,317 | 748 | 534,509 |
+| fonts_embed | 331,110 | 1,104 | 1,547,796 |
+
+libFuzzer: cargo-fuzz 0.13.2, nightly, WSL Ubuntu 24.04, AddressSanitizer, overflow checks and
+debug assertions on, `-timeout=10 -rss_limit_mb=2048`, the 17 targets in parallel for 1,500 s
+each: 46.5 million executions, **0 crashes, 0 timeouts, 0 out-of-memory** (peak RSS 440–614 MB).
+The targets that take whole fonts run at 100–1,000 executions/s under ASan with inputs up to
+64 KB, hence their lower counts. The stable driver (no coverage, mutations of the same corpus,
+then of the libFuzzer corpus) ran 48.5 million executions with no crash and no call over its 2 s
+slow mark (slowest 377 ms, `fonts_hyphen_build`). Its first pass found one false invariant of the
+subset target (glyph 0 checked in a font that declares no glyphs), fixed in the target, not in
+the crate.
+After the last edits of the targets (JS white space as the hyphenation separator, clippy) a final
+5-minute libFuzzer pass of the 17 targets on the final build ran 9.9 million more executions,
+0 crashes.
 
 ## Evolution
 
@@ -1341,6 +1688,7 @@ cmap reader (G6), one table-directory rule, the outline cache policy.
 
 | Change | Keeps results? | Before | After | Decision |
 |---|---|---|---|---|
+| Outline cache bounded by bytes (4 MiB per face, outlines over 256 KiB not kept), stage-4 fix F6 | yes (a miss decodes the glyph again) | up to 80 GB from a 330 KB font | 4 MiB per face | done |
 
 ## Final review and benchmarks (gate 3 — pending)
 
@@ -1356,6 +1704,9 @@ cmap reader (G6), one table-directory rule, the outline cache policy.
 | 3 (phase 2) | porter: frontier B (Sonnet) | 49.2 min | 133 |
 | 3 (phase 2) | porter: frontier C (Sonnet) | 36.9 min | 86 |
 | 3 (phase 2) | porter: frontier D (Sonnet) | 41.6 min | 134 |
+| 4 | memory verifier (Sonnet) | ≈ 45 min | ≈ 115 |
+| 4 | security specialist (Opus) | ≈ 115 min | ≈ 100 |
+| 4 | parity verifier (Sonnet) | ≈ 160 min | ≈ 180 |
 
 Stage 3 wall time ≈ 67 min (phase 1, then the three frontiers in parallel; B and D were
 restarted once after an API usage limit, the times above are the runs that did the work), against
@@ -1371,6 +1722,11 @@ Stage-3 integration by the orchestrator (rework, for the model comparison):
 | F3 | `Face` wiring of C's kerning/ligatures sat between two frontiers | the plan gave the API, not who wires it | frontier B, after a note |
 | F4 | `NotPorted` placeholder and its assertions left in | expected end of the stub phase | orchestrator |
 | F5 | 5 files with CRLF (frontier C) and mixed endings in the record | Windows editing (the uo-opc R4 lesson again) | orchestrator / frontier B |
+| F6 | the outline cache was capped in entries only: a 330 KB font of composites could make it keep 80 GB | frontier B built the cache as the plan said (clear at 2,048 entries); the plan bounded neither the size of an outline nor the bytes of the cache | memory verifier (Sonnet): 4 MiB per face, outlines over 256 KiB not cached, regression in `stage4_memory.rs` |
+| F7 | GPOS subtable visits outside the work budget (S4-1) | the R-BUDGET list of the plan omitted the subtable loop; the port followed it | security specialist (Opus): one unit per subtable |
+| F8 | the same in GSUB (S4-2) | same | security specialist |
+| F9 | `ligate` work unbounded per call (S4-3) | the plan budgeted the GSUB parse, not the query | security specialist: `ligate_within` with the face budget |
+| F10 | empty contours outside `max_outline_points` (S4-4) | the S1 point limit counted points only | security specialist: an empty contour counts one |
 
 Decisions taken outside the plan by the Sonnet porters: phase 1: 8, frontier B: 15, frontier C:
 10, frontier D: 16 (each listed in its subsection). The largest: frontier C capped stored kerning

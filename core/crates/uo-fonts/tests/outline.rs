@@ -246,8 +246,9 @@ fn emitted_points_count_against_the_limit_even_when_ends_repeat_points() {
     let points = [(0, 0, true), (10, 0, true), (20, 0, true), (30, 0, true)];
     let glyph = simple_glyph_ends(&[3, 0, 3], &points);
     let f = |max| face_of(&[vec![], glyph.clone()], false, &FontLimits { max_outline_points: max, ..FontLimits::DEFAULT });
-    assert!(f(7).glyph_outline(1).is_some(), "4 + 0 + 3 points");
-    assert_eq!(f(6).glyph_outline(1), None);
+    // the empty contour counts one (stage 4, S4-4)
+    assert!(f(8).glyph_outline(1).is_some(), "4 + 1 + 3 points");
+    assert_eq!(f(7).glyph_outline(1), None);
     let ends: Vec<u16> = (0..2999).map(|i| if i % 2 == 0 { 3 } else { 0 }).collect();
     let bomb = simple_glyph_ends(&ends, &points);
     let g = |max| face_of(&[vec![], bomb.clone()], false, &FontLimits { max_outline_points: max, ..FontLimits::DEFAULT });

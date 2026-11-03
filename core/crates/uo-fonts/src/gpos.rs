@@ -11,9 +11,10 @@
 //! read, or that passes the work budget or the pair cap, gives **no pairs and no class 0**
 //! (atomic) and leaves `kern_in_latin` at its default `true`; the legacy `kern` table keeps what
 //! it read before a failure (partial). Nothing is allocated from a count declared in the file:
-//! every vector grows with what is read, and the work budget (R-BUDGET) counts each coverage
-//! entry, class-definition entry, class-matrix cell, glyph pair and pair record; the entries of
-//! the class definitions that class-0 entries keep share the cap of the pair map.
+//! every vector grows with what is read, and the work budget (R-BUDGET) counts each subtable
+//! visited (stage 4, S4-1), coverage entry, class-definition entry, class-matrix cell, glyph pair
+//! and pair record; the entries of the class definitions that class-0 entries keep share the cap
+//! of the pair map.
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -340,6 +341,9 @@ impl GposParser<'_> {
             let lookup = lookup_list + u64::from(v.u16(lookup_list + 2 + u64::from(li) * 2)?);
             let lookup_type = v.u16(lookup)?;
             for s in 0..u64::from(v.u16(lookup + 4)?) {
+                // one unit per subtable visited (stage 4, S4-1): lookups and subtables can all
+                // point at one table, so the visits alone reach 65,535 x 65,535
+                self.w.tick()?;
                 let mut sub = lookup + u64::from(v.u16(lookup + 6 + s * 2)?);
                 let mut t = lookup_type;
                 if t == 9 {

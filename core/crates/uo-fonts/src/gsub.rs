@@ -9,9 +9,10 @@
 //!
 //! Any failure of the parse (a read past the end of the input, the work budget) is `None` for
 //! the life of the font, as the TS `try`/`catch` of `ligate` makes it. The work budget (R-BUDGET)
-//! counts each feature index appended, each coverage entry, each single-substitution set, each
-//! ligature record, and (a decision of this port, not in the plan) each component glyph of a
-//! ligature: a ligature set can point many records at one long record. What the parse stores
+//! counts each feature index appended, each subtable visited (stage 4, S4-2), each coverage entry,
+//! each single-substitution set, each ligature record, and (a decision of this port, not in the
+//! plan) each component glyph of a ligature: a ligature set can point many records at one long
+//! record. What the parse stores
 //! (ligature records, component glyphs, single substitutions) is also capped by
 //! `FontLimits::max_kern_pairs`, because the budget bounds time, not memory.
 
@@ -76,8 +77,18 @@ impl GsubLigatures {
 
     /// `SfntFont.ligate`: `None` when the font has no ligature lookup and no single substitution,
     /// or when none of the requested features maps to one of them; else the groups of
-    /// [`GsubLigatures::apply`].
+    /// [`GsubLigatures::apply`]. The work of the call is bounded by the work budget of
+    /// [`FontLimits::DEFAULT`] (see [`GsubLigatures::ligate_within`]).
     pub fn ligate(&self, gids: &[u32], features: &[Tag]) -> Option<Vec<LigGroup>> {
+        self.ligate_within(gids, features, &mut FontLimits::DEFAULT.work())
+    }
+
+    /// [`GsubLigatures::ligate`] with the work counted against `budget` (stage 4, S4-3): one unit
+    /// per group visited by each lookup, per ligature examined and per component compared. A
+    /// ligature list can hold millions of entries for one first glyph, so the TS work of one call
+    /// (positions x entries) has no bound; over the budget the run gets no ligatures (`None`,
+    /// what a GSUB that cannot be read gives).
+    pub fn ligate_within(&self, gids: &[u32], features: &[Tag], budget: &mut WorkBudget) -> Option<Vec<LigGroup>> {
         if self.lookups.is_empty() && self.singles.is_empty() {
             return None;
         }
@@ -86,21 +97,28 @@ impl GsubLigatures {
         if !any {
             return None;
         }
-        Some(self.apply(gids, features))
+        self.try_apply(gids, features, budget).ok()
     }
 
     /// `applyLigatures`: the lookups of the requested features, distinct and in increasing index
     /// order, each over the whole run from left to right; a lookup that has single substitutions
     /// applies only those (to groups of one glyph) and skips its ligatures; otherwise the first
     /// ligature of the first glyph's list whose component glyphs equal the following groups'
-    /// `gid`s replaces them, its `len` the sum of the groups it consumed.
+    /// `gid`s replaces them, its `len` the sum of the groups it consumed. Over the work budget of
+    /// [`FontLimits::DEFAULT`] (S4-3) the groups come back unchanged.
     pub fn apply(&self, gids: &[u32], features: &[Tag]) -> Vec<LigGroup> {
+        self.try_apply(gids, features, &mut FontLimits::DEFAULT.work())
+            .unwrap_or_else(|_| gids.iter().map(|&gid| LigGroup { gid, len: 1 }).collect())
+    }
+
+    fn try_apply(&self, gids: &[u32], features: &[Tag], budget: &mut WorkBudget) -> Result<Vec<LigGroup>, FontError> {
         let mut out: Vec<LigGroup> = gids.iter().map(|&gid| LigGroup { gid, len: 1 }).collect();
         let mut idx: Vec<u16> = features.iter().flat_map(|f| self.lookups_of(*f).iter().copied()).collect();
         idx.sort_unstable();
         idx.dedup();
         for li in idx {
             if let Some(single) = self.singles.get(&li) {
+                budget.tick_n(out.len() as u64)?;
                 for group in &mut out {
                     if group.len == 1
                         && let Some(&to) = u16::try_from(group.gid).ok().and_then(|g| single.get(&g))
@@ -114,11 +132,25 @@ impl GsubLigatures {
             let mut next: Vec<LigGroup> = Vec::with_capacity(out.len());
             let mut i = 0;
             while let Some(&group) = out.get(i) {
-                let hit = u16::try_from(group.gid).ok().and_then(|g| lookup.get(&g)).and_then(|candidates| {
-                    candidates
-                        .iter()
-                        .find(|c| c.rest.iter().enumerate().all(|(k, &r)| out.get(i + 1 + k).is_some_and(|o| o.gid == u32::from(r))))
-                });
+                budget.tick()?;
+                let mut hit: Option<&Ligature> = None;
+                if let Some(candidates) = u16::try_from(group.gid).ok().and_then(|g| lookup.get(&g)) {
+                    for c in candidates {
+                        budget.tick()?;
+                        let mut matches = true;
+                        for (k, &r) in c.rest.iter().enumerate() {
+                            budget.tick()?;
+                            if !out.get(i + 1 + k).is_some_and(|o| o.gid == u32::from(r)) {
+                                matches = false;
+                                break;
+                            }
+                        }
+                        if matches {
+                            hit = Some(c);
+                            break;
+                        }
+                    }
+                }
                 let Some(hit) = hit else {
                     next.push(group);
                     i += 1;
@@ -133,7 +165,7 @@ impl GsubLigatures {
             }
             out = next;
         }
-        out
+        Ok(out)
     }
 }
 
@@ -223,6 +255,8 @@ impl GsubParser<'_> {
             let mut ligatures: LigLookup = FxHashMap::default();
             let mut one: FxHashMap<u16, u16> = FxHashMap::default();
             for s in 0..u64::from(v.u16(lo + 4)?) {
+                // one unit per subtable visited (stage 4, S4-2), as in GPOS
+                self.w.tick()?;
                 let mut so = lo + u64::from(v.u16(lo + 6 + s * 2)?);
                 let mut t = lookup_type;
                 if t == 7 {

@@ -1,4 +1,7 @@
-//! Fuzz targets of `uo-opc` (stage 4 security, record `core/docs/modules/uo-opc-container.md`).
+//! Fuzz targets of `uo-opc` (stage 4 security, record `core/docs/modules/uo-opc-container.md`)
+//! and of `uo-jsnum` (`jsnum_parse`, `jsnum_math` in `src/jsnum.rs`, record
+//! `core/docs/modules/uo-jsnum.md`) and of `uo-fonts` (the `fonts_*` targets in `src/fonts.rs`,
+//! record `core/docs/modules/uo-fonts.md`).
 //!
 //! Every target is a plain `fn(&[u8])`: libFuzzer runs them through `fuzz_targets/*.rs`
 //! (`cargo +nightly fuzz run <name>`), the stable driver `src/bin/fallback.rs` through
@@ -26,6 +29,15 @@ use uo_opc::xml::write::{self, Escape, XmlWriter};
 use uo_opc::xml::{CanonicalPrefixes, CharRefPolicy, ContentPi, Document, Node, ParseOptions, parse};
 use uo_opc::zip::{self, WriteOptions, ZipWriter};
 
+mod jsnum;
+pub use jsnum::{jsnum_math, jsnum_parse};
+
+mod fonts;
+pub use fonts::{
+    fonts_catalog, fonts_cmap, fonts_colr_vdmx, fonts_embed, fonts_eot, fonts_gpos, fonts_gsub, fonts_hyphen_build, fonts_hyphen_words,
+    fonts_info, fonts_odttf, fonts_outline, fonts_parse, fonts_program, fonts_seeds, fonts_sfnt_dir, fonts_subset, fonts_ttc,
+};
+
 /// A fuzz target.
 pub type Target = fn(&[u8]);
 
@@ -45,6 +57,25 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("caseless", caseless),
     ("part_text", part_text),
     ("resolver", resolver),
+    ("jsnum_parse", jsnum_parse),
+    ("jsnum_math", jsnum_math),
+    ("fonts_parse", fonts_parse),
+    ("fonts_sfnt_dir", fonts_sfnt_dir),
+    ("fonts_cmap", fonts_cmap),
+    ("fonts_gpos", fonts_gpos),
+    ("fonts_gsub", fonts_gsub),
+    ("fonts_outline", fonts_outline),
+    ("fonts_colr_vdmx", fonts_colr_vdmx),
+    ("fonts_program", fonts_program),
+    ("fonts_info", fonts_info),
+    ("fonts_ttc", fonts_ttc),
+    ("fonts_subset", fonts_subset),
+    ("fonts_eot", fonts_eot),
+    ("fonts_odttf", fonts_odttf),
+    ("fonts_catalog", fonts_catalog),
+    ("fonts_hyphen_build", fonts_hyphen_build),
+    ("fonts_hyphen_words", fonts_hyphen_words),
+    ("fonts_embed", fonts_embed),
 ];
 
 /// Small limits: every check of `Limits` is exercised without slow executions.

@@ -19,10 +19,26 @@ count = ["dep:uo-alloc", "uo-alloc/global"]
 opc-memtest = ["dep:uo-opc"]
 # bench-only exports of the uo-opc benchmark (stage 5, tools/bench/opc/wasm.mjs); never shipped
 opc-bench = ["opc-memtest", "count"]
+# test-only exports of the uo-jsnum wasm memory gate (stage 4, tests/jsnum_memory.test.mjs); never shipped
+jsnum-memtest = ["dep:uo-jsnum", "count"]
+# test-only export of the uo-jsnum parity self-test (stage 4, tests/jsnum_selftest.test.mjs): recomputes the
+# digests of the committed captures inside the module; never shipped
+jsnum-selftest = ["dep:uo-jsnum", "dep:uo-testkit"]
+
+# test-only exports of the uo-fonts wasm memory gate (stage 4, tests/fonts_memory.test.mjs): the soaks of the
+# native test over buffers JS moves in, and the worst-case fonts; never shipped
+fonts-memtest = ["dep:uo-fonts", "dep:uo-testkit", "count"]
+
+# test-only exports of the uo-fonts parity self-test (stage 4, tests/fonts_selftest.test.mjs): recomputes the
+# facets of the committed captures inside the module; never shipped
+fonts-selftest = ["dep:uo-fonts", "dep:uo-testkit"]
 
 [dependencies]
 uo-alloc = { path = "../uo-alloc", optional = true }
 uo-opc = { path = "../uo-opc", optional = true }
+uo-fonts = { path = "../uo-fonts", optional = true }
+uo-jsnum = { path = "../uo-jsnum", optional = true }
+uo-testkit = { path = "../uo-testkit", optional = true }
 
 [lints]
 workspace = true
