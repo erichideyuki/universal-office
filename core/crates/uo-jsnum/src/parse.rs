@@ -55,7 +55,8 @@ fn int_double(radix_log_2: u32, b: &[u8]) -> f64 {
                 match b.get(current) {
                     Some(&c) if digit(c, radix).is_some() => {
                         zero_tail = zero_tail && c == b'0';
-                        exponent = exponent.saturating_add(radix_log_2 as i32);
+                        // V8's `int` wraps (radix 32 past 429,496,739 digits): the same here
+                        exponent = exponent.wrapping_add(radix_log_2 as i32);
                     }
                     _ => break,
                 }
@@ -67,7 +68,7 @@ fn int_double(radix_log_2: u32, b: &[u8]) -> f64 {
             }
 
             if (number & (1i64 << 53)) != 0 {
-                exponent += 1;
+                exponent = exponent.wrapping_add(1);
                 number >>= 1;
             }
             break;

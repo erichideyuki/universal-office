@@ -298,3 +298,16 @@ fn ts_call_sites() {
     // 10^23 is not the literal in the reference either (capture: 23, 126 and 210 in [-350, 350])
     assert_ne!(pow(10.0, 23.0).to_bits(), 1e23_f64.to_bits());
 }
+
+/// The names of the distributions, for the wasm self-test (`uo-wasm`, feature `jsnum-selftest`).
+#[allow(dead_code)]
+pub fn selftest_distributions() -> Vec<&'static str> {
+    DISTRIBUTIONS.iter().map(|d| d.0).collect()
+}
+
+/// The `n5`/`n7` facet (`count:digest`) of distribution `index` over its first `n` pairs.
+#[allow(dead_code)]
+pub fn selftest_digest(index: usize, n: usize) -> String {
+    let (_, seed, make) = DISTRIBUTIONS[index];
+    run(make, seed, n).0
+}

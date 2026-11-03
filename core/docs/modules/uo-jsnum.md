@@ -836,23 +836,332 @@ The committed capture is the Windows one (`os=win32 arch=x64`, Node v24.15.0, V8
 - `uo-opc` switching to `uo_jsnum::text` (G7, after gate 2); a `cargo deny` run (tool not installed).
 - `UO_JSNUM_DUMP` exists in the generator and in `tests/differential.rs` but was never exercised on a real mismatch (there was none).
 
+## Stage 4 — memory (increment A)
+
+Memory verifier: Sonnet 5.5 (general-purpose agent), 2026-11-02, worktree `rust-core`. Everything below comes from
+tests that ran (`CARGO_TARGET_DIR=core/target/jsnum-mem`, Windows x64, rustc 1.97, Node 24.15, Playwright WebKit 26.5);
+nothing is judged by reading. No leak, no unbounded growth and no allocation outside `utf16_slice` was found; no code of
+the crate was changed.
+
+Tests added (the porter's `tests/memory.rs` is untouched): `core/crates/uo-jsnum/tests/memory_gate.rs` (native) and
+`core/crates/uo-wasm/tests/jsnum_memory.test.mjs` (Node and WebKit) with the exports of `core/crates/uo-wasm/src/jsnum_memtest.rs`
+behind the feature `jsnum-memtest` (implies `count`; never shipped). `browser/run.mjs` forwards `UO_JSNUM_SOAK` and `UO_WASM_PATH`.
+Run: `cargo test --release -p uo-jsnum --test memory --test memory_gate -- --include-ignored`; `cargo build -p uo-wasm
+--features jsnum-memtest --target wasm32-unknown-unknown --profile wasm`, then `node --test crates/uo-wasm/tests/jsnum_memory.test.mjs`
+and `node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/jsnum_memory.test.mjs`.
+
+### M1 — no allocation, no leak per operation
+
+| Claim | Test | Result |
+|---|---|---|
+| Every public function is measured | `m1_covers_every_public_function`: scans `src` for the 59 `pub fn` (41 own + 18 re-exported fdlibm) and fails unless each is called module-qualified in `memory.rs` or `memory_gate.rs` | 59/59 |
+| Every numeric function allocates 0 B (and peaks at 0 B) | `m1_every_function_allocates_nothing`: each call under its own `measure`, inputs and outputs `black_box`ed, 22 inputs (±0, subnormals, NaN, ±∞, 2^31, 2^32+0.5, 2^53+1, 1e21, MAX…): 22 × 22 pairs for the 8 binary functions, 22 for each unary one, `hypot_n`/`max_n`/`min_n` on empty, 4-element and 10,000-element slices | 0 B in every call |
+| Parsers and text functions allocate 0 B on every path | `m1_text_and_parsers_allocate_nothing_on_every_path`: 34 strings (empty, white space only, junk, `Infinity`, `0x`/`0o`/`0b`, `1e`, overflow, lone prefix, emoji, cut pairs) × `to_number`, `parse_int` with 17 radixes (0, 1, 2, 3, 7, 8, 10, 16, 32, 36, 37, 100, −1, −36, 2^21, `i32::MIN`/`MAX`), `trim*`, `utf16_len`, `split_js_space`, `js_space_len` at every byte offset, `utf16_slice` over 11 × 11 start/end values including `i64::MIN`/`MAX` and every cut position | 0 B; every `utf16_slice` result that is `Cow::Borrowed` allocated 0 B |
+| Huge inputs | `m1_parsers_on_huge_and_hostile_strings_allocate_nothing`: 18 inputs of 10 MB (digits, zeros, spaces then 1, U+3000 then junk, `0x`/`0b`/`0o` + 10 MB, `1e` + 5 MB of 9, `1.` + 5 MB of 0 + `e-99`, 5 MB . 5 MB of 9, `z` and `6` for radix 36/7, `-`, U+00E9, U+1F600, `a `, digits then `!`) × `to_number`, `parse_int` in 10 radixes, `trim`, `split_js_space`, `utf16_len`, borrowed `utf16_slice` | 0 B, peak 0 B, all 18 × 14 calls |
+| The allocating path frees what it allocates | `m1_cut_surrogate_slice_allocates_only_its_output_and_frees_it` (porter, `assert_no_leak`) and the M3 test below, which also asserts `live_delta` | live bytes return exactly |
+| The harness sees allocations in release | the owned `utf16_slice` calls above are measured in `--release` with the output `black_box`ed and report 6 B to 4,000,003 B: LLVM does not elide them, so a 0 elsewhere is a real 0. The porter's `m1_numeric_functions_allocate_nothing` discards its result, so on its own it would not prove this; the new tests do | ok |
+| wasm | `jsnum_memory.test.mjs` M1: 100 numeric batches (every numeric function) and 37 strings (up to 32 KB) × 7 kinds (`to_number`, `parse_int` 10/7/16/36, `split_js_space`, `trim`): the module's total allocated bytes (`uo_alloc::global_stats().0`) do not move; the all-strings export (owns one cut-surrogate `String`) leaves live bytes unchanged | 0 B in Node and WebKit |
+
+The only allocation in the crate is `utf16_slice` when a surrogate pair is cut (`String::with_capacity(middle + 6)`).
+
+### M2 — soak
+
+| Soak | Iterations | Result |
+|---|---|---|
+| native, mixed batch (porter's `m2_soak_1000`) | 1,000 × 800 batches = 9,600 calls of every function and the string functions, sampled every 50 | tolerance 0 B, series constant, back to the start after `clear_caches()` |
+| native, hostile strings (`m2_soak_hostile_1000`, `#[ignore]`d, 1.5 s in release; `m2_soak_hostile_short` runs in `cargo test`) | 1,000 × 8 strings of 64 KB (digits, `z`, spaces then 1, `0x`+f, `1e`+9, emoji, `a `, empty) × `to_number`, `parse_int` 0/7/36/99, `trim`, `split_js_space`, `utf16_len`, two `utf16_slice` | one distinct sample (524,676 B = the 8 inputs), tolerance 0 |
+| wasm (Node 24.15 and WebKit 26.5) | 1,000 iterations of 20 numeric batches + 37 strings (229,562 input bytes), sampled every 50 | live bytes 229,562 B (the input buffers) in every sample; `memory.buffer.byteLength` 1,441,792 B (22 pages) in every sample; Node 2.2 s, WebKit 6.3 s |
+
+wasm high-water mark: the module starts with 1,114,112 B (1 MiB of stack + data) and 0 live bytes; 1,000 numeric batches
+alone leave it at 1,114,112 B, so the crate adds nothing to the high-water mark. The 328 KB above it in the soak is the
+229 KB of test inputs plus the allocator's bookkeeping, and does not grow. For a phone: the crate itself needs no heap and
+under 2 KB of stack.
+
+### M3 — budgets (first record: the baseline for later increments)
+
+| Function | Allocated | Peak above start |
+|---|---|---|
+| every numeric function, `to_number`, `parse_int`, `trim*`, `split_js_space`, `utf16_len`, `js_space_len`, `utf16_slice` without a cut pair | 0 B, on inputs of 10 MB | 0 B |
+| `utf16_slice` cutting a pair at the start and/or the end (`m3_utf16_slice_owned_output_is_the_output_plus_at_most_three_bytes`) | output ≤ allocated ≤ output + 3 B: one allocation of `middle + 6` B (both cuts: exactly the output). Measured: input 10 B → 6 B (both cuts) and 11 B (one cut); 4,002 B → 3,998 B and 4,003 B; 4,000,002 B → 3,999,998 B and 4,000,003 B | the same single allocation (no growth, no realloc), i.e. at most 1 B per input byte + 3 B; the plan's bound (peak ≤ 2 × output) holds with room |
+
+Stack of the deepest functions on wasm32 (shadow stack painted below the call with two patterns and scanned for the lowest
+touched byte, ±16 B; 1 MiB available; `jsnum_memory.test.mjs`, same numbers in Node and WebKit):
+
+| Function | Stack |
+|---|---|
+| `sin`/`cos`/`tan` (large argument: `rem_pio2` → `kernel_rem_pio2`, four 20-slot arrays) | 643 B (max over 13 arguments incl. 1e22, 1e300, ±∞, NaN, subnormal) |
+| `asin`, `acos`, `atan`, `atan2`, `exp`, `expm1`, `log*`, `sinh`, `cosh`, `tanh`, `atanh`, `cbrt`, `pow`, `hypot3`, `to_int32` | 11 B (leaf code, no spills) |
+| `to_number` | 1,655 B (max over 20 inputs, including a 770-digit halfway case, the 309-digit `2.2250738585072011…e-308` family and 100,000-character runs) |
+| `parse_int` radix 10 / 7, 16, 36 | 907 B / 59 B |
+| `split_js_space`, `utf16_slice`, `trim` | 59 B, 55 B, 59 B |
+
+All are far under the test's bounds (4 KB numeric, 8 KB parsers) and none recurses; stack does not grow with input length
+(the 100,000-character inputs are in the maximum above).
+
+wasm size (stage-3 "not done" item): `twiggy` is not installed, so the figure comes from the function sizes of an unstripped
+`wasm`-profile build of `uo-wasm --features jsnum-memtest` (throwaway script): functions named `uo_jsnum::*` add up to 33,123 B
+of code (`rem_pio2` 5,400 B, `utf16_slice` 1,558, `pow` 1,519, `cos` 1,240, `sin` 1,116, `to_number` 1,069, `hypot_n` 1,061,
+`int_double` 899, `expm1` 867, `parse_int` 850, `log1p` 814, `acos` 710), plus about 6 KB of core's `f64` parser
+(`dec2flt`) and the tables (log 128 × 32 B + exp 256 × 8 B for `pow`, `TWO_OVER_PI`, `NPIO2_HW`: about 7 KB). The whole build is 80,020 B
+against 15,912 B without the feature (+64,108 B raw, +35,950 B gzip), which includes the harness (it calls everything, with inlined
+copies) and the counting allocator. So the crate costs about 45 KB raw in a real module, above the plan's 25–35 KB estimate
+for the fdlibm functions alone because `pow`, the parsers and the tables are in it; a `twiggy` figure per increment stays
+for gate 3.
+
+### M4, M5, M6
+
+- **M4**: no handle crosses a boundary; the wasm exports take and return numbers and a borrowed buffer that JS frees with `uo_free_bytes`
+  (checked: live bytes return to the starting value after the buffers are released).
+- **M5** — no caches, proved by `m5_no_caches_no_interior_mutability`: the 16 source files contain no `thread_local!`, `OnceLock`,
+  `OnceCell`, `LazyLock`, `Mutex`, `RwLock`, `RefCell`, `Cell<`, `Atomic*`, `static mut`, `Box::leak`, `mem::forget`, `HashMap`,
+  `BTreeMap`, `Rc`/`Arc`; the only `static` items are the four immutable number tables of `pow` (`exp_data.rs` 2, `log_data.rs` 2). With the
+  M2 soaks (tolerance 0 over thousands of calls on distinct hostile inputs) a cache that fills would show.
+- **M6**: `#![forbid(unsafe_code)]`, no `unsafe` in `src` (grep: only the `forbid` attribute itself): no Miri job. The test-only wasm exports use `unsafe` for the borrowed buffer
+  (documented SAFETY comment); they are not part of the crate.
+
+### Findings
+
+None in the crate. Notes for the maintainer:
+
+1. The porter's `m1_numeric_functions_allocate_nothing` ignores the measured result (`let (_, usage) = measure(...)`) and its batch folds
+   into an `acc` that nothing reads; it is sound only because the functions have no allocation to elide. `memory_gate.rs` repeats the claim
+   per function with `black_box` on inputs and outputs, so it does not depend on that.
+2. The plan's M2 says 10^4 calls of every function per iteration; the porter's soak makes 9,600 (12 inputs × 800 batches). Same order; not changed.
+3. `m1_parsers_on_huge_and_hostile_strings_allocate_nothing` builds about 100 MB of inputs and takes 21 s in a debug build (1 s in
+   release): the CI `jsnum` job runs release.
+4. Not measured: Chromium in the browser run (Playwright's Chromium is not installed here; Node and WebKit ran); real Safari/iOS (gate 3,
+   BrowserStack); native stack depth (wasm32 is the constrained target); a `dhat` profile (nothing grows, so there is nothing to explain).
+
+## Stage 4 — parity (increment A)
+
+Parity verifier: Sonnet 5.5 (general-purpose agent), 2026-11-02, worktree `rust-core` (HEAD a1f07b9c plus the uncommitted work of the other stage 4 agents),
+Windows x64 (i5-14600KF, FMA), Node v24.15.0 / V8 13.6.233.17-node.48, WSL Ubuntu-24.04 (glibc 2.39), rustc 1.97.1, Playwright WebKit 26.5.
+`CARGO_TARGET_DIR=core/target/jsnum-parity`. **Result: 0 mismatches between the Rust port and V8 on everything the porter captured and on everything added
+here; 0 port bugs, so 0 parity rounds.** Two verifier-side findings (a coverage gap and one bug of the verifier's own test model) are listed below.
+
+### Re-run of the porter's claims
+
+| Check | Result |
+|---|---|
+| `node js/capture-jsnum.mjs --out <file>` on this machine (Windows x64, 2 min 15 s) | **byte-identical** to the committed `jsnum.capture` (121 digest records, 46 special records, 199 corpus strings, the tier check inside) |
+| the same generator in WSL, Node 24.15.0 linux-x64, glibc 2.39, once without and once with `GLIBC_TUNABLES=glibc.cpu.hwcaps=-FMA,-AVX2` | both identical to the Windows capture **line for line except `@platform`** (decision 1 below) |
+| `GLIBC_TUNABLES=glibc.cpu.hwcaps=-FMA,-AVX2 node js/capture-pow.mjs` in WSL (1 min 8 s) | **byte-identical** to the committed `pow.capture`, `@platform` line included |
+| `cargo test --release -p uo-jsnum -- --include-ignored` | green: 104 numeric records (1,022,000,000 samples: the stage 3 text says 1,192,000,000, which is not what the capture holds; the 121 digest records also include 17 random-string records, 16,100,000 strings), pow 8 distributions (8 x 10^7 pairs, 5,776 special pairs, 701 powers of ten), 46 special records, the corpus, the white space set over every code point |
+| the same tests in a release build with `overflow-checks` and `debug-assertions` (`CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true`, separate target dir) | green: no arithmetic overflow in the fdlibm, pow, parser or conversion code on any of the 10^9 samples, nor on the new corpora below |
+| mutation check, in a scratch copy of the crate (the real sources were never touched): 1 hypot3 compensation term dropped; 2 `to_uint8_clamp` tie to odd; 3 `int_double` tie rule `>` to `>=`; 4 `int_double` sticky bit ignoring a non-zero tail; 5 `log` constant `LG3` one ulp down; 6 pow `exp` coefficient +2^-31 relative; 7 `PIO2_3` low bit | 1, 2: the 10^5 replay fails (2 and 1 records); 3: 21 corpus/random mismatches; 4: 9 of the 26 digests of the new generated families; 5: only the 10^7 replay fails (3 records); 6: 138 of 5,776 special pairs and the distributions (4 of the 5 pow tests); 7: **not** the stage 3 numeric replay at 10^7, but the new targeted distributions (3 records at 10^5, 6 at 10^7), see "Findings". Not observable by construction: `PIO2_3T`/`PIO2_2T` last bit and a one-ulp change of an `exp` polynomial coefficient of pow (0 of 8 x 10^7 pairs) |
+
+### Added here (the gaps found while auditing the decisions)
+
+`js/capture-jsnum-adv.mjs` writes `tests/captures/adv.capture` (483 KB; also identical when taken in WSL, and with `--no-opt --no-maglev`); `tests/adv.rs` replays it with the
+generators of `tests/support/adv.rs` (draw-for-draw mirror of the script; the same code runs inside the wasm self-test). Native run: `cargo test --release -p uo-jsnum --test adv -- --include-ignored`, 4 s.
+
+| Record | What | Size | Result |
+|---|---|---|---|
+| `adv/cat0`…`cat11`, `adv/mixed` | `Number(s)` and `parseInt(s, r)` for r in 0, 10, 16, 2, 8, 36, 7, 32, 3 over strings from 12 structured families: decimals with 0–330 digit runs, zero-heavy decimals with long leading zeros, the boundaries of the double range (max, max + half ulp, min normal, 2^-1074, 2^-1075 and neighbours, 2^53 + 1, with zero tails and a sticky `1`), `0x`/`0o`/`0b` runs (ties at bit 53, 0–330 digits, sign, one invalid character), `Infinity` variants, junk soup, exponent overflow and 20-digit exponents, subnormals, dot forms (`.`, `5.`, `.e3`, `1.2.3`), 305–800-digit integers around the 309/310/311-digit threshold with tails (`.5`, `e5`, `x`), separators, non-ASCII digits; every string padded with 0–3 JS white space characters on each side (all 25) and with the negatives U+0085, U+180E, U+200B, U+2060, U+00AD, NUL | 12 x 2 x 10^5 + 2 x 10^6 = 4,400,000 strings, 44,000,000 calls | **equal** (10^4/10^5 in `cargo test`, full with `--include-ignored`) |
+| `hard/0000`…`0989` | the exact decimal midpoint between two neighbouring doubles, one hair above and one hair below it (BigInt-built; 60 subnormal, 40 tiny normal, 60 in 0.5–32, 40 around 2^52–2^54, 120 huge, plus max, min, 2^52, 1) with `Number(s)` and `parseInt(s, 10)` | 990 strings of up to 1,084 characters | **equal** |
+| `ext/<op>/<dist>` | the 19 math functions on the arguments where the algorithms branch: near multiples of pi/2 (k up to 2^20 and up to 2^60, ±3 ulp: the second and third pass of `rem_pio2`), every threshold word of `inputs.txt` and its predecessor with random low words and both signs (17 functions, atan2 on pairs of them), multiples and half multiples of ln2 ±3 ulp, 709.7–709.8 and −745.2…−745.1, 1 ± 2^-k, −1 + 2^-k, tiny 2^-k, sqrt2 and 1/sqrt2 times 2^e ±3 ulp, powers of two ±3 ulp, exact cubes, operands scaled by 2^±1020 (hypot, hypot3, hypot_n4, atan) | 60 records x 2 x 10^6 = 120,000,000 samples | **equal** |
+| `conv/exp_sweep` | `Int32Array`/`Uint32Array`/`Int16Array`/`Uint16Array`/`Int8Array`/`Uint8Array`/`Uint8ClampedArray` stores (ToIntN and ToUint8Clamp) of every biased exponent 0…2047 x 19 mantissas (the bit-52/53/32/31 boundaries, all ones, 8 random) x both signs | 77,824 values x 7 | **equal** |
+| `js_index/sweep` | `ta[i]` and `ta[i] = 99` on `Float64Array` of length 0, 1, 2, 3, 20 for the 98 special values and 22 more (−0, 0.5, 1.5, 2^32, 2^53, 1e21, 5e-324, 19.5…) | 600 cases | **equal** (`−0` reads index 0) |
+
+Tiers: the whole `adv.capture` generated under `--no-opt --no-maglev` (Ignition only, about 10 minutes at full size, all 124,400,000 samples) is identical to the default-tier capture but for `@platform` (`flags=--no-opt,--no-maglev`).
+
+### Audit of the 12 decisions of stage 3
+
+| # | Decision | Verdict |
+|---|---|---|
+| 1 | captures of the non-pow functions on Windows x64 | **verified equal**: the same generator in WSL (glibc 2.39, with and without the pow tunables) writes the same file but for `@platform`; so does `capture-jsnum-adv.mjs`. `require_platform` (V8 prefix, x64, Node v24.15.0) is what every non-pow replay checks |
+| 2 | `uo-testkit` changes (`platform()`, `Stream.digest()`, `Platform`/`require_platform`) | **verified**: every replay (`differential`, `special`, `strings`, `pow`, `adv`) checks the `@platform` line through `Capture::require_platform` before comparing anything, and the wasm test reads the same files |
+| 3 | seeds (FNV-1a of the key), digest at 10^5 and n_full, integer outputs hashed as f64 | **verified**: seeds are facets that the replay compares; both sides hash the same stream |
+| 4 | two tables, one oracle (generators duplicated in the script and in `tests/support`) | **verified by sensitivity**: a transcription error would be a digest mismatch (none), the mutations above show every record is sensitive; the new records use the same pattern and the draw-for-draw mirror is proved by equal digests |
+| 5 | `js_index`: `−0` is `Some(0)`; NaN, fractions, negatives, `>= len` are `None` | **verified equal** against `Float64Array` reads and writes (`js_index/sweep`), 600 cases, plus the 2 x 10^7 samples of the stage 3 records |
+| 6a | `kernel_rem_pio2` ported for `prec = 2` only | **verified by source**: `ieee754.cc` (V8 13.6.233.17) has one call, `__ieee754_rem_pio2` line 263 with `prec = 2`; `case 0` and `case 3` of the final switch are dead, `case 1` is `case 2` |
+| 6b | `to_number`: hand grammar check, then `str::parse::<f64>` | **verified equal**: 4,400,000 generated strings (families above), 990 midpoints between doubles (the inputs a not-correctly-rounded parser gets wrong), the 199 corpus strings, 16 x 10^6 random token strings; mutating `int_double`'s tie or sticky rule fails the new replay. Overflow (`1e99999999999999999999`, 20-digit exponents), `1e-400`, subnormal boundaries, `.5`/`5.`, signs, `Infinity` (case sensitive, `Infinityx` NaN), prefixes without sign, every JS white space at both ends, U+0085/U+180E/U+200B negatives: all equal |
+| 6c | `parse_int` radix 10: ±Infinity above 310 digits without parsing | **verified equal**, and **equivalent by arithmetic**: V8 keeps 310 digits, and any 310-digit integer is at least 1e309, above the largest double, so 310 and 311 as the threshold are the same function; 309-digit strings that round to a finite value (`17976931348623157` + zeros, `…158`) and to infinity (`…159`, 9s) are in `adv/cat9` with 305–312 and 320/400/800 digits, with and without tails, signs and leading zeros; mutating the threshold to 308 fails the replay (7 midpoint strings, 3 generated records) |
+| 6d | power-of-two radix `int_double` literal port | **verified equal**: `adv/cat3` and the generated `parseInt` radices 2, 8, 16, 32 (ties at bit 53 with sticky tails of 0–330 digits) |
+| 7 | ToIntN by the exponent/significand shift (no `fmod`) | **verified equal**: 10^7 `bits` and 10^7 `r2p40` samples per function (stage 3), the 77,824-value exponent sweep above, native and wasm |
+| 8 | NaN results are quiet `f64::NAN`, canonicalized before every comparison | **accepted by name** (plan rule S5: payloads are not part of parity); all replays canonicalize on both sides |
+| 9 | file layout, `fdlibm` functions `pub` in a private module | not a parity matter; builds and tests pass |
+| 10 | thresholds: every 8-hex-digit constant, `hi − 1` and `hi`, low word 0/1/0xFFFFFFFF; binary functions only over the first 40 specials | **verified and widened**: the same thresholds with random low words in `ext/*/thr` (2 x 10^6 per function, 17 functions) and `atan2` over all pairs of them; equal |
+| 11 | tier check at 10^5 only, in the generator | **accepted by name** for the stage 3 records (the 10^7 digests are taken in the default tiers; Ignition at that size would take hours); the new capture is checked under `--no-opt --no-maglev` at full size (above) |
+| 12 | the count test is a script, not a `cargo test` | not a parity matter |
+
+### wasm parity (`jsnum-selftest`)
+
+Feature `jsnum-selftest` of `uo-wasm` (`src/jsnum_selftest.rs`, depends on `uo-jsnum` and `uo-testkit`; never in the shipped module) includes the test sources of the crate with `#[path]`
+(`tests/support/mod.rs`, `tests/support/adv.rs`, `tests/pow.rs`: one copy of every generator) and exports, over plain numbers and JS-owned buffers (`uo_alloc_bytes`):
+`uo_jsnum_selftest_count/key/digest(group, index, n)` for 5 groups (numeric records, generated strings, targeted math, pow distributions, conversion sweep),
+`uo_jsnum_selftest_number/parse_int/text` for strings that JS feeds in (the 199 corpus strings and the 990 midpoints). `tests/jsnum_selftest.test.mjs` compares everything with the three capture files
+(`tests/pow.rs` gained two `pub fn`s for it).
+Build `cargo build -p uo-wasm --features jsnum-selftest --target wasm32-unknown-unknown --profile wasm` (154,584 bytes with the testkit and the test generators; `wasm-tools validate` with the Safari 15
+feature set: valid). Run `node --test crates/uo-wasm/tests/jsnum_selftest.test.mjs` and
+`UO_PLAYWRIGHT=D:/Projects/OfficeNext/slides/node_modules/playwright node crates/uo-wasm/tests/browser/run.mjs crates/uo-wasm/tests/jsnum_selftest.test.mjs`, both with `UO_WASM_PATH` pointing at the build; `UO_JSNUM_FULL=1` replays the full-size digests (`browser/run.mjs` forwards it).
+
+| Engine | 10^5 digests | Full size (`UO_JSNUM_FULL=1`) |
+|---|---|---|
+| Node 24.15.0 (V8 13.6, wasm) | **104 numeric + 8 pow + 13 string families + 60 math distributions + sweep: all equal**, 3,781 corpus and 1,980 midpoint comparisons equal (1.7 s) | **equal**: 208 numeric digests (10^7 samples each), 16 pow, 26 string, 120 math; 2 min 55 s |
+| WebKit 26.5 (Playwright; JavaScriptCore, the engine of Safari) | same, all equal (3.8 s) | **equal**, 2 min 44 s |
+| Chromium, Firefox | not run: the browsers are not installed here (Playwright reports it) | — |
+
+Native (`cargo test --release -p uo-jsnum -- --include-ignored`), wasm in Node and wasm in WebKit therefore give the same digests, which equal the capture taken in V8.
+
+### Findings
+
+No port bug (**0 parity rounds**). For the model comparison: the Sonnet port needed no rework for parity; everything below is verifier-side.
+
+1. **Coverage gap, closed (not a bug)**: the stage 3 distributions almost never reach the third pass of the `rem_pio2` argument reduction (`i > 49`: |x − n·pi/2| about 2^-49 of x, which uniform and bit-pattern draws do not produce). Perturbing `PIO2_3` by one bit passes the whole stage 3 numeric replay at 10^7 and fails `ext/sin/pio2k20s`-style records (`sin`, `cos`, `tan` on multiples of pi/2). It is the only gap shown by a mutation; the other `ext/*` distributions (ln2 multiples, near 1, scaled operands, threshold words with random low words) found nothing and stay as protection. Keep `adv.capture` in the gate (4 s native).
+2. A mismatch of the verifier's own test model, not of the port: `js_index/sweep` first failed because the Rust model summed with `Iterator::sum`, which starts at −0.0 since Rust 1.81 (a JS `let sum = 0` starts at +0); `fold(0.0, …)` fixed it. Worth knowing for every engine crate that models JS sums.
+3. The stage 3 text says 1,192,000,000 numeric samples; the capture holds 1,022,000,000 in 104 numeric records (+ 16,100,000 random strings in 17 records).
+4. Mutations that no sample can see (so no replay can): the last bit of `PIO2_2T`/`PIO2_3T`, a one-ulp change of one pow `exp` coefficient, `i > 49` to `i > 50` (every sample near a multiple of pi/2 has `i` of 52–54).
+
+### Not done
+
+- Chromium and Firefox runs of the wasm self-test (not installed); real Safari/iOS (gate 3).
+- No CI step for `jsnum-selftest` was added (`.github/workflows/rust-core.yml` is being edited by other agents): it needs `cargo build -p uo-wasm --features jsnum-selftest --target wasm32-unknown-unknown --profile wasm` and the two commands above, with `UO_WASM_PATH` where the default `.wasm` of the other tests differs.
+- 10^7-sample records of the stage 3 capture under `--no-opt --no-maglev` (hours) and on arm64 (the plan limits parity to x64).
+- `UO_JSNUM_DUMP` is still unexercised (no mismatch to explain).
+
 ## Verification (gate 2 — pending)
 
 ### Parity
+
+Parity: **0 mismatches** on the porter's captures and on the added ones (4.4 M structured strings, 990 exact midpoints, 120 M targeted math samples, the exponent sweep), native, wasm in Node and wasm in WebKit; 0 port bugs, 0 rounds; see "Stage 4 — parity".
 
 ### Memory (measured)
 
 | Check | Result | Numbers |
 |---|---|---|
-| M1 no leak per operation | | |
-| M2 soak (native) | | |
-| M2 soak (wasm) | | |
-| M3 budgets | | |
-| M4 boundaries | n/a | |
-| M5 cache caps | n/a | |
-| M6 Miri / LeakSanitizer | n/a (no unsafe) | |
+| M1 no leak per operation | pass | 59 of 59 public functions measured, 0 B allocated (also on 10 MB inputs and every error path); the one allocating path (`utf16_slice` cutting a pair) returns to 0 live bytes; `memory_gate.rs`, `jsnum_memory.test.mjs` |
+| M2 soak (native) | pass | 9,600 calls of every function; 1,000 iterations on 8 hostile strings of 64 KB; tolerance 0 B, series constant |
+| M2 soak (wasm) | pass | 1,000 iterations, live bytes 229,562 B (the inputs) in every sample, `byteLength` 1,441,792 B in every sample (Node 24.15, WebKit 26.5); module starts at 1,114,112 B |
+| M3 budgets | baseline recorded | 0 B everywhere except `utf16_slice` with a cut pair (output ≤ allocated ≤ output + 3 B); stack ≤ 643 B numeric, ≤ 1,655 B parsers (wasm32); crate about 45 KB raw in wasm |
+| M4 boundaries | n/a | no handles |
+| M5 cache caps | n/a (no caches) | proved by the source scan and the soaks |
+| M6 Miri / LeakSanitizer | n/a (no unsafe) | `forbid(unsafe_code)` |
 
 ### Security
+
+One finding (J1, low), fixed with V8's own arithmetic; 0 crashes in the fuzz targets after it;
+one proposal for gate 2. Details in "Stage 4 — security" below.
+
+## Stage 4 — security (security specialist, 2026-11-02)
+
+Review of every file of `src/` (`parse`, `text`, `conv`, `math`, `math/hypot`, `math/pow` and its
+tables, `fdlibm/*`) for panics on untrusted input (indexing, slicing at char boundaries, overflow,
+shifts ≥ 64), unbounded or quadratic work, disagreements between the hand grammar of `Number()`
+and `str::parse::<f64>`, wasm32 `usize` truncation and table bounds; fuzz targets in `core/fuzz`.
+The finding was reproduced by a failing test before the fix (a debug panic and a release value
+different from Node). `#![forbid(unsafe_code)]` holds: nothing for Miri.
+
+### Findings
+
+| # | Severity | Input | Effect before the fix | Fix | Test (`tests/security_regressions.rs`) |
+|---|---|---|---|---|---|
+| J1 | low | `parse_int(s, 32)` with at least 429,496,740 digits, e.g. `"v".repeat(429_496_740)` or `"1" + "0".repeat(429_496_740)` (a JS string can hold it: V8's maximum is 2^29 − 24; a 430 MB attribute fits the `uo-opc` XML part caps of 512 MiB on wasm32 and 2 GiB native) | `int_double` (V8 `InternalStringToIntDouble`) adds 5 to an `i32` exponent per digit. The port saturated in the digit loop and added the rounding carry with a plain `+= 1`: **an overflow panic** with overflow checks (a trap of the wasm instance, an abort under .NET with a debug native build); in release the saturation gave `Infinity` where V8 gives `0` (V8's `int` wraps: measured in Node 24.15, `Infinity` at 429,496,739 digits, `0` at 429,496,740 and 429,496,741, `-0` with a minus sign), and the carry wrapped to `0` by accident. Radix 16/8/2 cannot reach it (4 bits × (2^29 − 24) < 2^31) | `wrapping_add` in both places, which is what V8's `int` does: the result equals Node at every measured length | `radix_32_exponent_wraps_like_v8` (430 MB: `#[ignore]` in the debug run, run by the release `jsnum` CI job with `--include-ignored`, 2 s, 0.5 GB) |
+
+J1 is **rework of the stage-3 port (Sonnet)**: `saturating_add` was a deviation from V8 not
+listed in "Decisions taken outside the plan", and the carry was left unchecked next to it.
+
+### Checked, no finding
+
+- **Panics**: no `unwrap`/`expect`/`panic` (workspace lints). Indexing: `NPIO2_HW[n − 1]` is reached
+  with `n ≥ 1` and after `n < 32`; `kernel_rem_pio2` (arrays of 20 and 66) is the fdlibm bound,
+  exercised for every exponent × 6 mantissas × both signs and the double closest to a multiple of
+  π/2 (6381956970095103 × 2^797, the longest zero run of the reduction, bits equal to Node) in
+  `trig_argument_reduction_stays_in_bounds` (debug, overflow checks); the pow tables index with
+  `% N` (log: 128 entries; exp: `2·(k % 128) + 1 ≤ 255` of 256); shifts: `checkint` 0..=52,
+  `to_int32` ≤ 52 right / ≤ 31 left, `scalbn` saturating. `text` slices only at positions from
+  `find`/`char_indices`; `js_space_len` reads `i + 1`/`i + 2` only after `b.get(i)` succeeded
+  (`i < len ≤ isize::MAX`). `parse_generic` keeps `multiplier ≤ 0xFFFFFFFF / 36`, so its `u32`
+  products cannot overflow.
+- **Work**: every parser and helper visits each byte a bounded number of times; `parse_int`
+  radix 10 above 310 significant digits is `Infinity` without parsing; `Number()` hands
+  `str::parse` only grammar-checked ASCII (linear in core's `dec2flt`). Bounded in
+  `parsers_are_linear_on_long_inputs`: ten 10 MB shapes (digits, `0.000…1`, exponents of 10^7
+  digits, `0x`/`0b` runs, 10 MB of white space, U+3000 runs) through `to_number` and `parse_int` in
+  7 radices, and 10 MB of `split`/`trim`/`utf16_len`/`utf16_slice(i64::MIN, i64::MAX)`: 0.5 s
+  release, 7 s debug for the whole test.
+- **Grammar vs `str::parse`**: the fuzz reference re-implements StrNumericLiteral; every input it
+  accepts gives a non-NaN result with the literal's sign, every input it rejects gives NaN,
+  the exact fast path (≤ 15 digits, |e| ≤ 22) and the `0x`/`0o`/`0b` rounding are equal bit for
+  bit, and Rust's shortest decimal of every fuzzed double (`{:e}`, `{}`, `{:+.17e}`, `{:E}` wrapped
+  in JS spaces) parses back to the same bits.
+- **wasm32**: `utf16_len as i64` and the `i64` clamps cannot truncate; `js_index` compares with
+  `len as f64`, exact for any 32-bit length. On 64-bit with `len > 2^53` the rounding of
+  `len as f64` can answer `None` for a valid index, never `Some` for an invalid one (no JS typed
+  array is that long): observation only.
+- **Allocation**: only `utf16_slice` with a cut pair (≤ the input + 6 B); no recursion.
+- **Dependencies**: `cargo audit` (RustSec, 1,402 advisories, 2026-11-02): no advisory for the 10
+  crates of `core/Cargo.lock` nor the 15 of `core/fuzz/Cargo.lock` (now with `uo-jsnum`).
+  `cargo deny` is not installed on this machine (not installed: the `deny` CI job runs it); the
+  `deny.toml` bans were checked by hand: neither lock file has `libm` or `num-traits`, and
+  `uo-jsnum` has no normal dependency.
+
+### Proposals for gate 2 (behaviour changes, not applied)
+
+| # | Evidence | Recommendation |
+|---|---|---|
+| S-J1 | J1: at 429,496,740+ radix-32 digits V8's exponent wraps and `parseInt` returns `0` for a value above 10^(6×10^8); the port now does the same | keep V8's result (parity; no document has such an attribute). The alternative is `±Infinity` (the correct value, what the port's saturation intended), a divergence from Node to list in "Browsers" |
+
+Observation for the record of G1: the Windows UCRT `atanh` is off by about 10^15 ulps near ±1
+(`atanh(1 − 2^-53)` = 18.37 instead of 18.71, which V8 and the port give) — one more reason the
+engines cannot take `f64` methods from the platform; the fuzz oracle uses the `log1p` identity.
+
+### Fuzzing
+
+Targets in `core/fuzz/src/jsnum.rs` (registered in `TARGETS`, wrapped in
+`fuzz_targets/jsnum_*.rs`); references written in the fuzz crate, independent of `uo-jsnum`:
+
+- `jsnum_parse` (selector byte + text, lossy UTF-8): `to_number` against the StrNumericLiteral
+  reference above, and unchanged by surrounding JS white space; `parse_int` in radices 0..=36 and
+  −1, 1, 37, `i32::MIN`, `i32::MAX`, 65,546, −16 against the ECMA-262 steps (exact: powers of two
+  rounded half to even from the bit string, radix 10 up to 38 digits through `u128`, the other
+  radices below 2^53; above that the class), unchanged by trailing junk; `trim*`, `split_js_space`,
+  `is_js_space` against a char-by-char reference; `js_space_len` at every byte position, past the
+  end and at `usize::MAX`, and on the raw (non-UTF-8) bytes; `utf16_len`; `utf16_slice` against
+  `String::from_utf16_lossy` of the clamped code units for every range of strings up to 24 units
+  and for `i64::MIN`, `i64::MIN + 1`, ±len ± 1, 0, ±1, `i64::MAX` on any string.
+- `jsnum_math` (selector + doubles of 8 bytes; a leftover byte picks one of 32 special values):
+  each value through the 17 fdlibm functions (NaN → NaN, ranges, odd/even symmetry bit for bit,
+  within 2 ulps of the platform libm; 4 for `atanh` against `½·log1p(2|x|/(1 − |x|))`, 8 for
+  `sinh`/`cosh`), `round`/`sign`/`floor`/`ceil`/`trunc`/`abs`/`sqrt`/`fround`/`clz32` and every
+  `conv` function against the spec (ToInt32 through exact `%` on doubles), `js_index` for 7 lengths
+  up to `usize::MAX`, and `Number()`/`parseInt` of the value printed by Rust; each pair through
+  `pow` (ECMA-262 special cases, else 2 ulps of libm), `atan2`, `hypot` (4 ulps), `max`, `min`,
+  `imul`, `%`; the list through `max_n`, `min_n`, `hypot_n` (bounds) and `hypot3`.
+
+Seeds (`--bin seed`): the 199 strings of the parity corpus and 8 more for `jsnum_parse`; the 98
+special values and 3 doubles per high-word threshold of `tests/captures/inputs.txt`, in triples,
+for `jsnum_math`. The stable driver got numeric tokens (`0x`, `e-`, `Infinity`, U+3000, U+2028,
+U+00A0, an astral char…).
+
+| Target | libFuzzer (30 min, WSL, ASan, overflow checks) | Corpus after | Stable driver (Windows) |
+|---|---|---|---|
+| jsnum_parse | 372,028 execs (206/s: about 80 parses and up to 1,300 slices per input) | 937 | 456,451 (120 s) + 127,621 (20 s) |
+| jsnum_math | run 1 stopped at an oracle false positive (below); run 2: 1,553,298 execs before the second one; run 3 (final oracle): **1,334,347 execs, 0 stops** (740/s) | 628 | 858,786 (120 s) + 1,366,803 (120 s, final oracle) |
+
+**0 crashes of the library, 0 timeouts, 0 out-of-memory** (slowest unit < 1 s; peak RSS 621 MB,
+542 MB and 553 MB). The three stops were all in the oracle, each checked against Node and kept as the
+port's value: `atanh(1 − 2^-53)` (UCRT error, Windows driver), `hypot(−2.1e300, MAX)` = `MAX` in V8
+and the port where glibc rounds the exact value to `∞` (V8's `FastMathHypot` is not correctly
+rounded; the oracle now counts `±∞` as one ulp past `±MAX`), `sinh(709.8706054687281)` 3.5 ulps
+from glibc (fdlibm squares `exp(|x|/2)` there). CI: the `fuzz` job (now "Fuzz (uo-opc, uo-jsnum,
+libFuzzer)") runs every file of `fuzz_targets/`, so both targets get 60 s per push.
+`src/bin/fallback.rs` used the banned `f64::max` (clippy failed on the fuzz bins since the ban
+list landed): replaced by a comparison.
+
+```
+cd core/fuzz
+cargo run --release --no-default-features --features fallback --bin seed
+cargo +nightly fuzz run jsnum_parse -- -max_total_time=1800 -timeout=10 -rss_limit_mb=2048   # WSL
+cargo run --release --no-default-features --features fallback --bin fallback -- --secs 120 jsnum_parse jsnum_math
+cd .. && cargo test -p uo-jsnum --release --test security_regressions -- --include-ignored
+```
+
+Checks: `cargo fmt --check` and `cargo clippy -D warnings` clean for `uo-jsnum` (lib and
+`security_regressions`, also `--target wasm32-unknown-unknown`) and for `core/fuzz`
+(`--no-default-features --features fallback --all-targets`; the nightly in WSL has no clippy
+component, the `libfuzzer` wrappers are the same three lines as the uo-opc ones);
+`cargo test -p uo-jsnum --release`: green (all test files, including the verifiers' new ones).
 
 ## Evolution
 
@@ -870,3 +1179,6 @@ The committed capture is the Windows one (`os=win32 arch=x64`, Node v24.15.0, V8
 | 1 revision | port-planner / Opus: S1–S15 written in | 4.2 min | — | — |
 | 3 | porter: pow (Opus) | not measured (interrupted once by a usage limit); ~60 tool calls | 0 (bit-exact on the first replay) | clippy `assign_op_pattern` rewritten without reordering; `gen` identifier (reserved in edition 2024) renamed; capture switched to uo-testkit `platform()`/`require_platform` when they landed |
 | 3 | porter: increment A without pow (Sonnet) | about 3 h over two sessions (one usage-limit interruption); about 110 tool calls | 0: every record was bit-exact on its first native replay; later edits were clippy and test tables only | clippy lints (`eq_op` on `x - x`, `needless_range_loop`, `needless_late_init`, `while_let_loop`, identical `if` blocks, `manual_is_multiple_of`, `collapsible_if` in the testkit `PlatformSpec::check`, found by the uo-fonts agent); a bad TOML escape in a ban reason broke the clippy config of every crate for a few minutes, and a bad Rust escape in an `#[expect]` reason broke `uo-opc` tests; invisible characters in the generator source re-escaped |
+| 4 | memory verifier (Sonnet) | not measured | 0 | none in the crate; one test-only feature in `uo-wasm` and a two-variable forward in `browser/run.mjs`; `clippy::disallowed_methods` caught `str::trim`/`trim_start` in the new test (replaced by `text::trim*`); the first wasm soak with 1.8 MB inputs took 40 s and was cut to 230 KB; about 45 tool calls |
+| 4 | security specialist (Opus) | about 2 h 40 min (four 30-minute libFuzzer runs in it, two in parallel); about 90 tool calls | 1 finding (J1), fixed by the specialist | J1 is rework of the stage-3 Sonnet port: `int_double` saturated the exponent (an unrecorded deviation from V8) and added the rounding carry unchecked (debug panic; release `Infinity` where V8 gives `0`); two lines, now `wrapping_add` as V8's `int`. In the fuzz crate: the pre-existing banned `f64::max` in `fallback.rs`; three oracle false positives (UCRT `atanh`, `hypot` at `MAX`, `sinh` near overflow) each checked in Node and the oracle widened |
+| 4 | parity verifier (Sonnet) | not measured (about 2 h, most of it runs: three 1-3 minute captures, a 3 minute full-size wasm replay in Node and in WebKit) | 0 (no port bug) | none in the crate; test side: the start value of `Iterator::sum` (-0.0) in the `js_index` model, `clippy::manual_is_multiple_of` in the new generators, raw invisible characters in the generator source re-escaped as backslash-u sequences; shared files touched: `tests/pow.rs` (two `pub fn`), `tests/support/mod.rs` (`pub mod adv`), `browser/run.mjs` (forwards `UO_JSNUM_FULL`), `uo-wasm` `Cargo.toml` and `lib.rs` (feature `jsnum-selftest`); about 175 tool calls |

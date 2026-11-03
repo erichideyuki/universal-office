@@ -8,6 +8,8 @@ use uo_jsnum::{conv, math};
 use uo_testkit::generate::Rng;
 use uo_testkit::{Capture, PlatformSpec};
 
+pub mod adv;
+
 pub const CAPTURE: &str = include_str!("../captures/jsnum.capture");
 pub const INPUTS: &str = include_str!("../captures/inputs.txt");
 pub const SMALL: usize = 100_000;
