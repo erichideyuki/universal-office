@@ -4,7 +4,8 @@
 //
 // The checkout comes from UO_TS_ROOT or --ts-root <dir>, never from a path written in the repo.
 import { createHash } from 'node:crypto';
-import { readdirSync, statSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { cpus } from 'node:os';
 import { join, resolve, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -40,7 +41,7 @@ export class Stream {
   i64(v) { const b = BigInt(v); this.#room(8); this.buf.writeBigInt64LE(b, this.at); this.at += 8; this.#note(`i64 ${b}`); return this; }
   f64(v) {
     this.#room(8); this.buf.writeDoubleLE(v, this.at);
-    const bits = this.buf.readBigUInt64LE(this.at).toString(16).padStart(16, '0');
+    const bits = this.lines ? this.buf.readBigUInt64LE(this.at).toString(16).padStart(16, '0') : '';
     this.at += 8; this.#note(`f64 ${bits}`); return this;
   }
   bool(v) { this.#room(1); this.buf[this.at++] = v ? 1 : 0; this.#note(`bool ${v ? 1 : 0}`); return this; }
@@ -65,6 +66,13 @@ export class Stream {
     this.#note(this.lines ? `digest ${u8.length} ${d.subarray(0, 16).toString('hex')}` : '');
     return this;
   }
+  /** { hex, short } of everything written so far; the stream stays usable (the `digest()` of src/stream.rs). */
+  digest() {
+    const h = this.hash.copy();
+    h.update(this.buf.subarray(0, this.at));
+    const hex = h.digest('hex');
+    return { hex, short: hex.slice(0, 32) };
+  }
   /** { hex, short } of everything written; the stream must not be used afterwards. */
   finish() {
     this.hash.update(this.buf.subarray(0, this.at));
@@ -74,9 +82,41 @@ export class Stream {
   trace() { return this.lines ? this.lines.join('\n') + '\n' : ''; }
 }
 
-/** Writer of a capture file (format in src/capture.rs): records in insertion order. */
+/**
+ * The platform line of a capture (`@platform`, parsed by `Platform::parse` in src/capture.rs):
+ * `key=value` pairs without spaces. Math functions are not the same bits on every platform, so a
+ * capture records where it was taken and the replay checks it (`Capture::require_platform`).
+ */
+export function platform() {
+  const clean = (v) => String(v).trim().replace(/\s+/g, '_') || 'none';
+  let glibc = 'none';
+  let features = 'n/a';
+  if (process.platform === 'linux') {
+    glibc = process.report?.getReport?.().header?.glibcVersionRuntime ?? 'none';
+    try {
+      const flags = new Set((readFileSync('/proc/cpuinfo', 'utf8').match(/^flags\s*:\s*(.*)$/m)?.[1] ?? '').split(/\s+/));
+      features = ['fma', 'avx2', 'avx512f'].filter((f) => flags.has(f)).join('+') || 'none';
+    } catch { features = 'unknown'; }
+  }
+  return Object.entries({
+    node: process.version,
+    v8: process.versions.v8,
+    os: process.platform,
+    arch: process.arch,
+    cpu: cpus()[0]?.model ?? 'unknown',
+    features,
+    glibc,
+    tunables: process.env.GLIBC_TUNABLES ?? 'none',
+    flags: process.execArgv.join(',') || 'none',
+  }).map(([k, v]) => `${k}=${clean(v)}`).join(' ');
+}
+
+/** Writer of a capture file (format in src/capture.rs): records in insertion order; the first line is `@platform` unless `platform: false`. */
 export class CaptureWriter {
-  constructor(header = []) { this.header = header; this.metas = []; this.records = new Map(); }
+  constructor(header = [], { platform: withPlatform = true } = {}) {
+    this.header = header; this.metas = []; this.records = new Map();
+    if (withPlatform) this.meta('platform', platform());
+  }
   meta(name, value) { this.metas.push([name, String(value)]); }
   set(key, facet, value) {
     if (/[\t\n\r]/.test(key) || /[\t\n\r=]/.test(facet) || /[\t\n\r]/.test(String(value))) throw new Error(`bad capture field ${key} ${facet}`);

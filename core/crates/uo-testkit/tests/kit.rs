@@ -113,3 +113,29 @@ fn zip_builder_and_listing() {
     assert_eq!(central_directory(&z64).unwrap().len(), 1);
     assert!(central_directory(&z[..10]).is_err());
 }
+
+#[test]
+fn platform_line_parses_and_is_checked() {
+    use uo_testkit::capture::{Platform, PlatformSpec};
+    let line =
+        "node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i9 features=n/a glibc=none tunables=none flags=none";
+    let cap = Capture::parse(&format!("@platform {line}\nk\tf=1\n")).unwrap();
+    let p = cap.platform().unwrap();
+    assert_eq!(p, Platform::parse(line).unwrap());
+    assert_eq!((p.os.as_str(), p.arch.as_str(), p.glibc.as_str()), ("win32", "x64", "none"));
+
+    let x64 = PlatformSpec { v8_prefix: Some("13.6.233.17".into()), arch: Some("x64".into()), ..PlatformSpec::default() };
+    cap.require_platform(&x64).unwrap();
+    let linux = PlatformSpec {
+        os: Some("linux".into()),
+        glibc_prefix: Some("2.39".into()),
+        tunables_contain: Some("glibc.cpu.hwcaps=-FMA,-AVX2".into()),
+        ..x64.clone()
+    };
+    let err = cap.require_platform(&linux).unwrap_err();
+    assert!(err.contains("os win32") && err.contains("glibc none") && err.contains("GLIBC_TUNABLES none"), "{err}");
+    let old = PlatformSpec { v8_prefix: Some("13.7".into()), ..PlatformSpec::default() };
+    assert!(cap.require_platform(&old).unwrap_err().contains("v8 13.6.233.17-node.48"));
+    assert!(Capture::parse("k\tf=1\n").unwrap().platform().unwrap_err().contains("no @platform"));
+    assert!(Platform::parse("node=v24").is_err());
+}

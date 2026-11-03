@@ -5,6 +5,7 @@
 //!
 //!   cargo run --release -p uo-opc --example opc_bench [-- <runs>]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(clippy::disallowed_methods, reason = "f64::min on wall-clock timings: not JS arithmetic")]
 
 #[path = "../tests/bench_support/mod.rs"]
 mod bench_support;

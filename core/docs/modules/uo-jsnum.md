@@ -617,6 +617,225 @@ SpiderMonkey source was checked: `jsmath.cpp` `powi` covers integer `y` with `n 
 multiplication and an int64 path, else `std::pow` — not "repeated multiplication for every int32
 `y`"); the wasm size estimate; macOS/arm64 Node behaviour (S3 is a simulation).
 
+## Stage 3 — pow (option a)
+
+Port of `math::pow` under G1 (a), Opus, 2026-11-01/02. Files: `src/math/pow.rs` (V8 wrapper +
+core), `src/math/pow/log_data.rs`, `src/math/pow/exp_data.rs` (tables), `LICENSE-optimized-routines`,
+`js/capture-pow.mjs`, `tests/captures/pow.capture`, `tests/pow.rs`. The pow capture is its own file
+(not `jsnum.capture`), so it can be retaken without touching the other functions.
+
+### Reference platform (G2, G10)
+
+- Node **v24.15.0 linux-x64** installed in WSL Ubuntu-24.04 (user `hideyuki`) at
+  `~/opt/node-v24.15.0-linux-x64` from the official tarball
+  `https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz`; SHA-256
+  `472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6`, equal to its line in the
+  official `SHASUMS256.txt` (`sha256sum -c`: OK). The GPG signature of `SHASUMS256.txt` was not
+  checked. No sudo, nothing added to the system PATH.
+- Identity: `process.version` v24.15.0, `process.versions.v8` 13.6.233.17-node.48, arch x64,
+  `glibcVersionRuntime` 2.39 (Ubuntu GLIBC 2.39-0ubuntu8.7, the system `libm.so.6`). CPU Intel Core
+  i5-14600KF (`fma`, `avx2`; no `fma4`).
+- The capture line (written by `uo-testkit` `platform()`): `@platform node=v24.15.0
+  v8=13.6.233.17-node.48 os=linux arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=fma+avx2
+  glibc=2.39 tunables=glibc.cpu.hwcaps=-FMA,-AVX2 flags=none`. `tests/pow.rs` checks it with
+  `Capture::require_platform` (V8 13.6.233.17, x64, linux, glibc 2.39, the hwcaps mask, no flags)
+  plus node v24.15.0. The script refuses to write the committed file on any other platform.
+- Run (WSL, repository root): `GLIBC_TUNABLES=glibc.cpu.hwcaps=-FMA,-AVX2 node
+  core/crates/uo-jsnum/js/capture-pow.mjs` (~10 s for the default tier, ~60 s in total with the
+  `--no-opt --no-maglev` tier).
+
+### Mask verification
+
+glibc 2.39 x86_64 `pow` is an ifunc (`sysdeps/x86_64/fpu/multiarch/e_pow.c` with
+`ifunc-fma4.h`): `__ieee754_pow_fma` (built `-mfma -mavx2`) when FMA and AVX2 are usable, else the
+`fma4` build when FMA4 is, else `__ieee754_pow_sse2` (the generic `dbl-64/e_pow.c` without
+`__FP_FAST_FMA`). The CPU has no FMA4, so `-FMA,-AVX2` selects `sse2`. Measured on the same
+8 × 10^7 inputs: masked vs unmasked Node differ in **39,018 / 80,000,000 (0.049 %)**, all by 1 ulp
+(the skeptic's S2: 549 / 1M), so the mask changes the path; a second masked run is identical to the
+committed capture; and the Rust port of the non-FMA branch equals the masked capture bit for bit
+while it differs from the unmasked run, which identifies the masked path as the non-FMA algorithm.
+
+### Source pinned
+
+- Core: ARM optimized-routines (https://github.com/ARM-software/optimized-routines), commit
+  **`c0137013d868422fce51de5e5a2af567ff784b7e`** (2024-01-11, "Update copyright years"; glibc 2.39
+  was released 2024-01-31), files `math/pow.c`, `math/pow_log_data.c`, `math/exp_data.c`,
+  `math/math_config.h`, `math/math_err.c`, taken under the MIT option of "MIT OR Apache-2.0 WITH
+  LLVM-exception" (`LICENSE-optimized-routines`, G3). Configuration: `HAVE_FAST_FMA` 0,
+  `TOINT_INTRINSICS` 0, `EXP_USE_TOINT_NARROW` 0, `EXP_TABLE_BITS` 7, `EXP_POLY_ORDER` 5 (not
+  wide), `POW_LOG_TABLE_BITS` 7, `POW_LOG_POLY_ORDER` 8, `WANT_ROUNDING` 1.
+- Diff against glibc 2.39 (`sysdeps/ieee754/dbl-64/e_pow.c`, `e_pow_log_data.c`, `e_exp_data.c`,
+  read for the comparison only; nothing copied): the statements of `log_inline`, `specialcase`,
+  `exp_inline`, `checkint`, `zeroinfnan` and `pow` are the same under that configuration. The only
+  differences are macro names (`__FP_FAST_FMA`/`__builtin_fma` vs `HAVE_FAST_FMA`/`fma`,
+  `math_narrow_eval`/`math_opt_barrier`/`math_force_eval` vs `eval_as_double`/`opt_barrier_double`/
+  `force_eval_double`, `__glibc_unlikely` vs `unlikely`), `#if` branches for other table sizes and
+  polynomial orders, an `opt_barrier_double(x)` around the subnormal normalization (no value
+  effect) and the symbol aliases. Tables: the 128 `pow_log_data` entries, `ln2hi`/`ln2lo`, the 7
+  log coefficients, `invln2N`, `negln2hiN`/`negln2loN`, `shift`, the 4 exp coefficients of N = 128
+  and the 256 `exp_data.tab` words are **equal value by value** (checked by the generator script).
+  `errno` handling (`WANT_ERRNO`, `check_oflow`/`check_uflow`) never changes a value.
+- The later upstream commit `d9887682bf` (2025-10-28, "Fix pow special case") changes the non-FMA
+  `specialcase` only when rounding upwards; it is not in glibc 2.39 and is not ported.
+- The tables were generated from the pinned C files by a scratch script (not committed): each
+  hex-float literal written as `f64::from_bits(0x…)` with the literal kept in a comment, scaled
+  coefficients (`0x1.555555555556p-2 * -2`) multiplied exactly. The padding field of the log table
+  (always 0) is dropped.
+- Wrapper: V8 `13.6.233.17` `src/numbers/ieee754.cc` `math::pow`, the `use_std_math_pow` branch,
+  verbatim: y NaN → NaN; y ±∞ and x = ±1 → NaN; x NaN → quiet NaN; y = 2 → `x * x`; y = 0.5 → +∞ if
+  x is ±∞ else `sqrt(x + 0)`; else the core. (Its comment says the two shortcuts match the
+  optimizing compilers; the tier check below agrees.)
+- Port rules followed: C operation order kept (clippy's `assign_op_pattern` suggestion for
+  `lo = one - hi + y + lo`, `lo += …`, would reorder the sum: written as a new binding), no
+  `mul_add`, C unsigned arithmetic with `wrapping_*`, `(int64_t) tmp >> 52` as an `i64` shift.
+  `__math_invalid` returns `f64::NAN` (the C `(x - x) / (x - x)` gives a NaN whose payload is not
+  observable after canonicalization).
+
+### Parity (bit-exact)
+
+Capture `tests/captures/pow.capture` (132 KB): 8 distributions of 10^7 pairs (seeds
+`0x706f7701`…`08`): `gamma` x ∈ [0, 2) × y ∈ {2.4, 1/2.4, 2.2, 1/2.2, 3, −1, 10, 0.5, 2}; `range`
+x ∈ [0, 100) × y ∈ [−5, 5); `inty` x ∈ (0, 1e3] × integer y ∈ [−20, 20]; `negint` x ∈ [−1e3, 0) ×
+integer y ∈ [−40, 40]; `near1` x ∈ 1 ± 2^-20 × y ∈ ±2^30; `wide` x ∈ [0.25, 4) × y ∈ [−1100,
+1100) (overflow, underflow, subnormal results, `specialcase`); `subx` subnormal or zero x of both
+signs × y ∈ [−2, 2); `bits` random bits². Each has `in5` (digest of the first 10^5 inputs, so the
+Rust generator is checked apart from pow), `n5` and `n7`. Plus 76 special values with every pair
+(5,776 results written out) and `pow(10, n)` for n ∈ [−350, 350] written out with "equals
+`Number('1e' + n)`". Tiers: default and `--no-opt --no-maglev` give identical facets
+(`@tiers-agree yes`).
+
+| Check | Result |
+|---|---|
+| native Windows x64, `cargo test --release -p uo-jsnum --test pow -- --include-ignored` | **80,000,000 / 80,000,000** random pairs, 5,776 / 5,776 special pairs, 701 / 701 powers of ten: equal |
+| wasm32-unknown-unknown (a scratch cdylib exporting the crate's `pow`: 7,278 bytes, no imports, valid for the Safari 15 feature set with `wasm-tools validate`) via `node js/capture-pow.mjs --verify-wasm <file.wasm>` | **1,510 / 1,510** capture facets equal (every n5 and n7 digest, the specials, the powers of ten) |
+| `Math.pow(10, n) !== Number('1e' + n)` for n ∈ [−350, 350] | reference and Rust: n ∈ {23, 126, 210}; default Windows Node: {23}; glibc FMA: {23, 210} |
+| TS call sites (S2): `pow(10, -4) === 1e-4`, `pow(10, -5) === 1e-5`, `7.5 / pow(10, -5)` = `7.5 / 1e-5`, `pow(10, n)` = the literal for n ∈ [−22, 22] | hold (`tests/pow.rs` `ts_call_sites`) |
+
+`uo-wasm`'s `jsnum-selftest` export is not part of this stage; until it exists, `--verify-wasm`
+takes any module exporting `pow(f64, f64) -> f64` (the verifiers can point it at the uo-wasm
+build).
+
+### The cost of (a): differences from default Windows Node
+
+Same 8 × 10^7 inputs, Node 24.15.0 win-x64 (UCRT) vs the reference: **55,494 / 80,000,000
+(0.069 %)**, all 1 ulp (gamma 0.074 %, range 0.098 %, inty 0.092 %, negint 0.095 %, near1 0.094 %,
+wide 0.076 %, subx 0.024 %, bits 0.0006 %); in the written-out sets 9 values differ (among them
+`pow(10, 126)` and `pow(10, 210)`). For comparison: glibc FMA vs Windows 0.048 %, glibc FMA vs the
+reference 0.049 %. This is the 0.05–0.08 % the plan expected.
+
+## Stage 3 — port (increment A)
+
+Porter: Sonnet 5.5 (general-purpose agent), 2026-11-01/02, in the worktree `rust-core`. Everything of
+increment A except `pow` (Opus, previous section). Gate 2 is not requested here.
+
+### What was ported
+
+| Rust | V8 13.6.233.17 source | Notes |
+|---|---|---|
+| `fdlibm/rem_pio2.rs`: `rem_pio2`, `kernel_rem_pio2` | `ieee754.cc` 118, 443 | `prec` fixed to 2 (the only caller, `jk = 4`): the dead `prec` 0, 1, 3 branches of the final switch are not carried over |
+| `fdlibm/kernels.rs`: `kernel_cos` (`qx` variant), `kernel_sin`, `kernel_tan` | 305, 673, 733 | |
+| `fdlibm/trig.rs`: `acos`, `asin`, `atan`, `atan2`, `cos`, `sin`, `tan` | 862, 991, 1116, 1228, 1352, 2448, 2510 | the non-glibc branches |
+| `fdlibm/explog.rs`: `exp`, `expm1`, `log`, `log1p`, `log2` (+ `k_log1p`), `log10` | 1447, 2213, 1638, 1783, 1941/1951, 1973 | |
+| `fdlibm/hyper.rs`: `atanh`, `cosh`, `sinh`, `tanh` | 1557, 2554, 2930, 2986 | |
+| `fdlibm/cbrt.rs`: `cbrt` | 2333 | |
+| `fdlibm/mod.rs`: word helpers (`high_word`, `low_word`, `from_words`, `set_*_word`), `scalbn` (fdlibm `s_scalbn.c`, the C library function `rem_pio2` calls), the `consts!` macro | 41–113 | every constant is `f64::from_bits` of the two hex words of the C comment; a unit test checks each against the decimal literal of the source (about 130 constants) |
+| `math/hypot.rs`: `hypot`, `hypot3`, `hypot_n` | `math.tq` 399–510 | Infinity before NaN; 3 arguments with the compensation term; more than 3 Kahan |
+| `math/mod.rs`: `round`, `sign`, `max`, `min`, `max_n`, `min_n`, `imul`, `clz32`, `fround`, `floor`, `ceil`, `trunc`, `abs`, `sqrt`, `rem`; re-exports of the 18 fdlibm functions, `hypot*`, `pow` | ECMA-262, `Float64Round` | `mod pow; pub use pow::pow;` as laid out |
+| `conv.rs`: `to_int32`/`uint32`/`int16`/`uint16`/`int8`/`uint8`/`uint8_clamp`, `js_index`, `canonicalize_nan`, `truthy`, `is_integer`, `is_safe_integer` | ECMA-262 | |
+| `text.rs`: `is_js_space`, `js_space_len`, `trim`/`trim_start`/`trim_end`, `split_js_space`, `utf16_len`, `utf16_slice` | ECMA-262; the set and `js_space_len` copied from `uo-opc` `xml/chars.rs` | `uo-opc` is not switched to it yet (G7, after gate 2) |
+| `parse.rs`: `to_number`, `parse_int` | `conversions.cc` `InternalStringToDouble` (692), `InternalStringToIntDouble` (192–290), `StringToIntHelper::DetectRadixInternal`, `NumberParseIntHelper` (487–700) | see decisions 6 |
+
+About 2,700 lines of Rust in `src` (pow included). `asinh` and `acosh` are not ported (not in the API). `LICENSE-V8` holds
+the V8 BSD-3-Clause text and the Sun fdlibm notice; the crate `license` is `MIT AND BSD-3-Clause` (G3).
+
+### Tests and results
+
+Capture: `js/capture-jsnum.mjs` (deterministic: one FNV-1a seed per record, no clock, no randomness) writes
+`tests/captures/jsnum.capture` (645 KB) with `@platform`, and runs everything a second time as a child with
+`--no-opt --no-maglev`, failing unless the 10^5 digests agree (`@tiers-agree 121 records`).
+`tests/captures/inputs.txt` is the one shared data file (98 special values, 68 high-word thresholds: every
+8-hex-digit constant outside comments of `ieee754.cc`, minus legacy pow and the masks). Generator run time: about 2 min.
+
+| Test file | What | Result |
+|---|---|---|
+| `tests/differential.rs` | 121 numeric records (every function over the plan's distributions plus `bits`): digest of the outputs at 10^5 in `cargo test` and at n_full (10^7; 10^6 for `%`) with `--include-ignored` | **all 121 records bit-for-bit at both sizes: 1,192,000,000 samples**, on the first replay (the oracle found no port bug); the 10^5 set also runs in debug with overflow checks |
+| `tests/special.rs` | 46 records written in full (31,194 outputs: the specials, the thresholds with high word − 1 and 0, low words 0, 1, 0xFFFFFFFF, both signs, all pairs of the first 40 specials, triples, 4-tuples, `max_n`/`min_n` lists), plus the JS results written by hand | 46/46 identical |
+| `tests/strings.rs` | corpus of 199 strings with `Number`, `parseInt` in 14 radixes, `trim*`, `split(/\s+/)`, `length` (3,980 comparisons); the white space set over every code point (25 chars; `js_space_len` for all); 17 random-string records (10^5 and 10^6 strings; 10^4 and 10^5 for the `utf16_slice` text record, every cut position); the S9 cases by hand | 0 mismatches |
+| `tests/constants.rs` | the six `core::f64::consts` that exist in JS have the bits of `Math.PI`, `E`, `LN2`, `LN10`, `SQRT2`, `SQRT1_2` | ok |
+| `tests/memory.rs` | M1: every numeric function and every parser allocates 0 bytes (`measure`, asserted); a cut-surrogate `utf16_slice` frees what it allocates (`assert_no_leak`, at most 64 B); M2: soak of 1,000 iterations × 800 batches (9,600 calls of every function), tolerance 0, ends at the starting value | ok (`m2_soak_1000` is `#[ignore]`d, 3 s in release) |
+| unit (`fdlibm/mod.rs`) | hex words = decimal literals; `scalbn` identities | ok |
+
+The replay is sensitive: adding 1e-12 to `S2` in `kernel_sin` made 6 of 208 facets fail (source restored).
+Cross-OS check (the plan's "the 19 fdlibm functions give identical digests on win-x64 and linux-x64"): the same generator run in WSL
+Ubuntu-24.04 with Node v24.15.0 linux-x64 (glibc 2.39, FMA CPU, no tunables) wrote a capture identical to the Windows one
+line for line apart from `@platform` (all 121 digests at 10^5 and 10^7, the specials, the corpus, the random-string digests).
+The committed capture is the Windows one (`os=win32 arch=x64`, Node v24.15.0, V8 13.6.233.17-node.48, no flags).
+
+`cargo test --release -p uo-jsnum -- --include-ignored` (pow included): green. `cargo clippy -p uo-jsnum --all-targets
+--all-features -- -D warnings`, also with `--target wasm32-unknown-unknown`: clean. `cargo build -p uo-jsnum
+--target wasm32-unknown-unknown` (dev and release): ok (release rlib 258 KB before pruning; the real contribution is a stage-4
+`twiggy` measurement). Not run: Miri (no `unsafe`, forbidden) and `cargo deny` (not installed here).
+
+### Enforcement (G5, G6)
+
+- `core/clippy.toml`: `disallowed-methods` with 88 entries: the 39 `f64` methods of the plan (including `to_degrees`,
+  `to_radians`, `midpoint`, `abs_sub`), the same 39 on `f32`, and the 10 whitespace methods of `str`/`char`/`u8`. Each reason names
+  the replacement.
+- `core/tests/clippy-ban/` (outside the workspace) calls every listed path once; `check.sh` asserts clippy reports exactly as many
+  `clippy::disallowed_methods` diagnostics as `clippy.toml` has entries: **88 of 88**. Run in the `lint` CI job.
+- `core/tests/float-casts.sh` (G5): clippy with `cast_possible_truncation` and `cast_sign_loss` as JSON, failing only on `f32`/`f64`
+  sources, on the library code of the engine crates (all but `uo-jsnum`, `uo-testkit`, `uo-alloc`). `core/tests/grep-bans.sh`: float
+  `parse` outside `uo-jsnum` and the `consts` other than the six.
+- `core/deny.toml`: `[bans]` on `libm` and `num-traits` (neither is in a lock file). CI job `deny`: `cargo deny check bans`.
+- `.github/workflows/rust-core.yml`: wasm clippy, the three scripts, the `jsnum` job (`--include-ignored`) and `deny`.
+- Opt-ins in existing code: `uo-opc/examples/opc_bench.rs` (`f64::min` on timings, module-level `#![expect]`) and
+  `uo-opc/tests/xml_strict.rs` (`char::is_ascii_whitespace`: the oracle splits at XML white space; `#[expect]` on `sdump`).
+  Clippy was verified clean with `-p uo-jsnum -p uo-testkit -p uo-alloc -p uo-opc -p uo-wasm -p uo-ffi` and in `fuzz`, and
+  `cargo test --release -p uo-opc` is green. `uo-fonts` was mid-edit by other agents: the ban list reports
+  4 × `str::trim_start` in `uo-fonts/src/catalog.rs` (123, 125, 137, 139), `float-casts.sh` reports `(x as i64) as u8` in
+  `uo-fonts/src/js.rs:122` (`uo_jsnum::conv::to_uint8` is that function) and `grep-bans.sh` reports `s.parse::<f64>()` in a
+  test helper of `js.rs:164`. Those are for the uo-fonts agents (opt-in with a reason, or use `uo-jsnum`); its S15 keeps a private `js` module.
+
+### Decisions taken outside the plan (the model comparison depends on them)
+
+1. **Captures of the non-pow functions ran on Windows x64**, as briefed. The plan's capture-machine row (G1 (a)) says every math
+   capture runs in WSL; that is needed for `pow` only. `Capture::require_platform` takes a `PlatformSpec`; this crate's tests ask for
+   V8 `13.6.233.17`, `arch=x64` and Node `v24.15.0`, no OS; `tests/pow.rs` asks for the Linux/glibc/hwcaps spec. The cross-OS identity
+   above is the evidence.
+2. **uo-testkit changes** (the plan's `@platform`): `js/testkit.mjs` `platform()` and the automatic `@platform` line of
+   `CaptureWriter` (`features=` is the `fma`/`avx2`/`avx512f` flags of `/proc/cpuinfo` on Linux, `n/a` elsewhere); `Stream.digest()`
+   (non-destructive, like Rust); `Stream.f64` no longer builds the hex text unless the stream traces (same bytes, much faster);
+   Rust `Platform`, `PlatformSpec`, `Capture::platform`, `Capture::require_platform`; one test in `tests/kit.rs`.
+3. **Samples and seeds**: seed = FNV-1a of the record key (recorded as the `seed` facet and checked); one pass keeps the digest at
+   10^5 (`small`) and at n_full (`full`). Integer-valued outputs (conversions, predicates, `js_index`, `clz32`) are hashed as the f64
+   number, so there is one stream item kind.
+4. **Two tables, one oracle**: the generator and `tests/support/mod.rs` hold the same table of records, generators and operations;
+   a transcription error would show as a digest mismatch (none occurred). The string corpus lives only in the generator: its
+   inputs are written in the capture (`s`, JSON) and decoded by the Rust test.
+5. **`js_index`**: `−0` is `Some(0)`; NaN, fractions, negatives and `≥ len` are `None`; confirmed by `Float64Array` reads with a number key.
+6. **`parse_int` radix 10** returns infinity above 310 significant digits without parsing (V8 keeps the first 310 digits, at least 1e309)
+   and parses shorter runs with `str::parse::<f64>` (correctly rounded, like `Strtod`). **`to_number`** validates the ECMA-262 grammar by hand
+   and then calls the same parse on the validated slice (checked: `1e99999999999999999999`, `0e…`, `5.`, `.5`, `1.e3`, 10 MB of digits).
+   The power-of-two integer rounding is a literal port of `InternalStringToIntDouble` with the digit run chosen by the callers (its junk
+   branches are the callers' scans).
+7. **`to_int32` and the other ToIntN** use the exponent/significand shift of V8's `DoubleToInt32`, not `fmod` (no libm call on wasm).
+8. **NaN results** are `f64::NAN` (quiet) where C returns `signaling_NaN()`; payloads are canonicalized before every comparison anyway.
+9. **File layout**: `src/math/{mod,hypot,pow}.rs` (brief) instead of `src/math.rs`; the fdlibm split in `rem_pio2/kernels/trig/explog/hyper/cbrt`;
+   the 18 fdlibm functions are `pub` in a private module and re-exported by `math`. `fdlibm/mod.rs` allows `clippy::eq_op`
+   (`x - x` makes the NaN) and `needless_range_loop` (the C index loops stay as written).
+10. **Special-value thresholds** are every 8-hex-digit constant of the C file (68), with `hi − 1` and `hi`; only the 17 fdlibm unary
+    functions get them, the exactly-defined ones get the specials only. Binary functions use the first 40 specials (1,600 pairs).
+11. **The tier check** compares the 10^5 digests of a `--no-opt --no-maglev` child; the 10^7 digests are taken in the default tiers only.
+12. **The count test is a script** (`check.sh`), not a `cargo test`: it needs a clippy run on a crate outside the workspace.
+
+### Not done
+
+- `uo-wasm` feature `jsnum-selftest` and `tests/jsnum.test.mjs` (native = wasm = capture, Node and WebKit): stage 4.
+- Fuzz targets `jsnum_parse`/`jsnum_math` (security plan, stage 4); the 10 MB-digit case is a smoke test in `tests/strings.rs`, not a timing bound.
+- wasm size measurement (`twiggy`) and M3 numbers other than "0 bytes" (stage 4).
+- `uo-opc` switching to `uo_jsnum::text` (G7, after gate 2); a `cargo deny` run (tool not installed).
+- `UO_JSNUM_DUMP` exists in the generator and in `tests/differential.rs` but was never exercised on a real mismatch (there was none).
+
 ## Verification (gate 2 — pending)
 
 ### Parity
@@ -649,3 +868,5 @@ multiplication and an int64 path, else `std::pow` — not "repeated multiplicati
 | 1 plan (+ reuse) | port-planner / Opus | 18.7 min | — | — |
 | 2 skeptic | port-skeptic-analysis / Opus | 16.7 min | — | — |
 | 1 revision | port-planner / Opus: S1–S15 written in | 4.2 min | — | — |
+| 3 | porter: pow (Opus) | not measured (interrupted once by a usage limit); ~60 tool calls | 0 (bit-exact on the first replay) | clippy `assign_op_pattern` rewritten without reordering; `gen` identifier (reserved in edition 2024) renamed; capture switched to uo-testkit `platform()`/`require_platform` when they landed |
+| 3 | porter: increment A without pow (Sonnet) | about 3 h over two sessions (one usage-limit interruption); about 110 tool calls | 0: every record was bit-exact on its first native replay; later edits were clippy and test tables only | clippy lints (`eq_op` on `x - x`, `needless_range_loop`, `needless_late_init`, `while_let_loop`, identical `if` blocks, `manual_is_multiple_of`, `collapsible_if` in the testkit `PlatformSpec::check`, found by the uo-fonts agent); a bad TOML escape in a ban reason broke the clippy config of every crate for a few minutes, and a bad Rust escape in an `#[expect]` reason broke `uo-opc` tests; invisible characters in the generator source re-escaped |

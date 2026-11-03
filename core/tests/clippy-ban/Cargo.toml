@@ -1,0 +1,11 @@
+# The count test of the workspace ban list (core/clippy.toml, `disallowed-methods`): an
+# unresolvable path is silently ignored by clippy, so this crate (outside the workspace) calls
+# every listed path once and check.sh asserts clippy reports exactly as many diagnostics as
+# the list has entries. Calls are generated from the list; keep them in step with it.
+[package]
+name = "clippy-ban"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]

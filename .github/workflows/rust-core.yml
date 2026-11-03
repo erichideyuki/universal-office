@@ -32,9 +32,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: rustup toolchain install stable --profile minimal -c clippy,rustfmt && rustup default stable
+      - run: rustup toolchain install stable --profile minimal -c clippy,rustfmt -t wasm32-unknown-unknown && rustup default stable
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features --target wasm32-unknown-unknown -- -D warnings
+      # the workspace ban list (clippy.toml, uo-jsnum plan "Enforcement"): every path must resolve
+      # (clippy ignores an unresolvable one silently), float -> int casts go through uo_jsnum::conv,
+      # and the bans clippy cannot express
+      - run: bash tests/clippy-ban/check.sh
+      - run: bash tests/float-casts.sh
+      - run: bash tests/grep-bans.sh
 
   test:
     name: Tests (${{ matrix.os }})
@@ -58,6 +65,27 @@ jobs:
       # uo-opc: open → parse → edit → save → reopen, 1,000 times, live bytes flat (#[ignore]d in
       # the test job: about 190 s in debug)
       - run: cargo test -p uo-opc --release --all-features --test package_soak -- --ignored m2_soak_1000 --nocapture
+
+  jsnum:
+    name: uo-jsnum parity (10^7 samples per distribution, release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      # tests/captures/jsnum.capture is Node 24.15.0 x64 (Windows or Linux: the fdlibm bits are the
+      # same); the M2 soak of the crate is the ignored m2_soak_1000
+      - run: cargo test -p uo-jsnum --release --all-features -- --include-ignored
+
+  deny:
+    name: Dependency bans (cargo deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      # libm and num-traits would bring non-JS float math back (deny.toml)
+      - run: cargo deny check bans
 
   audit:
     name: Advisories (cargo audit)

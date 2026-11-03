@@ -2,7 +2,10 @@
 //! generators (so a corpus can be generated on either side) and a raw zip builder that can
 //! write the archives real writers never produce (lying sizes, names without the UTF-8 flag,
 //! duplicates, zip64 records, broken directories). Format-specific document generators build
-//! on these in the tests of each crate.
+//! on these in the tests of each crate; [`sfnt`] is the one for font files (a table assembler for
+//! sfnt and `.ttc`, directories that may lie).
+
+pub mod sfnt;
 
 /// xorshift32, the `rnd` of the JS generators (`gen_ts_oracle.mjs`):
 /// `s ^= s << 13; s ^= s >>> 17; s ^= s << 5` on a `u32`.

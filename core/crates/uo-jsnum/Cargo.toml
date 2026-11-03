@@ -1,0 +1,19 @@
+[package]
+name = "uo-jsnum"
+description = "JavaScript numerics of the UniversalOffice Rust core: Math.* as V8 13.6 computes them (fdlibm), ToInt32 and typed-array conversions, the JS whitespace set, Number() and parseInt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT AND BSD-3-Clause"
+repository.workspace = true
+publish.workspace = true
+
+# No dependencies in increment A (increment B adds ryu-js for Number::toString).
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# parity capture/replay: tests/differential.rs
+uo-testkit = { path = "../uo-testkit" }
+
+[lints]
+workspace = true

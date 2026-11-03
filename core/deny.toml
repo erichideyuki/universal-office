@@ -1,0 +1,14 @@
+# cargo-deny configuration of the Rust core. Only the bans are enforced here (advisories run
+# with cargo-audit in CI).
+#
+# libm and num-traits: their float functions (`Float::sin`, `libm::pow`, ...) are not the bits
+# JavaScript computes, and a generic `T: Float` would bring std or libm math back past the
+# clippy ban list (core/clippy.toml). Engine crates get their math from `uo-jsnum`. A
+# transitive need must go through `wrappers` with the reason recorded in
+# core/docs/modules/uo-jsnum.md.
+[bans]
+multiple-versions = "allow"
+deny = [
+    { name = "libm" },
+    { name = "num-traits" },
+]

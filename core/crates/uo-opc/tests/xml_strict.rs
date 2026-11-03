@@ -17,6 +17,10 @@ fn n(ns: Option<&str>) -> String {
     s[1..s.len() - 1].to_owned()
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the oracle splits a processing instruction at XML white space (the .NET XmlReader), not at the JS white space set"
+)]
 fn sdump(e: Element<'_>) -> String {
     let mut out = format!("{{{}}}{}[", n(e.namespace()), e.local_name());
     let attrs: Vec<String> = e

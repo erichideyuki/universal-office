@@ -95,6 +95,19 @@ impl Capture {
         self.meta.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
     }
 
+    /// The `@platform` line the Node writer adds (`platform()` in `js/testkit.mjs`).
+    pub fn platform(&self) -> Result<Platform, String> {
+        Platform::parse(self.meta("platform").ok_or("the capture has no @platform line (it predates the platform metadata)")?)
+    }
+
+    /// Checks the platform the capture was taken on against what the replaying test needs; the
+    /// error names every field that differs. Every replay of a capture whose path calls a
+    /// math function of `uo-jsnum` calls it (math bits depend on the V8, the architecture and,
+    /// for `pow`, the C runtime).
+    pub fn require_platform(&self, spec: &PlatformSpec) -> Result<(), String> {
+        spec.check(&self.platform()?)
+    }
+
     pub fn records(&self) -> &[Record] {
         &self.records
     }
@@ -270,5 +283,105 @@ impl Report {
         if !self.is_clean() {
             panic!("parity broken: {}\n{}", self.summary(), self.describe(30));
         }
+    }
+}
+
+/// The platform a capture was taken on: the `key=value` pairs of the `@platform` line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Platform {
+    /// `process.version`, e.g. `v24.15.0`
+    pub node: String,
+    /// `process.versions.v8`, e.g. `13.6.233.17-node.48`
+    pub v8: String,
+    /// `process.platform`: `linux`, `win32`, `darwin`
+    pub os: String,
+    /// `process.arch`: `x64`, `arm64`
+    pub arch: String,
+    /// the CPU model, spaces written as `_`
+    pub cpu: String,
+    /// Linux only: the `fma`, `avx2`, `avx512f` flags present, joined by `+`; `n/a` elsewhere
+    pub features: String,
+    /// the glibc version on Linux, `none` elsewhere
+    pub glibc: String,
+    /// `GLIBC_TUNABLES` or `none`
+    pub tunables: String,
+    /// Node's `execArgv` joined by `,` or `none`
+    pub flags: String,
+}
+
+impl Platform {
+    /// Parses the value of an `@platform` line; every field must be present.
+    pub fn parse(value: &str) -> Result<Platform, String> {
+        let field = |name: &str| -> Result<String, String> {
+            value
+                .split(' ')
+                .find_map(|kv| kv.strip_prefix(name).and_then(|rest| rest.strip_prefix('=')))
+                .map(str::to_owned)
+                .ok_or_else(|| format!("@platform has no {name}=: {value}"))
+        };
+        Ok(Platform {
+            node: field("node")?,
+            v8: field("v8")?,
+            os: field("os")?,
+            arch: field("arch")?,
+            cpu: field("cpu")?,
+            features: field("features")?,
+            glibc: field("glibc")?,
+            tunables: field("tunables")?,
+            flags: field("flags")?,
+        })
+    }
+}
+
+/// What a replay requires of the capture platform; `None` fields are not checked.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlatformSpec {
+    /// the V8 version must start with this (`13.6.233.17`)
+    pub v8_prefix: Option<String>,
+    pub arch: Option<String>,
+    pub os: Option<String>,
+    /// the glibc version must start with this (`2.39`)
+    pub glibc_prefix: Option<String>,
+    /// `GLIBC_TUNABLES` must contain this (`glibc.cpu.hwcaps=-FMA,-AVX2`)
+    pub tunables_contain: Option<String>,
+    /// the Node flags must be exactly this (`none` for none)
+    pub flags: Option<String>,
+}
+
+impl PlatformSpec {
+    /// Checks `p` against the spec; the error lists every mismatch.
+    pub fn check(&self, p: &Platform) -> Result<(), String> {
+        let mut bad = Vec::new();
+        if let Some(v) = &self.v8_prefix
+            && !p.v8.starts_with(v.as_str())
+        {
+            bad.push(format!("v8 {} (need {v}*)", p.v8));
+        }
+        if let Some(v) = &self.arch
+            && &p.arch != v
+        {
+            bad.push(format!("arch {} (need {v})", p.arch));
+        }
+        if let Some(v) = &self.os
+            && &p.os != v
+        {
+            bad.push(format!("os {} (need {v})", p.os));
+        }
+        if let Some(v) = &self.glibc_prefix
+            && !p.glibc.starts_with(v.as_str())
+        {
+            bad.push(format!("glibc {} (need {v}*)", p.glibc));
+        }
+        if let Some(v) = &self.tunables_contain
+            && !p.tunables.contains(v.as_str())
+        {
+            bad.push(format!("GLIBC_TUNABLES {} (need {v})", p.tunables));
+        }
+        if let Some(v) = &self.flags
+            && &p.flags != v
+        {
+            bad.push(format!("node flags {} (need {v})", p.flags));
+        }
+        if bad.is_empty() { Ok(()) } else { Err(format!("capture platform differs: {}", bad.join("; "))) }
     }
 }

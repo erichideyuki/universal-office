@@ -30,7 +30,7 @@ pub mod sha256;
 pub mod stream;
 pub mod zipdir;
 
-pub use capture::{Capture, Replay, Report};
+pub use capture::{Capture, Platform, PlatformSpec, Replay, Report};
 pub use stream::{Digest, Stream};
 
 use std::path::{Path, PathBuf};
