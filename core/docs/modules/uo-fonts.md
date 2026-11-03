@@ -1761,7 +1761,9 @@ costs are wall time (about 2× here, partly because the Sonnet frontiers also wr
 differentials) and one silent deviation (J1) — a decision not declared is the risk to watch, not
 translation accuracy.
 
-## Gate 2 — decisions (pending)
+## Gate 2 — decisions (approved 2026-11-03)
+
+Maintainer, verbatim: "Segue com os 2" — every recommendation accepted (D1–D3 now, D4 in the uo-docx-layout plan, D5 in stage 5).
 
 Parity 0 mismatches (17,366 facets + the C# G16 capture), memory gate green (M1–M5), security
 F7–F10 fixed, 105e6 fuzz execs without crashes. Proposals from the verifiers:
