@@ -23,6 +23,14 @@ pub mod fonts_selftest;
 #[path = "../../uo-fonts/tests/memory_support/mod.rs"]
 mod fonts_memory_support;
 
+#[cfg(feature = "dml-memtest")]
+pub mod dml_memtest;
+
+// the self-test includes the replay functions of the native parity tests of uo-drawingml, whose
+// `#[test]` functions would run again as tests of this crate: it is built for the module only
+#[cfg(all(feature = "dml-selftest", not(test)))]
+pub mod dml_selftest;
+
 #[cfg(feature = "opc-memtest")]
 pub mod opc_memtest;
 

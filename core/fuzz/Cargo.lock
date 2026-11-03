@@ -109,6 +109,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "uo-drawingml"
+version = "0.10.0-dev"
+dependencies = [
+ "uo-jsnum",
+]
+
+[[package]]
 name = "uo-fonts"
 version = "0.10.0-dev"
 dependencies = [
@@ -135,6 +142,7 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "miniz_oxide",
+ "uo-drawingml",
  "uo-fonts",
  "uo-jsnum",
  "uo-opc",

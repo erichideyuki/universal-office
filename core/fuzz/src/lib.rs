@@ -1,7 +1,8 @@
 //! Fuzz targets of `uo-opc` (stage 4 security, record `core/docs/modules/uo-opc-container.md`)
 //! and of `uo-jsnum` (`jsnum_parse`, `jsnum_math` in `src/jsnum.rs`, record
-//! `core/docs/modules/uo-jsnum.md`) and of `uo-fonts` (the `fonts_*` targets in `src/fonts.rs`,
-//! record `core/docs/modules/uo-fonts.md`).
+//! `core/docs/modules/uo-jsnum.md`), of `uo-fonts` (the `fonts_*` targets in `src/fonts.rs`,
+//! record `core/docs/modules/uo-fonts.md`) and of `uo-drawingml` (the `dml_*` targets in
+//! `src/drawingml.rs`, record `core/docs/modules/uo-drawingml.md`).
 //!
 //! Every target is a plain `fn(&[u8])`: libFuzzer runs them through `fuzz_targets/*.rs`
 //! (`cargo +nightly fuzz run <name>`), the stable driver `src/bin/fallback.rs` through
@@ -31,6 +32,12 @@ use uo_opc::zip::{self, WriteOptions, ZipWriter};
 
 mod jsnum;
 pub use jsnum::{jsnum_math, jsnum_parse};
+
+mod drawingml;
+pub use drawingml::{
+    dml_adjust, dml_bevel, dml_blip, dml_color, dml_custom_guides, dml_effects, dml_flatten, dml_light, dml_patterns, dml_preset,
+    dml_preset_path, dml_raster, dml_seeds,
+};
 
 mod fonts;
 pub use fonts::{
@@ -76,6 +83,18 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("fonts_hyphen_build", fonts_hyphen_build),
     ("fonts_hyphen_words", fonts_hyphen_words),
     ("fonts_embed", fonts_embed),
+    ("dml_preset", dml_preset),
+    ("dml_preset_path", dml_preset_path),
+    ("dml_custom_guides", dml_custom_guides),
+    ("dml_color", dml_color),
+    ("dml_patterns", dml_patterns),
+    ("dml_adjust", dml_adjust),
+    ("dml_blip", dml_blip),
+    ("dml_flatten", dml_flatten),
+    ("dml_raster", dml_raster),
+    ("dml_effects", dml_effects),
+    ("dml_light", dml_light),
+    ("dml_bevel", dml_bevel),
 ];
 
 /// Small limits: every check of `Limits` is exercised without slow executions.

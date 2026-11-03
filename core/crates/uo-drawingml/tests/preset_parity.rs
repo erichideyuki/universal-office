@@ -17,9 +17,9 @@ use uo_drawingml::{
 use uo_jsnum::conv::canonicalize_nan;
 use uo_jsnum::parse::to_number;
 use uo_testkit::generate::Rng;
-use uo_testkit::{Capture, PlatformSpec, Replay, Stream};
+use uo_testkit::{Capture, PlatformSpec, Replay, Report, Stream};
 
-const CAPTURE: &str = include_str!("captures/presets.capture");
+pub const CAPTURE: &str = include_str!("captures/presets.capture");
 
 // ── the corpus (mirrored from tools/capture-presets.mjs) ────────────────────────────────────────
 
@@ -397,12 +397,25 @@ fn enc_outline(s: &mut Stream, name: Option<&str>, w: f64, h: f64, adj: Option<&
 
 #[test]
 fn presets_match_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| !k.starts_with("custom/") && !k.starts_with("arc/"));
+    let report = replay_presets(&capture(), 1);
+    eprintln!("{}", report.summary());
+    report.assert_clean();
+}
+
+/// The replay of the presets (the wasm self-test of `uo-wasm` calls it too): every `every`-th
+/// defined preset and every `every`-th hand-drawn name outside the table, all the names without a
+/// definition. `every == 1` is the whole corpus; the facets not replayed show as `missing`.
+pub fn replay_presets(cap: &Capture, every: usize) -> Report {
+    let every = every.max(1);
+    let cap = cap.subset(|k| !k.starts_with("custom/") && !k.starts_with("arc/"));
     let mut replay = Replay::new(&cap);
     let names: Vec<&str> = preset_names().collect();
     assert_eq!(names.len(), 187);
     let builtin = builtins();
-    for name in &names {
+    for (index, name) in names.iter().enumerate() {
+        if !index.is_multiple_of(every) {
+            continue;
+        }
         let key = format!("preset/{name}");
         let rec = cap.record(&key).unwrap_or_else(|| panic!("no capture record {key}"));
         let av = split(rec.get("av").unwrap());
@@ -424,8 +437,8 @@ fn presets_match_the_ts_bit_for_bit() {
     for (label, name) in EXTRA_NAMES {
         run_preset(&mut replay, &format!("extra/{label}"), name, &two, &[50000.0, 50000.0], &guide_names);
     }
-    for name in HAND_DRAWN {
-        if !names.contains(&name) {
+    for (index, name) in HAND_DRAWN.into_iter().enumerate() {
+        if !names.contains(&name) && index % every == 0 {
             run_preset(&mut replay, &format!("hand/{name}"), Some(name), &two, &[50000.0, 50000.0], &guide_names);
         }
     }
@@ -436,9 +449,7 @@ fn presets_match_the_ts_bit_for_bit() {
         s.bool(has_preset_def(n));
     }
     replay.check("has/all", "v", &summary(s));
-    let report = replay.finish();
-    eprintln!("{}", report.summary());
-    report.assert_clean();
+    replay.finish()
 }
 
 // ── custom guides ───────────────────────────────────────────────────────────────────────────────
@@ -555,11 +566,22 @@ fn cg_query() -> Vec<String> {
 
 #[test]
 fn custom_guides_match_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| k.starts_with("custom/"));
+    let report = replay_custom_guides(&capture(), 1);
+    eprintln!("{}", report.summary());
+    report.assert_clean();
+}
+
+/// The replay of the custom guide programs: every `every`-th block of 250.
+pub fn replay_custom_guides(cap: &Capture, every: usize) -> Report {
+    let every = every.max(1);
+    let cap = cap.subset(|k| k.starts_with("custom/"));
     let mut replay = Replay::new(&cap);
     let query = cg_query();
     let limits = Limits::DEFAULT;
     for b in 0..CG_PROGRAMS / CG_BLOCK {
+        if !usize::try_from(b).unwrap().is_multiple_of(every) {
+            continue;
+        }
         let mut s = Stream::new();
         for i in b * CG_BLOCK..(b + 1) * CG_BLOCK {
             let p = program(i);
@@ -573,14 +595,17 @@ fn custom_guides_match_the_ts_bit_for_bit() {
         }
         replay.check(&format!("custom/{b}"), "v", &summary(s));
     }
-    let report = replay.finish();
-    eprintln!("{}", report.summary());
-    report.assert_clean();
+    replay.finish()
 }
 
 #[test]
 fn arc_to_seg_matches_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| k.starts_with("arc/"));
+    replay_arc(&capture()).assert_clean();
+}
+
+/// The replay of the `arc_to_seg` grid (24,948 cases, one facet).
+pub fn replay_arc(cap: &Capture) -> Report {
+    let cap = cap.subset(|k| k.starts_with("arc/"));
     let mut replay = Replay::new(&cap);
     let centres = [0.0, 10.5, -3.0];
     let radii = [0.0, -1.0, 5.0, 100.0, f64::NAN, f64::INFINITY];
@@ -614,6 +639,5 @@ fn arc_to_seg_matches_the_ts_bit_for_bit() {
         }
     }
     replay.check("arc/grid", "v", &summary(s));
-    let report = replay.finish();
-    report.assert_clean();
+    replay.finish()
 }

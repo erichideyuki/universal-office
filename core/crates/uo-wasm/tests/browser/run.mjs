@@ -11,7 +11,7 @@
 //
 // Playwright is resolved from UO_PLAYWRIGHT (a path to a `playwright` package folder) or as the
 // bare `playwright` package; its browsers must be installed (`npx playwright install webkit`).
-// UO_OPC_SOAK, UO_JSNUM_SOAK, UO_JSNUM_FULL, UO_FONTS_SOAK and UO_WASM_PATH (a .wasm inside the repository, served instead of the default) are forwarded to the page.
+// UO_OPC_SOAK, UO_JSNUM_SOAK, UO_JSNUM_FULL, UO_FONTS_SOAK, UO_DML_EVERY, UO_DML_SOAK, UO_DML_BIG and UO_WASM_PATH (a .wasm inside the repository, served instead of the default) are forwarded to the page.
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { resolve, relative, sep, dirname, basename, extname } from 'node:path';
@@ -64,7 +64,7 @@ function page(testUrl) {
     'node:url': shim('url.mjs'),
   };
   const wasm = process.env.UO_WASM_PATH && '/' + relative(repo, resolve(process.env.UO_WASM_PATH)).split(sep).join('/');
-  const env = { UO_OPC_SOAK: process.env.UO_OPC_SOAK, UO_JSNUM_SOAK: process.env.UO_JSNUM_SOAK, UO_JSNUM_FULL: process.env.UO_JSNUM_FULL, UO_FONTS_SOAK: process.env.UO_FONTS_SOAK, UO_WASM_PATH: wasm };
+  const env = { UO_OPC_SOAK: process.env.UO_OPC_SOAK, UO_JSNUM_SOAK: process.env.UO_JSNUM_SOAK, UO_JSNUM_FULL: process.env.UO_JSNUM_FULL, UO_FONTS_SOAK: process.env.UO_FONTS_SOAK, UO_DML_EVERY: process.env.UO_DML_EVERY, UO_DML_SOAK: process.env.UO_DML_SOAK, UO_DML_BIG: process.env.UO_DML_BIG, UO_WASM_PATH: wasm };
   return `<!doctype html><meta charset="utf-8">
 <script type="importmap">${JSON.stringify({ imports })}</script>
 <script type="module">

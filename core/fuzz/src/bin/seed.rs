@@ -249,6 +249,11 @@ fn main() {
     for (target, data) in uo_opc_fuzz::fonts_seeds(&repo) {
         c.add(target, &data);
     }
+    // uo-drawingml: every preset, a program per guide operator, every modifier and pattern, masks
+    // with every operation, every light rig and bevel preset (valid inputs of each layout)
+    for (target, data) in uo_opc_fuzz::dml_seeds() {
+        c.add(target, &data);
+    }
     for target in uo_opc_fuzz::TARGETS.iter().map(|(n, _)| *n) {
         c.add(target, b"");
     }

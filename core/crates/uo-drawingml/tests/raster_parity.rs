@@ -18,9 +18,9 @@ use uo_drawingml::{
 };
 use uo_jsnum::conv::canonicalize_nan;
 use uo_testkit::generate::Rng;
-use uo_testkit::{Capture, PlatformSpec, Replay, Stream};
+use uo_testkit::{Capture, PlatformSpec, Replay, Report, Stream};
 
-const CAPTURE: &str = include_str!("captures/raster.capture");
+pub const CAPTURE: &str = include_str!("captures/raster.capture");
 const L: Limits = Limits::NATIVE;
 
 fn capture() -> Capture {
@@ -337,12 +337,16 @@ fn preset_sil(name: &str, w: u32, h: u32, even_odd: bool) -> Mask {
     m
 }
 
-fn run(prefix: &str, body: impl FnOnce(&mut Replay<'_>)) {
-    let cap = capture().subset(|k| k.starts_with(prefix));
+fn run_on(cap: &Capture, prefix: &str, body: impl FnOnce(&mut Replay<'_>)) -> Report {
+    let cap = cap.subset(|k| k.starts_with(prefix));
     assert!(!cap.is_empty(), "no records for {prefix}");
     let mut replay = Replay::new(&cap);
     body(&mut replay);
-    let report = replay.finish();
+    replay.finish()
+}
+
+fn run(prefix: &str, body: impl FnOnce(&mut Replay<'_>)) {
+    let report = run_on(&capture(), prefix, body);
     eprintln!("{prefix}: {}", report.summary());
     report.assert_clean();
 }
@@ -351,66 +355,94 @@ fn run(prefix: &str, body: impl FnOnce(&mut Replay<'_>)) {
 
 #[test]
 fn flatten_matches_the_ts_bit_for_bit() {
-    run("flatten/", |replay| {
-        for name in preset_names() {
-            for (si, &(w, h)) in PRESET_SIZES.iter().enumerate() {
-                let subs = preset_outline(Some(name), w, h, None).subs;
-                let v = dig(|s| {
-                    for m in &AFFINES {
-                        for tol in TOLS {
-                            polys_out(s, &flatten(&subs, m, tol));
-                        }
-                    }
-                });
-                replay.check(&format!("flatten/preset/{name}/{si}"), "v", &v);
-            }
+    run("flatten/", |replay| flatten_body(replay, 1));
+}
+
+/// The replay of `flatten/`: every `every`-th preset (of 187) and every `every`-th block of 100 random subpath lists.
+pub fn replay_flatten(cap: &Capture, every: usize) -> Report {
+    run_on(cap, "flatten/", |replay| flatten_body(replay, every))
+}
+
+fn flatten_body(replay: &mut Replay<'_>, every: usize) {
+    let every = every.max(1);
+    for (index, name) in preset_names().enumerate() {
+        if !index.is_multiple_of(every) {
+            continue;
         }
-        for b in 0..40u32 {
+        for (si, &(w, h)) in PRESET_SIZES.iter().enumerate() {
+            let subs = preset_outline(Some(name), w, h, None).subs;
             let v = dig(|s| {
-                for i in b * 100..(b + 1) * 100 {
-                    let m = &AFFINES[(i % 10) as usize];
-                    let tol = TOLS[((i / 10) % 5) as usize];
-                    s.u32(i);
-                    polys_out(s, &flatten(&gen_subs(i + 1), m, tol));
+                for m in &AFFINES {
+                    for tol in TOLS {
+                        polys_out(s, &flatten(&subs, m, tol));
+                    }
                 }
             });
-            replay.check(&format!("flatten/rand/{b}"), "v", &v);
+            replay.check(&format!("flatten/preset/{name}/{si}"), "v", &v);
         }
-    });
+    }
+    for b in 0..40u32 {
+        if !(b as usize).is_multiple_of(every) {
+            continue;
+        }
+        let v = dig(|s| {
+            for i in b * 100..(b + 1) * 100 {
+                let m = &AFFINES[(i % 10) as usize];
+                let tol = TOLS[((i / 10) % 5) as usize];
+                s.u32(i);
+                polys_out(s, &flatten(&gen_subs(i + 1), m, tol));
+            }
+        });
+        replay.check(&format!("flatten/rand/{b}"), "v", &v);
+    }
 }
 
 // ── fill ────────────────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn fill_matches_the_ts_bit_for_bit() {
-    run("fill/", |replay| {
-        for b in 0..50u32 {
-            let v = dig(|s| {
-                for i in b * 60..(b + 1) * 60 {
-                    let (w, h) = FILL_DIMS[i as usize % FILL_DIMS.len()];
-                    let mut m = new_mask(w, h);
-                    if i % 3 == 0 {
-                        let mut r = Rng::new(i + 7);
-                        for k in 0..(w * h) as usize {
-                            m.data_mut()[k] = st(r.below(7) as f64 / 4.0);
-                        }
-                    }
-                    fill_polygons(&mut m, &gen_polys(i + 1, w, h), i % 2 == 1, &L).unwrap();
-                    s.u32(i);
-                    mask_out(s, &m);
-                }
-            });
-            replay.check(&format!("fill/rand/{b}"), "v", &v);
+    run("fill/", |replay| fill_body(replay, 1));
+}
+
+/// The replay of `fill/`: every `every`-th block of 60 random polygon sets and every `every`-th preset silhouette.
+pub fn replay_fill(cap: &Capture, every: usize) -> Report {
+    run_on(cap, "fill/", |replay| fill_body(replay, every))
+}
+
+fn fill_body(replay: &mut Replay<'_>, every: usize) {
+    let every = every.max(1);
+    for b in 0..50u32 {
+        if !(b as usize).is_multiple_of(every) {
+            continue;
         }
-        for name in preset_names() {
-            for (si, &(w, h)) in [(48u32, 32u32), (21, 21)].iter().enumerate() {
-                for eo in [false, true] {
-                    let v = dig(|s| mask_out(s, &preset_sil(name, w, h, eo)));
-                    replay.check(&format!("fill/preset/{name}/{si}/{}", if eo { "eo" } else { "nz" }), "v", &v);
+        let v = dig(|s| {
+            for i in b * 60..(b + 1) * 60 {
+                let (w, h) = FILL_DIMS[i as usize % FILL_DIMS.len()];
+                let mut m = new_mask(w, h);
+                if i % 3 == 0 {
+                    let mut r = Rng::new(i + 7);
+                    for k in 0..(w * h) as usize {
+                        m.data_mut()[k] = st(r.below(7) as f64 / 4.0);
+                    }
                 }
+                fill_polygons(&mut m, &gen_polys(i + 1, w, h), i % 2 == 1, &L).unwrap();
+                s.u32(i);
+                mask_out(s, &m);
+            }
+        });
+        replay.check(&format!("fill/rand/{b}"), "v", &v);
+    }
+    for (index, name) in preset_names().enumerate() {
+        if !index.is_multiple_of(every) {
+            continue;
+        }
+        for (si, &(w, h)) in [(48u32, 32u32), (21, 21)].iter().enumerate() {
+            for eo in [false, true] {
+                let v = dig(|s| mask_out(s, &preset_sil(name, w, h, eo)));
+                replay.check(&format!("fill/preset/{name}/{si}/{}", if eo { "eo" } else { "nz" }), "v", &v);
             }
         }
-    });
+    }
 }
 
 // ── blur, distance, morph, shift, warp, affine ──────────────────────────────────────────────────
@@ -420,43 +452,65 @@ const SIGMAS: [f64; 17] =
 
 #[test]
 fn blur_matches_the_ts_bit_for_bit() {
-    run("blur/", |replay| {
-        for (si, &sigma) in SIGMAS.iter().enumerate() {
-            let v = dig(|s| {
-                for &(w, h) in &MASK_DIMS {
-                    if sigma == 1000.0 && w * h > 200 {
-                        continue;
-                    }
-                    for kind in 0..4u32 {
-                        let m = gen_mask(w, h, kind, 100 + si as u32 * 10 + kind);
-                        s.u32(w * 4 + kind);
-                        write_mask(s, gaussian_blur(&m, sigma, &L));
-                    }
-                }
-            });
-            replay.check(&format!("blur/{si}"), "v", &v);
+    run("blur/", |replay| blur_body(replay, 1));
+}
+
+/// The replay of `blur/`: every `every`-th sigma (of 17).
+pub fn replay_blur(cap: &Capture, every: usize) -> Report {
+    run_on(cap, "blur/", |replay| blur_body(replay, every))
+}
+
+fn blur_body(replay: &mut Replay<'_>, every: usize) {
+    let every = every.max(1);
+    for (si, &sigma) in SIGMAS.iter().enumerate() {
+        if !si.is_multiple_of(every) {
+            continue;
         }
-    });
+        let v = dig(|s| {
+            for &(w, h) in &MASK_DIMS {
+                if sigma == 1000.0 && w * h > 200 {
+                    continue;
+                }
+                for kind in 0..4u32 {
+                    let m = gen_mask(w, h, kind, 100 + si as u32 * 10 + kind);
+                    s.u32(w * 4 + kind);
+                    write_mask(s, gaussian_blur(&m, sigma, &L));
+                }
+            }
+        });
+        replay.check(&format!("blur/{si}"), "v", &v);
+    }
 }
 
 #[test]
 fn distance_matches_the_ts_bit_for_bit() {
-    run("edt/", |replay| {
-        for kind in 0..4u32 {
-            for inside in [true, false] {
-                let v = dig(|s| {
-                    for (i, &(w, h)) in MASK_DIMS.iter().enumerate() {
-                        for seed in 0..3u32 {
-                            let m = gen_mask(w, h, kind, 500 + i as u32 * 7 + seed);
-                            s.u32(i as u32 * 3 + seed);
-                            s.bytes(&f32bytes(&distance_to(&m, inside)));
-                        }
-                    }
-                });
-                replay.check(&format!("edt/{kind}/{}", if inside { "in" } else { "out" }), "v", &v);
+    run("edt/", |replay| distance_body(replay, 1));
+}
+
+/// The replay of `edt/`: every `every`-th (kind, direction) pair (of 8).
+pub fn replay_distance(cap: &Capture, every: usize) -> Report {
+    run_on(cap, "edt/", |replay| distance_body(replay, every))
+}
+
+fn distance_body(replay: &mut Replay<'_>, every: usize) {
+    let every = every.max(1);
+    for kind in 0..4u32 {
+        for inside in [true, false] {
+            if !(kind as usize * 2 + usize::from(!inside)).is_multiple_of(every) {
+                continue;
             }
+            let v = dig(|s| {
+                for (i, &(w, h)) in MASK_DIMS.iter().enumerate() {
+                    for seed in 0..3u32 {
+                        let m = gen_mask(w, h, kind, 500 + i as u32 * 7 + seed);
+                        s.u32(i as u32 * 3 + seed);
+                        s.bytes(&f32bytes(&distance_to(&m, inside)));
+                    }
+                }
+            });
+            replay.check(&format!("edt/{kind}/{}", if inside { "in" } else { "out" }), "v", &v);
         }
-    });
+    }
 }
 
 const RADII: [f64; 17] =
@@ -464,23 +518,34 @@ const RADII: [f64; 17] =
 
 #[test]
 fn morph_matches_the_ts_bit_for_bit() {
-    run("morph/", |replay| {
-        for (ri, &r) in RADII.iter().enumerate() {
-            let v = dig(|s| {
-                for &(w, h) in &MASK_DIMS {
-                    if w * h > 1600 {
-                        continue;
-                    }
-                    for kind in 0..4u32 {
-                        let m = gen_mask(w, h, kind, 900 + ri as u32 * 10 + kind);
-                        s.u32(w * 4 + kind);
-                        write_mask(s, morph(&m, r, &L));
-                    }
-                }
-            });
-            replay.check(&format!("morph/{ri}"), "v", &v);
+    run("morph/", |replay| morph_body(replay, 1));
+}
+
+/// The replay of `morph/`: every `every`-th radius (of 17).
+pub fn replay_morph(cap: &Capture, every: usize) -> Report {
+    run_on(cap, "morph/", |replay| morph_body(replay, every))
+}
+
+fn morph_body(replay: &mut Replay<'_>, every: usize) {
+    let every = every.max(1);
+    for (ri, &r) in RADII.iter().enumerate() {
+        if !ri.is_multiple_of(every) {
+            continue;
         }
-    });
+        let v = dig(|s| {
+            for &(w, h) in &MASK_DIMS {
+                if w * h > 1600 {
+                    continue;
+                }
+                for kind in 0..4u32 {
+                    let m = gen_mask(w, h, kind, 900 + ri as u32 * 10 + kind);
+                    s.u32(w * 4 + kind);
+                    write_mask(s, morph(&m, r, &L));
+                }
+            }
+        });
+        replay.check(&format!("morph/{ri}"), "v", &v);
+    }
 }
 
 const SHIFTS: [(f64, f64); 14] = [
@@ -502,22 +567,33 @@ const SHIFTS: [(f64, f64); 14] = [
 
 #[test]
 fn shift_matches_the_ts_bit_for_bit() {
-    run("shift/", |replay| {
-        for (ki, &(dx, dy)) in SHIFTS.iter().enumerate() {
-            let v = dig(|s| {
-                for &(w, h) in &MASK_DIMS {
-                    for kind in 0..4u32 {
-                        let m = gen_mask(w, h, kind, 1300 + ki as u32 * 10 + kind);
-                        for size in [None, Some((w + 3, h + 2)), Some((1, 1)), Some((0, 3))] {
-                            s.u32(w * 4 + kind);
-                            write_mask(s, shift_mask(&m, dx, dy, size, &L));
-                        }
+    run("shift/", |replay| shift_body(replay, 1));
+}
+
+/// The replay of `shift/`: every `every`-th offset (of 14).
+pub fn replay_shift(cap: &Capture, every: usize) -> Report {
+    run_on(cap, "shift/", |replay| shift_body(replay, every))
+}
+
+fn shift_body(replay: &mut Replay<'_>, every: usize) {
+    let every = every.max(1);
+    for (ki, &(dx, dy)) in SHIFTS.iter().enumerate() {
+        if !ki.is_multiple_of(every) {
+            continue;
+        }
+        let v = dig(|s| {
+            for &(w, h) in &MASK_DIMS {
+                for kind in 0..4u32 {
+                    let m = gen_mask(w, h, kind, 1300 + ki as u32 * 10 + kind);
+                    for size in [None, Some((w + 3, h + 2)), Some((1, 1)), Some((0, 3))] {
+                        s.u32(w * 4 + kind);
+                        write_mask(s, shift_mask(&m, dx, dy, size, &L));
                     }
                 }
-            });
-            replay.check(&format!("shift/{ki}"), "v", &v);
-        }
-    });
+            }
+        });
+        replay.check(&format!("shift/{ki}"), "v", &v);
+    }
 }
 
 const WARPS: [[f64; 6]; 11] = [
@@ -536,56 +612,74 @@ const WARPS: [[f64; 6]; 11] = [
 
 #[test]
 fn warp_matches_the_ts_bit_for_bit() {
-    run("warp/", |replay| {
-        for (ai, a) in WARPS.iter().enumerate() {
-            let v = dig(|s| {
-                for &(w, h) in &MASK_DIMS {
-                    for kind in 0..4u32 {
-                        let m = gen_mask(w, h, kind, 1700 + ai as u32 * 10 + kind);
-                        for (tw, th) in [(w, h), (w + 5, h + 1), (1, 1), (0, 4)] {
-                            s.u32(w * 4 + kind);
-                            write_mask(s, warp_mask(&m, &Affine(*a), tw, th, &L));
-                        }
+    run("warp/", |replay| warp_body(replay, 1));
+}
+
+/// The replay of `warp/`: every `every`-th inverse affine (of 11).
+pub fn replay_warp(cap: &Capture, every: usize) -> Report {
+    run_on(cap, "warp/", |replay| warp_body(replay, every))
+}
+
+fn warp_body(replay: &mut Replay<'_>, every: usize) {
+    let every = every.max(1);
+    for (ai, a) in WARPS.iter().enumerate() {
+        if !ai.is_multiple_of(every) {
+            continue;
+        }
+        let v = dig(|s| {
+            for &(w, h) in &MASK_DIMS {
+                for kind in 0..4u32 {
+                    let m = gen_mask(w, h, kind, 1700 + ai as u32 * 10 + kind);
+                    for (tw, th) in [(w, h), (w + 5, h + 1), (1, 1), (0, 4)] {
+                        s.u32(w * 4 + kind);
+                        write_mask(s, warp_mask(&m, &Affine(*a), tw, th, &L));
                     }
                 }
-            });
-            replay.check(&format!("warp/{ai}"), "v", &v);
-        }
-    });
+            }
+        });
+        replay.check(&format!("warp/{ai}"), "v", &v);
+    }
 }
 
 const APOOL: [f64; 12] = [0.0, 1.0, -1.0, 0.5, 2.0, -3.5, 1e-9, 1e9, f64::NAN, f64::INFINITY, 0.3, -0.0];
 
 #[test]
 fn affine_matches_the_ts_bit_for_bit() {
-    run("affine/", |replay| {
-        let v = dig(|s| {
-            let mut r = Rng::new(31);
-            for _ in 0..3000 {
-                let mut m = [0.0; 6];
-                let mut n = [0.0; 6];
-                for c in &mut m {
-                    *c = APOOL[r.below(APOOL.len())];
-                }
-                for c in &mut n {
-                    *c = APOOL[r.below(APOOL.len())];
-                }
-                affine_out(s, &Affine(m).mul(&Affine(n)).0);
+    run("affine/", |replay| affine_body(replay, 1));
+}
+
+/// The replay of `affine/`: `mulAffine` and `invertAffine` over 3,000 random pairs each (whole).
+pub fn replay_affine(cap: &Capture, every: usize) -> Report {
+    run_on(cap, "affine/", |replay| affine_body(replay, every))
+}
+
+fn affine_body(replay: &mut Replay<'_>, _every: usize) {
+    let v = dig(|s| {
+        let mut r = Rng::new(31);
+        for _ in 0..3000 {
+            let mut m = [0.0; 6];
+            let mut n = [0.0; 6];
+            for c in &mut m {
+                *c = APOOL[r.below(APOOL.len())];
             }
-        });
-        replay.check("affine/mul", "v", &v);
-        let v = dig(|s| {
-            let mut r = Rng::new(37);
-            for _ in 0..3000 {
-                let mut m = [0.0; 6];
-                for c in &mut m {
-                    *c = APOOL[r.below(APOOL.len())];
-                }
-                affine_out(s, &Affine(m).invert().0);
+            for c in &mut n {
+                *c = APOOL[r.below(APOOL.len())];
             }
-        });
-        replay.check("affine/invert", "v", &v);
+            affine_out(s, &Affine(m).mul(&Affine(n)).0);
+        }
     });
+    replay.check("affine/mul", "v", &v);
+    let v = dig(|s| {
+        let mut r = Rng::new(37);
+        for _ in 0..3000 {
+            let mut m = [0.0; 6];
+            for c in &mut m {
+                *c = APOOL[r.below(APOOL.len())];
+            }
+            affine_out(s, &Affine(m).invert().0);
+        }
+    });
+    replay.check("affine/invert", "v", &v);
 }
 
 // ── effects ─────────────────────────────────────────────────────────────────────────────────────
@@ -627,96 +721,108 @@ fn gen_spec(r: &mut Rng) -> (ShadowSpec, BoxF, f64) {
 
 #[test]
 fn effects_match_the_ts_bit_for_bit() {
-    run("fx/", |replay| {
-        let v = dig(|s| {
-            for a in ALGNS {
-                for (x, y, w, h) in [
-                    (0.0, 0.0, 100.0, 50.0),
-                    (10.5, -3.0, 7.0, 0.0),
-                    (1e3, 1e3, 1e-3, 1e9),
-                    (f64::NAN, 0.0, 1.0, 1.0),
-                    (0.0, 0.0, f64::INFINITY, 2.0),
-                ] {
-                    let (px, py) = align_point(Align::from_attr(a), x, y, w, h);
-                    f(s, px);
-                    f(s, py);
-                }
-            }
-        });
-        replay.check("fx/alignPoint", "v", &v);
-        let v = dig(|s| {
-            let mut r = Rng::new(41);
-            for _ in 0..2000 {
-                let (spec, bx, ppt) = gen_spec(&mut r);
-                affine_out(s, &shadow_affine(&spec, &bx, ppt).0);
-            }
-        });
-        replay.check("fx/shadowAffine", "v", &v);
+    run("fx/", |replay| effects_body(replay, 1));
+}
 
-        let sils: [(&str, Mask); 5] = [
-            ("blob1", gen_mask(40, 30, 1, 2001)),
-            ("blob2", gen_mask(64, 48, 1, 2002)),
-            ("star5", preset_sil("star5", 48, 32, false)),
-            ("heart", preset_sil("heart", 33, 21, false)),
-            ("binary", gen_mask(17, 9, 2, 2003)),
-        ];
-        let rads = [0.0, 0.004, 1.0, 3.7, 10.0, -5.0, f64::NAN, f64::INFINITY];
-        let ppts = [1.0, 2.5, 0.75];
-        for (name, sil) in &sils {
-            let v = dig(|s| {
-                let mut r = Rng::new(51);
-                for i in 0..40u32 {
-                    let (spec, bx, ppt) = gen_spec(&mut r);
-                    s.u32(i);
-                    write_mask(s, outer_shadow_mask(sil, &bx, &spec, ppt, &L));
-                }
-            });
-            replay.check(&format!("fx/outer/{name}"), "v", &v);
-            let v = dig(|s| {
-                let mut r = Rng::new(53);
-                for i in 0..40u32 {
-                    let (spec, _, ppt) = gen_spec(&mut r);
-                    s.u32(i);
-                    write_mask(s, inner_shadow_mask(sil, spec.blur_pt, spec.dist_pt, spec.dir_deg, ppt, &L));
-                }
-            });
-            replay.check(&format!("fx/inner/{name}"), "v", &v);
-            let v = dig(|s| {
-                for rad in rads {
-                    for ppt in ppts {
-                        s.u32(0);
-                        write_mask(s, glow_mask(sil, rad, ppt, &L));
-                    }
-                }
-            });
-            replay.check(&format!("fx/glow/{name}"), "v", &v);
-            let v = dig(|s| {
-                for rad in rads {
-                    for ppt in ppts {
-                        s.u32(0);
-                        write_mask(s, soft_edge_mask(sil, rad, ppt, &L));
-                    }
-                }
-            });
-            replay.check(&format!("fx/soft/{name}"), "v", &v);
+/// The replay of `fx/`: `alignPoint`, `shadowAffine` and the reflection whole; every `every`-th
+/// silhouette (of 5) for the four masks.
+pub fn replay_effects(cap: &Capture, every: usize) -> Report {
+    run_on(cap, "fx/", |replay| effects_body(replay, every))
+}
+
+fn effects_body(replay: &mut Replay<'_>, every: usize) {
+    let every = every.max(1);
+    let v = dig(|s| {
+        for a in ALGNS {
+            for (x, y, w, h) in [
+                (0.0, 0.0, 100.0, 50.0),
+                (10.5, -3.0, 7.0, 0.0),
+                (1e3, 1e3, 1e-3, 1e9),
+                (f64::NAN, 0.0, 1.0, 1.0),
+                (0.0, 0.0, f64::INFINITY, 2.0),
+            ] {
+                let (px, py) = align_point(Align::from_attr(a), x, y, w, h);
+                f(s, px);
+                f(s, py);
+            }
         }
+    });
+    replay.check("fx/alignPoint", "v", &v);
+    let v = dig(|s| {
+        let mut r = Rng::new(41);
+        for _ in 0..2000 {
+            let (spec, bx, ppt) = gen_spec(&mut r);
+            affine_out(s, &shadow_affine(&spec, &bx, ppt).0);
+        }
+    });
+    replay.check("fx/shadowAffine", "v", &v);
 
+    let sils: [(&str, Mask); 5] = [
+        ("blob1", gen_mask(40, 30, 1, 2001)),
+        ("blob2", gen_mask(64, 48, 1, 2002)),
+        ("star5", preset_sil("star5", 48, 32, false)),
+        ("heart", preset_sil("heart", 33, 21, false)),
+        ("binary", gen_mask(17, 9, 2, 2003)),
+    ];
+    let rads = [0.0, 0.004, 1.0, 3.7, 10.0, -5.0, f64::NAN, f64::INFINITY];
+    let ppts = [1.0, 2.5, 0.75];
+    for (index, (name, sil)) in sils.iter().enumerate() {
+        if !index.is_multiple_of(every) {
+            continue;
+        }
         let v = dig(|s| {
-            let ts = [-1.0, 0.0, 0.1, 0.5, 0.9, 1.0, 1.5, f64::NAN, f64::INFINITY];
-            let pos = [0.0, 0.2, 0.5, 1.0, f64::NAN, -0.1];
-            let al = [0.0, 0.3, 1.0, -1.0, f64::NAN];
-            for t in ts {
-                for st_pos in pos {
-                    for end_pos in pos {
-                        for st_a in al {
-                            for end_a in al {
-                                f(s, reflection_alpha(t, &Reflection { st_a, st_pos, end_a, end_pos }));
-                            }
+            let mut r = Rng::new(51);
+            for i in 0..40u32 {
+                let (spec, bx, ppt) = gen_spec(&mut r);
+                s.u32(i);
+                write_mask(s, outer_shadow_mask(sil, &bx, &spec, ppt, &L));
+            }
+        });
+        replay.check(&format!("fx/outer/{name}"), "v", &v);
+        let v = dig(|s| {
+            let mut r = Rng::new(53);
+            for i in 0..40u32 {
+                let (spec, _, ppt) = gen_spec(&mut r);
+                s.u32(i);
+                write_mask(s, inner_shadow_mask(sil, spec.blur_pt, spec.dist_pt, spec.dir_deg, ppt, &L));
+            }
+        });
+        replay.check(&format!("fx/inner/{name}"), "v", &v);
+        let v = dig(|s| {
+            for rad in rads {
+                for ppt in ppts {
+                    s.u32(0);
+                    write_mask(s, glow_mask(sil, rad, ppt, &L));
+                }
+            }
+        });
+        replay.check(&format!("fx/glow/{name}"), "v", &v);
+        let v = dig(|s| {
+            for rad in rads {
+                for ppt in ppts {
+                    s.u32(0);
+                    write_mask(s, soft_edge_mask(sil, rad, ppt, &L));
+                }
+            }
+        });
+        replay.check(&format!("fx/soft/{name}"), "v", &v);
+    }
+
+    let v = dig(|s| {
+        let ts = [-1.0, 0.0, 0.1, 0.5, 0.9, 1.0, 1.5, f64::NAN, f64::INFINITY];
+        let pos = [0.0, 0.2, 0.5, 1.0, f64::NAN, -0.1];
+        let al = [0.0, 0.3, 1.0, -1.0, f64::NAN];
+        for t in ts {
+            for st_pos in pos {
+                for end_pos in pos {
+                    for st_a in al {
+                        for end_a in al {
+                            f(s, reflection_alpha(t, &Reflection { st_a, st_pos, end_a, end_pos }));
                         }
                     }
                 }
             }
-        });
-        replay.check("fx/reflection", "v", &v);
+        }
     });
+    replay.check("fx/reflection", "v", &v);
 }

@@ -3,7 +3,8 @@ name: Rust core
 # The Rust core of 0.10 (core/, branch rust-core) — the rust-port workflow's automatic
 # checks: format and clippy, tests on the three OSes, the memory gate (M1-M3 in the crates'
 # tests, the M2 soaks, M4 at the wasm and .NET boundaries, M6 with Miri and LeakSanitizer) and
-# the wasm build, the fuzz targets (security, stage 4: core/fuzz) and the advisories of the
+# the wasm build (with the memory tests and the parity self-tests of uo-fonts and uo-drawingml in
+# Node and WebKit), the fuzz targets (security, stage 4: core/fuzz) and the advisories of the
 # dependencies. Opt-in tests (TS and .NET parity) print a SKIPPED line here. See
 # .claude/skills/rust-port/SKILL.md.
 
@@ -100,7 +101,7 @@ jobs:
       - run: cargo audit --file fuzz/Cargo.lock
 
   wasm:
-    name: WebAssembly (build, Safari 15 features, boundary memory M2/M4, uo-opc M2, WebKit)
+    name: WebAssembly (build, Safari 15 features, boundary memory M2/M4, uo-opc M2, uo-fonts, uo-drawingml, WebKit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -118,6 +119,13 @@ jobs:
       # fonts-selftest: the uo-fonts parity replay (fonts.cap, legacy_kern.cap) recomputed inside the module (stage 4, parity)
       - run: cargo build -p uo-wasm --features fonts-selftest --target wasm32-unknown-unknown --profile wasm
       - run: node --test crates/uo-wasm/tests/fonts_selftest.test.mjs
+      # dml-memtest: the uo-drawingml soak (M2, 200 rounds: live bytes flat, memory.buffer.byteLength stops growing), the big
+      # effects at 1 and 4 Mpx against the M3 budgets and the 128 MiB phone budget, the wasm32 limit rows, the worst case per limit
+      - run: cargo build -p uo-wasm --features dml-memtest --target wasm32-unknown-unknown --profile wasm
+      - run: UO_DML_SOAK=200 node --test crates/uo-wasm/tests/dml_memory.test.mjs
+      # dml-selftest: the uo-drawingml parity replay (the four committed captures, 20 groups) recomputed inside the module; the whole corpus here
+      - run: cargo build -p uo-wasm --features dml-selftest --target wasm32-unknown-unknown --profile wasm
+      - run: UO_DML_EVERY=1 node --test crates/uo-wasm/tests/dml_selftest.test.mjs
       # browser baseline Safari 15 / iOS 15 (rust-port skill): the module may use only the
       # features Safari 15 has; the negative case proves the feature list rejects SIMD
       - uses: taiki-e/install-action@v2
@@ -141,6 +149,10 @@ jobs:
           UO_FONTS_SOAK=300 UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/fonts_memory.test.mjs
           cargo build -p uo-wasm --features fonts-selftest --target wasm32-unknown-unknown --profile wasm
           UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/fonts_selftest.test.mjs
+          cargo build -p uo-wasm --features dml-memtest --target wasm32-unknown-unknown --profile wasm
+          UO_DML_SOAK=100 UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/dml_memory.test.mjs
+          cargo build -p uo-wasm --features dml-selftest --target wasm32-unknown-unknown --profile wasm
+          UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/dml_selftest.test.mjs
 
   dotnet:
     name: .NET facade (boundary memory, M4) (${{ matrix.os }})
@@ -180,7 +192,7 @@ jobs:
       - run: cargo test --workspace --all-features --target x86_64-unknown-linux-gnu
 
   fuzz:
-    name: Fuzz (uo-opc, uo-jsnum, uo-fonts, libFuzzer)
+    name: Fuzz (uo-opc, uo-jsnum, uo-fonts, uo-drawingml, libFuzzer)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -193,8 +205,8 @@ jobs:
       - run: cargo run --release --no-default-features --features fallback --bin seed
       - run: cargo fuzz build
       # a short budget per target on every push (every file of fuzz_targets: the uo-opc targets,
-      # jsnum_parse, jsnum_math and the 17 fonts_* targets); long runs are local (module records,
-      # "Security")
+      # jsnum_parse, jsnum_math, the 17 fonts_* targets and the 12 dml_* targets); long runs are
+      # local (module records, "Security" and "Continuous verification")
       - run: |
           for t in $(ls fuzz_targets | sed 's/\.rs$//'); do
             echo "::group::$t"

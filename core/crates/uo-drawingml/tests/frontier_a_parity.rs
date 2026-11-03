@@ -20,9 +20,9 @@ use uo_drawingml::{
 };
 use uo_jsnum::conv::canonicalize_nan;
 use uo_testkit::generate::Rng;
-use uo_testkit::{Capture, PlatformSpec, Replay, Stream};
+use uo_testkit::{Capture, PlatformSpec, Replay, Report, Stream};
 
-const CAPTURE: &str = include_str!("captures/frontier-a.capture");
+pub const CAPTURE: &str = include_str!("captures/frontier-a.capture");
 
 fn capture() -> Capture {
     let cap = Capture::parse(CAPTURE).unwrap();
@@ -171,11 +171,23 @@ fn lin_inputs() -> Vec<f64> {
 
 #[test]
 fn colour_modifiers_match_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| k.starts_with("color/"));
+    let report = replay_colour(&capture(), 1);
+    eprintln!("{}", report.summary());
+    report.assert_clean();
+}
+
+/// The replay of the colour facets (the wasm self-test of `uo-wasm` calls it too): every
+/// `every`-th block of modifier sequences and of sRGB inputs; `every == 1` is the whole corpus.
+pub fn replay_colour(cap: &Capture, every: usize) -> Report {
+    let every = every.max(1);
+    let cap = cap.subset(|k| k.starts_with("color/"));
     let mut replay = Replay::new(&cap);
     const SEQUENCES: u32 = 20_000;
     const BLOCK: u32 = 500;
     for b in 0..SEQUENCES / BLOCK {
+        if !usize::try_from(b).unwrap().is_multiple_of(every) {
+            continue;
+        }
         let mut s = Stream::new();
         for i in b * BLOCK..(b + 1) * BLOCK {
             let q = gen_sequence(i);
@@ -189,6 +201,9 @@ fn colour_modifiers_match_the_ts_bit_for_bit() {
     }
     let inputs = lin_inputs();
     for (b, block) in inputs.chunks(5000).enumerate() {
+        if !b.is_multiple_of(every) {
+            continue;
+        }
         let mut s = Stream::new();
         for &x in block {
             f(&mut s, srgb_to_lin(x));
@@ -196,16 +211,25 @@ fn colour_modifiers_match_the_ts_bit_for_bit() {
         }
         replay.check("color/lin", &format!("b{b}"), &summary(s));
     }
-    let report = replay.finish();
-    eprintln!("{}", report.summary());
-    report.assert_clean();
+    replay.finish()
 }
 
 // ── patterns ────────────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn patterns_match_the_ts() {
-    let cap = capture().subset(|k| k == "patterns");
+    let cap = capture();
+    replay_patterns(&cap).assert_clean();
+    for name in ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"] {
+        assert_eq!(pattern_rows(name), None, "{name} is an unknown key (G7: the TS throws a TypeError)");
+        assert!((pattern_density(name) - 0.5).abs() < f64::EPSILON);
+    }
+    assert!(cap.meta("patterns-prototype-names").unwrap().contains("throws_TypeError"));
+}
+
+/// The replay of the pattern table, its key order and the unknown names.
+pub fn replay_patterns(cap: &Capture) -> Report {
+    let cap = cap.subset(|k| k == "patterns");
     let mut replay = Replay::new(&cap);
     let mut s = Stream::new();
     for (name, rows) in preset_patterns() {
@@ -240,13 +264,7 @@ fn patterns_match_the_ts() {
         f(&mut u, pattern_density(name));
     }
     replay.check("patterns", "unknown", &summary(u));
-    let report = replay.finish();
-    report.assert_clean();
-    for name in ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"] {
-        assert_eq!(pattern_rows(name), None, "{name} is an unknown key (G7: the TS throws a TypeError)");
-        assert!((pattern_density(name) - 0.5).abs() < f64::EPSILON);
-    }
-    assert!(capture().meta("patterns-prototype-names").unwrap().contains("throws_TypeError"));
+    replay.finish()
 }
 
 // ── adjust ──────────────────────────────────────────────────────────────────────────────────────
@@ -362,12 +380,25 @@ const BC: [f64; 25] = [
 
 #[test]
 fn adjustments_match_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| k.starts_with("adjust/"));
+    let cap = capture();
+    assert_eq!(cap.meta("adjust-images").unwrap(), image_list().len().to_string());
+    let report = replay_adjust(&cap, 1);
+    eprintln!("{}", report.summary());
+    report.assert_clean();
+}
+
+/// The replay of the image adjusts: every `every`-th generated image (saturation, temperature,
+/// sharpen/soften) and every `every`-th brightness row of the contrast grid.
+pub fn replay_adjust(cap: &Capture, every: usize) -> Report {
+    let every = every.max(1);
+    let cap = cap.subset(|k| k.starts_with("adjust/"));
     let mut replay = Replay::new(&cap);
     let images = image_list();
-    assert_eq!(capture().meta("adjust-images").unwrap(), images.len().to_string());
     let limits = Limits::DEFAULT;
     for (k, im) in images.iter().enumerate() {
+        if !k.is_multiple_of(every) {
+            continue;
+        }
         let src = gen_image(im.kind, im.w, im.h, im.seed);
         let (w, h) = (u32::try_from(im.w).unwrap(), u32::try_from(im.h).unwrap());
         let (mut sat, mut temp, mut sharp) = (Stream::new(), Stream::new(), Stream::new());
@@ -392,6 +423,9 @@ fn adjustments_match_the_ts_bit_for_bit() {
     }
     let lv = levels_image();
     for (bi, bright) in BC.iter().enumerate() {
+        if !bi.is_multiple_of(every) {
+            continue;
+        }
         let mut s = Stream::new();
         for contrast in BC {
             let mut d = lv.clone();
@@ -400,9 +434,7 @@ fn adjustments_match_the_ts_bit_for_bit() {
         }
         replay.check("adjust/bc", &format!("b{bi}"), &summary(s));
     }
-    let report = replay.finish();
-    eprintln!("{}", report.summary());
-    report.assert_clean();
+    replay.finish()
 }
 
 // ── blip ────────────────────────────────────────────────────────────────────────────────────────
@@ -473,7 +505,16 @@ fn picture_image() -> Vec<u8> {
 
 #[test]
 fn blip_effects_match_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| k.starts_with("blip/"));
+    let report = replay_blip(&capture(), 1);
+    eprintln!("{}", report.summary());
+    report.assert_clean();
+}
+
+/// The replay of the blip effects: the line and decode facets whole, and every `every`-th of the
+/// three generated images (at most the first of them for `every >= 3`).
+pub fn replay_blip(cap: &Capture, every: usize) -> Report {
+    let every = every.clamp(1, 3);
+    let cap = cap.subset(|k| k.starts_with("blip/"));
     let mut replay = Replay::new(&cap);
     let mut s = Stream::new();
     for gain in GAINS {
@@ -516,6 +557,9 @@ fn blip_effects_match_the_ts_bit_for_bit() {
     }
     replay.check("blip/decode", "v", &summary(d));
     for (k, src) in blip_images().iter().enumerate() {
+        if !k.is_multiple_of(every) {
+            continue;
+        }
         let mut s = Stream::new();
         for gray in [false, true] {
             for floor in [false, true] {
@@ -534,6 +578,9 @@ fn blip_effects_match_the_ts_bit_for_bit() {
     }
     let sources = [picture_image(), gen_image(1, 16, 16, 0xb100_0003), levels_image()];
     for (k, src) in sources.iter().enumerate() {
+        if !k.is_multiple_of(every) {
+            continue;
+        }
         let mut s = Stream::new();
         for alpha in ALPHAS {
             for duotone in DUOTONES {
@@ -546,7 +593,5 @@ fn blip_effects_match_the_ts_bit_for_bit() {
         }
         replay.check("blip/adjust", &format!("i{k}"), &summary(s));
     }
-    let report = replay.finish();
-    eprintln!("{}", report.summary());
-    report.assert_clean();
+    replay.finish()
 }

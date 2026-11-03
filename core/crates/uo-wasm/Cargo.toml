@@ -33,10 +33,19 @@ fonts-memtest = ["dep:uo-fonts", "dep:uo-testkit", "count"]
 # facets of the committed captures inside the module; never shipped
 fonts-selftest = ["dep:uo-fonts", "dep:uo-testkit"]
 
+# test-only exports of the uo-drawingml wasm memory gate (tests/dml_memory.test.mjs): the soak of the module
+# record, the big effects with their peak bytes, the wasm32 limit rows; never shipped
+dml-memtest = ["dep:uo-drawingml", "count"]
+
+# test-only exports of the uo-drawingml parity self-test (tests/dml_selftest.test.mjs): replays the committed
+# captures inside the module (the replay functions of the native parity tests, included with #[path]); never shipped
+dml-selftest = ["dep:uo-drawingml", "dep:uo-jsnum", "dep:uo-testkit"]
+
 [dependencies]
 uo-alloc = { path = "../uo-alloc", optional = true }
 uo-opc = { path = "../uo-opc", optional = true }
 uo-fonts = { path = "../uo-fonts", optional = true }
+uo-drawingml = { path = "../uo-drawingml", optional = true }
 uo-jsnum = { path = "../uo-jsnum", optional = true }
 uo-testkit = { path = "../uo-testkit", optional = true }
 

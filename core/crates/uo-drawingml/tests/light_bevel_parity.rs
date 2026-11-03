@@ -15,9 +15,9 @@ use uo_drawingml::{BevelSpec, Limits, Mask, bevel_phi, light_at, light_face, lig
 use uo_jsnum::conv::canonicalize_nan;
 use uo_jsnum::math::{max, min};
 use uo_testkit::generate::Rng;
-use uo_testkit::{Capture, PlatformSpec, Replay, Stream};
+use uo_testkit::{Capture, PlatformSpec, Replay, Report, Stream};
 
-const CAPTURE: &str = include_str!("captures/light_bevel.capture");
+pub const CAPTURE: &str = include_str!("captures/light_bevel.capture");
 
 // ── the corpus (mirrored from tools/capture-light-bevel.mjs) ────────────────────────────────────
 
@@ -302,7 +302,15 @@ fn f4(s: &mut Stream, v: [f32; 4]) {
 
 #[test]
 fn light_tables_match_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| k == "light/table");
+    let report = replay_light_tables(&capture());
+    eprintln!("{}", report.summary());
+    report.assert_clean();
+}
+
+/// The replay of the light tables (the wasm self-test of `uo-wasm` calls it too): 20 rigs x 14
+/// materials, byte digests.
+pub fn replay_light_tables(cap: &Capture) -> Report {
+    let cap = cap.subset(|k| k == "light/table");
     let mut replay = Replay::new(&cap);
     for rig in RIGS {
         let mut s = Stream::new();
@@ -311,18 +319,28 @@ fn light_tables_match_the_ts_bit_for_bit() {
         }
         replay.check("light/table", &format!("r_{}", label(rig)), &summary(s));
     }
-    let report = replay.finish();
-    eprintln!("{}", report.summary());
-    report.assert_clean();
+    replay.finish()
 }
 
 #[test]
 fn light_at_and_face_match_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| k == "light/at" || k == "light/face");
+    let report = replay_light_at(&capture(), 1);
+    eprintln!("{}", report.summary());
+    report.assert_clean();
+}
+
+/// The replay of `light_at` over every `every`-th table key (of 23); `light/face` is checked only
+/// when `every == 1` (it digests every table).
+pub fn replay_light_at(cap: &Capture, every: usize) -> Report {
+    let every = every.max(1);
+    let cap = cap.subset(|k| k == "light/at" || (every == 1 && k == "light/face"));
     let mut replay = Replay::new(&cap);
     let (th, ph) = (thetas(), phis());
     let mut sf = Stream::new();
-    for (rig, mat) in KEYS {
+    for (index, (rig, mat)) in KEYS.into_iter().enumerate() {
+        if !index.is_multiple_of(every) {
+            continue;
+        }
         let t = light_table(Some(rig), mat);
         let mut s = Stream::new();
         for dir in DIRS {
@@ -335,15 +353,22 @@ fn light_at_and_face_match_the_ts_bit_for_bit() {
         replay.check("light/at", &format!("k_{rig}_{}", label(mat)), &summary(s));
         f4(&mut sf, light_face(&t));
     }
-    replay.check("light/face", "all", &summary(sf));
-    let report = replay.finish();
-    eprintln!("{}", report.summary());
-    report.assert_clean();
+    if every == 1 {
+        replay.check("light/face", "all", &summary(sf));
+    }
+    replay.finish()
 }
 
 #[test]
 fn bevel_phi_matches_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| k == "light/phi");
+    let report = replay_bevel_phi(&capture());
+    eprintln!("{}", report.summary());
+    report.assert_clean();
+}
+
+/// The replay of `bevel_phi` over 16 presets x 96 `t` x 11 `hw`.
+pub fn replay_bevel_phi(cap: &Capture) -> Report {
+    let cap = cap.subset(|k| k == "light/phi");
     let mut replay = Replay::new(&cap);
     let ts = phi_ts();
     for prst in prsts() {
@@ -355,22 +380,28 @@ fn bevel_phi_matches_the_ts_bit_for_bit() {
         }
         replay.check("light/phi", &format!("p_{}", label(prst)), &summary(s));
     }
-    let report = replay.finish();
-    eprintln!("{}", report.summary());
-    report.assert_clean();
+    replay.finish()
 }
 
+/// The calls of the corpus are numbered and the number is part of the digest (it seeds the RGBA
+/// and goes into the stream), so a group left out of a subset replay still counts its calls:
+/// with `dry` set `shade` only advances the counter.
 struct Shader {
     call: u32,
+    dry: bool,
     masks: std::collections::HashMap<&'static str, Mask>,
 }
 
 impl Shader {
     fn new() -> Shader {
-        Shader { call: 0, masks: std::collections::HashMap::new() }
+        Shader { call: 0, dry: false, masks: std::collections::HashMap::new() }
     }
 
     fn shade(&mut self, s: &mut Stream, mask: &'static str, spec: &BevelSpec<'_>) {
+        if self.dry {
+            self.call += 1;
+            return;
+        }
         let sil = self.masks.entry(mask).or_insert_with(|| gen_mask(mask));
         let mut rgba = gen_rgba(sil.w(), sil.h(), 1000 + 7919 * self.call);
         shade_bevel(&mut rgba, sil, spec, &Limits::DEFAULT).unwrap();
@@ -385,13 +416,24 @@ fn spec<'a>(w: f64, h: f64, prst: O, rig: O, dir: O, material: O, word: bool) ->
 
 #[test]
 fn shade_bevel_matches_the_ts_bit_for_bit() {
-    let cap = capture().subset(|k| k.starts_with("bevel/"));
-    let mut replay = Replay::new(&cap);
-    let mut sh = Shader::new();
-    let all_prsts = prsts();
+    let cap = capture();
     for key in ["bevel-calls", "uint8-vs-clamped-checked"] {
         assert!(cap.meta(key).is_some(), "{key}");
     }
+    let report = replay_shade_bevel(&cap, 1);
+    eprintln!("{}", report.summary());
+    report.assert_clean();
+}
+
+/// The replay of `shade_bevel`: every `every`-th group of the four sections that have several (the
+/// Word presets, the rigs, the directions), the three single-facet sections whole. The groups left
+/// out only advance the call counter.
+pub fn replay_shade_bevel(cap: &Capture, every: usize) -> Report {
+    let every = every.max(1);
+    let cap = cap.subset(|k| k.starts_with("bevel/"));
+    let mut replay = Replay::new(&cap);
+    let mut sh = Shader::new();
+    let all_prsts = prsts();
 
     // A: the Word tables and the conditions that select or reject them
     let cond: [(O, O, O); 6] = [
@@ -403,7 +445,8 @@ fn shade_bevel_matches_the_ts_bit_for_bit() {
         (None, None, Some("matte")),
     ];
     let ws = [0.4, 0.6, 3.0, 12.0, 80.0, f64::NAN];
-    for &prst in &all_prsts {
+    for (pi, &prst) in all_prsts.iter().enumerate() {
+        sh.dry = !pi.is_multiple_of(every);
         let mut s = Stream::new();
         for (rig, dir, material) in cond {
             for w in ws {
@@ -414,12 +457,15 @@ fn shade_bevel_matches_the_ts_bit_for_bit() {
                 }
             }
         }
-        replay.check("bevel/word", &format!("p_{}", label(prst)), &summary(s));
+        if !sh.dry {
+            replay.check("bevel/word", &format!("p_{}", label(prst)), &summary(s));
+        }
     }
 
     // B: the light rigs x materials x presets, directions cycling
     let bm = ["e17", "ring", "blobs", "noise"];
     for (ri, rig) in RIGS.into_iter().enumerate() {
+        sh.dry = !ri.is_multiple_of(every);
         let mut s = Stream::new();
         for (pi, &prst) in all_prsts.iter().enumerate() {
             for (mi, material) in MATS.into_iter().enumerate() {
@@ -428,11 +474,14 @@ fn shade_bevel_matches_the_ts_bit_for_bit() {
                 sh.shade(&mut s, bm[(pi * 14 + mi) % 4], &spec(w, w * hr, prst, rig, DIRS[(ri + pi + mi) % 12], material, false));
             }
         }
-        replay.check("bevel/light", &format!("r_{}", label(rig)), &summary(s));
+        if !sh.dry {
+            replay.check("bevel/light", &format!("r_{}", label(rig)), &summary(s));
+        }
     }
 
     // B2: every direction x preset on small masks and several rigs
-    for dir in DIRS {
+    for (di, dir) in DIRS.into_iter().enumerate() {
+        sh.dry = !di.is_multiple_of(every);
         let mut s = Stream::new();
         for (pi, &prst) in all_prsts.iter().enumerate() {
             for (mi, m) in ["e17", "blobs", "noise"].into_iter().enumerate() {
@@ -441,10 +490,13 @@ fn shade_bevel_matches_the_ts_bit_for_bit() {
                 }
             }
         }
-        replay.check("bevel/dir", &format!("d_{}", label(dir)), &summary(s));
+        if !sh.dry {
+            replay.check("bevel/dir", &format!("d_{}", label(dir)), &summary(s));
+        }
     }
 
     // C: larger masks, Word table on and off
+    sh.dry = false;
     let mut s = Stream::new();
     for m in ["big_e", "big_blobs", "big_rr"] {
         for prst in [None, Some("circle"), Some("relaxedInset"), Some("angle"), Some("softRound"), Some("convex")] {
@@ -469,7 +521,5 @@ fn shade_bevel_matches_the_ts_bit_for_bit() {
     replay.check("bevel/nan", "all", &summary(s));
 
     assert_eq!(cap.meta("bevel-calls").unwrap(), sh.call.to_string());
-    let report = replay.finish();
-    eprintln!("{}", report.summary());
-    report.assert_clean();
+    replay.finish()
 }

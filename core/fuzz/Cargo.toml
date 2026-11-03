@@ -1,4 +1,4 @@
-# Fuzz targets of the uo-opc container layer, uo-jsnum and uo-fonts (rust-port workflow, stage 4 security).
+# Fuzz targets of the uo-opc container layer, uo-jsnum, uo-fonts and uo-drawingml (rust-port workflow, stage 4 security).
 # Its own workspace: not a member of core/ (cargo-fuzz needs nightly; core/ builds on stable).
 #
 #   cargo +nightly fuzz run <target> -s none          # libFuzzer (Linux CI, or Windows MSVC)
@@ -28,6 +28,8 @@ fallback = []
 [dependencies]
 uo-opc = { path = "../crates/uo-opc" }
 uo-jsnum = { path = "../crates/uo-jsnum" }
+# the dml_* targets (src/drawingml.rs)
+uo-drawingml = { path = "../crates/uo-drawingml" }
 # the shipped hyphenation patterns (fonts_hyphen_words)
 uo-fonts = { path = "../crates/uo-fonts", features = ["hyphen-data"] }
 # fonts built in code for the font targets and their seeds (no proprietary bytes)
@@ -316,6 +318,102 @@ bench = false
 [[bin]]
 name = "fonts_embed"
 path = "fuzz_targets/fonts_embed.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_preset"
+path = "fuzz_targets/dml_preset.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_preset_path"
+path = "fuzz_targets/dml_preset_path.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_custom_guides"
+path = "fuzz_targets/dml_custom_guides.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_color"
+path = "fuzz_targets/dml_color.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_patterns"
+path = "fuzz_targets/dml_patterns.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_adjust"
+path = "fuzz_targets/dml_adjust.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_blip"
+path = "fuzz_targets/dml_blip.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_flatten"
+path = "fuzz_targets/dml_flatten.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_raster"
+path = "fuzz_targets/dml_raster.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_effects"
+path = "fuzz_targets/dml_effects.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_light"
+path = "fuzz_targets/dml_light.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dml_bevel"
+path = "fuzz_targets/dml_bevel.rs"
 required-features = ["libfuzzer"]
 test = false
 doc = false
