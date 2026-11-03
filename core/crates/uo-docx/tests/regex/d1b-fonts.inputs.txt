@@ -1,0 +1,233 @@
+
+ 
+>
+/>
+<
+$
+$$
+&amp;&lt;&gt;&quot;&apos;&amp;lt;&amp;amp;&#38;&x;&
+a&b"c<d>e'f
+<Relationships xmlns="x"><Relationship Id="rId1" Type="t" Target="a.xml"/></Relationships>
+<Relationships xmlns="x"/>
+<Relationships xmlns="x"  \t/>
+<Relationships/>
+<Relationships>
+<Relationships a="1"/> \n
+<Relationships xmlns="x"></Relationships>  \r\n
+<Relationships xmlns="x"></Relationships>x
+<Relationships xmlns="x"></Relationships> ﻿
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/font" Target="fonts/font1.odttf"/>
+<Relationship Type="t" Target="x" TargetMode="External" Id="a"/><Relationship Id="" Target="&amp;x&lt;"/>
+<Relationship xId="1" Id="2" r:Id="3"/>
+<Relationship r:Id="3" Id="4">
+<Relationship Id="a>b" Type="t"/>
+<Relationship Id="unclosed Type="t"/>
+<Relationship_x Id="1"/><Relationship\tId="2"/><Relationship
+<RelationshipId="1"/>
+<Relationships><Relationship Id="1"/><Relationships/></Relationships>
+<Relationship Id="1" Target="a" TargetMode="external"/><Relationship Id="2" TargetMode="External"
+<Relationship Id="é😀" Target="ü"/>
+<Types xmlns="x"><Default Extension="xml" ContentType="application/xml"/></Types>
+<Types xmlns="x"><Default Extension="odttf" ContentType="c"/></Types>
+<Types><DEFAULT EXTENSION="ODTTF"/></Types>
+<Types><default x extension="OdTtF" /></Types>
+<Types><DefaultX Extension="odttf"/></Types>
+<Types><Default Extension="odttfx"/></Types>
+<Types><Default a=">" Extension="odttf"/></Types>
+<Types><Default Extension="odttf"
+<Default Extension="odttf">
+<Types/>
+<Types>
+<TypesX><Types a="1">
+<Types></Types>  
+</Types>\n\t
+<Types></Types><x/>
+<Defaultſ Extension="odttf"/>
+<Default Extension="odttfK"/>
+<w:settings xmlns:w="w"><w:zoom w:percent="100"/><w:embedTrueTypeFonts/></w:settings>
+<w:settings><w:embedTrueTypeFonts w:val="0"/></w:settings>
+<w:settings><w:embedTrueTypeFonts w:val="false"/><w:embedTrueTypeFonts/></w:settings>
+<w:settings><w:embedTrueTypeFonts w:val="off" ></w:embedTrueTypeFonts></w:settings>
+<w:settings><w:embedTrueTypeFonts w:val="1"/><w:saveSubsetFonts w:val="true"/></w:settings>
+<w:embedTrueTypeFonts
+<w:embedTrueTypeFonts>
+<w:embedTrueTypeFontsX/>
+<w:embedTrueTypeFonts w:val="0"/>
+<w:embedTrueTypeFonts />
+<w:embedTrueTypeFonts><w:embedTrueTypeFonts/></w:embedTrueTypeFonts>tail
+<w:embedTrueTypeFonts a="b">no close
+<w:embedTrue<w:embedTrueTypeFonts/>TypeFonts/>x
+<w:embedTrue<w:embedTrueTypeFonts>y</w:embedTrueTypeFonts>TypeFonts></w:embedTrueTypeFonts>z
+<a<a/> /><a<a></a>/>
+<a<a<a/>/>/>
+<a <a/>/>
+<a/><a><a/></a></a>
+<a
+<a　x>y</a>
+<w:embedSystemFonts/><w:embedSystemFonts w:val="0"></w:embedSystemFonts>
+<w:zoom/><w:view w:val="web"></w:view><w:zoom w:percent="90"></w:zoom>
+<w:settings/>
+<w:settings xmlns:w="w" a="$&"/>
+<w:settings a="$`$'"/><w:settings/>
+<w:settingsX/><w:settings  />
+<w:settings
+<w:settings x="/>">
+<w:fonts xmlns:w="w"><w:font w:name="Calibri"><w:panose1 w:val="020F0502020204030204"/></w:font></w:fonts>
+<w:fonts xmlns:w="w" xmlns:r="r"><w:font w:name="A&amp;B"><w:embedRegular r:id="rId1" w:fontKey="{K}"/></w:font><w:font w:name="Über"/></w:fonts>
+<w:fonts><w:font w:name="x"/><w:font w:name="y"><w:embedBold/></w:font></w:fonts>
+<w:fonts/>
+<w:fonts xmlns:r="r"/>
+<w:fonts a="1" />  
+<w:fontsX/><w:fonts>
+<w:fonts xmlns:w="w">
+<w:fonts\txmlns:r="1">
+<w:fonts a=">" xmlns:r="1"/>
+<w:font w:name="a" w:name="b">c</w:font>
+<w:font w:name="a>b" x>c</w:font>
+<w:font w:name="a" w:name="b>x">c</w:font>
+<w:font w:name="CALIBRI">x</W:FONT>
+<W:FONT W:NAME="calibri"/>
+<w:font w:name="Calibri" />
+<w:font  w:name="Calibri"></w:font>
+<w:fontx w:name="Calibri"/>
+<w:font w:name="ſ"/><w:font w:name="S"/>
+<w:font w:name="k"/><w:font w:name="K"/>
+<w:font w:name="SS"/><w:font w:name="ß"/>
+<w:font w:name="ı"/><w:font w:name="I"/><w:font w:name="İ"/>
+<w:font w:name="ς"/><w:font w:name="Σ"/>
+<w:font w:name="µ"/><w:font w:name="μ"/>
+<w:font w:name="ǅ"/><w:font w:name="ǆ"/>
+<w:font w:name="ﬀ"/><w:font w:name="😀"/>
+<w:font w:name="$&amp;"/><w:font w:name="$&"/>
+<w:font w:name="a&lt;b&gt;c"/><w:font w:name="Q&quot;x">
+<w:font w:name="Times New Roman"><w:embedItalic r:id="1"></w:embedItalic></w:font>
+<w:embedRegular/><w:embedBoldItalic x="/" /><w:embedBoldX/><w:embedItalic>/></w:embedItalic><w:embedBold
+<w:embedRegular_/><w:embedBold />
+<w:font w:name="Wfit Test"><w:embedRegular r:id="rId3" w:subsetted="1" w:fontKey="{0}"/></w:font></w:fonts>\n
+</w:font>
+</w:font> 
+x</w:font>
+</w:fonts>
+</w:fonts> \r\n
+</w:fonts>x
+</w:fonts></w:fonts>
+😀</W:FONT></w:embedTrueTypeFonts></Types>
+><w:embedRegular w:val="off"\n</a> w:name=" <a\n</a><w:font<w:embedTrueTypeFontsüber
+ w:name=" w:name="/></a>"é Id="rId1"
+x</w:embedTrueTypeFonts><Default\n</a>/><w:embedBold> </a> /></Types> w:val="0"
+><w:embedBold
+</Types></w:font></w:embedTrueTypeFonts>>
+<w:embedRegular w:val="0"$`<w:zoom</w:embedTrueTypeFonts>/>über</w:font>
+über<Default w:val="off"<w:fonts 
+$&😀<w:zoom<w:settings Target="a&amp;b"
+ w:name="<Calibriüber</Types><Default<a$&
+Calibri<w:embedBold
+é Type="t"Calibri w:val="off" w:val="0"<Default<w:embedTrueTypeFonts<Default</W:FONT>Calibri w:val="0" Target="a&amp;b"
+<w:embedBold<
+/>x <w:fonts/> Extension="odttf"<w:embedRegular w:val="0" w:val="0"
+</W:FONT>x<w:font w:name="<w:embedBold w:val="0"
+xmlns:r=</Types></W:FONT>$&x
+ Id="rId1""</Types> Type="t"/><DefaultCalibri
+<w:embedRegular </a><w:embedBold<w:settings<w:zoomx Extension="odttf"/><w:embedTrueTypeFonts
+</a>über<<w:settings<w:embedTrueTypeFonts Type="t"</Types>$` é</w:font>
+<w:embedRegular<w:zoom w:name="<w:embedTrueTypeFonts\n xmlns:r=
+</w:font> w:val="off"/><w:embedTrueTypeFonts w:val="off"
+</a></W:FONT>$` Id="rId1"$`😀<w:embedBold<w:embedRegular
+</w:embedTrueTypeFonts> Id="rId1"
+Calibri😀\n
+/><a Id="rId1" w:val="off"><w:zoom Id="rId1" w:val="off"$`</w:embedTrueTypeFonts>
+ Extension="odttf"<w:settings\n$& w:val="off"
+<w:embedBold</W:FONT></a> </w:font> <w:settings\n Target="a&amp;b" w:val="0"😀 w:val="off" Id="rId1" Extension="odttf"
+/>$`$`<w:embedBold" w:val="off"
+"$&$&/> Target="a&amp;b"<Types><w:embedRegular><w:embedTrueTypeFonts$`<w:embedRegular<</a>
+<w:settings Extension="odttf"😀
+</a>$&</W:FONT><w:zoom 
+ Target="a&amp;b"$`</a> Id="rId1" Target="a&amp;b"é
+</a></w:embedTrueTypeFonts> w:name="</Types><w:embedBold Type="t"<w:fonts< Extension="odttf" <a w:name=" w:val="0" Extension="odttf"
+</a>$&é</a>
+><w:font<w:embedRegular Id="rId1"<w:fonts "
+😀 <Relationship</w:embedTrueTypeFonts><w:embedRegular
+</w:font> </w:embedTrueTypeFonts>< Id="rId1"<w:settings</w:embedTrueTypeFonts><axmlns:r=
+ Extension="odttf"<w:embedTrueTypeFonts Id="rId1"$`é Target="a&amp;b"<a
+<w:zoom Id="rId1"</w:font>
+ Type="t" w:val="0"xmlns:r=</w:font>\nCalibri<w:fonts w:val="0" \n</w:embedTrueTypeFonts>
+</W:FONT> Target="a&amp;b"
+ w:name=" Target="a&amp;b"$&$`Calibri</w:embedTrueTypeFonts>$`$&über</w:font><w:settings<Types>
+x
+<w:embedTrueTypeFonts<w:embedTrueTypeFonts Target="a&amp;b"über/>
+</w:font></W:FONT>
+ xmlns:r= <w:settings
+ w:val="0"Calibri</W:FONT>  Target="a&amp;b" w:val="0"<w:embedBold
+😀
+</Types></W:FONT>über/>xmlns:r=<w:embedBold<Default$& überüber Id="rId1" 
+</Types>/> w:val="off"Calibri</w:embedTrueTypeFonts>xCalibri<a
+ w:val="0"é Target="a&amp;b"$&</w:font>$&
+über<w:embedTrueTypeFonts
+ w:val="off"éxmlns:r=$` Type="t"<<Relationship</a> Extension="odttf"😀 $`$`
+<Default$`  Type="t" w:name="<w:embedTrueTypeFonts\n$`
+<w:fonts</w:font>über w:name="
+Calibri Extension="odttf" Type="t"</w:embedTrueTypeFonts><w:embedBoldxxx<w:zoom<w:font w:val="0"<Default<w:embedRegular
+<Calibri<w:fonts <w:font w:val="0"
+\n</W:FONT>   x/><w:settingsüber<w:font
+>xCalibri</w:embedTrueTypeFonts>  /><w:embedTrueTypeFonts
+<Relationship</a> >> Type="t"<Relationship</Types><w:fonts</Types></W:FONT> w:val="0"<Types>
+> w:name="</w:font> w:val="0"<w:embedTrueTypeFontsüber</W:FONT></W:FONT>
+</W:FONT><a>$`x<Default
+</Types><w:settings/></w:font>
+ w:name=" w:name="<w:fonts<Defaulté</Types> </Types><w:embedTrueTypeFonts<w:fonts</W:FONT></w:font>
+</w:font> </w:embedTrueTypeFonts><<w:fonts$`😀/>""
+<w:zoom Id="rId1"😀$`
+😀 w:val="0"<w:fonts$`  Id="rId1"</w:embedTrueTypeFonts><w:embedRegular<w:fonts Type="t"><w:settings<w:embedRegular
+ Extension="odttf"xmlns:r=</w:embedTrueTypeFonts>Calibri 
+x> Target="a&amp;b"</W:FONT> Target="a&amp;b" Target="a&amp;b"<w:zoom Type="t"<Relationship<w:font$&</a>
+  Extension="odttf"<Types><w:embedTrueTypeFonts<w:embedBold
+über</w:font>
+$& w:name=" w:val="0"</Types><w:font$& Id="rId1"
+Calibri<w:zoom\n<w:embedBold Target="a&amp;b"</W:FONT>/>  <Types> w:name="
+</a><w:zoom<w:embedRegular<w:embedBold<w:embedTrueTypeFonts"></Types>
+xmlns:r= Id="rId1"Calibri"<w:fonts<a"</a> w:val="off"""xmlns:r=
+</w:embedTrueTypeFonts></a><w:embedTrueTypeFonts<w:font Id="rId1"éxmlns:r=😀 Extension="odttf"><w:embedTrueTypeFontsxmlns:r=xmlns:r=
+></a>Calibri</W:FONT>éCalibri w:val="off""<w:embedTrueTypeFonts<a
+😀😀<w:settings</W:FONT><w:embedTrueTypeFonts\n<w:settings<Relationship
+</W:FONT><w:embedTrueTypeFonts<w:font<w:embedTrueTypeFonts<w:zoom
+ Type="t" Id="rId1"
+<
+<w:fonts<w:settings/> "xmlns:r=</Types><Default</W:FONT></w:font>
+/>über 
+Calibri </W:FONT>über
+é Target="a&amp;b"$&</w:font></W:FONT><Types><Default😀
+<w:embedBold w:val="0"</W:FONT>> </w:font> Type="t" <w:settings<Default
+<w:embedBold Type="t"</w:embedTrueTypeFonts>  <Default</W:FONT></Types><Types> Target="a&amp;b"
+\n<w:settings</w:font><w:embedBold
+<w:fonts<Types></Types><w:settings<w:zoom<w:fonts Id="rId1"<
+über
+😀\n <<
+</a>über/>"<w:embedRegular</w:font> w:name="
+<w:fonts<w:embedRegular</w:font></Types>\n w:name=" Target="a&amp;b" Type="t"😀<Types><a<Relationship<Types>
+<<<Relationship </a> <w:embedBold$`/>é w:val="off" Id="rId1"
+<Types>$`<Relationship</w:font>$`
+/><w:embedRegular Extension="odttf"
+ Type="t"><w:embedBoldxé w:name="
+<<w:zoom
+ Type="t" <Relationshipé<w:embedTrueTypeFonts
+xmlns:r=
+<w:embedRegularé><a😀</w:font><w:embedRegular
+ Extension="odttf" Target="a&amp;b"  über Target="a&amp;b"$`<a
+"  
+$&xmlns:r="<w:embedTrueTypeFonts<w:fonts Extension="odttf"über<w:fonts</W:FONT></w:embedTrueTypeFonts> w:val="0"
+x<Relationship$&
+<w:font w:name="</w:font></a><w:embedTrueTypeFonts</a><w:embedTrueTypeFontsCalibri w:name="
+ Target="a&amp;b" </a></a><w:embedTrueTypeFonts
+ Target="a&amp;b" Id="rId1"😀überx<Relationship $` Type="t""<w:embedBold
+<<Relationship></w:font>/> Target="a&amp;b"<w:font Target="a&amp;b"x<</w:font>><a 
+ Extension="odttf"
+ w:name="<Types>>é<Relationship<>x<w:font"</a><a
+x<w:embedTrueTypeFonts</a> Extension="odttf"é$`<w:fonts"<w:zoom
+ Id="rId1">
+<a</w:font>
+"<w:embedBold<w:embedBold</w:font>$` Id="rId1"<a<a><w:embedBold
+/>xmlns:r=<w:embedTrueTypeFonts xüber\n
+$&
+<w:fonts w:name="$&Calibri>é"Calibri Target="a&amp;b" Id="rId1"<w:font" <w:embedRegular
+<w:fonts<<a\n" w:val="0"CalibriCalibri"<Types>
+über Extension="odttf"</w:font>

@@ -923,6 +923,8 @@ Pending.
 | R4b inline objects (`read/inline_objects.rs`, `read/picture_format.rs`; facet `drawing-runs` with `js/capture-drawing-runs.mjs`, generated corpus `js/quirk-objects.mjs`, `ObjectHost` for R4c's `ReadContext`, regex rows `r4b`, unit cases from the TS, M1 and no-panic tests; declarations in `uo-docx-d1a/R4b.md`) | Sonnet | one session (time not measured by the agent; plus short waits on other frontiers' transient build breakage); 0 verifier rounds (29,877 comparisons equal on the first complete replay after one bug the corpus found and one named difference), rework only on the corpus and the capture normalisation | ≈ 170 |
 | R4c paragraphs, runs, fields and the custom-inline `JSON.parse` (`read/paragraph.rs` = `ReadContext`/`readParagraph`, `read/json_parse.rs`; facets `paragraph` (+ sources variants) and `custom-tag` with `js/capture-paragraph.mjs`, `js/capture-custom-tag.mjs`, generated corpus `js/quirk-paragraph.mjs`, regex rows `r4c`, unit, M1 and no-panic tests; declarations in `uo-docx-d1a/R4c.md`) | Sonnet | one session (time not measured by the agent); 0 verifier rounds (22,000+ facets equal after the corpus and the capture normalisation were corrected; one port bug found by the first replay: key marks of `ins`/`del`/`commentIds`), rework on the no-panic findings (comment-id memory, stack cost of nested stories) | ≈ 140 |
 | R6 source store build (`read/sources.rs`, `SourcePart` no-copy change; facets `sources-para`, `sources-blocks`, `sources` (replay waits for R5), `js/capture-sources*.mjs`, synthetic package generator `js/quirk-sources.mjs`, regex rows `r6`, unit, M1 and no-panic tests; declarations in `uo-docx-d1a/R6.md`) | Sonnet | one session (time not measured by the agent; plus short waits on other frontiers' transient build breakage); 0 parity rounds (the interim facets matched on the first full replay), rework only on my own test expectations | ≈ 100 |
+| contour and shape styles (uo-drawingml G3: `drawing/contour.rs`, `drawing/shape_styles.rs`, generated `data/shape_styles.rs` + `tools/gen-shape-styles.mjs`; facets `contour`, `shape-styles` with `js/capture-contour.mjs`, unit, M1/M3 and no-panic tests; decisions C1–C7 in "contour and shape styles") | Sonnet | one session (time not measured by the agent); 0 parity rounds (every facet equal on the first replay: 2,369 contour cases + 776 gallery lines), rework only on my own tests (an ill-posed expectation, clippy lints) and one fix of line endings (the editor tool wrote CRLF) | ≈ 75 |
+| D1b font embedding, from uo-fonts G2 (`write/fonts/{docx,ooxml}.rs`: `read_docx_embedding`, `write_docx_embedding`, the app-neutral helpers; regex rows `d1b-fonts` (71 sites × 233 inputs), `js/capture-font-embedding.mjs` with 500 synthetic packages and seeded plans of open fonts, `TargetRule` for the D6 proof, unit, M1, no-panic and linear-time tests; section "D1b — font embedding") | Opus | one session (time not measured); 0 parity rounds (regex rows equal to V8 on the first run; corpus equal on the first replay; the synthetic differences were all D6) | ≈ 80 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
@@ -1151,3 +1153,186 @@ Open, for the next round or the milestone-1 review:
 - **Legacy flat `readDocument`** (R4c 9.7) not ported: confirm no consumer remains.
 - **9-level numbering limit** (R2), unbounded `Math.min` over wrap polygons (R3), the R4b item 9 rows:
   milestone security review.
+
+### contour and shape styles (from uo-drawingml G3)
+
+*(Sonnet, hybrid mode, 2026-11-03; nothing committed.)* The last two files of `shared/drawingml`
+moved here by gate decision G3 of uo-drawingml: `contour.ts` (`wrapContour`, the
+`wp:wrapPolygon` of a picture with transparency, 21600 units) and `shape-styles.ts`
+(`SHAPE_STYLE_PRESETS`, the Shape Styles gallery: `wps:spPr` tail + `wps:style`, 77 entries).
+
+**Ported 1:1** into the new module `uo_docx::drawing` (`src/drawing/{mod,contour,shape_styles}.rs`,
+generated `src/data/shape_styles.rs`, generator `tools/gen-shape-styles.mjs`):
+
+| TS | Rust |
+|---|---|
+| `wrapContour(rgba, w, h)` (96-cell grid on the longer side, 2-cell square dilation, row extremes, Douglas–Peucker with 1 cell, `Math.round` to 21600ths, closed ring) | `wrap_contour(&[u8], u32, u32) -> Result<Option<Vec<[f64; 2]>>, ContourError>` |
+| `SHAPE_STYLE_PRESETS[n - 1]` (`setShapeStyle`, `styleLook`) | `shape_style_preset(n: f64)` (`js_index`), `SHAPE_STYLE_PRESETS: &[ShapeStylePreset { sp_pr, style }]` |
+| the comparison loop of `shapeStyleIndex` (`shape-ops.ts`: `s === st && p === fillLn`, `i + 1`) | `find_shape_style(sp_pr, style) -> Option<u32>` (the regex half of that function is the session's, D2b) |
+
+TS users that fixed the API: `universal-write.ts` `pictureContour` (draws the visible part, at most
+480 px on the long side, into an `OffscreenCanvas`, passes `getImageData().data`, `cw`, `ch`, puts
+the points in `WrapPolygon.pts`), `chrome-shape.ts` (`styleLook` reads both strings, the gallery
+has `len` items), `shape-ops.ts` (`shapeStyleIndex`), `universal-write.ts` `setShapeStyle` (a
+number from the UI, `undefined` for a bad one). The canvas half of `pictureContour` is the shell's.
+
+**Parity (differential, V8 x64 Node 24.15, `js/capture-contour.mjs` from `UO_TS_ROOT`, committed
+inputs and captures in `tests/parity/contour.*`, `shape-styles.*`, replay `tests/parity_contour.rs`).**
+0 mismatches, 0 accepted, 0 not replayed:
+
+- contour: **2,369 cases**, 7,107 facets (`in` = digest of the RGBA bytes, so the Rust case generator is checked against the JS one; `out` = digest of the exact bits of every vertex; `len`), of which 489 `null` and 1,880 polygons (21,988 vertices, up to 84 per polygon). Families: rect, ellipse, ring, triangle, box unions, noise (alpha 0 with a per-mille probability, partial alphas), sparse pixels, frames, checkers; the filled/dilated-to-the-whole-grid family (boxes inset 0–7 cells on 10 sizes); the three cases of the TS test; hostile sizes (0 x N, N x 0, 1 x 100000, 100000 x 1, 3 x 99999, 20000 x 7, 1500 x 1500, 2000 x 1200); 80 truncated buffers and 40 over-long ones; **every one of the 187 preset shapes at five sizes** with margins (the alpha comes from `uo_drawingml` `preset_outline`/`flatten_path`/`fill_polygons` in Rust and from the TS drawingml dist in JS, and the `in` facet proves they agree). The script also runs the dist build of `wrapContour` next to the source on every case and aborts if they differ (2,369 equal).
+- shape styles: 776 lines, 778 facets: the table digest (77 entries), the `SHAPE_STYLE_PRESETS[n - 1]` lookups over hostile numbers as f64 bits (NaN, ±∞, ±0, 1.0000000000000002, 76.99999999999999, 2^32 + 1, 2^53, 1e300…; 83 hit), and the comparison loop over every entry and six variants (swapped, mixed, trailing space, `<wps:style >`) plus explicit pairs: 214 found, the first-match order checked (entries 1–42 share `<a:ln/>`).
+- no `pow` and no libm call is involved (`Math.hypot` of V8 is software, `uo_jsnum::math::hypot`), so there is no WSL/FMA facet; the capture is one Windows x64 run (platform line in the file).
+- Mutation check on `contour.rs` (13 one-line mutants, file restored after each): 10 killed (dilation radius, grid size 96, DP tolerance and `>=`, `round` to `floor` on the output and on the grid size, the all-filled test of the dilation, `d > best` to `>=`, the ring not reversed, the alpha-0 test); 3 survivors are equivalent mutants: `filled === gw * gh` is implied by `dil.every` (a full occupancy dilates to a full grid), `|| 1` of the DP length (a zero-length first segment, reachable when the grid is one cell wide, gives numerator 0, so `best` is 0 or -1 and nothing is above eps either way) and the `Math.min(gw - 1, …)`/`Math.min(gh - 1, …)` clamps (dead for integer sizes: `x * gw / w` stays at least `gw / w >= 2e-8` below `gw`, far above one ulp).
+- unit: 12 (the TS test's three cases, a one-pixel contour, the null exits, alpha-only reads, the grid on non-square pictures, buffers, a 2000 x 1500 picture, the gallery table and lookups, the source SHA of the generated table, the opt-in regeneration check); no-panic: 4 loops (1,500 random pictures with cut buffers, `u32` edge sizes, degenerate shapes, 20,000 random gallery numbers); M1: 3 tests (every path of `wrap_contour` returns every byte, 0 B for the gallery lookups).
+- **Memory (M1/M3).** Live bytes back to the start on the polygon, the four `None` exits and both errors. One contour allocates 31,012 B with a 24,576 B peak, **the same for a 96 x 96 and a 1920 x 1920 picture** (the work buffers are the 96 x 96 grid's; asserted). No cache (M5), no state (M2 does not apply).
+
+**Decisions outside the source semantics (none changes a result on an input the TS can be given):**
+
+| # | Decision | Why |
+|---|---|---|
+| C1 | **Module `uo_docx::drawing`**, not `word` and not under a future `write`/`session`. | `word` holds Word semantics over the model that the layout and the session share (resolution, numbering, fields); these are generators/inputs of two edit operations (`setImageWrap`, `setShapeStyle`) that the session (D2b) and the Editing API can both call, and neither reads the model. A module of their own avoids a dependency of one on the other and leaves `write/` to the fonts embedding. Additive edits to shared files: `lib.rs` (`pub mod drawing;`) and `data/mod.rs` (`pub mod shape_styles;`). |
+| C2 | `wrap_contour` takes `w`, `h` as `u32` and returns `Err(ContourError::BufferSize)` when `rgba.len() < w * h * 4` (checked in `u64`, no allocation before it). Zero sizes are `Ok(None)` before the buffer check, as `w < 1 \|\| h < 1 → null`. The error is local to the module, not a `DocxError` variant. | **Declared divergence.** The TS takes any JS number (NaN and fractional sizes run through the loops and read `undefined`) and a short buffer reads `undefined`, which is not `0`, so the missing pixels count as opaque. `getImageData` never gives either; a fractional or NaN size is not representable in `u32`, and a short buffer would make the work depend on a declared size instead of the buffer. The replay checks the error and then compares the TS result on the short buffer with the Rust result on the same buffer padded with 255 (80 cases, all equal). Same convention as `uo_drawingml::adjust_sharpen` / `Mask::from_vec`. |
+| C3 | Vertices are `[f64; 2]` (exact integers in `0..=21600`, never `-0`, asserted on every polygon), not integers. | no float-to-integer conversion to decide; the model's `WrapPolygon.pts` holds `JsNumber` pairs anyway. |
+| C4 | **No change of arithmetic semantics.** Everything the TS computes in `number` stays `f64` through `uo_jsnum::math` (`round`, `floor`, `min`, `max`, `hypot`, `abs`): the grid sizes, `(y * gh) / h`, `(x * 21600) / gw`, the DP distance with `hypot(...) \|\| 1`. Integers appear only as indexes (`u32` cell coordinates, `u64` for the byte offset `(y * w + x) * 4 + 3`), where they are exact; no saturating, wrapping or truncating conversion is introduced (`to_uint32` of a value in 1..=96, `checked_add_signed` for the dilation bounds). The dead clamps are kept. | R1. |
+| C5 | The brief said `wrapContour` uses `uo_drawingml`'s raster and presets: it does not. The TS uses only `Math.*` and its own Douglas–Peucker. `uo_drawingml` appears only in the differential, to build the preset-shaped test pictures. | read from the source. |
+| C6 | The gallery table is generated (`tools/gen-shape-styles.mjs`, deterministic, header with the SHA-256 of `shape-styles.ts`, `--check`, test `shape_styles_source_unchanged`, opt-in `shape_styles_regenerate_identically`), with its own generator rather than a section of `gen-data.mjs`. | the other generator belongs to D1a and reads `docx-core`; this one reads `shared/drawingml` and was written while D1b worked in parallel. |
+| C7 | `shape_style_preset(n: f64)` takes the JS number the UI passes and does `n - 1` then `js_index`; `find_shape_style` takes the strings already squashed and cut by the caller. | `setShapeStyle` receives any number; the squash/cut regexes of `shapeStyleIndex` are editor code (D2b). |
+
+**Not done:** a `core/fuzz` target for `wrap_contour` (the no-panic loops cover it; the work is O(w * h) over the caller's buffer); a browser/WebKit run of these two functions (they are not wasm-specific: the library builds and clippy passes for `wasm32-unknown-unknown`); the regex half of `shapeStyleIndex` and the canvas half of `pictureContour` (D2b and the shell); a `CHANGELOG.md` line (goes with the switch); of `contour.test.ts` only its three cases are ported (as Rust unit tests).
+
+**Gate commands (from `core/`, `CARGO_TARGET_DIR=$PWD/target/dml-move`).** `rustfmt --edition 2024 --check` on my files; `cargo clippy -p uo-docx --lib --all-features --test parity_contour --test drawing_contour_unit --test memory_contour --test nopanic_contour -- -D warnings` and `cargo clippy -p uo-docx --lib --all-features --target wasm32-unknown-unknown -- -D warnings` clean; `bash tests/grep-bans.sh` and `bash tests/float-casts.sh` clean; `cargo test --release -p uo-docx --all-features` all green (a debug run of the four new test files also green); the capture script is deterministic (two runs, identical files).
+
+## D1b — font embedding (from uo-fonts G2)
+
+*(Opus, 2026-11-03, hybrid mode.)* The first piece of D1b: the docx side of `shared/fonts/src/ooxml.ts`
+(`readDocxEmbedding`, `writeDocxEmbedding` and their helpers), deferred from uo-fonts to the writer that
+owns `fontTable.xml` and `settings.xml` (uo-fonts gate 1, G2 (a); Opus, G10). It is a documented step over
+a saved `uo_opc::Package`, as the TS editor runs it (`saveDocxWithFonts`: `DocxPackage.load(saveDocx())`,
+the step, `save()`). Nothing committed by this stage.
+
+### API
+
+Module `uo_docx::write::fonts` (always built; `src/write/mod.rs`, `src/write/fonts/{mod,docx,ooxml}.rs`):
+
+```rust
+pub fn read_docx_embedding(pkg: &Package) -> Result<DocxEmbedding, DocxError>;
+pub struct DocxEmbedding { pub settings: StoredEmbeddingSettings, pub embedded: Vec<String> /* lower-cased, TS Set order */ }
+impl DocxEmbedding { pub fn embedded_set(&self) -> FxHashSet<String>; }      // already_embedded of uo-fonts
+pub struct StoredEmbeddingSettings { pub embed: bool, pub subset: Option<bool>, pub skip_common_fonts: Option<bool> }
+impl StoredEmbeddingSettings { pub fn over(&self, defaults: FontEmbeddingSettings) -> FontEmbeddingSettings; } // { ...DEFAULT_EMBEDDING.write, ...stored }
+pub fn word_embedding_policy(s: &FontEmbeddingSettings) -> EmbeddingPolicy<'static>; // WORD_COMMON_FONTS, used variants only
+pub fn write_docx_embedding(pkg: &mut Package, plan: &EmbeddingPlan, settings: &FontEmbeddingSettings,
+    guid: &mut dyn FnMut() -> [u8; 16]) -> Result<(), DocxError>;
+pub const CT_ODTTF: &str;
+// parity only: the same with a relationship-target rule
+pub enum TargetRule { Opc /* default, uo-opc D6 */, Fonts09 /* the 0.9 ooxml.ts rule */ }
+pub fn read_docx_embedding_with(pkg, rule); pub fn write_docx_embedding_with(pkg, plan, settings, guid, rule);
+```
+
+The host sequence (uo-fonts R-EMBED): `read_docx_embedding` → `embedding_requests(usage,
+&word_embedding_policy(&settings), &embedded_set())` → the host fetches the faces → `plan_font_embedding`
+→ `write_docx_embedding` with 16 random bytes per face (the host's `crypto.getRandomValues` /
+`RandomNumberGenerator`; the TS `randomGuid` formatting is `ooxml::guid_of`) → `Package::save`. On error the
+package may be partly edited, as in the TS; the caller drops it (the editor loads it only for this step).
+
+`write::fonts::ooxml` holds the app-neutral pieces, written without Word assumptions: the seam for the pptx
+writer (`readPptxEmbedding`/`writePptxEmbedding`, uo-pptx), which reuses them as they are (they move to
+uo-opc / uo-fonts when that crate lands): `read_rels_text`/`attr_value` (the regex `.rels` reader),
+`add_rel`, `remove_rels_of_type`, `rel_target_of_type`, `has_default_extension`,
+`ensure_default_content_type`, `ensure_override`, `FontPartNames`, `find_element`/`element_end`,
+`remove_elements`, `find_start_tag`, `last_close_trimmed`, `esc_attr`/`unesc_attr`,
+`substitute`/`replace_range` (GetSubstitution), `guid_of`, `group_by_family`. `write::fonts::docx` holds
+the Word matchers (public for the regex differential).
+
+### Regex sites (every one a hand matcher, linear; V8 rows in `js/regex-sites/d1b-fonts.mjs`)
+
+| TS (ooxml.ts) | Rust | Note |
+|---|---|---|
+| `/<Relationship\b[^>]*\/?>/g`, `\bId="([^"]*)"` (Type, Target, TargetMode) | `ooxml::read_rels_text`, `attr_value` | exact (not the uo-opc parser: F1) |
+| `unescAttr` / `escAttr` chains | `unesc_attr` / `esc_attr` | one pass, proven equal to the chains |
+| `/<Relationships\b([^>]*?)\s*\/>/`, `/<\/Relationships>\s*$/` | uo-opc `rels::add_rel(.., BeforeLastCloseTrimmed)` | from `RELS_TEMPLATE` (LF), not `empty_rels` (CRLF) |
+| `/<Default\b[^>]*Extension="odttf"/i` | `has_default_extension` | ASCII case folding (Canonicalize keeps non-ASCII out of ASCII) |
+| `/(<Types\b[^>]*>)/`, `/<\/Types>\s*$/` | uo-opc `content_types::add_default(AfterRootOpen)`, `add_override(BeforeLastCloseTrimmed)` | |
+| `findElement` `<qname(?=[\s/>])` + `elementEnd`, and the removal loop | `find_element`, `remove_elements` | the loop in one pass (joins across a removed element handled); equal to the literal loop on 40,000 random texts |
+| `<w:NAME(?![^>]*w:val="(?:false\|0\|off)")[\s/>]` | `docx::setting_on` | |
+| `/<w:font\b[^>]*w:name="([^"]*)"[^>]*>([\s\S]*?)<\/w:font>/g` | `docx::font_entries` | V8 backtracking: the last `w:name="` of the tag, else the second-to-last (whose value closes before `>`) |
+| `/<w:embed(?:Regular\|Bold\|Italic\|BoldItalic)\b/`, its `[^>]*\/>/g` replace | `has_embed_tag`, `strip_embed_tags` | |
+| `/<w:fonts\b[^>]*xmlns:r=/`, `/<w:fonts\b/`, `/<w:fonts\b[^>]*\/>/`, `/(<w:fonts\b[^>]*)\/>/` | `fonts_has_xmlns_r` (every start, not only the first — the uo-fonts spec row said "first"), `fonts_add_xmlns_r`, `fonts_self_closing` | |
+| family element `…w:name="F"[^>]*?(\/>\|>[\s\S]*?<\/w:font>)`, `i` | `docx::find_font_element_ci` | per UTF-16 unit with uo-text `regexp_canonicalize` (`é`/`É` fold; `ſ`, the Kelvin sign do not); KMP once per tag |
+| `/<\/w:font>$/` (case-sensitive), `/<\/w:fonts>\s*$/` | `strip_suffix`, `last_close_trimmed` + `replace_range` | an element closed by `</W:FONT>` gets no embeds (TS) |
+| `/<w:settings\b[^>]*>/` and `xml.replace(root[0], …)` | `find_start_tag`, `replace_range` | |
+| `table.replace(el, merged)`, the new `<w:font>` template, `xml.replace(root[0], …)` | `replace_range` (`$$`, `$&`, `` $` ``, `$'`; `$n`, `$<` literal) | F5 |
+
+### Parity (Node 24.15 x64, frozen TS from `UO_TS_ROOT`)
+
+- **Regex differential** (`tests/regex_d1b_fonts.rs`): 71 sites (39 of them the family regex over 39
+  family names: escapes, `$`, `ſ`/`s`, Kelvin sign/`k`, `ß`/`SS`, `İ`/`ı`, `Σσς`, `µ`/`μ`, `ǅ`, ligatures,
+  astral) × 233 inputs = **16,543 results, all equal to V8** on the first run.
+- **TS differential** (`js/capture-font-embedding.mjs` → `tests/parity/font-embedding.{capture,inputs}`,
+  `tests/parity_font_embedding.rs`): 3,253 records — the 2,753 corpus docx (2,742 oracle + the docx-core
+  fixtures) and 500 synthetic packages (odd settings, font tables, relationships and content types:
+  self-closing roots, uppercase tags, `$` in attributes and names, entities, folded names, dangling and
+  external targets, existing font parts) — each with a seeded plan of open fonts only
+  (`shared/fonts/files/*.ttf`, 16 files; 9,687 plan faces in total) and seeded settings,
+  `crypto.getRandomValues` replaced by the testkit xorshift32. Compared: `readDocxEmbedding` before and
+  after, the part order, the set of parts written, every written part byte for byte (an `.odttf` by its
+  length, its 32 obfuscated bytes and the equality of its tail with the font file), and the settings,
+  font table, both `.rels` and content types by digest.
+  - corpus: **27,530 facets equal, 0 accepted**;
+  - synthetic: **4,419 equal, 566 accepted in 126 records, 0 mismatches**. Every accepted record is D6
+    (relationship targets through `Package::resolve_target`: case folding, fragments, `%XX`), and the
+    replay accepts it only when the step rerun with `TargetRule::Fonts09` gives the captured record
+    exactly. The 2 TS `TypeError`s (settings without `w:settings`) are `DocxError::Corrupt` in Rust.
+  - Parity rounds: 0 (the first full replay matched the corpus; the synthetic differences were all D6,
+    which led to `TargetRule` for the proof).
+
+### Decisions outside the TS semantics (or the uo-fonts spec table)
+
+| # | Decision | Why |
+|---|---|---|
+| F1 | `.rels` read by the hand matcher of the TS regex, not the uo-opc parser the uo-fonts spec row named | exact (no accepted difference on malformed `.rels`) and no failure path: a `.rels` the parser refuses would have failed the save |
+| F2 | `removeRelsOfType` cuts each tag at its own position; the TS removes `out.replace(r.xml, '')`, the first occurrence of the same text | equal unless that text also occurs earlier (inside another tag's value or joined across a removed tag: text no writer produces); the literal rule is O(n²). Accepted by name; not met on the corpora |
+| F3 | Every relationship target through uo-opc D6 (`docxPart`, the removal of font parts) | "Relationship targets: D6 only" (uo-opc record). 126 synthetic records, 0 corpus; proven D6-only by `TargetRule::Fonts09` |
+| F4 | A relationship that names no part counts as a missing part | the TS keeps the path of a missing part and every caller reads it as missing: same outcome |
+| F5 | `$` patterns of `String.prototype.replace` reproduced (a family `` x$`y `` inserts the text before `</w:fonts>`, as the TS does); a result over `Limits::max_xml_part_bytes` is `DocxError::Package(Limit { PartBytes })` | exact; the TS has no cap, and a list of families holding `` $` `` doubles the table per family |
+| F6 | The TS `TypeError` (`exec(…)!` on settings without `w:settings`) is `DocxError::Corrupt` | the error class is the parity unit |
+| F7 | The GUID bytes come from the caller (`FnMut() -> [u8; 16]`) | no RNG dependency in the engine; deterministic tests |
+| F8 | `uniquePartName` keeps the lower-cased names and the next `n` across faces | equal: within one write the names only grow and each chosen name is set right away |
+| F9 | Lower case by `uo_jsnum::text::to_lowercase` | the function uo-fonts `embed` compares `already_embedded` with |
+| F10 | `TargetRule::Fonts09` lives in the production module, documented as parity only | the D6 proof needs the step itself under the old rule |
+| F11 | The pptx side is not ported (`readPptxEmbedding`, `writePptxEmbedding`, `PRES_AFTER`, `P_EMBED`, EOT parts) | uo-pptx; `write::fonts::ooxml` is its seam |
+
+### Memory, work and security
+
+- **M1** (`tests/memory_d1b_fonts.rs`): 240 read → write → read runs over 120 synthetic packages (on and
+  off), the TypeError path, the cap path and every matcher: 0 B left each. No cache (M5 n/a). Peaks: the
+  cap path 3.2 MB (six faces obfuscated before the refusal), the TypeError path 0.3 MB.
+- **Work**: every matcher is linear (memoised "next occurrence" queries, one KMP pass per tag);
+  `tests/nopanic_d1b_fonts.rs` runs all of them over ten hostile texts of 2–4.6 MB (200,000 elements,
+  joins, starts without `>` or close, names crossing `>`, case-folded starts) in ≤ 1 s each (debug). The
+  step itself is O(faces × (font-table `.rels` + font table)), as the TS (`addRel` rereads the `.rels`, each
+  family scans the table).
+- **No panic**: 3,000 runs over mutated synthetic packages with hostile plans (junk family names,
+  3,000-character names, every variant, random panose and GUID bytes; both target rules): 2,868 written,
+  5,168 added font parts checked (de-obfuscated to the face with a key of the table; 487 without their
+  entry, the TS behaviour when the table has no final `</w:fonts>` or a `$` pattern rewrote it); 20,000
+  `odttf` round trips with hostile keys (astral, BMP, separators, any length).
+- For the security review (TS behaviour, kept): a hostile document's font relationships can name any part
+  (`document.xml`), which the step removes when the option is off; the font table can grow by `$`
+  patterns up to the XML part cap.
+
+### Checks
+
+From `core/`, `CARGO_TARGET_DIR=target/fonts-ooxml`: `rustfmt --check` on the new files; `cargo clippy -p
+uo-docx --all-targets --all-features -- -D warnings`, native and `--target wasm32-unknown-unknown`;
+`tests/clippy-ban/check.sh`, `tests/grep-bans.sh`, the float-cast check for uo-docx (0 in `write/fonts`);
+`cargo test -p uo-docx --all-features` (56 test binaries, all green). Regenerate: `node
+core/crates/uo-docx/js/regex-diff.mjs`; `UO_TS_ROOT=… node core/crates/uo-docx/js/capture-font-embedding.mjs`
+(`--dump <key>` / `UO_PARITY_TRACE=<key>` write both sides' parts).
+
+### Not done
+
+The pptx side (F11); `ooxml_*` libFuzzer targets (the no-panic loops stand in); the wasm/.NET exports of
+the step and the editor's `saveDocxWithFonts` orchestration (session, milestone 2); M2/M3 for the step
+(the D1b save soak of milestone 2 covers it).

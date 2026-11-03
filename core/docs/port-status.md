@@ -1,4 +1,4 @@
-# Port status — 2026-11-03 (HEAD 5cfa71d9)
+# Port status — 2026-11-03 (updated after the shared/fonts and shared/drawingml completion)
 
 Measured, not estimated, for the line counts; the "ported" fraction of a few split files (marked
 partial) is a judgement from the frontier records.
@@ -15,13 +15,13 @@ C#-only Editing API + Export. A file counts as ported when its frontier passed i
 |---|---|---|
 | docx-core (model, reader, writer, ops, .doc, ODF, export) | 20,030 | 29.6% |
 | docx-layout (layout, PDF, display list) | 12,827 | 47.8% |
-| shared/fonts | 837 | 65.9% |
-| shared/drawingml | 1,658 | 91.4% |
+| shared/fonts (Write scope; the 55 pptx lines of `ooxml.ts` belong to Slides) | 782 | 100% |
+| shared/drawingml | 1,658 | 100% |
 | editor model (to uo-docx session) | 12,889 | 0% |
 | compare | 789 | 0% |
 | C#-only (Editing API, export) | 4,188 | 0% |
-| **Write total** | **53,218** | **26.5%** |
-| **Milestone 1 (read path: reader → layout → render → PDF)** | **22,700** | **≈ 62%** |
+| **Write total** | **53,163** | **27.3%** |
+| **Milestone 1 (read path: reader → layout → render → PDF)** | **22,930** | **≈ 62%** |
 
 Largest remaining pieces: the editor model D2 (~12.9k), `.doc` D4 (~4.9k), layout engine + tables
 F6/F7 (`engine.ts` 3,128, `table.ts` 1,047, rest of `para.ts` F4), the C#-only Editing API D3
@@ -36,3 +36,8 @@ uo-testkit 1.1k, uo-render 1.1k, uo-text 0.8k / 0.9k, uo-codec 0.5k / 0.2k — �
 
 Caveat: lines are not effort. What is left is weighted toward the hardest parts (the layout engine
 and the editor model/undo), so the remaining effort share is larger than the remaining line share.
+
+Update: `shared/drawingml` `contour.ts` and `shape-styles.ts` ported into `uo_docx::drawing` (Sonnet,
+0 mismatches), and `shared/fonts` `ooxml.ts` (docx side) into `uo_docx::write::fonts` (Opus, the
+first piece of D1b; corpus 27,530 facets equal, 0 parity rounds). Both shared packages are now
+complete for Write; the pptx half of `ooxml.ts` waits for uo-pptx.

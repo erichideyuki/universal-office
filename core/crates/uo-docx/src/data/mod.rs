@@ -8,6 +8,8 @@
 
 // generated files keep the generator's layout (the regeneration check compares bytes)
 #[rustfmt::skip]
+pub mod shape_styles;
+#[rustfmt::skip]
 pub mod style_names_es;
 #[rustfmt::skip]
 pub mod table_styles_builtin;

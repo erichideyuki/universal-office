@@ -55,7 +55,7 @@ helpers it needs live in a private `js` module and move to uo-jsnum after its ga
 | *(revised after the skeptic, S14)* `docx-layout/src/math.ts` `parseFont` (a fourth directory reader: last-wins `Map` keyed by `b[p]` indexing, only `head` required, `upm \|\| 2048`; MATH constants, italic correction by coverage, glyph ink box with its own `glyf + s + 10 > byteLength` check; `WeakMap` cache) | `uo-docx-layout` now (G15) | used only by the Word equation layout; moves to `Face::math()` in uo-fonts when Slides equations need it. It keeps its own reader rules (named in the uo-docx-layout plan), built on `uo_fonts::read::View`. |
 | *(revised after the skeptic, S14)* slides-core `fonts.ts` `sfntStyle` (own OS/2 reader: weight in 1..=1000 else 400, `o + 64 > len` → null) and `looksLikeSfnt` (4 signatures, ≥ 4 bytes, no WOFF) | `uo-pptx` (Slides) | Slides' own rules over `uo_fonts::read::View`; the differences with `face_info`/`is_font_file` are named in that plan. |
 | *(revised after the skeptic, S14)* the third `deobfuscateFont` copy (slides-core `fonts.ts`) and the tool `sheet/tools/excel-lab/deobfuscate-odttf.mjs` | replaced by `odttf::deobfuscate` (same rule as docx-core) | one copy |
-| *(revised after the skeptic, S17, G2)* `ooxml.ts` read/write of the embedding settings and parts (`readDocxEmbedding`, `writeDocxEmbedding`, `readPptxEmbedding`, `writePptxEmbedding`) | **deferred to the uo-docx and uo-pptx plans** (recommended) | `word/fontTable.xml` and `word/settings.xml` belong to the uo-docx reader and lossless writer; the regex spec table below ("ooxml.ts") is handed to those plans. uo-fonts keeps the app-neutral pieces (plan, odttf, EOT, subset). |
+| *(revised after the skeptic, S17, G2)* `ooxml.ts` read/write of the embedding settings and parts (`readDocxEmbedding`, `writeDocxEmbedding`, `readPptxEmbedding`, `writePptxEmbedding`) | **deferred to the uo-docx and uo-pptx plans** (recommended) | `word/fontTable.xml` and `word/settings.xml` belong to the uo-docx reader and lossless writer; the regex spec table below ("ooxml.ts") is handed to those plans. uo-fonts keeps the app-neutral pieces (plan, odttf, EOT, subset). **Done 2026-11-03 (docx side)**: uo-docx `write::fonts` (`core/docs/modules/uo-docx.md`, "D1b — font embedding"); the pptx side waits for uo-pptx. |
 
 ### Deferred (module slots reserved in uo-fonts, not part of this gate 2 — G3)
 
@@ -1074,7 +1074,7 @@ Map/order/UTF-16 rules, parity facets).
 | 15 | `variant`, `catalog` | closed | `js_trim`/`js_to_lowercase` | |
 | 16 | `hyphen` | closed | `HyphenSession` (S12), `register` replaces (S11c) | |
 | 17 | `embed` | closed | R-EMBED two phases, app-neutral policy (S13, S19) | |
-| — | `ooxml` | not in this module | deferred (G2, S17); Opus in the format-crate plans | |
+| — | `ooxml` | not in this module | deferred (G2, S17); Opus in the format-crate plans | docx side done in uo-docx `write::fonts` (2026-11-03) |
 | — | `eot::read`, `system`, `symbols` | deferred (G3) | own plans when scheduled | |
 
 With G2 = defer, every module of uo-fonts is a Sonnet translation under the parity and memory

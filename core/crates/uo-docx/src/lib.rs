@@ -21,6 +21,7 @@
 #[cfg(feature = "canon")]
 pub mod canon;
 pub mod data;
+pub mod drawing;
 pub mod error;
 pub mod ids;
 pub mod js;
@@ -31,6 +32,7 @@ pub mod read;
 pub mod text;
 pub mod view;
 pub mod word;
+pub mod write;
 
 pub use error::DocxError;
 pub use limits::DocxLimits;
