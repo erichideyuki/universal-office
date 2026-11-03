@@ -1732,3 +1732,44 @@ Decisions taken outside the plan by the Sonnet porters: phase 1: 8, frontier B: 
 10, frontier D: 16 (each listed in its subsection). The largest: frontier C capped stored kerning
 and ligature records at `max_kern_pairs` because the work budget bounded time but not memory (a
 120 KB GSUB font reached 872 MB) — a memory design decision the plan had missed.
+
+## Model comparison: uo-fonts (Sonnet port) vs uo-opc (Opus port), through stage 4
+
+The maintainer asked for this comparison before using Sonnet for the next modules. Both modules
+had Opus planners and skeptics; uo-opc's port and verifiers were Opus, uo-fonts' port and its
+parity/memory verifiers were Sonnet (security Opus in both). uo-jsnum increment A (Sonnet port,
+Opus pow) is listed as a second Sonnet data point.
+
+| | uo-opc (Opus) | uo-fonts (Sonnet) | uo-jsnum A (Sonnet) |
+|---|---|---|---|
+| Library code (non-comment lines) | 5,150 | 4,374 | 2,275 |
+| Stage-3 wall time | ≈ 33 min | ≈ 67 min | ≈ 25 min (+ pow, Opus) |
+| Stage-3 agent time (sum) | 63 min | 145 min | — (interrupted once) |
+| Decisions outside the plan, declared | not tracked | 49 (all audited: verified or accepted by name) | 12 (all audited) |
+| Decisions outside the plan, **not** declared | — | 0 found | 1 (J1: `saturating_add` where V8 wraps) |
+| **Parity rounds** (port bugs the parity verifier sent back) | **0** | **0** | **0** |
+| Stage-4 defects found in the port (memory + security) | 7 (F1–F7) | 5 (F6 memory; F7–F10 security) | 1 (J1) |
+| …of which caused by a gap in the (Opus) plan rather than the translation | F1 inherited from fflate; F2–F5 quadratic paths | F7–F10 (budget points the plan missed); F6 (cache bounded by count only) | — |
+| Integration rework by the orchestrator | 4 (generators, error class, re-export, CRLF) | 5 (new bans, wiring between frontiers, stub removal, CRLF ×2) | 1 (escape in an opt-in) |
+| Stage-4 verifier time | parity 54.5, memory 35.3, security 85.5 min | parity 84.6, memory 47.2 (Sonnet), security 63.3 min (Opus) | parity 50.2, memory 11.7 (Sonnet), security 83.0 min (Opus) |
+| Verifier findings in the verifiers' own work | — | — | the port's "0 B" test discarded its result (memory verifier); a coverage gap in rem_pio2 (parity verifier) |
+
+Reading: on closed-scope modules the Sonnet ports were as faithful as the Opus port (0 parity
+rounds in both Sonnet modules, verified by corpus captures the orchestrator regenerated
+byte-identical), and found about as many defects in stage 4, all but one rooted in plan gaps. The
+costs are wall time (about 2× here, partly because the Sonnet frontiers also wrote their own TS
+differentials) and one silent deviation (J1) — a decision not declared is the risk to watch, not
+translation accuracy.
+
+## Gate 2 — decisions (pending)
+
+Parity 0 mismatches (17,366 facets + the C# G16 capture), memory gate green (M1–M5), security
+F7–F10 fixed, 105e6 fuzz execs without crashes. Proposals from the verifiers:
+
+| id | Decision | Recommendation |
+|---|---|---|
+| D1 | `glyph_ids_for` work budget trips on 9 of 620 real CJK fonts (Meiryo, Yu Mincho…) where the TS embeds (security P1 = parity finding): replace the linear scan by a binary search when the cmap ranges are sorted and disjoint (same results), and keep the budget for the rest | approve |
+| D2 | wasm32 `max_kern_pairs` 2^22 → 2^20 (≈ 18 MB kept / 27 MB peak; 1.4× the largest real font, Gabriola) | approve |
+| D3 | `max_outline_points` 2^20 → 2^16 (largest real outline over 472 faces: ~1,200 commands; one hostile glyph peaks at 120 MB today) | approve |
+| D4 | a per-document byte budget over faces in the layout provider's face cache (uo-docx-layout), since every cap here is per face | approve, in the uo-docx-layout plan |
+| D5 | ligature trie (linear ligate, same results) | stage 5 |

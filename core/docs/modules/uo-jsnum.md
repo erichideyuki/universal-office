@@ -1182,3 +1182,13 @@ component, the `libfuzzer` wrappers are the same three lines as the uo-opc ones)
 | 4 | memory verifier (Sonnet) | not measured | 0 | none in the crate; one test-only feature in `uo-wasm` and a two-variable forward in `browser/run.mjs`; `clippy::disallowed_methods` caught `str::trim`/`trim_start` in the new test (replaced by `text::trim*`); the first wasm soak with 1.8 MB inputs took 40 s and was cut to 230 KB; about 45 tool calls |
 | 4 | security specialist (Opus) | about 2 h 40 min (four 30-minute libFuzzer runs in it, two in parallel); about 90 tool calls | 1 finding (J1), fixed by the specialist | J1 is rework of the stage-3 Sonnet port: `int_double` saturated the exponent (an unrecorded deviation from V8) and added the rounding carry unchecked (debug panic; release `Infinity` where V8 gives `0`); two lines, now `wrapping_add` as V8's `int`. In the fuzz crate: the pre-existing banned `f64::max` in `fallback.rs`; three oracle false positives (UCRT `atanh`, `hypot` at `MAX`, `sinh` near overflow) each checked in Node and the oracle widened |
 | 4 | parity verifier (Sonnet) | not measured (about 2 h, most of it runs: three 1-3 minute captures, a 3 minute full-size wasm replay in Node and in WebKit) | 0 (no port bug) | none in the crate; test side: the start value of `Iterator::sum` (-0.0) in the `js_index` model, `clippy::manual_is_multiple_of` in the new generators, raw invisible characters in the generator source re-escaped as backslash-u sequences; shared files touched: `tests/pow.rs` (two `pub fn`), `tests/support/mod.rs` (`pub mod adv`), `browser/run.mjs` (forwards `UO_JSNUM_FULL`), `uo-wasm` `Cargo.toml` and `lib.rs` (feature `jsnum-selftest`); about 175 tool calls |
+
+## Gate 2 — decisions (pending, increment A)
+
+Parity 0 mismatches (1.02e9 samples + 120e6 targeted + strings, native, Node wasm and WebKit wasm),
+memory gate green (nothing allocates except owned `utf16_slice`), security J1 fixed, fuzz 0 crashes.
+
+| id | Decision | Recommendation |
+|---|---|---|
+| D1 | S-J1: past 429,496,740 radix-32 digits V8 (and the port) returns 0 for a huge value; keep V8's result for parity, or return ±Infinity (correct, a listed divergence) | keep V8's result |
+| D2 | after gate 2, uo-opc moves its JS text helpers to `uo_jsnum::text` and uo-fonts' private `js` module moves here (G7 of gate 1 / uo-fonts G8) | approve (stage 5 of each) |
