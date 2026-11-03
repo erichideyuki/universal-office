@@ -1,0 +1,159 @@
+12pt
+1in
+5cm
+10mm
+3pc
+2em
+16px
+16
+-.5in
+1.2.3pt
+.
+-
+
+ 
+5 pt
+ 7in 
+1e3pt
+abc
+100%
+0
+-0pt
+12PT
+5pt 
+ 5pt
+5 pt
+5 pt
+﻿5in
+5\tcm
+5ptx
+5 p t
+--5pt
++5pt
+5.pt
+..
+1-2
+12pt
+val 5000
+val -12
+val  7
+val\t3
+VAL 1
+val 1x
+val-3
+val
+val 
+val  -
+val 12345678901234567890
+*/ w h 2
++- 1 2 3
+  abs  -5 
+ val 1
+val 5
+val　5
+val --5
+val 5.5
+position:absolute;margin-left:0;margin-top:0;width:468pt;height:117pt;rotation:315;z-index:-251657216
+width:468pt;height:117pt
+ width : 10in ; height:2.5cm
+;width:
+width: ;
+width:\t;
+width:;
+x-width:1
+width:1;width:2
+;;font-size: 12pt;
+font-family:&quot;Calibri&quot;;font-size:1pt
+font-family:"Arial";font-size:40pt
+font-family:'Times New Roman';font-size:12.5pt
+font-size:2pt
+font-family:;font-size: 
+rotation:315
+rotation: -45
+rotation:
+rotation:  ;
+;rotation:1e3;
+ROTATION:5
+width\n:\n5pt
+width:5pt\n;height:1
+; width:5
+width:5pt;
+font-family:"
+font-family:'
+font-size: 10pt
+width:1;;width:2
+ width:3
+;font-size: 
+;font-size:\t\t;
+<w:pict><v:shape id="PowerPlusWaterMarkObject1" style="width:468pt;height:117pt;rotation:315" fillcolor="silver"><v:fill opacity=".5"/><v:textpath style="font-family:&quot;Calibri&quot;;font-size:1pt" string="RASCUNHO"/></v:shape></w:pict>
+<w:pict><v:shapetype id="_x0000_t75"/><v:shape id="WordPictureWatermark3" style="width:10in;height:5in"><v:imagedata r:id="rId7" o:title="a&amp;b.png" gain="19661f"/></v:shape></w:pict>
+<v:shape id="PowerPlusWaterMarkObject" style="x"></v:shape>
+<v:shape id="PowerPlusWaterMarkObject12"
+<v:shape id="PowerPlusWaterMarkObject12">
+<v:shape id="PowerPlusWaterMarkObject12"></v:shape
+<v:shapetype id="PowerPlusWaterMarkObject1"></v:shapetype>
+<v:shapex id="WordPictureWatermark1"></v:shapex>
+<v:shape o:spid="x" id="WordPictureWatermark1" xid="WordPictureWatermark2"/></v:shape>
+<v:shape id="WordPictureWatermark1" id="PowerPlusWaterMarkObject2" style="a"></v:shape>
+<v:shape id="PowerPlusWaterMarkObject1" id="WordPictureWatermark2"></v:shape>
+<v:shape xml:id="PowerPlusWaterMarkObject1"></v:shape>
+<v:shape\tid="PowerPlusWaterMarkObject1"\n></v:shape>
+<v:shape>id="PowerPlusWaterMarkObject1"</v:shape>
+<v:shape style="id=&quot;x&quot;" id='WordPictureWatermark1'></v:shape>
+<v:shape a="id=" id="WordPictureWatermark1"></v:shape></v:shape>
+<v:shape id="WordPictureWatermark1"></v:shape><v:shape id="PowerPlusWaterMarkObject2"></v:shape>
+<v:shape a="1"><v:shape id="PowerPlusWaterMarkObject1"></v:shape>
+<v:shape id="PowerPlusWaterMarkObject1" a=">" b="id=&quot;WordPictureWatermark2&quot;"></v:shape>
+ style="a;b" style="c"
+ r:id="rId1"
+\tr:id="x&quot;y&lt;z&gt;&amp;quot;"
+r:id="rId1"
+ string=""
+ string="a
+ o:title="é😀"
+ string="nbsp"
+ string="&amp;lt;"
+<v:imagedata r:id="rId1" blacklevel="1"/>
+<v:imagedata xgain="1"/>
+<v:imagedata gain="1"/>
+<v:imagedata _gain="1" /> gain=
+gain=
+ gain=x
+é gain=
+blacklevel=
+<v:imagedata
+<v:imagedataX a="1">
+<v:imagedata\ta>
+<v:fill opacity=".5"/>
+<v:fillx/><v:fill a="1">
+<v:textpath string="x"
+<v:textpath>
+<v:textpath_>
+id="PowerPlusWaterMarkObject"
+id="WordPictureWatermark99"
+xid="WordPictureWatermark9"
+ id="WordPictureWatermark9x"
+id="WordPictureWatermark
+o:id="PowerPlusWaterMarkObject1"
+_id="PowerPlusWaterMarkObject1"
+id="PowerPlusWaterMarkObject1" id="x"
+ID="PowerPlusWaterMarkObject1"
+id='PowerPlusWaterMarkObject1'
+"
+'
+""
+''
+"a"
+'a'
+"a
+a"
+'a"
+"'
+""a""
+a''
+"a'b"
+“a”
+_x0000_s1026
+_x0000_
+x_x0000_
+é_x0000_

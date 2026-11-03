@@ -9,9 +9,8 @@
 //! digest writes them by content (A6); positions (`at`) are UTF-8 offsets here and UTF-16 in the
 //! TS (the walker converts them).
 
-use std::sync::Arc;
-
 use indexmap::IndexSet;
+use uo_opc::xml::Source;
 
 use crate::ids::SourceKey;
 use crate::js::{JsMap, JsNumber, JsValue, JsonWriter, NumKey, Str};
@@ -32,11 +31,18 @@ impl Default for SrcText {
     }
 }
 
-/// The text of a part of the store (`word/document.xml` …), as the XML reader parsed it.
-#[derive(Debug, Clone, PartialEq)]
+/// The text of a part of the store (`word/document.xml` …), as the XML reader parsed it: the
+/// reader's own shared buffer (a reference-counted handle, never a copy).
+#[derive(Debug, Clone)]
 pub struct SourcePart {
     pub path: Str,
-    pub text: Arc<str>,
+    pub text: Source,
+}
+
+impl PartialEq for SourcePart {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path && *self.text == *other.text
+    }
 }
 
 impl SrcText {
@@ -223,9 +229,9 @@ js_object! {
 }
 
 /// The source store of one read (`SourceStore`), immutable afterwards.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SourceStore {
-    /// the TS `next` (the next `src` id)
+    /// the TS `next` (the next `src` id; the TS starts at 1, so that 0 is "no source")
     pub next: u32,
     pub paras: JsMap<SourceKey, ParaSource>,
     pub runs: JsMap<SourceKey, RunSource>,
@@ -242,6 +248,25 @@ pub struct SourceStore {
     pub comments_sig: Option<Str>,
     /// the texts the spans point into
     pub parts: Vec<SourcePart>,
+}
+
+impl Default for SourceStore {
+    fn default() -> Self {
+        SourceStore {
+            next: 1,
+            paras: JsMap::default(),
+            runs: JsMap::default(),
+            tables: JsMap::default(),
+            trs: JsMap::default(),
+            tcs: JsMap::default(),
+            stories: JsMap::default(),
+            txbx_groups: Vec::new(),
+            note_parts: JsMap::default(),
+            comment_ids: NumSet::default(),
+            comments_sig: None,
+            parts: Vec::new(),
+        }
+    }
 }
 
 impl SourceStore {

@@ -1,0 +1,697 @@
+S	resolver/1/0
+T	:Symbol	-	-	:02zz0604020202020204	:ee	:00002000
+T	:Foo-Bar	-	:swiss	-	:81	-
+T	:%20ARIAL%20	:%20Yu%20Gothic%20%2C%20Inter%20	:swiss	-	:02	-
+T	:Yu%20Gothic	-	:script	-	:86	:00002000
+R	:Caladea	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Caladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Caladea	0	0	0	0	0	1
+R	:Symbol	0	0	2
+F	2	058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74
+D	2	:Liberation%20Serif%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-regular.ttf%230	:Liberation%20Serif	0	0	0	0	0	2
+R	:%E3%80%80Carlito	0	0	3
+F	3	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	3	:Carlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Carlito	0	0	0	0	0	3
+R	:Verdana%2CBoldOblique	0	0	4
+D	4	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:Ms%20Shell%20Dlg%202	0	0	4
+R	:Calibri	0	1	5
+F	4	718a0663864d37a4868220a19b9668a5fe10a46197f6df367b4c2c30c04c026c
+D	5	:Calibri%7Cstandin%7CCarlito%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-italic.ttf%230	:Calibri	0	1	0	0	1	4
+R	:Helvetica%20Neue	0	0	4
+R	-	0	0	4
+R	:Times%20New%20Roman	1	0	6
+F	5	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	6	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	5
+S	resolver/1/1
+R	:ArialMT	0	1	1
+F	1	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	1	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	1
+R	:Courier	1	0	2
+F	2	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	2	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	2
+R	:Carlito	1	0	3
+F	3	0f62ab34ad5d079a0a28fac01bcf7c7a724a4db4d6cb99cab9cabff382fbb80f
+D	3	:Carlito%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-bold.ttf%230	:Carlito	1	0	0	0	0	3
+R	:SimSun	0	0	4
+F	4	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	4	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	4
+R	:Sakkal%20Majalla	0	0	4
+R	:Times%20New%20Roman	0	1	1
+S	resolver/1/2
+T	:Liberation%20Serif	-	:roman	-	:86	-
+R	:MS%20Mincho	0	0	1
+F	1	058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74
+D	1	:MS%20Mincho%7Cstandin%7CLiberation%20Serif%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-regular.ttf%230	:MS%20Mincho	0	0	0	0	1	1
+R	:%E3%80%80Carlito	1	0	2
+F	2	0f62ab34ad5d079a0a28fac01bcf7c7a724a4db4d6cb99cab9cabff382fbb80f
+D	2	:Carlito%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-bold.ttf%230	:Carlito	1	0	0	0	0	2
+R	:MS%20Gothic	0	0	3
+F	3	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	3	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	3
+R	:ZapfDingbats	1	0	4
+F	4	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	4	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	4
+R	:SymbolMT	0	0	3
+R	:arial	1	0	4
+R	:Carlito	0	0	5
+F	5	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	5	:Carlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Carlito	0	0	0	0	0	5
+R	:MS%20Gothic	0	1	6
+F	6	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	6	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	6
+S	resolver/1/3
+T	:SymbolMT	:%20Liberation%20Serif%20%3B%20Helvetica%20	:swiss	:020B0604020202020204	:88	-
+R	:%20ARIAL%20	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:Calibri	0	0	2
+F	2	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	2	:Calibri%7Cstandin%7CCarlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Calibri	0	0	0	0	1	2
+R	:%20%20	1	0	3
+F	3	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	3	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	3
+R	:Liberation%20Serif	0	1	4
+F	4	0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e
+D	4	:Liberation%20Serif%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-italic.ttf%230	:Liberation%20Serif	0	1	0	0	0	4
+R	:TimesNewRomanPSMT	0	1	5
+F	5	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	5	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	5
+R	:ZapfDingbats	0	0	1
+R	:Liberation%20Sans	0	0	6
+F	6	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	6	:Liberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Liberation%20Sans	0	0	0	0	0	6
+R	-	0	0	1
+R	:SimSun	0	0	1
+S	resolver/1/4
+T	:Arial	-	-	:02020604020202020204	-	-
+T	:Wingdings-Regular	-	:roman	:02020604020202020204	:02	:00000003
+T	:Foo-Bar	-	:swiss	-	:00	:
+T	:%20ARIAL%20	-	-	-	:80	-
+R	-	1	0	1
+F	1	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	1	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	1
+R	:ZapfDingbats	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	2
+R	:TimesNewRomanPSMT	0	0	2
+R	:Segoe%20UI	0	0	3
+F	3	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	3	:Segoe%20UI%7Cstandin%7CLiberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Segoe%20UI	0	0	0	0	1	3
+R	:MS%20Mincho	0	1	4
+F	4	0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e
+D	4	:MS%20Mincho%7Cstandin%7CLiberation%20Serif%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-italic.ttf%230	:MS%20Mincho	0	1	0	0	1	4
+R	:Foo-Bar	0	0	5
+F	5	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	5	:Calibri%7Cstandin%7CCarlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Calibri	0	0	0	0	1	5
+R	:Liberation%20Sans	0	0	6
+D	6	:Liberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Liberation%20Sans	0	0	0	0	0	3
+R	:Times	0	0	2
+S	resolver/1/5
+T	:%20ARIAL%20	:%20SymbolMT%20%2C%20Calibri%20	:decorative	-	:02	-
+T	:Yu%20Gothic	-	:swiss	:02zz0604020202020204	:80	-
+R	:Arial	0	1	1
+F	1	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	1	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	1
+R	:Arial-BoldMT	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	2
+R	:	1	0	3
+F	3	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	3	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	3
+R	:SymbolMT	0	0	2
+R	:ArialMT	0	0	2
+R	:Arial%20Unicode%20MS	0	0	4
+F	4	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	4	:Arial%20Unicode%20MS%7Cstandin%7CLiberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Arial%20Unicode%20MS	0	0	0	0	1	4
+R	:ZapfDingbats	1	0	3
+R	:Foo-Bar	1	0	3
+S	resolver/1/6
+T	:Foo-Bar	:%20SymbolMT%20%3B%20Arial%20MT%20	-	-	:02	:nothex
+T	:Cambria	:%20MS%20Mincho%20%2C%20Arial%20	:decorative	-	:ee	:nothex
+T	:SymbolMT	-	-	:020	:00	-
+T	:Liberation%20Mono	-	-	:02zz0604020202020204	:02	-
+R	:Liberation%20Serif	0	0	1
+F	1	058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74
+D	1	:Liberation%20Serif%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-regular.ttf%230	:Liberation%20Serif	0	0	0	0	0	1
+R	:Liberation%20Serif	0	1	2
+F	2	0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e
+D	2	:Liberation%20Serif%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-italic.ttf%230	:Liberation%20Serif	0	1	0	0	0	2
+R	:Arial%20Unicode%20MS	0	0	3
+F	3	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	3	:Arial%20Unicode%20MS%7Cstandin%7CLiberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Arial%20Unicode%20MS	0	0	0	0	1	3
+R	:SimSun	0	0	4
+F	4	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	4	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	4
+R	:Foo-Bar	0	0	1
+R	:CourierNewPSMT	0	1	5
+F	5	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	5	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	5
+R	:MS%20Gothic	0	0	4
+S	resolver/1/7
+T	:MS%20Gothic	-	-	-	:88	-
+T	:Liberation%20Serif	:%20Courier%20New%20%3B%20SymbolMT%20	:decorative	-	:ee	-
+T	:Times	-	-	:02020604020202020204	:02	-
+R	:Symbol	0	1	1
+F	1	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	1	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	1
+R	:Times%20New%20Roman	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	2
+R	:PMingLiU	0	0	2
+R	:Liberation%20Sans	0	1	3
+F	3	01f559e5c501d3d5777647c6a92b3ff37a4523bcf4f3b6e97ae052af567618b1
+D	3	:Liberation%20Sans%7Ci%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-italic.ttf%230	:Liberation%20Sans	0	1	0	0	0	3
+R	:MS%20Gothic	0	0	4
+F	4	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	4	:Calibri%7Cstandin%7CCarlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Calibri	0	0	0	0	1	4
+R	:Times	0	1	5
+F	5	0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e
+D	5	:Liberation%20Serif%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-italic.ttf%230	:Liberation%20Serif	0	1	0	0	0	5
+R	:Ms%20Shell%20Dlg%202	0	1	1
+S	resolver/1/8
+T	:Verdana%2CBoldOblique	-	:modern	-	:81	:nothex
+T	:SimSun	-	:roman	:02zz0604020202020204	:00	:E0002AFF
+T	:Liberation%20Serif	:%20Arial%20MT%20	:script	:02000604020202020204	-	-
+T	:CourierNewPSMT	-	:roman	-	:88	-
+R	:Calibri%20Light	1	0	1
+F	1	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	1	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	1
+R	:Segoe%20UI	0	1	2
+F	2	01f559e5c501d3d5777647c6a92b3ff37a4523bcf4f3b6e97ae052af567618b1
+D	2	:Segoe%20UI%7Cstandin%7CLiberation%20Sans%7Ci%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-italic.ttf%230	:Segoe%20UI	0	1	0	0	1	2
+R	:TimesNewRomanPSMT	0	1	3
+F	3	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	3	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	3
+R	:Times%20New%20Roman	0	0	4
+F	4	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	4	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	4
+R	:Wingdings-Regular	0	0	4
+R	:Calibri%20Light	0	0	4
+R	:Carlito	0	1	5
+F	5	718a0663864d37a4868220a19b9668a5fe10a46197f6df367b4c2c30c04c026c
+D	5	:Carlito%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-italic.ttf%230	:Carlito	0	1	0	0	0	5
+S	resolver/1/9
+R	:Times	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+S	resolver/1/10
+R	:SymbolMT	1	0	1
+F	1	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	1	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	1
+R	:Helvetica%20Neue	1	0	1
+S	resolver/1/11
+T	:Times%20New%20Roman	-	:auto	:02000604020202020204	:88	-
+T	:Courier%20New	-	-	-	:88	:00000003
+R	:Sakkal%20Majalla	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:Helvetica%20Neue	0	0	1
+R	:MS%20Mincho	1	0	2
+F	2	d754ba427cfe0bca54ae052384baa8f842da5bd6550ad4da024ac441e7a7d5ce
+D	2	:MS%20Mincho%7Cstandin%7CLiberation%20Serif%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-bold.ttf%230	:MS%20Mincho	1	0	0	0	1	2
+S	resolver/1/12
+R	:Arial%20MT	1	1	1
+F	1	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	1	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	1
+R	:Liberation%20Sans	1	0	2
+F	2	ba0e0dc3f7aca5b0afbc31e800531ee43be3aa79ae35b2ef1f6470a9547765c4
+D	2	:Liberation%20Sans%7Cb%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-bold.ttf%230	:Liberation%20Sans	1	0	0	0	0	2
+R	:Times	1	1	1
+R	:Calibri-Italic	1	1	3
+F	3	380764b6898d7b73ceae6384b2958b196d2a0428962ef3adf138d27947228666
+D	3	:Calibri%7Cstandin%7CCarlito%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-bolditalic.ttf%230	:Calibri	1	1	0	0	1	3
+R	:	0	0	4
+F	4	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	4	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	4
+R	:Caladea	0	1	5
+F	5	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	5	:Caladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Caladea	0	1	0	0	0	5
+R	:Times%20New%20Roman	0	0	4
+R	:Yu%20Gothic	1	0	6
+F	6	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	6	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	6
+S	resolver/1/13
+T	:Carlito	-	:modern	-	:81	-
+T	:Arial-BoldMT	-	-	-	:ee	-
+T	:Calibri-Italic	-	:roman	:02000604020202020204	:86	-
+R	:Arial%20MT	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:%20%20	0	0	1
+S	resolver/1/14
+T	:Ms%20Shell%20Dlg%202	-	:roman	:02zz0604020202020204	:00	-
+R	:CourierNewPSMT	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:Liberation%20Serif	0	0	2
+F	2	058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74
+D	2	:Liberation%20Serif%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-regular.ttf%230	:Liberation%20Serif	0	0	0	0	0	2
+R	:Arial	0	0	1
+R	:Caladea	1	0	3
+F	3	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	3	:Caladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Caladea	1	0	0	0	0	3
+R	:Cambria	1	1	4
+F	4	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	4	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	4
+R	:Calibri	0	0	5
+F	5	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	5	:Calibri%7Cstandin%7CCarlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Calibri	0	0	0	0	1	5
+R	:	0	0	1
+R	:Sakkal%20Majalla	0	0	1
+R	:Arial-ItalicMT	0	0	1
+R	:Ms%20Shell%20Dlg%202	0	1	6
+F	6	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	6	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	6
+R	:	0	1	6
+S	resolver/1/15
+R	:Arial-BoldMT	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:SymbolMT	0	0	1
+R	:ArialMT	0	0	1
+R	:Wingdings-Regular	1	0	2
+F	2	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	2	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	2
+R	:LiberationSerif-Bold	0	0	3
+F	3	d754ba427cfe0bca54ae052384baa8f842da5bd6550ad4da024ac441e7a7d5ce
+D	3	:Liberation%20Serif%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-bold.ttf%230	:Liberation%20Serif	1	0	0	0	0	3
+R	:Arial	0	0	1
+R	:Symbol	0	0	1
+R	:Caladea	1	0	4
+D	4	:Caladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Caladea	1	0	0	0	0	2
+S	resolver/1/16
+T	:Liberation%20Sans	:%20SimSun%20%3B%20Yu%20Gothic%20	:swiss	:020C0604020202020204	-	-
+R	:Wingdings	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:SymbolMT	0	0	1
+R	:Carlito	0	0	2
+F	2	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	2	:Carlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Carlito	0	0	0	0	0	2
+R	:MS%20Gothic	0	1	3
+F	3	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	3	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	3
+R	:Yu%20Gothic	0	1	3
+R	:Times%20New%20Roman	0	0	1
+S	resolver/1/17
+T	:Helvetica	-	:script	-	:80	:E0002AFF
+T	:Wingdings-Regular	:%20%20ARIAL%20%20%3B%20TimesNewRomanPSMT%20	:roman	-	:80	-
+T	:Caladea	-	:modern	-	:86	-
+R	:ZapfDingbats	0	1	1
+F	1	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	1	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	1
+R	:Calibri-Italic	0	0	2
+F	2	718a0663864d37a4868220a19b9668a5fe10a46197f6df367b4c2c30c04c026c
+D	2	:Calibri%7Cstandin%7CCarlito%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-italic.ttf%230	:Calibri	0	1	0	0	1	2
+R	:	0	1	1
+R	:SimSun	1	1	3
+F	3	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	3	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	3
+R	:Ms%20Shell%20Dlg%202	0	0	4
+F	4	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	4	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	4
+S	resolver/1/18
+T	:Foo-Bar	-	:roman	-	:ee	:nothex
+R	:arial	1	0	1
+F	1	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	1	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	1
+R	:Calibri	0	0	2
+F	2	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	2	:Calibri%7Cstandin%7CCarlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Calibri	0	0	0	0	1	2
+R	:Sakkal%20Majalla	1	1	3
+F	3	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	3	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	3
+R	:Sakkal%20Majalla	0	0	4
+F	4	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	4	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	4
+R	:Caladea	0	0	5
+D	5	:Caladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Caladea	0	0	0	0	0	4
+R	:MS%20Mincho	0	0	6
+F	5	058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74
+D	6	:MS%20Mincho%7Cstandin%7CLiberation%20Serif%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-regular.ttf%230	:MS%20Mincho	0	0	0	0	1	5
+R	:Ms%20Shell%20Dlg%202	0	0	4
+R	:LiberationSerif-Bold	0	0	7
+F	6	d754ba427cfe0bca54ae052384baa8f842da5bd6550ad4da024ac441e7a7d5ce
+D	7	:Liberation%20Serif%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-bold.ttf%230	:Liberation%20Serif	1	0	0	0	0	6
+R	:Arial%20Unicode%20MS	0	1	8
+F	7	01f559e5c501d3d5777647c6a92b3ff37a4523bcf4f3b6e97ae052af567618b1
+D	8	:Arial%20Unicode%20MS%7Cstandin%7CLiberation%20Sans%7Ci%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-italic.ttf%230	:Arial%20Unicode%20MS	0	1	0	0	1	7
+S	resolver/1/19
+T	:SimSun	:%20Wingdings%20%2C%20%20ARIAL%20%20	:swiss	:02020604020202020204	:86	:E0002AFF
+T	:CourierNewPSMT	-	:swiss	-	:00	:00002000
+R	:%20ARIAL%20	1	0	1
+F	1	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	1	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	1
+R	-	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	2
+R	:Caladea	1	0	3
+D	3	:Caladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Caladea	1	0	0	0	0	1
+S	resolver/1/20
+T	:Batang	-	:swiss	-	:80	-
+T	:SimSun	:%20%20	:decorative	-	:80	-
+T	:Arial%20Unicode%20MS	:%20Symbol%20	:roman	-	:86	:00002000
+T	:Segoe%20UI	:%20arial%20	:decorative	:02020604020202020204	:02	-
+R	:Segoe%20UI	0	0	1
+F	1	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	1	:Segoe%20UI%7Cstandin%7CLiberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Segoe%20UI	0	0	0	0	1	1
+R	:%20%20	0	1	2
+F	2	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	2	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	2
+R	:Carlito	1	0	3
+F	3	0f62ab34ad5d079a0a28fac01bcf7c7a724a4db4d6cb99cab9cabff382fbb80f
+D	3	:Carlito%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-bold.ttf%230	:Carlito	1	0	0	0	0	3
+R	:Sakkal%20Majalla	1	1	4
+F	4	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	4	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	4
+R	:Mystery	0	0	5
+F	5	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	5	:Mystery%7Cstandin%7CCarlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Mystery	0	0	0	0	1	5
+R	:Wingdings-Regular	0	1	2
+R	:Ms%20Shell%20Dlg%202	1	0	6
+F	6	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	6	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	6
+R	:Cambria	0	0	7
+F	7	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	7	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	7
+S	resolver/1/21
+T	:Wingdings-Regular	-	:modern	-	:88	-
+T	:Courier%20New	-	:script	-	:ee	:00002000
+R	:Times	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:CourierNewPSMT	0	0	1
+R	:Batang	0	0	1
+R	-	1	0	2
+F	2	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	2	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	2
+R	:%20%20	0	0	1
+S	resolver/1/22
+R	:Cambria	0	1	1
+F	1	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	1	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	1
+R	:Batang	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	2
+R	:Arial%20Unicode%20MS	0	0	3
+F	3	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	3	:Arial%20Unicode%20MS%7Cstandin%7CLiberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Arial%20Unicode%20MS	0	0	0	0	1	3
+S	resolver/1/23
+T	:%20%20	-	:modern	:020B0604020202020204	:02	:E0002AFF
+T	:Symbol	:%20Carlito%20%3B%20%20	:modern	:02z	:88	:
+T	:Courier	-	-	-	:86	:nothex
+T	:Arial-BoldMT	-	-	-	:ee	:E0002AFF
+R	:Liberation%20Sans	0	0	1
+F	1	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	1	:Liberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Liberation%20Sans	0	0	0	0	0	1
+R	:Calibri	0	1	2
+F	2	718a0663864d37a4868220a19b9668a5fe10a46197f6df367b4c2c30c04c026c
+D	2	:Calibri%7Cstandin%7CCarlito%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-italic.ttf%230	:Calibri	0	1	0	0	1	2
+R	:Wingdings	1	1	3
+F	3	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	3	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	3
+R	:Symbol	1	0	4
+F	4	0f62ab34ad5d079a0a28fac01bcf7c7a724a4db4d6cb99cab9cabff382fbb80f
+D	4	:Carlito%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-bold.ttf%230	:Carlito	1	0	0	0	0	4
+R	:Yu%20Gothic	0	1	5
+F	5	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	5	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	5
+R	:MS%20Gothic	1	0	6
+F	6	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	6	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	6
+R	:	0	0	7
+F	7	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	7	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	7
+R	:SymbolMT	0	0	7
+R	:Wingdings	0	0	7
+R	:Calibri%20Light	1	0	6
+S	resolver/1/24
+T	:Ms%20Shell%20Dlg%202	-	:modern	:02000604020202020204	-	-
+T	:Caladea	-	:swiss	-	:00	-
+T	:Times	:%20%20%20%20	:decorative	:02050604020202020204	:ee	-
+T	:MS%20Mincho	-	-	-	-	-
+R	:Batang	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	-	0	1	2
+F	2	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	2	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	2
+R	:Wingdings-Regular	1	1	3
+F	3	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	3	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	3
+R	:Helvetica%20Neue	0	0	1
+R	:CourierNewPSMT	1	0	4
+F	4	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	4	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	4
+R	:MS%20Gothic	0	0	1
+R	:Segoe%20UI	1	1	5
+F	5	15c1068175252e4adee6d3721bf74064ffe437f679d9dbaeacd03fa7711a041b
+D	5	:Segoe%20UI%7Cstandin%7CLiberation%20Sans%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-bolditalic.ttf%230	:Segoe%20UI	1	1	0	0	1	5
+R	:%20ARIAL%20	0	1	2
+S	resolver/1/25
+T	:Courier	:%20Inter%20%2C%20Times%20	-	:020D0604020202020204	:02	-
+T	:Courier%20New	:%20Wingdings%20%2C%20Verdana%2CBoldOblique%20	:decorative	-	:00	-
+R	:CourierNewPSMT	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:MS%20Mincho	1	0	2
+F	2	d754ba427cfe0bca54ae052384baa8f842da5bd6550ad4da024ac441e7a7d5ce
+D	2	:MS%20Mincho%7Cstandin%7CLiberation%20Serif%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-bold.ttf%230	:MS%20Mincho	1	0	0	0	1	2
+R	:TimesNewRomanPSMT	0	1	3
+F	3	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	3	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	3
+S	resolver/1/26
+T	:Times%20New%20Roman	-	:decorative	:020B0604020202020204	:88	-
+T	:Calibri	-	-	-	:86	-
+R	:Liberation%20Serif	0	0	1
+F	1	058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74
+D	1	:Liberation%20Serif%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-regular.ttf%230	:Liberation%20Serif	0	0	0	0	0	1
+R	:Calibri-Italic	0	0	2
+F	2	718a0663864d37a4868220a19b9668a5fe10a46197f6df367b4c2c30c04c026c
+D	2	:Calibri%7Cstandin%7CCarlito%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-italic.ttf%230	:Calibri	0	1	0	0	1	2
+R	:Liberation%20Sans	0	0	3
+F	3	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	3	:Liberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Liberation%20Sans	0	0	0	0	0	3
+R	:Verdana%2CBoldOblique	0	0	4
+F	4	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	4	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	4
+R	:CourierNewPSMT	1	0	5
+F	5	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	5	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	5
+R	-	0	0	1
+R	:Inter	1	0	5
+S	resolver/1/27
+T	:Calibri%20Light	-	:modern	:02050604020202020204	:02	:
+T	:Arial-BoldMT	-	:decorative	:02050604020202020204	:88	:
+T	:%20%20	:%20Courier%20%3B%20Verdana%2CBoldOblique%20	:modern	:020B0604020202020204	:02	:
+T	:Courier%20New	-	:swiss	:02000604020202020204	:81	-
+R	:ArialMT	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	-	0	0	1
+R	:Helvetica%20Neue	0	0	1
+R	:TimesNewRomanPSMT	0	0	1
+R	:Carlito	0	0	2
+F	2	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	2	:Carlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Carlito	0	0	0	0	0	2
+R	:%20ARIAL%20	0	0	1
+S	resolver/1/28
+T	:SimSun	:%20Inter%20%3B%20Liberation%20Serif%20	:script	-	:88	-
+R	:Times	0	1	1
+F	1	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	1	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	1
+R	:MS%20Gothic	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	2
+R	:Arial-ItalicMT	0	0	2
+R	:Inter	0	0	2
+S	resolver/1/29
+T	:Arial-BoldMT	-	:script	:020C0604020202020204	:86	-
+T	:Calibri%20Light	-	:script	:020C0604020202020204	:02	:00000003
+R	:Helvetica%20Neue	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:Arial%20MT	1	0	2
+F	2	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	2	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	2
+R	:Arial%20MT	0	0	1
+R	:TimesNewRomanPSMT	0	1	3
+F	3	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	3	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	3
+S	resolver/1/30
+R	:Helvetica	1	0	1
+F	1	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	1	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	1
+R	:Times	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	2
+R	:Batang	1	0	1
+R	:Helvetica	1	1	3
+F	3	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	3	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	3
+R	:Inter	0	1	4
+F	4	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	4	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	4
+R	:%20ARIAL%20	1	1	3
+S	resolver/1/31
+T	:LiberationSerif-Bold	-	:modern	-	:80	-
+R	:	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+R	:Times	0	1	2
+F	2	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	2	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	2
+R	:Helvetica	1	0	3
+F	3	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	3	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	3
+R	:SymbolMT	0	0	1
+R	:Arial	1	0	3
+R	:Helvetica%20Neue	0	1	2
+R	:Foo-Bar	1	0	3
+R	:Cambria	0	0	1
+S	resolver/1/32
+T	:Batang	-	:script	:020	:00	:nothex
+T	:Times%20New%20Roman	-	:decorative	:02020604020202020204	:81	-
+T	:Carlito	-	:roman	-	:ee	:E0002AFF
+R	:Times%20New%20Roman	0	1	1
+F	1	0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e
+D	1	:Liberation%20Serif%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-italic.ttf%230	:Liberation%20Serif	0	1	0	0	0	1
+R	:Ms%20Shell%20Dlg%202	0	1	2
+F	2	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	2	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	2
+R	:Yu%20Gothic	0	0	3
+F	3	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	3	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	3
+R	:MS%20Mincho	0	0	4
+F	4	058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74
+D	4	:MS%20Mincho%7Cstandin%7CLiberation%20Serif%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-regular.ttf%230	:MS%20Mincho	0	0	0	0	1	4
+R	:Foo-Bar	0	0	3
+R	:Batang	0	0	5
+F	5	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	5	:Calibri%7Cstandin%7CCarlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Calibri	0	0	0	0	1	5
+R	:%20%20	0	0	6
+D	6	:Liberation%20Serif%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-regular.ttf%230	:Liberation%20Serif	0	0	0	0	0	4
+R	:%20ARIAL%20	0	0	3
+R	:Arial-ItalicMT	0	0	3
+R	:Ms%20Shell%20Dlg%202	0	0	3
+S	resolver/1/33
+R	:PMingLiU	1	1	1
+F	1	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	1	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	1
+R	:Ms%20Shell%20Dlg%202	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	2
+R	:Arial-BoldMT	0	0	2
+R	:Arial%20Unicode%20MS	0	0	3
+F	3	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	3	:Arial%20Unicode%20MS%7Cstandin%7CLiberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Arial%20Unicode%20MS	0	0	0	0	1	3
+R	:Courier%20New	0	0	2
+R	:CourierNewPSMT	0	0	2
+S	resolver/1/34
+T	:Arial%20Unicode%20MS	-	:script	:02zz0604020202020204	:80	:00000003
+T	:Caladea	-	:swiss	:020	-	-
+T	:Ms%20Shell%20Dlg%202	:%20%20ARIAL%20%20%3B%20Liberation%20Serif%20	:swiss	-	:86	-
+T	:CourierNewPSMT	-	:decorative	:020C0604020202020204	:88	-
+R	:Cambria	1	0	1
+F	1	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	1	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	1
+R	:Calibri%20Light	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	2
+R	:Arial%20Unicode%20MS	0	0	3
+F	3	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	3	:Arial%20Unicode%20MS%7Cstandin%7CLiberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Arial%20Unicode%20MS	0	0	0	0	1	3
+R	:MS%20Gothic	0	1	4
+F	4	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	4	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	4
+S	resolver/1/35
+T	:Liberation%20Mono	-	:decorative	:020	:ee	:00002000
+R	:Caladea	0	0	1
+F	1	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	1	:Caladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Caladea	0	0	0	0	0	1
+R	:Arial%20Unicode%20MS	0	0	2
+F	2	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	2	:Arial%20Unicode%20MS%7Cstandin%7CLiberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Arial%20Unicode%20MS	0	0	0	0	1	2
+R	:Wingdings	0	0	3
+D	3	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	1
+S	resolver/1/36
+T	:Wingdings-Regular	-	:decorative	-	:02	-
+T	:ZapfDingbats	-	:decorative	:020D0604020202020204	:80	-
+R	:Mystery	0	0	1
+F	1	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	1	:Mystery%7Cstandin%7CCarlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Mystery	0	0	0	0	1	1
+R	:Segoe%20UI	0	0	2
+F	2	8d91388f1d3604b3b8ae0e3ee2d140e50cd6122f9214514f4aca772540a4076d
+D	2	:Segoe%20UI%7Cstandin%7CLiberation%20Sans%7C%7CD%3A%5CProjects%5COfficeNext%5Csite%5Cassets%5Cfonts%5Cliberationsans-regular.ttf%230	:Segoe%20UI	0	0	0	0	1	2
+R	:Batang	0	1	3
+F	3	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	3	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	3
+R	-	1	0	4
+F	4	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	4	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	4
+R	:SimSun	0	0	5
+F	5	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	5	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	5
+R	:Arial-BoldMT	0	0	5
+S	resolver/1/37
+T	:Courier	-	-	-	:00	:00002000
+T	:	:%20Liberation%20Sans%20%3B%20Courier%20New%20	:auto	-	:88	-
+T	:Wingdings-Regular	:%20Verdana%2CBoldOblique%20	:decorative	-	:02	:E0002AFF
+T	:Arial%20MT	:%20Yu%20Gothic%20%3B%20MS%20Mincho%20	:script	-	:ee	:00000003
+R	:Arial-BoldMT	1	0	1
+F	1	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	1	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	1
+R	:Courier	0	0	2
+F	2	058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74
+D	2	:Liberation%20Serif%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-regular.ttf%230	:Liberation%20Serif	0	0	0	0	0	2
+R	:SimSun	0	0	3
+F	3	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	3	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	3
+R	:PMingLiU	0	0	3
+R	:Symbol	0	0	3
+R	-	0	0	3
+R	:Arial	0	0	3
+R	:SimSun	0	1	4
+F	4	9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e
+D	4	:Cambria%7Cstandin%7CCaladea%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-italic.ttf%230	:Cambria	0	1	0	0	1	4
+R	:Foo-Bar	0	1	4
+R	:Caladea	0	0	5
+D	5	:Caladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Caladea	0	0	0	0	0	3
+S	resolver/1/38
+T	:Liberation%20Mono	:%20%E3%80%80Carlito%20	:decorative	:02020604020202020204	:80	-
+T	:LiberationSerif-Bold	-	:swiss	:02000604020202020204	:00	:
+T	:Carlito	-	:auto	:020C0604020202020204	:02	:
+T	:Liberation%20Serif	-	:swiss	-	:86	-
+R	:MS%20Mincho	0	1	1
+F	1	0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e
+D	1	:MS%20Mincho%7Cstandin%7CLiberation%20Serif%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-italic.ttf%230	:MS%20Mincho	0	1	0	0	1	1
+R	:Caladea	0	0	2
+F	2	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	2	:Caladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Caladea	0	0	0	0	0	2
+S	resolver/1/39
+T	:%20%20	-	:modern	-	-	:E0002AFF
+T	:Liberation%20Mono	-	:modern	:02050604020202020204	:80	:00002000
+T	:Carlito	:%20Times%20New%20Roman%20%2C%20%20	-	:02000604020202020204	:88	-
+R	:Carlito	0	0	1
+F	1	b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131
+D	1	:Carlito%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccarlito-regular.ttf%230	:Carlito	0	0	0	0	0	1
+R	:Batang	1	0	2
+F	2	74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6
+D	2	:Cambria%7Cstandin%7CCaladea%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bold.ttf%230	:Cambria	1	0	0	0	1	2
+R	:Ms%20Shell%20Dlg%202	0	0	3
+F	3	d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91
+D	3	:Cambria%7Cstandin%7CCaladea%7C%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-regular.ttf%230	:Cambria	0	0	0	0	1	3
+R	:Liberation%20Mono	1	0	4
+F	4	bd62a0672d0b9b6710b01df434c80ad54fa5f0835207eb7b17b7a761463067bb
+D	4	:Liberation%20Mono%7Cb%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationmono-bold.ttf%230	:Liberation%20Mono	1	0	0	0	0	4
+R	:Wingdings	0	0	3
+R	:Helvetica%20Neue	0	0	3
+R	:Liberation%20Serif	0	1	5
+F	5	0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e
+D	5	:Liberation%20Serif%7Ci%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Cliberationserif-italic.ttf%230	:Liberation%20Serif	0	1	0	0	0	5
+R	:Helvetica%20Neue	1	1	6
+F	6	f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01
+D	6	:Cambria%7Cstandin%7CCaladea%7Cbi%7CD%3A%5CProjects%5COfficeNext%5Cshared%5Cfonts%5Cfiles%5Ccaladea-bolditalic.ttf%230	:Cambria	1	1	0	0	1	6
+R	:Arial-BoldMT	0	0	3
+R	:Inter	1	0	2

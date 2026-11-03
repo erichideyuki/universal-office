@@ -912,6 +912,10 @@ Node and WebKit, plus the editor keystroke budget in milestone 2.
 | 2 | analysis skeptic, verified in the code (Opus) | (orchestrator) | ≈ 85 |
 | 1 (revision) | planner: K1–K20 written in, consolidated question list G15/G19/G21/LQ1–LQ22, order and estimate re-based (Opus) | (orchestrator) | ≈ 30 |
 | 3 — F0 | foundation + harness: crate skeleton, every shared type, uo-render types + IDL (frontier T), capture/replay harness proven on 2,755 TS layouts, codec wiring, reconciliation with uo-docx D1a and the uo-fonts registry, wave-1 briefs (Opus) | one session, built in parallel with uo-docx D1a, codec C and registry P | ≈ 165 |
+| 3 — F1 | fonts and the 600-DPI width model: `fonts.ts`, `context.ts` flow and notes, the `SfntFont` kerning scale (K7), the `para.ts` width model, `math.ts` `parseFont`; facets p3.metrics/advance/kern/faces + p2first and the resolver sweep, equal on the oracle (2,741), 200 CI documents and 5,000 sweep scenarios at the first replay (0 rounds) (Opus) | one session, ≈ 1.5 h, in parallel with F3, F5, D1a, uo-image | ≈ 95 |
+| 3 — F3 | drawing values and metafiles: `geometry.ts` 356–475 (`substPhClr`, `withThemeStyles`, `shapeExtras`, `groupChild`, the `ShapeGeom` spec), `pictureLook`, `resolvePageFill`/`imagePixelInfo`/`patternRowsFromImage` (+ docx-core `resolveColor2`, `vmlColor`, `dmlColorSpec`), `textfx.ts` `fxColor`/`fillOf`/`resolveTextFx`, `emf.ts` (GDI + EMF+) and `wmf.ts`; facets p3.emf/wmf/picture/pagefill/textfx/shape equal on the oracle (2,742 documents, 184,916 calls), the .NET inputs and 11,480 generated metafiles; **1 parity round** (POLYBEZIER with no point: the TS throws a `TypeError`), found by the generated differential (Opus) | one session, ≈ 2 h, in parallel with F1, F5, D1a, uo-image | ≈ 115 |
+| 3 — F5 | lines and paint: `lines.ts` (re-ported from the frozen TS on the spike's structure), `hyphenate.ts` `chooseHyphenation`, `para.ts` `shadowExtent`, `underline.ts`, `paint.ts` (`paintInlineObject` ends left to F7b); facets p3.lines (replacing the F0 seed) and p3.paint equal on the oracle (2,742 documents: 142,171 breaker and 139,904 paint calls), 200 CI documents and the committed fixture at the first replay (0 rounds) (Opus) | one session, ≈ 50 min, in parallel with F1, F2, F3, D1a, uo-image | ≈ 130 |
+| 3 — F2 | Word semantics in `uo_docx::word` (LQ3): `resolve.ts`, `directRPr`/`directPPr`/`resolvePPr`/`paraformat.ts`, `numbering.ts`, `datefmt.ts`, `field-formula.ts` (+ docx-core `formatPicture`/`formatFormulaResult`), `outline.ts`, `numpages.ts`, `revisions.ts`, `refs.ts` (model side), the `documentHyphenationLanguages` walk; the `JsAssign` spread machinery with key order; unit differential (25k generated cases, 222,757 facets), engine facets p3.datefmt/formula/numbering/style equal on the oracle and the F2 documents, São Paulo facet 1,485/1,485 — 0 parity rounds; 1 defect found by the no-panic loops (`sort_by` panics on NaN tab positions, F2-7) (Opus) | one session, ≈ 3 h, in parallel with F1, F3, F5 and R4b/R4c | ≈ 200 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
@@ -1167,3 +1171,579 @@ from 0 and the hanging indent as an implicit stop; the automatic hyphen is a syn
 - The CI job `layout-parity` is new and has not run on GitHub (its TS build commands follow `ci.yml`).
 - M1–M5 memory tests start with the first ported stage (no allocation path exists yet).
 - uo-drawingml does not host `CustPath` yet: uo-render defines it (to become a re-export).
+
+## Wave 1 — F1 (fonts and the 600-DPI width model)
+
+Opus, 2026-11-03, hybrid mode, one session (≈ 1.5 h) in parallel with F3, F5, the uo-docx D1a
+foundation and uo-image. 0 parity rounds: every facet was equal at its first replay.
+
+### Ported (TS → Rust, TS operation order)
+
+| TS | Rust |
+|---|---|
+| `fonts.ts` `faceMetrics` 57 (DirectWrite metrics, East Asian 1.3× rule, `metricsCache`) | `fonts::face_metrics` (infallible); the metrics live on `FaceEntry`, computed when the answer enters the table |
+| `fonts.ts` `VERT_TABLE`/`VERT_ALIAS`/`vertTable` 108–129, `superscriptRaiseFor` 132, `subscriptDropPt` 137, `superscriptRaisePt` 141, `isSymbolFont` 150 | `fonts::{superscript_raise_for, subscript_drop_pt, superscript_raise_pt, is_symbol_font}` |
+| `fonts.ts` `ALIASES` 161, `parsePostScriptName` 170, `genericFor` 193, `CJK_DEFAULT` 215, `FaceResolver.get`/`lookup` 235–300 | `fonts::{parse_post_script_name, FaceResolverCache::get}` over a `FaceEnv` (provider, font table, face table, resources) + `Cx::face`; `Err(NoFace)` where the TS throws |
+| `fonts.ts` `withEmbeddedFonts` 315 | `fonts::EmbeddedFontProvider::{wrap, new}`, a registry-side `FontProvider` over the host one |
+| `sfnt.ts` `kernTwips`/`kernGlyphsTwips` 183–199 (K7) | `fonts::{sfnt_kern_twips, sfnt_kern_glyphs_twips}` over `uo_fonts::Face::kern_units` |
+| face identity (K2a) | `FaceTable::intern`: a new `AnswerId` gets the next `FaceId` and a `FaceRes` (key, family, flags, face, bytes, advances) in `Resources`; `entry`/`face`/`metrics`/`math_info` |
+| `para.ts` `WORD_UNIT` 347, `wordWidth` 349, `toWordUnit` 355, `scaledUnits` 365, `spacingTwips` 373, `SPACE_WIDTHS` 335, `advanceTwips` 378–405, `glyphAdvTwips` 432, `kernGlyphs` 423, `kernTwips` 540 (`advanceEm: 'nominal'`, `advanceRound: 'word'`, LQ12) | `para::{WORD_UNIT, word_width, to_word_unit, scaled_units, spacing_twips, advance_twips_font, glyph_adv_twips, kern_glyphs, kern_twips}` over `&uo_fonts::Face`, and `advance_twips`/`advance_twips_w` over `Cx` + `FaceId` |
+| `context.ts` constructor, `warn`, `saveFlow`/`restoreFlow`/`pure`, `beginNoteSection`/`beginNotePage`, `noteMark`/`noteMarkOf`/`allNoteMarks`, `endnoteOrder` | `context::DocContext::{new, warn, save_flow, restore_flow, pure, begin_note_section, begin_note_page, note_mark, note_mark_of, all_note_marks, endnote_order}`, `NoteNumberings`, `NoteKindFlow`, `note_key` |
+| `math.ts` `fontInfo`/`infoCache` 43–57, `parseFont` 59, `box` 86, `forCoverage` 95 | `math::{MathFontInfo, parse_math_font}` (on `uo_fonts::read::View`, its own directory rules, S14), `MathFontInfo::glyph_box`; cached per face entry (`FaceTable::math_info`) |
+
+`Unported(F1, …)` is gone from the crate.
+
+### Parity (P2/P3 facets; TS capture regenerated in the same run, LQ21)
+
+Facets added in `tools/lib/facets-f1.mjs` (hooked by `facets.mjs`; `capture-layout.mjs` writes their
+input dumps `<key>.f1.tsv`): `p3.metrics` (`faceMetrics`, first call per font object), `p3.advance`
+(`advanceTwips`, every distinct input), `p3.kern` (`SfntFont.kernGlyphsTwips`, every distinct
+input), `p3.faces` (`FaceResolver.get`, every distinct request over all passes); plus the existing
+`p2first`. `tests/f1_parity.rs` recomputes every value from the dumped inputs, compares each bit for
+bit with the TS value and rebuilds the five streams; `p2first` comes from the Rust resolver's own
+provider calls over the transcript replay (the TS answers and identities).
+
+| Corpus | Documents | Facets equal | Mismatches |
+|---|---|---|---|
+| committed fixture `tests/captures/f1` (CI mode, seed 1, 2 documents) | 2 | 10 | 0 |
+| CI mode, 200 generated documents (seed 7), open fonts | 200 | 1,000 | 0 |
+| Word oracle, all documents, installed fonts | 2,741 (+1 skipped: `emwidth/ew-emb`, embedded-font bytes are not in the index, as in F0) | 13,705 | 0 |
+| resolver sweep `tools/capture-f1-resolver.mjs`, committed (40 scenarios) | 40 | 80 | 0 |
+| resolver sweep, 5,000 scenarios (seed 11) | 5,000 | 10,000 | 0 |
+
+Values compared in the oracle run: 3,114 font metrics, 95,813 distinct `advanceTwips` calls, 4,204
+distinct kerning pairs, 3,173 distinct resolver requests, 88 font-table entries. The corpus barely
+exercises the substitution chain (≈ 1 family per document, node-fonts never answers a stand-in), so
+the **resolver sweep** runs the frozen `FaceResolver` over seeded random font tables (charsets,
+generic families, `altName` lists, PANOSE, `w:sig`) and requests (aliases, PostScript names, East
+Asian names, blanks, case and white space) over the open fonts behind a viewer-like stand-in wrapper:
+31,691 requests, 9,635 table entries, 16,024 stand-in faces described. Sensitivity: disabling the
+stand-in re-check gives 542 mismatches, swapping Arial/Sakkal Majalla 46. Timing: TS oracle capture
+30 s; Rust replay 33 s (release). The CI job `layout-parity` gains the sweep (2,000 scenarios) and
+the `f1_parity` replay of its 200-document capture.
+
+### Memory and robustness (`tests/f1.rs`)
+
+| Check | Result |
+|---|---|
+| M1: resolver + face table + embedded provider (with a document ledger) + widths + kerning + math info, private `FaceCache` | 33,718 B allocated, 10,502 B peak, **0 B left** |
+| M1: `DocContext` (100 note marks, 50 under `pure`, `all_note_marks`), `parse_math_font` + `glyph_box` | **0 B left** |
+| M5: the embedded provider's answer cache (cap 16,384) filled with 16,484 requests | held at the cap; past it a new answer per request |
+| no panic: 1,500 mutated fonts (handcrafted with MATH/glyf/kern/post, and Carlito) through `face_metrics`, 40 advances and kernings each (NaN, 0, negative, 1e300 sizes and scales), `MathFontInfo` and `glyph_box` | 756 parsed, 1,044 math infos, no panic |
+| no panic: 3,000 random font tables and families through the resolver | ok |
+| hostile MATH coverage (2,000 ranges × 65,535) | stops at the step cap → fallback info |
+
+### Declarations (the nine kinds of uo-docx A7; LA3 keys; limits)
+
+1. **Numbers**: every `Math.*` through uo-jsnum (`round`, `floor`, `max`, `min`); `parseInt` through
+   `uo_jsnum::parse::parse_int` (`vertTable` base 36, `genericFor` hex, `w:sig` `usb0` hex with
+   `to_int32` for `& (1 << 13)`); `String(id)` through `to_js_string`; `w !== 100` an exact `f64`
+   compare (NaN scales). **No arithmetic-semantics change**: the TS order of operations everywhere.
+2. **Regex**: `parsePostScriptName` (fonts.ts:171) as a hand matcher (the first `-`/`,` is the
+   separator because the first group excludes both, the rest must equal one suffix, JS `$` is the
+   end of input); `/MT$/`, `/PS$/` → one `strip_suffix` each; `/([a-z])([A-Z])/g` → a left-to-right
+   non-overlapping scan; `altName.split(/[,;]/)` → `split([',', ';'])`. None dynamic.
+3. **NaN/±∞ and absent keys**: `supOffset` absent = `None`; advances propagate NaN sizes as the TS;
+   note ids are JS numbers → `NumKey` (NaN and −0 behave as `Map` keys).
+4. **Orders**: `FaceId` = first use of an answer identity; `NoteFlow` marks in `IndexMap` (insertion
+   order; `allNoteMarks` footnotes then endnotes); the font table through `JsRecord` (own keys); the
+   resolver cache, the face table index and the embedded cache are `FxHashMap` (only `get` is
+   observable).
+5. **Recursion**: `advanceTwips` recurses once at most (`SPACE_WIDTHS` strings point at U+0030,
+   U+002E, U+0020, which are not in the table). No parser recursion.
+6. **Module state**: `metricsCache` (`WeakMap<LayoutFont>`) → `FaceEntry.metrics`, computed eagerly
+   (pure); `infoCache` (`WeakMap` keyed by the font object) → `FaceEntry.math`, per answer (same
+   values: two answers over one font object compute the same info); the `FaceResolver` cache per
+   layout call (K4, LQ19).
+7. **try/catch**: an embedded font that does not parse is ignored (fonts.ts:326); `fontInfo`'s catch →
+   `MathFontInfo::fallback`; the `box` reads of `loca`/`glyf` are outside that `try` → `Err(Internal)`
+   (the TS throws out of `layoutDocument`); the resolver's throw → `Err(NoFace)`.
+8. **Aliasing / identity (LA3)**: `FontFace` objects (fonts.ts:225, 285, 328) → `AnswerId` → `FaceId`;
+   two answers over the same bytes are two faces (K2a). No `json_key` site in F1 (`eq` of context.ts
+   is F2's `directRPr`).
+9. **Choices outside the source semantics**:
+
+| # | Decision | Why |
+|---|---|---|
+| F1-1 | The provider is asked once per lower-case key **per layout call**, not per pass (LQ19). Observable only through cross-pass identity of a policy that makes fresh objects (`server-substitute`: the TS has new stand-ins each pass, Rust one per call); nothing in a pass compares faces of another pass | K4, approved shape |
+| F1-2 | `face_metrics` is infallible (the F0 stub returned `LResult`) | the TS cannot throw there |
+| F1-3 | `DocContext` has no `faces`, `opts` or `docDefault` (`void this.docDefault` in the TS); `DocContext::new(resolver, numbering, rev)` takes the F2 parts; `note_numbering` is `NoteNumberings` with the TS defaults (F0 had `Option<(…)>`); note ids are `NumKey` (F0 had `i32`) — `Glyph.note_id` and `FieldSource::Footnote/Endnote` in `para.rs` are still `i32` (F4/F7c convert) | TS `Map<number>` semantics |
+| F1-4 | `note_mark(kind, id, custom, lang, format_number)` takes `formatNumber` as a parameter until F2 lands it in `uo_docx::word` | F2 runs separately |
+| F1-5 | `pure` moves the snapshot back instead of cloning it (the TS clones in `restoreFlow`; the snapshot is not reused) | same state, one clone less |
+| F1-6 | `EmbeddedFontProvider` keeps answers per TS key up to `MAX_EMBEDDED_ANSWERS` = 16,384 (past it: a new answer per request, the registry's R7 rule); with a document `FaceLedger` a face the budget refuses is ignored (LA6: a miss) | M5, LA6 |
+| F1-7 | `parseFont`'s italic coverage walk skips the steps the TS does nothing in (`idx >= cnt`, exact) and stops past `MAX_MATH_COVERAGE_STEPS` = 2²² steps: the font counts as malformed (fallback info). The TS would walk up to 4.3·10⁹ steps | LQ14 (where the TS effectively hangs) |
+| F1-8 | Kerning through `uo_fonts::Face::kern_units` and advances through `advance_width` (uo-fonts gate-2 rules; a read past the end is 0 there where `SfntFont` throws, uo-fonts G4) | reuse, decided in uo-fonts |
+| F1-9 | `advance_twips` keeps the F0 signature (w = 100); `advance_twips_w` takes `w`; the `*_font` functions take a `&uo_fonts::Face` for F4/F5 and the tests | the TS default parameter |
+| F1-10 | Case mapping of family names and the font-table charset through `uo_text::case` (Node 24.15 tables); frontier P keys its policies with `uo_jsnum::text::to_lowercase` (std tables) — both are JS `toLowerCase` up to Unicode-version deltas, and only cache keys depend on them | exact V8 behaviour here |
+| F1-11 | `p3.advance`, `p3.kern` and `p3.faces` record **distinct inputs** in first-call order (pure functions; per-call resolver cache), not every call; `p3.kern` is taken at the `SfntFont` level (prototype patch), the para-level rescaling is unit-tested; the facet object of `facets.mjs` carries the input dumps as a non-enumerable `dumps` property (two lines in `capture-layout.mjs`) | dump size (the per-call form was 0.7 MB per generated document) |
+| F1-12 | A new capture tool, `tools/capture-f1-resolver.mjs`, with a stand-in wrapper (one object per request key, as the viewer's per-call cache) | the corpus does not exercise the chain |
+| F1-13 | Additive shared edits: `model.rs` re-exports `FontInfo`, `JsRecord`, `EmbeddedFont`; `Cx::face` is an inherent `impl` in `fonts.rs`; the `layout-parity` CI job gains two steps. One `cargo fmt -p uo-docx-layout` early in the session also formatted F3/F5 files in progress (formatting only) | — |
+
+Limit checks: the math coverage step cap (F1-7, new); `NoFace` (TS throw); the embedded answer cap
+(F1-6); the document face budget through the ledger (LA6).
+
+### Not done (handed on)
+
+- The `"font budget"` warning (LA6): a `FontProvider` miss does not say it came from the budget; the
+  registry/policies need a signal (or the engine checks the ledger) — F7a with the binding.
+- `formatNumber` for `note_mark` comes with F2; the `i32` note ids of `para.rs` (F0) with F4/F7c.
+- The per-function facets are replayed from dumped inputs; the same facets through the Rust engine
+  wait for the D1a reader and F7a (LQ22). The embedded-font document needs the reader's bytes (or a
+  dump of embedded font bytes in the capture).
+
+## Wave 1 — F3 (drawing values and metafiles)
+
+Opus, 2026-11-03, hybrid mode, one session (≈ 2 h) in parallel with F1, F5, the uo-docx D1a
+foundation and uo-image. **1 parity round**: the generated metafile differential found one port bug
+(below); every other facet was equal at its first replay.
+
+### Ported (TS → Rust, TS operation order)
+
+| TS | Rust |
+|---|---|
+| `geometry.ts` `substPhClr` 356, `withThemeStyles` 366, `shapeExtras` 389, `groupChild` 438 | `drawing::{subst_ph_clr, with_theme_styles (Cow), shape_extras → ShapeExtras { grad, shadow, pattern, blip: BlipRef, fx }, group_child → GroupChild { run: Cow<Run>, x, y, w, h }}` |
+| what the painters read of `ShapeItem.style` (RQ1) | `drawing::shape_geom → uo_render::types::ShapeGeom` (preset, `adj` in JS own-key order, custom paths in `Resources.cust`, flips, rotation, `fillAlpha`, `line.alpha`, `GeomEval::Compact`); `drawing::resolve_color` = `resolveDrawingColor` of a model colour (the engine's shape fill and stroke) |
+| `picture.ts` `color` 13, `pictureLook` 22, `blipLook` 77; docx-core `picture-xml.ts` `dmlColorSpec` 136 | `drawing::{picture_look → Option<PictureLook>, dml_color_spec}`; `drawing::resolve_color_str` = `resolveDrawingColor` over a spec **string** the layout builds (`split('|')`, `split(',')`, `split('=')` as the TS) |
+| `page-fill.ts` `resolvePageFill` 22, `imagePixelInfo` 176, `patternRowsFromImage` 207; docx-core `resolveColor2` (page-background.ts:359), `vmlColor` (drawing.ts:471) | `drawing::{resolve_page_fill → Option<PageFill>, image_pixel_info, pattern_rows_from_image, resolve_color2, vml_color}` (decoders and headers from uo-image) |
+| `textfx.ts` `fxColor` 34, `fillOf` 41, `resolveTextFx` 54 | `drawing::{fx_color → (hex units, alpha), resolve_text_fx → Option<ResolvedTextFx>}` |
+| `emf.ts` (633: `isEmf`, `renderEmf` with every record it plays, `dib`, `emfRastersDest`, `emfPlusOnly`, `emfPlusBitmap`, `EmfPlusPlayer`) | `metafile::{is_emf, render_emf}` (+ private `EmfPlayer`, `EmfPlusPlayer`, `emf_plus_bitmap`) |
+| `wmf.ts` (148: `isWmf`, `renderWmf`) | `metafile::{is_wmf, render_wmf}` |
+| the metafile branch of `paintObject` (engine.ts:3605–3608) and `paintInlineObject` (paint.ts:202–210) | `metafile::paint_metafile` (clip push with `src` in `ItemSide::clip_src`, the player's items, clip pop; `Ok(false)` for other bytes) |
+
+Entry points for the engine: `FaceLookup` (`face(res, family, bold, italic) -> LResult<FaceId>`,
+`warn`) is all the players need (LQ7; the face's metrics, cmap and advances are read from
+`Resources.faces[i].face`, the TS `face.font`), and `ResWriter { res, origins }` is where F3 writes
+symbols, derived images (with `ImageOrigin::Derived`) and custom paths. `Unported(F3, …)` is gone
+from `drawing.rs`/`metafile.rs` (F5's `paint_inline_object` stub can now call `paint_metafile` and
+`picture_look`).
+
+### Parity (P3 facets; TS capture regenerated in the same run, LQ21)
+
+Facets added in `tools/lib/facets-f3.mjs` (hooked by `facets.mjs`: `p3.emf`, `p3.wmf`, `p3.picture`,
+`p3.pagefill`, `p3.textfx`, `p3.shape`; each call's value is the P1 canonical stream of a one-page
+layout holding the call's result, so the Rust side writes it with `canon_layout`), with the dump
+`<key>.f3.jsonl` of every call's inputs (model objects as JSON, bytes by digest with the media in
+hex, non-finite numbers and −0 kept, the theme, the faces the pass's resolver had answered).
+`tests/f3_facets.rs` decodes each call (`tests/f3_support`: a JSON reader and the model decoders)
+and compares its value bit for bit; with `UO_F3_CAPTURE` it also checks the per-document `p3.*`
+aggregates. The corpus has 26 EMF and 2 WMF calls and no EMF+, so a new tool,
+**`tools/capture-f3.mjs`**, generates seeded EMF (GDI and EMF+ only) and WMF files covering every
+record the players read — transforms, map modes, save/restore, pens/brushes/fonts, paths, every poly
+record, text with and without Dx, glyph indices, alignment, the three bitmap records with 24/32 bpp
+DIBs and premultiplied alpha, ROP3 without a bitmap, EMF+ raw/compressed/continued images, crops,
+int16/float points, page units, Save/Restore — plus malformed ones (short records, huge counts,
+truncation), played by the frozen `renderEmf`/`renderWmf` over the repository's open fonts.
+
+| Corpus | Calls compared | Mismatches |
+|---|---|---|
+| committed `tests/captures/f3`: the 8 .NET synthetic inputs (pictures, page fills ×4, textboxes, text effects, synthetic) | picture 22, pagefill 4, shape 33, textfx 384 | 0 |
+| committed `tests/captures/f3/metafile-gen.f3.jsonl` (`capture-f3.mjs --seed 1`) | 320 EMF (≈ 20 % EMF+), 160 WMF; 41 TS throws reproduced as `Err` | 0 |
+| generated, seeds 2–6 (local) | 7,500 EMF, 3,500 WMF; 992 TS throws reproduced | 0 |
+| Word oracle, all 2,742 documents, installed fonts (`p3.*` aggregates also equal) | emf 26, wmf 2, picture 752, shape 445, textfx 183,691 | 0 |
+
+Item coverage of the committed generated set: 901 EMF paths, 67 EMF glyph runs (14 `asPath`), 150
+images (EMF bitmaps and EMF+, 1 cropped), 17 ROP rectangles, 397 WMF paths, 251 WMF glyph runs.
+Round 1: `POLYBEZIER` with no point — the TS reads `pts[0]![0]` and throws a `TypeError`; the port
+had skipped the move. Fixed (`Err(Internal)`); found by seed 1. A harness issue on the way (not a
+port bug): the generator first indexed the main checkout's ignored local fonts (Calibri); it now
+indexes the fonts this repository tracks. Timing: TS oracle capture ≈ 35 s; Rust replay of the
+oracle dumps 2.2 s (release).
+
+### Memory and robustness (`tests/f3.rs`)
+
+| Check | Result |
+|---|---|
+| M1: `render_emf` on a 1,088-byte generated EMF | 7,414 B allocated, 3,982 B peak, **0 B left** |
+| M1: `render_wmf` on a 194-byte generated WMF | 2,910 B allocated, 2,140 B peak, **0 B left** |
+| M1: `shape_geom` + `shape_extras` (theme of `pictures.docx`), `resolve_page_fill`, `subst_ph_clr`, `resolve_color2` | **0 B left** |
+| M5 | no cache in F3 |
+| limits (LQ14): records, items, payload each cut a 50-rectangle EMF at the limit, one `metafile truncated` warning, what was drawn kept | ok |
+| TS throws kept (LQ9): short header, a count past the end, POLYBEZIER without points | `Err(Internal)` |
+| no panic: the 480 generated metafiles mutated (byte noise, sign flips, random 32-bit counts/sizes, truncation, insertion), 1 in 4 with tiny limits: 9,600 runs (release) | 7,111 drawn, 2,489 errors where the TS throws, no panic |
+
+### Declarations (the nine kinds of uo-docx A7; LA3 keys; limits)
+
+1. **Numbers**: every `Math.*` through uo-jsnum (`min`, `max`, `abs`, `round`, `floor`, `hypot`,
+   `sign`, `sin`, `cos`, `%` = `rem`); `parseInt` through `parse_int`/`parse_int_utf16`;
+   `toString(16)` through `to_radix_string` (NaN prints `NaN`); `String(n)` through `to_js_string`;
+   `getFloat32` → `f64::from(f32)` (exact); integer reads → `f64::from`. Offsets and the EMF+ row
+   arithmetic in `i64` (exact where the TS `f64` is: below 2⁵³, and `stride * h > length` gives the
+   same answer because rounding is monotonic and the length is exact). **No arithmetic-semantics
+   change.**
+2. **Regex**: `resolveColor2`'s `/^\s*fill(?:\s+(darken|lighten)\((\d+)\))?\s*$/i` as a hand matcher
+   (non-`u` `/i`: no non-ASCII character canonicalizes to these ASCII letters); `vmlColor`'s
+   `/\s+/` through JS `trim` + `split_js_space`; `/^[0-9A-Fa-f]{6}$/` through `is_hex6`. None dynamic.
+3. **NaN/±∞ and absent keys**: a model `null` (`JsNumber::Null`) is nullish for `??`, present for
+   `!== undefined`, 0 in arithmetic and falsy, as in JS; an optional number written only when
+   `!== undefined` becomes `OptF64::NONE` for `null` too, because the canonical stream writes
+   `optNum(null)` as absent. Metafile coordinates propagate NaN as the TS (`emTw < 1` false for NaN).
+4. **Orders**: `adj` in JS own-key order (`JsRecord`); `fillOf`'s stop sort is `sort_by` with the TS
+   comparator (stable as V8's TimSort; equal for consistent comparators); EMF objects, EMF+ images
+   and saves are `FxHashMap` (only `get`/`set`/`delete` observable); WMF objects keep the array with
+   first-`null` reuse; `RESTOREDC` in WMF reproduces `splice(length + k)` with a negative start
+   counted from the end again.
+5. **Recursion**: none.
+6. **Module state**: only constants (`STOCK`, `CP1252`, the colour tables); every player is per call.
+7. **try/catch**: none in the F3 TS. TS throws kept as `Err(Internal)`: `DataView` reads past the end
+   or at negative offsets, `Uint8Array.set` past the end, `pts[0]![0]` of an empty POLYBEZIER, a
+   solid fill without colour or a gradient without stops in `fillOf`, a pattern image the decoder
+   finds malformed (uo-image `Malformed`), a face without parsed font; the resolver's throw is
+   `Err(NoFace)` (from `FaceLookup`).
+8. **Aliasing / identity (LA3)**: derived images get a new `ImageId` per TS object — one per bitmap
+   record, one per EMF+ image object (given at its first draw, shared by every draw of it), one per
+   `resolvePageFill` call — with the bytes shared by content in the layout (K12, RQ3); the shape's
+   blip is the model object (`BlipRef { image: &ImageData }`), mapped to its id by the engine;
+   `ClipItem.src` → `ItemSide::clip_src`; faces through `FaceLookup` (`FaceId`); `group_child`'s
+   `Cow::Owned` is the TS `{ ...r0 }` copy (a **new** identity: chains and object lookups must not
+   take it for the model's run). **No `json_key` site in F3** (F4's `fxKey` stringifies the
+   `ResolvedTextFx` it gets from here).
+9. **Choices outside the source semantics**:
+
+| # | Decision | Why |
+|---|---|---|
+| F3-1 | Metafile limits (LQ14): `max_metafile_records`, `max_metafile_items` and `MAX_METAFILE_PAYLOAD` = 2²⁰ path commands + glyphs (a const in `metafile.rs`, not a `LayoutLimits` field, to leave the shared type alone; gate 2 may move it). A hit stops the drawing, keeps what was drawn and warns `metafile truncated` once; the TS 200,000-record guard is kept. An EMF+ bitmap above `uo_image::ImageLimits::DEFAULT.max_px` is skipped the same way. The TS has no bound: a record may declare more points than it holds and read the records after it, so its work grows with records × file size | security §7 |
+| F3-2 | Signatures fixed: `render_emf`/`render_wmf(bytes, dest, MetafileLimits, &mut dyn FaceLookup, &mut ResWriter, &mut PassItems) -> LResult<()>` (F0 had no limits/resources and returned `LResult<bool>`); the `bool` moved to `paint_metafile`, which also pushes the clip pair. `FaceLookup::face` takes `&mut Resources` (the face table registers `FaceRes` there) | the borrow split of `Cx`: faces and resources are separate parameters |
+| F3-3 | `ResWriter { res, origins }`: `Cx` has `res` but no image origins; F7 adds `origins` to `Cx` or builds the writer from the `Layout` | K12 needs the origin per image |
+| F3-4 | `shape_extras` returns `BlipRef` (the model `ImageData`); the engine gives it the id of that model object. Read from `s0`: `withThemeStyles` never sets `blip`, so it is the same object | identity per model object needs the drawing key the engine has |
+| F3-5 | `with_theme_styles` returns `Cow` and does not keep the key order of the style it derives (nothing stringifies it) | no JSON site |
+| F3-6 | `group_child` clones the run when it transforms it (the textbox content `Story` included) | the TS copy is shallow; the clone is the cost of `Cow` — a transform-as-data variant is a stage-5 candidate if F7 measures it |
+| F3-7 | `resolve_page_fill` registers the derived image only when the fill is kept (the TS builds the object before its two checks); a fill type outside the five the reader produces → `None` (only an edit could make one); a pattern image past the decoder limits → no pattern rows (so no fill) + warning `page fill image too large` | resources retained by the layout; uo-image limits |
+| F3-8 | `dmlColorSpec` of a `prstClr` whose `val` is an `Object.prototype` key: the TS reads a function from `PRST_RGB` and the colour never resolves; here the head is a non-hex string (same result); `__proto__` without modifiers makes the TS throw a `TypeError` — here no colour | named JS quirk |
+| F3-9 | `resolveTextFx`'s `CAP[o.cap ?? 'flat']`: a prototype key gives a function in the TS; here `butt` | `LineCap` is an enum |
+| F3-10 | `resolve_text_fx` returns the value; the caller registers it in `Resources.text_fx` (the TS makes a new object per call; the canonical stream writes it by value). `fx_color` returns the hex as UTF-16 units: the fallback (the run's colour) is passed through unchanged | F4 owns the glyph style |
+| F3-11 | `vml_color`/`resolve_color2` work on UTF-16 units (the TS splits by unit); upper case through `uo_text::case` (Node 24.15 tables), lower case through `uo_jsnum::text` | exact V8 strings |
+| F3-12 | Model colours resolve through uo-drawingml's structured `resolve_word_spec` (the uo-docx G12 named difference applies); strings the layout builds (`dmlColorSpec`, `fxColor`) through `resolve_color_str` with the TS splits | both TS paths kept |
+| F3-13 | Custom paths are converted to `uo_render::types::CustPath` (until uo-render re-exports uo-drawingml's) and shared by value in `Resources.cust` | the canonical stream writes them by value |
+| F3-14 | The EMF device context is plain `Copy` data: colours as COLORREFs (`colorOf` at emission), font face names in a per-player list; `SETBKMODE`/`SETBKCOLOR` are read (they can throw) but not kept (the TS never reads them) | `SAVEDC` copies without allocation |
+| F3-15 | Derived images carry `natural_px` from `uo_image::image_pixel_size`; a blip's `ImageRes` (built by the engine) must have NaN `width_twips`/`height_twips` — the TS object is `{ data, ext }` and the walker writes `num(undefined)` | note for F7 |
+| F3-16 | The content dedupe of derived images is a linear scan of the layout's images (length first) | stage-5 candidate (an index on `Resources`) |
+| F3-17 | K11a accepted: `path.push(...)` spreads that throw `RangeError` in V8 above ≈ 10⁵ points (emf.ts:289, 314) succeed here | approved (LQ14) |
+| F3-18 | Shared files, additive only: `model.rs` re-exports (`Nullable`, `Str`, `MediaStore`, `PageBackground`, `DrawingColor`, `ShapeStyle`, `FxColor`, `FxFill`, `TextEffects`, `Theme`, `ImageData`, `PicBlipFx`, `PicColor`, `DrawingGroup`, `GroupItem`); `Cargo.toml` gains `uo-image`; `facets.mjs` gains the F3 wraps, recorder, reporter call and dump | — |
+
+Limit checks: `max_metafile_records`, `max_metafile_items`, `MAX_METAFILE_PAYLOAD`, the EMF+ bitmap
+pixel cap (F3-1), the page-fill decoder limits (F3-7); every one ends with a warning, never an `Err`.
+
+### Not done (handed on)
+
+- The fuzz targets `emf_records`/`wmf_records` of §7 are not in `core/fuzz` (the wave-1 brief did not
+  ask for them; `core/fuzz` would need uo-docx-layout, and with it uo-docx in construction, as a
+  dependency). `tests/f3.rs` runs the same no-panic loop on stable; the target bodies are that loop.
+- The engine's shape `fill`/`stroke`/`line` assembly (engine.ts:3621–3634, paint.ts:221) is F7b/F5's
+  (with `resolve_color`, `shape_geom`, `shape_extras`); `p3.shape` does not include the `fill` of
+  `withThemeStyles(s).fill` (its theme-style path is covered through the gradient, pattern and shadow).
+- F7: `FaceLookup` over `Cx` (F1's resolver), `origins` for `ResWriter`, the id of a blip's model
+  image, and derived images per pass: the TS makes new ones every pass, here they stay in
+  `Resources` with the layout — F7 decides whether passes share one table (M3).
+- The same facets through the Rust engine wait for the D1a reader and F7 (LQ22).
+
+## Wave 1 — F5 (lines and paint)
+
+Opus, 2026-11-03, hybrid mode, one session (≈ 50 min) in parallel with F1, F2, F3, the uo-docx D1a
+foundation and uo-image. **0 parity rounds**: every facet was equal at its first replay. Built
+against F1's signatures while F1 was in flight (its `to_word_unit`, `advance_twips`,
+`FaceTable::metrics/face` are the ones used) and wired to F2's `uo_docx::word::resolve` once it
+compiled.
+
+### Ported (TS → Rust, TS operation order)
+
+| TS | Rust |
+|---|---|
+| `lines.ts` (689: `FIXED_SPACE`, `FIT_EPS`, `nextTab` 76, `moreTabs` 98, `lineBox` 108, `LineBreaker` 140 — `done`, `peekWordWidth`, `indentFirst`, `mark`/`reset`, `fitRight`, `next` with `closePending`) | `lines::{next_tab, more_tabs, line_box, LineBreaker::{new, done, peek_word_width, mark, reset, next, next_in}}`, `Line`, `PlacedGlyph`, `GlyphSrc`, `glyph_of` (the automatic hyphen `{ ...kg, kind: 'shy', … }`) |
+| `hyphenate.ts` `HYPHEN_GAP15`, `HYPHEN_EXPAND15`, `HYPHEN_ZONE_DEFAULT`, `hyphenCandidates` 182, `chooseHyphenation` 206 (called by `next`) | `hyphenate::{hyphen_candidates, choose_hyphenation}` (F5-3; `markHyphenation` stays F4's) |
+| `para.ts` `shadowExtent` 321 (the empty-line height reads it) | `lines::shadow_extent` (F5-4) |
+| `underline.ts` (184: `ulMetrics` 20, `ulGeometry` 36, `PATTERNS`, `HEAVY`, `paintUnderlines` 74, `band`, `wave`, `paintStyle`) | `underline::{ul_metrics, ul_geometry, paint_underlines}` (+ private `band`, `wave`, `paint_style`) |
+| `paint.ts` (504: `lineSeq`, `paintLine` 19, `paintLeader` 102, `displayEnd` 140, `paintMath` 160, `paintCheckBox` 180, `paintInlineObject` 196, `paintHr` 234, `paintDecorations` 253, `borderWidth` 290, `borderBands` 319, `toWhite` 342, `BORDER_DASH`, `borderPaintWidth` 357, `paintBorder` 368, `paintWave` 403, `paintParaBox` 430, `pageBorderItems` 478) | `paint::{paint_line, paint_line_in, paint_inline_object, border_width, border_bands, to_white, border_paint_width, paint_border, paint_border_in, paint_para_box, page_border_items, page_border_items_in}` (+ private `paint_leader`, `display_end`, `paint_math`, `paint_check_box`, `paint_hr`, `paint_decorations`, `paint_wave`); `lineSeq` → `Cx::line_seq` (per call, LA3) |
+
+What the TS reads through `this.ctx` and `face.font` (settings, `advanceTwips`, `faceMetrics`, the
+run's `w:ptab` and `o:hr` shape, the font's `unitsPerEm`/`usWinDescent`/`descender`/VDMX,
+`advanceWidth(glyphId)`, COLR, the face key and synthetic flags, symbols, F2's colours) goes
+through two traits, `lines::LineEnv` and `paint::PaintEnv`, implemented by `Cx` (the engine) and by
+the facet replay (F5-1). The F0 entry points keep their signatures (`LineBreaker::next(cx, p, frame)`,
+`paint_line(cx, p, line, at, out)`).
+
+### Parity (P3 facets; TS capture regenerated in the same run, LQ21)
+
+`tools/lib/facets-f5.mjs` (hooked by `facets.mjs`; `p3.lines` **replaces the F0 seed**): every
+`LineBreaker.next`/`reset`/`peekWordWidth` and every `paintLine` call is one `bytes` item of the
+facet stream holding the call's raw encoding (`next`: the frame and every line field with the placed
+glyph identity — paragraph glyph index, marker glyph index or the automatic hyphen's offset;
+`paintLine`: the P1 canonical stream (canon.mjs v1) of a page holding the appended items, faces as
+descriptors). The dump `<key>.f5.bin` holds the inputs (faces with `faceMetrics` and the font numbers
+the paint reads, run styles with `rpr`, text effects and `!!fontOfSlot(…eastAsia…)`, prepared
+paragraphs with every glyph field lines and paint read, the `advanceTwips` answers the breaker asks
+for, VDMX/leader/COLR answers, the breakers' settings, each call with its TS raw output).
+`tests/f5_parity.rs` decodes them, runs `LineBreaker::next_in`/`reset`/`peek_word_width` and
+`paint_line_in` → `canon_layout`, and compares every call's bytes and the per-document facet digests.
+The loader hook gained an optional pre-call hook (`__uoFacetPre`, for `out.length` before
+`paintLine`); the recorder's own `advanceTwips`/`faceMetrics` calls run with the reporter off, so F1's
+streams see only the engine's calls.
+
+| Corpus | `next`/`reset`/`peek` calls | `paintLine` calls | Mismatches |
+|---|---|---|---|
+| committed `tests/captures/f5` (generated `gen/1/6`, open fonts) | 21 | 21 | 0 |
+| generated, CI mode, seed 7, 200 documents (open fonts; the CI job runs its own seed every time) | 57,016 | 57,016 | 0 |
+| Word oracle, all 2,742 documents, installed fonts | 142,171 | 139,904 (+ 246 pending: inline objects, F5-9) | 0 |
+
+On the oracle 2,609 documents are equal on both facet digests; the 133 with a pending inline object
+are compared call by call. Timing: TS oracle capture with dumps 52 s (913 MB of dumps, not kept);
+Rust replay 4.3 s (release).
+
+### Memory and robustness (`tests/f5.rs`)
+
+| Check | Result |
+|---|---|
+| M1: break a 76-glyph justified paragraph with a right tab into every line and paint each (wavy coloured underline, leaders) | 159,384 B allocated, 44,192 B peak, **0 B left** |
+| M1: `line_box`, `border_bands` | **0 B left** |
+| M5 | no cache in F5 (the per-group underline metrics memo of the TS is a local `Vec`) |
+| no panic: 400 hostile paragraphs (NaN, ±∞, −0, 1e300 and negative values in advances, metrics, indents, frames, tab stops, line rules, settings; random glyph kinds and flags), each broken until `done` and every line painted with a 200,000-unit work cap | progress holds (≤ n + 2 lines), every placed glyph resolves, the item side data stays parallel, no panic |
+| unit tests | line box rules (exact, at least, multiple above/below single, grid, grid 0/NaN), breaking and hanging spaces, character breaking and guaranteed progress, center/right/justify, default and right tab stops, the automatic hyphen, the trailing line break, underline geometry, border widths/bands/`toWhite` (incl. `parseInt('auto', 16)` = 10), borders as rectangles/dashes/waves, glyph runs merged and split, underline + strike + leader items |
+
+### Declarations (the nine kinds of uo-docx A7; LA3 keys; limits)
+
+1. **Numbers**: every `Math.*` through uo-jsnum (`max`, `min`, `max_n`, `min_n`, `round`, `floor`,
+   `ceil`, `abs`, `pow`, `sin`, `%` = `rem`); `parseInt(hex, 16)` through `parse_int_utf16`, `>>` and
+   `&` through `to_int32`; `toString(16)` through `to_radix_string`; `String(n)` through
+   `to_js_string` (run keys); `x > 0 || x < 0` through `conv::truthy`. Glyph indices `u32`/`usize`
+   from array positions. **No arithmetic-semantics change** (`lineIdx` saturates, unreachable within
+   the budget).
+2. **Regex**: `LETTER`/`MARK` (`/^[\p{L}\p{M}]$/u`, `/^\p{M}$/u`) through
+   `uo_text::props::is_single_code_point_in`; none dynamic.
+3. **NaN/±∞ and absent keys**: `??` on a model `null` is nullish (`rpr.sz`, `rpr.w`, `b.sz`,
+   `b.space`, `consecutiveHyphenLimit`, `hyphenationZone`, `ie.l`); truthiness of numbers through
+   `conv::truthy` (`oAsc ||`, `shT ?`, `hrPct ?`, `feShrink`); optional glyph fields are `OptF64`;
+   NaN comparisons fall as in JS.
+4. **Orders**: placed glyphs in the TS order; the TS `includes`/`indexOf` over `PlacedGlyph` objects
+   are index masks and positions.
+5. **Recursion**: none.
+6. **Module state**: `lineSeq` → `Cx::line_seq`, per call (LA3; the canonical stream relabels it).
+7. **Throws** (LQ9): a `placed[…]!`/`gs[…]!`/style/math read that cannot fail in the TS but would
+   throw → `Err(Internal)`; `String.fromCodePoint` above U+10FFFF → `Err(Internal)`.
+8. **Aliasing / identity (LA3)**: `PlacedGlyph.g` → `GlyphSrc` (`Para(i)` is the object `gs[i]`; the
+   automatic hyphen is a new object, never `===` a paragraph glyph, as in
+   `placed[…].g !== gs[lastBreak]`); `sh.includes(pg)`, `spaces.includes(pg)` → masks;
+   `cur.g.style === g.style` → `StyleIx` equality (**F4 must keep one `styles` entry per TS
+   `RunStyle` object, math styles included**); `Glyph.obj` → `RunKey` (a slice resolves to its base
+   run's fields); the glyph-run key uses the face's **`key` string** (the TS template), not the
+   answer identity: two answers with the same key merge into one run whose face is the first glyph's,
+   as in the TS. **No `json_key` site** (`fxKey` is F4's string).
+9. **Choices outside the source semantics**:
+
+| # | Decision | Why |
+|---|---|---|
+| F5-1 | `LineEnv`/`PaintEnv` traits over what the TS reads through `ctx`/`face.font`; `Cx` implements both; `next_in`/`paint_line_in` are generic | the facets replay the algorithms on the TS answers now (no D1a reader/F4 needed); the arithmetic and order are untouched |
+| F5-2 | `line_box` is infallible and returns `(height, baseline)` (F0 had `LResult`) | it cannot fail |
+| F5-3 | `hyphenCandidates`/`chooseHyphenation` and the three constants ported here, in `hyphenate.rs` | `next` calls them; F4 keeps `markHyphenation` |
+| F5-4 | `shadowExtent` in `lines.rs` (pub) | the empty-line height reads it; F4 uses this one |
+| F5-5 | the `paintLine` run key compared component by component with JS-string equality per number (`-0` = `0`, NaN = NaN), the full TS string built when a string component (face key, colour, `fxKey`) contains `\|`; the `paintMath` key always as the full string | identical result without a string per glyph |
+| F5-6 | a TS leader name outside `TabLeader` maps to `Dot` (`leader_from_ts`) | paint draws `'.'` for any other name; only a facet's leader name would differ |
+| F5-7 | `Object.prototype` names as `w:val` (`BORDER_DASH[val]`, `PATTERNS[val]`, e.g. `constructor`) are not looked up | the TS reads inherited members there (a function as dash pattern); accepted by name |
+| F5-8 | shared additions: `RunStyle.rpr: Arc<RPr>`, `PreparedPara.ppr: Arc<PPr>` (para.rs; F4 fills them), `Cx::line_seq` (engine/mod.rs), model.rs re-exports (`JsNumber`, `Settings`, `BorderSpec`, `PBdr`, `RFonts`, `RPr`, `ShadingSpec`, `TextShadow`, `DrawingShape`, `InlineImage`, `Ptab`, `PageBorders`, and F2's `ColorRef`, `FontSlot`, `font_of_slot`, `resolve_color`, `shading_fill`), the `uo-text` dependency, `loader.mjs` `__uoFacetPre`, the `f5` deps in `capture-layout.mjs`, the CI step | the TS fields the port reads; one place naming uo-docx |
+| F5-9 | `paintInlineObject`: the control flow is ported (effects margin, EMF/WMF before raster, the coordinates); its four ends are F7b stubs — the `ImageId` of a model drawing (RQ3), `metafile::paint_metafile` with the pass's `FaceLookup`/`ResWriter`, the image item with `drawing::picture_look`, the shape item the floating objects build | the engine holds the image table, `origins` and `FaceLookup` (F3 record, "Not done"); 246 oracle paint calls pending |
+| F5-10 | work budget: `next` charges the glyphs it visits + 1; the leader-dot, dash-band and wave loops 1 per iteration | the TS has no limit and hangs on absurd coordinates (LQ14) |
+| F5-11 | `Glyph.ptab` is an index into the paragraph's `LPara.runs` (the F0 doc) | F4 fills it so |
+| F5-12 | `fitRight` always rounds to the Word unit | the lab options are gone (LQ12) |
+| F5-13 | `displayEnd`'s East Asian check is `font_of_slot(…EastAsia…)` non-empty (`!!`); `paintBorder`/`pageBorderItems` colours through F2's `resolve_color`, `paintParaBox` through `shading_fill`; `paint_border_in`/`page_border_items_in` are the bodies after the colour, page-border colours resolved before drawing | F2's functions; resolution has no side effect |
+| F5-14 | `o:hr` fill = `sh.style.fill` as its TS string (`DrawingColor::to_ts_string`), else `A0A0A0` | the TS `sh.style.fill ?? 'A0A0A0'` |
+| F5-15 | VDMX at `em`: a size outside 0–65535 or not an integer finds no record | the TS `Map.get` misses there |
+
+**Limits** (LQ14): only the work budget (F5-10); every other loop is bounded by the glyph count.
+
+### Not done (handed on)
+
+- F7b: the four ends of `paint_inline_object` (F5-9).
+- The `Cx` adapters (`impl LineEnv`/`PaintEnv for Cx`) are covered by P1 from F7a on; the replay env
+  answers with the TS values, and the F1/F2 functions they delegate to have their own facets.
+- `paintBorder`, `paintParaBox`, `pageBorderItems` have unit tests but no facet yet: their callers
+  are the engine (F6, F7a); a facet with them when they call (engine.ts call sites).
+- `tests/layout_parity.rs` (F7a's) skips `p3.lines` in its `Ok` path; it should also skip or compare
+  `p3.paint` (and F1/F3's facets) when F7a wires the reader.
+
+## Wave 1 — F2 (Word semantics in `uo_docx::word`, LQ3)
+
+Opus, 2026-11-03, hybrid mode, one session (≈ 3 h) in parallel with F1, F3, F5 and the uo-docx
+reader frontiers. 0 parity rounds on the Word-semantics code: the first replay of every facet was
+equal except 24 cases of the unit differential whose test harness decoded lone surrogates into
+U+FFFD (a harness bug, fixed there); the no-panic loops found one real defect (below, F2-7).
+
+### Ported (TS → Rust, TS operation order)
+
+| TS | Rust (`core/crates/uo-docx/src/word/`) |
+|---|---|
+| `resolve.ts` (414): `mergeRFonts`, `mergeRPr`, `mergeTabs`, `mergePPr`, `mergeBorders`/`mergeMargins`, `mergeTblPr`/`mergeTrPr`/`mergeTcPr`, `StyleResolver` (`chain`, `paraChain`, `paraStyleId`, `paraStyle`, `charStyle`, `tableStyle`), `cascadeRPr` + `TOGGLES`, `COND_ORDER`, `fontOfSlot`, `own`, `highlightHex`, `applyTintShade`, `resolveColor`, `shadingFill`, `resolveDrawingColor` | `resolve.rs` |
+| `context.ts` `directRPr` 245 (+ `setFx`, `setOt`, `uSpec`, `colorSpec`, `eq`), `directPPr` 317; `para.ts` `resolvePPr` 682; `paraformat.ts` `inheritedPPr`, `effectivePPr` | `direct.rs` (`direct_rpr`, `direct_rpr_with`, `direct_ppr`, `resolve_ppr` → `ResolvedPPr`, `inherited_ppr`, `effective_ppr`) |
+| `numbering.ts` (236): `roman`, `letters`, `cardinalPt`, `formatNumber`, `NumberMarker`, `LevelCount`, `NumberingState` (`clone`, `listKey`, `abstractFor`, `level`, `next`) | `numbering.rs` (+ `TextCap`, `LevelSrc`) |
+| `datefmt.ts` (103): `formatWordDate`, `dateFieldValue` | `datefmt.rs` (+ `LocalDateTime`, `time_clip`) |
+| `field-formula.ts` (129): `fieldName`, `hasNestedField`, `evaluateFieldFormula`, `substituteNested`, `parseNumber`, `parseArithmetic`; docx-core `table-formula.ts` `formatFormulaResult`, `formatPicture` (+ `roundAway`, `group`, `splitSections`) | `field_formula.rs` |
+| `outline.ts` (185): `headingText`, `outlineLevelOf`, `documentOutline`, `listItemValues`, `numberedItems`, `outlineParagraphs` | `outline.rs` (over `DocView`) |
+| `numpages.ts` (30) | `numpages.rs` |
+| `revisions.ts` (178): `AUTHOR_PALETTE`, colours and bar constants, `authorColor`, `barX`, `RevisionDisplay` (`run`, `directRPr`, `paragraph`, `markGone`, `barFor`, `barColor`), `joinDeleted`'s offset, `revisionRanges` | `revisions.rs` |
+| `hyphenate.ts` `documentHyphenationLanguages` 65–80 (K5) | `hyphlangs.rs`: the explicit `lang`-site walk, in each object's key order |
+| `refs.ts` `cellAtGrid`, `paragraphAtPath` (`cellBlocks` = `Story::blocks`) | `refs.rs` (model side; the layout queries stay F8's) |
+| JS object operations (spread, `Object.assign`, `delete`, key order, `JSON.stringify` equality, `Array.prototype.sort`) and `Number.prototype.toString(radix)` | `obj.rs`, `num.rs` |
+
+uo-docx-layout `src/word.rs` is now the facade: re-exports of `uo_docx::word` (the F0 placeholders
+are gone) plus the glue to the layout's types — `TimeZoneRule::offset_min_at`, `Clock::local`/
+`local_now` (LQ10), `revision_display(opts.revisions)`, `text_cap(limits)`, `numbering_state(lang,
+limits)`. F5 already calls `resolve_color`/`ColorRef`/`shading_fill` through it; F1's `note_mark`
+can now take `word::format_number`.
+
+### Parity (TS capture regenerated in the same run, LQ21)
+
+**Unit differential** (`uo-docx/js/capture-word.mjs` → `uo-docx/tests/parity/word.{capture,inputs}`,
+replayed by `uo-docx/tests/word_unit.rs`): seeded generated inputs through the frozen functions —
+random OOXML `rPr`/`pPr`/`tblPr`/`trPr`/`tcPr` (data-dependent child orders, explicit `w:val="0"`,
+bad numbers, theme colours, w14 effects, `rPrChange`/`pPrChange`), random `styles.xml` (integer-like
+ids, `basedOn` cycles, linked styles, table styles with `tblStylePr` incl. `__proto__`), `numbering.xml`
+(numStyleLink, overrides, restarts, `isLgl`, `w:null` texts, every number format) and themes, read on
+both sides by the D1a readers (R1, R2); edit scripts over the editing props (R4a's
+`runPropsFromRPr`/`paraPropsFromPPr`); strings and numbers for dates, pictures, formulas and
+formats. Compared: canonical digests (A6) of every result **and of its key-order facet** (K9/LQ20),
+the JSON of strings. The facet `in` (digest of the inputs as read) tells a reader difference from a
+Word-semantics one: 0 reader differences. Regenerated after the uo-docx D1a fixes I1 (`TblBorders`
+diagonals) and I3 (`canon.mjs` own-key rules): byte-identical.
+
+| Run | Cases | Facets equal | Mismatches | Accepted by name |
+|---|---|---|---|---|
+| committed (seed 7) | 5,127 | 23,098 | 0 | 23 TS throws (F2-5) |
+| local (seed 11, `--count 4000 --fmt-count 400`) | 24,967 | 222,757 | 0 | 35 TS throws (F2-5) |
+
+The local run covered 1,772 non-null numbering markers, 1,948 distinct resolved paragraph styles,
+660 distinct table styles, 10,334 distinct merge results.
+
+**Engine facets** (`tools/lib/facets-f2.mjs`, hooked by `facets.mjs`; dumps `<key>.f2.tsv`; replayed by
+`tests/f2_parity.rs`): `p3.datefmt` (every `dateFieldValue`), `p3.formula` (every
+`evaluateFieldFormula`, nested calls included, with the transcript of its nested-field callback),
+`p3.numbering` (every `NumberingState.next` of the engine's states, with the `clone()` events of
+`pure()`/`saveFlow`, replayed over the formatting R2 reads from the docx), `p3.style` (the first
+`paraStyle`/`charStyle`/`tableStyle` query per id), `p3.hyphlangs` (once per document).
+
+| Corpus | Documents | Facets equal | Calls compared |
+|---|---|---|---|
+| committed fixture `tests/captures/f2` (4 documents of `tools/gen-f2-docs.mjs`: lists, styles, DATE/TIME/CREATEDATE, formulas) | 4 | 16 | 33 DATE/TIME, 33 formulas, 125 markers, 22 style queries |
+| Word oracle, all documents (installed fonts) | 2,742 | 10,968 | 1,167 markers (17,125 clone events), 6,479 style queries |
+
+The oracle and the F0 generator have **no** DATE/TIME or formula field, hence `gen-f2-docs.mjs`.
+`p3.hyphlangs` is captured but its replay waits for `read_document` (R5): 2,746 facets pending.
+
+**São Paulo facet** (LQ10; `capture-word.mjs --tz America/Sao_Paulo` → `tests/captures/f2/
+datefmt-America-Sao-Paulo.*`, replayed by `f2_parity.rs::sao_paulo_dates` through `Clock::local` with
+a `TimeZoneRule::Table` built from the zone's transitions the capture recorded, 1914–2040): 1,485
+cases (17 instants incl. the 2018 and 2019 switches and the 1985 DST era, 3 languages, 17 pictures
+and 16 instructions), **1,485 equal**; the rule's offset equals V8's at all 1,386 valid instants.
+
+### Memory and robustness
+
+| Check | Result |
+|---|---|
+| M1 (`uo-docx/tests/memory_word.rs`): merges, cascade, colours, style resolver (+ `clear`), direct formatting, `resolve_ppr`/`inherited_ppr`/`effective_ppr`, numbering (states and clones), every number format, dates, formulas (incl. a depth-limit error), pictures, revisions, outline functions, the hyphenation walk — 32 operations | 118,761 B allocated in total, largest peak 36,772 B, **0 B left** each |
+| no panic (`uo-docx/tests/nopanic_word.rs`): 20,000 random field codes (braces, backslashes, quotes, lone surrogates, nested PAGE/NUMPAGES with hostile answers); formulas of 10⁵ nested parentheses, 10⁶ minus signs, 1,000 nested fields, 2·10⁵-digit pictures | depth → `FormulaError::Depth`; 200-field guard → none; pictures cut at the cap |
+| no panic: 20,000 random date pictures/instructions at invalid and extreme instants; every number format × 14 hostile counters (±1e300, NaN, ±∞, 2⁵³+1, fractions) | texts within their caps |
+| no panic: hostile numbering (level texts of up to 5,400 placeholders, starts 1e15/NaN, numStyleLink cycles) and 300-style `basedOn` cycles; 3,000 random merges/cascades/direct formatting of hostile OOXML; V8 sort with NaN comparators (0–200 elements) | markers within the cap (bullets keep their written text), chains ≤ 32, permutations kept |
+| fmt, clippy `--no-deps -D warnings` (`-p uo-docx -p uo-docx-layout`, all targets, native and wasm32), `float-casts.sh`, `grep-bans.sh` | clean for the F2 files (other frontiers' files in progress muted with `-A clippy::collapsible_if/collapsible_match` to reach the test targets) |
+
+### Declarations (the nine kinds of uo-docx A7; LA3 keys; limits)
+
+1. **Numbers**: every `Math.*` through uo-jsnum (`max`/`min`/`max_n`/`min_n`/`round`/`floor`/`rem`/
+   `pow`/`sign`/`abs`/`trunc`), `parseInt` → `parse_int`/`parse_int_utf16` (over UTF-16 slices: hex
+   pairs of colours), `parseFloat` → `parse_float`, `String(n)` → `to_js_string`, `toFixed` →
+   `to_fixed`, `toString(16)` → `js_to_radix` (F2-8), `String.fromCharCode` → `to_uint16`. Model
+   numbers are `JsNumber`: `null` as a number is 0 in arithmetic, nullish for `??`, `!== undefined`,
+   never `=== 0`; every `!==` between optional numbers is the JS one (`ne_num`). **No
+   arithmetic-semantics change**: the TS order of operations everywhere (`applyTintShade`'s HSL,
+   `roundAway`, the formula parser).
+2. **Regex** (hand matchers, none dynamic): `/%([1-9])/g` (`fill`, `refs`), `/%[1-9]/` search,
+   `/\\@\s*(?:"([^"]*)"|(\S+))/`, the same with `#` (`find_switch_picture`: the quoted alternative
+   needs its closing quote, else `\S+` from the quote), `/\\\*\s*(\w+)/g` (`format_switches`),
+   `/(^|\s)(\S)/g` (`Caps`, one unit), `/\{([^{}]*)\}/` (`inner_braces`),
+   `/^\s*=([^\\]*)((?:\\[\s\S]*)?)$/`, the sticky tokenizer `/\s*(\d[\d.]*(?:,\d+)?|[-+*/()])/y`,
+   `parseNumber`'s `/^([-+]?)(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?$/` (greedy groups are exact: a
+   shorter choice always leaves a `.`), `/,(\d+)$/`, `/^[0-9a-fA-F]{6}$/`, `/^pct\d+$/`,
+   `/^heading ([1-9])$/i` (ASCII: no letter of "heading" has a non-ASCII `/i` fold), `/^'(.*)'$/` (no
+   line terminators), `/[0#x]\.[0#x]/`, `/\B(?=(\d{3})+(?!\d))/g` (`group`: a digit run whose length
+   is a multiple of 3, at a non-boundary), `/^[bcr](\d+)$/`, the soft hyphen and U+FFFC, `[\t\n\r\v\f]`, `\s+`.
+   JS `\s` = uo-text's white space over units.
+3. **NaN/±∞ and `undefined` keys**: counters and starts carry NaN (a NaN level writes its own slot,
+   as `c[NaN]` on the array); a `null` start override is stored as 0 (its only use is `+ 1`);
+   explicit `undefined` keys are produced where the TS writes them (`{ ...lvl.pPr, tabs: undefined }`,
+   `asciiTheme: undefined`…, `base.b = p.bold` with the prop absent) and copied by every spread
+   (`set_undefined`, `JsAssign`).
+4. **Orders**: every merge keeps the TS key insertion order (`obj::spread`/`assign`/`set`/`delete`:
+   base keys first, new keys appended, re-assignments in place, `delete` then set appends); style and
+   numbering records through `JsRecord` (integer-like keys first, own keys only); counters, seen
+   `w:num`s and deferred overrides in `IndexMap`/`IndexSet` (TS `Map`/`Set`); `mergeTabs` through an
+   `IndexMap` keyed by SameValueZero position and V8's sort (F2-7); the hyphenation walk in each
+   object's key order (F2-16). Validated by the order facet of the unit differential.
+5. **Recursion**: `parseArithmetic` bounded by `max_parse_depth` (K11c, F2-6);
+   `evaluateFieldFormula` ↔ `substituteNested` recurses one level (the inner code has no braces);
+   `abstractFor` ≤ 4 (TS guard); `chain` ≤ 32 (TS guard); the outline/hyphenation walks recurse per
+   table nesting (bounded by the model's 64, uo-docx F17); `roman`/`letters`/`chicago` loops bounded
+   by `TextCap`.
+6. **Module state**: the `CTX` `WeakMap<DocFormatting, DocContext>` of `paraformat.ts` → a resolver
+   passed by the caller (K3, LQ18: per call); no global.
+7. **try/catch**: `parseArithmetic`'s `SyntaxError` → `Ok(None)`; its rethrown `RangeError` → the
+   depth limit; `formatNumber`'s and `toFixed`'s throws → F2-5.
+8. **Aliasing / identity (LA3)**: `NumberMarker.level` (the `NumLevel` object) → `LevelSrc` locator +
+   `level_in(fmt)`; `charStyle` of a linked paragraph style shares the paragraph style's `Arc<RPr>` (the
+   TS returns the same object); `listItemValues`' `Map<Paragraph>` → `IndexMap<ParaId>`;
+   `outlineParagraphs`' paragraph objects → references; `REV_JOINS` (symbol key) → the offsets the
+   layout's `LPara.rev_joins` keeps (`join_offset`). `json_key`/`json_eq` sites: `eq` in `directRPr`
+   (`textFx`, `openType`, `underlineTheme`, `colorTheme`) and `directPPr` (`alignment`, `numbering`,
+   `borders`, `tabStops`), the old-formatting comparisons of `RevisionDisplay.directRPr`/`paragraph`
+   — all through `obj::json_eq` (uo-docx `JsonWriter`, insertion order).
+9. **Choices outside the source semantics**:
+
+| # | Decision | Why |
+|---|---|---|
+| F2-1 | **Shared D1a infrastructure, additive**: `js_object!` now also implements `JsAssign` (`assign_slot`, `remove_slot`: typed per-key copy/removal) for every model type; `word::obj` builds the JS spread/assign/delete with key order on it | no per-type hand-written spreads of 43-field objects; K9/LQ20 exact |
+| F2-2 | `StyleResolver` and `NumberingState` are plain data (caches/counters only); their methods take the `DocFormatting` (the TS objects kept references) | K18: the `Engine` holds them and clones them in `pure()` |
+| F2-3 | Counters: `[Option<LevelCount>; 9]` plus the NaN slot; fractional levels (only reachable by API misuse: `parseInt` gives integers) are not stored | the TS indexes an array by number |
+| F2-4 | `TextCap` (= `max_field_text`, K11b, LQ14): roman/alphabetic/chicago texts, a marker's filled text and its placeholder count (a `none` format would never stop it), DATE/TIME results and formula results stop at the cap and set a flag (`take_truncated`) for the caller's warning; the per-placeholder level formats are looked up once per call | the TS builds them until memory runs out or `repeat` throws; results differ only past 65,536 units |
+| F2-5 | **TS throws accepted by name** (extends K11/LQ14): `chicago` of a fraction or NaN (`TypeError`) → `""`; `decimalEnclosedCircle` of a fraction (`RangeError`) → `String(n)`; `repeat(Infinity)` / past the string limit → the capped text; `toFixed` past 100 digits in `formatPicture`/`formatFormulaResult` → `None` (the cached result stays); a solid w14 fill without a colour in `setFx` (`TypeError`) → a colour without fields. Captured: 23 (committed) and 35 (local) throws, all of these kinds (`Replay::accept`) | the layout fails in the TS; Rust continues |
+| F2-6 | `parseArithmetic` depth past `max_parse_depth` (256) → `FormulaError::Depth`; the TS succeeds up to V8's stack (≈ 10⁴ frames) and then throws | K11c/LQ13: a stack overflow would abort the wasm instance |
+| F2-7 | `js_sort` (`mergeTabs`): V8's run detection and binary insertion below 64 elements, exact even for NaN comparators; from 64 on a stable merge sort (equal to V8 for consistent comparators). Found by the no-panic loop: `slice::sort_by` **panics** on an inconsistent order (NaN tab positions), so it is not used | no panic on hostile documents |
+| F2-8 | `js_to_radix`: V8's `DoubleToRadixCString` (fractions, ≥ 2⁵³, NaN/∞) ported here; uo-jsnum's `to_radix_string` covers safe integers only | `formatNumber('hex')`, shading mixes |
+| F2-9 | Dates: the local getters become `LocalDateTime` parts from the time value and the offset at it (LQ10; ECMA-262 date algorithms); the glue `Clock::local`/`TimeZoneRule::offset_min_at` lives in the layout facade (inherent impls in `word.rs`); a table rule before its first transition uses the first offset. `TimeZoneRule` has minute resolution (F0), so local mean time (sub-minute offsets, São Paulo before 1914) is not representable: the facet starts in 1914 | F0 types |
+| F2-10 | `resolveDrawingColor` = uo-drawingml's `resolve_word_spec` over the structured spec (its named difference: modifier values holding `\|`, `,`, `=`); `THEME_ALIAS` = `word_theme_slot`; `toHex` = `to_hex_upper` | reuse (uo-drawingml G12) |
+| F2-11 | A `tblStylePr` type `__proto__`: the TS assignment sets `cond`'s prototype; Rust keeps an ordinary key. Consumers read `COND_ORDER` only (equal in the differential, which generates it) | unobservable |
+| F2-12 | `RevisionDisplay.color(author)` for an author named like an `Object.prototype` key (`toString`…): the TS returns that function from the `colors` record (and `run()` then loses its `color` key in JSON); Rust returns the palette colour. Not generated; named | prototype lookup |
+| F2-13 | `RevisionDisplay::new(mode, insDel, formatting, authors, colors, order, docOrder)` (uo-docx has no options type; the facade converts the layout's `RevisionView`); `paragraph()` returns the `(ppr, props)` override of the copy (LA2); `revision_ranges` takes the runs as (props, UTF-16 length) and the `REV_JOINS` offsets | the layout's derived paragraphs (LA2) |
+| F2-14 | `RevisionDisplay.directRPr` uses `direct_rpr_with(run, props)` instead of cloning the run (`{ ...run, props }`): `editBaseProps` reads the same link/note/symbol | no text copy |
+| F2-15 | The outline functions take a `DocView` (`full.formatting ?? emptyFormatting()` → the document's formatting, always present) | A4 |
+| F2-16 | `documentHyphenationLanguages`: the explicit site list (K5) in each object's key order; a section visits its parts' flat paragraph views (`headers`/`footers` come before `headerBlocks` in the TS object), a cell its direct paragraphs then its tables, a textbox its `paras` view then its blocks, custom inline data as any JSON | the output order of the TS `Set` |
+| F2-17 | docx-core `table-formula.ts` `formatFormulaResult`/`formatPicture` and docx-layout `refs.ts` `cellAtGrid`/`paragraphAtPath` are ported here | the layout and the editor need them; one implementation |
+| F2-18 | New dependency uo-docx → uo-text (UTF-16 case mapping with SpecialCasing, JS white space over units); uo-docx-layout dev-dependencies: uo-docx with `canon`, uo-opc (the F2 replay) | LQ11/K10 |
+| F2-19 | Harness: `uo-docx/js/capture-word.mjs` (unit differential, São Paulo facet with `--tz`), `tools/lib/facets-f2.mjs`, `tools/gen-f2-docs.mjs`; shared edits additive: `facets.mjs` imports and chains the F2 recorder after the F1/F3/F5 hooks (the pre-hook carries the formula callback rewiring), `capture-layout.mjs` passes the three TS classes it patches | the corpus has no DATE/formula field |
+| F2-20 | **The TS checkout of the captures**: `.claude/worktrees/clickcompliance-docx` at `d0f45bc5` (= this branch's frozen `write/`; its dist built after `field-formula.ts`). The main checkout (`b92b60fa`) has a **stale dist** (built 2026-10-23, before `field-formula.ts`/`numpages.ts` were added on 10-30): no `dist/field-formula.js`, `numpages.js`, `run-boxes.js`, `pdf-navigation.js`, `pdf-word-spaces.js`, `inline-renderer.js`, `docx-core/dist/inspect.js`, `style-names-es.js`, and different `engine.js`, `para.js`, `pdf.js`, `document.js`, `fulldoc.js`, `xml.js`. The captures naming `@ts-commit b92b60fa` (F0, F1, F5 `layout-ci`, F1 `resolver`) come from that older engine | finding for the orchestrator: recapture with a dist built from the frozen TS before the gate |
+
+**Limits** (LQ14): `max_parse_depth` (formula nesting, F2-6) and `max_field_text` (F2-4); every
+other loop is bounded by its input or by the TS guards (`chain` 32, `abstractFor` 4,
+`substituteNested` 200).
+
+### Not done (handed on)
+
+- `p3.hyphlangs` replay and the outline functions over real documents wait for `read_document`
+  (R5); their TS facet is captured (and the unit tests run on hand-built documents).
+- `resolvePPr` and `cascadeRPr` are compared on generated inputs (unit differential) only; their
+  engine call sites (F4 `prepareParagraph`, F7) are covered by P1 once F7a runs.
+- F1's `DocContext::note_mark` still takes `formatNumber` as a parameter (pass
+  `word::format_number` with the call's `text_cap`); F7c calls `date_field_value` with
+  `Clock::local(…)` and the same cap and warns on `take_truncated()`.
+- The stale-dist recapture of F2-20 (other frontiers' fixtures).
+
+## Stop point (2026-11-03, maintainer asked to stop after this round)
+
+Done: F0 and wave 1 — F1 (0 parity rounds), F2 (0), F3 (1: an empty POLYBEZIER throws in the TS),
+F5 (0). Next: wave 2 (F4 paragraph preparation, hyphenation, math; then F6 tables), then wave 3
+(F7a engine core, F7b/F7c, F8).
+
+Open:
+- **Stale TS build in some committed captures (F2-20)**: the main checkout `D:/Projects/OfficeNext`
+  (b92b60fa) has a `dist` built 2026-10-23, older than its sources (missing `field-formula.js`,
+  `numpages.js`, `run-boxes.js`; `engine.js`, `para.js`, `pdf.js`, docx-core `document.js`,
+  `fulldoc.js`, `xml.js` differ). Captures stamped `@ts-commit b92b60fa` came from it: the F0, F1 and
+  F5 `layout-ci` fixtures and F1's `resolver`. Recapture them from the frozen build
+  (`.claude/worktrees/clickcompliance-docx`, d0f45bc5) before the gate, and make the capture tools
+  refuse a `dist` older than its sources. The oracle runs that used d0f45bc5 are unaffected.
+- F1's `note_mark` should take `word::format_number`; F7c calls `date_field_value` with
+  `Clock::local` and the text cap; F7b owns the four `paint_inline_object` ends (246 pending oracle
+  paint calls); the "font budget" warning needs a registry signal.

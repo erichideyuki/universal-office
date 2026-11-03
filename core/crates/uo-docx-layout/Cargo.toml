@@ -26,11 +26,20 @@ uo-render = { path = "../uo-render" }
 # the model, read through DocView (A4), with the ids, RunRef, CellKey and the `word` semantics of
 # LQ3; src/model.rs is the only module that names it
 uo-docx = { path = "../uo-docx" }
+# JS `\p{L}`/`\p{M}` over UTF-16 (hyphenation candidates, F5; NFC and case mapping for F4)
+uo-text = { path = "../uo-text" }
+# image headers and the GIF/PNG decoders of the page fill (F3: `imagePixelInfo`,
+# `patternRowsFromImage`) and the natural size of derived images
+uo-image = { path = "../uo-image" }
 
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }
 # capture files, canonical streams (the P1 replay and the F0 adapter check)
 uo-testkit = { path = "../uo-testkit" }
+# F2 facets: the marker and style digests (uo-docx canon, A6) and the packages they read the
+# formatting from
+uo-docx = { path = "../uo-docx", features = ["canon"] }
+uo-opc = { path = "../uo-opc" }
 
 [lints]
 workspace = true

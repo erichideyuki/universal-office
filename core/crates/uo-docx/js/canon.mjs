@@ -101,7 +101,7 @@ export class Canon {
   object(o, key, extra = {}, skip = new Set()) {
     const own = Object.keys(o).filter((k) => !skip.has(k));
     let entries = own.map((k) => [k, o[k]]);
-    const rules = RULES[key];
+    const rules = Object.hasOwn(RULES, key) ? RULES[key] : undefined;
     if (rules) ({ entries, extra } = rules(this, o, entries, extra));
     const keys = [...entries.map(([k]) => k), ...Object.keys(extra)];
     this.orderFacet(keys);

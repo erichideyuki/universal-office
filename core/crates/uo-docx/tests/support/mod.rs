@@ -283,7 +283,7 @@ fn o(x: &str) -> SrcText {
 pub fn sample_sources() -> SourceStore {
     let para_raw = "<w:p><w:r><w:t>Olá</w:t></w:r></w:p>";
     let mut st = SourceStore { next: 3, ..SourceStore::default() };
-    st.parts.push(SourcePart { path: s("word/document.xml"), text: Arc::from(DOC_XML) });
+    st.parts.push(SourcePart { path: s("word/document.xml"), text: DOC_XML.into() });
     st.paras.insert(
         SourceKey(1),
         ParaSource {

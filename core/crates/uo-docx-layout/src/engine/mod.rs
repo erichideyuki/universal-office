@@ -133,6 +133,9 @@ pub struct Cx<'c, 'a> {
     pub budget: &'c mut Budget,
     /// the layout recursion depth (LQ13)
     pub depth: u32,
+    /// `lineSeq` (paint.ts:16, module state in the TS): the last `lineBox.line` handed out, per
+    /// layout call (LA3); `paint_line` increments it (added by F5)
+    pub line_seq: &'c mut u32,
 }
 
 /// One pass (`class Engine`, engine.ts:326). See the module comment for the field classes; each

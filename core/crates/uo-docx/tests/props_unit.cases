@@ -1,0 +1,44 @@
+# unit cases of frontier R1 (js/unit-cases.mjs): `prop<TAB>kind<TAB>inner xml<TAB>JSON.stringify of the TS reader`, `measure<TAB>text<TAB>result`, `xml<TAB>inner xml of a w14:scene3d<TAB>elementXml`
+prop	rPr	<w:b/><w:i w:val="0"/><w:sz w:val="22"/><w:color w:val="FF0000" w:themeShade="80"/><w:rFonts w:ascii="Calibri"/>	{"b":true,"i":false,"sz":22,"color":{"val":"FF0000","themeShade":"80"},"rFonts":{"ascii":"Calibri"}}
+prop	rPr	<w:sz w:val="1e3"/><w:spacing w:val="12pt"/><w:kern w:val="0x10"/><w:position w:val="-0"/><w:w w:val="50%"/>	{"sz":1,"spacing":240,"kern":0,"position":0,"w":50}
+prop	rPr	<w:spacing w:val="."/><w:u/><w:vertAlign w:val="superscript"/><w:lang w:val="pt-BR" w:eastAsia=""/>	{"spacing":null,"u":{"val":"single"},"vertAlign":"superscript","lang":{"val":"pt-BR"}}
+prop	rPr	<w:highlight w:val=""/><w:effect w:val="x"/><w:bdr w:sz="4" w:shadow="off"/><w:shd w:val="clear" w:fill="auto"/><w:em w:val="dot"/>	{"effect":"x","bdr":{"val":"single","sz":4,"shadow":false},"shd":{"val":"clear","fill":"auto"},"em":"dot"}
+prop	rPr	<w14:textFill><w14:solidFill><w14:srgbClr w14:val="ab12ef"><w14:alpha w14:val="25000"/></w14:srgbClr></w14:solidFill></w14:textFill><w14:ligatures w14:val="all"/><w14:shadow w14:blurRad="25400" w14:dist="12700" w14:dir="5400000"><w14:srgbClr w14:val="000000"/></w14:shadow>	{"textFill":{"color":"AB12EF","alpha":0.75},"ligatures":"all","textShadow":{"blur":2,"dist":1,"dir":90},"fx":{"fill":{"type":"solid","color":{"rgb":"AB12EF","mods":[["alpha",25000]]}},"shadow":{"blurRad":25400,"dist":12700,"dir":5400000,"sx":100000,"sy":100000,"kx":0,"ky":0,"algn":"b","color":{"rgb":"000000"}}},"ot":{"ligatures":"all"}}
+prop	rPr	<w14:textOutline w14:w="9525"><w14:solidFill><w14:schemeClr w14:val="accent1"><w14:lumMod w14:val="75000"/></w14:schemeClr></w14:solidFill><w14:round/></w14:textOutline><w14:glow w14:rad="63500"><w14:srgbClr w14:val="ff0000"/></w14:glow><w14:numForm w14:val="lining"/><w14:stylisticSets><w14:styleSet w14:id="1"/><w14:styleSet w14:id="30"/></w14:stylisticSets><w14:cntxtAlts/>	{"textOutline":true,"fx":{"outline":{"w":9525,"fill":{"type":"solid","color":{"scheme":"accent1","mods":[["lumMod",75000]]}},"join":"round"},"glow":{"rad":63500,"color":{"rgb":"FF0000"}}},"ot":{"numForm":"lining","stylisticSets":[1],"cntxtAlts":true}}
+prop	rPr	<w:rPrChange w:author="A" w:date="d" w16du:dateUtc="u"><w:rPr><w:b/><w:rPrChange w:author="B"/></w:rPr></w:rPrChange><w:i/>	{"change":{"author":"A","date":"d","dateUtc":"u","rPr":{"b":true,"change":{"author":"B","rPr":{}}}},"i":true}
+prop	rPr	<w14:scene3d a="1" b="&amp;&quot;">t&lt;<w14:e g="h"/></w14:scene3d><w14:props3d/>	{"fx":{"scene3d":"<w14:scene3d a=\"1\" b=\"&amp;&quot;\">t&lt;<w14:e g=\"h\"/></w14:scene3d>","props3d":"<w14:props3d/>"}}
+prop	pPr	<w:jc w:val="center"/><w:spacing w:after="120" w:before="12pt" w:line="1.5in" w:lineRule="auto" w:afterAutospacing="1"/><w:ind w:start="720" w:hanging="360" w:endChars="3"/>	{"jc":"center","spacing":{"before":240,"after":120,"afterAutospacing":true,"line":2160,"lineRule":"auto"},"ind":{"left":720,"hanging":360,"rightChars":3}}
+prop	pPr	<w:tabs><w:tab w:val="start" w:pos="100"/><w:tab w:val="bogus" w:pos="1"/><w:tab w:pos="x"/><w:tab w:val="clear" w:pos="1.5cm" w:leader="dot"/></w:tabs><w:numPr><w:ilvl w:val="1"/><w:numId w:val="0"/></w:numPr>	{"tabs":[{"val":"left","pos":100},{"val":"clear","pos":850,"leader":"dot"}],"numPr":{"numId":0,"ilvl":1}}
+prop	pPr	<w:framePr w:y="1" w:x="2" w:hRule="exact" w:wrap="around" w:dropCap="drop" w:lines="3"/><w:pBdr><w:start w:val="s"/><w:end w:val="e"/><w:bar/></w:pBdr><w:keepNext w:val="off"/>	{"framePr":{"dropCap":"drop","lines":3,"x":2,"y":1,"hRule":"exact","wrap":"around"},"pBdr":{"left":{"val":"s"},"right":{"val":"e"},"bar":{"val":"single"}},"keepNext":false}
+prop	pPr	<w:rPr><w:ins w:author="i"/><w:del w:author="d"/><w:b/></w:rPr><w:pPrChange w:author="c"><w:pPr><w:jc w:val="left"/></w:pPr></w:pPrChange>	{"rPr":{"b":true},"markIns":{"author":"i"},"markDeleted":true,"markDel":{"author":"d"},"change":{"author":"c","pPr":{"jc":"left"}}}
+prop	tblPr	<w:tblStyle w:val="Grid"/><w:tblW w:w="50%" w:type="pct"/><w:tblInd w:w="1in"/><w:tblLayout w:type="fixed"/><w:tblLook w:val="04A0" w:noVBand="1"/><w:tblBorders><w:top w:val="single"/><w:start w:val="x"/></w:tblBorders><w:tblCellMar><w:top w:w="10"/><w:end w:w="5"/></w:tblCellMar>	{"tblStyle":"Grid","tblW":{"w":2500,"type":"pct"},"tblInd":{"w":1440,"type":"dxa"},"tblLayout":"fixed","tblLook":{"firstRow":true,"lastRow":false,"firstColumn":true,"lastColumn":false,"noHBand":false,"noVBand":true},"tblBorders":{"top":{"val":"single"},"left":{"val":"x"}},"tblCellMar":{"top":{"w":10,"type":"dxa"},"right":{"w":5,"type":"dxa"}}}
+prop	tblPr	<w:tblpPr w:tblpY="1" w:vertAnchor="page" w:tblpX="2" w:tblpXSpec="left" w:leftFromText="3"/><w:tblCaption w:val=""/><w:tblDescription/>	{"tblpPr":{"leftFromText":3,"tblpX":2,"tblpY":1,"vertAnchor":"page","tblpXSpec":"left"},"tblCaption":""}
+prop	trPr	<w:trHeight w:val="400" w:hRule="exact"/><w:cantSplit/><w:wBefore w:w="5" w:type="x"/><w:gridAfter w:val="2"/><w:tblHeader w:val="false"/>	{"trHeight":{"val":400,"hRule":"exact"},"cantSplit":true,"wBefore":{"w":5,"type":"dxa"},"gridAfter":2,"tblHeader":false}
+prop	tcPr	<w:tcW w:w="2400" w:type="dxa"/><w:gridSpan w:val="2"/><w:vMerge/><w:hMerge w:val="restart"/><w:vAlign w:val="center"/><w:tcBorders><w:tl2br w:val="a"/><w:right w:val="r"/><w:end w:val="e"/></w:tcBorders><w:tcMar><w:left w:w="1pt"/></w:tcMar>	{"tcW":{"w":2400,"type":"dxa"},"gridSpan":2,"vMerge":"continue","hMerge":"restart","vAlign":"center","tcBorders":{"right":{"val":"r"},"tl2br":{"val":"a"}},"tcMar":{"left":{"w":20,"type":"dxa"}}}
+measure		undefined
+measure	 	undefined
+measure	12	12
+measure	12pt	240
+measure	 12pt 	240
+measure	1.5in	2160
+measure	2.54cm	1440
+measure	25.4mm	1440
+measure	1pc	240
+measure	3pi	720
+measure	.	NaN
+measure	..5	NaN
+measure	-.	NaN
+measure	1.2.3	1
+measure	1e3	undefined
+measure	0x10	undefined
+measure	-0	-0
+measure	-0pt	-0
+measure	abc	undefined
+measure	12 pt	undefined
+measure	1,5	undefined
+measure	99999999999999999999pt	2e+21
+xml		<w14:scene3d 1="x" a="1" b="&amp;&quot;"/>
+xml	x	<w14:scene3d 1="x" a="1" b="&amp;&quot;">x</w14:scene3d>
+xml	t&lt;&amp;&gt;&quot;	<w14:scene3d 1="x" a="1" b="&amp;&quot;">t&lt;&amp;&gt;&quot;</w14:scene3d>
+xml	<w14:e g="h"/><w14:f></w14:f>	<w14:scene3d 1="x" a="1" b="&amp;&quot;"><w14:e g="h"/><w14:f/></w14:scene3d>
+xml	 <w14:a 1="x" b="y"><w14:c/>tail</w14:a>	<w14:scene3d 1="x" a="1" b="&amp;&quot;"> <w14:a 1="x" b="y"><w14:c/>tail</w14:a></w14:scene3d>

@@ -123,6 +123,21 @@ jobs:
           UO_LAYOUT_CAPTURE: ${{ runner.temp }}/layout/ci.capture
           UO_LAYOUT_DUMP: ${{ runner.temp }}/layout/dump
           UO_LAYOUT_DOCS: ${{ runner.temp }}/layout/docs
+      # F1 (fonts and the width model): the P3 facets of the same capture, replayed from their dumped
+      # inputs, plus a resolver sweep (the Word substitution chain over random font tables)
+      - run: node crates/uo-docx-layout/tools/capture-f1-resolver.mjs --ts-root ../ts-main --count 2000 --seed ${{ github.run_number }} --out "$RUNNER_TEMP/layout/resolver.capture" --dump "$RUNNER_TEMP/layout/resolver"
+      - run: cargo test --release -p uo-docx-layout --test f1_parity -- --nocapture
+        env:
+          UO_LAYOUT_CAPTURE: ${{ runner.temp }}/layout/ci.capture
+          UO_LAYOUT_DUMP: ${{ runner.temp }}/layout/dump
+          UO_F1_RESOLVER_CAPTURE: ${{ runner.temp }}/layout/resolver.capture
+          UO_F1_RESOLVER_DUMP: ${{ runner.temp }}/layout/resolver
+      # F5 (lines and paint): p3.lines and p3.paint of the same capture, replayed call by call from
+      # the dumped inputs (`<key>.f5.bin`)
+      - run: cargo test --release -p uo-docx-layout --test f5_parity -- --nocapture
+        env:
+          UO_F5_CAPTURE: ${{ runner.temp }}/layout/ci.capture
+          UO_F5_DUMP: ${{ runner.temp }}/layout/dump
 
   soak:
     name: Memory soaks (M2, 1,000 iterations, release)

@@ -186,10 +186,10 @@ impl<'p> ReadCtx<'p> {
     }
 
     /// Registers the text of a part read with sources (spans point into it); returns its index.
+    /// The store keeps a handle on the XML reader's own buffer: the text is not copied.
     pub fn source_part(&mut self, path: &str, doc: &XmlDocument) -> Option<u32> {
         let store = self.sources.as_mut()?;
-        let text: std::sync::Arc<str> = std::sync::Arc::from(&**doc.source());
-        store.parts.push(SourcePart { path: path.into(), text });
+        store.parts.push(SourcePart { path: path.into(), text: doc.source().clone() });
         u32::try_from(store.parts.len() - 1).ok()
     }
 }

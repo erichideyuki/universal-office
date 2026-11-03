@@ -10,6 +10,10 @@ pub enum DocxLimitKind {
     FieldsPerStory,
     ParagraphsPerPart,
     RunsPerPart,
+    /// `w:lvl` elements of one `w:abstractNum` (`max_numbering_levels`)
+    NumberingLevels,
+    /// the length of one `basedOn` chain of styles (`max_based_on_chain`)
+    BasedOnChain,
 }
 
 /// An error of the docx reader (and later the writer).
@@ -23,6 +27,18 @@ pub enum DocxError {
     Limit { kind: DocxLimitKind, max: u64, part: Option<Box<str>> },
     /// a structure the reader cannot use (what, for diagnostics)
     Corrupt(&'static str),
+}
+
+impl DocxError {
+    /// Names the part on a [`DocxError::Limit`] that has none (a limit hit by a reader that works on a
+    /// parsed part and does not know its name); any other error is returned unchanged.
+    #[must_use]
+    pub fn in_part(self, name: &str) -> Self {
+        match self {
+            DocxError::Limit { kind, max, part: None } => DocxError::Limit { kind, max, part: Some(name.into()) },
+            other => other,
+        }
+    }
 }
 
 impl From<uo_opc::Error> for DocxError {

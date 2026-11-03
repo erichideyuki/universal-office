@@ -20,7 +20,9 @@ export async function load(url, context, nextLoad) {
     const decl = `export function ${name}(`;
     if (!src.includes(decl)) throw new Error(`facet hook: ${url} has no "${decl}"`);
     src = src.replace(decl, `function ${name}__uo(`);
-    src += `\nexport function ${name}(...a) { const r = ${name}__uo(...a); const f = globalThis.__uoFacet; if (f) f(${JSON.stringify(name)}, a, r); return r; }\n`;
+    // `__uoFacetPre(name, args)` (optional, F5): called before the function; what it returns is
+    // passed to `__uoFacet` as a fourth argument (paintLine: the length of `out` before the call)
+    src += `\nexport function ${name}(...a) { const p = globalThis.__uoFacetPre; const pre = p ? p(${JSON.stringify(name)}, a) : undefined; const r = ${name}__uo(...a); const f = globalThis.__uoFacet; if (f) f(${JSON.stringify(name)}, a, r, pre); return r; }\n`;
   }
   return { ...out, source: src, shortCircuit: true };
 }

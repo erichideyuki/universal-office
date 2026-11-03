@@ -19,7 +19,7 @@ mod value;
 
 pub use json::JsonWriter;
 pub use number::{JsNumber, Nullable, NumKey};
-pub use object::{FieldMask, JsObject, KeyOrder, Slot, object_json, object_json_with, sort_keys};
+pub use object::{FieldMask, JsAssign, JsObject, KeyOrder, Slot, object_json, object_json_with, sort_keys};
 #[cfg(feature = "canon")]
 pub use object::{object_canon, object_canon_with};
 pub use record::{JsMap, JsRecord};

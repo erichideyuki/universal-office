@@ -329,7 +329,8 @@ js_object! {
 }
 
 js_object! {
-    /// `w:tblBorders` (`TblBorders`).
+    /// `w:tblBorders` (`TblBorders`; the TS stores the diagonals here too, `readBorders` is shared
+    /// with `tcBorders`).
     pub struct TblBorders {
         opt top: Box<BorderSpec> = "top",
         opt left: Box<BorderSpec> = "left",
@@ -337,6 +338,8 @@ js_object! {
         opt right: Box<BorderSpec> = "right",
         opt inside_h: Box<BorderSpec> = "insideH",
         opt inside_v: Box<BorderSpec> = "insideV",
+        opt tl2br: Box<BorderSpec> = "tl2br",
+        opt tr2bl: Box<BorderSpec> = "tr2bl",
     }
 }
 

@@ -119,7 +119,13 @@ cap.meta('now', NOW.toISOString());
 cap.meta('tz', process.env.TZ);
 cap.meta('hyphenation-loaded', eng.HYPHENATION_PATTERN_IDS.join(','));
 
-const facets = facetRecorder({ LineBreaker });
+const facets = facetRecorder({
+  LineBreaker, FaceResolver: eng.FaceResolver, SfntFont: eng.SfntFont,
+  // F5 (p3.lines, p3.paint): the helpers its recorder calls with the reporter off
+  f5: { advanceTwips: (await importFrom(root, 'write/packages/docx-layout/dist/para.js')).advanceTwips, faceMetrics: eng.faceMetrics, fontOfSlot: eng.fontOfSlot },
+  // F2 (p3.datefmt, p3.formula, p3.numbering, p3.style, p3.hyphlangs): the classes it patches
+  f2: { NumberingState: eng.NumberingState, StyleResolver: eng.StyleResolver, documentHyphenationLanguages: eng.documentHyphenationLanguages },
+});
 let pages = 0, errors = 0;
 const docs = corpus();
 for (const doc of docs) {
@@ -150,6 +156,7 @@ for (const doc of docs) {
     if (dump) {
       writeFileSync(join(dump, `${safe(doc.key)}.p1.bin`), p1.bytes);
       writeFileSync(join(dump, `${safe(doc.key)}.transcript.tsv`), rec.transcriptText());
+      for (const [name, text] of Object.entries(doc.f3.dumps ?? {})) writeFileSync(join(dump, `${safe(doc.key)}.${name}`), text);
       if (media.size) {
         const md = join(dump, `${safe(doc.key)}.media`);
         mkdirSync(md, { recursive: true });

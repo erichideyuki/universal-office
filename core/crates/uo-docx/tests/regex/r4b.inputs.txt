@@ -1,0 +1,91 @@
+
+ 
+1
+true
+TRUE
+ 1
+1 
+1\n
+http://schemas.openxmlformats.org/drawingml/2006/diagram
+http://schemas.openxmlformats.org/drawingml/2006/diagram/
+x/drawingml/2006/diagram\n
+/drawingml/2006/diagram
+drawingml/2006/diagram
+http://schemas.openxmlformats.org/drawingml/2006/picture
+bold
+Bold
+bolder
+600
+700
+900
+500
+1600
+100
+6000
+x700y
+60
+0600
+normal
+italic
+Italic
+oblique
+bold italic
+"Arial"
+'Times'
+"
+'
+""
+'"
+"a
+a"
+a"b
+  "x"  
+"Calibri
+Calibri'
+
+﻿"x"
+#_x0000_s1027
+#
+##a
+x#
+ #a
+_x0000_s1
+#é
+_x0000_s1026
+99999999999999999999
+a1b2c3
+１２
+12 34
+-5
+1e3
+\n1\n
+é1😀2
+v:shape
+v:rect
+v:
+v
+V:shape
+x:v:shape
+ v:shape
+o:spid
+<a:blipFill
+<a:blipFill>
+<a:blipFill r:embed="x"/>
+<a:blipFillx/><a:blipFill r:embed="x"/>
+<a:blipFill_/>
+<a:blipFill
+<dml:blipFill>
+x <a:blipFill\n
+val 12
+val -3x
+val-3
+val  
+val\t+5
+VAL 1
+val 1x
+val -
+ val 1
+val 12345678901234567890
+val 5
+val　5
+*/ 1 2 3

@@ -1,0 +1,47 @@
+# uo-docx-layout F1 resolver sweep: written by core/crates/uo-docx-layout/tools/capture-f1-resolver.mjs, replayed by tests/f1_parity.rs (record "Wave 1 — F1").
+# p3.faces: FaceResolver.get per distinct request (tools/lib/facets-f1.mjs); p2first: the first provider request per lower-case key (tools/lib/transcript.mjs).
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+@ts-commit b92b60fae4c1c612de1de3174c199052d43b9230
+@seed 1
+@count 40
+@throws 0
+resolver/1/0	p3.faces=106:02f33728ab15e7f5acc39ec49a773159	p2first=84:94b2186a05266cda13f5e927a66d0feb
+resolver/1/1	p3.faces=72:e7d440258485115a060b9fb1400d9d61	p2first=58:55d004131cf3dd0e2d1c1a7a9be70e8a
+resolver/1/2	p3.faces=102:8e0c318dfa5636aaedaa0f0b07a31328	p2first=80:d987ae4e26c62480ec18ff0eab63c4a2
+resolver/1/3	p3.faces=107:535382d7ff7c68ec1ba087ea00296557	p2first=82:8ce160cb46490fb3c1d5d6e1bc65dbd6
+resolver/1/4	p3.faces=100:bb6c630449647423d927856237a5bf43	p2first=80:59736828fbc12ea5c3135505100cd4db
+resolver/1/5	p3.faces=84:fcd72872f638da10c7e0aeaaa50f0526	p2first=66:f998aa0647526920d39c34c366800a7c
+resolver/1/6	p3.faces=87:4ff199239cfaad2fd6d7a09fe78ec875	p2first=73:d02e22bf79a508fabd592b223decca12
+resolver/1/7	p3.faces=87:2560c016a229eccf73cf10f7b0cef5d1	p2first=75:3aeab6be74c19e5b9e0cae156884c1b6
+resolver/1/8	p3.faces=87:0a9a8b5726897d279bf18b49b0289a46	p2first=69:7dc9c85cb0075d1703f9ef22c4d94897
+resolver/1/9	p3.faces=15:5716c66549b2c25c659e02395da7f7e9	p2first=15:43ac3aef50a21f968d1914c7f2071a54
+resolver/1/10	p3.faces=21:f4f300e332f4c81ea9cd26f685a8b252	p2first=19:d8794ab2cb42c0e4e7997f75d07518ad
+resolver/1/11	p3.faces=36:e93311c2ed58ab9f1f2f2f8d67b3713f	p2first=28:8687475a31f59396570c23d62e6f4b94
+resolver/1/12	p3.faces=102:784f6f00713a4c88de597ae05fdd7a01	p2first=80:0d3df1ce8ce8e32dc871ddac05b7bffd
+resolver/1/13	p3.faces=21:519936ea2748412fb76740654aa2e5e7	p2first=17:0807f5845c339c4fef05219155a317b2
+resolver/1/14	p3.faces=120:73743b31fffc3481baa6471dc613d728	p2first=86:7036ab9224bff1057a45be7b9c9eaaec
+resolver/1/15	p3.faces=83:89c6dde7c01d441168e7cda7ef325593	p2first=62:e1509c2bb2b32a385519ec3ff61ab165
+resolver/1/16	p3.faces=63:9ea4f0032c876eb9cd59aa8f4da54d91	p2first=45:30c10afb8678a852fe94c183fdc24e1f
+resolver/1/17	p3.faces=66:bf9b5028ef6ee499886f9d57a3148b4b	p2first=58:ac01edfa93e0cad74ade929b17312778
+resolver/1/18	p3.faces=125:46befe16b52faa7ab27e466ebc60603d	p2first=102:a113794ce3a413a60a91f134e8076a46
+resolver/1/19	p3.faces=43:c2f5faf511e23ff5f05391aee011ef55	p2first=37:9ac2aacb1fb2a132c6bf4ab7e5de4a24
+resolver/1/20	p3.faces=111:19b83853bd82cf31e0b9b4d1994748e0	p2first=89:c8635805c4349b21ff9997001cde1f24
+resolver/1/21	p3.faces=47:208638d3298d16cf833f18cd8d535e38	p2first=34:29ece564959b0b554e768320eb303fc5
+resolver/1/22	p3.faces=45:2ecb8a76dffc814e132a95d46aff1a78	p2first=37:348a825b9c74e38f4be35d1a94dafee8
+resolver/1/23	p3.faces=123:4d6306df570f2d400bd858fb0709a2ac	p2first=95:ad1ea56d5ea2c48c3a6aed7beff74280
+resolver/1/24	p3.faces=92:629e083f92deb5e6c0565d1eff74fe48	p2first=75:b87beb25c1f0a2d489101e18e91f145f
+resolver/1/25	p3.faces=45:d7771fd81adde0b2e4bc7d2441f9b95e	p2first=41:5841acd574a23cfc9ef3eff6dde7f8d2
+resolver/1/26	p3.faces=86:6c2f6e18592ed23f64e28ebe1c6a31b7	p2first=73:db9100cdaedbe7368f25d0cefad6de49
+resolver/1/27	p3.faces=53:825571ee970d4bdf01f38b416c72b4b3	p2first=32:989536b5942ba57c920a8ba5d4d77dca
+resolver/1/28	p3.faces=42:9f184b9375bad38367f32e830a037fef	p2first=34:da5045ddf99c50f07e99ec3d2ea14968
+resolver/1/29	p3.faces=51:3b98ddbe447702157d3ae636d0b42ad1	p2first=47:57f7015cade0324cc7a6da6411d5d7c7
+resolver/1/30	p3.faces=72:779b29784fc31c56460cf217b1d28698	p2first=60:ee064652ebd87769e436de285d5e0776
+resolver/1/31	p3.faces=75:cec7ad0a1f179f5afe840ccf81d6cdf4	p2first=53:672c840d222962f57c7d744c7346dc2c
+resolver/1/32	p3.faces=113:44564ae73259abb90b5b505c1b643d03	p2first=94:105e1554d2338a35f5b0ab9ad24f0120
+resolver/1/33	p3.faces=63:afed49d789d7faec145078e73fc83b03	p2first=49:f9ded34a9753b4378147833b5f9c44c1
+resolver/1/34	p3.faces=60:b47be02af24b61e14ae745f373ceee59	p2first=52:1737c1ccfa626e0edbe340a4e9281137
+resolver/1/35	p3.faces=44:84660831fb7abbfa50f42e9f188b16a9	p2first=37:bd63ca3d7af6753f4d92e45cb95f0abe
+resolver/1/36	p3.faces=80:c490d7cfdfbf644e6c321383e4761132	p2first=65:8746899fe203e5595a64e7a735e108a4
+resolver/1/37	p3.faces=103:179a61c8b94cdbe57448bb82f7d80a36	p2first=77:4d6229d14bc7a588a0e4d2b1b3c6db0c
+resolver/1/38	p3.faces=30:531c8a717df0aa47d490f5ed8a5c60a1	p2first=22:b87df6c97d8c09150499468c1271eee6
+resolver/1/39	p3.faces=114:b8d50caddcbff501d0bd7f5968a7c1eb	p2first=88:9454c9f02561f2d0edb343eb2d61dab0

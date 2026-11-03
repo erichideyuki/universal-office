@@ -1,0 +1,334 @@
+# uo-docx R2 table-styles inputs (js/capture-table-styles.mjs): `colors` TAB key TAB value ... | `name` TAB escaped | `xml` TAB escaped | `local` TAB escaped
+colors
+colors
+colors	dk1	000000	lt1	FFFFFF	dk2	44546A	lt2	E7E6E6	accent1	4472C4	accent2	ED7D31	accent3	A5A5A5	accent4	FFC000	accent5	5B9BD5	accent6	70AD47	hlink	0563C1	folHlink	954F72
+colors	dk1	000000	lt1	FFFFFF	dk2	0E2841	lt2	E8E8E8	accent1	156082	accent2	E97132	accent3	196B24	accent4	0F9ED5	accent5	A02B93	accent6	4EA72E	hlink	467886	folHlink	96607D
+colors	0	1F497D	dk2	FFFFFFF	lt2	12345G	accent1		accent4	F	accent6	FFFFFFF	weird	F	constructor	12345G
+colors	dk1	ffffff	lt2	808080	accent2	0e2841	accent4	12345G	accent5	000000	accent6	000000	weird	1F497D		zz00zz	constructor	1F497D
+colors	lt1	0e2841	dk2		lt2	000000	accent4		accent5	FFFFFFF	accent6	FFFFFF	weird	FF0000	background1	ffffff
+colors	lt1	808080	dk2	ABC	lt2	7F7F7F	accent1	F	accent2	000000	accent6	FFFFFF		12345G	constructor	808080
+colors	0		dk1	ABC	lt1	FF0000	lt2		accent1	7F7F7F	accent2		accent4	zz00zz	accent5	12345G	accent6	1F497D	background1	FFFFFF
+colors	lt1		dk2	1F497D	accent1	FFFFFF	accent2	FF0000	hlink	4472C4	folHlink	FFFFFF	weird	F	text1	
+colors	dk1	1F497D	dk2	7F7F7F	accent2	1F497D	accent3	FF0000	accent4	zz00zz	accent5	FF0000	accent6	4472C4	hlink	0e2841	folHlink	FF0000	weird	4472C4	constructor	zz00zz
+colors	0	12345G	lt1	0e2841	accent3	0e2841	accent5	808080	accent6	12345G	weird	1F497D	background1	F		FF0000
+colors	0	ffffff	dk1	FF0000	weird	0e2841	background1	zz00zz
+colors	dk1		lt1		accent1	1F497D	accent2	0e2841	accent4	0e2841	weird	ABC	background1	FF0000
+colors	0	808080	dk1	7F7F7F	lt1	F	dk2	7F7F7F	lt2	ABC	accent2	F	accent3	ffffff	accent4	000000	hlink		folHlink		background1	7F7F7F		000000	constructor	12345G
+colors	0	ABC	dk2	FF0000	lt2	12345G	accent2	4472C4	accent3	1F497D	accent4	FF0000	hlink	7F7F7F	folHlink	12345G	background1	ABC		zz00zz	constructor	ffffff
+colors	0	808080	accent1	FF0000	accent2	0e2841	accent3	FFFFFFF	accent6	4472C4	hlink	0e2841	text1	FF0000	background1	ABC	constructor	FFFFFF
+colors	0	0e2841	dk1	0e2841	accent1	ffffff	accent2	FF0000	accent4	FFFFFF	accent6	FFFFFF	folHlink	ffffff	text1	000000		1F497D	constructor	FFFFFF
+colors	0	FFFFFF	lt1	FFFFFFF	accent2	808080	accent3	0e2841	accent4	FFFFFFF	background1	1F497D	constructor	FFFFFF
+colors	0	000000	dk1	FFFFFF	dk2	0e2841	accent3		accent4	FFFFFFF	folHlink	ABC	weird		text1	4472C4	background1	808080		808080	constructor	F
+colors	dk1	4472C4	dk2	FFFFFF	lt2	FF0000	accent1	4472C4	accent2		accent3	F	accent4	4472C4	weird	12345G	background1	
+colors	dk1	1F497D	lt1	FFFFFFF	dk2	zz00zz	accent5		hlink	ffffff	weird	
+colors	lt1	ABC	dk2	ffffff	lt2	12345G	accent4	4472C4	accent5	7F7F7F	accent6	12345G	hlink	FFFFFFF	folHlink	808080	constructor	7F7F7F
+colors	dk1	12345G	lt1	4472C4	dk2	808080	accent1	808080	accent2	808080	folHlink	FFFFFFF	text1	ABC		FFFFFF
+colors	dk2	000000	accent1	7F7F7F	accent2	zz00zz	accent4	FF0000	accent5	zz00zz	hlink	7F7F7F	folHlink	12345G	weird	ffffff	background1	7F7F7F		FFFFFF
+colors	dk1	FFFFFF	lt2	ffffff	accent2	ABC	accent4	4472C4	accent6	000000	hlink	000000	weird	FFFFFFF	background1	1F497D
+colors	dk1		dk2	1F497D	lt2	0e2841	accent2	FF0000	accent4	ffffff	accent5	1F497D	accent6		weird	F	text1	ABC	background1	
+colors	dk1	7F7F7F	lt1	FFFFFF	dk2	ffffff	accent1		accent6	0e2841	weird	FF0000
+name	
+name	Normal Table
+name	Table Grid
+name	Grid Table Light
+name	Table Theme
+name	Table Contemporary
+name	Table Elegant
+name	Table Professional
+name	x
+name	 Accent 1
+name	Accent 1
+name	Table Grid Accent 1
+name	Grid Table 4 Accent 1
+name	Grid Table 4 Accent 9
+name	Grid Table 4 Accent 10
+name	Grid Table 4 Accent 
+name	Grid Table 4  Accent 1
+name	Grid Table 4 accent 1
+name	Grid Table 4 Accent 1 
+name	Grid Table 44
+name	Grid Table 4 Light
+name	Grid Table 4 Light Accent 2
+name	Grid Table 7 Colorful Accent 6
+name	List Table 1 Dark Accent 3
+name	Plain Table 5
+name	Plain Table 5 Accent 1
+name	Medium Shading 1 Accent 2
+name	Medium Shading
+name	Light Shading Accent 1
+name	Colorful Grid Accent 4
+name	Table 3D effects 2
+name	Table 3D effects 22
+name	Table Classic 3
+name	Table Subtle 1
+name	Table Web 3
+name	Table Columns 5
+name	Table List 8
+name	Table Simple 2
+name	Table Colorful 1
+name	Table Grid 5
+name	Light List - Accent 1
+name	Light Grid Accent 5
+name	Dark List Accent 1
+name	Colorful List Accent 1
+name	constructor
+name	toString
+name	__proto__
+name	hasOwnProperty
+name	valueOf
+name	constructor Accent 1
+name	Table\nGrid
+name	Table Grid\r
+name	Table Grid Accent 1
+name	Table Grid Accent 1\n
+name	٣
+name	Grid Table ٣
+name	Grid Table 4 Accent ٣
+name	Tabela com grade
+name	GRID TABLE 4
+name	Grid Table 4😀
+name	é Accent 1
+name	Table Grid Accent 12
+name	Table Grid Accent 1Accent 2
+name	Light Grid
+name	Light Grid Accent 1
+name	Light Grid Accent 2
+name	Light Grid Accent 3
+name	Light Grid Accent 4
+name	Light Grid Accent 6
+name	Colorful Grid
+name	Colorful Grid Accent 1
+name	Colorful Grid Accent 2
+name	Colorful Grid Accent 3
+name	Colorful Grid Accent 5
+name	Colorful Grid Accent 6
+name	Medium Grid 1
+name	Medium Grid 1 Accent 1
+name	Medium Grid 1 Accent 2
+name	Medium Grid 1 Accent 3
+name	Medium Grid 1 Accent 4
+name	Medium Grid 1 Accent 5
+name	Medium Grid 1 Accent 6
+name	Medium Grid 2
+name	Medium Grid 2 Accent 1
+name	Medium Grid 2 Accent 2
+name	Medium Grid 2 Accent 3
+name	Medium Grid 2 Accent 4
+name	Medium Grid 2 Accent 5
+name	Medium Grid 2 Accent 6
+name	Medium Grid 3
+name	Medium Grid 3 Accent 1
+name	Medium Grid 3 Accent 2
+name	Medium Grid 3 Accent 3
+name	Medium Grid 3 Accent 4
+name	Medium Grid 3 Accent 5
+name	Medium Grid 3 Accent 6
+name	Light List
+name	Light List Accent 1
+name	Light List Accent 2
+name	Light List Accent 3
+name	Light List Accent 4
+name	Light List Accent 5
+name	Light List Accent 6
+name	Colorful List
+name	Colorful List Accent 2
+name	Colorful List Accent 3
+name	Colorful List Accent 4
+name	Colorful List Accent 5
+name	Colorful List Accent 6
+name	Dark List
+name	Dark List Accent 2
+name	Dark List Accent 3
+name	Dark List Accent 4
+name	Dark List Accent 5
+name	Dark List Accent 6
+name	Medium List 1
+name	Medium List 1 Accent 1
+name	Medium List 1 Accent 2
+name	Medium List 1 Accent 3
+name	Medium List 1 Accent 4
+name	Medium List 1 Accent 5
+name	Medium List 1 Accent 6
+name	Medium List 2
+name	Medium List 2 Accent 1
+name	Medium List 2 Accent 3
+name	Medium List 2 Accent 4
+name	Medium List 2 Accent 5
+name	Medium List 2 Accent 6
+name	Medium List 2 Accent 2
+name	Plain Table 1
+name	Plain Table 2
+name	Plain Table 3
+name	Light Shading
+name	Light Shading Accent 2
+name	Light Shading Accent 3
+name	Light Shading Accent 4
+name	Light Shading Accent 5
+name	Light Shading Accent 6
+name	Colorful Shading
+name	Colorful Shading Accent 2
+name	Colorful Shading Accent 3
+name	Colorful Shading Accent 4
+name	Colorful Shading Accent 5
+name	Colorful Shading Accent 6
+name	Colorful Shading Accent 1
+name	Medium Shading 1
+name	Medium Shading 1 Accent 1
+name	Medium Shading 1 Accent 3
+name	Medium Shading 1 Accent 4
+name	Medium Shading 1 Accent 5
+name	Medium Shading 1 Accent 6
+name	Medium Shading 2
+name	Medium Shading 2 Accent 1
+name	Medium Shading 2 Accent 2
+name	Medium Shading 2 Accent 3
+name	Medium Shading 2 Accent 4
+name	Medium Shading 2 Accent 5
+name	Medium Shading 2 Accent 6
+name	Table Classic 1
+name	Table Classic 2
+name	Table Classic 4
+name	Table Colorful 2
+name	Table Colorful 3
+name	Table 3D effects 1
+name	Table 3D effects 3
+name	Table Grid 1
+name	Table Grid 2
+name	Table Grid 3
+name	Table Grid 4
+name	Table Grid 6
+name	Table Grid 7
+name	Table Grid 8
+name	Table Web 1
+name	Table Web 2
+name	Grid Table 1 Light
+name	Grid Table 1 Light Accent 1
+name	Grid Table 1 Light Accent 2
+name	Grid Table 1 Light Accent 3
+name	Grid Table 1 Light Accent 4
+name	Grid Table 1 Light Accent 5
+name	Grid Table 1 Light Accent 6
+name	Grid Table 2
+name	Grid Table 2 Accent 1
+name	Grid Table 2 Accent 2
+name	Grid Table 2 Accent 3
+name	Grid Table 2 Accent 4
+name	Grid Table 2 Accent 5
+name	Grid Table 2 Accent 6
+name	Grid Table 3
+name	Grid Table 3 Accent 1
+name	Grid Table 3 Accent 2
+name	Grid Table 3 Accent 3
+name	Grid Table 3 Accent 4
+name	Grid Table 3 Accent 5
+name	Grid Table 3 Accent 6
+name	Grid Table 4
+name	Grid Table 4 Accent 2
+name	Grid Table 4 Accent 3
+name	Grid Table 4 Accent 4
+name	Grid Table 4 Accent 5
+name	Grid Table 4 Accent 6
+name	Grid Table 5 Dark
+name	Grid Table 5 Dark Accent 1
+name	Grid Table 5 Dark Accent 2
+name	Grid Table 5 Dark Accent 3
+name	Grid Table 5 Dark Accent 4
+name	Grid Table 5 Dark Accent 5
+name	Grid Table 5 Dark Accent 6
+name	Grid Table 6 Colorful
+name	Grid Table 6 Colorful Accent 1
+name	Grid Table 6 Colorful Accent 2
+name	Grid Table 6 Colorful Accent 3
+name	Grid Table 6 Colorful Accent 4
+name	Grid Table 6 Colorful Accent 5
+name	Grid Table 6 Colorful Accent 6
+name	Grid Table 7 Colorful
+name	Grid Table 7 Colorful Accent 1
+name	Grid Table 7 Colorful Accent 2
+name	Grid Table 7 Colorful Accent 3
+name	Grid Table 7 Colorful Accent 4
+name	Grid Table 7 Colorful Accent 5
+name	List Table 1 Light
+name	List Table 1 Light Accent 1
+name	List Table 1 Light Accent 2
+name	List Table 1 Light Accent 3
+name	List Table 1 Light Accent 4
+name	List Table 1 Light Accent 5
+name	List Table 1 Light Accent 6
+name	List Table 2
+name	List Table 2 Accent 1
+name	List Table 2 Accent 2
+name	List Table 2 Accent 3
+name	List Table 2 Accent 4
+name	List Table 2 Accent 5
+name	List Table 2 Accent 6
+name	List Table 3
+name	List Table 3 Accent 1
+name	List Table 3 Accent 2
+name	List Table 3 Accent 3
+name	List Table 3 Accent 4
+name	List Table 3 Accent 5
+name	List Table 3 Accent 6
+name	List Table 4
+name	List Table 4 Accent 1
+name	List Table 4 Accent 2
+name	List Table 4 Accent 3
+name	List Table 4 Accent 4
+name	List Table 4 Accent 5
+name	List Table 4 Accent 6
+name	List Table 5 Dark
+name	List Table 5 Dark Accent 1
+name	List Table 5 Dark Accent 2
+name	List Table 5 Dark Accent 3
+name	List Table 5 Dark Accent 4
+name	List Table 5 Dark Accent 5
+name	List Table 5 Dark Accent 6
+name	List Table 6 Colorful
+name	List Table 6 Colorful Accent 1
+name	List Table 6 Colorful Accent 2
+name	List Table 6 Colorful Accent 3
+name	List Table 6 Colorful Accent 4
+name	List Table 6 Colorful Accent 5
+name	List Table 6 Colorful Accent 6
+name	List Table 7 Colorful
+name	List Table 7 Colorful Accent 1
+name	List Table 7 Colorful Accent 2
+name	List Table 7 Colorful Accent 3
+name	List Table 7 Colorful Accent 4
+name	List Table 7 Colorful Accent 5
+name	List Table 7 Colorful Accent 6
+name	Table Columns 1
+name	Table Columns 2
+name	Table Columns 3
+name	Table Columns 4
+name	Table List 1
+name	Table List 2
+name	Table List 3
+name	Table List 4
+name	Table List 5
+name	Table List 6
+name	Table List 7
+name	Table Simple 1
+name	Table Simple 3
+name	Plain Table 4
+name	Table Subtle 2
+xml	
+xml	x
+xml	<w:style/>
+xml	<w:style w:type="table"/>
+xml	<w:style w:type="table" w:styleId="A"><w:name w:val="N"/></w:style>
+xml	<w:style w:type="table" w:styleId="A"/><w:style w:type="table" w:styleId="B"/>
+xml	<w:style w:type="paragraph" w:styleId="5"/><w:style w:type="table" w:styleId="A"/>
+xml	<w:style w:type="table" w:styleId="__proto__"><w:name w:val="p"/></w:style>
+xml	<w:style w:type="table" w:styleId="A"><w:tblPr><w:tblW w:w="1" w:type="dxa"/></w:tblPr></w:style>
+local	Tabela normal
+local	Tabela com grade
+local	Tabela Simples 1
+local	Grade Clara - Ênfase 1
+local	
+local	a-b_c.d e
+local	😀x
+local	Tabela com Grade 3-A
+local	çÇãõ
+local	---
+local	a b

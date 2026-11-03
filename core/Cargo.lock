@@ -74,6 +74,7 @@ dependencies = [
  "uo-jsnum",
  "uo-opc",
  "uo-testkit",
+ "uo-text",
 ]
 
 [[package]]
@@ -87,9 +88,12 @@ dependencies = [
  "uo-docx",
  "uo-drawingml",
  "uo-fonts",
+ "uo-image",
  "uo-jsnum",
+ "uo-opc",
  "uo-render",
  "uo-testkit",
+ "uo-text",
 ]
 
 [[package]]

@@ -916,6 +916,13 @@ Pending.
 | 1 | planner + reuse, umbrella plan (Opus) | (orchestrator) | ≈ 60 |
 | 1 (revision) | planner: U1–U20 written in, "Architecture (milestone 1)", consolidated milestone-1 gate list (Opus) | (orchestrator) | ≈ 20 |
 | M1 D1a foundation | A2 model types, A4 view and `LayoutOracle`, `ReadCtx`, A6 digest (Rust + TS walker, self-test), G9 matcher templates, data generator, G12 colour/theme API with TS differentials, M1 tests, R1–R6 brief (Opus) | one session, ≈ 3 h | ≈ 130 |
+| R4a props mapping (`read/props_map.rs`) | Sonnet | one session, ≈ 30 min (plus short waits on other frontiers' transient build breakage) | ≈ 85 |
+| R1 props + text effects (`read/props.rs`, `read/text_effects.rs`, props parity facet, quirk corpus generator) | Sonnet | one session, ≈ 20 min by file timestamps (plus two short waits on other frontiers' transient build breakage); no verifier round yet | ≈ 85 |
+| R2 formatting parts + styles + table styles (`read/parts.rs`, `read/styles.rs`, `read/table_styles.rs`, `read/style_names_es.rs`; facets `parts`, `styles`, `table-styles`; synthetic parts generator) | Sonnet | one session; time not measured by the agent; no verifier round yet (0 mismatches on the first full replay of every facet after two small fixes) | ≈ 115 |
+| R3 drawing + VML + page background + watermark read (`read/drawing.rs`, `read/vml_shape.rs`, `read/page_background.rs`, `read/watermark.rs`; facet `drawing`, `js/capture-drawing.mjs`, regex rows `r3`, unit, M1 and no-panic tests; declarations in `uo-docx-d1a/R3.md`) | Sonnet | one session, ≈ 45 min by file timestamps (plus short waits on other frontiers' transient build breakage); 0 parity rounds, rework only on the capture corpus | ≈ 105 |
+| R4b inline objects (`read/inline_objects.rs`, `read/picture_format.rs`; facet `drawing-runs` with `js/capture-drawing-runs.mjs`, generated corpus `js/quirk-objects.mjs`, `ObjectHost` for R4c's `ReadContext`, regex rows `r4b`, unit cases from the TS, M1 and no-panic tests; declarations in `uo-docx-d1a/R4b.md`) | Sonnet | one session (time not measured by the agent; plus short waits on other frontiers' transient build breakage); 0 verifier rounds (29,877 comparisons equal on the first complete replay after one bug the corpus found and one named difference), rework only on the corpus and the capture normalisation | ≈ 170 |
+| R4c paragraphs, runs, fields and the custom-inline `JSON.parse` (`read/paragraph.rs` = `ReadContext`/`readParagraph`, `read/json_parse.rs`; facets `paragraph` (+ sources variants) and `custom-tag` with `js/capture-paragraph.mjs`, `js/capture-custom-tag.mjs`, generated corpus `js/quirk-paragraph.mjs`, regex rows `r4c`, unit, M1 and no-panic tests; declarations in `uo-docx-d1a/R4c.md`) | Sonnet | one session (time not measured by the agent); 0 verifier rounds (22,000+ facets equal after the corpus and the capture normalisation were corrected; one port bug found by the first replay: key marks of `ins`/`del`/`commentIds`), rework on the no-panic findings (comment-id memory, stack cost of nested stories) | ≈ 140 |
+| R6 source store build (`read/sources.rs`, `SourcePart` no-copy change; facets `sources-para`, `sources-blocks`, `sources` (replay waits for R5), `js/capture-sources*.mjs`, synthetic package generator `js/quirk-sources.mjs`, regex rows `r6`, unit, M1 and no-panic tests; declarations in `uo-docx-d1a/R6.md`) | Sonnet | one session (time not measured by the agent; plus short waits on other frontiers' transient build breakage); 0 parity rounds (the interim facets matched on the first full replay), rework only on my own test expectations | ≈ 100 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
@@ -1105,3 +1112,42 @@ lands; the orchestrator folds the eight declaration files into this record at th
 - The CI workflow is unchanged: uo-docx joins `cargo test --workspace --all-features`, clippy and the
   ban scripts by being a workspace member; the Node scripts (captures, canon self-test, regex
   reference, data generator) are manual steps whose outputs are committed.
+
+### E. Integration fixes (after R1–R3, before the milestone gate)
+
+Three small changes decided by the orchestrator while integrating the frontiers; the first two close
+declarations of R1 and R2, the third a defect of the foundation walker.
+
+| # | Change | Result |
+|---|---|---|
+| I1 | **R1 item 9, row 1 (A1)**: `TblBorders` (model, `model/props.rs`) gets `tl2br` and `tr2bl` (`opt`, after `insideV`, the order `readBorders` assigns them in); `read::props::tbl_borders_of` copies them from `borders_of` like the TS (`p.tblBorders = readBorders(el)`). The capture normalisation and the `@accepted A1-tblBorders-diagonals=51` line are gone from `js/capture-props.mjs`; `props.capture` regenerated (Node 24.15 x64) | `parity_props`: 28,467 facets, 0 mismatches, **0 accepted for A1** (the 2 accepted are A2 and A3, unchanged); `props_parity_table_diagonals_are_kept` pins the three keys. Every other uo-docx test green (`TblBorders` is shared with `table_styles`/`props_map`) |
+| I2 | **R2 items R2-4/R2-5**: `DocxLimitKind::{NumberingLevels, BasedOnChain}` added (`error.rs`); the two `DocxError::Corrupt` sites for `max_numbering_levels` (`parts::read_numbering`) and `max_based_on_chain` (`styles::read_styles_xml`) are now `DocxError::Limit { kind, max, part }`, the part name filled in by `DocxError::in_part` at the two `ReadCtx` call sites (`read_doc_formatting`, `read_styles`; the `*_text` helpers leave it `None`). **Limit values unchanged**: the 9-level numbering limit (the TS reads every level; the oracle corpus has none above) stays on the milestone security review's list | `r2_unit` (22 tests) and `parity_parts` (the `R2-limit` acceptance now matches on the `Limit` kinds; 5 accepted as before) updated |
+| I3 | **Canon walker**: `js/canon.mjs` looks the context rules up with `Object.hasOwn(RULES, key) ? RULES[key] : undefined` (a dictionary key such as `constructor` found `Object` and broke the destructuring). R2's workaround in `js/capture-r2-common.mjs` (the `object` override that renamed `Object.prototype` keys) is removed; `R2Canon` stays for its lone-surrogate `str` | canon self-test output identical; `parts`, `styles`, `table-styles`, `props-map`, `drawing` captures regenerated **byte-identical** (`props` changes only by I1). `capture-word.mjs` (F2's) was not rerun |
+
+### E. `word` (uo-docx-layout frontier F2, LQ3) and its addition to the D1a foundation
+
+`src/word/` holds the Word semantics shared by the layout and the session (record
+`uo-docx-layout.md`, "Wave 1 — F2"). Two additions outside it, both additive: the `js_object!` macro
+also implements `js::JsAssign` (`assign_slot`/`remove_slot`: typed per-key copy and removal, the base
+of `word::obj`'s `{ ...a, ...b }`, `Object.assign` and `delete` with the key insertion order, K9/LQ20),
+and the crate depends on uo-text (UTF-16 case mapping and JS white space over units).
+
+## Stop point (2026-11-03, maintainer asked to stop after this round)
+
+Done in D1a: foundation (Opus), R1, R2, R3, R4a, R4b, R4c, R6 (Sonnet) and the integration fixes
+I1–I3; every frontier's facets equal to the frozen TS (accepted only by name). Parity rounds:
+R4b 1 (found by its own first replay: `linkedTxbx seq` is `|| 1`), all others 0.
+
+Next: **R5** (fulldoc/inspect/blank/fonts — the whole-document read; it unlocks the `sources`,
+`full` and `hyphlangs` facets and the text box `Blocks`/`Grouped` modes R4b leaves as `Err`).
+
+Open, for the next round or the milestone-1 review:
+- **Nested-story stack** (R4c): a text box inside a text box costs ~14 KB of native stack per level
+  in release (~50 KB debug), mostly R4b's VML/drawing readers; 64 levels do not fit the 1 MiB wasm
+  stack. Slim R4b's frames (or make the story recursion iterative) before R5's G20 wasm test.
+- **Open comment ranges** (R4c item 9.2): >64 concurrently open ranges is `Corrupt` today; the TS has
+  the same O(n²) memory. Proposal: a `DocxLimits` field and a `DocxLimitKind` variant (security review).
+- **`MathNode.rpr`** cloned per node (R4c 9.6): proposal `Arc<RPr>` in the model.
+- **Legacy flat `readDocument`** (R4c 9.7) not ported: confirm no consumer remains.
+- **9-level numbering limit** (R2), unbounded `Math.min` over wrap polygons (R3), the R4b item 9 rows:
+  milestone security review.

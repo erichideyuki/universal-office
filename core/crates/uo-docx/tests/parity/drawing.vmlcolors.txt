@@ -1,0 +1,39 @@
+#ff0000
+#f00
+#FFF
+red
+RED
+window
+#12
+#1234567
+#xyz
+#abc def
+fill darken(128)
+
+ 
+silver
+grey
+nope
+#😀a
+#12345😀
+#😀😀
+#a😀b
+#ß12
+#ǆ1
+#ﬃ
+#ΐab
+#ŉ12
+#abcdef😀
+😀
+red 😀
+#ﬀab
+#aBc
+ #ABC 
+#abcdef 12
+WHITE
+Window
+#ABCDEFG
+#
+#ab
+#abcd
+#abcde
