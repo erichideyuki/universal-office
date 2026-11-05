@@ -36,7 +36,7 @@ uo-fonts = { path = "../crates/uo-fonts", features = ["hyphen-data"] }
 uo-codec = { path = "../crates/uo-codec" }
 # the doc_convert target (src/doc.rs): the .doc converter; the read_docx target (src/docx.rs): the docx reader;
 # odt_read, export_docx and compare_docx (src/d5.rs): ODF, the HTML/Markdown exporters and the document diff
-uo-docx = { path = "../crates/uo-docx", features = ["doc", "odf", "export", "compare"] }
+uo-docx = { path = "../crates/uo-docx", features = ["doc", "odf", "export", "compare", "editing-api"] }
 # the image_decode target (src/image.rs)
 uo-image = { path = "../crates/uo-image" }
 # fonts built in code for the font targets and their seeds (no proprietary bytes)
@@ -453,6 +453,22 @@ bench = false
 [[bin]]
 name = "odt_read"
 path = "fuzz_targets/odt_read.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "api_open_sanitize_save"
+path = "fuzz_targets/api_open_sanitize_save.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "api_template_apply"
+path = "fuzz_targets/api_template_apply.rs"
 required-features = ["libfuzzer"]
 test = false
 doc = false

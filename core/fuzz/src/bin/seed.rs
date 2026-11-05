@@ -270,6 +270,10 @@ fn main() {
     for (target, data) in uo_opc_fuzz::d5_seeds(&repo) {
         c.add(target, &data);
     }
+    // D3: the Editing API over its harness fixtures (selectors and template/content pairs)
+    for (target, data) in uo_opc_fuzz::d3_seeds(&repo) {
+        c.add(target, &data);
+    }
     // the schema-driven codec: valid messages of every schema (raw and framed), and seeds of the structure-aware round trip
     for (target, data) in uo_opc_fuzz::codec_seeds() {
         c.add(target, &data);

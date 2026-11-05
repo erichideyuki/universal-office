@@ -87,6 +87,8 @@ Total ≈ 46.0k lines of behaviour source (≈ 41.3k TS + 4.75k C#).
 
 Records of the D5 port (2026-11-05): `../uo-docx-d5/D5a.md` (export and compare) and `../uo-docx-d5/D5b.md`
 (ODF). Record of the W4 emitter frontier (notes, settings, header/footer parts): `../uo-docx-d1b/W4.md`.
+Record of the D3 port (Editing API: architecture, .NET-semantics table, C ABI design, C# differential harness,
+parity, memory, security review of the sanitizer): `uo-docx-d3.md`.
 
 ### Crate placement and reuse
 

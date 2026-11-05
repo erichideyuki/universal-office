@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The C# differential harness of uo-docx D3 (the Editing API): runs the FROZEN C#
+       Editing API (dotnet/src, identical to main) over the corpus and scripted operation
+       sequences and writes captures that the Rust tests replay (record:
+       core/docs/modules/uo-docx-d3.md, "Parity harness"). Build output goes outside the
+       repository: pass `-artifacts-path <dir>` (see Program.cs). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- the frozen test suite (dotnet/Directory.Build.props) runs in invariant mode -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>UoD3Harness</RootNamespace>
+    <NoWarn>$(NoWarn);CS1591;CA1822</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\dotnet\src\UniversalOffice.Docx\UniversalOffice.Docx.csproj" />
+    <!-- the fixture builders of the frozen test suite, linked (not copied, not edited) -->
+    <Compile Include="..\..\..\..\dotnet\tests\UniversalOffice.Tests\Editing\DocxBuilder.cs" Link="Frozen\DocxBuilder.cs" />
+    <Compile Include="..\..\..\..\dotnet\tests\UniversalOffice.Tests\Editing\SampleTemplate.cs" Link="Frozen\SampleTemplate.cs" />
+  </ItemGroup>
+</Project>

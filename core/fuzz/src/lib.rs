@@ -58,6 +58,9 @@ pub use docx::{DOCX_PACKAGE_LIMITS, DOCX_READ_LIMITS, docx_seeds, read_docx};
 mod d5;
 pub use d5::{compare_docx, d5_seeds, export_docx, odt_read};
 
+mod d3;
+pub use d3::{api_open_sanitize_save, api_template_apply, d3_seeds};
+
 mod image;
 pub use image::{image_decode, image_seeds};
 
@@ -123,6 +126,8 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("odt_read", odt_read),
     ("export_docx", export_docx),
     ("compare_docx", compare_docx),
+    ("api_open_sanitize_save", api_open_sanitize_save),
+    ("api_template_apply", api_template_apply),
     ("image_decode", image_decode),
     ("codec_decode", codec_decode),
     ("codec_roundtrip", codec_roundtrip),

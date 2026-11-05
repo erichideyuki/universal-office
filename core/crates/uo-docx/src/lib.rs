@@ -18,6 +18,8 @@
 //! iteratively (G20).
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "editing-api")]
+pub mod api;
 #[cfg(feature = "canon")]
 pub mod canon;
 #[cfg(feature = "compare")]
