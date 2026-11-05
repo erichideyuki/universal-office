@@ -207,6 +207,16 @@ impl<S> History<S> {
         (e.map(|e| *e.state), change)
     }
 
+    /// `oneUndo`: the steps above `len` are dropped, the first of them stays (`undoStack.splice(mark
+    /// + 1)`; D2b-F7).
+    pub fn collapse_to(&mut self, len: usize) {
+        while self.undo.len() > len {
+            if let Some(e) = self.undo.pop_back() {
+                self.bytes = self.bytes.saturating_sub(e.cost);
+            }
+        }
+    }
+
     /// `editsSinceLoad++` outside a step (`toggleTrackChanges`).
     pub fn note_edit(&mut self) {
         self.edits_since_load = self.edits_since_load.saturating_add(1);

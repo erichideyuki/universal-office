@@ -727,7 +727,7 @@ impl Session {
 
     /// Reads a header/footer part from `xml` as if it came from the file at `path` (the reader with
     /// the document's sources); the signatures of the new nodes join the baseline.
-    fn read_hf_part_story(&mut self, path: &str, xml: &str) -> Result<Option<Story>, CommandError> {
+    pub(crate) fn read_hf_part_story(&mut self, path: &str, xml: &str) -> Result<Option<Story>, CommandError> {
         use crate::read::ctx::ReadCtx;
         let limits = crate::limits::DocxLimits::default();
         let opts = crate::read::ReadOptions { sources: false, limits };

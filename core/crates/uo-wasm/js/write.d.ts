@@ -59,6 +59,21 @@ export interface RunBox {
   value: string;
 }
 
+/** A rectangle of commented text (twips of page `page`). */
+export interface AnnotationRect {
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The viewer's comments (reading order) and headings (`collectAnnotations`). */
+export interface Annotations {
+  comments: { id: number; author?: string; text: string; rects: AnnotationRect[] }[];
+  headings: { level: number; text: string; page: number; y: number }[];
+}
+
 export interface LayoutOptions {
   /** the instant DATE/TIME fields show (default: now) */
   now?: Date | number;
@@ -88,6 +103,8 @@ export interface Buf {
 }
 
 export interface PaintOps {
+  /** the render message alone (no Write section), on the same resource mark as `WriteLayout.encodePage` */
+  encodePage(page: number): Buf;
   fxLayers(page: number, item: number, ppt: number): Buf;
   pattern(page: number, item: number): Buf;
   rectGradient(page: number, item: number): Buf;
@@ -113,8 +130,11 @@ export declare class WriteLayout {
   readonly pageCount: number;
   free(): void;
   pageInfo(i: number): PageInfo;
-  /** the uo-render page message (decode with js/gen/render.ts `decodePage`) */
+  /** the page message (decode with js/gen/render.ts `decodePage`); its `app` is the Write section
+   *  (js/gen/write.ts `decodeWritePage`: lines, chars, formats, objects, cells, `paras` for the text layer) */
   encodePage(i: number): Uint8Array;
+  /** `collectAnnotations(full, layout)` of the viewer */
+  annotations(): Annotations;
   readonly paint: PaintOps;
   navigation(): Navigation;
   runBoxes(kind?: 'links' | 'inlines'): RunBox[];

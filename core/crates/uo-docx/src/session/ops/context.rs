@@ -262,7 +262,9 @@ pub fn restore_context(s: &mut Session, step: ContextStep, prev: &EditContext) {
                 s.selection = if part == *p0 { selection } else { s.selection };
             }
         }
-        ContextStep::Textbox { outer, page, .. } => {
+        ContextStep::Textbox { outer, host, focus, page, selection } => {
+            // `reenterTextbox` runs at the end of the pop (D2b-F7: `Session::pop_history`)
+            s.f7.reenter = Some((host, focus, page, selection));
             // re-entering the box (`reenterTextbox`) needs `contextTextboxRuns` and the layout's
             // object: the drawing family's (D2b-F7); D2a returns to the outer context
             if let (Some(p), EditContext::HeaderFooter { part: p0, .. }) = (outer, prev)

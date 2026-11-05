@@ -17,6 +17,12 @@
 //! resource, 11 null handle); a call that answers a status returns a `pipeline::code`.
 //!
 //! # Result layouts (little endian; strings are UTF-16 code units, `n u32` then `n x u16`)
+//! - `uo_layout_encode_page`: the uo-render page message whose `app` is the Write section (`write.uos`
+//!   `WritePage`: lines, chars, formats, objects, cells, and each body line's paragraph text and
+//!   heading level for the text layer; G8). Decode with `js/gen/render.ts` then `js/gen/write.ts`.
+//! - `uo_layout_annotations`: `n u32` comments, each `id f64`, `has_author u8` [+ the author string],
+//!   the text string, `m u32` rects each `page u32, x f64, y f64, w f64, h f64` (twips); then `k u32`
+//!   headings, each `level f64, page u32, y f64` and the text string (`collectAnnotations`, G8).
 //! - `uo_layout_page_info`: `w f64, h f64` (twips), `section u32`, `number f64`, `hf_items i32` (-1 absent).
 //! - `uo_layout_navigation`: `n u32` links, each `page u32, x f64, y f64, w f64, h f64` (points from the
 //!   page top), `kind u8` then for 0 the URI string, for 1 `page u32, top f64`; then `m u32` outline
@@ -42,6 +48,8 @@ use uo_docx::DocView;
 use uo_docx::read::ReadOptions;
 use uo_docx_layout::Layout;
 use uo_docx_layout::LayoutOptions;
+use uo_docx_layout::annotations::Annotations;
+use uo_docx_layout::section::{SectionError, SectionModel};
 use uo_docx_layout::fonts::FontProvider;
 use uo_docx_layout::options::{Clock, Hyphenation, RevisionMode, RevisionView, TimeZoneRule, ViewTransform};
 use uo_docx_layout::run_boxes::RunBox;
@@ -54,11 +62,13 @@ use uo_render::view::RenderView;
 use uo_render::{LinkTarget, Navigation};
 
 use crate::pipeline::{self, JobError, LayoutJob, Opened, Trust, code};
-use crate::render::{NONE, NULL_HANDLE, OK, Out, UoBuf, UoRenderView, buf, take_bytes, view_handle, view_of};
+use crate::render::{NONE, NULL_HANDLE, OK, Out, UoBuf, UoRenderView, buf, take_bytes, view_handle, view_of, view_of_mut};
 
 const NO_PAGE: i32 = 6;
 const NO_RESOURCE: i32 = 8;
 const BAD_ARGUMENT: i32 = 5;
+/// render.rs: the page did not encode
+const NOT_ENCODED: i32 = 10;
 
 /// The effect-layer cap of a phone (uo-render E-D12: the layer peaks at about 37 bytes a pixel).
 pub const PHONE_MAX_FX_PX: u64 = 1 << 22;
@@ -321,14 +331,19 @@ pub unsafe extern "C" fn uo_write_hyphenation_patterns(
 
 // ───────────────────────────── layouts ─────────────────────────────
 
-/// One layout: the render view (pages and resources), the Write geometry, the navigation and the
-/// run boxes.
+/// One layout: the render view (pages and resources), the Write geometry, what the Write section
+/// reads from the model (G8), the navigation, the run boxes and the annotations.
 pub struct UoLayout {
     view: UoRenderView,
     geom: Layout,
+    /// each body line's paragraph text and level, the placed objects' run names (gathered once)
+    section: SectionModel,
+    /// the layout id of its messages (the render view's mark has the same)
+    generation: u32,
     navigation: Navigation,
     links: Vec<RunBox>,
     inlines: Vec<RunBox>,
+    annotations: Annotations,
 }
 
 /// `layout_flags` bits 0–1: hyphenation 0 on, 1 off, 2 force.
@@ -446,6 +461,11 @@ pub unsafe extern "C" fn uo_write_layout(
     match pipeline::lay_out(&doc.opened, &job) {
         Ok(laid) => {
             let mut geom = laid.layout;
+            // the viewer reads the paragraphs of `this.full`, not of the view transform (the Web
+            // view keeps the blocks): the model as opened
+            let model = DocView::new(&doc.opened.doc);
+            let section = SectionModel::new(model, &geom);
+            let annotations = geom.annotations(model);
             let pages = pipeline::take_pages(&mut geom);
             let res = std::mem::take(&mut geom.resources);
             let generation = if generation == 0 { GENERATION.fetch_add(1, Ordering::Relaxed) } else { generation };
@@ -456,9 +476,12 @@ pub unsafe extern "C" fn uo_write_layout(
             Box::into_raw(Box::new(UoLayout {
                 view: view_handle(view),
                 geom,
+                section,
+                generation,
                 navigation: laid.navigation,
                 links: laid.links,
                 inlines: laid.inlines,
+                annotations,
             }))
         }
         Err(e) => {
@@ -502,6 +525,74 @@ pub unsafe extern "C" fn uo_layout_page_count(l: *const UoLayout) -> usize {
 pub unsafe extern "C" fn uo_layout_view(l: *mut UoLayout) -> *mut UoRenderView {
     // SAFETY: the caller guarantees `l` is null or live.
     unsafe { l.as_mut() }.map_or(std::ptr::null_mut(), |l| &raw mut l.view)
+}
+
+/// The message of page `i` for the canvas painter: uo-render's page message (items, resource
+/// deltas since the last page this layout encoded, hints) with the **Write section** as its `app`
+/// (G8; uo-docx-layout `Layout::encode_page`). Status 6 past the last page, 10 when it does not
+/// encode (render.rs codes).
+///
+/// # Safety
+/// `l` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_layout_encode_page(l: *mut UoLayout, page: usize) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `l` is null or live.
+    let Some(l) = (unsafe { l.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let app = match l.geom.write_section(page, &l.section, l.generation) {
+        Ok(a) => a,
+        Err(SectionError::NoPage) => return buf(NO_PAGE, Vec::new()),
+        Err(_) => return buf(NOT_ENCODED, Vec::new()),
+    };
+    // the view carries the section for this one encoding (encoded on demand, never kept)
+    let v = view_of_mut(&mut l.view);
+    if v.set_app(page, app.0).is_err() {
+        return buf(NO_PAGE, Vec::new());
+    }
+    let mut out = Vec::new();
+    let r = v.encode_page(page, &mut out);
+    let _ = v.set_app(page, Vec::new());
+    match r {
+        Ok(()) => buf(OK, out),
+        Err(uo_render::ViewError::NoPage) => buf(NO_PAGE, Vec::new()),
+        Err(_) => buf(NOT_ENCODED, Vec::new()),
+    }
+}
+
+/// The viewer's annotations (`collectAnnotations(full, layout)`): the comments with the
+/// rectangles of their text, in reading order, and the headings of the outline pane.
+///
+/// # Safety
+/// `l` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_layout_annotations(l: *const UoLayout) -> *mut UoBuf {
+    // SAFETY: forwarded.
+    let Some(l) = (unsafe { layout_ref(l) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let a = &l.annotations;
+    let mut o = Out::default();
+    o.u32(a.comments.len());
+    for c in &a.comments {
+        o.f64(c.id);
+        match &c.author {
+            Some(au) => {
+                o.u8(1);
+                units(&mut o, au);
+            }
+            None => {
+                o.u8(0);
+            }
+        }
+        units(&mut o, &c.text);
+        o.u32(c.rects.len());
+        for r in &c.rects {
+            o.u32(usize::try_from(r.page).unwrap_or(usize::MAX)).f64(r.x).f64(r.y).f64(r.w).f64(r.h);
+        }
+    }
+    o.u32(a.headings.len());
+    for h in &a.headings {
+        o.f64(h.level).u32(usize::try_from(h.page).unwrap_or(usize::MAX)).f64(h.y);
+        units(&mut o, &h.text);
+    }
+    buf(OK, o.0)
 }
 
 /// Size, section, displayed number and header/footer item count of a page.

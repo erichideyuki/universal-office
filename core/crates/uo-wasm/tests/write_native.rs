@@ -136,6 +136,22 @@ fn session(key: &str) -> Vec<String> {
         }
         sums.push(format!("pages={pages}"));
         sums.push(format!("messages={:08x}", fnv(&msgs)));
+        // the same pages with the Write section (G8), from a fresh mark: the layout's own encoder
+        let l2 = layout(doc, env, 0, 0);
+        let mut secs = Vec::new();
+        for i in 0..pages {
+            let (s, m) = take(uo_layout_encode_page(l2, i));
+            assert_eq!(s, 0);
+            assert_eq!(&m[..4], b"UORP");
+            secs.extend_from_slice(&m);
+        }
+        assert_eq!(take(uo_layout_encode_page(l2, pages)).0, 6);
+        assert_eq!(take(uo_layout_encode_page(std::ptr::null_mut(), 0)).0, 11);
+        uo_layout_free(l2);
+        sums.push(format!("sections={:08x}", fnv(&secs)));
+        let (s, ann) = take(uo_layout_annotations(l));
+        assert_eq!(s, 0);
+        sums.push(format!("annotations={:08x}", fnv(&ann)));
         let (s, nav) = take(uo_layout_navigation(l));
         assert_eq!(s, 0);
         sums.push(format!("navigation={:08x}", fnv(&nav)));
@@ -264,7 +280,10 @@ fn m1_every_export_returns_the_live_bytes() {
         unsafe {
             for i in 0..uo_layout_page_count(l) {
                 drop(take(uo_render_encode_page(uo_layout_view(l), i)));
+                drop(take(uo_layout_encode_page(l, i)));
             }
+            drop(take(uo_layout_encode_page(l, 9999)));
+            drop(take(uo_layout_annotations(l)));
             for f in [uo_layout_navigation, uo_layout_warnings, uo_layout_missing_faces] {
                 drop(take(f(l)));
             }
@@ -286,4 +305,58 @@ fn m1_every_export_returns_the_live_bytes() {
         "M1: a viewer session (env + 5 families + open + layout + every query + PDF): {} B allocated, peak {} B, 0 B left",
         u.allocated, u.peak_above_start
     );
+}
+
+/// G8: the page message of `uo_layout_encode_page` is uo-render's message (the same items and
+/// resource deltas as `uo_render_encode_page`) with the Write section as its `app`, and that
+/// section is `Layout::write_page` of the same layout through the shared read path; its paragraph
+/// texts are the model's.
+#[test]
+fn the_page_message_carries_the_write_section() {
+    use uo_docx_layout::codec as wc;
+    let limits = uo_codec::Limits::default();
+    for key in DOCS {
+        let env = env_with_fonts();
+        let docx = fixture(key);
+        let doc = open(&docx);
+        let (a, b) = (layout(doc, env, 0, 0), layout(doc, env, 0, 0));
+        // the reference: the shared pipeline, the same options as `layout()`
+        // SAFETY: live handles until the frees below; results released by `take`.
+        unsafe {
+            let n = uo_layout_page_count(a);
+            let (mut ta, mut tb) = (uo_render::codec::Tables::new(), uo_render::codec::Tables::new());
+            let mut wt = wc::Tables::new();
+            let mut texts = 0usize;
+            for i in 0..n {
+                let (_, with) = take(uo_layout_encode_page(a, i));
+                let (_, bare) = take(uo_render_encode_page(uo_layout_view(b), i));
+                let mut pw = uo_render::codec::decode_page(&with, &mut ta, &limits).unwrap();
+                let pb = uo_render::codec::decode_page(&bare, &mut tb, &limits).unwrap();
+                let app = std::mem::take(&mut pw.app);
+                assert!(pb.app.is_empty());
+                assert_eq!(pw, pb, "{key} page {i}: the render part is the view's");
+                let w = wc::decode_write_page(&app, &mut wt, &limits).unwrap();
+                assert_eq!(wt.generation, Some(1));
+                let mut again = Vec::new();
+                wc::encode_write_page(&mut again, &wc::Delta { generation: 1 }, &w).unwrap();
+                assert_eq!(again, app, "{key} page {i}: canonical");
+                for l in &w.lines {
+                    if let Some(k) = l.para {
+                        // (a line's offsets are the layout's: a field shown longer than its model
+                        // text runs past the paragraph text, as in the TS text layer)
+                        assert!((k as usize) < w.paras.len());
+                        texts += 1;
+                    } else {
+                        let r = String::from_utf16_lossy(&l.r#ref);
+                        assert!(!(r.starts_with('b') && r.as_bytes().get(1).is_some_and(u8::is_ascii_digit)), "{key}: body line {r} without its paragraph");
+                    }
+                }
+            }
+            assert!(texts > 0, "{key}: the text layer has paragraphs");
+            uo_layout_free(a);
+            uo_layout_free(b);
+            uo_write_document_free(doc);
+            uo_write_env_free(env);
+        }
+    }
 }

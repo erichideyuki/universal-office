@@ -11,7 +11,8 @@
 //   env.pushFamily('Carlito', { source: 'bundled', faces: [{ variant: 'regular', bytes }] });
 //   const doc = uo.open(docxBytes);
 //   const layout = doc.layout(env, { hyphenationLanguages: ['pt-BR', 'en', 'es'] });
-//   const msg = layout.encodePage(0);            // the render message of page 0 (js/gen/render.ts decodes it)
+//   const msg = layout.encodePage(0);            // the page message of page 0: js/gen/render.ts decodes it, its
+//                                                // `app` is the Write section (js/gen/write.ts `decodeWritePage`)
 //   const pdf = layout.pdf();                    // { chunks: Uint8Array[], length }
 //   layout.free(); doc.free(); env.free();
 
@@ -202,12 +203,34 @@ export function bindWrite(w, host) {
       const hf = g.i32();
       return hf < 0 ? out : { ...out, hfItems: hf };
     }
-    /** the render message of page `i` (resource deltas since the last page this layout encoded) */
-    encodePage(i) { return take(w.uo_render_encode_page(w.uo_layout_view(this.#live()), i), 'encodePage'); }
+    /** the page message of page `i` (resource deltas since the last page this layout encoded) with the
+     *  Write section as its `app`: lines, chars, formats, objects, cells and the text layer's paragraphs */
+    encodePage(i) { return take(w.uo_layout_encode_page(this.#live(), i), 'encodePage'); }
+    /** `collectAnnotations` of the viewer: `{ comments: [{ id, author?, text, rects }], headings: [{ level, text, page, y }] }` (twips) */
+    annotations() {
+      const g = reader(take(w.uo_layout_annotations(this.#live()), 'annotations'));
+      const comments = [];
+      for (let i = 0, n = g.u32(); i < n; i++) {
+        const id = g.f64();
+        const c = g.u8() === 1 ? { id, author: g.str() } : { id };
+        c.text = g.str();
+        c.rects = [];
+        for (let k = 0, m = g.u32(); k < m; k++) c.rects.push({ page: g.u32(), x: g.f64(), y: g.f64(), w: g.f64(), h: g.f64() });
+        comments.push(c);
+      }
+      const headings = [];
+      for (let i = 0, n = g.u32(); i < n; i++) {
+        const level = g.f64(), page = g.u32(), y = g.f64();
+        headings.push({ level, text: g.str(), page, y });
+      }
+      return { comments, headings };
+    }
     /** the item-addressed paint operations of render.mjs, on this layout's view (Buf results) */
     get paint() {
       const v = () => w.uo_layout_view(this.#live());
       return {
+        /** the render message alone (no Write section), on the same resource mark as `encodePage` */
+        encodePage: (page) => new Buf(w.uo_render_encode_page(v(), page)),
         fxLayers: (page, item, ppt) => new Buf(w.uo_render_fx_layers(v(), page, item, ppt)),
         pattern: (page, item) => new Buf(w.uo_render_pattern(v(), page, item)),
         rectGradient: (page, item) => new Buf(w.uo_render_rect_gradient(v(), page, item)),

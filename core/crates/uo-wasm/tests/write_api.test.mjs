@@ -56,9 +56,9 @@ const concat = (chunks) => { const out = new Uint8Array(chunks.reduce((n, c) => 
 
 // printed by `cargo test -p uo-wasm --features write,count --test write_native -- --nocapture`
 const PINNED = {
-  f8__7__0: 'pages=3 messages=ea592122 navigation=77ac1ff2 links=fed3646f pdf=c28b3c53 raw=28d8e9a7',
-  f8__7__3: 'pages=4 messages=2d10de80 navigation=ccaab767 links=dd8e9a5b pdf=a2cf1bd6 raw=8484558e',
-  f8__7__10: 'pages=5 messages=f48e4c99 navigation=407f607c links=bf8ec749 pdf=88d31b5b raw=7b595536',
+  f8__7__0: 'pages=3 messages=ea592122 sections=8cea474e annotations=4ceffb56 navigation=77ac1ff2 links=fed3646f pdf=c28b3c53 raw=28d8e9a7',
+  f8__7__3: 'pages=4 messages=2d10de80 sections=0f5959f7 annotations=9be17165 navigation=ccaab767 links=dd8e9a5b pdf=a2cf1bd6 raw=8484558e',
+  f8__7__10: 'pages=5 messages=f48e4c99 sections=188af57d annotations=e37051ed navigation=407f607c links=bf8ec749 pdf=88d31b5b raw=7b595536',
 };
 
 function session(key) {
@@ -69,11 +69,18 @@ function session(key) {
   const n = layout.pageCount;
   const msgs = [];
   for (let i = 0; i < n; i++) {
-    const m = layout.encodePage(i);
+    const m = layout.paint.encodePage(i).take().data;
     assert.equal(String.fromCharCode(...m.subarray(0, 4)), 'UORP');
     msgs.push(m);
   }
   sums.push(`pages=${n}`, `messages=${hex(concat(msgs))}`);
+  // the page messages with the Write section (G8), from a fresh layout (a fresh resource mark)
+  const l2 = doc.layout(env, OPTS);
+  const secs = [];
+  for (let i = 0; i < n; i++) secs.push(l2.encodePage(i));
+  assert.throws(() => l2.encodePage(n), /status 6/);
+  l2.free();
+  sums.push(`sections=${hex(concat(secs))}`, `annotations=${hex(encodeAnnotations(layout.annotations()))}`);
   // the decoded forms re-encoded give the raw bytes the native test pins
   sums.push(`navigation=${hex(rawLayout(layout, 'nav'))}`, `links=${hex(rawLayout(layout, 'links'))}`);
   const nav = layout.navigation();
@@ -107,6 +114,20 @@ function encodeNav(nav) {
   }
   u32(p, nav.outline.length);
   for (const e of nav.outline) { u32(p, e.level); u32(p, e.page); f64(p, e.top); encodeStr(p, e.title); }
+  return concat(p);
+}
+function encodeAnnotations(a) {
+  const p = [];
+  u32(p, a.comments.length);
+  for (const c of a.comments) {
+    f64(p, c.id);
+    if (c.author !== undefined) { p.push(new Uint8Array([1])); encodeStr(p, c.author); } else p.push(new Uint8Array([0]));
+    encodeStr(p, c.text);
+    u32(p, c.rects.length);
+    for (const r of c.rects) { u32(p, r.page); f64(p, r.x); f64(p, r.y); f64(p, r.w); f64(p, r.h); }
+  }
+  u32(p, a.headings.length);
+  for (const h of a.headings) { f64(p, h.level); u32(p, h.page); f64(p, h.y); encodeStr(p, h.text); }
   return concat(p);
 }
 function encodeBoxes(boxes) {

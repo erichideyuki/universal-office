@@ -154,6 +154,7 @@ impl Session {
             f9: super::ops::navigation::F9State::default(),
             f5: super::ops::notes::F5State::default(),
             f4: super::ops::sections::F4State::default(),
+            f7: super::ops::drawing::F7State::default(),
             settings: Arc::new(SettingsStep::default()),
             sections: SectionState::default(),
             save: SaveState { baseline: crate::write::sig::Baseline::default(), gen_num_ids: None, fresh_id: 0.0 },

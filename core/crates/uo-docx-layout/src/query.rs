@@ -9,16 +9,34 @@ use crate::model::DocView;
 use crate::output::{Layout, LineGeom, LineRef};
 use crate::refs::Locator;
 use crate::run_boxes::{RunBox, RunFilter};
-use uo_render::Navigation;
+use crate::section::{SectionError, SectionModel};
+use uo_render::{DeltaMark, Navigation};
 
-/// Queries still to be ported (gate 2 needs the list empty). `encode_page` is the Write section
-/// encoder of frontier E (uo-render `AppSection` for the Write geometry), not F8's.
-pub const PENDING: &[&str] = &["encode_page"];
+/// Queries still to be ported (gate 2 needs the list empty). `encode_page` landed with G8
+/// ([`crate::section`], record "Write page section (G8)").
+pub const PENDING: &[&str] = &[];
 
 impl Layout {
-    /// Appends page `i` encoded for the canvas (uo-render codec + the Write section) — frontier
-    /// E's encoder; nothing until it lands.
-    pub fn encode_page(&self, _i: usize, _out: &mut Vec<u8>) {}
+    /// Appends page `i` encoded for the canvas: uo-render's message (items, the resource deltas
+    /// since `mark`, the painter hints) carrying the Write section of [`crate::section`] as its
+    /// `app` — the page's lines, chars, formats, objects, cells and, from `m` (gathered once per
+    /// layout by [`SectionModel::new`]), each body line's paragraph text and heading level for the
+    /// viewer's text layer. `out` and `mark` are untouched on error.
+    ///
+    /// # Errors
+    /// See [`SectionError`].
+    pub fn encode_page(&self, i: usize, m: &SectionModel, mark: &mut DeltaMark, out: &mut Vec<u8>) -> Result<(), SectionError> {
+        let page = self.pages.get(i).ok_or(SectionError::NoPage)?;
+        let app = self.write_section(i, m, mark.generation())?;
+        uo_render::encode_page_for_canvas(&page.page, &self.resources, &app, mark, out).map_err(SectionError::Render)
+    }
+
+    /// `collectAnnotations(full, layout)` of the viewer (annotations.ts): comments with the
+    /// rectangles of their text, and the headings of the outline pane (G8).
+    #[must_use]
+    pub fn annotations(&self, view: DocView<'_>) -> crate::annotations::Annotations {
+        crate::annotations::annotations(view, self)
+    }
 
     /// `runBoxes(full, layout, pick)` (run-boxes.ts).
     #[must_use]

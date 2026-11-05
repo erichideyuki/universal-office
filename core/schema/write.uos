@@ -5,6 +5,12 @@
 ///
 /// Not encoded (RQ2): the glyph runs' lineBox (cull group of cullOffPage) and lineNum, read only
 /// by the layout itself; they live in the layout's ItemMeta side table and the P1 Canon.
+///
+/// G8 (uo-docx-layout record, "Write page section (G8)"): the viewer's text layer (selection,
+/// copy, the browser's find, screen readers) reads each line's paragraph from the MODEL
+/// (`para(line.ref)`: its text and its heading level), which the shell no longer has after the
+/// switch; `paras` and `LaidOutLine.para` carry it. `hf_items`, `objects`, `cells` became optional
+/// and `PlacedCell.span` an f64, so the decoded section equals the TS LayoutPage value exactly.
 schema write_layout magic "UOWL";
 
 message WritePage {
@@ -13,14 +19,29 @@ message WritePage {
   /// the displayed number (PAGE): any JS number
   number: f64 ts "number",
   /// how many items at the start of the page's items belong to the header/footer layers
-  hf_items: u32 ts "hfItems",
+  /// (absent when the page has no header/footer layer, as the TS `hfItems?`)
+  hf_items: u32? ts "hfItems",
   lines: list<LaidOutLine> ts "lines",
   /// the paragraph formats the lines point at (by value: the TS sharing is never observed, K20)
   pfmts: list<LineParaFormat> ts "pfmts",
-  objects: list<PlacedObject> ts "objects",
-  cells: list<PlacedCell> ts "cells",
+  /// absent and empty differ in the TS LayoutPage (`objects?`, `cells?`)
+  objects: list<PlacedObject>? ts "objects",
+  cells: list<PlacedCell>? ts "cells",
   /// ClipItem.src: the vector image drawn inside a clip (the editor finds the EMF by its item)
   clip_src: list<ClipSrc> ts "clipSrc",
+  /// the text layer's paragraphs of this page (G8), each once, in the order the lines first
+  /// point at them; `LaidOutLine.para` indexes it
+  paras: list<TextPara> ts "paras",
+}
+
+/// The paragraph of a body line as the viewer's text layer reads it (G8): the model paragraph
+/// `paragraphAtPath(full.blocks, ref.split('/'))` of a `b…` ref (universal-document-viewer.ts
+/// `para`), its text `p.runs.map((r) => r.text).join('')` (the lines' `start`/`end` and the chars'
+/// `o` are offsets in it) and its heading level `levelResolver(full)(p)` (annotations.ts: 1–9,
+/// any JS number in general; absent = body text).
+struct TextPara {
+  text: utf16 ts "text",
+  level: f64? ts "level",
 }
 
 struct LineChar {
@@ -56,6 +77,10 @@ struct LaidOutLine {
   frame: LineFrame? ts "frame",
   /// index into WritePage.pfmts
   pfmt: u32? ts "pfmt",
+  /// index into WritePage.paras: the line's paragraph for the text layer (G8); absent when the
+  /// viewer's `para(ref)` is null (headers, footers, notes, textboxes, unresolved paths). Lines
+  /// with the same index belong to the same paragraph object (the text layer's block grouping).
+  para: u32? ts "para",
 }
 
 enum TabAlign {
@@ -139,7 +164,7 @@ struct PlacedCell {
   y: f64 ts "y",
   w: f64 ts "w",
   h: f64 ts "h",
-  span: u32 ts "span",
+  span: f64 ts "span",
 }
 
 struct ClipSrc {

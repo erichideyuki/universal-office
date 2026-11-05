@@ -153,6 +153,11 @@ pub(crate) fn view_of(h: &UoRenderView) -> &RenderView {
     &h.view
 }
 
+/// The view inside a handle, mutable (the layout handle encodes its pages through it; added by G8).
+pub(crate) fn view_of_mut(h: &mut UoRenderView) -> &mut RenderView {
+    &mut h.view
+}
+
 /// Adopts a view built elsewhere in the module (the layout handle, a fixture).
 pub fn adopt_view(view: RenderView) -> *mut UoRenderView {
     Box::into_raw(Box::new(UoRenderView { view }))

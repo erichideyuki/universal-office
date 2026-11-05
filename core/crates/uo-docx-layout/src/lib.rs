@@ -21,7 +21,8 @@
 //! - `refs.ts`, `run-boxes.ts`, `pdf-navigation.ts`, the editor queries → [`refs`],
 //!   [`run_boxes`], [`navigation`], [`hit`], gathered in [`query`]; the uo-docx `LayoutOracle` →
 //!   `oracle`; the views besides Print Layout → [`view_transform`] [F8]
-//! - `tree.ts` → uo-render (items) + [`output`] (the Write section)
+//! - `tree.ts` → uo-render (items) + [`output`] (the Write section); its page encoding (the
+//!   `write.uos` message carried as the render message's `app`, G8) → [`section`]
 //! - new: [`ldoc`] (the derived document, LA2), [`keys`] (LA3), [`items`] (pass-scope item and
 //!   line containers), [`options`], [`error`], [`json`] (K9), [`canon`] (the P1 stream), [`model`]
 //!   (the uo-docx facade).
@@ -57,6 +58,7 @@ macro_rules! bitflags_lite {
     };
 }
 
+pub mod annotations;
 pub mod canon;
 pub mod codec;
 pub mod context;
@@ -85,6 +87,7 @@ pub mod para;
 pub mod query;
 pub mod refs;
 pub mod run_boxes;
+pub mod section;
 pub mod table;
 pub mod underline;
 pub mod view_transform;

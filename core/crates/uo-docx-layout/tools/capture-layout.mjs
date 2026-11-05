@@ -47,6 +47,9 @@ const { generateF7bDocx } = await import('./lib/gen-f7b.mjs');
 // hyphenation, the Web view) — added by F8
 const f8 = process.argv.includes('--f8') ? await import('./lib/facets-f8.mjs') : null;
 const { generateF7dDocx } = await import('./lib/gen-f7d.mjs');
+// `--g8`: the Write page section as the viewer gets it, and the viewer's annotations
+// (tools/lib/facets-g8.mjs; record "Write page section (G8)") — added by G8
+const g8 = process.argv.includes('--g8') ? await import('./lib/facets-g8.mjs') : null;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -170,6 +173,7 @@ cap.meta('tz', process.env.TZ);
 cap.meta('hyphenation-loaded', eng.HYPHENATION_PATTERN_IDS.join(','));
 
 const F8 = f8 ? await f8.setupF8(root) : null;
+const G8 = g8 ? await g8.setupG8(root, importFrom) : null;
 const facets = facetRecorder({
   LineBreaker, FaceResolver: eng.FaceResolver, SfntFont: eng.SfntFont,
   // F5 (p3.lines, p3.paint): the helpers its recorder calls with the reporter off
@@ -207,6 +211,7 @@ for (const doc of docs) {
     cap.set(doc.key, 'p2first', p2.p2first);
     for (const [k, v] of Object.entries(doc.f3)) cap.set(doc.key, k, v);
     cap.set(doc.key, 'pages', String(res.pages.length));
+    if (g8) for (const [k, v] of Object.entries(g8.g8Facets(G8, full, res))) cap.set(doc.key, k, v);
     if (f8) {
       // after the P1 stream and the transcript facets: the extra layouts only append calls
       for (const [k, v] of Object.entries(f8.editorFacets(F8, full, res, fields, safe(doc.key)))) cap.set(doc.key, k, v);

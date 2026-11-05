@@ -153,6 +153,8 @@ pub struct Session {
     f5: ops::notes::F5State,
     /// the sections / header-footer / page family's own state (D2b-F4)
     f4: ops::sections::F4State,
+    /// the drawing objects / pictures family's own state (the inline selection, the multi-selection, the pending job results; D2b-F7)
+    f7: ops::drawing::F7State,
     settings: Arc<SettingsStep>,
     sections: SectionState,
     save: SaveState,
@@ -600,6 +602,10 @@ impl Session {
         p.jobs.remove(k);
         let last = p.jobs.is_empty();
         let command = p.command.clone();
+        // D2b-F7: a command of the picture family needs every job's answer, not only the last
+        if matches!(command, Command::Picture(_) | Command::Drawing(_)) {
+            self.f7.stash(job, result.clone());
+        }
         if !last {
             return Ok(Outcome::NeedsJobs(Vec::new()));
         }
@@ -804,6 +810,10 @@ impl Session {
         let Some((state, c)) = popped else { return self.change_set() };
         self.dirty_event(c);
         self.restore_state(state);
+        // a step taken inside a text box goes back into it (`reenterTextbox`, D2b-F7)
+        if let Some((host, focus, page, sel)) = self.f7.reenter.take() {
+            self.reenter_textbox(host, focus, page, sel);
+        }
         self.touch_all();
         // in header/footer mode the TS leaves the edit before the restore and `refresh()` (so
         // `syncSections` runs with the body in context) before returning to the page (D2b-F4)
@@ -901,6 +911,7 @@ impl Session {
         // `m.bodyRefs` comes back with the model; the memory keyed by the `sectPr` objects goes (D2b-F4)
         self.sections.body_refs = state.body_refs;
         self.f4.on_restore();
+        self.f7.on_restore();
         for (part, story) in state.hf_parts.iter() {
             let mut story = story.clone();
             normalize::normalize(&mut story, &mut self.doc.ids);
