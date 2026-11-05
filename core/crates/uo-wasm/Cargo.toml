@@ -45,6 +45,11 @@ dml-selftest = ["dep:uo-drawingml", "dep:uo-jsnum", "dep:uo-testkit"]
 # item-addressed paint operations (src/render.rs). The shipped module enables it with the layout
 render = ["dep:uo-render", "dep:uo-codec", "dep:uo-drawingml", "dep:uo-jsnum", "dep:uo-fonts"]
 
+# the Write read path for the browser (milestone 1, src/write.rs): open, layout with the viewer font policy, pages for
+# the canvas, navigation and run boxes, the PDF in chunks to the host import uo_host.pdf_chunk. The module of the
+# viewer: render + write (uo-bindings.md)
+write = ["render", "dep:uo-opc", "dep:uo-docx", "dep:uo-docx-layout", "dep:uo-pdf"]
+
 # test-only fixture views for the render exports (tests/render_paint.test.mjs, tests/render_boundary.test.mjs): a text
 # page with effects, a pattern, the rectangular gradient, blip tiles, a picture look and page fills built inside
 # the module from an open font; never shipped
@@ -59,6 +64,10 @@ uo-fonts = { path = "../uo-fonts", optional = true }
 uo-drawingml = { path = "../uo-drawingml", optional = true }
 uo-jsnum = { path = "../uo-jsnum", optional = true }
 uo-testkit = { path = "../uo-testkit", optional = true }
+uo-docx = { path = "../uo-docx", optional = true }
+# the layout without its oracle (the LayoutOracle is the editor's, milestone 2)
+uo-docx-layout = { path = "../uo-docx-layout", optional = true, default-features = false }
+uo-pdf = { path = "../uo-pdf", optional = true }
 
 [lints]
 workspace = true

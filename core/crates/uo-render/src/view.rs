@@ -137,6 +137,12 @@ impl RenderView {
         self.pages.get(i)
     }
 
+    /// Every page (the PDF of the view reads `&[Page]`; added by the bindings, uo-bindings.md).
+    #[must_use]
+    pub fn pages(&self) -> &[Page] {
+        &self.pages
+    }
+
     /// Sets the producer's section of a page (what `encode_page` carries as `app`).
     pub fn set_app(&mut self, page: usize, bytes: Vec<u8>) -> Result<(), ViewError> {
         *self.apps.get_mut(page).ok_or(ViewError::NoPage)? = bytes;

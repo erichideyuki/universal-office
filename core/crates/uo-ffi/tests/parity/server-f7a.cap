@@ -1,0 +1,23 @@
+# PP0 of the uo-pdf painter (frontier P): the frozen TS renderPdf over generated and real layouts
+# regenerate: see tests/parity_support/capture_painter.mjs
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+@documents 16
+@pages 151
+@errors 0
+@ts-throws 0
+f7a__7__0	raw=818657:b58db072bc9c3febc0daebd24226241c	norm=93:67985159461f4ef32829efb9ca319c8e	deflated=38
+f7a__7__1	raw=812365:9c8e4f463721f8da49b0c2bd193315e6	norm=95:01e55cffb0ba7d810f257e989b820d33	deflated=38
+f7a__7__10	raw=645423:06eba074a1873faafd4d40b75888fce5	norm=71:6402e3524bbab28fdd9bcdb87801df3e	deflated=28
+f7a__7__11	raw=820901:88777be3ae0d6b90b45dcfc0dbda2be1	norm=105:0b44e1be25aea84f110cd5c6cf39be8f	deflated=40
+f7a__7__12	raw=1101747:71d83e2836e3357bf125cfe3c5ca450a	norm=120:b520c571ba0c9ef2ab3aeabec1138cc5	deflated=48
+f7a__7__13	raw=566917:cc345eee9f804af3aba77511e6d4a434	norm=63:1e655eeaa4bf0d2d26e0bf257df3594e	deflated=24
+f7a__7__14	raw=596412:37cd3998f834c5aed56393564f417aa9	norm=75:f3c38b197474f417a042196969ae0bad	deflated=29
+f7a__7__15	raw=961585:f6003855e26f720899e98704caf26717	norm=107:78bf8b893b893335b0a7c37232f0a616	deflated=43
+f7a__7__2	raw=929863:4441f53cf091ffc4e1882cd5580e8cd4	norm=110:5da46c72c107e1faea2c82b11aba7bc6	deflated=42
+f7a__7__3	raw=563413:cb3345fe81e73ce3b06e8bb6a1d1b681	norm=69:b49e729a609f2d4ed5cdd8c281cc9f5b	deflated=26
+f7a__7__4	raw=774718:fbe4d0a0e54c2d65ada016e8303da611	norm=77:77ea78ec4a2bac12368793af09a61a1b	deflated=29
+f7a__7__5	raw=889917:74977000c79b836cf99b01fb6e79e518	norm=109:2b147c89db847c729d7493916ad1b5fb	deflated=43
+f7a__7__6	raw=977532:d6a26d9172279c8548745a2be4578ac2	norm=120:ebb5aa33603f938eab65f8f9067fdd5a	deflated=48
+f7a__7__7	raw=356254:7f8bf51aefdc4fb47ea40fe35387a660	norm=34:7516c122defb769584070a5913638959	deflated=13
+f7a__7__8	raw=866243:bd18890a1104e28d57cc75d6fef9b871	norm=91:745c6b6d1e77b3645593d4ddf80ac198	deflated=36
+f7a__7__9	raw=947273:1c6485d5ba3e927457862a5c6eadc554	norm=104:16688239480c918c05ef33dd8dec20ca	deflated=42

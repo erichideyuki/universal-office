@@ -1,0 +1,23 @@
+# PP0 of the uo-pdf painter (frontier P): the frozen TS renderPdf over generated and real layouts
+# regenerate: see tests/parity_support/capture_painter.mjs
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+@documents 16
+@pages 108
+@errors 0
+@ts-throws 0
+f7c__7__0	raw=579581:b1a55d6a8f61014ae175f2429ca6c42d	norm=71:fce8f084c0ae35a544146be1c097d407	deflated=27
+f7c__7__1	raw=824922:611ee7b75463fc79067d20ccfd73d864	norm=98:b14385baca3c257dcb5cf5d64cfefcf6	deflated=38
+f7c__7__10	raw=574340:2638ba158c5bb1b07def55e0c9cf0ebf	norm=67:58a10da274c0a40053494f3515705b01	deflated=25
+f7c__7__11	raw=544519:734145781c39878d547ece86ed0fd32c	norm=61:f688ab7976ec0a29884c45650c3feadf	deflated=23
+f7c__7__12	raw=774054:3c1e4a7d0e41e6b799c1868ac5468a1d	norm=94:cbf6dfce0e4dc499220d5a1e8fb9cf83	deflated=37
+f7c__7__13	raw=1082581:3f0fdb2f5ae9b8160067cac63564df48	norm=125:101ff3c27a5ab381e7638b710d28b6f0	deflated=48
+f7c__7__14	raw=631010:43d8a5aecb87b9a88d67bb061f9f6cfe	norm=68:664abefdb2001eed67ffb1d750c663df	deflated=26
+f7c__7__15	raw=741873:c8d1794f16466d113670ff735dd55a71	norm=80:c5332144b055af4104e6d86ee1a2e837	deflated=31
+f7c__7__2	raw=816184:cba719070c6c8819d4f1edd1cb317365	norm=95:d5ab87d52b5ca48b0cd4bcb0ea719bc3	deflated=36
+f7c__7__3	raw=825871:666871b95982ae3dbbdcfbae0f3a7b73	norm=109:8d63d19f211b56e6ee58b8ae7749b61c	deflated=42
+f7c__7__4	raw=361567:b0940a0ec742e37427133990aff562d8	norm=43:c714b0e524ce70361022efdc2bad8353	deflated=17
+f7c__7__5	raw=712141:0ef81dcfca5ad283ded9b61b5fc998f8	norm=76:d6b490bd5fe325c6f7a24e24b9372cc5	deflated=30
+f7c__7__6	raw=833638:4b96f7a1365c5fe5182031af492d4677	norm=95:178cc21d15d346094912f4cfb6b5c148	deflated=36
+f7c__7__7	raw=387013:18f0fad66cbd13ed4ab0fa444839a442	norm=50:3f1423984b07694f0175989df978d5cc	deflated=18
+f7c__7__8	raw=1014178:21fc1e4fcec42230c002ee77ea8ec74c	norm=111:a69d0b41d89a49a90b4d46a17042c294	deflated=41
+f7c__7__9	raw=333605:649843293821f76a03b2dfd2c69a3c02	norm=44:2d3830382765fe6dddc59697e8c90496	deflated=17

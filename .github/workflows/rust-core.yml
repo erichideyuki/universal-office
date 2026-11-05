@@ -189,6 +189,18 @@ jobs:
           UO_F5_CAPTURE: ${{ runner.temp }}/layout/ci.capture
           UO_F5_DUMP: ${{ runner.temp }}/layout/dump
 
+  server-pdf:
+    name: Server PDF (uo-ffi, frontier S; the 68 fixture documents equal the TS renderPdf byte for byte, release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      # tests/server_parity.rs over every fixture document (the debug test job samples every 7th); ffi_memory: M1, M3, M4, the thread soak
+      - run: cargo test -p uo-ffi --release --all-features -- --nocapture
+        env:
+          UO_SERVER_PARITY_EVERY: '1'
+          UO_FFI_SOAK: '25'
+
   soak:
     name: Memory soaks (M2, 1,000 iterations, release)
     runs-on: ubuntu-latest
@@ -258,6 +270,11 @@ jobs:
       # dml-selftest: the uo-drawingml parity replay (the four committed captures, 20 groups) recomputed inside the module; the whole corpus here
       - run: cargo build -p uo-wasm --features dml-selftest --target wasm32-unknown-unknown --profile wasm
       - run: UO_DML_EVERY=1 node --test crates/uo-wasm/tests/dml_selftest.test.mjs
+      # write: the Write read path of milestone 1 (uo-bindings.md): a viewer session over the fixture documents with the native
+      # checksums pinned (wasm bytes = native bytes), errors, M4 (10,000 environments, documents and layouts through free() and the
+      # FinalizationRegistry) and M2 (memory.buffer stops growing)
+      - run: cargo build -p uo-wasm --features count,write --target wasm32-unknown-unknown --profile wasm
+      - run: node --expose-gc --test crates/uo-wasm/tests/write_api.test.mjs
       # browser baseline Safari 15 / iOS 15 (rust-port skill): the module may use only the
       # features Safari 15 has; the negative case proves the feature list rejects SIMD
       - uses: taiki-e/install-action@v2
@@ -268,6 +285,10 @@ jobs:
           features=-all,wasm1,mutable-global,saturating-float-to-int,sign-extension,reference-types,multi-value,bulk-memory
           cargo build -p uo-wasm --target wasm32-unknown-unknown --profile wasm
           wasm-tools validate --features "$features" target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          # the module of the viewer (render + write, with its uo_host.pdf_chunk import)
+          cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm
+          wasm-tools validate --features "$features" target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          echo "write module: $(stat -c %s target/wasm32-unknown-unknown/wasm/uo_wasm.wasm) bytes"
           echo '(module (func (drop (v128.const i32x4 0 0 0 0))))' | wasm-tools parse -o /tmp/simd.wasm
           ! wasm-tools validate --features "$features" /tmp/simd.wasm
       # the same tests inside WebKit, the engine of Safari
@@ -285,9 +306,11 @@ jobs:
           UO_DML_SOAK=100 UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/dml_memory.test.mjs
           cargo build -p uo-wasm --features dml-selftest --target wasm32-unknown-unknown --profile wasm
           UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/dml_selftest.test.mjs
+          cargo build -p uo-wasm --features count,write --target wasm32-unknown-unknown --profile wasm
+          UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/write_api.test.mjs
 
   dotnet:
-    name: .NET facade (boundary memory, M4) (${{ matrix.os }})
+    name: .NET facade (server PDF parity, boundary memory M4, thread soak) (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -299,7 +322,12 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - run: rustup toolchain install stable --profile minimal && rustup default stable
-      - run: dotnet test dotnet/UniversalOffice.Native.Tests
+      # the facade over uo-ffi (uo-bindings.md): the fixture PDFs equal the TS renderPdf and the Rust native bytes, M4 through
+      # Dispose() and the finalizer, 8 threads converting at once; EXTRA_FONT_DIRS gives the system index the open fonts
+      - run: dotnet test dotnet/UniversalOffice.Docx.Tests -m:2
+        env:
+          EXTRA_FONT_DIRS: ${{ github.workspace }}/shared/fonts/files
+      - run: dotnet run --project dotnet/UniversalOffice.Docx.Smoke -- crates/uo-docx-layout/tests/captures/f8/docs/f8__7__1.docx "$RUNNER_TEMP/smoke.pdf" --font-dir ../shared/fonts/files --font-dir ../site/assets/fonts
 
   miri:
     name: Miri (unsafe code, M6)
@@ -310,8 +338,9 @@ jobs:
       - run: cargo miri setup
       # every crate with unsafe code goes here as it arrives
       - run: cargo miri test -p uo-alloc --features global
-      - run: cargo miri test -p uo-ffi
+      - run: cargo miri test -p uo-ffi --lib
       - run: cargo miri test -p uo-wasm
+      - run: cargo miri test -p uo-wasm --features write --test write_unsafe
 
   leak-sanitizer:
     name: LeakSanitizer (M6)

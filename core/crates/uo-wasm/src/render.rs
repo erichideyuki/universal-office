@@ -49,9 +49,9 @@ pub struct UoBuf {
     data: Vec<u8>,
 }
 
-const OK: i32 = 0;
-const NONE: i32 = 1;
-const NULL_HANDLE: i32 = 11;
+pub(crate) const OK: i32 = 0;
+pub(crate) const NONE: i32 = 1;
+pub(crate) const NULL_HANDLE: i32 = 11;
 
 fn code(e: &ViewError) -> i32 {
     match e {
@@ -68,7 +68,7 @@ fn code(e: &ViewError) -> i32 {
     }
 }
 
-fn buf(status: i32, data: Vec<u8>) -> *mut UoBuf {
+pub(crate) fn buf(status: i32, data: Vec<u8>) -> *mut UoBuf {
     Box::into_raw(Box::new(UoBuf { status, data }))
 }
 
@@ -82,25 +82,25 @@ fn none() -> *mut UoBuf {
 
 /// Little-endian writer of the result layouts.
 #[derive(Default)]
-struct Out(Vec<u8>);
+pub(crate) struct Out(pub(crate) Vec<u8>);
 
 impl Out {
-    fn f64(&mut self, v: f64) -> &mut Self {
+    pub(crate) fn f64(&mut self, v: f64) -> &mut Self {
         self.0.extend_from_slice(&v.to_le_bytes());
         self
     }
 
-    fn u32(&mut self, v: usize) -> &mut Self {
+    pub(crate) fn u32(&mut self, v: usize) -> &mut Self {
         self.0.extend_from_slice(&u32::try_from(v).unwrap_or(u32::MAX).to_le_bytes());
         self
     }
 
-    fn u8(&mut self, v: u8) -> &mut Self {
+    pub(crate) fn u8(&mut self, v: u8) -> &mut Self {
         self.0.push(v);
         self
     }
 
-    fn bytes(&mut self, b: &[u8]) -> &mut Self {
+    pub(crate) fn bytes(&mut self, b: &[u8]) -> &mut Self {
         self.0.extend_from_slice(b);
         self
     }
@@ -111,7 +111,7 @@ impl Out {
 /// # Safety
 /// `ptr` must be null or come from one call to `uo_alloc_bytes(len)`, filled with `len` bytes and not
 /// released or consumed yet.
-unsafe fn take_bytes(ptr: *mut u8, len: usize) -> Vec<u8> {
+pub(crate) unsafe fn take_bytes(ptr: *mut u8, len: usize) -> Vec<u8> {
     if ptr.is_null() {
         return Vec::new();
     }
@@ -141,6 +141,16 @@ unsafe fn view_mut<'a>(view: *mut UoRenderView) -> Option<&'a mut RenderView> {
 #[unsafe(no_mangle)]
 pub extern "C" fn uo_render_view_new(generation: u32) -> *mut UoRenderView {
     Box::into_raw(Box::new(UoRenderView { view: RenderView::from_messages(generation) }))
+}
+
+/// A view handle by value (the layout handle owns one; uo-bindings.md).
+pub(crate) fn view_handle(view: RenderView) -> UoRenderView {
+    UoRenderView { view }
+}
+
+/// The view inside a handle.
+pub(crate) fn view_of(h: &UoRenderView) -> &RenderView {
+    &h.view
 }
 
 /// Adopts a view built elsewhere in the module (the layout handle, a fixture).

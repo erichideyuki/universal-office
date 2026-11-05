@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The .NET facade of the Rust core (0.10, record core/docs/modules/uo-bindings.md): the NuGet
+       UniversalOffice.Docx over the C ABI of uo-ffi (P/Invoke, SafeHandles). Milestone 1: the
+       server PDF path (docx/.doc -> PDF with the server-substitute font policy). The native library
+       of each runtime travels in runtimes/<rid>/native/ (UoNativeRoot below); a development build
+       copies the library cargo built next to the assembly (UoNativeLib). -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>UniversalOffice</RootNamespace>
+    <AssemblyName>UniversalOffice.Docx</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <PackageId>UniversalOffice.Docx</PackageId>
+    <Version>0.10.0-dev</Version>
+    <Authors>Eric Kono</Authors>
+    <Copyright>Copyright (c) 2026 Eric Kono</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://universaloffice.org/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/erichideyuki/universal-office</RepositoryUrl>
+    <Description>Word documents to PDF with the UniversalOffice Rust core: a Word-compatible layout engine with installed or metric-compatible substitute fonts (.docx and Word 97-2003 .doc). Native library per runtime.</Description>
+    <PackageTags>docx;word;ooxml;pdf;docx-to-pdf;doc;layout</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Deterministic>true</Deterministic>
+    <!-- the native libraries to pack: <UoNativeRoot>/<rid>/{uo_ffi.dll,libuo_ffi.so,libuo_ffi.dylib}
+         (CI builds one per runtime and gathers them here before `dotnet pack`) -->
+    <UoNativeRoot Condition="'$(UoNativeRoot)' == ''">$(MSBuildThisFileDirectory)../../target/native-pack</UoNativeRoot>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(UoNativeRoot)')">
+    <None Include="$(UoNativeRoot)/**/uo_ffi.dll;$(UoNativeRoot)/**/libuo_ffi.so;$(UoNativeRoot)/**/libuo_ffi.dylib" Pack="true" PackagePath="runtimes/%(RecursiveDir)native/" Visible="false" />
+  </ItemGroup>
+  <!-- development: a library cargo built (UoNativeLib = its full path) is copied next to the assembly -->
+  <ItemGroup Condition="'$(UoNativeLib)' != '' And Exists('$(UoNativeLib)')">
+    <None Include="$(UoNativeLib)" CopyToOutputDirectory="PreserveNewest" Pack="false" Visible="false" />
+  </ItemGroup>
+</Project>

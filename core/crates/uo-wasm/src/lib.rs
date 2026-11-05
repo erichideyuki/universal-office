@@ -13,6 +13,13 @@ pub mod render;
 #[cfg(feature = "render-fixture")]
 pub mod render_fixture;
 
+// the read path shared with uo-ffi (one file, two bindings: uo-bindings.md) and the Write exports
+#[cfg(feature = "write")]
+#[path = "../../uo-ffi/src/pipeline.rs"]
+pub mod pipeline;
+#[cfg(feature = "write")]
+pub mod write;
+
 #[cfg(feature = "jsnum-memtest")]
 pub mod jsnum_memtest;
 

@@ -1,37 +1,42 @@
-//! C ABI of the Rust core for the .NET facade.
+//! C ABI of the Rust core for the .NET facade (`core/dotnet/UniversalOffice.Docx`). Milestone 1:
+//! the server PDF path (uo-pdf frontier S). Record: `core/docs/modules/uo-bindings.md`.
 //!
-//! Foundation skeleton: it proves the boundary before the first module — opaque handles
-//! owned by Rust and released by the caller, buffers passed as pointer + length, panics
-//! caught before they cross the ABI (unwinding into .NET is undefined behaviour), and the
-//! memory counters the M4 tests read. The `UoDocument` here is a placeholder resource; the
-//! real API arrives with the modules.
+//! Conventions of every export (the Editing API of uo-docx D3 joins them later):
+//! - **status**: an `int32` from [`pipeline::code`] (0 ok); the details of a failure through
+//!   [`pipeline::uo_last_error`] / [`pipeline::uo_last_error_message`], a per-thread slot that every
+//!   export clears first;
+//! - **handles** (`UoConverter`, `UoBuf`, `UoCancel`) are created by an export and released ONLY by
+//!   their `*_free` (the facade wraps each in a `SafeHandle`, so `Dispose()` and the finalizer end
+//!   there); a null handle is the `ARGUMENT` code, never a crash; `*_free(null)` is a no-op;
+//! - **buffers in** are `(ptr, len)` the call only reads during the call; **buffers out** are
+//!   `UoBuf` handles the caller reads (`uo_buf_ptr`/`uo_buf_len`), copies and frees;
+//! - **options** are `#[repr(C)]` structs whose first field is their size in bytes (a newer facade
+//!   may pass a longer struct; a shorter one is refused);
+//! - **threads**: a `UoConverter` is shared by any number of threads at once (`Send + Sync`); a
+//!   `UoBuf` belongs to one caller; a `UoCancel` is raised from any thread;
+//! - **panics** are caught in every export and become the `INTERNAL` code (unwinding into .NET is
+//!   undefined behaviour).
 //!
-//! Rules for every export:
-//! - handles are created by `uo_*_new` and released ONLY by `uo_*_free` (the .NET side wraps
-//!   them in a `SafeHandle`, so both `Dispose()` and the finalizer end there);
-//! - a null handle or buffer is an error status, never a crash;
-//! - every body runs inside [`guard`].
+//! Native only: the browser binding is uo-wasm (which shares [`pipeline`]); on wasm32 this crate is empty.
+#![cfg(not(target_arch = "wasm32"))]
+
+pub mod pipeline;
+pub mod server;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Result of an export, as an `int` on the C side.
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UoStatus {
-    Ok = 0,
-    NullArgument = 1,
-    /// a panic was caught at the boundary (a bug in the core)
-    Panic = 2,
-}
+use uo_docx_layout::options::{Clock, Hyphenation, RevisionMode, RevisionView, TimeZoneRule};
 
-/// Placeholder resource owned by Rust (replaced by the real document type).
-#[derive(Debug, Default)]
-pub struct UoDocument {
-    bytes: Vec<u8>,
-}
+use pipeline::{JobError, Trust, clear_last, code, fail, fail_with};
+use server::{Converter, ConverterOptions, PdfJob};
 
-fn guard(f: impl FnOnce() -> UoStatus) -> UoStatus {
-    catch_unwind(AssertUnwindSafe(f)).unwrap_or(UoStatus::Panic)
+/// Runs an export body: clears the last error, catches a panic.
+fn guard(f: impl FnOnce() -> i32) -> i32 {
+    clear_last();
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|_| fail_with(code::INTERNAL, "internal error (a panic was caught at the boundary)"))
 }
 
 /// Version of the core (static, NUL-terminated).
@@ -40,57 +45,303 @@ pub extern "C" fn uo_version() -> *const u8 {
     concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr()
 }
 
-/// New handle; release it with [`uo_document_free`].
-#[unsafe(no_mangle)]
-pub extern "C" fn uo_document_new() -> *mut UoDocument {
-    Box::into_raw(Box::new(UoDocument::default()))
-}
-
-/// Appends `len` bytes from `data` to the document.
+/// Reads `(ptr, len)` as bytes the call borrows; `None` for a null pointer with a length.
 ///
 /// # Safety
-/// `doc` must come from [`uo_document_new`] and not be freed; `data` must point to `len`
-/// readable bytes (or be null with `len == 0`).
+/// `ptr` must be null or point to `len` readable bytes that stay valid for `'a`.
+unsafe fn bytes_in<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
+    if len == 0 {
+        return Some(&[]);
+    }
+    if ptr.is_null() {
+        return None;
+    }
+    // SAFETY: the caller guarantees `ptr` points to `len` readable bytes.
+    Some(unsafe { std::slice::from_raw_parts(ptr, len) })
+}
+
+/// UTF-8 `(ptr, len)` split on `'\n'` (empty items dropped).
+///
+/// # Safety
+/// As [`bytes_in`].
+unsafe fn lines_in(ptr: *const u8, len: usize) -> Option<Vec<String>> {
+    // SAFETY: forwarded.
+    let b = unsafe { bytes_in(ptr, len) }?;
+    let s = std::str::from_utf8(b).ok()?;
+    Some(s.split('\n').filter(|l| !l.is_empty()).map(str::to_owned).collect())
+}
+
+// ───────────────────────────── buffers ─────────────────────────────
+
+/// An owned output buffer.
+pub struct UoBuf {
+    data: Vec<u8>,
+}
+
+fn buf_out(out: *mut *mut UoBuf, data: Vec<u8>) {
+    // SAFETY: every caller checked `out` for null before doing the work.
+    unsafe { *out = Box::into_raw(Box::new(UoBuf { data })) };
+}
+
+/// # Safety
+/// `b` must be null or a live buffer; the pointer is valid until the buffer is released.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn uo_document_append(doc: *mut UoDocument, data: *const u8, len: usize) -> UoStatus {
+pub unsafe extern "C" fn uo_buf_ptr(b: *const UoBuf) -> *const u8 {
+    // SAFETY: the caller guarantees `b` is null or live.
+    unsafe { b.as_ref() }.map_or(std::ptr::null(), |b| b.data.as_ptr())
+}
+
+/// # Safety
+/// `b` must be null or a live buffer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_buf_len(b: *const UoBuf) -> usize {
+    // SAFETY: the caller guarantees `b` is null or live.
+    unsafe { b.as_ref() }.map_or(0, |b| b.data.len())
+}
+
+/// # Safety
+/// `b` must be null or a live buffer, released only once.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_buf_free(b: *mut UoBuf) {
+    if !b.is_null() {
+        // SAFETY: the caller guarantees `b` came from this library and is released once.
+        drop(unsafe { Box::from_raw(b) });
+    }
+}
+
+// ───────────────────────────── cancellation ─────────────────────────────
+
+/// A cancellation flag shared with the jobs given it (the facade raises it from a
+/// `CancellationToken` registration).
+pub struct UoCancel {
+    flag: Arc<AtomicBool>,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn uo_cancel_new() -> *mut UoCancel {
+    Box::into_raw(Box::new(UoCancel { flag: Arc::new(AtomicBool::new(false)) }))
+}
+
+/// Raises the flag: running jobs stop at their next check (code `CANCELLED`).
+///
+/// # Safety
+/// `c` must be null or a live flag.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_cancel_raise(c: *const UoCancel) {
+    // SAFETY: the caller guarantees `c` is null or live.
+    if let Some(c) = unsafe { c.as_ref() } {
+        c.flag.store(true, Ordering::Relaxed);
+    }
+}
+
+/// # Safety
+/// `c` must be null or a live flag, released only once (a job holding it keeps its own reference).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_cancel_free(c: *mut UoCancel) {
+    if !c.is_null() {
+        // SAFETY: the caller guarantees `c` came from uo_cancel_new and is released once.
+        drop(unsafe { Box::from_raw(c) });
+    }
+}
+
+// ───────────────────────────── the converter ─────────────────────────────
+
+/// `UoConverterOptions.flags`: index the machine's font folders.
+pub const CONVERTER_SYSTEM_FONTS: u32 = 1;
+/// `UoConverterOptions.flags`: the documents are trusted (the target's default effect and image caps).
+pub const CONVERTER_TRUSTED: u32 = 2;
+
+/// Options of [`uo_converter_new`].
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct UoConverterOptions {
+    /// `sizeof(UoConverterOptions)`
+    pub size: u32,
+    /// `CONVERTER_*` bits
+    pub flags: u32,
+    /// extra font folders, UTF-8, separated by `'\n'` (may be null with length 0)
+    pub font_dirs: *const u8,
+    pub font_dirs_len: usize,
+}
+
+/// The shared converter of a host (see [`server::Converter`]).
+pub struct UoConverter {
+    conv: Converter,
+}
+
+/// Creates a converter (scans the font folders: the process-wide system index is scanned once).
+///
+/// # Safety
+/// `o` must point to a `UoConverterOptions` whose strings are valid for the call; `out` must be
+/// writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_converter_new(o: *const UoConverterOptions, out: *mut *mut UoConverter) -> i32 {
     guard(|| {
-        // SAFETY: the caller guarantees `doc` is a live handle from uo_document_new.
-        let Some(doc) = (unsafe { doc.as_mut() }) else { return UoStatus::NullArgument };
-        if len == 0 {
-            return UoStatus::Ok;
+        // SAFETY: the caller guarantees `o` is null or a valid options struct.
+        let Some(o) = (unsafe { o.as_ref() }) else { return fail(&JobError::Argument("options")) };
+        if out.is_null() || (o.size as usize) < size_of::<UoConverterOptions>() {
+            return fail(&JobError::Argument("options size or output"));
         }
-        if data.is_null() {
-            return UoStatus::NullArgument;
-        }
-        // SAFETY: the caller guarantees `data` points to `len` readable bytes.
-        let src = unsafe { std::slice::from_raw_parts(data, len) };
-        doc.bytes.extend_from_slice(src);
-        UoStatus::Ok
+        // SAFETY: the caller guarantees the font_dirs string.
+        let Some(dirs) = (unsafe { lines_in(o.font_dirs, o.font_dirs_len) }) else { return fail(&JobError::Argument("font_dirs")) };
+        let opts = ConverterOptions {
+            system_fonts: o.flags & CONVERTER_SYSTEM_FONTS != 0,
+            font_dirs: dirs.into_iter().map(PathBuf::from).collect(),
+            trust: if o.flags & CONVERTER_TRUSTED != 0 { Trust::Trusted } else { Trust::Untrusted },
+        };
+        let conv = Box::new(UoConverter { conv: Converter::new(&opts) });
+        // SAFETY: `out` was checked for null; the caller guarantees it is writable.
+        unsafe { *out = Box::into_raw(conv) };
+        code::OK
     })
 }
 
-/// Number of bytes in the document (0 for a null handle).
-///
 /// # Safety
-/// `doc` must be null or a live handle from [`uo_document_new`].
+/// `c` must be null or a live converter no job is using, released only once.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn uo_document_len(doc: *const UoDocument) -> usize {
-    // SAFETY: the caller guarantees `doc` is null or a live handle.
-    unsafe { doc.as_ref() }.map_or(0, |d| d.bytes.len())
-}
-
-/// Releases a handle (null is ignored).
-///
-/// # Safety
-/// `doc` must be null or a live handle from [`uo_document_new`], released only once.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn uo_document_free(doc: *mut UoDocument) {
-    if !doc.is_null() {
-        // SAFETY: the caller guarantees `doc` came from Box::into_raw in uo_document_new and
-        // is released once.
-        drop(unsafe { Box::from_raw(doc) });
+pub unsafe extern "C" fn uo_converter_free(c: *mut UoConverter) {
+    if !c.is_null() {
+        // SAFETY: the caller guarantees `c` came from uo_converter_new and is released once.
+        drop(unsafe { Box::from_raw(c) });
     }
 }
+
+/// The families of the converter's font index, UTF-8 separated by `'\n'`.
+///
+/// # Safety
+/// `c` must be null or a live converter; `out` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_converter_families(c: *const UoConverter, out: *mut *mut UoBuf) -> i32 {
+    guard(|| {
+        // SAFETY: the caller guarantees `c` is null or live.
+        let Some(c) = (unsafe { c.as_ref() }) else { return fail(&JobError::Argument("converter")) };
+        if out.is_null() {
+            return fail(&JobError::Argument("output"));
+        }
+        buf_out(out, c.conv.families().join("\n").into_bytes());
+        code::OK
+    })
+}
+
+/// `UoPdfJob.flags`: compress the content streams (the default of the facade).
+pub const JOB_COMPRESS: u32 = 1;
+/// `UoPdfJob.flags`: no automatic hyphenation (`LayoutOptions.Hyphenation = false`).
+pub const JOB_NO_HYPHENATION: u32 = 2;
+/// `UoPdfJob.flags`: `hyph_langs` is given (`HyphenationLanguages`; empty = hyphenate nothing).
+pub const JOB_HYPHENATION_LANGUAGES: u32 = 4;
+
+/// Options of one conversion.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct UoPdfJob {
+    /// `sizeof(UoPdfJob)`
+    pub size: u32,
+    /// `JOB_*` bits
+    pub flags: u32,
+    /// the instant DATE/TIME show, ms since the epoch; NaN = now
+    pub now_ms: f64,
+    /// the local offset of the host at that instant, minutes east of UTC
+    pub tz_offset_min: i32,
+    /// tracked changes: 0 the final view without marks (default), 1 final, 2 simple, 3 all, 4 original
+    pub revisions: u32,
+    /// pages of one layout (0 = the default limit)
+    pub max_pages: u32,
+    pub reserved: u32,
+    /// numbers and dates language, UTF-8 (`pt-BR` when empty)
+    pub lang: *const u8,
+    pub lang_len: usize,
+    /// `HyphenationLanguages`, UTF-8 separated by `'\n'` (read with `JOB_HYPHENATION_LANGUAGES`)
+    pub hyph_langs: *const u8,
+    pub hyph_langs_len: usize,
+}
+
+fn now_ms() -> f64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| (d.as_secs_f64() * 1000.0).floor())
+}
+
+/// The job of a `UoPdfJob`.
+///
+/// # Safety
+/// The strings of `j` must be valid for the call.
+unsafe fn job_of(j: &UoPdfJob) -> Result<PdfJob, JobError> {
+    if (j.size as usize) < size_of::<UoPdfJob>() {
+        return Err(JobError::Argument("job size"));
+    }
+    let mut job = PdfJob { compress: j.flags & JOB_COMPRESS != 0, ..PdfJob::default() };
+    let o = &mut job.layout;
+    // SAFETY: forwarded from the caller.
+    let lang = unsafe { bytes_in(j.lang, j.lang_len) }.and_then(|b| std::str::from_utf8(b).ok()).ok_or(JobError::Argument("lang"))?;
+    if !lang.is_empty() {
+        o.lang = lang.into();
+    }
+    o.clock =
+        Clock { now_ms: if j.now_ms.is_nan() { now_ms() } else { j.now_ms }, tz: TimeZoneRule::Fixed { offset_min: j.tz_offset_min } };
+    if j.flags & JOB_NO_HYPHENATION != 0 {
+        o.hyphenation = Hyphenation::Off;
+    }
+    if j.flags & JOB_HYPHENATION_LANGUAGES != 0 {
+        // SAFETY: forwarded from the caller.
+        let langs = unsafe { lines_in(j.hyph_langs, j.hyph_langs_len) }.ok_or(JobError::Argument("hyph_langs"))?;
+        o.hyphenation_languages = Some(langs.into_iter().map(Box::<str>::from).collect());
+    }
+    let mode = match j.revisions {
+        0 => None,
+        1 => Some(RevisionMode::Final),
+        2 => Some(RevisionMode::Simple),
+        3 => Some(RevisionMode::All),
+        4 => Some(RevisionMode::Original),
+        _ => return Err(JobError::Argument("revisions")),
+    };
+    o.revisions = mode.map(|mode| RevisionView { mode, ..RevisionView::default() });
+    if j.max_pages > 0 {
+        o.limits.max_pages = j.max_pages;
+    }
+    Ok(job)
+}
+
+/// `.docx` or `.doc` bytes → PDF bytes (the server path). `cancel` may be null.
+///
+/// # Safety
+/// `c` must be null or a live converter; `data` must point to `len` readable bytes; `job` to a
+/// valid `UoPdfJob`; `cancel` null or a live flag; `out` writable. The buffers are only read during
+/// the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_docx_to_pdf(
+    c: *const UoConverter,
+    data: *const u8,
+    len: usize,
+    job: *const UoPdfJob,
+    cancel: *const UoCancel,
+    out: *mut *mut UoBuf,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the caller guarantees `c`, `job` and `cancel` are null or valid.
+        let (Some(c), Some(j)) = (unsafe { c.as_ref() }, unsafe { job.as_ref() }) else {
+            return fail(&JobError::Argument("converter or job"));
+        };
+        if out.is_null() {
+            return fail(&JobError::Argument("output"));
+        }
+        // SAFETY: the caller guarantees `data` has `len` readable bytes.
+        let Some(bytes) = (unsafe { bytes_in(data, len) }) else { return fail(&JobError::Argument("data")) };
+        // SAFETY: the caller guarantees the strings of the job.
+        let pdf_job = match unsafe { job_of(j) } {
+            Ok(p) => p,
+            Err(e) => return fail(&e),
+        };
+        // SAFETY: the caller guarantees `cancel` is null or live.
+        let flag = unsafe { cancel.as_ref() }.map(|k| Arc::clone(&k.flag));
+        match c.conv.docx_to_pdf(bytes.to_vec(), &pdf_job, flag) {
+            Ok(pdf) => {
+                buf_out(out, pdf);
+                code::OK
+            }
+            Err(e) => fail(&e),
+        }
+    })
+}
+
+// ───────────────────────────── memory (tests) ─────────────────────────────
 
 /// 1 when this build counts memory (feature `count`), else 0.
 #[unsafe(no_mangle)]
@@ -111,34 +362,145 @@ pub extern "C" fn uo_memory_live_bytes() -> i64 {
     -1
 }
 
+/// Drops the process-wide caches: the face cache's unpinned faces and the shared system font index
+/// (a converter still alive keeps its own reference). The end of a host's life, and what the memory
+/// tests call before they read the live bytes.
+#[unsafe(no_mangle)]
+pub extern "C" fn uo_clear_caches() {
+    let _ = catch_unwind(|| {
+        uo_fonts::system::SystemFontIndex::release_shared();
+        uo_fonts::registry::FaceCache::shared().clear();
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pipeline::{UoErrorInfo, uo_last_error, uo_last_error_message};
+
+    fn last() -> (i32, String) {
+        let mut info = UoErrorInfo::default();
+        // SAFETY: `info` is writable; the message buffer has its full length.
+        unsafe {
+            let c = uo_last_error(&raw mut info);
+            let mut msg = vec![0u8; usize::try_from(info.message_len).unwrap()];
+            let n = uo_last_error_message(msg.as_mut_ptr(), msg.len());
+            assert_eq!(n, msg.len());
+            (c, String::from_utf8(msg).unwrap())
+        }
+    }
 
     #[test]
     fn null_arguments_are_errors_not_crashes() {
+        let mut out: *mut UoBuf = std::ptr::null_mut();
         // SAFETY: null handles are part of the documented contract.
         unsafe {
-            assert_eq!(uo_document_append(std::ptr::null_mut(), std::ptr::null(), 1), UoStatus::NullArgument);
-            assert_eq!(uo_document_len(std::ptr::null()), 0);
-            uo_document_free(std::ptr::null_mut());
+            assert_eq!(
+                uo_docx_to_pdf(std::ptr::null(), std::ptr::null(), 0, std::ptr::null(), std::ptr::null(), &raw mut out),
+                code::ARGUMENT
+            );
+            assert_eq!(last().0, code::ARGUMENT);
+            assert_eq!(uo_converter_families(std::ptr::null(), &raw mut out), code::ARGUMENT);
+            assert_eq!(uo_converter_new(std::ptr::null(), std::ptr::null_mut()), code::ARGUMENT);
+            assert_eq!(uo_buf_len(std::ptr::null()), 0);
+            assert!(uo_buf_ptr(std::ptr::null()).is_null());
+            uo_buf_free(std::ptr::null_mut());
+            uo_cancel_raise(std::ptr::null());
+            uo_cancel_free(std::ptr::null_mut());
+            uo_converter_free(std::ptr::null_mut());
         }
+        assert!(out.is_null());
     }
 
     #[test]
     fn a_panic_does_not_cross_the_boundary() {
-        assert_eq!(guard(|| panic!("bug")), UoStatus::Panic);
+        assert_eq!(guard(|| panic!("bug")), code::INTERNAL);
+        assert_eq!(last().0, code::INTERNAL);
+        // the next call clears the slot
+        assert_eq!(guard(|| code::OK), code::OK);
+        assert_eq!(last(), (0, String::new()));
+    }
+
+    fn converter(flags: u32) -> *mut UoConverter {
+        let o = UoConverterOptions {
+            size: u32::try_from(size_of::<UoConverterOptions>()).unwrap(),
+            flags,
+            font_dirs: std::ptr::null(),
+            font_dirs_len: 0,
+        };
+        let mut c = std::ptr::null_mut();
+        // SAFETY: valid options and output.
+        assert_eq!(unsafe { uo_converter_new(&raw const o, &raw mut c) }, code::OK);
+        c
+    }
+
+    fn job() -> UoPdfJob {
+        UoPdfJob {
+            size: u32::try_from(size_of::<UoPdfJob>()).unwrap(),
+            flags: JOB_COMPRESS,
+            now_ms: 0.0,
+            tz_offset_min: 0,
+            revisions: 0,
+            max_pages: 0,
+            reserved: 0,
+            lang: std::ptr::null(),
+            lang_len: 0,
+            hyph_langs: std::ptr::null(),
+            hyph_langs_len: 0,
+        }
     }
 
     #[test]
-    fn append_and_free() {
-        let d = uo_document_new();
-        let data = [1u8, 2, 3];
-        // SAFETY: `d` is live and `data` has 3 bytes.
+    fn a_short_struct_and_garbage_are_refused_with_a_message() {
+        let c = converter(0);
+        let mut out = std::ptr::null_mut();
+        let garbage = [1u8, 2, 3, 4];
+        let mut j = job();
+        // SAFETY: live converter, readable data, valid job.
         unsafe {
-            assert_eq!(uo_document_append(d, data.as_ptr(), data.len()), UoStatus::Ok);
-            assert_eq!(uo_document_len(d), 3);
-            uo_document_free(d);
+            assert_eq!(
+                uo_docx_to_pdf(c, garbage.as_ptr(), garbage.len(), &raw const j, std::ptr::null(), &raw mut out),
+                code::INVALID_DATA
+            );
+            let (code_, msg) = last();
+            assert_eq!(code_, code::INVALID_DATA);
+            assert!(!msg.is_empty());
+            j.size = 8;
+            assert_eq!(uo_docx_to_pdf(c, garbage.as_ptr(), garbage.len(), &raw const j, std::ptr::null(), &raw mut out), code::ARGUMENT);
+            j = job();
+            j.revisions = 9;
+            assert_eq!(uo_docx_to_pdf(c, garbage.as_ptr(), garbage.len(), &raw const j, std::ptr::null(), &raw mut out), code::ARGUMENT);
+            assert!(out.is_null());
+            uo_converter_free(c);
         }
+    }
+
+    #[test]
+    fn a_raised_flag_cancels_before_the_work() {
+        let c = converter(0);
+        let k = uo_cancel_new();
+        let mut out = std::ptr::null_mut();
+        let j = job();
+        let docx = minimal_docx();
+        // SAFETY: live handles, readable data.
+        unsafe {
+            uo_cancel_raise(k);
+            assert_eq!(uo_docx_to_pdf(c, docx.as_ptr(), docx.len(), &raw const j, k, &raw mut out), code::CANCELLED);
+            uo_cancel_free(k);
+            uo_converter_free(c);
+        }
+        assert!(out.is_null());
+    }
+
+    /// The smallest WordprocessingML package: one paragraph.
+    pub(crate) fn minimal_docx() -> Vec<u8> {
+        let ct = r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
+        let rels = r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+        let doc = r#"<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>"#;
+        uo_opc::zip::write(
+            [("[Content_Types].xml", ct.as_bytes()), ("_rels/.rels", rels.as_bytes()), ("word/document.xml", doc.as_bytes())],
+            uo_opc::zip::WriteOptions::default(),
+        )
+        .unwrap()
     }
 }

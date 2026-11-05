@@ -28,7 +28,12 @@ assert.throws = (fn, expected, message) => {
     for (const [k, v] of Object.entries(expected)) if (!Object.is(error?.[k], v)) fail(message, `expected the error to have ${k} = ${v}, got ${error?.[k]}`);
   } else if (expected instanceof RegExp) {
     if (!expected.test(String(error?.message ?? error))) fail(message, `the error ${error} does not match ${expected}`);
-  } else if (typeof expected === 'function' && !(error instanceof expected)) fail(message, `the error is not a ${expected.name}`);
+  } else if (typeof expected === 'function') {
+    // Node: a constructor is checked with instanceof; any other function validates and must return true
+    if (expected.prototype !== undefined && error instanceof expected) return;
+    if (expected === Error || Error.isPrototypeOf(expected) || expected.prototype !== undefined) fail(message, `the error is not a ${expected.name}`);
+    if (expected(error) !== true) fail(message, `the error ${error} does not pass the validation function`);
+  }
 };
 assert.AssertionError = AssertionError;
 

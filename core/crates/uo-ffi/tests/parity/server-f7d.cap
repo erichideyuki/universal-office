@@ -1,0 +1,19 @@
+# PP0 of the uo-pdf painter (frontier P): the frozen TS renderPdf over generated and real layouts
+# regenerate: see tests/parity_support/capture_painter.mjs
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+@documents 12
+@pages 32
+@errors 0
+@ts-throws 0
+f7d__7__0	raw=374191:6dac1d879b51b6f680359f4c4226a138	norm=34:f5b62ea3b54dff857966e89392fa5a1f	deflated=13
+f7d__7__1	raw=271480:368a8a691544306bfddf7a3c8ca98375	norm=34:671998dd12e68069978f20a8e7709e23	deflated=13
+f7d__7__10	raw=321074:69605f3b3e66ce6287aa477487c20e61	norm=34:6329239c49b7d5255eda20e56d944bda	deflated=13
+f7d__7__11	raw=376586:722868c5b861ffef3ff8a3368254226f	norm=41:6ca9efdd7eeccebc059abd7ae7706613	deflated=16
+f7d__7__2	raw=561228:0d01ba150d15a0f636ab188cdf98a20e	norm=68:55d89cc6a3d45e91b2e1e20df8b2d80e	deflated=28
+f7d__7__3	raw=344069:08a4208ebfd7ef819d0306c957a9c23a	norm=39:88dc8bc1e0fa19ab5e8c2a07cfcade85	deflated=15
+f7d__7__4	raw=305031:8cefb6b4b0a6a7faa927b3c19cf0b79a	norm=34:1884212987cd40ae58798448866275fd	deflated=13
+f7d__7__5	raw=510531:20735807de3abae26755bde598e24134	norm=56:ba04e85ef781d1ca23261de55419dd9b	deflated=23
+f7d__7__6	raw=271850:1ca15a591b4a2377cae9680a4a630d05	norm=34:4f993780fe5146ba98f8b834be2abac9	deflated=13
+f7d__7__7	raw=429911:09757246741cb038f7f414476180030d	norm=52:dafb501962f6ccf2dad5fd3c7c2e4fa1	deflated=21
+f7d__7__8	raw=458402:43730d4de2333e771270e56f595f34ce	norm=53:17fdb87165b03c04f1726035b8625978	deflated=21
+f7d__7__9	raw=371386:fd8ee476a61394dc17320a0fc579486e	norm=44:dd63feea3eb352cbb4c6a5e36312d40d	deflated=17

@@ -12,11 +12,27 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# memory counters exposed to the .NET tests (M4); never in the shipped library
+# memory counters and the test-only buffer export exposed to the .NET tests (M4); never in the shipped library
 count = ["dep:uo-alloc", "uo-alloc/global"]
 
 [dependencies]
 uo-alloc = { path = "../uo-alloc", optional = true }
+# the read path of milestone 1 (record core/docs/modules/uo-bindings.md): docx (and .doc, D4) → model → layout → PDF
+uo-opc = { path = "../uo-opc" }
+uo-docx = { path = "../uo-docx", features = ["doc"] }
+# the TS Set of the hyphenation patterns loaded (LayoutOptions)
+indexmap = "2"
+uo-docx-layout = { path = "../uo-docx-layout" }
+uo-render = { path = "../uo-render" }
+uo-pdf = { path = "../uo-pdf" }
+uo-drawingml = { path = "../uo-drawingml" }
+# the server font policy over the machine's fonts (`system`) and the hyphenation patterns compiled in (`hyphen-data`)
+uo-fonts = { path = "../uo-fonts", features = ["system", "hyphen-data"] }
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# sha256 and the capture reader of the TS parity test (tests/server_parity.rs)
+uo-testkit = { path = "../uo-testkit" }
 
 [lints]
 workspace = true
