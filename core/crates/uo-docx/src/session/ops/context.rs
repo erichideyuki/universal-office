@@ -257,27 +257,27 @@ pub fn restore_context(s: &mut Session, step: ContextStep, prev: &EditContext) {
             s.dirty_hf.insert(part);
             // the TS re-enters the header/footer only when it was being edited (`hf`), on the
             // same page: D2a keeps the part edited before the pop (D2a-C2)
-            if let EditContext::HeaderFooter { part: p0, page, saved } = prev {
-                s.ctx = EditContext::HeaderFooter { part: *p0, page: *page, saved: *saved };
+            if let EditContext::HeaderFooter { part: p0, page, .. } = prev {
+                s.ctx = EditContext::HeaderFooter { part: *p0, page: *page, saved: body_sel };
                 s.selection = if part == *p0 { selection } else { s.selection };
             }
         }
         ContextStep::Textbox { outer, page, .. } => {
             // re-entering the box (`reenterTextbox`) needs `contextTextboxRuns` and the layout's
             // object: the drawing family's (D2b-F7); D2a returns to the outer context
-            if let (Some(p), EditContext::HeaderFooter { part: p0, saved, .. }) = (outer, prev)
+            if let (Some(p), EditContext::HeaderFooter { part: p0, .. }) = (outer, prev)
                 && p == *p0
             {
-                s.ctx = EditContext::HeaderFooter { part: p, page, saved: *saved };
+                s.ctx = EditContext::HeaderFooter { part: p, page, saved: body_sel };
             }
         }
     }
     if !matches!(s.ctx, EditContext::HeaderFooter { .. })
-        && let EditContext::HeaderFooter { part: p0, page, saved } = prev
+        && let EditContext::HeaderFooter { part: p0, page, .. } = prev
         && !matches!(s.ctx, EditContext::Cell { .. } | EditContext::Note { .. })
     {
         // the step was not taken in the header: still re-entered, the cursor of then
-        s.ctx = EditContext::HeaderFooter { part: *p0, page: *page, saved: *saved };
+        s.ctx = EditContext::HeaderFooter { part: *p0, page: *page, saved: body_sel };
     }
     let paras = story_of(&s.doc, &s.ctx).map(|st| &st.paras);
     s.selection = clamp_selection(paras, s.selection);
@@ -437,9 +437,13 @@ impl Session {
                 }
                 if let EditContext::HeaderFooter { saved, .. } = self.ctx {
                     self.ctx = EditContext::Body;
-                    self.selection = saved;
+                    // the body may have changed while the part was edited (an undo): clamped (D2a-C4)
+                    self.selection = clamp_selection(self.paras(), saved);
                     self.pending_props = None;
                     self.tx.events.push(Event::HfMode { active: false });
+                    // `exitHeaderFooter(false, true)` relays out: `syncSections` runs with the body in
+                    // context again (what the edit of the page setup left pending, D2b-F4)
+                    self.settle();
                 }
                 Ok(Outcome::Done(self.change_set()))
             }

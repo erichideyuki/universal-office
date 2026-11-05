@@ -205,7 +205,7 @@ impl Session {
     }
 
     /// `splitAt(pos)` (Enter).
-    fn split_typed(&mut self, pos: DocPosition) -> Result<DocPosition, CommandError> {
+    pub(crate) fn split_typed(&mut self, pos: DocPosition) -> Result<DocPosition, CommandError> {
         let rev = self.opts.tracking.then(|| self.new_rev());
         let ctx = self.ctx.clone();
         let doc = &mut self.doc;

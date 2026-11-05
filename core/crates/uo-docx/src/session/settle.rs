@@ -18,11 +18,11 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 
 use crate::ids::HfPartId;
-use crate::js::{JsNumber, JsRecord, Str};
+use crate::js::{JsNumber, JsObject, JsRecord, Str};
 use crate::model::Document;
 use crate::model::para::{HfRefEdit, Paragraph, SectionBreak};
 use crate::model::run::{RprLink, Run};
-use crate::model::section::{HfRef, SectPr, Section, SectionProps};
+use crate::model::section::{ColDef, HfRef, LineNumbering, LnNumType, SectPr, Section, SectionProps};
 use crate::model::story::Story;
 use crate::pvec::PVec;
 use crate::text::Utf16;
@@ -473,6 +473,11 @@ impl SectionState {
             if !Arc::ptr_eq(&sec.sect_pr, sp) {
                 return Match::Differ;
             }
+            // the derived part of the effective section (type, line numbers, vertical alignment,
+            // columns of the `sectPr`) follows the model at every sync (the TS cache key)
+            if !sec.sect.as_deref().is_some_and(|s| derived_matches(s, sp)) {
+                return Match::Differ;
+            }
             if !(self.refs_kept(&sec.header_refs, hdr, "header") && self.refs_kept(&sec.footer_refs, ftr, "footer")) {
                 return Match::Differ;
             }
@@ -523,6 +528,43 @@ impl SectionState {
         let props = self.section_props.get(&id).cloned().flatten();
         let mut sect = props.map_or_else(|| SectionProps { r#type: "nextPage".into(), ..SectionProps::default() }, |p| (*p).clone());
         sect.r#type = sp.r#type.clone().unwrap_or_else(|| "nextPage".into());
+        // line numbers, vertical alignment and the own column widths live in the model (editable)
+        match &sp.ln_num_type {
+            Some(l) => {
+                let mut out = LnNumType::default();
+                // `{ ...sp.lnNumType }`: the key order of the model's object
+                for i in obj::key_indices(l) {
+                    match LineNumbering::keys().get(usize::from(i)).copied().unwrap_or("") {
+                        "countBy" => obj::set(&mut out, "countBy", |o| o.count_by = l.count_by),
+                        "start" => obj::set(&mut out, "start", |o| o.start = l.start),
+                        "distance" => obj::set(&mut out, "distance", |o| o.distance = l.distance),
+                        "restart" => obj::set(&mut out, "restart", |o| o.restart = l.restart.clone()),
+                        _ => {}
+                    }
+                }
+                obj::set(&mut sect, "lnNumType", |s| s.ln_num_type = Some(out));
+            }
+            None => obj::delete(&mut sect, "lnNumType"),
+        }
+        match &sp.v_align {
+            Some(v) => {
+                let v = v.clone();
+                obj::set(&mut sect, "vAlign", |s| s.v_align = Some(v));
+            }
+            None => obj::delete(&mut sect, "vAlign"),
+        }
+        match sp.cols.as_ref().and_then(|c| c.widths.as_ref()) {
+            Some(ws) => {
+                let defs: Vec<ColDef> =
+                    ws.iter().map(|w| ColDef { w: w.width_twips, space: w.space_twips, ..ColDef::default() }).collect();
+                obj::set(&mut sect, "colDefs", |s| s.col_defs = Some(defs));
+                obj::set(&mut sect, "equalWidth", |s| s.equal_width = Some(false));
+            }
+            None => {
+                obj::delete(&mut sect, "colDefs");
+                obj::delete(&mut sect, "equalWidth");
+            }
+        }
         let (block_start, block_end) = block_range(&doc.body, start_para, end_para);
         let mut sec = Section {
             sect_pr: Arc::clone(sp),
@@ -553,6 +595,31 @@ impl SectionState {
             }
         }
         sec
+    }
+}
+
+/// Whether the derived props of an effective section (`effectiveSection`) are what its `sectPr`
+/// gives: the type, the line numbers, the vertical alignment and the own column widths.
+fn derived_matches(sect: &SectionProps, sp: &SectPr) -> bool {
+    if sect.r#type.as_ref() != sp.r#type.as_deref().unwrap_or("nextPage") {
+        return false;
+    }
+    let ln = match (&sect.ln_num_type, &sp.ln_num_type) {
+        (None, None) => true,
+        (Some(a), Some(b)) => a.count_by == b.count_by && a.start == b.start && a.distance == b.distance && a.restart == b.restart,
+        _ => false,
+    };
+    if !ln || sect.v_align != sp.v_align {
+        return false;
+    }
+    match (sp.cols.as_ref().and_then(|c| c.widths.as_ref()), &sect.col_defs) {
+        (None, None) => sect.equal_width.is_none(),
+        (Some(ws), Some(defs)) => {
+            sect.equal_width == Some(false)
+                && ws.len() == defs.len()
+                && ws.iter().zip(defs).all(|(w, d)| w.width_twips == d.w && w.space_twips == d.space)
+        }
+        _ => false,
     }
 }
 

@@ -151,6 +151,8 @@ pub struct Session {
     f9: ops::navigation::F9State,
     /// the notes family's own state (the loaded note settings, the last conversion; D2b-F5)
     f5: ops::notes::F5State,
+    /// the sections / header-footer / page family's own state (D2b-F4)
+    f4: ops::sections::F4State,
     settings: Arc<SettingsStep>,
     sections: SectionState,
     save: SaveState,
@@ -748,6 +750,7 @@ impl Session {
             numbering: Some(self.numbering.version()),
             settings: Arc::clone(&self.settings),
             body_sect_pr: Arc::clone(&self.sections.body_sect_pr),
+            body_refs: self.sections.body_refs.clone(),
             deep_hf,
             deep_notes,
             hf_parts: hf_parts.into(),
@@ -802,6 +805,14 @@ impl Session {
         self.dirty_event(c);
         self.restore_state(state);
         self.touch_all();
+        // in header/footer mode the TS leaves the edit before the restore and `refresh()` (so
+        // `syncSections` runs with the body in context) before returning to the page (D2b-F4)
+        if matches!(self.ctx, EditContext::HeaderFooter { .. }) {
+            self.sections.pending = false;
+            self.sections.sync(&mut self.doc);
+            self.doc.formatting_version = self.doc.formatting_version.wrapping_add(1);
+            self.tx.formatting = true;
+        }
         self.finish()
     }
 
@@ -878,16 +889,18 @@ impl Session {
             // `syncNumbering()` (D2b-F2)
             self.sync_numbering();
         }
-        if !Arc::ptr_eq(&self.settings, &state.settings) && *self.settings != *state.settings {
-            self.settings = state.settings;
-            self.touch_formatting();
-        }
+        // `dt`, `hy`, `bg`/`bgd`, `eo`, `np`: a value of the step that differs from the current one
+        // is applied (D2b-F4: `restore_settings`)
+        self.restore_settings(state.settings);
         // `m.sectPr` of the body (the last section's `sectPr`; the others' are in `body`): the JSON
         // copy is a new object, which the sections the layout holds do not point to until
         // `syncSections` runs (not in a cell or a note); a `sectPr` is shared by value, so a new `Arc`
         let mut sp = state.body_sect_pr;
         normalize::normalize(&mut sp, &mut self.doc.ids);
         self.sections.body_sect_pr = Arc::new((*sp).clone());
+        // `m.bodyRefs` comes back with the model; the memory keyed by the `sectPr` objects goes (D2b-F4)
+        self.sections.body_refs = state.body_refs;
+        self.f4.on_restore();
         for (part, story) in state.hf_parts.iter() {
             let mut story = story.clone();
             normalize::normalize(&mut story, &mut self.doc.ids);

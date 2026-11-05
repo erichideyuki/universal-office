@@ -29,6 +29,7 @@ use crate::read::blank::{BlankDocxOptions, blank_docx_package};
 use crate::read::fulldoc::note_ref_ids;
 use crate::read::{ReadOptions, read_document};
 use crate::write::ctx::SaveState;
+use crate::write::emit::background::write_page_background;
 use crate::write::emit::settings::{
     drop_unused_hf_parts, write_default_tab_stop, write_display_background_shape, write_even_and_odd_headers, write_hyphenation_settings,
 };
@@ -152,6 +153,7 @@ impl Session {
             f2: super::ops::lists::F2State::default(),
             f9: super::ops::navigation::F9State::default(),
             f5: super::ops::notes::F5State::default(),
+            f4: super::ops::sections::F4State::default(),
             settings: Arc::new(SettingsStep::default()),
             sections: SectionState::default(),
             save: SaveState { baseline: crate::write::sig::Baseline::default(), gen_num_ids: None, fresh_id: 0.0 },
@@ -250,6 +252,7 @@ impl Session {
         self.rev_authors = super::revisions::revision_authors(self.doc_view_for_authors()).into_iter().map(Into::into).collect();
         self.save = SaveState::install(&self.doc, mode);
         self.f5 = super::ops::notes::F5State::install(&self.doc);
+        self.f4 = super::ops::sections::F4State::install(&self.doc);
         self.tx = Tx::default();
     }
 
@@ -261,7 +264,9 @@ impl Session {
     /// package at every save, as the TS) and returns its bytes.
     pub fn save_docx(&mut self) -> Result<Vec<u8>, DocxError> {
         // `syncSections()` (the body context only; in a context the body paragraphs are untouched)
-        if matches!(self.ctx, super::EditContext::Body) {
+        // (`saveDocx` leaves a header/footer edit first and returns to it: the body is in context
+        // while it saves, D2b-F4)
+        if matches!(self.ctx, super::EditContext::Body | super::EditContext::HeaderFooter { .. }) {
             self.sections.sync(&mut self.doc);
         }
         let doc = &self.doc;
@@ -329,12 +334,16 @@ impl Session {
         if let Some(on) = settings.even_odd {
             write_even_and_odd_headers(&mut self.pkg, on)?;
         }
-        if settings.background.is_some() {
-            // `writePageBackground`: the page family's (F4); no D2a command changes it
-            return Err(DocxError::Write("page background: frontier D2b-F4"));
-        }
-        if let Some(on) = settings.display_background {
-            write_display_background_shape(&mut self.pkg, on)?;
+        // the page colour: only if it changed since the open (the file's `w:background` stays byte for
+        // byte); the package is the same between saves, so what the last save added leaves first
+        if super::ops::page::background_differs(self.doc.background.as_ref(), self.f4.loaded.background.as_ref()) || self.f4.bg_written.is_some()
+        {
+            let prev = self.f4.bg_written.take();
+            self.f4.bg_written =
+                write_page_background(&mut self.pkg, &self.doc.media, self.doc.background.as_deref(), prev.as_ref())?;
+            if self.doc.background.is_some() {
+                write_display_background_shape(&mut self.pkg, true)?;
+            }
         }
         // parts no section refers to any more leave the package (Word, oracle e07)
         let used: HashSet<&str> =
@@ -343,6 +352,14 @@ impl Session {
             self.sections.hf_rids_at_load.iter().filter(|r| !used.contains(r.as_ref())).map(|r| r.to_string()).collect();
         if !gone.is_empty() {
             drop_unused_hf_parts(&mut self.pkg, &gone)?;
+        }
+        // relationships copied for unlinked parts that were not written leave the package
+        let copied: Vec<String> = self.f4.hf_rels_copied.iter().cloned().collect();
+        for r in copied {
+            let part = format!("word/{}", r.rsplit('/').next().unwrap_or(&r).trim_end_matches(".rels"));
+            if !self.pkg.contains(&part) {
+                self.pkg.remove_part(&r);
+            }
         }
         if let Some(ns) = &settings.note_settings
             && ns.json() != self.f5.loaded_json()

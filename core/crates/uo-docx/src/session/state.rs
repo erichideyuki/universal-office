@@ -230,6 +230,8 @@ pub struct EditState {
     /// the body's last-section `sectPr` (`m.sectPr`: in the TS it travels with the model; the other
     /// sections' are in the break paragraphs of `body`; D2b-F5 `setNoteOptions` edits it)
     pub body_sect_pr: Arc<crate::model::section::SectPr>,
+    /// the last section's header/footer references (`m.bodyRefs`, travels with the model; D2b-F4)
+    pub body_refs: Option<super::settle::SectionRefs>,
     /// `hf` (deep steps: accept/reject all): every header/footer part (the TS lists the six slots
     /// of every section; a part is stored once here)
     pub deep_hf: Option<Arc<[(HfPartId, Story)]>>,
