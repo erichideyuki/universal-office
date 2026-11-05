@@ -2,10 +2,9 @@
 // here and the matching Rust writer next to its module (same name, same stream): a P1 mismatch
 // then points at the first stage that differs. F0 ships the mechanism and two seed facets:
 //
-//   p3.prepare  every `prepareParagraph` result (para.ts:729), in call order (all passes):
-//               the paragraph metrics and every glyph's kind, code point, advance, ascent,
-//               descent, offset, run index, break flag and size — F4 extends it (face label,
-//               flags, marker, revision bars);
+//   p3.prepare  every `prepareParagraph` result (para.ts:729), in call order (all passes) —
+//               F4 replaced the F0 seed (facets-f4.mjs: the whole PreparedPara per call, with
+//               the call's inputs dumped for tests/f4_parity.rs);
 //   p3.lines    every `LineBreaker.next(frame)` (lines.ts) with its frame and the line it
 //               returned — the F0 seed; F5 replaces it (facets-f5.mjs: every breaker call with
 //               the placed glyph identity, plus p3.paint) when its dependencies are passed.
@@ -20,6 +19,7 @@ import { F1_WRAPS, f1Recorder } from './facets-f1.mjs';
 import { F3_WRAPS, f3Recorder } from './facets-f3.mjs';
 import { F5_WRAPS, f5Recorder } from './facets-f5.mjs';
 import { F2_WRAPS, f2Recorder } from './facets-f2.mjs';
+import { F4_WRAPS, f4Recorder } from './facets-f4.mjs';
 
 /** Wrapped module functions per dist file of docx-layout (paths relative to the dist). */
 export const WRAPS = {
@@ -31,6 +31,8 @@ for (const [file, names] of Object.entries(F1_WRAPS)) WRAPS[file] = [...(WRAPS[f
 for (const [file, names] of Object.entries(F3_WRAPS)) WRAPS[file] = [...(WRAPS[file] ?? []), ...names];
 // F5 (lines.ts LineBreaker, paint.ts paintLine): facets-f5.mjs (p3.lines replaces the F0 seed)
 for (const [file, names] of Object.entries(F5_WRAPS)) WRAPS[file] = [...(WRAPS[file] ?? []), ...names];
+// F4 (resolve.ts mergePPr/mergeRPr: the table-style env of cell paragraphs): facets-f4.mjs
+for (const [file, names] of Object.entries(F4_WRAPS)) WRAPS[file] = [...(WRAPS[file] ?? []), ...names];
 // F2 (datefmt.ts, field-formula.ts, engine.ts layoutDocument for the hyphenation walk): facets-f2.mjs
 for (const [file, names] of Object.entries(F2_WRAPS)) WRAPS[file] = [...(WRAPS[file] ?? []), ...names];
 
@@ -54,14 +56,9 @@ export function facetRecorder({ LineBreaker, FaceResolver, SfntFont, f5: f5Deps,
   const f1 = FaceResolver && SfntFont ? f1Recorder({ FaceResolver, SfntFont }) : null;
   // F3: p3.emf, p3.wmf, p3.picture, p3.pagefill, p3.textfx, p3.shape (+ the `f3.jsonl` dump of their inputs)
   const f3 = f3Recorder();
-  const prepare = (_args, p) => {
-    const s = prep;
-    s.tag('p').num(p.indLeft).num(p.indRight).num(p.firstLine).u16s(p.jc).num(p.spaceBefore).num(p.spaceAfter)
-      .u16s(p.lineRule).num(p.line).bool(!!p.empty).u32(p.glyphs.length);
-    for (const g of p.glyphs) {
-      s.u16s(g.kind).num(g.cp).num(g.adv).num(g.asc).num(g.desc).num(g.offset).num(g.runIdx).bool(!!g.breakAfter).num(g.sizePt);
-    }
-  };
+  // F4: p3.prepare (+ the `f4.bin` dump of its inputs)
+  const f4 = f4Recorder();
+  let unhookF4 = null;
   const origNext = LineBreaker.prototype.next;
   const patched = function (frame) {
     const l = origNext.call(this, frame);
@@ -77,10 +74,16 @@ export function facetRecorder({ LineBreaker, FaceResolver, SfntFont, f5: f5Deps,
   return {
     start() {
       prep = new Sink(); lines = new Sink(); paint = new Sink();
-      if (f5) { f5.start(); f5.bind(lines, paint); globalThis.__uoFacetPre = (name, args) => f5.pre(name, args); } else LineBreaker.prototype.next = patched;
+      if (f5) { f5.start(); f5.bind(lines, paint); } else LineBreaker.prototype.next = patched;
+      f4.start(); f4.bind(prep);
+      globalThis.__uoFacetPre = (name, args) => {
+        if (name === 'prepareParagraph') return f4.pre(name, args);
+        if (name === 'layoutDocument') f4.layout(args[0], args[2]);
+        return f5 ? f5.pre(name, args) : undefined;
+      };
       f1?.start();
       f3.start();
-      globalThis.__uoFacet = (name, args, r, pre) => { if (name === 'prepareParagraph' && prep) prepare(args, r); f1?.report(name, args, r); f3.report(name, args, r); f5?.report(name, args, r, pre); };
+      globalThis.__uoFacet = (name, args, r, pre) => { f4.report(name, args, r, pre); f1?.report(name, args, r); f3.report(name, args, r); f5?.report(name, args, r, pre); };
       // F2, chained on the hooks above
       if (f2) {
         f2.start();
@@ -88,8 +91,12 @@ export function facetRecorder({ LineBreaker, FaceResolver, SfntFont, f5: f5Deps,
         globalThis.__uoFacetPre = (n, a) => { f2.pre(n, a); return pre ? pre(n, a) : undefined; };
         globalThis.__uoFacet = (n, a, r, p) => { f2.report(n, a, r); rep(n, a, r, p); };
       }
+      // F4: the table styles of every resolver (after F2 patched the class)
+      unhookF4 = f2Deps?.StyleResolver ? f4.hook({ StyleResolver: f2Deps.StyleResolver }) : null;
     },
     finish() {
+      unhookF4?.();
+      unhookF4 = null;
       globalThis.__uoFacet = undefined;
       globalThis.__uoFacetPre = undefined;
       LineBreaker.prototype.next = origNext;
@@ -100,6 +107,7 @@ export function facetRecorder({ LineBreaker, FaceResolver, SfntFont, f5: f5Deps,
       if (f1) { const r = f1.finish(); Object.assign(out, r.facets); dumps['f1.tsv'] = r.dump; }
       { const r = f3.finish(); Object.assign(out, r.facets); if (r.dump) dumps['f3.jsonl'] = r.dump; }
       if (f5) dumps['f5.bin'] = f5.finish();
+      dumps['f4.bin'] = f4.finish();
       if (f2) { const r = f2.finish(); Object.assign(out, r.facets); dumps['f2.tsv'] = r.dump; }
       Object.defineProperty(out, 'dumps', { value: dumps, enumerable: false });
       prep = null; lines = null; paint = null;

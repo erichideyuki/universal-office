@@ -10,6 +10,8 @@
 //! (`new RevisionDisplay(opts.revisions, opts.revisions?.order ?? [])`, context.ts:115), and the
 //! text cap of the numbering formats from the layout limits (`max_field_text`, K11b).
 
+/// the JS object operations (spread, assign, `delete` with key order) of F2 (F4 deletes keys)
+pub use uo_docx::word::obj;
 pub use uo_docx::word::{
     AUTHOR_PALETTE, BAR_COLOR, BAR_WIDTH, COVER_PAGES_GALLERY, MOVE_COLOR, RevisionDisplay, SIMPLE_BAR_COLOR, cell_at_grid,
     paragraph_at_path,

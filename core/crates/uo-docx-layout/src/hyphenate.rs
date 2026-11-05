@@ -1,11 +1,16 @@
-//! Automatic hyphenation (`hyphenate.ts`, frontier F4): Word's choice over
-//! `uo_fonts::Hyphenator`. Which languages hyphenate is an **input** (`hyphenation_loaded`, K5,
-//! LQ16), not what is compiled in. The `documentHyphenationLanguages` walk goes to
-//! `uo_docx::word` (F2, explicit `lang`-site list).
+//! Automatic hyphenation (`hyphenate.ts`, frontiers F4 and F5): the marks of `markHyphenation`
+//! (F4) and Word's choice at the end of a line (F5) over `uo_fonts::Hyphenator`. Which languages
+//! hyphenate is an **input** (`hyphenation_loaded`, K5, LQ16), not what is compiled in. The
+//! `documentHyphenationLanguages` walk goes to `uo_docx::word` (F2, explicit `lang`-site list).
+
+use std::sync::Arc;
 
 use indexmap::IndexMap;
+use uo_fonts::hyphen::{HyphenSession, HyphenationRegistry, hyphenation_pattern_id};
 
-use crate::options::PatternId;
+use crate::error::LResult;
+use crate::options::{Hyphenation, PatternId};
+use crate::para::{Glyph, GlyphFlags, GlyphKind, RunStyle};
 
 /// `HyphenUnit` (hyphenate.ts:137): the word that did not fit.
 #[derive(Clone, Copy, Debug)]
@@ -32,21 +37,189 @@ pub struct HyphenChoice {
     pub w: f64,
 }
 
-/// The hyphenation sessions of one engine: one per loaded pattern set, each with a word cache
-/// capped at 100,000 words (M5). Filled by F4 over the uo-fonts hyphenation registry.
+/// The hyphenators of one engine (`hyphenatorFor`, typography/hyphen/index.ts:96): the pattern
+/// sets the host registered, of which a call uses the ones its options say the TS process had
+/// loaded (`hyphenation_loaded`, K5); one `HyphenSession` per pattern set holds the word cache
+/// (the uo-fonts rule: cleared past 50,000 words, the TS one; M5).
 #[derive(Debug, Default)]
 pub struct HyphenSessions {
-    /// the pattern sets this call may use (`LayoutOptions::hyphenation_loaded`)
-    pub loaded: Vec<PatternId>,
-    /// words already split, per pattern set: offsets after which a hyphen may go
-    pub cache: IndexMap<PatternId, WordCache>,
+    /// the registered pattern sets (the host's or `uo_fonts::embedded_patterns`)
+    pub registry: Option<Arc<HyphenationRegistry>>,
+    /// the sessions opened so far, per pattern id
+    pub sessions: IndexMap<PatternId, HyphenSession>,
 }
 
-/// Split words of one pattern set: word → offsets after which a hyphen may go.
-pub type WordCache = IndexMap<Box<[u16]>, Box<[u32]>>;
+impl HyphenSessions {
+    #[must_use]
+    pub fn new(registry: Arc<HyphenationRegistry>) -> HyphenSessions {
+        HyphenSessions { registry: Some(registry), sessions: IndexMap::new() }
+    }
 
-/// The word cache cap per language (M5).
-pub const WORD_CACHE_CAP: usize = 100_000;
+    /// `hyphenatorFor(lang)`: the session of the language's pattern set when the call may use it
+    /// (`loaded`) and the registry holds it.
+    pub fn session(&mut self, lang: &str, loaded: &indexmap::IndexSet<PatternId>) -> Option<&mut HyphenSession> {
+        let id = hyphenation_pattern_id(Some(lang))?;
+        if !loaded.contains(id) {
+            return None;
+        }
+        if !self.sessions.contains_key(id) {
+            let h = self.registry.as_ref()?.get(id)?;
+            self.sessions.insert(id.into(), HyphenSession::new(h));
+        }
+        self.sessions.get_mut(id)
+    }
+
+    /// Drops the word caches (`clear_caches`).
+    pub fn clear(&mut self) {
+        self.sessions.clear();
+    }
+}
+
+/// `hyphenMins(compat)` (hyphenate.ts:44): Word's minimum letters before/after the hyphen.
+#[must_use]
+pub fn hyphen_mins(compat: f64) -> (u32, u32) {
+    (2, if compat >= 15.0 { 3 } else { 2 })
+}
+
+/// `LETTER.test(ch)` (`/^[\p{L}\p{M}]$/u`).
+fn is_letter(ch: &[u16]) -> bool {
+    uo_text::props::is_single_code_point_in(ch, uo_text::props::LETTER | uo_text::props::MARK)
+}
+
+/// `MARK.test(ch)` (`/^\p{M}$/u`).
+fn is_mark(ch: &[u16]) -> bool {
+    uo_text::props::is_single_code_point_in(ch, uo_text::props::MARK)
+}
+
+/// `langOf(ctx, g)` (hyphenate.ts:51).
+fn lang_of<'s>(styles: &'s [RunStyle], g: &Glyph, default: &'s str) -> &'s str {
+    styles.get(g.style.0 as usize).and_then(|s| s.rpr.lang.as_deref()).and_then(|l| l.val.as_deref()).unwrap_or(default)
+}
+
+/// `langAllowed(ctx, lang)` (hyphenate.ts:55).
+fn lang_allowed(list: Option<&[Box<str>]>, lang: &str) -> bool {
+    let Some(list) = list else { return true };
+    let l = uo_text::case::to_lowercase_str(lang);
+    list.iter().any(|x| {
+        let y = uo_text::case::to_lowercase_str(x);
+        l == y || l.strip_prefix(y.as_str()).is_some_and(|r| r.starts_with('-'))
+    })
+}
+
+/// `markHyphenation(ctx, ppr, glyphs, skipRuns, para)` (hyphenate.ts:86): marks the automatic
+/// hyphenation points (`hyph` = may break with a hyphen AFTER this glyph) in the paragraph's runs
+/// of letters. `skip_runs` are the equation runs; `para` the model paragraph (a copy has none, so
+/// a manual-hyphenation skip never matches it, LA2).
+pub fn mark_hyphenation(
+    cx: &mut crate::engine::Cx<'_, '_>,
+    fmt: &crate::model::DocFormatting,
+    ppr: &crate::model::PPr,
+    styles: &[RunStyle],
+    glyphs: &mut [Glyph],
+    skip_runs: &[u32],
+    para: Option<crate::model::ParaId>,
+) -> LResult<()> {
+    let s = &fmt.settings;
+    let opts = cx.opts;
+    if (!s.auto_hyphenation && opts.hyphenation != Hyphenation::Force)
+        || ppr.suppress_auto_hyphens == Some(true)
+        || opts.hyphenation == Hyphenation::Off
+    {
+        return Ok(());
+    }
+    let (left, right) = hyphen_mins(s.compatibility_mode.to_number());
+    let default_lang: &str = &opts.lang;
+    let ch_of = |g: &Glyph| -> Vec<u16> { g.ch.as_units().to_vec() };
+    let mut k = 0;
+    while k < glyphs.len() {
+        let Some(g) = glyphs.get(k) else { break };
+        let ch = ch_of(g);
+        if g.kind != GlyphKind::Char || !is_letter(&ch) || is_mark(&ch) || skip_runs.contains(&g.run_idx) {
+            k += 1;
+            continue;
+        }
+        let lang = lang_of(styles, g, default_lang).to_owned();
+        // the run: letters of the same language; the optional hyphen stays inside
+        let mut idx: Vec<usize> = Vec::new();
+        let mut e = k;
+        while let Some(q) = glyphs.get(e) {
+            if q.kind == GlyphKind::Shy {
+                e += 1;
+                continue;
+            }
+            if q.kind != GlyphKind::Char
+                || !is_letter(&ch_of(q))
+                || lang_of(styles, q, default_lang) != lang
+                || skip_runs.contains(&q.run_idx)
+            {
+                break;
+            }
+            idx.push(e);
+            e += 1;
+        }
+        cx.budget.charge((e - k) as u64 + 1)?;
+        let first = k;
+        k = e;
+        let Some(g) = glyphs.get(first) else { break };
+        let Some(rpr) = styles.get(g.style.0 as usize).map(|st| &st.rpr) else { continue };
+        if rpr.no_proof == Some(true)
+            || rpr.cs == Some(true)
+            || rpr.rtl == Some(true)
+            || !lang_allowed(opts.hyphenation_languages.as_deref(), &lang)
+        {
+            continue;
+        }
+        // refused in Manual Hyphenation (the editor looks for the words with 'force')
+        if let Some(pid) = para
+            && opts.hyphenation_skips.0.contains(&(pid, g.offset))
+        {
+            continue;
+        }
+        if s.do_not_hyphenate_caps
+            && idx.iter().all(|&j| {
+                let c = glyphs.get(j).map(ch_of).unwrap_or_default();
+                let up = uo_text::case::to_uppercase(&c);
+                *uo_text::case::to_lowercase(&c) == *up || c == *up
+            })
+        {
+            continue;
+        }
+        let Some(h) = cx.hyph.session(&lang, &opts.hyphenation_loaded) else { continue };
+        // letter + combining marks -> one NFC code point (the patterns are NFC)
+        let mut clusters: Vec<Vec<usize>> = Vec::new();
+        for &j in &idx {
+            let m = glyphs.get(j).is_some_and(|q| is_mark(q.ch.as_units()));
+            match clusters.last_mut() {
+                Some(last) if m => last.push(j),
+                _ => clusters.push(vec![j]),
+            }
+        }
+        if clusters.len() < (left + right) as usize {
+            continue;
+        }
+        let mut word: Vec<u16> = Vec::new();
+        for c in &clusters {
+            let t: Vec<u16> = c.iter().filter_map(|&j| glyphs.get(j)).flat_map(|q| q.ch.as_units().to_vec()).collect();
+            let n = uo_text::nfc::nfc(&t);
+            if String::from_utf16(&n).is_ok_and(|s| s.chars().count() == 1) {
+                word.extend_from_slice(&n);
+            } else if let Some(q) = c.first().and_then(|&j| glyphs.get(j)) {
+                word.extend_from_slice(q.ch.as_units());
+            }
+        }
+        // every unit is a letter or mark (valid code points): the UTF-8 conversion is exact
+        let Ok(word) = String::from_utf16(&word) else { continue };
+        for p in h.hyphenate(&word, left, right) {
+            let Some(c) = (p as usize).checked_sub(1).and_then(|i| clusters.get(i)) else { continue };
+            if let Some(&j) = c.last()
+                && let Some(q) = glyphs.get_mut(j)
+            {
+                q.flags.set(GlyphFlags::HYPH, true);
+            }
+        }
+    }
+    Ok(())
+}
 
 // ── the choice at the end of a line (hyphenate.ts 133–250), ported with `lines.rs` by F5 because
 //    `LineBreaker.next` calls it (record "Stage 3 — F5", F5-3); `markHyphenation` stays F4's ──

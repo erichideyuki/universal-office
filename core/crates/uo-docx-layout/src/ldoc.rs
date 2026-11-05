@@ -28,6 +28,10 @@ pub struct LDoc<'a> {
     pub chains: Vec<Chain>,
     /// `revisionAuthors(full)` order (the default `RevisionView.order`)
     pub revision_order: Vec<&'a str>,
+    /// the key of the `j`-th field-result run of a model run (`RunRef` with
+    /// `RunSub::FieldResult(j)`): the identity of an object `prepareParagraph` shows from a field's
+    /// cached result (added by F4)
+    pub field_results: rustc_hash::FxHashMap<(RunKey, u32), RunKey>,
 }
 
 /// Where a derived paragraph comes from.
@@ -147,6 +151,7 @@ impl<'a> LDoc<'a> {
             textboxes: Vec::new(),
             chains: Vec::new(),
             revision_order: Vec::new(),
+            field_results: rustc_hash::FxHashMap::default(),
         }
     }
 
@@ -158,6 +163,12 @@ impl<'a> LDoc<'a> {
     #[must_use]
     pub fn run(&self, k: RunKey) -> Option<&RunSrc<'a>> {
         self.runs.get(k.ix())
+    }
+
+    /// The key of the `j`-th field-result run of `base` (F4).
+    #[must_use]
+    pub fn field_result_key(&self, base: RunKey, j: u32) -> Option<RunKey> {
+        self.field_results.get(&(base, j)).copied()
     }
 
     /// The model `ParaId` of a derived paragraph: only the model object itself has one.

@@ -40,6 +40,8 @@ uo-testkit = { path = "../uo-testkit" }
 # formatting from
 uo-docx = { path = "../uo-docx", features = ["canon"] }
 uo-opc = { path = "../uo-opc" }
+# F4 facet replay: the hyphenation patterns the TS capture loads (all seven, embedded)
+uo-fonts = { path = "../uo-fonts", features = ["hyphen-data"] }
 
 [lints]
 workspace = true

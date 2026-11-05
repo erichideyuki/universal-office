@@ -29,7 +29,9 @@ use uo_docx_layout::math::{MathBox, MathItem, MathRule};
 use uo_docx_layout::model::{JsNumber, RPr, TextShadow};
 use uo_docx_layout::output::{Layout, LayoutPage, TabAlign, TabLeader, TabStop};
 use uo_docx_layout::paint::{HrShape, PaintEnv, paint_line_in};
-use uo_docx_layout::para::{Ch, Glyph, GlyphFlags, GlyphKind, LineRule, MarkerSuffix, ParaMarker, PreparedPara, RunStyle, StyleIx};
+use uo_docx_layout::para::{
+    Ch, Glyph, GlyphFlags, GlyphKind, LineRule, MarkerLevel, MarkerSuffix, ParaMarker, PreparedPara, RunStyle, StyleIx,
+};
 use uo_docx_layout::underline::UlFont;
 use uo_render::types::{FxGlow, FxOutline, FxReflection, FxShadow, FxStop, LineCap, LineJoin, ResolvedFill, ResolvedTextFx};
 use uo_render::{FaceId, FaceRes, OptF64, Resources, Sym, TextFxId};
@@ -217,7 +219,7 @@ impl LineEnv for Env {
     }
     fn ptab(&self, p: &PreparedPara, g: &Glyph) -> Option<PtabSpec> {
         let _ = p;
-        g.ptab.and_then(|k| self.paras.get(self.cur_para)?.extras.ptabs.get(k as usize).copied())
+        g.ptab.and_then(|k| self.paras.get(self.cur_para)?.extras.ptabs.get(k.0 as usize).copied())
     }
     fn charge(&mut self, _units: u64) -> LResult<()> {
         Ok(())
@@ -554,16 +556,17 @@ fn glyph(r: &mut Rd<'_>, ls: &mut LocalStyles<'_>, extras: &mut Extras, math: &m
         flags: GlyphFlags(flags),
         obj,
         hr,
-        ptab,
+        ptab: ptab.map(RunKey),
         size_pt,
         check_box,
-        note_id: None,
+        note_id: OptF64::NONE,
         fe_shrink,
         kern_adj: OptF64::NONE,
         lig_start: None,
         lig_end: None,
         sub_gid,
         math: m,
+        pic_bullet: None,
     })
 }
 
@@ -600,7 +603,16 @@ fn para(r: &mut Rd<'_>, env: &Env) -> R<Para> {
         for _ in 0..r.u32()? {
             glyphs.push(glyph(r, &mut ls, &mut extras, &mut math)?);
         }
-        Some(ParaMarker { text: Box::default(), glyphs, width, level: 0, suff, jc: mjc, pic_bullet: None, chapter: None })
+        Some(ParaMarker {
+            text: Box::default(),
+            glyphs,
+            width,
+            level: MarkerLevel::default(),
+            suff,
+            jc: mjc,
+            pic_bullet: None,
+            chapter: None,
+        })
     } else {
         None
     };

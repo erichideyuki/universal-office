@@ -1252,9 +1252,8 @@ pub fn leader_from_ts(s: &str) -> TabLeader {
 
 /// `run.ptab` of a glyph's run (the TS `g.ptab`, the run's object; a slice keeps its base run's).
 fn ptab_of_cx(cx: &Cx<'_, '_>, p: &PreparedPara, g: &Glyph) -> Option<PtabSpec> {
-    let k = g.ptab?;
-    let key = *cx.ldoc.para(p.para)?.runs.get(k as usize)?;
-    let run = crate::paint::model_run(cx.ldoc, key)?;
+    let _ = p;
+    let run = crate::paint::model_run(cx.ldoc, g.ptab?)?;
     let pt = run.ext()?.ptab.as_ref()?;
     let alignment = match &*pt.alignment {
         "center" => PtabAlign::Center,

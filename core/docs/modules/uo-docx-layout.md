@@ -920,6 +920,7 @@ Node and WebKit, plus the editor keystroke budget in milestone 2.
 | 3 — F3 | drawing values and metafiles: `geometry.ts` 356–475 (`substPhClr`, `withThemeStyles`, `shapeExtras`, `groupChild`, the `ShapeGeom` spec), `pictureLook`, `resolvePageFill`/`imagePixelInfo`/`patternRowsFromImage` (+ docx-core `resolveColor2`, `vmlColor`, `dmlColorSpec`), `textfx.ts` `fxColor`/`fillOf`/`resolveTextFx`, `emf.ts` (GDI + EMF+) and `wmf.ts`; facets p3.emf/wmf/picture/pagefill/textfx/shape equal on the oracle (2,742 documents, 184,916 calls), the .NET inputs and 11,480 generated metafiles; **1 parity round** (POLYBEZIER with no point: the TS throws a `TypeError`), found by the generated differential (Opus) | one session, ≈ 2 h, in parallel with F1, F5, D1a, uo-image | ≈ 115 |
 | 3 — F5 | lines and paint: `lines.ts` (re-ported from the frozen TS on the spike's structure), `hyphenate.ts` `chooseHyphenation`, `para.ts` `shadowExtent`, `underline.ts`, `paint.ts` (`paintInlineObject` ends left to F7b); facets p3.lines (replacing the F0 seed) and p3.paint equal on the oracle (2,742 documents: 142,171 breaker and 139,904 paint calls), 200 CI documents and the committed fixture at the first replay (0 rounds) (Opus) | one session, ≈ 50 min, in parallel with F1, F2, F3, D1a, uo-image | ≈ 130 |
 | 3 — F2 | Word semantics in `uo_docx::word` (LQ3): `resolve.ts`, `directRPr`/`directPPr`/`resolvePPr`/`paraformat.ts`, `numbering.ts`, `datefmt.ts`, `field-formula.ts` (+ docx-core `formatPicture`/`formatFormulaResult`), `outline.ts`, `numpages.ts`, `revisions.ts`, `refs.ts` (model side), the `documentHyphenationLanguages` walk; the `JsAssign` spread machinery with key order; unit differential (25k generated cases, 222,757 facets), engine facets p3.datefmt/formula/numbering/style equal on the oracle and the F2 documents, São Paulo facet 1,485/1,485 — 0 parity rounds; 1 defect found by the no-panic loops (`sort_by` panics on NaN tab positions, F2-7) (Opus) | one session, ≈ 3 h, in parallel with F1, F3, F5 and R4b/R4c | ≈ 200 |
+| 3 — F4 | paragraph preparation: `para.ts` (`prepareParagraph`, `resolveRunStyle`, `faceFor` and the glyph fallback order, `displayRuns`/`fieldRuns`, ligatures, run-boundary kerning, NBSP glue, kinsoku and the East Asian layout, the marker, `paraVisibility`, `isDark`, `isCjkFont`, `isMarkRun`), `hyphenate.ts` `markHyphenation` (+ the hyphenator sessions), `math.ts` layout (`mathAtoms`, `rowBox`, `fracBox`, `mathTextMetrics`); facet p3.prepare (the whole `PreparedPara` per call, replacing the F0 seed) replayed over the uo-docx reader: 0 mismatches on the oracle (84,426 calls equal, 1,026 pending: engine-derived copies, F7a), 200 CI documents (15,108) and the .NET inputs — **1 parity round** (the metrics face of a `.notdef` symbol took `w:sym`'s font: 4 oracle calls) (Opus) | one session, ≈ 1 h 20 min | ≈ 120 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
@@ -1752,3 +1753,287 @@ Open:
 - F1's `note_mark` should take `word::format_number`; F7c calls `date_field_value` with
   `Clock::local` and the text cap; F7b owns the four `paint_inline_object` ends (246 pending oracle
   paint calls); the "font budget" warning needs a registry signal.
+
+## Stage 3 — F4 (paragraph preparation, hyphenation marks, equation layout)
+
+Opus, 2026-11-05, hybrid mode, one session (≈ 1 h 20 min), in parallel with uo-docx D2a (session),
+the `.doc` frontier and the docs records in the same tree. **1 parity round** (below); every other
+call was equal at its first replay. The F0 types were changed where the TS needed it (F4-3 … F4-5).
+
+### Brief (written from the frozen TS before porting)
+
+**F4 — paragraph preparation** (≈ 1,650 lines). TS (d0f45bc5): `para.ts` minus F1's width model —
+`resolveRunStyle` 206 (colour cascade `w14:textFill` → `w:color` → `env.defaultColor` → black/white,
+underline colour, shading, `w14` solid fill and `resolveTextFx` + `fxKey = JSON.stringify(fx)`,
+superscript/subscript raise by the run's own face), `faceFor` 266 (slot by Unicode range,
+`w:sym`, the `hint="eastAsia"` quotes, the F0xx `.notdef`, `fallbackOrder`/`classFallback` by
+PANOSE), `vMetrics` 301, `isHyperlinkStyle` 329, `otFeatures`/`ligFeatures`/`applyLigatures`
+440–538, `fieldValueRun`/`fieldRuns`/`displayRuns` 548–605 (the `env.field` callback, formulas
+with nested fields, field results, drop-downs; `GLUED_FIELD`), `isDark` 608, kinsoku
+`NO_LINE_END`, `isCjkFont`/`docEastAsiaCjk`/`eastAsianBreakRules`/`hangPunct` 616–669,
+`paraVisibility` 716, `prepareParagraph` 729–1175 (the run loop with objects, check boxes, custom
+inlines, `w:ptab`, note references, equations, `pushChars` with caps/small caps/kerning/spacing;
+the post passes: break before inline objects, dashes across runs, ligatures, run-boundary kerning,
+NBSP glue, kinsoku, the East Asian layout of modes ≤ 14; `markHyphenation`; the marker with picture
+bullets and the editor's synthetic lists 1001/1002; indents, `jc`, the equation-only `jc`, revision
+bars, `empty`); `hyphenate.ts` `hyphenMins`, `langOf`, `langAllowed`, `markHyphenation` 86 (NFC
+clusters, `doNotHyphenateCaps`, manual-hyphenation skips) and `hyphenatorFor` (typography/hyphen);
+`math.ts` layout (`mathTextMetrics` 115, `clsOf`, `mathAlpha` 124, `mathAtoms` 202, `rowBox` 258,
+`fracBox` 277, `kEm`/`q600`/`CM`). Rust: `para.rs`, `hyphenate.rs` (`mark_hyphenation`,
+`HyphenSessions`), `math.rs` (layout half). Inputs: F1 (resolver `Cx::face`, widths, kerning,
+`FaceTable::math_info`), F2 (`resolve_ppr`, `cascade_rpr`, `merge_rpr`, `char_style`,
+`RevisionDisplay`, `NumberingState`, `evaluate_field_formula`, `format_number`, colours), F3
+(`fx_color`, `resolve_text_fx`), F5 (`shadow_extent`, `leader_from_ts`), uo-text (case mapping with
+SpecialCasing, NFC, `\p{L}`/`\p{M}`, JS `\s`), uo-fonts (`ligate`, `kern_in_latin`, hyphenation
+sessions). Pick-ups from earlier frontiers: F1-3 (the `i32` note ids of `para.rs`), F1-4/F2 (the
+note mark formatted with `word::format_number`), F5-8/F5-11 (`RunStyle.rpr`, `PreparedPara.ppr`,
+`Glyph.ptab`), F5 "one `styles` entry per TS `RunStyle` object, math styles included", F3-10
+(`fxKey` is F4's), F2 "`resolvePPr`/`cascadeRPr` at their engine call sites". Facet: `p3.prepare`
+(the whole `PreparedPara` per call) replayed over the uo-docx reader, the table-style env rebuilt
+from (style, conditions), the field/numbering/note-mark answers from the TS transcript, the faces
+from the P2 transcript. Pitfalls: `RunStyle` identity per object; field-value copies are not model
+runs; `-1` offsets of marker glyphs; the `{}` literal and the per-cell merges of table envs;
+`fxKey`/`JSON.stringify(r.ot)` key order; a `.notdef` symbol measured by the run's font.
+
+### Ported (TS → Rust, TS operation order)
+
+| TS | Rust |
+|---|---|
+| `para.ts` `resolveRunStyle` 206, `faceFor` 266, `notdefPua` 263, `vMetrics` 301, `classFallback`/`fallbackOrder` 190–204 | `para::Prep::{resolve_run_style, face_for, notdef_pua, v_metrics}`, `class_fallback`, `fallback_order` |
+| `isHyperlinkStyle` 329, `otFeatures` 440, `ligFeatures` 452, `applyLigatures` 471 (`keyOf`) | `is_hyperlink_style`, `ot_features`, `lig_features`, `apply_ligatures` (`lig_key`), `fx_json` (`fxKey`) |
+| `fieldValueRun` 548, `fieldRuns` 557, `isMarkRun` 583, `displayRuns` 586 | `Prep::{field_value_run, field_runs, display_runs}` (`DRun`: the run object the TS pushes), `is_mark_run` |
+| `isDark` 608, `NO_LINE_END`, `CJK_FONT_NAME`/`isCjkFont` 620, `docEastAsiaCjk` 634, `isCjkLang`, `eastAsianBreakRules` 651, `HANG_*`/`hangPunct` 661, `SPACE_LIKE` | `is_dark`, `is_cjk_font` (+ `Prep::is_cjk_font`), `Prep::{doc_east_asia_cjk, east_asian_break_rules}`, `cjk_font_name`, `known_proportional_ea`, `hang_punct`, `space_like` |
+| `paraVisibility` 716, `prepareParagraph` 729 (`pushChars` 747, `pushMath` 851, the run loop, the post passes, the marker, the result) | `para_visibility`, `prepare_paragraph` (`Prep::push_chars`, `Prep::push_math` + `PrepMath`) |
+| `hyphenate.ts` `hyphenMins` 44, `langOf`, `langAllowed`, `markHyphenation` 86; typography/hyphen `hyphenatorFor` | `hyphenate::{hyphen_mins, mark_hyphenation}`, `HyphenSessions::{new, session, clear}` over `uo_fonts::hyphen` |
+| `math.ts` `K`, `CM`, `kEm`, `q600`, `mathTextMetrics` 115, `REL`/`BIN`/`OPEN`/`CLOSE`/`clsOf`, `mathAlpha` 124, `mathAtoms` 202, `rowBox` 258, `fracBox` 277, `MathEnv` | `math::{math_text_metrics, math_atoms, MathEnv, Lvl}` (+ private `k`, `cm`, `k_em`, `q600`, `cls_of`, `math_alpha`, `math_atoms_raw`, `row_box`, `frac_box`) |
+
+`Unported(F4, …)` is gone from the crate.
+
+### Parity (P3 facet; TS capture regenerated in the same run, LQ21)
+
+`tools/lib/facets-f4.mjs` (hooked by `facets.mjs`; **`p3.prepare` replaces the F0 seed**): every
+`prepareParagraph` call (all passes, measuring calls in `pure()` included) is one `bytes` item
+holding the raw encoding of the whole `PreparedPara` — styles (every field, `fxKey`, the uo-docx
+canonical digest of `rpr`) and faces labelled per call by first use, the `ppr` digest, indents,
+tabs, spacing, flags, revision bars, the marker (text, level locator, suffix, `jc`, chapter,
+glyphs) and every glyph field (`obj` as the run's model position, `ptab`, check box, the
+equation box with its items and rules). The dump `<key>.f4.bin` holds per call: the paragraph's
+model position (`modelRefs`, the walk of canon.mjs at paragraph level), the env, and the
+transcript of what the call asked outside the model — `env.field` answers, `ctx.numbering.next`
+markers (level as `nums[k].overrides[i].lvl` / `abstractNums[k].levels[i]`), `ctx.noteMark`
+marks. The **table-style env** is recorded as (style key, conditions): `mergePPr`/`mergeRPr`
+(resolve.js) are wrapped to keep each merge's recipe and every resolver's `tableStyle` answer
+registers its parts (a table can be laid out by another pass context than the paragraph's), so
+the env `merge(…merge(style.pPr, cond₁.pPr)…)` (table.ts:741–757) is replayed by F2's
+`table_style` + `merge_ppr`/`merge_rpr`; the literal `{ pPr: {}, rPr: {} }` of the nested-table
+measure (table.ts:537) is its own record. `tests/f4_parity.rs` reads the docx with
+`uo_docx::read::read_document`, builds an `LDoc` of the model paragraphs (runs and field results
+keyed), answers the faces from the P2 transcript over the real font files (`TranscriptProvider`),
+runs `prepare_paragraph` with a transcript `PrepFlow`, encodes the result as the TS and compares
+byte for byte, then rebuilds the facet digest.
+
+| Corpus | Documents | Calls | Equal | Pending | Mismatches |
+|---|---|---|---|---|---|
+| committed fixture `tests/captures/f4` (CI `gen/1/4`, open fonts; a table) | 1 | 32 | 32 | 0 | 0 |
+| CI mode, seed 1 | 5 | 385 | 385 | 0 | 0 |
+| CI mode, seed 7, 200 documents | 200 | 15,108 | 15,108 | 0 | 0 |
+| .NET synthetic inputs (pictures, page fills ×4, synthetic, textboxes, text effects) | 8 | 153 | 149 | 4 | 0 |
+| Word oracle, all documents, installed fonts (`emwidth/ew-emb` skipped: embedded bytes, as F0/F1) | 2,741 | 85,452 | 84,426 | 1,026 | 0 |
+
+On the oracle 2,570 documents are equal on the facet digest; the 171 others hold a pending call and
+are compared call by call. **Pending = the paragraph objects the engine derives (LA2, F7a)**, never
+counted as equal: 199 synthetic `{ runs: [], props, ppr }` (the note separator's paragraph,
+engine.ts:2311), 159 copies whose runs are model runs (frame inner copies, revision views,
+`joinDeleted`), 668 whose runs are not all model runs (frame anchors with the frame run,
+continuation slices). They are replayed by P1 once F7a's `derive` builds them. Coverage on the
+oracle includes the `omath`, `hyph*`, `kinsoku`/`fe*`, `ligwidth`/`kern*`, `symnotdef`, `glyphfb`,
+`supraise`, `revisions-render`, `fields`, `numrpr`/`picbullet` groups. Timing: TS oracle capture
+with dumps 70 s – 3 min (the merge wraps; 1.4 GB of dumps, kept under `target/`, not committed);
+Rust replay 87 s (release).
+
+**Round 1** (the only one): `symnotdef/sn-arial`, 4 calls — the metrics of a private-use
+character drawn as Calibri's `.notdef` come from `faceFor(ctx, rpr, 0x41, style)` **without** the
+run's `w:sym` font; the port passed `symFont` to that second call. Found by the oracle replay,
+fixed in `push_chars`.
+
+### Memory and robustness (`tests/f4.rs`)
+
+| Check | Result |
+|---|---|
+| M1: every body paragraph of the fixture document (14) prepared with a fresh face table, resources and hyphenation sessions, plus `para_visibility` | 2,598,539 B allocated, 119,748 B peak, **0 B left** |
+| M1: a document of every path (caps, small caps, kerning, ligatures and stylistic sets, superscript, `w14` fill, PAGE/formula/TOC-result fields, drop-down, check box, custom inline, footnote reference, `w:ptab`, `w:sym`, an equation with a fraction and `m:br`, a synthetic list, Portuguese hyphenation, CJK kinsoku) — body env and a header-like env | 406,687 B allocated, 40,453 B peak, **0 B left** (each) |
+| M5 | no new cache: the hyphenation word cache is the uo-fonts `HyphenSession`'s (cleared past 50,000 words, the TS rule, tested in uo-fonts); one session per pattern set used (asserted) |
+| no panic: 400 hostile documents × 6 paragraphs (NaN/±∞/−0/1e300/`null` sizes, kerning, scales, spacings, positions, indents, tab positions, levels; lone surrogates, PUA symbols, form feeds, U+2028, soft hyphens, combining marks; 40-deep field-result chains, formulas with nested fields, unknown note kinds, fractions nested up to 300, `m:r` without text, `m:f` without parts, drop-downs with NaN selections, synthetic lists with NaN/negative levels, unknown `lineRule`/`jc`/leaders) | 1,950 prepared, 450 errors where the TS throws or a limit stops it (258 `Limit(Depth)`, 112 `Internal` noteRef kind, 80 `Internal` `m:r` without text); every glyph's style, face and equation index valid |
+| work budget: one 160,000-character paragraph | prepared, the budget charged per code point |
+
+### Declarations (the nine kinds of uo-docx A7; LA3 keys; limits)
+
+1. **Numbers**: every `Math.*` through uo-jsnum (`round`, `max`, `min`, `floor`, `ceil` in
+   `q600`, `rem` for `ilvl % 3`); `parseInt(hex, 16)` through `parse_int` (`isDark`); `String(n)`
+   through `to_js_string` (`ss${String(n).padStart(2, '0')}`, the ligature key, the picture-bullet
+   key, `null` → `"null"`); `offset0 + Math.min(a.offset, last)` through `to_uint32` of the f64;
+   model numbers are `JsNumber` (`??` treats `null` as nullish, `ToNumber(null)` = 0, so
+   `-ind.hanging` of `null` is −0 as in JS). Offsets and run indices are `u32` UTF-16 positions,
+   `MARKER_IX` = the TS `-1` of the marker's glyphs. **No arithmetic-semantics change**.
+2. **Regex** (hand matchers, none dynamic): `NO_BREAK_AFTER_DASH` (`/^[\s…]$/u`: exactly one code
+   point, JS `\s` = `uo_text::space::is_space`), `/standard/i` etc. (ASCII lowercase `contains`: no
+   non-ASCII character folds to these letters without `u`), `CJK_FONT_NAME` (prefix alternatives
+   ASCII-insensitive, `hg.*` stopping at the line terminators, the CJK class over UTF-16 units as
+   the TS without `u`), `/^(ms (p|ui )(gothic|mincho)|meiryo|malgun gothic)\b/i`,
+   `/^(ja|zh|ko)\b/i`, `/^ja/i`, `/^ko/i`, `/^zh-(tw|hk|mo)/i`, `/^[0-9A-Fa-f]{6}/`,
+   `/^\s*FORMTEXT\b/i`, `/_MARK\s*$/`, `split(/\s+/)[0]` of a trimmed instruction, `LETTER`/`MARK`
+   through `uo_text::props`.
+3. **NaN/±∞ and absent keys**: optional glyph numbers are `OptF64`; truthiness of model numbers
+   through `JsNumber::truthy`; `rpr.w && rpr.w !== 100` (NaN falsy); NaN size comparisons fall as
+   in JS (`#[expect(float_cmp)]` where the TS compares exactly). `tf.alpha === null` (only an edit
+   could make one; the reader never does) gives an absent alpha (F4-7).
+4. **Orders**: glyphs, display runs, styles and equation boxes in TS creation order;
+   `mathRuns` (`Set<number>`, only `has`) is a `Vec`; ligature groups in `ligate` order; the
+   numbering and note marks in call order (the flow's).
+5. **Recursion**: `fieldRuns` over nested field results and `fracBox` ↔ `mathAtoms` are bounded by
+   `max_depth` → `Err(Limit(Depth))` (the TS recurses until V8's stack throws `RangeError`, which
+   fails the layout: same outcome class, F4-9); a copy chain of derived paragraphs and of slices
+   ≤ 64 (as F0's `model_run`).
+6. **Module state**: `GLUED_FIELD` (`WeakSet<Run>` of field-value copies, never read elsewhere) →
+   a flag on the display entry; `infoCache` → `FaceTable::math_info` (F1); the hyphenation
+   module's `loaded` map → `HyphenSessions` per engine, filtered by `hyphenation_loaded` (K5); the
+   `Hyphenator` word cache → the uo-fonts `HyphenSession` per pattern set.
+7. **Throws** (no `try` in the F4 TS) → `Err(Internal)`: `fxColor(undefined)` of a solid `w14`
+   fill without colour (`c.mods` of `undefined`), `Array.from(nd.text)` of a run node without
+   text, `for … of f.num`/`f.den` of a fraction without them, `ctx.noteMark` of an unknown note
+   kind (`this.notes.marks[kind]` is `undefined`), a ligature group past the glyphs
+   (`glyphs[pos]!.cp`), `String.fromCodePoint` past U+10FFFF; the formula depth (F2-6) →
+   `Err(Limit(Depth))`.
+8. **Aliasing / identity (LA3)**: `RunStyle` objects → `StyleIx`, one per TS object (the
+   picture bullet's `{ ...ms, shift: 0 }` and every `styleOf` call of an equation are new
+   entries); `FontFace` → `FaceId` (F1's resolver); `Glyph.obj` → `RunKey` of the paragraph run,
+   a field-result run through `LDoc::field_results` (one level, F4-12), `None` for the copies the
+   TS makes (`fieldValueRun`, drop-down: new objects, never model runs, F4-6); `Glyph.ptab` → the
+   `RunKey` of the run carrying it (F4-4); `ctx.rev.paragraph(para0)` copy → the (`ppr`, `props`)
+   override with **no `ParaId`** (a manual-hyphenation skip never matches it, LA2); `MathBox` →
+   index into `PreparedPara::math`; `NumLevel` object → `MarkerLevel::Doc(LevelSrc)` or
+   `MarkerLevel::Synthetic`. **`json_key` sites**: `fxKey = JSON.stringify(fx)` (para.ts:249) →
+   `para::fx_json` (the key order `resolveTextFx` writes, NaN → `null`); `JSON.stringify(r.ot ??
+   null)` in the ligature key (para.ts:476) → uo-docx `JsonWriter::stringify` (model key order).
+   Both are compared as strings only.
+9. **Choices outside the source semantics**:
+
+| # | Decision | Why |
+|---|---|---|
+| F4-1 | `PrepFlow` trait for what the TS reaches through `ctx`/`env` outside the model: `ctx()`, `field(cx, src, name, instr, at)`, `number_next`, `note_mark` (default: the real `DocContext` with `word::format_number` under the text cap), `on_field`; the engine implements it (F7), the facet replays the TS transcript | as F5-1: the algorithm is replayed on the TS answers now (no engine yet); the flow state stays the engine's |
+| F4-2 | `prepare_paragraph(cx, flow, para: LParaId, env)`; `para_visibility(cx, flow, para, env) -> (markHidden, visible)`; `is_cjk_font(cx, flow, name)` | F0 had no flow; the `DocContext` is the engine's |
+| F4-3 | `ParaEnv.table_ppr`/`table_rpr: Option<Arc<PPr/RPr>>` (F0: `table_style: Option<u32>`); `FieldSource::Footnote/Endnote` carry a `NumKey` (F1-3); `FieldSource::None` is a callback that answers nothing | the TS passes the merged objects; JS number ids |
+| F4-4 | `Glyph.ptab: Option<RunKey>` (F5-11 had an index into `LPara.runs`, wrong for a `w:ptab` in a field result); F5's `ptab_of_cx` and its facet decoder adapted | the TS object is the display run's |
+| F4-5 | `Ch` holds 4 units (the upper case of one small-caps letter is up to three BMP code points, e.g. U+1F52); `Glyph.note_id: OptF64`; `Glyph.pic_bullet: Option<Box<PicBulletGlyph>>` (the synthetic `{ text: '￼', image }` run of a picture bullet: id + drawn size; `obj` is `None`); `ParaMarker.level: MarkerLevel`; `RevBars.ranges` as `f64` (F2's `revision_ranges`) | the TS values |
+| F4-6 | Field-value and drop-down copies are display entries (`DRun`) over the base run's fields with their own text; `GLUED_FIELD` is the entry's flag | no `Run` clone; the copies are new objects in the TS too |
+| F4-7 | `tf.alpha === null` → no `alpha` (the TS writes `alpha: null`) | `OptF64` has no `null`; the reader never produces it |
+| F4-8 | A field or formula text cut by `TextCap` (F2-4) warns `field text truncated` | the TS has no cap (K11b) |
+| F4-9 | Depth guards on `fieldRuns` and on fractions (`max_depth`, 192) | LQ13: a stack overflow would abort the wasm instance |
+| F4-10 | Work budget: one unit per code point in `pushChars`, per glyph of a ligature run, per letter run of `markHyphenation`, per equation text unit | K16 |
+| F4-11 | `HyphenSessions { registry, sessions }`: a pattern set is used only when the registry holds it **and** `hyphenation_loaded` names it; the F0 `WordCache`/`WORD_CACHE_CAP` (100,000) are gone — the uo-fonts session keeps its own cache (TS rule: cleared past 50,000) | one cache, the TS one |
+| F4-12 | `LDoc::field_results: FxHashMap<(RunKey, u32), RunKey>` (filled by `derive`, F7a): the key of a field-result run; deeper results have no key (no `RunRef` either) — an inline picture there has `obj` `None` | additive to F0's `LDoc` |
+| F4-13 | `math::MathEnv` trait for the TS closure object `menv` (style, face, advance, kerning, the face table, the depth guard, the budget); `math_text_metrics(fonts, face)` | no closures in data |
+| F4-14 | Strings outside the TS unions map to the value every consumer gives them: `lineRule` ≠ exact/atLeast → `Auto` (lines.ts:110–129, engine.ts:2087), `suff` ≠ tab/space → `Nothing` (lines.ts:230, table.ts:588), a tab `val` outside the enum → `Left` (`nextTab` treats it as left), a leader → F5-6 | enums; only the facet would print the original string (none in any corpus) |
+| F4-15 | The hyphenation word goes to the uo-fonts session as UTF-8 (letters, marks and their NFC are valid code points) | the uo-fonts API takes `&str` |
+| F4-16 | Harness: `facets-f4.mjs` (+ `F4_WRAPS` = `resolve.js` `mergePPr`/`mergeRPr`, the `tableStyle` hook installed after F2's patch, the `UO_F4_STATS` counters), `facets.mjs` wires it (the F0 seed of `p3.prepare` removed), `facets-f5.mjs` exports `Raw` and `textfx`; `tests/f4_parity.rs`, `tests/f4.rs`, the committed fixture `tests/captures/f4` (one CI document, its dump, transcript and docx; open fonts only) | — |
+| F4-17 | Shared edits inside the crate, additive: `model.rs` re-exports (`DocFormatting`, `MathNode`, `OpenTypeProps`, `TabSpec`, `RunProps`, `JsonWriter`), `word.rs` re-exports `uo_docx::word::obj`, `ldoc.rs` `field_results`, `lines.rs` `ptab_of_cx`, `Cargo.toml` dev-dependency `uo-fonts` with `hyphen-data` (the replay loads the seven pattern sets as the capture), `tests/f5.rs`/`f5_parity.rs` follow the type changes. **No file outside `core/crates/uo-docx-layout` was touched** | — |
+
+**Limits** (LQ14): `max_depth` (field-result nesting, fraction nesting), `max_parse_depth`
+(formulas, F2), `max_field_text` (F2's `TextCap`), the work budget (F4-10); every other loop is
+bounded by the paragraph's runs and code points.
+
+### Not done (handed on)
+
+- **F7a**: the derived paragraphs (`derive.rs`) — the 1,026 pending oracle calls (above) are
+  compared through P1 once they exist; `derive` fills `LDoc::field_results`. The engine's
+  `PrepFlow` (field sources: page, header/footer, note marks; `on_field` → `collect_fields`).
+- **F7b**: the picture-bullet glyph has `obj` `None` and `pic_bullet` set — F5's paint gate
+  (`g.kind == Obj && g.obj.is_some() && g.adv > 0`, paint.rs:288) and `paint_inline_object` must
+  take it (the image of `numbering.picBullets[id].image` at the drawn size).
+- **F7c**: `DocContext::note_mark` keeps its `format_number` closure parameter; the engine's
+  `PrepFlow::note_mark` default already passes `word::format_number` with the call's text cap.
+- The `p3.prepare` values in the older committed captures (`tests/captures/f0`, `f1`, `f5`
+  `layout-ci.capture`) are the F0 seed encoding; nothing compares them (`layout_parity` reports
+  `pending` until F7a). Recapture them with the frozen build when F2-20 is handled.
+- The CI job `layout-parity` (`.github/workflows/rust-core.yml`, outside the crate) does not run
+  `f4_parity` against its fresh capture yet (it needs `--docs-out` and `UO_F4_DOCS`); the committed
+  fixture runs in `cargo test`.
+
+## Stage 3 — F6 (tables): brief, not started (2026-11-05)
+
+F4 closed green in this session; F6 was **not started** (no file of F6 was touched: `table.rs`
+keeps its F0 stubs `Unported(F6, …)`), because a faithful port of `table.ts` and its facet harness
+(which must replay the `CellLayouter` callback with whole item lists) does not fit in what was left
+of the session without leaving a half-ported module. The brief below was written from the frozen TS
+(d0f45bc5) for the next session.
+
+**F6 — tables** (`table.ts`, 1,406 lines; Opus). TS, in file order:
+- `splitContent` 91 (cut a cell's content at a vertical position: `lastOf` by line object — K2e:
+  line `ItemMeta`; `moved` `Map<object, object>` of shifted items/lines → index remaps; `nest` rows
+  remapped by index, F0's `NestRow` by ranges), `itemTop` 152, `splitAtNest` 158, `nestedRowCut`
+  198 (refs split by `/`), `widowCut` 227 (`ParaSplitInfo` per line ref: widows/orphans, `after`,
+  `band`).
+- The width model: `widthTw` 266, `GeoCell` 274, `boundaryWidths` 293, `prefOf` 321, `fitPctMins`
+  327, `fixedMins` 352, `columnWidths`/`columnWidthsExact` 396–522 (Word's autofit: `S1`/`S3`/`S4`
+  stages, `lerp`, `noWrap` floors, `tblW` dxa/pct, the stored grid when it already has the width) —
+  pure over numbers, the first piece to port and unit-facet.
+- `measureCell` 524 (`ctx.pure` around `prepareParagraph` per cell paragraph — F4 done; the nested
+  table literal `{ pPr: {}, rPr: {} }` — the F4 facet already replays it), `anchoredWidth` 558
+  (textbox `autoFit && noWrap`: `prepareParagraph(ctx, tp, {})` of the box's `paras`),
+  `paraContentWidths` 576 (min/max line widths with the marker's `suff`, tabs at `defaultTabStop`).
+- `CellSlot` 616, `isHiddenRow` 638 (`paraVisibility` — F4 done).
+- `layoutTable` 647–1266: the hidden-row filter; style cascade (`tableStyle`, `mergeTblPr`,
+  `tblLook` over `DEFAULT_LOOK`, `defMar` 108 only without any table style, `noVaSp`); the slot
+  grid (gridBefore/After, gridSpan, vMerge spans, RTL mirroring `col` vs logical `lcol`); the
+  conditional cascade per slot (`condFor` over `COND_ORDER`, banding, `resolved` map 741–757 → the
+  `tablePPr`/`tableRPr` F4 consumes); borders (`edge`, `heavier`, `topWinner`, separated vs
+  collapsed, `tblPrEx`), cell margins (`cellMarOf`, half borders); column widths through
+  `measureCell` (`rawMeasure` memo); row by row: cell contents through the **`CellLayouter`**
+  (`layoutCell(cell, x, width, { tablePPr, tableRPr, darkBackground, cellMar }, ref)`, also inside
+  `ctx.pure` to measure, 852/947–950), vertical merges (`pendingMerges`, `layoutVertical`,
+  `mergeAt`/`mergeText`/`mergeFills`), `trHeight` exact/atLeast, `natural`, vertical alignment
+  (`contentDy`, `placeContent`), text direction (`verticalDir`, `paintVertical`), shading
+  (`cellFill`/`shdFill`), border items through F5's `paint_border`/`border_width`, `breakBorderItems`,
+  `topCut`/`topBorders`/`ownTopBorders`, cell boxes for the editor (`cells`), `effR`,
+  `borderLeft`, `tblpPr`; and **`RowLayout.split`** 1193 (a closure: F0's `RowSplit` data +
+  `split(&self, avail, cx)`), called by the engine (engine.ts:2756), not by `layoutTable`.
+- Exports the engine uses (F7b): `mergeTextFirst` 1330, `atPageTop` 1351, `dropMoved` 1375,
+  `LATE_ITEMS` 1383 (`WeakMap<object>` → `ItemSide::meta`), `shiftItem`/`shiftItem0` 1385 (F0's
+  `push_shifted`/`shifted`), `isHiddenRow`, `splitContent`.
+
+Rust: `table.rs` (F0 types: `CellContent` with `nest` by index ranges, `NestRow`,
+`ParaSplitInfo`, `RowLayout` with every TS field, `RowSplit`, `TableLayout`, `CellEnv`, `trait
+CellLayouter` implemented by the engine through `Cx`, `layout_table`, `split_content`). Inputs:
+F2 (`table_style`, `merge_tbl_pr`/`merge_tc_pr`/`merge_ppr`/`merge_rpr`, `COND_ORDER`,
+`resolve_color`, `shading_fill`), F4 (`prepare_paragraph` with a `PrepFlow`, `para_visibility`,
+`is_dark`), F5 (`paint_border`, `border_width`), the F0 item side tables (K2e).
+
+**Facets** (to add in `tools/lib/facets-f6.mjs`): `p3.colwidths` — the autofit stage, recorded by
+wrapping `layoutTable` and recomputing nothing (the widths are visible as the cell `x`/`width` the
+`CellLayouter` receives, in call order); `p3.table` — every `layoutTable` call: inputs (the table's
+model position in `modelRefs` terms, `frameX`, `frameWidth`, `ref`) and the transcript of every
+`layoutCell` call it makes (cell position, `x`, `width`, the env as the F4 recipe of
+`tablePPr`/`tableRPr` + `darkBackground` + `cellMar`, `ref`, and the returned `CellContent`: items in
+the P1 item encoding of canon.mjs, lines, height, flags, `paras`, `nest` as index ranges, whether it
+ran inside `pure()`), value = the `TableLayout` in the P1 encoding (rows: every field, items, lines,
+border items, merge records, cell boxes, `split` present); `p3.rowsplit` — every `row.split(avail)`
+the engine makes (the recorder wraps the closures of the returned rows) with its two parts. The
+Rust replay decodes the `CellContent`s with `tests/common/decode.rs` (the P1 decoder of F0) and
+answers the `CellLayouter` from the transcript, as F4 answers its `PrepFlow`.
+
+**Pitfalls**: item and line identity across `moved`/`keep`/`own` sets and `lastOf.get(ref) === l`
+(K2e, LA3 `ItemMeta` rows) — the TS keeps the *object*, so a shifted copy is a different line;
+`Math.max(...[])`/`Math.min(...[])` = ∓∞ in the width model; `reduce` sums in array order; the
+`resolved` map is keyed by slot object (index the slots); `measureCell`/`layoutVertical` run the
+`CellLayouter` inside `ctx.pure()` (flow state restored, the clone count charged to the budget);
+RTL mirrors the grid but conditions use the logical column; `widthTw` of `pct` against the table
+width vs the frame width; spreads `argument lists ≥ 10⁵` (`Math.max(...)`, table.ts:129, 153; K11a)
+succeed in Rust (accepted, LQ14); `max_table_cells` checked when the slot grid is built.
+
+## Stop point (2026-11-05, after F4)
+
+Done: F0; wave 1 — F1 (0 parity rounds), F2 (0), F3 (1), F5 (0); wave 2 — **F4 (1 round:
+the `.notdef` metrics face)**. F6 not started (brief above). Next: F6 tables, then wave 3 (F7a
+engine core, F7b ∥ F7c, F8). Open items carried: the F2-20 recapture of the older fixtures (now
+also their `p3.prepare` encoding), the `layout-parity` CI steps for `f4_parity`, the F4 hand-ons
+to F7a (derived paragraphs, the engine `PrepFlow`), F7b (picture-bullet painting) and F7c.

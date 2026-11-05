@@ -65,7 +65,7 @@ export const F5_WRAPS = { 'paint.js': ['paintLine'] };
 const T = (v) => v !== undefined && v !== null;
 
 /** The raw byte encoding of sink.mjs, without the digest (one per call, and the dump). */
-class Raw {
+export class Raw {
   constructor() { this.parts = []; }
   #b(n) { const b = Buffer.alloc(n); this.parts.push(b); return b; }
   tag(c) { this.parts.push(Buffer.from([c.charCodeAt(0)])); return this; }
@@ -91,7 +91,7 @@ const quiet = (fn) => {
   try { return fn(); } finally { globalThis.__uoFacet = f; }
 };
 
-function textfx(s, fx) {
+export function textfx(s, fx) {
   const ltrb = (b) => { s.num(b.l).num(b.t).num(b.r).num(b.b); };
   const fill = (f) => {
     if (f.kind === 'none') { s.tag('n'); return; }

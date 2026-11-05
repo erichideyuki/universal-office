@@ -153,7 +153,7 @@ fn glyph(kind: GlyphKind, c: char, adv: f64, offset: u32) -> Glyph {
     let n = c.encode_utf16(&mut units).len();
     Glyph {
         kind,
-        ch: Ch { units, len: u8::try_from(n).unwrap() },
+        ch: Ch::of(&units[..n]),
         cp: u32::from(c),
         face: face(0),
         style: StyleIx(0),
@@ -170,13 +170,14 @@ fn glyph(kind: GlyphKind, c: char, adv: f64, offset: u32) -> Glyph {
         ptab: None,
         size_pt: 10.0,
         check_box: None,
-        note_id: None,
+        note_id: OptF64::NONE,
         fe_shrink: OptF64::NONE,
         kern_adj: OptF64::NONE,
         lig_start: None,
         lig_end: None,
         sub_gid: None,
         math: None,
+        pic_bullet: None,
     }
 }
 

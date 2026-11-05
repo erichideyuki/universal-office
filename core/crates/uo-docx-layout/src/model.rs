@@ -43,3 +43,10 @@ pub use uo_docx::model::formatting::Theme;
 pub use uo_docx::model::media::ImageData;
 pub use uo_docx::model::picture::{PicBlipFx, PicColor};
 pub use uo_docx::model::run::{DrawingGroup, GroupItem};
+// F4 (paragraph preparation): the formatting, equations, OpenType props, tab specs, run props and
+// the JSON writer of `JSON.stringify(r.ot)`
+pub use uo_docx::js::JsonWriter;
+pub use uo_docx::model::effects::OpenTypeProps;
+pub use uo_docx::model::formatting::DocFormatting;
+pub use uo_docx::model::props::TabSpec;
+pub use uo_docx::model::run::{MathNode, RunProps};
