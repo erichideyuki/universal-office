@@ -1,0 +1,9 @@
+# Parity capture of frontier G of uo-render (text_fx): written by core/crates/uo-render/tools/capture-g.mjs, replayed by tests/g_text_fx.rs.
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=linux arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=fma+avx2 glibc=2.39 tunables=glibc.cpu.hwcaps=-FMA,-AVX2 flags=none
+margin	v=6000:6768cd7cd51cb86fa8e5a4df1b7f231b
+box	v=6832:9ce812e90fb9e0bad8f9c6dc2d989891
+outline	v=197014:e4f51b03ba94b4f1138fa0508b2a7002
+gradof	v=20:ecc940087424a0d6e0a93f3046608985
+dilate	v=900:cacdc2eaa9178384cc7629cb4d34b045
+dash	v=49:23ccbc50b825f51bbadc2481901f1c1d
+layers	v=1145:19cd0cc821d6a519c48da9d328998aa6

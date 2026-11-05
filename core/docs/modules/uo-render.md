@@ -653,6 +653,144 @@ magic and hash, to four decoders and asserts no panic, no call over 1 s, an erro
 - Not run: the generated codec inside wasm (compiled only), in WebKit/real Safari, a TypeScript decode timing, `libFuzzer` itself (the stable driver ran; CI runs libFuzzer), a long fuzz run (minutes, not hours).
 - Open for the maintainer: the TypeScript decoder has no byte limit; if it ever reads bytes that did not come from the wasm module, add `maxAlloc` as in Rust.
 
+## Milestone 1 — frontier G (geometry and painter helpers)
+
+Hybrid mode, one Sonnet session, 2026-11-05. Scope: §5 `geom` and `paint::*` with their R-P3 facets. Pure functions on the
+types of frontier T; no painter, encoder or wasm export here (frontiers E, D, V; uo-pdf P). Files: `src/geom.rs`,
+`src/paint/{mod,fill,page_fill,text_fx,picture}.rs`, `tests/g_*.rs` (+ `tests/g_support/`, `tests/captures/g_*.capture`),
+`tools/capture-g.mjs`. `geom::PENDING` is empty (a test asserts it).
+
+### Ported (TS → Rust)
+
+| TS (`write/packages/docx-layout/src/`) | Rust (`uo-render/src/`) |
+|---|---|
+| `geometry.ts` 14–150 `K`, `arcTo`, `poly`, `pin`, `presetPathLocal` (21 names, `default` = rectangle) | `geom.rs` `arc_to`, `preset_path_local` |
+| `geometry.ts` 472–520 `custPaths` (M/L/C/Q/A/Z, `p.w \|\| 1`, flips, rotation) | `geom::cust_paths` |
+| `canvas.ts` 439–451 / `pdf.ts` 386–400 the shape-part assembly (line, `custom`, preset + `OPEN_PRESETS`) | `geom::shape_parts(unit, &ShapeGeom, &Resources, frame, line)` → `ShapePart { cmds, fill, stroke, even_odd }` |
+| `geometry.ts` 199–352 `phi`, `hexRgb`, `gradientSamples`, `gradientGeometry`, `patternRaster`, `blipTiles`, `isRectGradient`, `rectGradientRaster` | `paint/fill.rs` (+ `paint::hex_rgb`, `GradBox`, `Tile`, `PatternRaster`, `RectRaster`, `stops_of`) |
+| `page-fill.ts` 61–175 `tri`, `fract`, `near`, `fillParam`, `ramp`, `gradientTilePx`, `gradientTileRgba`, `patternRgba`, `hexRgb` (with `\|\| 0`), `pageFillTileTw` | `paint/page_fill.rs` |
+| `textfx.ts` 77–231 `gradOf`, `fxMarginPt`, `runBox`, `runOutlineSegs`, `fxLayers`, `dilate`, `dashPattern` | `paint/text_fx.rs` (+ `RunView`, `RunView::of(list, item, res)`, `FxLayer`) |
+| `canvas-picture.ts` / `pdf-picture.ts` `bounds`, `shapeSubs`, `maskToCanvas`/`colored`, `DASH` | `paint/picture.rs` `effect_bounds(Painter, …)`, `shape_subs`, `colored_mask(…, ChannelStore)`, `dash` |
+| (new) limits and errors of the helpers | `paint::{PaintLimits, PaintError, LimitKind}` |
+
+`geom.rs` 161 → 516 lines, `paint/` 20 → 949 lines (doc comments included); the T functions (`map_path`, `path_bounds`,
+`rotate_path`, `line_path`, `preset_path`, `is_open_preset`) are unchanged and now under facets.
+
+### Parity evidence (R-P3)
+
+`tools/capture-g.mjs` runs the frozen TS (`UO_TS_ROOT` = the clickcompliance-docx checkout, d0f45bc5, built `dist`) and writes
+five captures; `tests/g_*.rs` regenerate every input with the testkit `Rng` and the same pools (hostile values — NaN, ±∞, −0, 1e308 —
+in every number pool, malformed colour strings, unknown preset names) and compare digest by digest (exact f64 bits, −0
+distinguished, NaN canonicalized, pixel buffers as bytes). The functions that are private in the TS (`arcTo`, `rotatePath`,
+`shapePath('line')`, `linePath`, `dilate`, the picture `bounds`/`shapeSubs`/`maskToCanvas`/`colored`/`DASH`) are **run from the
+source text of the built `dist`** (`extractFn`), not copied.
+
+| Capture | Facets | Calls compared | Result |
+|---|---|---|---|
+| `g_geom` | 40: `preset/<29 names>` (local + placed with flips/rotation), `cust`, `arc`, `rotate.{canvas,pdf}`, `line.{canvas,pdf}`, `bounds`, `map`, `open`, `parts.{canvas,pdf}` | 8,700 presets, 3,000 cust sets, 3,000 arcs, 8,000 rotate/line, 4,000 bounds/map, 6,000 shape parts | 40/40 equal |
+| `g_fill` | 5: `samples`, `geometry`, `pattern`, `tiles`, `rect` | 1,200 ramps (two-stop S curve and linear), 3,000 geometries, 400 pattern rasters (all 54 presets plus unknown names, 5 pixel sizes, 4 samples per cell), 1,500 tile sets, 300 rect gradients up to 2,000² | 5/5 equal |
+| `g_page_fill` | 5: `param`, `tile_px`, `tile_rgba`, `pattern_rgba`, `tile_tw` | 25,200 `fillParam` values (600 fills × 21 points × 2 modes), 600 tile sizes, 160 tiles × screen/PDF, 400 patterns, 600 tile sizes in twips | 5/5 equal |
+| `g_text_fx` | 7: `margin`, `box`, `outline`, `gradof`, `dilate`, `dash`, `layers` | 1,500 margins, 1,500 boxes, 600 outlines (4 open fonts), 300 dilations, 260 `fxLayers` (177 produced a layer; pixel bytes compared) | 7/7 equal |
+| `g_picture` | 6: `bounds.{canvas,pdf}`, `subs`, `colored.{canvas,pdf}`, `dash` | 6,000 bounds, 800 subpath sets (17 shapes incl. arcs, all flips), 1,200 coloured masks | 6/6 equal |
+
+63 facets, **0 mismatches, 0 accepted, 0 not replayed**. The committed captures were taken in WSL (Node v24.15.0 linux-x64, glibc 2.39,
+`GLIBC_TUNABLES=glibc.cpu.hwcaps=-FMA,-AVX2): the replay requires that platform because the ramp uses `**`
+(`gradientSamples`: `g_fill`, `g_page_fill`). A second WSL run is byte-identical to the committed files and a **Windows Node
+v24.15.0 win32-x64** run has the same records line for line below `@platform` (so the pow-dependent facets did not separate the
+platforms on this corpus). Capture time 5 s; replay 3.9 s release, 45 s debug (`g_fill` 27 s of it).
+
+Two things the capture settles about the TS itself: (1) the picture helpers are **not** equal copies — `bounds` differs
+(the canvas adds `h` to the shadow margin for a negative `sy`; `bounds.canvas` ≠ `bounds.pdf` digests) and `maskToCanvas`
+clamps its colour channels where `colored` wraps (they differ only for a malformed colour string) — while `shapeSubs` and `DASH`
+are equal (the script throws if they ever differ) and are one function each; (2) `canvas.ts` and `pdf.ts` have the same
+`rotatePath` (one function, both facets equal).
+
+### Memory and no-panic
+
+- **M1** (`tests/g_memory.rs`): every `geom`/`paint` function, ok and each refusal, returns the live bytes to the starting value
+  (`assert_no_leak`, outputs `black_box`ed, the face's outline cache warmed first); the size checks come before the allocation they
+  guard (`measure`: 0 allocated bytes for the `max_samples` and `max_raster_px` refusals, < 256 B for the pattern ones, < 64 KiB for
+  the over-cap effects layer, < 1 MiB — the disc offsets — for `dilate`). **M2**: a soak of the pipeline (paths, ramps, pattern,
+  rect gradient, page tile, `fx_layers`) is flat with a tolerance of 0 B. **M3** (release, bytes allocated / peak above start):
+  `pattern_raster` Letter PDF (0.75 pt, 4 px per cell) 55.1 MB output, 55.1 / 55.1 MB; `rect_gradient_raster` 2,000² 16.0 MB,
+  16.0 / 16.0 MB; `gradient_tile_rgba` 1024×768 3.1 MB, 3.15 / 3.15 MB; `fx_layers` 24 pt run at 2.78 px/pt (54,810 px) 4.7 / 2.1 MB,
+  at 8.33 px/pt (489,936 px) 40.4 / 18.6 MB (**82 B and 37 B per pixel**: float RGBA 16, silhouette, reflection, blur and effect masks,
+  output 4); `dilate` 1000² r = 6 4.0 / 4.0 MB. Budgets asserted: output + 8 KiB for the rasters, 64 B/px + 1 MiB peak for the layers.
+- **No-panic** (`tests/g_nopanic.rs`): 20,000 hostile geometries (random f64 bit patterns, NaN, ±∞, ±1e300, −0), custom paths of
+  commands without points, 3,000 hostile fills, 3,000 page fills, 600 hostile runs (glyph ids and code points past the face, columns of
+  different lengths, hostile `scaleX`/size/ppt/effect parameters, tight mask limits), 4,000 pictures; colour strings of random UTF-16
+  (lone surrogates); the cases the TS never returns from end with an error (blip tiles under the precision of the coordinate, a
+  sweep of 1e300°, a 10⁹ pattern). 4 s debug.
+
+Gates run: `cargo test -p uo-render --all-features` (debug and release) green; `cargo check -p uo-docx-layout --all-features --tests`
+green; `cargo clippy -p uo-render --all-features --tests --no-deps -- -D warnings` native and `--lib --target wasm32-unknown-unknown`
+clean; `core/tests/float-casts.sh` exit 0; `core/tests/grep-bans.sh` clean; `rustfmt --check` on the files above clean. No `unwrap`,
+`expect`, `panic!` or panicking index in `src/`.
+
+### Declarations (every decision outside the TS semantics)
+
+Numeric sites (all `Math.*` through `uo_jsnum`): `math::{cos, sin, tan}` (arcs, rotations, shadow margins, gradient axis), `math::exp`
+(`phi`), `math::pow` (`**` 2.2 and 1/2.2 of the ramp), `math::hypot` (gradient geometry), `math::{round, ceil, floor}` (rasters,
+tiles, bounds), `math::{min, max, min_n, max_n}` (every `Math.min/max`, NaN wins), `math::rem` (`%` of the pattern and angle
+folds), `math::abs`; `conv::{truthy}` (`p.w || 1`, `if (st.rot)`, `Math.hypot(...) || 1`), `conv::{to_uint8, to_uint8_clamp}` (typed-array
+stores: `Uint8Array` wraps, `Uint8ClampedArray` clamps), `conv::to_int32`/`to_uint32` (`>>` of a pattern row and its count),
+`conv::js_index` (reads `ta[i]` with a JS number index: NaN out of range); `parse::parse_int_utf16` (`parseInt(h.slice(a, b), 16)`
+over the UTF-16 units: a malformed colour gives NaN/negative channels and the store decides); `paint::f32_store` (`Float32Array`
+store = `as f32`) for the RGBA accumulation and the masks. Constants written as the TS does at run time: `4/3`, `2/3`, `1/2.2`,
+`PI/3`, `(deg * PI) / 180`; `K = 0.5522847498`.
+
+| # | Decision | Why |
+|---|---|---|
+| G-D1 | `arc_to` emits nothing for a sweep of more than 16,384 quarter turns (it returns the current point); a NaN sweep emits nothing as in the TS | the TS loops `ceil(\|sweep\|/90)` times (hangs / exhausts memory on 1e300) |
+| G-D2 | Colours and names arrive as interned `Sym`s through a `&SymbolTable` (or `&[u16]`); `hex_rgb` is the TS `parseInt` over UTF-16 | RQ6; no lossy conversion of colour strings. Preset and pattern names do `String::from_utf16` (lone surrogates cannot name a preset) |
+| G-D3 | `PaintLimits` (`max_raster_px` 2^25, `max_tiles` 2^20, `max_samples` 2^20, `max_dilate_offsets` 2^16, `max_dilate_work` 2^33, `max_fx_px` 2.4·10⁷ = the TS cap, the uo-drawingml `Limits`) and `PaintError { Limit, Invalid, Draw }` | the TS has only the three caps (4,000 tiles, 2,000² rect gradient, 2.4·10⁷ px layer) and none of the others; a host short of memory lowers `max_fx_px` (the layer peaks at 37 B/px: 0.9 GB at the TS cap) |
+| G-D4 | `pattern_raster`: a raster size that is not a whole number (NaN, fraction: `px` 0, `k` 0.5 on an odd frame) is `Invalid`; over the limit `Limit(RasterPx)`; no allocation before the check | the TS builds a zero-length array / throws a `RangeError` |
+| G-D5 | `blip_tiles`: counts every loop turn (rows and tiles) against `max_tiles`; the TS check `out.length < 4000` stays; `algn` absent is the caller's `"tl"` | the TS hangs when the step is under the precision of the coordinate, and one row can hold millions of tiles |
+| G-D6 | `rect_gradient_raster`: a NaN side is `Invalid` (the TS returns an empty raster of NaN size) | |
+| G-D7 | `gradient_samples(stops, n)`: `n` over `max_samples` is `Limit(Samples)`; `gradient_tile_rgba` over `max_raster_px` is `Limit(RasterPx)` | |
+| G-D8 | `dilate`: the disc is capped (`max_dilate_offsets`, work) and an infinite radius refused, **before** the output mask is allocated | the TS loops (2R+1)² offsets per pixel |
+| G-D9 | `fx_layers` returns `Ok(None)` for a run with no glyphs (the TS throws a `TypeError` in `runBox`) and for a layer whose size is NaN (the TS then returns a degenerate layer of NaN size — a NaN `scaleX`; the parity corpus replaces a NaN `scaleX` by 1 for this facet only, `box`/`outline` keep it); mask limit errors are `Draw` | |
+| G-D10 | `run_box` is `Option` (empty run); `run_outline_segs` returns `Subpaths`, never "null": a `uo_fonts::Face` always has the outline method (no `glyf` = no subpaths, as every glyph answering `null`) | the TS `LayoutFont.glyphOutline` is optional, `Face` is not |
+| G-D11 | `RunView` borrows the glyph columns (`cps`, `xs`, `gids` with `NO_GID`); a column shorter than `cps` is tolerated (the glyph is skipped / the box is `None`) | no `GlyphRunItem` is rebuilt |
+| G-D12 | `picture`: **two** `effect_bounds` (`Painter::Canvas` keeps the extra `h`), **one** `shape_subs`, **one** `dash`, `colored_mask` with `ChannelStore::{Clamp, Wrap}` | the capture proves what is equal and what is not (above) |
+| G-D13 | `shape_parts` is the one assembly for both painters (`LineUnit` picks the unit: `line` points `/20` for the PDF); `GeomEval::Drawingml` shapes are not evaluated here (the painter calls uo-drawingml's `preset_path`) | RQ1; the TS evaluates the compact subset only |
+| G-D14 | `gradient_geometry` reads `GradFill.rot_with_shape` as a `bool` (`rotWithShape !== false`: the decoder sets `true` for absent; `grad_of` sets `true`); `adj` is looked up as a JS object (last value of a repeated name); `GradBox.rot` 0 stands for absent (`!box.rot`) | the types of T |
+| G-D15 | `pattern_raster` takes the preset name and looks the 8 rows up with `uo_drawingml::pattern_rows` (own names only, G7 of uo-drawingml) | |
+| G-D16 | The shape-part **assembly** facet (`parts.{canvas,pdf}`) compares with a transcription of the `paintShape` / PDF `shape` lines in the script (built from the real `custPaths`, `presetPath`, `OPEN_PRESETS` and the extracted private `rotatePath`/`shapePath('line')`/`linePath`); the assembly itself is not callable in the TS | it is inline code of two large functions |
+
+### Not done
+
+- **No corpus-driven inputs.** Every facet uses generated inputs (pools with hostile values, real open fonts for the text effects, the
+  real preset tables); no capture of the `ShapeItem`/`GlyphRunItem` values of real layouts. The item fields themselves are covered by the
+  layout adapter (2,755 layouts); the helpers' use of them comes with frontier E/V (R-P4) and the PDF parity.
+- The canvas-only precomputation of frontier E (glyph batch joins, the `F0xx` symbol remap, `gid` outlines of canvas.ts 357–371, the 64-sample
+  gradient call) and the PDF's own as-path outline code (`pdf.ts` 177–292, outline skew 0.2) are not here.
+- The wasm paint exports (`paint_fx_layers`, `paint_pattern`, …) of §5 and the uo-drawingml mask exports of RQ12.
+- `GeomEval::Drawingml` evaluation (Slides).
+- Cargo: `uo-testkit` added to `[dev-dependencies]` of `uo-render` (and the matching line of `core/Cargo.lock`) for the replay. No other file
+  outside `geom.rs`, `paint/`, `tests/g_*`, `tools/` and this record was touched.
+
+### What the next frontiers need
+
+- **E (canvas encoder)**: `shape_parts(CanvasTwips, …)` for the `parts` hint, `gradient_geometry` + `gradient_samples(…, 64)` for
+  `grad_geom`/`grad_samples`, `RunView::of` + `run_box` for fx runs, `run_outline_segs`/`Face::glyph_outline` for the `outlines` hint; the wasm
+  exports call `fx_layers(ppt)`, `pattern_raster(px 15, k 1)`, `rect_gradient_raster(ppu 2)`, `gradient_tile_rgba(…, false)`, `blip_tiles(emu 1/635)`,
+  `page_fill_tile_tw`, `picture::*` with `Painter::Canvas` / `ChannelStore::Clamp`. The wasm host sets `PaintLimits::max_fx_px` for a phone.
+- **uo-pdf P**: the same functions in points with `LineUnit::PdfPoints`, `Painter::Pdf`, `ChannelStore::Wrap`, `gradient_samples` 512 (256 for `path`),
+  `pattern_raster(px 0.75, k 4)`, `blip_tiles(emu 1/12700)`, `gradient_tile_rgba(…, true)`, `text_fx::dash_pattern`, `picture::dash`, `fx_layers(ppt 200/72)`.
+  `RunView.synth_italic` here is the textfx skew 0.21; the PDF's own outline paths use 0.2.
+
+### Process metrics
+
+| Stage | Agent (model) | Time | Tool calls |
+|---|---|---|---|
+| G | geometry + painter helpers + R-P3 + M1–M3 + no-panic + record (Sonnet, hybrid mode) | one session (wall time not recorded) | ≈ 100 (own tally) |
+
+Parity rounds: capture 1 of each file; `g_geom`, `g_fill`, `g_picture` equal on the first replay; `g_page_fill` 2 mismatches (a **port bug**:
+a clippy rewrite of `fo >= 75 || fo < 0` into a negated range changed the NaN focus; fixed, equal on round 2); `g_text_fx` 1 mismatch (not a
+port bug: a NaN-size layer, decision G-D9, a corpus change). Memory/no-panic: 2 test-design fixes (a `Vec` kept across `assert_no_leak`, an
+off-by-integer `k = 0.5` case), none in the library.
+
 ## Types (T)
 
 Frontier T, Opus, 2026-11-03, inside uo-docx-layout F0 (record there: "Milestone 1 — F0").

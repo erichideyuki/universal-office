@@ -1,0 +1,7 @@
+# Parity capture of frontier G of uo-render (page_fill): written by core/crates/uo-render/tools/capture-g.mjs, replayed by tests/g_page_fill.rs.
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=linux arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=fma+avx2 glibc=2.39 tunables=glibc.cpu.hwcaps=-FMA,-AVX2 flags=none
+param	v=25200:8b7646768938d6e9627a62df324fee00
+tile_px	v=1200:18cbab75963c6db8821a85e5ef0f54bc
+tile_rgba	v=320:b4a5707cf4077eb7c0f2c8b80d41de9f
+pattern_rgba	v=400:1ab568e199bfcff1444141aa349ede21
+tile_tw	v=1330:ed2e5a04fb5bcce098816dc6789fedc7

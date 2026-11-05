@@ -175,6 +175,7 @@ dependencies = [
  "uo-drawingml",
  "uo-fonts",
  "uo-jsnum",
+ "uo-testkit",
 ]
 
 [[package]]
