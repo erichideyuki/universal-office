@@ -90,7 +90,7 @@ Myers and O(N·M·N) time for the histogram on repetitive text.
 after them): `myers.rs`, the snapshot loop `k <= di - 1` → `k < di` (integers, identical); `diff.rs`, the delete
 + insert fold test through `matches!`; `html.rs` `list_html`, the TS condition `ilvl >= level && !(ilvl > level)` →
 `ilvl == level` (identical for NaN, which makes both false, and for ±0); `export/matchers.rs`
-`collapse_blank_lines`, `repeat_n`. Re-running clippy for this record: not done.
+`collapse_blank_lines`, `repeat_n`. Clippy re-run for this record on 2026-11-05 (clean, with the tests).
 
 ## 1. Numeric parse/format sites and the uo-jsnum function used
 
@@ -256,38 +256,160 @@ None of the three is used (no writer). The orders that matter and are kept:
 No deviation changes a result on the captured records except the named accepted difference (D5a-4); the work
 limits (D5a-8) are not reached by any captured pair.
 
-## Memory, work and security
+## Memory (measured)
 
-- **Memory gate**: **no M1/M3/M5 test exists for export or compare**: no `memory_*` or `nopanic_*` test and no
-  fuzz target (`core/fuzz/fuzz_targets`) calls `to_html`, `to_markdown` or `diff_*` (checked by listing those
-  files; the only callers under `tests/` are `parity_export.rs` and `parity_compare.rs`). The plan's D5 soak
-  ("1,000 × read → html → markdown → odt → read_odt → diff", `uo-docx.md`, memory table) has not been run.
-  Not measured.
-- **Work bounds**: by construction (items 5 and D5a-8) and by the unit tests `limits_answer_none`,
-  `coarse_is_a_valid_script` (myers), `repetitive_input_finishes_within_the_budget`, `exhausted_budget_gives_the_coarse_script`,
-  `deep_recursion_is_iterative` (histogram). **There is no test that drives `diff_blocks_with_limits` with small
-  limits and checks `DocDiff::limited` end to end**: `tests/parity_compare.rs` says that "the limits have their own
-  tests (`tests/compare_limits.rs`)", and **that file does not exist** (finding).
-- **No panic**: the code uses `get`/`first`/`Result` paths and `saturating_*`; no panic test. Not measured.
+2026-11-05, debug build, `uo-alloc` counting allocator, one thread per test. Tests: `tests/memory_export.rs`,
+`tests/memory_compare.rs` (and `tests/memory_odf.rs` for the D5 soak, see `D5b.md`); the documents come from
+`tests/d5_support/mod.rs` (corpus samples across the size range, the synthetic packages of `export.inputs` and
+`compare.inputs`, generated bodies). The numbers below are what the tests print (`--nocapture`).
+
+**M1 — no leak per operation (0 B left after the outputs are dropped, `clear_caches()` first)**
+
+| Area | Operations | Inputs | Result |
+|---|---|---|---|
+| Export | `ExportDoc::from_document`, `to_html` (full, fragment with images omitted, titled), `to_html_units`, `to_markdown` (plain, titled with images omitted), `to_markdown_units`, `ordered_blocks`, `heading_level`, `is_list_item`, `para_plain_text`, the escapes, `base64`/`data_uri` | 129 documents (36 corpus, 93 synthetic) in every shape; error paths: list level 70,000 (`ListLevelLimit`), -1, 1e21, empty documents | 0 B left each; costliest single run 5.3 MB allocated (`oracle/justify5/sh-23.docx`) |
+| Compare | `final_blocks`, `blocks_of`, `tokenize_blocks`, `myers_diff`, `histogram_diff`, `intra_word_marks`, `diff_blocks`/`diff_blocks_with_limits`, `diff_documents`/`diff_documents_with_limits` (both algorithms, with and without the word refinement, default and tight limits), `DocDiff::to_json` | 204 pairs (146 of `compare.inputs`, 58 corpus: next and itself); the building blocks over random keys at limits (huge, 200/64, 0/0); empty sides | 0 B left each; costliest 16.2 MB allocated (`seed-68-table-delete-row+image-bytes`) |
+
+**M2 — soak (1,000 iterations, sample every 50, flat after one sample of warm-up, back to the start after `clear_caches()`)**
+
+| Soak | Documents | Live bytes (21 samples) | After `clear_caches()` |
+|---|---|---|---|
+| 1,000 × (html ×4 shapes, markdown ×3) | 33 | 1,724,420 B in every sample | 1,724,420 B |
+| 1,000 × 7 diffs (both algorithms, default and tight limits, `diff_blocks`) | 41 pairs | 5,941,786 B in every sample | 5,941,786 B |
+| **D5 soak**: 1,000 × (read → html → markdown → odt → read_odt → diff original/read back), `memory_odf.rs` | 35 packages | 497,456 B in every sample | 497,456 B |
+
+(The baseline is the documents the test holds; the tolerance asserted is 0 B.) The D5 soak runs in 7.7 s.
+
+**M3 — budgets** (allocated bytes / peak live bytes above the start; the budget in the test is the measured
+value + 25%, and a regression over 10% of the recorded measurement fails the gate)
+
+| Export | Output | Allocated | Peak |
+|---|---|---|---|
+| html, small corpus document | 1.5-3.1 KB | 12.7-64.7 KB | 6.3-19.5 KB |
+| markdown, small corpus document | 36 B-1.5 KB | 1.4-41.8 KB | 0.75-20 KB |
+| html, generated 1,000 blocks | 88 KB | 2.76 MB | 740 KB |
+| markdown, generated 1,000 blocks | 73 KB | 2.19 MB | 1.03 MB |
+| html, generated 10,000 blocks | 866 KB | 26.7 MB | 6.9 MB |
+| markdown, generated 10,000 blocks | 728 KB | 21.1 MB | 9.8 MB |
+
+`ExportDoc::from_document` allocates 0 B (it borrows). Asserted: beyond a fixed part (80,000 B allocated, 20,000 B
+peak: the `Ctx`, the final view, the style sheet) at most 40 allocated bytes per output byte (measured worst 30.7
+html, 29.0 markdown) and 20 peak bytes per output byte (measured 13.8). The cost is high because the output is
+built in UTF-16 (`U16Buf`, 2 B per unit), then copied to a `String`, and the final view clones the paragraphs it
+changes; it is linear (the 1,000 and 10,000 block rows have the same ratio).
+
+| Diff (`diff_documents`, histogram, default limits) | Blocks (A+B) | Allocated | Peak | Budget (alloc / peak) |
+|---|---|---|---|---|
+| corpus pair `tabbeyond/tb-end-default-c15` / next | 60 | 90,717 B | 25,316 B | 114,000 / 32,000 |
+| corpus pair `metrics/rule-aptos` / next | 84 | 766,776 B | 47,188 B | 959,000 / 59,000 |
+| corpus pair `imgul/iu-ar-l240-22-double` / next | 8 | 13,948 B | 4,222 B | 18,000 / 6,000 |
+| generated 500 blocks, 5% edited | 1,000 | 2,419,176 B | 289,960 B | 3,025,000 / 363,000 |
+| generated 500 blocks, unrelated | 1,000 | 13,103,334 B | 2,499,310 B | 16,380,000 / 3,125,000 |
+| generated 2,000 blocks, 5% edited | 4,000 | 20,296,024 B | 1,157,200 B | 25,370,000 / 1,447,000 |
+| generated 2,000 blocks, unrelated | 4,000 | 68,961,168 B | 18,201,704 B | 86,200,000 / 22,750,000 |
+| repetitive 2,000 against 1,990 identical | 3,990 | 3,376,102 B | 649,826 B | 4,221,000 / 813,000 |
+
+The cost does not follow the block count alone: it follows the changed paragraphs (word refinement: one Myers
+trace per changed pair, up to `INTRA_TRACE_CELLS` = 1 Mi cells = 4 MiB) and the block-level trace (up to
+`MYERS_TRACE_CELLS` = 4 Mi cells = 16 MiB, hit by the "unrelated 2,000" row). Observation, not a defect: a pair
+of 84 blocks with 408 B of result allocates 767 KB (long paragraphs refined word by word); the first thing to
+look at if the diff becomes a hot path.
+
+**M5 — caches**: the exporters and the diff keep **no cache** between calls: `Ctx`, the interner and the budget
+live in the call. Tested: the second run of the same export allocates exactly the bytes of the first and keeps
+0 B (`m5_no_cache_to_cap`; same for the diff in `m5_the_trace_is_capped_and_nothing_is_cached`). What does grow
+with the data, Myers' trace, is capped by `myers_trace_cells`: 4,000 against 4,000 different blocks (D = 8,000)
+finishes with a peak of 18,155,566 B (Myers) and 18,553,958 B (histogram) against the 16,777,216 B of the trace
+limit (1.4-1.8 MB of linear part), and `limited` is set.
+
+## Work limits (tested)
+
+`tests/compare_limits.rs` (11 tests; it is the file `parity_compare.rs` cites), on generated documents and the
+pairs of `compare.inputs`:
+
+- `limited` is `false` for all 73 sampled capture pairs under the default limits, and a result that is not `limited`
+  under shrunk limits equals the unlimited one exactly (436 runs); 544 runs under limits from `(0,0,0,0)` to
+  `(5000, 4096, 5000, 4096)` are `limited`.
+- Under work 0, 1, 10, 50, 200 the script is **valid** for every pair and both algorithms: each block of each side
+  in exactly one edit, in order; `equal` edits pair blocks with the same text; the result is deterministic; the
+  JSON does not carry `limited`.
+- The coarse script keeps the common prefix and suffix (60 + 40 shared blocks around 200 against 180 different:
+  the first and last edits are `equal` and cover them) with work 0 and with 8 trace cells.
+- A trace limit of 100 cells on a pair with D = 300 sets `limited`; 1 Mi cells does not; an equal pair has D = 0 and
+  is never limited, whatever the limit.
+- **The work stays within the limit**: counted comparisons of `histogram_diff` and `myers_diff` over four shapes
+  (repeating, one value, random over 4 values, disjoint; 3,000 against 3,000) at work 1,000 / 20,000 / 400,000 and
+  1 Ki / 64 Ki cells stay under `limit + 4·(n+m)` (histogram) and `limit + 2·(n+m)` (Myers): the slack is the coarse
+  script's prefix/suffix scan; the 48 runs take 0.24 s in debug. 4,000 repetitive paragraphs against 4,000 almost
+  identical ones finish in 0.20 s (histogram, `limited`) and 0.12 s (Myers).
+- **Peak memory follows the trace limit**: 800 blocks all different at 256 / 4,096 / 65,536 / 1 Mi cells peak at
+  200 KB / 200 KB / 400 KB / 2.3 MB.
+- The word refinement is left out (fewer marks, `limited`), never wrong, when `intra_work` is 0 or the intra trace is
+  8 cells; the block-level stats do not change; `intra_word_marks` with a spent budget falls back.
+- Limits at the top of their range (`usize::MAX` cells, `u64::MAX` work) are clamped, not overflowed (bug 1 below).
+
+## Security (continuous)
+
+2026-11-05, debug build (overflow checks on), `tests/nopanic_export.rs`, `tests/nopanic_compare.rs`; fuzz
+targets `export_docx` and `compare_docx` (`core/fuzz/src/d5.rs`, shared with `odt_read`, see `D5b.md`).
+
+| Test | Inputs | Result |
+|---|---|---|
+| `nopanic_export`: mutated synthetic packages | 1,500 runs over `export.inputs` + `full.inputs` (bytes flipped, cut, duplicated, `>` removed, tokens for odd levels, spans, revisions, `&#xD800;`), read with default and tight `DocxLimits`, exported in every shape | no panic (about 29% of the runs read) |
+| mutated corpus | 600 sampled corpus documents with parts mutated and re-zipped, plus the raw zip bytes mutated | no panic |
+| random bodies | 4,000 bodies from 16 fragments and 14 list levels (0, 65,534, 65,535, 65,536, 70,000, -1, 1e21, empty, text, NaN, 2^32) | no panic; 1,868 exported to Markdown, 6,132 refused for the list level |
+| list level edge | 65,535 rendered, 65,536 and 70,000 `ListLevelLimit`, never a panic; html unaffected | exact |
+| hostile shapes (time bound 20 s each) | 20,000 list items 0.2 s; 200 items at level 65,535 (26 M units of Markdown) 1.6 s; tables nested 10 / 64 / 70 / 300 deep under 3 ms; one paragraph of 1 M characters 0.14 s; 100,000 runs 0.8 s; 20,000 tables 0.8 s; 30,000 emphasis paragraphs 0.55 s | all finish |
+| `nopanic_compare`: mutated pairs | 1,500 runs over `compare.inputs` (side A, side B or both mutated), 603 diffed, each in both algorithms, with and without refinement, default and random limits | no panic; the script is a partition of both sides every time |
+| random pairs and limits | 2,500 pairs of 15 fragments (tables with merged cells, revisions, text, empty), each diffed 3 ways (a/b, b/a, a/a) in 4 configurations with limits drawn from 0 / 1 / 2 / 10 / 1,000 / 100,000 / `u64::MAX` work and 0 … `usize::MAX` cells | **one panic found and fixed** (below); then none |
+| the algorithms directly | 6,000 random key sequences with an `eq` that disagrees with the keys, work 0 … `u64::MAX`, cells 0 … `usize::MAX`; 5,000 random UTF-16 texts (lone surrogates, pairs, NBSP, combining marks) through `intra_word_marks` (marks always inside the text) | no panic after the fix |
+| hostile pairs (30 s bound) | 6,000 identical against 5,990 + 10 different: 2.6 s histogram / 0.07 s Myers; 5,000 against 5,000 disjoint 0.43 s / 0.40 s (`limited`); two paragraphs of 60,000 words 0.12 s (`limited`); one word changed in 60,000 0.04 s; 4,000 tables 2.6 s | all finish |
+
+Fuzz (stable driver `core/fuzz/src/bin/fallback.rs`, release build with overflow checks, 70 s each, seeded from the
+docx seeds of the reader, the pairs of `compare.inputs` and corpus pairs):
+
+| Target | Executions | Exec/s | Seeds | Crashes | Slowest |
+|---|---|---|---|---|---|
+| `export_docx` (read → html/units/markdown/units; the String is the lossy form of the units, the full page is whole, a Markdown error is a named `ExportError`) | 1,982,050 | 28,314 | 574 | 0 | 10.6 ms |
+| `compare_docx` (two packages → diff in both algorithms and 4 limit sets; partition, determinism, a document equals itself, a not-limited result equals the default-limits one) | 558,010 | 7,972 | 323 | 0 | 21.5 ms |
+
+libFuzzer (`cargo +nightly fuzz run`) was not run: no nightly on this machine.
+
+**Bugs found by these tests (fixed, parity unchanged — `parity_export`, `parity_compare`, `parity_odf` at 100%)**
+
+1. `compare::myers::max_d_for(cells)`: with `DiffLimits::myers_trace_cells` / `intra_trace_cells` = `usize::MAX`
+   (or any limit whose triangular number does not fit) `total += d` overflowed: a panic in debug, a loop that never
+   ends in release. Defaults are 4 Mi and 1 Mi cells, so only a host that passes an extreme limit was affected.
+   Fix: the search is capped by `n + m` (the longest script) and sums with `saturating_add`. Test:
+   `limits_at_the_top_of_their_range_are_clamped_not_overflowed`, `nopanic_compare`.
+2. `compare::histogram::range`: the work budget charged only the successful comparisons of the run extension
+   (backwards and forwards from an anchor candidate), not the one that ends the run: a hostile input made up to
+   three comparisons per charged step (measured: 871,748 comparisons at a limit of 400,000). Fix: charge before every
+   comparison. Below the limits nothing changes (the parity replay uses unlimited limits); past them the fallback
+   starts at the real limit. Test: `the_work_stays_within_the_limit`.
 
 ## Checks
 
 `tests/parity_export.rs` (5 tests), `tests/parity_compare.rs` (5 tests), the two regex tests, the unit tests of
-the modules (16, all pass). Harness: `tests/d5a_support/mod.rs`. Generators: `js/quirk-d5a.mjs` (synthetic
+the modules (16, all pass); `tests/compare_limits.rs` (11), `tests/memory_export.rs` (5), `tests/memory_compare.rs`
+(5), `tests/nopanic_export.rs` (5), `tests/nopanic_compare.rs` (5), all green with `--features
+canon,odf,export,compare`; `cargo clippy -p uo-docx --features canon,odf,export,compare --tests --no-deps -- -D
+warnings`, `core/tests/grep-bans.sh` and `rustfmt --check` on the files touched are clean. Harness: `tests/d5a_support/mod.rs`. Generators: `js/quirk-d5a.mjs` (synthetic
 documents and pairs). Recapture: `UO_TS_ROOT=<built checkout of main> node
 core/crates/uo-docx/js/capture-export.mjs` and `.../capture-compare.mjs` (`--only <key prefix>`); the CSS is
 regenerated by `tools/gen-export-style.mjs`.
 
 ## Not done
 
-- Memory (M1/M3/M5), no-panic and fuzz coverage of export and compare; the D5 soak.
-- `tests/compare_limits.rs` (referred to by `parity_compare.rs`) and an end-to-end test of `DocDiff::limited`.
+- The `OutputLimit` of the Markdown exporter (2^28 units) is not driven by a test (half a gigabyte of output); it is
+  a length comparison before each append. libFuzzer runs of `export_docx`/`compare_docx` (nightly, Linux CI); the
+  stable driver ran 70 s each.
 - `docxToMarkdown` / `docxToHtml` (the converter's copy of the exporters), and the compare element
   (`universal-write-diff.ts`, the shell's; it needs a document query through the binding).
 - Parity of pairs above 3,000 blocks (the TS cannot run them); the Rust is covered there only by the unit tests of
   the limits.
 - Benchmarks against `main` (gate 3).
-- Re-running clippy and rustfmt after the 2026-11-05 clippy-only rewrites for this record.
+- (Done 2026-11-05: clippy and rustfmt re-run clean on the tests and the files touched.)
 
 ## Process metrics
 
@@ -297,4 +419,4 @@ regenerated by `tools/gen-export-style.mjs`.
 | Wall time | not recorded (the session was interrupted before the record) |
 | Tool calls | not recorded |
 | Parity rounds Rust vs TS | not recorded; the facets are at 0 mismatches now (the numbers above are from the 2026-11-05 run) |
-| Rework | clippy-only rewrites of 2026-11-05 (above); nothing else recorded |
+| Rework | clippy-only rewrites of 2026-11-05 (above); nothing else recorded. **Verification pass 2026-11-05 (memory, no-panic, limits, fuzz)**: two src fixes in `compare` (`max_d_for` overflow with an extreme trace limit; the histogram work budget did not charge the comparison that ends a run, see "Security (continuous)"); neither changes a parity result |

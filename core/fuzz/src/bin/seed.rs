@@ -266,6 +266,10 @@ fn main() {
     for (target, data) in uo_opc_fuzz::docx_seeds(&repo) {
         c.add(target, &data);
     }
+    // D5: the exporters, the ODF reader and the diff (docx seeds re-labelled, the generated .odt, packed pairs)
+    for (target, data) in uo_opc_fuzz::d5_seeds(&repo) {
+        c.add(target, &data);
+    }
     // the schema-driven codec: valid messages of every schema (raw and framed), and seeds of the structure-aware round trip
     for (target, data) in uo_opc_fuzz::codec_seeds() {
         c.add(target, &data);

@@ -347,6 +347,7 @@ impl<'d> OdfStyleIndex<'d> {
 
     /// Drops the cache (the memory gate's `clear_caches`).
     pub fn clear_cache(&mut self) {
-        self.cache.clear();
+        // a new map, not `clear()`: `clear` keeps the bucket table (about 200 KB at the cap)
+        self.cache = HashMap::new();
     }
 }

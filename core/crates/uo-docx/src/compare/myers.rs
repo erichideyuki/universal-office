@@ -84,12 +84,14 @@ pub(super) fn coarse_script(a0: usize, a1: usize, b0: usize, b1: usize, eq: EqFn
 }
 
 /// The largest `D` whose trace (`D·(D+1)/2` cells) fits `cells`.
-fn max_d_for(cells: usize) -> usize {
+fn max_d_for(cells: usize, cap: usize) -> usize {
+    // `cap` is the longest script there is (`n + m`): with no cap a limit of `usize::MAX` cells overflowed
+    // `total` (a panic in debug, a loop that never ends in release)
     let mut d = 0usize;
     let mut total = 0usize;
-    while total.saturating_add(d + 1) <= cells {
+    while d < cap && total.saturating_add(d + 1) <= cells {
         d += 1;
-        total += d;
+        total = total.saturating_add(d);
     }
     d
 }
@@ -116,7 +118,7 @@ pub fn myers_diff(n: usize, m: usize, eq: EqFn<'_>, budget: &Budget, trace_cells
     if max >= (1usize << 30) {
         return None;
     }
-    let d_cap = max_d_for(trace_cells).min(max);
+    let d_cap = max_d_for(trace_cells, max);
     let offset = isize::try_from(d_cap).ok()? + 1;
     let size = usize::try_from(offset).ok()? * 2 + 2;
     let at = |k: isize| usize::try_from(k + offset).unwrap_or(0);

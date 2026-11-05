@@ -245,19 +245,71 @@ No deviation changes a result on the 7,398 captured records except the three nam
 | **G20** (docx reader): a story nested past `max_nesting` (64) is read as plain text | `accepted_reason`: synthetic docx `quirk/full/nest-*-N` with N > 64 (docx → odt pipeline) | the docx reader's rule, inherited by the pipeline | 0 accepted in the run (the pipeline output equals the TS on these inputs; the rule is kept as a guard) |
 | **D6** (uo-opc): the relationship target is resolved with the OPC rule | `accepted_reason`: `quirk/full/rel-absolute`, `rel-dotdot`, `rel-uppercase`, `rel-fragment`, `rel-encoded` | the docx reader's D6, inherited | 0 accepted in the run (same) |
 
-## Memory, work and security
+## Memory (measured)
 
-- **Memory gate**: **no ODF-specific M1/M3/M5 test exists** (no `memory_*`, `nopanic_*` or fuzz target
-  calls `read_odt`/`write_odt`; checked with a search over `tests/`, `examples/` and the workflows). The plan's D5 soak
-  ("1,000 × read → html → markdown → odt → read_odt → diff", `uo-docx.md` memory table) has not been run. Not
-  measured; listed in "Not done".
-- **Work bounds by construction** (not measured by a dedicated test): the inline walk, column reader, style
-  resolution and list writer are iterative; the style cache is capped at 4,096; the limits of items 5, 7 and 9
-  bound recursion, repeats and spans; the package limits (`DocxLimits.package`) bound the zip. The parity set
-  includes hostile shapes (cycles, deep nesting, huge repeats, base64 damage, zip damage) and finishes the 7 tests
-  in 9.06 s.
-- **No-panic**: the code uses `get`/`first`/`last` access and `Result` paths; there is no panic test for ODF.
-  Not measured.
+2026-11-05, debug build, `uo-alloc` counting allocator. Tests: `tests/memory_odf.rs` (8 tests; the export and
+compare numbers and the other two soaks are in `D5a.md`); documents from `tests/d5_support/mod.rs`.
+
+**M1 — no leak per operation (0 B left)**
+
+| Operations | Inputs | Result |
+|---|---|---|
+| `is_odt`, `read_odt`, `read_package` with the default limits and with tight ones (package 4 KB parts / 16 entries / depth 8, nesting 2, based-on chain 3) | the 931 generated `.odt` of `odf.inputs` (882 read, 49 are the error paths: damaged zip, XML, base64, limits), and 5 non-packages (empty, `PK`, text, zeros) | 0 B left each |
+| `write_odt` (images embedded and omitted) followed by the read-back of what it wrote | 161 documents (corpus samples, `export.inputs`, `full.inputs`) × 2 image modes = 322 `.odt` | 0 B left each; write and read-back as one operation |
+| `write_odt` error path: a table cell spanning 70,000 columns; empty documents | 4 | 0 B left |
+| `length_to_twips`, `length_to_half_pt`, `length_to_twips_or` | 12 strings (units, exponents, empty, digits past `u64`, Arabic-Indic digits, `None`) | 0 B left |
+
+**M2 — soaks**: 1,000 × (`write_odt` → `is_odt`, `read_odt` ×2, `read_package`) over 54 documents: 3,862,615 B in
+all 21 samples, and the same after `clear_caches()`. The **D5 soak** (1,000 × read → html → markdown → odt →
+read_odt → diff) over 35 packages: 497,456 B in all 21 samples, the same after `clear_caches()`, 7.7 s.
+
+**M3 — budgets** (`write_odt` then `read_odt` of its output; bytes per uncompressed byte of the `.odt` parts, beyond
+a fixed part of 400,000 B allocated and 360,000 B peak):
+
+| Document | Parts | `write_odt` allocated / peak | `read_odt` allocated / peak |
+|---|---|---|---|
+| corpus, 2.9-3.9 KB docx (8 documents) | 7.8-13.8 KB | 378-481 KB / 336-358 KB | 294-553 KB / 70-185 KB |
+| generated 1,000 blocks | 273 KB | 4.40 MB / 1.55 MB | 9.24 MB / 4.16 MB |
+| generated 10,000 blocks | 2.36 MB | 45.0 MB / 18.1 MB | 81.2 MB / 34.4 MB |
+
+The fixed 320 KB of `write_odt` is the zip writer (`Package::save` of a 24-byte part allocates 319,788 B: the
+deflate state), not the ODF writer. Measured worst beyond the fixed part: write 18.9 allocated and 7.5 peak bytes per
+byte, read 34.2 and 14.4. Asserted: write 25 / 10, read 45 / 19 (measured + about 30%). Linear (the 1,000 and 10,000
+block rows agree).
+
+**M5 — the style cache** (`OdfStyleIndex`, `CACHE_CAP` = 4,096 resolved styles): 6,096 styles in a parent chain
+(`S{i}` → `S{i/2}`) resolved one by one; live bytes of the index after 2,048 / 4,096 / 5,096 / 6,096 styles resolved:
+1,953,808 / 3,907,600 / 3,907,600 / 3,907,600 B (about 954 B per entry): it grows to the cap and stops. After
+`clear_cache()` 0 B are left and the cache fills again; a style in a cycle is never cached (100 resolves, 0 B); a
+chain past `max_based_on_chain` is an error that leaves nothing in the cache (20 tries, 0 B). The cache lives in the
+index, which lives in one `read_odt` call: M1 above shows nothing survives it.
+
+**Bug found by the M5 test (fixed)**: `OdfStyleIndex::clear_cache` called `HashMap::clear`, which keeps the bucket
+table (205,080 B at the cap), so "clear" gave back the entries but not the table. Now it replaces the map. No result
+changes.
+
+## Security (continuous)
+
+2026-11-05, debug build (overflow checks on); `tests/nopanic_odf.rs` (6 tests, 26 s) and the fuzz target `odt_read`.
+
+| Test | Inputs | Result |
+|---|---|---|
+| bytes of the generated `.odt` mutated as they are | 2,000 runs over the 931 `odf.inputs` (1-8 mutations: flipped, cut, duplicated span, `>` removed, tokens, deleted span), `is_odt` + `read_odt` + write back, default and tight limits | no panic; about 3% still read (the zip layer rejects the rest) |
+| XML parts mutated and re-zipped stored | 2,000 runs (`content.xml`, `styles.xml`, `Pictures/*`; tokens for repeats of 99,999,999, spans of 70,000, nested lists/tables/frames, `xlink:href="data:"`, `&#x0;`) | no panic; about 30% read |
+| `.odt` written by `write_odt` from 161 documents, mutated and re-read | 1,200 runs | no panic; about a quarter read |
+| the writer on models read from mutated docx | 1,200 runs over `full.inputs`, `export.inputs`, `sources.inputs` | no panic; 570 of 570 models written and read back |
+| length strings | 30,000 random strings from 25 atoms (units, exponents, Unicode digits, NUL, `NaN`, `1e400`) and strings of a million digits / dots | no panic; 17 ms / 0.3 ms |
+| hostile shapes (30 s bound) | `text:s` count 1 / 1,000 / 16,777,216 (0.33 s) / 16,777,217 / 99,999,999,999 (the last two `Corrupt` in under 1 ms); 50 runs of 100,000 spaces 0.11 s; table columns repeated / cell spanned 65,536 (12 s and 13 s in debug with the write-back twice and the re-read; read 2 ms, write 1.9 s, linear: 29 µs per column) and 65,537 / 4,000,000,000 (refused in under 1 ms); rows repeated 4,000,000,000 12 ms; 20,000 paragraphs 1.6 s; 3,000 tables 1.9 s; a style chain 5,000 deep 2.3 s; a cycle and a self parent 2 ms; 6,000 styles used once each 1.3 s; lists / tables / frames / sections / spans nested 500 deep under 8 ms; XML 5,000 deep (refused by the parser depth) 14 ms; images with short, junk, empty and missing base64/hrefs and a 300 KB part; the writer on 10,000 empty paragraphs 0.36 s and a million characters 0.55 s | all finish, no panic |
+
+Fuzz (stable driver, release with overflow checks, 70 s, seeded from the generated `.odt` of `odf.inputs`, the
+`.odt` that `write_odt` makes from the docx seeds, and the docx seeds):
+
+| Target | Executions | Exec/s | Seeds | Crashes | Slowest |
+|---|---|---|---|---|---|
+| `odt_read` (selector: nesting 3 or 64, images embedded or omitted, `is_odt` only; `read_odt` and `read_package` agree; what is written reads again) | 1,772,121 | 25,316 | 1,168 | 0 | 27.6 ms |
+
+libFuzzer (`cargo +nightly fuzz run odt_read`) was not run: no nightly on this machine. The three D5 targets are
+registered in `core/fuzz/Cargo.toml`, `src/lib.rs` (`TARGETS`) and the seed builder (`bin/seed.rs`, `d5_seeds`).
 
 ## Checks
 
@@ -265,12 +317,15 @@ No deviation changes a result on the 7,398 captured records except the three nam
 `style_ids_lose_white_space`) and `write_odt.rs` (`escape_text_follows_the_ts`, `heading_levels`). Debug tools:
 `js/odf-dump.mjs` (TS side) and `examples/odf_dump.rs` (Rust side): `docx <file> <part>`, `trace <key>`;
 `UO_ODF_DUMP` in the test. Recapture: `UO_TS_ROOT=<built checkout of main> node
-core/crates/uo-docx/js/capture-odf.mjs [--only <key prefix>]`. clippy/rustfmt status of the 2026-11-05 clippy-only
-rewrites: not re-run for this record.
+core/crates/uo-docx/js/capture-odf.mjs [--only <key prefix>]`. Verification pass 2026-11-05: `tests/memory_odf.rs` (8
+tests), `tests/nopanic_odf.rs` (6 tests), green with `--features canon,odf,export,compare`; `cargo clippy -p uo-docx
+--features canon,odf,export,compare --tests --no-deps -- -D warnings`, `core/tests/grep-bans.sh` and `rustfmt --check` on
+the files touched are clean; `parity_odf` (7 tests) unchanged.
 
 ## Not done
 
-- ODF memory (M1/M3/M5), the D5 soak, a no-panic/fuzz target for `read_odt`/`write_odt`.
+- libFuzzer runs of `odt_read` (nightly, Linux CI); the stable driver ran 70 s. A model nested past the writer's depth
+  (256) cannot be made by the reader (it stops at 64), so that `write_odt` error is not driven by a test.
 - `.odt` made by Word (`SaveAs2` format 23) or LibreOffice for the read side (U15/U20): none exist in the
   repository and the producers are not on the build machines.
 - Wiring to the wasm/FFI surface (`uo-wasm`, `uo-ffi`, the C# facade): no bindings call `odf` yet.
@@ -284,6 +339,6 @@ rewrites: not re-run for this record.
 |---|---|
 | Model / mode | Sonnet, hybrid mode, faithful 1:1 port of D5 (export, ODF, compare), with Opus fixes on 2026-11-05 (the digest, `TextboxView::TopLevel`, clippy-only rewrites) |
 | Parity rounds Rust vs TS | not recorded for the port itself; the first full replay of the facet, on 2026-11-05, showed about 4,400 mismatches, all in the harness digest (fix (a)); fix (b) corrected one model-shape difference; the final run has 0 mismatches |
-| Rework | clippy-only rewrites of 2026-11-05 (D5a's, see `D5a.md`); fixes (a) and (b) above |
+| Rework | clippy-only rewrites of 2026-11-05 (D5a's, see `D5a.md`); fixes (a) and (b) above. **Verification pass 2026-11-05**: `OdfStyleIndex::clear_cache` kept the bucket table of the map (205 KB at the cap); now it replaces the map (found by the M5 test); no result changes |
 | Time | not recorded (the session that wrote the code was not timed; this record was written afterwards from the code and a fresh test run) |
 | Tool calls | not recorded |

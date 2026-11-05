@@ -132,15 +132,23 @@ fn range(
             }
             // extend the run backwards
             let (mut a_l, mut b_l) = (a_idx, j);
-            while a_l > a0 && b_l > b0 && eq(a_l - 1, b_l - 1) {
+            // every comparison is charged BEFORE it is made, the one that ends the run too (charging only the
+            // successes let a hostile input make up to three comparisons per step)
+            while a_l > a0 && b_l > b0 {
                 budget.spend(1);
+                if !eq(a_l - 1, b_l - 1) {
+                    break;
+                }
                 a_l -= 1;
                 b_l -= 1;
             }
             // and forwards
             let (mut a_r, mut b_r) = (a_idx + 1, j + 1);
-            while a_r < a1 && b_r < b1 && eq(a_r, b_r) {
+            while a_r < a1 && b_r < b1 {
                 budget.spend(1);
+                if !eq(a_r, b_r) {
+                    break;
+                }
                 a_r += 1;
                 b_r += 1;
             }
