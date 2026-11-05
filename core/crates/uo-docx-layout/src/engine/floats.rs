@@ -15,7 +15,7 @@
 use std::borrow::Cow;
 
 use crate::context::FlowState;
-use crate::error::{Frontier, LResult, LayoutError, LimitKind};
+use crate::error::{LResult, LayoutError, LimitKind};
 use crate::items::{ItemSide, PassItems, PassLine};
 use crate::keys::{PageIx, RunKey};
 use crate::lines::{Line, LineBreaker, LineFrame};
@@ -854,7 +854,7 @@ impl Engine {
 
     /// `tbEnv(tb)` (engine.ts:3251): a dark SOLID fill lightens the automatic text colour; the
     /// `fontRef` colour for text without one.
-    fn tb_env(cx: &Cx<'_, '_>, tb: &DrawingTextbox) -> (bool, Option<Box<str>>) {
+    pub(crate) fn tb_env(cx: &Cx<'_, '_>, tb: &DrawingTextbox) -> (bool, Option<Box<str>>) {
         let theme = &cx.ldoc.view.formatting().theme;
         let fc = tb.font_color.as_ref().and_then(|c| crate::drawing::resolve_color(c, theme));
         let s = tb.shape.as_deref();
@@ -870,18 +870,6 @@ impl Engine {
         let k = *cx.ldoc.tb_of_drawing.get(&tb.drawing).ok_or(LayoutError::Internal("textbox not derived"))?;
         let story = cx.ldoc.textboxes.get(k.ix()).ok_or(LayoutError::Internal("textbox"))?.story;
         self.story_blocks(cx, story)
-    }
-
-    /// `chainOf(tb)` (engine.ts:3265): linked textboxes are not laid out yet (F7b-6).
-    fn check_chain(cx: &Cx<'_, '_>, tb: &DrawingTextbox) -> LResult<()> {
-        if tb.story.is_none() && tb.link.is_none() {
-            return Ok(());
-        }
-        let Some(k) = cx.ldoc.tb_of_drawing.get(&tb.drawing) else { return Ok(()) };
-        if cx.ldoc.textboxes.get(k.ix()).is_some_and(|t| t.chain.is_some()) {
-            return crate::error::unported(Frontier::F7b, "linked textbox chains (chainSlice)");
-        }
-        Ok(())
     }
 
     /// The textbox env (`{ field: this.fieldValue(ps), ...this.tbEnv(tb), hf? }`).
@@ -1025,8 +1013,14 @@ impl Engine {
         // the textbox content (automatic height)
         let mut tb_content: Option<CellContent> = None;
         let mut tb_final: Option<TbFinal<'_>> = None;
-        if let Some(tb) = textbox {
-            Self::check_chain(cx, tb)?;
+        let chained = match textbox {
+            // a box of a linked chain: the piece of the content that fits in it (oracle txbxlink, F7d)
+            Some(tb) => self.chain_content(cx, tb, super::chain::ChainEnv { field_ps: Some(ps), hf: self.in_hf })?,
+            None => None,
+        };
+        if chained.is_some() {
+            tb_content = chained;
+        } else if let Some(tb) = textbox {
             // margins and width in the TEXT's frame (vertical text turns the margins)
             let fr = tb_frame(tb, theme, w, h);
             let ins = fr.ins;
@@ -1504,8 +1498,11 @@ impl Engine {
             let x = frame_x + pg.x;
             let y = top + line.baseline - shift - h;
             let mut tc: Option<CellContent> = None;
-            if let Some(tb) = e.textbox.as_deref() {
-                Self::check_chain(cx, tb)?;
+            if let Some(tb) = e.textbox.as_deref()
+                && let Some(c) = self.chain_content(cx, tb, super::chain::ChainEnv { field_ps: None, hf: false })?
+            {
+                tc = Some(c);
+            } else if let Some(tb) = e.textbox.as_deref() {
                 let blocks = self.tb_blocks(cx, tb)?;
                 let theme = &cx.ldoc.view.formatting().theme;
                 let iw = jm::max(1.0, tb_frame(tb, theme, w, h).iw);
@@ -1770,13 +1767,19 @@ impl Engine {
                     // fields (PAGE…) of the group's box are per page, as in a loose box (oracle
                     // hfgroup); (with the group's rotation/flip the child is a copy: the chain is
                     // the original box's)
-                    if let Some(orig) = item.run.ext().and_then(|e| e.textbox.as_deref()) {
-                        Self::check_chain(cx, orig)?;
+                    let orig = item.run.ext().and_then(|e| e.textbox.as_deref());
+                    let chained = match orig {
+                        Some(orig) => self.chain_content(cx, orig, super::chain::ChainEnv { field_ps: Some(ps), hf: self.in_hf })?,
+                        None => None,
+                    };
+                    if chained.is_some() {
+                        tc = chained;
+                    } else {
+                        let blocks = self.tb_blocks(cx, tb)?;
+                        let iw = jm::max(1.0, tb_frame(tb, theme, ch.w, ch.h).iw);
+                        let env = self.tb_para_env(cx, tb, true);
+                        tc = Some(self.static_at(cx, &blocks, iw, &env, &tb_ref(LineStory::GroupTextbox), Some(ps), Some(ps), 0.0)?);
                     }
-                    let blocks = self.tb_blocks(cx, tb)?;
-                    let iw = jm::max(1.0, tb_frame(tb, theme, ch.w, ch.h).iw);
-                    let env = self.tb_para_env(cx, tb, true);
-                    tc = Some(self.static_at(cx, &blocks, iw, &env, &tb_ref(LineStory::GroupTextbox), Some(ps), Some(ps), 0.0)?);
                 }
                 let (ix, iy, iw, ih) = (ch.x, ch.y, ch.w, ch.h);
                 self.paint_object(cx, r2, child_copy, ix, iy, iw, ih, tc.as_ref(), ps, true, out)?;

@@ -166,6 +166,9 @@ impl FaceTable {
 #[derive(Debug, Default)]
 pub struct FaceResolverCache {
     resolved: FxHashMap<Box<str>, FaceId>,
+    /// every request the provider answered `None`, first miss first (`Layout::missing_faces`;
+    /// added by F8)
+    misses: indexmap::IndexSet<crate::output::FaceRequest>,
 }
 
 /// What the resolver works over: the provider of the call, the document's font table, the face
@@ -193,10 +196,15 @@ impl FaceResolverCache {
         if let Some(&id) = self.resolved.get(key.as_str()) {
             return Ok(id);
         }
-        let answer = lookup(env.provider, env.font_table, fam, bold, italic)?;
+        let answer = lookup(env.provider, env.font_table, fam, bold, italic, &mut self.misses)?;
         let id = env.table.intern(&answer, env.res)?;
         self.resolved.insert(key.into_boxed_str(), id);
         Ok(id)
+    }
+
+    /// The provider misses of the call, first miss first (F8: `Layout::missing_faces`).
+    pub fn take_misses(&mut self) -> Vec<crate::output::FaceRequest> {
+        std::mem::take(&mut self.misses).into_iter().collect()
     }
 
     /// Entries cached (one per lower-case key resolved in this call).
@@ -479,7 +487,22 @@ fn alt_names(alt: &str) -> impl Iterator<Item = &str> + '_ {
 /// first the provider answers; a host stand-in for the asked family gives way to what Word maps
 /// that name to (East Asian script font, FontSubstitutes, PostScript name) when the provider has
 /// one that is not a stand-in. `Err(NoFace)` where the TS throws.
-fn lookup(provider: &dyn FontProvider, font_table: &FontTable, fam: &str, bold: bool, italic: bool) -> LResult<Arc<FontAnswer>> {
+fn lookup(
+    provider: &dyn FontProvider,
+    font_table: &FontTable,
+    fam: &str,
+    bold: bool,
+    italic: bool,
+    misses: &mut indexmap::IndexSet<crate::output::FaceRequest>,
+) -> LResult<Arc<FontAnswer>> {
+    // every request the provider has nothing for is noted (F8)
+    let mut ask = |family: &str, b: bool, i: bool| -> Option<Arc<FontAnswer>> {
+        let a = provider.face(family, b, i);
+        if a.is_none() && misses.len() < MAX_MISSES {
+            misses.insert(crate::output::FaceRequest { family: family.into(), bold: b, italic: i });
+        }
+        a
+    };
     let lower = uo_text::case::to_lowercase_str(fam);
     let mut tries: Vec<Try> = vec![Try { family: fam.to_owned(), bold, italic }];
     let alias = alias_of(&lower);
@@ -537,12 +560,12 @@ fn lookup(provider: &dyn FontProvider, font_table: &FontTable, fam: &str, bold: 
         if t.family.is_empty() {
             continue;
         }
-        let Some(face) = provider.face(&t.family, t.bold, t.italic) else { continue };
+        let Some(face) = ask(&t.family, t.bold, t.italic) else { continue };
         // the asked family came as the host's stand-in (not installed): what Word puts in its
         // place comes first; without any of them, the metric-compatible stand-in
         if i == 0 && face.stand_in {
             for c in tries.get(1..mapped_end).unwrap_or(&[]) {
-                let f = if c.family.is_empty() { None } else { provider.face(&c.family, c.bold, c.italic) };
+                let f = if c.family.is_empty() { None } else { ask(&c.family, c.bold, c.italic) };
                 if let Some(f) = f
                     && !f.stand_in
                 {
@@ -556,6 +579,9 @@ fn lookup(provider: &dyn FontProvider, font_table: &FontTable, fam: &str, bold: 
 }
 
 // ───────────────────────── embedded fonts ─────────────────────────
+
+/// Cap of the provider misses one call notes (M5; F8).
+pub const MAX_MISSES: usize = 4_096;
 
 /// Cap of the embedded provider's answer cache (M5): past it a request is answered without being
 /// remembered (a new answer identity each time, as the registry's viewer cap, R7 there).
@@ -574,6 +600,8 @@ pub struct EmbeddedFontProvider {
     /// lower-case family → variant (as written in the document) → face; TS `Map` order
     by_fam: FxHashMap<String, EmbeddedFamily>,
     cache: Mutex<FxHashMap<String, Option<Arc<FontAnswer>>>>,
+    /// the document ledger the embedded faces were charged to (its refusals: `"font budget"`)
+    ledger: Option<Arc<uo_fonts::registry::FaceLedger>>,
 }
 
 impl EmbeddedFontProvider {
@@ -618,7 +646,7 @@ impl EmbeddedFontProvider {
                 None => m.push((e.variant.clone(), face, ticket)),
             }
         }
-        EmbeddedFontProvider { inner, by_fam, cache: Mutex::new(FxHashMap::default()) }
+        EmbeddedFontProvider { inner, by_fam, cache: Mutex::new(FxHashMap::default()), ledger: ledger.cloned() }
     }
 
     /// Requests remembered (M5: at most [`MAX_EMBEDDED_ANSWERS`]).
@@ -674,6 +702,10 @@ impl EmbeddedFontProvider {
 }
 
 impl FontProvider for EmbeddedFontProvider {
+    fn budget_refusals(&self) -> u64 {
+        self.inner.budget_refusals().max(self.ledger.as_ref().map_or(0, |l| l.refused()))
+    }
+
     fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>> {
         let lower = uo_text::case::to_lowercase_str(family);
         let Some(fam) = self.by_fam.get(&lower) else { return self.inner.face(family, bold, italic) };

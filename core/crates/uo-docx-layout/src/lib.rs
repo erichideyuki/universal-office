@@ -7,7 +7,8 @@
 //!
 //! Module map (TS file → module; frontier in brackets):
 //! - `engine.ts` pass loop and `class Engine` → [`engine`] (`page`, `flow`, `tables`, `floats`,
-//!   `notes`, `hf`, `fields`) [F7a–c]; `frames.ts`, `chain.ts` → [`derive`] [F7a]
+//!   `notes`, `hf`, `fields`) [F7a–c], `chain` [F7d]; `frames.ts`, `chain.ts` `indexChains` →
+//!   [`derive`] [F7a, F7b]; `chain.ts` `sliceParagraphFrom`/`remapLines` → `engine::chain` [F7d]
 //! - `para.ts`, `hyphenate.ts`, `math.ts` → [`para`], [`hyphenate`], [`math`] [F4; the 600-DPI
 //!   width model F1]
 //! - `lines.ts`, `underline.ts`, `paint.ts` → [`lines`], [`underline`], [`paint`] [F5]
@@ -17,7 +18,9 @@
 //!   `numpages.ts`, `revisions.ts`, `paraformat.ts`) → `uo_docx::word`, reached via [`word`] [F2]
 //! - `geometry.ts` layout half, `picture.ts`, `page-fill.ts`, `textfx.ts` → [`drawing`]; `emf.ts`,
 //!   `wmf.ts` → [`metafile`] [F3]
-//! - `refs.ts`, `run-boxes.ts`, `pdf-navigation.ts`, the editor queries → [`query`] [F8]
+//! - `refs.ts`, `run-boxes.ts`, `pdf-navigation.ts`, the editor queries → [`refs`],
+//!   [`run_boxes`], [`navigation`], [`hit`], gathered in [`query`]; the uo-docx `LayoutOracle` →
+//!   `oracle`; the views besides Print Layout → [`view_transform`] [F8]
 //! - `tree.ts` → uo-render (items) + [`output`] (the Write section)
 //! - new: [`ldoc`] (the derived document, LA2), [`keys`] (LA3), [`items`] (pass-scope item and
 //!   line containers), [`options`], [`error`], [`json`] (K9), [`canon`] (the P1 stream), [`model`]
@@ -62,6 +65,7 @@ pub mod drawing;
 pub mod engine;
 pub mod error;
 pub mod fonts;
+pub mod hit;
 pub mod hyphenate;
 pub mod items;
 pub mod json;
@@ -71,13 +75,19 @@ pub mod lines;
 pub mod math;
 pub mod metafile;
 pub mod model;
+pub mod navigation;
 pub mod options;
+#[cfg(feature = "oracle")]
+pub mod oracle;
 pub mod output;
 pub mod paint;
 pub mod para;
 pub mod query;
+pub mod refs;
+pub mod run_boxes;
 pub mod table;
 pub mod underline;
+pub mod view_transform;
 pub mod word;
 
 pub use error::{LayoutError, LimitKind};
@@ -115,9 +125,12 @@ impl LayoutEngine {
         LayoutEngine { hyph: HyphenSessions::new(registry), last: None }
     }
 
-    /// A full layout of `view`.
+    /// A full layout of `view` in the view `o.view` (Web and Draft lay out a transformed copy
+    /// of the document, F8).
     pub fn layout(&mut self, view: DocView<'_>, provider: &dyn FontProvider, o: &LayoutOptions) -> Result<&Layout, LayoutError> {
         self.last = None;
+        let shown = view_transform::transformed(view.document(), o.view)?;
+        let view = shown.as_ref().map_or(view, DocView::new);
         let ldoc = derive::build(view, o)?;
         let layout = engine::layout_document(&ldoc, o, provider, &mut self.hyph)?;
         Ok(self.last.insert(layout))

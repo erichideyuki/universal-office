@@ -43,6 +43,10 @@ impl SystemFontProvider {
 }
 
 impl FontProvider for SystemFontProvider {
+    fn budget_refusals(&self) -> u64 {
+        self.ledger.as_ref().map_or(0, |l| l.refused())
+    }
+
     fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>> {
         let key: Key = (family.to_owned(), bold, italic);
         self.cache.get_or_resolve(&key, || match self.source.pick(family, bold, italic) {
@@ -80,6 +84,10 @@ impl SubstituteFontProvider {
 }
 
 impl FontProvider for SubstituteFontProvider {
+    fn budget_refusals(&self) -> u64 {
+        self.inner.budget_refusals()
+    }
+
     fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>> {
         if let Some(face) = self.inner.face(family, bold, italic) {
             return Some(face);

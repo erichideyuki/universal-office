@@ -13,8 +13,8 @@
 //! lifts them in every `layoutStatic` outside a cell, F7b-8). A frame's paragraphs get
 //! `FRAME_SKIP`, its synthetic textbox (`frame_run`, an `LTextbox` with `FrameInfo` over the
 //! `INNER` copies) is carried by a copy of the anchor paragraph or by `frame_carry`.
-//! `indexChains` (chain.ts) fills `LDoc::chains` (F7b); laying a chain out (`chainSlice`) is not
-//! ported yet.
+//! `indexChains` (chain.ts) fills `LDoc::chains` (F7b); laying a chain out (`chainSlice`,
+//! `sliceParagraphFrom`, `remapLines`) is the engine's, per pass (`engine::chain`, F7d).
 
 use crate::error::{LResult, LayoutError, LimitKind};
 use crate::keys::{ChainId, LParaId, RunKey, TbKey};
@@ -200,7 +200,7 @@ impl<'a> Builder<'a> {
 /// `indexChains(full)` (chain.ts:21): the chains of linked textboxes of the body and of each
 /// header/footer part (story ids are per part): the first box with content (`story`) and the
 /// boxes that link to it (`link.id`), in `seq` order (F7b).
-fn index_chains(ldoc: &mut LDoc<'_>) -> LResult<()> {
+fn index_chains<'a>(ldoc: &mut LDoc<'a>) -> LResult<()> {
     let view = ldoc.view;
     let mut scans: Vec<&Story> = vec![view.body()];
     let mut seen = Vec::new();
@@ -245,9 +245,11 @@ fn index_chains(ldoc: &mut LDoc<'_>) -> LResult<()> {
             let seq = |t: &uo_docx::model::run::DrawingTextbox| t.link.as_ref().map_or(f64::NAN, |l| l.seq.to_number());
             crate::word::obj::js_sort(&mut ms, |a, b| seq(a) - seq(b));
             let mut members = Vec::with_capacity(ms.len() + 1);
+            let mut boxes = Vec::with_capacity(ms.len() + 1);
             for tb in std::iter::once(head).chain(ms) {
                 if let Some(&k) = ldoc.tb_of_drawing.get(&tb.drawing) {
                     members.push(k);
+                    boxes.push(tb);
                 }
             }
             let cid = ChainId(u32_of(ldoc.chains.len())?);
@@ -256,7 +258,7 @@ fn index_chains(ldoc: &mut LDoc<'_>) -> LResult<()> {
                     t.chain = Some(cid);
                 }
             }
-            ldoc.chains.push(Chain { members });
+            ldoc.chains.push(Chain { members, boxes });
         }
     }
     Ok(())

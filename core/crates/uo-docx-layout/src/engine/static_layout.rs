@@ -30,7 +30,7 @@ use uo_docx::model::story::Block;
 use uo_jsnum::math as jm;
 use uo_render::OptF64;
 
-use super::flow::{CellNeighbors, HiddenJoin, PSrc, PrevPara};
+use super::flow::{CellNeighbors, HiddenJoin, PSrc, PrevPara, RtPara};
 use super::page::PageState;
 use super::{Cx, Engine};
 
@@ -39,6 +39,9 @@ use super::{Cx, Engine};
 pub enum SBlock<'a> {
     Para(LParaId),
     Table(&'a Table),
+    /// a paragraph object the engine made: the continuation of a paragraph cut between the boxes
+    /// of a linked chain (`sliceParagraphFrom`, chain.ts:57; F7d). Only the first block of a flow
+    Rt(&'a RtPara),
 }
 
 /// `run.image?.floating || run.shape?.floating || run.group?.floating || run.textbox?.floating`.
@@ -201,12 +204,16 @@ impl Engine {
             // content BEFORE the anchor wraps around them too (measured in Word; F7b)
             let pix = ps.ok_or(LayoutError::Internal("static: page"))?;
             for b in blocks {
-                let SBlock::Para(k) = b else { continue };
                 // (a frame's paragraph: only the box it carries)
-                let runs = match cx.ldoc.para(*k) {
-                    Some(lp) if lp.flags.has(ParaFlags::FRAME_SKIP) => lp.frame_carry.into_iter().collect(),
-                    Some(lp) => lp.runs.clone(),
-                    None => Vec::new(),
+                let runs = match *b {
+                    SBlock::Para(k) => match cx.ldoc.para(k) {
+                        Some(lp) if lp.flags.has(ParaFlags::FRAME_SKIP) => lp.frame_carry.into_iter().collect(),
+                        Some(lp) => lp.runs.clone(),
+                        None => Vec::new(),
+                    },
+                    // (a cut first run is a text run: never a float)
+                    SBlock::Rt(rt) => rt.runs.clone(),
+                    SBlock::Table(_) => continue,
                 };
                 for r in runs {
                     let Some(run) = crate::paint::model_run(cx.ldoc, r) else { continue };
@@ -226,16 +233,25 @@ impl Engine {
         let mut join: Option<HiddenJoin> = None;
         // runs of deleted-mark paragraphs (revision) going to the next one
         let mut del_runs: Option<Vec<crate::keys::RunKey>> = None;
+        // the carried runs start with a chain continuation's cut run (F7d-2)
+        let mut del_cut = 0u32;
         let mut paras: IndexMap<LineRef, ParaSplitInfo> = IndexMap::new();
         let mut last_para: Option<LineRef> = None;
         for (bi, b) in blocks.iter().enumerate() {
             cx.budget.charge(1)?;
             let bi32 = u32::try_from(bi).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
-            let next_is_para = matches!(blocks.get(bi + 1), Some(SBlock::Para(_)));
-            match *b {
+            let next_is_para = matches!(blocks.get(bi + 1), Some(SBlock::Para(_) | SBlock::Rt(_)));
+            // a chain continuation (F7d): the copy, over its base paragraph
+            let (b, rt): (SBlock<'_>, Option<&RtPara>) = match *b {
+                SBlock::Rt(rt) => (SBlock::Para(rt.base), Some(rt)),
+                other => (other, None),
+            };
+            match b {
                 SBlock::Para(k) => {
-                    // a frame: out of the flow (F7b); the box it carries goes here
-                    if let Some(lp) = cx.ldoc.para(k)
+                    // a frame: out of the flow (F7b); the box it carries goes here (`FRAME_SKIP` is
+                    // per object: a continuation copy is never in it)
+                    if rt.is_none()
+                        && let Some(lp) = cx.ldoc.para(k)
                         && lp.flags.has(ParaFlags::FRAME_SKIP)
                     {
                         if let (Some(carry), Some(pix)) = (lp.frame_carry, ps)
@@ -262,28 +278,46 @@ impl Engine {
                     }
                     // a deleted mark (revision): the text goes to the next paragraph, with ITS
                     // properties (oracle delmark); all the text deleted: gone (numbering3, del-mark)
+                    let own = match rt {
+                        Some(rt) => PSrc::Rt(Box::new(rt.clone())),
+                        None => PSrc::Doc(k),
+                    };
                     let gone = {
-                        let (_, props, _, _) = super::flow::fields_of(cx.ldoc, &PSrc::Doc(k))?;
+                        let (_, props, _, _) = super::flow::fields_of(cx.ldoc, &own)?;
                         self.ctx.rev.mark_gone(&props)
                     };
                     if gone && join.is_none() && bi + 1 < n && next_is_para {
-                        let runs = cx.ldoc.para(k).map(|p| p.runs.clone()).unwrap_or_default();
-                        del_runs.get_or_insert_with(Vec::new).extend(runs);
+                        let runs = match rt {
+                            Some(rt) => rt.runs.clone(),
+                            None => cx.ldoc.para(k).map(|p| p.runs.clone()).unwrap_or_default(),
+                        };
+                        let carried = del_runs.get_or_insert_with(Vec::new);
+                        if carried.is_empty() {
+                            del_cut = rt.map_or(0, |rt| rt.first_from);
+                        }
+                        carried.extend(runs);
                         continue;
                     }
-                    if gone && self.no_shown_runs(cx, k) && join.is_none() && del_runs.is_none() {
+                    let shown_none = match rt {
+                        Some(rt) => self.no_shown_run_keys(cx, &rt.runs),
+                        None => self.no_shown_runs(cx, k),
+                    };
+                    if gone && shown_none && join.is_none() && del_runs.is_none() {
                         continue;
                     }
                     let merged = match del_runs.take() {
-                        Some(carried) => self.join_deleted(cx, carried, k)?,
-                        None => PSrc::Doc(k),
+                        // (a continuation is only the first block: it never takes carried runs)
+                        Some(carried) => self.join_deleted(cx, carried, std::mem::take(&mut del_cut), k)?,
+                        None => own,
                     };
                     let para = match &join {
                         Some(j) => self.join_hidden(cx, j, &merged, env)?,
                         None => merged,
                     };
-                    let continuation =
-                        matches!(&para, PSrc::Doc(pk) if cx.ldoc.para(*pk).is_some_and(|lp| lp.flags.has(ParaFlags::CONTINUATION)));
+                    let continuation = match &para {
+                        PSrc::Doc(pk) => cx.ldoc.para(*pk).is_some_and(|lp| lp.flags.has(ParaFlags::CONTINUATION)),
+                        PSrc::Rt(r) => r.continuation,
+                    };
                     let penv = ParaEnv {
                         no_page_breaks: true,
                         numbering: if join.is_some() { Some(false) } else { env.numbering },
@@ -487,6 +521,7 @@ impl Engine {
                     }
                     let next_l = blocks.get(bi + 1).map(|b| match b {
                         SBlock::Para(k) => LBlock::Paragraph(*k),
+                        SBlock::Rt(rt) => LBlock::Paragraph(rt.base),
                         SBlock::Table(_) => LBlock::Table { block: 0 },
                     });
                     let grouped_next = self.groups_with_next(cx, &p, next_l, env)?;
@@ -564,6 +599,7 @@ impl Engine {
                         prev_list = None;
                     }
                 }
+                SBlock::Rt(_) => return Err(LayoutError::Internal("static: block")),
             }
         }
         let _ = (&mut last_para, &mut prev_list);

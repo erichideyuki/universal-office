@@ -9,10 +9,16 @@
 //! `REV_JOINS` offsets) — and are prepared through a scratch `LDoc` that relocates exactly the runs
 //! they hold; the glyphs come back with the keys of the call's `LDoc` (`Glyph.obj`, `Glyph.ptab`),
 //! so a model run keeps its identity through the copy (K1) and `Cx` keeps its shared `&LDoc`.
+//! The continuation of a paragraph cut between the boxes of a linked chain (`sliceParagraphFrom`,
+//! F7d) is one more `RtPara`: its first run may be a slice of a model run (`first_from`), made in
+//! the scratch `LDoc` as a `RunSrc::Slice`.
+//!
+//! The float, frame, wrap, table and note sites of `placeParagraph` are wired in (F7b, F7c): the
+//! module no longer stops anywhere with `LayoutError::Unported`.
 
 use std::sync::Arc;
 
-use crate::error::{Frontier, LResult, LayoutError, LimitKind};
+use crate::error::{LResult, LayoutError, LimitKind};
 use crate::items::{ItemSide, PassItems, PassLine};
 use crate::json::{JsonBuilder, JsonKey};
 use crate::keys::{ContainerId, LParaId, RunKey};
@@ -80,6 +86,12 @@ pub struct RtPara {
     pub runs: Vec<RunKey>,
     /// `REV_JOINS`
     pub rev_joins: Vec<u32>,
+    /// the first run is the slice `{ ...r, text: r.text.slice(first_from) }` of `runs[0]` (a
+    /// chain continuation, chain.ts:57; 0 = the run itself). A slice is cut at most once and always
+    /// at its first run, so one offset covers every copy built from it (F7d-2)
+    pub first_from: u32,
+    /// `CONTINUATION.has(para)` (chain.ts:15): this object is a chain continuation (F7d)
+    pub continuation: bool,
 }
 
 /// `HiddenJoin` (engine.ts:186): a hidden-mark paragraph waiting for the next one.
@@ -169,8 +181,8 @@ fn relocate_run<'a>(main: &LDoc<'a>, tiny: &mut LDoc<'a>, back: &mut Vec<RunKey>
     let src = match main.run(k) {
         Some(RunSrc::Model { run, at }) => RunSrc::Model { run, at: at.clone() },
         Some(RunSrc::Synth(r)) => RunSrc::Synth(r.clone()),
-        // continuation slices are made by the chains (F7b)
-        Some(RunSrc::Slice { .. }) => return Err(LayoutError::Unported(Frontier::F7b, "a chain slice in a joined paragraph")),
+        // (the call's `LDoc` holds no slice: chain continuations cut through `RtPara::first_from`)
+        Some(RunSrc::Slice { .. }) => return Err(LayoutError::Internal("engine: a slice run in the derived document")),
         None => return Err(LayoutError::Internal("engine: run not in the derived document")),
     };
     let nk = RunKey(u32::try_from(tiny.runs.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?);
@@ -308,7 +320,7 @@ fn widow_on(p: &PreparedPara) -> bool {
 }
 
 /// The paragraph frame of a line: `{ left, right }` (no float on the page; `wrapFrame` with floats
-/// is F7b).
+/// is `floats.rs`).
 pub(super) fn plain_frame(left: f64, right: f64) -> LineFrame {
     LineFrame { left, right, gap: false, next: None }
 }
@@ -342,8 +354,18 @@ impl Engine {
         let mut tiny = LDoc::empty(main.view);
         let mut back = Vec::with_capacity(rt.runs.len());
         let mut keys = Vec::with_capacity(rt.runs.len());
-        for &k in &rt.runs {
-            keys.push(relocate_run(main, &mut tiny, &mut back, k)?);
+        for (i, &k) in rt.runs.iter().enumerate() {
+            let nk = relocate_run(main, &mut tiny, &mut back, k)?;
+            if i == 0 && rt.first_from > 0 {
+                // the cut first run of a chain continuation: a slice of the relocated base; the
+                // glyphs it makes map back to the base's key (F7d-2)
+                let sk = RunKey(u32::try_from(tiny.runs.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?);
+                tiny.runs.push(RunSrc::Slice { base: nk, from: rt.first_from });
+                back.push(k);
+                keys.push(sk);
+                continue;
+            }
+            keys.push(nk);
         }
         tiny.paras.push(LPara {
             src: ParaSrc::Model { para: root, id: root.id },
@@ -387,12 +409,16 @@ impl Engine {
 
     /// `joinDeleted(carried, next)` (revisions.ts:155): the text of the deleted-mark paragraphs in
     /// front, the formatting of the next one; the join offset kept.
-    pub(super) fn join_deleted(&self, cx: &Cx<'_, '_>, carried: Vec<RunKey>, next: LParaId) -> LResult<PSrc> {
+    /// `first_from`: the carried runs start with a chain continuation's cut run (F7d-2).
+    pub(super) fn join_deleted(&self, cx: &Cx<'_, '_>, carried: Vec<RunKey>, first_from: u32, next: LParaId) -> LResult<PSrc> {
         let lp = cx.ldoc.para(next).ok_or(LayoutError::Internal("engine: paragraph"))?;
-        let n = carried.iter().fold(0u32, |n, k| n.wrapping_add(u32::try_from(cx.ldoc.run_text(*k).len()).unwrap_or(u32::MAX)));
+        let n = carried.iter().enumerate().fold(0u32, |n, (i, k)| {
+            let len = u32::try_from(cx.ldoc.run_text(*k).len()).unwrap_or(u32::MAX);
+            n.wrapping_add(if i == 0 { len.saturating_sub(first_from) } else { len })
+        });
         let mut runs = carried;
         runs.extend_from_slice(&lp.runs);
-        Ok(PSrc::Rt(Box::new(RtPara { base: next, ppr: None, props: None, runs, rev_joins: vec![n] })))
+        Ok(PSrc::Rt(Box::new(RtPara { base: next, ppr: None, props: None, runs, rev_joins: vec![n], first_from, continuation: false })))
     }
 
     /// `resolvePPr(ctx, para, env).ppr` (para.ts:681).
@@ -428,15 +454,33 @@ impl Engine {
             PSrc::Rt(rt) => rt.props.clone(),
             PSrc::Doc(_) => None,
         };
+        let first_from = match &join.para {
+            PSrc::Rt(rt) => rt.first_from,
+            PSrc::Doc(_) => 0,
+        };
         let mut runs = jruns.to_vec();
         runs.extend_from_slice(nruns);
-        Ok(PSrc::Rt(Box::new(RtPara { base, ppr: Some(Arc::new(ppr)), props, runs, rev_joins: joins.to_vec() })))
+        Ok(PSrc::Rt(Box::new(RtPara {
+            base,
+            ppr: Some(Arc::new(ppr)),
+            props,
+            runs,
+            rev_joins: joins.to_vec(),
+            first_from,
+            continuation: false,
+        })))
     }
 
     /// `noShownRuns(p)` (engine.ts:1739): no run shows in this view.
     pub(super) fn no_shown_runs(&self, cx: &Cx<'_, '_>, p: LParaId) -> bool {
         let Some(lp) = cx.ldoc.para(p) else { return true };
-        lp.runs.iter().all(|k| {
+        self.no_shown_run_keys(cx, &lp.runs)
+    }
+
+    /// `noShownRuns(p)` over a run list (a chain continuation's: its cut run reads its base's
+    /// fields, which are the copy's; F7d).
+    pub(super) fn no_shown_run_keys(&self, cx: &Cx<'_, '_>, runs: &[RunKey]) -> bool {
+        runs.iter().all(|k| {
             crate::paint::model_run(cx.ldoc, *k)
                 .is_none_or(|r| crate::para::is_mark_run(r) || matches!(self.ctx.rev.run(&r.props), Some(word::RunRevision::Hide)))
         })
@@ -576,11 +620,9 @@ impl Engine {
         let mut after = from.as_ref().map_or(0.0, after_of);
         let q = match nb {
             LBlock::Table { block } => {
-                // a title before a table: it stays with the first row (F7b, oracle keeptbl)
-                if self.en_blocks.is_some() {
-                    return Err(LayoutError::Unported(Frontier::F7b, "nextBlockLead: a table in the endnote flow"));
-                }
-                let t = super::tables::story_table(cx, self.story, block)?;
+                // a title before a table: it stays with the first row (F7b, oracle keeptbl); in the
+                // endnote flow the table is read from its note's story (F7d)
+                let t = self.flow_table(cx, block_idx + 1, block).ok_or(LayoutError::Internal("nextBlockLead: table block"))?;
                 return Ok(Lead::Done(self.table_lead(cx, t, width, from.as_ref(), after)?));
             }
             LBlock::Paragraph(k) => prepare_paragraph(cx, self, k, &none)?,
@@ -810,7 +852,7 @@ impl Engine {
         let cur0 = self.cur_ix()?;
         let env = ParaEnv { field: Some(FieldSource::Page), ..ParaEnv::default() };
         let merged = match self.pending_del.take() {
-            Some(carried) => self.join_deleted(cx, carried, para0)?,
+            Some(carried) => self.join_deleted(cx, carried, 0, para0)?,
             None => PSrc::Doc(para0),
         };
         let para = match &join {
@@ -1677,6 +1719,14 @@ impl PrepFlow for Engine {
                 let ps = self.cur_ix()?;
                 self.field_value(cx, ps, None, name, None, None)
             }
+        }
+    }
+
+    /// `ctx.opts.onField?.(run, v)` (F8): the editor's map keeps the last value per model run in
+    /// first-set order; runs without a model identity (slices, frame runs) are not reported.
+    fn on_field(&mut self, _run: &crate::para::FieldRun, at: Option<&crate::model::RunRef>, v: &[u16]) {
+        if let (Some(map), Some(r)) = (self.fields.as_mut(), at) {
+            map.insert(r.clone(), crate::model::Utf16::from_units(v.to_vec()));
         }
     }
 }

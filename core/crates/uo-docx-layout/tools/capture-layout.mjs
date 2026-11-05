@@ -34,7 +34,7 @@ const { mkdirSync, readFileSync, writeFileSync, existsSync } = await import('nod
 const { join, dirname, basename } = await import('node:path');
 const { fileURLToPath } = await import('node:url');
 const { execFileSync } = await import('node:child_process');
-const { CaptureWriter, importFrom, tsRoot, walk, relPath } = await import('../../uo-testkit/js/testkit.mjs');
+const { CaptureWriter, importFrom, tsRoot, walk, relPath, Rng } = await import('../../uo-testkit/js/testkit.mjs');
 const { installFacetHooks, facetRecorder } = await import('./lib/facets.mjs');
 const { canonLayout, CANON_VERSION } = await import('./lib/canon.mjs');
 const { Sink } = await import('./lib/sink.mjs');
@@ -43,6 +43,10 @@ const { generateDocx } = await import('./lib/gen-docx.mjs');
 const { generateF7aDocx } = await import('./lib/gen-f7a.mjs');
 const { generateF7cDocx } = await import('./lib/gen-f7c.mjs');
 const { generateF7bDocx } = await import('./lib/gen-f7b.mjs');
+// `--f8`: the P4 facets of F8 (tools/lib/facets-f8.mjs: editor/viewer queries, onField, forced
+// hyphenation, the Web view) — added by F8
+const f8 = process.argv.includes('--f8') ? await import('./lib/facets-f8.mjs') : null;
+const { generateF7dDocx } = await import('./lib/gen-f7d.mjs');
 
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -109,10 +113,19 @@ function corpus() {
     const f7c = opt('--gen', '') === 'f7c';
     // `--gen f7b`: tables, floating tables, floating shapes/textboxes and frames (tools/lib/gen-f7b.mjs, F7b)
     const f7b = opt('--gen', '') === 'f7b';
+    // `--gen f7d`: linked textbox chains and endnote-flow tables (tools/lib/gen-f7d.mjs, F7d)
+    const f7d = opt('--gen', '') === 'f7d';
+    // `--gen f8`: an F7c or F7b document (by index parity) with links and plugin inlines
+    // (tools/lib/facets-f8.mjs, F8)
+    const gf8 = opt('--gen', '') === 'f8';
     const out = [];
     for (let i = 0; i < count; i++) {
       const s = (seed * 1000003 + i) >>> 0;
-      out.push(f7b
+      out.push(gf8
+        ? { key: `f8/${seed}/${i}`, bytes: f8.decorateF8(i % 2 ? generateF7bDocx(s, fflate) : generateF7cDocx(s, fflate), s, fflate, Rng), opts: {} }
+        : f7d
+        ? { key: `f7d/${seed}/${i}`, bytes: generateF7dDocx(s, fflate), opts: {} }
+        : f7b
         ? { key: `f7b/${seed}/${i}`, bytes: generateF7bDocx(s, fflate), opts: {} }
         : f7c
         ? { key: `f7c/${seed}/${i}`, bytes: generateF7cDocx(s, fflate), opts: {} }
@@ -156,6 +169,7 @@ cap.meta('now', NOW.toISOString());
 cap.meta('tz', process.env.TZ);
 cap.meta('hyphenation-loaded', eng.HYPHENATION_PATTERN_IDS.join(','));
 
+const F8 = f8 ? await f8.setupF8(root) : null;
 const facets = facetRecorder({
   LineBreaker, FaceResolver: eng.FaceResolver, SfntFont: eng.SfntFont,
   // F5 (p3.lines, p3.paint): the helpers its recorder calls with the reporter off
@@ -180,7 +194,9 @@ for (const doc of docs) {
     const rec = recordProvider(eng.withEmbeddedFonts(provider, embedded, (b) => new eng.SfntFont(b)));
     facets.start();
     let res;
-    try { res = eng.layoutDocument(full, rec.provider, { now: NOW, ...doc.opts }); } finally { Object.assign(doc, { f3: facets.finish() }); }
+    const fields = new Map();
+    const onField = f8 ? { onField: (r, v) => { fields.set(r, v); } } : {};
+    try { res = eng.layoutDocument(full, rec.provider, { now: NOW, ...doc.opts, ...onField }); } finally { Object.assign(doc, { f3: facets.finish() }); }
     const sink = new Sink({ raw: !!dump, trace: flag('--trace') });
     const media = dump ? new Map() : null;
     canonLayout(res, full, sink, media);
@@ -191,6 +207,13 @@ for (const doc of docs) {
     cap.set(doc.key, 'p2first', p2.p2first);
     for (const [k, v] of Object.entries(doc.f3)) cap.set(doc.key, k, v);
     cap.set(doc.key, 'pages', String(res.pages.length));
+    if (f8) {
+      // after the P1 stream and the transcript facets: the extra layouts only append calls
+      for (const [k, v] of Object.entries(f8.editorFacets(F8, full, res, fields, safe(doc.key)))) cap.set(doc.key, k, v);
+      const read = () => core.readFullDocument(core.DocxPackage.load(bytes));
+      const layout = (fd, o) => eng.layoutDocument(fd, rec.provider, { now: NOW, ...doc.opts, ...o });
+      for (const [k, v] of Object.entries(f8.layoutFacets(F8, read, layout))) cap.set(doc.key, k, v);
+    }
     pages += res.pages.length;
     if (dump) {
       writeFileSync(join(dump, `${safe(doc.key)}.p1.bin`), p1.bytes);

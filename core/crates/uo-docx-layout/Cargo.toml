@@ -32,13 +32,19 @@ uo-text = { path = "../uo-text" }
 # `patternRowsFromImage`) and the natural size of derived images
 uo-image = { path = "../uo-image" }
 
+[features]
+default = ["oracle"]
+# the `LayoutOracle` of uo-docx over this engine (F8; the plan places it in the bindings, which
+# wrap it until they carry a layout themselves)
+oracle = []
+
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }
 # capture files, canonical streams (the P1 replay and the F0 adapter check)
 uo-testkit = { path = "../uo-testkit" }
 # F2 facets: the marker and style digests (uo-docx canon, A6) and the packages they read the
 # formatting from
-uo-docx = { path = "../uo-docx", features = ["canon"] }
+uo-docx = { path = "../uo-docx", features = ["canon", "session"] }
 uo-opc = { path = "../uo-opc" }
 # F4 facet replay: the hyphenation patterns the TS capture loads (all seven, embedded)
 uo-fonts = { path = "../uo-fonts", features = ["hyphen-data"] }

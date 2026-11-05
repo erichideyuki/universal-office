@@ -40,6 +40,10 @@ impl OracleProvider {
 }
 
 impl FontProvider for OracleProvider {
+    fn budget_refusals(&self) -> u64 {
+        self.ledger.as_ref().map_or(0, |l| l.refused())
+    }
+
     fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>> {
         let lower = to_lowercase(family);
         let key: Key = (lower.clone(), bold, italic);

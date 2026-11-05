@@ -1,4 +1,4 @@
-//! The engine (`engine.ts`, frontiers F7a–c): the pass loop and the column-balancing search of
+//! The engine (`engine.ts`, frontiers F7a–d): the pass loop and the column-balancing search of
 //! `layoutDocument`, and one pass, `class Engine`.
 //!
 //! **Shape (LA4, K18).** `layout_document` keeps the inter-pass inputs on a [`PassInput`]; every
@@ -15,11 +15,16 @@
 //! pass loop after the pass). The TS constructor parameters are the [`PassInput`]. The table with
 //! the TS line of each field is in the record ("Milestone 1 — F0", "Engine field classification").
 //!
-//! F7a (record "Stage 3 — F7a"): the pass loop, the balancing search, `run` with the page
-//! assembly, the geometry (`page.rs`) and the paragraph flow (`flow.rs`). What needs F7b (tables,
-//! floats, frames, inline groups and textboxes) or F7c (notes, headers/footers, the
-//! SEQ/REF/NOTEREF/STYLEREF/PAGEREF fields) stops the layout with `LayoutError::Unported`.
+//! The modules, by frontier (records "Stage 3 — F7a" … "F7d"): the pass loop, the balancing
+//! search, `run` with the page assembly (this file), the geometry (`page.rs`), the paragraph
+//! flow (`flow.rs`) and the F7a fields (`fields.rs`) — F7a; tables (`tables.rs`), floats,
+//! wraps, frames and objects (`floats.rs`, `objects.rs`) — F7b; the static flow
+//! (`static_layout.rs`), headers/footers (`hf.rs`), notes and the endnote flow (`notes.rs`), the
+//! reference fields (`field_refs.rs`) and V8's date parser (`date_legacy.rs`) — F7c; linked
+//! textbox chains (`chain.rs`) and the tables of the endnote flow — F7d. Nothing of the engine
+//! stops with `LayoutError::Unported` any more: the whole of `layoutDocument` is ported.
 
+pub mod chain;
 pub mod date_legacy;
 pub mod field_refs;
 pub mod fields;
@@ -312,6 +317,11 @@ pub struct Engine {
 
     // ── findings ────────────────────────────────────────────────────────────────────────────
     pub found: PassFindings,
+
+    // ── output (F8) ─────────────────────────────────────────────────────────────────────────
+    /// `onField`: the field values this pass reported (`Some` while the call collects them),
+    /// moved into the call's map after the pass (`Call::take_fields`)
+    pub fields: Option<IndexMap<crate::model::RunRef, crate::model::Utf16>>,
 }
 
 /// `===` between two JS numbers (NaN differs from itself, `-0 === 0`).
@@ -972,9 +982,21 @@ struct Call<'r, 'a> {
     images: objects::ImageTable,
     budget: Budget,
     line_seq: u32,
+    /// `onField` over every pass of the call (the editor's `Map<Run, string>`: first-set order,
+    /// last value; F8)
+    fields: Option<IndexMap<crate::model::RunRef, crate::model::Utf16>>,
 }
 
 impl Call<'_, '_> {
+    /// Moves what a pass reported through `onField` into the call's map (F8).
+    fn take_fields(&mut self, eng: &mut Engine) {
+        if let (Some(all), Some(pass)) = (self.fields.as_mut(), eng.fields.as_mut()) {
+            for (k, v) in pass.drain(..) {
+                all.insert(k, v);
+            }
+        }
+    }
+
     /// `new Engine(newCtx(), full, …)` + `eng.run()`.
     fn pass(&mut self, input: &PassInput) -> LResult<Engine> {
         let mut ctx = DocContext::new(
@@ -984,6 +1006,9 @@ impl Call<'_, '_> {
         );
         ctx.note_mark_override.clone_from(&input.note_marks);
         let mut eng = Engine::new(ctx, crate::derive::BODY);
+        if self.opts.collect_fields.is_some() {
+            eng.fields = Some(IndexMap::new());
+        }
         let mut cx = Cx {
             ldoc: self.ldoc,
             input,
@@ -998,7 +1023,9 @@ impl Call<'_, '_> {
             line_seq: &mut self.line_seq,
             images: &mut self.images,
         };
-        eng.run(&mut cx)?;
+        let ran = eng.run(&mut cx);
+        self.take_fields(&mut eng);
+        ran?;
         // the warnings of the pass's metafiles go to its context (F7b-1)
         for w in self.images.warnings.drain(..) {
             eng.ctx.warn(&w);
@@ -1082,6 +1109,7 @@ pub fn layout_document(ldoc: &LDoc<'_>, opts0: &LayoutOptions, provider: &dyn Fo
         images: objects::ImageTable::new(),
         budget: Budget::new(&opts.limits, &work_input(ldoc)),
         line_seq: 0,
+        fields: opts.collect_fields.as_ref().map(|_| IndexMap::new()),
     };
     // NUMPAGES and PAGEREF depend on the layout itself: the first pass guesses, the next ones use
     // the total and the bookmark pages of the one before
@@ -1233,13 +1261,27 @@ pub fn layout_document(ldoc: &LDoc<'_>, opts0: &LayoutOptions, provider: &dyn Fo
         };
         eng.finish(&mut cx)?
     };
+    call.take_fields(&mut eng);
+    let fields = call.fields.take().map(|m| {
+        m.into_iter()
+            .filter(|(r, _)| match &opts.collect_fields {
+                Some(crate::model::FieldScope::Runs(only)) => only.contains(r),
+                _ => true,
+            })
+            .collect()
+    });
+    let mut warnings = std::mem::take(&mut eng.ctx.warnings);
+    // past the document's face budget a face resolved as a miss (LA6, F8): said once, last
+    if provider.budget_refusals() > 0 {
+        warnings.insert("font budget".into());
+    }
     Ok(Layout {
         pages,
         resources: call.res,
         image_origins: call.images.origins,
-        warnings: std::mem::take(&mut eng.ctx.warnings),
-        missing_faces: Vec::new(),
-        fields: None,
+        warnings,
+        missing_faces: call.resolver.take_misses(),
+        fields,
         stamp: LayoutStamp { formatting_version: ldoc.view.formatting_version() },
     })
 }

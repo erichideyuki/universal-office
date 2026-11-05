@@ -25,7 +25,7 @@ pub struct LDoc<'a> {
     /// model textboxes and synthetic frame boxes ([`TbKey`])
     pub textboxes: Vec<LTextbox>,
     /// chains of linked textboxes ([`ChainId`])
-    pub chains: Vec<Chain>,
+    pub chains: Vec<Chain<'a>>,
     /// `revisionAuthors(full)` order (the default `RevisionView.order`)
     pub revision_order: Vec<&'a str>,
     /// the key of the `j`-th field-result run of a model run (`RunRef` with
@@ -150,8 +150,11 @@ pub struct LTextbox {
 /// A chain of linked textboxes (`TextboxChain`): the first box (with the content) and the linked
 /// ones in `seq` order.
 #[derive(Debug)]
-pub struct Chain {
+pub struct Chain<'a> {
     pub members: Vec<TbKey>,
+    /// the model box of each member (`members[k]`'s; added by F7d: `chainSlice` reads each box's
+    /// size, insets and colours)
+    pub boxes: Vec<&'a crate::model::DrawingTextbox>,
 }
 
 impl<'a> LDoc<'a> {

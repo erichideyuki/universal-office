@@ -153,6 +153,26 @@ jobs:
           UO_LAYOUT_CAPTURE: ${{ runner.temp }}/layout/f7b.capture
           UO_LAYOUT_DUMP: ${{ runner.temp }}/layout/f7b-dump
           UO_LAYOUT_DOCS: ${{ runner.temp }}/layout/f7b-docs
+      # F7d (linked textbox chains, endnote-flow tables): chains of floating, inline and grouped
+      # boxes cut in paragraphs and between table rows, endnotes with tables (tools/lib/gen-f7d.mjs),
+      # same run, strict
+      - run: node --max-old-space-size=8192 crates/uo-docx-layout/tools/capture-layout.mjs --ts-root ../ts-main --mode ci --gen f7d --count 200 --seed ${{ github.run_number }} --out "$RUNNER_TEMP/layout/f7d.capture" --dump "$RUNNER_TEMP/layout/f7d-dump" --docs-out "$RUNNER_TEMP/layout/f7d-docs"
+      - run: cargo test --release -p uo-docx-layout --test layout_parity -- --nocapture
+        env:
+          UO_LAYOUT_PARITY: "1"
+          UO_LAYOUT_STRICT: "1"
+          UO_LAYOUT_CAPTURE: ${{ runner.temp }}/layout/f7d.capture
+          UO_LAYOUT_DUMP: ${{ runner.temp }}/layout/f7d-dump
+          UO_LAYOUT_DOCS: ${{ runner.temp }}/layout/f7d-docs
+      # F8 (the editor-facing API and the oracle): the P4 facets (tools/lib/facets-f8.mjs) over
+      # F7c/F7b documents with links and plugin inlines (`--gen f8`), same run
+      - run: node --max-old-space-size=8192 crates/uo-docx-layout/tools/capture-layout.mjs --ts-root ../ts-main --mode ci --gen f8 --f8 --count 200 --seed ${{ github.run_number }} --out "$RUNNER_TEMP/layout/f8.capture" --dump "$RUNNER_TEMP/layout/f8-dump" --docs-out "$RUNNER_TEMP/layout/f8-docs"
+      - run: cargo test --release -p uo-docx-layout --test f8_parity -- --nocapture
+        env:
+          UO_F8_PARITY: "1"
+          UO_LAYOUT_CAPTURE: ${{ runner.temp }}/layout/f8.capture
+          UO_LAYOUT_DUMP: ${{ runner.temp }}/layout/f8-dump
+          UO_LAYOUT_DOCS: ${{ runner.temp }}/layout/f8-docs
       # F1 (fonts and the width model): the P3 facets of the same capture, replayed from their dumped
       # inputs, plus a resolver sweep (the Word substitution chain over random font tables)
       - run: node crates/uo-docx-layout/tools/capture-f1-resolver.mjs --ts-root ../ts-main --count 2000 --seed ${{ github.run_number }} --out "$RUNNER_TEMP/layout/resolver.capture" --dump "$RUNNER_TEMP/layout/resolver"

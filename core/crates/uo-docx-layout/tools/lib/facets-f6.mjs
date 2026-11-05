@@ -69,7 +69,9 @@ const digest = (v) => {
 
 /** Table and paragraph objects -> model positions (the walk of facets-f4.mjs `modelRefs`). */
 function positions(full) {
-  const tables = new Map(), paras = new Map();
+  // rows: Row -> { table, ri } (a row-sliced copy `{ ...t, rows: t.rows.slice(k) }` of a linked
+  // textbox chain, engine.ts:3336, is named `<table ref>+r<k>`: F7d)
+  const tables = new Map(), paras = new Map(), rows = new Map();
   const blocksOf = (c) => c.blocks ?? c.paragraphs?.map((paragraph) => ({ type: 'paragraph', paragraph })) ?? [];
   const runList = (rs, base) => {
     rs.forEach((r, i) => {
@@ -86,6 +88,7 @@ function positions(full) {
         runList(b.paragraph.runs, p);
       } else {
         if (!tables.has(b)) tables.set(b, p);
+        b.rows.forEach((row, ri) => { if (!rows.has(row)) rows.set(row, { table: b, ri }); });
         b.rows.forEach((row, ri) => row.cells.forEach((c, ci) => walk(blocksOf(c), `${p}/r${ri}/c${ci}`)));
       }
     });
@@ -107,7 +110,7 @@ function positions(full) {
   }
   const strip = (m) => { for (const [k, ref] of m) if (ref.startsWith('/')) m.set(k, ref.slice(1)); };
   strip(tables); strip(paras);
-  return { tables, paras };
+  return { tables, paras, rows };
 }
 
 /** counters over the process (`UO_F6_STATS=1` prints them at exit) */
@@ -265,7 +268,16 @@ export function f6Recorder({ LATE_ITEMS }) {
       if (!st) return undefined;
       if (name === 'layoutTable') {
         const [ctx, table0, frameX, frameWidth, layoutCell, ref] = args;
-        const tref = st.pos?.tables.get(table0);
+        let tref = st.pos?.tables.get(table0);
+        if (tref === undefined && table0.rows.length) {
+          // a row-sliced copy of a table (chainSlice, F7d): same fields, the rows from k on
+          const at = st.pos?.rows.get(table0.rows[0]);
+          const base = at && st.pos.tables.get(at.table);
+          const same = at && base !== undefined && table0.rows.length === at.table.rows.length - at.ri
+            && table0.rows.every((r, i) => at.table.rows[at.ri + i] === r)
+            && Object.keys(table0).every((k) => k === 'rows' || table0[k] === at.table[k]);
+          if (same) tref = `${base}+r${at.ri}`;
+        }
         if (tref === undefined) STATS.unknownTables++;
         const f = { call: st.calls++, tr: new Raw(), inCell: 0, pure: 0, ctx, had: Object.prototype.hasOwnProperty.call(ctx, 'pure'), prev: ctx.pure };
         f.head = new Raw().tag('T').u32(f.call).u16s(tref ?? '').num(frameX).num(frameWidth).u16s(ref);

@@ -67,8 +67,3 @@ impl From<uo_render::CapacityError> for LayoutError {
 
 /// `Result` of the layout stages.
 pub type LResult<T> = Result<T, LayoutError>;
-
-/// The F0 stub of a stage: `Err(Unported(frontier, what))`.
-pub(crate) fn unported<T>(fr: Frontier, what: &'static str) -> LResult<T> {
-    Err(LayoutError::Unported(fr, what))
-}

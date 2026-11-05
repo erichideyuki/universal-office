@@ -421,8 +421,10 @@ pub trait PrepFlow {
         })
     }
 
-    /// `ctx.opts.onField?.(run, v)`
-    fn on_field(&mut self, _run: &FieldRun, _v: &[u16]) {}
+    /// `ctx.opts.onField?.(run, v)`: `at` is the model run the TS hands over (a run of the
+    /// model or of a field result, also inside copied paragraphs, K1), resolved only when the
+    /// layout collects fields (`LayoutOptions::collect_fields`; added by F8)
+    fn on_field(&mut self, _run: &FieldRun, _at: Option<&crate::model::RunRef>, _v: &[u16]) {}
 }
 
 // ───────────────────────── character classes and constants ─────────────────────────
@@ -1110,7 +1112,15 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
 
     /// `fieldValueRun(ctx, run, v, glued)` (para.ts:548).
     fn field_value_run<'r>(&mut self, run: &'r Run, at: &FieldRun, v: Box<[u16]>, glued: bool, idx: u32, offset: u32) -> DRun<'r> {
-        self.flow.on_field(at, &v);
+        // the model run of `at` (F8): the keyed run, or the field result `sub[0]` of it (a
+        // PAGEREF in a TOC's result); a run nested deeper in field results has no `RunRef` (F8-6)
+        let ldoc = self.ldoc;
+        let model = match (self.cx.opts.collect_fields.is_some(), at.sub.as_slice()) {
+            (true, []) => at.run.and_then(|k| ldoc.run_ref(k)),
+            (true, [j]) => at.run.and_then(|k| ldoc.field_result_key(k, *j)).and_then(|k| ldoc.run_ref(k)),
+            _ => None,
+        };
+        self.flow.on_field(at, model, &v);
         let base = run
             .ext()
             .and_then(|e| e.field_result.as_deref())

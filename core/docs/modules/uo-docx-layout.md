@@ -925,6 +925,8 @@ Node and WebKit, plus the editor keystroke budget in milestone 2.
 | 3 — F7a | engine core: `layoutDocument` (passes, balancing, K19), `run` + the page assembly, geometry/pages/sections/columns, `placeParagraph` with keep rules, border groups, line numbers, the F7a field values, the derived document; runtime copies through a relocated `LDoc`; P1 through the real engine (D1a reader → derive → engine): **1,203 of 2,742 oracle documents equal, 0 mismatches**, 1,539 pending by reason (F7b/F7c), 1,300 generated F7a documents and the .NET page fills equal — **1 parity round** (the marker moved by `joinHidden` kept its paragraph's style indices); the `--gen f7a` generator, the stale-build refusal, the CI step (Opus) | one session, ≈ 3 h, in parallel with F6 | ≈ 150 |
 | 3 — F7b | engine tables and floats: `placeTable` + floating/late tables and the float carry, row emission, the cell layouter, the static-flow tables and cell floats, `wrapFrame`/`pickSeg`/`moreSegs`, `placeFloat(s)`/early floats/`paintObject`/inline drawings, the float branches of `placeParagraph`, the image table and the F5-9 ends, `liftFrames` and `indexChains` in `derive`; P1: **2,728 of 2,742 oracle documents equal (with F7a/F7c), 0 mismatches**, 14 pending (linked textbox chains), 300 generated `--gen f7b` documents and the committed fixture equal — **2 parity rounds** (`pinFloatsOverTable` without the table height: 2 documents; chains not indexed: 11); M1/M2 0 B, no panic on 200 hostile documents (Opus) | one session, ≈ 2 h 45 min, in parallel with F7c | ≈ 190 |
 | 3 — F7c | notes, headers/footers, fields and `layoutStatic`: the static flow (stable entry, F7b wired its float/table sites into it), `layoutHeaderFooter` with the scratch-page probes, the note area (separator, columns, split notes, the carry), the endnote flow, SEQ/REF/NOTEREF/STYLEREF/PAGEREF and `bookmarkPages`, V8's whole date parser; P1 through the real engine: **0 oracle documents pending for an F7c reason, 2,728 of 2,742 equal and 0 mismatches** (with F7b), 850 generated F7c documents, the 30 F0 documents and the committed fixture equal — **0 port parity rounds**; 1 defect from the no-panic loop (the endnote separator looked up before the early return); the `--gen f7c` generator, the CI step (Opus) | one session, ≈ 4 h, in parallel with F7b | ≈ 190 |
+| 3 — F7d | linked textbox chains and endnote-flow tables: `chainOf`/`chainSlice` with `sliceParagraphFrom` (an `RtPara` with the cut first run and `CONTINUATION`, prepared through the scratch `LDoc`), the row-sliced table copy (an owned `Table` in the frame, a reborrowed `Cx`), `remapLines`, the three call sites, `nextBlockLead`'s endnote-flow table; P1: **2,742 of 2,742 oracle documents equal, 0 pending, 0 mismatches**, 900 generated `--gen f7d` documents and the committed fixture equal, F6's `lk-table2` equal (a facet name for row-sliced copies) — **0 port parity rounds**; M1/M2 0 B, no panic on 200 hostile chain/endnote documents; the module docs of the engine updated; the `--gen f7d` generator, the CI step (Opus) | one session, ≈ 2 h 15 min, in parallel with F8 and D2b | ≈ 120 |
+| 3 — F8 | editor-facing API and oracle: `refs.rs` (line → paragraph: `locateRef`/`lineParagraph`/`hfBlocksFor`/`noteBlocks`), `hit.rs` (`caretXIn`/`offsetAtX`, the editor's `eng.lines` and `layoutCache` per scope, `hitTestRaw`, `caretRectAt`, `paintEngineSelection`, `engLineAt`, `cellBoxAt`, `pageOf`), `run_boxes.rs` (+ `paintCustomInlines`' face and `measureText`, K17e), `navigation.rs`, `onField` → `Layout::fields`, `missing_faces` + `"font budget"` (uo-fonts signal), `ViewTransform` Web/Draft, the uo-docx `LayoutOracle` (`EngineOracle`, tested over a `Session`); P4 harness with the editor's private methods extracted from the frozen source; **2,742 of 2,742 oracle documents equal in every P4 facet (41,130 facets) + P1**, 300 generated `--gen f8` and the committed fixture equal — **4 parity rounds** (1 harness: client-pixel scaling; 3 port: field results one level down, flat header/footer/textbox scopes, the TS's repeated in-place collapse of shared `chars`); M1 0 B, hit tests 0 B allocated, no panic on hostile probes (Opus) | one session, ≈ 5 h, in parallel with F7d and D2b | ≈ 230 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
@@ -2741,8 +2743,338 @@ picture-bullet guard), `model.rs`, `output.rs` (`LineStory::InlineTextbox`/`Grou
   runs and `CONTINUATION`, prepared through the relocated scratch `LDoc` of F7a-2, or slices built
   per chain in `derive`), the row-sliced table copy (an owned `Table` with `rows[row..]`, its
   `cellNb` keys re-assigned) and `remapLines`; `Engine::chain_slices` already exists. Then the 14
-  `txbxlink` documents and `txbxlink/lk-table2` of F6.
+  `txbxlink` documents and `txbxlink/lk-table2` of F6. *(Done in F7d.)*
 - **F8**: the `PlacedObject.content` lines are `LineGeom`s in `content_lines` (editor caret in
   boxes); hit tests over `objects`/`cells`.
-- The engine module docs of `mod.rs`/`flow.rs` still describe F7a's stop points.
+- The engine module docs of `mod.rs`/`flow.rs` still describe F7a's stop points. *(Updated in F7d.)*
 - M3 stays over the §6 per-character target (stage 5, as F7a).
+
+## Stage 3 — F7d (chains, endnote tables)
+
+Opus, 2026-11-05, hybrid mode, one session (≈ 2 h 15 min), in parallel with F8 (editor-facing
+API) in the same crate and with the uo-docx D2b session work. Built from the F7b/F7c hand-offs
+against the frozen TS (d0f45bc5). **0 port parity rounds**: the 14 `txbxlink` oracle documents,
+every generated document and the fixture were equal at their first replay.
+
+### Ported (TS → Rust, TS operation order)
+
+| TS | Rust |
+|---|---|
+| engine.ts `chainOf` 3265, `chainSlice` 3278 (the head's content laid out at each box's width in `seq` order through `ctx.pure(layoutStatic(…, 'txbx'))`; the continuation's widow count; `splitContent` at the box's inner height; the first moved line; the nested-row re-cut; the paragraph cut `sliceParagraphFrom`, the row cut `{ ...pb, rows: pb.rows.slice(row) }`, or the whole blocks from `j`; `remapLines`; the per-pass memo) | `engine/chain.rs` `Engine::chain_of`, `chain_content`, `chain_slice`, `chain_layout` |
+| chain.ts `sliceParagraphFrom` 57, `topBlockOf` 72, `topRowOf` 78, `remapLines` 86 | `slice_paragraph_from`, `top_block_of`, `top_row_of`, `remap_lines` |
+| the three call sites: `placeFloat` 3383, `paintInlineDrawings` 3592, `paintObject`'s group child 3721 | `engine/floats.rs` (`check_chain` and its `Unported` removed) |
+| `layoutStatic`'s `CONTINUATION.has(para)` 1272 and its block walk over a continuation copy | `engine/static_layout.rs` (`SBlock::Rt`) |
+| `nextBlockLead`'s table branch 2550 in the endnote flow (`this.full.blocks` = the flow's) | `engine/flow.rs` (`flow_table` of the endnote block's story) |
+
+The engine no longer returns `LayoutError::Unported` anywhere (`view_transform.rs`'s Outline
+view, F8/milestone 2, is the only producer left in the crate); `error::unported`, the F0 stub
+helper, is gone.
+
+### Parity (P1 through the real engine; TS capture regenerated in the same run, LQ21)
+
+`tests/layout_parity.rs` as F7a–c (P1 + `pages` + `p2first`). The `--gen f7d` generator
+(`tools/lib/gen-f7d.mjs`): chains of 2–5 boxes — floating (page/margin/column/paragraph anchors,
+none/square wrapping), inline (`wp:inline`) and inside drawing groups (`wpg:wgp`), sizes and
+insets at random, in the body and in a header; the head's content: paragraphs of one to four runs
+in five open families and four sizes (cut in the middle of a run and at run boundaries), a PAGE
+field and tabs (never cut), first-line and hanging indents, a numbered list (the continuation
+loses its marker), spacing, contextual spacing, widow control on/off, keepNext, justification,
+and tables of 2–10 rows (cantSplit, row heights, header rows) cut between rows; `seq` reversed or
+with gaps, links to a missing id, a linked box before its head, overflowing last boxes. Endnotes
+of one to four blocks: keepNext paragraphs right before tables (`nextBlockLead` in the endnote
+flow), tables of up to 44 rows crossing pages, at the section end or the document end; two-column
+sections now and then.
+
+| Corpus | Documents | Equal | Pending | Mismatches |
+|---|---|---|---|---|
+| Word oracle, all documents, installed fonts | 2,742 | **2,742** | **0** | **0** |
+| `txbxlink/*` of the oracle (the 14 F7b-6 documents) | 14 | **14** | 0 | 0 |
+| `--gen f7d`, seed 1 | 100 | **100** | 0 | 0 |
+| `--gen f7d`, seed 2 | 500 | **500** | 0 | 0 |
+| `--gen f7d`, seed 3 | 300 | **300** | 0 | 0 |
+| committed fixture `tests/captures/f7d` (`--gen f7d` seed 7, open fonts; runs in `cargo test`) | 12 | **12** | 0 | 0 |
+| the F7a, F7b and F7c fixtures (regression) | 16 + 12 + 16 | 44 | 0 | 0 |
+| F6 facets (`p3.table`/`p3.rowsplit`/`p3.splitcontent`) of `txbxlink/lk-table` and `lk-table2` (the row-sliced copy) | 2 | **6 calls equal** (4 tables, 2 content splits) | **0** (was 1) | 0 |
+
+Coverage of the generated corpus (seed 1, counted once by a temporary probe, then removed): every
+document with a chain had non-head boxes with content; 120 distinct continuation states with a
+paragraph cut (`cont > 0`) and 21 with a table cut between rows (`rows > 0`).
+The F6 replay needed one facet change: a row-sliced copy is not a model table, so the facet now
+names it `<table ref>+r<k>` when its rows are the model table's own row objects from `k` on and
+every other key is the table's (facets-f6.mjs `positions` keeps a `Row → { table, ri }` map), and
+`f6_parity` rebuilds the copy from the model table (F7d-11).
+
+Timing: TS oracle capture with dumps 1 min 38 s; Rust replay of the oracle 1 min 41 s (release);
+generated documents: capture 1 min 49 s (100), 17 min (500) and 9 min (300) on a machine shared with the F8 and D2b agents, replay 11 s, 78 s and 57 s.
+
+### Memory and robustness (`tests/f7d.rs`)
+
+| Check | Result |
+|---|---|
+| M1: the every-path document (a body chain of four floating boxes over a numbered paragraph, a paragraph with a PAGE field and a first-line indent, a 12-row table and a paragraph without widow control — cut mid-run, between rows and overflowing the last box; a chain of an inline head and a grouped linked box; a header chain; a box linked to a missing id; endnotes with keepNext paragraphs before a 60-row table crossing a page and a 3-row table): read → derive → layout → drop | 67,987,712 B allocated, 2,614,594 B peak, **0 B left** |
+| M1: the same ending in `Limit(Pages)` (1 page, inside the endnote flow) and in `Limit(Work)` (a work floor of 3,000 units, inside a chain) | **0 B left** each |
+| M2 soak: 100 × (open → read → derive → layout → drop) of the every-path document, sampled every 10 | flat, **0 B** variation (11,245,792 B live throughout) |
+| M3 (release, per call, the 12 fixture documents) | 7.5–591 MB allocated (the two of ≈ 0.5 GB: two-column sections, every balancing probe a full pass that lays the chains out again, as the TS), 0.54–2.9 MB peak, 157–624 KB retained; **52.5–99.6 B per laid-out character retained** (over the §6 target as F7a–c: stage 5) |
+| M5 | no new cross-call cache: `chain_slices` is pass state (one entry per chain and box, dropped with the pass); the slices and the row-sliced table copies live in `chain_layout`'s frame |
+| no panic: 200 hostile documents (release; 30 in debug) — boxes with link ids `1`, `0`, `-1`, `NaN`, `abc`, empty, `1e9`, `2.5`, `99999999999` and seqs `0`, `-1`, `NaN`, empty, `1e9`, `2.5`, duplicated; several heads with the same id; boxes of 0 × 0 up to 40,000 twips; heads whose content holds an inline box of their own chain or of another (re-entrant `chainSlice`, mutual chains), tables in the content; floating, inline and grouped members; header chains; endnotes with tables of up to 40 rows with `cantSplit`, `tblHeader`, `trHeight` `1e9`/`NaN` exact and keepNext paragraphs before them | 200 laid out with every output index valid; no error, no panic |
+| limits | a chain of 2,000 linked boxes (300 in debug) over 40 paragraphs lays out; the same with a work floor of 2,000 units → `Limit(Work)`; chains nested 12 deep in each other's content with `max_depth: 8` → `Limit(Depth)` (the default lays them out) |
+
+### Declarations (the nine kinds of uo-docx A7; LA3 keys; limits)
+
+1. **Numbers**: `Math.max` through uo-jsnum (`max(0, topBlockOf)`, `max(1, fr.iw)`); the block and
+   row indices of the refs are the TS numbers (`topBlockOf`/`topRowOf` −1 when absent) read as
+   indices through `index_of`; `rows + row`, `cont + off` and the remapped `start`/`end`/`o` in
+   `u32` with saturating adds (JS numbers: the values are bounded by a text length or a row
+   count, F7d-6); the slice's offsets in `u64` while walking the runs. **No arithmetic-semantics
+   change.**
+2. **Regex** (hand matchers over `LineRef` segments): `/^[^/]+\/b(\d+)/` → the first segment;
+   `/^[^/]+\/b\d+\/r(\d+)\//` → the second when a third follows; `/^[^/]+\/b\d+$/` → a one-segment
+   path; `remapLines`' `/^([^/]+)\/b(\d+)(.*)$/` and `/^\/r(\d+)/` → the first segment and the row
+   segment after it (segments cycle b, r, c).
+3. **NaN/±∞ and absent keys**: the `moved` filter `l.y >= cut - 0.01` drops NaN as the TS;
+   `map[j] ?? j`; `r.field || r.fieldResult || r.image || …` = a non-empty `field` or any of the
+   others present (an empty `fieldResult` array is truthy); `slices.get(tb) ?? empty`.
+4. **Orders**: boxes in `members` order (the `seq` sort of F7b's `index_chains`); `chain_slices`
+   an `IndexMap` (`Map` insertion order; `set` of an existing key keeps its place); the paras map
+   of a continuation updated in place.
+5. **Recursion**: `chainSlice` → `layoutStatic` → `paintInlineDrawings`/`placeFloat` →
+   `chainSlice` of another chain is bounded by `max_depth` (`layout_static` counts it); the same
+   chain re-entered returns the memo (F7d-4).
+6. **Module state**: `CONTINUATION` (a `WeakSet`) → `RtPara::continuation` on the copy object;
+   nothing else.
+7. **Throws** → `Err(Internal)`: `moved.reduce` of an empty array after the nested-row re-cut
+   (F7d-7), a chain without members, a cut after the first kept run (unreachable: every run before
+   a cut is skipped), a continuation block where the cell flow expects model blocks.
+8. **Aliasing / identity (LA3)**: `TextboxChain` → `ChainId`, `DrawingTextbox` (members, `out`
+   keys) → `TbKey`; the slice paragraph object → an `RtPara` (no `ParaId`, as any TS copy); its cut
+   run → a `RunSrc::Slice` of the relocated base in the scratch `LDoc`, its glyphs mapped back to
+   the base's `RunKey` (F7d-2); the row-sliced copy → an owned `Table` with the model's `TableId`
+   (F7d-3); remapped lines → copies without `ObjId` (F7d-6). **`json_key` sites: none.**
+9. **Choices outside the source semantics**:
+
+| # | Decision | Why |
+|---|---|---|
+| F7d-1 | `ldoc::Chain` carries the model box of each member (`Chain<'a>::boxes`, filled by `index_chains`) | `chainSlice` reads each box's size, insets and colours; `DocView::find_textbox` is O(document) per call |
+| F7d-2 | A continuation is `RtPara { first_from, continuation }`: `runs[0]` is cut from `first_from` (0 = whole). `sliceParagraphFrom` cuts at most one run and always the first one kept, so one offset covers slices of slices (offsets add up) and the copies built from them (`join_deleted` takes the carried runs' `first_from` and counts the cut text in `REV_JOINS`; `join_hidden` keeps the joined paragraph's). `prepare_rt` makes the cut run a `RunSrc::Slice` of the relocated base; its glyphs map back to the base's key | `Cx` keeps one shared `&LDoc` (F7a-2); the TS copy is a new run object, but a cut run is a text run (fields and objects are never cut), so nothing keyed by its identity differs |
+| F7d-3 | The row cut is an owned `Table` (`rows_copy`: the rows from `k` cloned, every other field copied, the model's `TableId`); slices of slices add up (`RBlock::Rows(t, from)`), one copy per box layout. The copies and the continuation paragraphs live in `chain_layout`'s frame and reach `layout_static` through a `Cx` reborrowed with that frame's lifetime (as F7b-5). `cellNb` keys (table, row, cell) name the copy's rows; they are assigned right before each table layout, as the TS assigns them on the (shared) cell objects | no model object exists for the copy; the cells' paragraphs keep their ids, so the derived paragraphs are found |
+| F7d-4 | `chain_slices[chain]` is inserted empty before the chain is laid out and filled box by box: a `chainSlice` of the same chain met while it is being laid out (a box of the chain inside its own content) gets the boxes done so far or empty; the env of the first caller of the pass (`field` page, `hf`) holds for every box | the TS `Map.set(chain, out)` comes before the loop; the memo is per pass |
+| F7d-5 | The flow ref `'txbx'` of every box is `LineStory::Textbox(head)` | the remapped refs name the head's content blocks; the TS string is the same for every box |
+| F7d-6 | `remapLines`' changed lines are copies (`ObjId` dropped); `start`/`end`/`o` + `cont` are saturating `u32` adds | `{ ...l }`; the sums are text offsets |
+| F7d-7 | `moved.reduce(…)` of an empty array (only reachable after the nested-row re-cut) → `Err(Internal("chain: no moved line"))` | the TS throws `TypeError` |
+| F7d-8 | Work budget: 1 unit per box of a chain (plus `layout_static`'s and `split_content`'s own) | K16; a very long chain stops at the budget |
+| F7d-9 | `nextBlockLead`'s table in the endnote flow is read from the note's story (`flow_table`) | the TS reads `this.full.blocks`, which the endnote flow replaced (F7c-10) |
+| F7d-10 | `SBlock::Rt(&RtPara)` is only ever the first block of a box's flow: `FRAME_SKIP` is never set on it (a `WeakSet` per object) and it is never lifted again (a frame paragraph has no line in the flow, so no cut falls in one); the cell flow's `invisible` answers `Internal` for it (unreachable) | `liftFrames` runs once in `derive` (F7b-8) |
+| F7d-11 | Harness: facets-f6.mjs names a row-sliced copy `<table ref>+r<k>` (the same row objects from `k`, every other key equal); `f6_parity` rebuilds it from the model table | the facet keyed tables by model position only (`lk-table2` was pending) |
+| F7d-12 | Harness: `--gen f7d` in `capture-layout.mjs`, the committed fixture and its test, the CI step (strict) | the gate needs end-to-end parity on chains and endnote tables |
+
+**Limits** (LQ14): `max_depth` (chains in each other's content, through `layout_static`), the work
+budget (F7d-8), `max_pages` (endnote tables crossing pages); a chain's boxes and blocks bound
+every other loop.
+
+### Shared files edited (additive)
+
+`ldoc.rs` (`Chain<'a>::boxes`), `derive.rs` (`index_chains` fills `boxes`; module doc),
+`engine/mod.rs` (`pub mod chain`; module doc), `engine/flow.rs` (`RtPara::{first_from,
+continuation}`, the cut run in `prepare_rt`, `join_deleted(…, first_from, …)`, `join_hidden`
+keeps `first_from`, `no_shown_run_keys`, the endnote-flow table of `nextBlockLead`; module doc),
+`engine/static_layout.rs` (`SBlock::Rt` and the continuation in the block walk),
+`engine/floats.rs` (the three chain sites, `tb_env` `pub(crate)`, `check_chain` removed),
+`engine/tables.rs` (the `SBlock::Rt` arm of `invisible`), `error.rs` (`unported` removed),
+`lib.rs` (module map), `tests/layout_parity.rs` (the F7d fixture test), `tests/f6_parity.rs` (the
+`+r<k>` copies), `tests/f7b.rs` (a stale comment), `tools/capture-layout.mjs` (`--gen f7d`),
+`tools/lib/facets-f6.mjs` (F7d-11), `.github/workflows/rust-core.yml` (the F7d capture + strict
+replay step), this record. Owned: `engine/chain.rs`, `tests/f7d.rs`, `tests/captures/f7d/`,
+`tools/lib/gen-f7d.mjs`.
+
+### Not done (handed on)
+
+- **F8**: the editor's chain queries (`rebuildTextboxLines` over the boxes of a chain) read the
+  `PlacedObject.content` lines the engine now fills for every box.
+- `engine/tables.rs` keeps F7b's dead `unported` helper (`#[allow(dead_code)]`), F7b's file.
+- M3 stays over the §6 per-character target (stage 5, as F7a–c).
+
+## Stage 3 — F8 (the editor-facing API and the layout oracle)
+
+Opus, 2026-11-05, hybrid mode, one session, in parallel with F7d (chains, endnote tables) in the
+same crate and with the uo-docx D2b frontiers. Behaviour source: the frozen TS d0f45bc5 —
+`refs.ts`, `run-boxes.ts`, `pdf-navigation.ts`, `inline-renderer.ts` (`paintCustomInlines`), the
+editor's `engine-doc.ts` (`caretXIn`, `offsetAtX`, `isSortedByX`, `locateRef`, `resolveCell`,
+`hfBlocksFor`), `notes.ts` (`noteBlocks`, `flattenBlocks`), the viewer's `views.ts`
+(`webDocument`), and the `<universal-write>` methods that call them over the engine lines.
+
+### API shape (refines plan §3: the plan's single `hit_test`/`caret`/`selection_rects` on `Layout` lacked the edit context the TS keeps)
+
+| Rust | TS | Notes |
+|---|---|---|
+| `refs::Locator::new(view)` → `locate(section, &LineRef) -> Located { kind: LocKind, para: Option<ParaLoc> }`; `path_in`, `body_path`, `cell_hops`, `hf_story_for`, `paragraph`, `para_length` | `locateRef` + `lineParagraph` (+ `paragraphAtPath`, `resolveCell`, `hfBlocksFor`, `noteBlocks`) | `ParaLoc` = story + model `BlockPath` (a cell by its index); `refs.ts` itself stays ported once in `uo_docx::word::refs` (`cell_at_grid`) |
+| `hit::caret_x_in`, `offset_at_x`, `is_sorted_by_x`, `collapse_custom_chars`, `xf_invert` over a `CharsView` | engine-doc.ts:371–400, universal-write.ts:953, 555 | pure, allocation-free |
+| `Layout::line_index(view) -> LineIndex` (`installEngineResult`'s `eng.lines`): `located`, `line_at(layout, page, x, y)` (`engLineAt`), `page_of(layout, &ParaLoc, off)` (the find list's `pageOf`, K17c); `hit::cell_at(loc, layout, page, x, y)` (`cellBoxAt`) | universal-write.ts:16507, 18689, 17874, 20255 | |
+| `Layout::edit_lines(view, &LineIndex, &EditScope) -> EditLines` (`layoutCache`): scopes `Body`, `Cell { table, row, cell }`, `HeaderFooter { which, part, page }`, `Note { kind, id }`, `Textbox { chain, page }`; `EditLines::{hit, caret, line_of, caret_x, hit_line_x, selection_rects, doc_ref, edit_pos}` with `EditPos { para, offset }`, `CaretRect` (+ `xf`), `SelRect` (+ `xf`) | `rebuildEditLines`/`rebuildTextboxLines`, `hitTestRaw` (engine branch) + `hitLineX`, `lineOf` + `caretX` (`caretRectAt`), `paintEngineSelection` | built once per layout; the queries allocate nothing |
+| `run_boxes::run_boxes(view, layout, RunFilter::{Links, CustomInlines}) -> Vec<RunBox>` (`Layout::run_boxes`); `RunBox { page, x, y, w, h, baseline, run: RunRef, props: Arc<RunProps>, value }` | `runBoxes` | K17e: the props and the `RunRef` travel with the box |
+| `Layout::custom_inline_face(&RunBox) -> InlineFace { face, size_pt, color }`, `Layout::measure_text(Option<FaceId>, size_pt, &[u16])` | `paintCustomInlines`' `run0` lookup and `measureText` | K17e |
+| `navigation::navigation(view, layout) -> uo_render::Navigation` (`Layout::navigation`), `block_line` | `pdfNavigation`, `blockLine` | |
+| `LayoutOptions::collect_fields` → `Layout::fields` | `onField` | over every pass of the call |
+| `oracle::EngineOracle` (feature `oracle`, default on) `impl uo_docx::view::LayoutOracle` (`field_values`, `next_hyphenation`); `oracle::first_hyphenation`, `to_oracle_error` | `refreshFieldCache`, the layout half of `nextManualHyphenation` | here until the bindings carry a layout (F8-10) |
+| `view_transform::{transformed, web_document}`; `LayoutEngine::layout` applies `o.view` | viewer `webDocument` | LQ2 |
+| `Layout::missing_faces`, the warning `"font budget"` | — | closes F7a-12; registry signal F8-11 |
+
+`query.rs` now only gathers these (`Layout::{run_boxes, navigation, lines_of, line_index,
+edit_lines}`); its `PENDING` holds `encode_page` alone — the Write-section `AppSection` encoder is
+frontier E's (uo-render already has `encode_page_for_canvas_with`), not in the F8 brief.
+
+### Ported (TS → Rust, TS operation order)
+
+| TS | Rust |
+|---|---|
+| engine-doc.ts `locateRef` 305, `resolveCell` 336, `hfBlocksFor` 358; universal-write.ts `lineParagraph` 16531; notes.ts `noteBlocks` 89 | `refs.rs` |
+| engine-doc.ts `caretXIn` 371, `offsetAtX` 386, `isSortedByX` 397; universal-write.ts `collapseCustomChars` 953 (= run-boxes.ts `collapseCustomInlineChars` 34), `xfInvert` 555, `shiftEngLine` 549 | `hit.rs` |
+| universal-write.ts `installEngineResult` 16507, `rebuildEditLines` 16403, `rebuildTextboxLines` 16463, `allLines`/`lineOf`/`caretX`/`hitLineX` 13297–13334, `hitTestRaw` 15859 (engine branch), `caretRectAt` 5105, `paintEngineSelection` 18602, `engLineAt` 18689, `cellBoxAt` 20255, `search()`'s `pageOf` 17874; notes.ts `flattenBlocks` 96 | `hit.rs` (`LineIndex`, `EditLines`, `cell_at`) |
+| run-boxes.ts `runBoxes` 57; inline-renderer.ts `paintCustomInlines` 50 (`run0`, `measureText`) | `run_boxes.rs` |
+| pdf-navigation.ts `pdfNavigation` 32, `blockLine` 20 | `navigation.rs` |
+| para.ts `fieldValueRun` 548 (`onField`) | `PrepFlow::on_field` (para.rs) + `Engine::fields`, `Call::take_fields` (engine/mod.rs) |
+| universal-write.ts `refreshFieldCache` 6457, `nextManualHyphenation` 17337 (layout half) | `oracle.rs` |
+| viewer views.ts `webDocument` 27 | `view_transform.rs` |
+
+### Parity (P4: the editor- and viewer-facing facets; TS capture regenerated in the same run, LQ21)
+
+Harness: `tools/lib/facets-f8.mjs` (owned) runs from `capture-layout.mjs --f8` after the P1 stream
+of each document. The exported TS functions are imported from the frozen sources (Node 24 strips
+the types of `engine-doc.ts`, `notes.ts`, `views.ts`); the `<universal-write>` methods, which are
+class-private on a DOM element, are **extracted from the frozen `universal-write.ts` at capture
+time** (their text, types stripped by `module.stripTypeScriptTypes`) and run on a plain object
+standing for the element — only the find list's `pageOf` closure (4 lines) is transcribed. Zoom 15
+makes `PX_PER_TWIP * zoom === 1`, so client pixels are page twips; one canvas per page. Facets:
+`p4.locate` (every page line: kind + paragraph), `p4.caret` (`caretXIn`/`offsetAtX` over every page
+line, sampled offsets and x), `p4.edit` (per scope — body, the first six cells depth first, the
+first four header/footer parts on the first and the last page, three notes of each kind, the first
+four model textboxes — the edit lines, `hitTestRaw` over sample points, `caretRectAt` per sampled
+offset, `paintEngineSelection` per sampled range and page), `p4.lineat`, `p4.cellat`, `p4.pageof`,
+`p4.runboxes` (links and plugin inlines), `p4.inline` (`paintCustomInlines`' `run0` +
+`measureText` through a recording renderer), `p4.nav`, `p4.fields` (`onField` of the main layout),
+`p4.hyph` (two `hyphenation: 'force'` layouts: nothing refused, then the first two points the engine
+asked about refused — `p4.hyphskip`, plain, the input of the replay), `p4.web` (the P1 stream of
+`webDocument(full, 9000)`). The sampling rules are mirrored in `tests/f8_parity.rs`, which lays
+every document out through the real engine (reader → derive → engine, transcript policy) and
+computes the same streams with the Rust queries; P1 and `pages` are compared in the same run.
+`UO_F8_TRACE=<dir>` writes both item traces of `p4.edit`. `--gen f8` = an F7c (odd index: F7b)
+document of the seed with hyperlinks (to bookmarks, external, broken) and plugin inlines
+(`wordnext:inline:` tags) appended to some paragraphs.
+
+| Corpus | Documents | Equal (every P4 facet + P1) | Facets compared | Mismatches |
+|---|---|---|---|---|
+| Word oracle, all documents, installed fonts | 2,742 | **2,742** | 41,130 | **0** |
+| `--gen f8`, seed 1 | 300 | **300** | 4,500 | **0** |
+| committed fixture `tests/captures/f8` (`--gen f8` seed 7, open fonts; runs in `cargo test`) | 12 | **12** | 180 | 0 |
+
+**Rounds** (4; the first oracle run: 2,670 of 2,742 equal, 72 mismatches, P1 equal everywhere):
+1. *harness*: the facet turned page twips into client pixels as `x * PX_PER_TWIP * 15`, not exactly
+   `x`: points on a character's middle went to the other side (65 documents of `p4.edit`,
+   `p4.lineat`, `p4.cellat`). Fixed in the facet.
+2. *port*: `onField` of a field inside a field result (a PAGEREF in a TOC's cached result) reaches
+   `PrepFlow::on_field` as `FieldRun { run: parent, sub: [j] }`; the first version resolved only
+   `sub == []` (4 documents of `p4.fields`). Fixed: `[j]` resolves through
+   `LDoc::field_result_key` (F8-6).
+3. *port*: the header/footer and textbox scopes took the top-level paragraphs; the editor's model
+   there is the part's / box's **flat** paragraph array (cells included), so the lines of a table in
+   a textbox were missing (`txbxlink/lk-table`, `lk-table2`). Fixed in `EditScope` and in the facet,
+   which now hands the part's own array (F8-8).
+4. *port* (the generated documents, seed 1: 3 of 300, `p4.edit`): `installEngineResult` collapses
+   plugin-inline characters **in place**, once per line, and the lines the engine shifts from one
+   source line (`shiftLine`: a repeated table header row) share one `chars` array, which is
+   therefore collapsed once per page it repeats on — a second collapse swallows the character
+   after the inline. Reproduced (F8-15).
+
+Between rounds 3 and 4 the capture's names were widened to the runs of textbox contents and group
+members (`<run>/tx`, `<run>/g<j>`): field values in textboxes (8 values in 6 oracle documents,
+`hfgroup/*`, `hftpl/pageMargin-*`) were left out of `p4.fields` by both sides; now they are compared
+(`p4.fields.unnamed` = 0 on every document).
+
+Timing: oracle TS capture with the F8 facets 2 min 27 s (four layouts per document); Rust replay of
+P1 + P4 (four layouts per document) 6–9 min (release, contended machine).
+
+### Memory and robustness (`tests/f8.rs`)
+
+| Check | Result |
+|---|---|
+| M1: the line index, the edit lines of every scope of a fixture document (hostile scopes included) with a selection, both run-box filters, the navigation; outputs dropped | 151,317 B allocated, 52,136 B peak, **0 B left** |
+| M3: the hot queries — `EditLines::hit`/`caret`, `LineIndex::line_at`, `cell_at` (200 points per page), `caret_x_in`/`offset_at_x` (20 probes per line) | **0 bytes allocated** (asserted) |
+| M3: building them (the same document, 3 pages) | `LineIndex` 2,376 B; `EditLines` (body) 98,728 B allocated, 48,280 B peak, 47,680 B kept (lines and characters copied, F8-4) |
+| no panic (12 documents): every scope (plus a cell path past the body, part `u32::MAX`, note id NaN, an empty chain) × 200 hostile probes (pages `u32::MAX`, coordinates NaN/±∞/±1e300/−0/subnormal, `EditPos` past every paragraph, reversed and `u32::MAX` selections), 300 random hostile `LineRef`s (paths of `u32::MAX`, note ids −1/0.5/NaN/1e22, unknown parts), `CharsView`s with NaN and unequal columns, a face id out of range, `block_line(NaN)`, `web_document(NaN)` | no panic |
+| the oracle over a uo-docx `Session` (4 fixture documents): `field_values(session.view(), All)` = the values of the direct layout in order, run by run on the same field instructions (the session's run indices include its mark runs); `Runs(subset)` keeps the order and only those; `next_hyphenation` walked from the start = `first_hyphenation` of a forced layout of the same view | equal |
+| `missing_faces` (a provider without Liberation Sans: noted, once each); `"font budget"` (a provider reporting refusals: the last warning); `Web`/`Draft` sizes, no header/footer line in Web; `Outline` = error | pass |
+
+### Declarations (the nine kinds of uo-docx A7; LA3 keys; limits)
+
+1. **Numbers**: `Math.min`/`max`/`abs`/`round`/`floor` through uo-jsnum; offsets are `u32` (the
+   engine's `chars.o`, P1-proven non-negative) compared as `f64` where the TS compares numbers
+   (`caret_x_in` takes an `f64` offset: `start − 1` is −1).
+2. **Identity (LA3)**: a line's TS `Paragraph` object → `ParaLoc` (story + model path), mapped once
+   to the scope index (`FxHashMap`); `l.para === p` → `ParaLoc` equality; the `Run` of `onField` →
+   `RunRef` (the `RunKey` of the line's `LDoc`, relocated copies included); a chain's
+   `DrawingTextbox` → `DrawingId`; `o.run.textbox` → the model run's `textbox.drawing` (a group's
+   run has none, as in the TS).
+3. **Order**: `eng.lines` = pages then lines; `allLines()` = scope paragraphs then lines;
+   `onField`'s map = first set over every pass of the call (balancing probes and `pure()`
+   included), last value (`IndexMap` insert); `missing_faces` first miss first.
+
+| # | Decision | Why |
+|---|---|---|
+| F8-1 | The editor queries take a page index and page twips; choosing the canvas under the pointer (rectangles, zoom, `hitTestRaw`'s horizontal-distance order) stays in the shell; `hit` returns the raw position — `canonPos` (hidden text before the caret) is the session's | the TS mixes DOM geometry with the line logic; P4 drives the TS with identity pixels |
+| F8-2 | The plan's `Affinity` is dropped: the TS has none (`lineOf` puts an offset at a wrap on the next line; the last line keeps its end) | parity |
+| F8-3 | `offset_at_x` over characters not in x order finds the least `(x, index)` candidate instead of sorting a copy (V8's stable sort by `a.x − b.x`): the same element for every non-NaN x, no allocation; with NaN x V8's order is implementation-defined and the result may differ (never produced on the corpus: P1 proves the characters) | M3: a hit test allocates nothing |
+| F8-4 | `EditLines`/`LineIndex` copy what they need (lines; characters collapsed or shifted as the TS mutates them) and borrow nothing; built once per layout. The TS `installEngineResult` collapses the layout's own `chars` in place; here the `Layout` stays immutable | plain data across the binding |
+| F8-5 | `RunBox.value` is the link (UTF-16) or the plugin inline's `type`; the inline's `data`/`fallbackText` are read from the model through `RunBox.run` | the TS hands the `CustomInline` object; the binding serialises it on demand |
+| F8-6 | `onField` reports the `RunRef` of a model run and of a field result one level down (`RunSub::FieldResult(j)`); a field nested deeper in results, a chain slice and a synthetic (frame) run have none and are not reported (the TS reports the object). Counted by the capture: `p4.fields.unnamed` = 0 on the oracle and the generated documents (the names cover textbox contents and group members) | `RunRef` names one level of results (uo-docx A4); the trait doc says "sliced and frame runs absent" |
+| F8-7 | `RunFilter` replaces the `pick(run)` callback (its two TS callers) | no callbacks across the binding |
+| F8-8 | Edit scopes: body and cell = their top-level paragraphs; header/footer and textbox = the flat paragraph array (cells included); note = `flattenBlocks`; a textbox scope names its chain by `DrawingId`s, head first | the editor's `this.model.paragraphs` in each mode |
+| F8-9 | `next_hyphenation` answers the first body point at or after `from` (body block, then offset) in page order; the session calls again after its `b − a < 2` skip (the TS goes on in the same layout: the same answer, one layout more) | the approved two-method trait |
+| F8-10 | `EngineOracle` lives in uo-docx-layout behind the feature `oracle` (default on): `uo-wasm`/`uo-ffi` carry no layout yet; a binding wraps it | brief |
+| F8-11 | `"font budget"`: a new `FontProvider::budget_refusals()` (default 0) over a refusal counter of `FaceLedger` (implemented by the `viewer`, `server-substitute`, `oracle` policies and the embedded wrapper); the layout warns once, last, when the provider of the call reports refusals (the TS has no such warning; 0 on the corpus) | LA6: the minimal registry signal (uo-fonts) |
+| F8-12 | `ViewTransform::Draft` = `webDocument` at the first section's text width plus the two Web margins (no TS function: the TS draft view was the legacy layout, LQ2); `Outline` = `Err(Unported(F8, …))` until milestone 2 designs it; a transformed view drops the `DocView`'s editing context | LQ2 |
+| F8-13 | `missing_faces` = every `provider.face` request answered `None` during the call (the substitution chain's fallbacks included), unique, first miss first, capped at 4,096 (M5) | the shell loads them and lays out again, as the viewer does |
+| F8-14 | P4 harness: the private editor methods extracted from the frozen source at capture time (above), the `--gen f8` decorator, `p4.*` skipped by `layout_parity` | the element cannot run in Node without its DOM; the extraction keeps the frozen text as the reference |
+| F8-15 | The edit lines of a paragraph with plugin inlines repeat the TS's cumulative in-place collapse: a page line is collapsed once per page line sharing its TS `chars` array, found as the page lines of that paragraph with the same ref, offsets and character bits (the layout keeps no array identity; `shiftLine`/`shiftLineXY` with `dx = 0` are the sharing sites). A TS defect (a repeated header's caret skips the character after the inline) reproduced for parity — a stage-5 candidate (collapse once), to be decided with the oracle | parity; only lines with plugin inlines, so the extra key costs nothing elsewhere |
+
+**Limits**: none new; every query indexes with `get` (a hostile page, paragraph or offset answers
+nothing, or `{ para: 0, offset: 0 }` where the TS does). `flatten` over cells recurses as deep as
+the model nests tables (uo-docx G20: 64).
+
+### Requests to other modules
+
+- **uo-docx `LayoutOracle`, D2a-C2 (open — not added)**: "which header/footer part does page N show"
+  would be a third method `hf_part_on_page(&mut self, doc, page: u32, which: HfWhich) ->
+  Result<Option<(HfPartId, HfSlot)>, LayoutError>` — the TS `hfPartOfPage` (universal-write.ts:18648):
+  the slot of the page's first header/footer line, else Word's rule (the section's first page with
+  `titlePg` → `first`; an even page with even/odd headers → `even`; else `default`), then
+  `hfBlocksFor`. Everything it reads is in `Layout` (`LineStory::HeaderFooter { slot, part }`,
+  `LayoutPage::{section, number}`) plus the settings; it needs the layout of the session's current
+  state (a `Layout` cached by the binding, or a layout per call).
+- **uo-docx session (D2b-F10)**: `field_values` keys runs of `session.view()`, whose paragraphs hold
+  the editor's mark runs — the run indices are the session's (tested). The `b − a < 2` skip and the
+  `to` bound of Manual Hyphenation are the session's (F8-9).
+- **uo-fonts** (done, F8-11): `FaceLedger::refused`, `FontProvider::budget_refusals`.
+
+### Shared files edited (additive)
+
+`para.rs` (`PrepFlow::on_field` gains the resolved `RunRef`; `field_value_run` resolves it when
+collecting), `engine/mod.rs` (`Engine::fields`, `Call::{fields, take_fields}`, the `Layout`'s
+`fields`, `missing_faces` and the budget warning), `engine/flow.rs` (the engine's `on_field`),
+`fonts.rs` (the resolver's misses, `MAX_MISSES`, `take_misses`; the embedded wrapper keeps its
+ledger and answers `budget_refusals`), `lib.rs` (modules; `LayoutEngine::layout` applies the view),
+`Cargo.toml` (feature `oracle`; the dev-dependency `uo-docx` with `session`),
+`tests/layout_parity.rs` (skips `p4.*`), `tools/capture-layout.mjs` (`--f8`, `--gen f8`, `onField`
+in the main run with `--f8`), `.github/workflows/rust-core.yml` (the F8 capture + replay step),
+uo-fonts `registry/ledger.rs`, `registry/answer.rs`, `policy/{viewer,server,oracle}.rs`, this
+record. Owned: `refs.rs`, `hit.rs`, `run_boxes.rs`, `navigation.rs`, `oracle.rs`,
+`view_transform.rs`, `query.rs` (rewritten), `tests/f8.rs`, `tests/f8_parity.rs`,
+`tests/captures/f8/`, `tools/lib/facets-f8.mjs`.
+
+### Not done (handed on)
+
+- `encode_page` (frontier E: the Write-section `AppSection` encoder).
+- The editor's object hit test (`hitTextbox`, `enumFloats`: rotation tolerance in screen pixels, z
+  order by `relativeHeight`) and the table-selection boxes (`tableBoxes`): their inputs are in
+  `PlacedObject`/`PlacedCell`; they depend on the editor's context sets (`contextTextboxRuns`) and
+  the zoom — milestone 2, with the session.
+- `ViewTransform::Outline` (milestone 2); the tiling of the editor's tall Web page (TS shell).
+- D2a-C2 (above).

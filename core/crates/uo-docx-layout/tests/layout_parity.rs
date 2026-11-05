@@ -345,7 +345,8 @@ fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Repor
                 // p2 (every call): the TS asks again in every pass, Rust once per call (LQ19); the
                 // stage facets have their own replays
                 for (f, _) in &rec.facets {
-                    if f.starts_with("p3.") || f == "p2" {
+                    // (`p4.*`: the F8 facets, replayed by f8_parity.rs)
+                    if f.starts_with("p3.") || f.starts_with("p4.") || f == "p2" {
                         replay.skip(&rec.key, f);
                     }
                 }
@@ -435,6 +436,22 @@ fn f7b_committed_fixture_through_the_engine() {
     assert!(t.mismatch.is_empty(), "{:?}", t.mismatch);
     assert!(t.pending.is_empty(), "{:?}", t.pending);
     assert!(t.equal > 0, "no document of the fixture was laid out end to end");
+}
+
+#[test]
+fn f7d_committed_fixture_through_the_engine() {
+    // linked textbox chains and endnote-flow tables (`--gen f7d` seed 7, open fonts; F7d)
+    let dir = manifest().join("tests/captures/f7d");
+    if !dir.join("layout.capture").exists() {
+        eprintln!("f7d fixture absent");
+        return;
+    }
+    let (t, report) = replay(&dir.join("layout.capture"), &dir, &dir.join("docs"));
+    eprintln!("f7d fixture: {t:?}; {}", report.summary());
+    report.assert_clean();
+    assert!(t.mismatch.is_empty(), "{:?}", t.mismatch);
+    assert!(t.pending.is_empty(), "{:?}", t.pending);
+    assert_eq!(t.equal, t.docs, "every document of the fixture is laid out end to end");
 }
 
 #[test]

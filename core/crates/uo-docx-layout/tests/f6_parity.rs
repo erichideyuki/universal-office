@@ -1155,7 +1155,18 @@ fn replay_doc(key: &str, dump: &[u8], docx: &Path, transcript: &Transcript, font
                 }
                 let ts = r.bytes()?;
                 f.table.bytes(&ts);
-                let (Some(table), Some(at)) = (model.tables.get(&tref).copied(), parse_ref(&sref)) else {
+                // `<table>+r<k>`: the row-sliced copy a linked textbox chain lays out (F7d)
+                let sliced: Option<Table> = tref.split_once("+r").and_then(|(b, k)| {
+                    let (t, k) = (model.tables.get(b)?, k.parse::<usize>().ok()?);
+                    let mut c = Table::clone(t);
+                    c.rows.drain(..k.min(c.rows.len()));
+                    Some(c)
+                });
+                let found = match &sliced {
+                    Some(c) => Some(c),
+                    None => model.tables.get(&tref).copied(),
+                };
+                let (Some(table), Some(at)) = (found, parse_ref(&sref)) else {
                     t.pending += 1;
                     t.pendings.push(format!("{key} table {call} at {tref:?} ref {sref}"));
                     f.all = false;

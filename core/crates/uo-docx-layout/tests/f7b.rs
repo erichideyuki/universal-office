@@ -628,8 +628,8 @@ fn no_panic_on_hostile_tables_floats_frames_and_chains() {
                     body.push_str(&para(&f, &run(8, i as usize)));
                 }
                 _ => {
-                    // a break with w:clear, and a linked textbox chain (pending: chainSlice is not
-                    // ported — an `Unported` error)
+                    // a break with w:clear, and a linked textbox chain (laid out since F7d; the
+                    // hostile chains are `tests/f7d.rs`'s)
                     body.push_str(&para(
                         "",
                         &format!(

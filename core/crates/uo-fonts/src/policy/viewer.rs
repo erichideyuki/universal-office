@@ -55,6 +55,10 @@ impl ViewerProvider {
 }
 
 impl FontProvider for ViewerProvider {
+    fn budget_refusals(&self) -> u64 {
+        self.registry.ledger().refused()
+    }
+
     fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>> {
         let key: Key = (family.to_owned(), bold, italic);
         if let Some(hit) = self.cache.lock().unwrap_or_else(PoisonError::into_inner).get(&key) {

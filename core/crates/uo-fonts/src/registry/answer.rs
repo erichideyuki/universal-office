@@ -139,6 +139,13 @@ impl std::fmt::Debug for FontAnswer {
 /// substitution chain). Synchronous and callable from several threads.
 pub trait FontProvider: Send + Sync {
     fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>>;
+
+    /// Faces of this document the budget refused so far (its [`super::FaceLedger`]: a refused
+    /// face resolves as a miss). The layout warns `"font budget"` when it is not 0 (LA6; added
+    /// by uo-docx-layout F8). Providers without a ledger answer 0.
+    fn budget_refusals(&self) -> u64 {
+        0
+    }
 }
 
 /// A face picked from a font index for a request, before a policy gives it an identity.

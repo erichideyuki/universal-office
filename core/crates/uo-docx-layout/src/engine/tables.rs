@@ -302,6 +302,8 @@ impl Engine {
             match b {
                 SBlock::Para(k) => Ok(!para_visibility(cx, eng, *k, penv)?.1),
                 SBlock::Table(_) => Ok(false),
+                // (cell blocks are the model's: a chain continuation is never one, F7d)
+                SBlock::Rt(_) => Err(LayoutError::Internal("cell: a continuation block")),
             }
         };
         // hideMark: the empty cell's mark does not count in the row height (oracle hidden)

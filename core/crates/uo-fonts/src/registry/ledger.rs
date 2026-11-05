@@ -9,6 +9,7 @@
 //! warns `"font budget"`).
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use super::cache::ContentKey;
@@ -49,12 +50,15 @@ struct State {
 pub struct FaceLedger {
     budget: u64,
     state: Mutex<State>,
+    /// charges refused so far (the signal of the layout's `"font budget"` warning; added by
+    /// uo-docx-layout F8)
+    refused: AtomicU64,
 }
 
 impl FaceLedger {
     /// A ledger that allows `budget` bytes pinned.
     pub fn new(budget: u64) -> Arc<FaceLedger> {
-        Arc::new(FaceLedger { budget, state: Mutex::new(State::default()) })
+        Arc::new(FaceLedger { budget, state: Mutex::new(State::default()), refused: AtomicU64::new(0) })
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -63,6 +67,11 @@ impl FaceLedger {
 
     pub fn budget(&self) -> u64 {
         self.budget
+    }
+
+    /// Charges refused since the ledger was made (a face that would have passed the budget).
+    pub fn refused(&self) -> u64 {
+        self.refused.load(Ordering::Relaxed)
     }
 
     /// Bytes charged now.
@@ -79,6 +88,7 @@ impl FaceLedger {
             return Some(Ticket(live));
         }
         if state.used.saturating_add(cost) > self.budget {
+            self.refused.fetch_add(1, Ordering::Relaxed);
             return None;
         }
         state.used += cost;
