@@ -10,7 +10,7 @@
 //! "Stage 3 — F5", F5-1). Colours stay the strings the document wrote, interned (RQ6).
 
 use crate::engine::Cx;
-use crate::error::{Frontier, LResult, LayoutError, LimitKind, unported};
+use crate::error::{LResult, LayoutError, LimitKind};
 use crate::fonts::FaceMetrics;
 use crate::items::{ItemSide, PassItems};
 use crate::keys::{LineSeq, RunKey};
@@ -285,7 +285,9 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
             if g.kind == GlyphKind::Tab && pg.leader.is_some() {
                 paint_leader(env, p, out, &all, k, frame_x, base_y)?;
             }
-            if g.kind == GlyphKind::Obj && g.obj.is_some() && g.adv > 0.0 {
+            // (a picture bullet's glyph has no model run: the TS one is a run built by
+            // `prepareParagraph`, F4 — painted the same way)
+            if g.kind == GlyphKind::Obj && (g.obj.is_some() || g.pic_bullet.is_some()) && g.adv > 0.0 {
                 env.inline_object(p, &g, frame_x + pg.x, base_y, out)?;
             }
             if g.kind == GlyphKind::Obj
@@ -1120,15 +1122,30 @@ pub fn page_border_items_in<E: PaintEnv + ?Sized>(
 /// the metafile players inside a clip with `src`, else an image item with its `pictureLook`) or an
 /// inline shape, inside its effects margin (oracle effext).
 ///
-/// The three ends need what the engine holds (F5-9): the `ImageId` of a model drawing (RQ3, one
-/// per `InlineImage` object, with its `ImageOrigin::Media`), the `FaceLookup` and `ResWriter` over
-/// the pass for `metafile::paint_metafile` and `drawing::picture_look`, and the shape item the
-/// floating objects also build (`drawing::shape_geom` + `shape_extras` + fill and stroke). They are
-/// [`image_id_of`], [`metafile_into`], [`image_item_into`] and [`shape_item_into`], stubs for F7b.
+/// The three ends need what the engine holds (F5-9): the `ImageId` of a model drawing (RQ3), the
+/// pass's face lookup and resource writer for the metafile players and `pictureLook`, and the
+/// shape item — `engine::objects` (F7b). A picture bullet (`g.pic_bullet`, no model run) paints
+/// its numbering picture as a new image object (F4 hand-on).
 pub fn paint_inline_object(cx: &mut Cx<'_, '_>, p: &PreparedPara, g: &Glyph, x0: f64, base_y0: f64, out: &mut PassItems) -> LResult<()> {
+    let shift = p.styles.get(g.style.0 as usize).ok_or(LayoutError::Internal("paint: inline object style"))?.shift;
+    if let Some(pb) = g.pic_bullet.as_deref()
+        && g.obj.is_none()
+    {
+        let key = uo_jsnum::format::to_js_string(pb.id);
+        let Some(img) = cx.ldoc.view.formatting().numbering.pic_bullets.get(&key).and_then(|b| b.image.as_ref()) else {
+            return Err(LayoutError::Internal("paint: picture bullet image"));
+        };
+        let (w, h) = (pb.width_twips, pb.height_twips);
+        let r = crate::metafile::MetafileFrame { x: x0, y: base_y0 - shift - h, w, h };
+        let data = cx.ldoc.view.media(img.data.0).unwrap_or(&[]);
+        let id = crate::engine::objects::pic_bullet_id(cx, img, w, h)?;
+        if !crate::engine::objects::push_metafile(cx, data, id, r, out)? {
+            crate::engine::objects::push_image_item(cx, None, id, r, out)?;
+        }
+        return Ok(());
+    }
     // `g.obj!`
     let run = g.obj.and_then(|k| model_run(cx.ldoc, k)).ok_or(LayoutError::Internal("paint: g.obj"))?;
-    let shift = p.styles.get(g.style.0 as usize).ok_or(LayoutError::Internal("paint: inline object style"))?.shift;
     let image = run.ext().and_then(|e| e.image.as_deref());
     let shape = run.ext().and_then(|e| e.shape.as_deref());
     // the effects margin: the picture sits inside it (oracle effext);
@@ -1141,55 +1158,19 @@ pub fn paint_inline_object(cx: &mut Cx<'_, '_>, p: &PreparedPara, g: &Glyph, x0:
         let data = cx.ldoc.view.media(im.data.0).unwrap_or(&[]);
         let (w, h) = (im.width_twips.to_number(), im.height_twips.to_number());
         let r = crate::metafile::MetafileFrame { x, y: base_y - shift - h, w, h };
-        if crate::metafile::metafile_kind(data).is_some() {
-            // EMF (`isEmf`) before WMF (`isWmf`, the Equation Editor 3.0 previews…): Word draws and
-            // writes the text
-            let src = image_id_of(cx, im)?;
-            return metafile_into(cx, data, src, r, out);
+        // EMF (`isEmf`) before WMF (`isWmf`, the Equation Editor 3.0 previews…): Word draws and
+        // writes the text
+        let id = crate::engine::objects::picture_id(cx, im, false)?;
+        if !crate::engine::objects::push_metafile(cx, data, id, r, out)? {
+            crate::engine::objects::push_image_item(cx, Some(im), id, r, out)?;
         }
-        let id = image_id_of(cx, im)?;
-        return image_item_into(cx, im, id, r, out);
+        return Ok(());
     }
     if let Some(s) = shape {
         let (w, h) = (s.width_twips.to_number(), s.height_twips.to_number());
-        return shape_item_into(cx, s, [x, base_y - shift - h, w, h], out);
+        return crate::engine::objects::push_shape_item(cx, &s.style, [x, base_y - shift - h, w, h], None, out);
     }
     Ok(())
-}
-
-/// The `ImageId` of a model image (RQ3: one per TS `InlineImage` object) — F7b's table.
-fn image_id_of(_cx: &mut Cx<'_, '_>, _im: &crate::model::InlineImage) -> LResult<uo_render::ImageId> {
-    unported(Frontier::F7b, "paint::paint_inline_object: the ImageId of a model drawing (RQ3)")
-}
-
-/// `out.push({ t: 'clip', op: 'push', ...r, src: im }, ...renderEmf|renderWmf(ctx, im.data, r),
-/// { t: 'clip', op: 'pop' })`: `metafile::paint_metafile` with the pass's `FaceLookup`,
-/// `ResWriter` and limits — F7b.
-fn metafile_into(
-    _cx: &mut Cx<'_, '_>,
-    _data: &[u8],
-    _src: uo_render::ImageId,
-    _r: crate::metafile::MetafileFrame,
-    _out: &mut PassItems,
-) -> LResult<()> {
-    unported(Frontier::F7b, "paint::paint_inline_object: metafile::paint_metafile over the pass (FaceLookup, ResWriter)")
-}
-
-/// `{ t: 'image', x, y, w, h, image: im, crop?, rot?, flipH?, flipV?, pic? }` with
-/// `drawing::picture_look(im, theme, w)` (its `ResWriter` is the pass's) — F7b.
-fn image_item_into(
-    _cx: &mut Cx<'_, '_>,
-    _im: &crate::model::InlineImage,
-    _id: uo_render::ImageId,
-    _r: crate::metafile::MetafileFrame,
-    _out: &mut PassItems,
-) -> LResult<()> {
-    unported(Frontier::F7b, "paint::paint_inline_object: the image item (pictureLook through the pass's ResWriter)")
-}
-
-/// `{ t: 'shape', x, y, w, h, style: s.style }` as the shape item the floating objects build — F7b.
-fn shape_item_into(_cx: &mut Cx<'_, '_>, _s: &crate::model::DrawingShape, _r: [f64; 4], _out: &mut PassItems) -> LResult<()> {
-    unported(Frontier::F7b, "paint::paint_inline_object: the shape item (drawing::shape_geom + shape_extras)")
 }
 
 // ── the engine's context as the paint environment ───────────────────────────────────────────

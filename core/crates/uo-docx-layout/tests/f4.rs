@@ -203,6 +203,7 @@ fn prepare_all(
             budget: &mut budget,
             depth: 0,
             line_seq: &mut seq,
+            images: &mut uo_docx_layout::engine::objects::ImageTable::new(),
         };
         match prepare_paragraph(&mut cx, &mut flow, id, env) {
             Ok(p) => {
@@ -466,6 +467,7 @@ fn hyphenation_marks_and_sessions() {
         budget: &mut budget,
         depth: 0,
         line_seq: &mut seq,
+        images: &mut uo_docx_layout::engine::objects::ImageTable::new(),
     };
     let p = prepare_paragraph(&mut cx, &mut flow, ids[1], &ParaEnv::default()).unwrap();
     let marks = p.glyphs.iter().filter(|g| g.flags.has(GlyphFlags::HYPH)).count();
@@ -749,6 +751,7 @@ fn work_budget_stops_a_huge_paragraph() {
         budget: &mut budget,
         depth: 0,
         line_seq: &mut seq,
+        images: &mut uo_docx_layout::engine::objects::ImageTable::new(),
     };
     let p = prepare_paragraph(&mut cx, &mut flow, ids[0], &ParaEnv::default()).unwrap();
     assert_eq!(p.glyphs.len(), 160_000);

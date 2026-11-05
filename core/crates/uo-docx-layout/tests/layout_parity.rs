@@ -110,9 +110,101 @@ fn p2first(t: &Transcript, calls: &[(String, bool, bool, u32)]) -> String {
     format!("{n}:{}", s.finish().short())
 }
 
+/// `runRefs(full)` of tools/lib/canon.mjs over the derived document (added by F7b): the TS ref of
+/// every model run a placed object can name — `<story>/<block path>#<run>`, `hf<n>` by first
+/// appearance over sections × [hdr default first even, ftr default first even], `fn<id>`/`en<id>`,
+/// textbox content `<ref of the textbox run>/tx/b<k>…`, group members `<ref of the group>/g<j>#0`.
+type RunNames = HashMap<uo_docx_layout::model::RunRef, Vec<u16>>;
+
+fn run_names(ldoc: &uo_docx_layout::ldoc::LDoc<'_>) -> RunNames {
+    use uo_docx_layout::ldoc::RunSrc;
+    use uo_docx_layout::model::{RunSub, StoryRef};
+    let view = ldoc.view;
+    let mut hf: HashMap<uo_docx_layout::model::HfPartId, usize> = HashMap::new();
+    for sec in view.sections() {
+        for set in [&sec.headers, &sec.footers] {
+            for k in ["default", "first", "even"] {
+                if let Some(&p) = set.get(k) {
+                    let n = hf.len();
+                    hf.entry(p).or_insert(n);
+                }
+            }
+        }
+    }
+    // the run that holds each textbox (top level, or a group member)
+    let mut tb_owner: HashMap<uo_docx_layout::model::DrawingId, (uo_docx_layout::model::RunRef, Option<usize>)> = HashMap::new();
+    for r in &ldoc.runs {
+        let RunSrc::Model { run, at } = r else { continue };
+        let Some(e) = run.ext() else { continue };
+        if let Some(tb) = &e.textbox {
+            tb_owner.entry(tb.drawing).or_insert((at.clone(), None));
+        }
+        if let Some(g) = &e.group {
+            for (j, it) in g.items.iter().enumerate() {
+                if let Some(tb) = it.run.ext().and_then(|e| e.textbox.as_ref()) {
+                    tb_owner.entry(tb.drawing).or_insert((at.clone(), Some(j)));
+                }
+            }
+        }
+    }
+    fn name(
+        at: &uo_docx_layout::model::RunRef,
+        hf: &HashMap<uo_docx_layout::model::HfPartId, usize>,
+        tb_owner: &HashMap<uo_docx_layout::model::DrawingId, (uo_docx_layout::model::RunRef, Option<usize>)>,
+        depth: u32,
+    ) -> Option<String> {
+        if depth > 16 {
+            return None;
+        }
+        let prefix = match at.story {
+            StoryRef::Body => String::new(),
+            StoryRef::HeaderFooter(p) => format!("hf{}", hf.get(&p)?),
+            StoryRef::Note(kind, id) => {
+                let k = if kind == uo_docx_layout::model::NoteKind::Footnote { "fn" } else { "en" };
+                format!("{k}{}", uo_jsnum::format::to_js_string(id.get()))
+            }
+            StoryRef::Textbox(d) => {
+                let (owner, j) = tb_owner.get(&d)?;
+                let base = name(owner, hf, tb_owner, depth + 1)?;
+                match j {
+                    Some(j) => format!("{base}/g{j}#0/tx"),
+                    None => format!("{base}/tx"),
+                }
+            }
+            StoryRef::Context => return None,
+        };
+        let mut path = String::new();
+        for (i, seg) in at.path.steps().iter().enumerate() {
+            if i > 0 || !prefix.is_empty() {
+                path.push('/');
+            }
+            path.push(match i % 3 {
+                0 => 'b',
+                1 => 'r',
+                _ => 'c',
+            });
+            path.push_str(&seg.to_string());
+        }
+        let base = format!("{prefix}{path}#{}", at.run);
+        match at.sub {
+            RunSub::None => Some(base),
+            RunSub::GroupItem(j) => Some(format!("{base}/g{j}#0")),
+            RunSub::FieldResult(_) => None,
+        }
+    }
+    let mut out = RunNames::new();
+    for r in &ldoc.runs {
+        let RunSrc::Model { at, .. } = r else { continue };
+        if let Some(n) = name(at, &hf, &tb_owner, 0) {
+            out.entry(at.clone()).or_insert_with(|| n.encode_utf16().collect());
+        }
+    }
+    out
+}
+
 /// Reads a `.docx` and lays it out: the replay's whole Rust path (D1a reader → derived document
 /// → engine).
-fn rust_layout(docx: &[u8], provider: &dyn FontProvider, o: &LayoutOptions) -> Result<Layout, LayoutError> {
+fn rust_layout(docx: &[u8], provider: &dyn FontProvider, o: &LayoutOptions) -> Result<(Layout, RunNames), LayoutError> {
     let pkg = uo_opc::Package::open(docx, &uo_opc::Limits::DEFAULT, &uo_opc::package::OpenOptions::default())
         .map_err(|_| LayoutError::Internal("test: the package does not open"))?;
     let doc = uo_docx::read::read_document(&pkg, &uo_docx::read::ReadOptions::default())
@@ -120,7 +212,8 @@ fn rust_layout(docx: &[u8], provider: &dyn FontProvider, o: &LayoutOptions) -> R
     let view = uo_docx::view::DocView::new(&doc);
     let ldoc = uo_docx_layout::derive::build(view, o)?;
     let mut hyph = HyphenSessions::new(hyph_registry());
-    uo_docx_layout::engine::layout_document(&ldoc, o, provider, &mut hyph)
+    let names = run_names(&ldoc);
+    uo_docx_layout::engine::layout_document(&ldoc, o, provider, &mut hyph).map(|l| (l, names))
 }
 
 /// The embedded fonts of a docx (de-obfuscated, as `withEmbeddedFonts` hands them to the TS).
@@ -197,7 +290,17 @@ fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Repor
     let mut fonts = FontIndex::open_fonts();
     let mut replay = Replay::new(&cap);
     let mut t = Tally::default();
+    // `UO_LAYOUT_ONLY=a/,b/c`: only the records whose key starts with one of the prefixes (a
+    // quick round; the rest is skipped, not counted) — added by F7b
+    let only: Vec<String> = std::env::var("UO_LAYOUT_ONLY").map(|v| v.split(',').map(str::to_owned).collect()).unwrap_or_default();
+    let verbose = uo_testkit::env_flag("UO_LAYOUT_VERBOSE");
     for rec in cap.records() {
+        if !only.is_empty() && !only.iter().any(|p| rec.key.starts_with(p.as_str())) {
+            for (f, _) in &rec.facets {
+                replay.skip(&rec.key, f);
+            }
+            continue;
+        }
         let skip_all = |replay: &mut Replay<'_>| {
             for (f, _) in &rec.facets {
                 replay.skip(&rec.key, f);
@@ -224,9 +327,9 @@ fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Repor
         let o = options_for(&rec.key);
         t.docs += 1;
         match rust_layout(&docx, &provider, &o) {
-            Ok(layout) => {
+            Ok((layout, names)) => {
                 let mut sink = StreamSink(Stream::new());
-                canon_layout(&layout, &|_| None, &mut sink);
+                canon_layout(&layout, &|r| names.get(r).cloned(), &mut sink);
                 let ok = match rec.get("error") {
                     Some(_) => replay.check(&rec.key, "error", "(rust laid it out)"),
                     None => {
@@ -250,6 +353,14 @@ fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Repor
                     t.equal += 1;
                 } else {
                     if uo_testkit::env_flag("UO_F7A_DIFF") {
+                        // (the image payloads of the stream, dumped beside it — added by F7b)
+                        if let Ok(rd) = std::fs::read_dir(dump.join(format!("{}.media", safe(&rec.key)))) {
+                            for e in rd.flatten() {
+                                if let Ok(b) = std::fs::read(e.path()) {
+                                    fonts.add_bytes(Arc::from(b));
+                                }
+                            }
+                        }
                         let bin = std::fs::read(dump.join(format!("{}.p1.bin", safe(&rec.key)))).unwrap_or_default();
                         match common::decode::decode_p1(&bin, &fonts) {
                             Ok(d) => eprintln!("{}: {}", rec.key, first_difference(&d.layout, &layout)),
@@ -260,6 +371,9 @@ fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Repor
                 }
             }
             Err(LayoutError::Unported(fr, what)) => {
+                if verbose {
+                    eprintln!("{}: pending {fr:?} {what}", rec.key);
+                }
                 *t.pending.entry(format!("{fr:?} {what}")).or_default() += 1;
                 skip_all(&mut replay);
             }
@@ -277,6 +391,22 @@ fn manifest() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// F7c: headers/footers, notes, endnotes and the SEQ/REF/… fields (`--gen f7c` seed 7, open fonts).
+#[test]
+fn f7c_committed_fixture_through_the_engine() {
+    let dir = manifest().join("tests/captures/f7c");
+    if !dir.join("layout.capture").exists() {
+        eprintln!("f7c fixture absent");
+        return;
+    }
+    let (t, report) = replay(&dir.join("layout.capture"), &dir, &dir.join("docs"));
+    eprintln!("f7c fixture: {t:?}; {}", report.summary());
+    report.assert_clean();
+    assert!(t.mismatch.is_empty(), "{:?}", t.mismatch);
+    assert!(t.pending.is_empty(), "documents not replayed: {:?}", t.pending);
+    assert_eq!(t.equal, t.docs, "every document of the fixture is laid out end to end");
+}
+
 #[test]
 fn f7a_committed_fixture_through_the_engine() {
     let dir = manifest().join("tests/captures/f7a");
@@ -288,6 +418,22 @@ fn f7a_committed_fixture_through_the_engine() {
     eprintln!("f7a fixture: {t:?}; {}", report.summary());
     report.assert_clean();
     assert!(t.mismatch.is_empty(), "{:?}", t.mismatch);
+    assert!(t.equal > 0, "no document of the fixture was laid out end to end");
+}
+
+#[test]
+fn f7b_committed_fixture_through_the_engine() {
+    // tables, floating tables, floats, textboxes and frames (`--gen f7b` seed 7, open fonts; F7b)
+    let dir = manifest().join("tests/captures/f7b");
+    if !dir.join("layout.capture").exists() {
+        eprintln!("f7b fixture absent");
+        return;
+    }
+    let (t, report) = replay(&dir.join("layout.capture"), &dir, &dir.join("docs"));
+    eprintln!("f7b fixture: {t:?}; {}", report.summary());
+    report.assert_clean();
+    assert!(t.mismatch.is_empty(), "{:?}", t.mismatch);
+    assert!(t.pending.is_empty(), "{:?}", t.pending);
     assert!(t.equal > 0, "no document of the fixture was laid out end to end");
 }
 

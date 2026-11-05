@@ -183,7 +183,7 @@ fn js_string(x: JsNumber) -> String {
 }
 
 /// The truthiness of a Word colour spec string (`''` is the only falsy one).
-fn color_truthy(c: &DrawingColor) -> bool {
+pub(crate) fn color_truthy(c: &DrawingColor) -> bool {
     !(matches!(&c.0.head, SpecHead::Hex(h) if h.is_empty()) && c.0.mods.is_empty())
 }
 

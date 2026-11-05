@@ -1,10 +1,11 @@
 //! Dynamic fields: the answer of `ParaEnv.field` per `FieldSource` (`fieldValue(ps, block)`,
-//! engine.ts:1099, the TS closure, LA3). F7a answers PAGE (with the chapter number of
-//! `chapterOf`), NUMPAGES (`numPagesShown`), SECTIONPAGES, SECTION, DATE/TIME and
-//! SAVEDATE/CREATEDATE/PRINTDATE; SEQ (`seqValue`), REF, NOTEREF, STYLEREF, PAGEREF and the
-//! endnote's own mark are F7c (`Unported`). Field texts are capped by `max_field_text` (F2-4).
+//! engine.ts:1099, the TS closure, LA3): PAGE (with the chapter number of `chapterOf`), NUMPAGES
+//! (`numPagesShown`), SECTIONPAGES, SECTION, DATE/TIME and SAVEDATE/CREATEDATE/PRINTDATE (F7a);
+//! SEQ, REF, NOTEREF, STYLEREF, PAGEREF and the endnote's own mark (F7c, `field_refs.rs`); a date
+//! outside the ISO subset below goes through V8's parser (`date_legacy.rs`, F7c). Field texts are
+//! capped by `max_field_text` (F2-4).
 
-use crate::error::{Frontier, LResult, LayoutError};
+use crate::error::{LResult, LayoutError};
 use crate::keys::PageIx;
 use crate::word;
 
@@ -166,21 +167,29 @@ impl Engine {
         &mut self,
         cx: &mut Cx<'_, '_>,
         ps: PageIx,
-        _block: Option<i64>,
-        name: &[u16],
-        instr: &[u16],
-        _at: f64,
+        block: Option<i64>,
+        name16: &[u16],
+        instr: Option<&[u16]>,
+        at: Option<f64>,
     ) -> LResult<Option<Box<[u16]>>> {
-        let name = String::from_utf16_lossy(name);
+        let name = String::from_utf16_lossy(name16);
         let lang = cx.opts.lang.clone();
         let mut cap = word::text_cap(&cx.opts.limits);
         let out = match name.as_str() {
-            "PAGEREF" | "SEQ" | "REF" | "NOTEREF" | "STYLEREF" => {
-                return Err(LayoutError::Unported(Frontier::F7c, "SEQ/REF/NOTEREF/STYLEREF/PAGEREF fields"));
+            "PAGEREF" => {
+                self.found.used_page_ref = true;
+                let bm = super::field_refs::tok(instr.unwrap_or(&[]), 1).map(String::from_utf16_lossy);
+                bm.filter(|b| !b.is_empty()).and_then(|b| cx.input.marks_guess.get(b.as_str()).cloned())
             }
+            "SEQ" => self.seq_value(instr.unwrap_or(&[]), &lang, &mut cap),
+            // the endnote's own number (w:endnoteRef) in the endnote flow
             "ENDNOTEREF_MARK" if self.cur_endnote.is_some() => {
-                return Err(LayoutError::Unported(Frontier::F7c, "ENDNOTEREF_MARK"));
+                let id = self.cur_endnote.ok_or(LayoutError::Internal("ENDNOTEREF_MARK"))?;
+                Some(self.ctx.note_mark_of(crate::context::NoteKindFlow::Endnote, id).map(Into::into).unwrap_or_default())
             }
+            "REF" => self.ref_value(cx, instr.unwrap_or(&[]), block, at)?,
+            "NOTEREF" => self.note_ref_value(cx, instr.unwrap_or(&[]), block, at),
+            "STYLEREF" => self.style_ref_value(cx, instr.unwrap_or(&[]), block)?,
             "PAGE" => {
                 let p = self.ps(ps)?;
                 let (number, gi) = (p.page.number, p.geom);
@@ -189,7 +198,8 @@ impl Engine {
                 let chap_style = g.chap.clone();
                 let num = word::format_number(number, Some(&fmt), &lang, &mut cap);
                 let chap = match &chap_style {
-                    Some(c) => self.chapter_of(cx, c.level, f64::from(ps.0)),
+                    // (`pages.indexOf(ps)`: −1 for a scratch page)
+                    Some(c) => self.chapter_of(cx, c.level, if ps == super::SCRATCH { -1.0 } else { f64::from(ps.0) }),
                     None => None,
                 };
                 match (chap, chap_style) {
@@ -222,7 +232,7 @@ impl Engine {
             // DATE/TIME: Word recomputes them on export — the export instant
             "DATE" | "TIME" => {
                 let now = cx.opts.clock.local_now();
-                Some(word::date_field_value(instr, &now, &lang, &mut cap).units().into())
+                Some(word::date_field_value(instr.unwrap_or(name16), &now, &lang, &mut cap).units().into())
             }
             // the document property dates (Word reads them again on export; local time)
             "SAVEDATE" | "CREATEDATE" | "PRINTDATE" => {
@@ -235,11 +245,21 @@ impl Engine {
                 match iso.filter(|s| !s.is_empty()) {
                     None => None,
                     Some(s) => {
-                        let Some(t) = parse_iso_date(s, &cx.opts.clock.tz) else {
-                            return Err(LayoutError::Unported(Frontier::F7c, "Date.parse outside the ISO format"));
+                        let t = match parse_iso_date(s, &cx.opts.clock.tz) {
+                            Some(t) => t,
+                            // V8's parser for every other form (F7c-6)
+                            None => match super::date_legacy::parse(s, &cx.opts.clock.tz) {
+                                super::date_legacy::Legacy::Time(t) => t,
+                                super::date_legacy::Legacy::Invalid => f64::NAN,
+                            },
                         };
-                        let d = cx.opts.clock.local(t);
-                        Some(word::date_field_value(instr, &d, &lang, &mut cap).units().into())
+                        // `d && !isNaN(d.getTime())`
+                        if t.is_nan() {
+                            None
+                        } else {
+                            let d = cx.opts.clock.local(t);
+                            Some(word::date_field_value(instr.unwrap_or(name16), &d, &lang, &mut cap).units().into())
+                        }
                     }
                 }
             }

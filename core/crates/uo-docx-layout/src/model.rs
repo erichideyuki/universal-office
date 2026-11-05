@@ -55,3 +55,7 @@ pub use uo_docx::model::drawing::DrawingAnchor;
 pub use uo_docx::model::props::{CellMargins, TblBorders, TblLook, TblPr, TblpPr, TcBorders, TcPr, TrHeight, TrPr, WidthSpec};
 pub use uo_docx::model::run::DrawingTextbox;
 pub use uo_docx::model::{Block, Cell, Row, RunExt, Story, Table};
+// F7b (tables and floats): image effects, extents and the shape parts of the floating objects
+pub use uo_docx::model::drawing::{Ltrb, ShapeLine, WrapBox};
+pub use uo_docx::model::props::FramePr;
+pub use uo_docx::model::run::{ImageEffects, VmlLine};

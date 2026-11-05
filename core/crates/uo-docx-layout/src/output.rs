@@ -170,6 +170,13 @@ pub enum LineStory {
     /// (engine.ts:2550, `nextBlockLead`); its path starts at the row (`preview/r0/c1/b0`; added
     /// by F6)
     Preview,
+    /// `ensep`: the line of the endnote separator (`placeEndnotes`, engine.ts:2484), taken off
+    /// the page right after it is placed — never in a layout (added by F7c)
+    EndnoteSep,
+    /// `itb`: the content of an inline textbox (`paintInlineDrawings`; added by F7b)
+    InlineTextbox,
+    /// `grp`: the content of a textbox in a drawing group (`paintObject`; added by F7b)
+    GroupTextbox,
 }
 
 /// The header/footer slot (`default | first | even`).
@@ -193,6 +200,9 @@ impl LineRef {
             }
             LineStory::Textbox(_) => s.push_str("txbx"),
             LineStory::Preview => s.push_str("preview"),
+            LineStory::EndnoteSep => s.push_str("ensep"),
+            LineStory::InlineTextbox => s.push_str("itb"),
+            LineStory::GroupTextbox => s.push_str("grp"),
             LineStory::HeaderFooter { which, slot, .. } => {
                 s.push_str(match which {
                     HfWhich::Header => "hdr:",

@@ -41,6 +41,8 @@ const { Sink } = await import('./lib/sink.mjs');
 const { recordProvider } = await import('./lib/transcript.mjs');
 const { generateDocx } = await import('./lib/gen-docx.mjs');
 const { generateF7aDocx } = await import('./lib/gen-f7a.mjs');
+const { generateF7cDocx } = await import('./lib/gen-f7c.mjs');
+const { generateF7bDocx } = await import('./lib/gen-f7b.mjs');
 
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -103,10 +105,18 @@ function corpus() {
     // `--gen f7a`: the engine-core generator (tools/lib/gen-f7a.mjs, F7a): no header/footer,
     // table, float or note — what F7a lays out end to end
     const f7a = opt('--gen', '') === 'f7a';
+    // `--gen f7c`: headers/footers, notes, endnotes and the SEQ/REF/… fields (tools/lib/gen-f7c.mjs, F7c)
+    const f7c = opt('--gen', '') === 'f7c';
+    // `--gen f7b`: tables, floating tables, floating shapes/textboxes and frames (tools/lib/gen-f7b.mjs, F7b)
+    const f7b = opt('--gen', '') === 'f7b';
     const out = [];
     for (let i = 0; i < count; i++) {
       const s = (seed * 1000003 + i) >>> 0;
-      out.push(f7a
+      out.push(f7b
+        ? { key: `f7b/${seed}/${i}`, bytes: generateF7bDocx(s, fflate), opts: {} }
+        : f7c
+        ? { key: `f7c/${seed}/${i}`, bytes: generateF7cDocx(s, fflate), opts: {} }
+        : f7a
         ? { key: `f7a/${seed}/${i}`, bytes: generateF7aDocx(s, fflate), opts: {} }
         : { key: `gen/${seed}/${i}`, bytes: generateDocx(s, fflate), opts: {} });
     }

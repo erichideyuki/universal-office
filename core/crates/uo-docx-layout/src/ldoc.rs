@@ -41,6 +41,10 @@ pub struct LDoc<'a> {
     pub note_stories: rustc_hash::FxHashMap<(crate::model::NoteKind, crate::model::NumKey), u32>,
     /// the textbox of each model drawing (F7a)
     pub tb_of_drawing: rustc_hash::FxHashMap<DrawingId, TbKey>,
+    /// the endnote separator paragraph (`{ runs: [], props: paraPropsFromPPr(sepPPr), ppr:
+    /// sepPPr }` of `placeEndnotes`, engine.ts:2461): a copy with both overrides and no runs, so
+    /// no model field of its base is read (added by F7c)
+    pub en_sep: Option<LParaId>,
 }
 
 /// Where a derived paragraph comes from.
@@ -101,6 +105,8 @@ pub enum RunSrc<'a> {
 #[derive(Debug, Default)]
 pub struct LStory {
     pub blocks: Vec<LBlock>,
+    /// the model story (its tables are read through the view; added by F7c)
+    pub sref: Option<StoryRef>,
 }
 
 /// A block of a derived story.
@@ -165,6 +171,7 @@ impl<'a> LDoc<'a> {
             hf_stories: rustc_hash::FxHashMap::default(),
             note_stories: rustc_hash::FxHashMap::default(),
             tb_of_drawing: rustc_hash::FxHashMap::default(),
+            en_sep: None,
         }
     }
 

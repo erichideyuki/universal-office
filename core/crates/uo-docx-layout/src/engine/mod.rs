@@ -20,12 +20,16 @@
 //! floats, frames, inline groups and textboxes) or F7c (notes, headers/footers, the
 //! SEQ/REF/NOTEREF/STYLEREF/PAGEREF fields) stops the layout with `LayoutError::Unported`.
 
+pub mod date_legacy;
+pub mod field_refs;
 pub mod fields;
 pub mod floats;
 pub mod flow;
 pub mod hf;
 pub mod notes;
+pub mod objects;
 pub mod page;
+pub mod static_layout;
 pub mod tables;
 
 use indexmap::{IndexMap, IndexSet};
@@ -40,7 +44,7 @@ use crate::keys::{ChainId, PageIx, RunKey, TableLayoutId, TbKey};
 use crate::ldoc::LDoc;
 use crate::model::CellKey;
 use crate::options::{Budget, LayoutOptions, RevisionMode, WorkInput};
-use crate::output::{CharsSoA, GlyphMeta, ImageOrigin, Layout, LayoutPage, LayoutStamp, LineGeom, LineParaFormat};
+use crate::output::{CharsSoA, GlyphMeta, Layout, LayoutPage, LayoutStamp, LineGeom, LineParaFormat};
 use crate::table::CellContent;
 use crate::word::{self, NumberMarker};
 use uo_jsnum::math as jm;
@@ -144,6 +148,8 @@ pub struct Cx<'c, 'a> {
     /// `lineSeq` (paint.ts:16, module state in the TS): the last `lineBox.line` handed out, per
     /// layout call (LA3); `paint_line` increments it (added by F5)
     pub line_seq: &'c mut u32,
+    /// the image identities of the call and their origins (RQ3; added by F7b, F7b-1)
+    pub images: &'c mut objects::ImageTable,
 }
 
 /// `LATE_ITEMS` entries (table.ts:1383): the z order of an item anchored in a cell, by
@@ -255,7 +261,7 @@ pub struct Engine {
     /// carried: `enFlow`
     pub en_flow: Option<EnFlow>,
     /// carried: `curEndnote`
-    pub cur_endnote: Option<i32>,
+    pub cur_endnote: Option<crate::model::NumKey>,
     /// carried: `endnotesDone`
     pub endnotes_done: u32,
     /// carried: `pinnedFloats` (`Map<Run, { ps, y }>`, K2c)
@@ -266,8 +272,27 @@ pub struct Engine {
     /// carried: the page and body block the `fieldValue(ps, block)` closure of the paragraph being
     /// prepared captured (`ParaEnv.field` = `FieldSource::Page`, LA3)
     pub field_at: Option<(PageIx, i64)>,
+    /// carried (F7b): the page the cells of the table being laid out anchor their objects on (the
+    /// `ps` of the TS `layoutCell` closure; `None` = no table, `Some(None)` = a measure)
+    pub cell_ps: Option<Option<PageIx>>,
+    /// carried (F7b): the `paras` of the cells of a table a static flow is laying out (merged into
+    /// the flow's own, engine.ts:1446)
+    pub cell_collect: Option<IndexMap<crate::output::LineRef, crate::table::ParaSplitInfo>>,
     /// carried: `LATE_ITEMS` marks by `ItemMeta` (F7b fills them)
     pub late_marks: Vec<LateMark>,
+    /// carried (F7c): `scratchPage(ps)` of a header/footer measure, reachable as [`SCRATCH`]
+    pub scratch: Option<Box<PageState>>,
+    /// carried (F7c): the next `CellContentId` of a static flow's items array (`boxPage`)
+    pub static_seq: u32,
+    /// carried (F7c): the page of the `fieldValue(ps)` closure without a block (header/footer
+    /// paragraphs, `FieldSource::HeaderFooter`)
+    pub field_page: Option<PageIx>,
+    /// carried (F7c): the blocks of the endnote flow while it comes out (`this.full = { ...saved,
+    /// blocks }`, engine.ts:2472): what the flow walks instead of `story`
+    pub en_blocks: Option<Vec<notes::EnBlock>>,
+    /// cache (F7c): the number of section geometries (`this.geoms.length`; the endnote flows'
+    /// copies `gEn` come after them)
+    pub sect_geoms: u32,
 
     // ── caches (pure functions of the document within the pass) ────────────────────────────
     /// cache: `geoms`
@@ -297,6 +322,10 @@ pub(crate) fn js_eq(a: f64, b: f64) -> bool {
 
 /// `x | 0`-free index of a JS number that must be an array index (`blocks[b]`): `None` when the
 /// TS read would be `undefined` (fractional, negative, NaN or past `u32`).
+/// The page index of `scratchPage(ps)` (F7c): a throwaway copy of a page held in
+/// `Engine::scratch`, never in `pages` (`pages.indexOf(scratch)` is −1).
+pub(crate) const SCRATCH: PageIx = PageIx(u32::MAX);
+
 #[must_use]
 pub(crate) fn index_of(x: f64) -> Option<usize> {
     let i = uo_jsnum::conv::to_uint32(x);
@@ -317,10 +346,16 @@ impl Engine {
     }
 
     pub(crate) fn ps(&self, ix: PageIx) -> LResult<&PageState> {
+        if ix == SCRATCH {
+            return self.scratch.as_deref().ok_or(LayoutError::Internal("engine: no scratch page"));
+        }
         self.pages.get(ix.ix()).ok_or(LayoutError::Internal("engine: page index"))
     }
 
     pub(crate) fn ps_mut(&mut self, ix: PageIx) -> LResult<&mut PageState> {
+        if ix == SCRATCH {
+            return self.scratch.as_deref_mut().ok_or(LayoutError::Internal("engine: no scratch page"));
+        }
         self.pages.get_mut(ix.ix()).ok_or(LayoutError::Internal("engine: page index"))
     }
 
@@ -343,7 +378,7 @@ impl Engine {
     pub fn note_mark_fix(&self, cx: &Cx<'_, '_>) -> Option<IndexMap<Box<str>, Box<[u16]>>> {
         let mut want: IndexMap<Box<str>, Box<[u16]>> = IndexMap::new();
         let mut differs = false;
-        let mut seen: Vec<i32> = Vec::new();
+        let mut seen: Vec<crate::model::NumKey> = Vec::new();
         let mut cap = word::text_cap(&cx.opts.limits);
         for ps in &self.pages {
             let Some(g) = self.geoms.get(ps.geom as usize) else { continue };
@@ -354,7 +389,7 @@ impl Engine {
                     continue;
                 }
                 seen.push(n.id);
-                let id = crate::model::NumKey::new(f64::from(n.id));
+                let id = n.id;
                 let Some(cur) = self.ctx.note_mark_of(crate::context::NoteKindFlow::Footnote, id) else { continue };
                 if cur.is_empty() || nn.restart != crate::context::NoteRestart::EachPage {
                     continue;
@@ -429,6 +464,7 @@ impl Engine {
         let blocks_len = self.story_len(cx);
         let en_sect_end = view.formatting().settings.endnote_pr.as_ref().and_then(|e| e.pos.as_deref()) == Some("sectEnd");
         let n_geoms = u32::try_from(self.geoms.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
+        self.sect_geoms = n_geoms;
         for gi in 0..n_geoms {
             let g = self.geom(gi)?.clone();
             // the numbering of the section's notes (a per-section restart counts from here)
@@ -470,7 +506,11 @@ impl Engine {
                     .ok_or(LayoutError::Internal("engine: block"))?;
                 match block {
                     crate::ldoc::LBlock::Paragraph(p) => self.place_paragraph(cx, p, bi, gi)?,
-                    crate::ldoc::LBlock::Table { .. } => return Err(LayoutError::Unported(crate::error::Frontier::F7b, "placeTable")),
+                    crate::ldoc::LBlock::Table { block } => {
+                        // `placeTable(block, 'b' + b, b)` (F7b)
+                        let t = tables::story_table(cx, self.story, block)?;
+                        self.place_table(cx, t, &tables::body_ref(bi), Some(bi))?;
+                    }
                 }
                 b += 1.0;
             }
@@ -479,7 +519,7 @@ impl Engine {
             let last_sect = gi + 1 == n_geoms;
             let no_endnote = sections.get(g.index as usize).and_then(|s| s.sect.as_ref()).and_then(|s| s.no_endnote) == Some(true);
             if last_sect || (en_sect_end && !no_endnote) {
-                self.place_endnotes()?;
+                self.place_endnotes(cx, gi)?;
             }
         }
         // a floating table split at the end of the document: the remaining rows get pages
@@ -491,34 +531,18 @@ impl Engine {
         }
         if self.cur.is_some() {
             self.close_columns(cx)?;
-            self.paint_notes()?;
+            let c = self.cur_ix()?;
+            self.paint_notes(cx, c)?;
         }
         Ok(())
-    }
-
-    /// `placeEndnotes(g)` (engine.ts:2455) up to its first step: the endnotes referenced since the
-    /// last call — laying them out is F7c.
-    fn place_endnotes(&mut self) -> LResult<()> {
-        let order = self.ctx.endnote_order();
-        let n = u32::try_from(order.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
-        let new = n > self.endnotes_done;
-        self.endnotes_done = n;
-        if new {
-            return Err(LayoutError::Unported(crate::error::Frontier::F7c, "placeEndnotes"));
-        }
-        Ok(())
-    }
-
-    /// `paintNotes(ps)` (engine.ts:2418): nothing without notes; the note area is F7c.
-    fn paint_notes(&mut self) -> LResult<()> {
-        if self.cur_ps()?.notes.is_empty() {
-            return Ok(());
-        }
-        Err(LayoutError::Unported(crate::error::Frontier::F7c, "paintNotes"))
     }
 
     /// The block count of the story the flow walks (`full.blocks.length`).
     pub(crate) fn story_len(&self, cx: &Cx<'_, '_>) -> f64 {
+        // (the endnote flow walks its own blocks, F7c)
+        if let Some(en) = &self.en_blocks {
+            return f64::from(u32::try_from(en.len()).unwrap_or(u32::MAX));
+        }
         cx.ldoc.stories.get(self.story as usize).map_or(0.0, |s| f64::from(u32::try_from(s.blocks.len()).unwrap_or(u32::MAX)))
     }
 }
@@ -743,7 +767,7 @@ impl Engine {
     /// The end of `run()` (engine.ts:714–764): per page the layers in Word's order (the whole
     /// header/footer under the body; behind the text < text < in front), off-page culling, page
     /// borders, revision bars, the background; the warnings. Builds the [`Layout`] of this pass.
-    pub fn finish(&mut self, cx: &mut Cx<'_, '_>, origins: &mut Vec<ImageOrigin>) -> LResult<Vec<LayoutPage>> {
+    pub fn finish(&mut self, cx: &mut Cx<'_, '_>) -> LResult<Vec<LayoutPage>> {
         let view = cx.ldoc.view;
         let fmt = view.formatting();
         // the page background (`w:background`): Word writes it in the PDF; white = nothing
@@ -766,7 +790,7 @@ impl Engine {
                     b,
                     bg.as_deref(),
                     &view.document().media,
-                    &mut crate::drawing::ResWriter { res: cx.res, origins },
+                    &mut crate::drawing::ResWriter { res: cx.res, origins: &mut cx.images.origins },
                     &mut |w: &str| warns.push(w.to_owned()),
                 )?;
                 for w in warns {
@@ -859,7 +883,7 @@ impl Engine {
             if bg_show && (lp.page.background.is_some() || bg_fill.is_some()) {
                 lp.page.background_show = true;
             }
-            emit_page(&mut lp, items, &ps.page.lines)?;
+            emit_page(&mut lp, items, &ps.page.lines, &ps.page.content_lines)?;
             out.push(lp);
         }
         self.pages = pages;
@@ -868,7 +892,7 @@ impl Engine {
 }
 
 /// The pass-scope items and lines of a page → the uo-render page and the Write section.
-fn emit_page(lp: &mut LayoutPage, items: PassItems, lines: &[crate::items::PassLine]) -> LResult<()> {
+fn emit_page(lp: &mut LayoutPage, items: PassItems, lines: &[crate::items::PassLine], content: &[crate::items::PassLine]) -> LResult<()> {
     let cap = |n: usize| u32::try_from(n).map_err(|_| LayoutError::Limit(LimitKind::Capacity));
     for (i, s) in items.side.iter().enumerate() {
         let i = cap(i)?;
@@ -883,7 +907,8 @@ fn emit_page(lp: &mut LayoutPage, items: PassItems, lines: &[crate::items::PassL
     }
     lp.page.list = items.list;
     let mut last_fmt: Option<(*const LineParaFormat, u32)> = None;
-    for l in lines {
+    // the page's lines, then the textbox content lines (`PlacedObject.content`, F7b)
+    for (l, is_content) in lines.iter().map(|l| (l, false)).chain(content.iter().map(|l| (l, true))) {
         let chars = match &l.chars {
             Some(cs) => {
                 let s0 = cap(lp.chars.o.len())?;
@@ -911,7 +936,8 @@ fn emit_page(lp: &mut LayoutPage, items: PassItems, lines: &[crate::items::PassL
             }
             None => None,
         };
-        lp.lines.push(LineGeom {
+        let dst = if is_content { &mut lp.content_lines } else { &mut lp.lines };
+        dst.push(LineGeom {
             at: l.at.clone(),
             start: l.start,
             end: l.end,
@@ -943,7 +969,7 @@ struct Call<'r, 'a> {
     fonts: FaceTable,
     resolver: FaceResolverCache,
     res: Resources,
-    origins: Vec<ImageOrigin>,
+    images: objects::ImageTable,
     budget: Budget,
     line_seq: u32,
 }
@@ -970,8 +996,13 @@ impl Call<'_, '_> {
             budget: &mut self.budget,
             depth: 0,
             line_seq: &mut self.line_seq,
+            images: &mut self.images,
         };
         eng.run(&mut cx)?;
+        // the warnings of the pass's metafiles go to its context (F7b-1)
+        for w in self.images.warnings.drain(..) {
+            eng.ctx.warn(&w);
+        }
         Ok(eng)
     }
 }
@@ -1048,7 +1079,7 @@ pub fn layout_document(ldoc: &LDoc<'_>, opts0: &LayoutOptions, provider: &dyn Fo
         fonts: FaceTable::new(),
         resolver: FaceResolverCache::new(),
         res: Resources::new(),
-        origins: Vec::new(),
+        images: objects::ImageTable::new(),
         budget: Budget::new(&opts.limits, &work_input(ldoc)),
         line_seq: 0,
     };
@@ -1063,7 +1094,7 @@ pub fn layout_document(ldoc: &LDoc<'_>, opts0: &LayoutOptions, provider: &dyn Fo
         let new_sect_pages = eng.found.used_section_pages.then(|| eng.section_page_counts());
         let f = &eng.found;
         let new_marks: Option<IndexMap<Box<str>, Box<[u16]>>> =
-            if f.used_page_ref { return Err(LayoutError::Unported(crate::error::Frontier::F7c, "bookmarkPages")) } else { None };
+            if f.used_page_ref { Some(eng.bookmark_pages(ldoc, opts)) } else { None };
         let new_note_refs = f.used_note_ref.then(|| eng.ctx.all_note_marks());
         let new_late = if f.late_found.is_empty() { None } else { merge_late(&input.late_floats, &f.late_found) };
         let new_late_tables = (!f.late_tables_found.is_empty()).then(|| {
@@ -1086,6 +1117,7 @@ pub fn layout_document(ldoc: &LDoc<'_>, opts0: &LayoutOptions, provider: &dyn Fo
                 budget: &mut call.budget,
                 depth: 0,
                 line_seq: &mut call.line_seq,
+                images: &mut call.images,
             };
             eng.note_mark_fix(&cx)
         };
@@ -1197,13 +1229,14 @@ pub fn layout_document(ldoc: &LDoc<'_>, opts0: &LayoutOptions, provider: &dyn Fo
             budget: &mut call.budget,
             depth: 0,
             line_seq: &mut call.line_seq,
+            images: &mut call.images,
         };
-        eng.finish(&mut cx, &mut call.origins)?
+        eng.finish(&mut cx)?
     };
     Ok(Layout {
         pages,
         resources: call.res,
-        image_origins: call.origins,
+        image_origins: call.images.origins,
         warnings: std::mem::take(&mut eng.ctx.warnings),
         missing_faces: Vec::new(),
         fields: None,

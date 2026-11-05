@@ -19,7 +19,7 @@ use crate::keys::{ContainerId, LParaId, RunKey};
 use crate::ldoc::{LBlock, LDoc, LPara, ParaFlags, ParaSrc, RunSrc};
 use crate::lines::{BreakKind, GlyphSrc, Line, LineBreaker, LineFrame, glyph_of};
 use crate::model::{PPr, ParaProps, Paragraph, Run};
-use crate::output::{GlyphMeta, LineParaFormat, LineRef, LineStory, RefPath};
+use crate::output::{GlyphMeta, LineParaFormat, LineRef};
 use crate::para::{FieldSource, GlyphKind, LineRule, ParaEnv, ParaMarker, PrepFlow, PreparedPara, prepare_paragraph};
 use crate::word;
 use uo_jsnum::math as jm;
@@ -104,6 +104,16 @@ enum Lead {
     Chain(f64),
 }
 
+/// `anchorAt` of `placeParagraph`: where the paragraph's anchored objects are measured from.
+#[derive(Clone, Copy, Debug)]
+struct AnchorAt {
+    ps: crate::keys::PageIx,
+    top: f64,
+    x: f64,
+    w: f64,
+    para_ref: Option<f64>,
+}
+
 /// A line placed in the current fragment (`frag` of `placeParagraph`).
 struct FragLine {
     line: Line,
@@ -114,7 +124,7 @@ struct FragLine {
 /// (`ppr`, `props`, `runs`, `REV_JOINS`) of a paragraph object.
 type PFields<'l> = (Option<Arc<PPr>>, Arc<ParaProps>, &'l [RunKey], &'l [u32]);
 
-fn fields_of<'l>(ldoc: &'l LDoc<'_>, p: &'l PSrc) -> LResult<PFields<'l>> {
+pub(super) fn fields_of<'l>(ldoc: &'l LDoc<'_>, p: &'l PSrc) -> LResult<PFields<'l>> {
     let err = LayoutError::Internal("engine: paragraph not in the derived document");
     let (base, ppr0, props0, runs, joins) = match p {
         PSrc::Doc(k) => {
@@ -196,14 +206,17 @@ macro_rules! with_ldoc {
             budget: &mut *$cx.budget,
             depth: $cx.depth,
             line_seq: &mut *$cx.line_seq,
+            images: &mut *$cx.images,
         }
     };
 }
 
+pub(super) use with_ldoc;
+
 /// Takes the marker out of a prepared paragraph with the run styles its glyphs point at (the TS
 /// marker glyphs hold their `RunStyle` objects; here a `StyleIx` is an index into its paragraph's
 /// list, so a marker that moves to another paragraph carries its styles, F7a-8).
-fn detach_marker(p: &mut PreparedPara) -> (Option<ParaMarker>, Vec<crate::para::RunStyle>) {
+pub(super) fn detach_marker(p: &mut PreparedPara) -> (Option<ParaMarker>, Vec<crate::para::RunStyle>) {
     let Some(mut m) = p.marker.take() else { return (None, Vec::new()) };
     let mut styles: Vec<crate::para::RunStyle> = Vec::new();
     let mut map: Vec<(u32, u32)> = Vec::new();
@@ -225,7 +238,7 @@ fn detach_marker(p: &mut PreparedPara) -> (Option<ParaMarker>, Vec<crate::para::
 
 /// `p.marker = join.marker`: the moved marker's styles become new entries of `p.styles` (new
 /// objects for `p`, as the TS ones are not `p`'s).
-fn attach_marker(p: &mut PreparedPara, m: Option<ParaMarker>, styles: &[crate::para::RunStyle]) {
+pub(super) fn attach_marker(p: &mut PreparedPara, m: Option<ParaMarker>, styles: &[crate::para::RunStyle]) {
     let Some(mut m) = m else {
         p.marker = None;
         return;
@@ -239,7 +252,7 @@ fn attach_marker(p: &mut PreparedPara, m: Option<ParaMarker>, styles: &[crate::p
 }
 
 /// `bdrKey(ppr)` (engine.ts:4089): `JSON.stringify([ppr.pBdr, ppr.ind ?? null])`.
-fn bdr_key(ppr: &PPr) -> Option<JsonKey> {
+pub(super) fn bdr_key(ppr: &PPr) -> Option<JsonKey> {
     let b = ppr.p_bdr.as_deref()?;
     let mut j = JsonBuilder::new();
     j.begin_array();
@@ -296,14 +309,15 @@ fn widow_on(p: &PreparedPara) -> bool {
 
 /// The paragraph frame of a line: `{ left, right }` (no float on the page; `wrapFrame` with floats
 /// is F7b).
-fn plain_frame(left: f64, right: f64) -> LineFrame {
+pub(super) fn plain_frame(left: f64, right: f64) -> LineFrame {
     LineFrame { left, right, gap: false, next: None }
 }
 
 impl Engine {
     /// The block `i` of the story the flow walks.
     fn block_at(&self, cx: &Cx<'_, '_>, i: usize) -> Option<LBlock> {
-        cx.ldoc.stories.get(self.story as usize).and_then(|s| s.blocks.get(i)).copied()
+        // (the endnote flow's blocks while it comes out, F7c)
+        self.flow_block(cx, i)
     }
 
     /// Prepares a paragraph object (`prepareParagraph(this.ctx, para, env)`).
@@ -373,7 +387,7 @@ impl Engine {
 
     /// `joinDeleted(carried, next)` (revisions.ts:155): the text of the deleted-mark paragraphs in
     /// front, the formatting of the next one; the join offset kept.
-    fn join_deleted(&self, cx: &Cx<'_, '_>, carried: Vec<RunKey>, next: LParaId) -> LResult<PSrc> {
+    pub(super) fn join_deleted(&self, cx: &Cx<'_, '_>, carried: Vec<RunKey>, next: LParaId) -> LResult<PSrc> {
         let lp = cx.ldoc.para(next).ok_or(LayoutError::Internal("engine: paragraph"))?;
         let n = carried.iter().fold(0u32, |n, k| n.wrapping_add(u32::try_from(cx.ldoc.run_text(*k).len()).unwrap_or(u32::MAX)));
         let mut runs = carried;
@@ -389,7 +403,7 @@ impl Engine {
 
     /// `joinHidden(join, next, env)` (engine.ts:1730): one paragraph with the properties of the
     /// first and the mark of the next; the next one's number is consumed too.
-    fn join_hidden(&mut self, cx: &Cx<'_, '_>, join: &HiddenJoin, next: &PSrc, env: &ParaEnv) -> LResult<PSrc> {
+    pub(super) fn join_hidden(&mut self, cx: &Cx<'_, '_>, join: &HiddenJoin, next: &PSrc, env: &ParaEnv) -> LResult<PSrc> {
         let r = self.resolve_ppr_of(cx, next, env)?;
         if let Some(n) = r.ppr.num_pr.as_deref()
             && n.num_id.is_some_and(crate::model::JsNumber::truthy)
@@ -420,7 +434,7 @@ impl Engine {
     }
 
     /// `noShownRuns(p)` (engine.ts:1739): no run shows in this view.
-    fn no_shown_runs(&self, cx: &Cx<'_, '_>, p: LParaId) -> bool {
+    pub(super) fn no_shown_runs(&self, cx: &Cx<'_, '_>, p: LParaId) -> bool {
         let Some(lp) = cx.ldoc.para(p) else { return true };
         lp.runs.iter().all(|k| {
             crate::paint::model_run(cx.ldoc, *k)
@@ -429,7 +443,7 @@ impl Engine {
     }
 
     /// `collapse(after, before)` (engine.ts:1614).
-    fn collapse(&self, cx: &Cx<'_, '_>, after: f64, before: f64) -> f64 {
+    pub(super) fn collapse(&self, cx: &Cx<'_, '_>, after: f64, before: f64) -> f64 {
         if cx.ldoc.view.formatting().settings.compat.get("doNotUseHTMLParagraphAutoSpacing") == Some(&true) {
             return after + before;
         }
@@ -437,7 +451,7 @@ impl Engine {
     }
 
     /// `borderTopExtent(p, prev)` (engine.ts:1624).
-    fn border_top_extent(p: &PreparedPara, prev: Option<&PrevPara>) -> f64 {
+    pub(super) fn border_top_extent(p: &PreparedPara, prev: Option<&PrevPara>) -> f64 {
         let b = p.ppr.p_bdr.as_deref();
         if let Some(prev) = prev
             && prev.p_bdr_key.is_some()
@@ -454,7 +468,7 @@ impl Engine {
     }
 
     /// `borderBottomExtent(p, groupedNext)` (engine.ts:1635).
-    fn border_bottom_extent(p: &PreparedPara, grouped_next: bool) -> f64 {
+    pub(super) fn border_bottom_extent(p: &PreparedPara, grouped_next: bool) -> f64 {
         let b = p.ppr.p_bdr.as_deref();
         let Some(bot) = border_on(b.and_then(|b| b.bottom.as_deref())) else { return 0.0 };
         if grouped_next {
@@ -464,7 +478,7 @@ impl Engine {
     }
 
     /// `groupsWithNext(p, next, env)` (engine.ts:1642).
-    fn groups_with_next(&mut self, cx: &Cx<'_, '_>, p: &PreparedPara, next: Option<LBlock>, env: &ParaEnv) -> LResult<bool> {
+    pub(super) fn groups_with_next(&mut self, cx: &Cx<'_, '_>, p: &PreparedPara, next: Option<LBlock>, env: &ParaEnv) -> LResult<bool> {
         let Some(LBlock::Paragraph(n)) = next else { return Ok(false) };
         if p.ppr.p_bdr.is_none() {
             return Ok(false);
@@ -479,7 +493,7 @@ impl Engine {
     }
 
     /// `listOf(p)` (engine.ts:1704): the list (abstractNum) of a numbered paragraph.
-    fn list_of(&self, cx: &Cx<'_, '_>, p: &PreparedPara) -> Option<Box<str>> {
+    pub(super) fn list_of(&self, cx: &Cx<'_, '_>, p: &PreparedPara) -> Option<Box<str>> {
         let id = p.ppr.num_pr.as_deref()?.num_id?;
         if !id.truthy() {
             return None;
@@ -561,7 +575,14 @@ impl Engine {
         };
         let mut after = from.as_ref().map_or(0.0, after_of);
         let q = match nb {
-            LBlock::Table { .. } => return Err(LayoutError::Unported(Frontier::F7b, "nextBlockLead: table preview")),
+            LBlock::Table { block } => {
+                // a title before a table: it stays with the first row (F7b, oracle keeptbl)
+                if self.en_blocks.is_some() {
+                    return Err(LayoutError::Unported(Frontier::F7b, "nextBlockLead: a table in the endnote flow"));
+                }
+                let t = super::tables::story_table(cx, self.story, block)?;
+                return Ok(Lead::Done(self.table_lead(cx, t, width, from.as_ref(), after)?));
+            }
             LBlock::Paragraph(k) => prepare_paragraph(cx, self, k, &none)?,
         };
         let mut before = q.space_before;
@@ -708,7 +729,7 @@ impl Engine {
     /// `paintBox(out, p, x, width, top, bottom, prev, at, groupedNext, page)` (engine.ts:1687):
     /// the paragraph's shading/borders, inserted at `at` (before the text already painted).
     #[expect(clippy::too_many_arguments, reason = "the TS signature")]
-    fn paint_box(
+    pub(super) fn paint_box(
         &mut self,
         cx: &mut Cx<'_, '_>,
         out: &mut PassItems,
@@ -753,14 +774,28 @@ impl Engine {
         let fmt = cx.ldoc.view.formatting();
         let settings = &fmt.settings;
         let compat = settings.compatibility_mode.to_number();
-        // a frame: out of the flow (liftFrames, F7b)
-        if crate::derive::frame_of(cx.ldoc, para0) {
-            return Err(LayoutError::Unported(Frontier::F7b, "frames (liftFrames)"));
+        // a frame: out of the flow (the box goes with the anchor paragraph; without an anchor it
+        // stays here — liftFrames, F7b)
+        if let Some(lp) = cx.ldoc.para(para0)
+            && lp.flags.has(ParaFlags::FRAME_SKIP)
+        {
+            if let Some(carry) = lp.frame_carry {
+                let fr = self.col_frame()?;
+                let cur = self.cur_ix()?;
+                let y = self.y;
+                self.place_float(cx, carry, cur, fr.x, fr.w, y, None, 0.0, None, None)?;
+            }
+            return Ok(());
         }
-        let (para0_model, _) = model_root(cx.ldoc, para0)?;
+        // (the paragraph object's own fields: a copy, like the endnote separator, has no model
+        // fields of its own — F7c)
+        let (p0_ppr, p0_props) = {
+            let (a, b, _, _) = fields_of(cx.ldoc, &PSrc::Doc(para0))?;
+            (a, b)
+        };
         let next_block = self.block_at(cx, block_idx + 1);
         let next_is_para = matches!(next_block, Some(LBlock::Paragraph(_)));
-        let mark_gone = self.ctx.rev.mark_gone(&para0_model.props);
+        let mark_gone = self.ctx.rev.mark_gone(&p0_props);
         // a deleted mark (revision): the text goes to the next paragraph, which keeps ITS
         // properties; the deleted one's number does not count (oracle delmark)
         if mark_gone && self.pending_join.is_none() && bi < g.blocks.1 && next_is_para {
@@ -789,16 +824,15 @@ impl Engine {
         if let Some(j) = &join {
             attach_marker(&mut p, j.marker.clone(), &j.marker_styles);
         }
-        self.check_scope(cx, &p)?;
         // a numbered heading (style Heading N): the chapter number of the PAGE field
         if let (Some(ch), Some(sid)) = (p.marker.as_ref().and_then(|m| m.chapter.as_ref()), p.style_id.as_deref())
             && let Some(lv) = fmt.styles.styles.get(sid).and_then(|s| s.name.as_deref()).and_then(heading_level)
         {
-            let r = LineRef { story: LineStory::Body, path: RefPath(vec![u32::try_from(block_idx).unwrap_or(u32::MAX)].into()) };
+            let r = self.flow_ref(block_idx);
             self.found.heading_marks.insert(r.to_ts().into(), (lv, ch.clone()));
         }
         // a heading ("heading N" style) laid out: SEQ \s n of the following paragraphs resets
-        let hl = self.heading_style_level(cx, para0_model);
+        let hl = heading_style_level_of(cx, &p0_props, p0_ppr.as_deref());
         if hl > 0.0 {
             self.ctx.flow.heads.push(hl);
         }
@@ -817,7 +851,9 @@ impl Engine {
         }
         // an EMPTY paragraph that only carries the break to a CONTINUOUS section: no height and
         // no spacing of its own, but it separates its neighbours (oracle colbreak, cb-emptysect-*)
-        let next_geom = self.geoms.get(g.index as usize + 1);
+        // (`this.geoms[g.index + 1]`: the section geometries only — the endnote flows' copies come
+        // after them, F7c)
+        let next_geom = self.geoms.get(g.index as usize + 1).filter(|_| g.index + 1 < self.sect_geoms);
         let prev_is_para = block_idx.checked_sub(1).and_then(|i| self.block_at(cx, i)).is_some_and(|b| matches!(b, LBlock::Paragraph(_)));
         if js_eq(bi, g.blocks.1)
             && p.glyphs.is_empty()
@@ -948,12 +984,34 @@ impl Engine {
                 }
             }
         }
+        let y_pre = self.y;
         let gap_in = if !self.at_top || self.first_in_doc || keep_after.is_some() { gap } else { 0.0 };
         self.y += gap_in;
-        // (the page top under a header/footer float of modes ≤ 14, oracle hff14wrap: F7b)
+        // the page top under a header/footer float of modes ≤ 14: the paragraph goes below it from
+        // ITS top (before the "before") and the "before" holds there (oracle hff14wrap)
         if self.at_top && gap_in > 0.0 && self.cur_ps()?.floats.iter().any(|f| f.body_only) {
-            return Err(LayoutError::Unported(Frontier::F7b, "wrapFrame (header/footer float)"));
+            let fr = self.col_frame()?;
+            let lh = super::floats::mark_line_h(cx, &p)?;
+            let cur = self.cur_ix()?;
+            let f0 = self.wrap_frame(&Self::para_wrap(&p, fr.w), fr.x, y_pre, gap_in + lh, cur)?;
+            if let Some(s) = f0.skip_to.get()
+                && s > y_pre
+            {
+                self.y = jm::max(self.y, s + gap_in);
+            }
         }
+        // the paragraph top for objects relative to it: the end of the previous one's "after"
+        let para_ref = y_pre + jm::min(prev_after, gap_in);
+        let self_gap = gap_in - jm::min(prev_after, gap_in);
+        // a floating table's anchor: if the table pushes it down, the space before holds again
+        // there (oracle ftable2)
+        let ft_gap = if self.float_table_gap && !self.at_top {
+            gap
+        } else if self.carry_anchor_gap {
+            before
+        } else {
+            0.0
+        };
         self.float_table_gap = false;
         self.carry_anchor_gap = false;
         self.first_in_doc = false;
@@ -961,7 +1019,7 @@ impl Engine {
         let mut br = LineBreaker::new(&p, self.grid_for(&p));
         let grouped_next = bi + 1.0 <= g.blocks.1 && self.groups_with_next(cx, &p, next_block, &ParaEnv::default())?;
         let widow = widow_on(&p);
-        let rf = LineRef { story: LineStory::Body, path: RefPath(vec![u32::try_from(block_idx).unwrap_or(u32::MAX)].into()) };
+        let rf = self.flow_ref(block_idx);
         let pfmt = Arc::new(LineParaFormat { left: p.ind_left, right: p.ind_right, first_line: p.first_line, tabs: p.tabs.clone().into() });
         // the lines placed on the current page (moved for widows/orphans)
         let mut frag: Vec<FragLine> = Vec::new();
@@ -973,22 +1031,180 @@ impl Engine {
         let mut first = true;
         let mut line_no: i64 = 0;
         let tail_ps = self.cur_ix()?;
+        // where the first line went: the objects anchored in the paragraph go to THAT page (not
+        // the last line's — a paragraph with a page break at its end)
+        let mut anchor_at = self.anchor_here(Some(para_ref))?;
+        let mut early = self.place_floats_early(cx, &p, anchor_at.ps, anchor_at.x, anchor_at.w, self.y, None, Some(para_ref))?;
+        // a wrapping object relative to the paragraph would pass the bottom margin: Word LIFTS it to
+        // the margin if it then does not cross the paragraph's own lines; else the paragraph goes
+        // down with it to the next page/column (oracle selffloat)
+        let body_bottom0 = self.cur_ps()?.body_bottom;
+        let over: Vec<f64> = early
+            .iter()
+            .filter(|e| {
+                let a = crate::paint::model_run(cx.ldoc, e.run).and_then(super::floats::float_anchor);
+                super::floats::follows_text(a) && e.obj.y + e.obj.h > body_bottom0 + 0.5
+            })
+            .map(|e| e.obj.h)
+            .collect();
+        if !self.at_top && !over.is_empty() {
+            let para_bottom = self.y + self.paragraph_height(cx, &p, frame_base.w)?;
+            let lift = over.iter().all(|h| body_bottom0 - h >= para_bottom - 0.5);
+            for e in &early {
+                self.unplace_float(e)?;
+            }
+            if lift {
+                // (the other objects keep measuring from the top before the "before" — oracle liftref)
+                let a = self.anchor_here(None)?;
+                early = self.place_floats_early(cx, &p, a.ps, a.x, a.w, self.y, Some(body_bottom0), Some(para_ref))?;
+            } else {
+                self.break_column(cx)?;
+                self.y += Self::border_top_extent(&p, self.prev.as_ref());
+                anchor_at = self.anchor_here(None)?;
+                early = self.place_floats_early(cx, &p, anchor_at.ps, anchor_at.x, anchor_at.w, self.y, None, None)?;
+            }
+        }
+        let mut early_at = (self.cur_ix()?, self.col_frame()?.x);
+        let early_runs: Vec<RunKey> = early.iter().map(|e| e.run).collect();
         // an EMPTY paragraph carrying the section break does not go to the next page: it hangs
         // below the margin (oracle sectfit)
         let n_sections = cx.ldoc.view.sections().len();
         let hangs = js_eq(bi, g.blocks.1)
             && (g.index as usize) < n_sections.saturating_sub(1)
             && p.glyphs.iter().all(|gl| gl.kind == GlyphKind::Obj && js_eq(gl.adv, 0.0));
+        let mark_h = super::floats::mark_line_h(cx, &p)?;
+        let mut last_line: Option<Line>;
         loop {
-            // (the frame around the floats of the page, `frameHere`: F7b with floats)
-            if !self.cur_ps()?.floats.is_empty() {
-                return Err(LayoutError::Unported(Frontier::F7b, "wrapFrame"));
+            let y0 = self.y;
+            let mut frame = self.frame_here(&p, mark_h)?;
+            // pushed below a float: the "before" holds again there — a floating table's anchor's
+            // whole; else the part of the gap INSIDE the paragraph (oracles ftable2, ftaftdist)
+            let push_gap = if ft_gap > 0.0 { ft_gap } else { self_gap };
+            if first && push_gap > 0.0 && self.y > y0 {
+                self.y += push_gap;
+                frame = self.frame_here(&p, mark_h)?;
             }
-            let fr = self.col_frame()?;
-            let mut frame = plain_frame(p.ind_left, fr.w - p.ind_right);
             let mark = br.mark();
-            let mut line = br.next(cx, &p, frame)?;
+            let (mut seg_k, sf) = Self::pick_seg(&br, &p, &frame);
+            let mut line = br.next(cx, &p, sf)?;
+            let has_floats = !self.cur_ps()?.floats.is_empty();
+            // the line's text taller than the estimate (the mark's font) crosses a float the
+            // estimated height did not: it goes below it (oracle ftable2); narrower: the line narrows
+            // (oracle tallwrap)
+            let text_h = jm::min(line.height, line.baseline + line.desc);
+            if has_floats && text_h > mark_h + 1.0 {
+                let fr = self.col_frame()?;
+                let cur = self.cur_ix()?;
+                let f2 = self.wrap_frame(&Self::para_wrap(&p, fr.w), fr.x, self.y, text_h, cur)?;
+                if let Some(s) = f2.skip_to.get()
+                    && s > self.y
+                {
+                    self.y = s + if first { self_gap } else { 0.0 };
+                    frame = self.frame_here(&p, mark_h)?;
+                    br.reset(mark);
+                    let (k, sf) = Self::pick_seg(&br, &p, &frame);
+                    seg_k = k;
+                    line = br.next(cx, &p, sf)?;
+                } else if super::floats::narrower(&f2, &frame) {
+                    frame = f2;
+                    br.reset(mark);
+                    let (k, sf) = Self::pick_seg(&br, &p, &frame);
+                    seg_k = k;
+                    line = br.next(cx, &p, sf)?;
+                }
+            }
+            // text LOWER than the mark: the jump below the float was by the mark's height; if the
+            // real line fits above it, it stays there (oracle liftref, lr-mark11)
+            if has_floats && self.y > y0 + 0.5 {
+                let text_h2 = jm::min(line.height, line.baseline + line.desc);
+                if text_h2 < mark_h - 1.0 {
+                    let fr = self.col_frame()?;
+                    let cur = self.cur_ix()?;
+                    let f0 = self.wrap_frame(&Self::para_wrap(&p, fr.w), fr.x, y0, text_h2, cur)?;
+                    if !f0.skip_to.is_some() && !super::floats::narrower(&f0, &frame) {
+                        let yb = self.y;
+                        self.y = y0;
+                        br.reset(mark);
+                        let (k0, sf0) = Self::pick_seg(&br, &p, &f0);
+                        let line0 = br.next(cx, &p, sf0)?;
+                        if jm::min(line0.height, line0.baseline + line0.desc) <= text_h2 + 0.5 {
+                            frame = f0;
+                            seg_k = k0;
+                            line = line0;
+                        } else {
+                            self.y = yb;
+                            br.reset(mark);
+                            let (k, sf) = Self::pick_seg(&br, &p, &frame);
+                            seg_k = k;
+                            line = br.next(cx, &p, sf)?;
+                        }
+                    }
+                }
+            }
+            // a word that does not fit the gap beside a float: Word does not split it by character —
+            // the line goes below it (oracle gapind, gi-*-r0)
+            if has_floats && !line.last && line.end > line.start && (line.end as usize) < p.glyphs.len() {
+                let fr = self.col_frame()?;
+                let narrowed = frame.left > p.ind_left + 0.5 || frame.right < fr.w - p.ind_right - 0.5;
+                let word = |g: &crate::para::Glyph| {
+                    g.kind == GlyphKind::Char
+                        && !g.ch.units.get(..usize::from(g.ch.len)).unwrap_or(&[]).iter().any(|&u| uo_text::space::is_space(u))
+                };
+                let g0 = p.glyphs.get(line.end as usize - 1);
+                let g1 = p.glyphs.get(line.end as usize);
+                let last_auto = line.placed.last().is_some_and(|t| matches!(t.g, crate::lines::GlyphSrc::AutoHyphen(_)));
+                if narrowed
+                    && g0.is_some_and(|g| word(g) && !g.flags.has(crate::para::GlyphFlags::BREAK_AFTER))
+                    && g1.is_some_and(word)
+                    && !last_auto
+                {
+                    let below = self.below_wrapping(jm::max(mark_h, line.height))?;
+                    if below < f64::INFINITY && below > self.y {
+                        self.y = below;
+                        frame = self.frame_here(&p, mark_h)?;
+                        br.reset(mark);
+                        let (k, sf) = Self::pick_seg(&br, &p, &frame);
+                        seg_k = k;
+                        line = br.next(cx, &p, sf)?;
+                    }
+                }
+            }
+            // a tab opening the line in the gap with its stop past it: the line goes below the float
+            // (oracle tabgap)
+            if line.gap_tab == Some(crate::lines::GapTab::Start) && has_floats {
+                let below = self.below_wrapping(jm::max(mark_h, line.height))?;
+                if below < f64::INFINITY && below > self.y {
+                    self.y = below;
+                    frame = self.frame_here(&p, mark_h)?;
+                    br.reset(mark);
+                    let (k, sf) = Self::pick_seg(&br, &p, &frame);
+                    seg_k = k;
+                    line = br.next(cx, &p, sf)?;
+                }
+            }
+            // modes < 15: the paragraph's last line stays above/beside a float only if the WHOLE
+            // line plus the "after" stay off it; else it goes down (oracle ftafter)
+            if has_floats && line.last && compat < 15.0 {
+                let aft = after_of(&p);
+                if aft > 0.0 {
+                    let fr = self.col_frame()?;
+                    let cur = self.cur_ix()?;
+                    let f3 = self.wrap_frame(&Self::para_wrap(&p, fr.w), fr.x, self.y, line.height + aft, cur)?;
+                    if let Some(s) = f3.skip_to.get()
+                        && s > self.y
+                    {
+                        self.y = s + if first { self_gap } else { 0.0 };
+                        frame = self.frame_here(&p, mark_h)?;
+                        br.reset(mark);
+                        let (k, sf) = Self::pick_seg(&br, &p, &frame);
+                        seg_k = k;
+                        line = br.next(cx, &p, sf)?;
+                    }
+                }
+            }
             let mut page_changed = false;
+            // the NEW notes of the line and the room they need (F7c)
+            let mut note_need = self.note_need(cx, &p, &line)?;
             // a line with only the page break and more content after it: no height in the test —
             // the break stays on this page (oracle pbfit)
             let break_only = line.break_after == Some(BreakKind::Page)
@@ -1002,6 +1218,17 @@ impl Engine {
                 jm::min(line.height, line.baseline + line.desc)
             };
             let body_bottom = self.cur_ps()?.body_bottom;
+            // a new note that does not fit whole: its beginning stays with the line (oracle fncont)
+            let nfit = super::notes::note_line_fit(&p, &line);
+            let mut note_cut: Option<super::notes::NoteCut> = None;
+            if note_need.1 > 0.0
+                && !self.at_top
+                && !hangs
+                && self.y + nfit > body_bottom - note_need.1 + 0.05
+                && self.y + nfit <= body_bottom + 0.05
+            {
+                note_cut = self.note_partial(cx, &note_need.0, self.y + nfit)?;
+            }
             if line_no == tail_at && self.cur == Some(tail_ps) && !frag.is_empty() && !self.at_top {
                 // keepNext: the last lines go down with the next one's start (oracle keepsplit)
                 self.flush_frag(cx, &p, &rf, &pfmt, &mut frag, frag_top, false, grouped_next)?;
@@ -1010,7 +1237,11 @@ impl Engine {
                 frag_top = self.y;
                 page_changed = true;
             // (no tolerance: 0.21 tw past the margin already goes down — oracle bodyfit)
-            } else if self.y + fit_h > body_bottom + 0.05 && !self.at_top && !hangs {
+            } else if note_cut.is_none()
+                && self.y + if note_need.1 > 0.0 { nfit } else { fit_h } > body_bottom - note_need.1 + 0.05
+                && !self.at_top
+                && !hangs
+            {
                 // it does not fit: widows/orphans
                 let placed_here = frag.len();
                 let mut moved: Vec<Line> = Vec::new();
@@ -1038,6 +1269,9 @@ impl Engine {
                 frag_has_first = all_moved;
                 self.break_column(cx)?;
                 frag_top = self.y;
+                if all_moved {
+                    anchor_at = self.anchor_here(None)?;
+                }
                 for m in moved {
                     let fx = self.col_frame()?.x;
                     let h = m.height;
@@ -1046,27 +1280,94 @@ impl Engine {
                 }
                 page_changed = true;
             }
+            if first {
+                // the first line went to another page/column: the floats go along
+                let here = (self.cur_ix()?, self.col_frame()?.x);
+                if !early.is_empty() && (early_at.0 != here.0 || !js_eq(early_at.1, here.1)) {
+                    for e in &early {
+                        self.unplace_float(e)?;
+                    }
+                    let a = self.anchor_here(None)?;
+                    early = self.place_floats_early(cx, &p, a.ps, a.x, a.w, self.y, None, None)?;
+                    early_at = here;
+                }
+                // the first line pushed below a float (table or figure) on the SAME page: the
+                // paragraph's objects keep measuring from where it began (oracle ftanchor); pushed past
+                // the page foot, from there (corpus t20)
+                let cur = self.cur_ix()?;
+                if anchor_at.ps != cur || self.y <= anchor_at.top + 0.5 || self.y > self.cur_ps()?.body_bottom {
+                    anchor_at = self.anchor_here(None)?;
+                }
+            }
             if page_changed {
                 // the line was broken in the previous page's frame (wrap around objects): redone in
                 // the new one's
-                let fr = self.col_frame()?;
-                let nf = plain_frame(p.ind_left, fr.w - p.ind_right);
-                if !js_eq(nf.left, frame.left) || !js_eq(nf.right, frame.right) {
+                let y_top = self.y;
+                let mut nf = self.frame_here(&p, mark_h)?;
+                // the first line pushed below a float at the new page's top: the "before" holds
+                // there, as on the same page (oracle hff14wrap)
+                if first && frag_has_first && frag.is_empty() && push_gap > 0.0 && self.y > y_top + 0.01 {
+                    self.y += push_gap;
+                    nf = self.frame_here(&p, mark_h)?;
+                }
+                if !js_eq(nf.left, frame.left) || !js_eq(nf.right, frame.right) || nf.segs.is_some() || frame.segs.is_some() {
                     br.reset(mark);
                     frame = nf;
-                    line = br.next(cx, &p, frame)?;
+                    let (k, sf) = Self::pick_seg(&br, &p, &frame);
+                    seg_k = k;
+                    line = br.next(cx, &p, sf)?;
+                    note_need = self.note_need(cx, &p, &line)?;
                 }
             }
+            if !note_need.0.is_empty() {
+                self.reserve_notes(cx, &note_need.0, if page_changed { None } else { note_cut.as_ref() })?;
+            }
             let fx = self.col_frame()?.x;
-            let line_h = line.height;
-            let (clear, brk, done_line) = (line.clear, line.break_after, ());
-            let _ = (clear, done_line);
-            frag.push(FragLine { line, y: self.y, frame_x: fx });
+            let mut line_h = line.height;
+            frag.push(FragLine { line: line.clone(), y: self.y, frame_x: fx });
+            // the other gaps of the same line (an object in the middle: text on both sides)
+            let y_line = self.y;
+            let last = {
+                let frag_ref = &mut frag;
+                let line_h_ref = &mut line_h;
+                let eng: &mut Engine = self;
+                let pp = &p;
+                let mut put = |cx: &mut Cx<'_, '_>, l: &Line| -> LResult<()> {
+                    let nn = eng.note_need(cx, pp, l)?;
+                    if !nn.0.is_empty() {
+                        eng.reserve_notes(cx, &nn.0, None)?;
+                    }
+                    let fx = eng.col_frame()?.x;
+                    frag_ref.push(FragLine { line: l.clone(), y: y_line, frame_x: fx });
+                    *line_h_ref = jm::max(*line_h_ref, l.height);
+                    Ok(())
+                };
+                Self::more_segs(cx, &mut br, pp, &frame, seg_k, line, &mut put)?
+            };
             self.y += line_h;
             self.at_top = false;
             first = false;
             line_no += 1;
-            // (a line break w:clear: below the floats that reach this height — none without floats)
+            // a line break w:clear: the next line starts below the wrapping floats that reach this
+            // height (oracle brclear)
+            if last.clear {
+                for _ in 0..8 {
+                    let yy = self.y;
+                    let below: Vec<f64> = self
+                        .cur_ps()?
+                        .floats
+                        .iter()
+                        .filter(|f| &*f.wrap != "none" && f.y - f.dist_t < yy && f.y + f.h + f.dist_b > yy)
+                        .map(|f| f.y + f.h + f.dist_b)
+                        .collect();
+                    if below.is_empty() {
+                        break;
+                    }
+                    self.y = jm::max_n(&below);
+                }
+            }
+            let brk = last.break_after;
+            last_line = Some(last);
             match brk {
                 Some(BreakKind::Page) => {
                     self.flush_frag(cx, &p, &rf, &pfmt, &mut frag, frag_top, false, grouped_next)?;
@@ -1088,7 +1389,7 @@ impl Engine {
                 break;
             }
         }
-        let _ = frag_has_first;
+        let _ = (frag_has_first, last_line);
         self.flush_frag(cx, &p, &rf, &pfmt, &mut frag, frag_top, true, grouped_next)?;
         self.y += Self::border_bottom_extent(&p, grouped_next);
         // the column ends at the paragraph end: the "after" counts for the line between columns
@@ -1096,7 +1397,14 @@ impl Engine {
             let a = after_of(&p);
             self.note_col_content(self.y + a)?;
         }
-        // (floats anchored in this paragraph: none — `check_scope`)
+        // the floating objects anchored in this paragraph
+        for r in &early_runs {
+            self.pre_placed.insert(*r);
+        }
+        self.place_floats(cx, &p, anchor_at.ps, anchor_at.x, anchor_at.w, anchor_at.top, None, 0.0, anchor_at.para_ref)?;
+        for r in &early_runs {
+            self.pre_placed.shift_remove(r);
+        }
         // a paragraph with only a page break: the next one starts at the top (with
         // splitPgBreakAndParaMark the mark already took the page's first line — oracle pbmark)
         let split_pg = compat < 15.0 && settings.compat.get("splitPgBreakAndParaMark") == Some(&true);
@@ -1118,6 +1426,52 @@ impl Engine {
             box_page: lb.and_then(|b| b.page),
         });
         Ok(())
+    }
+
+    /// `{ left: p.indLeft, right: fr.w − p.indRight }` as a wrap frame.
+    fn para_wrap(p: &PreparedPara, w: f64) -> super::page::WrapFrame {
+        super::page::WrapFrame { left: p.ind_left, right: w - p.ind_right, skip_to: OptF64::NONE, segs: None, gap: false }
+    }
+
+    /// `frameHere()` of `placeParagraph`: the line's frame at `this.y` around the current page's
+    /// floats; an object with no room beside it (or "top and bottom"): below it.
+    fn frame_here(&mut self, p: &PreparedPara, line_h: f64) -> LResult<super::page::WrapFrame> {
+        let fr = self.col_frame()?;
+        let cur = self.cur_ix()?;
+        let base = Self::para_wrap(p, fr.w);
+        let mut frame = self.wrap_frame(&base, fr.x, self.y, line_h, cur)?;
+        let mut k = 0;
+        while k < 8
+            && let Some(s) = frame.skip_to.get()
+            && s > self.y
+        {
+            self.y = s;
+            frame = self.wrap_frame(&base, fr.x, self.y, line_h, cur)?;
+            k += 1;
+        }
+        Ok(frame)
+    }
+
+    /// The bottom of the nearest square/tight/through float crossing `[y, y + lineH]` (the
+    /// `below` loops of `placeParagraph`).
+    fn below_wrapping(&self, line_h: f64) -> LResult<f64> {
+        let mut below = f64::INFINITY;
+        for f in &self.cur_ps()?.floats {
+            if !matches!(&*f.wrap, "square" | "tight" | "through") {
+                continue;
+            }
+            if self.y + line_h <= f.y - f.dist_t + 0.5 || self.y >= f.y + f.h + f.dist_b - 0.5 {
+                continue;
+            }
+            below = jm::min(below, f.y + f.h + f.dist_b);
+        }
+        Ok(below)
+    }
+
+    /// `{ ps: this.cur, top: this.y, x: colFrame().x, w: colFrame().w, ref }`.
+    fn anchor_here(&self, para_ref: Option<f64>) -> LResult<AnchorAt> {
+        let fr = self.col_frame()?;
+        Ok(AnchorAt { ps: self.cur_ix()?, top: self.y, x: fr.x, w: fr.w, para_ref })
     }
 
     /// `flushFrag(isLast)` of `placeParagraph`: paints the fragment's lines on the current page,
@@ -1155,7 +1509,9 @@ impl Engine {
             );
             self.ps_mut(cur)?.body = body;
             r?;
-            // (`paintInlineDrawings`: inline groups and textboxes are F7b — `check_scope`)
+            // inline groups and textboxes (F7b): to the front layer, after the page's text
+            let mut none = PassItems::new();
+            self.paint_inline_drawings(cx, p, &f.line, f.frame_x, f.y, Some(cur), true, &mut none)?;
             let l = line_record(rf, p, &f.line, f.frame_x, f.y, Some(col_w), pfmt);
             self.ps_mut(cur)?.page.lines.push(l);
         }
@@ -1185,45 +1541,15 @@ impl Engine {
         frag.clear();
         Ok(())
     }
+}
 
-    /// `headingStyleLevel(p)` (engine.ts:551): N of the paragraph's own "heading N" style, else 0.
-    fn heading_style_level(&self, cx: &Cx<'_, '_>, p: &Paragraph) -> f64 {
-        let id = p.props.style_id.as_deref().or_else(|| p.ppr.as_deref().and_then(|q| q.p_style.as_deref()));
-        let id = id.filter(|s| !s.is_empty());
-        let name = id.and_then(|id| cx.ldoc.view.formatting().styles.styles.get(id)).and_then(|s| s.name.as_deref());
-        name.and_then(heading_level).unwrap_or(0.0)
-    }
-
-    /// What F7a does not lay out: the paragraph's floats, inline groups/textboxes and picture
-    /// bullets (F7b), note references (F7c).
-    fn check_scope(&self, cx: &Cx<'_, '_>, p: &PreparedPara) -> LResult<()> {
-        for g in &p.glyphs {
-            if g.note_id.is_some() {
-                return Err(LayoutError::Unported(Frontier::F7c, "footnote/endnote references"));
-            }
-            if g.pic_bullet.is_some() {
-                return Err(LayoutError::Unported(Frontier::F7b, "picture bullets"));
-            }
-            if g.kind != GlyphKind::Obj {
-                continue;
-            }
-            let Some(ext) = g.obj.and_then(|k| crate::paint::model_run(cx.ldoc, k)).and_then(Run::ext) else { continue };
-            let floating = ext.image.as_ref().and_then(|x| x.floating) == Some(true)
-                || ext.shape.as_ref().and_then(|x| x.floating) == Some(true)
-                || ext.group.as_ref().and_then(|x| x.floating) == Some(true)
-                || ext.textbox.as_ref().and_then(|x| x.floating) == Some(true);
-            if floating {
-                return Err(LayoutError::Unported(Frontier::F7b, "floating objects"));
-            }
-            if g.adv > 0.0 && (ext.group.is_some() || ext.textbox.is_some()) && ext.image.is_none() && ext.shape.is_none() {
-                return Err(LayoutError::Unported(Frontier::F7b, "inline groups and textboxes"));
-            }
-        }
-        if p.marker.as_ref().is_some_and(|m| m.glyphs.iter().any(|g| g.pic_bullet.is_some())) {
-            return Err(LayoutError::Unported(Frontier::F7b, "picture bullets"));
-        }
-        Ok(())
-    }
+/// `headingStyleLevel(p)` (engine.ts:551): N of the paragraph's own "heading N" style, else 0
+/// (over the paragraph object's `props` and `ppr`).
+pub(super) fn heading_style_level_of(cx: &Cx<'_, '_>, props: &ParaProps, ppr: Option<&PPr>) -> f64 {
+    let id = props.style_id.as_deref().or_else(|| ppr.and_then(|q| q.p_style.as_deref()));
+    let id = id.filter(|s| !s.is_empty());
+    let name = id.and_then(|id| cx.ldoc.view.formatting().styles.styles.get(id)).and_then(|s| s.name.as_deref());
+    name.and_then(heading_level).unwrap_or(0.0)
 }
 
 /// `lineRecord(ref, p, line, frameX, top, frameW)` (engine.ts:3938).
@@ -1332,10 +1658,24 @@ impl PrepFlow for Engine {
             FieldSource::None => Ok(None),
             FieldSource::Page => {
                 let (ps, block) = self.field_at.ok_or(LayoutError::Internal("field: no page"))?;
-                self.field_value(cx, ps, Some(block), name, instr, at)
+                self.field_value(cx, ps, Some(block), name, Some(instr), Some(at))
             }
-            FieldSource::HeaderFooter | FieldSource::Footnote(_) | FieldSource::Endnote(_) => {
-                Err(LayoutError::Unported(Frontier::F7c, "header/footer and note field values"))
+            // `fieldValue(ps)` without a block: a header/footer's page (F7c)
+            FieldSource::HeaderFooter => {
+                let ps = self.field_page.ok_or(LayoutError::Internal("field: no header/footer page"))?;
+                self.field_value(cx, ps, None, name, Some(instr), Some(at))
+            }
+            // a footnote's content: its own mark, else `fieldValue(this.cur)(name)` (F7c)
+            FieldSource::Footnote(id) => {
+                if name == "FOOTNOTEREF_MARK".encode_utf16().collect::<Vec<_>>().as_slice() {
+                    return Ok(Some(self.footnote_mark(id)));
+                }
+                let ps = self.cur_ix()?;
+                self.field_value(cx, ps, None, name, None, None)
+            }
+            FieldSource::Endnote(_) => {
+                let ps = self.cur_ix()?;
+                self.field_value(cx, ps, None, name, None, None)
             }
         }
     }

@@ -6,7 +6,7 @@
 //! `pageBorders`; engine.ts:405–1080).
 
 use crate::context::{NoteNumbering, NoteRestart};
-use crate::error::{Frontier, LResult, LayoutError, LimitKind};
+use crate::error::{LResult, LayoutError, LimitKind};
 use crate::items::{ItemSide, PassItems, PassLine};
 use crate::keys::PageIx;
 use crate::model::JsNumber;
@@ -136,6 +136,8 @@ pub struct PageOut {
     pub number: f64,
     pub lines: Vec<PassLine>,
     pub objects: Option<Vec<PlacedObject>>,
+    /// the content lines of the page's textboxes (`PlacedObject.content` ranges; added by F7b)
+    pub content_lines: Vec<PassLine>,
     pub cells: Option<Vec<PlacedCell>>,
     pub hf_items: Option<u32>,
     pub background: Option<Sym>,
@@ -146,7 +148,8 @@ pub struct PageOut {
 /// A note on a page: its id and its laid-out content.
 #[derive(Clone, Debug)]
 pub struct PageNote {
-    pub id: i32,
+    /// the note id (a JS number: SameValueZero, F7c)
+    pub id: crate::model::NumKey,
     pub content: crate::table::CellContent,
 }
 
@@ -398,12 +401,13 @@ impl Engine {
         self.top_gap_prev_after = None;
         self.prev = None;
         self.ctx.begin_note_page();
-        // endnotes that continue: the continuation separator at the top (F7c)
+        // endnotes that continue: the continuation separator (margin to margin) at the top
+        // (oracle endnotes, en-fill50/en-split)
         if self.en_flow.is_some_and(|e| e.sep_done) {
-            return Err(LayoutError::Unported(Frontier::F7c, "continuationSeparator"));
+            self.continuation_separator(cx, true)?;
         }
         if !self.float_carry.is_empty() {
-            return Err(LayoutError::Unported(Frontier::F7b, "placeFloatCarry"));
+            self.place_float_carry(cx)?;
         }
         // a page of notes only (a long continuation): the text goes on to the next one
         if self.cur_ps()?.notes_full {
@@ -412,13 +416,16 @@ impl Engine {
         }
         // late floats of this page: placed before the text (F7b)
         let pix = u32::try_from(self.pages.len().saturating_sub(1)).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
-        if cx.input.late_floats.contains_key(&pix) {
-            return Err(LayoutError::Unported(Frontier::F7b, "late floats"));
+        if let Some(late) = cx.input.late_floats.get(&pix) {
+            let fr = self.col_frame()?;
+            let cur = self.cur_ix()?;
+            let body_top = self.ps(cur)?.body_top;
+            for &run in late {
+                self.place_float(cx, run, cur, fr.x, fr.w, body_top, None, 0.0, None, None)?;
+                self.pre_placed.insert(run);
+            }
         }
-        if cx.input.late_tables.values().any(|lt| lt.page == pix) {
-            return Err(LayoutError::Unported(Frontier::F7b, "late tables"));
-        }
-        Ok(())
+        self.place_late_tables(cx)
     }
 
     /// `makePage(g, sectPage, number)` (engine.ts:912).
@@ -439,9 +446,8 @@ impl Engine {
         };
         if self.cur.is_some() {
             self.close_columns(cx)?;
-            if !self.cur_ps()?.notes.is_empty() {
-                return Err(LayoutError::Unported(Frontier::F7c, "paintNotes"));
-            }
+            let c = self.cur_ix()?;
+            self.paint_notes(cx, c)?;
         }
         self.pages.push(ps);
         self.cur = Some(PageIx(u32::try_from(self.pages.len() - 1).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?));
@@ -449,34 +455,10 @@ impl Engine {
         self.layout_header_footer(cx)?;
         let ps = self.cur_ps_mut()?;
         ps.body_bottom_base = ps.body_bottom;
-        // the continuation of a note split on the previous page (F7c)
+        // the continuation of a note split on the previous page: first at this one's foot
+        // (oracle fncont)
         if !self.note_carry.is_empty() {
-            return Err(LayoutError::Unported(Frontier::F7c, "noteCarry"));
-        }
-        Ok(())
-    }
-
-    /// `layoutHeaderFooter(ps)` (engine.ts:1139) up to the slot choice: a header or footer with
-    /// content is laid out by F7c.
-    fn layout_header_footer(&mut self, cx: &mut Cx<'_, '_>) -> LResult<()> {
-        let ps = self.cur_ps()?;
-        let g = self.geom(ps.geom)?;
-        let settings = &cx.ldoc.view.formatting().settings;
-        let first = ps.sect_page == 0 && g.title_pg;
-        let even = settings.even_and_odd_headers && js_eq(jm::rem(ps.page.number, 2.0), 0.0);
-        let k = if first {
-            1
-        } else if even {
-            2
-        } else {
-            0
-        };
-        for set in [g.headers, g.footers] {
-            let st = set.get(k).copied().flatten();
-            let len = st.and_then(|s| cx.ldoc.stories.get(s as usize)).map_or(0, |s| s.blocks.len());
-            if len > 0 {
-                return Err(LayoutError::Unported(Frontier::F7c, "layoutHeaderFooter"));
-            }
+            self.place_note_carry(cx, gi)?;
         }
         Ok(())
     }
@@ -532,7 +514,7 @@ impl Engine {
     }
 
     /// `recordBalance(ending)` (engine.ts:978).
-    fn record_balance(&mut self, ending: u32) -> LResult<()> {
+    pub(crate) fn record_balance(&mut self, ending: u32) -> LResult<()> {
         let eg = self.geom(ending)?;
         if eg.cols.len() <= 1 {
             return Ok(());
@@ -626,8 +608,10 @@ impl Engine {
             self.y = self.col_top;
             self.at_top = true;
             self.prev = None;
+            // endnotes in columns: the next column keeps the separator's place (no line —
+            // oracle endnotes, en-cols)
             if self.en_flow.is_some_and(|e| e.sep_done) {
-                return Err(LayoutError::Unported(Frontier::F7c, "continuationSeparator"));
+                self.continuation_separator(cx, false)?;
             }
             Ok(())
         } else {
