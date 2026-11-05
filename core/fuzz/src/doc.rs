@@ -11,14 +11,17 @@ use std::path::Path;
 
 use uo_docx::doc::fkp::{read_chpx_runs, read_papx_runs};
 use uo_docx::doc::fonts::read_fonts;
+use uo_docx::doc::formfields::ff_data_xml;
 use uo_docx::doc::lists::read_lists;
 use uo_docx::doc::numbering::build_numbering;
 use uo_docx::doc::ooxml_props::{PPrOpts, PropCtx, p_pr_inner, r_pr_inner};
 use uo_docx::doc::open::DocStreams;
+use uo_docx::doc::pictures::{pic_fx_of, read_inline_picture, shape_blip};
 use uo_docx::doc::props::{
     Chp, ChpCtx, KeySet, Pap, PapCtx, Tap, apply_chp, apply_pap, apply_sep, apply_tap, default_chp, default_sep, finish_tap,
     prune_none_borders,
 };
+use uo_docx::doc::reader::{DocReader, NoteKind};
 use uo_docx::doc::settings::{build_settings, read_dop};
 use uo_docx::doc::sprm::prls;
 use uo_docx::doc::stsh::{StyleResolver, read_stsh};
@@ -28,7 +31,7 @@ use uo_docx::doc::{DocError, DocLimitKind, DocLimits, convert_doc_to_docx};
 
 /// Small limits: every limit is reached by small inputs.
 pub const DOC_LIMITS: DocLimits =
-    DocLimits { max_text_units: 1 << 16, max_string_units: 1 << 12, max_work: 1 << 12, string_units_per_byte: 1 };
+    DocLimits { max_text_units: 1 << 16, max_string_units: 1 << 12, max_work: 1 << 12, string_units_per_byte: 1, max_nesting: 8 };
 
 pub fn doc_convert(data: &[u8]) {
     let (sel, file) = match data.split_first() {
@@ -46,6 +49,7 @@ pub fn doc_convert(data: &[u8]) {
         }
     }
     let Ok(streams) = DocStreams::open(file) else { return };
+    reader_facets(&streams, &limits);
     let Ok(pt) = read_piece_table(&streams.fib, &streams.table) else { return };
     match decode_text(&pt, &streams.word, total_cp(&streams.fib, &pt), &limits) {
         Ok(t) => assert!(t.len() as u64 <= limits.max_text_units),
@@ -113,6 +117,35 @@ pub fn doc_convert(data: &[u8]) {
         Err(e) => panic!("{e}"),
     }
     black_box(read_lists(&streams.fib, &streams.table));
+}
+
+/// The reader assembly over the streams: the stories, the PLCs, the strings, the drawings and the pictures.
+fn reader_facets(streams: &DocStreams, limits: &DocLimits) {
+    let Ok(rd) = DocReader::new(streams, limits) else { return };
+    black_box(rd.header_stories());
+    black_box(rd.notes(NoteKind::Footnote));
+    black_box(rd.notes(NoteKind::Endnote));
+    black_box(rd.comments().is_ok());
+    black_box(rd.bookmarks().is_ok());
+    black_box(rd.revision_authors().is_ok());
+    for hdr in [false, true] {
+        for f in rd.fspas(hdr) {
+            if let Some(shape) = rd.shape(i64::from(f.spid), hdr) {
+                black_box(pic_fx_of(Some(shape)));
+                black_box(shape_blip(&rd, shape).is_some());
+            }
+        }
+        black_box(rd.textboxes(hdr));
+    }
+    for cp in [0, 1, 7, 100, i64::from(u32::MAX)] {
+        black_box(rd.paragraph_at(cp, i64::from(rd.fib.ccp_text)).end);
+    }
+    for run in rd.chpx.iter().take(64) {
+        let fcv = i32::from_le_bytes(run.fc_start.to_le_bytes());
+        black_box(read_inline_picture(&rd, fcv).is_some());
+        black_box(ff_data_xml(rd.data, fcv));
+    }
+    black_box(rd.data_records(0, u64::from(u32::MAX)).len());
 }
 
 /// Seeds: the 11 fixtures (both limit selectors) and one in twenty of the mutations of the parity capture.

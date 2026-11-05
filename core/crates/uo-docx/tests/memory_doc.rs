@@ -384,3 +384,139 @@ fn m3_f5_budgets() {
     }
     assert!(worst <= 15.0, "the emitters allocate {worst:.1} x the input (budget 15)");
 }
+
+// ───────────────────────── F4: the reader assembly; F6: the body and drawing writer ─────────────────────────
+
+use uo_docx::doc::docx_writer::ConvertOptions;
+use uo_docx::doc::formfields::ff_data_xml;
+use uo_docx::doc::pictures::{pic_fx_of, read_inline_picture, shape_blip};
+use uo_docx::doc::reader::{DocReader, NoteKind};
+use uo_docx::doc::{DocError, convert_doc_to_docx_with};
+
+/// Every operation of the reader assembly over a file: the stories, the PLCs and strings, the drawings, the
+/// pictures and the form-field data. Returns a number so nothing is optimised away.
+fn reader_ops(bytes: &[u8]) -> usize {
+    let Ok(streams) = DocStreams::open(bytes) else { return 0 };
+    let Ok(rd) = DocReader::new(&streams, &DocLimits::DEFAULT) else { return 1 };
+    let mut n = rd.header_stories().len() + rd.notes(NoteKind::Footnote).len() + rd.notes(NoteKind::Endnote).len();
+    n += rd.comments().map_or(0, |c| c.len()) + rd.bookmarks().map_or(0, |b| b.len()) + rd.revision_authors().map_or(0, |a| a.len());
+    for hdr in [false, true] {
+        for f in rd.fspas(hdr) {
+            if let Some(shape) = rd.shape(i64::from(f.spid), hdr) {
+                n += usize::from(pic_fx_of(Some(shape)).is_some()) + usize::from(shape_blip(&rd, shape).is_some());
+            }
+        }
+        n += rd.textboxes(hdr).len();
+    }
+    for cp in [0, 1, 50, 5000] {
+        n += usize::try_from(rd.paragraph_at(cp, i64::from(rd.fib.ccp_text)).end).unwrap_or(0);
+    }
+    for run in &rd.chpx {
+        let fc = i32::from_le_bytes(run.fc_start.to_le_bytes());
+        n += usize::from(read_inline_picture(&rd, fc).is_some()) + ff_data_xml(rd.data, fc).map_or(0, |x| x.len());
+    }
+    n + rd.data_records(0, u64::MAX).len() + rd.sections.len() + rd.text.len()
+}
+
+#[test]
+fn m1_f4_reader() {
+    for (name, bytes) in doc_support::fixtures() {
+        let u = assert_no_leak(|| black_box(reader_ops(&bytes)));
+        eprintln!("M1 f4 {name}: {} B allocated, {} B peak, 0 B left", u.allocated, u.peak_above_start);
+    }
+    for (_, bytes) in doc_support::class_samples() {
+        assert_no_leak(|| black_box(reader_ops(&bytes)));
+    }
+    // the string-budget error path of the strings (comments, bookmarks) and of the constructor
+    let tight = DocLimits { max_string_units: 2, string_units_per_byte: 0, ..DocLimits::DEFAULT };
+    for (_, bytes) in doc_support::fixtures() {
+        assert_no_leak(|| {
+            let Ok(streams) = DocStreams::open(&bytes) else { return 0 };
+            match DocReader::new(&streams, &tight) {
+                Ok(rd) => rd.comments().map_or(0, |c| c.len()) + rd.bookmarks().map_or(0, |b| b.len()),
+                Err(_) => 1,
+            }
+        });
+    }
+}
+
+#[test]
+fn m2_f4_soak_flat() {
+    let fixtures = doc_support::fixtures();
+    let series = soak(1000, 50, |i| {
+        black_box(reader_ops(&fixtures[i % fixtures.len()].1));
+    });
+    assert_flat(&series, 2, 0);
+}
+
+#[test]
+fn m3_f4_budgets() {
+    let mut worst = 0.0f64;
+    for (name, bytes) in doc_support::fixtures() {
+        let (n, u) = measure(|| reader_ops(&bytes));
+        black_box(n);
+        let ratio = u.allocated as f64 / bytes.len() as f64;
+        if ratio > worst {
+            worst = ratio;
+        }
+        eprintln!("M3 f4 {name}: {} B allocated = {ratio:.1} x the input ({} B), peak {} B", u.allocated, bytes.len(), u.peak_above_start);
+    }
+    assert!(worst <= 20.0, "the reader allocates {worst:.1} x the input (budget 20)");
+}
+
+/// The whole conversion: the package of a file, with and without `docProps`, and through every limit.
+fn convert(bytes: &[u8], limits: &DocLimits) -> usize {
+    let a = convert_doc_to_docx(bytes, limits).map_or(0, |z| z.len());
+    let b = convert_doc_to_docx_with(bytes, limits, &ConvertOptions { doc_props: false }).map_or(0, |z| z.len());
+    a + b
+}
+
+#[test]
+fn m1_f6_converter() {
+    let tight_work = DocLimits { max_work: 40, ..DocLimits::DEFAULT };
+    let tight_nest = DocLimits { max_nesting: 0, ..DocLimits::DEFAULT };
+    let tight_text = DocLimits { max_text_units: 16, ..DocLimits::DEFAULT };
+    let small =
+        DocLimits { max_text_units: 1 << 16, max_string_units: 1 << 12, max_work: 1 << 12, string_units_per_byte: 1, max_nesting: 8 };
+    for (name, bytes) in doc_support::fixtures() {
+        let u = assert_no_leak(|| black_box(convert(&bytes, &DocLimits::DEFAULT)));
+        eprintln!("M1 f6 {name}: {} B allocated, {} B peak, 0 B left (input {} B)", u.allocated, u.peak_above_start, bytes.len());
+        for limits in [&tight_work, &tight_nest, &tight_text, &small] {
+            assert_no_leak(|| black_box(convert(&bytes, limits)));
+        }
+    }
+    for (_, bytes) in doc_support::class_samples() {
+        assert_no_leak(|| black_box(convert(&bytes, &DocLimits::DEFAULT)));
+    }
+    // the work limit answers `Limit { Work }` on a fixture with a body
+    let (_, bytes) = &doc_support::fixtures()[0];
+    assert!(matches!(
+        convert_doc_to_docx(bytes, &tight_work),
+        Err(DocError::Limit { kind: DocLimitKind::Work, .. }) | Err(DocError::Limit { kind: DocLimitKind::TextUnits, .. })
+    ));
+}
+
+#[test]
+fn m2_f6_soak_flat() {
+    let fixtures = doc_support::fixtures();
+    let series = soak(1000, 50, |i| {
+        black_box(convert(&fixtures[i % fixtures.len()].1, &DocLimits::DEFAULT));
+    });
+    assert_flat(&series, 2, 0);
+}
+
+/// M3: the bytes of the conversion per fixture as a multiple of the input.
+#[test]
+fn m3_f6_budgets() {
+    let mut worst = 0.0f64;
+    for (name, bytes) in doc_support::fixtures() {
+        let (n, u) = measure(|| convert_doc_to_docx(&bytes, &DocLimits::DEFAULT).map_or(0, |z| z.len()));
+        black_box(n);
+        let ratio = u.allocated as f64 / bytes.len() as f64;
+        if ratio > worst {
+            worst = ratio;
+        }
+        eprintln!("M3 f6 {name}: {} B allocated = {ratio:.1} x the input ({} B), peak {} B", u.allocated, bytes.len(), u.peak_above_start);
+    }
+    assert!(worst <= 40.0, "the converter allocates {worst:.1} x the input (budget 40)");
+}

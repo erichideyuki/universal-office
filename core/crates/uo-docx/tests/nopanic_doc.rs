@@ -15,13 +15,51 @@ use doc_support::Rng;
 use uo_docx::doc::bytes::ByteReader;
 use uo_docx::doc::fkp::{read_chpx_runs, read_papx_runs, read_plc, run_at, run_index_from};
 use uo_docx::doc::fonts::read_fonts;
+use uo_docx::doc::formfields::ff_data_xml;
 use uo_docx::doc::lists::read_lists;
 use uo_docx::doc::open::DocStreams;
+use uo_docx::doc::pictures::{pic_fx_of, read_inline_picture, shape_blip};
+use uo_docx::doc::reader::{DocReader, NoteKind};
 use uo_docx::doc::sprm::prls;
 use uo_docx::doc::stsh::{StyleResolver, read_stsh};
 use uo_docx::doc::text::{decode_text, fc_of_cp, piece_at, read_piece_table, total_cp};
 use uo_docx::doc::xmlw::{esc_attr_units, esc_text_units};
 use uo_docx::doc::{DocError, DocLimitKind, DocLimits, convert_doc_to_docx, is_word_binary};
+
+/// The reader assembly (F4) over a file: every operation, the string budget as a value.
+fn reader_pipeline(bytes: &[u8], limits: &DocLimits) -> usize {
+    let Ok(streams) = DocStreams::open(bytes) else { return 0 };
+    let rd = match DocReader::new(&streams, limits) {
+        Ok(rd) => rd,
+        Err(DocError::Limit { .. } | DocError::NoClx | DocError::NoPcdt | DocError::EmptyPieceTable) => return 1,
+        Err(e) => panic!("unexpected {e}"),
+    };
+    let mut n = rd.header_stories().len() + rd.notes(NoteKind::Footnote).len() + rd.notes(NoteKind::Endnote).len();
+    for r in [rd.comments().map(|c| c.len()), rd.bookmarks().map(|b| b.len()), rd.revision_authors().map(|a| a.len())] {
+        match r {
+            Ok(k) => n += k,
+            Err(DocError::Limit { kind: DocLimitKind::StringUnits, .. }) => {}
+            Err(e) => panic!("unexpected {e}"),
+        }
+    }
+    for hdr in [false, true] {
+        for f in rd.fspas(hdr) {
+            if let Some(shape) = rd.shape(i64::from(f.spid), hdr) {
+                n += usize::from(pic_fx_of(Some(shape)).is_some()) + usize::from(shape_blip(&rd, shape).is_some());
+            }
+        }
+        n += rd.textboxes(hdr).len();
+    }
+    for cp in [-1, 0, 3, 77, i64::from(u32::MAX), i64::MAX] {
+        n += usize::from(rd.paragraph_at(cp, i64::from(rd.fib.ccp_text)).run.is_some());
+    }
+    for run in rd.chpx.iter().chain(rd.papx.iter()).take(200) {
+        let fc = i32::from_le_bytes(run.fc_start.to_le_bytes());
+        n += usize::from(read_inline_picture(&rd, fc).is_some()) + ff_data_xml(rd.data, fc).map_or(0, |x| x.len());
+        n += usize::from(read_inline_picture(&rd, -fc).is_some());
+    }
+    n + rd.data_records(0, u64::MAX).len() + rd.data_records(u64::MAX, 3).len()
+}
 
 /// The reader pipeline; a text limit must come back as a value.
 fn pipeline(bytes: &[u8], limits: &DocLimits) -> usize {
@@ -117,7 +155,7 @@ fn mutated_fixtures_never_panic() {
                     }
                 }
             }
-            total += pipeline(&b, &limits);
+            total += pipeline(&b, &limits) + reader_pipeline(&b, &limits);
             black_box(is_word_binary(&b));
             black_box(convert_doc_to_docx(&b, &DocLimits::DEFAULT).is_err());
         }
@@ -132,7 +170,11 @@ fn the_capture_mutations_with_tight_limits() {
     let mut n = 0;
     for rec in cap.records() {
         if rec.key.starts_with("mut/") {
-            black_box(pipeline(&doc_support::input_bytes(rec), &tight));
+            let bytes = doc_support::input_bytes(rec);
+            black_box(pipeline(&bytes, &tight));
+            black_box(reader_pipeline(&bytes, &tight));
+            black_box(convert_doc_to_docx(&bytes, &tight).is_ok());
+            black_box(convert_doc_to_docx(&bytes, &DocLimits::DEFAULT).is_ok());
             n += 1;
         }
     }
