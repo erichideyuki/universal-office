@@ -1,0 +1,7 @@
+# Parity capture of frontier E of uo-render (canvas hints): written by core/crates/uo-render/tools/capture-e.mjs, replayed by tests/e_hints.rs.
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+glyphs.kern	v=294961:575bde8b4c83d8ce1df7003d9d95edaf	stats=strings=6901;batched=1545;quads=9169
+glyphs.nokern	v=365923:a11f036f7ef065296be2cc322eb0c305	stats=strings=9650;batched=0;quads=12151
+fxrun	v=6127:113259c08e5e7fc1a98ffe0623c6cc71	stats=grads=395
+shapes	v=654414:dd10f7694b514f1f9e2a58cc8fccba23	stats=painted=1967;grads=809;fx=493;begin=2770
+shapes.fx	v=187445:38ada7a0cb288e6ddfb221c6ff7c7e78

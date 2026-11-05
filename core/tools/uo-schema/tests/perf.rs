@@ -39,6 +39,8 @@ fn page(glyphs: usize, runs: usize) -> Page {
             remap: None,
             outlines: None,
             r#box: None,
+            fx_fill_geom: None,
+            fx_outline_geom: None,
         }));
     }
     Page { w: 12240.0, h: 15840.0, background: None, background_fill: None, background_show: false, items, app: Vec::new() }

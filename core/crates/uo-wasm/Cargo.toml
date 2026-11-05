@@ -41,7 +41,18 @@ dml-memtest = ["dep:uo-drawingml", "count"]
 # captures inside the module (the replay functions of the native parity tests, included with #[path]); never shipped
 dml-selftest = ["dep:uo-drawingml", "dep:uo-jsnum", "dep:uo-testkit"]
 
+# the canvas paint exports of uo-render (frontier E): the view handle, the page encoder and the
+# item-addressed paint operations (src/render.rs). The shipped module enables it with the layout
+render = ["dep:uo-render", "dep:uo-codec", "dep:uo-drawingml", "dep:uo-jsnum", "dep:uo-fonts"]
+
+# test-only fixture views for the render exports (tests/render_paint.test.mjs, tests/render_boundary.test.mjs): a text
+# page with effects, a pattern, the rectangular gradient, blip tiles, a picture look and page fills built inside
+# the module from an open font; never shipped
+render-fixture = ["render", "count"]
+
 [dependencies]
+uo-render = { path = "../uo-render", optional = true }
+uo-codec = { path = "../uo-codec", optional = true }
 uo-alloc = { path = "../uo-alloc", optional = true }
 uo-opc = { path = "../uo-opc", optional = true }
 uo-fonts = { path = "../uo-fonts", optional = true }

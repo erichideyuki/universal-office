@@ -791,6 +791,170 @@ a clippy rewrite of `fo >= 75 || fo < 0` into a negated range changed the NaN fo
 port bug: a NaN-size layer, decision G-D9, a corpus change). Memory/no-panic: 2 test-design fixes (a `Vec` kept across `assert_no_leak`, an
 off-by-integer `k = 0.5` case), none in the library.
 
+## Milestone 1 — frontier E (canvas encoder and wasm paint exports)
+
+Hybrid mode, one Sonnet session, 2026-11-05. Scope: §3.3 precomputation, the app-section hook, the page encoder, and the wasm paint
+exports (§5), with parity facets against the frozen TS where a TS counterpart exists. Files: `uo-render/src/encode/{mod,hints,to_wire,
+decode}.rs`, `src/view.rs`, `tests/e_{hints,roundtrip,memory,nopanic}.rs` (+ `tests/e_support/`, `tests/captures/e_hints.capture`),
+`tools/capture-e.mjs`; `uo-wasm/src/{render,render_fixture}.rs`, `js/render.mjs`, `tests/render_{native,unsafe}.rs`,
+`tests/render_{paint,boundary,ts_codec}.test.mjs`; `core/schema/render.uos` and its generated files (E-D1). The `codec` module of
+uo-render was already declared when this session began.
+
+### Built (ported / new)
+
+| What | Where | Source |
+|---|---|---|
+| Page encoder `encode_page_for_canvas(page, res, app, sent, out)` (+ `_with(CanvasOptions)`): items, resources and the hints into the generated message; per-view `DeltaMark`; `AppSection` hook; strict errors (`BadId`, `BadSpan`, `Codec`), `out` and the mark untouched on error | `encode/mod.rs`, `to_wire.rs` | new (§3.2, §3.4, §6) |
+| Glyph hints: `batchable`, the batch `joins` (the `paintGlyphs` loop simulated, outline glyphs `continue`, NaN does not break), the F0xx `remap`, `outlines` of `gid` glyphs (font units, empty outlines kept) | `encode/hints.rs::glyph_hints` | canvas.ts 315–392 (ported) |
+| Fx-run hints: `box` (`run_box`) and the gradient geometry of a gradient text fill / outline fill (`fx_fill_geom`, `fx_outline_geom`) | `hints.rs::fx_hints` | canvas.ts 289–300 (ported) |
+| Shape hints: `parts` in canvas twips (`shape_parts(CanvasTwips)`), `grad_geom` (`path_bounds` of all parts + `gradient_geometry`), `grad_samples` (`gradient_samples(…, 64)`), the same branch conditions as `paintShape` | `hints.rs::shape_hints` | canvas.ts 427–510 (ported) |
+| Inverse `decode_page(buf, &mut DecodeTables, limits) -> DecodedPage` (Rust `Page` + `Resources` from a message; symbol dedup map; atomic on error) | `encode/decode.rs` | new (§6 "tests, fuzz, tools"; R-P2c bridge) |
+| `RenderView`: pages + resources + encoder mark + app sections; `push_message`, `encode_page`, `set_face_bytes`, `set_image_bytes`; item-addressed `fx_layers(ppt)`, `pattern_raster` (px 15, k 1), `rect_gradient` (ppu 2), `blip_tiles` (emu 1/635), `page_fill_tile_tw`, `page_fill_raster`, `picture_bounds` (`Painter::Canvas`), `picture_subs` | `view.rs` | new (§5) |
+| Wasm exports (C ABI, feature `render`): `UoRenderView` and `UoBuf` handles, 20 `uo_render_*`/`uo_buf_*` functions, `colored_mask` (`ChannelStore::Clamp`) and `dash` over raw buffers; result layouts and status codes in the module doc of `src/render.rs` | `uo-wasm/src/render.rs`, `js/render.mjs` (JS handles with `free()` + `FinalizationRegistry`, decoders) | new |
+| Test fixtures built inside the module (feature `render-fixture`, never shipped): `uo_render_fixture(0)` one rectangle, `(1)` a 24 pt fx run, `a:pattFill`, rectangular gradient, tiled blip, picture look, shape with effects, axial gradient, two page fills | `uo-wasm/src/render_fixture.rs` | new |
+
+### Evidence
+
+**Parity (R-P4 slice, the frozen `paintItems` as the oracle).** `tools/capture-e.mjs` runs the real `paintItems` of the built `dist`
+(`UO_TS_ROOT`) with a recording context; `tests/e_hints.rs` encodes the same generated items (the testkit `Rng`, mirrored pools),
+decodes the message with the generated codec and replays the painter's decisions from the hints alone through
+`tests/e_support/shell.rs` — a transcription of the part of `paintGlyphs`/`paintShape` that reads the hints, i.e. **the contract the TS shell
+(frontier D) implements**. Digest of every drawing call (name, f64 bits, strings by code point):
+
+| Facet | Cases | Result |
+|---|---|---|
+| `glyphs.kern` (`'fontKerning' in ctx`, batches) | 1,500 runs (4 open faces, scaleX / synthetic italic / bold, F0xx symbols, ZWNJ, CJK, astral, gid outlines, NaN jitter) | equal; 6,901 `fillText` of which 1,545 batched, 9,169 `quadraticCurveTo` |
+| `glyphs.nokern` (no `fontKerning`: every glyph alone, remap and outlines still apply) | the same 1,500 | equal; 9,650 `fillText` |
+| `fxrun` (`runBox` + `gradientGeometry(gradOf(fill), box, …)` for fill and outline fill) | 800 fx runs | equal; 395 gradient geometries |
+| `shapes` (parts, gradient geometry, 64 samples, shadow, stroke dash) | 2,007 shapes of 2,500 (13 geoms incl. custom paths with arcs, flips, rotation, lines, NaN/∞ coordinates) | equal; 1,967 of the 2,500 paint something, 809 with a gradient |
+| `shapes.fx` (the local item of the effects path) | the other 493 shapes | equal |
+
+**9 facets equal, 0 mismatches, 0 accepted, 0 not replayed**; the test is sensitive (changing the `0.25` join tolerance to `0.3` gives 2 mismatches).
+Platform: captured with Node v24.15.0 (V8 13.6) on win32-x64 — see E-D8.
+
+**Round trip (R-P2).** `tests/e_roundtrip.rs`: 60 seeds × a page that uses every item kind and every optional field with hostile numbers
+(`-0`, NaN, ±∞, 1e308): Rust page → `encode_page_for_canvas` → `decode_page` → `Debug`-equal page and equal resources (symbols, text effects, page
+fills, custom paths, face and image metadata); pages pulled in the order 3, 0, 4, 1, 2 send exactly the entries up to the highest id used so far
+(symbol watermark 4, 4, 5, 5, 5); a new generation restarts the tables; the app section travels opaque (also 259 arbitrary bytes); `debug_text` off
+sends no text; errors leave the buffer and the mark as they were; a stale schema hash is `VersionMismatch`. **R-P2b for the encoder**
+(`uo-wasm/tests/render_ts_codec.test.mjs`, Node): the Rust-encoded first message of the rich fixture → generated TS `decodePage` → generated TS
+`encodePage` is **byte-identical**, and the hints arrive as plain objects with the tree.ts names. `cargo test -p uo-schema` (generator check,
+codec suites, TS cross-checks after the schema change) green.
+
+**Wasm exports vs native.** `uo-wasm/tests/render_native.rs` calls the exports natively over the fixtures, checks the pattern result against the
+helper called directly and prints the FNV-1a 32 checksums that `render_paint.test.mjs` pins: the same 12 checksums in Node and in WebKit —
+**the wasm bytes equal the native bytes** for `fx_layers` (64,024 B), `pattern` (53,640 B), `rect_gradient` (57,608 B), `blip_tiles`,
+`page_fill_tile_tw`, `page_fill_raster` (gradient 3,145,736 B, pattern 264 B), `picture_bounds` ×2, `picture_subs`, `encode_page` ×2. Refusal codes
+(no page, no item, wrong item, missing font, not a font, stale hash, truncated message, null handle) are tested at both ends. A message pushed into
+an empty view (the TS-adapter path) paints the same bytes once the font is attached.
+
+**Wasm validation.** `wasm-tools validate --features=-all,wasm1,mutable-global,saturating-float-to-int,sign-extension,reference-types,multi-value,bulk-memory`
+(the CI line): valid for the default build (15,528 B, unchanged — `render` is a feature, E-D7), `--features render` (578,821 B) and
+`--features count,render-fixture` (983,005 B). **WebKit 26.5 (Playwright) runs both `.test.mjs` files of this frontier: 13 ok, 1 skipped (the
+finalizer test needs `gc()`), 0 failed** on this machine; Node: 16 of 16 (paint 7, boundary 7, ts codec 2).
+
+### Memory and no-panic
+
+- **M1** (`tests/e_memory.rs`, `uo_alloc::assert_no_leak`): encode + decode of the full page (font face attached, `debug_text` on and off), of a 40-run
+  text page with hints, of 60 shapes with parts and samples, every error path (bad id, one in seven prefixes and seven flipped bytes of a real message)
+  return the live bytes exactly. `uo-wasm/tests/render_native.rs::m1_every_export_returns_the_live_bytes`: every export, ok and refused, including the
+  consumed input buffers (`push_message` ×3 with a table gap, `set_app`, `set_face_bytes`, `colored_mask`).
+- **M2**: native soak 1,000 × (encode + decode of a 30-run + 30-shape page), sampled every 50, flat with tolerance 0 B; 500 iterations across
+  generations (3 pages each) flat at 0 B. Wasm (Node and WebKit): 200 iterations of `encode_page` + every paint export on the rich fixture —
+  `memory.buffer.byteLength` identical after the 2nd round (12.8 MiB in Node, 9.2 MiB in WebKit), live bytes identical every round
+  (799,422 B while the rich view is open, **0 B** after `free()`).
+- **M3** (release, bytes allocated / peak above start): text page of 3,000 glyphs in 60 runs — in memory 54,272 B, **encoded 29,473 B = 0.54 ×** (budget
+  1.5 ×), encode 225,722 / 144,554 B, decode 219,130 / 164,366 B; one run of 10^5 glyphs — 1,573,184 B, encoded 912,777 B (**0.58 ×**), encode
+  4,301,098 / 3,052,242 B, decode 5,149,586 / 3,575,910 B. The rasters' budgets are frontier G's (output + 8 KiB; 64 B/px for the layers).
+- **M4** (`render_boundary.test.mjs`, Node and WebKit): 10,000 × (create view, encode a page, free result, free view) with `free()`; 10,000 views
+  and results abandoned and released by the `FinalizationRegistry` (Node `--expose-gc`; native live bytes return **exactly**); 10,000 × (new view,
+  push a good message, `set_app`, three refused inputs) and 1,000 buffers given to a null handle: consumed, 0 B left; 1,000 × the raw helpers. A
+  second `free()` is a no-op.
+- **M6**: the new `unsafe` is in `uo-wasm/src/render.rs` (SAFETY comments; `take_bytes` is the one place that rebuilds a `Vec` from a JS buffer).
+  `tests/render_unsafe.rs` (no font, no raster) passes under **Miri** (`cargo +nightly miri test -p uo-wasm --features render-fixture --test render_unsafe
+  --target x86_64-unknown-linux-gnu`, which also reports leaks). uo-render has no `unsafe`.
+- **No-panic** (`tests/e_nopanic.rs`, 9 s debug): 400 pages with random f64 bit patterns in every number (hostile shapes, custom paths with arcs,
+  gradients, runs with code points up to `u32::MAX`, gids from `u32`), unregistered faces, malformed spans and ids (all refused), 6 × 1,500 mutated real
+  messages through `decode_page` and 3,000 arbitrary byte strings, 60 hostile views through every view operation (caps lowered to 2^22 px), one
+  run of 10^5 glyphs with hints.
+
+Gates run: `cargo test -p uo-render --all-features` (debug and release) and `cargo test -p uo-wasm --all-features` green; `cargo clippy -p uo-render
+-p uo-wasm --all-features --tests --no-deps -- -D warnings` clean natively and `--lib --target wasm32-unknown-unknown` (also with
+`count,render-fixture`); `core/tests/float-casts.sh` exit 0; `core/tests/grep-bans.sh` clean; `rustfmt --check` on the files above clean; `cargo run -p
+uo-schema -- check` up to date. No `unwrap`, `expect`, `panic!` or panicking index in `src/` (the generated files aside).
+
+### Declarations (every decision outside the plan or the TS semantics)
+
+| # | Decision | Why |
+|---|---|---|
+| E-D1 | **Schema change**: `GlyphRun` gains `fx_fill_geom` / `fx_outline_geom` (`GradGeom?`, TS `fxFillGeom`/`fxOutlineGeom`); `render.uos` regenerated (`SCHEMA_HASH` changes; `js/gen/render*.ts` and `generated*.rs` are the regenerated files); `core/tools/uo-schema/tests/perf.rs` gets the two `None` fields (outside the allowed paths, additive) | §3.3 lists only the run box, but `paintGlyphsFx` calls `gradientGeometry(gradOf(f), box, …)` for a gradient text fill and outline, and the shell has no `geometry.ts` after the switch |
+| E-D2 | A shape with effects (`fx` set and geom not `line`) gets the hints of the **local item** the canvas builds (`x = y = 0`, `rot = 0`, no `fx`/`shadow`, canvas.ts:430); `RenderView::pattern_raster`/`blip_tiles` use the same local frame | the canvas paints the body through `paintShapeEffects(…, drawBody)` → `paintShape(local)`; the parts of the placed item are never drawn. The shell must not draw a shape's own `shadow` in that path (the TS drops it) |
+| E-D3 | Shape hints are skipped (empty `parts`) when `paintShape` returns early (no valid fill/stroke and no gradient/pattern/blip) unless the shape has effects; `GeomEval::Drawingml` shapes get no parts (the Slides evaluator is uo-drawingml's, run by the painter that needs it) | bytes; G-D13 |
+| E-D4 | Resource deltas go **up to the highest id the page uses** (plus what those entries use), not "all unsent": pages pulled in any order are decodable, a page carries only what it needs | §3.2 "a page carries only the resources the view has not sent" with out-of-order pulls |
+| E-D5 | `AppSection` is `fn write(&self, out: &mut Vec<u8>)` (impls for `[u8]`, `Vec<u8>`, `NoApp`) and the generation lives in the `DeltaMark`; the page index is not in the header (the shell knows what it pulled) | the codec header has no page index; the simplest hook that lets the layout encode its section on demand |
+| E-D6 | Added beyond the plan: `encode::decode` (wire → Rust types), `RenderView`, and `push_message`/`set_face_bytes`/`set_image_bytes` | the paint exports need a view; the TS adapter (R-P2c) and V need to paint TS-produced layouts through the same exports. The wire loses `has_bytes`, `upem`, `byte_len`, `has_svg`, the hints and the glyph text (re-encoding a decoded view differs in those) |
+| E-D7 | The wasm exports are behind the `render` feature (not default: the shipped module enables it together with the layout bindings); `render-fixture` (implies `count`) is test only | the default module stays 15,528 B for the existing tests; the render exports add 563 KB (fonts + drawingml code) |
+| E-D8 | `capture-e` was taken on **win32-x64, Node v24.15.0 (V8 13.6)**, not in WSL like G's: WSL here has only Node 22 and installing Node is a download. `capture_e()` requires V8 13.6 / x64 / Node v24.15.0 but no OS or glibc. The pow-dependent facets (`gradientSamples`) compared equal in G between win32 and linux (V8 runs its own `ieee754::pow`) | no new download; to be re-taken in WSL when Node 24 is there |
+| E-D9 | Hints are computed only for a face with a parsed font (`FaceRes.face`); `joins` only for plain runs (`scaleX === 1`, no synthetic italic) and only when some glyph joins; `remap` and `outlines` do not depend on batching (the shell's fallback without `fontKerning` needs them) | the TS reads `it.face.font`, which a face without bytes (the TS adapter, decoders) does not have; same bytes the shell would draw |
+| E-D10 | `upem` of a face is `units_per_em || 1000` (1000 for a face without font) | canvas.ts:333 |
+| E-D11 | The path span of a `Path` item is checked strictly (`BadSpan`), where `ItemList::cmds_of` would silently give an empty path | a corrupt producer list must not paint as empty |
+| E-D12 | `RenderView.limits` (`PaintLimits`) is per view; `uo_render_view_set_max_fx_px` lowers the effect-layer cap for a phone (a cap of 1,000 px answers none or status 4 without allocating: tested) | G-D3 |
+| E-D13 | The shell-side contract for batching: `joins[i]` true = glyph `i` is appended (ZWNJ + its raw `cp`) to the batch begun at the nearest earlier glyph with `joins` false; the first glyph of a batch is drawn with its `remap`ped cp and must be `batchable`; outline glyphs are drawn from `outlines` and are never batch starts | what `e_support/shell.rs` implements and the facets prove |
+
+### Not done
+
+- **The uo-drawingml mask exports of RQ12** (`presetOutline`, `flattenPath`, `fillPolygons`, shadows, glow, soft edge, `reflectionAlpha`,
+  `gaussianBlur`, `shadeBevel`, `morph` over `Float32Array`/`Uint8Array`): they exist natively in uo-drawingml and in `dml-memtest` as test exports only;
+  the shell's `canvas-picture.ts` composition (`buildLayer`, `paintShapeEffects`) needs them as production exports. Only `picture::*`
+  (`effect_bounds`, `shape_subs`, `colored_mask`, `dash`) are exported here.
+- The layout handle does not exist yet: `uo_render_view_new` + `push_message` / `adopt_view` stand in for it; the layout binding (another agent) should
+  own a `RenderView` and call `encode_page` (`set_app` for the Write section).
+- A TS oracle comparison of the *exports* (the frozen `patternRaster`/`rectGradientRaster`/`blipTiles`/`fxLayers`/page-fill functions run on the
+  same items in Node against the wasm bytes): the exports are thin calls of G's helpers, which G proved against the TS (63 facets), and the wasm
+  bytes equal the native bytes here; a direct wasm × TS test is frontier V's.
+- CI: no job runs the new tests yet (`.github/workflows/rust-core.yml` is being edited by other frontiers). Lines to add: `cargo build -p uo-wasm
+  --features count,render-fixture --target wasm32-unknown-unknown --profile wasm`, then `node --expose-gc --test crates/uo-wasm/tests/render_{paint,boundary,ts_codec}.test.mjs`,
+  the WebKit runner on the first two, `cargo test -p uo-wasm --features render-fixture`, and the Miri line of `render_unsafe`.
+- Real Safari 15 / iOS 15 (BrowserStack) is not run; only the feature-set validation and WebKit 26.5.
+- No fuzz target was added (`render_decode`/`render_roundtrip` of §10 are covered by the codec fuzz targets and the mutation tests of `e_nopanic.rs`).
+
+### What D and V need
+
+**D (TS shell).**
+- Decode with the regenerated `js/gen/render.ts` (`decodePage(buf, tables)`); `tables.faces[i].upem` is the font's units per em; `sym` fields are strings already.
+- `paintGlyphs` on a decoded run: `outlines` (by `index`, font units: `x' = g.x + c.x·gx + k·c.y·s`, `y' = it.y − c.y·s`, `s = sizePt·20/upem`, `gx = s·sx`, `k = synthItalic ? 0.21 : 0`),
+  `remap` (the cp for the glyph at `index`; applies to batch starts only), `joins` (only when `'fontKerning' in ctx`; a run without `joins` draws glyph by glyph). `e_support/shell.rs` is
+  the reference transcription (line by line); its draw-call log equals the frozen painter's.
+- `paintShape`: draw `parts` (`cmds`, `fill`, `stroke`, `evenOdd`) instead of calling the geometry functions; for a gradient use `gradGeom`
+  (`axial {x0,y0,x1,y1}` | `radial {x0,y0,r}`) and the 64 `gradSamples` RGB triples (`addColorStop(i / 63, env.color(hex2 hex2 hex2))`); the pattern, rectangular-gradient
+  and blip branches call the `pattern` / `rectGradient` / `blipTiles` exports with `(page, item)`. For a shape with `fx`, `paintShapeEffects` must paint the body with the
+  LOCAL item: the hints are already the local ones and the shape's own `shadow` is not drawn.
+- `paintGlyphsFx`: `box` and `fxFillGeom` / `fxOutlineGeom` replace `runBox`/`gradientGeometry`; the layer is `view.fxLayers(page, item, ppt)` (RGBA, straight alpha, `x0`,`y0` in twips,
+  `ppt` as the TS computes it; `null` for status 1; cache by (page, item, ppt) with a cap).
+- `paintPageBackground`: `pageFillTileTw(page, devicePxTw)`, then `pageFillRaster(page)` for gradient and pattern fills (null for image fills); cache by fill key in the shell (cap 32).
+- `js/render.mjs` is the handle layer (free + `FinalizationRegistry`, result decoders); port it to TS or wrap it. Image bytes: `image_bytes` is not in this frontier
+  (the layout handle will own it); `setImageBytes(image, bytes, naturalW, naturalH)` is what a decoded view needs for tiled blips.
+- Statuses: 0 ok, 1 nothing to paint (a valid answer), 4 limit (paint nothing, keep going), the rest are bugs of the caller.
+- The picture layer of `canvas-picture.ts` still needs the drawingml mask exports (Not done, first item).
+
+**V (painter parity).**
+- Use `e_support/shell.rs` and the recording context of `tools/capture-e.mjs` (same log encoding: name, args as `n`/`s`/`a`) as the starting point of the Node log comparison
+  for the whole `paintItems`; the glyph and shape slices are already equal on 1,500 + 2,500 generated items.
+- The TS-adapter path is ready: frozen TS `LayoutResult` → generated TS encoder (`encodePage(msg, state)` with `tables.faces/images/…` filled by the adapter) → `newView(g).pushMessage` →
+  `setFaceBytes`/`setImageBytes` → every export; then compare the export bytes with the frozen `patternRaster`, `rectGradientRaster`, `blipTiles`, `fxLayers`, `gradientTileRgba`,
+  `patternRgba` on the same items (Node), and Chromium pixels for the paths that read pixels back.
+- The wasm fixtures (`uo_render_fixture`) are the smoke inputs; the pinned checksums are in `render_paint.test.mjs`.
+
+### Process metrics
+
+| Stage | Agent (model) | Time | Tool calls |
+|---|---|---|---|
+| E | encoder + hints + decoder + view + wasm exports + parity capture + R-P2/M1–M4/no-panic + record (Sonnet, hybrid mode) | one session (wall time not recorded) | ≈ 170 (own tally) |
+
+Parity rounds: `e_hints` equal on the first replay (9 facets). Rework in the session: a 40-byte leak in my own test (a result handle not freed; none in the library),
+a `Path` span leniency found by my no-panic test (E-D11), `assert.throws` added to the WebKit shim, two test expectations (a NaN scale answers `none`; `set_face_bytes` parses before it looks the face up).
+No port bug was sent back by a verifier.
+
 ## Types (T)
 
 Frontier T, Opus, 2026-11-03, inside uo-docx-layout F0 (record there: "Milestone 1 — F0").

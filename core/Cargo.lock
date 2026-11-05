@@ -204,9 +204,11 @@ name = "uo-wasm"
 version = "0.10.0-dev"
 dependencies = [
  "uo-alloc",
+ "uo-codec",
  "uo-drawingml",
  "uo-fonts",
  "uo-jsnum",
  "uo-opc",
+ "uo-render",
  "uo-testkit",
 ]

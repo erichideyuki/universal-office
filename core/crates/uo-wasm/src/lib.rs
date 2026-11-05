@@ -7,6 +7,12 @@
 //! wasm a panic aborts the module (the `wasm` profile uses `panic = "abort"`), so code
 //! reached from these exports must not panic on input.
 
+#[cfg(feature = "render")]
+pub mod render;
+
+#[cfg(feature = "render-fixture")]
+pub mod render_fixture;
+
 #[cfg(feature = "jsnum-memtest")]
 pub mod jsnum_memtest;
 

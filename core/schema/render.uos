@@ -118,6 +118,11 @@ struct GlyphRun {
   outlines: list<GlyphOutline>? ts "outlines",
   /// runBox(it) of an fx run (canvas.ts:289)
   box: Box? ts "box",
+  /// gradientGeometry(gradOf(fx.fill), box, run box) of an fx run whose fill is a gradient
+  /// (canvas.ts paintOf; frontier E: the plan listed only the box, but the shell has no geometry.ts)
+  fx_fill_geom: GradGeom? ts "fxFillGeom",
+  /// the same for fx.outline.fill
+  fx_outline_geom: GradGeom? ts "fxOutlineGeom",
 }
 
 struct Glyph {
