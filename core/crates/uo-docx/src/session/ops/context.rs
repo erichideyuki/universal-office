@@ -70,7 +70,7 @@ pub enum ContextCmd {
 }
 
 /// The block index `bi` of a story as a table anchor index.
-fn table_index_of_block(s: &Story, bi: usize) -> Option<usize> {
+pub(crate) fn table_index_of_block(s: &Story, bi: usize) -> Option<usize> {
     let mut t = 0usize;
     for (i, b) in s.blocks().enumerate() {
         if let Block::Table(_) = b {
@@ -86,7 +86,7 @@ fn table_index_of_block(s: &Story, bi: usize) -> Option<usize> {
 }
 
 /// The index in its row of the cell `cellAtGrid` finds.
-fn cell_index(t: &Table, h: &CellHop) -> Option<(usize, usize)> {
+pub(crate) fn cell_index(t: &Table, h: &CellHop) -> Option<(usize, usize)> {
     let cell = cell_at_grid(t, f64::from(h.row), f64::from(h.col))?;
     let r = h.row as usize;
     let k = t.rows.get(r)?.cells.iter().position(|c| std::ptr::eq(c, cell))?;
@@ -94,7 +94,7 @@ fn cell_index(t: &Table, h: &CellHop) -> Option<(usize, usize)> {
 }
 
 /// `resolveCell(t, hops)`: the cell's story.
-fn resolve_cell<'a>(t: &'a Table, hops: &[CellHop]) -> Option<&'a Story> {
+pub(crate) fn resolve_cell<'a>(t: &'a Table, hops: &[CellHop]) -> Option<&'a Story> {
     let mut table = t;
     for (i, h) in hops.iter().enumerate() {
         let (r, k) = cell_index(table, h)?;
@@ -345,28 +345,61 @@ impl Session {
         true
     }
 
+    /// `enterCell(anchor, hops, caret)`: whether the cell is now edited (a cell that does not exist
+    /// or an editor in another context changes nothing). Shared with the notes family
+    /// (`placeBodyCaret`, D2b-F5).
+    pub(crate) fn enter_cell(&mut self, anchor: u32, hops: Vec<CellHop>, caret: Option<DocPosition>) -> bool {
+        let ok = self.doc.body.tables.get(anchor as usize).is_some_and(|a| resolve_cell(&a.table, &hops).is_some());
+        if !ok || !matches!(self.ctx, EditContext::Body | EditContext::Cell { .. }) {
+            return false;
+        }
+        self.exit_cell();
+        let hops: Arc<[CellHop]> = hops.into();
+        let probe = EditContext::Cell { anchor, hops: Arc::clone(&hops), saved: self.selection };
+        if story_of(&self.doc, &probe).is_some_and(|s| s.paras.is_empty()) {
+            // an empty cell gets a paragraph (the TS pushes it into the cell)
+            let p = empty_paragraph(self);
+            if let Some(st) = story_of_mut(&mut self.doc, &probe) {
+                st.push_paragraph(p);
+            }
+        }
+        self.float_sel = None;
+        self.ctx = probe;
+        self.selection = clamp_selection(self.paras(), Selection::caret(caret.unwrap_or_default()));
+        self.pending_props = None;
+        self.tx.events.push(Event::CellMode { active: true });
+        true
+    }
+
+    /// `enterCell(anchor, hops, caret)` without the change set (D2b-F3 enters cells from its own
+    /// commands): whether the cell is now edited.
+    pub(crate) fn enter_cell_hops(&mut self, anchor: u32, hops: Vec<CellHop>, caret: Option<DocPosition>) -> bool {
+        let ok = self.doc.body.tables.get(anchor as usize).is_some_and(|a| resolve_cell(&a.table, &hops).is_some());
+        if !ok || !matches!(self.ctx, EditContext::Body | EditContext::Cell { .. }) {
+            return false;
+        }
+        self.exit_cell();
+        let hops: Arc<[CellHop]> = hops.into();
+        let probe = EditContext::Cell { anchor, hops: Arc::clone(&hops), saved: self.selection };
+        if story_of(&self.doc, &probe).is_some_and(|s| s.paras.is_empty()) {
+            // an empty cell gets a paragraph (the TS pushes it into the cell)
+            let p = empty_paragraph(self);
+            if let Some(st) = story_of_mut(&mut self.doc, &probe) {
+                st.push_paragraph(p);
+            }
+        }
+        self.float_sel = None;
+        self.ctx = probe;
+        self.selection = clamp_selection(self.paras(), Selection::caret(caret.unwrap_or_default()));
+        self.pending_props = None;
+        self.tx.events.push(Event::CellMode { active: true });
+        true
+    }
+
     pub(crate) fn exec_context(&mut self, cmd: ContextCmd, _cx: &mut ExecCx<'_>) -> Result<Outcome, CommandError> {
         match cmd {
             ContextCmd::EnterCell { anchor, hops, caret } => {
-                let ok = self.doc.body.tables.get(anchor as usize).is_some_and(|a| resolve_cell(&a.table, &hops).is_some());
-                if !ok || !matches!(self.ctx, EditContext::Body | EditContext::Cell { .. }) {
-                    return Ok(Outcome::Done(self.change_set()));
-                }
-                self.exit_cell();
-                let hops: Arc<[CellHop]> = hops.into();
-                let probe = EditContext::Cell { anchor, hops: Arc::clone(&hops), saved: self.selection };
-                if story_of(&self.doc, &probe).is_some_and(|s| s.paras.is_empty()) {
-                    // an empty cell gets a paragraph (the TS pushes it into the cell)
-                    let p = empty_paragraph(self);
-                    if let Some(st) = story_of_mut(&mut self.doc, &probe) {
-                        st.push_paragraph(p);
-                    }
-                }
-                self.float_sel = None;
-                self.ctx = probe;
-                self.selection = clamp_selection(self.paras(), Selection::caret(caret.unwrap_or_default()));
-                self.pending_props = None;
-                self.tx.events.push(Event::CellMode { active: true });
+                self.enter_cell_hops(anchor, hops, caret);
                 Ok(Outcome::Done(self.change_set()))
             }
             ContextCmd::ExitCell => {

@@ -1,0 +1,1024 @@
+# D2b-F5 pure model rules: editor notes.ts (effectiveNoteOptions, notePropsOf, ensureNoteStyles, nextNoteId, convertNoteContent) over corpus notes, settings and styles
+# facets: init (nid, eff, sty), cv:<kind>:<id> (digest), props#i (op, ret)
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+props#0	op=endnote|x|lowerLetter|5|continuous|0	ret={"numFmt":"lowerLetter","numStart":5}
+props#1	op=footnote|sectEnd|lowerRoman|NaN|eachSect|0	ret={"numFmt":"lowerRoman","numStart":null,"numRestart":"eachSect"}
+props#2	op=footnote|pageBottom|lowerRoman|1e+300|x|1	ret={"numFmt":"lowerRoman","numStart":1e+300,"numRestart":"x"}
+props#3	op=endnote|pageBottom|decimal|5|eachSect|0	ret={"numFmt":"decimal","numStart":5,"numRestart":"eachSect"}
+props#4	op=endnote|sectEnd|lowerRoman|-3|continuous|1	ret={"pos":"sectEnd","numStart":-3}
+props#5	op=endnote|x|chicago|-3|eachPage|1	ret={"pos":"x","numFmt":"chicago","numStart":-3,"numRestart":"eachPage"}
+props#6	op=footnote|beneathText|lowerRoman|2|eachSect|1	ret={"pos":"beneathText","numFmt":"lowerRoman","numStart":2,"numRestart":"eachSect"}
+props#7	op=footnote|x|upperRoman|5|x|0	ret={"numFmt":"upperRoman","numStart":5,"numRestart":"x"}
+props#8	op=footnote|pageBottom|decimal|0|continuous|0	ret={"numStart":0}
+props#9	op=footnote|pageBottom|upperRoman|5|eachSect|0	ret={"numFmt":"upperRoman","numStart":5,"numRestart":"eachSect"}
+props#10	op=footnote|docEnd||NaN|x|1	ret={"pos":"docEnd","numFmt":"","numStart":null,"numRestart":"x"}
+props#11	op=endnote|sectEnd|chicago|5|eachPage|0	ret={"numFmt":"chicago","numStart":5,"numRestart":"eachPage"}
+props#12	op=footnote|pageBottom|chicago|1|continuous|1	ret={"numFmt":"chicago"}
+props#13	op=footnote|sectEnd|decimal|NaN|continuous|1	ret={"pos":"sectEnd","numStart":null}
+props#14	op=endnote|sectEnd|upperRoman|Infinity|x|0	ret={"numFmt":"upperRoman","numStart":null,"numRestart":"x"}
+props#15	op=endnote|beneathText|lowerRoman|NaN|continuous|1	ret={"pos":"beneathText","numStart":null}
+props#16	op=footnote|beneathText|upperRoman|5|eachPage|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":5,"numRestart":"eachPage"}
+props#17	op=footnote|docEnd|lowerRoman|-3|x|1	ret={"pos":"docEnd","numFmt":"lowerRoman","numStart":-3,"numRestart":"x"}
+props#18	op=footnote|x|decimal|2.5|continuous|1	ret={"pos":"x","numStart":2.5}
+props#19	op=endnote|sectEnd||2.5|eachSect|0	ret={"numFmt":"","numStart":2.5,"numRestart":"eachSect"}
+props#20	op=endnote|docEnd|upperRoman|1e+300|eachPage|0	ret={"numFmt":"upperRoman","numStart":1e+300,"numRestart":"eachPage"}
+props#21	op=footnote|x|lowerLetter|2|continuous|0	ret={"numFmt":"lowerLetter","numStart":2}
+props#22	op=footnote|docEnd|upperRoman|NaN|continuous|0	ret={"numFmt":"upperRoman","numStart":null}
+props#23	op=footnote|x||0|continuous|1	ret={"pos":"x","numFmt":"","numStart":0}
+props#24	op=endnote|pageBottom|chicago|Infinity|continuous|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":null}
+props#25	op=endnote|pageBottom|chicago|Infinity|continuous|0	ret={"numFmt":"chicago","numStart":null}
+props#26	op=footnote|sectEnd||-3|x|0	ret={"numFmt":"","numStart":-3,"numRestart":"x"}
+props#27	op=endnote|sectEnd|chicago|0|continuous|1	ret={"pos":"sectEnd","numFmt":"chicago","numStart":0}
+props#28	op=footnote|x|lowerLetter|2|x|0	ret={"numFmt":"lowerLetter","numStart":2,"numRestart":"x"}
+props#29	op=footnote|sectEnd|lowerRoman|-3|eachSect|0	ret={"numFmt":"lowerRoman","numStart":-3,"numRestart":"eachSect"}
+props#30	op=endnote|sectEnd|upperRoman|2|x|0	ret={"numFmt":"upperRoman","numStart":2,"numRestart":"x"}
+props#31	op=endnote|docEnd|decimal|2.5|eachSect|1	ret={"numFmt":"decimal","numStart":2.5,"numRestart":"eachSect"}
+props#32	op=endnote|x|lowerRoman|0|continuous|1	ret={"pos":"x","numStart":0}
+props#33	op=footnote|docEnd||1e+300|x|0	ret={"numFmt":"","numStart":1e+300,"numRestart":"x"}
+props#34	op=footnote|sectEnd|decimal|1e+300|eachSect|0	ret={"numStart":1e+300,"numRestart":"eachSect"}
+props#35	op=endnote|sectEnd|lowerLetter|0|continuous|0	ret={"numFmt":"lowerLetter","numStart":0}
+props#36	op=footnote|sectEnd|upperRoman|1|x|0	ret={"numFmt":"upperRoman","numRestart":"x"}
+props#37	op=endnote|sectEnd|decimal|1e+300|eachPage|0	ret={"numFmt":"decimal","numStart":1e+300,"numRestart":"eachPage"}
+props#38	op=endnote|pageBottom||NaN|x|0	ret={"numFmt":"","numStart":null,"numRestart":"x"}
+props#39	op=endnote|docEnd|lowerLetter|Infinity|eachPage|0	ret={"numFmt":"lowerLetter","numStart":null,"numRestart":"eachPage"}
+props#40	op=footnote|x|chicago|Infinity|continuous|0	ret={"numFmt":"chicago","numStart":null}
+props#41	op=footnote|sectEnd|upperRoman|0|eachPage|0	ret={"numFmt":"upperRoman","numStart":0,"numRestart":"eachPage"}
+props#42	op=footnote|beneathText|decimal|NaN|continuous|0	ret={"numStart":null}
+props#43	op=footnote|beneathText|decimal|0|eachSect|1	ret={"pos":"beneathText","numStart":0,"numRestart":"eachSect"}
+props#44	op=footnote|beneathText|upperRoman|5|eachSect|0	ret={"numFmt":"upperRoman","numStart":5,"numRestart":"eachSect"}
+props#45	op=footnote|sectEnd|chicago|5|eachSect|1	ret={"pos":"sectEnd","numFmt":"chicago","numStart":5,"numRestart":"eachSect"}
+props#46	op=footnote|beneathText|decimal|NaN|continuous|1	ret={"pos":"beneathText","numStart":null}
+props#47	op=footnote|sectEnd|upperRoman|1e+300|x|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":1e+300,"numRestart":"x"}
+props#48	op=footnote|docEnd||0|x|1	ret={"pos":"docEnd","numFmt":"","numStart":0,"numRestart":"x"}
+props#49	op=footnote|beneathText|lowerLetter|2|continuous|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":2}
+props#50	op=footnote|x|lowerLetter|2|eachPage|1	ret={"pos":"x","numFmt":"lowerLetter","numStart":2,"numRestart":"eachPage"}
+props#51	op=footnote|docEnd|upperRoman|0|continuous|1	ret={"pos":"docEnd","numFmt":"upperRoman","numStart":0}
+props#52	op=footnote|x|decimal|Infinity|eachSect|0	ret={"numStart":null,"numRestart":"eachSect"}
+props#53	op=endnote|beneathText||1e+300|eachSect|0	ret={"numFmt":"","numStart":1e+300,"numRestart":"eachSect"}
+props#54	op=endnote|beneathText|lowerRoman|-3|continuous|0	ret={"numStart":-3}
+props#55	op=footnote|pageBottom|lowerLetter|Infinity|eachPage|1	ret={"numFmt":"lowerLetter","numStart":null,"numRestart":"eachPage"}
+props#56	op=footnote|x|chicago|1|continuous|1	ret={"pos":"x","numFmt":"chicago"}
+props#57	op=endnote|x|chicago|Infinity|eachSect|1	ret={"pos":"x","numFmt":"chicago","numStart":null,"numRestart":"eachSect"}
+props#58	op=endnote|x||-3|eachSect|0	ret={"numFmt":"","numStart":-3,"numRestart":"eachSect"}
+props#59	op=endnote|sectEnd|upperRoman|2.5|eachSect|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":2.5,"numRestart":"eachSect"}
+props#60	op=footnote|x|upperRoman|5|continuous|1	ret={"pos":"x","numFmt":"upperRoman","numStart":5}
+props#61	op=footnote|pageBottom|decimal|Infinity|x|1	ret={"numStart":null,"numRestart":"x"}
+props#62	op=footnote|beneathText|upperRoman|2.5|x|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":2.5,"numRestart":"x"}
+props#63	op=endnote|x||-3|continuous|1	ret={"pos":"x","numFmt":"","numStart":-3}
+props#64	op=footnote|beneathText||Infinity|x|0	ret={"numFmt":"","numStart":null,"numRestart":"x"}
+props#65	op=footnote|sectEnd|upperRoman|NaN|continuous|0	ret={"numFmt":"upperRoman","numStart":null}
+props#66	op=endnote|sectEnd|lowerRoman|1e+300|eachSect|0	ret={"numStart":1e+300,"numRestart":"eachSect"}
+props#67	op=footnote|docEnd|lowerRoman|1e+300|continuous|0	ret={"numFmt":"lowerRoman","numStart":1e+300}
+props#68	op=endnote|x|lowerRoman|-3|x|0	ret={"numStart":-3,"numRestart":"x"}
+props#69	op=endnote|pageBottom|chicago|2|x|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":2,"numRestart":"x"}
+props#70	op=endnote|sectEnd|lowerLetter|2|x|0	ret={"numFmt":"lowerLetter","numStart":2,"numRestart":"x"}
+props#71	op=endnote|beneathText||Infinity|x|1	ret={"pos":"beneathText","numFmt":"","numStart":null,"numRestart":"x"}
+props#72	op=endnote|beneathText|lowerRoman|2.5|eachSect|0	ret={"numStart":2.5,"numRestart":"eachSect"}
+props#73	op=footnote|docEnd|decimal|2.5|eachSect|0	ret={"numStart":2.5,"numRestart":"eachSect"}
+props#74	op=footnote|x|upperRoman|2|continuous|1	ret={"pos":"x","numFmt":"upperRoman","numStart":2}
+props#75	op=endnote|pageBottom|lowerLetter|1|eachPage|0	ret={"numFmt":"lowerLetter","numRestart":"eachPage"}
+props#76	op=endnote|pageBottom|lowerRoman|2|eachSect|1	ret={"pos":"pageBottom","numStart":2,"numRestart":"eachSect"}
+props#77	op=endnote|beneathText|lowerRoman|0|eachPage|0	ret={"numStart":0,"numRestart":"eachPage"}
+props#78	op=endnote|x|chicago|1e+300|continuous|0	ret={"numFmt":"chicago","numStart":1e+300}
+props#79	op=endnote|pageBottom|lowerLetter|-3|x|1	ret={"pos":"pageBottom","numFmt":"lowerLetter","numStart":-3,"numRestart":"x"}
+props#80	op=footnote|docEnd|decimal|-3|x|0	ret={"numStart":-3,"numRestart":"x"}
+props#81	op=endnote|sectEnd||NaN|eachPage|1	ret={"pos":"sectEnd","numFmt":"","numStart":null,"numRestart":"eachPage"}
+props#82	op=footnote|beneathText|lowerLetter|1e+300|continuous|0	ret={"numFmt":"lowerLetter","numStart":1e+300}
+props#83	op=endnote|sectEnd|chicago|5|eachPage|0	ret={"numFmt":"chicago","numStart":5,"numRestart":"eachPage"}
+props#84	op=footnote|pageBottom|decimal|2.5|continuous|1	ret={"numStart":2.5}
+props#85	op=endnote|docEnd|lowerRoman|2|eachSect|0	ret={"numStart":2,"numRestart":"eachSect"}
+props#86	op=endnote|docEnd|upperRoman|2|eachSect|0	ret={"numFmt":"upperRoman","numStart":2,"numRestart":"eachSect"}
+props#87	op=footnote|beneathText|decimal|2.5|x|1	ret={"pos":"beneathText","numStart":2.5,"numRestart":"x"}
+props#88	op=footnote|docEnd|upperRoman|0|eachPage|0	ret={"numFmt":"upperRoman","numStart":0,"numRestart":"eachPage"}
+props#89	op=footnote|x|lowerLetter|Infinity|eachPage|1	ret={"pos":"x","numFmt":"lowerLetter","numStart":null,"numRestart":"eachPage"}
+props#90	op=endnote|x|upperRoman|Infinity|eachSect|1	ret={"pos":"x","numFmt":"upperRoman","numStart":null,"numRestart":"eachSect"}
+props#91	op=endnote|x|upperRoman|0|eachPage|1	ret={"pos":"x","numFmt":"upperRoman","numStart":0,"numRestart":"eachPage"}
+props#92	op=endnote|sectEnd||1|eachSect|1	ret={"pos":"sectEnd","numFmt":"","numRestart":"eachSect"}
+props#93	op=endnote|docEnd|upperRoman|-3|eachPage|1	ret={"numFmt":"upperRoman","numStart":-3,"numRestart":"eachPage"}
+props#94	op=endnote|pageBottom|chicago|-3|continuous|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":-3}
+props#95	op=footnote|sectEnd|decimal|2.5|eachSect|1	ret={"pos":"sectEnd","numStart":2.5,"numRestart":"eachSect"}
+props#96	op=endnote|docEnd||NaN|eachSect|1	ret={"numFmt":"","numStart":null,"numRestart":"eachSect"}
+props#97	op=footnote|sectEnd||1e+300|x|1	ret={"pos":"sectEnd","numFmt":"","numStart":1e+300,"numRestart":"x"}
+props#98	op=endnote|x|decimal|NaN|x|0	ret={"numFmt":"decimal","numStart":null,"numRestart":"x"}
+props#99	op=footnote|x|lowerRoman|NaN|eachSect|0	ret={"numFmt":"lowerRoman","numStart":null,"numRestart":"eachSect"}
+props#100	op=footnote|beneathText|upperRoman|1e+300|x|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":1e+300,"numRestart":"x"}
+props#101	op=endnote|pageBottom|chicago|2|x|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":2,"numRestart":"x"}
+props#102	op=endnote|pageBottom|lowerLetter|0|eachPage|0	ret={"numFmt":"lowerLetter","numStart":0,"numRestart":"eachPage"}
+props#103	op=endnote|beneathText|upperRoman|0|eachSect|0	ret={"numFmt":"upperRoman","numStart":0,"numRestart":"eachSect"}
+props#104	op=footnote|docEnd||NaN|continuous|0	ret={"numFmt":"","numStart":null}
+props#105	op=endnote|pageBottom|chicago|1e+300|eachPage|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":1e+300,"numRestart":"eachPage"}
+props#106	op=endnote|beneathText|upperRoman|5|eachPage|0	ret={"numFmt":"upperRoman","numStart":5,"numRestart":"eachPage"}
+props#107	op=footnote|pageBottom|decimal|2|continuous|0	ret={"numStart":2}
+props#108	op=endnote|x|lowerRoman|0|continuous|0	ret={"numStart":0}
+props#109	op=endnote|x|lowerLetter|1|x|0	ret={"numFmt":"lowerLetter","numRestart":"x"}
+props#110	op=endnote|pageBottom|lowerRoman|NaN|continuous|0	ret={"numStart":null}
+props#111	op=endnote|docEnd|lowerLetter|Infinity|continuous|1	ret={"numFmt":"lowerLetter","numStart":null}
+props#112	op=footnote|sectEnd|lowerLetter|1|eachSect|0	ret={"numFmt":"lowerLetter","numRestart":"eachSect"}
+props#113	op=footnote|docEnd|lowerLetter|NaN|eachPage|0	ret={"numFmt":"lowerLetter","numStart":null,"numRestart":"eachPage"}
+props#114	op=endnote|sectEnd|lowerRoman|-3|continuous|1	ret={"pos":"sectEnd","numStart":-3}
+props#115	op=endnote|sectEnd|chicago|0|eachPage|0	ret={"numFmt":"chicago","numStart":0,"numRestart":"eachPage"}
+props#116	op=footnote|sectEnd|lowerRoman|0|continuous|0	ret={"numFmt":"lowerRoman","numStart":0}
+props#117	op=endnote|sectEnd|chicago|2|eachSect|0	ret={"numFmt":"chicago","numStart":2,"numRestart":"eachSect"}
+props#118	op=footnote|sectEnd||-3|eachSect|1	ret={"pos":"sectEnd","numFmt":"","numStart":-3,"numRestart":"eachSect"}
+props#119	op=endnote|x|upperRoman|5|continuous|0	ret={"numFmt":"upperRoman","numStart":5}
+props#120	op=endnote|pageBottom|lowerRoman|2|eachPage|0	ret={"numStart":2,"numRestart":"eachPage"}
+props#121	op=footnote|sectEnd||1|continuous|1	ret={"pos":"sectEnd","numFmt":""}
+props#122	op=endnote|sectEnd|lowerRoman|1|eachSect|1	ret={"pos":"sectEnd","numRestart":"eachSect"}
+props#123	op=footnote|beneathText|upperRoman|2|eachSect|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":2,"numRestart":"eachSect"}
+props#124	op=footnote|x|lowerLetter|NaN|continuous|1	ret={"pos":"x","numFmt":"lowerLetter","numStart":null}
+props#125	op=footnote|sectEnd|upperRoman|1|eachSect|0	ret={"numFmt":"upperRoman","numRestart":"eachSect"}
+props#126	op=footnote|beneathText|decimal|1e+300|eachPage|0	ret={"numStart":1e+300,"numRestart":"eachPage"}
+props#127	op=footnote|sectEnd|upperRoman|2|eachPage|0	ret={"numFmt":"upperRoman","numStart":2,"numRestart":"eachPage"}
+props#128	op=endnote|pageBottom|upperRoman|NaN|continuous|0	ret={"numFmt":"upperRoman","numStart":null}
+props#129	op=footnote|pageBottom|lowerRoman|NaN|continuous|0	ret={"numFmt":"lowerRoman","numStart":null}
+props#130	op=footnote|pageBottom|decimal|Infinity|x|0	ret={"numStart":null,"numRestart":"x"}
+props#131	op=footnote|docEnd|decimal|-3|eachPage|0	ret={"numStart":-3,"numRestart":"eachPage"}
+props#132	op=endnote|docEnd||5|continuous|1	ret={"numFmt":"","numStart":5}
+props#133	op=footnote|pageBottom|chicago|NaN|eachPage|1	ret={"numFmt":"chicago","numStart":null,"numRestart":"eachPage"}
+props#134	op=footnote|beneathText||1|x|1	ret={"pos":"beneathText","numFmt":"","numRestart":"x"}
+props#135	op=endnote|pageBottom||2|x|0	ret={"numFmt":"","numStart":2,"numRestart":"x"}
+props#136	op=footnote|sectEnd|lowerLetter|5|continuous|0	ret={"numFmt":"lowerLetter","numStart":5}
+props#137	op=endnote|sectEnd|decimal|NaN|x|1	ret={"pos":"sectEnd","numFmt":"decimal","numStart":null,"numRestart":"x"}
+props#138	op=footnote|pageBottom|lowerRoman|-3|eachPage|0	ret={"numFmt":"lowerRoman","numStart":-3,"numRestart":"eachPage"}
+props#139	op=footnote|pageBottom|lowerRoman|2.5|x|0	ret={"numFmt":"lowerRoman","numStart":2.5,"numRestart":"x"}
+props#140	op=endnote|pageBottom|decimal|2|eachPage|0	ret={"numFmt":"decimal","numStart":2,"numRestart":"eachPage"}
+props#141	op=endnote|docEnd||5|eachSect|1	ret={"numFmt":"","numStart":5,"numRestart":"eachSect"}
+props#142	op=endnote|beneathText|lowerLetter|1e+300|eachSect|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":1e+300,"numRestart":"eachSect"}
+props#143	op=footnote|x||Infinity|x|1	ret={"pos":"x","numFmt":"","numStart":null,"numRestart":"x"}
+props#144	op=footnote|docEnd|chicago|1e+300|continuous|0	ret={"numFmt":"chicago","numStart":1e+300}
+props#145	op=footnote|sectEnd|decimal|0|continuous|0	ret={"numStart":0}
+props#146	op=footnote|x|chicago|1|x|1	ret={"pos":"x","numFmt":"chicago","numRestart":"x"}
+props#147	op=endnote|pageBottom|decimal|5|eachSect|1	ret={"pos":"pageBottom","numFmt":"decimal","numStart":5,"numRestart":"eachSect"}
+props#148	op=endnote|sectEnd||NaN|eachPage|1	ret={"pos":"sectEnd","numFmt":"","numStart":null,"numRestart":"eachPage"}
+props#149	op=endnote|pageBottom|decimal|5|x|0	ret={"numFmt":"decimal","numStart":5,"numRestart":"x"}
+props#150	op=endnote|beneathText||1e+300|continuous|1	ret={"pos":"beneathText","numFmt":"","numStart":1e+300}
+props#151	op=footnote|docEnd|chicago|NaN|eachSect|0	ret={"numFmt":"chicago","numStart":null,"numRestart":"eachSect"}
+props#152	op=footnote|x|lowerRoman|1e+300|x|1	ret={"pos":"x","numFmt":"lowerRoman","numStart":1e+300,"numRestart":"x"}
+props#153	op=endnote|beneathText|chicago|NaN|x|1	ret={"pos":"beneathText","numFmt":"chicago","numStart":null,"numRestart":"x"}
+props#154	op=endnote|x||NaN|x|0	ret={"numFmt":"","numStart":null,"numRestart":"x"}
+props#155	op=endnote|x|upperRoman|-3|eachSect|0	ret={"numFmt":"upperRoman","numStart":-3,"numRestart":"eachSect"}
+props#156	op=endnote|docEnd|upperRoman|5|continuous|0	ret={"numFmt":"upperRoman","numStart":5}
+props#157	op=footnote|x|upperRoman|1|continuous|1	ret={"pos":"x","numFmt":"upperRoman"}
+props#158	op=footnote|pageBottom|lowerLetter|1e+300|eachSect|0	ret={"numFmt":"lowerLetter","numStart":1e+300,"numRestart":"eachSect"}
+props#159	op=endnote|docEnd||2|eachSect|0	ret={"numFmt":"","numStart":2,"numRestart":"eachSect"}
+props#160	op=footnote|sectEnd|chicago|5|eachPage|0	ret={"numFmt":"chicago","numStart":5,"numRestart":"eachPage"}
+props#161	op=footnote|docEnd|chicago|1|eachPage|1	ret={"pos":"docEnd","numFmt":"chicago","numRestart":"eachPage"}
+props#162	op=endnote|x|upperRoman|0|x|1	ret={"pos":"x","numFmt":"upperRoman","numStart":0,"numRestart":"x"}
+props#163	op=footnote|docEnd|lowerLetter|Infinity|eachSect|0	ret={"numFmt":"lowerLetter","numStart":null,"numRestart":"eachSect"}
+props#164	op=footnote|beneathText|lowerRoman|-3|x|1	ret={"pos":"beneathText","numFmt":"lowerRoman","numStart":-3,"numRestart":"x"}
+props#165	op=endnote|x|decimal|1|x|0	ret={"numFmt":"decimal","numRestart":"x"}
+props#166	op=footnote|sectEnd||0|continuous|1	ret={"pos":"sectEnd","numFmt":"","numStart":0}
+props#167	op=endnote|x|chicago|2.5|eachSect|1	ret={"pos":"x","numFmt":"chicago","numStart":2.5,"numRestart":"eachSect"}
+props#168	op=endnote|docEnd|lowerRoman|2.5|eachSect|1	ret={"numStart":2.5,"numRestart":"eachSect"}
+props#169	op=endnote|pageBottom|decimal|1|continuous|1	ret={"pos":"pageBottom","numFmt":"decimal"}
+props#170	op=endnote|pageBottom|lowerLetter|0|continuous|1	ret={"pos":"pageBottom","numFmt":"lowerLetter","numStart":0}
+props#171	op=footnote|docEnd|lowerLetter|NaN|eachPage|0	ret={"numFmt":"lowerLetter","numStart":null,"numRestart":"eachPage"}
+props#172	op=endnote|docEnd|upperRoman|-3|eachPage|0	ret={"numFmt":"upperRoman","numStart":-3,"numRestart":"eachPage"}
+props#173	op=footnote|x|upperRoman|5|continuous|0	ret={"numFmt":"upperRoman","numStart":5}
+props#174	op=endnote|x||Infinity|eachSect|1	ret={"pos":"x","numFmt":"","numStart":null,"numRestart":"eachSect"}
+props#175	op=footnote|x|lowerLetter|2.5|eachPage|1	ret={"pos":"x","numFmt":"lowerLetter","numStart":2.5,"numRestart":"eachPage"}
+props#176	op=endnote|pageBottom|lowerRoman|2.5|x|0	ret={"numStart":2.5,"numRestart":"x"}
+props#177	op=footnote|beneathText||5|x|1	ret={"pos":"beneathText","numFmt":"","numStart":5,"numRestart":"x"}
+props#178	op=footnote|beneathText||0|x|1	ret={"pos":"beneathText","numFmt":"","numStart":0,"numRestart":"x"}
+props#179	op=endnote|sectEnd|lowerRoman|1|eachPage|0	ret={"numRestart":"eachPage"}
+props#180	op=footnote|docEnd||2.5|eachPage|1	ret={"pos":"docEnd","numFmt":"","numStart":2.5,"numRestart":"eachPage"}
+props#181	op=footnote|x|chicago|NaN|eachSect|1	ret={"pos":"x","numFmt":"chicago","numStart":null,"numRestart":"eachSect"}
+props#182	op=endnote|docEnd|chicago|5|eachSect|1	ret={"numFmt":"chicago","numStart":5,"numRestart":"eachSect"}
+props#183	op=endnote|docEnd|decimal|1e+300|x|0	ret={"numFmt":"decimal","numStart":1e+300,"numRestart":"x"}
+props#184	op=footnote|beneathText|decimal|1|x|1	ret={"pos":"beneathText","numRestart":"x"}
+props#185	op=footnote|docEnd|lowerLetter|5|eachPage|1	ret={"pos":"docEnd","numFmt":"lowerLetter","numStart":5,"numRestart":"eachPage"}
+props#186	op=footnote|x||Infinity|continuous|1	ret={"pos":"x","numFmt":"","numStart":null}
+props#187	op=footnote|sectEnd||2|eachPage|1	ret={"pos":"sectEnd","numFmt":"","numStart":2,"numRestart":"eachPage"}
+props#188	op=footnote|sectEnd|lowerRoman|Infinity|eachPage|0	ret={"numFmt":"lowerRoman","numStart":null,"numRestart":"eachPage"}
+props#189	op=endnote|beneathText|chicago|0|x|1	ret={"pos":"beneathText","numFmt":"chicago","numStart":0,"numRestart":"x"}
+props#190	op=endnote|beneathText|upperRoman|2|eachPage|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":2,"numRestart":"eachPage"}
+props#191	op=footnote|x|upperRoman|-3|continuous|1	ret={"pos":"x","numFmt":"upperRoman","numStart":-3}
+props#192	op=endnote|pageBottom||-3|eachSect|0	ret={"numFmt":"","numStart":-3,"numRestart":"eachSect"}
+props#193	op=footnote|sectEnd|lowerLetter|NaN|continuous|0	ret={"numFmt":"lowerLetter","numStart":null}
+props#194	op=footnote|pageBottom|lowerLetter|2|x|1	ret={"numFmt":"lowerLetter","numStart":2,"numRestart":"x"}
+props#195	op=footnote|beneathText|lowerLetter|NaN|x|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":null,"numRestart":"x"}
+props#196	op=footnote|pageBottom|decimal|2|continuous|1	ret={"numStart":2}
+props#197	op=footnote|x|lowerLetter|2.5|eachSect|1	ret={"pos":"x","numFmt":"lowerLetter","numStart":2.5,"numRestart":"eachSect"}
+props#198	op=endnote|docEnd|lowerLetter|1e+300|eachPage|0	ret={"numFmt":"lowerLetter","numStart":1e+300,"numRestart":"eachPage"}
+props#199	op=endnote|pageBottom|upperRoman|-3|eachSect|0	ret={"numFmt":"upperRoman","numStart":-3,"numRestart":"eachSect"}
+props#200	op=footnote|beneathText|lowerRoman|Infinity|eachPage|0	ret={"numFmt":"lowerRoman","numStart":null,"numRestart":"eachPage"}
+props#201	op=footnote|docEnd|upperRoman|NaN|eachPage|1	ret={"pos":"docEnd","numFmt":"upperRoman","numStart":null,"numRestart":"eachPage"}
+props#202	op=footnote|pageBottom|upperRoman|Infinity|eachSect|0	ret={"numFmt":"upperRoman","numStart":null,"numRestart":"eachSect"}
+props#203	op=endnote|beneathText|lowerRoman|Infinity|continuous|1	ret={"pos":"beneathText","numStart":null}
+props#204	op=endnote|sectEnd||2|eachSect|1	ret={"pos":"sectEnd","numFmt":"","numStart":2,"numRestart":"eachSect"}
+props#205	op=footnote|docEnd||2|continuous|1	ret={"pos":"docEnd","numFmt":"","numStart":2}
+props#206	op=footnote|docEnd|lowerLetter|1|continuous|1	ret={"pos":"docEnd","numFmt":"lowerLetter"}
+props#207	op=footnote|pageBottom|lowerRoman|2|eachSect|0	ret={"numFmt":"lowerRoman","numStart":2,"numRestart":"eachSect"}
+props#208	op=footnote|sectEnd|decimal|1|continuous|0	ret=-
+props#209	op=footnote|x||0|eachPage|1	ret={"pos":"x","numFmt":"","numStart":0,"numRestart":"eachPage"}
+props#210	op=footnote|x||2.5|eachSect|0	ret={"numFmt":"","numStart":2.5,"numRestart":"eachSect"}
+props#211	op=endnote|beneathText|decimal|Infinity|eachPage|1	ret={"pos":"beneathText","numFmt":"decimal","numStart":null,"numRestart":"eachPage"}
+props#212	op=endnote|pageBottom||2.5|eachPage|1	ret={"pos":"pageBottom","numFmt":"","numStart":2.5,"numRestart":"eachPage"}
+props#213	op=footnote|beneathText|chicago|1e+300|eachSect|0	ret={"numFmt":"chicago","numStart":1e+300,"numRestart":"eachSect"}
+props#214	op=endnote|sectEnd|decimal|2.5|eachPage|1	ret={"pos":"sectEnd","numFmt":"decimal","numStart":2.5,"numRestart":"eachPage"}
+props#215	op=endnote|sectEnd|lowerLetter|5|eachSect|1	ret={"pos":"sectEnd","numFmt":"lowerLetter","numStart":5,"numRestart":"eachSect"}
+props#216	op=footnote|beneathText|decimal|1|continuous|1	ret={"pos":"beneathText"}
+props#217	op=endnote|pageBottom|lowerRoman|Infinity|eachSect|0	ret={"numStart":null,"numRestart":"eachSect"}
+props#218	op=endnote|pageBottom|chicago|1e+300|eachPage|0	ret={"numFmt":"chicago","numStart":1e+300,"numRestart":"eachPage"}
+props#219	op=footnote|sectEnd|chicago|0|x|1	ret={"pos":"sectEnd","numFmt":"chicago","numStart":0,"numRestart":"x"}
+props#220	op=footnote|pageBottom|lowerRoman|1e+300|continuous|0	ret={"numFmt":"lowerRoman","numStart":1e+300}
+props#221	op=footnote|beneathText|decimal|Infinity|eachSect|1	ret={"pos":"beneathText","numStart":null,"numRestart":"eachSect"}
+props#222	op=footnote|pageBottom||5|continuous|1	ret={"numFmt":"","numStart":5}
+props#223	op=endnote|sectEnd|lowerLetter|5|eachPage|0	ret={"numFmt":"lowerLetter","numStart":5,"numRestart":"eachPage"}
+props#224	op=footnote|x|lowerRoman|NaN|eachPage|0	ret={"numFmt":"lowerRoman","numStart":null,"numRestart":"eachPage"}
+props#225	op=footnote|docEnd|lowerRoman|1e+300|eachSect|1	ret={"pos":"docEnd","numFmt":"lowerRoman","numStart":1e+300,"numRestart":"eachSect"}
+props#226	op=endnote|x|chicago|NaN|continuous|1	ret={"pos":"x","numFmt":"chicago","numStart":null}
+props#227	op=endnote|x|upperRoman|NaN|eachPage|1	ret={"pos":"x","numFmt":"upperRoman","numStart":null,"numRestart":"eachPage"}
+props#228	op=footnote|pageBottom|chicago|Infinity|x|1	ret={"numFmt":"chicago","numStart":null,"numRestart":"x"}
+props#229	op=endnote|x|chicago|1e+300|eachSect|0	ret={"numFmt":"chicago","numStart":1e+300,"numRestart":"eachSect"}
+props#230	op=endnote|docEnd||5|continuous|0	ret={"numFmt":"","numStart":5}
+props#231	op=footnote|x|chicago|-3|eachPage|0	ret={"numFmt":"chicago","numStart":-3,"numRestart":"eachPage"}
+props#232	op=footnote|docEnd|lowerRoman|NaN|x|1	ret={"pos":"docEnd","numFmt":"lowerRoman","numStart":null,"numRestart":"x"}
+props#233	op=footnote|pageBottom|lowerRoman|2.5|eachPage|0	ret={"numFmt":"lowerRoman","numStart":2.5,"numRestart":"eachPage"}
+props#234	op=footnote|sectEnd|chicago|2.5|x|0	ret={"numFmt":"chicago","numStart":2.5,"numRestart":"x"}
+props#235	op=footnote|beneathText|lowerLetter|0|x|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":0,"numRestart":"x"}
+props#236	op=footnote|sectEnd|upperRoman|2|eachPage|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":2,"numRestart":"eachPage"}
+props#237	op=endnote|docEnd|upperRoman|1e+300|eachSect|1	ret={"numFmt":"upperRoman","numStart":1e+300,"numRestart":"eachSect"}
+props#238	op=endnote|pageBottom|upperRoman|Infinity|x|1	ret={"pos":"pageBottom","numFmt":"upperRoman","numStart":null,"numRestart":"x"}
+props#239	op=footnote|docEnd|decimal|Infinity|continuous|1	ret={"pos":"docEnd","numStart":null}
+props#240	op=endnote|sectEnd|upperRoman|1|eachPage|0	ret={"numFmt":"upperRoman","numRestart":"eachPage"}
+props#241	op=endnote|x|upperRoman|2|continuous|0	ret={"numFmt":"upperRoman","numStart":2}
+props#242	op=footnote|sectEnd||0|eachPage|1	ret={"pos":"sectEnd","numFmt":"","numStart":0,"numRestart":"eachPage"}
+props#243	op=endnote|sectEnd|chicago|0|continuous|0	ret={"numFmt":"chicago","numStart":0}
+props#244	op=footnote|pageBottom|upperRoman|Infinity|eachPage|1	ret={"numFmt":"upperRoman","numStart":null,"numRestart":"eachPage"}
+props#245	op=footnote|pageBottom|upperRoman|-3|continuous|0	ret={"numFmt":"upperRoman","numStart":-3}
+props#246	op=footnote|sectEnd||1e+300|continuous|0	ret={"numFmt":"","numStart":1e+300}
+props#247	op=endnote|beneathText|decimal|1e+300|x|0	ret={"numFmt":"decimal","numStart":1e+300,"numRestart":"x"}
+props#248	op=footnote|beneathText|lowerLetter|2|continuous|0	ret={"numFmt":"lowerLetter","numStart":2}
+props#249	op=endnote|docEnd|decimal|-3|eachSect|1	ret={"numFmt":"decimal","numStart":-3,"numRestart":"eachSect"}
+props#250	op=footnote|docEnd|upperRoman|NaN|continuous|0	ret={"numFmt":"upperRoman","numStart":null}
+props#251	op=endnote|beneathText|upperRoman|Infinity|eachPage|0	ret={"numFmt":"upperRoman","numStart":null,"numRestart":"eachPage"}
+props#252	op=footnote|docEnd|upperRoman|2|continuous|0	ret={"numFmt":"upperRoman","numStart":2}
+props#253	op=footnote|sectEnd|lowerRoman|1e+300|eachPage|0	ret={"numFmt":"lowerRoman","numStart":1e+300,"numRestart":"eachPage"}
+props#254	op=footnote|docEnd||NaN|continuous|1	ret={"pos":"docEnd","numFmt":"","numStart":null}
+props#255	op=endnote|docEnd|chicago|5|eachSect|0	ret={"numFmt":"chicago","numStart":5,"numRestart":"eachSect"}
+props#256	op=footnote|pageBottom|chicago|Infinity|eachPage|1	ret={"numFmt":"chicago","numStart":null,"numRestart":"eachPage"}
+props#257	op=footnote|sectEnd||-3|eachSect|0	ret={"numFmt":"","numStart":-3,"numRestart":"eachSect"}
+props#258	op=footnote|beneathText|lowerLetter|2.5|x|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":2.5,"numRestart":"x"}
+props#259	op=footnote|docEnd|lowerRoman|Infinity|continuous|0	ret={"numFmt":"lowerRoman","numStart":null}
+props#260	op=endnote|x|upperRoman|-3|continuous|1	ret={"pos":"x","numFmt":"upperRoman","numStart":-3}
+props#261	op=endnote|sectEnd|upperRoman|Infinity|continuous|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":null}
+props#262	op=endnote|beneathText|lowerRoman|1e+300|continuous|1	ret={"pos":"beneathText","numStart":1e+300}
+props#263	op=endnote|pageBottom||NaN|eachSect|0	ret={"numFmt":"","numStart":null,"numRestart":"eachSect"}
+props#264	op=footnote|pageBottom|decimal|-3|eachSect|1	ret={"numStart":-3,"numRestart":"eachSect"}
+props#265	op=endnote|x|upperRoman|1e+300|continuous|1	ret={"pos":"x","numFmt":"upperRoman","numStart":1e+300}
+props#266	op=footnote|x|decimal|Infinity|eachPage|1	ret={"pos":"x","numStart":null,"numRestart":"eachPage"}
+props#267	op=endnote|beneathText|decimal|0|x|1	ret={"pos":"beneathText","numFmt":"decimal","numStart":0,"numRestart":"x"}
+props#268	op=endnote|beneathText|chicago|0|eachPage|1	ret={"pos":"beneathText","numFmt":"chicago","numStart":0,"numRestart":"eachPage"}
+props#269	op=endnote|x|upperRoman|-3|x|0	ret={"numFmt":"upperRoman","numStart":-3,"numRestart":"x"}
+props#270	op=endnote|docEnd|decimal|0|eachPage|0	ret={"numFmt":"decimal","numStart":0,"numRestart":"eachPage"}
+props#271	op=footnote|sectEnd|upperRoman|2.5|eachSect|0	ret={"numFmt":"upperRoman","numStart":2.5,"numRestart":"eachSect"}
+props#272	op=footnote|pageBottom|lowerRoman|Infinity|eachPage|1	ret={"numFmt":"lowerRoman","numStart":null,"numRestart":"eachPage"}
+props#273	op=footnote|pageBottom||NaN|x|1	ret={"numFmt":"","numStart":null,"numRestart":"x"}
+props#274	op=endnote|pageBottom|decimal|0|continuous|0	ret={"numFmt":"decimal","numStart":0}
+props#275	op=footnote|beneathText|lowerLetter|1e+300|continuous|0	ret={"numFmt":"lowerLetter","numStart":1e+300}
+props#276	op=endnote|pageBottom|upperRoman|2|continuous|1	ret={"pos":"pageBottom","numFmt":"upperRoman","numStart":2}
+props#277	op=footnote|docEnd|upperRoman|1e+300|eachSect|1	ret={"pos":"docEnd","numFmt":"upperRoman","numStart":1e+300,"numRestart":"eachSect"}
+props#278	op=footnote|sectEnd|lowerLetter|-3|continuous|0	ret={"numFmt":"lowerLetter","numStart":-3}
+props#279	op=endnote|docEnd||2|x|0	ret={"numFmt":"","numStart":2,"numRestart":"x"}
+props#280	op=footnote|docEnd||5|continuous|0	ret={"numFmt":"","numStart":5}
+props#281	op=footnote|x|decimal|5|x|0	ret={"numStart":5,"numRestart":"x"}
+props#282	op=footnote|beneathText|lowerRoman|2.5|eachPage|1	ret={"pos":"beneathText","numFmt":"lowerRoman","numStart":2.5,"numRestart":"eachPage"}
+props#283	op=endnote|x|decimal|1e+300|eachSect|1	ret={"pos":"x","numFmt":"decimal","numStart":1e+300,"numRestart":"eachSect"}
+props#284	op=endnote|pageBottom|upperRoman|Infinity|eachSect|1	ret={"pos":"pageBottom","numFmt":"upperRoman","numStart":null,"numRestart":"eachSect"}
+props#285	op=endnote|beneathText|chicago|1|continuous|0	ret={"numFmt":"chicago"}
+props#286	op=endnote|sectEnd||-3|x|1	ret={"pos":"sectEnd","numFmt":"","numStart":-3,"numRestart":"x"}
+props#287	op=footnote|x|decimal|5|x|1	ret={"pos":"x","numStart":5,"numRestart":"x"}
+props#288	op=footnote|beneathText|lowerLetter|1|x|0	ret={"numFmt":"lowerLetter","numRestart":"x"}
+props#289	op=footnote|sectEnd|lowerRoman|5|continuous|1	ret={"pos":"sectEnd","numFmt":"lowerRoman","numStart":5}
+props#290	op=footnote|sectEnd||2.5|continuous|0	ret={"numFmt":"","numStart":2.5}
+props#291	op=footnote|sectEnd||-3|x|1	ret={"pos":"sectEnd","numFmt":"","numStart":-3,"numRestart":"x"}
+props#292	op=footnote|beneathText|lowerRoman|1e+300|eachPage|1	ret={"pos":"beneathText","numFmt":"lowerRoman","numStart":1e+300,"numRestart":"eachPage"}
+props#293	op=footnote|sectEnd|chicago|2.5|continuous|0	ret={"numFmt":"chicago","numStart":2.5}
+props#294	op=footnote|docEnd|lowerLetter|1e+300|eachPage|1	ret={"pos":"docEnd","numFmt":"lowerLetter","numStart":1e+300,"numRestart":"eachPage"}
+props#295	op=footnote|pageBottom|upperRoman|-3|x|0	ret={"numFmt":"upperRoman","numStart":-3,"numRestart":"x"}
+props#296	op=endnote|docEnd|lowerRoman|-3|x|1	ret={"numStart":-3,"numRestart":"x"}
+props#297	op=endnote|pageBottom|chicago|NaN|x|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":null,"numRestart":"x"}
+props#298	op=footnote|x|upperRoman|5|eachSect|1	ret={"pos":"x","numFmt":"upperRoman","numStart":5,"numRestart":"eachSect"}
+props#299	op=footnote|pageBottom|lowerLetter|NaN|continuous|1	ret={"numFmt":"lowerLetter","numStart":null}
+props#300	op=endnote|pageBottom|lowerLetter|1e+300|eachSect|0	ret={"numFmt":"lowerLetter","numStart":1e+300,"numRestart":"eachSect"}
+props#301	op=footnote|x|chicago|2.5|x|1	ret={"pos":"x","numFmt":"chicago","numStart":2.5,"numRestart":"x"}
+props#302	op=footnote|sectEnd|decimal|2|continuous|1	ret={"pos":"sectEnd","numStart":2}
+props#303	op=endnote|pageBottom|lowerRoman|5|x|0	ret={"numStart":5,"numRestart":"x"}
+props#304	op=footnote|x|chicago|2.5|continuous|0	ret={"numFmt":"chicago","numStart":2.5}
+props#305	op=footnote|x|lowerRoman|0|eachPage|1	ret={"pos":"x","numFmt":"lowerRoman","numStart":0,"numRestart":"eachPage"}
+props#306	op=endnote|docEnd|lowerRoman|1e+300|continuous|0	ret={"numStart":1e+300}
+props#307	op=footnote|pageBottom||1e+300|eachPage|1	ret={"numFmt":"","numStart":1e+300,"numRestart":"eachPage"}
+props#308	op=endnote|sectEnd||0|x|0	ret={"numFmt":"","numStart":0,"numRestart":"x"}
+props#309	op=footnote|sectEnd|lowerLetter|2.5|x|1	ret={"pos":"sectEnd","numFmt":"lowerLetter","numStart":2.5,"numRestart":"x"}
+props#310	op=footnote|docEnd|lowerRoman|1|continuous|0	ret={"numFmt":"lowerRoman"}
+props#311	op=footnote|x|upperRoman|NaN|continuous|0	ret={"numFmt":"upperRoman","numStart":null}
+props#312	op=footnote|beneathText|upperRoman|1e+300|x|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":1e+300,"numRestart":"x"}
+props#313	op=footnote|docEnd|chicago|1e+300|continuous|1	ret={"pos":"docEnd","numFmt":"chicago","numStart":1e+300}
+props#314	op=footnote|x||2.5|eachPage|0	ret={"numFmt":"","numStart":2.5,"numRestart":"eachPage"}
+props#315	op=footnote|beneathText|upperRoman|1e+300|continuous|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":1e+300}
+props#316	op=footnote|sectEnd|chicago|2|eachSect|0	ret={"numFmt":"chicago","numStart":2,"numRestart":"eachSect"}
+props#317	op=footnote|sectEnd|decimal|Infinity|x|0	ret={"numStart":null,"numRestart":"x"}
+props#318	op=footnote|beneathText|upperRoman|2|x|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":2,"numRestart":"x"}
+props#319	op=endnote|sectEnd|lowerRoman|5|continuous|1	ret={"pos":"sectEnd","numStart":5}
+props#320	op=footnote|pageBottom|lowerRoman|-3|x|1	ret={"numFmt":"lowerRoman","numStart":-3,"numRestart":"x"}
+props#321	op=footnote|sectEnd|upperRoman|2.5|continuous|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":2.5}
+props#322	op=footnote|pageBottom|upperRoman|2.5|continuous|1	ret={"numFmt":"upperRoman","numStart":2.5}
+props#323	op=footnote|pageBottom|chicago|0|eachPage|1	ret={"numFmt":"chicago","numStart":0,"numRestart":"eachPage"}
+props#324	op=endnote|x|upperRoman|1e+300|eachPage|0	ret={"numFmt":"upperRoman","numStart":1e+300,"numRestart":"eachPage"}
+props#325	op=endnote|beneathText|chicago|-3|x|0	ret={"numFmt":"chicago","numStart":-3,"numRestart":"x"}
+props#326	op=endnote|x||5|eachPage|0	ret={"numFmt":"","numStart":5,"numRestart":"eachPage"}
+props#327	op=endnote|docEnd||Infinity|eachPage|0	ret={"numFmt":"","numStart":null,"numRestart":"eachPage"}
+props#328	op=endnote|sectEnd|chicago|Infinity|continuous|0	ret={"numFmt":"chicago","numStart":null}
+props#329	op=endnote|docEnd|lowerLetter|Infinity|x|0	ret={"numFmt":"lowerLetter","numStart":null,"numRestart":"x"}
+props#330	op=footnote|beneathText|upperRoman|5|x|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":5,"numRestart":"x"}
+props#331	op=footnote|pageBottom|chicago|-3|continuous|1	ret={"numFmt":"chicago","numStart":-3}
+props#332	op=endnote|sectEnd|upperRoman|Infinity|x|0	ret={"numFmt":"upperRoman","numStart":null,"numRestart":"x"}
+props#333	op=endnote|sectEnd|chicago|2.5|eachPage|1	ret={"pos":"sectEnd","numFmt":"chicago","numStart":2.5,"numRestart":"eachPage"}
+props#334	op=endnote|sectEnd|lowerRoman|1e+300|continuous|0	ret={"numStart":1e+300}
+props#335	op=endnote|beneathText|decimal|NaN|continuous|0	ret={"numFmt":"decimal","numStart":null}
+props#336	op=footnote|pageBottom||-3|x|1	ret={"numFmt":"","numStart":-3,"numRestart":"x"}
+props#337	op=endnote|x|chicago|-3|continuous|0	ret={"numFmt":"chicago","numStart":-3}
+props#338	op=footnote|docEnd|chicago|NaN|eachPage|1	ret={"pos":"docEnd","numFmt":"chicago","numStart":null,"numRestart":"eachPage"}
+props#339	op=footnote|beneathText|decimal|2.5|eachPage|1	ret={"pos":"beneathText","numStart":2.5,"numRestart":"eachPage"}
+props#340	op=endnote|beneathText|chicago|Infinity|continuous|0	ret={"numFmt":"chicago","numStart":null}
+props#341	op=footnote|docEnd|upperRoman|5|continuous|1	ret={"pos":"docEnd","numFmt":"upperRoman","numStart":5}
+props#342	op=endnote|docEnd|lowerLetter|0|x|1	ret={"numFmt":"lowerLetter","numStart":0,"numRestart":"x"}
+props#343	op=footnote|docEnd|chicago|1|eachSect|1	ret={"pos":"docEnd","numFmt":"chicago","numRestart":"eachSect"}
+props#344	op=footnote|x||NaN|x|0	ret={"numFmt":"","numStart":null,"numRestart":"x"}
+props#345	op=endnote|beneathText|chicago|Infinity|eachPage|1	ret={"pos":"beneathText","numFmt":"chicago","numStart":null,"numRestart":"eachPage"}
+props#346	op=endnote|beneathText|chicago|2|eachSect|1	ret={"pos":"beneathText","numFmt":"chicago","numStart":2,"numRestart":"eachSect"}
+props#347	op=footnote|docEnd||1e+300|x|1	ret={"pos":"docEnd","numFmt":"","numStart":1e+300,"numRestart":"x"}
+props#348	op=footnote|docEnd|chicago|1e+300|continuous|1	ret={"pos":"docEnd","numFmt":"chicago","numStart":1e+300}
+props#349	op=endnote|pageBottom|lowerRoman|-3|x|1	ret={"pos":"pageBottom","numStart":-3,"numRestart":"x"}
+props#350	op=footnote|beneathText|chicago|0|continuous|0	ret={"numFmt":"chicago","numStart":0}
+props#351	op=endnote|x|upperRoman|2|continuous|0	ret={"numFmt":"upperRoman","numStart":2}
+props#352	op=footnote|pageBottom|upperRoman|2|x|1	ret={"numFmt":"upperRoman","numStart":2,"numRestart":"x"}
+props#353	op=endnote|x|decimal|-3|eachPage|0	ret={"numFmt":"decimal","numStart":-3,"numRestart":"eachPage"}
+props#354	op=endnote|sectEnd||1e+300|eachPage|0	ret={"numFmt":"","numStart":1e+300,"numRestart":"eachPage"}
+props#355	op=endnote|beneathText|lowerLetter|1|x|0	ret={"numFmt":"lowerLetter","numRestart":"x"}
+props#356	op=footnote|beneathText|lowerLetter|0|eachSect|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":0,"numRestart":"eachSect"}
+props#357	op=footnote|beneathText||0|continuous|1	ret={"pos":"beneathText","numFmt":"","numStart":0}
+props#358	op=endnote|x|decimal|2.5|continuous|0	ret={"numFmt":"decimal","numStart":2.5}
+props#359	op=endnote|docEnd|lowerLetter|2|continuous|0	ret={"numFmt":"lowerLetter","numStart":2}
+props#360	op=endnote|sectEnd|upperRoman|2.5|x|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":2.5,"numRestart":"x"}
+props#361	op=endnote|docEnd||1|x|0	ret={"numFmt":"","numRestart":"x"}
+props#362	op=footnote|sectEnd|lowerRoman|NaN|eachSect|1	ret={"pos":"sectEnd","numFmt":"lowerRoman","numStart":null,"numRestart":"eachSect"}
+props#363	op=footnote|pageBottom|decimal|-3|eachPage|1	ret={"numStart":-3,"numRestart":"eachPage"}
+props#364	op=footnote|docEnd|chicago|Infinity|x|1	ret={"pos":"docEnd","numFmt":"chicago","numStart":null,"numRestart":"x"}
+props#365	op=endnote|pageBottom|lowerLetter|2.5|x|1	ret={"pos":"pageBottom","numFmt":"lowerLetter","numStart":2.5,"numRestart":"x"}
+props#366	op=endnote|pageBottom|lowerLetter|Infinity|x|1	ret={"pos":"pageBottom","numFmt":"lowerLetter","numStart":null,"numRestart":"x"}
+props#367	op=footnote|sectEnd|chicago|2|continuous|1	ret={"pos":"sectEnd","numFmt":"chicago","numStart":2}
+props#368	op=endnote|x|lowerRoman|2.5|continuous|0	ret={"numStart":2.5}
+props#369	op=footnote|sectEnd|lowerRoman|2|x|0	ret={"numFmt":"lowerRoman","numStart":2,"numRestart":"x"}
+props#370	op=footnote|pageBottom|lowerLetter|-3|x|0	ret={"numFmt":"lowerLetter","numStart":-3,"numRestart":"x"}
+props#371	op=footnote|x||5|eachSect|1	ret={"pos":"x","numFmt":"","numStart":5,"numRestart":"eachSect"}
+props#372	op=endnote|pageBottom|lowerLetter|2|eachPage|1	ret={"pos":"pageBottom","numFmt":"lowerLetter","numStart":2,"numRestart":"eachPage"}
+props#373	op=endnote|pageBottom||2.5|eachSect|1	ret={"pos":"pageBottom","numFmt":"","numStart":2.5,"numRestart":"eachSect"}
+props#374	op=endnote|x|decimal|0|continuous|1	ret={"pos":"x","numFmt":"decimal","numStart":0}
+props#375	op=endnote|x|lowerLetter|0|eachSect|0	ret={"numFmt":"lowerLetter","numStart":0,"numRestart":"eachSect"}
+props#376	op=endnote|docEnd|chicago|-3|x|0	ret={"numFmt":"chicago","numStart":-3,"numRestart":"x"}
+props#377	op=footnote|docEnd||NaN|eachPage|0	ret={"numFmt":"","numStart":null,"numRestart":"eachPage"}
+props#378	op=footnote|x|lowerRoman|1|eachSect|0	ret={"numFmt":"lowerRoman","numRestart":"eachSect"}
+props#379	op=footnote|x|upperRoman|5|x|0	ret={"numFmt":"upperRoman","numStart":5,"numRestart":"x"}
+props#380	op=footnote|sectEnd||-3|eachPage|0	ret={"numFmt":"","numStart":-3,"numRestart":"eachPage"}
+props#381	op=footnote|beneathText|lowerLetter|-3|continuous|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":-3}
+props#382	op=endnote|beneathText|lowerLetter|5|eachPage|0	ret={"numFmt":"lowerLetter","numStart":5,"numRestart":"eachPage"}
+props#383	op=endnote|sectEnd|chicago|0|x|1	ret={"pos":"sectEnd","numFmt":"chicago","numStart":0,"numRestart":"x"}
+props#384	op=endnote|x|upperRoman|Infinity|eachSect|1	ret={"pos":"x","numFmt":"upperRoman","numStart":null,"numRestart":"eachSect"}
+props#385	op=endnote|sectEnd||-3|eachPage|1	ret={"pos":"sectEnd","numFmt":"","numStart":-3,"numRestart":"eachPage"}
+props#386	op=endnote|x|lowerRoman|NaN|eachPage|0	ret={"numStart":null,"numRestart":"eachPage"}
+props#387	op=endnote|pageBottom|decimal|1e+300|eachPage|1	ret={"pos":"pageBottom","numFmt":"decimal","numStart":1e+300,"numRestart":"eachPage"}
+props#388	op=endnote|beneathText|decimal|Infinity|x|0	ret={"numFmt":"decimal","numStart":null,"numRestart":"x"}
+props#389	op=footnote|beneathText|decimal|2|eachSect|0	ret={"numStart":2,"numRestart":"eachSect"}
+props#390	op=endnote|sectEnd|decimal|2|x|1	ret={"pos":"sectEnd","numFmt":"decimal","numStart":2,"numRestart":"x"}
+props#391	op=endnote|beneathText|lowerLetter|1|eachSect|0	ret={"numFmt":"lowerLetter","numRestart":"eachSect"}
+props#392	op=endnote|pageBottom|chicago|2.5|continuous|0	ret={"numFmt":"chicago","numStart":2.5}
+props#393	op=endnote|beneathText|decimal|2.5|eachSect|0	ret={"numFmt":"decimal","numStart":2.5,"numRestart":"eachSect"}
+props#394	op=endnote|beneathText|decimal|2.5|continuous|1	ret={"pos":"beneathText","numFmt":"decimal","numStart":2.5}
+props#395	op=endnote|pageBottom|lowerLetter|-3|continuous|0	ret={"numFmt":"lowerLetter","numStart":-3}
+props#396	op=footnote|beneathText|decimal|1|eachSect|1	ret={"pos":"beneathText","numRestart":"eachSect"}
+props#397	op=endnote|docEnd||Infinity|eachSect|1	ret={"numFmt":"","numStart":null,"numRestart":"eachSect"}
+props#398	op=footnote|sectEnd|lowerLetter|NaN|eachSect|0	ret={"numFmt":"lowerLetter","numStart":null,"numRestart":"eachSect"}
+props#399	op=endnote|sectEnd|lowerRoman|NaN|continuous|0	ret={"numStart":null}
+props#400	op=footnote|docEnd|lowerRoman|2|eachPage|0	ret={"numFmt":"lowerRoman","numStart":2,"numRestart":"eachPage"}
+props#401	op=endnote|docEnd|chicago|2|eachSect|0	ret={"numFmt":"chicago","numStart":2,"numRestart":"eachSect"}
+props#402	op=endnote|beneathText|chicago|0|eachSect|1	ret={"pos":"beneathText","numFmt":"chicago","numStart":0,"numRestart":"eachSect"}
+props#403	op=endnote|beneathText|lowerRoman|-3|continuous|0	ret={"numStart":-3}
+props#404	op=endnote|sectEnd||0|continuous|1	ret={"pos":"sectEnd","numFmt":"","numStart":0}
+props#405	op=endnote|x||2.5|x|0	ret={"numFmt":"","numStart":2.5,"numRestart":"x"}
+props#406	op=endnote|pageBottom|lowerRoman|2.5|continuous|0	ret={"numStart":2.5}
+props#407	op=endnote|docEnd|lowerLetter|NaN|continuous|1	ret={"numFmt":"lowerLetter","numStart":null}
+props#408	op=footnote|beneathText|upperRoman|2|continuous|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":2}
+props#409	op=footnote|x|chicago|5|eachPage|0	ret={"numFmt":"chicago","numStart":5,"numRestart":"eachPage"}
+props#410	op=footnote|sectEnd|upperRoman|Infinity|x|0	ret={"numFmt":"upperRoman","numStart":null,"numRestart":"x"}
+props#411	op=footnote|beneathText|lowerLetter|Infinity|eachSect|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":null,"numRestart":"eachSect"}
+props#412	op=footnote|sectEnd|upperRoman|2.5|eachPage|0	ret={"numFmt":"upperRoman","numStart":2.5,"numRestart":"eachPage"}
+props#413	op=footnote|docEnd|chicago|Infinity|eachSect|1	ret={"pos":"docEnd","numFmt":"chicago","numStart":null,"numRestart":"eachSect"}
+props#414	op=endnote|x||NaN|eachPage|1	ret={"pos":"x","numFmt":"","numStart":null,"numRestart":"eachPage"}
+props#415	op=endnote|sectEnd|chicago|NaN|eachSect|1	ret={"pos":"sectEnd","numFmt":"chicago","numStart":null,"numRestart":"eachSect"}
+props#416	op=footnote|pageBottom||2.5|x|1	ret={"numFmt":"","numStart":2.5,"numRestart":"x"}
+props#417	op=footnote|x|chicago|5|eachPage|0	ret={"numFmt":"chicago","numStart":5,"numRestart":"eachPage"}
+props#418	op=footnote|docEnd|lowerRoman|2.5|continuous|1	ret={"pos":"docEnd","numFmt":"lowerRoman","numStart":2.5}
+props#419	op=footnote|x|lowerLetter|5|continuous|0	ret={"numFmt":"lowerLetter","numStart":5}
+props#420	op=footnote|x|chicago|1e+300|continuous|1	ret={"pos":"x","numFmt":"chicago","numStart":1e+300}
+props#421	op=endnote|beneathText|upperRoman|1e+300|eachSect|1	ret={"pos":"beneathText","numFmt":"upperRoman","numStart":1e+300,"numRestart":"eachSect"}
+props#422	op=footnote|beneathText|upperRoman|0|continuous|0	ret={"numFmt":"upperRoman","numStart":0}
+props#423	op=endnote|x|chicago|5|eachPage|1	ret={"pos":"x","numFmt":"chicago","numStart":5,"numRestart":"eachPage"}
+props#424	op=endnote|x|chicago|5|eachPage|0	ret={"numFmt":"chicago","numStart":5,"numRestart":"eachPage"}
+props#425	op=footnote|x|lowerLetter|2.5|eachSect|1	ret={"pos":"x","numFmt":"lowerLetter","numStart":2.5,"numRestart":"eachSect"}
+props#426	op=endnote|x|lowerRoman|-3|x|0	ret={"numStart":-3,"numRestart":"x"}
+props#427	op=endnote|pageBottom|chicago|0|x|0	ret={"numFmt":"chicago","numStart":0,"numRestart":"x"}
+props#428	op=endnote|sectEnd|decimal|5|eachSect|0	ret={"numFmt":"decimal","numStart":5,"numRestart":"eachSect"}
+props#429	op=footnote|beneathText|decimal|1e+300|eachSect|1	ret={"pos":"beneathText","numStart":1e+300,"numRestart":"eachSect"}
+props#430	op=footnote|pageBottom||-3|continuous|0	ret={"numFmt":"","numStart":-3}
+props#431	op=endnote|beneathText|lowerLetter|1e+300|eachSect|0	ret={"numFmt":"lowerLetter","numStart":1e+300,"numRestart":"eachSect"}
+props#432	op=endnote|sectEnd||5|eachPage|0	ret={"numFmt":"","numStart":5,"numRestart":"eachPage"}
+props#433	op=footnote|docEnd||-3|continuous|1	ret={"pos":"docEnd","numFmt":"","numStart":-3}
+props#434	op=endnote|x|chicago|1|x|1	ret={"pos":"x","numFmt":"chicago","numRestart":"x"}
+props#435	op=footnote|docEnd|chicago|-3|x|1	ret={"pos":"docEnd","numFmt":"chicago","numStart":-3,"numRestart":"x"}
+props#436	op=endnote|beneathText|lowerLetter|Infinity|eachPage|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":null,"numRestart":"eachPage"}
+props#437	op=footnote|pageBottom|chicago|5|x|1	ret={"numFmt":"chicago","numStart":5,"numRestart":"x"}
+props#438	op=endnote|sectEnd||2.5|continuous|1	ret={"pos":"sectEnd","numFmt":"","numStart":2.5}
+props#439	op=endnote|beneathText|decimal|0|continuous|0	ret={"numFmt":"decimal","numStart":0}
+props#440	op=footnote|pageBottom||5|x|0	ret={"numFmt":"","numStart":5,"numRestart":"x"}
+props#441	op=endnote|docEnd|chicago|2|eachPage|1	ret={"numFmt":"chicago","numStart":2,"numRestart":"eachPage"}
+props#442	op=endnote|x|lowerLetter|1e+300|continuous|1	ret={"pos":"x","numFmt":"lowerLetter","numStart":1e+300}
+props#443	op=footnote|docEnd|decimal|0|eachPage|0	ret={"numStart":0,"numRestart":"eachPage"}
+props#444	op=footnote|sectEnd|lowerRoman|2|continuous|1	ret={"pos":"sectEnd","numFmt":"lowerRoman","numStart":2}
+props#445	op=endnote|docEnd|chicago|-3|eachPage|0	ret={"numFmt":"chicago","numStart":-3,"numRestart":"eachPage"}
+props#446	op=endnote|x|lowerRoman|1e+300|eachSect|1	ret={"pos":"x","numStart":1e+300,"numRestart":"eachSect"}
+props#447	op=endnote|x|chicago|NaN|eachPage|1	ret={"pos":"x","numFmt":"chicago","numStart":null,"numRestart":"eachPage"}
+props#448	op=footnote|sectEnd||NaN|eachPage|1	ret={"pos":"sectEnd","numFmt":"","numStart":null,"numRestart":"eachPage"}
+props#449	op=footnote|sectEnd|upperRoman|1|x|0	ret={"numFmt":"upperRoman","numRestart":"x"}
+props#450	op=endnote|sectEnd|lowerLetter|5|continuous|1	ret={"pos":"sectEnd","numFmt":"lowerLetter","numStart":5}
+props#451	op=endnote|beneathText||0|continuous|1	ret={"pos":"beneathText","numFmt":"","numStart":0}
+props#452	op=endnote|x|chicago|2.5|x|1	ret={"pos":"x","numFmt":"chicago","numStart":2.5,"numRestart":"x"}
+props#453	op=footnote|sectEnd||0|continuous|1	ret={"pos":"sectEnd","numFmt":"","numStart":0}
+props#454	op=endnote|sectEnd|upperRoman|NaN|continuous|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":null}
+props#455	op=footnote|beneathText|upperRoman|-3|eachSect|0	ret={"numFmt":"upperRoman","numStart":-3,"numRestart":"eachSect"}
+props#456	op=footnote|pageBottom||Infinity|continuous|0	ret={"numFmt":"","numStart":null}
+props#457	op=endnote|x|upperRoman|1e+300|continuous|0	ret={"numFmt":"upperRoman","numStart":1e+300}
+props#458	op=footnote|sectEnd|lowerRoman|NaN|eachPage|0	ret={"numFmt":"lowerRoman","numStart":null,"numRestart":"eachPage"}
+props#459	op=endnote|x||NaN|continuous|0	ret={"numFmt":"","numStart":null}
+props#460	op=footnote|beneathText||NaN|eachSect|1	ret={"pos":"beneathText","numFmt":"","numStart":null,"numRestart":"eachSect"}
+props#461	op=footnote|docEnd|lowerRoman|2|eachPage|1	ret={"pos":"docEnd","numFmt":"lowerRoman","numStart":2,"numRestart":"eachPage"}
+props#462	op=endnote|pageBottom|lowerRoman|-3|x|0	ret={"numStart":-3,"numRestart":"x"}
+props#463	op=footnote|pageBottom|upperRoman|1|continuous|1	ret={"numFmt":"upperRoman"}
+props#464	op=footnote|pageBottom|upperRoman|1e+300|x|0	ret={"numFmt":"upperRoman","numStart":1e+300,"numRestart":"x"}
+props#465	op=footnote|beneathText|lowerLetter|5|continuous|0	ret={"numFmt":"lowerLetter","numStart":5}
+props#466	op=endnote|sectEnd|chicago|1e+300|x|0	ret={"numFmt":"chicago","numStart":1e+300,"numRestart":"x"}
+props#467	op=endnote|docEnd|chicago|2.5|continuous|1	ret={"numFmt":"chicago","numStart":2.5}
+props#468	op=footnote|sectEnd|lowerRoman|1|continuous|1	ret={"pos":"sectEnd","numFmt":"lowerRoman"}
+props#469	op=endnote|beneathText|upperRoman|2.5|x|0	ret={"numFmt":"upperRoman","numStart":2.5,"numRestart":"x"}
+props#470	op=endnote|sectEnd|upperRoman|NaN|x|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":null,"numRestart":"x"}
+props#471	op=footnote|docEnd|upperRoman|0|x|0	ret={"numFmt":"upperRoman","numStart":0,"numRestart":"x"}
+props#472	op=footnote|beneathText|upperRoman|5|eachSect|0	ret={"numFmt":"upperRoman","numStart":5,"numRestart":"eachSect"}
+props#473	op=endnote|sectEnd|upperRoman|1e+300|eachPage|0	ret={"numFmt":"upperRoman","numStart":1e+300,"numRestart":"eachPage"}
+props#474	op=endnote|pageBottom|chicago|-3|eachPage|0	ret={"numFmt":"chicago","numStart":-3,"numRestart":"eachPage"}
+props#475	op=endnote|pageBottom|upperRoman|5|eachSect|1	ret={"pos":"pageBottom","numFmt":"upperRoman","numStart":5,"numRestart":"eachSect"}
+props#476	op=footnote|x|chicago|0|eachPage|1	ret={"pos":"x","numFmt":"chicago","numStart":0,"numRestart":"eachPage"}
+props#477	op=endnote|docEnd|decimal|-3|x|0	ret={"numFmt":"decimal","numStart":-3,"numRestart":"x"}
+props#478	op=footnote|x|lowerRoman|Infinity|eachSect|1	ret={"pos":"x","numFmt":"lowerRoman","numStart":null,"numRestart":"eachSect"}
+props#479	op=footnote|sectEnd||-3|eachPage|1	ret={"pos":"sectEnd","numFmt":"","numStart":-3,"numRestart":"eachPage"}
+props#480	op=endnote|docEnd||NaN|x|0	ret={"numFmt":"","numStart":null,"numRestart":"x"}
+props#481	op=footnote|pageBottom|decimal|NaN|eachSect|1	ret={"numStart":null,"numRestart":"eachSect"}
+props#482	op=endnote|sectEnd|lowerRoman|1|continuous|0	ret=-
+props#483	op=footnote|beneathText|lowerLetter|2.5|eachPage|0	ret={"numFmt":"lowerLetter","numStart":2.5,"numRestart":"eachPage"}
+props#484	op=footnote|x|decimal|2|continuous|1	ret={"pos":"x","numStart":2}
+props#485	op=footnote|pageBottom|upperRoman|2|eachPage|1	ret={"numFmt":"upperRoman","numStart":2,"numRestart":"eachPage"}
+props#486	op=footnote|pageBottom||1e+300|continuous|0	ret={"numFmt":"","numStart":1e+300}
+props#487	op=endnote|x|lowerRoman|NaN|eachSect|1	ret={"pos":"x","numStart":null,"numRestart":"eachSect"}
+props#488	op=endnote|docEnd|lowerRoman|5|x|1	ret={"numStart":5,"numRestart":"x"}
+props#489	op=endnote|docEnd|lowerLetter|0|x|1	ret={"numFmt":"lowerLetter","numStart":0,"numRestart":"x"}
+props#490	op=endnote|sectEnd|lowerRoman|-3|continuous|0	ret={"numStart":-3}
+props#491	op=footnote|pageBottom|upperRoman|2|continuous|0	ret={"numFmt":"upperRoman","numStart":2}
+props#492	op=endnote|pageBottom|chicago|2|eachSect|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":2,"numRestart":"eachSect"}
+props#493	op=footnote|sectEnd|chicago|2|eachSect|0	ret={"numFmt":"chicago","numStart":2,"numRestart":"eachSect"}
+props#494	op=endnote|beneathText|lowerLetter|0|continuous|0	ret={"numFmt":"lowerLetter","numStart":0}
+props#495	op=footnote|beneathText|lowerRoman|Infinity|eachSect|1	ret={"pos":"beneathText","numFmt":"lowerRoman","numStart":null,"numRestart":"eachSect"}
+props#496	op=endnote|sectEnd|decimal|5|eachPage|0	ret={"numFmt":"decimal","numStart":5,"numRestart":"eachPage"}
+props#497	op=endnote|docEnd|lowerLetter|NaN|x|0	ret={"numFmt":"lowerLetter","numStart":null,"numRestart":"x"}
+props#498	op=endnote|x|lowerLetter|1|continuous|0	ret={"numFmt":"lowerLetter"}
+props#499	op=endnote|docEnd|decimal|2|x|0	ret={"numFmt":"decimal","numStart":2,"numRestart":"x"}
+props#500	op=footnote|docEnd|lowerRoman|5|x|0	ret={"numFmt":"lowerRoman","numStart":5,"numRestart":"x"}
+props#501	op=endnote|docEnd|upperRoman|NaN|x|1	ret={"numFmt":"upperRoman","numStart":null,"numRestart":"x"}
+props#502	op=endnote|x|upperRoman|Infinity|eachSect|0	ret={"numFmt":"upperRoman","numStart":null,"numRestart":"eachSect"}
+props#503	op=endnote|sectEnd|upperRoman|-3|eachSect|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":-3,"numRestart":"eachSect"}
+props#504	op=footnote|sectEnd|lowerLetter|Infinity|continuous|0	ret={"numFmt":"lowerLetter","numStart":null}
+props#505	op=footnote|pageBottom|lowerRoman|0|x|1	ret={"numFmt":"lowerRoman","numStart":0,"numRestart":"x"}
+props#506	op=endnote|pageBottom|chicago|-3|x|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":-3,"numRestart":"x"}
+props#507	op=endnote|sectEnd|chicago|-3|x|0	ret={"numFmt":"chicago","numStart":-3,"numRestart":"x"}
+props#508	op=footnote|x||2.5|continuous|1	ret={"pos":"x","numFmt":"","numStart":2.5}
+props#509	op=endnote|docEnd|lowerRoman|Infinity|eachSect|0	ret={"numStart":null,"numRestart":"eachSect"}
+props#510	op=footnote|beneathText|lowerRoman|2|continuous|0	ret={"numFmt":"lowerRoman","numStart":2}
+props#511	op=endnote|pageBottom|lowerRoman|NaN|x|0	ret={"numStart":null,"numRestart":"x"}
+props#512	op=endnote|x|decimal|-3|continuous|1	ret={"pos":"x","numFmt":"decimal","numStart":-3}
+props#513	op=footnote|docEnd|decimal|5|eachPage|0	ret={"numStart":5,"numRestart":"eachPage"}
+props#514	op=footnote|beneathText|decimal|1e+300|eachPage|1	ret={"pos":"beneathText","numStart":1e+300,"numRestart":"eachPage"}
+props#515	op=footnote|sectEnd|lowerRoman|5|continuous|1	ret={"pos":"sectEnd","numFmt":"lowerRoman","numStart":5}
+props#516	op=endnote|sectEnd|lowerLetter|Infinity|x|1	ret={"pos":"sectEnd","numFmt":"lowerLetter","numStart":null,"numRestart":"x"}
+props#517	op=endnote|pageBottom|lowerRoman|2|continuous|1	ret={"pos":"pageBottom","numStart":2}
+props#518	op=endnote|pageBottom||2.5|eachSect|0	ret={"numFmt":"","numStart":2.5,"numRestart":"eachSect"}
+props#519	op=footnote|docEnd|lowerLetter|-3|eachSect|0	ret={"numFmt":"lowerLetter","numStart":-3,"numRestart":"eachSect"}
+props#520	op=endnote|pageBottom|lowerRoman|2|eachSect|1	ret={"pos":"pageBottom","numStart":2,"numRestart":"eachSect"}
+props#521	op=endnote|pageBottom|decimal|1|eachPage|1	ret={"pos":"pageBottom","numFmt":"decimal","numRestart":"eachPage"}
+props#522	op=endnote|docEnd|decimal|1|eachPage|1	ret={"numFmt":"decimal","numRestart":"eachPage"}
+props#523	op=endnote|x|chicago|2|eachPage|0	ret={"numFmt":"chicago","numStart":2,"numRestart":"eachPage"}
+props#524	op=footnote|pageBottom|lowerRoman|0|eachPage|0	ret={"numFmt":"lowerRoman","numStart":0,"numRestart":"eachPage"}
+props#525	op=endnote|pageBottom||5|x|1	ret={"pos":"pageBottom","numFmt":"","numStart":5,"numRestart":"x"}
+props#526	op=endnote|sectEnd|lowerLetter|0|continuous|1	ret={"pos":"sectEnd","numFmt":"lowerLetter","numStart":0}
+props#527	op=footnote|beneathText||-3|continuous|1	ret={"pos":"beneathText","numFmt":"","numStart":-3}
+props#528	op=footnote|beneathText|upperRoman|-3|eachPage|0	ret={"numFmt":"upperRoman","numStart":-3,"numRestart":"eachPage"}
+props#529	op=footnote|sectEnd|lowerRoman|NaN|eachPage|1	ret={"pos":"sectEnd","numFmt":"lowerRoman","numStart":null,"numRestart":"eachPage"}
+props#530	op=endnote|sectEnd|lowerRoman|0|x|0	ret={"numStart":0,"numRestart":"x"}
+props#531	op=footnote|docEnd|upperRoman|0|x|1	ret={"pos":"docEnd","numFmt":"upperRoman","numStart":0,"numRestart":"x"}
+props#532	op=footnote|pageBottom|lowerRoman|-3|continuous|0	ret={"numFmt":"lowerRoman","numStart":-3}
+props#533	op=footnote|x|upperRoman|1|eachSect|1	ret={"pos":"x","numFmt":"upperRoman","numRestart":"eachSect"}
+props#534	op=endnote|pageBottom|decimal|2.5|continuous|0	ret={"numFmt":"decimal","numStart":2.5}
+props#535	op=endnote|docEnd||1|eachPage|0	ret={"numFmt":"","numRestart":"eachPage"}
+props#536	op=footnote|pageBottom|chicago|1e+300|continuous|1	ret={"numFmt":"chicago","numStart":1e+300}
+props#537	op=endnote|sectEnd|upperRoman|5|continuous|0	ret={"numFmt":"upperRoman","numStart":5}
+props#538	op=footnote|docEnd|lowerRoman|-3|eachPage|1	ret={"pos":"docEnd","numFmt":"lowerRoman","numStart":-3,"numRestart":"eachPage"}
+props#539	op=footnote|x|decimal|2.5|eachPage|0	ret={"numStart":2.5,"numRestart":"eachPage"}
+props#540	op=endnote|sectEnd|lowerLetter|1|x|1	ret={"pos":"sectEnd","numFmt":"lowerLetter","numRestart":"x"}
+props#541	op=endnote|beneathText|lowerRoman|1|eachPage|1	ret={"pos":"beneathText","numRestart":"eachPage"}
+props#542	op=footnote|sectEnd|upperRoman|-3|continuous|1	ret={"pos":"sectEnd","numFmt":"upperRoman","numStart":-3}
+props#543	op=footnote|x|upperRoman|1|eachPage|0	ret={"numFmt":"upperRoman","numRestart":"eachPage"}
+props#544	op=footnote|beneathText|decimal|2.5|eachPage|0	ret={"numStart":2.5,"numRestart":"eachPage"}
+props#545	op=endnote|x||1|eachPage|0	ret={"numFmt":"","numRestart":"eachPage"}
+props#546	op=footnote|x|decimal|5|continuous|1	ret={"pos":"x","numStart":5}
+props#547	op=endnote|beneathText|decimal|0|continuous|1	ret={"pos":"beneathText","numFmt":"decimal","numStart":0}
+props#548	op=endnote|pageBottom|upperRoman|2|eachSect|0	ret={"numFmt":"upperRoman","numStart":2,"numRestart":"eachSect"}
+props#549	op=endnote|docEnd|chicago|5|x|0	ret={"numFmt":"chicago","numStart":5,"numRestart":"x"}
+props#550	op=endnote|docEnd|chicago|Infinity|x|0	ret={"numFmt":"chicago","numStart":null,"numRestart":"x"}
+props#551	op=footnote|docEnd|chicago|2.5|eachSect|0	ret={"numFmt":"chicago","numStart":2.5,"numRestart":"eachSect"}
+props#552	op=endnote|beneathText|lowerLetter|2|x|0	ret={"numFmt":"lowerLetter","numStart":2,"numRestart":"x"}
+props#553	op=endnote|docEnd|upperRoman|2.5|eachPage|0	ret={"numFmt":"upperRoman","numStart":2.5,"numRestart":"eachPage"}
+props#554	op=endnote|sectEnd|lowerLetter|1e+300|eachPage|1	ret={"pos":"sectEnd","numFmt":"lowerLetter","numStart":1e+300,"numRestart":"eachPage"}
+props#555	op=endnote|x|decimal|2.5|eachPage|0	ret={"numFmt":"decimal","numStart":2.5,"numRestart":"eachPage"}
+props#556	op=endnote|x|lowerLetter|NaN|eachPage|1	ret={"pos":"x","numFmt":"lowerLetter","numStart":null,"numRestart":"eachPage"}
+props#557	op=footnote|docEnd|lowerRoman|-3|eachPage|0	ret={"numFmt":"lowerRoman","numStart":-3,"numRestart":"eachPage"}
+props#558	op=endnote|pageBottom|lowerLetter|NaN|eachSect|1	ret={"pos":"pageBottom","numFmt":"lowerLetter","numStart":null,"numRestart":"eachSect"}
+props#559	op=footnote|beneathText|decimal|2.5|x|1	ret={"pos":"beneathText","numStart":2.5,"numRestart":"x"}
+props#560	op=footnote|beneathText||0|continuous|0	ret={"numFmt":"","numStart":0}
+props#561	op=endnote|sectEnd|lowerLetter|-3|eachSect|1	ret={"pos":"sectEnd","numFmt":"lowerLetter","numStart":-3,"numRestart":"eachSect"}
+props#562	op=footnote|pageBottom||0|eachPage|0	ret={"numFmt":"","numStart":0,"numRestart":"eachPage"}
+props#563	op=footnote|pageBottom|upperRoman|0|eachPage|1	ret={"numFmt":"upperRoman","numStart":0,"numRestart":"eachPage"}
+props#564	op=endnote|pageBottom|lowerRoman|0|eachPage|0	ret={"numStart":0,"numRestart":"eachPage"}
+props#565	op=footnote|x|upperRoman|2.5|eachPage|0	ret={"numFmt":"upperRoman","numStart":2.5,"numRestart":"eachPage"}
+props#566	op=endnote|x|decimal|NaN|eachSect|1	ret={"pos":"x","numFmt":"decimal","numStart":null,"numRestart":"eachSect"}
+props#567	op=endnote|x|chicago|2|continuous|0	ret={"numFmt":"chicago","numStart":2}
+props#568	op=endnote|beneathText||5|continuous|0	ret={"numFmt":"","numStart":5}
+props#569	op=endnote|docEnd|upperRoman|1|eachSect|0	ret={"numFmt":"upperRoman","numRestart":"eachSect"}
+props#570	op=endnote|sectEnd|upperRoman|-3|x|0	ret={"numFmt":"upperRoman","numStart":-3,"numRestart":"x"}
+props#571	op=endnote|beneathText|lowerLetter|Infinity|continuous|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":null}
+props#572	op=footnote|x|lowerLetter|Infinity|eachPage|1	ret={"pos":"x","numFmt":"lowerLetter","numStart":null,"numRestart":"eachPage"}
+props#573	op=footnote|sectEnd|decimal|2|eachSect|1	ret={"pos":"sectEnd","numStart":2,"numRestart":"eachSect"}
+props#574	op=endnote|sectEnd|chicago|2|eachPage|0	ret={"numFmt":"chicago","numStart":2,"numRestart":"eachPage"}
+props#575	op=footnote|sectEnd|upperRoman|NaN|x|0	ret={"numFmt":"upperRoman","numStart":null,"numRestart":"x"}
+props#576	op=endnote|pageBottom|upperRoman|-3|eachPage|1	ret={"pos":"pageBottom","numFmt":"upperRoman","numStart":-3,"numRestart":"eachPage"}
+props#577	op=footnote|sectEnd|decimal|5|eachSect|0	ret={"numStart":5,"numRestart":"eachSect"}
+props#578	op=endnote|x|decimal|5|x|0	ret={"numFmt":"decimal","numStart":5,"numRestart":"x"}
+props#579	op=endnote|docEnd|upperRoman|-3|continuous|0	ret={"numFmt":"upperRoman","numStart":-3}
+props#580	op=endnote|pageBottom|decimal|0|eachSect|1	ret={"pos":"pageBottom","numFmt":"decimal","numStart":0,"numRestart":"eachSect"}
+props#581	op=footnote|pageBottom|lowerRoman|1|continuous|0	ret={"numFmt":"lowerRoman"}
+props#582	op=footnote|sectEnd|lowerRoman|2.5|x|0	ret={"numFmt":"lowerRoman","numStart":2.5,"numRestart":"x"}
+props#583	op=footnote|x||2.5|continuous|1	ret={"pos":"x","numFmt":"","numStart":2.5}
+props#584	op=endnote|pageBottom|upperRoman|2|eachPage|0	ret={"numFmt":"upperRoman","numStart":2,"numRestart":"eachPage"}
+props#585	op=footnote|x|chicago|Infinity|continuous|1	ret={"pos":"x","numFmt":"chicago","numStart":null}
+props#586	op=endnote|beneathText|decimal|5|eachPage|0	ret={"numFmt":"decimal","numStart":5,"numRestart":"eachPage"}
+props#587	op=footnote|x|upperRoman|0|x|1	ret={"pos":"x","numFmt":"upperRoman","numStart":0,"numRestart":"x"}
+props#588	op=endnote|beneathText|lowerLetter|5|eachPage|1	ret={"pos":"beneathText","numFmt":"lowerLetter","numStart":5,"numRestart":"eachPage"}
+props#589	op=endnote|beneathText|chicago|5|eachSect|0	ret={"numFmt":"chicago","numStart":5,"numRestart":"eachSect"}
+props#590	op=footnote|pageBottom|lowerRoman|0|continuous|0	ret={"numFmt":"lowerRoman","numStart":0}
+props#591	op=endnote|x|upperRoman|2.5|continuous|1	ret={"pos":"x","numFmt":"upperRoman","numStart":2.5}
+props#592	op=footnote|docEnd|chicago|Infinity|x|0	ret={"numFmt":"chicago","numStart":null,"numRestart":"x"}
+props#593	op=footnote|docEnd|chicago|1|x|1	ret={"pos":"docEnd","numFmt":"chicago","numRestart":"x"}
+props#594	op=footnote|pageBottom|chicago|Infinity|eachPage|1	ret={"numFmt":"chicago","numStart":null,"numRestart":"eachPage"}
+props#595	op=endnote|pageBottom|lowerLetter|5|x|1	ret={"pos":"pageBottom","numFmt":"lowerLetter","numStart":5,"numRestart":"x"}
+props#596	op=endnote|pageBottom|chicago|1e+300|eachSect|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":1e+300,"numRestart":"eachSect"}
+props#597	op=endnote|pageBottom|chicago|5|x|1	ret={"pos":"pageBottom","numFmt":"chicago","numStart":5,"numRestart":"x"}
+props#598	op=footnote|sectEnd|lowerRoman|-3|eachSect|0	ret={"numFmt":"lowerRoman","numStart":-3,"numRestart":"eachSect"}
+props#599	op=footnote|sectEnd|lowerLetter|5|eachSect|1	ret={"pos":"sectEnd","numFmt":"lowerLetter","numStart":5,"numRestart":"eachSect"}
+write/packages/docx-layout/test/oracle/altname/alt-auni-81.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/altname/alt-auni-calibri.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/altname/alt-auni-none.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/altname/alt-inventada-00.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/altname/alt-inventada-81-roman.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/altname/alt-inventada-yugothic.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/anchorbefore/ab-body-0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/anchorbefore/ab-c11-body-0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/anchorbefore/ab-c14-body-0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/anchorbefore/ab-cell1-10.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/anchorbefore/ab-cell2-after-b100.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/anctrail/at-right.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp2/as2-cell-other.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c9bc7bd3ea8328051592a3cc80a7413d,Textodenotaderodap,Refdenotaderodap#f4af8b2c10b43af2bdc97cc0fb317f49,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp2/as2-direct-cell-expl.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=a941809627e8a9b57b99baf6de6dc79c,Textodenotaderodap,Refdenotaderodap#6e9723497bf1c8de67ca68f3d12fd32a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp2/as2-direct-prev.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5f66cdb3cdaba26e8708a1ef848e2f16,Textodenotaderodap,Refdenotaderodap#58086fea0780221d3c1fb072652d6a22,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp2/as2-expl-cells.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=8211a3f29d67db75af99b97e43239576,Textodenotaderodap,Refdenotaderodap#90292af73107daa5c8fa43ce8446eef2,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp2/as2-explicit.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=8211a3f29d67db75af99b97e43239576,Textodenotaderodap,Refdenotaderodap#90292af73107daa5c8fa43ce8446eef2,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp2/as2-ftr-one.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c9bc7bd3ea8328051592a3cc80a7413d,Textodenotaderodap,Refdenotaderodap#f4af8b2c10b43af2bdc97cc0fb317f49,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp2/as2-hdr-expl.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=8211a3f29d67db75af99b97e43239576,Textodenotaderodap,Refdenotaderodap#90292af73107daa5c8fa43ce8446eef2,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp2/as2-row-first-other.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c9bc7bd3ea8328051592a3cc80a7413d,Textodenotaderodap,Refdenotaderodap#f4af8b2c10b43af2bdc97cc0fb317f49,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp2/as2-rows-last-other.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c9bc7bd3ea8328051592a3cc80a7413d,Textodenotaderodap,Refdenotaderodap#f4af8b2c10b43af2bdc97cc0fb317f49,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp/as-first-anchor.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=33878a9e67b74bda5fa178445b41f286,Textodenotaderodap,Refdenotaderodap#29ce95ba83bf8fcc3259ebc818620e7f,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp/as-hdr-one.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=33878a9e67b74bda5fa178445b41f286,Textodenotaderodap,Refdenotaderodap#29ce95ba83bf8fcc3259ebc818620e7f,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosp/as-p-p.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=33878a9e67b74bda5fa178445b41f286,Textodenotaderodap,Refdenotaderodap#29ce95ba83bf8fcc3259ebc818620e7f,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosphtml/ash-c11-html.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosphtml/ash-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosplist/asl-num.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/autosplist/asl-zero-auto.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bdrthin/bt-sz3.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bdrw/bdrw-p-dotted.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bdrw/bdrw-p-thick.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bdrw/bdrw-t-double.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bodyfit/bf-cf-s4896.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bodyfit/bf-f-s221.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bodyfit/bf-f-s224.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bodyfit/bf-f-s227.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bodyfit/bf-ff-s5031.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bodyfit/bf-m-s88.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bodyfit/bf-m-s91.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/bodyfit/bf-mf-s4896.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/botfloat/bf-front.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/brclear/brc-left.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/breakopp/emdash-run.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5738b1e2ad5c1f457dd06c7fe375329d,Textodenotaderodap,Refdenotaderodap#6c37d5e38a431b8ef4af123b103e96ee,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/breakopp/hif-fim-run.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5738b1e2ad5c1f457dd06c7fe375329d,Textodenotaderodap,Refdenotaderodap#6c37d5e38a431b8ef4af123b103e96ee,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/breakopp/hif-mesmo-run.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5738b1e2ad5c1f457dd06c7fe375329d,Textodenotaderodap,Refdenotaderodap#6c37d5e38a431b8ef4af123b103e96ee,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/breaks/br-line.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5738b1e2ad5c1f457dd06c7fe375329d,Textodenotaderodap,Refdenotaderodap#6c37d5e38a431b8ef4af123b103e96ee,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/brfirst/bf-col-start-hang.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/brfirst/bf-col-start.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/brfirst/bf-page-start.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cbline/cbl-l240-s36.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cbline/cbl-l360-s36.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellftbl/cft-text-margin-right-425-empty.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellftbl/cft-text-page-x5000-300.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellnote/cn-span-late.docx#init	nid=2,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=b39ba1b1869bba9d9204e159e2b4bc50,FootnoteText,FootnoteReference#07b6fe533f3bd2fd03c057f0916cf136,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellnote/cn-span-late.docx#cv:footnote:1	digest=92d0e9a96def66669f5edda7069931d0
+write/packages/docx-layout/test/oracle/cellout/co11-in.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellout/co14-in-b3.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellout/co14-in-r2.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellout/co14-out-mrg.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellout/co14-out.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellout/co15-out.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellpic/cp-hdr-cont0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellpic/cp-hdr-noimg.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellsp2/cs2-200-3col.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellsp2/cs2-200-mar0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellsp2/cs2-200.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellsp2/cs2f-200-3col.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellsp/cs-40.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellsp/cs-zero-rowonly.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellsp/cs-zero.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellwrap/cw-auto-fit-square-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellwrap/cw-auto-wide-square-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellwrap/cw-grow-square-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellwrap/cw-none-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellwrap/cw-square-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellwrap/cw-square-rmargin-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellwrap/cw-vb-none-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/cellwrap/cw-vc-none-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbal3/b2-0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbal3/b3-0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbal3/b3-40.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbal3/b3-80.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbal/cb-empty-1.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=e96a0ebd7183990e8b2ec19a0dc8cb03,Textodenotaderodap,Refdenotaderodap#5adcfa795b4a264ff275690533c956c6,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbal/cb-empty-4.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=e96a0ebd7183990e8b2ec19a0dc8cb03,Textodenotaderodap,Refdenotaderodap#5adcfa795b4a264ff275690533c956c6,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbal/cb-last-short-6.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=e96a0ebd7183990e8b2ec19a0dc8cb03,Textodenotaderodap,Refdenotaderodap#5adcfa795b4a264ff275690533c956c6,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbal/cb-short-2.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=e96a0ebd7183990e8b2ec19a0dc8cb03,Textodenotaderodap,Refdenotaderodap#5adcfa795b4a264ff275690533c956c6,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbal/cb-short-6.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=e96a0ebd7183990e8b2ec19a0dc8cb03,Textodenotaderodap,Refdenotaderodap#5adcfa795b4a264ff275690533c956c6,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-emptysect-2col.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-emptysect-aftertbl-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-emptysect-big.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-exact-mark.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-par-sp-empty-text-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-plain-mark.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-seq-a0-e60-t0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-seq-a10-e66-t6.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-tbl-sp-empty-text-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-tbl-sp-text.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/colbreak/cb-textsect-after-sp.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=29d25aea754a010fc22df1024bfc4453,Textodenotaderodap,Refdenotaderodap#634a6be954f1ec12a5d5896e39dcb2e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/coltbl/ct-c1-c2.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/compat-text/txt-arial-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=744a830f3bd9dc8137cd386f830c9ce1,Textodenotaderodap,Refdenotaderodap#7721a713a20e908ead70c598303a791c,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/compat-text/txt-calibri-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=fd9bf1e3b00196c59d115c0663894004,Textodenotaderodap,Refdenotaderodap#db6d7353cfee567f500d0286383c41bf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/compat-text/txt-times-new-roman-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=2d9c07768a90126151377ef5fc779e73,Textodenotaderodap,Refdenotaderodap#e3840ab7a5d4a515ab933163ab213408,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/compat-text/txt-verdana-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=1a5ff757c1643ab43b3207cdc6a7cae5,Textodenotaderodap,Refdenotaderodap#863ad2e3e452d3a627ede54b41d5e611,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/contband/cb-float-inside.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/contband/cb-flow-inside.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ctxmark/cm-ctx-mark16.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=73089e5be4d19d692e070bc94c5947e4,Textodenotaderodap,Refdenotaderodap#dc348913b048e03c084ce14c468e9f11,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ctxmark/cm-mark26.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=73089e5be4d19d692e070bc94c5947e4,Textodenotaderodap,Refdenotaderodap#dc348913b048e03c084ce14c468e9f11,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/dashsym/ds-endash.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/dgmspace/dgm-empty-189.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/docgrid/grid-calibri-after.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/docgrid/grid-lines312-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/eafont/ea-arial-10-240.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c577d238986a8a6000a71cde796b4a9e,Textodenotaderodap,Refdenotaderodap#b6be9eedabe1b479a65d772f98a165a5,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/easpace/eas-a-sp-noft.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/easpace/eas-a-txt.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/easpace/eas-c-txt-noft.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/easpace/eas-d-sp.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/easpace/eas-e-sp-noft.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/easpace/eas-e-txt.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/effext/ee-lr5.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emfpat/ep-black-pp.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emfpat/ep-dnop.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emfpat/ep-notpat.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emfpat/ep-patinvert.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emfrop/er-and.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emfrop/er-notcopy.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emfrop/er-patinvert.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emfrop/er-white.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emptywrap/ew-c11-text.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emptywrap/ew-c15-text.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/emwidth/ew-scale-arial.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/endnotes/en-after.docx#init	nid=1,3	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=738ec6103f58c5102634202d1f73c978,FootnoteText,FootnoteReference#738ec6103f58c5102634202d1f73c978,EndnoteText,EndnoteReference
+write/packages/docx-layout/test/oracle/endnotes/en-after.docx#cv:endnote:1	digest=2677e6b54b6ccde1f4b6c843381aec91
+write/packages/docx-layout/test/oracle/endnotes/en-after.docx#cv:endnote:2	digest=a4b5e9670a06f58773c089cffab94854
+write/packages/docx-layout/test/oracle/endnotes/en-doc.docx#init	nid=1,3	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=d871518836d36bb1ef4a76dbca4e51c8,FootnoteText,FootnoteReference#d871518836d36bb1ef4a76dbca4e51c8,EndnoteText,EndnoteReference
+write/packages/docx-layout/test/oracle/endnotes/en-doc.docx#cv:endnote:1	digest=5824d3ffdf3ab32e7cca281b24eb0a89
+write/packages/docx-layout/test/oracle/endnotes/en-doc.docx#cv:endnote:2	digest=72652d046ce31d6813fb3ce0ee6c2a2c
+write/packages/docx-layout/test/oracle/endnotes/en-fill55.docx#init	nid=1,3	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=d871518836d36bb1ef4a76dbca4e51c8,FootnoteText,FootnoteReference#d871518836d36bb1ef4a76dbca4e51c8,EndnoteText,EndnoteReference
+write/packages/docx-layout/test/oracle/endnotes/en-fill55.docx#cv:endnote:1	digest=4d4ba541c20be4045512749c8569d792
+write/packages/docx-layout/test/oracle/endnotes/en-fill55.docx#cv:endnote:2	digest=dc70777d58555cf478f758c3d71e9b7d
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#init	nid=1,4	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,eachSect,-	sty=d871518836d36bb1ef4a76dbca4e51c8,FootnoteText,FootnoteReference#d871518836d36bb1ef4a76dbca4e51c8,EndnoteText,EndnoteReference
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#cv:endnote:1	digest=c3a9df525e14627d7eea7e952f42c76e
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#cv:endnote:2	digest=caf44e78547d5dab4fe45953df5d9e94
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#cv:endnote:3	digest=b409244480d8d4a7abc034fa35d9f7b5
+write/packages/docx-layout/test/oracle/endnotes/en-split.docx#init	nid=1,2	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=d871518836d36bb1ef4a76dbca4e51c8,FootnoteText,FootnoteReference#d871518836d36bb1ef4a76dbca4e51c8,EndnoteText,EndnoteReference
+write/packages/docx-layout/test/oracle/endnotes/en-split.docx#cv:endnote:1	digest=4791223b1db1be17290f7cf54b963820
+write/packages/docx-layout/test/oracle/endnotes/sep-times14.docx#init	nid=2,2	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=d1826880a1317c7e7ea7a19ceab91e82,FootnoteText,FootnoteReference#d1826880a1317c7e7ea7a19ceab91e82,EndnoteText,EndnoteReference
+write/packages/docx-layout/test/oracle/endnotes/sep-times14.docx#cv:footnote:1	digest=dc7d4bceb6fad36da7bb501edbc3d382
+write/packages/docx-layout/test/oracle/endnotes/sep-times14.docx#cv:endnote:1	digest=a9e38f06dedebe1d7d1609b04589510d
+write/packages/docx-layout/test/oracle/enspace/es-quebra.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/enspace/es-times-new-roman.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=d6cfbd1125c42a19a96173644f361ac5,Textodenotaderodap,Refdenotaderodap#c0627367c75ad5e2283eabe5f379e32d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fb-tahoma-msmincho.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=ee544c34638986372fa331238656d267,Textodenotaderodap,Refdenotaderodap#50305d5cc3a03fb16d6d2c2c44053715,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fb-timesnewroman-mspgothic.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=8c6c69bb08c903857e10d0bd74dbf232,Textodenotaderodap,Refdenotaderodap#485423e90baed8bf26b8d62884d38cff,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fc-arial-cp-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7ab6840fbf199c40c6d678b5b021c01b,Textodenotaderodap,Refdenotaderodap#72f571872e70f1b98baf00694a7b975b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fc-arial-estilo-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=8422348d81dee0f02df57755120f25e5,Textodenotaderodap,Refdenotaderodap#7829c504f49b0fc716ffba5e0a5620ac,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fc-calibri-cp-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=16e85fe110474e39dd4ee979b63f6705,Textodenotaderodap,Refdenotaderodap#0c1f67857bb43482da582ecfc8eccfcc,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fc-calibri-nc-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=16e85fe110474e39dd4ee979b63f6705,Textodenotaderodap,Refdenotaderodap#0c1f67857bb43482da582ecfc8eccfcc,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fc-georgia-cp-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=bee54b9b40843c3c52651f9124c49816,Textodenotaderodap,Refdenotaderodap#c54b7f6cc90dea773dae9c1486d689f0,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fc-timesnewroman-cp-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=92b9c98f37d755c0e550990ca734aa1f,Textodenotaderodap,Refdenotaderodap#7b525195dcb9f671e484d60c536e3e06,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fc-timesnewroman-estilo-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=a012e57ea697ed2c15eac9b167c733c9,Textodenotaderodap,Refdenotaderodap#44ebd6273fe4db933d3a2696debabe36,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fc-verdana-cp-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=862317646b5803e322715a3665b1393d,Textodenotaderodap,Refdenotaderodap#916bf7420e7a3a14467f0d6950ee495f,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fc-verdana-nc-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=862317646b5803e322715a3665b1393d,Textodenotaderodap,Refdenotaderodap#916bf7420e7a3a14467f0d6950ee495f,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fh-ko-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=402bf3509ae7ce586c3d83cf04037edc,Textodenotaderodap,Refdenotaderodap#b417c1bfd62ca1dc462f2be129f46a65,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fecompress/fh-zh-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=786b0dc92d69f7eae8b244de247a463a,Textodenotaderodap,Refdenotaderodap#1848573cb15304c4387a088198098ea5,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fejust/fj-bal-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=24ece641cc0c8078c58ba53e7ee0018b,Textodenotaderodap,Refdenotaderodap#6e63b4ca4225a0692a8b69af970e0b29,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fejust/fj-fe-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=24ece641cc0c8078c58ba53e7ee0018b,Textodenotaderodap,Refdenotaderodap#6e63b4ca4225a0692a8b69af970e0b29,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fejust/fj-lat-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=b613c000d5e6fd8626d3ec49c0094d39,Textodenotaderodap,Refdenotaderodap#d9c360b2db5d03445461153a8dc5e97c,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fejust/fj-nc-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=24ece641cc0c8078c58ba53e7ee0018b,Textodenotaderodap,Refdenotaderodap#6e63b4ca4225a0692a8b69af970e0b29,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fejust/fj-rest-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=24ece641cc0c8078c58ba53e7ee0018b,Textodenotaderodap,Refdenotaderodap#6e63b4ca4225a0692a8b69af970e0b29,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/feknown/fk-meiryo.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=f9a0d87ee74f281f6435b69dd41e9488,Textodenotaderodap,Refdenotaderodap#c7000abeb808c02ce7fdcce915e76a02,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/feknown/fk-mspgothic.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=770bb54c031efbee144831e1f8d5b419,Textodenotaderodap,Refdenotaderodap#b2a45ec1f2b4963ed1b1e8643f0b898f,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/feknown/fk-simsun.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=1895f5d996d5b3948b4124ca2061802c,Textodenotaderodap,Refdenotaderodap#9032826563efda34112188197af623d2,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/felayout/fe0-arial-none.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/felayout/fe0-cambria-none.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=98d266f6d67c3b1cb41958bfca4cdba7,Textodenotaderodap,Refdenotaderodap#5e4c78005f56e98de55aef13ba34625a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/felayout/fe1-arial-simsun.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/felead/fl-c11-eapt-ft.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=154cd8b5f05fd66b424e3ea2cb3b94fa,Textodenotaderodap,Refdenotaderodap#ccf73f2abc0ebc5b42278b5e8ac4682b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/felead/fl-c11-nobal.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=83a9cf2dc53801ecc3148e8c8f7ff0d9,Textodenotaderodap,Refdenotaderodap#29f940a3e2d2eb262995878d24b3bc7a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/felead/fl-c11-pt.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=573b717676ff37fbe7a438634783e3fc,Textodenotaderodap,Refdenotaderodap#a24095d579bf6bf50cba1b81a5efe898,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/felead/fl-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=83a9cf2dc53801ecc3148e8c8f7ff0d9,Textodenotaderodap,Refdenotaderodap#29f940a3e2d2eb262995878d24b3bc7a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fitwidth/fit-calibri.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/floatwide/fw-floats-wide.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fncont/fc-cell-50.docx#init	nid=2,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=b39ba1b1869bba9d9204e159e2b4bc50,FootnoteText,FootnoteReference#07b6fe533f3bd2fd03c057f0916cf136,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fncont/fc-cell-50.docx#cv:footnote:1	digest=aa2d771ab327a9c9da068003ad219338
+write/packages/docx-layout/test/oracle/fncont/fc-para-52.docx#init	nid=2,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=b39ba1b1869bba9d9204e159e2b4bc50,FootnoteText,FootnoteReference#07b6fe533f3bd2fd03c057f0916cf136,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fncont/fc-para-52.docx#cv:footnote:1	digest=ad5c479df3815ca1fd946c05f68c0bb1
+write/packages/docx-layout/test/oracle/fnrefsup/frs-direct-sup.docx#init	nid=2,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=1d5862f212d3d3564961335642582201,FootnoteText,FootnoteReference#bd4c9fe612950acaae9a6e98571e786e,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fnrefsup/frs-direct-sup.docx#cv:footnote:1	digest=d248a9756d3b27d77d1b8a99473b8fd8
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-sup.docx#init	nid=2,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=b39ba1b1869bba9d9204e159e2b4bc50,FootnoteText,FootnoteReference#07b6fe533f3bd2fd03c057f0916cf136,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-sup.docx#cv:footnote:1	digest=63b9cf7305f078af1810249f82fce6d0
+write/packages/docx-layout/test/oracle/fnsep/fsep-a0-top733.docx#init	nid=2,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c3a0220b9e7d4c0f6fc00c17c9e3c489,FootnoteText,FootnoteReference#4e491f5f99a433b1beb0ea656f6b7491,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fnsep/fsep-a0-top733.docx#cv:footnote:1	digest=b2467dbb7eeadcbb27bd76e59b9d523d
+write/packages/docx-layout/test/oracle/fnsep/fsep-simples.docx#init	nid=2,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c3a0220b9e7d4c0f6fc00c17c9e3c489,FootnoteText,FootnoteReference#4e491f5f99a433b1beb0ea656f6b7491,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fnsep/fsep-simples.docx#cv:footnote:1	digest=b2467dbb7eeadcbb27bd76e59b9d523d
+write/packages/docx-layout/test/oracle/fnsep/fsep-top720.docx#init	nid=2,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c3a0220b9e7d4c0f6fc00c17c9e3c489,FootnoteText,FootnoteReference#4e491f5f99a433b1beb0ea656f6b7491,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fnsep/fsep-top720.docx#cv:footnote:1	digest=b2467dbb7eeadcbb27bd76e59b9d523d
+write/packages/docx-layout/test/oracle/fnsep/fsep-top726.docx#init	nid=2,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c3a0220b9e7d4c0f6fc00c17c9e3c489,FootnoteText,FootnoteReference#4e491f5f99a433b1beb0ea656f6b7491,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fnsep/fsep-top726.docx#cv:footnote:1	digest=b2467dbb7eeadcbb27bd76e59b9d523d
+write/packages/docx-layout/test/oracle/fontsub2/fs2-century-schoolbook.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fontsub/sub-arial.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/fontsub/sub-verdana.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=4ce33f80658f710b113c65fe7868a9f4,Textodenotaderodap,Refdenotaderodap#06429b77364749189decae94f9628b85,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/formjust/fj-campo-espaco.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5fe7b4ce41b3092bba0c26d5fcdf76db,Textodenotaderodap,Refdenotaderodap#f8d891d90fb98109e87883c1308e1d61,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/formtext/ft-en4sp40en-both.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=fd9bf1e3b00196c59d115c0663894004,Textodenotaderodap,Refdenotaderodap#db6d7353cfee567f500d0286383c41bf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/formtext/ft-en5-left.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=fd9bf1e3b00196c59d115c0663894004,Textodenotaderodap,Refdenotaderodap#db6d7353cfee567f500d0286383c41bf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/formtext/ft-nome-both.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=fd9bf1e3b00196c59d115c0663894004,Textodenotaderodap,Refdenotaderodap#db6d7353cfee567f500d0286383c41bf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/formtext/ft-sp40-left.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=fd9bf1e3b00196c59d115c0663894004,Textodenotaderodap,Refdenotaderodap#db6d7353cfee567f500d0286383c41bf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/frames/fr-body-border.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/frames/fr-body-hatleast.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/frames/fr-body-margin-right.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/frames/fr-body-page.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/frames/fr-body-yoff.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/frames/fr-hdr-pgnum.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=72c0be5533accbeba4a2b18685c3f80c,Textodenotaderodap,Refdenotaderodap#06336eba76683382ab522a8670c3194c,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable2/ft2-form-nohl.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable2/ft2-formx-after160.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable2/ft2-formx-noempty-before.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable2/ft2-one-y0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable2/ft2-two-gap2.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable2/ft2-two-y0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable2/img-tb-before240.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable/ft-margin-full-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable/ft-split-firstrow.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftable/ft-text-right-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d0-o36.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d0-o39.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d0-o42.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d36-o37.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d36-o40.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o34.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o38.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o41.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d36-o36.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d36-o39.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d36-o42.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-empty-o48.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-html-o42.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-html-o46.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-html-o50.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-push-html-a240-b0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftaftdist/fad-push-max-a120-b360.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftafter/fta-a0-y27-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftafter/fta-a8-y35.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5738b1e2ad5c1f457dd06c7fe375329d,Textodenotaderodap,Refdenotaderodap#6c37d5e38a431b8ef4af123b103e96ee,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftafter/fta-img-square-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5738b1e2ad5c1f457dd06c7fe375329d,Textodenotaderodap,Refdenotaderodap#6c37d5e38a431b8ef4af123b103e96ee,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftafter/fta-img-tb.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5738b1e2ad5c1f457dd06c7fe375329d,Textodenotaderodap,Refdenotaderodap#6c37d5e38a431b8ef4af123b103e96ee,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftafter/fta-l15-y50-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=73089e5be4d19d692e070bc94c5947e4,Textodenotaderodap,Refdenotaderodap#dc348913b048e03c084ce14c468e9f11,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftanchor/fa-anchors-only.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftanchor/fa-overlap-empty-anchors-break.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftanchor/fa-pic-text.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftcellmar/fm-center-asym-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftcellmar/fm-center-wide-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftcellmar/fm-left-x-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftmin/ftm-body.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftmin/ftm-min49.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnegind/ftni-neg-empty.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-min48-c11-sem.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-min48-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-min49-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-n3f50-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-n6f42-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-r0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-r0c-c11-sem.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-r1h1500-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-six-c11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-tall-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftpage/fpg-p1-tall.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftpage/fpg-tall.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1778.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1790.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1802.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1814.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1826.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrtabs/ft-body-tabfirst.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrtabs/ft-body-tabsonly.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrtabs/ft-poly1.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrtabs/ft-poly4.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrtabs/ft-poly6.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftrtabs/ft-poly9.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftsplit/fts-fit-text.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftsplit/fts-split-text.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftvmsplit/ftvm-page-fit.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftvmsplit/ftvm-text-center.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftwidow/fw-float-13200.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/ftwidow/fw-flow-13200.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/gapind/gi-empty-r0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/gapind/gi-x-r0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/glyphfb/gfb-corbel.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7db57e8d4d2b9b31ca2060d1c944a907,Textodenotaderodap,Refdenotaderodap#f2fb0dbf9a680b8c68603f2ba7adbcf3,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/gwfit/gw-cal11.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hang15/h15-ja-jp-cjk-c15-both.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=6f93266e34b417bc93d37997b7730980,Textodenotaderodap,Refdenotaderodap#2d2fb1240d0be7c15ec24e770f1b2edf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hang15/h15-zh-cn-cjk-c11-left.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=786b0dc92d69f7eae8b244de247a463a,Textodenotaderodap,Refdenotaderodap#1848573cb15304c4387a088198098ea5,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hang15/h15-zh-cn-sem-c15-both.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=4bda796f5ae8869a9c049ed048cbe3da,Textodenotaderodap,Refdenotaderodap#f92752f1536ddd686121734748d34af5,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hangalt/ha-ko-kr-c11-left.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=402bf3509ae7ce586c3d83cf04037edc,Textodenotaderodap,Refdenotaderodap#b417c1bfd62ca1dc462f2be129f46a65,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hangalt/ha-zh-tw-c11-left.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=01e06e8590ba90b9c1b025231b46ed93,Textodenotaderodap,Refdenotaderodap#f6a1cf16a029cd00a56bc1e61d1a1b5e,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hdrrow/hr-fits-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hdrrow/hr-one-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hdrrow/hr-two-c15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hf/hdr-img-60-600.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hf/hdr-img-60-empty-1417.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hf/hdr-img-60-trailing-empty-600.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hf/hdr-text-short-1417.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hf/hdr-text-tall-600.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfclamp/hfc-mid.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=a2f008961c76b5933a8dbfd7a8823e82,Textodenotaderodap,Refdenotaderodap#bcfae3ee3c1ff30f43407673c6dfe04d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hff14wrap/hw14-sq-100-0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=f1429c53aa7a43f59a1ba059a60f4e05,Textodenotaderodap,Refdenotaderodap#22675c59e1cfa3a839f763fb319c77c5,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hff14wrap/hw14-sq-925-128-low.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=f1429c53aa7a43f59a1ba059a60f4e05,Textodenotaderodap,Refdenotaderodap#22675c59e1cfa3a839f763fb319c77c5,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hff14wrap/hw14-tb-925-128.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=f1429c53aa7a43f59a1ba059a60f4e05,Textodenotaderodap,Refdenotaderodap#22675c59e1cfa3a839f763fb319c77c5,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hffloat/hff-empty-ftr-tbl.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hffloat/hff-empty-hdr-text2.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hffloat/hff-sq-below.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hffloat/hff-tb-deep.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hffloat/hff14-text-hdr.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hg-full-2p.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hg-noind-text.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hg-notitle.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hg-pic.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hn-field-ftr.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hn-num-clip.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hn-two-ovf.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/ho-body-sq-behind.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/ho-body-tb-front.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/ho14-body-sq-behind.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hz-body-tbbehind-lo.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hz-body-tbbehind-tight-lo.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hz-hdr-grp-tbbehind.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hz-hdr-tbbehind-first.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hz-hdr-tbbehind-square.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hz-hdr-tbbehind-tight-lo.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfgroup/hz14-full.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfimg/hi-img-spaces.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5fe7b4ce41b3092bba0c26d5fcdf76db,Textodenotaderodap,Refdenotaderodap#f8d891d90fb98109e87883c1308e1d61,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfmargin/hfm-short-neg.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0371a9999c14d9b058f5dfc28e3f8562,Textodenotaderodap,Refdenotaderodap#c73ad87613c3cb8cb5c88d49b153092d,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfmix/hm-all.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfmix/hm-t1-only.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/chap-emdash.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=20d19c7e206962093b22a1026d310707,Textodenotaderodap,Refdenotaderodap#e6d031fb1d9a0f5e0af8f83b22bfdfaf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/chap-hyphen.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=20d19c7e206962093b22a1026d310707,Textodenotaderodap,Refdenotaderodap#e6d031fb1d9a0f5e0af8f83b22bfdfaf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/chap-period.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=20d19c7e206962093b22a1026d310707,Textodenotaderodap,Refdenotaderodap#e6d031fb1d9a0f5e0af8f83b22bfdfaf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/chap-two.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=20d19c7e206962093b22a1026d310707,Textodenotaderodap,Refdenotaderodap#e6d031fb1d9a0f5e0af8f83b22bfdfaf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/dist-small.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/eo-start2.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/fmt-lletter.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/fmt-uletter.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/ln-inherit-first.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/ptab-indent.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hfopts/tp-nofirst.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftable/hft-hdr-after.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/footer-band.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/footer-pageXofY.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/header-band.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/header-rule.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/pageBottom-brackets.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/pageBottom-plainLeft.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/pageCurrent-dashes.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/pageMargin-circle.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/pageTop-accentRule.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hftpl/pageTop-plainCenter.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=c95c7bcb3c974dedf2d436d71ddc5476,Textodenotaderodap,Refdenotaderodap#c91ed7b54e587f1389116739943d2f99,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-content-only.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-end-bold-51.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-end-one-49.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-end-one-52.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-end-two-50.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-end-two.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-form-end-53.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-hidemark.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-mark-visible-text.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidden/hid-row-mid.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidemark/hm-center-2-ctl.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidemark/hm-mid-empty.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/body-negind.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/ff-dropdown.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/mc-mc-body.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/nbh-arial.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/off-left.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/rot-1.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/shy-literal.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/straddle-right-runs.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/tf-alpha0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/tf-nofill.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hidetext/tf-outline0-alpha.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hlink/hl-color.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=eb0da14717fc42c37dbcfde992b7e2b6,Textodenotaderodap,Refdenotaderodap#5205101c8c9e98180294aa8803b1cfe0,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hlink/hl-style.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=eb0da14717fc42c37dbcfde992b7e2b6,Textodenotaderodap,Refdenotaderodap#5205101c8c9e98180294aa8803b1cfe0,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hrfont/hrf-body-0.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7db57e8d4d2b9b31ca2060d1c944a907,Textodenotaderodap,Refdenotaderodap#f2fb0dbf9a680b8c68603f2ba7adbcf3,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hrfont/hrf-body-3.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7db57e8d4d2b9b31ca2060d1c944a907,Textodenotaderodap,Refdenotaderodap#f2fb0dbf9a680b8c68603f2ba7adbcf3,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hrfont/hrf-hdr-8-16.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7db57e8d4d2b9b31ca2060d1c944a907,Textodenotaderodap,Refdenotaderodap#f2fb0dbf9a680b8c68603f2ba7adbcf3,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphfit/hf-fit15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphfit/hf-just8.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphlang/hl-en-gb.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphlang/hl-es.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphlang/hl-off.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphlang/hl-suppress.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphmin/hm-en15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphmin/hm-pt14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphshy/hs-auto-c14.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphshy/hs-just.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphshy/hs-lim1.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphshy/hs-manual.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphzone/hz-left15-z720.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphzone/hz-long15.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/hyphzone/hz-zone14-360.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgbr/ib-auto.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5fe7b4ce41b3092bba0c26d5fcdf76db,Textodenotaderodap,Refdenotaderodap#f8d891d90fb98109e87883c1308e1d61,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgfit/if-h470.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgfit/if-h480.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgfit/if-h490-eb.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgfit/if-h500.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgline/il-l240-22-run.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgline/il-l240-44-run.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgline/il-l240-72-run.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgline/il-l259-22-run.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgline/il-l259-44-run.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgline/il-l259-72-run.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ar-l240-22-double.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ar-l240-22-thick.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ar-l240-44-single.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ar-l259-22-none.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ar-l259-44-double.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ar-l259-44-thick.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=3f2e168378d53be4bfaeccb08c8750b3,Textodenotaderodap,Refdenotaderodap#74f36f460fb1c5087790456ce8ebce5a,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ca-l240-22-single.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ca-l240-44-none.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=5d08bc00aaf4eddb23bb06c6c8715c3b,Textodenotaderodap,Refdenotaderodap#effbd9d620b67d87184fb8907df086e9,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ca-l259-22-double.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ca-l259-22-thick.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/imgul/iu-ca-l259-44-single.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/inlinegrp/ig-textbox.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/inside/in-h-p1-start2.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/inside/in-margin-p2.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/inside/out-margin-p2.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=7e7d05472ddff5574b2db3709761b5fc,Textodenotaderodap,Refdenotaderodap#846475c817bf77c85cd4efec5a9fd71b,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/invischars/inv-calibri.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=fd9bf1e3b00196c59d115c0663894004,Textodenotaderodap,Refdenotaderodap#db6d7353cfee567f500d0286383c41bf,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/jkind/jk-arial-curlyclose.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim
+write/packages/docx-layout/test/oracle/jkind/jk-arial-hyphnum.docx#init	nid=1,1	eff=pageBottom,decimal,1,continuous,0#docEnd,lowerRoman,1,continuous,-	sty=0fd47f89a274820cde5d09eb5b91fee6,Textodenotaderodap,Refdenotaderodap#71ff1628ef3b0f2f0f2c56e6c0029b01,Textodenotadefim,Refdenotadefim

@@ -147,6 +147,10 @@ pub struct Session {
     numbering: VersionStore,
     /// the lists/styles family's own state (`numTouched`, `lastBullet`…; D2b-F2)
     f2: ops::lists::F2State,
+    /// the find and navigation family's own state (extra ranges, the last search; D2b-F9)
+    f9: ops::navigation::F9State,
+    /// the notes family's own state (the loaded note settings, the last conversion; D2b-F5)
+    f5: ops::notes::F5State,
     settings: Arc<SettingsStep>,
     sections: SectionState,
     save: SaveState,
@@ -231,7 +235,7 @@ impl Session {
 
     #[must_use]
     pub fn table_selection(&self) -> Option<TableSel> {
-        self.table_sel
+        self.table_sel.clone()
     }
 
     #[must_use]
@@ -473,7 +477,33 @@ impl Session {
     /// `shiftAnchors(fromPara, delta)`: table anchors and bookmarks after `from` move with the
     /// paragraphs (body and header/footer contexts; not in a cell or a note).
     pub fn shift_anchors(&mut self, from: u32, delta: i64) {
-        if matches!(self.ctx, EditContext::Cell { .. } | EditContext::Note { .. }) {
+        if matches!(self.ctx, EditContext::Cell { .. }) {
+            // the tables nested in the cell keep their order with the paragraphs (the TS
+            // `reconcileBlocks` after every edit of the cell's paragraph list: new paragraphs go
+            // right after the one they come from, in front of a table that follows it; removed
+            // ones leave the tables where they were: D2b-F3, found by its harness)
+            let n = delta.unsigned_abs();
+            if let Some(story) = self.story_mut() {
+                for i in 0..story.tables.len() {
+                    let Some(k) = story.tables.get(i).map(|a| a.before_para) else { continue };
+                    let new = if delta > 0 {
+                        if k > from { u32::try_from(i64::from(k) + delta).unwrap_or(u32::MAX) } else { k }
+                    } else if u64::from(k) > u64::from(from) + 1 {
+                        let gone = (u64::from(k) - u64::from(from) - 1).min(n);
+                        u32::try_from(u64::from(k) - gone).unwrap_or(k)
+                    } else {
+                        k
+                    };
+                    if new != k
+                        && let Some(a) = story.tables.make_mut(i)
+                    {
+                        a.before_para = new;
+                    }
+                }
+            }
+            return;
+        }
+        if matches!(self.ctx, EditContext::Note { .. }) {
             return;
         }
         let shift = |v: u32| -> u32 { if v > from { u32::try_from((i64::from(v) + delta).max(0)).unwrap_or(u32::MAX) } else { v } };
@@ -636,11 +666,18 @@ impl Session {
     fn settle(&mut self) {
         // `syncSections()` (body context only; its result depends only on the body paragraphs,
         // so it runs when they changed in structure or in a section break: D2a-S2)
-        if matches!(self.ctx, EditContext::Body) && (self.tx.sections || self.tx.all) {
+        let body = matches!(self.ctx, EditContext::Body);
+        if !body && (self.tx.sections || self.tx.all) {
+            self.sections.pending = true;
+        }
+        if body && (self.tx.sections || self.tx.all || self.sections.pending) {
+            self.sections.pending = false;
             self.sections.sync(&mut self.doc);
             self.doc.formatting_version = self.doc.formatting_version.wrapping_add(1);
             self.tx.formatting = true;
         }
+        // `syncNoteSettings()` of the layout pass (D2b-F5)
+        self.sync_note_settings();
         // `syncRunRPr(this.model.paragraphs)` of the layout pass (the context's paragraphs)
         if let Some(paras) = self.paras_mut() {
             settle::sync_paras(paras);
@@ -665,8 +702,8 @@ impl Session {
     fn take_state(&self, deep: bool, parts: &[HfPartId]) -> EditState {
         let context = ops::context::context_step(&self.doc, &self.ctx, self.selection);
         let (body_sel, ts) = match &self.ctx {
-            EditContext::Body => (self.selection, self.table_sel),
-            _ => (self.ctx_saved_selection(), self.table_sel),
+            EditContext::Body => (self.selection, self.table_sel.clone()),
+            _ => (self.ctx_saved_selection(), self.table_sel.clone()),
         };
         let mut hf_parts: Vec<(HfPartId, Story)> = parts
             .iter()
@@ -710,6 +747,7 @@ impl Session {
             styles: Some(self.styles.version()),
             numbering: Some(self.numbering.version()),
             settings: Arc::clone(&self.settings),
+            body_sect_pr: Arc::clone(&self.sections.body_sect_pr),
             deep_hf,
             deep_notes,
             hf_parts: hf_parts.into(),
@@ -790,8 +828,19 @@ impl Session {
                 self.dirty_hf.insert(*part);
             }
         }
+        // the sections' `sectPr` of the break paragraphs are new objects too
+        for i in 0..state.body.paras.len() {
+            if state.body.paras.get(i).is_some_and(|p| p.props.section_break.is_some())
+                && let Some(p) = state.body.paras.make_mut(i)
+                && let Some(sb) = Arc::make_mut(&mut p.props).section_break.as_deref_mut()
+            {
+                sb.sect_pr = Arc::new((*sb.sect_pr).clone());
+            }
+        }
         self.doc.body = state.body;
         self.selection = state.selection;
+        // a restored selection is a new object: the extra ranges of a multi-selection go (D2b-F9)
+        self.f9.drop_extras();
         self.table_sel = state.table_sel;
         self.bookmark_paras = state.bookmarks;
         ops::context::restore_context(self, state.context, &prev);
@@ -833,6 +882,12 @@ impl Session {
             self.settings = state.settings;
             self.touch_formatting();
         }
+        // `m.sectPr` of the body (the last section's `sectPr`; the others' are in `body`): the JSON
+        // copy is a new object, which the sections the layout holds do not point to until
+        // `syncSections` runs (not in a cell or a note); a `sectPr` is shared by value, so a new `Arc`
+        let mut sp = state.body_sect_pr;
+        normalize::normalize(&mut sp, &mut self.doc.ids);
+        self.sections.body_sect_pr = Arc::new((*sp).clone());
         for (part, story) in state.hf_parts.iter() {
             let mut story = story.clone();
             normalize::normalize(&mut story, &mut self.doc.ids);

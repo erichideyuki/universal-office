@@ -584,8 +584,8 @@ impl Session {
         !self.link_in_plain_text_control_at(&at)
     }
 
-    /// `inPlainTextControlAt(at)`.
-    fn link_in_plain_text_control_at(&self, at: &[DocPosition]) -> bool {
+    /// `inPlainTextControlAt(at)` (also `canInsertNote`, D2b-F5).
+    pub(crate) fn link_in_plain_text_control_at(&self, at: &[DocPosition]) -> bool {
         let Some(store) = self.doc.sources.as_deref() else { return false };
         let Some(paras) = self.paras() else { return false };
         at.iter().any(|pos| {

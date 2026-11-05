@@ -150,6 +150,8 @@ impl Session {
             styles,
             numbering,
             f2: super::ops::lists::F2State::default(),
+            f9: super::ops::navigation::F9State::default(),
+            f5: super::ops::notes::F5State::default(),
             settings: Arc::new(SettingsStep::default()),
             sections: SectionState::default(),
             save: SaveState { baseline: crate::write::sig::Baseline::default(), gen_num_ids: None, fresh_id: 0.0 },
@@ -247,6 +249,7 @@ impl Session {
         let _ = self.history.reset();
         self.rev_authors = super::revisions::revision_authors(self.doc_view_for_authors()).into_iter().map(Into::into).collect();
         self.save = SaveState::install(&self.doc, mode);
+        self.f5 = super::ops::notes::F5State::install(&self.doc);
         self.tx = Tx::default();
     }
 
@@ -341,9 +344,11 @@ impl Session {
         if !gone.is_empty() {
             drop_unused_hf_parts(&mut self.pkg, &gone)?;
         }
-        if settings.note_settings.is_some() {
-            // `patchSettingsNotes`: the notes family's (F5)
-            return Err(DocxError::Write("note settings: frontier D2b-F5"));
+        if let Some(ns) = &settings.note_settings
+            && ns.json() != self.f5.loaded_json()
+        {
+            // `patchSettingsNotes`, only when the options differ from the file's (D2b-F5)
+            super::ops::notes::save_note_settings(&mut self.pkg, ns)?;
         }
         if self.styles.dirty()
             && let Some(xml) = self.styles.xml()

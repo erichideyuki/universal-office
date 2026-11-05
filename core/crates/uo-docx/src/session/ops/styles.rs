@@ -459,7 +459,7 @@ impl Session {
     }
 
     /// `applyStyleCore(styleId)`: the style as Word applies it (see the TS comment).
-    fn apply_style_core(&mut self, style_id: Option<&str>) -> Result<(), CommandError> {
+    pub(crate) fn apply_style_core(&mut self, style_id: Option<&str>) -> Result<(), CommandError> {
         let defp = self.default_paragraph();
         let base = self.styles_base();
         let sid = style_id.map(|s| xform::resolve_style_id(self.styles.xml().map(|x| &**x), s));

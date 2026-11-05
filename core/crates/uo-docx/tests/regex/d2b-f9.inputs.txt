@@ -1,0 +1,212 @@
+
+ 
+1
+true
+TRUE
+ 1
+1 
+TOC
+ TOC \\o "1-3"
+xTOC TOC
+TOC_
+toc
+Toc\\h
+ TOC
+﻿TOC
+é toc
+ſ toc
+K TOC
+TOCé
+_TOC
+TOC1
+\tTOC\n
+val 12
+val -3x
+val-3
+val  
+val\t+5
+VAL 1
+<a:blipFillx/><a:blipFill r:embed="x"/>
+<a:blipFill
+<a:blipFill>
+<a:blipFill_/>
+a\r\nb\rc\nd\n\r
+<w:p w14:paraId="1" \t\n/>
+<w:p/>x
+<w:p>
+/>
+  />
+<dcterms:created xsi:type="x">2024-01-01T00:00:00Z</dcterms:created>
+<dcterms:createdX>v<
+<dcterms:created>no end
+<x/><dcterms:created a="<">t<
+_x0000_s1026
+pic.a-b_1
+pic a
+ab­cd­
+é😀
+
+a
+A
+e-mail
+a/b
+\\
+^
+$
+.
+*
++
+?
+(
+)
+[
+]
+{
+}
+|
+/
+-
+😀
+�
+�
+é
+ção
+0150
+u8212
+u
+u1
+123456
+99999
+0
+00
+x12
+u0
+1114112
+{2}
+{2,3}
+{2;3}
+{2;}
+{2,}
+{}
+{a}
+{2
+{2;3
+{2;3x}
+{99999999999999999999}
+{2,;}
+{2;3;4}
+{ 2}
+(?<!x)
+(?!x)
+(?=x)
+(?:x)
+((?<
+(
+(?
+(?<=x)
+abc'
+'
+it's
+it’s
+Ação
+a1
+a b
+ǅ
+ͅ
+ 
+\t
+ 
+ 
+﻿
+ 
+a᠎b
+KNIGHT
+gnome
+Wright
+xylophone
+whale
+aeon
+night
+phone
+Schmidt
+thomas
+judge
+signed
+sign
+dumb
+ghost
+church
+boxes
+cities
+stopped
+flying
+better
+went
+mouse
+try
+run
+stop
+make
+sh
+ch
+quiz
+word''
+word’’
+word'’'
+'''
+en
+en-US
+EN
+eng
+en_
+en1
+pt-BR
+en 
+e
+En-gb
+AÇÃO 1
+ação!
+123
+😀a
+ßtraße
+ŉ
+
+ab
++
+-
++2
+-1
++12x
+1
+42
+0042
+4 2
++ 2
+
+٣
+1e3
+ PAGE \\* MERGEFORMAT
+HYPERLINK "x"
+  
+\tREF\tx
+page
+
+\t\n\r￼
+ab
+<w:drawingGridHorizontalSpacing w:val="120"/>
+<w:drawingGridHorizontalSpacing w:other="1" w:val="9" w:val="11"/>
+<w:drawingGridHorizontalSpacing xw:val="3"/>
+<w:drawingGridHorizontalSpacingX w:val="5"/><w:drawingGridHorizontalSpacing w:val="7"/>
+<w:drawingGridHorizontalSpacing w:val="12x"/><w:drawingGridHorizontalSpacing w:val="13"/>
+<w:drawingGridHorizontalSpacing w:val="-0"/>
+<w:drawingGridHorizontalSpacing w:val="4>6"/>
+<w:drawingGridHorizontalSpacing\nw:val="44"/>
+<w:drawingGridHorizontalSpacing w:val="99999999999999999999"/>
+<w:doNotUseMarginsForDrawingGridOrigin/>
+<w:doNotUseMarginsForDrawingGridOrigin w:val="0"/>
+<w:doNotUseMarginsForDrawingGridOrigin w:val="false"/>
+<w:doNotUseMarginsForDrawingGridOrigin w:val="off"/>
+<w:doNotUseMarginsForDrawingGridOrigin w:val="1"/>
+<w:doNotUseMarginsForDrawingGridOriginX/>
+<w:doNotUseMarginsForDrawingGridOrigin w:val="0"/><w:doNotUseMarginsForDrawingGridOrigin/>
+<w:doNotUseMarginsForDrawingGridOrigin x="w:val=&quot;0&quot;"/>

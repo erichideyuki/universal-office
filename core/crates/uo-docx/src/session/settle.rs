@@ -260,6 +260,9 @@ pub struct SectionState {
     pub body_refs: Option<SectionRefs>,
     /// the rIds referenced at install (a part no section refers to any more leaves the package)
     pub hf_rids_at_load: HashSet<Str>,
+    /// a sync was due while a cell, note or header/footer was edited (the TS `syncSections` returns
+    /// there) and runs at the next settle of the body context, as the TS `refresh()` does
+    pub pending: bool,
 }
 
 /// `{ pageWidthTwips: 11906, … }`: the body `sectPr` of a document without sections (A4, margins

@@ -20,7 +20,9 @@ const base = await import(pathToFileURL(join(dir, 'templates.mjs')).href);
 // one input per line, with `\`, LF, CR and TAB escaped
 const escLine = (x) => x.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
 
-for (const file of readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort()) {
+// `--only <name>` regenerates one site file (frontiers working in parallel leave the others alone)
+const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
+for (const file of readdirSync(dir).filter((f) => f.endsWith('.mjs') && (!only || f === `${only}.mjs`)).sort()) {
   const m = await import(pathToFileURL(join(dir, file)).href);
   const inputs = m.INPUTS ?? base.INPUTS;
   const name = basename(file, '.mjs');

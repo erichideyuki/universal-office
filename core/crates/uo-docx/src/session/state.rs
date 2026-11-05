@@ -172,14 +172,19 @@ pub struct CellHop {
     pub block: Option<u32>,
 }
 
-/// The table selection (`TableSel`, D2b tables): the anchor and the cell rectangle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// The table selection (`TableSel` of the editor, D2b-F3): the anchor of the top table, the hops
+/// down to the cell that CONTAINS the table (empty: a body table), the cell rectangle and the fixed
+/// corner it grows from (`origin`: where the drag or Shift+arrow began).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TableSel {
     pub anchor: u32,
+    pub path: Arc<[CellHop]>,
     pub row0: u32,
     pub col0: u32,
     pub row1: u32,
     pub col1: u32,
+    pub origin_row: u32,
+    pub origin_col: u32,
 }
 
 /// The document-level settings an undo step carries (`eo`, `dt`, `hy`, `np`, `bg`, `bgd`), behind
@@ -195,7 +200,7 @@ pub struct SettingsStep {
     /// `hy`: the hyphenation options (D2b text layout)
     pub hyphenation: Option<crate::write::emit::settings::HyphenationSettings>,
     /// `np`: the note options of the document (D2b notes): footnote, endnote
-    pub note_settings: Option<(Option<crate::model::formatting::NoteProps>, Option<crate::model::formatting::NoteProps>)>,
+    pub note_settings: Option<super::ops::notes::NoteSettings>,
     /// `bg`: the page background (D2b page), `Some(None)` = removed
     pub background: Option<Option<Arc<crate::model::background::PageBackground>>>,
     /// `bgd`: `w:displayBackgroundShape`
@@ -222,6 +227,9 @@ pub struct EditState {
     pub styles: Option<VersionId>,
     pub numbering: Option<VersionId>,
     pub settings: Arc<SettingsStep>,
+    /// the body's last-section `sectPr` (`m.sectPr`: in the TS it travels with the model; the other
+    /// sections' are in the break paragraphs of `body`; D2b-F5 `setNoteOptions` edits it)
+    pub body_sect_pr: Arc<crate::model::section::SectPr>,
     /// `hf` (deep steps: accept/reject all): every header/footer part (the TS lists the six slots
     /// of every section; a part is stored once here)
     pub deep_hf: Option<Arc<[(HfPartId, Story)]>>,

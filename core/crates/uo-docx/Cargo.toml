@@ -15,8 +15,9 @@ default = []
 # the canonical model digest (A6) and the JSON keys with the JS rules (LQ20): parity tooling and
 # uo-docx-layout's JSON keys; tests turn it on
 canon = []
-# the editing session and history (D2a/D2b, milestone 2)
-session = []
+# the editing session and history (D2a/D2b, milestone 2); the table sort borrows Sheet's word-sort
+# collation (D2b-F3)
+session = ["uo-text/collation"]
 # the Editing API for .NET hosts (D3)
 editing-api = []
 # .doc conversion (D4); the OfficeArt layer (odraw) is uo-drawingml's feature `legacy`

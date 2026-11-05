@@ -304,7 +304,7 @@ impl Session {
         }
         self.begin_step(false, &[]);
         if self.has_selection() {
-            let pos = self.delete_selection()?;
+            let pos = self.delete_selected_ranges()?; // `deleteSelectedRanges` (D2b-F9)
             self.caret_at(pos);
         } else {
             let DocPosition { para, offset } = self.selection.focus;
@@ -360,7 +360,7 @@ impl Session {
         }
         self.begin_step(false, &[]);
         if self.has_selection() {
-            let pos = self.delete_selection()?;
+            let pos = self.delete_selected_ranges()?; // `deleteSelectedRanges` (D2b-F9)
             self.caret_at(pos);
         } else {
             let DocPosition { para, offset } = self.selection.focus;
@@ -470,6 +470,8 @@ impl Session {
         self.selection = super::context::clamp_selection(paras, Selection { anchor, focus });
         self.pending_props = None;
         self.float_sel = None;
+        // a new selection object: the extra ranges of a multi-selection go (D2b-F9)
+        self.f9.drop_extras();
         Outcome::Done(self.change_set())
     }
 
