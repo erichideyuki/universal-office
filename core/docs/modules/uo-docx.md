@@ -85,6 +85,9 @@ skeptic's verdict; D2b's dependency on the `LayoutOracle`; D5 lines; hybrid-mode
 
 Total ≈ 46.0k lines of behaviour source (≈ 41.3k TS + 4.75k C#).
 
+Records of the D5 port (2026-11-05): `../uo-docx-d5/D5a.md` (export and compare) and `../uo-docx-d5/D5b.md`
+(ODF). Record of the W4 emitter frontier (notes, settings, header/footer parts): `../uo-docx-d1b/W4.md`.
+
 ### Crate placement and reuse
 
 - **uo-docx** (Write-only): everything above except the shared pieces below. Features:
@@ -929,8 +932,10 @@ Pending.
 | D1b writer core (architecture; `write/{ctx,sig,lossless,story,parts,rev,matchers,js,roundtrip}.rs`, emitter stubs and frontier files, additive signature mode of `JsonWriter`, the `Write` error; captures `write-roundtrip` (corpus + R6/R5 synthetic, `none`/`all`/`gen`), `lossless` (30,000), regex rows `d1b-core` (14,790); M1, M3, no-panic, linear-time tests; briefs W1–W6; section "D1b — writer (architecture)") | Opus | one session (time not measured; R5 landed during it); 0 parity rounds (round trip, surgery and regex rows equal on their first complete runs; rework: three quadratic matchers and the 20 × save allocation found by my own no-panic and M3 tests, fixed before the record) | ≈ 160 |
 | D4 frontier briefs (written with the uo-drawingml `odraw` port, record there) | Opus | one session with the odraw port | ≈ 8 (of the session's ≈ 95, row in uo-drawingml.md) |
 | D4 F0-F3 + F5 .doc converter, reader core and part emitters (`src/doc/{bytes,xmlw,mod,open,fib,text,fkp,sprm,fonts,props,stsh,lists,ooxml_props,styles_xml,numbering,settings}.rs`; `js/capture-doc.mjs` with 1,644 generated mutations, 4,700 generated grpprls/style sheets/list tables/DOPs and a worker that survives the TS running out of memory; `tests/parity_doc.rs`, `memory_doc.rs`, `nopanic_doc.rs`; fuzz `doc_convert`; section "Stage 3 — D4") | Sonnet | one session (time not measured by the agent; two waits of 3-8 min on other frontiers' transient build breakage) | ≈ 215 |
+| D4 F4 + F6a/F6b verification (records, memory/no-panic/fuzz for the reader and the converter, fuzz target fixed; code written earlier) | Sonnet | one session | ≈ 70 |
 | Nested-story stack fix (R4b/R4c frames split; `tests/nested_stack.rs`, the wasm32 probe `examples/nested_stack_wasm.rs` + `js/wasm-stack.mjs`, the native probe; section "Nested-story stack — fixed") | Opus | one session (time not measured; in parallel with R5, `odraw` and the D1b writer, short waits on their transient breakage); 0 parity rounds (every facet equal after the splits), one split reverted on measurement | ≈ 160 |
 | R5 follow-ups (Opus check of R5 item 9 — G20 cell fallback accepted with the per-part count fix, D6, `PageFill.image.path` kept out, `__proto__` slot; hyphenation languages in one visit (F2-21) with the equality and depth tests; fuzz target `read_docx` (stable 150 s, libFuzzer 332 s); model-size analysis on an interning prototype and the plan; section "R5 follow-ups") | Opus | one session (time not measured; in parallel with the reader slimming, the D1b writer and the `.doc` port, waits on their transient build breakage); 0 parity rounds (every facet equal after the changes), 0 fuzz findings; rework: a test depth above the XML depth limit, one clippy `type_complexity` | ≈ 95 |
+| D2a session core (architecture; `src/session/**`: the step protocol, contexts, undo/redo with the JSON-round-trip normalisation, history caps and byte accounting, version stores, settle step, two-phase protocol, event table, guarded/tracked text ops, clipboard ring, formatting policy, open/install/save over D1b; the `Command` skeleton with 19 D2b family stubs and their hooks; captures `capture-d2a-ops.mjs` (Node) and `capture-d2a-session.mjs` (Chromium harness, built); tests `session_d2a`, `parity_d2a_ops`, `parity_d2a_session`, `memory_d2a`, `nopanic_d2a`; section "D2a — session (architecture)" with the D2b briefs) | Opus | one session continuing an interrupted one (time not measured; in parallel with the layout, `.doc` and docs agents); parity rounds: 1 on the Node capture (textbox views after undo) and 4 on the Chromium capture (tracked-delete caret, `toggleTrackChanges` as an edit, the harness's missing default font, the run key order of U6), all D2a findings; rework from M3: boxed history entries, the `syncSections` fast paths, the bookmark shift log, `doomedMarks` scope | ≈ 230 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
@@ -1816,12 +1821,357 @@ commands, not by `write_document`.
 
 ### Not done
 
-- Edit-driven parity (needs D2a/D2b ops; the U6 order-tag count runs there); the `gen` variant is captured
+- Edit-driven parity (needs D2a/D2b ops; the U6 order-tag count runs there — *D2a: done for the D2a scripts, the U6 count and its decision D2a-U6 in "D2a — session (architecture)"*); the `gen` variant is captured
   and waits for W1–W3.
 - The emitters W1–W6 (stubs).
 - M2 soak of the save (1,000 × open → read → save → reopen: the memory-verifier's, now that R5 exists).
 - `write_font_embedding` is `write::fonts` (done earlier); the editor's `saveDocxWithFonts` orchestration is
   D2a's.
+- CHANGELOG lines (with the switch).
+
+## D2a — session (architecture)
+
+*(Opus, 2026-11-05, hybrid mode; continues an interrupted D2a session; nothing committed.)* The Opus part of D2
+by the skeptic's verdict: the editing session core and the frame every D2b family ports into. Module
+`uo_docx::session` (feature `session`, `src/session/`). The TS sources are `universal-write.ts` (the model
+half: `installFullDoc` 2340, `saveDocxBody` 8546, `stringifyState`/`popHistory` 9406–9680, `snapshot` 9530,
+`type`/`pressEnter`/`pressBackspace`/`pressDelete`/`trackedKey` 9701–9930, `shiftAnchors` 2872, `syncSections`
+11004, `syncRunRPr` 16068, the contexts 18738–18850, `toggleTrackChanges` 7944), docx-core `model-ops.ts`,
+`revisions.ts`, editor `edit-guard.ts` and `formatting-policy.ts`.
+
+### Shapes
+
+```rust
+pub struct Session {
+    pkg: Package, doc: Document,                 // the package is written in place at every save (as the TS)
+    ctx: EditContext,                            // Body | Cell{anchor,hops,saved} | Note{footnote,id,saved}
+                                                 // | HeaderFooter{part,page,saved} | Textbox{outer,para,run,host,focus,page,saved}
+    selection: Selection, table_sel: Option<TableSel>, float_sel: Option<u32>,
+    bookmark_paras: BookmarkParas,               // name → body paragraph, shifts in a log (U19)
+    styles: VersionStore, numbering: VersionStore,   // part texts by version, collected (U12, G26)
+    settings: Arc<SettingsStep>,                 // eo/dt/hy/np/bg/bgd: the EDITED values (None = the file's)
+    sections: SectionState,                      // sectionProps, nextSectionId, hfParts, last ids/refs, body sectPr/refs
+    save: SaveState,                             // D1b: baseline, generated num ids, freshId (per document, W-D9)
+    history: History<EditState>, env: Box<dyn Env>, opts: SessionOptions,  // author, tracking, protected, read view, markup
+    rev_authors, pending_props, pending: Option<Pending>, next_job, dirty_hf: HashSet<HfPartId>,
+    policy: Option<(FormattingPolicy, ResolvedPolicy)>, session_id, generation, quiet, tx: Tx,
+}
+pub struct EditState {                           // one step = the `stringifyState` keys as shared roots
+    body: Story,                                 // m + tb + anc.t (anchors live in the story)
+    selection: Selection,                        // s (the body's; a context's is in `context`)
+    bookmarks: BookmarkParas,                    // anc.b
+    context: ContextStep,                        // ce | nt (+ the note story) | hp (+ the part story) | te
+    table_sel, float_sel,                        // ts, fs
+    styles, numbering: Option<VersionId>,        // sv, nv
+    settings: Arc<SettingsStep>,                 // eo, dt, hy, np, bg, bgd
+    deep_hf, deep_notes,                         // hf, nb (deep steps: accept/reject all)
+    hf_parts: Arc<[(HfPartId, Story)]>,          // hx
+}
+```
+
+- **O(touched) snapshot** (U19): a step clones roots only — `Story` is two `PVec`s (chunk pointers), the
+  bookmarks two `Arc`s, the settings one `Arc`; a context story (note, header part) is a `Story` clone too.
+  Measured on a 15,000-paragraph document: ≤ 18 KB allocated per typed key, the whole keystroke included.
+- **`BookmarkParas`** (U19, D2a-M1): the TS rewrites every bookmark value after the edit point at each
+  `shiftAnchors`; here a shift `(from, delta)` is appended to a log shared by the steps (`v > from ? max(0,
+  v + delta) : v`, applied in order, exactly the TS values) and folded into the base map every 512 shifts.
+  An Enter costs O(log) instead of a copy of every bookmark name (2,000 bookmarks ≈ 96 KB before).
+- **`SettingsStep`** keeps the edited values only, so the save writes exactly what the TS writes (`evenOdd !==
+  null`, `defaultTab !== null`, `hyph`, the note settings, `bgKey` changed).
+- **Contexts**: the TS swaps `this.model` to the context's paragraphs; here the context is a path and the
+  story is reached through it (`ops::context::story_of`/`story_of_mut`, copy-on-write down to it). Stories are
+  stored once (A2), so `reconcileBlocks` has nothing to do; `CellHop { row, col, block }` is the TS
+  `{ r, c, b? }` (grid column, `cellAtGrid`).
+
+### The `Command` skeleton (one owner, one `impl Session` module per family)
+
+`Command` is an enum of family enums; `exec(cmd, cx)` dispatches to `exec_<family>`; each family enum and its
+`impl Session` block live in one file of `session/ops/` owned by one frontier. A frontier adds variants and
+arms in its file only; a family that needs a hook from another family calls a `pub(crate)` method that the
+owner declared in its own file (D2a declared every hook the text family needs, with a "not handled" body
+until the owner lands: `clear_selected_cells` (F3), `list_enter_on_empty`/`list_backspace_at_start` (F2),
+`apply_next_style` (F2); `complete_clipboard`/`complete_pictures`/`complete_drawing` for two-phase commands).
+
+| File | Family | Owner |
+|---|---|---|
+| `ops/text.rs` | typing, Enter, Backspace, Delete, `trackedKey`, `setSelection` | **D2a** |
+| `ops/context.rs` | `enterCell`/`exitCell`, `enterNote`/`exitNote`, `enterHeaderFooter`/`exit…`, `enterTextbox`/`exit…` | **D2a** |
+| `ops/settings.rs` | `toggleTrackChanges`, `author`, protected mode, read view, `setMarkupMode`, `formattingPolicy` | **D2a** |
+| `ops/format.rs`, `ops/paragraph.rs` | character and paragraph formatting | D2b-F1 |
+| `ops/lists.rs`, `ops/styles.rs` | numbering store and lists, styles store and styles | D2b-F2 |
+| `ops/tables.rs` | tables (`table-ops.ts`, sort, formulas, styles) | D2b-F3 |
+| `ops/sections.rs`, `ops/header_footer.rs`, `ops/page.rs`, `ops/text_layout.rs` | sections/page setup, headers/footers, page design, text-layout options | D2b-F4 |
+| `ops/notes.rs` | notes | D2b-F5 |
+| `ops/revision_cmds.rs`, `ops/comments.rs`, `ops/bookmarks.rs` | review, comments, bookmarks/links | D2b-F6 |
+| `ops/drawing.rs`, `ops/pictures.rs` | shapes, textboxes, pictures (two-phase) | D2b-F7 |
+| `ops/clipboard.rs` | copy/cut/paste (two-phase; the paste-tree boundary is Opus) | D2b-F8 |
+| `ops/find.rs`, `ops/navigation.rs` | find/replace (the matcher is Opus), headings/navigation | D2b-F9 |
+| `ops/references.rs` | fields, TOC, captions, cross-references, manual hyphenation, galleries (`LayoutOracle`) | D2b-F10, after the uo-docx-layout gate |
+
+**The step protocol** (every family): `locked()` → `begin_step(deep, parts)` (`snapshot()`: the state BEFORE
+the change; `dirty_hf` of the part being edited; `uw-dirty-change` when it leaves the saved state, `uw-change`
+unless quiet) → the change through `paras_mut()`/`story_mut()` → `touch_para(i)`/`touch_structure()`/
+`touch_formatting()` → `discard_step()` when nothing changed (`discardSnapshot`: clean again if this step
+dirtied it) → `finish()` (the settle step, the history pricing, the version-store collection, the
+`ChangeSet`). An `Err` after `begin_step` drops the change set; every op checks its positions before changing
+anything (D2a-T1), so no partial change is left.
+
+**The formatting policy** (`policy.rs`, the pure half of `formatting-policy.ts` ported 1:1: `resolve`,
+`style_key`, `style_allowed`, `nearest_allowed_style`, `builtin_name_of_key`, `policy_splits_to_plain`,
+`sanitize_run_props`, `sanitize_para_props`, `list_kind_of_format`, `policy_list`, `POLICY_GUARDS` as
+`guard_allows`): each family enum implements `guard()` → `(TS method name, GuardArg)`; `exec` refuses a
+guarded command before it runs (no effect, `uw-blocked`), as the TS wrapper `Kp(rn.prototype)` does.
+`policyHiddenIds` stays in the shell (UI).
+
+**Queries**: no `Query` enum in D2a: the session exposes typed accessors (`document`, `view`, `story`,
+`paras`, `selection`, `context`, `bookmark_paras`, `styles_store`, `settings`, `history`, `is_dirty`, …); the
+binding's codec (G15) builds its queries on them, so a family adds an accessor in its own file instead of a
+variant in a shared enum (D2a-Q1).
+
+### The identity rule per TS construction site (U3, G22)
+
+`paras.make_mut(i)` = the TS mutates the object in place: the `ParaId` stays. A TS literal, spread or
+`JSON.parse` copy = a new object: `ids.para()` (or `table()`/`drawing()`). Runs are values (no run identity:
+the guard decides by text, `edit-guard.ts` `r !== o.run`, D2a-G1); their TS **key order** is part of the state
+(U6, below).
+
+| TS site | Rust | Id |
+|---|---|---|
+| `splitParagraph`: `tail = { runs, props: { ...p.props } }` | `text::split_paragraph` | head keeps; tail new |
+| `mergeWithPrevious`: `prev.runs.push(...)`, `splice(i, 1)` | `text::merge_with_previous` | prev keeps; the merged one goes |
+| `deleteRange` across paragraphs: first rebuilt in place, the rest spliced out | `text::delete_range` | first keeps |
+| `normalizeParagraph`: `{ ...run, props: { ...run.props } }`; `splitAt`: `{ ...textExtras(run), text, props }` | runs rebuilt | key order `rpr, text, props` set on split pieces (U6) |
+| `enterCell`/`enterNote` on an empty story: `{ runs: [], props: {} }`; install of an empty body | `ops::context`, `io` | new |
+| revisions `mergeNext` (accept a deleted mark, reject an inserted one) | `revisions::merge_next` | as `mergeWithPrevious` |
+| `parseState` (undo/redo): every object new | `normalize::JsNormalize` | every `ParaId`/`TableId`/`DrawingId` fresh |
+
+### The two-phase protocol (U9, G25)
+
+A command that needs the shell returns `Outcome::NeedsJobs(jobs)` through `Session::defer(command, jobs)`;
+`Job` = `DecodeImage`, `EncodeImage { width, height, rgba, mime, quality }`, `ReadClipboard`, `RenderClip`,
+each with a per-session `JobId`. While a command is pending every other `exec` answers `CommandError::Busy`
+(the TS awaits inside the element; the shell serialises). `complete(job, result)` takes one answer; when the
+last job is in, the owning family's `complete_<family>` applies the results and **only then takes its undo
+step** (a cancelled command — `cancel_pending` — leaves no step and no change). Parity feeds the shell's bytes
+to both sides; re-encoded bytes are not compared.
+
+### The settle step (G21a) and the `LayoutOracle` (G21b)
+
+`finish()` runs, where the TS `refresh()` runs its layout pass, the layout-independent mutations by name:
+
+| TS | Here | When |
+|---|---|---|
+| `syncSections()` (body context only) | `SectionState::sync` | after a body step that changed the paragraph list or a section break, after every undo/redo, at install and save |
+| `syncRunRPr(this.model.paragraphs)` (`layoutEngine`, `tryFastLayout`, `tryFastTable`) | `settle::sync_paras` over the context's paragraphs | every `finish()` |
+| `syncTableRPr` of every body table (`popHistory`) | `settle::sync_story(body, cells)` | every undo/redo |
+| install: `syncRunRPr` (body, tables, header/footer slots), `markSectionBreaks`, section ids, DATE/PAGE placeholders, `markNoteRuns` (body, tables, notes) + `syncRunRPr` of the notes, `syncSections`, the baseline | `io::Session::install` | open, new document |
+
+`syncSections` has a no-change path (D2a-S2): with the same break ids and the same `sectPr`/references the
+sections are kept, or only their block ranges are moved; block indices come from a binary search over the
+table anchors (the TS walks every paragraph and rebuilds every section at every layout; same result —
+checked by the scripts test against a full rebuild after every step). The TS fallback "layout failed →
+legacy layout + `exitCell()`" does not exist (G21d). The `LayoutOracle` is A4's trait as approved (G21:
+`field_values`, `next_hyphenation`), carried by `ExecCx`; no D2a command calls it (the test oracle panics
+if one does); F10 uses it.
+
+### The event table (U16)
+
+The session emits the model-derived events in TS order in `ChangeSet.events`; the shell re-dispatches them.
+
+| Event | Source | Emitted by |
+|---|---|---|
+| `uw-change`, `uw-dirty-change` | session | `begin_step`, `changed`, `discard_step`, undo/redo, `set_dirty` |
+| `uw-input` | session | typing |
+| `uw-track-changes`, `uw-protected`, `uw-markup`, `uw-formatting-policy-change`, `uw-blocked` | session | settings, the policy guard |
+| `uw-cellmode`, `uw-notemode`, `uw-hfmode`, `uw-tbmode` | session | contexts, undo/redo |
+| `uw-revisions-changed`, `uw-comments-changed`, `uw-bookmarks-change`, `uw-styles-change`, `uw-theme-change`, `uw-caption-settings`, `uw-sort-error`, `uw-pasted`, `uw-paste-options`, `uw-custom-inline-inserted`, `uw-font-embedding`, `uw-toc-update` | session | the D2b families (variants declared in `command::Event`) |
+| `uw-before-input` (cancelable, before the command), `uw-ready`, `uw-zoom`, `uw-hfhover`, `uw-tabletool`, `uw-borderpen`, `uw-side-resize`, `uw-select-objects`, `uw-comment-click`, `uw-file-drop`, `uw-paste-special`, `uw-toc-menu`, `uw-plugin-added`, `uw-plugin-removed` | shell | — |
+
+### Undo: normalisation, history caps, byte accounting (U4, U11, U12, U19)
+
+- **History** (`history.rs`, G5: Write's semantics, a module): the state before the step on undo; undo pushes
+  the current state on the other stack (so changes without a step land in redo); 200 steps (`shift()`); dirty on
+  every step, undo and redo, never clean after an undo; `discardSnapshot` of the dirtying step makes clean.
+  Entries are boxed (24-byte deque slots; the deque growth was 115 KB on one keystroke before).
+- **Byte cap** (U19): 64 MiB wasm32 / 256 MiB native. A step's cost is the bytes it does not share with the
+  state after it (chunk pointers compared, neighbours inside a changed chunk compared by `Arc`), priced once
+  when its successor is final; the version stores' texts are added (G26). Past the cap the oldest undo steps go,
+  then the farthest redo steps. Measured: 200 steps on the 15,000-paragraph document count 7.2 MB against
+  69 MB of session; the real growth of the session with 200 steps is 1.1 MB.
+- **Version stores** (U12, G26): `VersionStore` keeps a version while a step or the current state refers to it;
+  collected at every pricing (10,000 versions → ≤ 202 kept).
+- **Normalisation at restore** (A3, U4): `JsNormalize` (the `js_object!` macro emits it for every model type,
+  `src/js/object.rs`; `normalize.rs` for leaves and containers) reproduces `JSON.parse(JSON.stringify(state))`:
+  cleared keys dropped (and their place in the key order), `NaN`/`±∞` → `null`, `-0` → `0`, symbol keys
+  (`rpr_link`) dropped, fresh identities, media kept (the image pool), the textbox wrappers kept (U4c, fixed by
+  name), and — found by the parity capture — **a textbox's two views become copies** (`ViewsCopied`, the TS
+  relinks only the body tables after an undo, so a textbox's `paras` and `blocks` are no longer the same
+  objects: the canon writes both, "split"). O(document) per undo, as the TS.
+
+### Save and install over D1b
+
+`save_docx` is `saveDocxBody`: `syncSections` (body context), the header/footer parts of every section
+(unique by path, `dirty` = edited since the install), the last section's references on the body, comments,
+`blocks` when there are tables or sources, the notes referenced in the body (`noteRefIds`), `trackRevisions` =
+the session's tracking, then `write_document` into the session's package with its `SaveState`; then the
+settings the session edited (`write_even_and_odd_headers`, `write_display_background_shape`,
+`write_default_tab_stop`, `write_hyphenation_settings`), `drop_unused_hf_parts` for the parts no section refers
+to any more, and `pkg.save()`. The stores whose writers belong to a family (numbering → F2, styles → F2, page
+background → F4, note settings → F5) answer `DocxError::Write("… frontier D2b-Fn")` if dirty — never a silent
+wrong file (no D2a command dirties them). Open = `loadDocx`: `.doc` through `doc::convert_doc_to_docx` (feature
+`doc`), the reader with sources, the style/numbering stores from the part texts, `readTrackRevisions`, install.
+
+### Parity
+
+Two captures, both replayed exactly (`cargo test --release -p uo-docx --features canon,session --test
+parity_d2a_ops --test parity_d2a_session`):
+
+1. **Model ops, Node 24.15** (`js/capture-d2a-ops.mjs` → `tests/parity_d2a_ops.rs`): the docx-core ops through
+   the editor's guard (`edit-guard.ts` imported as TypeScript by Node 24's type stripping), `syncRunRPr` with its
+   symbol keys after every op, and the JSON round trip of an undo step; 394 corpus documents × 80 seeded ops
+   (typing incl. non-BMP text and one-unit deletes that leave lone surrogates, deletes across paragraphs,
+   Enter, joins, run props with explicit-`undefined` keys, clear formatting, the tracked twins with two
+   authors, accept/reject one or all, undo round trips): **126,868 facets equal, 0 mismatches**. One parity
+   round: the textbox views after the round trip (`ViewsCopied`, above).
+2. **The element in Chromium** (G17: `js/capture-d2a-session.mjs` → `tests/parity_d2a_session.rs`): Playwright
+   1.61 over a local HTTP server of the frozen root, the `<universal-write>` bundle (`publish/index.js`, its
+   SHA in the capture), the open default font so the layout pass (and its model mutations) runs after every
+   step, `Math.random` = the testkit xorshift32 and `Date` fixed by `addInitScript`, timezone UTC; TS-private
+   entry points called directly (`type`, `pressEnter`, `pressBackspace`, `pressDelete`, `stringifyState`,
+   `parseState`). Per step: the body as an undo would restore it, the selection, `anc` (table anchors and
+   bookmark paragraphs), the events, dirty/can-undo/can-redo/`editsSinceLoad`, and every 8 steps the saved
+   `word/document.xml`. 120 documents × 80 steps: **59,256 facets equal, 0 mismatches, 264 accepted by name**
+   (D2a-T4: after the first Enter on an empty list item or Backspace at the start of a list item the document
+   follows a list rule of D2b-F2; detected by the replay, every later facet of that document accepted).
+   Parity rounds: four, each a D2a finding — the tracked delete of a selection leaves the caret at the END
+   (`trackedDelete(range, 'end')`); `toggleTrackChanges` is an edit (`changed()`, `editsSinceLoad++`); the
+   harness itself must give the element its default font, or the layout pass and its `syncRunRPr` never run;
+   the run key order (U6, next).
+   The math override of G17 is not installed: no value of these scripts goes through math (recorded in the
+   capture metadata); the D2b harness adds it before any family whose model values use math.
+3. **The U6 count (G23)**: with the canonical (order-insensitive) signatures of G23 the saved
+   `document.xml` differs on **20 facets in 5 of 120 documents**: a run split by an op is the TS object
+   `{ ...textExtras(run), text, props }` (key order `rpr, text, props`), its order-sensitive `runSig` differs
+   from the baseline, so the TS regenerates the run where the canonical signature calls it pristine (e.g.
+   `<w:t>` without the source's `xml:space="preserve"`). G23's own condition ("accepted by name if the harness
+   finds no byte difference, else an order tag") applies: the split pieces now record the TS key order
+   (`text::text_piece`) and the session signs with `SigMode::Ts` (D2a-U6): **0 differences**. The reader's and
+   the writer's no-edit round trip is the same in both modes (D1b); for the gate: confirm `Ts` for the session
+   (the alternative, a per-run order tag inside the canonical signature, is a change in `write::sig`).
+
+### Memory (measured)
+
+| Gate | Test | Result |
+|---|---|---|
+| M1 | `memory_d2a.rs` `m1_session_lives_return_the_memory`: 19 corpus sessions (100 scripted commands of every D2a family incl. contexts, tracking and selections, 50 undo, 50 redo, save, drop), the refusal/lock/bad-job/blank path, the open error, the clipboard ring | 0 B left each |
+| M2 | `m2_soak_edit_undo_redo_save`: 1,000 × (open → 100 edits → 50 undo → 50 redo → save → close) over 10 corpus documents | flat: 0 B after warm-up (34,049 B of test scaffolding throughout) |
+| M3 | `m3_per_keystroke_on_a_500_page_document` (generated: 15,000 paragraphs, 2,143 bookmarks, 200 tables, 50 sections, 500 PAGEREF fields; 69 MB live after open) | per keystroke, worst of 30: typing 18.3 KB, Backspace 11.5 KB, Enter 52.4 KB, join 51.0 KB (budget 64 KiB, asserted); 200 steps: 7.2 MB counted (≤ 2 × model, asserted), 1.1 MB real growth |
+| M5 | `m5_caps` | version stores (10,000 versions → ≤ 202), clipboard ring (24 clips and the byte cap), the bookmark shift log (≤ 512 entries), the history byte cap (64 KiB → 39 steps kept) |
+
+Found by M3 and fixed before this record: the history deque growth (115 KB on one keystroke → boxed entries);
+`syncSections` rebuilding 50 sections and a 15,000-entry block index at every Enter (105 KB → the no-change and
+moved-ranges paths); the bookmark rewrite on Enter (the shift log); `doomedMarks` walking the whole story
+with a map of every bookmark start on each delete (80 KB with 2,000 bookmarks → only the range's paragraphs for
+bookmarks and the field stack from `start.para`, same result, D2a-T5).
+
+### Security (no panic)
+
+`nopanic_d2a.rs`: 251 corpus documents × 150 hostile steps (selections at `u32::MAX`, cells by random hops
+nested past the tables, notes with ids NaN/−0/1e300, header/footer parts and textbox runs by random index,
+every context entered from every other, markup modes, the policy, the read view, typing lone surrogates and
+NUL, 300 undo + 300 redo past both ends), then a save that reopens: every save reopened; 75 byte-mutated
+documents (17 opened and hammered, 58 refused by the reader). No `unwrap`/`expect`/`panic!`/indexing in
+`src/session`; positions from the shell are clamped (D2a-C4).
+
+### Decisions outside the TS semantics (for the milestone-2 gate)
+
+| # | Decision | Why |
+|---|---|---|
+| D2a-T1 | An op whose position is outside the story returns `OpError::Position` before changing anything | the TS throws a `TypeError`, sometimes after a partial change |
+| D2a-T2 | `sameComments`: two `NaN` comment ids are equal | the TS answers by array identity, which every split of a run shares |
+| D2a-T3 | `hiddenChar` takes the run rule of `revDisplay` for the markup views without an author filter | the author-filtered views are D2b-F6's |
+| D2a-T4 | The list rules of Enter/Backspace (`listEnterOnEmpty`, `listBackspaceAtStart`) and `applyNextStyle` are hooks answering "not handled" until D2b-F2 | the families own them; the session replay detects and accepts them by name |
+| D2a-T5 | `doomedMarks` walks only what can change its answer | the per-keystroke budget; same result (proof in the code comment) |
+| D2a-S1 | The settle runs `syncRunRPr` over the whole context story every time | the TS fast paths sync only the edited paragraph; the others are already synced (idempotent) |
+| D2a-S2 | `syncSections` keeps or relocates the sections when nothing else changed | the TS rebuilds them at every layout with the same result (checked after every scripted step) |
+| D2a-M1 | Bookmark shifts in a log folded every 512 | U19; the values are the TS ones |
+| D2a-U6 | The session signs with `SigMode::Ts` and the split runs carry the TS key order | G23's condition failed on 20 facets; 0 with this |
+| D2a-C1 | A note is edited through its top-level paragraphs | the TS flattens the note's cells into its editing list (`flattenBlocks`); D2b-F5 decides with the notes family |
+| D2a-C2 | After an undo in header/footer mode the session re-enters the part edited before the pop | the TS asks the layout which part shows on the same page; D2b-F4 replaces it with an oracle question |
+| D2a-C3 | Re-entering a textbox after an undo (`reenterTextbox`) is D2b-F7's; D2a returns to the outer context | needs `contextTextboxRuns` and the layout's object |
+| D2a-C4 | Carets given to `enterCell`/`enterNote` are clamped to the story | the TS takes them as given (an out-of-range caret then throws later) |
+| D2a-E1 | No change set at open | `loadDocx` dispatches `uw-protected`; the shell knows it opened |
+| D2a-Q1 | No `Query` enum; typed accessors | a shared enum would be edited by every frontier |
+| D2a-G1 | The guard decides "the original run" by its text | runs are values; same verdict on every capture |
+| D2a-A1 | Default author "Author" | the TS default follows the UI language; the shell passes the name |
+
+### For the milestone-2 gate
+
+1. D2a-U6: confirm the order-sensitive signatures in the session (with the TS key order recorded where the ops
+   build runs), or ask for a per-run order tag inside the canonical signature (`write::sig`, D1b).
+2. D2a-C2: the header/footer re-entry after an undo needs "which part does page N show" from the layout —
+   one more `LayoutOracle` method (`hf_part_on_page`) or a shell argument to `undo`.
+3. The note editing list (D2a-C1): the TS flattens the cells of a note into its editing paragraphs — keep the
+   TS shape (a second story view) or edit notes as stories like cells (a behaviour change on notes with tables).
+
+### D2b frontier briefs (Sonnet unless named; hybrid mode)
+
+**Common to every frontier.** Worktree `rust-core`, no commit/push/stash, LF only, `CARGO_TARGET_DIR=
+core/target/d2b-<fN>`. Edit only your `src/session/ops/<files>.rs` (the family enum, its `impl Session` block,
+its `guard()`, the hooks declared for you there), your tests (`tests/*d2b_<fN>*`), your scripts
+(`js/capture-d2b-<fN>*.mjs`) and your declaration file `core/docs/modules/uo-docx-d2b/<FN>.md`. Port 1:1 from
+`universal-write.ts` (the model half of each method; DOM, canvas and chrome stay in the shell) and the docx-core
+/ editor model files named below. Every model-changing method follows the step protocol (above) exactly where
+the TS calls `snapshot()`, `discardSnapshot()`, `changed()` and `refresh()`; every object the TS creates by a
+literal or spread takes a new id and the TS key order (`obj::set`, `obj::assign`, `obj::spread`,
+`obj::set_key_order`); every number through uo-jsnum; every regex a hand matcher with its V8 rows. Hooks of
+another family: call the owner's `pub(crate)` method; if it does not exist yet, add a stub in the OWNER's
+file with a "not handled" body and name it in your declaration (the owner fills it). Done = clippy clean
+(native and wasm32), `tests/grep-bans.sh` and the float-cast check, `cargo test -p uo-docx --all-features`
+green, an M1 test per command incl. error paths, a no-panic test with hostile arguments, and **parity through
+both harnesses**: (a) a Node capture of your pure model files (as `capture-d2a-ops.mjs`), (b) your commands
+added to `capture-d2a-session.mjs` (new op codes: the TS public method or private entry; the `paras`, `sel`,
+`anc`, `ev`, `flags`, `docxml` facets, plus a facet of your own state where the body does not show it — e.g.
+`parseState(...).hp`, `.nt`, `.sv` — and the part texts you write). Declarations (one table per kind, TS
+file:line): numeric sites; regex sites; key orders built; identity per construction site; two-phase jobs;
+events; the hooks used/declared; decisions outside the TS semantics (Opus check first).
+
+| Frontier | Files | TS source | Notes |
+|---|---|---|---|
+| **F1** character + paragraph formatting | `ops/format.rs`, `ops/paragraph.rs` | `toggleRunProp`, `setUnderline*`, text effects, `setFontSize`/`growFont`, `setFontFamily`, colours, highlight, `clearFormatting`, `changeCase` (`text-case.ts`), char spacing, format painter, `selectSimilarFormatting`, the `pendingProps` of a caret; alignment, indents, spacing, shading, borders, tabs (`setTabStops`), `setParagraphLayout`; `CLEARED_RUN`/`CLEARED_PARA` (899–896) | uses `guarded::apply_run_props`/`track_apply_*`; `pending_props` is the session's (`set_pending_props`) |
+| **F2** lists + styles | `ops/lists.rs`, `ops/styles.rs` | `numbering-store.ts`, `list-library.ts` (generated data), `styles.ts`, `style-sheet.ts`, `word-styles.ts`; `toggleList`…`setListLevel`, `applyStyle`…`deleteStyle`, `syncStyleSheet`, `syncNumbering`; the hooks `list_enter_on_empty`, `list_backspace_at_start`, `apply_next_style`; the save of the stores (`writeNumberingPart(numberingOut)`, `writeStylesPart`) — replace the two `DocxError::Write` refusals in `io.rs` by calls to your `pub(crate) fn save_*` | the stores are `VersionStore`s (set/restore/collect) |
+| **F3** tables | `ops/tables.rs` | docx-core `table-ops.ts` (incl. `TOps.relink`: no-op here, stories stored once), `table-sort.ts` (uo-text collation), `table-formula.ts` (uo-jsnum `pow`), `table-style-edit.ts`; the editor's table methods, `tableSel`, `clearSelectedCells` | the cell context is D2a's (`EnterCell`); the D2b harness needs the math override for formulas |
+| **F4** sections, page, header/footer, text layout | `ops/sections.rs`, `ops/page.rs`, `ops/header_footer.rs`, `ops/text_layout.rs` | `section-ops.ts`, `hf-ops.ts`, `page-background.ts`/`watermark.ts` write halves (W5 emitters exist), `page-design.ts`, `cover-templates.ts`, `hf-templates.ts`, `text-layout.ts`; `effectiveSection`'s refresh of line numbers/columns/vertical alignment (complete `SectionState::effective`, D2a's file: hand the change back to the D2a owner); `settings.even_odd`/`default_tab`/`hyphenation`/`background` | D2a-C2 |
+| **F5** notes | `ops/notes.rs` | editor `notes.ts`, docx-core `notes.ts` (W4 emitters), `insertFootnote`…`convertNotes`, the note settings (`settings.note_settings` + its save) | D2a-C1 |
+| **F6** review, comments, bookmarks | `ops/revision_cmds.rs`, `ops/comments.rs`, `ops/bookmarks.rs` | `revisions.ts` (editor) and the review methods (accept/reject with deep steps: `begin_step(true, …)`), `revisionAuthors` colours, markup options; comments; bookmarks (`BookmarkParas::map_mut`, `nextBmId` per document) | `revisions.rs` (docx-core) is D2a's and ported |
+| **F7** drawing objects and pictures | `ops/drawing.rs`, `ops/pictures.rs` | `shape-ops.ts`, `picture-ops.ts`, `picture-xml.ts`/`shape-xml.ts` (W2/W6 emitters exist), `insertImage`/`changeImage*`/`setImageAdjust`/`compressImages` as two-phase commands, `floatSel`, `reenterTextbox` (D2a-C3) | math override in the harness; textbox `ViewsCopied` after undo (decide with the gate) |
+| **F8** clipboard (Opus for the paste-tree boundary) | `ops/clipboard.rs` | `copy`/`cut`/`paste` (two-phase `ReadClipboard`/`RenderClip`), `paste-html.ts` rules over the neutral tree (G15), `ClipboardRing` (D2a), policy sanitize (`policy::sanitize_*`) | the `Clip` value type is D2a's (`clipboard.rs`) |
+| **F9** find + navigation (Opus for the matcher) | `ops/find.rs`, `ops/navigation.rs` | `find-engine.ts` (uo-text tables, step budget), `navigation.ts`, `moveHeading`… `selectAll`, `setSelectionRanges` (the extra ranges: add them to the session through an accessor in your file) | |
+| **F10** the layout family (after uo-docx-layout gate 2) | `ops/references.rs` | `references.ts`, `toc.ts`, fields (`refreshFieldCache` → `LayoutOracle::field_values`, `setFieldResult`, quiet steps `set_quiet`), captions, cross-references, manual hyphenation (`next_hyphenation`), galleries (previews through a session query) | Opus review of the oracle use |
+
+### What exists
+
+| File | Content |
+|---|---|
+| `session/mod.rs` | `Session`, `ExecCx`, `SessionOptions`, `MarkupMode`, the step protocol, `exec`/`defer`/`complete`/`cancel_pending`, `undo`/`redo` (`popHistory` with the note pre-entry, the deep steps, the contexts), the settle step, the pricing, `take_state` |
+| `session/io.rs` | `OpenOptions`, `OpenError`, `open` (docx, `.doc`), `new_blank`, `install`, `save_docx` |
+| `session/state.rs` | `EditState`, `ContextStep`, `CellHop`, `TableSel`, `SettingsStep`, `BookmarkParas`, `VersionId`, step cost |
+| `session/history.rs`, `versions.rs` | the history (caps, dirty, pricing), the version stores |
+| `session/text.rs`, `revisions.rs`, `guard.rs` | model-ops.ts, revisions.ts, edit-guard.ts complete, and the guarded wrappers |
+| `session/settle.rs` | `syncRunRPr`, `markNoteRuns`, the DATE/PAGE placeholders, `SectionState` (`resetSections`, `syncSections`, `effectiveSection` D2a part) |
+| `session/normalize.rs` | `JsNormalize` (the undo JSON round trip) |
+| `session/policy.rs`, `clipboard.rs`, `command.rs`, `env.rs` | formatting policy, clipboard ring, `Command`/`Job`/`Event`/`ChangeSet`, `Env`/`FixedEnv` |
+| `session/ops/{text,context,settings}.rs` + 19 family stubs | D2a's families; the D2b files with their enums, `guard()`, hooks |
+| outside `session/` | `lib.rs` (`pub mod session` under the feature); `model/run.rs` `ViewsCopied` + `DrawingTextbox::copies` (hidden, additive; the canon writes the copied views); `js/object.rs` already emitted `JsNormalize` |
+| tests | `session_d2a.rs` (8), `parity_d2a_ops.rs`, `parity_d2a_session.rs`, `memory_d2a.rs` (M1/M2/M3/M5), `nopanic_d2a.rs` (2), `d2a_support/`; unit tests in `history.rs`, `policy.rs`, `clipboard.rs` (8); captures `js/capture-d2a-ops.mjs`, `js/capture-d2a-session.mjs` |
+
+### Not done
+
+- The D2b families (briefs above); the save of the stores they own (refused loudly until then).
+- `EditState.settings.note_settings` and `hyphenation` are typed but never set by D2a (F4/F5).
+- The math override of the Chromium harness (designed; needed from F3/F7 on) and the multi-range selection
+  (`extraSel`, F9).
+- The wasm binding (`UoWriteSession`, M4) and the codec (G15): uo-wasm's.
 - CHANGELOG lines (with the switch).
 
 ## D4 — .doc (frontier briefs)
@@ -2259,7 +2609,112 @@ Port bugs found by the first replay of F5: none; the only mismatch was in my `do
   bookmarks, FSPAs, textboxes, form fields, PICF) are not in `doc.capture` yet; the capture already holds `convert`, `parts` and
   `model` for every input, which F6's replay turns on (`NOT_YET` in `tests/parity_doc.rs`). F6: the `ConvertOptions.docProps` and the
   limits are not defined yet; `DocLimits::max_work` is reserved for the body writer.
-- Not done (by scope): F4, F6, the `uo-opc` zip writing of `convert_doc_to_docx`; a local-corpus replay (`parity_doc_local`, the Word COM
+- (Superseded by the F4 and F6 blocks below: F4, F6a and F6b exist and `convert_doc_to_docx` writes the package.) Not done by scope in F0-F5: a local-corpus replay (`parity_doc_local`, the Word COM
   `.doc` files of the 2,742 oracle documents: run by the maintainer on a machine with Word, G18; nothing committed for it yet).
+
+### F4 — reader assembly (`reader.rs`, `pictures.rs`, `formfields.rs`)
+
+TS `reader.ts` (minus `loadDrawings` = `odraw::read_word_drawings`, called in `DocReader::new`), `pictures.ts`, `formfields.ts`.
+`DocReader<'a>` borrows its `DocStreams`; `styles: StyleResolver` owns the sheet; `drawings: Rc<WordDrawings>`; `blip_budget: Cell<BlipBudget>`
+is the ONE budget of the conversion (`BlipBudget::document()`), spent by `shape_blip`, `blip_at` and the PICF pictures in the TS call order.
+
+1. **Numbers.** CPs are `i64` (a story base plus a `u32`); file offsets `u64`. `Math.ceil((fc - base) / width)` is `int_of(ceil(..))` (`numeric.rs`:
+   an exact integer below 2^53 rebuilt from two `ToUint32` halves, else 0: no float -> int cast); `Piece.fc` stays `f64` (an odd compressed `fc`
+   gives x.5, as in the TS). Story counts are `max(0, i32)`. `readSections`: `Math.abs(i16)` is `i16.max(0)` then `unsigned_abs`; a `fcSepx` of
+   `0xFFFFFFFF` is the "no SEPX" sentinel. FSPA flags are `>>`/`&` on a `u16`. PICF: sizes are `i16`, scale `u16` (0 -> 1000),
+   `(dxa - cropL - cropR) * mx / 1000` in `i64` then `f64` (exact), `Math.max(1, ..) * 635` and `Math.round` through `uo_jsnum::math`; `picFxOf`:
+   contrast/brightness `/ 65536` (`pictureBrightness` is read as `i32`, the TS `| 0`), `Math.round(x * 100000)`; the Boolean bits test
+   `(v >> (bit + 16)) & 1` on a `u32` (bits <= 18: the same as the TS int32). `ffDataXml`: `cch` is `min(u16, 0x7fff)`; `fc + 0x44 + 10` is a `u64`
+   sum (the TS adds JS numbers); a negative `fc` is refused as in the TS.
+2. **Text.** Strings are `Utf16` (`Xst`, STTB entries, form-field text; Latin-1 PICF names are widened unit by unit); authors and bookmark names
+   are `Rc<Utf16>` shared with the owners table. Comment initials are `min(cch, 9)` units.
+3. **Regex sites.** None in these files.
+4. **Iteration order.** The annotation-bookmark ranges are a JS `Map` keyed by tag (a later tag replaces the earlier): a `HashMap` only queried by
+   key, never iterated. Notes, comments, bookmarks, FSPAs and text boxes come out in PLC order.
+5. **Recursion.** None (`paragraph_at` is a loop with the TS guard of 100,000 iterations; `sttb`/`xst_array` are loops).
+6. **State.** The BLIP budget and the string budget are per `DocReader`; no globals.
+7. **`try/catch`.** None in these TS files; a hostile read is a value: `None`, an empty list or `DocError::Limit`.
+8. **Bounds and budgets.** PLC counts go through `read_plc` (checked against the stream); `spend_strings` charges every `Xst`/STTB string against
+   `DocLimits::string_budget(table.len())` (**a declared difference on hostile input only**: the TS allocates what the cch fields claim); `sttb`
+   stops at `lcb`; `read_inline_picture` clamps `lcb` to the stream; BLIP inflation is bounded by the shared `BlipBudget`. Measured
+   (`tests/memory_doc.rs`): M1 0 B on every fixture, error class and the string-limit path (`m1_f4_reader`); M2 1,000 passes flat at 0 B; M3
+   1.3-2.0 x the input allocated on the fixtures (asserted <= 20).
+9. **Errors.** `DocReader::new`: `NoClx`, `NoPcdt`, `EmptyPieceTable`, `Limit { TextUnits | StringUnits }`; `comments`, `sttb`, `bookmarks`,
+   `revision_authors`: `Limit { StringUnits }`; the rest is total. **Data-shape deviations:** plain structs for the TS object literals;
+   `shape(spid: i64, hdr)` refuses a negative spid (never in the map).
+
+Facets: `sections`, `notes`, `comments`, `bookmarks`, `subs`, `fspas`, `textboxes`, `ffdata`, `picf`, `shapes`.
+
+### F6a/F6b — the writer (`docx_writer/{mod,body,fields,tables,stories,drawing,media}.rs`)
+
+TS `docx-writer.ts` (1,599 lines): `mod.rs` (package, relationships, `[Content_Types].xml`, `fontTable`, `ConvertOptions { doc_props }`, the work
+budget), `body.rs` (`collectParas`, `renderParagraph`, `renderRuns`, run buffer, revisions, bookmark and comment markers, special characters,
+form-field data), `fields.rs` (field-instruction matchers), `tables.rs` (`renderBlocks`, `renderTable`, tblPr/trPr/tcPr), `stories.rs`
+(`renderMain`, `sectPr`, header/footer parts, notes, comments), `drawing.rs` (anchors, `wsp`/`wpg`/`pic`, fills, lines, WordArt, background,
+`xfrm`), `media.rs`. The call order of the TS is kept (the style resolver's memo and `rev_next` depend on it): the body is rendered BEFORE
+`build_styles`, as F5 required.
+
+1. **Numbers.** Attribute integers are `AttrVal::Int(i64)`; the TS numbers that can be fractional (`Math.round(x / 12700 * 10) / 10`, gradient
+   positions, rotations) are `AttrVal::Num` formatted by `uo_jsnum::format::to_js_string`; every `Math.round/max/min/abs` is `uo_jsnum::math`;
+   `(rot | 0)` is `to_int32`; `(v >>> 0).toString(16).toUpperCase().padStart(n, '0')` is `format!("{:0nX}")` of the `u32`; `parseInt(c1, 16)` of
+   `oaColor` reads the 6-digit hex string the code itself produced (no free text reaches it). `Math.ceil((fcEnd - p.fc) / cs)` as in F4
+   (`int_of`). EMU products (`twips x 635`) are `i64`. Ids (`docPrId`, bookmark ids, `rev_next`, note ids) are per-conversion counters (note
+   ids saturate at `u32::MAX`, unreachable under the limits). No float -> int `as` cast (`core/tests/float-casts.sh` clean with `doc` on).
+2. **Text.** UTF-16 until `xmlw` escapes (lone surrogates and C0/`FFFE`/`FFFF` dropped, F0). The run buffer merges text by the revision wrapper key
+   (`ins|author|date`, units). The Portuguese literals the TS writes (`Autor desconhecido`, the `docProps/app.xml` application name) are output
+   text and stay.
+3. **Regex sites.** `/^\s*FORM(TEXT|CHECKBOX|DROPDOWN)\b/i`, `/^\s*SHAPE\b/i`, the HYPERLINK argument loop and `/^\s|\s$/` are hand matchers in
+   `fields.rs`/`body.rs` over UTF-16: JS `\s` is the Unicode space set plus line terminators, `i` folds ASCII letters only (no `u` flag), `\b` is
+   the ASCII word boundary; unit-tested and covered by the field fixtures and mutations. Linear, none dynamic.
+4. **Iteration order.** Every JS `Map`/`Set` whose order shows in the output is insertion ordered: package files (`Files`: setting a name again
+   keeps its place), `[Content_Types]` overrides, media extensions, relationships (`PartRels`: same type/target/mode gives the same id). The
+   `HashMap`s (`chp_cache`, `fspa_*`, `txbx_*`, bookmark/comment starts and ends, `media`) are only looked up by key; the vectors under a key keep
+   the TS push order. The table grid is a `BTreeSet<i64>` where the TS sorts a numeric array of unique values. Attribute objects follow the TS key
+   order (no integer-like keys).
+5. **Recursion.** `renderTable` (itap, a field of the file) and the text-box content of a shape recurse; both go through one counter `nest`
+   bounded by `DocLimits::max_nesting` (64 native, 32 wasm32). Past it the converter answers `DocError::Limit { kind: Nesting }` (**N1, accepted
+   by name**: the TS recurses until the JavaScript stack overflows and its catch-all gives the `corrupt` class; the replay accepts the `limit`
+   answer exactly where the capture says `corrupt`; 4 of the 4,019 files). Groups are bounded in `odraw`. `collectParas` keeps the TS guard of
+   2,000,000 iterations.
+6. **State.** `DocxWriter` is per conversion and consumed by `build`: counters, caches (`chp_cache`, the field-begin search, `media`) and
+   relationship tables; nothing global. `next_field_begin` memoizes the last `indexOf('\x13', from)` (the TS rescans: quadratic on a long text
+   without fields); same answers.
+7. **`try/catch`.** The TS wraps `convertDocToDocx` in a catch-all ("corrupt or not supported"); here no panic path exists (no-panic tests, fuzz)
+   and failures are values: `Limit { Work | Nesting | TextUnits | StringUnits }`, `Corrupt("writing the package")` when the zip writer refuses.
+8. **Bounds and budgets.** `DocLimits::max_work` (2^26 native, 2^24 wasm32) is the work budget: one unit per paragraph collected, per CP of every
+   rendered paragraph (`renderRuns`, `formFieldData`), per table row and per extra column; past it `Limit { Work }` (**a listed difference on
+   hostile input**: the TS has only the 2,000,000 guard). Measured worst case at the default limits: a 25-30 KB mutated file takes up to 2.1 s
+   in the fuzz driver (native, release; a `Limit { Work }` answer takes 0.7 s, about 11 ns per unit), so the wasm32 default is about 4x lower.
+   Media are deduplicated by FULL bytes (G24: a hash only picks candidates, equality decides), so the U8 quirk (same length, equal samples)
+   cannot merge two pictures; media bytes are `Cow` borrowed from the streams. Measured: M1 0 B on every fixture, error class and limit
+   (`m1_f6_converter`: tight work, nesting, text and a small `DocLimits`); M2 1,000 conversions flat at 0 B; M3 23-31 x the input allocated on
+   the fixtures (a fixed cost of 400-600 KB for the package and parts; peak 0.38-0.45 MB; asserted <= 40).
+9. **Errors.** As item 7; the `convert` facet is `ok` or the class of F0. **Data-shape deviations:** `DocxWriter<'a>` owns the `DocReader<'a>`;
+   `StoryCtx` is `Story { kind, hdr }` plus `&mut PartRels` passed explicitly; the CHP cache key is `(istd, grpprl spans)` where the TS keys by
+   a joined string; `ConvertOptions.doc_props` defaults to true; the zip is written by `uo_opc::zip` (parts compared, not zip bytes).
+
+Facets: `convert` (`ok` or the error class), `parts` (part names in zip order and each part's `len:SHA-256`), `model` (`readFullDocument` of the
+result through `canon`) over the 11 fixtures and 4,008 mutations.
+
+Replay (`cargo test --release -p uo-docx --features doc,canon --test parity_doc`): **179,929 comparisons equal, 0 mismatches, 4 accepted (N1),
+0 not replayed**; `NOT_YET` is gone.
+
+### F4/F6 — verification session: results
+
+- The code of F4, F6a and F6b was in the tree (committed in the Milestone 2 wave) without records; this session verified it and wrote these
+  blocks. The session that wrote the code left no note of parity rounds (unknown); in this session the replay sent nothing back.
+- **`js/capture-doc.mjs` is a 0-byte file in HEAD (lost; no copy in any worktree, branch or unreachable object).** `tests/parity/doc.capture` is
+  intact and the replay passes against it, but the capture cannot be re-run: the "twice byte-identical" check and a recapture need the script
+  rewritten (the replay's canonical streams are its specification; the inputs of the mutations and generated tables are recorded in the
+  capture as `edits`/`cut`/`hex`).
+- Added: `m1_f4_reader`, `m2_f4_soak_flat`, `m3_f4_budgets`, `m1_f6_converter`, `m2_f6_soak_flat`, `m3_f6_budgets` (`tests/memory_doc.rs`); the reader
+  assembly and the converter in `nopanic_doc.rs` (mutated fixtures; all 4,008 capture mutations with tight and default limits); the fuzz target
+  `doc_convert` also runs `DocReader`, pictures and form fields, and its small `DocLimits` got the `max_nesting` field (it no longer compiled).
+- Fuzz (stable driver, release): 1.3 M executions in 90 s and 0.9 M in 60 s, 0 crashes; slowest 2.1 s (item 8 of F6).
+- `cargo clippy -p uo-docx --features doc,canon --tests --no-deps -- -D warnings` clean native and `wasm32-unknown-unknown`.
+- **`js/capture-doc.mjs` rewritten (2026-11-05) and proved byte-identical:** two runs (about 46 s each, Node 24.15, worker with a 1.5 GB heap) wrote
+  files with the same SHA-256 as the committed `tests/parity/doc.capture` (`7781e939…20376d7`, 12,216,932 bytes), `cmp` clean. The inputs are rebuilt
+  from the capture itself (`edits`/`cut` over the fixtures, `hex`/`lst`/`lfo`/`nfib`/`ftcfe`), `--inputs <capture>`; the mutation and table
+  generators are not in the script (their PRNG was lost), and `left-out-ts-memory` carries over from the inputs' `@corpus` line.
 
 <!-- D4-END -->

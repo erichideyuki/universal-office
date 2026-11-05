@@ -259,9 +259,16 @@ js_object! {
         pub view: TextboxView,
         pub drawing: DrawingId,
         /// the source groups of the content (`SourceStore.txbx`)
-        pub txbx_src: Option<TxbxSrc>
+        pub txbx_src: Option<TxbxSrc>,
+        /// the TS `paras` and `blocks` are equal copies, not the same objects: what the JSON round
+        /// trip of an undo step leaves (D2a, U4; the TS relinks only the body tables)
+        pub copies: ViewsCopied
     }
 }
+
+/// Whether a textbox's two TS views are copies after an undo (see [`DrawingTextbox::copies`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ViewsCopied(pub bool);
 
 impl JsValue for DrawingTextbox {
     #[cfg(feature = "canon")]
@@ -273,10 +280,22 @@ impl JsValue for DrawingTextbox {
             }
             // the top-level paragraphs are a subsequence of the walked ones: equal counts = the
             // same objects ("synced"), else both views are written
-            TextboxView::TopLevel if content.flat_paragraphs().len() != content.paras.len() => {
+            TextboxView::TopLevel
+                if content.flat_paragraphs().len() != content.paras.len() || (self.copies.0 && content.has_paragraph()) =>
+            {
                 crate::js::object_canon_with(
                     self,
                     &[("blocks", &|w| content.canon(w)), ("paras", &|w| content.canon_paragraphs(w)), ("@views", &|w| w.str("split"))],
+                    w,
+                );
+            }
+            // equal copies (after an undo): both views, "split" (a view without paragraphs is the
+            // same empty list either way)
+            TextboxView::Synced if self.copies.0 && !content.flat_paragraphs().is_empty() => {
+                let flat = content.flat_paragraphs();
+                crate::js::object_canon_with(
+                    self,
+                    &[("blocks", &|w| content.canon(w)), ("paras", &|w| flat.canon(w)), ("@views", &|w| w.str("split"))],
                     w,
                 );
             }

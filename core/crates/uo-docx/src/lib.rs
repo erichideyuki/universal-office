@@ -39,6 +39,8 @@ pub mod model;
 pub mod odf;
 pub mod pvec;
 pub mod read;
+#[cfg(feature = "session")]
+pub mod session;
 pub mod text;
 #[cfg(any(feature = "export", feature = "compare", feature = "odf"))]
 pub mod u16buf;
