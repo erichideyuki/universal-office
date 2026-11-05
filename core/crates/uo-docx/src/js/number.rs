@@ -88,6 +88,12 @@ impl JsValue for JsNumber {
         }
         true
     }
+    fn exact(&self, k: &mut super::ExactKey) -> bool {
+        match *self {
+            JsNumber::Num(x) => k.f64(x),
+            JsNumber::Null => k.tag(b'z'),
+        }
+    }
 }
 
 /// A TS `T | null` field (`pgBorders?: PageBorders | null`, `line?: PicLine | null`): absence is
@@ -124,6 +130,12 @@ impl<T: JsValue> JsValue for Nullable<T> {
                 w.raw("null");
                 true
             }
+        }
+    }
+    fn exact(&self, k: &mut super::ExactKey) -> bool {
+        match self {
+            Nullable::Val(v) => k.tag(b'v') && v.exact(k),
+            Nullable::Null => k.tag(b'z'),
         }
     }
 }

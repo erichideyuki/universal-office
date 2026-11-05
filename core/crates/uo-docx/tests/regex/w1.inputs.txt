@@ -1,0 +1,640 @@
+
+x
+ 
+FOOTNOTEREF_MARK
+ ENDNOTEREF_MARK 
+\tFOOTNOTEREF_MARK\n
+footnoteref_mark
+FOOTNOTEREF_MARKX
+XFOOTNOTEREF_MARK
+FOOTNOTEREF MARK
+ FOOTNOTEREF_MARK 
+﻿ENDNOTEREF_MARK
+ENDNOTEREF_MARK
+ ENDNOTEREF_MARK 
+FOOTNOTE ENDNOTEREF_MARK
+=
+ = 1 + 2 
+\n=SUM(ABOVE)
+x=
+ =
+﻿=
+ =1
+TC
+tc "a"
+ TC "a" \\f C 
+XE "x"
+xe
+RD file
+rd
+TCX
+TC_
+TC1
+TC-1
+TCé
+TCé
+T
+TCD
+ſc
+ıe
+KE
+Kc
+REF a \\h
+REF a \\H
+REF a \\h 
+REF a \\hx
+REF a \\h_
+REF a \\h1
+\\h
+\\
+\\H\\h
+a\\hé
+a \\ h
+a\\\\h
+a\\h\\h1
+abc
+a.b-c_d
+a b
+a/b
+-
+_
+.
+a\n
+é
+clickcompliance.document-tag
+a\tb
+x\ny
+ab
+ab
+a‑b
+a­b
+a b
+\t
+\n\n
+a\t\tb
+  lead
+trail  
+ 
+  
+ nb 
+a\rb
+a\r\nb
+﻿x
+x 
+a&b<c>d
+&amp;
+😀\t😀
+\t😀
+😀 
+　x　
+᠎x
+a b
+<w:rPr/>
+<w:rPr></w:rPr>
+<w:rPr><w:b/></w:rPr>
+<w:rPr><w:noProof/></w:rPr>
+<w:rPr><w:noProofX/></w:rPr>
+<w:rPr><w:rFonts w:ascii="a"/><w:b/><w:sz w:val="2"/></w:rPr>
+<w:rPr><w:szCs w:val="2"/></w:rPr>
+<w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr>
+<w:rPr><w:w w:val="90"/></w:rPr>
+<w:rPr><w:wx/></w:rPr>
+<w:rPr><w:lang w:val="x"/></w:rPr>
+<w:rPr><w:rPrChange w:id="1"><w:rPr/></w:rPrChange></w:rPr>
+<w:rPr><w:b/><w:i/></w:rPr>
+<w:rPr w:x="1"><w:b/></w:rPr>
+<w:rPr>
+no tag
+<w:rPr><w:u/>é</w:rPr>
+<w:rPr><w:b/>😀
+<w:rPr><w:color w:val="a"/></w:rPr>
+<w:rPr><w:colorX/><w:color/></w:rPr>
+<w:rPr><w:b/><w:noProof /></w:rPr>
+<w:rPr><w:noProof\n/></w:rPr>
+<w:rPr><w:noProof/><w:sz/></w:rPr>
+<w:rPr><w:sz/><w:noProof_/></w:rPr>
+x😀
+😀
+<w:rPr>😀
+<w:rPr><w:b/>é
+PAGE§PAGE
+ IF { PAGE } > 1 "a" "b" §IF 3 > 1 "a" "b"
+{ A }{ B }§x y
+a{x}b{y}b§a1b2b3b
+A{B}C§AxD
+{X}§
+x§x
+{a{b}c}§zz
+T.*{X}§T.*v
+$1{X}$§$1q$
+a }{ b§a }{ b
+{{}}§x
+{ }§ 
+a{ b§a{ b
+a{b}}c§aXc
+{a}{b}§ab
+{a}b{c}§1b2
+ { PAGE } § 7 
+x{y}z§xz
+{y}{z}§
+{}§
+<"<<w:b/><w:rPrChange>=#<w:w/>
+"" ENDNOTEREF_MARK'11😀
+\tXE=\t<w:color/>
+RDé
+<w:w/>\n "TC­
+{\nXE
+1
+'<w:rPr>😀/)*</w:rPr> </w:rPr>
+% '<w:w/>b <w:w/>b(😀1
+ENDNOTEREF_MARK­</w:rPr><w:w/><w:noProof/>TC#
+XE﻿<w:color/>  <w:color/>~~RD\t_FOOTNOTEREF_MARK
+.)</w:rPr><w:b/>\nb
+FOOTNOTEREF_MARK\n<w:b/>~=
+😀1TCRD
+_*-<w:w/>﻿§&/(<w:rPrChange>&
+ "!<w:rPrChange>TC<w:rPr>#/)‑
+) 
+😀~a 
+%­'﻿<a)} 
+{(1 1.\t-﻿)<w:color/>
+hENDNOTEREF_MARK<w:rPr>-
+FOOTNOTEREF_MARK<<w:color/>{(‑<w:sz/>ENDNOTEREF_MARK/é(
+bXETC=!\n!‑ _
+\\h &<w:w/><w:sz/>*
+\\hXE<w:color/>ENDNOTEREF_MARK
+ '
+-§b%##.
+<w:b/>\\h</w:rPr><w:color/>)=
+<w:w/>
+<w:color/>&FOOTNOTEREF_MARK§a\t<
+§' (FOOTNOTEREF_MARK\\h' =
+"­\t< _
+<*\t "<w:color/>
+FOOTNOTEREF_MARK§{1FOOTNOTEREF_MARK% <w:w/></w:rPr>
+\n §<w:noProof/>)ENDNOTEREF_MARK
+‑RD&§
+#*‑﻿é
+_{a
+a(#h
+(RDRD<w:noProof/>😀<w:color/>)
+._=#­)<w:rPrChange>FOOTNOTEREF_MARK#
+\nFOOTNOTEREF_MARK\\h<w:noProof/><w:b/>
+\\TCFOOTNOTEREF_MARKTC#}h>
+<w:rPr>}'{)b\\h_
+<w:noProof/>/§ /
+\n
+<w:w/>*a­‑
+a{"=><w:w/>{
+<w:rPrChange>&*
+%1{%</w:rPr>\\></w:rPr>(1RD</w:rPr>
+§>b<w:b/>
+)>-1"§</w:rPr></w:rPr>﻿😀
+1 §<w:sz/>/\n<w:b/><w:sz/>"\\h)
+ENDNOTEREF_MARK<w:sz/><.\t<w:noProof/>§
+<w:color/>
+(XE
+#_.
+XE(h
+*😀<w:rPrChange>)﻿\n§<w:w/>*
+\t= (h{\nah%
+\\(ENDNOTEREF_MARKFOOTNOTEREF_MARK'<w:noProof/>
+ <w:w/>{<w:sz/>#\na~😀
+ {*."(=­'
+XE<\\(
+<w:rPr>_<w:b/>%/_RD RD
+   \\\n!}<w:color/> 
+bRDb\nENDNOTEREF_MARK~_
+ENDNOTEREF_MARK h RDé\t~bXE
+<w:noProof/><w:w/>b>FOOTNOTEREF_MARK﻿§<w:color/>
+_'&&ENDNOTEREF_MARK
+TCa*)\nXE}}
+😀<w:rPrChange>)%😀<w:rPr><w:b/>*<w:noProof/>
+ 1-=TC<w:b/>=\t
+b\\😀<w:rPr>ha‑ 
+=<w:rPr>*§</w:rPr><w:b/>}­<w:rPr>
+§{ ­<w:rPr>/a{
+~TC﻿=))\n & &
+ 
+\\!#&/(­\n<w:w/><w:b/>
+ \\%'<<w:rPr>‑(
+<w:b/>
+-'é~h<w:rPr>#<w:color/>_
+\n\né>
+\\hFOOTNOTEREF_MARK<w:rPr>FOOTNOTEREF_MARK😀<w:noProof/>
+<w:rPr>
+<*<w:color/>
+><w:noProof/>§§<w:w/>. <w:rPr>FOOTNOTEREF_MARK­-
+{<w:w/>ENDNOTEREF_MARK*~#1
+\t.<w:b/>h<<w:rPrChange>{{</w:rPr>hh
+é~ 
+\\-"{>
+_
+&-{
+‑‑\n\n!‑
+!&
+\nTCTC 
+'1<w:noProof/>\\<w:noProof/>/<w:rPr>.<w:sz/><
+XE  h<w:w/>b﻿)h
+TC&<w:w/><w:b/> ).=<w:sz/>&
+XE'"
+#RD >1TC'😀h<w:rPr>\n
+RD
+\\h
+\\/{XEb<w:rPr>‑='(﻿
+a\t.-
+<w:color/>'b_<w:rPrChange>'*.*%<w:rPr>
+a#TCa)<w:color/>\tRDFOOTNOTEREF_MARK
+\\b😀\\h§<w:color/>\n
+b
+< <w:rPrChange>.
+<w:sz/> &"1. 
+</w:rPr>😀
+TC
+!'" .<w:b/>
+"!
+(é\\-
+<w:color/>#  
+<w:rPrChange>‑ éé­}!a 
+/­§\t ><w:b/>.<w:rPr>é\\
+éFOOTNOTEREF_MARK-é~.<bFOOTNOTEREF_MARK</w:rPr>
+ aa\\>h
+<w:rPr>
+(\t\\hENDNOTEREF_MARK1=
+ RD\\h<w:sz/>
+{(=﻿\t%😀(}ENDNOTEREF_MARK \\
+ 😀h-<w:sz/>% §­TC
+b% <w:w/>)‑ 
+</w:rPr>FOOTNOTEREF_MARKTC{& "\\­<w:sz/>
+<w:noProof/>­-TC%é‑>(
+"} *(\t§‑  <w:rPrChange>'
+ ='§<w:w/>XE
+\t §-"
+ENDNOTEREF_MARK\\hb!\t
+1=<w:sz/>!\\*<w:color/><w:w/>&­
+"-\\éh<1-*
+<w:rPr>TC <w:w/>}</w:rPr><w:b/>
+FOOTNOTEREF_MARK>§#&<w:sz/>/~
+TC<w:color/>
+<w:w/><TC</w:rPr>=<w:rPr>\n<w:rPr>
+§ <w:sz/><w:noProof/>éTC
+#‑<w:sz/>﻿ <w:w/>h  \t)\n
+~h 
+\\h \na<\t<w:w/>
+\\h1\t.</w:rPr>~" ! RD
+­=
+- -ENDNOTEREF_MARK
+XE %­\\h 
+)</w:rPr><w:rPr> 
+(é\n~
+<
+<w:color/>#\n"﻿\t 
+%<w:rPr>\n<w:rPrChange>'<w:rPrChange>}&-)TCFOOTNOTEREF_MARK
+!_.<w:rPr>
+b<w:b/>!
+ 
+XE
+h {
+(<w:rPrChange>"
+§a§﻿TC/<w:sz/>*!(=
+ENDNOTEREF_MARK\\h{\\h<w:noProof/>hRD\n
+" <w:w/>
+<w:sz/>}FOOTNOTEREF_MARK {RD> 1(a
+_%\t~§=# ﻿ENDNOTEREF_MARK
+a"\t%﻿😀ENDNOTEREF_MARKa. .<w:noProof/>
+)😀
+>§ TC--TC﻿
+{<w:w/><w:w/><w:rPr>~/<w:w/>\\%#a
+<w:sz/><w:sz/>­
+ 
+<w:color/>
+/\n‑é-h=&😀& &
+FOOTNOTEREF_MARK<w:color/>
+aRD­RD{b
+=TC😀.!\\h!_{b</w:rPr>
+_/ é
+aFOOTNOTEREF_MARK
+é<w:w/>=
+" > 
+<w:color/>§{\\h <w:rPrChange>_TC\\
+(11 !TC*
+<w:rPrChange><w:w/>'('FOOTNOTEREF_MARK 
+<w:color/>
+~/~'.<w:w/>
+)\\h~ENDNOTEREF_MARK%_a‑.
+<w:w/>'
+.~\th
+%§!<w:rPrChange>
+a<w:rPrChange>a)
+­<w:rPr>)!*\\<w:sz/><w:w/><w:noProof/>
+=<w:rPr>
+}</w:rPr>XEbXEh
+>&=(>.é{‑
+&­‑
+-h<XE<w:noProof/>~RD
+_<w:b/>#"\\h1b!_<w:rPrChange>§\n
+­</w:rPr>* 1§\t%
+ENDNOTEREF_MARK<w:rPrChange>.
+­b<w:b/>&_\\h<!<w:noProof/>
+_a h%<w:rPr>
+-\\h}éTC.<&<w:color/> 
+{\\h\\h
+\\*b ﻿\n‑!=\\h
+-
+ . <w:color/>‑</w:rPr>!{
+ 😀ENDNOTEREF_MARK)<w:color/><é
+'\n
+‑-}TC*hb
+-­1~XETC<w:b/>b\\<<w:rPr>
+/</w:rPr>=b/ )>()~
+ /*(' §~TC
+ #
+'<w:noProof/>}§ENDNOTEREF_MARK!</w:rPr><{ 
+\tENDNOTEREF_MARK&_
+b‑<w:w/>!a<w:sz/> <w:sz/>%!%
+<w:noProof/>1RD1(<w:rPrChange>1 
+   ><w:sz/>%
+1﻿<w:rPr>!XE#
+TC <w:b/>- \n
+\\h
+{<w:w/><w:w/>b_ '_\t
+"<w:sz/>b
+TC- §%<w:color/>XETC&'<w:rPrChange>
+﻿"
+ RDé b
+éENDNOTEREF_MARK
+é-<w:rPrChange>\t
+RDXE1 \\h
+\\1RD#<w:w/>­'\\é
+­
+_.hFOOTNOTEREF_MARK}‑﻿)=
+ENDNOTEREF_MARKRD~"a<w:b/>  _
+/<w:w/>
+%_/😀<w:noProof/>XE%<w:rPr><w:rPr>   
+😀FOOTNOTEREF_MARK 'h)<b
+TC<w:sz/>/§
+{<w:b/>)\\h_}*😀</w:rPr>é\\h
+<w:rPr>b‑&!
+.h<w:b/>-TC=<w:sz/>\\h-TC
+XE.
+­1ENDNOTEREF_MARK1<w:rPr>TCENDNOTEREF_MARK<w:sz/></w:rPr><w:color/>
+={-<w:w/>%\\<
+‑'‑
+XE\t</w:rPr>­XEFOOTNOTEREF_MARKXE{
+\t\\hFOOTNOTEREF_MARK<w:rPrChange>h
+h
+<w:sz/>>FOOTNOTEREF_MARK& 
+' TC§ 
+ XEa &‑﻿<w:rPr>#﻿§
+­'~FOOTNOTEREF_MARK</w:rPr>(.<w:color/>
+é>‑ h
+.
+a"<w:w/><w:rPr>﻿=
+hTC<
+TC😀 (</w:rPr>!﻿é
+­<w:rPrChange><w:b/>§\\ </w:rPr><w:b/>" "
+)1FOOTNOTEREF_MARK 1~!<w:noProof/>/
+TC>😀<w:w/><w:rPrChange>1<w:rPr>~TC
+*1>FOOTNOTEREF_MARK§%
+/>h"  
+<w:b/>TC#<w:w/>\\<w:w/>=
+_ <w:b/>(&%(TC
+<w:sz/> 1'
+<w:rPr>‑#
+>/<
+</w:rPr>-!\n>XE!<w:color/>
+RD!😀~
+😀=
+\\<w:noProof/>
+h TC<
+.<w:rPrChange>RD
+1<w:w/><w:rPrChange>a#
+ </w:rPr>.<w:noProof/>%}}
+b\\h!ENDNOTEREF_MARK<w:rPr>\n
+<w:b/>😀.RD1 )XE
+<w:color/>/<w:noProof/>1</w:rPr>(b1 
+XE\\h<w:noProof/>
+\t-b<w:noProof/>}=FOOTNOTEREF_MARK
+<%{)</w:rPr><w:rPrChange>_RDRD
+<w:b/>=h{  ﻿%ENDNOTEREF_MARK
+"
+<w:noProof/>>
+</w:rPr>/😀(
+&*‑‑#~é <w:b/>
+a"<w:rPr>{‑\\b_*
+*<w:color/><w:sz/>
+a }\\hb‑<w:noProof/>"
+&§bé
+"§_‑"= 
+RDXEENDNOTEREF_MARK\\
+{11 
+ 
+1!==1=\n<w:noProof/>é§ENDNOTEREF_MARK
+ XEXE%*\t%<w:b/> )
+=}1<w:color/>=   \\h
+(>{{­\\h b/
+\\h<w:noProof/>.<w:w/>§  }
+b  
+!1
+<w:b/>1<w:sz/>}\t%1<w:rPr>_
+&}-))
+<w:color/>&<<XEXE
+<
+XE.{"
+{hTC<w:noProof/>😀
+%
+­( %­}% <w:sz/>
+!
+h \\hé1hTC<w:sz/><w:color/>﻿FOOTNOTEREF_MARK
+~~~<w:w/>😀 
+§\t\n<w:sz/>'<w:color/>*"'(h­
+ <w:rPr>\\\nTC)<w:noProof/>TCENDNOTEREF_MARK// 
+ &TC'}}TC‑
+}<w:color/>%'<w:sz/>é­/
+FOOTNOTEREF_MARK%FOOTNOTEREF_MARK=﻿a=§\t
+§<'hb# ­§.
+<w:b/>­\t!h'
+.*﻿﻿-#­﻿b‑
+-\\hENDNOTEREF_MARK1&<w:noProof/>\nXE~<w:rPr>
+#<w:rPrChange> _ .h‑~
+<FOOTNOTEREF_MARKRD/a{/_' -
+.)</w:rPr>*}/=
+\n{<w:b/>*XEé﻿<w:rPrChange>%
+"h%<w:w/>h<w:b/>XE  \t=
+/_h
+<w:rPr>#{
+<w:sz/> <w:rPr><­ §\\h1=RD
+&>RD<w:b/><w:w/>\n§<w:color/>
+</w:rPr>%
+~FOOTNOTEREF_MARKéRD'<w:rPrChange>>
+‑\\h<w:sz/>😀­ 
+b&😀>1ENDNOTEREF_MARK
+a"ENDNOTEREF_MARK'
+ TC\n ‑  
+<w:b/><w:sz/>XERD
+.-
+'b>\tXEENDNOTEREF_MARK­
+XE
+/#>
+<w:color/>\\</w:rPr>-*hTC<w:rPr>_
+</w:rPr>.§</w:rPr>
+/%
+é‑b\n﻿<w:noProof/> <w:noProof/>TC
+ }<w:w/>(_\n﻿> <w:rPr>§"
+b.
+TC>h"﻿RD\\‑/<w:color/>­h
+\\-{\n"aXE§­\\ha)
+FOOTNOTEREF_MARK&*XE=ah\n
+=RDFOOTNOTEREF_MARK <w:sz/>XE<w:rPr><w:w/>{=
+RD=<w:noProof/>­\t
+!\\"
+XE<w:noProof/>b-TC
+-\t <&<<\n
+-ENDNOTEREF_MARK 1é
+ }/\n</w:rPr>~_<w:b/>
+/><w:color/>!TC<w:w/>#😀
+%<😀
+FOOTNOTEREF_MARKXE😀é</w:rPr>.﻿
+%<w:sz/>
+<w:rPr><w:b/></w:rPr>a§a&}😀( TC
+\nRD}<w:color/>/"ENDNOTEREF_MARK*<w:b/>
+<w:noProof/>-\\  ﻿!}‑/TC
+'#\\TC\\h‑h"!﻿/
+#
+ENDNOTEREF_MARK*
+RD</w:rPr><w:w/><w:noProof/>FOOTNOTEREF_MARK\n<w:b/>_-}"
+\\ENDNOTEREF_MARKRD'
+‑\\h){- 
+ <w:rPrChange>ENDNOTEREF_MARKé
+b<\t\\h<w:w/>
+a﻿}}! 
+<w:b/> é#é\\&1-
+é=­﻿
+‑&* \t_-1
+. %
+<w:color/><w:sz/>a~>  <"
+{\n<w:b/>é)
+TC TC<w:rPrChange><w:noProof/>-
+\n{.)</w:rPr>­\t<w:sz/><w:b/><w:b/>a<w:color/>
+{﻿TC~<w:w/> <w:sz/>%é\t
+ \tTCTC)
+\n\n\\/TC}-
+%{<w:w/>&<w:rPr><w:color/>
+~h<w:rPr>TCb TC 
+é!- \t<w:w/>)
+😀}*­"<w:noProof/>\n</w:rPr> 1éh
+\\>
+={ §\\
+😀1 !</w:rPr>)# \\h­§­
+_~ # <w:w/>a} \\h<w:b/>
+)
+h 1_é ­-<w:rPr>!a
+<w:rPr>b)&
+'-.-
+<w:rPrChange>~\n}
+<w:rPrChange>FOOTNOTEREF_MARK</w:rPr>
+XE'>\\<w:noProof/>> 
+­ 
+b.\n.}😀§﻿ba'1
+<
+<</w:rPr>_<a/<\\h("}
+<w:rPr>\n<w:sz/>>#.b<w:color/>%#~&
+=
+1=%\t<w:rPr>
+<w:rPrChange>😀/﻿~XE
+§ 😀\n.)RD=#
+a
+h'
+/<w:b/>1 
+﻿{&-1~
+ \n﻿/<w:color/>&<w:noProof/>{TCh
+1! <w:rPr>(
+§§
+_)< XE/<w:rPrChange>
+)😀a <w:noProof/>_#>﻿
+\tRD</w:rPr>%ENDNOTEREF_MARK b&TC
+"
+ <w:noProof/>b \\h
+b\nb% RD\\‑<w:b/>#
+TCTC !}
+﻿%(</w:rPr><w:sz/><w:noProof/><w:rPrChange>_
+ 
+§
+<w:b/>}XEa<w:noProof/><w:rPr>XEh-"!
+~ §/'
+\\ &TC"
+bRD﻿=
+😀
+ 😀 
+ENDNOTEREF_MARK<w:w/>b~‑!\\XE
+aFOOTNOTEREF_MARK_1>%<w:b/>\\
+\n\\h<w:noProof/><w:rPrChange><w:color/> 
+\\h"*bENDNOTEREF_MARK.<w:noProof/>FOOTNOTEREF_MARK&h
+bFOOTNOTEREF_MARK‑‑<w:noProof/>#{
+‑TC_ %*>&XE'(
+<w:rPrChange>=)<w:b/>&#RD\\<w:noProof/>
+</w:rPr> ‑‑\\FOOTNOTEREF_MARK<w:b/>'}é
+!§\\\t.<ENDNOTEREF_MARK&<w:w/>
+ *#)﻿ ­<w:sz/>XE§
+b﻿­ \\<w:b/>%</w:rPr>
+~\n#<w:noProof/>#
+FOOTNOTEREF_MARK­
+><w:b/><
+a~\nTC
+#_<w:w/>FOOTNOTEREF_MARK).!‑}
+~\\h<ENDNOTEREF_MARK
+&# 1 
+TC­=%\\> 
+XE
+<!h😀'\\> #§
+
+
+( §‑<w:sz/>\t 
+1‑</w:rPr>}<w:rPrChange># ﻿
+1_RD
+ENDNOTEREF_MARK <w:w/>~
+<w:sz/>­</w:rPr>‑­"
+*1>!#a<ENDNOTEREF_MARK
+<w:rPrChange><w:b/>)=<w:sz/><w:color/> {
+\\h😀
+<w:color/> <w:rPr></w:rPr> 
+ \\h
+§="<w:color/>=😀
+\t<w:b/>>%\t§<w:noProof/>§<w:noProof/><w:rPr> 
+<w:b/>'{
+XEé*RD_RDa <w:color/>
+‑é !."
+</w:rPr>&{ TC éFOOTNOTEREF_MARK#
+RD~<.>~
+& \\h<w:noProof/>
+'<w:rPrChange>
+)TC<b=<w:rPrChange><)XE\t﻿
+% RD<w:b/>*­&RDéRD<w:w/>b
+h\\h/<w:sz/>
+ENDNOTEREF_MARK)\t­*
+XEENDNOTEREF_MARK)😀 }TC/}
+}*<w:noProof/>ENDNOTEREF_MARK~>/
+§😀__
+<w:noProof/>1😀﻿&RD<w:color/>'=<w:sz/>
+<w:noProof/>h§§RD<w:color/>
+RD=.!<w:b/><w:sz/>
+­<w:sz/>)FOOTNOTEREF_MARKENDNOTEREF_MARK*
+ '
+}/
+TC/"& <w:w/><w:color/>\n<w:b/>/
+\n _-ENDNOTEREF_MARK~"<w:sz/>
+TC§~>%/.>
+😀{%RD" (\n
+{<w:w/>\t>
+{! 
+%
+<w:b/>\n§1<w:b/><w:w/><w:rPrChange>§­1 
+ 
+!ENDNOTEREF_MARK</w:rPr><w:rPrChange>!
+<w:w/>éENDNOTEREF_MARK‑\\h<w:w/><w:rPr>é*
+h&<w:noProof/>hRD#~'
+_
+ §<w:rPrChange><w:rPr>
+{}~.-_>h
+<- 
+&-<w:b/>-{h<w:rPrChange>§=

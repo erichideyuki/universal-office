@@ -31,7 +31,7 @@ use super::drawing::{
 use super::matchers::{find_lit_then_boundary, is_one_of, keep_ascii_digits};
 use super::paragraph::{BlocksMode, ReadContext};
 use super::picture_format::read_picture_format;
-use super::plain::{default_run_props, plain_paragraphs};
+use super::plain::{default_run_props, plain_paragraphs_with};
 use super::props_map::{para_props_from_ppr, run_props_from_rpr};
 use super::vml_shape::{VmlLang, vml_single_textbox, vml_textbox_to_drawing};
 use super::watermark::strip_quotes;
@@ -44,7 +44,7 @@ use crate::model::media::{ImageData, MediaRef};
 use crate::model::picture::PicBlipFx;
 use crate::model::props::{ColorSpec, IndSpec, PPr, RFonts, RPr, SpacingSpec, UnderlineSpec};
 use crate::model::run::{
-    DrawingGroup, DrawingShape, DrawingTextbox, GroupItem, ImageEffects, InlineImage, OleData, RunExt, TextboxGeom, TextboxLink,
+    DrawingGroup, DrawingShape, DrawingTextbox, GroupItem, ImageEffects, InlineImage, OleData, RunExt, RunProps, TextboxGeom, TextboxLink,
     TextboxView, VmlLine,
 };
 use crate::model::{Paragraph, Run, Story};
@@ -89,6 +89,21 @@ pub trait ObjectHost {
     /// `textboxBlocks`' reading of the `w:txbxContent` (the block reader `fulldoc::read_blocks_of`
     /// grouped, or the paragraphs when the host has none).
     fn read_textbox_content(&mut self, content: Element<'_>) -> Result<TextboxRead, DocxError>;
+    /// `DEFAULT_RUN_PROPS` behind an `Arc` the host may share between runs (the read's is interned,
+    /// record "Model size — P1 done"); a new one by default.
+    fn default_run_props(&mut self) -> Arc<RunProps> {
+        Arc::new(default_run_props())
+    }
+    /// Counts a paragraph of the G20 plain fallback against the host's `max_paragraphs_per_part`
+    /// (`ReadCtx::count_paragraph`); a host without per-part limits counts nothing.
+    fn count_paragraph(&mut self) -> Result<(), DocxError> {
+        Ok(())
+    }
+    /// Counts a run of the G20 plain fallback against the host's `max_runs_per_part`
+    /// (`ReadCtx::count_run`); a host without per-part limits counts nothing.
+    fn count_run(&mut self) -> Result<(), DocxError> {
+        Ok(())
+    }
 }
 
 macro_rules! put {
@@ -148,8 +163,19 @@ fn obj_text() -> Utf16 {
 }
 
 /// `{ text: OBJ, props: { ...DEFAULT_RUN_PROPS }, ...ext }`: the run of a group item.
-fn item_run(ext: RunExt) -> Run {
-    Run { text: obj_text(), props: Arc::new(default_run_props()), ext: Some(Box::new(ext)), ..Run::default() }
+fn item_run(ext: Box<RunExt>, host: &mut dyn ObjectHost) -> Run {
+    Run { text: obj_text(), props: host.default_run_props(), ext: Some(ext), ..Run::default() }
+}
+
+/// A new text box of `w`×`h` twips with its drawing id (`widthTwips`, `heightTwips` marked), on
+/// the heap: the readers of a text box keep it across the read of its content, which recurses.
+#[inline(never)]
+fn new_textbox(w: f64, h: f64, host: &mut dyn ObjectHost) -> Box<DrawingTextbox> {
+    let mut tb =
+        Box::new(DrawingTextbox { width_twips: n(w), height_twips: n(h), drawing: host.ids().drawing(), ..DrawingTextbox::default() });
+    tb.mark("widthTwips");
+    tb.mark("heightTwips");
+    tb
 }
 
 /// `delete o.k` for an optional field the caller already cleared.
@@ -346,20 +372,45 @@ fn body_pr_of(tb: &mut DrawingTextbox, body_pr: Option<Element<'_>>) {
 }
 
 /// `textboxBlocks`: the content of a `w:txbxContent` into the text box (A2: one [`Story`] with the
-/// [`TextboxView`] of the TS `paras`/`blocks` pair), inside `enter_nested` (G20).
+/// [`TextboxView`] of the TS `paras`/`blocks` pair), inside `enter_nested` (G20). The recursion of
+/// nested stories goes through here: a small frame, the rest is in functions that return first.
+#[inline(never)]
 fn textbox_blocks(txbx: Element<'_>, host: &mut dyn ObjectHost, tb: &mut DrawingTextbox) -> Result<(), DocxError> {
     if !host.enter_nested() {
-        let mut story = Story::new();
-        for p in plain_paragraphs(txbx, host.ids()) {
-            story.push_paragraph(p);
-        }
-        tb.view = view_of(&story);
-        tb.content = story;
-        return Ok(());
+        return textbox_plain(txbx, host, tb);
     }
     let read = host.read_textbox_content(txbx);
     host.leave_nested();
-    match read? {
+    textbox_store(read?, tb);
+    Ok(())
+}
+
+/// The G20 fallback of [`textbox_blocks`] past `max_nesting`: the paragraphs as plain text,
+/// counted against the per-part limits as R5's `plain_cell_content` counts a cell's (the `w:p`
+/// count first, before anything is built; then one run per non-empty paragraph), so content buried
+/// below the nesting limit cannot go around them (record, "R5 follow-ups", handed on).
+#[inline(never)]
+fn textbox_plain(txbx: Element<'_>, host: &mut dyn ObjectHost, tb: &mut DrawingTextbox) -> Result<(), DocxError> {
+    for _ in std::iter::once(txbx).chain(txbx.descendants()).filter(|e| e.name() == "w:p") {
+        host.count_paragraph()?;
+    }
+    let props = host.default_run_props();
+    let mut story = Story::new();
+    for p in plain_paragraphs_with(txbx, host.ids(), &props) {
+        if !p.runs.is_empty() {
+            host.count_run()?;
+        }
+        story.push_paragraph(p);
+    }
+    tb.view = view_of(&story);
+    tb.content = story;
+    Ok(())
+}
+
+/// What the host read of a text box's content, into the text box.
+#[inline(never)]
+fn textbox_store(read: TextboxRead, tb: &mut DrawingTextbox) {
+    match read {
         TextboxRead::Blocks { story, txbx_src } => {
             tb.view = view_of(&story);
             tb.content = story;
@@ -374,7 +425,6 @@ fn textbox_blocks(txbx: Element<'_>, host: &mut dyn ObjectHost, tb: &mut Drawing
             tb.view = TextboxView::ParasOnly;
         }
     }
-    Ok(())
 }
 
 /// `paras.length ? synced : phantom` over the paragraphs of the blocks (cells included).
@@ -389,163 +439,255 @@ fn font_ref_color(font_ref: Element<'_>) -> Option<DrawingColor> {
 }
 
 /// `readGraphicObject`: a drawing object (`wps:wsp`, `pic:pic`, group) as a run without props.
-fn read_graphic_object(obj: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64) -> Result<Option<RunExt>, DocxError> {
+/// Boxed, and a small frame: it is on the native stack once per nested group or text box.
+fn read_graphic_object(obj: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64) -> Result<Option<Box<RunExt>>, DocxError> {
     match obj.name() {
-        "pic:pic" => {
-            let image = read_pic(PicRoot::Pic(obj), host, w_tw, h_tw)?;
-            Ok(image.map(|i| RunExt { image: Some(Box::new(i)), ..RunExt::default() }))
-        }
+        "pic:pic" => read_pic_run(obj, host, w_tw, h_tw),
         "wps:wsp" => read_wsp(obj, host, w_tw, h_tw),
         "wpg:wgp" | "wpg:grpSp" | "wpc:wpc" => read_group(obj, host, w_tw, h_tw),
         _ => Ok(None),
     }
 }
 
-fn read_wsp(obj: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64) -> Result<Option<RunExt>, DocxError> {
+/// The `pic:pic` case of [`read_graphic_object`].
+#[inline(never)]
+fn read_pic_run(obj: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64) -> Result<Option<Box<RunExt>>, DocxError> {
+    let image = read_pic(PicRoot::Pic(obj), host, w_tw, h_tw)?;
+    Ok(image.map(|i| Box::new(RunExt { image: Some(Box::new(i)), ..RunExt::default() })))
+}
+
+/// `readSpPr(spPr, style)` on the heap (kept by [`read_wsp`] across the read of a text box).
+#[inline(never)]
+fn boxed_sp_pr(sp_pr: Option<Element<'_>>, style_el: Option<Element<'_>>) -> Box<ShapeStyle> {
+    Box::new(read_sp_pr(sp_pr, style_el))
+}
+
+/// A `wps:wsp`: a text box (its content read through [`textbox_blocks`]), a picture fill or a
+/// shape. Only what the recursion needs stays in this frame.
+#[inline(never)]
+fn read_wsp(obj: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64) -> Result<Option<Box<RunExt>>, DocxError> {
     let sp_pr = obj.first_child("wps:spPr");
     let style_el = obj.first_child("wps:style");
-    let mut style = read_sp_pr(sp_pr, style_el);
+    let style = boxed_sp_pr(sp_pr, style_el);
     let txbx = obj.first_child("wps:txbx");
     let content = txbx.and_then(|t| t.first_child("w:txbxContent"));
     let linked = if content.is_none() { obj.first_child("wps:linkedTxbx") } else { None };
-    if content.is_some() || linked.is_some() {
-        let mut tb =
-            DrawingTextbox { width_twips: n(w_tw), height_twips: n(h_tw), drawing: host.ids().drawing(), ..DrawingTextbox::default() };
-        tb.mark("widthTwips");
-        tb.mark("heightTwips");
-        if let (Some(content), Some(txbx)) = (content, txbx) {
-            textbox_blocks(content, host, &mut tb)?;
-            let sid = parse_int(txbx.attr("id").unwrap_or(""), 10);
-            if sid.is_finite() {
-                put!(tb, story, "story", n(sid));
-            }
-        } else if let Some(linked) = linked {
-            tb.view = TextboxView::Synced;
-            put!(
-                tb,
-                link,
-                "link",
-                TextboxLink {
-                    id: n(or0(pint(linked.attr("id"), "0"))),
-                    seq: n({
-                        let q = pint(linked.attr("seq"), "1");
-                        if truthy(q) { q } else { 1.0 }
-                    }),
-                    ..TextboxLink::default()
-                }
-            );
-        }
-        body_pr_of(&mut tb, obj.first_child("wps:bodyPr"));
-        let font_ref = style_el.unwrap_or(obj).first_child("a:fontRef");
-        if let Some(fc) = font_ref.and_then(font_ref_color) {
-            put!(tb, font_color, "fontColor", fc);
-        }
-        let bf = sp_pr.and_then(|s| s.first_child("a:blipFill"));
-        let blip = bf.and_then(|b| b.first_child("a:blip"));
-        let media = match blip.and_then(|b| b.attr("r:embed")).filter(|r| !r.is_empty()) {
-            Some(r) => host.resolve_image(r)?,
-            None => None,
-        };
-        if let (Some(bf), Some(media)) = (bf, media) {
-            let tile = bf.first_child("a:tile");
-            let tn = |k: &str, d: &str| or0(pint(tile.and_then(|t| t.attr(k)), d));
-            let amf = blip.and_then(|b| b.first_child("a:alphaModFix"));
-            let mut sb = ShapeBlip {
-                image: ImageData { data: MediaRef(media.data), ext: media.ext, ..ImageData::default() },
-                ..ShapeBlip::default()
-            };
-            if let Some(t) = tile {
-                sb.tile = Some(BlipTile {
-                    tx: n(tn("tx", "0")),
-                    ty: n(tn("ty", "0")),
-                    sx: n(tn("sx", "100000")),
-                    sy: n(tn("sy", "100000")),
-                    algn: t.attr("algn").unwrap_or("tl").into(),
-                    flip: t.attr("flip").unwrap_or("none").into(),
-                    ..BlipTile::default()
-                });
-            }
-            if let Some(amf) = amf {
-                sb.alpha = Some(n(or0(pint(amf.attr("amt"), "100000")) / 100_000.0));
-            }
-            put!(style, blip, "blip", Box::new(sb));
-        }
-        if style.fill.is_some()
-            || style.line.is_some()
-            || style.gradient.is_some()
-            || style.blip.is_some()
-            || style.pattern.is_some()
-            || style.effect_ref.is_some()
-        {
-            put!(tb, shape, "shape", Box::new(style.clone()));
-        }
-        put!(tb, line_inset, "lineInset", style.line_inset.clone().unwrap_or_default());
-        if !style.geom.is_empty() && &*style.geom != "rect" && &*style.geom != "custom" {
-            let mut g = TextboxGeom { prst: style.geom.clone(), ..TextboxGeom::default() };
-            if let Some(adj) = &style.adj {
-                g.adj = Some(adj.clone());
-            }
-            put!(tb, geom, "geom", g);
-        }
-        if style.rot.is_some_and(JsNumber::truthy) || style.flip_v == Some(true) {
-            let rot = style.rot.map_or(0.0, JsNumber::to_number);
-            put!(tb, rot, "rot", n(math::rem(rot + if style.flip_v == Some(true) { 180.0 } else { 0.0 }, 360.0)));
-        }
-        return Ok(Some(RunExt { textbox: Some(Box::new(tb)), ..RunExt::default() }));
+    if content.is_none() && linked.is_none() {
+        return wsp_shape(sp_pr, style, host, w_tw, h_tw);
     }
+    let mut tb = new_textbox(w_tw, h_tw, host);
+    if let Some(content) = content {
+        textbox_blocks(content, host, &mut tb)?;
+    }
+    wsp_textbox(obj, WspParts { sp_pr, style_el, txbx, linked }, style, tb, host).map(Some)
+}
+
+/// The elements of a `wps:wsp` the text box case reads after the content.
+#[derive(Clone, Copy)]
+struct WspParts<'d> {
+    sp_pr: Option<Element<'d>>,
+    style_el: Option<Element<'d>>,
+    txbx: Option<Element<'d>>,
+    linked: Option<Element<'d>>,
+}
+
+/// The text box of a `wps:wsp` after its content: story id or link, `bodyPr`, font colour, picture
+/// fill, shape style, geometry and rotation.
+#[inline(never)]
+fn wsp_textbox(
+    obj: Element<'_>,
+    parts: WspParts<'_>,
+    mut style: Box<ShapeStyle>,
+    mut tb: Box<DrawingTextbox>,
+    host: &mut dyn ObjectHost,
+) -> Result<Box<RunExt>, DocxError> {
+    let WspParts { sp_pr, style_el, txbx, linked } = parts;
+    if let Some(linked) = linked {
+        tb.view = TextboxView::Synced;
+        put!(
+            tb,
+            link,
+            "link",
+            TextboxLink {
+                id: n(or0(pint(linked.attr("id"), "0"))),
+                seq: n({
+                    let q = pint(linked.attr("seq"), "1");
+                    if truthy(q) { q } else { 1.0 }
+                }),
+                ..TextboxLink::default()
+            }
+        );
+    } else if let Some(txbx) = txbx {
+        let sid = parse_int(txbx.attr("id").unwrap_or(""), 10);
+        if sid.is_finite() {
+            put!(tb, story, "story", n(sid));
+        }
+    }
+    body_pr_of(&mut tb, obj.first_child("wps:bodyPr"));
+    let font_ref = style_el.unwrap_or(obj).first_child("a:fontRef");
+    if let Some(fc) = font_ref.and_then(font_ref_color) {
+        put!(tb, font_color, "fontColor", fc);
+    }
+    let bf = sp_pr.and_then(|s| s.first_child("a:blipFill"));
+    let blip = bf.and_then(|b| b.first_child("a:blip"));
+    let media = match blip.and_then(|b| b.attr("r:embed")).filter(|r| !r.is_empty()) {
+        Some(r) => host.resolve_image(r)?,
+        None => None,
+    };
+    if let (Some(bf), Some(media)) = (bf, media) {
+        let tile = bf.first_child("a:tile");
+        let tn = |k: &str, d: &str| or0(pint(tile.and_then(|t| t.attr(k)), d));
+        let amf = blip.and_then(|b| b.first_child("a:alphaModFix"));
+        let mut sb =
+            ShapeBlip { image: ImageData { data: MediaRef(media.data), ext: media.ext, ..ImageData::default() }, ..ShapeBlip::default() };
+        if let Some(t) = tile {
+            sb.tile = Some(BlipTile {
+                tx: n(tn("tx", "0")),
+                ty: n(tn("ty", "0")),
+                sx: n(tn("sx", "100000")),
+                sy: n(tn("sy", "100000")),
+                algn: t.attr("algn").unwrap_or("tl").into(),
+                flip: t.attr("flip").unwrap_or("none").into(),
+                ..BlipTile::default()
+            });
+        }
+        if let Some(amf) = amf {
+            sb.alpha = Some(n(or0(pint(amf.attr("amt"), "100000")) / 100_000.0));
+        }
+        put!(style, blip, "blip", Box::new(sb));
+    }
+    if style.fill.is_some()
+        || style.line.is_some()
+        || style.gradient.is_some()
+        || style.blip.is_some()
+        || style.pattern.is_some()
+        || style.effect_ref.is_some()
+    {
+        put!(tb, shape, "shape", Box::new((*style).clone()));
+    }
+    put!(tb, line_inset, "lineInset", style.line_inset.clone().unwrap_or_default());
+    if !style.geom.is_empty() && &*style.geom != "rect" && &*style.geom != "custom" {
+        let mut g = TextboxGeom { prst: style.geom.clone(), ..TextboxGeom::default() };
+        if let Some(adj) = &style.adj {
+            g.adj = Some(adj.clone());
+        }
+        put!(tb, geom, "geom", g);
+    }
+    if style.rot.is_some_and(JsNumber::truthy) || style.flip_v == Some(true) {
+        let rot = style.rot.map_or(0.0, JsNumber::to_number);
+        put!(tb, rot, "rot", n(math::rem(rot + if style.flip_v == Some(true) { 180.0 } else { 0.0 }, 360.0)));
+    }
+    Ok(Box::new(RunExt { textbox: Some(tb), ..RunExt::default() }))
+}
+
+/// A `wps:wsp` without a text box: its picture fill as an image, or the shape.
+#[inline(never)]
+fn wsp_shape(
+    sp_pr: Option<Element<'_>>,
+    style: Box<ShapeStyle>,
+    host: &mut dyn ObjectHost,
+    w_tw: f64,
+    h_tw: f64,
+) -> Result<Option<Box<RunExt>>, DocxError> {
     if let Some(bf) = sp_pr.and_then(|s| s.first_child("a:blipFill"))
         && let Some(image) = read_pic(PicRoot::BlipFill(bf), host, w_tw, h_tw)?
     {
-        return Ok(Some(RunExt { image: Some(Box::new(image)), ..RunExt::default() }));
+        return Ok(Some(Box::new(RunExt { image: Some(Box::new(image)), ..RunExt::default() })));
     }
-    let mut shape =
-        DrawingShape { style, width_twips: n(w_tw), height_twips: n(h_tw), drawing: host.ids().drawing(), ..DrawingShape::default() };
+    let mut shape = DrawingShape {
+        style: *style,
+        width_twips: n(w_tw),
+        height_twips: n(h_tw),
+        drawing: host.ids().drawing(),
+        ..DrawingShape::default()
+    };
     shape.mark("style");
     shape.mark("widthTwips");
     shape.mark("heightTwips");
-    Ok(Some(RunExt { shape: Some(Box::new(shape)), ..RunExt::default() }))
+    Ok(Some(Box::new(RunExt { shape: Some(Box::new(shape)), ..RunExt::default() })))
 }
 
-fn read_group(obj: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64) -> Result<Option<RunExt>, DocxError> {
-    let grp_sp_pr = obj.first_child("wpg:grpSpPr");
-    let xfrm = grp_sp_pr.and_then(|g| g.first_child("a:xfrm"));
-    let num = |el: Option<Element<'_>>, k: &str| or0(pint(el.and_then(|e| e.attr(k)), "0"));
+/// The child scale of a `wpg` group: `a:chOff`, and EMU per child unit on each axis.
+#[derive(Clone, Copy)]
+struct GroupScale {
+    off_x: f64,
+    off_y: f64,
+    sx: f64,
+    sy: f64,
+}
+
+/// `num(el, k)` of `readGroup`: an integer attribute, 0 when missing or not a number.
+fn group_num(el: Option<Element<'_>>, k: &str) -> f64 {
+    or0(pint(el.and_then(|e| e.attr(k)), "0"))
+}
+
+/// The scale of a `wpg` group's children (`a:chOff`, `a:chExt` or `a:ext`).
+#[inline(never)]
+fn group_scale(xfrm: Option<Element<'_>>, w_tw: f64, h_tw: f64) -> GroupScale {
     let ch_off = xfrm.and_then(|x| x.first_child("a:chOff"));
     let ch_ext = xfrm.and_then(|x| x.first_child("a:chExt"));
     let ext = xfrm.and_then(|x| x.first_child("a:ext"));
     let either = |a: f64, b: f64| if truthy(a) { a } else { b };
-    let cw = either(num(ch_ext, "cx"), num(ext, "cx"));
-    let ch = either(num(ch_ext, "cy"), num(ext, "cy"));
+    let cw = either(group_num(ch_ext, "cx"), group_num(ext, "cx"));
+    let ch = either(group_num(ch_ext, "cy"), group_num(ext, "cy"));
     let sx = if truthy(cw) { (w_tw * EMU_PER_TWIP_D) / cw } else { 1.0 };
     let sy = if truthy(ch) { (h_tw * EMU_PER_TWIP_D) / ch } else { 1.0 };
+    GroupScale { off_x: group_num(ch_off, "x"), off_y: group_num(ch_off, "y"), sx, sy }
+}
+
+/// The position and size of one group child, in twips (`x`, `y`, `w`, `h`).
+#[inline(never)]
+fn group_child_box(child: Element<'_>, scale: GroupScale) -> [f64; 4] {
+    let cpr = child.first_child("wps:spPr").or_else(|| child.first_child("pic:spPr")).or_else(|| child.first_child("wpg:grpSpPr"));
+    let cx = cpr.and_then(|c| c.first_child("a:xfrm"));
+    let off = cx.and_then(|c| c.first_child("a:off"));
+    let cext = cx.and_then(|c| c.first_child("a:ext"));
+    let x = ((group_num(off, "x") - scale.off_x) * scale.sx) / EMU_PER_TWIP_D;
+    let y = ((group_num(off, "y") - scale.off_y) * scale.sy) / EMU_PER_TWIP_D;
+    let w = (group_num(cext, "cx") * scale.sx) / EMU_PER_TWIP_D;
+    let h = (group_num(cext, "cy") * scale.sy) / EMU_PER_TWIP_D;
+    [x, y, w, h]
+}
+
+/// `items.push({ x, y, w, h, run })`.
+#[inline(never)]
+fn push_group_item(items: &mut Vec<GroupItem>, [x, y, w, h]: [f64; 4], run: Box<RunExt>, host: &mut dyn ObjectHost) {
+    items.push(GroupItem { x: n(x), y: n(y), w: n(w), h: n(h), run: item_run(run, host), ..GroupItem::default() });
+}
+
+/// A `wpg:wgp`/`wpg:grpSp`/`wpc:wpc`: its children as group items. A nested group enters
+/// `max_nesting` (R4b item 4); a small frame, on the native stack once per nested group.
+#[inline(never)]
+fn read_group(obj: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64) -> Result<Option<Box<RunExt>>, DocxError> {
+    let xfrm = obj.first_child("wpg:grpSpPr").and_then(|g| g.first_child("a:xfrm"));
+    let scale = group_scale(xfrm, w_tw, h_tw);
     let mut items: Vec<GroupItem> = Vec::new();
     for child in obj.child_elements() {
         if !matches!(child.name(), "wps:wsp" | "pic:pic" | "wpg:grpSp") {
             continue;
         }
-        let cpr = child.first_child("wps:spPr").or_else(|| child.first_child("pic:spPr")).or_else(|| child.first_child("wpg:grpSpPr"));
-        let cx = cpr.and_then(|c| c.first_child("a:xfrm"));
-        let off = cx.and_then(|c| c.first_child("a:off"));
-        let cext = cx.and_then(|c| c.first_child("a:ext"));
-        let x = ((num(off, "x") - num(ch_off, "x")) * sx) / EMU_PER_TWIP_D;
-        let y = ((num(off, "y") - num(ch_off, "y")) * sy) / EMU_PER_TWIP_D;
-        let w = (num(cext, "cx") * sx) / EMU_PER_TWIP_D;
-        let h = (num(cext, "cy") * sy) / EMU_PER_TWIP_D;
+        let place = group_child_box(child, scale);
         let nested_group = child.name() == "wpg:grpSp";
         if nested_group && !host.enter_nested() {
             continue;
         }
-        let run = read_graphic_object(child, host, w, h);
+        let run = read_graphic_object(child, host, place[2], place[3]);
         if nested_group {
             host.leave_nested();
         }
         if let Some(run) = run? {
-            items.push(GroupItem { x: n(x), y: n(y), w: n(w), h: n(h), run: item_run(run), ..GroupItem::default() });
+            push_group_item(&mut items, place, run, host);
         }
     }
     if items.is_empty() {
         return Ok(None);
     }
+    Ok(Some(group_run(xfrm, items, host, w_tw, h_tw)))
+}
+
+/// The group of [`read_group`] once its items are read: size, drawing id, rotation and flips.
+#[inline(never)]
+fn group_run(xfrm: Option<Element<'_>>, items: Vec<GroupItem>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64) -> Box<RunExt> {
     let mut group =
         DrawingGroup { width_twips: n(w_tw), height_twips: n(h_tw), items, drawing: host.ids().drawing(), ..DrawingGroup::default() };
     group.mark("widthTwips");
@@ -561,7 +703,7 @@ fn read_group(obj: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64)
     if xfrm.and_then(|x| x.attr("flipV")) == Some("1") {
         put!(group, flip_v, "flipV", true);
     }
-    Ok(Some(RunExt { group: Some(Box::new(group)), ..RunExt::default() }))
+    Box::new(RunExt { group: Some(Box::new(group)), ..RunExt::default() })
 }
 
 // ───────────────────────── SmartArt ─────────────────────────
@@ -865,7 +1007,7 @@ fn read_diagram(gd: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64
                 y: n(by),
                 w: n(bw),
                 h: n(bh),
-                run: item_run(RunExt { shape: Some(Box::new(shape)), ..RunExt::default() }),
+                run: item_run(Box::new(RunExt { shape: Some(Box::new(shape)), ..RunExt::default() }), host),
                 ..GroupItem::default()
             });
         }
@@ -900,7 +1042,7 @@ fn read_diagram(gd: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64
             y: n(ty),
             w: n(tw),
             h: n(th),
-            run: item_run(RunExt { textbox: Some(Box::new(tb)), ..RunExt::default() }),
+            run: item_run(Box::new(RunExt { textbox: Some(Box::new(tb)), ..RunExt::default() }), host),
             ..GroupItem::default()
         });
     }
@@ -921,6 +1063,13 @@ fn read_diagram(gd: Element<'_>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64
 /// group). `raw` is the TS `drawing.raw` (the raw text of the `w:drawing`; `Element::raw` for a
 /// parsed document, the text itself for the sync functions).
 pub fn read_drawing_run(drawing: Element<'_>, raw: Option<&str>, host: &mut dyn ObjectHost) -> Result<Option<RunExt>, DocxError> {
+    Ok(drawing_run(drawing, raw, host)?.map(|run| *run))
+}
+
+/// [`read_drawing_run`], boxed. The recursion of nested stories goes through here (a text box's
+/// paragraphs hold drawings): a small frame, the rest is in functions that return first.
+#[inline(never)]
+fn drawing_run(drawing: Element<'_>, raw: Option<&str>, host: &mut dyn ObjectHost) -> Result<Option<Box<RunExt>>, DocxError> {
     let raw = raw.filter(|r| !r.is_empty());
     let anchor_el = drawing.first_child("wp:anchor");
     let Some(container) = anchor_el.or_else(|| drawing.first_child("wp:inline")) else { return Ok(None) };
@@ -935,29 +1084,36 @@ pub fn read_drawing_run(drawing: Element<'_>, raw: Option<&str>, host: &mut dyn 
     }
     let run = match obj {
         Some(o) => read_graphic_object(o, host, w_tw, h_tw)?,
-        None => {
-            let diagram = match gd {
-                Some(g) => read_diagram(g, host, w_tw, h_tw)?,
-                None => None,
-            };
-            Some(diagram.unwrap_or_else(|| {
-                let mut style = ShapeStyle { geom: "rect".into(), ..ShapeStyle::default() };
-                style.mark("geom");
-                let mut shape = DrawingShape {
-                    style,
-                    width_twips: n(w_tw),
-                    height_twips: n(h_tw),
-                    drawing: host.ids().drawing(),
-                    ..DrawingShape::default()
-                };
-                shape.mark("style");
-                shape.mark("widthTwips");
-                shape.mark("heightTwips");
-                RunExt { shape: Some(Box::new(shape)), ..RunExt::default() }
-            }))
-        }
+        None => Some(diagram_or_rect(gd, host, w_tw, h_tw)?),
     };
     let Some(mut run) = run else { return Ok(None) };
+    finish_drawing_run(&mut run, container, anchor_el, raw);
+    Ok(Some(run))
+}
+
+/// A `w:drawing` whose graphic data is a diagram: the SmartArt, or a plain rectangle.
+#[inline(never)]
+fn diagram_or_rect(gd: Option<Element<'_>>, host: &mut dyn ObjectHost, w_tw: f64, h_tw: f64) -> Result<Box<RunExt>, DocxError> {
+    let diagram = match gd {
+        Some(g) => read_diagram(g, host, w_tw, h_tw)?,
+        None => None,
+    };
+    Ok(Box::new(diagram.unwrap_or_else(|| {
+        let mut style = ShapeStyle { geom: "rect".into(), ..ShapeStyle::default() };
+        style.mark("geom");
+        let mut shape =
+            DrawingShape { style, width_twips: n(w_tw), height_twips: n(h_tw), drawing: host.ids().drawing(), ..DrawingShape::default() };
+        shape.mark("style");
+        shape.mark("widthTwips");
+        shape.mark("heightTwips");
+        RunExt { shape: Some(Box::new(shape)), ..RunExt::default() }
+    })))
+}
+
+/// The tail of `readDrawingRun` once the object is read: effect extent, anchor, `docPr hidden`,
+/// raw XML and picture format.
+#[inline(never)]
+fn finish_drawing_run(run: &mut RunExt, container: Element<'_>, anchor_el: Option<Element<'_>>, raw: Option<&str>) {
     let anchor = read_wp_anchor(anchor_el);
     let ee = if anchor_el.is_none() { container.first_child("wp:effectExtent") } else { None };
     if let Some(ee) = ee {
@@ -1037,7 +1193,6 @@ pub fn read_drawing_run(drawing: Element<'_>, raw: Option<&str>, host: &mut dyn 
     {
         put!(img, format, "format", Box::new(fmt));
     }
-    Ok(Some(run))
 }
 
 // ───────────────────────── sync from the raw XML ─────────────────────────
@@ -1319,16 +1474,138 @@ fn first_target_width(r: &RunExt) -> (f64, f64) {
     }
 }
 
-/// `shapeOf(el, inGroup?)` of `readVmlRuns`.
+/// A VML text box between [`vml_shape_start`] and the read of its content.
+struct VmlTextbox<'d> {
+    tb: Box<DrawingTextbox>,
+    st: VmlStyle,
+    anchor: Option<DrawingAnchor>,
+    content: Element<'d>,
+    txb: Element<'d>,
+}
+
+/// What [`vml_shape_start`] found.
+enum VmlStart<'d> {
+    /// the object (or nothing): no text box content to read
+    Done(Option<Box<RunExt>>),
+    /// a text box: its content is read by [`vml_shape_of`], then [`vml_textbox_finish`]
+    Textbox(Box<VmlTextbox<'d>>),
+}
+
+/// `shapeOf(el, inGroup?)` of `readVmlRuns`, boxed. The recursion of nested stories goes through
+/// here (a text box's paragraphs hold `w:pict`s): a small frame, the rest is in
+/// [`vml_shape_start`] and [`vml_textbox_finish`], which return before or start after the read
+/// of the content.
+#[inline(never)]
 fn vml_shape_of(
     container: Element<'_>,
     el: Element<'_>,
     in_group: Option<(f64, f64)>,
     host: &mut dyn ObjectHost,
-) -> Result<Option<RunExt>, DocxError> {
+) -> Result<Option<Box<RunExt>>, DocxError> {
+    let mut start = match vml_shape_start(el, in_group, host)? {
+        VmlStart::Done(run) => return Ok(run),
+        VmlStart::Textbox(start) => start,
+    };
+    textbox_blocks(start.content, host, &mut start.tb)?;
+    vml_textbox_finish(container, el, in_group, start).map(Some)
+}
+
+/// `float`, `anchor`, `behindDoc` and the relative position of a floating VML object.
+fn apply_vml_anchor(run: &mut RunExt, anchor: &DrawingAnchor) {
+    if let Some(t) = run.image.as_mut() {
+        float_to!(t, anchor);
+        if anchor.behind_doc == Some(true) {
+            put!(t, behind_doc, "behindDoc", true);
+        }
+        rel_fields!(t, anchor);
+    } else if let Some(t) = run.textbox.as_mut() {
+        float_to!(t, anchor);
+        if anchor.behind_doc == Some(true) {
+            put!(t, behind_doc, "behindDoc", true);
+        }
+        rel_fields!(t, anchor);
+    } else if let Some(t) = run.shape.as_mut() {
+        float_to!(t, anchor);
+    }
+}
+
+/// The text box of `shapeOf` after its content: insets, fit, wrap, flow, anchor, ids, shape
+/// style and the DrawingML twin of a lone text box.
+#[inline(never)]
+fn vml_textbox_finish(
+    container: Element<'_>,
+    el: Element<'_>,
+    in_group: Option<(f64, f64)>,
+    start: Box<VmlTextbox<'_>>,
+) -> Result<Box<RunExt>, DocxError> {
+    let VmlTextbox { mut tb, st, anchor, txb, .. } = *start;
+    let inset: Vec<&str> = txb.attr("inset").unwrap_or("").split(',').collect();
+    let ins = |i: usize, def: f64| -> f64 {
+        match inset.get(i).map(|s| trim(s)).filter(|s| !s.is_empty()) {
+            Some(t) => vml_len_twips(Some(t)).unwrap_or(def),
+            None => def,
+        }
+    };
+    put!(
+        tb,
+        insets,
+        "insets",
+        Ltrb { l: n(ins(0, 144.0)), t: n(ins(1, 72.0)), r: n(ins(2, 144.0)), b: n(ins(3, 72.0)), ..Ltrb::default() }
+    );
+    let tb_style = parse_vml_style(txb.attr("style"));
+    if tb_style.get("mso-fit-shape-to-text") == Some("t") {
+        put!(tb, auto_fit, "autoFit", true);
+    }
+    if parse_vml_style(el.attr("style")).get("mso-wrap-style") == Some("none") {
+        put!(tb, no_wrap, "noWrap", true);
+    }
+    let flow = tb_style.get("layout-flow");
+    let alt = tb_style.get("mso-layout-flow-alt");
+    if flow == Some("vertical") {
+        let v = match alt {
+            Some("bottom-to-top") => "vert270",
+            Some("top-to-bottom") => "mongolianVert",
+            _ => "vert",
+        };
+        put!(tb, vert, "vert", v.into());
+    } else if flow == Some("vertical-ideographic") {
+        put!(tb, vert, "vert", "eaVert".into());
+    }
+    match st.get("v-text-anchor") {
+        Some("middle" | "middle-center" | "middle-baseline") => put!(tb, v_anchor, "vAnchor", "ctr".into()),
+        Some("bottom" | "bottom-center" | "bottom-baseline") => put!(tb, v_anchor, "vAnchor", "b".into()),
+        _ => {}
+    }
+    if let Some(id) = el.attr("id").filter(|s| !s.is_empty()) {
+        put!(tb, vml_id, "vmlId", id.into());
+    }
+    if let Some(next) = tb_style.get("mso-next-textbox").filter(|s| !s.is_empty()) {
+        put!(tb, vml_next, "vmlNext", strip_leading_hash(next).into());
+    }
+    let sh = vml_shape_style(el, "rect");
+    if sh.fill.is_some() || sh.line.is_some() {
+        put!(tb, shape, "shape", Box::new(sh));
+    }
+    if in_group.is_none() && vml_single_textbox(container) == Some(el) {
+        let digits = keep_ascii_digits(el.attr("o:spid").unwrap_or(""));
+        let id = 1.0 + or0(parse_int(&digits, 10));
+        if let Some(raw) = vml_textbox_to_drawing(el, id, VmlLang::default())?.filter(|r| !r.is_empty()) {
+            put!(tb, raw_drawing_xml, "rawDrawingXml", raw.into());
+        }
+    }
+    let mut run = RunExt { textbox: Some(tb), ..RunExt::default() };
+    if let Some(anchor) = &anchor {
+        apply_vml_anchor(&mut run, anchor);
+    }
+    Ok(Box::new(run))
+}
+
+/// The part of `shapeOf` before a text box's content: the whole object when it is not a text box.
+#[inline(never)]
+fn vml_shape_start<'d>(el: Element<'d>, in_group: Option<(f64, f64)>, host: &mut dyn ObjectHost) -> Result<VmlStart<'d>, DocxError> {
     let st = parse_vml_style(el.attr("style"));
     if st.get("visibility") == Some("hidden") || st.get("display") == Some("none") {
-        return Ok(None);
+        return Ok(VmlStart::Done(None));
     }
     let mut w = vml_len_twips(st.get("width")).unwrap_or(0.0);
     let mut h = vml_len_twips(st.get("height")).unwrap_or(0.0);
@@ -1340,7 +1617,7 @@ fn vml_shape_of(
     if let Some(textpath) = el.descend("v:textpath") {
         let text = textpath.attr("string").unwrap_or("");
         if trim(text).is_empty() {
-            return Ok(None);
+            return Ok(VmlStart::Done(None));
         }
         let tps = parse_vml_style(textpath.attr("style"));
         let fam_raw = { trim(strip_quotes(tps.get("font-family").unwrap_or(""))).to_string() };
@@ -1422,13 +1699,13 @@ fn vml_shape_of(
             }
             rel_fields!(tb, anchor);
         }
-        return Ok(Some(RunExt { textbox: Some(Box::new(tb)), ..RunExt::default() }));
+        return Ok(VmlStart::Done(Some(Box::new(RunExt { textbox: Some(Box::new(tb)), ..RunExt::default() }))));
     }
     let imagedata = el.first_child("v:imagedata");
     let rid = imagedata.and_then(|i| i.attr("r:id").or_else(|| i.attr("r:pict"))).filter(|r| !r.is_empty());
     let mut run: RunExt;
     if let (Some(rid), Some(imagedata)) = (rid, imagedata) {
-        let Some(media) = host.resolve_image(rid)? else { return Ok(None) };
+        let Some(media) = host.resolve_image(rid)? else { return Ok(VmlStart::Done(None)) };
         let mut image = InlineImage {
             data: MediaRef(media.data),
             ext: media.ext,
@@ -1466,67 +1743,9 @@ fn vml_shape_of(
         let txb = el.first_child("v:textbox");
         let content = txb.and_then(|t| t.first_child("w:txbxContent"));
         if let (Some(content), Some(txb)) = (content, txb) {
-            let mut tb =
-                DrawingTextbox { width_twips: n(w), height_twips: n(h), drawing: host.ids().drawing(), ..DrawingTextbox::default() };
-            tb.mark("widthTwips");
-            tb.mark("heightTwips");
+            let mut tb = new_textbox(w, h, host);
             put!(tb, vml, "vml", true);
-            textbox_blocks(content, host, &mut tb)?;
-            let inset: Vec<&str> = txb.attr("inset").unwrap_or("").split(',').collect();
-            let ins = |i: usize, def: f64| -> f64 {
-                match inset.get(i).map(|s| trim(s)).filter(|s| !s.is_empty()) {
-                    Some(t) => vml_len_twips(Some(t)).unwrap_or(def),
-                    None => def,
-                }
-            };
-            put!(
-                tb,
-                insets,
-                "insets",
-                Ltrb { l: n(ins(0, 144.0)), t: n(ins(1, 72.0)), r: n(ins(2, 144.0)), b: n(ins(3, 72.0)), ..Ltrb::default() }
-            );
-            let tb_style = parse_vml_style(txb.attr("style"));
-            if tb_style.get("mso-fit-shape-to-text") == Some("t") {
-                put!(tb, auto_fit, "autoFit", true);
-            }
-            if parse_vml_style(el.attr("style")).get("mso-wrap-style") == Some("none") {
-                put!(tb, no_wrap, "noWrap", true);
-            }
-            let flow = tb_style.get("layout-flow");
-            let alt = tb_style.get("mso-layout-flow-alt");
-            if flow == Some("vertical") {
-                let v = match alt {
-                    Some("bottom-to-top") => "vert270",
-                    Some("top-to-bottom") => "mongolianVert",
-                    _ => "vert",
-                };
-                put!(tb, vert, "vert", v.into());
-            } else if flow == Some("vertical-ideographic") {
-                put!(tb, vert, "vert", "eaVert".into());
-            }
-            match st.get("v-text-anchor") {
-                Some("middle" | "middle-center" | "middle-baseline") => put!(tb, v_anchor, "vAnchor", "ctr".into()),
-                Some("bottom" | "bottom-center" | "bottom-baseline") => put!(tb, v_anchor, "vAnchor", "b".into()),
-                _ => {}
-            }
-            if let Some(id) = el.attr("id").filter(|s| !s.is_empty()) {
-                put!(tb, vml_id, "vmlId", id.into());
-            }
-            if let Some(next) = tb_style.get("mso-next-textbox").filter(|s| !s.is_empty()) {
-                put!(tb, vml_next, "vmlNext", strip_leading_hash(next).into());
-            }
-            let sh = vml_shape_style(el, "rect");
-            if sh.fill.is_some() || sh.line.is_some() {
-                put!(tb, shape, "shape", Box::new(sh));
-            }
-            if in_group.is_none() && vml_single_textbox(container) == Some(el) {
-                let digits = keep_ascii_digits(el.attr("o:spid").unwrap_or(""));
-                let id = 1.0 + or0(parse_int(&digits, 10));
-                if let Some(raw) = vml_textbox_to_drawing(el, id, VmlLang::default())?.filter(|r| !r.is_empty()) {
-                    put!(tb, raw_drawing_xml, "rawDrawingXml", raw.into());
-                }
-            }
-            run = RunExt { textbox: Some(Box::new(tb)), ..RunExt::default() };
+            return Ok(VmlStart::Textbox(Box::new(VmlTextbox { tb, st, anchor, content, txb })));
         } else {
             let tag = strip_vml_prefix(el.name());
             let ty = el.attr("type").unwrap_or("");
@@ -1537,7 +1756,7 @@ fn vml_shape_of(
                 || el.first_child("v:fill").is_some()
                 || el.first_child("v:stroke").is_some();
             if tag == "shape" && (ty.contains("_x0000_t75") || !declared) {
-                return Ok(None);
+                return Ok(VmlStart::Done(None));
             }
             let geom = if tag == "oval" {
                 "ellipse"
@@ -1590,29 +1809,23 @@ fn vml_shape_of(
         }
     }
     if let Some(anchor) = &anchor {
-        if let Some(t) = run.image.as_mut() {
-            float_to!(t, anchor);
-            if anchor.behind_doc == Some(true) {
-                put!(t, behind_doc, "behindDoc", true);
-            }
-            rel_fields!(t, anchor);
-        } else if let Some(t) = run.textbox.as_mut() {
-            float_to!(t, anchor);
-            if anchor.behind_doc == Some(true) {
-                put!(t, behind_doc, "behindDoc", true);
-            }
-            rel_fields!(t, anchor);
-        } else if let Some(t) = run.shape.as_mut() {
-            float_to!(t, anchor);
-        }
+        apply_vml_anchor(&mut run, anchor);
     }
-    Ok(Some(run))
+    Ok(VmlStart::Done(Some(Box::new(run))))
 }
 
 /// `readVmlRuns(container, ctx, inline)`: a `w:pict` or `w:object` as object runs; `inline` for
 /// `w:object` (the OLE preview is in line and carries its embedded file).
 pub fn read_vml_runs(container: Element<'_>, inline: bool, host: &mut dyn ObjectHost) -> Result<Vec<RunExt>, DocxError> {
-    let mut out: Vec<RunExt> = Vec::new();
+    Ok(vml_runs(container, inline, host)?.into_iter().map(|run| *run).collect())
+}
+
+/// [`read_vml_runs`], boxed. The recursion of nested stories goes through here (a text box's
+/// paragraphs hold `w:pict`s): a small frame.
+#[expect(clippy::vec_box, reason = "each box becomes the `ext` of a run as it is, with no copy of the `RunExt`")]
+#[inline(never)]
+fn vml_runs(container: Element<'_>, inline: bool, host: &mut dyn ObjectHost) -> Result<Vec<Box<RunExt>>, DocxError> {
+    let mut out: Vec<Box<RunExt>> = Vec::new();
     for el in container.child_elements() {
         let name = el.name();
         if name == "v:shapetype" || name.starts_with("o:") || name.starts_with("w10:") {
@@ -1626,29 +1839,8 @@ pub fn read_vml_runs(container: Element<'_>, inline: bool, host: &mut dyn Object
         }
         if name.starts_with("v:") {
             let Some(mut r) = vml_shape_of(container, el, None, host)? else { continue };
-            if inline && let Some(img) = r.image.as_mut() {
-                img.floating = None;
-                forget(&mut **img, "floating");
-                img.anchor = None;
-                forget(&mut **img, "anchor");
-                let oo = container.descend("o:OLEObject");
-                let rid = oo.and_then(|o| o.attr("r:id")).filter(|r| !r.is_empty());
-                if let (Some(oo), Some(rid)) = (oo, rid)
-                    && oo.attr("Type") != Some("Link")
-                    && let Some(part) = host.resolve_image(rid)?
-                {
-                    put!(
-                        img,
-                        ole,
-                        "ole",
-                        Box::new(OleData {
-                            prog_id: oo.attr("ProgID").unwrap_or("").into(),
-                            data: MediaRef(part.data),
-                            ext: part.ext,
-                            ..OleData::default()
-                        })
-                    );
-                }
+            if inline && r.image.is_some() {
+                inline_ole_image(&mut r, container, host)?;
             }
             out.push(r);
         }
@@ -1656,7 +1848,49 @@ pub fn read_vml_runs(container: Element<'_>, inline: bool, host: &mut dyn Object
     Ok(out)
 }
 
-fn vml_group(el: Element<'_>, host: &mut dyn ObjectHost, container: Element<'_>) -> Result<Option<RunExt>, DocxError> {
+/// The preview picture of a `w:object`: in line, with its embedded file (`o:OLEObject`).
+#[inline(never)]
+fn inline_ole_image(r: &mut RunExt, container: Element<'_>, host: &mut dyn ObjectHost) -> Result<(), DocxError> {
+    let Some(img) = r.image.as_mut() else { return Ok(()) };
+    img.floating = None;
+    forget(&mut **img, "floating");
+    img.anchor = None;
+    forget(&mut **img, "anchor");
+    let oo = container.descend("o:OLEObject");
+    let rid = oo.and_then(|o| o.attr("r:id")).filter(|r| !r.is_empty());
+    if let (Some(oo), Some(rid)) = (oo, rid)
+        && oo.attr("Type") != Some("Link")
+        && let Some(part) = host.resolve_image(rid)?
+    {
+        put!(
+            img,
+            ole,
+            "ole",
+            Box::new(OleData {
+                prog_id: oo.attr("ProgID").unwrap_or("").into(),
+                data: MediaRef(part.data),
+                ext: part.ext,
+                ..OleData::default()
+            })
+        );
+    }
+    Ok(())
+}
+
+/// The size of a `v:group` in twips, the scale of its children and its coordinate origin.
+#[derive(Clone, Copy)]
+struct VmlGroupGeom {
+    w: f64,
+    h: f64,
+    sx: f64,
+    sy: f64,
+    origin_x: f64,
+    origin_y: f64,
+}
+
+/// The geometry of a `v:group` (`style`, `coordsize`, `coordorigin`).
+#[inline(never)]
+fn vml_group_geom(el: Element<'_>) -> VmlGroupGeom {
     let st = parse_vml_style(el.attr("style"));
     let w = vml_len_twips(st.get("width")).unwrap_or(0.0);
     let h = vml_len_twips(st.get("height")).unwrap_or(0.0);
@@ -1678,37 +1912,57 @@ fn vml_group(el: Element<'_>, host: &mut dyn ObjectHost, container: Element<'_>)
             Some(v) if truthy(v) => v,
             _ => 1.0,
         });
+    VmlGroupGeom { w, h, sx, sy, origin_x: co.first().copied().unwrap_or(0.0), origin_y: co.get(1).copied().unwrap_or(0.0) }
+}
+
+/// One child of a `v:group` as a group item (`left`/`top` of its style, scaled).
+#[inline(never)]
+fn push_vml_item(items: &mut Vec<GroupItem>, c: Element<'_>, g: VmlGroupGeom, r: Box<RunExt>, host: &mut dyn ObjectHost) {
+    let cst = parse_vml_style(c.attr("style"));
+    let x = (or0(parse_float(cst.get("left").unwrap_or("0"))) - g.origin_x) * g.sx;
+    let y = (or0(parse_float(cst.get("top").unwrap_or("0"))) - g.origin_y) * g.sy;
+    let (tw, th) = first_target_width(&r);
+    items.push(GroupItem { x: n(x), y: n(y), w: n(tw), h: n(th), run: item_run(r, host), ..GroupItem::default() });
+}
+
+/// A `v:group`: its VML children as group items. A small frame: a text box in a group is on the
+/// recursion of nested stories.
+#[inline(never)]
+fn vml_group(el: Element<'_>, host: &mut dyn ObjectHost, container: Element<'_>) -> Result<Option<Box<RunExt>>, DocxError> {
+    let g = vml_group_geom(el);
     let mut items: Vec<GroupItem> = Vec::new();
     for c in el.child_elements() {
         if !c.name().starts_with("v:") || c.name() == "v:shapetype" {
             continue;
         }
-        let cst = parse_vml_style(c.attr("style"));
-        let Some(r) = vml_shape_of(container, c, Some((sx, sy)), host)? else { continue };
-        let x = (or0(parse_float(cst.get("left").unwrap_or("0"))) - co.first().copied().unwrap_or(0.0)) * sx;
-        let y = (or0(parse_float(cst.get("top").unwrap_or("0"))) - co.get(1).copied().unwrap_or(0.0)) * sy;
-        let (tw, th) = first_target_width(&r);
-        items.push(GroupItem { x: n(x), y: n(y), w: n(tw), h: n(th), run: item_run(r), ..GroupItem::default() });
+        let Some(r) = vml_shape_of(container, c, Some((g.sx, g.sy)), host)? else { continue };
+        push_vml_item(&mut items, c, g, r, host);
     }
     if items.is_empty() {
         return Ok(None);
     }
-    let mut group = DrawingGroup { width_twips: n(w), height_twips: n(h), items, drawing: host.ids().drawing(), ..DrawingGroup::default() };
+    Ok(Some(vml_group_run(el, g, items, host)))
+}
+
+/// The group of [`vml_group`] once its items are read: size, drawing id and anchor.
+#[inline(never)]
+fn vml_group_run(el: Element<'_>, g: VmlGroupGeom, items: Vec<GroupItem>, host: &mut dyn ObjectHost) -> Box<RunExt> {
+    let mut group =
+        DrawingGroup { width_twips: n(g.w), height_twips: n(g.h), items, drawing: host.ids().drawing(), ..DrawingGroup::default() };
     group.mark("widthTwips");
     group.mark("heightTwips");
     group.mark("items");
-    if let Some(anchor) = vml_anchor(&st, el.descend("w10:wrap")) {
+    if let Some(anchor) = vml_anchor(&parse_vml_style(el.attr("style")), el.descend("w10:wrap")) {
         float_to!(group, anchor);
     }
-    Ok(Some(RunExt { group: Some(Box::new(group)), ..RunExt::default() }))
+    Box::new(RunExt { group: Some(Box::new(group)), ..RunExt::default() })
 }
 
 // ───────────────────────── the host of the document reads ─────────────────────────
 
 /// The host of the full-document and comments reads: R4c's `ReadContext` (relationships, media,
 /// parts, the nesting guard). The content of a text box is read by the block reader the full
-/// document injects (`BlocksMode::Blocks`/`Grouped`: R5's `fulldoc::read_blocks_of`, not wired
-/// yet: an error value until it exists); without one (`BlocksMode::None`, the comments) the
+/// document injects (`BlocksMode::Blocks`/`Grouped`: R5's `fulldoc::read_textbox_content`); without one (`BlocksMode::None`, the comments) the
 /// `w:p` children are read as paragraphs, as `textboxBlocks` does.
 impl ObjectHost for ReadContext<'_, '_> {
     fn ids(&mut self) -> &mut IdAlloc {
@@ -1735,6 +1989,18 @@ impl ObjectHost for ReadContext<'_, '_> {
         self.ctx.leave_nested();
     }
 
+    fn default_run_props(&mut self) -> Arc<RunProps> {
+        ReadContext::default_run_props(self)
+    }
+
+    fn count_paragraph(&mut self) -> Result<(), DocxError> {
+        self.ctx.count_paragraph()
+    }
+
+    fn count_run(&mut self) -> Result<(), DocxError> {
+        self.ctx.count_run()
+    }
+
     fn read_textbox_content(&mut self, content: Element<'_>) -> Result<TextboxRead, DocxError> {
         match self.blocks {
             BlocksMode::None => {
@@ -1745,7 +2011,8 @@ impl ObjectHost for ReadContext<'_, '_> {
                 Ok(TextboxRead::Paragraphs(paras))
             }
             BlocksMode::Blocks | BlocksMode::Grouped => {
-                Err(DocxError::Corrupt("the block reader of text boxes (frontier R5, fulldoc::read_blocks_of) is not wired yet"))
+                let (story, txbx_src) = super::fulldoc::read_textbox_content(self, content, self.blocks == BlocksMode::Grouped)?;
+                Ok(TextboxRead::Blocks { story, txbx_src })
             }
         }
     }
@@ -1760,18 +2027,25 @@ pub mod with_context {
     use crate::model::Run;
     use uo_opc::xml::Element;
 
-    fn as_run(ext: RunExt) -> Run {
-        Run { text: obj_text(), ext: Some(Box::new(ext)), ..Run::default() }
+    fn as_run(ext: Box<RunExt>) -> Run {
+        Run { text: obj_text(), ext: Some(ext), ..Run::default() }
+    }
+
+    /// An object run of [`super::object_runs`] as a [`Run`] carrying its text and rare fields.
+    pub(crate) fn object_run(ext: Box<RunExt>) -> Run {
+        as_run(ext)
     }
 
     /// `readDrawingRun(drawing, ctx)`.
+    #[inline(never)]
     pub fn read_drawing_run(drawing: Element<'_>, rc: &mut ReadContext<'_, '_>) -> Result<Option<Run>, DocxError> {
-        Ok(super::read_drawing_run(drawing, drawing.raw(), rc as &mut dyn ObjectHost)?.map(as_run))
+        Ok(super::drawing_run(drawing, drawing.raw(), rc as &mut dyn ObjectHost)?.map(as_run))
     }
 
     /// `readVmlRuns(container, ctx, inline)`.
+    #[inline(never)]
     pub fn read_vml_runs(container: Element<'_>, rc: &mut ReadContext<'_, '_>, inline: bool) -> Result<Vec<Run>, DocxError> {
-        Ok(super::read_vml_runs(container, inline, rc as &mut dyn ObjectHost)?.into_iter().map(as_run).collect())
+        Ok(super::vml_runs(container, inline, rc as &mut dyn ObjectHost)?.into_iter().map(as_run).collect())
     }
 }
 
@@ -1781,23 +2055,28 @@ pub mod with_context {
 /// `mc:AlternateContent` cases): the drawing (`mc:Choice`, then the VML of `mc:Fallback` when the
 /// drawing reads as nothing). Any other element gives no runs.
 pub fn read_object_runs(el: Element<'_>, host: &mut dyn ObjectHost) -> Result<Vec<RunExt>, DocxError> {
+    Ok(object_runs(el, host)?.into_iter().map(|run| *run).collect())
+}
+
+/// [`read_object_runs`], boxed: what R4c's `run_object` reads (and turns into runs with
+/// [`with_context::object_run`] as it pushes them). The recursion of nested stories goes through
+/// here: a small frame.
+#[expect(clippy::vec_box, reason = "each box becomes the `ext` of a run as it is, with no copy of the `RunExt`")]
+#[inline(never)]
+pub(crate) fn object_runs(el: Element<'_>, host: &mut dyn ObjectHost) -> Result<Vec<Box<RunExt>>, DocxError> {
     match el.name() {
-        "w:drawing" => Ok(read_drawing_run(el, el.raw(), host)?.into_iter().collect()),
-        "w:pict" | "w:object" => read_vml_runs(el, el.name() == "w:object", host),
+        "w:drawing" => Ok(drawing_run(el, el.raw(), host)?.into_iter().collect()),
+        "w:pict" | "w:object" => vml_runs(el, el.name() == "w:object", host),
         "mc:AlternateContent" => {
             let choice = el.first_child("mc:Choice");
-            let drawing = choice.and_then(|c| c.descend("w:drawing"));
-            let r = match drawing {
-                Some(d) => read_drawing_run(d, d.raw(), host)?,
-                None => None,
-            };
-            if let Some(r) = r {
+            if let Some(d) = choice.and_then(|c| c.descend("w:drawing"))
+                && let Some(r) = drawing_run(d, d.raw(), host)?
+            {
                 return Ok(vec![r]);
             }
             let fb = el.first_child("mc:Fallback");
-            let pict = fb.and_then(|f| f.descend("w:pict").or_else(|| f.descend("w:object")));
-            match pict {
-                Some(p) => read_vml_runs(p, p.name() == "w:object", host),
+            match fb.and_then(|f| f.descend("w:pict").or_else(|| f.descend("w:object"))) {
+                Some(p) => vml_runs(p, p.name() == "w:object", host),
                 None => Ok(Vec::new()),
             }
         }

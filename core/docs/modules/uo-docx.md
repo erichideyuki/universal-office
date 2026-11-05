@@ -923,8 +923,14 @@ Pending.
 | R4b inline objects (`read/inline_objects.rs`, `read/picture_format.rs`; facet `drawing-runs` with `js/capture-drawing-runs.mjs`, generated corpus `js/quirk-objects.mjs`, `ObjectHost` for R4c's `ReadContext`, regex rows `r4b`, unit cases from the TS, M1 and no-panic tests; declarations in `uo-docx-d1a/R4b.md`) | Sonnet | one session (time not measured by the agent; plus short waits on other frontiers' transient build breakage); 0 verifier rounds (29,877 comparisons equal on the first complete replay after one bug the corpus found and one named difference), rework only on the corpus and the capture normalisation | ≈ 170 |
 | R4c paragraphs, runs, fields and the custom-inline `JSON.parse` (`read/paragraph.rs` = `ReadContext`/`readParagraph`, `read/json_parse.rs`; facets `paragraph` (+ sources variants) and `custom-tag` with `js/capture-paragraph.mjs`, `js/capture-custom-tag.mjs`, generated corpus `js/quirk-paragraph.mjs`, regex rows `r4c`, unit, M1 and no-panic tests; declarations in `uo-docx-d1a/R4c.md`) | Sonnet | one session (time not measured by the agent); 0 verifier rounds (22,000+ facets equal after the corpus and the capture normalisation were corrected; one port bug found by the first replay: key marks of `ins`/`del`/`commentIds`), rework on the no-panic findings (comment-id memory, stack cost of nested stories) | ≈ 140 |
 | R6 source store build (`read/sources.rs`, `SourcePart` no-copy change; facets `sources-para`, `sources-blocks`, `sources` (replay waits for R5), `js/capture-sources*.mjs`, synthetic package generator `js/quirk-sources.mjs`, regex rows `r6`, unit, M1 and no-panic tests; declarations in `uo-docx-d1a/R6.md`) | Sonnet | one session (time not measured by the agent; plus short waits on other frontiers' transient build breakage); 0 parity rounds (the interim facets matched on the first full replay), rework only on my own test expectations | ≈ 100 |
+| R5 whole-document read (`read/fulldoc.rs`, `read/inspect.rs`, `read/blank.rs`, `read/fonts.rs`; `read_document`/`read_embedded_fonts` real; facet `full` with `js/capture-full.mjs` and the generated corpus `js/quirk-full.mjs` (371 packages), unblocks the `sources` and `hyphlangs` replays; regex rows `r5`, unit (34), M1/M2/M3 (with the TS heap reference `js/measure-memory-full.mjs`) and no-panic tests; declarations in `uo-docx-d1a/R5.md`) | Sonnet | one session (time not measured by the agent); 0 verifier rounds (the facet over 2,753 documents equal on the first full replay; the five differing quirk inputs were two port bugs, one R4c bug, one data shape and one named difference), rework only on the quirk corpus and my own test expectations | ≈ 140 |
 | contour and shape styles (uo-drawingml G3: `drawing/contour.rs`, `drawing/shape_styles.rs`, generated `data/shape_styles.rs` + `tools/gen-shape-styles.mjs`; facets `contour`, `shape-styles` with `js/capture-contour.mjs`, unit, M1/M3 and no-panic tests; decisions C1–C7 in "contour and shape styles") | Sonnet | one session (time not measured by the agent); 0 parity rounds (every facet equal on the first replay: 2,369 contour cases + 776 gallery lines), rework only on my own tests (an ill-posed expectation, clippy lints) and one fix of line endings (the editor tool wrote CRLF) | ≈ 75 |
 | D1b font embedding, from uo-fonts G2 (`write/fonts/{docx,ooxml}.rs`: `read_docx_embedding`, `write_docx_embedding`, the app-neutral helpers; regex rows `d1b-fonts` (71 sites × 233 inputs), `js/capture-font-embedding.mjs` with 500 synthetic packages and seeded plans of open fonts, `TargetRule` for the D6 proof, unit, M1, no-panic and linear-time tests; section "D1b — font embedding") | Opus | one session (time not measured); 0 parity rounds (regex rows equal to V8 on the first run; corpus equal on the first replay; the synthetic differences were all D6) | ≈ 80 |
+| D1b writer core (architecture; `write/{ctx,sig,lossless,story,parts,rev,matchers,js,roundtrip}.rs`, emitter stubs and frontier files, additive signature mode of `JsonWriter`, the `Write` error; captures `write-roundtrip` (corpus + R6/R5 synthetic, `none`/`all`/`gen`), `lossless` (30,000), regex rows `d1b-core` (14,790); M1, M3, no-panic, linear-time tests; briefs W1–W6; section "D1b — writer (architecture)") | Opus | one session (time not measured; R5 landed during it); 0 parity rounds (round trip, surgery and regex rows equal on their first complete runs; rework: three quadratic matchers and the 20 × save allocation found by my own no-panic and M3 tests, fixed before the record) | ≈ 160 |
+| D4 frontier briefs (written with the uo-drawingml `odraw` port, record there) | Opus | one session with the odraw port | ≈ 8 (of the session's ≈ 95, row in uo-drawingml.md) |
+| D4 F0-F3 + F5 .doc converter, reader core and part emitters (`src/doc/{bytes,xmlw,mod,open,fib,text,fkp,sprm,fonts,props,stsh,lists,ooxml_props,styles_xml,numbering,settings}.rs`; `js/capture-doc.mjs` with 1,644 generated mutations, 4,700 generated grpprls/style sheets/list tables/DOPs and a worker that survives the TS running out of memory; `tests/parity_doc.rs`, `memory_doc.rs`, `nopanic_doc.rs`; fuzz `doc_convert`; section "Stage 3 — D4") | Sonnet | one session (time not measured by the agent; two waits of 3-8 min on other frontiers' transient build breakage) | ≈ 215 |
+| Nested-story stack fix (R4b/R4c frames split; `tests/nested_stack.rs`, the wasm32 probe `examples/nested_stack_wasm.rs` + `js/wasm-stack.mjs`, the native probe; section "Nested-story stack — fixed") | Opus | one session (time not measured; in parallel with R5, `odraw` and the D1b writer, short waits on their transient breakage); 0 parity rounds (every facet equal after the splits), one split reverted on measurement | ≈ 160 |
+| R5 follow-ups (Opus check of R5 item 9 — G20 cell fallback accepted with the per-part count fix, D6, `PageFill.image.path` kept out, `__proto__` slot; hyphenation languages in one visit (F2-21) with the equality and depth tests; fuzz target `read_docx` (stable 150 s, libFuzzer 332 s); model-size analysis on an interning prototype and the plan; section "R5 follow-ups") | Opus | one session (time not measured; in parallel with the reader slimming, the D1b writer and the `.doc` port, waits on their transient build breakage); 0 parity rounds (every facet equal after the changes), 0 fuzz findings; rework: a test depth above the XML depth limit, one clippy `type_complexity` | ≈ 95 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
@@ -1144,15 +1150,265 @@ Next: **R5** (fulldoc/inspect/blank/fonts — the whole-document read; it unlock
 `full` and `hyphlangs` facets and the text box `Blocks`/`Grouped` modes R4b leaves as `Err`).
 
 Open, for the next round or the milestone-1 review:
-- **Nested-story stack** (R4c): a text box inside a text box costs ~14 KB of native stack per level
+- ~~**Nested-story stack** (R4c): a text box inside a text box costs ~14 KB of native stack per level
   in release (~50 KB debug), mostly R4b's VML/drawing readers; 64 levels do not fit the 1 MiB wasm
-  stack. Slim R4b's frames (or make the story recursion iterative) before R5's G20 wasm test.
+  stack.~~ **Fixed**: see "Nested-story stack — fixed" below (64 levels ≤ 104 KB of the wasm32
+  shadow stack, budget 256 KiB).
 - **Open comment ranges** (R4c item 9.2): >64 concurrently open ranges is `Corrupt` today; the TS has
   the same O(n²) memory. Proposal: a `DocxLimits` field and a `DocxLimitKind` variant (security review).
 - **`MathNode.rpr`** cloned per node (R4c 9.6): proposal `Arc<RPr>` in the model.
 - **Legacy flat `readDocument`** (R4c 9.7) not ported: confirm no consumer remains.
 - **9-level numbering limit** (R2), unbounded `Math.min` over wrap polygons (R3), the R4b item 9 rows:
   milestone security review.
+
+### Nested-story stack — fixed (2026-11-03)
+
+*(Opus, hybrid mode, in parallel with R5, `odraw` and the D1b writer foundation; nothing committed.)*
+
+**Finding.** A text box in a text box is read from inside the run that holds it, so each level of
+nesting (bounded by `max_nesting` 64, G20/F17) puts the whole chain on the native stack once:
+`read_paragraph` → R4c's run walk → `run_object` → R4b's object reader (`w:drawing`: `drawing_run`
+→ `read_graphic_object` → `read_wsp` / `read_group`; `w:pict`: `vml_runs` → `vml_group` →
+`vml_shape_of`) → `textbox_blocks` → `ObjectHost::read_textbox_content` → `read_paragraph`. The frames
+on it held the large values of the object being built across the read of its content: the
+`DrawingTextbox` (784 B), its `DrawingAnchor` (576 B), the `ShapeStyle` (368 B), the parsed VML style,
+every `RunExt` (376 B) returned up the chain, and the inlined code before and after the recursion
+(`vml_shape_of` was 4.5 KB in release and 31 KB in debug, `read_drawing_run` 4.3/15.8 KB).
+
+**Approach: smaller frames, chosen by measurement.** Every function on the chain now keeps only
+element handles, a few scalars and boxes across the recursive call; the work before the content and
+after it is in `#[inline(never)]` functions that return first or start after:
+
+- R4b (`read/inline_objects.rs`): `vml_shape_of` = `vml_shape_start` (everything up to the text box:
+  hidden, WordArt, picture, shape; returns the object, or the text box on the heap with its style and
+  anchor) + `textbox_blocks` + `vml_textbox_finish` (insets, fit, wrap, flow, ids, shape style, the
+  DrawingML twin) with `apply_vml_anchor`; `vml_group` = `vml_group_geom` + loop + `push_vml_item` +
+  `vml_group_run`; `read_wsp` = `boxed_sp_pr` + `new_textbox` + `textbox_blocks` + `wsp_textbox` /
+  `wsp_shape`; `read_group` = `group_scale` + loop (`group_child_box`, `push_group_item`) + `group_run`;
+  `read_drawing_run` = `drawing_run` (`diagram_or_rect`, `finish_drawing_run`); `textbox_blocks` keeps
+  the guard and the host call, `textbox_plain` (G20 fallback) and `textbox_store` do the rest; the OLE
+  preview of `w:object` is `inline_ole_image`. Internally the readers return `Box<RunExt>`
+  (`drawing_run`, `vml_runs`, `object_runs`, `read_graphic_object`…): the box becomes the run's `ext`
+  as it is (`with_context::object_run`, `item_run`), no `RunExt` crosses a frame by value.
+- R4c (`read/paragraph.rs`): `read_paragraph` + `finish_paragraph` (open fields, TOC instruction, id,
+  sources); the run walk leaves the frame on top of its heap stack in place instead of popping and
+  pushing it, sends `w:drawing`/`w:pict`/`w:object`/`mc:AlternateContent` straight to `run_object`
+  (`run_child` is no longer on the chain), and the other steps are `container_step`, `end_run`,
+  `ruby_base`, `run_text`; `run_object` = `object_start` + `object_runs` (R4b, boxed, the same dispatch
+  as `read_object_runs`) + `object_finish`; with sources, `read_with_segments` keeps the loop and
+  `segment_of_child` does the bookkeeping.
+
+The public functions (`read_paragraph`, `read_runs_into`, `read_drawing_run`, `read_vml_runs`,
+`read_object_runs`, `with_context::*`, the `ObjectHost` trait) keep their signatures.
+**Results are identical**: the same operations in the same order (drawing ids before the content,
+media and the VML→DrawingML twin after it, key marks in the same order, every object read before the
+first push as the TS), pure functions (`parse_vml_style`, `vml_anchor`) recomputed in place of carried
+values; every parity facet replays with 0 mismatches against the committed captures (none
+regenerated), and `cargo test -p uo-docx --all-features` is green.
+
+*Not chosen:* an explicit work-list of pending stories. It needs every loop on the chain (VML and group
+children, the paragraphs of a text box, R5's block reader) turned into resumable state; the frames
+alone meet the target 2.5 times over. One split that measured worse (the start of `read_paragraph` in
+a function of its own: +3 KB of wasm32 stack at 64 levels) was reverted.
+
+**Measured** (stack used by the read of 64 levels, `levels` = 64 text boxes each holding the next; the
+65th is read with plain paragraphs, G20; the before column is HEAD 2701635a with the same probe):
+
+| 64 levels, paragraph reader | wasm32 (`--profile wasm`), before → after | native release, before → after | native debug, before → after |
+|---|---|---|---|
+| VML shape (`v:textbox`) | 508,735 → **79,619 B** | 868,255 → 207,999 B | 3,233,519 → 580,775 B |
+| VML, sources kept | 519,135 → 82,691 B | 915,055 → 240,703 B | 3,330,239 → 639,143 B |
+| DrawingML shape (`wps:txbx`) | 489,279 → 80,399 B | 950,175 → 220,303 B | 3,255,023 → 578,879 B |
+| text box in a `wpg` group | 672,575 → 87,567 B | 1,248,159 → 242,831 B | 3,897,071 → 646,463 B |
+| group, sources kept (worst before) | 682,975 → 90,687 B | 1,294,959 → 276,111 B | 3,993,791 → 705,743 B |
+| text box in a `v:group` | 508,735 → 87,299 B | 868,255 → 228,495 B | 3,738,351 → 630,815 B |
+| `mc:AlternateContent` / the five in turn | 489,279 / 534,415 → 80,399 / 83,443 B | 950,175 / 977,423 → 220,303 / 223,631 B | 3,255,023 / 3,479,247 → 578,879 / 604,143 B |
+
+Per level, VML: wasm32 ≈ 7.9 KB → **1.2 KB**; native release ≈ 13.4 KB → 3.1 KB; native debug ≈ 50 KB →
+8.6 KB. Through R5's block reader (`BlocksMode::Blocks`/`Grouped`, which did not exist before; the chain
+adds `fulldoc::read_textbox_content` → `read_blocks_grouped`/`read_blocks_of` → `read_children_into`,
+≈ 0.2 KB per level on wasm32, 0.55 KB release, 3.3 KB debug) the worst is the `wpg` group with sources:
+**103,999 B** wasm32, 311,951 B release, 1,043,663 B debug. Digest of 64 levels (the canonical walk is
+recursive): 13.5–25.8 KB wasm32, ≤ 147 KB release, ≤ 369 KB debug; drop: 1.6 KB wasm32 (flat), ≤ 62 KB
+release, ≤ 190 KB debug.
+
+**Budget.** G20's target is **256 KiB of the wasm32 shadow stack for 64 levels** (read, digest and drop;
+the 1 MiB stack keeps 0.75 MiB for the rest of the call): the worst measured is 104 KB (2.5× headroom).
+Natively the same chain costs more — on x86-64 Windows each frame pushes the callee-saved registers
+(XMM6–15 included) and a 32-byte home area, and a debug build has no stack colouring (every temporary
+has its own slot) — so the native tests run on `NESTED_STACK_KIB` (`tests/support/nested_stories.rs`):
+384 KiB in an optimized build (worst 312 KB), 1,536 KiB in a debug build (worst 1.04 MB, R5's reader
+with sources; 0.71 MB with the paragraph reader).
+
+**How it is measured.** wasm32: `examples/nested_stack_wasm.rs` (a `cdylib` example: one export per
+phase — read and keep, digest, drop — and a probe of the shadow stack pointer) and
+`js/wasm-stack.mjs`, which paints the shadow stack below the probe with 0xA5 and then 0x5A, runs one
+phase and scans for the lowest byte it touched (the uo-jsnum method), over 6 kinds of nesting × both
+readers × sources off/on × 0, 1, 8, 64, 65 levels, and fails above 256 KiB:
+
+```
+cargo build -p uo-docx --example nested_stack_wasm --target wasm32-unknown-unknown --profile wasm
+node core/crates/uo-docx/js/wasm-stack.mjs <target>/wasm32-unknown-unknown/wasm/examples/nested_stack_wasm.wasm [levels…]
+```
+
+Native: `cargo run -p uo-docx [--release] --example nested_stack_native -- 64 [vml|dml|dml-group|vml-group|alternate|mixed] [sources] [blocks]`
+paints the thread's stack the same way (volatile writes below the caller, top-down so that the guard
+page of a Windows stack moves as it would for a call). Windows 11 x64, rustc 1.97.1, Node 24.15. Frame
+sizes were read from `--emit asm` (`subq $N, %rsp`) to find the functions to split.
+
+**Tests.** `tests/nested_stack.rs`: 64, 65 and 80 levels (and 1) of each kind (VML shape, DrawingML
+shape, `wpg` group, `v:group`, `mc:AlternateContent`, the five in turn) × sources off/on × paragraph and
+block reader, read, digested and dropped on a `NESTED_STACK_KIB` thread; the depth of text boxes is
+`min(levels, 65)` and the text past the limit is kept as plain paragraphs. `nopanic_r4c`'s
+`textboxes_nested_past_the_limit_do_not_overflow_the_stack` runs on `NESTED_STACK_KIB` instead of
+32 MiB. The documents come from `tests/support/nested_stories.rs`, shared with both examples.
+
+**Files.** `src/read/inline_objects.rs`, `src/read/paragraph.rs`; `tests/nested_stack.rs` (new),
+`tests/support/nested_stories.rs` (new), `tests/nopanic_r4c.rs`; `examples/nested_stack_native.rs`,
+`examples/nested_stack_wasm.rs`, `js/wasm-stack.mjs` (new); `Cargo.toml` (`[[example]]
+nested_stack_wasm`, `crate-type = ["cdylib"]`).
+
+**For R5 / G20.** The block reader is now on the chain of every text box of the full document; its
+frames (`read_textbox_content`, `read_blocks_grouped`, `read_blocks_of`, `read_children_into`, and the
+table → row → cell recursion of a table inside a text box, not measured here) should stay small in
+the same way. The probe already covers `BlocksMode::Blocks`/`Grouped`; R5's full-document G20 test
+(read → write → layout → digest at depth 65) can reuse `nested_stories::nested_part`.
+
+### R5 follow-ups (Opus, 2026-11-03)
+
+*(Opus, hybrid mode; in parallel with the reader slimming, the D1b writer and the `.doc` port;
+nothing committed.)* The four follow-ups of frontier R5 (record `uo-docx-d1a/R5.md`). Files:
+`src/read/fulldoc.rs` (the G20 cell fallback), `src/word/hyphlangs.rs` (the single visit),
+`tests/r5_followups.rs`, `tests/memory_model_size.rs` (new); `core/fuzz/src/docx.rs`,
+`fuzz_targets/read_docx.rs` (new) and additive lines in `fuzz/Cargo.toml`, `src/lib.rs`,
+`src/bin/seed.rs`; F2-21 and the security list in `uo-docx-layout.md`.
+
+**1. Opus check of R5's item-9 rows** (rows 1–4 of R5 item 9; rows 5–11 need no check: A2 shapes,
+signatures and limits already decided).
+
+| R5 item 9 | Decision | Reason |
+|---|---|---|
+| 1 (G20: a cell past `max_nesting` read as plain text) | **Accepted, with one fix.** The fallback is G20/U18 as approved (text kept in place, one paragraph per `w:p`, default run props, no `src` on the paragraphs, the cell's own source kept, so the lossless writer can write the cell from its source). **Fix**: the plain paragraphs of the cell were not counted against `max_paragraphs_per_part`/`max_runs_per_part`, so content buried below the nesting limit escaped the per-part limits; `plain_cell_content` now counts them (the `w:p` count first, before anything is built). Parity unchanged (`parity_full`: 16,518 + 4,506 facets equal, the same 44 G20 acceptances); `r5_followups::a_cell_past_the_nesting_limit_counts_against_the_part_limits` pins it | a limit that content can go around is no limit (F21, A5); the TS has no limit, so a limit error is the only difference, and only past 4 M paragraphs in one part |
+| — (found by the check) | **Handed on**: R4b's text-box fallback (`inline_objects.rs` `textbox_plain`) has the same gap (its plain paragraphs are not counted). Not edited here (the reader-slimming session owns the file): the same lines as `plain_cell_content` (count the `w:p` below the `w:txbxContent` with `count_paragraph`, then `count_run` per non-empty paragraph; `textbox_plain` needs the `ReadCtx` or a counting callback through `ObjectHost`). The `read_docx` fuzz invariant leaves those paragraphs out of its count until then | security review |
+| 2 (D6: header/footer and font relationship targets) | **Accepted.** `HfRef.path` and the font part are the part `Package::resolve_target` gives (the OPC rule: relative to the source part, absolute `/…`, `..`, case-insensitive name match, fragment removed, percent-decoded), and `TargetMode` is not looked at, like the TS | A5 fixes "relationship targets resolved with `Package::resolve_target` only" (uo-opc D6, accepted in R1/R3); Word resolves targets with the same rule, and the C# host validator resolves them with it too, so the part the host checked is the part the reader opens (G27). A target that resolves to any part still reads an in-package part, once (`hfCache`), within the package limits. Behaviour change vs the TS (user review list below): the forms `/word/header1.xml`, `../word/header1.xml`, `HEADER1.XML`, `header1.xml#x`, `header%31.xml` find the part (the TS finds none), and a font target already written as `word/fonts/x.odttf` resolves to `word/word/fonts/x.odttf` (the TS keeps it as is) |
+| 3 (`PageFill.image.path` not stored) | **Keep as is** (no `path` in the model; the capture keeps deleting `background.fill.image.path` on the TS side, named) | `path` is not in the TS type (`image?: { data: Uint8Array; ext: string }`): it leaks from `resolveImage`'s return value (`document.ts:2186`). Nothing reads it: `writePageBackground` reads `img.data`/`img.ext` and picks a new `word/media/imageN.ext` (`page-background.ts:199`); the editor builds `{ data, ext }` (`page-design.ts:81, 85`); the layout and the exporters never touch it (searched in docx-core, docx-layout and editor). It is visible only in the undo JSON (`bg` of `stringifyState`), which nothing compares by field. Adding it would change a model type while D1b builds on the model, for a key no consumer reads |
+| 4 (`__proto__` header/footer slot) | **Accepted.** The slot is not an own key; the reference stays in `headerRefs`/`footerRefs` (the writer sees it) | in JS `set['__proto__'] = part.paras` sets the prototype of the set (an `Array`): no own key, no JSON, and every consumer reads `.default`/`.first`/`.even` (`engine.ts` `pick` and `blocksOfParas`, `engine-doc.ts` `reconcileSet`), which an `Array` prototype does not have, or spreads own keys. `JsRecord` would store an own key; the digest (own keys) is equal |
+
+**2. Hyphenation languages in one visit** (uo-docx-layout F2-21; `word/hyphlangs.rs`). The walk visits
+each paragraph once: a text box's `blocks` view is no longer visited after its `paras` view (the F2 port
+already visited a cell once). Same list, same order: a repeated visit of a subtree adds nothing to the
+`Set`. Proof: `parity_full` (`hyphlangs` facet, 2,753 documents + 771 synthetic packages) and
+`f2_parity` 0 mismatches as before; `r5_followups` compares the single visit with the TS double visit
+(`document_hyphenation_languages_ts_walk`, feature `canon`, test-only) on 420 cases (7 nesting patterns
+× depth 0–14 × sources × `force`) and reads 30, 64, 65 and 80 levels of each pattern in under 2 s.
+Measured (release, nested `wps` boxes): single visit 26–38 µs at depths 10–24; the TS double visit
+2.2 ms at 10, 1.43 s at 20, 23.9 s at 24 (×2 per level, ≈ 25 min at 30). The TS has the same bug (not
+edited); listed for the security review (uo-docx-layout "Security").
+
+**3. Fuzz target `read_docx`** (`core/fuzz/src/docx.rs`). Input: a selector byte (bit 0 sources, bit 1
+`max_nesting` 3, bit 2 `read_embedded_fonts`), then the package bytes → `Package::open` with small
+package limits (1 MiB per part, 4 MiB in total, 256 entries, XML depth 256, 100,000 elements) →
+`read_document` with small `DocxLimits` (4,096 paragraphs and 16,384 runs per part, field depth 16,
+2,000 fields per story, `basedOn` chain 64) → `document_is_empty`, `document_links`,
+`document_custom_inlines`, `document_hyphenation_languages` (forced), `revision_authors`. Invariants:
+no panic; a limit error names one of the limits of the read (Word or package); stories nest at most
+`max_nesting` deep plus one level of plain paragraphs, with no table and no object below the limit;
+the body part's paragraphs ≤ `max_paragraphs_per_part` + one empty paragraph per cell (text-box
+fallback paragraphs left out until R4b counts them, above); media within the package limits; embedded
+fonts within the binary part limit. Seeds (`seed` binary, `docx_seeds`): the docx-core fixtures and
+the 40 smallest oracle documents, as given and re-saved with every entry **stored** (the reader does not
+check the CRC, so byte mutations reach the XML instead of stopping in inflate), the 371 R5 synthetic
+packages (`full.inputs`) and one in four of the 400 R6 packages (`sources.inputs`), stored, with the
+selector rotating: 574 seeds.
+
+| Run | Executions | Time | Crashes / timeouts / OOM | Notes |
+|---|---|---|---|---|
+| stable driver (Windows, release with overflow checks and debug assertions, `--secs 150`) | 3,250,870 (21,672/s) | 150 s | 0 / 0 / 0 | slowest call 24.6 ms |
+| libFuzzer (WSL Ubuntu 24.04, cargo-fuzz 0.13.2, nightly, AddressSanitizer, `-fork=6 -max_total_time=330 -timeout=10 -rss_limit_mb=2048 -max_len=262144`) | 986,429 | 332 s | 0 / 0 / 0 | coverage 14,023 → 15,675 edges, features 55,167 → 63,507, corpus 485 → 2,119 |
+
+**4. Model size — analysis** (R5's M3 finding: the model is 1.7–1.9× the TS heap on paragraph and
+table documents). Measured on a prototype (`tests/memory_model_size.rs`, `--ignored`): the model read
+as today, then the same read with the props `Arc`s interned after the read (equal values share one
+`Arc`; the interning table dropped before the measurement ends), then also with each paragraph's
+`Vec<Run>` at its exact capacity. Native x86-64, release; the TS column is R5's M3 (`heapUsed`).
+
+| Class | Model today | Props interned | + exact `Vec<Run>` | TS heap |
+|---|---|---|---|---|
+| text, 2,000 paragraphs | 4,412,404 B | 924,149 B (−79%) | 636,149 B (−86%, 0.25× the TS) | 2,571,864 B |
+| tables, 3,000 rows × 3 | 17,566,308 B | 7,379,440 B (−58%) | 5,435,440 B (−69%, 0.58× the TS) | 9,429,568 B |
+| Word oracle, one in four (686 documents) | 44,948,929 B | 27,846,097 B (−38%) | 24,329,329 B (−46%) | — |
+
+Where the bytes go:
+
+- **Props allocated per run and per paragraph, almost all equal.** 2,000 paragraphs: 2,000 `ParaProps`
+  (392 B + 16 B of `Arc` header), 4,000 `RunProps` (480 + 16) and 2,000 `RPr` (328 + 16) for 1, 2 and 1
+  distinct values: 1,744 B of each paragraph's 2,206 B. Oracle sample: 17,018 `ParaProps` for 6,111
+  distinct values, 19,520 `RunProps` for 1,559, 6,998 `RPr` for 974, 7,983 `PPr` for 5,725, 1,904 `TcPr`
+  (208 B) for 344 (distinct per document; the equality includes the cleared mask and the key order).
+- **`Vec<Run>` over capacity**: 8,000 slots for 4,000 runs, 36,000 for 9,000 (tables), 68,364 for
+  19,520 (oracle), 72 B a slot: 144–216 B per paragraph.
+- **The fixed size of the props structs** (what V8 does not pay: it stores the keys that are set):
+  `RunProps` 480 B = 9 `Option<Str>` (144), two inline `ThemeColorAttrs` (`underline_theme`,
+  `color_theme`: 2 × 72, rare), 5 `Option<JsNumber>` (80), 5 boxes (40), `comment_ids` (24),
+  `cleared` + `keys` (24), the bools and `src`; `ParaProps` 392 B, `RPr` 328, `PPr` 232, `TcPr` 208.
+  After interning this is paid once per distinct value, not per run.
+- **Story and cell overhead** (tables after both fixes: 604 B per cell): `Cell` 208 B inline in
+  `Row.cells` (its `Story` is 112 B: two `PVec`s), a one-paragraph `PVec` allocates four blocks (chunk
+  list, starts, chunk `Arc<Vec>`, the element `Arc`), the `Paragraph` `Arc` (88 B).
+- UTF-16 run text is 3% (2,000 paragraphs) to 4% (oracle) of the model.
+
+Options weighed:
+
+| Option | Type change | Effect (measured or estimated) | Cost / risk |
+|---|---|---|---|
+| A. Intern the props `Arc`s per read (`RunProps`, `RPr`, `ParaProps`, `PPr`, `TcPr`; also `TrPr`, `TblPr`), keyed by **bitwise** value equality (f64 bits, so `-0`/`0` stay apart as in the digest; the cleared mask and the key order included — not `PartialEq`, which merges `-0` and `0` and never matches NaN) | none: `Arc<RunProps>` stays; the reader's `Arc::new` sites call `ReadCtx::intern_*` | −38% (oracle) to −79% (2,000 paragraphs); the peak falls too (a duplicate is dropped as soon as it is built). Variant: memoise by the `w:rPr`/`w:pPr` text before building (skips the build; needs the mapping to be a pure function of the element) | a hash per run, small next to the XML parse. Constraints for D2a below |
+| B. Exact `Vec<Run>` capacity when a paragraph is finished | none | −7 to −11 points more (−144 to −216 B per paragraph) | one line in `finish_paragraph` (R4c) |
+| C. Shrink fields: one `Option<Box<…>>` for the rare `RunProps` colour themes (144 → 8 B); a NaN-boxed `JsNumber` (absent and `null` as two reserved NaN payloads, which JS never observes) making `Option<JsNumber>` 8 B (−40 B `RunProps`, −56 B `ParaProps`); `cleared` + `keys` (24 B on every model object) as one `Option<Box<ObjMeta>>` (8 B). **Narrower integers are not allowed**: twips and half-points come from `parseInt`/`Number` and can be NaN, fractions, ±∞ or beyond `i32` (F1) | yes: every model type and every consumer (canon, JSON, `JsAssign`, D1b writer, layout, `word`) | after A, < 3% of the model on the measured classes (paid per distinct value); it matters for documents with many distinct props and for the editor's copy-on-write (each edited props is a clone) | broad; would collide with D1b now |
+| D. `PVec` single-chunk fast path (an inline first chunk) | internal to `PVec` | ≈ 100 B per cell story (estimate: the three small blocks of a one-chunk `PVec`) | `PVec` is the base of the history (U19): its sharing tests must stay |
+
+Effect on the consumers. **D1b writer**: reads props only; no change, as long as it never uses
+`Arc::ptr_eq` of props as TS identity (A1.3 already forbids it); a serialisation cache keyed by the props
+pointer would gain hits. **uo-docx-layout**: read-only; its `Arc::ptr_eq` "content unchanged" fast path
+stays valid (interned `Arc`s hold equal values) and hits more often; caches keyed by the props pointer
+(run style resolution, `json_key`) can be memoised per pointer. **Session (D2a)**: an edit goes through
+`Arc::make_mut`, which clones a shared `Arc` (as it does anyway once an undo snapshot holds it).
+Interning creates sharing the TS does not have, so two rules are needed: the TS aliasing of a props
+object (`{ ...run }` copies share it, and an in-place mutation is seen by both) must never be emulated
+through `Arc` pointer identity; and `rpr_link` (A2 puts it on the props object) must be part of the
+interning key or, better, live on `Run` (it is per-run data). `normalize` at restore can re-intern.
+**Digest, JSON, parity**: values only, unaffected. **wasm32**: pointers are 4 B, so every number above
+is smaller there; the ratios hold (the props structs dominate).
+
+**Model size — plan** (for the orchestrator, after D1b's foundation; no model type changes now):
+
+1. **P1, reader only (one session, Opus or a briefed Sonnet), after the reader slimming lands**
+   (`paragraph.rs` is being edited): `ReadCtx::intern_*` with the bitwise key (a small `InternKey` trait
+   generated by `js_object!`, or a hash of the canonical stream), used at every `Arc::new` of `RunProps`,
+   `RPr`, `ParaProps`, `PPr`, `TcPr`, `TrPr`, `TblPr` in R4a/R4c/R5 (including `plain_paragraphs`'
+   `DEFAULT_RUN_PROPS`); exact `Vec<Run>` capacity in `finish_paragraph`. Gates: every parity facet 0
+   mismatches (values unchanged), M1/M2 0 B, M3 re-measured with tightened budgets (expected: 2,000
+   paragraphs ≤ 0.7 MB, tables ≤ 5.5 MB; the model below the TS heap on every class), and
+   `memory_model_size` kept as the measurement.
+2. **P2, with D2a**: `rpr_link` on `Run`; the rule "props aliasing is never pointer identity" written into
+   A3's per-op identity table.
+3. **P3, optional, measured after P1**: the `PVec` single-chunk fast path (D); option C only if a class
+   stays above the TS heap after P1 or the editor's undo byte cap (U19) needs it, scheduled with the
+   consumers that would move with it.
+
+**For the user to review** (decisions that change behaviour vs the TS):
+
+- D6 for header/footer and font targets: `/word/header1.xml`, `../word/header1.xml`, `HEADER1.XML`, `header1.xml#x`, `header%31.xml` now find the part (the TS finds none); a font target `word/fonts/x.odttf` resolves to `word/word/fonts/x.odttf` (the TS keeps it).
+- G20: a cell nested past 64 is plain text in place (formatting, objects, bookmarks and fields inside it are dropped); its paragraphs now count against the per-part limits (an error past 4 M paragraphs in one part, where the TS reads on).
+- `PageFill.image` has no `path` key (no consumer reads it; visible only in the TS undo JSON).
+- Not a behaviour change, for completeness: the hyphenation languages walk visits each paragraph once (same list; the TS takes 2^depth time on nested text boxes and tables).
+
+**Checks.** `rustfmt --check` on my files; `cargo clippy -p uo-docx --lib --all-features --test
+r5_followups --test memory_model_size --test parity_full --test r5_unit -- -D warnings`, the uo-docx lib
+for `wasm32-unknown-unknown`, `cargo clippy -p uo-docx-layout --all-targets --all-features` (and its lib
+for wasm32), and in `core/fuzz` `cargo clippy --all-targets` (default and `--no-default-features
+--features fallback`) and `cargo fmt --check`: clean; `tests/grep-bans.sh`, `tests/float-casts.sh`:
+clean. Tests: `cargo test -p uo-docx --all-features` green — the lib (104) and every integration target (75), run per target while the writer and `.doc` sessions had transient breakage (`parity_page_background` failed once mid-edit of the writer and passed on the rerun; `parity_write_roundtrip` run in `--release`, its debug run did not finish in 25 min) —, `cargo test -p uo-docx-layout --all-features` green (11 targets) (`CARGO_TARGET_DIR=core/target/r5-followups`; the fuzz crate built in
+`core/target/r5-followups-fuzz`, the WSL build in `~/r5-docx-fuzz-target`).
 
 ### contour and shape styles (from uo-drawingml G3)
 
@@ -1336,3 +1592,674 @@ core/crates/uo-docx/js/regex-diff.mjs`; `UO_TS_ROOT=… node core/crates/uo-docx
 The pptx side (F11); `ooxml_*` libFuzzer targets (the no-panic loops stand in); the wasm/.NET exports of
 the step and the editor's `saveDocxWithFonts` orchestration (session, milestone 2); M2/M3 for the step
 (the D1b save soak of milestone 2 covers it).
+
+## D1b — writer (architecture)
+
+*(Opus, 2026-11-03, hybrid mode; nothing committed.)* The Opus part of D1b by the skeptic's verdict ("Opus
+for `source`/`lossless`/signatures/`WriteCtx`/dynamic regexes; Sonnet for the XML element emitters"): the
+shapes of the lossless writer, its core ported 1:1, and the briefs of the emitter frontiers W1–W6. Module
+`uo_docx::write` (always built; `src/write/`); the font embedding of "D1b — font embedding" is
+`write::fonts` beside it.
+
+### The model of the save
+
+**What the TS does.** `writeDocument(pkg, model, hfParts, opts)` writes into the editor's `DocxPackage`
+(the same object at every save). With `opts.sources` (the document was read with sources) the save is
+*lossless*: every top-level child of a part whose blocks are all present, in order and **pristine** goes
+out as its raw source; a pristine paragraph (one copy) is its raw `w:p`; a changed one keeps its original
+start tag (first copy), its raw `w:pPr` with only the differences applied (`patchPPr`) and each top-level
+segment raw when its runs are intact; tables, rows and cells the same by id. Without sources everything is
+generated (`serializeBlocks`). *Pristine* = the node's signature equals the baseline taken right after the
+install (`SourceStore.baseline()`): a paragraph whose runs have the same source keys and the same
+`runSig`, and the same `propsSig`; a table whose `tableSig` is the same.
+
+**Rust shapes.**
+
+| TS | Rust | Why |
+|---|---|---|
+| module state of `serialize.ts` (`mediaOut`, `drawingId`, `active`, `shapeTheme`, `chainNext`, `vmlSpid`, `vmlOnly`, `emittedShapes`) and `rev-xml.ts` (`nextId`, `usedUtc`) | `write::ctx::WriteCtx` (+ `rev::RevState`) inside one `ctx::Writer<'a> { doc: &'a Document, pkg: &'a mut Package, cx, fresh_id, lossless: Option<Lossless<'a>> }` per `write_document` call | G7: no process state; one borrow of the document for the whole save, so nodes are `&'a` and the per-save memo can key on addresses |
+| `active` (`Lossless`: `claimed`, `claimedSegs`, `remaining`, `paraRuns`, `emittedObj`, `genNumbering`, `numIds`, `relsPath`) | `ctx::Lossless<'a>` (sets of `SourceKey`, `paraRuns: Option<&'a [Run]>`) | the TS keys are already numbers |
+| `SourceStore.sig`, `genNumIds` (mutable on the store), `freshId` (a process-global `let`, never reset) | `ctx::SaveState { baseline, gen_num_ids, fresh_id }`, owned by the caller (the session keeps one per document) | the store is immutable after the read (A2); `freshId` per document (G7, declared W-D9) |
+| `memo` (a `WeakMap` by object, reset by `beginSave`) | `sig::Pristine` (by node address, per save) | the save borrows the document: addresses are stable for its duration |
+| `emittedShapes` (`WeakSet` by object), `chainNext` (`Map` by textbox) | `HashSet<DrawingId>`, `HashMap<DrawingId, Str>` | identity is a value (G22) |
+| `store.txbx` (`WeakMap` by textbox) | `DrawingTextbox::txbx_src` → `store.txbx_groups` | survives undo (U4c, fixed by name) |
+| text from the model (UTF-16, lone surrogates) | `String::from_utf16_lossy` at the emitter (= `TextEncoder`) | A1.4 |
+
+`write_document(pkg, doc, body, sect_pr, hf_parts, opts, save) -> Result<(), DocxError>` is
+`writeDocument`: `body`/`sect_pr` are the TS `model` (the session passes its body story and the last
+section's `SectPr`), `hf_parts: &[HfPartOut { kind, type, rid, path, story: &Story, dirty }]`,
+`opts: WriteOptions { comments, body_sect_refs, track_revisions, footnotes/endnotes: NotesOut, notes,
+blocks }`. A TS `throw` in the writer and, until a frontier lands, an emitter stub are `DocxError::Write`
+(added, additive).
+
+**Signatures (G23, U6).** `sig::{sig_hash, run_sig, props_sig, table_sig}` are `cyrb53` over the UTF-16
+units of a signature text built by the model's own `JsValue::json` (`JsonWriter::for_signature`, added):
+media as `"#bytes:<length>"` (`sigReplacer`), and in `SigMode::Canonical` — the **default, G23** — the keys of
+every declared object sorted, so two objects differing only in insertion order sign the same.
+`SigMode::Ts` keeps the insertion order: its value is the TS `runSig` of the same object (pinned in a unit
+test), and it is what the U6 harness of D2 compares the canonical verdict against. The same mode drives
+`sameJson` in `lossless.rs` (`write::js::same_json`). Signatures are only ever compared with signatures of
+the same code (baseline vs save), never with TS values. Two departures from the TS text, neither changing a
+verdict on synced content:
+- **W-S1, fast path**: the baseline keeps the installed node (`Arc<Paragraph>`, `Arc<Table>`, shared, not
+  copied); a node still behind the same `Arc` at save is pristine without computing anything (A1.3:
+  `Arc::ptr_eq` as a content-unchanged fast path, never identity). Cost: the installed version of an edited
+  source node stays alive (at most one per node). Save of an unchanged 188 KB body: 3.7 MB → 0.36 MB
+  allocated.
+- **W-S2, one view**: in a signature text a cell writes its content once (the block view) and a textbox
+  once (its blocks plus the view kind). The TS writes a cell's `paragraphs`, `tables` and `blocks` and a
+  textbox's `paras` and `blocks`, so the text **doubles per nesting level**: the TS save of
+  `quirk/full/nest-tables-31` (31 nested tables) does not finish in 10 minutes. Rust: linear in depth ×
+  content (`nest-*-70` round trips in well under a second).
+
+**Media (G24).** `Writer::media_rel_id` and the `mediaOut` flush reuse an existing `word/media/` part only on
+full byte equality (the TS compares the length, every 509th / 1009th byte and the last: a different image of
+the same length that agrees on the samples became the wrong picture).
+
+**Dynamic regexes (G9, U7).** `write::matchers`: every regex site of the core is a hand matcher, linear
+(memoised forward scans), checked against V8. The patterns the TS builds from document values are
+templates with the values as **literals** (TS metacharacter / `SyntaxError` behaviour accepted by name):
+- `TagPattern { names, name_boundary, attr, attr_boundary, values, tail: SelfClose | SelfCloseOrElement }`
+  = `<NAME\b[^>]*ATTR="(?:v1|…)"<tail>`: `dropCommentMarks` (both regexes; the run one is
+  `comment_reference_runs`), `patchComments` (commentsIds / commentsExtended / commentsExtensible), and for
+  W4/W5 `page-background.ts:189/228`, `hf-ops.ts:71`. A value holding `"` or `>` never matches (in the TS it
+  could match across the tag's `>`; only a `durableId` can hold `>`) — accepted by name (W-D6).
+- `field_code_groups` = `fieldCodeXml`'s `^lit([\s\S]*?)…lit$`: the lexicographically smallest group lengths
+  (what backtracking returns first) by one right-to-left feasibility pass and one left-to-right greedy pass,
+  O(k·n); past a 64 MiB work budget the cached results are dropped as when the flat instruction does not fit
+  (W-D7; V8 is O(n^k) there).
+- `find_literal_ci` = `new RegExp(literal, 'i')` without `u` (uo-text `regexp_canonicalize`, KMP).
+- `element_matches` / `remove_elements_lazy` = `<NAME\b[^>]*?(?:\/>|>[\s\S]*?<\/NAME>)` (settings, notes).
+- static sites: `has_xmlns`, `has_prefixed_attr`, `max_w_id`, `free_num_ids`, `grid_of`, `rel_id_of`,
+  `is_word_rels_path`, `is_empty_element`, `strip_pg_num_attrs`, `replace_txbx_contents`,
+  `count_txbx_contents`, `comment_elements`, `para_ids`, `durable_id`, `merge_numbering`, `with_namespaces`,
+  `ensure_revision_namespaces`, `track_revisions_on`.
+- `String.prototype.replace` with a string replacement is a template (`$&`, `` $` ``, `$'`, `$$`):
+  `parts::js_replace_first` / `replace_last_close` (a `$` in a header path or a comment's text does what
+  it does in the TS); a function replacement is literal (`insert_before_first`). `slice(…, -1)` on a text
+  without `>` cuts a final non-BMP character between its surrogates in the TS, which then encode as two
+  U+FFFD: `parts::split_last_unit` gives exactly those bytes.
+
+**The session-free entry (`write::roundtrip`).** D1b parity cannot wait for D2a's `installFullDoc` and
+`saveDocxBody`, so it uses docx-core's own lossless harness (`test/lossless.test.ts` `open` + `save`), the
+docx-core-level contract of the writer: `install(doc, mode)` = `markSectionBreaks` (ported here: it is the
+session's in A5, and this is its only use until D2a) + `SaveState::install` (the baseline); `save(pkg, doc,
+state, DirtyHf::{None, All})` = the harness's `hfParts` (unique by path, slots that hold a part), the last
+section's references on the body, the comments, the blocks, the sources → `write_document`. The editor's own
+install (`syncRunRPr`, the DATE text, note-run marks, `syncSections`, the settle step) and save (notes,
+settings, styles, numbering store, background, even/odd headers) are D2a's; their parity is the D2 harness's
+(edit scripts, U6 count).
+
+**Parity strategy.** (1) **Round trip** — `js/capture-write-roundtrip.mjs` → `tests/parity_write_roundtrip.rs`:
+the harness over the 2,753 corpus docx and the 400 + 352 synthetic packages of R6/R5, variants `none`,
+`all` (lossless, headers/footers clean or dirty) and `gen` (read without sources, every part generated:
+the gate of the emitter frontiers); per record the part order, which parts differ from the input and the
+short SHA-256 of each changed part, decompressed. A Rust save that stops at an emitter stub is skipped and
+counted, never accepted. (2) **Surgery** — `js/capture-lossless.mjs` → `tests/parity_lossless.rs`:
+`patchRPr`/`patchPPr`/`patchSectPr` over every distinct `w:rPr` (1,041), `w:pPr` (1,500) and `w:sectPr` (163)
+of the corpus × 13/10/9 named prop mutations. (3) **Regex** — `js/regex-sites/d1b-core.mjs` →
+`tests/regex_d1b_core.rs`. (4) Later, D2's edit scripts compare the saved bytes after every checkpoint.
+
+**Limits.** Every raw parse of the writer (`splitElement`, settings/theme, the notes part, `partByRelType`) is
+bounded by the package limits (`Limits::bounded`, uo-opc S1); recursion follows the model's nesting
+(bounded at 64 by the reader, G20; `patchRPr`/`patchPPr`'s rejected-change recursion is a loop); every
+matcher is linear (memoised scans; `field_code_groups` budgeted).
+
+### What exists (Opus)
+
+| File | Content |
+|---|---|
+| `write/ctx.rs` | `WriteCtx`, `Writer`, `Lossless`, `SaveState`, `GenNumIds`/`DEFAULT_NUM_IDS`, `MediaOut`, `DEFAULT_SHAPE_THEME` |
+| `write/sig.rs` | `sig_hash`/`sig_hash_units` (cyrb53), `SigMode`, `sig_text`, `run_sig`/`props_sig`/`table_sig`, `ParaSig`, `Baseline::take` (iterative over every story), `for_each_node`, `Pristine` (memo + W-S1), `block_src` |
+| `write/lossless.rs` | lossless.ts complete: `RPR_ORDER`/`PPR_ORDER`/`SECT_ORDER`/`W14_RPR`, `split`, `attrs_with` + `AttrChanges` (JS object order), `rpr_from_props`, `cleared_rpr`/`cleared_ppr`, `patch_rpr`, `ppr_from_props`, `patch_ppr` (`SectArg`), `cols_xml`, `pg_num_type_xml`, `ln_num_type_xml`, `patch_sect_pr`, `wrap_in`/`inner_of`, `HfRefXml` |
+| `write/story.rs` | serialize.ts core: `groups_xml`, `story_blocks_xml`, `story_pristine`, `count_copies`, `blocks_xml`, `para_xml` (+ generated path), `runs_lossless`, `para_sect_pr`, `section_break_xml`, `rpr_xml`, `table_xml`/rows/cells/`wrapped_xml`, `txbx_inner`, `drawing_with_paras`, `object_xml`, `note_xml` |
+| `write/parts.rs` | `write_document` / `write_parts`, `patch_comments`, `write_notes_part`, `serialize_blocks`, `serialize_hf_part`, numbering (`numbering_xml`, `merge_numbering`, `write_numbering_part`), `with_namespaces`, `rev_root`, `media_rel_id`, `link_rel_id`, the media flush, `part_by_rel_type` (D6), the replace helpers |
+| `write/rev.rs` | rev-xml.ts complete: `RevState` (`begin`, `attrs`, `mark_xml`, `wrap`, `take_used_date_utc`), `ensure_revision_namespaces`, `track_revisions_on`, `write_track_revisions` |
+| `write/matchers.rs` | the regex sites above |
+| `write/js.rs` | `num_str`, `strict_ne`, `or_num`, `rel_num`, `truthy`, `same_json`, escapes |
+| `write/roundtrip.rs` | `mark_section_breaks`, `install`, `save`, `DirtyHf` |
+| `write/emit/*` | the frontier files with stubs and the pieces the core needs now: `comment_marks`, `sect_pr_inner` (W1), `once_shape`, `Geometry` (W2), `border_xml`, `pg_borders_xml`, `grid_xml` (W3), `note_props_inner/xml`, `same_note_props`, `empty_notes_part` (W4), `HF_NS` (W4b), the empty case of `text_effects_xml` (W6) |
+| shared, additive | `DocxError::Write`; `JsonWriter::for_signature`/`is_signature`/`sorted_keys` + `SigEncoding`; the sorted branch of `object_json`/`object_json_with`; the signature branch of `Cell` and `DrawingTextbox` JSON |
+| tests | `parity_write_roundtrip.rs`, `parity_lossless.rs`, `regex_d1b_core.rs`, `memory_d1b_writer.rs`, `nopanic_d1b_writer.rs`, unit tests in `matchers.rs`/`sig.rs`; scripts `js/capture-write-roundtrip.mjs`, `js/capture-lossless.mjs`, `js/regex-sites/d1b-core.mjs` |
+
+### Results (Node 24.15 x64, frozen TS from `UO_TS_ROOT`; R5 landed during this session, so the round trip runs on the real reader)
+
+- **Round trip** (`none`, `all`): corpus 5,506 records, 11,012 facets equal — the TS no-edit save gives every
+  part byte-identical to the input for every corpus document, and so does Rust; synthetic (R6/R5 packages,
+  `nest-*` deeper than 16 out of the capture, W-S2) 1,482 records, **7,731 facets equal, 30 accepted (D6:
+  the five `rel-*` inputs, where uo-opc finds the header the TS `word/${target}` rule misses, so Rust keeps
+  it and adds its content type), 0 mismatches**; 0 records stopped at a stub. The synthetic records do write
+  (1,288 of them change parts in the TS: body `w:sectPr` surgery, the generated `w:sectPr` of a body without
+  one, missing content types and relationships, `withNamespaces`, header references the reader dropped,
+  comments): every one equal. Parity rounds: 0 (the replay was clean on its first complete run; the only
+  fixes were the capture's own error-class encoding and the D6 acceptance). `gen` (3,494 records): 4 equal,
+  3,490 stopped at a stub and skipped (`revisionRuns` 3,167, `paraXmlInner` 197, `legacyOrTypedTblPr` 126):
+  the frontiers' gate.
+- **Surgery**: 30,000 results (1,041 rPr × 13, 1,500 pPr × 10, 163 sectPr × 9) **equal on the first run**.
+- **Regex**: 30 sites × 493 inputs = **14,790 results equal to V8** (5 of them, a numbering text without its
+  closing tag that ends in an emoji, equal only after W-D8's U+FFFD rule — byte-exact to what the TS saves).
+- **M1** (`memory_d1b_writer.rs`): 92 round trips over corpus documents (both variants), the reader-error
+  path, the emitter-stub path, the matchers and the baseline in both modes: 0 B left each.
+- **M3**: the save step of the five documents with the most body XML (`sw-*`, 124–188 KB): allocated
+  1.8–2.3 × the XML written (budget ≤ 3 × + 64 KiB, asserted), peak 1.4 ×; the install (baseline of 665
+  paragraphs) allocates 2.2 MB and keeps 66 KB. Before the fixes found by M3 (W-S1, the story buffer sized
+  from the raw groups and the part built in place, the revision-id scan without copies) the same save
+  allocated 20 ×.
+- **Work**: `nopanic_d1b_writer.rs`: 1,500 corpus documents with mutated parts (document, header, footer,
+  settings, numbering, comments, content types, relationships, theme), random signature mode and variant:
+  695 saved and reopened, 805 refused by the reader or the writer, no panic; eight 2–3.5 MB hostile texts
+  through every core matcher and a 2,000-group field code: each under a second (the first version of three
+  matchers was quadratic on texts without `>`/closing tags — fixed with memoised scans before this record).
+
+### Decisions outside the TS semantics (for the milestone-2 gate)
+
+| # | Decision | Why |
+|---|---|---|
+| W-D1 | `SigMode::Canonical` default (G23), `SigMode::Ts` for the harness; `sameJson` of lossless.ts in the same mode | G23 approved; the TS order-dependence only matters after edits (D2's U6 count decides) |
+| W-D2 | W-S1 (`Arc` fast path; the installed node kept) | A1.3; M3 (20 × → 2 ×) |
+| W-D3 | W-S2 (one view per cell/textbox in signature texts) | the TS text is exponential in nesting (a hang at depth 31); same verdict on synced content |
+| W-D4 | Media dedupe by full bytes | G24 |
+| W-D5 | Dynamic patterns with values as literals | G9 |
+| W-D6 | `TagPattern` values holding `"` or `>` never match | linear matcher; only a hostile `durableId` differs |
+| W-D7 | `field_code_groups` budget 64 MiB scanned (k·n) | U7 |
+| W-D8 | `slice(…, -1)` over a final non-BMP character: two U+FFFD | the TS bytes exactly (lone surrogates through `TextEncoder`) |
+| W-D9 | `freshId` per document (`SaveState`), `shapeTheme` per save | G7: the TS carries both across documents in the process |
+| W-D10 | A part is set only when its text changed | same decompressed bytes; keeps the raw copy of unchanged entries (uo-opc D5) |
+| W-D11 | `partByRelType`, relationship targets: uo-opc D6 | "Relationship targets: D6 only" |
+| W-D12 | `MEDIA_MIME` own keys only (`constructor` is not a type) | the TS reads `Object.prototype` there |
+| W-D13 | The `rel-*` D6 records accepted by name in the round trip | consequence of W-D11 (5 inputs, 30 facets) |
+| W-D14 | Emitter stubs return `DocxError::Write("emitter Wn …")` | never a silent wrong string; the replay counts them |
+
+### Emitter frontiers (briefs for the orchestrator; Sonnet, hybrid mode)
+
+**Common to every frontier.** Worktree `rust-core`, no commit/push/stash, LF only,
+`CARGO_TARGET_DIR=core/target/d1b-<wN>`. Edit only your `src/write/emit/<file>.rs` (already declared; replace
+the stub bodies, keep the signatures — a needed signature change is a stop for the Opus owner of the core),
+your tests (`tests/<facet>_<wN>.rs`, `tests/regex_<wN>.rs`, `tests/memory_<wN>.rs`, `tests/nopanic_<wN>.rs`),
+your scripts (`js/capture-<facet>.mjs`, `js/regex-sites/<wN>.mjs`) and your declaration file
+`core/docs/modules/uo-docx-d1b/<WN>.md` (the nine kinds below). Port 1:1 from the TS (same order of
+evaluation — revision ids are numbered in call order, `RevState::attrs` must run exactly where the template
+literal evaluates `revisionAttrs` —, same numbers through uo-jsnum, same escapes per site: `esc_text` = `& < >`,
+`esc_attr` = `& < > "`, and unescaped where the TS does not escape). Use the core's API: `Writer::{rpr_xml,
+para_xml, block_xml, blocks_xml, table_xml, txbx_inner, drawing_with_paras, object_xml, link_rel_id,
+media_rel_id, src_text, active, store}`, `w.cx.{rev, limits, mode, media_out, drawing_id, shape_theme,
+chain_next, vml_spid, vml_only, emitted_shapes}`, `*w.fresh_id`, `lossless::{split, attrs_with, AttrChanges,
+wrap_in, inner_of}`, `uo_opc::xml::raw::set_kid`, `write::js::*`, `write::matchers::*` (and its templates for
+your dynamic regexes), `parts::{js_replace_first, insert_before_first, replace_last_close, part_by_rel_type,
+split_last_unit}`. Text from the model: `Utf16::to_string_lossy` (U+FFFD for lone surrogates = `TextEncoder`).
+No panic on any model or package; float → int only through `uo_jsnum::conv`. Done = `rustfmt --check` on
+your files; `cargo clippy -p uo-docx --all-targets --all-features -- -D warnings` (and `--lib --target
+wasm32-unknown-unknown`); `tests/grep-bans.sh`, the float-cast check; `cargo test -p uo-docx --all-features`
+green with your facet at 0 mismatches (acceptances only by name in this record) and **the round trip with no
+new skips** (`cargo test --release -p uo-docx --all-features --test parity_write_roundtrip -- --nocapture`
+prints the stubs still hit: your frontier's must be gone from the `gen` variant); an M1 test per public
+function incl. error paths.
+
+**The nine declarations** (one table per kind, each row with the TS file:line): (1) numeric parse/format
+sites and the uo-jsnum function; (2) regex sites and their matcher (dynamic ones through a core template,
+named); (3) template-literal values printed without escaping; (4) object/Map orders relied on (JSON keys,
+`Object.entries`); (5) recursions and their bound; (6) module state and where it lives in `WriteCtx`;
+(7) `throw` sites → `DocxError::Write`; (8) evaluation order around `revisionAttrs`/`mediaRelId`/
+`linkRelId` (side effects on ids and on the package); (9) any deviation (Opus check first).
+
+| Frontier | File | TS source (functions) | Parity facet (besides the round trip) | Order |
+|---|---|---|---|---|
+| **W1** runs, fields, generated paragraphs | `emit/run.rs` | serialize.ts: `textXml`, `fldCharXml`, `markXml`, `runXml` (custom inline `w:sdt`, notes refs, `ptab`, `sym`, math, `delText`), `fieldOrRunXml`, `nestedFieldXml`, `fieldCodeXml` (over `matchers::{code_parts, field_code_groups}`), `fieldResultXml`, `revKey`, `revisionRuns`, `formulaFieldXml`, `withNoProof`, `genRuns`, `paraXmlInner`, the custom-inline type check | `gen` variant of the round trip (body and headers generated); a function-level capture `js/capture-runs.mjs` over corpus runs read without sources (`runXml`/`fieldOrRunXml` reached through `serializeBlocks` of one-paragraph blocks) | first (the `gen` variant needs it everywhere) |
+| **W2** drawing objects | `emit/object.rs` | serialize.ts: `drawingXml`, `oleObjectXml`, `patchDrawingGeometry`, `pictureXml`, `shapeOut`, `docPrName`, `beginShapeContext` (+ fulldoc `forEachTextbox` order), `shapeColor` (uo-jsnum math), `editedShapeXml`, `fillMedia`, `editedGroupXml`, `freshDrawingIds`; shape-xml.ts (all: read half `readShapeFormat` too) | `gen` variant on the drawing-heavy oracle docs; `js/capture-shape-xml.mjs` (`patchShape`, `vmlFallback`, `textboxAlternateContent` over every `wps:wsp` of the corpus × named changes) | with W1 |
+| **W3** table props | `emit/table.rs` | table-xml.ts (all), serialize.ts legacy `tblPrXml`, `legacyOrTypedTblPr`, `tcPrXml`, `borderXml`, `borderSetXml`, `TBL_SIDES`/`CELL_SIDES` | `gen` variant on tables; `js/capture-table-xml.mjs` (`patch*`/`*Xml` over every `tblPr`/`tblPrEx`/`trPr`/`tcPr` of the corpus × named changes, as `capture-lossless.mjs`) | with W1 |
+| **W4** notes (+ W4b settings, header/footer parts) | `emit/notes.rs`, `emit/settings.rs` | notes.ts (`ensureNoteParts`, `patchSettingsNotes`, `NOTE_STYLES`, `noteMarkField`, `noteRefRun`, `newNoteParagraphs`), settings-xml.ts (all), hf-ops.ts (`hfPartXml`, `copyHfPartXml`, `dropUnusedHfParts`, `pageNumberGroupIds`) | `js/capture-settings-xml.mjs` (each function over the corpus settings/rels/content types × seeded arguments; `ensureNoteParts` on packages without notes) | after W1 |
+| **W5** page background and watermark | `emit/background.rs` | page-background.ts write half (`vmlColorAttr`, `pageBackgroundXml`, `writePageBackground`, `WORD_PATTERNS`, `patternGif` + `lzwEncode`, `oneColorGradientColor2`, `resolveColor2`), watermark.ts write half (`watermarkRunXml`, `autoTextBox`, `explicitTextBox`, `pictureBox`, galleries) | `js/capture-page-background.mjs` (every background read by R3 written back, seeded fills; GIF bytes compared) | any time |
+| **W6** DrawingML write halves | `emit/fx.rs` | text-effects.ts write half (`fxColorXml`, `fillXml`, `textEffectsXml`), picture-xml.ts write half (all `*Xml`, `patch*`, `newPictureXml`, `DEFAULT_WRAP_POLYGON`, the line-45 dynamic regex through `TagPattern`-like literal matching) | `js/capture-picture-xml.mjs` (`patchPicture` over every picture of the corpus × named `PictureChange`s; `textEffectsXml` over every `textFx`/`openType` R1 reads) | any time |
+
+W1–W3 unblock the `gen` variant and every edited paragraph/table (the D2 harness); W4–W6 are called by D2
+commands, not by `write_document`.
+
+### Not done
+
+- Edit-driven parity (needs D2a/D2b ops; the U6 order-tag count runs there); the `gen` variant is captured
+  and waits for W1–W3.
+- The emitters W1–W6 (stubs).
+- M2 soak of the save (1,000 × open → read → save → reopen: the memory-verifier's, now that R5 exists).
+- `write_font_embedding` is `write::fonts` (done earlier); the editor's `saveDocxWithFonts` orchestration is
+  D2a's.
+- CHANGELOG lines (with the switch).
+
+## D4 — .doc (frontier briefs)
+
+*(Opus brief, 2026-11-03, written with the `odraw` port; the D4 port itself is Sonnet, hybrid mode.)*
+Scope: the rest of `write/packages/docx-core/src/doc/**` (frozen `main`) after what already moved:
+`cfb.ts` → `uo_opc::cfb` (done), `officeart.ts` + the record half of `bytes.ts` + `loadDrawings` of
+`reader.ts` + `preset-map.ts` → `uo_drawingml::odraw` (done, feature `legacy`; record in
+uo-drawingml.md, "odraw — OfficeArt"). Output: `uo_docx::doc::convert_doc_to_docx(bytes, &DocLimits)
+-> Result<Vec<u8>, DocError>` (feature `doc`, which enables `uo-drawingml/legacy`), then the normal
+D1a reader opens the docx. C# `DocBinary/*` (7,030 lines) is the type guide only.
+
+### Frontiers, files and order
+
+Non-blank lines of the TS; Rust files under `crates/uo-docx/src/doc/`.
+
+| Frontier | TS | Lines | Rust | Needs |
+|---|---|---|---|---|
+| **F0** foundation (first, small) | `index.ts`, `bytes.ts` (the `ByteReader` half: `u8/i8/u16/i16/u32/i32/sub/utf16`), `xmlw.ts`, `DocFormatError` of `fib.ts` | 45 + 50 + 78 | `mod.rs` (`is_word_binary`, `convert_doc_to_docx`, `DocError`, `DocLimits`), `bytes.rs`, `xmlw.rs` | uo-opc `cfb`, `zip` |
+| **F1** reader core | `fib.ts`, `text.ts`, `fkp.ts`, `sprm.ts`, `fonts.ts` | 107 + 115 + 144 + 66 + 75 | `fib.rs`, `text.rs`, `fkp.rs`, `sprm.rs`, `fonts.rs` | F0 |
+| **F2** properties | `props.ts` (`Chp`/`Pap`/`Tap`/`Sep`, the "marked" keys, `applyChp/Pap/Tap/Sep`) | 771 | `props.rs` | F1 (`sprm`) |
+| **F3** styles and lists | `stsh.ts` (`readStsh`, `StyleResolver`), `lists.ts` | 218 + 146 | `stsh.rs`, `lists.rs` | F2 |
+| **F4** reader assembly | `reader.ts` (`DocReader` minus `loadDrawings`), `pictures.ts` (PICF, `picFxOf`, `shapeBlip`, `blipAt`), `formfields.ts` | 431 + 130 + 93 | `reader.rs`, `pictures.rs`, `formfields.rs` | F1–F3, `odraw` |
+| **F5** OOXML part emitters | `ooxml-props.ts`, `styles-xml.ts`, `numbering.ts`, `settings.ts` | 323 + 190 + 77 + 263 | `ooxml_props.rs`, `styles_xml.rs`, `numbering.rs`, `settings.rs` | F2, F3 (parallel to F4) |
+| **F6a** body writer | `docx-writer.ts`: build/package, stories, paragraphs and runs, fields and form fields, tables (`renderBlocks`), sections, notes, comments, headers/footers, bookmarks | ≈ 1,000 | `docx_writer/{mod,body,fields,tables,stories}.rs` | F4, F5 |
+| **F6b** drawing writer | `docx-writer.ts`: anchors (`Fspa`), `wsp`/`wpg`/`pic`, `oaFillXml`, `oaColor`, line/arrow/dash, `wordArtXml`, `backgroundXml`, `xfrmXml`, media (`mediaTarget`) | ≈ 500 | `docx_writer/drawing.rs`, `docx_writer/media.rs` | F6a skeleton, `odraw` |
+
+Order: F0 → F1 → F2 → F3 → (F4 ∥ F5) → F6a → F6b (F6b can start once F6a's `StoryCtx`/rels/`out`
+types compile). Each frontier compiles with clippy clean (native and wasm32) before its facet runs.
+
+### What `odraw` gives D4 (use it, do not re-port)
+
+- `DocReader.loadDrawings` → `odraw::read_word_drawings(table, fc, lcb, &OdrawLimits::WORD)` (after
+  D4's own `lcb`/range check is the same; `read_word_drawings` repeats it); `shape(spid, hdr)`,
+  `backgroundShape()`, `bse(pib)`, `masters.has(spid)` are methods/fields of `WordDrawings`.
+- `decodeBlip(rec, r.blipBudget)` → `odraw::decode_blip(&rec, &mut budget, Flavor::Word, &limits)`
+  with **one** `BlipBudget::document()` per conversion, shared by `shapeBlip`, `blipAt` and the PICF
+  pictures in the TS call order (the order changes which picture the budget refuses).
+- `readSpContainer`/`readFbse`/`recsIn`/`readRec` (PICF in `pictures.ts`) → `odraw::read_sp_container(..,
+  Flavor::Word)`, `read_fbse`, `recs_in`, `read_rec`; `OA.*` → `odraw::rt::*`; `FSP.*` → `odraw::fsp::*`.
+- `shape.props.get(id)?.value` / `.complex` → `PropTable::value(id)` / `get_complex(id)` (the 0x197
+  dash array, 0x145/0x146 vertices, 0x380 names).
+- `presetFor(type, adjust, box.cx || 1, box.cy || 1)` → `msospt::preset_for(.., PresetVariant::WordSlides)`
+  with the caller's `|| 1` kept; the adjust loop (`pv(0x147 + i) | 0`) is `msospt::raw_adjust`.
+- Blip bytes are `Cow` borrowed from the streams: media go into the zip without a copy.
+
+### Parity (Node 24.15 x64, frozen TS from `UO_TS_ROOT`)
+
+- **Capture** (F0 writes it with the harness, each frontier adds its facet):
+  `UO_TS_ROOT=<frozen checkout> node core/crates/uo-docx/js/capture-doc.mjs` → `tests/parity/doc.capture`.
+  Per input `.doc`: (1) `convertDocToDocx(bytes)` unzipped: the part list in zip order and each part's
+  decompressed bytes as `len:SHA-256` (`parts`), or the error class (`error`: which `DocFormatError`
+  branch — encrypted, pre-Word-97, not CFB, missing stream, corrupt); (2) the model of the result:
+  `readFullDocument(DocxPackage.load(docx))` through `js/canon.mjs` `document` (`model`, the A6
+  digest), so a part difference that the reader does not see is told apart from one it does;
+  (3) per-frontier `DocReader` facets, digests of the canonical stream: `fib` (the FIB fields and every
+  `fcLcb` pair), `text` (pieces, `decodeText` as UTF-16 code units), `fkp` (CHPX/PAPX runs and their
+  grpprls), `props` (`applyChp/Pap/Tap/Sep` results per run/paragraph, marked keys in insertion
+  order), `stsh`, `lists`, `reader` (sections, notes, comments, bookmarks, FSPAs, textboxes, form
+  fields, PICF infos), and for F5 each emitted part's text (`styles.xml`, `numbering.xml`,
+  `settings.xml`) before the body writer exists.
+- **Replay**: `cargo test --release -p uo-docx --features doc,canon --test parity_doc` (CI corpus);
+  the local corpus under `UO_DOC_CORPUS=<dir> cargo test … --test parity_doc_local` (opt-in, hashes
+  committed).
+- **Zip bytes are not compared** (fflate `zipSync` level 6 vs uo-opc's writer); parts are, exactly.
+- **Corpus**: the 11 repo fixtures (`write/packages/docx-core/test/fixtures/doc`, CI; their twins
+  `*.word.docx` are Word's own conversion, a reference for reports only, not parity); **the U15/G18
+  gap**: the repository's Word COM tool `write/tools/doc-lab/gen-fixtures.ps1` (`SaveAs2` format 0)
+  can turn the 2,742 oracle docx into Word-written `.doc` files — run by the maintainer on a machine
+  with Word, never by an agent; the generator invocation and the SHA-256 list are committed
+  (`tests/parity/doc-corpus.sha256`), the files stay local (G18); plus generated mutations of the
+  fixtures recorded as edits (as `odraw.capture` does: `edits=pos:val`, cuts) aimed at the CFB
+  directory, the FIB `fcLcb` table, the piece table (odd compressed `fc`, overlapping and reversed CPs),
+  FKP pages (`crun`, offsets), grpprls (truncated sprms, unknown opcodes, `sprmPHugePapx`), STSH and
+  LST/LFO counts, PLC counts larger than their stream.
+- **Memory**: M1 convert each fixture and each error class; M2 1,000 × convert the fixtures, flat at
+  0 B; M3 allocated ≤ k × input recorded per fixture and per limit (`odraw` alone: ≤ 30 × the
+  OfficeArt content).
+- **Fuzz**: `doc_convert` (whole `.doc` bytes, small `DocLimits`; seeds: the fixtures, their mutations,
+  `odraw_seeds` for the drawing part); `odraw_records` already runs.
+
+### What each frontier declares (in this record, "Stage 3 — D4", one block per frontier)
+
+As A7's nine items, with the `.doc`-specific cases named:
+
+1. **Numbers**: every `parseInt`/`Number`/`Math.round` (`docx-writer.ts` ×22 hot spots, e.g.
+   `parseInt(c1, 16)` at 1414) and the uo-jsnum function used; every `x | 0` / `x >>> 0` /
+   `(x << 16) >> 16` as an explicit wrap; **fractional offsets**: `text.ts` stores
+   `fc: compressed ? fcVal / 2 : fcVal`, so an odd `fcVal` gives a fractional `fc` and `r.u8(fc + i)`
+   reads `bytes[1.5]` = `undefined`, which `compressedChar` passes on and `String.fromCharCode` turns
+   into U+0000 — capture it, do not round it away.
+2. **Text**: everything is UTF-16 code units (`String.fromCharCode` per CP in `decodeText`,
+   `docx-writer.ts` 653–701, `fonts.ts`, `formfields.ts`); keep `Vec<u16>` until `xmlw` escapes, which
+   drops lone surrogates and C0/`FFFE`/`FFFF` (`stripInvalid`); the 8-bit pieces map through
+   `compressedChar` (the cp1252 table of `text.ts`); `toUpperCase` in `styles-xml.ts` through
+   `uo_jsnum::text`.
+3. **Regex sites** (spec-table rows, hand matchers, linear): `/^\s*FORM(TEXT|CHECKBOX|DROPDOWN)\b/i`,
+   `/^\s*SHAPE\b/i`, the field-argument `re.exec` loop at `docx-writer.ts:1229`, `/^\s|\s$/` (space
+   preserve), `styles-xml.ts` `split(/\s+/)` and `replace(/[^A-Za-z0-9-]/g, '')`, `fonts.ts` alt-name
+   test; JS `\s` (Unicode space set) is not ASCII space.
+4. **Iteration order**: `attrs()` emits `Object.entries` order (insertion, integer-like keys first —
+   check every attribute object built with numeric keys); the marked-key sets of `props.ts` decide
+   which properties are written and in which order; `Map` orders of rels/media/styles.
+5. **Recursion**: `renderBlocks` recurses on the table depth (`itap`, a `u16` from the file), field
+   nesting, groups (bounded in `odraw`); each made iterative or bounded by `DocLimits` with the
+   outcome past the bound named.
+6. **State**: `DocxWriter` instance counters (`docPrId`, ids, rels, media keys) are per conversion;
+   no process-global state.
+7. **`try/catch`**: `convertDocToDocx` turns any throw into `DocFormatError` ("corrupt or not
+   supported"); every internal catch with the partial result kept.
+8. **Bounds and budgets**: every offset `u64`, every count checked against its stream length before
+   allocating (PLCs, FKP `crun`, STSH `cstd`, LST/LFO, SttbF), a work budget per input (CP × runs,
+   pieces), `DocLimits` with the C# `DocBinary` caps where they exist; media deduplicated by full bytes
+   (G24, not `ext:length:FNV` of samples: accepted by name, with the U8 quirk pair in the corpus).
+9. **Errors**: `DocError` variants mirror the 14 `DocFormatError` throw sites by class; messages in
+   English (parity compares the class, never the Portuguese text — a CHANGELOG line for the hosts that
+   showed it).
+
+Plus, for F6: the docx part names, order and the `[Content_Types].xml`/rels emission order exactly
+as the TS (they are compared as parts), and `ConvertOptions.docProps` (default true).
+
+## Stage 3 — D4 (.doc converter): declarations per frontier
+
+Sonnet port, hybrid mode, the frontiers F0 → F1 → F2 → F3 → F5 of the brief above (F4 and F6 are the next
+agents'). Rust files in `core/crates/uo-docx/src/doc/` (feature `doc`, which turns on `uo-drawingml/legacy`);
+capture `js/capture-doc.mjs` → `tests/parity/doc.capture`, replay `tests/parity_doc.rs` (one test, every
+facet that exists, `Report::assert_clean`); `tests/memory_doc.rs`, `tests/nopanic_doc.rs`; shared test
+corpus `tests/doc_support/mod.rs`; fuzz target `doc_convert` (`fuzz/src/doc.rs`). TS paths are in
+`write/packages/docx-core/src/doc/`.
+
+### Corpus and harness (all frontiers)
+
+`doc.capture`: the 11 fixtures (`doc/<name>`), **1,644 generated mutations** (`mut/<name>/<tag>-<k>`: `edits=pos:val,...`
+on the file bytes and `cut=len`, aimed by walking the CFB sectors of the fixture at: the CFB header, directory and
+FAT; the FIB counters, flags, `nFib`, the fc/lcb pairs and the `ccp` counts; the Clx (odd compressed `fc`,
+reversed and overlapping CPs, `lcbPcdt`, markers); FKP pages (`crun`, offsets, page numbers); grpprl sprm bytes
+(unknown opcodes, `sprmTDefTable`, `sprmPChgTabs`, `sprmPHugePapx`); the STSH (`cbStshi`, `cstd`, `cbStd`, name
+`cch`); `PlfLst`/`PlfLfo` counts; PLC sizes; random noise; cuts) and generated inputs: **2,500 grpprls** (`gen/grpprl/<k>`,
+sprms drawn from every opcode `props.ts` handles plus random ones, truncated ones, long and short `PChgTabs`,
+`TDefTable` with right and wrong sizes, table rows, `sprmCMajority`), **700 style sheets**, **700 list tables** and **800 DOPs**
+(see F3 and F5). The capture is 7.7 MB (the generated tables are stored as hex). Per input the facets `input` (`len:sha16` of the rebuilt file),
+`isword`, `rd` (the class of the `new DocReader(bytes)` failure or `ok`), `convert`, `parts`, `model` (F6, captured
+now, replayed when F6 lands) and the digests of each frontier. **Run twice: byte-identical.**
+The TS runs in a worker with a 1.5 GB heap: V8 aborts the process on out-of-memory, and a worker dies alone; an
+input that exhausts it (1 of 1,645 so far: a mutation that makes the TS writer loop on a huge count) is left out and
+counted in the capture metadata (`left-out-ts-memory`). The mutation generator keeps the `ccp` counts at or below
+10^6 for the same reason (`decodeText` builds `totalCp` characters).
+
+### F0 — foundation (`bytes.rs`, `xmlw.rs`, `mod.rs`)
+
+1. **Numbers.** `ByteReader` takes `u64` offsets (a `usize` wraps on wasm32) and reads zero past the end, as the
+   TS. The one fractional offset of the format, `fc / 2` of an odd compressed piece (`text.ts`), reads
+   `bytes[1.5]` = `undefined` in the TS: `ByteReader::at_f64` is `uo_jsnum::conv::js_index` (the typed-array
+   index rule), and the callers decide what undefined becomes (item 1 of F1). No `parseInt`/`Math.round` in F0.
+   `String(v)` of a number attribute: `AttrVal::Int` is `i64::to_string` (every number of the `.doc` writer is
+   integer-valued; `i64` is exact where the TS number is, below 2^53), `AttrVal::Num` is
+   `uo_jsnum::format::to_js_string`. No float → integer `as` cast (`float-casts.sh`, run by hand with `doc` on).
+2. **Text.** UTF-16 code units end to end: `ByteReader::utf16` returns `Vec<u16>` (a lone surrogate stays), the
+   model of the strings is `crate::text::Utf16`; `esc_text_units`/`esc_attr_units` drop what `stripInvalid` drops
+   (C0 but TAB/LF/CR, U+FFFE, U+FFFF, lone surrogates) before escaping `& < > "` in that order, so the result is
+   valid UTF-8; `esc_text`/`esc_attr` are the same over `&str` for the writer's own constants.
+3. **Regex sites.** None in F0 (`stripInvalid` is a loop in the TS).
+4. **Iteration order.** `Attrs` is a vector of `(name, Option<value>)` in insertion order; `set` of an existing
+   key keeps its first position (JS object semantics), `None` is `undefined` (not written), `Bool(true)` is `"1"`,
+   `Bool(false)` is not written, `Str("")` is written (`=""`). JavaScript moves integer-like keys first; no
+   attribute name of the `.doc` writer is integer-like (all are `w:...`, `xmlns:...`), and F6 declares any that is.
+5. **Recursion.** None.
+6. **State.** None: `content_ns()` rebuilds its string per call, `ns::*` are constants.
+7. **`try/catch`.** `isWordBinary` (try/catch → false) is `read_cfb(..).is_ok_and(..)`; `convertDocToDocx`'s
+   catch-all ("corrupt or not supported") is `DocError::Corrupt`.
+8. **Bounds and budgets.** Reads are checked (`usize::try_from`, `checked_add`); `DocLimits` is defined with the
+   limits the frontiers need (`max_text_units` 2^28 native / 2^26 wasm32, `max_string_units`, `max_work`,
+   `string_units_per_byte`); a limit is a `DocError::Limit` value.
+9. **Errors.** `DocError` mirrors the 14 `DocFormatError` throw sites by class: `NotCfb` (index.ts:37), `Cfb` (reader.ts:110),
+   `Encrypted` (reader.ts:114, 135), `Obfuscated` (reader.ts:135, the `fObfuscated` variant), `NoWordDocument` (117),
+   `PreWord97` (125, 132), `FibTruncated` (fib.ts:65), `FibSignature` (68), `NoTableStream{one}` (140), `NoClx`
+   (text.ts:43), `NoPcdt` (54), `EmptyPieceTable` (58) and `Corrupt` (index.ts:43, the catch-all); plus `Limit`
+   (the Rust port's limits: a difference listed by name where the TS has none) and `NotYet`. `class()` gives the
+   names the capture uses (`classOf` of the script maps the Portuguese messages to them). Messages are English.
+   **Not done in F0:** `convert_doc_to_docx` answers `NotYet` for a Compound File (F4 + F6), `NotCfb` otherwise.
+
+Replay: `input`, `isword` on 1,655 inputs: equal.
+
+### F1 — reader core (`fib.rs`, `text.rs`, `fkp.rs`, `sprm.rs`, `fonts.rs`, and `open.rs`)
+
+`open.rs` is the head of `DocReader`'s constructor (`reader.ts` 106-142: the CFB, the encryption and pre-97
+checks in the TS order, the FIB, the table and `Data` streams): the replay of the `rd` facet needs it, and F4's
+`DocReader` borrows its `DocStreams`. `text::total_cp` is the constructor's `totalCp`.
+
+1. **Numbers.** `fc + lcb > table.length` in `u64`. `n = Math.floor((lcbPlc - 4) / 12)`, `readPlc`'s
+   `Math.floor((lcb - 4) / (4 + cbData))` and `Math.floor(lcb / 4) - 1`: `i64::div_euclid` (floor of a possibly
+   negative dividend). `pn & 0x3fffff` and `pn * 512` in `u64`. `Math.max(0, cb)` of an `i16`: `.max(0).unsigned_abs()`.
+   `(lo + hi) >> 1` in the binary searches (`i64`/`usize`, no overflow). **Fractional offsets (the brief's
+   item):** `Piece.fc` is an `f64` (`fcVal / 2` is exactly representable), `decode_text` reads a compressed piece with
+   an integer `fc` in place and one with a fractional `fc` as `bytes[x.5]`: undefined → U+0000, captured, not
+   rounded away (the `clx-fc` mutations with `fcRaw = 0x40000000 | (fc*2+1)` are in the corpus); `fc_of_cp`, `run_at`
+   and `run_index_from` take and compare `f64`. The FIB `ccp*` are `i32` (`r.i32`); the pairs are `u32`. No `x | 0`,
+   `>>> 0` or `(x << 16) >> 16` in F1; no float → integer `as` cast.
+2. **Text.** `decode_text` builds `Vec<u16>`: gaps `0x20`, the end `0x0D`, `compressedChar` (the cp1252 table of
+   0x80-0x9F; the five unmapped bytes stay as they are), `String.fromCharCode(...chunk)` and its 8,192 flush are not
+   observable and not ported. Font and alternative names are `Utf16`; an empty name is `Font{i}` (decimal `i`).
+3. **Regex sites.** One: the `fonts.ts` alt-name test, a class over code units (no `u` flag; `\udddd` is a lone
+   surrogate unit): `is_garbage_unit` (units 0-0x1F, 0xFDFD, 0xCDCD, 0xDDDD, 0xFFFD, 0xFFFF); linear.
+4. **Iteration order.** `sortRuns` is a stable sort by `fcStart` (V8's TimSort is stable): `sort_by_key` (stable);
+   pieces stay in table order (the table is not sorted, a corrupt one is binary-searched as is, as the TS);
+   FKP pages are visited in PLC order with a `seen` set (membership only).
+5. **Recursion.** None (the `prls` generator is an iterator; PLC and FKP walks are loops bounded by their stream).
+6. **State.** None: every function is pure over its streams (`readPlc` returns a per-call value).
+7. **`try/catch`.** None in these files. In `DocStreams::open` a Compound File chain cycle met while reading a stream
+   is a plain `Error` of the TS (not a `DocFormatError`, outside the constructor's `try`): `DocError::Corrupt`.
+8. **Bounds and budgets.** Every `fc + lcb` is checked against its stream before any read; `read_plc` allocates `n + 1`
+   `u32` with `n` bounded by `lcb` ≤ the stream. The piece loop stops at the end of the table: an entry whose first
+   CP is past it reads zeros (`cpEnd <= cpStart`, skipped), so the TS's walk of up to 357 million zero entries
+   (`lcbPcdt` up to 2^32) adds nothing (an exact equivalence, not a limit). `decode_text` counts the units it pushes
+   (overlapping pieces push again: a text longer than `totalCp`) and fails with `DocError::Limit{TextUnits}` past
+   `DocLimits::max_text_units`: the TS builds the string until V8's limit (2^29 - 24) and throws a RangeError (class
+   `corrupt`) or exhausts memory; **a listed difference on hostile input only**. FKP: pages visited once, `crun` ≤ 255,
+   so runs ≤ 255 × pages ≤ stream / 2; grpprls are borrowed slices (no copy); fonts ≤ `cData` ≤ 65,535 and each name is
+   bounded by its own record (`lim = min(o + cb, end)`). Measured (M3, `tests/memory_doc.rs`): the whole F1 pipeline
+   allocates 0.8-1.2 × the input on the 11 fixtures (peak 0.5-0.8 ×), asserted ≤ 3 ×; M1 0 B on every fixture and
+   every error class; M2 1,000 passes flat at 0 B.
+9. **Errors.** As F0: `open` and `read_piece_table` return the classes of item 9 of F0; the facet `rd` compares the
+   class on all 1,655 inputs (the corpus has 12 classes: ok 1,395, no-clx 61, cfb 53, no-pcdt 30, fib-signature 30,
+   no-table-stream 18, obfuscated 17, encrypted 15, empty-pieces 14, pre-word97 13, no-word-document 5,
+   fib-truncated 4).
+   **Data-shape deviations from the TS:** `Fib` keeps the 93 named pairs (`fc_lcb(i)` for `i` ≥ 93 is zeros, the TS
+   would read the file's real pair; no caller asks); `PieceTable.prcs` and `FcRun.grpprl` borrow the streams
+   (`'a`), so a `DocReader` in F4 borrows its `DocStreams`.
+
+Replay (facets `rd`, `fib`, `text`, `fkp`, `fonts`, `sprm`): **12,045 comparisons equal, 0 mismatches, 0 accepted**
+over 1,655 files and 1,500 grpprls.
+
+### F2 — properties (`props.rs`)
+
+`Chp` and `Pap` are structs of `Option` fields generated with their key enums (`ChpKey`, `PapKey`, 56 and 60 keys, in
+the order of the TS interfaces up to the capture's `chp-keys`/`pap-keys` metadata, which the replay compares) by one
+`macro_rules!`: `has`, `copy_key` (`chp[k] = style[k]`), `clear_key` (`delete chp[k]`), `same_json` and `field` (the
+digest). `Tc`, `Tap`, `Sep` are plain structs. `apply_chp(chp, &prl, &mut ChpCtx, &mut KeySet)`, `apply_pap(.., &mut
+PapCtx)`, `apply_tap`, `apply_sep`, `finish_tap`, `prune_none_borders`, `brc_none` and the readers (`brc80`, `brc_new`,
+`shd80`, `shd_new`, `color_ref`, `ico_color`, `lspd`, `default_chp`, `default_sep`) are the TS functions one to one;
+`ChpCtx` carries `base`, the `applyCharStyle` function (`&mut dyn FnMut(u16) -> Chp`) and `paraStyle`.
+
+1. **Numbers.** Every operand is a typed `ByteReader` read (`opU8` → `p.u8()`, `opI16` → `p.i16()`, …), kept in a
+   field of its own type (u8, u16, i16, i32, u32). Fields the sprms accumulate are wider: `hps` is `i32`
+   (`Math.max(2, (hps ?? 20) + i8 * 2)`: a `u16` plus at most 254 per sprm, below 2^31 for any grpprl), `dxaLeft` and
+   `itap` are `i64` (`(dxaLeft ?? 0) + i16`; `Math.max(0, (itap ?? 0) + i32)`), the table `centers` are `i64`
+   (`+= dxa`, `-= w`, `+= delta`), all exact where the TS number is (below 2^53; a grpprl cannot reach 2^37
+   sprms). `Math.min(9, Math.max(1, istd + d))` and the outline level `Math.min(9, Math.max(0, …))` are `clamp`s in
+   `i32` over an `i8` step. `colorRef`: `(v >>> 24) === 0xff` on a `u32`, `(r << 16) | (g << 8) | b` of three bytes
+   (24 bits, no wrap). `tbd & 7`, `(tbd >> 3) & 7`, `grf >> n & m` on `u8`/`u16`. `(i - first) % 2` in `usize`.
+   No `x | 0`, `>>> 0` (outside `colorRef`) or `(x << 16) >> 16`; no float → integer `as` cast.
+2. **Text.** None (no strings in `props.ts`).
+3. **Regex sites.** None.
+4. **Iteration order.** The touched sets are `KeySet`, an insertion-ordered set (a JS `Set`: `add` of a present key keeps
+   its place, `delete` then `add` moves it to the end); their order is in the digest (`chp`… facets). `tabsCleared` is
+   `[...Set]`: insertion order, no duplicates. The key order of the TS `Chp`/`Pap` objects is not observable (only
+   `Object.keys` in `setAll`, which deletes them all) and is not kept. `setAll`'s restore of the `PRESERVED` keys is dead
+   code in the TS (both call sites pass the target itself as `keep`, emptied first): `*chp = st.clone()`. `sprmCMajority`
+   compares `JSON.stringify(chp[k]) === JSON.stringify(probe[k])`: equal when both are absent or the values and the key
+   order of the objects are equal: `Option` equality, and a border read by `brcNew` (key order `color, width, …`) never
+   equals one read by `brc80` (`width, type, color, …`), so `Brc` carries `from_new`, an extra field that exists only for
+   this comparison (Shd and Symbol have one key order). The probe's own `dummy` set order does not matter (the keys are
+   independent).
+5. **Recursion.** `sprmCMajority` applies its embedded grpprl with an empty context, whose `paraStyle` is absent, so a
+   nested `sprmCMajority` returns at once: depth 1.
+6. **State.** None; `applyChp` and the others take every input as a parameter (`ChpCtx` is mutated by `sprmCIstd` and
+   `sprmCPlain`, as the TS).
+7. **`try/catch`.** None.
+8. **Bounds and budgets.** The structural sprms of a table row and the tab sprms cost time and memory the TS leaves
+   unbounded; three **listed differences on hostile input only**: `MAX_TABS` = 256 tab stops per paragraph (the filter
+   per added tab makes a grpprl of thousands of `sprmPChgTabs` quadratic; Word allows 64), `MAX_TAP_CELLS` = 4,096 cells
+   per row (Word: 63) and `MAX_TAP_WORK` = 2^24 elements visited by the structural sprms of one row (`sprmTInsert`,
+   `sprmTDelete`, `sprmTDxaCol`; a private `Tap.work_left`), past which those sprms are ignored. A real file never nears
+   them (the corpus, 1,655 files and 2,500 grpprls, never reaches them: 0 mismatches). `sprmTDefTable` has at most
+   255 cells and `shdArray` is bounded by its operand. Measured (`tests/memory_doc.rs`): M1 0 B on 400 generated grpprls
+   and on every run of the 11 fixtures (at most 52,856 B allocated for one grpprl); M2 1,000 passes flat at 0 B; M3 the
+   hostile grpprl of 10,000 × `sprmTInsert` of 255 cells allocates 917 KB (peak 459 KB) where the TS builds 2.55 million
+   cells, and 10,000 more `sprmTDxaCol` over the full row take 88 ms.
+9. **Errors.** None: every function is total (an operand past the end reads 0 as in the TS). **Data-shape deviations from
+   the TS:** `Brc.from_new` (item 4); `Tap.work_left` (item 8); `Pap.istd` is a plain `u16` (the TS interface has it
+   required); `Tap.shdRaw/shdDef/shd80` are `Vec<Shd>` (the TS type admits `undefined` entries, no producer writes
+   one); `Sep.colWidths/colSpacings` are `Vec<Option<i16>>` (JS array holes); `Tc.brcSet` and `mar` and `Tap.padding` are
+   arrays `[top, left, bottom, right]`; `tableGrpprl` is in `Pap` (the interface has it; no code of the TS sets or reads
+   it). The `Pap` spread `{ ...base.pap, … }` the writer uses is `Pap::clone` plus `clear_key`.
+
+Facets `chp` (no style context), `chp2` (a paragraph style, a character-style function and `sprmCPlain`/`sprmCMajority`),
+`pap`, `pap2`, `pap3` (three starting states: empty, `istd 3` with indents and tabs, `istd 12` with an outline level;
+each with the `onIstd` calls and `pruneNoneBorders`), `tap` (with `finishTap`), `sep`: every CHPX and PAPX grpprl of
+each file (all prls through every applier, which ignore the other classes), the `Sepx` of each `PlcfSed` entry
+through `applySep`, and 2,500 generated grpprls (a third are table rows: a `sprmTDefTable` then table sprms with small
+operands; a tenth a character grpprl ending in a `sprmCMajority` over values of the style; the rest random sprms of
+every class). Coverage of the generated set (TS side): 794 rows with cells (46 with more than 7, 20 built by
+`sprmTInsert` alone), 759 rows with touched cells, 219 `pap` runs with tab changes (52 with several cleared
+positions), 90 `onIstd` calls, 284 `sprmCMajority`, 31 `sprmCIstd` applications.
+
+Replay: **40,310 comparisons equal, 0 mismatches** (all facets so far, 1,655 files and 2,500 grpprls). One port bug
+found by the first replay: three `t('rmarkDel' | 'rmarkIns' | 'fldVanish')` marks I had left out (628 `chp`/`chp2` facets
+mismatched, all of them that one cause).
+
+### F3 — styles and lists (`stsh.rs`, `lists.rs`)
+
+`read_stsh(&Fib, table, &DocLimits) -> Result<StyleSheet, DocError>` and `read_stsh_at(FcLcb, ..)` (the pair `fc`/`lcb`:
+the generated inputs and F4/F5 share it), `StyleResolver::{new, resolve, apply_char_style, resolve_char, style, clear}`,
+`read_lists(&Fib, table) -> Lists` and `read_lists_at(lst, lfo, table)`. The structs borrow the table (`DocStyle.papx/chpx/tapx`,
+`Lvl.grpprl_*`).
+
+1. **Numbers.** Typed reads (`u16`, `i16`, `i32`, `u32`, `u8`) with the masks and shifts of the TS (`w0 & 0x0fff`,
+   `(w1 >> 4) & 0x0fff`, `w2 & 0x0f`, `grf & 0x0001`…, `bits & 0xf`); `(off - fc) & 1` and `(o - std) & 1`
+   (`ToInt32` keeps the parity of a number below 2^34): the parity of the `u64`; `cbSTDBaseInFile || 10` (0 → 10);
+   `o += 2 + cch * 2 + 2` and the UPX walk in `u64`; `Math.min(cch, 0x100)`; `cLst` is an `i16` (a negative count makes no
+   list, at most 32,767), `lfoMac` a `u32`, `counts[i]` a `u8`; the depth tests `depth < 32` and `chain.length < 32`.
+   `DocStyle.istd` is a `u16` (the loop runs below `cstd` ≤ 65,535). No float → integer `as` cast.
+2. **Text.** Names are UTF-16 (`Utf16`): `utf16(o + 2, cch)`, the first `,` found in code units splits the name from the
+   aliases (`indexOf(',')`, `slice`), the aliases may be empty (`Some(empty)`, the TS `''`); list text `xst` is
+   `utf16(o + 2, min(cch, 0x100))` units, the markers 0-8 are units too.
+3. **Regex sites.** None.
+4. **Iteration order.** `styles` is in `istd` order with `None` for the `cbStd` 0 slots; the memo `Map`s are only looked up;
+   `charChain` builds root → leaf (`unshift` is `insert(0, ..)`); `seen` is a membership set. **The results depend on the
+   order of the `resolve` calls** (a chain longer than 32 links and a cycle are cut at the depth the first call reached,
+   and the memo keeps that result): `stsh` resolves ascending, `stsh2` with a fresh resolver descending, and 28 of the 700
+   generated sheets give different results in the two orders (replayed equal to the TS in both). F4/F5 keep the TS call
+   order of `resolve`.
+5. **Recursion.** `resolve` recurses to at most 33 frames (`depth < 32`): a loop collects the frames that miss the memo
+   down to a memo hit or a style without a usable parent, then computes them from the deepest up and memoizes each, which
+   is what the returns do (a cycle repeats the same `istd` in several frames: each frame is computed and the last write
+   wins, as in the TS). `charChain` is a loop (it continues through styles without a CHPX but stops at a repeated one or
+   at 32 CHPXs).
+6. **State.** The memo and the character-chain memo live in the `StyleResolver` (one per reader; `clear()` empties
+   them); nothing is global. The TS returns the memoized object itself and callers copy it with a spread before changing
+   it: `resolve` returns an `Arc<ResolvedStyle>` and the callers `clone()` the `Pap`/`Chp`.
+7. **`try/catch`.** None.
+8. **Bounds and budgets.** A style name is read at the offset the style gives, **not bounded by its own record**, so
+   overlapping records multiply a small table (65,535 styles of 3 bytes each claiming 65,535 units: the TS allocates
+   8 GB): `read_stsh` counts the units it reads and fails with `DocError::Limit { StringUnits }` past
+   `DocLimits::string_budget` (`min(max_string_units, max(2^20, 8 × table length))`): **a listed difference on hostile
+   input only** (the corpus never hits it). `cstd` ≤ 65,535 styles; the UPX walk is bounded by `cupx` ≤ 15 and `stdEnd`;
+   the memo holds at most one result per style. Lists: `cLst` ≤ 32,767 entries (a count past the table reads zeros, as
+   the TS), levels are read only while 28 bytes remain in the table, `lfoMac` entries only while 16 bytes remain in the
+   LFO range, and every LFOLVL consumes 8 bytes of it, so one LFO adds at most 255 zero overrides past the end. Measured
+   (`tests/memory_doc.rs`): M1 0 B on every fixture and every error class and the string-budget error path; M2 1,000
+   passes of styles + resolution + lists flat at 0 B; M3 1.6-2.2 × the input allocated on the fixtures (asserted ≤ 20), and
+   the hostile sheet of 65,535 styles (262 KB) peaks at 45 MB, 692 B per resolved style (a `Pap` and a `Chp` of `Option`
+   fields), the worst case that `cstd` allows.
+9. **Errors.** `read_stsh`: `DocError::Limit` only (item 8); `read_lists`, `StyleResolver`: total. **Data-shape deviations from
+   the TS:** `StyleResolver` owns its `StyleSheet` (`resolver.sheet`; the TS has `reader.stsh` and `reader.styles.sheet` as
+   one object), results are `Arc`-shared, `Lvl`/`DocStyle` borrow the table (`'a`), `DocStyle.priority` is `Some` exactly when
+   `cbSTDBaseInFile >= 18`.
+
+Facets: `stsh` (the sheet's tables, then every style resolved in ascending order, then the ids past the end, 0xFFF and
+0xFFFF), `stsh2` (a fresh resolver, descending), `stsh3` (`resolveChar`, `applyCharStyle` over the root CHP and over a
+paragraph's CHP), `lists`; over the files and mutations (`PlfLst`/`PlfLfo` counts, STSH counts, `cbStd` and name `cch`), and
+**700 generated style sheets** (`gen/stsh`: up to 40 styles with chains past the 32 cut-off, cycles, self and missing and
+nil bases, empty slots, `cbSTDBaseInFile` 10 and 18, names with aliases and wrong `cch`, grpprls from the generator,
+truncated bodies: 13,132 styles in all) and **700 generated list tables** (`gen/lists`: 1,413 lists, 2,864 levels, 1,773
+overrides of which 837 with formatting, wrong `cch` and counts, truncated tables).
+
+Replay: **48,690 comparisons equal, 0 mismatches, 0 accepted** (all facets so far: 1,655 files, 2,500 grpprls, 1,400
+generated tables). No port bug found by the first replay of F3.
+
+### F5 — OOXML part emitters (`ooxml_props.rs`, `styles_xml.rs`, `numbering.rs`, `settings.rs`)
+
+`ooxml_props`: `r_pr_inner(&Chp, &KeySet<ChpKey>, &PropCtx, with_style) -> String`, `p_pr_inner(&Pap, &KeySet<PapKey>, &PropCtx,
+&PPrOpts)`, `brc_xml`, `shd_xml`, `tabs_xml`, `jc_val`, `lcid_tag`, `hex`, `num_fmt_of`, `PropCtx { fonts, style_id }` (`style_id: &dyn
+Fn(u16) -> Option<Cow<str>>`, two lifetimes), `PPrOpts { base_tabs, num_id, r_pr, sect_pr, with_style }`. `styles_xml`: `sti_name`,
+`style_name`, `style_id_map(&styles) -> StyleIds`, `build_styles(&mut StyleResolver, fonts, &PropCtx, &StyleIds, num_id_of)`.
+`numbering`: `lvl_text`, `build_numbering(&Lists, &PropCtx) -> Option<String>`. `settings`: `read_dop(bytes, n_fib) -> Dop`,
+`build_settings(dop_bytes, n_fib, fonts, ftc_fe, footnotes, endnotes)`. They take the pieces of the `DocReader` they read, not a
+reader (F4 does not exist yet).
+
+1. **Numbers.** Every attribute number is an integer: `AttrVal::Int(i64)` (`String(v)` of an integer; `Math.abs(ls.line)` of an `i16`,
+   `-l1` and `-dxcLeft1` negations in `i64`, `Math.min(8, ilvl)`, `Math.abs(ilfo)`); a colour is `toString(16).toUpperCase().padStart(6,
+   '0')` of 0-0xFFFFFF (`format!("{c:06X}")`, `auto` for -1), `hex8(v)` is `(v >>> 0).toString(16).toUpperCase().padStart(8, '0')`:
+   `format!("{:08X}", v as u32)` (`as u32` on the `i32` `lsid`/`tplc` is the `>>> 0`). `Dop`: `f32 & (1 << n)` for n ≤ 30 reads the bit
+   of the `u32` (the TS number is converted to int32, which does not change bits below 31); `copts80hi`/`copts60` bit tests with
+   `1 << bit` for bit ≤ 15; `(copts | 0xffffdc00)` and `(copts2 | 1)` are `u32` ORs: the TS holds the signed int32 result, which
+   only `>>> bit & 1` reads afterwards, the same bits (the replay's `dop` digest reads them as `i32` where the TS has the signed value);
+   `r.u16(10) || 720`; the zoom range test. `(pap.dxaLeft ?? …)` etc. as in F2. No `parseInt`/`Math.round`; no float → integer cast.
+2. **Text.** Attribute text is UTF-16 (`AttrVal::Units`): font names, style names, aliases, `lvlText`; `escAttr` of the writer strips and
+   escapes as in F0. The Portuguese literal `Estilo {istd}` (the name of a nameless built-in-range style) is output text and stays
+   as the TS writes it, as the other literals of the parts. `toUpperCase` of the first character of each word of an English built-in
+   name: the names are the fixed table and ASCII, so `char::to_uppercase` (identical on ASCII) is enough, no document text reaches it;
+   user style ids drop every code unit that is not `[A-Za-z0-9-]`.
+3. **Regex sites.** `/^toc (\d)$/` (the prefix `toc ` and one ASCII digit: `\d` is `[0-9]` without the `u` flag), `split(/\s+/)` over
+   the ASCII English names (runs of the ASCII space), `replace(/[^A-Za-z0-9-]/g, '')` (a unit filter, over the English id and over the
+   document's style name): all hand matchers, linear, none dynamic.
+4. **Iteration order.** `attrs()` in insertion order (F0; `Attrs::set` keeps the first position, `w:u`'s `w:color` is added after
+   `w:val`); `[...clearPos].sort((p, q) => p - q)` is a numeric sort of unique values; `COMPAT` is a table in the order of
+   `CT_Compat`; `styleIdMap` is a JS `Map` in insertion order (built-in styles by `istd`, then the others by `istd`): its consumers only
+   `get`/`has` and build a lowercase set, so `StyleIds` is a hash map and the replay digests the pairs in the TS order (`styleids`);
+   `sti_name` is computed by index (no table kept: nothing global, the M1 gate).
+5. **Recursion.** None (the resolver's recursion is F3's). `build_styles` resolves style 0 first, then each style and its parent in
+   the TS order: **the resolver memo makes the output depend on the calls made before it** (the TS body writer renders the paragraphs,
+   which resolve styles, before `styles.xml` is built): F6 must call `build_styles` after the body, with the same resolver.
+6. **State.** None: `styleIdMap`'s `used` set and `freeId`'s are per call, no counters survive a call.
+7. **`try/catch`.** None.
+8. **Bounds and budgets.** `style_id_map` is linear where the TS is quadratic: for each style the TS probes `base`, `base2`, `base3`…
+   from the start, so 20,000 styles with one name cost 2×10^8 probes; ids that are taken stay taken, so the port resumes each base
+   (lower-cased) at the last suffix it used (and the "a", "a0", "a1" sequence of the nameless ones likewise) and gives the same ids
+   (unit test with 20,000 styles under 2 s; the generated sheets with repeated names are in the replay). `tabs_xml` is O(final × base)
+   over at most `MAX_TABS` (F2). Output size is proportional to the input (a style, a level, an override per record). Measured
+   (`tests/memory_doc.rs`): M1 0 B on every fixture and error class for the whole part pipeline (styles, numbering, two settings, DOP) and for
+   the property emitters over 300 generated grpprls; M2 1,000 passes flat at 0 B; M3 4.3-11.4 × the input allocated on the fixtures
+   (peak 1.5-2.2 ×; the generated XML is the output), asserted ≤ 15.
+9. **Errors.** None: every emitter is total. **Data-shape deviations from the TS:** the emitters take the readers' pieces (resolver, fonts,
+   lists, DOP bytes + `nFib` + `ftcFE`) instead of a `DocReader`; `PropCtx` has two lifetimes and returns `Cow<str>` ids; `PPrOpts.with_style` is
+   a `bool` defaulting to true (`withStyle !== false`); `Dop.copts`/`copts2` are `Option<u32>` bit patterns (item 1); `StyleIds` is a hash
+   map (item 4).
+
+Facets: `xml.styles`, `styleids`, `xml.numbering`, `xml.settings`, `xml.settings2` (with notes), `dop` over the files and their mutations (the TS
+`buildStyles`/`buildNumbering`/`buildSettings` over a fresh `DocxWriter`'s `propCtx`/`styleIds`/`numIdOf`); `rpr` and `ppr` (the
+`rPrInner` with and without the style and `pPrInner` with three option sets, over every run grpprl of each file and every generated grpprl,
+with fonts that need escaping and a `styleId` that is sometimes absent); the same `xml.styles` over the 700 generated style sheets (long
+chains, cycles, repeated and non-ASCII names), `xml.numbering` over the 700 generated list tables, and **800 generated DOPs** (`gen/dop`:
+sizes 0 to 640 around the thresholds 88, 92, 410, 520, 600, `nFib` 0xC1 to 0x112, random flag bits).
+
+Replay: **69,350 comparisons equal, 0 mismatches, 0 accepted** (all facets so far: 1,655 files, 2,500 grpprls, 2,200 generated tables).
+Port bugs found by the first replay of F5: none; the only mismatch was in my `dop` digest (signed versus unsigned `copts`, item 1).
+
+### Results, checks and what is left
+
+- `cargo test -p uo-docx --features doc,canon` (parity, memory, no-panic, unit tests of every file), `rustfmt`, `clippy` native and
+  `wasm32-unknown-unknown` with `--features doc` on `src/doc/**` and the doc tests (clean), `core/tests/float-casts.sh` (run by hand with
+  `doc` on: no float → integer cast), `core/tests/grep-bans.sh` (clean on my files; it currently fails on another agent's
+  `tests/parity_shape_xml.rs`).
+- Fuzz: `doc_convert` (`fuzz/src/doc.rs`, selector byte for the small `DocLimits`, seeds: the 11 fixtures and a spread of the capture's
+  mutations): 3.5 million executions in 90 s of the stable driver, overflow checks on, 0 crashes, slowest execution 128 ms. It runs
+  the converter (which answers `NotYet`) and every structure reader and emitter that exists.
+- **What F4 needs from F0-F3 and F5** (all in `uo_docx::doc`): `open::DocStreams::open` (the constructor head of `reader.ts`: streams, FIB,
+  encrypted/pre-97 checks in the TS order) and its `Fib`; `text::{read_piece_table, total_cp, decode_text, piece_at, fc_of_cp}`
+  (`Piece.fc` is an `f64`, `fc_of_cp` gives `None` for the TS `-1`); `fkp::{read_plc, read_chpx_runs, read_papx_runs, run_at,
+  run_index_from, expand_huge_papx}` (runs borrow the streams: **`DocReader<'a>` borrows its `DocStreams`**); `fonts::read_fonts`;
+  `stsh::{read_stsh, StyleResolver}` (the resolver **owns** the `StyleSheet`: `reader.styles.sheet` is `reader.stsh`; keep the TS call
+  order of `resolve`); `lists::read_lists`; `props::{apply_*, default_sep, finish_tap, ...}`; the DOP slice of the reader (`dop.lcb &&
+  dop.fc + dop.lcb <= table.length ? table.subarray(...) : empty`) for `settings`. Its facets (`reader`: sections, notes, comments,
+  bookmarks, FSPAs, textboxes, form fields, PICF) are not in `doc.capture` yet; the capture already holds `convert`, `parts` and
+  `model` for every input, which F6's replay turns on (`NOT_YET` in `tests/parity_doc.rs`). F6: the `ConvertOptions.docProps` and the
+  limits are not defined yet; `DocLimits::max_work` is reserved for the body writer.
+- Not done (by scope): F4, F6, the `uo-opc` zip writing of `convert_doc_to_docx`; a local-corpus replay (`parity_doc_local`, the Word COM
+  `.doc` files of the 2,742 oracle documents: run by the maintainer on a machine with Word, G18; nothing committed for it yet).
+
+<!-- D4-END -->

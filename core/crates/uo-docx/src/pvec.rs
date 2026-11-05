@@ -204,6 +204,16 @@ impl<T> PVec<T> {
     pub fn chunk_count(&self) -> usize {
         self.chunks.len()
     }
+
+    /// The elements of the chunks of `self` that `other` does not share by pointer, with their
+    /// index (the session's history step cost, U19; O(chunks²) pointer comparisons).
+    pub fn unshared_chunk_elements<'s>(&'s self, other: &'s PVec<T>) -> impl Iterator<Item = (usize, &'s Arc<T>)> + 's {
+        self.chunks
+            .iter()
+            .zip(self.starts.iter())
+            .filter(move |(c, _)| !other.chunks.iter().any(|o| Arc::ptr_eq(c, o)))
+            .flat_map(|(c, &start)| c.iter().enumerate().map(move |(k, x)| (start + k, x)))
+    }
 }
 
 impl<T: Clone> PVec<T> {

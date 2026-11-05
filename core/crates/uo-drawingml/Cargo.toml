@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# OfficeArt ([MS-ODRAW]) of the .doc/.xls/.ppt readers: module `odraw` (uo-docx plan G11)
+legacy = []
+
 [dependencies]
 # every Math.* call, Number(), parseInt and typed-array store of the TS goes through it (R1)
 uo-jsnum = { path = "../uo-jsnum" }

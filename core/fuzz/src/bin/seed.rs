@@ -254,6 +254,18 @@ fn main() {
     for (target, data) in uo_opc_fuzz::dml_seeds() {
         c.add(target, &data);
     }
+    // uo-drawingml odraw: the OfficeArt of the .doc fixtures and the generated streams of its parity capture
+    for (target, data) in uo_opc_fuzz::odraw_seeds(&repo) {
+        c.add(target, &data);
+    }
+    // the .doc converter: the 11 fixtures and a spread of the mutations of its parity capture
+    for (target, data) in uo_opc_fuzz::doc_seeds(&repo) {
+        c.add(target, &data);
+    }
+    // the docx reader: the docx-core fixtures, the smallest oracle documents and the R5/R6 synthetic packages, stored
+    for (target, data) in uo_opc_fuzz::docx_seeds(&repo) {
+        c.add(target, &data);
+    }
     // the schema-driven codec: valid messages of every schema (raw and framed), and seeds of the structure-aware round trip
     for (target, data) in uo_opc_fuzz::codec_seeds() {
         c.add(target, &data);

@@ -8,29 +8,30 @@
 
 use std::path::Path;
 
-use uo_image::{ImageError, ImageLimits, Rgba, decode_bmp, decode_gif, decode_png, decode_raster, decode_tiff, image_pixel_size, jpeg_info};
+use uo_image::{
+    ImageError, ImageLimits, Rgba, decode_bmp, decode_gif, decode_png, decode_raster, decode_tiff, image_pixel_size, jpeg_info,
+};
 
 use crate::split1;
 
 const NORMAL: ImageLimits = ImageLimits { max_px: 1 << 22, max_dim: 1 << 17, max_inflated: 16 << 20, max_tag_values: 1 << 18 };
+type Decoder = fn(&[u8], &ImageLimits) -> Result<Rgba, ImageError>;
+
 const TIGHT: ImageLimits = ImageLimits { max_px: 600, max_dim: 40, max_inflated: 4096, max_tag_values: 24 };
 
 fn check(r: &Result<Rgba, ImageError>, l: &ImageLimits) {
-    match r {
-        Ok(img) => {
-            let px = u64::from(img.width) * u64::from(img.height);
-            assert!(px <= l.max_px, "{} x {} above max_px {}", img.width, img.height, l.max_px);
-            assert!(u64::from(img.width) <= u64::from(l.max_dim) && u64::from(img.height) <= u64::from(l.max_dim));
-            assert_eq!(img.data.len() as u64, px * 4, "RGBA buffer of {} x {}", img.width, img.height);
-        }
-        Err(_) => {}
+    if let Ok(img) = r {
+        let px = u64::from(img.width) * u64::from(img.height);
+        assert!(px <= l.max_px, "{} x {} above max_px {}", img.width, img.height, l.max_px);
+        assert!(u64::from(img.width) <= u64::from(l.max_dim) && u64::from(img.height) <= u64::from(l.max_dim));
+        assert_eq!(img.data.len() as u64, px * 4, "RGBA buffer of {} x {}", img.width, img.height);
     }
 }
 
 pub fn image_decode(data: &[u8]) {
     let (sel, bytes) = split1(data);
     let l = if sel & 0x80 != 0 { TIGHT } else { NORMAL };
-    let decoders: [fn(&[u8], &ImageLimits) -> Result<Rgba, ImageError>; 5] = [decode_raster, decode_png, decode_gif, decode_bmp, decode_tiff];
+    let decoders: [Decoder; 5] = [decode_raster, decode_png, decode_gif, decode_bmp, decode_tiff];
     match sel % 6 {
         5 => {
             let results: Vec<_> = decoders[1..].iter().map(|d| d(bytes, &l)).collect();

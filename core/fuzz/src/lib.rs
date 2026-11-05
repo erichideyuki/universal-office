@@ -2,8 +2,10 @@
 //! and of `uo-jsnum` (`jsnum_parse`, `jsnum_math` in `src/jsnum.rs`, record
 //! `core/docs/modules/uo-jsnum.md`), of `uo-fonts` (the `fonts_*` targets in `src/fonts.rs`,
 //! record `core/docs/modules/uo-fonts.md`) and of `uo-drawingml` (the `dml_*` targets in
-//! `src/drawingml.rs`, record `core/docs/modules/uo-drawingml.md`) and of the schema-driven codec (`codec_decode`,
+//! `src/drawingml.rs`, and `odraw_records` in `src/odraw.rs`, record `core/docs/modules/uo-drawingml.md`) and of the schema-driven codec (`codec_decode`,
 //! `codec_roundtrip` in `src/codec.rs`, record `core/docs/modules/uo-render.md`, "Milestone 1 — frontier C").
+//! The docx reader (`read_docx` in `src/docx.rs`) is recorded in `core/docs/modules/uo-docx.md`,
+//! "R5 follow-ups".
 //!
 //! Every target is a plain `fn(&[u8])`: libFuzzer runs them through `fuzz_targets/*.rs`
 //! (`cargo +nightly fuzz run <name>`), the stable driver `src/bin/fallback.rs` through
@@ -42,6 +44,15 @@ pub use drawingml::{
     dml_adjust, dml_bevel, dml_blip, dml_color, dml_custom_guides, dml_effects, dml_flatten, dml_light, dml_patterns, dml_preset,
     dml_preset_path, dml_raster, dml_seeds,
 };
+
+mod odraw;
+pub use odraw::{ODRAW_LIMITS, odraw_records, odraw_seeds};
+
+mod doc;
+pub use doc::{DOC_LIMITS, doc_convert, doc_seeds};
+
+mod docx;
+pub use docx::{DOCX_PACKAGE_LIMITS, DOCX_READ_LIMITS, docx_seeds, read_docx};
 
 mod image;
 pub use image::{image_decode, image_seeds};
@@ -102,6 +113,9 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("dml_effects", dml_effects),
     ("dml_light", dml_light),
     ("dml_bevel", dml_bevel),
+    ("odraw_records", odraw_records),
+    ("doc_convert", doc_convert),
+    ("read_docx", read_docx),
     ("image_decode", image_decode),
     ("codec_decode", codec_decode),
     ("codec_roundtrip", codec_roundtrip),

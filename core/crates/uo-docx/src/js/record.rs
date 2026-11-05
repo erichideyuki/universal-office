@@ -94,6 +94,12 @@ impl<V> JsRecord<V> {
     pub fn values(&self) -> impl ExactSizeIterator<Item = &V> + '_ {
         self.map.values()
     }
+
+    /// The values for an in-place change (keys and their order unchanged; the session's undo
+    /// normalisation, D2a).
+    pub fn values_mut(&mut self) -> impl ExactSizeIterator<Item = &mut V> + '_ {
+        self.map.values_mut()
+    }
 }
 
 impl<V: JsValue> JsValue for JsRecord<V> {
@@ -120,6 +126,10 @@ impl<V: JsValue> JsValue for JsRecord<V> {
         }
         w.end_object();
         true
+    }
+    /// The entries in their stored order (finer than the JS own-key order, which is derived from it).
+    fn exact(&self, k: &mut super::ExactKey) -> bool {
+        k.tag(b'r') && k.count(self.map.len()) && self.map.iter().all(|(key, v)| k.str(key) && v.exact(k))
     }
 }
 

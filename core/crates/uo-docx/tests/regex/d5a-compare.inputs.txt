@@ -1,0 +1,46 @@
+
+ 
+a
+ab
+a b
+ a
+a 
+ a 
+the quick brown fox
+the  quick\tbrown\nfox\r\n
+  
+\t\n\r
+   a   b   
+ 
+﻿
+
+᠎
+​
+ 
+ 
+ 
+　
+a b
+a﻿b
+ab
+a᠎b
+a​b
+😀
+a😀b
+😀 😀
+日本語 😀 emoji
+é è
+é x
+x‍y z
+*bold* _it_
+a,b.c;d
+a-b c_d
+it's
+<u>x</u>
+p|q r
+1. item
+- item
+one two three four five six seven eight nine ten
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+                                        
+ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab 

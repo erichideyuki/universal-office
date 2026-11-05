@@ -74,6 +74,12 @@ impl JsValue for Cell {
         crate::js::object_canon_with(self, &[("blocks", &|w| content.canon(w)), ("@views", &|w| w.str("synced"))], w);
     }
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
+        if w.is_signature() {
+            // D1b signature text: the content once (its block view)
+            let blocks = super::story::BlocksJson(&self.content);
+            crate::js::object_json_with(self, &[], &[("blocks", &blocks)], w);
+            return true;
+        }
         let paragraphs: Vec<&Paragraph> = self.content.paras.iter().collect();
         let tables: Vec<&Table> = self.content.tables.iter().map(|a| &*a.table).collect();
         let blocks = super::story::BlocksJson(&self.content);

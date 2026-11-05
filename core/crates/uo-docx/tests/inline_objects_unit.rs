@@ -379,9 +379,13 @@ fn the_host_of_the_document_reads_is_the_read_context() {
         let pict =
             parse("<w:pict><v:shape style=\"width:10pt;height:5pt\"><v:imagedata r:id=\"rId9\"/></v:shape></w:pict>", &DOCX).unwrap();
         assert!(with_context::read_vml_runs(pict.root(), &mut rc, false).unwrap().is_empty());
-        // the block reader of the full-document read is not wired yet: an error value, and the guard is balanced
+        // with the block reader of the full-document read (`fulldoc::read_textbox_content`): the content is a
+        // story of blocks, and the guard is balanced
         rc.blocks = BlocksMode::Blocks;
-        assert!(with_context::read_drawing_run(doc.root(), &mut rc).is_err());
+        let run = with_context::read_drawing_run(doc.root(), &mut rc).unwrap().unwrap();
+        let tb = run.ext().unwrap().textbox.as_deref().unwrap();
+        assert_eq!(tb.view, TextboxView::Synced);
+        assert_eq!(tb.content.paras.len(), 2);
     }
     assert_eq!(ctx.nesting(), 0);
 }

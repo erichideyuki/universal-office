@@ -20,6 +20,7 @@ pub mod fonts;
 pub mod fulldoc;
 pub mod inline_objects;
 pub mod inspect;
+pub mod intern;
 pub mod json_parse;
 pub mod page_background;
 pub mod paragraph;
@@ -83,11 +84,10 @@ pub struct ReadOptions {
     pub limits: DocxLimits,
 }
 
-/// Reads a docx package into a [`Document`] (A5). The read itself is frontier R5
-/// (`fulldoc.ts`); until it lands this returns `DocxError::Corrupt` for every input.
+/// Reads a docx package into a [`Document`] (A5): the TS `readFullDocument(pkg, { sources })`
+/// (frontier R5, [`fulldoc::read_document`]).
 pub fn read_document(pkg: &Package, opts: &ReadOptions) -> Result<Document, DocxError> {
-    let _ctx = ctx::ReadCtx::new(pkg, opts);
-    Err(DocxError::Corrupt("the docx reader is not ported yet (frontier R5)"))
+    fulldoc::read_document(pkg, opts)
 }
 
 /// A font embedded in the docx (`EmbeddedFont` of docx-core `fonts.ts`): the deobfuscated sfnt
@@ -101,10 +101,4 @@ pub struct EmbeddedFont {
     pub data: std::sync::Arc<[u8]>,
 }
 
-/// The embedded fonts of a package (`readEmbeddedFonts`): frontier R5 (`fonts.ts`, with
-/// `uo_fonts::odttf::deobfuscate`); empty until it lands.
-#[must_use]
-pub fn read_embedded_fonts(pkg: &Package) -> Vec<EmbeddedFont> {
-    let _ = pkg;
-    Vec::new()
-}
+pub use fonts::read_embedded_fonts;

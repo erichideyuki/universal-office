@@ -1,0 +1,876 @@
+# regex differential (d5a-export.mjs): V8 RegExp (Node 24.15) over d5a-export.inputs.txt, JSON per (site, input)
+d5a.heading_level	0	1
+d5a.heading_level	1	2
+d5a.heading_level	2	3
+d5a.heading_level	3	4
+d5a.heading_level	4	5
+d5a.heading_level	5	6
+d5a.heading_level	6	6
+d5a.heading_level	7	6
+d5a.heading_level	8	0
+d5a.heading_level	9	0
+d5a.heading_level	10	0
+d5a.heading_level	11	6
+d5a.heading_level	12	2
+d5a.heading_level	13	2
+d5a.heading_level	14	2
+d5a.heading_level	15	3
+d5a.heading_level	16	4
+d5a.heading_level	17	0
+d5a.heading_level	18	0
+d5a.heading_level	19	2
+d5a.heading_level	20	3
+d5a.heading_level	21	1
+d5a.heading_level	22	0
+d5a.heading_level	23	0
+d5a.heading_level	24	0
+d5a.heading_level	25	0
+d5a.heading_level	26	1
+d5a.heading_level	27	2
+d5a.heading_level	28	3
+d5a.heading_level	29	4
+d5a.heading_level	30	5
+d5a.heading_level	31	6
+d5a.heading_level	32	6
+d5a.heading_level	33	1
+d5a.heading_level	34	0
+d5a.heading_level	35	1
+d5a.heading_level	36	1
+d5a.heading_level	37	6
+d5a.heading_level	38	2
+d5a.heading_level	39	0
+d5a.heading_level	40	0
+d5a.heading_level	41	0
+d5a.heading_level	42	0
+d5a.heading_level	43	1
+d5a.heading_level	44	1
+d5a.heading_level	45	1
+d5a.heading_level	46	0
+d5a.heading_level	47	0
+d5a.heading_level	48	0
+d5a.heading_level	49	0
+d5a.heading_level	50	0
+d5a.heading_level	51	0
+d5a.heading_level	52	1
+d5a.heading_level	53	2
+d5a.heading_level	54	3
+d5a.heading_level	55	4
+d5a.heading_level	56	5
+d5a.heading_level	57	6
+d5a.heading_level	58	0
+d5a.heading_level	59	0
+d5a.heading_level	60	0
+d5a.heading_level	61	0
+d5a.heading_level	62	0
+d5a.heading_level	63	0
+d5a.heading_level	64	0
+d5a.heading_level	65	0
+d5a.heading_level	66	0
+d5a.heading_level	67	0
+d5a.heading_level	68	0
+d5a.heading_level	69	0
+d5a.heading_level	70	0
+d5a.heading_level	71	0
+d5a.heading_level	72	0
+d5a.heading_level	73	1
+d5a.heading_level	74	0
+d5a.heading_level	75	0
+d5a.heading_level	76	1
+d5a.heading_level	77	3
+d5a.heading_level	78	1
+d5a.heading_level	79	0
+d5a.heading_level	80	0
+d5a.heading_level	81	0
+d5a.heading_level	82	0
+d5a.heading_level	83	0
+d5a.heading_level	84	0
+d5a.heading_level	85	1
+d5a.heading_level	86	1
+d5a.heading_level	87	1
+d5a.heading_level	88	0
+d5a.heading_level	89	1
+d5a.heading_level	90	0
+d5a.heading_level	91	0
+d5a.heading_level	92	0
+d5a.heading_level	93	0
+d5a.heading_level	94	0
+d5a.heading_level	95	0
+d5a.heading_level	96	0
+d5a.heading_level	97	0
+d5a.heading_level	98	0
+d5a.heading_level	99	0
+d5a.heading_level	100	0
+d5a.heading_level	101	0
+d5a.heading_level	102	0
+d5a.heading_level	103	0
+d5a.heading_level	104	0
+d5a.heading_level	105	0
+d5a.heading_level	106	0
+d5a.heading_level	107	0
+d5a.heading_level	108	0
+d5a.heading_level	109	0
+d5a.heading_level	110	0
+d5a.heading_level	111	0
+d5a.heading_level	112	0
+d5a.heading_level	113	0
+d5a.heading_level	114	0
+d5a.heading_level	115	0
+d5a.heading_level	116	0
+d5a.heading_level	117	0
+d5a.heading_level	118	0
+d5a.heading_level	119	0
+d5a.heading_level	120	0
+d5a.heading_level	121	0
+d5a.heading_level	122	0
+d5a.heading_level	123	0
+d5a.heading_level	124	0
+d5a.heading_level	125	0
+d5a.heading_level	126	0
+d5a.heading_level	127	0
+d5a.heading_level	128	0
+d5a.heading_level	129	0
+d5a.heading_level	130	0
+d5a.heading_level	131	0
+d5a.heading_level	132	0
+d5a.heading_level	133	0
+d5a.heading_level	134	0
+d5a.heading_level	135	0
+d5a.heading_level	136	0
+d5a.heading_level	137	0
+d5a.heading_level	138	0
+d5a.heading_level	139	0
+d5a.heading_level	140	0
+d5a.heading_level	141	0
+d5a.heading_level	142	0
+d5a.heading_level	143	0
+d5a.heading_level	144	0
+d5a.heading_level	145	0
+d5a.heading_level	146	0
+d5a.heading_level	147	0
+d5a.heading_level	148	0
+d5a.heading_level	149	0
+d5a.heading_level	150	0
+d5a.heading_level	151	0
+d5a.heading_level	152	0
+d5a.heading_level	153	0
+d5a.heading_level	154	0
+d5a.heading_level	155	0
+d5a.heading_level	156	0
+d5a.heading_level	157	0
+d5a.heading_level	158	0
+d5a.heading_level	159	0
+d5a.heading_level	160	0
+d5a.heading_level	161	0
+d5a.heading_level	162	0
+d5a.heading_level	163	0
+d5a.heading_level	164	0
+d5a.heading_level	165	0
+d5a.heading_level	166	0
+d5a.heading_level	167	0
+d5a.heading_level	168	0
+d5a.heading_level	169	0
+d5a.heading_level	170	0
+d5a.heading_level	171	0
+d5a.heading_level	172	0
+d5a.heading_level	173	0
+d5a.heading_level	174	0
+d5a.escape_md	0	"Heading1"
+d5a.escape_md	1	"Heading2"
+d5a.escape_md	2	"Heading 3"
+d5a.escape_md	3	"heading4"
+d5a.escape_md	4	"HEADING5"
+d5a.escape_md	5	"Heading6"
+d5a.escape_md	6	"Heading7"
+d5a.escape_md	7	"Heading9"
+d5a.escape_md	8	"Heading0"
+d5a.escape_md	9	"Heading"
+d5a.escape_md	10	"Heading "
+d5a.escape_md	11	"Heading  7"
+d5a.escape_md	12	"Heading\t2"
+d5a.escape_md	13	"Heading\n2"
+d5a.escape_md	14	"Heading 2"
+d5a.escape_md	15	"Heading﻿3"
+d5a.escape_md	16	"Heading 4"
+d5a.escape_md	17	"Heading2"
+d5a.escape_md	18	"Heading​2"
+d5a.escape_md	19	"MyHeading2x"
+d5a.escape_md	20	"xHeading3"
+d5a.escape_md	21	"Subheading1"
+d5a.escape_md	22	"heading-2"
+d5a.escape_md	23	"heading\\_2"
+d5a.escape_md	24	"Heading１"
+d5a.escape_md	25	"Heading２"
+d5a.escape_md	26	"Título1"
+d5a.escape_md	27	"título2"
+d5a.escape_md	28	"TÍTULO3"
+d5a.escape_md	29	"Titulo4"
+d5a.escape_md	30	"titulo 5"
+d5a.escape_md	31	"TITULO6"
+d5a.escape_md	32	"Titulo7"
+d5a.escape_md	33	"Título"
+d5a.escape_md	34	"Título "
+d5a.escape_md	35	"Titulo"
+d5a.escape_md	36	"TÍTULO"
+d5a.escape_md	37	"tÍtulo9"
+d5a.escape_md	38	"tItulo 2"
+d5a.escape_md	39	"tİtulo2"
+d5a.escape_md	40	"tıtulo2"
+d5a.escape_md	41	"tı́tulo2"
+d5a.escape_md	42	"títúlo2"
+d5a.escape_md	43	"Title"
+d5a.escape_md	44	"title"
+d5a.escape_md	45	"TITLE"
+d5a.escape_md	46	"Title1"
+d5a.escape_md	47	"Title "
+d5a.escape_md	48	" Title"
+d5a.escape_md	49	"Titles"
+d5a.escape_md	50	"Tıtle"
+d5a.escape_md	51	"TİTLE"
+d5a.escape_md	52	"h1"
+d5a.escape_md	53	"H2"
+d5a.escape_md	54	"h3"
+d5a.escape_md	55	"H4"
+d5a.escape_md	56	"h5"
+d5a.escape_md	57	"h6"
+d5a.escape_md	58	"h7"
+d5a.escape_md	59	"h0"
+d5a.escape_md	60	"h"
+d5a.escape_md	61	"h11"
+d5a.escape_md	62	"h1 "
+d5a.escape_md	63	" h1"
+d5a.escape_md	64	"h1\n"
+d5a.escape_md	65	"ｈ1"
+d5a.escape_md	66	"Normal"
+d5a.escape_md	67	"ListParagraph"
+d5a.escape_md	68	"Quote"
+d5a.escape_md	69	"Caption"
+d5a.escape_md	70	""
+d5a.escape_md	71	" "
+d5a.escape_md	72	"x"
+d5a.escape_md	73	"Heading1Char"
+d5a.escape_md	74	"Ｈeading1"
+d5a.escape_md	75	"heading１"
+d5a.escape_md	76	"HEADING 1"
+d5a.escape_md	77	"hEaDiNg3"
+d5a.escape_md	78	"Heading 1 Char"
+d5a.escape_md	79	"K"
+d5a.escape_md	80	"ſ"
+d5a.escape_md	81	"ǅ"
+d5a.escape_md	82	"HeadingK1"
+d5a.escape_md	83	"ΗEADING1"
+d5a.escape_md	84	"TİTULO1"
+d5a.escape_md	85	"Heading10"
+d5a.escape_md	86	"Heading 10"
+d5a.escape_md	87	"Heading11"
+d5a.escape_md	88	"Heading 0 1"
+d5a.escape_md	89	"Heading 1 2"
+d5a.escape_md	90	"a"
+d5a.escape_md	91	"a b"
+d5a.escape_md	92	"  a"
+d5a.escape_md	93	"a  "
+d5a.escape_md	94	"  a  "
+d5a.escape_md	95	" a b "
+d5a.escape_md	96	"\t\na\r\n"
+d5a.escape_md	97	" a "
+d5a.escape_md	98	"﻿a﻿"
+d5a.escape_md	99	" a "
+d5a.escape_md	100	"a"
+d5a.escape_md	101	"᠎a᠎"
+d5a.escape_md	102	"​a​"
+d5a.escape_md	103	"　a　"
+d5a.escape_md	104	" a "
+d5a.escape_md	105	" a "
+d5a.escape_md	106	"   "
+d5a.escape_md	107	"\t"
+d5a.escape_md	108	"\n"
+d5a.escape_md	109	" "
+d5a.escape_md	110	"﻿"
+d5a.escape_md	111	""
+d5a.escape_md	112	"᠎"
+d5a.escape_md	113	"  "
+d5a.escape_md	114	"  "
+d5a.escape_md	115	"\\\\"
+d5a.escape_md	116	"\\`"
+d5a.escape_md	117	"\\*"
+d5a.escape_md	118	"\\_"
+d5a.escape_md	119	"\\{"
+d5a.escape_md	120	"\\}"
+d5a.escape_md	121	"\\["
+d5a.escape_md	122	"\\]"
+d5a.escape_md	123	"\\<"
+d5a.escape_md	124	"\\>"
+d5a.escape_md	125	"\\|"
+d5a.escape_md	126	"\\\\\\`\\*\\_\\{\\}\\[\\]\\<\\>\\|"
+d5a.escape_md	127	"a\\*b\\_c"
+d5a.escape_md	128	"\\*\\*bold\\*\\*"
+d5a.escape_md	129	"\\_it\\_"
+d5a.escape_md	130	"\\`code\\`"
+d5a.escape_md	131	"\\[l\\](u)"
+d5a.escape_md	132	"\\<u\\>x\\</u\\>"
+d5a.escape_md	133	"p\\|q"
+d5a.escape_md	134	"a\\\\b"
+d5a.escape_md	135	"#"
+d5a.escape_md	136	"-"
+d5a.escape_md	137	"1."
+d5a.escape_md	138	"+"
+d5a.escape_md	139	"!"
+d5a.escape_md	140	"("
+d5a.escape_md	141	")"
+d5a.escape_md	142	"~"
+d5a.escape_md	143	"$"
+d5a.escape_md	144	"&"
+d5a.escape_md	145	"\""
+d5a.escape_md	146	"'"
+d5a.escape_md	147	"."
+d5a.escape_md	148	"="
+d5a.escape_md	149	"😀"
+d5a.escape_md	150	"a😀b"
+d5a.escape_md	151	"\\*😀\\*"
+d5a.escape_md	152	"é"
+d5a.escape_md	153	"日本語"
+d5a.escape_md	154	" 日本語 "
+d5a.escape_md	155	"a\n"
+d5a.escape_md	156	"\na"
+d5a.escape_md	157	"a\n\nb"
+d5a.escape_md	158	"a\n\n\nb"
+d5a.escape_md	159	"a\n\n\n\nb"
+d5a.escape_md	160	"a\n\n\n"
+d5a.escape_md	161	"\n\n\n"
+d5a.escape_md	162	"\n\n"
+d5a.escape_md	163	"\n\n\n\n\n\n"
+d5a.escape_md	164	"a\n\n\nb\n\n\n\nc\n\nd\n"
+d5a.escape_md	165	"\r\n\r\n\r\n"
+d5a.escape_md	166	"a\r\n\n\n\nb"
+d5a.escape_md	167	"\n \n\n"
+d5a.escape_md	168	"\n \n\n"
+d5a.escape_md	169	"a\\|b\nc\\|d"
+d5a.escape_md	170	"\\|\n\\|"
+d5a.escape_md	171	"\\|\\|"
+d5a.escape_md	172	"\\|\n\n\n\\|"
+d5a.escape_md	173	"x\ny"
+d5a.escape_md	174	"x \n y"
+d5a.lead_trail	0	["",""]
+d5a.lead_trail	1	["",""]
+d5a.lead_trail	2	["",""]
+d5a.lead_trail	3	["",""]
+d5a.lead_trail	4	["",""]
+d5a.lead_trail	5	["",""]
+d5a.lead_trail	6	["",""]
+d5a.lead_trail	7	["",""]
+d5a.lead_trail	8	["",""]
+d5a.lead_trail	9	["",""]
+d5a.lead_trail	10	[""," "]
+d5a.lead_trail	11	["",""]
+d5a.lead_trail	12	["",""]
+d5a.lead_trail	13	["",""]
+d5a.lead_trail	14	["",""]
+d5a.lead_trail	15	["",""]
+d5a.lead_trail	16	["",""]
+d5a.lead_trail	17	["",""]
+d5a.lead_trail	18	["",""]
+d5a.lead_trail	19	["",""]
+d5a.lead_trail	20	["",""]
+d5a.lead_trail	21	["",""]
+d5a.lead_trail	22	["",""]
+d5a.lead_trail	23	["",""]
+d5a.lead_trail	24	["",""]
+d5a.lead_trail	25	["",""]
+d5a.lead_trail	26	["",""]
+d5a.lead_trail	27	["",""]
+d5a.lead_trail	28	["",""]
+d5a.lead_trail	29	["",""]
+d5a.lead_trail	30	["",""]
+d5a.lead_trail	31	["",""]
+d5a.lead_trail	32	["",""]
+d5a.lead_trail	33	["",""]
+d5a.lead_trail	34	[""," "]
+d5a.lead_trail	35	["",""]
+d5a.lead_trail	36	["",""]
+d5a.lead_trail	37	["",""]
+d5a.lead_trail	38	["",""]
+d5a.lead_trail	39	["",""]
+d5a.lead_trail	40	["",""]
+d5a.lead_trail	41	["",""]
+d5a.lead_trail	42	["",""]
+d5a.lead_trail	43	["",""]
+d5a.lead_trail	44	["",""]
+d5a.lead_trail	45	["",""]
+d5a.lead_trail	46	["",""]
+d5a.lead_trail	47	[""," "]
+d5a.lead_trail	48	[" ",""]
+d5a.lead_trail	49	["",""]
+d5a.lead_trail	50	["",""]
+d5a.lead_trail	51	["",""]
+d5a.lead_trail	52	["",""]
+d5a.lead_trail	53	["",""]
+d5a.lead_trail	54	["",""]
+d5a.lead_trail	55	["",""]
+d5a.lead_trail	56	["",""]
+d5a.lead_trail	57	["",""]
+d5a.lead_trail	58	["",""]
+d5a.lead_trail	59	["",""]
+d5a.lead_trail	60	["",""]
+d5a.lead_trail	61	["",""]
+d5a.lead_trail	62	[""," "]
+d5a.lead_trail	63	[" ",""]
+d5a.lead_trail	64	["","\n"]
+d5a.lead_trail	65	["",""]
+d5a.lead_trail	66	["",""]
+d5a.lead_trail	67	["",""]
+d5a.lead_trail	68	["",""]
+d5a.lead_trail	69	["",""]
+d5a.lead_trail	70	["",""]
+d5a.lead_trail	71	[" "," "]
+d5a.lead_trail	72	["",""]
+d5a.lead_trail	73	["",""]
+d5a.lead_trail	74	["",""]
+d5a.lead_trail	75	["",""]
+d5a.lead_trail	76	["",""]
+d5a.lead_trail	77	["",""]
+d5a.lead_trail	78	["",""]
+d5a.lead_trail	79	["",""]
+d5a.lead_trail	80	["",""]
+d5a.lead_trail	81	["",""]
+d5a.lead_trail	82	["",""]
+d5a.lead_trail	83	["",""]
+d5a.lead_trail	84	["",""]
+d5a.lead_trail	85	["",""]
+d5a.lead_trail	86	["",""]
+d5a.lead_trail	87	["",""]
+d5a.lead_trail	88	["",""]
+d5a.lead_trail	89	["",""]
+d5a.lead_trail	90	["",""]
+d5a.lead_trail	91	["",""]
+d5a.lead_trail	92	["  ",""]
+d5a.lead_trail	93	["","  "]
+d5a.lead_trail	94	["  ","  "]
+d5a.lead_trail	95	[" "," "]
+d5a.lead_trail	96	["\t\n","\r\n"]
+d5a.lead_trail	97	[" "," "]
+d5a.lead_trail	98	["﻿","﻿"]
+d5a.lead_trail	99	[" "," "]
+d5a.lead_trail	100	["",""]
+d5a.lead_trail	101	["",""]
+d5a.lead_trail	102	["",""]
+d5a.lead_trail	103	["　","　"]
+d5a.lead_trail	104	[" "," "]
+d5a.lead_trail	105	[" "," "]
+d5a.lead_trail	106	["   ","   "]
+d5a.lead_trail	107	["\t","\t"]
+d5a.lead_trail	108	["\n","\n"]
+d5a.lead_trail	109	[" "," "]
+d5a.lead_trail	110	["﻿","﻿"]
+d5a.lead_trail	111	["",""]
+d5a.lead_trail	112	["",""]
+d5a.lead_trail	113	[" "," "]
+d5a.lead_trail	114	[" "," "]
+d5a.lead_trail	115	["",""]
+d5a.lead_trail	116	["",""]
+d5a.lead_trail	117	["",""]
+d5a.lead_trail	118	["",""]
+d5a.lead_trail	119	["",""]
+d5a.lead_trail	120	["",""]
+d5a.lead_trail	121	["",""]
+d5a.lead_trail	122	["",""]
+d5a.lead_trail	123	["",""]
+d5a.lead_trail	124	["",""]
+d5a.lead_trail	125	["",""]
+d5a.lead_trail	126	["",""]
+d5a.lead_trail	127	["",""]
+d5a.lead_trail	128	["",""]
+d5a.lead_trail	129	["",""]
+d5a.lead_trail	130	["",""]
+d5a.lead_trail	131	["",""]
+d5a.lead_trail	132	["",""]
+d5a.lead_trail	133	["",""]
+d5a.lead_trail	134	["",""]
+d5a.lead_trail	135	["",""]
+d5a.lead_trail	136	["",""]
+d5a.lead_trail	137	["",""]
+d5a.lead_trail	138	["",""]
+d5a.lead_trail	139	["",""]
+d5a.lead_trail	140	["",""]
+d5a.lead_trail	141	["",""]
+d5a.lead_trail	142	["",""]
+d5a.lead_trail	143	["",""]
+d5a.lead_trail	144	["",""]
+d5a.lead_trail	145	["",""]
+d5a.lead_trail	146	["",""]
+d5a.lead_trail	147	["",""]
+d5a.lead_trail	148	["",""]
+d5a.lead_trail	149	["",""]
+d5a.lead_trail	150	["",""]
+d5a.lead_trail	151	["",""]
+d5a.lead_trail	152	["",""]
+d5a.lead_trail	153	["",""]
+d5a.lead_trail	154	[" "," "]
+d5a.lead_trail	155	["","\n"]
+d5a.lead_trail	156	["\n",""]
+d5a.lead_trail	157	["",""]
+d5a.lead_trail	158	["",""]
+d5a.lead_trail	159	["",""]
+d5a.lead_trail	160	["","\n\n\n"]
+d5a.lead_trail	161	["\n\n\n","\n\n\n"]
+d5a.lead_trail	162	["\n\n","\n\n"]
+d5a.lead_trail	163	["\n\n\n\n\n\n","\n\n\n\n\n\n"]
+d5a.lead_trail	164	["","\n"]
+d5a.lead_trail	165	["\r\n\r\n\r\n","\r\n\r\n\r\n"]
+d5a.lead_trail	166	["",""]
+d5a.lead_trail	167	["\n \n\n","\n \n\n"]
+d5a.lead_trail	168	["\n \n\n","\n \n\n"]
+d5a.lead_trail	169	["",""]
+d5a.lead_trail	170	["",""]
+d5a.lead_trail	171	["",""]
+d5a.lead_trail	172	["",""]
+d5a.lead_trail	173	["",""]
+d5a.lead_trail	174	["",""]
+d5a.cell_text	0	"Heading1"
+d5a.cell_text	1	"Heading2"
+d5a.cell_text	2	"Heading 3"
+d5a.cell_text	3	"heading4"
+d5a.cell_text	4	"HEADING5"
+d5a.cell_text	5	"Heading6"
+d5a.cell_text	6	"Heading7"
+d5a.cell_text	7	"Heading9"
+d5a.cell_text	8	"Heading0"
+d5a.cell_text	9	"Heading"
+d5a.cell_text	10	"Heading "
+d5a.cell_text	11	"Heading  7"
+d5a.cell_text	12	"Heading\t2"
+d5a.cell_text	13	"Heading 2"
+d5a.cell_text	14	"Heading 2"
+d5a.cell_text	15	"Heading﻿3"
+d5a.cell_text	16	"Heading 4"
+d5a.cell_text	17	"Heading2"
+d5a.cell_text	18	"Heading​2"
+d5a.cell_text	19	"MyHeading2x"
+d5a.cell_text	20	"xHeading3"
+d5a.cell_text	21	"Subheading1"
+d5a.cell_text	22	"heading-2"
+d5a.cell_text	23	"heading_2"
+d5a.cell_text	24	"Heading１"
+d5a.cell_text	25	"Heading２"
+d5a.cell_text	26	"Título1"
+d5a.cell_text	27	"título2"
+d5a.cell_text	28	"TÍTULO3"
+d5a.cell_text	29	"Titulo4"
+d5a.cell_text	30	"titulo 5"
+d5a.cell_text	31	"TITULO6"
+d5a.cell_text	32	"Titulo7"
+d5a.cell_text	33	"Título"
+d5a.cell_text	34	"Título "
+d5a.cell_text	35	"Titulo"
+d5a.cell_text	36	"TÍTULO"
+d5a.cell_text	37	"tÍtulo9"
+d5a.cell_text	38	"tItulo 2"
+d5a.cell_text	39	"tİtulo2"
+d5a.cell_text	40	"tıtulo2"
+d5a.cell_text	41	"tı́tulo2"
+d5a.cell_text	42	"títúlo2"
+d5a.cell_text	43	"Title"
+d5a.cell_text	44	"title"
+d5a.cell_text	45	"TITLE"
+d5a.cell_text	46	"Title1"
+d5a.cell_text	47	"Title "
+d5a.cell_text	48	" Title"
+d5a.cell_text	49	"Titles"
+d5a.cell_text	50	"Tıtle"
+d5a.cell_text	51	"TİTLE"
+d5a.cell_text	52	"h1"
+d5a.cell_text	53	"H2"
+d5a.cell_text	54	"h3"
+d5a.cell_text	55	"H4"
+d5a.cell_text	56	"h5"
+d5a.cell_text	57	"h6"
+d5a.cell_text	58	"h7"
+d5a.cell_text	59	"h0"
+d5a.cell_text	60	"h"
+d5a.cell_text	61	"h11"
+d5a.cell_text	62	"h1 "
+d5a.cell_text	63	" h1"
+d5a.cell_text	64	"h1 "
+d5a.cell_text	65	"ｈ1"
+d5a.cell_text	66	"Normal"
+d5a.cell_text	67	"ListParagraph"
+d5a.cell_text	68	"Quote"
+d5a.cell_text	69	"Caption"
+d5a.cell_text	70	""
+d5a.cell_text	71	" "
+d5a.cell_text	72	"x"
+d5a.cell_text	73	"Heading1Char"
+d5a.cell_text	74	"Ｈeading1"
+d5a.cell_text	75	"heading１"
+d5a.cell_text	76	"HEADING 1"
+d5a.cell_text	77	"hEaDiNg3"
+d5a.cell_text	78	"Heading 1 Char"
+d5a.cell_text	79	"K"
+d5a.cell_text	80	"ſ"
+d5a.cell_text	81	"ǅ"
+d5a.cell_text	82	"HeadingK1"
+d5a.cell_text	83	"ΗEADING1"
+d5a.cell_text	84	"TİTULO1"
+d5a.cell_text	85	"Heading10"
+d5a.cell_text	86	"Heading 10"
+d5a.cell_text	87	"Heading11"
+d5a.cell_text	88	"Heading 0 1"
+d5a.cell_text	89	"Heading 1 2"
+d5a.cell_text	90	"a"
+d5a.cell_text	91	"a b"
+d5a.cell_text	92	"  a"
+d5a.cell_text	93	"a  "
+d5a.cell_text	94	"  a  "
+d5a.cell_text	95	" a b "
+d5a.cell_text	96	"\t a\r "
+d5a.cell_text	97	" a "
+d5a.cell_text	98	"﻿a﻿"
+d5a.cell_text	99	" a "
+d5a.cell_text	100	"a"
+d5a.cell_text	101	"᠎a᠎"
+d5a.cell_text	102	"​a​"
+d5a.cell_text	103	"　a　"
+d5a.cell_text	104	" a "
+d5a.cell_text	105	" a "
+d5a.cell_text	106	"   "
+d5a.cell_text	107	"\t"
+d5a.cell_text	108	" "
+d5a.cell_text	109	" "
+d5a.cell_text	110	"﻿"
+d5a.cell_text	111	""
+d5a.cell_text	112	"᠎"
+d5a.cell_text	113	"  "
+d5a.cell_text	114	"  "
+d5a.cell_text	115	"\\"
+d5a.cell_text	116	"`"
+d5a.cell_text	117	"*"
+d5a.cell_text	118	"_"
+d5a.cell_text	119	"{"
+d5a.cell_text	120	"}"
+d5a.cell_text	121	"["
+d5a.cell_text	122	"]"
+d5a.cell_text	123	"<"
+d5a.cell_text	124	">"
+d5a.cell_text	125	"\\|"
+d5a.cell_text	126	"\\`*_{}[]<>\\|"
+d5a.cell_text	127	"a*b_c"
+d5a.cell_text	128	"**bold**"
+d5a.cell_text	129	"_it_"
+d5a.cell_text	130	"`code`"
+d5a.cell_text	131	"[l](u)"
+d5a.cell_text	132	"<u>x</u>"
+d5a.cell_text	133	"p\\|q"
+d5a.cell_text	134	"a\\b"
+d5a.cell_text	135	"#"
+d5a.cell_text	136	"-"
+d5a.cell_text	137	"1."
+d5a.cell_text	138	"+"
+d5a.cell_text	139	"!"
+d5a.cell_text	140	"("
+d5a.cell_text	141	")"
+d5a.cell_text	142	"~"
+d5a.cell_text	143	"$"
+d5a.cell_text	144	"&"
+d5a.cell_text	145	"\""
+d5a.cell_text	146	"'"
+d5a.cell_text	147	"."
+d5a.cell_text	148	"="
+d5a.cell_text	149	"😀"
+d5a.cell_text	150	"a😀b"
+d5a.cell_text	151	"*😀*"
+d5a.cell_text	152	"é"
+d5a.cell_text	153	"日本語"
+d5a.cell_text	154	" 日本語 "
+d5a.cell_text	155	"a "
+d5a.cell_text	156	" a"
+d5a.cell_text	157	"a  b"
+d5a.cell_text	158	"a   b"
+d5a.cell_text	159	"a    b"
+d5a.cell_text	160	"a   "
+d5a.cell_text	161	"   "
+d5a.cell_text	162	"  "
+d5a.cell_text	163	"      "
+d5a.cell_text	164	"a   b    c  d "
+d5a.cell_text	165	"\r \r \r "
+d5a.cell_text	166	"a\r    b"
+d5a.cell_text	167	"    "
+d5a.cell_text	168	"    "
+d5a.cell_text	169	"a\\|b c\\|d"
+d5a.cell_text	170	"\\| \\|"
+d5a.cell_text	171	"\\|\\|"
+d5a.cell_text	172	"\\|   \\|"
+d5a.cell_text	173	"x y"
+d5a.cell_text	174	"x   y"
+d5a.collapse	0	"Heading1"
+d5a.collapse	1	"Heading2"
+d5a.collapse	2	"Heading 3"
+d5a.collapse	3	"heading4"
+d5a.collapse	4	"HEADING5"
+d5a.collapse	5	"Heading6"
+d5a.collapse	6	"Heading7"
+d5a.collapse	7	"Heading9"
+d5a.collapse	8	"Heading0"
+d5a.collapse	9	"Heading"
+d5a.collapse	10	"Heading "
+d5a.collapse	11	"Heading  7"
+d5a.collapse	12	"Heading\t2"
+d5a.collapse	13	"Heading\n2"
+d5a.collapse	14	"Heading 2"
+d5a.collapse	15	"Heading﻿3"
+d5a.collapse	16	"Heading 4"
+d5a.collapse	17	"Heading2"
+d5a.collapse	18	"Heading​2"
+d5a.collapse	19	"MyHeading2x"
+d5a.collapse	20	"xHeading3"
+d5a.collapse	21	"Subheading1"
+d5a.collapse	22	"heading-2"
+d5a.collapse	23	"heading_2"
+d5a.collapse	24	"Heading１"
+d5a.collapse	25	"Heading２"
+d5a.collapse	26	"Título1"
+d5a.collapse	27	"título2"
+d5a.collapse	28	"TÍTULO3"
+d5a.collapse	29	"Titulo4"
+d5a.collapse	30	"titulo 5"
+d5a.collapse	31	"TITULO6"
+d5a.collapse	32	"Titulo7"
+d5a.collapse	33	"Título"
+d5a.collapse	34	"Título "
+d5a.collapse	35	"Titulo"
+d5a.collapse	36	"TÍTULO"
+d5a.collapse	37	"tÍtulo9"
+d5a.collapse	38	"tItulo 2"
+d5a.collapse	39	"tİtulo2"
+d5a.collapse	40	"tıtulo2"
+d5a.collapse	41	"tı́tulo2"
+d5a.collapse	42	"títúlo2"
+d5a.collapse	43	"Title"
+d5a.collapse	44	"title"
+d5a.collapse	45	"TITLE"
+d5a.collapse	46	"Title1"
+d5a.collapse	47	"Title "
+d5a.collapse	48	" Title"
+d5a.collapse	49	"Titles"
+d5a.collapse	50	"Tıtle"
+d5a.collapse	51	"TİTLE"
+d5a.collapse	52	"h1"
+d5a.collapse	53	"H2"
+d5a.collapse	54	"h3"
+d5a.collapse	55	"H4"
+d5a.collapse	56	"h5"
+d5a.collapse	57	"h6"
+d5a.collapse	58	"h7"
+d5a.collapse	59	"h0"
+d5a.collapse	60	"h"
+d5a.collapse	61	"h11"
+d5a.collapse	62	"h1 "
+d5a.collapse	63	" h1"
+d5a.collapse	64	"h1\n"
+d5a.collapse	65	"ｈ1"
+d5a.collapse	66	"Normal"
+d5a.collapse	67	"ListParagraph"
+d5a.collapse	68	"Quote"
+d5a.collapse	69	"Caption"
+d5a.collapse	70	""
+d5a.collapse	71	" "
+d5a.collapse	72	"x"
+d5a.collapse	73	"Heading1Char"
+d5a.collapse	74	"Ｈeading1"
+d5a.collapse	75	"heading１"
+d5a.collapse	76	"HEADING 1"
+d5a.collapse	77	"hEaDiNg3"
+d5a.collapse	78	"Heading 1 Char"
+d5a.collapse	79	"K"
+d5a.collapse	80	"ſ"
+d5a.collapse	81	"ǅ"
+d5a.collapse	82	"HeadingK1"
+d5a.collapse	83	"ΗEADING1"
+d5a.collapse	84	"TİTULO1"
+d5a.collapse	85	"Heading10"
+d5a.collapse	86	"Heading 10"
+d5a.collapse	87	"Heading11"
+d5a.collapse	88	"Heading 0 1"
+d5a.collapse	89	"Heading 1 2"
+d5a.collapse	90	"a"
+d5a.collapse	91	"a b"
+d5a.collapse	92	"  a"
+d5a.collapse	93	"a  "
+d5a.collapse	94	"  a  "
+d5a.collapse	95	" a b "
+d5a.collapse	96	"\t\na\r\n"
+d5a.collapse	97	" a "
+d5a.collapse	98	"﻿a﻿"
+d5a.collapse	99	" a "
+d5a.collapse	100	"a"
+d5a.collapse	101	"᠎a᠎"
+d5a.collapse	102	"​a​"
+d5a.collapse	103	"　a　"
+d5a.collapse	104	" a "
+d5a.collapse	105	" a "
+d5a.collapse	106	"   "
+d5a.collapse	107	"\t"
+d5a.collapse	108	"\n"
+d5a.collapse	109	" "
+d5a.collapse	110	"﻿"
+d5a.collapse	111	""
+d5a.collapse	112	"᠎"
+d5a.collapse	113	"  "
+d5a.collapse	114	"  "
+d5a.collapse	115	"\\"
+d5a.collapse	116	"`"
+d5a.collapse	117	"*"
+d5a.collapse	118	"_"
+d5a.collapse	119	"{"
+d5a.collapse	120	"}"
+d5a.collapse	121	"["
+d5a.collapse	122	"]"
+d5a.collapse	123	"<"
+d5a.collapse	124	">"
+d5a.collapse	125	"|"
+d5a.collapse	126	"\\`*_{}[]<>|"
+d5a.collapse	127	"a*b_c"
+d5a.collapse	128	"**bold**"
+d5a.collapse	129	"_it_"
+d5a.collapse	130	"`code`"
+d5a.collapse	131	"[l](u)"
+d5a.collapse	132	"<u>x</u>"
+d5a.collapse	133	"p|q"
+d5a.collapse	134	"a\\b"
+d5a.collapse	135	"#"
+d5a.collapse	136	"-"
+d5a.collapse	137	"1."
+d5a.collapse	138	"+"
+d5a.collapse	139	"!"
+d5a.collapse	140	"("
+d5a.collapse	141	")"
+d5a.collapse	142	"~"
+d5a.collapse	143	"$"
+d5a.collapse	144	"&"
+d5a.collapse	145	"\""
+d5a.collapse	146	"'"
+d5a.collapse	147	"."
+d5a.collapse	148	"="
+d5a.collapse	149	"😀"
+d5a.collapse	150	"a😀b"
+d5a.collapse	151	"*😀*"
+d5a.collapse	152	"é"
+d5a.collapse	153	"日本語"
+d5a.collapse	154	" 日本語 "
+d5a.collapse	155	"a\n"
+d5a.collapse	156	"\na"
+d5a.collapse	157	"a\n\nb"
+d5a.collapse	158	"a\n\nb"
+d5a.collapse	159	"a\n\nb"
+d5a.collapse	160	"a\n\n"
+d5a.collapse	161	"\n\n"
+d5a.collapse	162	"\n\n"
+d5a.collapse	163	"\n\n"
+d5a.collapse	164	"a\n\nb\n\nc\n\nd\n"
+d5a.collapse	165	"\r\n\r\n\r\n"
+d5a.collapse	166	"a\r\n\nb"
+d5a.collapse	167	"\n \n\n"
+d5a.collapse	168	"\n \n\n"
+d5a.collapse	169	"a|b\nc|d"
+d5a.collapse	170	"|\n|"
+d5a.collapse	171	"||"
+d5a.collapse	172	"|\n\n|"
+d5a.collapse	173	"x\ny"
+d5a.collapse	174	"x \n y"

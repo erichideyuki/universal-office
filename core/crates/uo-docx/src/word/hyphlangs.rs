@@ -14,7 +14,7 @@
 //! | `TableCell` | `paragraphs` (direct), `tables` (direct), then `blocks` (already seen) |
 //! | `Section` | `headers`/`footers` (the parts' flat paragraph views), then the blocks |
 //! | `Paragraph` | `runs`, `ppr` |
-//! | `Run` | `rpr`, then the rare keys: `textbox` (`paras` view, then `blocks`), `fieldResult`, `custom.data` (any JSON), `group.items[*].run`, `math.nodes` |
+//! | `Run` | `rpr`, then the rare keys: `textbox` (`paras` view; `blocks` already seen), `fieldResult`, `custom.data` (any JSON), `group.items[*].run`, `math.nodes` |
 //! | `RPr` | `lang` (the site), `change.rPr` |
 //! | `PPr` | `rPr`, `change.pPr` |
 //! | `MathNode` | `num`, `den`, `rpr` |
@@ -22,6 +22,17 @@
 //! No other model object can hold a `lang` key (`RunProps`, `ParaProps`, sections' `sectPr`/`sect`,
 //! drawings, effects and the numbering are not visited or have none). The output order is the
 //! order of first appearance, as the TS `Set`.
+//!
+//! **Each paragraph is visited once** (deliberate divergence from the TS walk, same output; record
+//! `uo-docx-layout.md`, F2-21). The TS visits a text
+//! box's `paras` view and then its `blocks` view, and a cell's `paragraphs`/`tables` and then its
+//! `blocks`: the same paragraphs twice per level, 2^depth visits for nested text boxes (30 levels
+//! stall the open). A repeated visit of a subtree adds nothing to the `Set` (the walk is pure, and
+//! everything the subtree holds is already in the set after its first visit), so the walk keeps
+//! only the first visit of each view pair: the cell's `paragraphs` then `tables` (whose union is its
+//! `blocks`), the text box's `paras` (every paragraph of its `blocks`, cells included, in document
+//! order). `document_hyphenation_languages_ts_walk` (feature `canon`) keeps the TS double visit,
+//! for the test that proves the two lists equal.
 
 use indexmap::IndexSet;
 
@@ -36,6 +47,9 @@ use crate::view::DocView;
 
 struct Walk {
     out: IndexSet<Box<str>>,
+    /// the TS walk: a cell's `blocks` view visited again after its `paragraphs` and `tables`, a
+    /// synced text box's after its `paras`
+    ts_views: bool,
 }
 
 impl Walk {
@@ -163,15 +177,31 @@ impl Walk {
     }
 
     fn textbox(&mut self, t: &DrawingTextbox) {
-        // `paras` first (the flat view), then `blocks`
+        // `paras` first (the flat view: every paragraph of the blocks, cells included); the TS then
+        // visits `blocks`, the same paragraphs again (see the module comment)
         match t.view {
             TextboxView::Phantom => self.blocks(&t.content),
             TextboxView::Synced | TextboxView::ParasOnly => {
                 for p in t.content.flat_paragraphs() {
                     self.paragraph(p);
                 }
-                if t.view == TextboxView::Synced {
+                if self.ts_views && t.view == TextboxView::Synced {
                     self.blocks(&t.content);
+                }
+            }
+            // `paras` is the top-level paragraphs only (the ODF frame), so the `blocks` visit adds the
+            // cell paragraphs: the TS order is top-level paragraphs, then the blocks. Single visit
+            // (F2-21): the paragraphs again add nothing, so only the tables are walked
+            TextboxView::TopLevel => {
+                for p in t.content.paras.iter() {
+                    self.paragraph(p);
+                }
+                if self.ts_views {
+                    self.blocks(&t.content);
+                } else {
+                    for a in t.content.tables.iter() {
+                        self.table(&a.table);
+                    }
                 }
             }
         }
@@ -243,6 +273,9 @@ impl Walk {
         for a in c.content.tables.iter() {
             self.table(&a.table);
         }
+        if self.ts_views {
+            self.blocks(&c.content);
+        }
     }
 
     fn table(&mut self, t: &Table) {
@@ -267,6 +300,21 @@ impl Walk {
 /// (unless `force`, the editor's Manual Hyphenation).
 #[must_use]
 pub fn document_hyphenation_languages(view: DocView<'_>, fallback: &str, force: bool) -> Vec<Box<str>> {
+    walk(view, fallback, force, false)
+}
+
+/// [`document_hyphenation_languages`] with the TS visit order kept as written: a cell's `blocks`
+/// view is visited again after its `paragraphs` and `tables`, a synced text box's after its `paras`
+/// (2^depth for nested text boxes and tables). The reference of the equality test only; never
+/// call it on an untrusted document.
+#[cfg(feature = "canon")]
+#[doc(hidden)]
+#[must_use]
+pub fn document_hyphenation_languages_ts_walk(view: DocView<'_>, fallback: &str, force: bool) -> Vec<Box<str>> {
+    walk(view, fallback, force, true)
+}
+
+fn walk(view: DocView<'_>, fallback: &str, force: bool, ts_views: bool) -> Vec<Box<str>> {
     let fmt = view.formatting();
     if !fmt.settings.auto_hyphenation && !force {
         return Vec::new();
@@ -279,7 +327,7 @@ pub fn document_hyphenation_languages(view: DocView<'_>, fallback: &str, force: 
         .and_then(|r| r.lang.as_deref())
         .and_then(|l| l.val.clone())
         .unwrap_or_else(|| fallback.into());
-    let mut w = Walk { out: IndexSet::from([first]) };
+    let mut w = Walk { out: IndexSet::from([first]), ts_views };
     for (_, s) in fmt.styles.styles.iter() {
         w.style(s);
     }

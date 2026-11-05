@@ -21,6 +21,11 @@ use uo_docx::read::{DOCX, DOCX_POS, ReadOptions};
 use uo_opc::Package;
 use uo_opc::xml::parse;
 
+#[path = "support/nested_stories.rs"]
+mod nested_stories;
+
+use nested_stories::NESTED_STACK_KIB;
+
 const NS: &str = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" \
 xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" \
 xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" \
@@ -275,22 +280,21 @@ fn nested_textboxes(n: usize) -> String {
     format!("{}<w:p><w:r><w:t>core</w:t></w:r></w:p>{}", open.repeat(n), close.repeat(n))
 }
 
-/// A story nested in a story costs native stack on every level: a paragraph, its runs, the VML
-/// reader of the object (frontier R4b) and the paragraphs of its textbox. Measured at the
-/// milestone (record, item 5): a level costs ≈ 50 KB of stack in a debug build (R4c's frames
-/// ≈ 8 KB of it, R4b's readers the rest) and ≈ 14 KB in a release build; 64 levels need
-/// ≈ 0.9 MB, which a 1 MiB wasm32 stack does not leave room for next to the full-document
-/// reader. The levels are bounded by `max_nesting` (64) and the content past it is read as
-/// plain text, so the test gives the thread 32 MiB.
+/// A story nested in a story costs native stack on every level: a paragraph, its runs, the
+/// reader of the object (frontier R4b) and the paragraphs of its textbox. The levels are bounded
+/// by `max_nesting` (64) and the content past it is read as plain text; the frames of the chain
+/// are small (record "Nested-story stack — fixed": 64 levels ≈ 80 KB of the wasm32 shadow stack,
+/// ≈ 0.21 MB native in a release build, ≈ 0.6 MB in a debug build), so the thread gets the
+/// nested-story budget (`NESTED_STACK_KIB`, `tests/nested_stack.rs` covers every kind of object).
 #[test]
 fn textboxes_nested_past_the_limit_do_not_overflow_the_stack() {
     for n in [1, 8, 63, 64, 65, 100, 120] {
         let text = doc(&nested_textboxes(n));
-        let runs = on_stack(32 * 1024, move || read_part(&text, false, &DocxLimits::DEFAULT));
+        let runs = on_stack(NESTED_STACK_KIB, move || read_part(&text, false, &DocxLimits::DEFAULT));
         assert!(runs >= 1, "{n}");
     }
     let text = doc(&nested_textboxes(100));
-    on_stack(32 * 1024, move || read_part(&text, true, &DocxLimits::DEFAULT));
+    on_stack(NESTED_STACK_KIB, move || read_part(&text, true, &DocxLimits::DEFAULT));
     let text = doc(&nested_textboxes(8));
     on_wasm_stack(move || read_part(&text, false, &DocxLimits::DEFAULT));
 }

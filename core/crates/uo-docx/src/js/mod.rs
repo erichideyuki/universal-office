@@ -11,15 +11,19 @@
 //! `cleared: FieldMask` (the key exists with the value `undefined`, U4) and `keys: KeyOrder` (the
 //! insertion order of the keys when it is not the declaration order, K9/LQ20).
 
+mod exact;
 mod json;
 mod number;
 mod object;
 mod record;
 mod value;
 
-pub use json::JsonWriter;
+pub use exact::ExactKey;
+pub use json::{JsonWriter, SigEncoding};
 pub use number::{JsNumber, Nullable, NumKey};
-pub use object::{FieldMask, JsAssign, JsObject, KeyOrder, Slot, object_json, object_json_with, sort_keys};
+pub use object::{
+    FieldMask, JsAssign, JsObject, KeyOrder, Slot, no_hidden_fields, object_exact_head, object_json, object_json_with, sort_keys,
+};
 #[cfg(feature = "canon")]
 pub use object::{object_canon, object_canon_with};
 pub use record::{JsMap, JsRecord};
@@ -38,6 +42,14 @@ pub trait JsValue {
     /// Writes `JSON.stringify(value)`; returns `false` without writing anything when the value
     /// is `undefined` (the caller omits the key, or writes `null` in an array).
     fn json(&self, w: &mut JsonWriter<'_>) -> bool;
+
+    /// Writes the value's exact identity ([`ExactKey`]: numbers by their bits, the cleared mask and
+    /// the key order of declared objects); `false` when the type declares none or the key would
+    /// pass its maximum length, and then the value is not interned (the reader's props interning).
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        let _ = k;
+        false
+    }
 }
 
 impl JsValue for bool {
@@ -48,6 +60,9 @@ impl JsValue for bool {
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
         w.raw(if *self { "true" } else { "false" });
         true
+    }
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        k.tag(if *self { b'T' } else { b'F' })
     }
 }
 
@@ -60,6 +75,9 @@ impl JsValue for f64 {
         w.num(*self);
         true
     }
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        k.f64(*self)
+    }
 }
 
 impl JsValue for str {
@@ -71,6 +89,9 @@ impl JsValue for str {
         w.str(self);
         true
     }
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        k.str(self)
+    }
 }
 
 impl<T: JsValue + ?Sized> JsValue for Box<T> {
@@ -81,6 +102,9 @@ impl<T: JsValue + ?Sized> JsValue for Box<T> {
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
         (**self).json(w)
     }
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        (**self).exact(k)
+    }
 }
 
 impl<T: JsValue + ?Sized> JsValue for std::sync::Arc<T> {
@@ -90,6 +114,10 @@ impl<T: JsValue + ?Sized> JsValue for std::sync::Arc<T> {
     }
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
         (**self).json(w)
+    }
+    /// By value: interning never uses the pointer as TS identity (A1.3).
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        (**self).exact(k)
     }
 }
 
@@ -108,6 +136,12 @@ impl<T: JsValue> JsValue for Option<T> {
             None => false,
         }
     }
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        match self {
+            Some(v) => k.tag(b'S') && v.exact(k),
+            None => k.tag(b'N'),
+        }
+    }
 }
 
 impl<T: JsValue> JsValue for [T] {
@@ -122,6 +156,9 @@ impl<T: JsValue> JsValue for [T] {
         w.array(self.iter().map(|v| v as &dyn JsValue));
         true
     }
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        k.tag(b'a') && k.count(self.len()) && self.iter().all(|v| v.exact(k))
+    }
 }
 
 impl<T: JsValue> JsValue for Vec<T> {
@@ -132,6 +169,9 @@ impl<T: JsValue> JsValue for Vec<T> {
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
         self.as_slice().json(w)
     }
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        self.as_slice().exact(k)
+    }
 }
 
 impl<T: JsValue, const N: usize> JsValue for [T; N] {
@@ -141,6 +181,9 @@ impl<T: JsValue, const N: usize> JsValue for [T; N] {
     }
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
         self.as_slice().json(w)
+    }
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        self.as_slice().exact(k)
     }
 }
 
@@ -155,5 +198,8 @@ impl<A: JsValue, B: JsValue> JsValue for (A, B) {
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
         w.array([&self.0 as &dyn JsValue, &self.1 as &dyn JsValue].into_iter());
         true
+    }
+    fn exact(&self, k: &mut ExactKey) -> bool {
+        self.0.exact(k) && self.1.exact(k)
     }
 }

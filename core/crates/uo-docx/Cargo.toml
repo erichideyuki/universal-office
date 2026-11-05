@@ -19,8 +19,8 @@ canon = []
 session = []
 # the Editing API for .NET hosts (D3)
 editing-api = []
-# .doc conversion (D4)
-doc = []
+# .doc conversion (D4); the OfficeArt layer (odraw) is uo-drawingml's feature `legacy`
+doc = ["uo-drawingml/legacy"]
 # ODF read/write (D5)
 odf = []
 # HTML/Markdown export (D5)
@@ -47,3 +47,10 @@ uo-docx = { path = ".", features = ["canon"] }
 
 [lints]
 workspace = true
+
+# the wasm32 stack probe of nested stories (G20, record "Nested-story stack — fixed"):
+#   cargo build -p uo-docx --example nested_stack_wasm --target wasm32-unknown-unknown --profile wasm
+#   node core/crates/uo-docx/js/wasm-stack.mjs <target>/wasm32-unknown-unknown/wasm/examples/nested_stack_wasm.wasm
+[[example]]
+name = "nested_stack_wasm"
+crate-type = ["cdylib"]

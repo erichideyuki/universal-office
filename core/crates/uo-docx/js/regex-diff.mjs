@@ -5,10 +5,10 @@
 //
 //   node core/crates/uo-docx/js/regex-diff.mjs
 //
-// A site file exports SITES (rows `[id, regex | [regex, replacement], op]`) and optionally
+// A site file exports SITES (rows `[id, regex | [regex, replacement] | function, op]`) and optionally
 // INPUTS (default: the template inputs). Results are JSON: `test` → boolean, `index` → the
 // UTF-16 index or null, `group` → group 1 or null, `replace` → the string, `match` → the whole
-// match or null.
+// match or null, `fn` → the result of the function (a TS expression that is more than one regex).
 import { readdirSync, writeFileSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -32,6 +32,7 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort()) {
       else if (op === 'index') { const x = re.exec(input); r = x ? x.index : null; }
       else if (op === 'group') { const x = re.exec(input); r = x ? (x[1] ?? null) : null; }
       else if (op === 'match') { const x = re.exec(input); r = x ? x[0] : null; }
+      else if (op === 'fn') r = re(input);
       else r = input.replace(re[0], re[1]);
       if (re instanceof RegExp) re.lastIndex = 0;
       lines.push(`${id}\t${i}\t${JSON.stringify(r)}`);

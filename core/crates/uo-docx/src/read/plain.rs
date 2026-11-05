@@ -29,6 +29,11 @@ pub fn default_run_props() -> RunProps {
 
 /// The text paragraphs of everything below `el` (see the module comment).
 pub fn plain_paragraphs(el: Element<'_>, ids: &mut IdAlloc) -> Vec<Paragraph> {
+    plain_paragraphs_with(el, ids, &Arc::new(default_run_props()))
+}
+
+/// [`plain_paragraphs`] whose runs share `props` (the default run props, interned by the read).
+pub fn plain_paragraphs_with(el: Element<'_>, ids: &mut IdAlloc, props: &Arc<RunProps>) -> Vec<Paragraph> {
     let mut out = Vec::new();
     for p in std::iter::once(el).chain(el.descendants()).filter(|e| e.name() == "w:p") {
         // a w:p inside another w:p (a textbox in a run) is its own paragraph: take only the
@@ -53,7 +58,7 @@ pub fn plain_paragraphs(el: Element<'_>, ids: &mut IdAlloc) -> Vec<Paragraph> {
         }
         let mut para = Paragraph::empty(ids.para());
         if !text.is_empty() {
-            para.runs.push(Run { text: Utf16::from_units(text), props: Arc::new(default_run_props()), ..Run::default() });
+            para.runs = vec![Run { text: Utf16::from_units(text), props: Arc::clone(props), ..Run::default() }];
         }
         out.push(para);
     }

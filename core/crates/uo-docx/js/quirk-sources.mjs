@@ -25,7 +25,7 @@ const NS = [
 const PROLOG = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n';
 const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
-class Gen {
+export class Gen {
   constructor(seed) { this.rng = new Rng(seed); this.fieldDepth = 0; this.bm = 0; this.sdt = 0; this.paraId = 0; this.openField = 0; }
   below(n) { return this.rng.below(n); }
   pick(a) { return a[this.below(a.length)]; }

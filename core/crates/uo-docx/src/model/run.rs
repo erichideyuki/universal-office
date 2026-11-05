@@ -35,6 +35,11 @@ js_object! {
         opt r#move: bool = "move",
         req old: Box<RunProps> = "old",
     }
+    hidden {
+        /// the symbol keys `old` carries (it is a spread of the run's props when the session
+        /// records the change: `runFormatting(run.props)`); see [`Run::rpr_link`]
+        pub old_link: Option<Box<RprLink>>
+    }
 }
 
 js_object! {
@@ -203,6 +208,11 @@ pub enum TextboxView {
     Phantom,
     /// no `blocks` key (read without a block reader: comments); `paras` = the story's paragraphs
     ParasOnly,
+    /// `blocks` present; `paras` = the top-level paragraphs of the blocks only, cells excluded
+    /// (`blocks.flatMap(b => b.type === 'paragraph' ? [b.paragraph] : [])`: the ODF text frame,
+    /// odf/index.ts:594). The same objects as [`TextboxView::Synced`] when the blocks hold no
+    /// cell paragraph; otherwise the TS canon calls the views "split"
+    TopLevel,
 }
 
 js_object! {
@@ -261,16 +271,41 @@ impl JsValue for DrawingTextbox {
             TextboxView::ParasOnly => {
                 crate::js::object_canon_with(self, &[("paras", &|w| content.canon_paragraphs(w))], w);
             }
+            // the top-level paragraphs are a subsequence of the walked ones: equal counts = the
+            // same objects ("synced"), else both views are written
+            TextboxView::TopLevel if content.flat_paragraphs().len() != content.paras.len() => {
+                crate::js::object_canon_with(
+                    self,
+                    &[("blocks", &|w| content.canon(w)), ("paras", &|w| content.canon_paragraphs(w)), ("@views", &|w| w.str("split"))],
+                    w,
+                );
+            }
             v => {
-                let views = if v == TextboxView::Synced { "synced" } else { "phantom" };
+                let views = if v == TextboxView::Phantom { "phantom" } else { "synced" };
                 crate::js::object_canon_with(self, &[("blocks", &|w| content.canon(w)), ("@views", &|w| w.str(views))], w);
             }
         }
     }
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
-        let paras = self.content.flat_paragraphs();
+        if w.is_signature() {
+            // D1b signature text: the content once (`paras` for a box without blocks, else the
+            // block view), with the view kind
+            let view = match self.view {
+                TextboxView::Synced => "synced",
+                TextboxView::Phantom => "phantom",
+                TextboxView::ParasOnly => "paras",
+                TextboxView::TopLevel => "toplevel",
+            };
+            let blocks = super::story::BlocksJson(&self.content);
+            crate::js::object_json_with(self, &[], &[("@view", &view), ("blocks", &blocks)], w);
+            return true;
+        }
         let phantom = Paragraph::default();
-        let paras: Vec<&Paragraph> = if self.view == TextboxView::Phantom { vec![&phantom] } else { paras };
+        let paras: Vec<&Paragraph> = match self.view {
+            TextboxView::Phantom => vec![&phantom],
+            TextboxView::TopLevel => self.content.paras.iter().collect(),
+            _ => self.content.flat_paragraphs(),
+        };
         let blocks = super::story::BlocksJson(&self.content);
         if self.view == TextboxView::ParasOnly {
             crate::js::object_json_with(self, &[("paras", &paras)], &[], w);
@@ -434,8 +469,22 @@ js_object! {
         opt rpr_edited: bool = "rprEdited",
     }
     hidden {
-        pub ext: Option<Box<RunExt>>
+        pub ext: Option<Box<RunExt>>,
+        /// the TS symbol keys `RPR_REF`/`RPR_EDITED` that `universal-write.ts` keeps on the props
+        /// object (`syncRunRPr`): invisible to equality, JSON and the digest, copied wherever the
+        /// TS copies the props by spread, dropped by the undo normalisation (P2: on the run, not on
+        /// the props, so that props stay internable; D2a)
+        pub rpr_link: Option<Box<RprLink>>
     }
+}
+
+/// The link from a run's props to the `w:rPr` it was read with (see [`Run::rpr_link`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RprLink {
+    /// `props[RPR_REF]`
+    pub rpr: Option<Arc<RPr>>,
+    /// `props[RPR_EDITED]`
+    pub edited: bool,
 }
 
 impl Run {

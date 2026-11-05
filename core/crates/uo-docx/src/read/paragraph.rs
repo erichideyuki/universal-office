@@ -39,6 +39,7 @@ use crate::model::sources::SegSource;
 use crate::text::Utf16;
 
 use super::ctx::ReadCtx;
+use super::inline_objects::object_runs;
 use super::inline_objects::with_context as object;
 use super::json_parse;
 use super::matchers::{Cur, find_word, newlines_to_space, replace_char};
@@ -474,9 +475,42 @@ struct RunFrame<'d> {
     base: Option<(u64, Arc<RunProps>)>,
 }
 
+/// A paragraph whose runs are read, before `readParagraph` finishes it.
+struct ParaRead<'d> {
+    ppr_el: Option<Element<'d>>,
+    ppr: Option<Arc<PPr>>,
+    props: Arc<ParaProps>,
+    list: RunList,
+    segs: Vec<PendingSeg>,
+    part: Option<u32>,
+}
+
 enum Frame<'d> {
     Container { kids: IntoIter<Element<'d>>, inherit: Arc<Inherit>, list: usize, finish: Finish },
     Run(Box<RunFrame<'d>>),
+}
+
+/// The children of a `w:r` that are objects (R4b): read by `run_object`, whose text boxes read
+/// paragraphs.
+fn is_object_element(name: &str) -> bool {
+    matches!(name, "w:drawing" | "w:pict" | "w:object" | "mc:AlternateContent")
+}
+
+/// The text of a `w:t`/`w:delText` added to the run's text (soft hyphens as U+2011, line breaks
+/// as spaces).
+#[inline(never)]
+fn run_text(text: &mut String, child: Element<'_>) {
+    text.push_str(&newlines_to_space(&replace_char(&direct_text(child), '\u{AD}', '\u{2011}')));
+}
+
+/// The base of a `w:ruby` whose run frame is on top of `stack`: read next, into the list of the
+/// run, with the run's inheritance.
+#[inline(never)]
+fn ruby_base<'d>(stack: &mut Vec<Frame<'d>>, ruby: Element<'d>) {
+    let Some(Frame::Run(rf)) = stack.last() else { return };
+    let Some(b) = ruby.first_child("w:rubyBase") else { return };
+    let (inherit, list) = (Arc::clone(&rf.inherit), rf.list);
+    stack.push(Frame::Container { kids: b.child_elements().collect::<Vec<_>>().into_iter(), inherit, list, finish: Finish::Plain });
 }
 
 /// The list with index `idx`: 0 is the list the caller passed, `n` the `n`-th list the walk
@@ -499,7 +533,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
     /// `buildReadContext(pkg, relsPath)`: the relationships of a part (`word/_rels/document.xml.rels`…).
     pub fn new(ctx: &'c mut ReadCtx<'p>, rels_path: &str) -> Result<ReadContext<'c, 'p>, DocxError> {
         let mut rels: HashMap<Box<str>, Rel> = HashMap::new();
-        if let Some(doc) = ctx.xml_part_plain(rels_path)? {
+        if let Some(doc) = super::parts::part_doc(ctx, rels_path)? {
             for rel in doc.root().children_named("Relationship") {
                 if let (Some(id), Some(target)) = (truthy(rel.attr("Id")), truthy(rel.attr("Target"))) {
                     let target = target.strip_prefix("./").unwrap_or(target);
@@ -507,6 +541,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
                 }
             }
         }
+        let default_props = ctx.intern(default_run_props());
         Ok(ReadContext {
             ctx,
             source: source_of_rels(rels_path).into(),
@@ -517,7 +552,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
             field_stack: Vec::new(),
             next_frame: 0,
             fields_opened: 0,
-            default_props: Arc::new(default_run_props()),
+            default_props,
             collect_bookmarks: false,
             bookmark_events: Vec::new(),
             blocks: BlocksMode::None,
@@ -525,10 +560,22 @@ impl<'c, 'p> ReadContext<'c, 'p> {
         })
     }
 
+    /// `DEFAULT_RUN_PROPS` of this read (interned: every run with the default props shares it).
+    #[must_use]
+    pub fn default_run_props(&self) -> Arc<RunProps> {
+        Arc::clone(&self.default_props)
+    }
+
     /// Sets the part being read with positions (the TS `sourceXml`): the index `ReadCtx::source_part`
     /// returned for its text. Paragraphs are captured into the source store from then on.
     pub fn set_source_part(&mut self, part: Option<u32>) {
         self.source_part = part;
+    }
+
+    /// The part being read with positions (see [`ReadContext::set_source_part`]).
+    #[must_use]
+    pub fn source_part(&self) -> Option<u32> {
+        self.source_part
     }
 
     /// `ctx.resolveImage(rid)`: the media part a relationship names, `None` for an unknown or
@@ -640,40 +687,53 @@ impl<'c, 'p> ReadContext<'c, 'p> {
     fn read_children<'d>(&mut self, base: &mut RunList, kids: Vec<Element<'d>>, inherit: Arc<Inherit>) -> Result<(), DocxError> {
         let mut lists: Vec<RunList> = Vec::new();
         let mut stack: Vec<Frame<'d>> = vec![Frame::Container { kids: kids.into_iter(), inherit, list: 0, finish: Finish::Plain }];
-        while let Some(frame) = stack.pop() {
-            match frame {
-                Frame::Container { mut kids, inherit, list, finish } => match kids.next() {
-                    Some(child) => {
-                        stack.push(Frame::Container { kids, inherit: Arc::clone(&inherit), list, finish });
-                        self.container_child(child, &inherit, list, base, &mut lists, &mut stack)?;
+        // This loop is on the native stack once per nested story (a text box is read from inside
+        // its run, through `run_object`): the frame on top stays in place while its child is
+        // read, and every step that cannot reach a text box is a function of its own.
+        while let Some(top) = stack.last_mut() {
+            match top {
+                Frame::Run(rf) => match rf.kids.next() {
+                    Some(child) if is_object_element(child.name()) => {
+                        let li = rf.list;
+                        self.run_object(rf, child, pick(base, &mut lists, li))?;
                     }
-                    None => self.finish_container(finish, base, &mut lists)?,
-                },
-                Frame::Run(mut rf) => match rf.kids.next() {
                     Some(child) => {
-                        let list = rf.list;
-                        let inherit = Arc::clone(&rf.inherit);
-                        let step = self.run_child(&mut rf, child, base, &mut lists)?;
-                        stack.push(Frame::Run(rf));
-                        if let Step::Ruby = step
-                            && let Some(b) = child.first_child("w:rubyBase")
-                        {
-                            stack.push(Frame::Container {
-                                kids: b.child_elements().collect::<Vec<_>>().into_iter(),
-                                inherit,
-                                list,
-                                finish: Finish::Plain,
-                            });
+                        if let Step::Ruby = self.run_child(rf, child, base, &mut lists)? {
+                            ruby_base(&mut stack, child);
                         }
                     }
-                    None => {
-                        let list = rf.list;
-                        self.flush(&mut rf, pick(base, &mut lists, list))?;
-                    }
+                    None => self.end_run(&mut stack, base, &mut lists)?,
                 },
+                Frame::Container { .. } => self.container_step(&mut stack, base, &mut lists)?,
             }
         }
         Ok(())
+    }
+
+    /// The end of the `w:r` on top of `stack`: its pending text becomes a run.
+    #[inline(never)]
+    fn end_run(&mut self, stack: &mut Vec<Frame<'_>>, base: &mut RunList, lists: &mut [RunList]) -> Result<(), DocxError> {
+        if let Some(Frame::Run(mut rf)) = stack.pop() {
+            let list = rf.list;
+            self.flush(&mut rf, pick(base, lists, list))?;
+        }
+        Ok(())
+    }
+
+    /// The next child of the container on top of `stack`, or its end.
+    #[inline(never)]
+    fn container_step<'d>(&mut self, stack: &mut Vec<Frame<'d>>, base: &mut RunList, lists: &mut Vec<RunList>) -> Result<(), DocxError> {
+        let Some(Frame::Container { kids, inherit, list, .. }) = stack.last_mut() else { return Ok(()) };
+        match kids.next() {
+            Some(child) => {
+                let (inherit, list) = (Arc::clone(inherit), *list);
+                self.container_child(child, &inherit, list, base, lists, stack)
+            }
+            None => match stack.pop() {
+                Some(Frame::Container { finish, .. }) => self.finish_container(finish, base, lists),
+                _ => Ok(()),
+            },
+        }
     }
 
     #[inline(never)]
@@ -769,7 +829,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
                             props.link_tip = Some(tip.into());
                         }
                     }
-                    let mut run = Run { props: Arc::new(props), ..Run::default() };
+                    let mut run = Run { props: self.ctx.intern(props), ..Run::default() };
                     let ext = run.ext_mut();
                     ext.bookmark = Some(BookmarkMark { id: JsNumber::Num(id), name, end: end.then_some(true), ..BookmarkMark::default() });
                     ext.mark("bookmark");
@@ -797,7 +857,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
                     kids: child.child_elements().collect::<Vec<_>>().into_iter(),
                     list,
                     inherit: Arc::clone(inherit),
-                    rpr: rpr.map(Arc::new),
+                    rpr: rpr.map(|r| self.ctx.intern(r)),
                     r_props,
                     rpr_el: r_pr_el.and_then(ElSpan::of),
                     text: String::new(),
@@ -840,7 +900,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
                 let mut props = default_run_props();
                 props.italic = Some(true);
                 props.is_math = Some(true);
-                let mut run = Run { text: Utf16::from(text), props: Arc::new(props), ..Run::default() };
+                let mut run = Run { text: Utf16::from(text), props: self.ctx.intern(props), ..Run::default() };
                 if child.name() == "m:oMathPara" {
                     let jc = child
                         .first_child("m:oMathParaPr")
@@ -948,7 +1008,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
                     p.del = Some(Box::new(d.clone()));
                     mark_if_recorded(&mut p, "del");
                 }
-                let p = Arc::new(p);
+                let p = self.ctx.intern(p);
                 rf.base = Some((ver, Arc::clone(&p)));
                 p
             }
@@ -978,9 +1038,8 @@ impl<'c, 'p> ReadContext<'c, 'p> {
         self.push_target(list, run, side)
     }
 
-    /// One child of a `w:r` (the loop of `readSingleRun`). A small dispatcher: it is on the
-    /// native stack of every nested story (a textbox's paragraphs are read from inside its run),
-    /// so each case that is not an object lives in a function of its own.
+    /// One child of a `w:r` (the loop of `readSingleRun`) that is not an object (objects go to
+    /// [`ReadContext::run_object`] from the walk).
     #[inline(never)]
     fn run_child(
         &mut self,
@@ -995,7 +1054,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
             "w:rPr" => {}
             "w:fldChar" => self.run_fld_char(rf, child, pick(base, lists, li))?,
             "w:instrText" | "w:delInstrText" => self.run_instr_text(child),
-            "w:t" | "w:delText" => rf.text.push_str(&newlines_to_space(&replace_char(&direct_text(child), '\u{AD}', '\u{2011}'))),
+            "w:t" | "w:delText" => run_text(&mut rf.text, child),
             "w:tab" => rf.text.push('\t'),
             "w:br" | "w:cr" => rf.text.push(break_char(child)),
             "w:noBreakHyphen" => rf.text.push('\u{2011}'),
@@ -1004,7 +1063,6 @@ impl<'c, 'p> ReadContext<'c, 'p> {
             "w:sym" => self.run_sym(rf, child, pick(base, lists, li))?,
             "w:footnoteReference" | "w:endnoteReference" => self.run_note_ref(rf, child, pick(base, lists, li))?,
             "w:footnoteRef" | "w:endnoteRef" | "w:pgNum" => self.run_field_mark(rf, name, pick(base, lists, li))?,
-            "w:drawing" | "w:pict" | "w:object" | "mc:AlternateContent" => self.run_object(rf, child, pick(base, lists, li))?,
             "w:ruby" if child.first_child("w:rubyBase").is_some() => {
                 self.flush(rf, pick(base, lists, li))?;
                 return Ok(Step::Ruby);
@@ -1088,6 +1146,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
                 }
             }
         }
+        self.ctx.intern_shared(&mut run.props);
         if let Some(f) = truthy(font) {
             let ext = run.ext_mut();
             append_key(ext, "symFont");
@@ -1121,6 +1180,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
             }
             props.vert_align = Some("superscript".into());
         }
+        self.ctx.intern_shared(&mut run.props);
         self.push_target(list, run, side)
     }
 
@@ -1142,40 +1202,36 @@ impl<'c, 'p> ReadContext<'c, 'p> {
 
     /// `w:drawing`, `w:pict`, `w:object` and `mc:AlternateContent`: the objects of R4b. Their
     /// textboxes read paragraphs, which read runs: this function is on the native stack once per
-    /// nested story.
+    /// nested story: a small frame, the runs are read first and pushed by functions that return
+    /// before or start after the read (every object is read before the first push, as the TS).
     #[inline(never)]
     fn run_object(&mut self, rf: &mut RunFrame<'_>, child: Element<'_>, list: &mut RunList) -> Result<(), DocxError> {
+        let (tgt, k) = self.object_start(rf, list)?;
+        let runs = object_runs(child, self)?;
+        self.object_finish(rf, list, runs, (tgt, k), child)
+    }
+
+    /// Before an object: the text read so far becomes a run, and where the object runs go.
+    #[inline(never)]
+    fn object_start(&mut self, rf: &mut RunFrame<'_>, list: &mut RunList) -> Result<(Target, usize), DocxError> {
         self.flush(rf, list)?;
         let tgt = self.target();
-        let k = self.target_len(tgt, list).unwrap_or(0);
-        match child.name() {
-            "w:drawing" => {
-                if let Some(r) = object::read_drawing_run(child, self)? {
-                    self.push_object(rf, list, r)?;
-                }
-            }
-            "w:pict" | "w:object" => {
-                for r in object::read_vml_runs(child, self, child.name() == "w:object")? {
-                    self.push_object(rf, list, r)?;
-                }
-            }
-            _ => {
-                let drawing = child.first_child("mc:Choice").and_then(|c| c.descend("w:drawing"));
-                let r = match drawing {
-                    Some(d) => object::read_drawing_run(d, self)?,
-                    None => None,
-                };
-                if let Some(r) = r {
-                    self.push_object(rf, list, r)?;
-                } else if let Some(fb) = child.first_child("mc:Fallback") {
-                    let pict = fb.descend("w:pict").or_else(|| fb.descend("w:object"));
-                    if let Some(p) = pict {
-                        for v in object::read_vml_runs(p, self, p.name() == "w:object")? {
-                            self.push_object(rf, list, v)?;
-                        }
-                    }
-                }
-            }
+        Ok((tgt, self.target_len(tgt, list).unwrap_or(0)))
+    }
+
+    /// After an object: its runs pushed and tagged with the object element.
+    #[expect(clippy::vec_box, reason = "each box becomes the `ext` of a run as it is, with no copy of the `RunExt`")]
+    #[inline(never)]
+    fn object_finish(
+        &mut self,
+        rf: &mut RunFrame<'_>,
+        list: &mut RunList,
+        runs: Vec<Box<RunExt>>,
+        (tgt, k): (Target, usize),
+        child: Element<'_>,
+    ) -> Result<(), DocxError> {
+        for r in runs {
+            self.push_object(rf, list, object::object_run(r))?;
         }
         self.tag_object_runs(tgt, list, k, child);
         Ok(())
@@ -1249,7 +1305,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
             return Ok(());
         }
         let first_run = first.and_then(|i| f.runs.runs.get(i));
-        let props = first_run.map_or_else(|| Arc::new(f.props.clone()), |r| Arc::clone(&r.props));
+        let props = first_run.map_or_else(|| self.ctx.intern(f.props.clone()), |r| Arc::clone(&r.props));
         let mut run = Run { text, props, ..Run::default() };
         let ext = run.ext_mut();
         ext.field = Some(format!(" {} ", jstext::trim(&f.instr)).into());
@@ -1270,32 +1326,46 @@ impl<'c, 'p> ReadContext<'c, 'p> {
         }
         if !f.runs.runs.is_empty() {
             let ext = run.ext_mut();
-            ext.field_result = Some(f.runs.runs);
+            let mut result = f.runs.runs;
+            result.shrink_to_fit();
+            ext.field_result = Some(result);
             ext.mark("fieldResult");
         }
         self.push_target(list, run, side)
     }
 
     /// `readParagraph(pEl, ctx)`. A small frame: a paragraph is on the native stack once per nested
-    /// story, the props and the segments are built by functions of their own.
+    /// story, the props, the segments and the paragraph are built by functions of their own.
     #[inline(never)]
     pub fn read_paragraph(&mut self, p_el: Element<'_>) -> Result<Paragraph, DocxError> {
         self.ctx.count_paragraph()?;
         let ppr_el = p_el.first_child("w:pPr");
-        let (ppr, mut props) = paragraph_props(ppr_el);
+        let (ppr, props) = paragraph_props(self.ctx, ppr_el);
         let mut list = RunList::default();
         let part = self.source_part.filter(|_| self.ctx.sources.is_some() && p_el.positions().is_some());
         let mut segs: Vec<PendingSeg> = Vec::new();
         match part {
-            None => self.read_runs_into(&mut list, p_el)?,
+            None => self.read_children(&mut list, p_el.child_elements().collect(), Arc::new(Inherit::default()))?,
             Some(part) => self.read_with_segments(&mut list, &mut segs, part, p_el)?,
         }
+        self.finish_paragraph(p_el, ParaRead { ppr_el, ppr, props, list, segs, part })
+    }
+
+    /// The end of `readParagraph` once its runs are read: the fields left open, the TOC
+    /// instruction, the id and the sources.
+    #[inline(never)]
+    fn finish_paragraph(&mut self, p_el: Element<'_>, read: ParaRead<'_>) -> Result<Paragraph, DocxError> {
+        let ParaRead { ppr_el, ppr, mut props, mut list, segs, part } = read;
         self.cross_open_fields(&mut list)?;
         let instr = collect_instr_text(p_el);
         if find_word(&instr, "TOC", false).is_some() {
             Arc::make_mut(&mut props).toc_instr = Some(jstext::trim(&instr).into());
+            self.ctx.intern_shared(&mut props);
         }
-        let mut para = Paragraph { runs: list.runs, props, ppr, ..Paragraph::default() };
+        // exact capacity: the model keeps the vector for the paragraph's life (record, "Model size — P1")
+        let mut runs = std::mem::take(&mut list.runs);
+        runs.shrink_to_fit();
+        let mut para = Paragraph { runs, props, ppr, ..Paragraph::default() };
         para.id = self.ctx.ids.para();
         if let (Some(part), Some(store)) = (part, self.ctx.sources.as_mut()) {
             capture_paragraph(store, part, &mut para, p_el, ppr_el, segs, &list.sides);
@@ -1321,38 +1391,53 @@ impl<'c, 'p> ReadContext<'c, 'p> {
             let before = list.len();
             let joining = cur.is_some() && self.field_stack.iter().any(|f| !f.crossed);
             self.read_children(list, vec![child], Arc::new(Inherit::default()))?;
-            match (joining, cur) {
-                (true, Some(c)) => {
-                    if let (Some(seg), Some(store)) = (segs.get_mut(c), self.ctx.sources.as_ref()) {
-                        let piece = super::sources::el_span(part, child);
-                        seg.seg.raw = store.concat(&seg.seg.raw, &piece);
-                        seg.to = list.len();
-                        seg.seg.wrap_open = None;
-                        seg.seg.wrap_close = None;
-                        for k in ["wrapOpen", "wrapClose"] {
-                            if let Some(i) = SegSource::key_index(k) {
-                                seg.seg.keys.forget(i);
-                            }
+            cur = self.segment_of_child(list, segs, part, child, (before, joining, cur));
+        }
+        Ok(())
+    }
+
+    /// The segment of one top-level child of a paragraph read with sources, once its runs are read:
+    /// joined to the current one while a field is open, else a new one (returned as current).
+    #[inline(never)]
+    fn segment_of_child(
+        &mut self,
+        list: &RunList,
+        segs: &mut Vec<PendingSeg>,
+        part: u32,
+        child: Element<'_>,
+        (before, joining, cur): (usize, bool, Option<usize>),
+    ) -> Option<usize> {
+        match (joining, cur) {
+            (true, Some(c)) => {
+                if let (Some(seg), Some(store)) = (segs.get_mut(c), self.ctx.sources.as_ref()) {
+                    let piece = super::sources::el_span(part, child);
+                    seg.seg.raw = store.concat(&seg.seg.raw, &piece);
+                    seg.to = list.len();
+                    seg.seg.wrap_open = None;
+                    seg.seg.wrap_close = None;
+                    for k in ["wrapOpen", "wrapClose"] {
+                        if let Some(i) = SegSource::key_index(k) {
+                            seg.seg.keys.forget(i);
                         }
                     }
                 }
-                _ => {
-                    let mut seg = PendingSeg::new(part, child, before, list.len());
-                    let open_here = self.field_stack.iter().any(|f| !f.crossed);
-                    if !open_here && let Some((open, close)) = inline_wrapper(part, child) {
-                        seg.seg.mark("raw");
-                        seg.seg.mark("sids");
-                        seg.seg.wrap_open = Some(open);
-                        seg.seg.mark("wrapOpen");
-                        seg.seg.wrap_close = Some(close);
-                        seg.seg.mark("wrapClose");
-                    }
-                    segs.push(seg);
-                    cur = Some(segs.len() - 1);
+                cur
+            }
+            _ => {
+                let mut seg = PendingSeg::new(part, child, before, list.len());
+                let open_here = self.field_stack.iter().any(|f| !f.crossed);
+                if !open_here && let Some((open, close)) = inline_wrapper(part, child) {
+                    seg.seg.mark("raw");
+                    seg.seg.mark("sids");
+                    seg.seg.wrap_open = Some(open);
+                    seg.seg.mark("wrapOpen");
+                    seg.seg.wrap_close = Some(close);
+                    seg.seg.mark("wrapClose");
                 }
+                segs.push(seg);
+                Some(segs.len() - 1)
             }
         }
-        Ok(())
     }
 
     /// The end-of-paragraph loop of `readParagraph`: a field whose result goes on in the next
@@ -1369,7 +1454,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
                 let first = f.runs.runs.iter().position(|r| !is_object_run(r)).or(if f.runs.runs.is_empty() { None } else { Some(0) });
                 let text = concat_text(f.runs.runs.iter().filter(|r| !is_object_run(r)));
                 let first_run = first.and_then(|k| f.runs.runs.get(k));
-                let props = first_run.map_or_else(|| Arc::new(f.props.clone()), |r| Arc::clone(&r.props));
+                let props = first_run.map_or_else(|| self.ctx.intern(f.props.clone()), |r| Arc::clone(&r.props));
                 let rpr = first_run.and_then(|r| r.rpr.clone()).or_else(|| f.rpr.clone());
                 let mut run = Run { text, props, rpr, ..Run::default() };
                 let ext = run.ext_mut();
@@ -1378,7 +1463,9 @@ impl<'c, 'p> ReadContext<'c, 'p> {
                 ext.field_open = Some(true);
                 ext.mark("fieldOpen");
                 if !f.runs.runs.is_empty() {
-                    ext.field_result = Some(std::mem::take(&mut f.runs.runs));
+                    let mut result = std::mem::take(&mut f.runs.runs);
+                    result.shrink_to_fit();
+                    ext.field_result = Some(result);
                     ext.mark("fieldResult");
                 }
                 self.ctx.count_run()?;
@@ -1434,10 +1521,10 @@ fn read_form_field(ff: Element<'_>) -> Option<FormField> {
 /// The `w:pPr` of a paragraph read and mapped (`readPPr`, `paraPropsFromPPr`), both behind an
 /// `Arc`: the large structs are built here, off the frame of the paragraph.
 #[inline(never)]
-fn paragraph_props(ppr_el: Option<Element<'_>>) -> (Option<Arc<PPr>>, Arc<ParaProps>) {
+fn paragraph_props(ctx: &mut ReadCtx<'_>, ppr_el: Option<Element<'_>>) -> (Option<Arc<PPr>>, Arc<ParaProps>) {
     let ppr: Option<PPr> = read_ppr(ppr_el);
     let props = para_props_from_ppr(ppr.as_ref());
-    (ppr.map(Arc::new), Arc::new(props))
+    (ppr.map(|p| ctx.intern(p)), ctx.intern(props))
 }
 
 /// The character a `w:br` or `w:cr` adds to the text: a page, a column or a line break (a line

@@ -40,7 +40,8 @@ Record of the rust-port workflow. Status: **gate 1 approved 2026-11-01** (G1–G
     `uo-render`, because their output is display-list content.
   - **msospt** (binary shape type → `prst`): three copies (`slides-core/src/ppt/preset-map.ts`,
     `docx-core/src/doc/preset-map.ts`, `sheet-core/src/xls/odraw-geom.ts`, C# `PresetMap.cs`),
-    planned with the first legacy-format port.
+    planned with the first legacy-format port. Done with the OfficeArt records of uo-docx G11:
+    `odraw::msospt` (section "odraw — OfficeArt").
   - Write's own `presetPathLocal` (twips, arcs as cubic Béziers, `docx-layout/src/geometry.ts`) and
     the canvas effect pipelines (`canvas-picture.ts`/`pdf-picture.ts`/`textfx.ts`) stay with
     `uo-docx-layout`; Slides' canvas `applyBevel`/`edt1d` and its PowerPoint blip model
@@ -906,6 +907,223 @@ Native, wasm and the frozen TS therefore agree bit for bit on the same inputs fo
 
 **Not done.** The security review (the `max_*` values above are its decision); real Safari / iOS (gate 3); the wasm run of `fill_polygons` at the work cap and of `gaussian_blur` at the radius cap on a large mask (seconds to minutes: native numbers only); Chromium and Firefox runs; the whole-corpus self-test in WebKit in CI (a local run took 20.7 s; only the subset runs there); a mutation check of the fuzz invariants beyond the NaN finding above.
 
+## odraw — OfficeArt (Opus brief, 2026-11-03)
+
+uo-docx plan G11 (approved): the OfficeArt records of the binary formats ([MS-ODRAW]) live in
+`uo_drawingml::odraw`, behind the feature `legacy` (`[features] legacy = []`; the D4 `.doc`
+converter, and later the `.xls`/`.ppt` readers, enable it), next to the msospt → preset map
+(this record's G6), which is `odraw::msospt`. Hybrid mode: one Opus agent wrote this brief and the
+1:1 port of the Write side; the Slides and Sheet differences are named variants, implemented where
+they are a few lines and verified against their own TS, declared (not implemented) where they are
+reader logic of their own.
+
+### Sources and placement
+
+| TS (frozen `main`) | Lines | Rust | State |
+|---|---|---|---|
+| `write/packages/docx-core/src/doc/officeart.ts` | 280 | `odraw/{fopt,shape,bstore}.rs` | ported, verified |
+| `doc/bytes.ts`, the record half (`readRec`, `recsIn`, `children`, `child`, `OA`) | ≈ 50 | `odraw/record.rs` | ported, verified; the `ByteReader` half stays with D4 |
+| `doc/reader.ts` `loadDrawings`, `shape`, `backgroundShape`, `bse` | ≈ 40 | `odraw/word.rs` | ported, verified (it is OfficeArt, not `.doc`) |
+| `doc/preset-map.ts` | 267 | `odraw/msospt.rs` | ported, verified with the Slides and Sheet variants |
+| `slides-core/src/ppt/officeart.ts`, `ppt/preset-map.ts` | 376 + 274 | same modules, `Flavor::Slides`, `PresetVariant::WordSlides` | FOPT and BLIP variants implemented and verified; tree/masters/anchor declared below |
+| `sheet-core/src/xls/officeart.ts`, `xls/odraw-geom.ts` (`presetGeomXml`, `hasPreset`, `rawAdjust`) | 400 + ≈ 150 | `Flavor::Sheet`, `PresetVariant::Sheet`, `OdrawLimits::SHEET` | FOPT, BLIP and preset variants implemented and verified; tree declared below |
+| C# `DocBinary/OfficeArt.cs`, `PresetMap.cs` | 375 + 294 | type guide | `PresetMap.cs` reviewed: same table, defaults and `JsNumber.Round` |
+
+Dependencies: `uo-opc` (`flate::inflate_capped`, the `inflateCapped` of the three readers, already
+ported and verified there) and `uo-jsnum` (`math::{round, min, max}`, `conv::{to_int16, to_uint16,
+truthy}`). `#![forbid(unsafe_code)]` and the crate's cast lints apply.
+
+### API
+
+```rust
+// uo_drawingml::odraw (feature "legacy")
+pub enum Flavor { Word, Slides, Sheet }                       // which reader's rules, where the copies differ
+pub struct OdrawLimits { max_blip_bytes: u64, max_group_depth: u32, max_word_drawings: u32, max_shapes: u32, max_master_props: u32 }
+impl OdrawLimits { const WORD; const SHEET; }                 // Default = WORD
+
+// records (record.rs): everything borrows the stream ('a)
+pub mod rt { DGG_CONTAINER, BSTORE_CONTAINER, DG_CONTAINER, SPGR_CONTAINER, SP_CONTAINER, FBSE, FSPGR, FSP, FOPT,
+             CLIENT_TEXTBOX, CHILD_ANCHOR, CLIENT_ANCHOR, CLIENT_DATA, BLIP_*, SECONDARY_FOPT, TERTIARY_FOPT, … }
+pub struct Rec<'a> { ver: u8, inst: u16, rec_type: u16, len: u32, hdr: u64, start: u64, end: u64, data: &'a [u8] }
+impl Rec { is_container, bytes, children -> Recs, child(type), is_blip }
+pub fn read_rec(data: &[u8], off: u64, limit: u64) -> Option<Rec<'_>>;
+pub fn recs_in(data: &[u8], start: u64, end: u64) -> Recs<'_>;  // iterator, the sequence of recsIn
+
+// properties (fopt.rs)
+pub struct Prop<'a> { id: u16, value: u32, bid: bool, complex: Option<&'a [u8]> }
+pub struct PropTable<'a>;   // JS Map order: get, value, contains, get_complex, set, iter, iter_complex, len
+pub fn read_fopt<'a>(rec: &Rec<'a>, into: &mut PropTable<'a>, flavor: Flavor);
+pub fn is_boolean_prop(id: u16) -> bool;  pub fn merge_booleans(base: u32, over: u32) -> u32;
+
+// shapes (shape.rs)
+pub mod fsp { GROUP, CHILD, PATRIARCH, DELETED, …, BACKGROUND, HAVE_SPT }  pub const PROP_HSP_MASTER: u16 = 0x301;
+pub struct Shape<'a> { spid, shape_type: u16, flags, props: PropTable<'a>, fspgr, child_anchor, client_anchor,
+                       client_data, client_textbox: Option<Rec<'a>>, last_anchor: Option<AnchorKind>,
+                       children: Option<Vec<Shape<'a>>>, z: Option<u32> }
+impl Shape { group_rect() -> Option<RectI32>, child_rect(), has_flag(f) }      // the Word/Slides `readRect`
+pub fn read_sp_container<'a>(rec: &Rec<'a>, flavor: Flavor) -> Shape<'a>;
+pub fn read_spgr_container<'a>(rec: &Rec<'a>, flavor: Flavor, l: &OdrawLimits) -> Shape<'a>;
+pub struct ShapeMap<'a>;    // spid → shape, JS Map semantics (a repeated spid replaces in place)
+pub fn index_drawing<'a>(dg: &Rec<'a>, into: &mut ShapeMap<'a>, l: &OdrawLimits);          // Word
+pub fn apply_masters(m: &mut ShapeMap<'_>, masters: &mut BTreeSet<u32>, l: &OdrawLimits);   // Word
+
+// Word's OfficeArtContent (word.rs): what DocReader.loadDrawings built
+pub struct WordDrawings<'a> { bstore: Vec<Option<Bse<'a>>>, main: ShapeMap<'a>, hdr: ShapeMap<'a>, masters: BTreeSet<u32> }
+impl WordDrawings { shape(spid, hdr), background_shape(), bse(pib) }
+pub fn read_word_drawings<'a>(table: &'a [u8], fc: u32, lcb: u32, l: &OdrawLimits) -> WordDrawings<'a>;
+
+// BLIP store and BLIPs (bstore.rs)
+pub struct Bse<'a> { bt_win32: u8, size: u32, c_ref: u32, fo_delay: u32, embedded: Option<Rec<'a>> }
+pub fn read_fbse<'a>(c: &Rec<'a>) -> Bse<'a>;  pub fn read_bstore<'a>(rec: &Rec<'a>) -> Vec<Option<Bse<'a>>>;
+pub enum BlipKind { Png, Jpeg, Tiff, Bmp, Emf, Wmf, Pict }  // ext(), mime(): the TS strings
+pub struct Blip<'a> { kind: BlipKind, bytes: Cow<'a, [u8]>, pict_size: Option<(i32, i32)> }
+pub struct BlipBudget { left: u64 }  // document() = 512 MiB, unlimited()
+pub fn decode_blip<'a>(rec: &Rec<'a>, budget: &mut BlipBudget, flavor: Flavor, l: &OdrawLimits) -> Option<Blip<'a>>;
+
+// msospt → DrawingML preset (msospt.rs)
+pub enum PresetVariant { WordSlides, Sheet }
+pub struct PresetResult { prst: &'static str, flip_v: bool, /* av(): at most 2 */ }  pub struct PresetAdjust { name: &'static str, val: f64 }
+pub fn preset_for(spt: u16, adjust: &[Option<f64>], w: f64, h: f64, v: PresetVariant) -> Option<PresetResult>;
+pub fn is_word_art_type(spt: u16) -> bool;  pub fn is_connector_type(spt: u16) -> bool;  pub fn has_preset(spt: u16) -> bool;
+pub fn raw_adjust(props: &PropTable<'_>) -> [Option<f64>; 10];   // `v | 0` of 0x147..0x150
+```
+
+Shape of the data: nothing is copied out of the stream (property data, records and raster BLIPs are
+slices; a BLIP is owned only when inflated, prefixed (BMP, WMF) or cut by `cbSize` after an
+inflate). The TS reads every field relative to the whole buffer, so a field past the end of its
+record reads the next record's bytes and past the buffer reads 0: the Rust reads are the same
+(`Rec.data` is the whole buffer). `PropTable` keeps `Map` order (append; replace in place) with a
+linear search up to 16 entries and an index above (a FOPT holds up to 4,095 entries). D4 owns the
+streams (`Vec<u8>` per CFB stream) and borrows `WordDrawings<'a>` from the table stream for the
+conversion.
+
+### The three copies, compared (named variants)
+
+| Area | Word (`doc/officeart.ts`) | Slides (`ppt/officeart.ts`) | Sheet (`xls/officeart.ts`) | In the Rust API |
+|---|---|---|---|---|
+| `readRec`, `recsIn` | — | same | same rule written as `rec.end - rec.start < len` | one implementation |
+| FOPT entries, `IMsoArray` size without the 6-byte header (LibreOffice), `0xFFF0` cells | — | same | same | one implementation |
+| boolean set read twice (FOPT + TertiaryFOPT) | `mergeBooleans(prev, new)` whenever the new one is not complex (no `fUse` bit → previous value); the new entry (its `bid`) replaces | per-bit, only if neither is complex and the new value has an `fUse` bit; keeps the previous entry's `bid`; else replaced | as Slides | `read_fopt(.., Flavor)`: implemented, verified |
+| where complex data goes | same table | same table | separate `complex` map; complex never replaces a simple value | `PropTable` keeps Sheet's complex entries apart (`get_complex`, `iter_complex`): implemented, verified |
+| `SpContainer` | FSP, FSPGR, FOPTs, ChildAnchor (last wins) | + ClientAnchor (8-byte `i16` or 16-byte `i32` rect), ClientData, ClientTextbox; one `anchor` + `anchorKind` (last of the two) | FSPGR and ChildAnchor only when ≥ 16 bytes (a short one does not replace); ClientAnchor = cell anchor (≥ 18 bytes); `clientDataAt`; a deleted shape is `undefined` | `Shape` keeps the raw records and `last_anchor`; `group_rect`/`child_rect` are the Word/Slides read. **To add at the ports**: `client_rect_ppt`, `cell_anchor`, the Sheet ≥ 16 rule (accessors over the same records, no API change) |
+| group tree | `readSpgrContainer` (no header → empty group with `fGroup`; deleted dropped; depth 64) | same | `readGroup`: no header → no group; header deleted → no group; depth 32; `readShapes` walks every `SpgrContainer` of every `DgContainer` of the concatenated MSODRAWING, header skipped | Word/Slides: `read_spgr_container`. **To add at the Sheet port**: `read_sheet_shapes` over `recs_in` + `read_sp_container` with `OdrawLimits::SHEET` |
+| drawing and masters | `indexDrawing` (spid map, `z`) + `applyMasters`: one level, regardless of `fHaveMaster`, every property but `0x301`, type inherited, booleans `mergeBooleans(master, own)` | `readDgContainer` (first `SpgrContainer` as root, `fBackground` shape) + `resolveShapeMasters`: chain to depth 8, needs `fHaveMaster`, never `0x80/0x301/0x380/0x381/0x3A9`, per-bit with the master's `fUse` | `readDrawingDefaults` (the DggContainer FOPT) | Word: `index_drawing`, `apply_masters`, `read_word_drawings`. **To add at the Slides port**: `read_dg_container`, `resolve_shape_masters` (planned names, same types) |
+| FBSE | `btWin32`, `size`, `foDelay`, embedded BLIP | + `cRef` | embedded only (by `pib`) | `Bse` has all fields |
+| BLIP: DIB header | missing fields 40/24/0/0 | same | also a zero `biSize`/`biBitCount` → 40/24 (`\|\|`) | `decode_blip(.., Flavor)`: implemented, verified |
+| BLIP: WMF | keeps an existing placeable header; units per inch from `ptSize` (`round((r − l) · 914400 / ptX)`, clamped to 1..65535) | always adds one, 1,440 | as Slides | same function: implemented, verified |
+| BLIP: PICT | raw | `fitPictFrame(bytes, ptSize)` (Slides' `pict.ts`) | raw | `Blip.pict_size` carries `ptSize`; the fit stays in Slides (not compared: the Slides facet skips PICT) |
+| budget | optional (`DocReader.blipBudget` 512 MiB) | optional | always 512 MiB per store; errors swallowed (`try/catch`); decoded BLIPs cached by `pib` | `BlipBudget`; Sheet's cache is the app's (M5 cap at its port) |
+| group depth | 64 | 64 | 32 | `OdrawLimits::{WORD, SHEET}` |
+
+**msospt, entry by entry** (the script evaluates every type 0..=255 and 4,095 over 40 cases of
+adjusts and box sizes, 10,280 evaluations per copy, and compares): Write and Slides `presetFor` are
+the same code (the files differ only in comments): **0 differences**. Sheet `presetGeomXml` differs
+only in (a) the classic WordArt types (24–31, 136–175): `rect` without adjusts in Write/Slides,
+no preset in Sheet (1,920 evaluations); (b) `w || 1`, `h || 1` applied inside Sheet, by the callers
+in Write/Slides (68 evaluations with a 0, −0 or NaN side); (c) `flipV: false` vs absent (same
+meaning); everything else equal (8,292 identical, 0 other). The tables (`P`, `DML_DEFAULTS`,
+`binDefaults`) are identical in the three TS copies and in C# `PresetMap.cs`. Hence
+`PresetVariant::{WordSlides, Sheet}`; Sheet's XML (`<a:prstGeom prst><a:avLst>…</a:avLst>`, always
+with `avLst` open and closed) is the caller's (the parity builds it with `uo_jsnum::format::Js`).
+
+**Next shared candidates** (not ported here; each with the first port that needs it): the freeform
+geometry (`pVertices` 0x145 / `pSegmentInfo` 0x146 → custom geometry: Sheet `custGeomXml`, Slides
+`shapeconv.ts`, Write's own in `docx-writer.ts`), the legacy arc (`arcGeomXml`), the WordArt warp
+adjusts (`warpAdjust`) and the OfficeArt colour (`0x08xxxxxx` scheme/system indices) of the three
+writers. They should land as `odraw::geom` and `odraw::color` with flavors, not in D4.
+
+### Limits
+
+| Limit | Value | Source | Effect |
+|---|---|---|---|
+| `max_blip_bytes` | 64 MiB | TS `MAX_BLIP` | a metafile inflating past it is dropped (`None`) |
+| `BlipBudget::document()` | 512 MiB | TS `blipBudget` | cumulative per document; a refused BLIP spends nothing |
+| `max_group_depth` | 64 (Sheet 32) | TS `MAX_GROUP_DEPTH` | deeper groups dropped; also the recursion bound |
+| `max_word_drawings` | 16 | TS `guard++ < 16` | |
+| `max_shapes` | 65,536 | **new** | shape containers past it are skipped (in one `read_word_drawings`, or one tree). An empty 8-byte `SpContainer` costs a 440-byte `Shape`: without it a 2 MB table stream builds ≈ 110 MB |
+| `max_master_props` | 1,048,576 | **new** | `apply_masters` stops once it has added that many properties (one 4,095-property master named by 10,000 shapes would copy 41 M entries, ≈ 1 GB) |
+
+Loops: every record step advances by ≥ 8 bytes; a FOPT has at most 4,095 entries (12-bit
+instance); `read_word_drawings` reads at most 16 drawings; offsets are `u64` (no overflow, nothing
+truncated). Nothing allocates from a size in the file before the data is there, except the inflate,
+which is capped (uo-opc). The two new limits change results only on hostile input; they are the
+listed differences of this module.
+
+### Decisions outside the TS semantics (none changes a result on the corpus)
+
+1. `max_shapes` and `max_master_props` (above).
+2. BLIP bytes borrowed (`Cow`) where the TS copies (`slice()`): same bytes.
+3. `recs_in` is an iterator; the `children(rec)` arrays are not built.
+4. `spt` is `u16` (the 12-bit `recInstance`), the adjusts `f64` (`raw_adjust` gives the callers'
+   `v | 0`).
+5. `Blip.pict_size` (the Slides input) is returned for every flavor.
+6. Sheet's separate complex map lives inside `PropTable` (boxed, created only by `Flavor::Sheet`).
+7. When `max_shapes` runs out exactly at a group header the group is an empty shape (only at the
+   limit).
+
+### Parity (Node 24.15.0 x64, frozen TS `UO_TS_ROOT` = the `clickcompliance-docx` worktree)
+
+`tools/capture-odraw.mjs` (deterministic: testkit xorshift32, `node:zlib` at fixed levels; run twice,
+byte-identical) writes `tests/captures/odraw.capture` (571 KB), replayed by `tests/odraw_parity.rs`:
+
+| Corpus | Records | Facets |
+|---|---|---|
+| the 11 `.doc` fixtures: `OfficeArtContent` at `fcDggInfo` through the real `DocReader` (the script checks that its copy of `loadDrawings` gives the same digest), every BStore entry decoded as `shapeBlip` does (embedded or at `foDelay` in WordDocument), the PICF walk of the Data stream (inline pictures: `readSpContainer`, `readFbse`, `decodeBlip`); Rust reads the streams with `uo_opc::cfb` and checks their SHA-256 | 11 | `streams`, `drawings`, `blips`, `inline` |
+| generated contents (nested and deleted groups, duplicate spids, masters, backgrounds, FOPT/Secondary/Tertiary with booleans and arrays, every BLIP type and instance, stored/zlib/raw/garbage/truncated metafiles, short and long `cbSize`, placeable WMFs, overflowing records, a delay stream and a Data stream of PICFs, budgets from 0 to 512 MiB) | 100 | `drawings`, `blips`, `inline` |
+| byte edits and cuts of the fixtures (24 each) and of the generated contents (2 each), in the table, delay or Data stream | 464 | same |
+| FOPT blocks under Word `readFopt`, Slides `readFopt`, Sheet `readFoptBlock` | 250 | `word`, `slides`, `sheet` |
+| single BLIPs under Word `decodeBlip` (budgets 0, 50, 300, 512 MiB), Slides `decodeBlip` (not PICT), Sheet `BlipStore` | 250 | `word`, `slides` (233), `sheet` |
+| msospt 0..=255 and 4,095 × 40 cases | 257 + 40 | `word`, `slides`, `sheet` |
+
+**Result: 3,990 facets equal, 0 mismatches, 0 accepted, nothing unreplayed, on the first run of
+the replay.** It bites: six deliberate changes in the port, one at a time (units per inch × 2, the
+Word merge rule dropped, the master type not inherited, `ss || 2` in the preset ratio, Sheet's
+`biSize` default 41, Word's placeable test inverted) gave 50, 153, 3, 16, 4 and 13 mismatches; a
+change of 1 in 914,400 is absorbed by `Math.round` on this corpus (no mismatch).
+
+Commands (from `core/`, `CARGO_TARGET_DIR=$PWD/target/odraw`):
+`UO_TS_ROOT=<frozen checkout> node crates/uo-drawingml/tools/capture-odraw.mjs`;
+`cargo test --release -p uo-drawingml --features legacy --test odraw_parity`.
+
+### Memory (measured, `tests/odraw_memory.rs`)
+
+| Check | Result |
+|---|---|
+| M1 | every entry point returns live bytes exactly: `read_word_drawings` and the decode of every BLIP of the 111 documents, 250 BLIPs × 3 flavors × 3 budgets, 250 FOPT blocks × 3 flavors, every preset type × 2 variants, the cap and budget refusals |
+| M2 | 200 rounds × (111 documents read and decoded + one BLIP): flat at 0 B after the first sample |
+| M3 | fixtures: 2.0 KB allocated / 1.9 KB peak for the 219-byte contents; `formas.doc` (14,431 bytes, 8 + 3 shapes, masters) 18.9 KB / 10.1 KB; `degrades.doc` 14.2 KB / 8.9 KB; worst allocated / `lcb` over the generated corpus 28.1. A 3 MiB EMF inflate: 12.6 MB allocated, 4.7 MB peak (uo-opc's output growth); refused at a 1 MiB cap: 2.2 MB / 1.05 MB |
+| M5 | no cache (`clear_caches` unchanged) |
+| bounds | 100,000 nested `SpgrContainer`s read to exactly 64 levels; `max_shapes` and `max_master_props` tested at their edge |
+
+### Security (continuous)
+
+- No panic (`tests/odraw_nopanic.rs`, overflow checks on in debug): 120 rounds (600 in release) of
+  edited and cut contents of all 111 documents at random `fc`/`lcb`, with the Word and small limits,
+  every record re-read as FOPT, shape, group, FBSE, BStore and BLIP under the three flavors; 2,000
+  random buffers; edited BLIPs and FOPT blocks; every `u16` type through the preset map with NaN,
+  ±∞, ±0 and huge boxes and adjusts; each input under 2 s.
+- Fuzz target `odraw_records` (`core/fuzz/src/odraw.rs`, in `TARGETS`, seeds from the fixtures and
+  the capture through `odraw_seeds`): invariants: shapes ≤ `max_shapes`, deterministic, a refused
+  BLIP spends no budget, an inflate spends ≤ `max_blip_bytes`, at most 2 adjusts, FOPT tables ≤
+  `inst`, an embedded BLIP inside its FBSE. Stable driver 120 s: 12,706,027 executions, 0 crashes,
+  slowest 10.3 ms. libFuzzer (WSL Ubuntu 24.04, nightly, `-s none`, overflow checks and debug
+  assertions on) 300 s: 2,548,137 executions, 0 crashes.
+- For the security review: the 512 MiB per-document inflate budget is cumulative and each BLIP may
+  be 64 MiB at once (a phone budget question for D4's caller); the two new limits above.
+
+### For the Slides and Sheet ports
+
+Add (same types, no API change): Slides `read_dg_container`, `resolve_shape_masters`,
+`client_rect_ppt`, its `fitPictFrame` on `Blip.pict_size`; Sheet `read_sheet_shapes`, `cell_anchor`,
+the ≥ 16-byte rule for FSPGR/ChildAnchor, `read_drawing_defaults`, a capped `pib` cache. The parity
+script already loads both TS readers; extend it with their `.ppt` samples (`slides/samples/legacy`,
+`slides/samples/playback`, tracked) and generated `.xls` drawings.
+
+### Not done
+
+The Slides/Sheet tree and master functions above; a wasm run of the odraw tests (no wasm export
+uses odraw yet: D4 adds the convert entry point); the Opus security review (milestone).
+
 ## Verification (gate 2 — YYYY-MM-DD)
 
 ### Parity
@@ -951,3 +1169,4 @@ Implementation skeptic findings and decisions. `tools/bench` table (main × rust
 | 3 (phase 2, A) | porter: color + patterns + adjust + blip (Sonnet) | not timed | ≈ 75 (estimate) | 0 rounds from a verifier yet; 8 decisions outside the plan (listed in "Phase 2, frontier A"); 1 bug of my own (a `u64` overflow of `4 * w * h` that wrapped in release, found by the debug run of the no-panic test) and 1 design defect of my own (a per-call `Vec` in the brightness curves, found by the M3 measurement) fixed before the report; 7 wrong expectations of my own in the unit tests corrected against the TS (arithmetic slips, not port bugs) |
 | 3 (phase 2, B) | porter: raster + effects (Sonnet) | not timed | ≈ 60 (estimate) | 0 rounds from a verifier yet; 10 decisions outside the plan (listed in "Phase 2, frontier B"; the one that touches an API is the `limits` parameter of `fill_polygons`); no bug of my own found by the differential (9 tests, 1,865 facets equal on the first run; a mutation check on 8 constants shows the replay bites); 1 test of mine wrong on the first run (the `flatten` error-path test used `star5`, a 10-point polygon, so the limit did not trigger: fixed in the test, not in the code); 7 hand-computed expectations of mine corrected after reasoning from the TS (e.g. the row of `ceil(ymax)` is merged and clamped, the 1-row blur is scaled by the centre tap) |
 | 4 (continuous verification) | verifier: fuzz targets, wasm memtest and self-test, CI (Sonnet) | not timed | ≈ 165 (estimate) | no round from the Opus review yet; 0 findings in `src` (303 M libFuzzer and 219 M stable-driver executions of 12 targets, wasm soak flat at 0 B, 9,453 facets equal in wasm); 2 false invariants of my own `dml_effects` target found by its first pass (a subnormal shadow scale and a 1e303 box make NaN coverage in the TS too) and fixed in the target; 1 failure of my own wasm test (a NaN checksum of the guides part, fixed in the export); a WSL clock jump stopped three libFuzzer runs at once (restarted); the parity tests of the crate were refactored (loops into callable functions) and the 20 tests pass as before; clippy `manual_is_multiple_of` and a banned `f64::round` in the new code fixed |
+| odraw (uo-docx G11): Opus brief + 1:1 port of the Write side, Slides/Sheet FOPT/BLIP/preset variants, TS differential (`tools/capture-odraw.mjs`), M1–M3, no-panic, fuzz target `odraw_records`, D4 frontier briefs in uo-docx.md | Opus (hybrid mode) | one session, ≈ 2 h | ≈ 95 | 0 rounds (no verifier yet); 0 mismatches on the first replay (3,990 facets); 3 own slips caught by my own tests before the record: a wrong expectation (chevron 13800 → 49,996 in the TS, the comment's 50,000 is the .pptx twin), out-of-range edits in the replay (a typed-array store past the end is ignored in JS), `&mut CONST` budget warnings (budget consts became `const fn`); 2 limits added beyond the TS (`max_shapes`, `max_master_props`) |

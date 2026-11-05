@@ -1,0 +1,908 @@
+
+x
+ 
+<
+>
+/>
+</w:settings>
+<w:defaultTabStop w:val="720"/>
+<w:defaultTabStop/>
+<w:defaultTabStop w:val="720">
+<w:defaultTabStopX w:val="1"/>
+<w:defaultTabStop\nw:val="1"\n/>
+<w:defaultTabStop w:val="1"></w:defaultTabStop><w:defaultTabStop w:val="2"/>
+<w:defaultTabStop w:val="1" / >
+<w:defaultTabStop/ >
+<w:defaultTabStop w:val="1"/
+<w:defaultTabStop w:val=">"/>
+<w:defaultTabStopé/>
+<w:defaultTabStop_/>
+é<w:defaultTabStop/>
+<w:autoHyphenation/>
+<w:autoHyphenation w:val="0"/>
+<w:autoHyphenation></w:autoHyphenation>
+<w:autoHyphenation w:val="1">x</w:autoHyphenation>
+<w:autoHyphenationX/>
+<w:autoHyphenation/><w:autoHyphenation w:val="1"/>
+<w:autoHyphenation w:val="1"/><w:consecutiveHyphenLimit/></w:autoHyphenation>
+<w:autoHyphenation><w:x/>
+<w:evenAndOddHeaders/>
+<w:evenAndOddHeaders w:val="off"/>
+<w:evenAndOddHeaders w:val="false"></w:evenAndOddHeaders>
+<w:evenAndOddHeaders w:val="on"/>
+xw:val="0"
+w:val="0"
+w:val="false"
+w:val="off"
+w:val="1"
+w:val="00"
+w:val='0'
+a w:val="OFF"
+720§w:val="720"
+720§w:val="7200"
+720§x w:val="720" y
+-5§w:val="-5"
+-0§w:val="0"
+0.4§w:val="0"
+0.5§w:val="1"
+-0.5§w:val="0"
+-0.5§w:val="-0"
+x§w:val="NaN"
+Infinity§w:val="Infinity"
+-Infinity§w:val="-Infinity"
+1e21§w:val="1e+21"
+1e21§w:val="1ee21"
+1e21§w:val="1eee21"
+1e21§w:val="1e21"
+1.5e300§w:val="1.5e+300"
+1.5e300§w:val="1X5ee300"
+1.5e300§w:val="1\n5e300"
+1.5e300§w:val="1.5e300"
+1.5e300§w:val="1😀5e300"
+-1e21§w:val="-1e+21"
+-1e21§w:val="-1ee21"
+123456789012345680000§w:val="123456789012345680000"
+1e21§w:val="1e
+1e21§w:val=
+2§
+2
+1e21§w:val="1e+21" w:val="1e+21"
+1e21§w:val="1ee2" w:val="1ee21"
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat></w:compat></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom/><w:compat><w:x/></w:compat><w:rsids/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr><w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr><w:compat/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr><w:pos w:val="beneathText"/><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr><w:compat/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr><w:numFmt w:val="decimal"/></w:footnotePr><w:endnotePr/><w:compat/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr/><w:compat/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr w:x="1"/><w:compat/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr w:x="1"/><w:compat/><w:footnotePr/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr w:x="1"/><w:compat/></w:footnotePr></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr w:x="1"/></w:footnotePr>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr/></w:footnotePr>
+<w:footnotePr/ ></w:footnotePr>
+<w:footnotePr/></w:footnotePr>
+<w:footnotePr>
+<w:footnotePr
+<w:footnotePr 
+<w:footnotePr >
+<w:footnotePr\t/>
+<w:footnotePr x="1"/>
+<w:footnotePr﻿/>
+<w:footnotePrX/>
+<w:footnotePrX></w:footnotePrX>
+<w:footnotePr-/>
+<w:footnotePr><w:footnote w:id="-1"/></w:footnotePr>
+<w:footnotePr><w:footnote w:id="1"/><w:footnotePr/></w:footnotePr>
+<w:footnotePr><w:footnoteRef/></w:footnotePr>
+<w:footnotePr><w:footnote/></w:footnotePr>
+<w:footnotePr><w:footnote-x/></w:footnotePr>
+<w:footnotePr><w:footnote w:id="1" / ></w:footnotePr>
+<w:footnotePr><w:footnote w:id="1"></w:footnote></w:footnotePr>
+<w:footnote w:id="-1"/><w:footnote w:id="0"/>
+<w:footnote\nw:id="-1"/>
+<w:footnote w:id=">"/>
+<w:footnote/>
+<w:footnoteX/>
+<w:footnote_/>
+<w:footnote é/>
+<w:footnote /
+<w:footnote /><w:footnote />
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnotePr><w:pos w:val="docEnd"/></w:endnotePr><w:compat/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnotePrX/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compatibility/><w:themeFontLang/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat\n/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat\t></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:decimalSymbol/><w:listSeparator/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:listSeparator w:val=","/><w:decimalSymbol w:val="."/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><m:mathPr/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><sl:schemaLibrary/><w:shapeDefaults/></w:settings>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:rsids></w:rsids>
+<w:compat/>
+no settings
+é
+😀
+x😀
+<w:compat/>😀
+</w:settings>😀
+😀</w:settings>
+<w:docVars/>😀
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/>
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes"
+Type="http://schemas-openxmlformats-org/officeDocument/2006/relationships/footnotes"
+Type="http://schemasXopenxmlformatsXorg/officeDocument/2006/relationships/footnotes"
+Type="http://schemas\nopenxmlformats.org/officeDocument/2006/relationships/footnotes"
+Type="http://schemas😀openxmlformats.org/officeDocument/2006/relationships/footnotes"
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotesX"
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnote"
+Type="http://schemas..openxmlformats.org/officeDocument/2006/relationships/footnotes"
+Type="http://schemas.openxmlformats.orgXofficeDocument/2006/relationships/footnotes"
+xType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+Type="http://schemasTYPE="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+Type="http://schemas openxmlformats.org/officeDocument/2006/relationships/endnotes"
+Type="http://schemas openxmlformatsFeffxorg/officeDocument/2006/relationships/endnotes"
+Id="rId1"
+Id="rId1" Id="rId2" Id="rId3"
+Id="rId2"
+Id="rId1"Id="rId2"
+ParentId="rId1"
+Id="rId01"
+Id="rId0"
+Id="rId1" Id="rId01" Id="rId3"
+Id="rId"
+Id="rIdA"
+Id="rId1
+Id=rId1
+Id="rId1 "
+Id=" rId1"
+Id="rId99999999999999999"
+Id="rId9007199254740993"
+Id="rId1" Id="rId2" Id="rId3" Id="rId4" Id="rId5"
+<wp:docPr id="1" name="a"/>
+<wp:docPr id="1" name="a"/><wp:docPr id="22" name="b"/>
+<wp:docPr name="a" id="7"/>
+<wp:docPr name="a" xid="7"/>
+<wp:docPr name="a" _id="7"/>
+<wp:docPr name="a" id="7" id="8"/>
+<wp:docPr name="a" id="x7" id="8"/>
+<wp:docPr id=""/>
+<wp:docPr id="7x"/>
+<wp:docPr id='7'/>
+<wp:docPr id="7
+<wp:docPr id="007"/>
+<wp:docPr descr="id=&quot;1&quot;" id="3"/>
+<wp:docPr descr=" id=&quot;1&quot;" id="3"/>
+<wp:docPr descr=" id="1" id="3"/>
+<wp:docPrX id="1"/>
+<wp:docPr>id="1"</wp:docPr>
+<wp:docPr\nid="1"/>
+<wp:docPr id="1"/>
+<wp:docPr id="1"<wp:docPr id="2"/>
+<wp:docPr <wp:docPr id="2">
+<wp:docPr id="1"><wp:docPr id="2"/>
+<wp:docPr é id="1"/>
+<wp:docPr id="١"/>
+<wp:docPr id="1"/>😀<wp:docPr id="2"/>
+<w:p w14:paraId="0A1B2C3D" w14:textId="77777777"><w:r/></w:p>
+<w:p\nw14:paraId="0a1b"/>
+<w:p w14:paraId=""/>
+<w:p w14:paraId="xyz"/>
+<w:p w14:paraId="1G"/>
+<w:p w14:paraId='AB'/>
+<w:p w14:paraId="AB" w14:textId="CD" w14:paraId="EF"/>
+<wp:anchor wp14:anchorId="1A" wp14:editId="2B" distT="0"/>
+<wp:anchor\twp14:anchorId="1A" wp14:editId="2B"/>
+<wp:anchor wp14:anchorIdX="1A"/>
+<wp:anchor xwp14:anchorId="1A"/>
+<wp:anchor wp14:anchorId="1A"wp14:editId="2B"/>
+<wp:anchor w14:anchorId="1A" wp14:paraId="2B"/>
+<wp:anchor wp14:editId="FF"﻿w14:textId="00"/>
+<wp:anchor wp14:editId="FF
+<wp:docPr id="5"/><w:p w14:paraId="AA" w14:textId="BB"/><wp:docPr id="6"/>
+<wp:docPr id="5" w14:paraId="AA"/>
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="/word/footer1.xml"/>
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="./header1.xml"/>
+relationships/header"
+relationships/footer"
+relationships/headers"
+relationships/header
+relationship/header"
+relationships/Header"
+xrelationships/footer"
+relationships/footer"relationships/header"
+Target="x"
+xTarget="x"
+_Target="x"
+Target=""
+Target="" Target="y"
+Target="x
+Target=x
+Id="a" Id="b"
+Id="" Id="b"
+ParentId="a" Id="b"
+Id="é"
+-Id="a"
+é Id="a"
+ Id="a"
+Id="a"
+<w:sdtPr><w:docPartObj><w:docPartGallery w:val="Page Numbers (Bottom of Page)"/></w:docPartObj></w:sdtPr>
+<w:docPartGallery w:val="Page Numbers"/>
+<w:docPartGallery\nw:val="Page Numbers (Top)"/>
+<w:docPartGallery w:val="Cover Pages"/>
+<w:docPartGallery  w:val="Page Numbers"/>
+<w:docPartGallery w:val="page Numbers"/>
+<w:docPartGallery w:val="Page Number"/>
+<w:docPartGallery/>
+<w:docPartGallery
+<w:docPartGalleryw:val="Page Numbers"/>
+<w:docPartGallery ﻿w:val="Page Numbers"/>
+<w:docPartGallery w:val="Page Numbers"/>
+<w:docPartGallery x w:val="Page Numbers"/>
+<w:docPartGallery w:val="Cover"/><w:docPartGallery w:val="Page Numbers"/>
+<w:docPartGallery
+<w:docPartGallery 
+./header1.xml
+/word/header1.xml
+word/header1.xml
+/header1.xml
+header1.xml
+././header1.xml
+../header1.xml
+/word/word/header1.xml
+word/
+/word/
+./
+
+//word/x
+xword/x
+/wordx/x
+.//word/x
+./word/word/x
+\\word\\x
+header1.xml§<Override PartName="/header1.xml" ContentType="a"/>
+word/header1.xml§<Override PartName="/word/header1.xml" ContentType="a"/><Override PartName="/word/header1.xml" ContentType="b"/>
+word/header1.xml§<Override PartName="/word/header1.xml"/>
+word/header1.xml§<Override PartName="/word/header1.xml" ContentType="a">
+word/header1.xml§<Override PartName="/word/header1.xml" ContentType="a"></Override>
+word/header1.xml§<Override PartName="/word/header1.xml" a="b" / >
+word/header1.xml§<Override PartName="/word/header1.xml"/ >
+word/header1.xml§<Override PartName="/word/header1.xml">x/>
+word/header1.xml§<Override PartName="/word/header1.xml"><Override PartName="/word/header1.xml"/>
+word/header1.xml§<Override PartName="/word/header1.xml" /
+word/headerX.xml§<Override PartName="/word/header1.xml"/>
+word/header1xml§<Override PartName="/word/header1.xml"/>
+word/header1.xml§<Override PartName="/word/header1Xxml"/>
+word/header(1).xml§<Override PartName="/word/header1.xml"/>
+word/header1.xml§<Override  PartName="/word/header1.xml"/>
+word/header1.xml§<override PartName="/word/header1.xml"/>
+word/header1.xml§<Override PartName="/word/header1.xml" é/>
+word/header1.xml§
+word/header1.xml
+§x
+§
+word/h😀.xml§<Override PartName="/word/h.xml"/>
+<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>§<Types><Override PartName="/word/header1.xml" ContentType="h"/><Override PartName="/word/footer1.xml" ContentType="f"/></Types>§rId1,rId3
+<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>§<Types><Override PartName="/word/header1.xml" ContentType="h"/><Override PartName="/word/footer1.xml" ContentType="f"/></Types>§rId1,rId2
+<Relationship Id="a" Type="x/header" Target="h.xml"/><Relationship Id="a" Type="x/header" Target="h.xml"/>§<Override PartName="/word/h.xml"/><Override PartName="/word/h.xml"/>§a
+<Relationship Id="a" Type="x/header" Target="h.xml"/>§<Override PartName="/word/h.xml"/>§
+<Relationship Id="a" Type="x/header" Target="h.xml"/>§<Override PartName="/word/h.xml"/>§a,b
+<Relationship Id="" Type="x/header" Target="h.xml"/>§§
+<Relationship Id="a" Type="x/header" Target="h.xml">§<Override PartName="/word/h.xml"/>§a
+<Relationship Id="a" Type="x/header" Target="h.xml" />§<Override PartName="/word/h.xml"/>§a
+<Relationship Id="a" Type="x/header" Target="h.xml"/ >§§a
+<Relationship Id="a" Type="x/header" Target="/word/h.xml"/><Relationship Id="b" Type="x/footer" Target="./word/f.xml"/>§<Override PartName="/word/h.xml"/><Override PartName="/word/f.xml"/>§a,b
+<Relationship Id="a" Type="x/header" Target="h.xml"/><Relationshipx Id="b" Type="x/header" Target="h2.xml"/>§<Override PartName="/word/h2.xml"/>§a,b
+<RelationshipId="a" Type="x/header" Target="h.xml"/>§§a
+<Relationship\nId="a" Type="x/header" Target="h.xml"/>§§a
+<Relationship Id="a" Type="x/header" Target="h$&.xml"/>§<Override PartName="/word/h$&.xml"/>§a
+<Relationship Id="a" Type="x/header" Target="h$1.xml"/>§<Override PartName="/word/h$1.xml"/>§a
+<Relationship Id="$&" Type="x/header" Target="h.xml"/>§<Override PartName="/word/h.xml"/>§$&
+<Relationship Id="a" Type="x/header" Target="a/b/h.xml"/>§<Override PartName="/word/a/b/h.xml"/>§a
+é<Relationship Id="a" Type="x/header" Target="é.xml"/>é§<Override PartName="/word/é.xml"/>§a
+<Relationship Id="a" Type="x/header" Target="h.xml"/>😀§<Override PartName="/word/h.xml"/>😀§a
+é<w:compat"2<Override PartName="/word/h.xml"/> Target="/word/h.xml"./< w:val="0"/>/>e
+2
+<w:footnoteRef/>><w:endnotePr/>é
+ w:val="0"<w:compat.//word/- id="3"word/,<w:footnotePr/word/<w:endnotePr<w:endnotePr<w:docPartGallery$&
+</w:autoHyphenation> Type="x/footer"</Relationships> Id="a" Type="x/footer", w:val="720"1relationships/footer""
+<w:compat/> Target="/word/h.xml" </w:settings><Relationship§id="9"
+></w:settings>id="9"<w:footnote"w:val=" w14:paraId="0A"2/relationships/footer" Target="h.xml"</w:autoHyphenation>./w:val="Page Numbers (Top)"
+ w:val="720"e w14:paraId="0A"$& Id="rId1". Type="x/footer" Type="x/footer"<w:footnote w:id="-1"/><w:compate
+-<w:footnote=<w:rsids/>
+ wp14:editId="FF"<w:compat/></w:footnotePr>
+<w:footnote=word/h.xml<w:compat Target="/word/h.xml"<Override PartName="/word/h.xml".
+ Id="a" w14:paraId="0A"<w:footnote Type="x/footer"word/h.xml id="<w:settings>word/. Target="h.xml"
+, w14:paraId="0A"/word/<w:endnotePr<Relationship Target="/word/h.xml"<
+ id="<w:rsids/><w:footnote 😀 Id="rId1"<w:endnotePr
+w:val="Page Numbers (Top)"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"./<w:footnote<Override PartName="/word/h.xml"/><w:evenAndOddHeaders Type="x/header"<w:evenAndOddHeaders.<Relationship<w:footnotePr-=
+</Relationships><w:rsids/>/></Relationships>
+<w:footnotePr<<w:footnote</w:settings> Type="x/header">
+/</Relationships></Relationships> w:val="Page Numbers2<Override PartName="/word/h.xml"+
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:defaultTabStop😀/word/  id=" id="</Relationships>
+> w14:paraId="0A"</w:autoHyphenation><Override PartName="/word/h.xml"/> /> Target="/word/h.xml"<w:footnote w:id="-1"/><w:defaultTabStop<wp:docPr
+. Target="/word/h.xml"<w:footnotePr$&>
+ Target="h.xml" id="3"
+§😀<wp:docPr Target="h.xml"-<w:rsids/> Type="x/footer"<w:footnote<w:compat/><w:endnotePr§
+relationships/header" w:val="720">+word/<w:endnotePr<w:footnote
+ Type="x/header" id="<,
+ Type="x/header" wp14:anchorId="1" Type="x/footer"
+e"<Override PartName="/word/h.xml"/> Target="/word/h.xml"<w:rsids/> w:val="Page Numbersword/h.xmlword/h.xml2/ Type="x/header"😀
+<w:compat/>/word/word/h.xmlid="9"><Override PartName="/word/h.xml"/>\n+
+e<Override PartName="/word/h.xml"<w:rsids/>w:val="Page Numbers (Top)"/><relationships/footer"1 Id="rId1"/> id="id="9"
+relationships/header"$&</w:footnotePr>, Target="h.xml"<Override PartName="/word/h.xml"/>1<w:footnotePr w:val="Page Numbers><w:footnote<w:footnote w:id="-1"/>
+</ w14:paraId="0A" Type="x/header"e Target="/word/h.xml"1<w:footnoteRef/>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"é<</w:footnotePr>$&
+./</w:autoHyphenation><w:defaultTabStop2<wp:docPr<w:autoHyphenation<w:compat/>
+-+</w:settings> wp14:anchorId="1"</w:settings>>w:val="
+ w14:textId="B".relationships/footer" Target="/word/h.xml"e  Target="/word/h.xml" Type="x/footer"<w:docPartGallery w:val="0"/word/ w:val="0"
+ w:val="Page Numbers wp14:editId="FF""w:val="<w:endnotePr<</w:settings>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+1= Type="x/header" Type="x/footer"<w:autoHyphenation$&
+ Type="x/header" w:val="0" w:val="Page Numbers id="\n wp14:editId="FF" <w:compat/>
+ id="<w:settings>/word/h.xml
+  <w:footnoteRef/>$&,relationships/footer"
+id="9"relationships/footer"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"/<w:compat/></w:footnotePr>
+<w:defaultTabStop w14:textId="B"<Relationship<w:footnote</Relationships><Override PartName="/word/h.xml"<Relationship<Relationship+ Target="h.xml"
+./ Type="x/header"w:val=" wp14:anchorId="1"
+<wp:docPr Id="rId1"w:val="Page Numbers (Top)"word/h.xml<wp:docPr w:val="0"<w:defaultTabStoprelationships/footer"e/>
+w:val="/<wp:docPr<w:compat/><w:footnotePr Type="x/header"> Id="a"<Override PartName="/word/h.xml"/><wp:docPrrelationships/footer"word/
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"+ Target="/word/h.xml" wp14:editId="FF" w:val="0"<wp:docPr Type="x/header"<w:rsids/></w:autoHyphenation>relationships/footer"
+ w:val="720"</w:settings>
+/word/
+<wp:docPr</w:settings>w:val="< wp14:editId="FF"<w:footnoteRef/>
+<Override PartName="/word/h.xml"/> Target="/word/h.xml"- Target="/word/h.xml" wp14:anchorId="1" Type="x/header"
+ Type="x/footer"
+<w:autoHyphenation w:val="0" Id="rId1"
+<w:footnote w:id="-1"/> w14:textId="B" id="3"
+1<<w:settings><Override PartName="/word/h.xml"/>
+<w:footnoteRef/>  w14:textId="B"
+</w:autoHyphenation> Target="/word/h.xml" Target="h.xml"/$& Type="x/footer",
+<w:rsids/> Type="x/header"
+ w14:textId="B"\n</w:footnotePr><wp:docPr<w:footnote w:id="-1"/>\n<w:compat<w:docPartGallery  - Id="a"
+ w14:paraId="0A"<w:autoHyphenation id="1
+/<1<w:docPartGalleryw:val="Page Numbers (Top)" id="3"".//word/  wp14:anchorId="1"
+ Id="a"</w:settings> Id="rId1"relationships/footer" Target="h.xml"</w:autoHyphenation>word/id="9"2
+ w:val="Page Numbers w:val="0"</w:settings><w:compat/>id="9" <w:footnote w:id="-1"/></w:autoHyphenation>>é<
+, id="  wp14:anchorId="1" Type="x/footer"<w:docPartGallery<Relationshipword/
+, w14:paraId="0A".<w:defaultTabStop "relationships/header"<w:settings>
+<Relationship\nrelationships/footer"w:val="Page Numbers (Top)" w:val="0"word/h.xml w:val="Page Numbers./<w:footnote w:id="-1"/>
+<w:footnotePr id="3" Id="rId1"</w:autoHyphenation><w:evenAndOddHeaders Type="x/footer"\n
+ Id="a". 
+<wp:docPr Id="a" word/ Id="a"w:val=" w14:textId="B"$&
+.
+</w:settings></w:footnotePr></w:autoHyphenation> Target="h.xml"</w:settings>😀id="9"<w:evenAndOddHeaders<<w:settings></w:autoHyphenation>
+ Target="/word/h.xml"§</w:autoHyphenation>/<w:compat/><w:footnoterelationships/header"<w:evenAndOddHeaders id="3"<w:footnotePr-,
+</w:autoHyphenation><w:docPartGallery$&<<w:settings><w:evenAndOddHeaders<wp:docPr/word/e wp14:anchorId="1"
+ Id="a"<w:defaultTabStop Id="rId1" Id="rId1",<Override PartName="/word/h.xml"<wp:docPrw:val="Page Numbers (Top)" </w:footnotePr> w:val="Page Numbers<w:evenAndOddHeaders
+ wp14:editId="FF"<w:endnotePr<w:compat<Override PartName="/word/h.xml"<w:docPartGallery,w:val="
+relationships/header"
+ w14:paraId="0A"$& w14:textId="B"<w:footnote w:id="-1"/></w:autoHyphenation>e<w:compat/>$&<w:autoHyphenation2.-
+"relationships/footer"<w:footnoteRef/><Override PartName="/word/h.xml" Id="rId1" wp14:editId="FF"word/h.xml w:val="Page Numbers w:val="0" Target="h.xml"
+<w:rsids/><w:defaultTabStop w:val="0"$&<Override PartName="/word/h.xml"<w:autoHyphenation w14:textId="B" w:val="720" Type="x/footer"/><w:docPartGallery</w:footnotePr>+>
+$& Type="x/footer"<w:footnoteRef/>\n
+<w:defaultTabStop<w:endnotePr</w:footnotePr> w14:textId="B"😀 Target="/word/h.xml".é+id="9"<w:defaultTabStop
+ = w:val="0"<Override PartName="/word/h.xml"<w:footnotePr<w:footnotePr ,/> wp14:anchorId="1"
+  id="-w:val="Page Numbers (Top)"/<Relationship<w:rsids/>
+é<w:docPartGallery</>
+.+<w:footnote w:id="-1"/>" <Relationship+</w:settings>relationships/header"§<w:endnotePr
+ w:val="0" w:val="0" w:val="0"word/h.xml<relationships/header"<Override PartName="/word/h.xml" w:val="0"w:val="Page Numbers (Top)" wp14:anchorId="1" id="<w:footnotePr
+/word/h.xml Id="rId1"<w:docPartGallery<w:footnote, Target="h.xml"
+"2
+-/word/ +
+=
+<Override PartName="/word/h.xml" id="w:val="word/h.xml<w:settings>.w:val="
+eType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<"
+ w:val="720" Target="/word/h.xml",<w:footnoteRef/><w:compat/><w:evenAndOddHeaders<w:footnotePr<w:footnoteRef/>,relationships/footer"§word//
+./ w14:paraId="0A"</Relationships>
+ Target="h.xml"$& w:val="720"word/h.xml<w:docPartGallery Type="x/footer"<w:rsids/>.😀/-😀<w:defaultTabStop
+<w:defaultTabStop<w:compat</w:footnotePr>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+<w:footnote w:id="-1"/>word/relationships/header" Type="x/header"<w:footnote w:id="-1"/>-
+ id="<w:footnoteRef/>$& wp14:anchorId="1"<w:compat/>+<wp:docPr😀<w:footnote w:id="-1"/><w:defaultTabStop-<w:settings>
+😀/>./
+ id="3"
+\n<w:endnotePr./><Relationship
+</w:settings><w:docPartGallery Id="rId1" 
+ Type="x/header" Type="x/footer" Type="x/header"
+relationships/footer"./=
+<wp:docPr<w:footnotePr Id="rId1" w:val="720" id="3" id="
+<w:rsids/><w:docPartGallery/
+- Type="x/header"12 w14:paraId="0A"w:val=" w:val="720"/word//"1<w:footnote w:id="-1"/>
+/> w14:paraId="0A"+<w:footnote=/
+<w:compat id="3"§<<Relationship<w:docPartGalleryrelationships/header"<w:settings>w:val="Page Numbers (Top)",
+-./
+ w:val="Page Numbersword/h.xml< w:val="Page Numbers<Relationship<Relationship.<Override PartName="/word/h.xml"/><w:endnotePrid="9"</w:autoHyphenation>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"><w:settings>
+ w:val="720"/-😀" Type="x/header"
+§w:val="Page Numbers (Top)" Type="x/footer"<wp:docPr Id="a"$&+ Target="h.xml"
+<w:docPartGallery w14:paraId="0A" id="word/h.xml Target="/word/h.xml"<w:defaultTabStop<wp:docPr.
+word/h.xmle§ w:val="Page Numbersrelationships/footer" Type="x/header"<w:footnotePrw:val="Page Numbers (Top)" Type="x/footer"<Override PartName="/word/h.xml"/><Override PartName="/word/h.xml"/>
+,<w:autoHyphenation$&<w:footnoteRef/><w:settings>
+<w:footnoteRef/><wp:docPrrelationships/header"e<w:evenAndOddHeaders Target="h.xml" wp14:editId="FF"§ Id="rId1"
+é<w:footnote w14:textId="B" <w:endnotePr>
+e
+./<w:compat<w:footnoteRef/> wp14:anchorId="1" ,.</w:footnotePr>-Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"$&"<Override PartName="/word/h.xml"
+/><w:footnote,
+,§<w:footnote w:id="-1"/> Type="x/footer"<w:footnoteRef/><w:settings><Relationship
+ w14:textId="B"+/word/2$&/ wp14:anchorId="1" Target="/word/h.xml"<w:footnote w:id="-1"/>
+ w:val="720"<Relationship1<w:autoHyphenation w:val="Page Numbers= w14:paraId="0A" wp14:editId="FF"
+ w:val="Page Numbers><w:settings>e<Override PartName="/word/h.xml"/><w:settings>word//><w:settings></w:settings>
+ Type="x/header"<Override PartName="/word/h.xml" Type="x/header"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:evenAndOddHeaders<w:compat
+</Relationships> Type="x/footer"<w:footnote Type="x/footer"e<Override PartName="/word/h.xml"<w:defaultTabStop w14:textId="B"<w:docPartGalleryrelationships/header",
+ wp14:anchorId="1"+</Relationships> w:val="720"<w:evenAndOddHeaders,é, w:val="Page Numbers1 
+$&é wp14:anchorId="1"</w:autoHyphenation><Override PartName="/word/h.xml"</w:autoHyphenation>
+<Relationship</w:footnotePr><Override PartName="/word/h.xml"<w:evenAndOddHeaders§/word/<w:evenAndOddHeaders<w:evenAndOddHeaders<w:footnotePr
+ Target="h.xml"<Override PartName="/word/h.xml"</Relationships><w:footnotePr id="3">é, id="><w:settings>w:val="Page Numbers (Top)"
+relationships/footer"=><Relationship++.e
+<w:footnote<
+ <w:compat<<w:compat/><w:docPartGallery w14:textId="B"+word/h.xml<w:footnote w:id="-1"/>
+1<Override PartName="/word/h.xml"<w:footnotePr
+,w:val=" w:val="720" w14:textId="B"<w:docPartGallery w:val="0"<Relationship<w:endnotePr§ Id="a"relationships/header"/word/$&w:val="
+ w14:paraId="0A" Target="/word/h.xml"2 Id="rId1"w:val="Page Numbers (Top)"<Override PartName="/word/h.xml"/> Id="a"= w:val="Page Numbers\n
+/./<Relationship Id="rId1"\nw:val="2 wp14:editId="FF"word/h.xmlw:val="word/h.xml<w:footnoteRef/></Relationships>,
+<wp:docPr<w:docPartGallery w:val="0"relationships/header"/ Target="/word/h.xml"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+ w:val="Page Numbers
+<Override PartName="/word/h.xml"<w:compat/><w:footnote1 w:val="720"
+ id="3". w14:paraId="0A"<w:endnotePr< w:val="720"<w:defaultTabStop<w:autoHyphenation<w:rsids/><w:settings><w:endnotePr=<w:compat/>-
+<w:docPartGallery<Override PartName="/word/h.xml"érelationships/footer"
+/word/<w:footnotePrid="9"<w:settings>\n w:val="720" w14:paraId="0A"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+</w:footnotePr><w:footnotePre Id="rId1"w:val="Page Numbers (Top)"<w:footnote w:id="-1"/>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"w:val="Page Numbers (Top)"<w:compat+<w:defaultTabStop<w:footnotePr
+😀 Id="rId1"<w:compat-
+ Target="/word/h.xml" Target="h.xml""  w:val="720"word/h.xml w:val="Page Numbers<w:footnotePr<w:evenAndOddHeadersé/
+<w:evenAndOddHeaders id="id="9"<w:endnotePr</word/<w:docPartGallery/
+<w:compat/>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:compat/>></Relationships>1w:val="Page Numbers (Top)"<w:rsids/>/ w:val="Page Numbers1<w:defaultTabStop
+ Type="x/footer"§ w14:textId="B"<w:footnote w:id="-1"/> id="3"😀</w:autoHyphenation>
+.<w:autoHyphenation Id="rId1"<w:compat
+ w14:textId="B"/<w:defaultTabStop,
+<w:rsids/>+
+< 
+id="9" w:val="Page Numbers+ Id="rId1"  w:val="720"<w:rsids/> Type="x/footer"<
+word//> Type="x/header" id="3" Type="x/header""= wp14:editId="FF"relationships/header"2e=</w:settings>
+ w14:textId="B"é\n😀
+<w:evenAndOddHeaders
+</Relationships> <w:settings>w:val="\n<w:footnoteRef/>w:val="Page Numbers (Top)" id=" w:val="Page Numbers$&2relationships/footer" Type="x/footer" Type="x/header"
+word/ word/h.xml<w:footnotePr<w:evenAndOddHeaders<w:footnotePrw:val="Page Numbers (Top)" id="3"
+id="9"</w:settings> Target="h.xml"w:val="😀</Relationships>
+..<w:footnoteRef/><wp:docPré<Relationship§<Relationship id="3".<Override PartName="/word/h.xml"/>é
+<w:compat
+relationships/footer"<w:footnoteRef/> Target="h.xml"$&
+-.relationships/footer" 
+>§2/>relationships/footer"<w:rsids/><w:compate<w:footnoteRef/>
+ Type="x/header"> w:val="0"<" id="
+2é<w:footnote<w:footnotePr w14:textId="B"+
+<w:settings>id="9"<wp:docPr<w:compat1</Relationships></Relationships>§<w:compatrelationships/footer"
+ w14:textId="B"<w:autoHyphenation<w:rsids/> Id="rId1" wp14:editId="FF" id="3"<w:defaultTabStop</Relationships>"<w:footnote w:id="-1"/>/$&<w:defaultTabStop
+<w:docPartGallery§<w:evenAndOddHeaders/
+</<Override PartName="/word/h.xml"/>
+1<w:settings></w:autoHyphenation><Override PartName="/word/h.xml"\nw:val="Page Numbers (Top)"<w:rsids/>w:val=" id="
+ wp14:editId="FF"w:val="<w:docPartGallery=id="9" w14:paraId="0A" Target="/word/h.xml""/
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:footnote w:id="-1"/> w14:paraId="0A"word/é$&relationships/footer"</w:autoHyphenation>
+w:val="<Override PartName="/word/h.xml"/>word/<Override PartName="/word/h.xml"/></w:autoHyphenation>word/<Override PartName="/word/h.xml"/><Override PartName="/word/h.xml"+<w:endnotePr<w:defaultTabStop<Override PartName="/word/h.xml"/>id="9"=
+<w:autoHyphenationrelationships/header"
+ Type="x/footer"<w:footnote1😀 w:val="Page Numbers<w:footnotePr<Override PartName="/word/h.xml"\nw:val="<w:compat/>
+$&word/h.xml<w:endnotePr<Override PartName="/word/h.xml" w:val="0"<w:autoHyphenation<w:autoHyphenation<Override PartName="/word/h.xml"/><w:footnote w:id="-1"/>1
+</w:autoHyphenation>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"/relationships/header",relationships/header" w14:textId="B" id="3"é<w:compat/>
+ Id="a"relationships/header"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"1 <w:endnotePr w:val="Page Numbers<w:rsids/>word/h.xmlid="9"é<w:rsids/>\n
+ Id="a"-<w:endnotePr id="<Override PartName="/word/h.xml" w:val="0"\n w:val="720" Type="x/header"relationships/header""<w:defaultTabStop
+=-/word/ Target="/word/h.xml" Type="x/header" id="3"./ Type="x/footer" Target="h.xml"<w:footnote
+>relationships/footer"<w:settings>id="9"></w:settings>/>=$&  Id="a"
+\nw:val="Page Numbers (Top)"- Type="x/footer"<Relationship<w:settings><<w:autoHyphenation /word/>
+. Id="rId1"é  id="relationships/header",
+ Type="x/header"<w:footnote-,<w:rsids/><w:docPartGallery Id="a"2"."
+<Override PartName="/word/h.xml"
+<wp:docPr😀 w:val="Page Numbers<w:rsids/><w:autoHyphenation<w:rsids/>word/
+<w:docPartGallery<w:footnote w:id="-1"/> w14:paraId="0A". wp14:editId="FF"=<w:settings>$& wp14:anchorId="1"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"</w:autoHyphenation><w:footnote</w:settings><w:evenAndOddHeaders
+ w14:paraId="0A"§</w:footnotePr></w:footnotePr>/word/ wp14:anchorId="1"word/h.xml<Relationship§-é w:val="Page Numbers$&<w:autoHyphenation
+</w:autoHyphenation><w:docPartGallery=<w:footnote<w:rsids/>$& id="3"<w:compat/>/1 Id="a"</w:settings>
+  id=" Target="/word/h.xml"<w:footnote w:id="-1"/> w:val="720"word/<w:footnoteRef/>/word/+ w:val="0"1<
+ Target="/word/h.xml""<<w:evenAndOddHeaders"</Relationships> w14:paraId="0A" w14:paraId="0A" Target="/word/h.xml"
+<w:defaultTabStop w14:textId="B"/>relationships/footer"word/
+</w:settings></w:footnotePr></Relationships>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" w14:paraId="0A" Type="x/footer"<w:footnote w:id="-1"/> wp14:editId="FF"😀<w:settings><w:rsids/><w:footnote w:id="-1"/><w:docPartGallery<Relationship
+ Id="rId1"1<w:compat/><w:compat/> Type="x/header" Target="/word/h.xml"w:val="<w:autoHyphenation$&
+ id="9"./"😀<Override PartName="/word/h.xml"/>/word/<w:evenAndOddHeaderse
+<w:footnotew:val="Page Numbers (Top)"<w:footnote w:id="-1"/><w:settings><w:footnote wp14:anchorId="1"
+<w:endnotePr Id="a"<w:settings><Override PartName="/word/h.xml"/>
+<w:compat Id="a"
+<w:endnotePr w14:textId="B"/><w:defaultTabStop
+<<w:docPartGallery./<w:compat w:val="720"<w:defaultTabStop
+<w:autoHyphenation2w:val="/word/<Relationship id="3" . Id="rId1"eword/h.xml</Relationships>
+2 w14:textId="B" Type="x/footer"2$&<Override PartName="/word/h.xml"
+-e<w:compat/> Target="/word/h.xml"1id="9"<w:footnotePrword/relationships/header"word/Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="/word/h.xml"<w:settings>
+<w:footnoteword/ <w:rsids/><w:docPartGallery$& w:val="720" id=" Type="x/header" Type="x/header" w:val="0"+ w:val="0"<w:evenAndOddHeaders
+relationships/footer" w14:paraId="0A"
+<w:defaultTabStopw:val="Page Numbers (Top)"<w:defaultTabStop w14:textId="B" w14:paraId="0A"/> id="3"1</w:footnotePr><w:endnotePr§
+<w:compat<Override PartName="/word/h.xml"/><w:settings>><w:footnotePrword/h.xml Type="x/header"</w:autoHyphenation>§
+"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Type="x/header"<w:endnotePr/word/<w:footnote</w:settings>
+1$&><Override PartName="/word/h.xml"/>😀é<w:footnote w:id="-1"/> id="3"§
+w:val="Page Numbers (Top)". wp14:editId="FF" Target="h.xml"<w:footnotePr<Override PartName="/word/h.xml"+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"><w:footnotePr
+ wp14:editId="FF"w:val="Page Numbers (Top)"+</w:settings>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+<w:compat<relationships/header"w:val="
+ Type="x/header"/word/ ./<w:compat
+ wp14:anchorId="1"
+<wp:docPr-§
+<w:footnoteRef/><w:autoHyphenation Type="x/header"w:val="Page Numbers (Top)" Type="x/header"2/> Type="x/header"<w:rsids/><wp:docPr- w:val="720"id="9"
+😀
+$&<w:compat/>
+id="9"é w:val="<w:footnote w:id="-1"/></w:footnotePr> id="3"relationships/footer" w:val="Page Numbers<w:footnote w:id="-1"/> w:val="0"<w:autoHyphenation
+<w:footnoteRef/> w14:paraId="0A" Target="h.xml"/>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"./§<Relationshipw:val=" wp14:anchorId="1"<w:defaultTabStop<w:autoHyphenation<Relationship Id="rId1"
+<w:footnotePr<w:settings> id="<wp:docPr/<w:rsids/> w:val="Page Numbers/word/=
+ Id="a"§  w14:paraId="0A"/word/ id="3" id="3" w:val="Page Numbersid="9"w:val="
+</w:autoHyphenation> w:val="720" id="3"<Override PartName="/word/h.xml" w:val="0" w:val="0" w14:textId="B"<w:footnoteRef/>word/§
+<w:defaultTabStop Type="x/header"word/h.xml
+<w:footnotePr<w:autoHyphenation</Relationships> Target="/word/h.xml" 
+ id="3" wp14:editId="FF"
+é<Relationship<w:footnote<w:evenAndOddHeaders
+. w14:textId="B"<w:footnote w:val="Page Numbers=
+ id="
+<w:compat/>id="9",id="9"><w:footnotePré<w:settings></w:autoHyphenation>
+id="9"§
+ wp14:anchorId="1""
+relationships/footer",word/ w:val="0"1
+ id="3"</Relationships>"<w:docPartGallery<w:autoHyphenation/word/$&
+<w:rsids/>word/.<Override PartName="/word/h.xml"/>word/h.xml/ w:val="0"id="9"<w:footnote w14:textId="B"</w:autoHyphenation> id=" Id="rId1"word/h.xml
+id="9"<w:footnotePr w:val="720"< id=" id="<Override PartName="/word/h.xml"/>><w:endnotePr
+id="9"<w:footnoteRef/>./" e$&😀<wp:docPrword/<w:endnotePr/word/relationships/footer"
+/word/
+w:val=" w:val="Page Numbers" w:val="720"word/h.xml
+ Id="rId1"+</w:autoHyphenation> Target="/word/h.xml"/><w:footnotePr\n
+<wp:docPrword/<erelationships/header"= w:val="Page Numbers2</w:footnotePr>e<w:settings>relationships/header"</w:settings>
+"<w:settings><w:evenAndOddHeaders Type="x/header"w:val="Page Numbers (Top)"</w:settings>
+w:val="Page Numbers (Top)" Id="a"</Relationships>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+ Type="x/footer" Target="/word/h.xml" w:val="Page Numbers <wp:docPr<wp:docPr w:val="0"<wp:docPr
+relationships/header"<w:footnote w:id="-1"/>\n w14:textId="B"  w14:textId="B"1- Target="/word/h.xml"
+<w:footnotePr<w:footnote w:id="-1"/></Relationships>w:val="Page Numbers (Top)",</w:autoHyphenation> w:val="720" Id="a" Target="/word/h.xml"</Relationships>
+ id=" w:val="0"
+>ew:val="Page Numbers (Top)" Id="a" w:val="0"-.é.
+<w:compat/>--1 w14:textId="B" id="3"</w:settings><Override PartName="/word/h.xml"/>é/> Type="x/footer" Id="a"> Type="x/footer"
+ Id="a"<w:endnotePr</w:footnotePr>\n<w:compat
+w:val="<w:endnotePr<w:footnoteRef/><w:footnote w:id="-1"/><w:footnoteRef/><w:rsids/> wp14:editId="FF"w:val="Page Numbers (Top)"
+.$&😀 Id="rId1"w:val="Page Numbers (Top)" Target="h.xml"<w:footnotePr=😀😀 Type="x/header"2 w:val="0"<Relationship
+,relationships/header" wp14:editId="FF"2
+relationships/header"- Target="h.xml"<w:settings><w:evenAndOddHeaders id="3" w14:textId="B" Id="a"./ w14:paraId="0A"\n\n+
+\n<w:docPartGalleryw:val=" id="<Override PartName="/word/h.xml"/>
+<w:compatType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"-/>< Target="h.xml"-</w:footnotePr>e2
+relationships/header"2 Id="rId1"<wp:docPr<w:defaultTabStop wp14:anchorId="1"<w:endnotePr<w:footnote w:id="-1"/>§ w:val="Page Numbers id="3",$&1
+word/h.xml
+w:val=" <w:compat/>w:val="Page Numbers (Top)"<w:settings><w:footnotePr<w:footnote w:id="-1"/><Override PartName="/word/h.xml"/>
+ id="3"/word/<w:footnotePr<w:footnoteRef/> 
+"<<w:defaultTabStop./<w:endnotePré
+$&<w:docPartGallery"<wp:docPr</w:settings>§<w:endnotePr<<w:footnoteRef/> Id="rId1"
+😀Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"./>w:val="Page Numbers (Top)"<w:rsids/> Id="rId1"/<w:endnotePrword/<w:docPartGallery Target="/word/h.xml" w:val="Page Numbers1
+ +<Relationship2/>w:val="Page Numbers (Top)"😀</w:settings>+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+ id="<w:defaultTabStop
+<w:footnoteRef/>
+relationships/footer" w:val="720" wp14:anchorId="1"<w:footnoteRef/>
+<Override PartName="/word/h.xml"==1<w:compat<w:footnote$&$& w:val="0"
+<w:docPartGalleryrelationships/header" wp14:editId="FF"<w:compat/>-=<w:compat Id="rId1" id="3" id="<w:autoHyphenationé
+=
+<w:docPartGallery/>😀e</w:settings> Type="x/header"
+,</w:settings> wp14:editId="FF" Type="x/footer"  w14:paraId="0A"
+.<Relationship,<
+= Type="x/header" id="</w:autoHyphenation> " w:val="0"-
+ Type="x/footer".<Override PartName="/word/h.xml"./\n <Override PartName="/word/h.xml"w:val="Page Numbers (Top)". wp14:anchorId="1"" wp14:editId="FF"
+relationships/footer"/$&<w:footnote
+  w14:textId="B"<, id=" Target="h.xml"</w:footnotePr><w:compatrelationships/header"id="9"
+</w:footnotePr> Type="x/footer"= Type="x/footer"<w:rsids/>
+=<wp:docPrword/word/</w:footnotePr>😀 Type="x/footer"+- Type="x/footer"<Relationship
+>/> w14:textId="B" Id="rId1"<w:compat/><Override PartName="/word/h.xml"/>
+" Target="h.xml"<w:docPartGalleryrelationships/header" Target="/word/h.xml"<w:defaultTabStope Id="rId1"/
+1<w:rsids/>\nType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"relationships/header"w:val="Page Numbers (Top)"./ w14:paraId="0A"
+</w:footnotePr><w:evenAndOddHeaders<w:defaultTabStopw:val="word/</w:autoHyphenation> Id="a"
+word/"w:val=" Id="rId1" w:val="720"<w:footnote w:id="-1"/> w14:paraId="0A" w:val="0"w:val="<w:autoHyphenationrelationships/footer"$&
+ w:val="720"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"word/
+<w:footnotePr w:val="0" Target="h.xml"é<w:evenAndOddHeaders<w:footnote😀<w:autoHyphenation w14:paraId="0A"<w:footnote w:id="-1"/><Override PartName="/word/h.xml"</w:settings>
+relationships/footer"<Override PartName="/word/h.xml"/>"1<w:defaultTabStop<w:footnotePréword/h.xmlw:val="Page Numbers (Top)"
+ w14:paraId="0A"
+,
+=<w:rsids/>
+<w:docPartGallery<w:compat/>ee Target="/word/h.xml"/<Override PartName="/word/h.xml"./<w:footnote<w:settings><w:endnotePr</w:footnotePr> wp14:editId="FF" Type="x/footer"
+,,.1
+<w:footnotePr Target="h.xml"</w:autoHyphenation>relationships/footer"<Relationship
+<w:footnoteRef/> Target="h.xml"word/Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" id="3" w14:textId="B"<w:endnotePr Target="h.xml"<w:footnoteRef/>/word/1
+ id="3" wp14:editId="FF"<Override PartName="/word/h.xml"/><w:docPartGallery-<Override PartName="/word/h.xml"😀-§=<w:defaultTabStop
+</w:footnotePr>+ w14:textId="B"</w:footnotePr><w:settings>./ id="3"relationships/footer"
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"word/word/word/h.xml<w:footnoteRef/><w:footnoteword/</w:footnotePr>word/h.xml</w:settings><wp:docPr.§<
+ Type="x/footer"w:val="-</w:settings></w:footnotePr>word/,< ./Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+<w:settings>,eid="9" w14:paraId="0A" w:val="720"</w:footnotePr><w:settings>
+-id="9"
+2 Id="rId1">\n<w:endnotePr/Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"w:val="w:val="
+ wp14:anchorId="1"word/h.xml w14:textId="B"\n
+<Override PartName="/word/h.xml"/></w:footnotePr><Override PartName="/word/h.xml"<wp:docPr\n w14:paraId="0A"=é
+./<w:docPartGallery <w:compat<Override PartName="/word/h.xml" id="3"/word/<Override PartName="/word/h.xml"/> Type="x/footer"
+<Override PartName="/word/h.xml"</w:settings><Override PartName="/word/h.xml" w14:paraId="0A"<w:endnotePr
+w:val="<Override PartName="/word/h.xml"$&😀
+word//word/.relationships/footer"<w:settings>2 w14:textId="B" w14:textId="B"=1<w:footnote Target="/word/h.xml" Id="rId1"
+ w14:textId="B">
+,  Target="/word/h.xml"1\n
+<Relationshiprelationships/footer" w:val="Page Numbers<w:defaultTabStop<w:footnoteRef/>
+ Target="/word/h.xml" <Override PartName="/word/h.xml"/>>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"/word/./.<w:evenAndOddHeaders<w:autoHyphenation
+ >$&
+./</w:autoHyphenation>"$&relationships/header"e<w:footnotePr2<
+  w14:textId="B" 
+word/<w:defaultTabStop=word/h.xml/word/ w:val="720"<w:footnote"<wp:docPr
+</w:settings><Relationship<w:defaultTabStopé<w:defaultTabStop</w:settings>1w:val="Page Numbers (Top)"<w:compat/>,word/./+<Override PartName="/word/h.xml"/>
+</w:autoHyphenation> Target="/word/h.xml"<wp:docPr=§</Relationships> Id="rId1" Type="x/header"</Relationships>
+</Relationships><w:autoHyphenation$&
+/word/<w:compatw:val="Page Numbers (Top)"\n
+<w:footnote<w:defaultTabStop$& Id="a"/word/</w:autoHyphenation>😀
++
+./😀<Override PartName="/word/h.xml"<w:endnotePrType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:defaultTabStope w14:textId="B"<"</w:footnotePr>
+<Relationship
+=w:val="Page Numbers (Top)" w:val="720"$&<w:endnotePr\n<wp:docPr😀
+<w:rsids/><w:footnoteéword/h.xml
+ w:val="0" Type="x/footer" w:val="0" wp14:editId="FF"</w:autoHyphenation><w:compatrelationships/footer"
+ id="3"<w:docPartGallery
+relationships/footer"
+<w:footnoteRef/></Relationships>
+w:val="Page Numbers (Top)"<w:footnoteRef/><w:compat wp14:editId="FF" id="3"<w:compat<w:footnotePr
+>
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Type="x/footer"word/id="9" id="\n<w:settings> wp14:anchorId="1">./ Id="rId1">
+<<w:rsids/> wp14:editId="FF"word/h.xml" w:val="720"
+./ Target="h.xml"<w:rsids/>> w14:paraId="0A"<w:compat/>😀 id="3" Id="a" 
+  w:val="Page Numbers<w:autoHyphenation id="3"" Id="rId1"w:val="</Relationships>/>w:val="Page Numbers (Top)"
+ Id="rId1"word/h.xml<Override PartName="/word/h.xml"/><w:defaultTabStopword/h.xml Target="h.xml"<w:compat/> Id="rId1"id="9"§ Id="a"
+<w:autoHyphenation<w:evenAndOddHeaders
+/word/<w:defaultTabStopType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:footnote<wp:docPr-
+ ."relationships/footer" w14:textId="B" id="3"=<Override PartName="/word/h.xml" Type="x/footer" w14:paraId="0A" w14:textId="B"😀
+\n</w:footnotePr> w:val="720"
+<w:compat<Override PartName="/word/h.xml"/></w:footnotePr>
+ w14:paraId="0A" w14:textId="B"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:footnotePr<w:settings></Relationships><w:compat />é2</Relationships>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"word/
+§<w:evenAndOddHeadersw:val="Page Numbers (Top)"relationships/footer"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:defaultTabStop§ Type="x/footer" wp14:anchorId="1"<Override PartName="/word/h.xml"/>
+ id="
+  Id="rId1"+ </w:autoHyphenation><
+"+relationships/header"<w:defaultTabStop<w:footnotePr Target="h.xml" <wp:docPr Type="x/footer"<w:footnote
+<Relationship w14:textId="B"id="9"<w:settings><w:endnotePr<w:docPartGalleryid="9" w:val="Page Numbers w:val="720"<w:defaultTabStoprelationships/header"
+ Type="x/header"$& Type="x/header"- w:val="720"
+><Override PartName="/word/h.xml"/> w:val="0"relationships/footer"/word/ 
+ Type="x/header" w14:paraId="0A"w:val="<w:compat/><wp:docPrrelationships/footer" w:val="720"2,<w:rsids/>relationships/header"
+  w14:textId="B"/> wp14:editId="FF"./<w:endnotePr=<w:footnoteRef/> w:val="0" w:val="720"<Override PartName="/word/h.xml"/>" Id="rId1" Id="a"
+\n=+</w:autoHyphenation>§</w:footnotePr>2<w:footnote
+ Id="a"/word/<w:footnote\nrelationships/header" w14:textId="B"word/h.xml😀<<Override PartName="/word/h.xml"/></w:autoHyphenation><wp:docPr"
+ w:val="720"
+</Relationships>😀§word/h.xml$&e w14:textId="B".=2<w:footnoteRef/>1</w:autoHyphenation>
+</Relationships> wp14:editId="FF"<<w:settings><w:footnote w:val="0"</Relationships>
+ w:val="720" w:val="720"<w:footnotePr<Override PartName="/word/h.xml"/>1+<w:compat/> <Override PartName="/word/h.xml"/>/<w:rsids/> Target="h.xml" w14:paraId="0A" id="
+ id="3"</Relationships>$& w14:textId="B"relationships/footer"😀 w:val="Page Numbers$&.$&<Override PartName="/word/h.xml"/>
+<w:defaultTabStop<w:footnoteRef/><Override PartName="/word/h.xml"/></w:settings><w:endnotePr<w:defaultTabStop<w:footnotePr
+"w:val="Page Numbers (Top)"\n w14:paraId="0A"relationships/header"word/h.xml</w:autoHyphenation> id="3"<w:rsids/>\n
+ Type="x/footer"
+,w:val=" Target="h.xml"<w:endnotePr
+/>w:val="</w:settings><w:compatrelationships/footer"😀</w:footnotePr> <Override PartName="/word/h.xml"/> id="3" wp14:editId="FF"<w:footnotee
+relationships/footer" id="
+ wp14:editId="FF"</w:autoHyphenation>-<w:endnotePr> w14:paraId="0A"<w:footnotePr w14:textId="B"\n<w:footnote w:id="-1"/>+<w:settings> w:val="720"
+</w:settings>
+ wp14:anchorId="1"
+ Id="a" id=" </w:settings>=/$& w14:paraId="0A" w:val="720"<w:defaultTabStop
+<w:autoHyphenation wp14:editId="FF"./2</w:settings> w14:textId="B"<w:rsids/><wp:docPr w:val="Page Numbers Target="h.xml"
+<w:autoHyphenation Type="x/footer"<w:footnoteRef/>" id="3"relationships/header">
+ Type="x/footer"é/word/<w:footnotePr+-</w:settings> Type="x/header"
+/>relationships/footer" Id="a"<w:footnote w:id="-1"/>/-.</w:autoHyphenation><w:compat
+id="9"- w14:textId="B" 
+$& wp14:editId="FF"<w:compat id="3"$& Target="/word/h.xml"<w:footnotePr id="3" id="<w:footnoteRef/><w:compat Id="rId1"§<w:footnoteRef/>
+ Type="x/footer" Id="a"=<w:compat/>= id="3" Id="rId1"
+<word/h.xml,./
+- w:val="720"<w:footnotePr. relationships/header"word/h.xmlword/"
+<w:footnote<Override PartName="/word/h.xml"/>w:val="
+-/ Target="/word/h.xml"§relationships/footer" <w:docPartGallery<w:defaultTabStope w14:paraId="0A" w:val="0"
+-w:val=">2//word/<Relationship. <w:compatword/2<w:docPartGallery Target="h.xml"
+ Id="rId1"§w:val="Page Numbers (Top)" id="<w:rsids/></w:autoHyphenation>.<w:footnoteRef/> id="3"
++-\n w:val="Page Numbers w:val="Page Numbers"<Override PartName="/word/h.xml"</Relationships> 
+<w:endnotePr< w14:paraId="0A"
+  Id="rId1" Id="a" w:val="720" w14:paraId="0A"\n/"$& Target="h.xml"1
+<w:footnoteword/h.xmlrelationships/footer"/word/ Type="x/header",<w:footnotePrw:val=""<w:endnotePrid="9" é<w:endnotePr
+\n
+§
+word/h.xml<w:footnoteRef/><w:docPartGallery
+ w:val="Page Numbers+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"w:val="😀é<wp:docPr<w:footnote
+<w:compat/>/word/<w:compat/> Id="rId1"relationships/footer".
+ w:val="Page Numbers/word/ </w:settings>-<w:footnote<w:footnote w:id="-1"/><w:footnoteRef/> w14:textId="B"<w:settings></Relationships><w:compat
+</w:footnotePr>22./ wp14:anchorId="1"§.§ Target="/word/h.xml"
+word/😀 w:val="Page Numbers Id="rId1"
+1 w:val="720" Id="a"<w:compat/>
+w:val="Page Numbers (Top)"e<w:footnoteRef/> Id="a" Id="a"
+1<w:compat/></w:autoHyphenation> w:val="720"e</Relationships>
+<w:docPartGallery/./word/h.xml<wp:docPr> Type="x/footer"<w:footnotePr<Override PartName="/word/h.xml"/>.</w:footnotePr> w14:textId="B"
+=<w:compat/>😀<w:autoHyphenation
+<w:docPartGallery/><w:defaultTabStop😀<w:compat/>/> Target="h.xml"
+ </Relationships>>word/ Target="h.xml"2e2<w:footnoteRef/> Target="h.xml"  w14:paraId="0A"
+😀
+<w:settings> id="3"§
+"<w:footnote w:id="-1"/>1<w:compat/><w:footnotePr
+ Target="/word/h.xml"
+/- Id="rId1"<Relationshipé§<w:compat/>,$& w:val="0" w14:paraId="0A"
+ w14:textId="B" wp14:anchorId="1"/>
+\n<w:footnoteRef/><w:rsids/><w:compat/>relationships/header"</ w:val="Page Numbers<Override PartName="/word/h.xml" wp14:anchorId="1"<w:footnote w:id="-1"/>
+, Type="x/footer"word/word/<w:endnotePr+ w:val="720"<Relationship.<w:compat/><id="9"<w:defaultTabStop
+.id="9"<w:autoHyphenation"<w:footnote<w:footnoteRef/> w:val="0"relationships/footer"<w:docPartGalleryword/h.xml,<wp:docPr<Override PartName="/word/h.xml"</w:autoHyphenation>
+ w14:textId="B"word/h.xml§ Type="x/footer" wp14:editId="FF"<Override PartName="/word/h.xml"/></w:footnotePr>w:val="Page Numbers (Top)"<w:compat/>
+<w:footnotePrw:val="$& >
+ Target="/word/h.xml"<w:compat/><w:compat/>>
+ w:val="Page Numbers/<</Relationships>
+</w:footnotePr> Id="a"-<w:compat<w:docPartGallery2word/<w:footnoteRef/>
+1+😀 Type="x/footer"
+ id="3".e<w:docPartGallery2 Target="h.xml"w:val="Page Numbers (Top)"
+$& Id="a" w14:paraId="0A"relationships/footer"
+ Target="/word/h.xml"<w:docPartGallery <wp:docPr> Target="h.xml"
+<Relationship<w:endnotePr. <w:compat/> wp14:editId="FF"word/,<w:docPartGallery<
+ wp14:editId="FF" w14:textId="B"$& w:val="Page Numbers
+relationships/footer"w:val="<w:autoHyphenation Target="/word/h.xml"<w:footnote w:id="-1"/> w14:paraId="0A"</Relationships>
+1$&éid="9" id="/word/<w:endnotePr id="3" w:val="720" id="3"/>$&2
+< w14:textId="B"
+ Type="x/header" w:val="720" w14:paraId="0A"relationships/footer" wp14:editId="FF"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="h.xml".+ Id="a"<w:compat<w:defaultTabStop</w:autoHyphenation>
+ id="<w:compat<wp:docPr<Override PartName="/word/h.xml"<w:docPartGallery  wp14:anchorId="1"<w:compat/><w:footnote w14:paraId="0A"<w:footnote w:id="-1"/> Target="h.xml"
+$& wp14:editId="FF" w:val="720"= w:val="Page Numbers<<w:footnote1
+<<Override PartName="/word/h.xml"/<w:defaultTabStop w:val="0"w:val="Page Numbers (Top)"<w:footnotePrType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:settings> wp14:editId="FF"e-
+<w:endnotePr<w:footnote<w:footnotePr Type="x/header"
+word/é><w:docPartGalleryword/h.xml<w:footnote w:id="-1"/>/<w:footnoteRef/> id="
+<w:footnotePr-<w:autoHyphenation
+ Type="x/footer", $&/word/h.xml1
+1-<w:footnoteRef/><Relationship< Target="h.xml" Id="a"<Override PartName="/word/h.xml"<w:footnoteRef/> -
+<w:evenAndOddHeaders<w:rsids/>"<w:docPartGallery<Relationship<w:footnoteRef/> Target="/word/h.xml"<w:footnoteRef/>/word/ Target="h.xml"/>
+eword/h.xml<w:defaultTabStop><w:autoHyphenation > Type="x/footer"<w:docPartGallery<w:compat/> wp14:editId="FF"§😀<w:compat/>
+ w14:textId="B"/word/<w:autoHyphenation<w:compat/>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"relationships/header"<Override PartName="/word/h.xml"/><w:docPartGallery<./
+<Override PartName="/word/h.xml"<w:docPartGallery<w:compat/>§ wp14:editId="FF"é-word/<w:rsids/>
+w:val="Page Numbers (Top)"/>  Target="/word/h.xml"<Override PartName="/word/h.xml"/>e w14:paraId="0A"<Override PartName="/word/h.xml"word/h.xml<Relationship Id="a" Type="x/footer"
+ Type="x/footer"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"$&
+<Relationship<w:compat<w:rsids/>
+ Id="a"<w:footnoterelationships/footer"</Relationships><w:defaultTabStop/word/e w:val="720" w:val="0"relationships/header"
+w:val="1 w:val="0" Id="a"</w:footnotePr>< id="<w:footnotePr wp14:editId="FF"
+ w:val="Page Numbers<wp:docPr2§w:val="Page Numbers (Top)"</w:autoHyphenation>> <w:footnote w:id="-1"/>w:val="</w:autoHyphenation>
+./<w:footnotePrType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="h.xml"\n1
+/word/-<w:autoHyphenation<Relationship2é Type="x/header"relationships/footer"relationships/footer"
+word/ id="3"<w:compatw:val="Page Numbers (Top)"+./<w:footnote
+ w14:textId="B"</w:settings>
+w:val="" w14:textId="B" wp14:editId="FF"/word/./<w:footnotePr$&<w:autoHyphenation<w:compat/>
+ <Override PartName="/word/h.xml"/><w:compat<w:compat/> w:val="720"/word/e</w:settings> wp14:editId="FF"
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"§😀 w14:textId="B"<w:docPartGallerye w:val="720" Id="a",e w:val="720" w:val="720"</w:autoHyphenation>é
+<w:settings>e\n
+ </w:settings>😀<w:defaultTabStop§é w14:paraId="0A"é$&§
+</w:autoHyphenation>
+,<w:footnotePr w:val="Page Numbers"relationships/header"</w:autoHyphenation></Relationships> wp14:editId="FF"=<w:compaté Target="/word/h.xml"
+</Relationships><w:compat/>id="9"<wp:docPreword/h.xmlid="9"<w:footnote$& w:val="0" Target="/word/h.xml"id="9"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:defaultTabStop
+\n1,=§ w:val="720"< 2w:val="Page Numbers (Top)"
+ Id="rId1" w14:paraId="0A"</w:autoHyphenation> w:val="Page Numbers</w:footnotePr> id="3"
+ Id="a"<w:footnotePréw:val="Page Numbers (Top)"
+ w:val="0"$&</Relationships> =<Override PartName="/word/h.xml"/>😀relationships/header"
+/word/relationships/footer"<w:footnote w:id="-1"/></w:footnotePr>é\n
+<w:autoHyphenationword/- Target="h.xml" wp14:anchorId="1"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:footnotePr\n
+<w:footnote w:id="-1"/> . +
+</w:settings>./<Override PartName="/word/h.xml"/>./1<w:compat/> Target="/word/h.xml"<Relationship<w:footnote<w:compat2</w:settings> w:val="0"
+<Relationship2<w:settings><w:footnote w:id="-1"/> w:val="Page Numbers./é
+é -
+ Id="a"§<w:docPartGallery
+>- w:val="Page Numbers wp14:anchorId="1"<w:settings> Id="rId1"😀"+ id="=<w:rsids/>
+1<w:endnotePr Target="/word/h.xml"<w:settings>w:val="Page Numbers (Top)"<w:settings></Relationships><w:compat/>§ wp14:anchorId="1"</w:autoHyphenation>
+ id="3".
+ w:val="Page Numbers/word/ <w:footnoteRef/>
+2 Type="x/header"+<w:docPartGallery<w:docPartGallery\nid="9" Type="x/footer"relationships/footer"./
+</w:footnotePr>=>,relationships/footer" w14:textId="B" Target="/word/h.xml"1
+</w:footnotePr><w:footnotePr id="§e
+1word/w:val="relationships/footer"<w:footnotePrid="9"😀<w:footnote
+, Id="a" w:val="Page Numbers<w:rsids/>
+relationships/header"../
+<w:footnote</Relationships>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" w14:textId="B" Target="h.xml"
+</w:autoHyphenation><w:defaultTabStop<w:footnote w:id="-1"/><w:compat/>§<=<w:compat w:val="720" w14:paraId="0A"<w:docPartGallery<Relationship<w:compatword/h.xml
+ Target="h.xml"></w:footnotePr> w:val="720" Type="x/header"<w:footnotePr-<w:compat/><word/ wp14:anchorId="1"
+<w:settings>w:val="Page Numbers (Top)" Id="rId1"<Relationshiprelationships/header"<w:footnoteRef/> Type="x/footer"
+ w14:textId="B"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"</w:settings>
+ Target="/word/h.xml" w14:textId="B"relationships/footer" Id="rId1"😀 Id="a"<w:rsids/>word/h.xml<w:evenAndOddHeaders< wp14:editId="FF" Target="h.xml"  
+./1relationships/footer"<Override PartName="/word/h.xml"<w:compat/> wp14:editId="FF"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"</w:autoHyphenation><w:footnoteRef/><w:footnoteRef/>
+word/h.xmlrelationships/header"2+relationships/footer"
+ 😀-/word/>
+<w:rsids/> w14:textId="B"-. Type="x/footer" w14:textId="B"<word/h.xml
+<Relationship Id="a"relationships/footer"
+<w:endnotePrid="9"=relationships/footer"word/
+</Relationships>
+ w14:textId="B"<w:evenAndOddHeaders=1<w:footnotePr wp14:editId="FF" id="word/h.xml w:val="0"  id=" Id="rId1"
+ wp14:anchorId="1"<w:evenAndOddHeaders</w:autoHyphenation> Type="x/header"1word/id="9"<Override PartName="/word/h.xml"/><w:defaultTabStop<w:evenAndOddHeaders<wp:docPr,relationships/footer"/>
+</w:footnotePr> w14:textId="B"></w:footnotePr>/</Relationships>
+<w:footnotePrrelationships/footer"<w:footnotePr/word/§<<</Relationships>.word/,<w:docPartGallery2
+<w:compat/>+<w:autoHyphenation,><Override PartName="/word/h.xml"/>"
+ id="3" id="3"é😀relationships/footer"<Relationship<w:endnotePr Id="rId1"  Type="x/header"<w:compat wp14:anchorId="1"
+😀word/<Override PartName="/word/h.xml"/><w:endnotePr w14:textId="B"<w:footnote w:id="-1"/> w:val="720"+<w:footnotePr§e
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:evenAndOddHeaders<w:footnoteRef/>relationships/header"<w:evenAndOddHeaders w:val="0"
+< Type="x/footer"id="9"<Override PartName="/word/h.xml"
+/word/
+/><w:compat/></w:settings> w14:textId="B"
+<w:settings>w:val="Page Numbers (Top)"<
+2 w14:textId="B"  Type="x/footer"<w:evenAndOddHeadersrelationships/footer" id="<wp:docPrword/
+ w:val="0"<Relationship Id="a"
+<Relationship<w:defaultTabStop/ id="3"=<Relationship/word/
+<Override PartName="/word/h.xml"/>/></w:footnotePr>1 w14:paraId="0A"11\n id="3"=<Override PartName="/word/h.xml"" id="
+,
+<w:footnoteType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:settings><w:rsids/>word/h.xml<w:docPartGallery"id="9" Id="a"<Override PartName="/word/h.xml"/>1id="9"§
+<w:settings>/<wp:docPr/><w:endnotePr<w:footnote w:id="-1"/> \nw:val="Page Numbers (Top)"
+<w:docPartGallery<w:footnote w:id="-1"/><w:evenAndOddHeaders<w:footnote< w14:paraId="0A" $&=<w:footnotePr
+<w:compat<w:footnotePr<w:rsids/><w:compat/><😀
+<w:endnotePr</w:autoHyphenation><w:footnote w:id="-1"/>
+<w:compat+ wp14:anchorId="1"</Relationships><wp:docPrw:val="<w:evenAndOddHeaders<Relationship
+ id="</w:autoHyphenation>.//word/</w:footnotePr> id="<Override PartName="/word/h.xml"/></w:settings>id="9" Type="x/footer"
+<.
+1 >+<Override PartName="/word/h.xml"relationships/footer" Id="rId1"
+<w:rsids/><w:footnotePr Target="h.xml"e</w:autoHyphenation>"word/- Type="x/footer"😀<Relationship<w:compat/> w:val="Page Numbers 
+w:val="Page Numbers (Top)" wp14:anchorId="1"<Relationship wp14:editId="FF"
+ Target="/word/h.xml" Id="a" wp14:anchorId="1"
+<w:compat/>\n<w:defaultTabStop w:val="Page Numbersrelationships/footer" w14:textId="B"<w:compat/> Id="a"<w:rsids/><w:footnote<w:rsids/> wp14:editId="FF" id="
+<w:footnote id="Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" id=">e w14:paraId="0A" id="3" Type="x/footer", \n w:val="Page Numbers
+<w:footnotePr
+§ </w:settings>>id="9"</w:settings><Relationship</Relationships>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<Relationship<w:settings>2 w:val="720" Target="/word/h.xml"
+ w14:textId="B"id="9"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"./<w:compat/>w:val=" id="3"§<w:endnotePr<<Relationship w14:textId="B" w:val="720"
+<w:settings><Relationship/>
+ Id="rId1"/>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"relationships/footer" w:val="Page Numbers< Target="/word/h.xml"<w:footnote.
+ wp14:anchorId="1"
+\n1 w:val="Page Numbers Target="/word/h.xml"😀 Target="/word/h.xml"word/h.xml \n</w:footnotePr> id="3"</Relationships>
+./</w:footnotePr> wp14:anchorId="1"</word/<w:footnote w:id="-1"/>w:val="\n</w:footnotePr> Type="x/footer"<Override PartName="/word/h.xml"\n
+<w:evenAndOddHeaders w:val="0" id="3"2 <w:footnote$&
+/word/<Relationship=
+<w:footnotePr wp14:editId="FF"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"$&/word/😀
+word//
+><w:footnoteRef/> wp14:anchorId="1"""é<w:compat"
+word/h.xmlType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" w:val="0"
+ w:val="Page Numbers<w:footnote w:id="-1"/><w:autoHyphenation./ <w:rsids/><Override PartName="/word/h.xml"/> Type="x/footer"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:autoHyphenation> Type="x/header"<w:evenAndOddHeaders$&
+ Id="a"2relationships/footer"> <Override PartName="/word/h.xml"/><w:footnote w:id="-1"/><</w:autoHyphenation>e"<w:compat\n
+<w:autoHyphenation1</w:footnotePr>,/word/<w:footnoteRef/> wp14:anchorId="1"word/h.xml w:val="Page Numbers-",<w:compat+
+ w:val="720" w:val="Page Numbersid="9" w:val="720"<w:defaultTabStop+ 1
+./ w:val="720""😀 <w:footnote wp14:anchorId="1" Type="x/footer"
+2</w:autoHyphenation><Override PartName="/word/h.xml"relationships/header"\n Type="x/header" id="3"
+😀 w:val="0"/>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" wp14:editId="FF"<w:footnotePr. w:val="Page Numbers Target="/word/h.xml"😀
+< id="3"<wp:docPr2>e<w:endnotePr- w14:textId="B" Id="rId1" w:val="0"<w:endnotePr
+$&,<Override PartName="/word/h.xml"/>\n> w14:paraId="0A"
+word/word/<Override PartName="/word/h.xml"/> Type="x/footer"w:val="Page Numbers (Top)"<Override PartName="/word/h.xml" \n<w:footnote w:id="-1"/>relationships/footer"
+</w:settings> Type="x/header"<w:footnotePr<w:evenAndOddHeaders
+  wp14:editId="FF"<w:autoHyphenation<w:footnote w:id="-1"/><w:compat2<w:defaultTabStopé<w:evenAndOddHeaders Id="a" wp14:editId="FF"<w:docPartGallery w:val="Page Numbers</w:footnotePr>
+= w:val="Page Numbers+<<w:evenAndOddHeaders Type="x/header"😀
+<w:endnotePr<w:footnoteRef/>
+ Id="rId1"2 Type="x/header"<w:autoHyphenation<w:footnote id="<w:footnotePr<Override PartName="/word/h.xml"/><Override PartName="/word/h.xml"/>id="9"</w:autoHyphenation>
+<w:compat id="3"+</Relationships> id="</w:settings>
+<Override PartName="/word/h.xml"/><Override PartName="/word/h.xml"/></w:settings></Relationships>Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<Override PartName="/word/h.xml"/>e<w:footnote w:id="-1"/>relationships/header"+<w:evenAndOddHeaders<w:footnoteRef/><w:compat/>"
+<w:compat id="3"/>+>+ id="w:val="<w:footnoteRef/>= w:val="Page NumbersType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"😀<wp:docPr
+😀/><w:footnotePr
+ w14:textId="B"<w:endnotePr<w:autoHyphenation><w:footnote w:id="-1"/><w:endnotePr./ w:val="0"</Relationships><w:rsids/>
+<w:evenAndOddHeaders w:val="Page Numbersword/h.xml<w:defaultTabStop w:val="Page Numbers w:val="720"<w:endnotePr w14:paraId="0A"/> Type="x/footer" <w:footnotePr
+,2 wp14:editId="FF"><w:compat/>\n😀relationships/footer"\n wp14:editId="FF"<wp:docPr<Relationship
+-id="9"
+<w:footnote w:id="-1"/></w:footnotePr><w:endnotePr
+<w:evenAndOddHeaders<Relationship</w:settings><Relationship<w:footnoteRef/>😀<w:settings>é<w:footnote w:id="-1"/>"/w:val=" Target="/word/h.xml"
+/word/<w:autoHyphenationrelationships/footer"<w:compat/> id="3" Type="x/header"id="9"<w:compat/>+
+./\nword/h.xml Target="h.xml"/></Relationships><w:endnotePr<./ id="3"2<w:settings><Relationship./
+§relationships/header"</w:footnotePr>§ew:val="
+ w:val="Page Numbers<Override PartName="/word/h.xml"
+ w:val="0"</Relationships>/word/ <Relationship<Override PartName="/word/h.xml"/>relationships/footer" Type="x/header"<wp:docPr
+<w:evenAndOddHeadersType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"> Id="a"</w:footnotePr>relationships/footer" w:val="720" w:val="0"<w:evenAndOddHeaders-<w:footnote w:id="-1"/>relationships/footer"
+word/1 Id="a"e<w:rsids/><w:evenAndOddHeaders./<Relationship</w:settings>w:val="2 Type="x/footer",</Relationships>
+<w:footnotePr<Relationship+😀 Type="x/header"<wp:docPr Target="/word/h.xml" Id="a"
+$& w:val="Page Numbers
+relationships/footer" w14:paraId="0A"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"1<RelationshipType="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<w:docPartGallery Id="a"<w:compat
+ <Override PartName="/word/h.xml"/>relationships/header"<w:defaultTabStop<w:endnotePr w14:textId="B"
+w:val="Page Numbers (Top)"id="9"<w:endnotePr Id="rId1"
+ id="</w:footnotePr> w:val="0"
+</w:autoHyphenation> /<w:footnote<w:footnote w:id="-1"/> Target="/word/h.xml"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"<Override PartName="/word/h.xml"§<w:autoHyphenation<w:docPartGallery w14:textId="B"
+</Relationships><Override PartName="/word/h.xml"/>id="9" Type="x/footer" w:val="720"  Type="x/header" 1<w:footnote w:id="-1"/>
+<w:footnotePr wp14:editId="FF"w:val=" id="
+ w14:paraId="0A" Id="rId1"
+ wp14:anchorId="1" w:val="0","$&- w:val="Page Numbers11 Target="h.xml"word/<w:rsids/>
+ id="3"
+<w:evenAndOddHeaders<w:docPartGallery Type="x/footer" w:val="Page Numbersword/ Id="rId1"ew:val=" w14:textId="B"
+ 😀</Relationships><w:rsids/><w:rsids/> w:val="720"</w:autoHyphenation><Override PartName="/word/h.xml"</w:footnotePr> 
+ Type="x/header"<w:footnoteRef/>e<w:defaultTabStop w14:paraId="0A"é<wp:docPr
+relationships/header"word/
+ relationships/footer" wp14:editId="FF"w:val=" Type="x/header" Id="rId1"><w:footnote w:val="720"\né</Relationships> w:val="Page Numbers<w:footnote w:id="-1"/>
+ w14:paraId="0A"w:val="Page Numbers (Top)"id="9"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"</w:autoHyphenation><w:docPartGalleryid="9"<w:defaultTabStop Type="x/header"eid="9"ew:val="Page Numbers (Top)"
+</Relationships>e,<w:footnotePr<w:autoHyphenation/> w14:textId="B"<w:docPartGallery
+e wp14:anchorId="1"+<w:settings> $& wp14:anchorId="1"+$& id="3"😀 Target="h.xml"
+</w:settings> id="3">Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" w:val="0"<<wp:docPr<w:rsids/><Override PartName="/word/h.xml"/>,<w:docPartGallery<Relationshipword/ Id="a"
+ id="<Override PartName="/word/h.xml"/> wp14:editId="FF" w:val="720"relationships/header"<Override PartName="/word/h.xml"/><Relationship
+w:val="/word/</w:footnotePr>2 w:val="Page Numbers Id="rId1"<w:compat/>id="9".<é Id="a"word/w:val="
+<w:defaultTabStop Target="/word/h.xml"</w:footnotePr> Id="rId1"<Relationship</w:footnotePr><w:footnotePr
+</w:footnotePr><w:footnoteRef/>😀
+ w:val="720"=
+</w:settings>relationships/header"<Relationship<w:compat<Relationship
+"<w:compat//word/</w:footnotePr><w:footnoteRef/>😀é></w:settings>§ Type="x/footer" w:val="720"
+erelationships/footer" Id="rId1"<w:docPartGallery"
+2$& Type="x/header""</w:settings> Target="h.xml"<Relationship\n
+ w:val="0"<Override PartName="/word/h.xml"/> Type="x/header" wp14:editId="FF"<Override PartName="/word/h.xml"/> Id="rId1" Id="rId1" Type="x/header"<w:compat/>
+/<w:rsids/>\n Id="rId1"<w:defaultTabStop</w:settings>e wp14:editId="FF" w:val="Page Numbers</w:autoHyphenation> w:val="Page Numbers
+ Type="x/header" Target="/word/h.xml" w:val="Page Numbers wp14:anchorId="1"<w:defaultTabStop<w:compatid="9"+
+<w:autoHyphenation<Relationship=<w:footnotePr<w:evenAndOddHeaders w:val="

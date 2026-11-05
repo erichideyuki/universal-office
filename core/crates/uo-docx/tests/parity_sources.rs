@@ -136,19 +136,8 @@ fn corpus_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Whether `read_document` is still the stub of the foundation (frontier R5 not landed): the
-/// replay is skipped, loudly, until it is.
-fn reader_is_a_stub() -> bool {
-    let pkg = Package::new_empty(&uo_opc::Limits::DEFAULT, &uo_opc::package::OpenOptions::default());
-    matches!(read_document(&pkg, &ReadOptions::default()), Err(e) if e.to_string().contains("not ported yet"))
-}
-
 /// Replays the docx containers of shard `shard` of `shards` (or the synthetic inputs when `shards == 0`).
 fn run(shard: u32, shards: u32) {
-    if reader_is_a_stub() {
-        println!("SKIPPED: read_document is not ported yet (frontier R5); the `sources` replay runs when it lands");
-        return;
-    }
     let manifest = env!("CARGO_MANIFEST_DIR");
     let cap = Capture::read(Path::new(manifest).join("tests/parity/sources.capture")).unwrap();
     let container_of = |key: &str| key.rsplit_once('#').unwrap().0.to_owned();

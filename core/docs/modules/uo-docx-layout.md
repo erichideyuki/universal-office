@@ -891,7 +891,11 @@ Corpus: … Mismatches: … Differential: …
 
 ### Security
 
-Pending.
+Pending. **For the security review** (collected as they are found):
+
+- F2-21: the TS `documentHyphenationLanguages` is exponential in nested text boxes and tables
+  (2^depth; 30 levels ≈ 25 min); the Rust walk visits each paragraph once (same output). The TS bug
+  remains in the shell until the switch (not edited by the port).
 
 ## Evolution
 
@@ -1623,7 +1627,7 @@ The local run covered 1,772 non-null numbering markers, 1,948 distinct resolved 
 | Word oracle, all documents (installed fonts) | 2,742 | 10,968 | 1,167 markers (17,125 clone events), 6,479 style queries |
 
 The oracle and the F0 generator have **no** DATE/TIME or formula field, hence `gen-f2-docs.mjs`.
-`p3.hyphlangs` is captured but its replay waits for `read_document` (R5): 2,746 facets pending.
+`p3.hyphlangs` replays since R5 landed `read_document`: `f2_parity` checks it over the real reader on the four fixture documents, and uo-docx's `parity_full` (facet `hyphlangs`, `js/capture-full.mjs`: `documentHyphenationLanguages` with and without `force` over the 2,753 corpus documents and 771 synthetic packages) is equal on every one (R5 record). Finding: the walk visited a text box's `paras` and `blocks` views both, 2^depth visits for nested text boxes (the TS does too): **fixed by a single visit, same output (F2-21)**.
 
 **São Paulo facet** (LQ10; `capture-word.mjs --tz America/Sao_Paulo` → `tests/captures/f2/
 datefmt-America-Sao-Paulo.*`, replayed by `f2_parity.rs::sao_paulo_dates` through `Clock::local` with
@@ -1709,11 +1713,12 @@ and 16 instructions), **1,485 equal**; the rule's offset equals V8's at all 1,38
 | F2-13 | `RevisionDisplay::new(mode, insDel, formatting, authors, colors, order, docOrder)` (uo-docx has no options type; the facade converts the layout's `RevisionView`); `paragraph()` returns the `(ppr, props)` override of the copy (LA2); `revision_ranges` takes the runs as (props, UTF-16 length) and the `REV_JOINS` offsets | the layout's derived paragraphs (LA2) |
 | F2-14 | `RevisionDisplay.directRPr` uses `direct_rpr_with(run, props)` instead of cloning the run (`{ ...run, props }`): `editBaseProps` reads the same link/note/symbol | no text copy |
 | F2-15 | The outline functions take a `DocView` (`full.formatting ?? emptyFormatting()` → the document's formatting, always present) | A4 |
-| F2-16 | `documentHyphenationLanguages`: the explicit site list (K5) in each object's key order; a section visits its parts' flat paragraph views (`headers`/`footers` come before `headerBlocks` in the TS object), a cell its direct paragraphs then its tables, a textbox its `paras` view then its blocks, custom inline data as any JSON | the output order of the TS `Set` |
+| F2-16 | `documentHyphenationLanguages`: the explicit site list (K5) in each object's key order; a section visits its parts' flat paragraph views (`headers`/`footers` come before `headerBlocks` in the TS object), a cell its direct paragraphs then its tables, a textbox its `paras` view then its blocks (the textbox's second visit is gone since F2-21), custom inline data as any JSON | the output order of the TS `Set` |
 | F2-17 | docx-core `table-formula.ts` `formatFormulaResult`/`formatPicture` and docx-layout `refs.ts` `cellAtGrid`/`paragraphAtPath` are ported here | the layout and the editor need them; one implementation |
 | F2-18 | New dependency uo-docx → uo-text (UTF-16 case mapping with SpecialCasing, JS white space over units); uo-docx-layout dev-dependencies: uo-docx with `canon`, uo-opc (the F2 replay) | LQ11/K10 |
 | F2-19 | Harness: `uo-docx/js/capture-word.mjs` (unit differential, São Paulo facet with `--tz`), `tools/lib/facets-f2.mjs`, `tools/gen-f2-docs.mjs`; shared edits additive: `facets.mjs` imports and chains the F2 recorder after the F1/F3/F5 hooks (the pre-hook carries the formula callback rewiring), `capture-layout.mjs` passes the three TS classes it patches | the corpus has no DATE/formula field |
 | F2-20 | **The TS checkout of the captures**: `.claude/worktrees/clickcompliance-docx` at `d0f45bc5` (= this branch's frozen `write/`; its dist built after `field-formula.ts`). The main checkout (`b92b60fa`) has a **stale dist** (built 2026-10-23, before `field-formula.ts`/`numpages.ts` were added on 10-30): no `dist/field-formula.js`, `numpages.js`, `run-boxes.js`, `pdf-navigation.js`, `pdf-word-spaces.js`, `inline-renderer.js`, `docx-core/dist/inspect.js`, `style-names-es.js`, and different `engine.js`, `para.js`, `pdf.js`, `document.js`, `fulldoc.js`, `xml.js`. The captures naming `@ts-commit b92b60fa` (F0, F1, F5 `layout-ci`, F1 `resolver`) come from that older engine | finding for the orchestrator: recapture with a dist built from the frozen TS before the gate |
+| F2-21 | **Deliberate divergence from the TS (security; same output)**: `document_hyphenation_languages` visits each paragraph once. The TS `visit` (`hyphenate.ts:65`, faithfully ported in F2-16) walks a text box's `paras` view and then its `blocks` view, and a cell's `paragraphs`/`tables` and then its `blocks`: the same subtree twice per level, **2^depth visits** for nested text boxes or tables (the TS has the same bug; not edited here). A repeated visit adds nothing to the `Set` (the walk is pure and the subtree's languages are already in the set after its first visit), so the single visit gives the same list in the same order. The F2 port already visited a cell once; the text box's `blocks` view is now skipped too (`paras` holds every paragraph of the blocks, cells included). Proof: `parity_full` (facet `hyphlangs`, 2,753 corpus documents and 771 synthetic packages: 16,518 + 4,506 facets equal, 0 mismatches) and `f2_parity` (`p3.hyphlangs`) unchanged; `tests/r5_followups.rs` compares the single visit with the TS double visit (`hyphlangs::document_hyphenation_languages_ts_walk`, feature `canon`, test-only) on 7 nesting patterns (VML, DrawingML, `wpg` group, `mc:AlternateContent`, tables, the five in turn, text box/table alternating) × depth 0–14 × sources off/on × `force` (420 equal lists, every language of every level in first-appearance order), and runs 30, 64, 65 and 80 levels of each pattern in under 2 s (measured, release, nested `wps` boxes: the single visit 26–38 µs at depths 10–24; the TS double visit takes 2.2 ms at depth 10, 1.43 s at 20, 23.9 s at 24, ×2 per level: ≈ 25 min at 30) | a document with 30 nested text boxes stalls any open with automatic hyphenation (and Manual Hyphenation's `force`); listed for the security review below |
 
 **Limits** (LQ14): `max_parse_depth` (formula nesting, F2-6) and `max_field_text` (F2-4); every
 other loop is bounded by its input or by the TS guards (`chain` 32, `abstractFor` 4,
@@ -1721,8 +1726,8 @@ other loop is bounded by its input or by the TS guards (`chain` 32, `abstractFor
 
 ### Not done (handed on)
 
-- `p3.hyphlangs` replay and the outline functions over real documents wait for `read_document`
-  (R5); their TS facet is captured (and the unit tests run on hand-built documents).
+- The outline functions over real documents (the `p3.hyphlangs` replay is done, see above; the walk
+  is linear since F2-21; the TS stays exponential in nested text boxes).
 - `resolvePPr` and `cascadeRPr` are compared on generated inputs (unit differential) only; their
   engine call sites (F4 `prepareParagraph`, F7) are covered by P1 once F7a runs.
 - F1's `DocContext::note_mark` still takes `formatNumber` as a parameter (pass

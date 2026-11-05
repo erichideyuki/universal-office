@@ -84,6 +84,9 @@ impl JsValue for Utf16 {
         w.str16(&self.0);
         true
     }
+    fn exact(&self, k: &mut crate::js::ExactKey) -> bool {
+        k.str16(&self.0)
+    }
 }
 
 #[cfg(test)]

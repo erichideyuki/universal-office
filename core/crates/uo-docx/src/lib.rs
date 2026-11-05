@@ -20,16 +20,28 @@
 
 #[cfg(feature = "canon")]
 pub mod canon;
+#[cfg(feature = "compare")]
+pub mod compare;
 pub mod data;
+#[cfg(feature = "doc")]
+pub mod doc;
 pub mod drawing;
 pub mod error;
+#[cfg(feature = "export")]
+pub mod export;
+#[cfg(any(feature = "export", feature = "compare", feature = "odf"))]
+pub mod final_view;
 pub mod ids;
 pub mod js;
 pub mod limits;
 pub mod model;
+#[cfg(feature = "odf")]
+pub mod odf;
 pub mod pvec;
 pub mod read;
 pub mod text;
+#[cfg(any(feature = "export", feature = "compare", feature = "odf"))]
+pub mod u16buf;
 pub mod view;
 pub mod word;
 pub mod write;

@@ -27,6 +27,11 @@ pub enum DocxError {
     Limit { kind: DocxLimitKind, max: u64, part: Option<Box<str>> },
     /// a structure the reader cannot use (what, for diagnostics)
     Corrupt(&'static str),
+    /// the writer refused the model: a TS writer `throw` (an invalid custom-inline type, data
+    /// `JSON.stringify` cannot write, a lone surrogate in `encodeURIComponent`), or, until its
+    /// D1b emitter frontier lands, a construct whose emitter is not ported yet (the message names
+    /// the frontier)
+    Write(&'static str),
 }
 
 impl DocxError {
@@ -56,6 +61,7 @@ impl fmt::Display for DocxError {
                 write!(f, "limit {kind:?} ({max}) exceeded{}", part.as_deref().map(|p| format!(" in {p}")).unwrap_or_default())
             }
             DocxError::Corrupt(what) => write!(f, "corrupt document: {what}"),
+            DocxError::Write(what) => write!(f, "cannot write the document: {what}"),
         }
     }
 }

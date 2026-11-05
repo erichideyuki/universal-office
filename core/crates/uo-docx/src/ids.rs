@@ -71,6 +71,9 @@ impl JsValue for SourceKey {
         w.num(f64::from(self.0));
         true
     }
+    fn exact(&self, k: &mut crate::js::ExactKey) -> bool {
+        k.tag(b'k') && k.u32(self.0)
+    }
 }
 
 impl JsValue for u32 {
@@ -81,6 +84,9 @@ impl JsValue for u32 {
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
         w.num(f64::from(*self));
         true
+    }
+    fn exact(&self, k: &mut crate::js::ExactKey) -> bool {
+        k.tag(b'i') && k.u32(*self)
     }
 }
 

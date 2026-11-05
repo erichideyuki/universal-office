@@ -19,6 +19,7 @@ use crate::model::MediaStore;
 use crate::model::para::SdtKey;
 use crate::model::sources::{SourcePart, SourceStore, WrapId};
 
+use super::intern::{Interned, Interner};
 use super::{DOCX, DOCX_POS, ReadOptions};
 
 /// The per-read values of the TS process-global counters (G7): the TS never resets them, so
@@ -39,6 +40,13 @@ pub struct PartCounts {
     pub runs: u32,
 }
 
+/// The counting state of a part put aside by [`ReadCtx::suspend_part`].
+#[derive(Debug, Clone, Default)]
+pub struct PartState {
+    part: Option<Box<str>>,
+    counts: PartCounts,
+}
+
 /// The context of one read (see the module comment).
 pub struct ReadCtx<'p> {
     pub pkg: &'p Package,
@@ -53,6 +61,9 @@ pub struct ReadCtx<'p> {
     /// the part being read and its counts
     part: Option<Box<str>>,
     counts: PartCounts,
+    /// the props interning of this read ([`super::intern`]), on the heap: the context is on the
+    /// frame of the read
+    interner: Box<Interner>,
 }
 
 impl<'p> ReadCtx<'p> {
@@ -67,7 +78,25 @@ impl<'p> ReadCtx<'p> {
             nesting: 0,
             part: None,
             counts: PartCounts::default(),
+            interner: Box::default(),
         }
+    }
+
+    /// The props value as an `Arc` shared with every equal value of this read ([`super::intern`];
+    /// `RunProps` and `ParaProps` of a read with sources get their own, see there).
+    pub fn intern<T: Interned>(&mut self, v: T) -> std::sync::Arc<T> {
+        if T::GETS_SRC && self.sources.is_some() {
+            return std::sync::Arc::new(v);
+        }
+        self.interner.intern(v)
+    }
+
+    /// [`ReadCtx::intern`] of a value already behind an `Arc` (after the reader wrote to it).
+    pub fn intern_shared<T: Interned>(&mut self, a: &mut std::sync::Arc<T>) {
+        if T::GETS_SRC && self.sources.is_some() {
+            return;
+        }
+        self.interner.intern_shared(a);
     }
 
     /// Whether the read keeps sources.
@@ -95,9 +124,25 @@ impl<'p> ReadCtx<'p> {
         Ok(Some(self.pkg.xml_part(name, &DOCX)?))
     }
 
-    /// The relationships of `rels_part` (`word/_rels/document.xml.rels`…), empty without one.
+    /// XML text the caller gives (`parseXml(text, { positions: !!store })` of a part that is not
+    /// in the package: the editor's new header or footer, the body fragment), parsed with the
+    /// preset and the limits of [`ReadCtx::xml_part`].
+    pub fn xml_text(&self, text: &str) -> Result<XmlDocument, DocxError> {
+        let opts = if self.with_sources() { &DOCX_POS } else { &DOCX };
+        if text.len() as u64 > self.limits.package.max_xml_part_bytes {
+            return Err(DocxError::Package(uo_opc::Error::Limit {
+                kind: uo_opc::LimitKind::PartBytes,
+                max: self.limits.package.max_xml_part_bytes,
+                part: None,
+            }));
+        }
+        Ok(uo_opc::xml::parse(text.to_owned(), &self.limits.package.bounded(opts))?)
+    }
+
+    /// The relationships of `rels_part` (`word/_rels/document.xml.rels`…), empty without one (an empty
+    /// part is none: `if (relsXml)`).
     pub fn rels(&self, rels_part: &str) -> Result<Vec<Relationship>, DocxError> {
-        match self.xml_part_plain(rels_part)? {
+        match super::parts::part_doc(self, rels_part)? {
             Some(doc) => Ok(uo_opc::rels::from_document(&doc)),
             None => Ok(Vec::new()),
         }
@@ -159,6 +204,19 @@ impl<'p> ReadCtx<'p> {
     pub fn begin_part(&mut self, name: &str) {
         self.part = Some(name.into());
         self.counts = PartCounts::default();
+    }
+
+    /// Puts the counting of the current part aside (a header or footer part is read in the middle
+    /// of the body, as `readFullDocument` does) and starts none; give the state back to
+    /// [`ReadCtx::resume_part`] when the other part is done.
+    pub fn suspend_part(&mut self) -> PartState {
+        PartState { part: self.part.take(), counts: std::mem::take(&mut self.counts) }
+    }
+
+    /// Resumes the counting [`ReadCtx::suspend_part`] put aside.
+    pub fn resume_part(&mut self, state: PartState) {
+        self.part = state.part;
+        self.counts = state.counts;
     }
 
     /// Counts a paragraph of the current part against `max_paragraphs_per_part`.

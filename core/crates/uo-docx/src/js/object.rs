@@ -1,6 +1,6 @@
 //! TS objects: the field bookkeeping and the [`crate::js_object!`] declaration macro.
 
-use super::{JsValue, JsonWriter};
+use super::{ExactKey, JsValue, JsonWriter};
 
 /// One bit per field: "the TS object has this key with the value `undefined`" (A2, U4: what
 /// `Object.assign(props, patch)` with a cleared field leaves). A set bit with a `None` field is an
@@ -232,9 +232,30 @@ pub fn object_canon<T: JsObject>(o: &T, w: &mut crate::canon::CanonWriter<'_>) {
     }
 }
 
+/// Whether a declared object has no Rust-only fields (`hidden { … }` of [`crate::js_object!`]): only
+/// then is its exact identity its TS keys.
+#[doc(hidden)]
+#[must_use]
+pub const fn no_hidden_fields(hidden: &[&str]) -> bool {
+    hidden.is_empty()
+}
+
+/// The start of the exact identity of a declared object ([`JsValue::exact`]): the recorded key
+/// order and the whole cleared mask. The macro then writes the presence of every key (one bit per
+/// field) and the exact key of each value present, in declaration order.
+#[doc(hidden)]
+pub fn object_exact_head(keys: &KeyOrder, cleared: FieldMask, k: &mut ExactKey) -> bool {
+    let order = keys.recorded();
+    k.tag(b'O') && k.count(order.len()) && order.iter().all(|&i| k.tag(i)) && k.u64(cleared.bits())
+}
+
 /// `JSON.stringify` of a declared object: keys in insertion order, `undefined` omitted.
 #[doc(hidden)]
 pub fn object_json<T: JsObject>(o: &T, w: &mut JsonWriter<'_>) {
+    if w.sorted_keys() {
+        object_json_with(o, &[], &[], w);
+        return;
+    }
     w.begin_object();
     o.for_each_in_order(&mut |k, s| {
         if let Slot::Val(v) = s {
@@ -284,6 +305,23 @@ pub fn object_canon_with<T: JsObject>(o: &T, extra: &[crate::canon::EntryRef<'_>
 /// `JSON.stringify` of a declared object with extra members: `before`, the object's keys in
 /// insertion order, then `after`.
 pub fn object_json_with<T: JsObject>(o: &T, before: &[(&str, &dyn JsValue)], after: &[(&str, &dyn JsValue)], w: &mut JsonWriter<'_>) {
+    if w.sorted_keys() {
+        // the order-insensitive signature encoding (D1b, G23): every member sorted by name
+        let mut all: Vec<(&str, &dyn JsValue)> = before.to_vec();
+        for (k, s) in o.slots_in_order() {
+            if let Slot::Val(v) = s {
+                all.push((k, v));
+            }
+        }
+        all.extend_from_slice(after);
+        all.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
+        w.begin_object();
+        for (k, v) in all {
+            w.member(k, v);
+        }
+        w.end_object();
+        return;
+    }
     w.begin_object();
     for (k, v) in before {
         w.member(k, *v);
@@ -390,7 +428,16 @@ macro_rules! js_object {
                 fn cleared_mut(&mut self) -> &mut $crate::js::FieldMask { &mut self.cleared }
             }
 
-            $crate::__js_value_impl!($value $name);
+            // Rust-only fields are not TS keys: a type with any is not internable (`JsValue::exact`)
+            #[allow(dead_code, reason = "unused by the `custom_value:` types, which write their own `JsValue`")]
+            const EXACT: bool = $crate::js::no_hidden_fields(&[ $( $( stringify!($hfield) ),* )? ]);
+            #[allow(dead_code, reason = "unused by the `custom_value:` types, which write their own `JsValue`")]
+            fn __exact_fields(s: &$name, k: &mut $crate::js::ExactKey) -> bool {
+                let mut present = 0u64;
+                $( present |= u64::from($crate::__js_present!($kind, s, $field)) << (K::$field as u32); )*
+                k.u64(present) $( && $crate::__js_exact_field!($kind, s, $field, k) )*
+            }
+            $crate::__js_value_impl!($value $name, EXACT, __exact_fields);
 
             // `JsAssign` (uo-docx-layout F2): typed per-key copy and removal, so that
             // `{ ...a, ...b }`, `Object.assign` and `delete` can be written once over any object
@@ -407,6 +454,22 @@ macro_rules! js_object {
                     if let Some(f) = REMOVE.get(i) {
                         f(self);
                     }
+                }
+            }
+
+            // the undo normalisation of the session (D2a, A3 "Restore"): what the TS JSON round
+            // trip of a history step does to this object and everything below it
+            #[cfg(feature = "session")]
+            impl $crate::session::normalize::JsNormalize for $name {
+                fn js_needs(&self) -> bool {
+                    !self.cleared.is_empty()
+                        $( || $crate::session::normalize::JsNormalize::js_needs(&self.$field) )*
+                        $( $( || $crate::session::normalize::JsNormalize::js_needs(&self.$hfield) )* )?
+                }
+                fn js_normalize(&mut self, cx: &mut $crate::session::normalize::NormCx<'_>) {
+                    $crate::session::normalize::drop_cleared(&mut self.cleared, &mut self.keys);
+                    $( $crate::session::normalize::JsNormalize::js_normalize(&mut self.$field, cx); )*
+                    $( $( $crate::session::normalize::JsNormalize::js_normalize(&mut self.$hfield, cx); )* )?
                 }
             }
         };
@@ -456,8 +519,33 @@ pub trait JsAssign: JsObject {
 
 #[doc(hidden)]
 #[macro_export]
+macro_rules! __js_present {
+    (opt, $s:expr, $f:ident) => {
+        $s.$f.is_some()
+    };
+    (req, $s:expr, $f:ident) => {
+        true
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __js_exact_field {
+    (opt, $s:expr, $f:ident, $k:expr) => {
+        match &$s.$f {
+            ::core::option::Option::Some(v) => $crate::js::JsValue::exact(v, $k),
+            ::core::option::Option::None => true,
+        }
+    };
+    (req, $s:expr, $f:ident, $k:expr) => {
+        $crate::js::JsValue::exact(&$s.$f, $k)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
 macro_rules! __js_value_impl {
-    (custom $name:ident) => {};
+    (custom $name:ident $(, $exact:expr, $fields:ident)?) => {};
     (auto $name:ident) => {
         impl $crate::js::JsValue for $name {
             #[cfg(feature = "canon")]
@@ -467,6 +555,21 @@ macro_rules! __js_value_impl {
             fn json(&self, w: &mut $crate::js::JsonWriter<'_>) -> bool {
                 $crate::js::object_json(self, w);
                 true
+            }
+        }
+    };
+    (auto $name:ident, $exact:expr, $fields:ident) => {
+        impl $crate::js::JsValue for $name {
+            #[cfg(feature = "canon")]
+            fn canon(&self, w: &mut $crate::canon::CanonWriter<'_>) {
+                $crate::js::object_canon(self, w);
+            }
+            fn json(&self, w: &mut $crate::js::JsonWriter<'_>) -> bool {
+                $crate::js::object_json(self, w);
+                true
+            }
+            fn exact(&self, k: &mut $crate::js::ExactKey) -> bool {
+                $exact && $crate::js::object_exact_head(&self.keys, self.cleared, k) && $fields(self, k)
             }
         }
     };

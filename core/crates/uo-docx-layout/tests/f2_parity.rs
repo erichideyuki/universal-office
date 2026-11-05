@@ -6,8 +6,8 @@
 //!   its nested-field callback) — recomputed from the dumped strings;
 //! - `p3.numbering` (every `NumberingState.next` of the engine's states, with their clones) and
 //!   `p3.style` (`StyleResolver` queries) — over the formatting the D1a reader (R2) gives;
-//! - `p3.hyphlangs` (`documentHyphenationLanguages`) needs the whole document (R5): reported
-//!   `pending` until `uo_docx::read::read_document` reads.
+//! - `p3.hyphlangs` (`documentHyphenationLanguages`, with and without `force`) — over the whole document
+//!   `uo_docx::read::read_document` reads (reported `pending` when the docx is not at hand).
 //!
 //! And the São Paulo date facet (LQ10): `datefmt-America-Sao-Paulo.*` from
 //! `uo-docx/js/capture-word.mjs --tz America/Sao_Paulo`, replayed through the layout's `Clock` with
@@ -22,12 +22,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use uo_docx::DocView;
 use uo_docx::canon::{CanonSink, CanonWriter, EntryRef, canon_entries};
 use uo_docx::js::{JsNumber, JsValue};
+use uo_docx::model::Document;
 use uo_docx::model::formatting::DocFormatting;
 use uo_docx::read::ReadOptions;
-use uo_docx::read::ctx::ReadCtx;
-use uo_docx::read::parts::read_doc_formatting;
+use uo_docx::read::read_document;
 use uo_docx_layout::options::{Clock, TimeZoneRule};
 use uo_docx_layout::word::{self, LocalDateTime, NumberingState, StyleResolver, TextCap};
 use uo_opc::Package;
@@ -126,12 +127,26 @@ fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/captures/f2")
 }
 
-fn formatting_of(docx: &Path) -> DocFormatting {
+/// The document the D1a reader gives for a docx (the formatting of its numbering and style queries,
+/// the whole of its hyphenation languages).
+fn read_doc(docx: &Path) -> Document {
     let bytes = std::fs::read(docx).unwrap_or_else(|e| panic!("{}: {e}", docx.display()));
     let pkg = Package::open(&bytes, &uo_opc::Limits::DEFAULT, &uo_opc::package::OpenOptions::default()).unwrap();
-    let opts = ReadOptions::default();
-    let mut ctx = ReadCtx::new(&pkg, &opts);
-    read_doc_formatting(&mut ctx).unwrap()
+    read_document(&pkg, &ReadOptions::default()).unwrap()
+}
+
+/// The `p3.hyphlangs` facet of `facets-f2.mjs`: `JSON.stringify([documentHyphenationLanguages(full),
+/// documentHyphenationLanguages(full, 'pt-BR', true)])` through the stream's `u16s`.
+fn hyphlangs_digest(doc: &Document) -> String {
+    let view = DocView::new(doc);
+    let list = |force: bool| {
+        let items: Vec<String> =
+            word::document_hyphenation_languages(view, "pt-BR", force).iter().map(|l| uo_jsnum::json::string(l)).collect();
+        format!("[{}]", items.join(","))
+    };
+    let mut s = S::new();
+    s.str(&format!("[{},{}]", list(false), list(true)));
+    s.value()
 }
 
 /// The marker digest of `facets-f2.mjs` (`digest(m)`: the marker object through `canon.mjs`).
@@ -301,7 +316,6 @@ fn replay_doc(r: &mut Replay<'_>, key: &str, dump: &str, fmt: Option<&DocFormatt
         r.check(key, "p3.numbering", &numbering.value());
         r.check(key, "p3.style", &style.value());
     }
-    // p3.hyphlangs: the whole document is R5's (pending until read_document reads)
 }
 
 fn run_capture(capture: &Path, dump_dir: &Path, docs: &Path) {
@@ -309,23 +323,35 @@ fn run_capture(capture: &Path, dump_dir: &Path, docs: &Path) {
     let mut r = Replay::new(&cap);
     let mut counts = [0usize; 4];
     let mut pending = 0usize;
+    let mut hyph = 0usize;
     for rec in cap.records() {
         let key = rec.key.as_str();
         let safe = key.replace(['/', '\\', ':'], "__");
         let Ok(dump) = std::fs::read_to_string(dump_dir.join(format!("{safe}.f2.tsv"))) else { continue };
         let docx = docs.join(format!("{key}.docx"));
-        let fmt = docx.exists().then(|| formatting_of(&docx));
-        replay_doc(&mut r, key, &dump, fmt.as_ref(), &mut counts);
+        let doc = docx.exists().then(|| read_doc(&docx));
+        let fmt = doc.as_ref().map(|d| &*d.formatting);
+        replay_doc(&mut r, key, &dump, fmt, &mut counts);
+        if let Some(doc) = &doc
+            && rec.get("p3.hyphlangs").is_some()
+        {
+            r.check(key, "p3.hyphlangs", &hyphlangs_digest(doc));
+            hyph += 1;
+        }
         // every other facet belongs to other frontiers or to P1/P2
         for (f, _) in &rec.facets {
-            if !f.starts_with("p3.datefmt") && !f.starts_with("p3.formula") && !f.starts_with("p3.numbering") && !f.starts_with("p3.style")
+            if !f.starts_with("p3.datefmt")
+                && !f.starts_with("p3.formula")
+                && !f.starts_with("p3.numbering")
+                && !f.starts_with("p3.style")
+                && !(f == "p3.hyphlangs" && doc.is_some())
             {
                 r.skip(key, f);
             }
-            if f == "p3.hyphlangs" {
+            if f == "p3.hyphlangs" && doc.is_none() {
                 pending += 1;
             }
-            if fmt.is_none() && (f == "p3.numbering" || f == "p3.style") {
+            if doc.is_none() && (f == "p3.numbering" || f == "p3.style") {
                 r.skip(key, f);
                 pending += 1;
             }
@@ -333,11 +359,12 @@ fn run_capture(capture: &Path, dump_dir: &Path, docs: &Path) {
     }
     let report = r.finish();
     eprintln!(
-        "F2 facets: {} DATE/TIME calls, {} formulas, {} numbering markers, {} style queries; {} facets pending (p3.hyphlangs needs the R5 reader); {}",
+        "F2 facets: {} DATE/TIME calls, {} formulas, {} numbering markers, {} style queries, {} hyphenation language lists; {} facets pending (docx not at hand); {}",
         counts[0],
         counts[1],
         counts[2],
         counts[3],
+        hyph,
         pending,
         report.summary()
     );

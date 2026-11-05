@@ -1,0 +1,130 @@
+<wp:docPr id="1" name="Picture 1"/>
+<wp:docPr id="1" name="Picture 1">
+<wp:docPr name="a" name="b">
+<a:blip r:embed="rId4"/>
+<a:blip r:embed="rId4" r:embed="rId5">
+<a:blip/>
+<a:blip >
+<a:blip  />
+<a:blip\n/>
+<a:blip\tr:embed="x"\n/>
+<a:blip r:embed="">
+<a:blip r:embed=">">
+<a:blip rr:embed="x"/>
+<a:blip xr:embed="x"/>
+<a:blip r_embed="x"/>
+<a:blip r:embed='x'/>
+<a:blip r:embed=x/>
+<wp:anchor distT="0" distB="0">
+<wp:anchor distT="0" distT="5"/>
+<wp:anchor xdistT="0"/>
+<wp:anchor  distT = "0">
+<wp:anchor distT="é😀">
+<wp:anchor a.b="1"/>
+<wp:anchor aXb="1"/>
+<wp:anchor a.b="1" aXb="2">
+<a:ext cx="1" cy="2"/>
+<a:xfrm rot="5" flipH="1">
+<x name="1" name="2"/>
+<x name="1"/>
+<x name="1">
+<x\tname="1">
+<x\nname="a"\n>
+<x name="a" />
+<x name="a"  />
+<x a="1"　/>
+<
+<x
+<x 
+<x>
+<x/>
+<x />
+
+ 
+/>
+>
+ />
+/ >
+<x/ >
+<x a="/>
+<x a="/">
+<x a="/" />
+<x a=">"/>
+<é name="1"/>
+<x name="é"/>
+<wp:inline distT="0" distB="0" distL="0" distR="0">
+<wp:docPr id="1" name="x" descr="y" title="z" hidden="1">
+<wp:docPr hidden="1"/>
+<wp:docPr id="1"\n  name="x"\n  />
+<w:drawing
+<wp:inline
+<wp:anchor
+<xx:inline
+<a-b:c
+<a_b:c
+<a.b:c
+<:a
+<a::b
+<a b:c
+<a>b:c
+<a:
+<1:b
+<é:b
+< a:b
+<a :b
+<a/:b
+<wp:inline><wp:extent/></wp:inline>
+<wp:a/><wp:b></wp:b><wpx:c/><wp/><wp:/><w p:d/><wp: e/>
+<<wp:a>
+</wp:a></ wp:a></wp:
+<wp:<wp:
+<//wp:a>
+</wp:wp:wp:>
+text <wp:a> and </wp:a> end
+<WP:a>
+<wp :a>
+<a14:artisticBlur radius="10"/>
+<a:blur rad="9"/>
+<a:fillOverlay blend="over"/>
+</x>
+<!--x-->
+<?x?>
+<![CDATA[x]]>
+<a:glow\trad="1"/>
+1
+true
+TRUE
+ 1
+1 
+TOC
+ TOC \\o "1-3"
+xTOC TOC
+TOC_
+toc
+Toc\\h
+ TOC
+﻿TOC
+é toc
+ſ toc
+K TOC
+TOCé
+_TOC
+TOC1
+\tTOC\n
+val 12
+val -3x
+val-3
+val  
+val\t+5
+VAL 1
+<a:blipFillx/><a:blipFill r:embed="x"/>
+<a:blipFill
+<a:blipFill>
+<a:blipFill_/>
+a\r\nb\rc\nd\n\r
+<w:p w14:paraId="1" \t\n/>
+<w:p/>x
+<w:p>
+  />
+<dcterms:created xsi:type="x">2024-01-01T00:00:00Z</dcterms:created>
+<dcterms:createdX>v<

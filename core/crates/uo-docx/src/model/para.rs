@@ -44,6 +44,9 @@ impl JsValue for SdtKey {
         w.str(&self.0);
         true
     }
+    fn exact(&self, k: &mut crate::js::ExactKey) -> bool {
+        k.str(&self.0)
+    }
 }
 
 js_object! {

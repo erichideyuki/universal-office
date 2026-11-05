@@ -3,7 +3,8 @@
 //! patterns, rasterization and the image effects (shadows, glow, soft edges, reflection), the 3D
 //! light and bevel, the image adjustments and the Word blip colour effects; the colour elements
 //! read from XML and their resolution ([`dml`]), the theme part ([`theme`]) and the custom
-//! geometry paths ([`CustPath`]) (uo-docx plan G12). Plan and decisions:
+//! geometry paths ([`CustPath`]) (uo-docx plan G12), and, with the feature `legacy`, the OfficeArt
+//! records of the binary formats (`odraw`, G11). Plan and decisions:
 //! `core/docs/modules/uo-drawingml.md`.
 //!
 //! Every result is the one the frozen TS engine (`shared/drawingml`) gave, bit for bit: all
@@ -25,6 +26,8 @@ mod error;
 mod light3d;
 mod limits;
 mod num;
+#[cfg(feature = "legacy")]
+pub mod odraw;
 mod outline;
 mod path;
 mod patterns;
