@@ -15,6 +15,12 @@ uo-jsnum = { path = "../uo-jsnum" }
 uo-opc = { path = "../uo-opc" }
 # TrueType subsetting for the embedded fonts
 uo-fonts = { path = "../uo-fonts" }
+# the display list the painter reads (pages, resources, navigation) and the geometry/fill/effect helpers it shares with the canvas painter
+uo-render = { path = "../uo-render" }
+# PNG/GIF/BMP/TIFF decoders and the JPEG header read (the images of the pages)
+uo-image = { path = "../uo-image" }
+# the mask operations of the picture and shape effects, the blip colour effects
+uo-drawingml = { path = "../uo-drawingml" }
 # the font and alpha-state maps (the same pinned version as uo-fonts)
 rustc-hash = "=2.1.3"
 

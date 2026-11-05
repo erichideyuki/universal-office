@@ -342,7 +342,7 @@ fn random_hostile_documents_never_panic() {
             Ok(_) => ok += 1,
             Err(PdfError::Limit(_)) => err_limit += 1,
             Err(PdfError::Sink) => err_sink += 1,
-            Err(PdfError::Invalid(_)) => err_invalid += 1,
+            Err(PdfError::Invalid(_) | PdfError::Cancelled) => err_invalid += 1,
         }
     }
     println!(

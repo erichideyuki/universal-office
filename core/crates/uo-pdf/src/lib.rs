@@ -25,22 +25,27 @@ mod error;
 mod font;
 mod num;
 mod page;
+mod picture;
+mod render;
 mod sink;
 mod types;
 mod uri;
+mod word_spaces;
 mod writer;
 
-pub use color::{PdfColor, hex_color, rgb255};
+pub use color::{PdfColor, hex_color, hex_color_units, rgb255};
 pub use document::PdfDocument;
 pub use error::{LimitKind, PdfError, PdfLimits, Result};
 pub use font::{EmbeddedFont, Encoded, FontProgram};
 pub use num::{fmt, fmt_value, utf16be_hex, utf16be_hex_units};
 pub use page::PageWriter;
+pub use render::{PdfOptions, render_pdf, render_pdf_to};
 pub use sink::{ChunkedSink, IoSink, PdfSink};
 pub use types::{
     FontId, GlyphOptions, JpegImage, PathCmd, PdfImage, PdfLink, PdfOutlineItem, PdfShading, PlacedGlyph, ShadingGeom, SoftMask, Stroke,
 };
 pub use uri::safe_pdf_uri;
+pub use word_spaces::{WordSpaceCursor, advance_twips, with_word_spaces};
 pub use writer::{PdfWriter, StreamBody};
 
 /// Nothing here outlives a document (no process-wide cache); kept for the memory-gate convention (M1).

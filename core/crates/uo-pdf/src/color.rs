@@ -13,9 +13,16 @@ pub fn rgb255(r: f64, g: f64, b: f64) -> PdfColor {
 /// `parseInt(h.slice(i, i + 2), 16)` over UTF-16 code units for the three pairs (leading white
 /// space and a sign are accepted by `parseInt`, a non-digit ends it, nothing parsed is NaN).
 pub fn hex_color(hex: &str) -> PdfColor {
-    let mut units: Vec<u16> = hex.encode_utf16().collect();
+    let units: Vec<u16> = hex.encode_utf16().collect();
+    hex_color_units(&units)
+}
+
+/// [`hex_color`] over the UTF-16 code units of a colour the display list holds as written (lone
+/// surrogates and all: the pairs are parsed unit by unit, as the TS does).
+pub fn hex_color_units(units: &[u16]) -> PdfColor {
+    let mut units: std::borrow::Cow<'_, [u16]> = std::borrow::Cow::Borrowed(units);
     if let Some(at) = units.iter().position(|&u| u == 0x23) {
-        units.remove(at);
+        units.to_mut().remove(at);
     }
     let pair = |from: usize| {
         let start = from.min(units.len());

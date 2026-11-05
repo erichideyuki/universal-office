@@ -24,6 +24,9 @@ pub enum PdfError {
     Limit(LimitKind),
     /// the sink refused the bytes
     Sink,
+    /// the caller raised the cancellation flag of [`crate::PdfOptions`] (PQ9): the render stopped
+    /// at the next page or batch of items
+    Cancelled,
     /// the document cannot be written as asked (an object used before it was allocated, an
     /// object left undefined, a code point past U+10FFFF in a ToUnicode map: the places where
     /// the TS throws)
@@ -35,6 +38,7 @@ impl fmt::Display for PdfError {
         match self {
             PdfError::Limit(kind) => write!(f, "PDF limit exceeded: {kind:?}"),
             PdfError::Sink => f.write_str("the PDF sink failed"),
+            PdfError::Cancelled => f.write_str("the PDF render was cancelled"),
             PdfError::Invalid(what) => write!(f, "invalid PDF document: {what}"),
         }
     }

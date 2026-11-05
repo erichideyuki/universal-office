@@ -159,9 +159,12 @@ version = "0.10.0-dev"
 dependencies = [
  "rustc-hash",
  "uo-alloc",
+ "uo-drawingml",
  "uo-fonts",
+ "uo-image",
  "uo-jsnum",
  "uo-opc",
+ "uo-render",
  "uo-testkit",
 ]
 

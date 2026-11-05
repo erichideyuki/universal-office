@@ -540,3 +540,115 @@ writer ones); the wasm `memory.buffer` soak and the WebKit run of the chunked si
 (PQ9, with the painter); the writer is not yet in `rust-core.yml` (the workspace-wide `lint` job already covers it). Worktree
 note: during this work other frontiers were editing uo-fonts and the workspace manifest, so the final runs were made in
 the real workspace once it built, and the intermediate ones in a snapshot of HEAD with this crate overlaid.
+
+## Milestone 1 — frontier P (the painter)
+
+Hybrid mode, one Sonnet session, 2026-11-05. Scope: `render_pdf` / `render_pdf_to`, the display-list PDF painter over `uo_render` pages (`pdf.ts`,
+`pdf-picture.ts`, `pdf-word-spaces.ts` + `advanceTwips`). New files in `core/crates/uo-pdf`: `src/render.rs` (1,235 lines with the doc comments),
+`src/picture.rs` (553), `src/word_spaces.rs` (86), the tests `tests/painter_{parity,memory,nopanic}.rs`, `tests/support/{pages,hostile}.rs`,
+`tests/parity_support/capture_painter.mjs`, `tests/parity/painter.cap` (60 generated pages, 1.1 MB) and `tests/parity/painter-docs.cap` (6 documents laid
+out by the frozen TS engine, 1.2 MB).
+
+### Ported (TS to Rust)
+
+| TS (`write/packages/docx-layout/src/`) | Rust (`uo-pdf/src/`) |
+|---|---|
+| `pdf.ts` `renderPdf`, `fontFor` (`#pua` copy, symbol-font fallback `glyphId(cp - 0xF000)`), `imageFor`, `rgbaOf`, `pictureEnv` (`image`, `masked`, the `adjustedFor` cache), `bgImage`, `paintFillPdf` | `render.rs` `render_pdf_to`, `Painter::{font_for, image_for, rgba_of, pic_image, pic_masked, bg_image, paint_fill}` |
+| `pdf.ts` `paintItem` (glyphs with word spaces and the pua runs, rect, line with the dash table, image, shape: shadow, pattern/blip clip, rectangular gradient raster, shaded gradient, plain; path, xform, clip) | `Painter::{paint_item, paint_run, paint_image, paint_shape, paint_shape_body}` |
+| `pdf.ts` `outlineInto`, `runPathCmds`, `glyphsAsPath` (COLR layers, skew 0.2, Q to C at 2/3), `paintGlyphsFxPdf` | `Painter::{outline_into, run_path_cmds, glyphs_as_path, paint_run_fx}` |
+| `pdf-picture.ts` `paintShapeEffectsPdf`, `paintPicturePdf` (shadow, glow, reflection, inner shadow, bevel, soft edges as `/SMask`, outline outside) | `picture.rs` `Painter::{paint_shape_effects, paint_picture}` |
+| `pdf-word-spaces.ts` `withWordSpaces`, `sfnt.ts` `advanceTwips` with the advance table (PQ1) | `word_spaces.rs` `with_word_spaces`, `advance_twips`, `WordSpaceCursor` |
+| (new) options, cancellation (PQ9) | `PdfOptions { compress, limits, paint, image, cancel }`, `PdfError::Cancelled`, `hex_color_units` (colour over UTF-16 units) |
+
+From the other crates, as the hand-off of uo-render G asked: `geom::shape_parts(LineUnit::PdfPoints)`, `Painter::Pdf` bounds, `ChannelStore::Wrap`,
+`gradient_samples` 512 (256 for `path`), `pattern_raster(0.75, 4)`, `blip_tiles(1/12700)`, `rect_gradient_raster(ppu 2)`, `gradient_tile_rgba(.., pdf)`,
+`fx_layers(200/72)`, `dash_pattern`, `picture::dash`, the uo-image decoders and the uo-drawingml masks. The PDF's own as-path outline code (skew 0.2) is here.
+
+### Parity evidence (PP0 of the painter)
+
+`capture_painter.mjs` drives the frozen TS `renderPdf` (UO_TS_ROOT d0f45bc5, built `dist`) and writes, per input, the `spec` (the LayoutResult in the shape of
+`tree.ts`, faces and images by index), `raw` (length:sha256 of the `compress: false` file), `norm` (objects:digest of the `compress: true` file, the structural
+form of section 6) and `deflated`. The Rust side decodes the spec into uo-render types (`tests/support/pages.rs`) and calls `render_pdf`. Decision: the planned
+TS adapter of uo-render C (`encodePage` then Rust decode) was **not used**: the Rust conversion from the generated wire types to the hand-written types is
+frontier E's and does not exist yet, so the capture carries its own small JSON spec (same data; the Rust decode is test-only).
+
+| Corpus | Inputs | Result |
+|---|---|---|
+| generated pages, committed (`painter.cap`) | 60 specs, 3,392 objects | **60/60 byte-exact (`raw`) and structurally equal (`norm`)** |
+| generated pages, 400 specs (local) | 21,759 objects; 11,090 glyph runs (1,143 with text effects), 1,832 shapes, 1,860 images (950 with a picture look) | **400/400 equal** |
+| laid-out documents, committed (`painter-docs.cap`) | 6 generated documents (open fonts): engine layouts with headers, footers, tables, page numbers | 6/6 equal |
+| laid-out documents, 12 generated (local) | 55 pages, 934 objects | 12/12 equal |
+| the 8 .NET synthetic inputs (pictures, page, page-pattern/frame/tile, textboxes, texteffects, synthetic), installed Office fonts | 14 pages, 196 objects | 8/8 equal |
+| the Word oracle, every 9th document, installed Office fonts | **300 documents, 519 pages, 3,508 objects** | **300/300 equal** |
+
+The generated corpus covers: word spaces inside and between runs with and without advance tables, pua codes, `scaleX`, synthetic styles, `asPath`, text effects
+(all fills, outline with dashes, shadow, glow, reflection), every line dash, images (PNG RGBA/RGB/gray, BMP, JPEG shells with 1/3/4 components and Adobe,
+undecodable bytes) with effects, crops, rotations, flips, picture looks (preset geometry, outline with dashes, outer/inner shadow, glow, soft edges, bevel,
+reflection, alpha, duotone, colour change), shapes (29 preset names incl. unknown and `custom`, flips, rotation, adjust values, solid/linear/radial/rect
+gradients, patterns, stretched and tiled blips, shadow, shape effects), paths, nested clips and transforms, page backgrounds and the five page fills, links
+(uri, destination, rejected schemes), outlines. Hostile numbers (NaN, infinities, -0, 1e300, 5e-324, rounding ties) in rect/line/path/clip/glyph coordinates.
+Not covered by a font: **COLR layers** (no open colour font; the flag runs the non-colour path only). `deflated` streams: the "only if smaller" rule flipped
+for 3 of 60 and 11 of 400 specs (invisible to the comparison, counted by the test). `qpdf` is not installed here: validity is the test parser (every xref
+offset, object frame, trailer) over every compared file.
+
+Parity rounds: **0 port bugs found by the corpus.** One generator round: the first runs showed specs where the TS writes a text-effects layer of `NaN` width (a
+NaN `scaleX` or glyph x on a run with effects: the TS emits an invalid `/Width NaN` image; Rust refuses it, decision G-D9 of uo-render); the generator no longer
+combines them.
+
+### Memory and no-panic (measured, `uo-alloc`; `tests/painter_memory.rs`, `painter_nopanic.rs`)
+
+| Check | Result | Numbers |
+|---|---|---|
+| M1 | green | `render_pdf` over 24 specs x 2 modes returns the live bytes to the start (outline caches of the faces warmed first); the ops / content / output limits, the cancellation flag, a failing sink, tight helper limits and 30 hostile pages with navigation: no leak |
+| M2 soak | green | 200 renders over 20 specs: live bytes **38,327,520 B at every sample (0 B above the start)** |
+| M3 images | green | 256x256 noise, chunked sink that drops the file: **peak 2.14 MB at 2, 8, 32 and 128 images** (files 0.4 / 1.5 / 6.1 / 24.5 MB; allocated 3.5 / 9.2 / 32 / 127 MB) |
+| M3 text | green | 40 lines x 8 words per page: 10 / 100 / 500 pages give files of 0.16 / 0.75 / 3.41 MB, peak 1.58 / 2.16 / 4.80 MB (dropping sink), 0.69 / 1.68 / 5.99 MB (Vec sink) |
+| M3 one 12 Mpx image | green | through the painter (PNG decode + embed): peak 96 MB (8.0 N), allocated 153 MB; the writer's own figures (8.5 N opaque, 6.7 N with alpha) hold |
+| M3 picture effects | green | 450x300 pt picture with shadow, glow and soft edges (layer capped at 8 Mpx): peak 24.8 MB, allocated 106 MB |
+| M5 / M6 | n/a | no cross-call cache (`clear_caches` stays a no-op); no `unsafe` |
+| no-panic | green | 600 hostile documents (NaN/inf/1e300 everywhere, resource ids that do not exist, faces without bytes or font, garbage and 60,000x60,000-declared PNGs, crops over 100 %, tiny limits, failing sinks, cancellation): 286 written (all parse), 148 stopped by a limit, 60 by the sink, 42 cancelled, 64 refused as invalid; no panic. A page-fill tile of 1/1000 px over a 1000 pt page stops at the operations limit in 0.48 s (2 million draws; the TS hangs). Cancelling from another thread after 30 ms stops a 400-page render in 31 ms |
+
+Slow hostile inputs (bounded, not hangs): a blur radius of thousands of points on an 8 Mpx layer takes up to 17 s at uo-drawingml's default
+`max_kernel_radius` 4,096 (about 3.7 s at 64, which the CI loop uses); a host that renders untrusted documents should lower
+`PaintLimits.draw.max_kernel_radius` / `max_mask_pixels` (the wasm32 defaults already halve the mask).
+
+Checks: `cargo clippy -p uo-pdf --all-features --tests --no-deps -- -D warnings` clean; `--lib --target wasm32-unknown-unknown` clean;
+`core/tests/float-casts.sh` and `grep-bans.sh` exit 0; `rustfmt --check` on the files above clean; no `unwrap`/`expect`/`panic!`/panicking index in `src/`;
+every `Math.*` through `uo_jsnum::math`/`conv`; `cargo test --release -p uo-pdf -- --include-ignored` all green. Commands:
+`UO_TS_ROOT=.. node tests/parity_support/capture_painter.mjs [--pages N]` regenerates `painter.cap`; `.. --docs <dir> --open-fonts --inline-spec --max 6 --dump <d>
+--out tests/parity/painter-docs.cap` the document fixture; `.. --docs <dir> --dump <d> --out <f>` plus
+`UO_PAINTER_CAPTURE=<f> UO_PAINTER_DUMP=<d> cargo test --release -p uo-pdf --test painter_parity real` the local real-document runs (`UO_PAINTER_TS=<dump>`
+prints the first differing byte).
+
+### Declarations (every decision outside the TS semantics)
+
+1. **API**: `PdfOptions { compress, limits: PdfLimits, paint: PaintLimits, image: ImageLimits, cancel: Option<Arc<AtomicBool>> }`; `render_pdf(pages, res, nav, o) -> Result<Vec<u8>>`, `render_pdf_to(.., sink)`. `PdfError::Cancelled` is new (PQ9; checked before each page and every 256 items; the layout side of the flag is the layout's).
+2. **Resources the TS keys by object identity are keyed by the resource ids**: fonts by `(face.key Sym, pua)` (two `FaceId`s with the same key share one embedded font, the first wins, as the TS `Map` by key), images by `ImageId`, adjusted pictures by `(ImageId, JSON key)`, page-fill tiles by a JSON-style string built with `uo_jsnum::json` (the same equalities as the TS `JSON.stringify` keys).
+3. **Failure policy**: an image the decoders refuse (`Unsupported`, `Malformed`, a limit of `ImageLimits`) is left out (the TS `catch`, PQ11); a writer `Limit`/`Sink` error met while a resource is made is kept and the render ends with it after the page; `Invalid` from the writer is an absent resource. A mask/raster limit met inside a picture or shape effect (`PaintError`) ends the composition of that item (what was written stays; the TS has no limit and exhausts memory). Errors of `rect_gradient_raster` / `pattern_raster` / `blip_tiles` skip that fill part.
+4. **Text-effect layers with a NaN size are not drawn** (uo-render G-D9; the TS writes `/Width NaN`). `run_box` of an empty effect run is skipped (the TS throws a `TypeError`). `advance_twips` with a code point past U+10FFFF and a table reads nothing (the TS `String.fromCodePoint` throws).
+5. **`apply_picture_adjust` clamps** its stores (uo-drawingml G7); the TS PDF path stores into a `Uint8Array` and wraps. They differ only for a malformed colour string (negative or NaN channels). Colour strings reach uo-drawingml through `String::from_utf16_lossy` (a lone surrogate cannot come from XML).
+6. **Outline titles** still go through `String` (W decision 4: a lone-surrogate title differs); link URIs through `from_utf16_lossy` (equal to the TS `TextEncoder`).
+7. **`GeomEval::Drawingml` shapes are painted with the compact evaluator** (uo-render G-D13; Slides wires `uo_drawingml::preset_path` later). A face with bytes but no parsed `Face`, or a missing resource id, is "not embeddable"/absent. `PathItem.even_odd` is ignored (the TS `pdf.ts` ignores `evenOdd` too).
+8. **Reflection loops** of the shape effects index with `js_index`: a NaN index skips the pixel (the TS stores `undefined`); `iw x ih` of the soft mask/reflection of a picture is bounded by `PaintLimits.max_raster_px`.
+9. Numeric sites: `Math.round/min/max/floor/ceil/sqrt/cos/sin` through `uo_jsnum::math`; `Uint8Array` stores through `conv::to_uint8`; `Float32Array` stores through a local `f32_store` (`as f32` under `#[allow]` for the float-casts script); the constants `2/3`, `200/72`, `0.12`, `1/12700` written as the TS expressions; `Math.round(x/0.12)*0.12` for the PDF size.
+10. **Outside the painter files**: `uo-render`, `uo-image`, `uo-drawingml` added to `uo-pdf/Cargo.toml` (`core/Cargo.lock` gained the three lines); `tests/writer_nopanic.rs` got the `Cancelled` arm; `hex_color_units` added to `color.rs`. Nothing outside `core/crates/uo-pdf/**`, `Cargo.lock` and this record was touched.
+
+### Not done
+
+- **COLR layer parity** (no open colour font; the code is a transcription), EMF/WMF glyph-index runs beyond the generated `gid` runs; `qpdf --check` (not installed) and the pdf.js text-extraction sample of section 6 for the painter files.
+- The fuzz target `pdf_render` (the no-panic loop is its stable-Rust form), the wasm `memory.buffer` soak and the WebKit run of the chunked sink, the 2,000 generated documents of the CI corpus (the committed fixtures are 60 + 6), PP1 (end to end with the Rust layout), the C# vs Rust migration report.
+- The oracle: 300 of 2,742 documents replayed (every 9th, 519 pages); the rest is the same command on a larger directory (local machine, fonts never committed).
+- Cancellation inside the layout work budget and the facade mapping of the request timeout (S).
+
+### What S and the bindings need next
+
+- **S (server path)**: build `Resources` from the layout (faces with `Arc<[u8]>` bytes and `uo_fonts::Face`, `advances: None`), a `Navigation` from `Layout::navigation`, then `render_pdf_to(.., Vec)`; share a `cancel` flag with the layout work budget; set `PdfOptions.paint.draw` (`max_kernel_radius`, `max_mask_pixels`) and `image` limits for untrusted documents. The wasm export wraps `render_pdf_to` with a `ChunkedSink` (1 MiB or more); `PdfLimits::DEFAULT` and `ImageLimits::DEFAULT` already switch on the target, `PaintLimits::DEFAULT` does not (set `max_fx_px` for a phone).
+- **Bindings**: `PdfError` maps to the facade error (`Limit(kind)`, `Sink`, `Cancelled`, `Invalid`); an image skipped for a limit is silent today, a warning list in the result would help the host (not built).
+
+### Process metrics
+
+| Stage | Agent (model) | Time | Tool calls |
+|---|---|---|---|
+| P | painter port + capture script + loader + PP0 (generated, laid-out, .NET, oracle sample) + M1-M3 + no-panic + cancellation + record (Sonnet, hybrid mode) | about 3 h wall, one session (the 400-spec capture takes 3 min, its replay 55 s in release) | about 120 (own tally) |
+
+Parity rounds: 2 replays with mismatches (4 of 60 specs, then 1 of 300), both the NaN layer of the TS (a generator change, **no port bug**); every later run equal. Memory/no-panic: 3 test-design fixes (the `Usage` field types, a closure kept by the sink, the kernel limit of the loop), none in the library.
