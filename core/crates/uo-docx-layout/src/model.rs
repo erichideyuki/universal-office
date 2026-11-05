@@ -50,3 +50,8 @@ pub use uo_docx::model::effects::OpenTypeProps;
 pub use uo_docx::model::formatting::DocFormatting;
 pub use uo_docx::model::props::TabSpec;
 pub use uo_docx::model::run::{MathNode, RunProps};
+// F6 (tables): the table model, its property objects and the content stories of cells
+pub use uo_docx::model::drawing::DrawingAnchor;
+pub use uo_docx::model::props::{CellMargins, TblBorders, TblLook, TblPr, TblpPr, TcBorders, TcPr, TrHeight, TrPr, WidthSpec};
+pub use uo_docx::model::run::DrawingTextbox;
+pub use uo_docx::model::{Block, Cell, Row, RunExt, Story, Table};

@@ -40,6 +40,7 @@ const { canonLayout, CANON_VERSION } = await import('./lib/canon.mjs');
 const { Sink } = await import('./lib/sink.mjs');
 const { recordProvider } = await import('./lib/transcript.mjs');
 const { generateDocx } = await import('./lib/gen-docx.mjs');
+const { generateF7aDocx } = await import('./lib/gen-f7a.mjs');
 
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -47,6 +48,27 @@ const opt = (name, d) => { const i = argv.indexOf(name); return i >= 0 ? argv[i 
 const flag = (name) => argv.includes(name);
 const root = tsRoot(argv);
 const mode = opt('--mode', 'ci');
+
+// F2-20 (added by F7a): refuse a stale TS build — a source module without its dist module, or a
+// dist module older than its source. `--accept-stale a.ts,b.ts` names sources whose newer edit is
+// known not to change results (the frozen d0f45bc5 build: typography/font/sfnt.ts, a GPOS cache).
+{
+  const { statSync, readdirSync } = await import('node:fs');
+  const { relative } = await import('node:path');
+  const accept = new Set((opt('--accept-stale', '') || '').split(',').filter(Boolean));
+  const files = (d, o = []) => { for (const n of readdirSync(d)) { const p = join(d, n); if (statSync(p).isDirectory()) files(p, o); else o.push(p); } return o; };
+  const stale = [];
+  for (const pkg of ['write/packages/docx-layout', 'write/packages/docx-core']) {
+    const src = join(root, pkg, 'src');
+    for (const ts of files(src).filter((p) => p.endsWith('.ts') && !p.endsWith('.d.ts'))) {
+      const rel = relative(src, ts).split('\\').join('/');
+      const js = join(root, pkg, 'dist', rel.replace(/\.ts$/, '.js'));
+      if (!existsSync(js)) stale.push(`${pkg}/dist/${rel.replace(/\.ts$/, '.js')} (missing)`);
+      else if (statSync(js).mtimeMs < statSync(ts).mtimeMs && !accept.has(rel)) stale.push(`${pkg}/src/${rel} (newer than its dist)`);
+    }
+  }
+  if (stale.length) { console.error(`stale TS build at ${root} (rebuild it, or --accept-stale):\n  ${stale.join('\n  ')}`); process.exit(2); }
+}
 
 // the loader hook of the P3 facets must be in place before the engine is imported
 installFacetHooks(root);
@@ -78,10 +100,15 @@ if (mode !== 'ci') {
 function corpus() {
   if (mode === 'ci') {
     const count = Number(opt('--count', '20')), seed = Number(opt('--seed', '1'));
+    // `--gen f7a`: the engine-core generator (tools/lib/gen-f7a.mjs, F7a): no header/footer,
+    // table, float or note — what F7a lays out end to end
+    const f7a = opt('--gen', '') === 'f7a';
     const out = [];
     for (let i = 0; i < count; i++) {
       const s = (seed * 1000003 + i) >>> 0;
-      out.push({ key: `gen/${seed}/${i}`, bytes: generateDocx(s, fflate), opts: {} });
+      out.push(f7a
+        ? { key: `f7a/${seed}/${i}`, bytes: generateF7aDocx(s, fflate), opts: {} }
+        : { key: `gen/${seed}/${i}`, bytes: generateDocx(s, fflate), opts: {} });
     }
     return out;
   }
@@ -95,7 +122,7 @@ function corpus() {
       .slice(0, max)
       .map((c) => ({ key: c.key, bytes: new Uint8Array(readFileSync(c.path)), opts: basename(c.key).startsWith('mk-') ? { revisions: { mode: 'all' } } : {} }));
   }
-  const VALUED = new Set(['--ts-root', '--mode', '--out', '--dump', '--docs-out', '--count', '--seed', '--only', '--max']);
+  const VALUED = new Set(['--ts-root', '--mode', '--out', '--dump', '--docs-out', '--count', '--seed', '--only', '--max', '--accept-stale', '--gen']);
   const files = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]) && a !== 'files');
   return files.map((p) => ({ key: basename(p).replace(/\.docx$/i, ''), bytes: new Uint8Array(readFileSync(p)), opts: {} }));
 }
@@ -125,6 +152,8 @@ const facets = facetRecorder({
   f5: { advanceTwips: (await importFrom(root, 'write/packages/docx-layout/dist/para.js')).advanceTwips, faceMetrics: eng.faceMetrics, fontOfSlot: eng.fontOfSlot },
   // F2 (p3.datefmt, p3.formula, p3.numbering, p3.style, p3.hyphlangs): the classes it patches
   f2: { NumberingState: eng.NumberingState, StyleResolver: eng.StyleResolver, documentHyphenationLanguages: eng.documentHyphenationLanguages },
+  // F6 (p3.table, p3.rowsplit, p3.splitcontent): the z-order marks of cell floats
+  f6: { LATE_ITEMS: (await importFrom(root, 'write/packages/docx-layout/dist/table.js')).LATE_ITEMS },
 });
 let pages = 0, errors = 0;
 const docs = corpus();

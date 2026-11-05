@@ -921,6 +921,8 @@ Node and WebKit, plus the editor keystroke budget in milestone 2.
 | 3 — F5 | lines and paint: `lines.ts` (re-ported from the frozen TS on the spike's structure), `hyphenate.ts` `chooseHyphenation`, `para.ts` `shadowExtent`, `underline.ts`, `paint.ts` (`paintInlineObject` ends left to F7b); facets p3.lines (replacing the F0 seed) and p3.paint equal on the oracle (2,742 documents: 142,171 breaker and 139,904 paint calls), 200 CI documents and the committed fixture at the first replay (0 rounds) (Opus) | one session, ≈ 50 min, in parallel with F1, F2, F3, D1a, uo-image | ≈ 130 |
 | 3 — F2 | Word semantics in `uo_docx::word` (LQ3): `resolve.ts`, `directRPr`/`directPPr`/`resolvePPr`/`paraformat.ts`, `numbering.ts`, `datefmt.ts`, `field-formula.ts` (+ docx-core `formatPicture`/`formatFormulaResult`), `outline.ts`, `numpages.ts`, `revisions.ts`, `refs.ts` (model side), the `documentHyphenationLanguages` walk; the `JsAssign` spread machinery with key order; unit differential (25k generated cases, 222,757 facets), engine facets p3.datefmt/formula/numbering/style equal on the oracle and the F2 documents, São Paulo facet 1,485/1,485 — 0 parity rounds; 1 defect found by the no-panic loops (`sort_by` panics on NaN tab positions, F2-7) (Opus) | one session, ≈ 3 h, in parallel with F1, F3, F5 and R4b/R4c | ≈ 200 |
 | 3 — F4 | paragraph preparation: `para.ts` (`prepareParagraph`, `resolveRunStyle`, `faceFor` and the glyph fallback order, `displayRuns`/`fieldRuns`, ligatures, run-boundary kerning, NBSP glue, kinsoku and the East Asian layout, the marker, `paraVisibility`, `isDark`, `isCjkFont`, `isMarkRun`), `hyphenate.ts` `markHyphenation` (+ the hyphenator sessions), `math.ts` layout (`mathAtoms`, `rowBox`, `fracBox`, `mathTextMetrics`); facet p3.prepare (the whole `PreparedPara` per call, replacing the F0 seed) replayed over the uo-docx reader: 0 mismatches on the oracle (84,426 calls equal, 1,026 pending: engine-derived copies, F7a), 200 CI documents (15,108) and the .NET inputs — **1 parity round** (the metrics face of a `.notdef` symbol took `w:sym`'s font: 4 oracle calls) (Opus) | one session, ≈ 1 h 20 min | ≈ 120 |
+| 3 — F6 | tables: `table.ts` whole (`layoutTable` with the cascade, borders and bands, the autofit width model, vertical merges and text, RTL, separated borders, `paintRow`/`build`/`row.split` as `RowSplit` data, `splitContent`/`splitAtNest`/`nestedRowCut`/`widowCut`, `measureCell`/`anchoredWidth`/`paraContentWidths`, `mergeTextFirst`/`atPageTop`/`dropMoved`), the `ObjId` object identity (K2e); facets p3.table/p3.rowsplit/p3.splitcontent replayed through a transcript `CellLayouter`: 0 mismatches on the oracle (1,590 calls equal, 1 pending: a chain-continuation table, F7a), 200 CI documents (902), the .NET inputs (5) and the committed fixture — **0 port parity rounds**, 2 harness rounds (split ids written in values; the `'preview'` ref) (Opus) | one session, ≈ 2 h 15 min, in parallel with F7a | ≈ 110 |
+| 3 — F7a | engine core: `layoutDocument` (passes, balancing, K19), `run` + the page assembly, geometry/pages/sections/columns, `placeParagraph` with keep rules, border groups, line numbers, the F7a field values, the derived document; runtime copies through a relocated `LDoc`; P1 through the real engine (D1a reader → derive → engine): **1,203 of 2,742 oracle documents equal, 0 mismatches**, 1,539 pending by reason (F7b/F7c), 1,300 generated F7a documents and the .NET page fills equal — **1 parity round** (the marker moved by `joinHidden` kept its paragraph's style indices); the `--gen f7a` generator, the stale-build refusal, the CI step (Opus) | one session, ≈ 3 h, in parallel with F6 | ≈ 150 |
 
 ## Milestone-1 gate — approved 2026-11-03
 
@@ -1959,7 +1961,7 @@ bounded by the paragraph's runs and code points.
   `f4_parity` against its fresh capture yet (it needs `--docs-out` and `UO_F4_DOCS`); the committed
   fixture runs in `cargo test`.
 
-## Stage 3 — F6 (tables): brief, not started (2026-11-05)
+## Stage 3 — F6 (tables): brief (2026-11-05, written before the port)
 
 F4 closed green in this session; F6 was **not started** (no file of F6 was touched: `table.rs`
 keeps its F0 stubs `Unported(F6, …)`), because a faithful port of `table.ts` and its facet harness
@@ -2030,6 +2032,179 @@ RTL mirrors the grid but conditions use the logical column; `widthTw` of `pct` a
 width vs the frame width; spreads `argument lists ≥ 10⁵` (`Math.max(...)`, table.ts:129, 153; K11a)
 succeed in Rust (accepted, LQ14); `max_table_cells` checked when the slot grid is built.
 
+## Stage 3 — F6 (tables)
+
+Opus, 2026-11-05, hybrid mode, one session (≈ 2 h 15 min), in parallel with F7a (engine core, same
+crate) and the uo-docx session work. **0 port parity rounds**: every `layoutTable` call, row split
+and content split of every corpus was equal at its first replay; the two harness rounds are below.
+Built from the brief above, against the frozen TS (d0f45bc5).
+
+### Ported (TS → Rust, TS operation order)
+
+| TS (`table.ts`) | Rust |
+|---|---|
+| `splitContent` 91, `itemTop`/`keyY` 129/152, `splitAtNest` 158, `nestedRowCut` 198, `widowCut` 227 | `table::{split_content}` (+ private `split_content_at`, `split_at_nest`, `nested_row_cut`, `widow_cut`, `item_top`) |
+| `widthTw` 266, `GeoCell` 274, `boundaryWidths` 293, `prefOf` 321, `fitPctMins` 327, `fixedMins` 352, `columnWidths`/`columnWidthsExact` 396–517, `paraContentWidths` 576 | `table/widths.rs`: `width_tw`, `GeoCell`, `boundary_widths`, `pref_of`, `fit_pct_mins`, `fixed_mins`, `column_widths`/`column_widths_exact`, `para_content_widths` |
+| `measureCell` 524, `anchoredWidth` 558, `CellSlot` 616, `isHiddenRow` 638 | `table/layout.rs` `measure_cell`, `anchored_width`, `Slot`; `table::is_hidden_row` |
+| `layoutTable` 647–1261: hidden-row filter, style cascade and `tblLook`, slot grid (gridBefore/After, gridSpan, `hMerge`, vMerge spans, RTL mirroring), `condFor` + the `resolved` cascade, `edge`/`heavier`/`covering`/`topWinner`, bands, the geometry (`legacy`, `marOf`, `padOf`, `rawOf`, the geo cells, `jc`/indent/RTL/`rowShift`), separated borders, `layoutVertical`, the row loop (margins, row maxima, `trHeight`, vertical cells, `absorb`, merges ending in the row, `brkW`, `minRow`), `paintRow`, `build`, `r.split`, the pending vertical merges | `table::layout_table` (`table/layout.rs`: `layout_table`, `Tbl`/`RowCtx`/`CellInfo`, `paint_row`, `build`, `split_row` = `RowSplit::split`, `layout_vertical`) |
+| `cellFill` 1267, `shdFill` 1271, `swapLR` 1274, `verticalDir` 1286, `paintVertical` 1298, `contentDy` 1310, `placeContent` 1318 | `fill_of`, `shd_fill`, `swap_mar`/`swap_tbl`/`swap_tc`, `table::vertical_dir` (+ `VDir`), `paint_vertical`, `content_dy`, `place_content` |
+| `mergeTextFirst` 1330, `atPageTop` 1351, `dropMoved` 1375, `LATE_ITEMS`/`shiftItem` 1383–1406 | `table::{merge_text_first, at_page_top, drop_moved}`; `LATE_ITEMS` = `ItemSide::meta`, `shiftItem` = `PassItems::push_shifted` (F0) |
+
+`Unported(F6, …)` is gone from the crate.
+
+### Parity (P3 facets; TS capture regenerated in the same run, LQ21)
+
+`tools/lib/facets-f6.mjs` (hooked by `facets.mjs`; `layoutTable`, `splitContent` and
+`paraVisibility` wrapped by the loader): **`p3.table`** — every `layoutTable` call (completion
+order) as one `bytes` item holding the whole `TableLayout`; **`p3.rowsplit`** — every outermost
+`row.split(avail)` the engine makes (the split closures are wrapped when they leave `layoutTable`
+or a split and named `<call>.<row>`/`s<n>b`; an engine copy `{ ...row }` keeps the wrapper); and
+**`p3.splitcontent`** — every outermost engine `splitContent`. A value is `bytes(structure)
+bytes(P1)`: the item and line lists are the pages of one canon.mjs stream (faces, images and
+`lineBox` lines labelled by first appearance across the value; faces/images made canonical per
+descriptor first), the structure holds every other field, the `LATE_ITEMS` marks and the object
+identities as list indices (`mergeText`, `topBorders`, `mergeFills`, `NestRow.items/lines`). The
+dump `<key>.f6.bin` holds per call the table's model position, `frameX`/`frameWidth`/`ref` and the
+transcript of what the table asked outside the model: every `layoutCell` (cell, `x`, `width`, the
+env as the uo-docx digests of `tablePPr`/`tableRPr` + `darkBackground` + `cellMar`, `ref`, inside
+`pure()` or not, and the returned content in the same encoding with the split ids of its nested
+rows), every measuring `prepareParagraph` (paragraph position, env, `pure`, what
+`paraContentWidths` reads) and every `paraVisibility` of `isHiddenRow`. `tests/f6_parity.rs`
+reads the docx with the uo-docx reader, finds the table by its position, answers the
+`CellLayouter` from the transcript (the contents decoded with `tests/common/decode.rs`'s new
+`decode_p1_shared`: one resource table per document), runs `layout_table`/`RowSplit::split`/
+`split_content` with the real style cascade, borders and paint, encodes the result as the TS and
+compares byte for byte, then rebuilds the three facet digests.
+
+| Corpus | Documents | `layoutTable` | row splits | content splits | Equal | Pending | Mismatches |
+|---|---|---|---|---|---|---|---|
+| committed fixture `tests/captures/f6` (CI `gen/1/7`, open fonts) | 1 | 3 | 1 | 0 | 4 | 0 | 0 |
+| CI mode, seed 1 | 10 | 21 | 17 | 0 | 38 | 0 | 0 |
+| CI mode, seed 7, 200 documents | 200 | 502 | 400 | 0 | 902 | 0 | 0 |
+| .NET synthetic inputs | 8 | 1 | 0 | 4 | 5 | 0 | 0 |
+| Word oracle, all documents, installed fonts (`emwidth/ew-emb` skipped: embedded bytes, as F0/F1) | 2,741 | 1,353 | 180 | 58 | 1,590 | 1 | 0 |
+
+On the oracle 2,740 documents are equal on the three facet digests. **Pending** (never counted
+equal): `txbxlink/lk-table2`, a table of a chained textbox's continuation (a copy the engine derives,
+F7a's `derive`; its model position is unknown). Coverage includes the `tables`, `tblw`, `tblpct`,
+`tblsp`, `cellsp`, `vmorder`/`vmshd`/`vmexact`/`vmdouble`, `rowsplit`/`rowwidow`/`rowmin`/
+`nestsplit`/`nestwidow`, `tblvert`, `rowjc`, `hidden`, `keeptbl`/`keepchain`/`partbl` (the
+`preview` tables) and `txbxlink` groups. Timing: TS oracle capture with dumps 1 min 46 s (1.5 GB of
+dumps, kept under `target/`, not committed); Rust replay 17–20 s (release).
+
+Harness rounds (no port bug): (1) the JS encoder wrote the nested rows' split ids in the *values*
+too (they belong only to the inputs): 2 oracle content splits differed; fixed in `facets-f6.mjs`.
+(2) the engine's keep-with-next preview lays tables out with the ref `'preview'`
+(engine.ts:2550), which `LineRef` could not hold: 16 oracle documents failed to decode; fixed with
+`LineStory::Preview` (F6-6).
+
+### Memory and robustness (`tests/f6.rs`)
+
+| Check | Result |
+|---|---|
+| M1: four tables covering every path (borders and fills, a dark cell, vertical merges with fills, exact/atLeast heights, vertical text in single and merged cells, RTL + separated borders + fixed layout + gridBefore/After, a nested table split as a row, a hidden row, `noWrap`) laid out with a synthetic `CellLayouter`; every row through `merge_text_first` → `drop_moved` → `at_page_top`, every split row split at four heights (and its rest again), a nested-row content through `split_content` at four heights | 12 rows, 21 splits: 5,014,184 B allocated, 473,494 B peak, **0 B left** |
+| M1/M3: one 500-row × 3-cell table | 35,828,092 B allocated, 7,010,730 B peak (≈ 14 KB per row, the synthetic contents included), **0 B left** |
+| M5 | no new cache: `rawMeasure` and the measures live in the call; the table-style cache is F2's `StyleResolver` in the pass's `DocContext` |
+| no panic: 600 hostile tables (two modes: wild — NaN/±∞/−0/1e300/negative spans, `gridBefore` and widths; moderate — sane spans, hostile widths), random `vMerge`/`hMerge`/`textDirection`/`noWrap`/borders/`trHeight`/spacing/`jc`/RTL/fixed, nesting 3 deep; every row split at two heights and its rest through `at_page_top` | 429 laid out (912 rows), 82 `Limit(Table)`, 89 `Internal` (`byEnd[e]` of a NaN/negative boundary: the TS throws a `TypeError`); item side data parallel everywhere |
+| limits | `gridSpan` 1e9 → `Limit(Table)`; 10,001 cells over a 10,000 cap → `Limit(Table)`; 13 nested tables over `max_depth` 8 → `Limit(Depth)` |
+| unit | fixed layout with `tcW`: the widths, the cell boxes, the mode-14 position (`x = frameX − 108`), the cell refs |
+
+### Declarations (the nine kinds of uo-docx A7; LA3 keys; limits)
+
+1. **Numbers**: every `Math.*` through uo-jsnum (`max`, `min`, `max_n`, `min_n` for the spreads,
+   `round`, `floor`, `ceil`, `trunc`, `abs`, `rem` for `Math.floor(c0 / band) % 2`). JS array reads
+   through `table::at` (an index that is negative, fractional, NaN or past the end reads
+   `undefined` = NaN in arithmetic; a write there is ignored, as it is invisible to the array),
+   `Array.prototype.slice` through `table::slice` (`ToIntegerOrInfinity`, negative from the end),
+   `Array.from({ length })` through `ToLength`. Spans, columns, `gridBefore`/`gridAfter` and every
+   width stay `f64` (NaN and negatives reach them); integers only for positions. Model numbers
+   with `null`: `?? ` nullish (`nn`), `ToNumber(null)` = 0 in arithmetic and comparisons. **No
+   arithmetic-semantics change.**
+2. **Regex**: `/\/r\d+\/c\d+/.test(ref)` (the `legacy` test, table.ts:804) by a hand matcher over
+   the TS string of the ref (`has_cell_ref`); none other.
+3. **NaN/±∞ and absent keys**: `??` and `||` per site as the TS (`widthTw(tblW) || frameWidth`,
+   the `??` chains of `marOf`); a `dxa` of `null` is `undefined` for `widthTw` (every caller
+   coalesces it); keys present with `undefined` (the cleared bit) spread as the TS through uo-docx
+   `assign`/`spread` (`{ ...DEFAULT_LOOK, ...look }`, the row's `trp`, the cell margins, `{
+   ...tblBorders, ...exb }`, `swapLR`); an empty colour string is falsy for every `if (fill)`; an
+   empty `vAlign` is left out of `mergeText`. NaN comparisons fall as in JS
+   (`#[expect(float_cmp)]` where the TS compares exactly).
+4. **Orders**: slots in row order (reversed for RTL), cells, pending merges and transcript calls in
+   TS order; the four sorts (`late` by span, cells by `bx0`, `mergeAt` by `at`/`col`, tab stops)
+   through uo-docx `js_sort` (V8's decision on NaN); `nestedRowCut`'s rows and `widowCut`'s refs
+   in `Map` insertion order (`IndexMap`), `paras` in `Map` order.
+5. **Recursion**: nested-table measures, cell → engine → nested table, and split → `splitContent`
+   → nested split are bounded by `max_depth` → `Err(Limit(Depth))` (the TS recurses until V8's
+   stack throws `RangeError`); `cx.depth` counts the host calls.
+6. **Module state**: `LATE_ITEMS` (`WeakMap<object>`, the only one) → `ItemSide::meta`, copied by
+   every `shiftItem` copy as the TS copies the entry.
+7. **Throws** → `Err(Internal)`: `byEnd[e]!.push` with a boundary that is no index (NaN or a
+   negative grid column: `TypeError`), `rows[startRow]!`, and the slot/cell lookups the TS asserts
+   (unreachable). V8 argument-spread limits (`Math.max(...rows)`, `...cellInfos`, K11a) succeed
+   here (accepted, LQ14).
+8. **Aliasing / identity (LA3)**: item and line **objects** → the new `ObjId` (keys.rs) on
+   `ItemSide::obj`/`PassLine::obj`: `NestRow.items`/`lines`, `mergeText.items`/`lines`,
+   `mergeFills.item`, `topBorders`, and the sets `own` (splitAtNest), `moved` (splitContent's remap,
+   `mergeTextFirst`/`dropMoved`), `keep`/`top` (atPageTop); a `shiftItem`/`shiftLine` copy has none
+   (`push_shifted`/`shifted`/`shifted_xy` drop it), a move keeps it (`push_same`, clone).
+   `lastOf.get(ref) === l` → the line's position in `c.lines`; `Map<CellSlot, …>` (`resolved`,
+   `rawMeasure`, `contents`) → fields of `Slot` / vectors by slot or cell position; `Map<GeoCell>` →
+   `GeoCell::ix`; `o === s` → the index; `target !== first` → row indices; the split closure →
+   `RowSplit { Arc<RowCtx>, contents, draw_top }` (LA3 "closures stored in data"). The rows
+   themselves carry no identity (F7b keys `floatFlow.idx` by its own row positions). **`json_key`
+   sites: none** (no `JSON.stringify` in table.ts).
+9. **Choices outside the source semantics**:
+
+| # | Decision | Why |
+|---|---|---|
+| F6-1 | `trait CellLayouter { ctx(), layout_cell(cx, cell: &Cell, key: CellKey, x, width, env, at), prepare(cx, para, env), visibility(cx, para), pure_depth(Δ) (default no-op) }`: the TS `layoutCell` callback plus what the table code reaches of the engine's `ctx` (the style resolver, `pure()`'s flow state) and the two `para.ts` calls on model paragraphs (the engine maps a model paragraph to its `LParaId`); `Engine` implements it (F7a/F7b), the facet replay answers from the TS transcript | no closures in data (K18); the engine holds the flow state and the `LDoc` keys |
+| F6-2 | `layout_table(cx, host, table: &Table, frame_x, frame_width, at)` (F0: `table_block: u32`); the hidden-row filter keeps the model row index for `CellKey` while refs use the filtered index, as the TS | the engine has the table; `CellKey` addresses the model |
+| F6-3 | `split_content(cx, c, avail)` and `RowSplit::split(&self, cx, avail)` take the `Cx` (a nested row's split paints borders) | F0's signatures had none |
+| F6-4 | `ObjId` (keys.rs), `ItemSide::obj`, `PassLine::obj`, `PassItems::push_same`; `push_shifted`/`PassLine::shifted`/`shifted_xy` drop the identity and keep the `LATE_ITEMS` mark | one field could not be both the `LATE_ITEMS` mark (copied) and the object identity (not copied), F0 conflated them |
+| F6-5 | type changes against F0: `CellContent.paras: Option<Arc<IndexMap<LineRef, ParaSplitInfo>>>` (one TS `Map` shared by the parts); `NestRow.items: Vec<ObjId>`, `lines: Vec<NestLine { obj, at }>` (not index ranges: rows are not contiguous after splices and a line that left the content keeps its ref, which engine.ts:3313 reads); `MergeAt { col: f64, at: u32, end_row: u32 }`; `MergeText.items/lines` are copies carrying the row's ids, `content: Option<Arc<CellContent>>`; `MergeFill { item: ObjId, end: u32 }`; `RowLayout.top_borders: Option<Vec<ObjId>>`; `TableLayout.tblp_pr: Option<Box<TblpPr>>` (F0: `floating: bool`); `CellEnv.table_ppr/table_rpr: Option<Arc<…>>` (F0: `table_style`) | the TS values; K2e |
+| F6-6 | a cell ref's grid column goes through `to_uint32` (a negative `gridBefore` prints `c4294967295` where the TS prints `c-1`; only hostile files); `LineStory::Preview` (output.rs) for the engine's `'preview'` table, whose path starts at the row | `RefPath` holds `u32`; the TS ref exists |
+| F6-7 | `merge_text_first`/`at_page_top`/`drop_moved` return `Option<RowLayout>` (`None` = the row itself: the engine compares `row === row0`); `fits: &mut dyn FnMut(f64) -> bool`; `moved: IndexSet<ObjId>` | identity of the returned row |
+| F6-8 | a moved copy in `splitContent`/`splitAtNest` takes the original's `ObjId` (the original is not in that part: `moved.get(it) ?? it` names the copy); an `atPageTop` cut copy keeps its id (only `mergeFills` name it: `items[row.items.indexOf(f.item)]`) | same names, no remap tables |
+| F6-9 | identity scopes: the rows of one `layoutTable` take ids from one counter from 1; a split's own top borders from 2³⁰ (compared only inside that part's `borderItems`); a split content's new nest objects from 1 + the content's largest id. **F7a's `layoutStatic` tags each nested row's items and lines with ids unique in the content** (from 1) | ids are compared only inside these families |
+| F6-10 | `pure()` (table.rs): `save_flow`/restore around the host call, restored also on `Err`, charged 1 unit and `pure_clones` | LA4 |
+| F6-11 | work budget: `layout_table` 1 + rows, one per slot, per `vMerge` scan step and per measured block; `paint_row` 1 + cells; a split 1 + cells; `split_content` 1 + lines | K16 |
+| F6-12 | `RowSplit` holds an `Arc<RowCtx>` (row cells, bands, margins) with an `Arc<Tbl>` (slots with their resolved `tcPr`, borders, geometry) shared by every closure of the table | the TS closure scope, without copies |
+| F6-13 | harness: `facets-f6.mjs`; `facets.mjs` and `capture-layout.mjs` wire it (`LATE_ITEMS` passed in); `tests/common/decode.rs` gains `decode_p1_shared` + `Share` (faces/images deduplicated by descriptor, `lineBox` labels offset per stream); the JS makes faces/images canonical per descriptor per value (two TS objects with one descriptor would be labelled once on both sides) | one resource table per document for the replay |
+
+**Limits** (LQ14): the grid's column count (`Array.from`/`push` up to `usedCols`) and the slot count
+over `max_table_cells` → `Err(Limit(Table))` (the TS allocates until memory runs out); `fixedMins`'
+`Array.from` length over `max_table_cells` → `Limit(Table)` (TS: `RangeError`/memory); recursion
+over `max_depth` → `Limit(Depth)` (TS: `RangeError`); the work budget (F6-11) → `Limit(Work)`
+(TS: hangs).
+
+### Shared files edited (additive)
+
+`keys.rs` (`ObjId`, the LA3 table row), `items.rs` (`ItemSide::obj`, `PassLine::obj`,
+`push_same`, the identity dropped by the shifts), `model.rs` (table re-exports), `output.rs`
+(`LineStory::Preview` + its `to_ts`), `tools/lib/facets.mjs`, `tools/capture-layout.mjs`,
+`tests/common/decode.rs` (`decode_p1_shared`, `preview` refs). Owned: `src/table.rs`,
+`src/table/{layout,widths}.rs`, `tests/f6.rs`, `tests/f6_parity.rs`, `tests/captures/f6/`,
+`tools/lib/facets-f6.mjs`.
+
+### Not done (handed on)
+
+- **F7a/F7b — the engine's `CellLayouter`**: `ctx` = the pass's `DocContext`; `layout_cell` =
+  `layoutCell(cell, x, w, env, ref, ps)` (cell by `&Cell` or `CellKey`); `prepare` =
+  `prepare_paragraph` of the model paragraph's `LParaId` (cell paragraphs and textbox paragraphs
+  of `anchoredWidth`); `visibility` = `para_visibility(…, ParaEnv::default())`. `layoutStatic`
+  builds `NestRow`s with `ObjId`s on the row's items and lines (F6-9) and `paras` as an `Arc`; a
+  nested row is placed with `push_shifted` (a new object) and then tagged.
+- **F7b call sites**: `placeTable`, floating tables, row emission (`RowSplit::split`,
+  `merge_text_first` with the engine's `fits`, `at_page_top`, `drop_moved`), the `mergeFills` skip
+  of engine.ts:3126 by `ObjId`, `fl.idx` (row positions), `fl.seen` (row, entry), `LastRowEmit`;
+  the `ItemMeta` → `{ z, seq, behind }` table of `LATE_ITEMS` lives on the engine; the preview of
+  `nextBlockLead` uses `LineStory::Preview`.
+- `mergeTextFirst`, `atPageTop` and `dropMoved` have no facet of their own (their inputs are engine
+  rows with identities): P1 covers them through F7b; M1 and the no-panic loop run them.
+- The chain-continuation table of `txbxlink/lk-table2` is pending until F7a's `derive` builds it.
+- The CI job `layout-parity` does not run `f6_parity` against its fresh capture yet (needs
+  `--docs-out` and `UO_F6_*`); the committed fixture runs in `cargo test`.
+
 ## Stop point (2026-11-05, after F4)
 
 Done: F0; wave 1 — F1 (0 parity rounds), F2 (0), F3 (1), F5 (0); wave 2 — **F4 (1 round:
@@ -2037,3 +2212,226 @@ the `.notdef` metrics face)**. F6 not started (brief above). Next: F6 tables, th
 engine core, F7b ∥ F7c, F8). Open items carried: the F2-20 recapture of the older fixtures (now
 also their `p3.prepare` encoding), the `layout-parity` CI steps for `f4_parity`, the F4 hand-ons
 to F7a (derived paragraphs, the engine `PrepFlow`), F7b (picture-bullet painting) and F7c.
+
+## Stage 3 — F7a (engine core)
+
+Opus, 2026-11-05, hybrid mode, in parallel with F6 (tables, same crate) and uo-docx session work.
+
+### Brief (written from the frozen TS d0f45bc5 before porting)
+
+**F7a — engine core** (`engine.ts` ≈ 1,900 of 4,183 lines, `frames.ts`, `chain.ts`). TS, in file
+order: `layoutDocument` 188 (the ≤ 5-pass loop with its stability test over NUMPAGES,
+SECTIONPAGES, PAGEREF marks, NOTEREF marks, late floats/tables, the each-page note marks and the
+chapter index; then the balancing search: per balanced section ≤ 20 searches, `byAvg` for ≥ 3
+columns, `trial`/`ok`, a bisection where every probe is a full pass — the result is the **last
+executed** pass, K19), `mergeLate`, `sameCounts`, `sameMap`; `class Engine`: `applyBalance` 405,
+`run` 669 (geometry of every section, the section loop with next-column / continuous / new-page
+starts, `placeEndnotes`, the float carry, then per page the layer assembly: `LATE_ITEMS` split,
+`zItems` order, `cullOffPage`, page borders front/back, revision bars, `hfItems`, background
+colour/fill/show), `pageBorders` 770, `geomOf` 784, `pageNumber`, `newPage` (even/odd blank
+page), `newPageAt`, `makePage`, `continuousSection`, `recordBalance`, `nextColumnFits`,
+`nextColumnSection`, `pageCols`, `colFrame`, `breakColumn`, `noteColContent`, `closeColumns`
+(column separator rects), `sectionPageCounts`, `numPagesShown`, `fieldValue` (PAGE, NUMPAGES,
+SECTIONPAGES, SECTION, DATE/TIME, SAVEDATE/CREATEDATE/PRINTDATE; SEQ/REF/NOTEREF/STYLEREF/PAGEREF/
+ENDNOTEREF_MARK are F7c), `layoutStatic` 1202, `collapse`, `borderTopExtent`,
+`borderBottomExtent`, `groupsWithNext`, `paintLineNumber` 1658, `paintBox` 1687, `listOf`,
+`gridFor`, `joinHidden`, `noShownRuns`, **`placeParagraph` 1743** (frame skip, deleted marks,
+hidden marks, the empty continuous-break paragraph, page break at the start, page break before,
+keepNext/keepLines with `paragraphLines`/`closingFit`/`nextBlockLead`, the gap rules — collapse,
+contextual, auto spacing in lists, section gap, top gap — the line loop with widow/orphan control
+and the keepNext tail, column/page breaks, the border group, the prev record),
+`paragraphLines`/`closingFit`/`paragraphHeight`/`nextBlockLead` 2514–2595, `wrapFrame` 3139
+(no float on the page: the frame itself), `pickSeg`, `moreSegs`; module helpers `lineRecord`,
+`pfmtOf`, `revisionBarItems`, `cullOffPage`, `bdrKey`, `shiftLine`, `markLineH`; `frames.ts`
+`liftFrames`/`frameRun` and `chain.ts` `indexChains`/`sliceParagraphFrom` → `derive.rs`.
+Out of F7a (pending with their frontier, never counted equal): tables and floating tables,
+floats, inline groups/textboxes, frames placed, chains (F7b); notes, endnotes, separators,
+headers/footers, SEQ/REF/NOTEREF/STYLEREF/PAGEREF/chapter fields (F7c).
+
+Rust: `engine/mod.rs` (pass loop, balancing, `run`, page assembly), `engine/page.rs` (geometry,
+pages, sections, columns), `engine/flow.rs` (`placeParagraph`, keep rules, border groups, line
+numbers, `lineRecord`), `engine/fields.rs` (the F7a field values), `derive.rs` (the derived
+document). The engine implements F4's `PrepFlow`; runtime paragraph copies (`joinDeleted`,
+`joinHidden`, the line-number paragraph) are prepared through a relocated scratch `LDoc` so `Cx`
+keeps its shared `&LDoc` (no change to the F4–F6 signatures). Harness: `tests/layout_parity.rs`
+`rust_layout` reads the docx with the D1a reader and runs `LayoutEngine::layout`; documents whose
+content needs F7b/F7c are counted `pending` by the `Unported` the engine returns.
+Pitfalls: K19 (last executed pass), `-0` kept through item moves (no `+0` shift), `Math.max(...[])`
+in `closeColumns`, the `JSON.stringify([pBdr, ind])` group key (K9), `lineSeq` per call, the
+`cur.geom` reassigned by continuous sections, `boxPage` as a container (K2f).
+
+### Ported (TS → Rust, TS operation order)
+
+| TS (engine.ts unless noted) | Rust |
+|---|---|
+| `layoutDocument` 188 (revision author order, the ≤ 5-pass loop and its stability test, the balancing search with `byAvg`, `trial`/`ok`, bisection; the result of the **last executed** pass, K19), `mergeLate`, `sameCounts`, `sameMap`, `sameChapters` | `engine::layout_document` (`Call::pass`, `merge_late`, `same_counts`, `same_map`, `same_chapters`, `work_input`) |
+| `run` 669 (cover page, first page number, geometry of every section, the default section, the section loop: next-column / new page / continuous, the block loop, `placeEndnotes`, the float carry, the last `closeColumns`/`paintNotes`) | `Engine::run` |
+| the end of `run` 714–764 (`LATE_ITEMS` split, `lateZ`, `zItems`, `cullOffPage`, page borders behind/in front, revision bars, `hfItems`, background colour/fill/show, the warnings) | `Engine::finish`, `cull_off_page`, `z_sorted`, `late_split`, `late_z`, `emit_page` |
+| `noteMarkFix` 588, `chapterOf` 612, `chapterIndex` 622, `sectionPageCounts` 1083, `numPagesShown` 1094 | `Engine::{note_mark_fix, chapter_of, chapter_index, section_page_counts}` |
+| `applyBalance` 405, `pageBorders` 770, `geomOf` 784, `pageNumber` 849, `newPage` 857, `newPageAt` 872, `makePage` 912, `continuousSection` 946, `recordBalance` 978, `nextColumnFits` 997, `nextColumnSection` 1007, `pageCols` 1023, `colFrame` 1027, `breakColumn` 1034, `noteColContent` 1055, `closeColumns` 1067 | `engine/page.rs` (same names) |
+| `fieldValue` 1099: PAGE (+ chapter), NUMPAGES, SECTIONPAGES, SECTION, DATE/TIME, SAVEDATE/CREATEDATE/PRINTDATE (`new Date(iso)`) | `engine/fields.rs` `Engine::field_value`, `parse_iso_date`; `impl PrepFlow for Engine` (F4-1) |
+| `layoutHeaderFooter` 1139 up to the slot choice | `Engine::layout_header_footer` (a slot with content: `Unported(F7c)`) |
+| `collapse` 1614, `borderTopExtent` 1624, `borderBottomExtent` 1635, `groupsWithNext` 1642, `paintLineNumber` 1658, `paintBox` 1687, `listOf` 1704, `gridFor` 1710, `joinHidden` 1730, `noShownRuns` 1739, **`placeParagraph` 1743** (with `flushFrag`), `headingStyleLevel` 551 | `engine/flow.rs` (same names; `flush_frag`, `heading_style_level`) |
+| `paragraphLines` 2514, `closingFit` 2523, `paragraphHeight` 2528, `nextBlockLead` 2536 | `engine/flow.rs` (`next_block_lead` + `next_block_lead_step`, F7a-5) |
+| `lineRecord` 3938, `pfmtOf`, `revisionBarItems` 3974, `bdrKey` 4089, `shiftLine` (F0) | `flow::{line_record, revision_bar_items, bdr_key}` |
+| revisions.ts `joinDeleted` 155 | `Engine::join_deleted` (an `RtPara`, F7a-2) |
+| frames.ts `frameOf` 33 | `derive::frame_of` (the lift itself is F7b's, below) |
+| the derived document (LA2): every model paragraph with its runs and field results keyed once, the stories (body, header/footer parts, notes, textbox contents), `revisionAuthors` | `derive::build` |
+
+`Unported(F7a, …)` is gone from the crate. The engine stops with `Unported(F7b, …)` at: a table
+block (`placeTable`), a framed paragraph (`liftFrames`), a floating object or an inline
+group/textbox in a paragraph, a picture bullet, the inline-object ends of F5's paint (F5-9), a
+table after a keepNext paragraph (`nextBlockLead` preview), floats on the page (`wrapFrame`), late
+floats/tables, the float carry; with `Unported(F7c, …)` at: a header/footer slot with content,
+note references and endnotes, the SEQ/REF/NOTEREF/STYLEREF/PAGEREF fields, the endnote flow, a
+`Date.parse` string outside the ISO format.
+
+### Parity (P1 through the real engine; TS capture regenerated in the same run, LQ21)
+
+`tests/layout_parity.rs` reads each `.docx` with the uo-docx reader, builds the derived document,
+runs `engine::layout_document` with the transcript policy and the capture's options (`now`
+2026-01-15T12:00Z, TZ = UTC, the seven pattern sets, `revisions: all` for `mk-*`), and compares
+**P1** (the canonical stream), **`pages`** and **`p2first`** (the first request per lower-case key
+and the answer identity, LQ19; `p2`, every call, is skipped: the TS asks again in every pass).
+The `p3.*` facets are compared by their own replays (`f1_parity`, `f2_parity`, `f4_parity`,
+`f5_parity`, `f6_parity`) over the same reader. A document counts as equal only when all three are.
+The embedded fonts of a document are added to the font index from the reader (the F0/F1 gap of
+`emwidth/ew-emb` is closed this way: it is among the equal documents). `UO_F7A_DIFF=1` prints where a mismatching layout first
+differs (pages, lines, items) by decoding the TS dump with F0's decoder.
+
+| Corpus | Documents | Equal | Pending (reason) | Mismatches |
+|---|---|---|---|---|
+| Word oracle, all documents, installed fonts | 2,742 | **1,203** | 1,539: tables 716, floating objects 331, header/footer content 250, inline images 102 + 1 shape (F5-9), frames 53, footnote/endnote references 44, table after keepNext 16, endnotes 13, SEQ/REF/… fields 10, inline groups/textboxes 3 | **0** |
+| `--gen f7a` (tools/lib/gen-f7a.mjs), seed 1 | 300 | **300** | 0 | 0 |
+| `--gen f7a`, seed 2 | 500 | **500** | 0 | 0 |
+| `--gen f7a`, seed 3 | 500 | **500** | 0 | 0 |
+| committed fixture `tests/captures/f7a` (`--gen f7a` seed 7, open fonts; runs in `cargo test`) | 16 | **16** | 0 | 0 |
+| .NET synthetic inputs | 8 | **3** (page fills: page, page-pattern, page-tile) | 5: floats, inline image, picture bullet, table, header | 0 |
+| F0 generator (`--mode ci`), seed 1 | 30 | 0 | 30: header/footer 27, tables 3 | 0 |
+
+**Round 1** (the only one): 5 of the first 300 generated documents — a hidden paragraph mark
+joined to the next paragraph (`joinHidden`) carries its **marker** to the joined paragraph; the TS
+marker glyphs hold their `RunStyle` objects, the Rust glyphs a `StyleIx` into their own
+paragraph's `styles`, so the moved marker pointed at the wrong styles (two layouts failed with
+`Internal("paint: glyph style")`, three painted the wrong style). Fixed by carrying the marker's
+styles (`detach_marker`/`attach_marker`, F7a-8); every document was equal at the next replay.
+Timing: oracle TS capture with dumps 80 s; Rust replay of the oracle 125 s (release).
+
+### Memory and robustness (`tests/f7a.rs`)
+
+| Check | Result |
+|---|---|
+| M1: the every-path document (40 paragraphs, three sections, balanced 2- and 3-column sections, line numbers, borders and shading, lists, hidden and deleted marks, keepNext/keepLines, PAGE/NUMPAGES, even-page break): read → derive → layout → drop | 630,165,490 B allocated, 2,122,745 B peak, **0 B left** |
+| M1: the same with `max_pages: 2` (the call ends in `Limit(Pages)` mid-pass) | **0 B left** |
+| M1: `LayoutEngine::with_hyphenation(…).layout(…)` + `clear_caches()` (after one warm-up) | 15,689,470 B allocated, 841,271 B peak, **0 B left** |
+| M2 soak: 1,000 × (open → read → derive → layout → drop) of a one-section fixture document, sampled every 50, and 50 × the every-path document | flat after the first sample, **0 B** variation |
+| M3 (release, per call, the 16 fixture documents) | 3.6–367 MB allocated, 0.33–3.5 MB peak, 98 KB–1.6 MB retained; **57–76 B per laid-out character retained** (target of §6: ≤ 48 B/char on the 500-page document — over it here; the char SoA, the glyph runs and the per-line `pfmt` copies are the candidates, stage 5) |
+| M5 | no new cache: the face table, the resolver cache, the resources and the hyphenation sessions are per call (F1, F4); `LayoutEngine::clear_caches` keeps the registry and drops the sessions |
+| no panic: 300 hostile documents (release; 60 in debug) — page sizes and margins 0, −720, 1e9, NaN, `abc`; columns 0…10⁹; column spaces, line pitches, line-number `countBy`/`start`/`distance`, page-number starts and section types out of range; spacing, indents, line rules, borders (`sz` 1e9, `space` NaN), list levels 9; keepNext/keepLines/pageBreakBefore/hidden marks at random | 264 laid out with every output index valid, 36 `Limit(Capacity)` (columns past `MAX_COLUMNS`); no panic |
+| limits | `max_pages` → `Limit(Pages)`; a work floor of 1,000 units → `Limit(Work)`; 10⁶ columns → `Limit(Capacity)` |
+
+The allocation count is dominated by the passes: every balancing probe is a full pass (the
+every-path document runs ≈ 30), and each pass prepares every paragraph again, as the TS does.
+
+### Declarations (the nine kinds of uo-docx A7; LA3 keys; limits)
+
+1. **Numbers**: every `Math.*` through uo-jsnum (`max`, `min`, `max_n`, `floor`, `ceil`, `rem`,
+   `trunc`); `String(n)` through `to_js_string` (NUMPAGES, SECTIONPAGES, SECTION, line numbers);
+   `===` between numbers through `js_eq` (NaN ≠ NaN, −0 = 0); block indices of a section are the
+   TS numbers (`SectGeom.blocks: (f64, f64)`), read as array indices through `index_of`
+   (fractional or NaN → the TS `undefined` read, `Err(Internal)`); `x % 2 === 0` of page numbers
+   through `rem`. **No arithmetic-semantics change**; the nested sum of `nextBlockLead` is folded
+   from the innermost term as the TS recursion adds (F7a-5).
+2. **Regex** (hand matchers, none dynamic): `/^heading ([1-9])$/i` (`heading_level`: ASCII
+   case-insensitive, non-`u` `/i` folds no non-ASCII letter to these), `/^(hdr|ftr):/` of
+   `recordBalance` → the line's `LineStory`, the ISO date grammar of `new Date(iso)` (F7a-7).
+3. **NaN/±∞ and absent keys**: model `??` defaults through `JsNumber::as_f64` (`null` is nullish)
+   in `geomOf`; `!!x` of strings (`vAlign`, `pgFmt`, `list`, `styleId`) as non-empty; the empty
+   `Math.max(...[])` of `closeColumns` is −∞ (the guard returns); NaN comparisons fall as in JS
+   (`!(bottom > colTop)` returns on NaN; `hi - lo > 1` stops a NaN bisection).
+4. **Orders**: pages, lines and items in TS order; `balanceFound`/`lateFound`/the inputs in
+   `IndexMap` (insertion order); `zItems` a stable sort by `z || seq` (NaN = 0, as V8 reads it); the
+   page assembly keeps the layer order of the TS spreads; `chapterIndex` per level in page order.
+5. **Recursion**: `nextBlockLead` is a loop (F7a-5); no other recursion in F7a (`newPage` →
+   `newPageAt` → `newPage` only for a page of notes, F7c).
+6. **Module state**: `lineSeq` per call (F5); the frame caches of frames.ts are not reproduced
+   (LQ18; the lift is F7b's); nothing else.
+7. **Throws** → `Err(Internal)`: `this.cur` without a page, a block index the TS reads as
+   `undefined` (`block.type` of `undefined`), `colFrame` of a page without columns, a paragraph
+   whose derived copy has no model root.
+8. **Aliasing / identity (LA3)**: `PageState` → `PageIx` (`lnPage`, the `fieldValue` closure's
+   `ps`, `chapterOf`'s `pages.indexOf(ps)`); `SectGeom` → its index (`cur.geom === g`); `boxPage`
+   → `ContainerId::PageBody(PageIx)` (K2f); the `fieldValue(ps, block)` closure → `FieldSource::Page`
+   + `Engine::field_at` (F7a-3); the paragraph objects the engine makes → `PSrc::Rt(RtPara)` over
+   the call's keys, prepared through a relocated `LDoc` whose glyph `obj`/`ptab` keys are mapped
+   back (K1: a model run keeps its `RunKey`); copies have no `ParaId` (LA2); the marker moved by
+   `joinHidden` keeps its own `RunStyle` entries (new indices of the joined paragraph, F7a-8);
+   `LATE_ITEMS` marks by `ItemMeta` (`Engine::late_marks`, filled by F7b); `pfmtOf`'s object per
+   paragraph → one `Arc<LineParaFormat>` per placed paragraph, emitted once per run of lines.
+   **`json_key` sites**: `bdrKey` → `bdr_key` (`JsonBuilder` + uo-docx `JsonWriter::stringify` of
+   `pBdr` and `ind`, model key order, `undefined` → `null`), compared with `JsonKey::json_eq`.
+9. **Choices outside the source semantics**:
+
+| # | Decision | Why |
+|---|---|---|
+| F7a-1 | The page assembly (`Engine::finish`) runs once, on the last executed pass; the TS assembles every pass's `LayoutResult` | only the last one is returned (K19); the assembly of the others has no effect on it — except derived page-fill images, which the TS makes per pass and Rust once |
+| F7a-2 | Runtime paragraph copies (`joinDeleted`, `joinHidden`, the line-number paragraph) are `RtPara`s prepared through a scratch `LDoc` that relocates exactly their runs (and field results); `Cx` keeps `&LDoc` | no change to the F4–F6 signatures; works inside cell layouts (F7b) where only a `Cx` is at hand; model runs keep their identity |
+| F7a-3 | `ParaEnv.field` of the body = `FieldSource::Page` + the engine's `field_at: (PageIx, block)` set right before the paragraph is prepared | the TS closure captures `this.cur` and `blockIdx`; preparing is synchronous |
+| F7a-4 | The line-number paragraph is a synthetic `Paragraph` with `ParaId(u32::MAX)` (`{ runs: [run], props: {}, ppr: {} }`), its run a `RunSrc::Synth` | a digit string never meets a manual-hyphenation skip |
+| F7a-5 | `nextBlockLead` over a keepNext chain is a loop with one save/restore of the flow (the inner pairs are invisible under the outer one) and the terms folded from the innermost out | no recursion over a chain of blocks; the TS throws `RangeError` past ≈ 10⁴ chained keepNext paragraphs, Rust lays them out (K11, accepted) |
+| F7a-6 | `w:cols/@w:num` above `MAX_COLUMNS` = 4,096 → `Err(Limit(Capacity))` | the TS makes one object per column (10⁹ hangs); Word allows 45 |
+| F7a-7 | `new Date(iso)` of SAVEDATE/CREATEDATE/PRINTDATE: the ISO forms only (`YYYY[-MM[-DD]][THH:mm[:ss[.f…]]][Z\|±HH:mm]`, date-only = UTC, date-time = local); any other string → `Unported(F7c)` (V8's legacy grammar) | core properties are W3CDTF; the legacy parser is a port of its own |
+| F7a-8 | A marker moved by `joinHidden` carries its glyphs' `RunStyle`s (`HiddenJoin.marker_styles`); attached as new entries of the joined paragraph's `styles` | `StyleIx` is per paragraph; the TS glyphs hold the style objects (round 1) |
+| F7a-9 | Work budget: 1 unit per pass, per body block, per page and per `nextBlockLead` level (plus F4/F5's per glyph); `Budget::pure_clones` counts the flow snapshots | K16; a bisection that never ends (an infinite column height) stops at the budget |
+| F7a-10 | The TS `Object.prototype` names as `w:chapSep` (e.g. `constructor`) give `-` | the TS would concatenate a function's source |
+| F7a-11 | `{ ...st.footnotePr, ...sp.footnotePr }` merged per field (`sp.x ?? st.x` by presence) | the reader writes no key with an `undefined` value |
+| F7a-12 | `Layout.missing_faces` stays empty and the `"font budget"` warning is not raised | the registry policies do not report misses yet (F1 hand-on; binding work, F8) |
+| F7a-13 | Item moves of the assembly and `paintBox`'s `splice` copy items exactly (`push_copy`, no `+ 0`) | `-0` coordinates stay `-0` (the TS moves objects) |
+| F7a-14 | Harness: `layout_parity` through the engine (P1 + `pages` + `p2first`; `p2` skipped, LQ19), the `--gen f7a` generator (`tools/lib/gen-f7a.mjs`), the stale-build refusal of `capture-layout.mjs` with `--accept-stale` (F2-20: the frozen d0f45bc5 `dist` is older than `typography/font/sfnt.ts`, whose last edit is a GPOS cache with the same results — accepted by name), the committed fixture, the CI step (strict) | the gate needs end-to-end parity; the old fixtures need no recapture for F7a (its replay uses fresh captures and its own fixture) |
+| F7a-15 | `LayoutEngine::with_hyphenation(registry)` (the F0 `new()` has no patterns); `clear_caches` clears the sessions and keeps the registry | the public path must hyphenate as the replay does; M1 after `clear_caches` |
+
+**Limits** (LQ14): `max_pages` (`makePage`), `MAX_COLUMNS` (F7a-6), the work budget (F7a-9),
+`max_depth` in `derive` (table and textbox nesting of the model); every other loop is bounded by
+the blocks, the lines of a paragraph or the pages.
+
+### Shared files edited (additive)
+
+`ldoc.rs` (`by_para`, `hf_stories`, `note_stories`, `tb_of_drawing` and their `empty()` values),
+`lib.rs` (`LayoutEngine::with_hyphenation`, `clear_caches` keeps the registry),
+`tools/capture-layout.mjs` (stale-build refusal, `--accept-stale`, `--gen f7a`),
+`.github/workflows/rust-core.yml` (the F7a capture + strict replay step), this record. F0 files
+owned by F7a and rewritten: `engine/mod.rs`, `engine/page.rs` (`SectGeom.blocks` is `(f64, f64)`),
+`engine/flow.rs` (`PrevPara.p_bdr` is a flag, `HiddenJoin` holds a `PSrc` and the marker styles),
+`engine/fields.rs`, `derive.rs`, `tests/layout_parity.rs`.
+
+### Not done (handed on)
+
+- **F7a scope left for the frontiers that make it reachable**: `layoutStatic` (engine.ts:1202:
+  cells, headers/footers, textbox contents) and `layoutCell`/`layoutCellIn` — every caller is F7b
+  (cells, textboxes) or F7c (headers/footers); with F6's hand-on (`NestRow`s with `ObjId`s,
+  `paras` as an `Arc`) and the `CellLayouter` impl. The runtime copies of `layoutStatic`
+  (`joinDeleted`/`joinHidden` in cells) use the same `RtPara` path (F7a-2), which works under a
+  plain `Cx`.
+- **F7b**: `liftFrames`/`frameRun` in every story (K3: the INNER copies, the anchor copy with the
+  frame run, `FRAME_SKIP`/`FRAME_CARRY` as `LPara` flags and `frame_carry`, the synthetic
+  `DrawingTextbox` → `LTextbox` with `FrameInfo`) and `indexChains`/`sliceParagraphFrom`
+  (`RunSrc::Slice`, `CONTINUATION`) — `derive::build` builds neither yet (frames are pending in
+  53 oracle documents); `wrapFrame`/`pickSeg`/`moreSegs` with floats and every float branch of
+  `placeParagraph` (`early`, `anchorAt`, `frameHere`'s `skipTo`, the tall-line and narrow-gap
+  rules, `brclear`), `placeFloats`/`placeFloatsEarly`, `paintInlineDrawings`, late floats and
+  tables in `newPageAt`, `placeFloatCarry`, `placeTable` and the table preview of `nextBlockLead`
+  (`LineStory::Preview`), the `LATE_ITEMS` marks (`Engine::late_marks`).
+- **F7c**: `layoutHeaderFooter` (the slot is chosen; `layoutStatic` over the slot's story), note
+  references (`noteNeed`, `reserveNotes`, `notePartial`), `paintNotes`, `placeEndnotes`, the
+  continuation separator, `noteCarry`, the SEQ/REF/NOTEREF/STYLEREF/PAGEREF and ENDNOTEREF_MARK
+  values (`seqValue`, `refValue`, `noteRefValue`, `styleRefValue`, `bookmarkPages`, `listNumberOf`),
+  the header/footer and note `FieldSource`s, V8's legacy `Date.parse` grammar (F7a-7).
+- **F8**: `collect_fields` (`PrepFlow::on_field`: the keys of a relocated copy map back through
+  the same table as `Glyph.obj`), `missing_faces` and the `"font budget"` warning (F7a-12).
+- The P3 facets are not re-derived from the engine run (they have their own replays over the same
+  reader); the 1,026 engine-derived `prepareParagraph` calls pending in F4's facet are covered by
+  P1 where F7a makes them (joined copies in the `mk-*`/hidden-mark documents) and stay pending for
+  the frames, slices and note separator (F7b/F7c).
+- M3 is over the §6 target (57–76 B per laid-out character retained, target ≤ 48): stage 5.
+- The F0/F1/F5 `layout-ci` fixtures stamped `b92b60fa` (F2-20) are not recaptured: nothing of
+  F7a reads them; the capture tool now refuses such a build.

@@ -108,6 +108,13 @@ impl LayoutEngine {
         LayoutEngine { hyph: HyphenSessions::default(), last: None }
     }
 
+    /// An engine whose hyphenation draws on `registry` (the pattern sets the host registered;
+    /// `LayoutOptions::hyphenation_loaded` still says which ones count, K5). Added by F7a.
+    #[must_use]
+    pub fn with_hyphenation(registry: std::sync::Arc<uo_fonts::hyphen::HyphenationRegistry>) -> LayoutEngine {
+        LayoutEngine { hyph: HyphenSessions::new(registry), last: None }
+    }
+
     /// A full layout of `view`.
     pub fn layout(&mut self, view: DocView<'_>, provider: &dyn FontProvider, o: &LayoutOptions) -> Result<&Layout, LayoutError> {
         self.last = None;
@@ -136,7 +143,8 @@ impl LayoutEngine {
 
     /// Drops every cache (M1: live bytes return to the start).
     pub fn clear_caches(&mut self) {
-        self.hyph = HyphenSessions::default();
+        // the sessions' word caches go; the registry stays (F7a)
+        self.hyph.clear();
         self.last = None;
     }
 }

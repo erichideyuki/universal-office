@@ -20,6 +20,7 @@ import { F3_WRAPS, f3Recorder } from './facets-f3.mjs';
 import { F5_WRAPS, f5Recorder } from './facets-f5.mjs';
 import { F2_WRAPS, f2Recorder } from './facets-f2.mjs';
 import { F4_WRAPS, f4Recorder } from './facets-f4.mjs';
+import { F6_WRAPS, f6Recorder } from './facets-f6.mjs';
 
 /** Wrapped module functions per dist file of docx-layout (paths relative to the dist). */
 export const WRAPS = {
@@ -35,6 +36,8 @@ for (const [file, names] of Object.entries(F5_WRAPS)) WRAPS[file] = [...(WRAPS[f
 for (const [file, names] of Object.entries(F4_WRAPS)) WRAPS[file] = [...(WRAPS[file] ?? []), ...names];
 // F2 (datefmt.ts, field-formula.ts, engine.ts layoutDocument for the hyphenation walk): facets-f2.mjs
 for (const [file, names] of Object.entries(F2_WRAPS)) WRAPS[file] = [...(WRAPS[file] ?? []), ...names];
+// F6 (table.ts layoutTable/splitContent, para.ts paraVisibility): facets-f6.mjs
+for (const [file, names] of Object.entries(F6_WRAPS)) WRAPS[file] = [...(WRAPS[file] ?? []), ...names];
 
 /** Installs the loader hook; call before importing the docx-layout dist. */
 export function installFacetHooks(tsRoot) {
@@ -45,7 +48,7 @@ export function installFacetHooks(tsRoot) {
 }
 
 /** Facet recorder for one layout run; `start()` before `layoutDocument`, `finish()` after. */
-export function facetRecorder({ LineBreaker, FaceResolver, SfntFont, f5: f5Deps, f2: f2Deps }) {
+export function facetRecorder({ LineBreaker, FaceResolver, SfntFont, f5: f5Deps, f2: f2Deps, f6: f6Deps }) {
   // F2: p3.datefmt, p3.formula, p3.numbering, p3.style, p3.hyphlangs (+ the `f2.tsv` dump of their inputs)
   const f2 = f2Deps ? f2Recorder(f2Deps) : null;
   let prep = null, lines = null, paint = null;
@@ -58,6 +61,8 @@ export function facetRecorder({ LineBreaker, FaceResolver, SfntFont, f5: f5Deps,
   const f3 = f3Recorder();
   // F4: p3.prepare (+ the `f4.bin` dump of its inputs)
   const f4 = f4Recorder();
+  // F6: p3.table, p3.rowsplit, p3.splitcontent (+ the `f6.bin` dump of their inputs)
+  const f6 = f6Deps ? f6Recorder(f6Deps) : null;
   let unhookF4 = null;
   const origNext = LineBreaker.prototype.next;
   const patched = function (frame) {
@@ -91,6 +96,17 @@ export function facetRecorder({ LineBreaker, FaceResolver, SfntFont, f5: f5Deps,
         globalThis.__uoFacetPre = (n, a) => { f2.pre(n, a); return pre ? pre(n, a) : undefined; };
         globalThis.__uoFacet = (n, a, r, p) => { f2.report(n, a, r); rep(n, a, r, p); };
       }
+      // F6, chained on the hooks above (its own pre value for layoutTable/splitContent)
+      if (f6) {
+        f6.start();
+        const pre = globalThis.__uoFacetPre, rep = globalThis.__uoFacet;
+        globalThis.__uoFacetPre = (n, a) => {
+          if (n === 'layoutDocument') f6.layout(a[0]);
+          if (n === 'layoutTable' || n === 'splitContent') return f6.pre(n, a);
+          return pre ? pre(n, a) : undefined;
+        };
+        globalThis.__uoFacet = (n, a, r, p) => { f6.report(n, a, r, p); rep(n, a, r, p); };
+      }
       // F4: the table styles of every resolver (after F2 patched the class)
       unhookF4 = f2Deps?.StyleResolver ? f4.hook({ StyleResolver: f2Deps.StyleResolver }) : null;
     },
@@ -109,6 +125,7 @@ export function facetRecorder({ LineBreaker, FaceResolver, SfntFont, f5: f5Deps,
       if (f5) dumps['f5.bin'] = f5.finish();
       dumps['f4.bin'] = f4.finish();
       if (f2) { const r = f2.finish(); Object.assign(out, r.facets); dumps['f2.tsv'] = r.dump; }
+      if (f6) { const r = f6.finish(); Object.assign(out, r.facets); dumps['f6.bin'] = r.dump; }
       Object.defineProperty(out, 'dumps', { value: dumps, enumerable: false });
       prep = null; lines = null; paint = null;
       return out;

@@ -1,7 +1,7 @@
 //! The engine (`engine.ts`, frontiers F7a–c): the pass loop and the column-balancing search of
 //! `layoutDocument`, and one pass, `class Engine`.
 //!
-//! **Shape (LA4, K18).** `layout_document` keeps the inter-pass inputs on a [`LayoutRun`]; every
+//! **Shape (LA4, K18).** `layout_document` keeps the inter-pass inputs on a [`PassInput`]; every
 //! pass is a fresh [`Engine`] — plain data, `Clone`, no borrows — and only its [`PassFindings`]
 //! survive it. Engine methods take a [`Cx`] (the derived document, the pass input, the face table
 //! and provider, the resources, the hyphenation sessions, the work budget, the options), so a
@@ -14,6 +14,11 @@
 //! **cache** (a memo of a pure function of the document within the pass), **finding** (read by the
 //! pass loop after the pass). The TS constructor parameters are the [`PassInput`]. The table with
 //! the TS line of each field is in the record ("Milestone 1 — F0", "Engine field classification").
+//!
+//! F7a (record "Stage 3 — F7a"): the pass loop, the balancing search, `run` with the page
+//! assembly, the geometry (`page.rs`) and the paragraph flow (`flow.rs`). What needs F7b (tables,
+//! floats, frames, inline groups and textboxes) or F7c (notes, headers/footers, the
+//! SEQ/REF/NOTEREF/STYLEREF/PAGEREF fields) stops the layout with `LayoutError::Unported`.
 
 pub mod fields;
 pub mod floats;
@@ -27,17 +32,20 @@ use indexmap::{IndexMap, IndexSet};
 use rustc_hash::FxHashMap;
 
 use crate::context::DocContext;
-use crate::error::{Frontier, LResult, unported};
+use crate::error::{LResult, LayoutError, LimitKind};
 use crate::fonts::{FaceResolverCache, FaceTable, FontProvider};
 use crate::hyphenate::HyphenSessions;
+use crate::items::{ItemSide, PassItems};
 use crate::keys::{ChainId, PageIx, RunKey, TableLayoutId, TbKey};
 use crate::ldoc::LDoc;
 use crate::model::CellKey;
-use crate::options::{Budget, LayoutOptions};
-use crate::output::Layout;
+use crate::options::{Budget, LayoutOptions, RevisionMode, WorkInput};
+use crate::output::{CharsSoA, GlyphMeta, ImageOrigin, Layout, LayoutPage, LayoutStamp, LineGeom, LineParaFormat};
 use crate::table::CellContent;
-use crate::word::NumberMarker;
-use uo_render::Resources;
+use crate::word::{self, NumberMarker};
+use uo_jsnum::math as jm;
+use uo_render::types::Item;
+use uo_render::{ItemList, Resources, Span};
 
 use fields::ChapterMark;
 use floats::Pinned;
@@ -138,6 +146,15 @@ pub struct Cx<'c, 'a> {
     pub line_seq: &'c mut u32,
 }
 
+/// `LATE_ITEMS` entries (table.ts:1383): the z order of an item anchored in a cell, by
+/// `ItemSide::meta` (F7b sets them; the page assembly reads them).
+#[derive(Clone, Copy, Debug)]
+pub struct LateMark {
+    pub z: f64,
+    pub seq: f64,
+    pub behind: bool,
+}
+
 /// One pass (`class Engine`, engine.ts:326). See the module comment for the field classes; each
 /// field names its class and its TS field.
 #[derive(Clone, Debug, Default)]
@@ -205,8 +222,8 @@ pub struct Engine {
     pub placed_tables: IndexSet<u32>,
     /// carried: `lateSplit`
     pub late_split: IndexSet<u32>,
-    /// carried: `colBottoms`
-    pub col_bottoms: Vec<f64>,
+    /// carried: `colBottoms` (a sparse JS array: `None` = hole)
+    pub col_bottoms: Vec<Option<f64>>,
     /// carried: `inCell` (mode)
     pub in_cell: bool,
     /// carried: `hfFrameAfter`
@@ -246,6 +263,11 @@ pub struct Engine {
     /// carried (memo within the pass, held by a checkpoint): `chainSlices`
     /// (`Map<TextboxChain, Map<DrawingTextbox, CellContent>>`, K2d)
     pub chain_slices: IndexMap<ChainId, IndexMap<TbKey, CellContent>>,
+    /// carried: the page and body block the `fieldValue(ps, block)` closure of the paragraph being
+    /// prepared captured (`ParaEnv.field` = `FieldSource::Page`, LA3)
+    pub field_at: Option<(PageIx, i64)>,
+    /// carried: `LATE_ITEMS` marks by `ItemMeta` (F7b fills them)
+    pub late_marks: Vec<LateMark>,
 
     // ── caches (pure functions of the document within the pass) ────────────────────────────
     /// cache: `geoms`
@@ -267,6 +289,20 @@ pub struct Engine {
     pub found: PassFindings,
 }
 
+/// `===` between two JS numbers (NaN differs from itself, `-0 === 0`).
+#[must_use]
+pub(crate) fn js_eq(a: f64, b: f64) -> bool {
+    a == b
+}
+
+/// `x | 0`-free index of a JS number that must be an array index (`blocks[b]`): `None` when the
+/// TS read would be `undefined` (fractional, negative, NaN or past `u32`).
+#[must_use]
+pub(crate) fn index_of(x: f64) -> Option<usize> {
+    let i = uo_jsnum::conv::to_uint32(x);
+    (js_eq(f64::from(i), x)).then(|| usize::try_from(i).ok()).flatten()
+}
+
 impl Engine {
     /// `new Engine(ctx, …)` with the pass state at its TS initial values.
     #[must_use]
@@ -274,30 +310,903 @@ impl Engine {
         Engine { ctx, story: body_story, at_top: true, first_in_doc: true, ln_sect: -1, first_page_number: 1.0, ..Engine::default() }
     }
 
-    /// `run()` (engine.ts): one pass over the document — F7a.
-    pub fn run(&mut self, _cx: &mut Cx<'_, '_>) -> LResult<()> {
-        unported(Frontier::F7a, "engine::Engine::run")
+    /// The current page (`this.cur`, asserted non-null by the TS: an absent page is a TS
+    /// `TypeError`).
+    pub(crate) fn cur_ix(&self) -> LResult<PageIx> {
+        self.cur.ok_or(LayoutError::Internal("engine: no current page"))
+    }
+
+    pub(crate) fn ps(&self, ix: PageIx) -> LResult<&PageState> {
+        self.pages.get(ix.ix()).ok_or(LayoutError::Internal("engine: page index"))
+    }
+
+    pub(crate) fn ps_mut(&mut self, ix: PageIx) -> LResult<&mut PageState> {
+        self.pages.get_mut(ix.ix()).ok_or(LayoutError::Internal("engine: page index"))
+    }
+
+    pub(crate) fn cur_ps(&self) -> LResult<&PageState> {
+        self.ps(self.cur_ix()?)
+    }
+
+    pub(crate) fn cur_ps_mut(&mut self) -> LResult<&mut PageState> {
+        let ix = self.cur_ix()?;
+        self.ps_mut(ix)
+    }
+
+    pub(crate) fn geom(&self, gi: u32) -> LResult<&SectGeom> {
+        self.geoms.get(gi as usize).ok_or(LayoutError::Internal("engine: section geometry"))
+    }
+
+    /// `noteMarkFix()` (engine.ts:588): with "restart each page" footnotes, the mark of each note
+    /// by the page it came out on — `None` when this pass's marks already hold.
+    #[must_use]
+    pub fn note_mark_fix(&self, cx: &Cx<'_, '_>) -> Option<IndexMap<Box<str>, Box<[u16]>>> {
+        let mut want: IndexMap<Box<str>, Box<[u16]>> = IndexMap::new();
+        let mut differs = false;
+        let mut seen: Vec<i32> = Vec::new();
+        let mut cap = word::text_cap(&cx.opts.limits);
+        for ps in &self.pages {
+            let Some(g) = self.geoms.get(ps.geom as usize) else { continue };
+            let nn = &g.notes.footnote;
+            let mut k = 0.0;
+            for n in &ps.notes {
+                if seen.contains(&n.id) {
+                    continue;
+                }
+                seen.push(n.id);
+                let id = crate::model::NumKey::new(f64::from(n.id));
+                let Some(cur) = self.ctx.note_mark_of(crate::context::NoteKindFlow::Footnote, id) else { continue };
+                if cur.is_empty() || nn.restart != crate::context::NoteRestart::EachPage {
+                    continue;
+                }
+                k += 1.0;
+                let m = word::format_number(nn.start - 1.0 + k, Some(&nn.fmt), &cx.opts.lang, &mut cap);
+                if m.units() != cur {
+                    differs = true;
+                }
+                want.insert(crate::context::note_key(crate::context::NoteKindFlow::Footnote, id).into_boxed_str(), m.units().into());
+            }
+        }
+        differs.then_some(want)
+    }
+
+    /// `chapterIndex()` (engine.ts:622): numbered headings of this pass per level and the page
+    /// where each starts.
+    #[must_use]
+    pub fn chapter_index(&self) -> ChapterIndex {
+        let mut out = ChapterIndex::new();
+        let mut seen: IndexSet<String> = IndexSet::new();
+        for (i, ps) in self.pages.iter().enumerate() {
+            for l in &ps.page.lines {
+                let r = l.at.to_ts();
+                let Some((level, text)) = self.found.heading_marks.get(r.as_str()) else { continue };
+                if seen.contains(&r) {
+                    continue;
+                }
+                seen.insert(r);
+                // `level` is `+lv` of a `[1-9]` match: an integer
+                let key = if *level >= 1.0 && *level <= 9.0 { uo_jsnum::conv::to_int32(*level).into() } else { 0 };
+                out.entry(key).or_default().push(ChapterMark { page: f64::from(u32::try_from(i).unwrap_or(u32::MAX)), text: text.clone() });
+            }
+        }
+        out
+    }
+
+    /// `sectionPageCounts()` (engine.ts:1083).
+    #[must_use]
+    pub fn section_page_counts(&self) -> IndexMap<u32, f64> {
+        let mut out: IndexMap<u32, f64> = IndexMap::new();
+        for p in &self.pages {
+            let idx = self.geoms.get(p.geom as usize).map_or(0, |g| g.index);
+            *out.entry(idx).or_insert(0.0) += 1.0;
+        }
+        out
+    }
+
+    /// `run()` (engine.ts:669): one pass over the document (the page assembly is
+    /// [`Engine::finish`]).
+    pub fn run(&mut self, cx: &mut Cx<'_, '_>) -> LResult<()> {
+        cx.budget.charge(1)?;
+        let view = cx.ldoc.view;
+        self.cover_page = word::has_cover_page(view.body().blocks().filter_map(|b| match b {
+            uo_docx::model::Block::Paragraph(p) => Some(p),
+            uo_docx::model::Block::Table(_) => None,
+        }));
+        let sections = view.sections();
+        self.first_page_number =
+            sections.first().and_then(|s| s.sect_pr.pg_num_start).and_then(crate::model::JsNumber::as_f64).unwrap_or(1.0);
+        // sequential: every section inherits the header/footer of the one before (geomOf reads
+        // this.geoms)
+        self.geoms = Vec::new();
+        for (i, s) in sections.iter().enumerate() {
+            let g = self.geom_of(cx, Some(s), i)?;
+            self.geoms.push(g);
+        }
+        if self.geoms.is_empty() {
+            let g = self.geom_of(cx, None, 0)?;
+            self.geoms.push(g);
+        }
+        let blocks_len = self.story_len(cx);
+        let en_sect_end = view.formatting().settings.endnote_pr.as_ref().and_then(|e| e.pos.as_deref()) == Some("sectEnd");
+        let n_geoms = u32::try_from(self.geoms.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
+        for gi in 0..n_geoms {
+            let g = self.geom(gi)?.clone();
+            // the numbering of the section's notes (a per-section restart counts from here)
+            self.ctx.begin_note_section(
+                crate::context::NoteNumberings { footnote: g.notes.footnote.clone(), endnote: g.notes.endnote.clone() },
+                g.index == 0,
+            );
+            // continuous (or next column) to another paper size/orientation: Word starts a new page
+            let same_paper = match self.cur {
+                Some(c) => {
+                    let p = &self.ps(c)?.page;
+                    js_eq(p.w, g.page_w) && js_eq(p.h, g.page_h)
+                }
+                None => false,
+            };
+            if g.index > 0 && &*g.kind == "nextColumn" && same_paper && self.next_column_fits(gi)? {
+                self.next_column_section(gi)?;
+            } else if g.index == 0 || &*g.kind != "continuous" || !same_paper {
+                let last_after = self.prev.as_ref().map_or(0.0, |p| p.after);
+                self.new_page(cx, gi, &g.kind)?;
+                // a new section: its first paragraph keeps the space before, less the "after" of
+                // the previous section's last one (tocref-sectgap)
+                if g.index > 0 {
+                    self.top_gap_prev_after = Some(last_after);
+                }
+            } else {
+                self.continuous_section(cx, gi)?;
+            }
+            let mut b = g.blocks.0;
+            while b <= g.blocks.1 && b < blocks_len {
+                cx.budget.charge(1)?;
+                let bi = index_of(b).ok_or(LayoutError::Internal("engine: block index"))?;
+                let block = cx
+                    .ldoc
+                    .stories
+                    .get(self.story as usize)
+                    .and_then(|s| s.blocks.get(bi))
+                    .copied()
+                    .ok_or(LayoutError::Internal("engine: block"))?;
+                match block {
+                    crate::ldoc::LBlock::Paragraph(p) => self.place_paragraph(cx, p, bi, gi)?,
+                    crate::ldoc::LBlock::Table { .. } => return Err(LayoutError::Unported(crate::error::Frontier::F7b, "placeTable")),
+                }
+                b += 1.0;
+            }
+            // the section that suppresses its endnotes passes them to the next one; at the end of
+            // the document they all come out
+            let last_sect = gi + 1 == n_geoms;
+            let no_endnote = sections.get(g.index as usize).and_then(|s| s.sect.as_ref()).and_then(|s| s.no_endnote) == Some(true);
+            if last_sect || (en_sect_end && !no_endnote) {
+                self.place_endnotes()?;
+            }
+        }
+        // a floating table split at the end of the document: the remaining rows get pages
+        let mut k = 0;
+        while k < 100 && !self.float_carry.is_empty() && self.cur.is_some() {
+            let gi = self.cur_ps()?.geom;
+            self.new_page(cx, gi, "nextPage")?;
+            k += 1;
+        }
+        if self.cur.is_some() {
+            self.close_columns(cx)?;
+            self.paint_notes()?;
+        }
+        Ok(())
+    }
+
+    /// `placeEndnotes(g)` (engine.ts:2455) up to its first step: the endnotes referenced since the
+    /// last call — laying them out is F7c.
+    fn place_endnotes(&mut self) -> LResult<()> {
+        let order = self.ctx.endnote_order();
+        let n = u32::try_from(order.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
+        let new = n > self.endnotes_done;
+        self.endnotes_done = n;
+        if new {
+            return Err(LayoutError::Unported(crate::error::Frontier::F7c, "placeEndnotes"));
+        }
+        Ok(())
+    }
+
+    /// `paintNotes(ps)` (engine.ts:2418): nothing without notes; the note area is F7c.
+    fn paint_notes(&mut self) -> LResult<()> {
+        if self.cur_ps()?.notes.is_empty() {
+            return Ok(());
+        }
+        Err(LayoutError::Unported(crate::error::Frontier::F7c, "paintNotes"))
+    }
+
+    /// The block count of the story the flow walks (`full.blocks.length`).
+    pub(crate) fn story_len(&self, cx: &Cx<'_, '_>) -> f64 {
+        cx.ldoc.stories.get(self.story as usize).map_or(0.0, |s| f64::from(u32::try_from(s.blocks.len()).unwrap_or(u32::MAX)))
     }
 }
 
-/// One `layoutDocument` call (LA4): the derived document, the faces, the budget and the inputs
-/// that go from pass to pass (engine.ts:197–251).
-pub struct LayoutRun<'r, 'a> {
-    pub ldoc: &'r LDoc<'a>,
-    pub opts: &'r LayoutOptions,
-    pub budget: Budget,
-    pub resolver: FaceResolverCache,
-    pub input: PassInput,
+// ───────────────────────── the page assembly (the end of `run()`) ─────────────────────────
+
+/// A z-ordered group of items (`ZObj`) being assembled: its items are ranges of a source list.
+struct ZGroup<'p> {
+    z: f64,
+    seq: f64,
+    parts: Vec<(&'p PassItems, usize)>,
+}
+
+/// `zItems([...groups, ...back])`: the items of the groups in z order.
+fn flat<'p>(groups: Vec<ZGroup<'p>>, back: Vec<ZGroup<'p>>) -> Vec<(&'p PassItems, usize)> {
+    let mut all = groups;
+    all.extend(back);
+    z_sorted(all).into_iter().flat_map(|g| g.parts).collect()
+}
+
+/// `zItems(objs)`: by `z`, then `seq` (a stable sort; NaN comparisons give 0 as the TS `||`).
+fn z_sorted(mut objs: Vec<ZGroup<'_>>) -> Vec<ZGroup<'_>> {
+    objs.sort_by(|a, b| {
+        let d = a.z - b.z;
+        let d = if uo_jsnum::conv::truthy(d) { d } else { a.seq - b.seq };
+        if d < 0.0 {
+            std::cmp::Ordering::Less
+        } else if d > 0.0 {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    });
+    objs
+}
+
+/// Copies item `i` of `src` to `dst` unchanged (a JS array move keeps the object: no `+ 0`
+/// arithmetic that would turn `-0` into `0`).
+pub(crate) fn push_copy(dst: &mut PassItems, src: &PassItems, i: usize) -> LResult<()> {
+    let Some(it) = src.list.items.get(i) else { return Ok(()) };
+    copy_list_item(&mut dst.list, &src.list, it)?;
+    dst.side.push(src.side.get(i).copied().unwrap_or_default());
+    Ok(())
+}
+
+fn copy_list_item(dst: &mut ItemList, src: &ItemList, it: &Item) -> LResult<()> {
+    match it {
+        Item::Glyphs { face, color, size_pt, y, glyphs, run, flags } => {
+            let side = src.run(*run).copied().unwrap_or_default();
+            let head = uo_render::GlyphRunHead {
+                face: *face,
+                color: *color,
+                size_pt: *size_pt,
+                y: *y,
+                text: src.text_of(side.text),
+                scale_x: side.scale_x,
+                alpha: side.alpha,
+                fx: side.fx,
+                flags: *flags,
+            };
+            dst.push_glyphs(head, src.glyphs_of(*glyphs))?;
+        }
+        Item::Path { cmds, fill, stroke, even_odd } => {
+            let c: Vec<_> = src.cmds_of(*cmds).to_vec();
+            dst.push_path(&c, *fill, *stroke, *even_odd)?;
+        }
+        other => dst.push_plain(other.clone()),
+    }
+    Ok(())
+}
+
+/// `out.splice(at, 0, ...ins)`.
+pub(crate) fn splice_items(out: &mut PassItems, at: usize, ins: &PassItems) -> LResult<()> {
+    if ins.is_empty() {
+        return Ok(());
+    }
+    if at >= out.len() {
+        for i in 0..ins.len() {
+            push_copy(out, ins, i)?;
+        }
+        return Ok(());
+    }
+    let old = std::mem::take(out);
+    for i in 0..at {
+        push_copy(out, &old, i)?;
+    }
+    for i in 0..ins.len() {
+        push_copy(out, ins, i)?;
+    }
+    for i in at..old.len() {
+        push_copy(out, &old, i)?;
+    }
+    Ok(())
+}
+
+/// `cullOffPage(items, pageW, pageH)` (engine.ts:4000): the indices of `items` that stay — a glyph
+/// run entirely off the page goes unless another run of its line (`lineBox.line`) crosses it.
+fn cull_off_page(items: &[(&PassItems, usize)], page_w: f64, page_h: f64) -> Vec<bool> {
+    type M = [f64; 6];
+    let mut stack: Vec<Option<M>> = Vec::new();
+    let mut m: Option<M> = None;
+    let mut outside = vec![false; items.len()];
+    let mut line_in: IndexSet<u32> = IndexSet::new();
+    for (k, &(src, i)) in items.iter().enumerate() {
+        let Some(it) = src.list.items.get(i) else { continue };
+        let side = src.side.get(i).copied().unwrap_or_default();
+        match it {
+            Item::XformPush { m: Some(n) } => {
+                stack.push(m);
+                let n = **n;
+                m = Some(match m {
+                    Some(m) => [
+                        m[0] * n[0] + m[2] * n[1],
+                        m[1] * n[0] + m[3] * n[1],
+                        m[0] * n[2] + m[2] * n[3],
+                        m[1] * n[2] + m[3] * n[3],
+                        m[0] * n[4] + m[2] * n[5] + m[4],
+                        m[1] * n[4] + m[3] * n[5] + m[5],
+                    ],
+                    None => n,
+                });
+                continue;
+            }
+            Item::XformPush { m: None } => continue,
+            Item::XformPop => {
+                m = stack.pop().flatten();
+                continue;
+            }
+            _ => {}
+        }
+        let Item::Glyphs { size_pt, y, glyphs, .. } = it else { continue };
+        let gm = side.glyph;
+        // (the line number stays even off the page — oracle lnnum2/ln-dist-wide)
+        if glyphs.len == 0 || gm.is_some_and(|g| g.line_num) {
+            continue;
+        }
+        let em = size_pt * 20.0;
+        let lb = gm.and_then(|g| g.line_box);
+        let (asc, desc, lead) = lb.map_or((em, em * 0.3, 0.0), |b| (b.asc, b.desc, b.lead));
+        let (mut x0, mut x1) = (f64::INFINITY, f64::NEG_INFINITY);
+        let mut first_x = None;
+        for (_, gx, _) in src.list.glyphs_of(*glyphs) {
+            first_x.get_or_insert(gx);
+            x0 = jm::min(x0, gx);
+            x1 = jm::max(x1, gx + em);
+        }
+        // the left edge of the frame (the text may overflow to either side)
+        let frame_l = first_x.unwrap_or(f64::NAN) - lead;
+        x0 = jm::min(x0, frame_l);
+        x1 = jm::max(x1, frame_l);
+        let (y0, y1) = (y - asc, y + desc);
+        let (mut bx0, mut bx1, mut by0, mut by1) = (x0, x1, y0, y1);
+        if let Some(mm) = m {
+            let pts =
+                [(x0, y0), (x1, y0), (x0, y1), (x1, y1)].map(|(px, py)| (mm[0] * px + mm[2] * py + mm[4], mm[1] * px + mm[3] * py + mm[5]));
+            bx0 = jm::min_n(&pts.map(|q| q.0));
+            bx1 = jm::max_n(&pts.map(|q| q.0));
+            by0 = jm::min_n(&pts.map(|q| q.1));
+            by1 = jm::max_n(&pts.map(|q| q.1));
+        }
+        if bx1 <= 0.0 || bx0 >= page_w || by1 <= 0.0 || by0 >= page_h {
+            if let Some(o) = outside.get_mut(k) {
+                *o = true;
+            }
+        } else if let Some(b) = lb {
+            line_in.insert(b.line.0);
+        }
+    }
+    items
+        .iter()
+        .enumerate()
+        .map(|(k, &(src, i))| {
+            if !outside.get(k).copied().unwrap_or(false) {
+                return true;
+            }
+            let lb = src.side.get(i).and_then(|s| s.glyph).and_then(|g| g.line_box);
+            matches!(src.list.items.get(i), Some(Item::Glyphs { .. })) && lb.is_some_and(|b| line_in.contains(&b.line.0))
+        })
+        .collect()
+}
+
+impl Engine {
+    /// The `LATE_ITEMS` split of an items array (`late(arr)` in `run()`): the items without a mark
+    /// stay; the marked ones go, grouped by consecutive mark, to the front or behind layer.
+    fn late_split<'p>(&self, arr: &'p PassItems) -> (Vec<(&'p PassItems, usize)>, Vec<ZGroup<'p>>, Vec<ZGroup<'p>>) {
+        let (mut keep, mut front, mut back) = (Vec::new(), Vec::<ZGroup<'p>>::new(), Vec::<ZGroup<'p>>::new());
+        let mut cur: Option<(u32, bool)> = None;
+        for i in 0..arr.len() {
+            let mk = arr.side.get(i).and_then(|s| s.meta).and_then(|m| self.late_marks.get(m.ix()).map(|lm| (m.0, *lm)));
+            let Some((id, lm)) = mk else {
+                keep.push((arr, i));
+                continue;
+            };
+            if cur.map(|c| c.0) != Some(id) {
+                let g = ZGroup { z: lm.z, seq: lm.seq, parts: Vec::new() };
+                if lm.behind {
+                    back.push(g);
+                } else {
+                    front.push(g);
+                }
+                cur = Some((id, lm.behind));
+            }
+            let target = if lm.behind { back.last_mut() } else { front.last_mut() };
+            if let Some(g) = target {
+                g.parts.push((arr, i));
+            }
+        }
+        (keep, front, back)
+    }
+
+    fn late_z<'p>(&self, objs: &'p [page::ZObj], front: &mut Vec<ZGroup<'p>>, back: &mut Vec<ZGroup<'p>>) -> Vec<ZGroup<'p>> {
+        objs.iter()
+            .map(|o| {
+                let (keep, f, b) = self.late_split(&o.items);
+                front.extend(f);
+                back.extend(b);
+                ZGroup { z: o.z, seq: o.seq, parts: keep }
+            })
+            .collect()
+    }
+
+    /// The end of `run()` (engine.ts:714–764): per page the layers in Word's order (the whole
+    /// header/footer under the body; behind the text < text < in front), off-page culling, page
+    /// borders, revision bars, the background; the warnings. Builds the [`Layout`] of this pass.
+    pub fn finish(&mut self, cx: &mut Cx<'_, '_>, origins: &mut Vec<ImageOrigin>) -> LResult<Vec<LayoutPage>> {
+        let view = cx.ldoc.view;
+        let fmt = view.formatting();
+        // the page background (`w:background`): Word writes it in the PDF; white = nothing
+        let bg_spec = view.background();
+        let bg = bg_spec.and_then(|b| {
+            word::resolve_color(
+                Some(word::ColorRef {
+                    val: b.color.as_deref().filter(|s| !s.is_empty()),
+                    theme_color: b.theme_color.as_deref().filter(|s| !s.is_empty()),
+                    theme_tint: b.theme_tint.as_deref().filter(|s| !s.is_empty()),
+                    theme_shade: b.theme_shade.as_deref().filter(|s| !s.is_empty()),
+                }),
+                &fmt.theme,
+            )
+        });
+        let bg_fill = match bg_spec {
+            Some(b) if b.fill.is_some() => {
+                let mut warns: Vec<String> = Vec::new();
+                let fill = crate::drawing::resolve_page_fill(
+                    b,
+                    bg.as_deref(),
+                    &view.document().media,
+                    &mut crate::drawing::ResWriter { res: cx.res, origins },
+                    &mut |w: &str| warns.push(w.to_owned()),
+                )?;
+                for w in warns {
+                    self.ctx.warn(&w);
+                }
+                match fill {
+                    Some(f) => Some(cx.res.add_page_fill(f).ok_or(LayoutError::Limit(LimitKind::Capacity))?),
+                    None => None,
+                }
+            }
+            _ => None,
+        };
+        let bg_show = fmt.settings.display_background_shape;
+        let bar_color = self.ctx.rev.bar_color();
+        let pages = std::mem::take(&mut self.pages);
+        let mut out = Vec::with_capacity(pages.len());
+        for ps in &pages {
+            let (page_w, page_h) = (ps.page.w, ps.page.h);
+            let (lh_keep, mut lh_front, mut lh_back) = self.late_split(&ps.hf);
+            let (lb_keep, mut lb_front, mut lb_back) = self.late_split(&ps.body);
+            let hf_b = self.late_z(&ps.hf_behind, &mut lh_front, &mut lh_back);
+            let hf_f = self.late_z(&ps.hf_front, &mut lh_front, &mut lh_back);
+            let b_b = self.late_z(&ps.behind, &mut lb_front, &mut lb_back);
+            let b_f = self.late_z(&ps.front, &mut lb_front, &mut lb_back);
+            let mut hf_seq = flat(hf_b, lh_back);
+            hf_seq.extend(lh_keep);
+            hf_seq.extend(flat(hf_f, lh_front));
+            let keep_hf = cull_off_page(&hf_seq, page_w, page_h);
+            let hf_layer: Vec<_> = hf_seq.iter().zip(&keep_hf).filter(|(_, k)| **k).map(|(x, _)| *x).collect();
+            // page borders: behind the text (zOrder back) or in front (default)
+            let geom = self.geoms.get(ps.geom as usize).ok_or(LayoutError::Internal("engine: page geometry"))?;
+            let pb = view.sections().get(geom.index as usize).and_then(|s| s.sect.as_ref()).and_then(|s| s.pg_borders.as_deref());
+            let pb_items = match pb {
+                Some(pb) => self.page_borders(cx, ps, geom, pb)?,
+                None => PassItems::new(),
+            };
+            let pb_back = pb.and_then(|p| p.z_order.as_deref()) == Some("back");
+            let mut body_seq = flat(b_b, lb_back);
+            body_seq.extend(lb_keep);
+            body_seq.extend(flat(b_f, lb_front));
+            let keep_body = cull_off_page(&body_seq, page_w, page_h);
+            let mut items = PassItems::new();
+            for &(src, i) in &hf_layer {
+                push_copy(&mut items, src, i)?;
+            }
+            if pb_back {
+                for i in 0..pb_items.len() {
+                    push_copy(&mut items, &pb_items, i)?;
+                }
+            }
+            for (&(src, i), k) in body_seq.iter().zip(&keep_body) {
+                if *k {
+                    push_copy(&mut items, src, i)?;
+                }
+            }
+            if !pb_back {
+                for i in 0..pb_items.len() {
+                    push_copy(&mut items, &pb_items, i)?;
+                }
+            }
+            // change bars (tracked changes): in front, in the left margin
+            if let Some(color) = bar_color
+                && ps.page.lines.iter().any(|l| l.rev.is_some())
+            {
+                let ml =
+                    view.sections().get(geom.index as usize).map_or(1701.0, |s| s.sect_pr.margin_left_twips.as_f64().unwrap_or(1701.0));
+                let c = cx.res.symbols.intern(&color.encode_utf16().collect::<Vec<_>>()).ok_or(LayoutError::Limit(LimitKind::Capacity))?;
+                flow::revision_bar_items(&ps.page.lines, word::bar_x(ml), c, &mut items);
+            }
+            let mut lp = LayoutPage {
+                section: ps.page.section,
+                number: ps.page.number,
+                hf_items: Some(u32::try_from(hf_layer.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?),
+                objects: ps.page.objects.clone(),
+                cells: ps.page.cells.clone(),
+                ..LayoutPage::default()
+            };
+            lp.page.w = page_w;
+            lp.page.h = page_h;
+            if let Some(bg) = bg.as_deref()
+                && uo_text::case::to_uppercase_str(bg) != "FFFFFF"
+                && bg != "auto"
+            {
+                lp.page.background =
+                    Some(cx.res.symbols.intern(&bg.encode_utf16().collect::<Vec<_>>()).ok_or(LayoutError::Limit(LimitKind::Capacity))?);
+            }
+            if let Some(f) = bg_fill {
+                lp.page.background_fill = Some(f);
+            }
+            if bg_show && (lp.page.background.is_some() || bg_fill.is_some()) {
+                lp.page.background_show = true;
+            }
+            emit_page(&mut lp, items, &ps.page.lines)?;
+            out.push(lp);
+        }
+        self.pages = pages;
+        Ok(out)
+    }
+}
+
+/// The pass-scope items and lines of a page → the uo-render page and the Write section.
+fn emit_page(lp: &mut LayoutPage, items: PassItems, lines: &[crate::items::PassLine]) -> LResult<()> {
+    let cap = |n: usize| u32::try_from(n).map_err(|_| LayoutError::Limit(LimitKind::Capacity));
+    for (i, s) in items.side.iter().enumerate() {
+        let i = cap(i)?;
+        if let Some(g) = s.glyph
+            && (g.line_box.is_some() || g.line_num)
+        {
+            lp.item_meta.push((i, GlyphMeta { line_box: g.line_box, line_num: g.line_num }));
+        }
+        if let Some(src) = s.clip_src {
+            lp.clip_src.push((i, src));
+        }
+    }
+    lp.page.list = items.list;
+    let mut last_fmt: Option<(*const LineParaFormat, u32)> = None;
+    for l in lines {
+        let chars = match &l.chars {
+            Some(cs) => {
+                let s0 = cap(lp.chars.o.len())?;
+                for &(o, x, w) in cs.iter() {
+                    lp.chars.o.push(o);
+                    lp.chars.x.push(x);
+                    lp.chars.w.push(w);
+                }
+                Some(Span { start: s0, len: cap(cs.len())? })
+            }
+            None => None,
+        };
+        let pfmt = match &l.pfmt {
+            Some(f) => {
+                let ptr = std::sync::Arc::as_ptr(f);
+                match last_fmt {
+                    Some((p, ix)) if std::ptr::eq(p, ptr) => Some(ix),
+                    _ => {
+                        lp.pfmts.push((**f).clone());
+                        let ix = cap(lp.pfmts.len() - 1)?;
+                        last_fmt = Some((ptr, ix));
+                        Some(ix)
+                    }
+                }
+            }
+            None => None,
+        };
+        lp.lines.push(LineGeom {
+            at: l.at.clone(),
+            start: l.start,
+            end: l.end,
+            x: l.x,
+            y: l.y,
+            height: l.height,
+            baseline: l.baseline,
+            width: l.width,
+            chars,
+            hyph: l.hyph,
+            rev: l.rev,
+            frame: l.frame,
+            pfmt,
+        });
+    }
+    let _ = CharsSoA::default;
+    let _ = ItemSide::default;
+    Ok(())
+}
+
+// ───────────────────────── layoutDocument ─────────────────────────
+
+/// The per-call state of one `layoutDocument`: the faces, resources and budget every pass shares.
+struct Call<'r, 'a> {
+    ldoc: &'r LDoc<'a>,
+    opts: &'r LayoutOptions,
+    provider: &'r dyn FontProvider,
+    hyph: &'r mut HyphenSessions,
+    fonts: FaceTable,
+    resolver: FaceResolverCache,
+    res: Resources,
+    origins: Vec<ImageOrigin>,
+    budget: Budget,
+    line_seq: u32,
+}
+
+impl Call<'_, '_> {
+    /// `new Engine(newCtx(), full, …)` + `eng.run()`.
+    fn pass(&mut self, input: &PassInput) -> LResult<Engine> {
+        let mut ctx = DocContext::new(
+            word::StyleResolver::new(),
+            word::numbering_state(&self.opts.lang, &self.opts.limits),
+            word::revision_display(self.opts.revisions.as_ref()),
+        );
+        ctx.note_mark_override.clone_from(&input.note_marks);
+        let mut eng = Engine::new(ctx, crate::derive::BODY);
+        let mut cx = Cx {
+            ldoc: self.ldoc,
+            input,
+            opts: self.opts,
+            fonts: &mut self.fonts,
+            provider: self.provider,
+            resolver: &mut self.resolver,
+            res: &mut self.res,
+            hyph: self.hyph,
+            budget: &mut self.budget,
+            depth: 0,
+            line_seq: &mut self.line_seq,
+        };
+        eng.run(&mut cx)?;
+        Ok(eng)
+    }
+}
+
+/// `mergeLate(a, b)` (engine.ts:304): `None` when nothing new (the TS returns `a` itself).
+fn merge_late(a: &IndexMap<u32, Vec<RunKey>>, b: &IndexMap<u32, Vec<RunKey>>) -> Option<IndexMap<u32, Vec<RunKey>>> {
+    let mut seen: IndexSet<RunKey> = a.values().flatten().copied().collect();
+    let mut out: Option<IndexMap<u32, Vec<RunKey>>> = None;
+    for (pg, runs) in b {
+        for r in runs {
+            if seen.contains(r) {
+                continue;
+            }
+            seen.insert(*r);
+            out.get_or_insert_with(|| a.clone()).entry(*pg).or_default().push(*r);
+        }
+    }
+    out
+}
+
+fn same_counts(a: &IndexMap<u32, f64>, b: &IndexMap<u32, f64>) -> bool {
+    a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|w| js_eq(*v, *w)))
+}
+
+fn same_map(a: &IndexMap<Box<str>, Box<[u16]>>, b: &IndexMap<Box<str>, Box<[u16]>>) -> bool {
+    a.len() == b.len() && a.iter().all(|(k, v)| b.get(k) == Some(v))
+}
+
+fn same_chapters(a: &ChapterIndex, b: &ChapterIndex) -> bool {
+    a.len() == b.len()
+        && a.iter().all(|(k, v)| {
+            b.get(k).is_some_and(|w| w.len() == v.len() && v.iter().zip(w).all(|(x, y)| js_eq(x.page, y.page) && x.text == y.text))
+        })
+}
+
+/// The work estimate of a call (K16): the UTF-16 units of every run, the sections with columns,
+/// the table nesting, the tallest page.
+fn work_input(ldoc: &LDoc<'_>) -> WorkInput {
+    let glyphs = (0..ldoc.runs.len()).map(|k| ldoc.run_text(RunKey(u32::try_from(k).unwrap_or(u32::MAX))).len() as u64).sum::<u64>();
+    let secs = ldoc.view.sections();
+    let balanced = secs.iter().filter(|s| s.sect_pr.cols.as_ref().is_some_and(|c| c.count.to_number() > 1.0)).count();
+    let nesting = ldoc.paras.iter().map(|p| p.path.depth()).max().unwrap_or(0);
+    let max_page_h = secs.iter().map(|s| s.sect_pr.page_height_twips.to_number()).fold(16838.0, jm::max);
+    WorkInput {
+        glyphs,
+        balanced_sections: u32::try_from(balanced).unwrap_or(u32::MAX),
+        nesting: u32::try_from(nesting).unwrap_or(u32::MAX),
+        max_page_h,
+    }
 }
 
 /// `layoutDocument(full, provider, opts)` (engine.ts:189): the pass loop (≤ 5 passes until
 /// stable), then the balancing search per balanced section; the result of the last executed pass
-/// (K19) — F7a.
-pub fn layout_document(
-    _ldoc: &LDoc<'_>,
-    _opts: &LayoutOptions,
-    _provider: &dyn FontProvider,
-    _hyph: &mut HyphenSessions,
-) -> LResult<Layout> {
-    unported(Frontier::F7a, "engine::layout_document")
+/// (K19).
+pub fn layout_document(ldoc: &LDoc<'_>, opts0: &LayoutOptions, provider: &dyn FontProvider, hyph: &mut HyphenSessions) -> LResult<Layout> {
+    // revisions: one colour per author in the document's reading order (Word's encounter order)
+    let owned;
+    let opts = match &opts0.revisions {
+        Some(r) if r.mode != RevisionMode::Final && r.order.is_none() => {
+            let mut o = opts0.clone();
+            if let Some(r) = o.revisions.as_mut() {
+                r.order = Some(ldoc.revision_order.iter().map(|s| Box::<str>::from(*s)).collect());
+            }
+            owned = o;
+            &owned
+        }
+        _ => opts0,
+    };
+    let mut call = Call {
+        ldoc,
+        opts,
+        provider,
+        hyph,
+        fonts: FaceTable::new(),
+        resolver: FaceResolverCache::new(),
+        res: Resources::new(),
+        origins: Vec::new(),
+        budget: Budget::new(&opts.limits, &work_input(ldoc)),
+        line_seq: 0,
+    };
+    // NUMPAGES and PAGEREF depend on the layout itself: the first pass guesses, the next ones use
+    // the total and the bookmark pages of the one before
+    let mut input = PassInput { total_pages_guess: 1.0, ..PassInput::default() };
+    let mut exec: Option<Engine> = None;
+    let mut last_found: Option<IndexMap<i64, BalanceInfo>> = None;
+    for _pass in 0..5 {
+        let eng = call.pass(&input)?;
+        let new_chaps = eng.found.used_chapter.then(|| eng.chapter_index());
+        let new_sect_pages = eng.found.used_section_pages.then(|| eng.section_page_counts());
+        let f = &eng.found;
+        let new_marks: Option<IndexMap<Box<str>, Box<[u16]>>> =
+            if f.used_page_ref { return Err(LayoutError::Unported(crate::error::Frontier::F7c, "bookmarkPages")) } else { None };
+        let new_note_refs = f.used_note_ref.then(|| eng.ctx.all_note_marks());
+        let new_late = if f.late_found.is_empty() { None } else { merge_late(&input.late_floats, &f.late_found) };
+        let new_late_tables = (!f.late_tables_found.is_empty()).then(|| {
+            let mut m = input.late_tables.clone();
+            for (k, v) in &f.late_tables_found {
+                m.insert(*k, *v);
+            }
+            m
+        });
+        let cx_fix = {
+            let cx = Cx {
+                ldoc,
+                input: &input,
+                opts,
+                fonts: &mut call.fonts,
+                provider,
+                resolver: &mut call.resolver,
+                res: &mut call.res,
+                hyph: call.hyph,
+                budget: &mut call.budget,
+                depth: 0,
+                line_seq: &mut call.line_seq,
+            };
+            eng.note_mark_fix(&cx)
+        };
+        let total = f64::from(u32::try_from(eng.pages.len()).unwrap_or(u32::MAX));
+        let stable = (!f.used_num_pages || js_eq(total, input.total_pages_guess))
+            && new_sect_pages.as_ref().is_none_or(|n| same_counts(n, &input.section_pages_guess))
+            && new_marks.as_ref().is_none_or(|n| same_map(n, &input.marks_guess))
+            && new_note_refs.as_ref().is_none_or(|n| same_map(n, &input.note_ref_guess))
+            && new_late.is_none()
+            && new_late_tables.is_none()
+            && cx_fix.is_none()
+            && new_chaps.as_ref().is_none_or(|n| same_chapters(n, &input.chapters_guess));
+        last_found = Some(f.balance_found.clone());
+        exec = Some(eng);
+        if stable {
+            break;
+        }
+        if let Some(c) = new_chaps {
+            input.chapters_guess = c;
+        }
+        if let Some(s) = new_sect_pages {
+            input.section_pages_guess = s;
+        }
+        input.total_pages_guess = total;
+        if let Some(m) = new_marks {
+            input.marks_guess = m;
+        }
+        if let Some(n) = new_note_refs {
+            input.note_ref_guess = n;
+        }
+        if let Some(l) = new_late {
+            input.late_floats = l;
+        }
+        if let Some(l) = new_late_tables {
+            input.late_tables = l;
+        }
+        if let Some(fix) = cx_fix {
+            input.note_marks = Some(fix);
+        }
+    }
+    // multi-column sections ended by a CONTINUOUS break: Word balances the columns of the
+    // section's last page (oracles colbal, colbal3)
+    let mut balance: IndexMap<i64, BalanceSpec> = IndexMap::new();
+    let mut done: IndexSet<i64> = IndexSet::new();
+    let mut guard = 0;
+    while guard < 20 {
+        guard += 1;
+        let Some(found) = last_found.as_ref() else { break };
+        let Some((&s, info)) = found.iter().find(|(s, i)| !done.contains(*s) && i.n > 1) else { break };
+        let info = info.clone();
+        done.insert(s);
+        // three columns or more (the note area aside): the 1st column reaches the AVERAGE of the
+        // content; two: the least height with which everything fits and the 2nd column is not
+        // longer than the 1st (oracles colbal, colbal3)
+        let by_avg = s >= 0 && info.n >= 3;
+        let n = f64::from(info.n);
+        let avg = info.content.iter().fold(0.0, |a, b| a + b) / n;
+        let mut lo = jm::max(0.0, jm::floor(if by_avg { avg } else { info.sum / n }) - 1.0);
+        let mut hi = jm::ceil(info.bottom - info.col_top);
+        if hi <= lo + 1.0 {
+            continue;
+        }
+        let page = info.page;
+        let ok = |h: f64, call: &mut Call<'_, '_>, exec: &mut Option<Engine>| -> LResult<bool> {
+            let mut b = balance.clone();
+            b.insert(s, BalanceSpec { page, h, last_free: by_avg });
+            let inp = PassInput { balance: b, ..input.clone() };
+            let eng = call.pass(&inp)?;
+            let f = eng.found.balance_found.get(&s).cloned();
+            *exec = Some(eng);
+            let Some(f) = f else { return Ok(false) };
+            if f.page != page {
+                return Ok(false);
+            }
+            Ok(if by_avg {
+                f.content.first().copied().unwrap_or(f64::NAN) >= avg - 0.5
+            } else {
+                f.used.last().copied().unwrap_or(f64::NAN) <= f.used.first().copied().unwrap_or(f64::NAN) + 1.0
+            })
+        };
+        if !ok(hi, &mut call, &mut exec)? {
+            continue;
+        }
+        while hi - lo > 1.0 {
+            let mid = jm::floor((lo + hi) / 2.0);
+            if ok(mid, &mut call, &mut exec)? {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        balance.insert(s, BalanceSpec { page, h: hi, last_free: by_avg });
+        let inp = PassInput { balance: balance.clone(), ..input.clone() };
+        let eng = call.pass(&inp)?;
+        last_found = Some(eng.found.balance_found.clone());
+        exec = Some(eng);
+    }
+    let mut eng = exec.ok_or(LayoutError::Internal("layoutDocument: no pass"))?;
+    let pages = {
+        let mut cx = Cx {
+            ldoc,
+            input: &input,
+            opts,
+            fonts: &mut call.fonts,
+            provider,
+            resolver: &mut call.resolver,
+            res: &mut call.res,
+            hyph: call.hyph,
+            budget: &mut call.budget,
+            depth: 0,
+            line_seq: &mut call.line_seq,
+        };
+        eng.finish(&mut cx, &mut call.origins)?
+    };
+    Ok(Layout {
+        pages,
+        resources: call.res,
+        image_origins: call.origins,
+        warnings: std::mem::take(&mut eng.ctx.warnings),
+        missing_faces: Vec::new(),
+        fields: None,
+        stamp: LayoutStamp { formatting_version: ldoc.view.formatting_version() },
+    })
 }

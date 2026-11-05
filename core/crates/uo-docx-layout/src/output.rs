@@ -166,6 +166,10 @@ pub enum LineStory {
         slot: HfSlot,
         part: HfPartId,
     },
+    /// `preview`: the table the engine lays out to measure what a keep-with-next heading needs
+    /// (engine.ts:2550, `nextBlockLead`); its path starts at the row (`preview/r0/c1/b0`; added
+    /// by F6)
+    Preview,
 }
 
 /// The header/footer slot (`default | first | even`).
@@ -188,6 +192,7 @@ impl LineRef {
                 s.push_str(&uo_jsnum::format::to_js_string(id.get()));
             }
             LineStory::Textbox(_) => s.push_str("txbx"),
+            LineStory::Preview => s.push_str("preview"),
             LineStory::HeaderFooter { which, slot, .. } => {
                 s.push_str(match which {
                     HfWhich::Header => "hdr:",
@@ -200,11 +205,13 @@ impl LineRef {
                 });
             }
         }
+        // (a preview's path starts at the row)
+        let first = usize::from(self.story == LineStory::Preview);
         for (i, seg) in self.path.0.iter().enumerate() {
             if !s.is_empty() {
                 s.push('/');
             }
-            let tag = match i % 3 {
+            let tag = match (i + first) % 3 {
                 0 => 'b',
                 1 => 'r',
                 _ => 'c',

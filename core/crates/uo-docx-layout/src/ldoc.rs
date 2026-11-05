@@ -32,6 +32,15 @@ pub struct LDoc<'a> {
     /// `RunSub::FieldResult(j)`): the identity of an object `prepareParagraph` shows from a field's
     /// cached result (added by F4)
     pub field_results: rustc_hash::FxHashMap<(RunKey, u32), RunKey>,
+    /// the derived paragraph of each model paragraph (cells and textbox contents included; added
+    /// by F7a: the engine reaches cell paragraphs by their model id)
+    pub by_para: rustc_hash::FxHashMap<crate::model::ParaId, LParaId>,
+    /// the story of each header/footer part (F7a)
+    pub hf_stories: rustc_hash::FxHashMap<crate::model::HfPartId, u32>,
+    /// the story of each note (F7a)
+    pub note_stories: rustc_hash::FxHashMap<(crate::model::NoteKind, crate::model::NumKey), u32>,
+    /// the textbox of each model drawing (F7a)
+    pub tb_of_drawing: rustc_hash::FxHashMap<DrawingId, TbKey>,
 }
 
 /// Where a derived paragraph comes from.
@@ -152,6 +161,10 @@ impl<'a> LDoc<'a> {
             chains: Vec::new(),
             revision_order: Vec::new(),
             field_results: rustc_hash::FxHashMap::default(),
+            by_para: rustc_hash::FxHashMap::default(),
+            hf_stories: rustc_hash::FxHashMap::default(),
+            note_stories: rustc_hash::FxHashMap::default(),
+            tb_of_drawing: rustc_hash::FxHashMap::default(),
         }
     }
 

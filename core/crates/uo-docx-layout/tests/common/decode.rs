@@ -40,6 +40,22 @@ struct R<'b> {
     run_names: Vec<Vec<u16>>,
     faces: u32,
     images: u32,
+    /// (F6) the stream's face and image labels when decoding into shared resources
+    share: Option<&'b mut Share>,
+    face_ids: Vec<FaceId>,
+    image_ids: Vec<uo_render::ImageId>,
+}
+
+/// Resources shared by many decoded streams (F6: every facet value of a document decodes into
+/// one resource table): faces and images deduplicated by their descriptor, `lineBox.line` labels
+/// offset per stream so lines of different streams stay distinct.
+#[derive(Default)]
+pub struct Share {
+    pub res: uo_render::Resources,
+    faces: std::collections::HashMap<Vec<u8>, FaceId>,
+    images: std::collections::HashMap<Vec<u8>, uo_render::ImageId>,
+    line_base: u32,
+    line_max: u32,
 }
 
 type Res<T> = Result<T, String>;
@@ -107,6 +123,9 @@ impl R<'_> {
     }
 
     fn face(&mut self) -> Res<FaceId> {
+        if self.share.is_some() {
+            return self.face_shared();
+        }
         let label = self.u32()?;
         if label < self.faces {
             return FaceId::from_index(label as usize).ok_or_else(|| "face".into());
@@ -129,7 +148,91 @@ impl R<'_> {
             .ok_or_else(|| "faces".into())
     }
 
+    /// A face label of a stream decoded into [`Share`]: the descriptor's face if seen before.
+    fn face_shared(&mut self) -> Res<FaceId> {
+        let label = self.u32()?;
+        if let Some(id) = self.face_ids.get(label as usize) {
+            return Ok(*id);
+        }
+        if label as usize != self.face_ids.len() {
+            return Err(format!("face label {label} out of order"));
+        }
+        let at0 = self.at;
+        let key = self.sym()?;
+        let family = self.sym()?;
+        let (bold, italic, synth_bold, synth_italic, stand_in) = (self.bool()?, self.bool()?, self.bool()?, self.bool()?, self.bool()?);
+        let digest = self.opt(|r| r.digest())?;
+        let desc = self.b.get(at0..self.at).ok_or("face")?.to_vec();
+        let known = self.share.as_ref().and_then(|s| s.faces.get(&desc).copied());
+        let id = match known {
+            Some(id) => id,
+            None => {
+                let bytes = match digest {
+                    Some((_, sha)) => Some(self.fonts.get(&sha).ok_or_else(|| format!("font {sha} not in the index"))?),
+                    None => None,
+                };
+                let face = bytes.as_ref().and_then(|b| uo_fonts::Face::parse(b.clone(), &uo_fonts::FontLimits::default()).ok());
+                let id = self
+                    .layout
+                    .resources
+                    .add_face(FaceRes { key, family, bold, italic, synth_bold, synth_italic, stand_in, face, bytes, advances: None })
+                    .ok_or("faces")?;
+                if let Some(s) = self.share.as_mut() {
+                    s.faces.insert(desc, id);
+                }
+                id
+            }
+        };
+        self.face_ids.push(id);
+        Ok(id)
+    }
+
+    /// An image label of a stream decoded into [`Share`].
+    fn image_shared(&mut self) -> Res<uo_render::ImageId> {
+        let label = self.u32()?;
+        if let Some(id) = self.image_ids.get(label as usize) {
+            return Ok(*id);
+        }
+        if label as usize != self.image_ids.len() {
+            return Err(format!("image label {label} out of order"));
+        }
+        let at0 = self.at;
+        let ext = self.sym()?;
+        let (_, sha) = self.digest()?;
+        let svg = self.opt(|r| r.digest())?;
+        let (width_twips, height_twips) = (self.num()?, self.num()?);
+        let effects = self.opt(|r| {
+            Ok(uo_drawingml::ImageEffects { gray: r.bool()?, gain: r.opt_f()?, bright: r.opt_f()?, floor: r.bool()?, bi_level: r.opt_f()? })
+        })?;
+        let desc = self.b.get(at0..self.at).ok_or("image")?.to_vec();
+        let known = self.share.as_ref().and_then(|s| s.images.get(&desc).copied());
+        let id = match known {
+            Some(id) => id,
+            None => {
+                let bytes = self.fonts.get(&sha).ok_or_else(|| format!("image payload {sha} not dumped"))?;
+                let svg = match svg {
+                    Some((_, h)) => Some(self.fonts.get(&h).ok_or_else(|| format!("svg payload {h} not dumped"))?),
+                    None => None,
+                };
+                let id = self
+                    .layout
+                    .resources
+                    .add_image(uo_render::ImageRes { bytes, ext, svg, effects, width_twips, height_twips, natural_px: None })
+                    .ok_or("images")?;
+                if let Some(s) = self.share.as_mut() {
+                    s.images.insert(desc, id);
+                }
+                id
+            }
+        };
+        self.image_ids.push(id);
+        Ok(id)
+    }
+
     fn image(&mut self) -> Res<uo_render::ImageId> {
+        if self.share.is_some() {
+            return self.image_shared();
+        }
         let label = self.u32()?;
         if label < self.images {
             return uo_render::ImageId::from_index(label as usize).ok_or_else(|| "image".into());
@@ -389,6 +492,8 @@ impl R<'_> {
     fn line_ref(s: &str) -> Res<LineRef> {
         let (story, rest) = if let Some(r) = s.strip_prefix("txbx") {
             (LineStory::Textbox(TbKey(0)), r)
+        } else if let Some(r) = s.strip_prefix("preview") {
+            (LineStory::Preview, r)
         } else if let Some(r) = s.strip_prefix("hdr:").or_else(|| s.strip_prefix("ftr:")) {
             let which = if s.starts_with("hdr:") { HfWhich::Header } else { HfWhich::Footer };
             let (slot, r) = r.split_once('/').map_or((r, ""), |(a, b)| (a, b));
@@ -495,7 +600,7 @@ impl R<'_> {
                     Some(fx) => Some(self.layout.resources.add_text_fx(fx).ok_or("fx")?),
                     None => None,
                 };
-                let line_box = self.opt(|r| Ok(LineBox { asc: r.num()?, desc: r.num()?, lead: r.num()?, line: LineSeq(r.u32()?) }))?;
+                let line_box = self.opt(|r| Ok(LineBox { asc: r.num()?, desc: r.num()?, lead: r.num()?, line: r.line_seq()? }))?;
                 let line_num = self.bool()?;
                 let flags = RunFlags::default()
                     .with(RunFlags::SYNTH_BOLD, sb)
@@ -702,13 +807,38 @@ impl R<'_> {
     }
 }
 
+impl R<'_> {
+    /// `lineBox.line`: the stream's label, offset into [`Share`]'s range when shared.
+    fn line_seq(&mut self) -> Res<LineSeq> {
+        let l = self.u32()?;
+        Ok(match self.share.as_mut() {
+            Some(s) => {
+                s.line_max = s.line_max.max(l.saturating_add(1));
+                LineSeq(s.line_base.saturating_add(l))
+            }
+            None => LineSeq(l),
+        })
+    }
+}
+
 fn int(v: f64) -> Res<u32> {
     if v >= 0.0 && v <= f64::from(u32::MAX) && v.fract() == 0.0 { Ok(v as u32) } else { Err(format!("not a u32: {v}")) }
 }
 
 /// Decodes a raw P1 stream (`<key>.p1.bin`) into a `Layout`.
 pub fn decode_p1(bytes: &[u8], fonts: &FontIndex) -> Result<Decoded, String> {
-    let mut r = R { b: bytes, at: 0, fonts, layout: Layout::default(), run_names: Vec::new(), faces: 0, images: 0 };
+    let mut r = R {
+        b: bytes,
+        at: 0,
+        fonts,
+        layout: Layout::default(),
+        run_names: Vec::new(),
+        faces: 0,
+        images: 0,
+        share: None,
+        face_ids: Vec::new(),
+        image_ids: Vec::new(),
+    };
     r.expect(b'L')?;
     let v = r.u32()?;
     if v != uo_docx_layout::canon::CANON_VERSION {
@@ -726,4 +856,52 @@ pub fn decode_p1(bytes: &[u8], fonts: &FontIndex) -> Result<Decoded, String> {
         return Err(format!("{} bytes left", bytes.len() - r.at));
     }
     Ok(Decoded { layout: r.layout, run_names: r.run_names })
+}
+
+/// Decodes a raw P1 stream into pages whose faces, images and symbols live in `share.res` (F6: the
+/// facet values of one document). The returned layout's own resources are empty.
+pub fn decode_p1_shared(bytes: &[u8], fonts: &FontIndex, share: &mut Share) -> Result<Decoded, String> {
+    let res = std::mem::take(&mut share.res);
+    share.line_max = 0;
+    let layout = Layout { resources: res, ..Layout::default() };
+    let mut r = R {
+        b: bytes,
+        at: 0,
+        fonts,
+        layout,
+        run_names: Vec::new(),
+        faces: 0,
+        images: 0,
+        share: Some(share),
+        face_ids: Vec::new(),
+        image_ids: Vec::new(),
+    };
+    let out = decode_body(&mut r, bytes.len());
+    let mut layout = r.layout;
+    let run_names = r.run_names;
+    let share = r.share.take().ok_or("share")?;
+    share.res = std::mem::take(&mut layout.resources);
+    share.line_base = share.line_base.saturating_add(share.line_max);
+    out?;
+    Ok(Decoded { layout, run_names })
+}
+
+fn decode_body(r: &mut R<'_>, len: usize) -> Result<(), String> {
+    r.expect(b'L')?;
+    let v = r.u32()?;
+    if v != uo_docx_layout::canon::CANON_VERSION {
+        return Err(format!("canon version {v}"));
+    }
+    for _ in 0..r.u32()? {
+        let p = r.page()?;
+        r.layout.pages.push(p);
+    }
+    for _ in 0..r.u32()? {
+        let w = r.string()?;
+        r.layout.warnings.insert(w.into());
+    }
+    if r.at != len {
+        return Err(format!("{} bytes left", len - r.at));
+    }
+    Ok(())
 }

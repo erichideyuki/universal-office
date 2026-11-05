@@ -10,7 +10,7 @@
 //! | `TextboxChain` (`chainSlices`) | [`ChainId`] |
 //! | `TableLayout` (`floatFlow` `WeakMap`) | [`TableLayoutId`] |
 //! | items and lines in row splits (`LATE_ITEMS`, `moved`/`own`/`keep`, `lastOf.get(ref) === last`, `idx`, `seen`) | [`ItemMeta`] (carried by every pass-scope item and line) |
-//! | `CellContent.nest` aliases | index ranges ([`crate::table::NestRow`]) |
+//! | `CellContent.nest` aliases, `mergeText`/`mergeFills`/`topBorders`, the `moved`/`own`/`keep` sets of row splits | [`ObjId`] on the items and lines ([`crate::table::NestRow`], F6) |
 //! | the items array a border box went into (`boxPage`) | [`ContainerId`] |
 //! | `PageState` objects (`lnPage`, pinned floats, `lastBox`) | [`PageIx`] |
 //! | `FontFace` objects (kerning/ligatures/merging across the same face) | `uo_render::FaceId` = the provider answer's identity |
@@ -65,6 +65,15 @@ key!(
     /// The side-table entry of a pass-scope item or line (K2e): `LATE_ITEMS`, the `moved`/`own`/
     /// `keep` sets of row splits, the line identity of `lastOf`.
     ItemMeta
+);
+key!(
+    /// The identity of a pass-scope item or line **object** (added by F6): the TS `===` of the
+    /// `moved`/`own`/`keep`/`top` sets of the row splits (table.ts:130–189, 1355), of
+    /// `mergeText`/`mergeFills`/`topBorders` and of `NestRow.items`/`lines`. Given where an object
+    /// is referenced from a second place; a `shiftItem`/`shiftLine` copy has none (a new object),
+    /// a move of the same object keeps it. Unique within the container family that compares it
+    /// (a cell content and its parts; the rows of one table).
+    ObjId
 );
 key!(
     /// A page of the pass.
