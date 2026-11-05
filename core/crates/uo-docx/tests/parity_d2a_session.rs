@@ -128,41 +128,12 @@ fn step(s: &mut Session, code: &str, cx: &mut Cx) -> ChangeSet {
     }
 }
 
-/// A step that reaches a rule of a D2b family (the hooks of `session::ops::text`): from there on
-/// the document's facets are accepted by name until the family lands.
-fn d2b_hook(s: &Session, code: &str) -> Option<&'static str> {
-    let sel = s.selection();
-    if sel.anchor != sel.focus {
-        return None;
-    }
-    let p = s.paras()?.get(sel.focus.para as usize)?;
-    let len = uo_docx::session::text::para_length(p);
-    // `paraNum(p)`: numbered directly or by the paragraph style
-    let style = p.props.style_id.as_deref().and_then(|id| s.document().styles.get(id));
-    // `styleNum(id)`: the `numPr` of the style or of one it is based on (the raw style sheet)
-    let sheet = &s.document().formatting.styles.styles;
-    let mut id = p.props.style_id.clone();
-    let mut style_num = false;
-    for _ in 0..32 {
-        let Some(def) = id.as_deref().and_then(|i| sheet.get(i)) else { break };
-        if def.p_pr.as_deref().is_some_and(|pp| pp.num_pr.is_some()) {
-            style_num = true;
-            break;
-        }
-        id = def.based_on.clone();
-    }
-    let numbered = p.props.numbering.is_some() || style_num;
-    // `listBackspaceAtStart` also takes a List Paragraph without indent and the 360-twip trail
-    let list_like = numbered
-        || style.and_then(|st| st.name.as_deref()).is_some_and(|n| n.eq_ignore_ascii_case("list paragraph"))
-        || p.props.indent_left_twips == Some(uo_docx::js::JsNumber::Num(360.0));
-    match code {
-        // `listEnterOnEmpty` (Enter on an empty list item ends the list or goes up a level)
-        "en" if numbered && len == 0 => Some("D2b-F2 list rule: listEnterOnEmpty (D2a-T4)"),
-        // `listBackspaceAtStart` (Backspace at the start of a list item removes the number first)
-        "bs" if list_like && sel.focus.offset == 0 => Some("D2b-F2 list rule: listBackspaceAtStart (D2a-T4)"),
-        _ => None,
-    }
+/// A step that reaches a rule of a D2b family (the hooks of `session::ops::text`): from there on the
+/// document's facets were accepted by name until the family landed. D2b-F2 ported the list rules
+/// (`listEnterOnEmpty`, `listBackspaceAtStart`) and `applyNextStyle`, so nothing is accepted any more
+/// (D2a-T4 resolved: the 264 facets it accepted are equalities now).
+fn d2b_hook(_s: &Session, _code: &str) -> Option<&'static str> {
+    None
 }
 
 #[test]

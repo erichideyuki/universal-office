@@ -1,0 +1,87 @@
+
+ 
+1
+true
+TRUE
+ 1
+1 
+TOC
+ TOC \\o "1-3"
+xTOC TOC
+TOC_
+toc
+Toc\\h
+ TOC
+﻿TOC
+é toc
+ſ toc
+K TOC
+TOCé
+_TOC
+TOC1
+\tTOC\n
+val 12
+val -3x
+val-3
+val  
+val\t+5
+VAL 1
+<a:blipFillx/><a:blipFill r:embed="x"/>
+<a:blipFill
+<a:blipFill>
+<a:blipFill_/>
+a\r\nb\rc\nd\n\r
+<w:p w14:paraId="1" \t\n/>
+<w:p/>x
+<w:p>
+/>
+  />
+<dcterms:created xsi:type="x">2024-01-01T00:00:00Z</dcterms:created>
+<dcterms:createdX>v<
+<dcterms:created>no end
+<x/><dcterms:created a="<">t<
+_x0000_s1026
+pic.a-b_1
+pic a
+ab­cd­
+é😀
+<w:sdt>
+<w:sdt><w:sdtPr><w:text/></w:sdtPr>
+<w:sdt><w:sdtPr><w:date/></w:sdtPr>
+<w:sdt><w:sdtPr><w:comboBox>
+<w:sdt><w:sdtPr><w:dropDownList>
+<w:sdt><w:sdtPr><w:textual/></w:sdtPr>
+<w:sdt><w:sdtPr><w:text9/>
+<w:sdt><w:sdtPr><w:text_/>
+<w:sdt><w:sdtPr><w:text-x/>
+<w:sdt><w:sdtPr><w:textÉ/>
+<w:sdtX><w:text/>
+<w:sdt\n><w:text/>
+<w:sdt\t><w:date/>
+<w:sdt ><w:date/>
+<w:sdt﻿><w:date/>
+<w:sdt><w:date/>
+ <w:sdt><w:text/>
+<w:sdt><w:sdtPr><w:richText/></w:sdtPr><w:text/>
+<w:sdt><w:sdtPr><w:id w:val="1"/><w:dropDownList w:lastValue="x"/></w:sdtPr>
+<w:sdt><w:sdtPr><w:text
+<w:sdt><w:sdtPr><w:comboBoxes/>
+<w:sdt><w:sdtPr><x:w:text/>
+<w:sdt><w:sdtPr><w:Text/>
+#ff0000
+##ff
+#
+FF00AA
+ #a
+.
+!
+?
+a.b
+abc
+3
+٣
+\n
+ 
+᠎
+ 
+ǆ

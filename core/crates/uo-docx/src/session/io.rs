@@ -149,6 +149,7 @@ impl Session {
             bookmark_paras: super::state::BookmarkParas::default(),
             styles,
             numbering,
+            f2: super::ops::lists::F2State::default(),
             settings: Arc::new(SettingsStep::default()),
             sections: SectionState::default(),
             save: SaveState { baseline: crate::write::sig::Baseline::default(), gen_num_ids: None, fresh_id: 0.0 },
@@ -156,6 +157,7 @@ impl Session {
             env,
             opts,
             rev_authors: Vec::new(),
+            next_bm_id: -1.0,
             pending_props: None,
             pending: None,
             next_job: 0,
@@ -167,6 +169,9 @@ impl Session {
             tx: Tx::default(),
         };
         s.install(doc, o.sig_mode);
+        // the style index of the lists/styles family (D2b-F2), so that Enter's `applyNextStyle` and the
+        // list hooks never parse `styles.xml` inside a keystroke
+        s.warm_style_index();
         Ok(s)
     }
 
@@ -290,10 +295,10 @@ impl Session {
             }
             None => hf.iter().map(|h| HfRefXml { kind: h.kind.clone(), r#type: h.r#type.clone(), rid: h.rid.clone() }).collect(),
         };
-        if self.numbering.dirty() {
-            // `writeNumberingPart(pkg, numberingOut(blocks, hfParts))`: the lists family's (F2);
-            // no D2a command changes the numbering
-            return Err(DocxError::Write("numbering store: frontier D2b-F2"));
+        if self.numbering.dirty() && self.numbering.xml().is_some() {
+            // `writeNumberingPart(pkg, numberingOut(blocks, hfParts))` (D2b-F2): only when the
+            // editor changed the part, before the body (the generated lists join it)
+            super::ops::lists::save_numbering(&mut self.pkg, &self.numbering, &self.f2, doc, &hf)?;
         }
         let notes_out = |kind: &str| -> NotesOut<'_> {
             let used = note_ref_ids(&doc.body, kind);
@@ -340,9 +345,11 @@ impl Session {
             // `patchSettingsNotes`: the notes family's (F5)
             return Err(DocxError::Write("note settings: frontier D2b-F5"));
         }
-        if self.styles.dirty() {
-            // `writeStylesPart`: the styles family's (F2)
-            return Err(DocxError::Write("styles store: frontier D2b-F2"));
+        if self.styles.dirty()
+            && let Some(xml) = self.styles.xml()
+        {
+            // `writeStylesPart(pkg, docStyles.xml)` (D2b-F2): only when a style changed
+            super::ops::styles::write_styles_part(&mut self.pkg, xml)?;
         }
         if let Some(t) = settings.default_tab {
             write_default_tab_stop(&mut self.pkg, t)?;

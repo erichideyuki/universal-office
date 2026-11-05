@@ -17,6 +17,16 @@ impl Session {
     }
 }
 
+impl Session {
+    /// `refBookmark(paras, para, from, to, prefix)` (hook declared by D2b-F6 for `insertHyperlink`
+    /// to a heading; F10 owns it with `newHiddenName`/`refSeed`): the hidden `_Ref`/`_Toc`
+    /// bookmark that covers exactly `[from, to]` of the paragraph, reused or new. "Not handled"
+    /// until F10 lands.
+    pub(crate) fn ref_bookmark(&mut self, _para: u32, _from: u32, _to: u32, _prefix: &str) -> Result<crate::js::Str, CommandError> {
+        Err(CommandError::NotPorted("references (D2b-F10: refBookmark)"))
+    }
+}
+
 impl ReferenceCmd {
     /// The TS method the formatting policy guards (`POLICY_GUARDS`) and the argument it reads.
     pub(crate) fn guard(&self) -> Option<(&'static str, GuardArg<'_>)> {

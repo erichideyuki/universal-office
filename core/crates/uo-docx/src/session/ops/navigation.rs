@@ -15,6 +15,17 @@ impl Session {
     pub(crate) fn exec_navigation(&mut self, cmd: NavigationCmd, _cx: &mut ExecCx<'_>) -> Result<Outcome, CommandError> {
         match cmd {}
     }
+
+    /// `extras()`: the selected ranges beyond the main one (non-contiguous selection), each
+    /// normalised; valid only while the main selection is unchanged (F9). Declared by F1
+    /// (`applyRun`/`applyPara`/`mapRunProps` read it); until F9 lands: none.
+    pub(crate) fn extra_ranges(&self) -> Vec<super::super::text::DocRange> {
+        Vec::new()
+    }
+
+    /// `setExtraSelection(ranges)`: the ranges beyond the main selection (F9; F1's
+    /// `selectSimilarFormatting` sets them). Until F9 lands: not stored.
+    pub(crate) fn set_extra_selection(&mut self, _ranges: Vec<super::super::text::DocRange>) {}
 }
 
 impl NavigationCmd {

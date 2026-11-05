@@ -57,20 +57,40 @@ impl Session {
 
     /// `hiddenChar(p, offset)`: the character is hidden in this markup view (deleted text in the
     /// final views, inserted text in the original). D2a takes the run rule of `revDisplay` for the
-    /// views without an author filter (D2a-T3).
+    /// views without an author filter (D2a-T3); with "Show Markup" options that turn insertions and
+    /// deletions off or filter by author (D2b-F6), the layout's `RevisionDisplay.run` decides.
     fn hidden_char(&self, p: Option<&Paragraph>, offset: usize) -> bool {
         let Some(p) = p else { return false };
-        if self.opts.markup == MarkupMode::All {
+        let filtered = self.opts.markup_options.filters_text();
+        if self.opts.markup == MarkupMode::All && !filtered {
             return false;
         }
+        let display = filtered.then(|| self.revision_display());
         let mut acc = 0usize;
         for r in &p.runs {
             if offset < acc + r.text.len() {
-                return offset >= acc && self.run_hidden(r);
+                return offset >= acc
+                    && match &display {
+                        Some(d) => d.run(&r.props) == Some(crate::word::revisions::RunRevision::Hide),
+                        None => self.run_hidden(r),
+                    };
             }
             acc += r.text.len();
         }
         false
+    }
+
+    /// `revDisplay()`: the layout's display rules for the markup mode and options.
+    pub(crate) fn revision_display(&self) -> crate::word::revisions::RevisionDisplay {
+        use crate::word::revisions::{RevisionDisplay, RevisionMode};
+        let mode = match self.opts.markup {
+            MarkupMode::All => RevisionMode::All,
+            MarkupMode::Simple => RevisionMode::Simple,
+            MarkupMode::None => RevisionMode::Final,
+            MarkupMode::Original => RevisionMode::Original,
+        };
+        let o = &self.opts.markup_options;
+        RevisionDisplay::new(mode, Some(o.ins_del), Some(o.formatting), o.authors.as_deref(), None, None, &[])
     }
 
     fn run_hidden(&self, r: &Run) -> bool {
@@ -125,7 +145,7 @@ impl Session {
     }
 
     /// `deleteSelection()`: the range goes, with the table anchors between its paragraphs.
-    fn delete_selection(&mut self) -> Result<DocPosition, CommandError> {
+    pub(crate) fn delete_selection(&mut self) -> Result<DocPosition, CommandError> {
         if self.opts.tracking {
             // `trackedDelete(this.range(), 'end')`: the caret after the deleted text
             return self.tracked_delete(self.range(), false);
@@ -171,7 +191,7 @@ impl Session {
     }
 
     /// `insertTyped(pos, text, props)`.
-    fn insert_typed(&mut self, pos: DocPosition, text: &[u16], props: Option<&CarriedProps>) -> Result<DocPosition, CommandError> {
+    pub(crate) fn insert_typed(&mut self, pos: DocPosition, text: &[u16], props: Option<&CarriedProps>) -> Result<DocPosition, CommandError> {
         let out = if self.opts.tracking {
             let rev = self.new_rev();
             let paras = self.paras_mut().ok_or(CommandError::Position)?;

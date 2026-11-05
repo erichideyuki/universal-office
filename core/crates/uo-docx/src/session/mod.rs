@@ -94,13 +94,22 @@ pub struct SessionOptions {
     pub protected: bool,
     pub read_view: bool,
     pub markup: MarkupMode,
+    /// "Show Markup" (`markup`: `MarkupOptions`, D2b-F6)
+    pub markup_options: ops::revision_cmds::MarkupOptions,
 }
 
 impl Default for SessionOptions {
     fn default() -> Self {
         // the TS default without an `author` attribute or property: "Author" in the UI language
         // (the shell passes the name; English is the UI default)
-        SessionOptions { author: "Author".into(), tracking: false, protected: false, read_view: false, markup: MarkupMode::All }
+        SessionOptions {
+            author: "Author".into(),
+            tracking: false,
+            protected: false,
+            read_view: false,
+            markup: MarkupMode::All,
+            markup_options: ops::revision_cmds::MarkupOptions::default(),
+        }
     }
 }
 
@@ -136,6 +145,8 @@ pub struct Session {
     bookmark_paras: state::BookmarkParas,
     styles: VersionStore,
     numbering: VersionStore,
+    /// the lists/styles family's own state (`numTouched`, `lastBullet`…; D2b-F2)
+    f2: ops::lists::F2State,
     settings: Arc<SettingsStep>,
     sections: SectionState,
     save: SaveState,
@@ -144,6 +155,8 @@ pub struct Session {
     opts: SessionOptions,
     /// the revision authors in colour order (`revAuthors`)
     rev_authors: Vec<Str>,
+    /// the next free `w:id` of a bookmark (`nextBmId`, -1 = not computed yet; D2b-F6)
+    next_bm_id: f64,
     /// the props the next typed text takes (`pendingProps`, the format family)
     pending_props: Option<CarriedProps>,
     pending: Option<Pending>,
@@ -807,12 +820,14 @@ impl Session {
         if let Some(v) = state.styles
             && self.styles.restore(v)
         {
-            self.touch_formatting();
+            // `syncStyleSheet()` (D2b-F2)
+            self.sync_style_sheet();
         }
         if let Some(v) = state.numbering
             && self.numbering.restore(v)
         {
-            self.touch_formatting();
+            // `syncNumbering()` (D2b-F2)
+            self.sync_numbering();
         }
         if !Arc::ptr_eq(&self.settings, &state.settings) && *self.settings != *state.settings {
             self.settings = state.settings;

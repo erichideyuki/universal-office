@@ -1,0 +1,869 @@
+# regex differential (d2b-f2.mjs): V8 RegExp (Node 24.15) over d2b-f2.inputs.txt, JSON per (site, input)
+abs.find	0	null
+abs.find	1	null
+abs.find	2	"<w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+abs.find	3	null
+abs.find	4	null
+abs.find	5	"<w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum>"
+abs.find	6	null
+abs.find	7	"<w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum>"
+abs.find	8	null
+abs.find	9	null
+abs.find	10	null
+abs.find	11	null
+abs.find	12	null
+abs.find	13	null
+abs.find	14	null
+abs.find	15	null
+abs.find	16	null
+abs.find	17	null
+abs.find	18	null
+abs.find	19	null
+abs.find	20	null
+abs.find	21	null
+abs.find	22	null
+abs.find	23	null
+abs.find	24	null
+abs.find	25	null
+abs.find	26	null
+abs.find	27	null
+abs.find12	0	null
+abs.find12	1	null
+abs.find12	2	null
+abs.find12	3	null
+abs.find12	4	"<w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+abs.find12	5	null
+abs.find12	6	null
+abs.find12	7	null
+abs.find12	8	null
+abs.find12	9	null
+abs.find12	10	null
+abs.find12	11	null
+abs.find12	12	null
+abs.find12	13	null
+abs.find12	14	null
+abs.find12	15	null
+abs.find12	16	null
+abs.find12	17	null
+abs.find12	18	null
+abs.find12	19	null
+abs.find12	20	null
+abs.find12	21	null
+abs.find12	22	null
+abs.find12	23	null
+abs.find12	24	null
+abs.find12	25	null
+abs.find12	26	null
+abs.find12	27	null
+num.find	0	null
+num.find	1	null
+num.find	2	"<w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num>"
+num.find	3	"<w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num>"
+num.find	4	null
+num.find	5	"<w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num>"
+num.find	6	null
+num.find	7	null
+num.find	8	"<w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num>"
+num.find	9	null
+num.find	10	null
+num.find	11	null
+num.find	12	null
+num.find	13	null
+num.find	14	null
+num.find	15	null
+num.find	16	null
+num.find	17	null
+num.find	18	null
+num.find	19	null
+num.find	20	null
+num.find	21	null
+num.find	22	null
+num.find	23	null
+num.find	24	null
+num.find	25	null
+num.find	26	null
+num.find	27	null
+num.find2	0	null
+num.find2	1	null
+num.find2	2	"<w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num>"
+num.find2	3	null
+num.find2	4	null
+num.find2	5	null
+num.find2	6	null
+num.find2	7	null
+num.find2	8	"<w:num w:numId=\"2\" w:x=\"1\"></w:num>"
+num.find2	9	null
+num.find2	10	null
+num.find2	11	null
+num.find2	12	null
+num.find2	13	null
+num.find2	14	null
+num.find2	15	null
+num.find2	16	null
+num.find2	17	null
+num.find2	18	null
+num.find2	19	null
+num.find2	20	null
+num.find2	21	null
+num.find2	22	null
+num.find2	23	null
+num.find2	24	null
+num.find2	25	null
+num.find2	26	null
+num.find2	27	null
+lvl.find	0	null
+lvl.find	1	null
+lvl.find	2	"<w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+lvl.find	3	null
+lvl.find	4	null
+lvl.find	5	null
+lvl.find	6	null
+lvl.find	7	null
+lvl.find	8	null
+lvl.find	9	null
+lvl.find	10	"<w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+lvl.find	11	"<w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+lvl.find	12	"<w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+lvl.find	13	null
+lvl.find	14	null
+lvl.find	15	null
+lvl.find	16	null
+lvl.find	17	null
+lvl.find	18	null
+lvl.find	19	null
+lvl.find	20	null
+lvl.find	21	null
+lvl.find	22	null
+lvl.find	23	null
+lvl.find	24	null
+lvl.find	25	null
+lvl.find	26	null
+lvl.find	27	null
+nextid.abs	0	0
+nextid.abs	1	0
+nextid.abs	2	2
+nextid.abs	3	1
+nextid.abs	4	13
+nextid.abs	5	2
+nextid.abs	6	0
+nextid.abs	7	2
+nextid.abs	8	0
+nextid.abs	9	0
+nextid.abs	10	4
+nextid.abs	11	0
+nextid.abs	12	0
+nextid.abs	13	0
+nextid.abs	14	0
+nextid.abs	15	0
+nextid.abs	16	0
+nextid.abs	17	0
+nextid.abs	18	0
+nextid.abs	19	0
+nextid.abs	20	0
+nextid.abs	21	0
+nextid.abs	22	0
+nextid.abs	23	0
+nextid.abs	24	0
+nextid.abs	25	0
+nextid.abs	26	0
+nextid.abs	27	0
+nextid.num	0	1
+nextid.num	1	1
+nextid.num	2	3
+nextid.num	3	2
+nextid.num	4	11
+nextid.num	5	2
+nextid.num	6	1
+nextid.num	7	1
+nextid.num	8	3
+nextid.num	9	2
+nextid.num	10	1
+nextid.num	11	1
+nextid.num	12	1
+nextid.num	13	1
+nextid.num	14	1
+nextid.num	15	1
+nextid.num	16	1
+nextid.num	17	1
+nextid.num	18	1
+nextid.num	19	1
+nextid.num	20	1
+nextid.num	21	1
+nextid.num	22	1
+nextid.num	23	1
+nextid.num	24	1
+nextid.num	25	1
+nextid.num	26	1
+nextid.num	27	1
+search.abs	0	null
+search.abs	1	48
+search.abs	2	1084
+search.abs	3	367
+search.abs	4	576
+search.abs	5	127
+search.abs	6	44
+search.abs	7	82
+search.abs	8	13
+search.abs	9	13
+search.abs	10	null
+search.abs	11	null
+search.abs	12	null
+search.abs	13	null
+search.abs	14	null
+search.abs	15	null
+search.abs	16	null
+search.abs	17	null
+search.abs	18	null
+search.abs	19	null
+search.abs	20	null
+search.abs	21	null
+search.abs	22	null
+search.abs	23	null
+search.abs	24	null
+search.abs	25	null
+search.abs	26	null
+search.abs	27	null
+search.num	0	null
+search.num	1	48
+search.num	2	1194
+search.num	3	422
+search.num	4	653
+search.num	5	182
+search.num	6	44
+search.num	7	82
+search.num	8	68
+search.num	9	null
+search.num	10	null
+search.num	11	null
+search.num	12	null
+search.num	13	null
+search.num	14	null
+search.num	15	null
+search.num	16	null
+search.num	17	null
+search.num	18	null
+search.num	19	null
+search.num	20	null
+search.num	21	null
+search.num	22	null
+search.num	23	null
+search.num	24	null
+search.num	25	null
+search.num	26	null
+search.num	27	null
+copy.tplc	0	""
+copy.tplc	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+copy.tplc	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"FFFFFFFF\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"FFFFFFFF\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+copy.tplc	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+copy.tplc	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+copy.tplc	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+copy.tplc	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+copy.tplc	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+copy.tplc	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+copy.tplc	9	"<w:numbering><w:num w:numId=\"1\">"
+copy.tplc	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+copy.tplc	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+copy.tplc	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"FFFFFFFF\"/><w:lvl w:ilvl=\"1\" w:tplc=\"FFFFFFFF\" w:tplc=\"1\"></w:lvl>"
+copy.tplc	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+copy.tplc	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+copy.tplc	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+copy.tplc	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+copy.tplc	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+copy.tplc	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+copy.tplc	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+copy.tplc	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+copy.tplc	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+copy.tplc	22	"<w:style w:styleId=\"H6\"></w:style>"
+copy.tplc	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+copy.tplc	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+copy.tplc	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+copy.tplc	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+copy.tplc	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+copy.absid	0	""
+copy.absid	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+copy.absid	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"7\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+copy.absid	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"7\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+copy.absid	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"7\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+copy.absid	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"7\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+copy.absid	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+copy.absid	7	"<w:numbering><w:abstractNum w:abstractNumId=\"7\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+copy.absid	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+copy.absid	9	"<w:numbering><w:num w:numId=\"1\">"
+copy.absid	10	"<w:abstractNum w:abstractNumId=\"7\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+copy.absid	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+copy.absid	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+copy.absid	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+copy.absid	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+copy.absid	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+copy.absid	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+copy.absid	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+copy.absid	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+copy.absid	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+copy.absid	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+copy.absid	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+copy.absid	22	"<w:style w:styleId=\"H6\"></w:style>"
+copy.absid	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+copy.absid	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+copy.absid	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+copy.absid	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+copy.absid	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+copy.nsid	0	""
+copy.nsid	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+copy.nsid	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"AAAAAAAA\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+copy.nsid	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"AAAAAAAA\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+copy.nsid	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"AAAAAAAA\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+copy.nsid	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+copy.nsid	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+copy.nsid	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+copy.nsid	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+copy.nsid	9	"<w:numbering><w:num w:numId=\"1\">"
+copy.nsid	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"AAAAAAAA\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+copy.nsid	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+copy.nsid	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+copy.nsid	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+copy.nsid	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+copy.nsid	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+copy.nsid	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+copy.nsid	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+copy.nsid	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+copy.nsid	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+copy.nsid	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+copy.nsid	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+copy.nsid	22	"<w:style w:styleId=\"H6\"></w:style>"
+copy.nsid	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+copy.nsid	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+copy.nsid	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+copy.nsid	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+copy.nsid	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+setlevels	0	""
+setlevels	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+setlevels	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/>LVLS</w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+setlevels	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/>LVLS</w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+setlevels	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/>LVLS</w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+setlevels	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+setlevels	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+setlevels	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+setlevels	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+setlevels	9	"<w:numbering><w:num w:numId=\"1\">"
+setlevels	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/>LVLS</w:abstractNum>"
+setlevels	11	"LVLS"
+setlevels	12	"LVLS"
+setlevels	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+setlevels	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+setlevels	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+setlevels	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+setlevels	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+setlevels	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+setlevels	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+setlevels	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+setlevels	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+setlevels	22	"<w:style w:styleId=\"H6\"></w:style>"
+setlevels	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+setlevels	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+setlevels	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+setlevels	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+setlevels	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+mlt	0	""
+mlt	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+mlt	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"multilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+mlt	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"multilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+mlt	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"multilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+mlt	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+mlt	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+mlt	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+mlt	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+mlt	9	"<w:numbering><w:num w:numId=\"1\">"
+mlt	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"multilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+mlt	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+mlt	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+mlt	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+mlt	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+mlt	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+mlt	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+mlt	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+mlt	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+mlt	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+mlt	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+mlt	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+mlt	22	"<w:style w:styleId=\"H6\"></w:style>"
+mlt	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+mlt	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+mlt	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+mlt	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+mlt	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+tmpl.set	0	""
+tmpl.set	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+tmpl.set	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"01234567\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+tmpl.set	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"01234567\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+tmpl.set	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"01234567\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+tmpl.set	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+tmpl.set	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+tmpl.set	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+tmpl.set	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+tmpl.set	9	"<w:numbering><w:num w:numId=\"1\">"
+tmpl.set	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"01234567\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+tmpl.set	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+tmpl.set	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+tmpl.set	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+tmpl.set	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+tmpl.set	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+tmpl.set	16	"<w:tmpl w:val=\"01234567\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+tmpl.set	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+tmpl.set	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+tmpl.set	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+tmpl.set	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+tmpl.set	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+tmpl.set	22	"<w:style w:styleId=\"H6\"></w:style>"
+tmpl.set	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+tmpl.set	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+tmpl.set	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+tmpl.set	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+tmpl.set	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+tentative	0	""
+tentative	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+tentative	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+tentative	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+tentative	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+tentative	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+tentative	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+tentative	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+tentative	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+tentative	9	"<w:numbering><w:num w:numId=\"1\">"
+tentative	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+tentative	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+tentative	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\" w:tentative=\"1\"></w:lvl>"
+tentative	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+tentative	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+tentative	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+tentative	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+tentative	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+tentative	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+tentative	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+tentative	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+tentative	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+tentative	22	"<w:style w:styleId=\"H6\"></w:style>"
+tentative	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+tentative	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+tentative	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+tentative	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+tentative	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+ind.find	0	null
+ind.find	1	null
+ind.find	2	"<w:ind w:left=\"720\" w:hanging=\"360\"/>"
+ind.find	3	"<w:ind w:left=\"720\" w:hanging=\"360\"/>"
+ind.find	4	"<w:ind w:left=\"720\" w:hanging=\"360\"/>"
+ind.find	5	null
+ind.find	6	null
+ind.find	7	null
+ind.find	8	null
+ind.find	9	null
+ind.find	10	"<w:ind w:left=\"720\" w:hanging=\"360\"/>"
+ind.find	11	"<w:ind w:left=\"720\" w:hanging=\"360\"/>"
+ind.find	12	null
+ind.find	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/>"
+ind.find	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/>"
+ind.find	15	null
+ind.find	16	null
+ind.find	17	null
+ind.find	18	"<w:ind w:left=\"0\"/>"
+ind.find	19	null
+ind.find	20	null
+ind.find	21	null
+ind.find	22	null
+ind.find	23	null
+ind.find	24	null
+ind.find	25	null
+ind.find	26	null
+ind.find	27	null
+ind.replace	0	""
+ind.replace	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+ind.replace	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+ind.replace	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+ind.replace	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+ind.replace	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+ind.replace	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+ind.replace	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+ind.replace	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+ind.replace	9	"<w:numbering><w:num w:numId=\"1\">"
+ind.replace	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+ind.replace	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+ind.replace	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+ind.replace	13	"<w:ind/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+ind.replace	14	"<w:ind/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+ind.replace	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+ind.replace	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+ind.replace	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+ind.replace	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind/></w:pPr></w:style>"
+ind.replace	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+ind.replace	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+ind.replace	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+ind.replace	22	"<w:style w:styleId=\"H6\"></w:style>"
+ind.replace	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+ind.replace	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+ind.replace	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+ind.replace	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+ind.replace	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+ilvl.replace	0	""
+ilvl.replace	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+ilvl.replace	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"3\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+ilvl.replace	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"3\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+ilvl.replace	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"3\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+ilvl.replace	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+ilvl.replace	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+ilvl.replace	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"3\"></w:abstractNum></w:numbering>"
+ilvl.replace	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+ilvl.replace	9	"<w:numbering><w:num w:numId=\"1\">"
+ilvl.replace	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"3\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+ilvl.replace	11	"<w:lvl w:ilvl=\"3\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+ilvl.replace	12	"<w:lvl w:ilvl=\"3\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+ilvl.replace	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+ilvl.replace	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+ilvl.replace	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+ilvl.replace	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+ilvl.replace	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+ilvl.replace	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+ilvl.replace	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+ilvl.replace	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+ilvl.replace	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+ilvl.replace	22	"<w:style w:styleId=\"H6\"></w:style>"
+ilvl.replace	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+ilvl.replace	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+ilvl.replace	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+ilvl.replace	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+ilvl.replace	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+indleft	0	""
+indleft	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+indleft	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1080\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+indleft	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1080\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+indleft	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1080\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+indleft	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+indleft	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+indleft	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+indleft	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+indleft	9	"<w:numbering><w:num w:numId=\"1\">"
+indleft	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1080\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+indleft	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1080\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+indleft	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+indleft	13	"<w:ind w:left=\"1080\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+indleft	14	"<w:ind w:leftx=\"1\" w:left=\"363\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+indleft	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+indleft	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+indleft	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+indleft	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"360\"/></w:pPr></w:style>"
+indleft	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+indleft	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+indleft	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+indleft	22	"<w:style w:styleId=\"H6\"></w:style>"
+indleft	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+indleft	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+indleft	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+indleft	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+indleft	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+start.test	0	false
+start.test	1	false
+start.test	2	true
+start.test	3	true
+start.test	4	true
+start.test	5	false
+start.test	6	false
+start.test	7	false
+start.test	8	false
+start.test	9	false
+start.test	10	true
+start.test	11	true
+start.test	12	false
+start.test	13	false
+start.test	14	false
+start.test	15	true
+start.test	16	false
+start.test	17	false
+start.test	18	false
+start.test	19	false
+start.test	20	false
+start.test	21	false
+start.test	22	false
+start.test	23	false
+start.test	24	false
+start.test	25	false
+start.test	26	false
+start.test	27	false
+start.set	0	""
+start.set	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+start.set	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"5\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+start.set	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"5\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+start.set	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"5\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+start.set	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+start.set	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+start.set	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+start.set	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+start.set	9	"<w:numbering><w:num w:numId=\"1\">"
+start.set	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"5\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+start.set	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"5\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+start.set	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:start w:val=\"5\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+start.set	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+start.set	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+start.set	15	"<w:start w:val=\"5\"/><w:start w:val=\"2\"/>"
+start.set	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+start.set	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+start.set	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+start.set	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+start.set	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+start.set	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+start.set	22	"<w:style w:styleId=\"H6\"></w:style>"
+start.set	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+start.set	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+start.set	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+start.set	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+start.set	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+tmpl8	0	null
+tmpl8	1	null
+tmpl8	2	"DEADBEEF"
+tmpl8	3	"DEADBEEF"
+tmpl8	4	"DEADBEEF"
+tmpl8	5	null
+tmpl8	6	null
+tmpl8	7	null
+tmpl8	8	null
+tmpl8	9	null
+tmpl8	10	"DEADBEEF"
+tmpl8	11	null
+tmpl8	12	null
+tmpl8	13	null
+tmpl8	14	null
+tmpl8	15	null
+tmpl8	16	"0123abcd"
+tmpl8	17	null
+tmpl8	18	null
+tmpl8	19	null
+tmpl8	20	null
+tmpl8	21	null
+tmpl8	22	null
+tmpl8	23	null
+tmpl8	24	null
+tmpl8	25	null
+tmpl8	26	null
+tmpl8	27	null
+numpr.test	0	false
+numpr.test	1	false
+numpr.test	2	false
+numpr.test	3	false
+numpr.test	4	false
+numpr.test	5	false
+numpr.test	6	false
+numpr.test	7	false
+numpr.test	8	false
+numpr.test	9	false
+numpr.test	10	false
+numpr.test	11	false
+numpr.test	12	false
+numpr.test	13	false
+numpr.test	14	false
+numpr.test	15	false
+numpr.test	16	false
+numpr.test	17	false
+numpr.test	18	false
+numpr.test	19	false
+numpr.test	20	true
+numpr.test	21	false
+numpr.test	22	false
+numpr.test	23	true
+numpr.test	24	false
+numpr.test	25	false
+numpr.test	26	false
+numpr.test	27	false
+put.numpr	0	""
+put.numpr	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+put.numpr	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+put.numpr	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+put.numpr	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+put.numpr	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+put.numpr	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+put.numpr	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+put.numpr	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+put.numpr	9	"<w:numbering><w:num w:numId=\"1\">"
+put.numpr	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+put.numpr	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+put.numpr	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+put.numpr	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+put.numpr	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+put.numpr	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+put.numpr	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+put.numpr	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:numPr><w:numId w:val=\"9\"/></w:numPr><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+put.numpr	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:numPr><w:numId w:val=\"9\"/></w:numPr><w:ind w:left=\"0\"/></w:pPr></w:style>"
+put.numpr	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr></w:pPr></w:style>"
+put.numpr	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+put.numpr	21	"<w:style w:styleId=\"H5\"><w:tblPr/><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr></w:pPr></w:style>"
+put.numpr	22	"<w:style w:styleId=\"H6\"><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr></w:pPr></w:style>"
+put.numpr	23	"<w:style w:styleId=\"H7\"><w:numPr><w:numId w:val=\"9\"/></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+put.numpr	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+put.numpr	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+put.numpr	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr></w:pPr></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+put.numpr	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/><w:pPr><w:numPr><w:numId w:val=\"9\"/></w:numPr></w:pPr></w:style>"
+lvl.all	0	[]
+lvl.all	1	[]
+lvl.all	2	["<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl>","<w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>","<w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl>","<w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"]
+lvl.all	3	["<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl>"]
+lvl.all	4	["<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl>","<w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl>"]
+lvl.all	5	[]
+lvl.all	6	[]
+lvl.all	7	[]
+lvl.all	8	[]
+lvl.all	9	[]
+lvl.all	10	["<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl>","<w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>","<w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl>"]
+lvl.all	11	["<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl>","<w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"]
+lvl.all	12	["<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"]
+lvl.all	13	[]
+lvl.all	14	[]
+lvl.all	15	[]
+lvl.all	16	[]
+lvl.all	17	[]
+lvl.all	18	[]
+lvl.all	19	[]
+lvl.all	20	[]
+lvl.all	21	[]
+lvl.all	22	[]
+lvl.all	23	[]
+lvl.all	24	[]
+lvl.all	25	[]
+lvl.all	26	[]
+lvl.all	27	[]
+lsd.q	0	""
+lsd.q	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+lsd.q	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+lsd.q	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+lsd.q	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+lsd.q	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+lsd.q	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+lsd.q	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+lsd.q	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+lsd.q	9	"<w:numbering><w:num w:numId=\"1\">"
+lsd.q	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+lsd.q	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+lsd.q	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+lsd.q	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+lsd.q	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+lsd.q	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+lsd.q	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+lsd.q	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+lsd.q	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+lsd.q	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+lsd.q	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+lsd.q	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+lsd.q	22	"<w:style w:styleId=\"H6\"></w:style>"
+lsd.q	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+lsd.q	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+lsd.q	25	"<w:lsdException  w:name=\"heading 1\" w:qFormat=\"1\"/>"
+lsd.q	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+lsd.q	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+lsd.noq	0	""
+lsd.noq	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+lsd.noq	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+lsd.noq	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+lsd.noq	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+lsd.noq	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+lsd.noq	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+lsd.noq	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+lsd.noq	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+lsd.noq	9	"<w:numbering><w:num w:numId=\"1\">"
+lsd.noq	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+lsd.noq	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+lsd.noq	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+lsd.noq	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+lsd.noq	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+lsd.noq	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+lsd.noq	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+lsd.noq	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+lsd.noq	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+lsd.noq	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+lsd.noq	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+lsd.noq	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+lsd.noq	22	"<w:style w:styleId=\"H6\"></w:style>"
+lsd.noq	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+lsd.noq	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+lsd.noq	25	"<w:lsdException  w:name=\"heading 1\" />"
+lsd.noq	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+lsd.noq	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
+refs.in	0	[]
+refs.in	1	[]
+refs.in	2	[]
+refs.in	3	[]
+refs.in	4	[]
+refs.in	5	[]
+refs.in	6	[]
+refs.in	7	[]
+refs.in	8	[]
+refs.in	9	[]
+refs.in	10	[]
+refs.in	11	[]
+refs.in	12	[]
+refs.in	13	[]
+refs.in	14	[]
+refs.in	15	[]
+refs.in	16	[]
+refs.in	17	[]
+refs.in	18	[]
+refs.in	19	[]
+refs.in	20	[]
+refs.in	21	[]
+refs.in	22	[]
+refs.in	23	[]
+refs.in	24	[]
+refs.in	25	[]
+refs.in	26	["X","X","Z","X"]
+refs.in	27	["Y","X"]
+retarget	0	""
+retarget	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+retarget	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+retarget	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+retarget	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+retarget	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+retarget	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+retarget	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+retarget	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+retarget	9	"<w:numbering><w:num w:numId=\"1\">"
+retarget	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+retarget	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+retarget	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+retarget	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+retarget	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+retarget	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+retarget	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+retarget	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+retarget	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+retarget	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+retarget	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+retarget	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+retarget	22	"<w:style w:styleId=\"H6\"></w:style>"
+retarget	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+retarget	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\" w:qFormat=\"1\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+retarget	25	"<w:lsdException  w:name=\"heading 1\"\n w:qFormat=\"1\" />"
+retarget	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"Y\"/><w:next w:val=\"Y\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"Y\"/>"
+retarget	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"Y\"/></w:style>"
+qformat.remove	0	""
+qformat.remove	1	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"></w:numbering>"
+qformat.remove	2	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\" w:tplc=\"04160001\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\" w:tplc=\"04160003\" w:tentative=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+qformat.remove	3	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:numIdMacAtCleanup w:val=\"2\"/></w:numbering>"
+qformat.remove	4	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"12\" w15:restartNumberingAfterBreak=\"0\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId=\"9\"/><w:num w:numId=\"10\"><w:abstractNumId w:val=\"12\"/></w:num></w:numbering>"
+qformat.remove	5	"<?xml version=\"1.0\"?>\r\n<w:numbering xmlns:w=\"w\"><w:abstractNum w:abstractNumId=\"1\"><w:numStyleLink w:val=\"LS\"/></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>"
+qformat.remove	6	"<w:numbering><w:numFmt w:val=\"x\"/><w:numPr/></w:numbering>"
+qformat.remove	7	"<w:numbering><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"></w:abstractNum></w:numbering>"
+qformat.remove	8	"<w:numbering><w:num w:numId=\"1\"/><w:num w:numId=\"2\" w:x=\"1\"></w:num></w:numbering>  \n"
+qformat.remove	9	"<w:numbering><w:num w:numId=\"1\">"
+qformat.remove	10	"<w:abstractNum w:abstractNumId=\"3\"><w:nsid w:val=\"0A1B2C3D\"/><w:multiLevelType w:val=\"hybridMultilevel\"/><w:tmpl w:val=\"DEADBEEF\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>"
+qformat.remove	11	"<w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl>"
+qformat.remove	12	"<w:lvl w:ilvl=\"0\" w:tplc=\"0A0B0C0D\"/><w:lvl w:ilvl=\"1\" w:tplc=\"0A0B0C0D\" w:tplc=\"1\"></w:lvl>"
+qformat.remove	13	"<w:ind w:left=\"720\" w:hanging=\"360\"/><w:ind w:left=\"5\" w:right=\"2\" w:left=\"9\"/>"
+qformat.remove	14	"<w:ind w:leftx=\"1\" w:left=\"3\"/><xw:ind w:left=\"4\"/><w:ind w:left=\"4\">"
+qformat.remove	15	"<w:start w:val=\"-3\"/><w:start w:val=\"2\"/>"
+qformat.remove	16	"<w:tmpl w:val=\"0123456\"/><w:tmpl w:val=\"0123456789\"/><w:tmpl w:val=\"0123abcd\"/>"
+qformat.remove	17	"<w:style w:styleId=\"H1\"><w:name w:val=\"heading 1\"/><w:pPr><w:keepNext/><w:keepLines w:val=\"1\"/><w:spacing w:after=\"0\"/></w:pPr><w:rPr/></w:style>"
+qformat.remove	18	"<w:style w:styleId=\"H2\"><w:pPr><w:keepNext/><w:keepLines/><w:widowControl/><w:ind w:left=\"0\"/></w:pPr></w:style>"
+qformat.remove	19	"<w:style w:styleId=\"H3\"><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>"
+qformat.remove	20	"<w:style w:styleId=\"H4\"><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:rPr/></w:style>"
+qformat.remove	21	"<w:style w:styleId=\"H5\"><w:tblPr/></w:style>"
+qformat.remove	22	"<w:style w:styleId=\"H6\"></w:style>"
+qformat.remove	23	"<w:style w:styleId=\"H7\"><w:numPr></w:numPr><w:numPr><w:numId w:val=\"12\"/></w:numPr></w:style>"
+qformat.remove	24	"<w:latentStyles><w:lsdException w:name=\"heading 1\" w:uiPriority=\"9\"/><w:lsdException w:name=\"heading 1\" w:semiHidden=\"1\"/><w:lsdException w:name=\"Heading 1\" w:uiPriority=\"9\"  w:qFormat=\"0\" /></w:latentStyles>"
+qformat.remove	25	"<w:lsdException  w:name=\"heading 1\" />"
+qformat.remove	26	"<w:style w:styleId=\"A\"><w:basedOn w:val=\"X\"/><w:next w:val=\"X\"/><w:link w:val=\"Z\"/></w:style><w:basedOn w:val=\"X\"/ ><w:link w:val=\"X\"/>"
+qformat.remove	27	"<w:style><w:basedOn w:val=\"Y\"/><w:next  w:val=\"X\"/><w:next w:val=\"X\"/></w:style>"
