@@ -1,0 +1,112 @@
+{
+ "date": "2026-11-06T15:26:27.378Z",
+ "doc": "pages100",
+ "scenarios": [
+  {
+   "kind": "ts",
+   "phone": false,
+   "browser": "chromium",
+   "before": {
+    "js_heap_used": 624408,
+    "js_heap_total": 1310720,
+    "uas_bytes": 479524,
+    "renderer": {
+     "renderers": 3,
+     "working_set_max": 88166400,
+     "private_max": 45490176
+    }
+   },
+   "pages": 100,
+   "after_first": {
+    "js_heap_used": 51560952,
+    "js_heap_total": 52162560,
+    "uas_bytes": 75437497,
+    "renderer": {
+     "renderers": 3,
+     "working_set_max": 227676160,
+     "private_max": 178827264
+    }
+   },
+   "after": {
+    "js_heap_used": 51673788,
+    "js_heap_total": 52162560,
+    "uas_bytes": 75551210,
+    "renderer": {
+     "renderers": 3,
+     "working_set_max": 252268544,
+     "private_max": 203235328
+    }
+   }
+  },
+  {
+   "kind": "rust",
+   "phone": false,
+   "browser": "chromium",
+   "before": {
+    "js_heap_used": 624408,
+    "js_heap_total": 1310720,
+    "uas_bytes": 478792,
+    "renderer": {
+     "renderers": 3,
+     "working_set_max": 90750976,
+     "private_max": 49065984
+    }
+   },
+   "pages": 100,
+   "encodedBytes": 11668069,
+   "wasmBytes": 48037888,
+   "hyph": [],
+   "crossOriginIsolated": true,
+   "after": {
+    "js_heap_used": 979432,
+    "js_heap_total": 1835008,
+    "uas_bytes": 1379964,
+    "renderer": {
+     "renderers": 3,
+     "working_set_max": 154763264,
+     "private_max": 119377920
+    }
+   }
+  },
+  {
+   "kind": "rust",
+   "phone": true,
+   "browser": "chromium",
+   "before": {
+    "js_heap_used": 624408,
+    "js_heap_total": 1310720,
+    "uas_bytes": 479500,
+    "renderer": {
+     "renderers": 3,
+     "working_set_max": 87556096,
+     "private_max": 46125056
+    }
+   },
+   "pages": 100,
+   "encodedBytes": 11668069,
+   "wasmBytes": 48037888,
+   "hyph": [],
+   "crossOriginIsolated": true,
+   "after": {
+    "js_heap_used": 979432,
+    "js_heap_total": 1835008,
+    "uas_bytes": 1380790,
+    "renderer": {
+     "renderers": 3,
+     "working_set_max": 158355456,
+     "private_max": 121798656
+    }
+   }
+  },
+  {
+   "kind": "rust",
+   "phone": false,
+   "browser": "webkit",
+   "pages": 100,
+   "encodedBytes": 11668069,
+   "wasmBytes": 48037888,
+   "hyph": [],
+   "crossOriginIsolated": true
+  }
+ ]
+}

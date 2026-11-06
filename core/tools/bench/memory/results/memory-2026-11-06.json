@@ -1,0 +1,1783 @@
+{
+ "date": "2026-11-06T15:19:03.497Z",
+ "node": "v24.15.0",
+ "ts_root": "D:\\Projects\\OfficeNext\\.claude\\worktrees\\clickcompliance-docx",
+ "classes": {
+  "small": {
+   "file": "D:\\Projects\\OfficeNext\\.claude\\worktrees\\rust-core\\core\\crates\\uo-docx-layout\\tests\\captures\\f8\\docs\\f8__7__0.docx",
+   "ts": {
+    "docx_bytes": 7970,
+    "pages": 3,
+    "lines": 82,
+    "chars": 5430,
+    "read": {
+     "retained": -158824,
+     "heap": -183072,
+     "arrayBuffers": 24248,
+     "ms": 2.2
+    },
+    "layout": {
+     "retained": 1001120,
+     "heap": 1001120,
+     "arrayBuffers": 0,
+     "ms": 42.5
+    },
+    "total_retained": 842296,
+    "baseline": 66735614,
+    "peak_rss": 280231936,
+    "idle_rss": 50761728,
+    "peak_over_idle": 229470208,
+    "keep": 2
+   },
+   "native": {
+    "docx_bytes": 7970,
+    "pages": 3,
+    "lines": 82,
+    "chars": 5430,
+    "read": {
+     "retained": 101559,
+     "peak": 165421,
+     "allocated": 602248,
+     "ms": 0.7
+    },
+    "derive": {
+     "retained": 18962,
+     "peak": 18986,
+     "allocated": 36967,
+     "ms": 0
+    },
+    "layout": {
+     "retained": 321236,
+     "peak": 1005356,
+     "allocated": 27048580,
+     "ms": 16.3
+    },
+    "call_peak": 1024318,
+    "total_retained": 422795
+   },
+   "wasm": {
+    "docx_bytes": 7970,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 3,
+    "encodedBytes": 163843,
+    "links": 7,
+    "pdfBytes": 245286,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 72675328
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 90857472
+     },
+     "open": {
+      "live": 7442295,
+      "bytes": 12386304,
+      "rss": 95195136
+     },
+     "hyphenation": {
+      "live": 7442295,
+      "bytes": 12386304,
+      "rss": 94728192
+     },
+     "layout1": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 108769280
+     },
+     "layout1_freed": {
+      "live": 7457743,
+      "bytes": 12386304,
+      "rss": 109010944
+     },
+     "layout2": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 102211584
+     },
+     "encode_visible": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 98885632
+     },
+     "encode_all": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 98775040
+     },
+     "navigation": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 99962880
+     },
+     "pdf": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 100704256
+     },
+     "layout_freed": {
+      "live": 7457743,
+      "bytes": 12386304,
+      "rss": 100704256
+     },
+     "doc_freed": {
+      "live": 7387220,
+      "bytes": 12386304,
+      "rss": 98963456
+     },
+     "env_freed": {
+      "live": 3486360,
+      "bytes": 12386304,
+      "rss": 99008512
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 75149312
+     },
+     "layout2": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 102690816
+     },
+     "encode_all": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 103321600
+     },
+     "env_freed": {
+      "live": 3486360,
+      "bytes": 12386304,
+      "rss": 98918400
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13358580,
+     "during_arrayBuffers": 13358580,
+     "after_drop_arrayBuffers": 13358580,
+     "after_second_arrayBuffers": 13358580,
+     "before_rss": 65363968,
+     "during_rss": 68210688,
+     "after_drop_rss": 68218880,
+     "after_second_rss": 68001792
+    },
+    "highwater_bytes": 12386304,
+    "highwater_final": 12386304,
+    "live_retained": {
+     "faces": 15448,
+     "layout": 335114,
+     "encode_all": 0,
+     "document": 70523,
+     "env": 7371772
+    }
+   },
+   "wasm_phone": {
+    "docx_bytes": 7970,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 3,
+    "encodedBytes": 163843,
+    "links": 7,
+    "pdfBytes": 0,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 72704000
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 90898432
+     },
+     "open": {
+      "live": 7442295,
+      "bytes": 12386304,
+      "rss": 95686656
+     },
+     "hyphenation": {
+      "live": 7442295,
+      "bytes": 12386304,
+      "rss": 94654464
+     },
+     "layout1": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 109092864
+     },
+     "layout1_freed": {
+      "live": 7457743,
+      "bytes": 12386304,
+      "rss": 107687936
+     },
+     "layout2": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 102793216
+     },
+     "encode_visible": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 99164160
+     },
+     "encode_all": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 99164160
+     },
+     "navigation": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 100392960
+     },
+     "layout_freed": {
+      "live": 7457743,
+      "bytes": 12386304,
+      "rss": 100417536
+     },
+     "doc_freed": {
+      "live": 7387220,
+      "bytes": 12386304,
+      "rss": 101036032
+     },
+     "env_freed": {
+      "live": 3486360,
+      "bytes": 12386304,
+      "rss": 101314560
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 74731520
+     },
+     "layout2": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 102871040
+     },
+     "encode_all": {
+      "live": 7792857,
+      "bytes": 12386304,
+      "rss": 103186432
+     },
+     "env_freed": {
+      "live": 3486360,
+      "bytes": 12386304,
+      "rss": 101011456
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13358580,
+     "during_arrayBuffers": 13358580,
+     "after_drop_arrayBuffers": 13358580,
+     "after_second_arrayBuffers": 13358580,
+     "before_rss": 65380352,
+     "during_rss": 77119488,
+     "after_drop_rss": 67633152,
+     "after_second_rss": 81170432
+    },
+    "highwater_bytes": 12386304,
+    "highwater_final": 12386304,
+    "live_retained": {
+     "faces": 15448,
+     "layout": 335114,
+     "encode_all": 0,
+     "document": 70523,
+     "env": 7371772
+    }
+   }
+  },
+  "typical": {
+   "file": "D:\\Projects\\OfficeNext\\.claude\\worktrees\\rust-core\\core\\target\\agent-membench\\docs\\typical.docx",
+   "ts": {
+    "docx_bytes": 19801,
+    "pages": 20,
+    "lines": 904,
+    "chars": 78768,
+    "read": {
+     "retained": 610755,
+     "heap": 495568,
+     "arrayBuffers": 115187,
+     "ms": 4.1
+    },
+    "layout": {
+     "retained": 14884712,
+     "heap": 14884712,
+     "arrayBuffers": 0,
+     "ms": 117.6
+    },
+    "total_retained": 15495467,
+    "baseline": 58040969,
+    "peak_rss": 274718720,
+    "idle_rss": 50921472,
+    "peak_over_idle": 223797248,
+    "keep": 2
+   },
+   "native": {
+    "docx_bytes": 19801,
+    "pages": 20,
+    "lines": 904,
+    "chars": 78768,
+    "read": {
+     "retained": 233249,
+     "peak": 431587,
+     "allocated": 2496351,
+     "ms": 1.5
+    },
+    "derive": {
+     "retained": 92752,
+     "peak": 93808,
+     "allocated": 183804,
+     "ms": 0
+    },
+    "layout": {
+     "retained": 3381600,
+     "peak": 6958083,
+     "allocated": 152755880,
+     "ms": 90.1
+    },
+    "call_peak": 7050835,
+    "total_retained": 3614849
+   },
+   "wasm": {
+    "docx_bytes": 19801,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 20,
+    "encodedBytes": 2299739,
+    "links": 0,
+    "pdfBytes": 221918,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 73244672
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 91377664
+     },
+     "open": {
+      "live": 7576125,
+      "bytes": 12386304,
+      "rss": 96870400
+     },
+     "hyphenation": {
+      "live": 7576125,
+      "bytes": 12386304,
+      "rss": 96894976
+     },
+     "layout1": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 104919040
+     },
+     "layout1_freed": {
+      "live": 7584337,
+      "bytes": 16449536,
+      "rss": 105443328
+     },
+     "layout2": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 102944768
+     },
+     "encode_visible": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 102486016
+     },
+     "encode_all": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 104562688
+     },
+     "navigation": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 104890368
+     },
+     "pdf": {
+      "live": 11120995,
+      "bytes": 17563648,
+      "rss": 107610112
+     },
+     "layout_freed": {
+      "live": 7584337,
+      "bytes": 17563648,
+      "rss": 107659264
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 17563648,
+      "rss": 108064768
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 17563648,
+      "rss": 108253184
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 74874880
+     },
+     "layout2": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 104181760
+     },
+     "encode_all": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 105922560
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 17563648,
+      "rss": 109219840
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13370411,
+     "during_arrayBuffers": 13370411,
+     "after_drop_arrayBuffers": 13370411,
+     "after_second_arrayBuffers": 13370411,
+     "before_rss": 65785856,
+     "during_rss": 67858432,
+     "after_drop_rss": 67969024,
+     "after_second_rss": 68579328
+    },
+    "highwater_bytes": 16449536,
+    "highwater_final": 17563648,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 3536658,
+     "encode_all": 0,
+     "document": 204353,
+     "env": 7371772
+    }
+   },
+   "wasm_phone": {
+    "docx_bytes": 19801,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 20,
+    "encodedBytes": 2299739,
+    "links": 0,
+    "pdfBytes": 0,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 74981376
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 88883200
+     },
+     "open": {
+      "live": 7576125,
+      "bytes": 12386304,
+      "rss": 94253056
+     },
+     "hyphenation": {
+      "live": 7576125,
+      "bytes": 12386304,
+      "rss": 94441472
+     },
+     "layout1": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 102002688
+     },
+     "layout1_freed": {
+      "live": 7584337,
+      "bytes": 16449536,
+      "rss": 102572032
+     },
+     "layout2": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 100274176
+     },
+     "encode_visible": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 99872768
+     },
+     "encode_all": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 98070528
+     },
+     "navigation": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 98390016
+     },
+     "layout_freed": {
+      "live": 7584337,
+      "bytes": 16449536,
+      "rss": 98414592
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 16449536,
+      "rss": 98668544
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 16449536,
+      "rss": 98746368
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 77107200
+     },
+     "layout2": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 106184704
+     },
+     "encode_all": {
+      "live": 11120995,
+      "bytes": 16449536,
+      "rss": 108265472
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 16449536,
+      "rss": 108437504
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13370411,
+     "during_arrayBuffers": 13370411,
+     "after_drop_arrayBuffers": 13370411,
+     "after_second_arrayBuffers": 13370411,
+     "before_rss": 67489792,
+     "during_rss": 70115328,
+     "after_drop_rss": 70201344,
+     "after_second_rss": 69894144
+    },
+    "highwater_bytes": 16449536,
+    "highwater_final": 16449536,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 3536658,
+     "encode_all": 0,
+     "document": 204353,
+     "env": 7371772
+    }
+   }
+  },
+  "tables": {
+   "file": "D:\\Projects\\OfficeNext\\.claude\\worktrees\\rust-core\\core\\target\\agent-membench\\docs\\tables.docx",
+   "ts": {
+    "docx_bytes": 23193,
+    "pages": 37,
+    "lines": 4885,
+    "chars": 72188,
+    "read": {
+     "retained": 2247338,
+     "heap": 1975400,
+     "arrayBuffers": 271938,
+     "ms": 13.5
+    },
+    "layout": {
+     "retained": 15366728,
+     "heap": 15366728,
+     "arrayBuffers": 0,
+     "ms": 217
+    },
+    "total_retained": 17614066,
+    "baseline": 60813496,
+    "peak_rss": 288313344,
+    "idle_rss": 53014528,
+    "peak_over_idle": 235298816,
+    "keep": 2
+   },
+   "native": {
+    "docx_bytes": 23193,
+    "pages": 37,
+    "lines": 4885,
+    "chars": 72188,
+    "read": {
+     "retained": 841549,
+     "peak": 1471817,
+     "allocated": 8742761,
+     "ms": 5.2
+    },
+    "derive": {
+     "retained": 533556,
+     "peak": 537700,
+     "allocated": 1069168,
+     "ms": 0.4
+    },
+    "layout": {
+     "retained": 6290980,
+     "peak": 12935902,
+     "allocated": 212085094,
+     "ms": 146.7
+    },
+    "call_peak": 13469458,
+    "total_retained": 7132529
+   },
+   "wasm": {
+    "docx_bytes": 23193,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 37,
+    "encodedBytes": 2803948,
+    "links": 0,
+    "pdfBytes": 273443,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 74936320
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 93118464
+     },
+     "open": {
+      "live": 7928669,
+      "bytes": 12386304,
+      "rss": 96026624
+     },
+     "hyphenation": {
+      "live": 7928669,
+      "bytes": 12386304,
+      "rss": 96100352
+     },
+     "layout1": {
+      "live": 14345681,
+      "bytes": 23199744,
+      "rss": 112365568
+     },
+     "layout1_freed": {
+      "live": 7936881,
+      "bytes": 23199744,
+      "rss": 112386048
+     },
+     "layout2": {
+      "live": 14345681,
+      "bytes": 23199744,
+      "rss": 112041984
+     },
+     "encode_visible": {
+      "live": 14345681,
+      "bytes": 23592960,
+      "rss": 114032640
+     },
+     "encode_all": {
+      "live": 14345681,
+      "bytes": 23592960,
+      "rss": 115458048
+     },
+     "navigation": {
+      "live": 14345681,
+      "bytes": 23592960,
+      "rss": 115527680
+     },
+     "pdf": {
+      "live": 14345681,
+      "bytes": 24707072,
+      "rss": 117239808
+     },
+     "layout_freed": {
+      "live": 7936881,
+      "bytes": 24707072,
+      "rss": 117432320
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 24707072,
+      "rss": 117829632
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 24707072,
+      "rss": 117903360
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 77340672
+     },
+     "layout2": {
+      "live": 14345681,
+      "bytes": 23199744,
+      "rss": 118566912
+     },
+     "encode_all": {
+      "live": 14345681,
+      "bytes": 23592960,
+      "rss": 118669312
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 24707072,
+      "rss": 119357440
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13373803,
+     "during_arrayBuffers": 13373803,
+     "after_drop_arrayBuffers": 13373803,
+     "after_second_arrayBuffers": 13373803,
+     "before_rss": 67584000,
+     "during_rss": 70115328,
+     "after_drop_rss": 70193152,
+     "after_second_rss": 71393280
+    },
+    "highwater_bytes": 23592960,
+    "highwater_final": 24707072,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 6408800,
+     "encode_all": 0,
+     "document": 556897,
+     "env": 7371772
+    }
+   },
+   "wasm_phone": {
+    "docx_bytes": 23193,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 37,
+    "encodedBytes": 2803948,
+    "links": 0,
+    "pdfBytes": 0,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 75042816
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 93163520
+     },
+     "open": {
+      "live": 7928669,
+      "bytes": 12386304,
+      "rss": 97116160
+     },
+     "hyphenation": {
+      "live": 7928669,
+      "bytes": 12386304,
+      "rss": 96256000
+     },
+     "layout1": {
+      "live": 14345681,
+      "bytes": 23199744,
+      "rss": 112664576
+     },
+     "layout1_freed": {
+      "live": 7936881,
+      "bytes": 23199744,
+      "rss": 112705536
+     },
+     "layout2": {
+      "live": 14345681,
+      "bytes": 23199744,
+      "rss": 112365568
+     },
+     "encode_visible": {
+      "live": 14345681,
+      "bytes": 23592960,
+      "rss": 114425856
+     },
+     "encode_all": {
+      "live": 14345681,
+      "bytes": 23592960,
+      "rss": 115826688
+     },
+     "navigation": {
+      "live": 14345681,
+      "bytes": 23592960,
+      "rss": 115838976
+     },
+     "layout_freed": {
+      "live": 7936881,
+      "bytes": 23592960,
+      "rss": 115896320
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 23592960,
+      "rss": 116002816
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 23592960,
+      "rss": 116011008
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 77475840
+     },
+     "layout2": {
+      "live": 14345681,
+      "bytes": 23199744,
+      "rss": 114196480
+     },
+     "encode_all": {
+      "live": 14345681,
+      "bytes": 23592960,
+      "rss": 117170176
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 23592960,
+      "rss": 117260288
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13373803,
+     "during_arrayBuffers": 13373803,
+     "after_drop_arrayBuffers": 13373803,
+     "after_second_arrayBuffers": 13373803,
+     "before_rss": 67633152,
+     "during_rss": 70565888,
+     "after_drop_rss": 70631424,
+     "after_second_rss": 71053312
+    },
+    "highwater_bytes": 23592960,
+    "highwater_final": 23592960,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 6408800,
+     "encode_all": 0,
+     "document": 556897,
+     "env": 7371772
+    }
+   }
+  },
+  "images": {
+   "file": "D:\\Projects\\OfficeNext\\.claude\\worktrees\\rust-core\\core\\target\\agent-membench\\docs\\images.docx",
+   "ts": {
+    "docx_bytes": 9255200,
+    "pages": 28,
+    "lines": 713,
+    "chars": 57481,
+    "read": {
+     "retained": 9815596,
+     "heap": 468104,
+     "arrayBuffers": 9347492,
+     "ms": 8.4
+    },
+    "layout": {
+     "retained": 10947384,
+     "heap": 10947384,
+     "arrayBuffers": 0,
+     "ms": 104.1
+    },
+    "total_retained": 20762980,
+    "baseline": 76923969,
+    "peak_rss": 314195968,
+    "idle_rss": 52862976,
+    "peak_over_idle": 261332992,
+    "keep": 2
+   },
+   "native": {
+    "docx_bytes": 9255200,
+    "pages": 28,
+    "lines": 713,
+    "chars": 57481,
+    "read": {
+     "retained": 9528326,
+     "peak": 28238057,
+     "allocated": 30551662,
+     "ms": 9.5
+    },
+    "derive": {
+     "retained": 92348,
+     "peak": 93436,
+     "allocated": 183432,
+     "ms": 0.1
+    },
+    "layout": {
+     "retained": 2912236,
+     "peak": 5691660,
+     "allocated": 114871512,
+     "ms": 67.8
+    },
+    "call_peak": 5784008,
+    "total_retained": 12440562
+   },
+   "wasm": {
+    "docx_bytes": 9255200,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 28,
+    "encodedBytes": 1689288,
+    "links": 0,
+    "pdfBytes": 9450141,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 84078592
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 102236160
+     },
+     "open": {
+      "live": 16851646,
+      "bytes": 37158912,
+      "rss": 129433600
+     },
+     "hyphenation": {
+      "live": 16851646,
+      "bytes": 37158912,
+      "rss": 129527808
+     },
+     "layout1": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 136732672
+     },
+     "layout1_freed": {
+      "live": 16859858,
+      "bytes": 37158912,
+      "rss": 137392128
+     },
+     "layout2": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 133890048
+     },
+     "encode_visible": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 134111232
+     },
+     "encode_all": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 136241152
+     },
+     "navigation": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 136376320
+     },
+     "pdf": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 147189760
+     },
+     "layout_freed": {
+      "live": 16859858,
+      "bytes": 37158912,
+      "rss": 147230720
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 37158912,
+      "rss": 147578880
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 37158912,
+      "rss": 147656704
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 86016000
+     },
+     "layout2": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 135729152
+     },
+     "encode_all": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 137318400
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 37158912,
+      "rss": 150073344
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 22605810,
+     "during_arrayBuffers": 22605810,
+     "after_drop_arrayBuffers": 22605810,
+     "after_second_arrayBuffers": 22605810,
+     "before_rss": 76718080,
+     "during_rss": 78798848,
+     "after_drop_rss": 78950400,
+     "after_second_rss": 79618048
+    },
+    "highwater_bytes": 37158912,
+    "highwater_final": 37158912,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 3024040,
+     "encode_all": 0,
+     "document": 9479874,
+     "env": 7371772
+    }
+   },
+   "wasm_phone": {
+    "docx_bytes": 9255200,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 28,
+    "encodedBytes": 1689288,
+    "links": 0,
+    "pdfBytes": 0,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 84406272
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 102592512
+     },
+     "open": {
+      "live": 16851646,
+      "bytes": 37158912,
+      "rss": 131231744
+     },
+     "hyphenation": {
+      "live": 16851646,
+      "bytes": 37158912,
+      "rss": 130457600
+     },
+     "layout1": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 136720384
+     },
+     "layout1_freed": {
+      "live": 16859858,
+      "bytes": 37158912,
+      "rss": 137367552
+     },
+     "layout2": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 134340608
+     },
+     "encode_visible": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 134553600
+     },
+     "encode_all": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 136626176
+     },
+     "navigation": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 136679424
+     },
+     "layout_freed": {
+      "live": 16859858,
+      "bytes": 37158912,
+      "rss": 136683520
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 37158912,
+      "rss": 136474624
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 37158912,
+      "rss": 136687616
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 86077440
+     },
+     "layout2": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 134434816
+     },
+     "encode_all": {
+      "live": 19883898,
+      "bytes": 37158912,
+      "rss": 137277440
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 37158912,
+      "rss": 137920512
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 22605810,
+     "during_arrayBuffers": 22605810,
+     "after_drop_arrayBuffers": 22605810,
+     "after_second_arrayBuffers": 22605810,
+     "before_rss": 77000704,
+     "during_rss": 78999552,
+     "after_drop_rss": 79052800,
+     "after_second_rss": 80277504
+    },
+    "highwater_bytes": 37158912,
+    "highwater_final": 37158912,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 3024040,
+     "encode_all": 0,
+     "document": 9479874,
+     "env": 7371772
+    }
+   }
+  },
+  "pages100": {
+   "file": "D:\\Projects\\OfficeNext\\.claude\\worktrees\\rust-core\\core\\target\\agent-membench\\docs\\pages100.docx",
+   "ts": {
+    "docx_bytes": 84178,
+    "pages": 100,
+    "lines": 4526,
+    "chars": 399589,
+    "read": {
+     "retained": 2470339,
+     "heap": 1910504,
+     "arrayBuffers": 559835,
+     "ms": 13.8
+    },
+    "layout": {
+     "retained": 73434096,
+     "heap": 73434096,
+     "arrayBuffers": 0,
+     "ms": 434.9
+    },
+    "total_retained": 75904435,
+    "baseline": 59981370,
+    "peak_rss": 409223168,
+    "idle_rss": 53260288,
+    "peak_over_idle": 355962880,
+    "keep": 2
+   },
+   "native": {
+    "docx_bytes": 84178,
+    "pages": 100,
+    "lines": 4526,
+    "chars": 399589,
+    "read": {
+     "retained": 1078817,
+     "peak": 1993720,
+     "allocated": 11899085,
+     "ms": 7.1
+    },
+    "derive": {
+     "retained": 552048,
+     "peak": 557160,
+     "allocated": 1098516,
+     "ms": 0.2
+    },
+    "layout": {
+     "retained": 18479512,
+     "peak": 36352071,
+     "allocated": 780074358,
+     "ms": 455.4
+    },
+    "call_peak": 36904119,
+    "total_retained": 19558329
+   },
+   "wasm": {
+    "docx_bytes": 84178,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 100,
+    "encodedBytes": 11668069,
+    "links": 0,
+    "pdfBytes": 524638,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 75259904
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 93409280
+     },
+     "open": {
+      "live": 8339589,
+      "bytes": 12386304,
+      "rss": 96866304
+     },
+     "hyphenation": {
+      "live": 8339589,
+      "bytes": 12386304,
+      "rss": 96886784
+     },
+     "layout1": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 133472256
+     },
+     "layout1_freed": {
+      "live": 8347801,
+      "bytes": 48037888,
+      "rss": 133488640
+     },
+     "layout2": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 135602176
+     },
+     "encode_visible": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 136810496
+     },
+     "encode_all": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 130920448
+     },
+     "navigation": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 130981888
+     },
+     "pdf": {
+      "live": 27606627,
+      "bytes": 49152000,
+      "rss": 133234688
+     },
+     "layout_freed": {
+      "live": 8347801,
+      "bytes": 49152000,
+      "rss": 133427200
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 49152000,
+      "rss": 133779456
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 49152000,
+      "rss": 133836800
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 77008896
+     },
+     "layout2": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 138903552
+     },
+     "encode_all": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 132034560
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 49152000,
+      "rss": 136183808
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13434788,
+     "during_arrayBuffers": 13434788,
+     "after_drop_arrayBuffers": 13434788,
+     "after_second_arrayBuffers": 13434788,
+     "before_rss": 67911680,
+     "during_rss": 69988352,
+     "after_drop_rss": 70037504,
+     "after_second_rss": 70905856
+    },
+    "highwater_bytes": 48037888,
+    "highwater_final": 49152000,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 19258826,
+     "encode_all": 0,
+     "document": 967817,
+     "env": 7371772
+    }
+   },
+   "wasm_phone": {
+    "docx_bytes": 84178,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 100,
+    "encodedBytes": 11668069,
+    "links": 0,
+    "pdfBytes": 0,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 75190272
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 89153536
+     },
+     "open": {
+      "live": 8339589,
+      "bytes": 12386304,
+      "rss": 92049408
+     },
+     "hyphenation": {
+      "live": 8339589,
+      "bytes": 12386304,
+      "rss": 92069888
+     },
+     "layout1": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 129323008
+     },
+     "layout1_freed": {
+      "live": 8347801,
+      "bytes": 48037888,
+      "rss": 129339392
+     },
+     "layout2": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 130605056
+     },
+     "encode_visible": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 131489792
+     },
+     "encode_all": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 139247616
+     },
+     "navigation": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 139345920
+     },
+     "layout_freed": {
+      "live": 8347801,
+      "bytes": 48037888,
+      "rss": 139382784
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 48037888,
+      "rss": 139476992
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 48037888,
+      "rss": 139505664
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 77516800
+     },
+     "layout2": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 135225344
+     },
+     "encode_all": {
+      "live": 27606627,
+      "bytes": 48037888,
+      "rss": 131907584
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 48037888,
+      "rss": 132190208
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13434788,
+     "during_arrayBuffers": 13434788,
+     "after_drop_arrayBuffers": 13434788,
+     "after_second_arrayBuffers": 13434788,
+     "before_rss": 68005888,
+     "during_rss": 70336512,
+     "after_drop_rss": 70393856,
+     "after_second_rss": 70852608
+    },
+    "highwater_bytes": 48037888,
+    "highwater_final": 48037888,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 19258826,
+     "encode_all": 0,
+     "document": 967817,
+     "env": 7371772
+    }
+   }
+  },
+  "pages500": {
+   "file": "D:\\Projects\\OfficeNext\\.claude\\worktrees\\rust-core\\core\\target\\agent-membench\\docs\\pages500.docx",
+   "ts": {
+    "docx_bytes": 408546,
+    "pages": 500,
+    "lines": 22786,
+    "chars": 2008124,
+    "read": {
+     "retained": 9076762,
+     "heap": 6262504,
+     "arrayBuffers": 2814258,
+     "ms": 66
+    },
+    "layout": {
+     "retained": 370342080,
+     "heap": 370342080,
+     "arrayBuffers": 0,
+     "ms": 1908.8
+    },
+    "total_retained": 379418842,
+    "baseline": 66997969,
+    "peak_rss": 818552832,
+    "idle_rss": 53366784,
+    "peak_over_idle": 765186048,
+    "keep": 2
+   },
+   "native": {
+    "docx_bytes": 408546,
+    "pages": 500,
+    "lines": 22786,
+    "chars": 2008124,
+    "read": {
+     "retained": 5329983,
+     "peak": 9888609,
+     "allocated": 59448934,
+     "ms": 34.3
+    },
+    "derive": {
+     "retained": 2217548,
+     "peak": 2243244,
+     "allocated": 4409720,
+     "ms": 1
+    },
+    "layout": {
+     "retained": 90419336,
+     "peak": 180323947,
+     "allocated": 3903731276,
+     "ms": 2343.9
+    },
+    "call_peak": 182541495,
+    "total_retained": 95749319
+   },
+   "wasm": {
+    "docx_bytes": 408546,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 500,
+    "encodedBytes": 58689186,
+    "links": 0,
+    "pdfBytes": 2066750,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 75919360
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 89788416
+     },
+     "open": {
+      "live": 12174207,
+      "bytes": 18481152,
+      "rss": 99188736
+     },
+     "hyphenation": {
+      "live": 12174207,
+      "bytes": 18481152,
+      "rss": 99217408
+     },
+     "layout1": {
+      "live": 106488787,
+      "bytes": 201654272,
+      "rss": 275148800
+     },
+     "layout1_freed": {
+      "live": 12182419,
+      "bytes": 201654272,
+      "rss": 275214336
+     },
+     "layout2": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 283185152
+     },
+     "encode_visible": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 283529216
+     },
+     "encode_all": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 342650880
+     },
+     "navigation": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 342663168
+     },
+     "pdf": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 347430912
+     },
+     "layout_freed": {
+      "live": 12182419,
+      "bytes": 201785344,
+      "rss": 347607040
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 201785344,
+      "rss": 347648000
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 201785344,
+      "rss": 347656192
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 78508032
+     },
+     "layout2": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 284696576
+     },
+     "encode_all": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 344100864
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 201785344,
+      "rss": 285827072
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13759156,
+     "during_arrayBuffers": 13759156,
+     "after_drop_arrayBuffers": 13759156,
+     "after_second_arrayBuffers": 13759156,
+     "before_rss": 68825088,
+     "during_rss": 72228864,
+     "after_drop_rss": 71225344,
+     "after_second_rss": 72470528
+    },
+    "highwater_bytes": 201785344,
+    "highwater_final": 201785344,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 94306368,
+     "encode_all": 0,
+     "document": 4802435,
+     "env": 7371772
+    }
+   },
+   "wasm_phone": {
+    "docx_bytes": 408546,
+    "profile": "desktop",
+    "wasm_module_bytes": 5960491,
+    "js_face_bytes": 7367352,
+    "pages": 500,
+    "encodedBytes": 58689186,
+    "links": 0,
+    "pdfBytes": 0,
+    "instance_collected": true,
+    "steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 75845632
+     },
+     "fonts": {
+      "live": 7371772,
+      "bytes": 12386304,
+      "rss": 93990912
+     },
+     "open": {
+      "live": 12174207,
+      "bytes": 18481152,
+      "rss": 103723008
+     },
+     "hyphenation": {
+      "live": 12174207,
+      "bytes": 18481152,
+      "rss": 103755776
+     },
+     "layout1": {
+      "live": 106488787,
+      "bytes": 201654272,
+      "rss": 275259392
+     },
+     "layout1_freed": {
+      "live": 12182419,
+      "bytes": 201654272,
+      "rss": 275333120
+     },
+     "layout2": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 282492928
+     },
+     "encode_visible": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 283254784
+     },
+     "encode_all": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 342458368
+     },
+     "navigation": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 342523904
+     },
+     "layout_freed": {
+      "live": 12182419,
+      "bytes": 201785344,
+      "rss": 342523904
+     },
+     "doc_freed": {
+      "live": 7379984,
+      "bytes": 201785344,
+      "rss": 342568960
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 201785344,
+      "rss": 342577152
+     }
+    },
+    "second_instance_steps": {
+     "instantiated": {
+      "live": 0,
+      "bytes": 1507328,
+      "rss": 78512128
+     },
+     "layout2": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 283549696
+     },
+     "encode_all": {
+      "live": 106488787,
+      "bytes": 201785344,
+      "rss": 343908352
+     },
+     "env_freed": {
+      "live": 2253396,
+      "bytes": 201785344,
+      "rss": 283795456
+     }
+    },
+    "node": {
+     "before_arrayBuffers": 13759156,
+     "during_arrayBuffers": 13759156,
+     "after_drop_arrayBuffers": 13759156,
+     "after_second_arrayBuffers": 13759156,
+     "before_rss": 68743168,
+     "during_rss": 71380992,
+     "after_drop_rss": 71430144,
+     "after_second_rss": 72663040
+    },
+    "highwater_bytes": 201785344,
+    "highwater_final": 201785344,
+    "live_retained": {
+     "faces": 8212,
+     "layout": 94306368,
+     "encode_all": 0,
+     "document": 4802435,
+     "env": 7371772
+    }
+   }
+  }
+ }
+}

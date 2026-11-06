@@ -299,6 +299,15 @@ Estimate of what optimisation buys (only the first row is measured):
 So ≈ 45–60% off today's 1.45 MB gzip at start is realistic; matching the TS start (≈ 0.30 MB gzip, ≈ 0.45 MB with
 the PDF) is not expected without moving the reader's cold paths out of the start module. Budget decision: G7.
 
+**Benchmark main × rust-core (memory, 2026-11-06)**: the wasm viewer path against the frozen TS engine and the TS viewer
+0.9.0 is recorded in `uo-docx-layout.md`, "Benchmarks main × rust-core — memory (measured)" (harness
+`core/tools/bench/memory/`: `run.mjs` for Node, `browser.mjs` for Chromium/WebKit). Through these exports a 100-page
+document keeps an 18.4 MiB `UoLayout` (48.2 B per laid-out character) and the module's `memory.buffer` reaches 45.8 MiB
+(46.9 MiB with the PDF; 192.4 MiB for 500 pages); freeing every handle returns the live bytes to 2.1 MiB (the face cache)
+but not the buffer — dropping the instance does (an asynchronous major GC in Node), and a new one starts at 1.4 MiB. In a
+Chromium tab the Rust engine side (no painter yet) is +67 MiB of renderer private bytes against +127–150 MiB for the TS
+viewer.
+
 ## 7. Security
 
 - Every export catches panics (native) or relies on no-panic code (wasm, `panic = "abort"`); no `unwrap`, `expect`,

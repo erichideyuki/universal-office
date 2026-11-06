@@ -908,6 +908,144 @@ clones as persistent structures, explicit-stack nesting (LQ13), the format-2 ker
 Pending. `tools/bench`: layout of the oracle corpus and of the 500-page document, main × rust-core,
 Node and WebKit, plus the editor keystroke budget in milestone 2.
 
+### Benchmarks main × rust-core — memory (measured)
+
+Measured 2026-11-06 on the milestone-1 tree (branch `rust-core`, Rust release / wasm `--profile wasm`, Node 24.15.0,
+Chromium (build 1248) and WebKit (build 2311) from the local Playwright, Windows 11, a contended 20-thread machine; one measurement process at a
+time). TS side: the frozen `d0f45bc5` (`UO_TS_ROOT`, `docx-core` + `docx-layout` dist) and the published TS viewer 0.9.0.
+Harness: `core/tools/bench/memory/` (results of this run in `results/memory-2026-11-06.{json,md}` and
+`results/browser-2026-11-06.json`), the Rust side in `crates/uo-docx-layout/examples/bench_memory.rs`.
+
+**Documents** (all open fonts, `gen_docs.mjs` seeded, same bytes for the three engines; the page and character counts
+below are equal in the TS and the Rust layout — parity of the generated documents): `small` = the committed fixture
+`f8__7__0` (3 pages); `typical` (20 pages, mixed runs and fonts, header/footer with PAGE); `tables` (18 tables of 12 × 6
+cells, 37 pages); `images` (40 noise PNGs of 320 × 240, 9.3 MB docx, 28 pages); `pages100` (100 pages, 399,589 laid-out
+characters) and `pages500` (500 pages, 2,008,124 characters). "Characters" = the engine's per-character records
+(`chars.o` rows; TS `lines[].chars` entries).
+
+**How each number is taken**
+
+| Number | Method |
+|---|---|
+| TS retained (`ts_mem.mjs`, one process per document) | `heapUsed + arrayBuffers` after four `gc()` with the outputs alive, minus a baseline taken after a warm-up pass of the same document (faces and GPOS caches filled, hyphenation loaded) followed by a pass of a tiny document (so no module state still holds the warm-up's pass). "read" = `readFullDocument`; "layout" = `layoutDocument` (the `LayoutResult`); the result is kept next to the model it points into |
+| TS peak (`peak RSS − idle`) | `process.resourceUsage().maxRSS` minus the RSS of the bare process before the engine is imported. It includes the engine modules, the open font files and the hyphenation tables the TS keeps, and the warm-up pass: it is an upper bound of "the peak of one layout", not that peak |
+| Rust retained / peak / allocated (`bench_memory`, `uo-alloc` counting allocator, one process per document) | after the same warm-up (face cache, hyphenation registry), `measure` of (a) open + read (document kept), (b) `derive::build` (the layout tree, kept), (c) `layout_document` (the `Layout` kept). Retained = `live_delta`; peak = highest live bytes above the start of the step; `call_peak` = derived tree + (c)'s peak. A reallocation counts as a new allocation before the old block is freed (uo-alloc), so peaks of growing vectors are an upper bound |
+| wasm in Node (`wasm_mem.mjs`, one process per document, module built with `--features count,write`) | the viewer's sequence through `js/write.mjs`: env + 5 open families (20 faces, 7.0 MiB pushed), open, register the patterns the document asks for, layout, free, layout again (the second one is the retained `UoLayout`: live bytes after it minus live bytes after the first was freed, so the instance face cache is excluded), `encodePage` for every page (the first 5 as a viewer's visible pages), navigation, run boxes, the PDF in chunks, then `free()` of layout, document and environment. `memory.buffer.byteLength` is read after each step (high-water); `uo_memory_live_bytes` is the module's counted live bytes. The `count` build and the shipped build give the same `byteLength` (48,037,888 B for `pages100` in both) |
+| Browser tab (`browser.mjs`, Chromium) | one browser per scenario; `Performance.getMetrics` `JSHeapUsedSize` after `HeapProfiler.collectGarbage` twice, `performance.measureUserAgentSpecificMemory()` (the server sends COOP/COEP, `crossOriginIsolated` is true) and the **private bytes of the renderer process** (CDP `SystemInfo.getProcessInfo` → `Get-Process`), the largest of the renderers, minus a blank tab of the same browser |
+
+**Retained memory** (MiB; `layout` = the `LayoutResult` / `Layout`; the target column is the plan's §6)
+
+| class | pages | chars | TS layout | Rust layout | Rust / TS | Rust B/char | wasm layout (`UoLayout`) | wasm B/char | TS read + layout | Rust read + layout | Rust / TS |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| small | 3 | 5,430 | 0.95 | 0.31 | 0.32 | 59.2 | 0.32 | 61.7 | 0.80 | 0.40 | 0.50 |
+| typical | 20 | 78,768 | 14.20 | 3.22 | 0.23 | 42.9 | 3.37 | 44.9 | 14.78 | 3.45 | 0.23 |
+| tables | 37 | 72,188 | 14.65 | 6.00 | 0.41 | 87.1 | 6.11 | 88.8 | 16.80 | 6.80 | 0.40 |
+| images | 28 | 57,481 | 10.44 | 2.78 | 0.27 | 50.7 | 2.88 | 52.6 | 19.80 | 11.86 | 0.60 |
+| pages100 | 100 | 399,589 | 70.03 | 17.62 | 0.25 | 46.2 | 18.37 | 48.2 | 72.39 | 18.65 | 0.26 |
+| pages500 | 500 | 2,008,124 | 353.19 | 86.23 | 0.24 | 45.0 | 89.94 | 47.0 | 361.84 | 91.31 | 0.25 |
+| **target** | | | | | **≤ 0.5** | **≤ 48 on pages500** | | **≤ 48 on pages500** | | |
+
+The Rust document model is small (`read` retained: 0.23 MiB typical, 1.1 MiB pages100, 5.3 MiB pages500; the TS model
+takes 0.6 / 2.4 / 8.7 MiB) and the derived tree is smaller still (0.5 MiB on pages100). In the `images` class the
+document's pictures dominate the "read" in both engines (9.1 MiB of media bytes kept in the Rust model; the TS keeps 8.9 MiB of
+`ArrayBuffer`s; TS read + layout 19.8 MiB), which is why its total ratio is 0.60 while its layout ratio is 0.27.
+
+**Peaks, the wasm instance and what dropping it gives back** (MiB)
+
+| class | TS peak RSS − idle | Rust layout-call peak (`uo-alloc`) | peak / retained layout | wasm high-water (`byteLength`, PDF done) | wasm high-water + JS face bytes (7.0) | Node RSS peak − before (wasm session) | RSS after dropping the instance − before |
+|---|---|---|---|---|---|---|---|
+| small | 218.8 | 0.98 | 3.19 | 11.81 | 18.84 | 41.6 | 2.7 |
+| typical | 213.4 | 6.72 | 2.09 | 16.75 | 23.78 | 40.5 | 2.1 |
+| tables | 224.4 | 12.85 | 2.14 | 23.56 | 30.59 | 48.0 | 2.5 |
+| images | 249.2 | 5.52 | 1.99 | 35.44 | 42.46 | 67.7 | 2.1 |
+| pages100 | 339.5 | 35.19 | 2.00 | 46.88 | 53.90 | 65.7 | 2.0 |
+| pages500 | 729.7 | 174.09 | 2.02 | 192.44 | 199.46 | 265.9 | 2.3 |
+
+- **The wasm linear memory never shrinks**, as expected: after `free()` of layout, document and environment the module's
+  live bytes are back at 2.1 MiB (the instance face cache, a cap of uo-fonts, not a leak) but `byteLength` stays at the
+  high-water (46.9 MiB for `pages100`, 192.4 MiB for `pages500`). The high-water is set by the first layout (the second
+  one reuses the freed blocks: `layout1` 45.8 MiB, `layout2` the same, for `pages100`) and is 1.6–1.9 × the live bytes of
+  the session (the allocator's free blocks and the transient peak of the layout call).
+- **Dropping the instance returns it all.** With every handle freed and the instance unreachable, an asynchronous major GC
+  (`await gc({ type: 'major', execution: 'async' })`) collects the `WebAssembly.Memory` (checked with a `WeakRef`: `true`
+  for every class) and the process RSS goes from +65.7 MiB (pages100) / +265.9 MiB (pages500) back to +2.0 / +2.3 MiB over
+  the baseline; a **new instance starts again at 1.4 MiB** and reaches the same high-water for the same work (45.8 MiB
+  for `pages100`, 192.4 MiB for `pages500`). Pitfall measured here: a synchronous `gc()` (or four of them) did not release
+  the dropped instance in Node 24; only the asynchronous major collection did. So the "give it back" operation of a host
+  is: free the handles, drop every reference to the instance and the wrappers (`bindWrite` closures and the module's
+  `FinalizationRegistry` callbacks keep it alive while anything is reachable), let the browser collect it, instantiate a
+  new one — which costs the font pushes again (7.0 MiB copied into wasm, plus the parse of the faces on the first layout).
+- The **Rust layout-call peak is 2.0 × the retained layout** from 20 pages on (3.2 × on the 3-page document, where the
+  fixed working set dominates), not "retained + 2 × the largest page + the face table" (plan §6): the working set grows with
+  the document. The probable causes are the growth of the large vectors (`Vec` doubling counts the new block before the
+  old one is freed in uo-alloc) and the passes that hold the previous pass's result while the next is built (the layout is
+  repeated for balancing); not investigated here. In absolute terms: 35 MiB for 100 pages and 174 MiB for 500 pages, against
+  the TS process peak (RSS − idle) of 339 and 730 MiB.
+- **Timing** (same runs, informative only, the Rust numbers include the counting allocator): layout of `pages100` 435 ms TS,
+  455 ms Rust; `pages500` 1.9 s TS, 2.3 s Rust. Not a gate of this section.
+
+**Browser tab, the same 100-page document (Chromium, headless, 1280 × 900)** — numbers minus a blank tab
+
+| scenario | JS heap used (after GC) | `measureUserAgentSpecificMemory` | renderer private bytes | wasm `byteLength` |
+|---|---|---|---|---|
+| blank tab (baseline) | 0.6 | 0.5 | 43.4 – 46.8 | — |
+| TS viewer 0.9.0, first page shown | 49.2 | 71.9 | 170.5 (+127 over a blank tab) | — |
+| TS viewer 0.9.0, after scrolling through all 100 pages and back | 49.3 | 72.1 | 193.8 (+150) | — |
+| Rust wasm path, desktop profile (layout + 100 page messages encoded, 5 kept) | 0.9 | 1.3 | 113.8 (+67) | 45.8 |
+| Rust wasm path, phone profile | 0.9 | 1.3 | 116.2 (+72) | 45.8 |
+| Rust wasm path in WebKit (Playwright build 2311) | n/a | n/a | n/a | 45.8 (identical) |
+
+Limits of this table, stated plainly: (1) **there is no Rust painter yet** (frontier D): the Rust page lays out, encodes
+every page and keeps five messages, but decodes nothing and paints nothing, so it is the engine side only — a lower bound for
+the Rust viewer — while the TS viewer's number includes its DOM, canvases and decoded pages. (2) `measureUserAgentSpecificMemory`
+does **not** include the wasm memory in this Chromium (1.3 MiB for a page holding 45.8 MiB of wasm), and the CDP heap
+metrics do not either; the wasm share is the `byteLength` and the renderer's private bytes, which is why the private bytes
+are the comparable column. (3) Private bytes of a renderer are noisy (the OS trims working sets; the largest of three
+renderer processes is taken; ±10 MiB between runs of the same scenario); the JS heap and `byteLength` columns are exact.
+(4) WebKit exposes no memory API: only the wasm size is read there. (5) The phone profile changes the face budget (48 MiB
+pinned, 16 MiB cache), which these 5 families (7.0 MiB) never reach, so desktop and phone are equal here.
+
+**Against the plan's targets**
+
+| Target (§6) | Result | Verdict |
+|---|---|---|
+| retained `Layout` ≤ 0.5 × the TS heap delta, per class | 0.23 (typical) – 0.41 (tables); 0.24–0.25 on the 100- and 500-page documents; the wasm `UoLayout` adds 2–5 % over the native `Layout` (navigation, run boxes, resources) | met in every class |
+| ≤ 48 B per laid-out character on the 500-page document | 45.0 B native, 47.0 B as `UoLayout` in wasm | met (the wasm margin is 3 B) |
+| per-character cost on other classes (not a target) | 42.9 (typical), 46.2 / 48.2 (pages100, native / wasm), 50.7 (images), **59.2 (small), 87.1 (tables)** | small documents carry fixed per-page items (header/footer lines), and a table-heavy page has many borders, cell boxes and few characters per cell: B/char is not the right unit there; per page: tables 0.16 MiB/page, typical 0.16, pages100 0.18, pages500 0.17 |
+| peak of one layout call ≤ retained + 2 × the largest page's working set + the face table | 2.0 × the retained layout (35.2 MiB for 100 pages, 174.1 MiB for 500) | **not met as written**: the extra grows with the document; decision for the maintainer (cause above, not investigated) |
+| encoded page ≤ 1.5 × the page's in-memory size, freed by JS | 11.1 MiB of messages for 100 pages (0.11 MiB each), 0 B left in the module after `encodePage` of every page (the live bytes do not change) | the second half met; the 1.5 × ratio is not measured here (the in-memory size of one page is not separated) |
+| viewer, 100-page document: wasm high-water + JS-side face bytes ≤ 160 MiB (phone profile) | 46.9 MiB (with the PDF; 45.8 without) + 7.0 MiB of faces = **53.9 MiB** (TS tab: +127 – 150 MiB over a blank tab, engine and viewer together) | met by 106 MiB; against the TS viewer the Rust engine side is about 0.45 × its private bytes, with the missing painter caveat |
+| 500-page stress wasm high-water ≤ 384 MiB (reported, not a gate) | 192.4 MiB (+7.0 MiB faces) | within the report threshold; a phone would still struggle (tab limits), as the plan says |
+| per-document faces pinned ≤ the profile's `face_budget` | 7.0 MiB pushed; the instance face cache holds 2.1 MiB after everything is freed (the profile's budget applies to it) | met |
+
+**Deviations and things to know**
+
+- The TS "retained" is a heap delta of a long-lived Node process (V8 object overheads, hidden classes, boxed numbers in
+  `chars`), the Rust one a count of allocator bytes; both are with the outputs alive after a warm-up, so the font caches and
+  the hyphenation tables are in neither. The TS number would be higher on a cold process.
+- `images`: the TS per-pass copy of the media is part of its read; neither engine decodes the pixels during layout.
+- The oracle corpus is not part of the default run (its documents use proprietary fonts that the open provider
+  substitutes, so the engines would be compared on different faces); `UO_MEMBENCH_CORPUS=<n>` runs every k-th oracle
+  document for a smoke slice.
+- Not measured: the Rust native process RSS (no portable counter in the test harness; the allocator counts are the native
+  numbers), WebKit's tab memory (no API), Firefox, real Safari/iOS devices (BrowserStack, gate 3), and a Rust viewer with a
+  painter (frontier D) — re-run `browser.mjs` when it exists.
+
+**Re-run** (Git Bash, nothing else running; `-j 4` is inside the script)
+
+```
+export UO_TS_ROOT=D:/Projects/OfficeNext/.claude/worktrees/clickcompliance-docx   # frozen TS, dist built
+export CARGO_TARGET_DIR=<own target dir>
+node core/tools/bench/memory/run.mjs --tag <name>                  # builds bench_memory + the count,write wasm, runs the 6 classes
+node core/tools/bench/memory/run.mjs --no-build --classes pages100,pages500 --skip phone
+UO_MEMBENCH_CORPUS=30 node core/tools/bench/memory/run.mjs --no-build --classes small          # + 30 oracle documents
+cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm -j 4    # then copy the .wasm to $CARGO_TARGET_DIR/uo_wasm_ship.wasm
+UO_TS_VIEWER=<published viewer folder> node core/tools/bench/memory/browser.mjs --webkit       # Chromium TS viewer vs Rust page (+ WebKit wasm size)
+```
+
+`browser.mjs` points Playwright at the installed Chromium/WebKit executables (`UO_CHROMIUM`, `UO_WEBKIT` override; the
+Playwright package comes from `UO_PLAYWRIGHT`, default the `sheet/node_modules` one of the main checkout).
+
 ## Process metrics
 
 | Stage | Agent (model) | Time | Tool calls |
