@@ -16,7 +16,10 @@ not check spelling.
 Nothing is downloaded until it is needed: the engine on the first check, each
 dictionary on the first text in that language. The editor runs the engine in a
 Web Worker (on the main thread when a Worker is not allowed, e.g. a CSP without
-`blob:`).
+`blob:`). A CSP that restricts `script-src` must also allow WebAssembly:
+`script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:`. `'wasm-unsafe-eval'`
+exists from Chrome/Edge 97, Firefox 102 and Safari/iOS 16.0; Safari 15 needs
+`'unsafe-eval'` instead. Without it there is no spell checking (and no error).
 
 ## Installation
 

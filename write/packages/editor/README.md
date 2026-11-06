@@ -428,6 +428,21 @@ created — it starts checking then. Without the engine or a dictionary, or if
 one fails to load, there is no spell checking and no error; the Spelling
 commands just find nothing.
 
+**Content Security Policy.** The engine is WebAssembly, run in a Worker created
+from a `blob:` URL. A page whose CSP restricts `script-src` must allow it:
+
+```http
+Content-Security-Policy: script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:
+```
+
+`'wasm-unsafe-eval'` only allows compiling WebAssembly — `eval()` and
+`new Function()` stay blocked. It is supported from Chrome/Edge 97, Firefox 102
+and Safari/iOS 16.0; **Safari 15 does not know it**, so there a strict policy
+needs `'unsafe-eval'` instead, or spell checking stays off. If the Worker is
+refused, the engine runs on the page's thread (still WebAssembly); if
+WebAssembly is refused, there is no spell checking, as above. The rest of the
+editor needs neither.
+
 ## Track changes
 
 With **Track Changes** on (Review › Track Changes, Ctrl+Shift+E), typing,

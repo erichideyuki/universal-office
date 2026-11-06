@@ -44,6 +44,15 @@ does with it, and the components do none of it:
 - a **compliance policy** requires every upload to be scanned;
 - **server-side processing** (conversion, extraction): isolation and limits come first; the antivirus is extra.
 
+## Content Security Policy of the host page
+
+WebAssembly needs `'wasm-unsafe-eval'` in a CSP that restricts `script-src` (it allows compiling WebAssembly only;
+`eval()`/`new Function()` stay blocked). Supported from Chrome/Edge 97, Firefox 102 and Safari/iOS 16.0; **Safari 15
+does not know it** (a strict policy there needs `'unsafe-eval'`). Today only the optional spell checker is WebAssembly
+(plus `worker-src blob:` for its Worker — `write` and `@universal-office/spellcheck` READMEs). With 0.10 the Rust
+engine is WebAssembly too; the plan and the plain-JS `wasm2js` fallback for hosts that cannot allow it are in
+`core/docs/modules/uo-bindings.md` (TS/Rust switch; "No-WebAssembly fallback").
+
 ## Sanitizer and importer findings (.NET)
 
 The security review of the Editing API port (D3, `core/docs/modules/uo-docx-d3.md` §9) found points that hold for the

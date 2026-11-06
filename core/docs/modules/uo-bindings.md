@@ -120,6 +120,13 @@ stage, max, detail }`; `layout.paint` = the frontier-E operations on the borrowe
   `navigation()`/`blockLine()`; print and download from `layout.pdf()`.
 - Missing before the switch: the **Write geometry section** of the page message (`Layout::encode_page`, the text layer,
   find, `collectAnnotations`) — gate item G8; frontier D (the TS shell painting decoded pages) and V (painter parity).
+- **Content Security Policy (to carry into the viewer and editor READMEs at the switch).** After the switch the
+  engine itself is WebAssembly, so a host whose CSP restricts `script-src` must allow `'wasm-unsafe-eval'` (Chrome/Edge
+  97, Firefox 102, Safari/iOS 16.0 — caniuse, checked 2026-11-06); **Safari 15, our baseline, does not know it** and
+  would need `'unsafe-eval'`. Today only the optional spell checker needs it (documented in the `write` and
+  `@universal-office/spellcheck` READMEs). The answer for hosts that cannot allow it is the plain-JS `wasm2js` build of
+  the same module (one implementation, slower and larger): measured in "No-WebAssembly fallback (wasm2js) and wasm-opt".
+  To confirm on a real Safari 15 (BrowserStack) before the gate: whether its CSP blocks WebAssembly at all.
 
 ## 3. The C ABI (`uo-ffi`)
 
