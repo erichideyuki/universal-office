@@ -311,3 +311,67 @@ export function bindWrite(w, host) {
     },
   };
 }
+
+// ---- the loader: WebAssembly, or the wasm2js build when the page forbids WebAssembly ----------------------------
+// A page whose Content-Security-Policy `script-src` has neither 'wasm-unsafe-eval' nor 'unsafe-eval' (Safari 15 knows no
+// 'wasm-unsafe-eval' at all) refuses to compile WebAssembly. `tools/build-wasm2js.mjs` turns the same module into plain
+// JavaScript (`export default function (imports)`), which needs neither. Record: core/docs/modules/uo-bindings.md.
+//
+//   const { uo, engine } = await loadWrite({ wasm: '/uo_wasm.wasm', js: '/uo_wasm.js' });   // engine: 'wasm' | 'js'
+//   const { uo } = await loadWrite({ engine: 'js', js: () => import('./uo_wasm.js') });
+
+/** `true` when this page may compile WebAssembly (an 8-byte module goes through the same CSP check as a real one). */
+export function canCompileWasm() {
+  if (typeof WebAssembly !== 'object' || typeof WebAssembly.Module !== 'function') return false;
+  try {
+    new WebAssembly.Module(new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const fetchBytes = async (src) => {
+  const r = await src;
+  if (r instanceof Uint8Array) return r;
+  if (r instanceof ArrayBuffer || ArrayBuffer.isView(r)) return new Uint8Array(r.buffer ?? r, r.byteOffset ?? 0, r.byteLength);
+  const res = typeof r === 'string' || r instanceof URL ? await fetch(r) : r; // a Response
+  if (!res.ok) throw new Error(`${res.url || 'wasm'}: HTTP ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+};
+
+/**
+ * Loads the Write module and binds it. `engine`: `'wasm'`, `'js'` (the wasm2js build) or `'auto'` (default: WebAssembly
+ * when the page may compile it, else `js`; an `'auto'` load whose WebAssembly compile or instantiate still throws
+ * falls back to `js` too, when given). `wasm`: bytes, a URL, a Response or a promise of one. `js`: the factory module's
+ * URL, the module namespace, the factory, or a function returning either (`() => import('./uo_wasm.js')`).
+ * Resolves to `{ uo, engine, exports }`; `uo` is `bindWrite`'s result. Never touches `WebAssembly` when `engine` is `'js'`.
+ */
+export async function loadWrite({ engine = 'auto', wasm, js } = {}) {
+  const viaWasm = async () => {
+    if (wasm === undefined) throw new Error('loadWrite: no wasm source');
+    const { imports, host } = writeImports();
+    const { instance } = await WebAssembly.instantiate(await fetchBytes(wasm), imports);
+    return { uo: bindWrite(instance.exports, host), engine: 'wasm', exports: instance.exports };
+  };
+  const viaJs = async () => {
+    if (js === undefined) throw new Error('loadWrite: no js (wasm2js) source');
+    let m = typeof js === 'string' || js instanceof URL ? await import(/* @vite-ignore */ String(js)) : js;
+    if (typeof m === 'function' && m.length === 0) m = await m(); // a loader thunk (the factory takes 1 argument)
+    const factory = typeof m === 'function' ? m : m.default;
+    const { imports, host } = writeImports();
+    const exports = factory(imports);
+    return { uo: bindWrite(exports, host), engine: 'js', exports };
+  };
+  if (engine === 'wasm') return viaWasm();
+  if (engine === 'js') return viaJs();
+  if (engine !== 'auto') throw new Error(`loadWrite: unknown engine '${engine}'`);
+  if (!canCompileWasm()) return viaJs();
+  try {
+    return await viaWasm();
+  } catch (e) {
+    // a refused compile is a CompileError (Chromium) or an EvalError (older engines); other failures are the caller's
+    if (js !== undefined && (e instanceof EvalError || (typeof WebAssembly === 'object' && e instanceof WebAssembly.CompileError))) return viaJs();
+    throw e;
+  }
+}

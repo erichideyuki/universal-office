@@ -163,3 +163,22 @@ export interface WriteBinding {
 }
 
 export declare function bindWrite(exports: WebAssembly.Exports, host: WriteHost): WriteBinding;
+
+/** `true` when the page may compile WebAssembly (false under a CSP without 'wasm-unsafe-eval'/'unsafe-eval'). */
+export declare function canCompileWasm(): boolean;
+
+/** The module built by `tools/build-wasm2js.mjs`: `export default function uoWasm2js(imports)`. */
+export type Wasm2jsFactory = (imports: { uo_host: { pdf_chunk(ptr: number, len: number): number } }) => WebAssembly.Exports;
+type MaybePromise<T> = T | Promise<T>;
+
+export interface LoadWriteOptions {
+  /** `'auto'` (default): WebAssembly when the page may compile it, else `js` (also when the compile throws) */
+  engine?: 'auto' | 'wasm' | 'js';
+  /** the .wasm: bytes, a URL, a `Response` or a promise of one */
+  wasm?: Uint8Array | ArrayBuffer | string | URL | Response | Promise<Uint8Array | ArrayBuffer | Response>;
+  /** the wasm2js build: its module URL, the namespace, the factory, or a function returning either */
+  js?: string | URL | Wasm2jsFactory | { default: Wasm2jsFactory } | (() => MaybePromise<{ default: Wasm2jsFactory } | Wasm2jsFactory>);
+}
+
+/** Loads the Write module with the chosen engine and binds it (`loadWrite` in js/write.mjs). */
+export declare function loadWrite(options?: LoadWriteOptions): Promise<{ uo: WriteBinding; engine: 'wasm' | 'js'; exports: WebAssembly.Exports }>;

@@ -287,17 +287,18 @@ number formatting, `Intl`, inflate through `DecompressionStream`) for free, and 
 ships its own (hash maps, UTF-16 strings, `uo_jsnum`, hand regex matchers, inflate, Unicode tables), and Rust
 generics are compiled once per type, then inlined.
 
-Estimate of what optimisation buys (only the first row is measured):
+What optimisation buys (rows 1–2 measured; see the wasm2js section below for the `wasm-opt` numbers):
 
-| Step | Expected gzip | Basis |
+| Step | gzip | Basis |
 |---|---|---|
-| `opt-level = "z"` | 1.09 MB (−26%) | measured; spike 2 measured `s` 2.2× slower: per-crate `opt-level` (layout at 3, cold crates `z`) should keep most of it — to measure |
-| + `wasm-opt -Oz` | ≈ 0.9–1.0 MB | typical 10–20% on top; `binaryen` is not installed here |
+| `opt-level = "z"` | 1.09 MB (−26%) | measured; `z` is 1.5–1.8× slower than `3` here (layout + pages + PDF, wasm2js section): per-crate `opt-level` (layout at 3, cold crates `z`) — to measure |
+| + `wasm-opt -Oz` | 1.12 MB (+2.3%) | **measured: no transfer gain** — raw −16.6%, gzip +2.3%, brotli +5.3%; worth it only for raw size/parse and ≈ 10% speed (the first estimate, 0.9–1.0 MB, was wrong) |
 | + PDF, inflate and image encoders in a second module loaded on export | ≈ −0.1 MB at start | `uo_pdf` + `miniz_oxide` + encoders ≈ 6% of the code |
-| + trimming monomorphisation (`dyn` at cold generic sites, fewer `core::fmt` paths, one map type) | ≈ 0.6–0.8 MB | work in the crates, not a flag; to measure with `twiggy` |
+| + trimming monomorphisation (`dyn` at cold generic sites, fewer `core::fmt` paths, one map type) and moving the reader's cold paths out of the start module | ≈ 0.6–0.8 MB | work in the crates, not a flag; to measure with `twiggy` |
 
-So ≈ 45–60% off today's 1.45 MB gzip at start is realistic; matching the TS start (≈ 0.30 MB gzip, ≈ 0.45 MB with
-the PDF) is not expected without moving the reader's cold paths out of the start module. Budget decision: G7.
+So ≈ 45–60% off today's 1.45 MB gzip at start is still the realistic band, but it comes from code changes (split
+modules, less monomorphisation), not from `wasm-opt`; matching the TS start (≈ 0.30 MB gzip, ≈ 0.45 MB with the PDF) is
+not expected. Budget decision: G7.
 
 **Benchmark main × rust-core (memory, 2026-11-06)**: the wasm viewer path against the frozen TS engine and the TS viewer
 0.9.0 is recorded in `uo-docx-layout.md`, "Benchmarks main × rust-core — memory (measured)" (harness
@@ -307,6 +308,142 @@ document keeps an 18.4 MiB `UoLayout` (48.2 B per laid-out character) and the mo
 but not the buffer — dropping the instance does (an asynchronous major GC in Node), and a new one starts at 1.4 MiB. In a
 Chromium tab the Rust engine side (no painter yet) is +67 MiB of renderer private bytes against +127–150 MiB for the TS
 viewer.
+
+### No-WebAssembly fallback (wasm2js) and wasm-opt (measured)
+
+Measured 2026-11-06 on the same sources as the G7 table (`--features write`, `--profile wasm`), binaryen **132.0.0** from
+the npm package `binaryen` (it ships `wasm-opt` and `wasm2js` as node scripts around a wasm build; installed into
+`core/target/tools/binaryen`, not a dependency of the repository; 15 files, **108,542,397 B unpacked**; the registry
+sends no content-length, so the tarball size was not read). Sizes: raw bytes, `gzip -9` (CLI), brotli 11; JS output
+minified with the repository's esbuild 0.28.1 (`minify`, target es2018; binaryen has no JS minifier).
+
+**Why.** A page whose CSP `script-src` has neither `'wasm-unsafe-eval'` nor `'unsafe-eval'` cannot compile WebAssembly.
+`'wasm-unsafe-eval'` exists from Chrome/Edge 97, Firefox 102, Safari/iOS 16.0; **Safari 15 (our baseline) has no such
+keyword**, so there a strict CSP leaves only `'unsafe-eval'` (which also allows `eval`) or no wasm at all. The wasm2js
+build is plain JavaScript and needs neither. (Safari 15 itself was not available; WebKit 26.5 from Playwright was.)
+
+**Sizes (viewer module).**
+
+| Build | Raw | gzip | brotli | Output correct? |
+|---|---|---|---|---|
+| wasm, `opt-level = 3` | 5,960,000 | 1,465,190 | 1,050,575 | (reference) |
+| wasm, 3 + `wasm-opt -O3` | 5,376,501 (-9.8%) | 1,462,528 (-0.2%) | 1,078,183 (+2.6%) | yes (`write_api` pinned checksums) |
+| wasm, `opt-level = "z"` | 3,525,048 | 1,090,787 | 816,431 | (reference) |
+| wasm, z + `wasm-opt -Oz` | 2,940,079 (-16.6%) | 1,115,496 (+2.3%) | 860,133 (+5.3%) | yes (same) |
+| wasm2js, z, no `wasm-opt`, no `wasm2js -O` | 9,444,914 | 1,903,039 | 1,285,411 | not run |
+| wasm2js, z + `wasm-opt -Oz`, no `wasm2js -O` | 8,416,037 | 2,043,952 | 1,430,384 | yes (12 fixtures) |
+| **wasm2js, z + `wasm-opt -Oz --alignment-lowering` + `wasm2js -Oz` (the script's default)** | **5,862,537** | **1,574,692** | **1,146,143** | **yes (12 fixtures)** |
+| wasm2js, same, unminified (`.raw.js`) | 29,479,388 | 3,067,149 | 1,962,285 | — |
+| wasm2js, 3 + `wasm-opt -O3`, no `wasm2js -O` | 15,603,620 | 3,062,033 | 2,003,586 | **no** (page messages differ) |
+| wasm2js, 3 + `wasm-opt -O3 --alignment-lowering` + `wasm2js -O3` | 10,644,633 | 2,170,654 | 1,496,728 | **no** (same) |
+
+Reading: `wasm-opt` shrinks the raw module 10-17% but **does not shrink what is transferred** (gzip -0.2% / +2.3%, brotli
++2.6% / +5.3%: it unrolls and inlines what the compressor already folded); its value is parse and instantiate time and
+memory, not bytes on the wire (and `z` + `-Oz` ran 10% faster than plain `z`: 227 vs 257 ms on the 33-page fixture in
+Node). `wasm2js` text is 2.0x (z) to 7x of the wasm in raw terms and 1.4x-1.9x in gzip; its own `-Oz` is worth 30% of the
+minified size and needs the `wasm-opt` step first (`wasm2js -O` on a raw rustc module aborts on an unaligned store).
+`--alignment-lowering` (rustc emits many `align=1` loads and stores) costs 0.3% on the Oz pipeline and keeps the output
+valid if the optimiser ever leaves an unaligned access. Build time on this machine: `wasm-opt -Oz` 35 s, `-O3` 55 s,
+`wasm2js` 10-35 s plus 1-1.5 min for the whole script (all single-threaded node).
+
+**The opt-level 3 build is not safe to convert (finding).** wasm2js of the `3` module gives byte-identical PDFs, navigation
+and link boxes but **different page messages** (f8__7__0: 51,757 B in wasm, 53,200 B in JS; the same with or without
+`wasm-opt`, `--alignment-lowering`, `--llvm-nontrapping-fptoint-lowering`). A `--log-execution` trace of both engines
+diverges at the first `encode_page` after the (identical) layout, in the function that tests `OptF64`
+(`uo-render/src/opt.rs`): its "absent" marker is the signalling NaN `0x7ff4_0000_0000_0001`, and in the JS build the
+marker arrives as the canonical `0x7ff80000_00000000` (V8 does not keep NaN payloads across all of its paths; patching the
+marker to a quiet payload did not help). The `z` build converts correctly on the 12 fixtures, but only because its
+code passes `OptF64` as an integer; **the hazard is in the Rust source, not in wasm2js's arithmetic**. Before any wasm2js
+build ships: give `OptF64` an explicit presence bit (or any representation that is not a NaN payload) and run
+`write_wasm2js.test.mjs` over a bigger corpus than 12 fixtures. Not done here (the crate is outside this task's scope).
+
+**The loader (`js/write.mjs`, `write.d.ts`).** `loadWrite({ engine, wasm, js })` -> `{ uo, engine, exports }`; `engine`
+`'wasm'`, `'js'` or `'auto'` (default). `auto` probes with `canCompileWasm()` (an 8-byte module through `new
+WebAssembly.Module`, which is subject to the same CSP check) and uses the JS build if the probe fails; if the probe passes
+but the compile or instantiate still throws a `CompileError`/`EvalError` and `js` was given, it falls back too. `wasm`
+is bytes, a URL, a `Response` or a promise of one; `js` is the module URL (dynamic `import()`, so it needs `script-src
+'self'` or the URL's origin), the namespace, the factory, or a thunk returning either. The JS module exports `default
+function (imports) -> exports` (the build script rewrites wasm2js's ES-module output into that factory, so several
+instances are possible and no import map is needed). `engine: 'js'` never touches `WebAssembly`.
+
+**Correctness (z, final pipeline).** `tests/write_wasm2js.test.mjs` (Node) and `tests/browser/wasm2js_run.mjs --mode
+correct` (Chromium 156, WebKit 26.5): over the 12 fixtures of `uo-docx-layout/tests/captures/f8` every render page
+message, Write section, annotations, navigation, link boxes, page info, first embedded face, the PDF (compressed) and the
+PDF (uncompressed, 4 KiB chunks) are **byte-identical** between the WebAssembly engine (the unoptimised `z` module) and the
+wasm2js engine (built from the `wasm-opt`-ed module); the three pinned native PDF checksums hold in the JS engine; errors
+keep their code and stage; `memory.buffer` is flat over repeated sessions. `write_api.test.mjs` also passes on the
+`wasm-opt`-ed modules (`z`+`-Oz` and `3`+`-O3`).
+
+**CSP proof.** The test page is served with `Content-Security-Policy: script-src 'self'` (page script external, no inline):
+
+| | Chromium 156 | WebKit 26.5 |
+|---|---|---|
+| `canCompileWasm()` | false | false |
+| wasm engine | refused: `CompileError`, "violates ... CSP directive because 'unsafe-eval' is not an allowed source of script" | refused: `CompileError`, "Refused to create a WebAssembly object because 'unsafe-eval' or 'wasm-unsafe-eval' is not an allowed source" |
+| `securitypolicyviolation` | `script-src: wasm-eval` (x3) | — (none fired for wasm) |
+| wasm2js engine | loads in 99 ms, runs; PDFs of f8__7__0 / 3 / 10 = 245,286 / 144,349 / 240,299 B, fnv `c28b3c53` / `a2cf1bd6` / `88d31b5b` = the native checksums | loads in 111 ms, same bytes and checksums |
+| `loadWrite()` (`auto`) | `js` | `js` |
+
+Control page with `script-src 'self' 'wasm-unsafe-eval'`: `canCompileWasm()` true, the wasm engine loads, `auto` picks
+`wasm` in both browsers (and `eval`/`new Function` stays refused in both pages).
+
+**Speed** (`layout + every page message and Write section + PDF`, median of 5 after one warm-up, ms; env and document
+prepared outside; Windows 11, loaded machine; fixtures: f8__7__0 3 pages, f8__7__10 5, f8__7__9 24, f8__7__7 33):
+
+| Engine | f8__7__0 | f8__7__10 | f8__7__9 | f8__7__7 |
+|---|---|---|---|---|
+| Node 24.15, wasm `3` | 30 | 26 | 97 | 145 |
+| Node, wasm `z` | 48 | 40 | 167 | 257 |
+| Node, wasm `z` + `-Oz` | 43 | 37 | 148 | 227 |
+| Node, **wasm2js** (z) | 218 | 165 | 1,240 | 1,955 |
+| Chromium 156, wasm `3` | 31 | 26 | 104 | 146 |
+| Chromium, wasm `z` | 46 | 39 | 155 | 235 |
+| Chromium, **wasm2js** | 229-236 | 174-186 | 798-1,398 | 1,245-2,161 |
+| WebKit 26.5, wasm `3` | 41 | 34 | 123 | 190 |
+| WebKit, wasm `z` | 56 | 47 | 185 | 285 |
+| WebKit, **wasm2js** | 243-246 | 179-327 | 795-1,442 | 1,243-1,271 |
+
+wasm2js is **4-8x slower than the `z` module and 6-14x slower than the `3` module** (V8, the same ratios in JavaScriptCore);
+the JS columns are two runs each in the browsers because the spread is large (tier-up and GC; a single run varies up to
+1.8x). Cold costs: loading the module (parse, no instantiation) 216-237 ms in Node, 100-104 ms in Chromium, 106-111 ms in
+WebKit vs 6-32 ms for `WebAssembly.instantiate`; in Node the first layout + PDF of the 3-page fixture takes 465 ms on
+wasm2js (env and open 147 ms) vs 81-100 ms on wasm (41-46 ms).
+
+**Memory.** The linear memory (`memory.buffer`) is the same 25,034,752 B high-water in both engines for the four fixtures
+(same code, same allocations). The process cost differs: Node maxRSS 302 MB for wasm2js vs 123 MB (z) / 127 MB (3) for wasm,
+`heapUsed` 53 MB vs 5-6 MB; Chromium `usedJSHeapSize` after loading the module and the runs 342 MB vs 18 MB (z) / 27 MB (3)
+(9.4 MB of that is the parsed module). WebKit exposes no JS heap figure.
+
+**Recommendation.**
+1. Do not ship wasm2js as a default or in the start bundle: +5.9 MB raw / **+1.57 MB gzip** on top of nothing (a host that
+   may compile wasm never downloads it), a 4-8x slowdown and ~2.5x the memory. Ship it, if at all, as an **opt-in extra
+   package** next to `font-files`/`spellcheck` (a data-like artefact the host registers: `js: () => import('...')`), loaded
+   only when `canCompileWasm()` is false. It does not change the budget of the wasm module itself.
+2. While the TS engine exists behind the viewer switch (plan above, `engine="ts"`), **it is the cheaper no-wasm fallback**
+   (0.30 MB gzip at start, plain JS, no conversion hazard); wasm2js becomes interesting only when the TS path is removed
+   and a strict-CSP/Safari 15 host still has to work. That decision belongs to G7/the 0.10 gate.
+3. If it is shipped: build only from the `z` module, keep `wasm-opt -Oz --alignment-lowering` + `wasm2js -Oz`, put
+   `write_wasm2js.test.mjs` (and the browser check) in the gate, and fix `OptF64` first (finding above).
+4. `wasm-opt` on the wasm module: worth running for the 10-17% smaller raw module and ~10% speed, not for transfer size
+   (gzip/brotli do not improve).
+
+Commands (all outputs under `core/target/`, never committed):
+
+```
+npm install --prefix core/target/tools/binaryen binaryen                                  # once; wasm-opt, wasm2js (not a repo dependency)
+export CARGO_TARGET_DIR=<target>; cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm -j 4
+CARGO_PROFILE_WASM_OPT_LEVEL=z cargo build ...                                            # the z module
+node core/target/tools/binaryen/node_modules/binaryen/bin/wasm-opt -Oz --enable-bulk-memory --enable-sign-ext --enable-nontrapping-float-to-int --enable-mutable-globals --enable-multivalue --enable-reference-types in.wasm -o out.wasm
+node core/crates/uo-wasm/tools/build-wasm2js.mjs --in <uo_wasm.wasm> --out core/target/wasm2js/uo_wasm.js [--wasm-opt Oz|O3|none] [--wasm2js-opt Oz|O3|none] [--no-minify] [--esbuild <dir>]
+UO_WASM_PATH=<.wasm> UO_WASM2JS_PATH=<.js> node --test crates/uo-wasm/tests/write_wasm2js.test.mjs
+UO_PLAYWRIGHT=<playwright dir> [UO_CHROMIUM=<chrome.exe>] node crates/uo-wasm/tests/browser/wasm2js_run.mjs --wasm <.wasm> --js <.js> [--browser chromium|webkit] [--mode csp|correct|speed]
+node core/crates/uo-wasm/tools/bench-wasm2js.mjs --engine wasm --wasm <.wasm>             # or --engine js --js <.js>; one engine per process (maxRSS)
+```
+
+Files: `js/write.mjs` + `write.d.ts` (`loadWrite`, `canCompileWasm`), `tools/build-wasm2js.mjs`, `tools/bench-wasm2js.mjs`,
+`tests/wasm2js_common.mjs`, `tests/write_wasm2js.test.mjs`, `tests/browser/wasm2js_page.mjs`, `tests/browser/wasm2js_run.mjs`.
+Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF64` fix, wasm2js of the `count` build
+(`uo_memory_live_bytes` returns an i64, which the JS build would give as its low half).
 
 ## 7. Security
 
@@ -342,6 +479,7 @@ viewer.
 | G19 | LeakSanitizer covers the Rust tests of uo-ffi (existing job); the C# facade tests under LSan would need `liblsan` preloaded into `dotnet` | add it |
 | G20 | The default debug test job samples every 7th fixture document (`UO_SERVER_PARITY_EVERY`); a new release job `server-pdf` runs all 68 | — |
 | G21 | No fuzz target for the exports yet (`ffi_docx_to_pdf`, `wasm_write_session`) | add to `core/fuzz` |
+| G22 | `uo-render` `OptF64` marks "absent" with a signalling-NaN payload (`0x7ff4_0000_0000_0001`); NaN payloads are not guaranteed to survive outside wasm loads/stores (V8 canonicalises them on some paths — the `opt-level = 3` wasm2js build gives different page messages because of it, see the wasm2js section) | give `OptF64` an explicit presence bit (or any non-NaN representation) before any JS/wasm2js build ships; audit other NaN-payload markers |
 
 ## Files touched outside the owned crates (each additive)
 
