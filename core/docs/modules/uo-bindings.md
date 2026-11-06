@@ -253,6 +253,45 @@ Timings (this machine, contended): 136 server conversions of the fixtures in 23 
 the machine's 357 families in 53 ms and converts `f8__7__1` (316,892 B PDF) in 151 ms; 211 oracle documents (2 policies,
 two converters) in 3.6 s.
 
+### Size analysis of the viewer module (G7, measured 2026-11-06)
+
+Same commit, `--features write`, `wasm32-unknown-unknown`, `--profile wasm` (LTO, one codegen unit, `panic=abort`),
+only `opt-level` changed through `CARGO_PROFILE_WASM_OPT_LEVEL`; gzip `-9`, brotli quality 11. The TS reference is the
+published `@universal-office/document-viewer` 0.9.0 (`publish/`): `index.js` (reader, layout, canvas painter) is
+loaded at start, the PDF chunk only for print/export, the hyphenation and built-in table-style chunks on demand.
+
+| Build | Raw | gzip | brotli |
+|---|---|---|---|
+| Rust, `opt-level = 3` (today) | 5,959,992 | 1,465,433 | 1,055,236 |
+| Rust, `opt-level = "s"` | 4,091,275 | 1,234,978 | 908,502 |
+| Rust, `opt-level = "z"` | 3,525,048 | 1,090,792 | 816,431 |
+| TS `index.js` (start) | 860,102 | 300,375 | 252,586 |
+| TS PDF chunk (on demand) | 481,994 | 146,092 | 123,094 |
+| TS all chunks | 2,121,993 | 655,067 | — |
+
+Where the bytes are (`opt-level = 3`, names kept, `target/size/wasm-size.mjs`): code 5.52 MB, data 0.42 MB (Unicode,
+font catalogue and other tables). Code by crate: generic code instantiated from `core` 2.11 MB, `alloc` 0.28,
+`hashbrown` 0.20, `indexmap` 0.08 (≈ 2.7 MB of monomorphised std, inlined by `opt-level = 3`); ours: `uo_docx`
+1.32 MB (the reader), `uo_docx_layout` 0.80, `uo_render` 0.19, `uo_pdf` 0.09, `uo_fonts` 0.08, `uo_opc` 0.08,
+`uo_drawingml` 0.06, `uo_jsnum` 0.05, `uo_image` 0.04, `miniz_oxide` 0.02.
+
+Why it is larger than the JS: in the browser the engine supplies the standard library (strings, `Map`, regex, JSON,
+number formatting, `Intl`, inflate through `DecompressionStream`) for free, and minified JS is dense; the wasm module
+ships its own (hash maps, UTF-16 strings, `uo_jsnum`, hand regex matchers, inflate, Unicode tables), and Rust
+generics are compiled once per type, then inlined.
+
+Estimate of what optimisation buys (only the first row is measured):
+
+| Step | Expected gzip | Basis |
+|---|---|---|
+| `opt-level = "z"` | 1.09 MB (−26%) | measured; spike 2 measured `s` 2.2× slower: per-crate `opt-level` (layout at 3, cold crates `z`) should keep most of it — to measure |
+| + `wasm-opt -Oz` | ≈ 0.9–1.0 MB | typical 10–20% on top; `binaryen` is not installed here |
+| + PDF, inflate and image encoders in a second module loaded on export | ≈ −0.1 MB at start | `uo_pdf` + `miniz_oxide` + encoders ≈ 6% of the code |
+| + trimming monomorphisation (`dyn` at cold generic sites, fewer `core::fmt` paths, one map type) | ≈ 0.6–0.8 MB | work in the crates, not a flag; to measure with `twiggy` |
+
+So ≈ 45–60% off today's 1.45 MB gzip at start is realistic; matching the TS start (≈ 0.30 MB gzip, ≈ 0.45 MB with
+the PDF) is not expected without moving the reader's cold paths out of the start module. Budget decision: G7.
+
 ## 7. Security
 
 - Every export catches panics (native) or relies on no-panic code (wasm, `panic = "abort"`); no `unwrap`, `expect`,

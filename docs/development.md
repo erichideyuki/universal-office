@@ -16,7 +16,8 @@ app** and, for servers, as a **.NET library**. MIT license (`LICENSE`).
 
 Repository rules (proprietary fonts, "one place only" for each engine,
 packages, publishing): `CLAUDE.md`. History: `CHANGELOG.md`. npm and
-NuGet publishing: `docs/publishing.md`.
+NuGet publishing: `docs/publishing.md`. Untrusted documents (threat model, antivirus,
+open findings): `docs/security.md`.
 
 ## Structure
 
