@@ -282,6 +282,31 @@ font catalogue and other tables). Code by crate: generic code instantiated from 
 1.32 MB (the reader), `uo_docx_layout` 0.80, `uo_render` 0.19, `uo_pdf` 0.09, `uo_fonts` 0.08, `uo_opc` 0.08,
 `uo_drawingml` 0.06, `uo_jsnum` 0.05, `uo_image` 0.04, `miniz_oxide` 0.02.
 
+**Corrected attribution and results (2026-11-07, plan and numbers in `size-optimization.md`).** The per-function
+attribution first used for this analysis (the uncommitted `target/size/wasm-size.mjs`) skipped the import section with an
+off-by-one, so every function body carried the name of the next one: single-function claims were wrong ("`FlowState::clone`
+31 KB" is `Engine::layout_static_in`, `FlowState::clone` is 1.8 KB; "`uo_pdf::num::Out::write_fmt` 24.7 KB" is
+`LineBreaker::next_in`; all of `core::fmt` is 14.6 KB, not 84 KB). The family totals above were roughly right. The
+committed tools `core/tools/size/` (`wasm-size`, `wasm-share`, `wasm-ab`) read the module correctly. With them, by owner:
+`core` 2.04 MB, of which `core::slice::sort` is **1.83 MB in 497 functions** (127 copies of the stable sort inside the
+signature writer alone: 1.69 MB), `uo_docx` 1.37 MB, `uo_docx_layout` 0.93, `uo_render` 0.18, `hashbrown` 0.17.
+
+Raw bytes are not transfer bytes: gzip and brotli already fold byte-identical copies, so removing the duplicated code
+takes a third off the raw module but only a few percent off the transfer. Measured (`--features write`, `--profile wasm`,
+identical output digest on the 12 fixtures, speed within noise: layout +1.3%, total +0.9%):
+
+| Step | Raw | gzip -9 | brotli 11 |
+|---|---|---|---|
+| before | 5,960,000 | 1,465,192 | 1,050,575 |
+| one `sort_members` for the signature members (item 1) | 4,281,155 | 1,445,744 | 1,046,845 |
+| + one JSON walker over `dyn JsObjectDyn` (item 2) | 4,014,011 | 1,422,858 | 1,034,548 |
+| + one index sort core for the cold sorts (item 3a) | 3,960,432 (-33.5%) | 1,405,088 (-4.1%) | 1,023,890 (-2.5%) |
+
+So the "trimming monomorphisation" row below (a band of 0.6-0.8 MB) was too high for the transfer: the work that exists
+(items 1-3a) is -4.1% gzip. What is left is a speed trade (`opt-level = "s"` for `uo-docx`: about -68 KB gzip for layout
++3%, open +14%) and the splits listed in `size-optimization.md`, section 7 (PDF in a second module: about -60 to -70 KB
+gzip; the data section: 161 KB gzip).
+
 Why it is larger than the JS: in the browser the engine supplies the standard library (strings, `Map`, regex, JSON,
 number formatting, `Intl`, inflate through `DecompressionStream`) for free, and minified JS is dense; the wasm module
 ships its own (hash maps, UTF-16 strings, `uo_jsnum`, hand regex matchers, inflate, Unicode tables), and Rust
@@ -294,7 +319,7 @@ What optimisation buys (rows 1–2 measured; see the wasm2js section below for t
 | `opt-level = "z"` | 1.09 MB (−26%) | measured; `z` is 1.5–1.8× slower than `3` here (layout + pages + PDF, wasm2js section): per-crate `opt-level` (layout at 3, cold crates `z`) — to measure |
 | + `wasm-opt -Oz` | 1.12 MB (+2.3%) | **measured: no transfer gain** — raw −16.6%, gzip +2.3%, brotli +5.3%; worth it only for raw size/parse and ≈ 10% speed (the first estimate, 0.9–1.0 MB, was wrong) |
 | + PDF, inflate and image encoders in a second module loaded on export | ≈ −0.1 MB at start | `uo_pdf` + `miniz_oxide` + encoders ≈ 6% of the code |
-| + trimming monomorphisation (`dyn` at cold generic sites, fewer `core::fmt` paths, one map type) and moving the reader's cold paths out of the start module | ≈ 0.6–0.8 MB | work in the crates, not a flag; to measure with `twiggy` |
+| + trimming monomorphisation (`dyn` at cold generic sites, one sort, one map type) and moving the reader's cold paths out of the start module | -0.06 MB gzip measured for the sort and `dyn` work (see above); the rest is a split | work in the crates, not a flag; the first estimate (0.6–0.8 MB) was wrong for the transfer |
 
 So ≈ 45–60% off today's 1.45 MB gzip at start is still the realistic band, but it comes from code changes (split
 modules, less monomorphisation), not from `wasm-opt`; matching the TS start (≈ 0.30 MB gzip, ≈ 0.45 MB with the PDF) is

@@ -523,7 +523,7 @@ fn read_grad_fill(st: &mut ShapeStyle, gf: Element<'_>) {
             ..GradStop::default()
         })
         .collect();
-    list.sort_by(|a, b| a.pos.to_number().partial_cmp(&b.pos.to_number()).unwrap_or(Ordering::Equal));
+    uo_jsnum::sort::sort_stable_by(&mut list, |a, b| a.pos.to_number().partial_cmp(&b.pos.to_number()).unwrap_or(Ordering::Equal));
     g.stops = Some(list);
     if let Some(sc) = lin.and_then(|l| l.attr("scaled")) {
         g.scaled = Some(is_on(sc));

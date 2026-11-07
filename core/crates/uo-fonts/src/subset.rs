@@ -241,7 +241,7 @@ fn try_subset(bytes: &[u8], used_gids: impl IntoIterator<Item = u32>, keep_layou
         };
         tables.push((t, len));
     }
-    tables.sort_by_key(|(t, _)| t.tag);
+    uo_jsnum::sort::sort_stable_by_key(&mut tables, |(t, _)| t.tag);
 
     let header = 12 + 16 * tables.len() as u64;
     let total = tables.iter().fold(header, |sum, (_, len)| sum + ((len + 3) & !3));

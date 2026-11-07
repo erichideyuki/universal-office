@@ -249,15 +249,62 @@ pub fn object_exact_head(keys: &KeyOrder, cleared: FieldMask, k: &mut ExactKey) 
     k.tag(b'O') && k.count(order.len()) && order.iter().all(|&i| k.tag(i)) && k.u64(cleared.bits())
 }
 
+/// The object-safe view of a declared object: the JSON walker exists once, each type only has this vtable.
+pub trait JsObjectDyn {
+    /// [`JsObject::keys`].
+    fn js_keys(&self) -> &'static [&'static str];
+    /// [`JsObject::slot`].
+    fn js_slot(&self, i: usize) -> Slot<'_>;
+    /// [`JsObject::key_order`].
+    fn js_key_order(&self) -> &KeyOrder;
+}
+
+impl<T: JsObject> JsObjectDyn for T {
+    fn js_keys(&self) -> &'static [&'static str] {
+        T::keys()
+    }
+    fn js_slot(&self, i: usize) -> Slot<'_> {
+        self.slot(i)
+    }
+    fn js_key_order(&self) -> &KeyOrder {
+        self.key_order()
+    }
+}
+
+/// [`JsObject::for_each_in_order`] over the view (same body).
+#[inline(never)]
+fn for_each_in_order_dyn<'a>(o: &'a dyn JsObjectDyn, f: &mut dyn FnMut(&'static str, Slot<'a>)) {
+    let keys = o.js_keys();
+    let recorded = o.js_key_order().recorded();
+    for &i in recorded {
+        let i = usize::from(i);
+        if let (Some(k), s) = (keys.get(i), o.js_slot(i))
+            && !matches!(s, Slot::Absent)
+        {
+            f(k, s);
+        }
+    }
+    for (i, k) in keys.iter().enumerate() {
+        if recorded.iter().any(|&r| usize::from(r) == i) {
+            continue;
+        }
+        let s = o.js_slot(i);
+        if !matches!(s, Slot::Absent) {
+            f(k, s);
+        }
+    }
+}
+
 /// `JSON.stringify` of a declared object: keys in insertion order, `undefined` omitted.
 #[doc(hidden)]
-pub fn object_json<T: JsObject>(o: &T, w: &mut JsonWriter<'_>) {
+#[inline(never)]
+pub fn object_json(o: &dyn JsObjectDyn, w: &mut JsonWriter<'_>) {
     if w.sorted_keys() {
         object_json_with(o, &[], &[], w);
         return;
     }
     w.begin_object();
-    o.for_each_in_order(&mut |k, s| {
+    for_each_in_order_dyn(o, &mut |k, s| {
         if let Slot::Val(v) = s {
             w.member(k, v);
         }
@@ -302,19 +349,26 @@ pub fn object_canon_with<T: JsObject>(o: &T, extra: &[crate::canon::EntryRef<'_>
     }
 }
 
+/// The members of a signature object in UTF-16 code-unit order of their names (G23): one sort for every type.
+#[inline(never)]
+fn sort_members(all: &mut [(&str, &dyn JsValue)]) {
+    all.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
+}
+
 /// `JSON.stringify` of a declared object with extra members: `before`, the object's keys in
 /// insertion order, then `after`.
-pub fn object_json_with<T: JsObject>(o: &T, before: &[(&str, &dyn JsValue)], after: &[(&str, &dyn JsValue)], w: &mut JsonWriter<'_>) {
+#[inline(never)]
+pub fn object_json_with(o: &dyn JsObjectDyn, before: &[(&str, &dyn JsValue)], after: &[(&str, &dyn JsValue)], w: &mut JsonWriter<'_>) {
     if w.sorted_keys() {
         // the order-insensitive signature encoding (D1b, G23): every member sorted by name
         let mut all: Vec<(&str, &dyn JsValue)> = before.to_vec();
-        for (k, s) in o.slots_in_order() {
+        for_each_in_order_dyn(o, &mut |k, s| {
             if let Slot::Val(v) = s {
                 all.push((k, v));
             }
-        }
+        });
         all.extend_from_slice(after);
-        all.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
+        sort_members(&mut all);
         w.begin_object();
         for (k, v) in all {
             w.member(k, v);
@@ -326,7 +380,7 @@ pub fn object_json_with<T: JsObject>(o: &T, before: &[(&str, &dyn JsValue)], aft
     for (k, v) in before {
         w.member(k, *v);
     }
-    o.for_each_in_order(&mut |k, s| {
+    for_each_in_order_dyn(o, &mut |k, s| {
         if let Slot::Val(v) = s {
             w.member(k, v);
         }

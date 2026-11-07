@@ -11,6 +11,7 @@
 //!   `toLowerCase`, the `TextDecoder` (UTF-8) and Latin-1 byte decoders.
 //! - [`object`]: the key order of a JS object (array indices first).
 //! - [`parse`]: `Number(s)`, `parseInt` (also over UTF-16 code units) and `parseFloat`.
+//! - [`sort`]: `Array.prototype.sort` (V8's decisions) over indices, one sort core for the cold sorts of the engines.
 //! - [`format`]: `String(x)`, `toFixed`, `toPrecision`, `toExponential` and `toString(radix)` of integers.
 //! - [`json`]: `JSON.stringify` of numbers and strings (UTF-8 or UTF-16), for TS JSON keys and signatures.
 //!
@@ -19,7 +20,7 @@
 //! banned workspace-wide by `core/clippy.toml`, and the replacements are here. Plan and
 //! decisions: `core/docs/modules/uo-jsnum.md`.
 //!
-//! Nothing here allocates except the strings that are returned, keeps state, or panics.
+//! Nothing here allocates except the strings that are returned (and the index vectors of [`sort`]), keeps state, or panics.
 //! Not `no_std`: `core` has no `f64::sqrt`, `floor`, `ceil` or `trunc` yet.
 #![forbid(unsafe_code)]
 
@@ -31,6 +32,7 @@ pub mod json;
 pub mod math;
 pub mod object;
 pub mod parse;
+pub mod sort;
 pub mod text;
 
 /// Nothing in this crate caches across calls; kept for the memory-gate convention (M1).

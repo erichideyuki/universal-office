@@ -562,7 +562,7 @@ impl<'s, 'o> Parser<'s, 'o> {
                 None => rest.push(*a),
             }
         }
-        ints.sort_by_key(|x| x.0);
+        uo_jsnum::sort::sort_stable_by_key(&mut ints, |x| x.0);
         self.pattrs.clear();
         self.pattrs.extend(ints.into_iter().map(|x| x.1));
         self.pattrs.extend(rest);

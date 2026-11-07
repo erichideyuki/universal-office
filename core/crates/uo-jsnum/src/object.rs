@@ -23,7 +23,7 @@ pub fn js_object_order<T>(items: Vec<(String, T)>) -> Vec<(String, T)> {
         return items;
     }
     let (mut ints, rest): (Vec<_>, Vec<_>) = items.into_iter().partition(|(n, _)| array_index(n).is_some());
-    ints.sort_by_key(|(n, _)| array_index(n));
+    crate::sort::sort_stable_by_key(&mut ints, |(n, _)| array_index(n));
     ints.extend(rest);
     ints
 }

@@ -22,7 +22,8 @@ pub use exact::ExactKey;
 pub use json::{JsonWriter, SigEncoding};
 pub use number::{JsNumber, Nullable, NumKey};
 pub use object::{
-    FieldMask, JsAssign, JsObject, KeyOrder, Slot, no_hidden_fields, object_exact_head, object_json, object_json_with, sort_keys,
+    FieldMask, JsAssign, JsObject, JsObjectDyn, KeyOrder, Slot, no_hidden_fields, object_exact_head, object_json, object_json_with,
+    sort_keys,
 };
 #[cfg(feature = "canon")]
 pub use object::{object_canon, object_canon_with};

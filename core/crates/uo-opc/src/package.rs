@@ -737,7 +737,7 @@ fn overlapping(entries: &[ZipEntry], len: u64) -> Vec<bool> {
     };
     let mut order: Vec<(u64, u64, usize)> =
         entries.iter().enumerate().map(|(i, e)| (range(e), i)).filter(|((s, e), _)| s < e).map(|((s, e), i)| (s, e, i)).collect();
-    order.sort_unstable();
+    uo_jsnum::sort::sort_stable_by(&mut order, |a, b| a.cmp(b));
     let mut shared = vec![false; entries.len()];
     // the entry reaching furthest so far, and where it ends
     let mut furthest: Option<(usize, u64)> = None;

@@ -154,84 +154,8 @@ pub fn json_eq(a: Option<&dyn JsValue>, b: Option<&dyn JsValue>) -> bool {
 /// merge sort on the same decision, which equals V8 whenever the comparator is consistent
 /// (declared: a NaN-answering comparator over 64 or more elements may order differently from V8;
 /// it never panics, unlike `slice::sort_by` on an inconsistent order).
-pub fn js_sort<T>(v: &mut Vec<T>, cmp: impl Fn(&T, &T) -> f64) {
-    let n = v.len();
-    if n < 2 {
-        return;
-    }
-    if n >= 64 {
-        let items: Vec<T> = std::mem::take(v);
-        *v = merge_sort(items, &cmp);
-        return;
-    }
-    // CountAndMakeRun(0, n)
-    let mut run = 2usize;
-    let descending = match (v.get(1), v.first()) {
-        (Some(b), Some(a)) => cmp(b, a) < 0.0,
-        _ => false,
-    };
-    while run < n {
-        let (Some(cur), Some(prev)) = (v.get(run), v.get(run - 1)) else { break };
-        let order = cmp(cur, prev);
-        // V8: a descending run stops at `order >= 0`, an ascending one at `order < 0` (NaN stops neither)
-        if descending {
-            if order >= 0.0 {
-                break;
-            }
-        } else if order < 0.0 {
-            break;
-        }
-        run += 1;
-    }
-    if descending && let Some(r) = v.get_mut(..run) {
-        r.reverse();
-    }
-    // BinaryInsertionSort(0, run, n)
-    let mut start = run;
-    while start < n {
-        let mut left = 0usize;
-        let mut right = start;
-        while left < right {
-            let mid = left + ((right - left) >> 1);
-            let order = match (v.get(start), v.get(mid)) {
-                (Some(p), Some(m)) => cmp(p, m),
-                _ => 0.0,
-            };
-            if order < 0.0 {
-                right = mid;
-            } else {
-                left = mid + 1;
-            }
-        }
-        if let Some(r) = v.get_mut(left..=start) {
-            r.rotate_right(1);
-        }
-        start += 1;
-    }
-}
-
-/// A top-down stable merge sort: `b` goes before `a` only when `cmp(b, a) < 0`.
-fn merge_sort<T>(mut items: Vec<T>, cmp: &impl Fn(&T, &T) -> f64) -> Vec<T> {
-    if items.len() < 2 {
-        return items;
-    }
-    let right = items.split_off(items.len() / 2);
-    let (l, r) = (merge_sort(items, cmp), merge_sort(right, cmp));
-    let mut out = Vec::with_capacity(l.len() + r.len());
-    let (mut li, mut ri) = (l.into_iter().peekable(), r.into_iter().peekable());
-    loop {
-        let take_right = match (li.peek(), ri.peek()) {
-            (Some(a), Some(b)) => cmp(b, a) < 0.0,
-            (None, Some(_)) => true,
-            (Some(_), None) => false,
-            (None, None) => break,
-        };
-        let next = if take_right { ri.next() } else { li.next() };
-        if let Some(x) = next {
-            out.push(x);
-        }
-    }
-    out
+pub fn js_sort<T>(v: &mut [T], cmp: impl Fn(&T, &T) -> f64) {
+    uo_jsnum::sort::js_sort_by(v, cmp);
 }
 
 #[cfg(test)]

@@ -119,7 +119,7 @@ impl Cmap {
             }
             other => return Err(FontError::CmapFormat(other)),
         };
-        order.sort_by_key(|&i| range_start(view, &kind, i));
+        uo_jsnum::sort::sort_stable_by_key(&mut order, |&i| range_start(view, &kind, i));
         Ok(Cmap { kind, order: order.into_boxed_slice(), symbol })
     }
 
