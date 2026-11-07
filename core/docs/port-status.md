@@ -1,5 +1,8 @@
 # Port status — 2026-11-03 (updated after the shared/fonts and shared/drawingml completion)
 
+> **Latest state (2026-11-07): `core/docs/HANDOFF.md`** — what is done since, the WIP commit, the queue and the
+> decisions waiting. The line counts below were last measured at `c3f95ae5` and have not been re-measured.
+
 Measured, not estimated, for the line counts; the "ported" fraction of a few split files (marked
 partial) is a judgement from the frontier records.
 
