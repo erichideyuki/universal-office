@@ -797,6 +797,12 @@ fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Repor
     let mut t = Tally::default();
     let only: Vec<String> = std::env::var("UO_LAYOUT_ONLY").map(|v| v.split(',').map(str::to_owned).collect()).unwrap_or_default();
     for rec in cap.records() {
+        // the G8 facets (a `--f8 --g8` capture) belong to tests/g8.rs
+        for f in ["g8.section", "g8.annotations"] {
+            if rec.get(f).is_some() {
+                replay.skip(&rec.key, f);
+            }
+        }
         let skip_all = |replay: &mut Replay<'_>| {
             for (f, _) in &rec.facets {
                 replay.skip(&rec.key, f);

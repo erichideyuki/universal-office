@@ -622,6 +622,7 @@ impl Session {
     /// Drops a pending two-phase command (the shell failed or the user cancelled).
     pub fn cancel_pending(&mut self) {
         self.pending = None;
+        self.f7.clear_pending();
     }
 
     // ── undo / redo ────────────────────────────────────────────────────────────────────────
@@ -644,7 +645,18 @@ impl Session {
         }
     }
 
+    /// Ends a command: the settle step and the history pricing when it took a step or reported
+    /// anything (F7: the drawing and picture commands end here), the bare change set otherwise.
+    pub(crate) fn finish_if_stepped(&mut self) -> ChangeSet {
+        if self.tx.events.is_empty() && self.tx.changed.is_empty() && !self.tx.structure && !self.tx.all && !self.tx.sections {
+            self.change_set()
+        } else {
+            self.finish()
+        }
+    }
+
     fn change_set(&mut self) -> ChangeSet {
+        self.settle_float_sel();
         let tx = std::mem::take(&mut self.tx);
         let story = if tx.all {
             StoryKey::All
@@ -788,7 +800,9 @@ impl Session {
             .unwrap_or_default()
         };
         let deep = (if undo { self.history.peek_undo() } else { self.history.peek_redo() }).is_some_and(|s| s.deep_hf.is_some());
-        // a textbox being edited is left first (the state of now is taken from outside it)
+        // a textbox being edited: the state of now (with the box: `te`) goes to the other stack, then the
+        // box is left (`popHistory`: `to.push(stringifyState(...))` before `exitTextbox(true)`)
+        let in_box = matches!(self.ctx, EditContext::Textbox { .. }).then(|| self.take_state(deep, &peek_parts));
         ops::context::leave_for_history(self, cx);
         // a step taken in a note brings the caret into it before the state of now is taken (the
         // redo keeps its text: notes-lab fn-undo)
@@ -805,7 +819,7 @@ impl Session {
                 self.enter_note(footnote, id, None, true);
             }
         }
-        let current = self.take_state(deep, &peek_parts);
+        let current = in_box.unwrap_or_else(|| self.take_state(deep, &peek_parts));
         let popped = if undo { self.history.undo(current) } else { self.history.redo(current) };
         let Some((state, c)) = popped else { return self.change_set() };
         self.dirty_event(c);

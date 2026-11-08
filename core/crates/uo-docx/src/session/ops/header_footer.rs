@@ -727,7 +727,7 @@ impl Session {
 
     /// Reads a header/footer part from `xml` as if it came from the file at `path` (the reader with
     /// the document's sources); the signatures of the new nodes join the baseline.
-    pub(crate) fn read_hf_part_story(&mut self, path: &str, xml: &str) -> Result<Option<Story>, CommandError> {
+    fn read_hf_part_story(&mut self, path: &str, xml: &str) -> Result<Option<Story>, CommandError> {
         use crate::read::ctx::ReadCtx;
         let limits = crate::limits::DocxLimits::default();
         let opts = crate::read::ReadOptions { sources: false, limits };
@@ -749,6 +749,23 @@ impl Session {
             self.baseline_new_nodes(st, old_next);
         }
         Ok(story)
+    }
+
+    /// `readHeaderFooterPart(pkg, path, undefined, xml)`: the same reader with no source store (what
+    /// the text box templates of D2b-F7 use): the nodes carry no `src`, so the save rebuilds them
+    /// from the model.
+    pub(crate) fn read_part_story_no_sources(&mut self, path: &str, xml: &str) -> Result<Option<Story>, CommandError> {
+        use crate::read::ctx::ReadCtx;
+        let limits = crate::limits::DocxLimits::default();
+        let opts = crate::read::ReadOptions { sources: false, limits };
+        let doc: &mut Document = &mut self.doc;
+        let mut ctx = ReadCtx::new(&self.pkg, &opts);
+        ctx.ids = std::mem::take(&mut doc.ids);
+        ctx.media = std::mem::take(&mut doc.media);
+        let r = crate::read::fulldoc::read_header_footer_part(&mut ctx, path, Some(xml));
+        doc.ids = ctx.ids;
+        doc.media = ctx.media;
+        r.map_err(|_| CommandError::Position)
     }
 
     /// `store.baseline()` for the nodes a read just registered (source keys from `old_next`): the

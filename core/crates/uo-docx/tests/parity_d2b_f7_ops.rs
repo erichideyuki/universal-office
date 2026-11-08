@@ -12,8 +12,12 @@ use uo_docx::session::ops::drawing::pure::{self, ZOp};
 use uo_jsnum::format::to_js_string as js;
 use uo_testkit::{Capture, Replay};
 
+fn num(s: &str) -> f64 {
+    uo_jsnum::parse::to_number(s)
+}
+
 fn n(s: &str) -> Option<JsNumber> {
-    (s != "-").then(|| JsNumber::Num(s.parse::<f64>().unwrap()))
+    (s != "-").then(|| JsNumber::Num(num(s)))
 }
 
 fn f(x: Option<JsNumber>) -> String {
@@ -26,8 +30,8 @@ fn black() -> PicColor {
 
 fn ee(input: &str) -> String {
     let p: Vec<&str> = input.split('|').collect();
-    let mut fm = PictureFormat { cx: JsNumber::Num(p[0].parse().unwrap()), cy: JsNumber::Num(p[1].parse().unwrap()), ..PictureFormat::default() };
-    fm.rot = JsNumber::Num(p[2].parse().unwrap());
+    let mut fm = PictureFormat { cx: JsNumber::Num(num(p[0])), cy: JsNumber::Num(num(p[1])), ..PictureFormat::default() };
+    fm.rot = JsNumber::Num(num(p[2]));
     fm.line = match p[3].as_bytes()[0] {
         b'-' => None,
         b'N' => Some(Nullable::Null),
@@ -68,11 +72,16 @@ fn ee(input: &str) -> String {
 }
 
 fn nums(s: &str) -> Vec<f64> {
-    s.split(',').filter(|x| !x.is_empty()).map(|x| x.parse().unwrap()).collect()
+    s.split(',').filter(|x| !x.is_empty()).map(num).collect()
 }
 
 fn col(c: &PicColor) -> String {
-    format!("{}:{}:{}", c.kind, c.val, c.mods.iter().flatten().map(|m| format!("{}={}", m.0, js(m.1.to_number()))).collect::<Vec<_>>().join(";"))
+    format!(
+        "{}:{}:{}",
+        c.kind,
+        c.val,
+        c.mods.iter().flatten().map(|m| format!("{}={}", m.0, js(m.1.to_number()))).collect::<Vec<_>>().join(";")
+    )
 }
 
 #[test]
@@ -83,8 +92,11 @@ fn d2b_f7_pure_file_matches_the_ts() {
     let mut replay = Replay::new(&cap);
     for j in 0..cases {
         let k = format!("ee{j}");
+        // the `in` facet is the input the replay parses; its comparison is the `out` facet
+        replay.skip(&k, "in");
         replay.check(&k, "out", &ee(cap.get(&k, "in").unwrap()));
         let k = format!("z{j}");
+        replay.skip(&k, "in");
         let inp = cap.get(&k, "in").unwrap();
         let p: Vec<&str> = inp.split('|').collect();
         let op = match p[0] {
@@ -93,18 +105,20 @@ fn d2b_f7_pure_file_matches_the_ts() {
             "forward" => ZOp::Forward,
             _ => ZOp::Backward,
         };
-        replay.check(&k, "out", &js(pure::z_for(op, p[1].parse().unwrap(), &nums(p[2]))));
+        replay.check(&k, "out", &js(pure::z_for(op, num(p[1]), &nums(p[2]))));
         let k = format!("ff{j}");
+        replay.skip(&k, "in");
         let inp = cap.get(&k, "in").unwrap();
         let p: Vec<&str> = inp.split('|').collect();
-        let r = pure::fill_fit_crop(p[0] == "fill", p[1].parse().unwrap(), p[2].parse().unwrap(), p[3].parse().unwrap(), p[4].parse().unwrap());
+        let r = pure::fill_fit_crop(p[0] == "fill", num(p[1]), num(p[2]), num(p[3]), num(p[4]));
         replay.check(&k, "out", &format!("{},{},{},{}", js(r.l), js(r.t), js(r.r), js(r.b)));
         let k = format!("ac{j}");
+        replay.skip(&k, "in");
         let inp = cap.get(&k, "in").unwrap();
         let p: Vec<&str> = inp.split('|').collect();
         let s = nums(p[2]);
         let src = uo_docx::write::emit::fx::Rect4 { l: s[0], t: s[1], r: s[2], b: s[3] };
-        let (c, cx, cy) = pure::aspect_crop(p[0].parse().unwrap(), p[1].parse().unwrap(), src, p[3].parse().unwrap());
+        let (c, cx, cy) = pure::aspect_crop(num(p[0]), num(p[1]), src, num(p[3]));
         replay.check(&k, "out", &format!("{},{},{},{},{},{}", js(c.l), js(c.t), js(c.r), js(c.b), js(cx), js(cy)));
     }
     // the presets
@@ -113,33 +127,71 @@ fn d2b_f7_pure_file_matches_the_ts() {
         let actual = match kind {
             "shadow" => {
                 let s = pure::shadow_preset(id).unwrap();
-                [s.kind.to_string(), f(s.blur_rad), f(s.dist), f(s.dir), f(s.sx), f(s.sy), f(s.kx), f(s.ky), s.algn.as_deref().unwrap_or("-").to_owned(), col(&s.color)].join(",")
+                [
+                    s.kind.to_string(),
+                    f(s.blur_rad),
+                    f(s.dist),
+                    f(s.dir),
+                    f(s.sx),
+                    f(s.sy),
+                    f(s.kx),
+                    f(s.ky),
+                    s.algn.as_deref().unwrap_or("-").to_owned(),
+                    col(&s.color),
+                ]
+                .join(",")
             }
             "reflection" => {
                 let s = pure::reflection_preset(id).unwrap();
-                [f(s.blur_rad), f(s.st_a), f(s.end_a), f(s.end_pos), f(s.dist), f(s.dir), f(s.sy), s.algn.as_deref().unwrap_or("-").to_owned(), s.rot_with_shape.unwrap().to_string()].join(",")
+                [
+                    f(s.blur_rad),
+                    f(s.st_a),
+                    f(s.end_a),
+                    f(s.end_pos),
+                    f(s.dist),
+                    f(s.dir),
+                    f(s.sy),
+                    s.algn.as_deref().unwrap_or("-").to_owned(),
+                    s.rot_with_shape.unwrap().to_string(),
+                ]
+                .join(",")
             }
             "recolor" => {
                 let x = pure::recolor_preset(id).unwrap();
                 [
                     x.grayscl.map_or("-".to_owned(), |b| b.to_string()),
                     f(x.bi_level),
-                    x.lum.as_ref().map_or("-".to_owned(), |l| format!("{}/{}", js(l.bright.unwrap().to_number()), js(l.contrast.unwrap().to_number()))),
+                    x.lum.as_ref().map_or("-".to_owned(), |l| {
+                        format!("{}/{}", js(l.bright.unwrap().to_number()), js(l.contrast.unwrap().to_number()))
+                    }),
                     x.duotone.as_ref().map_or("-".to_owned(), |d| format!("{}>{}", col(&d.0), col(&d.1))),
                 ]
                 .join(",")
             }
             "bevel" => {
                 let b = pure::bevel_3d(id);
-                format!("{},{},{},{}", b.camera.as_ref().unwrap().prst, b.light_rig.as_ref().unwrap().rig, b.light_rig.as_ref().unwrap().dir, b.bevel_t.as_ref().unwrap().prst.as_deref().unwrap_or("-"))
+                format!(
+                    "{},{},{},{}",
+                    b.camera.as_ref().unwrap().prst,
+                    b.light_rig.as_ref().unwrap().rig,
+                    b.light_rig.as_ref().unwrap().dir,
+                    b.bevel_t.as_ref().unwrap().prst.as_deref().unwrap_or("-")
+                )
             }
             "glow" => {
                 let (i, a) = id.split_once('-').unwrap();
-                let g = pure::glow_preset(pure::GLOW_SIZES[i.parse::<usize>().unwrap()], a.parse().unwrap());
+                let g = pure::glow_preset(pure::GLOW_SIZES[i.parse::<usize>().unwrap()], num(a));
                 format!("{},{}", js(g.rad.to_number()), col(&g.color))
             }
             _ => panic!("{kind}"),
         };
+        replay.check(&rec.key, "out", &actual);
+    }
+    // the gallery boxes (`textboxTemplateSpec` through `newTextboxDrawingXml`)
+    for rec in cap.records().iter().filter(|r| r.key.starts_with("tt#")) {
+        let mut it = rec.key.trim_start_matches("tt#").split('|');
+        let (id, accent, lang) = (it.next().unwrap(), it.next().unwrap(), it.next().unwrap());
+        let actual = uo_docx::session::ops::drawing::template_xml(id, accent, lang).unwrap_or_else(|| "-".to_owned());
         replay.check(&rec.key, "out", &actual);
     }
     let report = replay.finish();

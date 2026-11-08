@@ -20,7 +20,7 @@ use super::drawing::pure::{self, ZOp};
 use super::drawing::{FormatArg, ObjFacts, ObjFrame, Path, Step, apply_format_arg, format_of, raw_of};
 use crate::js::{JsNumber, Nullable, Str};
 use crate::model::media::MediaRef;
-use crate::model::picture::{A14Props, PicColor, PicLine, PicPos, Pic3D, PicBlipFx, SizeRel, WrapPolygon};
+use crate::model::picture::{A14Props, Pic3D, PicBlipFx, PicColor, PicLine, PicPos, SizeRel, WrapPolygon};
 use crate::model::run::{ImageLayer, InlineImage, OleData, Run, RunExt};
 use crate::text::Utf16;
 use crate::word::obj;
@@ -114,7 +114,8 @@ pub enum PictureCmd {
     /// `setImageWrap(kind)` (a picture wrapped tight/through asks the shell for its pixels)
     SetWrap { kind: PicWrapKind },
     /// `setImagePosition(preset)`
-    SetPosition { preset: Str },
+    /// `facts`: the box and the frame the layout gives the picture when it starts to float
+    SetPosition { preset: Str, facts: ObjFacts },
     /// `setImageMoveWithText(on)`
     SetMoveWithText { on: bool, facts: ObjFacts },
     /// `setImageLockAnchor(on)`
@@ -136,11 +137,11 @@ pub enum PictureCmd {
     /// `arrangeImage(op)`
     Arrange { op: ArrangeOp },
     /// `setImageLayout(o)`
-    SetLayout { o: LayoutInput, facts: ObjFacts },
+    SetLayout { o: Box<LayoutInput>, facts: ObjFacts },
     /// `setImageBorder({ color, weightPt, dash })`
     SetBorder { color: Option<Nullable<PicColor>>, weight_pt: Option<f64>, dash: Option<Str> },
     /// `setImageFormat(o)`
-    SetFormat { fmt: FormatArg },
+    SetFormat { fmt: Box<FormatArg> },
     /// `setImageEffect(kind, preset)`
     SetEffect { kind: EffectKind, preset: Option<Str> },
     /// `cropImageFillFit(mode)` with the natural size in points (`None`: not decoded, nothing happens)
@@ -261,18 +262,33 @@ fn rot_of(deg: f64) -> f64 {
 
 impl Session {
     fn done8(&mut self) -> Res {
-        Ok(Outcome::Done(self.change_set()))
+        Ok(Outcome::Done(self.finish_if_stepped()))
+    }
+
+    /// A command that runs another one inside itself (the wrap of the layout dialog, the wrap of a
+    /// position): what the inner one reported (events, changed paragraphs) goes on in the outer
+    /// change set, as the TS fires them in order.
+    fn carry(&mut self, inner: &Outcome) {
+        if let Outcome::Done(cs) = inner {
+            self.tx.events.splice(0..0, cs.events.iter().cloned());
+            for sc in &cs.stories {
+                self.tx.changed.splice(0..0, sc.changed.iter().copied());
+                self.tx.structure |= sc.structure;
+            }
+            self.tx.formatting |= cs.formatting;
+        }
     }
 
     pub(crate) fn exec_pictures(&mut self, cmd: PictureCmd, cx: &mut ExecCx<'_>) -> Res {
         match cmd {
             PictureCmd::SetWrap { kind } => return self.set_image_wrap(kind, None),
-            PictureCmd::SetPosition { preset } => {
+            PictureCmd::SetPosition { preset, facts } => {
                 if &*preset == "inline" {
                     return self.set_image_wrap(PicWrapKind::Inline, None);
                 }
+                // `const [v, hh] = preset.split('-')`: a preset without a dash has no horizontal part
                 let mut it = preset.splitn(2, '-');
-                let (v, h) = (it.next().unwrap_or(""), it.next().unwrap_or(""));
+                let (v, h) = (it.next().unwrap_or(""), it.next());
                 let Some(path) = self.draw_path() else { return self.done8() };
                 if self.locked() {
                     return self.done8();
@@ -283,11 +299,13 @@ impl Session {
                     if matches!(out, Outcome::NeedsJobs(_)) {
                         return Ok(out);
                     }
+                    self.carry(&out);
+                    self.place_from(&facts);
                 }
-                let (v, h): (Str, Str) = (v.into(), h.into());
+                let (v, h): (Str, Option<Str>) = (v.into(), h.map(Into::into));
                 self.edit_drawing(false, &mut |_, _| {
                     Some(pic(PictureChange {
-                        pos_h: Some(PicPos { relative_from: "margin".into(), align: Some(h.clone()), ..PicPos::default() }),
+                        pos_h: Some(PicPos { relative_from: "margin".into(), align: h.clone(), ..PicPos::default() }),
                         pos_v: Some(PicPos { relative_from: "margin".into(), align: Some(v.clone()), ..PicPos::default() }),
                         ..PictureChange::default()
                     }))
@@ -327,10 +345,14 @@ impl Session {
                         ch.no_change_aspect = lock_aspect;
                     }
                     if b.size_rel_h.as_ref().and_then(|s| s.pct.as_f64()).is_some_and(truthy) {
-                        ch.size_rel_h = b.size_rel_h.as_ref().map(|s| Nullable::Val(SizeRel { relative_from: s.relative_from.clone(), pct: num(0.0), ..Default::default() }));
+                        ch.size_rel_h = b.size_rel_h.as_ref().map(|s| {
+                            Nullable::Val(SizeRel { relative_from: s.relative_from.clone(), pct: num(0.0), ..Default::default() })
+                        });
                     }
                     if b.size_rel_v.as_ref().and_then(|s| s.pct.as_f64()).is_some_and(truthy) {
-                        ch.size_rel_v = b.size_rel_v.as_ref().map(|s| Nullable::Val(SizeRel { relative_from: s.relative_from.clone(), pct: num(0.0), ..Default::default() }));
+                        ch.size_rel_v = b.size_rel_v.as_ref().map(|s| {
+                            Nullable::Val(SizeRel { relative_from: s.relative_from.clone(), pct: num(0.0), ..Default::default() })
+                        });
                     }
                     if cx0 == ocx && cy0 == ocy && !aspect_key { None } else { Some(pic(ch)) }
                 });
@@ -375,7 +397,7 @@ impl Session {
                 });
             }
             PictureCmd::Arrange { op } => return self.arrange_image(op),
-            PictureCmd::SetLayout { o, facts } => return self.set_image_layout(&o, &facts),
+            PictureCmd::SetLayout { o, facts } => return self.set_image_layout(&o, &facts, None),
             PictureCmd::SetBorder { color, weight_pt, dash } => {
                 self.edit_drawing(false, &mut |f, _| {
                     let line = f.base().line.as_ref().and_then(Nullable::as_val);
@@ -429,7 +451,12 @@ impl Session {
             PictureCmd::CropToAspect { w, h } => {
                 self.edit_drawing(true, &mut |f, _| {
                     let b = f.base();
-                    let s = Rect4 { l: b.src_rect.l.to_number(), t: b.src_rect.t.to_number(), r: b.src_rect.r.to_number(), b: b.src_rect.b.to_number() };
+                    let s = Rect4 {
+                        l: b.src_rect.l.to_number(),
+                        t: b.src_rect.t.to_number(),
+                        r: b.src_rect.r.to_number(),
+                        b: b.src_rect.b.to_number(),
+                    };
                     let (crop, cx0, cy0) = pure::aspect_crop(b.cx.to_number(), b.cy.to_number(), s, w / h);
                     Some(pic(PictureChange { src_rect: Some(crop), size: Some((cx0, cy0)), ..PictureChange::default() }))
                 });
@@ -439,7 +466,10 @@ impl Session {
                     if *f.base().geom == *prst {
                         None
                     } else {
-                        Some(pic(PictureChange { geom: Some(GeomChange { prst: prst.to_string(), adj: None }), ..PictureChange::default() }))
+                        Some(pic(PictureChange {
+                            geom: Some(GeomChange { prst: prst.to_string(), adj: None }),
+                            ..PictureChange::default()
+                        }))
                     }
                 });
             }
@@ -491,10 +521,16 @@ impl Session {
                             obj::delete(&mut fx, "clrChange");
                         }
                         Some(h) => {
-                            let c = PicColor { kind: "srgbClr".into(), val: uo_text::case::to_uppercase_str(h).into(), ..PicColor::default() };
+                            let c =
+                                PicColor { kind: "srgbClr".into(), val: uo_text::case::to_uppercase_str(h).into(), ..PicColor::default() };
                             let to = PicColor { mods: Some(vec![(Str::from("alpha"), num(0.0))]), ..c.clone() };
                             obj::set(&mut fx, "clrChange", |x| {
-                                x.clr_change = Some(Box::new(crate::model::picture::ClrChange { from: c.clone(), to: to.clone(), use_a: None, ..Default::default() }));
+                                x.clr_change = Some(Box::new(crate::model::picture::ClrChange {
+                                    from: c.clone(),
+                                    to: to.clone(),
+                                    use_a: None,
+                                    ..Default::default()
+                                }));
                             });
                         }
                     }
@@ -643,7 +679,10 @@ impl Session {
                     if b.pos_h.as_ref().is_some_and(|p| *p.relative_from == *rel && p.align.as_deref() == Some(al)) {
                         return None;
                     }
-                    Some(pic(PictureChange { pos_h: Some(PicPos { relative_from: rel.clone(), align: Some(al.into()), ..PicPos::default() }), ..PictureChange::default() }))
+                    Some(pic(PictureChange {
+                        pos_h: Some(PicPos { relative_from: rel.clone(), align: Some(al.into()), ..PicPos::default() }),
+                        ..PictureChange::default()
+                    }))
                 }
                 _ => {
                     let v = match kind {
@@ -654,7 +693,10 @@ impl Session {
                     if b.pos_v.as_ref().is_some_and(|p| *p.relative_from == *rel && p.align.as_deref() == Some(v)) {
                         return None;
                     }
-                    Some(pic(PictureChange { pos_v: Some(PicPos { relative_from: rel.clone(), align: Some(v.into()), ..PicPos::default() }), ..PictureChange::default() }))
+                    Some(pic(PictureChange {
+                        pos_v: Some(PicPos { relative_from: rel.clone(), align: Some(v.into()), ..PicPos::default() }),
+                        ..PictureChange::default()
+                    }))
                 }
             }
         });
@@ -676,8 +718,12 @@ impl Session {
                 EffectKind::Glow => match preset {
                     None | Some("") => ch.glow = Some(Nullable::Null),
                     Some(p) => {
-                        let (size, acc) = parse_glow(p)?;
-                        let rad = (size >= 0.0 && size < 4.0).then(|| uo_jsnum::conv::to_uint32(size) as usize).and_then(|i| pure::GLOW_SIZES.get(i)).copied().unwrap_or(pure::GLOW_SIZES[0]);
+                        let (size, acc) = super::drawing::rx::parse_glow(p)?;
+                        let rad = uo_jsnum::conv::js_index(size, pure::GLOW_SIZES.len())
+                            .and_then(|i| pure::GLOW_SIZES.get(i))
+                            .or_else(|| pure::GLOW_SIZES.first())
+                            .copied()
+                            .unwrap_or_default();
                         ch.glow = Some(Nullable::Val(pure::glow_preset(rad, acc)));
                     }
                 },
@@ -706,10 +752,13 @@ impl Session {
                 EffectKind::Rotation => {
                     let mut t: Pic3D = f.base().three_d.as_deref().cloned().unwrap_or_default();
                     let prst: Str = preset.filter(|p| !p.is_empty()).unwrap_or("orthographicFront").into();
-                    obj::set(&mut t, "camera", |x| x.camera = Some(crate::model::picture::Camera { prst: prst.clone(), ..Default::default() }));
+                    obj::set(&mut t, "camera", |x| {
+                        x.camera = Some(crate::model::picture::Camera { prst: prst.clone(), ..Default::default() })
+                    });
                     if t.light_rig.is_none() {
                         obj::set(&mut t, "lightRig", |x| {
-                            x.light_rig = Some(crate::model::picture::LightRig { rig: "threePt".into(), dir: "t".into(), ..Default::default() });
+                            x.light_rig =
+                                Some(crate::model::picture::LightRig { rig: "threePt".into(), dir: "t".into(), ..Default::default() });
                         });
                     }
                     let keep = t.bevel_t.is_some() || preset.is_some_and(|p| !p.is_empty());
@@ -737,7 +786,8 @@ impl Session {
         let wants_contour = is_img && matches!(kind, PicWrapKind::Tight | PicWrapKind::Through);
         if wants_contour && poly.is_none() {
             let probe = run.ext().and_then(|e| e.image.as_deref()).and_then(|i| {
-                let ok = i.svg.is_none() && matches!(uo_text::case::to_lowercase_str(&i.ext).as_str(), "png" | "gif" | "webp" | "tif" | "tiff" | "bmp");
+                let ok = i.svg.is_none()
+                    && matches!(uo_text::case::to_lowercase_str(&i.ext).as_str(), "png" | "gif" | "webp" | "tif" | "tiff" | "bmp");
                 ok.then(|| (i.data.0, i.ext.clone()))
             });
             if let Some((mid, ext)) = probe
@@ -749,7 +799,11 @@ impl Session {
             }
         }
         let polygon = poly.flatten().map(|pts| {
-            Nullable::Val(WrapPolygon { edited: false, pts: pts.into_iter().map(|[x, y]| (num(x), num(y))).collect(), ..Default::default() })
+            Nullable::Val(WrapPolygon {
+                edited: false,
+                pts: pts.into_iter().map(|[x, y]| (num(x), num(y))).collect(),
+                ..Default::default()
+            })
         });
         let inline_f = f.base().inline;
         if !inline_f || kind == PicWrapKind::Inline {
@@ -761,8 +815,15 @@ impl Session {
         // in line → floating: the object floats at the origin; the shell places it with `PlaceAt`
         // once the layout gave it a frame
         let zs = self.z_values(Some(&path));
-        let z = zs.iter().copied().fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| math::max(m, v)))).map_or(pure::Z_FIRST, |m| m + 1024.0);
-        let ch = pic(PictureChange { wrap: Some(kind), at: Some((0.0, 0.0)), new_relative_height: Some(z), polygon, ..PictureChange::default() });
+        let z =
+            zs.iter().copied().fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| math::max(m, v)))).map_or(pure::Z_FIRST, |m| m + 1024.0);
+        let ch = pic(PictureChange {
+            wrap: Some(kind),
+            at: Some((0.0, 0.0)),
+            new_relative_height: Some(z),
+            polygon,
+            ..PictureChange::default()
+        });
         let Some(xml) = self.patch_drawing_pub(&path, &ch) else { return self.done8() };
         self.begin_step(false, &[]);
         self.apply_drawing_xml(&path, xml, true);
@@ -776,11 +837,27 @@ impl Session {
     /// The second half of a command that floats an object: the offsets from the frame the layout
     /// gave the placed object (`posH` from the column, `posV` from the paragraph), in the step the
     /// first half took.
+    /// `place_at` with the facts of a command that floats the picture itself (the box the layout had
+    /// drawn it in and the frame it gives the placed object).
+    fn place_from(&mut self, facts: &ObjFacts) {
+        if let (Some(fr), Some(rc)) = (facts.frame, facts.rect) {
+            self.place_at(&fr, rc.x, rc.y);
+        }
+    }
+
     pub(crate) fn place_at(&mut self, frame: &ObjFrame, x: f64, y: f64) {
         let Some(path) = self.f7.placed.take() else { return };
         let ch = pic(PictureChange {
-            pos_h: Some(PicPos { relative_from: "column".into(), offset: Some(num(math::round((x - frame.col_x) * 635.0))), ..PicPos::default() }),
-            pos_v: Some(PicPos { relative_from: "paragraph".into(), offset: Some(num(math::round((y - frame.para_top) * 635.0))), ..PicPos::default() }),
+            pos_h: Some(PicPos {
+                relative_from: "column".into(),
+                offset: Some(num(math::round((x - frame.col_x) * 635.0))),
+                ..PicPos::default()
+            }),
+            pos_v: Some(PicPos {
+                relative_from: "paragraph".into(),
+                offset: Some(num(math::round((y - frame.para_top) * 635.0))),
+                ..PicPos::default()
+            }),
             ..PictureChange::default()
         });
         if !super::drawing::change_is_finite(&ch) {
@@ -793,7 +870,7 @@ impl Session {
 
     // ── the Layout dialog ──────────────────────────────────────────────────────────────────
 
-    fn set_image_layout(&mut self, o: &LayoutInput, facts: &ObjFacts) -> Res {
+    fn set_image_layout(&mut self, o: &LayoutInput, facts: &ObjFacts, poly: Option<Option<Vec<[f64; 2]>>>) -> Res {
         let Some(path) = self.draw_path() else { return self.done8() };
         if self.locked() {
             return self.done8();
@@ -803,14 +880,17 @@ impl Session {
         if let (Some(w), Some(cur)) = (o.wrap, cur_wrap)
             && *cur != *w.as_str()
         {
-            let out = self.set_image_wrap(w, None)?;
-            if matches!(out, Outcome::NeedsJobs(_)) {
-                // a contour asked for (only Tight/Through on a picture): the layout dialog has no
-                // second phase; the wrap goes without the contour (F7-D3)
+            let out = self.set_image_wrap(w, poly)?;
+            if let Outcome::NeedsJobs(jobs) = out {
+                // a contour is asked for (Tight/Through on a picture): the whole dialog waits for the
+                // pixels, not only the wrap (the TS applies the contour and the rest in one step)
                 self.cancel_pending();
                 self.f7.clear_pending();
-                let _ = self.set_image_wrap(w, Some(None))?;
+                return Ok(self.defer(Command::Picture(PictureCmd::SetLayout { o: Box::new(o.clone()), facts: *facts }), jobs));
             }
+            self.carry(&out);
+            // the picture started to float: where it was, from the layout's box and frame
+            self.place_from(facts);
         }
         let frame = facts.frame;
         self.edit_drawing(false, &mut |f, _| {
@@ -847,7 +927,11 @@ impl Session {
                             ..PicPos::default()
                         };
                     }
-                    PicPos { relative_from: p.relative_from.clone(), offset: Some(num(math::round(p.offset_pt.unwrap_or(0.0) * 12700.0))), ..PicPos::default() }
+                    PicPos {
+                        relative_from: p.relative_from.clone(),
+                        offset: Some(num(math::round(p.offset_pt.unwrap_or(0.0) * 12700.0))),
+                        ..PicPos::default()
+                    }
                 };
                 if let Some(p) = &o.pos_h {
                     ch.pos_h = Some(pos(p, true));
@@ -872,14 +956,26 @@ impl Session {
                 }
                 if let Some(rw) = &o.rel_width {
                     ch.size_rel_h = Some(Nullable::Val(match rw {
-                        Some((from, pct)) => SizeRel { relative_from: from.clone(), pct: num(math::round(pct * 1000.0)), ..Default::default() },
-                        None => SizeRel { relative_from: b.size_rel_h.as_ref().map_or_else(|| "page".into(), |s| s.relative_from.clone()), pct: num(0.0), ..Default::default() },
+                        Some((from, pct)) => {
+                            SizeRel { relative_from: from.clone(), pct: num(math::round(pct * 1000.0)), ..Default::default() }
+                        }
+                        None => SizeRel {
+                            relative_from: b.size_rel_h.as_ref().map_or_else(|| "page".into(), |s| s.relative_from.clone()),
+                            pct: num(0.0),
+                            ..Default::default()
+                        },
                     }));
                 }
                 if let Some(rh) = &o.rel_height {
                     ch.size_rel_v = Some(Nullable::Val(match rh {
-                        Some((from, pct)) => SizeRel { relative_from: from.clone(), pct: num(math::round(pct * 1000.0)), ..Default::default() },
-                        None => SizeRel { relative_from: b.size_rel_v.as_ref().map_or_else(|| "page".into(), |s| s.relative_from.clone()), pct: num(0.0), ..Default::default() },
+                        Some((from, pct)) => {
+                            SizeRel { relative_from: from.clone(), pct: num(math::round(pct * 1000.0)), ..Default::default() }
+                        }
+                        None => SizeRel {
+                            relative_from: b.size_rel_v.as_ref().map_or_else(|| "page".into(), |s| s.relative_from.clone()),
+                            pct: num(0.0),
+                            ..Default::default()
+                        },
                     }));
                 }
             }
@@ -1047,12 +1143,15 @@ impl Session {
             };
             if let Some(o) = &ole {
                 let om = self.doc.media.add(&o.data);
-                img.ole = Some(Box::new(OleData { prog_id: o.prog_id.clone(), data: MediaRef(om), ext: o.ext.clone(), ..Default::default() }));
+                img.ole =
+                    Some(Box::new(OleData { prog_id: o.prog_id.clone(), data: MediaRef(om), ext: o.ext.clone(), ..Default::default() }));
             } else {
                 // the XML Word writes on insert; the media joins at the save (`r:embed="uw:media"`)
                 let r = f64::from(self.env_mut().random_u32()) / 4_294_967_296.0;
                 let pid = 1.0 + math::floor(r * 2_000_000_000.0);
-                let count = self.paras().map_or(0, |ps| ps.iter().map(|q| q.runs.iter().filter(|r| r.ext().is_some_and(|e| e.image.is_some())).count()).sum::<usize>());
+                let count = self.paras().map_or(0, |ps| {
+                    ps.iter().map(|q| q.runs.iter().filter(|r| r.ext().is_some_and(|e| e.image.is_some())).count()).sum::<usize>()
+                });
                 let name = format!("Imagem {}", count + 1);
                 let xml = new_picture_xml(pid, &name, "uw:media", math::round(w * 635.0), math::round(h * 635.0));
                 obj::set(&mut img, "rawDrawingXml", |i| i.raw_drawing_xml = Some(xml.clone().into()));
@@ -1061,7 +1160,10 @@ impl Session {
             }
             img
         };
-        let mut image_run = Run { text: Utf16::from_units(vec![0xFFFC]), props: Arc::new(props), ..Run::default() };
+        // the props copy carries the reference to the original `w:rPr` (the TS `RPR_REF` symbol, which the
+        // spread copies): the image run gets it as the pieces of the split run do
+        let mut image_run =
+            Run { text: Utf16::from_units(vec![0xFFFC]), props: Arc::new(props), rpr_link: base_link.clone(), ..Run::default() };
         image_run.ext = Some(Box::new(RunExt { image: Some(Box::new(image)), ..RunExt::default() }));
         let Some(paras) = self.paras_mut() else { return self.done8() };
         let Some(pm) = paras.make_mut(para as usize) else { return Err(CommandError::Position) };
@@ -1149,7 +1251,14 @@ impl Session {
     }
 
     /// The step of `setImageAdjust` with the encoded picture (`None` = neutral).
-    fn adjust_apply(&mut self, path: &Path, next: AdjustNext, original: Option<(MediaRef, Str)>, cur_layer_rid: Option<Str>, baked: Option<&[u8]>) {
+    fn adjust_apply(
+        &mut self,
+        path: &Path,
+        next: AdjustNext,
+        original: Option<(MediaRef, Str)>,
+        cur_layer_rid: Option<Str>,
+        baked: Option<&[u8]>,
+    ) {
         let Some(raw) = self.run_ref(path).and_then(raw_of).map(str::to_owned) else { return };
         let cur = self
             .run_ref(path)
@@ -1211,6 +1320,8 @@ impl Session {
     // ── two-phase: compress ────────────────────────────────────────────────────────────────
 
     fn compress_start(&mut self, ppi: f64, delete_cropped: bool, all: bool) -> Res {
+        // `return 0` when there is nothing to compress
+        self.f7.compressed = 0;
         if self.paras().is_none() || self.locked() {
             return self.done8();
         }
@@ -1219,9 +1330,15 @@ impl Session {
             if let Some(ps) = self.paras() {
                 for (pi, p) in ps.iter().enumerate() {
                     for (ri, r) in p.runs.iter().enumerate() {
-                        let ok = r.ext().and_then(|e| e.image.as_deref()).is_some_and(|i| i.raw_drawing_xml.is_some() && i.format.is_some() && i.ole.is_none());
+                        let ok = r
+                            .ext()
+                            .and_then(|e| e.image.as_deref())
+                            .is_some_and(|i| i.raw_drawing_xml.is_some() && i.format.is_some() && i.ole.is_none());
                         if ok {
-                            paths.push(vec![Step::Para { para: u32::try_from(pi).unwrap_or(u32::MAX), run: u32::try_from(ri).unwrap_or(u32::MAX) }]);
+                            paths.push(vec![Step::Para {
+                                para: u32::try_from(pi).unwrap_or(u32::MAX),
+                                run: u32::try_from(ri).unwrap_or(u32::MAX),
+                            }]);
                         }
                     }
                 }
@@ -1270,6 +1387,33 @@ impl Session {
         r
     }
 
+    /// `pictureContour`'s result for the shell's decode of the selected picture: the polygon, or
+    /// `None` (no pixels, no transparency, nothing visible).
+    fn contour_of(&self, results: &[(JobId, JobResult)]) -> Option<Vec<[f64; 2]>> {
+        match results.last() {
+            Some((_, JobResult::Image { width, height, rgba: Some(px) })) if u64::from(*width) * u64::from(*height) <= MAX_PIXELS => {
+                // `pictureContour`: the visible part (crop and flip), at most 480 px
+                let fmt = self.draw_path().and_then(|p| self.run_ref(&p).and_then(format_of));
+                let region = fmt.as_ref().and_then(|f| {
+                    let b = f.base();
+                    visible_region(
+                        px,
+                        *width,
+                        *height,
+                        [b.src_rect.l.to_number(), b.src_rect.t.to_number(), b.src_rect.r.to_number(), b.src_rect.b.to_number()],
+                        (b.flip_h, b.flip_v),
+                    )
+                });
+                match (&fmt, region) {
+                    (_, Some((rpx, cw, ch))) => crate::drawing::contour::wrap_contour(&rpx, cw, ch).ok().flatten(),
+                    (Some(_), None) => None,
+                    (None, None) => crate::drawing::contour::wrap_contour(px, *width, *height).ok().flatten(),
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn complete_pictures_inner(&mut self, cmd: PictureCmd, results: Vec<(JobId, JobResult)>, stage: Option<Stage>) -> Res {
         match cmd {
             PictureCmd::Insert { .. } => {
@@ -1285,25 +1429,33 @@ impl Session {
                 self.done8()
             }
             PictureCmd::SetWrap { kind } => {
-                let poly = match results.last() {
-                    Some((_, JobResult::Image { width, height, rgba: Some(px) })) if u64::from(*width) * u64::from(*height) <= MAX_PIXELS => {
-                        crate::drawing::contour::wrap_contour(px, *width, *height).ok().flatten()
-                    }
-                    _ => None,
-                };
+                let poly = self.contour_of(&results);
                 self.set_image_wrap(kind, Some(poly))
+            }
+            PictureCmd::SetLayout { o, facts } => {
+                let poly = self.contour_of(&results);
+                self.set_image_layout(&o, &facts, Some(poly))
             }
             PictureCmd::SetAdjust { .. } => match stage {
                 Some(Stage::Adjust { path, next, original, cur_layer_rid }) => {
                     // round 1: decoded pixels in; round 2: the encoded bytes
                     match results.last() {
-                        Some((_, JobResult::Image { width, height, rgba: Some(px) })) if u64::from(*width) * u64::from(*height) <= MAX_PIXELS => {
+                        Some((_, JobResult::Image { width, height, rgba: Some(px) }))
+                            if u64::from(*width) * u64::from(*height) <= MAX_PIXELS =>
+                        {
                             let mut buf: Vec<u8> = px.to_vec();
                             if !self.adjust_pixels(&mut buf, *width, *height, &next) {
                                 return self.done8();
                             }
                             let id = self.job_id();
-                            let job = Job::EncodeImage { id, width: *width, height: *height, rgba: Arc::from(buf), mime: "image/png".into(), quality: None };
+                            let job = Job::EncodeImage {
+                                id,
+                                width: *width,
+                                height: *height,
+                                rgba: Arc::from(buf),
+                                mime: "image/png".into(),
+                                quality: None,
+                            };
                             self.f7.stage = Some(Stage::Adjust { path, next, original, cur_layer_rid });
                             self.f7.encoding = true;
                             Ok(self.defer(Command::Picture(cmd), vec![job]))
@@ -1356,7 +1508,7 @@ impl Session {
         let fb = f.base().clone();
         let Some(raw) = self.run_ref(path).and_then(raw_of).map(str::to_owned) else { return };
         let cy = math::round((fb.cx.to_number() * bh) / math::max(1.0, bw));
-        let stripped = strip_svg_blip_ext(&raw);
+        let stripped = super::drawing::rx::strip_svg_blip_ext(&raw);
         let ch = PictureChange {
             embed: Some("uw:media".into()),
             a14: Some(Nullable::Null),
@@ -1396,6 +1548,9 @@ impl Session {
             let mut todo = Vec::new();
             for (item, (_, r)) in items.iter().zip(results.iter()) {
                 let JobResult::Image { width, height, rgba: Some(px) } = r else { continue };
+                if *width == 0 || *height == 0 || px.len() < (*width as usize).saturating_mul(*height as usize).saturating_mul(4) {
+                    continue;
+                }
                 if u64::from(*width) * u64::from(*height) > MAX_PIXELS {
                     continue;
                 }
@@ -1407,8 +1562,10 @@ impl Session {
                 let crop = delete_cropped && (sl > 0.0 || st > 0.0 || sr > 0.0 || sb > 0.0);
                 let sx = if crop { math::round((math::max(0.0, sl) / 100_000.0) * iw) } else { 0.0 };
                 let sy = if crop { math::round((math::max(0.0, st) / 100_000.0) * ih) } else { 0.0 };
-                let sw = if crop { math::max(1.0, math::round((1.0 - (math::max(0.0, sl) + math::max(0.0, sr)) / 100_000.0) * iw)) } else { iw };
-                let sh = if crop { math::max(1.0, math::round((1.0 - (math::max(0.0, st) + math::max(0.0, sb)) / 100_000.0) * ih)) } else { ih };
+                let sw =
+                    if crop { math::max(1.0, math::round((1.0 - (math::max(0.0, sl) + math::max(0.0, sr)) / 100_000.0) * iw)) } else { iw };
+                let sh =
+                    if crop { math::max(1.0, math::round((1.0 - (math::max(0.0, st) + math::max(0.0, sb)) / 100_000.0) * ih)) } else { ih };
                 let tw = math::max(1.0, math::round((f.cx.to_number() / 914_400.0) * ppi));
                 let th = math::max(1.0, math::round((f.cy.to_number() / 914_400.0) * ppi));
                 let (w, h) = (math::min(sw, tw), math::min(sh, th));
@@ -1418,7 +1575,7 @@ impl Session {
                 if !(w.is_finite() && h.is_finite() && w >= 1.0 && h >= 1.0) {
                     continue;
                 }
-                let (wu, hu) = (w as u32, h as u32);
+                let (wu, hu) = (uo_jsnum::conv::to_uint32(w), uo_jsnum::conv::to_uint32(h));
                 let buf = resample(px, *width, *height, [sx, sy, sw, sh], wu, hu);
                 let jpeg = {
                     let e = uo_text::case::to_lowercase_str(&img.ext);
@@ -1491,7 +1648,11 @@ impl Session {
     pub(crate) fn patch_drawing_pub(&self, path: &[Step], ch: &ShapeChange) -> Option<String> {
         let r = self.run_ref(path)?;
         let raw = raw_of(r)?;
-        if r.ext().is_some_and(|e| e.image.is_some()) { patch_picture(raw, &ch.pic).ok() } else { crate::write::emit::object::patch_shape(raw, ch).ok() }
+        if r.ext().is_some_and(|e| e.image.is_some()) {
+            patch_picture(raw, &ch.pic).ok()
+        } else {
+            crate::write::emit::object::patch_shape(raw, ch).ok()
+        }
     }
 }
 
@@ -1539,30 +1700,43 @@ fn merge_blip(keep: &mut PicBlipFx, p: &PicBlipFx) {
     }
 }
 
-/// `/^glow-(\d+)-(\d)$/`: the size index and the accent number.
-fn parse_glow(p: &str) -> Option<(f64, f64)> {
-    let rest = p.strip_prefix("glow-")?;
-    let (a, b) = rest.split_once('-')?;
-    if a.is_empty() || !a.bytes().all(|c| c.is_ascii_digit()) || b.len() != 1 || !b.bytes().all(|c| c.is_ascii_digit()) {
+/// The visible part of the picture as `pictureContour` rasterises it: the `srcRect` crop
+/// (thousandths of a percent of each side), flipped as the format says, scaled down to at most
+/// 480 px. The pixels come from the shell's decode (the whole picture); the TS draws the region
+/// through a canvas (smoothed when it is scaled), the port takes the nearest source pixel (F7-D2).
+/// `None` when the region is empty.
+fn visible_region(px: &[u8], w: u32, h: u32, src: [f64; 4], flip: (bool, bool)) -> Option<(Vec<u8>, u32, u32)> {
+    let (bw, bh) = (f64::from(w), f64::from(h));
+    let [l, t, r, b] = src;
+    let (sx, sy) = ((l / 100_000.0) * bw, (t / 100_000.0) * bh);
+    let sw = (1.0 - (l + r) / 100_000.0) * bw;
+    let sh = (1.0 - (t + b) / 100_000.0) * bh;
+    if !(sw > 0.0 && sh > 0.0) {
         return None;
     }
-    Some((uo_jsnum::parse::to_number(a), uo_jsnum::parse::to_number(b)))
-}
-
-/// `xml.replace(/<a:ext uri="\{96DAC541-7B7A-43D3-8B79-37D633B846F1\}">[\s\S]*?<\/a:ext>/g, '')`.
-fn strip_svg_blip_ext(raw: &str) -> String {
-    const OPEN: &str = "<a:ext uri=\"{96DAC541-7B7A-43D3-8B79-37D633B846F1}\">";
-    const CLOSE: &str = "</a:ext>";
-    let mut out = String::with_capacity(raw.len());
-    let mut rest = raw;
-    while let Some(i) = rest.find(OPEN) {
-        let after = &rest[i + OPEN.len()..];
-        let Some(j) = after.find(CLOSE) else { break };
-        out.push_str(&rest[..i]);
-        rest = &after[j + CLOSE.len()..];
+    let k = math::min(1.0, 480.0 / math::max(sw, sh));
+    let cw = uo_jsnum::conv::to_uint32(math::max(1.0, math::round(sw * k)));
+    let ch = uo_jsnum::conv::to_uint32(math::max(1.0, math::round(sh * k)));
+    if u64::from(cw) * u64::from(ch) > MAX_PIXELS || px.len() < (w as usize) * (h as usize) * 4 {
+        return None;
     }
-    out.push_str(rest);
-    out
+    let mut out = vec![0u8; (cw as usize) * (ch as usize) * 4];
+    for y in 0..ch {
+        let dy = if flip.1 { ch - 1 - y } else { y };
+        let fy = math::floor(sy + (f64::from(dy) + 0.5) * sh / f64::from(ch));
+        let iy = uo_jsnum::conv::to_uint32(math::min(math::max(fy, 0.0), bh - 1.0));
+        for x in 0..cw {
+            let dx = if flip.0 { cw - 1 - x } else { x };
+            let fx = math::floor(sx + (f64::from(dx) + 0.5) * sw / f64::from(cw));
+            let ix = uo_jsnum::conv::to_uint32(math::min(math::max(fx, 0.0), bw - 1.0));
+            let from = ((iy as usize) * (w as usize) + ix as usize) * 4;
+            let to = ((y as usize) * (cw as usize) + x as usize) * 4;
+            if let (Some(src_px), Some(dst)) = (px.get(from..from + 4), out.get_mut(to..to + 4)) {
+                dst.copy_from_slice(src_px);
+            }
+        }
+    }
+    Some((out, cw, ch))
 }
 
 /// Area-average resampling of the `[sx, sy, sw, sh]` region of `px` (RGBA, `w` × `h`) to
@@ -1570,6 +1744,9 @@ fn strip_svg_blip_ext(raw: &str) -> String {
 /// re-encoded picture are not compared).
 fn resample(px: &[u8], w: u32, h: u32, region: [f64; 4], tw: u32, th: u32) -> Vec<u8> {
     let mut out = vec![0u8; (tw as usize).saturating_mul(th as usize).saturating_mul(4)];
+    if w == 0 || h == 0 {
+        return out;
+    }
     let [sx, sy, sw, sh] = region;
     for ty in 0..th {
         let y0 = sy + f64::from(ty) * sh / f64::from(th);
@@ -1578,13 +1755,14 @@ fn resample(px: &[u8], w: u32, h: u32, region: [f64; 4], tw: u32, th: u32) -> Ve
             let x0 = sx + f64::from(tx) * sw / f64::from(tw);
             let x1 = sx + f64::from(tx + 1) * sw / f64::from(tw);
             let (mut acc, mut wsum) = ([0.0f64; 4], 0.0f64);
-            let (iy0, iy1) = (math::floor(y0) as i64, math::ceil(y1) as i64);
-            let (ix0, ix1) = (math::floor(x0) as i64, math::ceil(x1) as i64);
+            let (iy0, iy1) = (i64::from(uo_jsnum::conv::to_int32(math::floor(y0))), i64::from(uo_jsnum::conv::to_int32(math::ceil(y1))));
+            let (ix0, ix1) = (i64::from(uo_jsnum::conv::to_int32(math::floor(x0))), i64::from(uo_jsnum::conv::to_int32(math::ceil(x1))));
             for iy in iy0..iy1.max(iy0 + 1) {
                 for ix in ix0..ix1.max(ix0 + 1) {
-                    let (cx, cy) = (ix.clamp(0, i64::from(w) - 1) as usize, iy.clamp(0, i64::from(h) - 1) as usize);
-                    let wy = (f64::min(y1, (iy + 1) as f64) - f64::max(y0, iy as f64)).max(1e-6);
-                    let wx = (f64::min(x1, (ix + 1) as f64) - f64::max(x0, ix as f64)).max(1e-6);
+                    let (cx, cy) = (ix.clamp(0, i64::from(w) - 1), iy.clamp(0, i64::from(h) - 1));
+                    let (cx, cy) = (usize::try_from(cx).unwrap_or(0), usize::try_from(cy).unwrap_or(0));
+                    let wy = math::max(math::min(y1, (iy + 1) as f64) - math::max(y0, iy as f64), 1e-6);
+                    let wx = math::max(math::min(x1, (ix + 1) as f64) - math::max(x0, ix as f64), 1e-6);
                     let k = (cy * w as usize + cx) * 4;
                     let wgt = wx * wy;
                     for (c, a) in acc.iter_mut().enumerate() {
@@ -1594,13 +1772,12 @@ fn resample(px: &[u8], w: u32, h: u32, region: [f64; 4], tw: u32, th: u32) -> Ve
                 }
             }
             let o = (ty as usize * tw as usize + tx as usize) * 4;
-            for c in 0..4 {
+            for (c, a) in acc.iter().enumerate() {
                 if let Some(slot) = out.get_mut(o + c) {
-                    *slot = (acc[c] / wsum.max(1e-9)).round().clamp(0.0, 255.0) as u8;
+                    *slot = uo_jsnum::conv::to_uint8_clamp(math::round(a / math::max(wsum, 1e-9)));
                 }
             }
         }
     }
     out
 }
-

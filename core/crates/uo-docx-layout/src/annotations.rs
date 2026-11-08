@@ -6,7 +6,7 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::model::DocView;
+use crate::model::{DocView, NumKey};
 use crate::output::Layout;
 use crate::refs::Locator;
 use crate::section::{outline_level, paragraph_text, text_layer_paragraph};
@@ -52,17 +52,6 @@ pub struct Annotations {
     pub headings: Vec<HeadingEntry>,
 }
 
-/// A JS `Map` key for a number (SameValueZero: every NaN is one key, `-0` is `+0`).
-fn key(v: f64) -> u64 {
-    if v.is_nan() {
-        f64::NAN.to_bits()
-    } else if v == 0.0 {
-        0
-    } else {
-        v.to_bits()
-    }
-}
-
 /// `s.replace(/\s+/g, ' ').trim()`.
 fn collapse(units: &[u16]) -> Box<[u16]> {
     let mut out: Vec<u16> = Vec::with_capacity(units.len());
@@ -87,7 +76,7 @@ pub fn annotations(view: DocView<'_>, layout: &Layout) -> Annotations {
     let loc = Locator::new(view);
     let mut styles = StyleResolver::new();
     let mut levels: FxHashMap<crate::model::ParaId, Option<f64>> = FxHashMap::default();
-    let mut rects: FxHashMap<u64, Vec<AnnRect>> = FxHashMap::default();
+    let mut rects: FxHashMap<NumKey, Vec<AnnRect>> = FxHashMap::default();
     let mut headings = Vec::new();
     let mut seen: rustc_hash::FxHashSet<crate::model::ParaId> = rustc_hash::FxHashSet::default();
     for (pi, page) in (0u32..).zip(&layout.pages) {
@@ -124,11 +113,12 @@ pub fn annotations(view: DocView<'_>, layout: &Layout) -> Annotations {
                     x1 = math::min(x1, x);
                     x2 = math::max(x2, x + w);
                 }
+                #[expect(clippy::neg_cmp_op_on_partial_ord, reason = "the TS `!(x2 > x1)` (NaN skips the box)")]
                 if !(x2 > x1) {
                     continue;
                 }
                 for id in ids {
-                    let list = rects.entry(key(id.to_number())).or_default();
+                    let list = rects.entry(NumKey::new(id.to_number())).or_default();
                     match list.last_mut() {
                         Some(last) if last.page == pi && last.y == line.y && math::abs(last.x + last.w - x1) < 1.0 => last.w = x2 - last.x,
                         _ => list.push(AnnRect { page: pi, x: x1, y: line.y, w: x2 - x1, h: line.height }),
@@ -146,25 +136,24 @@ pub fn annotations(view: DocView<'_>, layout: &Layout) -> Annotations {
                 id,
                 author: c.author.as_deref().filter(|a| !a.is_empty()).map(|a| a.encode_utf16().collect()),
                 text: c.text.units().into(),
-                rects: rects.get(&key(id)).cloned().unwrap_or_default(),
+                rects: rects.get(&NumKey::new(id)).cloned().unwrap_or_default(),
             }
         })
         .collect();
     // reading order by the first anchor; none: at the end (`ka[0] - kb[0] || …`, a stable sort)
     let k = |c: &CommentEntry| c.rects.first().map_or([1e9, 0.0, 0.0], |r| [f64::from(r.page), r.y, r.x]);
-    comments.sort_by(|a, b| {
-        let (ka, kb) = (k(a), k(b));
-        for i in 0..3 {
-            let d = ka.get(i).copied().unwrap_or(0.0) - kb.get(i).copied().unwrap_or(0.0);
-            // `||` goes on for 0 and NaN; the last NaN or 0 is "equal"
-            if d < 0.0 {
-                return std::cmp::Ordering::Less;
-            }
-            if d > 0.0 {
-                return std::cmp::Ordering::Greater;
-            }
+    uo_jsnum::sort::js_sort_by(&mut comments, |a, b| {
+        let ([a0, a1, a2], [b0, b1, b2]) = (k(a), k(b));
+        // `||` goes on for 0 and NaN; the last difference is returned as is
+        let d0 = a0 - b0;
+        if d0 != 0.0 && !d0.is_nan() {
+            return d0;
         }
-        std::cmp::Ordering::Equal
+        let d1 = a1 - b1;
+        if d1 != 0.0 && !d1.is_nan() {
+            return d1;
+        }
+        a2 - b2
     });
     Annotations { comments, headings }
 }

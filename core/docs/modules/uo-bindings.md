@@ -19,7 +19,7 @@ so D3's exports join them.
 
 Inputs read: `uo-pdf.md` (§3, §7, §9, frontier P "What S and the bindings need next"), `uo-render.md` (frontier E: the
 render view and paint exports, "the layout handle does not exist yet"), `uo-docx-layout.md` (LA5, LA6, §3, F8 and its
-`PENDING = ["encode_page"]`), `uo-fonts.md` (registry, policies), `uo-docx-d3.md` §4 (C ABI design), the frozen C#
+`PENDING = []` (`encode_page` landed with G8)), `uo-fonts.md` (registry, policies), `uo-docx-d3.md` §4 (C ABI design), the frozen C#
 `DocxLayoutPipeline`, `SubstituteFontProvider`, `SystemFontProvider`, `DocxPdf`, `PdfRenderOptions`, `LayoutOptions`.
 
 ## 1. The shared read path (`pipeline.rs`)
@@ -49,7 +49,7 @@ pub enum JobError { Read(DocxError), Layout(LayoutError), Pdf(PdfError), Cancell
 |---|---|---|---|
 | `UoWriteEnv` | `uo_write_env_new(profile)` (0 desktop, 1 phone) | `uo_write_env_free` | `FontRegistry` (profile budget, the instance `FaceCache`), `HyphenationRegistry` |
 | `UoWriteDocument` | `uo_write_open(ptr, len)` | `uo_write_document_free` | model + embedded fonts |
-| `UoLayout` | `uo_write_layout(doc, env, now_ms, tz_offset_min, flags, web_width_tw, lang, hyph_langs, max_pages, generation)` | `uo_layout_free` | a uo-render `RenderView` (pages + resources), the Write geometry (`Layout` minus its pages), navigation, run boxes |
+| `UoLayout` | `uo_write_layout(doc, env, now_ms, tz_offset_min, flags, web_width_tw, lang, hyph_langs, max_pages, generation)` | `uo_layout_free` | a uo-render `RenderView` (pages + resources), the Write geometry (`Layout` minus its pages), navigation, run boxes, the `SectionModel` and the annotations (G8) |
 | (borrowed) `UoRenderView` | `uo_layout_view(layout)` | never (dies with the layout) | — |
 | `UoBuf` (render.rs) | every query | `uo_buf_free` | bytes + status |
 
@@ -63,7 +63,7 @@ Document: `uo_write_hyphenation_patterns(doc, env, app_langs)` = the viewer's `h
 (`documentHyphenationLanguages(full)` filtered by the app list, prefix match) → pattern ids **not yet registered**, so
 the host fetches only those.
 
-Layout: `uo_layout_page_count`, `uo_layout_page_info` (w, h, section, number, hf_items), `uo_layout_view` (then every
+Layout: `uo_layout_page_count`, `uo_layout_page_info` (w, h, section, number, hf_items), `uo_layout_encode_page(page)` (the page message with the Write section as its `app`, G8), `uo_layout_annotations` (`collectAnnotations`), `uo_layout_view` (then every
 `uo_render_*` paint export of frontier E: `encode_page`, `fx_layers`, `pattern`, `rect_gradient`, `blip_tiles`,
 `page_fill_*`, `picture_*`, `set_max_fx_px`), `uo_layout_navigation` (links in points + outline = `pdfNavigation`),
 `uo_layout_run_boxes(filter)` (links / plugin inlines = `runBoxes`, twips), `uo_layout_block_line(block)` (the
@@ -115,11 +115,10 @@ stage, max, detail }`; `layout.paint` = the frontier-E operations on the borrowe
   the whole `layoutDocument` path switches, not stage by stage).
 - `relayout()`: `fonts.loadAssets` → `pushAsset`; `doc.hyphenationPatterns(env)` → fetch + `registerHyphenation`; up to
   four passes of `doc.layout(env, LAYOUT_OPTS)` + `env.takeMissing()` → resolver → `pushFamily`.
-- Painting: `layout.encodePage(i)` → generated `js/gen/render.ts` `decodePage` → the TS painter of frontier D (hints,
+- Painting: `layout.encodePage(i)` (now carrying the Write section; `paint.encodePage` is the bare render message; `layout.annotations()`) → generated `js/gen/render.ts` `decodePage` → the TS painter of frontier D (hints,
   `paint.*` rasters), `faceBytes(i)` → `FontFace`; link overlays from `runBoxes('links')`, outline from
   `navigation()`/`blockLine()`; print and download from `layout.pdf()`.
-- Missing before the switch: the **Write geometry section** of the page message (`Layout::encode_page`, the text layer,
-  find, `collectAnnotations`) — gate item G8; frontier D (the TS shell painting decoded pages) and V (painter parity).
+- Missing before the switch: frontier D (the TS shell painting decoded pages) and V (painter parity).
 - **Content Security Policy (to carry into the viewer and editor READMEs at the switch).** After the switch the
   engine itself is WebAssembly, so a host whose CSP restricts `script-src` must allow `'wasm-unsafe-eval'` (Chrome/Edge
   97, Firefox 102, Safari/iOS 16.0 — caniuse, checked 2026-11-06); **Safari 15, our baseline, does not know it** and
@@ -490,7 +489,7 @@ Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF6
 | G5 | Untrusted caps: kernel radius 256, masks/effect layers 16 Mpx, images 40 Mpx (first numbers); the facade defaults to untrusted | measure on the corpus first |
 | G6 | The wasm PDF leaves through an **import** (`uo_host.pdf_chunk`): the viewer module cannot be instantiated without imports | pull the chunks (the output then stays in wasm memory, which never shrinks) |
 | G7 | `write` is **not a default feature** (the default module stays the 15 KB foundation build the other tests use); the shipped viewer module is `--features write`, **5.9 MB (1.45 MB gzip)** — a size budget, `wasm-opt`, and trimming uo-docx are open | make `write` default |
-| G8 | **The Write geometry section of the page message is not built** (`Layout::encode_page`, uo-docx-layout `PENDING`): the viewer's text layer, find and annotations need it; this binding exports run boxes, navigation and block lines | build it before the switch (frontier E of the layout) |
+| G8 | **Done (2026-11-07).** The Write geometry section of the page message (`Layout::encode_page`, `uo_layout_encode_page`, `uo_layout_annotations`): parity against the frozen TS 100%, 8 corpora (committed 52 docs, ci 100, `--gen f8` 100, oracle 2,742, 10 real documents with 35 comments / 55 rects), 0 mismatches; 0 B left (M1); no-panic; Node 8/8, native 6/6; the section is 1.9–2.2× the render message on the wire (maintainer decision G8-W); G8 code in the module: 26 KB raw / 9.4 KB gzip of 3.95 MB / 1.40 MB. Record: uo-docx-layout.md "Stage 3 — G8" | wire size, lazy section (G8-2) |
 | G9 | `uo_layout_view` lends the layout's view (valid until the layout is freed) to the frontier-E paint exports | a second handle with its own copy |
 | G10 | `generation` is an argument of `uo_write_layout` (0 = counter) so message bytes are reproducible | — |
 | G11 | .NET `Now` + `UtcOffset`: one fixed offset per conversion (a DST change between now and a CREATEDATE is not modelled) | a time-zone table (`TimeZoneRule::Table`) from `TimeZoneInfo` |
@@ -522,7 +521,7 @@ Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF6
 
 ## Not done (handed on)
 
-- The Write geometry section (G8), the TS shell (frontier D) and the switch itself; real Safari 15 / iOS (BrowserStack).
+- The TS shell (frontier D) and the switch itself; real Safari 15 / iOS (BrowserStack).
 - The NuGet RID matrix and `dotnet pack` with native assets (G14); LSan on the facade tests (G19); fuzz targets (G21).
 - Cancellation inside the layout (G4); a `ToPdf(Stream)` overload (uo-pdf's `IoSink` exists) for large outputs.
 - The structural C# vs Rust migration report for clickCompliance (uo-pdf §6, not a gate).
@@ -546,6 +545,8 @@ UO_TS_ROOT=<built d0f45bc5> node crates/uo-pdf/tests/parity_support/capture_pain
 ```
 
 ## Process metrics
+
+G8 (the Write section of the page message): Opus WIP 6471786d + Sonnet 5.5 finish (the maintainer's request; SKILL.md assigns the layout crate to Opus), see uo-docx-layout.md "Stage 3 — G8".
 
 | Stage | Agent (model) | Time | Tool calls |
 |---|---|---|---|

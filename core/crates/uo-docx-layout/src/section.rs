@@ -342,7 +342,11 @@ fn wire_line(p: &LayoutPage, l: &LineGeom, para: Option<u32>) -> codec::LaidOutL
     let chars = l.chars.map(|span| {
         let r = span.range().unwrap_or(0..0);
         let cut = |v: &[f64]| v.get(r.clone()).map(<[f64]>::to_vec).unwrap_or_default();
-        codec::LineCharColumns { o: p.chars.o.get(r.clone()).map(<[u32]>::to_vec).unwrap_or_default(), x: cut(&p.chars.x), w: cut(&p.chars.w) }
+        codec::LineCharColumns {
+            o: p.chars.o.get(r.clone()).map(<[u32]>::to_vec).unwrap_or_default(),
+            x: cut(&p.chars.x),
+            w: cut(&p.chars.w),
+        }
     });
     codec::LaidOutLine {
         r#ref: units(&l.at.to_ts()),
@@ -461,11 +465,8 @@ fn wire_page(p: &LayoutPage, m: Option<&PageModel>, all: &[TextPara]) -> codec::
     let cells = p.cells.as_ref().map(|cs| {
         cs.iter().map(|c| codec::PlacedCell { r#ref: units(&c.at.to_ts()), x: c.x, y: c.y, w: c.w, h: c.h, span: c.span }).collect()
     });
-    let clip_src = p
-        .clip_src
-        .iter()
-        .filter_map(|&(item, id)| Some(codec::ClipSrc { item, image: u32::try_from(id.index()).ok()? }))
-        .collect();
+    let clip_src =
+        p.clip_src.iter().filter_map(|&(item, id)| Some(codec::ClipSrc { item, image: u32::try_from(id.index()).ok()? })).collect();
     codec::WritePage { section: p.section, number: p.number, hf_items: p.hf_items, lines, pfmts, objects, cells, clip_src, paras }
 }
 
@@ -497,5 +498,32 @@ impl Layout {
         let mut out = Vec::new();
         codec::encode_write_page(&mut out, &codec::Delta { generation }, &page).map_err(SectionError::Codec)?;
         Ok(WriteSection(out))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::heading_name_level;
+
+    /// `/^(?:heading|t[íi]?tulo)s*(d)$/i` (cases checked against V8).
+    #[test]
+    fn heading_names_follow_the_js_regex() {
+        for (id, lvl) in [
+            ("Heading 1", 1.0),
+            ("heading1", 1.0),
+            ("HEADING 9", 9.0),
+            ("Título 2", 2.0),
+            ("TÍTULO 3", 3.0),
+            ("titulo 4", 4.0),
+            ("ttulo 5", 5.0),
+            ("heading 6", 6.0),
+            ("heading 7", 7.0),
+        ] {
+            assert_eq!(heading_name_level(id), Some(lvl), "{id:?}");
+        }
+        for id in ["Heading 10", "Heading", "Heading 1 ", "xheading 1", "Tıtulo 1", ""] {
+            assert_eq!(heading_name_level(id), None, "{id:?}");
+        }
     }
 }

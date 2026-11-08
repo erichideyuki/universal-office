@@ -3,7 +3,8 @@
 //! writes the same stream (same `count:digest` as the capture). Runs over the committed fixture
 //! (`tests/captures/f0/`, two generated documents with open fonts) and, with
 //! `UO_LAYOUT_CAPTURE=<file> UO_LAYOUT_DUMP=<dir>`, over a fresh `tools/capture-layout.mjs
-//! --dump` run (the CI job does it on its generated corpus).
+//! --dump` run (the CI job does it on its generated corpus). The adapter compares P1 only: every
+//! other facet (P2, P3, P4, G8) belongs to its own replay.
 
 mod common;
 
@@ -68,8 +69,11 @@ fn ts_layouts_round_trip_through_the_rust_types_and_canon() {
                 let mut sink = StreamSink(Stream::new());
                 canon_layout(&d.layout, &name, &mut sink);
                 replay.check(&rec.key, "p1", &sink.value());
-                for f in ["p2", "p2first", "p3.prepare", "p3.lines", "pages"] {
-                    replay.skip(&rec.key, f);
+                // the adapter compares P1 only; P2, P3, P4 and G8 belong to their own replays
+                for (f, _) in &rec.facets {
+                    if f != "p1" {
+                        replay.skip(&rec.key, f);
+                    }
                 }
             }
             Err(e) => {

@@ -36,7 +36,26 @@ in `core/docs/modules/`.
 | wasm2js fallback + wasm-opt, measured | `ba3e15b9` | `uo-bindings.md` "No-WebAssembly fallback" | works under strict CSP; 4–8× slower, 1.57 MB gzip |
 | wasm size items 1–3a (planner → Sonnet → reviewer) | `da31758d` | `size-optimization.md` §8 | raw −33.5%, gzip −4.1%, same output, same speed |
 
-## Work in progress — commit `6471786d` (WIP, stopped mid-frontier on the maintainer's request)
+## Update 2026-11-07 (later the same day) — WIP finished, workspace green
+
+The WIP below was finished in one workflow run (Opus planner → Sonnet implementer → Opus reviewer, up to 2 fix
+rounds; G8 implemented on Sonnet at the maintainer's request although SKILL.md says Opus for the layout crate):
+
+- **D2b F7** done: record `core/docs/modules/uo-docx-d2b/F7.md` (Node + Chromium harnesses, regex sites, M1–M3,
+  no-panic). Declared open items there: `gradientVariations`/`lineWith`/`POSITION_PRESETS` not ported; F7-D10 (typing
+  with an object selected) and some multi-selection behaviours left for the milestone-2 gate; `align_objects` with a
+  `rects` length mismatch (reviewer minor).
+- **G8** done: records `uo-docx-layout.md` (frontier E / G8) and `uo-bindings.md` (G8 row). Maintainer decisions
+  G8-W (section wire size) and G8-2 (lazy section in the wasm handle); the new CI steps have never run; no versioned
+  fixture with comments (comment-rect path proven only on 10 local real documents).
+- **Workspace**: `clippy -D warnings` native + wasm32 for the whole workspace, `clippy-ban`, `float-casts`,
+  `grep-bans` all green; suites uo-docx (all features), uo-docx-layout, uo-wasm, uo-fonts green. Pre-existing F2
+  float casts at `session/ops/lists.rs:761/1092/1126` are only visible with the `session` feature (the script runs
+  without features) — fix and extend `float-casts.sh` next.
+
+Next: queue item 2 (uo-render frontiers D and V).
+
+## Work in progress — commit `6471786d` (historical: finished, see the update above)
 
 It compiles (`cargo check --workspace --all-features --tests`) but was **not verified**:
 

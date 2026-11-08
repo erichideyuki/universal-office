@@ -173,6 +173,16 @@ jobs:
           UO_LAYOUT_CAPTURE: ${{ runner.temp }}/layout/f8.capture
           UO_LAYOUT_DUMP: ${{ runner.temp }}/layout/f8-dump
           UO_LAYOUT_DOCS: ${{ runner.temp }}/layout/f8-docs
+      # G8 (the Write section of the page message, record "Write page section (G8)"): the g8.* facets
+      # of F7c/F7b documents (separate capture: the other replays do not know the facets), replayed
+      # from the same dumps
+      - run: node --max-old-space-size=8192 crates/uo-docx-layout/tools/capture-layout.mjs --ts-root ../ts-main --mode ci --gen f8 --f8 --g8 --count 100 --seed ${{ github.run_number }} --out "$RUNNER_TEMP/layout/g8.capture" --dump "$RUNNER_TEMP/layout/g8-dump" --docs-out "$RUNNER_TEMP/layout/g8-docs"
+      - run: cargo test --release -p uo-docx-layout --test g8 -- --nocapture
+        env:
+          UO_G8_PARITY: "1"
+          UO_LAYOUT_CAPTURE: ${{ runner.temp }}/layout/g8.capture
+          UO_LAYOUT_DUMP: ${{ runner.temp }}/layout/g8-dump
+          UO_LAYOUT_DOCS: ${{ runner.temp }}/layout/g8-docs
       # F1 (fonts and the width model): the P3 facets of the same capture, replayed from their dumped
       # inputs, plus a resolver sweep (the Word substitution chain over random font tables)
       - run: node crates/uo-docx-layout/tools/capture-f1-resolver.mjs --ts-root ../ts-main --count 2000 --seed ${{ github.run_number }} --out "$RUNNER_TEMP/layout/resolver.capture" --dump "$RUNNER_TEMP/layout/resolver"
@@ -275,6 +285,8 @@ jobs:
       # FinalizationRegistry) and M2 (memory.buffer stops growing)
       - run: cargo build -p uo-wasm --features count,write --target wasm32-unknown-unknown --profile wasm
       - run: node --expose-gc --test crates/uo-wasm/tests/write_api.test.mjs
+      # G8: the Write section of the page message (decoded in Node from the same module; imports .ts, so Node only)
+      - run: node --test crates/uo-wasm/tests/write_section.test.mjs
       # browser baseline Safari 15 / iOS 15 (rust-port skill): the module may use only the
       # features Safari 15 has; the negative case proves the feature list rejects SIMD
       - uses: taiki-e/install-action@v2

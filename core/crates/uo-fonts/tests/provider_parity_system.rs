@@ -10,7 +10,7 @@
 //! The roots are exactly the generated corpus (written to a temp folder from `provider_support`) and
 //! `shared/fonts/files`; the paths of the keys are reduced to file names. `UO_PROVIDER_TRACE=<file>`
 //! writes the readable lines of the `server` replay to diff with the capture's `--trace` file.
-#![cfg(feature = "system")]
+#![cfg(all(feature = "system", not(target_family = "wasm")))]
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod b_support;

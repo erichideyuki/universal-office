@@ -80,6 +80,7 @@ fn pos(rng: &mut Rng, s: &Session) -> DocPosition {
 const TEXTS: [&str; 7] = ["a", "Olá ", " ", "ção", "😀", "𝒜!", "abc def"];
 
 /// One seeded command (or `None` for an undo/redo, which the caller runs): `Ok(cmd)`.
+#[allow(clippy::large_enum_variant)] // a test generator: one value at a time, a box would only add noise
 pub enum Step {
     Cmd(Command),
     Undo,

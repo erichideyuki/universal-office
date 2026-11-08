@@ -3057,8 +3057,8 @@ editor's `engine-doc.ts` (`caretXIn`, `offsetAtX`, `isSortedByX`, `locateRef`, `
 | `Layout::missing_faces`, the warning `"font budget"` | — | closes F7a-12; registry signal F8-11 |
 
 `query.rs` now only gathers these (`Layout::{run_boxes, navigation, lines_of, line_index,
-edit_lines}`); its `PENDING` holds `encode_page` alone — the Write-section `AppSection` encoder is
-frontier E's (uo-render already has `encode_page_for_canvas_with`), not in the F8 brief.
+edit_lines}`); its `PENDING` held `encode_page` alone — the Write-section `AppSection` encoder, which
+landed with G8 (section "Stage 3 — G8"; `PENDING` is empty now).
 
 ### Ported (TS → Rust, TS operation order)
 
@@ -3209,10 +3209,160 @@ record. Owned: `refs.rs`, `hit.rs`, `run_boxes.rs`, `navigation.rs`, `oracle.rs`
 
 ### Not done (handed on)
 
-- `encode_page` (frontier E: the Write-section `AppSection` encoder).
+- `encode_page`: done by G8 (section "Stage 3 — G8").
 - The editor's object hit test (`hitTextbox`, `enumFloats`: rotation tolerance in screen pixels, z
   order by `relativeHeight`) and the table-selection boxes (`tableBoxes`): their inputs are in
   `PlacedObject`/`PlacedCell`; they depend on the editor's context sets (`contextTextboxRuns`) and
   the zoom — milestone 2, with the session.
 - `ViewTransform::Outline` (milestone 2); the tiling of the editor's tall Web page (TS shell).
 - D2a-C2 (above).
+
+## Stage 3 — G8 (the Write page section)
+
+Opus WIP (commit 6471786d, 2026-11-05: schema, section/annotations code, facets, wasm export) finished
+by Sonnet 5.5 on 2026-11-07 (parity, memory and robustness tests, size, CI, records). **SKILL.md assigns every role of
+uo-docx-layout to Opus; the maintainer asked for a Sonnet implementation in this run.** Behaviour source: the frozen TS
+d0f45bc5 — `universal-document-viewer.ts` `para(ref)` (the text layer's paragraph), `text-layer.ts`, `annotations.ts`
+(`collectAnnotations`, `levelResolver`).
+
+Record anchor: **"Write page section (G8)"** (the code comments cite it).
+
+### Scope
+
+What the viewer reads from the *model* after the switch, per page: each body line's paragraph (its text — the lines'
+`start`/`end` and the chars' `o` are offsets in it — and its heading level) for the text layer, find and screen readers; the
+run name of each placed object (`runRefs`); and, per document, the annotations (the comments with their rectangles, the
+headings). Out of scope (still model reads: frontier D and the switch): bookmarks (`goToBookmark`), `getLinks`,
+`getCustomInlines`.
+
+### API shape
+
+| Rust | TS |
+|---|---|
+| `section::SectionModel::{new(view, &Layout), empty(), paras(), heap_bytes()}`: gathered once per layout, plain data (it outlives the model; LA1.5: no model borrow) | the viewer's `para(ref)` over `lines`, `runRefs` |
+| `Layout::{write_page(i, &SectionModel) -> Option<WritePage>, write_section(i, &m, generation) -> Result<WriteSection, SectionError>, encode_page(i, &m, &mut DeltaMark, &mut Vec<u8>)}`; `WriteSection: AppSection` | the page message with the Write section as its `app` |
+| `section::RunNames::{new(view), name(&RunRef)}` (the `runRefs` names of tools/lib/canon.mjs; `MAX_NAME_DEPTH` 64) | `tree.ts` names |
+| `annotations::annotations(view, &Layout) -> Annotations { comments, headings }` (`Layout::annotations`) | `collectAnnotations` |
+| `SectionError::{NoPage, Codec, Render}` | — |
+
+G8 sits on the F8 queries, not on a parallel walker: `section::text_layer_paragraph` is `refs::Locator::body_path` +
+`DocView::paragraph`; the heading level is `word::StyleResolver`'s outline level (`outline_level`, then the style name
+`/^(?:heading|t[íi]?tulo)\s*(\d)$/i`, unit-tested against V8 in `section.rs`).
+
+`query::PENDING` is empty: `encode_page` landed with G8.
+
+`write.uos` changes (the SCHEMA hash changed; `cargo run -p uo-schema --release -- generate` regenerated
+`uo-docx-layout/src/codec/generated*.rs` and `uo-wasm/js/gen/write*.ts`; `check`: 12 files up to date; `codec_real` 10/10):
+`WritePage.{hf_items, objects, cells}` optional (absent differs from empty in the TS `LayoutPage`), `PlacedCell.span` f64,
+`WritePage.paras: list<TextPara { text, level? }>` and `LaidOutLine.para: u32?`.
+
+### Ported
+
+| TS | Rust |
+|---|---|
+| viewer `para(ref)` → `paragraphAtPath` + `runs.map(r => r.text).join('')` | `section::{text_layer_paragraph, paragraph_text}` |
+| `levelResolver(full)` | `section::outline_level`, `heading_name_level` |
+| `runRefs(full)` for the placed objects | `section::RunNames` |
+| `collectAnnotations` (comment rectangles merged per line, reading order by the first anchor: `ka[0]-kb[0] \|\| …`, headings with the collapsed text) | `annotations::annotations`; the sort is `uo_jsnum::sort::js_sort_by` (V8 replay, also for NaN comparators), the map key `NumKey` (SameValueZero) |
+| `LayoutPage` → the page message | `section::wire_page`, `Layout::{write_page, write_section, encode_page}` |
+| wasm: `UoLayout` owns the `SectionModel` and the `Annotations` (computed at layout time, as the TS viewer does at `setLayout`) | `uo-wasm/src/write.rs` `uo_layout_encode_page`, `uo_layout_annotations`; `js/write.mjs` `encodePage` (message with the section), `paint.encodePage` (the bare render message), `annotations()` |
+
+### Parity (against the frozen TS: `tools/lib/facets-g8.mjs`, capture `--g8`)
+
+The facet `g8.section` is a stream written from the TS `LayoutPage` + `para(ref)`; the Rust side lays the document out,
+encodes every page with `Layout::encode_page`, decodes the render message and the `app` with the generated decoders and
+writes the same stream from the DECODED values; `g8.annotations` is the `collectAnnotations` stream. P1 and the page count
+are compared too. Round trip per page: the decoded section re-encodes to the same bytes and equals `write_page`; the render
+part equals uo-render's own encoding without a section.
+
+| Corpus | Docs | Equal | Facets | Mismatches | Pages | Lines | Section B | Render B |
+|---|---|---|---|---|---|---|---|---|
+| committed f7a | 16 | 16 | 64 | 0 | 151 | 5,415 | 4,177,729 | 2,244,076 |
+| committed f7b | 12 | 12 | 48 | 0 | 138 | 10,615 | 4,681,868 | 2,127,637 |
+| committed f7d | 12 | 12 | 48 | 0 | 32 | 1,704 | 1,180,777 | 536,392 |
+| committed f8 | 12 | 12 | 48 | 0 | 139 | 9,207 | 4,681,631 | 2,244,784 |
+| ci seed 1 (open fonts) | 100 | 100 | 400 | 0 | 515 | 30,278 | 22,187,955 | 10,863,849 |
+| `--gen f8` seed 1 (links, plugin inlines) | 100 | 100 | 400 | 0 | 971 | 56,969 | 32,923,085 | 15,526,574 |
+| oracle (installed fonts) | 2,742 | 2,742 | 10,968 | 0 | 4,629 | 109,651 | 70,299,188 | 29,261,876 |
+| real documents with comments (E:\UniversalWriteTest, installed fonts) | 10 | 10 | 40 | 0 | 118 | 5,748 | 5,901,525 | 2,977,232 |
+
+0 not replayed everywhere. **The comment-rectangle path** is exercised only by the last row: none of the generated, committed
+or oracle documents has `comments.xml` (0 comments in 2,742 + 200 + 52 documents). The 10 real documents (not versionable)
+carry 35 comments and 55 rectangles, all equal: they prove the merging and the reading order.
+
+Rounds: **0** G8 mismatches (every comparison equal on its first run). The finish found two harness issues instead (G8-7,
+G8-8).
+
+### Memory and robustness
+
+- M1: `section_and_annotations_leak_nothing` — `SectionModel::new`, every page through `encode_page`, `write_section`,
+  `write_page`, `annotations`, all dropped: 0 B left (13-page document, 7.7 MB allocated over the run).
+- M3 (13 pages, 36 paragraphs): `SectionModel::new` allocates 88,419 B (peak 32,361 B) and **retains 27,974 B**
+  (`heap_bytes`); one `encode_page` allocates 241,433 B (peak 127,480 B) for a 24,100-byte message; `annotations` allocates
+  32,487 B and retains 6,096 B. wasm: 44 pages, Write sections 1,581,080 B, render parts 647,093 B.
+- No panic: `hostile_section_inputs_do_not_panic` — an empty model, the model of another document's layout, another document's
+  view for the model and the annotations, page `len` and `usize::MAX` (`NoPage`, nothing written, the mark unchanged),
+  generations 0 and `u32::MAX`, `RunNames::name` over `u32::MAX` path steps, unknown parts and drawings, field-result and group
+  subs.
+- Native over the wasm exports: `write_native` 6/6 (sums `sections=8cea474e/0f5959f7/188af57d`,
+  `annotations=4ceffb56/9be17165/e37051ed`, equal to the values pinned in `write_api.test.mjs`); Node on the built module:
+  `write_section.test.mjs` + `write_api.test.mjs` 8/8 under `--expose-gc` (0 skipped); text layer: 1,198 lines with a paragraph.
+
+### Size
+
+- Shipped module (`-p uo-wasm --features write --profile wasm`): **3,948,899 B raw, 1,401,464 B gzip -9** (HANDOFF: 3.96 MB /
+  1.405 MB). G8 is already inside it; its share by name (`tools/size/wasm-share.mjs`, names kept): `section` 12,921 B raw /
+  5,184 gzip, `annotations` 7,929 / 2,877, `codec` 2,906 / 917, the two exports 2,595 / 371; **all 26 functions: 26,351 B raw,
+  9,364 B gzip (brotli 6,475)**.
+- JS: `js/gen/write.ts` 19,110 B (5,061 gzip) vs 16,601 (4,304) before 6471786d; `js/write.mjs` 18,347 (6,080) vs 13,449 (4,519).
+- **Wire size (maintainer decision G8-W):** the section is 1.9–2.2× the render message (f7a: 4.18 MB vs 2.24 MB over 151 pages;
+  oracle: 70.3 MB vs 29.3 MB over 4,629 pages; ≈ 28–34 KB per page on the fixtures). The chars are o/x/w columns with f64 x
+  and w, and the paragraph texts are repeated per page. Options, each a schema change with its own TS-equality check: the
+  paragraph texts once per layout, positions in f32 or integer twips, the chars only on demand. Kept as is: the contract is
+  the TS value, equal to the last bit.
+
+### Declarations
+
+- **G8-1** `SectionModel` is gathered once per layout and kept beside the `Layout` (LA1.5: no model borrow).
+- **G8-2** The wasm layout computes the `SectionModel` and the annotations eagerly at layout time (as the TS viewer at
+  `setLayout`); every relayout pays for them. Lazy needs the document handle alive and borrowed at query time (maintainer
+  decision).
+- **G8-3** `uo_layout_encode_page` does not call `Layout::encode_page`: the wasm layout moves its display lists into the
+  `RenderView` (`pipeline::take_pages`), so it calls `write_section` + `RenderView::set_app`/`encode_page`.
+- **G8-4** `section::paragraph_text` stays local: `uo_docx::session::text::para_text` is behind uo-docx's `session` feature,
+  which the viewer build does not enable. `section::RunNames` and the test-only `run_names` of `layout_parity.rs` /
+  `f8_parity.rs` stay two implementations (those suites pass; refactoring them is out of scope).
+- **G8-5** `MAX_NAME_DEPTH` 64: deeper nesting is not named (no `run`); the walk is recursive and the depth is the reader's.
+- **G8-6** `annotations` sorts through `js_sort_by` (da31758d's one sort core) and keys by `NumKey`; the TS `!(x2 > x1)` carries
+  `#[expect(clippy::neg_cmp_op_on_partial_ord)]`, as in `run_boxes.rs`.
+- **G8-7** The adapter test failed on any fresh `--dump` capture since 5cfa71d9 (not since 6471786d): it skipped a fixed list of
+  facets (`p2`, `p2first`, `p3.prepare`, `p3.lines`, `pages`), so the P3 facets that 5cfa71d9 added (14 per document) were
+  "not replayed" (840 for 60 documents; 96 on a 6-document `--g8` capture = 14 + the 2 g8 facets per document). It now skips
+  every facet but `p1` (fresh ci capture: 100 equal, 0 mismatches, 0 not replayed). Other replays with fixed skip lists may
+  have the same latent issue on fresh captures: audit before the first CI run.
+- **G8-8** `f8_parity` skips `g8.*` (it reported 200 "not replayed" on an `--f8 --g8` capture). CI captures G8 in a separate
+  step (`--gen f8 --f8 --g8`, 100 documents) replayed by `tests/g8.rs`.
+
+### Shared files edited
+
+`schema/write.uos` + generated codecs (WIP), `lib.rs`, `query.rs` (`PENDING` empty), `tools/capture-layout.mjs` (`--g8`),
+`tests/adapter.rs`, `tests/f8_parity.rs`, `.github/workflows/rust-core.yml` (the G8 capture + replay,
+`write_section.test.mjs`), uo-wasm `src/write.rs`, `src/render.rs`, `js/write.mjs`, `js/write.d.ts`, the three records.
+Owned: `section.rs`, `annotations.rs`, `tests/g8.rs`, `tests/captures/g8/`, `tools/lib/facets-g8.mjs`,
+`uo-wasm/tests/write_section.test.mjs`.
+
+### Not done
+
+- Bookmarks, `getLinks`, `getCustomInlines` as exports (frontier D and the switch).
+- A versioned fixture with comments (the real corpus is not versionable).
+- Wire-size reductions (G8-W) and a lazy section/annotations (G8-2): maintainer decisions.
+
+### Process metrics
+
+| Stage | Agent (model) | Notes |
+|---|---|---|
+| schema, section, annotations, facets, wasm export | Opus (WIP 6471786d) | stopped mid-frontier, nothing run |
+| finish: clippy fix, `NumKey`/`js_sort_by`, adapter and `f8_parity` fixes, memory and no-panic tests, heading unit test, parity (8 corpora), wasm and Node, size, CI, records | Sonnet 5.5 (maintainer's request; SKILL.md says Opus) | one session, 2026-11-07 |
+
+Parity rounds: 0 G8 mismatches. Rework: `--gen f8` needs `--f8` too (the first capture crashed in the harness);
+`f8_parity` did not tolerate the g8 facets (fixed, G8-8).

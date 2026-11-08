@@ -33,7 +33,7 @@ fn what_a_host_shares_between_threads_is_send_and_sync() {
     shared::<uo_fonts::policy::SubstituteFontProvider>();
     shared::<uo_fonts::policy::OracleProvider>();
     shared::<Box<dyn uo_fonts::registry::FontProvider>>();
-    #[cfg(feature = "system")]
+    #[cfg(all(feature = "system", not(target_family = "wasm")))]
     shared::<uo_fonts::system::SystemFontIndex>();
 }
 

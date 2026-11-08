@@ -228,6 +228,8 @@ The envelope carries one opaque, schema-typed producer section per page. Write's
 by uo-docx-layout (LA5, K14) with this generator; the shell's Write code reads it, the generic
 painter never does.
 
+The Write section is the `write.uos` message `WritePage` (Rust `uo-docx-layout/src/codec/generated.rs`, TS `uo-wasm/js/gen/write.ts` `decodeWritePage`), produced by `uo-docx-layout` `Layout::write_section` / `encode_page` (in the wasm layout handle: `write_section` + `RenderView::set_app`) and carried as the `app` of `encode_page_for_canvas`. G8 record: uo-docx-layout.md "Stage 3 — G8".
+
 ### 4. TS decoder contract and painter boundary
 
 #### 4.1 Contract (RQ5)
@@ -907,8 +909,7 @@ uo-schema -- check` up to date. No `unwrap`, `expect`, `panic!` or panicking ind
   `gaussianBlur`, `shadeBevel`, `morph` over `Float32Array`/`Uint8Array`): they exist natively in uo-drawingml and in `dml-memtest` as test exports only;
   the shell's `canvas-picture.ts` composition (`buildLayer`, `paintShapeEffects`) needs them as production exports. Only `picture::*`
   (`effect_bounds`, `shape_subs`, `colored_mask`, `dash`) are exported here.
-- The layout handle does not exist yet: `uo_render_view_new` + `push_message` / `adopt_view` stand in for it; the layout binding (another agent) should
-  own a `RenderView` and call `encode_page` (`set_app` for the Write section).
+- The layout handle exists now (G8 and the binding): the wasm `UoLayout` owns a `RenderView` and encodes with `set_app` for the Write section (`uo_layout_encode_page`).
 - A TS oracle comparison of the *exports* (the frozen `patternRaster`/`rectGradientRaster`/`blipTiles`/`fxLayers`/page-fill functions run on the
   same items in Node against the wasm bytes): the exports are thin calls of G's helpers, which G proved against the TS (63 facets), and the wasm
   bytes equal the native bytes here; a direct wasm × TS test is frontier V's.

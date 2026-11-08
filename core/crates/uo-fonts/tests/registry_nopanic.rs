@@ -16,7 +16,7 @@ use uo_fonts::registry::{AdvanceTable, FaceCache, FontBudget, FontProvider, Font
 use uo_fonts::{Face, FontLimits, Variant};
 use uo_testkit::generate::Rng;
 
-#[cfg(feature = "system")]
+#[cfg(all(feature = "system", not(target_family = "wasm")))]
 #[test]
 fn mutated_fonts_never_panic_the_scan_and_the_pick() {
     use provider_support::TempDir;

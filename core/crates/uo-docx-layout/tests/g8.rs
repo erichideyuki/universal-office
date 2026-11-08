@@ -294,6 +294,10 @@ struct Tally {
     lines: usize,
     section_bytes: usize,
     render_bytes: usize,
+    /// documents whose annotations carry a comment, comments, and their rectangles
+    comment_docs: usize,
+    comments: usize,
+    comment_rects: usize,
 }
 
 fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Report) {
@@ -351,8 +355,14 @@ fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Repor
         for i in 0..layout.pages.len() {
             t.section_bytes += layout.write_section(i, &m, 1).unwrap().0.len();
             let mut bare = Vec::new();
-            uo_render::encode_page_for_canvas(&layout.pages[i].page, &layout.resources, &uo_render::NoApp, &mut DeltaMark::new(1), &mut bare)
-                .unwrap();
+            uo_render::encode_page_for_canvas(
+                &layout.pages[i].page,
+                &layout.resources,
+                &uo_render::NoApp,
+                &mut DeltaMark::new(1),
+                &mut bare,
+            )
+            .unwrap();
             t.render_bytes += bare.len();
         }
         let sec = replay.check(&rec.key, "g8.section", &section_stream(&pages));
@@ -361,6 +371,10 @@ fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Repor
         }
         let ann = match rec.get("g8.annotations") {
             Some(_) => {
+                let a = layout.annotations(view);
+                t.comments += a.comments.len();
+                t.comment_rects += a.comments.iter().map(|c| c.rects.len()).sum::<usize>();
+                t.comment_docs += usize::from(a.comments.iter().any(|c| !c.rects.is_empty()));
                 let ok = replay.check(&rec.key, "g8.annotations", &annotations_stream(view, &layout));
                 if !ok {
                     t.annotations_differs.push(rec.key.clone());
@@ -423,6 +437,7 @@ fn g8_committed_fixtures() {
             t.section_differs,
             t.annotations_differs
         );
+        eprintln!("g8 {name}: comments: {} docs with rects, {} comments, {} rects", t.comment_docs, t.comments, t.comment_rects);
         report.assert_clean();
         assert_eq!(t.equal, t.docs, "{name}: every document equal (P1, section, annotations)");
         total.docs += t.docs;
@@ -449,6 +464,7 @@ fn g8_parity_against_the_frozen_ts() {
         t.section_bytes,
         t.render_bytes
     );
+    eprintln!("comments: {} docs with commented text, {} comments, {} rects", t.comment_docs, t.comments, t.comment_rects);
     eprintln!("P1 differs ({}): {:?}", t.p1_differs.len(), t.p1_differs);
     let p1: std::collections::HashSet<&String> = t.p1_differs.iter().collect();
     let own: Vec<&String> = t.section_differs.iter().filter(|k| !p1.contains(k)).collect();
@@ -456,4 +472,114 @@ fn g8_parity_against_the_frozen_ts() {
     let own_a: Vec<&String> = t.annotations_differs.iter().filter(|k| !p1.contains(k)).collect();
     eprintln!("annotations differ ({}; {} over an equal P1): {:?}", t.annotations_differs.len(), own_a.len(), own_a);
     assert!(own.is_empty() && own_a.is_empty(), "a section or annotations mismatch over an equal layout");
+}
+
+// ───────────────────────── memory and robustness ─────────────────────────
+
+/// The documents of `tests/captures/f8` (open fonts) with their transcript providers.
+fn fixture(take: usize) -> Vec<(String, Vec<u8>, TranscriptProvider)> {
+    let d = manifest().join("tests/captures/f8");
+    let mut fonts = FontIndex::open_fonts();
+    let mut names: Vec<_> = std::fs::read_dir(d.join("docs")).map(|r| r.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    names.sort();
+    let mut out = Vec::new();
+    for p in names.into_iter().take(take) {
+        let stem = p.file_stem().unwrap().to_string_lossy().into_owned();
+        let tr = Transcript::read(&d.join(format!("{stem}.transcript.tsv"))).unwrap();
+        fonts.add_transcript_sources(&tr);
+        let loaded = load_answers(&tr, &fonts);
+        assert!(loaded.missing.is_empty());
+        out.push((stem, std::fs::read(&p).unwrap(), TranscriptProvider::new(&tr, loaded)));
+    }
+    out
+}
+
+#[test]
+fn section_and_annotations_leak_nothing() {
+    use uo_alloc::{assert_no_leak, measure};
+    let fx = fixture(8);
+    let (_, docx, p) = &fx[fx.len() / 2];
+    let doc = read_doc(docx);
+    let view = DocView::new(&doc);
+    let l = lay(view, p, &options_for("f8/x")).unwrap();
+    // M1: the model, every page encoded, the annotations, all dropped
+    let u = assert_no_leak(|| {
+        let m = SectionModel::new(view, &l);
+        let mut mark = DeltaMark::new(1);
+        for i in 0..l.pages.len() {
+            let mut out = Vec::new();
+            l.encode_page(i, &m, &mut mark, &mut out).unwrap();
+            drop(l.write_section(i, &m, 1).unwrap());
+            drop(l.write_page(i, &m));
+        }
+        drop(l.annotations(view));
+        drop(m);
+    });
+    eprintln!("M1 section + annotations over {} pages: {u:?}", l.pages.len());
+    // M3 numbers for the record
+    let (m, um) = measure(|| SectionModel::new(view, &l));
+    eprintln!("M3 SectionModel::new {um:?}; retained {} B; {} paragraphs", m.heap_bytes(), m.paras().len());
+    let mut mark = DeltaMark::new(1);
+    let mut out = Vec::new();
+    let (r, ue) = measure(|| l.encode_page(0, &m, &mut mark, &mut out));
+    r.unwrap();
+    eprintln!("M3 encode_page(0) {ue:?} ({} B)", out.len());
+    let (_, ua) = measure(|| l.annotations(view));
+    eprintln!("M3 annotations {ua:?}");
+}
+
+#[test]
+fn hostile_section_inputs_do_not_panic() {
+    use uo_docx_layout::model::{BlockPath, DrawingId, HfPartId, RunRef, RunSub, StoryRef};
+    let fx = fixture(3);
+    let docs: Vec<_> = fx.iter().map(|(_, d, _)| read_doc(d)).collect();
+    let layouts: Vec<Layout> = fx.iter().zip(&docs).map(|((_, _, p), d)| lay(DocView::new(d), p, &options_for("f8/x")).unwrap()).collect();
+    for (i, l) in layouts.iter().enumerate() {
+        let view = DocView::new(&docs[i]);
+        // no model at all
+        let empty = SectionModel::empty();
+        for pg in 0..l.pages.len() {
+            let mut out = Vec::new();
+            l.encode_page(pg, &empty, &mut DeltaMark::new(1), &mut out).unwrap();
+        }
+        // the model of ANOTHER document's layout (mismatched pages, lines, objects)
+        let j = (i + 1) % layouts.len();
+        let other = SectionModel::new(DocView::new(&docs[j]), &layouts[j]);
+        for pg in 0..l.pages.len() {
+            let mut out = Vec::new();
+            let _ = l.encode_page(pg, &other, &mut DeltaMark::new(1), &mut out);
+            let _ = l.write_page(pg, &other);
+        }
+        // a model of this layout over another document's view
+        let _ = SectionModel::new(DocView::new(&docs[j]), l);
+        // annotations over another document's view
+        let _ = l.annotations(DocView::new(&docs[j]));
+        // pages and generations out of range
+        let m = SectionModel::new(view, l);
+        for pg in [l.pages.len(), usize::MAX] {
+            let mut mark = DeltaMark::new(1);
+            let before = mark.sent();
+            let mut out = Vec::new();
+            assert!(l.encode_page(pg, &m, &mut mark, &mut out).is_err());
+            assert!(out.is_empty() && mark.sent() == before);
+            assert!(l.write_section(pg, &m, 1).is_err());
+            assert!(l.write_page(pg, &m).is_none());
+        }
+        for generation in [0, u32::MAX] {
+            let mut out = Vec::new();
+            let _ = l.encode_page(0, &m, &mut DeltaMark::new(generation), &mut out);
+            let _ = l.write_section(0, &m, generation);
+        }
+        // hostile run names
+        let names = RunNames::new(view);
+        let stories = [StoryRef::Body, StoryRef::HeaderFooter(HfPartId(9999)), StoryRef::Textbox(DrawingId(u32::MAX)), StoryRef::Context];
+        let sub = [RunSub::None, RunSub::FieldResult(u32::MAX), RunSub::GroupItem(u32::MAX)];
+        for story in stories {
+            for sub in sub {
+                for path in [BlockPath::root(u32::MAX), BlockPath::root(0).cell_block(u32::MAX, u32::MAX, u32::MAX)] {
+                    let _ = names.name(&RunRef { story, path, run: u32::MAX, sub });
+                }
+            }
+        }
+    }
 }

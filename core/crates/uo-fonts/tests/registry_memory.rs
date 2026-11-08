@@ -178,7 +178,7 @@ fn m1_the_system_fed_policies() {
     });
 }
 
-#[cfg(feature = "system")]
+#[cfg(all(feature = "system", not(target_family = "wasm")))]
 #[test]
 fn m1_the_system_index() {
     use provider_support::{TempDir, write_corpus};

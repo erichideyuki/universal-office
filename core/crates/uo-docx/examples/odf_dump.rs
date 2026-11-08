@@ -74,8 +74,10 @@ fn main() {
     fn unhex(s: &str) -> Vec<u8> {
         s.as_bytes().chunks(2).map(|p| u8::from_str_radix(std::str::from_utf8(p).unwrap(), 16).unwrap()).collect()
     }
+    /// Named package parts and the optional extra input bytes.
+    type Inputs = (Vec<(String, Vec<u8>)>, Option<Vec<u8>>);
     /// The parts of a package of an inputs file.
-    fn inputs(file: &str, key: &str) -> (Vec<(String, Vec<u8>)>, Option<Vec<u8>>) {
+    fn inputs(file: &str, key: &str) -> Inputs {
         let text = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity").join(file)).unwrap();
         let mut on = false;
         let (mut parts, mut raw) = (Vec::new(), None);

@@ -1,7 +1,7 @@
 //! The native system font index (feature `system`): what the scan reads, how it indexes and picks,
 //! the files it must not trust, and the process-wide instance under threads. The replay against
 //! the C# and Node references is `provider_parity_system.rs`.
-#![cfg(feature = "system")]
+#![cfg(all(feature = "system", not(target_family = "wasm")))]
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod b_support;

@@ -10,12 +10,14 @@
 // uo-jsnum port on the Rust side (proven equal in the uo-jsnum record).
 import { join } from 'node:path';
 import { CaptureWriter, Rng, importFrom } from '../../uo-testkit/js/testkit.mjs';
-import { crate, root } from './capture-r2-common.mjs';
+import { crate, root, ts } from './capture-r2-common.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => (argv.includes(k) ? Number(argv[argv.indexOf(k) + 1]) : d);
 const CASES = opt('--cases', 3000);
 const po = await importFrom(root, 'write/packages/editor/src/picture-ops.ts');
+const so = await importFrom(root, 'write/packages/editor/src/shape-ops.ts');
+const sx = await ts('shape-xml.js');
 
 const out = new CaptureWriter(['D2b-F7 pure file: picture-ops.ts', 'facets: in, out']);
 out.meta('cases', CASES);
@@ -66,5 +68,14 @@ for (const p of po.REFLECTION_PRESETS) { const s = p.reflection; out.set(`pre#re
 for (const p of po.RECOLOR_PRESETS) { const x = p.fx; out.set(`pre#recolor:${p.id}`, 'out', [f(x.grayscl), f(x.biLevel), x.lum ? `${x.lum.bright}/${x.lum.contrast}` : '-', x.duotone ? `${col(x.duotone[0])}>${col(x.duotone[1])}` : '-'].join(',')); }
 for (const prst of ['circle', 'relaxedInset', 'hardEdge']) { const b = po.bevel3D(prst); out.set(`pre#bevel:${prst}`, 'out', `${b.camera.prst},${b.lightRig.rig},${b.lightRig.dir},${b.bevelT.prst ?? '-'}`); }
 for (let i = 0; i < 4; i++) for (let a = 1; a <= 6; a++) { const g = po.glowPreset(po.GLOW_SIZES[i], a); out.set(`pre#glow:${i}-${a}`, 'out', `${g.rad},${col(g.color)}`); }
+// the gallery boxes: `textboxTemplateSpec(id, { accent, lang })` through `newTextboxDrawingXml` (the
+// call `newTextboxXml` makes), every id x accent x language, and the unknown ids (`null`)
+for (const id of [...so.TEXTBOX_TEMPLATES.map((t) => t.id), 'nope', '', 'user:x', 'Simple'])
+  for (const accent of ['156082', '4472C4', 'ED7D31', '000000'])
+    for (const lang of ['en', 'pt', 'es']) {
+      const t = so.textboxTemplateSpec(id, { accent, lang });
+      const xml = t ? sx.newTextboxDrawingXml({ id: 1, name: 'x', cx: t.cx, cy: t.cy, posH: t.posH, posV: t.posV, relativeHeight: 1, wrap: t.wrap, ...(t.sizeRelH ? { sizeRelH: t.sizeRelH } : {}), ...(t.sizeRelV ? { sizeRelV: t.sizeRelV } : {}), fill: t.fill, line: t.line, body: { ...t.body }, content: t.content }) : '-';
+      out.set(`tt#${id}|${accent}|${lang}`, 'out', xml);
+    }
 out.write(join(crate, 'tests', 'parity', 'd2b-f7-ops.capture'));
 console.log(`d2b-f7-ops: ${CASES} cases`);

@@ -8,13 +8,14 @@ use uo_jsnum::math;
 
 use super::super::super::command::{CommandError, Event, Outcome};
 use super::super::super::state::Selection;
-use super::super::super::text::{DocPosition, insert_index, normalize_range, para_length, props_at};
+use super::super::super::text::{DocPosition, insert_index, para_length, props_at};
 use super::super::context::EditContext;
 use super::super::pictures::PictureCmd;
 use super::pure::Z_FIRST;
-use super::{AlignKind, DrawingCmd, GalleryBox, ObjFacts, ObjRect, Path, Step, change_is_finite, format_of};
+use super::rx;
+use super::{AlignKind, GalleryBox, ObjFacts, ObjRect, Path, Step, change_is_finite, format_of};
 use crate::js::{JsNumber, Nullable, Str};
-use crate::model::picture::{PicColor, PicLine, PicPos};
+use crate::model::picture::{PicColor, PicLine};
 use crate::model::run::{Run, TextboxView};
 use crate::model::story::Story;
 use crate::session::{ExecCx, Session};
@@ -216,13 +217,46 @@ pub(crate) fn template_spec(id: &str, accent: &str, lang: &str) -> Option<Templa
             size_rel_v: None,
             wrap: NewWrap::Square,
             fill: ShapeFill::Solid(scheme("accent4", &[("lumMod", 20000.0), ("lumOff", 80000.0)])),
-            line: Some(PicLine { w: Some(JsNumber::Num(12700.0)), fill: Some(Nullable::Val(scheme("accent4", &[]))), ..PicLine::default() }),
+            line: Some(PicLine {
+                w: Some(JsNumber::Num(12700.0)),
+                fill: Some(Nullable::Val(scheme("accent4", &[]))),
+                ..PicLine::default()
+            }),
             body: body_patch(91440.0, 91440.0, 91440.0, 91440.0, BodyAutofit::Shape),
-            content: para_xml(&run_xml(t.note, &format!("<w:b/><w:bCs/>{}", sz(20))), "<w:spacing w:after=\"60\"/>", &format!("<w:b/><w:bCs/>{}", sz(20)))
-                + &para_xml(&run_xml(t.body, &sz(18)), "", &sz(18)),
+            content: para_xml(
+                &run_xml(t.note, &format!("<w:b/><w:bCs/>{}", sz(20))),
+                "<w:spacing w:after=\"60\"/>",
+                &format!("<w:b/><w:bCs/>{}", sz(20)),
+            ) + &para_xml(&run_xml(t.body, &sz(18)), "", &sz(18)),
         },
         _ => return None,
     })
+}
+
+/// The `w:drawing` of the gallery box `id` as `newTextboxXml` builds it (box id 1, name `x`,
+/// z 1): the digest the parity capture compares (`tt#<id>|<accent>|<lang>`).
+#[doc(hidden)]
+#[must_use]
+pub fn template_xml(id: &str, accent: &str, lang: &str) -> Option<String> {
+    let t = template_spec(id, accent, lang)?;
+    let o = NewTextboxOptions {
+        id: 1.0,
+        name: "x".into(),
+        cx: t.cx,
+        cy: t.cy,
+        pos_h: Some(t.pos_h),
+        pos_v: Some(t.pos_v),
+        relative_height: 1.0,
+        wrap: Some(t.wrap),
+        size_rel_h: t.size_rel_h,
+        size_rel_v: t.size_rel_v,
+        fill: Some(t.fill),
+        line: Some(t.line),
+        body: Some(t.body),
+        content: t.content,
+        ..NewTextboxOptions::default()
+    };
+    Some(new_textbox_drawing_xml(&o))
 }
 
 fn box_name(lang: &str) -> &'static str {
@@ -233,95 +267,23 @@ fn box_name(lang: &str) -> &'static str {
     }
 }
 
-/// `str.replace(/(<wp:docPr\b[^>]*?\bid=")\d+"/, …)` and its `name`/`relativeHeight` twins, on a
-/// user gallery item: the first match only.
-fn replace_attr(xml: &str, tag: Option<&str>, attr: &str, digits_only: bool, new: &str) -> String {
-    let pat = format!("{attr}=\"");
-    let search_from = match tag {
-        Some(t) => match xml.find(t) {
-            Some(i) => i,
-            None => return xml.to_owned(),
-        },
-        None => 0,
-    };
-    let end_of_tag = tag.map(|_| xml[search_from..].find('>').map_or(xml.len(), |g| search_from + g));
-    let mut at = search_from;
-    while let Some(rel) = xml[at..].find(&pat) {
-        let i = at + rel;
-        if end_of_tag.is_some_and(|e| i >= e) {
-            break;
-        }
-        let prev_word = i > 0 && xml.as_bytes()[i - 1].is_ascii_alphanumeric();
-        if !prev_word {
-            let vs = i + pat.len();
-            let rest = &xml[vs..];
-            let ve = rest.find('"');
-            if let Some(ve) = ve {
-                let val = &rest[..ve];
-                let ok = if digits_only { !val.is_empty() && val.bytes().all(|c| c.is_ascii_digit()) } else { true };
-                if ok {
-                    return format!("{}{new}{}", &xml[..vs], &xml[vs + ve..]);
-                }
-            }
-        }
-        at = i + pat.len();
-    }
-    xml.to_owned()
-}
-
 impl Session {
     // ── the theme's default box ────────────────────────────────────────────────────────────
 
     /// `themePartPath()`.
     fn theme_part_path(&self) -> Option<String> {
         let rels = self.pkg.part_text("word/_rels/document.xml.rels").ok().flatten()?;
-        let mut from = 0usize;
-        while let Some(i) = rels[from..].find("<Relationship") {
-            let s = from + i;
-            let e = rels[s..].find('>').map_or(rels.len(), |g| s + g + 1);
-            let tag = &rels[s..e];
-            if let Some(ty) = attr_of(tag, "Type")
-                && ty.ends_with("/theme")
-                && let Some(t) = attr_of(tag, "Target")
-            {
-                let t = t.strip_prefix('/').unwrap_or(t);
-                let t = t.strip_prefix("word/").unwrap_or(t);
-                let t = t.strip_prefix("./").unwrap_or(t);
-                return Some(format!("word/{t}"));
-            }
-            from = e;
-        }
-        None
+        rx::theme_part_path(&rels)
     }
 
     /// `textboxDefaults()`: the `spPr` children and the `bodyPr` attributes of `a:txDef`.
     fn textbox_defaults(&self) -> Option<(String, TextboxBodyPatch)> {
         let path = self.theme_part_path()?;
         let x = self.pkg.part_text(&path).ok().flatten()?;
-        let od = x.find("<a:objectDefaults>")?;
-        let td_s = od + x[od..].find("<a:txDef>")? + "<a:txDef>".len();
-        let td_e = td_s + x[td_s..].find("</a:txDef>")?;
-        let td = &x[td_s..td_e];
-        let sp_pr = match td.find("<a:spPr>") {
-            Some(a) => {
-                let a = a + "<a:spPr>".len();
-                td[a..].find("</a:spPr>").map(|b| td[a..a + b].to_owned()).unwrap_or_default()
-            }
-            None => String::new(),
-        };
-        let bp = td.find("<a:bodyPr").map(|a| {
-            let rest = &td[a + "<a:bodyPr".len()..];
-            let e = rest.find('>').unwrap_or(rest.len());
-            rest[..e].trim_end_matches('/').to_owned()
-        });
-        let bp = bp.unwrap_or_default();
-        let at = |n: &str| -> Option<String> {
-            let pat = format!(" {n}=\"");
-            let i = bp.find(&pat)?;
-            let s = i + pat.len();
-            let e = bp[s..].find('"')?;
-            Some(bp[s..s + e].to_owned())
-        };
+        let td = rx::tx_def(&x).filter(|t| !t.is_empty())?;
+        let sp_pr = rx::tx_def_sp_pr(td).to_owned();
+        let bp = rx::tx_def_body_pr(td);
+        let at = |n: &str| rx::body_pr_attr(bp, n).map(str::to_owned);
         let mut body = TextboxBodyPatch::default();
         let ins = |k: &str| at(k).map(|v| uo_jsnum::parse::to_number(&v));
         body.l_ins = ins("lIns");
@@ -385,7 +347,16 @@ impl Session {
         if let Some(v) = vert {
             body.vert = Some(v.to_owned());
         }
-        let mut o = NewTextboxOptions { id, name, cx, cy, relative_height: z, body: Some(body), content: content.to_owned(), ..NewTextboxOptions::default() };
+        let mut o = NewTextboxOptions {
+            id,
+            name,
+            cx,
+            cy,
+            relative_height: z,
+            body: Some(body),
+            content: content.to_owned(),
+            ..NewTextboxOptions::default()
+        };
         match &def {
             Some((sp, _)) => o.sp_pr_raw = Some(sp.clone()),
             None => {
@@ -399,7 +370,7 @@ impl Session {
     /// `textboxRunFromXml(drawing)`: the run the reader makes of the drawing.
     fn textbox_run_from_xml(&mut self, drawing: &str) -> Option<Run> {
         let xml = format!("<w:p><w:r><w:rPr><w:noProof/></w:rPr>{drawing}</w:r></w:p>");
-        let story = self.read_hf_part_story("word/uw-template.xml", &hf_part_xml("header", &xml)).ok().flatten()?;
+        let story = self.read_part_story_no_sources("word/uw-template.xml", &hf_part_xml("header", &xml)).ok().flatten()?;
         let mut run = story.paras.get(0)?.runs.iter().find(|r| r.ext().is_some_and(|e| e.textbox.is_some()))?.clone();
         let tb = run.ext_mut().textbox.as_deref_mut()?;
         obj::set(tb, "edited", |t| t.edited = Some(true));
@@ -451,8 +422,15 @@ impl Session {
     }
 
     /// `insertTextbox(id)`.
-    pub(crate) fn insert_textbox(&mut self, id: &str, page: Option<u32>, accent1: Option<&str>, lang: &str, user: Option<&GalleryBox>) -> Res {
-        let done = |s: &mut Session| Ok(Outcome::Done(s.change_set()));
+    pub(crate) fn insert_textbox(
+        &mut self,
+        id: &str,
+        page: Option<u32>,
+        accent1: Option<&str>,
+        lang: &str,
+        user: Option<&GalleryBox>,
+    ) -> Res {
+        let done = |s: &mut Session| Ok(Outcome::Done(s.finish_if_stepped()));
         if self.paras().is_none() || self.locked() || matches!(self.ctx, EditContext::Textbox { .. } | EditContext::Note { .. }) {
             return done(self);
         }
@@ -460,11 +438,12 @@ impl Session {
         let xml = if let (true, Some(u)) = (id.starts_with("user:"), user) {
             let nid = self.next_drawing_id();
             let zs = self.z_values(None);
-            let z = zs.iter().copied().fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| math::max(m, v)))).map_or(Z_FIRST, |m| m + 1024.0);
+            let z =
+                zs.iter().copied().fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| math::max(m, v)))).map_or(Z_FIRST, |m| m + 1024.0);
             let nid_s = uo_jsnum::format::to_js_string(nid);
-            let x = replace_attr(&u.xml, Some("<wp:docPr"), "id", true, &nid_s);
-            let x = replace_attr(&x, Some("<wp:docPr"), "name", false, &format!("{} {nid_s}", box_name(lang)));
-            replace_attr(&x, None, "relativeHeight", true, &uo_jsnum::format::to_js_string(z))
+            let x = rx::replace_doc_pr_id(&u.xml, &nid_s);
+            let x = rx::replace_doc_pr_name(&x, &format!("{} {nid_s}", box_name(lang)));
+            rx::replace_relative_height(&x, &uo_jsnum::format::to_js_string(z))
         } else {
             let Some(spec) = template_spec(id, accent, lang) else { return done(self) };
             self.new_textbox_xml(spec.cx, spec.cy, &spec.content.clone(), None, Some(&spec), lang).0
@@ -496,12 +475,15 @@ impl Session {
     }
 
     /// `createDrawnTextbox(page, rect, vertical, anchorPos)` (the placement is `PlaceAt`).
-    pub(crate) fn create_drawn_textbox(&mut self, page: u32, r: ObjRect, vertical: bool, anchor_para: Option<u32>) -> Res {
-        let done = |s: &mut Session| Ok(Outcome::Done(s.change_set()));
+    pub(crate) fn create_drawn_textbox(&mut self, page: u32, r: ObjRect, vertical: bool, anchor_para: Option<u32>, lang: &str) -> Res {
+        let done = |s: &mut Session| Ok(Outcome::Done(s.finish_if_stepped()));
+        // F7-D11: inside a box or a note the TS nests the new box in that story (and cannot place it: the
+        // layout has no frame for it); the draw mode of the UI leaves the box first, so the port refuses
         if self.paras().is_none() || self.locked() || matches!(self.ctx, EditContext::Textbox { .. } | EditContext::Note { .. }) {
             return done(self);
         }
-        let (xml, _) = self.new_textbox_xml(math::round(r.w * 635.0), math::round(r.h * 635.0), "<w:p/>", vertical.then_some("eaVert"), None, "en");
+        let (xml, _) =
+            self.new_textbox_xml(math::round(r.w * 635.0), math::round(r.h * 635.0), "<w:p/>", vertical.then_some("eaVert"), None, lang);
         let Some(run) = self.textbox_run_from_xml(&xml) else { return done(self) };
         self.begin_step(false, &[]);
         if matches!(self.ctx, EditContext::Cell { .. }) {
@@ -526,6 +508,25 @@ impl Session {
         self.changed();
         self.enter_textbox_at(&path, page);
         done(self)
+    }
+
+    /// `editSelectedTextbox()`: the selected box goes into edit with the caret at the end of its text
+    /// (the head of the chain holds the text).
+    pub(crate) fn edit_selected_textbox(&mut self, page: u32) -> Res {
+        let Some(path) = self.sel_path() else { return Ok(Outcome::Done(self.finish_if_stepped())) };
+        let is_box = self.run_ref(&path).and_then(|r| r.ext()).is_some_and(|e| e.textbox.is_some());
+        if !is_box || self.locked() {
+            return Ok(Outcome::Done(self.finish_if_stepped()));
+        }
+        // `floatSel = null`, then `enterTextbox` (which refuses inside a box or a note)
+        self.set_float_sel(None);
+        if self.enter_textbox_at(&path, page) {
+            let last = self.paras().map_or(0, |ps| ps.len().saturating_sub(1));
+            let len = self.paras().and_then(|ps| ps.get(last)).map_or(0, para_length);
+            let at = DocPosition::new(u32::try_from(last).unwrap_or(0), u32::try_from(len).unwrap_or(0));
+            self.selection = Selection { anchor: at, focus: at };
+        }
+        Ok(Outcome::Done(self.finish_if_stepped()))
     }
 
     // ── chains ─────────────────────────────────────────────────────────────────────────────
@@ -565,7 +566,13 @@ impl Session {
             .collect();
         let max = ids.iter().copied().fold(0.0, math::max);
         let id = match &chain {
-            Some(c) => c.first().and_then(|p| self.run_ref(p)).and_then(|r| r.ext()).and_then(|e| e.textbox.as_deref()).and_then(|t| t.story).map_or(f64::NAN, JsNumber::to_number),
+            Some(c) => c
+                .first()
+                .and_then(|p| self.run_ref(p))
+                .and_then(|r| r.ext())
+                .and_then(|e| e.textbox.as_deref())
+                .and_then(|t| t.story)
+                .map_or(f64::NAN, JsNumber::to_number),
             None => max + 1.0,
         };
         let seq = chain.as_ref().map_or(1.0, |c| c.len() as f64);
@@ -574,9 +581,16 @@ impl Session {
         }
         self.begin_step(false, &[]);
         if chain.is_none() {
-            let raw = self.run_ref(from).and_then(|r| r.ext()).and_then(|e| e.textbox.as_deref()).and_then(|t| t.raw_drawing_xml.as_deref().map(str::to_owned));
+            let raw = self
+                .run_ref(from)
+                .and_then(|r| r.ext())
+                .and_then(|e| e.textbox.as_deref())
+                .and_then(|t| t.raw_drawing_xml.as_deref().map(str::to_owned));
             if let Some(raw) = raw
-                && let Ok(x) = patch_shape(&raw, &ShapeChange { story: Some(StoryChange::Txbx { id: Some(id), content: None }), ..ShapeChange::default() })
+                && let Ok(x) = patch_shape(
+                    &raw,
+                    &ShapeChange { story: Some(StoryChange::Txbx { id: Some(id), content: None }), ..ShapeChange::default() },
+                )
             {
                 self.apply_drawing_xml(from, x, false);
             }
@@ -587,7 +601,11 @@ impl Session {
             t.content = Story::new();
             t.view = TextboxView::ParasOnly;
         }
-        let raw = self.run_ref(to).and_then(|r| r.ext()).and_then(|e| e.textbox.as_deref()).and_then(|t| t.raw_drawing_xml.as_deref().map(str::to_owned));
+        let raw = self
+            .run_ref(to)
+            .and_then(|r| r.ext())
+            .and_then(|e| e.textbox.as_deref())
+            .and_then(|t| t.raw_drawing_xml.as_deref().map(str::to_owned));
         if let Some(raw) = raw
             && let Ok(x) = patch_shape(&raw, &ShapeChange { story: Some(StoryChange::Linked { id, seq }), ..ShapeChange::default() })
         {
@@ -613,7 +631,11 @@ impl Session {
         }
         self.begin_step(false, &[]);
         for t in chain.iter().skip(k + 1) {
-            let raw = self.run_ref(t).and_then(|r| r.ext()).and_then(|e| e.textbox.as_deref()).and_then(|b| b.raw_drawing_xml.as_deref().map(str::to_owned));
+            let raw = self
+                .run_ref(t)
+                .and_then(|r| r.ext())
+                .and_then(|e| e.textbox.as_deref())
+                .and_then(|b| b.raw_drawing_xml.as_deref().map(str::to_owned));
             let Some(raw) = raw else { continue };
             let pid = self.doc.ids.para();
             if let Some(run) = self.run_mut(t)
@@ -624,15 +646,23 @@ impl Session {
                 b.content = s;
                 b.view = TextboxView::ParasOnly;
             }
-            if let Ok(x) = patch_shape(&raw, &ShapeChange { story: Some(StoryChange::Txbx { id: None, content: Some("<w:p/>".into()) }), ..ShapeChange::default() }) {
+            if let Ok(x) = patch_shape(
+                &raw,
+                &ShapeChange { story: Some(StoryChange::Txbx { id: None, content: Some("<w:p/>".into()) }), ..ShapeChange::default() },
+            ) {
                 self.apply_drawing_xml(t, x, false);
             }
         }
         if k == 0 {
             let first = &chain[0];
-            let raw = self.run_ref(first).and_then(|r| r.ext()).and_then(|e| e.textbox.as_deref()).and_then(|b| b.raw_drawing_xml.as_deref().map(str::to_owned));
+            let raw = self
+                .run_ref(first)
+                .and_then(|r| r.ext())
+                .and_then(|e| e.textbox.as_deref())
+                .and_then(|b| b.raw_drawing_xml.as_deref().map(str::to_owned));
             if let Some(raw) = raw
-                && let Ok(x) = patch_shape(&raw, &ShapeChange { story: Some(StoryChange::Txbx { id: None, content: None }), ..ShapeChange::default() })
+                && let Ok(x) =
+                    patch_shape(&raw, &ShapeChange { story: Some(StoryChange::Txbx { id: None, content: None }), ..ShapeChange::default() })
             {
                 self.apply_drawing_xml(first, x, false);
             }
@@ -655,8 +685,7 @@ impl Session {
         if self.locked() {
             return false;
         }
-        let sp = between(&raw, "<wps:spPr", "</wps:spPr>").unwrap_or_default();
-        let sp_in = strip_geometry(&strip_xfrm(&sp));
+        let sp_in = rx::sp_pr_inner(&raw);
         let d = crate::write::emit::object::default_textbox_body();
         let mut ins = String::new();
         for (k, v, dv) in [("lIns", b.l_ins, d.l_ins), ("tIns", b.t_ins, d.t_ins), ("rIns", b.r_ins, d.r_ins), ("bIns", b.b_ins, d.b_ins)] {
@@ -678,12 +707,16 @@ impl Session {
             b.vert,
             if anchor == "t" { String::new() } else { format!(" anchor=\"{anchor}\"") }
         );
-        let body = if b.autofit == BodyAutofit::Shape { format!("<a:bodyPr {attrs}><a:spAutoFit/></a:bodyPr>") } else { format!("<a:bodyPr {attrs}/>") };
+        let body = if b.autofit == BodyAutofit::Shape {
+            format!("<a:bodyPr {attrs}><a:spAutoFit/></a:bodyPr>")
+        } else {
+            format!("<a:bodyPr {attrs}/>")
+        };
         let tx_def = format!("<a:txDef><a:spPr>{sp_in}</a:spPr>{body}<a:lstStyle/></a:txDef>");
         let next = if theme.contains("<a:objectDefaults/>") {
             theme.replacen("<a:objectDefaults/>", &format!("<a:objectDefaults>{tx_def}</a:objectDefaults>"), 1)
-        } else if let (Some(i), Some(j)) = (theme.find("<a:txDef>"), theme.find("</a:txDef>")) {
-            format!("{}{tx_def}{}", &theme[..i], &theme[j + "</a:txDef>".len()..])
+        } else if let Some((i, j)) = rx::tx_def_span(&theme) {
+            format!("{}{tx_def}{}", theme.get(..i).unwrap_or(""), theme.get(j..).unwrap_or(""))
         } else if theme.contains("<a:objectDefaults>") {
             theme.replacen("</a:objectDefaults>", &format!("{tx_def}</a:objectDefaults>"), 1)
         } else {
@@ -696,20 +729,12 @@ impl Session {
 
     // ── alignObjects ───────────────────────────────────────────────────────────────────────
 
-    /// `alignObjects(kind)` with the facts of the selected floating objects (the selected object
-    /// first, then the others).
-    pub(crate) fn align_objects(&mut self, kind: AlignKind, objs: &[ObjFacts], cx: &mut ExecCx<'_>) -> Res {
-        let n = objs.len();
-        if n < 2 {
-            if !matches!(kind, AlignKind::DistributeH | AlignKind::DistributeV) && !self.draw_is_image() {
-                let k = kind;
-                return self.exec_pictures(PictureCmd::Align { kind: k, relative_to: None, rects: Vec::new() }, cx);
-            }
-            return Ok(Outcome::Done(self.change_set()));
-        }
-        if self.locked() {
-            return Ok(Outcome::Done(self.change_set()));
-        }
+    /// `alignObjects(kind)` with the facts of the selected objects: ONE entry per selected object,
+    /// in selection order (the selected object first, then the others). An entry without a `rect`
+    /// stands for an object the TS leaves out (`selectedFloats().filter(h => !h.inline)`: an inline
+    /// picture, or an object with no laid-out handle); the rest are aligned, or `alignShape` runs
+    /// when fewer than 2 are left. A list of another length than the selection is a no-op.
+    pub(crate) fn align_objects(&mut self, kind: AlignKind, all: &[ObjFacts], cx: &mut ExecCx<'_>) -> Res {
         let mut paths: Vec<Path> = Vec::new();
         if let Some(p) = self.sel_path() {
             paths.push(p);
@@ -719,8 +744,25 @@ impl Session {
                 paths.push(p);
             }
         }
+        let (objs, paths): (Vec<ObjFacts>, Vec<Path>) = if all.len() == paths.len() {
+            all.iter().copied().zip(paths).filter(|(o, _)| o.rect.is_some()).unzip()
+        } else {
+            (all.to_vec(), paths)
+        };
+        let objs = objs.as_slice();
+        let n = objs.len();
+        if n < 2 {
+            if !matches!(kind, AlignKind::DistributeH | AlignKind::DistributeV) && !self.draw_is_image() {
+                let k = kind;
+                return self.exec_pictures(PictureCmd::Align { kind: k, relative_to: None, rects: Vec::new() }, cx);
+            }
+            return Ok(Outcome::Done(self.finish_if_stepped()));
+        }
+        if self.locked() {
+            return Ok(Outcome::Done(self.finish_if_stepped()));
+        }
         if paths.len() != n {
-            return Ok(Outcome::Done(self.change_set()));
+            return Ok(Outcome::Done(self.finish_if_stepped()));
         }
         let rect = |o: &ObjFacts| o.rect.unwrap_or_default();
         let l = objs.iter().map(|o| rect(o).x).fold(f64::INFINITY, math::min);
@@ -774,7 +816,7 @@ impl Session {
             self.move_float_by(&paths[i], &objs[i], dx, dy);
         }
         self.changed();
-        Ok(Outcome::Done(self.change_set()))
+        Ok(Outcome::Done(self.finish_if_stepped()))
     }
 
     /// `moveFloatBy(h, dx, dy)` with a frame: the positions keep their references.
@@ -813,7 +855,8 @@ impl Session {
         }
         let hidx = all.iter().position(|p| *p == head).and_then(|i| u32::try_from(i).ok()).unwrap_or(host);
         let fidx = all.iter().position(|p| *p == path).and_then(|i| u32::try_from(i).ok()).unwrap_or(hidx);
-        let probe = EditContext::Textbox { outer: Box::new(self.ctx.clone()), para, run, host: hidx, focus: fidx, page, saved: self.selection };
+        let probe =
+            EditContext::Textbox { outer: Box::new(self.ctx.clone()), para, run, host: hidx, focus: fidx, page, saved: self.selection };
         if crate::session::ops::context::story_of(&self.doc, &probe).is_none() {
             return;
         }
@@ -823,81 +866,4 @@ impl Session {
         self.emit(Event::TbMode { active: true });
         self.selection = crate::session::ops::context::clamp_selection(self.paras(), sel);
     }
-}
-
-fn attr_of<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    let pat = format!("{name}=\"");
-    let mut from = 0usize;
-    while let Some(i) = tag[from..].find(&pat) {
-        let s = from + i;
-        let prev_ok = s == 0 || !tag.as_bytes()[s - 1].is_ascii_alphanumeric();
-        if prev_ok {
-            let v = s + pat.len();
-            let e = tag[v..].find('"')?;
-            return Some(&tag[v..v + e]);
-        }
-        from = s + pat.len();
-    }
-    None
-}
-
-/// The inside of the first `<open ...>…close` element.
-fn between(s: &str, open: &str, close: &str) -> Option<String> {
-    let i = s.find(open)?;
-    let gt = i + s[i..].find('>')? + 1;
-    let j = gt + s[gt..].find(close)?;
-    Some(s[gt..j].to_owned())
-}
-
-/// `.replace(/<a:xfrm\b[\s\S]*?<\/a:xfrm>|<a:xfrm\/>/, '')`.
-fn strip_xfrm(s: &str) -> String {
-    if let Some(i) = s.find("<a:xfrm") {
-        let after = &s[i + 7..];
-        if after.starts_with('/') && after.starts_with("/>") {
-            return format!("{}{}", &s[..i], &s[i + 9..]);
-        }
-        if !after.starts_with(|c: char| c.is_alphanumeric() || c == '_')
-            && let Some(j) = s[i..].find("</a:xfrm>")
-        {
-            return format!("{}{}", &s[..i], &s[i + j + 9..]);
-        }
-    }
-    s.to_owned()
-}
-
-/// `.replace(/<a:prstGeom\b[\s\S]*?<\/a:prstGeom>|<a:prstGeom\b[^>]*\/>|<a:custGeom\b[\s\S]*?<\/a:custGeom>/, '')`.
-fn strip_geometry(s: &str) -> String {
-    let cands = [("<a:prstGeom", "</a:prstGeom>"), ("<a:custGeom", "</a:custGeom>")];
-    let mut best: Option<(usize, usize)> = None;
-    for (open, close) in cands {
-        if let Some(i) = s.find(open) {
-            let e = if let Some(j) = s[i..].find(close) {
-                i + j + close.len()
-            } else {
-                continue;
-            };
-            let gt = s[i..].find('>').map(|g| i + g);
-            // the self-closing form ends at its own `/>`
-            let end = match gt {
-                Some(g) if s[..g].ends_with('/') && g < e => g + 1,
-                _ => e,
-            };
-            if best.is_none_or(|(bi, _)| i < bi) {
-                best = Some((i, end));
-            }
-        }
-    }
-    match best {
-        Some((i, e)) => format!("{}{}", &s[..i], &s[e..]),
-        None => s.to_owned(),
-    }
-}
-
-#[allow(dead_code)]
-fn _keep(_: Nullable<()>, _: PicPos, _: DrawingCmd, _: &str, _: normalize_range_alias) {}
-#[allow(non_camel_case_types)]
-type normalize_range_alias = ();
-#[allow(dead_code)]
-fn _nr() {
-    let _ = normalize_range;
 }

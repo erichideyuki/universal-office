@@ -8,6 +8,7 @@
 
 mod loc;
 pub mod pure;
+pub mod rx;
 pub(crate) mod textbox;
 
 use std::sync::Arc;
@@ -30,11 +31,11 @@ use crate::read::inline_objects::{sync_image_from_xml, sync_shape_from_xml};
 use crate::read::picture_format::read_picture_format;
 use crate::word::obj;
 use crate::write::emit::fx::{PictureChange, patch_picture};
-use crate::write::emit::object::{
-    ShapeChange, ShapeFill, ShapeFormat, StoryChange, TextboxBodyPatch, patch_shape, read_shape_format,
-};
+use crate::write::emit::object::{ShapeChange, ShapeFill, ShapeFormat, StoryChange, TextboxBodyPatch, patch_shape, read_shape_format};
 
 pub(crate) use loc::{Path, Step};
+#[doc(hidden)]
+pub use textbox::template_xml;
 
 type Res = Result<Outcome, CommandError>;
 
@@ -115,6 +116,63 @@ pub struct GalleryBox {
     pub xml: Str,
 }
 
+/// What the selection pane lists (`selectionPaneItems`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneKind {
+    Image,
+    Textbox,
+    Shape,
+    Group,
+}
+
+/// One object of the selection pane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaneItem {
+    pub key: String,
+    pub name: String,
+    pub hidden: bool,
+    pub selected: bool,
+    pub kind: PaneKind,
+}
+
+/// The text body values of a selected box (`ShapeState.text`, before the unit conversion).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextState {
+    /// `lIns`, `tIns`, `rIns`, `bIns` in EMU
+    pub margins_emu: [f64; 4],
+    pub anchor: &'static str,
+    pub direction: String,
+    pub wrap: bool,
+    pub autofit: &'static str,
+    pub upright: bool,
+}
+
+/// `ShapeState` / `ImageState` with the model values (EMU, 60000ths of a degree).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectState {
+    pub kind: PaneKind,
+    pub inline: bool,
+    pub wrap: String,
+    pub cx: f64,
+    pub cy: f64,
+    pub rot: f64,
+    pub flip_h: bool,
+    pub flip_v: bool,
+    pub lock_aspect: bool,
+    pub move_with_text: bool,
+    pub lock_anchor: bool,
+    pub name: String,
+    pub alt_text: String,
+    pub decorative: bool,
+    pub geometry: String,
+    pub style_index: u32,
+    pub editing_text: bool,
+    pub text: Option<TextState>,
+    pub link_next: bool,
+    pub link_previous: bool,
+    pub format: PictureFormat,
+}
+
 /// The commands of this family.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DrawingCmd {
@@ -137,7 +195,7 @@ pub enum DrawingCmd {
     /// `setShapeOutline({ color, weightPt, dash, compound })`
     SetShapeOutline { color: Option<Nullable<PicColor>>, weight_pt: Option<f64>, dash: Option<Str>, compound: Option<Str> },
     /// `setShapeFormat(o)`
-    SetShapeFormat { fmt: FormatArg },
+    SetShapeFormat { fmt: Box<FormatArg> },
     /// `setShapeStyle(n)`
     SetShapeStyle { n: f64 },
     /// `changeShape(prst)`
@@ -159,14 +217,18 @@ pub enum DrawingCmd {
     InsertTextbox { id: Str, page: Option<u32>, theme_accent1: Option<Str>, lang: Str, user: Option<GalleryBox> },
     /// `createDrawnTextbox(page, rect, vertical, anchorPos)` after `drawTextbox` (`frame` is
     /// applied by a following [`DrawingCmd::PlaceAt`], the TS refreshes the layout in between)
-    CreateDrawnTextbox { page: u32, rect: ObjRect, vertical: bool, anchor_para: Option<u32> },
+    CreateDrawnTextbox { page: u32, rect: ObjRect, vertical: bool, anchor_para: Option<u32>, lang: Str },
     /// the second half of a command that floats an object (`setImageWrap` from inline,
     /// `createDrawnTextbox`): the offsets from the frame the layout gave the placed object
     PlaceAt { frame: ObjFrame, x: f64, y: f64 },
     /// `setAsDefaultTextbox()`
     SetAsDefaultTextbox,
-    /// `alignObjects(kind)` with the rectangles of the selected objects
+    /// `alignObjects(kind)`: one entry per selected object in selection order (selected first); an
+    /// entry without `rect` is an inline or not laid out object, which the TS leaves out
     AlignObjects { kind: AlignKind, rects: Vec<ObjFacts> },
+    /// `editSelectedTextbox()`: the selected box is edited, the caret at the end of its text (`page`:
+    /// the page of `selectedFloat()`, 0 without one)
+    EditSelectedTextbox { page: u32 },
 }
 
 /// The F7 state of a session (the TS element's `floatMulti`, the inline selection, the answers of
@@ -295,8 +357,12 @@ pub(crate) fn change_is_finite(ch: &ShapeChange) -> bool {
         && p.src_rect.is_none_or(|r| finite(r.l) && finite(r.t) && finite(r.r) && finite(r.b))
         && p.effect_extent.is_none_or(|r| finite(r.l) && finite(r.t) && finite(r.r) && finite(r.b))
         && p.dist.as_ref().is_none_or(|d| d.iter().all(|(_, v)| finite(*v)))
-        && p.pos_h.as_ref().is_none_or(|q| q.offset.is_none_or(|n| n.to_number().is_finite()) && q.pct.is_none_or(|n| n.to_number().is_finite()))
-        && p.pos_v.as_ref().is_none_or(|q| q.offset.is_none_or(|n| n.to_number().is_finite()) && q.pct.is_none_or(|n| n.to_number().is_finite()))
+        && p.pos_h
+            .as_ref()
+            .is_none_or(|q| q.offset.is_none_or(|n| n.to_number().is_finite()) && q.pct.is_none_or(|n| n.to_number().is_finite()))
+        && p.pos_v
+            .as_ref()
+            .is_none_or(|q| q.offset.is_none_or(|n| n.to_number().is_finite()) && q.pct.is_none_or(|n| n.to_number().is_finite()))
         && p.soft_edge.as_ref().is_none_or(|n| match n {
             Nullable::Val(v) => finite(*v),
             Nullable::Null => true,
@@ -305,7 +371,7 @@ pub(crate) fn change_is_finite(ch: &ShapeChange) -> bool {
 
 impl Session {
     fn done7(&mut self) -> Res {
-        Ok(Outcome::Done(self.change_set()))
+        Ok(Outcome::Done(self.finish_if_stepped()))
     }
 
     // ── the stories drawing runs live in ───────────────────────────────────────────────────
@@ -417,6 +483,28 @@ impl Session {
         }
     }
 
+    /// What the paint of the handles does through `selectedFloat()`: an inline picture stays
+    /// selected only while the text selection is exactly over its run.
+    pub(crate) fn settle_float_sel(&mut self) {
+        let Some(p) = self.f7.inline_sel.clone() else { return };
+        let over = match p.as_slice() {
+            [Step::Para { para, run }] => self.paras().and_then(|ps| ps.get(*para as usize)).is_some_and(|pp| {
+                let at: usize = pp.runs.iter().take(*run as usize).map(|r| r.text.len()).sum();
+                let len = pp.runs.get(*run as usize).map_or(0, |r| r.text.len());
+                let (s, e) = {
+                    let r = super::super::text::normalize_range(self.range());
+                    (r.start, r.end)
+                };
+                s.para == *para && e.para == *para && s.offset as usize == at && e.offset as usize == at + len
+            }),
+            // an inline picture of a table cell or of a box is not under the selection of the story
+            _ => false,
+        };
+        if !over {
+            self.f7.inline_sel = None;
+        }
+    }
+
     // ── the edit pipeline (`editDrawing`, `applyDrawingXml`) ───────────────────────────────
 
     /// `patchDrawing(r, ch)`: `patchPicture` for a picture, `patchShape` for the rest.
@@ -428,6 +516,16 @@ impl Session {
 
     /// `applyDrawingXml(run, xml, extent)` on the run at `path` (the step is taken).
     pub(crate) fn apply_drawing_xml(&mut self, path: &[Step], xml: String, extent: bool) {
+        // `floatSel` is the run itself: when the object stops floating (or starts to) the list of
+        // floating objects changes under the index, the selection follows the run
+        let keep = if self.float_sel.is_some() || self.f7.inline_sel.is_some() { self.sel_path() } else { None };
+        self.apply_drawing_xml_inner(path, xml, extent);
+        if keep.is_some() {
+            self.set_float_sel(keep);
+        }
+    }
+
+    fn apply_drawing_xml_inner(&mut self, path: &[Step], xml: String, extent: bool) {
         let Some(run0) = self.run_ref(path) else { return };
         let image = is_image(run0);
         let mut x = xml;
@@ -559,7 +657,9 @@ impl Session {
         }
         fn scan_run(r: &Run, max: &mut f64, depth: usize) {
             if let Some(raw) = raw_of(r) {
-                scan_doc_pr_ids(raw, max);
+                for d in rx::doc_pr_ids(raw) {
+                    *max = math::max(*max, uo_jsnum::parse::to_number(d));
+                }
             }
             if let Some(tb) = r.ext().and_then(|e| e.textbox.as_deref()) {
                 scan_story(&tb.content, max, depth + 1);
@@ -569,11 +669,6 @@ impl Session {
         scan_story(&self.doc.body, &mut max, 0);
         for h in self.doc.hf.iter() {
             scan_story(&h.story, &mut max, 0);
-        }
-        if let Some(p) = self.paras() {
-            // the story being edited is the body or one of the above except a note/cell/box: the
-            // TS reads `bodyBlocks()` (the body)
-            let _ = p;
         }
         if max >= 2_147_483_646.0 {
             // ids this big (Word draws 9-digit ones): the next must fit the schema's int
@@ -687,13 +782,17 @@ impl Session {
             self.unchain_textbox(&path);
         }
         let mut done = false;
-        let inline_pic = self.run_ref(&path).is_some_and(|r| r.ext().and_then(|e| e.image.as_deref()).is_some_and(|i| i.floating != Some(true)));
+        let inline_pic =
+            self.run_ref(&path).is_some_and(|r| r.ext().and_then(|e| e.image.as_deref()).is_some_and(|i| i.floating != Some(true)));
         if let Some((para, run)) = loc::top_level(&path)
             && matches!(self.ctx, EditContext::Body | EditContext::HeaderFooter { .. })
             && self.paras().is_some()
         {
             // the paragraph list the TS searches is the model's (body, or the part in edit)
-            let off: usize = self.paras().and_then(|ps| ps.get(para as usize)).map_or(0, |p| p.runs.iter().take(run as usize).map(|r| r.text.len()).sum());
+            let off: usize = self
+                .paras()
+                .and_then(|ps| ps.get(para as usize))
+                .map_or(0, |p| p.runs.iter().take(run as usize).map(|r| r.text.len()).sum());
             if let Some(ps) = self.base_story_mut().paras.make_mut(para as usize)
                 && (run as usize) < ps.runs.len()
             {
@@ -779,6 +878,152 @@ impl Session {
         self.pane_runs().into_iter().find(|x| x.1 == key).map(|x| x.0)
     }
 
+    // ── the queries of the shell ───────────────────────────────────────────────────────────
+
+    /// `stringifyState().fs`: the index of the selected object in the drawing runs of the context
+    /// (`None`: nothing selected, or the selection is an inline picture).
+    #[must_use]
+    pub fn float_selection(&self) -> Option<u32> {
+        self.float_sel
+    }
+
+    /// `selectedObjectCount()`: the selected object and the others of the multi-selection. The TS
+    /// counts the handles `enumFloats()` finds on the laid-out pages (`selectedFloats().length ||
+    /// 1`); the model has no layout, so every selected object counts (F7-D6).
+    #[must_use]
+    pub fn selected_object_count(&self) -> usize {
+        let Some(sel) = self.sel_path() else { return 0 };
+        let mut n = 1usize;
+        let mut seen: Vec<&Path> = vec![&sel];
+        for p in &self.f7.multi {
+            if !seen.contains(&p) && self.run_ref(p).is_some() {
+                seen.push(p);
+                n += 1;
+            }
+        }
+        n
+    }
+
+    /// `selectionPaneItems()`: the objects of the pane, the front-most first.
+    #[must_use]
+    pub fn selection_pane_items(&self) -> Vec<PaneItem> {
+        let cur = self.sel_path().or_else(|| self.focus_path());
+        let multi_on = self.sel_path().is_some();
+        let mut out: Vec<(f64, PaneItem)> = Vec::new();
+        for (path, key, f) in self.pane_runs() {
+            let Some(r) = self.run_ref(&path) else { continue };
+            let b = f.base();
+            let kind = match r.ext() {
+                Some(e) if e.image.is_some() => PaneKind::Image,
+                Some(e) if e.textbox.is_some() => PaneKind::Textbox,
+                Some(e) if e.group.is_some() => PaneKind::Group,
+                _ => PaneKind::Shape,
+            };
+            let selected = cur.as_ref() == Some(&path) || (multi_on && self.f7.multi.contains(&path));
+            let z = b.relative_height.map_or(0.0, JsNumber::to_number);
+            out.push((
+                z,
+                PaneItem {
+                    key,
+                    name: b.doc_pr.name.as_deref().unwrap_or("").to_owned(),
+                    hidden: b.doc_pr.hidden.unwrap_or(false),
+                    selected,
+                    kind,
+                },
+            ));
+        }
+        // `sort((x, y) => y.z - x.z)`: stable, front-most first
+        out.sort_by(|x, y| {
+            let d = y.0 - x.0;
+            if d > 0.0 {
+                std::cmp::Ordering::Greater
+            } else if d < 0.0 {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        });
+        out.into_iter().map(|x| x.1).collect()
+    }
+
+    /// `selectedShape()` / `selectedImage()`: the model values of the object `drawRun()` /
+    /// `picRun()` finds (`want_image`), with the unit conversions (`/ 12700`, `/ 60000`) and the
+    /// labels left to the shell (F7-D5).
+    #[must_use]
+    pub fn selected_object_state(&self, want_image: bool) -> Option<ObjectState> {
+        let path = if want_image { self.pic_path()? } else { self.draw_path()? };
+        let run = self.run_ref(&path)?;
+        if !want_image && is_image(run) {
+            return None;
+        }
+        let f = format_of(run)?;
+        let b = f.base();
+        let rel = b.pos_v.as_ref().map(|p| &*p.relative_from);
+        let tb = run.ext().and_then(|e| e.textbox.as_deref());
+        let chain = tb.and_then(|_| self.textbox_chain(&path));
+        let (kind, style_index, text) = if want_image {
+            (PaneKind::Image, 0, None)
+        } else {
+            let kind = if run.ext().is_some_and(|e| e.group.is_some()) {
+                PaneKind::Group
+            } else if tb.is_some() {
+                PaneKind::Textbox
+            } else {
+                PaneKind::Shape
+            };
+            let (si, text) = match &f {
+                Fmt::Shape(sf) => (
+                    raw_of(run).map_or(0, rx::shape_style_index),
+                    sf.body.as_ref().map(|bd| TextState {
+                        margins_emu: [bd.l_ins, bd.t_ins, bd.r_ins, bd.b_ins],
+                        anchor: match bd.anchor {
+                            crate::write::emit::object::BodyAnchor::T => "t",
+                            crate::write::emit::object::BodyAnchor::Ctr => "ctr",
+                            crate::write::emit::object::BodyAnchor::B => "b",
+                        },
+                        direction: bd.vert.clone(),
+                        wrap: bd.wrap != crate::write::emit::object::BodyWrap::None,
+                        autofit: match bd.autofit {
+                            crate::write::emit::object::BodyAutofit::None => "none",
+                            crate::write::emit::object::BodyAutofit::Shape => "shape",
+                            crate::write::emit::object::BodyAutofit::Norm => "norm",
+                        },
+                        upright: bd.upright,
+                    }),
+                ),
+                Fmt::Pic(_) => (0, None),
+            };
+            (kind, si, text)
+        };
+        let link = chain.as_ref().map(|c| {
+            let i = c.iter().position(|p| *p == path);
+            (i.is_some_and(|i| i + 1 < c.len()), i.is_some_and(|i| i > 0))
+        });
+        Some(ObjectState {
+            kind,
+            inline: b.inline,
+            wrap: b.wrap.to_string(),
+            cx: b.cx.to_number(),
+            cy: b.cy.to_number(),
+            rot: b.rot.to_number(),
+            flip_h: b.flip_h,
+            flip_v: b.flip_v,
+            lock_aspect: b.no_change_aspect,
+            move_with_text: !b.inline && matches!(rel, Some("paragraph" | "line")),
+            lock_anchor: b.locked,
+            name: b.doc_pr.name.as_deref().unwrap_or("").to_owned(),
+            alt_text: b.doc_pr.descr.as_deref().unwrap_or("").to_owned(),
+            decorative: b.doc_pr.decorative.unwrap_or(false),
+            geometry: b.geom.to_string(),
+            style_index,
+            editing_text: !want_image && self.focus_path().as_ref() == Some(&path),
+            text,
+            link_next: link.is_some_and(|l| l.0),
+            link_previous: link.is_some_and(|l| l.1),
+            format: b.clone(),
+        })
+    }
+
     // ── the commands ───────────────────────────────────────────────────────────────────────
 
     pub(crate) fn exec_drawing(&mut self, cmd: DrawingCmd, cx: &mut ExecCx<'_>) -> Res {
@@ -837,7 +1082,8 @@ impl Session {
                 if self.locked() || nm.is_empty() || f.base().doc_pr.name.as_deref() == Some(&*name) {
                     return self.done7();
                 }
-                let ch = ShapeChange { pic: PictureChange { name: Some(nm.to_owned()), ..PictureChange::default() }, ..ShapeChange::default() };
+                let ch =
+                    ShapeChange { pic: PictureChange { name: Some(nm.to_owned()), ..PictureChange::default() }, ..ShapeChange::default() };
                 if let Some(x) = self.patch_drawing(&p, &ch) {
                     self.begin_step(false, &[]);
                     self.apply_drawing_xml(&p, x, false);
@@ -853,13 +1099,15 @@ impl Session {
                     None => self.pane_runs(),
                     Some(k) => self.pane_runs().into_iter().filter(|x| x.1 == **k).collect(),
                 };
-                let todo: Vec<Path> = runs.into_iter().filter(|(_, _, f)| f.base().doc_pr.hidden.unwrap_or(false) != hidden).map(|x| x.0).collect();
+                let todo: Vec<Path> =
+                    runs.into_iter().filter(|(_, _, f)| f.base().doc_pr.hidden.unwrap_or(false) != hidden).map(|x| x.0).collect();
                 if todo.is_empty() {
                     return self.done7();
                 }
                 let mut patched = Vec::new();
                 for p in &todo {
-                    let ch = ShapeChange { pic: PictureChange { hidden: Some(hidden), ..PictureChange::default() }, ..ShapeChange::default() };
+                    let ch =
+                        ShapeChange { pic: PictureChange { hidden: Some(hidden), ..PictureChange::default() }, ..ShapeChange::default() };
                     if let Some(x) = self.patch_drawing(p, &ch) {
                         patched.push((p.clone(), x));
                     }
@@ -874,7 +1122,11 @@ impl Session {
             DrawingCmd::SetShapeFill { fill } => {
                 let f = fill.unwrap_or(ShapeFill::None);
                 self.edit_drawing(false, &mut |_, run| {
-                    if run.ext().is_some_and(|e| e.group.is_some()) { None } else { Some(ShapeChange { fill: Some(f.clone()), ..ShapeChange::default() }) }
+                    if run.ext().is_some_and(|e| e.group.is_some()) {
+                        None
+                    } else {
+                        Some(ShapeChange { fill: Some(f.clone()), ..ShapeChange::default() })
+                    }
                 });
                 self.done7()
             }
@@ -943,15 +1195,16 @@ impl Session {
                 self.done7()
             }
             DrawingCmd::SetShapeStyle { n } => {
-                let presets = crate::data::shape_styles::SHAPE_STYLE_PRESETS;
-                let idx = n - 1.0;
-                let Some(p) = (idx >= 0.0 && idx.fract() == 0.0).then(|| presets.get(idx as usize)).flatten() else { return self.done7() };
+                let Some(p) = crate::drawing::shape_styles::shape_style_preset(n) else { return self.done7() };
                 self.edit_drawing(false, &mut |_, run| {
                     if run.ext().is_some_and(|e| e.group.is_some()) {
                         None
                     } else {
                         Some(ShapeChange {
-                            style_preset: Some(crate::write::emit::object::StylePreset { sp_pr: p.sp_pr.to_owned(), style: p.style.to_owned() }),
+                            style_preset: Some(crate::write::emit::object::StylePreset {
+                                sp_pr: p.sp_pr.to_owned(),
+                                style: p.style.to_owned(),
+                            }),
                             ..ShapeChange::default()
                         })
                     }
@@ -964,7 +1217,10 @@ impl Session {
                         None
                     } else {
                         Some(ShapeChange {
-                            pic: PictureChange { geom: Some(crate::write::emit::fx::GeomChange { prst: prst.to_string(), adj: None }), ..PictureChange::default() },
+                            pic: PictureChange {
+                                geom: Some(crate::write::emit::fx::GeomChange { prst: prst.to_string(), adj: None }),
+                                ..PictureChange::default()
+                            },
                             ..ShapeChange::default()
                         })
                     }
@@ -1025,8 +1281,12 @@ impl Session {
                 self.break_textbox_link();
                 self.done7()
             }
-            DrawingCmd::InsertTextbox { id, page, theme_accent1, lang, user } => self.insert_textbox(&id, page, theme_accent1.as_deref(), &lang, user.as_ref()),
-            DrawingCmd::CreateDrawnTextbox { page, rect, vertical, anchor_para } => self.create_drawn_textbox(page, rect, vertical, anchor_para),
+            DrawingCmd::InsertTextbox { id, page, theme_accent1, lang, user } => {
+                self.insert_textbox(&id, page, theme_accent1.as_deref(), &lang, user.as_ref())
+            }
+            DrawingCmd::CreateDrawnTextbox { page, rect, vertical, anchor_para, lang } => {
+                self.create_drawn_textbox(page, rect, vertical, anchor_para, &lang)
+            }
             DrawingCmd::PlaceAt { frame, x, y } => {
                 self.place_at(&frame, x, y);
                 self.done7()
@@ -1036,6 +1296,7 @@ impl Session {
                 self.done7()
             }
             DrawingCmd::AlignObjects { kind, rects } => self.align_objects(kind, &rects, cx),
+            DrawingCmd::EditSelectedTextbox { page } => self.edit_selected_textbox(page),
         }
     }
 
@@ -1129,47 +1390,6 @@ impl Session {
 /// JS `SameValueZero` for the chain ids.
 fn same_value_zero(a: f64, b: f64) -> bool {
     a == b || (a.is_nan() && b.is_nan())
-}
-
-/// `/<wp:docPr\b[^>]*?\bid="(\d+)"/g`: the ids of the drawing's `wp:docPr` tags.
-fn scan_doc_pr_ids(raw: &str, max: &mut f64) {
-    let b = raw.as_bytes();
-    let pat = b"<wp:docPr";
-    let mut i = 0usize;
-    while i + pat.len() <= b.len() {
-        if &b[i..i + pat.len()] != pat {
-            i += 1;
-            continue;
-        }
-        let after = i + pat.len();
-        // `\b` after "docPr": the next char is not a word character
-        if b.get(after).is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_') {
-            i += 1;
-            continue;
-        }
-        // `[^>]*?` then `\bid="`: the first `id="` of the tag preceded by a non-word char
-        let mut j = after;
-        let mut found = None;
-        while j < b.len() && b[j] != b'>' {
-            if b[j..].starts_with(b"id=\"") && b.get(j.wrapping_sub(1)).is_some_and(|c| !(c.is_ascii_alphanumeric() || *c == b'_')) {
-                found = Some(j + 4);
-                break;
-            }
-            j += 1;
-        }
-        if let Some(s) = found {
-            let mut e = s;
-            while b.get(e).is_some_and(u8::is_ascii_digit) {
-                e += 1;
-            }
-            if e > s && b.get(e) == Some(&b'"') {
-                // `Number(m[1])`
-                let v = uo_jsnum::parse::to_number(&raw[s..e]);
-                *max = math::max(*max, v);
-            }
-        }
-        i = after;
-    }
 }
 
 fn textbox_patch(o: &TextboxOptions) -> TextboxBodyPatch {

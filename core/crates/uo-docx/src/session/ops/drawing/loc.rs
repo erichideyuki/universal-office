@@ -101,7 +101,9 @@ enum Mode {
 }
 
 fn is_drawing(r: &Run) -> bool {
-    r.ext().is_some_and(|e| e.image.as_deref().is_some_and(|i| i.floating == Some(true)) || e.textbox.is_some() || e.shape.is_some() || e.group.is_some())
+    r.ext().is_some_and(|e| {
+        e.image.as_deref().is_some_and(|i| i.floating == Some(true)) || e.textbox.is_some() || e.shape.is_some() || e.group.is_some()
+    })
 }
 
 fn walk_story(story: &Story, base: &mut Path, mode: Mode, out: &mut Vec<Path>, depth: usize) {
@@ -117,7 +119,11 @@ fn walk_story(story: &Story, base: &mut Path, mode: Mode, out: &mut Vec<Path>, d
             let at = u32::try_from(ti).unwrap_or(u32::MAX);
             for (ri, row) in a.table.rows.iter().enumerate() {
                 for (ci, cell) in row.cells.iter().enumerate() {
-                    base.push(Step::Cell { anchor: at, row: u32::try_from(ri).unwrap_or(u32::MAX), col: u32::try_from(ci).unwrap_or(u32::MAX) });
+                    base.push(Step::Cell {
+                        anchor: at,
+                        row: u32::try_from(ri).unwrap_or(u32::MAX),
+                        col: u32::try_from(ci).unwrap_or(u32::MAX),
+                    });
                     walk_story(&cell.content, base, mode, out, depth + 1);
                     base.pop();
                 }

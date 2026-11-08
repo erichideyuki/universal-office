@@ -6,7 +6,7 @@
 use uo_jsnum::math;
 
 use crate::js::{JsNumber, Nullable, Str};
-use crate::model::picture::{BlipLum, Bevel, Camera, LightRig, Pic3D, PicBlipFx, PicColor, PicReflection, PicShadow, PictureFormat};
+use crate::model::picture::{Bevel, BlipLum, Camera, LightRig, Pic3D, PicBlipFx, PicColor, PicReflection, PicShadow, PictureFormat};
 use crate::write::emit::fx::Rect4;
 
 const STEP: f64 = 19050.0;
@@ -150,11 +150,7 @@ pub fn z_for(op: ZOp, mine: f64, others: &[f64]) -> f64 {
         ZOp::Backward => {
             let below: Vec<f64> = all.iter().copied().filter(|v| *v < mine).collect();
             let Some(&prev) = below.last() else { return mine };
-            if below.len() < 2 {
-                prev - 1025.0
-            } else {
-                math::floor((prev + below[below.len() - 2]) / 2.0)
-            }
+            if below.len() < 2 { prev - 1025.0 } else { math::floor((prev + below[below.len() - 2]) / 2.0) }
         }
     }
 }
@@ -216,12 +212,7 @@ fn num(v: f64) -> JsNumber {
 }
 
 fn black(alpha: Option<f64>) -> PicColor {
-    PicColor {
-        kind: "prstClr".into(),
-        val: "black".into(),
-        mods: alpha.map(|a| vec![(Str::from("alpha"), num(a))]),
-        ..PicColor::default()
-    }
+    PicColor { kind: "prstClr".into(), val: "black".into(), mods: alpha.map(|a| vec![(Str::from("alpha"), num(a))]), ..PicColor::default() }
 }
 
 /// `SHADOW_PRESETS[id].shadow`.
@@ -312,7 +303,8 @@ pub fn glow_preset(rad: f64, accent: f64) -> crate::model::picture::PicGlow {
             val: format!("accent{}", uo_jsnum::format::to_js_string(accent)).into(),
             mods: Some(vec![(Str::from("alpha"), num(40000.0))]),
             ..PicColor::default()
-        },    ..Default::default()
+        },
+        ..Default::default()
     }
 }
 
@@ -382,4 +374,3 @@ pub fn recolor_preset(id: &str) -> Option<PicBlipFx> {
     }
     Some(fx)
 }
-
