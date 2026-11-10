@@ -126,7 +126,10 @@ stage, max, detail }`; `layout.paint` = the frontier-E and -D operations on the 
   would need `'unsafe-eval'`. Today only the optional spell checker needs it (documented in the `write` and
   `@universal-office/spellcheck` READMEs). The answer for hosts that cannot allow it is the plain-JS `wasm2js` build of
   the same module (one implementation, slower and larger): measured in "No-WebAssembly fallback (wasm2js) and wasm-opt".
-  To confirm on a real Safari 15 (BrowserStack) before the gate: whether its CSP blocks WebAssembly at all.
+  **Confirmed on a real Safari 15.6.1 (macOS Monterey, BrowserStack, 2026-11-10):** `script-src 'self'` refuses
+  WebAssembly (`EvalError`), and so does `script-src 'self' 'wasm-unsafe-eval'` (Safari 15 ignores the keyword); only
+  `'unsafe-eval'` lets it compile. iOS 26.5 compiles with `'wasm-unsafe-eval'` and refuses with `'self'` alone
+  (`CompileError`). See "Real Safari 15 / iOS (BrowserStack, 2026-11-10)".
 
 #### As built (frontier SW, 2026-11-10)
 
@@ -512,7 +515,8 @@ minified with the repository's esbuild 0.28.1 (`minify`, target es2018; binaryen
 **Why.** A page whose CSP `script-src` has neither `'wasm-unsafe-eval'` nor `'unsafe-eval'` cannot compile WebAssembly.
 `'wasm-unsafe-eval'` exists from Chrome/Edge 97, Firefox 102, Safari/iOS 16.0; **Safari 15 (our baseline) has no such
 keyword**, so there a strict CSP leaves only `'unsafe-eval'` (which also allows `eval`) or no wasm at all. The wasm2js
-build is plain JavaScript and needs neither. (Safari 15 itself was not available; WebKit 26.5 from Playwright was.)
+build is plain JavaScript and needs neither. (Confirmed on a real Safari 15.6.1 on 2026-11-10: `'wasm-unsafe-eval'` does not
+let it compile wasm, `'unsafe-eval'` does; "Real Safari 15 / iOS (BrowserStack, 2026-11-10)".)
 
 **Sizes (viewer module).**
 
@@ -949,9 +953,45 @@ state.
   CI). Not exercised: the web view and Reading Mode, Local Font Access or installed Office fonts, the `.doc` path (through the
   TS converter, SW-3), and plugin inlines (SW-7, a gap). Accepted difference: SW-6 (the `udv-link-click` text).
 - **Painter.** Part A replay (74 docs), Part B with 200 generated seeds (50 in CI), and pixels in Chromium and in Windows
-  WebKit 26.5 (no OffscreenCanvas, so the kerning-joins path was not exercised). There is no `viewer_switch` run in WebKit,
-  and no run on real Safari 15 or iOS.
+  WebKit 26.5 (no OffscreenCanvas, so the kerning-joins path was not exercised). The `viewer_switch` comparison (which
+  paints through the same painter) later ran on real Safari 15.6.1, iOS 15.5 and iOS 26.5 ("Real Safari 15 / iOS
+  (BrowserStack, 2026-11-10)").
 - **wasm vs native.** 3 fixtures pinned. wasm2js: 12 fixtures.
+
+### Real Safari 15 / iOS (BrowserStack, 2026-11-10)
+
+`viewer_switch.mjs --mode serve` (new): no browser is launched; the server serves the same bundle and a page that runs the
+same `compare` (page count and sizes, headings, comments, link boxes, text layer, find hits, canvas pixels at 1/15 and
+2/15 with tolerance 0, the uncompressed PDF of the print layout) on every 4th fixture (19 documents, 82 pages), then a
+30-cycle soak of 4 documents with `engine="rust"`, then a CSP probe, and POSTs every result. The page fixes the clock to
+`NOW` (as `page.clock.setFixedTime` does in Chromium), releases each comparison canvas after reading it, and resumes
+after a tab crash (the document that was running is recorded with its last step). Only git-tracked (open) fonts are
+served. BrowserStack cannot reach localhost: the port was exposed for the run with a temporary anonymous dev tunnel,
+deleted after. Count build (`count,write,render-fixture`, 4,266 KB), the HEAD `e2b52827` tree.
+
+| Browser (device) | wasm SIMD | OffscreenCanvas | Documents / pages | Differences | Soak (30 cycles) | CSP `'self'` | `+'wasm-unsafe-eval'` | `+'unsafe-eval'` |
+|---|---|---|---|---|---|---|---|---|
+| Safari 15.6.1, macOS Monterey (dpr 1) | no | no | 19 / 82 | **0** | live 12,681,089 B flat, buffer flat, 0 handles, 1 page env | refused | **refused** | compiles |
+| Safari 15.5, iPhone 13, iOS 15.5 (dpr 3) | no | no | 16 / 56 compared, 3 not (below) | **0** | not reached | not reached | not reached | not reached |
+| Safari 26.5, iPhone 17, iOS 26.5 (dpr 3) | yes | yes | 19 / 82 | **0** | same numbers as Safari 15.6 | refused | compiles | compiles |
+
+Per-browser totals of the two full runs: 164 renders, 377,619,748 pixels, 103,422 text-layer characters, 3,692 find
+hits, 10,551,603 PDF bytes, all equal TS vs Rust. Open time (loadDocx, median / sum over 19 documents; the TS engine is
+measured first, cold, so the medians favour Rust and are not a speed comparison): Safari 15.6 TS 1,202 ms / 27.1 s, Rust
+77 ms / 4.9 s; iOS 26.5 TS 1,104 ms / 20.4 s, Rust 21 ms / 2.2 s.
+
+- **iPhone 13, iOS 15.5.** The tab is killed and reloaded (OS memory) at the `settle` step of the three largest documents of
+  the stride (d5 `f7a__7__8` 8 pages, d12 9 pages, d18 9 pages): there the harness holds two full viewers (TS and Rust)
+  of the document side by side at dpr 3. Opened ALONE (`/?solo=ts|rust&docs=…`: one viewer, open, scroll through every
+  page, close), each engine handles all three without a crash: Rust 8.9 / 5.8 / 5.8 s, TS 7.6 / 6.7 / 6.7 s. So the crash
+  is the two-viewer harness, not the Rust engine; the pixel comparison of those three documents on iOS 15 is not
+  covered (it is covered on Safari 15.6 and iOS 26.5), nor the soak and the CSP probe on iOS 15.
+- **First run artefacts (fixed in the harness, not engine findings).** Without the fixed clock, d0 (`f2-3-0`, a
+  `TIME \@ "HH:mm:ss"` field) differed in every browser (54–350 pixels and the PDF), because the TS and Rust loads were
+  seconds apart; with `NOW` it is equal. Without releasing the comparison canvases, iOS 15 reached its canvas memory
+  budget and `getContext('2d')` returned `null` (exceptions on d4, d5, d7).
+- **Not covered:** iPad, low-RAM devices, Lockdown Mode (disables WebAssembly), the web view and Reading Mode, the
+  wasm2js engine in Safari, Firefox.
 
 ### Classification of G1–G22 and the other open items
 
@@ -962,27 +1002,27 @@ state.
 | G7 size budget (1.405 MB gzip against the TS start of 0.30 MB), G8-W, G8-2, G1 (the `#[path]` file shared across two cdylibs), G2, G3, G6, G9–G13, G15–G18, G20 | maintainer decision at the gate (recommend accepting G2, G3, G6, G9, G10, G13, G15–G18, G20 as built) |
 | G14 NuGet RID matrix, G19 LSan on the facade, the facade `CHANGELOG` breaks (S14), the wasm2js CI job and package (only if wasm2js ships) | later: before any publish of 0.10, not for the code gate |
 | SW-1 to SW-16 and SPEED-1 to SPEED-5 | maintainer decisions. Notably SW-6/SW-7 (behaviour gaps), SW-11 with S8 (phone profile, memory never returned), and SPEED-1 with S6/S7 |
-| Real Safari 15 / iOS (BrowserStack; the MCP needs `/mcp` re-authorisation), and whether Safari 15's CSP blocks wasm | **must-do before the gate** (SKILL: real Safari runs before each gate) |
+| Real Safari 15 / iOS (BrowserStack; the MCP needs `/mcp` re-authorisation), and whether Safari 15's CSP blocks wasm | **done 2026-11-10**: 0 differences on Safari 15.6.1 and iOS 26.5 (19 documents), iOS 15.5 16 of 19 (the other 3 crash the two-viewer harness, not one viewer); Safari 15 needs `'unsafe-eval'` |
 
 ### Gate checklist
 
 | Criterion | Status |
 |---|---|
 | Parity 100% on the captured corpora (layout, PDF, painter, switch) | met where measured; scope limits above |
-| Parity reference fresh (F2-20) | **open** (S4) |
+| Parity reference fresh (F2-20) | met (recaptured against `d0f45bc5`, commit `e2b52827`) |
 | Memory gate M1–M5, every crate on the path | met, except the page-env M5 and M3 baseline (S6, S7) |
 | M4, every boundary handle (wasm, C ABI, .NET) | met |
 | M6: Miri on all unsafe | met locally; LSan CI never run |
-| Lint: clippy native + wasm32, bans | stage-1 changes clean; tree red from the untracked bench example |
+| Lint: clippy native + wasm32, bans | met (`check-changed.mjs --all` green at `e2b52827`) |
 | CI green on GitHub | **never run** (S1) |
-| Security review of the milestone | **not done** (S2) |
-| Benchmarks main × rust-core (speed) accepted | **missing**, and the measured rows are slower (S3) |
-| Real Safari 15 / iOS | **not run** |
+| Security review of the milestone | done (`core/docs/security.md`); its blocker and two majors fixed, the rest in G23–G31 |
+| Benchmarks main × rust-core (speed) accepted | measured (`uo-docx-layout.md`); acceptance is the maintainer's (G30: Chromium total and the 500-page wasm layout slower than TS) |
+| Real Safari 15 / iOS | met with the iOS 15 limit above ("Real Safari 15 / iOS (BrowserStack, 2026-11-10)") |
 | Licence notices for what ships | met (generator + check); `cargo deny licenses` never run |
 | TS default path untouched | met |
 | Reuse: no Word-only rules in shared crates | minor finding S9 (uo-pdf) |
 | Records honest and complete (numbers, decisions, process metrics) | partly: S5, S6, S13, the unsupported speed sentence (S3); the ship frontier has no wall time; SW wall time is an estimate |
-| Stage-1 work committed | **no** (S5) |
+| Stage-1 work committed | yes (`e2b52827`) |
 
 Process metrics (this review): one Opus agent, about 1 h 10 min wall time (estimated), about 45 tool calls. Builds: clippy of
 6 crates native + wasm32 (about 30 s each, warm) and two small test runs. Rework: none.

@@ -113,8 +113,13 @@ and benchmarks, then a fix chain; every reviewer accepted). Items above, now:
   native 0.90, wasm 0.94 (open 0.56/0.61, PDF 0.67/0.77, layout 0.96/0.98). 500-page wasm layout 1.40× TS (G30).
 - **Skeptic** — checklist in `uo-bindings.md` "Milestone-1 skeptic review (2026-11)".
 
+- **Real Safari** (2026-11-10, `viewer_switch.mjs --mode serve` + BrowserStack, temporary dev tunnel): 0 differences
+  TS × Rust on Safari 15.6.1 (Monterey) and iOS 26.5, 19 documents / 82 pages, flat memory; iOS 15.5 (iPhone 13) 16 of 19
+  equal, the 3 largest crash the TWO-viewer harness at dpr 3 (each engine alone opens them). Safari 15 refuses wasm even
+  with `'wasm-unsafe-eval'` (needs `'unsafe-eval'`). Record: `uo-bindings.md` "Real Safari 15 / iOS".
+
 **Still open for the milestone-1 gate (needs the maintainer):** push `rust-core` and get one green `rust-core.yml`
-run; real Safari 15 / iOS (BrowserStack MCP needs `/mcp`); decisions **G23–G31** in `uo-bindings.md` "For the
+run; decisions **G23–G31** in `uo-bindings.md` "For the
 milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects — 600 glow runs = 61 s, G25 limits
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
@@ -185,8 +190,8 @@ Later: Sheet (calc engine on Opus, `sheet-core`), Slides (`slides-core`), charts
   process); the Slides viewer (`slides/packages/viewer/src/universal-slides-viewer.ts:1161`) and Sheet
   (`sheet/packages/sheet/src/universal-sheet.ts:1559`) open hyperlink targets without a scheme filter (Write filters).
   All in `docs/security.md`.
-- CSP: `'wasm-unsafe-eval'` exists only from Safari/iOS 16 (baseline is Safari 15) — the wasm2js fallback or the TS
-  engine covers strict-CSP hosts; confirm on a real Safari 15 whether its CSP blocks wasm at all.
+- CSP: confirmed on a real Safari 15.6.1 — `'wasm-unsafe-eval'` does not let it compile wasm, only `'unsafe-eval'`
+  does; strict-CSP hosts on Safari 15 need the TS engine or the wasm2js build (decide what the viewer does there).
 
 ## Operating rules learned in this session (follow them)
 

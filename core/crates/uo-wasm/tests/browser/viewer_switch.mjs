@@ -17,10 +17,14 @@
 // interleaved TS/Rust per document, UO_SW_ROUNDS (3) rounds of the corpus, UO_SW_SCENARIOS (S0,S1,S2). Instrumentation wraps prototypes
 // in the page driver only; nothing in shipped code. `--mode faults` (not part of `all`; needs the count build: `uo_test_trap`) forces a
 // trap of the wasm instance (the viewer must drop it, reload on the same element and open another element) and a refused font push
-// (WriteError 5 from `pushFamily`: the document still loads with the substitute).
+// (WriteError 5 from `pushFamily`: the document still loads with the substitute). `--mode serve` (real Safari on BrowserStack, which cannot
+// reach localhost: expose UO_SW_PORT (8766) with a temporary tunnel, delete it after) launches no browser: `/` is a page that runs the
+// same `compare` on every fixture and a short soak (UO_SW_SOAK, 30) by itself and POSTs each result to `/result` (appended to
+// <outDir>/serve-results.jsonl and printed); then `/csp?v=strict|wasm|eval` probes whether the browser compiles wasm under a CSP
+// without 'wasm-unsafe-eval'. Only git-tracked (open) fonts are served in this mode.
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync, rmSync, appendFileSync } from 'node:fs';
 import { join, dirname, resolve, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixtureDocs, relDoc, NOW } from '../support/paint-common.mjs';
@@ -97,22 +101,41 @@ const fixtures = fixtureDocs().filter((p, i) => i % STRIDE === 0 && (!ONLY || ne
 const docsByName = new Map(fixtures.map((p, i) => [`d${i}.docx`, p]));
 const FONT_DIRS = [join(repo, 'site/assets/fonts'), join(repo, 'shared/fonts/files')];
 const requests = [];
+const SERVE = MODE === 'serve';
+const TRACKED = SERVE ? new Set((await import('node:child_process')).execFileSync('git', ['ls-files', '--', ...FONT_DIRS], { cwd: repo, encoding: 'utf8' }).split('\n').filter(Boolean).map((p) => basename(p))) : null;
+const resultsFile = join(outDir, 'serve-results.jsonl');
+const CSP = { strict: "default-src 'self'; script-src 'self'", wasm: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'", eval: "default-src 'self'; script-src 'self' 'unsafe-eval'" };
+const CSP_NEXT = { strict: '/csp?v=wasm', wasm: '/csp?v=eval', eval: '/done' };
 const MIME = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.ttf': 'font/ttf', '.json': 'application/json', '.docx': 'application/octet-stream' };
 const server = createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
   requests.push(url);
   const send = (file) => res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' }).end(readFileSync(file));
+  if (SERVE) {
+    const q = new URL(req.url, 'http://x').searchParams;
+    console.log(new Date().toISOString(), req.method, url, (req.headers['user-agent'] ?? '').slice(0, 120));
+    if (req.method === 'POST' && url === '/result') {
+      let body = '';
+      req.on('data', (c) => { body += c; if (body.length > 4e6) req.destroy(); });
+      req.on('end', () => { const line = body.replace(/\n/g, ' '); appendFileSync(resultsFile, line + '\n'); console.log('RESULT', line.slice(0, 600)); res.writeHead(204).end(); });
+      return;
+    }
+    if (url === '/') return res.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end(servePage());
+    if (url === '/csp' && CSP[q.get('v')]) return res.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store', 'content-security-policy': CSP[q.get('v')] }).end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><body><div id="s">csp ${q.get('v')}…</div><script src="/csp.js?v=${q.get('v')}&next=${encodeURIComponent(CSP_NEXT[q.get('v')])}"></script></body>`);
+    if (url === '/csp.js') return res.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-store' }).end(cspProbe);
+    if (url === '/done') return res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><meta name="viewport" content="width=device-width"><body style="font:28px sans-serif">DONE</body>');
+  }
   if (url === '/') return res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><meta charset="utf-8"><body style="margin:0"><script type="module">import * as e from "/out/entry.js"; window.__e = e; window.__ready = true;</script></body>');
   if (url.startsWith('/out/')) { const f = join(out, url.slice(5)); return f.startsWith(out) && existsSync(f) ? send(f) : res.writeHead(404).end(); }
   if (url.startsWith('/fonts/')) {
     const name = basename(url);
-    if (/^[\w.-]+\.(ttf|json)$/.test(name)) for (const d of FONT_DIRS) if (existsSync(join(d, name))) return send(join(d, name));
+    if (/^[\w.-]+\.(ttf|json)$/.test(name) && (!TRACKED || TRACKED.has(name))) for (const d of FONT_DIRS) if (existsSync(join(d, name))) return send(join(d, name));
     return res.writeHead(404).end();
   }
   if (url.startsWith('/docs/')) { const f = docsByName.get(basename(url)); return f ? send(f) : res.writeHead(404).end(); }
   res.writeHead(404).end();
 });
-await new Promise((r) => server.listen(0, '127.0.0.1', r));
+await new Promise((r) => server.listen(SERVE ? Number(process.env.UO_SW_PORT ?? 8766) : 0, '127.0.0.1', r));
 
 // ── Chromium ────────────────────────────────────────────────────────────────────────────────────
 const { chromium } = createRequire(join(root, 'sheet/package.json'))('playwright');
@@ -123,8 +146,8 @@ const installed = (() => {
   const exe = dirs.length && join(base, dirs[dirs.length - 1], 'chrome-headless-shell-win64', 'chrome-headless-shell.exe');
   return exe && existsSync(exe) ? exe : undefined;
 })();
-const browser = await chromium.launch({ headless: true, executablePath: process.env.UO_CHROMIUM ?? installed });
-const context = await browser.newContext({ timezoneId: 'UTC', deviceScaleFactor: 1, viewport: { width: 1280, height: 900 } });
+const browser = SERVE ? null : await chromium.launch({ headless: true, executablePath: process.env.UO_CHROMIUM ?? installed });
+const context = SERVE ? null : await browser.newContext({ timezoneId: 'UTC', deviceScaleFactor: 1, viewport: { width: 1280, height: 900 } });
 let page = null;
 const pageRequests = [];
 /** a fresh page (a new module instance, a clean heap): the parity phase restarts it every BATCH documents, because the page
@@ -141,7 +164,7 @@ async function openPage() {
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 60000 });
 }
 const BATCH = Number(process.env.UO_SW_BATCH ?? 0);
-await openPage();
+if (!SERVE) await openPage();
 const names = [...docsByName.keys()];
 const label = (n) => relDoc(docsByName.get(n));
 
@@ -180,6 +203,7 @@ const driverFn = () => {
       const cv = document.createElement('canvas');
       el.drawPage(i, cv, W, H, W / p.widthTw, 0, false);
       data = cv.getContext('2d').getImageData(0, 0, W, H).data;
+      cv.width = cv.height = 0; // release the backing store now: iOS Safari has a small canvas memory budget (getContext returns null past it)
       const h = fnv(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
       if (h === last) { settled = true; break; }
       last = h;
@@ -458,6 +482,113 @@ const driverFn = () => {
     },
   };
 };
+// ── serve: the page runs the driver itself (real Safari) ────────────────────────────────────────
+function servePage() {
+  const soakDocs = names.slice(0, 4);
+  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<body style="margin:0"><div id="s" style="font:24px -apple-system,sans-serif;padding:8px">running…</div><pre id="r" style="font-size:11px;white-space:pre-wrap;padding:8px"></pre>
+<script>
+// the fixed clock of the Chromium runs (page.clock.setFixedTime(NOW)): TIME/DATE fields must not differ between the two loads
+(function () { var N = ${NOW}, RD = Date; var FD = function (y, m, d, h, mi, s, ms) { if (!(this instanceof FD)) return new RD(N).toString(); var a = arguments.length === 0 ? [N] : Array.prototype.slice.call(arguments); return new (Function.prototype.bind.apply(RD, [null].concat(a)))(); }; FD.prototype = RD.prototype; FD.now = function () { return N; }; FD.UTC = RD.UTC; FD.parse = RD.parse; window.Date = FD; })();
+var post = function (o) { o.ua = navigator.userAgent; return fetch('/result', { method: 'POST', body: JSON.stringify(o) }).catch(function () {}); };
+window.onerror = function (m, src, l, c) { post({ kind: 'fatal', error: String(m) + ' ' + src + ':' + l + ':' + c }); };
+window.addEventListener('unhandledrejection', function (e) { post({ kind: 'fatal', error: 'unhandled ' + String(e.reason && e.reason.stack || e.reason) }); });
+</script>
+<script type="module">
+import * as e from '/out/entry.js';
+const renderPdfFn = e.renderPdf, pdfNavFn = e.pdfNavigation, engineModuleFn = e.engineModule;
+const api = (${driverFn.toString()})();
+const names = ${JSON.stringify(names)}, scales = [1 / 15, 2 / 15];
+const show = (t) => { document.getElementById('s').textContent = t; };
+const log = (t) => { document.getElementById('r').textContent += t + String.fromCharCode(10); };
+// /?solo=ts|rust&docs=d5.docx,d12.docx: ONE viewer of one engine per document (no comparison), to tell an engine's memory from the
+// harness's two viewers side by side; each document opens, settles, scrolls through every page and closes
+const qs = new URLSearchParams(location.search);
+if (qs.get('solo')) {
+  const engine = qs.get('solo');
+  for (const n of (qs.get('docs') ?? '').split(',').filter(Boolean)) {
+    const key = 'uo-solo-' + engine + '-' + n;
+    if (sessionStorage.getItem(key)) { await post({ kind: 'solo', engine, n, crashed: true }); continue; }
+    sessionStorage.setItem(key, '1');
+    show('solo ' + engine + ' ' + n);
+    const el = document.createElement('universal-document-viewer');
+    el.setAttribute('engine', engine); el.setAttribute('fonts', '/fonts'); el.setAttribute('zoom', '100%'); el.setAttribute('nocontrols', '');
+    el.style.cssText = 'display:block;width:1000px;height:800px';
+    document.body.appendChild(el);
+    const t0 = performance.now();
+    let err = null;
+    try {
+      await el.loadDocx(new Uint8Array(await (await fetch('/docs/' + n)).arrayBuffer()));
+      await new Promise((r) => setTimeout(r, 1500));
+      const sc = el.shadowRoot && [...el.shadowRoot.querySelectorAll('*')].find((x) => x.scrollHeight > x.clientHeight + 10);
+      if (sc) for (let y = 0; y <= sc.scrollHeight; y += 600) { sc.scrollTop = y; await new Promise((r) => setTimeout(r, 200)); }
+    } catch (e2) { err = String(e2 && e2.stack || e2); }
+    await post({ kind: 'solo', engine, n, pages: el.getPageCount?.(), ms: performance.now() - t0, err, layoutEngine: el.layout?.engine ?? 'ts' });
+    el.remove();
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  await post({ kind: 'solo-end', engine });
+  show('solo done');
+  await new Promise(() => {}); // stop here: the comparison below does not run
+}
+const sim = new Uint8Array([0,97,115,109,1,0,0,0,1,4,1,96,0,0,3,2,1,0,10,23,1,21,0,253,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,26,11]);
+await post({ kind: 'start', simd: WebAssembly.validate(sim), offscreen: typeof OffscreenCanvas, fontKerning: 'fontKerning' in CanvasRenderingContext2D.prototype, dpr: devicePixelRatio, names: names.length });
+// a tab that the OS kills (iOS memory) reloads the page: resume after the document that was running, recorded as a crash with its
+// last step (window.__step of the driver, mirrored to sessionStorage and to the server as it changes)
+let bad = 0, pages = 0, from = 0;
+const at = sessionStorage.getItem('uo-at');
+if (at !== null) {
+  const crashed = { kind: 'crash', at, step: sessionStorage.getItem('uo-step') };
+  await post(crashed);
+  if (at === 'soak') from = names.length; else from = Number(at) + 1;
+  sessionStorage.setItem('uo-crashes', String(Number(sessionStorage.getItem('uo-crashes') ?? 0) + 1));
+}
+let lastStep = null;
+setInterval(() => { if (window.__step !== lastStep) { lastStep = window.__step; sessionStorage.setItem('uo-step', String(lastStep)); post({ kind: 'step', step: lastStep }); } }, 250);
+for (let i = from; i < names.length; i++) {
+  sessionStorage.setItem('uo-at', String(i));
+  show('compare ' + (i + 1) + '/' + names.length);
+  let r;
+  try { r = await api.compare(names[i], scales); } catch (err) { r = { n: names[i], mismatches: [{ facet: 'exception', detail: String(err && err.stack || err) }], facets: {} }; }
+  if (r.mismatches.length) bad++;
+  pages += r.pages || 0;
+  log(names[i] + ' ' + (r.pages || 0) + 'p ' + (r.mismatches.length ? 'MISMATCH ' + JSON.stringify(r.mismatches.slice(0, 2)) : 'ok') + ' ts ' + Math.round(r.tsMs) + ' rust ' + Math.round(r.rustMs));
+  await post({ kind: 'row', i, row: r });
+}
+show('soak');
+sessionStorage.setItem('uo-at', 'soak');
+window.__step = 'soak';
+let series = null;
+try { series = await api.soak(${JSON.stringify(soakDocs)}, ${Number(process.env.UO_SW_SOAK ?? 30)}); } catch (err) { series = String(err && err.stack || err); }
+await post({ kind: 'soak', series });
+sessionStorage.removeItem('uo-at');
+const crashes = Number(sessionStorage.getItem('uo-crashes') ?? 0);
+const ok = bad === 0 && crashes === 0;
+await post({ kind: 'end', ok, documents: names.length - from, from, pages, differ: bad, crashes });
+show((ok ? 'PASS ' : 'FAIL ') + names.length + ' documents, ' + pages + ' pages, ' + bad + ' differ');
+setTimeout(() => { location.href = '/csp?v=strict'; }, 1500);
+</script></body>`;
+}
+const cspProbe = `(function () {
+  var p = new URLSearchParams(document.currentScript.src.split('?')[1]);
+  var v = p.get('v'), next = p.get('next');
+  var bytes = new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,127,3,2,1,0,7,5,1,1,102,0,0,10,6,1,4,0,65,42,11]);
+  var done = function (o) { o.kind = 'csp'; o.v = v; o.ua = navigator.userAgent; document.getElementById('s').textContent = 'csp ' + v + ': ' + JSON.stringify(o);
+    fetch('/result', { method: 'POST', body: JSON.stringify(o) }).catch(function () {}).then(function () { setTimeout(function () { location.href = next; }, 800); }); };
+  var violations = [];
+  document.addEventListener('securitypolicyviolation', function (e) { violations.push(e.violatedDirective + ' ' + e.blockedURI); });
+  var r = {};
+  try { r.validate = WebAssembly.validate(bytes); } catch (e) { r.validate = 'threw ' + e; }
+  WebAssembly.compile(bytes).then(function (m) { return WebAssembly.instantiate(m); })
+    .then(function (i) { r.compile = 'ok ' + i.exports.f(); }, function (e) { r.compile = 'refused ' + e; })
+    .then(function () { return WebAssembly.instantiate(bytes).then(function (x) { r.instantiateBytes = 'ok ' + x.instance.exports.f(); }, function (e) { r.instantiateBytes = 'refused ' + e; }); })
+    .then(function () { r.violations = violations; done(r); });
+})();
+`;
+if (SERVE) {
+  console.log(`serve: http://127.0.0.1:${server.address().port}/ (${names.length} documents; results in ${resultsFile}); Ctrl+C to stop`);
+  await new Promise(() => {});
+}
 const evalDriver = () => page.evaluateHandle(`(() => { const renderPdfFn = window.__e.renderPdf, pdfNavFn = window.__e.pdfNavigation, engineModuleFn = window.__e.engineModule; return (${driverFn.toString()})(); })()`);
 
 const t00 = Date.now();
