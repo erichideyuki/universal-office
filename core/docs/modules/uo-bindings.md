@@ -794,10 +794,23 @@ Times, the same machine (`glow79pt_600c` = `glow_dense_600`; the others are one 
 find, pixels and the PDF (no fixture has a glow of 20 pt or a shadow blur of 10 pt). uo-pdf all tests and uo-ffi all
 tests (debug and release) green; clippy native clean.
 
+**The Word's screen, measured after** (PrintWindow of Word's own window off-screen, not activated, zooms 100-500 %,
+`core/target/pdf-time/screen-glow.ps1`; compatibility mode 15 and the mode of a file without settings give the same PDF):
+- **Fast.** `ScreenRefresh` of the 600-colour page: 333 ms at 100 %, 150 ms at 200 %, 81 ms at 400 % (fewer runs in view),
+  the same on a second refresh (no cache seen); the one-colour page 11-36 ms, the page without glow 8-50 ms.
+- **Smooth at every zoom**, unlike its PDF (whose 50 dpi image, `/Interpolate false`, shows steps in a nearest-neighbour
+  rasterizer): the screen profile is piecewise linear in places (slopes constant over 2-3 px at 100-400 % for an 18 pt
+  glow, 3-7 px for a 79 pt one), so a raster below screen resolution scaled up bilinearly, but the step could not be
+  measured reliably (long nearly linear ramps): **the screen resolution rule is not known**.
+- **The same size at every zoom** (79 pt glow: 50-52 pt wide on screen with 17 pt of text; 150 pt: 81-85 pt; 18 pt: 21-23
+  pt), 10-20 % wider than the visible part of its own PDF image (79 pt: 70 px against 57 px at 96 dpi) and far smaller
+  than ours.
+
 Open, not done here:
 - **The screen painter** does the same work at screen resolution: the 600-colour page takes 6.2 s to paint at 96 dpi and
-  39.7 s at 192 dpi (TS 1.1 s and 189 s); the rule is PDF only. Lowering the screen layers too would change screen pixels
-  against the TS, and the Word's screen was not measured.
+  39.7 s at 192 dpi (TS 1.1 s and 189 s; the Word 0.33 s); the rule is PDF only. Lowering the screen layers too would
+  change screen pixels against the TS; the Word's own screen step is not known (above), so a rule there would be ours
+  (for example the PDF's sigma cap in screen pixels, drawn with bilinear smoothing).
 - **The glow is larger than the Word's.** At 79 pt the Word's glow reaches about 28 pt past the text and ours about 79 pt
   (the layer reserves `1.2 × rad`); at 18 pt the Word's line image is 36 pt tall, ours 54 pt. Rendered side by side
   (`core/target/pdf-time/png/`), the Word's 79 pt glow looks like a much smaller one. Pre-existing, TS too: needs the
