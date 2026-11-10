@@ -32,7 +32,7 @@ use uo_render::paint::fill::{
 };
 use uo_render::paint::page_fill::{gradient_tile_rgba, page_fill_tile_tw, pattern_rgba};
 use uo_render::paint::picture::AdjustParts;
-use uo_render::paint::text_fx::{FxPlan, RunView, dash_pattern, fx_layers_pooled, fx_only, fx_plan, fx_pool, grad_of, run_box};
+use uo_render::paint::text_fx::{FxPlan, RunView, dash_pattern, fx_for_word, fx_layers_pooled, fx_only, fx_plan, fx_pool, grad_of, run_box};
 use uo_render::paint::{GradGeom, PaintLimits};
 use uo_render::types::{
     ImageItem, Item, Ltrb, PageFill, PageFillKind, PathCmd as RPath, ResolvedFill, ResolvedTextFx, ShapeItem, Stroke as RStroke,
@@ -72,11 +72,15 @@ pub struct PdfOptions {
     /// a flag the caller raises to stop the render (PQ9): checked before each page, every 256
     /// items and before each raster effect (text, shape and picture effects); the render then returns [`PdfError::Cancelled`]
     pub cancel: Option<Arc<AtomicBool>>,
+    /// paint the text effects as the frozen TS: unscaled by the font size and one layer at 200 dpi
+    /// (the parity tests against the TS); default false, the Word's way (uo-render `fx_for_word`,
+    /// `fx_plan`)
+    pub frozen_text_fx: bool,
 }
 
 impl Default for PdfOptions {
     fn default() -> Self {
-        PdfOptions { compress: true, limits: PdfLimits::DEFAULT, paint: PaintLimits::DEFAULT, image: ImageLimits::DEFAULT, cancel: None }
+        PdfOptions { compress: true, limits: PdfLimits::DEFAULT, paint: PaintLimits::DEFAULT, image: ImageLimits::DEFAULT, cancel: None, frozen_text_fx: false }
     }
 }
 
@@ -1047,8 +1051,12 @@ impl<'r> Painter<'r> {
             && (fx.shadow.is_some() || fx.glow.is_some() || fx.reflection.is_some())
         {
             let rv = run.view(face);
-            match fx_plan(fx, FX_PPT) {
-                // the frozen TS: one layer of the three effects at 200 dpi
+            // the Word sizes the effects by the font size (uo-render `word_fx_scale`)
+            let scaled = if self.opts.frozen_text_fx { fx.clone() } else { fx_for_word(fx, rv.size_pt) };
+            let fx = &scaled;
+            let plan = if self.opts.frozen_text_fx { FxPlan::One } else { fx_plan(fx, FX_PPT) };
+            match plan {
+                // one layer of the three effects at 200 dpi (the frozen TS's, with the scaled lengths)
                 FxPlan::One => self.paint_fx_layer(page, &rv, fx, 1.0, run),
                 // the Word: an image per effect, each at its own resolution (uo-render `fx_downscale`)
                 FxPlan::Split { shadow, glow } => {

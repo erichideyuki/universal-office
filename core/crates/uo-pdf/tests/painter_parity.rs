@@ -61,7 +61,7 @@ fn replay_capture(cap: &Capture, spec_of: &dyn Fn(&str) -> (String, Sources), mi
         let Loaded { pages, res, nav } = load_text(&text, &src);
         t.records += 1;
         replay.skip(key, "spec");
-        let raw = render_pdf(&pages, &res, nav.as_ref(), &PdfOptions { compress: false, ..PdfOptions::default() })
+        let raw = render_pdf(&pages, &res, nav.as_ref(), &PdfOptions { compress: false, frozen_text_fx: true, ..PdfOptions::default() })
             .unwrap_or_else(|e| panic!("{key}: {e}"));
         let want = cap.get(key, "raw").unwrap();
         let got = format!("{}:{}", raw.len(), Digest::of(&raw).short());
@@ -72,7 +72,7 @@ fn replay_capture(cap: &Capture, spec_of: &dyn Fn(&str) -> (String, Sources), mi
             eprintln!("{key}: {}", first_diff(&raw, &ts));
         }
         replay.check(key, "raw", &got);
-        let comp = render_pdf(&pages, &res, nav.as_ref(), &PdfOptions::default()).unwrap();
+        let comp = render_pdf(&pages, &res, nav.as_ref(), &PdfOptions { frozen_text_fx: true, ..PdfOptions::default() }).unwrap();
         let n = normalize(&comp).unwrap_or_else(|e| panic!("{key}: the compressed file is not valid: {e}"));
         let r = normalize(&raw).unwrap_or_else(|e| panic!("{key}: the stored file is not valid: {e}"));
         assert_eq!((n.objects, &n.digest), (r.objects, &r.digest), "{key}: the file differs between modes");

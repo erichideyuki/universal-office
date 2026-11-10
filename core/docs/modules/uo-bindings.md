@@ -827,16 +827,55 @@ painter branch, 4 configurations): 0 log mismatches; `render_paint`, `paint_memo
 native suites, the shell's `tsc --strict` and clippy native + wasm32: green. New tests: `fx_plan` scaling (uo-render),
 `the_layer_set_follows_the_plan` (render_native: byte-equal to `fx_layers` under the step, 3 layers at 10, 5 and 10
 px/pt past it). Side by side with the Word (`core/target/pdf-time/compare/comparacao-zoom{100,200}.png`, outside git):
-our screen before and now look the same; **our glow is much larger than the Word's** from about 40 pt up (below).
+our screen before and now look the same; **our glow was much larger than the Word's** (the cause and the fix: "Text effects scale with the font size").
 
 Open, not done here:
-- **The glow is larger than the Word's.** At 79 pt the Word's glow reaches about 28 pt past the text and ours about 79 pt
-  (the layer reserves `1.2 × rad`); at 18 pt the Word's line image is 36 pt tall, ours 54 pt. Rendered side by side
-  (`core/target/pdf-time/png/`), the Word's 79 pt glow looks like a much smaller one. Pre-existing, TS too: needs the
-  glow profile measured in the Word.
+- ~~The glow is larger than the Word's~~: fixed, "Text effects scale with the font size".
 - **The glow grows the line in the Word**: 17 pt between lines without it, 19.5 / 26 / 56 pt with 5 / 18 / 79 pt (so the
   79 pt document is 2 pages in the Word and 1 in ours). The layout does not do it (TS too).
 - The reflection's rule, the picture and shape effects (`paint_shape_effects`, `make_image`) and the TS: unchanged.
+
+## Text effects scale with the font size (2026-11-10, Rust only)
+
+**What was wrong.** Side by side with the Word (`core/target/pdf-time/compare*/`), our glow was far larger than the
+Word's on 12 pt text (79 pt glow: about 79 pt past the text against the Word's 18-28 pt). The glow's own profile was
+not the cause: on a straight edge (three full blocks U+2588, Arial 72 pt, the effect image's SMask read from the Word's
+PDF) the Word's glow is our model exactly, `alpha = Phi((rad/2 - d) / (rad/6))` (half alpha at `rad/2`, sigma
+`rad/6`, within the measurement). The model came from the picture effects ("medidos no Word" in uo-drawingml), where
+there is no font size, and the TS reused it for text unchanged. **The Word sizes a text run's effects by its font
+size**: sweeping 6-200 pt text with glows of 5-150 pt, the sigma is `rad·f/6` with `f = (size/72)^p`, the fit giving
+p = 0.692 and 72.7 pt (within 2 % over every point; we use `ln 2` and 72). The shadow's blur (`blur·f/3`, 12-144 pt)
+and distance (a blur-free 20 pt shadow moves 5.8 / 20.2 / 32.4 pt at 12 / 72 / 144 pt) scale the same way. So the
+frozen TS (and we until now) are right at 72 pt only: 3.5 times too large at 12 pt, 2 times too small at 200 pt.
+
+The same scale explains the resolution rule's odd step: in scaled lengths both sizes have one step (0.96 pt of sigma),
+so the PDF's `k` comes 3.5 times sooner on 72 pt text (glow 5 pt 200 dpi, 10 pt 100, 18 pt 50, 30 pt 33.3, 60 pt
+18.2, 100 pt 11.1, 150 pt 7.4). `GLOW_STEP_PT` / `SHADOW_STEP_PT` are now in scaled lengths (20 and 10 pt at 12 pt
+text); at 72 pt `ceil` gives 26 where the Word wrote 27 for the 150 pt glow.
+
+**Done.** uo-render `word_fx_scale` / `fx_for_word` (glow radius, shadow blur and distance; the reflection stays
+unscaled, not measured); `fx_layer_set` (the screen) and uo-pdf `paint_run_fx` scale first, then plan. `fx_layers` and
+the export `uo_render_fx_layers` stay the frozen TS's (unscaled): `paint_parity` gives the D painter that path
+(`fxLayerSet` removed from its source) and still finds 0 mismatches; the PDF has `PdfOptions::frozen_text_fx` (default
+false) for uo-pdf `painter_parity`, which compares with the TS's files and is still equal. `viewer_switch` (74
+fixtures, none with text effects): 0 differences. Our glow against the Word's on the straight edge
+now (sigma, the Word's / ours): 12 pt text 0.96/1.07, 3.79/3.94, 7.09/7.12 (glow 20, 80, 150); 24 pt 6.09/6.25; 48 pt
+9.85/10.17; 72 pt 3.32/3.45, 13.10/13.61, 24.62/25.48: ours 1-4 % wider (before: up to 3.5 times); half alpha ours
+0-10 % farther (the Word's dilation looks nearer `0.46·rad` than `rad/2`, inside the method's noise: the Word's top
+and left edges disagree up to 25 % on some sizes, ours do not). Tests: `effects_scale_with_the_font_size` (the measured
+sigmas within 2 %, the shadow), `the_plan_scales_with_the_resolution` (the 12 pt and 72 pt tables), render_native
+(the 24 pt fixture's layers smaller than the frozen TS's, 3 layers at 10 / 5 / 5 px/pt past the steps), uo-ffi
+`pdf_cancel_effects` (the cancel page is now 72 pt text with a 5 pt glow: still seconds of 200 dpi layers).
+
+**Found on the way (not fixed here):**
+- **The reflection's distance**: a 10 pt `w14:dist` drew no gap in the Word at 72 and 144 pt (the reflection starts at
+  the text's bottom); ours moves it. Its blur and whether it scales were not measured.
+- **A blur-free shadow** is vector in the Word's PDF (a copy of the text), an image in ours.
+- **The glow grows the line** in the Word (above), not in ours.
+- **A document without a styles part**: the Word uses Aptos 12 pt, ours a smaller serif (seen in every comparison).
+- **The Slides** (`shared/drawingml` model, the same text-effect raster): whether PowerPoint scales text effects by the
+  font size too was not measured (PowerPoint's COM opens windows).
+- The silhouette of a coarse layer (fixed above, `fx_layers_pooled`).
 
 ## For the milestone-1 gate
 

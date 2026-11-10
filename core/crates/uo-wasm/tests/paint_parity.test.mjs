@@ -213,7 +213,9 @@ function processResult(f, label, result, S, { facets = true } = {}) {
     const { pages: dpages, tables, diffs } = checkWire(view, a);
     S.wireDiffs += diffs.length;
     for (const d of diffs.slice(0, 2)) if (S.wireMsgs.length < 8) S.wireMsgs.push(`${label}: ${d}`);
-    const rasters = uo.render.rasters(view.paint);
+    // the frozen painter's text effects: `fxLayer` (no font-size scale, one layer); `fxLayerSet` is the Word's way
+    // (uo-render `fx_layer_set`, Rust only: render_native `the_layer_set_follows_the_plan`, uo-render tests)
+    const rasters = { ...uo.render.rasters(view.paint), fxLayerSet: undefined };
     const denv = envD((id) => a.images[id]?.bytes ?? null);
     const fenv = { fontOf, image: (img) => bitmapOf(img.data), color: colorOf };
     result.pages.forEach((page, pi) => {

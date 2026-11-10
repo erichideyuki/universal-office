@@ -32,16 +32,21 @@ const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/
 const CT: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
 const RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
 
-/// One paragraph: the text `text` in one run with the effects `rpr` (w14 elements).
-fn docx(rpr: &str, text: &str) -> Vec<u8> {
+/// One paragraph: the text `text` in one run of `half_pt` half-points with the effects `rpr` (w14 elements).
+fn docx_sz(rpr: &str, text: &str, half_pt: u32) -> Vec<u8> {
     let doc = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {NS}><w:body><w:p><w:r><w:rPr>{rpr}</w:rPr><w:t xml:space="preserve">{text}</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>"#
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {NS}><w:body><w:p><w:r><w:rPr><w:sz w:val="{half_pt}"/>{rpr}</w:rPr><w:t xml:space="preserve">{text}</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>"#
     );
     let mut z = uo_opc::zip::ZipWriter::new(uo_opc::zip::WriteOptions::default());
     for (name, data) in [("[Content_Types].xml", CT), ("_rels/.rels", RELS), ("word/document.xml", doc.as_str())] {
         z.add(name, data.as_bytes()).unwrap();
     }
     z.finish()
+}
+
+/// [`docx_sz`] at 12 pt.
+fn docx(rpr: &str, text: &str) -> Vec<u8> {
+    docx_sz(rpr, text, 24)
 }
 
 fn glow(pt: u32) -> String {
@@ -109,8 +114,9 @@ fn image_dpis(pdf: &[u8]) -> Vec<f64> {
 
 #[test]
 fn raising_the_flag_inside_the_text_effects_stops_the_render_promptly() {
-    // a 19 pt glow stays at 200 dpi: ~500 lines of long layers take seconds
-    let bytes = docx(&glow(19), &"ab ".repeat(60_000));
+    // a 5 pt glow on 72 pt text stays at 200 dpi (scaled radius under the step): ~1,100 lines of long layers
+    // take seconds
+    let bytes = docx_sz(&glow(5), &"ab ".repeat(20_000), 144);
     let flag = Arc::new(AtomicBool::new(false));
     let o = pdf_options(true, Trust::Untrusted, Some(Arc::clone(&flag)));
     let raised = Arc::new(std::sync::Mutex::new(None::<Instant>));

@@ -333,9 +333,10 @@ fn the_picture_layer_exports_refuse_hostile_arguments() {
     }
 }
 
-/// The screen's layer set (`uo_render_fx_layer_set`): the one layer of `uo_render_fx_layers` while the
-/// blurs are under the Word's step at that resolution; past it a layer per effect, each with its own
-/// pixels per point (the fixture run: shadow blur 3 pt, glow 4 pt, reflection 1 pt).
+/// The screen's layer set (`uo_render_fx_layer_set`): the lengths scaled by the font size as the Word does
+/// (the fixture run is 24 pt: shadow blur 3 pt and glow 4 pt become 1.40 and 1.87 pt), one layer while the
+/// blurs are under the Word's step at that resolution, past it a layer per effect with its own pixels per
+/// point; the frozen TS's `uo_render_fx_layers` stays unscaled.
 #[test]
 fn the_layer_set_follows_the_plan() {
     let v = uo_render_fixture(1);
@@ -347,8 +348,11 @@ fn the_layer_set_follows_the_plan() {
         assert_eq!(s, 0);
         assert_eq!(u32::from_le_bytes(set[0..4].try_into().unwrap()), 1);
         assert_eq!(f64::from_le_bytes(set[4..12].try_into().unwrap()), 2.0);
-        assert_eq!(&set[12..], &one[..], "under the step: the frozen TS's layer, byte-equal");
-        // at 10 px/pt the 3 pt shadow spans as many pixels as a 10.8 pt one at 200 dpi: past its step
+        let (w1, h1) = (u32::from_le_bytes(one[16..20].try_into().unwrap()), u32::from_le_bytes(one[20..24].try_into().unwrap()));
+        let (w2, h2) = (u32::from_le_bytes(set[28..32].try_into().unwrap()), u32::from_le_bytes(set[32..36].try_into().unwrap()));
+        assert!(w2 < w1 && h2 < h1, "the scaled effects need a smaller layer: {w2}x{h2} vs {w1}x{h1}");
+        // at 10 px/pt the scaled shadow (1.40 pt) and glow (1.87 pt) span as many pixels as 5.0 and 6.7 pt at 200 dpi:
+        // both past their steps (2.89 and 5.78 pt), k = 2
         let (s, set) = take(uo_render_fx_layer_set(v, 0, 0, 10.0));
         assert_eq!(s, 0);
         assert_eq!(u32::from_le_bytes(set[0..4].try_into().unwrap()), 3);
@@ -360,7 +364,7 @@ fn the_layer_set_follows_the_plan() {
             o += 32 + (w * h * 4) as usize;
         }
         assert_eq!(o, set.len());
-        assert_eq!(ppts, [10.0, 5.0, 10.0], "reflection, shadow at half, glow");
+        assert_eq!(ppts, [10.0, 5.0, 5.0], "reflection, then shadow and glow at half");
         assert_eq!(take(uo_render_fx_layer_set(v, 0, 1, 2.0)).0, 7, "a shape is the wrong item");
         uo_render_view_free(v);
     }

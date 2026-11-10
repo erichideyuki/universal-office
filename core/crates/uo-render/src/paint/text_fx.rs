@@ -16,7 +16,7 @@ use std::f64::consts::PI;
 use uo_drawingml::{Affine, Align, BoxF, Mask, PathSeg, Reflection, ShadowSpec, Subpaths};
 use uo_fonts::{Face, OutlineCmd};
 use uo_jsnum::conv::{js_index, to_uint8_clamp};
-use uo_jsnum::math::{abs, ceil, cos, max, max_n, round, sin};
+use uo_jsnum::math::{abs, ceil, cos, max, max_n, pow, round, sin};
 
 /// A glyph run as the helpers read it (`GlyphRunItem` with its glyph columns): borrowed from the
 /// page list ([`RunView::of`]) or built by hand (tests, the TS adapter).
@@ -369,6 +369,38 @@ pub fn fx_layers_pooled(
     Ok(Some(FxLayer { data, w, h, x0, y0 }))
 }
 
+/// How the Word sizes a text run's effects by its font size: the glow radius, the shadow blur and the
+/// shadow distance are as written at 72 pt and scale with `(size / 72)^ln 2`. Measured in Word 365's
+/// PDF (2026-11-10, a straight edge of three full blocks U+2588 in Arial, 6–200 pt, glow 5–150 pt,
+/// shadow blur 10 and 40 pt and distance 20 pt; uo-bindings.md "Text effects scale with the font
+/// size"): the Gaussian sigma of the glow is `rad·f/6` and the shadow's `blur·f/3` within 2 % (the
+/// fitted exponent 0.692, the reference 72.7 pt), the blur-free shadow moves `dist·f`. The frozen TS
+/// (and the picture effects' model this came from) applies them unscaled: right at 72 pt only,
+/// 3.5 times too large at 12 pt. The reflection was not measured and stays unscaled.
+#[must_use]
+pub fn word_fx_scale(size_pt: f64) -> f64 {
+    if !size_pt.is_finite() || size_pt <= 0.0 {
+        return 1.0;
+    }
+    pow(size_pt / 72.0, std::f64::consts::LN_2)
+}
+
+/// `fx` with the lengths the Word scales by [`word_fx_scale`] of `size_pt` (glow radius, shadow blur
+/// and distance).
+#[must_use]
+pub fn fx_for_word(fx: &ResolvedTextFx, size_pt: f64) -> ResolvedTextFx {
+    let f = word_fx_scale(size_pt);
+    let mut out = fx.clone();
+    if let Some(g) = out.glow.as_mut() {
+        g.rad_pt *= f;
+    }
+    if let Some(sh) = out.shadow.as_mut() {
+        sh.blur_pt *= f;
+        sh.dist_pt *= f;
+    }
+    out
+}
+
 /// The resolution of the PDF's text-effect layers (the Word writes about 200 dpi), pixels per point.
 pub const FX_PDF_PPT: f64 = 200.0 / 72.0;
 
@@ -377,10 +409,13 @@ pub const FX_PDF_PPT: f64 = 200.0 / 72.0;
 /// record is uo-bindings.md "Effect resolution as the Word"): glow up to 19 pt at 200 dpi, 20–40 pt
 /// at 100, 41–60 pt at 66.7, 61–80 pt at 50, 81–100 pt at 40, 150 pt at 25; shadow blur 2 pt at
 /// 200, 10–20 pt at 100, 21–30 pt at 66.7, 40 pt at 50, 41 pt at 40, 60 pt at 33.3, 61 pt at 28.6,
-/// 80 pt at 25. So `k = 1` under `step`, else `max(2, ceil(x / step))` with `step` = 20 pt of glow
-/// radius and 10 pt of shadow blur (the same Gaussian sigma, 10/3 pt, in both). A larger blur has
-/// no fine detail: the image looks the same and the work falls with k³. Not in the frozen TS (which
-/// always uses one layer at the asked resolution).
+/// 80 pt at 25 — all with 12 pt text; with 72 pt text the steps come 3.5 times sooner (glow 5 pt at
+/// 200 dpi, 10 at 100, 18 at 50, 30 at 33.3, 60 at 18.2, 100 at 11.1, 150 at 7.4): the step is in
+/// the scaled lengths of [`fx_for_word`]. So `k = 1` under `step`, else `max(2, ceil(x / step))` with
+/// `step` = [`GLOW_STEP_PT`] of scaled glow radius and [`SHADOW_STEP_PT`] of scaled shadow blur (the
+/// same Gaussian sigma, 0.96 pt, in both; at 72 pt `ceil` gives 26 where the Word wrote 27 for the
+/// 150 pt glow). A larger blur has no fine detail: the image looks the same and the work falls with
+/// k³. Not in the frozen TS (which always uses one layer at the asked resolution).
 #[must_use]
 pub fn fx_downscale(x_pt: f64, step_pt: f64) -> f64 {
     // NaN, infinite and the small ones keep the asked resolution (as before); the EMU of the file
@@ -405,12 +440,19 @@ pub enum FxPlan {
     Split { shadow: f64, glow: f64 },
 }
 
-/// [`FxPlan`] of `fx` at `ppt`.
+/// The step of [`fx_downscale`] in scaled glow radius ([`fx_for_word`]): 20 pt at 12 pt text.
+pub const GLOW_STEP_PT: f64 = 20.0 * F12;
+/// The step of [`fx_downscale`] in scaled shadow blur: 10 pt at 12 pt text.
+pub const SHADOW_STEP_PT: f64 = 10.0 * F12;
+/// [`word_fx_scale`] of 12 pt, `(1/6)^ln 2` (a test pins it to the function).
+const F12: f64 = 0.288_819_595_059_252;
+
+/// [`FxPlan`] of `fx` (the lengths already scaled by [`fx_for_word`]) at `ppt`.
 #[must_use]
 pub fn fx_plan(fx: &ResolvedTextFx, ppt: f64) -> FxPlan {
     let scale = if ppt.is_finite() && ppt > 0.0 { ppt / FX_PDF_PPT } else { 1.0 };
-    let glow = fx.glow.as_ref().map_or(1.0, |g| fx_downscale(g.rad_pt * scale, 20.0));
-    let shadow = fx.shadow.as_ref().map_or(1.0, |s| fx_downscale(s.blur_pt * scale, 10.0));
+    let glow = fx.glow.as_ref().map_or(1.0, |g| fx_downscale(g.rad_pt * scale, GLOW_STEP_PT));
+    let shadow = fx.shadow.as_ref().map_or(1.0, |s| fx_downscale(s.blur_pt * scale, SHADOW_STEP_PT));
     if glow == 1.0 && shadow == 1.0 { FxPlan::One } else { FxPlan::Split { shadow, glow } }
 }
 
@@ -434,8 +476,9 @@ pub fn fx_only(fx: &ResolvedTextFx, shadow: bool, glow: bool, reflection: bool) 
     }
 }
 
-/// The layers of [`fx_plan`] in paint order, each with the pixels per point it was drawn at: one
-/// layer of [`fx_layers`] for [`FxPlan::One`], else one per present effect.
+/// The layers of a run's effects as the Word paints them, in paint order, each with the pixels per
+/// point it was drawn at: the lengths scaled by the font size ([`fx_for_word`]), then one layer for
+/// [`FxPlan::One`], else one per present effect.
 ///
 /// # Errors
 /// As [`fx_layers`].
@@ -447,6 +490,7 @@ pub fn fx_layer_set(
     text_hex: &[u16],
     lim: &PaintLimits,
 ) -> PaintResult<Vec<(f64, FxLayer)>> {
+    let fx = &fx_for_word(fx, run.size_pt);
     let mut out = Vec::new();
     match fx_plan(fx, ppt) {
         FxPlan::One => {
@@ -582,7 +626,7 @@ pub fn dash_pattern(dash: Option<&[u16]>) -> &'static [f64] {
 
 #[cfg(test)]
 mod tests {
-    use super::{FX_PDF_PPT, FxPlan, fx_downscale, fx_plan};
+    use super::{F12, FX_PDF_PPT, FxPlan, fx_downscale, fx_for_word, fx_plan, word_fx_scale};
     use crate::ids::Sym;
     use crate::types::{FxGlow, FxShadow, ResolvedTextFx};
 
@@ -612,24 +656,50 @@ mod tests {
         ResolvedTextFx { glow: Some(FxGlow { rad_pt, hex: sym(), alpha: 1.0 }), ..ResolvedTextFx::default() }
     }
 
-    /// The plan measures the blur in pixels of the asked resolution against those of 200 dpi.
+    /// The plan measures the blur in pixels of the asked resolution against those of 200 dpi, in the
+    /// lengths scaled by the font size (12 pt text: the Word's table in raw lengths).
     #[test]
     fn the_plan_scales_with_the_resolution() {
-        // the PDF: the Word's table
-        assert_eq!(fx_plan(&glow(19.0), FX_PDF_PPT), FxPlan::One);
-        assert_eq!(fx_plan(&glow(79.0), FX_PDF_PPT), FxPlan::Split { shadow: 1.0, glow: 4.0 });
-        // the screen at 96 dpi: a blur of 20 pt is 0.48 of the PDF's pixels; 41.7 pt is the first step
+        let at12 = |rad: f64| fx_for_word(&glow(rad), 12.0);
+        // the PDF of 12 pt text: the Word's table
+        assert_eq!(fx_plan(&at12(19.0), FX_PDF_PPT), FxPlan::One);
+        assert_eq!(fx_plan(&at12(20.0), FX_PDF_PPT), FxPlan::Split { shadow: 1.0, glow: 2.0 });
+        assert_eq!(fx_plan(&at12(40.0), FX_PDF_PPT), FxPlan::Split { shadow: 1.0, glow: 2.0 });
+        assert_eq!(fx_plan(&at12(79.0), FX_PDF_PPT), FxPlan::Split { shadow: 1.0, glow: 4.0 });
+        assert_eq!(fx_plan(&at12(150.0), FX_PDF_PPT), FxPlan::Split { shadow: 1.0, glow: 8.0 });
+        // 72 pt text (scale 1): the Word wrote 200, 100, 50, 33.3, 18.2 and 11.1 dpi for 5, 10, 18, 30, 60, 100 pt
+        for (rad, k) in [(5.0, 1.0), (10.0, 2.0), (18.0, 4.0), (30.0, 6.0), (60.0, 11.0), (100.0, 18.0)] {
+            let want = if k == 1.0 { FxPlan::One } else { FxPlan::Split { shadow: 1.0, glow: k } };
+            assert_eq!(fx_plan(&fx_for_word(&glow(rad), 72.0), FX_PDF_PPT), want, "glow {rad} pt at 72 pt");
+        }
+        // the screen at 96 dpi and 192 dpi, 12 pt text
         let p96 = 96.0 / 72.0;
-        assert_eq!(fx_plan(&glow(20.0), p96), FxPlan::One);
-        assert_eq!(fx_plan(&glow(41.0), p96), FxPlan::One);
-        assert_eq!(fx_plan(&glow(42.0), p96), FxPlan::Split { shadow: 1.0, glow: 2.0 });
-        assert_eq!(fx_plan(&glow(79.0), p96), FxPlan::Split { shadow: 1.0, glow: 2.0 });
-        // 192 dpi: the 79 pt glow goes at 192 / 4 = 48 dpi, about what it gets at 96 dpi
-        assert_eq!(fx_plan(&glow(79.0), 192.0 / 72.0), FxPlan::Split { shadow: 1.0, glow: 4.0 });
-        // a shadow alone, and nonsense resolutions keep the plan of 200 dpi
+        assert_eq!(fx_plan(&at12(41.0), p96), FxPlan::One);
+        assert_eq!(fx_plan(&at12(42.0), p96), FxPlan::Split { shadow: 1.0, glow: 2.0 });
+        assert_eq!(fx_plan(&at12(79.0), 192.0 / 72.0), FxPlan::Split { shadow: 1.0, glow: 4.0 });
+        // a shadow alone (40 pt blur at 12 pt: 50 dpi), and nonsense resolutions keep the plan of 200 dpi
         let sh = ResolvedTextFx { shadow: Some(FxShadow { blur_pt: 40.0, dist_pt: 3.0, dir_deg: 45.0, sx: 1.0, sy: 1.0, kx_deg: 0.0, ky_deg: 0.0, algn: sym(), hex: sym(), alpha: 0.6 }), ..ResolvedTextFx::default() };
-        assert_eq!(fx_plan(&sh, FX_PDF_PPT), FxPlan::Split { shadow: 4.0, glow: 1.0 });
-        assert_eq!(fx_plan(&glow(79.0), f64::NAN), FxPlan::Split { shadow: 1.0, glow: 4.0 });
+        assert_eq!(fx_plan(&fx_for_word(&sh, 12.0), FX_PDF_PPT), FxPlan::Split { shadow: 4.0, glow: 1.0 });
+        assert_eq!(fx_plan(&at12(79.0), f64::NAN), FxPlan::Split { shadow: 1.0, glow: 4.0 });
         assert_eq!(fx_plan(&ResolvedTextFx::default(), 3.0), FxPlan::One);
+    }
+
+    /// The Word's font-size scale: 1 at 72 pt, (1/6)^ln 2 at 12 pt (the constant of the steps), the measured
+    /// sigmas within 2 %; the shadow's blur and distance scale, its other fields do not.
+    #[test]
+    fn effects_scale_with_the_font_size() {
+        assert_eq!(word_fx_scale(72.0), 1.0);
+        assert!((word_fx_scale(12.0) - F12).abs() < 1e-15);
+        assert_eq!(word_fx_scale(0.0), 1.0);
+        assert_eq!(word_fx_scale(f64::NAN), 1.0);
+        // (size, glow radius, the sigma the Word drew)
+        for (size, rad, sigma) in [(6.0, 80.0, 2.37), (12.0, 80.0, 3.795), (24.0, 150.0, 11.6), (48.0, 80.0, 9.89), (72.0, 150.0, 24.75), (144.0, 80.0, 21.41), (200.0, 80.0, 26.97)] {
+            let ours = rad * word_fx_scale(size) / 6.0;
+            assert!((ours / sigma - 1.0).abs() < 0.02, "{size} pt, glow {rad}: {ours} vs {sigma}");
+        }
+        let sh = ResolvedTextFx { shadow: Some(FxShadow { blur_pt: 40.0, dist_pt: 20.0, dir_deg: 90.0, sx: 1.0, sy: 1.0, kx_deg: 0.0, ky_deg: 0.0, algn: sym(), hex: sym(), alpha: 1.0 }), ..ResolvedTextFx::default() };
+        let s = fx_for_word(&sh, 144.0).shadow.unwrap();
+        // the Word: blur 40 pt drew sigma 22.1 at 144 pt (the fit's 2.5 %); distance 20 pt moved 32.4 pt
+        assert!((s.blur_pt / 3.0 / 22.1 - 1.0).abs() < 0.03 && (s.dist_pt / 32.4 - 1.0).abs() < 0.02 && s.dir_deg == 90.0, "{s:?}");
     }
 }
