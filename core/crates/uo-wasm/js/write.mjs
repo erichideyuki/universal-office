@@ -34,11 +34,20 @@ export class WriteError extends Error {
   }
 }
 
-/** The import object the module needs (`uo_host.pdf_chunk`) and the slot `bindWrite` fills. */
+/** The import object the module needs (`uo_host.pdf_chunk` + `uo_host.layout_poll`) and the slot `bindWrite` fills. */
 export function writeImports() {
-  const host = { memory: null, sink: null };
+  const host = { memory: null, sink: null, poll: null, busy: false };
   const imports = {
     uo_host: {
+      // G4: the layout asks every few ms whether to stop; a throwing callback counts as a cancel
+      // (an exception must never unwind through the wasm frames) and the callback calls nothing back
+      layout_poll() {
+        try {
+          return host.poll && host.poll() ? 1 : 0;
+        } catch {
+          return 1;
+        }
+      },
       // copies the chunk out of wasm memory (which may move when it grows) and calls nothing back
       pdf_chunk(ptr, len) {
         if (!host.sink) return 1;
@@ -176,7 +185,18 @@ export function bindWrite(w, host) {
       flags |= ['print', 'web', 'draft'].indexOf(o.view ?? 'print') << 2;
       flags |= [undefined, 'final', 'simple', 'all', 'original'].indexOf(o.revisions) << 4;
       if (o.hyphenationLanguages) flags |= 1 << 8;
-      const p = w.uo_write_layout(this.#live(), env.ptr, now, tz, flags, o.webWidthTw ?? 0, ...text(o.lang), ...text((o.hyphenationLanguages ?? []).join('\n')), o.maxPages ?? 0, o.generation ?? 0);
+      if (typeof o.cancelCheck === 'function') flags |= 1 << 9;
+      // a nested layout() from cancelCheck would re-enter the module mid-call and reset host.poll
+      if (host.busy) throw new Error('layout() cannot be called from cancelCheck or while another layout runs');
+      host.busy = true;
+      host.poll = o.cancelCheck ?? null;
+      let p;
+      try {
+        p = w.uo_write_layout(this.#live(), env.ptr, now, tz, flags, o.webWidthTw ?? 0, ...text(o.lang), ...text((o.hyphenationLanguages ?? []).join('\n')), o.maxPages ?? 0, o.generation ?? 0);
+      } finally {
+        host.poll = null;
+        host.busy = false;
+      }
       if (!p) throw lastError('layout');
       return new WriteLayout(p);
     }
@@ -227,21 +247,11 @@ export function bindWrite(w, host) {
     }
     /** the item-addressed paint operations of render.mjs, on this layout's view (Buf results) */
     get paint() {
-      const v = () => w.uo_layout_view(this.#live());
-      return {
-        /** the render message alone (no Write section), on the same resource mark as `encodePage` */
-        encodePage: (page) => new Buf(w.uo_render_encode_page(v(), page)),
-        fxLayers: (page, item, ppt) => new Buf(w.uo_render_fx_layers(v(), page, item, ppt)),
-        pattern: (page, item) => new Buf(w.uo_render_pattern(v(), page, item)),
-        rectGradient: (page, item) => new Buf(w.uo_render_rect_gradient(v(), page, item)),
-        blipTiles: (page, item) => new Buf(w.uo_render_blip_tiles(v(), page, item)),
-        pageFillTileTw: (page, devicePxTw) => new Buf(w.uo_render_page_fill_tile_tw(v(), page, devicePxTw)),
-        pageFillRaster: (page) => new Buf(w.uo_render_page_fill_raster(v(), page)),
-        pictureBounds: (page, item) => new Buf(w.uo_render_picture_bounds(v(), page, item)),
-        pictureSubs: (page, item) => new Buf(w.uo_render_picture_subs(v(), page, item)),
-        setMaxFxPx: (px) => w.uo_render_view_set_max_fx_px(v(), px),
-      };
+      // `encodePage` here is the render message alone (no Write section), on the same resource mark as the layout's
+      return r.paintOps(() => w.uo_layout_view(this.#live()));
     }
+    /** the decoded facade of the paint operations (render.mjs `rasters`): the `RasterSource` of the TS painter (js/paint.ts) */
+    rasters() { return r.rasters(this.paint); }
     /** `{ links: [{ page, x, y, w, h, uri } | { page, x, y, w, h, dest: { page, top } }], outline: [{ title, level, page, top }] }` (points) */
     navigation() {
       const g = reader(take(w.uo_layout_navigation(this.#live()), 'navigation'));
@@ -282,6 +292,8 @@ export function bindWrite(w, host) {
     /** the font file of face `i` of the messages (for a `FontFace`), or null */
     faceBytes(i) { const { status, data } = new Buf(w.uo_layout_face_bytes(this.#live(), i)).take(); return status === 0 ? data : null; }
     imageBytes(i) { const { status, data } = new Buf(w.uo_layout_image_bytes(this.#live(), i)).take(); return status === 0 ? data : null; }
+    /** the SVG version of image `i` (the vector the viewer paints in place of the raster), or null */
+    imageSvg(i) { const { status, data } = new Buf(w.uo_layout_image_svg(this.#live(), i)).take(); return status === 0 ? data : null; }
     /** the PDF in chunks: `{ chunks, length }` (`new Blob(chunks, { type: 'application/pdf' })` in a browser) */
     pdf({ compress = true, untrusted = false, chunk = 0 } = {}) {
       const chunks = [];

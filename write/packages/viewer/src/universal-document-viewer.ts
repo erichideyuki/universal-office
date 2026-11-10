@@ -12,6 +12,9 @@ import {
 import { LiveRegion, PluginRegistry, ColorSchemeWatcher, forceColorScheme, themeMode, type ColorScheme, type ProgressStep } from '@universal-office/ui';
 import { onBrowserLangChange, uiLang, type UiLang } from '@universal-office/ui';
 import { ViewerFonts } from './fonts.js';
+import { decodeImage, PX_PER_TWIP } from './image-decode.js';
+import type { RustSession } from './rust-engine.js';
+import type { DecodedLayout } from '@universal-office/write-engine';
 import { collectAnnotations, levelResolver, type Annotations } from './annotations.js';
 import { fillTextLayer, TEXT_LAYER_CSS } from './text-layer.js';
 import { webDocument, webPageHeight, readPagesPerView, VIEW_MODES, type ViewMode } from './views.js';
@@ -23,6 +26,16 @@ import {
 
 /** Esquemas que o viewer abre sozinho (o resto só pelo hospedeiro, no udv-link-click). */
 const SAFE_LINK = /^(https?:|mailto:)/i;
+
+/** De onde vem o motor Rust (`UniversalDocumentViewerElement.configureEngine`): o .wasm (bytes, URL ou Response) ou o build wasm2js. */
+export interface EngineSource {
+  wasm?: Uint8Array | ArrayBuffer | string | URL | Response | Promise<Uint8Array | ArrayBuffer | Response>;
+  js?: string | URL;
+  engine?: 'auto' | 'wasm' | 'js';
+}
+
+/** Caixa de um link/inline na página (twips): a do motor TS traz a execução (`run`); a do motor Rust, só o valor. */
+interface Box<T> { page: number; x: number; y: number; w: number; h: number; value: T; run?: { text: string } }
 
 /** Mesmas opções de layout do editor (ENGINE_LAYOUT_OPTS em universal-write.ts). */
 const LAYOUT_OPTS: LayoutOptions = { hyphenationLanguages: ['pt-BR', 'en', 'es'] };
@@ -40,8 +53,6 @@ const hyphenationLangs = (full: FullDocument): string[] =>
     return LAYOUT_OPTS.hyphenationLanguages!.some((y) => { const z = y.toLowerCase(); return x === z || x.startsWith(`${z}-`); });
   });
 
-/** px CSS por twip (96 dpi). */
-const PX_PER_TWIP = 96 / 1440;
 /** Altura máxima (px CSS) de cada faixa de pintura: o canvas tem limite de tamanho
  *  e a folha do Layout da Web pode ter dezenas de milhares de px. */
 const TILE_PX = 2048;
@@ -207,8 +218,11 @@ export class UniversalDocumentViewerElement extends HTMLElement {
   private pkg: DocxPackage | null = null;
   private embedded: ReturnType<typeof readEmbeddedFonts> = [];
   /** layout em exibição (o do modo atual) e o de impressão (PDF/impressão em qualquer modo) */
-  private layout: LayoutResult | null = null;
-  private printLayoutCache: LayoutResult | null = null;
+  private layout: LayoutResult | DecodedLayout | null = null;
+  private printLayoutCache: LayoutResult | DecodedLayout | null = null;
+  /** engine="rust": a sessão do motor (carregada sob demanda) e o módulo que a define */
+  private rust: RustSession | null = null;
+  private rustMod: Promise<typeof import('./rust-engine.js')> | null = null;
   private layoutVersion = 0;
   private pageEls: HTMLDivElement[] = [];
   private tiles: Tile[][] = [];
@@ -257,8 +271,19 @@ export class UniversalDocumentViewerElement extends HTMLElement {
   private readonly pluginCleanups = new Map<string, () => void>();
   private readonly inlineRenderers = new Map<string, { owner: string; renderer: InlineRenderer }>();
   /** inlines de plugin e links do corpo nas páginas do layout atual (por página) */
-  private inlineBoxes: RunBox<CustomInline>[][] = [];
-  private linkBoxes: RunBox<string>[][] = [];
+  private inlineBoxes: Box<CustomInline>[][] = [];
+  private linkBoxes: Box<string>[][] = [];
+
+  private static engineSource: EngineSource | undefined;
+
+  /**
+   * De onde vem o motor Rust (`engine="rust"`): o .wasm (bytes, URL ou Response) ou o build wasm2js (`js`). Sem isto, o
+   * .wasm do pacote (`chunks/uo-write.wasm`, ao lado do código do motor). Há UM módulo por página: vale o primeiro
+   * carregamento; chamadas depois dele não têm efeito. O viewer sem `engine="rust"` nunca baixa o .wasm.
+   */
+  static configureEngine(source: EngineSource): void {
+    UniversalDocumentViewerElement.engineSource = source;
+  }
 
   /**
    * Registra um plugin para TODAS as instâncias (como o `Quill.register`): as
@@ -314,7 +339,7 @@ export class UniversalDocumentViewerElement extends HTMLElement {
   pluginIds(): string[] { return [...this.plugins.keys()]; }
 
   static get observedAttributes(): string[] {
-    return ['src', 'zoom', 'view', 'noselect', 'nocontrols', ...CONTROL_ITEMS.map((it) => `no${it}`), 'lang', 'theme'];
+    return ['src', 'zoom', 'view', 'noselect', 'nocontrols', ...CONTROL_ITEMS.map((it) => `no${it}`), 'lang', 'theme', 'engine'];
   }
 
   constructor() {
@@ -455,6 +480,8 @@ export class UniversalDocumentViewerElement extends HTMLElement {
     const src = this.getAttribute('src');
     if (src && src !== this.srcUrl) void this.loadSrc(src);
     else if (!this.layout) this.msg.textContent = '';
+    // engine="rust": a desconexão liberou os handles do módulo; reabre do arquivo guardado
+    if (this.engine() === 'rust' && this.fileBytes && !this.rust) this.reload();
   }
 
   disconnectedCallback(): void {
@@ -470,6 +497,8 @@ export class UniversalDocumentViewerElement extends HTMLElement {
     this.rafId = 0;
     clearTimeout(this.relayoutTimer);
     this.controls.dispose();
+    this.rust?.dispose();
+    this.rust = null;
   }
 
   attributeChangedCallback(name: string, oldV: string | null, newV: string | null): void {
@@ -478,6 +507,7 @@ export class UniversalDocumentViewerElement extends HTMLElement {
     if (name === 'src') { if (newV && newV !== oldV && newV !== this.srcUrl) void this.loadSrc(newV); }
     else if (name === 'zoom') { this.readZoomAttr(); this.applyZoom(); }
     else if (name === 'view') this.readViewAttr();
+    else if (name === 'engine') this.switchEngine(oldV, newV);
     else if (name === 'noselect') {
       this.wrap.classList.toggle('udv-noselect', newV !== null);
       this.texted.clear();
@@ -564,6 +594,9 @@ export class UniversalDocumentViewerElement extends HTMLElement {
 
   /** Carrega um .docx (ou .doc). Arquivo inválido LANÇA e o documento atual fica. */
   async loadDocx(bytes: Uint8Array): Promise<void> {
+    if (this.engine() === 'rust') return this.loadDocxRust(bytes);
+    this.rust?.dispose();
+    this.rust = null;
     const docx = isWordBinary(bytes) ? convertDocToDocx(bytes) : bytes;
     const pkg = DocxPackage.load(docx);
     const full = readFullDocument(pkg);
@@ -584,6 +617,84 @@ export class UniversalDocumentViewerElement extends HTMLElement {
     this.dispatchEvent(new CustomEvent('udv-loaded', { detail: { pages: this.getPageCount() } }));
   }
 
+  /** `rust` só quando o atributo `engine` diz `rust`; qualquer outro valor é o motor TS. */
+  private engine(): 'ts' | 'rust' {
+    return (this.getAttribute('engine') ?? '').trim().toLowerCase() === 'rust' ? 'rust' : 'ts';
+  }
+
+  private isRust(l: unknown): l is DecodedLayout {
+    return !!l && typeof l === 'object' && (l as { engine?: unknown }).engine === 'rust';
+  }
+
+  private hasDocument(): boolean { return !!this.full || !!this.rust?.hasDocument; }
+
+  /** Libera o layout se for do motor Rust (o do motor TS é só memória do JS). */
+  private releaseLayout(l: LayoutResult | DecodedLayout | null): void {
+    if (l && this.isRust(l)) this.rust?.release(l);
+  }
+
+  private reload(): void {
+    if (!this.fileBytes) return;
+    this.loadDocx(this.fileBytes).catch((error) => {
+      this.dispatchEvent(new CustomEvent('udv-error', { detail: { src: this.srcUrl, error } }));
+    });
+  }
+
+  private switchEngine(oldV: string | null, newV: string | null): void {
+    const was = (oldV ?? '').trim().toLowerCase() === 'rust', now = (newV ?? '').trim().toLowerCase() === 'rust';
+    if (was === now) return;
+    if (!now) { this.rust?.dispose(); this.rust = null; }
+    this.reload();
+  }
+
+  private rustHost(): import('./rust-engine.js').RustHost {
+    return {
+      fontsBase: () => this.getAttribute('fonts') ?? PACKAGE_FONTS,
+      resolver: this.fonts.resolver,
+      repaint: () => this.repaintAll(),
+      source: () => UniversalDocumentViewerElement.engineSource,
+    };
+  }
+
+  /** engine="rust": os mesmos passos de `loadDocx`; o arquivo inválido LANÇA (e o documento atual fica) antes de mudar o estado. */
+  private async loadDocxRust(bytes: Uint8Array): Promise<void> {
+    const mod = await (this.rustMod ??= import('./rust-engine.js'));
+    const rs = (this.rust ??= new mod.RustSession(this.rustHost()));
+    if (!(await rs.open(bytes)) || this.rust !== rs) return;
+    const seq = ++this.loadSeq;
+    this.srcUrl = this.getAttribute('src');
+    this.fileBytes = bytes;
+    this.pkg = null;
+    this.full = null;
+    this.embedded = [];
+    this.printLayoutCache = null;
+    this.layout = null;
+    this.index = 0;
+    this.readFirst = 0;
+    this.scroller.scrollTop = 0;
+    await this.relayout(seq);
+    if (seq !== this.loadSeq) return;
+    this.dispatchEvent(new CustomEvent('udv-loaded', { detail: { pages: this.getPageCount() } }));
+  }
+
+  /** engine="rust": diagrama pelo motor e repete enquanto ele pede fontes que chegam. */
+  private async relayoutRust(rs: RustSession, seq: number): Promise<void> {
+    if (!rs.hasDocument) return;
+    const web = this.view === 'web';
+    if (web) this.webWidthTw = this.webTargetTw();
+    await rs.relayout(() => seq !== this.loadSeq || this.rust !== rs, { view: web ? 'web' : 'print', webWidthTw: this.webWidthTw }, (dl, pass) => {
+      if (!web) {
+        this.printLayoutCache = dl;
+      } else if (pass > 0) {
+        // chegaram fontes: o layout de impressão guardado também muda
+        const stale = this.printLayoutCache;
+        this.printLayoutCache = null;
+        if (stale !== this.layout) this.releaseLayout(stale);
+      }
+      this.setLayout(dl);
+    });
+  }
+
   /** O documento que o motor diagrama no modo atual. */
   private docForView(): FullDocument {
     if (this.view !== 'web') return this.full!;
@@ -599,6 +710,7 @@ export class UniversalDocumentViewerElement extends HTMLElement {
 
   /** Diagrama o documento atual; repete enquanto o motor pede fontes que chegam. */
   private async relayout(seq = this.loadSeq): Promise<void> {
+    if (this.rust) return this.relayoutRust(this.rust, seq);
     const full = this.full;
     if (!full) return;
     await this.fonts.loadAssets(this.getAttribute('fonts') ?? PACKAGE_FONTS);
@@ -623,15 +735,22 @@ export class UniversalDocumentViewerElement extends HTMLElement {
   }
 
   /** Layout de impressão (PDF/impressão em qualquer modo de exibição). */
-  private printLayout(): LayoutResult | null {
+  private printLayout(): LayoutResult | DecodedLayout | null {
+    if (this.rust) {
+      if (!this.rust.hasDocument) return null;
+      if (this.view !== 'web' && this.layout) return this.layout;
+      return (this.printLayoutCache ??= this.rust.layoutSync());
+    }
     if (!this.full) return null;
     if (this.view !== 'web' && this.layout) return this.layout;
     return (this.printLayoutCache ??= layoutDocument(this.full, this.provider(), LAYOUT_OPTS));
   }
 
-  private setLayout(res: LayoutResult): void {
+  private setLayout(res: LayoutResult | DecodedLayout): void {
     const keepFrac = this.layout && this.view !== 'read' ? this.scrollFraction() : 0;
+    const old = this.layout;
     this.layout = res;
+    if (old && old !== res && old !== this.printLayoutCache) this.releaseLayout(old);
     this.layoutVersion++;
     this.painted.clear();
     this.texted.clear();
@@ -649,14 +768,23 @@ export class UniversalDocumentViewerElement extends HTMLElement {
       this.tiles.push([]);
     }
     this.headingIndex = -2; // anuncia de novo o título atual no documento novo
-    this.notes = this.full ? collectAnnotations(this.full, res) : { comments: [], headings: [] };
-    this.inlineBoxes = res.pages.map(() => []);
-    this.linkBoxes = res.pages.map(() => []);
-    if (this.full) {
-      for (const b of runBoxes(this.full, res, (r) => r.custom)) this.inlineBoxes[b.page]!.push(b);
-      for (const b of runBoxes(this.full, res, (r) => (r.custom ? undefined : r.props.link))) this.linkBoxes[b.page]!.push(b);
+    if (this.isRust(res)) {
+      // motor Rust: comentários e títulos e as caixas de link vêm do layout; inlines de plugin ainda não (runBoxes('inlines') só traz o tipo)
+      this.notes = res.annotations();
+      this.inlineBoxes = res.pages.map(() => []);
+      this.linkBoxes = res.pages.map(() => []);
+      for (const b of res.runBoxes('links')) this.linkBoxes[b.page]?.push(b);
+      this.levelOf = () => undefined;
+    } else {
+      this.notes = this.full ? collectAnnotations(this.full, res) : { comments: [], headings: [] };
+      this.inlineBoxes = res.pages.map(() => []);
+      this.linkBoxes = res.pages.map(() => []);
+      if (this.full) {
+        for (const b of runBoxes(this.full, res, (r) => r.custom)) this.inlineBoxes[b.page]!.push(b);
+        for (const b of runBoxes(this.full, res, (r) => (r.custom ? undefined : r.props.link))) this.linkBoxes[b.page]!.push(b);
+      }
+      this.levelOf = this.full ? levelResolver(this.full) : () => undefined;
     }
-    this.levelOf = this.full ? levelResolver(this.full) : () => undefined;
     this.nameRegion();
     if (this.activeComment !== null && !this.notes.comments.some((c) => c.id === this.activeComment)) this.activeComment = null;
     this.buildThumbs();
@@ -684,14 +812,16 @@ export class UniversalDocumentViewerElement extends HTMLElement {
     if (v === 'web' && this.navTab === 'pages') this.setNav(null);
     this.dispatchEvent(new CustomEvent('udv-view', { detail: { view: v } }));
     this.announce(this.labels()[v]);
-    if (!this.full) return;
+    if (!this.hasDocument()) return;
     if (v === 'web' || prev === 'web') {
       // outro layout: o de impressão volta do cache; o da Web é refeito na largura atual
       if (v !== 'web' && this.printLayoutCache) {
         this.setLayout(this.printLayoutCache);
         this.goToPage(page, false, false);
       } else {
+        const web = this.layout;
         this.layout = null;
+        if (web !== this.printLayoutCache) this.releaseLayout(web);
         void this.relayout();
       }
     } else {
@@ -915,7 +1045,7 @@ export class UniversalDocumentViewerElement extends HTMLElement {
    * (px/twip) e começando em `topTw` (a faixa).
    */
   private drawPage(i: number, cv: HTMLCanvasElement, w: number, h: number, sc: number, topTw: number, highlights: boolean): void {
-    const p = this.layout!.pages[i]!;
+    const lay = this.layout!;
     if (cv.width !== w) cv.width = w;
     if (cv.height !== h) cv.height = h;
     const ctx = cv.getContext('2d');
@@ -927,13 +1057,23 @@ export class UniversalDocumentViewerElement extends HTMLElement {
     ctx.fillRect(0, 0, w, h);
     ctx.setTransform(sc, 0, 0, sc, 0, -topTw * sc);
     // Cor da Página: na tela só com w:displayBackgroundShape; efeitos em ladrilhos de px de tela
-    try { paintPageBackground(ctx, p, this.paintEnv(), { devicePxTw: (window.devicePixelRatio || 1) / sc, screen: true, paper: '#ffffff' }); } catch { /* fundo que não pinta: a página fica branca */ }
-    try { paintItems(ctx, p.items, this.paintEnv()); } catch { /* item que o pintor não conhece: o resto fica */ }
-    // inlines de plugin: o renderer desenha por cima do texto de reserva (como no editor)
-    const inlines = this.inlineBoxes[i];
-    if (inlines?.length && this.inlineRenderers.size) {
-      const renderers = new Map([...this.inlineRenderers].map(([type, e]) => [type, e.renderer]));
-      paintCustomInlines(ctx, p, inlines, renderers, this.paintEnv());
+    if (this.isRust(lay)) {
+      const rs = this.rust;
+      if (rs) {
+        const env = rs.paintEnv(lay);
+        try { lay.paintBackground(ctx, i, env, { devicePxTw: (window.devicePixelRatio || 1) / sc, screen: true, paper: '#ffffff' }); } catch { /* fundo que não pinta: a página fica branca */ }
+        try { lay.paintItems(ctx, i, env); } catch { /* item que o pintor não conhece: o resto fica */ }
+      }
+    } else {
+      const p = lay.pages[i]!;
+      try { paintPageBackground(ctx, p, this.paintEnv(), { devicePxTw: (window.devicePixelRatio || 1) / sc, screen: true, paper: '#ffffff' }); } catch { /* fundo que não pinta: a página fica branca */ }
+      try { paintItems(ctx, p.items, this.paintEnv()); } catch { /* item que o pintor não conhece: o resto fica */ }
+      // inlines de plugin: o renderer desenha por cima do texto de reserva (como no editor)
+      const inlines = this.inlineBoxes[i];
+      if (inlines?.length && this.inlineRenderers.size) {
+        const renderers = new Map([...this.inlineRenderers].map(([type, e]) => [type, e.renderer]));
+        paintCustomInlines(ctx, p, inlines as RunBox<CustomInline>[], renderers, this.paintEnv());
+      }
     }
     // trechos comentados (só com o painel de comentários aberto — a página impressa não os tem)
     if (highlights && this.commentsOpen) {
@@ -946,10 +1086,17 @@ export class UniversalDocumentViewerElement extends HTMLElement {
 
   /** Camada de texto selecionável da faixa: as linhas que começam nela. */
   private fillText(i: number, t: Tile, detailed: boolean): void {
-    const p = this.layout!.pages[i]!;
+    const lay = this.layout!;
     const k = this.pxPerTw(i);
     const top = t.top / k, bottom = (t.top + t.h) / k;
-    fillTextLayer(t.text, p.lines.filter((l) => l.y >= top && l.y < bottom), this.para, this.levelOf, k, top, detailed);
+    if (this.isRust(lay)) {
+      const rs = this.rust;
+      if (!rs) return;
+      const tx = rs.textOf(lay, i);
+      fillTextLayer(t.text, tx.lines.filter((l) => l.y >= top && l.y < bottom), tx.para, (para) => para.level, k, top, detailed);
+      return;
+    }
+    fillTextLayer(t.text, lay.pages[i]!.lines.filter((l) => l.y >= top && l.y < bottom), this.para, this.levelOf, k, top, detailed);
   }
 
   /** Imagem decodificada (o vetor SVG, como o Word, quando houver). */
@@ -959,28 +1106,10 @@ export class UniversalDocumentViewerElement extends HTMLElement {
     if (c) return c;
     this.bitmaps.set(img, 'loading');
     const done = (b: ImageBitmap | HTMLCanvasElement | null): void => { this.bitmaps.set(img, b); if (b) this.repaintAll(); };
-    const svg = (img as { svg?: Uint8Array }).svg;
-    if (svg) {
-      const url = URL.createObjectURL(new Blob([new Uint8Array(svg)], { type: 'image/svg+xml' }));
-      const el = new Image();
-      el.onload = () => {
-        try {
-          const SS = 3;
-          const wt = (img as { widthTwips?: number }).widthTwips, ht = (img as { heightTwips?: number }).heightTwips;
-          const oc = document.createElement('canvas');
-          oc.width = Math.min(4096, Math.max(1, Math.round((wt ?? el.width / PX_PER_TWIP) * PX_PER_TWIP * SS)));
-          oc.height = Math.min(4096, Math.max(1, Math.round((ht ?? el.height / PX_PER_TWIP) * PX_PER_TWIP * SS)));
-          oc.getContext('2d')!.drawImage(el, 0, 0, oc.width, oc.height);
-          done(oc);
-        } catch { done(null); }
-        URL.revokeObjectURL(url);
-      };
-      el.onerror = () => { URL.revokeObjectURL(url); done(null); };
-      el.src = url;
-      return null;
-    }
-    const ext = img.ext === 'jpg' ? 'jpeg' : img.ext;
-    void createImageBitmap(new Blob([new Uint8Array(img.data)], { type: `image/${ext}` })).then(done, () => done(null));
+    decodeImage({
+      data: img.data, ext: img.ext, svg: (img as { svg?: Uint8Array }).svg,
+      widthTwips: (img as { widthTwips?: number }).widthTwips, heightTwips: (img as { heightTwips?: number }).heightTwips,
+    }, done);
     return null;
   }
 
@@ -1226,7 +1355,7 @@ export class UniversalDocumentViewerElement extends HTMLElement {
     return { page, x: (e.clientX - rect.left) / rect.width * p.widthTw, y: (e.clientY - rect.top) / rect.height * this.pageHeightTw(page) };
   }
 
-  private static hit<T>(boxes: readonly RunBox<T>[] | undefined, x: number, y: number): RunBox<T> | undefined {
+  private static hit<T>(boxes: readonly Box<T>[] | undefined, x: number, y: number): Box<T> | undefined {
     return boxes?.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
   }
 
@@ -1253,7 +1382,8 @@ export class UniversalDocumentViewerElement extends HTMLElement {
     const link = UniversalDocumentViewerElement.hit(this.linkBoxes[pt.page], pt.x, pt.y);
     if (!link) return false;
     const target = link.value;
-    const text = link.run.text;
+    const cur = this.layout;
+    const text = link.run ? link.run.text : this.rust && this.isRust(cur) ? this.rust.boxText(cur, link) : '';
     const detail: ViewerLinkClickDetail = target.startsWith('#')
       ? { anchor: target.slice(1), text, page: pt.page }
       : { address: target, text, page: pt.page };
@@ -1266,9 +1396,18 @@ export class UniversalDocumentViewerElement extends HTMLElement {
 
   /** Vai ao indicador (âncora de link interno). */
   goToBookmark(name: string): boolean {
+    const cur = this.layout;
+    if (cur && this.isRust(cur)) {
+      // motor Rust: o nome do indicador vem do modelo TS (lido uma vez, sob demanda), a linha do layout
+      const b = this.rust?.tsModel()?.bookmarks.get(name);
+      const at = b === undefined ? null : cur.blockLine(b);
+      if (!at) return false;
+      this.reveal(at.page, at.y, 24);
+      return true;
+    }
     const block = this.full?.bookmarks.get(name);
     const layout = this.layout;
-    if (block === undefined || !layout) return false;
+    if (block === undefined || !layout || this.isRust(layout)) return false;
     for (let pi = 0; pi < layout.pages.length; pi++) {
       const line = layout.pages[pi]!.lines.find((l) => l.ref === `b${block}` || l.ref.startsWith(`b${block}/`));
       if (line) { this.reveal(pi, line.y, 24); return true; }
@@ -1293,12 +1432,14 @@ export class UniversalDocumentViewerElement extends HTMLElement {
 
   /** Links do corpo (externos e indicadores), na ordem do documento. */
   getLinks(): DocumentLink[] {
-    return this.full ? documentLinks(this.full.blocks) : [];
+    const full = this.full ?? this.rust?.tsModel();
+    return full ? documentLinks(full.blocks) : [];
   }
 
   /** Inlines de plugin do corpo (todos ou de um tipo), na ordem do documento. */
   getCustomInlines(type?: string): CustomInline[] {
-    return this.full ? documentCustomInlines(this.full.blocks, type) : [];
+    const full = this.full ?? this.rust?.tsModel();
+    return full ? documentCustomInlines(full.blocks, type) : [];
   }
 
   /** Repinta as páginas (o estado que os renderers de inline consultam mudou). */
@@ -1345,13 +1486,14 @@ export class UniversalDocumentViewerElement extends HTMLElement {
   /** PDF do layout de IMPRESSÃO (o pintor de referência do motor), em qualquer modo de exibição. */
   exportPdf(): Uint8Array {
     const lay = this.printLayout();
+    if (lay && this.isRust(lay)) return lay.pdf();
     if (!lay || !this.full) throw new Error('document not loaded');
     return renderPdf(lay, { navigation: pdfNavigation(this.full, lay) });
   }
 
   /** Imprime pelo PDF do motor (não pelo que está na tela): `udv-print` cancelável. */
   print(): void {
-    if (!this.full) return;
+    if (!this.hasDocument()) return;
     const pdf = this.exportPdf();
     if (!this.dispatchEvent(new CustomEvent('udv-print', { cancelable: true, detail: { pdf } }))) return;
     const url = URL.createObjectURL(new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }));
@@ -1395,7 +1537,7 @@ export class UniversalDocumentViewerElement extends HTMLElement {
 
   /** Baixa o PDF do layout de impressão (o mesmo de `print()`): `udv-download-pdf` cancelável. */
   downloadPdf(): void {
-    if (!this.full || !this.fileBytes) return;
+    if (!this.hasDocument() || !this.fileBytes) return;
     const pdf = this.exportPdf();
     const name = this.sourceName(isWordBinary(this.fileBytes)).replace(/\.[^.]+$/, '.pdf');
     if (!this.dispatchEvent(new CustomEvent('udv-download-pdf', { cancelable: true, detail: { pdf, filename: name } }))) return;

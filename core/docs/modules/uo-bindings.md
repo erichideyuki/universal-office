@@ -65,14 +65,15 @@ the host fetches only those.
 
 Layout: `uo_layout_page_count`, `uo_layout_page_info` (w, h, section, number, hf_items), `uo_layout_encode_page(page)` (the page message with the Write section as its `app`, G8), `uo_layout_annotations` (`collectAnnotations`), `uo_layout_view` (then every
 `uo_render_*` paint export of frontier E: `encode_page`, `fx_layers`, `pattern`, `rect_gradient`, `blip_tiles`,
-`page_fill_*`, `picture_*`, `set_max_fx_px`), `uo_layout_navigation` (links in points + outline = `pdfNavigation`),
+`page_fill_*`, `picture_*`, `set_max_fx_px`, and the picture-layer masks of frontier D: `picture_polys`, `picture_silhouette`, `picture_bevel`,
+`picture_adjust`, `outer_shadow`, `reflection_alphas`, `inner_shadow`, `glow`, `soft_edge`, `gaussian_blur` — layouts in the last section of `uo-wasm/src/render.rs`), `uo_layout_navigation` (links in points + outline = `pdfNavigation`),
 `uo_layout_run_boxes(filter)` (links / plugin inlines = `runBoxes`, twips), `uo_layout_block_line(block)` (the
 viewer's outline jump), `uo_layout_warnings`, `uo_layout_missing_faces`, `uo_layout_face_bytes(face)` (the document's
 embedded fonts exist only in wasm: the painter makes its `FontFace` from these), `uo_layout_image_bytes(image)`,
 `uo_layout_pdf(layout, flags, chunk)`. Result layouts are in the module doc of `src/write.rs`.
 
 Layout flags: hyphenation on/off/force (bits 0–1), view print/web/draft (2–3), revisions default/final/simple/all/
-original (4–6), `hyphenationLanguages` given (8). `generation` stamps the page messages (0 = a module counter); the
+original (4–6), `hyphenationLanguages` given (8), `cancelCheck` given (9, `LAYOUT_CANCEL_POLL`: the layout asks the host import `uo_host.layout_poll`, G4-W). `generation` stamps the page messages (0 = a module counter); the
 tests pass 1 so the message bytes are reproducible.
 
 ### Font bytes flow (`viewer` policy)
@@ -105,10 +106,10 @@ replaces the import by a per-thread callback (`write::host::set_pdf_sink`, tests
 
 `writeImports()` → `{ imports, host }` for `WebAssembly.instantiate`; `bindWrite(exports, host)` → `newEnv()`, `open()`;
 classes `WriteEnv`, `WriteDocument`, `WriteLayout` with `free()` and a `FinalizationRegistry` each; `WriteError { code,
-stage, max, detail }`; `layout.paint` = the frontier-E operations on the borrowed view; `layout.pdf()` →
+stage, max, detail }`; `layout.paint` = the frontier-E and -D operations on the borrowed view (`Buf` results); `layout.rasters()` = their decoded facade (render.mjs `rasters`: `null` for status 1 and 4, a `RenderError` otherwise), the `RasterSource` of the TS painter `js/paint.ts`; `layout.pdf()` →
 `{ chunks, length }` (`new Blob(chunks)` in a browser). It reuses `render.mjs` (`Buf`, `put`).
 
-### The TS/Rust switch of the viewer (plan; frontier D builds it)
+### The TS/Rust switch of the viewer (done 2026-11-10; plan below, built and measured after it)
 
 - One module per page (`write` build), one `WriteEnv` per viewer element. A viewer option (`engine="rust"`, default
   `ts` until the milestone gate) picks the path; the TS path stays intact behind it until 0.10 ships ("plug in at once":
@@ -118,14 +119,102 @@ stage, max, detail }`; `layout.paint` = the frontier-E operations on the borrowe
 - Painting: `layout.encodePage(i)` (now carrying the Write section; `paint.encodePage` is the bare render message; `layout.annotations()`) → generated `js/gen/render.ts` `decodePage` → the TS painter of frontier D (hints,
   `paint.*` rasters), `faceBytes(i)` → `FontFace`; link overlays from `runBoxes('links')`, outline from
   `navigation()`/`blockLine()`; print and download from `layout.pdf()`.
-- Missing before the switch: frontier D (the TS shell painting decoded pages) and V (painter parity).
-- **Content Security Policy (to carry into the viewer and editor READMEs at the switch).** After the switch the
+- **Frontier D and V are done** (2026-11-09; `uo-render.md` "Milestone 1 — frontier D" and "… frontier V"): `js/paint.ts` + `js/picture.ts` paint a decoded page with the same draw calls as the frozen `paintItems`/`paintPageBackground` (the glue is the snippet in the header of `paint.ts` and of `write.d.ts`: `decodePage(layout.encodePage(i), tables)`, `layout.rasters()`, `paintPageBackground` + `paintItems`). Parity: 0 mismatches in the draw-call log over the 74 committed fixture documents (replay of `v_paint.capture`, platform-independent: it passed on win32 Node 24 and on Linux Node 22 under WSL; the CI line is not in the workflow yet), 200 generated pages (every painter branch) and the whole Word oracle (2,742 documents, `UO_V_ORACLE_STRIDE=1`; the default stride 13 is 347 documents); the export bytes equal the frozen functions; Chromium: 390 renders, 1,030,732,444 pixels, 0 differing; M4 (10,000 pages) and M5 (caps) green. **Still missing before the gate:** the painter in WebKit/real Safari 15 (only the handle layer ran in WebKit), the CI lines of D/V and of the switch (listed below, not in the workflow: another frontier owns it), and the gaps of the Rust path listed under "Remaining gaps" below. (The `engine="rust"` option and its wiring are done, below; G4 cancellation is done, `cancelCheck` aborts a relayout.)
+- **Content Security Policy (carried into the viewer README at the switch; the editor README when `<universal-write>` switches).** After the switch the
   engine itself is WebAssembly, so a host whose CSP restricts `script-src` must allow `'wasm-unsafe-eval'` (Chrome/Edge
   97, Firefox 102, Safari/iOS 16.0 — caniuse, checked 2026-11-06); **Safari 15, our baseline, does not know it** and
   would need `'unsafe-eval'`. Today only the optional spell checker needs it (documented in the `write` and
   `@universal-office/spellcheck` READMEs). The answer for hosts that cannot allow it is the plain-JS `wasm2js` build of
   the same module (one implementation, slower and larger): measured in "No-WebAssembly fallback (wasm2js) and wasm-opt".
   To confirm on a real Safari 15 (BrowserStack) before the gate: whether its CSP blocks WebAssembly at all.
+
+#### As built (frontier SW, 2026-11-10)
+
+Files: `write/packages/viewer/src/rust-engine.ts` (the viewer side: `RustSession`, one per element; dynamic-imported only for
+`engine="rust"`), `src/image-decode.ts` (the bitmap decode both engines share: the old `bitmapFor` body, extracted), the element
+(`universal-document-viewer.ts`: early branches; the TS lines are untouched except the type widening and the `!this.full` guards),
+`src/write-engine.d.ts` (ambient declaration of the engine surface) and `core/crates/uo-wasm/js/viewer.ts` (the engine side:
+`loadViewerModule` = ONE module per page, `ViewerEnv`/`ViewerDocument`/`DecodedLayout` over `write.mjs`, the painter `paint.ts`,
+every page decoded once: render message + Write section), `viewer.check.ts` (assigns the real module to the declaration: drift
+fails tsc), `hyphen-patterns.mjs`, `write.d.mts`, `render.d.mts` (TS7016: `.mjs` modules typed for `.ts` callers). New wasm
+export `uo_layout_image_svg` (+ `WriteLayout.imageSvg`): SVG images paint as vectors as in TS (0 of the 74 fixtures have SVG).
+`tools/build-pkg.mjs`: alias `ENGINE` (outside `INTERNAL`: the licence loop reads `<pkg>/package.json`), and `chunks/uo-write.wasm`
+copied from `UO_WRITE_WASM` or `core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm` (warning when missing). Alias also in the
+viewer's `vitest.config.ts` and `build:demo`. README: attribute `engine`, `configureEngine`, "Content Security Policy"; `CHANGELOG.md` Unreleased.
+
+Behaviour: `engine` absent or any value but `rust` is the TS path, byte for byte (the vitest "no .wasm" test and Chromium phase 0
+prove no `.wasm`, no engine chunk and no `stats` request; the entry's static closure holds none of the engine's code). With `rust`:
+`relayout()` = fetch `ASSET_FILES` (cached per base) -> `pushAsset`; `doc.hyphenationPatterns` -> pattern text from the TS pattern
+modules -> `registerHyphenation`; up to 5 passes of `doc.layout(env, { cancelCheck })` + `env.takeMissing()` -> the shared
+`FontResolver` (`getWithFile`, else `resolveWithFile` + `loadFace`) -> `pushFamily`; painting `decodePage` -> `paintBackground` +
+`paintItems` (the D painter), `faceBytes` -> one `FontFace` per file content; text layer from the Write section (`paras`, `lines`);
+link boxes from `runBoxes('links')`; comments and headings from `annotations()`; print and download from `layout.pdf()`; every
+handle freed on disconnect, new document, replaced layout (`setLayout` frees the previous unless it is the cached print layout).
+`cancelCheck` (G4) stops a layout when the document changes or the element disconnects.
+
+Declarations (outside the plan):
+
+| # | Decision | Alternative |
+|---|---|---|
+| SW-1 | The viewer reaches the engine JS through the alias `@universal-office/write-engine` (`core/crates/uo-wasm/js/viewer.ts`), typed by an ambient `.d.ts` plus a drift check; no `paths` for the types (the ambient module serves them) | `paths` + `allowImportingTsExtensions` (breaks the viewer's emit) |
+| SW-2 | Hyphenation patterns come from the TS pattern modules through a literal-import loader (same chunk as the TS path, no duplicated data); the text is the `parse_patterns` format. Checked: the 7 ids register, and 8 fixtures lay out to the same page bytes with them as with `uo-fonts/data/hyphen/*.txt` | ship the `.txt` files (about 450 KB more) |
+| SW-3 | `.doc` on the Rust path is converted by the TS `convertDocToDocx`, then opened in wasm | the `doc` feature in the module (size, G7) |
+| SW-4 | Up to 5 layout passes instead of 4: the first may be a discovery pass for families the resolver already answers (the Rust policy cannot ask the resolver synchronously) | a synchronous resolver callback |
+| SW-5 | `getLinks()`, `getCustomInlines()`, the public `goToBookmark(name)` and link-anchor clicks read the document with the TS reader lazily (`readFullDocument`, only when called); anchors then use `blockLine(block)` | new wasm exports (bookmark -> block, links, inlines) |
+| SW-6 | `udv-link-click` `detail.text` is rebuilt from the characters inside the link box; the TS gives the whole run text (differs when a link run wraps) | run boxes carrying the run text (layout change) |
+| SW-7 | Plugin inline renderers are not painted and `udv-inline-click` is not fired with `engine="rust"` (`runBoxes('inlines')` carries only the type) | sdt tag data from the wasm (layout change) |
+| SW-8 | Disconnect frees every handle; reconnect reopens from the kept bytes (the scroll position resets; moving the element in the DOM does the same) | keep the session alive across a move |
+| SW-9 | `build-pkg` copies `chunks/uo-write.wasm` and only warns when it is missing; which build ships (opt-level, `wasm-opt -Oz`, G7) is open | fail the build on rust-core |
+| SW-10 | `configureEngine` is static, first load wins (one module per page) | a per-element `engine-wasm` attribute |
+| SW-11 | Desktop font profile (`newEnv()` without `phone`); PDF trusted caps, as the TS `renderPdf` | phone/untrusted for viewer documents (product decision) |
+| SW-12 | Painter caches are the global `defaultCaches`, as the TS module-level caches | per-element caches |
+| SW-13 | New export `uo_layout_image_svg` (status 8 when the image has no SVG, 6 unknown index, 11 null) | none |
+| SW-14 | Default stays `ts` until the gate; the CI lines are not added to `rust-core.yml` (another frontier owns it) | - |
+| SW-15 | A `FontFace` per file CONTENT (FNV-1a of the bytes + length) shared by every element and document of the page; each session repaints once when a face it uses finishes loading | one per layout |
+| SW-16 | The browser test can restart the page every n documents (`UO_SW_BATCH`, default 0 = never): one page accumulates canvases and FontFaces of both engines; restarting made the runs slower here, so it is off | one page, always |
+
+Measured (2026-11-10, Chromium headless-shell 1248 on win32, `viewer_switch.mjs`, `UO_TS_ROOT` = the frozen checkout for tools only):
+
+```
+bundle: entry static closure 2 output(s) 868 KB; reachable only by import("./rust-engine"): 2 output(s) 66 KB + uo-write.wasm 3875 KB
+phase 0: 3 documents with engine="ts" (1p 122 ms, 12p 198 ms, 5p 33 ms); requests 68, for the wasm / the engine chunk: 0
+parity: 13 documents, 108 pages in 64 s
+  page count + sizes   0 documents differ (108 pages compared)
+  headings / comments / link boxes  0 differ (49 headings, 0 comments, 39 link boxes)
+  text layer           0 differ (119856 characters)
+  pixels               0 documents differ (216 renders, 519194547 px, 30515092 ink px, 0 unsettled renders), tolerance 0
+  PDF (print layout)   0 differ (8607684 B)
+  exceptions           0
+  loadDocx (open + layout, incl. fonts): TS 1766 ms total, median 88 ms; Rust 3802 ms total, median 288 ms
+(UO_SW_STRIDE=6: 13 of the 74 fixture documents, one per 6, every group; an earlier run at UO_SW_STRIDE=10 gave 8 documents, 52 pages, the same 0 differences.
+The full 74 did not finish in the implementer's run; the reviewer then ran it.)
+
+**Full run (reviewer, `UO_SW_STRIDE=1 UO_SW_BATCH=10 viewer_switch.mjs --mode parity`, Chromium headless, 457 s): all 74
+documents, 579 pages, 0 differences** — page count/sizes, headings (144), comments, link boxes (838), text layer
+(693,279 chars), find hits (414 queries, 22,137 hits), pixels (1,158 renders, 2,625,879,594 px, 212,919,649 ink px,
+tolerance 0), uncompressed PDF (45,358,755 B). loadDocx totals: TS 16,892 ms (median 122 ms), Rust 27,373 ms (median
+251 ms) — the Rust path is slower to open in the browser today; to be measured and explained before the gate.
+```
+
+Memory (`--mode memory`, 200 open/close cycles of 10 fixture documents with `engine="rust"`, `count,write` build): live bytes
+2,422,548 after the first close, then exactly 4,850,392 at every later sample (190 samples, 1 distinct value); `memory.buffer` 17,039,360
+B at every sample after the warm-up (1 distinct value); handles alive after every close 0 (3 while a document is open: environment,
+document, layout). Vitest: the 21 existing viewer tests + 4 engine-switch tests pass with the default engine (25 passed, 1 skipped: the
+wasm one), and 26/26 with `UO_WASM_PATH` (5 documents: page count, sizes, headings, comments, link boxes, `getLinks`, `goToBookmark`,
+`exportPdf`, `handles === 0` after remove). Rust: `write_native` 7/7 (M1: 78,696,053 B allocated, 0 B left, with the svg export called for
+every image index, a null layout and an unknown index), `write_api` 6/6 and `write_cancel` 7/7 (Node), clippy `-D warnings` native and wasm32 clean for
+`uo-wasm`, grep-bans / float-casts / clippy-ban 0. Sizes: entry static closure 868 KB minified (the TS viewer as before), the Rust path's JS 66 KB
+(minified, loaded only for `engine="rust"`), `uo-write.wasm` `--features write`: 3,967,023 B raw, 1,409,254 B gzip (before the svg export 3,966,580 /
+1,409,092: +443 B / +162 B).
+
+Remaining gaps of the Rust path against TS: plugin inline renderers (SW-7); `getLinks`/`getCustomInlines`/bookmarks through the TS reader
+(SW-5); `udv-link-click` text (SW-6); `.doc` through the TS converter (SW-3); the Layout da Web (`view=web`) and Modo de Leitura run
+through the same code but are not in the parity test (print layout only); no WebKit/Safari run of the painter; the first layout of a
+document takes one extra pass (SW-4) and costs more than the TS engine in the browser on the fixtures (see the load times above;
+the TS engine caches fonts and metrics between documents in the page, the Rust one measures again).
+
+CI lines to add (not added): the core tsc line + `viewer.ts` `viewer.check.ts` `../write/packages/viewer/src/write-engine.d.ts`; the viewer's vitest
+with `UO_WASM_PATH` (`count,write` build); `UO_WASM_PATH=<..> UO_TS_ROOT=<frozen> node crates/uo-wasm/tests/browser/viewer_switch.mjs --mode all`.
 
 ## 3. The C ABI (`uo-ffi`)
 
@@ -145,7 +234,9 @@ stage, max, detail }`; `layout.paint` = the frontier-E operations on the borrowe
   inside; a font registry and its ledger are made per conversion, so documents do not share a font budget). `UoCancel`
   is raised from any thread; a job holds its own `Arc` of the flag.
 - **Cancellation**: checked before the work, between read, layout and PDF, and by uo-pdf before each page and every 256
-  items (PQ9). Inside the layout the work budget bounds the time (G4).
+  items (PQ9), and now inside the layout: `LayoutOptions.cancel` (the same `Arc<AtomicBool>` as `PdfOptions.cancel` and
+  `UoCancel`) is read at every `Budget::charge`, `LayoutError::Cancelled` becomes code 10 (G4). On wasm, `cancel_poll`
+  asks the host import `uo_host.layout_poll` (flag bit 9; G4-W).
 - **Panics**: `catch_unwind` in every export → code 12. Native only: on wasm32 the crate is empty (`#![cfg]`).
 - `uo_docx_to_pdf(conv, data, len, job, cancel, &out)`: `.doc` (Word 97-2003, uo-docx D4) is converted first, as the C#
   `DocxPdf.ToPdf` did; then `server-substitute` over the converter's index, all seven hyphenation pattern sets compiled in
@@ -253,7 +344,7 @@ against the native library byte for byte. The server-substitute policy itself ha
 Sizes (`--profile wasm`, wasm32-unknown-unknown): default module **15,528 B** (6,553 B gzip, unchanged); the viewer
 module `--features write` **5,915,444 B (1,450,639 B gzip)**; both pass `wasm-tools validate
 --features=-all,wasm1,mutable-global,saturating-float-to-int,sign-extension,reference-types,multi-value,bulk-memory`
-(Safari 15). The write module imports one function, `uo_host.pdf_chunk`.
+(Safari 15). The write module imports two functions, `uo_host.pdf_chunk` and (G4) `uo_host.layout_poll`.
 
 Timings (this machine, contended): 136 server conversions of the fixtures in 23 s (release); the smoke console indexes
 the machine's 357 families in 53 ms and converts `f8__7__1` (316,892 B PDF) in 151 ms; 211 oracle documents (2 policies,
@@ -485,7 +576,7 @@ Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF6
 | G1 | The read path is **one file** `uo-ffi/src/pipeline.rs`, included by uo-wasm with `#[path]` (no new crate; no `#[no_mangle]` export leaks from one cdylib into the other) | move it into uo-docx-layout (`pipeline` module) |
 | G2 | The last error is **per thread** (`uo_last_error(UoErrorInfo*)`), not per handle as D3 §4 sketched; D3's exports adopt it | per-handle slot |
 | G3 | Codes 10 cancelled, 11 no font, 12 internal (D3 said a panic is code 2), 13 sink added to D3's 1–9 | — |
-| G4 | **Cancellation inside the layout is not wired**: it needs `LayoutOptions.cancel` + a `LayoutError::Cancelled` checked in `Budget::charge` (a uo-docx-layout change); milestone 1 checks between stages and inside the PDF, and the work budget bounds a layout | wire it now |
+| G4 | **Done (2026-11-09).** `LayoutOptions.cancel` (shared flag, Relaxed load at every `Budget::charge`) + `cancel_poll` (every `CANCEL_POLL_UNITS` = 4,096 work units, first at the first charge) + `LayoutError::Cancelled` (latched, wins over `Limit(Work)`); uo-ffi: code 10, stage none, the server passes the same Arc to layout and PDF; C# facade unchanged (token -> `UoCancel` -> `OperationCanceledException`); wasm: opt-in host import `uo_host.layout_poll` (flag bit 9, JS `LayoutOptions.cancelCheck`, **G4-W**), a throwing callback counts as cancel. Latency from raising the flag mid-layout (650-paragraph document, release): native 0.16-1.4 ms, C ABI 0.7-1.4 ms, .NET facade 0.6-1.5 ms (ranges over runs) (before: the rest of the layout, hundreds of ms); M1 0 B left (native layout, C ABI, wasm 20 cancelled layouts cancelled mid-layout at the k-th poll, .NET 5 + 1); cost within noise (B/A -2.9% to +0.4%, C/A -0.3% to +1.5% over median/min on pages100 and pages500, one +17.5% outlier min, noisy machine); layout parity unchanged (layout_parity 5, f8_parity 2, g8 4, f7a 7, server_parity 3; wasm-ab digest cca8d8794ec4bfe0 equal, layout min 366.1 -> 367.9 ms). Record: uo-docx-layout.md "Stage 3 — G4" | the PDF on wasm and the `.doc`/reader stay uncancellable inside (G4-4) |
 | G5 | Untrusted caps: kernel radius 256, masks/effect layers 16 Mpx, images 40 Mpx (first numbers); the facade defaults to untrusted | measure on the corpus first |
 | G6 | The wasm PDF leaves through an **import** (`uo_host.pdf_chunk`): the viewer module cannot be instantiated without imports | pull the chunks (the output then stays in wasm memory, which never shrinks) |
 | G7 | `write` is **not a default feature** (the default module stays the 15 KB foundation build the other tests use); the shipped viewer module is `--features write`, **5.9 MB (1.45 MB gzip)** — a size budget, `wasm-opt`, and trimming uo-docx are open | make `write` default |
@@ -508,6 +599,7 @@ Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF6
 ## Files touched outside the owned crates (each additive)
 
 - `crates/uo-render/src/view.rs`: `RenderView::pages(&self) -> &[Page]` (the PDF of a view reads `&[Page]`).
+- `write/packages/viewer/**` (new `rust-engine.ts`, `image-decode.ts`, `write-engine.d.ts`, `engine-switch.test.ts`; the element, `fonts.ts`, `text-layer.ts`, `views.ts`, README, `vitest.config.ts`, `package.json`), `tools/build-pkg.mjs` (alias `ENGINE`, `chunks/uo-write.wasm`), `CHANGELOG.md`: the viewer switch.
 - `.github/workflows/rust-core.yml`: wasm job (build + Node test + validation of the write module + WebKit run of
   `write_api.test.mjs`), new `server-pdf` job, `dotnet` job runs `UniversalOffice.Docx.Tests` and the smoke (replaces the
   removed placeholder project's line), Miri: `-p uo-ffi --lib` (was the whole package: the integration tests read
@@ -521,9 +613,9 @@ Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF6
 
 ## Not done (handed on)
 
-- The TS shell (frontier D) and the switch itself; real Safari 15 / iOS (BrowserStack).
+- The switch for the editor `<universal-write>` (milestone 2) and the gaps of the viewer's Rust path ("Remaining gaps" in section 2); the painter in WebKit / real Safari 15 / iOS (BrowserStack); the CI lines of the switch and of D/V; HANDOFF queue item 4 is done by this frontier (HANDOFF.md is updated by the orchestrator).
 - The NuGet RID matrix and `dotnet pack` with native assets (G14); LSan on the facade tests (G19); fuzz targets (G21).
-- Cancellation inside the layout (G4); a `ToPdf(Stream)` overload (uo-pdf's `IoSink` exists) for large outputs.
+- A `ToPdf(Stream)` overload (uo-pdf's `IoSink` exists) for large outputs.
 - The structural C# vs Rust migration report for clickCompliance (uo-pdf §6, not a gate).
 - The rest of the oracle corpus with installed fonts (211 of 2,742 run; the same command over every group).
 - The editor's queries (hit test, caret, selection: F8's `EditLines`) — milestone 2 with the session; the plugin-inline
@@ -532,12 +624,16 @@ Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF6
 ## Commands
 
 ```
+UO_TS_ROOT=<frozen> UO_WASM_PATH=<count,write .wasm> node crates/uo-wasm/tests/browser/viewer_switch.mjs [--mode parity|memory|all|phase0]   # UO_SW_STRIDE, UO_SW_SOAK, UO_SW_ONLY=<regex>, UO_SW_BATCH, UO_SW_VERBOSE
 export CARGO_TARGET_DIR=<target>
 cargo test -p uo-ffi --release --all-features                      # UO_SERVER_PARITY_EVERY=1 for all 68; UO_FFI_SOAK=<n>
 UO_SERVER_ORACLE_DIR=<dir> cargo test -p uo-ffi --release --test server_parity the_oracle -- --nocapture
 cargo test -p uo-wasm --features write,count --test write_native -- --nocapture   # prints the pinned checksums
 cargo build -p uo-wasm --features count,write --target wasm32-unknown-unknown --profile wasm
 UO_WASM_PATH=<.wasm> node --expose-gc --test crates/uo-wasm/tests/write_api.test.mjs
+UO_WASM_PATH=<.wasm> node --expose-gc --test crates/uo-wasm/tests/write_cancel.test.mjs      # G4
+cargo test -p uo-docx-layout --release --test g4_cancel -- --nocapture     # G4; UO_G4_BENCH=<runs> UO_G4_DOC=<docx> for the cost
+cargo test -p uo-ffi --release --all-features --test cancel_layout -- --nocapture   # G4
 UO_WASM_PATH=<.wasm> UO_PLAYWRIGHT=<playwright> node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/write_api.test.mjs
 dotnet test dotnet/UniversalOffice.Docx.Tests -m:2 [--artifacts-path <dir>]       # UO_DOTNET_M4, UO_DOTNET_CONVERSIONS, UO_DOTNET_THREADS, UO_DOTNET_SOAK
 dotnet run --project dotnet/UniversalOffice.Docx.Smoke -- <in.docx> <out.pdf> [--font-dir <d>]... [--no-system-fonts]
@@ -545,6 +641,10 @@ UO_TS_ROOT=<built d0f45bc5> node crates/uo-pdf/tests/parity_support/capture_pain
 ```
 
 ## Process metrics
+
+SW (the viewer TS/Rust switch, 2026-11-10): planner Opus, implementer Sonnet 5.5; wall time and tool-call counts were not recorded per step (estimates: about 4 h wall, a large part of it waiting for Chromium runs on a loaded machine; about 150 tool calls). Parity rounds: 0 mismatches on every comparison, first run. Rework: the `.wasm` default-source bug in the memory phase (the driver asked for the module before any viewer loaded it), a test timer that paused the page after 150 s (cleared per document now).
+
+G4 (cancellation inside the layout): planner Opus, implementer Sonnet 5.5 (the maintainer's request; SKILL.md assigns the layout crate to Opus), see uo-docx-layout.md "Stage 3 — G4".
 
 G8 (the Write section of the page message): Opus WIP 6471786d + Sonnet 5.5 finish (the maintainer's request; SKILL.md assigns the layout crate to Opus), see uo-docx-layout.md "Stage 3 — G8".
 

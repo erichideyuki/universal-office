@@ -17,9 +17,11 @@ export declare class WriteError extends Error {
 export interface WriteHost {
   memory: WebAssembly.Memory | null;
   sink: ((chunk: Uint8Array) => void) | null;
+  /** the callback of `LayoutOptions.cancelCheck` while a layout runs (G4) */
+  poll: (() => boolean) | null;
 }
 
-/** The import object of the module (`uo_host.pdf_chunk`) and the slot `bindWrite` fills. */
+/** The import object of the module (`uo_host.pdf_chunk` + `uo_host.layout_poll`) and the slot `bindWrite` fills. */
 export declare function writeImports(): { imports: WebAssembly.Imports; host: WriteHost };
 
 export interface HostFaceInput {
@@ -91,6 +93,13 @@ export interface LayoutOptions {
   maxPages?: number;
   /** the layout id stamped on its page messages (0 or absent: a counter of the module) */
   generation?: number;
+  /**
+   * Polled during the layout (the first time at once, then every few ms of work); return `true`
+   * to stop it: the call throws a `WriteError` with code 10 (cancelled). A synchronous call cannot
+   * see an `AbortSignal` fire, so use a deadline, e.g. `() => performance.now() > end`. It must
+   * not call into the module; an exception counts as `true`. (G4)
+   */
+  cancelCheck?: () => boolean;
 }
 
 /** A result buffer of render.mjs (`take()` = status + a copy of the bytes, then free). */
@@ -113,7 +122,51 @@ export interface PaintOps {
   pageFillRaster(page: number): Buf;
   pictureBounds(page: number, item: number): Buf;
   pictureSubs(page: number, item: number): Buf;
+  /** the picture-layer masks (frontier D; see src/render.rs "the picture-layer masks"); `rgba` is consumed copy-in, masks are `w * h` `Float32Array` */
+  picturePolys(page: number, item: number, ppt: number, ox: number, oy: number): Buf;
+  pictureSilhouette(page: number, item: number, ppt: number, ox: number, oy: number, w: number, h: number): Buf;
+  pictureBevel(page: number, item: number, ppt: number, ox: number, oy: number, w: number, h: number, rgba: Uint8ClampedArray | Uint8Array): Buf;
+  pictureAdjust(page: number, item: number, rgba: Uint8ClampedArray | Uint8Array): Buf;
+  outerShadow(page: number, item: number, sil: Float32Array, w: number, h: number, box: { x: number; y: number; w: number; h: number }, dirDeg: number, ppt: number): Buf;
+  reflectionAlphas(page: number, item: number, top: number, hPpt: number, rows: number): Buf;
+  innerShadow(sil: Float32Array, w: number, h: number, blurPt: number, distPt: number, dirDeg: number, ppt: number): Buf;
+  glow(sil: Float32Array, w: number, h: number, radPt: number, ppt: number): Buf;
+  softEdge(sil: Float32Array, w: number, h: number, radPt: number, ppt: number): Buf;
+  gaussianBlur(m: Float32Array, w: number, h: number, sigma: number): Buf;
   setMaxFxPx(px: number): number;
+}
+
+/**
+ * The decoded results of the paint operations (`WriteLayout.rasters()`, render.mjs `rasters`): `null` for "nothing to paint"
+ * (status 1) and for a limit (status 4). It is the `RasterSource` of js/paint.ts, the TS painter of decoded pages:
+ *
+ *     const tables = newTables();                                  // js/gen/render.ts
+ *     const rasters = layout.rasters();
+ *     const page = decodePage(layout.encodePage(i), tables);       // pages in order
+ *     const p = { page, tables, index: i, rasters, owner: layout };
+ *     paintPageBackground(ctx, p, env, { devicePxTw, screen, paper });
+ *     paintItems(ctx, p, env);
+ */
+export interface RasterSource {
+  fxLayer(page: number, item: number, ppt: number): { x0: number; y0: number; w: number; h: number; data: Uint8Array } | null;
+  pattern(page: number, item: number): { x: number; y: number; cellsW: number; cellsH: number; w: number; h: number; data: Uint8Array } | null;
+  rectGradient(page: number, item: number): { w: number; h: number; data: Uint8Array } | null;
+  blipTiles(page: number, item: number): { x: number; y: number; w: number; h: number }[] | null;
+  pageFillTileTw(page: number, devicePxTw: number): { w: number; h: number } | null;
+  pageFillRaster(page: number): { w: number; h: number; data: Uint8Array } | null;
+  pictureBounds(page: number, item: number): { x0: number; y0: number; x1: number; y1: number } | null;
+  picturePolys(page: number, item: number, ppt: number, ox: number, oy: number): Float64Array[] | null;
+  pictureSilhouette(page: number, item: number, ppt: number, ox: number, oy: number, w: number, h: number): Float32Array | null;
+  pictureBevel(page: number, item: number, ppt: number, ox: number, oy: number, w: number, h: number, rgba: Uint8ClampedArray): Uint8Array | null;
+  pictureAdjust(page: number, item: number, rgba: Uint8ClampedArray): Uint8Array | null;
+  outerShadow(page: number, item: number, sil: Float32Array, w: number, h: number, box: { x: number; y: number; w: number; h: number }, dirDeg: number, ppt: number): Float32Array | null;
+  reflectionAlphas(page: number, item: number, top: number, hPpt: number, rows: number): Float64Array | null;
+  innerShadow(sil: Float32Array, w: number, h: number, blurPt: number, distPt: number, dirDeg: number, ppt: number): Float32Array | null;
+  glow(sil: Float32Array, w: number, h: number, radPt: number, ppt: number): Float32Array | null;
+  softEdge(sil: Float32Array, w: number, h: number, radPt: number, ppt: number): Float32Array | null;
+  gaussianBlur(m: Float32Array, w: number, h: number, sigma: number): Float32Array | null;
+  coloredMask(mask: Float32Array, w: number, h: number, hex: string, alpha: number): Uint8Array | null;
+  dash(name: string): number[] | null;
 }
 
 export declare class WriteEnv {
@@ -136,6 +189,8 @@ export declare class WriteLayout {
   /** `collectAnnotations(full, layout)` of the viewer */
   annotations(): Annotations;
   readonly paint: PaintOps;
+  /** the decoded facade of `paint` (the `RasterSource` of js/paint.ts) */
+  rasters(): RasterSource;
   navigation(): Navigation;
   runBoxes(kind?: 'links' | 'inlines'): RunBox[];
   blockLine(block: number): { page: number; y: number } | null;
@@ -143,6 +198,8 @@ export declare class WriteLayout {
   missingFaces(): { family: string; bold: boolean; italic: boolean }[];
   faceBytes(face: number): Uint8Array | null;
   imageBytes(image: number): Uint8Array | null;
+  /** the SVG version of image `image`, or null */
+  imageSvg(image: number): Uint8Array | null;
   pdf(o?: { compress?: boolean; untrusted?: boolean; chunk?: number }): { chunks: Uint8Array[]; length: number };
 }
 
@@ -168,7 +225,7 @@ export declare function bindWrite(exports: WebAssembly.Exports, host: WriteHost)
 export declare function canCompileWasm(): boolean;
 
 /** The module built by `tools/build-wasm2js.mjs`: `export default function uoWasm2js(imports)`. */
-export type Wasm2jsFactory = (imports: { uo_host: { pdf_chunk(ptr: number, len: number): number } }) => WebAssembly.Exports;
+export type Wasm2jsFactory = (imports: { uo_host: { pdf_chunk(ptr: number, len: number): number; layout_poll(): number } }) => WebAssembly.Exports;
 type MaybePromise<T> = T | Promise<T>;
 
 export interface LoadWriteOptions {

@@ -74,5 +74,30 @@ fn handles_buffers_and_consumed_inputs() {
         let name: Vec<u8> = "sysDot".encode_utf16().flat_map(u16::to_le_bytes).collect();
         assert_eq!(take(uo_render_dash(put(&name), name.len())).1.len(), 4 + 16);
         assert_eq!(take(uo_render_dash(std::ptr::null_mut(), 0)).0, 1);
+
+        // the picture-layer masks (frontier D): generic ones over a 2 x 2 mask, item-addressed ones refused on a rectangle, the
+        // consumed input of each (also with a null view and a wrong size)
+        let v = uo_render_fixture(0);
+        assert_eq!(take(uo_render_glow(v, put(&mask), mask.len(), 2, 2, 1.0, 1.0)).1.len(), 16);
+        assert_eq!(take(uo_render_soft_edge(v, put(&mask), mask.len(), 2, 2, 1.0, 1.0)).1.len(), 16);
+        assert_eq!(take(uo_render_inner_shadow(v, put(&mask), mask.len(), 2, 2, 1.0, 1.0, 45.0, 1.0)).1.len(), 16);
+        assert_eq!(take(uo_render_gaussian_blur(v, put(&mask), mask.len(), 2, 2, 0.5)).1.len(), 16);
+        assert_eq!(take(uo_render_glow(v, put(&mask), mask.len(), 3, 3, 1.0, 1.0)).0, 5);
+        assert_eq!(take(uo_render_gaussian_blur(v, std::ptr::null_mut(), 0, 2, 2, 0.5)).0, 5);
+        assert_eq!(take(uo_render_glow(std::ptr::null(), put(&mask), mask.len(), 2, 2, 1.0, 1.0)).0, 11);
+        assert_eq!(take(uo_render_picture_polys(v, 0, 0, 1.0, 0.0, 0.0)).0, 7);
+        assert_eq!(take(uo_render_picture_polys(v, 0, 9, 1.0, 0.0, 0.0)).0, 6);
+        assert_eq!(take(uo_render_picture_silhouette(v, 0, 0, 1.0, 0.0, 0.0, 2, 2)).0, 7);
+        assert_eq!(take(uo_render_picture_bevel(v, 0, 0, 1.0, 0.0, 0.0, 1, 1, put(&[0; 4]), 4)).0, 7);
+        assert_eq!(take(uo_render_picture_bevel(std::ptr::null(), 0, 0, 1.0, 0.0, 0.0, 1, 1, put(&[0; 4]), 4)).0, 11);
+        assert_eq!(take(uo_render_picture_adjust(v, 0, 0, put(&[0; 4]), 4)).0, 7);
+        assert_eq!(take(uo_render_outer_shadow(v, 0, 0, put(&mask), mask.len(), 2, 2, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0)).0, 7);
+        assert_eq!(
+            take(uo_render_outer_shadow(v, 0, 0, put(&mask[..mask.len() - 1]), mask.len() - 1, 2, 2, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0)).0,
+            5
+        );
+        assert_eq!(take(uo_render_reflection_alphas(v, 0, 0, 0.0, 1.0, 2)).0, 7);
+        assert_eq!(take(uo_render_reflection_alphas(std::ptr::null(), 0, 0, 0.0, 1.0, 2)).0, 11);
+        uo_render_view_free(v);
     }
 }

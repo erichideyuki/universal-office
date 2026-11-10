@@ -133,6 +133,21 @@ export class CaptureWriter {
   write(path) { writeFileSync(path, this.text()); }
 }
 
+/** Reader of a capture file (the inverse of `CaptureWriter`): `{ header: string[], metas: Map<name, value>, records: Map<key, Map<facet, value>> }`. */
+export function readCapture(path) {
+  const header = [], metas = new Map(), records = new Map();
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    if (!line) continue;
+    if (line.startsWith('# ')) { header.push(line.slice(2)); continue; }
+    if (line.startsWith('@')) { const i = line.indexOf(' '); metas.set(line.slice(1, i), line.slice(i + 1)); continue; }
+    const [key, ...facets] = line.split('\t');
+    const m = new Map();
+    for (const f of facets) { const i = f.indexOf('='); m.set(f.slice(0, i), f.slice(i + 1)); }
+    records.set(key, m);
+  }
+  return { header, metas, records };
+}
+
 /** The built checkout of main: --ts-root <dir> or UO_TS_ROOT. */
 export function tsRoot(argv = process.argv.slice(2)) {
   const i = argv.indexOf('--ts-root');

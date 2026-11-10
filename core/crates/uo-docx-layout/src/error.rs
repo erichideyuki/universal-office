@@ -42,6 +42,8 @@ pub enum LayoutError {
     /// no face at all for the document's default font and every fallback (the TS throws when the
     /// provider has nothing, fonts.ts)
     NoFace,
+    /// G4: the caller raised `LayoutOptions::cancel`, or `cancel_poll` answered true; no pages
+    Cancelled,
     /// **stage 3 only**: the stage is not ported yet (frontier, function)
     Unported(Frontier, &'static str),
 }
@@ -52,6 +54,7 @@ impl std::fmt::Display for LayoutError {
             LayoutError::Limit(k) => write!(f, "layout limit: {k:?}"),
             LayoutError::Internal(site) => write!(f, "layout failed at {site}"),
             LayoutError::NoFace => f.write_str("no font face"),
+            LayoutError::Cancelled => f.write_str("layout cancelled"),
             LayoutError::Unported(fr, what) => write!(f, "not ported yet ({fr:?}): {what}"),
         }
     }

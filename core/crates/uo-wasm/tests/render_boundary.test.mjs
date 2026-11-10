@@ -12,10 +12,11 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bindRender } from '../js/render.mjs';
+import { writeImports } from '../js/write.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/wasm32-unknown-unknown/wasm/uo_wasm.wasm');
-const { instance } = await WebAssembly.instantiate(readFileSync(wasmPath));
+const { instance } = await WebAssembly.instantiate(readFileSync(wasmPath), writeImports().imports);
 const w = instance.exports;
 const has = typeof w.uo_render_fixture === 'function';
 const skip = has ? false : 'this build has no render-fixture exports';

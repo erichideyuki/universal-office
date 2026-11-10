@@ -7,7 +7,9 @@
 //! `a:pattFill` (`dkUpDiag`); 2 a shape with the rectangular gradient; 3 a shape with a tiled
 //! picture fill (image 0, 64 x 48 px); 4 an image with a picture look (ellipse, outer shadow, glow);
 //! 5 a shape with effects (glow) and a picture tile; 6 a plain axial gradient shape. Page 0 has a
-//! gradient page fill, page 1 a pattern page fill.
+//! gradient page fill, page 1 a pattern page fill. `uo_render_fixture(2)` is the picture-layer page: 0 an image with the
+//! whole look, 1 an image with an outer shadow and a glow, 2 a shape with an inner shadow and soft edges, 3 a shape with an
+//! outer shadow and a reflection.
 
 use crate::render::{UoRenderView, adopt_view};
 use std::sync::Arc;
@@ -235,17 +237,147 @@ fn rich() -> Option<RenderView> {
     Some(RenderView::new(7, res, vec![page0, page1]))
 }
 
-/// The fixture view `kind` (0 tiny, 1 rich) as a native value.
+/// Kind 2, the picture-layer fixture (frontier D): page 0 — 0 an image with the whole look (rounded rectangle, dashed
+/// outline, inner shadow, soft edges, bevel, reflection, alpha, duotone, colour change; the image has Word colour
+/// effects); 1 an image with an ellipse, an outer shadow that rotates with the shape and a glow; 2 a shape with an inner
+/// shadow and soft edges over a fill; 3 a shape with an outer shadow and a reflection.
+fn pictures() -> Option<RenderView> {
+    let mut res = Resources::new();
+    let s = |res: &mut Resources, v: &str| res.symbols.intern_str(v);
+    let (color, red, blue, rect) = (s(&mut res, "202020")?, s(&mut res, "FF0000")?, s(&mut res, "0000FF")?, s(&mut res, "rect")?);
+    let png = s(&mut res, "png")?;
+    let img = res.add_image(ImageRes {
+        bytes: Arc::from(vec![0u8; 16]),
+        ext: png,
+        svg: None,
+        effects: Some(uo_drawingml::ImageEffects { gray: true, gain: None, bright: Some(0.1), floor: false, bi_level: None }),
+        width_twips: 960.0,
+        height_twips: 720.0,
+        natural_px: Some((64, 48)),
+    })?;
+    let shadow = |kind, rot_with_shape, color| t::PicShadow {
+        kind,
+        color,
+        alpha: 0.5,
+        blur_pt: 4.0,
+        dist_pt: 3.0,
+        dir_deg: 45.0,
+        sx: OptF64::NONE,
+        sy: OptF64::NONE,
+        kx_deg: OptF64::NONE,
+        ky_deg: OptF64::NONE,
+        algn: None,
+        rot_with_shape,
+    };
+    let reflection = |algn| t::PicReflection {
+        blur_pt: 1.0,
+        st_a: 0.5,
+        st_pos: 0.0,
+        end_a: 0.0,
+        end_pos: 0.9,
+        dist_pt: 1.0,
+        dir_deg: 90.0,
+        sy: -100_000.0,
+        algn,
+        rot_with_shape: false,
+    };
+    let round_rect = s(&mut res, "roundRect")?;
+    let ellipse = s(&mut res, "ellipse")?;
+    let dash = s(&mut res, "dash")?;
+    let (relaxed, three_pt, top, warm) =
+        (s(&mut res, "relaxedInset")?, s(&mut res, "threePt")?, s(&mut res, "t")?, s(&mut res, "warmMatte")?);
+    let geom = |g| t::ShapeGeom {
+        geom: g,
+        adj: None,
+        cust: None,
+        flip_h: false,
+        flip_v: false,
+        rot: OptF64::NONE,
+        fill_alpha: OptF64::NONE,
+        line_alpha: OptF64::NONE,
+        eval: t::GeomEval::Compact,
+    };
+    let mut list = ItemList::new();
+    list.push_plain(t::Item::Image(Box::new(t::ImageItem {
+        x: 1000.0,
+        y: 1000.0,
+        w: 2400.0,
+        h: 1800.0,
+        image: img,
+        crop: None,
+        rot: OptF64::some(15.0),
+        flip_h: false,
+        flip_v: true,
+        pic: Some(Box::new(t::PictureLook {
+            geom: Some(t::PresetSpec { prst: round_rect, adj: None }),
+            line: Some(t::PicLine { color: red, alpha: 0.8, width_pt: 2.0, dash: Some(dash), cmpd: None, cap: None, join: None }),
+            shadow: Some(shadow(t::ShadowKind::Inner, false, color)),
+            soft_edge_pt: OptF64::some(3.0),
+            bevel: Some(t::PicBevel {
+                w_pt: 4.0,
+                h_pt: 4.0,
+                prst: Some(relaxed),
+                rig: Some(three_pt),
+                dir: Some(top),
+                material: Some(warm),
+            }),
+            reflection: Some(reflection(None)),
+            alpha: OptF64::some(0.8),
+            duotone: Some([red, blue]),
+            clr_change: Some(t::ClrChange { from: blue, to: red, to_alpha: 0.5 }),
+            ..t::PictureLook::default()
+        })),
+    })));
+    list.push_plain(t::Item::Image(Box::new(t::ImageItem {
+        x: 4000.0,
+        y: 1000.0,
+        w: 2400.0,
+        h: 1800.0,
+        image: img,
+        crop: Some(t::Ltrb { l: 0.1, t: 0.0, r: 0.0, b: 0.2 }),
+        rot: OptF64::some(30.0),
+        flip_h: true,
+        flip_v: false,
+        pic: Some(Box::new(t::PictureLook {
+            geom: Some(t::PresetSpec { prst: ellipse, adj: None }),
+            shadow: Some(shadow(t::ShadowKind::Outer, true, color)),
+            glow: Some(t::PicGlow { color: red, alpha: 0.4, rad_pt: 5.0 }),
+            ..t::PictureLook::default()
+        })),
+    })));
+    let mut s2 = shape(1000.0, 4000.0, 2000.0, 1000.0, geom(rect));
+    s2.fill = Some(blue);
+    s2.fx = Some(t::ShapeFx {
+        shadow: Some(shadow(t::ShadowKind::Inner, false, color)),
+        soft_edge_pt: OptF64::some(2.0),
+        ..t::ShapeFx::default()
+    });
+    list.push_plain(t::Item::Shape(Box::new(s2)));
+    let mut s3 = shape(4000.0, 4000.0, 2000.0, 1000.0, geom(rect));
+    s3.fill = Some(red);
+    s3.stroke = Some(t::Stroke { color, width_pt: 1.0, dash: None });
+    s3.fx = Some(t::ShapeFx {
+        shadow: Some(shadow(t::ShadowKind::Outer, false, color)),
+        reflection: Some(reflection(None)),
+        ..t::ShapeFx::default()
+    });
+    list.push_plain(t::Item::Shape(Box::new(s3)));
+    let page = Page { w: 12240.0, h: 15840.0, list, background: None, background_fill: None, background_show: false };
+    Some(RenderView::new(9, res, vec![page]))
+}
+
+/// The fixture view `kind` (0 tiny, 1 rich, 2 pictures) as a native value.
 #[must_use]
 pub fn fixture_view(kind: u32) -> Option<RenderView> {
     match kind {
         0 => tiny(),
         1 => rich(),
+        2 => pictures(),
         _ => None,
     }
 }
 
-/// The fixture view `kind` (0 tiny, 1 rich); null for another kind.
+/// The fixture view `kind` (0 tiny, 1 rich, 2 pictures); null for another kind.
 #[unsafe(no_mangle)]
 pub extern "C" fn uo_render_fixture(kind: u32) -> *mut UoRenderView {
     fixture_view(kind).map_or(std::ptr::null_mut(), adopt_view)

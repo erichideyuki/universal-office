@@ -185,3 +185,89 @@ pub fn dash(name: &[u16]) -> Option<&'static [f64]> {
         return None;
     })
 }
+
+// ───────────────────── the look → uo-drawingml spec conversions (frontier D, decision D-1) ─────────────────────
+// They lived as private copies in uo-pdf (`shadow_spec`, the `BevelSpec` and `PictureAdjust` builds); the canvas
+// exports of uo-wasm need the same, so they are here and uo-pdf calls them. Same arithmetic, moved verbatim.
+
+/// The `ShadowSpec` the shadow functions take, from the look's shadow (`dir_deg` is the caller's: the
+/// rotation rule differs per painter).
+#[must_use]
+pub fn shadow_spec(res: &crate::resources::Resources, s: &crate::types::PicShadow, dir_deg: f64) -> uo_drawingml::ShadowSpec {
+    let algn = s.algn.map(|a| String::from_utf16_lossy(res.sym(a)));
+    uo_drawingml::ShadowSpec {
+        blur_pt: s.blur_pt,
+        dist_pt: s.dist_pt,
+        dir_deg,
+        sx: s.sx.get(),
+        sy: s.sy.get(),
+        kx_deg: s.kx_deg.get(),
+        ky_deg: s.ky_deg.get(),
+        algn: uo_drawingml::Align::from_attr(algn.as_deref()),
+    }
+}
+
+/// The owned strings of a bevel spec (`prst`, `rig`, `dir`, `material`) and its size in pixels.
+#[derive(Clone, Debug)]
+pub struct BevelParts {
+    w: f64,
+    h: f64,
+    prst: Option<String>,
+    rig: Option<String>,
+    dir: Option<String>,
+    material: Option<String>,
+}
+
+impl BevelParts {
+    /// `{ w: wPt * ppt, h: hPt * ppt, prst, rig, dir, material, word: true }` of the TS.
+    #[must_use]
+    pub fn of(res: &crate::resources::Resources, bv: &crate::types::PicBevel, ppt: f64) -> BevelParts {
+        let s = |v: Option<crate::Sym>| v.map(|s| String::from_utf16_lossy(res.sym(s)));
+        BevelParts { w: bv.w_pt * ppt, h: bv.h_pt * ppt, prst: s(bv.prst), rig: s(bv.rig), dir: s(bv.dir), material: s(bv.material) }
+    }
+
+    /// The borrowed spec.
+    #[must_use]
+    pub fn spec(&self) -> uo_drawingml::BevelSpec<'_> {
+        uo_drawingml::BevelSpec {
+            w: self.w,
+            h: self.h,
+            prst: self.prst.as_deref(),
+            rig: self.rig.as_deref(),
+            dir: self.dir.as_deref(),
+            material: self.material.as_deref(),
+            word: true,
+        }
+    }
+}
+
+/// The owned strings of a `PictureAdjust` (`alpha`, `duotone`, `clrChange`).
+#[derive(Clone, Debug)]
+pub struct AdjustParts {
+    alpha: Option<f64>,
+    duotone: Option<(String, String)>,
+    clr: Option<(String, String, f64)>,
+}
+
+impl AdjustParts {
+    /// The adjustments of a look.
+    #[must_use]
+    pub fn of(res: &crate::resources::Resources, pic: &PictureLook) -> AdjustParts {
+        let syms = &res.symbols;
+        AdjustParts {
+            alpha: pic.alpha.get(),
+            duotone: pic.duotone.map(|[a, b]| (String::from_utf16_lossy(syms.get(a)), String::from_utf16_lossy(syms.get(b)))),
+            clr: pic.clr_change.map(|c| (String::from_utf16_lossy(syms.get(c.from)), String::from_utf16_lossy(syms.get(c.to)), c.to_alpha)),
+        }
+    }
+
+    /// The borrowed adjustments.
+    #[must_use]
+    pub fn spec(&self) -> uo_drawingml::PictureAdjust<'_> {
+        uo_drawingml::PictureAdjust {
+            alpha: self.alpha,
+            duotone: self.duotone.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+            clr_change: self.clr.as_ref().map(|(f, t, ta)| uo_drawingml::ClrChange { from: f.as_str(), to: t.as_str(), to_alpha: *ta }),
+        }
+    }
+}

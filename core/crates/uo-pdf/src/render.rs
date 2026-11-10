@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustc_hash::FxHashMap;
-use uo_drawingml::{ClrChange, PictureAdjust, apply_image_effects, apply_picture_adjust, effect_decode};
+use uo_drawingml::{apply_image_effects, apply_picture_adjust, effect_decode};
 use uo_fonts::{Face, OutlineCmd};
 use uo_image::{ImageLimits, JpegInfo, Rgba, decode_raster, image_pixel_size, jpeg_info};
 use uo_jsnum::conv::{js_index, truthy};
@@ -31,6 +31,7 @@ use uo_render::paint::fill::{
     GradBox, blip_tiles, gradient_geometry, gradient_samples, is_rect_gradient, pattern_raster, rect_gradient_raster,
 };
 use uo_render::paint::page_fill::{gradient_tile_rgba, page_fill_tile_tw, pattern_rgba};
+use uo_render::paint::picture::AdjustParts;
 use uo_render::paint::text_fx::{RunView, dash_pattern, fx_layers, grad_of, run_box};
 use uo_render::paint::{GradGeom, PaintLimits};
 use uo_render::types::{
@@ -486,16 +487,7 @@ impl<'r> Painter<'r> {
             apply_image_effects(&mut r.data, fx);
         }
         if let Some(pic) = &it.pic {
-            let syms = &self.res.symbols;
-            let duotone = pic.duotone.map(|[a, b]| (String::from_utf16_lossy(syms.get(a)), String::from_utf16_lossy(syms.get(b))));
-            let clr =
-                pic.clr_change.map(|c| (String::from_utf16_lossy(syms.get(c.from)), String::from_utf16_lossy(syms.get(c.to)), c.to_alpha));
-            let adj = PictureAdjust {
-                alpha: pic.alpha.get(),
-                duotone: duotone.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
-                clr_change: clr.as_ref().map(|(f, t, ta)| ClrChange { from: f.as_str(), to: t.as_str(), to_alpha: *ta }),
-            };
-            apply_picture_adjust(&mut r.data, &adj);
+            apply_picture_adjust(&mut r.data, &AdjustParts::of(self.res, pic).spec());
         }
         Some(r)
     }

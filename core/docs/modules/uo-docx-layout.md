@@ -3366,3 +3366,92 @@ Owned: `section.rs`, `annotations.rs`, `tests/g8.rs`, `tests/captures/g8/`, `too
 
 Parity rounds: 0 G8 mismatches. Rework: `--gen f8` needs `--f8` too (the first capture crashed in the harness);
 `f8_parity` did not tolerate the g8 facets (fixed, G8-8).
+
+## Stage 3 — G4 (cancellation inside the layout)
+
+### Scope
+
+Bindings gate item G4 (uo-bindings.md): a caller can stop a running layout. Before, the flag was read before and after the
+layout only; the work budget bounded the time. No TS source: this is an addition outside the frozen semantics; with both
+new fields `None` the output is unchanged (parity runs and the wasm digest below).
+
+### API shape
+
+- `LayoutOptions.cancel: Option<Arc<AtomicBool>>`: raised from any thread (the shape of uo-pdf `PdfOptions.cancel` and uo-ffi
+  `UoCancel`); a Relaxed load at every `Budget::charge`.
+- `LayoutOptions.cancel_poll: Option<fn() -> bool>`: for hosts that cannot share a flag (wasm); called at the first charge and
+  then every `CANCEL_POLL_UNITS` (4,096) work units; `true` cancels.
+- `LayoutError::Cancelled` (Display "layout cancelled"); `Budget::with_cancel(cancel, poll)`, set in `layout_document`
+  (`engine/mod.rs`, the one place a `Budget` is built). The state is latched in the budget.
+- Every work charge goes through `Budget::charge` (38 call sites), so no engine code changed; no layout code swallows the
+  `Err`, so `Cancelled` propagates like `Limit(Work)`.
+
+### Tests
+
+- `options.rs` unit tests (4): raised flag latches, `Cancelled` wins over an exhausted budget, the poll cadence, no cancel = no error.
+- `tests/g4_cancel.rs` (5 + 1 opt-in; 1.8 s release, 16.6 s debug: debug uses a 150-paragraph document and a small warm-up): flag raised before the call; raised mid-layout at 10/40/120 ms on a 650-paragraph
+  document returns in 0.16-1.2 ms (bound 250 ms release, 2 s debug); read and derive run outside the timed and the leak-checked regions (`prepared` / `layout_prepared`); the poll cancels at exactly the k-th poll (201 polls in a
+  120-paragraph layout); M1 after a cancelled layout 0 B left (poll: 180 MB allocated, 4.4 MB peak; flag at 5 ms: 8.1 MB
+  allocated, 0.68 MB peak, asserted > 100 kB so the flag cannot have gone up before the work); a layout after a cancelled one, same provider and registry, equals a fresh one (pages/items/lines per page and the whole P1 canonical stream); `bench_cancel_check_cost` (`UO_G4_BENCH`).
+- Through the bindings (numbers of the fix round; they vary run to run, e.g. C ABI 0.7-1.4 ms, .NET 0.6-1.5 ms): uo-ffi `tests/cancel_layout.rs` (code 10 / stage none, 1.4 and 1.2 ms, bound 50 ms release, M1 66 MB allocated, 2.7 MB peak,
+  0 B left), `tests/write_cancel.test.mjs` (Node, 7; 53 polls in the largest f8 fixture; the state-after-cancel and M1 cases cancel at the k = n/2-th poll, M1 with the counting build; a nested `layout()` from `cancelCheck` throws instead of re-entering), uo-wasm `write_native` `the_host_poll_cancels_the_layout_with_code_10` (bit 9: yes = code 10, no = same bytes, no bit = never asked), .NET
+  `A_token_cancelled_during_the_layout_stops_it_promptly` (0.6-1.5 ms) and 5 mid-layout cancellations in
+  `Conversions_leave_nothing_ok_failed_or_cancelled` (0 B left; whole project 14/14).
+- Unchanged and green: layout_parity 5, f8_parity 2, g8 4, f7a 7, uo-ffi server_parity 3 and ffi_memory 4, uo-wasm write_native 6,
+  write_api and write_section (Node).
+
+### Cost (the check on a big document; interleaved A none / B flag / C poll, release, a noisy machine)
+
+| document | A min / median | B flag (min / median) | C poll (min / median) | polls, ms per poll |
+|---|---|---|---|---|
+| pages100 (100 pages, 15 runs) | 527.1 / 881.4 ms | -2.9% / -0.3% | +17.5% (one slow run) / -0.3% | 395, 1.3 ms |
+| pages500 (500 pages, 5 runs) | 4,450.2 / 4,483.5 ms | +0.4% / -0.1% | -0.1% / +1.5% | 1,980, 2.3 ms |
+
+The differences are inside the run-to-run noise of this machine (other agents compiling): the check costs nothing measurable,
+so `CANCEL_POLL_UNITS` = 4,096 stays (1.3-2.3 ms per poll native; the +17.5% min of C on pages100 is one outlier, its median is -0.3% and pages500 shows -0.1%/+1.5%). wasm (`tools/size/wasm-ab.mjs --runs 21`, base = HEAD module):
+digest `cca8d8794ec4bfe0` equal on both, layout min 366.1 -> 367.9 ms (+0.5%), total 498.7 -> 500.1 ms (+0.3%). Module size 3,948,899 ->
+3,966,599 B raw (+17,700), 1,401,461 -> 1,409,093 B gzip -9 (+7,632); the base is HEAD and the working tree also holds the
+other frontiers' uncommitted changes (uo-render, uo-pdf, wasm render), so this delta is not attributable to G4 alone.
+
+### Declarations
+
+- **G4-1** `cancel` is checked at every charge (a Relaxed load plus an `Option` test), not on a stride; the cost above is noise.
+- **G4-2** Cancellation is checked before the work limit (`Cancelled` wins over `Limit(Work)`), it latches, and `left` is not zeroed.
+- **G4-3** uo-ffi maps `LayoutError::Cancelled` to `JobError::Cancelled`: code 10, stage none, as a PDF cancel (also an explicit arm in `code()`).
+- **G4-4** The `.doc` conversion, the docx reader and the wasm PDF are not cancellable inside (bounded by their limits; the wasm PDF stops
+  through `pdf_chunk` answering non-zero, code 13).
+- **G4-5** uo-docx's `LayoutOracle` error kind is not extended: `to_oracle_error` maps `Cancelled` to Internal (the oracle never passes a cancel).
+- **G4-6** `CANCEL_POLL_UNITS` = 4,096; the latency bound in the tests is 250 ms release (the measured values are about 1 ms).
+- **G4-W** wasm: opt-in host poll. `layout_flags` bit 9 makes the layout call `uo_host.layout_poll() -> i32` (non-zero cancels, code 10);
+  JS `LayoutOptions.cancelCheck` (typically a deadline); a throwing callback counts as cancel (an exception must not unwind through the
+  wasm frames). Not chosen: a Worker with `terminate()` (host side, still possible), a clock import, a `SharedArrayBuffer` flag
+  (needs cross-origin isolation, outside the Safari 15 baseline). **New import**: every loader must build its imports with
+  `writeImports()`; a module built before G4 ignores the extra import.
+- Native stand-in: `uo_wasm::write::host::set_layout_poll` (thread-local, as `set_pdf_sink`); `write_native` tests it. JS: `layout()` refuses a nested call (`host.busy`).
+- The first poll happens at the first charge, so even a tiny layout polls once.
+
+### Shared files edited
+
+uo-ffi `src/pipeline.rs`, `src/server.rs`; uo-wasm `src/write.rs`, `js/write.mjs`, `js/write.d.ts` (minimal: the import, the host
+slot, the flag bit, the option; the files also carry the other frontiers' uncommitted edits); `.github/workflows/rust-core.yml`
+(`write_cancel.test.mjs`); `dotnet/UniversalOffice.Docx/DocxLayout/DocxPdfConverter.cs` (doc comment),
+`dotnet/UniversalOffice.Docx.Tests/FacadeTests.cs`; uo-bindings.md. Owned: `tests/g4_cancel.rs`, uo-ffi `tests/cancel_layout.rs`,
+uo-wasm `tests/write_cancel.test.mjs`.
+
+### Not done
+
+- `LayoutErrorKind::Cancelled` in the uo-docx oracle (milestone 2); cancellation of the wasm PDF and the reader.
+- The cross-binary bench (`bench_memory` HEAD vs new); the in-process A/B above is the measure.
+- clippy `-D warnings` is clean natively and for wasm32 on uo-docx-layout, uo-ffi and uo-wasm (`--all-targets --all-features`).
+  `rustfmt --check` shows diffs that were there before (`engine/mod.rs` line 1121, an import order in `write.rs`), none in the G4 lines.
+
+### Process metrics
+
+SKILL.md assigns every role of uo-docx-layout to Opus; the maintainer asked for a Sonnet implementation in this run.
+
+| Stage | Agent (model) | Notes |
+|---|---|---|
+| plan (measured baselines, steps) | Opus | one round |
+| implementation: layout, ffi, wasm/JS, .NET, tests, measurements, records | Sonnet 5.5 (maintainer's request) | two sessions on 2026-11-09: the first attempt, then a re-verification of the same working tree; wall time not recorded by the agents (the first release build alone 2.5 min, the tests seconds) |
+| review | reviewer | one round: 1 major (FacadeTests.cs mixed encodings, now UTF-8 again), 6 minor |
+| fix round 1 | Sonnet 5.5 | one session: UTF-8 restore, docs, test split (read/derive outside), debug 45 s -> 16.6 s, canon-stream comparison, ffi bound 250 -> 50 ms, wasm k-th-poll cases, native host-poll test, JS re-entry guard |

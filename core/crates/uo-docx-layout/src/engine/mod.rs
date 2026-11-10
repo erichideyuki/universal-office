@@ -1107,7 +1107,7 @@ pub fn layout_document(ldoc: &LDoc<'_>, opts0: &LayoutOptions, provider: &dyn Fo
         resolver: FaceResolverCache::new(),
         res: Resources::new(),
         images: objects::ImageTable::new(),
-        budget: Budget::new(&opts.limits, &work_input(ldoc)),
+        budget: Budget::new(&opts.limits, &work_input(ldoc)).with_cancel(opts.cancel.clone(), opts.cancel_poll),
         line_seq: 0,
         fields: opts.collect_fields.as_ref().map(|_| IndexMap::new()),
     };

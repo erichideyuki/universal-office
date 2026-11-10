@@ -58,6 +58,7 @@ with the editor — no need for this package too.
 | `no<item>` | boolean | Removes one control: `nonav`, `nocounter`, `nooutline`, `nothumbnails`, `nocomments`, `nozoom`, `noview`, `nodownload`, `nodownloadpdf` (the Print button then prints directly, with no Save as PDF option), `noprint`, `nofullscreen`, `noprogress`. |
 | `lang` | `en` · `pt` · `es` | UI language (any region: `es-MX`, `es-419`… → Spanish). Without it: the first of Spanish/Portuguese/English the browser prefers (`es-*` → Spanish, `pt-*` → Portuguese), otherwise English. |
 | `theme` | `auto` (default) · `light` · `dark` | Light or dark UI. `auto` — or no attribute — follows the CSS `color-scheme` the element inherits from the page (see [Light and dark](#light-and-dark)); `light`/`dark` force it. |
+| `engine` | `ts` (default) · `rust` | Layout and painting engine. `rust` is the Rust/WebAssembly engine (preview until 0.10: same pages, text layer and PDF, checked against `ts`); it loads `chunks/uo-write.wasm` on first use and needs `'wasm-unsafe-eval'` in a strict CSP (see [Content Security Policy](#content-security-policy)). Any other value is `ts`. A viewer without `engine="rust"` never fetches the `.wasm`. Changing it reloads the open document. Not yet in `rust`: plugin inline renderers (`udv-inline-click`), see the CHANGELOG. |
 
 ## Methods
 
@@ -71,6 +72,7 @@ with the editor — no need for this package too.
 | `getHeadings()` · `goToHeading(i)` | Outline: `{ level, text, page }[]`. |
 | `getComments()` · `selectComment(id)` | Comments: `{ id, author, text, page }[]`. |
 | `exportPdf(): Uint8Array` | PDF of the print layout. |
+| `UniversalDocumentViewerElement.configureEngine({ wasm, js, engine })` | Static. Where `engine="rust"` gets its module: `wasm` is the `.wasm` (bytes, URL, `Response`), `js` the wasm2js build, `engine` `'auto'` (default) · `'wasm'` · `'js'`. Without it: `chunks/uo-write.wasm` next to the engine's code. There is one module per page, so the first load wins; calls after it have no effect. |
 | `effectiveTheme` | `'light'` · `'dark'` — the UI theme in effect (getter). |
 | `print()` · `download()` · `downloadPdf()` · `toggleFullscreen()` | Same as the control-bar buttons: Download saves the original file; Print opens a menu with **Print…** and **Save as PDF** (`downloadPdf()`, the PDF of the print layout). |
 
@@ -196,6 +198,26 @@ universal-document-viewer {
 }
 universal-document-viewer::part(button-download) { display: none; }
 ```
+
+## Content Security Policy
+
+The default engine (`ts`) is plain JavaScript and needs nothing special. With
+`engine="rust"` the engine is WebAssembly, so a page whose CSP restricts
+`script-src` must allow compiling it:
+
+```http
+Content-Security-Policy: script-src 'self' 'wasm-unsafe-eval'
+```
+
+`'wasm-unsafe-eval'` only allows compiling WebAssembly — `eval()` and
+`new Function()` stay blocked. It is supported from Chrome/Edge 97, Firefox 102
+and Safari/iOS 16.0; **Safari 15 does not know it**, so there a strict policy
+needs `'unsafe-eval'` instead. Hosts that cannot allow either keep the default
+`ts` engine, or give the Rust engine its plain-JavaScript build (the same
+module compiled to JS, 4–8 times slower and about 1.6 MB gzipped; not shipped in
+the package) with `UniversalDocumentViewerElement.configureEngine({ js: '/uo-write.js' })`.
+With `engine="auto"` (the default of `configureEngine`) the engine falls back to
+that build when the page may not compile WebAssembly.
 
 ## Fonts
 

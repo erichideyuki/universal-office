@@ -30,6 +30,9 @@
 //!   byte ccw · `Z` none), all `f64`.
 //! - `uo_render_colored_mask`: RGBA.
 //! - `uo_render_dash`: `n u32`, then `n x f64`.
+//! - the picture-layer masks (frontier D, see the section at the end of the file): a mask is `w * h` `f32` LE; a layer is
+//!   `w * h * 4` RGBA bytes; `uo_render_picture_polys` is `n u32`, per polygon `m u32` and `m x f64`;
+//!   `uo_render_reflection_alphas` is `rows x f64`.
 
 use std::sync::Arc;
 use uo_codec::Limits;
@@ -538,4 +541,294 @@ pub unsafe extern "C" fn uo_render_dash(name_ptr: *mut u8, name_len: usize) -> *
         }
         None => none(),
     }
+}
+
+// ───────────────────── the picture-layer masks (frontier D): canvas-picture.ts over the drawingml functions ─────────────────────
+//
+// Masks travel as `w * h` little-endian `f32` (coverage 0..1); RGBA layers as `w * h * 4` bytes. The item-addressed exports read
+// the look of the item (an image's `pic`, or a shape's effects); the generic ones (`inner_shadow`, `glow`, `soft_edge`, `blur`)
+// take the parameters. Polygons: `n u32`, then per polygon `m u32` (numbers) and `m` x `f64`. `morph` (unused by the canvas) and
+// `presetOutline` (`picture_subs` / `picture_polys` cover it) are not exported. A buffer whose length is not what `w`, `h` say is
+// status 5; an item without what the export reads is status 7.
+
+use uo_drawingml::BoxF;
+
+/// A mask from an input buffer (consumed): `None` when the length is not `w * h * 4`.
+///
+/// # Safety
+/// As [`take_bytes`].
+unsafe fn mask_in(ptr: *mut u8, len: usize, w: u32, h: u32) -> Option<Mask> {
+    // SAFETY: the caller guarantees the buffer; it is consumed here.
+    let bytes = unsafe { take_bytes(ptr, len) };
+    if bytes.len() % 4 != 0 {
+        return None;
+    }
+    let a: Vec<f32> = bytes.chunks_exact(4).filter_map(|c| <[u8; 4]>::try_from(c).ok().map(f32::from_le_bytes)).collect();
+    Mask::from_vec(w, h, a).ok()
+}
+
+fn mask_bytes(m: &Mask) -> Vec<u8> {
+    let mut v = Vec::new();
+    v.reserve_exact(m.data().len().saturating_mul(4));
+    for a in m.data() {
+        v.extend_from_slice(&a.to_le_bytes());
+    }
+    v
+}
+
+fn mask_result(r: Result<Mask, ViewError>) -> *mut UoBuf {
+    match r {
+        Ok(m) => buf(OK, mask_bytes(&m)),
+        Err(e) => fail(&e),
+    }
+}
+
+/// `flattenPath(shapeSubs(...), [ppt, 0, 0, ppt, ox, oy], 0.35)` of an image: the polygons.
+///
+/// # Safety
+/// `view` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_render_picture_polys(
+    view: *const UoRenderView,
+    page: usize,
+    item: usize,
+    ppt: f64,
+    ox: f64,
+    oy: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    match v.picture_polys(page, item, ppt, ox, oy) {
+        Ok(polys) => {
+            let mut o = Out::default();
+            o.u32(polys.len());
+            for p in polys.iter() {
+                o.u32(p.len());
+                for &n in p {
+                    o.f64(n);
+                }
+            }
+            buf(OK, o.0)
+        }
+        Err(e) => fail(&e),
+    }
+}
+
+/// `fillPolygons(newMask(w, h), polys)` of the image's polygons: the silhouette mask.
+///
+/// # Safety
+/// `view` must be null or a live handle.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn uo_render_picture_silhouette(
+    view: *const UoRenderView,
+    page: usize,
+    item: usize,
+    ppt: f64,
+    ox: f64,
+    oy: f64,
+    w: u32,
+    h: u32,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    mask_result(v.picture_silhouette(page, item, ppt, ox, oy, w, h))
+}
+
+/// `shadeBevel(rgba, silhouette, bevel)` over the layer's pixels (`rgba`, consumed): the shaded RGBA.
+///
+/// # Safety
+/// `view` must be null or a live handle; `rgba_ptr`/`rgba_len` a buffer from `uo_alloc_bytes` that JS filled.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn uo_render_picture_bevel(
+    view: *const UoRenderView,
+    page: usize,
+    item: usize,
+    ppt: f64,
+    ox: f64,
+    oy: f64,
+    w: u32,
+    h: u32,
+    rgba_ptr: *mut u8,
+    rgba_len: usize,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; it is consumed even when the view is null.
+    let mut rgba = unsafe { take_bytes(rgba_ptr, rgba_len) };
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    match v.picture_bevel(page, item, ppt, ox, oy, w, h, &mut rgba) {
+        Ok(()) => buf(OK, rgba),
+        Err(e) => fail(&e),
+    }
+}
+
+/// `applyImageEffects` + `applyPictureAdjust` over the bitmap's pixels (`rgba`, consumed): the adjusted RGBA, or status 1
+/// when nothing applies (the TS uses the bitmap itself).
+///
+/// # Safety
+/// `view` must be null or a live handle; `rgba_ptr`/`rgba_len` a buffer from `uo_alloc_bytes` that JS filled.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_render_picture_adjust(
+    view: *const UoRenderView,
+    page: usize,
+    item: usize,
+    rgba_ptr: *mut u8,
+    rgba_len: usize,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; it is consumed even when the view is null.
+    let mut rgba = unsafe { take_bytes(rgba_ptr, rgba_len) };
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    match v.picture_adjust(page, item, &mut rgba) {
+        Ok(true) => buf(OK, rgba),
+        Ok(false) => none(),
+        Err(e) => fail(&e),
+    }
+}
+
+/// `outerShadowMask(sil, box, spec, ppt)` with the item's shadow; `sil` is `w * h` `f32` (consumed).
+///
+/// # Safety
+/// `view` must be null or a live handle; `sil_ptr`/`sil_len` a buffer from `uo_alloc_bytes` that JS filled.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn uo_render_outer_shadow(
+    view: *const UoRenderView,
+    page: usize,
+    item: usize,
+    sil_ptr: *mut u8,
+    sil_len: usize,
+    w: u32,
+    h: u32,
+    bx: f64,
+    by: f64,
+    bw: f64,
+    bh: f64,
+    dir_deg: f64,
+    ppt: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; it is consumed even when the view is null.
+    let sil = unsafe { mask_in(sil_ptr, sil_len, w, h) };
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(sil) = sil else { return buf(5, Vec::new()) };
+    mask_result(v.outer_shadow(page, item, &sil, BoxF { x: bx, y: by, w: bw, h: bh }, dir_deg, ppt))
+}
+
+/// The alpha of each of `rows` rows of the item's reflection: `rows` x `f64`.
+///
+/// # Safety
+/// `view` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_render_reflection_alphas(
+    view: *const UoRenderView,
+    page: usize,
+    item: usize,
+    top: f64,
+    h_ppt: f64,
+    rows: u32,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    match v.reflection_alphas(page, item, top, h_ppt, rows) {
+        Ok(a) => {
+            let mut o = Out::default();
+            for x in a {
+                o.f64(x);
+            }
+            buf(OK, o.0)
+        }
+        Err(e) => fail(&e),
+    }
+}
+
+/// `innerShadowMask(sil, { blurPt, distPt, dirDeg }, ppt)`; `sil` is `w * h` `f32` (consumed).
+///
+/// # Safety
+/// `view` must be null or a live handle; `sil_ptr`/`sil_len` a buffer from `uo_alloc_bytes` that JS filled.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn uo_render_inner_shadow(
+    view: *const UoRenderView,
+    sil_ptr: *mut u8,
+    sil_len: usize,
+    w: u32,
+    h: u32,
+    blur_pt: f64,
+    dist_pt: f64,
+    dir_deg: f64,
+    ppt: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; it is consumed even when the view is null.
+    let sil = unsafe { mask_in(sil_ptr, sil_len, w, h) };
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(sil) = sil else { return buf(5, Vec::new()) };
+    mask_result(v.inner_shadow(&sil, blur_pt, dist_pt, dir_deg, ppt))
+}
+
+/// `glowMask(sil, radPt, ppt)`; `sil` is `w * h` `f32` (consumed).
+///
+/// # Safety
+/// `view` must be null or a live handle; `sil_ptr`/`sil_len` a buffer from `uo_alloc_bytes` that JS filled.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_render_glow(
+    view: *const UoRenderView,
+    sil_ptr: *mut u8,
+    sil_len: usize,
+    w: u32,
+    h: u32,
+    rad_pt: f64,
+    ppt: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; it is consumed even when the view is null.
+    let sil = unsafe { mask_in(sil_ptr, sil_len, w, h) };
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(sil) = sil else { return buf(5, Vec::new()) };
+    mask_result(v.glow(&sil, rad_pt, ppt))
+}
+
+/// `softEdgeMask(sil, radPt, ppt)`; `sil` is `w * h` `f32` (consumed).
+///
+/// # Safety
+/// `view` must be null or a live handle; `sil_ptr`/`sil_len` a buffer from `uo_alloc_bytes` that JS filled.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_render_soft_edge(
+    view: *const UoRenderView,
+    sil_ptr: *mut u8,
+    sil_len: usize,
+    w: u32,
+    h: u32,
+    rad_pt: f64,
+    ppt: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; it is consumed even when the view is null.
+    let sil = unsafe { mask_in(sil_ptr, sil_len, w, h) };
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(sil) = sil else { return buf(5, Vec::new()) };
+    mask_result(v.soft_edge(&sil, rad_pt, ppt))
+}
+
+/// `gaussianBlur(mask, sigma)`; `m` is `w * h` `f32` (consumed).
+///
+/// # Safety
+/// `view` must be null or a live handle; `m_ptr`/`m_len` a buffer from `uo_alloc_bytes` that JS filled.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_render_gaussian_blur(
+    view: *const UoRenderView,
+    m_ptr: *mut u8,
+    m_len: usize,
+    w: u32,
+    h: u32,
+    sigma: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; it is consumed even when the view is null.
+    let m = unsafe { mask_in(m_ptr, m_len, w, h) };
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(m) = m else { return buf(5, Vec::new()) };
+    mask_result(v.blur(&m, sigma))
 }

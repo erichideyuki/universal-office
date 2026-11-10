@@ -133,6 +133,9 @@ impl Converter {
             Arc::from(provider(&registry, policy).map_err(|_| JobError::Argument("font policy without a font source"))?);
         let hyphenation = hyphenation();
         let mut options = job.layout.clone();
+        if cancel.is_some() {
+            options.cancel = cancel.clone();
+        }
         if options.hyphenation_loaded.is_empty() {
             options.hyphenation_loaded = hyphenation.ids().into_iter().map(Box::<str>::from).collect::<IndexSet<_>>();
         }

@@ -54,7 +54,7 @@
  */
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -108,6 +108,15 @@ export const PRODUCTS = {
   'dictionary-es': { dir: 'shared/spell/packages/dictionary-es', project: 'write', kind: 'data', entry: 'shared/spell/src/dicts/es.ts', types: dictionaryDts('es') },
   converter: { dir: 'converter/packages/converter', project: 'converter', kind: 'library' },
 };
+
+/**
+ * O lado JS do motor Rust do viewer (`engine="rust"`): o alias que o viewer importa. FORA de INTERNAL de propósito: o laço
+ * das licenças lê `<pacote>/package.json` de cada INTERNAL e `core/crates/uo-wasm` não é um pacote; e os tipos do viewer
+ * declaram a superfície por `write/packages/viewer/src/write-engine.d.ts` (módulo ambiente), sem `paths`.
+ */
+const ENGINE = { '@universal-office/write-engine': 'core/crates/uo-wasm/js/viewer.ts' };
+/** O .wasm do motor (build `--features write --profile wasm`, SEM `count`), copiado para `chunks/uo-write.wasm` dos pacotes do viewer. */
+const WRITE_WASM = process.env.UO_WRITE_WASM ?? 'core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm';
 
 /** Pacotes internos → src (embutidos em todo bundle que os usa). */
 const INTERNAL = {
@@ -259,7 +268,7 @@ async function buildProduct(id) {
   const esbuild = req('esbuild');
 
   // 1. JS: tudo dentro, partes sob demanda (e as compartilhadas entre entradas) em chunks/
-  const alias = Object.fromEntries(Object.entries(INTERNAL).filter(([n]) => n !== src.name).map(([n, f]) => [n, p(f)]));
+  const alias = Object.fromEntries([...Object.entries(INTERNAL).filter(([n]) => n !== src.name), ...Object.entries(ENGINE)].map(([n, f]) => [n, p(f)]));
   const entryPoints = { index: path.join(pkgDir, 'src', 'index.ts'), ...Object.fromEntries(Object.entries(entries).map(([n, f]) => [n, p(f)])) };
   const built = await esbuild.build({
     metafile: true,
@@ -282,6 +291,18 @@ async function buildProduct(id) {
     if (own.length) throw new Error(`build-pkg: ${id}/${name}.js carrega código da entrada principal: ${own.map((f) => path.relative(ROOT, f)).join(', ')}`);
     const kb = (o) => (built.metafile.outputs[o].bytes / 1024).toFixed(0);
     console.log(`build-pkg: ${id}/${name}.js importa estaticamente ${closure.length - 1} chunk(s): ${closure.map((o) => `${path.posix.relative(path.relative(pkgDir, dist).replace(/\\/g, '/'), o)} (${kb(o)} KB)`).join(', ')}`);
+  }
+
+  // 1c. O .wasm do motor Rust (engine="rust") ao lado do chunk que o carrega: `chunks/uo-write.wasm`. O viewer sem o atributo
+  //     nunca o baixa. Sem o arquivo o pacote sai, mas engine="rust" não funciona nele (aviso).
+  if (Object.keys(built.metafile.outputs).some((o) => /(^|\/)chunks\/rust-engine-/.test(o))) {
+    const wasm = path.isAbsolute(WRITE_WASM) ? WRITE_WASM : p(WRITE_WASM);
+    if (existsSync(wasm)) {
+      copyFileSync(wasm, path.join(dist, 'chunks', 'uo-write.wasm'));
+      console.log(`build-pkg: ${id}/chunks/uo-write.wasm (${(statSync(wasm).size / 1024).toFixed(0)} KB)`);
+    } else {
+      console.warn(`build-pkg: AVISO: ${path.relative(ROOT, wasm)} não existe (cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm, ou UO_WRITE_WASM); engine="rust" não funciona em ${id}`);
+    }
   }
 
   // 2. Tipos num arquivo só por entrada

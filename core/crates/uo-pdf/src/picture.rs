@@ -13,7 +13,7 @@
 
 use std::f64::consts::PI;
 
-use uo_drawingml::{Affine, Align, BevelSpec, BoxF, Mask, Reflection, ShadowSpec};
+use uo_drawingml::{Affine, BoxF, Mask, Reflection};
 use uo_drawingml::{
     fill_polygons, flatten_path, gaussian_blur, glow_mask, inner_shadow_mask, morph, outer_shadow_mask, reflection_alpha, shade_bevel,
     soft_edge_mask,
@@ -21,9 +21,9 @@ use uo_drawingml::{
 use uo_jsnum::conv::{js_index, to_uint8, truthy};
 use uo_jsnum::math;
 use uo_render::Sym;
-use uo_render::paint::picture::{ChannelStore, Painter as Which, colored_mask, dash, effect_bounds, shape_subs};
+use uo_render::paint::picture::{BevelParts, ChannelStore, Painter as Which, colored_mask, dash, effect_bounds, shadow_spec, shape_subs};
 use uo_render::paint::{LimitKind, PaintError, PaintResult, hex_rgb};
-use uo_render::types::{ImageItem, PicShadow, PictureLook, PresetSpec, ShapeItem};
+use uo_render::types::{ImageItem, PictureLook, PresetSpec, ShapeItem};
 
 use crate::page::PageWriter;
 use crate::render::{Painter, T, f32_store};
@@ -50,21 +50,6 @@ fn at(p: &[f64], i: usize) -> f64 {
 /// `Uint8Array` store of `Math.round(x)`.
 fn round_u8(x: f64) -> u8 {
     to_uint8(math::round(x))
-}
-
-/// The ShadowSpec the effect functions take, from the look's shadow.
-fn shadow_spec(res: &uo_render::Resources, s: &PicShadow, dir_deg: f64) -> ShadowSpec {
-    let algn = s.algn.map(|a| String::from_utf16_lossy(res.sym(a)));
-    ShadowSpec {
-        blur_pt: s.blur_pt,
-        dist_pt: s.dist_pt,
-        dir_deg,
-        sx: s.sx.get(),
-        sy: s.sy.get(),
-        kx_deg: s.kx_deg.get(),
-        ky_deg: s.ky_deg.get(),
-        algn: Align::from_attr(algn.as_deref()),
-    }
 }
 
 /// The `(ppt, W, H, ox, oy)` of the effect layer: the box that the effects occupy at 200 ppp, the
@@ -478,20 +463,8 @@ impl Painter<'_> {
                     }
                 }
             }
-            let prst = bv.prst.map(|s| String::from_utf16_lossy(res.sym(s)));
-            let rig = bv.rig.map(|s| String::from_utf16_lossy(res.sym(s)));
-            let dir = bv.dir.map(|s| String::from_utf16_lossy(res.sym(s)));
-            let material = bv.material.map(|s| String::from_utf16_lossy(res.sym(s)));
-            let spec = BevelSpec {
-                w: bv.w_pt * ppt,
-                h: bv.h_pt * ppt,
-                prst: prst.as_deref(),
-                rig: rig.as_deref(),
-                dir: dir.as_deref(),
-                material: material.as_deref(),
-                word: true,
-            };
-            shade_bevel(&mut px, &shape_m, &spec, &lim)?;
+            let parts = BevelParts::of(res, &bv, ppt);
+            shade_bevel(&mut px, &shape_m, &parts.spec(), &lim)?;
             drop(shape_m);
             if let Some(img) = self.embed_rgba(page, &px, ww, hh) {
                 draw(page, img, &layer_m);

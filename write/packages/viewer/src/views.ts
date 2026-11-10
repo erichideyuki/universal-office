@@ -1,5 +1,16 @@
 import type { FullDocument } from '@universal-office/docx-core';
-import type { LayoutPage } from '@universal-office/docx-layout';
+
+/** O que `webPageHeight` lê de uma página (a `LayoutPage` do motor TS e a página decodificada do motor Rust). */
+export interface WebPage {
+  heightTw: number;
+  lines: readonly { ref: string; y: number; height: number }[];
+  items: readonly (
+    | { t: 'rect' | 'image' | 'shape'; y: number; h: number }
+    | { t: 'line'; y1: number; y2: number }
+    | { t: 'glyphs'; y: number }
+    | { t: 'path' | 'clip' | 'xform' }
+  )[];
+}
 
 /**
  * Modos de exibição do viewer (os do Word):
@@ -48,7 +59,7 @@ export function webDocument(full: FullDocument, widthTw: number): FullDocument {
  * Altura exibida da folha no Layout da Web: até o fim do CORPO (linhas do
  * documento e objetos junto delas) + margem — o resto da folha enorme é vazio.
  */
-export function webPageHeight(p: LayoutPage): number {
+export function webPageHeight(p: WebPage): number {
   let bottom = 0;
   for (const l of p.lines) if (/^b\d/.test(l.ref)) bottom = Math.max(bottom, l.y + l.height);
   // objetos que descem além da última linha (imagens/formas ancoradas)

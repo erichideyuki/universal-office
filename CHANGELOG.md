@@ -74,6 +74,30 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
 
 ## Unreleased
 
+### Document viewer: engine switch (`engine="rust"`)
+
+- New attribute `engine` on `<universal-document-viewer>` (and the viewer entry of
+  `@universal-office/write`): `ts` (default, the 0.9 engine, unchanged) or `rust`, the
+  Rust core compiled to WebAssembly. With `rust` the document is laid out by the Rust
+  engine, painted by the same canvas code from the pages it encodes, and the text
+  layer, find, comments, headings, link boxes, print and "Save as PDF" come from it. On
+  all 74 committed fixture documents (579 pages) both engines give the same page count and sizes,
+  headings, link boxes, text layer, find hits, canvas pixels (byte for byte) and
+  uncompressed PDF. Changing the attribute reloads the open document. The editor
+  `<universal-write>` is not part of this switch.
+- The `.wasm` ships as `chunks/uo-write.wasm` and is fetched on first use only: a viewer
+  without `engine="rust"` never requests it. `UniversalDocumentViewerElement.configureEngine({
+  wasm, js, engine })` points to another source (bytes, URL, `Response`, or the wasm2js
+  build); one module per page, so the first load wins.
+- A strict `script-src` needs `'wasm-unsafe-eval'` for `engine="rust"` (Chrome/Edge 97,
+  Firefox 102, Safari/iOS 16.0; Safari 15 needs `'unsafe-eval'`). Hosts that cannot allow
+  it keep `ts` or use the wasm2js build. See the viewer README, "Content Security Policy".
+- Not yet in `rust`: plugin inline renderers are not painted and `udv-inline-click` is not
+  fired; `getLinks()`, `getCustomInlines()` and `goToBookmark(name)` read the document with
+  the TS reader on first use; `udv-link-click` `detail.text` is the text of the link box, not
+  of the whole run when the run wraps. Closing or moving the element frees the engine's
+  memory; reconnecting reopens the document (the scroll position resets).
+
 ### Opening documents on slower machines
 
 - `<universal-write>` lays the document out far fewer times while it opens

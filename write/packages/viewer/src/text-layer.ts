@@ -1,5 +1,14 @@
-import type { Paragraph } from '@universal-office/docx-core';
-import type { LaidOutLine } from '@universal-office/docx-layout';
+/** O que a camada de texto lê de uma linha diagramada (o `LaidOutLine` do motor TS e a linha da seção Write do motor Rust). */
+export interface TextLine {
+  ref: string;
+  start: number;
+  end: number;
+  x: number;
+  y: number;
+  height: number;
+  width: number;
+  chars?: readonly { o: number; x: number; y?: number; w: number }[] | undefined;
+}
 
 /**
  * Camada de texto sobre o canvas — a MESMA serve à seleção (como a do PDF.js)
@@ -40,13 +49,13 @@ function blockFor(level: number | undefined): HTMLElement {
  * `para(ref)` resolve o parágrafo da linha (null: sem texto); `levelOf` dá o
  * nível de título; `detailed` = palavra por palavra (seleção).
  */
-export function fillTextLayer(
-  target: HTMLElement, lines: readonly LaidOutLine[], para: (ref: string) => Paragraph | null,
-  levelOf: (p: Paragraph) => number | undefined, pxPerTw: number, topTw: number, detailed: boolean,
+export function fillTextLayer<P extends { runs: readonly { text: string }[] }>(
+  target: HTMLElement, lines: readonly TextLine[], para: (ref: string) => P | null,
+  levelOf: (p: P) => number | undefined, pxPerTw: number, topTw: number, detailed: boolean,
 ): void {
-  const texts = new Map<Paragraph, string>();
+  const texts = new Map<P, string>();
   const frag = document.createDocumentFragment();
-  let block: HTMLElement | null = null, blockPara: Paragraph | null = null;
+  let block: HTMLElement | null = null, blockPara: P | null = null;
   for (const line of lines) {
     const p = para(line.ref);
     const chars = line.chars;

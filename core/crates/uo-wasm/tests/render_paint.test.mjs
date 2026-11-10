@@ -11,10 +11,11 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bindRender, fnv } from '../js/render.mjs';
+import { writeImports } from '../js/write.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/wasm32-unknown-unknown/wasm/uo_wasm.wasm');
-const { instance } = await WebAssembly.instantiate(readFileSync(wasmPath));
+const { instance } = await WebAssembly.instantiate(readFileSync(wasmPath), writeImports().imports);
 const w = instance.exports;
 const has = typeof w.uo_render_fixture === 'function';
 const skip = has ? false : 'this build has no render-fixture exports';
@@ -156,4 +157,70 @@ test('dash patterns', { skip }, () => {
   assert.deepEqual(r.dash('lgDashDot'), [8, 3, 1, 3]);
   assert.equal(r.dash('solid'), null);
   assert.equal(r.dash(''), null);
+});
+
+// the picture-layer exports (frontier D) on fixture 2, the same inputs as `picture_pass` of render_native.rs; the
+// checksums are the ones that test prints with --nocapture
+const PIC = {
+  polys: [0, 4488, 'cdbaaacd'],
+  silhouette: [0, 374976, 'a9af21dc'],
+  bevel: [0, 374976, '691efc5e'],
+  adjust: [0, 374976, '8d05a3e5'],
+  outer_shadow: [0, 374976, 'b51bc9e8'],
+  reflection: [0, 2976, 'cf5e2cca'],
+  inner_shadow: [0, 374976, '5a49b4ca'],
+  glow: [0, 374976, 'b1420741'],
+  soft_edge: [0, 374976, 'e34f4565'],
+  blur: [0, 374976, '4b9441ad'],
+};
+
+test('the picture-layer exports equal the native run', { skip }, () => {
+  const v = r.fixture(2);
+  const ops = v.paint;
+  const pin = (name, buf) => {
+    const { status, data } = buf.take();
+    const [s, len, sum] = PIC[name];
+    assert.equal(status, s, `${name} status`);
+    assert.equal(data.length, len, `${name} length`);
+    assert.equal(fnv(data), sum, `${name} bytes`);
+    return data;
+  };
+  const b = r.decoders.bounds(r.ok(ops.pictureBounds(0, 0), 'bounds'));
+  const ppt = 2;
+  const W = Math.max(1, Math.ceil((b.x1 - b.x0) * ppt)), H = Math.max(1, Math.ceil((b.y1 - b.y0) * ppt));
+  const ox = -b.x0 * ppt, oy = -b.y0 * ppt;
+  pin('polys', ops.picturePolys(0, 0, ppt, ox, oy));
+  pin('silhouette', ops.pictureSilhouette(0, 0, ppt, ox, oy, W, H));
+  const sil = r.decoders.mask(r.ok(ops.pictureSilhouette(0, 1, ppt, ox, oy, W, H), 'silhouette'));
+  const rgba = Uint8ClampedArray.from({ length: W * H * 4 }, (_, i) => (i * 7) % 251);
+  pin('bevel', ops.pictureBevel(0, 0, ppt, ox, oy, W, H, rgba));
+  pin('adjust', ops.pictureAdjust(0, 0, rgba));
+  pin('outer_shadow', ops.outerShadow(0, 1, sil, W, H, { x: ox, y: oy, w: (2400 / 20) * ppt, h: (1800 / 20) * ppt }, 30, ppt));
+  pin('reflection', ops.reflectionAlphas(0, 0, oy + 90 * ppt, 90 * ppt, H));
+  pin('inner_shadow', ops.innerShadow(sil, W, H, 4, 3, 45, ppt));
+  pin('glow', ops.glow(sil, W, H, 5, ppt));
+  pin('soft_edge', ops.softEdge(sil, W, H, 3, ppt));
+  pin('blur', ops.gaussianBlur(sil, W, H, 2.5));
+  // refusals: status codes, nothing traps
+  assert.equal(ops.pictureBevel(0, 1, ppt, ox, oy, W, H, rgba).take().status, 7, 'no bevel');
+  assert.equal(ops.pictureAdjust(0, 2, rgba).take().status, 7, 'a shape');
+  assert.equal(ops.gaussianBlur(new Float32Array(3), 2, 2, 1).take().status, 5, 'bad mask size');
+  assert.equal(ops.reflectionAlphas(0, 1, 0, 10, 4).take().status, 7, 'no reflection');
+  v.free();
+});
+
+test('the rasters facade returns decoded values and nulls', { skip }, () => {
+  const v = r.fixture(2);
+  const R = r.rasters(v.paint);
+  const b = R.pictureBounds(0, 0);
+  assert.ok(b && b.x1 > b.x0);
+  const polys = R.picturePolys(0, 0, 2, 0, 0);
+  assert.ok(polys.length >= 1 && polys[0] instanceof Float64Array && polys[0].length >= 6);
+  const sil = R.pictureSilhouette(0, 0, 2, 10, 10, 200, 150);
+  assert.ok(sil instanceof Float32Array && sil.length === 200 * 150);
+  assert.throws(() => R.pictureAdjust(0, 2, new Uint8ClampedArray(16)), /wrong item/);
+  assert.deepEqual(R.dash('dash'), [4, 3]);
+  assert.equal(R.dash('nope'), null);
+  assert.throws(() => R.rectGradient(0, 2), /wrong item/);
+  v.free();
 });

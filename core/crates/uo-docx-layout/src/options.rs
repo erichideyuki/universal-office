@@ -5,9 +5,12 @@
 //! `advanceEm: 'device'`, `advanceRound` other than `'word'`, a `justifyShrink` override) are gone
 //! (LQ12): the engine always runs `advanceEm: 'nominal'`, `advanceRound: 'word'`,
 //! `justifyShrink: { ratio: 0.25, expandRatio: 0.5 }`. The callbacks became data (`onField` →
-//! `collect_fields`, `hyphenationSkip` → `hyphenation_skips`).
+//! `collect_fields`, `hyphenationSkip` → `hyphenation_skips`). Two fields have no TS counterpart (G4):
+//! `cancel` (a shared flag) and `cancel_poll` (a host function), both read in `Budget::charge`; `None`
+//! changes nothing.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use indexmap::{IndexMap, IndexSet};
 
@@ -112,7 +115,17 @@ pub struct LayoutOptions {
     /// `onField`: which field values to collect into `Layout::fields` (`None` = none)
     pub collect_fields: Option<FieldScope>,
     pub limits: LayoutLimits,
+    /// G4: raised by the caller from any thread; checked at every work charge. The same shape
+    /// as uo-pdf's `PdfOptions::cancel` and uo-ffi's `UoCancel`. A raised flag ends the layout
+    /// with `LayoutError::Cancelled`.
+    pub cancel: Option<Arc<AtomicBool>>,
+    /// G4: polled every `CANCEL_POLL_UNITS` work units (and at the first charge); `true`
+    /// cancels. For hosts that cannot share a flag (wasm: the `uo_host.layout_poll` import).
+    pub cancel_poll: Option<fn() -> bool>,
 }
+
+/// Work units between two polls of `LayoutOptions::cancel_poll` (G4).
+pub const CANCEL_POLL_UNITS: u64 = 1 << 12;
 
 impl Default for LayoutOptions {
     fn default() -> LayoutOptions {
@@ -127,6 +140,8 @@ impl Default for LayoutOptions {
             view: ViewTransform::Print,
             collect_fields: None,
             limits: LayoutLimits::default(),
+            cancel: None,
+            cancel_poll: None,
         }
     }
 }
@@ -198,6 +213,11 @@ pub struct Budget {
     spent: u64,
     /// the `pure()` flow clones (LA4: part of the budget)
     pub pure_clones: u64,
+    /// G4
+    cancel: Option<Arc<AtomicBool>>,
+    poll: Option<fn() -> bool>,
+    next_poll: u64,
+    cancelled: bool,
 }
 
 impl Budget {
@@ -211,17 +231,41 @@ impl Budget {
         let nesting = l.work_nesting_factor.saturating_pow(w.nesting.min(8));
         let left =
             l.work_floor.saturating_add(l.work_per_glyph.saturating_mul(w.glyphs.max(1)).saturating_mul(passes).saturating_mul(nesting));
-        Budget { left, spent: 0, pure_clones: 0 }
+        Budget { left, spent: 0, pure_clones: 0, cancel: None, poll: None, next_poll: 0, cancelled: false }
     }
 
     /// An unlimited budget (tests of single stages).
     #[must_use]
     pub fn unlimited() -> Budget {
-        Budget { left: u64::MAX, spent: 0, pure_clones: 0 }
+        Budget { left: u64::MAX, spent: 0, pure_clones: 0, cancel: None, poll: None, next_poll: 0, cancelled: false }
     }
 
-    /// Spends `units`; `Err(Limit(Work))` once the budget is gone.
+    /// G4: cancellation by a shared flag (every charge) and/or a poll (every `CANCEL_POLL_UNITS`;
+    /// the first charge polls too).
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: Option<Arc<AtomicBool>>, poll: Option<fn() -> bool>) -> Budget {
+        self.cancel = cancel;
+        self.poll = poll;
+        self.next_poll = 0;
+        self
+    }
+
+    /// Spends `units`; `Err(Cancelled)` once the caller cancelled (checked first, latched),
+    /// `Err(Limit(Work))` once the budget is gone.
     pub fn charge(&mut self, units: u64) -> LResult<()> {
+        if !self.cancelled {
+            if self.cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed)) {
+                self.cancelled = true;
+            } else if let Some(p) = self.poll
+                && self.spent >= self.next_poll
+            {
+                self.next_poll = self.spent.saturating_add(CANCEL_POLL_UNITS);
+                self.cancelled = p();
+            }
+        }
+        if self.cancelled {
+            return Err(LayoutError::Cancelled);
+        }
         if units > self.left {
             self.left = 0;
             return Err(LayoutError::Limit(LimitKind::Work));
@@ -246,4 +290,56 @@ fn log2_ceil(h: f64) -> u64 {
         n += 1;
     }
     n
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn a_raised_flag_cancels_and_latches() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let mut b = Budget::unlimited().with_cancel(Some(flag.clone()), None);
+        assert!(b.charge(1).is_ok());
+        flag.store(true, Ordering::Relaxed);
+        assert_eq!(b.charge(1), Err(LayoutError::Cancelled));
+        flag.store(false, Ordering::Relaxed);
+        assert_eq!(b.charge(1), Err(LayoutError::Cancelled));
+    }
+
+    #[test]
+    fn cancelled_wins_over_an_exhausted_budget() {
+        let flag = Arc::new(AtomicBool::new(true));
+        let mut b = Budget::new(&LayoutLimits::default(), &WorkInput::default()).with_cancel(Some(flag), None);
+        assert_eq!(b.charge(u64::MAX), Err(LayoutError::Cancelled));
+    }
+
+    static POLLS: AtomicUsize = AtomicUsize::new(0);
+    fn counting() -> bool {
+        POLLS.fetch_add(1, Ordering::Relaxed);
+        false
+    }
+
+    #[test]
+    fn the_poll_runs_at_the_first_charge_and_once_per_interval() {
+        let mut b = Budget::unlimited().with_cancel(None, Some(counting));
+        b.charge(1).unwrap();
+        assert_eq!(POLLS.load(Ordering::Relaxed), 1);
+        for _ in 0..(CANCEL_POLL_UNITS - 2) {
+            b.charge(1).unwrap();
+        }
+        assert_eq!(POLLS.load(Ordering::Relaxed), 1);
+        b.charge(1).unwrap();
+        b.charge(1).unwrap();
+        assert_eq!(POLLS.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn unlimited_without_cancel_never_fails() {
+        let mut b = Budget::unlimited();
+        for _ in 0..10_000 {
+            assert!(b.charge(1 << 20).is_ok());
+        }
+    }
 }

@@ -12,7 +12,7 @@ import type { FontProvider, FontFace as EngineFontFace } from '@universal-office
 
 /** Arquivos opcionais da base `fonts` — os mesmos que o editor procura
  *  (proprietárias só existem no dev local via `npm run fonts:sync`; 404 = pula). */
-const ASSET_FILES: [string, string, FontVariant][] = [
+export const ASSET_FILES: [string, string, FontVariant][] = [
   ['Liberation Sans', 'liberationsans-regular.ttf', 'regular'],
   ['Liberation Sans', 'liberationsans-bold.ttf', 'bold'],
   ['Liberation Sans', 'liberationsans-italic.ttf', 'italic'],
@@ -26,6 +26,13 @@ const ASSET_FILES: [string, string, FontVariant][] = [
   ['Calibri', 'calibrii.ttf', 'italic'],
   ['Calibri', 'calibriz.ttf', 'boldItalic'],
 ];
+
+/** Nome do JSON de larguras de avanço de um arquivo de fonte (`liberationsans-bolditalic-advances.json`); o motor Rust usa o mesmo. */
+export function advancesFile(family: string, variant: FontVariant): string {
+  const prefix = family.toLowerCase().replace(/\s+/g, '');
+  const suffix = variant === 'regular' ? '' : variant === 'boldItalic' ? '-bolditalic' : `-${variant}`;
+  return `${prefix}${suffix}-advances.json`;
+}
 
 const variantOf = (bold: boolean, italic: boolean): FontVariant =>
   bold && italic ? 'boldItalic' : bold ? 'bold' : italic ? 'italic' : 'regular';
@@ -50,11 +57,6 @@ export class ViewerFonts {
   loadAssets(base: string | null): Promise<void> {
     this.resolver.suggestBaseUrl(base);
     return (this.assetsLoad ??= base === null ? Promise.resolve() : (async () => {
-      const tableName = (family: string, variant: FontVariant): string => {
-        const prefix = family.toLowerCase().replace(/\s+/g, '');
-        const suffix = variant === 'regular' ? '' : variant === 'boldItalic' ? '-bolditalic' : `-${variant}`;
-        return `${prefix}${suffix}-advances.json`;
-      };
       await Promise.all(ASSET_FILES.map(async ([family, file, variant]) => {
         const resp = await fetch(`${base}/${file}`).catch(() => null);
         if (!resp?.ok) return;
@@ -63,7 +65,7 @@ export class ViewerFonts {
           if (!isFontFile(bytes)) return; // 200 com o HTML de fallback de uma SPA: ausente
           const font = new SfntFont(bytes);
           try {
-            const r = await fetch(`${base}/${tableName(family, variant)}`);
+            const r = await fetch(`${base}/${advancesFile(family, variant)}`);
             if (r.ok) font.setAdvanceTable(await r.json() as Record<string, Record<string, number>>);
           } catch { /* tabela opcional: métricas lineares */ }
           const k = family.toLowerCase();

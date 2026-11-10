@@ -16,14 +16,17 @@ use crate::encode::{AppSection, CanvasOptions, DeltaMark, EncodeError, encode_pa
 use crate::list::ItemList;
 use crate::paint::fill::{PatternRaster, RectRaster, Tile, blip_tiles, pattern_raster, rect_gradient_raster};
 use crate::paint::page_fill::{gradient_tile_px, gradient_tile_rgba, page_fill_tile_tw, pattern_rgba};
-use crate::paint::picture::{Bounds, Painter, effect_bounds, shape_subs};
+use crate::paint::picture::{AdjustParts, BevelParts, Bounds, Painter, effect_bounds, shadow_spec, shape_subs};
 use crate::paint::text_fx::{FxLayer, RunView, fx_layers};
 use crate::paint::{PaintError, PaintLimits};
 use crate::resources::Resources;
 use crate::types::{Item, Page, PageFillKind, PictureLook, ShapeItem};
 use std::sync::Arc;
 use uo_codec::{DecodeError, Limits};
-use uo_drawingml::Subpaths;
+use uo_drawingml::{
+    Affine, BoxF, Mask, Polygons, Reflection, Subpaths, apply_image_effects, apply_picture_adjust, fill_polygons, flatten_path,
+    gaussian_blur, glow_mask, inner_shadow_mask, outer_shadow_mask, reflection_alpha, shade_bevel, soft_edge_mask,
+};
 
 /// Why a view operation refused.
 #[derive(Debug)]
@@ -358,5 +361,151 @@ impl RenderView {
             im.flip_h,
             im.flip_v,
         ))
+    }
+    // ───────────── the picture layer of canvas-picture.ts (frontier D): masks over the item's look ─────────────
+
+    fn image_item(&self, page: usize, item: usize) -> Result<&crate::types::ImageItem, ViewError> {
+        match self.item(page, item)?.1 {
+            Item::Image(im) => Ok(im),
+            _ => Err(ViewError::WrongItem),
+        }
+    }
+
+    /// `flattenPath(shapeSubs(look, w, h, flipH, flipV), [ppt, 0, 0, ppt, ox, oy], 0.35)` of an image
+    /// (canvas-picture.ts:151-152).
+    ///
+    /// # Errors
+    /// [`ViewError::WrongItem`] for any other item; the mask limits.
+    pub fn picture_polys(&self, page: usize, item: usize, ppt: f64, ox: f64, oy: f64) -> Result<Polygons, ViewError> {
+        let subs = self.picture_subs(page, item)?;
+        Ok(flatten_path(&subs, &Affine([ppt, 0.0, 0.0, ppt, ox, oy]), 0.35, &self.limits.draw).map_err(PaintError::from)?)
+    }
+
+    /// `fillPolygons(newMask(W, H), polys)` of the image's polygons (canvas-picture.ts:172, 178).
+    ///
+    /// # Errors
+    /// As [`RenderView::picture_polys`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn picture_silhouette(&self, page: usize, item: usize, ppt: f64, ox: f64, oy: f64, w: u32, h: u32) -> Result<Mask, ViewError> {
+        let polys = self.picture_polys(page, item, ppt, ox, oy)?;
+        let mut m = Mask::new(w, h, &self.limits.draw).map_err(PaintError::from)?;
+        fill_polygons(&mut m, &polys, false, &self.limits.draw).map_err(PaintError::from)?;
+        Ok(m)
+    }
+
+    /// The bevel of `buildLayer` (canvas-picture.ts:170-175): the shape's silhouette and
+    /// `shadeBevel(rgba, silhouette, bevel)` over the layer's pixels.
+    ///
+    /// # Errors
+    /// [`ViewError::WrongItem`] for an image without a bevel; the mask limits; `Paint(Invalid)` when `rgba` is not `w * h * 4`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn picture_bevel(
+        &self,
+        page: usize,
+        item: usize,
+        ppt: f64,
+        ox: f64,
+        oy: f64,
+        w: u32,
+        h: u32,
+        rgba: &mut [u8],
+    ) -> Result<(), ViewError> {
+        let im = self.image_item(page, item)?;
+        let bv = im.pic.as_deref().and_then(|p| p.bevel).ok_or(ViewError::WrongItem)?;
+        let want = u64::from(w).checked_mul(u64::from(h)).and_then(|n| n.checked_mul(4));
+        if u64::try_from(rgba.len()).ok() != want {
+            return Err(PaintError::Invalid.into());
+        }
+        let sil = self.picture_silhouette(page, item, ppt, ox, oy, w, h)?;
+        let parts = BevelParts::of(self.resources(), &bv, ppt);
+        shade_bevel(rgba, &sil, &parts.spec(), &self.limits.draw).map_err(PaintError::from)?;
+        Ok(())
+    }
+
+    /// `adjustedBitmap` (canvas-picture.ts:122-140): `applyImageEffects` when the image carries effects, then
+    /// `applyPictureAdjust` when the item has a look. `false` (nothing applies: the TS returns the bitmap
+    /// itself) leaves `rgba` untouched.
+    ///
+    /// # Errors
+    /// [`ViewError::WrongItem`] for any other item.
+    pub fn picture_adjust(&self, page: usize, item: usize, rgba: &mut [u8]) -> Result<bool, ViewError> {
+        let im = self.image_item(page, item)?;
+        let res = self.resources();
+        let fx = res.image(im.image).and_then(|r| r.effects);
+        let look = im.pic.as_deref();
+        if fx.is_none() && look.is_none_or(|l| l.alpha.get().is_none() && l.duotone.is_none() && l.clr_change.is_none()) {
+            return Ok(false);
+        }
+        if let Some(fx) = &fx {
+            apply_image_effects(rgba, fx);
+        }
+        if let Some(l) = look {
+            apply_picture_adjust(rgba, &AdjustParts::of(res, l).spec());
+        }
+        Ok(true)
+    }
+
+    /// `outerShadowMask(sil, box, spec, ppt)` with the shadow of the item's look (an image's `pic` or a
+    /// shape's effects); `dir_deg` is the caller's (the rotation rule stays in the shell).
+    ///
+    /// # Errors
+    /// [`ViewError::WrongItem`] for an item without an outer shadow; the mask limits.
+    pub fn outer_shadow(&self, page: usize, item: usize, sil: &Mask, bx: BoxF, dir_deg: f64, ppt: f64) -> Result<Mask, ViewError> {
+        let (look, ..) = self.look_of(page, item)?;
+        let sh = look.shadow.ok_or(ViewError::WrongItem)?;
+        Ok(outer_shadow_mask(sil, &bx, &shadow_spec(self.resources(), &sh, dir_deg), ppt, &self.limits.draw).map_err(PaintError::from)?)
+    }
+
+    /// The alpha of each row of the reflection (canvas-picture.ts:241-245): `t = (y + 0.5 - top) / hPpt`,
+    /// 0 for `t < 0`, else `reflectionAlpha(t, reflection)`.
+    ///
+    /// # Errors
+    /// [`ViewError::WrongItem`] for an item without a reflection; `Paint(Invalid)` over 2^24 rows.
+    pub fn reflection_alphas(&self, page: usize, item: usize, top: f64, h_ppt: f64, rows: u32) -> Result<Vec<f64>, ViewError> {
+        let (look, ..) = self.look_of(page, item)?;
+        let r = look.reflection.ok_or(ViewError::WrongItem)?;
+        if rows > 1 << 24 {
+            return Err(PaintError::Invalid.into());
+        }
+        let r = Reflection { st_a: r.st_a, st_pos: r.st_pos, end_a: r.end_a, end_pos: r.end_pos };
+        let mut out = Vec::new();
+        out.reserve_exact(usize::try_from(rows).unwrap_or(0));
+        for y in 0..rows {
+            let t = (f64::from(y) + 0.5 - top) / h_ppt;
+            out.push(if t < 0.0 { 0.0 } else { reflection_alpha(t, &r) });
+        }
+        Ok(out)
+    }
+
+    /// `innerShadowMask(sil, { blurPt, distPt, dirDeg }, ppt)`.
+    ///
+    /// # Errors
+    /// The mask limits.
+    pub fn inner_shadow(&self, sil: &Mask, blur_pt: f64, dist_pt: f64, dir_deg: f64, ppt: f64) -> Result<Mask, ViewError> {
+        Ok(inner_shadow_mask(sil, blur_pt, dist_pt, dir_deg, ppt, &self.limits.draw).map_err(PaintError::from)?)
+    }
+
+    /// `glowMask(sil, radPt, ppt)`.
+    ///
+    /// # Errors
+    /// The mask limits.
+    pub fn glow(&self, sil: &Mask, rad_pt: f64, ppt: f64) -> Result<Mask, ViewError> {
+        Ok(glow_mask(sil, rad_pt, ppt, &self.limits.draw).map_err(PaintError::from)?)
+    }
+
+    /// `softEdgeMask(sil, radPt, ppt)`.
+    ///
+    /// # Errors
+    /// The mask limits.
+    pub fn soft_edge(&self, sil: &Mask, rad_pt: f64, ppt: f64) -> Result<Mask, ViewError> {
+        Ok(soft_edge_mask(sil, rad_pt, ppt, &self.limits.draw).map_err(PaintError::from)?)
+    }
+
+    /// `gaussianBlur(mask, sigma)`.
+    ///
+    /// # Errors
+    /// The mask limits.
+    pub fn blur(&self, m: &Mask, sigma: f64) -> Result<Mask, ViewError> {
+        Ok(gaussian_blur(m, sigma, &self.limits.draw).map_err(PaintError::from)?)
     }
 }

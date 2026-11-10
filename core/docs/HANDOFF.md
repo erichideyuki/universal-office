@@ -55,6 +55,33 @@ rounds; G8 implemented on Sonnet at the maintainer's request although SKILL.md s
 
 Next: queue item 2 (uo-render frontiers D and V).
 
+## Update 2026-11-10 — milestone-1 code done (queue items 2–4)
+
+Same workflow (Opus plan → Sonnet implement → Opus review; all three accepted after fix rounds):
+
+- **uo-render D + V**: the TS painter of decoded pages (`core/crates/uo-wasm/js/paint.ts`, `picture.ts`, mask exports
+  in uo-wasm/uo-render; look→spec helpers moved from uo-pdf to `uo_render::paint::picture`) and painter parity
+  (`tests/paint_parity.test.mjs` Parts A–C, `browser/paint_pixels.mjs`, `paint_memory.test.mjs`). Record: `uo-render.md`.
+- **G4**: `LayoutOptions.cancel` / `LayoutError::Cancelled` in `Budget::charge`, wired to uo-ffi (code 10), the C#
+  facade and wasm (`cancelCheck`, import `uo_host.layout_poll`, layout flag bit 9). Records: `uo-docx-layout.md`,
+  `uo-bindings.md` G4 row.
+- **Viewer switch**: `engine="rust"` on `<universal-document-viewer>` (`write/packages/viewer/src/rust-engine.ts`,
+  default `ts` untouched, wasm fetched only on first use as `chunks/uo-write.wasm`), CSP note, CHANGELOG entry. Full
+  Chromium parity: **74/74 fixtures, 579 pages, 0 differences** (pixels exact, text layer, find, links, PDF).
+- Verified by the orchestrator: workspace clippy native + wasm32, bans, suites uo-docx/layout/render/pdf/wasm/ffi/fonts
+  green.
+
+Open before the milestone-1 gate (besides queue item 5):
+- Rust path opens slower in the browser (loadDocx median 251 ms vs TS 122 ms on the fixtures) — measure and explain.
+- `tools/build-pkg.mjs` ships `uo-write.wasm` without the licence notices of the Rust crates compiled in — must add a
+  THIRD-PARTY notice (CLAUDE.md rule) before any publish from rust-core.
+- CI lines for D/V/G4/switch not added to `rust-core.yml`; Part A of the painter parity is platform-pinned (win32) and
+  would always skip on Linux CI — recapture or relax the pin.
+- `write_wasm2js.test.mjs` fails (`f8__7__0 messages: length 51757 vs 53200`), also at the previous base — investigate.
+- Painter not run in WebKit/real Safari (only the handle layer).
+- Speed of verification: uo-docx has 160 integration-test crates; merge into one binary per crate (`tests/all/main.rs`)
+  and clippy only changed crates + dependents locally — suggested as the first item of the next round.
+
 ## Work in progress — commit `6471786d` (historical: finished, see the update above)
 
 It compiles (`cargo check --workspace --all-features --tests`) but was **not verified**:

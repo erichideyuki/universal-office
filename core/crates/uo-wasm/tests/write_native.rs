@@ -250,6 +250,54 @@ fn refusals_set_the_last_error() {
     }
 }
 
+/// G4-W: flag bit 9 asks the host poll; `true` ends the layout with code 10, a counting poll that
+/// says no leaves the output unchanged, and without the bit the poll is never asked.
+#[test]
+fn the_host_poll_cancels_the_layout_with_code_10() {
+    use std::cell::Cell;
+    let env = env_with_fonts();
+    let doc = open(&fixture("f8__7__0"));
+    assert!(!doc.is_null());
+    let sum = |l: *mut UoLayout| -> Vec<u8> {
+        assert!(!l.is_null());
+        let mut msgs = Vec::new();
+        // SAFETY: a live layout; every result is released by `take`.
+        unsafe {
+            for i in 0..uo_layout_page_count(l) {
+                let (s, m) = take(uo_render_encode_page(uo_layout_view(l), i));
+                assert_eq!(s, 0);
+                msgs.extend_from_slice(&m);
+            }
+            uo_layout_free(l);
+        }
+        msgs
+    };
+    let plain = sum(layout(doc, env, 0, 0));
+    // a poll that says no: asked at least once, the output is the same
+    let asked = Rc::new(Cell::new(0u32));
+    let a2 = Rc::clone(&asked);
+    host::set_layout_poll(Some(Box::new(move || {
+        a2.set(a2.get() + 1);
+        false
+    })));
+    let counted = sum(layout(doc, env, LAYOUT_CANCEL_POLL, 0));
+    assert!(asked.get() >= 1, "the poll was never asked");
+    assert!(counted == plain, "a poll that never cancels changed the layout");
+    // a poll that says yes at the first ask
+    host::set_layout_poll(Some(Box::new(|| true)));
+    assert!(layout(doc, env, LAYOUT_CANCEL_POLL, 0).is_null());
+    // SAFETY: the last error of this thread.
+    assert_eq!(unsafe { uo_last_error(std::ptr::null_mut()) }, code::CANCELLED);
+    // without the bit the poll is not used at all
+    assert!(sum(layout(doc, env, 0, 0)) == plain);
+    host::set_layout_poll(None);
+    // SAFETY: live handles, freed once.
+    unsafe {
+        uo_write_document_free(doc);
+        uo_write_env_free(env);
+    }
+}
+
 #[test]
 fn the_hyphenation_patterns_a_document_needs() {
     let env = uo_write_env_new(0);
@@ -290,6 +338,14 @@ fn m1_every_export_returns_the_live_bytes() {
             drop(take(uo_layout_run_boxes(l, 0)));
             drop(take(uo_layout_run_boxes(l, 1)));
             drop(take(uo_layout_face_bytes(l, 0)));
+            // every image index: bytes (0, 8 or 6) and the SVG version (0, 8 or 6); null layout 11
+            for i in 0..8 {
+                let (sb, _) = take(uo_layout_image_bytes(l, i));
+                let (ss, _) = take(uo_layout_image_svg(l, i));
+                assert!([0, 6, 8].contains(&sb) && [0, 6, 8].contains(&ss), "image {i}: {sb} {ss}");
+            }
+            assert_eq!(take(uo_layout_image_svg(l, 9999)).0, 6);
+            assert_eq!(take(uo_layout_image_svg(std::ptr::null(), 0)).0, 11);
             drop(take(uo_layout_block_line(l, 0.0)));
             drop(take(uo_write_env_take_missing(env)));
             drop(pdf(l, PDF_COMPRESS, 0));

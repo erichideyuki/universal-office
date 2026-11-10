@@ -7,6 +7,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@universal-office/ui': fileURLToPath(new URL('../../../shared/ui/src/index.ts', import.meta.url)),
+      // engine="rust": o lado JS do motor (core/crates/uo-wasm/js), como no build:demo e no build-pkg
+      '@universal-office/write-engine': fileURLToPath(new URL('../../../core/crates/uo-wasm/js/viewer.ts', import.meta.url)),
     },
   },
 });

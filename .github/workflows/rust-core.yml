@@ -285,6 +285,8 @@ jobs:
       # FinalizationRegistry) and M2 (memory.buffer stops growing)
       - run: cargo build -p uo-wasm --features count,write --target wasm32-unknown-unknown --profile wasm
       - run: node --expose-gc --test crates/uo-wasm/tests/write_api.test.mjs
+      # G4: cancellation inside the layout (uo_host.layout_poll, WriteError code 10)
+      - run: node --expose-gc --test crates/uo-wasm/tests/write_cancel.test.mjs
       # G8: the Write section of the page message (decoded in Node from the same module; imports .ts, so Node only)
       - run: node --test crates/uo-wasm/tests/write_section.test.mjs
       # browser baseline Safari 15 / iOS 15 (rust-port skill): the module may use only the

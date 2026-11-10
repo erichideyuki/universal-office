@@ -77,7 +77,10 @@ pub enum JobError {
 
 impl From<LayoutError> for JobError {
     fn from(e: LayoutError) -> JobError {
-        JobError::Layout(e)
+        match e {
+            LayoutError::Cancelled => JobError::Cancelled,
+            other => JobError::Layout(other),
+        }
     }
 }
 
@@ -100,6 +103,7 @@ impl JobError {
             JobError::Read(_) => code::INVALID_DATA,
             JobError::Layout(LayoutError::Limit(_)) | JobError::Pdf(PdfError::Limit(_)) => code::LIMIT_EXCEEDED,
             JobError::Layout(LayoutError::NoFace) => code::NO_FONT,
+            JobError::Layout(LayoutError::Cancelled) => code::CANCELLED,
             JobError::Layout(_) | JobError::Pdf(PdfError::Invalid(_)) => code::INTERNAL,
             JobError::Pdf(PdfError::Sink) => code::SINK,
             JobError::Pdf(PdfError::Cancelled) | JobError::Cancelled => code::CANCELLED,
@@ -299,8 +303,9 @@ fn check(cancel: Option<&AtomicBool>) -> Result<(), JobError> {
 }
 
 /// `layoutDocument(view(full), withEmbeddedFonts(provider, embedded), options)` plus the navigation
-/// and, when asked, the run boxes. The cancellation flag is checked before and after the layout
-/// (inside it the work budget bounds the time; see the record, "For the milestone-1 gate").
+/// and, when asked, the run boxes. The cancellation flag is checked before and after the layout;
+/// inside it the caller sets `LayoutOptions::cancel` (G4: `Converter::convert` passes the same
+/// flag), checked at every work charge.
 ///
 /// # Errors
 /// [`JobError::Layout`], [`JobError::Cancelled`].

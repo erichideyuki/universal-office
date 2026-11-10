@@ -30,6 +30,8 @@
 //! - `uo_layout_run_boxes`: `n u32`, each `page u32, x f64, y f64, w f64, h f64, baseline f64` (twips)
 //!   and the value string (the link, or the plugin inline's type).
 //! - `uo_layout_block_line`: `page u32, y f64` (twips), status 1 when the block has no line.
+//! - `uo_layout_image_bytes` / `uo_layout_image_svg`: the bytes of image `i` / its SVG version; status 8 when
+//!   there is none (no SVG), 6 for an unknown index.
 //! - `uo_layout_warnings`: UTF-8 lines. `uo_layout_missing_faces`: UTF-8 lines `family\tbold\titalic`
 //!   (`0`/`1`). `uo_write_env_take_missing`: UTF-8 lines `family\tregular,bold,…`.
 //! - `uo_write_hyphenation_patterns`: UTF-8 lines, the pattern ids to fetch and register.
@@ -40,6 +42,14 @@
 //! `uo_host.pdf_chunk(ptr, len) -> i32`, which copies the bytes (and calls nothing back) and answers 0
 //! to go on. The module never holds more than one chunk of the output, so its memory does not grow
 //! with the file (wasm memory never shrinks). Answer: the bytes written, or `-code`.
+//!
+//! # Cancellation (G4)
+//! A synchronous wasm call cannot see an `AbortSignal` or a flag the host changes, so the layout
+//! asks. With `layout_flags` bit 9 (`LAYOUT_CANCEL_POLL`) it calls the host import
+//! `uo_host.layout_poll() -> i32` at its first work charge and then about every
+//! `CANCEL_POLL_UNITS` work units (a few ms); non-zero stops it and `uo_write_layout` fails with
+//! code 10, stage none. The import must not call back into the module. The PDF is stoppable through
+//! `pdf_chunk` answering non-zero (code 13, sink); `uo_layout_pdf` has no poll.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -354,6 +364,8 @@ pub const LAYOUT_VIEW_SHIFT: u32 = 2;
 pub const LAYOUT_REVISIONS_SHIFT: u32 = 4;
 /// bit 8: the `hyph_langs` list is given (`hyphenationLanguages`).
 pub const LAYOUT_HYPHENATION_LANGUAGES: u32 = 1 << 8;
+/// bit 9: poll the host import `uo_host.layout_poll()` during the layout; non-zero cancels (G4).
+pub const LAYOUT_CANCEL_POLL: u32 = 1 << 9;
 
 static GENERATION: AtomicU32 = AtomicU32::new(1);
 
@@ -396,6 +408,9 @@ fn layout_options(
         _ => return None,
     };
     o.revisions = mode.map(|mode| RevisionView { mode, ..RevisionView::default() });
+    if flags & LAYOUT_CANCEL_POLL != 0 {
+        o.cancel_poll = Some(host::layout_poll);
+    }
     if flags & LAYOUT_HYPHENATION_LANGUAGES != 0 {
         o.hyphenation_languages = Some(utf8(hyph)?.split('\n').filter(|l| !l.is_empty()).map(Box::<str>::from).collect());
     }
@@ -745,6 +760,22 @@ pub unsafe extern "C" fn uo_layout_image_bytes(l: *const UoLayout, image: usize)
     }
 }
 
+/// A copy of the SVG version of image `image` of the layout (the vector the viewer paints in place
+/// of the raster when the document has one). Status 8 when the image has no SVG, 6 for an unknown
+/// index.
+///
+/// # Safety
+/// `l` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_layout_image_svg(l: *const UoLayout, image: usize) -> *mut UoBuf {
+    // SAFETY: forwarded.
+    let Some(l) = (unsafe { layout_ref(l) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    match view_of(&l.view).resources().images.get(image) {
+        Some(im) => im.svg.as_ref().map_or_else(|| buf(NO_RESOURCE, Vec::new()), |b| buf(OK, b.to_vec())),
+        None => buf(NO_PAGE, Vec::new()),
+    }
+}
+
 /// `uo_layout_pdf` flags: compress the content streams.
 pub const PDF_COMPRESS: u32 = 1;
 /// `uo_layout_pdf` flags: an untrusted document (lower effect and image caps).
@@ -756,6 +787,14 @@ mod host {
     unsafe extern "C" {
         /// Copies `len` bytes at `ptr` of this module's memory; 0 = go on.
         fn pdf_chunk(ptr: *const u8, len: usize) -> i32;
+        /// 0 = go on, non-zero cancels the layout (G4); calls nothing back.
+        #[link_name = "layout_poll"]
+        fn layout_poll_import() -> i32;
+    }
+
+    pub(super) fn layout_poll() -> bool {
+        // SAFETY: no arguments; the import calls nothing back into the module.
+        unsafe { layout_poll_import() != 0 }
     }
 
     pub(super) fn chunk(b: &[u8]) -> bool {
@@ -783,6 +822,21 @@ pub mod host {
 
     pub(super) fn chunk(b: &[u8]) -> bool {
         SINK.with(|s| s.borrow_mut().as_mut().is_none_or(|f| f(b)))
+    }
+
+    type Poll = Box<dyn FnMut() -> bool>;
+
+    thread_local! {
+        static POLL: RefCell<Option<Poll>> = const { RefCell::new(None) };
+    }
+
+    /// The answer of `uo_host.layout_poll` on this thread (`None`: never cancels); `true` cancels (G4).
+    pub fn set_layout_poll(f: Option<Poll>) {
+        POLL.with(|p| *p.borrow_mut() = f);
+    }
+
+    pub(super) fn layout_poll() -> bool {
+        POLL.with(|p| p.borrow_mut().as_mut().is_some_and(|f| f()))
     }
 }
 

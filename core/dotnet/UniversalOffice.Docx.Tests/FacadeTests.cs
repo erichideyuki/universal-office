@@ -49,6 +49,34 @@ internal static class Fixtures
 
     internal static DocxPdfConverter OpenFonts(bool trusted) =>
         new(new DocxPdfConverterOptions { SystemFonts = false, FontDirectories = OpenFontDirs, TrustedInput = trusted });
+
+    /// <summary>A .docx of <paramref name="paragraphs"/> paragraphs of 80-120 words in Liberation Serif (650 take
+    /// the native layout several hundred ms in release), built in memory.</summary>
+    internal static byte[] BigDocx(int paragraphs)
+    {
+        string[] ws = ["o", "motor", "de", "layout", "quebra", "linhas", "colunas", "secoes", "informação", "parágrafo", "página", "responsabilidade"];
+        var body = new System.Text.StringBuilder();
+        for (int i = 0; i < paragraphs; i++)
+        {
+            int n = 80 + (i * 7) % 41;
+            var text = string.Join(' ', Enumerable.Range(0, n).Select(k => ws[(k * 7 + i * 3) % ws.Length]));
+            body.Append("<w:p><w:r><w:rPr><w:rFonts w:ascii=\"Liberation Serif\" w:hAnsi=\"Liberation Serif\"/></w:rPr><w:t xml:space=\"preserve\">").Append(text).Append("</w:t></w:r></w:p>");
+        }
+        const string W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        string doc = $"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:document xmlns:w=\"{W}\"><w:body>{body}<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1417\" w:right=\"1701\" w:bottom=\"1417\" w:left=\"1701\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/></w:sectPr></w:body></w:document>";
+        const string ct = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>";
+        const string rels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>";
+        using var ms = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (name, text) in new[] { ("[Content_Types].xml", ct), ("_rels/.rels", rels), ("word/document.xml", doc) })
+            {
+                using var w = new StreamWriter(zip.CreateEntry(name).Open(), new System.Text.UTF8Encoding(false));
+                w.Write(text);
+            }
+        }
+        return ms.ToArray();
+    }
 }
 
 public class PdfParityTests(ITestOutputHelper log)
@@ -97,7 +125,7 @@ public class PdfParityTests(ITestOutputHelper log)
     }
 }
 
-public class ErrorTests
+public class ErrorTests(ITestOutputHelper log)
 {
     [Fact]
     public void Garbage_is_invalid_data_with_a_message()
@@ -141,6 +169,25 @@ public class ErrorTests
             catch (OperationCanceledException) { cancelled++; }
         }
         Assert.True(cancelled > 0, "no conversion was cancelled in 20 tries");
+    }
+
+    [Fact]
+    public void A_token_cancelled_during_the_layout_stops_it_promptly()
+    {
+        using var conv = Fixtures.OpenFonts(trusted: false);
+        var big = Fixtures.BigDocx(650);
+        conv.ToPdf(Fixtures.Docx("f8", "f8__7__0")); // warm-up: faces cached
+        using var cts = new CancellationTokenSource();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        TimeSpan raisedAt = TimeSpan.Zero;
+        cts.Token.Register(() => raisedAt = sw.Elapsed);
+        cts.CancelAfter(TimeSpan.FromMilliseconds(50));
+        Assert.ThrowsAny<OperationCanceledException>(() => conv.ToPdf(big, ct: cts.Token));
+        var thrownAt = sw.Elapsed;
+        var latency = thrownAt - raisedAt;
+        log.WriteLine($"G4 facade: raised at {raisedAt.TotalMilliseconds:F1} ms, thrown at {thrownAt.TotalMilliseconds:F1} ms, latency {latency.TotalMilliseconds:F1} ms");
+        Assert.True(raisedAt > TimeSpan.Zero, "the token was never cancelled");
+        Assert.True(latency < TimeSpan.FromMilliseconds(250), $"latency {latency.TotalMilliseconds:F1} ms");
     }
 }
 
@@ -195,6 +242,12 @@ public class BoundaryMemoryTests(ITestOutputHelper log)
         using var conv = Fixtures.OpenFonts(trusted: false);
         var docx = Fixtures.Docx("f8", "f8__7__0");
         conv.ToPdf(docx); // warm-up: faces cached, patterns parsed
+        var big = Fixtures.BigDocx(650);
+        using (var warm = new CancellationTokenSource())
+        {
+            warm.CancelAfter(TimeSpan.FromMilliseconds(30)); // the faces of the big document
+            Assert.ThrowsAny<OperationCanceledException>(() => conv.ToPdf(big, ct: warm.Token));
+        }
         long before = Settle();
         using var cts = new CancellationTokenSource();
         for (int i = 0; i < Conversions; i++)
@@ -206,8 +259,15 @@ public class BoundaryMemoryTests(ITestOutputHelper log)
         {
             Assert.Throws<InvalidDataException>(() => conv.ToPdf([1, 2, 3], ct: cts.Token));
         }
+        // G4: cancelled in the middle of the layout of a big document
+        for (int i = 0; i < 5; i++)
+        {
+            using var mid = new CancellationTokenSource();
+            mid.CancelAfter(TimeSpan.FromMilliseconds(30));
+            Assert.ThrowsAny<OperationCanceledException>(() => conv.ToPdf(big, ct: mid.Token));
+        }
         Assert.Equal(before, Settle());
-        log.WriteLine($"{Conversions} conversions + {Count} refused (with cancel handles): 0 B left");
+        log.WriteLine($"{Conversions} conversions + {Count} refused (with cancel handles) + 5 cancelled inside the layout: 0 B left");
     }
 
     /// <summary>Runs the finalizers until no native memory is pending, then reads the counter.</summary>

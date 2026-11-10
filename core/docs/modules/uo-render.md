@@ -905,10 +905,7 @@ uo-schema -- check` up to date. No `unwrap`, `expect`, `panic!` or panicking ind
 
 ### Not done
 
-- **The uo-drawingml mask exports of RQ12** (`presetOutline`, `flattenPath`, `fillPolygons`, shadows, glow, soft edge, `reflectionAlpha`,
-  `gaussianBlur`, `shadeBevel`, `morph` over `Float32Array`/`Uint8Array`): they exist natively in uo-drawingml and in `dml-memtest` as test exports only;
-  the shell's `canvas-picture.ts` composition (`buildLayer`, `paintShapeEffects`) needs them as production exports. Only `picture::*`
-  (`effect_bounds`, `shape_subs`, `colored_mask`, `dash`) are exported here.
+- ~~**The uo-drawingml mask exports of RQ12**~~ **Done in frontier D** (milestone 1, below): `picture_polys`, `picture_silhouette`, `picture_bevel`, `picture_adjust`, `outer_shadow`, `reflection_alphas`, `inner_shadow`, `glow`, `soft_edge`, `blur`; `morph` and `presetOutline` are not exported (the canvas never calls the first; `picture_subs`/`picture_polys` cover the second).
 - The layout handle exists now (G8 and the binding): the wasm `UoLayout` owns a `RenderView` and encodes with `set_app` for the Write section (`uo_layout_encode_page`).
 - A TS oracle comparison of the *exports* (the frozen `patternRaster`/`rectGradientRaster`/`blipTiles`/`fxLayers`/page-fill functions run on the
   same items in Node against the wasm bytes): the exports are thin calls of G's helpers, which G proved against the TS (63 facets), and the wasm
@@ -955,6 +952,150 @@ uo-schema -- check` up to date. No `unwrap`, `expect`, `panic!` or panicking ind
 Parity rounds: `e_hints` equal on the first replay (9 facets). Rework in the session: a 40-byte leak in my own test (a result handle not freed; none in the library),
 a `Path` span leniency found by my no-panic test (E-D11), `assert.throws` added to the WebKit shim, two test expectations (a NaN scale answers `none`; `set_face_bytes` parses before it looks the face up).
 No port bug was sent back by a verifier.
+
+## Milestone 1 — frontier D (TS painter on decoded pages)
+
+Sonnet (implementer, 2026-11-09), plan by the planner of the same workflow run. Closed scope: the frozen `canvas.ts` + `canvas-picture.ts` ported line by line over the decoded page message, with the wasm exports as the only source of geometry, rasters and masks.
+
+### Built
+
+| File | What |
+|---|---|
+| `crates/uo-wasm/js/paint.ts` (new, erasable TS) | `paintItems`, `paintPageBackground`, `paintShape`, `snapThin`, `PaintCaches`/`defaultCaches`, `PaintEnv`, `RasterSource`, `PaintPage`; the usage snippet is in its header and in `write.d.ts` |
+| `crates/uo-wasm/js/picture.ts` (new) | `canvas-picture.ts`: `needsPicturePainter`, `paintPicture`, `buildLayer`, `adjustedBitmap`, `paintShapeEffects`, `maskToCanvas`, `reflect` |
+| `crates/uo-wasm/js/render.mjs` | `paintOps(view)` (every item-addressed export as a `Buf`), `RenderView.paint`, `rasters(ops)` (decoded facade, every `Buf` taken and freed), the decoders `mask`/`polygons`/`f64s` |
+| `crates/uo-wasm/js/write.mjs`, `write.d.ts` | `layout.paint` = `paintOps` of the borrowed view; `layout.rasters()`; `PaintOps` and `RasterSource` typed |
+| `crates/uo-render/src/view.rs` | `picture_polys`, `picture_silhouette`, `picture_bevel`, `picture_adjust`, `outer_shadow`, `reflection_alphas`, `inner_shadow`, `glow`, `soft_edge`, `blur` (all on `self.limits.draw`) |
+| `crates/uo-render/src/paint/picture.rs` | the look → spec conversions, moved from uo-pdf: `shadow_spec`, `BevelParts`, `AdjustParts` |
+| `crates/uo-wasm/src/render.rs` | the ten new exports (layouts in the file's last section and the module header) |
+| `crates/uo-wasm/src/render_fixture.rs` | fixture kind 2 (an image with the whole look, an image with outer shadow + glow, a shape with inner shadow + soft edges, a shape with outer shadow + reflection) |
+
+The TS → wasm call mapping of the picture layer (frozen `canvas-picture.ts` → `RasterSource`):
+
+| Frozen call | Here |
+|---|---|
+| `bounds(look, w, h)` | `pictureBounds(page, item)` (image look or the shape's `{...fx, line?}`) |
+| `shapeSubs` + `flattenPath(subs, [ppt,0,0,ppt,ox,oy], 0.35)` | `picturePolys(page, item, ppt, ox, oy)` → `Float64Array[]` |
+| `fillPolygons(newMask(W, H), polys)` | `pictureSilhouette(page, item, ppt, ox, oy, W, H)` → `Float32Array` |
+| `shadeBevel(img.data, sil, bevel)` | `pictureBevel(page, item, ppt, ox, oy, W, H, rgba)` → shaded RGBA |
+| `applyImageEffects` + `applyPictureAdjust` | `pictureAdjust(page, item, rgba)` (null = nothing applies, the TS returns the bitmap) |
+| `outerShadowMask(sil, box, spec, ppt)` | `outerShadow(page, item, sil, W, H, box, dirDeg, ppt)` (the `rotWithShape` rule stays in TS) |
+| `reflectionAlpha(t, r)` row loop | `reflectionAlphas(page, item, top, hPpt, rows)` |
+| `innerShadowMask`, `glowMask`, `softEdgeMask`, `gaussianBlur` | `innerShadow`, `glow`, `softEdge`, `gaussianBlur` (generic: no item) |
+| `maskToCanvas` colours, `DASH[name]` | `coloredMask`, `dash` (existing exports; a small dash cache in the facade) |
+| `patternRaster`, `rectGradientRaster`, `blipTiles`, `fxLayers`, `pageFillTileTw`, `gradientTileRgba`, `patternRgba` | `pattern`, `rectGradient`, `blipTiles`, `fxLayer`, `pageFillTileTw`, `pageFillRaster` (frontier E) |
+| `presetOutline`, `morph` | not exported: `picture_subs`/`picture_polys` cover the outline; `canvas-picture.ts` never calls `morph` |
+
+This closes the first item of frontier E's "Not done" (the drawingml mask exports).
+
+### Evidence
+
+- `tsc` (the CI line of frontier E plus `paint.ts picture.ts`): exit 0.
+- Native: `render_native` 5/5 (the new `the_picture_layer_exports`, `the_picture_layer_exports_refuse_hostile_arguments`, M1 extended with the picture pass); `render_unsafe` (consumed buffers of the mask exports) ok natively and under **Miri** (`cargo +nightly miri test -p uo-wasm --features render-fixture --test render_unsafe --target x86_64-unknown-linux-gnu`: 1 passed, no leak); `uo-render` all features green (e_hints 1/1 = 9 facets equal, e_memory 3, e_nopanic 5, g_* all); `uo-pdf` `painter_parity` 3/3 after the helper move (60 generated specs, 6 laid-out documents, real documents: same counts as before).
+- The wasm results equal the native ones (pinned FNV checksums in `render_paint.test.mjs`, Node and WebKit 26.5): `polys` cdbaaacd, `silhouette` a9af21dc, `bevel` 691efc5e, `adjust` 8d05a3e5, `outer_shadow` b51bc9e8, `reflection` cf5e2cca, `inner_shadow` 5a49b4ca, `glow` b1420741, `soft_edge` e34f4565, `blur` 4b9441ad.
+- The three old render test files now instantiate with `writeImports().imports`, so ONE build (`count,write,render-fixture`) runs every render test (they failed with "Imports argument must be present" on that build before).
+- Parity of the painter: see frontier V below.
+
+### Memory
+
+- **M1 (native)**: `m1_every_export_returns_the_live_bytes` runs `picture_pass` (20 calls: ok, refused, consumed inputs, null handles) twice and asserts the live bytes return exactly.
+- **M4 (10,000 pages, `UO_PAINT_M4=10000`)**: 10,000 pages cycled through `encodePage` → `decodePage` → background + items over 6 layouts (46 distinct pages): 8,407,239 draw calls, live bytes 14,991,615 → 14,991,615 (identical), `memory.buffer` 19,988,480 → 19,988,480 (flat after the 200-page warm-up); after `layout.free()`/`doc.free()` the live bytes equal the pre-layout value. The finalizer path: 10,000 rounds of abandoned `Buf`s (never taken or freed) return to the baseline exactly (7,721,330 B). The picture layer (fixture 2, 16 + 48 paints at 8 scales through the mask exports): live 6,925,640 → 6,925,640, `memory.buffer` flat.
+- **M5 (caps)**: every cache is filled past its cap through constructed pages and never exceeds it (`paint_memory.test.mjs`, caps 8/8/16/8/4/4): page-fill tiles 8, shape layers ≤ 9 (cap + 1 for an instant: the TS rule clears when over the cap, after the insert), effect layers 16, images with picture layers 8, layers per image ≤ 5 (cap 4 + 1), adjusted bitmaps 4. Defaults: 32 / 32 / 256 / 64 / 8 / 16.
+- What stays after `env.free()` (6.9 MB) is process-wide (hyphenation and font tables of the languages the documents used, built on first use): not the painter's, reported in the test output.
+- A defect found by the hostile test and fixed: `picture_bevel` computed `w * h * 4` in unchecked `u64` (a debug-build overflow panic for `w = h = u32::MAX`): now `checked_mul`.
+
+### Declarations
+
+| # | Decision | Why |
+|---|---|---|
+| D-1 | `shadow_spec`, the bevel spec and the `PictureAdjust` build moved from uo-pdf into `uo_render::paint::picture` (`shadow_spec`, `BevelParts`, `AdjustParts`); uo-pdf calls them (no duplicate). Arithmetic untouched | two painters, one conversion; `painter_parity` 3/3 guards it |
+| D-2 | The painter lives in `crates/uo-wasm/js/` next to `write.mjs`/`render.mjs`, erasable TS with `import type` only from `gen/render.ts`; the handle layer comes in through the structural `RasterSource`/`PaintEnv` interfaces, not by importing `write.mjs` | TS cannot type `./write.mjs` through `write.d.ts` (TS7016); at the switch `write.d.ts` may become `write.d.mts` (maintainer) |
+| D-3 | Mixed ABI for the masks: item-addressed where the look supplies the parameters (polys, silhouette, bevel, adjust, outer shadow, reflection rows), raw parameters for the generic ones (inner shadow, glow, soft edge, blur). A mask is `w*h` f32 LE, a layer `w*h*4` bytes, a length that does not match is status 5 | RQ12 said "a thin TS facade with the same signatures"; the item-addressed form keeps the look inside wasm |
+| D-4 | `outer_shadow` computes the shadow of `look.shadow` whatever its kind; the `kind === 'outer'` test and the `rotWithShape` direction rule stay in TS | those are the TS's own `if`s |
+| D-5 | Status 4 (a limit) and 1 on a mask export make the painter skip THAT effect (a missing silhouette is a zero mask, a missing layer paints nothing) and keep going | the TS has no limits (it exhausts memory); record E: 4 = paint nothing, keep going |
+| D-6 | `rasters().rectGradient` answers null for status 5 (a NaN side, G-D6) instead of the frozen NaN-size canvas; no corpus exercised it | an invalid size must not throw in a paint loop |
+| D-7 | Caches (`PaintCaches`): page-fill tiles and shape-effect layers are global like the TS module caches (cap 32, clear when over); effect layers are per layout (`WeakMap` on `owner`) keyed `page:item` with a cap of 256 (the TS kept a `WeakMap` per item: no cap); picture layers per layout and image id (cap 8 per image as the TS, plus 64 images); adjusted bitmaps per image id (cap 16, the TS had none). The shape-layer key replaces `style.cust` by the decoded geometry `tables.cust[id]` and the blip's `data.length` by `tables.images[id].byteLength` | a custom geometry's id is per layout, the TS key inlined the object; the equivalence classes stay the TS's |
+| D-8 | `grad && !gradGeom` is the rectangular gradient (hints.rs: `grad_geom` exists only for a gradient that is not rectangular and has no pattern or blip); a fill gradient without its geometry hint paints no fill in the text-effect path (`paintOf` returns null) | the hints are all-or-nothing per item |
+| D-9 | Glyph hints as `e_support/shell.rs`: `outlines` and `remap` by index (a `Map` built only when present), `joins` only when `'fontKerning' in ctx`, the ZWNJ written as the escape `\u200C`, `upem` from `tables.faces[face].upem`; a run whose face is missing from the tables paints nothing | the contract of E-D13 |
+| D-10 | The shape of an effects item is painted in `local` mode: the hints are already the local item's (E-D2), so only the shadow and `fx` are skipped and `x`, `y`, `rot` read as 0 | canvas.ts:430 |
+| D-11 | The page background reads the source-tile size from the export's raster (`pageFillRaster` is `gradientTilePx`) and, on a cache hit, from the cached canvas; an image fill uses `env.image(id)` with `imagePx` | the TS computed `gradientTilePx` itself |
+| D-12 | CI: the new test files, the build line and the tsc line are listed below and NOT added to `.github/workflows/rust-core.yml` (another frontier is editing it) | orchestrator's call |
+
+CI lines to add: `tsc … crates/uo-wasm/js/paint.ts crates/uo-wasm/js/picture.ts`; `cargo build -p uo-wasm --features count,write,render-fixture --target wasm32-unknown-unknown --profile wasm` then `node --expose-gc --test --test-concurrency=1 crates/uo-wasm/tests/{render_paint,render_boundary,render_ts_codec,write_section,write_api,paint_parity,paint_memory}.test.mjs`; the WebKit runner on `render_paint`/`render_boundary`; `cargo test -p uo-wasm --features render-fixture,write --test render_native --test write_native`; the Miri line of `render_unsafe`.
+
+### Not done
+
+- The wiring in the viewer (`engine="rust"`, queue item 4): the snippet in `paint.ts`'s header is the glue; nothing in `universal-document-viewer.ts` changed.
+- The painter has not run in WebKit/Safari (the handle layer and the mask exports have, WebKit 26.5); Chromium only for the pixels. Real Safari 15 is the gate's.
+- `write_section.test.mjs` still passes the 3-language OPTS (the plan proposed registering the 7 pattern files and dropping `hyphenationLanguages`; V's own harness does, the existing test was left alone).
+- The size of the new exports: see "Size" below; the G7 budget is the maintainer's.
+
+### Size
+
+`--features write --profile wasm`: raw 3,966,580 B, gzip -9 1,409,092 B, against the last recorded 3,960,432 / 1,405,088 (`size-optimization.md` item 3a): **+6,148 B raw / +4,004 B gzip**, an upper bound for the ten exports (other frontiers landed code since). `wasm-tools validate` with the Safari-15 feature set: valid. The test build (`count,write,render-fixture`) is 4,371,733 B.
+
+### Process metrics (D)
+
+| Stage | Agent (model) | Time | Tool calls |
+|---|---|---|---|
+| D + V | one implementer session (Sonnet), planner's plan followed | ≈ 55 min wall (20:43–21:40, 2026-11-09), machine shared with two agents | ≈ 170 |
+
+Rework: clippy (`too_many_arguments` on two view methods, `f64::max` ban in a test, import order by rustfmt); the hostile-argument test found the `picture_bevel` overflow (above); the M4 test needed a warm-up cycle (the environment and process-wide tables are built on first use) and per-item cache watching for M5. No port bug was found by a verifier in the painter; frontier V found one adapter bug (below).
+
+## Milestone 1 — frontier V (painter parity)
+
+Sonnet, same session. The draw calls of the TS painter of decoded pages (frontier D) against the frozen `paintItems`/`paintPageBackground`, on a recording context, over the committed fixtures, generated pages and the whole Word oracle, plus the export bytes and Chromium pixels.
+
+### Built
+
+| File | What |
+|---|---|
+| `crates/uo-wasm/tests/support/recording-context.mjs` | the recording context: logs every method and property set (capture-e's n/s/a encoding), a real affine stack, tokens for gradients/patterns/canvases, `OffscreenCanvas`/`DOMMatrix` stubs with a creation-ordered token and a deterministic pseudo-random RGBA backing; `putImageData` writes it, `drawImage` logs the source token and the FNV of its backing |
+| `crates/uo-wasm/tests/support/paint-common.mjs`, `paint-d.mjs` | the four configurations (kerning × scale 1/15 and 2.5/15, with alpha 0.6 on the second scale), the fixture list, the open-font environment, the D-side env and page decoding |
+| `crates/uo-render/tools/capture-v.mjs` | the frozen side: TS layout of the 74 fixture documents, frozen painter on the recording context, one digest per document and configuration → `tests/captures/v_paint.capture` |
+| `crates/uo-render/tools/lib/ts-adapter.mjs` | R-P2c: a frozen `LayoutResult` → render.uos messages through the generated encoder (the TS twin of `to_wire.rs`), `pushInto(view, adapted)` |
+| `crates/uo-wasm/tests/paint_parity.test.mjs` | Part A (CI, no TS root), Part B (generated + oracle, call-by-call diff + R-P2c), Part C (export bytes) |
+| `crates/uo-wasm/tests/browser/paint_pixels.mjs` | Chromium: the frozen `canvas.js` and `paint.ts` bundled by the frozen esbuild into `$CARGO_TARGET_DIR/v-pixels/`, `getImageData` compared byte for byte |
+| `crates/uo-wasm/tests/paint_memory.test.mjs` | M4 / M5 of the painter |
+| `crates/uo-testkit/js/testkit.mjs` | `readCapture(path)` (additive) |
+
+### Evidence (platform: win32, Node v24.15.0, V8 13.6, x64)
+
+| Corpus | Layouts / pages / items | Draw calls | Mismatches |
+|---|---|---|---|
+| **Part A**: 74 committed fixture documents, laid out by the wasm engine (open fonts, the 7 hyphenation patterns, no `hyphenationLanguages`), decode → D painter, against `v_paint.capture` | 74 / 579 / 55,322 (glyphs 47,334 · rect 6,372 · line 939 · shape 377 · clip 300) | 456,698 per configuration (× 4 configurations, 296 digests) | **0** (and a perturbed painter fails 288 of them: the digests are sensitive) |
+| **Part B, generated**: 200 `genSpec` seeds (every painter branch: images PNG/BMP/fake JPEG, picture looks, shapes with presets/custom/gradients/patterns/blips/shadows/effects, paths, clips, xforms, page fills, text effects, hostile numbers), frozen painter vs adapter → Rust view → `encodePage` → `decodePage` → D painter | 200 / 405 / 10,659 (image 952 · glyphs 5,821 · shape 951 · xform 617 · line 535 · rect 587 · clip 802 · path 394) | 1,577,904 (4 configurations) | **0** log, **0** exception mismatches |
+| **Part B, oracle**: the WHOLE Word oracle with `UO_V_ORACLE=1 UO_V_ORACLE_STRIDE=1` (259 groups, 2,742 documents, laid out by the frozen engine with this machine's installed fonts), same path. The default stride 13 (`UO_V_ORACLE=1` only) is 347 layouts / 505 pages / 11,689 items / 597,358 frozen calls (x 4 configurations), 0 mismatches, re-run 2026-11-09 after the fixes | 2,742 / 4,629 / 140,089 (glyphs 115,043 · rect 22,107 · image 604 · shape 410 · line 429 · clip 1,302 · xform 156 · path 38) | 9,880,928 (4 configurations) | **0** |
+
+- **R-P2c** (the adapter): for every page of the three corpora the Rust view re-encodes what the adapter pushed; decoded by the TS decoder and with the hint fields stripped it equals the adapter's own message and the five resource tables are equal: **0 differences** on 2,942 layouts (200 generated + 2,742 oracle). Rust refused nothing.
+- **Export bytes** (Part C, frozen function vs export, byte equality; generated corpus unless said): `patternRaster` 135 equal (+4 both null) · `rectGradientRaster` 147 · `blipTiles` 126 · `fxLayers` at ppt 1.5: 424 equal (+169 both null) and at 3.3333: 424 (+169) · `pageFillTileTw` 59 · `gradientTileRgba` 22 · `patternRgba` 16; oracle: `fxLayers` 196 equal at each ppt (+2 both null) (the oracle has no pattern/blip/rect-gradient shape facets). **0 mismatches, 0 refusals, 0 one-sided results**: the test asserts `mismatch + refused + frozenOnly + rustOnly = 0`.
+- **Chromium pixels** (`UO_V_PIXEL_SEEDS=300 node crates/uo-wasm/tests/browser/paint_pixels.mjs`; the default is 60 seeds: 37 layouts, 78 renders, 204,663,507 px, 0 differing, and every category has renders with ink (pixels of the frozen render that are not the paper; the run fails if a category has renders but none with ink): pic 48/48, shapeFx 16/16, textFx 40/40, pageFill 12/12, shapeRaster 36/36, text 76/76 renders with ink, 64,515,535 ink px in all (the ink of a category counts the whole page, so text on the same page is included); re-run 2026-11-09 with the same result as below; chromium-1248 headless shell): 185 generated layouts, 390 renders (two scales), **1,030,732,444 pixels, 0 differing**. By path: picture layers 196 renders / 520,531,947 px; shape effects 82 / 217,781,747; text-effect layers 176 / 468,497,714; page fills 50 / 126,509,204; pattern/gradient/blip shapes 184 / 478,088,546; text 374 / 980,081,569.
+- Handle layer in WebKit 26.5: `render_paint` 9/9 (including the picture-layer exports equal to native) and `render_boundary` 6/6 (the gc test skipped).
+
+### Declarations
+
+| # | Decision | Why |
+|---|---|---|
+| V-1 | `v_paint.capture` was taken once, on win32 Node v24.15.0 (`@platform` is recorded in it). Part A does NOT key on the platform: the replay side takes its gradient samples, geometry and rasters from the Rust hints and exports (wasm) and the D painter only calls `Math.round`/`Math.hypot` and fdlibm `sin`/`cos`, none OS-dependent. Verified: Part A passes (0 mismatches, 74 / 579 / 55,322 / 456,698) on win32 Node 24 and on Linux x64 Node 22.21 (WSL Ubuntu 24.04) | the earlier version skipped on any other platform, so on the Linux CI it would have checked nothing; the `**` caveat (E-D8) concerns the capture side only. If a future V8 changed the last bit, recapture with `tools/capture-v.mjs` |
+| V-2 | The frozen painter keeps module-level caches; capture and replay paint the same pages in the same order in one process, the replay with fresh `PaintCaches`; the canvas tokens count across the whole run on both sides | otherwise a cache hit (no `createImageData`/`putImageData`) would differ for reasons unrelated to the painter |
+| V-3 | The recording context does not rasterise: `drawImage` logs the source's token and the FNV of its stub backing; the pixels of the picture layer, shape effects and text-effect layers are compared by Chromium (`paint_pixels.mjs`), not by the Node log | stated limitation; both are needed for the parity claim |
+| V-4 | `fontOf` of both sides keys on family/bold/italic/synthBold/synthItalic, never on `key` (a provider path in the TS, `Family|variant` here); an image's bitmap token is the sha256 of its bytes | the keys differ by design |
+| V-5 | The end-to-end fixture corpus needs the 7 hyphenation pattern files registered and NO `hyphenationLanguages` (the 3-language option set of `write_section.test.mjs` makes 8 of the 74 documents lay out differently): a layout/font-policy difference, not a painter one | measured by the planner; the harness registers all patterns |
+| V-6 | The oracle corpus runs through the ADAPTER (frozen layout with installed fonts → view), not end to end: the TS node provider over this machine's fonts and the wasm viewer policy may pick different faces. It covers all 259 groups (the plan's subset was ≈ 395 documents). It depends on the machine's fonts: local only | |
+| V-7 | Adapter decisions: tables in first-use order across the layout (faces/images/text effects/page fills/custom geometries by object identity); `hasBytes = !!face.bytes`; the font file handed to the view is `face.bytes`, or the sfnt the TS font was parsed from (`font.view`) for a non-embeddable face, so the view computes the glyph hints the frozen painter computed from `face.font` (E-D9); `GradFill.rotWithShape` is `rotWithShape !== false` (the frozen `gradientGeometry` treats absent as true) | the first run of V found the last one: a radial gradient radius differed (1707.27 vs 2263.00) until the adapter mapped it as the TS reads it; an adapter bug, not a painter bug |
+| V-8 | Chromium harness: pages whose numbers are not plain (non-finite or beyond 40,000) are skipped (the canvases would be hostile-sized); images the browser cannot decode (the generated fake JPEGs) paint nothing on both sides; the bundle is a build output under `$CARGO_TARGET_DIR/v-pixels/`; a harness bug (the table id of an image is its first use, not its spec index) was fixed before the numbers above | |
+| V-9 | **Accepted differences: none exercised.** 0 unexplained mismatches in every row above. The one declared behavioural difference is D-6 (a NaN rectangular-gradient side: the frozen painter throws from `createImageData`, D skips the fill); no corpus item reaches it | |
+
+### Not done
+
+- Chromium covers 185 generated layouts at two scales; the oracle documents (few images) were compared by call log only, not by pixels, and the corpus of real documents with pictures (the Word corpus outside the oracle) was not run.
+- The painter and the pixel comparison run in Chromium only: no Firefox, no WebKit, no real Safari.
+- `paint_parity.test.mjs` Parts B/C and `paint_pixels.mjs` need the frozen TS root (and, for the oracle, this machine's fonts): they are local runs, not CI steps. Part A and `paint_memory` need no TS root and no fonts and are the CI gate (not yet in the workflow, D-12); Part A is platform-independent (V-1).
+- Hostile-number pages are compared in Node only (0 exception mismatches; they are not rendered).
+
+### Process metrics (V)
+
+Parity rounds: Part A equal on the first run; Part B found one adapter bug (V-7, one round, 4 mismatches in 20 seeds → 0 in 200); the Chromium harness needed one fix of its own (V-8) before 0 differing pixels. Model Sonnet; time and tool calls are shared with frontier D above (one combined row: the per-step split of D and V was not recorded). Fix round 1 (reviewer findings): Part A made platform-independent, one-sided/refused export results counted as failures, ink check in the Chromium harness, record corrections; ≈ 30 min. The new `RenderView` methods of D are covered by uo-wasm's `render_native` (M1 + hostile arguments) and `render_unsafe` instead of `e_memory`/`e_nopanic` test files of uo-render itself.
 
 ## Types (T)
 
