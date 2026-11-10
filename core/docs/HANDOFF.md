@@ -82,6 +82,44 @@ Open before the milestone-1 gate (besides queue item 5):
 - ~~Speed of verification~~: done 2026-11-10 (one uo-docx test binary, `tools/check-changed.mjs`; see the operating
   rules below).
 
+## Update 2026-11-10 (later) — milestone-1 gate work (queue item 5, minus what needs the maintainer)
+
+Workflow `rust-port-milestone1-gate` (3 frontiers plan → implement → review, then security review, milestone skeptic
+and benchmarks, then a fix chain; every reviewer accepted). Items above, now:
+
+- **Open speed** — root cause: one `WriteEnv` per viewer element (assets re-pushed, every face re-hashed, a discovery
+  pass on every document). Now one environment per page and fonts base, superseded passes not decoded, pages
+  decoded on demand (`uo_layout_page_heads`), one face copy out of wasm. Chromium, new element per document: Rust
+  median 44–47 ms vs TS 62–72 ms. Still slower in total (S1/S2 9.4 s vs TS 8.9/7.6 s): wasm layout in Chromium
+  (9.0 s vs 7.1 s), tier-up unproven (G30). Record: `uo-bindings.md` "Open speed".
+- **Licences** — `core/tools/licenses/gen-notices.mjs` → `core/licenses/` (checked with `--check`);
+  `build-pkg.mjs` `shipEngineWasm` fails without current notices; the NuGet packs them (and its `runtimes/` path no
+  longer repeats the RID). `deny.toml` `[licenses]`.
+- **CI** — `rust-core.yml` jobs for painter (Linux recapture of Part A), viewer switch (phase 0, parity, memory,
+  faults), wasm2js, cargo deny licenses. **Never run** (branch not pushed).
+- **wasm2js** — cause: LLVM O3 turns `OptF64`'s sNaN marker into an `f64.const nan:payload`, which wasm2js prints as
+  `NaN`. `OptF64` is now an integer (0 = absent, bits + 1; still 8 B) — this settles **G22**; uo-image TIFF
+  `UNDEF_BITS` is a plain NaN; `build-wasm2js.mjs` fails on NaN-payload constants. 5/5 on O3 and z.
+- **WebKit** — painter Part A in Playwright WebKit (Windows WebKit 26.5); real Safari 15 still open.
+- **F2-20** — the stale-stamped captures were recaptured against the frozen root (`d0f45bc5`).
+- **Security review** (`core/docs/security.md`, new) — blocker fixed: 56+ nested tables overflowed the native stack
+  in layout (kills the .NET server); `uo_docx_to_pdf` now converts on its own 16 MiB thread
+  (`hostile_inputs.rs`, `write_hostile.test.mjs`). Untrusted documents open with the C# package limits (256 MiB per
+  part, 512 MiB total). A wasm trap kills the instance and the next use loads a fresh module (`viewer_trap.test.mjs`).
+  Per-effect native cancellation of raster effects; fuzz target `ffi_docx_to_pdf` (G21 in part).
+  `uo_alloc::assert_no_leak_global` for tests whose work runs on another thread.
+- **Benchmarks** (`uo-docx-layout.md` "Benchmarks main × rust-core — speed", `tools/bench/speed/run.mjs`): 68
+  captures + 5 generated classes up to 500 pages, PDFs byte-identical in TS, wasm and native. Warm totals vs TS:
+  native 0.90, wasm 0.94 (open 0.56/0.61, PDF 0.67/0.77, layout 0.96/0.98). 500-page wasm layout 1.40× TS (G30).
+- **Skeptic** — checklist in `uo-bindings.md` "Milestone-1 skeptic review (2026-11)".
+
+**Still open for the milestone-1 gate (needs the maintainer):** push `rust-core` and get one green `rust-core.yml`
+run; real Safari 15 / iOS (BrowserStack MCP needs `/mcp`); decisions **G23–G31** in `uo-bindings.md` "For the
+milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects — 600 glow runs = 61 s, G25 limits
+of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
+Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
+the gate itself.
+
 ## Work in progress — commit `6471786d` (historical: finished, see the update above)
 
 It compiles (`cargo check --workspace --all-features --tests`) but was **not verified**:
@@ -135,7 +173,8 @@ Later: Sheet (calc engine on Opus, `sheet-core`), Slides (`slides-core`), charts
   a table).
 - **Bindings G1–G22** (`uo-bindings.md` "For the milestone-1 gate"): notably G4 cancellation, G5 limits for untrusted
   documents, G7 size budget, G8 page section, G14 NuGet RID packing, **G22 `OptF64`'s signalling-NaN "absent" marker**
-  (breaks any JS/wasm2js build; give it a presence bit).
+  (breaks any JS/wasm2js build) — **done 2026-11-10** as an integer encoding (approve), and the new **G23–G31** from
+  the gate work.
 - **Size** (`size-optimization.md`): D-1 six NaN-capable layout sorts on the JS core; D-2 `opt-level = "s"` for
   uo-docx in the wasm profile (−68 KB gzip, open +14%) or `"z"` (−156 KB, open +60%). Viewer today: 3.96 MB raw /
   1.405 MB gzip (TS start: 0.30 MB gzip).

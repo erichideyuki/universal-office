@@ -109,6 +109,9 @@ impl Painter<'_> {
     /// and glow behind, the reflection (the silhouette in the fill colour, mirrored with the gradient),
     /// the inner shadow on top. With soft edges the body becomes a raster (the fill colour with the mask).
     pub(crate) fn paint_shape_effects<S: PdfSink>(&mut self, page: &mut PageWriter<'_, S>, it: &ShapeItem) -> PaintResult<()> {
+        if self.stop_for_cancel() {
+            return Ok(());
+        }
         let res = self.res;
         let lim = self.opts.paint.draw;
         let fx = it.fx.unwrap_or_default();

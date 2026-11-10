@@ -13,7 +13,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use uo_alloc::{assert_no_leak, measure};
+use uo_alloc::{assert_no_leak, assert_no_leak_global, measure};
+use uo_ffi::pipeline::Trust;
+use uo_ffi::server::{Converter, ConverterOptions, PdfJob};
 use uo_ffi::pipeline::{UoErrorInfo, code, uo_last_error, uo_last_error_clear};
 use uo_ffi::{
     CONVERTER_TRUSTED, JOB_COMPRESS, UoBuf, UoConverter, UoConverterOptions, UoPdfJob, uo_buf_free, uo_buf_len, uo_buf_ptr, uo_cancel_free,
@@ -126,44 +128,42 @@ fn m1_a_conversion_leaves_nothing_ok_refused_or_cancelled() {
     let j = job(JOB_COMPRESS);
     // warm-up: the faces enter the face cache, the hyphenation patterns are parsed once
     let first = convert(c, &docx, &j, std::ptr::null()).unwrap();
-    let (again, u) = measure(|| convert(c, &docx, &j, std::ptr::null()).unwrap());
+    let again = convert(c, &docx, &j, std::ptr::null()).unwrap();
     assert_eq!(first, again, "deterministic");
     drop(again);
-    let ok = assert_no_leak(|| convert(c, &docx, &j, std::ptr::null()).unwrap());
-    let garbage = assert_no_leak(|| assert_eq!(convert(c, b"PK\x03\x04 not a zip", &j, std::ptr::null()), Err(code::INVALID_DATA)));
+    // global counters: the conversion runs on its own worker thread (CONVERSION_STACK_BYTES)
+    let ok = assert_no_leak_global(|| convert(c, &docx, &j, std::ptr::null()).unwrap());
+    let garbage = assert_no_leak_global(|| assert_eq!(convert(c, b"PK\x03\x04 not a zip", &j, std::ptr::null()), Err(code::INVALID_DATA)));
     let k = uo_cancel_new();
     // SAFETY: a live flag.
     unsafe { uo_cancel_raise(k) };
-    let cancelled = assert_no_leak(|| assert_eq!(convert(c, &docx, &j, k), Err(code::CANCELLED)));
+    let cancelled = assert_no_leak_global(|| assert_eq!(convert(c, &docx, &j, k), Err(code::CANCELLED)));
     let tight = UoPdfJob { max_pages: 1, ..job(JOB_COMPRESS) };
     // warm-up of the faces this other document loads before its layout stops
     assert_eq!(convert(c, &fixture("f8", "f8__7__1"), &tight, std::ptr::null()), Err(code::LIMIT_EXCEEDED));
-    let limit = assert_no_leak(|| assert_eq!(convert(c, &fixture("f8", "f8__7__1"), &tight, std::ptr::null()), Err(code::LIMIT_EXCEEDED)));
+    let limit = assert_no_leak_global(|| assert_eq!(convert(c, &fixture("f8", "f8__7__1"), &tight, std::ptr::null()), Err(code::LIMIT_EXCEEDED)));
     // SAFETY: live handles, released once.
     unsafe {
         uo_cancel_free(k);
         uo_converter_free(c);
     }
     println!(
-        "M1: ok {} B allocated (peak {} B above start, file {} B); invalid {} B; cancelled {} B; page limit {} B; 0 B left each",
-        ok.allocated,
-        u.peak_above_start,
-        first.len(),
-        garbage.allocated,
-        cancelled.allocated,
-        limit.allocated
+        "M1 (global counters): ok {ok} B allocated (file {} B); invalid {garbage} B; cancelled {cancelled} B; page limit {limit} B; 0 B left each",
+        first.len()
     );
 }
 
 #[test]
 fn m3_server_conversion_budgets() {
     let _serial = serial();
-    let c = converter(&open_dirs());
-    let j = job(JOB_COMPRESS);
+    // the C ABI converts on a worker thread, which the thread-local counters of `measure` cannot see:
+    // the same conversion through the Rust API runs inline on this thread
+    let conv = Converter::new(&ConverterOptions { system_fonts: false, font_dirs: open_dirs(), trust: Trust::Trusted });
+    let pj = PdfJob::default();
     for (fam, key) in [("f8", "f8__7__0"), ("f7b", "f7b__7__0"), ("f7c", "f7c__7__1"), ("f8", "f8__7__2")] {
         let docx = fixture(fam, key);
-        drop(convert(c, &docx, &j, std::ptr::null()).unwrap());
-        let (pdf, u) = measure(|| convert(c, &docx, &j, std::ptr::null()).unwrap());
+        drop(conv.docx_to_pdf(docx.clone(), &pj, None).unwrap());
+        let (pdf, u) = measure(|| conv.docx_to_pdf(docx.clone(), &pj, None).unwrap());
         println!(
             "M3 {fam}/{key}: docx {} B -> pdf {} B; allocated {} B, peak {} B above start",
             docx.len(),
@@ -172,8 +172,6 @@ fn m3_server_conversion_budgets() {
             u.peak_above_start
         );
     }
-    // SAFETY: a live converter, released once.
-    unsafe { uo_converter_free(c) };
 }
 
 #[test]

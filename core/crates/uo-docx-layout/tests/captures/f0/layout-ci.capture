@@ -1,7 +1,7 @@
 # uo-docx-layout layout parity capture: written by core/crates/uo-docx-layout/tools/capture-layout.mjs, replayed by tests/layout_parity.rs (record §5, "Milestone 1 — F0").
 # p1: the canonical stream of the LayoutResult (tools/lib/canon.mjs = src/canon.rs); p2/p2first: the provider transcript (tools/lib/transcript.mjs); p3.*: per-stage facets (tools/lib/facets.mjs); error: the TS exception, if the layout threw.
-@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
-@ts-commit b92b60fae4c1c612de1de3174c199052d43b9230
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=--max-old-space-size=8192
+@ts-commit d0f45bc54c05fb026475d7b229efa498af8423c6
 @mode ci
 @canon-version 1
 @now 2026-01-15T12:00:00.000Z
@@ -10,5 +10,5 @@
 @documents 2
 @pages 3
 @errors 0
-gen/1/2	p1=16179:4eb879533abcedb26eaa6d177673a30f	p2=91:5f33a83a2beb82558d3f6779c1c888c4	p2first=77:5dc77469be364e406211a982d46e639d	p3.prepare=23095:0fa174e047a596acd19ef08b7370f47e	p3.lines=8407:5cb92b73c6839e75087a84594bd42d53	pages=1
-gen/1/4	p1=24801:2e38d71f182b4d8283ecd6a513dcde9a	p2=182:e44feccdc4251e8a77227be9dfbfe8d1	p2first=154:4306b6680eaa9ccc88e5d8de52ac0324	p3.prepare=42751:9ee4926e01c8ad4f207323be34a286fd	p3.lines=12856:85c28955cc042714f956b52fda88ab82	pages=2
+gen/1/2	p1=16179:a830da7dd1ec7923deec12f8eb8de6bc	p2=91:3feaea7d21defaafb92fd55a0fd403f9	p2first=77:e4e98194bf788caa8be0df458b78ac83	p3.prepare=14:624fdca17782fc5d9db19fe0fb5363de	p3.lines=38:f7491ca6a537d621948399b3e16dd69a	pages=1
+gen/1/4	p1=24801:20047aa1e66aea0097b01a721193aed3	p2=182:08026864b48806121f3260564b73a554	p2first=154:cc62c0f68df99883abac113647099383	p3.prepare=32:a7c9966b3bd823ae18811673f346180c	p3.lines=80:a14e375db966de01fbcc8e04cf5e073e	pages=2

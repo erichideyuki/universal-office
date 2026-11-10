@@ -61,6 +61,9 @@ pub use d5::{compare_docx, d5_seeds, export_docx, odt_read};
 mod d3;
 pub use d3::{api_open_sanitize_save, api_template_apply, d3_seeds};
 
+mod pipeline;
+pub use pipeline::{ffi_docx_to_pdf, pipeline_seeds};
+
 mod image;
 pub use image::{image_decode, image_seeds};
 
@@ -123,6 +126,7 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("odraw_records", odraw_records),
     ("doc_convert", doc_convert),
     ("read_docx", read_docx),
+    ("ffi_docx_to_pdf", ffi_docx_to_pdf),
     ("odt_read", odt_read),
     ("export_docx", export_docx),
     ("compare_docx", compare_docx),

@@ -16,7 +16,7 @@ fn an_item_is_at_most_48_bytes() {
 
 #[test]
 fn opt_f64_keeps_absent_apart_from_every_value() {
-    for v in [0.0, -0.0, f64::NAN, -f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300, 5e-324, f64::from_bits(0x7ff4_0000_0000_0001)] {
+    for v in [0.0, -0.0, f64::NAN, -f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300, 5e-324, f64::from_bits(0x7ff4_0000_0000_0001), f64::from_bits(u64::MAX), f64::from_bits(0x7ff8_0000_0000_0001), f64::MAX] {
         let o = OptF64::some(v);
         assert!(o.is_some());
         let got = o.get().unwrap();
@@ -27,6 +27,8 @@ fn opt_f64_keeps_absent_apart_from_every_value() {
         }
     }
     assert_eq!(OptF64::NONE.get(), None);
+    assert_ne!(OptF64::some(0.0), OptF64::NONE);
+    assert_eq!(OptF64::from(Some(f64::NAN)), OptF64::some(f64::NAN));
     assert_eq!(OptF64::default().get(), None);
     assert_eq!(OptF64::from(None).or(7.0), 7.0);
 }

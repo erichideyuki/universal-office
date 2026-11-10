@@ -3,6 +3,9 @@
 // (render and Write sections), annotations, navigation, link boxes, page info, the first embedded face and the PDF
 // (compressed and not) are byte-identical, the PDF equals the native checksum where one is pinned, `engine:'auto'`
 // picks WebAssembly here and falls back to js when the compile is refused, and errors carry the same codes.
+// Since G22 (OptF64 is an integer, 0 = absent) both the default opt-level 3 module and the z one (cargo
+// CARGO_PROFILE_WASM_OPT_LEVEL=z) convert correctly. The .js must be built with tools/build-wasm2js.mjs, which
+// refuses a module holding NaN-payload constants (JavaScript has no NaN payloads):
 //   cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm
 //   node core/crates/uo-wasm/tools/build-wasm2js.mjs --in <that .wasm> --out <uo_wasm.js>
 //   UO_WASM_PATH=<.wasm> UO_WASM2JS_PATH=<uo_wasm.js> node --test crates/uo-wasm/tests/write_wasm2js.test.mjs

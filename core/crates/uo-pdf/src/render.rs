@@ -69,8 +69,8 @@ pub struct PdfOptions {
     pub paint: PaintLimits,
     /// the limits of the image decoders
     pub image: ImageLimits,
-    /// a flag the caller raises to stop the render (PQ9): checked before each page and every 256
-    /// items; the render then returns [`PdfError::Cancelled`]
+    /// a flag the caller raises to stop the render (PQ9): checked before each page, every 256
+    /// items and before each raster effect (text, shape and picture effects); the render then returns [`PdfError::Cancelled`]
     pub cancel: Option<Arc<AtomicBool>>,
 }
 
@@ -348,6 +348,17 @@ impl<'r> Painter<'r> {
         }
     }
 
+    /// Checks the cancel flag before a raster effect (the unbudgeted cost of a page): on a raised
+    /// flag the render is marked [`PdfError::Cancelled`] and the caller skips the effect; the page
+    /// loop then stops after the item.
+    pub(crate) fn stop_for_cancel(&mut self) -> bool {
+        if self.check_cancel().is_err() {
+            self.fatal.get_or_insert(PdfError::Cancelled);
+            return true;
+        }
+        false
+    }
+
     fn check_cancel(&mut self) -> Result<()> {
         if self.opts.cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed)) {
             return Err(PdfError::Cancelled);
@@ -442,6 +453,9 @@ impl<'r> Painter<'r> {
         let r = if jp.is_some() { None } else { decode_raster(data, &self.opts.image).ok() };
         if let Some(mut r) = r {
             if let Some(fx) = fx {
+                if self.stop_for_cancel() {
+                    return None;
+                }
                 apply_image_effects(&mut r.data, fx);
             }
             return self.embed_rgba(page, &r.data, r.width, r.height);
@@ -505,6 +519,9 @@ impl<'r> Painter<'r> {
         let key = (it.image, self.adjust_key(it));
         if let Some(h) = self.adjusted.get(&key) {
             return *h;
+        }
+        if self.stop_for_cancel() {
+            return None;
         }
         let h = match self.rgba_of(it) {
             Some(r) => self.embed_rgba(page, &r.data, r.width, r.height),
@@ -570,6 +587,9 @@ impl<'r> Painter<'r> {
             if fx.is_none() || dec.is_some() {
                 return self.embed_jpeg(page, data, &j, dec.as_deref().unwrap_or(&[]), Some(SoftMask { alpha, width: mw, height: mh }));
             }
+        }
+        if self.stop_for_cancel() {
+            return None;
         }
         let Some(mut r) = self.rgba_of(it) else { return self.image_for(page, it.image) };
         // the mask (at its resolution) multiplies the alpha of the image
@@ -1008,6 +1028,7 @@ impl<'r> Painter<'r> {
         let face = res.face(run.face).and_then(|f| f.face.as_ref());
         if let Some(face) = face
             && (fx.shadow.is_some() || fx.glow.is_some() || fx.reflection.is_some())
+            && !self.stop_for_cancel()
         {
             let rv = run.view(face);
             if let Ok(Some(l)) = fx_layers(&rv, fx, &res.symbols, FX_PPT, res.sym(run.color), &self.opts.paint)

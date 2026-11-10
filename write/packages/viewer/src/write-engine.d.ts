@@ -114,6 +114,7 @@ declare module '@universal-office/write-engine' {
     paintItems(ctx: CanvasRenderingContext2D, i: number, env: PaintEnv, opts?: { from?: number; to?: number; alpha?: number }): void;
     faceIndex(face: Face): number;
     faceKey(i: number): string | null;
+    dropFaceBytes(i: number): void;
     faceBytes(i: number): Uint8Array | null;
     imageBytes(i: number): Uint8Array | null;
     imageSvg(i: number): Uint8Array | null;
@@ -134,10 +135,12 @@ declare module '@universal-office/write-engine' {
 
   export interface ViewerModule {
     readonly engine: 'wasm' | 'js';
-    newEnv(): ViewerEnv;
+    /** true once a `WebAssembly.RuntimeError` stopped this instance: every call refuses, `loadViewerModule` makes a fresh one */
+    readonly dead: boolean;
+    newEnv(o?: { page?: boolean }): ViewerEnv;
     open(docx: Uint8Array): ViewerDocument;
     patternText(id: string): Promise<string | null>;
-    stats(): { buffer: number; live: number | null; handles: number };
+    stats(): { buffer: number; live: number | null; handles: number; pageEnvs: number };
   }
 
   export function loadViewerModule(src?: LoadWriteOptions): Promise<ViewerModule>;

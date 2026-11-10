@@ -5,7 +5,7 @@
 // real Chromium, and `getImageData` is compared byte for byte. The D painter's page comes from the frozen LayoutResult through
 // the TS adapter, the Rust view (wasm) and `encodePage` -> `decodePage`; its rasters and masks are the wasm exports.
 //
-//   UO_TS_ROOT=<frozen> UO_CHROMIUM=<chrome-headless-shell.exe> [UO_WASM_PATH=<.wasm>] [UO_V_PIXEL_SEEDS=60] node crates/uo-wasm/tests/browser/paint_pixels.mjs
+//   UO_TS_ROOT=<frozen> UO_CHROMIUM=<chrome-headless-shell.exe> [UO_WASM_PATH=<.wasm>] [UO_V_PIXEL_SEEDS=60] [UO_PLAYWRIGHT=<playwright package>] node crates/uo-wasm/tests/browser/paint_pixels.mjs [--browser chromium|webkit]
 //
 // The bundle goes to `$CARGO_TARGET_DIR/v-pixels/` (a build output; no repo copy, no junction). Fonts are registered as FontFace
 // from the same bytes on both sides; images are decoded once with createImageBitmap (an image the browser cannot decode — the
@@ -101,7 +101,7 @@ export async function run({ wasmB64, specs, fonts, scales }) {
       };
       for (const s of scales) {
         const W = Math.max(1, Math.min(2400, Math.ceil(page.widthTw * s))), H = Math.max(1, Math.min(3200, Math.ceil(page.heightTw * s)));
-        const draw = (fn) => { const c = new OffscreenCanvas(W, H); const x = c.getContext('2d', { willReadFrequently: true }); x.setTransform(s, 0, 0, s, 0, 0); fn(x); return x.getImageData(0, 0, W, H).data; };
+        const draw = (fn) => { const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(W, H) : Object.assign(document.createElement('canvas'), { width: W, height: H }); const x = c.getContext('2d', { willReadFrequently: true }); x.setTransform(s, 0, 0, s, 0, 0); fn(x); return x.getImageData(0, 0, W, H).data; };
         let A, B, err = null;
         try {
           A = draw((x) => { canvas.paintPageBackground(x, page, fenv, { devicePxTw: 1 / s, screen: false, paper: '#ffffff' }); canvas.paintItems(x, page.items, fenv); });
@@ -162,7 +162,14 @@ for (let i = 0; specs.length < SEEDS && i < SEEDS * 6; i++) {
 }
 
 // ── Chromium ────────────────────────────────────────────────────────────────────────────────────
-const { chromium } = createRequire(join(root, 'sheet/package.json'))('playwright');
+// `--browser chromium|webkit` (default chromium). UO_PLAYWRIGHT (a path to a `playwright` package folder, as run.mjs) wins over the
+// frozen root's sheet/node_modules/playwright. WebKit on Windows has no OffscreenCanvas: the harness (and both painters) then use an
+// HTMLCanvasElement, the path of Safari 15.
+const browserName = process.argv.includes('--browser') ? process.argv[process.argv.indexOf('--browser') + 1] : 'chromium';
+if (!['chromium', 'webkit'].includes(browserName)) throw new Error(`--browser chromium|webkit, got ${browserName}`);
+const playwright = process.env.UO_PLAYWRIGHT
+  ? await import(pathToFileURL(resolve(process.env.UO_PLAYWRIGHT, 'index.mjs')).href)
+  : createRequire(join(root, 'sheet/package.json'))('playwright');
 const installed = (() => {
   const base = join(process.env.LOCALAPPDATA ?? '', 'ms-playwright');
   if (!existsSync(base)) return undefined;
@@ -176,14 +183,16 @@ const server = createServer((req, res) => {
   res.writeHead(404).end();
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
-const browser = await chromium.launch({ headless: true, executablePath: process.env.UO_CHROMIUM ?? installed });
+const browser = await playwright[browserName].launch(browserName === 'chromium' ? { headless: true, executablePath: process.env.UO_CHROMIUM ?? installed } : { headless: true });
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.log('PAGE ERROR', e.message));
 page.on('console', (m) => { if (m.type() === 'error') console.log('CONSOLE', m.text()); });
 await page.goto(`http://127.0.0.1:${server.address().port}/`);
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 60000 });
 const t0 = Date.now();
+const paths = await page.evaluate(() => ({ offscreen: typeof OffscreenCanvas !== 'undefined', kerning: 'fontKerning' in CanvasRenderingContext2D.prototype }));
 const rows = await page.evaluate(({ wasmB64, specs, fonts, scales }) => window.__run({ wasmB64, specs, fonts, scales }), { wasmB64: readFileSync(wasmPath).toString('base64'), specs, fonts, scales: [1 / 15, 2.5 / 15] });
+const browserVersion = `${browserName} ${browser.version()}`;
 await browser.close();
 server.close();
 
@@ -195,7 +204,7 @@ for (const r of rows) for (const c of ['all', ...cats.filter((k) => r.features[k
   if (r.err) { t.errors++; continue; }
   t.pixels += r.pixels; t.inkPixels += r.ink; if (r.ink) t.inkRenders++; t.diffPixels += r.diff; if (r.diff) t.diffPages++;
 }
-console.log(`paint_pixels: ${specs.length} generated layouts, ${rows.length} page renders (2 scales) in ${Date.now() - t0} ms`);
+console.log(`paint_pixels: ${browserVersion} (OffscreenCanvas ${paths.offscreen ? 'yes' : 'no: HTMLCanvasElement'}, ctx.fontKerning ${paths.kerning ? 'yes' : 'no'}): ${specs.length} generated layouts, ${rows.length} page renders (2 scales) in ${Date.now() - t0} ms`);
 for (const [c, t] of Object.entries(tally)) console.log(`  ${c.padEnd(12)} ${String(t.pages).padStart(4)} renders  ${String(t.pixels).padStart(11)} pixels  ${t.diffPixels} differing pixels in ${t.diffPages} renders  ${t.errors} errors  ${t.inkRenders} renders with ink (${t.inkPixels} px)`);
 for (const r of rows.filter((x) => x.err || x.diff).slice(0, 12)) console.log('  DIFF', JSON.stringify({ seed: r.seed, page: r.pi, scale: r.s, features: Object.keys(r.features).filter((k) => r.features[k]), diff: r.diff, first: r.first, err: r.err, items: r.items }));
 // a category with renders but none with any ink compared nothing: fail

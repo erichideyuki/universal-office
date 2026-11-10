@@ -3,7 +3,7 @@
 // opening and closing documents with `engine="rust"`.
 //
 //   UO_TS_ROOT=<frozen checkout: tools only> [UO_CHROMIUM=<chrome-headless-shell.exe>] [UO_WASM_PATH=<.wasm: count,write build>]
-//   [UO_SW_STRIDE=1] [UO_SW_SOAK=200] node crates/uo-wasm/tests/browser/viewer_switch.mjs [--mode parity|memory|all|phase0]
+//   [UO_SW_STRIDE=1] [UO_SW_SOAK=200] node crates/uo-wasm/tests/browser/viewer_switch.mjs [--mode parity|memory|all|phase0|speed|faults]
 //
 // The page is the real thing: the viewer's `src/index.ts` and the Rust engine's JS bundled by the frozen esbuild with the settings
 // of tools/build-pkg.mjs (`splitting`, `chunks/[name]-[hash]`, the same alias table, `@universal-office/write-engine`), served by a
@@ -12,7 +12,12 @@
 // entry's static closure holds none of the engine's code. The parity phase compares, per fixture: page count and sizes, headings,
 // comments, link boxes, the text layer (innerHTML), find hits, canvas pixels at two scales (byte for byte, tolerance 0) and the
 // uncompressed PDF of the print layout. The memory phase opens and closes documents with `engine="rust"` and checks that the
-// module's live bytes return to a flat line and no handle stays alive.
+// module's live bytes return to a flat line and no handle stays alive. `--mode speed` (not part of `all`) times the open: per-stage
+// breakdown of both engines in three scenarios (S0 cold first load; S1 a new element per document; S2 one element for all documents),
+// interleaved TS/Rust per document, UO_SW_ROUNDS (3) rounds of the corpus, UO_SW_SCENARIOS (S0,S1,S2). Instrumentation wraps prototypes
+// in the page driver only; nothing in shipped code. `--mode faults` (not part of `all`; needs the count build: `uo_test_trap`) forces a
+// trap of the wasm instance (the viewer must drop it, reload on the same element and open another element) and a refused font push
+// (WriteError 5 from `pushFamily`: the document still loads with the substitute).
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync, rmSync } from 'node:fs';
@@ -45,7 +50,7 @@ export { UniversalDocumentViewerElement, renderPdf, pdfNavigation };
 const statsUrl = new URL('./stats.js', import.meta.url).href;
 export const engineModule = () => import(statsUrl);
 `;
-const statsEntry = `export { loadViewerModule, viewerModuleLoaded } from '${W('core/crates/uo-wasm/js/viewer.ts')}';\n`;
+const statsEntry = `export { loadViewerModule, viewerModuleLoaded, WriteError, __trapForTest } from '${W('core/crates/uo-wasm/js/viewer.ts')}';\n`;
 writeFileSync(join(outDir, 'entry.mjs'), driver);
 writeFileSync(join(outDir, 'stats.mjs'), statsEntry);
 const INTERNAL = {
@@ -182,6 +187,66 @@ const driverFn = () => {
     }
     return { data, W, H, settled };
   };
+  // ── speed instrumentation (prototype wrappers; accumulates into window.__T, reset per measured load) ──
+  const MARK = Symbol('speed');
+  const missingHooks = new Set();
+  const T = () => (window.__T ??= {});
+  const add = (k, ms) => { const s = (T()[k] ??= { ms: 0, n: 0 }); s.ms += ms; s.n++; };
+  const wrap = (proto, name, key, kind, extra) => {
+    if (!proto || typeof proto[name] !== 'function') { missingHooks.add(key); return; }
+    proto[MARK] ??= new Set();
+    if (proto[MARK].has(name)) return;
+    proto[MARK].add(name);
+    const f = proto[name];
+    proto[name] = kind === 'async'
+      ? async function (...a) { const t0 = performance.now(); extra?.pre?.(t0); try { return await f.apply(this, a); } finally { const t1 = performance.now(); add(key, t1 - t0); extra?.post?.(t1); } }
+      : function (...a) { const t0 = performance.now(); extra?.pre?.(t0); try { return f.apply(this, a); } finally { const t1 = performance.now(); add(key, t1 - t0); extra?.post?.(t1); } };
+  };
+  const instrument = (el) => {
+    const P = Object.getPrototypeOf(el);
+    wrap(P, 'setLayout', 'ts.setLayout', 'sync', { pre: (t) => { const r = T(); if (r._p !== undefined) { add('ts.layoutPass', t - r._p); r._p = undefined; } } });
+    wrap(P, 'provider', 'ts.provider', 'sync', { pre: (t) => { const r = T(); r._p = t; if (r._la !== undefined) { add('ts.hyphenation', t - r._la); r._la = undefined; } } });
+    wrap(P, 'relayout', 'relayout', 'async');
+    if (el.fonts) {
+      wrap(Object.getPrototypeOf(el.fonts), 'loadAssets', 'ts.loadAssets', 'async', { post: (t) => { T()._la = t; } });
+      wrap(Object.getPrototypeOf(el.fonts), 'loadMissing', 'ts.loadMissing', 'async');
+    }
+    const rs = el.rust;
+    if (rs) {
+      const RP = Object.getPrototypeOf(rs);
+      for (const m of ['open', 'prepare', 'supply', 'fetchLater']) if (typeof RP[m] === 'function') wrap(RP, m, `rust.${m}`, 'async');
+      if (typeof RP.pushNow === 'function') wrap(RP, 'pushNow', 'rust.pushNow', 'sync');
+      if (rs.doc) {
+        wrap(Object.getPrototypeOf(rs.doc), 'layout', 'rust.layout', 'sync');
+        wrap(Object.getPrototypeOf(rs.doc.inner), 'layout', 'rust.wasmLayout', 'sync');
+      }
+      const env = rs.env;
+      if (env) for (const m of ['pushAsset', 'pushFamily', 'registerHyphenation', 'takeMissing']) wrap(Object.getPrototypeOf(env), m, `rust.${m}`, 'sync');
+    }
+  };
+  const timedLoad = async (el, bytes) => {
+    window.__T = {};
+    const t0 = performance.now();
+    await el.loadDocx(bytes);
+    const loadMs = performance.now() - t0;
+    const stages = {};
+    for (const [k, v] of Object.entries(window.__T)) if (!k.startsWith('_')) stages[k] = { ms: v.ms, n: v.n };
+    return { loadMs, stages };
+  };
+  const firstPage = (el) => {
+    const p = el.layout.pages[0];
+    const W = Math.max(1, Math.round(p.widthTw / 15)), H = Math.max(1, Math.round(p.heightTw / 15));
+    const cv = document.createElement('canvas');
+    const t0 = performance.now();
+    el.drawPage(0, cv, W, H, W / p.widthTw, 0, false);
+    return performance.now() - t0;
+  };
+  const one = async (el, engine, n, bytes) => {
+    const r = await timedLoad(el, bytes);
+    const firstMs = firstPage(el);
+    const passes = engine === 'ts' ? (r.stages['ts.provider']?.n ?? 0) : (r.stages['rust.layout']?.n ?? 0);
+    return { n, engine, loadMs: r.loadMs, firstMs, stages: r.stages, passes };
+  };
   const loadedLayoutEngine = (el) => el.layout?.engine ?? 'ts';
   return {
     async phase0(names) {
@@ -283,6 +348,97 @@ const driverFn = () => {
       }
       return res;
     },
+    /** speed: `scenario` S1 (new element per document) or S2 (one element per engine); alternating order per document */
+    async speed(names, scenario) {
+      const rows = [];
+      const warm = [make('ts'), make('rust')];
+      const b0 = await fetchDoc(names[0]);
+      for (const e of warm) await e.loadDocx(b0);
+      for (const e of warm) instrument(e);
+      for (const e of warm) e.remove();
+      const long = scenario === 'S2' ? { ts: make('ts'), rust: make('rust') } : null;
+      if (long) { for (const e of Object.values(long)) { await e.loadDocx(b0); instrument(e); } }
+      for (let k = 0; k < names.length; k++) {
+        const n = names[k];
+        const bytes = await fetchDoc(n);
+        for (const engine of k % 2 === 0 ? ['ts', 'rust'] : ['rust', 'ts']) {
+          const el = long ? long[engine] : make(engine);
+          rows.push(await one(el, engine, n, bytes));
+          if (!long) el.remove();
+          await sleep(0);
+        }
+      }
+      if (long) for (const e of Object.values(long)) e.remove();
+      return { rows, missing: [...missingHooks] };
+    },
+    /** S0: the cold first load of one document on a fresh page with one engine */
+    async cold(n, engine) {
+      const el = make(engine);
+      const r = await timedLoad(el, await fetchDoc(n));
+      el.remove();
+      return r;
+    },
+    /** faults: a trap of the wasm instance, then a refused font push; every step is reported, the node side asserts */
+    async faults(n0, n1, n2, n3) {
+      const engine = await engineModuleFn();
+      const out = {};
+      const watch = (el) => { const ev = []; el.addEventListener('udv-loaded', () => ev.push('loaded')); el.addEventListener('udv-error', () => ev.push('error')); return ev; };
+      const trap = () => { try { engine.__trapForTest(); return 'no throw'; } catch (e) { return e?.constructor?.name ?? String(e); } };
+      const attempt = async (el, n) => { try { await el.loadDocx(await fetchDoc(n)); await settle(el); return null; } catch (e) { return String(e?.message ?? e); } };
+      // (1) a trap while a document is open
+      const A = make('rust');
+      const evA = watch(A);
+      out.a0 = await attempt(A, n0);
+      const mod0 = await engine.loadViewerModule();
+      out.pagesA0 = A.getPageCount();
+      out.before = mod0.stats();
+      out.trap = trap();
+      out.deadAfterTrap = mod0.dead;
+      evA.length = 0;
+      out.a1 = await attempt(A, n1);
+      out.eventsA1 = evA.slice();
+      const T = make('ts');
+      await T.loadDocx(await fetchDoc(n1)); await settle(T);
+      out.pagesA1 = A.getPageCount(); out.pagesTs1 = T.getPageCount();
+      T.remove();
+      const mod1 = await engine.loadViewerModule();
+      out.freshModule = mod1 !== mod0 && !mod1.dead;
+      const B = make('rust');
+      const evB = watch(B);
+      out.b = await attempt(B, n2);
+      out.eventsB = evB.slice();
+      out.pagesB = B.getPageCount();
+      A.remove(); B.remove();
+      await sleep(50);
+      out.after = mod1.stats();
+      // (2) a refused font push (OverBudget on the page environment): the document still loads, with the substitute
+      const C0 = make('rust');
+      await attempt(C0, n0);
+      const proto = Object.getPrototypeOf(C0.rust.env);
+      const orig = proto.pushFamily;
+      let thrown = 0;
+      proto.pushFamily = function () { thrown++; throw new engine.WriteError(5, 0, 0, 'test', 'pushFamily'); };
+      out.trap2 = trap(); // a new instance has an empty page environment: every family is pushed again
+      C0.remove();
+      const C = make('rust');
+      const evC = watch(C);
+      out.c = await attempt(C, n3);
+      out.eventsC = evC.slice();
+      out.pagesC = C.getPageCount();
+      const T3 = make('ts');
+      await T3.loadDocx(await fetchDoc(n3)); await settle(T3);
+      out.pagesTs3 = T3.getPageCount(); T3.remove();
+      out.thrown = thrown;
+      proto.pushFamily = orig;
+      C.remove();
+      const D = make('rust');
+      const evD = watch(D);
+      out.d = await attempt(D, n2);
+      out.eventsD = evD.slice();
+      out.pagesD = D.getPageCount();
+      D.remove();
+      return out;
+    },
     async soak(names, count) {
       const engine = await engineModuleFn();
       let mod = null; // the memoized module: available once the first viewer loaded it (the default source is the viewer's own)
@@ -296,7 +452,7 @@ const driverFn = () => {
         const during = mod.stats();
         el.remove();
         const s = mod.stats();
-        series.push({ k, pages, buffer: s.buffer, live: s.live, handles: s.handles, duringHandles: during.handles });
+        series.push({ k, pages, buffer: s.buffer, live: s.live, handles: s.handles, pageEnvs: s.pageEnvs, duringHandles: during.handles });
       }
       return series;
     },
@@ -356,6 +512,81 @@ if (MODE === 'parity' || MODE === 'all') {
   console.log(`  loadDocx (open + layout, incl. fonts): TS ${tsMs.toFixed(0)} ms total, median ${med('tsMs').toFixed(0)} ms; Rust ${rustMs.toFixed(0)} ms total, median ${med('rustMs').toFixed(0)} ms`);
 }
 
+// ── speed ───────────────────────────────────────────────────────────────────────────────────────
+if (MODE === 'speed') {
+  const ROUNDS = Number(process.env.UO_SW_ROUNDS ?? 3);
+  const SCEN = (process.env.UO_SW_SCENARIOS ?? 'S0,S1,S2').split(',');
+  const med = (v) => { const a = [...v].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : NaN; };
+  const p90 = (v) => { const a = [...v].sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(a.length * 0.9))] : NaN; };
+  const f0 = (x) => (Number.isFinite(x) ? x.toFixed(0) : 'n/a');
+  const f1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : 'n/a');
+  const report = (title, rows, missing) => {
+    console.log(`${title}`);
+    if (missing.length) console.log(`  (hooks not found, stage not reported: ${[...new Set(missing)].join(', ')})`);
+    const by = (e) => rows.filter((r) => r.engine === e);
+    const per = { ts: {}, rust: {} };
+    for (const e of ['ts', 'rust']) {
+      const R = by(e), L = R.map((r) => r.loadMs);
+      for (const r of R) (per[e][r.n] ??= []).push(r.loadMs);
+      console.log(`  ${e.padEnd(4)} loadDocx total ${f0(sumBy(R, (r) => r.loadMs))} ms, median ${f1(med(L))}, p90 ${f1(p90(L))}; first page (drawPage 1/15) median ${f1(med(R.map((r) => r.firstMs)))} ms; layout passes ${sumBy(R, (r) => r.passes)} for ${R.length} documents`);
+      const st = new Map();
+      for (const r of R) for (const [k, v] of Object.entries(r.stages)) { const s = st.get(k) ?? { ms: 0, n: 0 }; s.ms += v.ms; s.n += v.n; st.set(k, s); }
+      const lines = [...st.entries()].sort((a, b) => b[1].ms - a[1].ms).map(([k, v]) => `${k} ${f0(v.ms)} ms/${v.n}`);
+      console.log(`       stages (sum ms / calls): ${lines.join('; ')}`);
+      console.log(`       slowest: ${R.slice().sort((a, b) => b.loadMs - a.loadMs).slice(0, 5).map((r) => `${label(r.n)} ${f0(r.loadMs)}`).join(', ')}`);
+    }
+    const ratios = Object.keys(per.ts).filter((n) => per.rust[n]).map((n) => med(per.rust[n]) / med(per.ts[n]));
+    console.log(`  median per-document Rust/TS ratio ${med(ratios).toFixed(2)}`);
+    return { tsMed: med(by('ts').map((r) => r.loadMs)), rustMed: med(by('rust').map((r) => r.loadMs)), ratio: med(ratios) };
+  };
+  if (SCEN.includes('S0')) {
+    for (const engine of ['rust', 'ts']) {
+      const ms = [];
+      for (let k = 0; k < 3; k++) {
+        await openPage(); api = await evalDriver();
+        const r = await api.evaluate((a, [n, e]) => a.cold(n, e), [names[0], engine]);
+        ms.push(r.loadMs);
+      }
+      console.log(`S0 cold (fresh page, first document ${label(names[0])}) ${engine}: loadDocx ${ms.map(f0).join(', ')} ms (median ${f0(med(ms))})`);
+    }
+  }
+  for (const sc of ['S1', 'S2']) {
+    if (!SCEN.includes(sc)) continue;
+    const all = []; let miss = [];
+    const reps = [];
+    for (let round = 1; round <= ROUNDS; round++) {
+      await openPage(); api = await evalDriver();
+      const r = await api.evaluate((a, [ns, s]) => a.speed(ns, s), [names, sc]);
+      miss = r.missing;
+      const rep = report(`${sc} round ${round}${round === 1 ? ' (first pass through the corpus)' : ''}: ${sc === 'S1' ? 'a new element per document' : 'one element per engine'}, ${names.length} documents`, r.rows, r.missing);
+      if (round > 1 || ROUNDS === 1) { all.push(...r.rows); reps.push(rep); }
+    }
+    if (reps.length > 1) report(`${sc} rounds 2..${ROUNDS} together`, all, miss);
+    if (reps.length) console.log(`${sc} summary${ROUNDS > 1 ? ` over rounds 2..${ROUNDS}` : ''}: Rust median ${reps.map((m) => f1(m.rustMed)).join(' / ')} ms vs TS median ${reps.map((m) => f1(m.tsMed)).join(' / ')} ms; ratio ${reps.map((m) => m.ratio.toFixed(2)).join(' / ')}`);
+  }
+}
+
+// ── faults ──────────────────────────────────────────────────────────────────────────────────────
+if (MODE === 'faults') {
+  if (names.length < 4) throw new Error('faults needs at least 4 fixtures (lower UO_SW_STRIDE)');
+  const r = await api.evaluate((a, ns) => a.faults(...ns), names.slice(0, 4));
+  console.log(`faults (trap): ${JSON.stringify({ trap: r.trap, deadAfterTrap: r.deadAfterTrap, before: r.before, eventsA1: r.eventsA1, pagesA1: r.pagesA1, pagesTs1: r.pagesTs1, freshModule: r.freshModule, eventsB: r.eventsB, pagesB: r.pagesB, after: r.after })}`);
+  if (r.a0) fail(`faults: the first load failed: ${r.a0}`);
+  if (r.trap !== 'RuntimeError') fail(`faults: the forced trap threw ${r.trap} (build with --features count,write)`);
+  if (!r.deadAfterTrap) fail('faults: the module is not dead after the trap');
+  if (r.a1) fail(`faults: the element did not reload after the trap: ${r.a1}`);
+  if (r.eventsA1.join() !== 'loaded') fail(`faults: events of the reload: ${r.eventsA1.join()}`);
+  if (r.pagesA1 !== r.pagesTs1) fail(`faults: reloaded document has ${r.pagesA1} pages, TS ${r.pagesTs1}`);
+  if (!r.freshModule) fail('faults: the next module is not a fresh instance');
+  if (r.b || r.eventsB.join() !== 'loaded') fail(`faults: a new element after the trap: ${r.b ?? r.eventsB.join()}`);
+  if (r.after.handles !== 0) fail(`faults: handles of the fresh module after removal: ${r.after.handles}`);
+  console.log(`faults (full page environment): ${JSON.stringify({ trap2: r.trap2, thrown: r.thrown, c: r.c, eventsC: r.eventsC, pagesC: r.pagesC, pagesTs3: r.pagesTs3, eventsD: r.eventsD, pagesD: r.pagesD })}`);
+  if (r.trap2 !== 'RuntimeError') fail(`faults: second trap threw ${r.trap2}`);
+  if (!r.thrown) fail('faults: no pushFamily was refused: the test did not exercise the path');
+  if (r.c || r.eventsC.join() !== 'loaded') fail(`faults: a refused font failed the document: ${r.c ?? r.eventsC.join()}`);
+  if (r.d || r.eventsD.join() !== 'loaded') fail(`faults: another document after the refusals: ${r.d ?? r.eventsD.join()}`);
+}
+
 // ── memory ──────────────────────────────────────────────────────────────────────────────────────
 if (MODE === 'memory' || MODE === 'all') {
   const cycle = names.slice(0, 10);
@@ -368,8 +599,10 @@ if (MODE === 'memory' || MODE === 'all') {
   clearInterval(poll);
   const warm = cycle.length; // the first cycle warms the env tables, the hyphenation, the font caches
   console.log(`memory: ${series.length} open/close cycles of ${cycle.length} documents with engine="rust" in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-  for (const s of series) if (s.k % 20 === 0 || s.k === series.length - 1) console.log(`  #${String(s.k).padStart(3)}  pages ${String(s.pages).padStart(2)}  live ${s.live}  buffer ${s.buffer}  handles after close ${s.handles} (while open ${s.duringHandles})`);
+  for (const s of series) if (s.k % 20 === 0 || s.k === series.length - 1) console.log(`  #${String(s.k).padStart(3)}  pages ${String(s.pages).padStart(2)}  live ${s.live}  buffer ${s.buffer}  handles after close ${s.handles} (while open ${s.duringHandles}), page envs ${s.pageEnvs}`);
   if (series.some((s) => s.handles !== 0)) fail(`handles left alive after close: ${series.filter((s) => s.handles !== 0).length} samples`);
+  const after0 = series.slice(warm);
+  if (after0.some((s) => s.pageEnvs !== 1)) fail(`page envs after warm-up: ${[...new Set(after0.map((s) => s.pageEnvs))].join(', ')} (expected 1)`);
   if (series.some((s) => s.live === null)) fail('the module has no uo_memory_live_bytes export: build with --features count,write');
   const after = series.slice(warm);
   const liveSet = new Set(after.map((s) => s.live)), bufSet = new Set(after.map((s) => s.buffer));

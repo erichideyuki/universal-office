@@ -4,32 +4,33 @@
 /// hold, NaN included, in 8 bytes instead of the 16 of `Option<f64>` (the item size budget,
 /// RA1.3).
 ///
-/// "Absent" is a signalling-NaN payload that JavaScript can never produce: every NaN stored as a
-/// value is canonicalized first ([`uo_jsnum::conv::canonicalize_nan`]), exactly what the codec
-/// does to every `f64` it writes (uo-render §3.1), so no value collides with the marker.
+/// Stored as an integer: 0 is "absent", a value is its bits plus 1, with every NaN canonicalized first
+/// ([`uo_jsnum::conv::canonicalize_nan`], what the codec does to every `f64` it writes, uo-render
+/// §3.1). The canonical bits are never `u64::MAX`, so the sum never wraps to 0. It is never a NaN
+/// payload, because JavaScript does not keep them: at opt-level 3 LLVM materialised the former
+/// signalling-NaN marker as an `f64.const`, which the wasm2js build prints as `NaN` (G22, uo-bindings.md
+/// "No-WebAssembly fallback").
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OptF64(u64);
 
-const ABSENT: u64 = 0x7ff4_0000_0000_0001;
-
 impl OptF64 {
     /// `undefined`.
-    pub const NONE: OptF64 = OptF64(ABSENT);
+    pub const NONE: OptF64 = OptF64(0);
 
     /// A present value (NaN canonicalized).
     #[must_use]
     pub fn some(v: f64) -> OptF64 {
-        OptF64(uo_jsnum::conv::canonicalize_nan(v).to_bits())
+        OptF64(uo_jsnum::conv::canonicalize_nan(v).to_bits().wrapping_add(1))
     }
 
     #[must_use]
     pub fn get(self) -> Option<f64> {
-        if self.0 == ABSENT { None } else { Some(f64::from_bits(self.0)) }
+        self.0.checked_sub(1).map(f64::from_bits)
     }
 
     #[must_use]
     pub fn is_some(self) -> bool {
-        self.0 != ABSENT
+        self.0 != 0
     }
 
     /// `v ?? d`.
@@ -57,5 +58,17 @@ impl std::fmt::Debug for OptF64 {
             Some(v) => write!(f, "{v:?}"),
             None => f.write_str("undefined"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OptF64;
+
+    #[test]
+    fn absent_is_zero_and_every_bit_pattern_is_a_value() {
+        assert_eq!(OptF64::NONE.0, 0);
+        assert_eq!(OptF64::default(), OptF64::NONE);
+        assert!(OptF64::some(f64::from_bits(u64::MAX)).is_some());
     }
 }

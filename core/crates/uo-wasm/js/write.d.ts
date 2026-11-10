@@ -183,6 +183,8 @@ export declare class WriteLayout {
   readonly pageCount: number;
   free(): void;
   pageInfo(i: number): PageInfo;
+  /** the size (twips) and background colour of every page, without decoding any page */
+  pageHeads(): { w: number; h: number; background?: string }[];
   /** the page message (decode with js/gen/render.ts `decodePage`); its `app` is the Write section
    *  (js/gen/write.ts `decodeWritePage`: lines, chars, formats, objects, cells, `paras` for the text layer) */
   encodePage(i: number): Uint8Array;

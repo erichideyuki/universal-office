@@ -21,6 +21,31 @@ use uo_pdf::PdfSink;
 
 use crate::pipeline::{JobError, LayoutJob, Trust, code, lay_out, open, pdf_options, stage, take_pages};
 
+/// Untrusted documents: bytes of one inflated part (the frozen C# `OpcPackageLimits` default).
+pub const UNTRUSTED_PACKAGE_PART_BYTES: u64 = 256 << 20;
+/// Untrusted documents: bytes of all inflated parts together (the C# `OpcPackageLimits` default).
+pub const UNTRUSTED_PACKAGE_TOTAL_BYTES: u64 = 512 << 20;
+
+/// The read limits of a trust level: the target defaults when trusted, those capped at the C#
+/// package limits when untrusted (with deflate's 1,032:1 a 4 MB upload could otherwise inflate to 4 GiB).
+fn read_limits(trust: Trust) -> DocxLimits {
+    match trust {
+        Trust::Trusted => DocxLimits::DEFAULT,
+        Trust::Untrusted => {
+            let d = DocxLimits::DEFAULT;
+            DocxLimits {
+                package: uo_opc::Limits {
+                    max_xml_part_bytes: d.package.max_xml_part_bytes.min(UNTRUSTED_PACKAGE_PART_BYTES),
+                    max_binary_part_bytes: d.package.max_binary_part_bytes.min(UNTRUSTED_PACKAGE_PART_BYTES),
+                    max_total_bytes: d.package.max_total_bytes.min(UNTRUSTED_PACKAGE_TOTAL_BYTES),
+                    ..d.package.clone()
+                },
+                ..d
+            }
+        }
+    }
+}
+
 /// How a converter finds fonts and how much it trusts its documents.
 #[derive(Debug, Clone)]
 pub struct ConverterOptions {
@@ -96,6 +121,9 @@ impl Converter {
 
     /// `.docx` (or Word 97-2003 `.doc`) bytes → PDF bytes with the `server-substitute` policy.
     ///
+    /// Runs on the caller's stack, which must be large (nested tables: about 19 KB per level);
+    /// `uo_docx_to_pdf` provides a thread of `CONVERSION_STACK_BYTES`.
+    ///
     /// # Errors
     /// See [`JobError`].
     pub fn docx_to_pdf(&self, bytes: Vec<u8>, job: &PdfJob, cancel: Option<Arc<AtomicBool>>) -> Result<Vec<u8>, JobError> {
@@ -123,7 +151,7 @@ impl Converter {
         } else {
             bytes
         };
-        let opened = open(bytes, &ReadOptions { sources: false, limits: DocxLimits::DEFAULT })?;
+        let opened = open(bytes, &ReadOptions { sources: false, limits: read_limits(self.trust) })?;
         // one registry per call: its ledger is this document's font budget (several documents
         // convert at once); the index and the face cache underneath are shared
         let cache = Arc::clone(self.source.cache());

@@ -223,6 +223,18 @@ export function bindWrite(w, host) {
       const hf = g.i32();
       return hf < 0 ? out : { ...out, hfItems: hf };
     }
+    /** `[{ w, h, background? }]` of every page (twips; the colour string as `decodePage` gives it): what the viewer reads of
+     *  all pages before it decodes the ones it paints */
+    pageHeads() {
+      const g = reader(take(w.uo_layout_page_heads(this.#live()), 'pageHeads'));
+      const out = [];
+      for (let i = 0, n = g.u32(); i < n; i++) {
+        const h = { w: g.f64(), h: g.f64() };
+        if (g.u8() === 1) h.background = g.str();
+        out.push(h);
+      }
+      return out;
+    }
     /** the page message of page `i` (resource deltas since the last page this layout encoded) with the
      *  Write section as its `app`: lines, chars, formats, objects, cells and the text layer's paragraphs */
     encodePage(i) { return take(w.uo_layout_encode_page(this.#live(), i), 'encodePage'); }

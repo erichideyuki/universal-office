@@ -161,6 +161,10 @@ fn session(key: &str) -> Vec<String> {
         let (s, info) = take(uo_layout_page_info(l, 0));
         assert_eq!((s, info.len()), (0, 32));
         assert_eq!(take(uo_layout_page_info(l, pages)).0, 6);
+        let (s, heads) = take(uo_layout_page_heads(l));
+        assert_eq!(s, 0);
+        assert_eq!(u32::from_le_bytes(heads[..4].try_into().unwrap()) as usize, pages);
+        assert_eq!(f64::from_le_bytes(heads[4..12].try_into().unwrap()), f64::from_le_bytes(info[..8].try_into().unwrap()));
         assert_eq!(take(uo_layout_face_bytes(l, 0)).0, 0);
         assert_eq!(take(uo_layout_face_bytes(l, 9999)).0, 6);
         let (s, _) = take(uo_layout_block_line(l, 0.0));

@@ -12,3 +12,13 @@ deny = [
     { name = "libm" },
     { name = "num-traits" },
 ]
+
+# Licences: every crate linked into the shipped artifacts must be under one of these (an OR expression needs one
+# alternative covered, an AND expression all its terms). tools/licenses/gen-notices.mjs reads the same list to build
+# core/licenses (the third-party notices that ship with the npm packages and the NuGet).
+[licenses]
+allow = ["MIT", "Apache-2.0", "BSD-3-Clause"]
+confidence-threshold = 0.8
+
+[licenses.private]
+ignore = false

@@ -12,7 +12,7 @@
 //!   `UoBuf` handles the caller reads (`uo_buf_ptr`/`uo_buf_len`), copies and frees;
 //! - **options** are `#[repr(C)]` structs whose first field is their size in bytes (a newer facade
 //!   may pass a longer struct; a shorter one is refused);
-//! - **threads**: a `UoConverter` is shared by any number of threads at once (`Send + Sync`); a
+//! - **threads**: each conversion runs on its own thread of [`CONVERSION_STACK_BYTES`]; a `UoConverter` is shared by any number of threads at once (`Send + Sync`); a
 //!   `UoBuf` belongs to one caller; a `UoCancel` is raised from any thread;
 //! - **panics** are caught in every export and become the `INTERNAL` code (unwinding into .NET is
 //!   undefined behaviour).
@@ -32,6 +32,11 @@ use uo_docx_layout::options::{Clock, Hyphenation, RevisionMode, RevisionView, Ti
 
 use pipeline::{JobError, Trust, clear_last, code, fail, fail_with};
 use server::{Converter, ConverterOptions, PdfJob};
+
+/// Stack of the thread every `uo_docx_to_pdf` conversion runs on. Measured: the layout of nested
+/// tables uses about 19 KB of release stack per level (LTO), so on a 1 MiB thread 52 levels pass and
+/// 56 overflow; the reader allows `max_nesting` 64 levels and the layout depth guard is 192.
+pub const CONVERSION_STACK_BYTES: usize = if cfg!(debug_assertions) { 64 << 20 } else { 16 << 20 };
 
 /// Runs an export body: clears the last error, catches a panic.
 fn guard(f: impl FnOnce() -> i32) -> i32 {
@@ -331,12 +336,32 @@ pub unsafe extern "C" fn uo_docx_to_pdf(
         };
         // SAFETY: the caller guarantees `cancel` is null or live.
         let flag = unsafe { cancel.as_ref() }.map(|k| Arc::clone(&k.flag));
-        match c.conv.docx_to_pdf(bytes.to_vec(), &pdf_job, flag) {
-            Ok(pdf) => {
+        // the conversion runs on its own thread with a big stack: the layout of nested tables uses
+        // about 19 KB of release stack per level, so on a 1 MiB caller thread (the Windows main
+        // thread) 56 levels overflow, and an overflow aborts the process
+        let conv = &c.conv;
+        let worker = std::thread::scope(|s| {
+            let spawned = std::thread::Builder::new().name("uo-convert".into()).stack_size(CONVERSION_STACK_BYTES).spawn_scoped(s, move || {
+                conv.docx_to_pdf(bytes.to_vec(), &pdf_job, flag).map_err(|e| pipeline::LastError {
+                    code: e.code(),
+                    stage: e.stage(),
+                    max: e.max(),
+                    message: e.message(),
+                })
+            });
+            match spawned {
+                Ok(h) => Some(h.join()),
+                Err(_) => None,
+            }
+        });
+        match worker {
+            Some(Ok(Ok(pdf))) => {
                 buf_out(out, pdf);
                 code::OK
             }
-            Err(e) => fail(&e),
+            Some(Ok(Err(le))) => pipeline::set_last(le),
+            Some(Err(_)) => fail_with(code::INTERNAL, "internal error (a panic was caught at the boundary)"),
+            None => fail_with(code::INTERNAL, "could not start the conversion thread"),
         }
     })
 }

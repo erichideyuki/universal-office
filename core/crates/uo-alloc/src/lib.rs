@@ -198,6 +198,34 @@ pub fn assert_no_leak<R>(op: impl FnOnce() -> R) -> Usage {
     }
 }
 
+/// M1 over ALL threads: like [`check_no_leak`] but compares the global live bytes, so work done on
+/// other threads (a conversion that runs on its own worker) is counted. Returns the bytes allocated
+/// meanwhile. Valid only while no other thread allocates: the callers hold a serial lock, as the
+/// .NET M4 tests do.
+pub fn check_no_leak_global<R>(op: impl FnOnce() -> R) -> Result<u64, MemoryCheck> {
+    if !is_counting() {
+        return Err(MemoryCheck::NotCounting);
+    }
+    let (t0, l0) = global_stats();
+    drop(op());
+    let (t1, l1) = global_stats();
+    let delta = i64::try_from(l1).unwrap_or(i64::MAX) - i64::try_from(l0).unwrap_or(i64::MAX);
+    let allocated = t1.saturating_sub(t0);
+    if delta != 0 {
+        return Err(MemoryCheck::Leak { bytes: delta, usage: Usage { allocated, peak_above_start: 0, live_delta: delta } });
+    }
+    Ok(allocated)
+}
+
+/// [`check_no_leak_global`] as a test assertion; returns the bytes allocated meanwhile.
+#[allow(clippy::panic)]
+pub fn assert_no_leak_global<R>(op: impl FnOnce() -> R) -> u64 {
+    match check_no_leak_global(op) {
+        Ok(u) => u,
+        Err(e) => panic!("memory gate M1 (global) failed: {e:?}"),
+    }
+}
+
 /// M2: runs `step(i)` `iterations` times and samples the live bytes of the current thread
 /// every `sample_every` iterations (and once before the first).
 pub fn soak(iterations: usize, sample_every: usize, mut step: impl FnMut(usize)) -> Vec<i64> {

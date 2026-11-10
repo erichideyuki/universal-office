@@ -1,0 +1,228 @@
+{
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "lock": {
+    "adler2": "2.0.1",
+    "equivalent": "1.0.3",
+    "hashbrown": "0.17.1",
+    "indexmap": "2.14.2",
+    "miniz_oxide": "0.9.1",
+    "rustc-hash": "2.1.3",
+    "ryu-js": "1.0.3"
+  },
+  "artifacts": {
+    "wasm": [
+      {
+        "component": "adler2",
+        "version": "2.0.1",
+        "licence": "0BSD OR MIT OR Apache-2.0",
+        "files": [
+          "texts/adler2-2.0.1/LICENSE-0BSD",
+          "texts/adler2-2.0.1/LICENSE-APACHE",
+          "texts/adler2-2.0.1/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "equivalent",
+        "version": "1.0.3",
+        "licence": "Apache-2.0 OR MIT",
+        "files": [
+          "texts/equivalent-1.0.3/LICENSE-APACHE",
+          "texts/equivalent-1.0.3/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "hashbrown",
+        "version": "0.17.1",
+        "licence": "MIT OR Apache-2.0",
+        "files": [
+          "texts/hashbrown-0.17.1/LICENSE-APACHE",
+          "texts/hashbrown-0.17.1/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "indexmap",
+        "version": "2.14.2",
+        "licence": "Apache-2.0 OR MIT",
+        "files": [
+          "texts/indexmap-2.14.2/LICENSE-APACHE",
+          "texts/indexmap-2.14.2/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "miniz_oxide",
+        "version": "0.9.1",
+        "licence": "MIT OR Zlib OR Apache-2.0",
+        "files": [
+          "texts/miniz_oxide-0.9.1/LICENSE",
+          "texts/miniz_oxide-0.9.1/LICENSE-APACHE.md",
+          "texts/miniz_oxide-0.9.1/LICENSE-MIT.md",
+          "texts/miniz_oxide-0.9.1/LICENSE-ZLIB.md"
+        ]
+      },
+      {
+        "component": "rustc-hash",
+        "version": "2.1.3",
+        "licence": "Apache-2.0 OR MIT",
+        "files": [
+          "texts/rustc-hash-2.1.3/LICENSE-APACHE",
+          "texts/rustc-hash-2.1.3/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "ryu-js",
+        "version": "1.0.3",
+        "licence": "Apache-2.0 OR BSL-1.0",
+        "files": [
+          "texts/ryu-js-1.0.3/LICENSE-APACHE",
+          "texts/ryu-js-1.0.3/LICENSE-BOOST"
+        ]
+      },
+      {
+        "component": "V8 and ARM optimized-routines (math of uo-jsnum, translated to Rust)",
+        "version": "",
+        "licence": "BSD-3-Clause AND MIT",
+        "files": [
+          "texts/uo-jsnum/LICENSE-V8",
+          "texts/uo-jsnum/LICENSE-optimized-routines"
+        ]
+      },
+      {
+        "component": "fflate 0.8.3 (inflate of uo-opc, translated to Rust)",
+        "version": "",
+        "licence": "MIT",
+        "files": [
+          "texts/uo-opc/LICENSE-fflate"
+        ]
+      },
+      {
+        "component": "Unicode Character Database (tables of uo-text, generated through the ICU of Node 24.15)",
+        "version": "",
+        "licence": "Unicode-3.0",
+        "files": [
+          "texts/unicode/Unicode-3.0.txt"
+        ]
+      },
+      {
+        "component": "Rust standard library (std, core, alloc and their dependencies)",
+        "version": "",
+        "licence": "MIT OR Apache-2.0",
+        "files": [
+          "texts/rust-std/COPYRIGHT-library.html",
+          "texts/rust-std/MIT.txt",
+          "texts/rust-std/Apache-2.0.txt"
+        ]
+      }
+    ],
+    "native": [
+      {
+        "component": "adler2",
+        "version": "2.0.1",
+        "licence": "0BSD OR MIT OR Apache-2.0",
+        "files": [
+          "texts/adler2-2.0.1/LICENSE-0BSD",
+          "texts/adler2-2.0.1/LICENSE-APACHE",
+          "texts/adler2-2.0.1/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "equivalent",
+        "version": "1.0.3",
+        "licence": "Apache-2.0 OR MIT",
+        "files": [
+          "texts/equivalent-1.0.3/LICENSE-APACHE",
+          "texts/equivalent-1.0.3/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "hashbrown",
+        "version": "0.17.1",
+        "licence": "MIT OR Apache-2.0",
+        "files": [
+          "texts/hashbrown-0.17.1/LICENSE-APACHE",
+          "texts/hashbrown-0.17.1/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "indexmap",
+        "version": "2.14.2",
+        "licence": "Apache-2.0 OR MIT",
+        "files": [
+          "texts/indexmap-2.14.2/LICENSE-APACHE",
+          "texts/indexmap-2.14.2/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "miniz_oxide",
+        "version": "0.9.1",
+        "licence": "MIT OR Zlib OR Apache-2.0",
+        "files": [
+          "texts/miniz_oxide-0.9.1/LICENSE",
+          "texts/miniz_oxide-0.9.1/LICENSE-APACHE.md",
+          "texts/miniz_oxide-0.9.1/LICENSE-MIT.md",
+          "texts/miniz_oxide-0.9.1/LICENSE-ZLIB.md"
+        ]
+      },
+      {
+        "component": "rustc-hash",
+        "version": "2.1.3",
+        "licence": "Apache-2.0 OR MIT",
+        "files": [
+          "texts/rustc-hash-2.1.3/LICENSE-APACHE",
+          "texts/rustc-hash-2.1.3/LICENSE-MIT"
+        ]
+      },
+      {
+        "component": "ryu-js",
+        "version": "1.0.3",
+        "licence": "Apache-2.0 OR BSL-1.0",
+        "files": [
+          "texts/ryu-js-1.0.3/LICENSE-APACHE",
+          "texts/ryu-js-1.0.3/LICENSE-BOOST"
+        ]
+      },
+      {
+        "component": "V8 and ARM optimized-routines (math of uo-jsnum, translated to Rust)",
+        "version": "",
+        "licence": "BSD-3-Clause AND MIT",
+        "files": [
+          "texts/uo-jsnum/LICENSE-V8",
+          "texts/uo-jsnum/LICENSE-optimized-routines"
+        ]
+      },
+      {
+        "component": "fflate 0.8.3 (inflate of uo-opc, translated to Rust)",
+        "version": "",
+        "licence": "MIT",
+        "files": [
+          "texts/uo-opc/LICENSE-fflate"
+        ]
+      },
+      {
+        "component": "Unicode Character Database (tables of uo-text, generated through the ICU of Node 24.15)",
+        "version": "",
+        "licence": "Unicode-3.0",
+        "files": [
+          "texts/unicode/Unicode-3.0.txt"
+        ]
+      },
+      {
+        "component": "Hyphenation patterns (hyph-utf8) compiled into uo-fonts",
+        "version": "",
+        "licence": "see the notice file",
+        "files": [
+          "texts/hyphenation/THIRD-PARTY-NOTICES.md"
+        ]
+      },
+      {
+        "component": "Rust standard library (std, core, alloc and their dependencies)",
+        "version": "",
+        "licence": "MIT OR Apache-2.0",
+        "files": [
+          "texts/rust-std/COPYRIGHT-library.html",
+          "texts/rust-std/MIT.txt",
+          "texts/rust-std/Apache-2.0.txt"
+        ]
+      }
+    ]
+  }
+}

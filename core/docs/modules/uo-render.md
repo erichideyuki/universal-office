@@ -1097,6 +1097,41 @@ Sonnet, same session. The draw calls of the TS painter of decoded pages (frontie
 
 Parity rounds: Part A equal on the first run; Part B found one adapter bug (V-7, one round, 4 mismatches in 20 seeds → 0 in 200); the Chromium harness needed one fix of its own (V-8) before 0 differing pixels. Model Sonnet; time and tool calls are shared with frontier D above (one combined row: the per-step split of D and V was not recorded). Fix round 1 (reviewer findings): Part A made platform-independent, one-sided/refused export results counted as failures, ink check in the Chromium harness, record corrections; ≈ 30 min. The new `RenderView` methods of D are covered by uo-wasm's `render_native` (M1 + hostile arguments) and `render_unsafe` instead of `e_memory`/`e_nopanic` test files of uo-render itself.
 
+## Milestone 1 — Shipping, CI and WebKit (painter)
+
+Frontier "Shipping and CI" (2026-11-10, Sonnet); the licence and CI parts are in uo-bindings.md section 8. Here: what the painter (D) and its parity (V) got.
+
+**CI lines added** (`.github/workflows/rust-core.yml`, none could run on GitHub from here; each command was run locally, see "Commands"):
+
+- job `wasm`: one `count,write,render-fixture` build runs write_api, write_cancel, write_section, `render_paint`, `render_boundary`, `render_ts_codec`, `paint_parity` (Part A only: no `UO_TS_ROOT`), `paint_memory` and the new `browser/shims.test.mjs`; the WebKit step builds the same module and runs render_paint, render_boundary, write_section and paint_parity (Part A) in WebKit.
+- job `painter` (new): checkout of `main` as the frozen engine (built as in layout-parity), then the **same-run Linux recapture of the frozen side** diffed against the committed `v_paint.capture` without its `@platform` line, `paint_parity` with `UO_TS_ROOT` (Part A + Part B at `UO_V_SEEDS=50` + Part C facets), and `paint_pixels.mjs` in Chromium and in WebKit (`UO_V_PIXEL_SEEDS=30`).
+- job `miri`: `render_unsafe` (`--features render-fixture`). The `codec` job's strict `tsc` now also covers `paint.ts`, `picture.ts`, `viewer.ts`, `viewer.check.ts` and `write-engine.d.ts`.
+
+**Decision (Part A platform).** The brief said Part A was pinned to win32, Node v24.15.0 and V8 13.6. That pin was already gone: since V-1 the replay depends only on the Rust exports and on `Math.round/hypot/sin/cos` through the recorded frozen digests, and the test has no platform skip (it passed on WSL Node 22.21.1). What really varies is the frozen side's capture, so the CI proves *that* instead of pinning: the `painter` job recaptures the frozen painter on Linux and Node 24.15 and diffs it with the committed capture (equal except `@platform`; measured here on Windows Node 24.15, 19 s, and on Linux WSL Node 22.21.1: byte-equal, 74 / 579 / 55,322 / 456,698). The Math-override approach (`d2b-math-override.mjs`) was not needed for Part A in Node; `run.mjs` gained an optional `UO_MATH_OVERRIDE=1` only to attribute a difference in another JavaScript engine (it was not needed in WebKit, below).
+
+**Parts B/C in CI at 50 seeds** (200 locally): measured 50 layouts, 102 pages, 2,556 items, 393,434 frozen draw calls x 4 configurations: 0 log mismatches, 0 exception mismatches, 0 wire differences; every facet equal (blipTiles 35, fxLayers 97+97, patternRaster 34, rectGradientRaster 49, pageFillTileTw 12, gradientTileRgba 4, patternRgba 1; refused/frozen-only/export-only 0); 67 s.
+
+**WebKit (Playwright 1.61, WebKit 26.5 on Windows, headless).**
+
+- Handle layer: render_paint 9/9, render_boundary 6 ok + 1 skip (needs `--expose-gc`), write_section 2/2.
+- **Part A in WebKit: 74 documents, 579 pages, 55,322 items, 456,698 draw calls x 4 configurations, 0 mismatches** (22 s; Node: 11 s). Sensitivity: `UO_V_NEGATIVE=1` gives 288 mismatches and exit 1, the same count as Node. No named difference: JavaScriptCore's `Math.sin/cos/hypot/pow` gave the frozen digests unchanged, so `UO_MATH_OVERRIDE` is not needed and the CI line does not set it.
+- **Pixels (`paint_pixels.mjs --browser webkit`)**: 60 seeds = 37 generated layouts, 78 renders at two scales, 204,663,507 px; 300 seeds = 185 layouts, 390 renders, 1,030,732,444 px; **0 differing pixels, 0 errors, every category with ink** (pic 196 renders, shapeFx 82, textFx 176, pageFill 50, shapeRaster 184, text 374). Chromium 156 with 60 seeds: 0 differing (the 300-seed Chromium record above is unchanged).
+- **Paths exercised.** WebKit on Windows has no `OffscreenCanvas` and no `ctx.fontKerning`: both painters took the `HTMLCanvasElement` fallback (the Safari-15-like path) and never the kerning-joins path (`fontKerning` present). On the Linux CI WebKit (GTK/WPE) `OffscreenCanvas` may exist and the run then takes the other path; the harness prints which one it used. Real Safari 15 / iOS (BrowserStack) is still the gate item.
+
+**Browser runner changes** (`tests/browser/run.mjs`, shims): `.ts` served through `node:module` `stripTypeScriptTypes`, `?__fs=stat|list`, shims for `node:crypto` (synchronous SHA-256), `Buffer` subset, `node:os`, `readdirSync/existsSync/statSync`, `path.resolve/relative/basename/sep`, `url.pathToFileURL`; `UO_CHROMIUM`, `UO_MATH_OVERRIDE`, `UO_V_NEGATIVE`, `UO_PAINT_M4` forwarded; `shims.test.mjs` proves Buffer and SHA-256 against Node on 200 random inputs each (edge lengths 55/56/63/64/119/120 included). `paint_pixels.mjs` takes `--browser chromium|webkit` and `UO_PLAYWRIGHT`.
+
+**Commands** (core/, `UO_WASM_PATH` = a `count,write,render-fixture` build; `PW` = a Playwright 1.61 package folder):
+`UO_WASM_PATH=$W UO_PLAYWRIGHT=$PW node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/paint_parity.test.mjs` ·
+`UO_TS_ROOT=$F UO_WASM_PATH=$W UO_V_PIXEL_SEEDS=60 node crates/uo-wasm/tests/browser/paint_pixels.mjs --browser webkit` ·
+`UO_TS_ROOT=$F node --max-old-space-size=8192 crates/uo-render/tools/capture-v.mjs --out-dir <existing dir>` (the directory must exist) and `diff` without `@platform` ·
+`UO_TS_ROOT=$F UO_V_SEEDS=50 UO_WASM_PATH=$W node --expose-gc --test --test-concurrency=1 crates/uo-wasm/tests/paint_parity.test.mjs`.
+
+**Not covered / for the maintainer.** The painter CI job depends on `main` staying at the frozen commit (a later push to `main` changes the same-run recapture). Chromium in the `painter` job is the Playwright-bundled revision, not the 1248 used here. The `viewer` job and the Playwright install lines are untested on GitHub.
+
+### Process metrics (Shipping/CI/WebKit)
+
+About 95 tool calls; rework: 3 (a regex mangled by the shell's backslash halving in `build-pkg.mjs`, `capture-v.mjs --out-dir` needs an existing directory so the CI step does `mkdir -p`, a relative `CARGO_TARGET_DIR` breaks `viewer_switch.mjs`'s esbuild paths: use an absolute one); WebKit Part A passed on the first run after the shims.
+
 ## Types (T)
 
 Frontier T, Opus, 2026-11-03, inside uo-docx-layout F0 (record there: "Milestone 1 — F0").
@@ -1110,7 +1145,7 @@ clippy `-D warnings` (native and wasm32) and the ban scripts clean.
   `NonZeroU32` (`index + 1`) so `Option<Id>` is 4 bytes; `from_index`/`index`/`raw`/`from_raw` for
   the codec.
 - `sym::SymbolTable`: UTF-16 interning, lone surrogates kept, `since(n)` for the per-generation delta.
-- `opt::OptF64`: an optional number in 8 bytes (below).
+- `opt::OptF64`: an optional number in 8 bytes (below). Since 2026-11-10 "absent" is the integer 0 and a value is its canonical bits + 1, no NaN payload (G22, uo-bindings.md).
 - `types`: `Page`, `Item` and every payload of RA2 field by field — `RunFlags`, `LineDash` (RQ13, with
   `BORDER_DASHES`), `Stroke`, `PathCmd`, `Ltrb`, `ImageItem`, `PictureLook` (+ `PresetSpec`, `PicLine`,
   `PicShadow`, `PicGlow`, `PicBevel`, `PicReflection`, `ClrChange`), `ShapeItem` with the `ShapeGeom`
@@ -1149,7 +1184,7 @@ a representation here.
 |---|---|---|
 | T1 | `Item` has **inline struct variants** for the small items and boxes `Image`/`Shape`; `XformPush` boxes its matrix | RA2's `Item::Glyphs(GlyphRun)` with payload structs measures 56 B (the tag cannot use the payload's padding); inline variants measure 48 |
 | T2 | A glyph run keeps `text`, `scaleX`, `alpha`, `fx` in a side record `RunSide` (`list.runs[run]`) | the run item stays 40 B; those fields are rare or (RQ7) read only by the canonical stream |
-| T3 | `OptF64` for every optional number of an item (absent = a signalling-NaN payload JS never produces; values are NaN-canonicalized on entry, as the codec does) | `Option<f64>` is 16 B; RA1.2 needs absent apart from NaN |
+| T3 | `OptF64` for every optional number of an item (absent = a signalling-NaN payload JS never produces; **2026-11-10: now the integer 0, a value is its bits + 1, G22**; values are NaN-canonicalized on entry, as the codec does) | `Option<f64>` is 16 B; RA1.2 needs absent apart from NaN |
 | T4 | `ItemList` is the storage of a page **and** of the producers' intermediate arrays (uo-docx-layout `PassItems`): moving an item copies its column ranges; `push_shifted` is the TS `shiftItem` (app-neutral arithmetic) | one container; the layout shifts items between arrays all the time |
 | T5 | `FaceRes` = `face: Option<uo_fonts::Face>` (TS `font`) + `bytes: Option<Arc<[u8]>>` (TS `bytes`, absent = not embeddable) + `advances: Option<Arc<AdvanceTable>>` (PQ1); manual `Debug` | RA2 merged `font` and `bytes`; the TS keeps them apart |
 | T6 | `ImageRes` gains `svg` and `width_twips`/`height_twips` | the viewer paints the SVG version (universal-document-viewer.ts:962); page fills build images from the twips sizes |

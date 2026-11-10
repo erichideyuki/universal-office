@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use uo_alloc::assert_no_leak;
+use uo_alloc::assert_no_leak_global;
 use uo_ffi::pipeline::{UoErrorInfo, code, uo_last_error, uo_last_error_clear};
 use uo_ffi::{
     CONVERTER_TRUSTED, JOB_COMPRESS, UoBuf, UoCancel, UoConverter, UoConverterOptions, UoPdfJob, uo_buf_free, uo_buf_len, uo_buf_ptr,
@@ -177,13 +177,15 @@ fn m1_a_conversion_cancelled_inside_the_layout_leaves_nothing() {
     let (go, done) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
     let raised_at = Arc::new(AtomicU64::new(0));
     let h = raiser(k as usize, Arc::clone(&go), Arc::clone(&done), raised_at, Instant::now(), Duration::from_millis(30));
-    let u = assert_no_leak(|| {
+    // the raiser thread frees its spawn bookkeeping when it starts: let it start before the window opens
+    std::thread::sleep(Duration::from_millis(20));
+    let allocated = assert_no_leak_global(|| {
         go.store(true, Ordering::Release);
         assert_eq!(convert(c, &docx, &j, k).map(|_| ()), Err((code::CANCELLED, 0)));
     });
     done.store(true, Ordering::Release);
     h.join().unwrap();
-    println!("G4 ffi M1/M3: cancelled inside the layout: {} B allocated, {} B peak, 0 B left", u.allocated, u.peak_above_start);
+    println!("G4 ffi M1 (global): cancelled inside the layout: {allocated} B allocated, 0 B left");
     // SAFETY: the raiser is joined; live handles, freed once.
     unsafe {
         uo_cancel_free(k);

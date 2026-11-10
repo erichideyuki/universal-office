@@ -13,8 +13,9 @@ import type { TextLine } from './text-layer.js';
  * core/docs/modules/uo-bindings.md "The TS/Rust switch of the viewer"). Carregado SÓ por `import()` dinâmico quando o
  * atributo pede o motor Rust — um viewer sem `engine="rust"` nunca baixa este módulo nem o .wasm.
  *
- * Um `RustSession` por elemento: um ambiente do motor (fontes, padrões de hifenização), o documento aberto e os
- * layouts vivos. As fontes continuam no resolvedor único de shared/fonts: o motor Rust PEDE (takeMissing), o
+ * Um `RustSession` por elemento: o documento aberto e os layouts vivos. O ambiente do motor (fontes, padrões de hifenização) é
+ * UM por página e base de fontes (`PageFonts`, como o `FontResolver.shared()` do motor TS): o 2º documento da página já acha as
+ * fontes empurradas e diagrama numa passada só. As fontes continuam no resolvedor único de shared/fonts: o motor Rust PEDE (takeMissing), o
  * resolvedor responde (getWithFile) e o resultado é empurrado (pushFamily) — a mesma política do `ViewerFonts` do motor TS.
  */
 
@@ -37,6 +38,9 @@ export interface RustHost {
 }
 
 export interface RelayoutOptions { view: 'print' | 'web'; webWidthTw: number }
+
+/** O que o motor pediu e não havia: a família e as variantes. */
+type MissingFont = { family: string; variants: FontVariant[] };
 
 /** Um arquivo opcional da base de fontes (os mesmos do motor TS), em bytes. */
 interface AssetFile { family: string; variant: FontVariant; bytes: Uint8Array; advances: string | undefined }
@@ -66,6 +70,32 @@ function fetchAssets(base: string): Promise<AssetFile[]> {
   return p;
 }
 
+/**
+ * O ambiente do motor da página, por base de fontes: as fontes empurradas (e o que foi empurrado, para não repetir) e os
+ * padrões de hifenização registrados valem para todos os elementos. Nunca é liberado por um viewer (`stats().pageEnvs`).
+ */
+interface PageFonts {
+  env: ViewerEnv;
+  /** família (minúsculas) → chave da resposta do resolvedor já empurrada, e o nome como o motor a pediu */
+  pushed: Map<string, string>;
+  pushedNames: Map<string, string>;
+  /** hyphenation id -> the registration in flight or done (concurrent sessions await the same one) */
+  patterns: Map<string, Promise<void>>;
+  /** the Liberation assets push, in flight or done */
+  assets: Promise<void> | null;
+}
+const pageFonts = new Map<string, PageFonts>();
+
+function pageFontsFor(mod: ViewerModule, base: string | null): PageFonts {
+  const key = String(base);
+  let p = pageFonts.get(key);
+  if (!p || p.env.freed) {
+    p = { env: mod.newEnv({ page: true }), pushed: new Map(), pushedNames: new Map(), patterns: new Map(), assets: null };
+    pageFonts.set(key, p);
+  }
+  return p;
+}
+
 const sourceOf = (s: string): FontSource => (s === 'local-access' ? 'localAccess' : s as FontSource);
 
 /** Uma FontFace por ARQUIVO (conteúdo), para a página inteira: vários elementos e documentos compartilham. */
@@ -79,15 +109,10 @@ interface PageText { para: (ref: string) => TextParagraph | null }
 
 export class RustSession {
   private mod: ViewerModule | null = null;
-  private env: ViewerEnv | null = null;
+  private page: PageFonts | null = null;
   private doc: ViewerDocument | null = null;
   private docx: Uint8Array | null = null;
   private readonly layouts = new Set<DecodedLayout>();
-  /** família (minúsculas) → chave da resposta do resolvedor já empurrada, e o nome como o motor a pediu */
-  private readonly pushed = new Map<string, string>();
-  private readonly pushedNames = new Map<string, string>();
-  private readonly patterns = new Set<string>();
-  private assetsPushed = false;
   private model: FullDocument | null = null;
   private disposed = false;
   private readonly envs = new WeakMap<DecodedLayout, PaintEnv>();
@@ -98,6 +123,15 @@ export class RustSession {
   constructor(private readonly host: RustHost) {}
 
   get hasDocument(): boolean { return this.doc !== null; }
+
+  /** o ambiente do motor da página (o mesmo de todos os elementos), null antes do 1º layout */
+  get env(): ViewerEnv | null { return this.page?.env ?? null; }
+
+  /** O ambiente da página para a base de fontes de agora (a base é o atributo `fonts`, que pode mudar). */
+  private ensurePage(): PageFonts | null {
+    if (!this.mod || this.mod.dead) return null; // um trap parou a instância: a próxima abertura carrega outra
+    return this.page = pageFontsFor(this.mod, this.host.fontsBase());
+  }
 
   stats(): ReturnType<ViewerModule['stats']> | null { return this.mod?.stats() ?? null; }
 
@@ -111,7 +145,9 @@ export class RustSession {
   /** Abre o documento (.docx ou .doc). LANÇA em arquivo inválido ANTES de mudar qualquer estado. `false`: a sessão acabou no meio. */
   async open(bytes: Uint8Array): Promise<boolean> {
     const docx = isWordBinary(bytes) ? convertDocToDocx(bytes) : bytes;
-    const mod = this.mod ??= await loadViewerModule(this.moduleSource());
+    // uma instância parada por um trap (`WebAssembly.RuntimeError`) é largada: o próximo uso instancia um módulo novo
+    if (!this.mod || this.mod.dead) this.mod = await loadViewerModule(this.moduleSource());
+    const mod = this.mod;
     const doc = mod.open(docx);
     if (this.disposed) { doc.free(); return false; }
     this.releaseLayouts();
@@ -119,7 +155,6 @@ export class RustSession {
     this.doc = doc;
     this.docx = docx;
     this.model = null;
-    this.env ??= mod.newEnv();
     return true;
   }
 
@@ -140,64 +175,87 @@ export class RustSession {
     this.layouts.clear();
   }
 
-  /** Libera tudo: layouts, documento e ambiente (idempotente). */
+  /** Libera layouts e documento (idempotente); o ambiente da página fica (é de todos os elementos). */
   dispose(): void {
     this.disposed = true;
     this.releaseLayouts();
     this.doc?.free();
     this.doc = null;
-    this.env?.free();
-    this.env = null;
+    this.page = null;
     this.docx = null;
     this.model = null;
   }
 
-  private async prepare(env: ViewerEnv, doc: ViewerDocument): Promise<void> {
+  private async prepare(page: PageFonts, doc: ViewerDocument): Promise<void> {
+    const { env } = page;
     const base = this.host.fontsBase();
     this.host.resolver.suggestBaseUrl(base);
-    if (!this.assetsPushed && base !== null) {
-      const files = await fetchAssets(base);
-      for (const f of files) {
-        try { env.pushAsset(f.family, f.variant, f.bytes, f.advances); } catch { /* arquivo que o motor recusa: pula */ }
-      }
-      this.assetsPushed = true;
+    if (!page.assets && base !== null) {
+      const assets = fetchAssets(base).then((files) => {
+        for (const f of files) {
+          try { env.pushAsset(f.family, f.variant, f.bytes, f.advances); } catch { /* arquivo que o motor recusa: pula */ }
+        }
+      });
+      page.assets = assets;
+      assets.catch(() => { if (page.assets === assets) page.assets = null; }); // a failed fetch is tried again by the next session
     }
+    if (page.assets) await page.assets;
     try {
+      const mod = this.mod!;
       for (const id of doc.hyphenationPatterns(env, LANGS)) {
-        if (this.patterns.has(id)) continue;
-        const text = await this.mod!.patternText(id);
-        if (text) { env.registerHyphenation(text); this.patterns.add(id); }
+        let reg = page.patterns.get(id);
+        if (!reg) {
+          const made = mod.patternText(id).then((text) => { if (text) env.registerHyphenation(text); });
+          reg = made;
+          page.patterns.set(id, made);
+          made.catch(() => { if (page.patterns.get(id) === made) page.patterns.delete(id); });
+        }
+        await reg;
       }
     } catch { /* sem padrões: sem hifenização */ }
   }
 
   /** Empurra a resposta do resolvedor para `family` se ela mudou; true se empurrou. */
-  private push(env: ViewerEnv, family: string): boolean {
+  private push(page: PageFonts, family: string): boolean {
     const r = this.host.resolver.getWithFile(family);
     if (!r) return false;
     const faces = VARIANTS.flatMap((variant) => { const bytes = r.faces[variant]; return bytes ? [{ variant, bytes }] : []; });
     const key = [r.source, r.embeddable ? 1 : 0, ...faces.map((f) => `${f.variant}:${f.bytes.length}`)].join('|');
     const k = family.toLowerCase();
-    if (this.pushed.get(k) === key) return false;
-    env.pushFamily(family, { source: sourceOf(r.source), embeddable: r.embeddable, faces });
-    this.pushed.set(k, key);
-    this.pushedNames.set(k, family);
+    if (page.pushed.get(k) === key) return false;
+    try {
+      page.env.pushFamily(family, { source: sourceOf(r.source), embeddable: r.embeddable, faces });
+    } catch (e) {
+      // OverBudget (WriteError 5) no ledger de 128 MiB da página, ou uma face ilegível: o documento NÃO falha, o motor fica com a
+      // substituta (como o motor TS com uma face ausente). A mesma resposta não é tentada de novo. Um trap (RuntimeError) sobe.
+      if (!(e instanceof WriteError)) throw e;
+      page.pushed.set(k, key);
+      console.warn(`uo-wasm: the engine refused the font "${family}" (${e.message}); using the substitute`);
+      return false;
+    }
+    page.pushed.set(k, key);
+    page.pushedNames.set(k, family);
     return true;
   }
 
-  /** Responde o que o motor pediu e não havia; true se algo novo foi empurrado (refazer o layout). */
-  private async supply(env: ViewerEnv, missing: { family: string; variants: FontVariant[] }[]): Promise<boolean> {
+  /** Empurra já o que o resolvedor responde de imediato; `later` é o que precisa de busca (arquivo, `loadFace`). */
+  private pushNow(page: PageFonts, missing: MissingFont[]): { any: boolean; later: MissingFont[] } {
     let any = false;
-    const later: typeof missing = [];
-    for (const m of missing) { if (this.push(env, m.family)) any = true; else later.push(m); }
-    if (!later.length) return any;
+    const later: MissingFont[] = [];
+    for (const m of missing) { if (this.push(page, m.family)) any = true; else later.push(m); }
+    return { any, later };
+  }
+
+  /** Busca o que `pushNow` deixou para depois e empurra; true se algo novo foi empurrado (refazer o layout). */
+  private async fetchLater(page: PageFonts, later: MissingFont[]): Promise<boolean> {
+    let any = false;
     const resolver = this.host.resolver;
     try {
       const want = new Map(later.map((m) => [m.family, new Set(m.variants)]));
       const rs = await resolver.resolveWithFile(want.keys());
       await Promise.all(rs.flatMap((r) => [...(want.get(r.family) ?? [])].filter((v) => !r.faces[v]).map((v) => resolver.loadFace(r, v))));
-    } catch { return any; }
-    for (const m of later) if (this.push(env, m.family)) any = true;
+    } catch { return false; }
+    for (const m of later) if (this.push(page, m.family)) any = true;
     return any;
   }
 
@@ -207,12 +265,14 @@ export class RustSession {
    * cancelado pelo `cancelCheck` do motor (G4).
    */
   async relayout(stale: () => boolean, o: RelayoutOptions, onLayout: (dl: DecodedLayout, pass: number) => void): Promise<void> {
-    const { env, doc } = this;
-    if (!env || !doc) return;
-    await this.prepare(env, doc);
+    const { doc } = this;
+    const page = this.ensurePage();
+    if (!page || !doc) return;
+    const { env } = page;
+    await this.prepare(page, doc);
     for (let pass = 0; pass < MAX_PASSES; pass++) {
       if (stale() || this.doc !== doc || this.disposed) return;
-      for (const name of [...this.pushedNames.values()]) this.push(env, name); // o resolvedor mudou (onChange)
+      for (const name of [...page.pushedNames.values()]) this.push(page, name); // o resolvedor mudou (onChange)
       let dl: DecodedLayout;
       try {
         dl = doc.layout(env, {
@@ -223,18 +283,25 @@ export class RustSession {
         if (e instanceof WriteError && e.code === 10) return;
         throw e;
       }
+      const missing = env.takeMissing();
+      const { any, later } = this.pushNow(page, missing);
+      // as fontes pedidas já estavam no resolvedor: o layout de agora seria trocado já pelo da próxima passada, que começa
+      // sem mostrar (nem decodificar) este; a última passada sempre é entregue
+      if (any && !later.length && pass < MAX_PASSES - 1) { dl.free(); continue; }
       this.layouts.add(dl);
       onLayout(dl, pass);
-      const missing = env.takeMissing();
-      if (!missing.length || !(await this.supply(env, missing))) return;
+      if (!missing.length) return;
+      const more = later.length ? await this.fetchLater(page, later) : false;
+      if (!(any || more)) return;
     }
   }
 
   /** Uma passada só, sem o laço de fontes: o layout de impressão sob demanda (como o `printLayout` do motor TS). */
   layoutSync(): DecodedLayout | null {
-    const { env, doc } = this;
-    if (!env || !doc) return null;
-    const dl = doc.layout(env, { hyphenationLanguages: LANGS, view: 'print' });
+    const { doc } = this;
+    const page = this.ensurePage();
+    if (!page || !doc) return null;
+    const dl = doc.layout(page.env, { hyphenationLanguages: LANGS, view: 'print' });
     this.layouts.add(dl);
     return dl;
   }
@@ -257,14 +324,17 @@ export class RustSession {
       return { family: `"${face.family.replace(/["\\]/g, '')}", "Liberation Sans", sans-serif`, weight: face.bold && !face.synthBold ? 700 : 400, italic: !!face.italic && !face.synthItalic };
     }
     let entry = faceEntries.get(key);
-    if (!entry) {
+    if (entry) dl.dropFaceBytes(i);
+    else {
       const name = `udv-rface-${++faceSeq}`;
       entry = { name, ready: false, loaded: Promise.resolve() };
       faceEntries.set(key, entry);
       const bytes = dl.faceBytes(i);
       try {
         if (!bytes) throw new Error('no bytes');
-        const ff = new FontFace(name, bytes.slice().buffer);
+        // `faceBytes` is a fresh copy out of the engine's memory: its buffer is exactly the file unless a view says otherwise
+        const exact = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+        const ff = new FontFace(name, exact ? bytes.buffer as ArrayBuffer : bytes.slice().buffer);
         document.fonts.add(ff);
         const e = entry;
         entry.loaded = ff.load().then(() => { e.ready = true; }, () => {});

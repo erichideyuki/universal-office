@@ -75,6 +75,7 @@ fn consumed_buffers_null_handles_and_the_error_slot() {
             uo_layout_missing_faces(std::ptr::null()),
             uo_layout_run_boxes(std::ptr::null(), 0),
             uo_layout_page_info(std::ptr::null(), 0),
+            uo_layout_page_heads(std::ptr::null()),
             uo_layout_block_line(std::ptr::null(), 0.0),
             uo_layout_face_bytes(std::ptr::null(), 0),
             uo_layout_image_bytes(std::ptr::null(), 0),

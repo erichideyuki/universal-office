@@ -216,6 +216,83 @@ the TS engine caches fonts and metrics between documents in the page, the Rust o
 CI lines to add (not added): the core tsc line + `viewer.ts` `viewer.check.ts` `../write/packages/viewer/src/write-engine.d.ts`; the viewer's vitest
 with `UO_WASM_PATH` (`count,write` build); `UO_WASM_PATH=<..> UO_TS_ROOT=<frozen> node crates/uo-wasm/tests/browser/viewer_switch.mjs --mode all`.
 
+#### Open speed (2026-11-10)
+
+**The question.** In the full SW run the Rust engine opened the 74 fixtures slower than TS in Chromium (loadDocx total 27.4 s against
+16.9 s, median 251 ms against 122 ms) although the wasm layout alone is as fast as the TS one natively. Where does the time go, and
+which part is avoidable inside the approved design?
+
+**Root cause.** One `WriteEnv` per viewer ELEMENT (SW section 2), and a page that shows several documents makes a new element for each.
+The TS engine keeps fonts and hyphenation for the whole page (`FontResolver.shared()`), so after the first document it lays out in one
+pass. A fresh Rust environment paid again for: (a) the 4 Liberation Sans assets (`pushAsset`, SHA-256 over 1.65 MB, about 11 ms);
+(b) a discovery pass that always ran (pass 0 has nothing pushed, so `takeMissing` listed families the resolver already answers): 2 layout
+passes per document, 148 for 74; (c) `pushFamily` of the document's families (SHA-256 over every face, about 10 ms for the 4 Carlito faces);
+(d) SHA-256 a second time at first use of the face (`FaceCache::get_or_parse`, uo-fonts, NOT changed here). Eager encode+decode of
+every page of every pass was a smaller cost (about 4 % of the total).
+
+**Measured** (`viewer_switch.mjs --mode speed`, Chromium headless, 74 fixtures, TS and Rust interleaved per document, one fresh page per
+round, round 1 not counted; "S1" = a new element per document, "S2" = one element per engine for all documents, "S0" = cold first load).
+
+```
+                                   before (HEAD ec66f1a1)            after (this frontier)
+S1 Rust loadDocx total / median    23.2-23.3 s / 172-173 ms          9.4-9.5 s / 44-47 ms
+S1 TS   loadDocx total / median     9.3 s /  70-75 ms                 8.9 s / 62-72 ms (TS code unchanged: machine noise)
+S1 Rust layout passes (74 docs)     148                                77
+S1 median per-document Rust/TS      2.62-2.79                          0.73-0.80  (3 runs x 2 rounds)
+S1 Rust stages (sum, ms)            wasmLayout 18095-18215, supply 3188-3221, pushFamily 3088-3125 (544 calls),
+                                    prepare 1155-1167, pushAsset 1132-1147 (296 calls), open 125-129
+                                    -> wasmLayout 9029, fetchLater 155, open 125, pushFamily 62 (14 calls), prepare 10
+S1 Rust first page (drawPage 1/15)  median 21-22 ms                    median 19-21 ms (decode now happens here)
+S2 Rust median / TS median          50 / 49 ms (ratio 1.24-1.27)       47-48 / 47-53 ms (ratio 1.14-1.18)
+S2 Rust total / TS total            9.9 s / 7.7-7.9 s                  9.4 s / 7.6 s
+S0 cold first document (rust / ts)  not measured                       131-173 ms (median 131-146) / 68-97 ms (median 70-80)
+```
+
+Node cross-check (`core/target/agent-speed/stages.mjs`, the viewer's own JS, same wasm, eager decode as before): fresh env per document
+sum 24.5 s, median 191 ms, p90 523 ms (layout pass 0 = discovery 8.6 s, pass 1 11.0 s, push 3.4 s, assets 1.2 s); one env shared by all
+documents sum 10.0 s, median 54.8 ms, p90 212 ms (1 pass each, push 4 ms). The fresh-env Node sum matches the browser total of the SW run.
+
+Full parity after all changes (`--mode parity`, `UO_SW_STRIDE=1 UO_SW_BATCH=10`): 74 documents, 579 pages, 0 differences in page
+count/sizes, headings/comments/link boxes (144/0/838), text layer (693,279 chars), find hits (22,137), pixels (1,158 renders,
+tolerance 0), PDF (45,358,755 B), 0 exceptions. Its own loadDocx line (a pixel-compare run, element pairs, page restarted every 10
+documents, so every batch pays the first load again): TS 16,377 ms total / median 123 ms, Rust 16,036 ms / median 133 ms. Memory mode
+(count build, 200 open/close cycles): handles 0 after every close, page envs 1, live bytes 1 distinct value after warm-up, buffer 1
+distinct value. Phase 0: 0 requests for the wasm or the engine chunk.
+
+| # | Declaration |
+|---|---|
+| SPEED-1 | ONE environment per PAGE and fonts base (`rust-engine.ts` `PageFonts`, `newEnv({ page: true })`), never freed by a viewer: fonts, assets and hyphenation patterns pushed once for all elements, like the TS `FontResolver.shared()`. It counts in the new `stats().pageEnvs`, not in `handles`. It replaces the "one `WriteEnv` per viewer element" line of section 2. Alternative kept out: per-element env with pre-pushed families (still pays the SHA-256 of every face for each new viewer, about 20 ms, and stays near the TS median). Known consequences: the FaceLedger budget (WASM_DESKTOP, 128 MiB) is shared by every viewer of the page, so many documents with big embedded fonts could meet `OverBudget` where a per-element env would not (the fixtures cannot); `takeMissing` reports each (family, variant) once per environment, so with several elements loading at the same time one may stop without a family the other already took, until the resolver's `onChange` makes it relayout (the harness loads one at a time and does not exercise this); hyphenation patterns accumulate page-wide; `takeMissing`'s `attempted` set is per page, not per element as the TS `ViewerFonts.attempted`, so a family whose fetch failed in `fetchLater` (transient network or Local Font Access error) is not asked again by a later viewer of the page, where TS retries it per element; one environment per distinct fonts base lives (and keeps its pushed faces charged to the budget) until the page ends, also after the `fonts` attribute changes. Concurrent sessions await ONE assets push and ONE registration per hyphenation id (a promise in `PageFonts`; a failed one is dropped so the next session retries). |
+| SPEED-2 | A layout pass whose missing fonts are all answered synchronously by the resolver is freed without being handed to `onLayout` (not shown, not decoded) and the next pass starts at once; the last pass is always handed over. The decision "relayout or stop" is unchanged. (`pushNow` / `fetchLater` split of the old `supply`.) |
+| SPEED-3 | Pages are decoded ON DEMAND: new export `uo_layout_page_heads` (w, h, background of every page, because `applyZoom` reads every background), `WriteLayout.pageHeads()`, lazy page objects in `DecodedLayout` that encode+decode page `i` (together, so the tables see messages in encoder order; the encoder serves any order) the first time `items`/`lines`/`paras` or a paint call needs it. A decode failure now shows at paint/read time: one `console.error` per layout and an empty page (before: the layout constructor threw). The `view=web` layout reads lines of every page for its height, so that view still decodes all pages. |
+| SPEED-4 | `faceKey` keeps the bytes it fetched only until the caller decides: `fontOf` takes them through `faceBytes` on a cache miss (one copy out of the wasm memory) and calls `dropFaceBytes(i)` when the page already has an entry for the key, so no font file stays held in JS for the life of the layout. `FontFace` gets the exact buffer (one copy instead of three). A page whose lazy decode failed is remembered (`#failed`) and never encoded again; `free()` clears the decoded lines too. Out-of-order decode is tested (`write_api.test.mjs`, reverse and shuffled equal in-order). |
+| SPEED-5 | NOT done: `WebAssembly.instantiateStreaming` for URL/Response sources. Tried and measured: S0 cold Rust median 146 / 145 / 129 ms without against 149 / 148 / 140 ms with it (three fresh pages each), no gain in a fresh-profile headless Chromium (the code cache it enables needs a persistent profile), so reverted. |
+
+**What this supersedes in the SW text.** SW-4's "the first layout takes one extra pass" is gone (1 pass per document, 77 passes for 74
+documents; the extra ones are real missing fonts), and the "Remaining gaps" sentence that the Rust path costs more than TS on load: with
+a page environment the median open in S1 is 44-47 ms against 62-72 ms for TS (ratio 0.73-0.80). SW's own lines are left as they were.
+
+**Remaining gap (S1 and S2 totals, S2 median).** The Rust MEDIAN is at or below TS in the "new element per document" case (the case the
+harness and a page showing several documents hit). The total is not: S1 Rust 9.4 s against TS 8.9 s, S2 Rust 9.4 s against TS 7.6 s,
+and the S2 median ratio is 1.14-1.18 (47-48 ms against 47-53 ms in separate rounds; same-round ratio 1.16). Everything left is the wasm
+layout itself in Chromium: `rust.wasmLayout` 9.0-9.1 s for 77 passes, against the TS layout passes 7.1-7.2 s (the heaviest document,
+f7c__7__13: 2.35 s against 1.6 s). In Node the layout stage is at parity with TS on the 68-capture sum (native 0.96, wasm 0.98 of TS; 20 of 68 documents slower natively and 34 in wasm; the wasm layout of the
+500-page document is 1.40x TS: `uo-docx-layout.md` "Benchmarks main x rust-core - speed"), so the likely cause of the Chromium gap is how Chromium runs the 3.9 MB
+module (Liftoff baseline code, then TurboFan tier-up; a hypothesis, NOT measured here: no flag run, no code cache, see SPEED-5), not something in the viewer. It is not touched by this
+frontier. The first call of a new tab pays the compile + instantiate (S0: about 60 ms more than TS for a small document, the module
+is memoized per page afterwards). Not fixed here: uo-fonts SHA-256 twice per face (keyed `get_or_parse` would halve it; after SPEED-1 it is paid once per page per face, so
+low priority).
+
+**Commands** (from `core/`, `UO_TS_ROOT` = the frozen checkout):
+`cargo build -j 4 -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm` (and `--features count,write` for memory);
+`UO_WASM_PATH=<wasm> UO_SW_ROUNDS=3 node crates/uo-wasm/tests/browser/viewer_switch.mjs --mode speed` (`UO_SW_SCENARIOS=S0,S1,S2`);
+`... --mode parity` with `UO_SW_STRIDE=1 UO_SW_BATCH=10`; `... --mode memory` (count build; now also fails unless `pageEnvs === 1`);
+`node tools/size/wasm-ab.mjs --runs 5 <old.wasm> <new.wasm>` (digests equal: cca8d8794ec4bfe0 both, no change of page messages, sections
+or PDF); `cargo test -j 4 -p uo-wasm --features write,count --test write_native --test write_unsafe -- --test-threads=3` (M1 0 B left including
+`uo_layout_page_heads`); `node --expose-gc --test crates/uo-wasm/tests/write_api.test.mjs ...write_cancel... ...write_section...` (17/17: `write_api` 8, `write_cancel` 7, `write_section` 2; `pageHeads` equals the eager decode of every page of the three fixtures); `node tools/check-changed.mjs` (clean).
+Files touched: `uo-wasm/src/write.rs` (+ `uo_layout_page_heads`), `js/{viewer.ts,write.mjs,write.d.ts}`, `viewer/src/rust-engine.ts`,
+`viewer/src/write-engine.d.ts` (additive: `newEnv(o?)`, `pageEnvs`; not in the brief's owned list), `tests/browser/viewer_switch.mjs` (`--mode speed`,
+memory checks `pageEnvs`), `tests/write_native.rs`, `tests/write_unsafe.rs`, `tests/write_api.test.mjs`.
+
 ## 3. The C ABI (`uo-ffi`)
 
 - **Handles**: `UoConverter` (`uo_converter_new(const UoConverterOptions*, UoConverter**)`, `uo_converter_free`,
@@ -230,11 +307,11 @@ with `UO_WASM_PATH` (`count,write` build); `UO_WASM_PATH=<..> UO_TS_ROOT=<frozen
   newer facade may pass a longer struct, a shorter one is refused. Strings are UTF-8 `(ptr, len)`, lists `'\n'`-separated.
 - **Buffers**: inputs are borrowed for the call only; the PDF comes back as a `UoBuf` the facade copies into a `byte[]`
   and frees at once (the SafeHandle's `Dispose`).
-- **Threads**: `UoConverter` is `Send + Sync` and shared by every thread (the system index and the face cache are locked
+- **Threads**: each `uo_docx_to_pdf` conversion runs on its own thread of `CONVERSION_STACK_BYTES` (16 MiB, 64 MiB in debug: nested tables use about 19 KB of release stack per level and an overflow aborts the process); the caller reads the result and the per-thread last error on its own thread. `UoConverter` is `Send + Sync` and shared by every thread (the system index and the face cache are locked
   inside; a font registry and its ledger are made per conversion, so documents do not share a font budget). `UoCancel`
   is raised from any thread; a job holds its own `Arc` of the flag.
-- **Cancellation**: checked before the work, between read, layout and PDF, and by uo-pdf before each page and every 256
-  items (PQ9), and now inside the layout: `LayoutOptions.cancel` (the same `Arc<AtomicBool>` as `PdfOptions.cancel` and
+- **Cancellation**: checked before the work, between read, layout and PDF, and by uo-pdf before each page, every 256
+  items (PQ9) and before each raster effect (text, shape and picture effects), and now inside the layout: `LayoutOptions.cancel` (the same `Arc<AtomicBool>` as `PdfOptions.cancel` and
   `UoCancel`) is read at every `Budget::charge`, `LayoutError::Cancelled` becomes code 10 (G4). On wasm, `cancel_poll`
   asks the host import `uo_host.layout_poll` (flag bit 9; G4-W).
 - **Panics**: `catch_unwind` in every export → code 12. Native only: on wasm32 the crate is empty (`#![cfg]`).
@@ -328,8 +405,8 @@ against the native library byte for byte. The server-substitute policy itself ha
 | Check | Where | Result |
 |---|---|---|
 | M1 native, a whole viewer session through the wasm exports (env + 5 families + open + layout + every query + PDF) | `uo-wasm/tests/write_native.rs` | 76,618,438 B allocated, peak 14,986,201 B, **0 B left** |
-| M1 native, one server conversion through `uo_docx_to_pdf` (ok / invalid / cancelled / page limit) | `uo-ffi/tests/ffi_memory.rs` | ok 39,465,851 B allocated (peak 1,139,625 B, file 245,286 B); invalid 46 B; cancelled 7,984 B; limit 21,083,844 B; **0 B left each** |
-| M3 server conversion (release) | same | f8__7__0 7,970 B docx → 245,286 B PDF: 39.5 MB allocated, peak 1.14 MB; f7b__7__0 → 187,564 B: 87.5 MB / 3.59 MB; f7c__7__1 → 335,884 B: 69.1 MB / 2.27 MB; f8__7__2 → 323,120 B: 136.2 MB / 3.42 MB |
+| M1 native, one server conversion through `uo_docx_to_pdf` (ok / invalid / cancelled / page limit) | `uo-ffi/tests/ffi_memory.rs` | global counters (the conversion runs on its own thread): ok 39,468,390 B allocated (file 245,286 B); invalid 761 B; cancelled 8,699 B; limit 21,084,607 B; **0 B left each**, three runs equal |
+| M3 server conversion (release; `Converter::docx_to_pdf` inline since the C ABI converts on a worker thread) | same | f8__7__0 7,970 B docx → 245,286 B PDF: 39.2 MB allocated, peak 1.14 MB; f7b__7__0 → 187,564 B: 87.3 MB / 3.59 MB; f7c__7__1 → 335,884 B: 68.7 MB / 2.27 MB; f8__7__2 → 323,092 B: 135.8 MB / 3.42 MB |
 | M4 C ABI (native) | same | 10,000 × (converter + family buffer + cancel flag): 2,640,000 B allocated, **0 B left** |
 | M4 wasm, `free()` | `write_api.test.mjs` (Node, WebKit) | 10,000 environments, 10,000 documents, 10,000 layouts: live bytes back **exactly** |
 | M4 wasm, `FinalizationRegistry` | same (Node `--expose-gc`) | the same 3 × 10,000 abandoned: counted while alive, back **exactly** |
@@ -342,7 +419,7 @@ against the native library byte for byte. The server-substitute policy itself ha
 | LeakSanitizer | the existing CI job runs `cargo test --workspace --all-features` on Linux, which now includes uo-ffi's tests (sampled parity, M1/M4, soak) | CI (not run here: Windows) |
 
 Sizes (`--profile wasm`, wasm32-unknown-unknown): default module **15,528 B** (6,553 B gzip, unchanged); the viewer
-module `--features write` **5,915,444 B (1,450,639 B gzip)**; both pass `wasm-tools validate
+module `--features write` **3,962,975 B (about 1.405 MB gzip, after the size work: `size-optimization.md`)**; both pass `wasm-tools validate
 --features=-all,wasm1,mutable-global,saturating-float-to-int,sign-extension,reference-types,multi-value,bulk-memory`
 (Safari 15). The write module imports two functions, `uo_host.pdf_chunk` and (G4) `uo_host.layout_poll`.
 
@@ -449,8 +526,9 @@ build is plain JavaScript and needs neither. (Safari 15 itself was not available
 | wasm2js, z + `wasm-opt -Oz`, no `wasm2js -O` | 8,416,037 | 2,043,952 | 1,430,384 | yes (12 fixtures) |
 | **wasm2js, z + `wasm-opt -Oz --alignment-lowering` + `wasm2js -Oz` (the script's default)** | **5,862,537** | **1,574,692** | **1,146,143** | **yes (12 fixtures)** |
 | wasm2js, same, unminified (`.raw.js`) | 29,479,388 | 3,067,149 | 1,962,285 | — |
-| wasm2js, 3 + `wasm-opt -O3`, no `wasm2js -O` | 15,603,620 | 3,062,033 | 2,003,586 | **no** (page messages differ) |
-| wasm2js, 3 + `wasm-opt -O3 --alignment-lowering` + `wasm2js -O3` | 10,644,633 | 2,170,654 | 1,496,728 | **no** (same) |
+| wasm2js, 3 + `wasm-opt -O3`, no `wasm2js -O` | 15,603,620 | 3,062,033 | 2,003,586 | **no** before G22 (page messages differ); not rebuilt after |
+| wasm2js, 3 + `wasm-opt -O3 --alignment-lowering` + `wasm2js -O3` | 10,644,633 | 2,170,654 | 1,496,728 | **no** before G22 (same); not rebuilt after |
+| wasm2js, 3 (G22 fix) + the script's default (`wasm-opt -Oz --alignment-lowering`, `wasm2js -Oz`), minified (2026-11-10) | 7,290,722 | not measured | not measured | **yes after G22** (12 fixtures, Node 5/5; Chromium and WebKit) |
 
 Reading: `wasm-opt` shrinks the raw module 10-17% but **does not shrink what is transferred** (gzip -0.2% / +2.3%, brotli
 +2.6% / +5.3%: it unrolls and inlines what the compressor already folded); its value is parse and instantiate time and
@@ -461,16 +539,43 @@ minified size and needs the `wasm-opt` step first (`wasm2js -O` on a raw rustc m
 valid if the optimiser ever leaves an unaligned access. Build time on this machine: `wasm-opt -Oz` 35 s, `-O3` 55 s,
 `wasm2js` 10-35 s plus 1-1.5 min for the whole script (all single-threaded node).
 
-**The opt-level 3 build is not safe to convert (finding).** wasm2js of the `3` module gives byte-identical PDFs, navigation
-and link boxes but **different page messages** (f8__7__0: 51,757 B in wasm, 53,200 B in JS; the same with or without
-`wasm-opt`, `--alignment-lowering`, `--llvm-nontrapping-fptoint-lowering`). A `--log-execution` trace of both engines
-diverges at the first `encode_page` after the (identical) layout, in the function that tests `OptF64`
-(`uo-render/src/opt.rs`): its "absent" marker is the signalling NaN `0x7ff4_0000_0000_0001`, and in the JS build the
-marker arrives as the canonical `0x7ff80000_00000000` (V8 does not keep NaN payloads across all of its paths; patching the
-marker to a quiet payload did not help). The `z` build converts correctly on the 12 fixtures, but only because its
-code passes `OptF64` as an integer; **the hazard is in the Rust source, not in wasm2js's arithmetic**. Before any wasm2js
-build ships: give `OptF64` an explicit presence bit (or any representation that is not a NaN payload) and run
-`write_wasm2js.test.mjs` over a bigger corpus than 12 fixtures. Not done here (the crate is outside this task's scope).
+**The opt-level 3 build was not safe to convert; resolved (G22, 2026-11-10).** Before the fix, wasm2js of the `3` module
+gave byte-identical PDFs, navigation and link boxes but **different page messages** (f8__7__0: 51,757 B in wasm, 53,200 B
+in JS; the same with or without `wasm-opt`, `--alignment-lowering`, `--llvm-nontrapping-fptoint-lowering`). The 2026-11-06
+reading (V8 canonicalising the payload) was wrong; the cause is **wasm2js**, found by a census of the NaN constants in the
+disassembly (`wasm-dis`): the `3` module held **22 `f64.const nan:0x4000000000001`** in 9 functions (that is
+`OptF64`'s absent marker `0x7ff4_0000_0000_0001`: `some()` was a bitcast of a double, so at opt-level 3 LLVM kept the value in
+f64-typed select/phi nodes and materialised the marker as an f64 constant), plus 1,083 canonical `f64.const nan`, 15
+canonical f32 and **1 `f64.const nan:0x8deadbeef0001`** (the second marker, `UNDEF_BITS` of uo-image `tiff.rs`). The `z`
+modules had none of the `OptF64` marker (it stayed an `i64.const`) but held the TIFF one (`nan:0x8deadbeef0001`). wasm2js prints every NaN constant as the JS literal
+`NaN` (the raw JS of the `3` module has 1,099 `NaN` and no payload), and JavaScript cannot carry a payload, so `get()`
+saw a present NaN instead of "absent". **The hazard was in the Rust source, not in wasm2js's arithmetic or V8.** There was
+no regression: the `3` path never passed (`ba3e15b9`, the commit that added the test, already recorded it); the G4 reviewer's
+"fails on the previous base too" is the same failure, and the z build passed all along.
+
+**Fix (2026-11-10).** (1) `OptF64` is an integer, **0 = absent, a value = its canonical bits + 1** (never a NaN payload; a
+canonical NaN is never `u64::MAX`, so the sum cannot wrap to 0; still 8 B, `Item` still 48 B). The wire is unchanged
+(`OptF64` never reaches it: `to_wire` goes through `Option<f64>`), so no schema and no codec change; this is G22's own
+alternative "any non-NaN representation" (a presence bit would make it 16 B and break the `Item` budget). (2) uo-image
+`UNDEF_BITS` is now a plain NaN with `is_nan` (exact: the only producers push u16/u32 values and rationals with a
+denominator of at least 1, so no other NaN can be stored in a tag). (3) `build-wasm2js.mjs` runs a **NaN-constant census**
+on the optimised module (`wasm-dis`) and exits 2 on anything but the canonical `f64.const nan:0x8000000000000` /
+`f32.const nan:0x400000` (`--allow-nan-payload` skips it). Measured: the guard on the old `3` module exits 2 listing the 22
+`nan:0x4000000000001` and the 1 `nan:0x8deadbeef0001`; on the new `3` module the census is 1,061 canonical f64 + 15 canonical
+f32, on the new `z` module 135 + 4.
+
+Evidence after the fix (HEAD ec66f1a1 + this change, `--features write`): modules `3` 3,967,023 -> 3,962,975 B, `z`
+3,125,747 -> 3,123,638 B; wasm2js (default pipeline, minified) `3` 7,293,236 -> **7,290,722 B**, `z` 5,240,248 ->
+**5,235,996 B** (the old `3` JS was built with `--allow-nan-payload`). `write_wasm2js.test.mjs`: **5/5 on both** (`3`: 38.5 s;
+`z`: 45.8 s; before, `3` failed after 2.2 s with the f8__7__0 lengths above). `core/tools/size/wasm-ab.mjs --runs 9` on
+base 3 / new 3 / base z / new z: the **four digests are equal** (`cca8d8794ec4bfe0`, everything `collect` reads over the 12
+fixtures); min total ms 496.2 / 493.7 / 734.8 / 734.2 (medians 508.1 / 507.7 / 746.3 / 747.5): within noise. Browser, headless
+(`wasm2js_run.mjs --mode correct --mode csp`, `new 3` module + its JS): Chromium 156 (chromium-1248) and WebKit 26.5: all 12
+fixtures `diff=null`, the three pinned PDFs equal to native (c28b3c53 / a2cf1bd6 / 88d31b5b), the strict CSP (`script-src
+'self'`) falls back to the js engine, `'wasm-unsafe-eval'` picks wasm. Parity nets unchanged: uo-render, uo-pdf, uo-docx-layout
+(adapter, f3, f5, f6, f8, g8, layout parity), uo-wasm, uo-ffi, uo-image (`image_parity`) all green; `write_api` (pinned
+checksums), `write_section`, `paint_parity` (Parts A-C) green on the `count` O3 build. Not covered by the census: a NaN
+payload built at run time (`f64::from_bits` of a computed integer); the source has none (grep).
 
 **The loader (`js/write.mjs`, `write.d.ts`).** `loadWrite({ engine, wasm, js })` -> `{ uo, engine, exports }`; `engine`
 `'wasm'`, `'js'` or `'auto'` (default). `auto` probes with `canCompileWasm()` (an 8-byte module through `new
@@ -537,8 +642,10 @@ wasm2js (env and open 147 ms) vs 81-100 ms on wasm (41-46 ms).
 2. While the TS engine exists behind the viewer switch (plan above, `engine="ts"`), **it is the cheaper no-wasm fallback**
    (0.30 MB gzip at start, plain JS, no conversion hazard); wasm2js becomes interesting only when the TS path is removed
    and a strict-CSP/Safari 15 host still has to work. That decision belongs to G7/the 0.10 gate.
-3. If it is shipped: build only from the `z` module, keep `wasm-opt -Oz --alignment-lowering` + `wasm2js -Oz`, put
-   `write_wasm2js.test.mjs` (and the browser check) in the gate, and fix `OptF64` first (finding above).
+3. If it is shipped: keep `wasm-opt -Oz --alignment-lowering` + `wasm2js -Oz` and put `write_wasm2js.test.mjs` (and the
+   browser check) in the gate. Since G22 (2026-11-10) the JS engine may be built from the shipped opt-level 3 module too
+   (not only from `z`); the NaN-constant census in `build-wasm2js.mjs` is a hard build guard, so a NaN-payload marker
+   that comes back in the Rust source fails the build instead of the output.
 4. `wasm-opt` on the wasm module: worth running for the 10-17% smaller raw module and ~10% speed, not for transfer size
    (gzip/brotli do not improve).
 
@@ -549,7 +656,7 @@ npm install --prefix core/target/tools/binaryen binaryen                        
 export CARGO_TARGET_DIR=<target>; cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm -j 4
 CARGO_PROFILE_WASM_OPT_LEVEL=z cargo build ...                                            # the z module
 node core/target/tools/binaryen/node_modules/binaryen/bin/wasm-opt -Oz --enable-bulk-memory --enable-sign-ext --enable-nontrapping-float-to-int --enable-mutable-globals --enable-multivalue --enable-reference-types in.wasm -o out.wasm
-node core/crates/uo-wasm/tools/build-wasm2js.mjs --in <uo_wasm.wasm> --out core/target/wasm2js/uo_wasm.js [--wasm-opt Oz|O3|none] [--wasm2js-opt Oz|O3|none] [--no-minify] [--esbuild <dir>]
+node core/crates/uo-wasm/tools/build-wasm2js.mjs --in <uo_wasm.wasm> --out core/target/wasm2js/uo_wasm.js [--wasm-opt Oz|O3|none] [--wasm2js-opt Oz|O3|none] [--no-minify] [--allow-nan-payload] [--esbuild <dir>]   # prints the NaN-constant census, exits 2 on payload constants
 UO_WASM_PATH=<.wasm> UO_WASM2JS_PATH=<.js> node --test crates/uo-wasm/tests/write_wasm2js.test.mjs
 UO_PLAYWRIGHT=<playwright dir> [UO_CHROMIUM=<chrome.exe>] node crates/uo-wasm/tests/browser/wasm2js_run.mjs --wasm <.wasm> --js <.js> [--browser chromium|webkit] [--mode csp|correct|speed]
 node core/crates/uo-wasm/tools/bench-wasm2js.mjs --engine wasm --wasm <.wasm>             # or --engine js --js <.js>; one engine per process (maxRSS)
@@ -557,7 +664,7 @@ node core/crates/uo-wasm/tools/bench-wasm2js.mjs --engine wasm --wasm <.wasm>   
 
 Files: `js/write.mjs` + `write.d.ts` (`loadWrite`, `canCompileWasm`), `tools/build-wasm2js.mjs`, `tools/bench-wasm2js.mjs`,
 `tests/wasm2js_common.mjs`, `tests/write_wasm2js.test.mjs`, `tests/browser/wasm2js_page.mjs`, `tests/browser/wasm2js_run.mjs`.
-Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF64` fix, wasm2js of the `count` build
+Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, wasm2js of the `count` build
 (`uo_memory_live_bytes` returns an i64, which the JS build would give as its low half).
 
 ## 7. Security
@@ -566,8 +673,92 @@ Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF6
   `panic!` or panicking index in `src/`; inputs are length-checked (`parse_faces`, option sizes, UTF-8).
 - Untrusted caps (§1) on the server by default; the reader, layout and PDF limits are the crates'.
 - The host import receives a pointer into wasm memory and must copy before returning (documented; the JS wrapper does).
-- No new fuzz target: the exports are thin over fuzzed crates; a `ffi_docx_to_pdf` target over the whole pipeline is a
-  gate item (G21).
+- Fuzz: `core/fuzz` target `ffi_docx_to_pdf` runs the whole server pipeline through the C ABI (G21, done); the conversion runs on a 16 MiB thread; `Trust::Untrusted` opens
+  with the C# package limits (256 MiB per part, 512 MiB in total); the cancel flag is checked before each raster effect. Open: the paint work budget (G24).
+
+## 8. Shipping, CI and WebKit (2026-11-10)
+
+**Licence notices of what ships.** `chunks/uo-write.wasm` (inside `@universal-office/write` and `@universal-office/document-viewer` since `build-pkg` step 1c) and `uo_ffi` (the native library of the NuGet `UniversalOffice.Docx`) contain compiled third-party Rust. CLAUDE.md requires the licence texts inside the package, so:
+
+- `core/tools/licenses/gen-notices.mjs` builds `core/licenses/` (committed: `THIRD-PARTY-NOTICES.md`, `notices.json`, `texts/`) from `cargo tree` of the two artifacts (`-p uo-wasm --features write --target wasm32-unknown-unknown`; `-p uo-ffi --target all`), the licence files at the root of each registry crate in `~/.cargo/registry/src` (no network), the texts kept in workspace crates and the toolchain's own notices. `node tools/licenses/gen-notices.mjs --check` (CI job `deny`) rebuilds in memory and fails on any difference (toolchain files are checked for presence only, since they vary with the CI's rustc). An SPDX expression must have one OR-alternative whose AND-terms are all in the `[licenses] allow` list of `core/deny.toml` (MIT, Apache-2.0, BSD-3-Clause; override for tests: `UO_LICENSE_ALLOW`); otherwise the generator exits 1 naming the crates (checked with an allow list of BSD-3-Clause only).
+- `tools/build-pkg.mjs` `shipEngineWasm(id, dist)` (exported; the former step 1c): copies the wasm, then `verifyNotices` (notices present, `lock` map equal to the registry packages of `core/Cargo.lock`, every listed file present) and copies the notices to `licenses/uo-write-wasm/`; any failure is rethrown as "leva chunks/uo-write.wasm sem os avisos de licença" and fails the build (a missing wasm still only warns, SW-9). Checked: ok; empty notices dir throws; a notices.json with one edited lock version throws. The `wasm` CI job runs it on the `--features write` build.
+- NuGet: `UniversalOffice.Docx.csproj` packs `core/licenses/**` under `licenses/rust/` (property `UoRustNotices`) and the target `UoCheckRustNotices` fails the pack (with a native library) when the index is missing. Checked with `dotnet pack` over a fake `uo_ffi.dll`: 27 files under `licenses/rust/`; with an empty `UoRustNotices` the pack fails. The same edit fixed an existing defect: `PackagePath="runtimes/%(RecursiveDir)native/"` made NuGet append the relative path again (`runtimes/win-x64/native/win-x64/uo_ffi.dll`); it is now `.../native/%(Filename)%(Extension)` (`runtimes/win-x64/native/uo_ffi.dll`).
+
+| Component | Version | Licence | wasm | native |
+|---|---|---|---|---|
+| adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | yes | yes |
+| equivalent | 1.0.3 | Apache-2.0 OR MIT | yes | yes |
+| hashbrown | 0.17.1 | MIT OR Apache-2.0 | yes | yes |
+| indexmap | 2.14.2 | Apache-2.0 OR MIT | yes | yes |
+| miniz_oxide | 0.9.1 | MIT OR Zlib OR Apache-2.0 | yes | yes |
+| rustc-hash | 2.1.3 | Apache-2.0 OR MIT | yes | yes |
+| ryu-js | 1.0.3 | Apache-2.0 OR BSL-1.0 | yes | yes |
+| V8 + ARM optimized-routines (uo-jsnum math) | - | BSD-3-Clause AND MIT | yes | yes |
+| fflate 0.8.3 (inflate of uo-opc; new `crates/uo-opc/LICENSE-fflate`) | - | MIT | yes | yes |
+| Unicode tables of uo-text (ICU of Node 24.15) | - | Unicode-3.0 | yes | yes |
+| Rust standard library (COPYRIGHT-library.html, MIT, Apache-2.0) | toolchain | MIT OR Apache-2.0 | yes | yes |
+| hyph-utf8 patterns (uo-fonts `hyphen-data`) | - | see the notice file | no | yes |
+
+Size: 401,593 B (392 KiB, 27 files; 279 KB of it the Rust std copyright page) uncompressed in each package that ships the wasm and in the NuGet.
+
+**CI lines for G4 and the switch** (workflow `rust-core.yml`): G4: `cargo test --workspace --all-features` (test job) already runs `g4_cancel` (debug bound 2 s) and uo-ffi `cancel_layout`; `server-pdf` now adds `cargo test -p uo-docx-layout --release --test g4_cancel` (bound 250 ms; measured 0.3-0.7 ms) and its `-p uo-ffi --release` line already runs `cancel_layout` (50 ms bound); `write_cancel.test.mjs` was already in the `wasm` job. Switch: new job `viewer` (JS install and build as ci.yml, `count,write` wasm, `npx vitest run test/engine-switch.test.ts` with `UO_WASM_PATH`, Chromium, `viewer_switch.mjs --mode all` with `UO_SW_STRIDE=6`, `UO_SW_SOAK=50`, `UO_TS_ROOT` = the same checkout: the script takes only tools from it and compares the two engines of the checkout; open fonts only). Measured locally with the frozen root: phase 0 requests for wasm/chunk 0, 13 documents / 108 pages, 0 differences in every row (sizes, headings/comments/links, text layer 119,856 characters, find 4,302 hits, pixels 216 renders 519,194,547 px tolerance 0, PDF 8,607,684 B, exceptions 0), memory 50 cycles flat (live 16,577,181 B, buffer 24,969,216 B, 0 handles after close). uo-docx: no per-file `--test` line remains; its tests are the single `all` binary covered by `--workspace`. WebKit and the painter job: uo-render.md "Milestone 1 — Shipping, CI and WebKit".
+
+**Not runnable locally** (CI is the first run): `cargo deny check bans licenses` (cargo-deny not installed; the `[licenses]` keys may need a fix-up on first run), `npx vitest run test/engine-switch.test.ts` and the whole `viewer` job (no `node_modules` in this worktree), `playwright install --with-deps`, `node tools/build-pkg.mjs write` end to end (only `shipEngineWasm` was run).
+
+**Decisions for the maintainer.** (1) The generated notices are committed (reviewable; no cargo, registry or rustc needed at pack time) and checked in CI. (2) Conservative scope: fflate, Unicode-3.0 and the whole Rust std copyright page are shipped; each can be dropped. (3) `core/deny.toml` gained a `[licenses]` allow list and the `deny` job runs `bans licenses`; until CI runs it, the list is enforced locally only by the generator. (4) `build-pkg` still only warns when the wasm is missing (SW-9) but fails when it ships without current notices. (5) The painter job costs about a frozen build plus 6 minutes per push; the `viewer` job a full JS install and build: both could be limited to `pull_request`/`workflow_dispatch`. (6) Whether a JavaScript engine's Math difference would be overridden in CI is moot today (WebKit had none).
+
+## Milestone-1 gate fixes (2026-11-10)
+
+The blocker and major findings of the milestone-1 security review, the skeptic and the benchmarks that are code, test or record defects
+inside the approved design. Whatever needs a maintainer decision (an API shape, a result that differs from the frozen TS, a budget) is NOT
+implemented: it is a row G23-G30 of "For the milestone-1 gate" with its evidence. Frozen TS: `UO_TS_ROOT` = `clickcompliance-docx` at
+`d0f45bc5`; `CARGO_TARGET_DIR` = `core/target/agent-gatefix`; cargo `-j 4`, tests `--test-threads=3`.
+
+| Finding | Done | Evidence |
+|---|---|---|
+| Security review, blocker: native stack overflow in the layout of nested tables (about 19 KB of release stack per level; `nest_tables_64.docx`, 1,508 B, kills the process on a 1 MiB thread) | **Fixed.** `uo_docx_to_pdf` runs the conversion on its own thread (`std::thread::scope` + `Builder::stack_size(CONVERSION_STACK_BYTES)`: 16 MiB, 64 MiB in debug); raw pointers and the job are read on the caller thread, the worker returns plain data (`LastError`, which `pipeline::set_last` records on the caller thread, where P/Invoke reads it); a worker panic becomes `INTERNAL`, a spawn failure too. The Rust API `Converter::docx_to_pdf` stays inline (documented: needs a large stack) | Reproduced first with the prebuilt release `bench_speed.exe` (main thread, 1 MiB): `nt_52` passes, `nt_56` and `nest_tables_64` abort ("has overflowed its stack", exit 127). New `uo-ffi/tests/hostile_inputs.rs` (fixtures `tests/hostile/*.docx`, byte-equal to the generators, `UO_BLESS=1` rewrites): 64 and 200 nested tables, 64 nested VML boxes and a 64-level mix convert through the C ABI **from a 1 MiB caller thread**, release (41 / 8 / 7 / 107 ms) and debug (245 / 47 / 45 / 623 ms: the 64 MiB debug constant is enough). Wasm: new `uo-wasm/tests/write_hostile.test.mjs` lays out and exports the same four (64 / 200 tables 2 / 4 pages) |
+| Security review, major: the server opened documents with the 2 GiB per part / 4 GiB total limits | **Fixed.** `Trust::Untrusted` opens with the frozen C# `OpcPackageLimits` (256 MiB per part, 512 MiB in total: `UNTRUSTED_PACKAGE_PART_BYTES`, `UNTRUSTED_PACKAGE_TOTAL_BYTES`, `server::read_limits`); trusted keeps the target defaults | Release-only tests (ignored in debug, they inflate up to 512 MiB): three 200 MiB picture parts in a 2.87 MB file give `LIMIT_EXCEEDED`, stage READ, `max` 536,870,912; one 257 MiB part in a 1.23 MB file gives `max` 268,435,456. `server_parity`: 68 documents, oracle policy 68 equal, server-substitute 68 equal, the committed untrusted compressed PDFs unchanged |
+| Security review, major: text-effect rasters have no budget; the PDF cannot be cancelled inside them (`glow_dense_600`: 61 s) | **Cancellation fixed, budget NOT done (G24).** uo-pdf checks the cancel flag before every text effect (`paint_run_fx`), shape effect (`paint_shape_effects`) and picture effect (`make_image`, the adjust paths): `Painter::stop_for_cancel` marks `Cancelled`, the item loop stops after the item. The wasm PDF still has no poll (G4-4, G24) | `glow_dense_600.docx` (4.6 KB, one page, 600 runs of a 78.7 pt glow): 59.5 s uncancelled (release, `bench_speed`, 18.4 MB PDF; the 100-run page 0.46 s, so the cost is superlinear). `uo-ffi/tests/pdf_cancel_effects.rs` raises the flag 300 ms in: `Err(Cancelled)` in **40-45 ms** (before: the next 256-item check, about 26 s apart on this page). uo-pdf `painter_parity` 3, `painter_nopanic` 4, `painter_memory` 5, `writer_*` all green: no output change |
+| Security review, major: a trap leaves the viewer's single module usable | **Fixed.** `viewer.ts` keeps an `Instance` (dead flag, handles, page environments) per loaded module; every call goes through `call(inst, f)`: on `WebAssembly.RuntimeError` the instance is **dead**, `loading`/`loaded` are reset and the next `loadViewerModule` instantiates a fresh module; objects of a dead instance read as freed, their `free()` is a no-op, any other call throws "the engine instance stopped after a trap"; `ViewerModule.dead`; `rust-engine.ts` drops a dead module in `open()` and `pageFontsFor` replaces the freed page environment. Count build only: export `uo_test_trap` (`unreachable`) and the test hook `__trapForTest`. **Not detected: the wasm2js engine** (its traps are plain JS errors; G26) | `viewer_trap.test.mjs`: trap throws `RuntimeError`, `mod.dead`, frees do not throw, `open`/`newEnv`/`pdf` refuse, a second `loadViewerModule` is a different live module whose PDF is byte-equal (245,286 B), 0 handles after the frees, a second trap on the fresh module works the same way. `viewer_switch --mode faults` (Chromium): element A (12 pages) survives the trap, reloads another document (`udv-loaded`, 12 pages = TS), a new element B opens, 0 handles after removal |
+| Security review, major: a full page environment fails every later document | **Fixed (fallback, G27).** `RustSession.push()` catches `WriteError` (OverBudget, an unreadable face): the family stays on the substitute, one `console.warn`, the answer is not retried; anything else (a trap) still rises. The page environment stays full until reload | `write_hostile.test.mjs` M5: 8 MiB faces with distinct content keys fill the 128 MiB ledger, **the push of face #15 fails with `WriteError` code 5**; the environment still lays the fixture out to a PDF byte-equal to a fresh environment's; after `free()` live bytes are back at the baseline. `viewer_switch --mode faults`: `pushFamily` made to throw `WriteError(5)` 10 times; the document still loads (`udv-loaded`, no `udv-error`; 18 pages against the TS's 17, because every family is the substitute), and the next document loads |
+| G21 / security review: no fuzz target over the pipeline | **Done.** `core/fuzz` target `ffi_docx_to_pdf` (`fuzz/src/pipeline.rs`): the whole server pipeline through the C ABI `uo_docx_to_pdf` (selector: trusted, `max_pages`), a 3 s watchdog raises the cancel flag, invariants: no `INTERNAL`, `uo_last_error` equals the status, an OK output is a PDF. Seeds: the 6 smallest layout fixtures and the hostile fixtures | Stable driver, 120 s: **96,040 executions (796/s), 0 crashes**, slowest 924 ms; fuzz crate `clippy -D warnings` clean (`Cargo.lock` gained uo-ffi's dependency set, offline). CI runs every file of `fuzz_targets` (`cargo fuzz run`, 60 s, `-timeout=10`) |
+| F2-20 (S4): four captures stamped with the stale engine `b92b60fa` | **Done.** `f0`, `f1` and `f5` `layout-ci` and `f1/resolver` recaptured with the frozen `d0f45bc5` (`capture-layout.mjs --mode ci --count 7 --seed 1 --accept-stale typography/font/sfnt.ts`, `capture-f1-resolver.mjs --count 40 --seed 1`). The digests of **every** record differed from the old ones (the old p1, p2, p2first and p3 values came from the older engine; the facet set per key was kept): the record lines, the dump files (`p1.bin`, `f1.tsv`, `f5.bin`, `transcript.tsv`) and the headers were replaced | `adapter` 2 equal; `f1_parity` committed 10 equal, resolver sweep 40 documents / 80 equal; `f5_parity` 2 equal (lines 21, paint 21); `layout_parity` 5 tests (f7a 48, f7b 36, f7c 48, f7d 36 equal): **0 mismatches**. `grep -rl b92b60fa core/crates/*/tests` is empty. CI: the `layout-parity` and `painter` jobs now pin `ref: d0f45bc5` instead of `main` (S10) |
+| M3 (retained memory after close) of the page environment | Measured, **approval is G29** | See below |
+| Speed sentence (S3) | **Fixed** in "Open speed" (the rows slower than TS are G30) | Text only |
+| Record and code minors (S5 and the skeptic's list) | Applied here: "16/16" (now 17/17), the `z` modules sentence, the licence size, the `pageHeads` sentence, the sizes and the G7 row, `NO_PAGE` frozen, the `build-wasm2js` usage string, the stage `rust.layout+decode` renamed `rust.layout`. The other minors are the orchestrator's | |
+
+**M3 of the page environment (finding 11, reconciled).** The two earlier numbers came from different documents and from different histories of
+the page: the SW run (`UO_SW_STRIDE=1`, `--mode memory`) and the section-8 run (`UO_SW_STRIDE=6`, `--mode all`, where the 13-document parity phase fills the
+page environment with fonts before the memory phase). Same machine, count build of this HEAD, 200 open/close cycles of 10 documents:
+
+| Run | live bytes after warm-up | `memory.buffer` | handles after close | page envs | Before SPEED-1 (SW, stride 1) |
+|---|---|---|---|---|---|
+| `--mode memory`, stride 1 (the SW's 10 documents) | **13,610,330 B** (1 distinct value) | 20,643,840 B | 0 | 1 | live 4,850,392 B, buffer 17,039,360 B: **+8,759,938 B (+181 %) live, +3,604,480 B buffer** |
+| `--mode memory`, stride 6 (other 10 documents) | 12,569,061 B | 20,447,232 B | 0 | 1 | not measured before SPEED-1 |
+| `--mode all`, stride 6, soak 50 (parity first, the section-8 run) | 16,577,181 B | 25,362,432 B | 0 | 1 | the section-8 line (16,577,181 B, 24,969,216 B) is this run: live equal to the byte |
+
+Flat in all three (one distinct live value, one buffer size, 0 handles, 1 page environment). The growth is the page environment (the fonts every
+viewer of the page shares, SPEED-1) that now lives as long as the page: over the M3 10 % rule, so it needs the maintainer's approval (G29).
+Retained memory per document, after close, is still 0 (handles) and flat.
+
+**Process notes.** `assert_no_leak` (thread-local counters) cannot see a worker thread: `uo_alloc::check_no_leak_global` / `assert_no_leak_global` compare the
+global live bytes (valid while no other thread allocates; the callers hold a serial lock). The first run of `cancel_layout` with them failed by -24 B: the
+raiser thread frees its spawn bookkeeping when it starts, inside the window; the test waits 20 ms for it to start. After that, `ffi_memory` M1 (global): 0 B left
+for ok, refused, cancelled and page limit, **three consecutive runs equal** (allocated 39,468,390 / 761 / 8,699 / 21,084,607 B); `cancel_layout` M1 0 B left
+(about 72 MB allocated), latency 0.6-1.4 ms. M3 now measures `Converter::docx_to_pdf` inline (the C ABI converts on a worker): numbers in §6, comparable to the old ones
+(allocated 39.2 / 87.3 / 68.7 / 135.8 MB, peaks equal); the f8__7__2 PDF is 323,092 B (the old line said 323,120 B; `server_parity` pins the current bytes).
+Verification, all green: `uo-ffi` release (`UO_SERVER_PARITY_EVERY=1`: 4 unit + cancel_layout 2 + ffi_memory 4 + hostile_inputs 4 + pdf_cancel_effects 1 + server_parity 3) and debug (hostile bombs ignored);
+`uo-pdf` release (all 8 files); `uo-alloc --features global` 8; `write_native` 7, `write_unsafe` 1, `g4_cancel` 6; Node `write_api` 8, `write_cancel` 7, `write_section` 2 (17), `write_hostile` 5, `viewer_trap` 1;
+`viewer_switch --mode all` (stride 6, soak 50): 13 documents / 108 pages, 0 differences in every row (text layer 119,856 characters, 4,302 find hits, 216 renders 519,194,547 px at tolerance 0, PDF 8,607,684 B),
+and `--mode faults` ok; `dotnet test UniversalOffice.Docx.Tests` 14/14 (the facade over the worker thread: M4 global, thread soak, cancellation); Miri `-p uo-ffi --lib` 4/4;
+`node tools/check-changed.mjs` clean (clippy native + wasm32 with `-D warnings`, float-cast and grep bans); the codec-job `tsc` line clean (viewer.ts, viewer.check.ts, write-engine.d.ts);
+`rust-engine.ts` type-checked with a temporary paths tsconfig: 0 errors in it (8 unrelated "cannot find module fflate / converter" errors of the worktree, which has no `node_modules`).
+Not run here: the vitest engine-switch test and `rust-core.yml` itself (the branch was never pushed, G30-CI).
+
+**Files touched.** `uo-ffi/src/{lib,pipeline,server}.rs`, `uo-ffi/tests/{ffi_memory,cancel_layout}.rs` (global counters) and new `hostile_inputs.rs`, `pdf_cancel_effects.rs`, `tests/hostile/`;
+`uo-alloc/src/lib.rs` + `tests/gate_global.rs`; `uo-pdf/src/{render,picture}.rs`; `uo-wasm/src/lib.rs` (`uo_test_trap`), `js/viewer.ts`, `tests/{viewer_trap,write_hostile}.test.mjs`,
+`tests/browser/viewer_switch.mjs` (`--mode faults`, stage rename), `tools/build-wasm2js.mjs` (usage); `write/packages/viewer/src/{rust-engine.ts,write-engine.d.ts}`; `fuzz/**`;
+`uo-docx-layout/tests/captures/{f0,f1,f5}`; `.github/workflows/rust-core.yml`.
 
 ## For the milestone-1 gate
 
@@ -579,7 +770,7 @@ Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF6
 | G4 | **Done (2026-11-09).** `LayoutOptions.cancel` (shared flag, Relaxed load at every `Budget::charge`) + `cancel_poll` (every `CANCEL_POLL_UNITS` = 4,096 work units, first at the first charge) + `LayoutError::Cancelled` (latched, wins over `Limit(Work)`); uo-ffi: code 10, stage none, the server passes the same Arc to layout and PDF; C# facade unchanged (token -> `UoCancel` -> `OperationCanceledException`); wasm: opt-in host import `uo_host.layout_poll` (flag bit 9, JS `LayoutOptions.cancelCheck`, **G4-W**), a throwing callback counts as cancel. Latency from raising the flag mid-layout (650-paragraph document, release): native 0.16-1.4 ms, C ABI 0.7-1.4 ms, .NET facade 0.6-1.5 ms (ranges over runs) (before: the rest of the layout, hundreds of ms); M1 0 B left (native layout, C ABI, wasm 20 cancelled layouts cancelled mid-layout at the k-th poll, .NET 5 + 1); cost within noise (B/A -2.9% to +0.4%, C/A -0.3% to +1.5% over median/min on pages100 and pages500, one +17.5% outlier min, noisy machine); layout parity unchanged (layout_parity 5, f8_parity 2, g8 4, f7a 7, server_parity 3; wasm-ab digest cca8d8794ec4bfe0 equal, layout min 366.1 -> 367.9 ms). Record: uo-docx-layout.md "Stage 3 — G4" | the PDF on wasm and the `.doc`/reader stay uncancellable inside (G4-4) |
 | G5 | Untrusted caps: kernel radius 256, masks/effect layers 16 Mpx, images 40 Mpx (first numbers); the facade defaults to untrusted | measure on the corpus first |
 | G6 | The wasm PDF leaves through an **import** (`uo_host.pdf_chunk`): the viewer module cannot be instantiated without imports | pull the chunks (the output then stays in wasm memory, which never shrinks) |
-| G7 | `write` is **not a default feature** (the default module stays the 15 KB foundation build the other tests use); the shipped viewer module is `--features write`, **5.9 MB (1.45 MB gzip)** — a size budget, `wasm-opt`, and trimming uo-docx are open | make `write` default |
+| G7 | `write` is **not a default feature** (the default module stays the 15 KB foundation build the other tests use); the shipped viewer module is `--features write`, **3.96 MB (about 1.405 MB gzip) after the size work (`size-optimization.md`)** — a size budget, `wasm-opt`, and trimming uo-docx are open | make `write` default |
 | G8 | **Done (2026-11-07).** The Write geometry section of the page message (`Layout::encode_page`, `uo_layout_encode_page`, `uo_layout_annotations`): parity against the frozen TS 100%, 8 corpora (committed 52 docs, ci 100, `--gen f8` 100, oracle 2,742, 10 real documents with 35 comments / 55 rects), 0 mismatches; 0 B left (M1); no-panic; Node 8/8, native 6/6; the section is 1.9–2.2× the render message on the wire (maintainer decision G8-W); G8 code in the module: 26 KB raw / 9.4 KB gzip of 3.95 MB / 1.40 MB. Record: uo-docx-layout.md "Stage 3 — G8" | wire size, lazy section (G8-2) |
 | G9 | `uo_layout_view` lends the layout's view (valid until the layout is freed) to the frontier-E paint exports | a second handle with its own copy |
 | G10 | `generation` is an argument of `uo_write_layout` (0 = counter) so message bytes are reproducible | — |
@@ -593,8 +784,26 @@ Not done: Safari 15 itself, Firefox, a corpus beyond the 12 fixtures, the `OptF6
 | G18 | `.doc` on the server path through uo-docx D4 (`doc` feature), as the C# `DocxPdf.ToPdf` | `.docx` only |
 | G19 | LeakSanitizer covers the Rust tests of uo-ffi (existing job); the C# facade tests under LSan would need `liblsan` preloaded into `dotnet` | add it |
 | G20 | The default debug test job samples every 7th fixture document (`UO_SERVER_PARITY_EVERY`); a new release job `server-pdf` runs all 68 | — |
-| G21 | No fuzz target for the exports yet (`ffi_docx_to_pdf`, `wasm_write_session`) | add to `core/fuzz` |
-| G22 | `uo-render` `OptF64` marks "absent" with a signalling-NaN payload (`0x7ff4_0000_0000_0001`); NaN payloads are not guaranteed to survive outside wasm loads/stores (V8 canonicalises them on some paths — the `opt-level = 3` wasm2js build gives different page messages because of it, see the wasm2js section) | give `OptF64` an explicit presence bit (or any non-NaN representation) before any JS/wasm2js build ships; audit other NaN-payload markers |
+| G21 | **Done (2026-11-10)** for `ffi_docx_to_pdf` (whole pipeline through the C ABI; 96,040 stable-driver executions in 120 s, 0 crashes); `wasm_write_session` is covered by `write_hostile.test.mjs` and the no-panic tests, not by a fuzz target | a wasm session target |
+| G22 | **Done (2026-11-10).** `OptF64` is an integer (0 = absent, value = canonical bits + 1; 8 B, `Item` still 48 B; no schema/codec change, it never reaches the wire); the second NaN-payload marker (uo-image `tiff.rs` `UNDEF_BITS`) is a plain NaN with `is_nan` (exact: no other NaN can be stored); `build-wasm2js.mjs` fails on NaN-payload constants; wasm2js of the opt-level 3 module now equals wasm on the 12 fixtures (Node 5/5, Chromium, WebKit), output digests equal before/after. Record: "No-WebAssembly fallback" above. Was: `uo-render` `OptF64` marks "absent" with a signalling-NaN payload (`0x7ff4_0000_0000_0001`); NaN payloads are not guaranteed to survive outside wasm loads/stores (V8 canonicalises them on some paths — the `opt-level = 3` wasm2js build gives different page messages because of it, see the wasm2js section) | give `OptF64` an explicit presence bit (or any non-NaN representation) before any JS/wasm2js build ships; audit other NaN-payload markers |
+| G23 | **Stack depth.** Every `uo_docx_to_pdf` conversion runs on its own thread of `CONVERSION_STACK_BYTES` (16 MiB; 64 MiB in debug). Evidence: release LTO uses about 19 KB of stack per nested-table level; on a 1 MiB thread `nt_52` passes and `nt_56` / `nest_tables_64` overflow (the reader allows 64 levels, the layout depth guard is 192), and an overflow aborts the process; with the thread, 64 and 200 levels convert from a 1 MiB caller thread (release and debug) | Keep the thread; also shrink the layout's per-level frames; or lower the layout's effective depth below the reader's `max_nesting` 64 (a result change against the TS only past that depth). The Rust API `Converter` still runs on the caller's stack |
+| G24 | **Paint work budget for raster effects: not implemented** (a budget, and it changes results against the frozen TS, which does the work uncapped). Evidence: `glow_dense_600.docx` (4,632 B, one page, 600 runs of a 78.7 pt glow) takes 61.3 s native, 69.8 s wasm trusted and 71.7 s wasm untrusted; every layer is under the per-call caps; the cost grows faster than the runs (100 runs 0.46 s, 600 runs 59.5 s). Now cancellable natively (40-45 ms from the flag, per-effect check). Open: the wasm `uo_layout_pdf` has no poll (G4-4) and the viewer's print and download run it synchronously on the main thread; the screen painter's `fxLayer` per run was not measured | A per-page and per-document budget (layer pixels x kernel work, like the layout's `Budget`) that drops the effects with a warning or fails with Limit, with its numbers; an opt-in poll for wasm `uo_layout_pdf` (reverses G4-4) or a deadline |
+| G25 | **Package limits by trust (implemented).** `Trust::Untrusted` opens with the C# limits (256 MiB per part, 512 MiB in total); trusted keeps the target defaults (2 GiB per binary part, 4 GiB total natively). Evidence: with deflate's 1,032:1 a 4 MB upload could hold up to 4 GiB per conversion; the new release tests return `LIMIT_EXCEEDED` for 600 MiB over three parts and for one 257 MiB part | The C# limits for both trust levels (the frozen C# applies them to every caller), with an explicit facade option to raise them |
+| G26 | **A trap kills the instance (implemented).** After a `WebAssembly.RuntimeError` the viewer's instance is dead and the next use loads a fresh module. Not covered: the wasm2js engine (`engine: 'js'`), whose traps are plain JS errors; V8 stack exhaustion inside a wasm call (a `RangeError`, not a `RuntimeError`), which `call()` does not treat as fatal (unreachable today: nesting is capped at 64 and 200-level documents pass in wasm); an element that is not the one that trapped keeps reading its old layouts as freed until it loads again | Accept, or detect traps of the js engine (which means telling its errors from the ordinary `WriteError`s) |
+| G27 | **A full page environment (SPEED-1 with S7, implemented as a fallback).** A refused `pushFamily` (OverBudget on the shared 128 MiB ledger) keeps the substitute instead of failing the document; the environment stays full until reload (face #15 of 8 MiB is refused) | Rebuild the page environment when it is full (needs reference counting of the sessions that use it) |
+| G28 | **The viewer's wasm memory never shrinks (S8).** One module per page (SW-10) and a page environment that is never freed (SPEED-1) keep `memory.buffer` near its high-water mark (about 192 MiB after a 500-page document) until reload, where the TS memory is collected; the viewer always uses the desktop font profile (SW-11). Nothing in the records stated this for iOS 15 | Drop and re-instantiate the module when no viewer holds a document; the phone profile on touch devices; or accept and document it |
+| G29 | **M3 baseline of the page environment (S6).** Retained after close, 200 cycles of the SW's 10 documents: 13,610,330 B live and 20,643,840 B buffer against 4,850,392 B and 17,039,360 B before SPEED-1 (+181 % live, over the 10 % M3 rule); the section-8 line (16,577,181 B) was the `--mode all` run, whose parity phase fills the environment first; stride 6 alone 12,569,061 B. Flat, 0 handles, 1 page environment | Approve the page-lifetime baseline, or ask for a reduction (fewer faces kept, free the environment when no viewer holds a document: G28) |
+| G30 | **Speed rows slower than TS, and CI.** (1) The wasm layout of the 500-page document is 1.40x TS in Node (5.9 s against 4.2 s; native 0.97x); per-page cost +45 % from 100 to 500 pages (native +9 %, TS +2 %); not tier-up (`--no-liftoff` 6.98 s against 7.12 s), not interference. Profile the allocator and `memory.grow` at the 192 MiB high-water, page faults and locality, or accept it as the stress case. (2) Chromium: S2 total 1.12-1.20x TS, S0 cold about 1.8x, wasm layout 9.0 s against 7.1 s, while the same module in Node is 0.94x TS; the tier-up explanation is unmeasured (Liftoff against TurboFan, code cache). (3) The Rust server PDF against the frozen C# was never timed. **CI (blocker, S1):** `rust-core.yml` has never run (the branch was never pushed; agents may not push), so the painter, viewer and fuzz jobs, `cargo deny bans licenses`, the dotnet matrix, LeakSanitizer and the Linux WebKit painter are unproven, as is everything in these records that says "CI covers it" | Measure the Chromium tier-up and accept or reject a Chromium-total gap above TS for the gate; push the branch (or a bundle to a private remote) and get one green run before the gate |
+| G31 | **Security review items still open.** G5's untrusted caps (kernel radius 256, masks and layers 16 Mpx, images 40 Mpx) were never measured on the corpus beyond the untrusted equality of `server_parity`; the uo-drawingml blur/fill/morph time bounds; uo-docx F21/I2 (`max_numbering_levels` 9); real Safari 15 / iOS (BrowserStack needs `/mcp` re-authorisation) | Decide the numbers; run the sweeps |
+
+**Benchmarks main × rust-core (2026-11-10; full tables in uo-docx-layout.md, "Benchmarks main × rust-core — speed" and "— memory").** Node 24, warm, TS / wasm / native
+interleaved in one process, 68 oracle capture documents (568 pages) plus five generated classes up to 500 pages, byte-identical raw PDFs from all three engines
+on all 73 documents. Total open + layout + PDF against the frozen TS: **native 0.90 and wasm 0.94 on the captures** (native 0.64–0.90, wasm 0.70–0.96 up to 100
+pages); open 0.56 / 0.61 and PDF 0.67 / 0.77 always faster; **layout at parity only** (0.96 / 0.98 on the sum, 20 / 34 of 68 documents slower on that stage, worst 1.19).
+Gaps: **wasm layout of the 500-page document is 1.40 × TS** (per-page cost +45 % from 100 to 500 pages, native +9 %, not tier-up; cause open), and the **Chromium** viewer
+numbers of "Open speed" (S2 total 1.12–1.20 × TS, S0 cold about 1.8 ×, cited, not re-run). Memory re-measured and unchanged (Rust layout 0.23–0.41 × TS, 47.0 B/char
+wasm on 500 pages). Not measured: the Rust server PDF against the frozen C#, WebKit timings, the phone profile. The earlier "as fast or faster than TS natively"
+sentence of "Open speed" is only backed as "as fast on the corpus sum" (skeptic S3 answered; the benchmark harness is `core/tools/bench/speed/`).
 
 ## Files touched outside the owned crates (each additive)
 
@@ -642,11 +851,17 @@ UO_TS_ROOT=<built d0f45bc5> node crates/uo-pdf/tests/parity_support/capture_pain
 
 ## Process metrics
 
+SPEED (open speed of the Rust viewer, 2026-11-10): planner Opus, implementer Sonnet 5.5; wall time about 1 h 15 min (harness `--mode speed` and baseline 20 min, fixes A/B/C/D 25 min, full parity 6.5 min, three speed runs 9 min, record 10 min), about 95 tool calls. Parity rounds: 2 quick (stride 6, 0 differences) + 1 full (0 differences). Rework: a Python edit script truncated `viewer_switch.mjs` (cp1252 default; restored from git and rerun with UTF-8); one tsc error in the `FontFace` buffer cast. SPEED-5 (streaming compile) tried and reverted.
+
 SW (the viewer TS/Rust switch, 2026-11-10): planner Opus, implementer Sonnet 5.5; wall time and tool-call counts were not recorded per step (estimates: about 4 h wall, a large part of it waiting for Chromium runs on a loaded machine; about 150 tool calls). Parity rounds: 0 mismatches on every comparison, first run. Rework: the `.wasm` default-source bug in the memory phase (the driver asked for the module before any viewer loaded it), a test timer that paused the page after 150 s (cleared per document now).
 
 G4 (cancellation inside the layout): planner Opus, implementer Sonnet 5.5 (the maintainer's request; SKILL.md assigns the layout crate to Opus), see uo-docx-layout.md "Stage 3 — G4".
 
 G8 (the Write section of the page message): Opus WIP 6471786d + Sonnet 5.5 finish (the maintainer's request; SKILL.md assigns the layout crate to Opus), see uo-docx-layout.md "Stage 3 — G8".
+
+GATEFIX (milestone-1 gate fixes, 2026-11-10): planner (measured the code), implementer Sonnet 5.5; wall time and tool-call counts were not recorded per step (estimates: about 3 h wall, much of it release builds and the 600 MiB bomb runs on a shared machine; about 150 tool calls). Parity rounds: 0 (every parity comparison equal on the first run). Rework: the leak window of `cancel_layout` (-24 B from the raiser thread, found by the first global M1 run), the first M5 baseline taken before the module warmed up, the first PDF-cancel fixture too light (the 100-run page takes 0.46 s: the 600-run one is the 60 s case), the first M3 version used the untrusted converter (changed bytes by 28), and two edit scripts that wrote CRLF into LF files or were eaten by the shell.
+
+G22 / wasm2js fallback parity (2026-11-10): planner Opus (measured the cause, reproduced the failure, built the z module), implementer Sonnet 5.5; about 1 h 30 min wall (the O3 wasm2js build is 1-3 min per run, four builds, plus the uo-ffi and uo-docx-layout release test compiles), about 45 tool calls. Rounds: 0 parity mismatches after the change (digests equal on the first run). Rework: the census regex lost its backslashes through the shell tool (the first guard run printed "none" for the old module; found because the old module is known to fail, fixed by editing the file); no other.
 
 | Stage | Agent (model) | Time | Tool calls |
 |---|---|---|---|
@@ -659,3 +874,115 @@ wrappers clear after reading; found by M1 and by the .NET M4); the memory tests 
 (→ serialized); uo-ffi did not build for wasm32 under the workspace clippy (→ native-only `#![cfg]`); the WebKit
 `assert.throws` shim lacked Node's validation-function form; two XML comments with `--` in the csproj files; one edit
 script that missed a CRLF file (`uo-wasm/src/lib.rs`).
+
+## Milestone-1 skeptic review (2026-11)
+
+Opus implementation skeptic, 2026-11-10, over HEAD `ec66f1a1` plus the uncommitted stage-1 work of the SPEED, Shipping/CI/
+WebKit and G22 (wasm2js) frontiers. The claim attacked: "milestone 1 is ready for the maintainer's gate". Read-only on source.
+
+**Verdict: not ready yet.** The code of the read path is in good shape. Parity is exact wherever it was measured, every
+binding handle has M1/M4 tests, and the TS default path is intact. The gate is still blocked by process items: CI has never
+run, the milestone security review has not been done, the main × rust-core speed benchmarks are missing, the F2-20 recapture
+is open and the stage-1 work is uncommitted. There are also two memory findings caused by SPEED-1 that the record does not
+state.
+
+### What I re-ran
+
+- `node tools/licenses/gen-notices.mjs --check`: current, 27 files, 401,593 B.
+- `node tools/check-changed.mjs` (agent-skep target, 6 crates): native clippy, float-casts and grep-bans pass. The wasm32
+  `--all-targets` leg **fails**. The cause is the untracked `crates/uo-ffi/examples/bench_speed.rs`, which appeared during this
+  review (another agent's benchmark work, with `tools/bench/speed/`). It imports `uo_ffi::pipeline` and `uo_fonts::system`,
+  and both are native-only. Re-run without examples (`--lib --tests --benches`, wasm32): clean. The stage-1 changes are
+  therefore lint-clean, but the tree is not, until that example is gated (`required-features` or `#![cfg(not(target_family =
+  "wasm"))]`).
+- `cargo test -p uo-render --lib` (the new `OptF64` test) and `cargo test -p uo-image --release`: green.
+- Read through: the OptF64 and TIFF changes, the `rust-engine.ts` and `viewer.ts` diffs, the switch commit's TS diff
+  (`1b585623`), the `rust-core.yml` diff, `build-pkg.mjs`, `deny.toml` and the `Cargo.lock` registry set.
+
+### Findings
+
+| # | Severity | Finding | Fix / owner |
+|---|---|---|---|
+| S1 | blocker (process) | The branch has never been pushed, so **no CI job has ever run**. That includes the new `painter` and `viewer` jobs, `cargo deny check bans licenses`, the `dotnet` matrix (the facade has only been tested on Windows), LeakSanitizer (G19) and the Linux WebKit painter. Every "CI covers it" in this record is still unproven. | Push (or bundle and push), get one green run, and record it before the gate. |
+| S2 | blocker (process) | **The milestone security review has not been done.** SKILL "Hybrid mode" step 3 requires it once per milestone, and HANDOFF queue item 5 lists it. The records carry items deferred to it: uo-drawingml blur, fill and morph time bounds; uo-docx limits F21/I2; layout F2-21; G5 caps that were never measured on the corpus. | Run the review (Opus). It decides G5 and G21. |
+| S3 | blocker (measurement) | **Speed benchmarks main × rust-core are missing.** The `uo-docx-layout.md` "Final review and benchmarks" section says "Pending" (oracle corpus, the 500-page document, Node and WebKit), and there are no server-PDF timings of the Rust facade against the frozen C#. The SPEED section also claims that "natively and in Node the same Rust layout is as fast or faster than TS", but no record contains a TS-vs-Rust layout timing that supports it. What *is* measured is worse than TS: the wasm layout in Chromium takes 9.0–9.1 s against 7.1–7.2 s (+27%), the S2 total is 9.4 s against 7.6 s, and the S0 cold open is about 2× (median 131–146 ms against 70–80 ms). | Finish the `tools/bench/speed` work now in flight. Either back the "as fast natively" sentence with numbers or delete it. Present every row slower than TS to the maintainer. |
+| S4 | blocker (process) | **F2-20 is still open.** Four committed captures are stamped with the stale TS engine `b92b60fa`: `uo-docx-layout/tests/captures/f0/layout-ci.capture`, `f1/layout-ci.capture`, `f1/resolver.capture` and `f5/layout-ci.capture`. | Recapture them with the frozen `d0f45bc5` build (HANDOFF queue 5). |
+| S5 | blocker (process) | The stage-1 work (G22, SPEED, shipping/licences) is uncommitted, and none of the 15 minor items its reviewers raised has been applied. Examples: line 290 still says "16/16, one new test", line 702 still says "457 KB", line 706 still reports a pageHeads failure that no longer reproduces, line 550 still says "z modules had 0 such constants", `NO_PAGE` is not frozen, and the build-wasm2js usage string still omits the new flag. | The orchestrator applies the record fixes, verifies and commits. |
+| S6 | major (memory, unrecorded) | **SPEED-1 raised the retained memory after close, and M3 does not record it.** The SW memory mode showed 4,850,392 B live and a 17,039,360 B buffer after every close. The section-8 viewer run (tree with SPEED-1) shows 16,577,181 B live and a 24,969,216 B buffer. The SPEED record says "1 distinct value" but gives no number. That is over the 10% M3 rule unless approved (it may be partly a different document set, which nobody reconciled). | Re-run `--mode memory` on the same 10 documents and record before/after. The maintainer approves the new page-lifetime baseline (Liberation assets, pushed families, patterns). |
+| S7 | major (robustness) | **A page-lifetime environment that fills up stays full.** SPEED-1 notes that the 128 MiB FaceLedger is shared, but not the consequence. `RustSession.push()` calls `pushFamily` without a `catch`, in `pushNow` and `fetchLater` and in the re-push loop of `relayout`. An `OverBudget` (`WriteError` 5) therefore escapes `relayout`, and the document fails to load (`udv-error`). Nothing is ever evicted from the page env, so every later document on the page that needs a new family fails the same way, until the page reloads. With Local Font Access, a few CJK families are enough. There is no M5 test that fills the page env past its cap. | Catch the error per family (fall back to the substitute, as TS does when a face is missing), or rebuild the page env when it is full. Add an M5 test. |
+| S8 | major (maintainer decision) | **The viewer's wasm memory never shrinks for the life of the page.** There is one memoized module per page (SW-10), and the page env is never freed (SPEED-1). After one 500-page document the buffer stays near 192 MiB until reload, where TS memory is collected. The viewer also always uses the desktop font profile (SW-11). The baseline includes iOS 15, whose tabs die far below desktop limits. No record states this as a consequence. | Decide: drop and re-instantiate the module when no viewer holds a document, or the phone profile on touch devices, or accept and document it. |
+| S9 | minor (reuse) | **Word-only rules are hard-wired into the shared `uo_pdf::render_pdf`.** Space glyphs are always inserted (`word_spaces`, called with `Some(&mut spaces)` for every top-level item, `render.rs:115-120`), the font size is quantized to 1/600" (0.12 pt, `render.rs:825`), and the text-effect layer is fixed at 200 dpi (`FX_PPT`). These are measured Word behaviours. A Slides or Sheet producer of uo-render pages gets them with no option. Twips as the display-list unit and the `page_fill` effects are Word-flavoured too, but they are documented and generic enough. | Add a `PdfProfile` (or per-page flags) in `PdfOptions` before Slides or Sheet become producers. Record it as a reuse constraint in `uo-pdf.md`. Not for the M1 gate. |
+| S10 | minor (CI) | The `layout-parity` and `painter` jobs check out `ref: main` as the frozen reference. Locally `main` is the stale `b92b60fa`. On GitHub `origin/main` is `d0f45bc5`. If the security fixes listed for the published product (S1, S6 of D3) land on `main`, the parity reference moves silently. | Pin `ref: d0f45bc54c05fb026475d7b229efa498af8423c6` in both jobs. |
+| S11 | minor (shipping) | `shipEngineWasm` ships whatever module sits at `core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm`. Locally that is often a `count,write,render-fixture` build, which has the counting allocator and test exports. Only the notices are verified, not the module. | Fail the build when the module exports fixture or self-test symbols or reports counting, or have build-pkg build the module itself. |
+| S12 | minor (coverage) | `uo_write_env_push_asset` (the success path with an advance table) and `uo_write_env_clear_fonts` are not in the native M1 test `write_native.rs`. They are covered only at crate level (uo-fonts `registry_memory`) and on the error path in `write_api`. `uo_layout_page_heads` has the null-handle case only, and its empty case is not declared. | Add both exports to `write_native` M1, or state that the crate-level M1 covers them. |
+| S13 | minor (record) | Stale numbers. Section 6 "Sizes" (5,915,444 B, 1.45 MB gzip) and the G7 row ("5.9 MB") predate the size work. The module is now 3,962,975 B raw and about 1.405 MB gzip (`size-optimization.md`). | Update both lines. |
+| S14 | minor (record) | The §4 .NET API breaks (items 1–9) and the wasm/npm new API are not in `CHANGELOG.md`. Only the viewer switch is. SKILL says every break is listed there. HANDOFF defers this to the milestone-2 gate. | Keep as deferred, but say so in the gate list. |
+
+### Checked and found fine
+
+- **TS default path.** The switch commit changes the TS lines only by type widening, `hasDocument()` guards, a shared
+  `fillTextLayer`/`webPageHeight` shape and the `advancesFile` extraction. The engine import is type-only. Phase 0 shows 0
+  requests for the wasm or the engine chunk. The 21 existing vitest tests passed (SW). This round's changes touch only
+  `rust-engine.ts` (Rust path) and `write-engine.d.ts`.
+- **G22 fix.** `OptF64` uses 0 for absent and canonical bits + 1 for a value; it cannot wrap. The TIFF `is_nan` change is
+  exact: types 3, 4 and 5 only, with denominators `max(1)`. Digests are equal before and after.
+- **Licences.** The 7 registry crates of `Cargo.lock` are all MIT/Apache-compatible, the notices match `cargo tree`, and
+  `gen-notices.mjs` has no side effects on import.
+- **Viewer concurrency.** `takeMissing` runs synchronously after each layout, so sessions sharing the env cannot interleave
+  between layout and take. The shared `FontResolver.shared()` makes keying the page env by fonts base sound. The link scheme
+  filter (`SAFE_LINK`) is shared by both engines.
+- **Unsafe code.** All engine crates on the path are `forbid(unsafe_code)`. Unsafe exists only in uo-alloc, uo-wasm and
+  uo-ffi, and all three are in the Miri job (write_unsafe, render_unsafe, ffi lib).
+- **Memory coverage per crate.** M1 and M2 tests exist for every crate on the path: uo-opc, uo-docx, uo-docx-layout (soak in
+  f7a–d), uo-render, uo-pdf, uo-fonts, uo-image, uo-drawingml, uo-text, uo-jsnum, uo-ffi and uo-wasm. uo-codec has M1 only
+  (no soak). M4 covers every handle: env, document, layout, buf, converter, cancel, and the .NET SafeHandles.
+- **Reuse.** uo-opc has no Word assumptions. uo-fonts policies are named, with Word substitution confined to the policy
+  layer.
+
+### Parity claims and how they were measured
+
+- **Layout.** Rust equals TS on the Word-oracle corpus: 2,742/2,742 documents, run locally with Office fonts. CI runs
+  generated documents and 68 committed fixtures.
+- **Server PDF.** Byte-equal to TS on 68/68 fixtures (open fonts, in CI) and on 211 of the 2,742 oracle documents (local,
+  opt-in, every 13th group). The rest of the oracle corpus has not been run.
+- **Viewer switch.** Chromium only, print layout only, open fonts only, pixel tolerance 0, 74 fixtures locally (stride 6 in
+  CI). Not exercised: the web view and Reading Mode, Local Font Access or installed Office fonts, the `.doc` path (through the
+  TS converter, SW-3), and plugin inlines (SW-7, a gap). Accepted difference: SW-6 (the `udv-link-click` text).
+- **Painter.** Part A replay (74 docs), Part B with 200 generated seeds (50 in CI), and pixels in Chromium and in Windows
+  WebKit 26.5 (no OffscreenCanvas, so the kerning-joins path was not exercised). There is no `viewer_switch` run in WebKit,
+  and no run on real Safari 15 or iOS.
+- **wasm vs native.** 3 fixtures pinned. wasm2js: 12 fixtures.
+
+### Classification of G1–G22 and the other open items
+
+| Item | Class |
+|---|---|
+| G4, G8, G22 | done (G22 still uncommitted, S5) |
+| G5 (untrusted caps not measured), G21 (no fuzz target over the pipeline; uo-docx-layout and uo-pdf have none at all, `core/fuzz/fuzz_targets`) | **must-fix before the gate**, through the security review (S2) |
+| G7 size budget (1.405 MB gzip against the TS start of 0.30 MB), G8-W, G8-2, G1 (the `#[path]` file shared across two cdylibs), G2, G3, G6, G9–G13, G15–G18, G20 | maintainer decision at the gate (recommend accepting G2, G3, G6, G9, G10, G13, G15–G18, G20 as built) |
+| G14 NuGet RID matrix, G19 LSan on the facade, the facade `CHANGELOG` breaks (S14), the wasm2js CI job and package (only if wasm2js ships) | later: before any publish of 0.10, not for the code gate |
+| SW-1 to SW-16 and SPEED-1 to SPEED-5 | maintainer decisions. Notably SW-6/SW-7 (behaviour gaps), SW-11 with S8 (phone profile, memory never returned), and SPEED-1 with S6/S7 |
+| Real Safari 15 / iOS (BrowserStack; the MCP needs `/mcp` re-authorisation), and whether Safari 15's CSP blocks wasm | **must-do before the gate** (SKILL: real Safari runs before each gate) |
+
+### Gate checklist
+
+| Criterion | Status |
+|---|---|
+| Parity 100% on the captured corpora (layout, PDF, painter, switch) | met where measured; scope limits above |
+| Parity reference fresh (F2-20) | **open** (S4) |
+| Memory gate M1–M5, every crate on the path | met, except the page-env M5 and M3 baseline (S6, S7) |
+| M4, every boundary handle (wasm, C ABI, .NET) | met |
+| M6: Miri on all unsafe | met locally; LSan CI never run |
+| Lint: clippy native + wasm32, bans | stage-1 changes clean; tree red from the untracked bench example |
+| CI green on GitHub | **never run** (S1) |
+| Security review of the milestone | **not done** (S2) |
+| Benchmarks main × rust-core (speed) accepted | **missing**, and the measured rows are slower (S3) |
+| Real Safari 15 / iOS | **not run** |
+| Licence notices for what ships | met (generator + check); `cargo deny licenses` never run |
+| TS default path untouched | met |
+| Reuse: no Word-only rules in shared crates | minor finding S9 (uo-pdf) |
+| Records honest and complete (numbers, decisions, process metrics) | partly: S5, S6, S13, the unsupported speed sentence (S3); the ship frontier has no wall time; SW wall time is an estimate |
+| Stage-1 work committed | **no** (S5) |
+
+Process metrics (this review): one Opus agent, about 1 h 10 min wall time (estimated), about 45 tool calls. Builds: clippy of
+6 crates native + wasm32 (about 30 s each, warm) and two small test runs. Rework: none.

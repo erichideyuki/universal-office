@@ -172,7 +172,8 @@ pub fn fail_with(code: i32, message: &str) -> i32 {
     set_last(LastError { code, stage: stage::NONE, max: 0, message: message.to_owned() })
 }
 
-fn set_last(e: LastError) -> i32 {
+/// Records an error built elsewhere, for example on a worker thread.
+pub fn set_last(e: LastError) -> i32 {
     let c = e.code;
     LAST.with(|l| *l.borrow_mut() = e);
     c

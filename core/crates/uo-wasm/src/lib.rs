@@ -138,6 +138,15 @@ pub extern "C" fn uo_memory_live_bytes() -> f64 {
     -1.0
 }
 
+/// Test-only (count build, wasm32): executes `unreachable`, the trap a panic (`panic = abort`) or an
+/// allocation failure ends in, so the JS tests can check that the viewer drops the instance
+/// (`js/viewer.ts`, `__trapForTest`). Never in the shipped module.
+#[cfg(all(feature = "count", target_arch = "wasm32"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn uo_test_trap() {
+    core::arch::wasm32::unreachable()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

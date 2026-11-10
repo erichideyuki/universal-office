@@ -68,7 +68,9 @@ jobs:
           "$RUNNER_TEMP/ts/node_modules/.bin/tsc" --noEmit --strict --target es2022 --module esnext --moduleResolution bundler \
             --allowImportingTsExtensions --noUncheckedIndexedAccess --noUnusedLocals --noUnusedParameters --noImplicitReturns \
             --exactOptionalPropertyTypes --erasableSyntaxOnly --verbatimModuleSyntax --skipLibCheck \
-            crates/uo-codec/js/runtime.ts crates/uo-wasm/js/gen/*.ts tools/uo-schema/tests/fixtures/*.ts
+            crates/uo-codec/js/runtime.ts crates/uo-wasm/js/gen/*.ts tools/uo-schema/tests/fixtures/*.ts \
+            crates/uo-wasm/js/paint.ts crates/uo-wasm/js/picture.ts crates/uo-wasm/js/viewer.ts crates/uo-wasm/js/viewer.check.ts \
+            ../write/packages/viewer/src/write-engine.d.ts
       # the runtime builds for the browser (the generated codec is compiled for wasm32 by the lint job's clippy)
       - run: cargo build -p uo-codec --target wasm32-unknown-unknown --profile wasm
 
@@ -82,7 +84,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install stable --profile minimal && rustup default stable
-      # --all-features turns the counting allocator on: the memory tests (M1-M3) run here
+      # --all-features turns the counting allocator on: the memory tests (M1-M3) run here. uo-docx's integration tests are the
+      # single `all` binary (tests/all.rs), so this line covers them (no per-file --test line); it also runs the G4 tests
+      # (uo-docx-layout g4_cancel with the debug bound, uo-ffi cancel_layout) and the native halves of render_native/write_native
       - run: cargo test --workspace --all-features
 
   layout-parity:
@@ -93,7 +97,8 @@ jobs:
       # the frozen TS engine (main, 0.9.x) is the parity reference: built in the same run (LQ21)
       - uses: actions/checkout@v7
         with:
-          ref: main
+          # pinned to the frozen TS commit (the parity reference): main moves on and its dist was stale (F2-20)
+          ref: d0f45bc54c05fb026475d7b229efa498af8423c6
           path: ts-main
       - uses: actions/setup-node@v7
         with:
@@ -210,6 +215,9 @@ jobs:
         env:
           UO_SERVER_PARITY_EVERY: '1'
           UO_FFI_SOAK: '25'
+      # G4 in release: the cancellation of the layout inside the engine (bound 250 ms here, 2 s in the debug test job). The uo-ffi
+      # cancel_layout test (G4 through the C ABI, bound 50 ms in release) is already in the `-p uo-ffi --release --all-features` line above
+      - run: cargo test -p uo-docx-layout --release --test g4_cancel -- --nocapture
 
   soak:
     name: Memory soaks (M2, 1,000 iterations, release)
@@ -232,15 +240,22 @@ jobs:
       - run: cargo test -p uo-jsnum --release --all-features -- --include-ignored
 
   deny:
-    name: Dependency bans (cargo deny)
+    name: Dependency bans and licences (cargo deny, third-party notices)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown && rustup default stable
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
-      # libm and num-traits would bring non-JS float math back (deny.toml)
-      - run: cargo deny check bans
+      # libm and num-traits would bring non-JS float math back; every linked crate is under the [licenses] allow list (deny.toml)
+      - run: cargo deny check bans licenses
+      # core/licenses (the third-party notices that ship inside the npm products and the NuGet) equals what cargo tree says is
+      # linked into the write wasm and into uo_ffi; a new or bumped crate without regenerating them fails here
+      - run: node tools/licenses/gen-notices.mjs --check
 
   audit:
     name: Advisories (cargo audit)
@@ -283,12 +298,28 @@ jobs:
       # write: the Write read path of milestone 1 (uo-bindings.md): a viewer session over the fixture documents with the native
       # checksums pinned (wasm bytes = native bytes), errors, M4 (10,000 environments, documents and layouts through free() and the
       # FinalizationRegistry) and M2 (memory.buffer stops growing)
-      - run: cargo build -p uo-wasm --features count,write --target wasm32-unknown-unknown --profile wasm
+      # render-fixture adds the test-only render exports (the painter D/V tests below): one build runs every write and render test
+      - run: cargo build -p uo-wasm --features count,write,render-fixture --target wasm32-unknown-unknown --profile wasm
       - run: node --expose-gc --test crates/uo-wasm/tests/write_api.test.mjs
       # G4: cancellation inside the layout (uo_host.layout_poll, WriteError code 10)
       - run: node --expose-gc --test crates/uo-wasm/tests/write_cancel.test.mjs
       # G8: the Write section of the page message (decoded in Node from the same module; imports .ts, so Node only)
       - run: node --test crates/uo-wasm/tests/write_section.test.mjs
+      # gate fixes: nested tables / text boxes at max_nesting through the wasm layout, a full font ledger (M5, WriteError 5), and a
+      # trap (the count build's uo_test_trap) that kills the viewer's instance: the next module gives the same PDF
+      - run: node --expose-gc --test crates/uo-wasm/tests/write_hostile.test.mjs
+      - run: node --expose-gc --test crates/uo-wasm/tests/viewer_trap.test.mjs
+      # uo-render D and V (painter of decoded pages, milestone 1): the handle layer, the boundary, the TS codec of the render
+      # messages, Part A of the painter parity (replay of tests/captures/v_paint.capture through the Rust painter: platform
+      # independent since V-1; the "painter" job recaptures the frozen side on Linux and diffs it against this file) and the
+      # painter's memory (M2/M4)
+      - run: node --expose-gc --test crates/uo-wasm/tests/render_paint.test.mjs
+      - run: node --expose-gc --test crates/uo-wasm/tests/render_boundary.test.mjs
+      - run: node --expose-gc --test crates/uo-wasm/tests/render_ts_codec.test.mjs
+      - run: node --expose-gc --test --test-concurrency=1 crates/uo-wasm/tests/paint_parity.test.mjs
+      - run: node --expose-gc --test --test-concurrency=1 crates/uo-wasm/tests/paint_memory.test.mjs
+      # the browser runner's shims (Buffer subset, SHA-256) equal node:buffer and node:crypto
+      - run: node --test crates/uo-wasm/tests/browser/shims.test.mjs
       # browser baseline Safari 15 / iOS 15 (rust-port skill): the module may use only the
       # features Safari 15 has; the negative case proves the feature list rejects SIMD
       - uses: taiki-e/install-action@v2
@@ -303,6 +334,10 @@ jobs:
           cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm
           wasm-tools validate --features "$features" target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
           echo "write module: $(stat -c %s target/wasm32-unknown-unknown/wasm/uo_wasm.wasm) bytes"
+          # shipping: build-pkg copies this module into the write and document-viewer packages and fails without the current
+          # third-party notices (core/licenses)
+          UO_WRITE_WASM="$PWD/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm" node --input-type=module -e "const m = await import('../tools/build-pkg.mjs'); if (!m.shipEngineWasm('write', process.env.RUNNER_TEMP + '/pkg')) process.exit(1)"
+          test -f "$RUNNER_TEMP/pkg/licenses/uo-write-wasm/THIRD-PARTY-NOTICES.md"
           echo '(module (func (drop (v128.const i32x4 0 0 0 0))))' | wasm-tools parse -o /tmp/simd.wasm
           ! wasm-tools validate --features "$features" /tmp/simd.wasm
       # the same tests inside WebKit, the engine of Safari
@@ -320,8 +355,116 @@ jobs:
           UO_DML_SOAK=100 UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/dml_memory.test.mjs
           cargo build -p uo-wasm --features dml-selftest --target wasm32-unknown-unknown --profile wasm
           UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/dml_selftest.test.mjs
-          cargo build -p uo-wasm --features count,write --target wasm32-unknown-unknown --profile wasm
+          cargo build -p uo-wasm --features count,write,render-fixture --target wasm32-unknown-unknown --profile wasm
           UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/write_api.test.mjs
+          # the painter in WebKit: the handle layer, the boundary and Part A of the painter parity (record "Milestone 1 - Shipping, CI and WebKit")
+          UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright" node crates/uo-wasm/tests/browser/run.mjs --browser webkit crates/uo-wasm/tests/render_paint.test.mjs crates/uo-wasm/tests/render_boundary.test.mjs crates/uo-wasm/tests/write_section.test.mjs crates/uo-wasm/tests/paint_parity.test.mjs
+
+  painter:
+    name: Painter parity (uo-render V, frozen side recaptured in the same run, Parts B/C, Chromium and WebKit pixels)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # the frozen TS engine (main) is the reference: built in the same run, as in layout-parity
+      - uses: actions/checkout@v7
+        with:
+          # pinned to the frozen TS commit (the parity reference): main moves on and its dist was stale (F2-20)
+          ref: d0f45bc54c05fb026475d7b229efa498af8423c6
+          path: ts-main
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.15
+      - run: rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown && rustup default stable
+      - name: Build the frozen TS engine
+        working-directory: ts-main
+        run: |
+          npm run install:converter
+          npm run install:fonts
+          npm run install:drawingml
+          npm install --prefix write
+          npm run build -w @universal-office/docx-core --prefix write
+          npm run build -w @universal-office/docx-layout --prefix write
+      - run: cargo build -p uo-wasm --features count,write,render-fixture --target wasm32-unknown-unknown --profile wasm
+      # V-1: the replay of Part A reads tests/captures/v_paint.capture (taken on Windows). The frozen painter recaptured here, on Linux
+      # and Node 24.15, must equal it byte for byte except the @platform line: that is what makes Part A meaningful on every platform
+      - name: Frozen side on Linux equals the committed capture (V-1)
+        run: |
+          mkdir -p "$RUNNER_TEMP/v"
+          node --max-old-space-size=8192 crates/uo-render/tools/capture-v.mjs --ts-root ../ts-main --out-dir "$RUNNER_TEMP/v"
+          diff <(grep -v '^@platform' crates/uo-render/tests/captures/v_paint.capture) <(grep -v '^@platform' "$RUNNER_TEMP/v/v_paint.capture")
+      # Part A (replay), Part B (200 seeds locally, 50 here: generated pages through the frozen and the Rust painter, same run) and Part C
+      - run: node --expose-gc --max-old-space-size=8192 --test --test-concurrency=1 crates/uo-wasm/tests/paint_parity.test.mjs
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}/ts-main
+          UO_WASM_PATH: ${{ github.workspace }}/core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          UO_V_SEEDS: '50'
+      # pixels: the frozen and the Rust painter draw the same generated pages on a real canvas, in Chromium and in WebKit
+      # (WebKit has no OffscreenCanvas on every platform: the painters then use an HTMLCanvasElement)
+      - name: Pixels
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}/ts-main
+          UO_WASM_PATH: ${{ github.workspace }}/core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          UO_V_PIXEL_SEEDS: '30'
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pw" --no-save --no-package-lock playwright@1.61.0
+          npx --prefix "$RUNNER_TEMP/pw" playwright install --with-deps chromium webkit
+          export UO_PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright"
+          node crates/uo-wasm/tests/browser/paint_pixels.mjs --browser chromium
+          node crates/uo-wasm/tests/browser/paint_pixels.mjs --browser webkit
+
+  viewer:
+    name: Viewer TS/Rust switch (engine=rust - vitest with the wasm, Chromium parity, memory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown && rustup default stable
+      # the products bundle the converter and the shared packages from source (as ci.yml)
+      - name: Install
+        working-directory: ${{ github.workspace }}
+        run: |
+          npm run install:converter
+          npm run install:fonts
+          npm run install:charts
+          npm run install:drawingml
+          npm run install:ui
+          npm run install:spell
+          npm install --prefix write
+          npm install --prefix sheet
+          npm install --prefix slides
+      - name: Build
+        working-directory: ${{ github.workspace }}
+        run: npm run build
+      # the viewer's wasm (`count` makes the memory phase count handles and live bytes)
+      - run: cargo build -p uo-wasm --features count,write --target wasm32-unknown-unknown --profile wasm
+      # engine-switch.test.ts: the viewer with engine="rust" against the TS engine over the fixtures (skipped without UO_WASM_PATH)
+      - name: Viewer unit tests with the wasm
+        working-directory: ${{ github.workspace }}/write/packages/viewer
+        run: npx vitest run test/engine-switch.test.ts
+        env:
+          UO_WASM_PATH: ${{ github.workspace }}/core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+      - name: Chromium for the switch runner
+        working-directory: ${{ github.workspace }}
+        run: npx --prefix sheet playwright install --with-deps chromium
+      # viewer_switch.mjs in Chromium: phase 0 (the viewer without engine="rust" never requests the wasm), parity TS vs Rust over every
+      # 6th fixture and the memory phase (50 rounds, flat memory, 0 handles). UO_TS_ROOT is this same checkout: the script takes only
+      # tools from it (esbuild, playwright, the converter dist) and compares the two engines of the checkout. The frozen root and the
+      # proprietary fonts are not needed: open fonts only.
+      - run: node crates/uo-wasm/tests/browser/viewer_switch.mjs --mode all
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          UO_WASM_PATH: ${{ github.workspace }}/core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          UO_SW_STRIDE: '6'
+          UO_SW_SOAK: '50'
+      # faults: a forced trap (the viewer drops the instance, the element reloads, a new element opens) and a refused font push
+      # (OverBudget on the page environment: the document still loads with the substitute)
+      - run: node crates/uo-wasm/tests/browser/viewer_switch.mjs --mode faults
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          UO_WASM_PATH: ${{ github.workspace }}/core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          UO_SW_STRIDE: '6'
 
   dotnet:
     name: .NET facade (server PDF parity, boundary memory M4, thread soak) (${{ matrix.os }})
@@ -355,6 +498,7 @@ jobs:
       - run: cargo miri test -p uo-ffi --lib
       - run: cargo miri test -p uo-wasm
       - run: cargo miri test -p uo-wasm --features write --test write_unsafe
+      - run: cargo miri test -p uo-wasm --features render-fixture --test render_unsafe
 
   leak-sanitizer:
     name: LeakSanitizer (M6)

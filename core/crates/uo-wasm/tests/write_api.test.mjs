@@ -15,6 +15,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeImports, bindWrite, WriteError } from '../js/write.mjs';
 import { fnv } from '../js/render.mjs';
+import { decodePage, newTables } from '../js/gen/render.ts';
+import { decodeWritePage, newTables as newWriteTables } from '../js/gen/write.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '../../../..');
@@ -139,6 +141,54 @@ function encodeBoxes(boxes) {
 
 test('a viewer session gives the native bytes (pages, navigation, links, PDF)', { skip }, () => {
   for (const [key, want] of Object.entries(PINNED)) assert.equal(session(key), want, key);
+});
+
+test('pageHeads gives the size and background of every page, as the eager decode of each page does', { skip }, () => {
+  for (const key of Object.keys(PINNED)) {
+    const env = withFonts(uo.newEnv());
+    const doc = uo.open(fixture(key));
+    const layout = doc.layout(env, OPTS);
+    const heads = layout.pageHeads();
+    assert.equal(heads.length, layout.pageCount, key);
+    const tables = newTables();
+    for (let i = 0; i < layout.pageCount; i++) {
+      const p = decodePage(layout.encodePage(i), tables);
+      const want = { w: p.widthTw, h: p.heightTw, ...(p.background !== undefined ? { background: p.background } : {}) };
+      assert.deepEqual(heads[i], want, `${key} page ${i}`);
+    }
+    layout.free();
+    assert.throws(() => layout.pageHeads());
+    doc.free(); env.free();
+  }
+});
+
+test('pages decoded out of order (reverse, shuffled) equal the in-order decode, with one set of tables', { skip }, () => {
+  const decodeAll = (layout, order) => {
+    const tables = newTables();
+    const wt = newWriteTables();
+    const out = [];
+    for (const i of order) {
+      const p = decodePage(layout.encodePage(i), tables);
+      const sec = decodeWritePage(p.app, wt);
+      out[i] = { w: p.widthTw, h: p.heightTw, items: p.items, lines: sec.lines, paras: sec.paras };
+    }
+    return out;
+  };
+  for (const key of Object.keys(PINNED)) {
+    const env = withFonts(uo.newEnv());
+    const doc = uo.open(fixture(key));
+    const n = doc.layout(env, OPTS);
+    const count = n.pageCount;
+    n.free();
+    const inOrder = [...Array(count).keys()];
+    const reverse = [...inOrder].reverse();
+    const shuffled = [...inOrder.filter((i) => i % 2 === 1), ...inOrder.filter((i) => i % 2 === 0)].reverse();
+    const run = (order) => { const l = doc.layout(env, OPTS); try { return decodeAll(l, order); } finally { l.free(); } };
+    const want = run(inOrder);
+    assert.deepEqual(run(reverse), want, `${key} reverse`);
+    assert.deepEqual(run(shuffled), want, `${key} shuffled`);
+    doc.free(); env.free();
+  }
 });
 
 test('the PDF arrives in chunks of the asked size; a null layout is refused', { skip }, () => {

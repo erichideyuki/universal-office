@@ -57,6 +57,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyNotices } from '../core/tools/licenses/gen-notices.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const p = (...s) => path.join(ROOT, ...s);
@@ -261,6 +262,37 @@ function writeTypes(pkgDir, dist, entryPoints, entries = {}) {
   }
 }
 
+/** Onde ficam os avisos de licença do núcleo Rust (gerados por core/tools/licenses/gen-notices.mjs, versionados). */
+const NOTICES = process.env.UO_RUST_NOTICES ?? 'core/licenses';
+
+/**
+ * Copia o .wasm do motor Rust para `dist/chunks/uo-write.wasm` e, junto, os avisos de licença das caixas Rust de terceiros
+ * compiladas nele (`dist/licenses/uo-write-wasm/`). Sem o .wasm só avisa (SW-9) e devolve false; com o .wasm e sem avisos
+ * atuais (faltam ou o Cargo.lock mudou) o build FALHA. Devolve true quando copiou os avisos.
+ */
+export function shipEngineWasm(id, dist) {
+  const wasm = path.isAbsolute(WRITE_WASM) ? WRITE_WASM : p(WRITE_WASM);
+  if (!existsSync(wasm)) {
+    console.warn(`build-pkg: AVISO: ${path.relative(ROOT, wasm)} não existe (cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm, ou UO_WRITE_WASM); engine="rust" não funciona em ${id}`);
+    return false;
+  }
+  mkdirSync(path.join(dist, 'chunks'), { recursive: true });
+  copyFileSync(wasm, path.join(dist, 'chunks', 'uo-write.wasm'));
+  console.log(`build-pkg: ${id}/chunks/uo-write.wasm (${(statSync(wasm).size / 1024).toFixed(0)} KB)`);
+  const notices = path.isAbsolute(NOTICES) ? NOTICES : p(NOTICES);
+  try {
+    const files = verifyNotices(notices, p('core/Cargo.lock'), 'wasm');
+    for (const f of files) {
+      const to = path.join(dist, 'licenses', 'uo-write-wasm', f);
+      mkdirSync(path.dirname(to), { recursive: true });
+      copyFileSync(path.join(notices, f), to);
+    }
+  } catch (e) {
+    throw new Error(`build-pkg: ${id} leva chunks/uo-write.wasm sem os avisos de licença das caixas Rust (${e.message})`);
+  }
+  return true;
+}
+
 async function buildProduct(id) {
   const { project, entries = {} } = PRODUCTS[id];
   const { pkgDir, src, publish, dist } = prepare(id);
@@ -293,24 +325,15 @@ async function buildProduct(id) {
     console.log(`build-pkg: ${id}/${name}.js importa estaticamente ${closure.length - 1} chunk(s): ${closure.map((o) => `${path.posix.relative(path.relative(pkgDir, dist).replace(/\\/g, '/'), o)} (${kb(o)} KB)`).join(', ')}`);
   }
 
-  // 1c. O .wasm do motor Rust (engine="rust") ao lado do chunk que o carrega: `chunks/uo-write.wasm`. O viewer sem o atributo
-  //     nunca o baixa. Sem o arquivo o pacote sai, mas engine="rust" não funciona nele (aviso).
-  if (Object.keys(built.metafile.outputs).some((o) => /(^|\/)chunks\/rust-engine-/.test(o))) {
-    const wasm = path.isAbsolute(WRITE_WASM) ? WRITE_WASM : p(WRITE_WASM);
-    if (existsSync(wasm)) {
-      copyFileSync(wasm, path.join(dist, 'chunks', 'uo-write.wasm'));
-      console.log(`build-pkg: ${id}/chunks/uo-write.wasm (${(statSync(wasm).size / 1024).toFixed(0)} KB)`);
-    } else {
-      console.warn(`build-pkg: AVISO: ${path.relative(ROOT, wasm)} não existe (cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm, ou UO_WRITE_WASM); engine="rust" não funciona em ${id}`);
-    }
-  }
+  // 1c. O .wasm do motor Rust (engine="rust") ao lado do chunk que o carrega, com os avisos de licença (shipEngineWasm).
+  let withLicenses = false;
+  if (Object.keys(built.metafile.outputs).some((o) => /(^|\/)chunks\/rust-engine-/.test(o))) withLicenses = shipEngineWasm(id, dist);
 
   // 2. Tipos num arquivo só por entrada
   writeTypes(pkgDir, dist, entryPoints, entries);
 
   // 3. Licenças de terceiros dos pacotes internos que entraram no bundle: cada
   //    um declara os textos em `licenseFiles` (package.json) → licenses/<nome>/
-  let withLicenses = false;
   for (const [name, entry] of Object.entries(INTERNAL)) {
     const dir = path.dirname(path.dirname(p(entry))); // <pacote>/src/index.ts → <pacote>
     if (!inputs.some((f) => f.startsWith(dir + path.sep))) continue;

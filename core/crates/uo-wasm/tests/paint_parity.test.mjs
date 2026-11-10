@@ -83,7 +83,7 @@ test('Part A: the D painter equals the frozen painter on the committed fixture d
     env.free();
   }
   const ms = Math.round(performance.now() - t0);
-  console.log(`Part A: ${docs} documents, ${pages} pages, ${items} items, ${calls} draw calls (k1s1) x ${CONFIGS.length} configurations, ${mismatches.length} mismatches, ${ms} ms`);
+  console.log(`Part A: ${docs} documents, ${pages} pages, ${items} items, ${calls} draw calls (k1s1) x ${CONFIGS.length} configurations, ${mismatches.length} mismatches, ${ms} ms (${globalThis.navigator?.userAgent ?? process.version})`);
   for (const m of mismatches.slice(0, 20)) console.log('  MISMATCH', m);
   assert.equal(String(docs), cap.metas.get('documents'));
   assert.equal(String(pages), cap.metas.get('pages'));

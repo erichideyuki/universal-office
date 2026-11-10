@@ -24,17 +24,18 @@ use uo_jsnum::math;
 use crate::lzw::Lzw;
 use crate::{ImageError, ImageLimits, LimitKind, Result, Rgba, at, at0, sub, zeroed};
 
-/// `undefined` in a tag's values: a byte value past the end of the file.
-const UNDEF_BITS: u64 = 0x7ff8_dead_beef_0001;
 /// The tags the decoder reads; the others are checked for reads past the end and dropped.
 const KNOWN: [u32; 18] = [256, 257, 258, 259, 262, 273, 277, 278, 279, 284, 317, 320, 322, 323, 324, 325, 529, 530];
 
+/// `undefined` in a tag's values: a byte value past the end of the file. A plain NaN, the only NaN a
+/// tag value can hold (the producers push u16/u32 values and rationals with a denominator of at
+/// least 1). Not a NaN payload: JavaScript, and so the wasm2js build, cannot carry one (G22).
 fn undef() -> f64 {
-    f64::from_bits(UNDEF_BITS)
+    f64::NAN
 }
 
 fn is_undef(v: f64) -> bool {
-    v.to_bits() == UNDEF_BITS
+    v.is_nan()
 }
 
 struct Reader<'a> {
@@ -96,7 +97,7 @@ fn js_u64(v: f64) -> u64 {
 /// `b.subarray(off, off + (counts[i] ?? 0))` for the `i`-th strip or tile.
 fn chunk_of<'a>(b: &'a [u8], offs: &[f64], counts: &[f64], i: usize) -> &'a [u8] {
     let Some(&off) = offs.get(i) else { return &[] };
-    if is_undef(off) || off.is_nan() {
+    if off.is_nan() {
         return &[];
     }
     let count = counts.get(i).copied().filter(|c| !is_undef(*c)).unwrap_or(0.0);

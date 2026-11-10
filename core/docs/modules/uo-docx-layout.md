@@ -891,7 +891,12 @@ Corpus: … Mismatches: … Differential: …
 
 ### Security
 
-Pending. **For the security review** (collected as they are found):
+Milestone-1 gate fixes (2026-11-10, record `uo-bindings.md` "Milestone-1 gate fixes"). **Native stack**: the layout of nested tables uses about
+19 KB of release stack per level (Windows x64, LTO): on a 1 MiB thread 52 nested tables pass and 56 overflow (`nest_tables_64.docx`, 1,508 B, aborts
+the process; the reader's `max_nesting` is 64 and `LayoutLimits.max_depth` 192, so neither stops it). The C ABI `uo_docx_to_pdf` now converts on its own
+16 MiB thread (64 MiB in debug), and 64 and 200 nested tables, 64 VML boxes and a 64-level mix convert from a 1 MiB caller thread (release and debug); wasm
+lays the same four out (`write_hostile.test.mjs`). The per-level frame size is not reduced (maintainer decision G23). The rest of this section is still
+**pending the security review** (collected as they are found):
 
 - F2-21: the TS `documentHyphenationLanguages` is exponential in nested text boxes and tables
   (2^depth; 30 levels ≈ 25 min); the Rust walk visits each paragraph once (same output). The TS bug
@@ -905,8 +910,8 @@ clones as persistent structures, explicit-stack nesting (LQ13), the format-2 ker
 
 ## Final review and benchmarks (gate 3)
 
-Pending. `tools/bench`: layout of the oracle corpus and of the 500-page document, main × rust-core,
-Node and WebKit, plus the editor keystroke budget in milestone 2.
+Memory and speed of the milestone-1 read path are measured below (2026-11-06 and 2026-11-10, Node and Chromium; WebKit only the wasm size and the
+wasm2js speed rows). Open: the Rust server PDF against the frozen C#, WebKit timings, the editor keystroke budget in milestone 2.
 
 ### Benchmarks main × rust-core — memory (measured)
 
@@ -1045,6 +1050,97 @@ UO_TS_VIEWER=<published viewer folder> node core/tools/bench/memory/browser.mjs 
 
 `browser.mjs` points Playwright at the installed Chromium/WebKit executables (`UO_CHROMIUM`, `UO_WEBKIT` override; the
 Playwright package comes from `UO_PLAYWRIGHT`, default the `sheet/node_modules` one of the main checkout).
+
+### Benchmarks main × rust-core — speed (measured 2026-11-10)
+
+Measured on HEAD `ec66f1a1` plus the uncommitted stage-1 work (tree of 2026-11-10), Node 24.15.0, Windows 11, a 20-thread
+machine that was quiet during the runs (3 % CPU before each; other agents compile on it at other times, so absolute
+milliseconds move by up to 2× between sessions and only the interleaved ratios are used). TS side: the frozen
+`d0f45bc5` (`UO_TS_ROOT`; `main`'s own `dist` is stale, HANDOFF F2-20, as in the earlier runs). Harness: `core/tools/bench/speed/run.mjs`
+(results `results/speed-2026-11-10-ec66f1a1-dirty.{md,json}`), the native side in `crates/uo-ffi/examples/bench_speed.rs`.
+
+**Method.** ONE Node process drives three engines over the same documents, **interleaved per document and per round** (the engine
+that starts rotates every round), after one untimed warm-up iteration per engine and document (faces parsed, JIT warm, caches filled):
+`ts` = `DocxPackage.load` + `readFullDocument` + `readEmbeddedFonts` (open); `layoutDocument` + `pdfNavigation` (layout);
+`renderPdf` compressed (pdf). `wasm` = the shipped module (`--features write --profile wasm`, 3.96 MB) through `js/write.mjs`: `open`,
+`layout` (which includes the navigation, as `pipeline::lay_out`), `pdf({ compress: true })`, one page-level environment with the
+5 open families pushed once (as the viewer) and the hyphenation patterns registered on demand. `native` = a persistent child process
+(`bench_speed`, release, `oracle` policy over the open fonts, the same functions `uo_docx_to_pdf` runs, one stdin line per
+iteration). Documents: the **68 oracle capture documents** of the five families the server parity uses (`f7a`–`f7d`, `f8`; 568 pages,
+open fonts; 16 ms – 2.6 s in TS) and the five generated classes of the memory benchmark (`typical` 20 pages, `tables` 37, `images`
+28, `pages100`, `pages500`; the same bytes as the memory run). Rounds: 9 for the captures, 7 for the classes, 5 for `pages100`, 3 for
+`pages500`; the table uses the **median of each document's rounds, summed over the class**. Output equality is checked in an
+untimed pass per document on the uncompressed PDF (the compressed bytes depend on the deflate implementation; the parity gates compare
+raw): **TS, native and wasm give byte-identical PDFs on all 73 documents** (0 mismatches; the first run had 1 because the TS formats
+`now` in the local zone, which the harness now pins to UTC like the capture tools).
+
+| class | docs | pages | stage | TS (ms) | wasm in Node (ms) | native (ms) | wasm / TS | native / TS |
+|---|---|---|---|---|---|---|---|---|
+| captures | 68 | 568 | open | 171 | 105 | 95.6 | 0.61 | 0.56 |
+| captures | 68 | 568 | layout | 9,685 | 9,531 | 9,262 | 0.98 | 0.96 |
+| captures | 68 | 568 | pdf | 1,968 | 1,515 | 1,313 | 0.77 | 0.67 |
+| captures | 68 | 568 | **total** | 11,846 | 11,161 | 10,677 | **0.94** | **0.90** |
+| typical | 1 | 20 | total | 220 | 199 | 193 | 0.91 | 0.88 |
+| tables | 1 | 37 | total | 371 | 345 | 299 | 0.93 | 0.81 |
+| images | 1 | 28 | total (layout 159 / 111 / 110, pdf 515 / 362 / 315) | 688 | 482 | 438 | 0.70 | 0.64 |
+| pages100 | 1 | 100 | total | 1,084 | 1,044 | 954 | 0.96 | 0.88 |
+| pages500 | 1 | 500 | open | 121 | 56.3 | 54.1 | 0.47 | 0.45 |
+| pages500 | 1 | 500 | layout | 4,199 | **5,865** | 4,069 | **1.40** | 0.97 |
+| pages500 | 1 | 500 | pdf | 1,445 | 1,108 | 911 | 0.77 | 0.63 |
+| pages500 | 1 | 500 | **total** | 5,772 | **7,029** | 5,036 | **1.22** | 0.87 |
+
+Per-document distribution on the 68 captures (ratio to TS of the document's median): **total** wasm median 0.90 (p10 0.84, p90 0.99,
+max 1.06, 5 documents above 1.0), native median 0.85 (p10 0.79, p90 0.94, max 1.05, 1 above 1.0); **open** wasm 0.66 / native 0.58 (always
+faster); **pdf** wasm 0.78 / native 0.67 (always faster); **layout** wasm median 1.00 (max 1.17, 34 of 68 documents slower than TS) and
+native median 0.95 (max 1.19, 20 of 68 slower). Per page on the generated documents: layout TS 8.3 / 8.4 ms (100 / 500 pages), native 7.5 / 8.1,
+wasm 8.1 / **11.7**; PDF TS 2.4 / 2.9, native 1.8 / 1.8, wasm 2.3 / 2.2. The first run (before the UTC pin, same tree, 9 rounds) gave
+captures totals 12,227 / 11,371 / 10,822 ms (0.93 / 0.89), `pages500` wasm 1.20 total: the ratios repeat to within 0.01–0.03. The untimed
+first iteration of every document (faces already warm from earlier documents): TS 12.9 s, wasm 11.4 s, native 10.8 s over the 68 captures.
+
+**Reading.** In Node, with warm caches, the Rust read path is **not slower than the TS one in total on any class up to 100 pages** (native
+0.64–0.90, wasm 0.70–0.96) and wins in the open (0.45–0.92) and in the PDF writer (0.61–0.93). The layout stage — most of the time —
+is **at parity, not faster**: native 0.96 and wasm 0.98 of TS on the corpus sum, with a third of the documents (native 20, wasm 34 of 68) a
+few percent slower than TS on this stage. The earlier sentence "natively and in Node the same Rust layout is as fast or faster than TS" (uo-bindings.md,
+"Open speed") is therefore backed by these numbers only as "as fast, on the corpus sum"; no number here supports "faster".
+
+**Findings against the targets.** The plan has no numeric speed target for the read path (the §6 targets are memory); the working bar of the
+records is "not slower than the TS" per stage.
+
+1. **wasm layout of the 500-page document is 1.40 × the TS** (5.9 s against 4.2 s; native 0.97). The per-page layout cost of the wasm
+   module rises 45 % from 100 to 500 pages (8.1 → 11.7 ms) while native rises 9 % and TS 2 %. Not warm-up (the run repeats 3 times; `node --no-liftoff`
+   gives 6.98 s against 7.12 s, `--liftoff-only` 19.5 s), not interference (the wasm engine alone in the process: 7.12 s total; with TS next to it 7.14 s).
+   The wasm linear memory of this run grows to 192 MiB (memory record); cause not investigated (candidates: allocator behaviour or page-fault cost of the growing
+   memory, cache and TLB locality at that size). Decision for the maintainer: investigate before the gate or accept (a 500-page document is the stress case, not a
+   viewer scenario: the viewer lays out incrementally in the browser's tab limits).
+2. **Browser: the Rust wasm is slower than TS in Chromium on the whole** (record "Open speed", viewer switch, 74 fixtures; cited, not re-run here): S1 (a new
+   element per document) Rust median 43–48 ms against TS 66–71 (ratio 0.70) but the wasm layout alone is 9.0 s against 7.1 s; S2 (one element) total 9.4–9.6 s against
+   7.6–7.7 s (ratio 1.12–1.20); S0 cold first document 131–173 ms against 68–97 ms. Node and Chromium differ for the same module (Node wasm total 0.94 of TS on
+   the captures), the Chromium tier-up cause is still a hypothesis.
+3. **Layout is the only stage without a Rust advantage** (above): any further speed work belongs there (the memory work is done, the open and PDF stages already
+   win).
+4. **Gaps of this run.** Not measured: the Rust server PDF against the frozen C# `DocxPdf.ToPdf` (the C# needs a build of the frozen `dotnet/`; the earlier fonts/lines
+   spikes had C# columns, this run has none), WebKit or Firefox timings (the wasm2js section has WebKit speed rows for 4 fixtures only), cold-process start-up, the
+   phone profile, concurrency (several documents at once through one converter), and documents with proprietary fonts (the open provider substitutes them on both sides).
+
+**Re-run** (Git Bash, nothing else running; builds with `-j 4` inside the script)
+
+```
+export UO_TS_ROOT=D:/Projects/OfficeNext/.claude/worktrees/clickcompliance-docx   # frozen TS, dist built
+export CARGO_TARGET_DIR=<own target dir>
+node core/tools/bench/speed/run.mjs --tag <name>                      # builds bench_speed + the shipped wasm, 68 captures + 5 classes
+node core/tools/bench/speed/run.mjs --no-build --docs pages500 --rounds 3 --engines wasm,native
+```
+
+**Memory** was re-measured on the same tree with `core/tools/bench/memory/run.mjs --skip phone` (`results/memory-2026-11-10.{json,md}`): the
+retained and peak tables above are **unchanged** (Rust layout 0.23–0.41 × TS, 45.0 B/char native and 47.0 B/char wasm on `pages500`, wasm high-water
+46.88 / 192.44 MiB for `pages100` / `pages500`, layout-call peak 2.0 × retained); the wasm high-water of the small classes moved by ≤ 0.13 MiB
+(`typical` 16.75 → 16.88) and TS heap numbers by ≤ 0.02 MiB. SPEED-1 (the page-level environment) does not enter this harness (one environment per
+process, freed at the end), so its retained cost after a viewer closes is not seen here (skeptic S6 in uo-bindings.md).
+
+**Process metrics (this run).** Sonnet 5.5, about 1 h wall time (estimated: native example build 2 min 47 s, wasm build 1 min 10 s, two full speed runs of
+about 5 min each, one memory run of about 8 min, probes 5 min), about 50 tool calls. Rework: the first speed run compared PDFs from a TS side in the local time
+zone (one document differed; pinned to UTC and re-run); a Python edit that went through the Bash tool lost a backslash in a template string (the native engine
+got the wrong compress flag; caught by the equality check).
 
 ## Process metrics
 
@@ -1201,7 +1297,7 @@ guesses set by `layoutDocument`).
 |---|---|---|
 | F0-1 | `model` is the only module naming uo-docx; F0 started on placeholders with the A2/A4 names and switched to re-exports when D1a compiled (same session). `StoryChange` stays local until D2a | parallel construction; one place to reconcile |
 | F0-2 | uo-render `Item` uses **inline struct variants** (`Item::Rect { … }`), boxed `Image`/`Shape`, `XformPush { m: Option<Box<[f64; 6]>> }`: measured 48 B. A glyph run keeps `text`, `scaleX`, `alpha`, `fx` in a per-run side record (`RunSide`) | tuple variants over payload structs cannot place the tag in the padding: 56 B |
-| F0-3 | `OptF64`: optional numbers in 8 bytes, "absent" = a signalling-NaN payload JS cannot produce (values are NaN-canonicalized on entry, as the codec does) | `Option<f64>` is 16 B; RA1.2 needs absent ≠ NaN |
+| F0-3 | `OptF64`: optional numbers in 8 bytes, "absent" = a signalling-NaN payload JS cannot produce (2026-11-10: now the integer 0, G22, see uo-bindings.md) (values are NaN-canonicalized on entry, as the codec does) | `Option<f64>` is 16 B; RA1.2 needs absent ≠ NaN |
 | F0-4 | `ItemList` (items + glyph/run/text/path columns) is the storage of pages **and** of every intermediate item array; `push_shifted` implements `shiftItem` in uo-render (glyph x only when `dx` is truthy, a clip push without `y` untouched, `M'(p+d) = M(p)+d`) | items move between arrays by copying column ranges; the arithmetic is app-neutral |
 | F0-5 | `LineRef.path` is the **TS ref path** with the table cell by GRID column (`c${slot.lcol}`, table.ts:1060), a type of its own (`RefPath`), not uo-docx `BlockPath` (cell index in the row) | the shell resolves line refs with `cellAtGrid`; both meanings exist in the TS |
 | F0-6 | `LineStory::Note` carries the note id as `NumKey` (printed with `String(n)`); `HfWhich` is uo-docx's | the TS id is a number; no duplicate enum |
@@ -1862,7 +1958,7 @@ and 16 instructions), **1,485 equal**; the rule's offset equals V8's at all 1,38
 | F2-17 | docx-core `table-formula.ts` `formatFormulaResult`/`formatPicture` and docx-layout `refs.ts` `cellAtGrid`/`paragraphAtPath` are ported here | the layout and the editor need them; one implementation |
 | F2-18 | New dependency uo-docx → uo-text (UTF-16 case mapping with SpecialCasing, JS white space over units); uo-docx-layout dev-dependencies: uo-docx with `canon`, uo-opc (the F2 replay) | LQ11/K10 |
 | F2-19 | Harness: `uo-docx/js/capture-word.mjs` (unit differential, São Paulo facet with `--tz`), `tools/lib/facets-f2.mjs`, `tools/gen-f2-docs.mjs`; shared edits additive: `facets.mjs` imports and chains the F2 recorder after the F1/F3/F5 hooks (the pre-hook carries the formula callback rewiring), `capture-layout.mjs` passes the three TS classes it patches | the corpus has no DATE/formula field |
-| F2-20 | **The TS checkout of the captures**: `.claude/worktrees/clickcompliance-docx` at `d0f45bc5` (= this branch's frozen `write/`; its dist built after `field-formula.ts`). The main checkout (`b92b60fa`) has a **stale dist** (built 2026-10-23, before `field-formula.ts`/`numpages.ts` were added on 10-30): no `dist/field-formula.js`, `numpages.js`, `run-boxes.js`, `pdf-navigation.js`, `pdf-word-spaces.js`, `inline-renderer.js`, `docx-core/dist/inspect.js`, `style-names-es.js`, and different `engine.js`, `para.js`, `pdf.js`, `document.js`, `fulldoc.js`, `xml.js`. The captures naming `@ts-commit b92b60fa` (F0, F1, F5 `layout-ci`, F1 `resolver`) come from that older engine | finding for the orchestrator: recapture with a dist built from the frozen TS before the gate |
+| F2-20 | **The TS checkout of the captures**: `.claude/worktrees/clickcompliance-docx` at `d0f45bc5` (= this branch's frozen `write/`; its dist built after `field-formula.ts`). The main checkout (`b92b60fa`) has a **stale dist** (built 2026-10-23, before `field-formula.ts`/`numpages.ts` were added on 10-30): no `dist/field-formula.js`, `numpages.js`, `run-boxes.js`, `pdf-navigation.js`, `pdf-word-spaces.js`, `inline-renderer.js`, `docx-core/dist/inspect.js`, `style-names-es.js`, and different `engine.js`, `para.js`, `pdf.js`, `document.js`, `fulldoc.js`, `xml.js`. The captures naming `@ts-commit b92b60fa` (F0, F1, F5 `layout-ci`, F1 `resolver`) come from that older engine | **Done (2026-11-10, gate fixes).** The four were recaptured with the frozen `d0f45bc5` (`capture-layout.mjs --mode ci --count 7 --seed 1 --accept-stale typography/font/sfnt.ts`; `capture-f1-resolver.mjs --count 40 --seed 1`). The digests of every record differed from the old ones (content, not only the header: p1, p2, p2first and the p3 facets), so the record lines (same facets per key), the dumps (`p1.bin`, `f1.tsv`, `f5.bin`, `transcript.tsv`) and the headers were replaced; the f1 resolver capture was replaced whole. Replays: `adapter` 2 equal, `f1_parity` 10 + 80 equal (40 resolver documents), `f5_parity` 2 equal, `layout_parity` 5 tests, 0 mismatches; `grep -rl b92b60fa core/crates/*/tests` is empty |
 | F2-21 | **Deliberate divergence from the TS (security; same output)**: `document_hyphenation_languages` visits each paragraph once. The TS `visit` (`hyphenate.ts:65`, faithfully ported in F2-16) walks a text box's `paras` view and then its `blocks` view, and a cell's `paragraphs`/`tables` and then its `blocks`: the same subtree twice per level, **2^depth visits** for nested text boxes or tables (the TS has the same bug; not edited here). A repeated visit adds nothing to the `Set` (the walk is pure and the subtree's languages are already in the set after its first visit), so the single visit gives the same list in the same order. The F2 port already visited a cell once; the text box's `blocks` view is now skipped too (`paras` holds every paragraph of the blocks, cells included). Proof: `parity_full` (facet `hyphlangs`, 2,753 corpus documents and 771 synthetic packages: 16,518 + 4,506 facets equal, 0 mismatches) and `f2_parity` (`p3.hyphlangs`) unchanged; `tests/r5_followups.rs` compares the single visit with the TS double visit (`hyphlangs::document_hyphenation_languages_ts_walk`, feature `canon`, test-only) on 7 nesting patterns (VML, DrawingML, `wpg` group, `mc:AlternateContent`, tables, the five in turn, text box/table alternating) × depth 0–14 × sources off/on × `force` (420 equal lists, every language of every level in first-appearance order), and runs 30, 64, 65 and 80 levels of each pattern in under 2 s (measured, release, nested `wps` boxes: the single visit 26–38 µs at depths 10–24; the TS double visit takes 2.2 ms at depth 10, 1.43 s at 20, 23.9 s at 24, ×2 per level: ≈ 25 min at 30) | a document with 30 nested text boxes stalls any open with automatic hyphenation (and Manual Hyphenation's `force`); listed for the security review below |
 
 **Limits** (LQ14): `max_parse_depth` (formula nesting, F2-6) and `max_field_text` (F2-4); every

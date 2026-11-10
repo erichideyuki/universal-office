@@ -24,6 +24,9 @@
 //!   the text string, `m u32` rects each `page u32, x f64, y f64, w f64, h f64` (twips); then `k u32`
 //!   headings, each `level f64, page u32, y f64` and the text string (`collectAnnotations`, G8).
 //! - `uo_layout_page_info`: `w f64, h f64` (twips), `section u32`, `number f64`, `hf_items i32` (-1 absent).
+//! - `uo_layout_page_heads`: `n u32` pages, each `w f64, h f64` (twips), `has_background u8` and, for 1, the
+//!   background colour string (what `decodePage` gives as `background`): the page sizes and backgrounds of every page
+//!   in one call, so the viewer can decode a page's items only when it paints it.
 //! - `uo_layout_navigation`: `n u32` links, each `page u32, x f64, y f64, w f64, h f64` (points from the
 //!   page top), `kind u8` then for 0 the URI string, for 1 `page u32, top f64`; then `m u32` outline
 //!   entries, each `level u32, page u32, top f64` and the title string.
@@ -622,6 +625,34 @@ pub unsafe extern "C" fn uo_layout_page_info(l: *const UoLayout, page: usize) ->
     let mut o = Out::default();
     o.f64(p.w).f64(p.h).u32(usize::try_from(g.section).unwrap_or(usize::MAX)).f64(g.number);
     o.bytes(&g.hf_items.map_or(-1, |n| i32::try_from(n).unwrap_or(i32::MAX)).to_le_bytes());
+    buf(OK, o.0)
+}
+
+/// The size and the background colour of every page: `n u32`, then per page `w f64, h f64`, `has_background u8` and,
+/// when 1, the colour string. The page heads the viewer reads of all pages at once (`applyZoom`), so the items of a
+/// page need decoding only when it paints.
+///
+/// # Safety
+/// `l` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_layout_page_heads(l: *const UoLayout) -> *mut UoBuf {
+    // SAFETY: forwarded.
+    let Some(l) = (unsafe { layout_ref(l) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let view = view_of(&l.view);
+    let mut o = Out::default();
+    o.u32(view.pages().len());
+    for p in view.pages() {
+        o.f64(p.w).f64(p.h);
+        match p.background {
+            Some(sym) => {
+                o.u8(1);
+                units(&mut o, view.resources().symbols.get(sym));
+            }
+            None => {
+                o.u8(0);
+            }
+        }
+    }
     buf(OK, o.0)
 }
 
