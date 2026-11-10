@@ -120,9 +120,41 @@ and benchmarks, then a fix chain; every reviewer accepted). Items above, now:
 - **Effect resolution as the Word** (maintainer: Rust only; the frozen TS keeps 200 dpi): the PDF writes a glow of
   20 pt or more and a shadow blur of 10 pt or more at `200 / k` dpi, an image per effect, as measured in the Word
   (uo-pdf `fx_downscale`). `glow_dense_600` (now generated with a colour per run, as its record said): 44 s → 1.3 s
-  wasm (Word 1.2 s); viewer parity on every fixture unchanged (0 differences). Open: the screen painter (39.7 s at
-  192 dpi on that page), our glow is larger than the Word's, the Word grows the line with the glow. Record:
-  `uo-bindings.md` "Effect resolution as the Word".
+  wasm (Word 1.2 s); viewer parity on every fixture unchanged (0 differences). Record: `uo-bindings.md` "Effect
+  resolution as the Word".
+- **The screen too** (`9b7edbeb`, maintainer: "the PDF rule, smoothed"): uo-render `fx_plan`/`fx_layer_set`, export
+  `uo_render_fx_layer_set`, `paint.ts` draws coarse layers with smoothing; coarse layers pool a finer silhouette (a
+  150 pt glow had vanished at 25 dpi). That page: 6.2 s → 1.5 s at 96 dpi, 39.7 s → 2.6 s at 192 dpi (Word 0.33 s).
+  The Word's screen measured by PrintWindow (`1b6dd8c7`): fast, smooth, same size at every zoom.
+- **Text effects scale with the font size** (`34caf5c0`): the Word sizes a run's glow radius, shadow blur and shadow
+  distance by `(size/72)^ln 2` (measured 6–200 pt, within 2 %); the TS (and we) applied the picture-effect model
+  unscaled, right at 72 pt only (3.5× too large at 12 pt). uo-render `word_fx_scale`/`fx_for_word`, screen and PDF;
+  `fx_layers` and `PdfOptions::frozen_text_fx` keep the parity tests on the TS path. Record: `uo-bindings.md` "Text
+  effects scale with the font size". Lab: `core/target/pdf-time/` (outside git: generators, Word scripts, captures,
+  comparison sheets).
+
+**Fidelity findings to fix (Word measured, not done; Rust only unless the maintainer says otherwise):**
+1. **The glow grows the line** in the Word (17 pt between lines → 19.5 / 26 / 56 pt with 5 / 18 / 79 pt glow at 12 pt
+   text: the 79 pt document is 2 pages in the Word, 1 in ours). Layout change: measure the rule (does it scale with
+   the font size too? shadow and reflection?) in the oracle first.
+2. **The reflection's distance**: a 10 pt `w14:dist` drew no gap in the Word at 72 and 144 pt; ours moves it. Measure
+   the gallery presets (0 / 4 / 8 pt offsets), the blur and whether the reflection scales with the font size.
+3. **A document without a styles part**: the Word uses Aptos 12 pt (compatibility mode 12 or 15); ours a smaller serif.
+4. **A blur-free shadow** is vector in the Word's PDF (a copy of the text), an image in ours.
+5. **The Slides** use the same text-effect model (`shared/drawingml` → uo-drawingml): measure whether PowerPoint also
+   scales text effects by the font size (its COM opens windows: needs a no-focus recipe or the maintainer's ok).
+6. Residuals on the straight edge: our glow sigma 1–4 % wider, half alpha up to 10 % farther (the Word's dilation
+   may be `0.46·rad`); the PDF's `k` off by one at 72 pt / 150 pt (26 vs 27).
+
+**How much is left (2026-11-10; TS lines = non-blank non-comment source of the frozen checkout, an indication of
+size, not of effort):**
+
+| Product | Done in Rust | Left | TS still to port |
+|---|---|---|---|
+| Write, milestone 1 (viewer + PDF + server) | everything: reader, writer, `.doc`, export/ODF/compare, layout, render, PDF, C# Editing API, viewer/FFI/C# bindings | the gate: push + first green CI, decisions G23–G31, D2a | — |
+| Write, milestone 2 (editor) | session core D2a, families F1–F3, F5–F7, F9, F4 (part) | F4 rest, F8 clipboard, F10 layout family; incremental relayout; session bindings (wasm + C ABI + C#); the editor switch (`universal-write.ts` to a shell over the session, the largest unknown); gate, 0.10 | editor package 36.8k (most of it stays as the TS shell) |
+| Slides | the shared parts only (fonts, drawingml) | everything else: `slides-core` (reader, model, layout, render), the editor, the viewer; charts | 25.9k + charts 5.2k |
+| Sheet | the shared parts only | everything: calc engine, `sheet-core`, the editor; charts (shared with Slides) | 34.7k |
 
 **Still open for the milestone-1 gate (needs the maintainer):** push `rust-core` and get one green `rust-core.yml`
 run; decisions **G23–G31** in `uo-bindings.md` "For the
