@@ -22,7 +22,8 @@ use uo_docx::write::emit::settings::{
 use uo_opc::Package;
 use uo_testkit::generate::Rng;
 
-mod w4_support;
+#[allow(unused_imports)]
+use crate::w4_support;
 
 use w4_support::{Part, dec, inputs, package};
 

@@ -21,8 +21,8 @@ use uo_docx::read::{DOCX, DOCX_POS, ReadOptions};
 use uo_opc::Package;
 use uo_opc::xml::parse;
 
-#[path = "support/nested_stories.rs"]
-mod nested_stories;
+#[allow(unused_imports)]
+use crate::nested_stories;
 
 use nested_stories::NESTED_STACK_KIB;
 

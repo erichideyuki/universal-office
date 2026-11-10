@@ -6,7 +6,8 @@
 //! ASCII-folded name index is part of what must be returned). Bytes are printed (`--nocapture`).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod fonts_support;
+#[allow(unused_imports)]
+use crate::fonts_support;
 
 use std::hint::black_box;
 

@@ -25,7 +25,8 @@ use uo_opc::package::OpenOptions;
 use uo_opc::{Limits, Package};
 use uo_testkit::repo_root;
 
-mod w2_support;
+#[allow(unused_imports)]
+use crate::w2_support;
 use w2_support::{EDITS, apply};
 
 fn unescape(line: &str) -> String {

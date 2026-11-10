@@ -13,7 +13,8 @@
 //! `capture-sources-para.mjs --trace <key>`).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod support;
+#[allow(unused_imports)]
+use crate::support;
 
 use std::path::{Path, PathBuf};
 

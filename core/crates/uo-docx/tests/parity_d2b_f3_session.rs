@@ -14,9 +14,12 @@
 #![cfg(feature = "session")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod d2a_support;
-mod d2b_f3_support;
-mod support;
+#[allow(unused_imports)]
+use crate::d2a_support;
+#[allow(unused_imports)]
+use crate::d2b_f3_support;
+#[allow(unused_imports)]
+use crate::support;
 
 use std::path::Path;
 

@@ -10,7 +10,8 @@
 #![cfg(feature = "compare")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::disallowed_methods)]
 
-mod d5_support;
+#[allow(unused_imports)]
+use crate::d5_support;
 
 use std::cell::Cell;
 use std::hint::black_box;

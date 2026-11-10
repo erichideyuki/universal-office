@@ -6,9 +6,12 @@
 #![cfg(feature = "session")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod d2a_support;
-mod d2b_f2_support;
-mod support;
+#[allow(unused_imports)]
+use crate::d2a_support;
+#[allow(unused_imports)]
+use crate::d2b_f2_support;
+#[allow(unused_imports)]
+use crate::support;
 
 use d2a_support::{Cx, sample};
 use d2b_f2_support::{doc_with_parts, f2_cmd, some_selection, typed};

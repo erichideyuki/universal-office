@@ -6,8 +6,8 @@
 //! (256 KiB) is measured by `js/wasm-stack.mjs`.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-#[path = "support/nested_stories.rs"]
-mod nested_stories;
+#[allow(unused_imports)]
+use crate::nested_stories;
 
 use nested_stories::{NestedRead, Nesting, digest, on_nested_stack, read_nested, story_depth};
 

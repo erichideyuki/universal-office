@@ -16,7 +16,8 @@
 //! Recapture: `UO_TS_ROOT=<built checkout of the frozen TS> node core/crates/uo-docx/js/capture-word.mjs`.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod support;
+#[allow(unused_imports)]
+use crate::support;
 
 use std::collections::HashMap;
 use std::sync::Arc;

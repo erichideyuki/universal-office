@@ -25,7 +25,8 @@ use uo_docx::write::emit::settings::{
 };
 use uo_docx::write::matchers::element_matches;
 
-mod w4_support;
+#[allow(unused_imports)]
+use crate::w4_support;
 
 use w4_support::{Part, dec, inputs, package, synthetic_inputs, synthetic_package};
 

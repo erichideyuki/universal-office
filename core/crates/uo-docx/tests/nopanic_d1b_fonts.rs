@@ -12,7 +12,8 @@
 //! one-pass rewrites (thousands of elements, starts without `>`, joins) finish in linear time.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod fonts_support;
+#[allow(unused_imports)]
+use crate::fonts_support;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};

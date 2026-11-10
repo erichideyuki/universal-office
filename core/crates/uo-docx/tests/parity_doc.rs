@@ -49,8 +49,10 @@ use uo_drawingml::odraw::Shape;
 use uo_opc::Package;
 use uo_testkit::{Capture, Digest, Replay, Stream};
 
-mod doc_support;
-mod support;
+#[allow(unused_imports)]
+use crate::doc_support;
+#[allow(unused_imports)]
+use crate::support;
 
 use doc_support::{CAPTURE, input_bytes, le16, unhex};
 

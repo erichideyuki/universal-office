@@ -4,8 +4,7 @@
 //! byte/text mutator.
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-#[path = "../d5a_support/mod.rs"]
-pub mod a;
+pub(crate) use super::d5a_support as a;
 
 use std::path::Path;
 

@@ -6,8 +6,8 @@
 //! does not parse), the picture formats, the sync functions, and the JSON of the results.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-#[path = "support/r4b_host.rs"]
-mod r4b_host;
+#[allow(unused_imports)]
+use crate::r4b_host;
 
 use std::hint::black_box;
 

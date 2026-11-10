@@ -9,7 +9,8 @@
 //! Recapture: `UO_TS_ROOT=<built checkout of main> node core/crates/uo-docx/js/capture-styles.mjs`.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod support;
+#[allow(unused_imports)]
+use crate::support;
 
 use std::path::{Path, PathBuf};
 

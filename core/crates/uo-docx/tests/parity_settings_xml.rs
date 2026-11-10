@@ -31,7 +31,8 @@ use uo_opc::package::OpenOptions;
 use uo_opc::{Limits, Package};
 use uo_testkit::{Capture, Digest, Replay, repo_root};
 
-mod w4_support;
+#[allow(unused_imports)]
+use crate::w4_support;
 
 use w4_support::{Part, dec, inputs, package, synthetic_inputs, synthetic_package};
 

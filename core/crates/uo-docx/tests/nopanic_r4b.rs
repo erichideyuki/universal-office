@@ -8,8 +8,8 @@
 //! text leaves the object with the same kind.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-#[path = "support/r4b_host.rs"]
-mod r4b_host;
+#[allow(unused_imports)]
+use crate::r4b_host;
 
 use std::collections::HashMap;
 

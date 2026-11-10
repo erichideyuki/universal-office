@@ -12,7 +12,8 @@
 //! as `rust-<name>` (the TS side: `capture-font-embedding.mjs --dump <key>`, `ts-<name>`).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod fonts_support;
+#[allow(unused_imports)]
+use crate::fonts_support;
 
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -8,7 +8,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 status=0
-for crate in $(ls crates | grep -vE '^(uo-jsnum|uo-testkit|uo-alloc)$'); do
+# CRATES="uo-a uo-b" restricts the run (tools/check-changed.mjs passes the changed crates and their dependents)
+for crate in ${CRATES:-$(ls crates)}; do
+  case "$crate" in uo-jsnum|uo-testkit|uo-alloc) continue ;; esac
+  [ -d "crates/$crate" ] || continue
   touch "crates/$crate/src/lib.rs"
   hits=$(cargo clippy -p "$crate" --lib --no-deps --message-format=json -- -W clippy::cast_possible_truncation -W clippy::cast_sign_loss 2>/dev/null \
     | grep -E '"message":"casting `f(32|64)` to' || true)

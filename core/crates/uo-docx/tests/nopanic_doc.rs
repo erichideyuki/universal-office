@@ -7,7 +7,8 @@
 #![cfg(feature = "doc")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod doc_support;
+#[allow(unused_imports)]
+use crate::doc_support;
 
 use std::hint::black_box;
 

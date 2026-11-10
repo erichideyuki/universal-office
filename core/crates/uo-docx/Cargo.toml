@@ -6,6 +6,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+# the integration tests are one binary (tests/all.rs), not one per file
+autotests = false
 publish.workspace = true
 
 # G1 (milestone-1 gate): one crate, modules behind features. The read path (model, reader,
@@ -39,6 +41,10 @@ uo-opc = { path = "../uo-opc" }
 # UTF-16 case mapping with SpecialCasing and JS white space over units (the Word semantics of
 # `word`, LQ11/K10: toUpperCase/toLowerCase, trim, white space runs)
 uo-text = { path = "../uo-text" }
+
+[[test]]
+name = "all"
+path = "tests/all.rs"
 
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }

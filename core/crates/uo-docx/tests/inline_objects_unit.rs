@@ -7,8 +7,8 @@
 //! error and `None` paths of every public function.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-#[path = "support/r4b_host.rs"]
-mod r4b_host;
+#[allow(unused_imports)]
+use crate::r4b_host;
 
 use r4b_host::{QuirkHost, empty_package};
 use std::collections::HashMap;

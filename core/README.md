@@ -27,6 +27,10 @@ The engine crates (`uo-opc`, `uo-fonts`, `uo-drawingml`, `uo-render`, `uo-pdf`, 
 ```shell
 cargo test --workspace --all-features            # tests, memory gate on (counting allocator)
 cargo clippy --workspace --all-targets --all-features -- -D warnings
+node tools/check-changed.mjs [base]              # local lint gate: clippy native + wasm32 and the bans, only on the
+                                                 # crates changed since base (default HEAD) and their dependents
+cargo test -p uo-docx --all-features --test all parity_d2b_f7_ops::   # uo-docx's integration tests are ONE binary
+                                                 # (tests/all.rs): pick a file with `<file>::`
 cargo build -p uo-wasm --features count --target wasm32-unknown-unknown --profile wasm
 node --expose-gc --test crates/uo-wasm/tests/boundary.test.mjs
 dotnet test dotnet/UniversalOffice.Native.Tests  # builds uo-ffi with the counters

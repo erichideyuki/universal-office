@@ -79,8 +79,8 @@ Open before the milestone-1 gate (besides queue item 5):
   would always skip on Linux CI — recapture or relax the pin.
 - `write_wasm2js.test.mjs` fails (`f8__7__0 messages: length 51757 vs 53200`), also at the previous base — investigate.
 - Painter not run in WebKit/real Safari (only the handle layer).
-- Speed of verification: uo-docx has 160 integration-test crates; merge into one binary per crate (`tests/all/main.rs`)
-  and clippy only changed crates + dependents locally — suggested as the first item of the next round.
+- ~~Speed of verification~~: done 2026-11-10 (one uo-docx test binary, `tools/check-changed.mjs`; see the operating
+  rules below).
 
 ## Work in progress — commit `6471786d` (historical: finished, see the update above)
 
@@ -151,6 +151,12 @@ Later: Sheet (calc engine on Opus, `sheet-core`), Slides (`slides-core`), charts
 
 ## Operating rules learned in this session (follow them)
 
+- **Faster verification (2026-11-10)**: uo-docx's 160 integration-test files are ONE test binary (`tests/all.rs`,
+  `autotests = false`; each file is a module, the support modules are declared once there and imported with
+  `use crate::<name>;`). A brief's `--test <file>` for uo-docx is now `--test all <file>::` (older records still show
+  the old form). New test file = add `mod <file>;` to `tests/all.rs`. Local lint gate: `node tools/check-changed.mjs
+  [base]` (clippy native + wasm32 and the bans on the changed crates and their dependents); the whole-workspace clippy
+  is for CI and milestone checks.
 - **Machine load**: at most 2–3 agents at once; every brief demands `cargo -j 4`, tests with `--test-threads` ≤ 4,
   bounded no-panic/soak tests (seconds; big runs behind an env var), own `CARGO_TARGET_DIR` under `core/target/<name>`,
   and "only your own test targets". **Only the orchestrator runs the full suite**, once per commit

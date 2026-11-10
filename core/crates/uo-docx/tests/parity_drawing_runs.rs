@@ -17,7 +17,8 @@
 //! Trace one record: `UO_PARITY_TRACE=<key>` here and `--trace <key>` there.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod support;
+#[allow(unused_imports)]
+use crate::support;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

@@ -6,8 +6,10 @@
 #![cfg(feature = "session")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod d2a_support;
-mod support;
+#[allow(unused_imports)]
+use crate::d2a_support;
+#[allow(unused_imports)]
+use crate::support;
 
 use d2a_support::Cx;
 use uo_docx::model::table::Table;

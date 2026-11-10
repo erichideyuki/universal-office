@@ -199,6 +199,8 @@ there verbatim.
 - A subagent does not see the conversation: give it the module, the decisions of previous
   gates, the TS and C# files, the record path and the commands.
 - Check every finding in the code before showing it; say what was discarded and why.
+- Briefs give the local lint gate as `node core/tools/check-changed.mjs` (changed crates + dependents); uo-docx's
+  integration tests are one binary, so a single file runs as `cargo test -p uo-docx --test all <file>::`.
 - Specialists of the same stage run in parallel (one message, several Agent calls).
 - Every Agent call sets the model of its role (see "Models"), also for general-purpose agents.
 - Keep the module record's "Process metrics" current: per stage the wall time of each agent,

@@ -16,7 +16,8 @@
 #![cfg(feature = "export")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod d5a_support;
+#[allow(unused_imports)]
+use crate::d5a_support;
 
 use d5a_support::{corpus_shard, inputs_file, open_file, package_of, read};
 use uo_docx::export::{ExportDoc, HtmlOptions, ImagesMode, MarkdownOptions, to_html, to_markdown};

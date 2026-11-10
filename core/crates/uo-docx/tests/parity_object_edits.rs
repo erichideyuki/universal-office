@@ -19,7 +19,8 @@ use uo_opc::Package;
 use uo_opc::package::OpenOptions;
 use uo_testkit::{Capture, Digest, Replay, repo_root};
 
-mod w2_support;
+#[allow(unused_imports)]
+use crate::w2_support;
 use w2_support::{EDITS, apply};
 
 fn facets(bytes: &[u8], edit: &str, dirty: DirtyHf, sources: bool) -> Result<Vec<(String, String)>, uo_docx::error::DocxError> {

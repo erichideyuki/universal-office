@@ -10,7 +10,8 @@
 //! a function in the plain object `TABLE_FIXED` (`X`); the Rust function returns `None` for both.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod support;
+#[allow(unused_imports)]
+use crate::support;
 
 use std::path::{Path, PathBuf};
 

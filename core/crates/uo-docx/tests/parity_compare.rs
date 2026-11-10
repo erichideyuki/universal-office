@@ -14,7 +14,8 @@
 #![cfg(feature = "compare")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod d5a_support;
+#[allow(unused_imports)]
+use crate::d5a_support;
 
 use std::collections::HashMap;
 use std::path::Path;
