@@ -117,10 +117,16 @@ and benchmarks, then a fix chain; every reviewer accepted). Items above, now:
   TS × Rust on Safari 15.6.1 (Monterey) and iOS 26.5, 19 documents / 82 pages, flat memory; iOS 15.5 (iPhone 13) 16 of 19
   equal, the 3 largest crash the TWO-viewer harness at dpr 3 (each engine alone opens them). Safari 15 refuses wasm even
   with `'wasm-unsafe-eval'` (needs `'unsafe-eval'`). Record: `uo-bindings.md` "Real Safari 15 / iOS".
+- **Effect resolution as the Word** (maintainer: Rust only; the frozen TS keeps 200 dpi): the PDF writes a glow of
+  20 pt or more and a shadow blur of 10 pt or more at `200 / k` dpi, an image per effect, as measured in the Word
+  (uo-pdf `fx_downscale`). `glow_dense_600` (now generated with a colour per run, as its record said): 44 s → 1.3 s
+  wasm (Word 1.2 s); viewer parity on every fixture unchanged (0 differences). Open: the screen painter (39.7 s at
+  192 dpi on that page), our glow is larger than the Word's, the Word grows the line with the glow. Record:
+  `uo-bindings.md` "Effect resolution as the Word".
 
 **Still open for the milestone-1 gate (needs the maintainer):** push `rust-core` and get one green `rust-core.yml`
 run; decisions **G23–G31** in `uo-bindings.md` "For the
-milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects — 600 glow runs = 61 s, G25 limits
+milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects — 600 glow runs = 61 s, now about 1 s in the PDF with the Word's resolution rule but unchanged on screen, G25 limits
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.

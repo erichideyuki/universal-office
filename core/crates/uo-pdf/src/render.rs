@@ -57,6 +57,30 @@ pub(crate) const T: f64 = 20.0;
 /// The resolution of the text-effects layer in the PDF (the Word writes about 200 dpi).
 const FX_PPT: f64 = 200.0 / 72.0;
 
+/// How much the Word lowers the resolution of a blurred text effect in the PDF: the layer goes at
+/// `200 / k` dpi. Measured in Word 365 (2026-11-10, one run per radius, `ExportAsFixedFormat`):
+/// glow up to 19 pt at 200 dpi, 20–40 pt at 100, 41–60 pt at 66.7, 61–80 pt at 50, 81 pt at 40,
+/// 100 pt at 40, 150 pt at 25; shadow blur 2 pt at 200, 10–20 pt at 100, 21–30 pt at 66.7, 40 pt
+/// at 50, 41 pt at 40, 60 pt at 33.3, 61 pt at 28.6, 80 pt at 25. So `k = 1` under `step`, else
+/// `max(2, ceil(x / step))` with `step` = 20 pt of glow radius and 10 pt of shadow blur (the same
+/// Gaussian sigma, 10/3 pt, in both). A larger blur has no fine detail: the image looks the same
+/// and the work falls with k³ (k² pixels, a kernel k times shorter). Not in the frozen TS (which
+/// always writes 200 dpi): the PDF of a run with such an effect differs from it on purpose.
+#[must_use]
+pub(crate) fn fx_downscale(x_pt: f64, step_pt: f64) -> f64 {
+    // NaN, infinite and the small ones stay at 200 dpi (as before); the EMU of the file can land a
+    // hair off a multiple
+    if !x_pt.is_finite() || x_pt < step_pt - 1e-9 {
+        return 1.0;
+    }
+    math::max(2.0, math::ceil(x_pt / step_pt - 1e-9))
+}
+
+/// `fx_downscale` of the glow (radius, step 20 pt) and of the outer shadow (blur, step 10 pt).
+fn fx_downscales(fx: &ResolvedTextFx) -> (f64, f64) {
+    (fx.glow.as_ref().map_or(1.0, |g| fx_downscale(g.rad_pt, 20.0)), fx.shadow.as_ref().map_or(1.0, |s| fx_downscale(s.blur_pt, 10.0)))
+}
+
 /// What a render takes besides the pages.
 #[derive(Clone, Debug)]
 pub struct PdfOptions {
@@ -1021,6 +1045,21 @@ impl<'r> Painter<'r> {
         true
     }
 
+    /// One effect layer of the run at `ppt` pixels per point, drawn as an image with alpha (the
+    /// cancel flag is checked before each layer: a blur is the long step).
+    fn paint_fx_layer<S: PdfSink>(&mut self, page: &mut PageWriter<'_, S>, rv: &RunView<'_>, fx: &ResolvedTextFx, ppt: f64, run: &Run<'_>) {
+        if self.stop_for_cancel() {
+            return;
+        }
+        let res = self.res;
+        if let Ok(Some(l)) = fx_layers(rv, fx, &res.symbols, ppt, res.sym(run.color), &self.opts.paint)
+            && let (Ok(w), Ok(h)) = (u32::try_from(l.w), u32::try_from(l.h))
+            && let Some(img) = self.embed_rgba(page, &l.data, w, h)
+        {
+            page.draw_image(img, l.x0 / T, l.y0 / T, l.w as f64 / ppt, l.h as f64 / ppt);
+        }
+    }
+
     /// `paintGlyphsFxPdf`: shadow/glow/reflection in an image with alpha behind; the fill (solid =
     /// text; gradient = shaded curves; none = only the outline) and the outline in curves on top.
     fn paint_run_fx<S: PdfSink>(&mut self, page: &mut PageWriter<'_, S>, run: &Run<'_>, fx: &ResolvedTextFx) {
@@ -1028,14 +1067,31 @@ impl<'r> Painter<'r> {
         let face = res.face(run.face).and_then(|f| f.face.as_ref());
         if let Some(face) = face
             && (fx.shadow.is_some() || fx.glow.is_some() || fx.reflection.is_some())
-            && !self.stop_for_cancel()
         {
             let rv = run.view(face);
-            if let Ok(Some(l)) = fx_layers(&rv, fx, &res.symbols, FX_PPT, res.sym(run.color), &self.opts.paint)
-                && let (Ok(w), Ok(h)) = (u32::try_from(l.w), u32::try_from(l.h))
-                && let Some(img) = self.embed_rgba(page, &l.data, w, h)
-            {
-                page.draw_image(img, l.x0 / T, l.y0 / T, l.w as f64 / FX_PPT, l.h as f64 / FX_PPT);
+            let (kg, ks) = fx_downscales(fx);
+            if kg == 1.0 && ks == 1.0 {
+                // the frozen TS: one layer of the three effects at 200 dpi
+                self.paint_fx_layer(page, &rv, fx, FX_PPT, run);
+            } else {
+                // the Word: an image per effect, each at its own resolution, the reflection
+                // (kept at 200 dpi), the shadow and then the glow (the order of the one layer)
+                let only = |shadow: bool, glow: bool, reflection: bool| ResolvedTextFx {
+                    fill: None,
+                    outline: fx.outline.clone(),
+                    shadow: if shadow { fx.shadow } else { None },
+                    glow: if glow { fx.glow } else { None },
+                    reflection: if reflection { fx.reflection } else { None },
+                };
+                if fx.reflection.is_some() {
+                    self.paint_fx_layer(page, &rv, &only(false, false, true), FX_PPT, run);
+                }
+                if fx.shadow.is_some() {
+                    self.paint_fx_layer(page, &rv, &only(true, false, false), FX_PPT / ks, run);
+                }
+                if fx.glow.is_some() {
+                    self.paint_fx_layer(page, &rv, &only(false, true, false), FX_PPT / kg, run);
+                }
             }
         }
         match &fx.fill {
@@ -1244,5 +1300,28 @@ impl<'r> Painter<'r> {
                 return;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fx_downscale;
+
+    /// The resolutions the Word wrote (dpi = 200 / k) for one run per radius (fx_downscale's record).
+    #[test]
+    fn the_downscale_follows_the_word() {
+        let glow = [(2.0, 1.0), (18.0, 1.0), (19.0, 1.0), (20.0, 2.0), (21.0, 2.0), (36.0, 2.0), (40.0, 2.0), (41.0, 3.0), (60.0, 3.0), (61.0, 4.0), (79.0, 4.0), (80.0, 4.0), (81.0, 5.0), (100.0, 5.0), (150.0, 8.0)];
+        for (rad, k) in glow {
+            assert_eq!(fx_downscale(rad, 20.0), k, "glow {rad} pt");
+            // the radius as the file stores it (EMU) and the reader converts it
+            assert_eq!(fx_downscale(uo_jsnum::math::round(rad * 12_700.0) / 12_700.0, 20.0), k, "glow {rad} pt from EMU");
+        }
+        let shadow = [(2.0, 1.0), (10.0, 2.0), (18.0, 2.0), (20.0, 2.0), (21.0, 3.0), (30.0, 3.0), (40.0, 4.0), (41.0, 5.0), (60.0, 6.0), (61.0, 7.0), (80.0, 8.0)];
+        for (blur, k) in shadow {
+            assert_eq!(fx_downscale(blur, 10.0), k, "shadow blur {blur} pt");
+        }
+        assert_eq!(fx_downscale(f64::NAN, 20.0), 1.0);
+        assert_eq!(fx_downscale(f64::INFINITY, 20.0), 1.0);
+        assert_eq!(fx_downscale(0.0, 10.0), 1.0);
     }
 }

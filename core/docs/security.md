@@ -18,7 +18,7 @@ probes below live in `core/target/agent-sec/` (ignored) and are not committed.
 | # | Severity | Finding |
 |---|---|---|
 | SEC-M1-1 | **blocker** | Native stack overflow in the layout on 56 nested tables (1.5 KB docx): aborts the server process |
-| SEC-M1-2 | major | Text-effect rasters have no per-page/per-document budget: a 4.6 KB docx makes the PDF take 61 s (native) / 70 s (wasm, uncancellable) |
+| SEC-M1-2 | major | Text-effect rasters have no per-page/per-document budget: a 4.6 KB docx makes the PDF take 61 s (native) / 70 s (wasm, uncancellable); since "Effect resolution as the Word" (uo-bindings.md) about 1 s |
 | SEC-M1-3 | major | Server package limits are 8x the C# it replaces (4 GiB inflated per conversion vs 512 MiB) |
 | SEC-M1-4 | major | The page's single wasm module is kept after a trap; the viewer never reinstantiates it |
 | SEC-M1-5 | minor | Browser viewer: synchronous layout of a 6.9 KB mutant takes 63 s in wasm (2.8 s native) and keeps 613 MiB; trusted PDF caps and the 100,000-page default |
@@ -111,6 +111,11 @@ reader recursion (64 levels) and the parsers' depth guards (`formula_5000`, 200 
   server, uo-pdf checks the cancel flag every 256 items, so cancellation latency on this page is ≈ 26 s; with no
   cancellation token the conversion runs to the end. The frozen TS has the same work (parity) and no caps, so this is
   not a regression, but the plan's rule "where the TS hangs, Rust stops" is not met for effects.
+- **Update (2026-11-10, later)**: the PDF now lowers the resolution of large glows and shadows as the Word does
+  (uo-pdf `fx_downscale`, Rust only; uo-bindings.md "Effect resolution as the Word"): this page takes 1.08 s natively
+  with the layout and 1.29 s in wasm (the Word: 1.22 s). The committed fixture had one colour (1,750 B, the runs merged
+  into 16 layers, 2.7 s); it is now generated with a colour per run, as measured here. Still open: the screen painter
+  (6.2 s at 96 dpi, 39.7 s at 192 dpi on this page), effects under the Word's steps, picture and shape effects.
 - **Fix**: a paint work budget per page and per document (the sum of layer pixels × kernel work of every text effect
   and picture effect, like the layout's `Budget`), past which effects are dropped (with a warning) or the call fails
   with `Limit`; poll the cancel flag per effect item in uo-pdf; give `uo_layout_pdf` the same opt-in `layout_poll`

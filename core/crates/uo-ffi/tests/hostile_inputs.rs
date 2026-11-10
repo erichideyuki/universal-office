@@ -98,12 +98,17 @@ fn mixed(n: usize) -> Vec<u8> {
     docx(&format!("{s}{P}"))
 }
 
-/// `n` runs of "ab " each with a 78.7 pt `w14:glow` on one page: every layer is under the per-call
-/// caps, and the raster work grows faster than the runs (100 runs = 0.46 s, 600 runs = 59.5 s of
-/// PDF export natively, an 18 MB output).
+/// `n` runs of "ab " each with a 78.7 pt `w14:glow` of its own colour on one page: the runs do not
+/// merge, so the PDF has a layer per run, every one under the per-call caps (600 runs at 200 dpi:
+/// 44 s of wasm PDF, 18 MB; at the Word's 50 dpi, `fx_downscale`, see pdf_cancel_effects.rs).
 fn glow_dense(n: usize) -> Vec<u8> {
-    let run = r#"<w:r><w:rPr><w14:glow w14:rad="1000000"><w14:srgbClr w14:val="FF0000"/></w14:glow></w:rPr><w:t xml:space="preserve">ab </w:t></w:r>"#;
-    docx(&format!("<w:p>{}</w:p>", run.repeat(n)))
+    let runs: String = (0..n)
+        .map(|i| {
+            let c = (i as u32 + 1).wrapping_mul(2_654_435_761) & 0x00FF_FFFF;
+            format!(r#"<w:r><w:rPr><w14:glow w14:rad="1000000"><w14:srgbClr w14:val="{c:06X}"/></w14:glow></w:rPr><w:t xml:space="preserve">ab </w:t></w:r>"#)
+        })
+        .collect();
+    docx(&format!("<w:p>{runs}</w:p>"))
 }
 
 fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
