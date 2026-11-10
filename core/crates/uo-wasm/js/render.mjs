@@ -105,6 +105,7 @@ export function bindRender(w) {
     // the raw operations: a Buf each (call take()/free() on it)
     encodePage(page) { return new Buf(w.uo_render_encode_page(this.#ptr, page)); }
     fxLayers(page, item, ppt) { return new Buf(w.uo_render_fx_layers(this.#ptr, page, item, ppt)); }
+    fxLayerSet(page, item, ppt) { return new Buf(w.uo_render_fx_layer_set(this.#ptr, page, item, ppt)); }
     pattern(page, item) { return new Buf(w.uo_render_pattern(this.#ptr, page, item)); }
     rectGradient(page, item) { return new Buf(w.uo_render_rect_gradient(this.#ptr, page, item)); }
     blipTiles(page, item) { return new Buf(w.uo_render_blip_tiles(this.#ptr, page, item)); }
@@ -133,6 +134,7 @@ export function bindRender(w) {
   const paintOps = (v) => ({
     encodePage: (page) => new Buf(w.uo_render_encode_page(v(), page)),
     fxLayers: (page, item, ppt) => new Buf(w.uo_render_fx_layers(v(), page, item, ppt)),
+    fxLayerSet: (page, item, ppt) => new Buf(w.uo_render_fx_layer_set(v(), page, item, ppt)),
     pattern: (page, item) => new Buf(w.uo_render_pattern(v(), page, item)),
     rectGradient: (page, item) => new Buf(w.uo_render_rect_gradient(v(), page, item)),
     blipTiles: (page, item) => new Buf(w.uo_render_blip_tiles(v(), page, item)),
@@ -161,6 +163,19 @@ export function bindRender(w) {
       const d = dv(data);
       const w_ = d.getUint32(16, true), h = d.getUint32(20, true);
       return { x0: d.getFloat64(0, true), y0: d.getFloat64(8, true), w: w_, h, data: data.subarray(24, 24 + w_ * h * 4) };
+    },
+    /** `n`, then per layer `ppt` (its pixels per point), `x0, y0` (twips), `w, h`, RGBA */
+    fxLayerSet(data) {
+      if (!data) return null;
+      const d = dv(data);
+      const out = [];
+      let o = 4;
+      for (let i = 0, n = d.getUint32(0, true); i < n; i++) {
+        const w_ = d.getUint32(o + 24, true), h = d.getUint32(o + 28, true);
+        out.push({ ppt: d.getFloat64(o, true), x0: d.getFloat64(o + 8, true), y0: d.getFloat64(o + 16, true), w: w_, h, data: data.subarray(o + 32, o + 32 + w_ * h * 4) });
+        o += 32 + w_ * h * 4;
+      }
+      return out;
     },
     /** the pattern raster: grid corner, size in cells, pixel size, RGBA */
     pattern(data) {
@@ -248,6 +263,7 @@ export function bindRender(w) {
     const dec = (b, what, f) => { const d = lenient(b, what); return d ? f(d) : null; };
     return {
       fxLayer: (page, item, ppt) => dec(ops.fxLayers(page, item, ppt), 'fxLayers', decoders.fxLayer),
+      fxLayerSet: (page, item, ppt) => dec(ops.fxLayerSet(page, item, ppt), 'fxLayerSet', decoders.fxLayerSet),
       pattern: (page, item) => dec(ops.pattern(page, item), 'pattern', decoders.pattern),
       rectGradient: (page, item) => { const d = lenient(ops.rectGradient(page, item), 'rectGradient', [5]); return d ? decoders.raster(d) : null; },
       blipTiles: (page, item) => dec(ops.blipTiles(page, item), 'blipTiles', decoders.blipTiles),

@@ -17,7 +17,7 @@ use crate::list::ItemList;
 use crate::paint::fill::{PatternRaster, RectRaster, Tile, blip_tiles, pattern_raster, rect_gradient_raster};
 use crate::paint::page_fill::{gradient_tile_px, gradient_tile_rgba, page_fill_tile_tw, pattern_rgba};
 use crate::paint::picture::{AdjustParts, BevelParts, Bounds, Painter, effect_bounds, shadow_spec, shape_subs};
-use crate::paint::text_fx::{FxLayer, RunView, fx_layers};
+use crate::paint::text_fx::{FxLayer, RunView, fx_layer_set, fx_layers};
 use crate::paint::{PaintError, PaintLimits};
 use crate::resources::Resources;
 use crate::types::{Item, Page, PageFillKind, PictureLook, ShapeItem};
@@ -229,6 +229,21 @@ impl RenderView {
         let fx = list.run(*run).and_then(|s| s.fx).and_then(|id| res.text_fx(id)).ok_or(ViewError::WrongItem)?;
         let view = RunView::of(list, it, res).ok_or(ViewError::NoResource)?;
         Ok(fx_layers(&view, fx, &res.symbols, ppt, res.sym(*color), &self.limits)?)
+    }
+
+    /// The layers the screen paints a glyph run's effects in at `ppt` ([`fx_layer_set`]: one layer
+    /// as [`Self::fx_layers`] while every blur is under the Word's step, else a layer per effect at
+    /// its own resolution), each with its pixels per point.
+    ///
+    /// # Errors
+    /// [`ViewError::WrongItem`] for a run without effects; the helper's limits.
+    pub fn fx_layer_set(&self, page: usize, item: usize, ppt: f64) -> Result<Vec<(f64, FxLayer)>, ViewError> {
+        let (list, it) = self.item(page, item)?;
+        let Item::Glyphs { run, color, .. } = it else { return Err(ViewError::WrongItem) };
+        let res = self.resources();
+        let fx = list.run(*run).and_then(|s| s.fx).and_then(|id| res.text_fx(id)).ok_or(ViewError::WrongItem)?;
+        let view = RunView::of(list, it, res).ok_or(ViewError::NoResource)?;
+        Ok(fx_layer_set(&view, fx, &res.symbols, ppt, res.sym(*color), &self.limits)?)
     }
 
     /// `patternRaster(pattern, x, y, w, h, 15)` of a shape with an `a:pattFill` (canvas.ts:464).

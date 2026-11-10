@@ -19,6 +19,8 @@
 //! # Result layouts (little endian)
 //! - `uo_render_encode_page`: the message bytes.
 //! - `uo_render_fx_layers`: `x0 f64, y0 f64` (twips, the grid corner), `w u32, h u32`, RGBA (straight alpha).
+//! - `uo_render_fx_layer_set`: `n u32`, then per layer in paint order `ppt f64` (its pixels per point), `x0 f64, y0 f64`,
+//!   `w u32, h u32`, RGBA (straight alpha); status 1 when there is no layer.
 //! - `uo_render_pattern`: `x f64, y f64` (the grid corner), `cells_w f64, cells_h f64`, `w u32, h u32`, RGBA.
 //! - `uo_render_rect_gradient`: `w u32, h u32`, RGBA.
 //! - `uo_render_blip_tiles`: `n u32`, then `n x (x, y, w, h: f64)`.
@@ -334,6 +336,29 @@ pub unsafe extern "C" fn uo_render_fx_layers(view: *const UoRenderView, page: us
             buf(OK, o.0)
         }
         Ok(None) => none(),
+        Err(e) => fail(&e),
+    }
+}
+
+/// The screen's layers of a glyph run's text effects at `ppt` (uo-render `fx_layer_set`: the
+/// Word's lower resolution for large blurs, a layer per effect then).
+///
+/// # Safety
+/// `view` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_render_fx_layer_set(view: *const UoRenderView, page: usize, item: usize, ppt: f64) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view_ref(view) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    match v.fx_layer_set(page, item, ppt) {
+        Ok(ls) if ls.is_empty() => none(),
+        Ok(ls) => {
+            let mut o = Out::default();
+            o.u32(ls.len());
+            for (p, l) in &ls {
+                o.f64(*p).f64(l.x0).f64(l.y0).u32(l.w).u32(l.h).bytes(&l.data);
+            }
+            buf(OK, o.0)
+        }
         Err(e) => fail(&e),
     }
 }

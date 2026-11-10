@@ -806,11 +806,30 @@ tests (debug and release) green; clippy native clean.
   pt), 10-20 % wider than the visible part of its own PDF image (79 pt: 70 px against 57 px at 96 dpi) and far smaller
   than ours.
 
+**The screen too (maintainer: "the PDF rule, smoothed").** uo-render `fx_plan(fx, ppt)` measures each blur in pixels of
+`ppt` against those of 200 dpi, so the screen lowers a blur that spans as many pixels as one the PDF lowers (at 96 dpi
+the first step is a 41.7 pt glow, at 192 dpi 20.8 pt); `fx_layer_set` paints the plan and is shared by the PDF and the
+new export `uo_render_fx_layer_set` (`n`, then per layer `ppt, x0, y0, w, h, RGBA`; render.mjs `fxLayerSet`).
+`paint.ts` takes it when the source has it (else `fxLayer`), caches the layers per run and draws a coarser layer with
+`imageSmoothingEnabled = true` (bilinear, smooth as the Word's screen); a layer at the asked resolution is drawn exactly
+as before, without touching the smoothing (the frozen painter's call log). A coarse layer **pools its silhouette** from a
+grid `k` times finer (`fx_layers_pooled`): by the maximum for a glow, by the mean for a shadow or a reflection. Without
+it a 150 pt glow at 25 dpi vanished (alpha at most 1/255: the 12 pt letters covered no pixel centre).
+
+| 600 runs, 78.7 pt glow, 600 colours (wasm, Chromium) | 96 dpi | 192 dpi | PDF |
+|---|---|---|---|
+| before | 6.2 s | 39.7 s | 44.1 s |
+| now | **1.5 s** | **2.6 s** | **1.4 s** |
+| the Word | 0.33 s (`ScreenRefresh`) | 0.15 s | 1.2 s |
+
+`viewer_switch --mode parity` (every fixture): 0 differences; `paint_parity` Part B (200 generated pages, every
+painter branch, 4 configurations): 0 log mismatches; `render_paint`, `paint_memory`, uo-render/uo-pdf/uo-ffi/uo-wasm
+native suites, the shell's `tsc --strict` and clippy native + wasm32: green. New tests: `fx_plan` scaling (uo-render),
+`the_layer_set_follows_the_plan` (render_native: byte-equal to `fx_layers` under the step, 3 layers at 10, 5 and 10
+px/pt past it). Side by side with the Word (`core/target/pdf-time/compare/comparacao-zoom{100,200}.png`, outside git):
+our screen before and now look the same; **our glow is much larger than the Word's** from about 40 pt up (below).
+
 Open, not done here:
-- **The screen painter** does the same work at screen resolution: the 600-colour page takes 6.2 s to paint at 96 dpi and
-  39.7 s at 192 dpi (TS 1.1 s and 189 s; the Word 0.33 s); the rule is PDF only. Lowering the screen layers too would
-  change screen pixels against the TS; the Word's own screen step is not known (above), so a rule there would be ours
-  (for example the PDF's sigma cap in screen pixels, drawn with bilinear smoothing).
 - **The glow is larger than the Word's.** At 79 pt the Word's glow reaches about 28 pt past the text and ours about 79 pt
   (the layer reserves `1.2 × rad`); at 18 pt the Word's line image is 36 pt tall, ours 54 pt. Rendered side by side
   (`core/target/pdf-time/png/`), the Word's 79 pt glow looks like a much smaller one. Pre-existing, TS too: needs the

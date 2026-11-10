@@ -50,6 +50,9 @@ export interface Bounds { x0: number; y0: number; x1: number; y1: number }
  */
 export interface RasterSource {
   fxLayer(page: number, item: number, ppt: number): FxLayer | null;
+  /** the layers of a run's effects at `ppt` (one as `fxLayer` while every blur is under the Word's step, else a
+   *  layer per effect at its own pixels per point); a source without it paints `fxLayer` */
+  fxLayerSet?(page: number, item: number, ppt: number): (FxLayer & { ppt: number })[] | null;
   pattern(page: number, item: number): PatternRaster | null;
   rectGradient(page: number, item: number): Raster | null;
   blipTiles(page: number, item: number): Tile[] | null;
@@ -106,7 +109,8 @@ function dashPattern(dash: string | undefined): number[] {
   }
 }
 
-interface FxEntry { ppt: number; img: CanvasImageSource | null; x0: number; y0: number; w: number; h: number }
+/** the effect layers of a run, painted at `ppt` (each layer with the pixels per point it was drawn at) */
+interface FxEntry { ppt: number; layers: { ppt: number; img: CanvasImageSource; x0: number; y0: number; w: number; h: number }[] }
 
 /** The per-layout caches (dropped with the layout: a WeakMap on the owner). */
 class OwnerCaches {
@@ -428,14 +432,29 @@ function paintGlyphsFx(ctx: CanvasRenderingContext2D, p: PaintPage, index: numbe
     const key = `${p.index}:${index}`;
     let c = oc.fx.get(key);
     if (!c || Math.abs(c.ppt - ppt) > 0.01) {
-      const L = p.rasters.fxLayer(p.index, index, ppt);
-      c = L ? { ppt, img: rgbaCanvas(L.data, L.w, L.h), x0: L.x0, y0: L.y0, w: L.w, h: L.h } : { ppt, img: null, x0: 0, y0: 0, w: 0, h: 0 };
+      const set = p.rasters.fxLayerSet ? p.rasters.fxLayerSet(p.index, index, ppt) : null;
+      const one = p.rasters.fxLayerSet ? null : p.rasters.fxLayer(p.index, index, ppt);
+      const ls = set ?? (one ? [{ ...one, ppt }] : []);
+      const layers: FxEntry['layers'] = [];
+      for (const L of ls) {
+        const img = rgbaCanvas(L.data, L.w, L.h);
+        if (img) layers.push({ ppt: L.ppt, img, x0: L.x0, y0: L.y0, w: L.w, h: L.h });
+      }
+      c = { ppt, layers };
       if (!oc.fx.has(key) && oc.fx.size >= caches.capFx) oc.fx.clear();
       oc.fx.set(key, c);
     }
-    if (c.img) {
+    if (c.layers.length) {
       ctx.globalAlpha = base;
-      ctx.drawImage(c.img, c.x0, c.y0, (c.w / ppt) * 20, (c.h / ppt) * 20);
+      // a layer below the asked resolution (a large blur, the Word's rule) is scaled up smoothly, as the Word's
+      // screen shows it; a layer at the asked resolution lands 1:1 and the smoothing setting does not touch it
+      for (const l of c.layers) {
+        if (l.ppt === ppt) { ctx.drawImage(l.img, l.x0, l.y0, (l.w / l.ppt) * 20, (l.h / l.ppt) * 20); continue; }
+        const smooth = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(l.img, l.x0, l.y0, (l.w / l.ppt) * 20, (l.h / l.ppt) * 20);
+        ctx.imageSmoothingEnabled = smooth;
+      }
     }
   }
   const paintOf = (f: ResolvedFill, geom: GradGeom | undefined): string | CanvasGradient | null => {

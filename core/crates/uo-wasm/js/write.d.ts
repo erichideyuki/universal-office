@@ -115,6 +115,7 @@ export interface PaintOps {
   /** the render message alone (no Write section), on the same resource mark as `WriteLayout.encodePage` */
   encodePage(page: number): Buf;
   fxLayers(page: number, item: number, ppt: number): Buf;
+  fxLayerSet(page: number, item: number, ppt: number): Buf;
   pattern(page: number, item: number): Buf;
   rectGradient(page: number, item: number): Buf;
   blipTiles(page: number, item: number): Buf;
@@ -149,6 +150,8 @@ export interface PaintOps {
  */
 export interface RasterSource {
   fxLayer(page: number, item: number, ppt: number): { x0: number; y0: number; w: number; h: number; data: Uint8Array } | null;
+  /** the screen's layers (the Word's lower resolution for large blurs, a layer per effect then), each with its pixels per point */
+  fxLayerSet(page: number, item: number, ppt: number): { ppt: number; x0: number; y0: number; w: number; h: number; data: Uint8Array }[] | null;
   pattern(page: number, item: number): { x: number; y: number; cellsW: number; cellsH: number; w: number; h: number; data: Uint8Array } | null;
   rectGradient(page: number, item: number): { w: number; h: number; data: Uint8Array } | null;
   blipTiles(page: number, item: number): { x: number; y: number; w: number; h: number }[] | null;

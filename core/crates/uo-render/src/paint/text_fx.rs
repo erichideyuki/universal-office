@@ -248,6 +248,28 @@ pub fn fx_layers(
     text_hex: &[u16],
     lim: &PaintLimits,
 ) -> PaintResult<Option<FxLayer>> {
+    fx_layers_pooled(run, fx, syms, ppt, 1, text_hex, lim)
+}
+
+/// [`fx_layers`] on a grid of `ppt` whose silhouette is rasterized `pool` times finer and pooled
+/// down: by the maximum for a glow (its dilation keeps a thin stroke at full strength; sampled at a
+/// coarse grid the stroke of a 12 pt letter at 25 dpi covers no pixel centre and the glow vanished),
+/// by the mean for a shadow or a reflection (their blur is linear: the mean is the covered area).
+/// `pool` 1 is [`fx_layers`] itself; it shrinks while the fine grid would pass
+/// [`PaintLimits::max_fx_px`].
+///
+/// # Errors
+/// As [`fx_layers`].
+#[allow(clippy::too_many_arguments)]
+pub fn fx_layers_pooled(
+    run: &RunView<'_>,
+    fx: &ResolvedTextFx,
+    syms: &SymbolTable,
+    ppt: f64,
+    pool: usize,
+    text_hex: &[u16],
+    lim: &PaintLimits,
+) -> PaintResult<Option<FxLayer>> {
     if fx.shadow.is_none() && fx.glow.is_none() && fx.reflection.is_none() {
         return Ok(None);
     }
@@ -265,10 +287,24 @@ pub fn fx_layers(
     let (Some(w), Some(h)) = (js_index(wf, 1 << 31), js_index(hf, 1 << 31)) else { return Ok(None) };
     let (wu, hu) = (u32::try_from(w).map_err(|_| PaintError::Invalid)?, u32::try_from(h).map_err(|_| PaintError::Invalid)?);
     let tw = ppt / 20.0;
-    let polys = uo_drawingml::flatten_path(&subs, &Affine([tw, 0.0, 0.0, tw, -x0 * tw, -y0 * tw]), 0.35, &lim.draw)?;
-    let mut sil = Mask::new(wu, hu, &lim.draw)?;
-    uo_drawingml::fill_polygons(&mut sil, &polys, false, &lim.draw)?;
-    drop(polys);
+    let mut k = pool.max(1);
+    while k > 1 && w.saturating_mul(h).saturating_mul(k * k) as f64 > cap {
+        k -= 1;
+    }
+    let mut sil = if k == 1 {
+        let polys = uo_drawingml::flatten_path(&subs, &Affine([tw, 0.0, 0.0, tw, -x0 * tw, -y0 * tw]), 0.35, &lim.draw)?;
+        let mut sil = Mask::new(wu, hu, &lim.draw)?;
+        uo_drawingml::fill_polygons(&mut sil, &polys, false, &lim.draw)?;
+        sil
+    } else {
+        let tk = tw * k as f64;
+        let ku = u32::try_from(k).map_err(|_| PaintError::Invalid)?;
+        let polys = uo_drawingml::flatten_path(&subs, &Affine([tk, 0.0, 0.0, tk, -x0 * tk, -y0 * tk]), 0.35, &lim.draw)?;
+        let mut fine = Mask::new(wu.saturating_mul(ku), hu.saturating_mul(ku), &lim.draw)?;
+        uo_drawingml::fill_polygons(&mut fine, &polys, false, &lim.draw)?;
+        let take_max = fx.glow.is_some() && fx.shadow.is_none() && fx.reflection.is_none();
+        pool_mask(&fine, w, h, k, take_max, wu, hu)?
+    };
     // outline: the silhouette grows half the thickness (glow and shadow follow the line)
     if let Some(o) = &fx.outline {
         let r = (o.width_pt / 2.0) * ppt;
@@ -331,6 +367,130 @@ pub fn fx_layers(
         .map(|(i, &v)| to_uint8_clamp(if i % 4 == 3 { round(f64::from(v) * 255.0) } else { round(f64::from(v)) }))
         .collect();
     Ok(Some(FxLayer { data, w, h, x0, y0 }))
+}
+
+/// The resolution of the PDF's text-effect layers (the Word writes about 200 dpi), pixels per point.
+pub const FX_PDF_PPT: f64 = 200.0 / 72.0;
+
+/// How much the Word lowers the resolution of a blurred text effect in the PDF: the layer goes at
+/// `200 / k` dpi. Measured in Word 365 (2026-11-10, one run per radius, `ExportAsFixedFormat`; the
+/// record is uo-bindings.md "Effect resolution as the Word"): glow up to 19 pt at 200 dpi, 20–40 pt
+/// at 100, 41–60 pt at 66.7, 61–80 pt at 50, 81–100 pt at 40, 150 pt at 25; shadow blur 2 pt at
+/// 200, 10–20 pt at 100, 21–30 pt at 66.7, 40 pt at 50, 41 pt at 40, 60 pt at 33.3, 61 pt at 28.6,
+/// 80 pt at 25. So `k = 1` under `step`, else `max(2, ceil(x / step))` with `step` = 20 pt of glow
+/// radius and 10 pt of shadow blur (the same Gaussian sigma, 10/3 pt, in both). A larger blur has
+/// no fine detail: the image looks the same and the work falls with k³. Not in the frozen TS (which
+/// always uses one layer at the asked resolution).
+#[must_use]
+pub fn fx_downscale(x_pt: f64, step_pt: f64) -> f64 {
+    // NaN, infinite and the small ones keep the asked resolution (as before); the EMU of the file
+    // can land a hair off a multiple
+    if !x_pt.is_finite() || x_pt < step_pt - 1e-9 {
+        return 1.0;
+    }
+    max(2.0, ceil(x_pt / step_pt - 1e-9))
+}
+
+/// The layers a run's effects are painted in at `ppt` pixels per point (the PDF at
+/// [`FX_PDF_PPT`], the screen at its device resolution): the Word's rule of [`fx_downscale`] with
+/// the blur measured in pixels of `ppt` against those of 200 dpi, so the screen lowers a blur that
+/// spans as many pixels as one the PDF lowers (a rule of ours: the Word's screen is smooth and below
+/// screen resolution, but its step was not measurable).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum FxPlan {
+    /// every blur under its step: one layer of the effects at `ppt` (the frozen TS, byte-equal)
+    One,
+    /// a layer per effect, in this order: the reflection at `ppt`, the shadow at `ppt / shadow`,
+    /// the glow at `ppt / glow`
+    Split { shadow: f64, glow: f64 },
+}
+
+/// [`FxPlan`] of `fx` at `ppt`.
+#[must_use]
+pub fn fx_plan(fx: &ResolvedTextFx, ppt: f64) -> FxPlan {
+    let scale = if ppt.is_finite() && ppt > 0.0 { ppt / FX_PDF_PPT } else { 1.0 };
+    let glow = fx.glow.as_ref().map_or(1.0, |g| fx_downscale(g.rad_pt * scale, 20.0));
+    let shadow = fx.shadow.as_ref().map_or(1.0, |s| fx_downscale(s.blur_pt * scale, 10.0));
+    if glow == 1.0 && shadow == 1.0 { FxPlan::One } else { FxPlan::Split { shadow, glow } }
+}
+
+/// The pooling factor of a layer `k` times coarser ([`fx_layers_pooled`]): `k` itself (an integer
+/// of [`fx_downscale`]).
+#[must_use]
+pub fn fx_pool(k: f64) -> usize {
+    js_index(k, 64).unwrap_or(1).max(1)
+}
+
+/// The effects of `fx` that one layer of [`FxPlan::Split`] paints: the outline (it grows the
+/// silhouette) and the chosen effect; no fill.
+#[must_use]
+pub fn fx_only(fx: &ResolvedTextFx, shadow: bool, glow: bool, reflection: bool) -> ResolvedTextFx {
+    ResolvedTextFx {
+        fill: None,
+        outline: fx.outline.clone(),
+        shadow: if shadow { fx.shadow } else { None },
+        glow: if glow { fx.glow } else { None },
+        reflection: if reflection { fx.reflection } else { None },
+    }
+}
+
+/// The layers of [`fx_plan`] in paint order, each with the pixels per point it was drawn at: one
+/// layer of [`fx_layers`] for [`FxPlan::One`], else one per present effect.
+///
+/// # Errors
+/// As [`fx_layers`].
+pub fn fx_layer_set(
+    run: &RunView<'_>,
+    fx: &ResolvedTextFx,
+    syms: &SymbolTable,
+    ppt: f64,
+    text_hex: &[u16],
+    lim: &PaintLimits,
+) -> PaintResult<Vec<(f64, FxLayer)>> {
+    let mut out = Vec::new();
+    match fx_plan(fx, ppt) {
+        FxPlan::One => {
+            if let Some(l) = fx_layers(run, fx, syms, ppt, text_hex, lim)? {
+                out.push((ppt, l));
+            }
+        }
+        FxPlan::Split { shadow, glow } => {
+            let parts = [
+                (fx.reflection.is_some(), fx_only(fx, false, false, true), 1.0),
+                (fx.shadow.is_some(), fx_only(fx, true, false, false), shadow),
+                (fx.glow.is_some(), fx_only(fx, false, true, false), glow),
+            ];
+            for (present, part, k) in parts {
+                if present && let Some(l) = fx_layers_pooled(run, &part, syms, ppt / k, fx_pool(k), text_hex, lim)? {
+                    out.push((ppt / k, l));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// `fine` (`w·k × h·k`) down to `w × h`: each cell the maximum or the mean of its `k × k` block.
+fn pool_mask(fine: &Mask, w: usize, h: usize, k: usize, take_max: bool, wu: u32, hu: u32) -> PaintResult<Mask> {
+    let fw = w * k;
+    let mut out = zeroed_f32(w.saturating_mul(h))?;
+    let inv = 1.0 / (k * k) as f32;
+    for (row_out, block) in out.chunks_exact_mut(w).zip(fine.data().chunks_exact(fw * k)) {
+        for line in block.chunks_exact(fw) {
+            for (cell, run) in row_out.iter_mut().zip(line.chunks_exact(k)) {
+                for &v in run {
+                    if take_max {
+                        if v > *cell {
+                            *cell = v;
+                        }
+                    } else {
+                        *cell += v * inv;
+                    }
+                }
+            }
+        }
+    }
+    Ok(Mask::from_vec(wu, hu, out)?)
 }
 
 /// `dilate(m, r)` (textfx.ts:200): the maximum over a disc of radius `r` pixels.
@@ -417,5 +577,59 @@ pub fn dash_pattern(dash: Option<&[u16]>) -> &'static [f64] {
         &[3.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     } else {
         &[]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FX_PDF_PPT, FxPlan, fx_downscale, fx_plan};
+    use crate::ids::Sym;
+    use crate::types::{FxGlow, FxShadow, ResolvedTextFx};
+
+    fn sym() -> Sym {
+        Sym::from_index(0).unwrap()
+    }
+
+    /// The resolutions the Word wrote (dpi = 200 / k) for one run per radius (fx_downscale's record).
+    #[test]
+    fn the_downscale_follows_the_word() {
+        let glow = [(2.0, 1.0), (18.0, 1.0), (19.0, 1.0), (20.0, 2.0), (21.0, 2.0), (36.0, 2.0), (40.0, 2.0), (41.0, 3.0), (60.0, 3.0), (61.0, 4.0), (79.0, 4.0), (80.0, 4.0), (81.0, 5.0), (100.0, 5.0), (150.0, 8.0)];
+        for (rad, k) in glow {
+            assert_eq!(fx_downscale(rad, 20.0), k, "glow {rad} pt");
+            // the radius as the file stores it (EMU) and the reader converts it
+            assert_eq!(fx_downscale(uo_jsnum::math::round(rad * 12_700.0) / 12_700.0, 20.0), k, "glow {rad} pt from EMU");
+        }
+        let shadow = [(2.0, 1.0), (10.0, 2.0), (18.0, 2.0), (20.0, 2.0), (21.0, 3.0), (30.0, 3.0), (40.0, 4.0), (41.0, 5.0), (60.0, 6.0), (61.0, 7.0), (80.0, 8.0)];
+        for (blur, k) in shadow {
+            assert_eq!(fx_downscale(blur, 10.0), k, "shadow blur {blur} pt");
+        }
+        assert_eq!(fx_downscale(f64::NAN, 20.0), 1.0);
+        assert_eq!(fx_downscale(f64::INFINITY, 20.0), 1.0);
+        assert_eq!(fx_downscale(0.0, 10.0), 1.0);
+    }
+
+    fn glow(rad_pt: f64) -> ResolvedTextFx {
+        ResolvedTextFx { glow: Some(FxGlow { rad_pt, hex: sym(), alpha: 1.0 }), ..ResolvedTextFx::default() }
+    }
+
+    /// The plan measures the blur in pixels of the asked resolution against those of 200 dpi.
+    #[test]
+    fn the_plan_scales_with_the_resolution() {
+        // the PDF: the Word's table
+        assert_eq!(fx_plan(&glow(19.0), FX_PDF_PPT), FxPlan::One);
+        assert_eq!(fx_plan(&glow(79.0), FX_PDF_PPT), FxPlan::Split { shadow: 1.0, glow: 4.0 });
+        // the screen at 96 dpi: a blur of 20 pt is 0.48 of the PDF's pixels; 41.7 pt is the first step
+        let p96 = 96.0 / 72.0;
+        assert_eq!(fx_plan(&glow(20.0), p96), FxPlan::One);
+        assert_eq!(fx_plan(&glow(41.0), p96), FxPlan::One);
+        assert_eq!(fx_plan(&glow(42.0), p96), FxPlan::Split { shadow: 1.0, glow: 2.0 });
+        assert_eq!(fx_plan(&glow(79.0), p96), FxPlan::Split { shadow: 1.0, glow: 2.0 });
+        // 192 dpi: the 79 pt glow goes at 192 / 4 = 48 dpi, about what it gets at 96 dpi
+        assert_eq!(fx_plan(&glow(79.0), 192.0 / 72.0), FxPlan::Split { shadow: 1.0, glow: 4.0 });
+        // a shadow alone, and nonsense resolutions keep the plan of 200 dpi
+        let sh = ResolvedTextFx { shadow: Some(FxShadow { blur_pt: 40.0, dist_pt: 3.0, dir_deg: 45.0, sx: 1.0, sy: 1.0, kx_deg: 0.0, ky_deg: 0.0, algn: sym(), hex: sym(), alpha: 0.6 }), ..ResolvedTextFx::default() };
+        assert_eq!(fx_plan(&sh, FX_PDF_PPT), FxPlan::Split { shadow: 4.0, glow: 1.0 });
+        assert_eq!(fx_plan(&glow(79.0), f64::NAN), FxPlan::Split { shadow: 1.0, glow: 4.0 });
+        assert_eq!(fx_plan(&ResolvedTextFx::default(), 3.0), FxPlan::One);
     }
 }

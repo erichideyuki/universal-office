@@ -332,3 +332,36 @@ fn the_picture_layer_exports_refuse_hostile_arguments() {
         uo_render_view_free(v);
     }
 }
+
+/// The screen's layer set (`uo_render_fx_layer_set`): the one layer of `uo_render_fx_layers` while the
+/// blurs are under the Word's step at that resolution; past it a layer per effect, each with its own
+/// pixels per point (the fixture run: shadow blur 3 pt, glow 4 pt, reflection 1 pt).
+#[test]
+fn the_layer_set_follows_the_plan() {
+    let v = uo_render_fixture(1);
+    // SAFETY: `v` is a live handle until the free at the end; results are released by `take`.
+    unsafe {
+        let (s, one) = take(uo_render_fx_layers(v, 0, 0, 2.0));
+        assert_eq!(s, 0);
+        let (s, set) = take(uo_render_fx_layer_set(v, 0, 0, 2.0));
+        assert_eq!(s, 0);
+        assert_eq!(u32::from_le_bytes(set[0..4].try_into().unwrap()), 1);
+        assert_eq!(f64::from_le_bytes(set[4..12].try_into().unwrap()), 2.0);
+        assert_eq!(&set[12..], &one[..], "under the step: the frozen TS's layer, byte-equal");
+        // at 10 px/pt the 3 pt shadow spans as many pixels as a 10.8 pt one at 200 dpi: past its step
+        let (s, set) = take(uo_render_fx_layer_set(v, 0, 0, 10.0));
+        assert_eq!(s, 0);
+        assert_eq!(u32::from_le_bytes(set[0..4].try_into().unwrap()), 3);
+        let mut o = 4;
+        let mut ppts = Vec::new();
+        for _ in 0..3 {
+            ppts.push(f64::from_le_bytes(set[o..o + 8].try_into().unwrap()));
+            let (w, h) = (u32::from_le_bytes(set[o + 24..o + 28].try_into().unwrap()), u32::from_le_bytes(set[o + 28..o + 32].try_into().unwrap()));
+            o += 32 + (w * h * 4) as usize;
+        }
+        assert_eq!(o, set.len());
+        assert_eq!(ppts, [10.0, 5.0, 10.0], "reflection, shadow at half, glow");
+        assert_eq!(take(uo_render_fx_layer_set(v, 0, 1, 2.0)).0, 7, "a shape is the wrong item");
+        uo_render_view_free(v);
+    }
+}
