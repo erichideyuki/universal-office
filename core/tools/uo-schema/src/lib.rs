@@ -18,6 +18,7 @@ pub mod model;
 mod out;
 pub mod parse;
 pub mod rust;
+pub mod rust_bind;
 pub mod rust_support;
 mod sha256;
 pub mod ts;
@@ -44,12 +45,16 @@ pub struct Target {
     pub ts_support: Option<PathBuf>,
     /// Where the TypeScript runtime is, relative to the root (default `crates/uo-codec/js/runtime.ts`).
     pub ts_runtime: Option<PathBuf>,
+    /// The conversions between the wire types and existing Rust types ([`rust_bind`]): the output file and
+    /// the bind map it reads (both relative to the root, both or neither).
+    pub rust_bind: Option<PathBuf>,
+    pub bind: Option<PathBuf>,
 }
 
 pub const DEFAULT_TS_RUNTIME: &str = "crates/uo-codec/js/runtime.ts";
 
 /// The manifest: one target per line, `schema.uos key=path ...` with the keys `rust`, `ts`,
-/// `rust_support`, `ts_support` and `ts_runtime`; `#` starts a comment. Every path is relative to the root
+/// `rust_support`, `ts_support`, `ts_runtime`, `rust_bind` and `bind`; `#` starts a comment. Every path is relative to the root
 /// (`core/`), the schema's too (`schema/render.uos`).
 pub fn parse_manifest(text: &str) -> Result<Vec<Target>, String> {
     let mut out = Vec::new();
@@ -72,6 +77,8 @@ pub fn parse_manifest(text: &str) -> Result<Vec<Target>, String> {
                 "rust_support" => t.rust_support = p,
                 "ts_support" => t.ts_support = p,
                 "ts_runtime" => t.ts_runtime = p,
+                "rust_bind" => t.rust_bind = p,
+                "bind" => t.bind = p,
                 _ => return Err(format!("manifest line {}: unknown key `{k}`", n + 1)),
             }
         }
@@ -106,8 +113,14 @@ fn slash(p: &Path) -> String {
     parts(p).join("/")
 }
 
-/// Generates every file of a target from its schema source.
+/// Generates every file of a target from its schema source (a target with `rust_bind` needs
+/// [`generate_target_with_bind`]).
 pub fn generate_target(target: &Target, source: &str) -> Result<Vec<Generated>, String> {
+    generate_target_with_bind(target, source, None)
+}
+
+/// [`generate_target`] with the text of the target's bind map (`bind=`), when it has one.
+pub fn generate_target_with_bind(target: &Target, source: &str, bind_map: Option<&str>) -> Result<Vec<Generated>, String> {
     let schema = load(source).map_err(|e| format!("{}: {e}", slash(&target.schema)))?;
     let label = slash(&target.schema);
     let mut files = Vec::new();
@@ -130,6 +143,24 @@ pub fn generate_target(target: &Target, source: &str) -> Result<Vec<Generated>, 
         let main = target.ts.as_ref().ok_or("`ts_support` needs `ts`")?;
         files.push(Generated { path: p.clone(), text: ts_support::emit(&schema, &label, &relative_import(p, main)) });
     }
+    match (&target.rust_bind, &target.bind) {
+        (Some(p), Some(b)) => {
+            let main = target.rust.as_ref().ok_or("`rust_bind` needs `rust`")?;
+            if main.parent() != p.parent() {
+                return Err("`rust_bind` must be in the same directory as `rust`".to_string());
+            }
+            let text = bind_map.ok_or("`rust_bind`: the bind map was not read")?;
+            let map = rust_bind::parse(text).map_err(|e| format!("{}: {e}", slash(b)))?;
+            let source = format!("{label} and {}", slash(b));
+            let stem = main.file_stem().and_then(|s| s.to_str()).ok_or("bad `rust` path")?;
+            files.push(Generated {
+                path: p.clone(),
+                text: rust_bind::emit(&schema, &map, &source, stem).map_err(|e| format!("{}: {e}", slash(b)))?,
+            });
+        }
+        (None, None) => {}
+        _ => return Err("`rust_bind` and `bind` go together".to_string()),
+    }
     Ok(files)
 }
 
@@ -140,7 +171,14 @@ pub fn generate_all(root: &Path, manifest: &Path) -> Result<Vec<Generated>, Stri
     for t in parse_manifest(&text)? {
         let path = root.join(&t.schema);
         let src = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        all.extend(generate_target(&t, &src)?);
+        let bind = match &t.bind {
+            Some(b) => {
+                let p = root.join(b);
+                Some(normalized(&fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?))
+            }
+            None => None,
+        };
+        all.extend(generate_target_with_bind(&t, &src, bind.as_deref())?);
     }
     Ok(all)
 }

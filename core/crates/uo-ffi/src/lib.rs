@@ -1,7 +1,7 @@
 //! C ABI of the Rust core for the .NET facade (`core/dotnet/UniversalOffice.Docx`). Milestone 1:
 //! the server PDF path (uo-pdf frontier S). Record: `core/docs/modules/uo-bindings.md`.
 //!
-//! Conventions of every export (the Editing API of uo-docx D3 joins them later):
+//! Conventions of every export (the Editing API of uo-docx D3, module [`editing`], follows them too):
 //! - **status**: an `int32` from [`pipeline::code`] (0 ok); the details of a failure through
 //!   [`pipeline::uo_last_error`] / [`pipeline::uo_last_error_message`], a per-thread slot that every
 //!   export clears first;
@@ -20,6 +20,7 @@
 //! Native only: the browser binding is uo-wasm (which shares [`pipeline`]); on wasm32 this crate is empty.
 #![cfg(not(target_arch = "wasm32"))]
 
+pub mod editing;
 pub mod pipeline;
 pub mod server;
 
@@ -341,14 +342,15 @@ pub unsafe extern "C" fn uo_docx_to_pdf(
         // thread) 56 levels overflow, and an overflow aborts the process
         let conv = &c.conv;
         let worker = std::thread::scope(|s| {
-            let spawned = std::thread::Builder::new().name("uo-convert".into()).stack_size(CONVERSION_STACK_BYTES).spawn_scoped(s, move || {
-                conv.docx_to_pdf(bytes.to_vec(), &pdf_job, flag).map_err(|e| pipeline::LastError {
-                    code: e.code(),
-                    stage: e.stage(),
-                    max: e.max(),
-                    message: e.message(),
-                })
-            });
+            let spawned =
+                std::thread::Builder::new().name("uo-convert".into()).stack_size(CONVERSION_STACK_BYTES).spawn_scoped(s, move || {
+                    conv.docx_to_pdf(bytes.to_vec(), &pdf_job, flag).map_err(|e| pipeline::LastError {
+                        code: e.code(),
+                        stage: e.stage(),
+                        max: e.max(),
+                        message: e.message(),
+                    })
+                });
             match spawned {
                 Ok(h) => Some(h.join()),
                 Err(_) => None,

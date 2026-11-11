@@ -219,6 +219,7 @@ macro_rules! with_ldoc {
             depth: $cx.depth,
             line_seq: &mut *$cx.line_seq,
             images: &mut *$cx.images,
+            memo: None,
         }
     };
 }
@@ -335,7 +336,16 @@ impl Engine {
     /// Prepares a paragraph object (`prepareParagraph(this.ctx, para, env)`).
     pub(crate) fn prepare(&mut self, cx: &mut Cx<'_, '_>, para: &PSrc, env: &ParaEnv) -> LResult<PreparedPara> {
         match para {
-            PSrc::Doc(k) => prepare_paragraph(cx, self, *k, env),
+            // the paragraph memo of an incremental relayout (LA7 level 1), taken out while it works
+            // so nothing prepared inside it (a field's own layout) uses it
+            PSrc::Doc(k) => match cx.memo.take() {
+                Some(m) => {
+                    let r = crate::incr::memo::prepare(m, self, cx, *k, env);
+                    cx.memo = Some(m);
+                    r
+                }
+                None => prepare_paragraph(cx, self, *k, env),
+            },
             PSrc::Rt(rt) => self.prepare_rt(cx, rt, env),
         }
     }
@@ -614,7 +624,7 @@ impl Engine {
         // the keepNext paragraph's own "after" counts up to the next one; contextual with the
         // next one in the same style drops it (oracle keepgap)
         let from = match self.block_at(cx, block_idx) {
-            Some(LBlock::Paragraph(k)) => Some(prepare_paragraph(cx, self, k, &none)?),
+            Some(LBlock::Paragraph(k)) => Some(self.prepare(cx, &PSrc::Doc(k), &none)?),
             _ => None,
         };
         let mut after = from.as_ref().map_or(0.0, after_of);
@@ -625,7 +635,7 @@ impl Engine {
                 let t = self.flow_table(cx, block_idx + 1, block).ok_or(LayoutError::Internal("nextBlockLead: table block"))?;
                 return Ok(Lead::Done(self.table_lead(cx, t, width, from.as_ref(), after)?));
             }
-            LBlock::Paragraph(k) => prepare_paragraph(cx, self, k, &none)?,
+            LBlock::Paragraph(k) => self.prepare(cx, &PSrc::Doc(k), &none)?,
         };
         let mut before = q.space_before;
         let mut ctx_after: Option<f64> = None;

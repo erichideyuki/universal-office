@@ -19,7 +19,7 @@ count = ["dep:uo-alloc", "uo-alloc/global"]
 uo-alloc = { path = "../uo-alloc", optional = true }
 # the read path of milestone 1 (record core/docs/modules/uo-bindings.md): docx (and .doc, D4) → model → layout → PDF
 uo-opc = { path = "../uo-opc" }
-uo-docx = { path = "../uo-docx", features = ["doc"] }
+uo-docx = { path = "../uo-docx", features = ["doc", "editing-api"] }
 # the TS Set of the hyphenation patterns loaded (LayoutOptions)
 indexmap = "2"
 uo-docx-layout = { path = "../uo-docx-layout" }

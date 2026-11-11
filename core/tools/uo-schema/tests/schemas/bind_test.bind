@@ -1,0 +1,13 @@
+# The bind map of schemas/bind_test.uos (tests/bind.rs).
+runtime crate::bind_runtime
+
+Point struct crate::bind_native::Point
+Tagged struct crate::bind_native::Tagged default
+ShapePair tuple
+Shape enum crate::bind_native::Shape native_only=Only
+Color enum crate::bind_native::Color
+Id newtype crate::bind_native::Id
+TupF64U32 tuple
+OptPoint option
+Bag struct crate::bind_native::Bag
+Report struct crate::bind_native::Report into_only

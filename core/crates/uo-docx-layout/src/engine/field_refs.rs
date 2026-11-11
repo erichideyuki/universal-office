@@ -366,6 +366,8 @@ impl Engine {
     /// the first call (cell paragraphs count without a marker of their own).
     pub(crate) fn list_number_of(&mut self, cx: &mut Cx<'_, '_>, block: f64) -> LResult<Option<NumberMarker>> {
         if self.list_texts.is_none() {
+            // the list markers of every block (LA7)
+            self.note_read_all();
             let fmt = cx.ldoc.view.formatting();
             let mut st = word::numbering_state(&cx.opts.lang, &cx.opts.limits);
             let mut out: IndexMap<u32, Option<NumberMarker>> = IndexMap::new();
@@ -398,6 +400,7 @@ impl Engine {
     /// The model table of flow block `i` (`LBlock::Table { block }`): from the body story, or
     /// from its endnote's story in the endnote flow.
     pub(crate) fn flow_table<'a>(&self, cx: &Cx<'_, 'a>, i: usize, block: u32) -> Option<&'a crate::model::Table> {
+        self.note_read(i);
         let story = match &self.en_blocks {
             Some(en) => en.get(i)?.story?,
             None => self.story,

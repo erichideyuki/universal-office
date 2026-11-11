@@ -7,7 +7,10 @@
 
 mod common;
 
-use std::collections::HashMap;
+use common::docgen::{big_doc, docx, para, sect};
+use common::hyph::{hyph_opts as opts, hyph_registry};
+use common::open_fonts::OpenFonts;
+
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -15,136 +18,9 @@ use std::time::{Duration, Instant};
 use uo_alloc::assert_no_leak;
 use uo_docx_layout::Layout;
 use uo_docx_layout::error::LayoutError;
-use uo_docx_layout::fonts::{FontAnswer, FontProvider};
+use uo_docx_layout::fonts::FontProvider;
 use uo_docx_layout::hyphenate::HyphenSessions;
 use uo_docx_layout::options::LayoutOptions;
-use uo_fonts::FontLimits;
-use uo_fonts::registry::{AnswerParts, FaceCache, FontBudget};
-
-const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-
-/// The repository's open fonts behind a fixed family map (one answer per request key).
-struct OpenFonts {
-    cache: Arc<FaceCache>,
-    files: HashMap<String, Arc<[u8]>>,
-    answers: Mutex<HashMap<(String, bool, bool), Arc<FontAnswer>>>,
-}
-
-impl OpenFonts {
-    fn new() -> OpenFonts {
-        let mut files = HashMap::new();
-        for dir in ["shared/fonts/files", "site/assets/fonts"] {
-            let Ok(rd) = std::fs::read_dir(common::repo().join(dir)) else { continue };
-            for e in rd.flatten() {
-                let p = e.path();
-                if p.extension().is_some_and(|x| x == "ttf") {
-                    let name = p.file_stem().unwrap().to_string_lossy().into_owned();
-                    files.insert(name, Arc::from(std::fs::read(&p).unwrap()));
-                }
-            }
-        }
-        OpenFonts {
-            cache: Arc::new(FaceCache::new(FontBudget::of(uo_fonts::registry::FontProfile::Desktop), FontLimits::default())),
-            files,
-            answers: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
-impl FontProvider for OpenFonts {
-    fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>> {
-        let fam = family.to_lowercase();
-        let k = (fam.clone(), bold, italic);
-        if let Some(a) = self.answers.lock().unwrap().get(&k) {
-            return Some(Arc::clone(a));
-        }
-        let base = match fam.as_str() {
-            "carlito" | "calibri" => "carlito",
-            "caladea" | "cambria" => "caladea",
-            "liberation serif" | "times new roman" => "liberationserif",
-            "liberation mono" | "courier new" => "liberationmono",
-            _ => "liberationsans",
-        };
-        let v = match (bold, italic) {
-            (false, false) => "regular",
-            (true, false) => "bold",
-            (false, true) => "italic",
-            (true, true) => "bolditalic",
-        };
-        let bytes = self.files.get(&format!("{base}-{v}"))?.clone();
-        let a = FontAnswer::new(AnswerParts {
-            key: format!("{family}|{}{}", u8::from(bold), u8::from(italic)),
-            family: family.to_owned(),
-            face: self.cache.get_or_parse(bytes).ok()?,
-            bold,
-            italic,
-            synth_bold: false,
-            synth_italic: false,
-            stand_in: false,
-            advances: None,
-            ticket: None,
-        });
-        self.answers.lock().unwrap().insert(k, Arc::clone(&a));
-        Some(a)
-    }
-}
-
-fn hyph_registry() -> Arc<uo_fonts::hyphen::HyphenationRegistry> {
-    let mut reg = uo_fonts::hyphen::HyphenationRegistry::new();
-    for id in uo_fonts::hyphen::HYPHENATION_PATTERN_IDS {
-        if let Some(p) = uo_fonts::embedded_patterns(id) {
-            reg.register(&p);
-        }
-    }
-    Arc::new(reg)
-}
-
-/// A docx with `body` (paragraph XML) and the final `sect` (sectPr XML), plus a style sheet with a
-/// heading, a contextual style and the line-number style, and a two-level numbering.
-fn docx(body: &str, sect: &str, settings: &str) -> Vec<u8> {
-    let doc = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="{W}"><w:body>{body}{sect}</w:body></w:document>"#
-    );
-    let styles = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Liberation Serif" w:hAnsi="Liberation Serif"/><w:sz w:val="22"/><w:lang w:val="pt-BR"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="259" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="H1"><w:name w:val="heading 1"/><w:pPr><w:keepNext/><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="C"><w:name w:val="Corpo"/><w:pPr><w:contextualSpacing/></w:pPr></w:style><w:style w:type="character" w:styleId="LN"><w:name w:val="line number"/></w:style></w:styles>"#
-    );
-    let numbering = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="{W}"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2)"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>"#
-    );
-    let settings = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="{W}">{settings}</w:settings>"#);
-    let ct = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#;
-    let rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
-    let doc_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rN" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rT" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#;
-    let mut z = uo_opc::zip::ZipWriter::new(uo_opc::zip::WriteOptions::default());
-    for (name, data) in [
-        ("[Content_Types].xml", ct.to_owned()),
-        ("_rels/.rels", rels.to_owned()),
-        ("word/document.xml", doc),
-        ("word/_rels/document.xml.rels", doc_rels.to_owned()),
-        ("word/styles.xml", styles),
-        ("word/numbering.xml", numbering),
-        ("word/settings.xml", settings),
-    ] {
-        z.add(name, data.as_bytes()).unwrap();
-    }
-    z.finish()
-}
-
-fn words(n: usize, seed: usize) -> String {
-    const WS: [&str; 12] =
-        ["o", "motor", "de", "layout", "quebra", "linhas", "colunas", "secoes", "informação", "parágrafo", "página", "responsabilidade"];
-    (0..n).map(|i| WS[(i * 7 + seed * 3) % WS.len()]).collect::<Vec<_>>().join(" ")
-}
-
-fn para(ppr: &str, n: usize, seed: usize) -> String {
-    format!(r#"<w:p><w:pPr>{ppr}</w:pPr><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, words(n, seed))
-}
-
-fn sect(cols: u32, extra: &str, kind: &str) -> String {
-    format!(
-        r#"<w:sectPr>{kind}<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:right="1701" w:bottom="1417" w:left="1701" w:header="708" w:footer="708" w:gutter="0"/><w:cols w:num="{cols}" w:space="708" w:sep="1"/>{extra}</w:sectPr>"#
-    )
-}
 
 /// A document of every F7a path: sections (continuous with balanced columns, next page, even
 /// page), keepNext/keepLines, widows, page breaks, border groups, shading, line numbers, lists,
@@ -252,27 +128,6 @@ fn canon_bytes(l: &Layout) -> Vec<u8> {
     s.0
 }
 
-fn opts() -> LayoutOptions {
-    LayoutOptions {
-        hyphenation_loaded: uo_fonts::hyphen::HYPHENATION_PATTERN_IDS.iter().map(|s| Box::<str>::from(*s)).collect(),
-        ..LayoutOptions::default()
-    }
-}
-
-/// A document that takes a release layout several hundred ms: `paragraphs` paragraphs of 80-120
-/// words (every 10th keepNext), a PAGE/NUMPAGES field (two or more passes).
-fn big_doc(paragraphs: usize) -> Vec<u8> {
-    let mut b = String::new();
-    for i in 0..paragraphs {
-        let ppr = if i % 10 == 0 { "<w:keepNext/>" } else { "" };
-        b.push_str(&para(ppr, 80 + (i * 7) % 41, i));
-        if i == 3 {
-            b.push_str(r#"<w:p><w:r><w:t>p. </w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>"#);
-        }
-    }
-    docx(&b, &sect(1, "", ""), "")
-}
-
 fn with_flag(flag: &Arc<AtomicBool>) -> LayoutOptions {
     LayoutOptions { cancel: Some(Arc::clone(flag)), ..opts() }
 }
@@ -309,7 +164,7 @@ fn run(
 
 #[test]
 fn a_raised_flag_stops_before_any_work() {
-    let (fonts, reg) = (OpenFonts::new(), hyph_registry());
+    let (fonts, reg) = (OpenFonts::at(&common::repo()), hyph_registry());
     let flag = Arc::new(AtomicBool::new(true));
     let r = run(&every_path(), &fonts, &reg, &with_flag(&flag));
     assert_eq!(r.map(|_| ()), Err(LayoutError::Cancelled));
@@ -340,7 +195,7 @@ fn raiser(
 #[test]
 fn raising_the_flag_mid_layout_returns_promptly() {
     let _g = SERIAL.lock().unwrap();
-    let (fonts, reg) = (OpenFonts::new(), hyph_registry());
+    let (fonts, reg) = (OpenFonts::at(&common::repo()), hyph_registry());
     // debug builds use a smaller document (the layout there is an order of magnitude slower)
     let bytes = big_doc(if cfg!(debug_assertions) { 150 } else { 650 });
     drop(run(&big_doc(5), &fonts, &reg, &opts()).map(|_| ())); // warm: the faces and hyphenation tables are the same
@@ -374,7 +229,7 @@ fn raising_the_flag_mid_layout_returns_promptly() {
 #[test]
 fn poll_cancels_at_the_kth_poll_deterministically() {
     let _g = SERIAL.lock().unwrap();
-    let (fonts, reg) = (OpenFonts::new(), hyph_registry());
+    let (fonts, reg) = (OpenFonts::at(&common::repo()), hyph_registry());
     let bytes = big_doc(120);
     POLLS.store(0, Ordering::Relaxed);
     STOP_AT.store(usize::MAX, Ordering::Relaxed);
@@ -393,7 +248,7 @@ fn poll_cancels_at_the_kth_poll_deterministically() {
 #[test]
 fn m1_a_cancelled_layout_leaves_nothing() {
     let _g = SERIAL.lock().unwrap();
-    let (fonts, reg) = (OpenFonts::new(), hyph_registry());
+    let (fonts, reg) = (OpenFonts::at(&common::repo()), hyph_registry());
     let bytes = big_doc(120);
     POLLS.store(0, Ordering::Relaxed);
     STOP_AT.store(usize::MAX, Ordering::Relaxed);
@@ -430,12 +285,12 @@ fn m1_a_cancelled_layout_leaves_nothing() {
 fn a_layout_after_a_cancelled_one_is_identical() {
     let _g = SERIAL.lock().unwrap();
     let bytes = big_doc(120);
-    let (fonts, reg) = (OpenFonts::new(), hyph_registry());
+    let (fonts, reg) = (OpenFonts::at(&common::repo()), hyph_registry());
     POLLS.store(0, Ordering::Relaxed);
     STOP_AT.store(3, Ordering::Relaxed);
     assert_eq!(run(&bytes, &fonts, &reg, &poll_opts()).map(|_| ()), Err(LayoutError::Cancelled));
     let after = run(&bytes, &fonts, &reg, &opts()).unwrap();
-    let (fresh_fonts, fresh_reg) = (OpenFonts::new(), hyph_registry());
+    let (fresh_fonts, fresh_reg) = (OpenFonts::at(&common::repo()), hyph_registry());
     let fresh = run(&bytes, &fresh_fonts, &fresh_reg, &opts()).unwrap();
     assert_eq!(fingerprint(&after), fingerprint(&fresh));
     // the whole item sequence, not only the counts
@@ -454,7 +309,7 @@ fn bench_cancel_check_cost() {
     let Some(runs) = std::env::var("UO_G4_BENCH").ok().and_then(|v| v.parse::<usize>().ok()) else { return };
     let _g = SERIAL.lock().unwrap();
     let bytes = std::env::var("UO_G4_DOC").ok().map_or_else(|| big_doc(650), |p| std::fs::read(p).unwrap());
-    let (fonts, reg) = (OpenFonts::new(), hyph_registry());
+    let (fonts, reg) = (OpenFonts::at(&common::repo()), hyph_registry());
     let flag = Arc::new(AtomicBool::new(false));
     let modes: [(&str, LayoutOptions); 3] =
         [("A none", opts()), ("B flag", with_flag(&flag)), ("C poll", LayoutOptions { cancel_poll: Some(counting_poll), ..opts() })];

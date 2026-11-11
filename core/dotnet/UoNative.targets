@@ -1,0 +1,19 @@
+<Project>
+  <!-- Builds the native core (uo-ffi, release, feature `count`) and copies it next to the project's output.
+       Shared by the Tests, Smoke, FrozenSuite and Parity projects: all of them build the SAME library with the
+       same features, so switching projects does not relink the shared release/uo_ffi.dll with LTO.
+       CARGO_TARGET_DIR (or core/target) is where cargo writes. -p:UoSkipCargo=true copies the library cargo already built. -->
+  <PropertyGroup>
+    <CoreDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..'))</CoreDir>
+    <CargoTarget Condition="'$(CARGO_TARGET_DIR)' != ''">$(CARGO_TARGET_DIR)</CargoTarget>
+    <CargoTarget Condition="'$(CARGO_TARGET_DIR)' == ''">$(CoreDir)/target</CargoTarget>
+    <CargoJobs Condition="'$(CargoJobs)' == ''">4</CargoJobs>
+    <NativeName Condition="$([MSBuild]::IsOSPlatform('Windows'))">uo_ffi.dll</NativeName>
+    <NativeName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libuo_ffi.so</NativeName>
+    <NativeName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libuo_ffi.dylib</NativeName>
+  </PropertyGroup>
+  <Target Name="BuildRustCore" BeforeTargets="Build">
+    <Exec Condition="'$(UoSkipCargo)' != 'true'" Command="cargo build -p uo-ffi --release --features count -j $(CargoJobs)" WorkingDirectory="$(CoreDir)" />
+    <Copy SourceFiles="$(CargoTarget)/release/$(NativeName)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

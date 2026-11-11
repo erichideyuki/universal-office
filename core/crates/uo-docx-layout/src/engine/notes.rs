@@ -542,6 +542,7 @@ impl Engine {
     /// The block `i` of the flow being walked: the endnote flow's while it comes out, else the
     /// story's (`this.full.blocks[i]`).
     pub(crate) fn flow_block(&self, cx: &Cx<'_, '_>, i: usize) -> Option<LBlock> {
+        self.note_read(i);
         match &self.en_blocks {
             Some(en) => en.get(i).map(|b| b.block),
             None => cx.ldoc.stories.get(self.story as usize).and_then(|s| s.blocks.get(i)).copied(),

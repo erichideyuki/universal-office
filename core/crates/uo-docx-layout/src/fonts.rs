@@ -157,18 +157,61 @@ impl FaceTable {
     pub fn is_empty(&self) -> bool {
         self.by_answer.is_empty()
     }
+
+    /// A copy holding the faces with an id below `faces` (the resource faces of a checkpoint;
+    /// the table only grows within a call, LA7). The lazily computed equation info stays.
+    #[must_use]
+    pub fn prefix(&self, faces: usize) -> FaceTable {
+        FaceTable {
+            entries: self.entries.iter().take(faces).cloned().collect(),
+            by_answer: self.by_answer.iter().filter(|(_, id)| id.index() < faces).map(|(a, id)| (*a, *id)).collect(),
+        }
+    }
+
+    /// The same faces as `other` (identities and ids; LA7).
+    #[must_use]
+    pub fn same_as(&self, other: &FaceTable) -> bool {
+        self.entries.len() == other.entries.len()
+            && self.by_answer.len() == other.by_answer.len()
+            && self.entries.iter().zip(&other.entries).all(|(a, b)| match (a, b) {
+                (Some(a), Some(b)) => a.id == b.id && a.answer.id() == b.answer.id(),
+                (None, None) => true,
+                _ => false,
+            })
+    }
 }
 
 /// `FaceResolver.cache` (fonts.ts:225): per **layout call** (K4, LQ19), keyed as the TS
 /// (`${fam.toLowerCase()}|${bold?1:0}${italic?1:0}`, the family trimmed), the resolved face after
 /// the Word substitution chain. The TS throws when nothing resolves, so a key is never cached
 /// without a face.
+///
+/// `resolved` is an `IndexMap` (insertion order, never observed: only `get`/`insert`) so a
+/// checkpoint of the incremental relayout can truncate it to its length at a page start (LA7,
+/// D-LA7-4); it was an `FxHashMap`.
 #[derive(Debug, Default)]
 pub struct FaceResolverCache {
-    resolved: FxHashMap<Box<str>, FaceId>,
+    resolved: indexmap::IndexMap<Box<str>, FaceId, rustc_hash::FxBuildHasher>,
     /// every request the provider answered `None`, first miss first (`Layout::missing_faces`;
     /// added by F8)
     misses: indexmap::IndexSet<crate::output::FaceRequest>,
+    /// every provider request and the identity of its answer, in order (`Some` only while an
+    /// incremental relayout records: the next relayout asks them again to know the provider
+    /// still answers the same faces, LA7)
+    pub log: Option<Vec<ProviderAsk>>,
+    /// every key asked (cached or not) and its face, first ask first (`Some` only while the
+    /// paragraph memo records one paragraph: a hit needs the same keys cached with the same
+    /// faces, LA7 level 1)
+    pub tap: Option<indexmap::IndexMap<Box<str>, FaceId, rustc_hash::FxBuildHasher>>,
+}
+
+/// One provider request of a recorded layout call and its answer's identity (LA7).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProviderAsk {
+    pub family: Box<str>,
+    pub bold: bool,
+    pub italic: bool,
+    pub answer: Option<AnswerId>,
 }
 
 /// What the resolver works over: the provider of the call, the document's font table, the face
@@ -194,17 +237,67 @@ impl FaceResolverCache {
         let fam = if trimmed.is_empty() { "Times New Roman" } else { trimmed };
         let key = format!("{}|{}{}", uo_text::case::to_lowercase_str(fam), u8::from(bold), u8::from(italic));
         if let Some(&id) = self.resolved.get(key.as_str()) {
+            if let Some(t) = self.tap.as_mut()
+                && !t.contains_key(key.as_str())
+            {
+                t.insert(key.into_boxed_str(), id);
+            }
             return Ok(id);
         }
-        let answer = lookup(env.provider, env.font_table, fam, bold, italic, &mut self.misses)?;
+        let answer = lookup(env.provider, env.font_table, fam, bold, italic, &mut self.misses, self.log.as_mut())?;
         let id = env.table.intern(&answer, env.res)?;
-        self.resolved.insert(key.into_boxed_str(), id);
+        let key = key.into_boxed_str();
+        if let Some(t) = self.tap.as_mut() {
+            t.insert(key.clone(), id);
+        }
+        self.resolved.insert(key, id);
         Ok(id)
+    }
+
+    /// The face cached for a key of [`FaceResolverCache::get`] (no request, no insertion; LA7
+    /// level 1).
+    #[must_use]
+    pub fn cached(&self, key: &str) -> Option<FaceId> {
+        self.resolved.get(key).copied()
     }
 
     /// The provider misses of the call, first miss first (F8: `Layout::missing_faces`).
     pub fn take_misses(&mut self) -> Vec<crate::output::FaceRequest> {
         std::mem::take(&mut self.misses).into_iter().collect()
+    }
+
+    /// The provider misses so far (a copy: a recorded call keeps its cache, LA7).
+    #[must_use]
+    pub fn misses(&self) -> Vec<crate::output::FaceRequest> {
+        self.misses.iter().cloned().collect()
+    }
+
+    /// (`resolved`, `misses`) lengths: the state at a checkpoint (LA7).
+    #[must_use]
+    pub fn lens(&self) -> (usize, usize) {
+        (self.resolved.len(), self.misses.len())
+    }
+
+    /// A copy holding only the first `resolved` entries and `misses` misses: the cache as it was
+    /// when it had those lengths (both only grow within a call). The log is not copied.
+    #[must_use]
+    pub fn prefix(&self, resolved: usize, misses: usize) -> FaceResolverCache {
+        FaceResolverCache {
+            resolved: self.resolved.iter().take(resolved).map(|(k, v)| (k.clone(), *v)).collect(),
+            misses: self.misses.iter().take(misses).cloned().collect(),
+            log: None,
+            tap: None,
+        }
+    }
+
+    /// The entries from `resolved` on and the misses from `misses` on equal `other`'s (the
+    /// growth since a checkpoint, LA7).
+    #[must_use]
+    pub fn same_from(&self, other: &FaceResolverCache, resolved: usize, misses: usize) -> bool {
+        self.resolved.len() == other.resolved.len()
+            && self.misses.len() == other.misses.len()
+            && self.resolved.iter().skip(resolved).zip(other.resolved.iter().skip(resolved)).all(|(a, b)| a == b)
+            && self.misses.iter().skip(misses).zip(other.misses.iter().skip(misses)).all(|(a, b)| a == b)
     }
 
     /// Entries cached (one per lower-case key resolved in this call).
@@ -494,12 +587,16 @@ fn lookup(
     bold: bool,
     italic: bool,
     misses: &mut indexmap::IndexSet<crate::output::FaceRequest>,
+    mut log: Option<&mut Vec<ProviderAsk>>,
 ) -> LResult<Arc<FontAnswer>> {
     // every request the provider has nothing for is noted (F8)
     let mut ask = |family: &str, b: bool, i: bool| -> Option<Arc<FontAnswer>> {
         let a = provider.face(family, b, i);
         if a.is_none() && misses.len() < MAX_MISSES {
             misses.insert(crate::output::FaceRequest { family: family.into(), bold: b, italic: i });
+        }
+        if let Some(log) = log.as_deref_mut() {
+            log.push(ProviderAsk { family: family.into(), bold: b, italic: i, answer: a.as_ref().map(|x| x.id()) });
         }
         a
     };

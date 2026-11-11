@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The D3 differential harness THROUGH the facade (uo-docx-d3.md section 4/5): the scripts and the semantics
+       sites of core/crates/uo-docx/dotnet-harness (linked, not copied) run over the Rust core via the C# facade
+       (C# -> C ABI -> Rust), and the captures are compared with the ones the FROZEN C# produced
+       (tests/parity/d3/*.capture, .NET 10.0.5). Modes: corpus-check, semantics-check, api-dump (see ParityMain.cs).
+       net10.0 because the harness uses Convert.ToHexStringLower (.NET 9+). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>UoD3Harness</RootNamespace>
+    <StartupObject>UoD3Harness.Facade.ParityMain</StartupObject>
+    <NoWarn>$(NoWarn);CS1591;CA1822</NoWarn>
+    <IsPackable>false</IsPackable>
+    <HarnessDir>$(MSBuildThisFileDirectory)..\..\crates\uo-docx\dotnet-harness\</HarnessDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UniversalOffice.Docx\UniversalOffice.Docx.csproj" />
+    <Compile Include="$(HarnessDir)Program.cs" Link="Harness\Program.cs" />
+    <Compile Include="$(HarnessDir)Scripts.cs" Link="Harness\Scripts.cs" />
+    <Compile Include="$(HarnessDir)Fixtures.cs" Link="Harness\Fixtures.cs" />
+    <Compile Include="$(HarnessDir)Semantics.cs" Link="Harness\Semantics.cs" />
+    <Compile Include="$(HarnessDir)Tables.cs" Link="Harness\Tables.cs" />
+    <!-- the fixture builders of the frozen test suite, linked (not copied, not edited) -->
+    <Compile Include="..\..\..\dotnet\tests\UniversalOffice.Tests\Editing\DocxBuilder.cs" Link="Frozen\DocxBuilder.cs" />
+    <Compile Include="..\..\..\dotnet\tests\UniversalOffice.Tests\Editing\SampleTemplate.cs" Link="Frozen\SampleTemplate.cs" />
+  </ItemGroup>
+  <Import Project="..\UoNative.targets" />
+</Project>

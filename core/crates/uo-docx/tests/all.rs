@@ -204,6 +204,7 @@ mod session_d2b_f5;
 mod session_d2b_f6;
 mod session_d2b_f7;
 mod session_d2b_f9;
+mod session_font_usage;
 mod sources_unit;
 mod word_unit;
 

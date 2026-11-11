@@ -55,6 +55,8 @@ pub use uo_docx::model::drawing::DrawingAnchor;
 pub use uo_docx::model::props::{CellMargins, TblBorders, TblLook, TblPr, TblpPr, TcBorders, TcPr, TrHeight, TrPr, WidthSpec};
 pub use uo_docx::model::run::DrawingTextbox;
 pub use uo_docx::model::{Block, Cell, Row, RunExt, Story, Table};
+// LA7: the parts of the document an incremental relayout keeps to know what an edit replaced
+pub use uo_docx::model::{Document, TableAnchor};
 // F7b (tables and floats): image effects, extents and the shape parts of the floating objects
 pub use uo_docx::model::drawing::{Ltrb, ShapeLine, WrapBox};
 pub use uo_docx::model::props::FramePr;

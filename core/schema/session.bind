@@ -1,0 +1,335 @@
+# The bind map of schema/session.uos (core/tools/uo-schema rust_bind): which Rust type each wire type is.
+# Drafted with the schema by a throwaway extractor over the uo-docx sources.
+runtime crate::session::wire
+
+Command enum uo_docx::session::command::Command
+JobResult enum uo_docx::session::command::JobResult
+LocalNow struct uo_docx::session::env::LocalNow
+TextCmd enum uo_docx::session::ops::text::TextCmd
+ContextCmd enum uo_docx::session::ops::context::ContextCmd
+SettingsCmd enum uo_docx::session::ops::settings::SettingsCmd
+FormatCmd enum uo_docx::session::ops::format::FormatCmd native_only=ApplyPainter
+TupParaBorderSideOptBorderSpec tuple
+ParagraphCmd enum uo_docx::session::ops::paragraph::ParagraphCmd
+ListCmd enum uo_docx::session::ops::lists::ListCmd
+StyleCmd enum uo_docx::session::ops::styles::StyleCmd
+TupI32I32 tuple
+TupUtf16OptBorderSpec tuple
+TableCmd enum uo_docx::session::ops::tables::TableCmd
+SectionCmd enum uo_docx::session::ops::sections::SectionCmd
+TupF64F64 tuple
+HeaderFooterCmd enum uo_docx::session::ops::header_footer::HeaderFooterCmd
+TupBoolF64 tuple
+NoteCmd enum uo_docx::session::ops::notes::NoteCmd
+RevisionCmd enum uo_docx::session::ops::revision_cmds::RevisionCmd
+CommentCmd enum uo_docx::session::ops::comments::CommentCmd
+BookmarkCmd enum uo_docx::session::ops::bookmarks::BookmarkCmd
+NullablePicColor enum uo_docx::js::Nullable<uo_docx::model::picture::PicColor>
+DrawingCmd enum uo_docx::session::ops::drawing::DrawingCmd
+PictureCmd enum uo_docx::session::ops::pictures::PictureCmd
+PageCmd enum uo_docx::session::ops::page::PageCmd
+TextLayoutCmd enum uo_docx::session::ops::text_layout::TextLayoutCmd
+ClipboardCmd enum uo_docx::session::ops::clipboard::ClipboardCmd native_only=RenderPictures
+FindCmd enum uo_docx::session::ops::find::FindCmd
+NavigationCmd enum uo_docx::session::ops::navigation::NavigationCmd
+TupUtf16CaptionPosition tuple
+ReferenceCmd enum uo_docx::session::ops::references::ReferenceCmd
+ClipImage struct uo_docx::session::command::ClipImage
+DateParts struct uo_docx::session::env::DateParts
+DocPosition struct uo_docx::session::text::DocPosition
+CellHop struct uo_docx::session::state::CellHop
+MarkupMode enum uo_docx::session::MarkupMode
+TupListPolicyListKindOptF64 tuple
+FormattingPolicy struct uo_docx::session::policy::FormattingPolicy
+RunToggle enum uo_docx::session::ops::format::RunToggle
+ColorArg enum uo_docx::session::ops::format::ColorArg
+OptFxFill option
+OptFxOutline option
+OptFxShadow option
+OptFxReflection option
+OptFxGlow option
+OptUtf16 option
+FxPart enum uo_docx::session::ops::format::FxPart
+OptListf64 option
+OptBool option
+OtPart enum uo_docx::session::ops::format::OtPart
+GradientArg struct uo_docx::session::ops::format::GradientArg
+OptColorArg option
+FontFormat struct uo_docx::session::ops::format::FontFormat
+VertKind enum uo_docx::session::ops::format::VertKind
+CaseMode enum uo_docx::session::ops::format::CaseMode
+SpecialIndent enum uo_docx::session::ops::paragraph::SpecialIndent
+IndentPatch struct uo_docx::session::ops::paragraph::IndentPatch
+TabStopInfo struct uo_docx::session::ops::paragraph::TabStopInfo
+TabOnly struct uo_docx::session::ops::paragraph::TabOnly
+FlowArgs struct uo_docx::session::ops::paragraph::FlowArgs
+LayoutArgs struct uo_docx::session::ops::paragraph::LayoutArgs
+ParaBorderSide enum uo_docx::session::ops::paragraph::ParaBorderSide
+BorderSpec struct uo_docx::model::props::BorderSpec default
+BorderPreset enum uo_docx::session::ops::paragraph::BorderPreset
+ListLevelSpec struct uo_docx::session::ops::lists::ListLevelSpec
+ListLevelFormat struct uo_docx::session::ops::lists::ListLevelFormat
+CreateStyleSpec struct uo_docx::session::ops::styles::CreateStyleSpec
+ModifyStyleSpec struct uo_docx::session::ops::styles::ModifyStyleSpec
+DefaultFont struct uo_docx::session::ops::styles::DefaultFont
+AutoFit enum uo_docx::session::ops::tables::table_ops::AutoFit
+TableLayoutIn struct uo_docx::session::ops::tables::TableLayoutIn
+InsertCellsShift enum uo_docx::session::ops::tables::InsertCellsShift
+DeleteCellsShift enum uo_docx::session::ops::tables::DeleteCellsShift
+CellRect struct uo_docx::session::ops::tables::table_ops::CellRect
+SelKey enum uo_docx::session::ops::tables::SelKey
+AutoFitMode enum uo_docx::session::ops::tables::table_ops::AutoFitMode
+MarginsIn struct uo_docx::session::ops::tables::MarginsIn
+TupI32SortTypeBool tuple
+SortRequest struct uo_docx::session::ops::tables::SortRequest
+TextSeparator enum uo_docx::session::ops::tables::table_ops::TextSeparator
+StyleOptions struct uo_docx::session::ops::tables::StyleOptions
+ShadeColor enum uo_docx::session::ops::tables::ShadeColor
+ShadePattern struct uo_docx::session::ops::tables::ShadePattern
+ApplyTo enum uo_docx::session::ops::tables::ApplyTo
+BorderKind enum uo_docx::session::ops::tables::table_ops::BorderKind
+OptWidthSpec option
+TablePropertiesInput struct uo_docx::session::ops::tables::TablePropertiesInput
+PageSetup struct uo_docx::session::ops::sections::PageSetup
+PageBorders struct uo_docx::model::section::PageBorders default
+SectionType enum uo_docx::session::ops::sections::SectionType
+ColumnsArg enum uo_docx::session::ops::sections::ColumnsArg
+SectionApplyTo enum uo_docx::session::ops::sections::SectionApplyTo
+VerticalAlignment enum uo_docx::session::ops::sections::VerticalAlignment
+LineNumberMode enum uo_docx::session::ops::text_layout::LineNumberMode
+LineNumberingOptions struct uo_docx::session::ops::text_layout::LineNumberingOptions
+HfAt struct uo_docx::session::ops::header_footer::HfAt
+HfReenter enum uo_docx::session::ops::header_footer::HfReenter
+HfKind enum uo_docx::session::ops::header_footer::HfKind
+TupF64Utf16 tuple
+OptTupF64Utf16 option
+OptF64 option
+PageNumberFormatPatch struct uo_docx::session::ops::header_footer::PageNumberFormatPatch
+HfSlot enum uo_docx::session::ops::header_footer::HfSlot
+HfGallery enum uo_docx::session::ops::header_footer::hf_templates::HfGallery
+PageLang enum uo_docx::session::ops::page::PageLang
+HfEnter struct uo_docx::session::ops::header_footer::HfEnter
+NoteOptionsPatch struct uo_docx::session::ops::notes::NoteOptionsPatch
+NoteScope enum uo_docx::session::ops::notes::NoteScope
+ConvertMode enum uo_docx::session::ops::notes::ConvertMode
+OptListutf16 option
+MarkupPatch struct uo_docx::session::ops::revision_cmds::MarkupPatch
+HyperlinkOptions struct uo_docx::session::ops::bookmarks::HyperlinkOptions
+ShapeFill enum uo_docx::write::emit::object::ShapeFill
+TupUtf16F64 tuple
+PicColor struct uo_docx::model::picture::PicColor default
+NullablePicLine enum uo_docx::js::Nullable<uo_docx::model::picture::PicLine>
+NullablePicShadow enum uo_docx::js::Nullable<uo_docx::model::picture::PicShadow>
+NullablePicReflection enum uo_docx::js::Nullable<uo_docx::model::picture::PicReflection>
+NullablePicGlow enum uo_docx::js::Nullable<uo_docx::model::picture::PicGlow>
+NullableF64 enum uo_docx::js::Nullable<f64>
+NullablePic3D enum uo_docx::js::Nullable<uo_docx::model::picture::Pic3D>
+FormatArg struct uo_docx::session::ops::drawing::FormatArg
+TextboxOptions struct uo_docx::session::ops::drawing::TextboxOptions
+EffectKind enum uo_docx::session::ops::pictures::EffectKind
+GalleryBox struct uo_docx::session::ops::drawing::GalleryBox
+ObjRect struct uo_docx::session::ops::drawing::ObjRect
+ObjFrame struct uo_docx::session::ops::drawing::ObjFrame
+AlignKind enum uo_docx::session::ops::drawing::AlignKind
+ObjFacts struct uo_docx::session::ops::drawing::ObjFacts
+PicWrapKind enum uo_docx::write::emit::fx::PicWrapKind
+ArrangeOp enum uo_docx::session::ops::pictures::ArrangeOp
+OptTupUtf16F64 option
+LayoutInput struct uo_docx::session::ops::pictures::LayoutInput
+RecolorArg enum uo_docx::session::ops::pictures::RecolorArg
+OleArg struct uo_docx::session::ops::pictures::OleArg
+AdjustArg struct uo_docx::session::ops::pictures::AdjustArg
+PageFillInput enum uo_docx::session::ops::page::PageFillInput
+WatermarkArg enum uo_docx::session::ops::page::watermark::WatermarkArg
+HyphenationPatch struct uo_docx::session::ops::text_layout::HyphenationPatch
+PasteMode enum uo_docx::session::ops::clipboard::PasteMode
+PasteLayoutIn struct uo_docx::session::ops::clipboard::PasteLayoutIn
+RichPick enum uo_docx::session::ops::clipboard::RichPick
+ListPasteMode enum uo_docx::session::ops::clipboard::ListPasteMode
+CellsPasteMode enum uo_docx::session::ops::clipboard::CellsPasteMode
+PasteSpecialFormat enum uo_docx::session::ops::clipboard::PasteSpecialFormat
+PasteDefaults struct uo_docx::session::ops::clipboard::PasteDefaults
+FindQuery struct uo_docx::session::ops::find::engine::FindQuery
+Direction enum uo_docx::session::ops::find::Direction
+FindFormat struct uo_docx::session::ops::find::engine::FindFormat
+Within enum uo_docx::session::ops::find::Within
+GoToWhat enum uo_docx::session::ops::find::GoToWhat
+DocRange struct uo_docx::session::text::DocRange
+HeadingWhere enum uo_docx::session::ops::navigation::HeadingWhere
+FindOptions struct uo_docx::session::ops::navigation::FindOptions
+FieldKind enum uo_docx::session::ops::references::FieldKind
+UiLang enum uo_docx::session::ops::styles::sheet::UiLang
+DocInfoKind enum uo_docx::session::ops::references::DocInfoKind
+FieldScopeSel enum uo_docx::session::ops::references::FieldScopeSel
+TocMode enum uo_docx::session::ops::references::TocMode
+CrossRefOptions struct uo_docx::session::ops::references::CrossRefOptions
+TableOfFiguresOptions struct uo_docx::session::ops::references::TableOfFiguresOptions
+TocTemplateId enum uo_docx::session::ops::references::toc::TocTemplateId
+TableOfContentsOptions struct uo_docx::session::ops::references::toc::TableOfContentsOptions
+TupUtf16CaptionNumbering tuple
+CaptionSettings struct uo_docx::session::ops::references::CaptionSettings
+CaptionNumbering struct uo_docx::session::ops::references::pure::CaptionNumbering
+CaptionPosition enum uo_docx::session::ops::references::CaptionPosition
+CaptionOptions struct uo_docx::session::ops::references::CaptionOptions
+PolicyListKind enum uo_docx::session::policy::ListKind
+CharacterFormat enum uo_docx::session::policy::CharacterFormat
+Indentation enum uo_docx::session::policy::Indentation
+Flag enum uo_docx::session::policy::Flag
+ThemeColorRef struct uo_docx::session::ops::format::ThemeColorRef
+FxFill struct uo_docx::model::effects::FxFill default
+FxOutline struct uo_docx::model::effects::FxOutline default
+FxShadow struct uo_docx::model::effects::FxShadow default
+FxReflection struct uo_docx::model::effects::FxReflection default
+FxGlow struct uo_docx::model::effects::FxGlow default
+SpacingArg enum uo_docx::session::ops::paragraph::SpacingArg
+StyleFormat struct uo_docx::session::ops::styles::sheet::StyleFormat
+ChUtf16 enum uo_docx::session::ops::styles::sheet::Ch<String>
+SortType enum uo_docx::session::ops::tables::sort::SortType
+SortSeparator enum uo_docx::session::ops::tables::sort::SortSeparator
+TableTab struct uo_docx::session::ops::tables::TableTab
+RowTab struct uo_docx::session::ops::tables::RowTab
+WidthSpec struct uo_docx::model::props::WidthSpec default
+OptMarginsIn option
+CellTab struct uo_docx::session::ops::tables::CellTab
+Orientation enum uo_docx::session::ops::sections::section_ops::Orientation
+PageSize enum uo_docx::session::ops::sections::PageSize
+MarginPreset enum uo_docx::session::ops::sections::MarginPreset
+ColumnPreset enum uo_docx::session::ops::sections::section_ops::ColumnPreset
+ColumnSpec struct uo_docx::session::ops::sections::section_ops::ColumnSpec
+LineRestart enum uo_docx::session::ops::text_layout::LineRestart
+Balloons enum uo_docx::session::ops::revision_cmds::Balloons
+TupF64Bool tuple
+TupUtf16OptFillRect tuple
+GradientFill struct uo_docx::write::emit::object::GradientFill
+FillTile struct uo_docx::write::emit::object::FillTile
+PicLine struct uo_docx::model::picture::PicLine default
+PicShadow struct uo_docx::model::picture::PicShadow default
+PicReflection struct uo_docx::model::picture::PicReflection default
+PicGlow struct uo_docx::model::picture::PicGlow default
+Pic3D struct uo_docx::model::picture::Pic3D default
+LayoutPos struct uo_docx::session::ops::pictures::LayoutPos
+GradientStyle enum uo_docx::session::ops::page::GradientStyle
+WatermarkTextSpec struct uo_docx::write::emit::background::WatermarkTextSpec
+WatermarkBox struct uo_docx::write::emit::background::WatermarkBox
+WatermarkPictureSpec struct uo_docx::write::emit::background::WatermarkPictureSpec
+CrossRefType enum uo_docx::session::ops::references::pure::CrossRefType
+CrossRefKind enum uo_docx::session::ops::references::pure::CrossRefKind
+TofFormat enum uo_docx::session::ops::references::pure::TofFormat
+TocFormat enum uo_docx::session::ops::references::toc::TocFormat
+TocStyle struct uo_docx::session::ops::references::pure::TocStyle
+AutoCaptionCfg struct uo_docx::session::ops::references::AutoCaptionCfg
+CaptionFormat enum uo_docx::session::ops::references::pure::CaptionFormat
+CaptionChapter struct uo_docx::session::ops::references::pure::CaptionChapter
+FxColor struct uo_docx::model::effects::FxColor default
+FxGradStop struct uo_docx::model::effects::FxGradStop default
+FxLin struct uo_docx::model::effects::FxLin default
+FxPath struct uo_docx::model::effects::FxPath default
+ChF64 enum uo_docx::session::ops::styles::sheet::Ch<f64>
+ChBool enum uo_docx::session::ops::styles::sheet::Ch<bool>
+TblpPr struct uo_docx::model::props::TblpPr default
+GradientStop struct uo_docx::write::emit::object::GradientStop
+FillRect struct uo_docx::write::emit::object::FillRect
+Camera struct uo_docx::model::picture::Camera default
+LightRig struct uo_docx::model::picture::LightRig default
+Bevel struct uo_docx::model::picture::Bevel default
+WatermarkLayout enum uo_docx::write::emit::background::WatermarkLayout
+AutoCaption struct uo_docx::session::ops::references::AutoCaption
+ChapterSeparator enum uo_docx::session::ops::references::pure::ChapterSeparator
+Rot3 struct uo_docx::model::picture::Rot3 default
+ChangeSet struct uo_docx::session::command::ChangeSet into_only
+Job enum uo_docx::session::command::Job into_only
+CommandError enum uo_docx::session::command::CommandError into_only
+CommandStoryChange struct uo_docx::session::command::StoryChange into_only
+Selection struct uo_docx::session::state::Selection into_only
+Event enum uo_docx::session::command::Event into_only
+LayoutError struct uo_docx::view::LayoutError into_only
+StoryKey enum uo_docx::session::command::StoryKey into_only
+LayoutErrorKind enum uo_docx::view::LayoutErrorKind into_only
+TableSel struct uo_docx::session::state::TableSel into_only
+MarkStory struct uo_docx::session::ops::bookmarks::MarkStory into_only
+StoryLoc enum uo_docx::session::ops::revision_cmds::StoryLoc into_only
+CellStep struct uo_docx::session::ops::revision_cmds::CellStep into_only
+BookmarkInfo struct uo_docx::session::ops::bookmarks::BookmarkInfo into_only
+TupPasteModeOptListPasteMode tuple into_only
+PasteOptions struct uo_docx::session::ops::clipboard::PasteOptions into_only
+SpecialFormats struct uo_docx::session::ops::clipboard::SpecialFormats into_only
+PasteRange struct uo_docx::session::ops::clipboard::PasteRange into_only
+DocumentComment struct uo_docx::model::document::Comment default into_only
+PaneItem struct uo_docx::session::ops::drawing::PaneItem into_only
+PaneKind enum uo_docx::session::ops::drawing::PaneKind into_only
+ObjectState struct uo_docx::session::ops::drawing::ObjectState into_only
+TextState struct uo_docx::session::ops::drawing::TextState into_only
+NullableBoxPicLine enum uo_docx::js::Nullable<Box<uo_docx::model::picture::PicLine>> into_only
+PictureFormat struct uo_docx::model::picture::PictureFormat default into_only
+Dist struct uo_docx::model::picture::Dist default into_only
+PicPos struct uo_docx::model::picture::PicPos default into_only
+SizeRel struct uo_docx::model::picture::SizeRel default into_only
+Ltrb struct uo_docx::model::drawing::Ltrb default into_only
+WrapPolygon struct uo_docx::model::picture::WrapPolygon default into_only
+DocPr struct uo_docx::model::picture::DocPr default into_only
+PicEffects struct uo_docx::model::picture::PicEffects default into_only
+TupPicColorPicColor tuple into_only
+PicBlipFx struct uo_docx::model::picture::PicBlipFx default into_only
+BlipLum struct uo_docx::model::picture::BlipLum default into_only
+ClrChange struct uo_docx::model::picture::ClrChange default into_only
+A14Props struct uo_docx::model::picture::A14Props default into_only
+QueryError enum uo_docx::session::ops::find::engine::QueryError into_only
+TupSearchLocU32U32 tuple into_only
+SearchLoc enum uo_docx::session::ops::navigation::SearchLoc into_only
+TupHfKindHfSlot tuple into_only
+HeaderFooterOptions struct uo_docx::session::ops::header_footer::HeaderFooterOptions into_only
+PageNumberFormat struct uo_docx::session::ops::header_footer::PageNumberFormat into_only
+TupUtf16Utf16 tuple into_only
+F9Result enum uo_docx::session::ops::navigation::F9Result into_only
+FindOutcome struct uo_docx::session::ops::find::FindOutcome into_only
+ReplaceOutcome struct uo_docx::session::ops::find::ReplaceOutcome into_only
+HeadingInfo struct uo_docx::session::ops::navigation::HeadingInfo into_only
+SearchResult struct uo_docx::session::ops::navigation::SearchResult into_only
+Snippet struct uo_docx::session::ops::navigation::Snippet into_only
+TupU32CellHop tuple into_only
+NoteRefLoc struct uo_docx::session::ops::notes::NoteRefLoc into_only
+NoteOptions struct uo_docx::session::ops::notes::NoteOptions into_only
+TupWatermarkInfoOptBytes tuple into_only
+WatermarkInfo enum uo_docx::read::watermark::WatermarkInfo into_only
+WatermarkTextInfo struct uo_docx::read::watermark::WatermarkTextInfo default into_only
+WatermarkPictureInfo struct uo_docx::read::watermark::WatermarkPictureInfo default into_only
+WatermarkGalleryEntry struct uo_docx::session::ops::page::watermark::WatermarkGalleryEntry into_only
+WatermarkGalleryItem struct uo_docx::write::emit::background::WatermarkGalleryItem into_only
+IndentInfo struct uo_docx::session::ops::paragraph::IndentInfo into_only
+OptManualHyphenation option into_only
+F10Result enum uo_docx::session::ops::references::F10Result into_only
+ManualHyphenation struct uo_docx::session::ops::references::hyphen::ManualHyphenation into_only
+CaptionLabelInfo struct uo_docx::session::ops::references::CaptionLabelInfo into_only
+CaptionTarget enum uo_docx::session::ops::references::CaptionTarget into_only
+CrossRefItem struct uo_docx::session::ops::references::CrossRefItem into_only
+ManualHyphState struct uo_docx::session::ops::references::ManualHyphState into_only
+ManualHyphWord struct uo_docx::session::ops::references::ManualHyphWord into_only
+TupTocTemplateIdUtf16 tuple into_only
+RevisionEntry struct uo_docx::session::ops::revision_cmds::RevisionEntry into_only
+RevisionSpan struct uo_docx::session::revisions::RevisionSpan default into_only
+RevisionStory enum uo_docx::session::ops::revision_cmds::RevisionStory into_only
+SpanProps enum uo_docx::session::revisions::SpanProps into_only
+RunProps struct uo_docx::model::run::RunProps default into_only
+ParaProps struct uo_docx::model::para::ParaProps default into_only
+ThemeColorAttrs struct uo_docx::model::run::ThemeColorAttrs default into_only
+TextEffects struct uo_docx::model::effects::TextEffects default into_only
+OpenTypeProps struct uo_docx::model::effects::OpenTypeProps default into_only
+RevisionInfo struct uo_docx::model::props::RevisionInfo default into_only
+SourceKey newtype uo_docx::ids::SourceKey into_only
+NumberingProps struct uo_docx::model::para::NumberingProps default into_only
+ParaTabStop struct uo_docx::model::para::ParaTabStop default into_only
+ParagraphBorders struct uo_docx::model::para::ParagraphBorders default into_only
+BlockSdt struct uo_docx::model::para::BlockSdt default into_only
+SectionBreak struct uo_docx::model::para::SectionBreak default into_only
+BorderEdge struct uo_docx::model::para::BorderEdge default into_only
+SdtKey newtype uo_docx::model::para::SdtKey into_only
+NullableBoxPageBorders enum uo_docx::js::Nullable<Box<uo_docx::model::section::PageBorders>> into_only
+SectPr struct uo_docx::model::section::SectPr default into_only
+HfRefEdit struct uo_docx::model::para::HfRefEdit default into_only
+Cols struct uo_docx::model::section::Cols default into_only
+NoteProps struct uo_docx::model::formatting::NoteProps default into_only
+LineNumbering struct uo_docx::model::section::LineNumbering default into_only
+ColWidth struct uo_docx::model::section::ColWidth default into_only
+MarkupOptions struct uo_docx::session::ops::revision_cmds::MarkupOptions into_only
+HyphenationSettings struct uo_docx::write::emit::settings::HyphenationSettings into_only
+HyphenationInfo struct uo_docx::session::ops::text_layout::HyphenationInfo into_only

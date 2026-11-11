@@ -104,7 +104,7 @@ public sealed class DocxPdfConverter : IDisposable
 
     /// <summary>.docx or .doc bytes → PDF bytes.</summary>
     /// <exception cref="InvalidDataException">not a Word document, or a damaged one</exception>
-    /// <exception cref="OfficeLimitExceededException">a limit for untrusted documents</exception>
+    /// <exception cref="UniversalOffice.Core.OfficeLimitExceededException">a limit for untrusted documents</exception>
     /// <exception cref="OperationCanceledException"><paramref name="ct"/> was cancelled (checked by the
     /// native core before and inside the layout, between the stages and while the PDF is written)</exception>
     public unsafe byte[] ToPdf(byte[] docx, LayoutOptions? opts = null, PdfRenderOptions? pdfOpts = null, CancellationToken ct = default)

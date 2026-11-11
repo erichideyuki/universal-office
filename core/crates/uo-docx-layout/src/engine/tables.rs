@@ -928,6 +928,8 @@ impl Engine {
     /// `pinFloatsOverTable(t, blockIdx)` (engine.ts:2900): a wrapping float of the paragraph AFTER
     /// the table, relative to it with a negative offset falling on the table (oracle toptbl).
     fn pin_floats_over_table(&mut self, cx: &mut Cx<'_, '_>, t: &TableLayout, block_idx: usize) -> LResult<()> {
+        // (LA7: the paragraph after the table is read here — its runs, space before and style)
+        self.note_read(block_idx + 1);
         let Some(LBlock::Paragraph(nb)) = cx.ldoc.stories.get(self.story as usize).and_then(|s| s.blocks.get(block_idx + 1)).copied()
         else {
             return Ok(());
@@ -1645,6 +1647,8 @@ impl Engine {
             if lt.page as usize != page || self.placed_tables.contains(&bi) {
                 continue;
             }
+            // (LA7: block `bi` is laid out here, at the page start, before its own turn in the flow)
+            self.note_read(bi as usize);
             let Some(LBlock::Table { block }) = cx.ldoc.stories.get(self.story as usize).and_then(|s| s.blocks.get(bi as usize)).copied()
             else {
                 continue;

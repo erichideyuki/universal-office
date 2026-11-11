@@ -1,0 +1,66 @@
+// The fixture schema of the bind emitter (core/tools/uo-schema src/rust_bind.rs): one wire type of each
+// binding kind, bound to the native types of tests/fixtures/bind_native.rs by schemas/bind_test.bind.
+schema bind_test magic "UOBT";
+
+struct Point {
+  x: f64,
+  y: f64,
+  label: utf16?,
+}
+
+/// a struct with a Rust-only field (bound `default`)
+struct Tagged {
+  point: Point,
+}
+
+/// a struct variant's fields (no bind line)
+struct ShapeLine {
+  from: Point,
+  to: Point,
+}
+
+/// a tuple variant's fields (bound `tuple`: spread)
+struct ShapePair {
+  f0: u32,
+  f1: utf16?,
+}
+
+enum Shape {
+  Empty,
+  Dot(Point),
+  Line(ShapeLine),
+  Pair(ShapePair),
+}
+
+enum Color {
+  Red,
+  Green,
+}
+
+struct Id {
+  value: u32,
+}
+
+struct TupF64U32 {
+  f0: f64,
+  f1: u32,
+}
+
+struct OptPoint {
+  value: Point?,
+}
+
+message Bag {
+  shapes: list<Shape>,
+  color: Color,
+  tagged: Tagged,
+  id: Id,
+  pair: TupF64U32,
+  maybe: list<OptPoint>,
+}
+
+/// an output of the engine (bound `into_only`)
+message Report {
+  total: u32,
+  colors: list<Color>,
+}

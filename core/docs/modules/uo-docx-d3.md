@@ -178,31 +178,243 @@ Every row is measured by the harness (`semantics.capture`, site in brackets) or 
 limits `Entries`/`XmlElements`). Rust-only bounds where the C# recurses (§7 A6): style/numbering/note import
 depth 256 (`InvalidOperation`), part-copy chains iterative (140,000 frames).
 
-## 4. The C ABI the facade will need (design only; `uo-ffi` owns it)
+## 4. The C ABI and the C# facade of the Editing API (built; `uo-ffi` owns the ABI)
 
-- **Handles**: `UoDocx*` (a `Box<DocxDocument>`), `UoBodyWriter*`, `UoRowTemplate*`, `UoSanitizeStage*`,
-  `UoParagraphProps*`; each with `uo_*_free`. C#: one `SafeHandle` subclass per handle
-  (`ReleaseHandle` → free; finalizer path covered by the M4 test of `core/dotnet/UniversalOffice.Native.Tests`).
-  Writer/row-template/stage handles keep the document's stamp; calling them with another document is the
-  `InvalidOperation` code (§1.1), and the C# facade keeps a reference to the owning document object so the
-  document handle outlives them.
-- **Views without handles**: `CustomInline`, `Shape` are `readonly struct`s of (document handle, `NodeId`
-  as two `u32`), plus the strings copied out at creation (`type`, `json`, `part_path`).
-- **Calls**: `int32_t uo_docx_<op>(UoDocx*, in…, out…)` returning 0 or an error code (`ApiError::code`:
-  1 Argument, 2 InvalidOperation, 3 InvalidData, 4 Xml, 5 LimitExceeded, 6 Format, 7 Overflow, 8 Json,
-  9 ArgumentOutOfRange); details through `uo_last_error(UoDocx*, UoError*)` (`limit`, `max`, part name, UTF-8
-  message), mapped by the facade to the same .NET exception types the C# threw (`OfficeLimitExceededException`
-  with `Limit`/`Maximum`/`PartName`).
-- **Data**: strings in as UTF-8 `(ptr, len)`, out as owned `UoBuf { ptr, len }` freed by `uo_buf_free`;
-  lists out as a count + indexed getters (`uo_docx_inlines_count`, `uo_docx_inline_at`) — no callbacks, no
-  pointers into Rust memory survive a call.
-- **Validator**: `uo_docx_sanitize_begin(doc, opts*, &stage)`, `uo_stage_count`, `uo_stage_inline(stage, i,
-  &type, &json)`, `uo_stage_finish(doc, stage, const uint8_t* verdicts, n)`; the facade keeps the old
-  `Func<string,string,bool>` signature by running the two phases itself (the callback runs in managed code,
-  so no exception crosses the boundary — the alternative `[UnmanagedCallersOnly]` design is not needed).
-- **Panics**: none are possible by construction (no `unwrap`, no indexing, `forbid(unsafe_code)`), and every
-  export still wraps its body in `catch_unwind` → code 2 with message "internal".
-- **Threads**: a `UoDocx*` is `Send`, not `Sync`; the facade locks per document.
+Built in milestone 2 (frontier D3-ABI): `core/crates/uo-ffi/src/editing/` (the C ABI: 92 exports — 86 with a status plus the 6 handle frees of `free_fn!` —, 1,940 lines with its
+unit tests) and `core/dotnet/UniversalOffice.Docx/{Editing,Native,Core}` (the facade, 2,389 lines), over the Rust
+Editing API of §1 (feature `editing-api`, enabled by `uo-ffi/Cargo.toml`). Every behaviour comes from Rust; the ABI
+only translates, the facade only adds the .NET types and the lock.
+
+### 4.1 Conventions (module doc of `uo-ffi/src/editing.rs`)
+
+- **Status**: every export returns an `int32` (`ApiError::code`: 1 Argument, 2 InvalidOperation, 3 InvalidData,
+  4 Xml, 5 LimitExceeded, 6 Format, 7 Overflow, 8 Json, 9 ArgumentOutOfRange; 12 Internal is the caught panic of the
+  shared `pipeline::code` space). The `*_free`s, `uo_docx_native_bytes`, `uo_sample_set_count` and the error getters
+  return no status. Bodies run in `error::api` / `error::with_doc`, which clear both error slots and call the
+  milestone-1 `guard` (`catch_unwind`).
+- **Error details**: the shared per-thread slot of `pipeline` (`uo_last_error`, `uo_last_error_message`, 24 bytes,
+  shared with wasm: G2) carries code, maximum and the English message; a second per-thread slot of
+  `editing/error.rs` carries what that struct cannot: the `OfficeLimit` ordinal and the part name
+  (`uo_last_error_limit` gives `UoLimitInfo{limit, part_len}`, `uo_last_error_part` the bytes).
+  `uo_editing_error_clear` clears BOTH and drops their strings (the facade calls it after reading, so M4 sees 0 B).
+  Limit ordinals follow the C# `OfficeLimit` (PartBytes 0, TotalBytes 1, XmlDepth 2, FieldsPerStory 3,
+  FieldNesting 4) plus the Rust-only Entries 5 and XmlElements 6.
+- **Strings and lists**: UTF-8 `(ptr, len)`; `len == usize::MAX` is null (never the pointer: an empty .NET array may
+  pin to a null pointer). Lists and records go in and out as ONE packed little-endian format (`editing/wire.rs`
+  and `Native/Wire.cs`): a string is `u32 len` (`0xFFFF_FFFF` = null) plus UTF-8; a list is `u32 count` plus the
+  items; a record list is `u32 count` plus the fields of each record in the order the export documents. A count
+  larger than the bytes left is refused before any allocation (`Reader::count`); truncated or garbage input is the
+  Argument code, never a panic. Owned results are `UoBuf`s (`uo_buf_free`); an optional result leaves the slot null
+  (the C# `null`).
+- **Option structs** are `#[repr(C)]`, start with `size: u32` (shorter = Argument; longer from a newer facade is
+  accepted) and carry `Str{ptr,len}` fields and flag bits. `UoParagraphFormat` carries a `*const UoParagraphProps`
+  for `Base`. Every export that takes a pointer is `pub unsafe extern "C" fn` with a `# Safety` section (as the
+  milestone-1 exports of `lib.rs`): the caller promises that each `(ptr, len)` is null or readable for `len` bytes
+  during the call, each handle is null or live and used by one thread at a time, each output slot is null or
+  writable. `editing/wire.rs` holds the helpers that turn pointers into references; they are `unsafe fn` with their own
+  `# Safety`, and each export wraps its body in ONE `unsafe` block with the single SAFETY line that forwards the
+  contract (`unsafe_op_in_unsafe_fn` and `undocumented_unsafe_blocks` are deny). The exports with no pointer
+  (`uo_editing_error_clear`) stay safe. (An earlier draft kept the exports safe and hid the dereference in `pub`
+  helpers to pass clippy's `not_unsafe_ptr_arg_deref`; that was unsound, since any safe Rust caller could pass a
+  dangling pointer, and was reverted in fix round 1.) The unit tests wrap their calls in `unsafe` blocks; Miri
+  (`--lib`) is clean.
+- **Threads**: `UoDocx` is `Send` (a compile-time assertion for every handle), used by one thread at a time; the
+  facade takes a per-document lock on EVERY call path (writer, row template, shapes, inlines included).
+- **Panics**: `with_doc` catches a panic inside the body, sets `poisoned` and answers INTERNAL; every later call on
+  that handle is `InvalidOperation` ("poisoned by an earlier internal error"). Tested in `editing/tests.rs`.
+
+### 4.2 The exports (92 after fix round 2: 91 `unsafe extern "C"`, plus the pointer-free `uo_editing_error_clear`; `pure.rs` has 10, the two `uo_opc_*` included; the facade imports all 92, name sets diffed equal at merge)
+
+| Family (file) | Exports |
+|---|---|
+| document (`document.rs`, 17) | `uo_docx_open(data,len,*UoDocxLimits,out)`, `_save`, `_clone`, `_native_bytes`, `_main_part_path`, `_part_names`, `_has_part`, `_get_part_bytes`, `_get_relationships`, `_get_relationship`, `_get_content_type`, `_prop_get` / `_prop_set` (which: 0 Title … 9 ApplicationName), `_prop_get_date` / `_prop_set_date` (`UoDateTime`), `_custom_property_names`, `_set_custom_property` |
+| operations (`ops.rs`, 20) | `uo_docx_run(op)` (0 Template.Empty, 1 AcceptAllRevisions, 2 RemoveComments, 3 DisableTrackChanges, 4 RemoveProtection, 5 RemoveAttachedTemplate, 6 RemoveMacros, 7 RemoveHeadersAndFooters, 8 MergeSections, 9 RemoveCustomXml, 10 RemoveCustomProperties, 11 RemovePersonalMetadata); `_sanitize`, `_sanitize_begin`, `uo_stage_inlines`, `uo_stage_finish`, `_remove_unsafe_content`; `_fields_replace_disallowed`, `_fields_convert_hyperlinks`, `_fields_instructions`; `_text_replace`, `_text_replace_parameter`, `_text_replace_parameters`, `_text_contains`, `_text_remove_paragraphs_containing`, `_text_plain`; `_template_apply_content`, `_template_import_body`; `_numbering_add_restarted`, `_pictures_fit_to_page`, `_samples_contains` |
+| views (`views.rs`, 20) | `uo_docx_shapes_find_containing`, `_remove_containing`, `_replace_text_with_image`, `_first_in`, `_clear_header_footer`; `uo_shape_text`, `_clear_text`, `_set_fill_color`, `_set_fill_transparent`, `_set_text_color`, `_remove`; `uo_docx_inlines_find`, `_replace_text`, `_unwrap_where`; `uo_inline_title`, `_text`, `_is_attached`, `_replace_with_text`, `_replace_with_hyperlink`, `_unwrap` |
+| writer (`writer.rs`, 16) | `uo_body_writer_new`, `_line_is_empty`, `_add_text`, `_add_break`, `_add_image`, `_end_paragraph`, `_finish`; `uo_row_template_take`, `_append`, `_appended_rows`; `uo_docx_samples_extract`, `uo_sample_set_count`, `_name`, `_take`; `uo_paragraph_props_style_id`, `_num_id` |
+| pure (`pure.rs`, 8) | `uo_tag_try_parse`, `uo_tag_format`, `uo_fields_is_allowed_url`, `uo_fields_try_parse_hyperlink`, `uo_pictures_fit`, `uo_image_info_try_read` (`UoImageInfo`), `uo_editing_defaults`, `uo_docx_paragraph_style_name` |
+| errors (`error.rs`, 3) | `uo_last_error_limit`, `uo_last_error_part`, `uo_editing_error_clear` |
+| frees (`handles.rs`, 6 + the milestone-1 `uo_buf_free`) | `uo_docx_free`, `uo_body_writer_free`, `uo_row_template_free`, `uo_stage_free`, `uo_sample_set_free`, `uo_paragraph_props_free` |
+
+Handles: `UoDocx`, `UoBodyWriter`, `UoRowTemplate`, `UoSanitizeStage`, `UoSampleSet`, `UoParagraphProps`; none holds a
+pointer to another (every call that needs the document receives it), so any free order is safe. The `*_free`s are
+plain `Box` drops and touch no thread-local (they run on the finalizer thread).
+
+### 4.3 Deviations from the original design, each with its reason
+
+1. **Per-thread error slot plus a detail slot** instead of `uo_last_error(UoDocx*, …)`: G2 fixed the 24-byte
+   `UoErrorInfo` shared with wasm; the limit and the part name need a slot of their own (D3A-1).
+2. **Views are tagged indices into per-document tables** (two `IndexSet<NodeId>` in `UoDocx`, one for shape runs and
+   one for inline sdts), not raw `NodeId` bits: the fields of `NodeId` are `pub(crate)` and `uo-docx` is not this
+   frontier's. A view value is `kind (1 bit) | document salt (8 bits) | index (23 bits)`; the salt comes from a global
+   counter (wraps at 256). What is detected, and tested (`editing_abi.rs`): a forged index past the table, a view of the
+   other kind (an inline view given to a `uo_shape_*` export and the reverse: exact), and a view of ANOTHER document
+   even when that document also holds views (exact unless the two salts collide: two documents opened a multiple of 256
+   documents apart). What is NOT detected: a `stale` view (the tables never shrink, so a node that was unwrapped or
+   removed keeps its index; the Rust API then answers about a detached node as it does for the C#), and a salt collision.
+   The C# facade cannot produce any of these mixes (each `DocxShape` / `DocxCustomInline` carries its own document and
+   kind); the guard is for raw C callers. A document that hands out more than 8,388,607 distinct views of one kind
+   answers `InvalidOperation`. Cost: the table keeps every distinct node ever handed out until the document is freed
+   (bounded by the arena, as detached nodes are); a clone starts with empty tables and its own salt (D3A-3).
+3. **Packed lists in one `UoBuf`** instead of count plus indexed getters: fewer crossings and no handle per list;
+   `'\n'`-joined lists (the milestone-1 convention) cannot be used because parameter values contain line breaks
+   (D3A-4).
+4. **`DocxShape` / `DocxCustomInline` are sealed classes**, not readonly structs: `FirstShapeIn` returns
+   `DocxShape?` in hosts (D3A-3).
+5. **`uo_docx_run(op)`** serves the 12 no-argument operations with stable op numbers (D3A-13).
+6. **Poisoned handles** after a caught panic (D3A-12); **same-document `ImportBody`** imports from a clone, never two
+   `&mut` to one box (D3A-10); **count saturation**: counts are `i32::try_from(n).unwrap_or(i32::MAX)` (D3A-11).
+7. **No `Create(...)` returning an `XElement`** in `DocxCustomInlines`; `DocxPageArea.From(XElement?)` is a verbatim
+   managed port and `DocxStyles.ParagraphStyleName(doc, XElement)` reads the `w:pStyle` in managed code and resolves
+   it in Rust by style id (D3A-2; `uo_docx_paragraph_style_name` allocates no node: it calls the additive
+   `styles::paragraph_style_name_of_id` of `uo-docx`, which shares its tail with `paragraph_style_name`).
+8. **Exceptions**: the 0.9 `UniversalOffice.Core.OfficeLimitExceededException {Limit, Maximum, PartName}` now lives in
+   the UniversalOffice.Docx assembly (`Core/OfficeLimits.cs`, with `OfficeLimit` and `OpcPackageLimits`), derives
+   from `UniversalOfficeException` and adds `Stage`; the milestone-1 `UniversalOffice.OfficeLimitExceededException`
+   (never published) is gone and the PDF path throws the Core one with `Limit = Conversion` (D3A-1, D3A-9).
+9. **Additive change outside the owned files**: `uo-ffi/Cargo.toml` enables `uo-docx/editing-api` (one word);
+   `uo-ffi/src/lib.rs` gets `pub mod editing;` and one doc line.
+
+### 4.4 The C# facade (`UniversalOffice.Docx`, net8.0, no NuGet dependencies)
+
+`DocxDocument` is `IDisposable`: it holds a `DocxHandle` (SafeHandle; Dispose and the finalizer both end in
+`uo_docx_free`), a per-document lock taken by every call, a monotonic `Order` so that `ImportBody(a, b)` locks the two
+documents in a fixed order, and `GC.AddMemoryPressure(uo_docx_native_bytes)`, removed on Dispose or by its finalizer
+(D3A-7). `DocxBodyWriter`, `DocxTableRowTemplate` and `DocxParagraphProperties` are `IDisposable` too (additive).
+The two-phase validator runs inside `DocxSanitizer.Sanitize`: `sanitize_begin`, then `uo_stage_inlines`, then the
+host's `Func<string,string,bool>` for each inline, then `uo_stage_finish`, all under a `using` of the stage, so an
+exception from the host callback propagates and frees the stage (D3A-6). Errors map in `Native/EditingErrors.cs`:
+1 `ArgumentException`, 2 `InvalidOperationException`, 3 `InvalidDataException`, 4 `System.Xml.XmlException`,
+5 `OfficeLimitExceededException{Limit,Maximum,PartName}`, 6 `FormatException`, 7 `OverflowException`, 8
+`System.Text.Json.JsonException` (D3A-5), 9 `ArgumentOutOfRangeException`; null arguments are
+`ArgumentNullException` in managed code, as in 0.9. The default lists (`DocxFields.Default*`) are read from Rust once.
+`dotnet/UoNative.targets` builds `uo-ffi` once (`--features count`, release) for the four .NET test and tool projects
+(`-p:UoSkipCargo=true` copies a library cargo already built). Projects: `UniversalOffice.Docx.Tests` (facade, Editing
+contract, errors by class, memory, threads), `UniversalOffice.Docx.FrozenSuite` (the frozen C# Editing suite),
+`UniversalOffice.Docx.Parity` (the D3 differential harness through the facade), `UniversalOffice.Docx.Smoke`
+(`edit <in.docx> <template.docx> <out.docx>`, the clickCompliance flow, 202 ms on the fixtures).
+
+### 4.5 Public API differences against the published 0.9 (`UniversalOffice.Docx` 0.9.3), for the in-scope types
+
+Measured by `api-dump` (`dotnet run --project core/dotnet/UniversalOffice.Docx.Parity -- api-dump <0.9
+UniversalOffice.Docx.dll>`): the public types of `UniversalOffice.Docx.Editing`, `CustomInlineTag` and the four Core
+types the Editing API throws, takes or that a host validator calls (`OfficeLimit`, `OfficeLimitExceededException`,
+`OpcPackageLimits`, `OpcPartName`), member by member (36 types in the frozen assembly, 36 in the facade, 11
+differences). `OpcPartName` is a PUBLIC static class of the 0.9 `UniversalOffice.Core`, and clickCompliance calls
+`ResolveRelationshipTarget` in production code (`DocxPackageValidationService`) and in its contract tests: the facade
+provides it (`ResolveRelationshipTarget` and `EscapeSegment`, both over `uo_opc_resolve_relationship_target` /
+`uo_opc_escape_segment`, the ONE rule of `uo_opc::part_name`, so the host validator and the core cannot diverge), with
+no difference in signature. OUT of scope, printed by `api-dump` by namespace: the other 380 public types of the two
+frozen assemblies (the C# document model, layout reader, PDF writer, exporters, DrawingML and Fonts; Core: `DmlColorMods`,
+`JsNumber`, `MiniXml`, `OpcPackage`, `Units`, `XmlElement`); the facade does not provide them and clickCompliance does
+not reference them (checked by search in its source: only `UniversalOffice.Docx.Editing`, `CustomInlineTag`, the
+limits types and `OpcPartName`).
+
+| # | Difference | Kind |
+|---|---|---|
+| 1 | `OfficeLimit` gains `Entries`, `XmlElements` (Rust-only caps) and `Conversion` (PDF-path limits) | 3 added members |
+| 2 | `OfficeLimitExceededException` is not `sealed` any more and derives `UniversalOfficeException` instead of `Exception` (adds `Stage`, `Code`); the public constructor `(OfficeLimit, long, string?)` is kept | changed base (2 lines) |
+| 3 | `DocxDocument`, `DocxBodyWriter`, `DocxTableRowTemplate`, `DocxParagraphProperties` get `Dispose()` (`IDisposable`) | 4 added |
+| 4 | `DocxCustomInlines.Create(string, string, XElement?)` returning an `XElement` is removed (unused by clickCompliance and by the frozen tests; it would need an rPr fragment parser in Rust) | removed (D3A-2) |
+| 5 | `DocxText.Replace(doc, Regex, …)` is removed (§1.6) | removed |
+
+Semantic differences that no signature shows: exception **messages are the Rust core's, in English** (0.9's were
+Portuguese; classes and properties are equal and nothing matches on messages, D3A-8); bad JSON throws the public
+`JsonException` where 0.9 threw the internal `JsonReaderException` (its subclass, D3A-5); a throwing host validator
+leaves NO inline unwrapped (0.9 had unwrapped the ones before it; the document is mid-sanitization in both, D3A-6);
+documents are thread-safe (one call at a time), disposable and report GC memory pressure (D3A-7); a negative cap in
+`DocxLimits` / `OpcPackageLimits` counts as 0 (D3A-11: 0.9 made every part exceed, empty ones included; now empty
+parts pass); counts above `int.MaxValue` saturate; `null` items inside string collections are
+`ArgumentNullException`; a lone surrogate in a string argument becomes U+FFFD on the way to Rust (A1, as in the
+milestone-1 UTF-8 writer); the `UniversalOffice.Core` types now live in the UniversalOffice.Docx assembly, so a host
+that also references the 0.9 `UniversalOffice.Core` package (through Xlsx or Pptx) gets CS0433 (clickCompliance
+references only UniversalOffice.Docx and is unaffected, D3A-9); operations on a shape removed from the document
+behave as on 0.9's detached `XElement` (no throw).
+
+### 4.6 What was verified (every run with `CARGO_TARGET_DIR=core/target/m2-d3abi`, `-j 4`)
+
+- **Rust, function level** (`cargo test -p uo-ffi`): lib 11 passed (wire round trips, null and short structs, every
+  `*_free(null)`, the poisoned handle, the limit detail of `deep-257`); `editing_abi` 11 passed (all 35 d3 fixtures:
+  30 open and save byte-equal to `DocxDocument::open(..).save()`, 5 refused with codes 3 to 5; each error class and
+  code; `deep-257` gives limit 2, max 256, part `word/document.xml`; the two-phase sanitizer equals the Rust
+  two-phase byte for byte and a second finish is InvalidOperation; forged and foreign views on the 11 view exports;
+  same-document import; a writer of another document is InvalidOperation); `editing_nopanic` 2 passed in 1.6 s
+  (40 random rounds over 9 documents through every export that takes a document, string, list, date or option struct
+  (plain getters of a handle are left to `editing_abi`, listed in the test doc), with null and garbage pointers,
+  lengths, option bits and dates, truncated lists and forged views, `apply_content` with garbage and with each hostile
+  document as the content and `import_body` with it as the source; 60 hostile, truncated or bit-flipped documents,
+  also through `apply_content` and `import_body`: no INTERNAL).
+- **Memory, Rust** (`editing_memory`, counting allocator, 49 s in debug): M4 10,000 × each handle kind (UoDocx,
+  UoBodyWriter, UoRowTemplate, UoSanitizeStage, UoSampleSet with UoParagraphProps, UoBuf) and 10,000 × (limit error
+  and xml error): **0 B left**; M1 every export family over 7 fixtures: 0 B left each; M2 soak of 200 × (open,
+  sanitize two-phase, save, apply_content into a template, sanitize, save): live series constant at 7,717 B over 21
+  samples (`UO_FFI_EDITING_SOAK=1000` for the 1,000-iteration run).
+- **.NET, `dotnet test UniversalOffice.Docx.Tests`** (net8.0): **43 passed of 43** = the 14 milestone-1 tests (68 of
+  68 PDF parity, M4 converters, thread soak) plus 29 new Editing tests (contract 10, errors 10, memory 6, threads 3).
+  M4: 10,000 documents Open, Save, Dispose **0 B left**; 10,000 abandoned and finalized **0 B left**; 10,000 ×
+  (document, writer, row template, sample set, paragraph props, sanitize stage) 0 B; 20,000 failed opens 0 B;
+  10 rounds × 35 fixtures through sanitize, text, fields, inlines, save 0 B. Threads: 8 threads × 50 flows equal to
+  the sequential bytes with native memory flat; 8 threads × 20 rounds on ONE document without a crash and flat;
+  Dispose racing 4 readers is safe. The 29 Editing tests take 8 s.
+- **The frozen C# Editing suite through the facade** (`UniversalOffice.Docx.FrozenSuite`, the 12 frozen files
+  linked): **134 passed of 134** (11 s). Two tests cannot run over Rust and are cut from a generated copy in
+  `obj/` (the frozen sources are untouched; a pattern that stops matching fails the build):
+  `DocxBodyWriterTests.Resultado_Passa_Pela_Leitura_Do_Motor_De_Layout` (reads the result with the C# layout
+  reader) and `DocxTextTests.Expressao_Regular_Apaga_Parametros_Que_Sobraram` (the removed Regex overload).
+  `DocxUntrustedInputTests` is linked whole since fix round 2: its `OpcPartName.ResolveRelationshipTarget` assertion
+  (the escape `%2531`) runs against the facade's `OpcPartName` (round 1 had cut it, on the false ground that the
+  type was internal); one helper
+  (`OpcPackageLimitsTests.LieAboutSize`) is a verbatim copy in `FrozenShims.cs`. `DocxUntrustedInputTests` asserts
+  `Limit`, `Maximum` and `PartName` exactly as 0.9 threw them.
+- **Parity harness through the facade** (`UniversalOffice.Docx.Parity`, net10.0): `corpus-check` gives **records
+  50,436, facets equal 100,872 of 100,872, mismatches 0** in 36 s (the C# took about 55 s), the same result as the
+  Rust API replay of `tests/parity_d3.rs`; `semantics-check` checked 13,429 public or pure-.NET sites: 0 mismatches,
+  26 accepted (10 lone-surrogate inputs, A1; 16 `JsonReaderException` seen as `JsonException`, D3A-5), and skipped
+  4,639 reflection-site records (builtin, color, date, firstword, nextrelid, relative, removeinvalid, unique, vml,
+  wholeword: they reach C# internals). Both re-run in fix round 2 on the final tree (corpus 36.4 s; semantics 13,429
+  checked, 26 accepted, 0 mismatches, 4,639 skipped).
+- **Lint**: `cargo clippy -p uo-ffi --all-targets` with no features, with `--features count`, and the check-changed
+  gate (`--all-features`, native and wasm32): clean; `tests/float-casts.sh` and `tests/grep-bans.sh` clean; rustfmt
+  clean on every touched file. All C# builds with 0 warnings.
+- **Size** (release, LTO, feature `count`, same target dir, fix round 1): `uo_ffi.dll` is **8,589,824 B with** the Editing
+  API and **7,496,704 B without** it (`editing-api` removed from `uo-ffi/Cargo.toml` and `pub mod editing;` commented
+  out, nothing else), a difference of 1,093,120 B (+14.6 %).
+- **Fix round 2** (reviewer findings): (1) `OpcPartName` (public in 0.9, called by clickCompliance) provided by the
+  facade over two new pure exports, `uo_opc_resolve_relationship_target` and `uo_opc_escape_segment` (92 exports in all, counting the 6 frees),
+  with a call-shape test in `EditingContractTests` and the FrozenSuite cut removed; `api-dump` scope widened to it and
+  prints the out-of-scope set (§4.5). (2) `uo_docx_template_import_body` catches a panic around `import_body` and
+  poisons the SOURCE handle as well as the target (D3A-12). (3) `editing_nopanic` now also drives `text_plain`,
+  `fields_instructions`, `custom_property_names`, `main_part_path`, `pictures_fit_to_page`, `prop_set_date` /
+  `prop_get_date` with garbage fields, `shapes_first_in`, `apply_content`, `import_body`, `tag_format`,
+  `is_allowed_url`, `try_parse_hyperlink`, the two OPC exports, `editing_defaults` and `open`; the doc lists the plain
+  getters it leaves to `editing_abi`. (4) `uo-docx` `api/styles.rs`: `paragraph_style_name` now delegates to
+  `paragraph_style_name_of_id` (one tail), with the test `nopanic_d3::paragraph_style_name_of_id_equals_the_node_door`
+  over every paragraph of the d3 fixtures (files outside this frontier, additive; declared for the orchestrator).
+  (5) The in-tree `bin/` and `obj/` of the .NET projects were removed; every run passes `--artifacts-path
+  target/m2-d3abi/dotnet`. Re-run: `dotnet test UniversalOffice.Docx.Tests` 43/43 (32 s), FrozenSuite 134/134,
+  `cargo test -p uo-ffi` `editing_abi` 11, `editing_nopanic` 2, `editing_memory` 4; `nopanic_d3` 4; clippy
+  `-D warnings` clean for uo-ffi (no features, `count`) and uo-ffi + uo-docx `--all-features`, and uo-docx wasm32;
+  `float-casts.sh` and `grep-bans.sh` clean. `node tools/check-changed.mjs` stops at `uo-schema` (a clippy
+  `collapsible_match` in `core/tools/uo-schema/src/lib.rs`, a file of the WS frontier, not touched here), so the
+  clippy steps were run per crate instead.
+- **Merge (orchestrator, the third review's findings)**: the two `PatchFrozen` patterns end in `\r?\n` (they
+  matched LF only, so a CRLF checkout — `core.autocrlf=true`, the windows-latest runner — failed the FrozenSuite
+  build; probed on LF and CRLF copies of both frozen files: both match, same cut); the generated sources are listed
+  by name instead of `$(PatchDir)*.cs` (a stale round-1 copy broke the Debug build with CS0111); `uo_stage_finish`
+  reads `verdicts` before it takes the stage, and `uo_tag_try_parse` checks both output slots before writing any,
+  so a failing call leaves no stage consumed and no buffer the caller was not told about; export counts corrected
+  (92). The third review re-ran `corpus-check` (100,872 facets equal), `semantics-check` (0 mismatches) and
+  `api-dump` (11 differences, §4.5).
+- **Fix round 1** (reviewer findings): the exports are `unsafe extern "C"` (§4.1); view tables split by kind with a salt
+  (§4.3 item 2); `uo_docx_view_count` removed (it was a test-only export with no C# import); `uo_docx_paragraph_style_name`
+  no longer allocates arena nodes; the `editing_nopanic` sample-set leak is freed. Re-run after them:
+  `cargo clippy -p uo-ffi --all-targets -- -D warnings` clean with no features and with `--features count`;
+  `cargo clippy -p uo-docx --all-targets --all-features` clean native and for wasm32; Miri
+  (`cargo +nightly miri test -p uo-ffi --lib editing`) 5 passed, 2 ignored; `cargo test -p uo-ffi --features count --lib
+  --test editing_abi --test editing_nopanic --test editing_memory --test ffi_memory --test hostile_inputs`: all green
+  (editing_abi 11 tests incl. the new view-mix test; editing_memory, the 10,000-handle M4 test, 4 passed in 49 s);
+  `dotnet test UniversalOffice.Docx.Tests -c Release` (cargo release build inside, 1 min 10 s) **42/42**;
+  `dotnet test UniversalOffice.Docx.FrozenSuite` **134/134**; `corpus-check` through the facade **50,436 records,
+  100,872 of 100,872 facets equal, 0 mismatches** (34.9 s).
 
 ## 5. Parity harness
 
@@ -355,7 +567,47 @@ ids refused.
 
 ## 12. What is left
 
-- The `uo-ffi` exports and the C# facade (design §4) — owned by the bindings work; the M4 handle test with it.
-- The maintainer's decisions on S1–S8 (port and C# keep the current behaviour).
-- G27 (ship the hybrid NuGet or wait for the Rust PDF path) — unchanged.
-- CHANGELOG entry for the removed `Regex` overloads (§1.6), for the coordinator.
+- **Decisions of this frontier waiting for the maintainer** (the variants below are implemented; pending decisions
+  D2a-U6, D2a-C2, D2a-C1, G23-G31 and G27 keep the variants already implemented): D3A-1 one
+  `UniversalOffice.Core.OfficeLimitExceededException` (not sealed, with `Stage`); D3A-2 keep `DocxPageArea.From` and
+  `DocxStyles.ParagraphStyleName` over `XElement`, drop `DocxCustomInlines.Create`; D3A-3 views as sealed classes over
+  a per-document index table; D3A-4 packed lists; D3A-5 public `JsonException` for the internal `JsonReaderException`;
+  D3A-6 two-phase validator semantics (an exception from the host callback leaves no inline unwrapped); D3A-7
+  `IDisposable`, GC memory pressure and a per-document lock; D3A-8 English exception messages (a CHANGELOG line);
+  D3A-9 the Core types inside the UniversalOffice.Docx assembly (a 0.10 `UniversalOffice.Core` package is the
+  alternative, needed when Xlsx and Pptx move to Rust); D3A-10 `ImportBody(doc, doc)` imports from a clone (not
+  measured against 0.9); D3A-11 negative caps count as 0, counts saturate; D3A-12 a caught panic poisons the handle;
+  D3A-13 `uo_docx_run(op)`.
+- The maintainer's decisions on S1-S8 (port and C# keep the current behaviour) and G27 (ship the hybrid NuGet or wait
+  for the Rust PDF path): unchanged.
+- **For the milestone-2 gate**:
+  1. (done in fix round 1) `dotnet test UniversalOffice.Docx.Tests` with the cargo release build inside (42/42), the
+     FrozenSuite (134/134) and `corpus-check` (0 mismatches) ran on the compiling tree; `semantics-check` was re-run in fix round 2 (§4.6).
+  2. (done) The size of `uo_ffi.dll` with and without `editing-api`: 8,589,824 B and 7,496,704 B (§4.6).
+  3. (done locally, in fix round 1 — before the round-2 edits of `pure.rs` and `import_body`) Miri `--lib` over the editing unit tests: 5 passed, 2 ignored (the parse-heavy ones); the CI job
+     must still run it.
+  4. A `ffi_editing` fuzz target in `core/fuzz` (not owned here: proposed) and LSan over the facade (G19).
+  5. The CI `dotnet` job has never run (the edit adds `10.0.x` to setup-dotnet, the FrozenSuite, both parity checks and
+     the Smoke `edit`); the first run on Linux also exercises `libuo_ffi.so` through the shared `UoNative.targets`.
+  6. (fixed in round 1) `uo_docx_paragraph_style_name` allocated up to three arena nodes per call; it now resolves the
+     style id directly (`styles::paragraph_style_name_of_id`, additive in `uo-docx/src/api/styles.rs`: a file outside
+     the owned list, declared for the orchestrator). GC pressure of an open document is still measured once, at open.
+- **For the orchestrator, outside the owned files**: the CHANGELOG (.NET) entries (English messages, `IDisposable`
+  documents, `Create` and the `Regex` overloads removed, the Core types in the UniversalOffice.Docx assembly, the
+  exception hierarchy); the §8 M4 row of this record should point at the facade numbers of §4.6;
+  `uo-bindings.md` should cross-reference §4; `uo-ffi/Cargo.toml` (one word, `editing-api`) and `uo-ffi/src/lib.rs`
+  (`pub mod editing;`, one doc line) and the additive `styles::paragraph_style_name_of_id` in `uo-docx/src/api/styles.rs` are the only edits outside the owned list.
+- The CHANGELOG entry for the removed `Regex` overloads (§1.6), for the coordinator: unchanged.
+
+### Process metrics (this frontier)
+
+| Stage | Wall time (approx.) | Rounds / rework |
+|---|---|---|
+| Reading (record §4, the 12 Rust API modules, the 0.9 C# signatures, the milestone-1 ABI and facade) | 25 min | 0 |
+| Rust ABI (wire, errors, handles, options, 6 export files) | 30 min | 2: clippy `not_unsafe_ptr_arg_deref` on the first design; the first answer (safe exports over `pub` helpers that hid the dereference) bypassed the lint and was unsound, so the review sent it back: exports and `wire` helpers are now `unsafe` with `# Safety` sections (fix round 1, ≈ 40 min incl. the test wrapping) |
+| Rust tests (abi, memory, nopanic, lib unit) | 25 min | 3 test fixes (fixtures with shapes do not exist: a synthetic VML package; one output check moved before the work; `deep-257` setup) |
+| C# facade (22 files) | 30 min | 0 compile rounds after the cell edits (pointer-in-lambda: 3 sites rewritten before the first build) |
+| .NET tests (4 files) | 25 min | 2: 4 test expectations that were wrong (default content type of an unknown extension, detached shapes do not throw, an unbounded `ImportBody` growth in the thread test) |
+| FrozenSuite | 20 min | 1: 7 compile errors from 3 frozen files, solved by the generated-copy patch (a first attempt wrote to a doubled absolute path) |
+| Parity project, api-dump | 25 min | 2: `JsonException` rule (D3A-5), api-dump scope (first run listed the 190 C# model types) |
+| Record, lint, CI | 20 min | 0 |

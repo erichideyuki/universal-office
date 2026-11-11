@@ -1,0 +1,5027 @@
+// The session protocol of <universal-write> over wasm (milestone 2): the messages of
+// `uo_session_exec`, `uo_session_complete`, `uo_session_query`, the hot paths and the font save
+// (record core/docs/modules/uo-bindings.md, "Milestone 2: the session in wasm").
+//
+// The command and output types mirror uo-docx's session types one to one; schema/session.bind binds
+// each to its Rust type (core/tools/uo-schema rust_bind), so a new variant or field there fails to
+// compile until it is added here. The type part was drafted from the uo-docx sources by a throwaway
+// extractor and finished by hand.
+//
+// Wire rules of the binding (declared in the record): i64/i8 travel as i32 (checked), usize as u32;
+// `JsNumber` as f64 (the TS `null` goes out as NaN, never comes back as `null`); `Str`/`String`
+// arguments are built from UTF-16 (a lone surrogate becomes U+FFFD); maps (`JsRecord`, `IndexMap`)
+// as lists of pairs in their order; Rust tuples as `Tup*` structs; an `Option` where the IDL has no
+// optional as an `Opt*` struct of one optional field.
+schema write_session magic "UOWS";
+
+// ───────────────────────────── messages ─────────────────────────────
+
+/// `uo_session_exec`: one operation of the session
+message Exec {
+  op: ExecOp,
+}
+
+/// `uo_session_complete`: the answer to a job of a pending two-phase command
+message Complete {
+  job: u32,
+  result: JobResult,
+}
+
+/// what `exec`, `complete` and every hot path answer
+message ExecResult {
+  outcome: ExecOutcome,
+}
+
+/// `uo_session_query`
+message Query {
+  q: QueryOp,
+}
+
+message QueryResult {
+  r: QueryAnswer,
+}
+
+/// `uo_session_open` / `uo_session_new_blank`: how the session opens
+message SessionOpen {
+  /// Modo Protegido (the TS `loadDocx` default is `true`; hosts pass `false`)
+  protected: bool,
+  /// `author` (default "Author")
+  author: utf16?,
+  tracking: bool?,
+  markup: MarkupMode?,
+  /// the language of a new document (`newDocument`, `spellcheck-default-lang`)
+  lang: utf16?,
+  /// the clock of the session (dates of revisions, comments, DATE fields); default 2026-01-02 03:04
+  clock: LocalNow?,
+  /// the seed of the TS `Math.random` sites (xorshift32; 0 = the fixed default)
+  seed: u32,
+  /// the undo history cap in steps (default: uo-docx `HistoryLimits`)
+  max_history_steps: u32?,
+  /// the clipboard identity (G7; default: a counter of the module)
+  session_id: u32?,
+}
+
+/// `uo_session_font_requests`: the faces the save wants (phase 1 of the fonts on save)
+message FontRequests {
+  settings: EmbeddingSettings,
+  requests: list<FaceRequest>,
+}
+
+/// `uo_session_save_with_fonts`: one answer per request, in order, and 16 random bytes per face (the GUIDs)
+message FontFaces {
+  faces: list<FaceAnswer>,
+  guids: bytes,
+}
+
+/// what `uo_session_save_with_fonts` answers
+message SaveResult {
+  bytes: bytes,
+  events: list<Event>,
+}
+
+/// `uo_session_caret_rect`: page twips (in the text frame when `xf`)
+message Caret {
+  page: u32,
+  x: f64,
+  y: f64,
+  h: f64,
+  xf: list<f64>?,
+}
+
+/// `uo_session_hit_test`: a position in the edited paragraphs
+message Hit {
+  para: u32,
+  offset: u32,
+}
+
+/// `uo_session_selection_rects`
+message SelRects {
+  rects: list<SelRect>,
+}
+
+// ───────────────────────────── binding-level types ─────────────────────────────
+
+/// an operation of `uo_session_exec`
+enum ExecOp {
+  Command(Command),
+  Undo,
+  Redo,
+  /// drops a pending two-phase command (no step, no change)
+  CancelPending,
+  /// `uw-dirty-change` from the host (after its own save)
+  SetDirty(bool),
+  /// `applyPainter()` with the painter the last `CopyFormat` query stored in the handle
+  ApplyPainter,
+  /// `fontEmbedding = { ...fontEmbedding, ...patch }` (no undo step)
+  SetFontEmbedding(EmbeddingPatch),
+  /// the clock of the session from now on
+  SetClock(LocalNow),
+  /// the interface language of the style names and the galleries (the element's `lang`)
+  SetUiLang(UiLang),
+}
+
+enum ExecOutcome {
+  Done(ChangeSet),
+  Jobs(JobList),
+  Error(CommandError),
+}
+
+struct JobList {
+  jobs: list<Job>,
+}
+
+/// `FontEmbeddingSettings` (uo-fonts)
+struct EmbeddingSettings {
+  embed: bool,
+  subset: bool,
+  skip_common_fonts: bool,
+}
+
+struct EmbeddingPatch {
+  embed: bool?,
+  subset: bool?,
+  skip_common_fonts: bool?,
+}
+
+enum FontVariant {
+  Regular,
+  Bold,
+  Italic,
+  BoldItalic,
+}
+
+struct FaceRequest {
+  family: utf16,
+  variant: FontVariant,
+}
+
+/// the bytes of a requested face (absent: the host has no file)
+struct FaceAnswer {
+  bytes: bytes?,
+}
+
+struct SelRect {
+  x: f64,
+  y: f64,
+  w: f64,
+  h: f64,
+  xf: list<f64>?,
+}
+
+/// one item of the Office Clipboard of the instance (`ClipboardItems`)
+struct ClipItem {
+  id: u32,
+  text: utf16,
+  at: LocalNow,
+}
+
+/// the binding-level answers
+struct ClipItems {
+  version: u32,
+  items: list<ClipItem>,
+}
+
+/// one face of `fontUsage()` (LQ15)
+struct FontUse {
+  family: utf16,
+  variant: FontVariant,
+  text: utf16,
+}
+
+// ───────────────────────────── queries ─────────────────────────────
+
+/// a query of the session (one variant per public accessor of `uo_docx::session::Session` that answers model state, D2a-Q1)
+enum QueryOp {
+  Selection,
+  TableSelection,
+  RevisionAuthors,
+  IsDirty,
+  CanUndo,
+  CanRedo,
+  EditsSinceLoad,
+  MarkStories,
+  HasBookmark(QHasBookmark),
+  Bookmarks(QBookmarks),
+  CanInsertField,
+  PasteOptions,
+  PasteSpecialFormats,
+  LastPasteRange,
+  LinkSourceName,
+  PasteDefaults,
+  SelectedText,
+  Comments,
+  PaneKeys,
+  FloatSelection,
+  SelectedObjectCount,
+  SelectionPaneItems,
+  SelectedObjectState(QSelectedObjectState),
+  FindQueryError(QFindQueryError),
+  HighlightSpans,
+  EvenOddHeaders,
+  HeaderFooterOptions(QHeaderFooterOptions),
+  PageNumberFormat(QPageNumberFormat),
+  HfPartOfRef(QHfPartOfRef),
+  HeaderFooterTemplates(QHeaderFooterTemplates),
+  NavigationResult,
+  SelectionRanges,
+  Headings,
+  CurrentHeading,
+  SearchResults,
+  EditingNote,
+  LastConvertedNotes,
+  CanInsertNote,
+  NoteRefs(QNoteRefs),
+  NoteCount(QNoteCount),
+  NoteOptions(QNoteOptions),
+  CoverPages(QCoverPages),
+  HasCoverPage,
+  CoverParaIndexes,
+  Watermark(QWatermark),
+  WatermarkTexts(QWatermarkTexts),
+  WatermarkGalleryEntries(QWatermarkGalleryEntries),
+  ParagraphBorderSides,
+  ParagraphIndents,
+  ParagraphTabStops,
+  CompressResult,
+  ReferencesResult,
+  RefSeed,
+  CaptionSettings,
+  CaptionLabels,
+  CaptionNumbering(QCaptionNumbering),
+  AutoCaption,
+  CaptionTarget,
+  CrossReferenceKinds(QCrossReferenceKinds),
+  CrossReferenceItems(QCrossReferenceItems),
+  NextCaptionNumber(QNextCaptionNumber),
+  DateTimeFormats(QDateTimeFormats),
+  ManualHyphenationState,
+  ManualHyphenationFrom,
+  TableOfFiguresOptions,
+  HasTableOfContents,
+  InTableOfContents,
+  TocTemplates,
+  TableOfContentsOptions,
+  TocLevel,
+  RevisionEntries,
+  RevisionCount,
+  RevisionAuthorsNow,
+  AuthorColorOf(QAuthorColorOf),
+  MarkupOptions,
+  SuggestFormula,
+  PreviewFormula(QPreviewFormula),
+  HasSelection,
+  Range,
+  CanonPos(QCanonPos),
+  HyphenationSettings,
+  Hyphenation,
+  /// the Office Clipboard of the instance (G7)
+  ClipboardItems,
+  /// `copyFormat()`: stores the painter in the handle for `ExecOp::ApplyPainter`; answers whether there is one
+  CopyFormat,
+  /// `fontUsage()` (LQ15)
+  FontUsage,
+  /// the font embedding settings of the session
+  FontEmbedding,
+}
+
+enum QueryAnswer {
+  Selection(Selection),
+  TableSelection(ATableSelection),
+  RevisionAuthors(list<utf16>),
+  IsDirty(bool),
+  CanUndo(bool),
+  CanRedo(bool),
+  EditsSinceLoad(u32),
+  MarkStories(list<MarkStory>),
+  HasBookmark(bool),
+  Bookmarks(list<BookmarkInfo>),
+  CanInsertField(bool),
+  PasteOptions(PasteOptions),
+  PasteSpecialFormats(APasteSpecialFormats),
+  LastPasteRange(ALastPasteRange),
+  LinkSourceName(ALinkSourceName),
+  PasteDefaults(PasteDefaults),
+  SelectedText(utf16),
+  Comments(list<DocumentComment>),
+  PaneKeys(list<utf16>),
+  FloatSelection(AFloatSelection),
+  SelectedObjectCount(u32),
+  SelectionPaneItems(list<PaneItem>),
+  SelectedObjectState(ASelectedObjectState),
+  FindQueryError(AFindQueryError),
+  HighlightSpans(list<TupSearchLocU32U32>),
+  EvenOddHeaders(bool),
+  HeaderFooterOptions(HeaderFooterOptions),
+  PageNumberFormat(PageNumberFormat),
+  HfPartOfRef(AHfPartOfRef),
+  HeaderFooterTemplates(list<TupUtf16Utf16>),
+  NavigationResult(ANavigationResult),
+  SelectionRanges(list<DocRange>),
+  Headings(list<HeadingInfo>),
+  CurrentHeading(i32),
+  SearchResults(list<SearchResult>),
+  EditingNote(AEditingNote),
+  LastConvertedNotes(u32),
+  CanInsertNote(bool),
+  NoteRefs(list<NoteRefLoc>),
+  NoteCount(u32),
+  NoteOptions(NoteOptions),
+  CoverPages(list<TupUtf16Utf16>),
+  HasCoverPage(bool),
+  CoverParaIndexes(list<u32>),
+  Watermark(AWatermark),
+  WatermarkTexts(list<utf16>),
+  WatermarkGalleryEntries(list<WatermarkGalleryEntry>),
+  ParagraphBorderSides(list<ParaBorderSide>),
+  ParagraphIndents(IndentInfo),
+  ParagraphTabStops(list<TabStopInfo>),
+  CompressResult(u32),
+  ReferencesResult(AReferencesResult),
+  RefSeed(ARefSeed),
+  CaptionSettings(CaptionSettings),
+  CaptionLabels(list<CaptionLabelInfo>),
+  CaptionNumbering(CaptionNumbering),
+  AutoCaption(AAutoCaption),
+  CaptionTarget(ACaptionTarget),
+  CrossReferenceKinds(list<CrossRefKind>),
+  CrossReferenceItems(list<CrossRefItem>),
+  NextCaptionNumber(utf16),
+  DateTimeFormats(list<TupUtf16Utf16>),
+  ManualHyphenationState(AManualHyphenationState),
+  ManualHyphenationFrom(AManualHyphenationFrom),
+  TableOfFiguresOptions(ATableOfFiguresOptions),
+  HasTableOfContents(bool),
+  InTableOfContents(bool),
+  TocTemplates(list<TupTocTemplateIdUtf16>),
+  TableOfContentsOptions(ATableOfContentsOptions),
+  TocLevel(f64),
+  RevisionEntries(list<RevisionEntry>),
+  RevisionCount(u32),
+  RevisionAuthorsNow(list<utf16>),
+  AuthorColorOf(utf16),
+  MarkupOptions(MarkupOptions),
+  SuggestFormula(utf16),
+  PreviewFormula(APreviewFormula),
+  HasSelection(bool),
+  Range(DocRange),
+  CanonPos(DocPosition),
+  HyphenationSettings(HyphenationSettings),
+  Hyphenation(HyphenationInfo),
+  ClipboardItems(ClipItems),
+  CopyFormat(bool),
+  FontUsage(list<FontUse>),
+  FontEmbedding(EmbeddingSettings),
+}
+
+struct ATableSelection { value: TableSel? }
+
+struct QHasBookmark {
+  name: utf16,
+}
+
+struct QBookmarks {
+  hidden: bool,
+  by_location: bool,
+}
+
+struct APasteSpecialFormats { value: SpecialFormats? }
+
+struct ALastPasteRange { value: PasteRange? }
+
+struct ALinkSourceName { value: utf16? }
+
+struct AFloatSelection { value: u32? }
+
+struct QSelectedObjectState {
+  want_image: bool,
+}
+
+struct ASelectedObjectState { value: ObjectState? }
+
+struct QFindQueryError {
+  q: FindQuery,
+}
+
+struct AFindQueryError { value: QueryError? }
+
+struct QHeaderFooterOptions {
+  at: HfAt,
+}
+
+struct QPageNumberFormat {
+  at: HfAt,
+}
+
+struct QHfPartOfRef {
+  kind: HfKind,
+  rid: utf16,
+}
+
+struct AHfPartOfRef { value: u32? }
+
+struct QHeaderFooterTemplates {
+  gallery: HfGallery,
+  lang: PageLang,
+}
+
+struct ANavigationResult { value: F9Result? }
+
+struct AEditingNote { value: TupBoolF64? }
+
+struct QNoteRefs {
+  kind: bool?,
+}
+
+struct QNoteCount {
+  footnote: bool,
+}
+
+struct QNoteOptions {
+  footnote: bool,
+}
+
+struct QCoverPages {
+  lang: PageLang,
+}
+
+struct QWatermark {
+  at: HfAt,
+}
+
+struct AWatermark { value: TupWatermarkInfoOptBytes? }
+
+struct QWatermarkTexts {
+  lang: PageLang,
+}
+
+struct QWatermarkGalleryEntries {
+  lang: PageLang,
+}
+
+struct AReferencesResult { value: F10Result? }
+
+struct ARefSeed { value: f64? }
+
+struct QCaptionNumbering {
+  label: utf16,
+}
+
+struct AAutoCaption { value: AutoCaptionCfg? }
+
+struct ACaptionTarget { value: CaptionTarget? }
+
+struct QCrossReferenceKinds {
+  ty: CrossRefType,
+}
+
+struct QCrossReferenceItems {
+  ty: CrossRefType,
+  label: utf16?,
+}
+
+struct QNextCaptionNumber {
+  label: utf16,
+}
+
+struct QDateTimeFormats {
+  lang: UiLang?,
+}
+
+struct AManualHyphenationState { value: ManualHyphState? }
+
+struct AManualHyphenationFrom { value: DocRange? }
+
+struct ATableOfFiguresOptions { value: TableOfFiguresOptions? }
+
+struct ATableOfContentsOptions { value: TableOfContentsOptions? }
+
+struct QAuthorColorOf {
+  author: utf16,
+}
+
+struct QPreviewFormula {
+  formula: utf16,
+  number_format: utf16?,
+}
+
+struct APreviewFormula { value: utf16? }
+
+struct QCanonPos {
+  pos: DocPosition,
+}
+
+// ───────────────────────────── the session types (bound: schema/session.bind) ─────────────────────────────
+
+/// `uo_docx::session::command::Command`
+enum Command {
+  Text(TextCmd),
+  Context(ContextCmd),
+  Settings(SettingsCmd),
+  Format(FormatCmd),
+  Paragraph(ParagraphCmd),
+  List(ListCmd),
+  Style(StyleCmd),
+  Table(TableCmd),
+  Section(SectionCmd),
+  HeaderFooter(HeaderFooterCmd),
+  Note(NoteCmd),
+  Revision(RevisionCmd),
+  Comment(CommentCmd),
+  Bookmark(BookmarkCmd),
+  Drawing(DrawingCmd),
+  Picture(PictureCmd),
+  Page(PageCmd),
+  TextLayout(TextLayoutCmd),
+  Clipboard(ClipboardCmd),
+  Find(FindCmd),
+  Navigation(NavigationCmd),
+  Reference(ReferenceCmd),
+}
+
+/// the fields of `JobResult::Image { .. }`
+struct JobResultImage {
+  width: u32,
+  height: u32,
+  rgba: bytes?,
+}
+
+/// the fields of `JobResult::Clipboard { .. }`
+struct JobResultClipboard {
+  text: utf16?,
+  html_tree: bytes?,
+  fragment: bytes?,
+  image: ClipImage?,
+}
+
+/// the fields of `JobResult::Rendered { .. }`
+struct JobResultRendered {
+  png: bytes,
+  width_twips: f64,
+  height_twips: f64,
+}
+
+/// `uo_docx::session::command::JobResult`
+enum JobResult {
+  Image(JobResultImage),
+  Bytes(bytes),
+  Clipboard(JobResultClipboard),
+  Rendered(JobResultRendered),
+  Failed,
+}
+
+/// `uo_docx::session::env::LocalNow`
+struct LocalNow {
+  local: DateParts,
+  utc: DateParts,
+}
+
+/// the fields of `TextCmd::Type { .. }`
+struct TextCmdType {
+  text: utf16,
+}
+
+/// the fields of `TextCmd::SetSelection { .. }`
+struct TextCmdSetSelection {
+  anchor: DocPosition,
+  focus: DocPosition,
+}
+
+/// `uo_docx::session::ops::text::TextCmd`
+enum TextCmd {
+  Type(TextCmdType),
+  Enter,
+  Backspace,
+  Delete,
+  SetSelection(TextCmdSetSelection),
+}
+
+/// the fields of `ContextCmd::EnterCell { .. }`
+struct ContextCmdEnterCell {
+  anchor: u32,
+  hops: list<CellHop>,
+  caret: DocPosition?,
+}
+
+/// the fields of `ContextCmd::EnterNote { .. }`
+struct ContextCmdEnterNote {
+  footnote: bool,
+  id: f64,
+  caret: DocPosition?,
+  at_end: bool,
+}
+
+/// the fields of `ContextCmd::EnterHeaderFooter { .. }`
+struct ContextCmdEnterHeaderFooter {
+  part: u32,
+  page: u32,
+}
+
+/// the fields of `ContextCmd::EnterTextbox { .. }`
+struct ContextCmdEnterTextbox {
+  para: u32,
+  run: u32,
+  host: u32,
+  focus: u32,
+  page: u32,
+}
+
+/// `uo_docx::session::ops::context::ContextCmd`
+enum ContextCmd {
+  EnterCell(ContextCmdEnterCell),
+  ExitCell,
+  EnterNote(ContextCmdEnterNote),
+  ExitNote,
+  EnterHeaderFooter(ContextCmdEnterHeaderFooter),
+  ExitHeaderFooter,
+  EnterTextbox(ContextCmdEnterTextbox),
+  ExitTextbox,
+}
+
+/// the fields of `SettingsCmd::SetTracking { .. }`
+struct SettingsCmdSetTracking {
+  on: bool,
+}
+
+/// the fields of `SettingsCmd::SetAuthor { .. }`
+struct SettingsCmdSetAuthor {
+  name: utf16,
+}
+
+/// the fields of `SettingsCmd::SetProtected { .. }`
+struct SettingsCmdSetProtected {
+  on: bool,
+}
+
+/// the fields of `SettingsCmd::SetReadView { .. }`
+struct SettingsCmdSetReadView {
+  on: bool,
+}
+
+/// the fields of `SettingsCmd::SetMarkup { .. }`
+struct SettingsCmdSetMarkup {
+  mode: MarkupMode,
+}
+
+/// the fields of `SettingsCmd::SetPolicy { .. }`
+struct SettingsCmdSetPolicy {
+  policy: FormattingPolicy?,
+}
+
+/// `uo_docx::session::ops::settings::SettingsCmd`
+enum SettingsCmd {
+  SetTracking(SettingsCmdSetTracking),
+  SetAuthor(SettingsCmdSetAuthor),
+  SetProtected(SettingsCmdSetProtected),
+  SetReadView(SettingsCmdSetReadView),
+  SetMarkup(SettingsCmdSetMarkup),
+  SetPolicy(SettingsCmdSetPolicy),
+}
+
+/// the fields of `FormatCmd::ToggleRunProp { .. }`
+struct FormatCmdToggleRunProp {
+  key: RunToggle,
+  button: utf16,
+}
+
+/// the fields of `FormatCmd::ToggleUnderline { .. }`
+struct FormatCmdToggleUnderline {
+  style: utf16?,
+  button: utf16,
+}
+
+/// the fields of `FormatCmd::SetUnderline { .. }`
+struct FormatCmdSetUnderline {
+  style: utf16,
+}
+
+/// the fields of `FormatCmd::SetUnderlineColor { .. }`
+struct FormatCmdSetUnderlineColor {
+  color: ColorArg?,
+  button: utf16,
+}
+
+/// the fields of `FormatCmd::SetTextEffects { .. }`
+struct FormatCmdSetTextEffects {
+  patch: list<FxPart>,
+}
+
+/// the fields of `FormatCmd::ApplyTextEffectPreset { .. }`
+struct FormatCmdApplyTextEffectPreset {
+  index: f64?,
+}
+
+/// the fields of `FormatCmd::SetOpenType { .. }`
+struct FormatCmdSetOpenType {
+  patch: list<OtPart>,
+}
+
+/// the fields of `FormatCmd::SetTextGradient { .. }`
+struct FormatCmdSetTextGradient {
+  v: GradientArg?,
+}
+
+/// the fields of `FormatCmd::SetFontFormat { .. }`
+struct FormatCmdSetFontFormat {
+  f: FontFormat,
+}
+
+/// the fields of `FormatCmd::ToggleVertAlign { .. }`
+struct FormatCmdToggleVertAlign {
+  kind: VertKind,
+}
+
+/// the fields of `FormatCmd::SetFontSize { .. }`
+struct FormatCmdSetFontSize {
+  pt: f64,
+}
+
+/// the fields of `FormatCmd::GrowFont { .. }`
+struct FormatCmdGrowFont {
+  delta: f64,
+}
+
+/// the fields of `FormatCmd::SetFontFamily { .. }`
+struct FormatCmdSetFontFamily {
+  name: utf16,
+}
+
+/// the fields of `FormatCmd::SetColor { .. }`
+struct FormatCmdSetColor {
+  color: ColorArg?,
+}
+
+/// the fields of `FormatCmd::SetHighlight { .. }`
+struct FormatCmdSetHighlight {
+  name: utf16?,
+}
+
+/// the fields of `FormatCmd::ChangeCase { .. }`
+struct FormatCmdChangeCase {
+  mode: CaseMode,
+}
+
+/// the fields of `FormatCmd::SetCharSpacing { .. }`
+struct FormatCmdSetCharSpacing {
+  twips: f64?,
+}
+
+/// `uo_docx::session::ops::format::FormatCmd`
+enum FormatCmd {
+  ToggleRunProp(FormatCmdToggleRunProp),
+  ToggleUnderline(FormatCmdToggleUnderline),
+  SetUnderline(FormatCmdSetUnderline),
+  SetUnderlineColor(FormatCmdSetUnderlineColor),
+  SetTextEffects(FormatCmdSetTextEffects),
+  ApplyTextEffectPreset(FormatCmdApplyTextEffectPreset),
+  SetOpenType(FormatCmdSetOpenType),
+  SetTextGradient(FormatCmdSetTextGradient),
+  SetFontFormat(FormatCmdSetFontFormat),
+  ToggleVertAlign(FormatCmdToggleVertAlign),
+  SetFontSize(FormatCmdSetFontSize),
+  GrowFont(FormatCmdGrowFont),
+  SetFontFamily(FormatCmdSetFontFamily),
+  SetColor(FormatCmdSetColor),
+  SetHighlight(FormatCmdSetHighlight),
+  ClearFormatting,
+  ChangeCase(FormatCmdChangeCase),
+  SetCharSpacing(FormatCmdSetCharSpacing),
+  SelectSimilarFormatting,
+}
+
+/// the fields of `ParagraphCmd::SetAlignment { .. }`
+struct ParagraphCmdSetAlignment {
+  alignment: utf16,
+}
+
+/// the fields of `ParagraphCmd::Indent { .. }`
+struct ParagraphCmdIndent {
+  delta: i32,
+}
+
+/// the fields of `ParagraphCmd::SetLineSpacing { .. }`
+struct ParagraphCmdSetLineSpacing {
+  line: f64,
+}
+
+/// the fields of `ParagraphCmd::SetSpaceAfter { .. }`
+struct ParagraphCmdSetSpaceAfter {
+  twips: f64?,
+}
+
+/// the fields of `ParagraphCmd::SetSpaceBefore { .. }`
+struct ParagraphCmdSetSpaceBefore {
+  twips: f64?,
+}
+
+/// the fields of `ParagraphCmd::SetShading { .. }`
+struct ParagraphCmdSetShading {
+  hex: utf16?,
+}
+
+/// the fields of `ParagraphCmd::SetSpecialIndent { .. }`
+struct ParagraphCmdSetSpecialIndent {
+  kind: SpecialIndent,
+}
+
+/// the fields of `ParagraphCmd::SetIndentRight { .. }`
+struct ParagraphCmdSetIndentRight {
+  twips: f64?,
+}
+
+/// the fields of `ParagraphCmd::SetParagraphIndents { .. }`
+struct ParagraphCmdSetParagraphIndents {
+  ind: IndentPatch,
+}
+
+/// the fields of `ParagraphCmd::SetTabStops { .. }`
+struct ParagraphCmdSetTabStops {
+  tabs: list<TabStopInfo>,
+  only: TabOnly?,
+}
+
+/// the fields of `ParagraphCmd::SetParagraphFlow { .. }`
+struct ParagraphCmdSetParagraphFlow {
+  f: FlowArgs,
+}
+
+/// the fields of `ParagraphCmd::SetParagraphLayout { .. }`
+struct ParagraphCmdSetParagraphLayout {
+  v: LayoutArgs,
+}
+
+/// a Rust tuple `(ParaBorderSide, Option<BorderSpec>)`
+struct TupParaBorderSideOptBorderSpec { f0: ParaBorderSide, f1: BorderSpec? }
+
+/// the fields of `ParagraphCmd::SetParagraphBorders { .. }`
+struct ParagraphCmdSetParagraphBorders {
+  sides: list<TupParaBorderSideOptBorderSpec>?,
+}
+
+/// the fields of `ParagraphCmd::ParagraphBorderPreset { .. }`
+struct ParagraphCmdParagraphBorderPreset {
+  kind: BorderPreset,
+}
+
+/// `uo_docx::session::ops::paragraph::ParagraphCmd`
+enum ParagraphCmd {
+  SetAlignment(ParagraphCmdSetAlignment),
+  Indent(ParagraphCmdIndent),
+  SetLineSpacing(ParagraphCmdSetLineSpacing),
+  SetSpaceAfter(ParagraphCmdSetSpaceAfter),
+  SetSpaceBefore(ParagraphCmdSetSpaceBefore),
+  SetShading(ParagraphCmdSetShading),
+  SetSpecialIndent(ParagraphCmdSetSpecialIndent),
+  SetIndentRight(ParagraphCmdSetIndentRight),
+  SetParagraphIndents(ParagraphCmdSetParagraphIndents),
+  SetTabStops(ParagraphCmdSetTabStops),
+  SetParagraphFlow(ParagraphCmdSetParagraphFlow),
+  SetParagraphLayout(ParagraphCmdSetParagraphLayout),
+  SetParagraphBorders(ParagraphCmdSetParagraphBorders),
+  ParagraphBorderPreset(ParagraphCmdParagraphBorderPreset),
+  ToggleBorder,
+  InsertHorizontalLine,
+  ClearParagraphFormatting,
+}
+
+/// the fields of `ListCmd::ToggleList { .. }`
+struct ListCmdToggleList {
+  bullet: bool,
+}
+
+/// the fields of `ListCmd::ApplyListLibrary { .. }`
+struct ListCmdApplyListLibrary {
+  bullet: bool,
+  index: u32?,
+}
+
+/// the fields of `ListCmd::ApplyMultilevelLibrary { .. }`
+struct ListCmdApplyMultilevelLibrary {
+  index: u32?,
+}
+
+/// the fields of `ListCmd::ApplyListLevels { .. }`
+struct ListCmdApplyListLevels {
+  levels: list<ListLevelSpec>,
+}
+
+/// the fields of `ListCmd::SetListLevel { .. }`
+struct ListCmdSetListLevel {
+  ilvl: f64,
+}
+
+/// the fields of `ListCmd::ChangeListLevel { .. }`
+struct ListCmdChangeListLevel {
+  delta: i32,
+}
+
+/// the fields of `ListCmd::RestartNumbering { .. }`
+struct ListCmdRestartNumbering {
+  start: f64?,
+}
+
+/// the fields of `ListCmd::SetNumberingValue { .. }`
+struct ListCmdSetNumberingValue {
+  new_list: bool,
+  value: f64?,
+}
+
+/// the fields of `ListCmd::DefineListLevel { .. }`
+struct ListCmdDefineListLevel {
+  format: ListLevelFormat,
+}
+
+/// the fields of `ListCmd::DefineMultilevelList { .. }`
+struct ListCmdDefineMultilevelList {
+  levels: list<ListLevelSpec>,
+  forward: bool,
+}
+
+/// the fields of `ListCmd::CreateListStyle { .. }`
+struct ListCmdCreateListStyle {
+  name: utf16,
+  levels: list<ListLevelSpec>,
+  apply: bool,
+}
+
+/// the fields of `ListCmd::ApplyListStyle { .. }`
+struct ListCmdApplyListStyle {
+  style_id: utf16,
+}
+
+/// the fields of `ListCmd::ModifyListStyle { .. }`
+struct ListCmdModifyListStyle {
+  style_id: utf16,
+  levels: list<ListLevelSpec>,
+}
+
+/// `uo_docx::session::ops::lists::ListCmd`
+enum ListCmd {
+  ToggleList(ListCmdToggleList),
+  ApplyListLibrary(ListCmdApplyListLibrary),
+  RemoveList,
+  ApplyMultilevelLibrary(ListCmdApplyMultilevelLibrary),
+  ApplyListLevels(ListCmdApplyListLevels),
+  SetListLevel(ListCmdSetListLevel),
+  ChangeListLevel(ListCmdChangeListLevel),
+  RestartNumbering(ListCmdRestartNumbering),
+  ContinueNumbering,
+  SetNumberingValue(ListCmdSetNumberingValue),
+  DefineListLevel(ListCmdDefineListLevel),
+  DefineMultilevelList(ListCmdDefineMultilevelList),
+  CreateListStyle(ListCmdCreateListStyle),
+  ApplyListStyle(ListCmdApplyListStyle),
+  ModifyListStyle(ListCmdModifyListStyle),
+}
+
+/// the fields of `StyleCmd::ApplyStyle { .. }`
+struct StyleCmdApplyStyle {
+  style_id: utf16?,
+}
+
+/// the fields of `StyleCmd::CreateStyle { .. }`
+struct StyleCmdCreateStyle {
+  spec: CreateStyleSpec,
+}
+
+/// the fields of `StyleCmd::ModifyStyle { .. }`
+struct StyleCmdModifyStyle {
+  id: utf16,
+  spec: ModifyStyleSpec,
+}
+
+/// the fields of `StyleCmd::SetDefaultFont { .. }`
+struct StyleCmdSetDefaultFont {
+  font: DefaultFont,
+}
+
+/// the fields of `StyleCmd::UpdateStyleFromSelection { .. }`
+struct StyleCmdUpdateStyleFromSelection {
+  id: utf16?,
+}
+
+/// the fields of `StyleCmd::RenameStyle { .. }`
+struct StyleCmdRenameStyle {
+  id: utf16,
+  name: utf16,
+}
+
+/// the fields of `StyleCmd::DeleteStyle { .. }`
+struct StyleCmdDeleteStyle {
+  id: utf16,
+}
+
+/// the fields of `StyleCmd::SetStyleInGallery { .. }`
+struct StyleCmdSetStyleInGallery {
+  id: utf16,
+  on: bool,
+}
+
+/// `uo_docx::session::ops::styles::StyleCmd`
+enum StyleCmd {
+  ApplyStyle(StyleCmdApplyStyle),
+  CreateStyle(StyleCmdCreateStyle),
+  ModifyStyle(StyleCmdModifyStyle),
+  SetDefaultFont(StyleCmdSetDefaultFont),
+  UpdateStyleFromSelection(StyleCmdUpdateStyleFromSelection),
+  RenameStyle(StyleCmdRenameStyle),
+  DeleteStyle(StyleCmdDeleteStyle),
+  SetStyleInGallery(StyleCmdSetStyleInGallery),
+  ClearParagraphStyle,
+  ClearParagraphFormatting,
+  ClearCharacterStyle,
+  ClearCharacterFormatting,
+}
+
+/// the fields of `TableCmd::InsertTable { .. }`
+struct TableCmdInsertTable {
+  rows: f64,
+  cols: f64,
+  autofit: AutoFit?,
+  col_width_twips: f64?,
+  layout: TableLayoutIn,
+}
+
+/// the fields of `TableCmd::InsertCells { .. }`
+struct TableCmdInsertCells {
+  shift: InsertCellsShift,
+}
+
+/// the fields of `TableCmd::DeleteCells { .. }`
+struct TableCmdDeleteCells {
+  shift: DeleteCellsShift,
+}
+
+/// the fields of `TableCmd::SplitCell { .. }`
+struct TableCmdSplitCell {
+  cols: f64,
+  rows: f64,
+  merge_first: bool,
+  layout: TableLayoutIn,
+}
+
+/// a Rust tuple `(i64, i64)`
+struct TupI32I32 { f0: i32, f1: i32 }
+
+/// the fields of `TableCmd::SetTableSelection { .. }`
+struct TableCmdSetTableSelection {
+  anchor: u32,
+  path: list<CellHop>,
+  rect: CellRect,
+  origin: TupI32I32,
+}
+
+/// the fields of `TableCmd::TableSelArrow { .. }`
+struct TableCmdTableSelArrow {
+  key: SelKey,
+  shift: bool,
+}
+
+/// the fields of `TableCmd::TableSelDelete { .. }`
+struct TableCmdTableSelDelete {
+  backspace: bool,
+}
+
+/// the fields of `TableCmd::DistributeRows { .. }`
+struct TableCmdDistributeRows {
+  layout: TableLayoutIn,
+}
+
+/// the fields of `TableCmd::SetRowHeight { .. }`
+struct TableCmdSetRowHeight {
+  twips: f64,
+  exact: bool,
+}
+
+/// the fields of `TableCmd::SetColumnWidth { .. }`
+struct TableCmdSetColumnWidth {
+  twips: f64,
+}
+
+/// the fields of `TableCmd::AutoFitTable { .. }`
+struct TableCmdAutoFitTable {
+  mode: AutoFitMode,
+  layout: TableLayoutIn,
+}
+
+/// the fields of `TableCmd::SetCellAlignment { .. }`
+struct TableCmdSetCellAlignment {
+  horizontal: utf16,
+  vertical: utf16,
+}
+
+/// the fields of `TableCmd::SetTextDirection { .. }`
+struct TableCmdSetTextDirection {
+  dir: utf16,
+}
+
+/// the fields of `TableCmd::SetTableCellMargins { .. }`
+struct TableCmdSetTableCellMargins {
+  margins: MarginsIn,
+  spacing_twips: f64?,
+  auto_resize: bool?,
+}
+
+/// the fields of `TableCmd::ConvertTableToText { .. }`
+struct TableCmdConvertTableToText {
+  separator: TextSeparator,
+}
+
+/// the fields of `TableCmd::ConvertTextToTable { .. }`
+struct TableCmdConvertTextToTable {
+  separator: TextSeparator?,
+  cols: f64?,
+  autofit: AutoFit?,
+  col_width_twips: f64?,
+  layout: TableLayoutIn,
+}
+
+/// the fields of `TableCmd::SetTableStyle { .. }`
+struct TableCmdSetTableStyle {
+  name: utf16?,
+}
+
+/// the fields of `TableCmd::SaveTableStyle { .. }`
+struct TableCmdSaveTableStyle {
+  xml: utf16,
+  apply: bool,
+  based_on_name: utf16?,
+}
+
+/// the fields of `TableCmd::SetCellShading { .. }`
+struct TableCmdSetCellShading {
+  color: ShadeColor?,
+  pattern: ShadePattern?,
+  apply_to: ApplyTo?,
+}
+
+/// a Rust tuple `(String, Option<BorderSpec>)`
+struct TupUtf16OptBorderSpec { f0: utf16, f1: BorderSpec? }
+
+/// the fields of `TableCmd::SetTableBorderSides { .. }`
+struct TableCmdSetTableBorderSides {
+  sides: list<TupUtf16OptBorderSpec>,
+  apply_to: ApplyTo,
+}
+
+/// the fields of `TableCmd::SetCellBorders { .. }`
+struct TableCmdSetCellBorders {
+  kind: BorderKind,
+  spec: BorderSpec?,
+}
+
+/// the fields of `TableCmd::SetTableProperties { .. }`
+struct TableCmdSetTableProperties {
+  input: TablePropertiesInput,
+  layout: TableLayoutIn,
+}
+
+/// the fields of `TableCmd::InsertFormula { .. }`
+struct TableCmdInsertFormula {
+  formula: utf16?,
+  number_format: utf16?,
+}
+
+/// the fields of `TableCmd::MoveTableRow { .. }`
+struct TableCmdMoveTableRow {
+  dir: i32,
+}
+
+/// the fields of `TableCmd::ResizeTableColumn { .. }`
+struct TableCmdResizeTableColumn {
+  boundary: i32,
+  delta_twips: f64,
+}
+
+/// the fields of `TableCmd::ResizeTableRow { .. }`
+struct TableCmdResizeTableRow {
+  row: i32,
+  delta_twips: f64,
+  layout: TableLayoutIn,
+}
+
+/// `uo_docx::session::ops::tables::TableCmd`
+enum TableCmd {
+  InsertTable(TableCmdInsertTable),
+  InsertRowAbove,
+  InsertRowBelow,
+  InsertColumnLeft,
+  InsertColumnRight,
+  InsertCells(TableCmdInsertCells),
+  DeleteRow,
+  DeleteColumn,
+  DeleteTable,
+  DeleteCells(TableCmdDeleteCells),
+  MergeCells,
+  SplitCell(TableCmdSplitCell),
+  SplitTable,
+  SelectCell,
+  SelectRow,
+  SelectColumn,
+  SelectTable,
+  SetTableSelection(TableCmdSetTableSelection),
+  ClearTableSelection,
+  TableSelArrow(TableCmdTableSelArrow),
+  TableSelDelete(TableCmdTableSelDelete),
+  ClearSelectedCells,
+  DistributeRows(TableCmdDistributeRows),
+  DistributeColumns,
+  SetRowHeight(TableCmdSetRowHeight),
+  SetColumnWidth(TableCmdSetColumnWidth),
+  AutoFitTable(TableCmdAutoFitTable),
+  SetCellAlignment(TableCmdSetCellAlignment),
+  SetTextDirection(TableCmdSetTextDirection),
+  CycleTextDirection,
+  ToggleRepeatHeaderRows,
+  SetTableCellMargins(TableCmdSetTableCellMargins),
+  Sort(SortRequest),
+  ConvertTableToText(TableCmdConvertTableToText),
+  ConvertTextToTable(TableCmdConvertTextToTable),
+  SetTableStyle(TableCmdSetTableStyle),
+  SetTableStyleOptions(StyleOptions),
+  SaveTableStyle(TableCmdSaveTableStyle),
+  SetCellShading(TableCmdSetCellShading),
+  SetTableBorderSides(TableCmdSetTableBorderSides),
+  SetCellBorders(TableCmdSetCellBorders),
+  SetTableProperties(TableCmdSetTableProperties),
+  InsertFormula(TableCmdInsertFormula),
+  TabNewRow,
+  MoveTableRow(TableCmdMoveTableRow),
+  ResizeTableColumn(TableCmdResizeTableColumn),
+  ResizeTableRow(TableCmdResizeTableRow),
+}
+
+/// the fields of `SectionCmd::SetPageBorders { .. }`
+struct SectionCmdSetPageBorders {
+  borders: PageBorders?,
+  document_wide: bool,
+}
+
+/// the fields of `SectionCmd::InsertSectionBreak { .. }`
+struct SectionCmdInsertSectionBreak {
+  kind: SectionType,
+}
+
+/// the fields of `SectionCmd::SetSectionStart { .. }`
+struct SectionCmdSetSectionStart {
+  kind: SectionType,
+  apply_to: SectionApplyTo,
+  hf_section: u32?,
+}
+
+/// the fields of `SectionCmd::SetVerticalAlignment { .. }`
+struct SectionCmdSetVerticalAlignment {
+  v: VerticalAlignment,
+  apply_to: SectionApplyTo,
+  hf_section: u32?,
+}
+
+/// the fields of `SectionCmd::SetLineNumbering { .. }`
+struct SectionCmdSetLineNumbering {
+  mode: LineNumberMode,
+  hf_section: u32?,
+}
+
+/// the fields of `SectionCmd::SetLineNumberingOptions { .. }`
+struct SectionCmdSetLineNumberingOptions {
+  o: LineNumberingOptions,
+  apply_to: SectionApplyTo,
+  hf_section: u32?,
+}
+
+/// `uo_docx::session::ops::sections::SectionCmd`
+enum SectionCmd {
+  SetPageSetup(PageSetup),
+  SetPageBorders(SectionCmdSetPageBorders),
+  InsertSectionBreak(SectionCmdInsertSectionBreak),
+  InsertColumnBreak,
+  InsertPageBreak,
+  InsertBlankPage,
+  SetColumns(ColumnsArg),
+  SetSectionStart(SectionCmdSetSectionStart),
+  SetVerticalAlignment(SectionCmdSetVerticalAlignment),
+  SetLineNumbering(SectionCmdSetLineNumbering),
+  SetLineNumberingOptions(SectionCmdSetLineNumberingOptions),
+  ToggleLineNumberSuppression,
+}
+
+/// the fields of `HeaderFooterCmd::SetDifferentFirstPage { .. }`
+struct HeaderFooterCmdSetDifferentFirstPage {
+  on: bool,
+  at: HfAt,
+  reenter: HfReenter?,
+}
+
+/// the fields of `HeaderFooterCmd::SetDifferentOddEven { .. }`
+struct HeaderFooterCmdSetDifferentOddEven {
+  on: bool,
+  reenter: HfReenter?,
+}
+
+/// the fields of `HeaderFooterCmd::SetHeaderFooterDistance { .. }`
+struct HeaderFooterCmdSetHeaderFooterDistance {
+  header: f64?,
+  footer: f64?,
+  at: HfAt,
+  reenter: HfReenter?,
+}
+
+/// the fields of `HeaderFooterCmd::SetLinkToPrevious { .. }`
+struct HeaderFooterCmdSetLinkToPrevious {
+  on: bool,
+  kind: HfKind?,
+  at: HfAt,
+  reenter: HfReenter?,
+}
+
+/// the fields of `HeaderFooterCmd::RemoveHeaderFooter { .. }`
+struct HeaderFooterCmdRemoveHeaderFooter {
+  kind: HfKind,
+  at: HfAt,
+}
+
+/// the fields of `HeaderFooterCmd::RemovePageNumbers { .. }`
+struct HeaderFooterCmdRemovePageNumbers {
+  at: HfAt,
+}
+
+/// the fields of `HeaderFooterCmd::SetPageNumberFormat { .. }`
+struct HeaderFooterCmdSetPageNumberFormat {
+  f: PageNumberFormatPatch,
+  at: HfAt,
+  reenter: HfReenter?,
+}
+
+/// the fields of `HeaderFooterCmd::CreateHeaderFooterPart { .. }`
+struct HeaderFooterCmdCreateHeaderFooterPart {
+  kind: HfKind,
+  section: u32,
+  slot: HfSlot,
+}
+
+/// a Rust tuple `(f64, f64)`
+struct TupF64F64 { f0: f64, f1: f64 }
+
+/// the fields of `HeaderFooterCmd::InsertTemplate { .. }`
+struct HeaderFooterCmdInsertTemplate {
+  gallery: HfGallery,
+  id: utf16,
+  lang: PageLang,
+  enter: HfEnter?,
+  page_numbers: TupF64F64?,
+}
+
+/// `uo_docx::session::ops::header_footer::HeaderFooterCmd`
+enum HeaderFooterCmd {
+  SetDifferentFirstPage(HeaderFooterCmdSetDifferentFirstPage),
+  SetDifferentOddEven(HeaderFooterCmdSetDifferentOddEven),
+  SetHeaderFooterDistance(HeaderFooterCmdSetHeaderFooterDistance),
+  SetLinkToPrevious(HeaderFooterCmdSetLinkToPrevious),
+  RemoveHeaderFooter(HeaderFooterCmdRemoveHeaderFooter),
+  RemovePageNumbers(HeaderFooterCmdRemovePageNumbers),
+  SetPageNumberFormat(HeaderFooterCmdSetPageNumberFormat),
+  CreateHeaderFooterPart(HeaderFooterCmdCreateHeaderFooterPart),
+  InsertTemplate(HeaderFooterCmdInsertTemplate),
+}
+
+/// the fields of `NoteCmd::Insert { .. }`
+struct NoteCmdInsert {
+  footnote: bool,
+  mark: utf16?,
+}
+
+/// the fields of `NoteCmd::SetOptions { .. }`
+struct NoteCmdSetOptions {
+  footnote: bool,
+  patch: NoteOptionsPatch,
+  scope: NoteScope,
+}
+
+/// a Rust tuple `(bool, f64)`
+struct TupBoolF64 { f0: bool, f1: f64 }
+
+/// the fields of `NoteCmd::Convert { .. }`
+struct NoteCmdConvert {
+  mode: ConvertMode,
+  only: TupBoolF64?,
+}
+
+/// the fields of `NoteCmd::Open { .. }`
+struct NoteCmdOpen {
+  footnote: bool,
+  id: f64,
+}
+
+/// the fields of `NoteCmd::GoToRef { .. }`
+struct NoteCmdGoToRef {
+  footnote: bool,
+  id: f64,
+}
+
+/// the fields of `NoteCmd::Next { .. }`
+struct NoteCmdNext {
+  footnote: bool,
+  forward: bool,
+}
+
+/// the fields of `NoteCmd::Show { .. }`
+struct NoteCmdShow {
+  footnote: bool?,
+}
+
+/// `uo_docx::session::ops::notes::NoteCmd`
+enum NoteCmd {
+  Insert(NoteCmdInsert),
+  SetOptions(NoteCmdSetOptions),
+  Convert(NoteCmdConvert),
+  Open(NoteCmdOpen),
+  GoToRef(NoteCmdGoToRef),
+  Next(NoteCmdNext),
+  Show(NoteCmdShow),
+}
+
+/// the fields of `RevisionCmd::AcceptAt { .. }`
+struct RevisionCmdAcceptAt {
+  index: u32,
+}
+
+/// the fields of `RevisionCmd::RejectAt { .. }`
+struct RevisionCmdRejectAt {
+  index: u32,
+}
+
+/// the fields of `RevisionCmd::Accept { .. }`
+struct RevisionCmdAccept {
+  move_next: bool,
+}
+
+/// the fields of `RevisionCmd::Reject { .. }`
+struct RevisionCmdReject {
+  move_next: bool,
+}
+
+/// the fields of `RevisionCmd::AcceptAll { .. }`
+struct RevisionCmdAcceptAll {
+  shown: bool,
+  stop_tracking: bool,
+}
+
+/// the fields of `RevisionCmd::RejectAll { .. }`
+struct RevisionCmdRejectAll {
+  shown: bool,
+  stop_tracking: bool,
+}
+
+/// the fields of `RevisionCmd::SelectRevision { .. }`
+struct RevisionCmdSelectRevision {
+  index: u32,
+}
+
+/// `uo_docx::session::ops::revision_cmds::RevisionCmd`
+enum RevisionCmd {
+  AcceptAt(RevisionCmdAcceptAt),
+  RejectAt(RevisionCmdRejectAt),
+  Accept(RevisionCmdAccept),
+  Reject(RevisionCmdReject),
+  AcceptAll(RevisionCmdAcceptAll),
+  RejectAll(RevisionCmdRejectAll),
+  NextChange,
+  PreviousChange,
+  SelectRevision(RevisionCmdSelectRevision),
+  SetMarkupOptions(MarkupPatch),
+}
+
+/// the fields of `CommentCmd::Add { .. }`
+struct CommentCmdAdd {
+  text: utf16,
+  author: utf16?,
+}
+
+/// the fields of `CommentCmd::Remove { .. }`
+struct CommentCmdRemove {
+  id: f64,
+}
+
+/// `uo_docx::session::ops::comments::CommentCmd`
+enum CommentCmd {
+  Add(CommentCmdAdd),
+  Remove(CommentCmdRemove),
+}
+
+/// the fields of `BookmarkCmd::Insert { .. }`
+struct BookmarkCmdInsert {
+  name: utf16,
+}
+
+/// the fields of `BookmarkCmd::Delete { .. }`
+struct BookmarkCmdDelete {
+  name: utf16,
+}
+
+/// the fields of `BookmarkCmd::SetLink { .. }`
+struct BookmarkCmdSetLink {
+  url: utf16?,
+}
+
+/// `uo_docx::session::ops::bookmarks::BookmarkCmd`
+enum BookmarkCmd {
+  Insert(BookmarkCmdInsert),
+  Delete(BookmarkCmdDelete),
+  InsertHyperlink(HyperlinkOptions),
+  SetLink(BookmarkCmdSetLink),
+  RemoveLink,
+}
+
+/// the fields of `DrawingCmd::SelectObject { .. }`
+struct DrawingCmdSelectObject {
+  index: u32?,
+}
+
+/// the fields of `DrawingCmd::SelectInline { .. }`
+struct DrawingCmdSelectInline {
+  para: u32,
+  run: u32,
+}
+
+/// the fields of `DrawingCmd::SelectPaneItem { .. }`
+struct DrawingCmdSelectPaneItem {
+  key: utf16,
+  add: bool,
+}
+
+/// the fields of `DrawingCmd::SelectPaneItems { .. }`
+struct DrawingCmdSelectPaneItems {
+  keys: list<utf16>,
+}
+
+/// the fields of `DrawingCmd::RenamePaneItem { .. }`
+struct DrawingCmdRenamePaneItem {
+  key: utf16,
+  name: utf16,
+}
+
+/// the fields of `DrawingCmd::SetPaneItemHidden { .. }`
+struct DrawingCmdSetPaneItemHidden {
+  key: utf16?,
+  hidden: bool,
+}
+
+/// the fields of `DrawingCmd::SetShapeFill { .. }`
+struct DrawingCmdSetShapeFill {
+  fill: ShapeFill?,
+}
+
+/// the fields of `DrawingCmd::SetShapePictureFill { .. }`
+struct DrawingCmdSetShapePictureFill {
+  data: bytes,
+  ext: utf16,
+  tile: bool,
+}
+
+/// `Nullable<PicColor>` (the TS `null` or a value)
+enum NullablePicColor { Null, Val(PicColor) }
+
+/// the fields of `DrawingCmd::SetShapeOutline { .. }`
+struct DrawingCmdSetShapeOutline {
+  color: NullablePicColor?,
+  weight_pt: f64?,
+  dash: utf16?,
+  compound: utf16?,
+}
+
+/// the fields of `DrawingCmd::SetShapeFormat { .. }`
+struct DrawingCmdSetShapeFormat {
+  fmt: FormatArg,
+}
+
+/// the fields of `DrawingCmd::SetShapeStyle { .. }`
+struct DrawingCmdSetShapeStyle {
+  n: f64,
+}
+
+/// the fields of `DrawingCmd::ChangeShape { .. }`
+struct DrawingCmdChangeShape {
+  prst: utf16,
+}
+
+/// the fields of `DrawingCmd::SetTextboxOptions { .. }`
+struct DrawingCmdSetTextboxOptions {
+  o: TextboxOptions,
+}
+
+/// the fields of `DrawingCmd::SetShapeEffect { .. }`
+struct DrawingCmdSetShapeEffect {
+  kind: EffectKind,
+  preset: utf16?,
+}
+
+/// the fields of `DrawingCmd::LinkTextboxTo { .. }`
+struct DrawingCmdLinkTextboxTo {
+  key: utf16,
+}
+
+/// the fields of `DrawingCmd::InsertTextbox { .. }`
+struct DrawingCmdInsertTextbox {
+  id: utf16,
+  page: u32?,
+  theme_accent1: utf16?,
+  lang: utf16,
+  user: GalleryBox?,
+}
+
+/// the fields of `DrawingCmd::CreateDrawnTextbox { .. }`
+struct DrawingCmdCreateDrawnTextbox {
+  page: u32,
+  rect: ObjRect,
+  vertical: bool,
+  anchor_para: u32?,
+  lang: utf16,
+}
+
+/// the fields of `DrawingCmd::PlaceAt { .. }`
+struct DrawingCmdPlaceAt {
+  frame: ObjFrame,
+  x: f64,
+  y: f64,
+}
+
+/// the fields of `DrawingCmd::AlignObjects { .. }`
+struct DrawingCmdAlignObjects {
+  kind: AlignKind,
+  rects: list<ObjFacts>,
+}
+
+/// the fields of `DrawingCmd::EditSelectedTextbox { .. }`
+struct DrawingCmdEditSelectedTextbox {
+  page: u32,
+}
+
+/// `uo_docx::session::ops::drawing::DrawingCmd`
+enum DrawingCmd {
+  SelectObject(DrawingCmdSelectObject),
+  SelectInline(DrawingCmdSelectInline),
+  SelectPaneItem(DrawingCmdSelectPaneItem),
+  SelectPaneItems(DrawingCmdSelectPaneItems),
+  RenamePaneItem(DrawingCmdRenamePaneItem),
+  SetPaneItemHidden(DrawingCmdSetPaneItemHidden),
+  SetShapeFill(DrawingCmdSetShapeFill),
+  SetShapePictureFill(DrawingCmdSetShapePictureFill),
+  SetShapeOutline(DrawingCmdSetShapeOutline),
+  SetShapeFormat(DrawingCmdSetShapeFormat),
+  SetShapeStyle(DrawingCmdSetShapeStyle),
+  ChangeShape(DrawingCmdChangeShape),
+  SetTextboxOptions(DrawingCmdSetTextboxOptions),
+  OnShape(PictureCmd),
+  SetShapeEffect(DrawingCmdSetShapeEffect),
+  DeleteSelectedShape,
+  LinkTextboxTo(DrawingCmdLinkTextboxTo),
+  BreakTextboxLink,
+  InsertTextbox(DrawingCmdInsertTextbox),
+  CreateDrawnTextbox(DrawingCmdCreateDrawnTextbox),
+  PlaceAt(DrawingCmdPlaceAt),
+  SetAsDefaultTextbox,
+  AlignObjects(DrawingCmdAlignObjects),
+  EditSelectedTextbox(DrawingCmdEditSelectedTextbox),
+}
+
+/// the fields of `PictureCmd::SetWrap { .. }`
+struct PictureCmdSetWrap {
+  kind: PicWrapKind,
+}
+
+/// the fields of `PictureCmd::SetPosition { .. }`
+struct PictureCmdSetPosition {
+  preset: utf16,
+  facts: ObjFacts,
+}
+
+/// the fields of `PictureCmd::SetMoveWithText { .. }`
+struct PictureCmdSetMoveWithText {
+  on: bool,
+  facts: ObjFacts,
+}
+
+/// the fields of `PictureCmd::SetLockAnchor { .. }`
+struct PictureCmdSetLockAnchor {
+  on: bool,
+}
+
+/// the fields of `PictureCmd::SetAlignTo { .. }`
+struct PictureCmdSetAlignTo {
+  page: bool,
+}
+
+/// the fields of `PictureCmd::Align { .. }`
+struct PictureCmdAlign {
+  kind: AlignKind,
+  relative_to: utf16?,
+  rects: list<ObjFacts>,
+}
+
+/// the fields of `PictureCmd::SetSize { .. }`
+struct PictureCmdSetSize {
+  width_pt: f64?,
+  height_pt: f64?,
+  lock_aspect: bool?,
+}
+
+/// the fields of `PictureCmd::SetRotation { .. }`
+struct PictureCmdSetRotation {
+  deg: f64,
+}
+
+/// the fields of `PictureCmd::Rotate { .. }`
+struct PictureCmdRotate {
+  deg: f64,
+}
+
+/// the fields of `PictureCmd::Flip { .. }`
+struct PictureCmdFlip {
+  vertical: bool,
+}
+
+/// the fields of `PictureCmd::SetAltText { .. }`
+struct PictureCmdSetAltText {
+  text: utf16?,
+  title: utf16?,
+  decorative: bool?,
+}
+
+/// the fields of `PictureCmd::Arrange { .. }`
+struct PictureCmdArrange {
+  op: ArrangeOp,
+}
+
+/// the fields of `PictureCmd::SetLayout { .. }`
+struct PictureCmdSetLayout {
+  o: LayoutInput,
+  facts: ObjFacts,
+}
+
+/// the fields of `PictureCmd::SetBorder { .. }`
+struct PictureCmdSetBorder {
+  color: NullablePicColor?,
+  weight_pt: f64?,
+  dash: utf16?,
+}
+
+/// the fields of `PictureCmd::SetFormat { .. }`
+struct PictureCmdSetFormat {
+  fmt: FormatArg,
+}
+
+/// the fields of `PictureCmd::SetEffect { .. }`
+struct PictureCmdSetEffect {
+  kind: EffectKind,
+  preset: utf16?,
+}
+
+/// the fields of `PictureCmd::CropFillFit { .. }`
+struct PictureCmdCropFillFit {
+  fill: bool,
+  natural_pt: TupF64F64?,
+}
+
+/// the fields of `PictureCmd::CropToAspect { .. }`
+struct PictureCmdCropToAspect {
+  w: f64,
+  h: f64,
+}
+
+/// the fields of `PictureCmd::CropToShape { .. }`
+struct PictureCmdCropToShape {
+  prst: utf16,
+}
+
+/// the fields of `PictureCmd::SetTransparency { .. }`
+struct PictureCmdSetTransparency {
+  pct: f64,
+}
+
+/// the fields of `PictureCmd::SetRecolor { .. }`
+struct PictureCmdSetRecolor {
+  arg: RecolorArg,
+}
+
+/// the fields of `PictureCmd::SetTransparentColor { .. }`
+struct PictureCmdSetTransparentColor {
+  hex: utf16?,
+}
+
+/// the fields of `PictureCmd::SetCrop { .. }`
+struct PictureCmdSetCrop {
+  l: f64,
+  t: f64,
+  r: f64,
+  b: f64,
+}
+
+/// the fields of `PictureCmd::Reset { .. }`
+struct PictureCmdReset {
+  size: bool,
+  natural_pt: TupF64F64?,
+}
+
+/// the fields of `PictureCmd::Insert { .. }`
+struct PictureCmdInsert {
+  data: bytes,
+  ext: utf16,
+  ole: OleArg?,
+  max_width_twips: f64?,
+}
+
+/// the fields of `PictureCmd::SetAdjust { .. }`
+struct PictureCmdSetAdjust {
+  o: AdjustArg,
+}
+
+/// the fields of `PictureCmd::Change { .. }`
+struct PictureCmdChange {
+  data: bytes,
+  ext: utf16,
+}
+
+/// the fields of `PictureCmd::Compress { .. }`
+struct PictureCmdCompress {
+  ppi: f64,
+  delete_cropped: bool,
+  all: bool,
+}
+
+/// `uo_docx::session::ops::pictures::PictureCmd`
+enum PictureCmd tag "$t" {
+  SetWrap(PictureCmdSetWrap),
+  SetPosition(PictureCmdSetPosition),
+  SetMoveWithText(PictureCmdSetMoveWithText),
+  SetLockAnchor(PictureCmdSetLockAnchor),
+  SetAlignTo(PictureCmdSetAlignTo),
+  Align(PictureCmdAlign),
+  SetSize(PictureCmdSetSize),
+  SetRotation(PictureCmdSetRotation),
+  Rotate(PictureCmdRotate),
+  Flip(PictureCmdFlip),
+  SetAltText(PictureCmdSetAltText),
+  Arrange(PictureCmdArrange),
+  SetLayout(PictureCmdSetLayout),
+  SetBorder(PictureCmdSetBorder),
+  SetFormat(PictureCmdSetFormat),
+  SetEffect(PictureCmdSetEffect),
+  CropFillFit(PictureCmdCropFillFit),
+  CropToAspect(PictureCmdCropToAspect),
+  CropToShape(PictureCmdCropToShape),
+  SetTransparency(PictureCmdSetTransparency),
+  SetRecolor(PictureCmdSetRecolor),
+  SetTransparentColor(PictureCmdSetTransparentColor),
+  SetCrop(PictureCmdSetCrop),
+  Reset(PictureCmdReset),
+  DeleteSelectedImage,
+  Insert(PictureCmdInsert),
+  SetAdjust(PictureCmdSetAdjust),
+  Change(PictureCmdChange),
+  Compress(PictureCmdCompress),
+}
+
+/// the fields of `PageCmd::SetPageColor { .. }`
+struct PageCmdSetPageColor {
+  color: ColorArg?,
+}
+
+/// the fields of `PageCmd::SetPageFill { .. }`
+struct PageCmdSetPageFill {
+  fill: PageFillInput?,
+  lang: PageLang,
+}
+
+/// the fields of `PageCmd::SetWatermark { .. }`
+struct PageCmdSetWatermark {
+  spec: WatermarkArg,
+  at: HfAt,
+  lang: PageLang,
+  reenter: HfReenter?,
+}
+
+/// the fields of `PageCmd::RemoveWatermark { .. }`
+struct PageCmdRemoveWatermark {
+  reenter: HfReenter?,
+}
+
+/// the fields of `PageCmd::InsertCoverPage { .. }`
+struct PageCmdInsertCoverPage {
+  id: utf16,
+  lang: PageLang,
+}
+
+/// `uo_docx::session::ops::page::PageCmd`
+enum PageCmd {
+  SetPageColor(PageCmdSetPageColor),
+  SetPageFill(PageCmdSetPageFill),
+  SetWatermark(PageCmdSetWatermark),
+  RemoveWatermark(PageCmdRemoveWatermark),
+  InsertCoverPage(PageCmdInsertCoverPage),
+  RemoveCoverPage,
+}
+
+/// the fields of `TextLayoutCmd::SetDefaultTabStop { .. }`
+struct TextLayoutCmdSetDefaultTabStop {
+  twips: f64,
+}
+
+/// the fields of `TextLayoutCmd::SetHyphenation { .. }`
+struct TextLayoutCmdSetHyphenation {
+  auto: bool,
+}
+
+/// the fields of `TextLayoutCmd::SetHyphenationOptions { .. }`
+struct TextLayoutCmdSetHyphenationOptions {
+  o: HyphenationPatch,
+}
+
+/// `uo_docx::session::ops::text_layout::TextLayoutCmd`
+enum TextLayoutCmd {
+  SetDefaultTabStop(TextLayoutCmdSetDefaultTabStop),
+  SetHyphenation(TextLayoutCmdSetHyphenation),
+  SetHyphenationOptions(TextLayoutCmdSetHyphenationOptions),
+}
+
+/// the fields of `ClipboardCmd::Paste { .. }`
+struct ClipboardCmdPaste {
+  mode: PasteMode?,
+  layout: PasteLayoutIn,
+}
+
+/// the fields of `ClipboardCmd::PasteData { .. }`
+struct ClipboardCmdPasteData {
+  text: utf16,
+  html: bytes?,
+  image: ClipImage?,
+  rich: RichPick,
+  mode: PasteMode?,
+  list: ListPasteMode?,
+  layout: PasteLayoutIn,
+}
+
+/// the fields of `ClipboardCmd::PasteText { .. }`
+struct ClipboardCmdPasteText {
+  text: utf16,
+}
+
+/// the fields of `ClipboardCmd::Repaste { .. }`
+struct ClipboardCmdRepaste {
+  mode: PasteMode,
+  list: ListPasteMode?,
+  layout: PasteLayoutIn,
+}
+
+/// the fields of `ClipboardCmd::PasteCells { .. }`
+struct ClipboardCmdPasteCells {
+  mode: CellsPasteMode,
+  layout: PasteLayoutIn,
+}
+
+/// the fields of `ClipboardCmd::PasteSpecial { .. }`
+struct ClipboardCmdPasteSpecial {
+  format: PasteSpecialFormat,
+  link: bool,
+  layout: PasteLayoutIn,
+}
+
+/// the fields of `ClipboardCmd::PasteClipboardItem { .. }`
+struct ClipboardCmdPasteClipboardItem {
+  id: u32,
+  mode: PasteMode?,
+  layout: PasteLayoutIn,
+}
+
+/// the fields of `ClipboardCmd::PasteAllClipboardItems { .. }`
+struct ClipboardCmdPasteAllClipboardItems {
+  layout: PasteLayoutIn,
+}
+
+/// the fields of `ClipboardCmd::RemoveClipboardItem { .. }`
+struct ClipboardCmdRemoveClipboardItem {
+  id: u32,
+}
+
+/// the fields of `ClipboardCmd::SetDocumentPath { .. }`
+struct ClipboardCmdSetDocumentPath {
+  path: utf16?,
+}
+
+/// the fields of `ClipboardCmd::SetPasteDefaults { .. }`
+struct ClipboardCmdSetPasteDefaults {
+  defaults: PasteDefaults,
+}
+
+/// the fields of `ClipboardCmd::SetInlineTypes { .. }`
+struct ClipboardCmdSetInlineTypes {
+  types: list<utf16>,
+}
+
+/// the fields of `ClipboardCmd::AddLinkSource { .. }`
+struct ClipboardCmdAddLinkSource {
+  item: u32?,
+}
+
+/// the fields of `ClipboardCmd::PasteLinkWith { .. }`
+struct ClipboardCmdPasteLinkWith {
+  name: utf16,
+  item: u32?,
+  text: bool,
+  layout: PasteLayoutIn,
+}
+
+/// `uo_docx::session::ops::clipboard::ClipboardCmd`
+enum ClipboardCmd {
+  Copy,
+  Cut,
+  Paste(ClipboardCmdPaste),
+  PasteData(ClipboardCmdPasteData),
+  PasteText(ClipboardCmdPasteText),
+  Repaste(ClipboardCmdRepaste),
+  PasteCells(ClipboardCmdPasteCells),
+  PasteSpecialFormats,
+  PasteSpecial(ClipboardCmdPasteSpecial),
+  PasteClipboardItem(ClipboardCmdPasteClipboardItem),
+  PasteAllClipboardItems(ClipboardCmdPasteAllClipboardItems),
+  RemoveClipboardItem(ClipboardCmdRemoveClipboardItem),
+  ClearClipboardItems,
+  SetDocumentPath(ClipboardCmdSetDocumentPath),
+  SetPasteDefaults(ClipboardCmdSetPasteDefaults),
+  SetInlineTypes(ClipboardCmdSetInlineTypes),
+  AddLinkSource(ClipboardCmdAddLinkSource),
+  PasteLinkWith(ClipboardCmdPasteLinkWith),
+}
+
+/// the fields of `FindCmd::FindNext { .. }`
+struct FindCmdFindNext {
+  query: FindQuery,
+  direction: Direction,
+}
+
+/// the fields of `FindCmd::ReplaceMatch { .. }`
+struct FindCmdReplaceMatch {
+  query: FindQuery,
+  replacement: utf16,
+  direction: Direction,
+  replace_format: FindFormat?,
+}
+
+/// the fields of `FindCmd::ReplaceAll { .. }`
+struct FindCmdReplaceAll {
+  query: FindQuery,
+  replacement: utf16,
+  within: Within,
+  replace_format: FindFormat?,
+}
+
+/// the fields of `FindCmd::SelectAllMatches { .. }`
+struct FindCmdSelectAllMatches {
+  query: FindQuery,
+  within: Within,
+}
+
+/// the fields of `FindCmd::HighlightMatches { .. }`
+struct FindCmdHighlightMatches {
+  query: FindQuery,
+  within: Within,
+}
+
+/// the fields of `FindCmd::GoTo { .. }`
+struct FindCmdGoTo {
+  what: GoToWhat,
+  target: utf16,
+}
+
+/// the fields of `FindCmd::GoToBookmark { .. }`
+struct FindCmdGoToBookmark {
+  name: utf16,
+}
+
+/// the fields of `FindCmd::GoToComment { .. }`
+struct FindCmdGoToComment {
+  id: f64,
+}
+
+/// `uo_docx::session::ops::find::FindCmd`
+enum FindCmd {
+  FindNext(FindCmdFindNext),
+  ReplaceMatch(FindCmdReplaceMatch),
+  ReplaceAll(FindCmdReplaceAll),
+  SelectAllMatches(FindCmdSelectAllMatches),
+  HighlightMatches(FindCmdHighlightMatches),
+  GoTo(FindCmdGoTo),
+  GoToBookmark(FindCmdGoToBookmark),
+  GoToComment(FindCmdGoToComment),
+}
+
+/// the fields of `NavigationCmd::SetSelectionRanges { .. }`
+struct NavigationCmdSetSelectionRanges {
+  ranges: list<DocRange>,
+}
+
+/// the fields of `NavigationCmd::MoveHeading { .. }`
+struct NavigationCmdMoveHeading {
+  index: i32,
+  before: i32,
+}
+
+/// the fields of `NavigationCmd::PromoteHeading { .. }`
+struct NavigationCmdPromoteHeading {
+  index: i32,
+}
+
+/// the fields of `NavigationCmd::DemoteHeading { .. }`
+struct NavigationCmdDemoteHeading {
+  index: i32,
+}
+
+/// the fields of `NavigationCmd::InsertHeading { .. }`
+struct NavigationCmdInsertHeading {
+  index: i32,
+  at: HeadingWhere,
+}
+
+/// the fields of `NavigationCmd::DeleteHeading { .. }`
+struct NavigationCmdDeleteHeading {
+  index: i32,
+}
+
+/// the fields of `NavigationCmd::SelectHeading { .. }`
+struct NavigationCmdSelectHeading {
+  index: i32,
+}
+
+/// the fields of `NavigationCmd::GoToHeading { .. }`
+struct NavigationCmdGoToHeading {
+  index: i32,
+}
+
+/// the fields of `NavigationCmd::Search { .. }`
+struct NavigationCmdSearch {
+  text: utf16,
+  opts: FindOptions,
+}
+
+/// the fields of `NavigationCmd::GoToSearchResult { .. }`
+struct NavigationCmdGoToSearchResult {
+  index: i32,
+}
+
+/// `uo_docx::session::ops::navigation::NavigationCmd`
+enum NavigationCmd {
+  SelectAll,
+  SetSelectionRanges(NavigationCmdSetSelectionRanges),
+  MoveHeading(NavigationCmdMoveHeading),
+  PromoteHeading(NavigationCmdPromoteHeading),
+  DemoteHeading(NavigationCmdDemoteHeading),
+  InsertHeading(NavigationCmdInsertHeading),
+  DeleteHeading(NavigationCmdDeleteHeading),
+  SelectHeading(NavigationCmdSelectHeading),
+  GoToHeading(NavigationCmdGoToHeading),
+  Search(NavigationCmdSearch),
+  ClearSearch,
+  GoToSearchResult(NavigationCmdGoToSearchResult),
+}
+
+/// the fields of `ReferenceCmd::InsertField { .. }`
+struct ReferenceCmdInsertField {
+  kind: FieldKind,
+}
+
+/// the fields of `ReferenceCmd::InsertDateTime { .. }`
+struct ReferenceCmdInsertDateTime {
+  pattern: utf16,
+  update: bool,
+  lang: UiLang?,
+}
+
+/// the fields of `ReferenceCmd::InsertDocumentInfo { .. }`
+struct ReferenceCmdInsertDocumentInfo {
+  kind: DocInfoKind,
+  file_name: utf16,
+}
+
+/// the fields of `ReferenceCmd::InsertAlignmentTab { .. }`
+struct ReferenceCmdInsertAlignmentTab {
+  alignment: utf16,
+  relative_to: utf16,
+  leader: utf16,
+}
+
+/// the fields of `ReferenceCmd::UpdateFields { .. }`
+struct ReferenceCmdUpdateFields {
+  scope: FieldScopeSel,
+  toc: TocMode,
+}
+
+/// the fields of `ReferenceCmd::UpdateToc { .. }`
+struct ReferenceCmdUpdateToc {
+  mode: TocMode,
+}
+
+/// the fields of `ReferenceCmd::InsertTocTemplate { .. }`
+struct ReferenceCmdInsertTocTemplate {
+  id: TocTemplateId,
+}
+
+/// the fields of `ReferenceCmd::InsertTableOfContents { .. }`
+struct ReferenceCmdInsertTableOfContents {
+  opts: TableOfContentsOptions,
+  replace: bool?,
+}
+
+/// the fields of `ReferenceCmd::SetTocLevel { .. }`
+struct ReferenceCmdSetTocLevel {
+  level: f64,
+}
+
+/// the fields of `ReferenceCmd::MarkTocEntry { .. }`
+struct ReferenceCmdMarkTocEntry {
+  text: utf16,
+  identifier: utf16?,
+  level: f64?,
+}
+
+/// the fields of `ReferenceCmd::AddCaptionLabel { .. }`
+struct ReferenceCmdAddCaptionLabel {
+  name: utf16,
+}
+
+/// the fields of `ReferenceCmd::DeleteCaptionLabel { .. }`
+struct ReferenceCmdDeleteCaptionLabel {
+  name: utf16,
+}
+
+/// the fields of `ReferenceCmd::SetCaptionNumbering { .. }`
+struct ReferenceCmdSetCaptionNumbering {
+  label: utf16,
+  numbering: CaptionNumbering,
+}
+
+/// a Rust tuple `(String, CaptionPosition)`
+struct TupUtf16CaptionPosition { f0: utf16, f1: CaptionPosition }
+
+/// the fields of `ReferenceCmd::SetAutoCaption { .. }`
+struct ReferenceCmdSetAutoCaption {
+  auto: TupUtf16CaptionPosition?,
+}
+
+/// the fields of `ReferenceCmd::ApplyManualHyphenation { .. }`
+struct ReferenceCmdApplyManualHyphenation {
+  letters: f64,
+}
+
+/// `uo_docx::session::ops::references::ReferenceCmd`
+enum ReferenceCmd {
+  InsertField(ReferenceCmdInsertField),
+  InsertDateTime(ReferenceCmdInsertDateTime),
+  InsertDocumentInfo(ReferenceCmdInsertDocumentInfo),
+  InsertAlignmentTab(ReferenceCmdInsertAlignmentTab),
+  UpdateFields(ReferenceCmdUpdateFields),
+  InsertCrossReference(CrossRefOptions),
+  InsertTableOfFigures(TableOfFiguresOptions),
+  UpdateTableOfFigures,
+  UpdateToc(ReferenceCmdUpdateToc),
+  InsertTocTemplate(ReferenceCmdInsertTocTemplate),
+  InsertTableOfContents(ReferenceCmdInsertTableOfContents),
+  RemoveTableOfContents,
+  SetTocLevel(ReferenceCmdSetTocLevel),
+  MarkTocEntry(ReferenceCmdMarkTocEntry),
+  SetCaptionSettings(CaptionSettings),
+  AddCaptionLabel(ReferenceCmdAddCaptionLabel),
+  DeleteCaptionLabel(ReferenceCmdDeleteCaptionLabel),
+  SetCaptionNumbering(ReferenceCmdSetCaptionNumbering),
+  SetAutoCaption(ReferenceCmdSetAutoCaption),
+  InsertCaption(CaptionOptions),
+  NextManualHyphenation,
+  ApplyManualHyphenation(ReferenceCmdApplyManualHyphenation),
+  SkipManualHyphenation,
+  EndManualHyphenation,
+}
+
+/// `uo_docx::session::command::ClipImage`
+struct ClipImage {
+  ext: utf16,
+  data: bytes,
+}
+
+/// `uo_docx::session::env::DateParts`
+struct DateParts {
+  year: i32,
+  month: u32,
+  day: u32,
+  hour: u32,
+  minute: u32,
+}
+
+/// `uo_docx::session::text::DocPosition`
+struct DocPosition {
+  para: u32,
+  offset: u32,
+}
+
+/// `uo_docx::session::state::CellHop`
+struct CellHop {
+  row: u32,
+  col: u32,
+  block: u32?,
+}
+
+/// `uo_docx::session::MarkupMode`
+enum MarkupMode {
+  All,
+  Simple,
+  None,
+  Original,
+}
+
+/// a Rust tuple `(Vec<ListKind>, Option<f64>)`
+struct TupListPolicyListKindOptF64 { f0: list<PolicyListKind>, f1: f64? }
+
+/// `uo_docx::session::policy::FormattingPolicy`
+struct FormattingPolicy {
+  paragraph_styles: list<utf16>?,
+  character_styles: list<utf16>?,
+  lists: TupListPolicyListKindOptF64?,
+  character: list<CharacterFormat>?,
+  indentation: Indentation?,
+  denied: list<Flag>,
+}
+
+/// `uo_docx::session::ops::format::RunToggle`
+enum RunToggle {
+  Bold,
+  Italic,
+  Underline,
+  Strike,
+  DoubleStrike,
+  AllCaps,
+  SmallCaps,
+  Hidden,
+}
+
+/// `uo_docx::session::ops::format::ColorArg`
+enum ColorArg {
+  Hex(utf16),
+  Theme(ThemeColorRef),
+}
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptFxFill { value: FxFill? }
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptFxOutline { value: FxOutline? }
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptFxShadow { value: FxShadow? }
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptFxReflection { value: FxReflection? }
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptFxGlow { value: FxGlow? }
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptUtf16 { value: utf16? }
+
+/// `uo_docx::session::ops::format::FxPart`
+enum FxPart {
+  Fill(OptFxFill),
+  Outline(OptFxOutline),
+  Shadow(OptFxShadow),
+  Reflection(OptFxReflection),
+  Glow(OptFxGlow),
+  Scene3d(OptUtf16),
+  Props3d(OptUtf16),
+}
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptListf64 { value: list<f64>? }
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptBool { value: bool? }
+
+/// `uo_docx::session::ops::format::OtPart`
+enum OtPart {
+  Ligatures(OptUtf16),
+  NumForm(OptUtf16),
+  NumSpacing(OptUtf16),
+  StylisticSets(OptListf64),
+  CntxtAlts(OptBool),
+}
+
+/// `uo_docx::session::ops::format::GradientArg`
+struct GradientArg {
+  angle_deg: f64,
+  light: bool,
+}
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptColorArg { value: ColorArg? }
+
+/// `uo_docx::session::ops::format::FontFormat`
+struct FontFormat {
+  font_family: utf16?,
+  size_pt: f64?,
+  bold: bool?,
+  italic: bool?,
+  underline: utf16?,
+  underline_color: OptColorArg?,
+  color: OptColorArg?,
+  strike: bool?,
+  double_strike: bool?,
+  superscript: bool?,
+  subscript: bool?,
+  small_caps: bool?,
+  all_caps: bool?,
+  hidden: bool?,
+  scale_pct: f64?,
+  spacing_twips: f64?,
+  position_half_pt: f64?,
+  kern_min_half_pt: f64?,
+}
+
+/// `uo_docx::session::ops::format::VertKind`
+enum VertKind {
+  Superscript,
+  Subscript,
+}
+
+/// `uo_docx::session::ops::format::CaseMode`
+enum CaseMode {
+  Upper,
+  Lower,
+  Sentence,
+  Title,
+  Toggle,
+  Next,
+}
+
+/// `uo_docx::session::ops::paragraph::SpecialIndent`
+enum SpecialIndent {
+  None,
+  FirstLine,
+  Hanging,
+}
+
+/// `uo_docx::session::ops::paragraph::IndentPatch`
+struct IndentPatch {
+  left: f64?,
+  right: f64?,
+  first_line: f64?,
+}
+
+/// `uo_docx::session::ops::paragraph::TabStopInfo`
+struct TabStopInfo {
+  pos: f64,
+  align: utf16,
+  leader: utf16?,
+}
+
+/// `uo_docx::session::ops::paragraph::TabOnly`
+struct TabOnly {
+  add: list<TabStopInfo>?,
+  remove: list<f64>?,
+}
+
+/// `uo_docx::session::ops::paragraph::FlowArgs`
+struct FlowArgs {
+  widow_control: bool?,
+  keep_next: bool?,
+  keep_lines: bool?,
+  page_break_before: bool?,
+  suppress_line_numbers: bool?,
+  suppress_auto_hyphens: bool?,
+  textbox_tight_wrap: utf16?,
+}
+
+/// `uo_docx::session::ops::paragraph::LayoutArgs`
+struct LayoutArgs {
+  left: f64?,
+  right: f64?,
+  before: SpacingArg?,
+  after: SpacingArg?,
+}
+
+/// `uo_docx::session::ops::paragraph::ParaBorderSide`
+enum ParaBorderSide {
+  Top,
+  Left,
+  Bottom,
+  Right,
+  Between,
+  Bar,
+}
+
+/// `uo_docx::model::props::BorderSpec`
+struct BorderSpec {
+  val: utf16,
+  sz: f64?,
+  space: f64?,
+  color: utf16?,
+  theme_color: utf16?,
+  theme_tint: utf16?,
+  theme_shade: utf16?,
+  shadow: bool?,
+  frame: bool?,
+}
+
+/// `uo_docx::session::ops::paragraph::BorderPreset`
+enum BorderPreset {
+  Bottom,
+  Top,
+  Left,
+  Right,
+  None,
+  All,
+  Outside,
+  Inside,
+  InsideH,
+  InsideV,
+}
+
+/// `uo_docx::session::ops::lists::ListLevelSpec`
+struct ListLevelSpec {
+  ilvl: f64,
+  num_fmt: utf16,
+  lvl_text: utf16,
+  font: utf16?,
+  bold: bool,
+  italic: bool,
+  size_pt: f64?,
+  color: utf16?,
+  start: f64?,
+  p_style: utf16?,
+  ind_left: f64,
+  hanging: f64,
+  jc: utf16?,
+  suff: utf16?,
+  tab_pos: f64?,
+  is_lgl: bool,
+  lvl_restart: f64?,
+}
+
+/// `uo_docx::session::ops::lists::ListLevelFormat`
+struct ListLevelFormat {
+  bullet: utf16?,
+  num_fmt: utf16?,
+  lvl_text: utf16?,
+  start: f64?,
+  align: utf16?,
+  font: utf16?,
+  bold: bool,
+  italic: bool,
+  size_pt: f64?,
+  color: utf16?,
+}
+
+/// `uo_docx::session::ops::styles::CreateStyleSpec`
+struct CreateStyleSpec {
+  name: utf16,
+  kind: utf16?,
+  based_on: utf16?,
+  next: utf16?,
+  quick: bool?,
+  auto_update: bool,
+  format: StyleFormat?,
+  from_selection: bool?,
+  apply: bool?,
+}
+
+/// `uo_docx::session::ops::styles::ModifyStyleSpec`
+struct ModifyStyleSpec {
+  name: utf16?,
+  based_on: utf16?,
+  next: ChUtf16,
+  quick: bool?,
+  auto_update: bool?,
+  format: StyleFormat,
+}
+
+/// `uo_docx::session::ops::styles::DefaultFont`
+struct DefaultFont {
+  font_family: utf16?,
+  size_pt: f64?,
+  bold: bool?,
+  italic: bool?,
+  underline: bool?,
+  strike: bool?,
+  all_caps: bool?,
+  small_caps: bool?,
+  color: ChUtf16,
+  spacing_twips: f64?,
+}
+
+/// `uo_docx::session::ops::tables::table_ops::AutoFit`
+enum AutoFit {
+  Fixed,
+  Content,
+  Window,
+}
+
+/// `uo_docx::session::ops::tables::TableLayoutIn`
+struct TableLayoutIn {
+  content_width_twips: f64?,
+  row_heights: list<f64>,
+}
+
+/// `uo_docx::session::ops::tables::InsertCellsShift`
+enum InsertCellsShift {
+  Right,
+  Down,
+  Row,
+  Column,
+}
+
+/// `uo_docx::session::ops::tables::DeleteCellsShift`
+enum DeleteCellsShift {
+  Left,
+  Up,
+  Row,
+  Column,
+}
+
+/// `uo_docx::session::ops::tables::table_ops::CellRect`
+struct CellRect {
+  r1: i32,
+  c1: i32,
+  r2: i32,
+  c2: i32,
+}
+
+/// `uo_docx::session::ops::tables::SelKey`
+enum SelKey {
+  Left,
+  Right,
+  Up,
+  Down,
+}
+
+/// `uo_docx::session::ops::tables::table_ops::AutoFitMode`
+enum AutoFitMode {
+  Content,
+  Window,
+  Fixed,
+}
+
+/// `uo_docx::session::ops::tables::MarginsIn`
+struct MarginsIn {
+  top: f64?,
+  left: f64?,
+  bottom: f64?,
+  right: f64?,
+}
+
+/// a Rust tuple `(i64, SortType, bool)`
+struct TupI32SortTypeBool { f0: i32, f1: SortType, f2: bool }
+
+/// `uo_docx::session::ops::tables::SortRequest`
+struct SortRequest {
+  keys: list<TupI32SortTypeBool>,
+  header: bool,
+  case_sensitive: bool,
+  separator: SortSeparator?,
+}
+
+/// `uo_docx::session::ops::tables::table_ops::TextSeparator`
+enum TextSeparator {
+  Paragraph,
+  Tab,
+  Semicolon,
+  Comma,
+  Char(utf16),
+}
+
+/// `uo_docx::session::ops::tables::StyleOptions`
+struct StyleOptions {
+  header_row: bool?,
+  total_row: bool?,
+  banded_rows: bool?,
+  first_column: bool?,
+  last_column: bool?,
+  banded_columns: bool?,
+}
+
+/// the fields of `ShadeColor::Theme { .. }`
+struct ShadeColorTheme {
+  theme_color: utf16,
+  tint: utf16?,
+  shade: utf16?,
+}
+
+/// `uo_docx::session::ops::tables::ShadeColor`
+enum ShadeColor {
+  Hex(utf16),
+  Theme(ShadeColorTheme),
+}
+
+/// `uo_docx::session::ops::tables::ShadePattern`
+struct ShadePattern {
+  val: utf16,
+  color: utf16?,
+}
+
+/// `uo_docx::session::ops::tables::ApplyTo`
+enum ApplyTo {
+  Cell,
+  Table,
+}
+
+/// `uo_docx::session::ops::tables::table_ops::BorderKind`
+enum BorderKind {
+  Bottom,
+  Top,
+  Left,
+  Right,
+  None,
+  All,
+  Outside,
+  Inside,
+  InsideH,
+  InsideV,
+  Tl2br,
+  Tr2bl,
+}
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptWidthSpec { value: WidthSpec? }
+
+/// `uo_docx::session::ops::tables::TablePropertiesInput`
+struct TablePropertiesInput {
+  table: TableTab?,
+  row: RowTab?,
+  column_width: OptWidthSpec?,
+  cell: CellTab?,
+}
+
+/// `uo_docx::session::ops::sections::PageSetup`
+struct PageSetup {
+  orientation: Orientation?,
+  size: PageSize?,
+  margins: MarginPreset?,
+  custom_margins: list<f64>?,
+  section_start: SectionType?,
+  vertical_alignment: VerticalAlignment?,
+  line_numbering: LineNumberingOptions?,
+  apply_to: SectionApplyTo?,
+}
+
+/// `uo_docx::model::section::PageBorders`
+struct PageBorders {
+  offset_from: utf16?,
+  display: utf16?,
+  z_order: utf16?,
+  top: BorderSpec?,
+  left: BorderSpec?,
+  bottom: BorderSpec?,
+  right: BorderSpec?,
+}
+
+/// `uo_docx::session::ops::sections::SectionType`
+enum SectionType {
+  NextPage,
+  Continuous,
+  NextColumn,
+  EvenPage,
+  OddPage,
+}
+
+/// the fields of `ColumnsArg::Spec { .. }`
+struct ColumnsArgSpec {
+  spec: ColumnSpec,
+  apply_to: SectionApplyTo?,
+  start_new_column: bool,
+}
+
+/// `uo_docx::session::ops::sections::ColumnsArg`
+enum ColumnsArg {
+  Preset(ColumnPreset),
+  Spec(ColumnsArgSpec),
+}
+
+/// `uo_docx::session::ops::sections::SectionApplyTo`
+enum SectionApplyTo {
+  Section,
+  Document,
+  Forward,
+  Selection,
+}
+
+/// `uo_docx::session::ops::sections::VerticalAlignment`
+enum VerticalAlignment {
+  Top,
+  Center,
+  Both,
+  Bottom,
+}
+
+/// `uo_docx::session::ops::text_layout::LineNumberMode`
+enum LineNumberMode {
+  None,
+  Continuous,
+  Page,
+  Section,
+}
+
+/// `uo_docx::session::ops::text_layout::LineNumberingOptions`
+struct LineNumberingOptions {
+  on: bool,
+  start_at: f64,
+  count_by: f64,
+  distance_twips: f64,
+  restart: LineRestart,
+}
+
+/// `uo_docx::session::ops::header_footer::HfAt`
+struct HfAt {
+  section: u32,
+  slot: HfSlot,
+}
+
+/// the fields of `HfReenter::Create { .. }`
+struct HfReenterCreate {
+  kind: HfKind,
+  section: u32,
+  slot: HfSlot,
+}
+
+/// `uo_docx::session::ops::header_footer::HfReenter`
+enum HfReenter {
+  Part(u32),
+  Create(HfReenterCreate),
+}
+
+/// `uo_docx::session::ops::header_footer::HfKind`
+enum HfKind {
+  Header,
+  Footer,
+}
+
+/// a Rust tuple `(f64, String)`
+struct TupF64Utf16 { f0: f64, f1: utf16 }
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptTupF64Utf16 { value: TupF64Utf16? }
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptF64 { value: f64? }
+
+/// `uo_docx::session::ops::header_footer::PageNumberFormatPatch`
+struct PageNumberFormatPatch {
+  format: utf16?,
+  chapter: OptTupF64Utf16?,
+  start: OptF64?,
+}
+
+/// `uo_docx::session::ops::header_footer::HfSlot`
+enum HfSlot {
+  Default,
+  First,
+  Even,
+}
+
+/// `uo_docx::session::ops::header_footer::hf_templates::HfGallery`
+enum HfGallery {
+  Header,
+  Footer,
+  PageTop,
+  PageBottom,
+  PageMargin,
+  PageCurrent,
+}
+
+/// `uo_docx::session::ops::page::PageLang`
+enum PageLang {
+  En,
+  Pt,
+  Es,
+}
+
+/// `uo_docx::session::ops::header_footer::HfEnter`
+struct HfEnter {
+  part: HfReenter,
+  page: u32,
+}
+
+/// `uo_docx::session::ops::notes::NoteOptionsPatch`
+struct NoteOptionsPatch {
+  position: utf16?,
+  number_format: utf16?,
+  start_at: f64?,
+  restart: utf16?,
+  columns: f64?,
+}
+
+/// `uo_docx::session::ops::notes::NoteScope`
+enum NoteScope {
+  Section,
+  Document,
+}
+
+/// `uo_docx::session::ops::notes::ConvertMode`
+enum ConvertMode {
+  ToEndnotes,
+  ToFootnotes,
+  Swap,
+}
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptListutf16 { value: list<utf16>? }
+
+/// `uo_docx::session::ops::revision_cmds::MarkupPatch`
+struct MarkupPatch {
+  ins_del: bool?,
+  formatting: bool?,
+  comments: bool?,
+  balloons: Balloons?,
+  authors: OptListutf16?,
+}
+
+/// `uo_docx::session::ops::bookmarks::HyperlinkOptions`
+struct HyperlinkOptions {
+  address: utf16?,
+  anchor: utf16?,
+  tip: utf16?,
+  text: utf16?,
+}
+
+/// the fields of `ShapeFill::Pattern { .. }`
+struct ShapeFillPattern {
+  prst: utf16,
+  fg: PicColor,
+  bg: PicColor,
+}
+
+/// the fields of `ShapeFill::Picture { .. }`
+struct ShapeFillPicture {
+  embed: utf16,
+  tile: FillTile?,
+  alpha: f64?,
+}
+
+/// `uo_docx::write::emit::object::ShapeFill`
+enum ShapeFill {
+  None,
+  Style,
+  Solid(PicColor),
+  Gradient(GradientFill),
+  Pattern(ShapeFillPattern),
+  Picture(ShapeFillPicture),
+  Raw(utf16),
+}
+
+/// a Rust tuple `(Str, JsNumber)`
+struct TupUtf16F64 { f0: utf16, f1: f64 }
+
+/// `uo_docx::model::picture::PicColor`
+struct PicColor {
+  kind: utf16,
+  val: utf16,
+  last_clr: utf16?,
+  mods: list<TupUtf16F64>?,
+}
+
+/// `Nullable<PicLine>` (the TS `null` or a value)
+enum NullablePicLine { Null, Val(PicLine) }
+
+/// `Nullable<crate::model::picture::PicShadow>` (the TS `null` or a value)
+enum NullablePicShadow { Null, Val(PicShadow) }
+
+/// `Nullable<crate::model::picture::PicReflection>` (the TS `null` or a value)
+enum NullablePicReflection { Null, Val(PicReflection) }
+
+/// `Nullable<crate::model::picture::PicGlow>` (the TS `null` or a value)
+enum NullablePicGlow { Null, Val(PicGlow) }
+
+/// `Nullable<f64>` (the TS `null` or a value)
+enum NullableF64 { Null, Val(f64) }
+
+/// `Nullable<crate::model::picture::Pic3D>` (the TS `null` or a value)
+enum NullablePic3D { Null, Val(Pic3D) }
+
+/// `uo_docx::session::ops::drawing::FormatArg`
+struct FormatArg {
+  line: NullablePicLine?,
+  shadow: NullablePicShadow?,
+  reflection: NullablePicReflection?,
+  glow: NullablePicGlow?,
+  soft_edge: NullableF64?,
+  three_d: NullablePic3D?,
+}
+
+/// `uo_docx::session::ops::drawing::TextboxOptions`
+struct TextboxOptions {
+  margin_l_pt: f64?,
+  margin_t_pt: f64?,
+  margin_r_pt: f64?,
+  margin_b_pt: f64?,
+  anchor: utf16?,
+  direction: utf16?,
+  wrap: bool?,
+  autofit: utf16?,
+  upright: bool?,
+}
+
+/// `uo_docx::session::ops::pictures::EffectKind`
+enum EffectKind {
+  Shadow,
+  Reflection,
+  Glow,
+  SoftEdge,
+  Bevel,
+  Rotation,
+}
+
+/// `uo_docx::session::ops::drawing::GalleryBox`
+struct GalleryBox {
+  xml: utf16,
+}
+
+/// `uo_docx::session::ops::drawing::ObjRect`
+struct ObjRect {
+  x: f64,
+  y: f64,
+  w: f64,
+  h: f64,
+}
+
+/// `uo_docx::session::ops::drawing::ObjFrame`
+struct ObjFrame {
+  page_w: f64,
+  page_h: f64,
+  mar_l: f64,
+  mar_r: f64,
+  mar_t: f64,
+  mar_b: f64,
+  col_x: f64,
+  col_w: f64,
+  body_top: f64,
+  para_top: f64,
+}
+
+/// `uo_docx::session::ops::drawing::AlignKind`
+enum AlignKind {
+  Left,
+  Center,
+  Right,
+  Top,
+  Middle,
+  Bottom,
+  DistributeH,
+  DistributeV,
+}
+
+/// `uo_docx::session::ops::drawing::ObjFacts`
+struct ObjFacts {
+  rect: ObjRect?,
+  frame: ObjFrame?,
+}
+
+/// `uo_docx::write::emit::fx::PicWrapKind`
+enum PicWrapKind {
+  Inline,
+  Square,
+  Tight,
+  Through,
+  TopAndBottom,
+  Behind,
+  Front,
+}
+
+/// `uo_docx::session::ops::pictures::ArrangeOp`
+enum ArrangeOp {
+  Front,
+  Back,
+  Forward,
+  Backward,
+  FrontOfText,
+  BehindText,
+}
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptTupUtf16F64 { value: TupUtf16F64? }
+
+/// `uo_docx::session::ops::pictures::LayoutInput`
+struct LayoutInput {
+  wrap: PicWrapKind?,
+  wrap_text: utf16?,
+  dist_pt: list<OptF64>?,
+  pos_h: LayoutPos?,
+  pos_v: LayoutPos?,
+  move_with_text: bool?,
+  lock_anchor: bool?,
+  allow_overlap: bool?,
+  layout_in_cell: bool?,
+  width_pt: f64?,
+  height_pt: f64?,
+  rel_width: OptTupUtf16F64?,
+  rel_height: OptTupUtf16F64?,
+  lock_aspect: bool?,
+  rotation: f64?,
+}
+
+/// `uo_docx::session::ops::pictures::RecolorArg`
+enum RecolorArg {
+  Preset(utf16),
+  Color(PicColor),
+}
+
+/// `uo_docx::session::ops::pictures::OleArg`
+struct OleArg {
+  prog_id: utf16,
+  data: bytes,
+  ext: utf16,
+  width_twips: f64,
+  height_twips: f64,
+}
+
+/// `uo_docx::session::ops::pictures::AdjustArg`
+struct AdjustArg {
+  sharpen: f64?,
+  bright: f64?,
+  contrast: f64?,
+  saturation: f64?,
+  temperature: f64?,
+}
+
+/// the fields of `PageFillInput::GradientOne { .. }`
+struct PageFillInputGradientOne {
+  color: utf16,
+  degree: f64,
+  style: GradientStyle,
+  variant: f64,
+}
+
+/// the fields of `PageFillInput::GradientTwo { .. }`
+struct PageFillInputGradientTwo {
+  color: utf16,
+  color2: utf16,
+  style: GradientStyle,
+  variant: f64,
+}
+
+/// the fields of `PageFillInput::GradientPreset { .. }`
+struct PageFillInputGradientPreset {
+  preset: utf16,
+  style: GradientStyle,
+  variant: f64,
+}
+
+/// the fields of `PageFillInput::Pattern { .. }`
+struct PageFillInputPattern {
+  pattern: utf16,
+  color: utf16,
+  background: utf16,
+}
+
+/// the fields of `PageFillInput::Picture { .. }`
+struct PageFillInputPicture {
+  texture: bool,
+  data: bytes,
+  ext: utf16,
+  name: utf16,
+}
+
+/// `uo_docx::session::ops::page::PageFillInput`
+enum PageFillInput {
+  GradientOne(PageFillInputGradientOne),
+  GradientTwo(PageFillInputGradientTwo),
+  GradientPreset(PageFillInputGradientPreset),
+  Pattern(PageFillInputPattern),
+  Picture(PageFillInputPicture),
+}
+
+/// the fields of `WatermarkArg::Text { .. }`
+struct WatermarkArgText {
+  spec: WatermarkTextSpec,
+  measured_box: WatermarkBox?,
+}
+
+/// the fields of `WatermarkArg::Picture { .. }`
+struct WatermarkArgPicture {
+  spec: WatermarkPictureSpec,
+  pixel_info: list<f64>?,
+}
+
+/// `uo_docx::session::ops::page::watermark::WatermarkArg`
+enum WatermarkArg {
+  Gallery(utf16),
+  Text(WatermarkArgText),
+  Picture(WatermarkArgPicture),
+}
+
+/// `uo_docx::session::ops::text_layout::HyphenationPatch`
+struct HyphenationPatch {
+  auto: bool?,
+  caps: bool?,
+  zone_twips: f64?,
+  limit: f64?,
+}
+
+/// `uo_docx::session::ops::clipboard::PasteMode`
+enum PasteMode {
+  Keep,
+  Merge,
+  Text,
+  Picture,
+  Default,
+}
+
+/// `uo_docx::session::ops::clipboard::PasteLayoutIn`
+struct PasteLayoutIn {
+  content_width_twips: f64?,
+}
+
+/// `uo_docx::session::ops::clipboard::RichPick`
+enum RichPick {
+  WithRich,
+  None,
+}
+
+/// `uo_docx::session::ops::clipboard::ListPasteMode`
+enum ListPasteMode {
+  Continue,
+  New,
+  Merge,
+  NoMerge,
+}
+
+/// `uo_docx::session::ops::clipboard::CellsPasteMode`
+enum CellsPasteMode {
+  Overwrite,
+  Rows,
+  Nest,
+  Text,
+}
+
+/// `uo_docx::session::ops::clipboard::PasteSpecialFormat`
+enum PasteSpecialFormat {
+  Rtf,
+  Text,
+  Picture,
+  Html,
+  Unicode,
+  Image,
+}
+
+/// `uo_docx::session::ops::clipboard::PasteDefaults`
+struct PasteDefaults {
+  within: PasteMode,
+  between: PasteMode,
+  other: PasteMode,
+}
+
+/// `uo_docx::session::ops::find::engine::FindQuery`
+struct FindQuery {
+  text: utf16,
+  match_case: bool,
+  whole_word: bool,
+  wildcards: bool,
+  sounds_like: bool,
+  all_forms: bool,
+  prefix: bool,
+  suffix: bool,
+  ignore_punct: bool,
+  ignore_space: bool,
+  format: FindFormat?,
+}
+
+/// `uo_docx::session::ops::find::Direction`
+enum Direction {
+  Down,
+  Up,
+  All,
+}
+
+/// `uo_docx::session::ops::find::engine::FindFormat`
+struct FindFormat {
+  bold: bool?,
+  italic: bool?,
+  underline: bool?,
+  strike: bool?,
+  double_strike: bool?,
+  all_caps: bool?,
+  small_caps: bool?,
+  hidden: bool?,
+  vert_align: OptUtf16?,
+  font: utf16?,
+  size_pt: f64?,
+  color: utf16?,
+  highlight: bool?,
+  char_style: utf16?,
+  para_style: utf16?,
+}
+
+/// `uo_docx::session::ops::find::Within`
+enum Within {
+  Document,
+  Selection,
+}
+
+/// `uo_docx::session::ops::find::GoToWhat`
+enum GoToWhat {
+  Page,
+  Section,
+  Line,
+  Bookmark,
+  Comment,
+  Footnote,
+  Endnote,
+  Field,
+  Table,
+  Graphic,
+  Equation,
+  Object,
+  Heading,
+}
+
+/// `uo_docx::session::text::DocRange`
+struct DocRange {
+  start: DocPosition,
+  end: DocPosition,
+}
+
+/// `uo_docx::session::ops::navigation::HeadingWhere`
+enum HeadingWhere {
+  Before,
+  After,
+  Sub,
+}
+
+/// `uo_docx::session::ops::navigation::FindOptions`
+struct FindOptions {
+  match_case: bool,
+  whole_word: bool,
+}
+
+/// `uo_docx::session::ops::references::FieldKind`
+enum FieldKind {
+  Page,
+  NumPages,
+  Date,
+}
+
+/// `uo_docx::session::ops::styles::sheet::UiLang`
+enum UiLang {
+  En,
+  Pt,
+  Es,
+}
+
+/// `uo_docx::session::ops::references::DocInfoKind`
+enum DocInfoKind {
+  Author,
+  Title,
+  FileName,
+  FilePath,
+}
+
+/// `uo_docx::session::ops::references::FieldScopeSel`
+enum FieldScopeSel {
+  Selection,
+  All,
+}
+
+/// `uo_docx::session::ops::references::TocMode`
+enum TocMode {
+  Pages,
+  All,
+}
+
+/// `uo_docx::session::ops::references::CrossRefOptions`
+struct CrossRefOptions {
+  ty: CrossRefType,
+  label: utf16?,
+  item: utf16,
+  kind: CrossRefKind,
+  hyperlink: bool?,
+  position: bool?,
+  separator: utf16?,
+}
+
+/// `uo_docx::session::ops::references::TableOfFiguresOptions`
+struct TableOfFiguresOptions {
+  label: utf16,
+  include_label: bool?,
+  page_numbers: bool?,
+  right_align: bool?,
+  leader: utf16?,
+  hyperlinks: bool?,
+  format: TofFormat?,
+}
+
+/// `uo_docx::session::ops::references::toc::TocTemplateId`
+enum TocTemplateId {
+  Auto1,
+  Auto2,
+  Manual,
+}
+
+/// `uo_docx::session::ops::references::toc::TableOfContentsOptions`
+struct TableOfContentsOptions {
+  page_numbers: bool?,
+  right_align: bool?,
+  leader: utf16?,
+  hyperlinks: bool?,
+  format: TocFormat?,
+  levels: f64?,
+  use_styles: bool?,
+  styles: list<TocStyle>?,
+  outline_levels: bool?,
+  fields: bool?,
+  field_id: utf16?,
+}
+
+/// a Rust tuple `(String, CaptionNumbering)`
+struct TupUtf16CaptionNumbering { f0: utf16, f1: CaptionNumbering }
+
+/// `uo_docx::session::ops::references::CaptionSettings`
+struct CaptionSettings {
+  labels: list<utf16>,
+  numbering: list<TupUtf16CaptionNumbering>,
+  auto: AutoCaptionCfg?,
+}
+
+/// `uo_docx::session::ops::references::pure::CaptionNumbering`
+struct CaptionNumbering {
+  format: CaptionFormat,
+  chapter: CaptionChapter?,
+}
+
+/// `uo_docx::session::ops::references::CaptionPosition`
+enum CaptionPosition {
+  Above,
+  Below,
+}
+
+/// `uo_docx::session::ops::references::CaptionOptions`
+struct CaptionOptions {
+  label: utf16,
+  title: utf16?,
+  position: CaptionPosition?,
+  exclude_label: bool?,
+  numbering: CaptionNumbering?,
+}
+
+/// `uo_docx::session::policy::ListKind`
+enum PolicyListKind {
+  Bullet,
+  Decimal,
+}
+
+/// `uo_docx::session::policy::CharacterFormat`
+enum CharacterFormat {
+  Bold,
+  Italic,
+  Underline,
+  UnderlineStyles,
+  Strike,
+  DoubleStrike,
+  Superscript,
+  Subscript,
+  Color,
+  Highlight,
+  Link,
+  Caps,
+  Hidden,
+  CharSpacing,
+  TextEffects,
+}
+
+/// `uo_docx::session::policy::Indentation`
+enum Indentation {
+  All,
+  Steps,
+  None,
+}
+
+/// `uo_docx::session::policy::Flag`
+enum Flag {
+  Font,
+  FontSize,
+  Alignment,
+  Spacing,
+  Borders,
+  Shading,
+  Tabs,
+  StyleEditing,
+  FormatPainter,
+  PageSetup,
+  PageBackground,
+  HeadersFooters,
+  Columns,
+  PageBreaks,
+  SectionBreaks,
+  Tables,
+  Images,
+  ImageFormatting,
+  Shapes,
+}
+
+/// `uo_docx::session::ops::format::ThemeColorRef`
+struct ThemeColorRef {
+  theme_color: utf16,
+  tint: f64?,
+  shade: f64?,
+}
+
+/// `uo_docx::model::effects::FxFill`
+struct FxFill {
+  type: utf16,
+  color: FxColor?,
+  stops: list<FxGradStop>?,
+  lin: FxLin?,
+  path: FxPath?,
+}
+
+/// `uo_docx::model::effects::FxOutline`
+struct FxOutline {
+  w: f64?,
+  cap: utf16?,
+  cmpd: utf16?,
+  algn: utf16?,
+  fill: FxFill?,
+  dash: utf16?,
+  join: utf16?,
+  miter_lim: f64?,
+}
+
+/// `uo_docx::model::effects::FxShadow`
+struct FxShadow {
+  blur_rad: f64,
+  dist: f64,
+  dir: f64,
+  sx: f64,
+  sy: f64,
+  kx: f64,
+  ky: f64,
+  algn: utf16,
+  color: FxColor,
+}
+
+/// `uo_docx::model::effects::FxReflection`
+struct FxReflection {
+  blur_rad: f64,
+  st_a: f64,
+  st_pos: f64,
+  end_a: f64,
+  end_pos: f64,
+  dist: f64,
+  dir: f64,
+  fade_dir: f64,
+  sx: f64,
+  sy: f64,
+  kx: f64,
+  ky: f64,
+  algn: utf16,
+}
+
+/// `uo_docx::model::effects::FxGlow`
+struct FxGlow {
+  rad: f64,
+  color: FxColor,
+}
+
+/// `uo_docx::session::ops::paragraph::SpacingArg`
+enum SpacingArg {
+  Auto,
+  Twips(f64),
+}
+
+/// `uo_docx::session::ops::styles::sheet::StyleFormat`
+struct StyleFormat {
+  font_ascii: ChUtf16,
+  sz_half_pt: ChF64,
+  bold: ChBool,
+  italic: ChBool,
+  underline: ChBool,
+  strike: ChBool,
+  all_caps: ChBool,
+  small_caps: ChBool,
+  color: ChUtf16,
+  char_spacing_twips: ChF64,
+  alignment: ChUtf16,
+  space_before_twips: ChF64,
+  space_after_twips: ChF64,
+  line_twentieths: ChF64,
+  indent_left_twips: ChF64,
+  indent_right_twips: ChF64,
+  indent_first_line_twips: ChF64,
+}
+
+/// `uo_docx::session::ops::styles::sheet::Ch<String>`
+enum ChUtf16 {
+  Keep,
+  Null,
+  Val(utf16),
+}
+
+/// `uo_docx::session::ops::tables::sort::SortType`
+enum SortType {
+  Text,
+  Number,
+  Date,
+}
+
+/// `uo_docx::session::ops::tables::sort::SortSeparator`
+enum SortSeparator {
+  Tab,
+  Comma,
+  Char(utf16),
+}
+
+/// `uo_docx::session::ops::tables::TableTab`
+struct TableTab {
+  width: OptWidthSpec?,
+  align: utf16?,
+  indent_twips: f64?,
+  wrap: utf16?,
+  position: TblpPr?,
+  overlap: bool?,
+  title: utf16?,
+  description: utf16?,
+}
+
+/// `uo_docx::session::ops::tables::RowTab`
+struct RowTab {
+  height: OptTupF64Utf16?,
+  allow_break: bool?,
+  header: bool?,
+}
+
+/// `uo_docx::model::props::WidthSpec`
+struct WidthSpec {
+  w: f64,
+  type: utf16,
+}
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptMarginsIn { value: MarginsIn? }
+
+/// `uo_docx::session::ops::tables::CellTab`
+struct CellTab {
+  width: OptWidthSpec?,
+  v_align: utf16?,
+  margins: OptMarginsIn?,
+  wrap: bool?,
+  fit_text: bool?,
+}
+
+/// `uo_docx::session::ops::sections::section_ops::Orientation`
+enum Orientation {
+  Portrait,
+  Landscape,
+}
+
+/// `uo_docx::session::ops::sections::PageSize`
+enum PageSize {
+  A4,
+  Letter,
+}
+
+/// `uo_docx::session::ops::sections::MarginPreset`
+enum MarginPreset {
+  Normal,
+  Narrow,
+  Wide,
+}
+
+/// `uo_docx::session::ops::sections::section_ops::ColumnPreset`
+enum ColumnPreset {
+  One,
+  Two,
+  Three,
+  Left,
+  Right,
+}
+
+/// `uo_docx::session::ops::sections::section_ops::ColumnSpec`
+struct ColumnSpec {
+  count: f64,
+  space_twips: f64?,
+  widths: list<TupF64F64>?,
+  sep: bool,
+}
+
+/// `uo_docx::session::ops::text_layout::LineRestart`
+enum LineRestart {
+  Page,
+  Section,
+  Continuous,
+}
+
+/// `uo_docx::session::ops::revision_cmds::Balloons`
+enum Balloons {
+  Revisions,
+  Inline,
+  Mixed,
+}
+
+/// a Rust tuple `(f64, bool)`
+struct TupF64Bool { f0: f64, f1: bool }
+
+/// a Rust tuple `(String, Option<FillRect>)`
+struct TupUtf16OptFillRect { f0: utf16, f1: FillRect? }
+
+/// `uo_docx::write::emit::object::GradientFill`
+struct GradientFill {
+  stops: list<GradientStop>,
+  lin: TupF64Bool?,
+  path: TupUtf16OptFillRect?,
+  rot_with_shape: bool?,
+  flip: utf16?,
+  tile_rect: bool,
+}
+
+/// `uo_docx::write::emit::object::FillTile`
+struct FillTile {
+  tx: f64,
+  ty: f64,
+  sx: f64,
+  sy: f64,
+  flip: utf16,
+  algn: utf16,
+}
+
+/// `uo_docx::model::picture::PicLine`
+struct PicLine {
+  w: f64?,
+  cap: utf16?,
+  cmpd: utf16?,
+  algn: utf16?,
+  fill: NullablePicColor?,
+  fill_raw: utf16?,
+  dash: utf16?,
+  join: utf16?,
+  miter_lim: f64?,
+  tail_raw: utf16?,
+}
+
+/// `uo_docx::model::picture::PicShadow`
+struct PicShadow {
+  kind: utf16,
+  blur_rad: f64?,
+  dist: f64?,
+  dir: f64?,
+  sx: f64?,
+  sy: f64?,
+  kx: f64?,
+  ky: f64?,
+  algn: utf16?,
+  rot_with_shape: bool?,
+  prst: utf16?,
+  color: PicColor,
+}
+
+/// `uo_docx::model::picture::PicReflection`
+struct PicReflection {
+  blur_rad: f64?,
+  st_a: f64?,
+  st_pos: f64?,
+  end_a: f64?,
+  end_pos: f64?,
+  dist: f64?,
+  dir: f64?,
+  fade_dir: f64?,
+  sx: f64?,
+  sy: f64?,
+  kx: f64?,
+  ky: f64?,
+  algn: utf16?,
+  rot_with_shape: bool?,
+}
+
+/// `uo_docx::model::picture::PicGlow`
+struct PicGlow {
+  rad: f64,
+  color: PicColor,
+}
+
+/// `uo_docx::model::picture::Pic3D`
+struct Pic3D {
+  camera: Camera?,
+  light_rig: LightRig?,
+  bevel_t: Bevel?,
+  bevel_b: Bevel?,
+  extrusion_h: f64?,
+  contour_w: f64?,
+  z: f64?,
+  prst_material: utf16?,
+  extrusion_clr: PicColor?,
+  contour_clr: PicColor?,
+}
+
+/// `uo_docx::session::ops::pictures::LayoutPos`
+struct LayoutPos {
+  relative_from: utf16,
+  align: utf16?,
+  offset_pt: f64?,
+  pct: f64?,
+}
+
+/// `uo_docx::session::ops::page::GradientStyle`
+enum GradientStyle {
+  Horizontal,
+  Vertical,
+  DiagonalUp,
+  DiagonalDown,
+  FromCorner,
+  FromCenter,
+}
+
+/// `uo_docx::write::emit::background::WatermarkTextSpec`
+struct WatermarkTextSpec {
+  text: utf16,
+  font: utf16,
+  size_pt: f64?,
+  color: utf16,
+  semitransparent: bool,
+  layout: WatermarkLayout,
+  lang: utf16?,
+}
+
+/// `uo_docx::write::emit::background::WatermarkBox`
+struct WatermarkBox {
+  width_pt: f64,
+  height_pt: f64,
+}
+
+/// `uo_docx::write::emit::background::WatermarkPictureSpec`
+struct WatermarkPictureSpec {
+  data: bytes,
+  ext: utf16,
+  title: utf16,
+  scale: f64?,
+  washout: bool,
+}
+
+/// `uo_docx::session::ops::references::pure::CrossRefType`
+enum CrossRefType {
+  Numbered,
+  Heading,
+  Bookmark,
+  Footnote,
+  Endnote,
+  Caption,
+}
+
+/// `uo_docx::session::ops::references::pure::CrossRefKind`
+enum CrossRefKind {
+  Text,
+  Page,
+  Number,
+  NumberNoContext,
+  NumberFullContext,
+  Position,
+  NoteNumber,
+  NoteNumberFormatted,
+  CaptionEntire,
+  CaptionLabel,
+  CaptionText,
+}
+
+/// `uo_docx::session::ops::references::pure::TofFormat`
+enum TofFormat {
+  Template,
+  Classic,
+  Distinctive,
+  Centered,
+  Formal,
+  Simple,
+}
+
+/// `uo_docx::session::ops::references::toc::TocFormat`
+enum TocFormat {
+  Template,
+  Classic,
+  Distinctive,
+  Fancy,
+  Modern,
+  Formal,
+  Simple,
+}
+
+/// `uo_docx::session::ops::references::pure::TocStyle`
+struct TocStyle {
+  style: utf16,
+  level: f64,
+}
+
+/// `uo_docx::session::ops::references::AutoCaptionCfg`
+struct AutoCaptionCfg {
+  table: AutoCaption?,
+}
+
+/// `uo_docx::session::ops::references::pure::CaptionFormat`
+enum CaptionFormat {
+  Arabic,
+  AlphabeticUpper,
+  AlphabeticLower,
+  RomanUpper,
+  RomanLower,
+}
+
+/// `uo_docx::session::ops::references::pure::CaptionChapter`
+struct CaptionChapter {
+  level: f64,
+  separator: ChapterSeparator,
+}
+
+/// `uo_docx::model::effects::FxColor`
+struct FxColor {
+  rgb: utf16?,
+  scheme: utf16?,
+  mods: list<TupUtf16F64>?,
+}
+
+/// `uo_docx::model::effects::FxGradStop`
+struct FxGradStop {
+  pos: f64,
+  color: FxColor,
+}
+
+/// `uo_docx::model::effects::FxLin`
+struct FxLin {
+  ang: f64,
+  scaled: bool,
+}
+
+/// `uo_docx::model::effects::FxPath`
+struct FxPath {
+  kind: utf16,
+  l: f64,
+  t: f64,
+  r: f64,
+  b: f64,
+}
+
+/// `uo_docx::session::ops::styles::sheet::Ch<f64>`
+enum ChF64 {
+  Keep,
+  Null,
+  Val(f64),
+}
+
+/// `uo_docx::session::ops::styles::sheet::Ch<bool>`
+enum ChBool {
+  Keep,
+  Null,
+  Val(bool),
+}
+
+/// `uo_docx::model::props::TblpPr`
+struct TblpPr {
+  left_from_text: f64?,
+  right_from_text: f64?,
+  top_from_text: f64?,
+  bottom_from_text: f64?,
+  vert_anchor: utf16?,
+  horz_anchor: utf16?,
+  tblp_x_spec: utf16?,
+  tblp_x: f64?,
+  tblp_y_spec: utf16?,
+  tblp_y: f64?,
+}
+
+/// `uo_docx::write::emit::object::GradientStop`
+struct GradientStop {
+  pos: f64,
+  color: PicColor,
+}
+
+/// `uo_docx::write::emit::object::FillRect`
+struct FillRect {
+  l: f64,
+  t: f64,
+  r: f64,
+  b: f64,
+}
+
+/// `uo_docx::model::picture::Camera`
+struct Camera {
+  prst: utf16,
+  fov: f64?,
+  zoom: f64?,
+  rot: Rot3?,
+}
+
+/// `uo_docx::model::picture::LightRig`
+struct LightRig {
+  rig: utf16,
+  dir: utf16,
+  rot: Rot3?,
+}
+
+/// `uo_docx::model::picture::Bevel`
+struct Bevel {
+  w: f64?,
+  h: f64?,
+  prst: utf16?,
+}
+
+/// `uo_docx::write::emit::background::WatermarkLayout`
+enum WatermarkLayout {
+  Diagonal,
+  Horizontal,
+}
+
+/// `uo_docx::session::ops::references::AutoCaption`
+struct AutoCaption {
+  label: utf16,
+  position: CaptionPosition,
+}
+
+/// `uo_docx::session::ops::references::pure::ChapterSeparator`
+enum ChapterSeparator {
+  Hyphen,
+  Period,
+  Colon,
+  EmDash,
+  EnDash,
+}
+
+/// `uo_docx::model::picture::Rot3`
+struct Rot3 {
+  lat: f64,
+  lon: f64,
+  rev: f64,
+}
+
+/// `uo_docx::session::command::ChangeSet`
+struct ChangeSet {
+  stories: list<CommandStoryChange>,
+  selection: Selection,
+  events: list<Event>,
+  dirty: bool,
+  can_undo: bool,
+  can_redo: bool,
+  formatting: bool,
+}
+
+/// the fields of `Job::DecodeImage { .. }`
+struct JobDecodeImage {
+  id: u32,
+  bytes: bytes,
+  ext: utf16,
+}
+
+/// the fields of `Job::EncodeImage { .. }`
+struct JobEncodeImage {
+  id: u32,
+  width: u32,
+  height: u32,
+  rgba: bytes,
+  mime: utf16,
+  quality: f64?,
+}
+
+/// the fields of `Job::ReadClipboard { .. }`
+struct JobReadClipboard {
+  id: u32,
+}
+
+/// the fields of `Job::RenderClip { .. }`
+struct JobRenderClip {
+  id: u32,
+}
+
+/// `uo_docx::session::command::Job`
+enum Job {
+  DecodeImage(JobDecodeImage),
+  EncodeImage(JobEncodeImage),
+  ReadClipboard(JobReadClipboard),
+  RenderClip(JobRenderClip),
+}
+
+/// `uo_docx::session::command::CommandError`
+enum CommandError {
+  Locked,
+  Position,
+  NotPorted(utf16),
+  Layout(LayoutError),
+  UnknownJob,
+  Busy,
+}
+
+/// `uo_docx::session::command::StoryChange`
+struct CommandStoryChange {
+  story: StoryKey,
+  changed: list<u32>,
+  structure: bool,
+}
+
+/// `uo_docx::session::state::Selection`
+struct Selection {
+  anchor: DocPosition,
+  focus: DocPosition,
+}
+
+/// the fields of `Event::DirtyChange { .. }`
+struct EventDirtyChange {
+  dirty: bool,
+}
+
+/// the fields of `Event::Input { .. }`
+struct EventInput {
+  text: utf16,
+}
+
+/// the fields of `Event::Protected { .. }`
+struct EventProtected {
+  active: bool,
+  has_fields: bool,
+}
+
+/// the fields of `Event::CellMode { .. }`
+struct EventCellMode {
+  active: bool,
+}
+
+/// the fields of `Event::NoteMode { .. }`
+struct EventNoteMode {
+  active: bool,
+  footnote: bool,
+  id: f64,
+}
+
+/// the fields of `Event::HfMode { .. }`
+struct EventHfMode {
+  active: bool,
+}
+
+/// the fields of `Event::TbMode { .. }`
+struct EventTbMode {
+  active: bool,
+}
+
+/// the fields of `Event::TrackChanges { .. }`
+struct EventTrackChanges {
+  on: bool,
+}
+
+/// the fields of `Event::SortError { .. }`
+struct EventSortError {
+  message: utf16,
+}
+
+/// the fields of `Event::CustomInlineInserted { .. }`
+struct EventCustomInlineInserted {
+  type: utf16,
+}
+
+/// the fields of `Event::Blocked { .. }`
+struct EventBlocked {
+  command: utf16,
+}
+
+/// the fields of `Event::FontEmbedding { .. }`
+struct EventFontEmbedding {
+  embedded: list<utf16>,
+  skipped: list<utf16>,
+}
+
+/// `uo_docx::session::command::Event`
+enum Event {
+  Change = "uw-change",
+  DirtyChange = "uw-dirty-change"(EventDirtyChange),
+  Input = "uw-input"(EventInput),
+  Protected = "uw-protected"(EventProtected),
+  CellMode = "uw-cellmode"(EventCellMode),
+  NoteMode = "uw-notemode"(EventNoteMode),
+  HfMode = "uw-hfmode"(EventHfMode),
+  TbMode = "uw-tbmode"(EventTbMode),
+  TrackChanges = "uw-track-changes"(EventTrackChanges),
+  RevisionsChanged = "uw-revisions-changed",
+  CommentsChanged = "uw-comments-changed",
+  BookmarksChange = "uw-bookmarks-change",
+  StylesChange = "uw-styles-change",
+  ThemeChange = "uw-theme-change",
+  CaptionSettings = "uw-caption-settings",
+  SortError = "uw-sort-error"(EventSortError),
+  Pasted = "uw-pasted",
+  CustomInlineInserted = "uw-custom-inline-inserted"(EventCustomInlineInserted),
+  Blocked = "uw-blocked"(EventBlocked),
+  FontEmbedding = "uw-font-embedding"(EventFontEmbedding),
+  TocUpdate = "uw-toc-update",
+  FormattingPolicyChange = "uw-formatting-policy-change",
+  Markup = "uw-markup",
+  PasteOptions = "uw-paste-options",
+}
+
+/// `uo_docx::view::LayoutError`
+struct LayoutError {
+  kind: LayoutErrorKind,
+  detail: utf16,
+}
+
+/// `uo_docx::session::command::StoryKey`
+enum StoryKey {
+  Body,
+  Context,
+  All,
+}
+
+/// `uo_docx::view::LayoutErrorKind`
+enum LayoutErrorKind {
+  Limit,
+  Budget,
+  Internal,
+}
+
+/// `uo_docx::session::state::TableSel`
+struct TableSel {
+  anchor: u32,
+  path: list<CellHop>,
+  row0: u32,
+  col0: u32,
+  row1: u32,
+  col1: u32,
+  origin_row: u32,
+  origin_col: u32,
+}
+
+/// `uo_docx::session::ops::bookmarks::MarkStory`
+struct MarkStory {
+  loc: StoryLoc,
+  key: f64,
+  body: bool,
+}
+
+/// the fields of `StoryLoc::Note { .. }`
+struct StoryLocNote {
+  footnote: bool,
+  id: f64,
+}
+
+/// `uo_docx::session::ops::revision_cmds::StoryLoc`
+enum StoryLoc {
+  Body,
+  Cell(list<CellStep>),
+  Hf(u32),
+  Note(StoryLocNote),
+}
+
+/// `uo_docx::session::ops::revision_cmds::CellStep`
+struct CellStep {
+  table: u32,
+  row: u32,
+  cell: u32,
+}
+
+/// `uo_docx::session::ops::bookmarks::BookmarkInfo`
+struct BookmarkInfo {
+  name: utf16,
+  hidden: bool,
+  text: utf16,
+}
+
+/// a Rust tuple `(PasteMode, Option<ListPasteMode>)`
+struct TupPasteModeOptListPasteMode { f0: PasteMode, f1: ListPasteMode? }
+
+/// `uo_docx::session::ops::clipboard::PasteOptions`
+struct PasteOptions {
+  modes: list<PasteMode>,
+  list: list<ListPasteMode>,
+  current: TupPasteModeOptListPasteMode?,
+}
+
+/// `uo_docx::session::ops::clipboard::SpecialFormats`
+struct SpecialFormats {
+  formats: list<PasteSpecialFormat>,
+  link: bool,
+  source: utf16,
+}
+
+/// `uo_docx::session::ops::clipboard::PasteRange`
+struct PasteRange {
+  start: DocPosition,
+  end: DocPosition,
+  first: u32,
+  last: u32,
+  marked: list<u32>,
+}
+
+/// `uo_docx::model::document::Comment`
+struct DocumentComment {
+  id: f64,
+  author: utf16?,
+  text: utf16,
+}
+
+/// `uo_docx::session::ops::drawing::PaneItem`
+struct PaneItem {
+  key: utf16,
+  name: utf16,
+  hidden: bool,
+  selected: bool,
+  kind: PaneKind,
+}
+
+/// `uo_docx::session::ops::drawing::PaneKind`
+enum PaneKind {
+  Image,
+  Textbox,
+  Shape,
+  Group,
+}
+
+/// `uo_docx::session::ops::drawing::ObjectState`
+struct ObjectState {
+  kind: PaneKind,
+  inline: bool,
+  wrap: utf16,
+  cx: f64,
+  cy: f64,
+  rot: f64,
+  flip_h: bool,
+  flip_v: bool,
+  lock_aspect: bool,
+  move_with_text: bool,
+  lock_anchor: bool,
+  name: utf16,
+  alt_text: utf16,
+  decorative: bool,
+  geometry: utf16,
+  style_index: u32,
+  editing_text: bool,
+  text: TextState?,
+  link_next: bool,
+  link_previous: bool,
+  format: PictureFormat,
+}
+
+/// `uo_docx::session::ops::drawing::TextState`
+struct TextState {
+  margins_emu: list<f64>,
+  anchor: utf16,
+  direction: utf16,
+  wrap: bool,
+  autofit: utf16,
+  upright: bool,
+}
+
+/// `Nullable<Box<PicLine>>` (the TS `null` or a value)
+enum NullableBoxPicLine { Null, Val(PicLine) }
+
+/// `uo_docx::model::picture::PictureFormat`
+struct PictureFormat {
+  inline: bool,
+  wrap: utf16,
+  wrap_text: utf16,
+  dist: Dist,
+  pos_h: PicPos?,
+  pos_v: PicPos?,
+  cx: f64,
+  cy: f64,
+  size_rel_h: SizeRel?,
+  size_rel_v: SizeRel?,
+  effect_extent: Ltrb,
+  locked: bool,
+  layout_in_cell: bool,
+  allow_overlap: bool,
+  behind_doc: bool,
+  relative_height: f64?,
+  polygon: WrapPolygon?,
+  doc_pr: DocPr,
+  no_change_aspect: bool,
+  rot: f64,
+  flip_h: bool,
+  flip_v: bool,
+  src_rect: Ltrb,
+  geom: utf16,
+  adj: list<TupUtf16F64>?,
+  cust_geom: bool?,
+  line: NullableBoxPicLine?,
+  effects: PicEffects,
+  three_d: Pic3D?,
+  blip: PicBlipFx,
+  embed: utf16?,
+}
+
+/// `uo_docx::model::picture::Dist`
+struct Dist {
+  t: f64,
+  b: f64,
+  l: f64,
+  r: f64,
+}
+
+/// `uo_docx::model::picture::PicPos`
+struct PicPos {
+  relative_from: utf16,
+  align: utf16?,
+  offset: f64?,
+  pct: f64?,
+  fallback: f64?,
+}
+
+/// `uo_docx::model::picture::SizeRel`
+struct SizeRel {
+  relative_from: utf16,
+  pct: f64,
+}
+
+/// `uo_docx::model::drawing::Ltrb`
+struct Ltrb {
+  l: f64,
+  t: f64,
+  r: f64,
+  b: f64,
+}
+
+/// `uo_docx::model::picture::WrapPolygon`
+struct WrapPolygon {
+  edited: bool,
+  pts: list<TupF64F64>,
+}
+
+/// `uo_docx::model::picture::DocPr`
+struct DocPr {
+  id: utf16?,
+  name: utf16?,
+  descr: utf16?,
+  title: utf16?,
+  hidden: bool?,
+  decorative: bool?,
+}
+
+/// `uo_docx::model::picture::PicEffects`
+struct PicEffects {
+  shadow: PicShadow?,
+  reflection: PicReflection?,
+  glow: PicGlow?,
+  soft_edge: f64?,
+  other_raw: list<utf16>?,
+}
+
+/// a Rust tuple `(PicColor, PicColor)`
+struct TupPicColorPicColor { f0: PicColor, f1: PicColor }
+
+/// `uo_docx::model::picture::PicBlipFx`
+struct PicBlipFx {
+  alpha_mod_fix: f64?,
+  lum: BlipLum?,
+  grayscl: bool?,
+  bi_level: f64?,
+  duotone: TupPicColorPicColor?,
+  clr_change: ClrChange?,
+  a14: A14Props?,
+}
+
+/// `uo_docx::model::picture::BlipLum`
+struct BlipLum {
+  bright: f64?,
+  contrast: f64?,
+}
+
+/// `uo_docx::model::picture::ClrChange`
+struct ClrChange {
+  from: PicColor,
+  to: PicColor,
+  use_a: bool?,
+}
+
+/// `uo_docx::model::picture::A14Props`
+struct A14Props {
+  layer_rid: utf16?,
+  saturation: f64?,
+  color_temp: f64?,
+  sharpen: f64?,
+  bright: f64?,
+  contrast: f64?,
+  other_raw: list<utf16>?,
+}
+
+/// `uo_docx::session::ops::find::engine::QueryError`
+enum QueryError {
+  Pattern,
+  Special(utf16),
+  Syntax(utf16),
+  Unsupported,
+}
+
+/// a Rust tuple `(super::navigation::SearchLoc, u32, u32)`
+struct TupSearchLocU32U32 { f0: SearchLoc, f1: u32, f2: u32 }
+
+/// the fields of `SearchLoc::Body { .. }`
+struct SearchLocBody {
+  para: u32,
+}
+
+/// the fields of `SearchLoc::Cell { .. }`
+struct SearchLocCell {
+  anchor: u32,
+  hops: list<CellHop>,
+  para: u32,
+}
+
+/// `uo_docx::session::ops::navigation::SearchLoc`
+enum SearchLoc {
+  Body(SearchLocBody),
+  Cell(SearchLocCell),
+}
+
+/// a Rust tuple `(HfKind, HfSlot)`
+struct TupHfKindHfSlot { f0: HfKind, f1: HfSlot }
+
+/// `uo_docx::session::ops::header_footer::HeaderFooterOptions`
+struct HeaderFooterOptions {
+  section: u32,
+  section_count: u32,
+  part: TupHfKindHfSlot?,
+  different_first_page: bool,
+  different_odd_even: bool,
+  header_distance: f64,
+  footer_distance: f64,
+  link_to_previous: bool,
+}
+
+/// `uo_docx::session::ops::header_footer::PageNumberFormat`
+struct PageNumberFormat {
+  format: utf16,
+  chapter: TupF64Utf16?,
+  start: f64?,
+}
+
+/// a Rust tuple `(&str, &str)`
+struct TupUtf16Utf16 { f0: utf16, f1: utf16 }
+
+/// `uo_docx::session::ops::navigation::F9Result`
+enum F9Result {
+  Bool(bool),
+  Count(u32),
+  Find(FindOutcome),
+  Replace(ReplaceOutcome),
+}
+
+/// `uo_docx::session::ops::find::FindOutcome`
+struct FindOutcome {
+  found: bool,
+  wrapped: bool,
+  error: QueryError?,
+  budget: bool,
+}
+
+/// `uo_docx::session::ops::find::ReplaceOutcome`
+struct ReplaceOutcome {
+  find: FindOutcome,
+  replaced: bool,
+  count: u32,
+}
+
+/// `uo_docx::session::ops::navigation::HeadingInfo`
+struct HeadingInfo {
+  index: u32,
+  level: f64,
+  text: utf16,
+  para: u32,
+}
+
+/// `uo_docx::session::ops::navigation::SearchResult`
+struct SearchResult {
+  index: u32,
+  start: u32,
+  end: u32,
+  snippet: Snippet,
+  heading: i32,
+  in_table: bool,
+  loc: SearchLoc,
+}
+
+/// `uo_docx::session::ops::navigation::Snippet`
+struct Snippet {
+  before: utf16,
+  match: utf16,
+  after: utf16,
+}
+
+/// a Rust tuple `(u32, CellHop)`
+struct TupU32CellHop { f0: u32, f1: CellHop }
+
+/// `uo_docx::session::ops::notes::NoteRefLoc`
+struct NoteRefLoc {
+  footnote: bool,
+  id: f64,
+  para: u32,
+  cell: TupU32CellHop?,
+  offset: u32,
+  key: list<f64>,
+}
+
+/// `uo_docx::session::ops::notes::NoteOptions`
+struct NoteOptions {
+  position: utf16,
+  number_format: utf16,
+  start_at: f64,
+  restart: utf16,
+  columns: f64?,
+}
+
+/// a Rust tuple `(WatermarkInfo, Option<Vec<u8>>)`
+struct TupWatermarkInfoOptBytes { f0: WatermarkInfo, f1: bytes? }
+
+/// `uo_docx::read::watermark::WatermarkInfo`
+enum WatermarkInfo {
+  Text(WatermarkTextInfo),
+  Picture(WatermarkPictureInfo),
+}
+
+/// `uo_docx::read::watermark::WatermarkTextInfo`
+struct WatermarkTextInfo {
+  kind: utf16,
+  text: utf16,
+  font: utf16,
+  size_pt: f64?,
+  color: utf16,
+  semitransparent: bool,
+  layout: utf16,
+  width_pt: f64,
+  height_pt: f64,
+}
+
+/// `uo_docx::read::watermark::WatermarkPictureInfo`
+struct WatermarkPictureInfo {
+  kind: utf16,
+  rid: utf16,
+  title: utf16,
+  washout: bool,
+  width_pt: f64,
+  height_pt: f64,
+}
+
+/// `uo_docx::session::ops::page::watermark::WatermarkGalleryEntry`
+struct WatermarkGalleryEntry {
+  item: WatermarkGalleryItem,
+  label: utf16,
+  category_label: utf16,
+}
+
+/// `uo_docx::write::emit::background::WatermarkGalleryItem`
+struct WatermarkGalleryItem {
+  id: utf16,
+  category: utf16,
+  text_pt: utf16,
+  text_en: utf16,
+  text_es: utf16,
+  layout: WatermarkLayout,
+  box_pt: list<f64>,
+  box_en: list<f64>,
+  box_es: list<f64>,
+}
+
+/// `uo_docx::session::ops::paragraph::IndentInfo`
+struct IndentInfo {
+  left: f64,
+  right: f64,
+  first_line: f64,
+}
+
+/// an `Option` where the IDL has no optional (a list element, a payload, an option of an option)
+struct OptManualHyphenation { value: ManualHyphenation? }
+
+/// `uo_docx::session::ops::references::F10Result`
+enum F10Result {
+  Unit,
+  Bool(bool),
+  Count(u32),
+  Hyphenation(OptManualHyphenation),
+}
+
+/// `uo_docx::session::ops::references::hyphen::ManualHyphenation`
+struct ManualHyphenation {
+  word: utf16,
+  lang: utf16,
+  points: list<u32>,
+  suggested: u32,
+  limit: u32,
+}
+
+/// `uo_docx::session::ops::references::CaptionLabelInfo`
+struct CaptionLabelInfo {
+  name: utf16,
+  built_in: bool,
+  position: CaptionPosition,
+}
+
+/// `uo_docx::session::ops::references::CaptionTarget`
+enum CaptionTarget {
+  Table,
+  Image,
+}
+
+/// `uo_docx::session::ops::references::CrossRefItem`
+struct CrossRefItem {
+  id: utf16,
+  text: utf16,
+}
+
+/// `uo_docx::session::ops::references::ManualHyphState`
+struct ManualHyphState {
+  from: DocPosition,
+  to: DocPosition?,
+  cur: ManualHyphWord?,
+  skipped: u32,
+}
+
+/// `uo_docx::session::ops::references::ManualHyphWord`
+struct ManualHyphWord {
+  para: u32,
+  start: u32,
+  end: u32,
+  points: list<u32>,
+  limit: u32,
+}
+
+/// a Rust tuple `(TocTemplateId, &str)`
+struct TupTocTemplateIdUtf16 { f0: TocTemplateId, f1: utf16 }
+
+/// `uo_docx::session::ops::revision_cmds::RevisionEntry`
+struct RevisionEntry {
+  span: RevisionSpan,
+  story: RevisionStory,
+  loc: StoryLoc,
+}
+
+/// `uo_docx::session::revisions::RevisionSpan`
+struct RevisionSpan {
+  kind: utf16,
+  author: utf16,
+  date: utf16?,
+  date_utc: utf16?,
+  move: bool?,
+  mark: bool?,
+  para: f64,
+  end_para: f64?,
+  start: f64,
+  end: f64,
+  text: utf16,
+  old: SpanProps?,
+  now: SpanProps?,
+}
+
+/// `uo_docx::session::ops::revision_cmds::RevisionStory`
+enum RevisionStory {
+  Body,
+  Table,
+  Header,
+  Footer,
+  Footnote,
+  Endnote,
+}
+
+/// `uo_docx::session::revisions::SpanProps`
+enum SpanProps {
+  Run(RunProps),
+  Para(ParaProps),
+}
+
+/// `uo_docx::model::run::RunProps`
+struct RunProps {
+  bold: bool?,
+  italic: bool?,
+  underline: bool?,
+  strike: bool?,
+  all_caps: bool?,
+  small_caps: bool?,
+  underline_style: utf16?,
+  underline_color: utf16?,
+  underline_theme: ThemeColorAttrs?,
+  color_theme: ThemeColorAttrs?,
+  hidden: bool?,
+  scale_pct: f64?,
+  position_half_pt: f64?,
+  kern_half_pt: f64?,
+  double_strike: bool?,
+  vert_align: utf16?,
+  sz_half_pt: f64?,
+  color: utf16?,
+  highlight: utf16?,
+  font_ascii: utf16?,
+  char_spacing_twips: f64?,
+  char_style: utf16?,
+  text_fx: TextEffects?,
+  open_type: OpenTypeProps?,
+  link: utf16?,
+  link_tip: utf16?,
+  no_proof: bool?,
+  web_hidden: bool?,
+  is_math: bool?,
+  comment_ids: list<f64>?,
+  ins: RevisionInfo?,
+  del: RevisionInfo?,
+  src: SourceKey?,
+}
+
+/// `uo_docx::model::para::ParaProps`
+struct ParaProps {
+  alignment: utf16?,
+  style_id: utf16?,
+  numbering: NumberingProps?,
+  indent_left_twips: f64?,
+  indent_right_twips: f64?,
+  indent_first_line_twips: f64?,
+  line_twentieths: f64?,
+  space_after_twips: f64?,
+  space_before_twips: f64?,
+  space_before_auto: bool?,
+  space_after_auto: bool?,
+  shading_hex: utf16?,
+  tab_stops: list<ParaTabStop>?,
+  box_border: bool?,
+  borders: ParagraphBorders?,
+  page_break_before: bool?,
+  keep_next: bool?,
+  keep_lines: bool?,
+  widow_control: bool?,
+  suppress_line_numbers: bool?,
+  suppress_auto_hyphens: bool?,
+  textbox_tight_wrap: utf16?,
+  outline_lvl: f64?,
+  drop_cap: bool?,
+  mark_ins: RevisionInfo?,
+  mark_del: RevisionInfo?,
+  toc_instr: utf16?,
+  toc_entry: bool?,
+  src: SourceKey?,
+  block_sdt: BlockSdt?,
+  fmt_src: SourceKey?,
+  section_break: SectionBreak?,
+}
+
+/// `uo_docx::model::run::ThemeColorAttrs`
+struct ThemeColorAttrs {
+  theme_color: utf16,
+  tint: utf16?,
+  shade: utf16?,
+}
+
+/// `uo_docx::model::effects::TextEffects`
+struct TextEffects {
+  fill: FxFill?,
+  outline: FxOutline?,
+  shadow: FxShadow?,
+  reflection: FxReflection?,
+  glow: FxGlow?,
+  scene3d: utf16?,
+  props3d: utf16?,
+}
+
+/// `uo_docx::model::effects::OpenTypeProps`
+struct OpenTypeProps {
+  ligatures: utf16?,
+  num_form: utf16?,
+  num_spacing: utf16?,
+  stylistic_sets: list<f64>?,
+  cntxt_alts: bool?,
+}
+
+/// `uo_docx::model::props::RevisionInfo`
+struct RevisionInfo {
+  author: utf16,
+  date: utf16?,
+  date_utc: utf16?,
+  move: bool?,
+}
+
+/// `uo_docx::ids::SourceKey` (a newtype)
+struct SourceKey { value: u32 }
+
+/// `uo_docx::model::para::NumberingProps`
+struct NumberingProps {
+  kind: utf16,
+  ilvl: f64,
+  num_id: f64?,
+}
+
+/// `uo_docx::model::para::ParaTabStop`
+struct ParaTabStop {
+  pos_twips: f64,
+  align: utf16,
+  leader: utf16?,
+}
+
+/// `uo_docx::model::para::ParagraphBorders`
+struct ParagraphBorders {
+  top: BorderEdge?,
+  left: BorderEdge?,
+  bottom: BorderEdge?,
+  right: BorderEdge?,
+  between: BorderEdge?,
+  bar: BorderEdge?,
+}
+
+/// `uo_docx::model::para::BlockSdt`
+struct BlockSdt {
+  key: SdtKey,
+  gallery: utf16?,
+  pr: utf16?,
+}
+
+/// `uo_docx::model::para::SectionBreak`
+struct SectionBreak {
+  sect_pr: SectPr,
+  header_refs: list<HfRefEdit>,
+  footer_refs: list<HfRefEdit>,
+  raw: utf16?,
+  id: f64?,
+}
+
+/// `uo_docx::model::para::BorderEdge`
+struct BorderEdge {
+  style: utf16,
+  size_eighth_pt: f64,
+  color: utf16?,
+  space_pt: f64,
+}
+
+/// `uo_docx::model::para::SdtKey` (a newtype)
+struct SdtKey { value: utf16 }
+
+/// `Nullable<Box<PageBorders>>` (the TS `null` or a value)
+enum NullableBoxPageBorders { Null, Val(PageBorders) }
+
+/// `uo_docx::model::section::SectPr`
+struct SectPr {
+  page_width_twips: f64,
+  page_height_twips: f64,
+  margin_left_twips: f64,
+  margin_right_twips: f64,
+  margin_top_twips: f64,
+  margin_bottom_twips: f64,
+  type: utf16?,
+  cols: Cols?,
+  title_pg: bool?,
+  header_distance_twips: f64?,
+  footer_distance_twips: f64?,
+  pg_num_start: f64?,
+  pg_num_fmt: utf16?,
+  pg_num_chap_style: f64?,
+  pg_num_chap_sep: utf16?,
+  pg_borders: NullableBoxPageBorders?,
+  footnote_pr: NoteProps?,
+  endnote_pr: NoteProps?,
+  footnote_columns: f64?,
+  ln_num_type: LineNumbering?,
+  v_align: utf16?,
+}
+
+/// `uo_docx::model::para::HfRefEdit`
+struct HfRefEdit {
+  kind: utf16,
+  type: utf16,
+  rid: utf16,
+}
+
+/// `uo_docx::model::section::Cols`
+struct Cols {
+  count: f64,
+  space_twips: f64,
+  sep: bool,
+  widths: list<ColWidth>?,
+}
+
+/// `uo_docx::model::formatting::NoteProps`
+struct NoteProps {
+  pos: utf16?,
+  num_fmt: utf16?,
+  num_start: f64?,
+  num_restart: utf16?,
+}
+
+/// `uo_docx::model::section::LineNumbering`
+struct LineNumbering {
+  count_by: f64?,
+  start: f64?,
+  distance: f64?,
+  restart: utf16?,
+}
+
+/// `uo_docx::model::section::ColWidth`
+struct ColWidth {
+  width_twips: f64,
+  space_twips: f64,
+}
+
+/// `uo_docx::session::ops::revision_cmds::MarkupOptions`
+struct MarkupOptions {
+  ins_del: bool,
+  formatting: bool,
+  comments: bool,
+  balloons: Balloons,
+  authors: list<utf16>?,
+}
+
+/// `uo_docx::write::emit::settings::HyphenationSettings`
+struct HyphenationSettings {
+  auto: bool,
+  caps: bool,
+  zone: f64?,
+  limit: f64,
+}
+
+/// `uo_docx::session::ops::text_layout::HyphenationInfo`
+struct HyphenationInfo {
+  auto: bool,
+  caps: bool,
+  zone_twips: f64,
+  limit: f64,
+}

@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- The .NET facade of the Rust core (0.10, record core/docs/modules/uo-bindings.md): the NuGet
        UniversalOffice.Docx over the C ABI of uo-ffi (P/Invoke, SafeHandles). Milestone 1: the
-       server PDF path (docx/.doc -> PDF with the server-substitute font policy). The native library
+       server PDF path (docx/.doc -> PDF with the server-substitute font policy)
+       and the Editing API of uo-docx D3 (uo-docx-d3.md section 4: Editing/, over the C ABI of uo-ffi/src/editing). The native library
        of each runtime travels in runtimes/<rid>/native/ (UoNativeRoot below); a development build
        copies the library cargo built next to the assembly (UoNativeLib). -->
   <PropertyGroup>
@@ -20,8 +21,8 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://universaloffice.org/</PackageProjectUrl>
     <RepositoryUrl>https://github.com/erichideyuki/universal-office</RepositoryUrl>
-    <Description>Word documents to PDF with the UniversalOffice Rust core: a Word-compatible layout engine with installed or metric-compatible substitute fonts (.docx and Word 97-2003 .doc). Native library per runtime.</Description>
-    <PackageTags>docx;word;ooxml;pdf;docx-to-pdf;doc;layout</PackageTags>
+    <Description>Word documents with the UniversalOffice Rust core: the Editing API (open, sanitize, apply content to templates, write rich content, fields, shapes, plugin inlines) and Word documents to PDF with a Word-compatible layout engine (.docx and Word 97-2003 .doc). Native library per runtime.</Description>
+    <PackageTags>docx;word;ooxml;pdf;docx-to-pdf;doc;layout;editing;sanitize;template</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <Deterministic>true</Deterministic>

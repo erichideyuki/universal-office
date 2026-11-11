@@ -152,7 +152,7 @@ size, not of effort):**
 | Product | Done in Rust | Left | TS still to port |
 |---|---|---|---|
 | Write, milestone 1 (viewer + PDF + server) | everything: reader, writer, `.doc`, export/ODF/compare, layout, render, PDF, C# Editing API, viewer/FFI/C# bindings | the gate: push + first green CI, decisions G23–G31, D2a | — |
-| Write, milestone 2 (editor) | session core D2a, every D2b family F1–F10 (wave 1 `4c003113`, 2026-11-11) | incremental relayout; session bindings (wasm + C ABI + C#); the editor switch (`universal-write.ts` to a shell over the session, the largest unknown); gate, 0.10 | editor package 36.8k (most of it stays as the TS shell) |
+| Write, milestone 2 (editor) | session core D2a, every D2b family F1–F10 (wave 1 `4c003113`), incremental relayout LA7, the session in wasm, the D3 C ABI + C# facade (wave 2, 2026-11-11) | the editor switch (`universal-write.ts` to a shell over the session, the largest unknown); gate, 0.10 | editor package 36.8k (most of it stays as the TS shell) |
 | Slides | the shared parts only (fonts, drawingml) | everything else: `slides-core` (reader, model, layout, render), the editor, the viewer; charts | 25.9k + charts 5.2k |
 | Sheet | the shared parts only | everything: calc engine, `sheet-core`, the editor; charts (shared with Slides) | 34.7k |
 
@@ -162,6 +162,30 @@ milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects 
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
+
+## Update 2026-11-11 (later) — milestone 2, wave 2 (queue items 7–8) committed
+
+- **R — incremental relayout (LA7)**, record `uo-docx-layout.md` "Stage M2 — incremental relayout": level 2 (page
+  checkpoints, one- and multi-pass) and level 1 (the paragraph memo, plain body paragraphs; no line memo, D-LA7-26;
+  no header/footer, cell, note or textbox memo, D-LA7-18). `relayout()` keeps its signature and gives the same
+  `Layout` bits as a full layout: 2,901 differential relayouts, 0 mismatches. An Enter still costs ≈ 50 % of a full
+  layout. Gate list: "For the milestone-2 gate" items 1–8 (memory of the incremental state 3.5–4.1× the `Layout`).
+- **WS — the session in wasm**, record `uo-bindings.md` (UoWriteSession): `uo-wasm` feature `session`, hot paths +
+  hit-test/caret, exec/query through a schema-generated codec (`schema/session.uos`, 300 commands, 82 queries; the
+  new `uo-schema` emitter `rust_bind.rs`), two-phase font save, `fontUsage()` port (100 documents, 631 equal).
+  Replay through the wasm: d2a/f1/f2/f6 0 mismatches; f7/f8/f10, jobs and the shared ring are not replayed yet. Size:
+  9.23 MB raw / 3.03 MB gzip with the session (viewer alone 1.41 MB). Accepted minors left: bind `default` structs
+  are not exhaustive (57 lines), no hostile *query* fuzz, stale-layout hit tests, `Locked` not asserted, phase 1 of
+  the font save lost on a malformed phase 2, the replay opens through a test export.
+- **D3-ABI**, record `uo-docx-d3.md` §4/§12: 92 C exports (`uo-ffi` feature `editing-api`) and the C# facade
+  (`UniversalOffice.Docx` Editing/Native/Core, `OpcPartName` included — clickCompliance calls it), 11 declared
+  public-API differences from 0.9 (§4.5). Fixed at merge: CRLF-safe FrozenSuite patterns, explicit generated files,
+  validate-before-mutate in two exports, counts.
+- Verified at merge: check-changed green; uo-docx 775 tests; uo-docx-layout 25 binaries (la7 13); generated parity
+  f7a–f7d 300 equal each, f8 1,500; Word oracle 2,742/2,742; `viewer_switch --mode all` 0 differences (pixels
+  tolerance 0, PDF); uo-ffi editing tests; .NET 43/43, FrozenSuite 134/134 Debug and Release; uo-wasm session native
+  8/8, API, hostile (1.17 M calls), replay. D: ended with 46 GB free; `core/target/m2-*` hold ≈ 36 GB of caches.
+- CI not wired yet (`rust-core.yml`): a release `la7` line, the session wasm tests, the uo-ffi `editing-api` tests.
 
 ## Update 2026-11-11 — milestone 2, wave 1 (queue item 6) committed `4c003113`
 
@@ -214,8 +238,8 @@ Milestone 2 (editor in Rust):
 6. ~~D2b~~ done (`4c003113`). Was: finish F7; F4 remainder (watermark, cover pages, header/footer galleries, `insertDateTime`,
    `insertDocumentInfo`, `insertAlignmentTab`); **F8 clipboard** (Opus for the paste-tree boundary); **F10** the layout
    family (fields, TOC, captions, manual hyphenation, galleries — needs F8 of the layout, done).
-7. Incremental relayout (layout plan row "(M2)", LA7 levels 1–2; Opus).
-8. Editor bindings: the session in wasm (`UoWriteSession`, session codec G15) and the D3 C ABI + C# facade.
+7. ~~Incremental relayout~~ done (wave 2).
+8. ~~Editor bindings~~ done (wave 2): the session in wasm (`UoWriteSession`, session codec G15) and the D3 C ABI + C# facade.
 9. The editor switch: `universal-write.ts` reduced to the shell over the wasm session (the largest unknown).
 10. Milestone-2 gate, `CHANGELOG.md` (API breaks: `uo-bindings.md` §4), docs, publish 0.10.
 

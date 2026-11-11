@@ -244,6 +244,7 @@ fn with_cx<T>(doc: &Document, o: &LayoutOptions, f: impl FnOnce(&mut Cx<'_, '_>)
         depth: 0,
         line_seq: &mut seq,
         images: &mut uo_docx_layout::engine::objects::ImageTable::new(),
+        memo: None,
     };
     f(&mut cx)
 }

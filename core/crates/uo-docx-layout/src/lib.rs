@@ -69,6 +69,7 @@ pub mod error;
 pub mod fonts;
 pub mod hit;
 pub mod hyphenate;
+pub mod incr;
 pub mod items;
 pub mod json;
 pub mod keys;
@@ -106,7 +107,12 @@ use model::{DocView, StoryChange};
 /// call (K4). The provider is the registry policy the binding chose (LQ8).
 pub struct LayoutEngine {
     hyph: HyphenSessions,
+    /// the last result of [`LayoutEngine::layout`] (`None` once a relayout ran after it)
     last: Option<Layout>,
+    /// the incremental state of [`LayoutEngine::relayout`] (LA7)
+    incr: incr::IncrState,
+    /// whether the newest attempt was a relayout (then [`LayoutEngine::last`] is its result)
+    newest_relayout: bool,
 }
 
 impl Default for LayoutEngine {
@@ -118,20 +124,21 @@ impl Default for LayoutEngine {
 impl LayoutEngine {
     #[must_use]
     pub fn new() -> LayoutEngine {
-        LayoutEngine { hyph: HyphenSessions::default(), last: None }
+        LayoutEngine { hyph: HyphenSessions::default(), last: None, incr: incr::IncrState::default(), newest_relayout: false }
     }
 
     /// An engine whose hyphenation draws on `registry` (the pattern sets the host registered;
     /// `LayoutOptions::hyphenation_loaded` still says which ones count, K5). Added by F7a.
     #[must_use]
     pub fn with_hyphenation(registry: std::sync::Arc<uo_fonts::hyphen::HyphenationRegistry>) -> LayoutEngine {
-        LayoutEngine { hyph: HyphenSessions::new(registry), last: None }
+        LayoutEngine { hyph: HyphenSessions::new(registry), last: None, incr: incr::IncrState::default(), newest_relayout: false }
     }
 
     /// A full layout of `view` in the view `o.view` (Web and Draft lay out a transformed copy
     /// of the document, F8).
     pub fn layout(&mut self, view: DocView<'_>, provider: &dyn FontProvider, o: &LayoutOptions) -> Result<&Layout, LayoutError> {
         self.last = None;
+        self.newest_relayout = false;
         let shown = view_transform::transformed(view.document(), o.view)?;
         let view = shown.as_ref().map_or(view, DocView::new);
         let ldoc = derive::build(view, o)?;
@@ -139,8 +146,19 @@ impl LayoutEngine {
         Ok(self.last.insert(layout))
     }
 
-    /// A relayout after `changes`. Milestone 1: a full layout (correct by definition, LA7); the
-    /// incremental levels come in milestone 2 with the criterion "same bits as a full layout".
+    /// The incremental relayout with the caps of `cfg` (LA7; the default is on, with the caps of
+    /// [`incr::IncrConfig::default`]).
+    #[must_use]
+    pub fn with_incremental(mut self, cfg: incr::IncrConfig) -> LayoutEngine {
+        self.incr = incr::IncrState::new(cfg);
+        self
+    }
+
+    /// A relayout after an edit: the same `Layout` as [`LayoutEngine::layout`] of `view`, bit for
+    /// bit (LA7), computed on the previous relayout's run when only body blocks changed in place
+    /// (record "Stage M2 — incremental relayout"). `changes` is advisory (D-LA7-2): what changed is
+    /// found by structural sharing. On an error the incremental state is dropped (the next
+    /// relayout is a full one).
     pub fn relayout(
         &mut self,
         view: DocView<'_>,
@@ -148,13 +166,44 @@ impl LayoutEngine {
         provider: &dyn FontProvider,
         o: &LayoutOptions,
     ) -> Result<&Layout, LayoutError> {
-        self.layout(view, provider, o)
+        self.last = None;
+        self.newest_relayout = true;
+        if o.view != options::ViewTransform::Print {
+            // the other views lay out a transformed copy of the document: no incremental state
+            self.incr.clear();
+            self.incr.full_report(incr::FallbackReason::View);
+            return self.layout(view, provider, o);
+        }
+        let ldoc = match derive::build(view, o) {
+            Ok(l) => l,
+            Err(e) => {
+                self.incr.clear();
+                return Err(e);
+            }
+        };
+        incr::relayout(&mut self.incr, &ldoc, provider, o, &mut self.hyph)?;
+        self.incr.layout().ok_or(LayoutError::Internal("relayout: no layout"))
     }
 
-    /// The last successful layout.
+    /// What the last relayout did (path, fallback reason, the pages laid out again, the bytes
+    /// kept): the shell repaints `relaid_pages`, or every page when the path is `Full`.
+    #[must_use]
+    pub fn last_relayout(&self) -> Option<&incr::RelayoutReport> {
+        self.incr.report()
+    }
+
+    /// Drops the incremental state (the next relayout is a full one).
+    pub fn clear_incremental(&mut self) {
+        self.incr.clear();
+    }
+
+    /// The newer of the last [`LayoutEngine::layout`] and [`LayoutEngine::relayout`] results;
+    /// `None` after either one failed (each drops the previous result before it runs, as
+    /// `layout()` did in milestone 1; a failed relayout also drops the incremental state, and a
+    /// failed `layout()` hides an older relayout result without dropping the state).
     #[must_use]
     pub fn last(&self) -> Option<&Layout> {
-        self.last.as_ref()
+        if self.newest_relayout { self.last.as_ref().or_else(|| self.incr.layout()) } else { self.last.as_ref() }
     }
 
     /// Drops every cache (M1: live bytes return to the start).
@@ -162,6 +211,7 @@ impl LayoutEngine {
         // the sessions' word caches go; the registry stays (F7a)
         self.hyph.clear();
         self.last = None;
+        self.incr.clear();
     }
 }
 

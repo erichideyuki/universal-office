@@ -425,6 +425,23 @@ pub trait PrepFlow {
     /// model or of a field result, also inside copied paragraphs, K1), resolved only when the
     /// layout collects fields (`LayoutOptions::collect_fields`; added by F8)
     fn on_field(&mut self, _run: &FieldRun, _at: Option<&crate::model::RunRef>, _v: &[u16]) {}
+
+    /// `ctx.warn(msg)` (a method so the paragraph memo of the incremental relayout sees it; LA7
+    /// level 1)
+    fn warn(&mut self, msg: &str) {
+        self.ctx().warn(msg);
+    }
+}
+
+/// The model run `onField` reports for a field run (`at`): the keyed run, or the field result
+/// `sub[0]` of it (a PAGEREF in a TOC's result); a run nested deeper in field results has no
+/// `RunRef` (F8-6); nothing when the layout does not collect fields.
+pub(crate) fn field_model_ref<'l>(ldoc: &'l LDoc<'_>, collect: bool, at: &FieldRun) -> Option<&'l crate::model::RunRef> {
+    match (collect, at.sub.as_slice()) {
+        (true, []) => at.run.and_then(|k| ldoc.run_ref(k)),
+        (true, [j]) => at.run.and_then(|k| ldoc.field_result_key(k, *j)).and_then(|k| ldoc.run_ref(k)),
+        _ => None,
+    }
 }
 
 // ───────────────────────── character classes and constants ─────────────────────────
@@ -1114,12 +1131,7 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
     fn field_value_run<'r>(&mut self, run: &'r Run, at: &FieldRun, v: Box<[u16]>, glued: bool, idx: u32, offset: u32) -> DRun<'r> {
         // the model run of `at` (F8): the keyed run, or the field result `sub[0]` of it (a
         // PAGEREF in a TOC's result); a run nested deeper in field results has no `RunRef` (F8-6)
-        let ldoc = self.ldoc;
-        let model = match (self.cx.opts.collect_fields.is_some(), at.sub.as_slice()) {
-            (true, []) => at.run.and_then(|k| ldoc.run_ref(k)),
-            (true, [j]) => at.run.and_then(|k| ldoc.field_result_key(k, *j)).and_then(|k| ldoc.run_ref(k)),
-            _ => None,
-        };
+        let model = field_model_ref(self.ldoc, self.cx.opts.collect_fields.is_some(), at);
         self.flow.on_field(at, model, &v);
         let base = run
             .ext()
@@ -1198,7 +1210,7 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             }
             let v = v.map_err(|_| LayoutError::Limit(LimitKind::Depth))?;
             if self.cap.take_truncated() {
-                self.flow.ctx().warn("field text truncated");
+                self.flow.warn("field text truncated");
             }
             if let Some(v) = v {
                 return Ok(Some(vec![self.field_value_run(run, &at, v.units().to_vec().into_boxed_slice(), false, idx, offset)]));

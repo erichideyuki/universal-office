@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The FROZEN C# Editing test suite (dotnet/tests/UniversalOffice.Tests/Editing, linked: not copied, not edited)
+       run over the Rust facade: the strongest behaviour and exception-by-class check of uo-docx-d3.md section 4.
+       Two files carry a test that needs what the facade does not have (the C# layout reader, the Regex overload
+       removed by D3 1.6): they are compiled from a generated copy in obj/ with
+       exactly those members cut (PatchFrozen below; a pattern that no longer matches fails the build), so the
+       frozen sources stay untouched. The list is in uo-docx-d3.md section 4. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS1591;xUnit1013;xUnit2000;xUnit2013</NoWarn>
+    <FrozenDir>$(MSBuildThisFileDirectory)..\..\..\dotnet\tests\UniversalOffice.Tests\Editing\</FrozenDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UniversalOffice.Docx\UniversalOffice.Docx.csproj" />
+    <Compile Include="$(FrozenDir)*.cs" LinkBase="Frozen" Exclude="$(FrozenDir)DocxBodyWriterTests.cs;$(FrozenDir)DocxTextTests.cs" />
+  </ItemGroup>
+  <UsingTask TaskName="PatchFrozen" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Source ParameterType="System.String" Required="true" />
+      <Destination ParameterType="System.String" Required="true" />
+      <Patterns ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var text = File.ReadAllText(Source);
+        foreach (var pattern in Patterns.Split(new[] { "||" }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var rx = new Regex(pattern, RegexOptions.Singleline);
+            if (!rx.IsMatch(text)) { Log.LogError("PatchFrozen: pattern not found in " + Source + ": " + pattern); return false; }
+            text = rx.Replace(text, "", 1);
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(Destination));
+        File.WriteAllText(Destination, text);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="PatchFrozenSources" BeforeTargets="CoreCompile;GenerateMSBuildEditorConfigFileCore">
+    <PropertyGroup>
+      <PatchDir>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)'))frozen\</PatchDir>
+      <WriterPattern>\[Fact\]\s+public void Resultado_Passa_Pela_Leitura_Do_Motor_De_Layout\(\).*?\r?\n    \}\r?\n</WriterPattern>
+      <TextPattern>\[Fact\]\s+public void Expressao_Regular_Apaga_Parametros_Que_Sobraram\(\).*?\r?\n    \}\r?\n</TextPattern>
+    </PropertyGroup>
+    <PatchFrozen Source="$(FrozenDir)DocxBodyWriterTests.cs" Destination="$(PatchDir)DocxBodyWriterTests.cs" Patterns="$(WriterPattern)" />
+    <PatchFrozen Source="$(FrozenDir)DocxTextTests.cs" Destination="$(PatchDir)DocxTextTests.cs" Patterns="$(TextPattern)" />
+    <ItemGroup>
+      <Compile Include="$(PatchDir)DocxBodyWriterTests.cs;$(PatchDir)DocxTextTests.cs" />
+    </ItemGroup>
+  </Target>
+  <Import Project="..\UoNative.targets" />
+</Project>

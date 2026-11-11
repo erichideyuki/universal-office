@@ -467,7 +467,7 @@ jobs:
           UO_SW_STRIDE: '6'
 
   dotnet:
-    name: .NET facade (server PDF parity, boundary memory M4, thread soak) (${{ matrix.os }})
+    name: .NET facade (server PDF parity, Editing API, frozen suite, D3 parity, boundary memory M4, thread soak) (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -477,7 +477,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
       - run: rustup toolchain install stable --profile minimal && rustup default stable
       # the facade over uo-ffi (uo-bindings.md): the fixture PDFs equal the TS renderPdf and the Rust native bytes, M4 through
       # Dispose() and the finalizer, 8 threads converting at once; EXTRA_FONT_DIRS gives the system index the open fonts
@@ -485,6 +487,12 @@ jobs:
         env:
           EXTRA_FONT_DIRS: ${{ github.workspace }}/shared/fonts/files
       - run: dotnet run --project dotnet/UniversalOffice.Docx.Smoke -- crates/uo-docx-layout/tests/captures/f8/docs/f8__7__1.docx "$RUNNER_TEMP/smoke.pdf" --font-dir ../shared/fonts/files --font-dir ../site/assets/fonts
+      # the Editing API of uo-docx D3 through the facade (uo-docx-d3.md section 4): the FROZEN C# Editing test suite, linked, over the Rust core
+      - run: dotnet test dotnet/UniversalOffice.Docx.FrozenSuite -m:2
+      # the D3 differential harness through the facade: the 18 scripts over the corpus and the .NET-semantics sites equal the frozen C# captures
+      - run: dotnet run -c Release --project dotnet/UniversalOffice.Docx.Parity -- corpus-check crates/uo-docx/tests/parity/d3/corpus.capture .. crates/uo-docx/tests/parity/d3/corpus.list "$RUNNER_TEMP/facade-corpus.capture"
+      - run: dotnet run -c Release --project dotnet/UniversalOffice.Docx.Parity -- semantics-check crates/uo-docx/tests/parity/d3/semantics.capture crates/uo-docx/tests/parity/custom-tag.inputs.txt "$RUNNER_TEMP/facade-semantics.capture"
+      - run: dotnet run --project dotnet/UniversalOffice.Docx.Smoke -- edit crates/uo-docx/tests/parity/d3/fixtures/inlines.docx crates/uo-docx/tests/parity/d3/fixtures/sample-template.docx "$RUNNER_TEMP/smoke-edit.docx"
 
   miri:
     name: Miri (unsafe code, M6)

@@ -183,6 +183,8 @@ export declare class WriteEnv {
 }
 
 export declare class WriteLayout {
+  /** the handle (the session's caret exports take it; 0 once freed) */
+  readonly ptr: number;
   readonly pageCount: number;
   free(): void;
   pageInfo(i: number): PageInfo;
@@ -222,6 +224,10 @@ export interface WriteBinding {
   render: unknown;
   newEnv(o?: { phone?: boolean }): WriteEnv;
   open(docx: Uint8Array): WriteDocument;
+  /** a layout handle another export made (the session's `uo_session_layout`): owned by the returned object */
+  wrapLayout(ptr: number): WriteLayout;
+  /** the module's last error (after an export answered null), cleared */
+  lastError(what: string): WriteError;
 }
 
 export declare function bindWrite(exports: WebAssembly.Exports, host: WriteHost): WriteBinding;

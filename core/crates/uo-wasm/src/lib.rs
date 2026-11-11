@@ -20,6 +20,35 @@ pub mod pipeline;
 #[cfg(feature = "write")]
 pub mod write;
 
+// the editing session (milestone 2): src/session.rs and src/session/
+#[cfg(feature = "session")]
+pub mod session;
+
+// the self-test of the session replays the committed D2a/D2b captures inside the module through the
+// command scripts of the native parity tests: their support modules are included here under the names
+// they refer to each other by (`crate::support`, `crate::d2a_support`...); their `#[test]` functions
+// would run again as tests of this crate, so they are built for the module only
+#[cfg(all(feature = "session-selftest", not(test)))]
+#[path = "../../uo-docx/tests/support/mod.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+mod support;
+#[cfg(all(feature = "session-selftest", not(test)))]
+#[path = "../../uo-docx/tests/d2a_support/mod.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+mod d2a_support;
+#[cfg(all(feature = "session-selftest", not(test)))]
+#[path = "../../uo-docx/tests/d2b_f1_support/mod.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+mod d2b_f1_support;
+#[cfg(all(feature = "session-selftest", not(test)))]
+#[path = "../../uo-docx/tests/d2b_f2_support/mod.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+mod d2b_f2_support;
+#[cfg(all(feature = "session-selftest", not(test)))]
+#[path = "../../uo-docx/tests/d2b_f6_support/mod.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+mod d2b_f6_support;
+
 #[cfg(feature = "jsnum-memtest")]
 pub mod jsnum_memtest;
 

@@ -867,6 +867,7 @@ fn replay_doc(key: &str, dump: &[u8], docx: &Path, transcript: &Transcript, font
             depth: 0,
             line_seq: &mut line_seq,
             images: &mut uo_docx_layout::engine::objects::ImageTable::new(),
+            memo: None,
         };
         let out = prepare_paragraph(&mut cx, &mut flow, pid, &env);
         let p = match out {

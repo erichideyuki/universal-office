@@ -65,6 +65,26 @@ impl ImageTable {
     pub fn is_empty(&self) -> bool {
         self.by_model.is_empty()
     }
+
+    /// A copy as it was with `images` images and `warnings` warnings (both only grow within a
+    /// call; the ids of `by_model` are indices of the images): a checkpoint's (LA7).
+    #[must_use]
+    pub fn prefix(&self, images: usize, warnings: usize) -> ImageTable {
+        ImageTable {
+            origins: self.origins.iter().take(images).cloned().collect(),
+            by_model: self.by_model.iter().filter(|(_, id)| id.index() < images).map(|(k, v)| (*k, *v)).collect(),
+            warnings: self.warnings.iter().take(warnings).cloned().collect(),
+        }
+    }
+
+    /// The same images, identities and pending warnings as `other` (LA7).
+    #[must_use]
+    pub fn same_as(&self, other: &ImageTable) -> bool {
+        self.warnings == other.warnings
+            && format!("{:?}", self.origins) == format!("{:?}", other.origins)
+            && self.by_model.len() == other.by_model.len()
+            && self.by_model.iter().all(|(k, v)| other.by_model.get(k) == Some(v))
+    }
 }
 
 fn capacity() -> LayoutError {

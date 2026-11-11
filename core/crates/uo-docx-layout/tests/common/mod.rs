@@ -5,6 +5,9 @@
 #![allow(dead_code)]
 
 pub mod decode;
+pub mod docgen;
+pub mod hyph;
+pub mod open_fonts;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

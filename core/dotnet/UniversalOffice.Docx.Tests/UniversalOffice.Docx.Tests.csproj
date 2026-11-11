@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Tests of the .NET facade (uo-bindings.md): the PDF of the fixture documents equal byte for byte
-       to the frozen TS renderPdf and to the Rust native output, the memory gate M4 (Dispose() and the
-       finalizer), a thread soak, errors and cancellation. Builds uo-ffi (release, feature count) into
-       CARGO_TARGET_DIR (or core/target) and copies the library next to the tests. -->
+  <!-- Tests of the .NET facade (uo-bindings.md, uo-docx-d3.md section 4): the PDF of the fixture documents equal byte
+       for byte to the frozen TS renderPdf and to the Rust native output, the Editing API (contract, errors by class,
+       threads), the memory gate M4 (Dispose() and the finalizer), a thread soak, errors and cancellation. Builds uo-ffi
+       (release, feature count, UoNative.targets) into CARGO_TARGET_DIR (or core/target) and copies the library next to
+       the tests. -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>12</LangVersion>
@@ -10,12 +11,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <CoreDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../..'))</CoreDir>
-    <CargoTarget Condition="'$(CARGO_TARGET_DIR)' != ''">$(CARGO_TARGET_DIR)</CargoTarget>
-    <CargoTarget Condition="'$(CARGO_TARGET_DIR)' == ''">$(CoreDir)/target</CargoTarget>
-    <CargoJobs Condition="'$(CargoJobs)' == ''">4</CargoJobs>
-    <NativeName Condition="$([MSBuild]::IsOSPlatform('Windows'))">uo_ffi.dll</NativeName>
-    <NativeName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libuo_ffi.so</NativeName>
-    <NativeName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libuo_ffi.dylib</NativeName>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
@@ -35,8 +30,5 @@
   <ItemGroup>
     <ProjectReference Include="..\UniversalOffice.Docx\UniversalOffice.Docx.csproj" />
   </ItemGroup>
-  <Target Name="BuildRustCore" BeforeTargets="Build">
-    <Exec Command="cargo build -p uo-ffi --release --features count -j $(CargoJobs)" WorkingDirectory="$(CoreDir)" />
-    <Copy SourceFiles="$(CargoTarget)/release/$(NativeName)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-  </Target>
+  <Import Project="..\UoNative.targets" />
 </Project>

@@ -349,3 +349,26 @@ fn hostile_arguments_are_errors() {
     let st = sanitizer::sanitize_begin(&mut v, &SanitizeOptions { validate_custom_inlines: true, ..SanitizeOptions::content() }).unwrap();
     assert_eq!(st.finish(&mut v, &[true]).unwrap_err().kind, ErrorKind::Argument);
 }
+
+/// `paragraph_style_name` (a node) and `paragraph_style_name_of_id` (the id the C ABI passes) resolve the same name
+/// for every paragraph of every d3 fixture: one tail, two doors.
+#[test]
+fn paragraph_style_name_of_id_equals_the_node_door() {
+    use uo_docx::api::dom::n;
+    use uo_docx::api::{paragraph_text, styles};
+    let mut compared = 0usize;
+    for (name, bytes) in fixtures() {
+        let Ok(mut d) = DocxDocument::open(&bytes) else { continue };
+        let Ok(root) = d.main_root() else { continue };
+        for p in paragraph_text::paragraphs(d.dom(), root) {
+            let dom = d.dom();
+            let direct =
+                dom.element(p, n::pPr).and_then(|x| dom.element(x, n::pStyle)).and_then(|x| dom.attr(x, n::val)).map(str::to_owned);
+            let by_node = styles::paragraph_style_name(&mut d, p).unwrap();
+            let by_id = styles::paragraph_style_name_of_id(&mut d, direct.as_deref()).unwrap();
+            assert_eq!(by_node, by_id, "{name}");
+            compared += 1;
+        }
+    }
+    assert!(compared > 0);
+}

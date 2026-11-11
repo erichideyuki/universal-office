@@ -1139,3 +1139,259 @@ measured first, cold, so the medians favour Rust and are not a speed comparison)
 
 Process metrics (this review): one Opus agent, about 1 h 10 min wall time (estimated), about 45 tool calls. Builds: clippy of
 6 crates native + wasm32 (about 30 s each, warm) and two small test runs. Rework: none.
+
+## Milestone 2: the session in wasm
+
+*(2026-11-11, milestone 2 wave 2, frontier WS: queue item 8, the wasm half, plus `fontUsage` LQ15; planner → implementer.
+Nothing committed by the frontier.)* One `UoWriteSession` handle owns uo-docx's `Session`; the hot paths are dedicated
+exports; everything else goes through `uo_session_exec` / `uo_session_query` / `uo_session_complete` with a
+schema-generated binary codec whose conversions to uo-docx's own types are generated too (no hand-written mapping per
+command). Code: `crates/uo-wasm/src/session.rs` and `src/session/` (feature `session`), `js/session.mjs` +
+`js/session.d.ts`, `js/gen/session*.ts`, `schema/session.uos` + `schema/session.bind`; the generator's new emitter
+`tools/uo-schema/src/rust_bind.rs`; `uo-docx/src/session/font_usage.rs`.
+
+### API
+
+Every export is `extern "C"`; input buffers come from `uo_alloc_bytes` and are consumed (also on failure). `UoBuf`
+statuses: 0 ok, 1 none, 2 no pending font save, 3 save failed (last error set), 5 a message that does not decode or bind
+or an argument out of its domain (UTF-8 detail in the buffer), 11 null handle. A handle-creating call answers null and
+sets `uo_last_error` (codes of `pipeline::code`).
+
+| Export | Arguments | Result |
+|---|---|---|
+| `uo_session_open` | env (nullable `UoWriteEnv`, borrowed), `SessionOpen` bytes, docx bytes | handle / null |
+| `uo_session_new_blank` | env, `SessionOpen` bytes | handle / null |
+| `uo_session_free` | handle | — |
+| `uo_session_set_env` | handle, env (nullable) | code (the session keeps the registry `Arc`s, not the env handle) |
+| `uo_session_exec` | handle, `Exec` | `ExecResult` (status 0; a command error is the `error` outcome) |
+| `uo_session_complete` | handle, `Complete` (job id + `JobResult`) | `ExecResult` |
+| `uo_session_query` | handle, `Query` | `QueryResult` |
+| `uo_session_type` | handle, UTF-16LE units | `ExecResult` |
+| `uo_session_enter` / `_backspace` / `_delete` | handle | `ExecResult` |
+| `uo_session_set_selection` | handle, anchor para/offset, focus para/offset | `ExecResult` |
+| `uo_session_move_caret` | handle, layout (nullable for left/right/word), dir 0–7, extend | `ExecResult`; 1 nothing moved; 5 bad dir or a line move without layout |
+| `uo_session_hit_test` | handle, layout, page, x, y (twips) | `Hit`; 1 no lines (textbox) |
+| `uo_session_caret_rect` | handle, layout | `Caret`; 1 no line |
+| `uo_session_selection_rects` | handle, layout, page | `SelRects` |
+| `uo_session_layout` | handle, env, now ms, tz offset, flags (as `uo_write_layout`; revision bits 0 = the session's `revisionView()`), lang, hyphenation languages, max pages | an OWNED `UoLayout` (every `uo_layout_*` / `uo_render_*` export reads it; `uo_layout_free`) / null |
+| `uo_session_save` | handle | docx bytes; 3 |
+| `uo_session_font_requests` | handle | `FontRequests` (phase 1: saves, keeps the package); 3 |
+| `uo_session_save_with_fonts` | handle, `FontFaces` (one answer per request, 16 GUID bytes per request) | `SaveResult` (bytes + `uw-font-embedding`); 2 without phase 1; 5 mismatched answers |
+| `uo_session_clear_caches` | handle | — (M1) |
+| `uo_session_clipboard_clear` | — | empties the instance's Office Clipboard |
+| test only (`session-selftest`) | `uo_session_test_open/_hook/_next/_facets/_random_exec/_forget` | the capture replay and the fuzz (below) |
+
+JS (`js/session.mjs`, `bindSession(exports, bindWrite(...))`): `open(bytes, o)`, `newBlank(o)`, `clipboardClear()`,
+`SessionError`, `codec`; a `WriteSession` (private handle, `FinalizationRegistry`) has `type`, `enter`, `backspace`,
+`delete`, `setSelection`, `moveCaret`, `hitTest`, `caretRect`, `selectionRects`, `exec`, `command`, `undo`, `redo`,
+`cancelPending`, `setDirty`, `applyPainter`, `setFontEmbedding`, `setClock`, `setUiLang`, `complete`, `query`,
+`layout(env, o)` (a `WriteLayout` of write.mjs through the new `uo.wrapLayout`), `save`, `fontRequests`,
+`saveWithFonts`, `clearCaches`, `free`. Results are the generated TS objects: a variant whose payload is a struct
+carries the struct's fields next to its tag (`{ t: 'done', stories, selection, events, dirty, canUndo, canRedo }`),
+other payloads are `v`. Decode, bind and null failures throw `SessionError { code, detail }`; a
+`WebAssembly.RuntimeError` marks the binding dead and throws `SessionError('trap')` (no unwinding through the module;
+the shell reloads it as the viewer does). session.mjs imports the generated `.ts` directly (Node strips the types,
+bundlers compile it); a page without a bundler needs a compiled copy; no `session.d.mts` (WS-D9).
+
+### The codec
+
+- `schema/session.uos` (5,027 lines, schema `write_session`, magic `UOWS`, hash `d4bfc82666d659d1`): 12 messages
+  (`Exec`, `Complete`, `ExecResult`, `Query`, `QueryResult`, `SessionOpen`, `FontRequests`, `FontFaces`,
+  `SaveResult`, `Caret`, `Hit`, `SelRects`), 661 types. `Command` with its 22 family enums and all 300 variants (298 on
+  the wire; `FormatCmd::ApplyPainter` and `ClipboardCmd::RenderPictures` are native-only: the painter stays in the
+  handle and `ExecOp::ApplyPainter` uses it); every argument and model type they reach; `ChangeSet`, `Event` (variants
+  named by their DOM names, `{ t: 'uw-change' }`, so the shell dispatches `new CustomEvent(ev.t, …)`), `Job`,
+  `JobResult`, `CommandError`, `LocalNow`; `QueryOp` / `QueryAnswer` with 82 accessors plus 4 binding-level answers
+  (`ClipboardItems`, `CopyFormat`, `FontUsage`, `FontEmbedding`); `ExecOp` = `Command | Undo | Redo | CancelPending |
+  SetDirty | ApplyPainter | SetFontEmbedding | SetClock | SetUiLang`.
+- `schema/session.bind` (330 bind lines): which Rust type each wire type is (127 enums, 165 structs, 21 tuples, 16
+  options, 2 newtypes; 97 `into_only`, the engine's outputs). The type part of both files was drafted by a throwaway
+  extractor over the uo-docx sources (kept outside git, `core/target/m2-wsession/plan/`) and finished by hand (the
+  head with the messages and the binding-level types is hand-written).
+- Generated (`uo-schema generate`, one manifest line): `crates/uo-wasm/src/session/codec/generated.rs` (23.8k lines),
+  `generated_support.rs` (canonical dump, random messages; built only with `session-selftest`), `bind.rs` (6.9k
+  lines), `js/gen/session.ts`, `js/gen/session.support.ts`. `uo-schema check`: 20 generated files up to date; the
+  render/write outputs are byte-identical.
+- **The bind emitter** (`rust_bind.rs`, manifest keys `rust_bind=` + `bind=`; the IDL grammar and hash untouched): per
+  bound type `impl FromWire<w::T> for Native` and `impl IntoWire<w::T> for Native` against the consumer's traits (the
+  `runtime` line: `crate::session::wire`), every field through the traits so the leaf impls are picked by inference;
+  kinds `struct [default] [empty]`, `enum [native_only=…]`, `tuple`, `option`, `newtype`, `manual`, modifier
+  `into_only`; a payload struct without a bind line is a Rust struct variant, a `tuple` payload a spread tuple variant,
+  anything else `V(x)`; matches are exhaustive both ways, so a new variant or field of uo-docx fails to compile until
+  the schema has it. Leaf impls (`session/wire.rs`): primitives, `Option`, `Vec`, `Box`, `Arc`, `Arc<[T]>`,
+  `VecDeque`, `BTreeSet`, arrays, `IndexMap`/`JsMap` and `JsRecord` as lists of pairs, ids, `JsNumber`, `NumKey`,
+  strings.
+- Tags: the default `t`; `$t` on `PictureCmd`, `DrawingCmd` and every enum whose payload struct has a field `t`
+  (`uo-schema` refuses a clash).
+- Decode limits (WS-D4): nesting 64, 16 Mi elements per list, 64 Mi elements and code units per message, 256 MiB of
+  decoded values (`codec::limits()`; the codec default is 128 MiB, a picture command carries its bytes).
+
+### Bytes ownership and the two-phase protocols
+
+Inputs move into the module (`uo_alloc_bytes`, consumed); outputs are `UoBuf`s JS copies and frees (`Buf.take`).
+**Jobs**: a two-phase command answers the `jobs` outcome; the shell runs each job (decode or encode an image, read the
+clipboard, render a clip) and answers it with `complete(job, result)`; while a command is pending every other command
+answers `CommandError::Busy` (tested). **Paste**: `ClipboardCmd.pasteData.html` and `JobResult.clipboard.htmlTree`
+carry the bytes of `encodePaste()` (core/crates/uo-docx/js/paste-tree.mjs). **Fonts on save**: phase 1
+`fontRequests()` saves, reads what the package embeds and answers the faces the plan wants (uo-fonts
+`embedding_requests` with Word's policy; none when `embed` is off); the shell gathers the bytes; phase 2
+`saveWithFonts(faces, guids)` plans (`plan_font_embedding`; the document's own embedded face of a request first, the TS
+`documentFace ?? resolver`), writes the fonts (`write_docx_embedding`) and answers the bytes and the event. The glue
+is in uo-docx (`font_usage.rs`: `initial_embedding_settings`, `set_font_embedding` — no undo step, tested —,
+`begin_save_with_fonts`, `finish_save_with_fonts`), reusable by uo-ffi.
+
+### Layouts, the oracle, the caret
+
+- `uo_session_layout` lays out `Session::view()` (the edit context's model) with the viewer policy over the embedded
+  fonts and answers a `UoLayout` built by the new `write::layout_handle` (a copy of `uo_write_layout`'s success
+  branch: dedupe later). Print view only (WS-D6).
+- The `LayoutOracle` of the layout family is `uo_docx_layout::oracle::EngineOracle` built on the first call of a
+  command (`session/oracle.rs`, `LazyOracle`): typing never builds an engine. Options: the editor's `layoutOpts()`
+  (hyphenation languages pt-BR/en/es, `revisionView()` ported from universal-write.ts 7986, the host clock, the loaded
+  pattern sets). Without an environment every oracle call answers a layout error (`CommandError::Layout`, tested).
+- Hit, caret and selection rectangles wrap uo-docx-layout's `EditLines`/`LineIndex` over the edit scope of the
+  context (body; cell: the anchor's body block and the hops through `cell_at_grid`, as f8_parity.rs; header/footer;
+  note; a textbox has no scope here because uo-docx does not expose the edited chain, WS-D6), cached per (layout
+  generation, scope). Used from uo-docx-layout: `EditLines::new/caret/hit/selection_rects/line_of/caret_x/hit_line_x`,
+  `LineIndex::new`, `Locator::new`, `EngineOracle::new`, `derive::build`, `engine::layout_document`,
+  `HyphenSessions::new`, `EmbeddedFontProvider::wrap`, `Layout::navigation/run_boxes`.
+- `moveCaret`/`moveWord`/`lineEndOffset` ported (`session/caret.rs`, universal-write.ts 9915–9989, 18624): left/right
+  skip the characters the markup view hides (`hidden_char`, `canon_pos` made `pub` in uo-docx), up/down through the
+  lines in `allLines()` order, home/end, word boundaries with the JS `\s`. A move only sets the selection (no step, no
+  event, the dirty flag untouched: unit test). `tableNavigate`/`moveCell` are not ported (gate item); the moves have no
+  capture of their own.
+
+### The environment, the ring
+
+`HostEnv` = the session's clock (`Rc<Cell<LocalNow>>` shared with the handle, `SetClock`; WS-D5: one cell of `Copy`
+data in a single-threaded module) and the testkit xorshift32 (equal to `FixedEnv`: unit test). One `ClipboardRing` per
+instance in a `thread_local` (G7), lent to each command.
+
+### fontUsage (LQ15)
+
+`Session::font_usage()` ports universal-write.ts 2317–2335 literally, with `buildSpans` (10859) reduced to the family,
+the variant and the text: bold/italic of the run or the document style, `fontAscii ?? style ?? docDefaults`, textbox
+runs give '', image runs `text || U+FFFC`, custom inlines U+FFFC (no `renderer.measure`: its result never reaches the
+usage), all caps upper-cased, small caps through `smallCapsSpans` (lower/not-lower runs per code unit, upper-cased
+unless the length changes). The editor's built-in `STYLES` table is left out (no font, italic or caps, `bold: false`:
+it cannot change the output). Order: the paragraphs of `this.model` — the body's or a cell's top-level paragraphs; a
+note's, a header/footer part's and a textbox's flattened with their cells, as the TS swaps `this.model` in the contexts
+— each followed by its textbox runs' paragraphs (the textbox's TS `paras` view); then `this.tableAnchors` (the body
+tables in the body, cell and note contexts; `[]` in a header/footer or textbox) row → cell → paragraphs → nested
+tables; then every section's header and footer slots default/first/even (the flattened part paragraphs). Parity:
+`js/capture-font-usage.mjs` (frozen element, Chromium 156, 100 corpus documents, four points: open; select all + bold +
+typing at the end; inside the header/footer part of page 0; inside the first body cell) →
+`tests/parity/font-usage.capture`; `session_font_usage::font_usage_matches_the_element`: **100 documents, 631 facets
+equal, 0 mismatches** (`fu` digest of `JSON.stringify(fontUsage())` plus `n`; in this sample only 3 documents have a
+header part the TS enters without creating one and 27 have a body table). M1 of the usage and of both save phases (14
+corpus documents + the blank one): 0 B; no panic over 50 corpus documents with the save (145 ms).
+
+### Numbers
+
+| Check | Result |
+|---|---|
+| (a) capture replay through the wasm exports (Node 24.15, `session_replay.test.mjs`, session-test module) | **d2a** 120 documents, 49,800 facets equal, 0 accepted, 0 mismatches (9,600 actions: 7,320 hot path, 2,280 exec); **f1** 96 docs, 39,840 equal, 0 mismatches (8,478 actions); **f2** 120 docs, 37,559 equal, 1 accepted (F2's "throws after the step", as natively), 0 mismatches (7,200 actions); **f6** 60 docs, 18,780 equal, 0 mismatches (3,600 actions); every action re-encoded by the TS codec byte-identical (28,878 / 28,878); 1.9 s / 2.1 s / 11.5 s / 0.6 s |
+| (b) M4 (`session_api.test.mjs`, count build) | 10,000 × open(tiny docx) + type + free, 10,000 × newBlank + free, 10,000 dropped and collected by the FinalizationRegistry (`--expose-gc`, a gc every 500): live bytes back exactly to 5,180,964 B; 45 s |
+| M2 wasm | 200 sessions × 50 edits + undo/redo + save: live bytes flat (5,180,964 B at every sample), `memory.buffer` grew 0 B |
+| M1 native (`session_native`) | an editor session through every export (open, hot paths, exec/query/complete with a picture job, layout, caret/hit/rects, 8 moves, save, both font phases, free) + a blank one: 0 B left (65.3 MB allocated, 3.6 MB peak) |
+| M2 native | 1,000 × (open → 100 hot-path edits → 50 undo / 50 redo → save → free) over 10 corpus documents: 0 B drift (`uo_alloc::soak`), 4.3 s |
+| M3 per typed key (native, 200 keys, release) | 15,000 paragraphs: `uo_session_type` 15,652 B mean / 21,982 B worst allocated, 209 µs; `Session::exec` 15,058 / 21,387 B, 210 µs (the export adds about 600 B: the change set's wire form). f8__7__3: 12,351 / 18,715 B, 8.0 µs vs 11,794 / 18,123 B, 7.1 µs |
+| bind completeness (native) | 2,838 commands of the hostile generators (F1, F2, F6, F9, D2a) native → wire → bytes → wire → native equal; 67 refused by the declared i64 → i32 narrowing (`i64::MIN/MAX` indices); 0 failures |
+| (c) hostile, native | 4,015 cases (random bytes, prefixes, byte flips into exec/query/complete/open): no panic, worst 50 µs; 3,000 random `Exec` messages run on a session: 0 leak on a second run |
+| (c) hostile, wasm (`session_hostile.test.mjs`, 10 s) | 1,300,092 calls in two identical passes (random 0–4 KiB strings, prefixes and bit flips of 6 valid messages, 325,022 random `Exec` messages of the generated support run on the session): no trap, worst 14.0 ms per call, a valid exec works afterwards, live bytes after pass 2 = after pass 1 (2,086 B: tables built lazily in pass 1) |
+| R-P2 of the 12 messages (`uo-schema` `codec_session.rs`) | 60 tests pass (Rust round trip, TS decode/encode, canonical form); bind fixture: 5,000 random messages wire → native → wire identical, every binding kind |
+| (d) size, `--profile wasm`, `gzip -9` | viewer (`write`) 4,024,661 B raw / 1,433,113 B gzip at the end of the wave (HEAD 3,977,238 / 1,414,509; the +18.6 KB gzip is not this frontier's: the viewer build contains none of its code — uo-docx-layout changed in parallel); **session (`session`) 9,230,855 B raw / 3,029,327 B gzip: +1,596,214 B gzip over the viewer** (not optimized; `wasm-tools validate` with the default feature set: valid) |
+| regressions | `write_native` 7/7, `write_api.test.mjs` 8/8 on the viewer-count module after the write.rs/write.mjs additions |
+
+### Decisions outside the TS semantics (declared)
+
+- **WS-D1** the bind mechanism: a separate bind map read by a new emitter (no IDL change); the codec lives in uo-wasm.
+- **WS-D2** narrowings: i64/i8/i16 → i32 checked, usize/u64 → u32 checked; `JsNumber::Null` goes out as NaN and never
+  comes back as `null`; `String`/`Str` arguments are built from UTF-16 with a lone surrogate → U+FFFD; the js_object
+  `cleared`/`keys` (explicit `undefined`, key order) are not carried (structs bound `default`); the font usage's text
+  goes to uo-fonts as UTF-8 (a lone surrogate → U+FFFD in the subset set); the skip reasons of `uw-font-embedding` are
+  dropped by `Event::FontEmbedding`'s shape.
+- **WS-D3** the into-only answers drop what the IDL cannot carry: `RunProps.fmt`/`ParaProps.pfmt` (a format change
+  inside a format change, recursion without a list) in `RevisionEntries`.
+- **WS-D4** the decode limits (above). **WS-D5** the shared clock cell. **WS-D6** print view, viewer policy, no textbox
+  scope.
+- **WS-D7** caret moves without `tableNavigate`/`moveCell`. **WS-D8** `ExecOp::SetUiLang` added (the session's
+  `set_ui_lang` had no command; the element's `lang`). **WS-D9** session.mjs imports the generated `.ts`.
+- **WS-D10** statuses 2 (no pending font save) and 3 (save failed) join the `UoBuf` status space.
+- **WS-D11** a typed key in a protected session answers `done` with no change (the TS `locked()` returns silently),
+  not `CommandError::Locked`.
+- **WS-D12** the self-test copies the op-code → command mappings of the D2a, F1 (`step`), F2 (`command`) and F6
+  (`step`) native replays and their `paras_digest`/`anc_json`/`docxml` (one copy each), and includes uo-docx's test
+  support modules with `#[path]` (`support`, `d2a_support`, `d2b_f1/f2/f6_support`; also in `tests/session_native.rs`
+  with `d2b_f9_support`); `big_document()` of memory_d2a.rs is copied (without its tables and fields) into
+  session_native.rs.
+
+### Queries left out
+
+The model/state accessors (`document`, `view`, `package`, `context`, `options`, `story`, `paras`, `history`, `pending`,
+`pending_props`, the version stores, `bookmark_paras`, `section_state`, `settings`, `policy`, `resolved_policy`,
+`history_bytes`, `clip_identity`, `locked`), `copied`/`copy_format` (the painter stays in the handle),
+`note_settings` (private entries; `note_options` answers), `render_clip_request` (the F8 continuation),
+`count_matches` (its result is a private alias `Found<T>`), `hidden_char` (takes a paragraph), `font_usage` (the
+binding-level `FontUsage`). Not in uo-docx at all (queue item 9 prep): `getSelectionState`, `getTableState`, the
+spellchecker's paragraph texts and languages.
+
+### Files touched outside the owned crates (additive)
+
+- `tools/uo-schema`: `src/rust_bind.rs` (new), `src/lib.rs` (`pub mod rust_bind`, `Target.rust_bind/bind`, the two
+  manifest keys, `generate_target_with_bind`, the bind map read in `generate_all`); tests `bind.rs`,
+  `bind_generator.rs`, `codec_session.rs`, `session_codec/mod.rs`, `schemas/bind_test.{uos,bind}`,
+  `fixtures/bind_native.rs` and the generated `fixtures/bind_test{,_support,_bind}.rs`.
+- `schema/manifest.txt` (two lines), `schema/session.uos`, `schema/session.bind`.
+- `crates/uo-wasm/src/write.rs`: `layout_handle`, `layout_geom`, `layout_generation`, `session_layout_options`,
+  `env_parts` (all `#[cfg(feature = "session")]`, appended). `js/write.mjs`/`write.d.ts`: `wrapLayout` and
+  `lastError` in the binding object, `WriteLayout.ptr`.
+- `crates/uo-docx`: `session/mod.rs` (`pub mod font_usage;`), `session/ops/text.rs` (`hidden_char`, `canon_pos` →
+  `pub`), `tests/all.rs` (`mod session_font_usage;`), `js/capture-font-usage.mjs`, `tests/parity/font-usage.capture`.
+- `Cargo.lock` (uo-wasm's optional `indexmap` and its new dev-dependencies).
+
+### Wanted CI lines (for the orchestrator)
+
+`cargo run -p uo-schema -- check` (already) and `cargo test -p uo-schema` (now with the session suite and the bind
+tests); `cargo clippy -p uo-wasm --features session[,count|,session-selftest]` native and wasm32;
+`cargo test -p uo-wasm --features session,count,session-selftest --test session_native`;
+`cargo build -p uo-wasm --features session --target wasm32-unknown-unknown --profile wasm` + `wasm-tools validate`;
+the session-test module + `node --expose-gc --test` of `session_api`, `session_replay` (`UO_WS_FAMILIES=d2a,f1,f2,f6`)
+and `session_hostile` (`UO_WS_FUZZ_MS=10000`); tsc over `js/gen/*.ts` with `js/session.d.ts`. No Miri file was added.
+
+### For the milestone-2 gate
+
+1. The bind mechanism (WS-D1) and where the session codec lives (uo-wasm now; uo-docx behind a `session-codec`
+   feature, or a shared crate, when uo-ffi carries the session).
+2. Session-produced values never on the wire (the painter, `RenderPictures`): accepted as implemented?
+3. Layout ownership: the owned `UoLayout` + (session, layout) caret exports; R's incremental relayout becomes
+   `uo_session_relayout(h, prev)`.
+4. Keyboard navigation: `tableNavigate`/`moveCell` not ported; the moves have no capture (queue item 9, with a
+   Chromium capture).
+5. Toolbar queries missing from uo-docx (`getSelectionState`, `getTableState`, the spellchecker's texts/languages).
+6. The narrowings of WS-D2/WS-D3 (notably `JsNumber::Null`, explicit-`undefined` masks and key order for
+   order-sensitive signatures, D2a-U6).
+7. `uw-font-embedding` skip reasons: extend `Event::FontEmbedding` in uo-docx.
+8. Font policy (`Editor` policy not built) and print view only.
+9. `.doc` in the wasm session: off.
+10. Module packaging: the editor as its own module (+1.60 MB gzip over the viewer); size work deferred.
+11. Replay coverage: d2a, f1, f2, f6 done through the wasm exports; **f3, f4, f5, f7, f8, f9, f10 not replayed in wasm
+    in this wave** (their mappings were not ported into the self-test); family-specific facets (pend, sv/nv, rev,
+    cm, …) are compared natively only.
+12. Not done: `session_unsafe.rs` (Miri), the WebKit run of the session tests, a hostile test pairing a stale layout
+    with an edited session (the hit/caret code reads with `get()`; not measured), the skipped queries, the generator
+    wart (a list of a unit-only enum emits a redundant `.copied()`, allowed in the uo-schema include of the session
+    codec).
+13. The viewer module grew 18.6 KB gzip during the wave from changes outside this frontier: re-measure at the merge.
+
+### Process metrics
+
+One implementer agent (Opus), one session of about 4 h wall time, about 200 tool calls. Rework: the extractor's first
+drafts (js_object! bodies parsed twice, CR line ends, generic and boxed `Nullable`, recursion through `FormatChange`);
+the bind emitter's tuple bounds named unqualified wire types (now `w::`), a too strict payload check, the bind file
+hard-coded `super::generated` (now the rust file's stem); the JS wrapper passed struct payloads as `v` (the generated
+TS flattens them); M2's sample vector was counted as growth (now `uo_alloc::soak`); the wasm hostile baseline counted
+lazily built tables (now two identical passes); M4's finalizer loop let 10,000 sessions live at once and pushed the
+memory past 2 GiB (now a gc every 500; render.mjs reads pointers as signed `i32`, a pre-existing limit at 2 GiB);
+clippy findings in the new code (6). Builds: four wasm modules per round (about 2–2.5 min each, `-j 4`), one target
+dir (`core/target/m2-wsession`).

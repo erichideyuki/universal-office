@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using UniversalOffice.Core;
 
 namespace UniversalOffice.Native;
 
@@ -132,7 +133,7 @@ internal static unsafe partial class NativeMethods
             Cancelled => new OperationCanceledException(text, ct),
             Argument => new ArgumentException(text),
             InvalidData or Xml => new InvalidDataException(text),
-            LimitExceeded => new OfficeLimitExceededException(text, stage, (long)Math.Min(info.Max, long.MaxValue)),
+            LimitExceeded => new OfficeLimitExceededException(text, OfficeLimit.Conversion, (long)Math.Min(info.Max, long.MaxValue), null, stage),
             _ => new UniversalOfficeException(text, status, stage),
         };
     }

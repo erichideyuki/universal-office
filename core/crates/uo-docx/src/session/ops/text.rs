@@ -59,7 +59,7 @@ impl Session {
     /// final views, inserted text in the original). D2a takes the run rule of `revDisplay` for the
     /// views without an author filter (D2a-T3); with "Show Markup" options that turn insertions and
     /// deletions off or filter by author (D2b-F6), the layout's `RevisionDisplay.run` decides.
-    fn hidden_char(&self, p: Option<&Paragraph>, offset: usize) -> bool {
+    pub fn hidden_char(&self, p: Option<&Paragraph>, offset: usize) -> bool {
         let Some(p) = p else { return false };
         let filtered = self.opts.markup_options.filters_text();
         if self.opts.markup == MarkupMode::All && !filtered {
@@ -102,7 +102,7 @@ impl Session {
     }
 
     /// `canonPos(pos)`: the first of the visually equal positions.
-    pub(crate) fn canon_pos(&self, pos: DocPosition) -> DocPosition {
+    pub fn canon_pos(&self, pos: DocPosition) -> DocPosition {
         let p = self.paras().and_then(|ps| ps.get(pos.para as usize));
         let mut k = pos.offset as usize;
         while k > 0 && self.hidden_char(p, k - 1) {

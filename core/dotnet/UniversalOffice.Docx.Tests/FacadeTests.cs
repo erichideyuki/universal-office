@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using UniversalOffice.Core;
 using System.Security.Cryptography;
 using UniversalOffice.DocxLayout;
 using UniversalOffice.Native;

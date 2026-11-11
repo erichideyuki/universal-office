@@ -687,7 +687,7 @@ limit check and its TS behaviour).
 | F7b | engine: tables and floats | `placeTable`, floating/late tables, row emission, `placeFloats`, `wrapFrame`, objects, textboxes and chains | ≈ 1,500 | F6, F7a |
 | F7c | engine: notes, headers/footers, fields | notes, separators, note columns, endnotes, `layoutHeaderFooter`, SEQ/REF/NOTEREF/STYLEREF/PAGEREF/chapters | ≈ 1,000 | F7a |
 | F8 | editor-facing API and oracle | `refs.ts`, `run-boxes.ts` (+ props and `measure_text`, K17e), `caretXIn`/`offsetAtX`/`locateRef`, hit tests, selection rectangles, `page_of`, `navigation`, `collect_fields`, `next_hyphenation`; the `LayoutOracle` impl in the bindings; `ViewTransform` (LQ2) | ≈ 400 + new | F7a–c |
-| (M2) | incremental relayout; uo-docx session `fontUsage()` port (LQ15, uo-docx D2) | LA7 levels 1 and 2, differential tests | new | F7, D2a |
+| (M2) | incremental relayout; uo-docx session `fontUsage()` port (LQ15, uo-docx D2) | LA7 levels 1 and 2, differential tests — **both done** (level 1 without the line memo, D-LA7-26; "Stage M2 — incremental relayout (LA7)") | new | F7, D2a |
 
 **Order and parallelism** *(revised after the skeptic)*. The facet inputs are model objects and no
 capture → model decoder is planned, so **every parity facet needs the uo-docx D1a reader at digest
@@ -3551,3 +3551,497 @@ SKILL.md assigns every role of uo-docx-layout to Opus; the maintainer asked for 
 | implementation: layout, ffi, wasm/JS, .NET, tests, measurements, records | Sonnet 5.5 (maintainer's request) | two sessions on 2026-11-09: the first attempt, then a re-verification of the same working tree; wall time not recorded by the agents (the first release build alone 2.5 min, the tests seconds) |
 | review | reviewer | one round: 1 major (FacadeTests.cs mixed encodings, now UTF-8 again), 6 minor |
 | fix round 1 | Sonnet 5.5 | one session: UTF-8 restore, docs, test split (read/derive outside), debug 45 s -> 16.6 s, canon-stream comparison, ffi bound 250 -> 50 ms, wasm k-th-poll cases, native host-poll test, JS re-entry guard |
+
+## Stage M2 — incremental relayout (LA7)
+
+Frontier R of milestone 2, wave 2 (queue item 7, 2026-11-11). Opus planner → Opus implementer. Not committed (the
+orchestrator commits the wave).
+
+### Scope
+
+`LayoutEngine::relayout(view, changes, provider, o)` (signature unchanged; the WS frontier calls it) gives **the same
+`Layout` bits as a full layout of the same view** (LA7 criterion, maintainer decision 1 "EXACT" as recommended: pages by
+`Debug`, resource tables entry by entry, `image_origins`, `warnings`, `missing_faces`, `fields`, `stamp`, lineBox ids
+included), computed on the previous relayout's run when only body blocks changed in place. **Level 2 (page checkpoints)
+is implemented, single- and multi-pass. Level 1 (the paragraph memo of `prepare_paragraph`, with the recorded reads and
+the replayed effect log) is implemented in fix round 2**; its line memo is not (D-LA7-26, measured). Structure edits
+(Enter, a merge, a paste) stay full layouts for level 2 and are served by the memo: half the time of a full layout.
+`layout()`, `EngineOracle` and the viewer/server path (`engine::layout_document`) use neither level and keep their output
+(re-proved below).
+
+### Design (code: `src/incr/`, hooks in `src/engine/`)
+
+- **Recording** (`incr/record.rs`, `Recorder`, a `BlockHook`). A recorded full call (`layout_document_with(…, Some(rec))`)
+  takes, per pass, a `Checkpoint` before the first body block of every new page (`run_from` calls the hook before each
+  body block of the main flow, never in cells, static flows or the endnote flow): the engine cloned without its pages and
+  trace, the open pages `pages[cur..]`, the lengths of the call's tables (`CallLens`: faces, resolver entries and misses,
+  symbols, images, text effects, page fills, custom paths, image origins, pending metafile warnings, `line_seq`). Per
+  pass it keeps the input, the final pages, the final engine (its warnings as at the pass end, before `finish`), the
+  pass's `onField` map and the end lengths; per call the final `FaceTable`, `FaceResolverCache` (with the provider
+  request log) and `ImageTable`. The `Layout` keeps the resources. A call that ran column-balancing probes keeps nothing
+  (`Balancing`, decision 4).
+- **Trace** (`incr/trace.rs`, `Engine::trace`, a new field class "trace": never compared, never in a checkpoint). Per
+  interval between checkpoints: the body blocks read besides the one being placed (`flow_block`, `flow_table`, i.e.
+  lookahead, keep-with-next chains, REF/NOTEREF/STYLEREF/bookmark paragraphs, `paraByRef`; `note_read(i)` directly in
+  `pin_floats_over_table` — the paragraph after a table, read for its floats, space before and style — and in
+  `place_late_tables` — the late floating table at block `bi`, laid out at its page's start before its turn; both
+  added in fix round 1 after the review found them untraced; `note_read_all` for the list markers cache `list_texts`
+  and for late floats), and the lowest page written (`ps_mut`, `make_page`). Every direct read of
+  `ldoc.stories[…].blocks` under `src/engine` was checked again: the others are the block being placed (`run_from`,
+  `story_table` from it), the block count (`story_len`, keyed by the shape), static, note, endnote and header/footer
+  stories (not the body flow) and the prologue's cover page (keyed by the prologue). The reads use
+  `Cell<u32>` counters because the read sites are `&self` methods (no `RefCell`, no sharing: D-LA7-7).
+- **Keys** (`incr/keys.rs`): the options by `Debug` without `cancel`/`cancel_poll` (none with hyphenation skips);
+  every recorded provider request asked again with the same answer identity, and the budget-refusal flag; every document
+  part but the body the same object (`sections`, `notes`, `comments`, `styles`, `bookmarks`, `formatting`,
+  `background`, each header/footer part; `core_props` and `formatting_version` equal; `media` needs no key: `MediaStore`
+  is append-only, with no replace API, so an id never changes bytes); no context story; no textbox chains;
+  the same derived-document shape (`shape()`: every LPara's source, id, flags, runs, overrides, path; every run's source
+  and `RunRef`; stories, textboxes, revision order); the same prologue (cover page, first page number, section
+  geometries). The changed body blocks `[b0, b1]` come from structural sharing (`PVec::unshared_chunk_elements`, then
+  `Arc::ptr_eq` per paragraph and table anchor, mapped to `Story::blocks` indices). The previous call's body and parts
+  are kept as shallow clones, so a changed paragraph always has a new pointer (copy-on-write sees them shared).
+- **Resume** (`incr/mod.rs`, `incremental`). Per pass of the previous call, in order: the input must equal the previous
+  one; the latest checkpoint `c` with `c.b ≤ b0`, nothing read at or past `b0` before it, and no page below `c.cur`
+  written after it ("sealed"); the tables restored as prefixes of the final ones (`restore`: the symbol table rebuilt by
+  interning its first strings again, the others truncated copies); the engine cloned from `c`, the previous pages
+  `[0, c.cur)` moved in, `c.open` cloned; `run_from(cx, Some((gi, b)), &mut Converge)`.
+- **Convergence** (`Converge::meets`, `incr/bits.rs`). At a later checkpoint `k` of the previous run (`k.b > b1`, same
+  section/block): sealed after `k` and nothing after `k` reads a block `≤ b1`; same `cur` and page count; the same table
+  lengths (the line counter aside) and the same entries since `c`; the same engine state — `state_string`, the `Debug` of
+  every field but the pages, the trace, the style-resolver memo and the cell-neighbour memo (exhaustive destructuring:
+  a new `Engine` field does not compile until classed) — and the same open pages by `Debug`; both compared after moving
+  the previous run's line ids into the new numbering (`relabel_debug`). Then `Stop`.
+- **Line ids** (`incr/relabel.rs`). An edit that adds or removes lines moves every later `lineBox.line` of a full
+  layout. `LineMap { from, by }` (ids at or past `from` move by `by`); `Relabel` (exhaustive destructuring over
+  `PassItems`, `CellContent`, `NestRow`, `RowLayout`, `MergeText`, `RowSplit`, `TableLayout`, `ZObj`, `PageNote`,
+  `PageState`, `FloatCarry`, `FloatFlow`, `FlowMerge`, `NoteCarry`, `NoteCut`, `LastRowEmit`, `Engine`, `LayoutPage`)
+  moves the kept pages, the final engine and the kept checkpoints after the meeting point, and the reused `LayoutPage`s;
+  a shift carried from an earlier pass (`shift`) moves the resumed pass's prefix too. Nothing is moved when no line was
+  added (the typing case).
+- **Splice.** Pages `[0, k.cur)` from the new run, `[k.cur, n)` from the previous one; the pass's final engine, end
+  tables and `onField` map are the previous run's (the state at `k` is equal and the rest is deterministic and reads no
+  changed block). The pass record is spliced the same way (checkpoints and trace intervals before `c`, the new ones, the
+  previous ones from `k`). Without a meeting point the pass runs to its end (still exact); then the next pass resumes only
+  if the tables equal the previous call's at that pass end (`Tables` otherwise).
+- **Pass loop.** `Call::next_input` (factored out of `layout_document`, shared by both paths) on the spliced engine; the
+  incremental call stops where the previous one stopped (else `Unstable`), continues while each next input equals the
+  previous call's (else `PassInput`); balancing found → `Balancing`.
+- **Page assembly.** `Engine::finish` split into `finish_prep` + `finish_page(reuse)`: the pages before the resume point
+  (and not written by the new run) and the pages from the meeting point on reuse the previous `LayoutPage` (relabelled),
+  after running their resource-touching steps (page borders, revision-bar colour, background) in page order; then the
+  final tables must equal the previous call's (`Tables` otherwise), so a reused page's ids mean the same strings.
+- **Caps (M5).** `IncrConfig { enabled, checkpoint_bytes }` (defaults: native 512 MiB, wasm32 96 MiB) covers the
+  estimated heap of the checkpoints plus the kept pages of every recorded pass. Past it the checkpoints are spaced every
+  k pages (`fit_cap`, distance-based so re-applying keeps them; applied after every recorded or incremental relayout);
+  when the kept pages alone do not fit nothing is kept (`Memory`).
+- **Level 1 — the paragraph memo** (`incr/memo.rs`, fix round 2). Every `relayout` (the recording full layout, a resumed
+  level-2 run, the context-view full layout) prepares body paragraphs through `Engine::prepare` → `memo::prepare` (the memo
+  rides in `Cx::memo`, taken out of the `Cx` while one paragraph is prepared, so nothing a field lays out inside it uses
+  it). Scope: a derived paragraph that is the model paragraph itself (`ParaSrc::Model`), in the body story, without
+  overrides, flags, frame carry or revision joins, and a top-level body paragraph (its `Arc` is in `body.paras`); the
+  rest is prepared as before (`skipped`). An entry per `ParaId` and environment (at most two: the main flow's and the
+  keep-with-next lookahead's, which now also goes through `Engine::prepare`, identical without a memo) holds:
+  - the **key**: the paragraph node's `Arc` (kept alive, compared with `ptr::eq`), the address of each run's model run and
+    its field-result count, the `ParaEnv` by `Debug`, `cx.depth`; per call, the options by `Debug` (as level 2, the
+    effective options) and the `formatting` and `styles` objects; every face key the prepare asked the resolver for
+    (`FaceResolverCache::tap`), its `FaceId` and the provider's answer identity — all must be cached alike in the running
+    call (`cached`), so a hit adds nothing to the face tables;
+  - the **effect log**: every `PrepFlow` call in order — `field` (PAGE, REF, STYLEREF, NOTEREF…: the other paragraphs
+    they read are read again by the live call), `number_next` (the numbering marker), `note_mark` (with the text cap
+    before and after), `on_field`, `warn` (a new `PrepFlow` method, default `ctx().warn`, so the one warning site of
+    `prepare_paragraph` is seen) — with its answer, and the paragraph's own work units (the budget spent minus what the
+    live flow calls spent);
+  - the **result** with its run keys made relative to the paragraph (`run` index, field result `sub`), its glyphs packed
+    (`Core`, 48 bytes for a glyph with no optional field, ascent/descent/size in a per-paragraph table; the others kept
+    whole).
+  A hit replays the log on the live pass state in order; when every answer is the recorded one it charges the work
+  units once and returns the result with the running call's keys. When answer `i` differs (a list item renumbered, a
+  PAGE field on another page, NUMPAGES of the next pass) the paragraph is prepared again with calls `0..=i` served from
+  what the replay already did (`RecFlow`: the same calls with the same arguments — a deterministic prefix — so no effect
+  runs twice), and the new run replaces the entry. Not kept: a prepare that added an entry to any call table
+  (`CallLens` before/after: a new face, symbol, text effect, image, or the line counter — then a hit would have to add
+  it too; in practice the first paragraph using a face), a result with a text effect or a picture-bullet image (call-local
+  ids), a key that is not one of the paragraph's runs or their field results, a face in the result not asked by the
+  prepare. Caps (M5): `IncrConfig::memo = MemoCaps { enabled, entries, bytes }` (defaults on, 2^20 entries, 384 MiB native,
+  64 MiB wasm32); past the bytes new paragraphs are refused (`over_cap`) and the kept ones stay (a full layout walks in
+  document order: evicting the oldest would evict exactly what the next full layout needs first); after each full layout
+  the entries it did not use go (removed paragraphs). The memo is dropped with `clear()`/`clear_caches()`, on any error
+  of a relayout, and when the call key changes.
+
+### API added (for the WS frontier)
+
+- `LayoutEngine::with_incremental(IncrConfig) -> Self`, `last_relayout() -> Option<&incr::RelayoutReport>`,
+  `clear_incremental()`; `clear_caches()` also drops the incremental state; `last()` returns the newer of `layout()`'s
+  and `relayout()`'s result.
+- `incr::RelayoutReport { path: Full | Incremental, reason: Option<FallbackReason>, passes, changed_blocks,
+  resumed_page, converged_page, relaid_pages, checkpoints, spacing, checkpoint_bytes, retained_page_bytes, line_shift,
+  layout_bytes }`. The shell repaints `relaid_pages` when `path == Incremental`, every page otherwise. The pages outside
+  `relaid_pages` encode the same section bytes as before even when `line_shift ≠ 0` (lineBox is not in the page encoding,
+  F0-18), but their `LayoutPage.item_meta` ids moved.
+- `incr::FallbackReason`: `NoBase, Disabled, View, Options, Provider, Document, Context, Chains, Shape, Prologue,
+  NoCheckpoint, PassInput, Unstable, Tables, Balancing, Memory, Failed` (`Failed` added in fix round 1, D-LA7-15).
+- Unchanged: `relayout`'s signature and the layout-local `model::StoryChange`; `layout()`, `layout_document`.
+- Fix round 2: `IncrConfig::memo: MemoCaps` (a new field: a struct literal of `IncrConfig` needs `..IncrConfig::default()`,
+  only this crate builds one today); `incr::{MemoCaps, MemoReport, ParaMemo}`; `RelayoutReport::memo` (hits, replayed,
+  misses, skipped, unmemoizable, over_cap, entries, bytes). `relaid_pages` now starts at the lowest page the resumed run
+  wrote (`lowest.min(resume page)`), not the resume page (review finding: a page below it re-assembled after a float
+  receipt was outside the range); the tests now check the contract on every incremental relayout. Crate-internal:
+  `Cx::memo` (a new field of a public struct with public fields: struct literals of `Cx` outside the crate need it; only
+  this crate's tests build one), `Call::memo`, `layout_document_with(…, rec, memo)`, `FaceResolverCache::{tap, cached}`,
+  `PrepFlow::warn` (defaulted), `para::field_model_ref` (factored out of `field_value_run`, same logic).
+- `last()` (review finding checked): milestone 1's `layout()` already set `last = None` before laying out, so a failed
+  `layout()` or `relayout()` left `last()` `None` then too; the semantics are unchanged and the doc comment, which said
+  "the last successful layout", now says what it does (`None` after a failed call; a failed relayout also drops the
+  incremental state). For the WS frontier: keep the shell's own copy of the pages if it must show something after a
+  failed relayout.
+
+### Declarations (outside the TS semantics)
+
+- **D-LA7-1** Exact criterion (decision 1): `Layout` equal field by field, compared in the tests by the P1 digest, the
+  `Debug` of every page, the symbol strings in order, the faces by key/family/flags/bytes identity, the other resources
+  and the rest by `Debug`.
+- **D-LA7-2** `changes` is advisory (decision 2): what changed is found by structural sharing.
+- **D-LA7-3** Level-2 scope (decision 3): in-place edits only. Enter, Backspace across a paragraph mark, paste, table
+  structure, list toggles, section and style changes replace `sections`, bump `formatting_version` or change the shape:
+  full layout (`Document`/`Shape`). Measured probe (`which_arcs_change_on_typing`): typing replaces 1 body paragraph and
+  no document part; Enter and Backspace (merge) replace `sections` and bump `formatting_version`.
+- **D-LA7-4** `FaceResolverCache.resolved` is an `IndexMap` with `FxBuildHasher` (was `FxHashMap`) so a prefix can be
+  restored; its order is never observed. The resolver gains a provider request log (`Some` only while recording).
+- **D-LA7-5** A call that ran balancing probes keeps no checkpoints (decision 4).
+- **D-LA7-6** The incremental call's work budget is fresh and counts only the work it does (decision 6); cancellation
+  polls at its own charges. On any `Err` the incremental state is dropped (decision 7).
+- **D-LA7-15** (fix round 1) An `Err` of the incremental attempt itself (an internal check of the splice or the
+  restore, `Limit` of its fresh budget, `NoFace`…) does not fail the call: the state is dropped and the same call lays
+  out in full (`FallbackReason::Failed`); `relayout` returns `Err` only when the full layout fails too. Exception:
+  `Cancelled` is returned at once (the caller asked to stop; a full layout would be cancelled again). New variant
+  `FallbackReason::Failed` (no other crate matches on the enum yet).
+- **D-LA7-16** (fix round 1) A relayout of a view with a context story (a cell, note, header/footer or textbox being
+  edited) is a plain full layout that keeps no base (`no_base = Context`): the next relayout outside the context is a
+  full recording one. Keeping a base recorded under a context view would make the next non-context relayout exact
+  only if the session replaced the body or part `Arc`s whenever the context's content is written back — a dependency
+  on the session not worth its one saved full layout. Tested: `lookahead_sites_are_traced` enters a cell, types,
+  leaves, types in the body (exact; the relayout after leaving is `Full(Context)`, the next keystroke incremental).
+- **D-LA7-7** The read trace uses `Cell<u32>` inside `Engine::trace` (the read sites take `&self`).
+- **D-LA7-8** Options with hyphenation skips (a `HashSet`, unstable `Debug`) are never incremental (the editor's
+  relayouts pass none; `EngineOracle` uses `layout()`).
+- **D-LA7-9** State equality by `Debug` strings: two NaNs of different payloads print alike (no carried NaN reaches the
+  output with its payload); `FxHashMap`/`IndexMap` order differences only miss a convergence (slower, exact).
+- **D-LA7-10** Line ids after an added/removed line are moved by `Relabel` (the plan's `shift_line_seq`, extended to every
+  type holding items because checkpoints hold engines with notes, chains and float carries).
+- **D-LA7-11** Copies (frame anchors, revision views, chain slices) need no special rule in level 2: the shape key
+  includes them. Documents with textbox chains are never incremental (`Chains`): a chain member's content is read from
+  other blocks.
+- **D-LA7-12** Conservative reads: a read at or before `b1` after the meeting point (e.g. a STYLEREF in a header looking
+  back) prevents convergence there, even when the block read is unchanged (min/max per interval, not a set).
+- **D-LA7-13** The final page assembly requires the call's final tables equal to the previous call's whenever pages are
+  reused: an edit that resolves a new face or interns a new symbol is a full layout (`Tables`).
+- **D-LA7-14** Debug-based `ImageTable`/resource comparisons compare image bytes by content, not `Debug`.
+- **D-LA7-17** (decided by fix round 2, option (a)): level 1 is implemented by this frontier as the brief asks (the review
+  of fix round 1 rejected descoping it inside the frontier); the level-2 key remap stays a follow-up for the gate.
+- **D-LA7-18** Memo scope: plain body model paragraphs only (above). Cells, headers/footers (PAGE differs per page: they
+  would mostly replay), notes, textboxes and copies are prepared as before. Measured on pages50: 245 of 579 prepares of a
+  full layout are header/footer paragraphs (`skipped`).
+- **D-LA7-19** A hit needs no table growth: a prepare that grew any call table is not kept, and a hit needs every face key
+  it asked cached with the same `FaceId` and answer. Exact because the tables only grow, and an existing entry's id never
+  changes. Faces are the only call-local ids a kept result may hold (checked: every `FaceId` of the result, the marker's
+  and the equations' included, was asked by the prepare).
+- **D-LA7-20** Answers are compared by value: field texts and note marks as UTF-16, the text cap by value, numbering
+  markers by `Debug` (a JS number: `-0`/`+0` apart), `f64` arguments by bits, `JsNumber` arguments by `Debug`. A
+  different answer only costs a new prepare.
+- **D-LA7-21** A served call that is not the one the prepare makes, or a key that does not map, is an internal error
+  (`incr: memo check`; impossible for a deterministic prepare, never seen in the 110,000 hits and 1,900 replays of the fix-round-2 test run). In a
+  level-2 attempt it falls back as D-LA7-15; in a full layout the call is laid out again without the memo (and the memo
+  is dropped). Not tested by injection (no hook).
+- **D-LA7-22** The work budget: a hit charges the paragraph's own units in one charge after the replay (the same total;
+  a limit error has the same kind; cancellation polls there once). A live field call that fails during a replay returns
+  its error at once (the prepare would fail with the same first error; the formula path's later field calls are not
+  made — the relayout fails either way).
+- **D-LA7-23** Not compared or replayed (pure caches, never observed): the pass's style resolver memo, the hyphenation
+  sessions (created lazily, persistent per `LayoutEngine`), the face table's equation info. `PreparedPara.ppr` and the
+  styles' `rpr` of a hit are the previous call's `Arc`s (equal content; no `ptr_eq` on them anywhere in the engine,
+  checked by grep).
+- **D-LA7-24** The memo's call key is the options' `Debug` like level 2's: a host passing a new `clock` every relayout
+  would clear both levels every time (the editor shell should pass a fixed clock between explicit refreshes — WS
+  frontier).
+- **D-LA7-25** The keep-with-next lookahead (`next_block_lead_step`, 2 sites) calls `self.prepare(cx, &PSrc::Doc(k), …)`
+  instead of `prepare_paragraph(cx, self, k, …)`: the same function when no memo is given (the full/viewer path), and
+  memoized with its own environment entry when one is.
+- **D-LA7-26** The line memo of level 1 is not implemented. Measured (temporary counters, removed; release, pages50 /
+  pages500 full layout): `prepare_paragraph` through `Engine::prepare` 105 / 1,085 ms of 204 / 2,113 ms (51 %),
+  `LineBreaker::next` 12.3 / 130 ms (6 %). A line memo would need the identity of the `PreparedPara` at the 23
+  `LineBreaker` call sites (the engine changes prepared paragraphs after `prepare`: markers attached and detached, spacing)
+  and would save at most 6 %. Proposed for the gate: drop it.
+- **D-LA7-27** Memo cap policy: keep-first, no eviction (above); the per-paragraph environments evict the one used longest
+  ago. Glyph packing (`Core`) is a storage choice: `plain()` destructures `Glyph` exhaustively, so a new optional field
+  does not compile until it is classed, and an unpacked glyph is `Glyph::new` plus the stored fields (exact).
+
+### Engine field-by-field equality (`incr/bits.rs::state_string`)
+
+Compared by `Debug`: `ctx.{flow, rev, warnings, note_numbering, note_mark_override}`, `story, cur, col, y, col_top, at_top,
+top_gap_prev_after, prev, last_box, first_in_doc, ln_count, ln_page, ln_sect, last_row_emit, tbl_x0, in_hf, float_carry,
+float_flow, next_table_layout, only_text_floats, pre_placed, z_seq, col_used, balance_saved, balance_last_free,
+placed_tables, late_split, col_bottoms, in_cell, hf_frame_after, hf_frame_tbl, static_dx, cell_mar, col_max_y,
+sect_gap_after, pending_join, pending_del, float_table_gap, carry_anchor_gap, note_carry, row_note_cut, flow_fills,
+en_flow, cur_endnote, endnotes_done, pinned_floats, chain_slices, field_at, cell_ps, cell_collect, late_marks, scratch,
+static_seq, field_page, en_blocks, sect_geoms, geoms, cover_page, first_page_number, list_texts, note_cache, sep_cache,
+found, fields`. Not compared: `pages` (the open ones are compared apart, the earlier ones are sealed), `trace`,
+`ctx.resolver` (pure memo of `Arc`s of resolved styles), `cell_nb` (pure memo of a table's cell neighbours; the changed
+blocks are not read after the meeting point). `note_cache`, `list_texts`, `sep_cache` and `chain_slices` are compared
+although caches: a miss lays out content (tables, line ids), so presence matters.
+
+### Verification
+
+**Differential "incremental == full"** (`tests/la7.rs`, three tests sharing the 70 documents so `--test-threads=3`
+runs them in parallel: the 68 committed fixtures f7a–f8 with their transcript providers + the generated 58-page PAGE
+and PAGE+NUMPAGES documents; per step 70 % `d2a_support::next_step` (type, Enter, Backspace, Delete, selection,
+tracking, contexts, undo, redo) and 30 % own layout steps (bold, space after, line spacing, centre, list toggle,
+200-character insertion); after every step `relayout` vs a fresh `LayoutEngine::layout`, errors compared by kind):
+
+| run | documents × steps | relayouts | incremental | errors (equal kinds) | mismatches |
+|---|---|---|---|---|---|
+| default (`UO_LA7_STEPS=8`) | 70 × 8 | 625 | 296 (47.4 %) | 5 | **0** |
+| big (`UO_LA7_STEPS=60`) | 70 × 60 | 4,143 | 1,837 (44.3 %) | 127 | **0** |
+
+Fallback reasons in the default run: Chains 69, Document 78, NoBase/Balancing 71/56 (balanced fixtures keep nothing),
+Context 9, Shape 15, NoCheckpoint 9, Tables 18, PassInput 4. `incremental_path_is_taken`: on the generated 58-page
+documents, 20/20 keystrokes in the middle are incremental with one page laid out again (PAGE only and PAGE+NUMPAGES), and
+a 60-character insertion that adds a line is incremental with `line_shift ≠ 0` and equal bits.
+
+**Fix round 1 (review of 2026-11-11).** Rerun of the default differential after the fixes: the same 625 relayouts,
+296 incremental, 5 equal errors, **0 mismatches**, the same fallback counts. `incremental_path_is_taken` now fills its
+timings: 20 keystrokes on the 58-page documents cost 255 ms incremental vs 13,625 ms full (PAGE only) and 492 ms vs
+25,727 ms (PAGE+NUMPAGES), each including a fresh engine. New `lookahead_sites_are_traced`: (1) a page-anchored
+floating table over the lines laid out before it (late in the next pass: `place_late_tables`), grown by Replace All and
+restored by undo/redo, then a keystroke; (2) a 70-row page-spanning table and the paragraph after it with a
+wrapping shape at −36 pt (`pin_floats_over_table`), its space before set to 24 pt (pinned) then 60 pt (not pinned) and
+undone, then a cell entered, typed in, left, and two body keystrokes. Every relayout exact; the Replace All and both
+space-before relayouts are incremental. **Detection checked**: with the `note_read` of `place_late_tables` removed the
+test fails at the Replace All step ("late table step 4: canonical digest"); with the one of `pin_floats_over_table`
+removed it fails at the 60 pt step ("pinned float step 4"); both restored, green.
+
+**Fix round 2 (review of 2026-11-11: level 1).** `la7` release, 13 tests, `--test-threads=3`, 188.3 s (log
+`target/m2-relayout/fix2-la7-release-nocap.log`; the run without `--nocapture` before it: 13 passed, 189.2 s):
+
+- The three differentials (memo on, the default): the same 625 relayouts, 296 incremental, 5 equal errors, **0
+  mismatches**; memo 69,897 hits, 909 replayed, 6,707 misses, 1,846 not memoizable, 0 over the cap. The relaid-pages
+  contract (new, every incremental relayout): 2,808 pages outside `relaid_pages` checked equal to the previous
+  relayout's (`Debug`; `item_meta` aside when `line_shift ≠ 0`).
+- New `memo_only_equals_full` (level 2 off: `checkpoint_bytes: 0`, so every relayout is a full layout through the
+  memo): every 2nd of the 70 documents × 8 steps, 315 relayouts, 0 errors, **0 mismatches**; memo 40,089 hits, 998
+  replayed, 4,328 misses, 1,615 not memoizable; time 28.5 s against 40.0 s of fresh full layouts.
+- New `memo_serves_structure_edits` (310 ¶, PAGE only and PAGE + NUMPAGES): Enter in the middle (Full, `Document`) 371
+  hits of 375 prepares (743 of 748 with NUMPAGES: pass 2 hits pass 1's entries); a numbered list toggled (a new
+  `formatting`: the memo starts again, 0 hits); Enter inside the list: 8 replayed (the items after it renumbered),
+  364 hits; Backspace at an item start (the number goes, in place: level 2) 182 hits, 8 replayed; all exact.
+- New `m5_memo_caps`: the 310-¶ document needs 14.2 MB; capped at a third (4.7 MB) the memo keeps 126 entries (4.72 MB),
+  refuses 247 (`over_cap`), still serves 125 hits on the next Enter, exact; the memo off keeps and serves nothing.
+- `incremental_path_is_taken` now checks the full criterion (`assert_same_layout`) on every keystroke (review finding):
+  20/20 incremental, exact, PAGE only and PAGE + NUMPAGES.
+- M1 `m1_relayouts_leave_nothing`: **0 B** left on the 5 documents (the memo is dropped by `clear_caches`). M2
+  `m2_soak_is_flat`: 200/200 incremental, samples 20,341,993–20,344,153 B after the warm-up (flat; 2.9 MB more than
+  without the memo: the 60-¶ document's entries), **0 B** after `clear_caches` and drop. No-panic: 140 relayouts, 0
+  errors, 55.0 s.
+- Debug size (CI's workspace job): `la7` 13 tests, 0 failures, 77.4 s (1 min 32 s with the build).
+- Crate suite, release, without `--nocapture` (`cargo test -j 4 --release -p uo-docx-layout --no-fail-fast --
+  --test-threads=3`, 13 min 5 s wall with the build): **25 binaries, 0 failures** — lib 8, adapter 1, f0 4, f1 19,
+  f1_parity 4, f2_parity 3, f3 9, f3_facets 2, f4 4, f4_parity 2, f5 14, f5_parity 2, f6 4, f6_parity 2, f7a 7, f7b 7,
+  f7c 6, f7d 6, f8 6, f8_parity 2, g4_cancel 6, g8 4, la7 13, layout_parity 5, doc-tests 0. The viewer/server path changed
+  only by D-LA7-25 (the same function without a memo); the generated and oracle captures (b)–(d) were not rerun, nor the
+  uo-wasm `viewer_switch` harness (uo-wasm is the WS frontier's this wave; the viewer calls `layout_document`, which
+  passes no memo) — for the orchestrator at merge.
+- **Merge (orchestrator, 2026-11-11).** Fix round 2 also touched the full path through hooks that are no-ops without a
+  memo (`PrepFlow::warn`, a defaulted method; the `field_model_ref` extraction; the resolver `tap`/`log`). Rerun on the
+  merged tree: same-run captures f7b 100 / 1,295 pages, f7c 100 / 588, f7d 100 / 306 — 300 facets equal each, strict;
+  f8 1,500 equal (100/100); Word oracle P1 2,742/2,742 documents, 8,226 facets equal (the reviewer reran f7a: 300
+  equal); the crate suite in release without `--nocapture`, 25 binaries green (la7 13); uo-wasm `viewer_switch --mode
+  all` at stride 1: 74 documents / 579 pages, 0 differences in sizes, text, find, pixels (tolerance 0) and PDF, memory
+  flat over 200 cycles. `last()` was fixed at merge (gate item 7).
+
+**Test sizes (fix round 1).** CI's `cargo test --workspace --all-features` is a debug build: `la7` scales down under
+`cfg!(debug_assertions)`; every bound has an env var (`UO_LA7_STEPS`, `UO_LA7_STRIDE`, `UO_LA7_BIG`, `UO_LA7_KEYS`,
+`UO_LA7_SOAK`, `UO_LA7_NOPANIC_STEPS`).
+
+| bound | release default | debug default |
+|---|---|---|
+| differential: documents × steps | 70 × 8 (stride 1, generated 310 ¶ ≈ 58 pages) | every 8th of 70 → 9 × 2 (generated 40 ¶ ≈ 8 pages) |
+| `incremental_path_is_taken` | 310 ¶, 20 keystrokes | 40 ¶, 3 keystrokes |
+| `lookahead_sites_are_traced` | 20 + 30 ¶ around the table, 70 rows | 8 + 8 ¶, 40 rows |
+| M1 | f7a/f7c/f8 every 12th + big60 NUMPAGES | every 24th + big30 |
+| M2 soak | 20 iterations on big60 | 4 iterations on big30 |
+| M5 | big310, 6 steps per cap | big60, 2 steps |
+| no-panic | 28 documents × 4 steps, bound 300 s | every 7th (4) × 2 steps, bound 600 s |
+
+Measured (`--test-threads=3`, other agents compiling): release `la7` 10 tests in **159.7 s** (the three differential
+tests 57.5 / 103.1 / 106.5 s in parallel; no-panic 49.9 s), wall 4 min 3 s with the build; debug `la7` **76.3 s**
+(wall 2 min 4 s with `g4_cancel`). The plan's ≈ 60 s for the release run is not met: each differential step runs a
+fresh full layout besides the relayout (the comparison is the test); `UO_LA7_STEPS=4` halves it. No-panic default
+went from 8 to 4 steps per document (`UO_LA7_NOPANIC_STEPS=8` = the 252 relayouts of the first round).
+
+**Parity of the full (viewer/server) path after the `run`/`finish` refactor** (STEP 11):
+
+- (a) crate suite: the first round's claim "identical to the baseline, every binary green" was **wrong**: that run
+  passed `--nocapture`, and without it `m2_soak_is_flat` failed every time (`left: 304`, an `eprintln!` inside the
+  measured window grew libtest's capture buffer). Fix round 1 prints only after the measurement. Rerun without
+  `--nocapture` (`cargo test -j 4 --release -p uo-docx-layout -- --test-threads=3`, 11 min 7 s wall with the build):
+  **25 binaries, 0 failures** — lib 8, adapter 1, f0 4, f1 19, f1_parity 4, f2_parity 3, f3 9, f3_facets 2, f4 4,
+  f4_parity 2, f5 14, f5_parity 2, f6 4, f6_parity 2, f7a 7, f7b 7, f7c 6, f7d 6, f8 6, f8_parity 2, g4_cancel 6,
+  g8 4, la7 10, layout_parity 5, doc-tests 0. (`g4_cancel`, `la7` and the bench now share
+  `tests/common/{open_fonts,docgen,hyph}.rs`; `hyph.rs` = `hyph_registry` + `hyph_opts`, fix round 1.)
+- (b) same-run generated captures (`capture-layout.mjs --mode ci --count 100 --seed 11`, frozen TS `d0f45bc5`),
+  strict replay: f7a 100 documents / 994 pages, f7b 100 / 1,295, f7c 100 / 588, f7d 100 / 306 — each **300 facets
+  equal, 0 mismatches, 0 pending**.
+- (c) f8 (`--gen f8 --f8`, `f8_parity`): **1,500 facets equal**, 100/100 documents, 0 mismatches (and the committed
+  fixture 180/180).
+- (d) Word oracle P1 (`--mode oracle`, installed fonts, docs from the frozen root): **2,742/2,742 documents equal**,
+  8,226 facets, 0 mismatches, 0 pending (4,629 pages).
+- The viewer harness (`uo-wasm` `viewer_switch.mjs`) was not run: uo-wasm is being edited by the WS frontier. The
+  viewer calls `engine::layout_document`, whose output (b)–(d) prove unchanged; the orchestrator runs it at merge.
+- Fix round 1 changed the engine only by two `note_read` calls, no-ops without a trace (the full path never has one),
+  so (b)–(d) were not rerun. Their captures, dumps and documents (15 GB under `target/m2-relayout/cap`) were deleted
+  to free the disk; the capture and replay logs are kept there and the data is regenerated by the commands above.
+
+**Memory.**
+
+- M1 (`m1_relayouts_leave_nothing`): a session, a relayout, five edits with relayouts (one adds a line),
+  `clear_caches`, drop → **0 B** left on 5 documents (f7a ×2, f7c, f8, a 60-paragraph NUMPAGES document); allocated
+  57–488 MB, peak 2.6–12.4 MB above start.
+- M2 (`m2_soak_is_flat`, default 20 iterations; `UO_LA7_SOAK` for more): 10 typed edits with a relayout each (200/200
+  incremental), every 5th iteration digest-compared with a full layout, all undone and a relayout; samples 17.42 MB
+  ± 1 KB after the warm-up (flat), **0 B** after `clear_caches` and drop. Big run (`UO_LA7_SOAK=200`): 2,000/2,000 incremental relayouts, samples 17.419–17.421 MB after the warm-up, 0 B after `clear_caches`.
+  Fix round 1, with libtest's output capture on (no `--nocapture`): release 17,417,822–17,419,982 B after the warm-up,
+  0 B left; debug (4 iterations, big30) 14,344,201–14,345,095 B, 0 B left.
+- M5 (`m5_caps`): a cap of `pages + checkpoints/3` keeps a checkpoint every 4 pages (15 checkpoints, estimate under the
+  cap) and is still exact and incremental; a cap below the pages keeps nothing (`Memory` every relayout); `enabled:
+  false` → `Disabled` every relayout. All exact.
+- No-panic (`no_panic_seeded_steps`): 28 documents (f7c notes/headers, f7d chains/endnote tables) × 8 steps = 252
+  relayouts, 0 panics, error kinds equal, 78.5 s alone, 133 s next to the 60-step run (a 300 s hang bound; the plan's 30 s is not met on these
+  fixtures: every step also runs a full layout). Fix round 1 default (4 steps): 140 relayouts, 0 errors, 49.9 s
+  release; debug 4 documents × 2 steps, 39.8 s.
+
+### Speed (release, native, this machine; `examples/bench_relayout.rs`, caret in the middle paragraph)
+
+| document | pages | full layout | recording relayout | type 1 char (median / p90) | ratio | pages re-laid | 60-char insertion | Enter |
+|---|---|---|---|---|---|---|---|---|
+| pages50 (gen_docs seed 16, 310 ¶) | 49 | 262 ms | 231 ms | **5.3 / 5.7 ms** | 2.0 % | 1 | 5.8 ms (incremental, line added) | 233 ms (full, `Document`) |
+| pages500 | 500 | 2,459 ms | 2,569 ms | **7.9 / 11.0 ms** | 0.32 % | 1 | 8.3 ms | 2,409 ms (full) |
+| gen310 PAGE+NUMPAGES (2 passes) | 58 | 591 ms | 586 ms | **11.4 / 12.0 ms** | 1.9 % | 1 | 738 ms (full, `PassInput`: the page count changed) | 586 ms |
+| gen3130 PAGE+NUMPAGES | 581 | 6,152 ms | 6,951 ms | **13.1 / 19.0 ms** | 0.21 % | 1 | (before the line-shift support: 8.5 s, `Tables`) | 6,812 ms |
+
+The target (one character ≤ 5 % of the full layout on 500 pages, ≤ 3 pages re-laid) is met: 0.32 % and 1 page. The
+keystroke after an Enter or an insertion is incremental again (4.7–13 ms). Second run (nothing else of this frontier running): pages50 type 1 char 5.19 / 5.64 ms vs 232 ms (2.2 %), insertion 5.6 ms, Enter 232 ms; pages500 8.02 / 8.59 ms vs 2,399 ms (0.33 %), insertion 8.7 ms, Enter 2,449 ms; recording 230 / 2,387 ms vs full 230 / 2,401 ms (the recording costs nothing measurable).
+
+**Fix round 2 (level 1)** (`examples/bench_relayout.rs`, same machine, log `target/m2-relayout/fix2-bench.jsonl`):
+
+| document | full layout | Enter before (level 2 only) | **Enter with the memo** | memo hits of the Enter | type 1 char (median / p90) | recording relayout |
+|---|---|---|---|---|---|---|
+| pages50 (49 pages) | 232 ms | 233 ms | **115 ms** (49.6 %) | 329 (6 misses) | 3.13 / 3.51 ms (was 5.3) | 243 ms |
+| pages500 (500 pages) | 2,427 ms | 2,409 ms | **1,208 ms** (49.8 %) | 3,363 (5 misses) | 5.74 / 6.32 ms (was 7.9) | 2,506 ms |
+| gen310 PAGE+NUMPAGES (2 passes, 58 pages) | 599 ms | 586 ms | **262 ms** (43.7 %) | 743 | 6.39 / 6.58 ms | 443 ms (pass 2 from pass 1's entries) |
+| gen3130 PAGE+NUMPAGES (581 pages) | 6,126 ms | 6,812 ms | **2,787 ms** (45.5 %) | 7,511 | 8.65 / 9.34 ms | 4,541 ms |
+
+The rest of a full layout (page flow, lines, paint, derive, header/footer paragraphs) is what an Enter still costs; the
+level-2 key remap (gate) would make it a resumed run. Keystrokes got faster too (the paragraphs of the re-laid page are
+hits). The 60-character insertion on gen310 NUMPAGES changes the page count: `PassInput`, 333 ms (was 738).
+
+### Memory kept (measured with `uo-alloc` in the bench; estimates in the report)
+
+| document | `Layout` (measured) | kept besides the `Layout` | × `Layout` | checkpoints (est.) | kept pages (est.) |
+|---|---|---|---|---|---|
+| pages50 | 8.8 MB | 10.0 MB | 1.14 | 1.0 MB (49) | 8.6 MB |
+| pages500 | 90.5 MB | 102.8 MB | 1.14 | 11.1 MB (500) | 87.9 MB |
+| gen310 NUMPAGES | 12.5 MB | 23.8 MB | 1.90 | 2.8 MB (116) | 20.4 MB (2 passes) |
+| gen3130 NUMPAGES | 128.0 MB | 240.7 MB | 1.88 | 29.0 MB (1,162) | 205.6 MB (2 passes) |
+
+The kept `PageState`s of every recorded pass dominate (≈ 1× the `Layout` per pass); checkpoints are ≈ 12 % of one pass.
+
+The paragraph memo (fix round 2; measured = kept bytes with the memo − without it, same document and relayout):
+
+| document | `Layout` | memo measured | memo estimate (report) | × `Layout` | entries | all kept (both levels) × `Layout` |
+|---|---|---|---|---|---|---|
+| pages50 | 8.8 MB | 11.9 MB | 10.2 MB | 1.35 | 331 | 30.6 MB, 3.49 |
+| pages500 | 90.5 MB | 122.4 MB | 105.6 MB | 1.35 | 3,365 | 315.6 MB, 3.49 |
+| gen310 NUMPAGES | 12.5 MB | 15.3 MB | 14.2 MB | 1.23 | 374 | 51.6 MB, 4.13 |
+| gen3130 NUMPAGES | 128.0 MB | 154.8 MB | 143.8 MB | 1.21 | 3,758 | 523.4 MB, 4.09 |
+
+Before the glyph packing the memo of pages50 measured 49 MB (5.6× the `Layout`; a `Glyph` is ≈ 200 bytes). The estimate
+is 14 % under the measure (allocator rounding, the node maps). With the wasm32 default (64 MiB) pages500 keeps the first
+≈ 60 % of its paragraphs; the native default (384 MiB) keeps every document measured.
+With the wasm32 default cap (96 MiB) pages500 still fits (88 MB of pages + 11 MB of checkpoints, every page); gen3130 keeps nothing
+(`Memory`: 206 MB of pages) and every relayout is full — decision 5 below.
+
+### Not done (handed on)
+
+- **Level 1's line memo** (D-LA7-26: 6 % of a full layout; proposed to drop) and the memo for cells, headers/footers,
+  notes and textboxes (D-LA7-18). An Enter costs half a full layout with the memo; the level-2 key remap (LParaId/RunKey/
+  block-index shift of the kept checkpoints and pages, including the `LineRef` paths `b<i>` of the output) would make it
+  a resumed run — a follow-up for the gate.
+- No injection test of the memo-check fallback (D-LA7-21).
+- A changed page count in a NUMPAGES/SECTIONPAGES/PAGEREF document changes the next pass's input: full (`PassInput`).
+  Running only the remaining passes fully would halve it.
+- Edits in context stories (cells entered as a context, notes, headers, textboxes) are full (`Context`); a header or note
+  edit would need the hf/note stories in the change detection.
+- Copies of `OpenFonts` (5 left in tests), `hyph_registry`/`opts` (in f4, f4_parity, f7a–f7d, f8, f8_parity, g8,
+  layout_parity) and `docx()` builders not consolidated beyond g4_cancel, la7 and the bench (declared follow-up).
+- The plan's no-panic bound of 30 s (49.9 s at the new 4-step default, release).
+
+### For the milestone-2 gate
+
+1. Decision 5 — memory budget of the incremental state: measured 1.14× the `Layout` for one-pass documents, 1.9× for
+   two-pass ones (every pass's pages are kept). Options: keep only the final pass's pages and replay non-final passes from
+   their checkpoints ("lite" retention), lower the wasm32/phone cap, or accept.
+2. D-LA7-17 is closed (level 1 implemented). Still open: the level-2 key remap for structure edits (Enter now costs
+   ≈ 50 % of a full layout through the memo), and dropping the line memo (D-LA7-26).
+3. The memo's memory (1.2–1.35× the `Layout`, measured) and its wasm32 default cap (64 MiB: pages500 keeps ≈ 60 % of its
+   paragraphs); with level 2 the incremental state keeps 3.5–4.1× the `Layout` in all.
+4. A fixed `clock` between relayouts in the editor shell (D-LA7-24, WS frontier).
+5. Rust full == TS full on edited documents (LA7 last bullet): a bounded `capture-layout.mjs --mode files` run over the
+   saved states of the differential scripts with CI font isolation.
+6. A corpus-wide differential (oracle documents + edit scripts) — the reads traced are the ones the 70 test documents
+   exercise; a missed read site would show as a mismatch only on a document that has it.
+7. The WS frontier's use: repaint `relaid_pages`. (`last()` with `layout()` interleaved was fixed at merge: the
+   engine remembers whether the newest attempt was a relayout, so a failed `layout()` after a relayout gives `None`, as
+   in milestone 1.)
+8. The memo's scope (D-LA7-18): header/footer, cell, note and textbox paragraphs are not memoized; header/footer
+   paragraphs are 245 of 579 prepares (42 %) on pages50 — the main reason an Enter still costs ≈ 50 % of a full layout.
+
+### Requests to other modules
+
+- None required. (`uo_docx::model::{Document, TableAnchor}` are re-exported by `src/model.rs`, additive.)
+- For the orchestrator (fix round 1, not done here: `.github/workflows/rust-core.yml` is not this frontier's file): the
+  workspace debug job now runs `la7` at its debug size (76 s); a release line in the layout-parity job, e.g.
+  `cargo test --release -p uo-docx-layout --test la7 -- --test-threads=3`, would run the full-size differential
+  (160 s) on every push, if wanted.
+
+### Process metrics
+
+| Step | Wall time | Notes |
+|---|---|---|
+| baseline suite | 8 min 15 s | all green |
+| design + instrumentation + level 2 (single pass) | — | first differential run: 0 mismatches |
+| line-id relabel (d ≠ 0) | — | pages50 60-char insertion 128 ms → 5.8 ms |
+| caps (M5) | — | one rework: the cap was applied only after recorded calls (an incremental relayout recorded a checkpoint per page and passed the cap); now `fit_cap` after every relayout, distance-based thinning |
+| crate suite after the refactor | 4 min 22 s | reported "identical to the baseline": wrong, it ran with `--nocapture` (fix round 1) |
+| parity reruns (b)–(d) | ≈ 45 min | two script reruns (below) |
+| differential 60 steps + soak 200 | 10 min | 0 mismatches |
+| fix round 1: fixes + new test | — | two untraced lookahead sites, M2 capture artefact, debug sizes, `Failed` fallback, context base, shared helpers, bench JSON |
+| fix round 1: detection check | ≈ 6 min | each `note_read` removed in turn: the new test fails; restored |
+| fix round 1: crate suite (release, no `--nocapture`) | 11 min 7 s | 25 binaries, 0 failures |
+| fix round 1: `la7` release / debug | 4 min 3 s / 2 min 4 s | 159.7 s / 76.3 s of tests |
+| fix round 1: `check-changed.mjs` | ≈ 3 min | one rework (clippy `large_enum_variant` on the test's `Step`); then all steps passed |
+| fix round 2: profile (temporary counters) | ≈ 3 min | prepare 51 %, line breaking 6 % of a full layout (D-LA7-26) |
+| fix round 2: level 1 (memo, effect log, replay, caps) + tests | — | one rework: unpacked glyphs made the memo 5.6× the `Layout`; packed `Core` glyphs, 1.35× |
+| fix round 2: `la7` release | 3 min 9 s / 3 min 8 s | 13 tests, 0 failures (with and without `--nocapture`) |
+| fix round 2: bench (4 documents) | 2 min 15 s | |
+| fix round 2: `check-changed.mjs` | 59 s | all steps passed |
+| fix round 2: crate suite (release) / `la7` debug | 13 min 5 s / 1 min 32 s | 25 binaries, 0 failures / 13 tests, 0 failures |
+
+Rework: two parity-script bugs of this frontier (the bash builtin `GROUPS` shadowed the script variable, so the first
+capture ran a default generator; relative capture paths failed in `cargo test`, whose working directory is the crate);
+both reruns are the numbers above. A test-file import (`Mutex` in `g4_cancel.rs` after the helpers moved) failed the first
+suite rerun. Level 1 was not started in the first round (it was implemented in fix round 2). Fix round 1 (review of 2026-11-11): the review found the M2 soak failing under
+output capture (the first suite run used `--nocapture`), the release-sized `la7` in the debug CI job, two lookahead sites
+missing from the trace (`pin_floats_over_table`, `place_late_tables`; found by reading, then reproduced by the new
+test), the level-1 scope gap (now the open decision D-LA7-17), `Err` of an attempt failing the call (D-LA7-15), the
+context base (D-LA7-16), duplicated test helpers, invalid bench JSON (`None`/`Some(…)`; now `null`/numbers/strings,
+validated with `JSON.parse` on a `--gen 60` run) and 15 GB of captures left in the target dir (deleted).

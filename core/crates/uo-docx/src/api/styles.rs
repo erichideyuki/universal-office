@@ -55,11 +55,18 @@ pub(crate) fn default_paragraph_style_id(dom: &Dom, root: Option<NodeId>) -> Opt
 /// The display name of the paragraph's effective style.
 pub fn paragraph_style_name(doc: &mut DocxDocument, paragraph: NodeId) -> Result<Option<String>> {
     doc.dom().check(paragraph)?;
-    let r = root(doc, false)?;
     let dom = doc.dom();
     let direct =
         dom.element(paragraph, n::pPr).and_then(|p| dom.element(p, n::pStyle)).and_then(|s| dom.attr(s, n::val)).map(str::to_owned);
-    let Some(sid) = direct.or_else(|| default_paragraph_style_id(dom, r)) else { return Ok(None) };
+    paragraph_style_name_of_id(doc, direct.as_deref())
+}
+
+/// `paragraph_style_name` for a paragraph whose direct style id is `direct` (`None`: no `w:pStyle`), without a node:
+/// the C ABI asks the effective name of an id and must not allocate a paragraph in the arena per call.
+pub fn paragraph_style_name_of_id(doc: &mut DocxDocument, direct: Option<&str>) -> Result<Option<String>> {
+    let r = root(doc, false)?;
+    let dom = doc.dom();
+    let Some(sid) = direct.map(str::to_owned).or_else(|| default_paragraph_style_id(dom, r)) else { return Ok(None) };
     Ok(Some(match by_id(dom, r, &sid) {
         None => sid,
         Some(s) => name(dom, s).unwrap_or(sid),

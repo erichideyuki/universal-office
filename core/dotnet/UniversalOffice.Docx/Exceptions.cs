@@ -16,16 +16,3 @@ public class UniversalOfficeException : Exception
     /// <summary>"read", "layout", "pdf" or "" (before any stage).</summary>
     public string Stage { get; }
 }
-
-/// <summary>A limit for untrusted documents was hit (package, reader, layout or PDF): the document is
-/// refused instead of exhausting the server.</summary>
-public sealed class OfficeLimitExceededException : UniversalOfficeException
-{
-    public OfficeLimitExceededException(string message, string stage, long maximum) : base(message, 5, stage)
-    {
-        Maximum = maximum;
-    }
-
-    /// <summary>The configured maximum, when the limit says it (package and reader limits), else 0.</summary>
-    public long Maximum { get; }
-}

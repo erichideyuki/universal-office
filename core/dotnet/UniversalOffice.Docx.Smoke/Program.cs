@@ -1,7 +1,25 @@
 // docx/.doc -> PDF through the .NET facade of the Rust core, the way clickCompliance calls it.
 using System.Diagnostics;
+using UniversalOffice.Core;
+using UniversalOffice.Docx.Editing;
 using UniversalOffice.DocxLayout;
 using UniversalOffice.Native;
+
+// edit <in.docx> <template.docx> <out.docx>: the clickCompliance flow of the Editing API
+if (args.Length == 4 && args[0] == "edit")
+{
+    var swEdit = Stopwatch.StartNew();
+    using var content = DocxDocument.Open(File.ReadAllBytes(args[1]), new DocxLimits { Package = new OpcPackageLimits { MaxPartBytes = 64 << 20, MaxTotalBytes = 256 << 20 }, MaxXmlDepth = 128 });
+    DocxSanitizer.Sanitize(content, DocxSanitizeOptions.Content with { MergeSections = false, IsCustomInlineValid = (type, json) => json.Length > 0 });
+    using var template = DocxDocument.Open(File.ReadAllBytes(args[2]));
+    DocxTemplate.ApplyContent(template, content.Save());
+    template.Properties.Title = "Smoke " + template.Properties.Title;
+    template.Properties.LastSaveDate = DateTime.UtcNow;
+    DocxSanitizer.Sanitize(template, DocxSanitizeOptions.Output);
+    File.WriteAllBytes(args[3], template.Save());
+    Console.WriteLine($"uo-ffi {NativeCore.Version}: {args[1]} + {args[2]} -> {args[3]} in {swEdit.ElapsedMilliseconds} ms");
+    return 0;
+}
 
 if (args.Length < 2)
 {

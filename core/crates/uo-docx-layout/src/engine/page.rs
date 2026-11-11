@@ -417,6 +417,8 @@ impl Engine {
         // late floats of this page: placed before the text (F7b)
         let pix = u32::try_from(self.pages.len().saturating_sub(1)).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
         if let Some(late) = cx.input.late_floats.get(&pix) {
+            // a late float reads its anchor's paragraph, wherever it is (LA7)
+            self.note_read_all();
             let fr = self.col_frame()?;
             let cur = self.cur_ix()?;
             let body_top = self.ps(cur)?.body_top;
@@ -450,6 +452,9 @@ impl Engine {
             self.paint_notes(cx, c)?;
         }
         self.pages.push(ps);
+        if let Some(t) = self.trace.as_deref_mut() {
+            t.touch(u32::try_from(self.pages.len() - 1).unwrap_or(u32::MAX));
+        }
         self.cur = Some(PageIx(u32::try_from(self.pages.len() - 1).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?));
         self.col_max_y = 0.0;
         self.layout_header_footer(cx)?;

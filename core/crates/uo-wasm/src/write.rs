@@ -897,3 +897,66 @@ pub unsafe extern "C" fn uo_layout_pdf(l: *const UoLayout, flags: u32, chunk: us
         Err(e) => -f64::from(pipeline::fail(&JobError::from(e))),
     }
 }
+
+// ───────────────────────────── the session's layouts (milestone 2) ─────────────────────────────
+//
+// Additive helpers for `src/session` (feature `session`): the layout handle of a session's layout is
+// a `UoLayout` like the viewer's, so every `uo_layout_*` / `uo_render_*` export works on it. Note for
+// the orchestrator: `layout_handle` repeats the success branch of `uo_write_layout` (dedupe later).
+
+/// The layout handle of `laid` over `model` (the success branch of [`uo_write_layout`]).
+#[cfg(feature = "session")]
+pub(crate) fn layout_handle(laid: pipeline::LaidOut, model: DocView<'_>, phone: bool, generation: u32) -> UoLayout {
+    let mut geom = laid.layout;
+    let section = SectionModel::new(model, &geom);
+    let annotations = geom.annotations(model);
+    let pages = pipeline::take_pages(&mut geom);
+    let res = std::mem::take(&mut geom.resources);
+    let generation = if generation == 0 { GENERATION.fetch_add(1, Ordering::Relaxed) } else { generation };
+    let mut view = RenderView::new(generation, res, pages);
+    if phone {
+        view.limits.max_fx_px = view.limits.max_fx_px.min(PHONE_MAX_FX_PX);
+    }
+    UoLayout {
+        view: view_handle(view),
+        geom,
+        section,
+        generation,
+        navigation: laid.navigation,
+        links: laid.links,
+        inlines: laid.inlines,
+        annotations,
+    }
+}
+
+/// The Write geometry of a layout (the session's caret, hit and selection exports read its lines).
+#[cfg(feature = "session")]
+pub(crate) fn layout_geom(l: &UoLayout) -> &Layout {
+    &l.geom
+}
+
+/// The layout options of [`uo_write_layout`] (its arguments: clock, flags, web width, language,
+/// hyphenation languages).
+#[cfg(feature = "session")]
+pub(crate) fn session_layout_options(
+    env: &UoWriteEnv,
+    now_ms: f64,
+    tz_offset_min: i32,
+    flags: u32,
+    lang: &[u8],
+    hyph: &[u8],
+) -> Option<LayoutOptions> {
+    layout_options(env, now_ms, tz_offset_min, flags, 0.0, lang, hyph)
+}
+
+/// The fonts, the hyphenation patterns and the profile of an environment.
+#[cfg(feature = "session")]
+pub(crate) fn env_parts(env: &UoWriteEnv) -> (&Arc<FontRegistry>, &Arc<HyphenationRegistry>, bool) {
+    (&env.fonts, &env.hyphenation, env.phone)
+}
+
+/// The layout id of a layout (the session's lines cache is keyed by it).
+#[cfg(feature = "session")]
+pub(crate) fn layout_generation(l: &UoLayout) -> u32 {
+    l.generation
+}

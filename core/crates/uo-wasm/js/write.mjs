@@ -208,6 +208,8 @@ export function bindWrite(w, host) {
       this.#ptr = ptr;
       layoutRegistry.register(this, ptr, this);
     }
+    /** the handle (the session's caret exports take it; 0 once freed) */
+    get ptr() { return this.#ptr; }
     #live() { if (!this.#ptr) throw new Error('layout freed'); return this.#ptr; }
     free() {
       if (!this.#ptr) return;
@@ -327,6 +329,10 @@ export function bindWrite(w, host) {
     WriteLayout,
     render: r,
     newEnv: ({ phone = false } = {}) => new WriteEnv(phone),
+    /** a layout handle another export made (the session's `uo_session_layout`): owned, freed by `free()` or the registry */
+    wrapLayout: (ptr) => new WriteLayout(ptr),
+    /** the last error of the module as a WriteError (after an export answered null) */
+    lastError,
     /** opens docx bytes; throws a WriteError */
     open(bytes) {
       const p = w.uo_write_open(...arg(bytes));

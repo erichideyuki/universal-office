@@ -50,6 +50,16 @@ render = ["dep:uo-render", "dep:uo-codec", "dep:uo-drawingml", "dep:uo-jsnum", "
 # viewer: render + write (uo-bindings.md)
 write = ["render", "dep:uo-opc", "dep:uo-docx", "dep:uo-docx-layout", "dep:uo-pdf"]
 
+# the Write editing session for the browser (milestone 2, src/session.rs; record uo-bindings.md "Milestone 2: the
+# session in wasm"): one `UoWriteSession` handle over uo-docx's `Session` and the layout's `LayoutOracle`, the hot
+# paths, `exec`/`query`/`complete` through the schema-generated codec (schema/session.uos), layouts, caret and
+# hit tests, the font save in two phases. The editor's module: write + session (the viewer module stays as it is)
+session = ["write", "uo-docx/session", "uo-docx-layout/oracle", "dep:indexmap"]
+
+# test-only exports of the session (tests/session_*.test.mjs): the capture replay of the D2a/D2b families inside the
+# module (the native parity tests' support modules, included with #[path]), the facets, random messages; never shipped
+session-selftest = ["session", "count", "uo-docx/canon", "dep:uo-testkit"]
+
 # test-only fixture views for the render exports (tests/render_paint.test.mjs, tests/render_boundary.test.mjs): a text
 # page with effects, a pattern, the rectangular gradient, blip tiles, a picture look and page fills built inside
 # the module from an open font; never shipped
@@ -68,6 +78,17 @@ uo-docx = { path = "../uo-docx", optional = true }
 # the layout without its oracle (the LayoutOracle is the editor's, milestone 2)
 uo-docx-layout = { path = "../uo-docx-layout", optional = true, default-features = false }
 uo-pdf = { path = "../uo-pdf", optional = true }
+# the maps of the session's wire conversions (uo-docx's JsMap is an IndexMap; same version)
+indexmap = { version = "2", optional = true }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# the session tests (tests/session_native.rs): the corpus, the capture tools, the canonical digests and the hostile
+# command generators of uo-docx's own tests (included with #[path])
+uo-testkit = { path = "../uo-testkit" }
+uo-docx = { path = "../uo-docx", features = ["canon", "session"] }
+uo-opc = { path = "../uo-opc" }
+uo-jsnum = { path = "../uo-jsnum" }
+uo-drawingml = { path = "../uo-drawingml" }

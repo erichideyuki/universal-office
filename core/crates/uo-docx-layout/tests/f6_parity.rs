@@ -1189,6 +1189,7 @@ fn replay_doc(key: &str, dump: &[u8], docx: &Path, transcript: &Transcript, font
                         depth: 0,
                         line_seq: &mut line_seq,
                         images: &mut uo_docx_layout::engine::objects::ImageTable::new(),
+                        memo: None,
                     };
                     layout_table(&mut cx, &mut host, table, frame_x, frame_w, &at)
                 };
@@ -1249,6 +1250,7 @@ fn replay_doc(key: &str, dump: &[u8], docx: &Path, transcript: &Transcript, font
                         depth: 0,
                         line_seq: &mut line_seq,
                         images: &mut uo_docx_layout::engine::objects::ImageTable::new(),
+                        memo: None,
                     };
                     sp.split(&mut cx, avail)
                 };
@@ -1304,6 +1306,7 @@ fn replay_doc(key: &str, dump: &[u8], docx: &Path, transcript: &Transcript, font
                         depth: 0,
                         line_seq: &mut line_seq,
                         images: &mut uo_docx_layout::engine::objects::ImageTable::new(),
+                        memo: None,
                     };
                     split_content(&mut cx, &c, avail)
                 };

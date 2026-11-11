@@ -23,6 +23,7 @@
 pub mod clipboard;
 pub mod command;
 pub mod env;
+pub mod font_usage;
 pub mod guard;
 pub mod history;
 mod io;
