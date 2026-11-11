@@ -6,6 +6,9 @@ import { bindSession, encodePaste, type Caret, type ExecOutcome, type RelayoutRe
 import { RustSession, type EngineDocument } from '../../viewer/src/rust-engine.js';
 import { NEUTRAL_QUERIES, ROUTED_PRIVATE, ROUTED_PUBLIC, SHELL, isMutator, neutralOf } from './engine-routes.js';
 import { PUBLIC_METHODS } from './engine-public.js';
+import { objectsHandlers } from './rust-engine-objects.js';
+import { reviewHandlers } from './rust-engine-review.js';
+import { storiesHandlers } from './rust-engine-stories.js';
 import { fragmentOf } from './paste-html.js';
 
 /**
@@ -1164,9 +1167,15 @@ export function engineStats(): { buffer: number; live: number | null; handles: n
 export function installRoutes(el: HTMLElement, editor: RustEditor, proto: object): { routed: number; shell: number; disabledMutators: number; disabledQueries: number } {
   const rec = editor as unknown as Record<string, unknown>;
   const define = (name: string, value: unknown): void => { Object.defineProperty(el, name, { value, configurable: true, writable: true }); };
+  // os handlers das frentes da leva 5 (rust-engine-<frente>.ts) vêm antes dos métodos do RustEditor
+  const fronts: Record<string, unknown> = { ...storiesHandlers(editor), ...objectsHandlers(editor), ...reviewHandlers(editor) };
   for (const name of [...ROUTED_PUBLIC, ...ROUTED_PRIVATE]) {
+    const g = fronts[name];
     const f = rec[name];
-    if (typeof f === 'function') define(name, (f as (...a: unknown[]) => unknown).bind(editor));
+    if (typeof g === 'function') define(name, g);
+    else if (typeof f === 'function') define(name, (f as (...a: unknown[]) => unknown).bind(editor));
+    // roteado sem handler: fechado (no-op avisado), nunca o código TS
+    else define(name, () => { editor.warnDisabled(name); return undefined; });
   }
   const routed = new Set([...ROUTED_PUBLIC, ...ROUTED_PRIVATE]);
   const shell = new Set(SHELL);

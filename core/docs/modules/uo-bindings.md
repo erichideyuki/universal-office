@@ -2151,3 +2151,16 @@ core tsc line plus `editor.check.ts` and `write-session.d.ts` 0 errors (the new 
   Tab typed a tab at the start of a list item where the TS changes the list level (ED-26, fixed; f7a__7__8 equal now),
   and two first divergences that the clipboard entries hid (f2-3-3 gate item 1, f7b__7__5 ED-7). Rework: the first
   parity run of the round was started before the `uw-pasted` detail fix and was stopped and rerun.
+
+## Milestone 2: the editor switch, wave 5
+
+Three frontiers in parallel on the same editor package. Each routes its families through its own files
+(`write/packages/editor/src/engine-routes-<front>.ts` for the names, `rust-engine-<front>.ts` for the handlers; both merged
+by `engine-routes.ts` and `installRoutes`, where a routed name without a handler is a warned no-op, never the TS code) and
+writes only its own subsection below. ED numbers continue from ED-28: S uses ED-100.., O ED-200.., R ED-300...
+
+### Wave 5 — S: stories (tables, headers/footers, notes, the caret in a text box)
+
+### Wave 5 — O: objects and the page (pictures, shapes and text boxes as objects, page setup, views, context menu)
+
+### Wave 5 — R: review and document (comments, revisions, fields, find, spelling, styles, clipboard buttons, Alt keys)

@@ -8,7 +8,14 @@
 // uma consulta responde o valor do TS com o modelo TS vazio (o documento TS nunca é carregado com engine="rust").
 // Método público novo fica desligado até ser classificado aqui (o teste engine-switch.test.ts imprime as contagens).
 
-/** Métodos públicos que a sessão wasm atende (handler em rust-engine.ts com o mesmo nome). */
+import { ROUTES_OBJECTS } from './engine-routes-objects.js';
+import { ROUTES_REVIEW } from './engine-routes-review.js';
+import { ROUTES_STORIES } from './engine-routes-stories.js';
+
+/** As tabelas das frentes da leva 5 (cada uma no seu arquivo, para não disputarem este). */
+const FRONTS = [ROUTES_STORIES, ROUTES_OBJECTS, ROUTES_REVIEW];
+
+/** Métodos públicos que a sessão wasm atende (handler em rust-engine.ts ou rust-engine-<frente>.ts com o mesmo nome). */
 export const ROUTED_PUBLIC: readonly string[] = [
   // abrir, novo, salvar, sujo
   'load', 'loadDocx', 'loadOdt', 'newDocument', 'saveDocx', 'saveDocxWithFonts', 'save', 'exportPdf', 'isDirty', 'setDirty',
@@ -34,6 +41,7 @@ export const ROUTED_PUBLIC: readonly string[] = [
   'copy', 'cut', 'paste', 'pastePlain', 'pasteText', 'pasteOptions', 'repaste', 'pasteButtonRect',
   // a revisão de memória (engineStats) e o fim
   'focusEditor',
+  ...FRONTS.flatMap((f) => f.public),
 ];
 
 /** Métodos privados do elemento que o motor Rust assume (o código TS que os chama passa a usar a sessão). */
@@ -41,6 +49,7 @@ export const ROUTED_PRIVATE: readonly string[] = [
   'refreshView', 'refreshSelection', 'rebuildCanvases', 'paint', 'positionProxy', 'scrollCaretIntoView', 'onFontsResolved',
   'queueRefresh', 'type', 'moveCaret', 'moveWord', 'deleteWord', 'hitTest', 'hitTestRaw', 'popHistory', 'pressEnter',
   'updateTouchHandles', 'layout',
+  ...FRONTS.flatMap((f) => f.private),
 ];
 
 /** Métodos públicos que continuam o código TS (só estado da casca). */
@@ -71,7 +80,9 @@ export function isMutator(name: string): boolean {
  * Consultas desligadas que respondem SEMPRE o neutro (sem rodar o código TS): sobre o modelo TS vazio elas dariam um
  * valor falso do documento (a lista embutida de estilos do TS, o `tracking` do TS) — declarado (ED-24 do registro).
  */
-export const NEUTRAL_QUERIES: readonly string[] = ['listStyles', 'paragraphStyles', 'listStylesInDocument', 'isTrackingChanges'];
+export const NEUTRAL_QUERIES: readonly string[] = ['listStyles', 'paragraphStyles', 'listStylesInDocument', 'isTrackingChanges']
+  .filter((n) => !FRONTS.some((f) => f.public.includes(n)))
+  .concat(FRONTS.flatMap((f) => f.neutral));
 
 /**
  * O valor neutro de uma consulta desligada cujo código TS lança com o modelo TS vazio (a barra lê estes): listas
@@ -101,6 +112,7 @@ export function neutralOf(name: string): unknown {
  * ficam visíveis e DESLIGADOS (decisão D7). Lidos um a um no `run` de cada comando.
  */
 export const ROUTED_COMMAND_IDS: ReadonlySet<string> = new Set([
+  ...FRONTS.flatMap((f) => f.commands),
   // Arquivo (app.newDocument/open/save chamam newDocument/load/save/saveDocxWithFonts; export:pdf chama save('pdf');
   // Salvar Como .odt chama exportOdt, que lança um erro claro: a barra conta como falha, nada é gravado — ED-18)
   'new', 'open', 'save', 'saveAs', 'export:pdf',
