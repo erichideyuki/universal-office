@@ -152,7 +152,7 @@ size, not of effort):**
 | Product | Done in Rust | Left | TS still to port |
 |---|---|---|---|
 | Write, milestone 1 (viewer + PDF + server) | everything: reader, writer, `.doc`, export/ODF/compare, layout, render, PDF, C# Editing API, viewer/FFI/C# bindings | the gate: push + first green CI, decisions G23–G31, D2a | — |
-| Write, milestone 2 (editor) | session core D2a, families F1–F3, F5–F7, F9, F4 (part) | F4 rest, F8 clipboard, F10 layout family; incremental relayout; session bindings (wasm + C ABI + C#); the editor switch (`universal-write.ts` to a shell over the session, the largest unknown); gate, 0.10 | editor package 36.8k (most of it stays as the TS shell) |
+| Write, milestone 2 (editor) | session core D2a, every D2b family F1–F10 (wave 1 `4c003113`, 2026-11-11) | incremental relayout; session bindings (wasm + C ABI + C#); the editor switch (`universal-write.ts` to a shell over the session, the largest unknown); gate, 0.10 | editor package 36.8k (most of it stays as the TS shell) |
 | Slides | the shared parts only (fonts, drawingml) | everything else: `slides-core` (reader, model, layout, render), the editor, the viewer; charts | 25.9k + charts 5.2k |
 | Sheet | the shared parts only | everything: calc engine, `sheet-core`, the editor; charts (shared with Slides) | 34.7k |
 
@@ -162,6 +162,20 @@ milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects 
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
+
+## Update 2026-11-11 — milestone 2, wave 1 (queue item 6) committed `4c003113`
+
+- F4 remainder (watermark, cover pages, header/footer galleries), F8 clipboard (paste-tree boundary v1 with limits,
+  Paste Special/Link, the ring priced by what a clip really keeps) and F10 (fields, TOC, table of figures, captions,
+  cross-references, manual hyphenation, galleries, date/time, document info, alignment tab). Records
+  `uo-docx-d2b/F4.md`, `F8.md`, `F10.md`; each has a "For the milestone-2 gate" list (new: the third oracle method
+  `shown_page_numbers`, F10-A2 cross-reference with position, Spanish dates F10-D10, F8-D1/D2 boundary, F8-O3/O4
+  behaviours of other families found by the clipboard scripts).
+- Orchestrator: `uo_docx_layout::oracle::shown_page_numbers` (the TS `pageLabelOf`) — without it every TOC command
+  failed over the real engine; tested end to end (`tests/f8.rs`).
+- Verified: check-changed green, uo-docx 770 tests, uo-docx-layout suite. The disk D: filled up (0 bytes free)
+  during the verification: the milestone-1 `core/target/agent-*` caches were removed (79 GB). Watch `df -h /d`
+  before launching a wave; each front's target is 4–10 GB.
 
 ## Work in progress — commit `6471786d` (historical: finished, see the update above)
 
@@ -197,7 +211,7 @@ Milestone 1 (viewer and PDF in Rust):
    on GitHub (never run)**, then the maintainer's milestone-1 gate.
 
 Milestone 2 (editor in Rust):
-6. D2b: finish F7; F4 remainder (watermark, cover pages, header/footer galleries, `insertDateTime`,
+6. ~~D2b~~ done (`4c003113`). Was: finish F7; F4 remainder (watermark, cover pages, header/footer galleries, `insertDateTime`,
    `insertDocumentInfo`, `insertAlignmentTab`); **F8 clipboard** (Opus for the paste-tree boundary); **F10** the layout
    family (fields, TOC, captions, manual hyphenation, galleries — needs F8 of the layout, done).
 7. Incremental relayout (layout plan row "(M2)", LA7 levels 1–2; Opus).
