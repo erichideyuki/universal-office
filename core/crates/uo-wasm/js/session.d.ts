@@ -14,7 +14,9 @@ import type {
   LocalNow,
   MarkupMode,
   QueryAnswer,
+  ParaProps,
   QueryOp,
+  RunProps,
   SaveResult,
   SelRect,
 } from './gen/session.ts';
@@ -86,6 +88,50 @@ export declare class WriteSession {
   fontRequests(): FontRequests;
   saveWithFonts(faces: (Uint8Array | undefined)[], guids?: Uint8Array): SaveResult | null;
   clearCaches(): void;
+  // the editor shell (src/session/shell.rs; record "Milestone 2: the editor switch")
+  /** the edit story: paragraph count and the UTF-16 length of the last paragraph */
+  storyInfo(): { paras: number; lastLength: number };
+  /** the text of paragraph `i` of the edit story, or null */
+  paraText(i: number): string | null;
+  /** the toolbar state at the selection (`getSelectionState()` without view, marks and table) */
+  selectionState(): SelectionState;
+  /** the hyphenation pattern ids the document needs and `env` does not have yet */
+  hyphenationPatterns(env: WriteEnv, langs?: string[]): string[];
+  /** the text and HTML of the last copy or cut, or null */
+  copied(): { text: string; html: string } | null;
+}
+
+export interface SelectionState {
+  run: RunProps;
+  para: ParaProps;
+  /** the run props are the pending ones (typed text gets them) */
+  pending: boolean;
+}
+
+export type RelayoutReason =
+  | 'noBase' | 'disabled' | 'view' | 'options' | 'provider' | 'document' | 'context' | 'chains' | 'shape' | 'prologue'
+  | 'noCheckpoint' | 'passInput' | 'unstable' | 'tables' | 'balancing' | 'memory' | 'failed';
+
+export interface RelayoutReport {
+  path: 'full' | 'incremental';
+  /** why the path is full */
+  reason: RelayoutReason | null;
+  /** the pages laid out again: [start, end) */
+  relaid: [number, number];
+  passes: number;
+  lineShift: number;
+  memoHits: number;
+  memoMisses: number;
+}
+
+/** The incremental layout engine of one edited document (LA7): free it. */
+export declare class ShellEngine {
+  readonly ptr: number;
+  /** the layout of `session`'s view, laid out again only where the edits changed it (a WriteLayout: free it) */
+  relayout(session: WriteSession, env: WriteEnv, o?: Omit<LayoutOptions, 'cancelCheck' | 'view' | 'webWidthTw' | 'generation'>): WriteLayout;
+  report(): RelayoutReport | null;
+  clear(): void;
+  free(): void;
 }
 
 export interface SessionBinding {
@@ -95,7 +141,13 @@ export interface SessionBinding {
   open(docx: Uint8Array, o?: SessionOpenOptions): WriteSession;
   newBlank(o?: SessionOpenOptions): WriteSession;
   clipboardClear(): void;
+  newShellEngine(): ShellEngine;
+  ShellEngine: typeof ShellEngine;
   readonly dead: boolean;
 }
 
 export declare function bindSession(exports: WebAssembly.Exports, uo: WriteBinding): SessionBinding;
+
+/** The payload of a `text/html` clipboard item (`ClipboardCmd` `pasteData.html`), re-exported from
+ *  core/crates/uo-docx/js/paste-tree.mjs; `fragmentOf` is the editor's paste-html.ts one. Browser only (DOMParser). */
+export declare function encodePaste(html: string, fragmentOf: (html: string) => string): { bytes: Uint8Array; nodes: number; depth: number };

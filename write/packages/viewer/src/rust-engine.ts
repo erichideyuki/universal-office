@@ -2,7 +2,7 @@ import { DocxPackage, convertDocToDocx, isWordBinary, readFullDocument, type Ful
 import { isFontFile, type FontResolver, type FontVariant } from '@universal-office/fonts';
 import {
   WriteError, loadViewerModule,
-  type DecodedLayout, type Face, type FontSource, type LoadWriteOptions, type PaintEnv, type ViewerDocument, type ViewerEnv, type ViewerModule,
+  type DecodedLayout, type Face, type FontSource, type LayoutOptions, type LoadWriteOptions, type PaintEnv, type ViewerEnv, type ViewerModule,
 } from '@universal-office/write-engine';
 import { ASSET_FILES, advancesFile } from './fonts.js';
 import { decodeImage } from './image-decode.js';
@@ -38,6 +38,17 @@ export interface RustHost {
 }
 
 export interface RelayoutOptions { view: 'print' | 'web'; webWidthTw: number }
+
+/**
+ * O documento que o `RustSession` diagrama: o `ViewerDocument` do viewer, ou a sessão de edição do `<universal-write
+ * engine="rust">` (registro "Milestone 2: the editor switch"), que reaproveita o laço de fontes, o ambiente da página e a
+ * pintura daqui por `adoptDocument`.
+ */
+export interface EngineDocument {
+  layout(env: ViewerEnv, opts?: LayoutOptions): DecodedLayout;
+  hyphenationPatterns(env: ViewerEnv, langs?: string[]): string[];
+  free(): void;
+}
 
 /** O que o motor pediu e não havia: a família e as variantes. */
 type MissingFont = { family: string; variants: FontVariant[] };
@@ -110,7 +121,7 @@ interface PageText { para: (ref: string) => TextParagraph | null }
 export class RustSession {
   private mod: ViewerModule | null = null;
   private page: PageFonts | null = null;
-  private doc: ViewerDocument | null = null;
+  private doc: EngineDocument | null = null;
   private docx: Uint8Array | null = null;
   private readonly layouts = new Set<DecodedLayout>();
   private model: FullDocument | null = null;
@@ -158,6 +169,19 @@ export class RustSession {
     return true;
   }
 
+  /**
+   * Adota um documento aberto fora daqui (a sessão do editor) no módulo `mod`: o mesmo fim de `open()` (layouts e documento
+   * anteriores liberados). Os bytes do .docx não ficam: `tsModel()` responde null.
+   */
+  adoptDocument(mod: ViewerModule, doc: EngineDocument): void {
+    this.releaseLayouts();
+    this.doc?.free();
+    this.mod = mod;
+    this.doc = doc;
+    this.docx = null;
+    this.model = null;
+  }
+
   /** O modelo do documento no motor TS (só para o que o motor Rust ainda não entrega: indicadores, links, inlines). */
   tsModel(): FullDocument | null {
     if (!this.docx) return null;
@@ -186,7 +210,7 @@ export class RustSession {
     this.model = null;
   }
 
-  private async prepare(page: PageFonts, doc: ViewerDocument): Promise<void> {
+  private async prepare(page: PageFonts, doc: EngineDocument): Promise<void> {
     const { env } = page;
     const base = this.host.fontsBase();
     this.host.resolver.suggestBaseUrl(base);

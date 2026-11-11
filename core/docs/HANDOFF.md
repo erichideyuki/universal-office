@@ -152,7 +152,7 @@ size, not of effort):**
 | Product | Done in Rust | Left | TS still to port |
 |---|---|---|---|
 | Write, milestone 1 (viewer + PDF + server) | everything: reader, writer, `.doc`, export/ODF/compare, layout, render, PDF, C# Editing API, viewer/FFI/C# bindings | the gate: push + first green CI, decisions G23–G31, D2a | — |
-| Write, milestone 2 (editor) | session core D2a, every D2b family F1–F10 (wave 1 `4c003113`), incremental relayout LA7, the session in wasm, the D3 C ABI + C# facade (wave 2, 2026-11-11) | the editor switch (`universal-write.ts` to a shell over the session, the largest unknown); gate, 0.10 | editor package 36.8k (most of it stays as the TS shell) |
+| Write, milestone 2 (editor) | session core D2a, every D2b family F1–F10 (wave 1 `4c003113`), incremental relayout LA7, the session in wasm, the D3 C ABI + C# facade (wave 2, 2026-11-11) | the editor switch: first cut done (core editing behind `engine="rust"`, wave 4); left: the disabled command families, latency, gate; 0.10 | editor package 36.8k (most of it stays as the TS shell) |
 | Slides | the shared parts only (fonts, drawingml) | everything else: `slides-core` (reader, model, layout, render), the editor, the viewer; charts | 25.9k + charts 5.2k |
 | Sheet | the shared parts only | everything: calc engine, `sheet-core`, the editor; charts (shared with Slides) | 34.7k |
 
@@ -162,6 +162,41 @@ milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects 
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
+
+## Update 2026-11-11 (evening) — milestone 2, wave 4 (queue item 9, first cut) committed
+
+- **E — the editor switch**, record `uo-bindings.md` "Milestone 2: the editor switch" (ED-1..ED-28, gate list 1–18):
+  `<universal-write engine="rust">` is a TS shell over the wasm session (routing by instance shadowing, fail-closed
+  table `engine-routes.ts`: 68 public methods routed, 26 shell, 293 disabled mutators = warned no-ops, 124 disabled
+  queries; 57 bar commands routed, the rest visible and disabled). Taken by the session: open/new/save (.docx, with
+  fonts, PDF), typing, Enter, Backspace/Delete, caret moves, mouse selection, undo/redo, character and paragraph
+  formatting, lists, styles, keyboard clipboard (Ctrl+C/X/V, HTML paste, Paste Options), font embedding. NOT routed
+  (disabled): tables, pictures, shapes/text boxes, headers/footers, notes, comments/tracked changes, fields, page setup,
+  find, spelling, other views, clipboard without a clipboard event, the styles list, the context menu (ED-28). Without
+  the attribute nothing of the engine is fetched and the TS editor is unchanged (editor suite 314 tests).
+  Harness `tests/browser/editor_switch.mjs` (phase0, parity, memory, latency, keys, chrome): 74 fixtures × 12 steps,
+  48 equal in every facet, 26 with one DECLARED entry each (0 undeclared, 0 page errors). Typing on 50 pages: Rust
+  26 ms median vs the TS fast path 7 ms (clone of `Layout` + EditLines rebuild are gate items). Session wasm 3.13 MB
+  gzip.
+- **W — wave-2 follow-ups + CI**: exhaustive bind defaults, hostile query fuzz, stale-layout hit tests, `Locked`,
+  font-save phase 1 kept, replay through the production open for d2a/f1/f2/f3/f5/f6/f7/f8/f9/f10 (f4 not in the
+  wasm replay), fontUsage recapture with notes and text boxes, CI lines in `rust-core.yml` (session wasm tests and the
+  replay families). `uo-docx-layout` `Layout`/`LayoutPage` gained `Clone`; `uo-docx` `days_from_civil` is `pub`.
+- **Fixed at merge** (the last reviews' findings): `build:offline-demo`/`build:site-live` and `build-pkg` did not
+  resolve the engine imports (aliases added; the three editor bundles resolve); `paragraphBorderPreset` ran its TS
+  body as a "query" (now a mutator, and a test fails on any disabled query whose body takes an undo step); a `load*()`
+  before `uw-ready` left a TS model behind (reset, ED-27); context menu declared (ED-28); the f7 wasm replay accepted
+  `enc` unread (now compared: 27,207 equal, 8 accepted, as native); a codec refusal fails the protected-session test.
+- Verified at merge: check-changed green; uo-codec/uo-schema; strict tsc line + editor/viewer tsc; editor vitest 30
+  files / 314, viewer 25 (+1 skipped); uo-docx 775; uo-docx-layout release suite (la7 13); uo-wasm session_native 11,
+  shell_native 5; wasm session API, hostile, replay of the 10 families 0 mismatches; shell_api, write_api;
+  `editor_switch --mode all` ok and `--mode parity` stride 1 ok (0 undeclared); `viewer_switch --mode all` ok.
+  D: 50 GB free.
+- Not done / known: `rustfmt --check` reports a pre-existing diff in `uo-wasm/src/write.rs` (untouched by this wave;
+  the CI `cargo fmt --all --check` will flag it and other HEAD files); no CI job runs `editor_switch` or the editor
+  vitest yet; `chunks/uo-write-editor.wasm` is not shipped by `build-pkg` (D5, gate item 18); CHANGELOG not edited.
+- **Next:** the rest of the editor switch (route the disabled families, latency work, the parity causes in
+  `hit.rs`/`caret.rs`) and then the milestone-2 gate (maintainer).
 
 ## Update 2026-11-11 (later) — milestone 2, wave 2 (queue items 7–8) committed
 
@@ -241,6 +276,9 @@ Milestone 2 (editor in Rust):
 7. ~~Incremental relayout~~ done (wave 2).
 8. ~~Editor bindings~~ done (wave 2): the session in wasm (`UoWriteSession`, session codec G15) and the D3 C ABI + C# facade.
 9. The editor switch: `universal-write.ts` reduced to the shell over the wasm session (the largest unknown).
+   **First cut done (wave 4):** core editing routed behind `engine="rust"`; left: the disabled families (tables,
+   pictures, shapes/text boxes, headers/footers, notes, comments/revisions, fields, page setup, find, spelling, views,
+   clipboard without event, styles list, context menu), typing latency, gate list 1–18 of the record.
 10. Milestone-2 gate, `CHANGELOG.md` (API breaks: `uo-bindings.md` §4), docs, publish 0.10.
 
 Later: Sheet (calc engine on Opus, `sheet-core`), Slides (`slides-core`), charts, the converter — 0% today.

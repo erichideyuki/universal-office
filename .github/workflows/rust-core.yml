@@ -70,7 +70,7 @@ jobs:
             --exactOptionalPropertyTypes --erasableSyntaxOnly --verbatimModuleSyntax --skipLibCheck \
             crates/uo-codec/js/runtime.ts crates/uo-wasm/js/gen/*.ts tools/uo-schema/tests/fixtures/*.ts \
             crates/uo-wasm/js/paint.ts crates/uo-wasm/js/picture.ts crates/uo-wasm/js/viewer.ts crates/uo-wasm/js/viewer.check.ts \
-            ../write/packages/viewer/src/write-engine.d.ts
+            ../write/packages/viewer/src/write-engine.d.ts crates/uo-wasm/js/session.d.ts
       # the runtime builds for the browser (the generated codec is compiled for wasm32 by the lint job's clippy)
       - run: cargo build -p uo-codec --target wasm32-unknown-unknown --profile wasm
 
@@ -218,6 +218,12 @@ jobs:
       # G4 in release: the cancellation of the layout inside the engine (bound 250 ms here, 2 s in the debug test job). The uo-ffi
       # cancel_layout test (G4 through the C ABI, bound 50 ms in release) is already in the `-p uo-ffi --release --all-features` line above
       - run: cargo test -p uo-docx-layout --release --test g4_cancel -- --nocapture
+      # LA7 (the incremental relayout of the editor session: equal to a full layout, bounded by the soak) in release with the
+      # full bounds; the debug test job runs the reduced ones. The same release build of uo-docx-layout as g4_cancel above
+      - run: cargo test -p uo-docx-layout --release --test la7 -- --nocapture
+      # the editing_* tests of uo-ffi (the Editing API through the C ABI: editing_abi, editing_memory, editing_nopanic) run in the
+      # `-p uo-ffi --release --all-features` line above and in the debug `test` job: editing-api is not a feature of uo-ffi, it is
+      # always on through the uo-docx dependency, so there is no `--features editing-api` line
 
   soak:
     name: Memory soaks (M2, 1,000 iterations, release)
@@ -228,6 +234,10 @@ jobs:
       # uo-opc: open → parse → edit → save → reopen, 1,000 times, live bytes flat (#[ignore]d in
       # the test job: about 190 s in debug)
       - run: cargo test -p uo-opc --release --all-features --test package_soak -- --ignored m2_soak_1000 --nocapture
+      # the session in wasm, native half (milestone 2): the editor session through every export, M1 (live bytes back), M3
+      # (bytes and time per key), the 1,000-session soak, the hostile bytes, the random Exec/Query messages of the generated support
+      # (3,000 each, twice: leaks) and the stale layouts; the debug test job runs the same with the default bounds
+      - run: cargo test -p uo-wasm --release --features session,count,session-selftest --test session_native -- --nocapture --test-threads=2
 
   jsnum:
     name: uo-jsnum parity (10^7 samples per distribution, release)
@@ -318,6 +328,24 @@ jobs:
       - run: node --expose-gc --test crates/uo-wasm/tests/render_ts_codec.test.mjs
       - run: node --expose-gc --test --test-concurrency=1 crates/uo-wasm/tests/paint_parity.test.mjs
       - run: node --expose-gc --test --test-concurrency=1 crates/uo-wasm/tests/paint_memory.test.mjs
+      # the session in wasm (milestone 2, uo-bindings.md): the session exports through js/session.mjs. session-selftest adds the test-only
+      # exports (random messages, the capture replay); count the memory counters of M2/M4
+      - run: cargo build -p uo-wasm --features session,count,session-selftest --target wasm32-unknown-unknown --profile wasm
+      # the API on three fixtures, errors, the protected session, the phase-1-survives-a-malformed-phase-2 assertion, stale layouts, M4 (10,000
+      # sessions through free() and the FinalizationRegistry: live bytes back exactly) and M2 (flat)
+      - run: node --expose-gc --test crates/uo-wasm/tests/session_api.test.mjs
+        env:
+          UO_WASM_PATH: ${{ github.workspace }}/core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+      # hostile bytes, random Exec and Query messages: no trap, live bytes back after a second identical pass
+      - run: node --expose-gc --test crates/uo-wasm/tests/session_hostile.test.mjs
+        env:
+          UO_WASM_PATH: ${{ github.workspace }}/core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          UO_WS_FUZZ_MS: '10000'
+      # the committed session captures replayed through the production open and the exports (the families listed; UO_WS_FAMILIES)
+      - run: node --test crates/uo-wasm/tests/session_replay.test.mjs
+        env:
+          UO_WASM_PATH: ${{ github.workspace }}/core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          UO_WS_FAMILIES: 'd2a,f1,f2,f3,f5,f6,f7,f8,f9,f10'
       # the browser runner's shims (Buffer subset, SHA-256) equal node:buffer and node:crypto
       - run: node --test crates/uo-wasm/tests/browser/shims.test.mjs
       # browser baseline Safari 15 / iOS 15 (rust-port skill): the module may use only the
@@ -338,6 +366,11 @@ jobs:
           # third-party notices (core/licenses)
           UO_WRITE_WASM="$PWD/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm" node --input-type=module -e "const m = await import('../tools/build-pkg.mjs'); if (!m.shipEngineWasm('write', process.env.RUNNER_TEMP + '/pkg')) process.exit(1)"
           test -f "$RUNNER_TEMP/pkg/licenses/uo-write-wasm/THIRD-PARTY-NOTICES.md"
+          # (after the shipping lines above, which copy the `--features write` module)
+          # the shipped session module (the Write editor's engine of milestone 2; without the count and self-test features)
+          cargo build -p uo-wasm --features session --target wasm32-unknown-unknown --profile wasm
+          wasm-tools validate --features "$features" target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          echo "session module: $(stat -c %s target/wasm32-unknown-unknown/wasm/uo_wasm.wasm) bytes"
           echo '(module (func (drop (v128.const i32x4 0 0 0 0))))' | wasm-tools parse -o /tmp/simd.wasm
           ! wasm-tools validate --features "$features" /tmp/simd.wasm
       # the same tests inside WebKit, the engine of Safari

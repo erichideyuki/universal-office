@@ -1642,7 +1642,41 @@ export class UniversalWriteElement extends HTMLElement {
   // ─────────────────────── chrome (barras) ───────────────────────
 
   static get observedAttributes(): string[] {
-    return ['topbar', 'bottombar', 'toolbar', 'layout', 'lang', 'nospellcheck', 'spellcheck-url', 'spellcheck-languages', 'spellcheck-default-lang', 'hidden-commands', 'theme', 'formatting-policy'];
+    return ['topbar', 'bottombar', 'toolbar', 'layout', 'lang', 'nospellcheck', 'spellcheck-url', 'spellcheck-languages', 'spellcheck-default-lang', 'hidden-commands', 'theme', 'formatting-policy', 'engine'];
+  }
+
+  // ─────────── motor Rust (engine="rust"; registro core/docs/modules/uo-bindings.md "Milestone 2: the editor switch") ───────────
+
+  /** `rust` só quando o atributo `engine` diz `rust` (lido no initialize(); mudar depois não troca o motor, ED-12 do registro). */
+  get engine(): 'ts' | 'rust' {
+    return (this.getAttribute('engine') ?? '').trim().toLowerCase() === 'rust' ? 'rust' : 'ts';
+  }
+
+  private static engineSource: { wasm?: Uint8Array | ArrayBuffer | string | URL | Response | Promise<Uint8Array | ArrayBuffer | Response>; js?: string | URL; engine?: 'auto' | 'wasm' | 'js' } | undefined;
+
+  /** De onde vem o .wasm do motor Rust (sem isto, `chunks/uo-write-editor.wasm` do pacote). Um módulo por página: vale o 1º carregamento. */
+  static configureEngine(source: NonNullable<typeof UniversalWriteElement.engineSource>): void {
+    UniversalWriteElement.engineSource = source;
+  }
+
+  /** O motor Rust deste elemento (null no motor TS: o padrão, que nunca carrega o módulo). */
+  private rust: import('./rust-engine.js').RustEditor | null = null;
+  private static rustStats: (() => unknown) | null = null;
+
+  /** Memória e handles do motor Rust da página (null antes do 1º elemento engine="rust"). */
+  static engineStats(): unknown {
+    return UniversalWriteElement.rustStats?.() ?? null;
+  }
+
+  private async startRust(): Promise<void> {
+    const m = await import('./rust-engine.js');
+    UniversalWriteElement.rustStats = m.engineStats;
+    this.rust = await m.startRustEditor(this, UniversalWriteElement.prototype, () => UniversalWriteElement.engineSource);
+    // um load*() chamado antes do uw-ready rodou no TS (as rotas ainda não existiam): o modelo TS que ele deixou não
+    // está na tela e as consultas desligadas leriam dele — com engine="rust" o modelo TS fica sempre vazio (ED-27)
+    this.model = null;
+    this.pkg = null;
+    this.fullDoc = null;
   }
 
   attributeChangedCallback(name: string): void {
@@ -1722,12 +1756,14 @@ export class UniversalWriteElement extends HTMLElement {
     this.unsubscribeSpellSources ??= onSpellSourcesChange(() => { if (this.model) this.queueSpellRepaint(); });
     this.unsubscribeLang ??= onBrowserLangChange(() => { if (this.initialized && !this.hasAttribute('lang')) void this.updateChrome(); });
     if (this.initialized) this.startCaret();
+    this.rust?.unpark();
     // reconectado: as barras voltam (no disconnect elas se desmontam inteiras)
     if (this.initialized && !this.chromeSync && (this.topbar || this.bottombar)) void this.updateChrome();
     if (!this.hasAttribute('manual-init')) await this.initialize();
   }
 
   disconnectedCallback(): void {
+    this.rust?.park();
     UniversalWriteElement.registry.disconnect(this);
     this.colorScheme.disconnect();
     this.unsubscribeFonts?.();
@@ -1775,6 +1811,7 @@ export class UniversalWriteElement extends HTMLElement {
     const suppliedFonts = options.fonts ?? this.fontAssets;
     const assets = suppliedFonts ?? await this.fetchDefaultFontAssets();
     await this.installFontAssets(assets);
+    if (this.engine === 'rust') await this.startRust();
 
     const source = options.document ?? this.documentSource;
     if (source) this.loadDocumentSource(source);

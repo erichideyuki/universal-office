@@ -12,6 +12,25 @@ use std::rc::Rc;
 
 use uo_docx::session::{DateParts, Env, LocalNow};
 
+#[cfg(all(feature = "session-selftest", not(test)))]
+thread_local! {
+    /// test-only (feature `session-selftest`): the number of `random_u32` calls since the last reset, the F8 replay's `rc` facet
+    static DRAWS: Cell<u32> = const { Cell::new(0) };
+}
+
+/// test-only: the random calls counted since the last [`reset_draws`].
+#[cfg(all(feature = "session-selftest", not(test)))]
+#[must_use]
+pub fn draws() -> u32 {
+    DRAWS.with(Cell::get)
+}
+
+/// test-only: starts the count over.
+#[cfg(all(feature = "session-selftest", not(test)))]
+pub fn reset_draws() {
+    DRAWS.with(|d| d.set(0));
+}
+
 /// The default clock: 2026-01-02 03:04 local and UTC (`FixedEnv::default()`).
 #[must_use]
 pub fn default_now() -> LocalNow {
@@ -39,6 +58,8 @@ impl Env for HostEnv {
     }
 
     fn random_u32(&mut self) -> u32 {
+        #[cfg(all(feature = "session-selftest", not(test)))]
+        DRAWS.with(|d| d.set(d.get().wrapping_add(1)));
         // uo-testkit `Rng` (xorshift32), as uo-docx `FixedEnv`
         let mut x = self.state;
         x ^= x << 13;

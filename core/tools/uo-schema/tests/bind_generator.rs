@@ -9,11 +9,13 @@ const SCHEMA: &str = "schema t magic \"TTTT\";\nstruct P { x: f64, n: u32? }\nst
 
 #[test]
 fn the_grammar() {
-    let m = parse("# c\nruntime crate::rt\nP struct a::P default\nC enum a::C native_only=X,Y into_only\nE struct a::E empty\nM manual\n")
-        .unwrap();
+    let m = parse(
+        "# c\nruntime crate::rt\nP struct a::P skip=cache,r#type\nC enum a::C native_only=X,Y into_only\nE struct a::E empty\nM manual\n",
+    )
+    .unwrap();
     assert_eq!(m.runtime, "crate::rt");
     assert_eq!(m.binds.len(), 4);
-    assert_eq!(m.binds[0].kind, Kind::Struct { path: "a::P".into(), default: true, empty: false });
+    assert_eq!(m.binds[0].kind, Kind::Struct { path: "a::P".into(), skip: vec!["cache".into(), "r#type".into()], empty: false });
     assert_eq!(m.binds[1].kind, Kind::Enum { path: "a::C".into(), native_only: vec!["X".into(), "Y".into()] });
     assert!(m.binds[1].into_only);
     assert_eq!(m.binds[3].kind, Kind::Manual);
@@ -29,6 +31,8 @@ fn refusals() {
         ("runtime a\nP struct a::P wat\n", "unknown struct modifier"),
         ("runtime a\nP tuple a::P\n", "takes no path"),
         ("runtime a\nP newtype\n", "needs exactly a path"),
+        ("runtime a\nP struct a::P default\n", "`default` is gone"),
+        ("runtime a\nP struct a::P skip=a skip=a\n", "twice"),
     ] {
         let e = parse(text).unwrap_err();
         assert!(e.contains(why), "{text:?}: {e}");
@@ -41,6 +45,8 @@ fn refusals() {
         ("runtime a\nP option\n", "one optional field"),
         ("runtime a\nP newtype a::P\n", "one field"),
         ("runtime a\nP struct a::P empty\n", "placeholder"),
+        ("runtime a\nP struct a::P skip=x\n", "is on the wire"),
+        ("runtime a\nE struct a::E empty skip=k\n", "together with `empty`"),
         ("runtime a\nC enum a::C native_only=A\n", "also on the wire"),
     ] {
         let e = emit(&schema, &parse(text).unwrap(), "t", "g").unwrap_err();
@@ -51,13 +57,16 @@ fn refusals() {
 #[test]
 fn the_shapes_of_the_emitted_code() {
     let schema = load(SCHEMA).unwrap();
-    let map = parse("runtime crate::rt\nP struct a::P default\nC enum a::C\nS enum a::S\nE struct a::E empty\nM struct a::M into_only\n")
-        .unwrap();
+    let map =
+        parse("runtime crate::rt\nP struct a::P skip=cache\nC enum a::C\nS enum a::S\nE struct a::E empty\nM struct a::M into_only\n")
+            .unwrap();
     let out = emit(&schema, &map, "t.uos", "generated").unwrap();
     assert!(out.starts_with("// @generated"));
     assert!(out.contains("use crate::rt::{BindError, FromWire, IntoWire};"));
     assert!(out.contains("use super::generated as w;"));
-    assert!(out.contains("..Default::default()"));
+    assert!(!out.contains("..Default::default()"));
+    assert!(out.contains("let a::P { x: x_x, n: x_n, cache: _ } = self;"));
+    assert!(out.contains("cache: Default::default(),"));
     // P is bound: `S::One(x)`, not struct fields
     assert!(out.contains("w::S::One(x) => a::S::One(FromWire::from_wire(x)?)"));
     assert!(out.contains("a::S::Unit { .. } => w::S::Unit"));

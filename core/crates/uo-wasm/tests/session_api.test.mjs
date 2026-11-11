@@ -10,52 +10,20 @@
 // UO_WS_M4 (default 10000) and UO_WS_SOAK (default 200) size the memory tests.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { writeImports, bindWrite } from '../js/write.mjs';
-import { bindSession, SessionError } from '../js/session.mjs';
+import { SessionError } from '../js/session.mjs';
+import { loadModule, fixture, fontFiles, withFonts, OPTS } from './session_support.mjs';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const repo = join(here, '../../../..');
-const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/wasm32-unknown-unknown/wasm/uo_wasm.wasm');
-const bytes = readFileSync(wasmPath);
-const has = WebAssembly.Module.exports(new WebAssembly.Module(bytes)).some((e) => e.name === 'uo_session_open');
+const { has, w, uo, ss, counting, settle } = await loadModule();
 const skip = has ? false : 'this build has no session exports (--features session)';
-const { imports, host } = writeImports();
-const instance = has ? (await WebAssembly.instantiate(bytes, imports)).instance : null;
-const w = instance?.exports;
-const uo = has ? bindWrite(w, host) : null;
-const ss = has ? bindSession(w, uo) : null;
-const counting = has && w.uo_memory_live_bytes() >= 0;
 const M4 = Number(process.env.UO_WS_M4 ?? 10_000);
 const SOAK = Number(process.env.UO_WS_SOAK ?? 200);
 const live = () => w.uo_memory_live_bytes();
-const settle = async () => {
-  for (let i = 0; i < 5; i++) { globalThis.gc?.(); await new Promise((ok) => setTimeout(ok, 10)); }
-  return live();
-};
 
-const OPEN_FONTS = [
-  ['Liberation Sans', 'site/assets/fonts', 'liberationsans'],
-  ['Liberation Serif', 'shared/fonts/files', 'liberationserif'],
-  ['Liberation Mono', 'shared/fonts/files', 'liberationmono'],
-  ['Carlito', 'shared/fonts/files', 'carlito'],
-  ['Caladea', 'shared/fonts/files', 'caladea'],
-];
-const VARIANTS = ['regular', 'bold', 'italic', 'boldItalic'];
-const fontFiles = has ? OPEN_FONTS.map(([family, dir, stem]) => [family, ['regular', 'bold', 'italic', 'bolditalic'].map((s) => readFileSync(join(repo, dir, `${stem}-${s}.ttf`)))]) : [];
-const withFonts = (env) => {
-  for (const [family, files] of fontFiles) env.pushFamily(family, { source: 'installed', embeddable: true, faces: files.map((b, i) => ({ variant: VARIANTS[i], bytes: b })) });
-  return env;
-};
-const fixture = (key) => readFileSync(join(repo, `core/crates/uo-docx-layout/tests/captures/f8/docs/${key}.docx`));
 const PNG = Uint8Array.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15,
   0xc4, 0x89, 0, 0, 0, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xf0, 0x1f, 0, 0x05, 0x00, 0x01, 0xff, 0x89,
   0x99, 0x3d, 0x1d, 0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
 ]);
-const OPTS = { now: 1_768_478_400_000, tzOffsetMin: 0, hyphenationLanguages: ['pt-BR', 'en', 'es'] };
 const jobId = (j) => j.id;
 
 /** an editor session on one document; a short log */
@@ -113,10 +81,18 @@ function editor(env, docx) {
   assert.equal(s.setFontEmbedding({ embed: true, subset: true, skipCommonFonts: false }).t, 'done');
   const req = s.fontRequests();
   assert.ok(req.requests.length > 0);
-  const face = fontFiles[1][1][0];
+  const face = fontFiles()[1][1][0];
   const out = s.saveWithFonts(req.requests.map((_, i) => (i === 0 ? face : undefined)), new Uint8Array(16 * req.requests.length).fill(7));
   assert.ok(out.bytes.length > 0);
   assert.equal(out.events[0].t, 'uw-font-embedding');
+  // (follow-up 5) a malformed phase 2 keeps phase 1: the host answers again
+  const req2 = s.fontRequests();
+  const guids = new Uint8Array(16 * req2.requests.length).fill(7);
+  assert.throws(() => s.saveWithFonts([...req2.requests.map(() => undefined), undefined], new Uint8Array(16 * (req2.requests.length + 1))), (e) => e instanceof SessionError && e.code === 5);
+  assert.throws(() => s.saveWithFonts(req2.requests.map(() => undefined), guids.subarray(1)), (e) => e instanceof SessionError && e.code === 5);
+  const again = s.saveWithFonts(req2.requests.map(() => undefined), guids);
+  assert.ok(again.bytes.length > 0, 'phase 1 survived the malformed phase 2');
+  assert.throws(() => s.saveWithFonts(req2.requests.map(() => undefined), guids), (e) => e instanceof SessionError && e.code === 2);
   log.push(`fonts ${req.requests.length}`);
   s.free();
   return log.join(' | ');
@@ -139,11 +115,35 @@ test('errors: null handle, bad bytes, protected, freed', { skip }, () => {
   const p = uo.render.put(junk);
   const r = new uo.render.Buf(w.uo_session_exec(s.ptr, p, junk.length)).take();
   assert.equal(r.status, 5);
-  // protected: the text commands are locked
+  // protected (follow-up 4): every refused command answers `done` and changes nothing, as the TS
+  // `locked()` returns silently; `CommandError::Locked` is never produced (a gate item of the record)
   const pr = ss.open(fixture('f8__7__0'), { protected: true });
+  const before = pr.save();
+  const same = () => { const b = pr.save(); return b.length === before.length && b.every((v, k) => v === before[k]); };
   const t = pr.type('x');
-  assert.ok(t === null || t.t === 'error' || t.t === 'done');
-  console.log(`protected type: ${JSON.stringify(t?.t === 'error' ? t.v : t?.t)}`);
+  assert.equal(t.t, 'done');
+  assert.ok(same(), 'typing in a protected session leaves the document unchanged');
+  assert.equal(pr.query({ t: 'isDirty' }).v, false);
+  const outcomes = [];
+  for (const [name, op] of [
+    ['bold', { t: 'command', v: { t: 'format', v: { t: 'toggleRunProp', key: 'bold', button: 'single' } } }],
+    ['center', { t: 'command', v: { t: 'paragraph', v: { t: 'setAlignment', alignment: 'center' } } }],
+    ['enter', { t: 'command', v: { t: 'text', v: { t: 'enter' } } }],
+    ['backspace', { t: 'command', v: { t: 'text', v: { t: 'backspace' } } }],
+    ['comment', { t: 'command', v: { t: 'comment', v: { t: 'add', text: 'x' } } }],
+    ['pasteText', { t: 'command', v: { t: 'clipboard', v: { t: 'pasteText', text: 'pasted' } } }],
+  ]) {
+    let r;
+    try { r = pr.exec(op); } catch (e) { if (e instanceof SessionError && e.code === 5) assert.fail(`${name}: refused by the codec (5)`); throw e; }
+    assert.notEqual(r.t, 'error', `${name}: ${JSON.stringify(r)}`);
+    assert.ok(!(r.t === 'error' && r.v?.t === 'locked'));
+    // `pasteText` is the one command the TS does not guard with `locked()` (pasteTextOnly checks only the read view): a
+    // faithful port lets it through in a protected session (a gate item of the record)
+    if (name === 'pasteText') { outcomes.push(`${name}: ${r.t}, ${same() ? 'unchanged' : 'CHANGED the document (as the TS: no protected-mode guard)'}`); continue; }
+    assert.ok(same(), `${name} leaves the protected document unchanged`);
+    outcomes.push(`${name}: ${r.t}`);
+  }
+  console.log(`protected: type done, unchanged; ${outcomes.join('; ')}`);
   pr.free();
   // not a docx
   assert.throws(() => ss.open(Uint8Array.from([0x50, 0x4b, 1, 2])));
@@ -151,6 +151,89 @@ test('errors: null handle, bad bytes, protected, freed', { skip }, () => {
   s.free();
   assert.throws(() => s.type('x'), (e) => e instanceof SessionError && e.code === 11);
   s.free();
+});
+
+const STALE = Number(process.env.UO_WS_STALE ?? 200);
+test('stale layouts: hit / caret / selection / moves after edits and context changes never trap', { skip }, async () => {
+  const floats = [NaN, Infinity, -Infinity, -1, 0, 1500, -1e300, 1e300, 300, 5000];
+  const dirs = ['left', 'right', 'up', 'down', 'home', 'end', 'wordLeft', 'wordRight'];
+  let calls = 0;
+  let seed = 0x57a1e;
+  const rnd = (n) => { seed ^= seed << 13; seed >>>= 0; seed ^= seed >>> 17; seed ^= seed << 5; seed >>>= 0; return seed % n; };
+  const active = { 'uw-cellmode': 0, 'uw-notemode': 0, 'uw-hfmode': 0 };
+  let inCell = false;
+  let cellCalls = 0;
+  const count = (out) => { for (const e of out?.events ?? []) { if (e.t === 'uw-cellmode') inCell = e.active; if (e.active && e.t in active) active[e.t]++; } };
+  const ctx = (v) => count(s_.command({ t: 'context', v }));
+  let s_;
+  const round = () => { const env = withFonts(uo.newEnv()); for (const key of ['f8__7__0', 'f8__7__3', 'f8__7__10']) {
+    const s = ss.open(fixture(key));
+    s_ = s;
+    let layout = s.layout(env, OPTS);
+    const pages = layout.pageCount;
+    const queries = () => {
+      const page = [0, Math.max(pages - 1, 0), pages, 4294967295][rnd(4)];
+      s.hitTest(layout, page, floats[rnd(floats.length)], floats[rnd(floats.length)]);
+      s.caretRect(layout);
+      s.selectionRects(layout, page);
+      s.moveCaret(dirs[rnd(8)], rnd(2) === 1, layout);
+      calls += 4;
+      if (inCell) cellCalls += 4;
+    };
+    // every context once before the random part, each against the layout taken above AND queried while it is active
+    inCell = false;
+    ctx({ t: 'enterCell', anchor: 0, hops: [{ row: 0, col: 0 }] });
+    queries();
+    ctx({ t: 'exitCell' });
+    ctx({ t: 'enterNote', footnote: true, id: 3, atEnd: false });
+    queries();
+    ctx({ t: 'exitNote' });
+    ctx({ t: 'enterHeaderFooter', part: 0, page: 0 });
+    queries();
+    ctx({ t: 'exitHeaderFooter' });
+    // the cells the document really has (anchor 0, rows and columns up to 3): the random part enters THESE, not blind indices
+    const cells = [];
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        inCell = false;
+        ctx({ t: 'enterCell', anchor: 0, hops: [{ row, col }] });
+        if (inCell) { cells.push([row, col]); queries(); ctx({ t: 'exitCell' }); }
+      }
+    }
+    for (let it = 0; it < STALE; it++) {
+      switch (rnd(16)) {
+        case 0: for (let k = 0; k <= rnd(30); k++) s.backspace(); break;
+        case 1: for (let k = 0; k <= rnd(30); k++) s.delete(); break;
+        case 2: s.setSelection({ para: 0, offset: 0 }, { para: 1e9, offset: 1e9 }); s.delete(); break;
+        case 3: for (let k = 0; k <= rnd(5); k++) s.enter(); break;
+        case 4: s.type('abc def'); break;
+        // real contexts: a cell of the document's tables, a note of the fixtures (ids 3/4 and 7/9), a header/footer part
+        case 5: if (cells.length) { const [row, col] = cells[rnd(cells.length)]; ctx({ t: 'enterCell', anchor: 0, hops: [{ row, col }] }); } else ctx({ t: 'enterCell', anchor: rnd(3), hops: [{ row: rnd(3), col: rnd(3) }] }); break;
+        case 6: ctx({ t: 'enterNote', footnote: true, id: [3, 4, 7, 9][rnd(4)], atEnd: rnd(2) === 1 }); break;
+        case 7: ctx({ t: 'enterHeaderFooter', part: rnd(4), page: rnd(3) }); break;
+        case 8: ctx({ t: ['exitNote', 'exitCell', 'exitHeaderFooter', 'exitTextbox'][rnd(4)] }); break;
+        case 9: s.undo(); break;
+        case 10: s.redo(); break;
+        // a fresh layout now and then: the lines cache of a non-body scope is rebuilt against new geometry
+        case 11: if (rnd(4) === 0) { layout.free(); layout = s.layout(env, OPTS); } break;
+        default: s.setSelection({ para: rnd(40), offset: rnd(200) }, { para: rnd(40), offset: rnd(200) });
+      }
+      queries();
+    }
+    assert.ok(!ss.dead, `${key}: no trap`);
+    layout.free();
+    s.free();
+  } env.free(); };
+  // two rounds: the first may build lazily initialised tables, the second must leave the live bytes where the first did
+  round();
+  ss.clipboardClear();
+  const base = await settle();
+  round();
+  ss.clipboardClear();
+  if (counting) assert.equal(await settle(), base, 'live bytes back after layout.free() and s.free()');
+  for (const [k, n] of Object.entries(active)) assert.ok(n > 0, `${k} was never activated`);
+  assert.ok(cellCalls > 0, 'stale layouts were queried while in a cell');
+  console.log(`stale layouts: ${calls} calls in 2 rounds (${cellCalls} made while in a cell), no trap; activations ${JSON.stringify(active)}; live bytes ${base}`);
 });
 
 test('M4: 10,000 sessions through free() and the FinalizationRegistry, live bytes back exactly', { skip: skip || (!counting && 'not a count build') }, async () => {

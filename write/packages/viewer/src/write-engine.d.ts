@@ -95,7 +95,22 @@ declare module '@universal-office/write-engine' {
     outline: { title: string; level: number; page: number; top: number }[];
   }
 
+  /** The write binding's layout handle (js/write.mjs `WriteLayout`): what the editor's session reads besides the decoded pages. */
+  export interface EngineLayout {
+    readonly ptr: number;
+    readonly pageCount: number;
+    pageInfo(i: number): { w: number; h: number; section: number; number: number; hfItems?: number };
+    free(): void;
+  }
+
+  /** The write binding's environment handle (js/write.mjs `WriteEnv`). */
+  export interface EngineEnv {
+    readonly ptr: number;
+  }
+
   export interface ViewerEnv {
+    /** the binding's environment (the editor's session lays out with it) */
+    readonly inner: EngineEnv;
     readonly freed: boolean;
     pushAsset(family: string, variant: Variant, bytes: Uint8Array, advancesJson?: string): void;
     pushFamily(family: string, o?: { source?: FontSource; embeddable?: boolean; faces?: HostFaceInput[] }): void;
@@ -107,6 +122,8 @@ declare module '@universal-office/write-engine' {
 
   export interface DecodedLayout {
     readonly engine: 'rust';
+    /** the binding's layout handle (the editor's caret, hit and selection exports read it) */
+    readonly inner: EngineLayout;
     readonly pages: ViewerPage[];
     readonly tables: { faces: Face[]; images: ImageEntry[] };
     readonly freed: boolean;
@@ -141,6 +158,15 @@ declare module '@universal-office/write-engine' {
     open(docx: Uint8Array): ViewerDocument;
     patternText(id: string): Promise<string | null>;
     stats(): { buffer: number; live: number | null; handles: number; pageEnvs: number };
+    // the editor switch (record "Milestone 2: the editor switch")
+    /** the instance's exports (`bindSession` of js/session.mjs) */
+    readonly exports: WebAssembly.Exports;
+    /** the write binding of the instance (`bindSession`) */
+    readonly binding: unknown;
+    /** a layout made outside the viewer (a session's) adopted as a `DecodedLayout` (counts in `handles`) */
+    adopt(inner: EngineLayout): DecodedLayout;
+    /** marks the instance dead after a trap seen outside the viewer (the session's calls) */
+    kill(): void;
   }
 
   export function loadViewerModule(src?: LoadWriteOptions): Promise<ViewerModule>;

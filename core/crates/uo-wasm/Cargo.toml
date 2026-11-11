@@ -58,7 +58,9 @@ session = ["write", "uo-docx/session", "uo-docx-layout/oracle", "dep:indexmap"]
 
 # test-only exports of the session (tests/session_*.test.mjs): the capture replay of the D2a/D2b families inside the
 # module (the native parity tests' support modules, included with #[path]), the facets, random messages; never shipped
-session-selftest = ["session", "count", "uo-docx/canon", "dep:uo-testkit"]
+# (`uo-docx/export`: the F8 replay's `cbw` facet compares the HTML a copy writes, which the uo-docx export feature gates, F8-D5;
+# the shipped `session` feature does not have it)
+session-selftest = ["session", "count", "uo-docx/canon", "uo-docx/export", "dep:uo-testkit"]
 
 # test-only fixture views for the render exports (tests/render_paint.test.mjs, tests/render_boundary.test.mjs): a text
 # page with effects, a pattern, the rectangular gradient, blip tiles, a picture look and page fills built inside

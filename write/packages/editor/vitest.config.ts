@@ -11,6 +11,9 @@ export default defineConfig({
       '@universal-office/collation': fileURLToPath(new URL('../../../sheet/packages/calc/src/collation.ts', import.meta.url)),
       // só o registro de fontes da revisão (motor/dicionários), sem o SpellChecker
       '@universal-office/spell-sources': fileURLToPath(new URL('../../../shared/spell/src/sources.ts', import.meta.url)),
+      // engine="rust": o lado JS do motor (core/crates/uo-wasm/js), como no viewer
+      '@universal-office/write-engine': fileURLToPath(new URL('../../../core/crates/uo-wasm/js/viewer.ts', import.meta.url)),
+      '@universal-office/write-session': fileURLToPath(new URL('../../../core/crates/uo-wasm/js/session.mjs', import.meta.url)),
     },
   },
 });

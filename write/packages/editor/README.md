@@ -126,6 +126,41 @@ Without a `fonts` attribute the viewer looks for the fonts in the sibling
 | `layout` | `legacy` | Use the previous canvas layout instead of the Word-fidelity engine. The editor also falls back to it on its own if the engine fails on a document. |
 | `formatting-policy` | `template-document` | What the user may format, by preset name (see [Formatting policy](#formatting-policy)). The `formattingPolicy` property takes any policy object and, once set, wins over the attribute. |
 | `nofiledrop` | boolean | The editor never opens or inserts dropped files (the cancelable `uw-file-drop` still fires, so the host can run its own flow). Also the `fileDropDisabled` property. See [Dropped files](#dropped-files). |
+| `engine` | `ts` (default) · `rust` | Editing, layout and painting engine. `rust` is the Rust/WebAssembly engine (preview until 0.10, see [The Rust engine](#the-rust-engine-preview)). Read at initialization: changing it later takes effect at the next initialization. Any other value is `ts`. An editor without `engine="rust"` never fetches the `.wasm` nor the engine's code. |
+
+### The Rust engine (preview)
+
+With `engine="rust"` the element is a shell over the Rust editing session (WebAssembly): the document model, the
+editing commands, undo, the incremental layout and the page painting come from the engine; the element keeps the
+input (keyboard, IME, mouse), the bars, scrolling and zoom. It needs the editing build of the engine (the
+session build of the `.wasm`) and `'wasm-unsafe-eval'` in a strict CSP (Safari 15 needs `'unsafe-eval'`).
+
+**The published package does not ship the editing `.wasm` yet.** Until it does, give its location with
+`UniversalWriteElement.configureEngine({ wasm })` before the first `<universal-write engine="rust">` initializes (by
+default the element looks for `chunks/uo-write-editor.wasm` next to its code). There is one engine module per page and
+the first load wins: the editor's module must be the FIRST engine module on the page. A
+`<universal-document-viewer engine="rust">` that loads its own (viewer-only) module first makes `engine="rust"` on the
+editor fail with an error; loaded after the editor, the viewer uses the editor's module.
+
+`UniversalWriteElement.configureEngine({ wasm, js, engine })` (static) says where the module comes from: `wasm` is the
+`.wasm` (bytes, URL, `Response`), `js` the wasm2js build. `UniversalWriteElement.engineStats()` reports the engine's
+memory and live handles.
+
+In this preview the engine takes: opening (`.docx`, `.doc`), `newDocument()`, saving (`.docx`, `.docx` with fonts,
+PDF), dirty state, typing, Enter, Backspace/Delete (and by word), the arrow keys, Home/End, Page Up/Down, selection
+with the mouse (click, Shift+click, drag, double and triple click), undo/redo, select all, character formatting (bold,
+italic, underline styles, strikethrough, caps, super/subscript, font, size, grow/shrink, color, highlight, case,
+spacing, clear), paragraph formatting (alignment, indent, line spacing, spacing before/after, shading, clear),
+bullets and numbering (Tab / Shift+Tab change the list level), applying a style, the document's font embedding
+option, and copy/cut/paste through the keyboard (Ctrl+C, Ctrl+X, Ctrl+V with the text and HTML of the clipboard,
+Ctrl+Shift+V as plain text, and the Paste Options after a paste; the Cut, Copy and Paste buttons and menu items are
+disabled, and pasting an image is not supported yet). Saving as `.odt`, HTML, Markdown or XPS throws an error.
+The styles gallery lists no styles yet, and the pages have no context menu in this preview. Call `load*()` after
+`uw-ready`. Everything else (tables, pictures,
+shapes and text boxes, headers and footers, notes, comments and tracked changes, fields and references,
+page setup, find, spelling, the Web/Draft/Read views, the ruler…) is **disabled**: its bar buttons stay visible
+but grayed out and its methods do nothing (queries answer an empty document). The field shading, the formatting marks
+and the other screen adornments are not painted yet.
 
 ## Built-in bars
 

@@ -14,8 +14,9 @@ pub use crate::model::HfWhich;
 use crate::model::{DrawingId, HfPartId, MediaId, NoteKind, NumKey, RunRef, Utf16};
 use uo_render::{ImageId, Page, Resources, Span};
 
-/// The result of one `layout()` call.
-#[derive(Debug, Default)]
+/// The result of one `layout()` call. `Clone` serves the editor shell of uo-wasm (its incremental
+/// relayout keeps the result inside the engine and hands a copy to the layout handle).
+#[derive(Clone, Debug, Default)]
 pub struct Layout {
     pub pages: Vec<LayoutPage>,
     /// faces (by provider answer), images (by TS object identity, RQ3), text effects, page fills,
@@ -57,7 +58,7 @@ pub enum ImageOrigin {
 }
 
 /// One page.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct LayoutPage {
     /// size, items, background (uo-render)
     pub page: Page,

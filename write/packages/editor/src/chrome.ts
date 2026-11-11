@@ -14,6 +14,7 @@ import {
 } from '@universal-office/ui';
 import type { UniversalWriteElement, ViewMode } from './universal-write.js';
 import { appFor, type WriteApp } from './chrome-app.js';
+import { ROUTED_COMMAND_IDS } from './engine-routes.js';
 import { registerWriteCommands, type ChromeCtl } from './chrome-commands.js';
 import { refsDialog, hyperlinkDialog, type RefsEnv } from './chrome-refs.js';
 import { tocDialog, tocGalleryMenu, type TocEnv } from './chrome-toc.js';
@@ -445,6 +446,13 @@ class WriteChrome {
     this.clipboardUI = new ClipboardUI({ ed, app, lang: opts.lang, layer: this.layer, frame: () => this.docFrame(), after: () => this.after(),
       dialog: () => ({ ed: this.ed, app: this.app, layer: this.layer, lang: this.lang, state: () => this.state() }), signal: this.ac.signal });
     registerWriteCommands(this.reg, ed, app, this.ctl());
+    // engine="rust": o que a sessão ainda não atende fica visível e DESLIGADO (nunca roda no modelo TS; D7 do registro)
+    if (ed.engine === 'rust') {
+      for (const id of this.reg.ids()) {
+        const c = this.reg.get(id);
+        if (c && !ROUTED_COMMAND_IDS.has(id)) this.reg.add({ ...c, isEnabled: () => false });
+      }
+    }
     // extensões do hospedeiro: comandos dos plugins e ids ocultos (hidden-commands)
     const contributions = opts.contributions ?? [];
     for (const c of contributions) if (c.commands?.length) this.reg.add(...c.commands);

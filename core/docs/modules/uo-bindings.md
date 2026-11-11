@@ -1395,3 +1395,759 @@ lazily built tables (now two identical passes); M4's finalizer loop let 10,000 s
 memory past 2 GiB (now a gc every 500; render.mjs reads pointers as signed `i32`, a pre-existing limit at 2 GiB);
 clippy findings in the new code (6). Builds: four wasm modules per round (about 2–2.5 min each, `-j 4`), one target
 dir (`core/target/m2-wsession`).
+
+### Wave-2 follow-ups
+
+The wave-2 reviewer accepted the session in wasm with eight minor findings and asked for CI lines. Measured at HEAD
+27f395db plus this frontier, one target dir (`core/target/m2-wsfollow`), `-j 4`, tests at most 3 threads.
+
+1. **Bind exhaustiveness (uo-schema `rust_bind.rs`).** The `default` struct modifier is gone (a parse error that names
+   the replacement); a struct bind now lists its Rust-only fields with `skip=a,b` (raw identifiers as `r#type`; repeatable).
+   `FromWire` sets each skipped field with `Default::default()` and never uses `..Default::default()`; `IntoWire` of EVERY
+   struct bind (the 57 `default` lines, and also the 108 that had no skip list and the 35 `into_only` ones) first
+   destructures the native struct with no rest pattern (`let a::P { x: x_x, n: x_n, cache: _ } = self;`), so a new real
+   field of a native type fails to compile until the schema or the `skip=` list has it. `emit()` refuses a `skip` name
+   that is on the wire, `skip` with `empty`, and a duplicate. The bind map `#` comment rule now starts a comment only at
+   a word start (a raw identifier `r#type` is not a comment). `schema/session.bind`: 55 lines `skip=cleared,keys`,
+   `RunProps` `skip=fmt,cleared,keys`, `ParaProps` `skip=pfmt,cleared,keys` (the skip lists were measured by a throwaway
+   extractor over the 165 struct binds: the only Rust-only fields are the `js_object!` macro's `cleared`/`keys` and WS-D3's
+   `fmt`/`pfmt`). Regenerated: `cargo run -p uo-schema -- check` gives "20 generated files are up to date"; the emitted
+   `bind.rs` has 0 `..Default::default()` and 57 `cleared: _, keys: _` patterns. Proof of the claim: adding `pub extra: u8`
+   to the fixture struct `Tagged` makes `cargo test -p uo-schema --test bind --no-run` fail with E0063 (missing field in the
+   initializer) twice and E0027 (the destructure does not mention it); reverted. uo-wasm builds natively and for
+   wasm32 with all 165 struct binds. Tests: `bind_generator` 4 pass (grammar with `skip`, the `default` refusal, skip on
+   the wire, skip with `empty`, the emitted shapes), `bind` 2 pass.
+2. **Hostile `Query` fuzz.** `uo_session_test_random_query(seed)` (selftest, test-only) is the sibling of
+   `uo_session_test_random_exec` over the generated `w::Query::random`. Native: `random_exec_messages_leave_nothing` and the
+   new `random_query_messages_leave_nothing` share one helper; each runs 3,000 messages (`UO_WS_RANDOM`) on a session
+   without an environment and on one with the open fonts: 0 leaks on a second run in all four runs. wasm
+   (`session_hostile.test.mjs`, kinds `i % 5`): 10 s first pass, the second pass repeats the same calls. **One final run
+   (fix round 2, `UO_WS_FUZZ_MS=10000`):** 725,220 calls in two passes of 362,610 iterations, 145,044 random `Exec` and
+   145,044 random `Query` run, no trap, live bytes 3,492 -> 3,492, worst 179.9 ms. The test now prints WHICH call sets the
+   worst time: an `exec` of 20 bytes, i.e. a random `Exec` message that decoded into a real command (a layout or a
+   whole-document operation); the wave-2 figure of 9.6 ms came before the random `Exec` messages existed. The call count
+   varies by run (a 5 s run gave 640,746 calls, worst 55.1 ms) because the first pass is time-bounded; the earlier figures
+   (726,080 / 725,980 calls, 132.6 / 229.9 ms) were other runs of the same test.
+3. **Stale layouts (fix round 1: real contexts).** Native `stale_layouts_never_panic` (`UO_WS_STALE`, 300 per document, three
+   documents, two passes, the second leak-checked under `count`): one layout, then random backspace/delete bursts, select-all +
+   delete, Enter, typing, **`EnterCell` of the fixture's tables, `EnterNote` with the real note ids (3/4 of f8__7__0, 7/9 of
+   f8__7__10), `EnterHeaderFooter` of the real parts**, the exit commands, undo/redo, fresh layouts now and then (the lines
+   cache of a non-body scope is rebuilt against new geometry) and random selections, each followed by `hit_test` (page 0,
+   last, last+1, `u32::MAX`; x/y NaN, +-inf, -1, 0, 1500, 300, 5000, +-1e300), `caret_rect`, `selection_rects` and
+   `move_caret` (directions 0..8) against the STALE layout; every context is also activated once before the random part.
+   The activations are counted from the `uw-cellmode` / `uw-notemode` / `uw-hfmode` events and asserted > 0: 3,600 calls,
+   activations cell/note/hf 1 / 21 / 37, statuses only 0/1/5, no panic, second pass 0 B left. **Fix round 2 (cells):** the
+   reviewer found that no stale query ran while the session was in a CELL (the one pre-loop activation was exited at once and
+   the random indices hit a real cell of `f8__7__3` 6 times in 27). Now each pre-loop `Enter*` runs the four queries before its
+   `Exit*`, a probe finds the cells the document really has (anchor 0, rows and columns 0..3: `f8__7__3` only), the random
+   `EnterCell` picks from them, and the number of queries made while in a cell (from the `uw-cellmode` events) is asserted
+   > 0: native 3,648 calls, 36 of them in a cell, activations cell/note/hf 5 / 29 / 35; wasm 4,896 calls in 2 rounds, 184
+   in a cell, `{uw-cellmode: 11, uw-notemode: 31, uw-hfmode: 54}`, live bytes 5,180,964 both rounds. The random part
+   rarely stays in a cell because the select-all + delete of the loop destroys the fixture's table early: most cell queries
+   are the pre-loop ones (this is the limit of the test). (the first version's
+   `EnterNote` used footnote id 1, which the fixtures do not have, and its `Exit*` commands ran in the body: no-ops, found by
+   the reviewer). wasm (`session_api.test.mjs`, `UO_WS_STALE`, 200 per document, two rounds): no trap (`!ss.dead`), live bytes
+   back. No panic or trap was found: nothing to report to uo-docx-layout.
+4. **Protected sessions.** `session_api.test.mjs` asserts that typing in a protected session answers `done`, the saved
+   bytes are equal and `isDirty` is false, and runs bold, `setAlignment`, Enter, Backspace and a comment through `exec`: each
+   answers `done` (never `error`, never `locked`) and the document is unchanged; the native `refusals_and_errors` now
+   requires `Done` and equal `save` bytes (it accepted `Locked | Done`). **WS-D11b:** `CommandError::Locked` is never
+   produced anywhere in uo-docx (every locked path returns silently, as the TS `locked()`), so "a command the session
+   refuses with Locked through exec" cannot be asserted; the silent refusal is asserted instead. **Finding:**
+   `pasteText` is not locked in a protected session and changes the document, as the TS (`pasteTextOnly` checks only the
+   read view, not `protectedMode`); the test prints it and does not assert it (gate item).
+5. **Phase 2 of the font save.** `uo_session_save_with_fonts` decodes and checks the `FontFaces` message (decode error ->
+   5, wrong face count or fewer than 16 GUID bytes per request -> 5) BEFORE it takes the pending `FontSave`, so a
+   malformed phase 2 leaves phase 1 alive (**WS-D13**); a status-3 failure still consumes it. Native
+   `a_malformed_phase_2_keeps_phase_1` (junk, one answer too many, one GUID byte short -> 5 each; then the right message
+   -> 0; then again -> 2) and the same sequence in `session_api.test.mjs` through `s.saveWithFonts` (codes 5, 5, ok, 2).
+6. **Replay through the production open.** `session_replay.test.mjs` opens every document with `uo_session_open`
+   and a `SessionOpen` message (author "A", seed 1, or the second xorshift value for F2 and F10 as the harness draws one
+   `Math.random()`, clock 2026-01-02 03:04 local = UTC, session id 0 or the document's index + 1 for F8; F2 and F10 then
+   `setUiLang('pt')`): `uo_session_test_open` and `UoWriteSession::for_tests` are removed. d2a 120 documents, 49,800 facets
+   equal; f1 96, 39,840; f2 120, 37,559 + 1 accepted; f6 60, 18,780; **f3** (tables) 70, 40,390, 4,762 actions; 0
+   mismatches, TS re-encode byte-identical everywhere. **Fix round 1 adds f5, f8, f9 and f10** (the native replays' mappers
+   and facet functions are COPIED into `src/session/selftest/{fam,f10,f8}.rs`, each with a source header; declared, the gate
+   list asks to share them with the native support modules), all at 0 mismatches and with the SAME accepted counts as the
+   native replays (re-run natively in this round, f8 with `uo-docx/export` as the native replay needs it):
+   - **f5** (notes): 60 documents, 44,940 facets equal (the native 48,600 also counts the 3,660 `op` checks), 3,600 actions;
+     facets `ctx`, `no`, `np`, `ref`, `nts`, `sect`, `csel`, `parts`; the list-rule hook (F2) as f1/f6.
+   - **f9** (find, navigation): 80 documents, 54,803 equal, 10 accepted (F9-A2, as native), 6 steps where the TS threw (the
+     script ends), 5,245 actions; `cm` (`countMatches`, a direct call of the session that is not on the wire) is answered by
+     the facets export; `res`, `cursel`, `ext`, `ctx`, `hd`.
+   - **f10** (references): 77 documents, 76,346 equal, 53 accepted (31 F10-A3 + 22 F10-A4, as native), 2 steps where the TS
+     threw, 4,593 actions. The handle has a **test-only `test_oracle`** (`ReplayOracle` of `d2b_f10_support`, field cfg
+     `session-selftest`): the production `run()` is unchanged without it. `uo_session_test_f10_setup` (reference seed from the
+     capture's `i-seed`, the hyphenation registry of pt/en/es from the uo-fonts data, as the native replay),
+     `_begin` (the TS's `i-fv`/`i-pg`/`i-mh` script of the step) and `_record` (how the session asked: `fvs`, `pgc`, `pgv`,
+     `mhc`, the values the TS named that the model lacks); the DIVERGENCES by name (`fsep-top716.docx` from step 30).
+   - **f8** (clipboard): 54 documents, 43,132 equal, 122 accepted (61 F8-D14 + 61 G7/F8-O2, as native: 46,480 equal, 122
+     accepted), 3,491 actions (the `@setup` commands through `exec` since fix round 2), 0 command errors. Per group the Office Clipboard (items AND current rich copy: `clear()` leaves
+     the current, found by the first run) and the carried paste defaults, path and policy start over
+     (`uo_session_test_f8_group`); `uo_session_test_f8_open` registers the session and the carried state (paste defaults, path, policy, the extended group's
+     inline types) goes in as EXEC ACTIONS of the pseudo-code `@setup` (fix round 2: it was applied with `h.command`, bypassing
+     the codec and `exec`; now the four commands are re-encoded and counted like every action); the shell's answers
+     (`cbt`, `pt`, `fx`) are the JS side's: `readClipboard` answered with the text and the paste tree, `renderClip` with the
+     PNGs in order, as the native `drive`. Two additions outside the replay files, both test-only: the self-test build turns on
+     `uo-docx/export` (the HTML a copy writes, F8-D5: without it 84 `cbw` facets differ, the native replay needs it too; the
+     shipped `session` feature is unchanged), and `env.rs` counts the session's random draws behind
+     `cfg(all(feature = "session-selftest", not(test)))` (`draws`/`reset_draws`: the `rc` facet; additive, declared).
+   - **f7** (drawing objects, text boxes, pictures; **fix round 2**): 40 documents, 2,400 steps, 27,207 facets equal, 8
+     accepted (5 F7-D1 compress `enc` that differ, 3 F7-D6 multi-selection `cnt`: the native replay's own count; merge fix: the
+     `cmp:` `enc` facet is compared first and accepted only when it differs, as `Replay::accept`; it was accepted unread),
+     2,418 actions, 0 refused by the session, 0 mismatches, TS re-encode 2,418 byte-identical. The earlier record deferred f7
+     to a maintainer decision about the draw counter; that was wrong: the test-only counter (`env::draws`) was already there
+     and `Session::env_mut()` is public, so `SharedEnv::advance_to(rc)` is reproduced by `uo_session_test_f7_begin`, which
+     advances the session's environment through `env_mut().random_u32()` until the cumulative counter (reset by
+     `uo_session_test_f7_reset` right before the open, so the open's own draws count as in the native `SharedEnv`) equals the
+     capture's `rc` of the previous step. `src/session/selftest/f7.rs` COPIES the native `step` mapper (rewritten as "action
+     k of a code": `iw` and `cdt` have a second action, `PlaceAt`, which exists only when the first was not refused: the JS
+     loop stops the step on a refusal) and the facets (`paras sel anc flags fs tb pane st cnt n rc docxml`; `ev` comes from the
+     TS-decoded change set). The facts the commands take (`sf`, `sfs`, `fr`, `eo`) are parsed module-side from the step's `fx`;
+     the job half of the native `Run` is the JS side's: `decodeImage` answered from `gid` (pixels) or `bmp` (size only),
+     `encodeImage` answered from `blob` and hashed (`enc`, FNV of the RGBA), `gid` dropped for `ins`/`chg`; the images
+     (`img#k`) are handed over once (`uo_session_test_f7_image`). `rc` is compared at every step. Nothing of the family is
+     declared as not replayed.
+   `uo_session_test_next` answers status 5 with the error when a native command has no wire form (it answered "no more
+   actions" before, which the JS loop could not tell from the end of the list). **Not replayed in wasm:** f4 only (no wire
+   op for `undo_reentering`/`redo_reentering`): the CI list is `d2a,f1,f2,f3,f5,f6,f7,f8,f9,f10`.
+7. **fontUsage parity with notes and text boxes.** `capture-font-usage.mjs --docs 160 --pick notes,textboxes` takes the
+   100 stride documents plus the first 30 corpus documents with a note reference and 30 text-box documents (a mini zip
+   reader in the script; **fix round 2:** the 30 are no longer "the first 30": the whole corpus is scanned, 24 documents
+   whose `w:txbxContent` is NOT inside a table are spread evenly over the 147 that qualify, plus the first 6 of the 81 whose
+   boxes are only in cells, the declared divergence), and adds two points: #4 the first note (`noteRefs()[0]`, `openNote`, typing, exit)
+   and #5 the first text box (`floatSel = contextDrawingRuns(model)[ix]`, `editSelectedTextbox()`, typing, exit); facets
+   `nk`/`nid`, `ix`/`pg`/`nd`/`ce`. The frozen bundle hash stays `6802c7b45d367dd1234f71d9f4ba2b99`. The native replay
+   mirrors both (`NoteCmd::Open`; `SelectObject` + `EditSelectedTextbox`). Result (fix round 2, recaptured): 160
+   documents, 1,379 facets equal, 0 mismatches. Coverage per context (documents whose point has a real usage): open 160,
+   body + bold 160, header/footer 6, cell 44, note 32 (all equal to the element), **text box 33 in the capture, 22
+   reproduced** (it was 1 of 33 with the first-30 pick), 11 not opened. The summary line now prints the skipped text-box
+   facets ("11 text-box points whose fu/n are NOT replayed"), not only "0 not replayed".
+   **Finding (first sample: 32 documents, now 11):** in the documents the element lists one drawing run (`nd=1`, in the body, `ce=0`) and opens its box, while
+   the session's `drawing_paths()` of the body story is empty after the same sequence (`SelectObject{0}` leaves
+   `float_selection()` = None, context stays Body). The documents are the oracle `cellout`/`cellnote` ones whose box
+   anchor sits in a table cell paragraph (reproducer: `write/packages/docx-layout/test/oracle/cellout/co11-in.docx`,
+   `UO_FU_DUMP`-style run of `session_font_usage`); the test declares them (prints the 32 names, skips their facets)
+   instead of loosening a comparison. It is either a divergence of `loc::walk_story` (`Mode::Drawing`) on boxes inside
+   tables or of the context the capture is in: for the owner of `session/ops/drawing` (outside this frontier).
+   **Pinned (fix round 1):** `session_font_usage` asserts that exactly 11 text boxes are not opened and that at least 20 are
+   reproduced (`covered[5] >= 20`), for the full 160-document run: a fix of the divergence makes the count drop and a regression
+   makes it grow, either one fails the test and asks for this record to be updated. Reproducer for the owner of
+   `session/ops/drawing`: `write/packages/docx-layout/test/oracle/cellout/co11-in.docx` (a box whose anchor sits in a table
+   cell paragraph; `SelectObject{0}` leaves `float_selection()` None). Listed in the gate list below; the HANDOFF queue is not
+   an owned file of this frontier: **for the orchestrator**, add the reproducer there.
+
+8. **Dedupe in `handle.rs`.** `variant_name` is `uo_fonts::Variant::name()`; the clock arithmetic uses
+   `uo_docx::session::ops::tables::sort::days_from_civil` (raised from `pub(crate)` to `pub` with `#[must_use]`, additive,
+   declared; **WS-D14:** a hostile `SetClock` with a month above 14 now follows the session's DATE-field arithmetic, the
+   old copy differed there; neither reproduces the JS `Date` overflow: validate month/day at the gate);
+   `uo_session_layout` calls `layout::editor_options` and restores an explicit revision mode of `flags` (**WS-D15**).
+   Results stay bit-identical: `session_native` 11 pass, `session_api` and the replay unchanged.
+
+**CI** (`.github/workflows/rust-core.yml`, the YAML parses, 16 jobs): `server-pdf` gains `cargo test -p uo-docx-layout
+--release --test la7` (full bounds; the debug `test` job runs the reduced ones) and a comment; `soak` gains
+`cargo test -p uo-wasm --release --features session,count,session-selftest --test session_native -- --test-threads=2`;
+`wasm` gains the session-selftest build and three node steps (`session_api`, `session_hostile` with
+`UO_WS_FUZZ_MS=10000`, `session_replay` with `UO_WS_FAMILIES=d2a,f1,f2,f3,f5,f6,f7,f8,f9,f10`, each with `UO_WASM_PATH`), and the Safari-15
+step builds and validates the shipped `--features session` module and prints its size (**fix round 1:** these three lines now
+come AFTER the shipping lines, which copy the `--features write` module as `uo-write.wasm`; before, the session module
+overwrote it first and the shipping check silently exercised another module); the `codec` job's `tsc` list gains
+`crates/uo-wasm/js/session.d.ts` (checked locally with typescript 5.9.3: exit 0). **Not added:** the requested
+`cargo test -p uo-ffi --features editing-api,count` is invalid (uo-ffi has no `editing-api` feature; it is always on through
+the uo-docx dependency, `cargo` answers "does not contain this feature"); the `editing_*` tests already run in the `test`
+job (debug, `--workspace --all-features`) and in `server-pdf` (`-p uo-ffi --release --all-features`), named in a comment. If a
+visible line is wanted: `cargo test -p uo-ffi --features count --test editing_abi --test editing_memory --test editing_nopanic`.
+
+**Files touched outside the frontier's own files (each additive or test-only, declared):**
+`core/tools/uo-schema/tests/bind_generator.rs`, `tests/schemas/bind_test.bind` and the regenerated
+`tests/fixtures/bind_test_bind.rs` (the grammar change); `core/crates/uo-docx/src/session/ops/tables/sort.rs`
+(`days_from_civil` `pub`); `core/crates/uo-docx/tests/d2b_f3_support/session_codes.rs` (`pub fn commands`);
+`core/crates/uo-docx/tests/session_font_usage.rs`, `js/capture-font-usage.mjs`, `tests/parity/font-usage.capture` (item 7);
+`core/crates/uo-wasm/src/lib.rs` (the `#[path]` mods of `d2b_f3_support`, `d2b_f9_support`, `d2b_f10_support`, selftest only; rustfmt
+also reordered the mod lines); `core/crates/uo-wasm/Cargo.toml` (`session-selftest` gains `uo-docx/export`);
+`core/crates/uo-wasm/src/session/env.rs` (the test-only draw counter); new `src/session/selftest/{fam,f10,f8,f7}.rs`;
+`core/crates/uo-wasm/tests/session_support.mjs` (new: the shared module loader, fixtures, open fonts). The
+`bind_native.rs` experiment of item 1 was reverted. No `schema/session.uos` change, no new wire op.
+
+#### For the milestone-2 gate
+
+1. `CommandError::Locked` is a dead variant (never built): remove it from uo-docx and the schema, or make protected-mode
+   commands answer it (the TS answers silently; 0.10 keeps that). `pasteText` in a protected session is not guarded, as the
+   TS: keep or fix at the TS.
+2. Replay in wasm covers d2a, f1, f2, f3, f5, f6, f7, f8, f9, f10. **Not replayed:** f4 only (needs `undo_reentering` /
+   `redo_reentering` with a shell-chosen re-entering, no wire op: recommended additive `ExecOp::UndoReentering(OptHfReenter)` /
+   `RedoReentering`). The mappers and facet functions of d2a, f1, f2, f6, f5, f7, f8, f9 and f10 are copies of the native
+   replays' (f3 reuses the support function): recommended for the gate, move every family's "code -> actions" mapper into its
+   `tests/d2b_fX_support` so the native replay and the wasm self-test share one copy.
+3. Native-only facets stay native-only: pend, sv/nv of f1-f6, rev, enc, n (the F8 `nv`/`sv`/`rc`, F9 `cm` and the F10
+   `fvs`/`pgc`/`pgv`/`mhc` are compared in wasm now).
+4. The 11 text boxes of item 7 (fix round 2; 32 in the first sample) that the element opens and the session does not: owner of `session/ops/drawing`.
+   Also declared: the F8 `@setup` commands and the F7 `PlaceAt` second halves go through the codec and `exec`, but the F7
+   `rc` advance (`env_mut().random_u32()`) is a test-only side channel into the session's environment.
+5. A hostile `SetClock` should be validated at the gate (`LocalNow::from_wire`): month 1-12, day 1-31, minute 0-59.
+6. The `uo-ffi` CI line (above): keep the comment, or add the explicit `--test` line.
+7. The shipped session module (`--features session`, validated against the Safari 15 feature list) is 9,538,764 B raw /
+   3,126,149 B gzip -9 against 9,230,855 / 3,029,327 in the wave-2 record: the growth comes from the editor-switch frontier's
+   shell code in the same worktree, this frontier's shipped changes (handle.rs dedupe, WS-D13) are a few hundred bytes.
+
+#### Process metrics
+
+One implementer agent, about 3 h wall time, about 120 tool calls. Builds: the session-selftest module 4 times
+(first cold 2 min 19 s by the planner, then 55 s-2 min incrementals), uo-wasm native test builds 2, the uo-docx
+`all` test binary 5 incremental rebuilds (48 s the first, 4 s the rest), `check-changed` once. Rework: the Bash tool
+halved backslashes and refused a heredoc with a quote, so scripts with escapes went through the Write tool; the bind
+comment rule swallowed `r#type` (found by the grammar test); `rustfmt lib.rs` reordered `mod` lines and a use in
+`write.rs` (reverted); the first font-usage native run failed because the element leaves the cell before the note point
+even when the document has no note (mirrored); the protected-session assertions assumed `pasteText` is locked (it is not
+in the TS). Disk: D: 65 GB free throughout.
+
+**Fix round 2** (second review: f7 not replayed, stale queries never in a cell, f7-less record, text-box sampling, inconsistent hostile
+numbers, F8 setup bypass): f7 ported (above), the stale tests query in cells, the text-box pick recaptured, the hostile test
+names its worst call, the F8 setup runs as exec actions. Final numbers: replay 10 families (d2a 120 docs / 49,800 equal, f1 96 /
+39,840, f2 120 / 37,559 + 1, f3 70 / 40,390, f5 60 / 44,940, f6 60 / 18,780, f7 40 / 27,151 + 64, f8 54 / 43,132 + 122, f9 80 /
+54,803 + 10, f10 77 / 76,346 + 53), 0 mismatches, 0 re-encode differences; `session_native` 11 pass (feature `count`);
+`session_api` 5 pass; `session_hostile` 725,220 calls; `session_font_usage` 4 pass (160 documents, 1,379 equal);
+`check-changed` clean (clippy native and wasm32, float-cast and ban scripts); rustfmt on `selftest.rs` and `session_native.rs`.
+A `python open(p,'w')` with the default Windows encoding truncated `session_replay.test.mjs` to 0 bytes during the round (a
+non-cp1252 character); it was rewritten from the earlier read: use `encoding='utf-8'` in every script.
+
+**Fix round 1** (reviewer findings): about 2 h, the session-selftest module built 4 times (2 min 20 s each, one cold),
+`check-changed` once more (clean), the native f5/f8/f9/f10 replays re-run for the equal accepted counts. Rework: a relative
+`CARGO_TARGET_DIR` typed from `crates/` created `core/crates/target` (an empty workspace member that broke every cargo
+command; removed); `rustfmt` on `lib.rs` reformatted `write.rs` again (reverted); the first f8 run had 1,183 mismatches
+(the ring's `clear()` keeps the current rich copy; the HTML of a copy needs `uo-docx/export`). Final numbers: replay 9
+families, 0 mismatches; `session_native` 11 pass; `session_api` 5 pass; `session_hostile` 725,980 calls, live bytes 3,492
+-> 3,492; `uo-schema check` 20 files up to date; D: 54 GB free.
+
+## Milestone 2: the editor switch
+
+Queue item 9 (wave 3, frontier E, 2026-11-11): an opt-in `engine="rust"` on `<universal-write>` under which the element's
+document model, editing, layout and page painting come from the wasm `UoWriteSession`; the TS keeps only what
+uo-docx.md "Stays in the TS shell" lists. The default (`engine` absent or any value but `rust`) is the TS engine,
+unchanged: no wasm request, no engine code in the entry's static closure (phase 0). Plan by the planner of the wave
+(Opus); implementation and verification in this section.
+
+### Inventory of `universal-write.ts` (measured at 27f395db, unchanged since)
+
+23,473 lines; class `UniversalWriteElement` at 1231–23295: **511 public methods** (+ 11 getters/setters, 3 statics),
+≈ 600 private ones. References: `this.model` 596, `this.selection` 298, `this.fullDoc` 153, `this.eng` 110,
+`this.cellEdit` 119, `snapshot()` 141 call sites, `locked()` 162, `dispatchEvent` 65 (35 distinct `uw-*` types).
+Model/layout references per concern (line range: count): open/new/load 1797–2460: 34; save/dirty/print 8530–8910: 32;
+getSelection/getSelectionState 2960–3320: 11; format commands 3320–4760: 105; clipboard 4757–5700: 32; undo/redo
+(string snapshots) 9520–9735: 29; typing 9736–9914: 20; caret moves: 10; DOM listeners (bindEvents) 9995–10900: 39;
+header/footer and the legacy layout 12179–13310: 34; hit test: 14; engine layout and fast paths 16144–16507: 44;
+engine paint 16580–16760: 22; screen paint 21399–22080: 15; PDF/print 22365: 10. The bars register their commands in
+`chrome-commands.ts` (`supports: typeof ed[m] === 'function'`) and read the toolbar state from `getSelectionState()`.
+
+### Routing design (decision D1: instance shadowing, not an interface refactor)
+
+The editor does not fork its 23k lines and the TS path is not refactored (it is the frozen behaviour and stays the
+default until 0.10). `write/packages/editor/src/engine-routes.ts` (static data, no engine import) classifies the
+element's methods; `rust-engine.ts` (reached only by a dynamic `import()`) installs them on the INSTANCE with
+`Object.defineProperty` at `initialize()`, before the first load:
+
+- **ROUTED** (68 public + 18 private since fix round 2): handled by `RustEditor` over the session (table below). The private ones are
+  the TS methods that SHELL code calls into (`refreshView`, `refreshSelection`, `rebuildCanvases`, `paint`,
+  `positionProxy`, `scrollCaretIntoView`, `type`, `moveCaret`, `popHistory`, `hitTest`…): the TS shell code (scroll
+  virtualization `ensureVisiblePainted`, `setZoom`, the caret blink, the bars) keeps running and reaches the session.
+- **SHELL** (26 since fix round 2): run their TS code unchanged (zoom, view getters, theme, plugins, notices, fonts list,
+  side panels). `getFontEmbedding`/`setFontEmbedding` were SHELL until fix round 2, but they are document state (the TS
+  reads them from the package at load): routed since (review finding).
+  `currentPage`, `stats` and `pageWidthZoom` were SHELL in the first round and read TS state that is never filled
+  under `rust` (page count 1, words 0, the zoom unchanged): routed since fix round 1 (ED-20).
+- **Everything else is closed by default** (fail-closed): a mutator (by name, `isMutator`) is a no-op warned once
+  (an `async` one answers a resolved promise, the bars chain `.then` on them); a query runs its TS code over the EMPTY
+  TS document (the TS model is never loaded under `engine="rust"`), and a query that throws answers `neutralOf(name)`
+  ([] for plural names, `null`, the markup defaults the bars destructure). 292 disabled mutators, 125 disabled queries
+  (fix round 2). Four of those queries answer the neutral value WITHOUT running the TS code (`NEUTRAL_QUERIES`, ED-24):
+  over the empty TS model they would answer a false value of the document.
+  `engine-public.ts` is the generated list of the 511 public names; `engine-switch.test.ts` fails when the source's
+  public methods drift from it, so a new public method is disabled until classified.
+- **Input**: capture-phase listeners on the hidden textarea (`keydown`, `input`, composition, `copy`/`cut`/`paste`) and
+  on the host for events whose path holds the pages container or the hidden textarea (`mousedown`, `dblclick`,
+  `contextmenu`; the 2nd and 3rd press of a double/triple click at the caret land on the 1 px textarea, which sits on the
+  caret) call `stopImmediatePropagation()`, so the TS bubble listeners of `bindEvents` never see them; the bars, side
+  panels and the scroll listener are untouched. A key the shell does not handle itself is forwarded to the element (ED-21),
+  so the bars' shortcuts keep working with the focus in the document.
+- **Bars**: in `chrome.ts`, right after `registerWriteCommands`, every command whose id is not in
+  `ROUTED_COMMAND_IDS` (57 ids, each read in its `run`; Cut, Copy, Paste and Paste as text left out in fix round 1:
+  their `run` calls `cut()`/`copy()`/`paste()` without a clipboard event, ED-16) gets `isEnabled: () => false` —
+  visible, grayed out, never run on the TS model (D7). Widgets that call the API directly (font, size, the paragraph
+  style dropdown) reach routed methods; the styles gallery and pane list nothing under `rust` (ED-24).
+- `universal-write.ts` changes: 34 lines (the `engine` getter and observed attribute, `configureEngine`,
+  `engineStats`, the `rust` field, `startRust()` after `installFontAssets`, `park`/`unpark` in disconnected/connected).
+
+Why not an `EditorEngine` interface with a TS implementation wrapping today's code: that refactor touches every one of
+the ~1,100 methods of the frozen path for a structure that disappears when the TS engine is removed at 0.10; the route
+table becomes the shell's call map at the gate instead.
+
+### What is routed
+
+| Element method / input | Session |
+|---|---|
+| `loadDocx`, `load('docx')` (`.doc` converted first) | `bindSession(...).open(bytes, { protected, author, clock, seed: 1 })` + `ShellEngine` |
+| `newDocument()` | `newBlank({ lang: spellcheck-default-lang ?? 'pt-BR' })` |
+| `saveDocx()` / `save('docx')`, `saveDocxWithFonts()` | `save()` / `fontRequests()` → `FontResolver` bytes → `saveWithFonts()` (events re-dispatched) |
+| `save('pdf')`, `exportPdf()` | `editsSinceLoad === 0` → the original bytes laid out by a `ViewerDocument` (D12), else the current layout's `pdf()` |
+| `isDirty`, `setDirty`, `isProtected`, `enableEditing`, `isEmpty` | `ChangeSet.dirty`; `setDirty`; `settings.setProtected { on: false }`; `storyInfo()` |
+| typing (`input`, `compositionend`), `uw-before-input` | `type(text)` |
+| Enter, Backspace, Delete, Ctrl+Backspace/Delete | `enter()`, `backspace()`, `delete()`; by word: `moveCaret(word)` + `setSelection` + backspace/delete (ED-4) |
+| arrows (+Shift), Home/End, Ctrl+Left/Right, Ctrl+Home/End, PageUp/Down, Tab, Shift+Tab | `moveCaret(dir, extend, layout)`; `storyInfo()` + `setSelection`; scroll + 20 line moves; `list.changeListLevel(±1)` at a list item's start, else `type('\t')` (ED-26) |
+| mouse down / Shift+click / drag / double / triple click | `hitTest(layout, page, x, y)` + `setSelection`; `paraText()` for the word and the paragraph |
+| `setSelection`, `selectAll`, `selectedText` | `setSelection`, `navigation.selectAll`, `query selectedText` |
+| `undo`, `redo` (Ctrl+Z/Y, Ctrl+Shift+Z) | `undo()`, `redo()` |
+| `getSelectionState()` | `selectionState()` (shell export, below) + `view`, `marks`, `table: null` |
+| `toggleRunProp`, `toggleUnderline`, `setUnderline`, `setFontFamily`, `setFontSize`, `growFont`, `setColor`, `setHighlight`, `clearFormatting`, `changeCase`, `toggleVertAlign`, `setCharSpacing`, `clearCharacterFormatting`; Ctrl+B/I/U, Ctrl+Shift+D/W/H/K/A, Shift+F3 | `format.*`, `style.clearCharacterFormatting` (the Underline button style is shell state, as the TS `ulButton`) |
+| `setAlignment`, `indent`, `setLineSpacing`, `setSpaceBefore`, `setSpaceAfter`, `setShading`, `clearParagraphFormatting`; Ctrl+E/L/R/J | `paragraph.*` |
+| `toggleList`, `removeList`, `changeListLevel`, `applyStyle` | `list.*`, `style.applyStyle` |
+| Ctrl+C / Ctrl+X (clipboard events) | `clipboard.copy`/`cut` + `copied()` → `text/plain` (+ `text/html` when the build has it) |
+| Ctrl+V / Ctrl+Shift+V (the `paste` event; fix round 2) | `clipboard.pasteData { text, html: encodePaste(text/html), rich: 'withRich', mode: 'text' after Ctrl+Shift+V, layout: {} }` (the TS `bindEvents` paste listener; ED-16) |
+| `uw-pasted`, `pasteOptions()`, `repaste()`, `pasteButtonRect()` (the Paste Options button and the Ctrl menu) | the event's detail and `pasteOptions()` from `query pasteOptions` (`noMerge` → `nomerge`); `clipboard.repaste`; `query lastPasteRange` + `caretRectAt` |
+| `getFontEmbedding()`, `setFontEmbedding(patch)` (fix round 2) | `query fontEmbedding`; `setFontEmbedding(patch)` (nothing when nothing changes, as the TS) |
+| `currentStyles()` (styles gallery and pane, fix round 2) | `selectionState()`: `para.styleId ?? 'Normal'`, `run.charStyle` (ED-23) |
+| `exportOdt()`, `exportXps()`, `exportHtml()`, `exportMarkdown()` (fix round 2) | throw a clear error (ED-18): Save As .odt fails instead of writing `undefined` |
+| paint, scroll, zoom, thumbnails, caret, `caretRectAt(focus)` | decoded pages (`DecodedLayout` of js/viewer.ts), `caretRect`, `selectionRects` |
+| `refresh()` | a new clock epoch + relayout |
+| `currentPage()`, `stats()`, `pageWidthZoom()` (bottom bar, word count dialog, mobile fit width) | the decoded pages and the canvases; `storyInfo()` + `paraText(i)` (cached per document change, ED-20) |
+| any other key (Ctrl+S, Ctrl+O, Ctrl+], Ctrl+[, Ctrl+Shift+N, F-keys, Esc, Alt+…, AltGr/Option characters, printable keys) | not run by the shell: forwarded to the element for the bars' shortcuts; the browser's default prevented only for the keys the TS `bindEvents` always prevents (ED-21) |
+
+Each outcome is applied the same way: the selection mirrored into the element (`getSelection()` stays SHELL), dirty
+and undo flags, a relayout only when `stories` or `formatting` say the document changed (a pure selection change
+repaints the selection and the caret), the session's events re-dispatched in order as `CustomEvent(t, { detail })`
+(no `detail` for payload-free events, as the TS), the caret scrolled into view, `onSelectionChange` and the bars
+synced. `{ t: 'error' }` warns once; `{ t: 'jobs' }` (a two-phase command this wave does not answer) is cancelled.
+
+**Layout and paint.** Every edit relays out synchronously through the shell's `ShellEngine` (LA7 incremental) and
+the result is adopted as a `DecodedLayout` (pages decoded lazily). The page base (background + items, the
+header/footer layer at `HF_DIM_ALPHA`, as the TS `engineBase`) is cached per page and invalidated only for the
+report's `relaid` pages (all on a full relayout or a page-count change); the selection rectangles and the caret are
+drawn over it. `rebuildCanvases` mirrors the TS (same canvases, buffers released, the visible ones reallocated by
+`ensureVisiblePainted`). Fonts, hyphenation, the page environment and the paint sources are the viewer's
+`RustSession` (`write/packages/viewer/src/rust-engine.ts`) reused through `adoptDocument()` — the single font
+resolution place of CLAUDE.md; its font loop (`relayout`, up to 5 passes) runs after open and whenever a relayout
+reports missing faces or the resolver changes.
+
+### Shell exports (uo-wasm `src/session/shell.rs`, `shell_state.rs`; js/session.mjs)
+
+| Export | JS | Answer |
+|---|---|---|
+| `uo_shell_engine_new/free/clear` | `ss.newShellEngine()`, `free()` (+ FinalizationRegistry), `clear()` | an incremental `LayoutEngine` per edited document |
+| `uo_shell_relayout(e, h, env, now, tz, flags, lang, hyph, max_pages)` | `engine.relayout(session, env, o)` | an owned `UoLayout` (the options exactly as `uo_session_layout`) |
+| `uo_shell_relayout_report(e)` | `engine.report()` | `{ path, reason, relaid: [a, b), passes, lineShift, memoHits, memoMisses }` (26 bytes) |
+| `uo_shell_story_info(h)` | `storyInfo()` | `{ paras, lastLength }` |
+| `uo_shell_para_text(h, i)` | `paraText(i)` | UTF-16 text or null |
+| `uo_shell_hyphenation_patterns(h, env, langs)` | `hyphenationPatterns(env, langs)` | the pattern ids the document needs (`uo_write_hyphenation_patterns` over the session) |
+| `uo_shell_copied(h)` | `copied()` | `{ text, html }` of the last copy/cut, or null |
+| `uo_shell_selection_state(h)` | `selectionState()` | `{ run, para, pending }`: the generated wire `RunProps`/`ParaProps` structs (no header) decoded with the generated `readRunProps`/`readParaProps` |
+
+`selection_state` ports `getSelectionState()` (universal-write.ts 2992–3011): `pendingProps ?? currentProps()`
+(`props_at` of the focus), the paragraph props with the style's alignment, the font and size filled through the style
+cascade (`styleLook`: `StyleResolver` para/char style, `cascade_rpr`, `font_of_slot` with the theme, the TS fallbacks
+`Liberation Sans` and 22).
+
+### Declarations (decisions outside the TS semantics)
+
+- **ED-1** routing by instance shadowing + fail-closed table + capture listeners (D1 above).
+- **ED-2** `uo_shell_relayout` repeats ≈ 20 lines of the option code of `handle.rs` `uo_session_layout` (not this
+  frontier's file); the engine's `Layout` is **cloned** into the handle after every relayout (`Clone` derived on
+  uo-docx-layout `Layout`/`LayoutPage`, declared edit (a)): the handle owns its pages. Gate: fold the engine into the
+  session handle with a borrowed or incremental layout handle (removes the clone and the duplicate).
+- **ED-3** the shell engine keeps its font provider while (session, registry pointer, registry generation, embedded
+  font count) holds: a provider built per call answered new face identities and every keystroke fell back to
+  `Provider` (measured: 0/20 incremental before, 20/20 after).
+- **ED-4** Ctrl+Backspace/Delete = the TS `deleteWord` composed from session calls (no selection: move by word without
+  extending, select from the old focus, backspace/delete). Fix round 1: when the move does not move (the story's start
+  or end) nothing happens, as the TS (the first round ran a backspace there and emitted the snapshot/discard dirty pair,
+  found by the new Ctrl+Backspace step of the harness, f7d__7__1).
+- **ED-5** `caretRectAt(pos)` answers only for the selection's focus (other positions: null; the session has no caret
+  query by position).
+- **ED-6** `uw-change` and `uw-dirty-change` are dispatched after the mutation (the TS fires them inside `snapshot()`,
+  before it): listeners see the new state. Measured: the event SEQUENCES are equal (below), only the timing moved.
+- **ED-7** clicks resolve in the body scope: a click on a table cell, a header/footer, a note, a text box or a floating
+  object does not enter that context (the TS emits `uw-cellmode`/`uw-tbmode`, or `snapshot()` + `discardSnapshot()` for
+  a click on a floating object: `uw-dirty-change true, uw-change, uw-dirty-change false`); `tableNavigate` is absent
+  (WS-D7).
+- **ED-8** TS screen overlays not painted: field shading and comment highlight, formatting marks, bookmarks, spelling
+  squiggles, search hits, the TOC control, table selection and adorners, multi-selection, plugin inline renderers,
+  touch handles; print view only (web/draft/read disabled); no spellcheck under `rust`.
+- **ED-9** layouts of the editor are not cancellable (the viewer's `cancelCheck` is ignored by the adapter).
+- **ED-10** the clock is fixed per "refresh epoch" (open or `refresh()`), so LA7 stays incremental (D-LA7-24); date
+  fields do not tick while typing (the TS fast path does not either between full layouts).
+- **ED-11** one module per page with the session build (`chunks/uo-write-editor.wasm`, loaded through
+  `loadViewerModule`): a viewer-only module loaded first on the page makes `engine="rust"` fail with a clear error.
+- **ED-12** `engine` is read at `initialize()`; changing it later has no effect until the next initialization
+  (D6: no live switch, which would lose the undo history).
+- **ED-13** `loadDocx` returns before the first layout when the page environment has no fonts yet: the pages appear
+  after the font loop's first pass (`el.rust.idle()` awaits it); later documents of the page lay out synchronously.
+- **ED-14** `selection_state`: `withLatent` (a built-in style the document never defined) and the editor's built-in
+  `STYLES` table (documents without `styles.xml`) are not ported (such ids resolve as undefined styles); the default
+  paragraph style is the sheet's `defaults.paragraph` (TS: the index's first `w:default` paragraph style, else `Normal`).
+- **ED-15** the wire `src` of the run and paragraph props travels as an option of an option (`{ value }`); the shell
+  flattens it to the TS number in `getSelectionState()`.
+- **ED-16** (rewritten in fix round 2) the keyboard paste (the `paste` event of Ctrl+V and Ctrl+Shift+V) is the TS
+  `bindEvents` paste listener over the session: `text/plain`, the `text/html` item encoded by `encodePaste()` (the
+  DOMParser tree of the D2b-F8 boundary, core/crates/uo-docx/js/paste-tree.mjs, re-exported by js/session.mjs) with the
+  editor's own `fragmentOf`, `rich: 'withRich'` (the session's internal copy when the system text is still its own) and
+  `mode: 'text'` after Ctrl+Shift+V (the TS `plainPasteNext`), sent as `clipboard.pasteData` (uo-docx paste.rs
+  `paste_data`: the formatting policy, the ring, `Event::Pasted`). The first two rounds called `clipboard.pasteText` (the
+  port of the public `pasteText` API method) and lost `uw-pasted` and the TS paste's formatting: review finding of fix
+  round 1, fixed. `uw-pasted` travels without detail (F8-D3); the shell dispatches it with `pasteOptions()` (routed:
+  the session's query in the TS form), so the Paste Options button (`pasteButtonRect()`, only while the caret is at the
+  paste's end, ED-5) and the Ctrl-alone menu (`repaste`) work. Not routed in this wave: `layout.contentWidthTwips` is
+  absent (the session uses the body section's print width, F8-D3; the TS `contentWidthTwips()` is the caret's section,
+  equal for single-section documents and in print view); an image-only clipboard item (a two-phase decode job: warned,
+  nothing pasted); `copy()`/`cut()`/`paste()`/`pastePlain()` called WITHOUT a clipboard event (the bars' Cut, Copy,
+  Paste and Paste-as-text commands stay DISABLED, D7; the keyboard paths work), Paste Special and the ring pane; the
+  element's `pasteDefaults` field (the bars' saved Set Default Paste preferences) does not reach the session, which
+  keeps its own defaults (the TS defaults: within/between `keep`, other `default`). `copied().html` is empty in the
+  shipped session build (uo-docx `export` is not in it, F8-D5): the system clipboard gets `text/plain` only, but a
+  Ctrl+V in the same editor still pastes the session's own rich copy through `withRich` (as the TS). The shell's
+  `text/plain` has LF between paragraphs where the TS's has CRLF (the parity facet `clipboard text`).
+- **ED-17** without a `fonts` base the element's installed font assets are pushed to the page environment as assets
+  (no advance tables).
+- **ED-18** `.odt` load and the html/markdown/odt/xps exports are not routed: `loadOdt` warns; `exportOdt`,
+  `exportXps`, `exportHtml` and `exportMarkdown` throw a clear error (fix round 2: they were disabled mutators answering
+  `undefined`, so the bar's Save As with the ODT format handed `undefined` bytes to `host.saveFile` or the download —
+  review finding). The bar's save catches the error and reports a failed save (the file-picker and host paths); `save()`
+  with another format than docx/pdf rejects.
+- **ED-19** a reconnected element reopens the document saved at disconnect (the undo history is not kept).
+- **ED-20** (fix round 1) `stats()` counts words and characters over the session's `paraText` of the body paragraphs
+  (the TS `plainTextSlice` skips note reference marks and counts a plugin inline as its `fallbackText`; the session's
+  text holds the run text of both); inside a note or a text box the TS counts the saved body, the shell always the
+  body (it never enters those contexts, ED-7). `pageWidthZoom()` uses the width of the caret's page (the focus
+  section's page in print view, the only view of this wave) instead of `sect().pageWidthTwips`. `currentPage()` is the
+  TS algorithm capped by the layout's page count.
+- **ED-21** (fix round 1, corrected in fix round 2) a key the shell does not run itself (a Ctrl or Alt combination
+  outside its own table, AltGr and Option characters, the F-keys, Esc, printable keys) stops on the textarea (the TS
+  `bindEvents` listeners never see it) and a synthetic copy (`key`, `code`, modifiers, `repeat`, `location`; bubbling,
+  composed, cancelable) is dispatched on the element, where the bars' shortcut listener (`bindDocumentFeatures`) and host
+  listeners see it; when a listener prevents the copy, the original is prevented too. Otherwise the browser's default
+  runs, as in the TS — EXCEPT for the keys the TS `bindEvents` always prevents (`tsOwned`: the navigation keys
+  with any modifier, Enter, Backspace, Delete, Tab, PageUp/PageDown, F9, Shift+F3, Ctrl+Alt+F/D, Ctrl+Alt+V, Ctrl+hyphen,
+  the Ctrl letters of its map and the Ctrl+Shift letters D/W/H/K/A), whose default stays prevented although their TS
+  function is disabled here (Alt+ArrowLeft does not go back in history, Shift+Tab does not move the focus out, Ctrl+Enter
+  inserts nothing). The copy is untrusted (`isTrusted` false). Ctrl+C/X/V and Ctrl+Shift+V keep their native default
+  (the clipboard events). Fix round 1 prevented every Ctrl/Alt/F-key/Esc original on the premise that they insert
+  nothing, which is false: on Windows AltGr reports `ctrlKey` and `altKey` together, so @ (AltGr+2 or AltGr+Q), the euro
+  sign (AltGr+E), `[ ] { } \ | ~` on es-ES and the Mac Option characters typed nothing, and F5/F11 lost their browser
+  default (review finding of fix round 1, reproduced with CDP: TS offsets 0 → 1 → 2 → 3, Rust 0). `--mode keys` checks
+  AltGr+2, AltGr+E and Option+2 and the default of ten keys against the TS. Remaining difference: the TS runs some of
+  those owned keys with Alt (Alt+Arrow moves the caret, Alt+Enter is Enter, Ctrl+Alt+B is bold); the shell prevents them
+  and runs nothing.
+- **ED-22** (fix round 1) PageUp/PageDown scroll by 0.9 of the view as the TS `bindEvents` (the first round scrolled
+  by the whole view), then 20 line moves through the layout.
+
+- **ED-23** (fix round 2) `currentStyles()` is routed (the styles gallery's checked item, the styles pane, Modify
+  Style): the paragraph's own `styleId` from `selectionState()`, else `Normal` (the TS `docStyles.defaultParagraph()`, the
+  document's `w:default` paragraph style: equal for the documents whose default style id is `Normal`; the session does
+  not expose that id), and the run's `charStyle` (`pendingProps ?? currentProps()` in both).
+- **ED-24** (fix round 2) four disabled queries answer the neutral value without running the TS code
+  (`NEUTRAL_QUERIES`): over the empty TS model they answered a false value of the document (review finding).
+  Visible effects: `listStyles()` → [] (the styles gallery and the styles pane are EMPTY; the Find dialog's style list
+  and the TOC dialog's styles too); `paragraphStyles()` → [] (the paragraph style dropdown falls back to its built-in
+  Normal / Title / Heading 1–3 list, whose ids reach the routed `applyStyle`); `listStylesInDocument()` → [] (the list
+  gallery shows no document list styles); `isTrackingChanges()` → false (the session reads `w:trackRevisions` at open,
+  but no query exposes it; the Track Changes command is disabled, D7, so the bar's flash text never asks). Still
+  answered by the TS code over the empty model: `knownFontFamilies()` (SHELL) lists the fonts installed through
+  `initialize({ fonts })`/the `fonts` base but NOT the document's embedded families (the TS adds them at load:
+  `registerEmbeddedFontMetrics`; the session reads them for layout, no query lists them), so the font menus lack them.
+- **ED-25** (fix round 2) `engineStats().editors` counts the CONNECTED `engine="rust"` elements: a disconnect parks the
+  editor (document saved, session freed) and leaves the count, a reconnect re-enters it. The first rounds had a
+  `dispose()` that nothing called (the count only grew; review finding): removed. `--mode memory` asserts 1 while open
+  and 0 after each remove.
+- **ED-26** (fix round 2) Tab / Shift+Tab are the TS `bindEvents` rule: at the start of a list item or with several
+  paragraphs selected, `list.changeListLevel(±1)`; when the session answers no change (no selected paragraph in a list),
+  Tab types a tab and Shift+Tab does nothing. The first rounds always typed a tab (Shift+Tab: nothing), hidden in the
+  parity runs behind f7a__7__8's earlier clipboard divergence until the paste was routed. Difference: the TS asks whether
+  the FOCUS paragraph is a list item (with the style's numbering), the session whether ANY selected paragraph is; they
+  differ only for a multi-paragraph selection whose focus paragraph is not in a list. The TS's `true` without a change
+  (a formatting policy refusing the level) types nothing; the shell then types a tab.
+- **ED-27** (merge, orchestrator) the TS model stays empty under `rust` also when the host calls `load*()` before
+  `uw-ready`: the routes exist only once `startRust()` returns, so such a call runs the TS load. `startRust()` now resets
+  `model`, `pkg` and `fullDoc` to null afterwards (the safety net of the disabled queries and the TS hover listeners is
+  the null TS model). The document of that early call is not shown (`initialize()` opens the configured source or a new
+  document through the session, as the TS `initialize()` also overwrites); hosts call `load*()` after `uw-ready`. A TS
+  load still in flight when the session starts is not awaited (not exercised by the harness).
+- **ED-28** (merge, orchestrator) no context menu on the pages under `rust`: the shell's capture `contextmenu` listener
+  moves nothing and prevents both the bars' menu (chrome.ts) and the browser's. Declared in the README; routing the menu
+  (its disabled items grayed, D7) is gate item 17.
+- **Classification (merge).** `paragraphBorderPreset` is a mutator whose name matched neither `MUTATOR` nor `QUERY`, so it
+  ran its TS body as a "disabled query" (inert only through the null TS model): added to `MUTATOR`. `engine-switch.test.ts`
+  now fails when any disabled query's TS body takes an undo step or applies formatting (`this.snapshot(`/`applyPara(`/
+  `applyRun(`/`pushHistory(`).
+- **Builds (merge).** `build:offline-demo` and `build:site-live` (single-file bundles, the public site's live editor) did
+  not resolve after `rust-engine.ts` arrived: they gained the `write-engine`/`write-session` aliases (the engine JS is
+  then inlined, about 389 KB, run only with `engine="rust"`). `tools/build-pkg.mjs` `ENGINE` gained
+  `@universal-office/write-session`: without it `build:pkg write` fails. Shipping `chunks/uo-write-editor.wasm` stays D5.
+
+### Numbers
+
+Fixtures: the 74 committed documents of `core/crates/uo-docx-layout/tests/captures/*/docs`, Chromium headless
+(chromium-headless-shell 1228 of the frozen Playwright), 1280×900, dpr 1, UTC, a fixed clock, `Math.random` seeded,
+reduced motion.
+
+**Parity, full run, fix round 1** (`UO_ES_STRIDE=1 UO_ES_STEPS=12`, seed 1; 888 scripted steps of real mouse and
+keyboard events, the TS run first, the Rust run replaying the same events). The scripts changed in fix round 1: each
+fixture's script is seeded by its file name (the same script at any stride or `UO_ES_ONLY`; the first round seeded by
+the fixture's index, so a stride-6 fixture ran another script than at stride 1), and the steps now cover every routed
+input path of the table above: Shift+click, drag, double and triple click, IME composition (CDP
+`Input.imeSetComposition` + `Input.insertText`), ArrowUp/Down, Shift+ArrowDown, PageUp/PageDown, Ctrl+Backspace/Delete,
+Tab, Ctrl+Home/End, and clipboard steps (Ctrl+Shift+Left, Ctrl+C or Ctrl+X, the copied `text/plain` read as a facet,
+then a fixed plain text `colado` put on the clipboard and pasted with Ctrl+V or Ctrl+Shift+V). **The mode FAILS on any
+difference that its `DECLARED` table does not cover** (review finding, fixed: the first round only tallied):
+
+Fix round 2 (the keyboard paste through `pasteData`, Tab/Shift+Tab, the key defaults; the same scripts, so the
+numbers compare with fix round 1's in brackets):
+
+| Facet | Equal | Different (all declared) |
+|---|---|---|
+| page count after load | 74 | 0 |
+| selection after each step | 799 | 89 (94) |
+| caret rectangle (relative to its page canvas) | 791 | 97 (105) |
+| `uw-*` event sequence (type + detail) | 866 | 22 (70) |
+| toolbar state: run props | 818 | 70 (70) |
+| toolbar state: paragraph props | 822 | 66 (71) |
+| `isDirty()` | 888 | 0 |
+| clipboard `text/plain` after a copy/cut | 876 | 12 (12) |
+| page count and sizes after `refresh()` | 72 | 2 (2) |
+| page thumbnails, ×1 and ×2.5, pixels at tolerance 0 | 1,050 | 100 (106) |
+| screen canvases, caret hidden, TS overlays off | 146 | 29 (31) |
+| screen canvases, TS overlays on (ED-8, informative, never fails) | 72 | 103 |
+| saved `.docx` part names | 73 | 1 (1) |
+| saved `.docx` part bytes | 647 | 14 (17) |
+| page errors | 74 fixtures | 0 |
+
+Two full runs in fix round 2: the first (paste routed, before the Tab fix) exit 0 with 27 entries used and 15 entries
+stale; the second (Tab fixed, `DECLARED` regenerated) exit 0, `editor_switch: ok`, 5 min 27 s, every entry used, none
+stale. **48 of the 74 fixtures are equal in every facet** (fix round 1: 32). The other 26 each have one `DECLARED`
+entry (the first differing step, the step facets that may differ from there on, the end facets, the declaration).
+Entries by cause:
+
+- **ED-16, the copied `text/plain` only (3: f7a__7__14, f7c__7__5, f8__7__5)**: a copy or cut over a paragraph mark;
+  the TS joins paragraphs with CRLF, the shell writes the session's `copied().text` with LF. Every paste of the scripts
+  is now equal (selection, events with the `uw-pasted` detail, toolbar state, saved bytes): the 23 ED-16 entries of fix
+  round 1 were the paste through `pasteText` (review finding). f8__7__5 also diverges at step 11 (ED-7 below) and
+  f7c__7__5 has other pages at the end on the same saved bytes (gate item 10).
+- **ED-7, table cells by line moves (7: f7b__7__1/4/5/6/7/9, f7d__7__8)**: PageUp/PageDown/ArrowUp; the TS `moveCaret`
+  calls `tableNavigate` and enters the cells (`uw-cellmode`), the session's `moveCaret` stays in the body story (WS-D7).
+  f7b__7__5 was hidden behind its clipboard entry until fix round 2.
+- **ED-7, a click on a floating object (5: f7b__7__10, f7d__7__6/7/10/11)**: the TS selects it (`uw-change`; in f7d__7__7
+  the `snapshot()` + `discardSnapshot()` dirty pair), the shell resolves the click in the body.
+- **ED-7, a double click on a note reference or a click in a text box (2: f7c__7__13 `uw-notemode`; f8__7__5 step 11
+  `uw-tbmode`, and the TS saves from inside the text box: the saved `document.xml` differs)**.
+- **Gate item 1, the caret/hit x mapping (7: f2-3-2, f2-3-3, f7a__7__1/2/3/4/13)**: a click at the TS caret x hits
+  another offset (f2-3-3, new in fix round 2 behind its former clipboard entry: paragraph 16 offset 162 in the TS, 159 in
+  the shell), and the line moves of ArrowDown/PageUp, whose goal x is the caret x, land elsewhere (f7a__7__1, f7a__7__3).
+- **Gate item 10, other pages on the same saved bytes (2: f2-3-1, f7c__7__1)**: equal at every step; f2-3-1 and
+  f7c__7__1 were declared ED-16 in fix round 1 (their paste step), now the end pages are their only difference.
+- **BUG-1 (1: f7d__7__9)**: equal at every step and in the saved package; the screen of the end differs because the
+  final selection is BACKWARD and `uo_session_selection_rects` answers no rectangle for it. Fix requested above
+  (frontier W's file).
+- f7a__7__8 (fix round 1: ED-16) is equal since the Tab fix (ED-26: its step 3, Tab at the start of a list item, changed
+  the list level in the TS and typed a tab in the shell).
+
+Fix round 1's numbers (same scripts, before the paste was routed): selection 794 / 94, caret 783 / 105, events 818 /
+70, run 818 / 70, paragraph 817 / 71, clipboard 876 / 12, pages 72 / 2, thumbnails 1,044 / 106, screen 144 / 31,
+overlays on 71 / 104, part names 73 / 1, part bytes 644 / 17; 32 fixtures equal, 42 declared (23 of them ED-16: the
+TS emitted `uw-pasted` and the shell did not, and five pastes differed in content).
+
+The first round's End-on-a-wrapped-line (gate item 2) and caret-after-typing (f8__7__7) divergences are not hit by the
+fix-round-1 scripts; both items stay open. Fixed by this round's harness: the dblclick and triple click of the shell
+(the 2nd and 3rd press at the caret land on the 1 px textarea, which the shell did not count as the pages: the shell
+kept the caret where the TS selected the word or paragraph; `inPages` now accepts the textarea); Ctrl+Backspace/Delete
+at the story's start or end (the shell ran a backspace with nothing selected, emitting the TS's snapshot/discard
+dirty pair; the TS `deleteWord` returns without an edit: ED-4 now does too); PageUp/PageDown scrolled by the whole view
+instead of 0.9 (ED-22).
+
+**Stride 6 (13 fixtures, 156 steps, `--mode all` with the count build)**: phase 0 (no `.wasm` request, no engine chunk,
+no engine code in the static closure), parity exit 0 with 4 declared entries used (f7a__7__14 ED-16, f7b__7__10 ED-7,
+f7b__7__6 ED-7, f7d__7__8 ED-7), memory and chrome below, `editor_switch: ok`. Fix round 2 (`--mode all`, count build,
+which now includes `keys`): phase 0 the same (0 `.wasm` requests, 0 engine chunk requests, 0 leaks; the entry's
+static closure is 11 outputs, 2,207 KB: `paste-html.ts`, now imported by the engine chunk too, became a shared chunk),
+parity exit 0 with the same 4 entries used (f7a__7__14 is now its copied CRLF only), memory, keys and chrome below,
+`editor_switch: ok` (76 s for the whole mode).
+
+**Keys** (`--mode keys`, fix round 2): AltGr+2 (CDP modifiers 3, `@`), AltGr+E (`€`) and Option+2 (modifiers 1, `™`)
+on the same document: TS focus offsets 1, 2, 3 and text `@€™`; Rust the same (fix round 1: offset 0, nothing typed).
+The browser's default of ten synthetic keydowns, TS / Rust: F5, F11, Esc, Ctrl+P, Alt+F default / default; Shift+Tab,
+Alt+ArrowLeft, F9, Ctrl+Enter, Ctrl+Alt+V prevented / prevented.
+
+**Chrome** (`--mode chrome`, compact and ribbon): the routed buttons change the session state; a non-routed command
+(`link`, `pagebreak`) is disabled; with the focus in the document Ctrl+S reaches the bar's save (one
+`uw-save-request`), Ctrl+] grows the font (22 → 24 half-points), Ctrl+K runs nothing (no dialog); the ribbon's Cut, Copy
+and Paste buttons are disabled (the compact bar shows none); 0 page errors. Fix round 2: the same results (Ctrl+S and
+Ctrl+K are no longer prevented by the shell: the bar's listener prevents them, as in the TS).
+
+**Memory** (`--mode memory`, count build, 100 cycles of create `engine="rust"` → load → 20 typed characters →
+`saveDocx` → remove, 5 documents): after every remove sessions 0, shell engines 0, handles 0 (1 while open), page
+environments 1; live bytes at each cycle's end one value after warm-up (16,986,450), `memory.buffer` one value
+(30,736,384 B). Fix round 2: the same values, and `engineStats().editors` is 1 while open and 0 after every remove
+(ED-25). Native (`tests/shell_native.rs`): M1 every shell export returns the live bytes exactly (42,961,397 B
+allocated, peak 4,325,375 B, 0 B left); M4 10,000 engines (0 B left); wasm M4 (`tests/shell_api.test.mjs`) 10,000 ×
+(newShellEngine + relayout + free) in 576 ms and 10,000 dropped through the FinalizationRegistry, live bytes back to
+12,782,879 exactly.
+
+**Relayout = full layout** (`shell_native` A): 30 seeded hot-path steps on a 120-paragraph document, every page message
+(layout id zeroed) and the page heads byte-equal to `uo_session_layout` after each step; mid-document typing 20/20
+incremental (pages 2–4 relaid), Enter falls back to a full relayout with reason `document`.
+
+**Keystroke latency, 50 pages** (`--mode latency`, `gen_docs.mjs` seed 14, 310 paragraphs, caret in paragraph 155;
+synchronous duration of one `input` / `keydown` event; Playwright's fixed clock rounds `performance.now()` to ms):
+
+| | TS (fast path) | Rust | fix round 1: TS | fix round 1: Rust | fix round 2: TS | fix round 2: Rust |
+|---|---|---|---|---|---|---|
+| type, median / p95 | 7 / 11 ms | 27 / 32 ms | 7 / 8 ms | 26 / 30 ms | 7 / 8 ms | 26 / 29 ms |
+| Enter | 111 / 130 ms | 139 / 169 ms | 113 / 131 ms | 136 / 142 ms | 111 / 133 ms | 136 / 148 ms |
+| Backspace (merging paragraphs) | 109 / 142 ms | 137 / 153 ms | 110 / 133 ms | 135 / 142 ms | 109 / 122 ms | 136 / 142 ms |
+
+Rust per typed key (median / p95; fix round 1 in brackets: 0 / 1, 13 / 14, 0 / 0, 12 / 16, 200/200; fix round 2: 0 / 1,
+13 / 14, 0 / 0, 12 / 16, 200/200): session exec 0 / 1 ms; relayout (incremental + `Layout` clone + `layout_handle`)
+14 / 15 ms; adopt (handle + page heads) 0 / 0 ms; install + paint (page cache, the relaid page decoded and painted,
+caret EditLines, proxy) 13 / 17 ms; incremental 200/200. Native, debug build (`shell_native` E): a keystroke's
+relayout + clone + handle 115 ms median, 15.9 MB allocated, 7.6 MB peak; a full `uo_session_layout` 2,230 ms. The
+TS's own full relayout runs 1.5 s after the last key and is not in its column.
+
+**Sizes**: the session build (`--features session`) 9,538,764 B raw / 3,126,154 B gzip -9 (the wave's planning base
+9,329,985 / 3,063,663, which predates both frontiers of this wave); the viewer build (`--features write`) 4,122,173 /
+1,466,506. The editor's engine chunk (rust-engine + the viewer's RustSession + js/viewer, session, paint, codecs): 382 KB
+minified; the entry's static closure is unchanged (10 outputs, 2,207 KB, no engine code).
+
+**Regressions**: the editor's vitest suite 30 files / 313 tests (baseline 29 / 310 + `engine-switch.test.ts`); the
+viewer's 25 passed + 1 skipped (26/26 with `UO_WASM_PATH`); `write_api.test.mjs` 8/8; `viewer_switch --mode parity`
+(stride 6) 0 differences with the session build AND with a `--features write` build (13 documents, 108 pages, pixels at
+tolerance 0, PDF, text layer, find, links); editor and viewer tsc (path-mapped configs) exit 0, no output; the core tsc
+line with `editor.check.ts` 0 errors; `check-changed` clean (clippy native + wasm32, float casts, grep bans). Fix
+round 2: the editor's vitest 30 files / 313 tests (`engine-switch.test.ts` now also checks the four neutral queries and
+the routed font embedding and `currentStyles`; it prints 511 public methods: routed 68, shell 26, disabled mutators
+292, disabled queries 125, private routed 18, bar commands routed 57); editor and viewer tsc exit 0, no output; the
+core tsc line plus `editor.check.ts` and `write-session.d.ts` 0 errors (the new `encodePaste` line included);
+`shell_api.test.mjs` 2/2 on the count build (`UO_ES_M4=2000`); `check-changed` clean (no Rust file changed this round).
+
+### Files touched outside the frontier's own files (each declared)
+
+- (a) `core/crates/uo-docx-layout/src/output.rs`: `Clone` added to the derives of `Layout` and `LayoutPage` (purely
+  additive; every field was already `Clone`).
+- (b) `core/crates/uo-wasm/js/viewer.ts`: four additive `ViewerModule` members (`exports`, `binding`, `adopt`, `kill`);
+  `write/packages/viewer/src/write-engine.d.ts`: those four, plus `inner` on `ViewerEnv`/`DecodedLayout` (opaque
+  `EngineEnv`/`EngineLayout`).
+- (c) `write/packages/viewer/src/rust-engine.ts`: `EngineDocument` (the `doc` field's type; `ViewerDocument` satisfies
+  it) and `adoptDocument()`; behaviour-neutral (viewer parity 0 differences on both builds).
+- (d) not needed: `current_props` was rebuilt from the public `props_at`.
+- (e) new tests `core/crates/uo-wasm/tests/shell_native.rs`, `shell_api.test.mjs`; (f) new `core/crates/uo-wasm/js/editor.check.ts`.
+- (g) fix round 2, this frontier's own JS files, additive: `js/session.mjs` re-exports `encodePaste` from
+  core/crates/uo-docx/js/paste-tree.mjs (unchanged; a relative import, so the existing `@universal-office/write-session`
+  alias of the bundlers carries it and no new alias is needed), declared in `js/session.d.ts` and in the editor's
+  `write-session.d.ts` (plus `setFontEmbedding` and `charStyle`, already in the real binding), checked by a new line of
+  `editor.check.ts`.
+- Not edited (requests below): `CHANGELOG.md`, `tools/build-pkg.mjs`, `.github/workflows/rust-core.yml`.
+
+### Wanted (for the orchestrator)
+
+- `tools/build-pkg.mjs`: ship `chunks/uo-write-editor.wasm` (the `--features session` build) with the write package when
+  the `rust-engine` chunk of the editor is present, with the licence notices (as `shipEngineWasm`), and the alias
+  `@universal-office/write-session` → `core/crates/uo-wasm/js/session.mjs`; decide D5 (one module for editor and viewer).
+- `CHANGELOG.md`: `engine="rust"` on `<universal-write>` (preview), `UniversalWriteElement.configureEngine()`,
+  `engineStats()`; the declared differences ED-6 (event timing) and ED-7/ED-8.
+- **BUG-1 (fix round 1, owner: frontier W, `src/session/handle.rs`)**: `uo_session_selection_rects` passes
+  `s.session.range()` as is to `EditLines::selection_rects`, which walks from `start` to `end`: a backward selection
+  (focus before anchor: Shift+Left, a drag or Shift+click upwards) answers NO rectangle, so the shell paints no
+  highlight (measured: f7d__7__9 paragraph 6 offsets 10→106 answers 2 rectangles, 106→10 answers 0). The TS paints
+  `normalizeRange(range)`. The fix is one line, `let r = uo_docx::session::text::normalize_range(s.session.range());`
+  (not made here: not this frontier's file). Declared as BUG-1 in the harness (f7d__7__9, end screen); remove the entry
+  when fixed.
+- CI (`rust-core.yml`): `cargo test -p uo-wasm --features session,count --test shell_native`; `node --expose-gc --test
+  crates/uo-wasm/tests/shell_api.test.mjs` on the count build; `editor.check.ts` and
+  `write/packages/editor/src/write-session.d.ts` on the core tsc line; `editor_switch.mjs --mode phase0`, `--mode
+  parity` (stride 6; it FAILS on any difference outside its `DECLARED` table since fix round 1), `--mode memory` (count
+  build), `--mode chrome`; `editor_switch_tsc.mjs`; the editor's vitest
+  through `editor_switch_vitest.mjs`.
+
+### For the milestone-2 gate
+
+1. **Caret/hit x past a run boundary on a mixed-size line** (the first divergence of most fixtures above): the caret x
+   of the session (uo-wasm `session/caret.rs`, which calls `EditLines::caret_x` → `caret_x_in` and `hit_line_x` of
+   uo-docx-layout `src/hit.rs`, the port of the TS `caretXIn`/`hitLineX` of engine-doc.ts) differs from the TS `caretX`
+   (f7a__7__3 paragraph 0 offset 186: TS 3181.7 tw — its `chars[o]` — Rust 3892.7 tw; the line holds runs of two
+   sizes, the offset is one past the boundary at 185), so a click at the TS position hits another offset. Pixels of the
+   same layout are equal: the mapping, not the layout. The place to look is the `chars` table `EditLines` builds per
+   line in uo-docx-layout `hit.rs` (the per-character x/offset arrays), not this frontier's crate.
+2. **End on a wrapped line** (f2-3-2, seed 1, step 2): TS lands at offset 88 (the end of the line's range, drawn at the
+   start of the next line), the session's `line_end_offset` at 84 (before the trailing white space): `lineEndOffset`
+   vs `move_caret` in uo-wasm `session/caret.rs`.
+3. Fold the shell engine into `UoWriteSession` (`uo_session_relayout(h, prev)` with a borrowed or incremental layout
+   handle): removes the `Layout` clone (ED-2), the duplicated option code, and most of the 14 ms per key.
+4. The caret's `EditLines` are rebuilt for every new layout generation (part of the 13 ms install + paint): an
+   incremental `EditLines` over the relaid pages.
+5. Move `selection_state` into uo-docx (`Session::selection_state()` and a `QueryOp`), with `getTableState` (WS gate
+   item 5), `withLatent` and the built-in `STYLES` (ED-14).
+6. A caret query by position (ED-5) and the hit test in context scopes (cells, headers/footers, notes, text boxes:
+   ED-7), `tableNavigate` (WS-D7).
+7. The overlays of ED-8, the views, the spellcheck, then the rich paste and the two-phase jobs (ED-16), one family per
+   later wave; the 425 disabled public methods are the remaining surface (count printed by `engine-switch.test.ts`).
+8. D5 packaging (one session module per page, viewers included) and the build-pkg change above.
+9. The latency numbers are from Playwright's fixed clock (ms resolution): re-measure without it before the gate.
+10. The end-of-run page differences of f2-3-1 / f7c__7__1 / f7c__7__11 (same saved bytes, an automatic hyphen in the
+    TS only): find whether the TS editor's page-global hyphenator or the session's pattern registration is right
+    (the viewer parity, where both sides lay out the same bytes without edits, is 0 differences). Not reproduced by the
+    fix-round-1 scripts (f7c__7__11 is equal in every facet; f2-3-1 and f7c__7__1 diverge earlier at a clipboard
+    step); kept open.
+11. (fix round 1) BUG-1 above: the backward selection's rectangles (one line in `handle.rs`, frontier W).
+12. (fix round 1; fix round 2) The keyboard paste is routed through `clipboard.pasteData` since fix round 2 (ED-16):
+    the `uw-pasted` differences of the first rounds are gone (they needed no new work: the session already had the port).
+    Left: the clipboard items of two-phase jobs (an image-only item, `copy()`/`cut()`/`paste()` without an event, which
+    need the `ReadClipboard`/decode/encode/render jobs answered by the shell), Paste Special, the ring pane, the
+    `pasteDefaults` field (a session setter), `contentWidthTwips` of the caret's section, and the CRLF of the copied
+    `text/plain` (the shell writes the session's `copied().text`; the TS joins paragraphs with CRLF).
+13. (fix round 1) The first-round f2-3-3 click divergence (round-1 script, step 7: the TS hit paragraph 23 offset 152 at
+    caret y 333.6 px, the Rust paragraph 22 offset 62 at y 322.9: another LINE, not a mixed-size line nor a text box)
+    was left unclassified in the first round. With the fix-round-1 scripts (seeded by the fixture's name) f2-3-3's clicks
+    are equal and it diverges first at a clipboard step; the round-1 case is not reproducible by the current harness and
+    stays open (a candidate for gate item 1's line choice in `EditLines::hit`).
+14. (fix round 2) Session queries for what ED-24 answers neutral: the styles list (`listStyles(filter)` with
+    `withLatent` and the built-in `STYLES`, then `paragraphStyles`/`listStylesInDocument`), the tracking state
+    (`isTrackingChanges`: `SessionOptions.tracking`, read at open), and the document's embedded font families
+    (`knownFontFamilies`). Each is a `QueryOp` in uo-wasm `query.rs` (frontier W's files) or a shell export.
+15. (fix round 2) The document's default paragraph style id (`docStyles.defaultParagraph()`) in `selectionState()` (ED-23).
+16. (fix round 2) The TS-owned keys with Alt that the TS runs (Alt+Arrow, Alt+Enter, Alt+Backspace/Delete, Ctrl+Alt+letter
+    of the Ctrl map): the shell prevents them and runs nothing (ED-21).
+17. (merge) The context menu on the pages (ED-28): move the selection, then open the bars' menu with its disabled items
+    grayed (D7).
+18. (merge) Packaging before 0.10: ship `chunks/uo-write-editor.wasm` with the write package (D5). The `write-session`
+    alias in `build-pkg.mjs` is in since the merge (a prerequisite: `build:pkg write` did not resolve without it).
+
+### Process metrics
+
+- Wall time: one implementer session (Opus), 09:40–10:55 local (≈ 1 h 15 min, every run included) after the planner's
+  measurements; a full parity run (74 fixtures × 12 steps × 2 engines) takes 5 min 40 s, stride 6 45 s.
+- Rounds: none with a reviewer yet. Rework inside the session: the shell engine's provider per call (all relayouts
+  fell back to `Provider`; fixed by keeping it, ED-3); the first `tsc` of the viewer through a path-mapped config
+  EMITTED `.js`/`.d.ts`/`.js.map` next to 564 sources of shared/ and write/ (and a `viewer/dist/`) because the viewer's
+  own config emits — removed file by file (only files created by that run, checked by mtime, no junctions), the helper
+  now forces `noEmit` and `rootDir`; the harness's click targets drawn on positions without a line moved the TS
+  selection without the Rust run seeing it (fixed: redraw, restore); screen captures raced the scroll virtualization
+  and the caret blink (fixed: settle + stop the timer); the Rust `rebuildCanvases` kept far buffers (fixed: mirror the
+  TS release); disabled `async` methods answered `undefined` where the ribbon chains `.catch` (fixed: a resolved
+  promise).
+- **Fix round 1** (reviewer round 1: 2 major, 6 minor findings; all fixed or declared): ≈ 2 h 30 min wall time, 6 full
+  parity runs (≈ 9 min each with the new steps) plus focused runs. Fixed: the parity mode fails on undeclared
+  differences (`DECLARED` table, per fixture / facet / step); the shell forwards the keys it does not run to the element
+  (ED-21: Ctrl+S, Ctrl+Shift+S, Ctrl+O, Ctrl+], Ctrl+[, Ctrl+Shift+N work with the focus in the document; `--mode
+  chrome` checks it); Cut/Copy/Paste/Paste-as-text disabled in the bars, Ctrl+Shift+V reaches the native paste
+  (ED-16); `currentPage`, `stats`, `pageWidthZoom` routed (ED-20); `WriteSession.layout` uses `layoutArgs`; the README
+  states the packaging state and the module order; f2-3-3 and gate item 1 named (gate items 1 and 13). The new input
+  steps found three shell defects, fixed (double/triple click on the textarea, Ctrl+Backspace at the story's start,
+  PageUp/Down scroll) and one session defect, not this frontier's file (BUG-1, backward selection rectangles). Rework:
+  the first clipboard steps pasted with End in between (mixing in gate item 2) and read the facets before the TS's
+  asynchronous paste landed (flaky selections between runs); fixed by pasting in place, waiting 300 ms, and pasting a
+  fixed plain text so that both engines take the plain-text path.
+- **Fix round 2** (reviewer round 2: 3 major, 4 minor findings; all fixed or declared): ≈ 1 h 25 min wall time, two
+  full parity runs (≈ 5 min 30 s each), one stride-6 `--mode all`, two focused runs. Fixed: the key forwarding prevents
+  only what the TS prevents (ED-21: AltGr/Option characters type, F5/F11 keep their default; `--mode keys`); the keyboard
+  paste goes through `clipboard.pasteData` with the HTML tree and `withRich` (ED-16), the `uw-pasted` detail and the
+  Paste Options (`pasteOptions`, `repaste`, `pasteButtonRect`) routed; `getFontEmbedding`/`setFontEmbedding` routed;
+  `currentStyles` routed (ED-23) and four document queries answer neutral (ED-24); `exportOdt`/`exportXps`/
+  `exportHtml`/`exportMarkdown` throw (ED-18); the `editors` counter follows connect/disconnect, `dispose()` removed
+  (ED-25); the record's garbled ED-16 count and wrong ED-21 premise corrected. Found by the rerouted paste: the shell's
+  Tab typed a tab at the start of a list item where the TS changes the list level (ED-26, fixed; f7a__7__8 equal now),
+  and two first divergences that the clipboard entries hid (f2-3-3 gate item 1, f7b__7__5 ED-7). Rework: the first
+  parity run of the round was started before the `uw-pasted` detail fix and was stopped and rerun.

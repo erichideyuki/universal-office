@@ -17,10 +17,11 @@ impl FromWire<w::Point> for crate::bind_native::Point {
 
 impl IntoWire<w::Point> for crate::bind_native::Point {
     fn into_wire(&self) -> Result<w::Point, BindError> {
+        let crate::bind_native::Point { x: x_x, y: x_y, label: x_label } = self;
         Ok(w::Point {
-            x: IntoWire::into_wire(&self.x)?,
-            y: IntoWire::into_wire(&self.y)?,
-            label: IntoWire::into_wire(&self.label)?,
+            x: IntoWire::into_wire(x_x)?,
+            y: IntoWire::into_wire(x_y)?,
+            label: IntoWire::into_wire(x_label)?,
         })
     }
 }
@@ -29,15 +30,16 @@ impl FromWire<w::Tagged> for crate::bind_native::Tagged {
     fn from_wire(v: w::Tagged) -> Result<Self, BindError> {
         Ok(crate::bind_native::Tagged {
             point: FromWire::from_wire(v.point)?,
-            ..Default::default()
+            cache: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::Tagged> for crate::bind_native::Tagged {
     fn into_wire(&self) -> Result<w::Tagged, BindError> {
+        let crate::bind_native::Tagged { point: x_point, cache: _ } = self;
         Ok(w::Tagged {
-            point: IntoWire::into_wire(&self.point)?,
+            point: IntoWire::into_wire(x_point)?,
         })
     }
 }
@@ -146,22 +148,24 @@ impl FromWire<w::Bag> for crate::bind_native::Bag {
 
 impl IntoWire<w::Bag> for crate::bind_native::Bag {
     fn into_wire(&self) -> Result<w::Bag, BindError> {
+        let crate::bind_native::Bag { shapes: x_shapes, color: x_color, tagged: x_tagged, id: x_id, pair: x_pair, maybe: x_maybe } = self;
         Ok(w::Bag {
-            shapes: IntoWire::into_wire(&self.shapes)?,
-            color: IntoWire::into_wire(&self.color)?,
-            tagged: IntoWire::into_wire(&self.tagged)?,
-            id: IntoWire::into_wire(&self.id)?,
-            pair: IntoWire::into_wire(&self.pair)?,
-            maybe: IntoWire::into_wire(&self.maybe)?,
+            shapes: IntoWire::into_wire(x_shapes)?,
+            color: IntoWire::into_wire(x_color)?,
+            tagged: IntoWire::into_wire(x_tagged)?,
+            id: IntoWire::into_wire(x_id)?,
+            pair: IntoWire::into_wire(x_pair)?,
+            maybe: IntoWire::into_wire(x_maybe)?,
         })
     }
 }
 
 impl IntoWire<w::Report> for crate::bind_native::Report {
     fn into_wire(&self) -> Result<w::Report, BindError> {
+        let crate::bind_native::Report { total: x_total, colors: x_colors } = self;
         Ok(w::Report {
-            total: IntoWire::into_wire(&self.total)?,
-            colors: IntoWire::into_wire(&self.colors)?,
+            total: IntoWire::into_wire(x_total)?,
+            colors: IntoWire::into_wire(x_colors)?,
         })
     }
 }

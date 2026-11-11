@@ -32,6 +32,10 @@ pub mod layout;
 pub mod oracle;
 pub mod query;
 pub mod ring;
+// the editor switch (record "Milestone 2: the editor switch"): the shell's incremental relayout and
+// story queries, and its toolbar state
+pub mod shell;
+pub mod shell_state;
 pub mod wire;
 
 #[cfg(all(feature = "session-selftest", not(test)))]

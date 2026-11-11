@@ -1,7 +1,7 @@
 // Verification (c) of the session in wasm (record uo-bindings.md "Milestone 2: the session in wasm"):
 // hostile bytes into the decoding exports for a bounded time — random byte strings of 0–4 KiB, the
-// prefixes and bit flips of valid messages, and the module's own random `Exec` messages
-// (`uo_session_test_random_exec`, the generated test support) — into exec / query / complete and the open
+// prefixes and bit flips of valid messages, and the module's own random `Exec` and `Query` messages
+// (`uo_session_test_random_exec` / `_query`, the generated test support) — into exec / query / complete and the open
 // options. Every call succeeds or throws SessionError, never a WebAssembly.RuntimeError (a trap); a valid
 // exec still works afterwards; the live bytes come back after free.
 //   UO_WASM_PATH=<session-test .wasm> UO_WS_FUZZ_MS=10000 node --expose-gc --test crates/uo-wasm/tests/session_hostile.test.mjs
@@ -20,7 +20,7 @@ const repo = join(here, '../../../..');
 const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/wasm32-unknown-unknown/wasm/uo_wasm.wasm');
 const bytes = readFileSync(wasmPath);
 const names = WebAssembly.Module.exports(new WebAssembly.Module(bytes)).map((e) => e.name);
-const skip = names.includes('uo_session_test_random_exec') ? false : 'this build has no session self-test (--features session-selftest)';
+const skip = names.includes('uo_session_test_random_exec') && names.includes('uo_session_test_random_query') ? false : 'this build has no session self-test (--features session-selftest)';
 const { imports, host } = writeImports();
 const instance = skip ? null : (await WebAssembly.instantiate(bytes, imports)).instance;
 const w = instance?.exports;
@@ -46,8 +46,9 @@ test('hostile messages never trap', { skip }, async () => {
     enc(codec.encodeSessionOpen, { protected: false, seed: 1 }),
   ];
   let rng = new Rng(0xbad5e55);
-  const counts = { calls: 0, ok: 0, refused: 0, randomExec: 0 };
+  const counts = { calls: 0, ok: 0, refused: 0, randomExec: 0, randomQuery: 0 };
   let worst = 0;
+  let worstWhat = '';
   const call = (b, which) => {
     const t = performance.now();
     const p = b.length ? uo.render.put(b) : 0;
@@ -66,7 +67,8 @@ test('hostile messages never trap', { skip }, async () => {
     } catch (e) {
       assert.fail(`a trap on ${which % 4} with ${b.length} bytes: ${e}`);
     }
-    worst = Math.max(worst, performance.now() - t);
+    const dt = performance.now() - t;
+    if (dt > worst) { worst = dt; worstWhat = `${['exec', 'query', 'complete', 'new_blank'][which % 4]} ${b.length} B`; }
     counts.calls++;
     if (status === 0) counts.ok++; else counts.refused++;
   };
@@ -76,7 +78,7 @@ test('hostile messages never trap', { skip }, async () => {
   const t0 = performance.now();
   const start = i;
   while (i - start < count && (count !== Infinity || performance.now() - t0 < ms)) {
-    const kind = i % 4;
+    const kind = i % 5;
     if (kind === 0) {
       const n = rng.below(4097);
       const b = new Uint8Array(n);
@@ -90,10 +92,14 @@ test('hostile messages never trap', { skip }, async () => {
       const b = valid[vi].slice();
       if (b.length) b[rng.below(b.length)] ^= 1 << rng.below(8);
       call(b, vi < 2 ? 0 : vi < 4 ? 1 : vi === 4 ? 2 : 3);
-    } else {
+    } else if (kind === 3) {
       // a random Exec of the module's generated support, run on the session
       const { status, data } = new uo.render.Buf(w.uo_session_test_random_exec(i)).take();
       if (status === 0) { counts.randomExec++; call(data, 0); }
+    } else {
+      // a random Query (generated support), run on the session
+      const { status, data } = new uo.render.Buf(w.uo_session_test_random_query(i)).take();
+      if (status === 0) { counts.randomQuery++; call(data, 1); }
     }
     i++;
   }
@@ -115,7 +121,7 @@ test('hostile messages never trap', { skip }, async () => {
   s.free();
   ss.clipboardClear();
   const after = await settle();
-  console.log(`hostile: ${counts.calls} calls in 2 passes of ${iterations} iterations (${FUZZ_MS} ms for the first; ${counts.ok} answered, ${counts.refused} refused, ${counts.randomExec} random Exec run), worst ${worst.toFixed(1)} ms; live bytes ${base} -> ${after}`);
+  console.log(`hostile: ${counts.calls} calls in 2 passes of ${iterations} iterations (${FUZZ_MS} ms for the first; ${counts.ok} answered, ${counts.refused} refused, ${counts.randomExec} random Exec and ${counts.randomQuery} random Query run), worst ${worst.toFixed(1)} ms (${worstWhat}); live bytes ${base} -> ${after}`);
   assert.ok(!ss.dead);
   assert.equal(after, base);
 });

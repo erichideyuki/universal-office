@@ -29,13 +29,13 @@ pub mod session;
 // they refer to each other by (`crate::support`, `crate::d2a_support`...); their `#[test]` functions
 // would run again as tests of this crate, so they are built for the module only
 #[cfg(all(feature = "session-selftest", not(test)))]
-#[path = "../../uo-docx/tests/support/mod.rs"]
-#[allow(dead_code, unused_imports, clippy::all)]
-mod support;
-#[cfg(all(feature = "session-selftest", not(test)))]
 #[path = "../../uo-docx/tests/d2a_support/mod.rs"]
 #[allow(dead_code, unused_imports, clippy::all)]
 mod d2a_support;
+#[cfg(all(feature = "session-selftest", not(test)))]
+#[path = "../../uo-docx/tests/d2b_f10_support/mod.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+mod d2b_f10_support;
 #[cfg(all(feature = "session-selftest", not(test)))]
 #[path = "../../uo-docx/tests/d2b_f1_support/mod.rs"]
 #[allow(dead_code, unused_imports, clippy::all)]
@@ -45,9 +45,21 @@ mod d2b_f1_support;
 #[allow(dead_code, unused_imports, clippy::all)]
 mod d2b_f2_support;
 #[cfg(all(feature = "session-selftest", not(test)))]
+#[path = "../../uo-docx/tests/d2b_f3_support/mod.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+mod d2b_f3_support;
+#[cfg(all(feature = "session-selftest", not(test)))]
 #[path = "../../uo-docx/tests/d2b_f6_support/mod.rs"]
 #[allow(dead_code, unused_imports, clippy::all)]
 mod d2b_f6_support;
+#[cfg(all(feature = "session-selftest", not(test)))]
+#[path = "../../uo-docx/tests/d2b_f9_support/mod.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+mod d2b_f9_support;
+#[cfg(all(feature = "session-selftest", not(test)))]
+#[path = "../../uo-docx/tests/support/mod.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+mod support;
 
 #[cfg(feature = "jsnum-memtest")]
 pub mod jsnum_memtest;

@@ -354,10 +354,16 @@ fn refusals_and_errors() {
     let (dp, dl) = put(&docx);
     // SAFETY: consumed buffers.
     let p = unsafe { uo_session_open(std::ptr::null(), op, ol, dp, dl) };
+    // (follow-up 4) the lock is silent, as the TS `locked()`: `Done`, the document unchanged. The
+    // `CommandError::Locked` variant is never produced (a gate item of the record).
+    // SAFETY: live handle.
+    let before = take(unsafe { uo_session_save(p) }).1;
     match exec(p, Command::Text(TextCmd::Type { text: Utf16::from("x") })) {
-        w::ExecOutcome::Error(w::CommandError::Locked) | w::ExecOutcome::Done(_) => {}
+        w::ExecOutcome::Done(_) => {}
         other => panic!("{other:?}"),
     }
+    // SAFETY: live handle.
+    assert_eq!(take(unsafe { uo_session_save(p) }).1, before, "a protected session types nothing");
     // the layout family without fonts: a layout error, no panic
     let toc = Command::Reference(uo_docx::session::ops::references::ReferenceCmd::UpdateFields {
         scope: uo_docx::session::ops::references::FieldScopeSel::All,
@@ -673,40 +679,285 @@ fn hostile_bytes_never_panic() {
     assert!(worst.as_secs_f64() < 1.0);
 }
 
-/// The random `Exec` messages of the generated support run on a session: what stays alive after the
-/// session is freed and the ring emptied (lazily built tables of a path the warm-up did not reach are
-/// counted once: a seed is a leak only when it leaves bytes the second time too).
+/// The random messages of the generated support (`Exec`, `Query`) run on a session: what stays alive
+/// after the session is freed and the ring emptied (lazily built tables of a path the warm-up did not
+/// reach are counted once: a seed is a leak only when it leaves bytes the second time too). Run twice:
+/// on a session without an environment and on one with the open fonts.
+#[cfg(all(feature = "count", feature = "session-selftest"))]
+fn random_messages_leave_nothing(
+    label: &str,
+    generate: extern "C" fn(u32) -> *mut UoBuf,
+    call: unsafe extern "C" fn(*mut UoWriteSession, *mut u8, usize) -> *mut UoBuf,
+) {
+    let n: u32 = std::env::var("UO_WS_RANDOM").ok().and_then(|v| v.parse().ok()).unwrap_or(3_000);
+    let docx = fixture("f8__7__0");
+    for with_fonts in [false, true] {
+        let env = if with_fonts { env_with_fonts() } else { std::ptr::null_mut() };
+        let run = |seed: u32| {
+            let h = open(env, &docx);
+            let (st, msg) = take(generate(seed));
+            if st == 0 {
+                let (p, l) = put(&msg);
+                // SAFETY: consumed buffer, live handle.
+                drop(take(unsafe { call(h, p, l) }));
+            }
+            // SAFETY: freed once.
+            unsafe { uo_session_free(h) };
+            uo_session_clipboard_clear();
+            uo_last_error_clear();
+        };
+        run(0);
+        let mut leaks = Vec::new();
+        for seed in 0..n {
+            let before = uo_alloc::thread_stats().live;
+            run(seed);
+            if uo_alloc::thread_stats().live != before {
+                let again = uo_alloc::thread_stats().live;
+                run(seed);
+                let d = uo_alloc::thread_stats().live - again;
+                if d != 0 {
+                    leaks.push((seed, d));
+                }
+            }
+        }
+        println!(
+            "random {label} ({}): {n} messages run, {} leak on a second run: {:?}",
+            if with_fonts { "fonts" } else { "no env" },
+            leaks.len(),
+            &leaks[..leaks.len().min(10)]
+        );
+        assert!(leaks.is_empty());
+        if with_fonts {
+            // SAFETY: freed once.
+            unsafe { uo_write_env_free(env) };
+        }
+    }
+}
+
 #[cfg(all(feature = "count", feature = "session-selftest"))]
 #[test]
 fn random_exec_messages_leave_nothing() {
-    use uo_wasm::session::selftest::uo_session_test_random_exec;
-    let n: u32 = std::env::var("UO_WS_RANDOM").ok().and_then(|v| v.parse().ok()).unwrap_or(3_000);
-    let docx = fixture("f8__7__0");
-    let run = |seed: u32| {
-        let h = open(std::ptr::null(), &docx);
-        let (st, msg) = take(uo_session_test_random_exec(seed));
-        if st == 0 {
-            drop(exec_bytes(h, &msg));
-        }
-        // SAFETY: freed once.
-        unsafe { uo_session_free(h) };
-        uo_session_clipboard_clear();
-        uo_last_error_clear();
+    random_messages_leave_nothing("Exec", uo_wasm::session::selftest::uo_session_test_random_exec, uo_session_exec);
+}
+
+/// (follow-up 2) the random `Query` messages: same gate.
+#[cfg(all(feature = "count", feature = "session-selftest"))]
+#[test]
+fn random_query_messages_leave_nothing() {
+    random_messages_leave_nothing("Query", uo_wasm::session::selftest::uo_session_test_random_query, uo_session_query);
+}
+
+/// (follow-up 5, WS-D13) a malformed phase 2 of the save with fonts keeps phase 1: the host can answer
+/// again. Status 2 (no pending phase 1) only after a good answer consumed it.
+#[test]
+fn a_malformed_phase_2_keeps_phase_1() {
+    let h = open(std::ptr::null(), &fixture("f8__7__0"));
+    let (st, _) = exec_bytes(
+        h,
+        &exec_msg(w::ExecOp::SetFontEmbedding(w::EmbeddingPatch { embed: Some(true), subset: Some(true), skip_common_fonts: Some(false) })),
+    );
+    assert_eq!(st, 0);
+    // SAFETY: live handle.
+    let (st, req) = take(unsafe { uo_session_font_requests(h) });
+    assert_eq!(st, 0);
+    let wanted = w::decode_font_requests(&req, &mut w::Tables::new(), &w::limits()).unwrap().requests.len();
+    assert!(wanted > 0);
+    let faces = |n: usize, guid: usize| {
+        let m = w::FontFaces { faces: (0..n).map(|_| w::FaceAnswer { bytes: None }).collect(), guids: vec![7; guid] };
+        let mut out = Vec::new();
+        w::encode_font_faces(&mut out, &w::Delta::default(), &m).unwrap();
+        out
     };
-    run(0);
-    let mut leaks = Vec::new();
-    for seed in 0..n {
-        let before = uo_alloc::thread_stats().live;
-        run(seed);
-        if uo_alloc::thread_stats().live != before {
-            let again = uo_alloc::thread_stats().live;
-            run(seed);
-            let d = uo_alloc::thread_stats().live - again;
-            if d != 0 {
-                leaks.push((seed, d));
-            }
+    let phase_2 = |bytes: &[u8]| {
+        let (p, l) = put(bytes);
+        // SAFETY: consumed buffer, live handle.
+        take(unsafe { uo_session_save_with_fonts(h, p, l) }).0
+    };
+    assert_eq!(phase_2(b"junk"), 5, "undecodable");
+    assert_eq!(phase_2(&faces(wanted + 1, 16 * (wanted + 1))), 5, "one answer too many");
+    assert_eq!(phase_2(&faces(wanted, 16 * wanted - 1)), 5, "too few GUID bytes");
+    assert_eq!(phase_2(&faces(wanted, 16 * wanted)), 0, "phase 1 survived three refusals");
+    assert_eq!(phase_2(&faces(wanted, 16 * wanted)), NO_FONT_SAVE, "and a good answer consumes it");
+    // SAFETY: freed once.
+    unsafe { uo_session_free(h) };
+}
+
+/// One pass of the stale-layout scenario over the three fixtures (real note ids, cells, headers/footers and layout
+/// renewals): the number of calls, of activations per context (`cell`, `note`, `hf`) and of the calls made while the session was IN a cell.
+fn stale_pass(env: *mut UoWriteEnv, iterations: usize) -> (usize, [usize; 3], usize) {
+    use uo_docx::ids::HfPartId;
+    use uo_docx::session::CellHop;
+    use uo_docx::session::ops::context::ContextCmd;
+    let floats = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 0.0, 1500.0, -1e300, 1e300, 300.0, 5000.0];
+    let notes = [3.0, 4.0, 7.0, 9.0];
+    let mut queries = 0usize;
+    let mut cell_queries = 0usize;
+    let mut active = [0usize; 3];
+    /// the four queries against the (stale) layout; true when all answered 0, none or a bad argument
+    fn query4(h: *mut UoWriteSession, l: *mut UoLayout, pages: u32, rng: &mut Rng, floats: &[f64], what: &str) {
+        let page = [0, pages.saturating_sub(1), pages, u32::MAX][rng.below(4)];
+        let (x, y) = (floats[rng.below(floats.len())], floats[rng.below(floats.len())]);
+        // SAFETY: live handles; the layout is stale on purpose.
+        let sts = unsafe {
+            [
+                take(uo_session_hit_test(h, l, page, x, y)).0,
+                take(uo_session_caret_rect(h, l)).0,
+                take(uo_session_selection_rects(h, l, page)).0,
+                take(uo_session_move_caret(h, l, u32::try_from(rng.below(9)).unwrap(), u32::try_from(rng.below(2)).unwrap())).0,
+            ]
+        };
+        for st in sts {
+            assert!(st == 0 || st == 1 || st == 5, "{what}: status {st}");
         }
     }
-    println!("random Exec: {n} messages run, {} leak on a second run: {:?}", leaks.len(), &leaks[..leaks.len().min(10)]);
-    assert!(leaks.is_empty());
+    for key in ["f8__7__0", "f8__7__3", "f8__7__10"] {
+        let h = open(env, &fixture(key));
+        let mut l = layout(h, env);
+        assert!(!l.is_null());
+        // SAFETY: live layout.
+        let pages = u32::try_from(unsafe { uo_layout_page_count(l) }).unwrap();
+        let mut rng = Rng::new(0x57a1e);
+        let in_cell = std::cell::Cell::new(false);
+        let mut run = |c: Command| {
+            let (st, b) = exec_bytes(h, &exec_msg(w::ExecOp::Command(c.into_wire().unwrap())));
+            assert_eq!(st, 0, "{key}: {}", String::from_utf8_lossy(&b));
+            if let Ok(r) = w::decode_exec_result(&b, &mut w::Tables::new(), &w::limits())
+                && let w::ExecOutcome::Done(cs) = r.outcome
+            {
+                for e in cs.events {
+                    match e {
+                        w::Event::CellMode(x) => {
+                            in_cell.set(x.active);
+                            if x.active {
+                                active[0] += 1;
+                            }
+                        }
+                        w::Event::NoteMode(x) if x.active => active[1] += 1,
+                        w::Event::HfMode(x) if x.active => active[2] += 1,
+                        _ => {}
+                    }
+                }
+            }
+        };
+        // every context once before the random part (the geometry of the layout is still the document's): a cell, a note, a
+        // header/footer part, each against the layout taken above
+        run(Command::Context(ContextCmd::EnterCell { anchor: 0, hops: vec![CellHop { row: 0, col: 0, block: None }], caret: None }));
+        if in_cell.get() {
+            cell_queries += 4;
+        }
+        query4(h, l, pages, &mut rng, &floats, &format!("{key} in a cell"));
+        run(Command::Context(ContextCmd::ExitCell));
+        run(Command::Context(ContextCmd::EnterNote { footnote: true, id: notes[0], caret: None, at_end: false }));
+        query4(h, l, pages, &mut rng, &floats, &format!("{key} in a note"));
+        run(Command::Context(ContextCmd::ExitNote));
+        run(Command::Context(ContextCmd::EnterHeaderFooter { part: HfPartId(0), page: 0 }));
+        query4(h, l, pages, &mut rng, &floats, &format!("{key} in a header/footer"));
+        run(Command::Context(ContextCmd::ExitHeaderFooter));
+        // the cells the document really has (anchor 0, rows and columns up to 3): the random part enters THESE, not blind indices
+        let mut cells: Vec<(u32, u32)> = Vec::new();
+        for row in 0..3u32 {
+            for col in 0..3u32 {
+                run(Command::Context(ContextCmd::EnterCell { anchor: 0, hops: vec![CellHop { row, col, block: None }], caret: None }));
+                if in_cell.get() {
+                    cells.push((row, col));
+                    query4(h, l, pages, &mut rng, &floats, &format!("{key} in cell {row},{col}"));
+                    cell_queries += 4;
+                    queries += 4;
+                    run(Command::Context(ContextCmd::ExitCell));
+                }
+            }
+        }
+        queries += 12;
+        for it in 0..iterations {
+            match rng.below(16) {
+                0 => (0..=rng.below(30)).for_each(|_| run(Command::Text(TextCmd::Backspace))),
+                1 => (0..=rng.below(30)).for_each(|_| run(Command::Text(TextCmd::Delete))),
+                2 => {
+                    let end = DocPosition { para: u32::MAX / 2, offset: u32::MAX / 2 };
+                    run(Command::Text(TextCmd::SetSelection { anchor: DocPosition { para: 0, offset: 0 }, focus: end }));
+                    run(Command::Text(TextCmd::Delete));
+                }
+                3 => (0..=rng.below(5)).for_each(|_| run(Command::Text(TextCmd::Enter))),
+                4 => run(Command::Text(TextCmd::Type { text: Utf16::from("abc def") })),
+                5 => {
+                    // a real cell when the document has one, else a blind index (refused: the session stays where it was)
+                    let (row, col) = if cells.is_empty() {
+                        (u32::try_from(rng.below(3)).unwrap(), u32::try_from(rng.below(3)).unwrap())
+                    } else {
+                        cells[rng.below(cells.len())]
+                    };
+                    let anchor = if cells.is_empty() { u32::try_from(rng.below(3)).unwrap() } else { 0 };
+                    run(Command::Context(ContextCmd::EnterCell { anchor, hops: vec![CellHop { row, col, block: None }], caret: None }))
+                }
+                6 => run(Command::Context(ContextCmd::EnterNote {
+                    footnote: true,
+                    id: notes[rng.below(4)],
+                    caret: None,
+                    at_end: rng.below(2) == 1,
+                })),
+                7 => run(Command::Context(ContextCmd::EnterHeaderFooter {
+                    part: HfPartId(u32::try_from(rng.below(4)).unwrap()),
+                    page: u32::try_from(rng.below(3)).unwrap(),
+                })),
+                8 => run(Command::Context(
+                    [ContextCmd::ExitNote, ContextCmd::ExitCell, ContextCmd::ExitHeaderFooter, ContextCmd::ExitTextbox][rng.below(4)]
+                        .clone(),
+                )),
+                9 => drop(exec_bytes(h, &exec_msg(w::ExecOp::Undo))),
+                10 => drop(exec_bytes(h, &exec_msg(w::ExecOp::Redo))),
+                11 => {
+                    // a fresh layout now and then: the lines cache of a non-body scope is rebuilt against new geometry
+                    if rng.below(4) == 0 {
+                        // SAFETY: freed once, replaced at once.
+                        unsafe { uo_layout_free(l) };
+                        l = layout(h, env);
+                        assert!(!l.is_null());
+                    }
+                }
+                _ => run(Command::Text(TextCmd::SetSelection {
+                    anchor: DocPosition { para: u32::try_from(rng.below(50)).unwrap(), offset: u32::try_from(rng.below(200)).unwrap() },
+                    focus: DocPosition { para: u32::try_from(rng.below(50)).unwrap(), offset: u32::try_from(rng.below(200)).unwrap() },
+                })),
+            }
+            query4(h, l, pages, &mut rng, &floats, &format!("{key} iteration {it}"));
+            queries += 4;
+            if in_cell.get() {
+                cell_queries += 4;
+            }
+        }
+        // SAFETY: freed once.
+        unsafe {
+            uo_layout_free(l);
+            uo_session_free(h);
+        }
+    }
+    (queries, active, cell_queries)
+}
+
+/// (follow-up 3) a layout that is stale after edits: hit test, caret, selection rectangles and caret
+/// moves against it never panic (answers 0, none or a bad argument), also while the session is in a cell, a
+/// note (ids 3/4 and 7/9 of the fixtures) or a header/footer; every context is activated (counted from the
+/// `uw-*mode` events). `UO_WS_STALE` iterations per document; two passes, the second leak-checked (feature `count`).
+#[test]
+fn stale_layouts_never_panic() {
+    let iterations: usize = std::env::var("UO_WS_STALE").ok().and_then(|v| v.parse().ok()).unwrap_or(300);
+    let env = env_with_fonts();
+    let (queries, active, cell_queries) = stale_pass(env, iterations);
+    uo_session_clipboard_clear();
+    assert!(active.iter().all(|&n| n > 0), "every context must be activated: cell/note/hf = {active:?}");
+    assert!(cell_queries > 0, "stale layouts must be queried while the session is in a cell");
+    #[cfg(feature = "count")]
+    {
+        let u = uo_alloc::assert_no_leak(|| {
+            let _ = stale_pass(env, iterations);
+            uo_session_clipboard_clear();
+            uo_last_error_clear();
+        });
+        println!("stale layouts: second pass {} B allocated, 0 B left", u.allocated);
+    }
+    // SAFETY: freed once.
+    unsafe { uo_write_env_free(env) };
+    println!(
+        "stale layouts: {queries} calls against stale layouts ({cell_queries} made while in a cell), activations cell/note/hf {active:?}, no panic"
+    );
 }

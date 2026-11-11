@@ -80,7 +80,9 @@ fn trim_units(t: &[u16]) -> &[u16] {
     t.get(a..b.max(a)).unwrap_or(&[])
 }
 
-pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+/// Days since 1970-01-01 of a civil date (shared with the wasm shell's clock).
+#[must_use]
+pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     // Howard Hinnant's algorithm over the proleptic Gregorian calendar (`m` 1..=12)
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);

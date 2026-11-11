@@ -30,7 +30,7 @@ use uo_fonts::{FontLimits, Variant};
 use super::caret::{Dir, move_caret};
 use super::codec as w;
 use super::env::{HostEnv, default_now};
-use super::layout::{edit_scope, editor_options, lay_out_session, revision_view, scope_key};
+use super::layout::{edit_scope, editor_options, lay_out_session, scope_key};
 use super::oracle::LazyOracle;
 use super::query;
 use super::ring::with_ring;
@@ -78,22 +78,17 @@ pub struct UoWriteSession {
     pub(crate) painter: Option<FormatPainter>,
     pub(crate) font_save: Option<FontSave>,
     pub(crate) lines: Option<LinesCache>,
+    /// test-only: the scripted layout oracle of the F10 replay (what the TS layout answered), instead of the lazy one
+    #[cfg(all(feature = "session-selftest", not(test)))]
+    pub(crate) test_oracle: Option<Box<crate::d2b_f10_support::replay::ReplayOracle>>,
 }
 
 static NEXT_SESSION: AtomicU32 = AtomicU32::new(1);
 
 /// `Date` of a clock: ms since the epoch of the UTC parts, the offset of the local parts (minutes).
 fn clock_of(now: LocalNow) -> Clock {
-    // days from the civil date (H. Hinnant), exact in i64
-    fn days(y: i32, m: u32, d: u32) -> i64 {
-        let y = i64::from(y) - i64::from(m <= 2);
-        let era = y.div_euclid(400);
-        let yoe = y - era * 400;
-        let m = i64::from(m);
-        let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + i64::from(d) - 1;
-        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-        era * 146_097 + doe - 719_468
-    }
+    // WS-D14: the one civil-date arithmetic of the session (its DATE fields use it too)
+    let days = |y: i32, m: u32, d: u32| uo_docx::session::ops::tables::sort::days_from_civil(i64::from(y), i64::from(m), i64::from(d));
     let minutes = |p: uo_docx::session::DateParts| days(p.year, p.month, p.day) * 1440 + i64::from(p.hour) * 60 + i64::from(p.minute);
     let utc = minutes(now.utc);
     let offset = i32::try_from(minutes(now.local) - utc).unwrap_or(0);
@@ -111,18 +106,18 @@ impl UoWriteSession {
         now: Rc<Cell<LocalNow>>,
         font_embedding: FontEmbeddingSettings,
     ) -> Self {
-        UoWriteSession { session, embedded, fonts, now, font_embedding, painter: None, font_save: None, lines: None }
-    }
-
-    /// A handle over a session the self-test opened (no font environment).
-    #[cfg(all(feature = "session-selftest", not(test)))]
-    pub(crate) fn for_tests(
-        session: Session,
-        embedded: Vec<EmbeddedFont>,
-        now: Rc<Cell<LocalNow>>,
-        settings: FontEmbeddingSettings,
-    ) -> Self {
-        Self::new(session, embedded, None, now, settings)
+        UoWriteSession {
+            session,
+            embedded,
+            fonts,
+            now,
+            font_embedding,
+            painter: None,
+            font_save: None,
+            lines: None,
+            #[cfg(all(feature = "session-selftest", not(test)))]
+            test_oracle: None,
+        }
     }
 
     /// The options of the oracle's layouts: the host's clock and loaded pattern sets, the editor's.
@@ -141,6 +136,14 @@ impl UoWriteSession {
 
     /// Runs `f` with the command context: the lazy oracle and the instance's clipboard ring.
     pub(crate) fn run<R>(&mut self, f: impl FnOnce(&mut Session, &mut ExecCx<'_>) -> R) -> R {
+        #[cfg(all(feature = "session-selftest", not(test)))]
+        if let Some(o) = self.test_oracle.as_deref_mut() {
+            let session = &mut self.session;
+            return with_ring(|ring| {
+                let mut cx = ExecCx { layout: o, clipboard: ring };
+                f(session, &mut cx)
+            });
+        }
         let opts = self.oracle_options();
         let provider = OnceCell::new();
         let UoWriteSession { session, embedded, fonts, .. } = self;
@@ -269,15 +272,6 @@ fn variant_wire(v: Variant) -> w::FontVariant {
         Variant::Bold => w::FontVariant::Bold,
         Variant::Italic => w::FontVariant::Italic,
         Variant::BoldItalic => w::FontVariant::BoldItalic,
-    }
-}
-
-fn variant_name(v: Variant) -> &'static str {
-    match v {
-        Variant::Regular => "regular",
-        Variant::Bold => "bold",
-        Variant::Italic => "italic",
-        Variant::BoldItalic => "boldItalic",
     }
 }
 
@@ -712,15 +706,17 @@ pub unsafe extern "C" fn uo_session_layout(
         pipeline::fail(&JobError::Argument("session or environment"));
         return std::ptr::null_mut();
     };
-    let Some(mut o) = session_layout_options(env, now_ms, tz_offset_min, flags, &lang, &hyph) else {
+    let Some(base) = session_layout_options(env, now_ms, tz_offset_min, flags, &lang, &hyph) else {
         pipeline::fail(&JobError::Argument("layout options"));
         return std::ptr::null_mut();
     };
-    if (flags >> crate::write::LAYOUT_REVISIONS_SHIFT) & 7 == 0 {
-        o.revisions = Some(revision_view(&s.session));
-    }
-    if o.hyphenation_languages.is_none() {
-        o.hyphenation_languages = Some(super::layout::ENGINE_HYPHENATION_LANGUAGES.iter().map(|l| Box::<str>::from(*l)).collect());
+    // WS-D15: the editor's options (`layoutOpts()`); an explicit revision mode of `flags` wins over the
+    // session's own revision view
+    let explicit = (flags >> crate::write::LAYOUT_REVISIONS_SHIFT) & 7 != 0;
+    let keep = base.revisions.clone();
+    let mut o = editor_options(&s.session, &base);
+    if explicit {
+        o.revisions = keep;
     }
     if max_pages > 0 {
         o.limits.max_pages = max_pages;
@@ -805,19 +801,23 @@ pub unsafe extern "C" fn uo_session_save_with_fonts(h: *mut UoWriteSession, ptr:
     let bytes = unsafe { take_bytes(ptr, len) };
     // SAFETY: the caller guarantees `h` is null or live.
     let Some(s) = (unsafe { session_mut(h) }) else { return buf(NULL_HANDLE, Vec::new()) };
-    let Some(f) = s.font_save.take() else { return buf(NO_FONT_SAVE, Vec::new()) };
+    let Some(pending) = s.font_save.as_ref() else { return buf(NO_FONT_SAVE, Vec::new()) };
+    let wanted = pending.requests.len();
+    // WS-D13: the answer is decoded and checked BEFORE the pending save is taken, so a malformed phase 2
+    // leaves phase 1 alive and the host can answer again.
     let m = match w::decode_font_faces(&bytes, &mut w::Tables::new(), &w::limits()) {
         Ok(m) => m,
         Err(e) => return bad(&format!("decode: {e:?}")),
     };
-    if m.faces.len() != f.requests.len() || m.guids.len() < 16 * f.requests.len() {
+    if m.faces.len() != wanted || m.guids.len() < 16 * wanted {
         return bad("one face answer and 16 GUID bytes per request");
     }
+    let Some(f) = s.font_save.take() else { return buf(NO_FONT_SAVE, Vec::new()) };
     let host: Vec<Option<Arc<[u8]>>> = m.faces.into_iter().map(|a| a.bytes.map(Arc::from)).collect();
     let embedded = &s.embedded;
     let requests = &f.requests;
     let faces = |r: &FaceRequest| -> Option<Arc<[u8]>> {
-        if let Some(e) = embedded.iter().find(|e| *e.family == *r.family && *e.variant == *variant_name(r.variant)) {
+        if let Some(e) = embedded.iter().find(|e| *e.family == *r.family && *e.variant == *r.variant.name()) {
             return Some(Arc::clone(&e.data));
         }
         let i = requests.iter().position(|q| q == r)?;

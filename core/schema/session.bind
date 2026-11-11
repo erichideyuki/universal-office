@@ -65,7 +65,7 @@ TabOnly struct uo_docx::session::ops::paragraph::TabOnly
 FlowArgs struct uo_docx::session::ops::paragraph::FlowArgs
 LayoutArgs struct uo_docx::session::ops::paragraph::LayoutArgs
 ParaBorderSide enum uo_docx::session::ops::paragraph::ParaBorderSide
-BorderSpec struct uo_docx::model::props::BorderSpec default
+BorderSpec struct uo_docx::model::props::BorderSpec skip=cleared,keys
 BorderPreset enum uo_docx::session::ops::paragraph::BorderPreset
 ListLevelSpec struct uo_docx::session::ops::lists::ListLevelSpec
 ListLevelFormat struct uo_docx::session::ops::lists::ListLevelFormat
@@ -91,7 +91,7 @@ BorderKind enum uo_docx::session::ops::tables::table_ops::BorderKind
 OptWidthSpec option
 TablePropertiesInput struct uo_docx::session::ops::tables::TablePropertiesInput
 PageSetup struct uo_docx::session::ops::sections::PageSetup
-PageBorders struct uo_docx::model::section::PageBorders default
+PageBorders struct uo_docx::model::section::PageBorders skip=cleared,keys
 SectionType enum uo_docx::session::ops::sections::SectionType
 ColumnsArg enum uo_docx::session::ops::sections::ColumnsArg
 SectionApplyTo enum uo_docx::session::ops::sections::SectionApplyTo
@@ -117,7 +117,7 @@ MarkupPatch struct uo_docx::session::ops::revision_cmds::MarkupPatch
 HyperlinkOptions struct uo_docx::session::ops::bookmarks::HyperlinkOptions
 ShapeFill enum uo_docx::write::emit::object::ShapeFill
 TupUtf16F64 tuple
-PicColor struct uo_docx::model::picture::PicColor default
+PicColor struct uo_docx::model::picture::PicColor skip=cleared,keys
 NullablePicLine enum uo_docx::js::Nullable<uo_docx::model::picture::PicLine>
 NullablePicShadow enum uo_docx::js::Nullable<uo_docx::model::picture::PicShadow>
 NullablePicReflection enum uo_docx::js::Nullable<uo_docx::model::picture::PicReflection>
@@ -176,11 +176,11 @@ CharacterFormat enum uo_docx::session::policy::CharacterFormat
 Indentation enum uo_docx::session::policy::Indentation
 Flag enum uo_docx::session::policy::Flag
 ThemeColorRef struct uo_docx::session::ops::format::ThemeColorRef
-FxFill struct uo_docx::model::effects::FxFill default
-FxOutline struct uo_docx::model::effects::FxOutline default
-FxShadow struct uo_docx::model::effects::FxShadow default
-FxReflection struct uo_docx::model::effects::FxReflection default
-FxGlow struct uo_docx::model::effects::FxGlow default
+FxFill struct uo_docx::model::effects::FxFill skip=cleared,keys
+FxOutline struct uo_docx::model::effects::FxOutline skip=cleared,keys
+FxShadow struct uo_docx::model::effects::FxShadow skip=cleared,keys
+FxReflection struct uo_docx::model::effects::FxReflection skip=cleared,keys
+FxGlow struct uo_docx::model::effects::FxGlow skip=cleared,keys
 SpacingArg enum uo_docx::session::ops::paragraph::SpacingArg
 StyleFormat struct uo_docx::session::ops::styles::sheet::StyleFormat
 ChUtf16 enum uo_docx::session::ops::styles::sheet::Ch<String>
@@ -188,7 +188,7 @@ SortType enum uo_docx::session::ops::tables::sort::SortType
 SortSeparator enum uo_docx::session::ops::tables::sort::SortSeparator
 TableTab struct uo_docx::session::ops::tables::TableTab
 RowTab struct uo_docx::session::ops::tables::RowTab
-WidthSpec struct uo_docx::model::props::WidthSpec default
+WidthSpec struct uo_docx::model::props::WidthSpec skip=cleared,keys
 OptMarginsIn option
 CellTab struct uo_docx::session::ops::tables::CellTab
 Orientation enum uo_docx::session::ops::sections::section_ops::Orientation
@@ -202,11 +202,11 @@ TupF64Bool tuple
 TupUtf16OptFillRect tuple
 GradientFill struct uo_docx::write::emit::object::GradientFill
 FillTile struct uo_docx::write::emit::object::FillTile
-PicLine struct uo_docx::model::picture::PicLine default
-PicShadow struct uo_docx::model::picture::PicShadow default
-PicReflection struct uo_docx::model::picture::PicReflection default
-PicGlow struct uo_docx::model::picture::PicGlow default
-Pic3D struct uo_docx::model::picture::Pic3D default
+PicLine struct uo_docx::model::picture::PicLine skip=cleared,keys
+PicShadow struct uo_docx::model::picture::PicShadow skip=cleared,keys
+PicReflection struct uo_docx::model::picture::PicReflection skip=cleared,keys
+PicGlow struct uo_docx::model::picture::PicGlow skip=cleared,keys
+Pic3D struct uo_docx::model::picture::Pic3D skip=cleared,keys
 LayoutPos struct uo_docx::session::ops::pictures::LayoutPos
 GradientStyle enum uo_docx::session::ops::page::GradientStyle
 WatermarkTextSpec struct uo_docx::write::emit::background::WatermarkTextSpec
@@ -220,22 +220,22 @@ TocStyle struct uo_docx::session::ops::references::pure::TocStyle
 AutoCaptionCfg struct uo_docx::session::ops::references::AutoCaptionCfg
 CaptionFormat enum uo_docx::session::ops::references::pure::CaptionFormat
 CaptionChapter struct uo_docx::session::ops::references::pure::CaptionChapter
-FxColor struct uo_docx::model::effects::FxColor default
-FxGradStop struct uo_docx::model::effects::FxGradStop default
-FxLin struct uo_docx::model::effects::FxLin default
-FxPath struct uo_docx::model::effects::FxPath default
+FxColor struct uo_docx::model::effects::FxColor skip=cleared,keys
+FxGradStop struct uo_docx::model::effects::FxGradStop skip=cleared,keys
+FxLin struct uo_docx::model::effects::FxLin skip=cleared,keys
+FxPath struct uo_docx::model::effects::FxPath skip=cleared,keys
 ChF64 enum uo_docx::session::ops::styles::sheet::Ch<f64>
 ChBool enum uo_docx::session::ops::styles::sheet::Ch<bool>
-TblpPr struct uo_docx::model::props::TblpPr default
+TblpPr struct uo_docx::model::props::TblpPr skip=cleared,keys
 GradientStop struct uo_docx::write::emit::object::GradientStop
 FillRect struct uo_docx::write::emit::object::FillRect
-Camera struct uo_docx::model::picture::Camera default
-LightRig struct uo_docx::model::picture::LightRig default
-Bevel struct uo_docx::model::picture::Bevel default
+Camera struct uo_docx::model::picture::Camera skip=cleared,keys
+LightRig struct uo_docx::model::picture::LightRig skip=cleared,keys
+Bevel struct uo_docx::model::picture::Bevel skip=cleared,keys
 WatermarkLayout enum uo_docx::write::emit::background::WatermarkLayout
 AutoCaption struct uo_docx::session::ops::references::AutoCaption
 ChapterSeparator enum uo_docx::session::ops::references::pure::ChapterSeparator
-Rot3 struct uo_docx::model::picture::Rot3 default
+Rot3 struct uo_docx::model::picture::Rot3 skip=cleared,keys
 ChangeSet struct uo_docx::session::command::ChangeSet into_only
 Job enum uo_docx::session::command::Job into_only
 CommandError enum uo_docx::session::command::CommandError into_only
@@ -254,25 +254,25 @@ TupPasteModeOptListPasteMode tuple into_only
 PasteOptions struct uo_docx::session::ops::clipboard::PasteOptions into_only
 SpecialFormats struct uo_docx::session::ops::clipboard::SpecialFormats into_only
 PasteRange struct uo_docx::session::ops::clipboard::PasteRange into_only
-DocumentComment struct uo_docx::model::document::Comment default into_only
+DocumentComment struct uo_docx::model::document::Comment skip=cleared,keys into_only
 PaneItem struct uo_docx::session::ops::drawing::PaneItem into_only
 PaneKind enum uo_docx::session::ops::drawing::PaneKind into_only
 ObjectState struct uo_docx::session::ops::drawing::ObjectState into_only
 TextState struct uo_docx::session::ops::drawing::TextState into_only
 NullableBoxPicLine enum uo_docx::js::Nullable<Box<uo_docx::model::picture::PicLine>> into_only
-PictureFormat struct uo_docx::model::picture::PictureFormat default into_only
-Dist struct uo_docx::model::picture::Dist default into_only
-PicPos struct uo_docx::model::picture::PicPos default into_only
-SizeRel struct uo_docx::model::picture::SizeRel default into_only
-Ltrb struct uo_docx::model::drawing::Ltrb default into_only
-WrapPolygon struct uo_docx::model::picture::WrapPolygon default into_only
-DocPr struct uo_docx::model::picture::DocPr default into_only
-PicEffects struct uo_docx::model::picture::PicEffects default into_only
+PictureFormat struct uo_docx::model::picture::PictureFormat skip=cleared,keys into_only
+Dist struct uo_docx::model::picture::Dist skip=cleared,keys into_only
+PicPos struct uo_docx::model::picture::PicPos skip=cleared,keys into_only
+SizeRel struct uo_docx::model::picture::SizeRel skip=cleared,keys into_only
+Ltrb struct uo_docx::model::drawing::Ltrb skip=cleared,keys into_only
+WrapPolygon struct uo_docx::model::picture::WrapPolygon skip=cleared,keys into_only
+DocPr struct uo_docx::model::picture::DocPr skip=cleared,keys into_only
+PicEffects struct uo_docx::model::picture::PicEffects skip=cleared,keys into_only
 TupPicColorPicColor tuple into_only
-PicBlipFx struct uo_docx::model::picture::PicBlipFx default into_only
-BlipLum struct uo_docx::model::picture::BlipLum default into_only
-ClrChange struct uo_docx::model::picture::ClrChange default into_only
-A14Props struct uo_docx::model::picture::A14Props default into_only
+PicBlipFx struct uo_docx::model::picture::PicBlipFx skip=cleared,keys into_only
+BlipLum struct uo_docx::model::picture::BlipLum skip=cleared,keys into_only
+ClrChange struct uo_docx::model::picture::ClrChange skip=cleared,keys into_only
+A14Props struct uo_docx::model::picture::A14Props skip=cleared,keys into_only
 QueryError enum uo_docx::session::ops::find::engine::QueryError into_only
 TupSearchLocU32U32 tuple into_only
 SearchLoc enum uo_docx::session::ops::navigation::SearchLoc into_only
@@ -291,8 +291,8 @@ NoteRefLoc struct uo_docx::session::ops::notes::NoteRefLoc into_only
 NoteOptions struct uo_docx::session::ops::notes::NoteOptions into_only
 TupWatermarkInfoOptBytes tuple into_only
 WatermarkInfo enum uo_docx::read::watermark::WatermarkInfo into_only
-WatermarkTextInfo struct uo_docx::read::watermark::WatermarkTextInfo default into_only
-WatermarkPictureInfo struct uo_docx::read::watermark::WatermarkPictureInfo default into_only
+WatermarkTextInfo struct uo_docx::read::watermark::WatermarkTextInfo skip=cleared,keys into_only
+WatermarkPictureInfo struct uo_docx::read::watermark::WatermarkPictureInfo skip=cleared,keys into_only
 WatermarkGalleryEntry struct uo_docx::session::ops::page::watermark::WatermarkGalleryEntry into_only
 WatermarkGalleryItem struct uo_docx::write::emit::background::WatermarkGalleryItem into_only
 IndentInfo struct uo_docx::session::ops::paragraph::IndentInfo into_only
@@ -306,30 +306,30 @@ ManualHyphState struct uo_docx::session::ops::references::ManualHyphState into_o
 ManualHyphWord struct uo_docx::session::ops::references::ManualHyphWord into_only
 TupTocTemplateIdUtf16 tuple into_only
 RevisionEntry struct uo_docx::session::ops::revision_cmds::RevisionEntry into_only
-RevisionSpan struct uo_docx::session::revisions::RevisionSpan default into_only
+RevisionSpan struct uo_docx::session::revisions::RevisionSpan skip=cleared,keys into_only
 RevisionStory enum uo_docx::session::ops::revision_cmds::RevisionStory into_only
 SpanProps enum uo_docx::session::revisions::SpanProps into_only
-RunProps struct uo_docx::model::run::RunProps default into_only
-ParaProps struct uo_docx::model::para::ParaProps default into_only
-ThemeColorAttrs struct uo_docx::model::run::ThemeColorAttrs default into_only
-TextEffects struct uo_docx::model::effects::TextEffects default into_only
-OpenTypeProps struct uo_docx::model::effects::OpenTypeProps default into_only
-RevisionInfo struct uo_docx::model::props::RevisionInfo default into_only
+RunProps struct uo_docx::model::run::RunProps skip=fmt,cleared,keys into_only
+ParaProps struct uo_docx::model::para::ParaProps skip=pfmt,cleared,keys into_only
+ThemeColorAttrs struct uo_docx::model::run::ThemeColorAttrs skip=cleared,keys into_only
+TextEffects struct uo_docx::model::effects::TextEffects skip=cleared,keys into_only
+OpenTypeProps struct uo_docx::model::effects::OpenTypeProps skip=cleared,keys into_only
+RevisionInfo struct uo_docx::model::props::RevisionInfo skip=cleared,keys into_only
 SourceKey newtype uo_docx::ids::SourceKey into_only
-NumberingProps struct uo_docx::model::para::NumberingProps default into_only
-ParaTabStop struct uo_docx::model::para::ParaTabStop default into_only
-ParagraphBorders struct uo_docx::model::para::ParagraphBorders default into_only
-BlockSdt struct uo_docx::model::para::BlockSdt default into_only
-SectionBreak struct uo_docx::model::para::SectionBreak default into_only
-BorderEdge struct uo_docx::model::para::BorderEdge default into_only
+NumberingProps struct uo_docx::model::para::NumberingProps skip=cleared,keys into_only
+ParaTabStop struct uo_docx::model::para::ParaTabStop skip=cleared,keys into_only
+ParagraphBorders struct uo_docx::model::para::ParagraphBorders skip=cleared,keys into_only
+BlockSdt struct uo_docx::model::para::BlockSdt skip=cleared,keys into_only
+SectionBreak struct uo_docx::model::para::SectionBreak skip=cleared,keys into_only
+BorderEdge struct uo_docx::model::para::BorderEdge skip=cleared,keys into_only
 SdtKey newtype uo_docx::model::para::SdtKey into_only
 NullableBoxPageBorders enum uo_docx::js::Nullable<Box<uo_docx::model::section::PageBorders>> into_only
-SectPr struct uo_docx::model::section::SectPr default into_only
-HfRefEdit struct uo_docx::model::para::HfRefEdit default into_only
-Cols struct uo_docx::model::section::Cols default into_only
-NoteProps struct uo_docx::model::formatting::NoteProps default into_only
-LineNumbering struct uo_docx::model::section::LineNumbering default into_only
-ColWidth struct uo_docx::model::section::ColWidth default into_only
+SectPr struct uo_docx::model::section::SectPr skip=cleared,keys into_only
+HfRefEdit struct uo_docx::model::para::HfRefEdit skip=cleared,keys into_only
+Cols struct uo_docx::model::section::Cols skip=cleared,keys into_only
+NoteProps struct uo_docx::model::formatting::NoteProps skip=cleared,keys into_only
+LineNumbering struct uo_docx::model::section::LineNumbering skip=cleared,keys into_only
+ColWidth struct uo_docx::model::section::ColWidth skip=cleared,keys into_only
 MarkupOptions struct uo_docx::session::ops::revision_cmds::MarkupOptions into_only
 HyphenationSettings struct uo_docx::write::emit::settings::HyphenationSettings into_only
 HyphenationInfo struct uo_docx::session::ops::text_layout::HyphenationInfo into_only

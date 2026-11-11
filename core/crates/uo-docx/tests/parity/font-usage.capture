@@ -1,6 +1,6 @@
-# fontUsage() of the frozen <universal-write> in Chromium (LQ15): open, select all + bold + typing, a header/footer part, a body cell
-# facets: fu (short SHA-256 of JSON.stringify(fontUsage())), n (entries), hfpath (#2)
-@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=--max-old-space-size=8192
+# fontUsage() of the frozen <universal-write> in Chromium (LQ15): open, select all + bold + typing, a header/footer part, a body cell, a note, a text box
+# facets: fu (short SHA-256 of JSON.stringify(fontUsage())), n (entries), hfpath (#2), nk/nid (#4), ix/pg (#5)
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
 @browser chromium 156.0.8078.4
 @bundle 6802c7b45d367dd1234f71d9f4ba2b99
 @typed Olá ß
@@ -8,399 +8,959 @@ write/packages/docx-layout/test/oracle/altname/alt-auni-calibri.docx#0	fu=a09b57
 write/packages/docx-layout/test/oracle/altname/alt-auni-calibri.docx#1	fu=c89110c950a8272c0128f956489ec7d0	n=4
 write/packages/docx-layout/test/oracle/altname/alt-auni-calibri.docx#2	fu=-
 write/packages/docx-layout/test/oracle/altname/alt-auni-calibri.docx#3	fu=-
+write/packages/docx-layout/test/oracle/altname/alt-auni-calibri.docx#4	fu=-
+write/packages/docx-layout/test/oracle/altname/alt-auni-calibri.docx#5	fu=-
 write/packages/docx-layout/test/oracle/altname/alt-inventada-80-roman.docx#0	fu=797da1bdbfc0169dce52ef7cd274bd7b	n=4
 write/packages/docx-layout/test/oracle/altname/alt-inventada-80-roman.docx#1	fu=17bb9b2293edbdd80591857d4732769d	n=4
 write/packages/docx-layout/test/oracle/altname/alt-inventada-80-roman.docx#2	fu=-
 write/packages/docx-layout/test/oracle/altname/alt-inventada-80-roman.docx#3	fu=-
+write/packages/docx-layout/test/oracle/altname/alt-inventada-80-roman.docx#4	fu=-
+write/packages/docx-layout/test/oracle/altname/alt-inventada-80-roman.docx#5	fu=-
 write/packages/docx-layout/test/oracle/anchorbefore/ab-after-b400.docx#0	fu=f8eee5631833cead9d65e2e7fc01f028	n=4
 write/packages/docx-layout/test/oracle/anchorbefore/ab-after-b400.docx#1	fu=a187af68af1f8be853212949c24f4df9	n=4
 write/packages/docx-layout/test/oracle/anchorbefore/ab-after-b400.docx#2	fu=-
 write/packages/docx-layout/test/oracle/anchorbefore/ab-after-b400.docx#3	fu=-
+write/packages/docx-layout/test/oracle/anchorbefore/ab-after-b400.docx#4	fu=-
+write/packages/docx-layout/test/oracle/anchorbefore/ab-after-b400.docx#5	fu=-
 write/packages/docx-layout/test/oracle/anchorbefore/ab-c14-body-0.docx#0	fu=f8eee5631833cead9d65e2e7fc01f028	n=4
 write/packages/docx-layout/test/oracle/anchorbefore/ab-c14-body-0.docx#1	fu=a187af68af1f8be853212949c24f4df9	n=4
 write/packages/docx-layout/test/oracle/anchorbefore/ab-c14-body-0.docx#2	fu=-
 write/packages/docx-layout/test/oracle/anchorbefore/ab-c14-body-0.docx#3	fu=-
+write/packages/docx-layout/test/oracle/anchorbefore/ab-c14-body-0.docx#4	fu=-
+write/packages/docx-layout/test/oracle/anchorbefore/ab-c14-body-0.docx#5	fu=-
 write/packages/docx-layout/test/oracle/anchorbefore/ab-cell2-after-b400.docx#0	fu=453fbe9cc732435754fc5f3a4243e802	n=6
 write/packages/docx-layout/test/oracle/anchorbefore/ab-cell2-after-b400.docx#1	fu=130c67422ac5864b07f629b67397fee4	n=6
 write/packages/docx-layout/test/oracle/anchorbefore/ab-cell2-after-b400.docx#2	fu=-
 write/packages/docx-layout/test/oracle/anchorbefore/ab-cell2-after-b400.docx#3	fu=066adcfb504fd5895b79ff22dde88b4c	n=8
+write/packages/docx-layout/test/oracle/anchorbefore/ab-cell2-after-b400.docx#4	fu=-
+write/packages/docx-layout/test/oracle/anchorbefore/ab-cell2-after-b400.docx#5	fu=-
 write/packages/docx-layout/test/oracle/autosp2/as2-cell-two.docx#0	fu=12b6e99116318318c481ae30fbfadc57	n=4
 write/packages/docx-layout/test/oracle/autosp2/as2-cell-two.docx#1	fu=7dcb1fbba7dd49cdaf943c25167cc4b3	n=4
 write/packages/docx-layout/test/oracle/autosp2/as2-cell-two.docx#2	fu=-
 write/packages/docx-layout/test/oracle/autosp2/as2-cell-two.docx#3	fu=3420bfe0c1e62ca0c41cca636d599594	n=4
+write/packages/docx-layout/test/oracle/autosp2/as2-cell-two.docx#4	fu=-
+write/packages/docx-layout/test/oracle/autosp2/as2-cell-two.docx#5	fu=-
 write/packages/docx-layout/test/oracle/autosp2/as2-expl-cells.docx#0	fu=12b6e99116318318c481ae30fbfadc57	n=4
 write/packages/docx-layout/test/oracle/autosp2/as2-expl-cells.docx#1	fu=7dcb1fbba7dd49cdaf943c25167cc4b3	n=4
 write/packages/docx-layout/test/oracle/autosp2/as2-expl-cells.docx#2	fu=-
 write/packages/docx-layout/test/oracle/autosp2/as2-expl-cells.docx#3	fu=7d039dacf75033889409db2b0d0ba48c	n=3
+write/packages/docx-layout/test/oracle/autosp2/as2-expl-cells.docx#4	fu=-
+write/packages/docx-layout/test/oracle/autosp2/as2-expl-cells.docx#5	fu=-
 write/packages/docx-layout/test/oracle/autosp2/as2-ftr-two-noctx.docx#0	fu=df27e09798ea82af913d5cdd4de9ff7a	n=4
 write/packages/docx-layout/test/oracle/autosp2/as2-ftr-two-noctx.docx#1	fu=88189bf1298863d3fa01ec8101c4dd65	n=4
 write/packages/docx-layout/test/oracle/autosp2/as2-ftr-two-noctx.docx#2	fu=-
 write/packages/docx-layout/test/oracle/autosp2/as2-ftr-two-noctx.docx#3	fu=-
+write/packages/docx-layout/test/oracle/autosp2/as2-ftr-two-noctx.docx#4	fu=-
+write/packages/docx-layout/test/oracle/autosp2/as2-ftr-two-noctx.docx#5	fu=-
 write/packages/docx-layout/test/oracle/autosp2/as2-rows-first-other.docx#0	fu=12b6e99116318318c481ae30fbfadc57	n=4
 write/packages/docx-layout/test/oracle/autosp2/as2-rows-first-other.docx#1	fu=7dcb1fbba7dd49cdaf943c25167cc4b3	n=4
 write/packages/docx-layout/test/oracle/autosp2/as2-rows-first-other.docx#2	fu=-
 write/packages/docx-layout/test/oracle/autosp2/as2-rows-first-other.docx#3	fu=7d039dacf75033889409db2b0d0ba48c	n=3
+write/packages/docx-layout/test/oracle/autosp2/as2-rows-first-other.docx#4	fu=-
+write/packages/docx-layout/test/oracle/autosp2/as2-rows-first-other.docx#5	fu=-
 write/packages/docx-layout/test/oracle/autosp/as-hdr-one.docx#0	fu=20330c0607d9f9727672d9412fac371e	n=3
 write/packages/docx-layout/test/oracle/autosp/as-hdr-one.docx#1	fu=73ea109ff058c207c7a2bff858abfbfa	n=3
 write/packages/docx-layout/test/oracle/autosp/as-hdr-one.docx#2	fu=244785cfd2ecbb0b8d6961d25808f82f	n=2	hfpath=word/headerdefault.xml
 write/packages/docx-layout/test/oracle/autosp/as-hdr-one.docx#3	fu=-
+write/packages/docx-layout/test/oracle/autosp/as-hdr-one.docx#4	fu=-
+write/packages/docx-layout/test/oracle/autosp/as-hdr-one.docx#5	fu=-
 write/packages/docx-layout/test/oracle/autosphtml/ash-c11.docx#0	fu=296383c68294c61f7398a60d6c94667a	n=14
 write/packages/docx-layout/test/oracle/autosphtml/ash-c11.docx#1	fu=6eb3348b8cfa7dc3853abb539e045c34	n=14
 write/packages/docx-layout/test/oracle/autosphtml/ash-c11.docx#2	fu=-
 write/packages/docx-layout/test/oracle/autosphtml/ash-c11.docx#3	fu=-
+write/packages/docx-layout/test/oracle/autosphtml/ash-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/autosphtml/ash-c11.docx#5	fu=-
 write/packages/docx-layout/test/oracle/autosplist/asl-two-lists.docx#0	fu=b14ff7651932fc879ed79b70af8f1099	n=4
 write/packages/docx-layout/test/oracle/autosplist/asl-two-lists.docx#1	fu=91da0241ddcb7f588a162b38090e9e7c	n=4
 write/packages/docx-layout/test/oracle/autosplist/asl-two-lists.docx#2	fu=-
 write/packages/docx-layout/test/oracle/autosplist/asl-two-lists.docx#3	fu=-
+write/packages/docx-layout/test/oracle/autosplist/asl-two-lists.docx#4	fu=-
+write/packages/docx-layout/test/oracle/autosplist/asl-two-lists.docx#5	fu=-
 write/packages/docx-layout/test/oracle/bdrw/bdrw-p-dotted.docx#0	fu=047099ec30fbc4226da21bd8d634f14a	n=10
 write/packages/docx-layout/test/oracle/bdrw/bdrw-p-dotted.docx#1	fu=5cd6d8c7514301be29a7e186e48e77aa	n=10
 write/packages/docx-layout/test/oracle/bdrw/bdrw-p-dotted.docx#2	fu=-
 write/packages/docx-layout/test/oracle/bdrw/bdrw-p-dotted.docx#3	fu=-
+write/packages/docx-layout/test/oracle/bdrw/bdrw-p-dotted.docx#4	fu=-
+write/packages/docx-layout/test/oracle/bdrw/bdrw-p-dotted.docx#5	fu=-
 write/packages/docx-layout/test/oracle/bdrw/bdrw-t-single.docx#0	fu=5ae5d4796bc96b10e66bd8f245f7d187	n=20
 write/packages/docx-layout/test/oracle/bdrw/bdrw-t-single.docx#1	fu=9660d5d3bec0b1ab9d04085d22a40823	n=20
 write/packages/docx-layout/test/oracle/bdrw/bdrw-t-single.docx#2	fu=-
 write/packages/docx-layout/test/oracle/bdrw/bdrw-t-single.docx#3	fu=356fd1e1aa9fefbc0d4efc1aa5ad78aa	n=19
+write/packages/docx-layout/test/oracle/bdrw/bdrw-t-single.docx#4	fu=-
+write/packages/docx-layout/test/oracle/bdrw/bdrw-t-single.docx#5	fu=-
 write/packages/docx-layout/test/oracle/bodyfit/bf-f-s223.docx#0	fu=65e3dfb676a1286ba4f8ed2f26d3faa6	n=60
 write/packages/docx-layout/test/oracle/bodyfit/bf-f-s223.docx#1	fu=7ba6addac1850d5045273bcd2ff5e906	n=60
 write/packages/docx-layout/test/oracle/bodyfit/bf-f-s223.docx#2	fu=-
 write/packages/docx-layout/test/oracle/bodyfit/bf-f-s223.docx#3	fu=-
+write/packages/docx-layout/test/oracle/bodyfit/bf-f-s223.docx#4	fu=-
+write/packages/docx-layout/test/oracle/bodyfit/bf-f-s223.docx#5	fu=-
 write/packages/docx-layout/test/oracle/bodyfit/bf-ff-s5031.docx#0	fu=113c459ecc1a40ae7c01e5e43080604d	n=41
 write/packages/docx-layout/test/oracle/bodyfit/bf-ff-s5031.docx#1	fu=f69f1d4efa8fdd3c7e365e564e9ead99	n=41
 write/packages/docx-layout/test/oracle/bodyfit/bf-ff-s5031.docx#2	fu=-
 write/packages/docx-layout/test/oracle/bodyfit/bf-ff-s5031.docx#3	fu=-
+write/packages/docx-layout/test/oracle/bodyfit/bf-ff-s5031.docx#4	fu=-
+write/packages/docx-layout/test/oracle/bodyfit/bf-ff-s5031.docx#5	fu=-
 write/packages/docx-layout/test/oracle/bodyfit/bf-m-s92.docx#0	fu=aa38f2b9c8a2db416cf357a3b832af4a	n=55
 write/packages/docx-layout/test/oracle/bodyfit/bf-m-s92.docx#1	fu=aa2bf393fc2f950c2fd8286f8e3c8f27	n=55
 write/packages/docx-layout/test/oracle/bodyfit/bf-m-s92.docx#2	fu=-
 write/packages/docx-layout/test/oracle/bodyfit/bf-m-s92.docx#3	fu=-
+write/packages/docx-layout/test/oracle/bodyfit/bf-m-s92.docx#4	fu=-
+write/packages/docx-layout/test/oracle/bodyfit/bf-m-s92.docx#5	fu=-
 write/packages/docx-layout/test/oracle/brclear/brc-all.docx#0	fu=679b435d1167e585826246584499c36c	n=6
 write/packages/docx-layout/test/oracle/brclear/brc-all.docx#1	fu=2e8f1da5fb9794485090014084b253e7	n=6
 write/packages/docx-layout/test/oracle/brclear/brc-all.docx#2	fu=-
 write/packages/docx-layout/test/oracle/brclear/brc-all.docx#3	fu=-
+write/packages/docx-layout/test/oracle/brclear/brc-all.docx#4	fu=-
+write/packages/docx-layout/test/oracle/brclear/brc-all.docx#5	fu=-
 write/packages/docx-layout/test/oracle/breakopp/hif-fim-run.docx#0	fu=240249b608e5232dea1b7d7080592806	n=216
 write/packages/docx-layout/test/oracle/breakopp/hif-fim-run.docx#1	fu=554db3812ddd7d805ca7a1bdf8120593	n=216
 write/packages/docx-layout/test/oracle/breakopp/hif-fim-run.docx#2	fu=-
 write/packages/docx-layout/test/oracle/breakopp/hif-fim-run.docx#3	fu=-
+write/packages/docx-layout/test/oracle/breakopp/hif-fim-run.docx#4	fu=-
+write/packages/docx-layout/test/oracle/breakopp/hif-fim-run.docx#5	fu=-
 write/packages/docx-layout/test/oracle/breaks/br-page.docx#0	fu=dd412d669f6ce8b4921c275548a5ac0d	n=10
 write/packages/docx-layout/test/oracle/breaks/br-page.docx#1	fu=b2ec0be0cdf86b35a9d646f18c9009c4	n=10
 write/packages/docx-layout/test/oracle/breaks/br-page.docx#2	fu=-
 write/packages/docx-layout/test/oracle/breaks/br-page.docx#3	fu=-
+write/packages/docx-layout/test/oracle/breaks/br-page.docx#4	fu=-
+write/packages/docx-layout/test/oracle/breaks/br-page.docx#5	fu=-
 write/packages/docx-layout/test/oracle/brfirst/bf-page-start-hang.docx#0	fu=57f3aeff3b5a8b6a2ea23a1adf8a4786	n=5
 write/packages/docx-layout/test/oracle/brfirst/bf-page-start-hang.docx#1	fu=90fcf0fdc2414f2f008fa959760842ba	n=5
 write/packages/docx-layout/test/oracle/brfirst/bf-page-start-hang.docx#2	fu=-
 write/packages/docx-layout/test/oracle/brfirst/bf-page-start-hang.docx#3	fu=-
+write/packages/docx-layout/test/oracle/brfirst/bf-page-start-hang.docx#4	fu=-
+write/packages/docx-layout/test/oracle/brfirst/bf-page-start-hang.docx#5	fu=-
 write/packages/docx-layout/test/oracle/cbline/cbl-l360-s36.docx#0	fu=c05dcb1409b37d90a2602c90b78b2b3e	n=4
 write/packages/docx-layout/test/oracle/cbline/cbl-l360-s36.docx#1	fu=4b50022cb851456b0641324d6a89cd51	n=4
 write/packages/docx-layout/test/oracle/cbline/cbl-l360-s36.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cbline/cbl-l360-s36.docx#3	fu=-
+write/packages/docx-layout/test/oracle/cbline/cbl-l360-s36.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cbline/cbl-l360-s36.docx#5	fu=-
 write/packages/docx-layout/test/oracle/cellftbl/cft-text-text-x500-200.docx#0	fu=81793493cf9273db88a98e26f6b3a793	n=11
 write/packages/docx-layout/test/oracle/cellftbl/cft-text-text-x500-200.docx#1	fu=67195c69701d2cd71cc4c682976985ae	n=11
 write/packages/docx-layout/test/oracle/cellftbl/cft-text-text-x500-200.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellftbl/cft-text-text-x500-200.docx#3	fu=ec8d30ba11923923469eba1ea04fffcc	n=12
+write/packages/docx-layout/test/oracle/cellftbl/cft-text-text-x500-200.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellftbl/cft-text-text-x500-200.docx#5	fu=-
+write/packages/docx-layout/test/oracle/cellnote/cn-grid10-room.docx#0	fu=f37bf11b8f94bc40db45b604a99cb074	n=322
+write/packages/docx-layout/test/oracle/cellnote/cn-grid10-room.docx#1	fu=97dbb8f3bedd6549b2c59efc8e2a07b8	n=322
+write/packages/docx-layout/test/oracle/cellnote/cn-grid10-room.docx#2	fu=-
+write/packages/docx-layout/test/oracle/cellnote/cn-grid10-room.docx#3	fu=18fd6b936c59e2aff0d68bdcb89ae22a	n=303
+write/packages/docx-layout/test/oracle/cellnote/cn-grid10-room.docx#4	fu=7d2016604e7c14a9b922d2020dabd57c	n=303	nk=0	nid=1
+write/packages/docx-layout/test/oracle/cellnote/cn-grid10-room.docx#5	fu=-
+write/packages/docx-layout/test/oracle/cellnote/cn-span-late.docx#0	fu=6af6e7b178c71a1a933e7deaf5dc726b	n=142
+write/packages/docx-layout/test/oracle/cellnote/cn-span-late.docx#1	fu=09ae29efc8bc818b028c069852f5a7c8	n=142
+write/packages/docx-layout/test/oracle/cellnote/cn-span-late.docx#2	fu=-
+write/packages/docx-layout/test/oracle/cellnote/cn-span-late.docx#3	fu=ca47f7167921c6bfa04eddc15451f83c	n=122
+write/packages/docx-layout/test/oracle/cellnote/cn-span-late.docx#4	fu=a9de18e4060614b06cd55fdd1cd28899	n=123	nk=0	nid=1
+write/packages/docx-layout/test/oracle/cellnote/cn-span-late.docx#5	fu=-
+write/packages/docx-layout/test/oracle/cellnote/cn-span-mid.docx#0	fu=fc71a7abf1da9879028fd70c4dd05c6b	n=31
+write/packages/docx-layout/test/oracle/cellnote/cn-span-mid.docx#1	fu=6a34fa0bd1c8b1a43058c8ac8582a8c9	n=31
+write/packages/docx-layout/test/oracle/cellnote/cn-span-mid.docx#2	fu=-
+write/packages/docx-layout/test/oracle/cellnote/cn-span-mid.docx#3	fu=aa440182b5a3e2a34dc7454522aa29fe	n=26
+write/packages/docx-layout/test/oracle/cellnote/cn-span-mid.docx#4	fu=02a49bf2a16d0d814460ace0672901d3	n=27	nk=0	nid=1
+write/packages/docx-layout/test/oracle/cellnote/cn-span-mid.docx#5	fu=-
+write/packages/docx-layout/test/oracle/cellnote/cn-span-room.docx#0	fu=02db937a3be0beaa2f2d07885f40dd6c	n=142
+write/packages/docx-layout/test/oracle/cellnote/cn-span-room.docx#1	fu=38ba9678ae70dd15d55574a211be47fc	n=142
+write/packages/docx-layout/test/oracle/cellnote/cn-span-room.docx#2	fu=-
+write/packages/docx-layout/test/oracle/cellnote/cn-span-room.docx#3	fu=ed5efc33c0e08a02cc23203ed4e67a90	n=122
+write/packages/docx-layout/test/oracle/cellnote/cn-span-room.docx#4	fu=6d29ca6e8c3f470528a3442543e4e635	n=123	nk=0	nid=1
+write/packages/docx-layout/test/oracle/cellnote/cn-span-room.docx#5	fu=-
+write/packages/docx-layout/test/oracle/cellout/co11-in.docx#0	fu=f03ee529fb3487384a8f2b4734b07ae5	n=5
+write/packages/docx-layout/test/oracle/cellout/co11-in.docx#1	fu=acf13cbd22e21ceaecc06efb57b8008d	n=5
+write/packages/docx-layout/test/oracle/cellout/co11-in.docx#2	fu=-
+write/packages/docx-layout/test/oracle/cellout/co11-in.docx#3	fu=23ce4eb7f2abd2beb48477dd7f0b168e	n=4
+write/packages/docx-layout/test/oracle/cellout/co11-in.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellout/co11-in.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/cellout/co11-out-mrg.docx#0	fu=f03ee529fb3487384a8f2b4734b07ae5	n=5
+write/packages/docx-layout/test/oracle/cellout/co11-out-mrg.docx#1	fu=acf13cbd22e21ceaecc06efb57b8008d	n=5
+write/packages/docx-layout/test/oracle/cellout/co11-out-mrg.docx#2	fu=-
+write/packages/docx-layout/test/oracle/cellout/co11-out-mrg.docx#3	fu=23ce4eb7f2abd2beb48477dd7f0b168e	n=4
+write/packages/docx-layout/test/oracle/cellout/co11-out-mrg.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellout/co11-out-mrg.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
 write/packages/docx-layout/test/oracle/cellout/co11-out.docx#0	fu=f03ee529fb3487384a8f2b4734b07ae5	n=5
 write/packages/docx-layout/test/oracle/cellout/co11-out.docx#1	fu=acf13cbd22e21ceaecc06efb57b8008d	n=5
 write/packages/docx-layout/test/oracle/cellout/co11-out.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellout/co11-out.docx#3	fu=23ce4eb7f2abd2beb48477dd7f0b168e	n=4
+write/packages/docx-layout/test/oracle/cellout/co11-out.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellout/co11-out.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/cellout/co14-in-b3.docx#0	fu=f03ee529fb3487384a8f2b4734b07ae5	n=5
+write/packages/docx-layout/test/oracle/cellout/co14-in-b3.docx#1	fu=acf13cbd22e21ceaecc06efb57b8008d	n=5
+write/packages/docx-layout/test/oracle/cellout/co14-in-b3.docx#2	fu=-
+write/packages/docx-layout/test/oracle/cellout/co14-in-b3.docx#3	fu=23ce4eb7f2abd2beb48477dd7f0b168e	n=4
+write/packages/docx-layout/test/oracle/cellout/co14-in-b3.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellout/co14-in-b3.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/cellout/co14-in-p2.docx#0	fu=a5ea86ba46c777e12e5e7ac3406f8f93	n=6
+write/packages/docx-layout/test/oracle/cellout/co14-in-p2.docx#1	fu=87f742dcc4653acd480159db4958b875	n=6
+write/packages/docx-layout/test/oracle/cellout/co14-in-p2.docx#2	fu=-
+write/packages/docx-layout/test/oracle/cellout/co14-in-p2.docx#3	fu=05a18eaf6493b42dd02e3968ad1446fd	n=5
+write/packages/docx-layout/test/oracle/cellout/co14-in-p2.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellout/co14-in-p2.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/cellout/co14-in-pg.docx#0	fu=f03ee529fb3487384a8f2b4734b07ae5	n=5
+write/packages/docx-layout/test/oracle/cellout/co14-in-pg.docx#1	fu=acf13cbd22e21ceaecc06efb57b8008d	n=5
+write/packages/docx-layout/test/oracle/cellout/co14-in-pg.docx#2	fu=-
+write/packages/docx-layout/test/oracle/cellout/co14-in-pg.docx#3	fu=23ce4eb7f2abd2beb48477dd7f0b168e	n=4
+write/packages/docx-layout/test/oracle/cellout/co14-in-pg.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellout/co14-in-pg.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
 write/packages/docx-layout/test/oracle/cellout/co14-out-mrg.docx#0	fu=f03ee529fb3487384a8f2b4734b07ae5	n=5
 write/packages/docx-layout/test/oracle/cellout/co14-out-mrg.docx#1	fu=acf13cbd22e21ceaecc06efb57b8008d	n=5
 write/packages/docx-layout/test/oracle/cellout/co14-out-mrg.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellout/co14-out-mrg.docx#3	fu=23ce4eb7f2abd2beb48477dd7f0b168e	n=4
+write/packages/docx-layout/test/oracle/cellout/co14-out-mrg.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellout/co14-out-mrg.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
 write/packages/docx-layout/test/oracle/cellpic/cp-body-1.docx#0	fu=0ee0e8190813f7053d182b16a5b14140	n=32
 write/packages/docx-layout/test/oracle/cellpic/cp-body-1.docx#1	fu=b823a068b41359b93d1aa3fee8edb2c5	n=32
 write/packages/docx-layout/test/oracle/cellpic/cp-body-1.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellpic/cp-body-1.docx#3	fu=8d504690c81334d43f86713d7923b739	n=19
+write/packages/docx-layout/test/oracle/cellpic/cp-body-1.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellpic/cp-body-1.docx#5	fu=-
 write/packages/docx-layout/test/oracle/cellsp2/cs2-100-thick-mar0.docx#0	fu=7b991530d3d52e303e94c9ea4a4f6f79	n=8
 write/packages/docx-layout/test/oracle/cellsp2/cs2-100-thick-mar0.docx#1	fu=e6039e6be7100bfaae377f5159e0f089	n=8
 write/packages/docx-layout/test/oracle/cellsp2/cs2-100-thick-mar0.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellsp2/cs2-100-thick-mar0.docx#3	fu=d4e06190598e5e807e21a184c02e539e	n=7
+write/packages/docx-layout/test/oracle/cellsp2/cs2-100-thick-mar0.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellsp2/cs2-100-thick-mar0.docx#5	fu=-
 write/packages/docx-layout/test/oracle/cellsp2/cs2-200.docx#0	fu=7b991530d3d52e303e94c9ea4a4f6f79	n=8
 write/packages/docx-layout/test/oracle/cellsp2/cs2-200.docx#1	fu=e6039e6be7100bfaae377f5159e0f089	n=8
 write/packages/docx-layout/test/oracle/cellsp2/cs2-200.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellsp2/cs2-200.docx#3	fu=d4e06190598e5e807e21a184c02e539e	n=7
+write/packages/docx-layout/test/oracle/cellsp2/cs2-200.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellsp2/cs2-200.docx#5	fu=-
 write/packages/docx-layout/test/oracle/cellsp/cs-none.docx#0	fu=3e534f8f043949db2ea41a01b1e08edf	n=18
 write/packages/docx-layout/test/oracle/cellsp/cs-none.docx#1	fu=56716a5bc6a991bcd01912117aaee1c7	n=18
 write/packages/docx-layout/test/oracle/cellsp/cs-none.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellsp/cs-none.docx#3	fu=cec038e5a8ecbafccc5d112542bffa8e	n=17
+write/packages/docx-layout/test/oracle/cellsp/cs-none.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellsp/cs-none.docx#5	fu=-
 write/packages/docx-layout/test/oracle/cellwrap/cw-auto-fit-none-c15.docx#0	fu=f0ba335e4489e18f97e83f5831824d2f	n=5
 write/packages/docx-layout/test/oracle/cellwrap/cw-auto-fit-none-c15.docx#1	fu=7818bc37db9c0714b8d256c6fe8a01ac	n=5
 write/packages/docx-layout/test/oracle/cellwrap/cw-auto-fit-none-c15.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellwrap/cw-auto-fit-none-c15.docx#3	fu=2ea337c31bc04156009b0ff5e85fb5fb	n=7
+write/packages/docx-layout/test/oracle/cellwrap/cw-auto-fit-none-c15.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellwrap/cw-auto-fit-none-c15.docx#5	fu=ba76a12349beb2de322a3bd2cdf35fd9	n=1	ix=0	pg=0	nd=1	ce=0
 write/packages/docx-layout/test/oracle/cellwrap/cw-grow-square-c14.docx#0	fu=e3d61539e53b623e7fc87bb2f347f3bf	n=5
 write/packages/docx-layout/test/oracle/cellwrap/cw-grow-square-c14.docx#1	fu=747577317217bf312a10bd43a79194e8	n=5
 write/packages/docx-layout/test/oracle/cellwrap/cw-grow-square-c14.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellwrap/cw-grow-square-c14.docx#3	fu=a2bcb50b32322cade2b5a31c5492648f	n=7
+write/packages/docx-layout/test/oracle/cellwrap/cw-grow-square-c14.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellwrap/cw-grow-square-c14.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
 write/packages/docx-layout/test/oracle/cellwrap/cw-square-c15.docx#0	fu=8444ea1f8aabccc5f4b3ff5d204b2d14	n=5
 write/packages/docx-layout/test/oracle/cellwrap/cw-square-c15.docx#1	fu=68612fe4c337d5792775d26635366838	n=5
 write/packages/docx-layout/test/oracle/cellwrap/cw-square-c15.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellwrap/cw-square-c15.docx#3	fu=e675552be3a41a6f7973156bbaaef8e8	n=7
+write/packages/docx-layout/test/oracle/cellwrap/cw-square-c15.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellwrap/cw-square-c15.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
 write/packages/docx-layout/test/oracle/cellwrap/cw-vc-none-c14.docx#0	fu=ead652dbcd8c0a75fdbd377c615a11f4	n=5
 write/packages/docx-layout/test/oracle/cellwrap/cw-vc-none-c14.docx#1	fu=c8c962808fed1ada9ac0d9d4acd1a7b0	n=5
 write/packages/docx-layout/test/oracle/cellwrap/cw-vc-none-c14.docx#2	fu=-
 write/packages/docx-layout/test/oracle/cellwrap/cw-vc-none-c14.docx#3	fu=533e5284534843805e52364dcdf6c93b	n=7
+write/packages/docx-layout/test/oracle/cellwrap/cw-vc-none-c14.docx#4	fu=-
+write/packages/docx-layout/test/oracle/cellwrap/cw-vc-none-c14.docx#5	fu=c826f1ea0d7424e171183348f68ac515	n=1	ix=0	pg=0	nd=1	ce=0
 write/packages/docx-layout/test/oracle/colbal3/b3-0.docx#0	fu=c7525b00fe7ab135d875c6d7c7652931	n=11
 write/packages/docx-layout/test/oracle/colbal3/b3-0.docx#1	fu=f78d7cebb02ecd9b7400210e848e37b4	n=11
 write/packages/docx-layout/test/oracle/colbal3/b3-0.docx#2	fu=-
 write/packages/docx-layout/test/oracle/colbal3/b3-0.docx#3	fu=-
+write/packages/docx-layout/test/oracle/colbal3/b3-0.docx#4	fu=-
+write/packages/docx-layout/test/oracle/colbal3/b3-0.docx#5	fu=-
 write/packages/docx-layout/test/oracle/colbal/cb-3col-long.docx#0	fu=0f6593ec32ed8ffe6fab5cc333a1bf66	n=4
 write/packages/docx-layout/test/oracle/colbal/cb-3col-long.docx#1	fu=138431944885336950612e28641cd273	n=4
 write/packages/docx-layout/test/oracle/colbal/cb-3col-long.docx#2	fu=-
 write/packages/docx-layout/test/oracle/colbal/cb-3col-long.docx#3	fu=-
+write/packages/docx-layout/test/oracle/colbal/cb-3col-long.docx#4	fu=-
+write/packages/docx-layout/test/oracle/colbal/cb-3col-long.docx#5	fu=-
 write/packages/docx-layout/test/oracle/colbal/cb-empty-7.docx#0	fu=b24d5420278f8286dcf6084ae2a1e4c5	n=3
 write/packages/docx-layout/test/oracle/colbal/cb-empty-7.docx#1	fu=1c06a3351d46bb836baca9c003a41887	n=3
 write/packages/docx-layout/test/oracle/colbal/cb-empty-7.docx#2	fu=-
 write/packages/docx-layout/test/oracle/colbal/cb-empty-7.docx#3	fu=-
+write/packages/docx-layout/test/oracle/colbal/cb-empty-7.docx#4	fu=-
+write/packages/docx-layout/test/oracle/colbal/cb-empty-7.docx#5	fu=-
 write/packages/docx-layout/test/oracle/colbal/cb-short-6.docx#0	fu=1f4b6e90984a39e5978a3aa78ea904bd	n=9
 write/packages/docx-layout/test/oracle/colbal/cb-short-6.docx#1	fu=947f5c358ddb4f08a45f40182b8287c7	n=9
 write/packages/docx-layout/test/oracle/colbal/cb-short-6.docx#2	fu=-
 write/packages/docx-layout/test/oracle/colbal/cb-short-6.docx#3	fu=-
+write/packages/docx-layout/test/oracle/colbal/cb-short-6.docx#4	fu=-
+write/packages/docx-layout/test/oracle/colbal/cb-short-6.docx#5	fu=-
 write/packages/docx-layout/test/oracle/colbreak/cb-emptysect-aftertbl.docx#0	fu=6406ba44120f94b1daca6981e6517345	n=5
 write/packages/docx-layout/test/oracle/colbreak/cb-emptysect-aftertbl.docx#1	fu=3e81e2243af91a8a0a124a64ea497e01	n=5
 write/packages/docx-layout/test/oracle/colbreak/cb-emptysect-aftertbl.docx#2	fu=-
 write/packages/docx-layout/test/oracle/colbreak/cb-emptysect-aftertbl.docx#3	fu=456b5ad2fbc4cd4d1c5436ff8143a4f2	n=2
+write/packages/docx-layout/test/oracle/colbreak/cb-emptysect-aftertbl.docx#4	fu=-
+write/packages/docx-layout/test/oracle/colbreak/cb-emptysect-aftertbl.docx#5	fu=-
 write/packages/docx-layout/test/oracle/colbreak/cb-onecol-end.docx#0	fu=e2618caa52c85d1c7ba29e055de940f4	n=4
 write/packages/docx-layout/test/oracle/colbreak/cb-onecol-end.docx#1	fu=b8ddcc20122169618e05e8356ea0dfb0	n=4
 write/packages/docx-layout/test/oracle/colbreak/cb-onecol-end.docx#2	fu=-
 write/packages/docx-layout/test/oracle/colbreak/cb-onecol-end.docx#3	fu=-
+write/packages/docx-layout/test/oracle/colbreak/cb-onecol-end.docx#4	fu=-
+write/packages/docx-layout/test/oracle/colbreak/cb-onecol-end.docx#5	fu=-
 write/packages/docx-layout/test/oracle/colbreak/cb-seq-a0-e60-t0.docx#0	fu=34b36e0960999a69f412c55ffc4e990e	n=4
 write/packages/docx-layout/test/oracle/colbreak/cb-seq-a0-e60-t0.docx#1	fu=3ef11c2bfd3763164366da97ce4cd6d1	n=4
 write/packages/docx-layout/test/oracle/colbreak/cb-seq-a0-e60-t0.docx#2	fu=-
 write/packages/docx-layout/test/oracle/colbreak/cb-seq-a0-e60-t0.docx#3	fu=-
+write/packages/docx-layout/test/oracle/colbreak/cb-seq-a0-e60-t0.docx#4	fu=-
+write/packages/docx-layout/test/oracle/colbreak/cb-seq-a0-e60-t0.docx#5	fu=-
 write/packages/docx-layout/test/oracle/colbreak/cb-tbl-sp-empty-text-c14.docx#0	fu=90cc37d246317db28cfc0fd8d92b87fd	n=4
 write/packages/docx-layout/test/oracle/colbreak/cb-tbl-sp-empty-text-c14.docx#1	fu=0f8e587a28766f147a4090816af264c2	n=4
 write/packages/docx-layout/test/oracle/colbreak/cb-tbl-sp-empty-text-c14.docx#2	fu=-
 write/packages/docx-layout/test/oracle/colbreak/cb-tbl-sp-empty-text-c14.docx#3	fu=456b5ad2fbc4cd4d1c5436ff8143a4f2	n=2
+write/packages/docx-layout/test/oracle/colbreak/cb-tbl-sp-empty-text-c14.docx#4	fu=-
+write/packages/docx-layout/test/oracle/colbreak/cb-tbl-sp-empty-text-c14.docx#5	fu=-
 write/packages/docx-layout/test/oracle/colbreak/pb-onecol-end.docx#0	fu=f0aef564abd652c2496b614eba38f911	n=4
 write/packages/docx-layout/test/oracle/colbreak/pb-onecol-end.docx#1	fu=81aae7f2fcd6852fe938dd45c7e4ea49	n=4
 write/packages/docx-layout/test/oracle/colbreak/pb-onecol-end.docx#2	fu=-
 write/packages/docx-layout/test/oracle/colbreak/pb-onecol-end.docx#3	fu=-
+write/packages/docx-layout/test/oracle/colbreak/pb-onecol-end.docx#4	fu=-
+write/packages/docx-layout/test/oracle/colbreak/pb-onecol-end.docx#5	fu=-
 write/packages/docx-layout/test/oracle/compat-text/txt-calibri-c14.docx#0	fu=749d8e8307a0c62ed6b78508d7d49dbd	n=12
 write/packages/docx-layout/test/oracle/compat-text/txt-calibri-c14.docx#1	fu=409520986c4dc1dd1923915c693b98ae	n=12
 write/packages/docx-layout/test/oracle/compat-text/txt-calibri-c14.docx#2	fu=-
 write/packages/docx-layout/test/oracle/compat-text/txt-calibri-c14.docx#3	fu=-
+write/packages/docx-layout/test/oracle/compat-text/txt-calibri-c14.docx#4	fu=-
+write/packages/docx-layout/test/oracle/compat-text/txt-calibri-c14.docx#5	fu=-
 write/packages/docx-layout/test/oracle/compat-text/txt-verdana-c15.docx#0	fu=615ca769d746f21287e4c93502f3ed40	n=12
 write/packages/docx-layout/test/oracle/compat-text/txt-verdana-c15.docx#1	fu=81ddc12f635d2238378108c9beec2edf	n=12
 write/packages/docx-layout/test/oracle/compat-text/txt-verdana-c15.docx#2	fu=-
 write/packages/docx-layout/test/oracle/compat-text/txt-verdana-c15.docx#3	fu=-
+write/packages/docx-layout/test/oracle/compat-text/txt-verdana-c15.docx#4	fu=-
+write/packages/docx-layout/test/oracle/compat-text/txt-verdana-c15.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ctlspace/cs-basico.docx#0	fu=c24d9c0c4c8459c7a6a5359ae822d9d7	n=9
 write/packages/docx-layout/test/oracle/ctlspace/cs-basico.docx#1	fu=c0f2d0f02aeb10ecd49b75fb6f26e4ac	n=9
 write/packages/docx-layout/test/oracle/ctlspace/cs-basico.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ctlspace/cs-basico.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ctlspace/cs-basico.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ctlspace/cs-basico.docx#5	fu=-
 write/packages/docx-layout/test/oracle/dashsym/ds-endash.docx#0	fu=fd33acdc5208258500fe65b90fdf2eee	n=162
 write/packages/docx-layout/test/oracle/dashsym/ds-endash.docx#1	fu=37d8ec962fa4a26175afcd6cee46d127	n=162
 write/packages/docx-layout/test/oracle/dashsym/ds-endash.docx#2	fu=-
 write/packages/docx-layout/test/oracle/dashsym/ds-endash.docx#3	fu=-
+write/packages/docx-layout/test/oracle/dashsym/ds-endash.docx#4	fu=-
+write/packages/docx-layout/test/oracle/dashsym/ds-endash.docx#5	fu=-
 write/packages/docx-layout/test/oracle/docgrid/grid-chars360-c15.docx#0	fu=49ed624fc72c0b1680e66854343c8925	n=16
 write/packages/docx-layout/test/oracle/docgrid/grid-chars360-c15.docx#1	fu=71be6b24b234e6348422ea67be7c649f	n=16
 write/packages/docx-layout/test/oracle/docgrid/grid-chars360-c15.docx#2	fu=-
 write/packages/docx-layout/test/oracle/docgrid/grid-chars360-c15.docx#3	fu=f23199a1acd97186e31d47177070a634	n=3
+write/packages/docx-layout/test/oracle/docgrid/grid-chars360-c15.docx#4	fu=-
+write/packages/docx-layout/test/oracle/docgrid/grid-chars360-c15.docx#5	fu=-
 write/packages/docx-layout/test/oracle/eafont/ea-calibri-12-240.docx#0	fu=fbc004528a6e7625366d38c727fd22d0	n=43
 write/packages/docx-layout/test/oracle/eafont/ea-calibri-12-240.docx#1	fu=43529ebd5f65f3c4120639a03aa670f2	n=43
 write/packages/docx-layout/test/oracle/eafont/ea-calibri-12-240.docx#2	fu=-
 write/packages/docx-layout/test/oracle/eafont/ea-calibri-12-240.docx#3	fu=-
+write/packages/docx-layout/test/oracle/eafont/ea-calibri-12-240.docx#4	fu=-
+write/packages/docx-layout/test/oracle/eafont/ea-calibri-12-240.docx#5	fu=-
 write/packages/docx-layout/test/oracle/easpace/eas-c-txt-noft.docx#0	fu=fe8598ee801b6d2c3c6589c0d3d9adbd	n=3
 write/packages/docx-layout/test/oracle/easpace/eas-c-txt-noft.docx#1	fu=2d9e1064a1f0291ee4eff22efee50920	n=3
 write/packages/docx-layout/test/oracle/easpace/eas-c-txt-noft.docx#2	fu=-
 write/packages/docx-layout/test/oracle/easpace/eas-c-txt-noft.docx#3	fu=-
+write/packages/docx-layout/test/oracle/easpace/eas-c-txt-noft.docx#4	fu=-
+write/packages/docx-layout/test/oracle/easpace/eas-c-txt-noft.docx#5	fu=-
 write/packages/docx-layout/test/oracle/easpace/eas-e-sp.docx#0	fu=7ce5fa1abade4c25d6a82aebd1af6b1a	n=3
 write/packages/docx-layout/test/oracle/easpace/eas-e-sp.docx#1	fu=d2069d8122e19875626fcdcd5c3aae11	n=3
 write/packages/docx-layout/test/oracle/easpace/eas-e-sp.docx#2	fu=-
 write/packages/docx-layout/test/oracle/easpace/eas-e-sp.docx#3	fu=-
+write/packages/docx-layout/test/oracle/easpace/eas-e-sp.docx#4	fu=-
+write/packages/docx-layout/test/oracle/easpace/eas-e-sp.docx#5	fu=-
 write/packages/docx-layout/test/oracle/effext/ee-tb5.docx#0	fu=8f6bfcab04b87d9b20eba5d4477c8e89	n=5
 write/packages/docx-layout/test/oracle/effext/ee-tb5.docx#1	fu=e436592183eb37f3ca72bd27bb3afe1a	n=5
 write/packages/docx-layout/test/oracle/effext/ee-tb5.docx#2	fu=-
 write/packages/docx-layout/test/oracle/effext/ee-tb5.docx#3	fu=-
+write/packages/docx-layout/test/oracle/effext/ee-tb5.docx#4	fu=-
+write/packages/docx-layout/test/oracle/effext/ee-tb5.docx#5	fu=-
 write/packages/docx-layout/test/oracle/emfpat/ep-notpat.docx#0	fu=465b0b6dbe9172a38b42367ca964e19f	n=2
 write/packages/docx-layout/test/oracle/emfpat/ep-notpat.docx#1	fu=d1bbaab60991f235bf5c753f3a8cea79	n=3
 write/packages/docx-layout/test/oracle/emfpat/ep-notpat.docx#2	fu=-
 write/packages/docx-layout/test/oracle/emfpat/ep-notpat.docx#3	fu=-
+write/packages/docx-layout/test/oracle/emfpat/ep-notpat.docx#4	fu=-
+write/packages/docx-layout/test/oracle/emfpat/ep-notpat.docx#5	fu=-
 write/packages/docx-layout/test/oracle/emfrop/er-dnop.docx#0	fu=465b0b6dbe9172a38b42367ca964e19f	n=2
 write/packages/docx-layout/test/oracle/emfrop/er-dnop.docx#1	fu=d1bbaab60991f235bf5c753f3a8cea79	n=3
 write/packages/docx-layout/test/oracle/emfrop/er-dnop.docx#2	fu=-
 write/packages/docx-layout/test/oracle/emfrop/er-dnop.docx#3	fu=-
+write/packages/docx-layout/test/oracle/emfrop/er-dnop.docx#4	fu=-
+write/packages/docx-layout/test/oracle/emfrop/er-dnop.docx#5	fu=-
 write/packages/docx-layout/test/oracle/emfrop/er-srccopy.docx#0	fu=465b0b6dbe9172a38b42367ca964e19f	n=2
 write/packages/docx-layout/test/oracle/emfrop/er-srccopy.docx#1	fu=d1bbaab60991f235bf5c753f3a8cea79	n=3
 write/packages/docx-layout/test/oracle/emfrop/er-srccopy.docx#2	fu=-
 write/packages/docx-layout/test/oracle/emfrop/er-srccopy.docx#3	fu=-
+write/packages/docx-layout/test/oracle/emfrop/er-srccopy.docx#4	fu=-
+write/packages/docx-layout/test/oracle/emfrop/er-srccopy.docx#5	fu=-
 write/packages/docx-layout/test/oracle/emptywrap/ew-c15-text.docx#0	fu=99671c25d91e051d650c3859a41a172c	n=6
 write/packages/docx-layout/test/oracle/emptywrap/ew-c15-text.docx#1	fu=320a832fb15097df99392e94cdb0e450	n=6
 write/packages/docx-layout/test/oracle/emptywrap/ew-c15-text.docx#2	fu=-
 write/packages/docx-layout/test/oracle/emptywrap/ew-c15-text.docx#3	fu=-
+write/packages/docx-layout/test/oracle/emptywrap/ew-c15-text.docx#4	fu=-
+write/packages/docx-layout/test/oracle/emptywrap/ew-c15-text.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-after.docx#0	fu=e66a02f39dc7452173b25c050cc271c3	n=6
+write/packages/docx-layout/test/oracle/endnotes/en-after.docx#1	fu=caea748fe81ce4f5c5782defce6f791d	n=6
+write/packages/docx-layout/test/oracle/endnotes/en-after.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-after.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-after.docx#4	fu=f3aa984783368a699062ec9ef015dcd5	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-after.docx#5	fu=-
 write/packages/docx-layout/test/oracle/endnotes/en-cols.docx#0	fu=969c421239c0e498b68830234885255c	n=12
 write/packages/docx-layout/test/oracle/endnotes/en-cols.docx#1	fu=f9ec8a46cb11582821d9e6484285720d	n=12
 write/packages/docx-layout/test/oracle/endnotes/en-cols.docx#2	fu=-
 write/packages/docx-layout/test/oracle/endnotes/en-cols.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-cols.docx#4	fu=84f5fe4a6e5357cc86d68c8c2a867157	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-cols.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-decimal4.docx#0	fu=ba6fb31aae04a903dc61197de9ec1212	n=5
+write/packages/docx-layout/test/oracle/endnotes/en-decimal4.docx#1	fu=32168142ff3ceeb56266b264916294e0	n=5
+write/packages/docx-layout/test/oracle/endnotes/en-decimal4.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-decimal4.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-decimal4.docx#4	fu=3cbc6a2e1a0f106434f8fa5100663253	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-decimal4.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-doc.docx#0	fu=8cfde708b513c92d624ec735a1af92a4	n=9
+write/packages/docx-layout/test/oracle/endnotes/en-doc.docx#1	fu=32b48c5c6752b88b4f86d2747739ea8e	n=9
+write/packages/docx-layout/test/oracle/endnotes/en-doc.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-doc.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-doc.docx#4	fu=f3aa984783368a699062ec9ef015dcd5	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-doc.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-fill50.docx#0	fu=aabae090fc3a2bdbfcbe18796dbc0599	n=56
+write/packages/docx-layout/test/oracle/endnotes/en-fill50.docx#1	fu=6d06c262c1c00298d220aeb2e8613d5a	n=56
+write/packages/docx-layout/test/oracle/endnotes/en-fill50.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-fill50.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-fill50.docx#4	fu=68ea8071db94de0e9d3edb47938e726c	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-fill50.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-fill53.docx#0	fu=d066e7973c4a94175980491d19c6bf67	n=59
+write/packages/docx-layout/test/oracle/endnotes/en-fill53.docx#1	fu=dd23a7aa636746a19cc743df22270337	n=59
+write/packages/docx-layout/test/oracle/endnotes/en-fill53.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-fill53.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-fill53.docx#4	fu=68ea8071db94de0e9d3edb47938e726c	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-fill53.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-fill55.docx#0	fu=a1fab432d0a91374ea5ad9911f217d2e	n=61
+write/packages/docx-layout/test/oracle/endnotes/en-fill55.docx#1	fu=c99819c5e78a939f4f950826538261ab	n=61
+write/packages/docx-layout/test/oracle/endnotes/en-fill55.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-fill55.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-fill55.docx#4	fu=68ea8071db94de0e9d3edb47938e726c	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-fill55.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-noend.docx#0	fu=2311e7b6c386b3c0784a5e47924ae828	n=9
+write/packages/docx-layout/test/oracle/endnotes/en-noend.docx#1	fu=ec2e3c5fd47a5509ea8d8447abe2dd75	n=9
+write/packages/docx-layout/test/oracle/endnotes/en-noend.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-noend.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-noend.docx#4	fu=3589249c2e6bf0345cd862a14af1a24c	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-noend.docx#5	fu=-
 write/packages/docx-layout/test/oracle/endnotes/en-paras.docx#0	fu=410547699475302ad64db3b92c7ba544	n=5
 write/packages/docx-layout/test/oracle/endnotes/en-paras.docx#1	fu=1f1e35ee9fbdced9dcf8eda4eb17dc1b	n=5
 write/packages/docx-layout/test/oracle/endnotes/en-paras.docx#2	fu=-
 write/packages/docx-layout/test/oracle/endnotes/en-paras.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-paras.docx#4	fu=787e6537497fa21f2414f29f6193aff6	n=3	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-paras.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#0	fu=1fe481c4c07baa1aab46ef2b23699740	n=9
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#1	fu=9836e1f1aae6cfe3866f0a501ced869b	n=9
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#4	fu=3cbc6a2e1a0f106434f8fa5100663253	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-restart.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-sect-cont.docx#0	fu=484025f3d3a0101ddd782b1b40c099b4	n=11
+write/packages/docx-layout/test/oracle/endnotes/en-sect-cont.docx#1	fu=c827b65f69468e39d651d0c0c7df9dea	n=11
+write/packages/docx-layout/test/oracle/endnotes/en-sect-cont.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-sect-cont.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-sect-cont.docx#4	fu=3589249c2e6bf0345cd862a14af1a24c	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-sect-cont.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-sect-np.docx#0	fu=484025f3d3a0101ddd782b1b40c099b4	n=11
+write/packages/docx-layout/test/oracle/endnotes/en-sect-np.docx#1	fu=c827b65f69468e39d651d0c0c7df9dea	n=11
+write/packages/docx-layout/test/oracle/endnotes/en-sect-np.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-sect-np.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-sect-np.docx#4	fu=3589249c2e6bf0345cd862a14af1a24c	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-sect-np.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-split.docx#0	fu=5c588d4c66618d4e5130e03214cccf72	n=49
+write/packages/docx-layout/test/oracle/endnotes/en-split.docx#1	fu=9d95a0bc15fa5cb5070e2059c7c97626	n=49
+write/packages/docx-layout/test/oracle/endnotes/en-split.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-split.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-split.docx#4	fu=3c89f4e2bef605a9305f9596390cd179	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-split.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-with-fn.docx#0	fu=9901d971aca2c6847fd4b95e79c01303	n=11
+write/packages/docx-layout/test/oracle/endnotes/en-with-fn.docx#1	fu=d6f7e7fc7689ebefd068500adf1db887	n=11
+write/packages/docx-layout/test/oracle/endnotes/en-with-fn.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-with-fn.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/en-with-fn.docx#4	fu=15d72f19e16a4427d59955c3accb5ec8	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/endnotes/en-with-fn.docx#5	fu=-
+write/packages/docx-layout/test/oracle/endnotes/sep-calibri.docx#0	fu=bd6eb2eb6cb85e86b86d223a287d020c	n=7
+write/packages/docx-layout/test/oracle/endnotes/sep-calibri.docx#1	fu=39fd99706dd947c4e2134d0cefb91640	n=7
+write/packages/docx-layout/test/oracle/endnotes/sep-calibri.docx#2	fu=-
+write/packages/docx-layout/test/oracle/endnotes/sep-calibri.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/sep-calibri.docx#4	fu=675adf6829543ac232b57ff6b587f9f4	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/sep-calibri.docx#5	fu=-
 write/packages/docx-layout/test/oracle/endnotes/sep-times14.docx#0	fu=0c1c3f1f658bfca7f31a8d3b8f0b7b66	n=7
 write/packages/docx-layout/test/oracle/endnotes/sep-times14.docx#1	fu=5d17a57cd7e0354071e37ad1b2af930f	n=7
 write/packages/docx-layout/test/oracle/endnotes/sep-times14.docx#2	fu=-
 write/packages/docx-layout/test/oracle/endnotes/sep-times14.docx#3	fu=-
+write/packages/docx-layout/test/oracle/endnotes/sep-times14.docx#4	fu=f7d3dc8396bb678f51801ff41efbf64f	n=2	nk=1	nid=1
+write/packages/docx-layout/test/oracle/endnotes/sep-times14.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fb-arial-msmincho.docx#0	fu=31a7411148f606a55011e05c038343fd	n=8
 write/packages/docx-layout/test/oracle/fecompress/fb-arial-msmincho.docx#1	fu=905d0d422bb500569e125e31ac4a4646	n=8
 write/packages/docx-layout/test/oracle/fecompress/fb-arial-msmincho.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fb-arial-msmincho.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fb-arial-msmincho.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fb-arial-msmincho.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fb-verdana-mspgothic.docx#0	fu=d3cebeac3f7251e12b4b6f4e8678093c	n=8
 write/packages/docx-layout/test/oracle/fecompress/fb-verdana-mspgothic.docx#1	fu=67b6791caef77d1cf32d4a7ecff8694f	n=8
 write/packages/docx-layout/test/oracle/fecompress/fb-verdana-mspgothic.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fb-verdana-mspgothic.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fb-verdana-mspgothic.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fb-verdana-mspgothic.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fc-calibri-cp-c14.docx#0	fu=78e73108c0ec6b3dadbec49e0c2fc149	n=16
 write/packages/docx-layout/test/oracle/fecompress/fc-calibri-cp-c14.docx#1	fu=b8ee67c3761d84b0e98952f9b206584e	n=16
 write/packages/docx-layout/test/oracle/fecompress/fc-calibri-cp-c14.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fc-calibri-cp-c14.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fc-calibri-cp-c14.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fc-calibri-cp-c14.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fc-georgia-estilo-c11.docx#0	fu=ceef563a356cad5bb7fe3bb09293b4ba	n=16
 write/packages/docx-layout/test/oracle/fecompress/fc-georgia-estilo-c11.docx#1	fu=2fb3f89725cee45c09ca006da1074fb9	n=16
 write/packages/docx-layout/test/oracle/fecompress/fc-georgia-estilo-c11.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fc-georgia-estilo-c11.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fc-georgia-estilo-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fc-georgia-estilo-c11.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fc-verdana-cp-c11.docx#0	fu=77b794b431679d2d611f93a59b25e4e0	n=16
 write/packages/docx-layout/test/oracle/fecompress/fc-verdana-cp-c11.docx#1	fu=4887432aaf58bfdaac546f4f9c567219	n=16
 write/packages/docx-layout/test/oracle/fecompress/fc-verdana-cp-c11.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fc-verdana-cp-c11.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fc-verdana-cp-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fc-verdana-cp-c11.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fh-ko-c11.docx#0	fu=d0b1d0341252de042974b67a957670ac	n=16
 write/packages/docx-layout/test/oracle/fecompress/fh-ko-c11.docx#1	fu=92ea70ee0622a4f11f5384f27cdc5fcb	n=16
 write/packages/docx-layout/test/oracle/fecompress/fh-ko-c11.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fecompress/fh-ko-c11.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fh-ko-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fecompress/fh-ko-c11.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fejust/fj-cp-c11.docx#0	fu=c7609d6e1183a3438d258dd9305c61a7	n=57
 write/packages/docx-layout/test/oracle/fejust/fj-cp-c11.docx#1	fu=353c2cce7c3179193174e5728dd97912	n=57
 write/packages/docx-layout/test/oracle/fejust/fj-cp-c11.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fejust/fj-cp-c11.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fejust/fj-cp-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fejust/fj-cp-c11.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fejust/fj-nc-c11.docx#0	fu=c7609d6e1183a3438d258dd9305c61a7	n=57
 write/packages/docx-layout/test/oracle/fejust/fj-nc-c11.docx#1	fu=353c2cce7c3179193174e5728dd97912	n=57
 write/packages/docx-layout/test/oracle/fejust/fj-nc-c11.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fejust/fj-nc-c11.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fejust/fj-nc-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fejust/fj-nc-c11.docx#5	fu=-
 write/packages/docx-layout/test/oracle/feknown/fk-meiryo.docx#0	fu=0f2e2cd8f5716d4a5b1617cd6b2fa3d7	n=2
 write/packages/docx-layout/test/oracle/feknown/fk-meiryo.docx#1	fu=31c449537b6b42ccbfa96af55387be58	n=2
 write/packages/docx-layout/test/oracle/feknown/fk-meiryo.docx#2	fu=-
 write/packages/docx-layout/test/oracle/feknown/fk-meiryo.docx#3	fu=-
+write/packages/docx-layout/test/oracle/feknown/fk-meiryo.docx#4	fu=-
+write/packages/docx-layout/test/oracle/feknown/fk-meiryo.docx#5	fu=-
 write/packages/docx-layout/test/oracle/feknown/fk-yugothic.docx#0	fu=0f2e2cd8f5716d4a5b1617cd6b2fa3d7	n=2
 write/packages/docx-layout/test/oracle/feknown/fk-yugothic.docx#1	fu=31c449537b6b42ccbfa96af55387be58	n=2
 write/packages/docx-layout/test/oracle/feknown/fk-yugothic.docx#2	fu=-
 write/packages/docx-layout/test/oracle/feknown/fk-yugothic.docx#3	fu=-
+write/packages/docx-layout/test/oracle/feknown/fk-yugothic.docx#4	fu=-
+write/packages/docx-layout/test/oracle/feknown/fk-yugothic.docx#5	fu=-
 write/packages/docx-layout/test/oracle/felayout/fe1-arial-none.docx#0	fu=6679ac43b0724b40f3f98c5188715f6a	n=2
 write/packages/docx-layout/test/oracle/felayout/fe1-arial-none.docx#1	fu=3b89f053ece0b415551aa22457fa4283	n=2
 write/packages/docx-layout/test/oracle/felayout/fe1-arial-none.docx#2	fu=-
 write/packages/docx-layout/test/oracle/felayout/fe1-arial-none.docx#3	fu=-
+write/packages/docx-layout/test/oracle/felayout/fe1-arial-none.docx#4	fu=-
+write/packages/docx-layout/test/oracle/felayout/fe1-arial-none.docx#5	fu=-
 write/packages/docx-layout/test/oracle/felead/fl-c11-nobal.docx#0	fu=bc74ced328f8f1fbe9c129c56870bc55	n=8
 write/packages/docx-layout/test/oracle/felead/fl-c11-nobal.docx#1	fu=311b2728866a339b4ce7a0e2611504f2	n=8
 write/packages/docx-layout/test/oracle/felead/fl-c11-nobal.docx#2	fu=-
 write/packages/docx-layout/test/oracle/felead/fl-c11-nobal.docx#3	fu=-
+write/packages/docx-layout/test/oracle/felead/fl-c11-nobal.docx#4	fu=-
+write/packages/docx-layout/test/oracle/felead/fl-c11-nobal.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fields/fld-pageref.docx#0	fu=a66f7fb5b668806ae2004e06dbcd86bd	n=30
 write/packages/docx-layout/test/oracle/fields/fld-pageref.docx#1	fu=2215aad46957f167cb3a8c0b9687181c	n=31
 write/packages/docx-layout/test/oracle/fields/fld-pageref.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fields/fld-pageref.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fields/fld-pageref.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fields/fld-pageref.docx#5	fu=-
 write/packages/docx-layout/test/oracle/floatwide/fw-wide.docx#0	fu=27b5d4f2439da360a89dc48721cd39f0	n=3
 write/packages/docx-layout/test/oracle/floatwide/fw-wide.docx#1	fu=fc9b09fe26b8edf8e8fda299acd0b130	n=3
 write/packages/docx-layout/test/oracle/floatwide/fw-wide.docx#2	fu=-
 write/packages/docx-layout/test/oracle/floatwide/fw-wide.docx#3	fu=-
+write/packages/docx-layout/test/oracle/floatwide/fw-wide.docx#4	fu=-
+write/packages/docx-layout/test/oracle/floatwide/fw-wide.docx#5	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-cell-50.docx#0	fu=1b3696bdd99f9bc02c145c2c7134f3d9	n=58
+write/packages/docx-layout/test/oracle/fncont/fc-cell-50.docx#1	fu=e863c1077a45e6cbab1446be72065f1c	n=58
+write/packages/docx-layout/test/oracle/fncont/fc-cell-50.docx#2	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-cell-50.docx#3	fu=2c49d103e60586f6660fe1640a54d01c	n=10
+write/packages/docx-layout/test/oracle/fncont/fc-cell-50.docx#4	fu=8dcb9094b03b1eb5bb0b03620e2e59cd	n=11	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fncont/fc-cell-50.docx#5	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-50.docx#0	fu=391ce17d15d511678e2c3dd42d00172c	n=55
+write/packages/docx-layout/test/oracle/fncont/fc-para-50.docx#1	fu=d9ad10e9312e2dc2b077e4ce7cda00d0	n=55
+write/packages/docx-layout/test/oracle/fncont/fc-para-50.docx#2	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-50.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-50.docx#4	fu=76f529b1b6039eddb744d89f926da75d	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fncont/fc-para-50.docx#5	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-51.docx#0	fu=baac161401f7c73ef0218f8b4a90016a	n=56
+write/packages/docx-layout/test/oracle/fncont/fc-para-51.docx#1	fu=c236d8db90a0ce72970f18f3c0a8da60	n=56
+write/packages/docx-layout/test/oracle/fncont/fc-para-51.docx#2	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-51.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-51.docx#4	fu=76f529b1b6039eddb744d89f926da75d	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fncont/fc-para-51.docx#5	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-52.docx#0	fu=90333160269ab588eaa6143c3937b5f5	n=57
+write/packages/docx-layout/test/oracle/fncont/fc-para-52.docx#1	fu=eb61831ff71e13a28c29aba9aed534dd	n=57
+write/packages/docx-layout/test/oracle/fncont/fc-para-52.docx#2	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-52.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-52.docx#4	fu=76f529b1b6039eddb744d89f926da75d	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fncont/fc-para-52.docx#5	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-53.docx#0	fu=4a5cd8a3466dcfd6d496f3c3dbdde52a	n=58
+write/packages/docx-layout/test/oracle/fncont/fc-para-53.docx#1	fu=bd4994f1574f639363de8613f530ee92	n=58
+write/packages/docx-layout/test/oracle/fncont/fc-para-53.docx#2	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-53.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-para-53.docx#4	fu=76f529b1b6039eddb744d89f926da75d	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fncont/fc-para-53.docx#5	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-two.docx#0	fu=57d164e8b18265f7d9489c84d9c68781	n=58
+write/packages/docx-layout/test/oracle/fncont/fc-two.docx#1	fu=72819601e4b49cacb7f60b995819d9cc	n=58
+write/packages/docx-layout/test/oracle/fncont/fc-two.docx#2	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-two.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fncont/fc-two.docx#4	fu=76f529b1b6039eddb744d89f926da75d	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fncont/fc-two.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fnrefsup/frs-direct-sup.docx#0	fu=9e88921a96062b200fe346e95963b07a	n=4
 write/packages/docx-layout/test/oracle/fnrefsup/frs-direct-sup.docx#1	fu=62f8dbc31b5b9fa1efe61453e3787c6d	n=4
 write/packages/docx-layout/test/oracle/fnrefsup/frs-direct-sup.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fnrefsup/frs-direct-sup.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-direct-sup.docx#4	fu=b3fbd856a326185ffc4852875e5b6f9e	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fnrefsup/frs-direct-sup.docx#5	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-nostyle.docx#0	fu=9e88921a96062b200fe346e95963b07a	n=4
+write/packages/docx-layout/test/oracle/fnrefsup/frs-nostyle.docx#1	fu=62f8dbc31b5b9fa1efe61453e3787c6d	n=4
+write/packages/docx-layout/test/oracle/fnrefsup/frs-nostyle.docx#2	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-nostyle.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-nostyle.docx#4	fu=b3fbd856a326185ffc4852875e5b6f9e	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fnrefsup/frs-nostyle.docx#5	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-nosup.docx#0	fu=9e88921a96062b200fe346e95963b07a	n=4
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-nosup.docx#1	fu=62f8dbc31b5b9fa1efe61453e3787c6d	n=4
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-nosup.docx#2	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-nosup.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-nosup.docx#4	fu=b3fbd856a326185ffc4852875e5b6f9e	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-nosup.docx#5	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-sup.docx#0	fu=9e88921a96062b200fe346e95963b07a	n=4
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-sup.docx#1	fu=62f8dbc31b5b9fa1efe61453e3787c6d	n=4
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-sup.docx#2	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-sup.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-sup.docx#4	fu=b3fbd856a326185ffc4852875e5b6f9e	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fnrefsup/frs-style-sup.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fnsep/fsep-folga.docx#0	fu=685efc9b7705a9855d920f26b49e0ac0	n=6
 write/packages/docx-layout/test/oracle/fnsep/fsep-folga.docx#1	fu=d4996f149501c8178bcfcea34c357bba	n=6
 write/packages/docx-layout/test/oracle/fnsep/fsep-folga.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fnsep/fsep-folga.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fnsep/fsep-folga.docx#4	fu=68ea8071db94de0e9d3edb47938e726c	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fnsep/fsep-folga.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fnsep/fsep-top724.docx#0	fu=685efc9b7705a9855d920f26b49e0ac0	n=6
 write/packages/docx-layout/test/oracle/fnsep/fsep-top724.docx#1	fu=d4996f149501c8178bcfcea34c357bba	n=6
 write/packages/docx-layout/test/oracle/fnsep/fsep-top724.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fnsep/fsep-top724.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fnsep/fsep-top724.docx#4	fu=68ea8071db94de0e9d3edb47938e726c	n=2	nk=0	nid=1
+write/packages/docx-layout/test/oracle/fnsep/fsep-top724.docx#5	fu=-
 write/packages/docx-layout/test/oracle/fontsub/sub-arial.docx#0	fu=033694cb86d56180c7813c45763a342c	n=8
 write/packages/docx-layout/test/oracle/fontsub/sub-arial.docx#1	fu=f14e47be04d30fde8f5dca3adbf88e3d	n=8
 write/packages/docx-layout/test/oracle/fontsub/sub-arial.docx#2	fu=-
 write/packages/docx-layout/test/oracle/fontsub/sub-arial.docx#3	fu=-
+write/packages/docx-layout/test/oracle/fontsub/sub-arial.docx#4	fu=-
+write/packages/docx-layout/test/oracle/fontsub/sub-arial.docx#5	fu=-
 write/packages/docx-layout/test/oracle/formjust/fj-campo.docx#0	fu=6e920a8216fd061ed1b1f17dba26cd8e	n=304
 write/packages/docx-layout/test/oracle/formjust/fj-campo.docx#1	fu=16e2e77edca0aadfe67a2b5f72fd6a7e	n=304
 write/packages/docx-layout/test/oracle/formjust/fj-campo.docx#2	fu=-
 write/packages/docx-layout/test/oracle/formjust/fj-campo.docx#3	fu=-
+write/packages/docx-layout/test/oracle/formjust/fj-campo.docx#4	fu=-
+write/packages/docx-layout/test/oracle/formjust/fj-campo.docx#5	fu=-
 write/packages/docx-layout/test/oracle/formtext/ft-margem-txt-en4sp100en.docx#0	fu=c601654186fec23d65cd5cd8674ee820	n=135
 write/packages/docx-layout/test/oracle/formtext/ft-margem-txt-en4sp100en.docx#1	fu=cf761ba21055d32dc2531856f4f4c0fe	n=135
 write/packages/docx-layout/test/oracle/formtext/ft-margem-txt-en4sp100en.docx#2	fu=-
 write/packages/docx-layout/test/oracle/formtext/ft-margem-txt-en4sp100en.docx#3	fu=-
+write/packages/docx-layout/test/oracle/formtext/ft-margem-txt-en4sp100en.docx#4	fu=-
+write/packages/docx-layout/test/oracle/formtext/ft-margem-txt-en4sp100en.docx#5	fu=-
 write/packages/docx-layout/test/oracle/frames/fr-body-border.docx#0	fu=37de103b348529208cd1d594a471045d	n=5
 write/packages/docx-layout/test/oracle/frames/fr-body-border.docx#1	fu=03ec31310cfbacb1c57e3ff1ba013017	n=5
 write/packages/docx-layout/test/oracle/frames/fr-body-border.docx#2	fu=-
 write/packages/docx-layout/test/oracle/frames/fr-body-border.docx#3	fu=-
+write/packages/docx-layout/test/oracle/frames/fr-body-border.docx#4	fu=-
+write/packages/docx-layout/test/oracle/frames/fr-body-border.docx#5	fu=-
 write/packages/docx-layout/test/oracle/frames/fr-body-none.docx#0	fu=d3c20752df66cf18aad01ed6f6c724fd	n=5
 write/packages/docx-layout/test/oracle/frames/fr-body-none.docx#1	fu=aa62ff2d1a15e81d8baae075c41ad2e9	n=5
 write/packages/docx-layout/test/oracle/frames/fr-body-none.docx#2	fu=-
 write/packages/docx-layout/test/oracle/frames/fr-body-none.docx#3	fu=-
+write/packages/docx-layout/test/oracle/frames/fr-body-none.docx#4	fu=-
+write/packages/docx-layout/test/oracle/frames/fr-body-none.docx#5	fu=-
 write/packages/docx-layout/test/oracle/frames/fr-hdr-left.docx#0	fu=1a6ac5389c7a935e3c7fd7caa92b467c	n=10
 write/packages/docx-layout/test/oracle/frames/fr-hdr-left.docx#1	fu=80fdefc801698a1aab861b695d413846	n=10
 write/packages/docx-layout/test/oracle/frames/fr-hdr-left.docx#2	fu=73de598365eed9fc422c8891196630b6	n=4	hfpath=word/headerdefault.xml
 write/packages/docx-layout/test/oracle/frames/fr-hdr-left.docx#3	fu=-
+write/packages/docx-layout/test/oracle/frames/fr-hdr-left.docx#4	fu=-
+write/packages/docx-layout/test/oracle/frames/fr-hdr-left.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftable2/ft2-formx-after160.docx#0	fu=c115f9af4477120b5e5181b6a968dcf1	n=5
 write/packages/docx-layout/test/oracle/ftable2/ft2-formx-after160.docx#1	fu=54a688b0d7e8524894de6b1122a917aa	n=5
 write/packages/docx-layout/test/oracle/ftable2/ft2-formx-after160.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftable2/ft2-formx-after160.docx#3	fu=9f67806b3d0798982c903260b004d7c2	n=8
+write/packages/docx-layout/test/oracle/ftable2/ft2-formx-after160.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftable2/ft2-formx-after160.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftable2/ft2-one-y200.docx#0	fu=b1c3916d7bf7e4aecb5bf8aaf78e21e1	n=4
 write/packages/docx-layout/test/oracle/ftable2/ft2-one-y200.docx#1	fu=10869846afbbee0b2fb53421409105cd	n=4
 write/packages/docx-layout/test/oracle/ftable2/ft2-one-y200.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftable2/ft2-one-y200.docx#3	fu=d7de6a5e33f2613eb831fe6f30f1f310	n=6
+write/packages/docx-layout/test/oracle/ftable2/ft2-one-y200.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftable2/ft2-one-y200.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftable2/img-tb-before0.docx#0	fu=01f46227c052f0f75e79853d873dadfd	n=4
 write/packages/docx-layout/test/oracle/ftable2/img-tb-before0.docx#1	fu=d3c645697c074ba10cf78894a4054c87	n=4
 write/packages/docx-layout/test/oracle/ftable2/img-tb-before0.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftable2/img-tb-before0.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftable2/img-tb-before0.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftable2/img-tb-before0.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftable/ft-split-firstrow.docx#0	fu=50aa57fab917dc0dd0c9e23b7090be57	n=60
 write/packages/docx-layout/test/oracle/ftable/ft-split-firstrow.docx#1	fu=2398c6ace2ba0d86113f113a8c2f1d62	n=60
 write/packages/docx-layout/test/oracle/ftable/ft-split-firstrow.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftable/ft-split-firstrow.docx#3	fu=fa3ce62bf4139dbe7d8ed7476c0cc2cd	n=17
+write/packages/docx-layout/test/oracle/ftable/ft-split-firstrow.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftable/ft-split-firstrow.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d0-o37.docx#0	fu=99d5a4d6d3f2f77d8bd25e104aa71925	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d0-o37.docx#1	fu=7b085aa0408f1aa15e265fa2e1704bce	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d0-o37.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d0-o37.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d0-o37.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d0-o37.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d36-o36.docx#0	fu=99d5a4d6d3f2f77d8bd25e104aa71925	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d36-o36.docx#1	fu=7b085aa0408f1aa15e265fa2e1704bce	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d36-o36.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d36-o36.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d36-o36.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c11-d36-o36.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o34.docx#0	fu=99d5a4d6d3f2f77d8bd25e104aa71925	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o34.docx#1	fu=7b085aa0408f1aa15e265fa2e1704bce	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o34.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o34.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o34.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o34.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o42.docx#0	fu=99d5a4d6d3f2f77d8bd25e104aa71925	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o42.docx#1	fu=7b085aa0408f1aa15e265fa2e1704bce	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o42.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o42.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o42.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d0-o42.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d36-o41.docx#0	fu=99d5a4d6d3f2f77d8bd25e104aa71925	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d36-o41.docx#1	fu=7b085aa0408f1aa15e265fa2e1704bce	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d36-o41.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d36-o41.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d36-o41.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-c15-d36-o41.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-html-o42.docx#0	fu=99d5a4d6d3f2f77d8bd25e104aa71925	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-html-o42.docx#1	fu=7b085aa0408f1aa15e265fa2e1704bce	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-html-o42.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-html-o42.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-html-o42.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-html-o42.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-push-html-a0-b240.docx#0	fu=99d5a4d6d3f2f77d8bd25e104aa71925	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-push-html-a0-b240.docx#1	fu=7b085aa0408f1aa15e265fa2e1704bce	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-push-html-a0-b240.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-push-html-a0-b240.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-push-html-a0-b240.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-push-html-a0-b240.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-push-max-a360-b120.docx#0	fu=99d5a4d6d3f2f77d8bd25e104aa71925	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-push-max-a360-b120.docx#1	fu=7b085aa0408f1aa15e265fa2e1704bce	n=5
 write/packages/docx-layout/test/oracle/ftaftdist/fad-push-max-a360-b120.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftaftdist/fad-push-max-a360-b120.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-push-max-a360-b120.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftaftdist/fad-push-max-a360-b120.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftafter/fta-img-square-c11.docx#0	fu=1ae27e20e3ee883a2ed5f2d18941dbba	n=14
 write/packages/docx-layout/test/oracle/ftafter/fta-img-square-c11.docx#1	fu=f939fef772afe122a5c9f07b04c9d590	n=14
 write/packages/docx-layout/test/oracle/ftafter/fta-img-square-c11.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftafter/fta-img-square-c11.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftafter/fta-img-square-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftafter/fta-img-square-c11.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftafter/fta-l15-y50.docx#0	fu=528541e1598882ccd8fcad76a69adc54	n=14
 write/packages/docx-layout/test/oracle/ftafter/fta-l15-y50.docx#1	fu=9ae12c222e3a8594fab3e2fbed51b755	n=14
 write/packages/docx-layout/test/oracle/ftafter/fta-l15-y50.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftafter/fta-l15-y50.docx#3	fu=dce55bef452a0360004ffaa7e784e34c	n=2
+write/packages/docx-layout/test/oracle/ftafter/fta-l15-y50.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftafter/fta-l15-y50.docx#5	fu=-
+write/packages/docx-layout/test/oracle/ftanchor/fa-anchors-break.docx#0	fu=c46a6b6e4fb5985c7c01ae8989c64364	n=8
+write/packages/docx-layout/test/oracle/ftanchor/fa-anchors-break.docx#1	fu=616ab4454f9ec9782b747d88b7321700	n=8
+write/packages/docx-layout/test/oracle/ftanchor/fa-anchors-break.docx#2	fu=-
+write/packages/docx-layout/test/oracle/ftanchor/fa-anchors-break.docx#3	fu=2e29d394378b15a833e95996ab2a290b	n=5
+write/packages/docx-layout/test/oracle/ftanchor/fa-anchors-break.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftanchor/fa-anchors-break.docx#5	fu=334bd630f592e11f54af785e533e72d2	n=1	ix=0	pg=0	nd=1	ce=0
 write/packages/docx-layout/test/oracle/ftanchor/fa-pic-anchors-break.docx#0	fu=32df43a4481394383de2c0b6f8a46508	n=5
 write/packages/docx-layout/test/oracle/ftanchor/fa-pic-anchors-break.docx#1	fu=67a738d0e858a8621fb93a3bf28e8fcd	n=5
 write/packages/docx-layout/test/oracle/ftanchor/fa-pic-anchors-break.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftanchor/fa-pic-anchors-break.docx#3	fu=-
+write/packages/docx-layout/test/oracle/ftanchor/fa-pic-anchors-break.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftanchor/fa-pic-anchors-break.docx#5	fu=334bd630f592e11f54af785e533e72d2	n=1	ix=1	pg=0	nd=2	ce=0
 write/packages/docx-layout/test/oracle/ftcellmar/fm-center-wide-c11.docx#0	fu=ff7eea19e63c265a24b3bef62f1e4766	n=7
 write/packages/docx-layout/test/oracle/ftcellmar/fm-center-wide-c11.docx#1	fu=91a854b0d826a682723b7d7448eee94f	n=7
 write/packages/docx-layout/test/oracle/ftcellmar/fm-center-wide-c11.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftcellmar/fm-center-wide-c11.docx#3	fu=57454ed39ae94fd3af60a0a775cf4bba	n=5
+write/packages/docx-layout/test/oracle/ftcellmar/fm-center-wide-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftcellmar/fm-center-wide-c11.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftmin/ftm-min47.docx#0	fu=b3a9f193b39e16b995973ecf1edb3e0e	n=52
 write/packages/docx-layout/test/oracle/ftmin/ftm-min47.docx#1	fu=8ed7503b27eeeb4de653af19dd35af74	n=52
 write/packages/docx-layout/test/oracle/ftmin/ftm-min47.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftmin/ftm-min47.docx#3	fu=3834cb46ff1a38930c4bae07384814e4	n=5
+write/packages/docx-layout/test/oracle/ftmin/ftm-min47.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftmin/ftm-min47.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftnegind/ftni-noind.docx#0	fu=e43917099e62749973e86f1b5b22a00f	n=14
 write/packages/docx-layout/test/oracle/ftnegind/ftni-noind.docx#1	fu=b84159d3cea23ea9191df1551bda40c8	n=14
 write/packages/docx-layout/test/oracle/ftnegind/ftni-noind.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftnegind/ftni-noind.docx#3	fu=d9f01273570e48d54bc434bf870eba07	n=8
+write/packages/docx-layout/test/oracle/ftnegind/ftni-noind.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftnegind/ftni-noind.docx#5	fu=-
 write/packages/docx-layout/test/oracle/ftnobreak/ftnb-min49-c11.docx#0	fu=3d1e3fc0dad8ce81e54a6fecaa95e077	n=55
 write/packages/docx-layout/test/oracle/ftnobreak/ftnb-min49-c11.docx#1	fu=f88d1e686d53a8f98e624789e869c5c2	n=55
 write/packages/docx-layout/test/oracle/ftnobreak/ftnb-min49-c11.docx#2	fu=-
 write/packages/docx-layout/test/oracle/ftnobreak/ftnb-min49-c11.docx#3	fu=3834cb46ff1a38930c4bae07384814e4	n=5
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-min49-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-min49-c11.docx#5	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-n6f43-c11.docx#0	fu=47211c4ad1fae53b153cb6a75cfa60d5	n=57
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-n6f43-c11.docx#1	fu=9265c1ebbfbba9570f5cbdc7458101c2	n=57
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-n6f43-c11.docx#2	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-n6f43-c11.docx#3	fu=95ca2224537ead9677af02f1d4e3f092	n=14
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-n6f43-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-n6f43-c11.docx#5	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-r1h1000-c11.docx#0	fu=21ce8287115a2a37651597daf8081733	n=54
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-r1h1000-c11.docx#1	fu=f430266b21f867eb380b47c5f252664c	n=54
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-r1h1000-c11.docx#2	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-r1h1000-c11.docx#3	fu=3834cb46ff1a38930c4bae07384814e4	n=5
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-r1h1000-c11.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-r1h1000-c11.docx#5	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-tall-c14.docx#0	fu=fe91c4324a6ea7e8e1ccb0271324f862	n=62
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-tall-c14.docx#1	fu=d3c92ab1f8e0a61c4a397626116685a9	n=62
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-tall-c14.docx#2	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-tall-c14.docx#3	fu=519d8048af4f5a48fe80bc3e9603eb24	n=18
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-tall-c14.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftnobreak/ftnb-tall-c14.docx#5	fu=-
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1770.docx#0	fu=a15d4b9827f4c36ffec271d767687fa5	n=33
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1770.docx#1	fu=c764a3acc4d0f6064ea7c41101b339d6	n=33
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1770.docx#2	fu=-
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1770.docx#3	fu=1216d42dfcc482cebbf8676abf680fad	n=31
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1770.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1770.docx#5	fu=-
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1798.docx#0	fu=a15d4b9827f4c36ffec271d767687fa5	n=33
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1798.docx#1	fu=c764a3acc4d0f6064ea7c41101b339d6	n=33
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1798.docx#2	fu=-
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1798.docx#3	fu=1216d42dfcc482cebbf8676abf680fad	n=31
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1798.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1798.docx#5	fu=-
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1826.docx#0	fu=a15d4b9827f4c36ffec271d767687fa5	n=33
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1826.docx#1	fu=c764a3acc4d0f6064ea7c41101b339d6	n=33
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1826.docx#2	fu=-
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1826.docx#3	fu=1216d42dfcc482cebbf8676abf680fad	n=31
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1826.docx#4	fu=-
+write/packages/docx-layout/test/oracle/ftrowbdr/frb-1826.docx#5	fu=-
+write/packages/docx-layout/test/oracle/hfgroup/hn-num-clip.docx#0	fu=f1847419a2c799357441f00abf229164	n=10
+write/packages/docx-layout/test/oracle/hfgroup/hn-num-clip.docx#1	fu=fb2b9b24b8a4fdd802ebc233277e5d70	n=10
+write/packages/docx-layout/test/oracle/hfgroup/hn-num-clip.docx#2	fu=5a672f31da906880356233eb6e446a5e	n=2	hfpath=word/headerdefault.xml
+write/packages/docx-layout/test/oracle/hfgroup/hn-num-clip.docx#3	fu=-
+write/packages/docx-layout/test/oracle/hfgroup/hn-num-clip.docx#4	fu=-
+write/packages/docx-layout/test/oracle/hfgroup/hn-num-clip.docx#5	fu=1ae2f64a4f02b272136d315a3f07fff8	n=2	ix=0	pg=0	nd=2	ce=0
+write/packages/docx-layout/test/oracle/hfgroup/ho-body-sq-behind.docx#0	fu=f2321c4fe5925fae5f8221223c3a710a	n=11
+write/packages/docx-layout/test/oracle/hfgroup/ho-body-sq-behind.docx#1	fu=726ef20c5fefdcf2a212f1b054ccaa90	n=11
+write/packages/docx-layout/test/oracle/hfgroup/ho-body-sq-behind.docx#2	fu=5a672f31da906880356233eb6e446a5e	n=2	hfpath=word/headerdefault.xml
+write/packages/docx-layout/test/oracle/hfgroup/ho-body-sq-behind.docx#3	fu=-
+write/packages/docx-layout/test/oracle/hfgroup/ho-body-sq-behind.docx#4	fu=-
+write/packages/docx-layout/test/oracle/hfgroup/ho-body-sq-behind.docx#5	fu=098aa1dc3ec676b1135adb9ee5337972	n=2	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/hfgroup/ho14-body-sq-behind.docx#0	fu=f2321c4fe5925fae5f8221223c3a710a	n=11
+write/packages/docx-layout/test/oracle/hfgroup/ho14-body-sq-behind.docx#1	fu=726ef20c5fefdcf2a212f1b054ccaa90	n=11
+write/packages/docx-layout/test/oracle/hfgroup/ho14-body-sq-behind.docx#2	fu=5a672f31da906880356233eb6e446a5e	n=2	hfpath=word/headerdefault.xml
+write/packages/docx-layout/test/oracle/hfgroup/ho14-body-sq-behind.docx#3	fu=-
+write/packages/docx-layout/test/oracle/hfgroup/ho14-body-sq-behind.docx#4	fu=-
+write/packages/docx-layout/test/oracle/hfgroup/ho14-body-sq-behind.docx#5	fu=098aa1dc3ec676b1135adb9ee5337972	n=2	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/hfgroup/hz-body-tbbehind-tight-lo.docx#0	fu=6168f4ec632edeff8373b560acaf3293	n=10
+write/packages/docx-layout/test/oracle/hfgroup/hz-body-tbbehind-tight-lo.docx#1	fu=91e8535a7626855ac36f50f653da0ac7	n=10
+write/packages/docx-layout/test/oracle/hfgroup/hz-body-tbbehind-tight-lo.docx#2	fu=5a672f31da906880356233eb6e446a5e	n=2	hfpath=word/headerdefault.xml
+write/packages/docx-layout/test/oracle/hfgroup/hz-body-tbbehind-tight-lo.docx#3	fu=-
+write/packages/docx-layout/test/oracle/hfgroup/hz-body-tbbehind-tight-lo.docx#4	fu=-
+write/packages/docx-layout/test/oracle/hfgroup/hz-body-tbbehind-tight-lo.docx#5	fu=098aa1dc3ec676b1135adb9ee5337972	n=2	ix=1	pg=0	nd=2	ce=0
+write/packages/docx-layout/test/oracle/hidetext/off-bottom.docx#0	fu=5fa1215219663e21816dceb7d3a1fd34	n=4
+write/packages/docx-layout/test/oracle/hidetext/off-bottom.docx#1	fu=7592e3ca6c21815e8950e76e92e27ed0	n=4
+write/packages/docx-layout/test/oracle/hidetext/off-bottom.docx#2	fu=-
+write/packages/docx-layout/test/oracle/hidetext/off-bottom.docx#3	fu=-
+write/packages/docx-layout/test/oracle/hidetext/off-bottom.docx#4	fu=-
+write/packages/docx-layout/test/oracle/hidetext/off-bottom.docx#5	fu=62771262bd87f4d8d3c334bd0305b490	n=1	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/hidetext/rot-tb.docx#0	fu=67c4dc83c411a7342a1939823ad4c974	n=4
+write/packages/docx-layout/test/oracle/hidetext/rot-tb.docx#1	fu=22d727b1dab64642d4acd501756125f6	n=4
+write/packages/docx-layout/test/oracle/hidetext/rot-tb.docx#2	fu=-
+write/packages/docx-layout/test/oracle/hidetext/rot-tb.docx#3	fu=-
+write/packages/docx-layout/test/oracle/hidetext/rot-tb.docx#4	fu=-
+write/packages/docx-layout/test/oracle/hidetext/rot-tb.docx#5	fu=2bb7a7f03ceb7a47ef59670d5fdf652b	n=1	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/inlinegrp/ig-group.docx#0	fu=27b5d4f2439da360a89dc48721cd39f0	n=3
+write/packages/docx-layout/test/oracle/inlinegrp/ig-group.docx#1	fu=fc9b09fe26b8edf8e8fda299acd0b130	n=3
+write/packages/docx-layout/test/oracle/inlinegrp/ig-group.docx#2	fu=-
+write/packages/docx-layout/test/oracle/inlinegrp/ig-group.docx#3	fu=-
+write/packages/docx-layout/test/oracle/inlinegrp/ig-group.docx#4	fu=-
+write/packages/docx-layout/test/oracle/inlinegrp/ig-group.docx#5	fu=-
+write/packages/docx-layout/test/oracle/inside/in-v-p2.docx#0	fu=6b607141018bed4803f8011c7c226854	n=15
+write/packages/docx-layout/test/oracle/inside/in-v-p2.docx#1	fu=e71b53524bd70e6102122920da44d19b	n=15
+write/packages/docx-layout/test/oracle/inside/in-v-p2.docx#2	fu=-
+write/packages/docx-layout/test/oracle/inside/in-v-p2.docx#3	fu=-
+write/packages/docx-layout/test/oracle/inside/in-v-p2.docx#4	fu=-
+write/packages/docx-layout/test/oracle/inside/in-v-p2.docx#5	fu=835b4054bcfc2528ebb99b91e762d6d6	n=1	ix=0	pg=1	nd=1	ce=0
+write/packages/docx-layout/test/oracle/pbanc/pa14-parsq.docx#0	fu=2f6f5e5f0332f0af440515041bb10f07	n=6
+write/packages/docx-layout/test/oracle/pbanc/pa14-parsq.docx#1	fu=04eb0f1d300ae8e5e884976db12cf613	n=6
+write/packages/docx-layout/test/oracle/pbanc/pa14-parsq.docx#2	fu=-
+write/packages/docx-layout/test/oracle/pbanc/pa14-parsq.docx#3	fu=-
+write/packages/docx-layout/test/oracle/pbanc/pa14-parsq.docx#4	fu=-
+write/packages/docx-layout/test/oracle/pbanc/pa14-parsq.docx#5	fu=c7f68485e0bb6b03e9c2e38fdb95e77a	n=1	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/pbanc/pa15-two.docx#0	fu=07e7cdb6419e89b9191a76999fda83c4	n=7
+write/packages/docx-layout/test/oracle/pbanc/pa15-two.docx#1	fu=358676ca8d2f9d02b8cb9b02c45667c4	n=7
+write/packages/docx-layout/test/oracle/pbanc/pa15-two.docx#2	fu=-
+write/packages/docx-layout/test/oracle/pbanc/pa15-two.docx#3	fu=-
+write/packages/docx-layout/test/oracle/pbanc/pa15-two.docx#4	fu=-
+write/packages/docx-layout/test/oracle/pbanc/pa15-two.docx#5	fu=74df04d6dd89efccf420f22440987f97	n=1	ix=0	pg=0	nd=2	ce=0
+write/packages/docx-layout/test/oracle/tbinset/ti-nostyle-nofill.docx#0	fu=bd3be3c0d001aa6e846bb045d3eabc58	n=3
+write/packages/docx-layout/test/oracle/tbinset/ti-nostyle-nofill.docx#1	fu=5ed0e081a98071694aabf3f3d4881dc2	n=3
+write/packages/docx-layout/test/oracle/tbinset/ti-nostyle-nofill.docx#2	fu=-
+write/packages/docx-layout/test/oracle/tbinset/ti-nostyle-nofill.docx#3	fu=-
+write/packages/docx-layout/test/oracle/tbinset/ti-nostyle-nofill.docx#4	fu=-
+write/packages/docx-layout/test/oracle/tbinset/ti-nostyle-nofill.docx#5	fu=1e3b15b0d65f8209963736a902750ab4	n=1	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/tbinset/ti-style2-wnofill.docx#0	fu=bd3be3c0d001aa6e846bb045d3eabc58	n=3
+write/packages/docx-layout/test/oracle/tbinset/ti-style2-wnofill.docx#1	fu=5ed0e081a98071694aabf3f3d4881dc2	n=3
+write/packages/docx-layout/test/oracle/tbinset/ti-style2-wnofill.docx#2	fu=-
+write/packages/docx-layout/test/oracle/tbinset/ti-style2-wnofill.docx#3	fu=-
+write/packages/docx-layout/test/oracle/tbinset/ti-style2-wnofill.docx#4	fu=-
+write/packages/docx-layout/test/oracle/tbinset/ti-style2-wnofill.docx#5	fu=1e3b15b0d65f8209963736a902750ab4	n=1	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/tbover/to-lines-h44.docx#0	fu=0f99e82eb2fa73d60de6c869335b2a16	n=10
+write/packages/docx-layout/test/oracle/tbover/to-lines-h44.docx#1	fu=d28fb4905a16165daa7418ed69e1bcfd	n=10
+write/packages/docx-layout/test/oracle/tbover/to-lines-h44.docx#2	fu=-
+write/packages/docx-layout/test/oracle/tbover/to-lines-h44.docx#3	fu=-
+write/packages/docx-layout/test/oracle/tbover/to-lines-h44.docx#4	fu=-
+write/packages/docx-layout/test/oracle/tbover/to-lines-h44.docx#5	fu=a63e4c98f4541284c617d64d4047eec6	n=8	ix=0	pg=0	nd=1	ce=0
+write/packages/docx-layout/test/oracle/txbxctr/tc-c15.docx#0	fu=233d6afe140d6ec94a80ec5a387e9a02	n=14
+write/packages/docx-layout/test/oracle/txbxctr/tc-c15.docx#1	fu=55c19fae48575039b650d7c730b9f3d5	n=14
+write/packages/docx-layout/test/oracle/txbxctr/tc-c15.docx#2	fu=-
+write/packages/docx-layout/test/oracle/txbxctr/tc-c15.docx#3	fu=-
+write/packages/docx-layout/test/oracle/txbxctr/tc-c15.docx#4	fu=-
+write/packages/docx-layout/test/oracle/txbxctr/tc-c15.docx#5	fu=da054e7884aa924872ed2fdd3278c258	n=1	ix=0	pg=0	nd=7	ce=0
+write/packages/docx-layout/test/oracle/txbxlink/lk-id0.docx#0	fu=503209b9210f5ac5bb682448fe359e6e	n=5
+write/packages/docx-layout/test/oracle/txbxlink/lk-id0.docx#1	fu=43f3c1a60c4f05faa8a8d52a881d66c6	n=5
+write/packages/docx-layout/test/oracle/txbxlink/lk-id0.docx#2	fu=-
+write/packages/docx-layout/test/oracle/txbxlink/lk-id0.docx#3	fu=-
+write/packages/docx-layout/test/oracle/txbxlink/lk-id0.docx#4	fu=-
+write/packages/docx-layout/test/oracle/txbxlink/lk-id0.docx#5	fu=883ffd4ed1df576791f5af9328e86f2e	n=3	ix=0	pg=0	nd=2	ce=0
+write/packages/docx-layout/test/oracle/txbxlink/lk-split.docx#0	fu=8f11bbde5f8f97e1a9cd9fcb64a7730d	n=5
+write/packages/docx-layout/test/oracle/txbxlink/lk-split.docx#1	fu=3b0256137594557378716a9b8fa9cc4b	n=5
+write/packages/docx-layout/test/oracle/txbxlink/lk-split.docx#2	fu=-
+write/packages/docx-layout/test/oracle/txbxlink/lk-split.docx#3	fu=-
+write/packages/docx-layout/test/oracle/txbxlink/lk-split.docx#4	fu=-
+write/packages/docx-layout/test/oracle/txbxlink/lk-split.docx#5	fu=d7fb40a58ebf91be0d1143a183bb00ac	n=3	ix=0	pg=0	nd=2	ce=0
+write/packages/docx-layout/test/oracle/txbxscale/ts-grupo.docx#0	fu=320101ae53a50ae9e77761462808dd29	n=4
+write/packages/docx-layout/test/oracle/txbxscale/ts-grupo.docx#1	fu=7fc2dc10a75047291a71e5e15b737878	n=4
+write/packages/docx-layout/test/oracle/txbxscale/ts-grupo.docx#2	fu=-
+write/packages/docx-layout/test/oracle/txbxscale/ts-grupo.docx#3	fu=-
+write/packages/docx-layout/test/oracle/txbxscale/ts-grupo.docx#4	fu=-
+write/packages/docx-layout/test/oracle/txbxscale/ts-grupo.docx#5	fu=-
+write/packages/docx-layout/test/oracle/txbxvert/tv-mongolianVert.docx#0	fu=69512604238191f5e0954eb61cb00816	n=10
+write/packages/docx-layout/test/oracle/txbxvert/tv-mongolianVert.docx#1	fu=f93061d1aff90cbd366500f3cb7c2bcd	n=10
+write/packages/docx-layout/test/oracle/txbxvert/tv-mongolianVert.docx#2	fu=-
+write/packages/docx-layout/test/oracle/txbxvert/tv-mongolianVert.docx#3	fu=-
+write/packages/docx-layout/test/oracle/txbxvert/tv-mongolianVert.docx#4	fu=-
+write/packages/docx-layout/test/oracle/txbxvert/tv-mongolianVert.docx#5	fu=bc725e6adb42c18c461030878b5cd72e	n=1	ix=0	pg=0	nd=7	ce=0
+write/packages/docx-layout/test/oracle/txgeom/tg-01.docx#0	fu=f1bb353a17bab1f6160a6b6d264b381e	n=10
+write/packages/docx-layout/test/oracle/txgeom/tg-01.docx#1	fu=d8a996b8beba1d625cf700b2a6f96ac1	n=10
+write/packages/docx-layout/test/oracle/txgeom/tg-01.docx#2	fu=-
+write/packages/docx-layout/test/oracle/txgeom/tg-01.docx#3	fu=-
+write/packages/docx-layout/test/oracle/txgeom/tg-01.docx#4	fu=-
+write/packages/docx-layout/test/oracle/txgeom/tg-01.docx#5	fu=af2aed09311beb3c28b11c2a9b932a12	n=1	ix=0	pg=0	nd=8	ce=0
+write/packages/docx-layout/test/oracle/txgeom/tg-07.docx#0	fu=84646eb167443194d3886bdc06f5e16a	n=10
+write/packages/docx-layout/test/oracle/txgeom/tg-07.docx#1	fu=fc9279db73c9d1f7bd95b8de16c549ba	n=10
+write/packages/docx-layout/test/oracle/txgeom/tg-07.docx#2	fu=-
+write/packages/docx-layout/test/oracle/txgeom/tg-07.docx#3	fu=-
+write/packages/docx-layout/test/oracle/txgeom/tg-07.docx#4	fu=-
+write/packages/docx-layout/test/oracle/txgeom/tg-07.docx#5	fu=508252ea2df9980bf20bec392eaec75d	n=1	ix=0	pg=0	nd=8	ce=0
+write/packages/docx-layout/test/oracle/txgeom/tg-13.docx#0	fu=67658ad3c438093b058b1a27290f8a44	n=10
+write/packages/docx-layout/test/oracle/txgeom/tg-13.docx#1	fu=5ebf34609dc8af1ea6781c29b23672d8	n=10
+write/packages/docx-layout/test/oracle/txgeom/tg-13.docx#2	fu=-
+write/packages/docx-layout/test/oracle/txgeom/tg-13.docx#3	fu=-
+write/packages/docx-layout/test/oracle/txgeom/tg-13.docx#4	fu=-
+write/packages/docx-layout/test/oracle/txgeom/tg-13.docx#5	fu=f012fea0e7e1870d497e9fa436ab5559	n=1	ix=0	pg=0	nd=8	ce=0
+write/packages/docx-layout/test/oracle/txrect/tr-diamond.docx#0	fu=70e05df8c6baf46c062da16f7d85421d	n=6
+write/packages/docx-layout/test/oracle/txrect/tr-diamond.docx#1	fu=f48e53b703fb742be363b6e22ece821d	n=6
+write/packages/docx-layout/test/oracle/txrect/tr-diamond.docx#2	fu=-
+write/packages/docx-layout/test/oracle/txrect/tr-diamond.docx#3	fu=-
+write/packages/docx-layout/test/oracle/txrect/tr-diamond.docx#4	fu=-
+write/packages/docx-layout/test/oracle/txrect/tr-diamond.docx#5	fu=893d2c10084c5882d93c9dee119c5d0f	n=1	ix=0	pg=0	nd=4	ce=0

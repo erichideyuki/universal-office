@@ -30,6 +30,11 @@
 // `encodePaste()` of core/crates/uo-docx/js/paste-tree.mjs (the shell's DOMParser + CSSOM tree).
 
 import * as codec from './gen/session.ts';
+import { Reader } from '../../uo-codec/js/runtime.ts';
+
+// The encoder of that tree, for the editor's shell (`<universal-write engine="rust">`, keyboard paste; record
+// uo-bindings.md "Milestone 2: the editor switch", ED-16): additive, pure DOM at call time.
+export { encodePaste } from '../../uo-docx/js/paste-tree.mjs';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -167,12 +172,7 @@ export function bindSession(w, uo) {
     // ── layouts ──
     /** the layout of the session's view (a WriteLayout: free it); `o` as `WriteDocument.layout` (no cancelCheck) */
     layout(env, o = {}) {
-      const now = o.now instanceof Date ? o.now.getTime() : (o.now ?? Date.now());
-      const tz = o.tzOffsetMin ?? -new Date(now).getTimezoneOffset();
-      let flags = ['on', 'off', 'force'].indexOf(o.hyphenation ?? 'on');
-      flags |= [undefined, 'final', 'simple', 'all', 'original'].indexOf(o.revisions) << 4;
-      if (o.hyphenationLanguages) flags |= 1 << 8;
-      const p = call('layout', () => w.uo_session_layout(this.#live(), env.ptr, now, tz, flags, ...text(o.lang), ...text((o.hyphenationLanguages ?? []).join('\n')), o.maxPages ?? 0));
+      const p = call('layout', () => w.uo_session_layout(this.#live(), env.ptr, ...layoutArgs(o)));
       if (!p) throw uo.lastError('layout');
       return uo.wrapLayout(p);
     }
@@ -195,6 +195,107 @@ export function bindSession(w, uo) {
       return call('saveWithFonts', () => answer(w.uo_session_save_with_fonts(this.#live(), ...arg(m)), codec.decodeSaveResult, 'saveWithFonts'));
     }
     clearCaches() { call('clearCaches', () => w.uo_session_clear_caches(this.#live())); }
+
+    // ── the editor shell (src/session/shell.rs; record "Milestone 2: the editor switch") ──
+    /** `{ paras, lastLength }` of the edit story */
+    storyInfo() {
+      const { status, data } = call('storyInfo', () => take(w.uo_shell_story_info(this.#live())));
+      if (status !== 0) throw new SessionError(status, '', 'storyInfo');
+      const d = new DataView(data.buffer, data.byteOffset, data.byteLength);
+      return { paras: d.getUint32(0, true), lastLength: d.getUint32(4, true) };
+    }
+    /** the text of paragraph `i` of the edit story, or null */
+    paraText(i) {
+      const { status, data } = call('paraText', () => take(w.uo_shell_para_text(this.#live(), i >>> 0)));
+      if (status === 1) return null;
+      if (status !== 0) throw new SessionError(status, '', 'paraText');
+      return utf16(data, 0, data.length);
+    }
+    /** the toolbar state at the selection: `{ run, para, pending }` (`getSelectionState()` without view, marks, table) */
+    selectionState() {
+      const { status, data } = call('selectionState', () => take(w.uo_shell_selection_state(this.#live())));
+      if (status !== 0) throw new SessionError(status, dec.decode(data), 'selectionState');
+      const n = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0, true);
+      const run = codec.readRunProps(new Reader(data.subarray(4, 4 + n)), codec.newTables());
+      const para = codec.readParaProps(new Reader(data.subarray(4 + n, data.length - 1)), codec.newTables());
+      return { run, para, pending: (data[data.length - 1] & 1) === 1 };
+    }
+    /** the hyphenation pattern ids the document needs and `env` lacks (the viewer's `hyphenationPatterns`) */
+    hyphenationPatterns(env, langs = []) {
+      const { status, data } = call('hyphenationPatterns', () => take(w.uo_shell_hyphenation_patterns(this.#live(), env.ptr, ...text(langs.join('\n')))));
+      if (status !== 0) throw new SessionError(status, '', 'hyphenationPatterns');
+      const s = dec.decode(data);
+      return s ? s.split('\n') : [];
+    }
+    /** `{ text, html }` of the last copy or cut, or null */
+    copied() {
+      const { status, data } = call('copied', () => take(w.uo_shell_copied(this.#live())));
+      if (status === 1) return null;
+      if (status !== 0) throw new SessionError(status, '', 'copied');
+      const n = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0, true);
+      return { text: utf16(data, 4, 4 + n * 2), html: dec.decode(data.subarray(4 + n * 2)) };
+    }
+  }
+
+  /** UTF-16LE code units of `data[from, to)` as a string */
+  const utf16 = (data, from, to) => {
+    const d = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let s = '';
+    for (let i = from; i + 1 < to; i += 2) s += String.fromCharCode(d.getUint16(i, true));
+    return s;
+  };
+  /** the layout arguments of `WriteSession.layout` and `ShellEngine.relayout` (now, tz, flags, lang, hyphenation languages, max pages) */
+  const layoutArgs = (o) => {
+    const now = o.now instanceof Date ? o.now.getTime() : (o.now ?? Date.now());
+    const tz = o.tzOffsetMin ?? -new Date(now).getTimezoneOffset();
+    let flags = ['on', 'off', 'force'].indexOf(o.hyphenation ?? 'on');
+    flags |= [undefined, 'final', 'simple', 'all', 'original'].indexOf(o.revisions) << 4;
+    if (o.hyphenationLanguages) flags |= 1 << 8;
+    return [now, tz, flags, ...text(o.lang), ...text((o.hyphenationLanguages ?? []).join('\n')), o.maxPages ?? 0];
+  };
+  const REASONS = ['noBase', 'disabled', 'view', 'options', 'provider', 'document', 'context', 'chains', 'shape', 'prologue',
+    'noCheckpoint', 'passInput', 'unstable', 'tables', 'balancing', 'memory', 'failed'];
+  const engines = new FinalizationRegistry((ptr) => { if (!dead) w.uo_shell_engine_free(ptr); });
+
+  /** The incremental layout engine of one edited document (`relayout` lays out only what an edit changed, LA7). */
+  class ShellEngine {
+    #ptr;
+    constructor(ptr) {
+      this.#ptr = ptr;
+      engines.register(this, ptr, this);
+    }
+    get ptr() { return this.#ptr; }
+    #live() { if (!this.#ptr) throw new SessionError(11, 'engine freed', 'engine'); return this.#ptr; }
+    /** the layout of `session`'s view (a WriteLayout: free it); `o` as `WriteSession.layout` */
+    relayout(session, env, o = {}) {
+      const p = call('relayout', () => w.uo_shell_relayout(this.#live(), session.ptr, env.ptr, ...layoutArgs(o)));
+      if (!p) throw uo.lastError('relayout');
+      return uo.wrapLayout(p);
+    }
+    /** what the last relayout did, or null before the first */
+    report() {
+      const { status, data } = call('report', () => take(w.uo_shell_relayout_report(this.#live())));
+      if (status === 1) return null;
+      if (status !== 0) throw new SessionError(status, '', 'report');
+      const d = new DataView(data.buffer, data.byteOffset, data.byteLength);
+      return {
+        path: d.getUint8(0) === 1 ? 'incremental' : 'full',
+        reason: d.getUint8(1) === 255 ? null : (REASONS[d.getUint8(1)] ?? d.getUint8(1)),
+        relaid: [d.getUint32(2, true), d.getUint32(6, true)],
+        passes: d.getUint32(10, true),
+        lineShift: d.getInt32(14, true),
+        memoHits: d.getUint32(18, true),
+        memoMisses: d.getUint32(22, true),
+      };
+    }
+    /** drops the incremental state (the next relayout is a full one) */
+    clear() { call('clear', () => w.uo_shell_engine_clear(this.#live())); }
+    free() {
+      if (!this.#ptr) return;
+      engines.unregister(this);
+      if (!dead) w.uo_shell_engine_free(this.#ptr);
+      this.#ptr = 0;
+    }
   }
 
   return {
@@ -217,6 +318,9 @@ export function bindSession(w, uo) {
     },
     /** empties the Office Clipboard of the instance */
     clipboardClear() { call('clipboardClear', () => w.uo_session_clipboard_clear()); },
+    /** a new incremental layout engine for one edited document (the editor shell) */
+    newShellEngine() { return new ShellEngine(call('newShellEngine', () => w.uo_shell_engine_new())); },
+    ShellEngine,
     get dead() { return dead; },
   };
 }

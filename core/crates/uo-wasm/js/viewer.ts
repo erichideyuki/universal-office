@@ -360,6 +360,15 @@ export interface ViewerModule {
   patternText(id: string): Promise<string | null>;
   /** `buffer`: the wasm memory in bytes; `live`: the module's live allocation (the `count` build only); `handles`: documents + layouts (+ element-lifetime environments) not freed; `pageEnvs`: page-lifetime environments */
   stats(): { buffer: number; live: number | null; handles: number; pageEnvs: number };
+  // the editor switch (record "Milestone 2: the editor switch"): what `<universal-write engine="rust">` binds its session on
+  /** the instance's exports (for `bindSession` of js/session.mjs) */
+  readonly exports: WebAssembly.Exports;
+  /** the write binding of the instance (for `bindSession`) */
+  readonly binding: WriteBinding;
+  /** a layout made outside this module (a session's) adopted as a `DecodedLayout`: it counts in `handles` and is freed with it */
+  adopt(inner: WriteLayout): DecodedLayout;
+  /** marks the instance dead after a trap seen outside this module (the session's own calls) */
+  kill(): void;
 }
 
 let loading: Promise<ViewerModule> | null = null;
@@ -409,6 +418,10 @@ function makeModule(inst: Instance, uo: WriteBinding, engine: 'wasm' | 'js', exp
       handles: inst.handles,
       pageEnvs: inst.pageEnvs,
     }),
+    exports,
+    binding: uo,
+    adopt: (inner) => new DecodedLayout(inst, inner),
+    kill: () => kill(inst),
   };
 }
 

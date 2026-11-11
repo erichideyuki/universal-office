@@ -2,7 +2,7 @@
 runtime crate::bind_runtime
 
 Point struct crate::bind_native::Point
-Tagged struct crate::bind_native::Tagged default
+Tagged struct crate::bind_native::Tagged skip=cache
 ShapePair tuple
 Shape enum crate::bind_native::Shape native_only=Only
 Color enum crate::bind_native::Color

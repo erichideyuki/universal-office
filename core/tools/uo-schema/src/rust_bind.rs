@@ -13,8 +13,11 @@
 //! One declaration per line; `#` starts a comment.
 //!
 //! - `runtime <rust path>`: the module of `FromWire`, `IntoWire` and `BindError` (required, once).
-//! - `<Wire> struct <path> [default] [empty] [into_only]`: field by field, same names. `default` ends the
-//!   struct literal with `..Default::default()` (Rust-only fields, a field the schema leaves out);
+//! - `<Wire> struct <path> [skip=a,b] [empty] [into_only]`: field by field, same names. `skip=` names the
+//!   Rust-only fields (a field the schema leaves out; raw identifiers as `r#type`; the modifier may repeat):
+//!   `FromWire` sets each to `Default::default()`, and `IntoWire` destructures the native struct with NO
+//!   rest pattern, naming every wire field and every skipped one, so a new real field of the native struct
+//!   fails to compile until the schema or the `skip=` list has it. (The old `default` modifier is gone.)
 //!   `empty`: the wire struct only carries a placeholder (`<path>::default()` back, the placeholder
 //!   `false` out).
 //! - `<Wire> enum <path> [native_only=A,B] [into_only]`: variant by variant, same names. A variant whose
@@ -40,7 +43,7 @@ use crate::rust::rust_ty;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
-    Struct { path: String, default: bool, empty: bool },
+    Struct { path: String, skip: Vec<String>, empty: bool },
     Enum { path: String, native_only: Vec<String> },
     Tuple,
     Option,
@@ -68,7 +71,12 @@ pub fn parse(text: &str) -> Result<BindMap, String> {
     let mut binds: Vec<Bind> = Vec::new();
     for (n, raw) in text.lines().enumerate() {
         let line_no = n + 1;
-        let line = raw.split('#').next().unwrap_or("").trim();
+        // a comment starts at a `#` that begins a word (`r#type` is a raw identifier, not a comment)
+        let cut = raw
+            .char_indices()
+            .find(|(i, c)| *c == '#' && raw[..*i].chars().next_back().is_none_or(char::is_whitespace))
+            .map_or(raw.len(), |(i, _)| i);
+        let line = raw[..cut].trim();
         if line.is_empty() {
             continue;
         }
@@ -91,16 +99,25 @@ pub fn parse(text: &str) -> Result<BindMap, String> {
         let kind = match *kind {
             "struct" => {
                 let Some(path) = rest.first() else { return Err(err("`struct` needs a path")) };
-                let mut default = false;
+                let mut skip: Vec<String> = Vec::new();
                 let mut empty = false;
                 for m in rest.iter().skip(1) {
-                    match *m {
-                        "default" => default = true,
-                        "empty" => empty = true,
-                        other => return Err(err(&format!("unknown struct modifier `{other}`"))),
+                    if *m == "empty" {
+                        empty = true;
+                    } else if *m == "default" {
+                        return Err(err("`default` is gone: name the Rust-only fields with skip=a,b"));
+                    } else if let Some(list) = m.strip_prefix("skip=") {
+                        for name in list.split(',').filter(|x| !x.is_empty()) {
+                            if skip.iter().any(|x| x == name) {
+                                return Err(err(&format!("skip field `{name}` twice")));
+                            }
+                            skip.push(name.to_string());
+                        }
+                    } else {
+                        return Err(err(&format!("unknown struct modifier `{m}`")));
                     }
                 }
-                Kind::Struct { path: (*path).to_string(), default, empty }
+                Kind::Struct { path: (*path).to_string(), skip, empty }
             }
             "enum" => {
                 let Some(path) = rest.first() else { return Err(err("`enum` needs a path")) };
@@ -197,6 +214,13 @@ pub fn emit(schema: &Schema, map: &BindMap, source: &str, stem: &str) -> Result<
             (Kind::Newtype { .. }, Def::Struct(s)) if s.fields.len() != 1 => {
                 return Err(at("a `newtype` binding needs a struct of one field"));
             }
+            (Kind::Struct { skip, empty, .. }, Def::Struct(s)) if *empty && !skip.is_empty() => {
+                let _ = s;
+                return Err(at("`skip` together with `empty`"));
+            }
+            (Kind::Struct { skip, .. }, Def::Struct(s)) if skip.iter().any(|k| s.fields.iter().any(|f| f.rname == *k)) => {
+                return Err(at("a `skip` field is on the wire"));
+            }
             (Kind::Struct { empty: true, .. }, Def::Struct(s)) if s.fields.len() != 1 || s.fields.iter().any(|f| f.ty != Ty::Bool) => {
                 return Err(at("an `empty` binding needs a struct of one bool placeholder"));
             }
@@ -223,7 +247,7 @@ pub fn emit(schema: &Schema, map: &BindMap, source: &str, stem: &str) -> Result<
         }
         match (&b.kind, schema.def(i)) {
             (Kind::Manual, _) => {}
-            (Kind::Struct { path, default, empty }, Def::Struct(s)) => emit_struct(&mut o, s, path, *default, *empty, b.into_only),
+            (Kind::Struct { path, skip, empty }, Def::Struct(s)) => emit_struct(&mut o, s, path, skip, *empty, b.into_only),
             (Kind::Tuple, Def::Struct(s)) => emit_tuple(&cx, &mut o, s, b.into_only),
             (Kind::Option, Def::Struct(s)) => emit_option(&cx, &mut o, s, b.into_only),
             (Kind::Newtype { path }, Def::Struct(s)) => emit_newtype(&mut o, s, path, b.into_only),
@@ -234,7 +258,7 @@ pub fn emit(schema: &Schema, map: &BindMap, source: &str, stem: &str) -> Result<
     Ok(o.finish())
 }
 
-fn emit_struct(o: &mut Out, s: &StructDef, path: &str, default: bool, empty: bool, into_only: bool) {
+fn emit_struct(o: &mut Out, s: &StructDef, path: &str, skip: &[String], empty: bool, into_only: bool) {
     let n = &s.name;
     if !into_only {
         o.open(&format!("impl FromWire<w::{n}> for {path} {{"));
@@ -246,8 +270,8 @@ fn emit_struct(o: &mut Out, s: &StructDef, path: &str, default: bool, empty: boo
             for f in &s.fields {
                 o.line(&format!("{r}: FromWire::from_wire(v.{r})?,", r = f.rname));
             }
-            if default {
-                o.line("..Default::default()");
+            for k in skip {
+                o.line(&format!("{k}: Default::default(),"));
             }
             o.close("})");
         }
@@ -261,9 +285,14 @@ fn emit_struct(o: &mut Out, s: &StructDef, path: &str, default: bool, empty: boo
         let f = s.fields.first().map_or("unused".to_string(), |f| f.rname.clone());
         o.line(&format!("Ok(w::{n} {{ {f}: false }})"));
     } else {
+        // every field of the native struct is named (no `..`): a new real field fails to compile
+        let bind = |r: &str| format!("x_{}", r.trim_start_matches("r#"));
+        let mut pat: Vec<String> = s.fields.iter().map(|f| format!("{r}: {b}", r = f.rname, b = bind(&f.rname))).collect();
+        pat.extend(skip.iter().map(|k| format!("{k}: _")));
+        o.line(&format!("let {} {{ {} }} = self;", bare(path), pat.join(", ")));
         o.open(&format!("Ok(w::{n} {{"));
         for f in &s.fields {
-            o.line(&format!("{r}: IntoWire::into_wire(&self.{r})?,", r = f.rname));
+            o.line(&format!("{r}: IntoWire::into_wire({b})?,", r = f.rname, b = bind(&f.rname)));
         }
         o.close("})");
     }

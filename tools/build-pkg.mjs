@@ -115,7 +115,11 @@ export const PRODUCTS = {
  * das licenças lê `<pacote>/package.json` de cada INTERNAL e `core/crates/uo-wasm` não é um pacote; e os tipos do viewer
  * declaram a superfície por `write/packages/viewer/src/write-engine.d.ts` (módulo ambiente), sem `paths`.
  */
-const ENGINE = { '@universal-office/write-engine': 'core/crates/uo-wasm/js/viewer.ts' };
+const ENGINE = {
+  '@universal-office/write-engine': 'core/crates/uo-wasm/js/viewer.ts',
+  // o editor (`engine="rust"`, src/rust-engine.ts) importa a sessão de edição: sem este alias o `build:pkg write` não resolve
+  '@universal-office/write-session': 'core/crates/uo-wasm/js/session.mjs',
+};
 /** O .wasm do motor (build `--features write --profile wasm`, SEM `count`), copiado para `chunks/uo-write.wasm` dos pacotes do viewer. */
 const WRITE_WASM = process.env.UO_WRITE_WASM ?? 'core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm';
 

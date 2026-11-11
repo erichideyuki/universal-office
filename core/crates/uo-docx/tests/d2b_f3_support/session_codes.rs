@@ -246,7 +246,7 @@ fn x2t(i: usize, layout: TableLayoutIn) -> TableCmd {
 }
 
 /// The commands of one op code (some are two: selecting then acting).
-fn commands(s: &Session, code: &str, lay: Option<&str>) -> Vec<Command> {
+pub fn commands(s: &Session, code: &str, lay: Option<&str>) -> Vec<Command> {
     let f: Vec<&str> = code.split(':').collect();
     let i = |k: usize| f[k].parse::<usize>().unwrap();
     let pos = |k: usize| DocPosition::new(f[k].parse().unwrap(), f[k + 1].parse().unwrap());

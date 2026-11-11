@@ -1,7 +1,8 @@
 //! `fontUsage()` (LQ15, `session::font_usage`) against the frozen element in Chromium: replays
 //! `tests/parity/font-usage.capture` (written by `js/capture-font-usage.mjs`): per document the usage
-//! after the open, after select all + bold + typing, inside the header/footer part of page 0 and inside
-//! the first body cell. Also M1 of the usage and of both phases of the font save, the blank
+//! after the open, after select all + bold + typing, inside the header/footer part of page 0, inside
+//! the first body cell, inside the first note and inside the first text box (selected as the F7 harness does:
+//! `SelectObject` then `EditSelectedTextbox`). Also M1 of the usage and of both phases of the font save, the blank
 //! document, the settings patch without an undo step, and no panic over corpus documents.
 #![cfg(feature = "session")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -19,9 +20,11 @@ use uo_docx::ids::HfPartId;
 use uo_docx::session::font_usage::{
     EmbeddingPatch, FontUse, begin_save_with_fonts, finish_save_with_fonts, initial_embedding_settings, set_font_embedding,
 };
-use uo_docx::session::ops::context::ContextCmd;
+use uo_docx::session::ops::context::{ContextCmd, EditContext};
+use uo_docx::session::ops::drawing::DrawingCmd;
 use uo_docx::session::ops::format::{FormatCmd, RunToggle};
 use uo_docx::session::ops::navigation::NavigationCmd;
+use uo_docx::session::ops::notes::NoteCmd;
 use uo_docx::session::ops::text::TextCmd;
 use uo_docx::session::{CellHop, Command, DocPosition, FixedEnv, OpenOptions, Outcome, Session};
 use uo_docx::text::Utf16;
@@ -29,15 +32,6 @@ use uo_fonts::Variant;
 use uo_testkit::{Capture, Digest, Replay, repo_root};
 
 const TYPED: &str = "Olá ß";
-
-fn variant_name(v: Variant) -> &'static str {
-    match v {
-        Variant::Regular => "regular",
-        Variant::Bold => "bold",
-        Variant::Italic => "italic",
-        Variant::BoldItalic => "boldItalic",
-    }
-}
 
 /// `JSON.stringify(fontUsage())`.
 pub fn usage_json(u: &[FontUse]) -> String {
@@ -49,7 +43,7 @@ pub fn usage_json(u: &[FontUse]) -> String {
         s.push_str("{\"family\":");
         uo_jsnum::json::push_string(&mut s, &e.family);
         s.push_str(",\"variants\":[\"");
-        s.push_str(variant_name(e.variant));
+        s.push_str(e.variant.name());
         s.push_str("\"],\"text\":");
         uo_jsnum::json::push_string_utf16(&mut s, e.text.units());
         s.push('}');
@@ -97,6 +91,9 @@ fn font_usage_matches_the_element() {
     let mut replay = Replay::new(&cap);
     let mut cx = Cx::new();
     let mut docs = 0;
+    // documents (and facets) per context, for the report: open, body bold, header/footer, cell, note, text box
+    let mut covered = [0usize; 6];
+    let mut not_opened: Vec<String> = Vec::new();
     for rec in cap.records().iter().filter(|r| r.key.ends_with("#0")) {
         let rel = rec.key.trim_end_matches("#0");
         let mut s = open(std::fs::read(root.join(rel)).unwrap()).unwrap();
@@ -129,6 +126,7 @@ fn font_usage_matches_the_element() {
             exec(&mut s, &mut cx, Command::Text(TextCmd::SetSelection { anchor: DocPosition::new(0, 0), focus: DocPosition::new(0, 0) }));
             type_text(&mut s, &mut cx);
             check(&mut replay, 2, &s);
+            covered[2] += 1;
             exec(&mut s, &mut cx, Command::Context(ContextCmd::ExitHeaderFooter));
         }
         // #3: the first body cell
@@ -140,16 +138,79 @@ fn font_usage_matches_the_element() {
             exec(&mut s, &mut cx, Command::Context(ContextCmd::EnterCell { anchor: 0, hops, caret: None }));
             type_text(&mut s, &mut cx);
             check(&mut replay, 3, &s);
+            covered[3] += 1;
+        }
+        // #4: the first note reference of the body (the cell is left first, as the element does)
+        let k4 = format!("{rel}#4");
+        // the element leaves the cell first whether or not the document has a note
+        if matches!(s.context(), EditContext::Cell { .. }) {
+            exec(&mut s, &mut cx, Command::Context(ContextCmd::ExitCell));
+        }
+        if cap.get(&k4, "fu") == Some("-") {
+            replay.check(&k4, "fu", "-");
+        } else {
+            // the facets that are inputs of the step (what the element opened)
+            replay.skip(&k4, "nk");
+            replay.skip(&k4, "nid");
+            let footnote = cap.get(&k4, "nk") == Some("0");
+            let id = uo_jsnum::parse::to_number(cap.get(&k4, "nid").unwrap());
+            exec(&mut s, &mut cx, Command::Note(NoteCmd::Open { footnote, id }));
+            type_text(&mut s, &mut cx);
+            check(&mut replay, 4, &s);
+            covered[4] += 1;
+            exec(&mut s, &mut cx, Command::Context(ContextCmd::ExitNote));
+        }
+        // #5: the first text box of the body: select its run (the index among the story's drawing runs), edit its text
+        let k5 = format!("{rel}#5");
+        if cap.get(&k5, "fu") == Some("-") {
+            replay.check(&k5, "fu", "-");
+        } else {
+            replay.skip(&k5, "ix");
+            replay.skip(&k5, "pg");
+            // `nd` (the number of drawing runs the element lists) and `ce` (still in a cell: always 0) are facts of the capture
+            replay.skip(&k5, "nd");
+            replay.skip(&k5, "ce");
+            let index: u32 = cap.get(&k5, "ix").unwrap().parse().unwrap();
+            let page: u32 = cap.get(&k5, "pg").unwrap().parse().unwrap();
+            exec(&mut s, &mut cx, Command::Drawing(DrawingCmd::SelectObject { index: Some(index) }));
+            exec(&mut s, &mut cx, Command::Drawing(DrawingCmd::EditSelectedTextbox { page }));
+            if matches!(s.context(), EditContext::Textbox { .. }) {
+                type_text(&mut s, &mut cx);
+                check(&mut replay, 5, &s);
+                covered[5] += 1;
+                exec(&mut s, &mut cx, Command::Context(ContextCmd::ExitTextbox));
+            } else {
+                // the element opened a box that the session's drawing paths do not list: declared (see the record)
+                not_opened.push(format!("{rel} (index {index}, selected {:?})", s.float_selection()));
+                replay.skip(&k5, "fu");
+                replay.skip(&k5, "n");
+            }
         }
         docs += 1;
     }
     let report = replay.finish();
-    println!("font-usage: {docs} documents, {}", report.summary());
+    println!(
+        "font-usage: {docs} documents, {}, {} text-box points whose fu/n are NOT replayed (declared below)",
+        report.summary(),
+        not_opened.len()
+    );
+    println!("font-usage text boxes the session did not open ({}): {not_opened:#?}", not_opened.len());
+    println!(
+        "font-usage coverage (documents exercising the context): open {docs}, body+bold {docs}, header/footer {}, cell {}, note {}, text box {}",
+        covered[2], covered[3], covered[4], covered[5]
+    );
     if !report.is_clean() {
         println!("{}", report.describe(40));
     }
     report.assert_clean();
     assert!(docs >= 50, "{docs} documents");
+    // the divergence is pinned (a known gap of session/ops/drawing or the reader, queue item "text boxes anchored in cells"):
+    // 11 boxes of the cellout/cellwrap oracle documents are not opened (reproducer write/packages/docx-layout/test/oracle/cellout/co11-in.docx);
+    // a fix makes the count drop and a regression makes it grow: either one fails here and asks for the record to be updated
+    if docs >= 160 {
+        assert_eq!(not_opened.len(), 11, "text boxes the session does not open: {not_opened:#?}");
+        assert!(covered[5] >= 20, "text boxes reproduced: {}", covered[5]);
+    }
 }
 
 /// A face for the save tests: an open font of the repository (Liberation Serif).

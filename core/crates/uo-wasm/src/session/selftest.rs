@@ -17,30 +17,38 @@ use uo_docx::canon::CanonWriter;
 use uo_docx::js::JsValue;
 use uo_docx::session::ops::bookmarks::{BookmarkCmd, HyperlinkOptions};
 use uo_docx::session::ops::comments::CommentCmd;
+use uo_docx::session::ops::context::{EditContext, saved_selection};
 use uo_docx::session::ops::format::{FormatCmd, VertKind};
 use uo_docx::session::ops::lists::{ListCmd, ListLevelFormat, ListLevelSpec};
 use uo_docx::session::ops::paragraph::{ParagraphCmd, SpecialIndent};
 use uo_docx::session::ops::revision_cmds::{Balloons, MarkupPatch, RevisionCmd};
 use uo_docx::session::ops::settings::SettingsCmd;
-use uo_docx::session::ops::styles::{Ch, CreateStyleSpec, DefaultFont, ModifyStyleSpec, StyleCmd, StyleFormat, UiLang};
+use uo_docx::session::ops::styles::{Ch, CreateStyleSpec, DefaultFont, ModifyStyleSpec, StyleCmd, StyleFormat};
 use uo_docx::session::ops::text::TextCmd;
-use uo_docx::session::{Command, DocPosition, Env, FixedEnv, MarkupMode, OpenOptions, Session};
+use uo_docx::session::{Command, DocPosition, MarkupMode, Session};
 use uo_docx::text::Utf16;
-use uo_docx::write::sig::SigMode;
 use uo_jsnum::parse::to_number;
 use uo_testkit::{Digest, Stream};
 
 use super::codec as w;
-use super::env::default_now;
 use super::handle::UoWriteSession;
 use super::wire::IntoWire;
 use crate::d2b_f1_support as f1;
 use crate::render::{NONE, NULL_HANDLE, OK, UoBuf, buf, take_bytes};
 use crate::support::Sink;
 
+mod f10;
+mod f7;
+mod f8;
+mod fam;
+
 thread_local! {
-    /// the shell state of the F1 harness per handle (`ulButton`)
+    /// the shell state of the F1 harness per handle (`ulButton`). The documents themselves open through the
+    /// production `uo_session_open` (the replay passes the native environment as a `SessionOpen` message)
     static SHELL: RefCell<HashMap<usize, String>> = RefCell::new(HashMap::new());
+    /// the commands of the F3 op code in progress per handle: the native replay computes them ONCE from the
+    /// state before the step (`d2b_f3_support::session_codes::commands`) and runs them in order
+    static F3: RefCell<HashMap<usize, Vec<Command>>> = RefCell::new(HashMap::new());
 }
 
 /// What action k of a code is (one value at a time: a box would only add noise).
@@ -393,43 +401,6 @@ fn utf8(b: &[u8]) -> &str {
     std::str::from_utf8(b).unwrap_or("")
 }
 
-/// Opens a capture document as the family's native replay does (`family`: d2a, f1, f2, f6): the TS
-/// signatures, the clock and seed of `FixedEnv::default()` (F2: one random value drawn first, the
-/// element's `refSeed`; the pt-BR interface), the author "A". Both buffers consumed.
-///
-/// # Safety
-/// Each `(ptr, len)` a buffer of `uo_alloc_bytes(len)` filled by JS.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn uo_session_test_open(
-    family_ptr: *mut u8,
-    family_len: usize,
-    doc_ptr: *mut u8,
-    doc_len: usize,
-) -> *mut UoWriteSession {
-    // SAFETY: the caller guarantees the buffers; both are consumed here.
-    let (family, doc) = unsafe { (take_bytes(family_ptr, family_len), take_bytes(doc_ptr, doc_len)) };
-    let family = utf8(&family);
-    let mut env = FixedEnv::default();
-    if family == "f2" {
-        env.random_u32();
-    }
-    let now = std::rc::Rc::new(std::cell::Cell::new(default_now()));
-    let host = super::env::HostEnv::new(std::rc::Rc::clone(&now), env.state);
-    let Ok(mut session) = Session::open(doc, OpenOptions { sig_mode: SigMode::Ts, ..OpenOptions::default() }, Box::new(host)) else {
-        return std::ptr::null_mut();
-    };
-    if family == "f2" {
-        session.set_ui_lang(UiLang::Pt);
-    }
-    let embedded = uo_docx::read::read_embedded_fonts(session.package()).unwrap_or_default();
-    let settings = uo_docx::session::font_usage::initial_embedding_settings(session.package());
-    let mut h = UoWriteSession::for_tests(session, embedded, now, settings);
-    let _ = h.command(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }));
-    let p = Box::into_raw(Box::new(h));
-    SHELL.with(|m| m.borrow_mut().insert(p as usize, "single".to_owned()));
-    p
-}
-
 /// The accept reason of the family's hook for `code` before it runs (status 0, UTF-8), or status 1.
 ///
 /// # Safety
@@ -447,7 +418,7 @@ pub unsafe extern "C" fn uo_session_test_hook(
     // SAFETY: the caller guarantees `h` is null or live.
     let Some(s) = (unsafe { h.as_ref() }) else { return buf(NULL_HANDLE, Vec::new()) };
     match utf8(&family) {
-        "f1" | "f6" => match list_hook(&s.session, utf8(&code)) {
+        "f1" | "f5" | "f6" | "f7" => match list_hook(&s.session, utf8(&code)) {
             Some(why) => buf(OK, why.as_bytes().to_vec()),
             None => buf(NONE, Vec::new()),
         },
@@ -476,19 +447,58 @@ pub unsafe extern "C" fn uo_session_test_next(
     let Some(s) = (unsafe { h.as_ref() }) else { return buf(NULL_HANDLE, Vec::new()) };
     let code = utf8(&code);
     let f: Vec<&str> = code.split(':').collect();
+    let unbindable = std::cell::Cell::new(false);
     let action = match utf8(&family) {
         "f1" => SHELL.with(|m| {
             let mut m = m.borrow_mut();
             let sh = m.entry(h as usize).or_insert_with(|| "single".to_owned());
             f1(&f, k, s, sh)
         }),
+        "f3" => {
+            // the code argument is `<op>` or `<op>\t<lay>` (the step record's `lay`, which the TS read from the layout)
+            let (op, lay) = code.split_once('\t').map_or((code, None), |(a, b)| (a, Some(b)));
+            match op.split(':').next() {
+                _ if k > 0 && !F3.with(|m| m.borrow().contains_key(&(h as usize))) => None,
+                Some("un") => (k == 0).then_some(Action::Exec(w::ExecOp::Undo)),
+                Some("re") => (k == 0).then_some(Action::Exec(w::ExecOp::Redo)),
+                _ => F3.with(|m| {
+                    let mut m = m.borrow_mut();
+                    if k == 0 {
+                        m.insert(h as usize, crate::d2b_f3_support::session_codes::commands(&s.session, op, lay));
+                    }
+                    let c = m.get(&(h as usize)).and_then(|v| v.get(k as usize)).cloned();
+                    if c.is_none() {
+                        m.remove(&(h as usize));
+                    }
+                    // a command that has no wire form is an error (status 5), not "the code has no more actions"
+                    match c {
+                        Some(c) => {
+                            let a = cmd(c);
+                            unbindable.set(a.is_none());
+                            a
+                        }
+                        None => None,
+                    }
+                }),
+            }
+        }
+        // the code is `<op>` or `<op> TAB <hf>`
+        "f8" => f8::action(h as usize, &s.session, code, k),
+        "f7" => f7::action(h as usize, &s.session, code, k),
         _ if k > 0 => None,
         "f2" => f2(code),
         "f6" => f6(&f),
+        "f5" => d2a(&f).or_else(|| fam::f5_action(&f, &s.session)).flatten(),
+        "f9" => d2a(&f).or_else(|| fam::f9_action(&f, &s.session)).flatten(),
+        "f10" => match f.first() {
+            Some(&("un" | "re")) => d2a(&f).flatten(),
+            _ => f10::action(code),
+        },
         _ => d2a(&f).flatten(),
     };
     let mut out = Vec::new();
     let r = match action {
+        None if unbindable.get() => return buf(5, b"the command has no wire form (into_wire failed)".to_vec()),
         None => return buf(NONE, Vec::new()),
         Some(Action::Exec(op)) => {
             out.push(b'E');
@@ -550,6 +560,220 @@ pub unsafe extern "C" fn uo_session_test_facets(h: *mut UoWriteSession, want_doc
     buf(OK, format!("{}\t{}\t{d}", paras_digest(&s.session), anc_json(&s.session)).into_bytes())
 }
 
+/// The F3 facets beyond the common ones (copies of `parity_d2b_f3_session.rs`, declared): UTF-8
+/// `paras\tanc\tdocxml\ttbl\tsel\tctx\tts`. `sel` is the BODY's selection (the saved one while a cell is edited).
+///
+/// # Safety
+/// `h` null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_facets_f3(h: *mut UoWriteSession, want_docxml: u32) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `h` is null or live.
+    let Some(s) = (unsafe { h.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let d = if want_docxml != 0 { docxml(&mut s.session) } else { String::new() };
+    let s = &s.session;
+    let sel_text = |sel: uo_docx::session::Selection| {
+        format!(
+            "{{\"anchor\":{{\"para\":{},\"offset\":{}}},\"focus\":{{\"para\":{},\"offset\":{}}}}}",
+            sel.anchor.para, sel.anchor.offset, sel.focus.para, sel.focus.offset
+        )
+    };
+    let hop = |h: &uo_docx::session::CellHop| match h.block {
+        Some(b) => format!("{{\"r\":{},\"c\":{},\"b\":{b}}}", h.row, h.col),
+        None => format!("{{\"r\":{},\"c\":{}}}", h.row, h.col),
+    };
+    let doc = s.document();
+    let mut ids = doc.ids.clone();
+    let mut sink = Sink(Stream::new());
+    for (i, a) in doc.body.tables.iter().enumerate() {
+        let mut t = (*a.table).clone();
+        uo_docx::session::normalize::normalize(&mut t, &mut ids);
+        sink.0.tag(b'E').u32(u32::try_from(i).unwrap_or(u32::MAX));
+        let mut cw = CanonWriter::new(&mut sink).with_media(&doc.media);
+        t.canon(&mut cw);
+    }
+    let tbl = sink.0.finish().short();
+    let sel = sel_text(saved_selection(s.context()).unwrap_or_else(|| s.selection()));
+    let ctx = match s.context() {
+        EditContext::Cell { anchor, hops, .. } => {
+            let h: Vec<String> = hops.iter().map(hop).collect();
+            format!("{{\"a\":{anchor},\"h\":[{}],\"s\":{}}}", h.join(","), sel_text(s.selection()))
+        }
+        _ => "null".to_owned(),
+    };
+    let ts = match s.table_selection() {
+        None => "null".to_owned(),
+        Some(ts) => {
+            let h: Vec<String> = ts.path.iter().map(hop).collect();
+            format!(
+                "{{\"anchor\":{},\"path\":[{}],\"rect\":{{\"r1\":{},\"c1\":{},\"r2\":{},\"c2\":{}}},\"origin\":{{\"r\":{},\"c\":{}}}}}",
+                ts.anchor,
+                h.join(","),
+                ts.row0,
+                ts.col0,
+                ts.row1,
+                ts.col1,
+                ts.origin_row,
+                ts.origin_col
+            )
+        }
+    };
+    buf(OK, format!("{}\t{}\t{d}\t{tbl}\t{sel}\t{ctx}\t{ts}", paras_digest(s), anc_json(s)).into_bytes())
+}
+
+/// The facets of a family that has its own table (F5, F9; copies of the native replays' functions, declared): UTF-8
+/// `name=value` pairs separated by tabs, for the code just run (`code` is the step's op code; `want`: bit 0 = the saved
+/// `docxml`, bit 1 = the date-format table `dtf`).
+///
+/// # Safety
+/// `h` null or live; each `(ptr, len)` a buffer of `uo_alloc_bytes(len)` filled by JS.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_facets_fam(
+    h: *mut UoWriteSession,
+    family_ptr: *mut u8,
+    family_len: usize,
+    code_ptr: *mut u8,
+    code_len: usize,
+    want: u32,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffers; both are consumed here.
+    let (family, code) = unsafe { (take_bytes(family_ptr, family_len), take_bytes(code_ptr, code_len)) };
+    // SAFETY: the caller guarantees `h` is null or live.
+    let Some(s) = (unsafe { h.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    match fam::facets(utf8(&family), h as usize, &mut s.session, utf8(&code), want) {
+        Some(t) => buf(OK, t.into_bytes()),
+        None => buf(NONE, Vec::new()),
+    }
+}
+
+/// F10 setup of a handle: the scripted oracle (`ReplayOracle`), the reference seed the capture recorded and the
+/// hyphenation patterns of the element (pt-BR, en, es). The session must have been opened with the F10 environment (the
+/// replay's one extra draw, `setUiLang('pt')`).
+///
+/// # Safety
+/// `h` null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_f10_setup(h: *mut UoWriteSession, ref_seed: f64) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `h` is null or live.
+    let Some(s) = (unsafe { h.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    s.session.set_ref_seed(ref_seed);
+    s.session.set_hyphenation_registry(Some(f10::hyphenation_registry()));
+    s.test_oracle = Some(Box::new(crate::d2b_f10_support::replay::ReplayOracle::new()));
+    buf(OK, Vec::new())
+}
+
+/// Starts an F10 step: the TS's script (`i-fv`, `i-pg`, `i-mh` of the capture) as `fv TAB pg TAB mh` (an absent one is
+/// empty), a clean record.
+///
+/// # Safety
+/// As [`uo_session_test_hook`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_f10_begin(h: *mut UoWriteSession, ptr: *mut u8, len: usize) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; it is consumed here.
+    let script = unsafe { take_bytes(ptr, len) };
+    // SAFETY: the caller guarantees `h` is null or live.
+    let Some(s) = (unsafe { h.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(o) = s.test_oracle.as_deref_mut() else { return buf(NONE, Vec::new()) };
+    let text = utf8(&script);
+    let mut it = text.split('\t').map(|x| (!x.is_empty()).then_some(x));
+    let (fv, pg, mh) = (it.next().flatten(), it.next().flatten(), it.next().flatten());
+    o.begin(crate::d2b_f10_support::replay::StepScript::parse(fv, pg, mh));
+    buf(OK, Vec::new())
+}
+
+/// The record of the F10 step: `fvs TAB pg_calls TAB pg_requested (sorted, comma) TAB mh_calls TAB fv_missing`.
+///
+/// # Safety
+/// `h` null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_f10_record(h: *mut UoWriteSession) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `h` is null or live.
+    let Some(s) = (unsafe { h.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(o) = s.test_oracle.as_deref() else { return buf(NONE, Vec::new()) };
+    let mut asked: Vec<u32> = o.pg_requested.iter().copied().collect();
+    asked.sort_unstable();
+    let asked: Vec<String> = asked.iter().map(u32::to_string).collect();
+    buf(OK, format!("{}\t{}\t{}\t{}\t{}", o.fvs(), o.pg_calls, asked.join(","), o.mh_calls, o.fv_missing).into_bytes())
+}
+
+/// F8: a new group of documents (the carried paste defaults, path and policy, and the Office Clipboard start over).
+#[unsafe(no_mangle)]
+pub extern "C" fn uo_session_test_f8_group() {
+    f8::new_group();
+}
+
+/// F8: the carried state of the group goes into the freshly opened session; `ext` for an extended group.
+///
+/// # Safety
+/// `h` null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_f8_open(h: *mut UoWriteSession, ext: u32) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `h` is null or live.
+    let Some(s) = (unsafe { h.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    f8::setup(s, ext != 0);
+    buf(OK, Vec::new())
+}
+
+/// F8: the shell's inputs of the step (`cbt` as hex UTF-16 units, the paste-tree bytes when `has_tree`); the random counter starts at 0.
+///
+/// # Safety
+/// As [`uo_session_test_hook`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_f8_step(
+    h: *mut UoWriteSession,
+    cbt_ptr: *mut u8,
+    cbt_len: usize,
+    tree_ptr: *mut u8,
+    tree_len: usize,
+    has_tree: u32,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffers; both are consumed here.
+    let (cbt, tree) = unsafe { (take_bytes(cbt_ptr, cbt_len), take_bytes(tree_ptr, tree_len)) };
+    if h.is_null() {
+        return buf(NULL_HANDLE, Vec::new());
+    }
+    f8::begin_step(h as usize, Utf16::from_units(units(utf8(&cbt))), (has_tree != 0).then(|| std::sync::Arc::<[u8]>::from(tree)));
+    buf(OK, Vec::new())
+}
+
+/// F7: the cumulative random-call counter starts over (call it right BEFORE the document opens: the open's own draws count, as the
+/// native `SharedEnv`).
+#[unsafe(no_mangle)]
+pub extern "C" fn uo_session_test_f7_reset() {
+    crate::session::env::reset_draws();
+}
+
+/// F7: one image of the capture (`img#k`): the extension and the bytes.
+///
+/// # Safety
+/// Each `(ptr, len)` a buffer of `uo_alloc_bytes(len)` filled by JS.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_f7_image(k: u32, ext_ptr: *mut u8, ext_len: usize, data_ptr: *mut u8, data_len: usize) {
+    // SAFETY: the caller guarantees the buffers; both are consumed here.
+    let (ext, data) = unsafe { (take_bytes(ext_ptr, ext_len), take_bytes(data_ptr, data_len)) };
+    f7::set_image(k as usize, utf8(&ext).to_owned(), data);
+}
+
+/// F7: the step's inputs: the `fx` fact log (UTF-8) and the target of the session's random count (`has_target`; the editor's own
+/// uses of `Math.random` between the steps: the session's environment is advanced to it).
+///
+/// # Safety
+/// As [`uo_session_test_hook`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_f7_begin(
+    h: *mut UoWriteSession,
+    fx_ptr: *mut u8,
+    fx_len: usize,
+    has_target: u32,
+    target: u32,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; it is consumed here.
+    let fx = unsafe { take_bytes(fx_ptr, fx_len) };
+    // SAFETY: the caller guarantees `h` is null or live.
+    let Some(s) = (unsafe { h.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    f7::begin(h as usize, &mut s.session, utf8(&fx), (has_target != 0).then_some(target));
+    buf(OK, Vec::new())
+}
+
 /// A random `Exec` message (the generated test support), for the hostile test.
 #[unsafe(no_mangle)]
 pub extern "C" fn uo_session_test_random_exec(seed: u32) -> *mut UoBuf {
@@ -562,8 +786,23 @@ pub extern "C" fn uo_session_test_random_exec(seed: u32) -> *mut UoBuf {
     }
 }
 
+/// A random `Query` message (the generated test support), for the hostile test (WS follow-up 2).
+#[unsafe(no_mangle)]
+pub extern "C" fn uo_session_test_random_query(seed: u32) -> *mut UoBuf {
+    let mut rng = uo_codec::testing::Rng(u64::from(seed).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
+    let m = w::Query::random(&mut rng, &w::generated_support::Bounds::default(), 0);
+    let mut out = Vec::new();
+    match w::encode_query(&mut out, &w::Delta::default(), &m) {
+        Ok(()) => buf(OK, out),
+        Err(e) => buf(5, format!("{e:?}").into_bytes()),
+    }
+}
+
 /// Forgets the shell state of a handle the test frees.
 #[unsafe(no_mangle)]
 pub extern "C" fn uo_session_test_forget(h: *mut UoWriteSession) {
     SHELL.with(|m| m.borrow_mut().remove(&(h as usize)));
+    F3.with(|m| m.borrow_mut().remove(&(h as usize)));
+    f8::forget(h as usize);
+    f7::forget(h as usize);
 }

@@ -98,9 +98,10 @@ impl FromWire<w::LocalNow> for uo_docx::session::env::LocalNow {
 
 impl IntoWire<w::LocalNow> for uo_docx::session::env::LocalNow {
     fn into_wire(&self) -> Result<w::LocalNow, BindError> {
+        let uo_docx::session::env::LocalNow { local: x_local, utc: x_utc } = self;
         Ok(w::LocalNow {
-            local: IntoWire::into_wire(&self.local)?,
-            utc: IntoWire::into_wire(&self.utc)?,
+            local: IntoWire::into_wire(x_local)?,
+            utc: IntoWire::into_wire(x_utc)?,
         })
     }
 }
@@ -1112,9 +1113,10 @@ impl FromWire<w::ClipImage> for uo_docx::session::command::ClipImage {
 
 impl IntoWire<w::ClipImage> for uo_docx::session::command::ClipImage {
     fn into_wire(&self) -> Result<w::ClipImage, BindError> {
+        let uo_docx::session::command::ClipImage { ext: x_ext, data: x_data } = self;
         Ok(w::ClipImage {
-            ext: IntoWire::into_wire(&self.ext)?,
-            data: IntoWire::into_wire(&self.data)?,
+            ext: IntoWire::into_wire(x_ext)?,
+            data: IntoWire::into_wire(x_data)?,
         })
     }
 }
@@ -1133,12 +1135,13 @@ impl FromWire<w::DateParts> for uo_docx::session::env::DateParts {
 
 impl IntoWire<w::DateParts> for uo_docx::session::env::DateParts {
     fn into_wire(&self) -> Result<w::DateParts, BindError> {
+        let uo_docx::session::env::DateParts { year: x_year, month: x_month, day: x_day, hour: x_hour, minute: x_minute } = self;
         Ok(w::DateParts {
-            year: IntoWire::into_wire(&self.year)?,
-            month: IntoWire::into_wire(&self.month)?,
-            day: IntoWire::into_wire(&self.day)?,
-            hour: IntoWire::into_wire(&self.hour)?,
-            minute: IntoWire::into_wire(&self.minute)?,
+            year: IntoWire::into_wire(x_year)?,
+            month: IntoWire::into_wire(x_month)?,
+            day: IntoWire::into_wire(x_day)?,
+            hour: IntoWire::into_wire(x_hour)?,
+            minute: IntoWire::into_wire(x_minute)?,
         })
     }
 }
@@ -1154,9 +1157,10 @@ impl FromWire<w::DocPosition> for uo_docx::session::text::DocPosition {
 
 impl IntoWire<w::DocPosition> for uo_docx::session::text::DocPosition {
     fn into_wire(&self) -> Result<w::DocPosition, BindError> {
+        let uo_docx::session::text::DocPosition { para: x_para, offset: x_offset } = self;
         Ok(w::DocPosition {
-            para: IntoWire::into_wire(&self.para)?,
-            offset: IntoWire::into_wire(&self.offset)?,
+            para: IntoWire::into_wire(x_para)?,
+            offset: IntoWire::into_wire(x_offset)?,
         })
     }
 }
@@ -1173,10 +1177,11 @@ impl FromWire<w::CellHop> for uo_docx::session::state::CellHop {
 
 impl IntoWire<w::CellHop> for uo_docx::session::state::CellHop {
     fn into_wire(&self) -> Result<w::CellHop, BindError> {
+        let uo_docx::session::state::CellHop { row: x_row, col: x_col, block: x_block } = self;
         Ok(w::CellHop {
-            row: IntoWire::into_wire(&self.row)?,
-            col: IntoWire::into_wire(&self.col)?,
-            block: IntoWire::into_wire(&self.block)?,
+            row: IntoWire::into_wire(x_row)?,
+            col: IntoWire::into_wire(x_col)?,
+            block: IntoWire::into_wire(x_block)?,
         })
     }
 }
@@ -1230,13 +1235,14 @@ impl FromWire<w::FormattingPolicy> for uo_docx::session::policy::FormattingPolic
 
 impl IntoWire<w::FormattingPolicy> for uo_docx::session::policy::FormattingPolicy {
     fn into_wire(&self) -> Result<w::FormattingPolicy, BindError> {
+        let uo_docx::session::policy::FormattingPolicy { paragraph_styles: x_paragraph_styles, character_styles: x_character_styles, lists: x_lists, character: x_character, indentation: x_indentation, denied: x_denied } = self;
         Ok(w::FormattingPolicy {
-            paragraph_styles: IntoWire::into_wire(&self.paragraph_styles)?,
-            character_styles: IntoWire::into_wire(&self.character_styles)?,
-            lists: IntoWire::into_wire(&self.lists)?,
-            character: IntoWire::into_wire(&self.character)?,
-            indentation: IntoWire::into_wire(&self.indentation)?,
-            denied: IntoWire::into_wire(&self.denied)?,
+            paragraph_styles: IntoWire::into_wire(x_paragraph_styles)?,
+            character_styles: IntoWire::into_wire(x_character_styles)?,
+            lists: IntoWire::into_wire(x_lists)?,
+            character: IntoWire::into_wire(x_character)?,
+            indentation: IntoWire::into_wire(x_indentation)?,
+            denied: IntoWire::into_wire(x_denied)?,
         })
     }
 }
@@ -1448,9 +1454,10 @@ impl FromWire<w::GradientArg> for uo_docx::session::ops::format::GradientArg {
 
 impl IntoWire<w::GradientArg> for uo_docx::session::ops::format::GradientArg {
     fn into_wire(&self) -> Result<w::GradientArg, BindError> {
+        let uo_docx::session::ops::format::GradientArg { angle_deg: x_angle_deg, light: x_light } = self;
         Ok(w::GradientArg {
-            angle_deg: IntoWire::into_wire(&self.angle_deg)?,
-            light: IntoWire::into_wire(&self.light)?,
+            angle_deg: IntoWire::into_wire(x_angle_deg)?,
+            light: IntoWire::into_wire(x_light)?,
         })
     }
 }
@@ -1494,25 +1501,26 @@ impl FromWire<w::FontFormat> for uo_docx::session::ops::format::FontFormat {
 
 impl IntoWire<w::FontFormat> for uo_docx::session::ops::format::FontFormat {
     fn into_wire(&self) -> Result<w::FontFormat, BindError> {
+        let uo_docx::session::ops::format::FontFormat { font_family: x_font_family, size_pt: x_size_pt, bold: x_bold, italic: x_italic, underline: x_underline, underline_color: x_underline_color, color: x_color, strike: x_strike, double_strike: x_double_strike, superscript: x_superscript, subscript: x_subscript, small_caps: x_small_caps, all_caps: x_all_caps, hidden: x_hidden, scale_pct: x_scale_pct, spacing_twips: x_spacing_twips, position_half_pt: x_position_half_pt, kern_min_half_pt: x_kern_min_half_pt } = self;
         Ok(w::FontFormat {
-            font_family: IntoWire::into_wire(&self.font_family)?,
-            size_pt: IntoWire::into_wire(&self.size_pt)?,
-            bold: IntoWire::into_wire(&self.bold)?,
-            italic: IntoWire::into_wire(&self.italic)?,
-            underline: IntoWire::into_wire(&self.underline)?,
-            underline_color: IntoWire::into_wire(&self.underline_color)?,
-            color: IntoWire::into_wire(&self.color)?,
-            strike: IntoWire::into_wire(&self.strike)?,
-            double_strike: IntoWire::into_wire(&self.double_strike)?,
-            superscript: IntoWire::into_wire(&self.superscript)?,
-            subscript: IntoWire::into_wire(&self.subscript)?,
-            small_caps: IntoWire::into_wire(&self.small_caps)?,
-            all_caps: IntoWire::into_wire(&self.all_caps)?,
-            hidden: IntoWire::into_wire(&self.hidden)?,
-            scale_pct: IntoWire::into_wire(&self.scale_pct)?,
-            spacing_twips: IntoWire::into_wire(&self.spacing_twips)?,
-            position_half_pt: IntoWire::into_wire(&self.position_half_pt)?,
-            kern_min_half_pt: IntoWire::into_wire(&self.kern_min_half_pt)?,
+            font_family: IntoWire::into_wire(x_font_family)?,
+            size_pt: IntoWire::into_wire(x_size_pt)?,
+            bold: IntoWire::into_wire(x_bold)?,
+            italic: IntoWire::into_wire(x_italic)?,
+            underline: IntoWire::into_wire(x_underline)?,
+            underline_color: IntoWire::into_wire(x_underline_color)?,
+            color: IntoWire::into_wire(x_color)?,
+            strike: IntoWire::into_wire(x_strike)?,
+            double_strike: IntoWire::into_wire(x_double_strike)?,
+            superscript: IntoWire::into_wire(x_superscript)?,
+            subscript: IntoWire::into_wire(x_subscript)?,
+            small_caps: IntoWire::into_wire(x_small_caps)?,
+            all_caps: IntoWire::into_wire(x_all_caps)?,
+            hidden: IntoWire::into_wire(x_hidden)?,
+            scale_pct: IntoWire::into_wire(x_scale_pct)?,
+            spacing_twips: IntoWire::into_wire(x_spacing_twips)?,
+            position_half_pt: IntoWire::into_wire(x_position_half_pt)?,
+            kern_min_half_pt: IntoWire::into_wire(x_kern_min_half_pt)?,
         })
     }
 }
@@ -1593,10 +1601,11 @@ impl FromWire<w::IndentPatch> for uo_docx::session::ops::paragraph::IndentPatch 
 
 impl IntoWire<w::IndentPatch> for uo_docx::session::ops::paragraph::IndentPatch {
     fn into_wire(&self) -> Result<w::IndentPatch, BindError> {
+        let uo_docx::session::ops::paragraph::IndentPatch { left: x_left, right: x_right, first_line: x_first_line } = self;
         Ok(w::IndentPatch {
-            left: IntoWire::into_wire(&self.left)?,
-            right: IntoWire::into_wire(&self.right)?,
-            first_line: IntoWire::into_wire(&self.first_line)?,
+            left: IntoWire::into_wire(x_left)?,
+            right: IntoWire::into_wire(x_right)?,
+            first_line: IntoWire::into_wire(x_first_line)?,
         })
     }
 }
@@ -1613,10 +1622,11 @@ impl FromWire<w::TabStopInfo> for uo_docx::session::ops::paragraph::TabStopInfo 
 
 impl IntoWire<w::TabStopInfo> for uo_docx::session::ops::paragraph::TabStopInfo {
     fn into_wire(&self) -> Result<w::TabStopInfo, BindError> {
+        let uo_docx::session::ops::paragraph::TabStopInfo { pos: x_pos, align: x_align, leader: x_leader } = self;
         Ok(w::TabStopInfo {
-            pos: IntoWire::into_wire(&self.pos)?,
-            align: IntoWire::into_wire(&self.align)?,
-            leader: IntoWire::into_wire(&self.leader)?,
+            pos: IntoWire::into_wire(x_pos)?,
+            align: IntoWire::into_wire(x_align)?,
+            leader: IntoWire::into_wire(x_leader)?,
         })
     }
 }
@@ -1632,9 +1642,10 @@ impl FromWire<w::TabOnly> for uo_docx::session::ops::paragraph::TabOnly {
 
 impl IntoWire<w::TabOnly> for uo_docx::session::ops::paragraph::TabOnly {
     fn into_wire(&self) -> Result<w::TabOnly, BindError> {
+        let uo_docx::session::ops::paragraph::TabOnly { add: x_add, remove: x_remove } = self;
         Ok(w::TabOnly {
-            add: IntoWire::into_wire(&self.add)?,
-            remove: IntoWire::into_wire(&self.remove)?,
+            add: IntoWire::into_wire(x_add)?,
+            remove: IntoWire::into_wire(x_remove)?,
         })
     }
 }
@@ -1655,14 +1666,15 @@ impl FromWire<w::FlowArgs> for uo_docx::session::ops::paragraph::FlowArgs {
 
 impl IntoWire<w::FlowArgs> for uo_docx::session::ops::paragraph::FlowArgs {
     fn into_wire(&self) -> Result<w::FlowArgs, BindError> {
+        let uo_docx::session::ops::paragraph::FlowArgs { widow_control: x_widow_control, keep_next: x_keep_next, keep_lines: x_keep_lines, page_break_before: x_page_break_before, suppress_line_numbers: x_suppress_line_numbers, suppress_auto_hyphens: x_suppress_auto_hyphens, textbox_tight_wrap: x_textbox_tight_wrap } = self;
         Ok(w::FlowArgs {
-            widow_control: IntoWire::into_wire(&self.widow_control)?,
-            keep_next: IntoWire::into_wire(&self.keep_next)?,
-            keep_lines: IntoWire::into_wire(&self.keep_lines)?,
-            page_break_before: IntoWire::into_wire(&self.page_break_before)?,
-            suppress_line_numbers: IntoWire::into_wire(&self.suppress_line_numbers)?,
-            suppress_auto_hyphens: IntoWire::into_wire(&self.suppress_auto_hyphens)?,
-            textbox_tight_wrap: IntoWire::into_wire(&self.textbox_tight_wrap)?,
+            widow_control: IntoWire::into_wire(x_widow_control)?,
+            keep_next: IntoWire::into_wire(x_keep_next)?,
+            keep_lines: IntoWire::into_wire(x_keep_lines)?,
+            page_break_before: IntoWire::into_wire(x_page_break_before)?,
+            suppress_line_numbers: IntoWire::into_wire(x_suppress_line_numbers)?,
+            suppress_auto_hyphens: IntoWire::into_wire(x_suppress_auto_hyphens)?,
+            textbox_tight_wrap: IntoWire::into_wire(x_textbox_tight_wrap)?,
         })
     }
 }
@@ -1680,11 +1692,12 @@ impl FromWire<w::LayoutArgs> for uo_docx::session::ops::paragraph::LayoutArgs {
 
 impl IntoWire<w::LayoutArgs> for uo_docx::session::ops::paragraph::LayoutArgs {
     fn into_wire(&self) -> Result<w::LayoutArgs, BindError> {
+        let uo_docx::session::ops::paragraph::LayoutArgs { left: x_left, right: x_right, before: x_before, after: x_after } = self;
         Ok(w::LayoutArgs {
-            left: IntoWire::into_wire(&self.left)?,
-            right: IntoWire::into_wire(&self.right)?,
-            before: IntoWire::into_wire(&self.before)?,
-            after: IntoWire::into_wire(&self.after)?,
+            left: IntoWire::into_wire(x_left)?,
+            right: IntoWire::into_wire(x_right)?,
+            before: IntoWire::into_wire(x_before)?,
+            after: IntoWire::into_wire(x_after)?,
         })
     }
 }
@@ -1727,23 +1740,25 @@ impl FromWire<w::BorderSpec> for uo_docx::model::props::BorderSpec {
             theme_shade: FromWire::from_wire(v.theme_shade)?,
             shadow: FromWire::from_wire(v.shadow)?,
             frame: FromWire::from_wire(v.frame)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::BorderSpec> for uo_docx::model::props::BorderSpec {
     fn into_wire(&self) -> Result<w::BorderSpec, BindError> {
+        let uo_docx::model::props::BorderSpec { val: x_val, sz: x_sz, space: x_space, color: x_color, theme_color: x_theme_color, theme_tint: x_theme_tint, theme_shade: x_theme_shade, shadow: x_shadow, frame: x_frame, cleared: _, keys: _ } = self;
         Ok(w::BorderSpec {
-            val: IntoWire::into_wire(&self.val)?,
-            sz: IntoWire::into_wire(&self.sz)?,
-            space: IntoWire::into_wire(&self.space)?,
-            color: IntoWire::into_wire(&self.color)?,
-            theme_color: IntoWire::into_wire(&self.theme_color)?,
-            theme_tint: IntoWire::into_wire(&self.theme_tint)?,
-            theme_shade: IntoWire::into_wire(&self.theme_shade)?,
-            shadow: IntoWire::into_wire(&self.shadow)?,
-            frame: IntoWire::into_wire(&self.frame)?,
+            val: IntoWire::into_wire(x_val)?,
+            sz: IntoWire::into_wire(x_sz)?,
+            space: IntoWire::into_wire(x_space)?,
+            color: IntoWire::into_wire(x_color)?,
+            theme_color: IntoWire::into_wire(x_theme_color)?,
+            theme_tint: IntoWire::into_wire(x_theme_tint)?,
+            theme_shade: IntoWire::into_wire(x_theme_shade)?,
+            shadow: IntoWire::into_wire(x_shadow)?,
+            frame: IntoWire::into_wire(x_frame)?,
         })
     }
 }
@@ -1808,24 +1823,25 @@ impl FromWire<w::ListLevelSpec> for uo_docx::session::ops::lists::ListLevelSpec 
 
 impl IntoWire<w::ListLevelSpec> for uo_docx::session::ops::lists::ListLevelSpec {
     fn into_wire(&self) -> Result<w::ListLevelSpec, BindError> {
+        let uo_docx::session::ops::lists::ListLevelSpec { ilvl: x_ilvl, num_fmt: x_num_fmt, lvl_text: x_lvl_text, font: x_font, bold: x_bold, italic: x_italic, size_pt: x_size_pt, color: x_color, start: x_start, p_style: x_p_style, ind_left: x_ind_left, hanging: x_hanging, jc: x_jc, suff: x_suff, tab_pos: x_tab_pos, is_lgl: x_is_lgl, lvl_restart: x_lvl_restart } = self;
         Ok(w::ListLevelSpec {
-            ilvl: IntoWire::into_wire(&self.ilvl)?,
-            num_fmt: IntoWire::into_wire(&self.num_fmt)?,
-            lvl_text: IntoWire::into_wire(&self.lvl_text)?,
-            font: IntoWire::into_wire(&self.font)?,
-            bold: IntoWire::into_wire(&self.bold)?,
-            italic: IntoWire::into_wire(&self.italic)?,
-            size_pt: IntoWire::into_wire(&self.size_pt)?,
-            color: IntoWire::into_wire(&self.color)?,
-            start: IntoWire::into_wire(&self.start)?,
-            p_style: IntoWire::into_wire(&self.p_style)?,
-            ind_left: IntoWire::into_wire(&self.ind_left)?,
-            hanging: IntoWire::into_wire(&self.hanging)?,
-            jc: IntoWire::into_wire(&self.jc)?,
-            suff: IntoWire::into_wire(&self.suff)?,
-            tab_pos: IntoWire::into_wire(&self.tab_pos)?,
-            is_lgl: IntoWire::into_wire(&self.is_lgl)?,
-            lvl_restart: IntoWire::into_wire(&self.lvl_restart)?,
+            ilvl: IntoWire::into_wire(x_ilvl)?,
+            num_fmt: IntoWire::into_wire(x_num_fmt)?,
+            lvl_text: IntoWire::into_wire(x_lvl_text)?,
+            font: IntoWire::into_wire(x_font)?,
+            bold: IntoWire::into_wire(x_bold)?,
+            italic: IntoWire::into_wire(x_italic)?,
+            size_pt: IntoWire::into_wire(x_size_pt)?,
+            color: IntoWire::into_wire(x_color)?,
+            start: IntoWire::into_wire(x_start)?,
+            p_style: IntoWire::into_wire(x_p_style)?,
+            ind_left: IntoWire::into_wire(x_ind_left)?,
+            hanging: IntoWire::into_wire(x_hanging)?,
+            jc: IntoWire::into_wire(x_jc)?,
+            suff: IntoWire::into_wire(x_suff)?,
+            tab_pos: IntoWire::into_wire(x_tab_pos)?,
+            is_lgl: IntoWire::into_wire(x_is_lgl)?,
+            lvl_restart: IntoWire::into_wire(x_lvl_restart)?,
         })
     }
 }
@@ -1849,17 +1865,18 @@ impl FromWire<w::ListLevelFormat> for uo_docx::session::ops::lists::ListLevelFor
 
 impl IntoWire<w::ListLevelFormat> for uo_docx::session::ops::lists::ListLevelFormat {
     fn into_wire(&self) -> Result<w::ListLevelFormat, BindError> {
+        let uo_docx::session::ops::lists::ListLevelFormat { bullet: x_bullet, num_fmt: x_num_fmt, lvl_text: x_lvl_text, start: x_start, align: x_align, font: x_font, bold: x_bold, italic: x_italic, size_pt: x_size_pt, color: x_color } = self;
         Ok(w::ListLevelFormat {
-            bullet: IntoWire::into_wire(&self.bullet)?,
-            num_fmt: IntoWire::into_wire(&self.num_fmt)?,
-            lvl_text: IntoWire::into_wire(&self.lvl_text)?,
-            start: IntoWire::into_wire(&self.start)?,
-            align: IntoWire::into_wire(&self.align)?,
-            font: IntoWire::into_wire(&self.font)?,
-            bold: IntoWire::into_wire(&self.bold)?,
-            italic: IntoWire::into_wire(&self.italic)?,
-            size_pt: IntoWire::into_wire(&self.size_pt)?,
-            color: IntoWire::into_wire(&self.color)?,
+            bullet: IntoWire::into_wire(x_bullet)?,
+            num_fmt: IntoWire::into_wire(x_num_fmt)?,
+            lvl_text: IntoWire::into_wire(x_lvl_text)?,
+            start: IntoWire::into_wire(x_start)?,
+            align: IntoWire::into_wire(x_align)?,
+            font: IntoWire::into_wire(x_font)?,
+            bold: IntoWire::into_wire(x_bold)?,
+            italic: IntoWire::into_wire(x_italic)?,
+            size_pt: IntoWire::into_wire(x_size_pt)?,
+            color: IntoWire::into_wire(x_color)?,
         })
     }
 }
@@ -1882,16 +1899,17 @@ impl FromWire<w::CreateStyleSpec> for uo_docx::session::ops::styles::CreateStyle
 
 impl IntoWire<w::CreateStyleSpec> for uo_docx::session::ops::styles::CreateStyleSpec {
     fn into_wire(&self) -> Result<w::CreateStyleSpec, BindError> {
+        let uo_docx::session::ops::styles::CreateStyleSpec { name: x_name, kind: x_kind, based_on: x_based_on, next: x_next, quick: x_quick, auto_update: x_auto_update, format: x_format, from_selection: x_from_selection, apply: x_apply } = self;
         Ok(w::CreateStyleSpec {
-            name: IntoWire::into_wire(&self.name)?,
-            kind: IntoWire::into_wire(&self.kind)?,
-            based_on: IntoWire::into_wire(&self.based_on)?,
-            next: IntoWire::into_wire(&self.next)?,
-            quick: IntoWire::into_wire(&self.quick)?,
-            auto_update: IntoWire::into_wire(&self.auto_update)?,
-            format: IntoWire::into_wire(&self.format)?,
-            from_selection: IntoWire::into_wire(&self.from_selection)?,
-            apply: IntoWire::into_wire(&self.apply)?,
+            name: IntoWire::into_wire(x_name)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            based_on: IntoWire::into_wire(x_based_on)?,
+            next: IntoWire::into_wire(x_next)?,
+            quick: IntoWire::into_wire(x_quick)?,
+            auto_update: IntoWire::into_wire(x_auto_update)?,
+            format: IntoWire::into_wire(x_format)?,
+            from_selection: IntoWire::into_wire(x_from_selection)?,
+            apply: IntoWire::into_wire(x_apply)?,
         })
     }
 }
@@ -1911,13 +1929,14 @@ impl FromWire<w::ModifyStyleSpec> for uo_docx::session::ops::styles::ModifyStyle
 
 impl IntoWire<w::ModifyStyleSpec> for uo_docx::session::ops::styles::ModifyStyleSpec {
     fn into_wire(&self) -> Result<w::ModifyStyleSpec, BindError> {
+        let uo_docx::session::ops::styles::ModifyStyleSpec { name: x_name, based_on: x_based_on, next: x_next, quick: x_quick, auto_update: x_auto_update, format: x_format } = self;
         Ok(w::ModifyStyleSpec {
-            name: IntoWire::into_wire(&self.name)?,
-            based_on: IntoWire::into_wire(&self.based_on)?,
-            next: IntoWire::into_wire(&self.next)?,
-            quick: IntoWire::into_wire(&self.quick)?,
-            auto_update: IntoWire::into_wire(&self.auto_update)?,
-            format: IntoWire::into_wire(&self.format)?,
+            name: IntoWire::into_wire(x_name)?,
+            based_on: IntoWire::into_wire(x_based_on)?,
+            next: IntoWire::into_wire(x_next)?,
+            quick: IntoWire::into_wire(x_quick)?,
+            auto_update: IntoWire::into_wire(x_auto_update)?,
+            format: IntoWire::into_wire(x_format)?,
         })
     }
 }
@@ -1941,17 +1960,18 @@ impl FromWire<w::DefaultFont> for uo_docx::session::ops::styles::DefaultFont {
 
 impl IntoWire<w::DefaultFont> for uo_docx::session::ops::styles::DefaultFont {
     fn into_wire(&self) -> Result<w::DefaultFont, BindError> {
+        let uo_docx::session::ops::styles::DefaultFont { font_family: x_font_family, size_pt: x_size_pt, bold: x_bold, italic: x_italic, underline: x_underline, strike: x_strike, all_caps: x_all_caps, small_caps: x_small_caps, color: x_color, spacing_twips: x_spacing_twips } = self;
         Ok(w::DefaultFont {
-            font_family: IntoWire::into_wire(&self.font_family)?,
-            size_pt: IntoWire::into_wire(&self.size_pt)?,
-            bold: IntoWire::into_wire(&self.bold)?,
-            italic: IntoWire::into_wire(&self.italic)?,
-            underline: IntoWire::into_wire(&self.underline)?,
-            strike: IntoWire::into_wire(&self.strike)?,
-            all_caps: IntoWire::into_wire(&self.all_caps)?,
-            small_caps: IntoWire::into_wire(&self.small_caps)?,
-            color: IntoWire::into_wire(&self.color)?,
-            spacing_twips: IntoWire::into_wire(&self.spacing_twips)?,
+            font_family: IntoWire::into_wire(x_font_family)?,
+            size_pt: IntoWire::into_wire(x_size_pt)?,
+            bold: IntoWire::into_wire(x_bold)?,
+            italic: IntoWire::into_wire(x_italic)?,
+            underline: IntoWire::into_wire(x_underline)?,
+            strike: IntoWire::into_wire(x_strike)?,
+            all_caps: IntoWire::into_wire(x_all_caps)?,
+            small_caps: IntoWire::into_wire(x_small_caps)?,
+            color: IntoWire::into_wire(x_color)?,
+            spacing_twips: IntoWire::into_wire(x_spacing_twips)?,
         })
     }
 }
@@ -1987,9 +2007,10 @@ impl FromWire<w::TableLayoutIn> for uo_docx::session::ops::tables::TableLayoutIn
 
 impl IntoWire<w::TableLayoutIn> for uo_docx::session::ops::tables::TableLayoutIn {
     fn into_wire(&self) -> Result<w::TableLayoutIn, BindError> {
+        let uo_docx::session::ops::tables::TableLayoutIn { content_width_twips: x_content_width_twips, row_heights: x_row_heights } = self;
         Ok(w::TableLayoutIn {
-            content_width_twips: IntoWire::into_wire(&self.content_width_twips)?,
-            row_heights: IntoWire::into_wire(&self.row_heights)?,
+            content_width_twips: IntoWire::into_wire(x_content_width_twips)?,
+            row_heights: IntoWire::into_wire(x_row_heights)?,
         })
     }
 }
@@ -2051,11 +2072,12 @@ impl FromWire<w::CellRect> for uo_docx::session::ops::tables::table_ops::CellRec
 
 impl IntoWire<w::CellRect> for uo_docx::session::ops::tables::table_ops::CellRect {
     fn into_wire(&self) -> Result<w::CellRect, BindError> {
+        let uo_docx::session::ops::tables::table_ops::CellRect { r1: x_r1, c1: x_c1, r2: x_r2, c2: x_c2 } = self;
         Ok(w::CellRect {
-            r1: IntoWire::into_wire(&self.r1)?,
-            c1: IntoWire::into_wire(&self.c1)?,
-            r2: IntoWire::into_wire(&self.r2)?,
-            c2: IntoWire::into_wire(&self.c2)?,
+            r1: IntoWire::into_wire(x_r1)?,
+            c1: IntoWire::into_wire(x_c1)?,
+            r2: IntoWire::into_wire(x_r2)?,
+            c2: IntoWire::into_wire(x_c2)?,
         })
     }
 }
@@ -2115,11 +2137,12 @@ impl FromWire<w::MarginsIn> for uo_docx::session::ops::tables::MarginsIn {
 
 impl IntoWire<w::MarginsIn> for uo_docx::session::ops::tables::MarginsIn {
     fn into_wire(&self) -> Result<w::MarginsIn, BindError> {
+        let uo_docx::session::ops::tables::MarginsIn { top: x_top, left: x_left, bottom: x_bottom, right: x_right } = self;
         Ok(w::MarginsIn {
-            top: IntoWire::into_wire(&self.top)?,
-            left: IntoWire::into_wire(&self.left)?,
-            bottom: IntoWire::into_wire(&self.bottom)?,
-            right: IntoWire::into_wire(&self.right)?,
+            top: IntoWire::into_wire(x_top)?,
+            left: IntoWire::into_wire(x_left)?,
+            bottom: IntoWire::into_wire(x_bottom)?,
+            right: IntoWire::into_wire(x_right)?,
         })
     }
 }
@@ -2149,11 +2172,12 @@ impl FromWire<w::SortRequest> for uo_docx::session::ops::tables::SortRequest {
 
 impl IntoWire<w::SortRequest> for uo_docx::session::ops::tables::SortRequest {
     fn into_wire(&self) -> Result<w::SortRequest, BindError> {
+        let uo_docx::session::ops::tables::SortRequest { keys: x_keys, header: x_header, case_sensitive: x_case_sensitive, separator: x_separator } = self;
         Ok(w::SortRequest {
-            keys: IntoWire::into_wire(&self.keys)?,
-            header: IntoWire::into_wire(&self.header)?,
-            case_sensitive: IntoWire::into_wire(&self.case_sensitive)?,
-            separator: IntoWire::into_wire(&self.separator)?,
+            keys: IntoWire::into_wire(x_keys)?,
+            header: IntoWire::into_wire(x_header)?,
+            case_sensitive: IntoWire::into_wire(x_case_sensitive)?,
+            separator: IntoWire::into_wire(x_separator)?,
         })
     }
 }
@@ -2197,13 +2221,14 @@ impl FromWire<w::StyleOptions> for uo_docx::session::ops::tables::StyleOptions {
 
 impl IntoWire<w::StyleOptions> for uo_docx::session::ops::tables::StyleOptions {
     fn into_wire(&self) -> Result<w::StyleOptions, BindError> {
+        let uo_docx::session::ops::tables::StyleOptions { header_row: x_header_row, total_row: x_total_row, banded_rows: x_banded_rows, first_column: x_first_column, last_column: x_last_column, banded_columns: x_banded_columns } = self;
         Ok(w::StyleOptions {
-            header_row: IntoWire::into_wire(&self.header_row)?,
-            total_row: IntoWire::into_wire(&self.total_row)?,
-            banded_rows: IntoWire::into_wire(&self.banded_rows)?,
-            first_column: IntoWire::into_wire(&self.first_column)?,
-            last_column: IntoWire::into_wire(&self.last_column)?,
-            banded_columns: IntoWire::into_wire(&self.banded_columns)?,
+            header_row: IntoWire::into_wire(x_header_row)?,
+            total_row: IntoWire::into_wire(x_total_row)?,
+            banded_rows: IntoWire::into_wire(x_banded_rows)?,
+            first_column: IntoWire::into_wire(x_first_column)?,
+            last_column: IntoWire::into_wire(x_last_column)?,
+            banded_columns: IntoWire::into_wire(x_banded_columns)?,
         })
     }
 }
@@ -2237,9 +2262,10 @@ impl FromWire<w::ShadePattern> for uo_docx::session::ops::tables::ShadePattern {
 
 impl IntoWire<w::ShadePattern> for uo_docx::session::ops::tables::ShadePattern {
     fn into_wire(&self) -> Result<w::ShadePattern, BindError> {
+        let uo_docx::session::ops::tables::ShadePattern { val: x_val, color: x_color } = self;
         Ok(w::ShadePattern {
-            val: IntoWire::into_wire(&self.val)?,
-            color: IntoWire::into_wire(&self.color)?,
+            val: IntoWire::into_wire(x_val)?,
+            color: IntoWire::into_wire(x_color)?,
         })
     }
 }
@@ -2325,11 +2351,12 @@ impl FromWire<w::TablePropertiesInput> for uo_docx::session::ops::tables::TableP
 
 impl IntoWire<w::TablePropertiesInput> for uo_docx::session::ops::tables::TablePropertiesInput {
     fn into_wire(&self) -> Result<w::TablePropertiesInput, BindError> {
+        let uo_docx::session::ops::tables::TablePropertiesInput { table: x_table, row: x_row, column_width: x_column_width, cell: x_cell } = self;
         Ok(w::TablePropertiesInput {
-            table: IntoWire::into_wire(&self.table)?,
-            row: IntoWire::into_wire(&self.row)?,
-            column_width: IntoWire::into_wire(&self.column_width)?,
-            cell: IntoWire::into_wire(&self.cell)?,
+            table: IntoWire::into_wire(x_table)?,
+            row: IntoWire::into_wire(x_row)?,
+            column_width: IntoWire::into_wire(x_column_width)?,
+            cell: IntoWire::into_wire(x_cell)?,
         })
     }
 }
@@ -2351,15 +2378,16 @@ impl FromWire<w::PageSetup> for uo_docx::session::ops::sections::PageSetup {
 
 impl IntoWire<w::PageSetup> for uo_docx::session::ops::sections::PageSetup {
     fn into_wire(&self) -> Result<w::PageSetup, BindError> {
+        let uo_docx::session::ops::sections::PageSetup { orientation: x_orientation, size: x_size, margins: x_margins, custom_margins: x_custom_margins, section_start: x_section_start, vertical_alignment: x_vertical_alignment, line_numbering: x_line_numbering, apply_to: x_apply_to } = self;
         Ok(w::PageSetup {
-            orientation: IntoWire::into_wire(&self.orientation)?,
-            size: IntoWire::into_wire(&self.size)?,
-            margins: IntoWire::into_wire(&self.margins)?,
-            custom_margins: IntoWire::into_wire(&self.custom_margins)?,
-            section_start: IntoWire::into_wire(&self.section_start)?,
-            vertical_alignment: IntoWire::into_wire(&self.vertical_alignment)?,
-            line_numbering: IntoWire::into_wire(&self.line_numbering)?,
-            apply_to: IntoWire::into_wire(&self.apply_to)?,
+            orientation: IntoWire::into_wire(x_orientation)?,
+            size: IntoWire::into_wire(x_size)?,
+            margins: IntoWire::into_wire(x_margins)?,
+            custom_margins: IntoWire::into_wire(x_custom_margins)?,
+            section_start: IntoWire::into_wire(x_section_start)?,
+            vertical_alignment: IntoWire::into_wire(x_vertical_alignment)?,
+            line_numbering: IntoWire::into_wire(x_line_numbering)?,
+            apply_to: IntoWire::into_wire(x_apply_to)?,
         })
     }
 }
@@ -2374,21 +2402,23 @@ impl FromWire<w::PageBorders> for uo_docx::model::section::PageBorders {
             left: FromWire::from_wire(v.left)?,
             bottom: FromWire::from_wire(v.bottom)?,
             right: FromWire::from_wire(v.right)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::PageBorders> for uo_docx::model::section::PageBorders {
     fn into_wire(&self) -> Result<w::PageBorders, BindError> {
+        let uo_docx::model::section::PageBorders { offset_from: x_offset_from, display: x_display, z_order: x_z_order, top: x_top, left: x_left, bottom: x_bottom, right: x_right, cleared: _, keys: _ } = self;
         Ok(w::PageBorders {
-            offset_from: IntoWire::into_wire(&self.offset_from)?,
-            display: IntoWire::into_wire(&self.display)?,
-            z_order: IntoWire::into_wire(&self.z_order)?,
-            top: IntoWire::into_wire(&self.top)?,
-            left: IntoWire::into_wire(&self.left)?,
-            bottom: IntoWire::into_wire(&self.bottom)?,
-            right: IntoWire::into_wire(&self.right)?,
+            offset_from: IntoWire::into_wire(x_offset_from)?,
+            display: IntoWire::into_wire(x_display)?,
+            z_order: IntoWire::into_wire(x_z_order)?,
+            top: IntoWire::into_wire(x_top)?,
+            left: IntoWire::into_wire(x_left)?,
+            bottom: IntoWire::into_wire(x_bottom)?,
+            right: IntoWire::into_wire(x_right)?,
         })
     }
 }
@@ -2515,12 +2545,13 @@ impl FromWire<w::LineNumberingOptions> for uo_docx::session::ops::text_layout::L
 
 impl IntoWire<w::LineNumberingOptions> for uo_docx::session::ops::text_layout::LineNumberingOptions {
     fn into_wire(&self) -> Result<w::LineNumberingOptions, BindError> {
+        let uo_docx::session::ops::text_layout::LineNumberingOptions { on: x_on, start_at: x_start_at, count_by: x_count_by, distance_twips: x_distance_twips, restart: x_restart } = self;
         Ok(w::LineNumberingOptions {
-            on: IntoWire::into_wire(&self.on)?,
-            start_at: IntoWire::into_wire(&self.start_at)?,
-            count_by: IntoWire::into_wire(&self.count_by)?,
-            distance_twips: IntoWire::into_wire(&self.distance_twips)?,
-            restart: IntoWire::into_wire(&self.restart)?,
+            on: IntoWire::into_wire(x_on)?,
+            start_at: IntoWire::into_wire(x_start_at)?,
+            count_by: IntoWire::into_wire(x_count_by)?,
+            distance_twips: IntoWire::into_wire(x_distance_twips)?,
+            restart: IntoWire::into_wire(x_restart)?,
         })
     }
 }
@@ -2536,9 +2567,10 @@ impl FromWire<w::HfAt> for uo_docx::session::ops::header_footer::HfAt {
 
 impl IntoWire<w::HfAt> for uo_docx::session::ops::header_footer::HfAt {
     fn into_wire(&self) -> Result<w::HfAt, BindError> {
+        let uo_docx::session::ops::header_footer::HfAt { section: x_section, slot: x_slot } = self;
         Ok(w::HfAt {
-            section: IntoWire::into_wire(&self.section)?,
-            slot: IntoWire::into_wire(&self.slot)?,
+            section: IntoWire::into_wire(x_section)?,
+            slot: IntoWire::into_wire(x_slot)?,
         })
     }
 }
@@ -2627,10 +2659,11 @@ impl FromWire<w::PageNumberFormatPatch> for uo_docx::session::ops::header_footer
 
 impl IntoWire<w::PageNumberFormatPatch> for uo_docx::session::ops::header_footer::PageNumberFormatPatch {
     fn into_wire(&self) -> Result<w::PageNumberFormatPatch, BindError> {
+        let uo_docx::session::ops::header_footer::PageNumberFormatPatch { format: x_format, chapter: x_chapter, start: x_start } = self;
         Ok(w::PageNumberFormatPatch {
-            format: IntoWire::into_wire(&self.format)?,
-            chapter: IntoWire::into_wire(&self.chapter)?,
-            start: IntoWire::into_wire(&self.start)?,
+            format: IntoWire::into_wire(x_format)?,
+            chapter: IntoWire::into_wire(x_chapter)?,
+            start: IntoWire::into_wire(x_start)?,
         })
     }
 }
@@ -2712,9 +2745,10 @@ impl FromWire<w::HfEnter> for uo_docx::session::ops::header_footer::HfEnter {
 
 impl IntoWire<w::HfEnter> for uo_docx::session::ops::header_footer::HfEnter {
     fn into_wire(&self) -> Result<w::HfEnter, BindError> {
+        let uo_docx::session::ops::header_footer::HfEnter { part: x_part, page: x_page } = self;
         Ok(w::HfEnter {
-            part: IntoWire::into_wire(&self.part)?,
-            page: IntoWire::into_wire(&self.page)?,
+            part: IntoWire::into_wire(x_part)?,
+            page: IntoWire::into_wire(x_page)?,
         })
     }
 }
@@ -2733,12 +2767,13 @@ impl FromWire<w::NoteOptionsPatch> for uo_docx::session::ops::notes::NoteOptions
 
 impl IntoWire<w::NoteOptionsPatch> for uo_docx::session::ops::notes::NoteOptionsPatch {
     fn into_wire(&self) -> Result<w::NoteOptionsPatch, BindError> {
+        let uo_docx::session::ops::notes::NoteOptionsPatch { position: x_position, number_format: x_number_format, start_at: x_start_at, restart: x_restart, columns: x_columns } = self;
         Ok(w::NoteOptionsPatch {
-            position: IntoWire::into_wire(&self.position)?,
-            number_format: IntoWire::into_wire(&self.number_format)?,
-            start_at: IntoWire::into_wire(&self.start_at)?,
-            restart: IntoWire::into_wire(&self.restart)?,
-            columns: IntoWire::into_wire(&self.columns)?,
+            position: IntoWire::into_wire(x_position)?,
+            number_format: IntoWire::into_wire(x_number_format)?,
+            start_at: IntoWire::into_wire(x_start_at)?,
+            restart: IntoWire::into_wire(x_restart)?,
+            columns: IntoWire::into_wire(x_columns)?,
         })
     }
 }
@@ -2807,12 +2842,13 @@ impl FromWire<w::MarkupPatch> for uo_docx::session::ops::revision_cmds::MarkupPa
 
 impl IntoWire<w::MarkupPatch> for uo_docx::session::ops::revision_cmds::MarkupPatch {
     fn into_wire(&self) -> Result<w::MarkupPatch, BindError> {
+        let uo_docx::session::ops::revision_cmds::MarkupPatch { ins_del: x_ins_del, formatting: x_formatting, comments: x_comments, balloons: x_balloons, authors: x_authors } = self;
         Ok(w::MarkupPatch {
-            ins_del: IntoWire::into_wire(&self.ins_del)?,
-            formatting: IntoWire::into_wire(&self.formatting)?,
-            comments: IntoWire::into_wire(&self.comments)?,
-            balloons: IntoWire::into_wire(&self.balloons)?,
-            authors: IntoWire::into_wire(&self.authors)?,
+            ins_del: IntoWire::into_wire(x_ins_del)?,
+            formatting: IntoWire::into_wire(x_formatting)?,
+            comments: IntoWire::into_wire(x_comments)?,
+            balloons: IntoWire::into_wire(x_balloons)?,
+            authors: IntoWire::into_wire(x_authors)?,
         })
     }
 }
@@ -2830,11 +2866,12 @@ impl FromWire<w::HyperlinkOptions> for uo_docx::session::ops::bookmarks::Hyperli
 
 impl IntoWire<w::HyperlinkOptions> for uo_docx::session::ops::bookmarks::HyperlinkOptions {
     fn into_wire(&self) -> Result<w::HyperlinkOptions, BindError> {
+        let uo_docx::session::ops::bookmarks::HyperlinkOptions { address: x_address, anchor: x_anchor, tip: x_tip, text: x_text } = self;
         Ok(w::HyperlinkOptions {
-            address: IntoWire::into_wire(&self.address)?,
-            anchor: IntoWire::into_wire(&self.anchor)?,
-            tip: IntoWire::into_wire(&self.tip)?,
-            text: IntoWire::into_wire(&self.text)?,
+            address: IntoWire::into_wire(x_address)?,
+            anchor: IntoWire::into_wire(x_anchor)?,
+            tip: IntoWire::into_wire(x_tip)?,
+            text: IntoWire::into_wire(x_text)?,
         })
     }
 }
@@ -2886,18 +2923,20 @@ impl FromWire<w::PicColor> for uo_docx::model::picture::PicColor {
             val: FromWire::from_wire(v.val)?,
             last_clr: FromWire::from_wire(v.last_clr)?,
             mods: FromWire::from_wire(v.mods)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::PicColor> for uo_docx::model::picture::PicColor {
     fn into_wire(&self) -> Result<w::PicColor, BindError> {
+        let uo_docx::model::picture::PicColor { kind: x_kind, val: x_val, last_clr: x_last_clr, mods: x_mods, cleared: _, keys: _ } = self;
         Ok(w::PicColor {
-            kind: IntoWire::into_wire(&self.kind)?,
-            val: IntoWire::into_wire(&self.val)?,
-            last_clr: IntoWire::into_wire(&self.last_clr)?,
-            mods: IntoWire::into_wire(&self.mods)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            val: IntoWire::into_wire(x_val)?,
+            last_clr: IntoWire::into_wire(x_last_clr)?,
+            mods: IntoWire::into_wire(x_mods)?,
         })
     }
 }
@@ -3025,13 +3064,14 @@ impl FromWire<w::FormatArg> for uo_docx::session::ops::drawing::FormatArg {
 
 impl IntoWire<w::FormatArg> for uo_docx::session::ops::drawing::FormatArg {
     fn into_wire(&self) -> Result<w::FormatArg, BindError> {
+        let uo_docx::session::ops::drawing::FormatArg { line: x_line, shadow: x_shadow, reflection: x_reflection, glow: x_glow, soft_edge: x_soft_edge, three_d: x_three_d } = self;
         Ok(w::FormatArg {
-            line: IntoWire::into_wire(&self.line)?,
-            shadow: IntoWire::into_wire(&self.shadow)?,
-            reflection: IntoWire::into_wire(&self.reflection)?,
-            glow: IntoWire::into_wire(&self.glow)?,
-            soft_edge: IntoWire::into_wire(&self.soft_edge)?,
-            three_d: IntoWire::into_wire(&self.three_d)?,
+            line: IntoWire::into_wire(x_line)?,
+            shadow: IntoWire::into_wire(x_shadow)?,
+            reflection: IntoWire::into_wire(x_reflection)?,
+            glow: IntoWire::into_wire(x_glow)?,
+            soft_edge: IntoWire::into_wire(x_soft_edge)?,
+            three_d: IntoWire::into_wire(x_three_d)?,
         })
     }
 }
@@ -3054,16 +3094,17 @@ impl FromWire<w::TextboxOptions> for uo_docx::session::ops::drawing::TextboxOpti
 
 impl IntoWire<w::TextboxOptions> for uo_docx::session::ops::drawing::TextboxOptions {
     fn into_wire(&self) -> Result<w::TextboxOptions, BindError> {
+        let uo_docx::session::ops::drawing::TextboxOptions { margin_l_pt: x_margin_l_pt, margin_t_pt: x_margin_t_pt, margin_r_pt: x_margin_r_pt, margin_b_pt: x_margin_b_pt, anchor: x_anchor, direction: x_direction, wrap: x_wrap, autofit: x_autofit, upright: x_upright } = self;
         Ok(w::TextboxOptions {
-            margin_l_pt: IntoWire::into_wire(&self.margin_l_pt)?,
-            margin_t_pt: IntoWire::into_wire(&self.margin_t_pt)?,
-            margin_r_pt: IntoWire::into_wire(&self.margin_r_pt)?,
-            margin_b_pt: IntoWire::into_wire(&self.margin_b_pt)?,
-            anchor: IntoWire::into_wire(&self.anchor)?,
-            direction: IntoWire::into_wire(&self.direction)?,
-            wrap: IntoWire::into_wire(&self.wrap)?,
-            autofit: IntoWire::into_wire(&self.autofit)?,
-            upright: IntoWire::into_wire(&self.upright)?,
+            margin_l_pt: IntoWire::into_wire(x_margin_l_pt)?,
+            margin_t_pt: IntoWire::into_wire(x_margin_t_pt)?,
+            margin_r_pt: IntoWire::into_wire(x_margin_r_pt)?,
+            margin_b_pt: IntoWire::into_wire(x_margin_b_pt)?,
+            anchor: IntoWire::into_wire(x_anchor)?,
+            direction: IntoWire::into_wire(x_direction)?,
+            wrap: IntoWire::into_wire(x_wrap)?,
+            autofit: IntoWire::into_wire(x_autofit)?,
+            upright: IntoWire::into_wire(x_upright)?,
         })
     }
 }
@@ -3104,8 +3145,9 @@ impl FromWire<w::GalleryBox> for uo_docx::session::ops::drawing::GalleryBox {
 
 impl IntoWire<w::GalleryBox> for uo_docx::session::ops::drawing::GalleryBox {
     fn into_wire(&self) -> Result<w::GalleryBox, BindError> {
+        let uo_docx::session::ops::drawing::GalleryBox { xml: x_xml } = self;
         Ok(w::GalleryBox {
-            xml: IntoWire::into_wire(&self.xml)?,
+            xml: IntoWire::into_wire(x_xml)?,
         })
     }
 }
@@ -3123,11 +3165,12 @@ impl FromWire<w::ObjRect> for uo_docx::session::ops::drawing::ObjRect {
 
 impl IntoWire<w::ObjRect> for uo_docx::session::ops::drawing::ObjRect {
     fn into_wire(&self) -> Result<w::ObjRect, BindError> {
+        let uo_docx::session::ops::drawing::ObjRect { x: x_x, y: x_y, w: x_w, h: x_h } = self;
         Ok(w::ObjRect {
-            x: IntoWire::into_wire(&self.x)?,
-            y: IntoWire::into_wire(&self.y)?,
-            w: IntoWire::into_wire(&self.w)?,
-            h: IntoWire::into_wire(&self.h)?,
+            x: IntoWire::into_wire(x_x)?,
+            y: IntoWire::into_wire(x_y)?,
+            w: IntoWire::into_wire(x_w)?,
+            h: IntoWire::into_wire(x_h)?,
         })
     }
 }
@@ -3151,17 +3194,18 @@ impl FromWire<w::ObjFrame> for uo_docx::session::ops::drawing::ObjFrame {
 
 impl IntoWire<w::ObjFrame> for uo_docx::session::ops::drawing::ObjFrame {
     fn into_wire(&self) -> Result<w::ObjFrame, BindError> {
+        let uo_docx::session::ops::drawing::ObjFrame { page_w: x_page_w, page_h: x_page_h, mar_l: x_mar_l, mar_r: x_mar_r, mar_t: x_mar_t, mar_b: x_mar_b, col_x: x_col_x, col_w: x_col_w, body_top: x_body_top, para_top: x_para_top } = self;
         Ok(w::ObjFrame {
-            page_w: IntoWire::into_wire(&self.page_w)?,
-            page_h: IntoWire::into_wire(&self.page_h)?,
-            mar_l: IntoWire::into_wire(&self.mar_l)?,
-            mar_r: IntoWire::into_wire(&self.mar_r)?,
-            mar_t: IntoWire::into_wire(&self.mar_t)?,
-            mar_b: IntoWire::into_wire(&self.mar_b)?,
-            col_x: IntoWire::into_wire(&self.col_x)?,
-            col_w: IntoWire::into_wire(&self.col_w)?,
-            body_top: IntoWire::into_wire(&self.body_top)?,
-            para_top: IntoWire::into_wire(&self.para_top)?,
+            page_w: IntoWire::into_wire(x_page_w)?,
+            page_h: IntoWire::into_wire(x_page_h)?,
+            mar_l: IntoWire::into_wire(x_mar_l)?,
+            mar_r: IntoWire::into_wire(x_mar_r)?,
+            mar_t: IntoWire::into_wire(x_mar_t)?,
+            mar_b: IntoWire::into_wire(x_mar_b)?,
+            col_x: IntoWire::into_wire(x_col_x)?,
+            col_w: IntoWire::into_wire(x_col_w)?,
+            body_top: IntoWire::into_wire(x_body_top)?,
+            para_top: IntoWire::into_wire(x_para_top)?,
         })
     }
 }
@@ -3207,9 +3251,10 @@ impl FromWire<w::ObjFacts> for uo_docx::session::ops::drawing::ObjFacts {
 
 impl IntoWire<w::ObjFacts> for uo_docx::session::ops::drawing::ObjFacts {
     fn into_wire(&self) -> Result<w::ObjFacts, BindError> {
+        let uo_docx::session::ops::drawing::ObjFacts { rect: x_rect, frame: x_frame } = self;
         Ok(w::ObjFacts {
-            rect: IntoWire::into_wire(&self.rect)?,
-            frame: IntoWire::into_wire(&self.frame)?,
+            rect: IntoWire::into_wire(x_rect)?,
+            frame: IntoWire::into_wire(x_frame)?,
         })
     }
 }
@@ -3304,22 +3349,23 @@ impl FromWire<w::LayoutInput> for uo_docx::session::ops::pictures::LayoutInput {
 
 impl IntoWire<w::LayoutInput> for uo_docx::session::ops::pictures::LayoutInput {
     fn into_wire(&self) -> Result<w::LayoutInput, BindError> {
+        let uo_docx::session::ops::pictures::LayoutInput { wrap: x_wrap, wrap_text: x_wrap_text, dist_pt: x_dist_pt, pos_h: x_pos_h, pos_v: x_pos_v, move_with_text: x_move_with_text, lock_anchor: x_lock_anchor, allow_overlap: x_allow_overlap, layout_in_cell: x_layout_in_cell, width_pt: x_width_pt, height_pt: x_height_pt, rel_width: x_rel_width, rel_height: x_rel_height, lock_aspect: x_lock_aspect, rotation: x_rotation } = self;
         Ok(w::LayoutInput {
-            wrap: IntoWire::into_wire(&self.wrap)?,
-            wrap_text: IntoWire::into_wire(&self.wrap_text)?,
-            dist_pt: IntoWire::into_wire(&self.dist_pt)?,
-            pos_h: IntoWire::into_wire(&self.pos_h)?,
-            pos_v: IntoWire::into_wire(&self.pos_v)?,
-            move_with_text: IntoWire::into_wire(&self.move_with_text)?,
-            lock_anchor: IntoWire::into_wire(&self.lock_anchor)?,
-            allow_overlap: IntoWire::into_wire(&self.allow_overlap)?,
-            layout_in_cell: IntoWire::into_wire(&self.layout_in_cell)?,
-            width_pt: IntoWire::into_wire(&self.width_pt)?,
-            height_pt: IntoWire::into_wire(&self.height_pt)?,
-            rel_width: IntoWire::into_wire(&self.rel_width)?,
-            rel_height: IntoWire::into_wire(&self.rel_height)?,
-            lock_aspect: IntoWire::into_wire(&self.lock_aspect)?,
-            rotation: IntoWire::into_wire(&self.rotation)?,
+            wrap: IntoWire::into_wire(x_wrap)?,
+            wrap_text: IntoWire::into_wire(x_wrap_text)?,
+            dist_pt: IntoWire::into_wire(x_dist_pt)?,
+            pos_h: IntoWire::into_wire(x_pos_h)?,
+            pos_v: IntoWire::into_wire(x_pos_v)?,
+            move_with_text: IntoWire::into_wire(x_move_with_text)?,
+            lock_anchor: IntoWire::into_wire(x_lock_anchor)?,
+            allow_overlap: IntoWire::into_wire(x_allow_overlap)?,
+            layout_in_cell: IntoWire::into_wire(x_layout_in_cell)?,
+            width_pt: IntoWire::into_wire(x_width_pt)?,
+            height_pt: IntoWire::into_wire(x_height_pt)?,
+            rel_width: IntoWire::into_wire(x_rel_width)?,
+            rel_height: IntoWire::into_wire(x_rel_height)?,
+            lock_aspect: IntoWire::into_wire(x_lock_aspect)?,
+            rotation: IntoWire::into_wire(x_rotation)?,
         })
     }
 }
@@ -3356,12 +3402,13 @@ impl FromWire<w::OleArg> for uo_docx::session::ops::pictures::OleArg {
 
 impl IntoWire<w::OleArg> for uo_docx::session::ops::pictures::OleArg {
     fn into_wire(&self) -> Result<w::OleArg, BindError> {
+        let uo_docx::session::ops::pictures::OleArg { prog_id: x_prog_id, data: x_data, ext: x_ext, width_twips: x_width_twips, height_twips: x_height_twips } = self;
         Ok(w::OleArg {
-            prog_id: IntoWire::into_wire(&self.prog_id)?,
-            data: IntoWire::into_wire(&self.data)?,
-            ext: IntoWire::into_wire(&self.ext)?,
-            width_twips: IntoWire::into_wire(&self.width_twips)?,
-            height_twips: IntoWire::into_wire(&self.height_twips)?,
+            prog_id: IntoWire::into_wire(x_prog_id)?,
+            data: IntoWire::into_wire(x_data)?,
+            ext: IntoWire::into_wire(x_ext)?,
+            width_twips: IntoWire::into_wire(x_width_twips)?,
+            height_twips: IntoWire::into_wire(x_height_twips)?,
         })
     }
 }
@@ -3380,12 +3427,13 @@ impl FromWire<w::AdjustArg> for uo_docx::session::ops::pictures::AdjustArg {
 
 impl IntoWire<w::AdjustArg> for uo_docx::session::ops::pictures::AdjustArg {
     fn into_wire(&self) -> Result<w::AdjustArg, BindError> {
+        let uo_docx::session::ops::pictures::AdjustArg { sharpen: x_sharpen, bright: x_bright, contrast: x_contrast, saturation: x_saturation, temperature: x_temperature } = self;
         Ok(w::AdjustArg {
-            sharpen: IntoWire::into_wire(&self.sharpen)?,
-            bright: IntoWire::into_wire(&self.bright)?,
-            contrast: IntoWire::into_wire(&self.contrast)?,
-            saturation: IntoWire::into_wire(&self.saturation)?,
-            temperature: IntoWire::into_wire(&self.temperature)?,
+            sharpen: IntoWire::into_wire(x_sharpen)?,
+            bright: IntoWire::into_wire(x_bright)?,
+            contrast: IntoWire::into_wire(x_contrast)?,
+            saturation: IntoWire::into_wire(x_saturation)?,
+            temperature: IntoWire::into_wire(x_temperature)?,
         })
     }
 }
@@ -3447,11 +3495,12 @@ impl FromWire<w::HyphenationPatch> for uo_docx::session::ops::text_layout::Hyphe
 
 impl IntoWire<w::HyphenationPatch> for uo_docx::session::ops::text_layout::HyphenationPatch {
     fn into_wire(&self) -> Result<w::HyphenationPatch, BindError> {
+        let uo_docx::session::ops::text_layout::HyphenationPatch { auto: x_auto, caps: x_caps, zone_twips: x_zone_twips, limit: x_limit } = self;
         Ok(w::HyphenationPatch {
-            auto: IntoWire::into_wire(&self.auto)?,
-            caps: IntoWire::into_wire(&self.caps)?,
-            zone_twips: IntoWire::into_wire(&self.zone_twips)?,
-            limit: IntoWire::into_wire(&self.limit)?,
+            auto: IntoWire::into_wire(x_auto)?,
+            caps: IntoWire::into_wire(x_caps)?,
+            zone_twips: IntoWire::into_wire(x_zone_twips)?,
+            limit: IntoWire::into_wire(x_limit)?,
         })
     }
 }
@@ -3490,8 +3539,9 @@ impl FromWire<w::PasteLayoutIn> for uo_docx::session::ops::clipboard::PasteLayou
 
 impl IntoWire<w::PasteLayoutIn> for uo_docx::session::ops::clipboard::PasteLayoutIn {
     fn into_wire(&self) -> Result<w::PasteLayoutIn, BindError> {
+        let uo_docx::session::ops::clipboard::PasteLayoutIn { content_width_twips: x_content_width_twips } = self;
         Ok(w::PasteLayoutIn {
-            content_width_twips: IntoWire::into_wire(&self.content_width_twips)?,
+            content_width_twips: IntoWire::into_wire(x_content_width_twips)?,
         })
     }
 }
@@ -3596,10 +3646,11 @@ impl FromWire<w::PasteDefaults> for uo_docx::session::ops::clipboard::PasteDefau
 
 impl IntoWire<w::PasteDefaults> for uo_docx::session::ops::clipboard::PasteDefaults {
     fn into_wire(&self) -> Result<w::PasteDefaults, BindError> {
+        let uo_docx::session::ops::clipboard::PasteDefaults { within: x_within, between: x_between, other: x_other } = self;
         Ok(w::PasteDefaults {
-            within: IntoWire::into_wire(&self.within)?,
-            between: IntoWire::into_wire(&self.between)?,
-            other: IntoWire::into_wire(&self.other)?,
+            within: IntoWire::into_wire(x_within)?,
+            between: IntoWire::into_wire(x_between)?,
+            other: IntoWire::into_wire(x_other)?,
         })
     }
 }
@@ -3624,18 +3675,19 @@ impl FromWire<w::FindQuery> for uo_docx::session::ops::find::engine::FindQuery {
 
 impl IntoWire<w::FindQuery> for uo_docx::session::ops::find::engine::FindQuery {
     fn into_wire(&self) -> Result<w::FindQuery, BindError> {
+        let uo_docx::session::ops::find::engine::FindQuery { text: x_text, match_case: x_match_case, whole_word: x_whole_word, wildcards: x_wildcards, sounds_like: x_sounds_like, all_forms: x_all_forms, prefix: x_prefix, suffix: x_suffix, ignore_punct: x_ignore_punct, ignore_space: x_ignore_space, format: x_format } = self;
         Ok(w::FindQuery {
-            text: IntoWire::into_wire(&self.text)?,
-            match_case: IntoWire::into_wire(&self.match_case)?,
-            whole_word: IntoWire::into_wire(&self.whole_word)?,
-            wildcards: IntoWire::into_wire(&self.wildcards)?,
-            sounds_like: IntoWire::into_wire(&self.sounds_like)?,
-            all_forms: IntoWire::into_wire(&self.all_forms)?,
-            prefix: IntoWire::into_wire(&self.prefix)?,
-            suffix: IntoWire::into_wire(&self.suffix)?,
-            ignore_punct: IntoWire::into_wire(&self.ignore_punct)?,
-            ignore_space: IntoWire::into_wire(&self.ignore_space)?,
-            format: IntoWire::into_wire(&self.format)?,
+            text: IntoWire::into_wire(x_text)?,
+            match_case: IntoWire::into_wire(x_match_case)?,
+            whole_word: IntoWire::into_wire(x_whole_word)?,
+            wildcards: IntoWire::into_wire(x_wildcards)?,
+            sounds_like: IntoWire::into_wire(x_sounds_like)?,
+            all_forms: IntoWire::into_wire(x_all_forms)?,
+            prefix: IntoWire::into_wire(x_prefix)?,
+            suffix: IntoWire::into_wire(x_suffix)?,
+            ignore_punct: IntoWire::into_wire(x_ignore_punct)?,
+            ignore_space: IntoWire::into_wire(x_ignore_space)?,
+            format: IntoWire::into_wire(x_format)?,
         })
     }
 }
@@ -3684,22 +3736,23 @@ impl FromWire<w::FindFormat> for uo_docx::session::ops::find::engine::FindFormat
 
 impl IntoWire<w::FindFormat> for uo_docx::session::ops::find::engine::FindFormat {
     fn into_wire(&self) -> Result<w::FindFormat, BindError> {
+        let uo_docx::session::ops::find::engine::FindFormat { bold: x_bold, italic: x_italic, underline: x_underline, strike: x_strike, double_strike: x_double_strike, all_caps: x_all_caps, small_caps: x_small_caps, hidden: x_hidden, vert_align: x_vert_align, font: x_font, size_pt: x_size_pt, color: x_color, highlight: x_highlight, char_style: x_char_style, para_style: x_para_style } = self;
         Ok(w::FindFormat {
-            bold: IntoWire::into_wire(&self.bold)?,
-            italic: IntoWire::into_wire(&self.italic)?,
-            underline: IntoWire::into_wire(&self.underline)?,
-            strike: IntoWire::into_wire(&self.strike)?,
-            double_strike: IntoWire::into_wire(&self.double_strike)?,
-            all_caps: IntoWire::into_wire(&self.all_caps)?,
-            small_caps: IntoWire::into_wire(&self.small_caps)?,
-            hidden: IntoWire::into_wire(&self.hidden)?,
-            vert_align: IntoWire::into_wire(&self.vert_align)?,
-            font: IntoWire::into_wire(&self.font)?,
-            size_pt: IntoWire::into_wire(&self.size_pt)?,
-            color: IntoWire::into_wire(&self.color)?,
-            highlight: IntoWire::into_wire(&self.highlight)?,
-            char_style: IntoWire::into_wire(&self.char_style)?,
-            para_style: IntoWire::into_wire(&self.para_style)?,
+            bold: IntoWire::into_wire(x_bold)?,
+            italic: IntoWire::into_wire(x_italic)?,
+            underline: IntoWire::into_wire(x_underline)?,
+            strike: IntoWire::into_wire(x_strike)?,
+            double_strike: IntoWire::into_wire(x_double_strike)?,
+            all_caps: IntoWire::into_wire(x_all_caps)?,
+            small_caps: IntoWire::into_wire(x_small_caps)?,
+            hidden: IntoWire::into_wire(x_hidden)?,
+            vert_align: IntoWire::into_wire(x_vert_align)?,
+            font: IntoWire::into_wire(x_font)?,
+            size_pt: IntoWire::into_wire(x_size_pt)?,
+            color: IntoWire::into_wire(x_color)?,
+            highlight: IntoWire::into_wire(x_highlight)?,
+            char_style: IntoWire::into_wire(x_char_style)?,
+            para_style: IntoWire::into_wire(x_para_style)?,
         })
     }
 }
@@ -3773,9 +3826,10 @@ impl FromWire<w::DocRange> for uo_docx::session::text::DocRange {
 
 impl IntoWire<w::DocRange> for uo_docx::session::text::DocRange {
     fn into_wire(&self) -> Result<w::DocRange, BindError> {
+        let uo_docx::session::text::DocRange { start: x_start, end: x_end } = self;
         Ok(w::DocRange {
-            start: IntoWire::into_wire(&self.start)?,
-            end: IntoWire::into_wire(&self.end)?,
+            start: IntoWire::into_wire(x_start)?,
+            end: IntoWire::into_wire(x_end)?,
         })
     }
 }
@@ -3811,9 +3865,10 @@ impl FromWire<w::FindOptions> for uo_docx::session::ops::navigation::FindOptions
 
 impl IntoWire<w::FindOptions> for uo_docx::session::ops::navigation::FindOptions {
     fn into_wire(&self) -> Result<w::FindOptions, BindError> {
+        let uo_docx::session::ops::navigation::FindOptions { match_case: x_match_case, whole_word: x_whole_word } = self;
         Ok(w::FindOptions {
-            match_case: IntoWire::into_wire(&self.match_case)?,
-            whole_word: IntoWire::into_wire(&self.whole_word)?,
+            match_case: IntoWire::into_wire(x_match_case)?,
+            whole_word: IntoWire::into_wire(x_whole_word)?,
         })
     }
 }
@@ -3932,14 +3987,15 @@ impl FromWire<w::CrossRefOptions> for uo_docx::session::ops::references::CrossRe
 
 impl IntoWire<w::CrossRefOptions> for uo_docx::session::ops::references::CrossRefOptions {
     fn into_wire(&self) -> Result<w::CrossRefOptions, BindError> {
+        let uo_docx::session::ops::references::CrossRefOptions { ty: x_ty, label: x_label, item: x_item, kind: x_kind, hyperlink: x_hyperlink, position: x_position, separator: x_separator } = self;
         Ok(w::CrossRefOptions {
-            ty: IntoWire::into_wire(&self.ty)?,
-            label: IntoWire::into_wire(&self.label)?,
-            item: IntoWire::into_wire(&self.item)?,
-            kind: IntoWire::into_wire(&self.kind)?,
-            hyperlink: IntoWire::into_wire(&self.hyperlink)?,
-            position: IntoWire::into_wire(&self.position)?,
-            separator: IntoWire::into_wire(&self.separator)?,
+            ty: IntoWire::into_wire(x_ty)?,
+            label: IntoWire::into_wire(x_label)?,
+            item: IntoWire::into_wire(x_item)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            hyperlink: IntoWire::into_wire(x_hyperlink)?,
+            position: IntoWire::into_wire(x_position)?,
+            separator: IntoWire::into_wire(x_separator)?,
         })
     }
 }
@@ -3960,14 +4016,15 @@ impl FromWire<w::TableOfFiguresOptions> for uo_docx::session::ops::references::T
 
 impl IntoWire<w::TableOfFiguresOptions> for uo_docx::session::ops::references::TableOfFiguresOptions {
     fn into_wire(&self) -> Result<w::TableOfFiguresOptions, BindError> {
+        let uo_docx::session::ops::references::TableOfFiguresOptions { label: x_label, include_label: x_include_label, page_numbers: x_page_numbers, right_align: x_right_align, leader: x_leader, hyperlinks: x_hyperlinks, format: x_format } = self;
         Ok(w::TableOfFiguresOptions {
-            label: IntoWire::into_wire(&self.label)?,
-            include_label: IntoWire::into_wire(&self.include_label)?,
-            page_numbers: IntoWire::into_wire(&self.page_numbers)?,
-            right_align: IntoWire::into_wire(&self.right_align)?,
-            leader: IntoWire::into_wire(&self.leader)?,
-            hyperlinks: IntoWire::into_wire(&self.hyperlinks)?,
-            format: IntoWire::into_wire(&self.format)?,
+            label: IntoWire::into_wire(x_label)?,
+            include_label: IntoWire::into_wire(x_include_label)?,
+            page_numbers: IntoWire::into_wire(x_page_numbers)?,
+            right_align: IntoWire::into_wire(x_right_align)?,
+            leader: IntoWire::into_wire(x_leader)?,
+            hyperlinks: IntoWire::into_wire(x_hyperlinks)?,
+            format: IntoWire::into_wire(x_format)?,
         })
     }
 }
@@ -4012,18 +4069,19 @@ impl FromWire<w::TableOfContentsOptions> for uo_docx::session::ops::references::
 
 impl IntoWire<w::TableOfContentsOptions> for uo_docx::session::ops::references::toc::TableOfContentsOptions {
     fn into_wire(&self) -> Result<w::TableOfContentsOptions, BindError> {
+        let uo_docx::session::ops::references::toc::TableOfContentsOptions { page_numbers: x_page_numbers, right_align: x_right_align, leader: x_leader, hyperlinks: x_hyperlinks, format: x_format, levels: x_levels, use_styles: x_use_styles, styles: x_styles, outline_levels: x_outline_levels, fields: x_fields, field_id: x_field_id } = self;
         Ok(w::TableOfContentsOptions {
-            page_numbers: IntoWire::into_wire(&self.page_numbers)?,
-            right_align: IntoWire::into_wire(&self.right_align)?,
-            leader: IntoWire::into_wire(&self.leader)?,
-            hyperlinks: IntoWire::into_wire(&self.hyperlinks)?,
-            format: IntoWire::into_wire(&self.format)?,
-            levels: IntoWire::into_wire(&self.levels)?,
-            use_styles: IntoWire::into_wire(&self.use_styles)?,
-            styles: IntoWire::into_wire(&self.styles)?,
-            outline_levels: IntoWire::into_wire(&self.outline_levels)?,
-            fields: IntoWire::into_wire(&self.fields)?,
-            field_id: IntoWire::into_wire(&self.field_id)?,
+            page_numbers: IntoWire::into_wire(x_page_numbers)?,
+            right_align: IntoWire::into_wire(x_right_align)?,
+            leader: IntoWire::into_wire(x_leader)?,
+            hyperlinks: IntoWire::into_wire(x_hyperlinks)?,
+            format: IntoWire::into_wire(x_format)?,
+            levels: IntoWire::into_wire(x_levels)?,
+            use_styles: IntoWire::into_wire(x_use_styles)?,
+            styles: IntoWire::into_wire(x_styles)?,
+            outline_levels: IntoWire::into_wire(x_outline_levels)?,
+            fields: IntoWire::into_wire(x_fields)?,
+            field_id: IntoWire::into_wire(x_field_id)?,
         })
     }
 }
@@ -4052,10 +4110,11 @@ impl FromWire<w::CaptionSettings> for uo_docx::session::ops::references::Caption
 
 impl IntoWire<w::CaptionSettings> for uo_docx::session::ops::references::CaptionSettings {
     fn into_wire(&self) -> Result<w::CaptionSettings, BindError> {
+        let uo_docx::session::ops::references::CaptionSettings { labels: x_labels, numbering: x_numbering, auto: x_auto } = self;
         Ok(w::CaptionSettings {
-            labels: IntoWire::into_wire(&self.labels)?,
-            numbering: IntoWire::into_wire(&self.numbering)?,
-            auto: IntoWire::into_wire(&self.auto)?,
+            labels: IntoWire::into_wire(x_labels)?,
+            numbering: IntoWire::into_wire(x_numbering)?,
+            auto: IntoWire::into_wire(x_auto)?,
         })
     }
 }
@@ -4071,9 +4130,10 @@ impl FromWire<w::CaptionNumbering> for uo_docx::session::ops::references::pure::
 
 impl IntoWire<w::CaptionNumbering> for uo_docx::session::ops::references::pure::CaptionNumbering {
     fn into_wire(&self) -> Result<w::CaptionNumbering, BindError> {
+        let uo_docx::session::ops::references::pure::CaptionNumbering { format: x_format, chapter: x_chapter } = self;
         Ok(w::CaptionNumbering {
-            format: IntoWire::into_wire(&self.format)?,
-            chapter: IntoWire::into_wire(&self.chapter)?,
+            format: IntoWire::into_wire(x_format)?,
+            chapter: IntoWire::into_wire(x_chapter)?,
         })
     }
 }
@@ -4110,12 +4170,13 @@ impl FromWire<w::CaptionOptions> for uo_docx::session::ops::references::CaptionO
 
 impl IntoWire<w::CaptionOptions> for uo_docx::session::ops::references::CaptionOptions {
     fn into_wire(&self) -> Result<w::CaptionOptions, BindError> {
+        let uo_docx::session::ops::references::CaptionOptions { label: x_label, title: x_title, position: x_position, exclude_label: x_exclude_label, numbering: x_numbering } = self;
         Ok(w::CaptionOptions {
-            label: IntoWire::into_wire(&self.label)?,
-            title: IntoWire::into_wire(&self.title)?,
-            position: IntoWire::into_wire(&self.position)?,
-            exclude_label: IntoWire::into_wire(&self.exclude_label)?,
-            numbering: IntoWire::into_wire(&self.numbering)?,
+            label: IntoWire::into_wire(x_label)?,
+            title: IntoWire::into_wire(x_title)?,
+            position: IntoWire::into_wire(x_position)?,
+            exclude_label: IntoWire::into_wire(x_exclude_label)?,
+            numbering: IntoWire::into_wire(x_numbering)?,
         })
     }
 }
@@ -4266,10 +4327,11 @@ impl FromWire<w::ThemeColorRef> for uo_docx::session::ops::format::ThemeColorRef
 
 impl IntoWire<w::ThemeColorRef> for uo_docx::session::ops::format::ThemeColorRef {
     fn into_wire(&self) -> Result<w::ThemeColorRef, BindError> {
+        let uo_docx::session::ops::format::ThemeColorRef { theme_color: x_theme_color, tint: x_tint, shade: x_shade } = self;
         Ok(w::ThemeColorRef {
-            theme_color: IntoWire::into_wire(&self.theme_color)?,
-            tint: IntoWire::into_wire(&self.tint)?,
-            shade: IntoWire::into_wire(&self.shade)?,
+            theme_color: IntoWire::into_wire(x_theme_color)?,
+            tint: IntoWire::into_wire(x_tint)?,
+            shade: IntoWire::into_wire(x_shade)?,
         })
     }
 }
@@ -4282,19 +4344,21 @@ impl FromWire<w::FxFill> for uo_docx::model::effects::FxFill {
             stops: FromWire::from_wire(v.stops)?,
             lin: FromWire::from_wire(v.lin)?,
             path: FromWire::from_wire(v.path)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::FxFill> for uo_docx::model::effects::FxFill {
     fn into_wire(&self) -> Result<w::FxFill, BindError> {
+        let uo_docx::model::effects::FxFill { r#type: x_type, color: x_color, stops: x_stops, lin: x_lin, path: x_path, cleared: _, keys: _ } = self;
         Ok(w::FxFill {
-            r#type: IntoWire::into_wire(&self.r#type)?,
-            color: IntoWire::into_wire(&self.color)?,
-            stops: IntoWire::into_wire(&self.stops)?,
-            lin: IntoWire::into_wire(&self.lin)?,
-            path: IntoWire::into_wire(&self.path)?,
+            r#type: IntoWire::into_wire(x_type)?,
+            color: IntoWire::into_wire(x_color)?,
+            stops: IntoWire::into_wire(x_stops)?,
+            lin: IntoWire::into_wire(x_lin)?,
+            path: IntoWire::into_wire(x_path)?,
         })
     }
 }
@@ -4310,22 +4374,24 @@ impl FromWire<w::FxOutline> for uo_docx::model::effects::FxOutline {
             dash: FromWire::from_wire(v.dash)?,
             join: FromWire::from_wire(v.join)?,
             miter_lim: FromWire::from_wire(v.miter_lim)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::FxOutline> for uo_docx::model::effects::FxOutline {
     fn into_wire(&self) -> Result<w::FxOutline, BindError> {
+        let uo_docx::model::effects::FxOutline { w: x_w, cap: x_cap, cmpd: x_cmpd, algn: x_algn, fill: x_fill, dash: x_dash, join: x_join, miter_lim: x_miter_lim, cleared: _, keys: _ } = self;
         Ok(w::FxOutline {
-            w: IntoWire::into_wire(&self.w)?,
-            cap: IntoWire::into_wire(&self.cap)?,
-            cmpd: IntoWire::into_wire(&self.cmpd)?,
-            algn: IntoWire::into_wire(&self.algn)?,
-            fill: IntoWire::into_wire(&self.fill)?,
-            dash: IntoWire::into_wire(&self.dash)?,
-            join: IntoWire::into_wire(&self.join)?,
-            miter_lim: IntoWire::into_wire(&self.miter_lim)?,
+            w: IntoWire::into_wire(x_w)?,
+            cap: IntoWire::into_wire(x_cap)?,
+            cmpd: IntoWire::into_wire(x_cmpd)?,
+            algn: IntoWire::into_wire(x_algn)?,
+            fill: IntoWire::into_wire(x_fill)?,
+            dash: IntoWire::into_wire(x_dash)?,
+            join: IntoWire::into_wire(x_join)?,
+            miter_lim: IntoWire::into_wire(x_miter_lim)?,
         })
     }
 }
@@ -4342,23 +4408,25 @@ impl FromWire<w::FxShadow> for uo_docx::model::effects::FxShadow {
             ky: FromWire::from_wire(v.ky)?,
             algn: FromWire::from_wire(v.algn)?,
             color: FromWire::from_wire(v.color)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::FxShadow> for uo_docx::model::effects::FxShadow {
     fn into_wire(&self) -> Result<w::FxShadow, BindError> {
+        let uo_docx::model::effects::FxShadow { blur_rad: x_blur_rad, dist: x_dist, dir: x_dir, sx: x_sx, sy: x_sy, kx: x_kx, ky: x_ky, algn: x_algn, color: x_color, cleared: _, keys: _ } = self;
         Ok(w::FxShadow {
-            blur_rad: IntoWire::into_wire(&self.blur_rad)?,
-            dist: IntoWire::into_wire(&self.dist)?,
-            dir: IntoWire::into_wire(&self.dir)?,
-            sx: IntoWire::into_wire(&self.sx)?,
-            sy: IntoWire::into_wire(&self.sy)?,
-            kx: IntoWire::into_wire(&self.kx)?,
-            ky: IntoWire::into_wire(&self.ky)?,
-            algn: IntoWire::into_wire(&self.algn)?,
-            color: IntoWire::into_wire(&self.color)?,
+            blur_rad: IntoWire::into_wire(x_blur_rad)?,
+            dist: IntoWire::into_wire(x_dist)?,
+            dir: IntoWire::into_wire(x_dir)?,
+            sx: IntoWire::into_wire(x_sx)?,
+            sy: IntoWire::into_wire(x_sy)?,
+            kx: IntoWire::into_wire(x_kx)?,
+            ky: IntoWire::into_wire(x_ky)?,
+            algn: IntoWire::into_wire(x_algn)?,
+            color: IntoWire::into_wire(x_color)?,
         })
     }
 }
@@ -4379,27 +4447,29 @@ impl FromWire<w::FxReflection> for uo_docx::model::effects::FxReflection {
             kx: FromWire::from_wire(v.kx)?,
             ky: FromWire::from_wire(v.ky)?,
             algn: FromWire::from_wire(v.algn)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::FxReflection> for uo_docx::model::effects::FxReflection {
     fn into_wire(&self) -> Result<w::FxReflection, BindError> {
+        let uo_docx::model::effects::FxReflection { blur_rad: x_blur_rad, st_a: x_st_a, st_pos: x_st_pos, end_a: x_end_a, end_pos: x_end_pos, dist: x_dist, dir: x_dir, fade_dir: x_fade_dir, sx: x_sx, sy: x_sy, kx: x_kx, ky: x_ky, algn: x_algn, cleared: _, keys: _ } = self;
         Ok(w::FxReflection {
-            blur_rad: IntoWire::into_wire(&self.blur_rad)?,
-            st_a: IntoWire::into_wire(&self.st_a)?,
-            st_pos: IntoWire::into_wire(&self.st_pos)?,
-            end_a: IntoWire::into_wire(&self.end_a)?,
-            end_pos: IntoWire::into_wire(&self.end_pos)?,
-            dist: IntoWire::into_wire(&self.dist)?,
-            dir: IntoWire::into_wire(&self.dir)?,
-            fade_dir: IntoWire::into_wire(&self.fade_dir)?,
-            sx: IntoWire::into_wire(&self.sx)?,
-            sy: IntoWire::into_wire(&self.sy)?,
-            kx: IntoWire::into_wire(&self.kx)?,
-            ky: IntoWire::into_wire(&self.ky)?,
-            algn: IntoWire::into_wire(&self.algn)?,
+            blur_rad: IntoWire::into_wire(x_blur_rad)?,
+            st_a: IntoWire::into_wire(x_st_a)?,
+            st_pos: IntoWire::into_wire(x_st_pos)?,
+            end_a: IntoWire::into_wire(x_end_a)?,
+            end_pos: IntoWire::into_wire(x_end_pos)?,
+            dist: IntoWire::into_wire(x_dist)?,
+            dir: IntoWire::into_wire(x_dir)?,
+            fade_dir: IntoWire::into_wire(x_fade_dir)?,
+            sx: IntoWire::into_wire(x_sx)?,
+            sy: IntoWire::into_wire(x_sy)?,
+            kx: IntoWire::into_wire(x_kx)?,
+            ky: IntoWire::into_wire(x_ky)?,
+            algn: IntoWire::into_wire(x_algn)?,
         })
     }
 }
@@ -4409,16 +4479,18 @@ impl FromWire<w::FxGlow> for uo_docx::model::effects::FxGlow {
         Ok(uo_docx::model::effects::FxGlow {
             rad: FromWire::from_wire(v.rad)?,
             color: FromWire::from_wire(v.color)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::FxGlow> for uo_docx::model::effects::FxGlow {
     fn into_wire(&self) -> Result<w::FxGlow, BindError> {
+        let uo_docx::model::effects::FxGlow { rad: x_rad, color: x_color, cleared: _, keys: _ } = self;
         Ok(w::FxGlow {
-            rad: IntoWire::into_wire(&self.rad)?,
-            color: IntoWire::into_wire(&self.color)?,
+            rad: IntoWire::into_wire(x_rad)?,
+            color: IntoWire::into_wire(x_color)?,
         })
     }
 }
@@ -4467,24 +4539,25 @@ impl FromWire<w::StyleFormat> for uo_docx::session::ops::styles::sheet::StyleFor
 
 impl IntoWire<w::StyleFormat> for uo_docx::session::ops::styles::sheet::StyleFormat {
     fn into_wire(&self) -> Result<w::StyleFormat, BindError> {
+        let uo_docx::session::ops::styles::sheet::StyleFormat { font_ascii: x_font_ascii, sz_half_pt: x_sz_half_pt, bold: x_bold, italic: x_italic, underline: x_underline, strike: x_strike, all_caps: x_all_caps, small_caps: x_small_caps, color: x_color, char_spacing_twips: x_char_spacing_twips, alignment: x_alignment, space_before_twips: x_space_before_twips, space_after_twips: x_space_after_twips, line_twentieths: x_line_twentieths, indent_left_twips: x_indent_left_twips, indent_right_twips: x_indent_right_twips, indent_first_line_twips: x_indent_first_line_twips } = self;
         Ok(w::StyleFormat {
-            font_ascii: IntoWire::into_wire(&self.font_ascii)?,
-            sz_half_pt: IntoWire::into_wire(&self.sz_half_pt)?,
-            bold: IntoWire::into_wire(&self.bold)?,
-            italic: IntoWire::into_wire(&self.italic)?,
-            underline: IntoWire::into_wire(&self.underline)?,
-            strike: IntoWire::into_wire(&self.strike)?,
-            all_caps: IntoWire::into_wire(&self.all_caps)?,
-            small_caps: IntoWire::into_wire(&self.small_caps)?,
-            color: IntoWire::into_wire(&self.color)?,
-            char_spacing_twips: IntoWire::into_wire(&self.char_spacing_twips)?,
-            alignment: IntoWire::into_wire(&self.alignment)?,
-            space_before_twips: IntoWire::into_wire(&self.space_before_twips)?,
-            space_after_twips: IntoWire::into_wire(&self.space_after_twips)?,
-            line_twentieths: IntoWire::into_wire(&self.line_twentieths)?,
-            indent_left_twips: IntoWire::into_wire(&self.indent_left_twips)?,
-            indent_right_twips: IntoWire::into_wire(&self.indent_right_twips)?,
-            indent_first_line_twips: IntoWire::into_wire(&self.indent_first_line_twips)?,
+            font_ascii: IntoWire::into_wire(x_font_ascii)?,
+            sz_half_pt: IntoWire::into_wire(x_sz_half_pt)?,
+            bold: IntoWire::into_wire(x_bold)?,
+            italic: IntoWire::into_wire(x_italic)?,
+            underline: IntoWire::into_wire(x_underline)?,
+            strike: IntoWire::into_wire(x_strike)?,
+            all_caps: IntoWire::into_wire(x_all_caps)?,
+            small_caps: IntoWire::into_wire(x_small_caps)?,
+            color: IntoWire::into_wire(x_color)?,
+            char_spacing_twips: IntoWire::into_wire(x_char_spacing_twips)?,
+            alignment: IntoWire::into_wire(x_alignment)?,
+            space_before_twips: IntoWire::into_wire(x_space_before_twips)?,
+            space_after_twips: IntoWire::into_wire(x_space_after_twips)?,
+            line_twentieths: IntoWire::into_wire(x_line_twentieths)?,
+            indent_left_twips: IntoWire::into_wire(x_indent_left_twips)?,
+            indent_right_twips: IntoWire::into_wire(x_indent_right_twips)?,
+            indent_first_line_twips: IntoWire::into_wire(x_indent_first_line_twips)?,
         })
     }
 }
@@ -4566,15 +4639,16 @@ impl FromWire<w::TableTab> for uo_docx::session::ops::tables::TableTab {
 
 impl IntoWire<w::TableTab> for uo_docx::session::ops::tables::TableTab {
     fn into_wire(&self) -> Result<w::TableTab, BindError> {
+        let uo_docx::session::ops::tables::TableTab { width: x_width, align: x_align, indent_twips: x_indent_twips, wrap: x_wrap, position: x_position, overlap: x_overlap, title: x_title, description: x_description } = self;
         Ok(w::TableTab {
-            width: IntoWire::into_wire(&self.width)?,
-            align: IntoWire::into_wire(&self.align)?,
-            indent_twips: IntoWire::into_wire(&self.indent_twips)?,
-            wrap: IntoWire::into_wire(&self.wrap)?,
-            position: IntoWire::into_wire(&self.position)?,
-            overlap: IntoWire::into_wire(&self.overlap)?,
-            title: IntoWire::into_wire(&self.title)?,
-            description: IntoWire::into_wire(&self.description)?,
+            width: IntoWire::into_wire(x_width)?,
+            align: IntoWire::into_wire(x_align)?,
+            indent_twips: IntoWire::into_wire(x_indent_twips)?,
+            wrap: IntoWire::into_wire(x_wrap)?,
+            position: IntoWire::into_wire(x_position)?,
+            overlap: IntoWire::into_wire(x_overlap)?,
+            title: IntoWire::into_wire(x_title)?,
+            description: IntoWire::into_wire(x_description)?,
         })
     }
 }
@@ -4591,10 +4665,11 @@ impl FromWire<w::RowTab> for uo_docx::session::ops::tables::RowTab {
 
 impl IntoWire<w::RowTab> for uo_docx::session::ops::tables::RowTab {
     fn into_wire(&self) -> Result<w::RowTab, BindError> {
+        let uo_docx::session::ops::tables::RowTab { height: x_height, allow_break: x_allow_break, header: x_header } = self;
         Ok(w::RowTab {
-            height: IntoWire::into_wire(&self.height)?,
-            allow_break: IntoWire::into_wire(&self.allow_break)?,
-            header: IntoWire::into_wire(&self.header)?,
+            height: IntoWire::into_wire(x_height)?,
+            allow_break: IntoWire::into_wire(x_allow_break)?,
+            header: IntoWire::into_wire(x_header)?,
         })
     }
 }
@@ -4604,16 +4679,18 @@ impl FromWire<w::WidthSpec> for uo_docx::model::props::WidthSpec {
         Ok(uo_docx::model::props::WidthSpec {
             w: FromWire::from_wire(v.w)?,
             r#type: FromWire::from_wire(v.r#type)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::WidthSpec> for uo_docx::model::props::WidthSpec {
     fn into_wire(&self) -> Result<w::WidthSpec, BindError> {
+        let uo_docx::model::props::WidthSpec { w: x_w, r#type: x_type, cleared: _, keys: _ } = self;
         Ok(w::WidthSpec {
-            w: IntoWire::into_wire(&self.w)?,
-            r#type: IntoWire::into_wire(&self.r#type)?,
+            w: IntoWire::into_wire(x_w)?,
+            r#type: IntoWire::into_wire(x_type)?,
         })
     }
 }
@@ -4644,12 +4721,13 @@ impl FromWire<w::CellTab> for uo_docx::session::ops::tables::CellTab {
 
 impl IntoWire<w::CellTab> for uo_docx::session::ops::tables::CellTab {
     fn into_wire(&self) -> Result<w::CellTab, BindError> {
+        let uo_docx::session::ops::tables::CellTab { width: x_width, v_align: x_v_align, margins: x_margins, wrap: x_wrap, fit_text: x_fit_text } = self;
         Ok(w::CellTab {
-            width: IntoWire::into_wire(&self.width)?,
-            v_align: IntoWire::into_wire(&self.v_align)?,
-            margins: IntoWire::into_wire(&self.margins)?,
-            wrap: IntoWire::into_wire(&self.wrap)?,
-            fit_text: IntoWire::into_wire(&self.fit_text)?,
+            width: IntoWire::into_wire(x_width)?,
+            v_align: IntoWire::into_wire(x_v_align)?,
+            margins: IntoWire::into_wire(x_margins)?,
+            wrap: IntoWire::into_wire(x_wrap)?,
+            fit_text: IntoWire::into_wire(x_fit_text)?,
         })
     }
 }
@@ -4747,11 +4825,12 @@ impl FromWire<w::ColumnSpec> for uo_docx::session::ops::sections::section_ops::C
 
 impl IntoWire<w::ColumnSpec> for uo_docx::session::ops::sections::section_ops::ColumnSpec {
     fn into_wire(&self) -> Result<w::ColumnSpec, BindError> {
+        let uo_docx::session::ops::sections::section_ops::ColumnSpec { count: x_count, space_twips: x_space_twips, widths: x_widths, sep: x_sep } = self;
         Ok(w::ColumnSpec {
-            count: IntoWire::into_wire(&self.count)?,
-            space_twips: IntoWire::into_wire(&self.space_twips)?,
-            widths: IntoWire::into_wire(&self.widths)?,
-            sep: IntoWire::into_wire(&self.sep)?,
+            count: IntoWire::into_wire(x_count)?,
+            space_twips: IntoWire::into_wire(x_space_twips)?,
+            widths: IntoWire::into_wire(x_widths)?,
+            sep: IntoWire::into_wire(x_sep)?,
         })
     }
 }
@@ -4835,13 +4914,14 @@ impl FromWire<w::GradientFill> for uo_docx::write::emit::object::GradientFill {
 
 impl IntoWire<w::GradientFill> for uo_docx::write::emit::object::GradientFill {
     fn into_wire(&self) -> Result<w::GradientFill, BindError> {
+        let uo_docx::write::emit::object::GradientFill { stops: x_stops, lin: x_lin, path: x_path, rot_with_shape: x_rot_with_shape, flip: x_flip, tile_rect: x_tile_rect } = self;
         Ok(w::GradientFill {
-            stops: IntoWire::into_wire(&self.stops)?,
-            lin: IntoWire::into_wire(&self.lin)?,
-            path: IntoWire::into_wire(&self.path)?,
-            rot_with_shape: IntoWire::into_wire(&self.rot_with_shape)?,
-            flip: IntoWire::into_wire(&self.flip)?,
-            tile_rect: IntoWire::into_wire(&self.tile_rect)?,
+            stops: IntoWire::into_wire(x_stops)?,
+            lin: IntoWire::into_wire(x_lin)?,
+            path: IntoWire::into_wire(x_path)?,
+            rot_with_shape: IntoWire::into_wire(x_rot_with_shape)?,
+            flip: IntoWire::into_wire(x_flip)?,
+            tile_rect: IntoWire::into_wire(x_tile_rect)?,
         })
     }
 }
@@ -4861,13 +4941,14 @@ impl FromWire<w::FillTile> for uo_docx::write::emit::object::FillTile {
 
 impl IntoWire<w::FillTile> for uo_docx::write::emit::object::FillTile {
     fn into_wire(&self) -> Result<w::FillTile, BindError> {
+        let uo_docx::write::emit::object::FillTile { tx: x_tx, ty: x_ty, sx: x_sx, sy: x_sy, flip: x_flip, algn: x_algn } = self;
         Ok(w::FillTile {
-            tx: IntoWire::into_wire(&self.tx)?,
-            ty: IntoWire::into_wire(&self.ty)?,
-            sx: IntoWire::into_wire(&self.sx)?,
-            sy: IntoWire::into_wire(&self.sy)?,
-            flip: IntoWire::into_wire(&self.flip)?,
-            algn: IntoWire::into_wire(&self.algn)?,
+            tx: IntoWire::into_wire(x_tx)?,
+            ty: IntoWire::into_wire(x_ty)?,
+            sx: IntoWire::into_wire(x_sx)?,
+            sy: IntoWire::into_wire(x_sy)?,
+            flip: IntoWire::into_wire(x_flip)?,
+            algn: IntoWire::into_wire(x_algn)?,
         })
     }
 }
@@ -4885,24 +4966,26 @@ impl FromWire<w::PicLine> for uo_docx::model::picture::PicLine {
             join: FromWire::from_wire(v.join)?,
             miter_lim: FromWire::from_wire(v.miter_lim)?,
             tail_raw: FromWire::from_wire(v.tail_raw)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::PicLine> for uo_docx::model::picture::PicLine {
     fn into_wire(&self) -> Result<w::PicLine, BindError> {
+        let uo_docx::model::picture::PicLine { w: x_w, cap: x_cap, cmpd: x_cmpd, algn: x_algn, fill: x_fill, fill_raw: x_fill_raw, dash: x_dash, join: x_join, miter_lim: x_miter_lim, tail_raw: x_tail_raw, cleared: _, keys: _ } = self;
         Ok(w::PicLine {
-            w: IntoWire::into_wire(&self.w)?,
-            cap: IntoWire::into_wire(&self.cap)?,
-            cmpd: IntoWire::into_wire(&self.cmpd)?,
-            algn: IntoWire::into_wire(&self.algn)?,
-            fill: IntoWire::into_wire(&self.fill)?,
-            fill_raw: IntoWire::into_wire(&self.fill_raw)?,
-            dash: IntoWire::into_wire(&self.dash)?,
-            join: IntoWire::into_wire(&self.join)?,
-            miter_lim: IntoWire::into_wire(&self.miter_lim)?,
-            tail_raw: IntoWire::into_wire(&self.tail_raw)?,
+            w: IntoWire::into_wire(x_w)?,
+            cap: IntoWire::into_wire(x_cap)?,
+            cmpd: IntoWire::into_wire(x_cmpd)?,
+            algn: IntoWire::into_wire(x_algn)?,
+            fill: IntoWire::into_wire(x_fill)?,
+            fill_raw: IntoWire::into_wire(x_fill_raw)?,
+            dash: IntoWire::into_wire(x_dash)?,
+            join: IntoWire::into_wire(x_join)?,
+            miter_lim: IntoWire::into_wire(x_miter_lim)?,
+            tail_raw: IntoWire::into_wire(x_tail_raw)?,
         })
     }
 }
@@ -4922,26 +5005,28 @@ impl FromWire<w::PicShadow> for uo_docx::model::picture::PicShadow {
             rot_with_shape: FromWire::from_wire(v.rot_with_shape)?,
             prst: FromWire::from_wire(v.prst)?,
             color: FromWire::from_wire(v.color)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::PicShadow> for uo_docx::model::picture::PicShadow {
     fn into_wire(&self) -> Result<w::PicShadow, BindError> {
+        let uo_docx::model::picture::PicShadow { kind: x_kind, blur_rad: x_blur_rad, dist: x_dist, dir: x_dir, sx: x_sx, sy: x_sy, kx: x_kx, ky: x_ky, algn: x_algn, rot_with_shape: x_rot_with_shape, prst: x_prst, color: x_color, cleared: _, keys: _ } = self;
         Ok(w::PicShadow {
-            kind: IntoWire::into_wire(&self.kind)?,
-            blur_rad: IntoWire::into_wire(&self.blur_rad)?,
-            dist: IntoWire::into_wire(&self.dist)?,
-            dir: IntoWire::into_wire(&self.dir)?,
-            sx: IntoWire::into_wire(&self.sx)?,
-            sy: IntoWire::into_wire(&self.sy)?,
-            kx: IntoWire::into_wire(&self.kx)?,
-            ky: IntoWire::into_wire(&self.ky)?,
-            algn: IntoWire::into_wire(&self.algn)?,
-            rot_with_shape: IntoWire::into_wire(&self.rot_with_shape)?,
-            prst: IntoWire::into_wire(&self.prst)?,
-            color: IntoWire::into_wire(&self.color)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            blur_rad: IntoWire::into_wire(x_blur_rad)?,
+            dist: IntoWire::into_wire(x_dist)?,
+            dir: IntoWire::into_wire(x_dir)?,
+            sx: IntoWire::into_wire(x_sx)?,
+            sy: IntoWire::into_wire(x_sy)?,
+            kx: IntoWire::into_wire(x_kx)?,
+            ky: IntoWire::into_wire(x_ky)?,
+            algn: IntoWire::into_wire(x_algn)?,
+            rot_with_shape: IntoWire::into_wire(x_rot_with_shape)?,
+            prst: IntoWire::into_wire(x_prst)?,
+            color: IntoWire::into_wire(x_color)?,
         })
     }
 }
@@ -4963,28 +5048,30 @@ impl FromWire<w::PicReflection> for uo_docx::model::picture::PicReflection {
             ky: FromWire::from_wire(v.ky)?,
             algn: FromWire::from_wire(v.algn)?,
             rot_with_shape: FromWire::from_wire(v.rot_with_shape)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::PicReflection> for uo_docx::model::picture::PicReflection {
     fn into_wire(&self) -> Result<w::PicReflection, BindError> {
+        let uo_docx::model::picture::PicReflection { blur_rad: x_blur_rad, st_a: x_st_a, st_pos: x_st_pos, end_a: x_end_a, end_pos: x_end_pos, dist: x_dist, dir: x_dir, fade_dir: x_fade_dir, sx: x_sx, sy: x_sy, kx: x_kx, ky: x_ky, algn: x_algn, rot_with_shape: x_rot_with_shape, cleared: _, keys: _ } = self;
         Ok(w::PicReflection {
-            blur_rad: IntoWire::into_wire(&self.blur_rad)?,
-            st_a: IntoWire::into_wire(&self.st_a)?,
-            st_pos: IntoWire::into_wire(&self.st_pos)?,
-            end_a: IntoWire::into_wire(&self.end_a)?,
-            end_pos: IntoWire::into_wire(&self.end_pos)?,
-            dist: IntoWire::into_wire(&self.dist)?,
-            dir: IntoWire::into_wire(&self.dir)?,
-            fade_dir: IntoWire::into_wire(&self.fade_dir)?,
-            sx: IntoWire::into_wire(&self.sx)?,
-            sy: IntoWire::into_wire(&self.sy)?,
-            kx: IntoWire::into_wire(&self.kx)?,
-            ky: IntoWire::into_wire(&self.ky)?,
-            algn: IntoWire::into_wire(&self.algn)?,
-            rot_with_shape: IntoWire::into_wire(&self.rot_with_shape)?,
+            blur_rad: IntoWire::into_wire(x_blur_rad)?,
+            st_a: IntoWire::into_wire(x_st_a)?,
+            st_pos: IntoWire::into_wire(x_st_pos)?,
+            end_a: IntoWire::into_wire(x_end_a)?,
+            end_pos: IntoWire::into_wire(x_end_pos)?,
+            dist: IntoWire::into_wire(x_dist)?,
+            dir: IntoWire::into_wire(x_dir)?,
+            fade_dir: IntoWire::into_wire(x_fade_dir)?,
+            sx: IntoWire::into_wire(x_sx)?,
+            sy: IntoWire::into_wire(x_sy)?,
+            kx: IntoWire::into_wire(x_kx)?,
+            ky: IntoWire::into_wire(x_ky)?,
+            algn: IntoWire::into_wire(x_algn)?,
+            rot_with_shape: IntoWire::into_wire(x_rot_with_shape)?,
         })
     }
 }
@@ -4994,16 +5081,18 @@ impl FromWire<w::PicGlow> for uo_docx::model::picture::PicGlow {
         Ok(uo_docx::model::picture::PicGlow {
             rad: FromWire::from_wire(v.rad)?,
             color: FromWire::from_wire(v.color)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::PicGlow> for uo_docx::model::picture::PicGlow {
     fn into_wire(&self) -> Result<w::PicGlow, BindError> {
+        let uo_docx::model::picture::PicGlow { rad: x_rad, color: x_color, cleared: _, keys: _ } = self;
         Ok(w::PicGlow {
-            rad: IntoWire::into_wire(&self.rad)?,
-            color: IntoWire::into_wire(&self.color)?,
+            rad: IntoWire::into_wire(x_rad)?,
+            color: IntoWire::into_wire(x_color)?,
         })
     }
 }
@@ -5021,24 +5110,26 @@ impl FromWire<w::Pic3D> for uo_docx::model::picture::Pic3D {
             prst_material: FromWire::from_wire(v.prst_material)?,
             extrusion_clr: FromWire::from_wire(v.extrusion_clr)?,
             contour_clr: FromWire::from_wire(v.contour_clr)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::Pic3D> for uo_docx::model::picture::Pic3D {
     fn into_wire(&self) -> Result<w::Pic3D, BindError> {
+        let uo_docx::model::picture::Pic3D { camera: x_camera, light_rig: x_light_rig, bevel_t: x_bevel_t, bevel_b: x_bevel_b, extrusion_h: x_extrusion_h, contour_w: x_contour_w, z: x_z, prst_material: x_prst_material, extrusion_clr: x_extrusion_clr, contour_clr: x_contour_clr, cleared: _, keys: _ } = self;
         Ok(w::Pic3D {
-            camera: IntoWire::into_wire(&self.camera)?,
-            light_rig: IntoWire::into_wire(&self.light_rig)?,
-            bevel_t: IntoWire::into_wire(&self.bevel_t)?,
-            bevel_b: IntoWire::into_wire(&self.bevel_b)?,
-            extrusion_h: IntoWire::into_wire(&self.extrusion_h)?,
-            contour_w: IntoWire::into_wire(&self.contour_w)?,
-            z: IntoWire::into_wire(&self.z)?,
-            prst_material: IntoWire::into_wire(&self.prst_material)?,
-            extrusion_clr: IntoWire::into_wire(&self.extrusion_clr)?,
-            contour_clr: IntoWire::into_wire(&self.contour_clr)?,
+            camera: IntoWire::into_wire(x_camera)?,
+            light_rig: IntoWire::into_wire(x_light_rig)?,
+            bevel_t: IntoWire::into_wire(x_bevel_t)?,
+            bevel_b: IntoWire::into_wire(x_bevel_b)?,
+            extrusion_h: IntoWire::into_wire(x_extrusion_h)?,
+            contour_w: IntoWire::into_wire(x_contour_w)?,
+            z: IntoWire::into_wire(x_z)?,
+            prst_material: IntoWire::into_wire(x_prst_material)?,
+            extrusion_clr: IntoWire::into_wire(x_extrusion_clr)?,
+            contour_clr: IntoWire::into_wire(x_contour_clr)?,
         })
     }
 }
@@ -5056,11 +5147,12 @@ impl FromWire<w::LayoutPos> for uo_docx::session::ops::pictures::LayoutPos {
 
 impl IntoWire<w::LayoutPos> for uo_docx::session::ops::pictures::LayoutPos {
     fn into_wire(&self) -> Result<w::LayoutPos, BindError> {
+        let uo_docx::session::ops::pictures::LayoutPos { relative_from: x_relative_from, align: x_align, offset_pt: x_offset_pt, pct: x_pct } = self;
         Ok(w::LayoutPos {
-            relative_from: IntoWire::into_wire(&self.relative_from)?,
-            align: IntoWire::into_wire(&self.align)?,
-            offset_pt: IntoWire::into_wire(&self.offset_pt)?,
-            pct: IntoWire::into_wire(&self.pct)?,
+            relative_from: IntoWire::into_wire(x_relative_from)?,
+            align: IntoWire::into_wire(x_align)?,
+            offset_pt: IntoWire::into_wire(x_offset_pt)?,
+            pct: IntoWire::into_wire(x_pct)?,
         })
     }
 }
@@ -5107,14 +5199,15 @@ impl FromWire<w::WatermarkTextSpec> for uo_docx::write::emit::background::Waterm
 
 impl IntoWire<w::WatermarkTextSpec> for uo_docx::write::emit::background::WatermarkTextSpec {
     fn into_wire(&self) -> Result<w::WatermarkTextSpec, BindError> {
+        let uo_docx::write::emit::background::WatermarkTextSpec { text: x_text, font: x_font, size_pt: x_size_pt, color: x_color, semitransparent: x_semitransparent, layout: x_layout, lang: x_lang } = self;
         Ok(w::WatermarkTextSpec {
-            text: IntoWire::into_wire(&self.text)?,
-            font: IntoWire::into_wire(&self.font)?,
-            size_pt: IntoWire::into_wire(&self.size_pt)?,
-            color: IntoWire::into_wire(&self.color)?,
-            semitransparent: IntoWire::into_wire(&self.semitransparent)?,
-            layout: IntoWire::into_wire(&self.layout)?,
-            lang: IntoWire::into_wire(&self.lang)?,
+            text: IntoWire::into_wire(x_text)?,
+            font: IntoWire::into_wire(x_font)?,
+            size_pt: IntoWire::into_wire(x_size_pt)?,
+            color: IntoWire::into_wire(x_color)?,
+            semitransparent: IntoWire::into_wire(x_semitransparent)?,
+            layout: IntoWire::into_wire(x_layout)?,
+            lang: IntoWire::into_wire(x_lang)?,
         })
     }
 }
@@ -5130,9 +5223,10 @@ impl FromWire<w::WatermarkBox> for uo_docx::write::emit::background::WatermarkBo
 
 impl IntoWire<w::WatermarkBox> for uo_docx::write::emit::background::WatermarkBox {
     fn into_wire(&self) -> Result<w::WatermarkBox, BindError> {
+        let uo_docx::write::emit::background::WatermarkBox { width_pt: x_width_pt, height_pt: x_height_pt } = self;
         Ok(w::WatermarkBox {
-            width_pt: IntoWire::into_wire(&self.width_pt)?,
-            height_pt: IntoWire::into_wire(&self.height_pt)?,
+            width_pt: IntoWire::into_wire(x_width_pt)?,
+            height_pt: IntoWire::into_wire(x_height_pt)?,
         })
     }
 }
@@ -5151,12 +5245,13 @@ impl FromWire<w::WatermarkPictureSpec> for uo_docx::write::emit::background::Wat
 
 impl IntoWire<w::WatermarkPictureSpec> for uo_docx::write::emit::background::WatermarkPictureSpec {
     fn into_wire(&self) -> Result<w::WatermarkPictureSpec, BindError> {
+        let uo_docx::write::emit::background::WatermarkPictureSpec { data: x_data, ext: x_ext, title: x_title, scale: x_scale, washout: x_washout } = self;
         Ok(w::WatermarkPictureSpec {
-            data: IntoWire::into_wire(&self.data)?,
-            ext: IntoWire::into_wire(&self.ext)?,
-            title: IntoWire::into_wire(&self.title)?,
-            scale: IntoWire::into_wire(&self.scale)?,
-            washout: IntoWire::into_wire(&self.washout)?,
+            data: IntoWire::into_wire(x_data)?,
+            ext: IntoWire::into_wire(x_ext)?,
+            title: IntoWire::into_wire(x_title)?,
+            scale: IntoWire::into_wire(x_scale)?,
+            washout: IntoWire::into_wire(x_washout)?,
         })
     }
 }
@@ -5288,9 +5383,10 @@ impl FromWire<w::TocStyle> for uo_docx::session::ops::references::pure::TocStyle
 
 impl IntoWire<w::TocStyle> for uo_docx::session::ops::references::pure::TocStyle {
     fn into_wire(&self) -> Result<w::TocStyle, BindError> {
+        let uo_docx::session::ops::references::pure::TocStyle { style: x_style, level: x_level } = self;
         Ok(w::TocStyle {
-            style: IntoWire::into_wire(&self.style)?,
-            level: IntoWire::into_wire(&self.level)?,
+            style: IntoWire::into_wire(x_style)?,
+            level: IntoWire::into_wire(x_level)?,
         })
     }
 }
@@ -5305,8 +5401,9 @@ impl FromWire<w::AutoCaptionCfg> for uo_docx::session::ops::references::AutoCapt
 
 impl IntoWire<w::AutoCaptionCfg> for uo_docx::session::ops::references::AutoCaptionCfg {
     fn into_wire(&self) -> Result<w::AutoCaptionCfg, BindError> {
+        let uo_docx::session::ops::references::AutoCaptionCfg { table: x_table } = self;
         Ok(w::AutoCaptionCfg {
-            table: IntoWire::into_wire(&self.table)?,
+            table: IntoWire::into_wire(x_table)?,
         })
     }
 }
@@ -5346,9 +5443,10 @@ impl FromWire<w::CaptionChapter> for uo_docx::session::ops::references::pure::Ca
 
 impl IntoWire<w::CaptionChapter> for uo_docx::session::ops::references::pure::CaptionChapter {
     fn into_wire(&self) -> Result<w::CaptionChapter, BindError> {
+        let uo_docx::session::ops::references::pure::CaptionChapter { level: x_level, separator: x_separator } = self;
         Ok(w::CaptionChapter {
-            level: IntoWire::into_wire(&self.level)?,
-            separator: IntoWire::into_wire(&self.separator)?,
+            level: IntoWire::into_wire(x_level)?,
+            separator: IntoWire::into_wire(x_separator)?,
         })
     }
 }
@@ -5359,17 +5457,19 @@ impl FromWire<w::FxColor> for uo_docx::model::effects::FxColor {
             rgb: FromWire::from_wire(v.rgb)?,
             scheme: FromWire::from_wire(v.scheme)?,
             mods: FromWire::from_wire(v.mods)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::FxColor> for uo_docx::model::effects::FxColor {
     fn into_wire(&self) -> Result<w::FxColor, BindError> {
+        let uo_docx::model::effects::FxColor { rgb: x_rgb, scheme: x_scheme, mods: x_mods, cleared: _, keys: _ } = self;
         Ok(w::FxColor {
-            rgb: IntoWire::into_wire(&self.rgb)?,
-            scheme: IntoWire::into_wire(&self.scheme)?,
-            mods: IntoWire::into_wire(&self.mods)?,
+            rgb: IntoWire::into_wire(x_rgb)?,
+            scheme: IntoWire::into_wire(x_scheme)?,
+            mods: IntoWire::into_wire(x_mods)?,
         })
     }
 }
@@ -5379,16 +5479,18 @@ impl FromWire<w::FxGradStop> for uo_docx::model::effects::FxGradStop {
         Ok(uo_docx::model::effects::FxGradStop {
             pos: FromWire::from_wire(v.pos)?,
             color: FromWire::from_wire(v.color)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::FxGradStop> for uo_docx::model::effects::FxGradStop {
     fn into_wire(&self) -> Result<w::FxGradStop, BindError> {
+        let uo_docx::model::effects::FxGradStop { pos: x_pos, color: x_color, cleared: _, keys: _ } = self;
         Ok(w::FxGradStop {
-            pos: IntoWire::into_wire(&self.pos)?,
-            color: IntoWire::into_wire(&self.color)?,
+            pos: IntoWire::into_wire(x_pos)?,
+            color: IntoWire::into_wire(x_color)?,
         })
     }
 }
@@ -5398,16 +5500,18 @@ impl FromWire<w::FxLin> for uo_docx::model::effects::FxLin {
         Ok(uo_docx::model::effects::FxLin {
             ang: FromWire::from_wire(v.ang)?,
             scaled: FromWire::from_wire(v.scaled)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::FxLin> for uo_docx::model::effects::FxLin {
     fn into_wire(&self) -> Result<w::FxLin, BindError> {
+        let uo_docx::model::effects::FxLin { ang: x_ang, scaled: x_scaled, cleared: _, keys: _ } = self;
         Ok(w::FxLin {
-            ang: IntoWire::into_wire(&self.ang)?,
-            scaled: IntoWire::into_wire(&self.scaled)?,
+            ang: IntoWire::into_wire(x_ang)?,
+            scaled: IntoWire::into_wire(x_scaled)?,
         })
     }
 }
@@ -5420,19 +5524,21 @@ impl FromWire<w::FxPath> for uo_docx::model::effects::FxPath {
             t: FromWire::from_wire(v.t)?,
             r: FromWire::from_wire(v.r)?,
             b: FromWire::from_wire(v.b)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::FxPath> for uo_docx::model::effects::FxPath {
     fn into_wire(&self) -> Result<w::FxPath, BindError> {
+        let uo_docx::model::effects::FxPath { kind: x_kind, l: x_l, t: x_t, r: x_r, b: x_b, cleared: _, keys: _ } = self;
         Ok(w::FxPath {
-            kind: IntoWire::into_wire(&self.kind)?,
-            l: IntoWire::into_wire(&self.l)?,
-            t: IntoWire::into_wire(&self.t)?,
-            r: IntoWire::into_wire(&self.r)?,
-            b: IntoWire::into_wire(&self.b)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            l: IntoWire::into_wire(x_l)?,
+            t: IntoWire::into_wire(x_t)?,
+            r: IntoWire::into_wire(x_r)?,
+            b: IntoWire::into_wire(x_b)?,
         })
     }
 }
@@ -5490,24 +5596,26 @@ impl FromWire<w::TblpPr> for uo_docx::model::props::TblpPr {
             tblp_x: FromWire::from_wire(v.tblp_x)?,
             tblp_y_spec: FromWire::from_wire(v.tblp_y_spec)?,
             tblp_y: FromWire::from_wire(v.tblp_y)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::TblpPr> for uo_docx::model::props::TblpPr {
     fn into_wire(&self) -> Result<w::TblpPr, BindError> {
+        let uo_docx::model::props::TblpPr { left_from_text: x_left_from_text, right_from_text: x_right_from_text, top_from_text: x_top_from_text, bottom_from_text: x_bottom_from_text, vert_anchor: x_vert_anchor, horz_anchor: x_horz_anchor, tblp_x_spec: x_tblp_x_spec, tblp_x: x_tblp_x, tblp_y_spec: x_tblp_y_spec, tblp_y: x_tblp_y, cleared: _, keys: _ } = self;
         Ok(w::TblpPr {
-            left_from_text: IntoWire::into_wire(&self.left_from_text)?,
-            right_from_text: IntoWire::into_wire(&self.right_from_text)?,
-            top_from_text: IntoWire::into_wire(&self.top_from_text)?,
-            bottom_from_text: IntoWire::into_wire(&self.bottom_from_text)?,
-            vert_anchor: IntoWire::into_wire(&self.vert_anchor)?,
-            horz_anchor: IntoWire::into_wire(&self.horz_anchor)?,
-            tblp_x_spec: IntoWire::into_wire(&self.tblp_x_spec)?,
-            tblp_x: IntoWire::into_wire(&self.tblp_x)?,
-            tblp_y_spec: IntoWire::into_wire(&self.tblp_y_spec)?,
-            tblp_y: IntoWire::into_wire(&self.tblp_y)?,
+            left_from_text: IntoWire::into_wire(x_left_from_text)?,
+            right_from_text: IntoWire::into_wire(x_right_from_text)?,
+            top_from_text: IntoWire::into_wire(x_top_from_text)?,
+            bottom_from_text: IntoWire::into_wire(x_bottom_from_text)?,
+            vert_anchor: IntoWire::into_wire(x_vert_anchor)?,
+            horz_anchor: IntoWire::into_wire(x_horz_anchor)?,
+            tblp_x_spec: IntoWire::into_wire(x_tblp_x_spec)?,
+            tblp_x: IntoWire::into_wire(x_tblp_x)?,
+            tblp_y_spec: IntoWire::into_wire(x_tblp_y_spec)?,
+            tblp_y: IntoWire::into_wire(x_tblp_y)?,
         })
     }
 }
@@ -5523,9 +5631,10 @@ impl FromWire<w::GradientStop> for uo_docx::write::emit::object::GradientStop {
 
 impl IntoWire<w::GradientStop> for uo_docx::write::emit::object::GradientStop {
     fn into_wire(&self) -> Result<w::GradientStop, BindError> {
+        let uo_docx::write::emit::object::GradientStop { pos: x_pos, color: x_color } = self;
         Ok(w::GradientStop {
-            pos: IntoWire::into_wire(&self.pos)?,
-            color: IntoWire::into_wire(&self.color)?,
+            pos: IntoWire::into_wire(x_pos)?,
+            color: IntoWire::into_wire(x_color)?,
         })
     }
 }
@@ -5543,11 +5652,12 @@ impl FromWire<w::FillRect> for uo_docx::write::emit::object::FillRect {
 
 impl IntoWire<w::FillRect> for uo_docx::write::emit::object::FillRect {
     fn into_wire(&self) -> Result<w::FillRect, BindError> {
+        let uo_docx::write::emit::object::FillRect { l: x_l, t: x_t, r: x_r, b: x_b } = self;
         Ok(w::FillRect {
-            l: IntoWire::into_wire(&self.l)?,
-            t: IntoWire::into_wire(&self.t)?,
-            r: IntoWire::into_wire(&self.r)?,
-            b: IntoWire::into_wire(&self.b)?,
+            l: IntoWire::into_wire(x_l)?,
+            t: IntoWire::into_wire(x_t)?,
+            r: IntoWire::into_wire(x_r)?,
+            b: IntoWire::into_wire(x_b)?,
         })
     }
 }
@@ -5559,18 +5669,20 @@ impl FromWire<w::Camera> for uo_docx::model::picture::Camera {
             fov: FromWire::from_wire(v.fov)?,
             zoom: FromWire::from_wire(v.zoom)?,
             rot: FromWire::from_wire(v.rot)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::Camera> for uo_docx::model::picture::Camera {
     fn into_wire(&self) -> Result<w::Camera, BindError> {
+        let uo_docx::model::picture::Camera { prst: x_prst, fov: x_fov, zoom: x_zoom, rot: x_rot, cleared: _, keys: _ } = self;
         Ok(w::Camera {
-            prst: IntoWire::into_wire(&self.prst)?,
-            fov: IntoWire::into_wire(&self.fov)?,
-            zoom: IntoWire::into_wire(&self.zoom)?,
-            rot: IntoWire::into_wire(&self.rot)?,
+            prst: IntoWire::into_wire(x_prst)?,
+            fov: IntoWire::into_wire(x_fov)?,
+            zoom: IntoWire::into_wire(x_zoom)?,
+            rot: IntoWire::into_wire(x_rot)?,
         })
     }
 }
@@ -5581,17 +5693,19 @@ impl FromWire<w::LightRig> for uo_docx::model::picture::LightRig {
             rig: FromWire::from_wire(v.rig)?,
             dir: FromWire::from_wire(v.dir)?,
             rot: FromWire::from_wire(v.rot)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::LightRig> for uo_docx::model::picture::LightRig {
     fn into_wire(&self) -> Result<w::LightRig, BindError> {
+        let uo_docx::model::picture::LightRig { rig: x_rig, dir: x_dir, rot: x_rot, cleared: _, keys: _ } = self;
         Ok(w::LightRig {
-            rig: IntoWire::into_wire(&self.rig)?,
-            dir: IntoWire::into_wire(&self.dir)?,
-            rot: IntoWire::into_wire(&self.rot)?,
+            rig: IntoWire::into_wire(x_rig)?,
+            dir: IntoWire::into_wire(x_dir)?,
+            rot: IntoWire::into_wire(x_rot)?,
         })
     }
 }
@@ -5602,17 +5716,19 @@ impl FromWire<w::Bevel> for uo_docx::model::picture::Bevel {
             w: FromWire::from_wire(v.w)?,
             h: FromWire::from_wire(v.h)?,
             prst: FromWire::from_wire(v.prst)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::Bevel> for uo_docx::model::picture::Bevel {
     fn into_wire(&self) -> Result<w::Bevel, BindError> {
+        let uo_docx::model::picture::Bevel { w: x_w, h: x_h, prst: x_prst, cleared: _, keys: _ } = self;
         Ok(w::Bevel {
-            w: IntoWire::into_wire(&self.w)?,
-            h: IntoWire::into_wire(&self.h)?,
-            prst: IntoWire::into_wire(&self.prst)?,
+            w: IntoWire::into_wire(x_w)?,
+            h: IntoWire::into_wire(x_h)?,
+            prst: IntoWire::into_wire(x_prst)?,
         })
     }
 }
@@ -5646,9 +5762,10 @@ impl FromWire<w::AutoCaption> for uo_docx::session::ops::references::AutoCaption
 
 impl IntoWire<w::AutoCaption> for uo_docx::session::ops::references::AutoCaption {
     fn into_wire(&self) -> Result<w::AutoCaption, BindError> {
+        let uo_docx::session::ops::references::AutoCaption { label: x_label, position: x_position } = self;
         Ok(w::AutoCaption {
-            label: IntoWire::into_wire(&self.label)?,
-            position: IntoWire::into_wire(&self.position)?,
+            label: IntoWire::into_wire(x_label)?,
+            position: IntoWire::into_wire(x_position)?,
         })
     }
 }
@@ -5683,31 +5800,34 @@ impl FromWire<w::Rot3> for uo_docx::model::picture::Rot3 {
             lat: FromWire::from_wire(v.lat)?,
             lon: FromWire::from_wire(v.lon)?,
             rev: FromWire::from_wire(v.rev)?,
-            ..Default::default()
+            cleared: Default::default(),
+            keys: Default::default(),
         })
     }
 }
 
 impl IntoWire<w::Rot3> for uo_docx::model::picture::Rot3 {
     fn into_wire(&self) -> Result<w::Rot3, BindError> {
+        let uo_docx::model::picture::Rot3 { lat: x_lat, lon: x_lon, rev: x_rev, cleared: _, keys: _ } = self;
         Ok(w::Rot3 {
-            lat: IntoWire::into_wire(&self.lat)?,
-            lon: IntoWire::into_wire(&self.lon)?,
-            rev: IntoWire::into_wire(&self.rev)?,
+            lat: IntoWire::into_wire(x_lat)?,
+            lon: IntoWire::into_wire(x_lon)?,
+            rev: IntoWire::into_wire(x_rev)?,
         })
     }
 }
 
 impl IntoWire<w::ChangeSet> for uo_docx::session::command::ChangeSet {
     fn into_wire(&self) -> Result<w::ChangeSet, BindError> {
+        let uo_docx::session::command::ChangeSet { stories: x_stories, selection: x_selection, events: x_events, dirty: x_dirty, can_undo: x_can_undo, can_redo: x_can_redo, formatting: x_formatting } = self;
         Ok(w::ChangeSet {
-            stories: IntoWire::into_wire(&self.stories)?,
-            selection: IntoWire::into_wire(&self.selection)?,
-            events: IntoWire::into_wire(&self.events)?,
-            dirty: IntoWire::into_wire(&self.dirty)?,
-            can_undo: IntoWire::into_wire(&self.can_undo)?,
-            can_redo: IntoWire::into_wire(&self.can_redo)?,
-            formatting: IntoWire::into_wire(&self.formatting)?,
+            stories: IntoWire::into_wire(x_stories)?,
+            selection: IntoWire::into_wire(x_selection)?,
+            events: IntoWire::into_wire(x_events)?,
+            dirty: IntoWire::into_wire(x_dirty)?,
+            can_undo: IntoWire::into_wire(x_can_undo)?,
+            can_redo: IntoWire::into_wire(x_can_redo)?,
+            formatting: IntoWire::into_wire(x_formatting)?,
         })
     }
 }
@@ -5738,19 +5858,21 @@ impl IntoWire<w::CommandError> for uo_docx::session::command::CommandError {
 
 impl IntoWire<w::CommandStoryChange> for uo_docx::session::command::StoryChange {
     fn into_wire(&self) -> Result<w::CommandStoryChange, BindError> {
+        let uo_docx::session::command::StoryChange { story: x_story, changed: x_changed, structure: x_structure } = self;
         Ok(w::CommandStoryChange {
-            story: IntoWire::into_wire(&self.story)?,
-            changed: IntoWire::into_wire(&self.changed)?,
-            structure: IntoWire::into_wire(&self.structure)?,
+            story: IntoWire::into_wire(x_story)?,
+            changed: IntoWire::into_wire(x_changed)?,
+            structure: IntoWire::into_wire(x_structure)?,
         })
     }
 }
 
 impl IntoWire<w::Selection> for uo_docx::session::state::Selection {
     fn into_wire(&self) -> Result<w::Selection, BindError> {
+        let uo_docx::session::state::Selection { anchor: x_anchor, focus: x_focus } = self;
         Ok(w::Selection {
-            anchor: IntoWire::into_wire(&self.anchor)?,
-            focus: IntoWire::into_wire(&self.focus)?,
+            anchor: IntoWire::into_wire(x_anchor)?,
+            focus: IntoWire::into_wire(x_focus)?,
         })
     }
 }
@@ -5788,9 +5910,10 @@ impl IntoWire<w::Event> for uo_docx::session::command::Event {
 
 impl IntoWire<w::LayoutError> for uo_docx::view::LayoutError {
     fn into_wire(&self) -> Result<w::LayoutError, BindError> {
+        let uo_docx::view::LayoutError { kind: x_kind, detail: x_detail } = self;
         Ok(w::LayoutError {
-            kind: IntoWire::into_wire(&self.kind)?,
-            detail: IntoWire::into_wire(&self.detail)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            detail: IntoWire::into_wire(x_detail)?,
         })
     }
 }
@@ -5817,25 +5940,27 @@ impl IntoWire<w::LayoutErrorKind> for uo_docx::view::LayoutErrorKind {
 
 impl IntoWire<w::TableSel> for uo_docx::session::state::TableSel {
     fn into_wire(&self) -> Result<w::TableSel, BindError> {
+        let uo_docx::session::state::TableSel { anchor: x_anchor, path: x_path, row0: x_row0, col0: x_col0, row1: x_row1, col1: x_col1, origin_row: x_origin_row, origin_col: x_origin_col } = self;
         Ok(w::TableSel {
-            anchor: IntoWire::into_wire(&self.anchor)?,
-            path: IntoWire::into_wire(&self.path)?,
-            row0: IntoWire::into_wire(&self.row0)?,
-            col0: IntoWire::into_wire(&self.col0)?,
-            row1: IntoWire::into_wire(&self.row1)?,
-            col1: IntoWire::into_wire(&self.col1)?,
-            origin_row: IntoWire::into_wire(&self.origin_row)?,
-            origin_col: IntoWire::into_wire(&self.origin_col)?,
+            anchor: IntoWire::into_wire(x_anchor)?,
+            path: IntoWire::into_wire(x_path)?,
+            row0: IntoWire::into_wire(x_row0)?,
+            col0: IntoWire::into_wire(x_col0)?,
+            row1: IntoWire::into_wire(x_row1)?,
+            col1: IntoWire::into_wire(x_col1)?,
+            origin_row: IntoWire::into_wire(x_origin_row)?,
+            origin_col: IntoWire::into_wire(x_origin_col)?,
         })
     }
 }
 
 impl IntoWire<w::MarkStory> for uo_docx::session::ops::bookmarks::MarkStory {
     fn into_wire(&self) -> Result<w::MarkStory, BindError> {
+        let uo_docx::session::ops::bookmarks::MarkStory { loc: x_loc, key: x_key, body: x_body } = self;
         Ok(w::MarkStory {
-            loc: IntoWire::into_wire(&self.loc)?,
-            key: IntoWire::into_wire(&self.key)?,
-            body: IntoWire::into_wire(&self.body)?,
+            loc: IntoWire::into_wire(x_loc)?,
+            key: IntoWire::into_wire(x_key)?,
+            body: IntoWire::into_wire(x_body)?,
         })
     }
 }
@@ -5853,20 +5978,22 @@ impl IntoWire<w::StoryLoc> for uo_docx::session::ops::revision_cmds::StoryLoc {
 
 impl IntoWire<w::CellStep> for uo_docx::session::ops::revision_cmds::CellStep {
     fn into_wire(&self) -> Result<w::CellStep, BindError> {
+        let uo_docx::session::ops::revision_cmds::CellStep { table: x_table, row: x_row, cell: x_cell } = self;
         Ok(w::CellStep {
-            table: IntoWire::into_wire(&self.table)?,
-            row: IntoWire::into_wire(&self.row)?,
-            cell: IntoWire::into_wire(&self.cell)?,
+            table: IntoWire::into_wire(x_table)?,
+            row: IntoWire::into_wire(x_row)?,
+            cell: IntoWire::into_wire(x_cell)?,
         })
     }
 }
 
 impl IntoWire<w::BookmarkInfo> for uo_docx::session::ops::bookmarks::BookmarkInfo {
     fn into_wire(&self) -> Result<w::BookmarkInfo, BindError> {
+        let uo_docx::session::ops::bookmarks::BookmarkInfo { name: x_name, hidden: x_hidden, text: x_text } = self;
         Ok(w::BookmarkInfo {
-            name: IntoWire::into_wire(&self.name)?,
-            hidden: IntoWire::into_wire(&self.hidden)?,
-            text: IntoWire::into_wire(&self.text)?,
+            name: IntoWire::into_wire(x_name)?,
+            hidden: IntoWire::into_wire(x_hidden)?,
+            text: IntoWire::into_wire(x_text)?,
         })
     }
 }
@@ -5879,54 +6006,59 @@ impl<T0: IntoWire<w::PasteMode>, T1: IntoWire<Option<w::ListPasteMode>>> IntoWir
 
 impl IntoWire<w::PasteOptions> for uo_docx::session::ops::clipboard::PasteOptions {
     fn into_wire(&self) -> Result<w::PasteOptions, BindError> {
+        let uo_docx::session::ops::clipboard::PasteOptions { modes: x_modes, list: x_list, current: x_current } = self;
         Ok(w::PasteOptions {
-            modes: IntoWire::into_wire(&self.modes)?,
-            list: IntoWire::into_wire(&self.list)?,
-            current: IntoWire::into_wire(&self.current)?,
+            modes: IntoWire::into_wire(x_modes)?,
+            list: IntoWire::into_wire(x_list)?,
+            current: IntoWire::into_wire(x_current)?,
         })
     }
 }
 
 impl IntoWire<w::SpecialFormats> for uo_docx::session::ops::clipboard::SpecialFormats {
     fn into_wire(&self) -> Result<w::SpecialFormats, BindError> {
+        let uo_docx::session::ops::clipboard::SpecialFormats { formats: x_formats, link: x_link, source: x_source } = self;
         Ok(w::SpecialFormats {
-            formats: IntoWire::into_wire(&self.formats)?,
-            link: IntoWire::into_wire(&self.link)?,
-            source: IntoWire::into_wire(&self.source)?,
+            formats: IntoWire::into_wire(x_formats)?,
+            link: IntoWire::into_wire(x_link)?,
+            source: IntoWire::into_wire(x_source)?,
         })
     }
 }
 
 impl IntoWire<w::PasteRange> for uo_docx::session::ops::clipboard::PasteRange {
     fn into_wire(&self) -> Result<w::PasteRange, BindError> {
+        let uo_docx::session::ops::clipboard::PasteRange { start: x_start, end: x_end, first: x_first, last: x_last, marked: x_marked } = self;
         Ok(w::PasteRange {
-            start: IntoWire::into_wire(&self.start)?,
-            end: IntoWire::into_wire(&self.end)?,
-            first: IntoWire::into_wire(&self.first)?,
-            last: IntoWire::into_wire(&self.last)?,
-            marked: IntoWire::into_wire(&self.marked)?,
+            start: IntoWire::into_wire(x_start)?,
+            end: IntoWire::into_wire(x_end)?,
+            first: IntoWire::into_wire(x_first)?,
+            last: IntoWire::into_wire(x_last)?,
+            marked: IntoWire::into_wire(x_marked)?,
         })
     }
 }
 
 impl IntoWire<w::DocumentComment> for uo_docx::model::document::Comment {
     fn into_wire(&self) -> Result<w::DocumentComment, BindError> {
+        let uo_docx::model::document::Comment { id: x_id, author: x_author, text: x_text, cleared: _, keys: _ } = self;
         Ok(w::DocumentComment {
-            id: IntoWire::into_wire(&self.id)?,
-            author: IntoWire::into_wire(&self.author)?,
-            text: IntoWire::into_wire(&self.text)?,
+            id: IntoWire::into_wire(x_id)?,
+            author: IntoWire::into_wire(x_author)?,
+            text: IntoWire::into_wire(x_text)?,
         })
     }
 }
 
 impl IntoWire<w::PaneItem> for uo_docx::session::ops::drawing::PaneItem {
     fn into_wire(&self) -> Result<w::PaneItem, BindError> {
+        let uo_docx::session::ops::drawing::PaneItem { key: x_key, name: x_name, hidden: x_hidden, selected: x_selected, kind: x_kind } = self;
         Ok(w::PaneItem {
-            key: IntoWire::into_wire(&self.key)?,
-            name: IntoWire::into_wire(&self.name)?,
-            hidden: IntoWire::into_wire(&self.hidden)?,
-            selected: IntoWire::into_wire(&self.selected)?,
-            kind: IntoWire::into_wire(&self.kind)?,
+            key: IntoWire::into_wire(x_key)?,
+            name: IntoWire::into_wire(x_name)?,
+            hidden: IntoWire::into_wire(x_hidden)?,
+            selected: IntoWire::into_wire(x_selected)?,
+            kind: IntoWire::into_wire(x_kind)?,
         })
     }
 }
@@ -5944,41 +6076,43 @@ impl IntoWire<w::PaneKind> for uo_docx::session::ops::drawing::PaneKind {
 
 impl IntoWire<w::ObjectState> for uo_docx::session::ops::drawing::ObjectState {
     fn into_wire(&self) -> Result<w::ObjectState, BindError> {
+        let uo_docx::session::ops::drawing::ObjectState { kind: x_kind, inline: x_inline, wrap: x_wrap, cx: x_cx, cy: x_cy, rot: x_rot, flip_h: x_flip_h, flip_v: x_flip_v, lock_aspect: x_lock_aspect, move_with_text: x_move_with_text, lock_anchor: x_lock_anchor, name: x_name, alt_text: x_alt_text, decorative: x_decorative, geometry: x_geometry, style_index: x_style_index, editing_text: x_editing_text, text: x_text, link_next: x_link_next, link_previous: x_link_previous, format: x_format } = self;
         Ok(w::ObjectState {
-            kind: IntoWire::into_wire(&self.kind)?,
-            inline: IntoWire::into_wire(&self.inline)?,
-            wrap: IntoWire::into_wire(&self.wrap)?,
-            cx: IntoWire::into_wire(&self.cx)?,
-            cy: IntoWire::into_wire(&self.cy)?,
-            rot: IntoWire::into_wire(&self.rot)?,
-            flip_h: IntoWire::into_wire(&self.flip_h)?,
-            flip_v: IntoWire::into_wire(&self.flip_v)?,
-            lock_aspect: IntoWire::into_wire(&self.lock_aspect)?,
-            move_with_text: IntoWire::into_wire(&self.move_with_text)?,
-            lock_anchor: IntoWire::into_wire(&self.lock_anchor)?,
-            name: IntoWire::into_wire(&self.name)?,
-            alt_text: IntoWire::into_wire(&self.alt_text)?,
-            decorative: IntoWire::into_wire(&self.decorative)?,
-            geometry: IntoWire::into_wire(&self.geometry)?,
-            style_index: IntoWire::into_wire(&self.style_index)?,
-            editing_text: IntoWire::into_wire(&self.editing_text)?,
-            text: IntoWire::into_wire(&self.text)?,
-            link_next: IntoWire::into_wire(&self.link_next)?,
-            link_previous: IntoWire::into_wire(&self.link_previous)?,
-            format: IntoWire::into_wire(&self.format)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            inline: IntoWire::into_wire(x_inline)?,
+            wrap: IntoWire::into_wire(x_wrap)?,
+            cx: IntoWire::into_wire(x_cx)?,
+            cy: IntoWire::into_wire(x_cy)?,
+            rot: IntoWire::into_wire(x_rot)?,
+            flip_h: IntoWire::into_wire(x_flip_h)?,
+            flip_v: IntoWire::into_wire(x_flip_v)?,
+            lock_aspect: IntoWire::into_wire(x_lock_aspect)?,
+            move_with_text: IntoWire::into_wire(x_move_with_text)?,
+            lock_anchor: IntoWire::into_wire(x_lock_anchor)?,
+            name: IntoWire::into_wire(x_name)?,
+            alt_text: IntoWire::into_wire(x_alt_text)?,
+            decorative: IntoWire::into_wire(x_decorative)?,
+            geometry: IntoWire::into_wire(x_geometry)?,
+            style_index: IntoWire::into_wire(x_style_index)?,
+            editing_text: IntoWire::into_wire(x_editing_text)?,
+            text: IntoWire::into_wire(x_text)?,
+            link_next: IntoWire::into_wire(x_link_next)?,
+            link_previous: IntoWire::into_wire(x_link_previous)?,
+            format: IntoWire::into_wire(x_format)?,
         })
     }
 }
 
 impl IntoWire<w::TextState> for uo_docx::session::ops::drawing::TextState {
     fn into_wire(&self) -> Result<w::TextState, BindError> {
+        let uo_docx::session::ops::drawing::TextState { margins_emu: x_margins_emu, anchor: x_anchor, direction: x_direction, wrap: x_wrap, autofit: x_autofit, upright: x_upright } = self;
         Ok(w::TextState {
-            margins_emu: IntoWire::into_wire(&self.margins_emu)?,
-            anchor: IntoWire::into_wire(&self.anchor)?,
-            direction: IntoWire::into_wire(&self.direction)?,
-            wrap: IntoWire::into_wire(&self.wrap)?,
-            autofit: IntoWire::into_wire(&self.autofit)?,
-            upright: IntoWire::into_wire(&self.upright)?,
+            margins_emu: IntoWire::into_wire(x_margins_emu)?,
+            anchor: IntoWire::into_wire(x_anchor)?,
+            direction: IntoWire::into_wire(x_direction)?,
+            wrap: IntoWire::into_wire(x_wrap)?,
+            autofit: IntoWire::into_wire(x_autofit)?,
+            upright: IntoWire::into_wire(x_upright)?,
         })
     }
 }
@@ -5994,115 +6128,123 @@ impl IntoWire<w::NullableBoxPicLine> for uo_docx::js::Nullable<Box<uo_docx::mode
 
 impl IntoWire<w::PictureFormat> for uo_docx::model::picture::PictureFormat {
     fn into_wire(&self) -> Result<w::PictureFormat, BindError> {
+        let uo_docx::model::picture::PictureFormat { inline: x_inline, wrap: x_wrap, wrap_text: x_wrap_text, dist: x_dist, pos_h: x_pos_h, pos_v: x_pos_v, cx: x_cx, cy: x_cy, size_rel_h: x_size_rel_h, size_rel_v: x_size_rel_v, effect_extent: x_effect_extent, locked: x_locked, layout_in_cell: x_layout_in_cell, allow_overlap: x_allow_overlap, behind_doc: x_behind_doc, relative_height: x_relative_height, polygon: x_polygon, doc_pr: x_doc_pr, no_change_aspect: x_no_change_aspect, rot: x_rot, flip_h: x_flip_h, flip_v: x_flip_v, src_rect: x_src_rect, geom: x_geom, adj: x_adj, cust_geom: x_cust_geom, line: x_line, effects: x_effects, three_d: x_three_d, blip: x_blip, embed: x_embed, cleared: _, keys: _ } = self;
         Ok(w::PictureFormat {
-            inline: IntoWire::into_wire(&self.inline)?,
-            wrap: IntoWire::into_wire(&self.wrap)?,
-            wrap_text: IntoWire::into_wire(&self.wrap_text)?,
-            dist: IntoWire::into_wire(&self.dist)?,
-            pos_h: IntoWire::into_wire(&self.pos_h)?,
-            pos_v: IntoWire::into_wire(&self.pos_v)?,
-            cx: IntoWire::into_wire(&self.cx)?,
-            cy: IntoWire::into_wire(&self.cy)?,
-            size_rel_h: IntoWire::into_wire(&self.size_rel_h)?,
-            size_rel_v: IntoWire::into_wire(&self.size_rel_v)?,
-            effect_extent: IntoWire::into_wire(&self.effect_extent)?,
-            locked: IntoWire::into_wire(&self.locked)?,
-            layout_in_cell: IntoWire::into_wire(&self.layout_in_cell)?,
-            allow_overlap: IntoWire::into_wire(&self.allow_overlap)?,
-            behind_doc: IntoWire::into_wire(&self.behind_doc)?,
-            relative_height: IntoWire::into_wire(&self.relative_height)?,
-            polygon: IntoWire::into_wire(&self.polygon)?,
-            doc_pr: IntoWire::into_wire(&self.doc_pr)?,
-            no_change_aspect: IntoWire::into_wire(&self.no_change_aspect)?,
-            rot: IntoWire::into_wire(&self.rot)?,
-            flip_h: IntoWire::into_wire(&self.flip_h)?,
-            flip_v: IntoWire::into_wire(&self.flip_v)?,
-            src_rect: IntoWire::into_wire(&self.src_rect)?,
-            geom: IntoWire::into_wire(&self.geom)?,
-            adj: IntoWire::into_wire(&self.adj)?,
-            cust_geom: IntoWire::into_wire(&self.cust_geom)?,
-            line: IntoWire::into_wire(&self.line)?,
-            effects: IntoWire::into_wire(&self.effects)?,
-            three_d: IntoWire::into_wire(&self.three_d)?,
-            blip: IntoWire::into_wire(&self.blip)?,
-            embed: IntoWire::into_wire(&self.embed)?,
+            inline: IntoWire::into_wire(x_inline)?,
+            wrap: IntoWire::into_wire(x_wrap)?,
+            wrap_text: IntoWire::into_wire(x_wrap_text)?,
+            dist: IntoWire::into_wire(x_dist)?,
+            pos_h: IntoWire::into_wire(x_pos_h)?,
+            pos_v: IntoWire::into_wire(x_pos_v)?,
+            cx: IntoWire::into_wire(x_cx)?,
+            cy: IntoWire::into_wire(x_cy)?,
+            size_rel_h: IntoWire::into_wire(x_size_rel_h)?,
+            size_rel_v: IntoWire::into_wire(x_size_rel_v)?,
+            effect_extent: IntoWire::into_wire(x_effect_extent)?,
+            locked: IntoWire::into_wire(x_locked)?,
+            layout_in_cell: IntoWire::into_wire(x_layout_in_cell)?,
+            allow_overlap: IntoWire::into_wire(x_allow_overlap)?,
+            behind_doc: IntoWire::into_wire(x_behind_doc)?,
+            relative_height: IntoWire::into_wire(x_relative_height)?,
+            polygon: IntoWire::into_wire(x_polygon)?,
+            doc_pr: IntoWire::into_wire(x_doc_pr)?,
+            no_change_aspect: IntoWire::into_wire(x_no_change_aspect)?,
+            rot: IntoWire::into_wire(x_rot)?,
+            flip_h: IntoWire::into_wire(x_flip_h)?,
+            flip_v: IntoWire::into_wire(x_flip_v)?,
+            src_rect: IntoWire::into_wire(x_src_rect)?,
+            geom: IntoWire::into_wire(x_geom)?,
+            adj: IntoWire::into_wire(x_adj)?,
+            cust_geom: IntoWire::into_wire(x_cust_geom)?,
+            line: IntoWire::into_wire(x_line)?,
+            effects: IntoWire::into_wire(x_effects)?,
+            three_d: IntoWire::into_wire(x_three_d)?,
+            blip: IntoWire::into_wire(x_blip)?,
+            embed: IntoWire::into_wire(x_embed)?,
         })
     }
 }
 
 impl IntoWire<w::Dist> for uo_docx::model::picture::Dist {
     fn into_wire(&self) -> Result<w::Dist, BindError> {
+        let uo_docx::model::picture::Dist { t: x_t, b: x_b, l: x_l, r: x_r, cleared: _, keys: _ } = self;
         Ok(w::Dist {
-            t: IntoWire::into_wire(&self.t)?,
-            b: IntoWire::into_wire(&self.b)?,
-            l: IntoWire::into_wire(&self.l)?,
-            r: IntoWire::into_wire(&self.r)?,
+            t: IntoWire::into_wire(x_t)?,
+            b: IntoWire::into_wire(x_b)?,
+            l: IntoWire::into_wire(x_l)?,
+            r: IntoWire::into_wire(x_r)?,
         })
     }
 }
 
 impl IntoWire<w::PicPos> for uo_docx::model::picture::PicPos {
     fn into_wire(&self) -> Result<w::PicPos, BindError> {
+        let uo_docx::model::picture::PicPos { relative_from: x_relative_from, align: x_align, offset: x_offset, pct: x_pct, fallback: x_fallback, cleared: _, keys: _ } = self;
         Ok(w::PicPos {
-            relative_from: IntoWire::into_wire(&self.relative_from)?,
-            align: IntoWire::into_wire(&self.align)?,
-            offset: IntoWire::into_wire(&self.offset)?,
-            pct: IntoWire::into_wire(&self.pct)?,
-            fallback: IntoWire::into_wire(&self.fallback)?,
+            relative_from: IntoWire::into_wire(x_relative_from)?,
+            align: IntoWire::into_wire(x_align)?,
+            offset: IntoWire::into_wire(x_offset)?,
+            pct: IntoWire::into_wire(x_pct)?,
+            fallback: IntoWire::into_wire(x_fallback)?,
         })
     }
 }
 
 impl IntoWire<w::SizeRel> for uo_docx::model::picture::SizeRel {
     fn into_wire(&self) -> Result<w::SizeRel, BindError> {
+        let uo_docx::model::picture::SizeRel { relative_from: x_relative_from, pct: x_pct, cleared: _, keys: _ } = self;
         Ok(w::SizeRel {
-            relative_from: IntoWire::into_wire(&self.relative_from)?,
-            pct: IntoWire::into_wire(&self.pct)?,
+            relative_from: IntoWire::into_wire(x_relative_from)?,
+            pct: IntoWire::into_wire(x_pct)?,
         })
     }
 }
 
 impl IntoWire<w::Ltrb> for uo_docx::model::drawing::Ltrb {
     fn into_wire(&self) -> Result<w::Ltrb, BindError> {
+        let uo_docx::model::drawing::Ltrb { l: x_l, t: x_t, r: x_r, b: x_b, cleared: _, keys: _ } = self;
         Ok(w::Ltrb {
-            l: IntoWire::into_wire(&self.l)?,
-            t: IntoWire::into_wire(&self.t)?,
-            r: IntoWire::into_wire(&self.r)?,
-            b: IntoWire::into_wire(&self.b)?,
+            l: IntoWire::into_wire(x_l)?,
+            t: IntoWire::into_wire(x_t)?,
+            r: IntoWire::into_wire(x_r)?,
+            b: IntoWire::into_wire(x_b)?,
         })
     }
 }
 
 impl IntoWire<w::WrapPolygon> for uo_docx::model::picture::WrapPolygon {
     fn into_wire(&self) -> Result<w::WrapPolygon, BindError> {
+        let uo_docx::model::picture::WrapPolygon { edited: x_edited, pts: x_pts, cleared: _, keys: _ } = self;
         Ok(w::WrapPolygon {
-            edited: IntoWire::into_wire(&self.edited)?,
-            pts: IntoWire::into_wire(&self.pts)?,
+            edited: IntoWire::into_wire(x_edited)?,
+            pts: IntoWire::into_wire(x_pts)?,
         })
     }
 }
 
 impl IntoWire<w::DocPr> for uo_docx::model::picture::DocPr {
     fn into_wire(&self) -> Result<w::DocPr, BindError> {
+        let uo_docx::model::picture::DocPr { id: x_id, name: x_name, descr: x_descr, title: x_title, hidden: x_hidden, decorative: x_decorative, cleared: _, keys: _ } = self;
         Ok(w::DocPr {
-            id: IntoWire::into_wire(&self.id)?,
-            name: IntoWire::into_wire(&self.name)?,
-            descr: IntoWire::into_wire(&self.descr)?,
-            title: IntoWire::into_wire(&self.title)?,
-            hidden: IntoWire::into_wire(&self.hidden)?,
-            decorative: IntoWire::into_wire(&self.decorative)?,
+            id: IntoWire::into_wire(x_id)?,
+            name: IntoWire::into_wire(x_name)?,
+            descr: IntoWire::into_wire(x_descr)?,
+            title: IntoWire::into_wire(x_title)?,
+            hidden: IntoWire::into_wire(x_hidden)?,
+            decorative: IntoWire::into_wire(x_decorative)?,
         })
     }
 }
 
 impl IntoWire<w::PicEffects> for uo_docx::model::picture::PicEffects {
     fn into_wire(&self) -> Result<w::PicEffects, BindError> {
+        let uo_docx::model::picture::PicEffects { shadow: x_shadow, reflection: x_reflection, glow: x_glow, soft_edge: x_soft_edge, other_raw: x_other_raw, cleared: _, keys: _ } = self;
         Ok(w::PicEffects {
-            shadow: IntoWire::into_wire(&self.shadow)?,
-            reflection: IntoWire::into_wire(&self.reflection)?,
-            glow: IntoWire::into_wire(&self.glow)?,
-            soft_edge: IntoWire::into_wire(&self.soft_edge)?,
-            other_raw: IntoWire::into_wire(&self.other_raw)?,
+            shadow: IntoWire::into_wire(x_shadow)?,
+            reflection: IntoWire::into_wire(x_reflection)?,
+            glow: IntoWire::into_wire(x_glow)?,
+            soft_edge: IntoWire::into_wire(x_soft_edge)?,
+            other_raw: IntoWire::into_wire(x_other_raw)?,
         })
     }
 }
@@ -6115,47 +6257,51 @@ impl<T0: IntoWire<w::PicColor>, T1: IntoWire<w::PicColor>> IntoWire<w::TupPicCol
 
 impl IntoWire<w::PicBlipFx> for uo_docx::model::picture::PicBlipFx {
     fn into_wire(&self) -> Result<w::PicBlipFx, BindError> {
+        let uo_docx::model::picture::PicBlipFx { alpha_mod_fix: x_alpha_mod_fix, lum: x_lum, grayscl: x_grayscl, bi_level: x_bi_level, duotone: x_duotone, clr_change: x_clr_change, a14: x_a14, cleared: _, keys: _ } = self;
         Ok(w::PicBlipFx {
-            alpha_mod_fix: IntoWire::into_wire(&self.alpha_mod_fix)?,
-            lum: IntoWire::into_wire(&self.lum)?,
-            grayscl: IntoWire::into_wire(&self.grayscl)?,
-            bi_level: IntoWire::into_wire(&self.bi_level)?,
-            duotone: IntoWire::into_wire(&self.duotone)?,
-            clr_change: IntoWire::into_wire(&self.clr_change)?,
-            a14: IntoWire::into_wire(&self.a14)?,
+            alpha_mod_fix: IntoWire::into_wire(x_alpha_mod_fix)?,
+            lum: IntoWire::into_wire(x_lum)?,
+            grayscl: IntoWire::into_wire(x_grayscl)?,
+            bi_level: IntoWire::into_wire(x_bi_level)?,
+            duotone: IntoWire::into_wire(x_duotone)?,
+            clr_change: IntoWire::into_wire(x_clr_change)?,
+            a14: IntoWire::into_wire(x_a14)?,
         })
     }
 }
 
 impl IntoWire<w::BlipLum> for uo_docx::model::picture::BlipLum {
     fn into_wire(&self) -> Result<w::BlipLum, BindError> {
+        let uo_docx::model::picture::BlipLum { bright: x_bright, contrast: x_contrast, cleared: _, keys: _ } = self;
         Ok(w::BlipLum {
-            bright: IntoWire::into_wire(&self.bright)?,
-            contrast: IntoWire::into_wire(&self.contrast)?,
+            bright: IntoWire::into_wire(x_bright)?,
+            contrast: IntoWire::into_wire(x_contrast)?,
         })
     }
 }
 
 impl IntoWire<w::ClrChange> for uo_docx::model::picture::ClrChange {
     fn into_wire(&self) -> Result<w::ClrChange, BindError> {
+        let uo_docx::model::picture::ClrChange { from: x_from, to: x_to, use_a: x_use_a, cleared: _, keys: _ } = self;
         Ok(w::ClrChange {
-            from: IntoWire::into_wire(&self.from)?,
-            to: IntoWire::into_wire(&self.to)?,
-            use_a: IntoWire::into_wire(&self.use_a)?,
+            from: IntoWire::into_wire(x_from)?,
+            to: IntoWire::into_wire(x_to)?,
+            use_a: IntoWire::into_wire(x_use_a)?,
         })
     }
 }
 
 impl IntoWire<w::A14Props> for uo_docx::model::picture::A14Props {
     fn into_wire(&self) -> Result<w::A14Props, BindError> {
+        let uo_docx::model::picture::A14Props { layer_rid: x_layer_rid, saturation: x_saturation, color_temp: x_color_temp, sharpen: x_sharpen, bright: x_bright, contrast: x_contrast, other_raw: x_other_raw, cleared: _, keys: _ } = self;
         Ok(w::A14Props {
-            layer_rid: IntoWire::into_wire(&self.layer_rid)?,
-            saturation: IntoWire::into_wire(&self.saturation)?,
-            color_temp: IntoWire::into_wire(&self.color_temp)?,
-            sharpen: IntoWire::into_wire(&self.sharpen)?,
-            bright: IntoWire::into_wire(&self.bright)?,
-            contrast: IntoWire::into_wire(&self.contrast)?,
-            other_raw: IntoWire::into_wire(&self.other_raw)?,
+            layer_rid: IntoWire::into_wire(x_layer_rid)?,
+            saturation: IntoWire::into_wire(x_saturation)?,
+            color_temp: IntoWire::into_wire(x_color_temp)?,
+            sharpen: IntoWire::into_wire(x_sharpen)?,
+            bright: IntoWire::into_wire(x_bright)?,
+            contrast: IntoWire::into_wire(x_contrast)?,
+            other_raw: IntoWire::into_wire(x_other_raw)?,
         })
     }
 }
@@ -6194,25 +6340,27 @@ impl<T0: IntoWire<w::HfKind>, T1: IntoWire<w::HfSlot>> IntoWire<w::TupHfKindHfSl
 
 impl IntoWire<w::HeaderFooterOptions> for uo_docx::session::ops::header_footer::HeaderFooterOptions {
     fn into_wire(&self) -> Result<w::HeaderFooterOptions, BindError> {
+        let uo_docx::session::ops::header_footer::HeaderFooterOptions { section: x_section, section_count: x_section_count, part: x_part, different_first_page: x_different_first_page, different_odd_even: x_different_odd_even, header_distance: x_header_distance, footer_distance: x_footer_distance, link_to_previous: x_link_to_previous } = self;
         Ok(w::HeaderFooterOptions {
-            section: IntoWire::into_wire(&self.section)?,
-            section_count: IntoWire::into_wire(&self.section_count)?,
-            part: IntoWire::into_wire(&self.part)?,
-            different_first_page: IntoWire::into_wire(&self.different_first_page)?,
-            different_odd_even: IntoWire::into_wire(&self.different_odd_even)?,
-            header_distance: IntoWire::into_wire(&self.header_distance)?,
-            footer_distance: IntoWire::into_wire(&self.footer_distance)?,
-            link_to_previous: IntoWire::into_wire(&self.link_to_previous)?,
+            section: IntoWire::into_wire(x_section)?,
+            section_count: IntoWire::into_wire(x_section_count)?,
+            part: IntoWire::into_wire(x_part)?,
+            different_first_page: IntoWire::into_wire(x_different_first_page)?,
+            different_odd_even: IntoWire::into_wire(x_different_odd_even)?,
+            header_distance: IntoWire::into_wire(x_header_distance)?,
+            footer_distance: IntoWire::into_wire(x_footer_distance)?,
+            link_to_previous: IntoWire::into_wire(x_link_to_previous)?,
         })
     }
 }
 
 impl IntoWire<w::PageNumberFormat> for uo_docx::session::ops::header_footer::PageNumberFormat {
     fn into_wire(&self) -> Result<w::PageNumberFormat, BindError> {
+        let uo_docx::session::ops::header_footer::PageNumberFormat { format: x_format, chapter: x_chapter, start: x_start } = self;
         Ok(w::PageNumberFormat {
-            format: IntoWire::into_wire(&self.format)?,
-            chapter: IntoWire::into_wire(&self.chapter)?,
-            start: IntoWire::into_wire(&self.start)?,
+            format: IntoWire::into_wire(x_format)?,
+            chapter: IntoWire::into_wire(x_chapter)?,
+            start: IntoWire::into_wire(x_start)?,
         })
     }
 }
@@ -6236,56 +6384,61 @@ impl IntoWire<w::F9Result> for uo_docx::session::ops::navigation::F9Result {
 
 impl IntoWire<w::FindOutcome> for uo_docx::session::ops::find::FindOutcome {
     fn into_wire(&self) -> Result<w::FindOutcome, BindError> {
+        let uo_docx::session::ops::find::FindOutcome { found: x_found, wrapped: x_wrapped, error: x_error, budget: x_budget } = self;
         Ok(w::FindOutcome {
-            found: IntoWire::into_wire(&self.found)?,
-            wrapped: IntoWire::into_wire(&self.wrapped)?,
-            error: IntoWire::into_wire(&self.error)?,
-            budget: IntoWire::into_wire(&self.budget)?,
+            found: IntoWire::into_wire(x_found)?,
+            wrapped: IntoWire::into_wire(x_wrapped)?,
+            error: IntoWire::into_wire(x_error)?,
+            budget: IntoWire::into_wire(x_budget)?,
         })
     }
 }
 
 impl IntoWire<w::ReplaceOutcome> for uo_docx::session::ops::find::ReplaceOutcome {
     fn into_wire(&self) -> Result<w::ReplaceOutcome, BindError> {
+        let uo_docx::session::ops::find::ReplaceOutcome { find: x_find, replaced: x_replaced, count: x_count } = self;
         Ok(w::ReplaceOutcome {
-            find: IntoWire::into_wire(&self.find)?,
-            replaced: IntoWire::into_wire(&self.replaced)?,
-            count: IntoWire::into_wire(&self.count)?,
+            find: IntoWire::into_wire(x_find)?,
+            replaced: IntoWire::into_wire(x_replaced)?,
+            count: IntoWire::into_wire(x_count)?,
         })
     }
 }
 
 impl IntoWire<w::HeadingInfo> for uo_docx::session::ops::navigation::HeadingInfo {
     fn into_wire(&self) -> Result<w::HeadingInfo, BindError> {
+        let uo_docx::session::ops::navigation::HeadingInfo { index: x_index, level: x_level, text: x_text, para: x_para } = self;
         Ok(w::HeadingInfo {
-            index: IntoWire::into_wire(&self.index)?,
-            level: IntoWire::into_wire(&self.level)?,
-            text: IntoWire::into_wire(&self.text)?,
-            para: IntoWire::into_wire(&self.para)?,
+            index: IntoWire::into_wire(x_index)?,
+            level: IntoWire::into_wire(x_level)?,
+            text: IntoWire::into_wire(x_text)?,
+            para: IntoWire::into_wire(x_para)?,
         })
     }
 }
 
 impl IntoWire<w::SearchResult> for uo_docx::session::ops::navigation::SearchResult {
     fn into_wire(&self) -> Result<w::SearchResult, BindError> {
+        let uo_docx::session::ops::navigation::SearchResult { index: x_index, start: x_start, end: x_end, snippet: x_snippet, heading: x_heading, in_table: x_in_table, loc: x_loc } = self;
         Ok(w::SearchResult {
-            index: IntoWire::into_wire(&self.index)?,
-            start: IntoWire::into_wire(&self.start)?,
-            end: IntoWire::into_wire(&self.end)?,
-            snippet: IntoWire::into_wire(&self.snippet)?,
-            heading: IntoWire::into_wire(&self.heading)?,
-            in_table: IntoWire::into_wire(&self.in_table)?,
-            loc: IntoWire::into_wire(&self.loc)?,
+            index: IntoWire::into_wire(x_index)?,
+            start: IntoWire::into_wire(x_start)?,
+            end: IntoWire::into_wire(x_end)?,
+            snippet: IntoWire::into_wire(x_snippet)?,
+            heading: IntoWire::into_wire(x_heading)?,
+            in_table: IntoWire::into_wire(x_in_table)?,
+            loc: IntoWire::into_wire(x_loc)?,
         })
     }
 }
 
 impl IntoWire<w::Snippet> for uo_docx::session::ops::navigation::Snippet {
     fn into_wire(&self) -> Result<w::Snippet, BindError> {
+        let uo_docx::session::ops::navigation::Snippet { before: x_before, r#match: x_match, after: x_after } = self;
         Ok(w::Snippet {
-            before: IntoWire::into_wire(&self.before)?,
-            r#match: IntoWire::into_wire(&self.r#match)?,
-            after: IntoWire::into_wire(&self.after)?,
+            before: IntoWire::into_wire(x_before)?,
+            r#match: IntoWire::into_wire(x_match)?,
+            after: IntoWire::into_wire(x_after)?,
         })
     }
 }
@@ -6298,25 +6451,27 @@ impl<T0: IntoWire<u32>, T1: IntoWire<w::CellHop>> IntoWire<w::TupU32CellHop> for
 
 impl IntoWire<w::NoteRefLoc> for uo_docx::session::ops::notes::NoteRefLoc {
     fn into_wire(&self) -> Result<w::NoteRefLoc, BindError> {
+        let uo_docx::session::ops::notes::NoteRefLoc { footnote: x_footnote, id: x_id, para: x_para, cell: x_cell, offset: x_offset, key: x_key } = self;
         Ok(w::NoteRefLoc {
-            footnote: IntoWire::into_wire(&self.footnote)?,
-            id: IntoWire::into_wire(&self.id)?,
-            para: IntoWire::into_wire(&self.para)?,
-            cell: IntoWire::into_wire(&self.cell)?,
-            offset: IntoWire::into_wire(&self.offset)?,
-            key: IntoWire::into_wire(&self.key)?,
+            footnote: IntoWire::into_wire(x_footnote)?,
+            id: IntoWire::into_wire(x_id)?,
+            para: IntoWire::into_wire(x_para)?,
+            cell: IntoWire::into_wire(x_cell)?,
+            offset: IntoWire::into_wire(x_offset)?,
+            key: IntoWire::into_wire(x_key)?,
         })
     }
 }
 
 impl IntoWire<w::NoteOptions> for uo_docx::session::ops::notes::NoteOptions {
     fn into_wire(&self) -> Result<w::NoteOptions, BindError> {
+        let uo_docx::session::ops::notes::NoteOptions { position: x_position, number_format: x_number_format, start_at: x_start_at, restart: x_restart, columns: x_columns } = self;
         Ok(w::NoteOptions {
-            position: IntoWire::into_wire(&self.position)?,
-            number_format: IntoWire::into_wire(&self.number_format)?,
-            start_at: IntoWire::into_wire(&self.start_at)?,
-            restart: IntoWire::into_wire(&self.restart)?,
-            columns: IntoWire::into_wire(&self.columns)?,
+            position: IntoWire::into_wire(x_position)?,
+            number_format: IntoWire::into_wire(x_number_format)?,
+            start_at: IntoWire::into_wire(x_start_at)?,
+            restart: IntoWire::into_wire(x_restart)?,
+            columns: IntoWire::into_wire(x_columns)?,
         })
     }
 }
@@ -6338,65 +6493,70 @@ impl IntoWire<w::WatermarkInfo> for uo_docx::read::watermark::WatermarkInfo {
 
 impl IntoWire<w::WatermarkTextInfo> for uo_docx::read::watermark::WatermarkTextInfo {
     fn into_wire(&self) -> Result<w::WatermarkTextInfo, BindError> {
+        let uo_docx::read::watermark::WatermarkTextInfo { kind: x_kind, text: x_text, font: x_font, size_pt: x_size_pt, color: x_color, semitransparent: x_semitransparent, layout: x_layout, width_pt: x_width_pt, height_pt: x_height_pt, cleared: _, keys: _ } = self;
         Ok(w::WatermarkTextInfo {
-            kind: IntoWire::into_wire(&self.kind)?,
-            text: IntoWire::into_wire(&self.text)?,
-            font: IntoWire::into_wire(&self.font)?,
-            size_pt: IntoWire::into_wire(&self.size_pt)?,
-            color: IntoWire::into_wire(&self.color)?,
-            semitransparent: IntoWire::into_wire(&self.semitransparent)?,
-            layout: IntoWire::into_wire(&self.layout)?,
-            width_pt: IntoWire::into_wire(&self.width_pt)?,
-            height_pt: IntoWire::into_wire(&self.height_pt)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            text: IntoWire::into_wire(x_text)?,
+            font: IntoWire::into_wire(x_font)?,
+            size_pt: IntoWire::into_wire(x_size_pt)?,
+            color: IntoWire::into_wire(x_color)?,
+            semitransparent: IntoWire::into_wire(x_semitransparent)?,
+            layout: IntoWire::into_wire(x_layout)?,
+            width_pt: IntoWire::into_wire(x_width_pt)?,
+            height_pt: IntoWire::into_wire(x_height_pt)?,
         })
     }
 }
 
 impl IntoWire<w::WatermarkPictureInfo> for uo_docx::read::watermark::WatermarkPictureInfo {
     fn into_wire(&self) -> Result<w::WatermarkPictureInfo, BindError> {
+        let uo_docx::read::watermark::WatermarkPictureInfo { kind: x_kind, rid: x_rid, title: x_title, washout: x_washout, width_pt: x_width_pt, height_pt: x_height_pt, cleared: _, keys: _ } = self;
         Ok(w::WatermarkPictureInfo {
-            kind: IntoWire::into_wire(&self.kind)?,
-            rid: IntoWire::into_wire(&self.rid)?,
-            title: IntoWire::into_wire(&self.title)?,
-            washout: IntoWire::into_wire(&self.washout)?,
-            width_pt: IntoWire::into_wire(&self.width_pt)?,
-            height_pt: IntoWire::into_wire(&self.height_pt)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            rid: IntoWire::into_wire(x_rid)?,
+            title: IntoWire::into_wire(x_title)?,
+            washout: IntoWire::into_wire(x_washout)?,
+            width_pt: IntoWire::into_wire(x_width_pt)?,
+            height_pt: IntoWire::into_wire(x_height_pt)?,
         })
     }
 }
 
 impl IntoWire<w::WatermarkGalleryEntry> for uo_docx::session::ops::page::watermark::WatermarkGalleryEntry {
     fn into_wire(&self) -> Result<w::WatermarkGalleryEntry, BindError> {
+        let uo_docx::session::ops::page::watermark::WatermarkGalleryEntry { item: x_item, label: x_label, category_label: x_category_label } = self;
         Ok(w::WatermarkGalleryEntry {
-            item: IntoWire::into_wire(&self.item)?,
-            label: IntoWire::into_wire(&self.label)?,
-            category_label: IntoWire::into_wire(&self.category_label)?,
+            item: IntoWire::into_wire(x_item)?,
+            label: IntoWire::into_wire(x_label)?,
+            category_label: IntoWire::into_wire(x_category_label)?,
         })
     }
 }
 
 impl IntoWire<w::WatermarkGalleryItem> for uo_docx::write::emit::background::WatermarkGalleryItem {
     fn into_wire(&self) -> Result<w::WatermarkGalleryItem, BindError> {
+        let uo_docx::write::emit::background::WatermarkGalleryItem { id: x_id, category: x_category, text_pt: x_text_pt, text_en: x_text_en, text_es: x_text_es, layout: x_layout, box_pt: x_box_pt, box_en: x_box_en, box_es: x_box_es } = self;
         Ok(w::WatermarkGalleryItem {
-            id: IntoWire::into_wire(&self.id)?,
-            category: IntoWire::into_wire(&self.category)?,
-            text_pt: IntoWire::into_wire(&self.text_pt)?,
-            text_en: IntoWire::into_wire(&self.text_en)?,
-            text_es: IntoWire::into_wire(&self.text_es)?,
-            layout: IntoWire::into_wire(&self.layout)?,
-            box_pt: IntoWire::into_wire(&self.box_pt)?,
-            box_en: IntoWire::into_wire(&self.box_en)?,
-            box_es: IntoWire::into_wire(&self.box_es)?,
+            id: IntoWire::into_wire(x_id)?,
+            category: IntoWire::into_wire(x_category)?,
+            text_pt: IntoWire::into_wire(x_text_pt)?,
+            text_en: IntoWire::into_wire(x_text_en)?,
+            text_es: IntoWire::into_wire(x_text_es)?,
+            layout: IntoWire::into_wire(x_layout)?,
+            box_pt: IntoWire::into_wire(x_box_pt)?,
+            box_en: IntoWire::into_wire(x_box_en)?,
+            box_es: IntoWire::into_wire(x_box_es)?,
         })
     }
 }
 
 impl IntoWire<w::IndentInfo> for uo_docx::session::ops::paragraph::IndentInfo {
     fn into_wire(&self) -> Result<w::IndentInfo, BindError> {
+        let uo_docx::session::ops::paragraph::IndentInfo { left: x_left, right: x_right, first_line: x_first_line } = self;
         Ok(w::IndentInfo {
-            left: IntoWire::into_wire(&self.left)?,
-            right: IntoWire::into_wire(&self.right)?,
-            first_line: IntoWire::into_wire(&self.first_line)?,
+            left: IntoWire::into_wire(x_left)?,
+            right: IntoWire::into_wire(x_right)?,
+            first_line: IntoWire::into_wire(x_first_line)?,
         })
     }
 }
@@ -6420,22 +6580,24 @@ impl IntoWire<w::F10Result> for uo_docx::session::ops::references::F10Result {
 
 impl IntoWire<w::ManualHyphenation> for uo_docx::session::ops::references::hyphen::ManualHyphenation {
     fn into_wire(&self) -> Result<w::ManualHyphenation, BindError> {
+        let uo_docx::session::ops::references::hyphen::ManualHyphenation { word: x_word, lang: x_lang, points: x_points, suggested: x_suggested, limit: x_limit } = self;
         Ok(w::ManualHyphenation {
-            word: IntoWire::into_wire(&self.word)?,
-            lang: IntoWire::into_wire(&self.lang)?,
-            points: IntoWire::into_wire(&self.points)?,
-            suggested: IntoWire::into_wire(&self.suggested)?,
-            limit: IntoWire::into_wire(&self.limit)?,
+            word: IntoWire::into_wire(x_word)?,
+            lang: IntoWire::into_wire(x_lang)?,
+            points: IntoWire::into_wire(x_points)?,
+            suggested: IntoWire::into_wire(x_suggested)?,
+            limit: IntoWire::into_wire(x_limit)?,
         })
     }
 }
 
 impl IntoWire<w::CaptionLabelInfo> for uo_docx::session::ops::references::CaptionLabelInfo {
     fn into_wire(&self) -> Result<w::CaptionLabelInfo, BindError> {
+        let uo_docx::session::ops::references::CaptionLabelInfo { name: x_name, built_in: x_built_in, position: x_position } = self;
         Ok(w::CaptionLabelInfo {
-            name: IntoWire::into_wire(&self.name)?,
-            built_in: IntoWire::into_wire(&self.built_in)?,
-            position: IntoWire::into_wire(&self.position)?,
+            name: IntoWire::into_wire(x_name)?,
+            built_in: IntoWire::into_wire(x_built_in)?,
+            position: IntoWire::into_wire(x_position)?,
         })
     }
 }
@@ -6451,32 +6613,35 @@ impl IntoWire<w::CaptionTarget> for uo_docx::session::ops::references::CaptionTa
 
 impl IntoWire<w::CrossRefItem> for uo_docx::session::ops::references::CrossRefItem {
     fn into_wire(&self) -> Result<w::CrossRefItem, BindError> {
+        let uo_docx::session::ops::references::CrossRefItem { id: x_id, text: x_text } = self;
         Ok(w::CrossRefItem {
-            id: IntoWire::into_wire(&self.id)?,
-            text: IntoWire::into_wire(&self.text)?,
+            id: IntoWire::into_wire(x_id)?,
+            text: IntoWire::into_wire(x_text)?,
         })
     }
 }
 
 impl IntoWire<w::ManualHyphState> for uo_docx::session::ops::references::ManualHyphState {
     fn into_wire(&self) -> Result<w::ManualHyphState, BindError> {
+        let uo_docx::session::ops::references::ManualHyphState { from: x_from, to: x_to, cur: x_cur, skipped: x_skipped } = self;
         Ok(w::ManualHyphState {
-            from: IntoWire::into_wire(&self.from)?,
-            to: IntoWire::into_wire(&self.to)?,
-            cur: IntoWire::into_wire(&self.cur)?,
-            skipped: IntoWire::into_wire(&self.skipped)?,
+            from: IntoWire::into_wire(x_from)?,
+            to: IntoWire::into_wire(x_to)?,
+            cur: IntoWire::into_wire(x_cur)?,
+            skipped: IntoWire::into_wire(x_skipped)?,
         })
     }
 }
 
 impl IntoWire<w::ManualHyphWord> for uo_docx::session::ops::references::ManualHyphWord {
     fn into_wire(&self) -> Result<w::ManualHyphWord, BindError> {
+        let uo_docx::session::ops::references::ManualHyphWord { para: x_para, start: x_start, end: x_end, points: x_points, limit: x_limit } = self;
         Ok(w::ManualHyphWord {
-            para: IntoWire::into_wire(&self.para)?,
-            start: IntoWire::into_wire(&self.start)?,
-            end: IntoWire::into_wire(&self.end)?,
-            points: IntoWire::into_wire(&self.points)?,
-            limit: IntoWire::into_wire(&self.limit)?,
+            para: IntoWire::into_wire(x_para)?,
+            start: IntoWire::into_wire(x_start)?,
+            end: IntoWire::into_wire(x_end)?,
+            points: IntoWire::into_wire(x_points)?,
+            limit: IntoWire::into_wire(x_limit)?,
         })
     }
 }
@@ -6489,30 +6654,32 @@ impl<T0: IntoWire<w::TocTemplateId>, T1: IntoWire<Vec<u16>>> IntoWire<w::TupTocT
 
 impl IntoWire<w::RevisionEntry> for uo_docx::session::ops::revision_cmds::RevisionEntry {
     fn into_wire(&self) -> Result<w::RevisionEntry, BindError> {
+        let uo_docx::session::ops::revision_cmds::RevisionEntry { span: x_span, story: x_story, loc: x_loc } = self;
         Ok(w::RevisionEntry {
-            span: IntoWire::into_wire(&self.span)?,
-            story: IntoWire::into_wire(&self.story)?,
-            loc: IntoWire::into_wire(&self.loc)?,
+            span: IntoWire::into_wire(x_span)?,
+            story: IntoWire::into_wire(x_story)?,
+            loc: IntoWire::into_wire(x_loc)?,
         })
     }
 }
 
 impl IntoWire<w::RevisionSpan> for uo_docx::session::revisions::RevisionSpan {
     fn into_wire(&self) -> Result<w::RevisionSpan, BindError> {
+        let uo_docx::session::revisions::RevisionSpan { kind: x_kind, author: x_author, date: x_date, date_utc: x_date_utc, r#move: x_move, mark: x_mark, para: x_para, end_para: x_end_para, start: x_start, end: x_end, text: x_text, old: x_old, now: x_now, cleared: _, keys: _ } = self;
         Ok(w::RevisionSpan {
-            kind: IntoWire::into_wire(&self.kind)?,
-            author: IntoWire::into_wire(&self.author)?,
-            date: IntoWire::into_wire(&self.date)?,
-            date_utc: IntoWire::into_wire(&self.date_utc)?,
-            r#move: IntoWire::into_wire(&self.r#move)?,
-            mark: IntoWire::into_wire(&self.mark)?,
-            para: IntoWire::into_wire(&self.para)?,
-            end_para: IntoWire::into_wire(&self.end_para)?,
-            start: IntoWire::into_wire(&self.start)?,
-            end: IntoWire::into_wire(&self.end)?,
-            text: IntoWire::into_wire(&self.text)?,
-            old: IntoWire::into_wire(&self.old)?,
-            now: IntoWire::into_wire(&self.now)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            author: IntoWire::into_wire(x_author)?,
+            date: IntoWire::into_wire(x_date)?,
+            date_utc: IntoWire::into_wire(x_date_utc)?,
+            r#move: IntoWire::into_wire(x_move)?,
+            mark: IntoWire::into_wire(x_mark)?,
+            para: IntoWire::into_wire(x_para)?,
+            end_para: IntoWire::into_wire(x_end_para)?,
+            start: IntoWire::into_wire(x_start)?,
+            end: IntoWire::into_wire(x_end)?,
+            text: IntoWire::into_wire(x_text)?,
+            old: IntoWire::into_wire(x_old)?,
+            now: IntoWire::into_wire(x_now)?,
         })
     }
 }
@@ -6541,126 +6708,132 @@ impl IntoWire<w::SpanProps> for uo_docx::session::revisions::SpanProps {
 
 impl IntoWire<w::RunProps> for uo_docx::model::run::RunProps {
     fn into_wire(&self) -> Result<w::RunProps, BindError> {
+        let uo_docx::model::run::RunProps { bold: x_bold, italic: x_italic, underline: x_underline, strike: x_strike, all_caps: x_all_caps, small_caps: x_small_caps, underline_style: x_underline_style, underline_color: x_underline_color, underline_theme: x_underline_theme, color_theme: x_color_theme, hidden: x_hidden, scale_pct: x_scale_pct, position_half_pt: x_position_half_pt, kern_half_pt: x_kern_half_pt, double_strike: x_double_strike, vert_align: x_vert_align, sz_half_pt: x_sz_half_pt, color: x_color, highlight: x_highlight, font_ascii: x_font_ascii, char_spacing_twips: x_char_spacing_twips, char_style: x_char_style, text_fx: x_text_fx, open_type: x_open_type, link: x_link, link_tip: x_link_tip, no_proof: x_no_proof, web_hidden: x_web_hidden, is_math: x_is_math, comment_ids: x_comment_ids, ins: x_ins, del: x_del, src: x_src, fmt: _, cleared: _, keys: _ } = self;
         Ok(w::RunProps {
-            bold: IntoWire::into_wire(&self.bold)?,
-            italic: IntoWire::into_wire(&self.italic)?,
-            underline: IntoWire::into_wire(&self.underline)?,
-            strike: IntoWire::into_wire(&self.strike)?,
-            all_caps: IntoWire::into_wire(&self.all_caps)?,
-            small_caps: IntoWire::into_wire(&self.small_caps)?,
-            underline_style: IntoWire::into_wire(&self.underline_style)?,
-            underline_color: IntoWire::into_wire(&self.underline_color)?,
-            underline_theme: IntoWire::into_wire(&self.underline_theme)?,
-            color_theme: IntoWire::into_wire(&self.color_theme)?,
-            hidden: IntoWire::into_wire(&self.hidden)?,
-            scale_pct: IntoWire::into_wire(&self.scale_pct)?,
-            position_half_pt: IntoWire::into_wire(&self.position_half_pt)?,
-            kern_half_pt: IntoWire::into_wire(&self.kern_half_pt)?,
-            double_strike: IntoWire::into_wire(&self.double_strike)?,
-            vert_align: IntoWire::into_wire(&self.vert_align)?,
-            sz_half_pt: IntoWire::into_wire(&self.sz_half_pt)?,
-            color: IntoWire::into_wire(&self.color)?,
-            highlight: IntoWire::into_wire(&self.highlight)?,
-            font_ascii: IntoWire::into_wire(&self.font_ascii)?,
-            char_spacing_twips: IntoWire::into_wire(&self.char_spacing_twips)?,
-            char_style: IntoWire::into_wire(&self.char_style)?,
-            text_fx: IntoWire::into_wire(&self.text_fx)?,
-            open_type: IntoWire::into_wire(&self.open_type)?,
-            link: IntoWire::into_wire(&self.link)?,
-            link_tip: IntoWire::into_wire(&self.link_tip)?,
-            no_proof: IntoWire::into_wire(&self.no_proof)?,
-            web_hidden: IntoWire::into_wire(&self.web_hidden)?,
-            is_math: IntoWire::into_wire(&self.is_math)?,
-            comment_ids: IntoWire::into_wire(&self.comment_ids)?,
-            ins: IntoWire::into_wire(&self.ins)?,
-            del: IntoWire::into_wire(&self.del)?,
-            src: IntoWire::into_wire(&self.src)?,
+            bold: IntoWire::into_wire(x_bold)?,
+            italic: IntoWire::into_wire(x_italic)?,
+            underline: IntoWire::into_wire(x_underline)?,
+            strike: IntoWire::into_wire(x_strike)?,
+            all_caps: IntoWire::into_wire(x_all_caps)?,
+            small_caps: IntoWire::into_wire(x_small_caps)?,
+            underline_style: IntoWire::into_wire(x_underline_style)?,
+            underline_color: IntoWire::into_wire(x_underline_color)?,
+            underline_theme: IntoWire::into_wire(x_underline_theme)?,
+            color_theme: IntoWire::into_wire(x_color_theme)?,
+            hidden: IntoWire::into_wire(x_hidden)?,
+            scale_pct: IntoWire::into_wire(x_scale_pct)?,
+            position_half_pt: IntoWire::into_wire(x_position_half_pt)?,
+            kern_half_pt: IntoWire::into_wire(x_kern_half_pt)?,
+            double_strike: IntoWire::into_wire(x_double_strike)?,
+            vert_align: IntoWire::into_wire(x_vert_align)?,
+            sz_half_pt: IntoWire::into_wire(x_sz_half_pt)?,
+            color: IntoWire::into_wire(x_color)?,
+            highlight: IntoWire::into_wire(x_highlight)?,
+            font_ascii: IntoWire::into_wire(x_font_ascii)?,
+            char_spacing_twips: IntoWire::into_wire(x_char_spacing_twips)?,
+            char_style: IntoWire::into_wire(x_char_style)?,
+            text_fx: IntoWire::into_wire(x_text_fx)?,
+            open_type: IntoWire::into_wire(x_open_type)?,
+            link: IntoWire::into_wire(x_link)?,
+            link_tip: IntoWire::into_wire(x_link_tip)?,
+            no_proof: IntoWire::into_wire(x_no_proof)?,
+            web_hidden: IntoWire::into_wire(x_web_hidden)?,
+            is_math: IntoWire::into_wire(x_is_math)?,
+            comment_ids: IntoWire::into_wire(x_comment_ids)?,
+            ins: IntoWire::into_wire(x_ins)?,
+            del: IntoWire::into_wire(x_del)?,
+            src: IntoWire::into_wire(x_src)?,
         })
     }
 }
 
 impl IntoWire<w::ParaProps> for uo_docx::model::para::ParaProps {
     fn into_wire(&self) -> Result<w::ParaProps, BindError> {
+        let uo_docx::model::para::ParaProps { alignment: x_alignment, style_id: x_style_id, numbering: x_numbering, indent_left_twips: x_indent_left_twips, indent_right_twips: x_indent_right_twips, indent_first_line_twips: x_indent_first_line_twips, line_twentieths: x_line_twentieths, space_after_twips: x_space_after_twips, space_before_twips: x_space_before_twips, space_before_auto: x_space_before_auto, space_after_auto: x_space_after_auto, shading_hex: x_shading_hex, tab_stops: x_tab_stops, box_border: x_box_border, borders: x_borders, page_break_before: x_page_break_before, keep_next: x_keep_next, keep_lines: x_keep_lines, widow_control: x_widow_control, suppress_line_numbers: x_suppress_line_numbers, suppress_auto_hyphens: x_suppress_auto_hyphens, textbox_tight_wrap: x_textbox_tight_wrap, outline_lvl: x_outline_lvl, drop_cap: x_drop_cap, mark_ins: x_mark_ins, mark_del: x_mark_del, toc_instr: x_toc_instr, toc_entry: x_toc_entry, src: x_src, block_sdt: x_block_sdt, fmt_src: x_fmt_src, section_break: x_section_break, pfmt: _, cleared: _, keys: _ } = self;
         Ok(w::ParaProps {
-            alignment: IntoWire::into_wire(&self.alignment)?,
-            style_id: IntoWire::into_wire(&self.style_id)?,
-            numbering: IntoWire::into_wire(&self.numbering)?,
-            indent_left_twips: IntoWire::into_wire(&self.indent_left_twips)?,
-            indent_right_twips: IntoWire::into_wire(&self.indent_right_twips)?,
-            indent_first_line_twips: IntoWire::into_wire(&self.indent_first_line_twips)?,
-            line_twentieths: IntoWire::into_wire(&self.line_twentieths)?,
-            space_after_twips: IntoWire::into_wire(&self.space_after_twips)?,
-            space_before_twips: IntoWire::into_wire(&self.space_before_twips)?,
-            space_before_auto: IntoWire::into_wire(&self.space_before_auto)?,
-            space_after_auto: IntoWire::into_wire(&self.space_after_auto)?,
-            shading_hex: IntoWire::into_wire(&self.shading_hex)?,
-            tab_stops: IntoWire::into_wire(&self.tab_stops)?,
-            box_border: IntoWire::into_wire(&self.box_border)?,
-            borders: IntoWire::into_wire(&self.borders)?,
-            page_break_before: IntoWire::into_wire(&self.page_break_before)?,
-            keep_next: IntoWire::into_wire(&self.keep_next)?,
-            keep_lines: IntoWire::into_wire(&self.keep_lines)?,
-            widow_control: IntoWire::into_wire(&self.widow_control)?,
-            suppress_line_numbers: IntoWire::into_wire(&self.suppress_line_numbers)?,
-            suppress_auto_hyphens: IntoWire::into_wire(&self.suppress_auto_hyphens)?,
-            textbox_tight_wrap: IntoWire::into_wire(&self.textbox_tight_wrap)?,
-            outline_lvl: IntoWire::into_wire(&self.outline_lvl)?,
-            drop_cap: IntoWire::into_wire(&self.drop_cap)?,
-            mark_ins: IntoWire::into_wire(&self.mark_ins)?,
-            mark_del: IntoWire::into_wire(&self.mark_del)?,
-            toc_instr: IntoWire::into_wire(&self.toc_instr)?,
-            toc_entry: IntoWire::into_wire(&self.toc_entry)?,
-            src: IntoWire::into_wire(&self.src)?,
-            block_sdt: IntoWire::into_wire(&self.block_sdt)?,
-            fmt_src: IntoWire::into_wire(&self.fmt_src)?,
-            section_break: IntoWire::into_wire(&self.section_break)?,
+            alignment: IntoWire::into_wire(x_alignment)?,
+            style_id: IntoWire::into_wire(x_style_id)?,
+            numbering: IntoWire::into_wire(x_numbering)?,
+            indent_left_twips: IntoWire::into_wire(x_indent_left_twips)?,
+            indent_right_twips: IntoWire::into_wire(x_indent_right_twips)?,
+            indent_first_line_twips: IntoWire::into_wire(x_indent_first_line_twips)?,
+            line_twentieths: IntoWire::into_wire(x_line_twentieths)?,
+            space_after_twips: IntoWire::into_wire(x_space_after_twips)?,
+            space_before_twips: IntoWire::into_wire(x_space_before_twips)?,
+            space_before_auto: IntoWire::into_wire(x_space_before_auto)?,
+            space_after_auto: IntoWire::into_wire(x_space_after_auto)?,
+            shading_hex: IntoWire::into_wire(x_shading_hex)?,
+            tab_stops: IntoWire::into_wire(x_tab_stops)?,
+            box_border: IntoWire::into_wire(x_box_border)?,
+            borders: IntoWire::into_wire(x_borders)?,
+            page_break_before: IntoWire::into_wire(x_page_break_before)?,
+            keep_next: IntoWire::into_wire(x_keep_next)?,
+            keep_lines: IntoWire::into_wire(x_keep_lines)?,
+            widow_control: IntoWire::into_wire(x_widow_control)?,
+            suppress_line_numbers: IntoWire::into_wire(x_suppress_line_numbers)?,
+            suppress_auto_hyphens: IntoWire::into_wire(x_suppress_auto_hyphens)?,
+            textbox_tight_wrap: IntoWire::into_wire(x_textbox_tight_wrap)?,
+            outline_lvl: IntoWire::into_wire(x_outline_lvl)?,
+            drop_cap: IntoWire::into_wire(x_drop_cap)?,
+            mark_ins: IntoWire::into_wire(x_mark_ins)?,
+            mark_del: IntoWire::into_wire(x_mark_del)?,
+            toc_instr: IntoWire::into_wire(x_toc_instr)?,
+            toc_entry: IntoWire::into_wire(x_toc_entry)?,
+            src: IntoWire::into_wire(x_src)?,
+            block_sdt: IntoWire::into_wire(x_block_sdt)?,
+            fmt_src: IntoWire::into_wire(x_fmt_src)?,
+            section_break: IntoWire::into_wire(x_section_break)?,
         })
     }
 }
 
 impl IntoWire<w::ThemeColorAttrs> for uo_docx::model::run::ThemeColorAttrs {
     fn into_wire(&self) -> Result<w::ThemeColorAttrs, BindError> {
+        let uo_docx::model::run::ThemeColorAttrs { theme_color: x_theme_color, tint: x_tint, shade: x_shade, cleared: _, keys: _ } = self;
         Ok(w::ThemeColorAttrs {
-            theme_color: IntoWire::into_wire(&self.theme_color)?,
-            tint: IntoWire::into_wire(&self.tint)?,
-            shade: IntoWire::into_wire(&self.shade)?,
+            theme_color: IntoWire::into_wire(x_theme_color)?,
+            tint: IntoWire::into_wire(x_tint)?,
+            shade: IntoWire::into_wire(x_shade)?,
         })
     }
 }
 
 impl IntoWire<w::TextEffects> for uo_docx::model::effects::TextEffects {
     fn into_wire(&self) -> Result<w::TextEffects, BindError> {
+        let uo_docx::model::effects::TextEffects { fill: x_fill, outline: x_outline, shadow: x_shadow, reflection: x_reflection, glow: x_glow, scene3d: x_scene3d, props3d: x_props3d, cleared: _, keys: _ } = self;
         Ok(w::TextEffects {
-            fill: IntoWire::into_wire(&self.fill)?,
-            outline: IntoWire::into_wire(&self.outline)?,
-            shadow: IntoWire::into_wire(&self.shadow)?,
-            reflection: IntoWire::into_wire(&self.reflection)?,
-            glow: IntoWire::into_wire(&self.glow)?,
-            scene3d: IntoWire::into_wire(&self.scene3d)?,
-            props3d: IntoWire::into_wire(&self.props3d)?,
+            fill: IntoWire::into_wire(x_fill)?,
+            outline: IntoWire::into_wire(x_outline)?,
+            shadow: IntoWire::into_wire(x_shadow)?,
+            reflection: IntoWire::into_wire(x_reflection)?,
+            glow: IntoWire::into_wire(x_glow)?,
+            scene3d: IntoWire::into_wire(x_scene3d)?,
+            props3d: IntoWire::into_wire(x_props3d)?,
         })
     }
 }
 
 impl IntoWire<w::OpenTypeProps> for uo_docx::model::effects::OpenTypeProps {
     fn into_wire(&self) -> Result<w::OpenTypeProps, BindError> {
+        let uo_docx::model::effects::OpenTypeProps { ligatures: x_ligatures, num_form: x_num_form, num_spacing: x_num_spacing, stylistic_sets: x_stylistic_sets, cntxt_alts: x_cntxt_alts, cleared: _, keys: _ } = self;
         Ok(w::OpenTypeProps {
-            ligatures: IntoWire::into_wire(&self.ligatures)?,
-            num_form: IntoWire::into_wire(&self.num_form)?,
-            num_spacing: IntoWire::into_wire(&self.num_spacing)?,
-            stylistic_sets: IntoWire::into_wire(&self.stylistic_sets)?,
-            cntxt_alts: IntoWire::into_wire(&self.cntxt_alts)?,
+            ligatures: IntoWire::into_wire(x_ligatures)?,
+            num_form: IntoWire::into_wire(x_num_form)?,
+            num_spacing: IntoWire::into_wire(x_num_spacing)?,
+            stylistic_sets: IntoWire::into_wire(x_stylistic_sets)?,
+            cntxt_alts: IntoWire::into_wire(x_cntxt_alts)?,
         })
     }
 }
 
 impl IntoWire<w::RevisionInfo> for uo_docx::model::props::RevisionInfo {
     fn into_wire(&self) -> Result<w::RevisionInfo, BindError> {
+        let uo_docx::model::props::RevisionInfo { author: x_author, date: x_date, date_utc: x_date_utc, r#move: x_move, cleared: _, keys: _ } = self;
         Ok(w::RevisionInfo {
-            author: IntoWire::into_wire(&self.author)?,
-            date: IntoWire::into_wire(&self.date)?,
-            date_utc: IntoWire::into_wire(&self.date_utc)?,
-            r#move: IntoWire::into_wire(&self.r#move)?,
+            author: IntoWire::into_wire(x_author)?,
+            date: IntoWire::into_wire(x_date)?,
+            date_utc: IntoWire::into_wire(x_date_utc)?,
+            r#move: IntoWire::into_wire(x_move)?,
         })
     }
 }
@@ -6673,66 +6846,72 @@ impl IntoWire<w::SourceKey> for uo_docx::ids::SourceKey {
 
 impl IntoWire<w::NumberingProps> for uo_docx::model::para::NumberingProps {
     fn into_wire(&self) -> Result<w::NumberingProps, BindError> {
+        let uo_docx::model::para::NumberingProps { kind: x_kind, ilvl: x_ilvl, num_id: x_num_id, cleared: _, keys: _ } = self;
         Ok(w::NumberingProps {
-            kind: IntoWire::into_wire(&self.kind)?,
-            ilvl: IntoWire::into_wire(&self.ilvl)?,
-            num_id: IntoWire::into_wire(&self.num_id)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            ilvl: IntoWire::into_wire(x_ilvl)?,
+            num_id: IntoWire::into_wire(x_num_id)?,
         })
     }
 }
 
 impl IntoWire<w::ParaTabStop> for uo_docx::model::para::ParaTabStop {
     fn into_wire(&self) -> Result<w::ParaTabStop, BindError> {
+        let uo_docx::model::para::ParaTabStop { pos_twips: x_pos_twips, align: x_align, leader: x_leader, cleared: _, keys: _ } = self;
         Ok(w::ParaTabStop {
-            pos_twips: IntoWire::into_wire(&self.pos_twips)?,
-            align: IntoWire::into_wire(&self.align)?,
-            leader: IntoWire::into_wire(&self.leader)?,
+            pos_twips: IntoWire::into_wire(x_pos_twips)?,
+            align: IntoWire::into_wire(x_align)?,
+            leader: IntoWire::into_wire(x_leader)?,
         })
     }
 }
 
 impl IntoWire<w::ParagraphBorders> for uo_docx::model::para::ParagraphBorders {
     fn into_wire(&self) -> Result<w::ParagraphBorders, BindError> {
+        let uo_docx::model::para::ParagraphBorders { top: x_top, left: x_left, bottom: x_bottom, right: x_right, between: x_between, bar: x_bar, cleared: _, keys: _ } = self;
         Ok(w::ParagraphBorders {
-            top: IntoWire::into_wire(&self.top)?,
-            left: IntoWire::into_wire(&self.left)?,
-            bottom: IntoWire::into_wire(&self.bottom)?,
-            right: IntoWire::into_wire(&self.right)?,
-            between: IntoWire::into_wire(&self.between)?,
-            bar: IntoWire::into_wire(&self.bar)?,
+            top: IntoWire::into_wire(x_top)?,
+            left: IntoWire::into_wire(x_left)?,
+            bottom: IntoWire::into_wire(x_bottom)?,
+            right: IntoWire::into_wire(x_right)?,
+            between: IntoWire::into_wire(x_between)?,
+            bar: IntoWire::into_wire(x_bar)?,
         })
     }
 }
 
 impl IntoWire<w::BlockSdt> for uo_docx::model::para::BlockSdt {
     fn into_wire(&self) -> Result<w::BlockSdt, BindError> {
+        let uo_docx::model::para::BlockSdt { key: x_key, gallery: x_gallery, pr: x_pr, cleared: _, keys: _ } = self;
         Ok(w::BlockSdt {
-            key: IntoWire::into_wire(&self.key)?,
-            gallery: IntoWire::into_wire(&self.gallery)?,
-            pr: IntoWire::into_wire(&self.pr)?,
+            key: IntoWire::into_wire(x_key)?,
+            gallery: IntoWire::into_wire(x_gallery)?,
+            pr: IntoWire::into_wire(x_pr)?,
         })
     }
 }
 
 impl IntoWire<w::SectionBreak> for uo_docx::model::para::SectionBreak {
     fn into_wire(&self) -> Result<w::SectionBreak, BindError> {
+        let uo_docx::model::para::SectionBreak { sect_pr: x_sect_pr, header_refs: x_header_refs, footer_refs: x_footer_refs, raw: x_raw, id: x_id, cleared: _, keys: _ } = self;
         Ok(w::SectionBreak {
-            sect_pr: IntoWire::into_wire(&self.sect_pr)?,
-            header_refs: IntoWire::into_wire(&self.header_refs)?,
-            footer_refs: IntoWire::into_wire(&self.footer_refs)?,
-            raw: IntoWire::into_wire(&self.raw)?,
-            id: IntoWire::into_wire(&self.id)?,
+            sect_pr: IntoWire::into_wire(x_sect_pr)?,
+            header_refs: IntoWire::into_wire(x_header_refs)?,
+            footer_refs: IntoWire::into_wire(x_footer_refs)?,
+            raw: IntoWire::into_wire(x_raw)?,
+            id: IntoWire::into_wire(x_id)?,
         })
     }
 }
 
 impl IntoWire<w::BorderEdge> for uo_docx::model::para::BorderEdge {
     fn into_wire(&self) -> Result<w::BorderEdge, BindError> {
+        let uo_docx::model::para::BorderEdge { style: x_style, size_eighth_pt: x_size_eighth_pt, color: x_color, space_pt: x_space_pt, cleared: _, keys: _ } = self;
         Ok(w::BorderEdge {
-            style: IntoWire::into_wire(&self.style)?,
-            size_eighth_pt: IntoWire::into_wire(&self.size_eighth_pt)?,
-            color: IntoWire::into_wire(&self.color)?,
-            space_pt: IntoWire::into_wire(&self.space_pt)?,
+            style: IntoWire::into_wire(x_style)?,
+            size_eighth_pt: IntoWire::into_wire(x_size_eighth_pt)?,
+            color: IntoWire::into_wire(x_color)?,
+            space_pt: IntoWire::into_wire(x_space_pt)?,
         })
     }
 }
@@ -6754,114 +6933,123 @@ impl IntoWire<w::NullableBoxPageBorders> for uo_docx::js::Nullable<Box<uo_docx::
 
 impl IntoWire<w::SectPr> for uo_docx::model::section::SectPr {
     fn into_wire(&self) -> Result<w::SectPr, BindError> {
+        let uo_docx::model::section::SectPr { page_width_twips: x_page_width_twips, page_height_twips: x_page_height_twips, margin_left_twips: x_margin_left_twips, margin_right_twips: x_margin_right_twips, margin_top_twips: x_margin_top_twips, margin_bottom_twips: x_margin_bottom_twips, r#type: x_type, cols: x_cols, title_pg: x_title_pg, header_distance_twips: x_header_distance_twips, footer_distance_twips: x_footer_distance_twips, pg_num_start: x_pg_num_start, pg_num_fmt: x_pg_num_fmt, pg_num_chap_style: x_pg_num_chap_style, pg_num_chap_sep: x_pg_num_chap_sep, pg_borders: x_pg_borders, footnote_pr: x_footnote_pr, endnote_pr: x_endnote_pr, footnote_columns: x_footnote_columns, ln_num_type: x_ln_num_type, v_align: x_v_align, cleared: _, keys: _ } = self;
         Ok(w::SectPr {
-            page_width_twips: IntoWire::into_wire(&self.page_width_twips)?,
-            page_height_twips: IntoWire::into_wire(&self.page_height_twips)?,
-            margin_left_twips: IntoWire::into_wire(&self.margin_left_twips)?,
-            margin_right_twips: IntoWire::into_wire(&self.margin_right_twips)?,
-            margin_top_twips: IntoWire::into_wire(&self.margin_top_twips)?,
-            margin_bottom_twips: IntoWire::into_wire(&self.margin_bottom_twips)?,
-            r#type: IntoWire::into_wire(&self.r#type)?,
-            cols: IntoWire::into_wire(&self.cols)?,
-            title_pg: IntoWire::into_wire(&self.title_pg)?,
-            header_distance_twips: IntoWire::into_wire(&self.header_distance_twips)?,
-            footer_distance_twips: IntoWire::into_wire(&self.footer_distance_twips)?,
-            pg_num_start: IntoWire::into_wire(&self.pg_num_start)?,
-            pg_num_fmt: IntoWire::into_wire(&self.pg_num_fmt)?,
-            pg_num_chap_style: IntoWire::into_wire(&self.pg_num_chap_style)?,
-            pg_num_chap_sep: IntoWire::into_wire(&self.pg_num_chap_sep)?,
-            pg_borders: IntoWire::into_wire(&self.pg_borders)?,
-            footnote_pr: IntoWire::into_wire(&self.footnote_pr)?,
-            endnote_pr: IntoWire::into_wire(&self.endnote_pr)?,
-            footnote_columns: IntoWire::into_wire(&self.footnote_columns)?,
-            ln_num_type: IntoWire::into_wire(&self.ln_num_type)?,
-            v_align: IntoWire::into_wire(&self.v_align)?,
+            page_width_twips: IntoWire::into_wire(x_page_width_twips)?,
+            page_height_twips: IntoWire::into_wire(x_page_height_twips)?,
+            margin_left_twips: IntoWire::into_wire(x_margin_left_twips)?,
+            margin_right_twips: IntoWire::into_wire(x_margin_right_twips)?,
+            margin_top_twips: IntoWire::into_wire(x_margin_top_twips)?,
+            margin_bottom_twips: IntoWire::into_wire(x_margin_bottom_twips)?,
+            r#type: IntoWire::into_wire(x_type)?,
+            cols: IntoWire::into_wire(x_cols)?,
+            title_pg: IntoWire::into_wire(x_title_pg)?,
+            header_distance_twips: IntoWire::into_wire(x_header_distance_twips)?,
+            footer_distance_twips: IntoWire::into_wire(x_footer_distance_twips)?,
+            pg_num_start: IntoWire::into_wire(x_pg_num_start)?,
+            pg_num_fmt: IntoWire::into_wire(x_pg_num_fmt)?,
+            pg_num_chap_style: IntoWire::into_wire(x_pg_num_chap_style)?,
+            pg_num_chap_sep: IntoWire::into_wire(x_pg_num_chap_sep)?,
+            pg_borders: IntoWire::into_wire(x_pg_borders)?,
+            footnote_pr: IntoWire::into_wire(x_footnote_pr)?,
+            endnote_pr: IntoWire::into_wire(x_endnote_pr)?,
+            footnote_columns: IntoWire::into_wire(x_footnote_columns)?,
+            ln_num_type: IntoWire::into_wire(x_ln_num_type)?,
+            v_align: IntoWire::into_wire(x_v_align)?,
         })
     }
 }
 
 impl IntoWire<w::HfRefEdit> for uo_docx::model::para::HfRefEdit {
     fn into_wire(&self) -> Result<w::HfRefEdit, BindError> {
+        let uo_docx::model::para::HfRefEdit { kind: x_kind, r#type: x_type, rid: x_rid, cleared: _, keys: _ } = self;
         Ok(w::HfRefEdit {
-            kind: IntoWire::into_wire(&self.kind)?,
-            r#type: IntoWire::into_wire(&self.r#type)?,
-            rid: IntoWire::into_wire(&self.rid)?,
+            kind: IntoWire::into_wire(x_kind)?,
+            r#type: IntoWire::into_wire(x_type)?,
+            rid: IntoWire::into_wire(x_rid)?,
         })
     }
 }
 
 impl IntoWire<w::Cols> for uo_docx::model::section::Cols {
     fn into_wire(&self) -> Result<w::Cols, BindError> {
+        let uo_docx::model::section::Cols { count: x_count, space_twips: x_space_twips, sep: x_sep, widths: x_widths, cleared: _, keys: _ } = self;
         Ok(w::Cols {
-            count: IntoWire::into_wire(&self.count)?,
-            space_twips: IntoWire::into_wire(&self.space_twips)?,
-            sep: IntoWire::into_wire(&self.sep)?,
-            widths: IntoWire::into_wire(&self.widths)?,
+            count: IntoWire::into_wire(x_count)?,
+            space_twips: IntoWire::into_wire(x_space_twips)?,
+            sep: IntoWire::into_wire(x_sep)?,
+            widths: IntoWire::into_wire(x_widths)?,
         })
     }
 }
 
 impl IntoWire<w::NoteProps> for uo_docx::model::formatting::NoteProps {
     fn into_wire(&self) -> Result<w::NoteProps, BindError> {
+        let uo_docx::model::formatting::NoteProps { pos: x_pos, num_fmt: x_num_fmt, num_start: x_num_start, num_restart: x_num_restart, cleared: _, keys: _ } = self;
         Ok(w::NoteProps {
-            pos: IntoWire::into_wire(&self.pos)?,
-            num_fmt: IntoWire::into_wire(&self.num_fmt)?,
-            num_start: IntoWire::into_wire(&self.num_start)?,
-            num_restart: IntoWire::into_wire(&self.num_restart)?,
+            pos: IntoWire::into_wire(x_pos)?,
+            num_fmt: IntoWire::into_wire(x_num_fmt)?,
+            num_start: IntoWire::into_wire(x_num_start)?,
+            num_restart: IntoWire::into_wire(x_num_restart)?,
         })
     }
 }
 
 impl IntoWire<w::LineNumbering> for uo_docx::model::section::LineNumbering {
     fn into_wire(&self) -> Result<w::LineNumbering, BindError> {
+        let uo_docx::model::section::LineNumbering { count_by: x_count_by, start: x_start, distance: x_distance, restart: x_restart, cleared: _, keys: _ } = self;
         Ok(w::LineNumbering {
-            count_by: IntoWire::into_wire(&self.count_by)?,
-            start: IntoWire::into_wire(&self.start)?,
-            distance: IntoWire::into_wire(&self.distance)?,
-            restart: IntoWire::into_wire(&self.restart)?,
+            count_by: IntoWire::into_wire(x_count_by)?,
+            start: IntoWire::into_wire(x_start)?,
+            distance: IntoWire::into_wire(x_distance)?,
+            restart: IntoWire::into_wire(x_restart)?,
         })
     }
 }
 
 impl IntoWire<w::ColWidth> for uo_docx::model::section::ColWidth {
     fn into_wire(&self) -> Result<w::ColWidth, BindError> {
+        let uo_docx::model::section::ColWidth { width_twips: x_width_twips, space_twips: x_space_twips, cleared: _, keys: _ } = self;
         Ok(w::ColWidth {
-            width_twips: IntoWire::into_wire(&self.width_twips)?,
-            space_twips: IntoWire::into_wire(&self.space_twips)?,
+            width_twips: IntoWire::into_wire(x_width_twips)?,
+            space_twips: IntoWire::into_wire(x_space_twips)?,
         })
     }
 }
 
 impl IntoWire<w::MarkupOptions> for uo_docx::session::ops::revision_cmds::MarkupOptions {
     fn into_wire(&self) -> Result<w::MarkupOptions, BindError> {
+        let uo_docx::session::ops::revision_cmds::MarkupOptions { ins_del: x_ins_del, formatting: x_formatting, comments: x_comments, balloons: x_balloons, authors: x_authors } = self;
         Ok(w::MarkupOptions {
-            ins_del: IntoWire::into_wire(&self.ins_del)?,
-            formatting: IntoWire::into_wire(&self.formatting)?,
-            comments: IntoWire::into_wire(&self.comments)?,
-            balloons: IntoWire::into_wire(&self.balloons)?,
-            authors: IntoWire::into_wire(&self.authors)?,
+            ins_del: IntoWire::into_wire(x_ins_del)?,
+            formatting: IntoWire::into_wire(x_formatting)?,
+            comments: IntoWire::into_wire(x_comments)?,
+            balloons: IntoWire::into_wire(x_balloons)?,
+            authors: IntoWire::into_wire(x_authors)?,
         })
     }
 }
 
 impl IntoWire<w::HyphenationSettings> for uo_docx::write::emit::settings::HyphenationSettings {
     fn into_wire(&self) -> Result<w::HyphenationSettings, BindError> {
+        let uo_docx::write::emit::settings::HyphenationSettings { auto: x_auto, caps: x_caps, zone: x_zone, limit: x_limit } = self;
         Ok(w::HyphenationSettings {
-            auto: IntoWire::into_wire(&self.auto)?,
-            caps: IntoWire::into_wire(&self.caps)?,
-            zone: IntoWire::into_wire(&self.zone)?,
-            limit: IntoWire::into_wire(&self.limit)?,
+            auto: IntoWire::into_wire(x_auto)?,
+            caps: IntoWire::into_wire(x_caps)?,
+            zone: IntoWire::into_wire(x_zone)?,
+            limit: IntoWire::into_wire(x_limit)?,
         })
     }
 }
 
 impl IntoWire<w::HyphenationInfo> for uo_docx::session::ops::text_layout::HyphenationInfo {
     fn into_wire(&self) -> Result<w::HyphenationInfo, BindError> {
+        let uo_docx::session::ops::text_layout::HyphenationInfo { auto: x_auto, caps: x_caps, zone_twips: x_zone_twips, limit: x_limit } = self;
         Ok(w::HyphenationInfo {
-            auto: IntoWire::into_wire(&self.auto)?,
-            caps: IntoWire::into_wire(&self.caps)?,
-            zone_twips: IntoWire::into_wire(&self.zone_twips)?,
-            limit: IntoWire::into_wire(&self.limit)?,
+            auto: IntoWire::into_wire(x_auto)?,
+            caps: IntoWire::into_wire(x_caps)?,
+            zone_twips: IntoWire::into_wire(x_zone_twips)?,
+            limit: IntoWire::into_wire(x_limit)?,
         })
     }
 }
