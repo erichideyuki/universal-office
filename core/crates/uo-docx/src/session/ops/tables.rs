@@ -43,11 +43,9 @@ use crate::model::Document;
 use crate::model::formatting::DocFormatting;
 use crate::model::para::Paragraph;
 use crate::model::props::{BorderSpec, ShadingSpec, TblBorders, TblLook, TblPr, TblpPr, TcPr, TrPr, WidthSpec};
-use crate::model::run::Run;
 use crate::model::story::{Block, OwnedBlock, TableAnchor};
 use crate::model::table::Table;
 use crate::read::table_styles::{CORE_TABLE_STYLES, local_style_id, materialize_style_xml, style_def_of, style_id_by_name, theme_hex};
-use crate::text::Utf16;
 use crate::word::obj;
 use formula::{FormulaEnv, default_formula, formula_instr, formula_result_text};
 use sort::{SortKey, SortOptions, SortSeparator, SortType, can_sort_table, sort_paragraphs_order, sort_table};
@@ -361,7 +359,7 @@ impl TableCmd {
 
 /// `tableAt(anchor, path)`: the table at the end of the path (`path` = the hops to the cell that
 /// CONTAINS the table; empty = a body table).
-fn table_at<'a>(doc: &'a Document, anchor: u32, path: &[CellHop]) -> Option<&'a Table> {
+pub(crate) fn table_at<'a>(doc: &'a Document, anchor: u32, path: &[CellHop]) -> Option<&'a Table> {
     let mut t: &Table = &doc.body.tables.get(anchor as usize)?.table;
     for h in path {
         let (r, k) = cell_index(t, h)?;
@@ -390,21 +388,21 @@ fn table_slot_mut<'a>(doc: &'a mut Document, anchor: u32, path: &[CellHop]) -> O
 }
 
 /// The same table, unshared.
-fn table_at_mut<'a>(doc: &'a mut Document, anchor: u32, path: &[CellHop]) -> Option<&'a mut Table> {
+pub(crate) fn table_at_mut<'a>(doc: &'a mut Document, anchor: u32, path: &[CellHop]) -> Option<&'a mut Table> {
     table_slot_mut(doc, anchor, path).map(Arc::make_mut)
 }
 
 /// The target of the table operations (`tableTarget()`).
 #[derive(Debug, Clone)]
-struct Target {
-    anchor: u32,
-    path: Vec<CellHop>,
-    rect: CellRect,
+pub(crate) struct Target {
+    pub(crate) anchor: u32,
+    pub(crate) path: Vec<CellHop>,
+    pub(crate) rect: CellRect,
 }
 
 /// What an operation leaves of the cursor (`TableAfter`).
 #[derive(Debug, Clone)]
-enum After {
+pub(crate) enum After {
     /// the cursor in the body
     Body(DocPosition),
     /// the cursor in a cell of another table of the path
@@ -418,7 +416,7 @@ enum After {
 }
 
 /// What a table operation asks of the session besides changing the table.
-enum Op {
+pub(crate) enum Op {
     Done(After),
     /// the table goes (`removeTableAt`)
     Remove,
@@ -455,7 +453,7 @@ impl Session {
     // ───────────────────────── the target and the edit protocol ─────────────────────────
 
     /// `tableTarget()`: the selection of cells or the cell of the cursor.
-    fn table_target(&self) -> Option<Target> {
+    pub(crate) fn table_target(&self) -> Option<Target> {
         if !matches!(self.ctx, EditContext::Body | EditContext::Cell { .. }) {
             return None;
         }
@@ -495,7 +493,10 @@ impl Session {
 
     /// `editTable(fn)`: one undo step, outside the cell (the body is the model during the
     /// operation), then the cursor. Nothing is changed when the operation cannot run.
-    fn edit_table(&mut self, f: impl FnOnce(&mut Session, &Target) -> Result<Op, CommandError>) -> Result<Outcome, CommandError> {
+    pub(crate) fn edit_table(
+        &mut self,
+        f: impl FnOnce(&mut Session, &Target) -> Result<Op, CommandError>,
+    ) -> Result<Outcome, CommandError> {
         if self.locked() {
             return done(self);
         }
@@ -565,7 +566,7 @@ impl Session {
 
     /// `enterCellAt(anchor, path, r, c, atEnd)`: enters the cell (row `r`, grid column `c`), the
     /// cursor at its start or end.
-    fn enter_cell_at(&mut self, anchor: u32, path: &[CellHop], r: i64, c: i64, at_end: bool) -> bool {
+    pub(crate) fn enter_cell_at(&mut self, anchor: u32, path: &[CellHop], r: i64, c: i64, at_end: bool) -> bool {
         let Some(t) = table_at(&self.doc, anchor, path) else { return false };
         if t.rows.is_empty() {
             return false;
@@ -702,7 +703,7 @@ impl Session {
     // ───────────────────────── the values the TS reads from the document ─────────────────────────
 
     /// `contentWidthTwips()`: the shell's value, else the print width of the body section.
-    fn content_width(&self, layout: &TableLayoutIn) -> f64 {
+    pub(crate) fn content_width(&self, layout: &TableLayoutIn) -> f64 {
         layout.content_width_twips.unwrap_or_else(|| {
             let s = &self.sections.body_sect_pr;
             s.page_width_twips.to_number() - s.margin_left_twips.to_number() - s.margin_right_twips.to_number()
@@ -790,10 +791,10 @@ impl Session {
 
     // ───────────────────────── the commands ─────────────────────────
 
-    pub(crate) fn exec_tables(&mut self, cmd: TableCmd, _cx: &mut ExecCx<'_>) -> Result<Outcome, CommandError> {
+    pub(crate) fn exec_tables(&mut self, cmd: TableCmd, cx: &mut ExecCx<'_>) -> Result<Outcome, CommandError> {
         match cmd {
             TableCmd::InsertTable { rows, cols, autofit, col_width_twips, layout } => {
-                self.insert_table(rows, cols, autofit, col_width_twips, &layout)
+                self.insert_table(cx, rows, cols, autofit, col_width_twips, &layout)
             }
             TableCmd::InsertRowAbove => self.edit_table(|s, tg| {
                 let r = s.with_table(tg.anchor, &tg.path, |t, ids| table_ops::insert_rows(t, tg.rect, true, None, ids))?;
@@ -812,8 +813,8 @@ impl Session {
                 Ok(Op::Done(After::Select(r)))
             }),
             TableCmd::InsertCells { shift } => match shift {
-                InsertCellsShift::Row => self.exec_tables(TableCmd::InsertRowAbove, _cx),
-                InsertCellsShift::Column => self.exec_tables(TableCmd::InsertColumnLeft, _cx),
+                InsertCellsShift::Row => self.exec_tables(TableCmd::InsertRowAbove, cx),
+                InsertCellsShift::Column => self.exec_tables(TableCmd::InsertColumnLeft, cx),
                 InsertCellsShift::Right | InsertCellsShift::Down => {
                     let sh = if shift == InsertCellsShift::Right { InsertShift::Right } else { InsertShift::Down };
                     self.edit_table(move |s, tg| {
@@ -1087,6 +1088,7 @@ impl Session {
 
     fn insert_table(
         &mut self,
+        cx: &mut ExecCx<'_>,
         rows: f64,
         cols: f64,
         autofit: Option<AutoFit>,
@@ -1102,6 +1104,7 @@ impl Session {
         };
         let rows = max(1.0, min(32767.0, js_or_1(rows)));
         let cols = max(1.0, min(63.0, js_or_1(cols)));
+        let was_dirty = self.is_dirty();
         self.begin_step(false, &[]);
         self.table_sel = None;
         if self.has_selection() {
@@ -1124,12 +1127,19 @@ impl Session {
             self.shift_anchors(para, 1);
             para += 1;
         }
+        let nested = matches!(self.ctx, EditContext::Cell { .. });
         let mut ids = std::mem::take(&mut self.doc.ids);
         let res = self.insert_table_at(para, rows, cols, autofit, col_width, style_id, layout, &mut ids);
         self.doc.ids = ids;
         match res {
             Some(()) => {
                 self.touch_structure();
+                // the automatic caption (D2b-F10: AutoCaption; only a table at the top level, as the TS)
+                if !nested && let Err(e) = self.auto_caption_table(cx) {
+                    // F10-D1: the caption's step is already back; the table's goes too (the whole command is undone)
+                    self.rollback_nested_step(was_dirty);
+                    return Err(e);
+                }
                 Ok(Outcome::Done(self.finish()))
             }
             None => {
@@ -2100,86 +2110,10 @@ impl Session {
         let instr = formula_instr(&fu, pic.as_deref());
         self.table_sel = None;
         let Some(display) = self.preview_formula(&f, nf) else { return done(self) };
-        self.insert_field_run(&instr, &display)?;
+        let shown: Vec<u16> = display.encode_utf16().collect();
+        let instr_s = String::from_utf16_lossy(&instr);
+        self.insert_field_run(&instr_s, &shown, None)?;
         Ok(Outcome::Done(self.finish()))
-    }
-
-    /// `insertFieldRun(instr, display)` (the editor's, also used by the fields of D2b-F10): a field
-    /// run at the cursor (it replaces the selection), a run of its own.
-    fn insert_field_run(&mut self, instr: &[u16], display: &str) -> Result<(), CommandError> {
-        self.begin_step(false, &[]);
-        if self.has_selection() {
-            let pos = self.delete_selection()?;
-            self.selection = Selection::caret(pos);
-        }
-        let DocPosition { para, offset } = self.selection.focus;
-        let tracking = self.opts.tracking;
-        let rev = tracking.then(|| self.new_rev());
-        let instr_s = Str::from(String::from_utf16_lossy(instr));
-        let shown = Utf16::from(display);
-        let Some(paras) = self.paras_mut() else { return Err(CommandError::Position) };
-        let Some(p) = paras.make_mut(para as usize) else { return Err(CommandError::Position) };
-        let off = offset as usize;
-        let mut acc = 0usize;
-        let n = p.runs.len();
-        let mut inserted = false;
-        for ri in 0..=n {
-            let run = p.runs.get(ri).cloned();
-            let re = acc + run.as_ref().map_or(0, |r| r.text.len());
-            if off <= re || ri == n {
-                let mut props = match &run {
-                    Some(r) => text::without_revisions(&r.props),
-                    None => text::without_revisions(&crate::read::plain::default_run_props()),
-                };
-                if let Some(rev) = &rev {
-                    obj::set(&mut props, "ins", |x| x.ins = Some(Box::new(rev.clone())));
-                }
-                // `{ ...withoutRevisions(base) }` copies the symbol keys: the link to the base run's rPr travels
-                let mut field_run = Run {
-                    text: shown.clone(),
-                    props: Arc::new(props),
-                    rpr_link: run.as_ref().and_then(|r| r.rpr_link.clone()),
-                    ..Run::default()
-                };
-                field_run.ext_mut().field = Some(instr_s.clone());
-                match run {
-                    None => p.runs.push(field_run),
-                    Some(r) => {
-                        let cut = off.saturating_sub(acc).min(r.text.len());
-                        let (head, tail) = r.text.units().split_at(cut);
-                        let piece = |units: &[u16]| {
-                            let mut x =
-                                Run { text: Utf16::from_units(units.to_vec()), props: Arc::new((*r.props).clone()), ..Run::default() };
-                            x.rpr_link = r.rpr_link.clone();
-                            if let Some(f) = r.ext().and_then(|e| e.field.clone()).filter(|f| !f.is_empty()) {
-                                x.ext_mut().field = Some(f);
-                            }
-                            x
-                        };
-                        let mut parts: Vec<Run> = Vec::new();
-                        if !head.is_empty() {
-                            parts.push(piece(head));
-                        }
-                        parts.push(field_run);
-                        if !tail.is_empty() {
-                            parts.push(piece(tail));
-                        }
-                        p.runs.splice(ri..=ri, parts);
-                    }
-                }
-                inserted = true;
-                break;
-            }
-            acc = re;
-        }
-        if !inserted {
-            self.discard_step();
-            return Ok(());
-        }
-        let np = DocPosition::new(para, u(i64::try_from(off + shown.len()).unwrap_or(0)));
-        self.selection = Selection::caret(np);
-        self.touch_para(para as usize);
-        Ok(())
     }
 
     // ───────────────────────── rows by hand ─────────────────────────

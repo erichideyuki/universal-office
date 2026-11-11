@@ -369,7 +369,7 @@ fn set_text(pkg: &mut Package, name: &str, text: String) -> WResult<()> {
     Ok(())
 }
 
-const EMPTY_DOC_RELS: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"></Relationships>";
+pub(crate) const EMPTY_DOC_RELS: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"></Relationships>";
 const REL_IMAGE: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 
 /// `writePageBackground(pkg, bg, prev)`: writes (or removes, with `None`) the `w:background` of the

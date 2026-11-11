@@ -6,6 +6,8 @@
 #[cfg(feature = "session")]
 mod d2a_support;
 #[cfg(feature = "session")]
+mod d2b_f10_support;
+#[cfg(feature = "session")]
 mod d2b_f1_support;
 #[cfg(feature = "session")]
 mod d2b_f2_support;
@@ -50,6 +52,7 @@ mod memory_contour;
 mod memory_d1b_fonts;
 mod memory_d1b_writer;
 mod memory_d2a;
+mod memory_d2b_f10;
 mod memory_d2b_f1;
 mod memory_d2b_f2;
 mod memory_d2b_f3;
@@ -84,6 +87,7 @@ mod nopanic_contour;
 mod nopanic_d1b_fonts;
 mod nopanic_d1b_writer;
 mod nopanic_d2a;
+mod nopanic_d2b_f10;
 mod nopanic_d2b_f1;
 mod nopanic_d2b_f2;
 mod nopanic_d2b_f3;
@@ -115,6 +119,8 @@ mod parity_contour;
 mod parity_custom_tag;
 mod parity_d2a_ops;
 mod parity_d2a_session;
+mod parity_d2b_f10_ops;
+mod parity_d2b_f10_session;
 mod parity_d2b_f1_ops;
 mod parity_d2b_f1_session;
 mod parity_d2b_f2_ops;
@@ -167,7 +173,9 @@ mod r5_unit;
 mod regex_d1b_core;
 mod regex_d1b_fonts;
 mod regex_d2b_f1;
+mod regex_d2b_f10;
 mod regex_d2b_f3;
+mod regex_d2b_f4;
 mod regex_d2b_f6;
 mod regex_d2b_f7;
 mod regex_d2b_f9;
@@ -188,6 +196,7 @@ mod regex_w5;
 mod regex_w6;
 mod session_d2a;
 mod session_d2b_f1;
+mod session_d2b_f10;
 mod session_d2b_f2;
 mod session_d2b_f3;
 mod session_d2b_f4;
@@ -197,3 +206,14 @@ mod session_d2b_f7;
 mod session_d2b_f9;
 mod sources_unit;
 mod word_unit;
+
+// ── D2b-F8 (clipboard) ──
+#[cfg(feature = "session")]
+mod d2b_f8_support;
+mod parity_d2b_f8_ops;
+mod parity_d2b_f8_html;
+mod session_d2b_f8;
+mod memory_d2b_f8;
+mod nopanic_d2b_f8;
+mod regex_d2b_f8;
+mod parity_d2b_f8_session;

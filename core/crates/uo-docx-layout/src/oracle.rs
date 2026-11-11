@@ -8,7 +8,11 @@
 //!   layout with `hyphenation: 'force'` and the refused points, then the first body line, in page
 //!   order, whose automatic hyphen sits at or after `from`. The word around it, the `b - a < 2`
 //!   skip, the `to` bound and the points are the session's (D2b-F10).
+//! - `shown_page_numbers` = `pageLabelOf` (universal-write.ts:6623): `page.number` of the first
+//!   line of each paragraph in a layout of the unchanged view (the TS reads the editor's last
+//!   layout, which is this one when the shell's layout is current), `None` without a line.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::LayoutEngine;
@@ -16,7 +20,7 @@ use crate::fonts::FontProvider;
 use crate::model::{BlockPath, DocRef, DocView, FieldScope, HyphenCandidate, HyphenSkips, RunRef, StoryRef, Utf16};
 use crate::options::{Hyphenation, LayoutOptions};
 use crate::output::Layout;
-use crate::refs::{LocKind, Locator};
+use crate::refs::{LocKind, Locator, ParaLoc};
 use uo_docx::view::{LayoutError as OracleError, LayoutErrorKind, LayoutOracle};
 
 /// The engine as the session's oracle: the host's provider, the engine (its hyphenation
@@ -99,4 +103,30 @@ impl LayoutOracle for EngineOracle<'_> {
         let l = self.run(doc, &o)?;
         Ok(first_hyphenation(doc, l, from))
     }
+
+    fn shown_page_numbers(&mut self, doc: DocView<'_>, paras: &[DocRef]) -> Result<Vec<Option<f64>>, OracleError> {
+        let mut o = self.options.clone();
+        o.collect_fields = None;
+        let l = self.run(doc, &o)?;
+        Ok(shown_page_numbers(doc, l, paras))
+    }
+}
+
+/// `pageLabelOf` over `layout`: for each paragraph, `page.number` of its first line in page and
+/// line order (the TS `eng.lines.find(x => x.para === p)`), `None` when it has no line.
+#[must_use]
+pub fn shown_page_numbers(view: DocView<'_>, layout: &Layout, paras: &[DocRef]) -> Vec<Option<f64>> {
+    let key = |r: &DocRef| ParaLoc { story: r.story, path: r.path.clone() };
+    let mut first: HashMap<ParaLoc, Option<f64>> = paras.iter().map(|r| (key(r), None)).collect();
+    let loc = Locator::new(view);
+    for p in &layout.pages {
+        for l in &p.lines {
+            if let Some(para) = loc.locate(p.section, &l.at).para
+                && let Some(slot @ None) = first.get_mut(&para)
+            {
+                *slot = Some(p.number);
+            }
+        }
+    }
+    paras.iter().map(|r| first.get(&key(r)).copied().flatten()).collect()
 }

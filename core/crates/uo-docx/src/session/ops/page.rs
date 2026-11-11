@@ -9,9 +9,13 @@
 //! carries them (`bg`, `bgd`). The save compares `doc.background` with the one of the install
 //! (`bgAtLoad`).
 //!
-//! Not ported (recorded in `F4.md`): the watermark (`setWatermark`/`removeWatermark`, which read
-//! and write header parts through the reader with the page's measured fonts), the cover pages
-//! (`insertCoverPage`/`removeCoverPage`, `cover-templates.ts`) and the template galleries.
+//! The watermark ([`watermark`]), the cover pages ([`cover`], with the templates of
+//! [`cover_templates`]) and the regex sites of both ([`rx`]) are the submodules of this file.
+
+pub mod cover;
+pub mod cover_templates;
+pub mod rx;
+pub mod watermark;
 
 use std::sync::Arc;
 
@@ -22,6 +26,7 @@ use super::super::policy::GuardArg;
 use super::super::state::SettingsStep;
 use super::super::{ExecCx, Session};
 use super::format::{ColorArg, ThemeColorRef, theme_tint_shade};
+use super::header_footer::{HfAt, HfReenter};
 use crate::js::{JsNumber, JsRecord, Str};
 use crate::model::background::{FillStop, PageBackground, PageFill};
 use crate::model::media::ImageData;
@@ -110,6 +115,15 @@ pub enum PageCmd {
     /// `setPageFill(fill)`: `None` removes the background; `lang` is the interface language (the
     /// pattern's title)
     SetPageFill { fill: Option<PageFillInput>, lang: PageLang },
+    /// `setWatermark(spec)` of the section of the caret's page (`at`); `reenter` is the part the
+    /// page shows after the change when a header was in edit (the layout's answer, D2a-C2)
+    SetWatermark { spec: Box<watermark::WatermarkArg>, at: HfAt, lang: PageLang, reenter: Option<HfReenter> },
+    /// `removeWatermark()`: from every header of the document
+    RemoveWatermark { reenter: Option<HfReenter> },
+    /// `insertCoverPage(id)`
+    InsertCoverPage { id: String, lang: PageLang },
+    /// `removeCoverPage()`
+    RemoveCoverPage,
 }
 
 impl PageCmd {
@@ -118,6 +132,9 @@ impl PageCmd {
         Some(match self {
             PageCmd::SetPageColor { .. } => ("setPageColor", GuardArg::None),
             PageCmd::SetPageFill { .. } => ("setPageFill", GuardArg::None),
+            PageCmd::SetWatermark { .. } => ("setWatermark", GuardArg::None),
+            PageCmd::InsertCoverPage { .. } => ("insertCoverPage", GuardArg::None),
+            PageCmd::RemoveWatermark { .. } | PageCmd::RemoveCoverPage => return None,
         })
     }
 }
@@ -274,8 +291,12 @@ pub fn background_differs(a: Option<&Arc<PageBackground>>, b: Option<&Arc<PageBa
 }
 
 impl Session {
-    pub(crate) fn exec_page(&mut self, cmd: PageCmd, _cx: &mut ExecCx<'_>) -> Res {
+    pub(crate) fn exec_page(&mut self, cmd: PageCmd, cx: &mut ExecCx<'_>) -> Res {
         match cmd {
+            PageCmd::SetWatermark { spec, at, lang, reenter } => self.exec_set_watermark(*spec, at, lang, reenter, cx),
+            PageCmd::RemoveWatermark { reenter } => self.exec_remove_watermark(reenter, cx),
+            PageCmd::InsertCoverPage { id, lang } => self.exec_insert_cover_page(&id, lang, cx),
+            PageCmd::RemoveCoverPage => self.exec_remove_cover_page(cx),
             PageCmd::SetPageColor { color } => {
                 if self.paras().is_none() || self.locked() {
                     return Ok(Outcome::Done(self.change_set()));

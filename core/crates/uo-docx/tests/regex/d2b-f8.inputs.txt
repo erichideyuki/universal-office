@@ -1,0 +1,199 @@
+
+ 
+1
+true
+TRUE
+ 1
+1 
+TOC
+ TOC \\o "1-3"
+xTOC TOC
+TOC_
+toc
+Toc\\h
+ TOC
+﻿TOC
+é toc
+ſ toc
+K TOC
+TOCé
+_TOC
+TOC1
+\tTOC\n
+val 12
+val -3x
+val-3
+val  
+val\t+5
+VAL 1
+<a:blipFillx/><a:blipFill r:embed="x"/>
+<a:blipFill
+<a:blipFill>
+<a:blipFill_/>
+a\r\nb\rc\nd\n\r
+<w:p w14:paraId="1" \t\n/>
+<w:p/>x
+<w:p>
+/>
+  />
+<dcterms:created xsi:type="x">2024-01-01T00:00:00Z</dcterms:created>
+<dcterms:createdX>v<
+<dcterms:created>no end
+<x/><dcterms:created a="<">t<
+_x0000_s1026
+pic.a-b_1
+pic a
+ab­cd­
+é😀
+
+ 
+\t\n
+a\r\nb\rc\nd
+\r\r\n\n
+x y
+<table>x</table>
+<TABLE a>y</Table>z
+<table
+<tablex>
+<table\n>
+a<table>b</table>c<table>d
+<p>
+<P\t>
+<pre>
+<h7>
+<h1>
+<li>
+<lix>
+<div>
+<DIV 
+<x><p >
+abc
+ção
+1
+😀
+a.
+a)
+"
+”
+’
+]
+}
+?
+-
+ a
+a 
+<wp:docPr id="3" name="Imagem 12"/>
+<wp:docPr id="3" name="Pic 1 2"/>
+<wp:docPr name="12"/>
+<wp:docPr name="a  "/>
+<wp:docPrX name="a 1"/><wp:docPr id="2" name="Shape 9"/>
+<wp:docPr id="1" xname="a" name="b 4"/>
+<wp:docPr id="1"><x name="a 2"/>
+<wp:docPr name="unclosed
+<w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl><w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/>
+<w:lvl w:ilvl="1x5"><w:numFmt  w:val="lowerRoman"/>
+<w:lvl w:ilvl="NaN" w:x="1"><w:numFmt\nw:val="x"/>
+<w:lvl w:ilvl="1eee21"><w:numFmt w:val="y"/>
+<w:lvlText w:ilvl="0"/><w:lvl w:ilvl="0" w:ilvl="1"><w:numFmt w:val=""/><w:numFmt w:val="z"/>
+<w:lvl w:ilvl="null"><w:numFmt w:val="n"/>
+<w:lvl w:ilvl="0">
+<w:lvl\tw:ilvl="1" a="w:ilvl="0""><w:numFmt w:val="q"/>
+C:\\docs\\a.docx
+\\\\server\\x
+a & b < c > d
+  a \n\t b  
+ x 
+#abc
+#ABC
+#abcd
+#abcdef
+#abcdef00
+#12345
+rgb(1, 2, 3)
+rgba(1,2,3,0)
+rgb(1 2 3 / 0.5)
+rgb(1,2,3 )
+rgb(1,2)
+rgba(1,2,3,,0%)
+rgb(1,2,3,4,5)
+rgb( 1 , 2 , 3 / . )
+12pt
+10.5px
+.5pt
+1..2pt
+pt
+12PT
+12 pt
+1e3pt
+"Arial"
+'Times New Roman'
+  "x" 
+"
+""
+serif
+SANS-SERIF
+ui-monospace
+ui-
+ui-x y
+-apple-system
+BlinkMacSystemFont
+Calibri
+javascript:x
+JavaScript:
+ javascript:
+https://e.com
+#top
+data:image/png;base64,iVBOR w0K
+DATA:IMAGE/JPEG;BASE64,/9j/
+data:image/jpg;base64,
+data:image/gif;base64,R0l\nGOD
+data:image/svg;base64,PHN2
+data:text/html;base64,x
+@list l0:level1 { mso-level-number-format:bullet; }
+@LIST L1:LEVEL2{mso-level-number-format: image}@list l2:level1 {}
+@list l3:level1 {
+@listl0:level1{}
+@list l01:level09 {mso-level-number-format:-x_1}
+mso-list:l0 level1 lfo1
+MSO-LIST: L1 LEVEL2 LFO3
+mso-list:l0 level1
+x mso-list:l2 level1 lfo1 mso-list:l3 level2 lfo2
+mso-list:Ignore
+mso-list: IGNORE
+mso-list:\tignorex
+1.
+(1)
+1)
+a)
+iv.
+(iv)
+abcd.
+abcde.
+·
+1.)
+(a
+A.
+12
+[if !supportLists]
+[IF !SUPPORTLISTS] x
+[endif]
+[ENDIF]--
+ [endif]
+H1
+H6
+H7
+h1
+H12
+MsoHeading3
+x MsoHeading9 y
+MsoHeading0
+MsoHeading12
+MsoTitle
+MsoTitleX
+a\tMsoSubtitle
+MsoSubtitle\n
+<w:abstractNum w:abstractNumId="3" w15:restartNumberingAfterBreak="0"><w:nsid w:val="ABCDEF01"/><w:styleLink w:val="x"/><w:numStyleLink w:val="y"/></w:abstractNum>
+<w:abstractNumId w:val="1"/><w:abstractNum>
+<w:abstractNum
+<w:styleLink w:val="a"/x
+<w:numStyleLink  w:val="a"/>

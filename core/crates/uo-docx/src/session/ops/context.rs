@@ -446,6 +446,12 @@ impl Session {
                     // `exitHeaderFooter(false, true)` relays out: `syncSections` runs with the body in
                     // context again (what the edit of the page setup left pending, D2b-F4)
                     self.settle();
+                    // the same `refresh()` rebuilds `lastSectionRefs` from the model, which holds a
+                    // reference the edit made (F4-D21: `make_section_part` leaves the snapshot stale;
+                    // only this relayout refreshes it, not the silent exits of an undo)
+                    if self.sections.last_refs_stale {
+                        self.sections.sync(&mut self.doc);
+                    }
                 }
                 Ok(Outcome::Done(self.change_set()))
             }

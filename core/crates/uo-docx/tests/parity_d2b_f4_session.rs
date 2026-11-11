@@ -35,9 +35,12 @@ use support::Sink;
 use uo_docx::canon::CanonWriter;
 use uo_docx::ids::HfPartId;
 use uo_docx::js::{JsNumber, JsValue};
+use uo_docx::read::watermark::WatermarkInfo;
 use uo_docx::session::ops::context::ContextCmd;
 use uo_docx::session::ops::format::{ColorArg, ThemeColorRef};
-use uo_docx::session::ops::header_footer::{HeaderFooterCmd, HfAt, HfKind, HfReenter, HfSlot, PageNumberFormatPatch};
+use uo_docx::session::ops::header_footer::hf_templates::{HfGallery, gallery_kind};
+use uo_docx::session::ops::header_footer::{HeaderFooterCmd, HfAt, HfEnter, HfKind, HfReenter, HfSlot, PageNumberFormatPatch};
+use uo_docx::session::ops::page::watermark::WatermarkArg;
 use uo_docx::session::ops::page::{GradientStyle, PageCmd, PageFillInput, PageLang};
 use uo_docx::session::ops::sections::section_ops::{ColumnPreset, ColumnSpec, Orientation};
 use uo_docx::session::ops::sections::{
@@ -48,6 +51,7 @@ use uo_docx::session::ops::text::TextCmd;
 use uo_docx::session::ops::text_layout::{HyphenationPatch, LineNumberMode, LineNumberingOptions, LineRestart, TextLayoutCmd};
 use uo_docx::session::{ChangeSet, Command, DocPosition, EditContext, Event, FixedEnv, OpenOptions, Outcome, Session};
 use uo_docx::text::Utf16;
+use uo_docx::write::emit::background::{WatermarkBox, WatermarkLayout, WatermarkPictureSpec, WatermarkTextSpec};
 use uo_docx::write::sig::SigMode;
 use uo_testkit::{Capture, Digest, Replay, Stream, repo_root};
 
@@ -322,11 +326,71 @@ fn ctx_text(s: &Session) -> String {
     format!("{kind}:{rid}:{path}:{ty}")
 }
 
+/// `wm` of the capture: `watermark()` after the op (the context of the page, `hca`).
+fn wm_text(s: &Session, at: HfAt) -> String {
+    let Some((info, image)) = s.watermark(at) else { return "-".to_owned() };
+    let img = image.map_or("-".to_owned(), |i| i.len().to_string());
+    match info {
+        WatermarkInfo::Text(t) => [
+            "text".to_owned(),
+            hx(&t.text.encode_utf16().collect::<Vec<_>>()),
+            t.font.to_string(),
+            fnum(t.size_pt),
+            t.color.to_string(),
+            t.semitransparent.to_string(),
+            t.layout.to_string(),
+            String::new(),
+            String::new(),
+            "-".to_owned(),
+            fnum_req(t.width_pt),
+            fnum_req(t.height_pt),
+            img,
+        ]
+        .join("|"),
+        WatermarkInfo::Picture(p) => [
+            "picture".to_owned(),
+            String::new(),
+            String::new(),
+            "-".to_owned(),
+            String::new(),
+            "-".to_owned(),
+            String::new(),
+            p.rid.to_string(),
+            hx(&p.title.encode_utf16().collect::<Vec<_>>()),
+            p.washout.to_string(),
+            fnum_req(p.width_pt),
+            fnum_req(p.height_pt),
+            img,
+        ]
+        .join("|"),
+    }
+}
+
+fn cov_text(s: &Session) -> String {
+    let idx: Vec<String> = s.cover_para_indexes().iter().map(ToString::to_string).collect();
+    format!("{}:{}", u8::from(s.has_cover_page()), idx.join(","))
+}
+
+/// `gal` of the capture (at #0): the galleries' labels in the interface language.
+fn gal_text(s: &Session, lang: PageLang) -> String {
+    let wg: Vec<String> =
+        s.watermark_gallery_entries(lang).iter().map(|e| format!("{}:{}:{}", e.item.id, e.label, e.category_label)).collect();
+    let cp: Vec<String> = s.cover_pages(lang).iter().map(|(i, n)| format!("{i}:{n}")).collect();
+    let mut parts = vec![wg.join(";"), cp.join(";")];
+    for g in ["header", "footer", "pageTop", "pageBottom", "pageMargin", "pageCurrent"] {
+        let t: Vec<String> =
+            s.header_footer_templates(HfGallery::parse(g).unwrap(), lang).iter().map(|(i, n)| format!("{i}:{n}")).collect();
+        parts.push(t.join(";"));
+    }
+    parts.push(s.watermark_texts(lang).join(","));
+    parts.join("|")
+}
+
 fn part_of_path(s: &Session, path: &str) -> HfPartId {
     s.document().hf.iter().position(|h| &*h.path == path).map_or(HfPartId(u32::MAX), |i| HfPartId(u32::try_from(i).unwrap()))
 }
 
-fn saved(s: &mut Session) -> (String, Option<String>) {
+fn saved(s: &mut Session) -> (String, Option<String>, String) {
     match s.save_docx() {
         Ok(bytes) => {
             let pkg = uo_opc::Package::open(&bytes, &uo_opc::Limits::DEFAULT, &uo_opc::package::OpenOptions::default()).unwrap();
@@ -352,12 +416,25 @@ fn saved(s: &mut Session) -> (String, Option<String>) {
             let parts: Vec<String> =
                 names.iter().map(|n| format!("{n}\n{}", pkg.part_text(n).unwrap().map(|t| t.into_owned()).unwrap_or_default())).collect();
             let joined = parts.join("\n#\n");
+            if std::env::var("UO_F4_DOCXML").is_ok() {
+                println!(
+                    "RUST docxml
+{t}"
+                );
+            }
             if std::env::var("UO_F4_PARTS").is_ok() {
                 println!("RUST parts\n{joined}");
             }
-            (Digest::of(t.as_bytes()).short(), Some(sha(&joined)))
+            let mut media: Vec<String> = pkg
+                .part_names()
+                .filter(|n| n.starts_with("word/media/"))
+                .map(|n| format!("{n}:{}", pkg.part(n).unwrap().map_or(0, <[u8]>::len)))
+                .collect();
+            media.sort();
+            let media = if media.is_empty() { "-".to_owned() } else { media.join(",") };
+            (Digest::of(t.as_bytes()).short(), Some(sha(&joined)), media)
         }
-        Err(_) => ("err".to_owned(), Some("err".to_owned())),
+        Err(_) => ("err".to_owned(), Some("err".to_owned()), "err".to_owned()),
     }
 }
 
@@ -449,6 +526,12 @@ fn kind_of(c: &str) -> Option<HfKind> {
 
 /// What the capture holds about a step's layout answers.
 struct Lay<'a> {
+    lang: PageLang,
+    wb: Option<&'a str>,
+    pi: Option<&'a str>,
+    pn: Option<&'a str>,
+    hpg: Option<u32>,
+    rek: Option<&'a str>,
     hc: Option<&'a str>,
     hp: Option<&'a str>,
     hs: Option<u32>,
@@ -457,29 +540,69 @@ struct Lay<'a> {
     path: Option<&'a str>,
 }
 
+/// The element's construction draws one `Math.random()` (the class field `refSeed`), so the TS
+/// sequence of the harness starts at the SECOND value of the testkit xorshift: the replay's
+/// environment skips the first.
+fn env_after_element_creation() -> FixedEnv {
+    use uo_docx::session::Env;
+    let mut env = FixedEnv::default();
+    let _ = env.random_u32();
+    env
+}
+
+fn lang_of(c: &str) -> PageLang {
+    match c {
+        "pt" => PageLang::Pt,
+        "es" => PageLang::Es,
+        _ => PageLang::En,
+    }
+}
+
+fn unhex(h: &str) -> Vec<u8> {
+    (0..h.len() / 2).map(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).unwrap()).collect()
+}
+
+/// `kind:section:variant` of the capture's `rek`/`cr` as the part to create.
+fn create_of(cr: &str) -> HfReenter {
+    let g: Vec<&str> = cr.split(':').collect();
+    HfReenter::Create {
+        kind: kind_of(&g[0][..1]).unwrap(),
+        section: g[1].parse().unwrap(),
+        slot: match g[2] {
+            "first" => HfSlot::First,
+            "even" => HfSlot::Even,
+            _ => HfSlot::Default,
+        },
+    }
+}
+
+/// The part the layout shows after an op of the remainder: the path of the part in edit, which
+/// resolves now, else the part the references of section `rek` hold (it is created by the op).
+fn part_after(lay: &Lay<'_>) -> HfReenter {
+    match lay.reenter {
+        Some(p) if p != HfPartId(u32::MAX) => HfReenter::Part(p),
+        _ => match lay.rek.filter(|r| *r != "-") {
+            Some(r) => create_of(r),
+            None => HfReenter::Part(HfPartId(u32::MAX)),
+        },
+    }
+}
+
 fn step(s: &mut Session, code: &str, lay: &Lay<'_>, cx: &mut Cx) -> Result<ChangeSet, String> {
     let f: Vec<&str> = code.split(':').collect();
     let nn = |i: usize| f[i].parse::<u32>().unwrap();
     let hf_before = matches!(s.context(), EditContext::HeaderFooter { .. });
-    let reenter = if hf_before {
-        Some(match lay.cr.filter(|c| *c != "-") {
-            Some(cr) => {
-                let g: Vec<&str> = cr.split(':').collect();
-                HfReenter::Create {
-                    kind: kind_of(&g[0][..1]).unwrap(),
-                    section: g[1].parse().unwrap(),
-                    slot: match g[2] {
-                        "first" => HfSlot::First,
-                        "even" => HfSlot::Even,
-                        _ => HfSlot::Default,
-                    },
-                }
-            }
-            None => HfReenter::Part(lay.reenter.unwrap_or(HfPartId(u32::MAX))),
-        })
-    } else {
-        None
-    };
+    // the part the page shows after the op: the part in edit afterwards when it exists now, else the
+    // part the references of its section hold (the op creates it): unlinks and re-entries alike
+    let reenter = if hf_before { Some(part_after(lay)) } else { None };
+    if std::env::var("UO_F4_DBG").is_ok() {
+        eprintln!(
+            "DBG {code}: hf_before {hf_before} reenter {reenter:?} lay.reenter {:?} rek {:?} parts {:?}",
+            lay.reenter,
+            lay.rek,
+            s.document().hf.iter().map(|h| h.path.to_string()).collect::<Vec<_>>()
+        );
+    }
     let cmd = match f[0] {
         "ty" => Command::Text(TextCmd::Type { text: Utf16::from_units(units(f[1])) }),
         "en" => Command::Text(TextCmd::Enter),
@@ -622,7 +745,59 @@ fn step(s: &mut Session, code: &str, lay: &Lay<'_>, cx: &mut Cx) -> Result<Chang
                     name: "a.b.png".into(),
                 }),
             };
-            Command::Page(PageCmd::SetPageFill { fill, lang: PageLang::Pt })
+            Command::Page(PageCmd::SetPageFill { fill, lang: lay.lang })
+        }
+        "wm" => {
+            let arg = match f[1] {
+                "g" => WatermarkArg::Gallery(f[2].to_owned()),
+                "t" => {
+                    let spec = WatermarkTextSpec {
+                        text: String::from_utf16_lossy(&units(f[2])),
+                        font: f[3].to_owned(),
+                        size_pt: opt_num(f[4]),
+                        color: f[5].to_owned(),
+                        semitransparent: f[6] == "1",
+                        layout: if f[7] == "d" { WatermarkLayout::Diagonal } else { WatermarkLayout::Horizontal },
+                        lang: None,
+                    };
+                    let measured_box = lay.wb.filter(|w| *w != "-").map(|w| {
+                        let (a, b) = w.split_once('|').unwrap();
+                        WatermarkBox { width_pt: pf(a), height_pt: pf(b) }
+                    });
+                    WatermarkArg::Text { spec, measured_box }
+                }
+                _ => {
+                    let spec = WatermarkPictureSpec {
+                        data: std::sync::Arc::from(unhex(f[2]).into_boxed_slice()),
+                        ext: f[5].to_owned(),
+                        title: f[6].to_owned(),
+                        scale: opt_num(f[3]),
+                        washout: f[4] == "1",
+                    };
+                    let pixel_info = lay.pi.filter(|p| *p != "-").map(|p| {
+                        let v: Vec<f64> = p.split(',').map(pf).collect();
+                        [v[0], v[1], v[2]]
+                    });
+                    WatermarkArg::Picture { spec, pixel_info }
+                }
+            };
+            Command::Page(PageCmd::SetWatermark { spec: Box::new(arg), at: at_of(lay.hc), lang: lay.lang, reenter })
+        }
+        "rwm" => Command::Page(PageCmd::RemoveWatermark { reenter }),
+        "cv" => Command::Page(PageCmd::InsertCoverPage { id: f[1].to_owned(), lang: lay.lang }),
+        "rcv" => Command::Page(PageCmd::RemoveCoverPage),
+        "hft" => {
+            let gallery = HfGallery::parse(f[1]).unwrap();
+            let editing = ctx_text(s);
+            let same_kind = gallery_kind(gallery).is_some_and(|k| editing.starts_with(k.as_str()));
+            let enter = (gallery_kind(gallery).is_some() && !same_kind)
+                .then(|| lay.hpg.map(|page| HfEnter { part: part_after(lay), page }))
+                .flatten();
+            let page_numbers = lay.pn.filter(|p| *p != "-").map(|p| {
+                let (a, b) = p.split_once(':').unwrap();
+                (pf(a), pf(b))
+            });
+            Command::HeaderFooter(HeaderFooterCmd::InsertTemplate { gallery, id: f[2].to_owned(), lang: lay.lang, enter, page_numbers })
         }
         "ehf" => {
             // the TS no-op when already in edit
@@ -706,13 +881,15 @@ fn d2b_hook(s: &Session, code: &str) -> Option<&'static str> {
 #[test]
 fn d2b_f4_session_matches_the_element() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity");
-    let cap = Capture::read(dir.join("d2b-f4-session.capture")).unwrap();
+    let cap = Capture::read(std::env::var("UO_F4_CAPTURE").map_or_else(|_| dir.join("d2b-f4-session.capture"), std::path::PathBuf::from))
+        .unwrap();
     let root = repo_root(env!("CARGO_MANIFEST_DIR"));
     let steps: usize = cap.meta("steps").unwrap().parse().unwrap();
     let mut replay = Replay::new(&cap);
     let mut cx = Cx::new();
     let mut docs = 0;
     let only = std::env::var("UO_F4_DOC").ok();
+    let mut sink_media = 0usize;
     for rec in cap.records().iter().filter(|r| r.key.ends_with("#0")) {
         let rel = rec.key.trim_end_matches("#0");
         if only.as_deref().is_some_and(|o| o != rel) {
@@ -720,9 +897,11 @@ fn d2b_f4_session_matches_the_element() {
         }
         let bytes = std::fs::read(root.join(rel)).unwrap();
         let mut s =
-            Session::open(bytes, OpenOptions { sig_mode: SigMode::Ts, ..OpenOptions::default() }, Box::new(FixedEnv::default())).unwrap();
+            Session::open(bytes, OpenOptions { sig_mode: SigMode::Ts, ..OpenOptions::default() }, Box::new(env_after_element_creation()))
+                .unwrap();
         s.exec(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }), &mut cx.cx()).unwrap();
         let mut pending: Option<&str> = None;
+        let lang = lang_of(cap.get(&format!("{rel}#0"), "lang").unwrap_or("pt"));
         for j in 0..=steps {
             let key = format!("{rel}#{j}");
             let Some(code) = cap.get(&key, "op") else { break };
@@ -731,6 +910,12 @@ fn d2b_f4_session_matches_the_element() {
                 pending = d2b_hook(&s, code);
             }
             let lay = Lay {
+                lang,
+                wb: cap.get(&key, "wb"),
+                pi: cap.get(&key, "pi"),
+                pn: cap.get(&key, "pn"),
+                hpg: cap.get(&key, "hpg").and_then(|h| h.parse().ok()),
+                rek: cap.get(&key, "rek"),
                 hc: cap.get(&key, "hc"),
                 hp: cap.get(&key, "hp"),
                 hs: cap.get(&key, "hs").and_then(|h| h.parse().ok()),
@@ -738,7 +923,26 @@ fn d2b_f4_session_matches_the_element() {
                 cr: cap.get(&key, "cr"),
                 path: cap.get(&key, "reenter"),
             };
-            for f in ["hc", "hp", "hs", "reenter", "cr", "sec.text", "body.text", "hfp.text", "parts.text", "paras.text"] {
+            for f in [
+                "hc",
+                "hp",
+                "hs",
+                "reenter",
+                "cr",
+                "wb",
+                "pi",
+                "pn",
+                "hpg",
+                "rek",
+                "pjson",
+                "savectx",
+                "docxml.text",
+                "sec.text",
+                "body.text",
+                "hfp.text",
+                "parts.text",
+                "paras.text",
+            ] {
                 if cap.get(&key, f).is_some() {
                     replay.skip(&key, f);
                 }
@@ -752,6 +956,14 @@ fn d2b_f4_session_matches_the_element() {
                     Err(e) => panic!("{rel}#{j}: {e}"),
                 };
                 ev = Some(ev_text(&cs));
+                if std::env::var("UO_F4_DBG").is_ok() {
+                    eprintln!(
+                        "DBG after {code}: body {} | hfp {} | ctx {}",
+                        body_text(&s),
+                        hfp_text(&s).replace(char::from(10), ";"),
+                        ctx_text(&s)
+                    );
+                }
             }
             let mut facets = vec![
                 ("paras", paras_digest(&s)),
@@ -767,12 +979,40 @@ fn d2b_f4_session_matches_the_element() {
             if let Some(ev) = ev {
                 facets.push(("ev", ev));
             }
+            facets.push(("wm", wm_text(&s, at_of(cap.get(&key, "hca")))));
+            facets.push(("cov", cov_text(&s)));
+            replay.skip(&key, "hca");
+            if j == 0 {
+                facets.push(("gal", sha(&gal_text(&s, lang))));
+                replay.skip(&key, "lang");
+            }
             if cap.get(&key, "docxml").is_some() {
-                let (d, parts) = saved(&mut s);
+                let (d, parts, media) = saved(&mut s);
+                // `saveDocx` in header mode returns to the page, in the part the layout shows there now (the
+                // layout's answer, D2a-C2): the replay enters the part the TS recorded
+                if let (Some(sc), EditContext::HeaderFooter { part, page, .. }) =
+                    (cap.get(&key, "savectx").filter(|p| *p != "-"), s.context().clone())
+                {
+                    let (path, rek) = sc.split_once('|').unwrap();
+                    let mut want = part_of_path(&s, path);
+                    if want == HfPartId(u32::MAX)
+                        && let HfReenter::Create { kind, section, slot } = create_of(rek)
+                    {
+                        // the part is new: the save's return to the page makes it, as `enterHeaderFooter` does
+                        let _ =
+                            s.exec(Command::HeaderFooter(HeaderFooterCmd::CreateHeaderFooterPart { kind, section, slot }), &mut cx.cx());
+                        want = part_of_path(&s, path);
+                    }
+                    if want != part && want != HfPartId(u32::MAX) {
+                        let _ = s.exec(Command::Context(ContextCmd::EnterHeaderFooter { part: want, page }), &mut cx.cx());
+                    }
+                }
                 facets.push(("docxml", d));
                 if let Some(p) = parts {
                     facets.push(("parts", p));
                 }
+                facets.push(("media", media));
+                sink_media += 1;
             }
             if std::env::var("UO_F4_DUMP").is_ok_and(|d| d == key) {
                 let doc = s.document();
@@ -794,6 +1034,9 @@ fn d2b_f4_session_matches_the_element() {
                     each.join(",")
                 );
                 println!("RUST sec\n{}\nRUST body\n{}\nRUST hfp\n{}", sec_text(&s), body_text(&s), hfp_text(&s));
+                for (i, p) in paras.iter().enumerate() {
+                    println!("RUST pjson {i} {}", uo_docx::js::JsonWriter::stringify(p, None).unwrap_or_default());
+                }
                 for f in ["sec.text", "body.text", "hfp.text", "parts.text", "paras.text"] {
                     println!("TS {f}\n{}", cap.get(&key, f).unwrap_or("-").replace('\u{23ce}', "\n"));
                 }
@@ -812,7 +1055,7 @@ fn d2b_f4_session_matches_the_element() {
         docs += 1;
     }
     let report = replay.finish();
-    println!("d2b-f4-session: {docs} documents, {}", report.summary());
+    println!("d2b-f4-session: {docs} documents, {sink_media} saves checked, {}", report.summary());
     if !report.is_clean() {
         println!("{}", report.describe(std::env::var("UO_D2A_ALL").map_or(40, |_| 100_000)));
     }

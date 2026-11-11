@@ -6,7 +6,7 @@
 //! where a drawing run lives ([`loc`]), the selection (`floatSel`, `floatMulti`, the inline
 //! picture), `editDrawing`/`applyDrawingXml`, and the textbox chains.
 
-mod loc;
+pub(super) mod loc;
 pub mod pure;
 pub mod rx;
 pub(crate) mod textbox;

@@ -15,6 +15,12 @@ use std::path::Path;
 use uo_docx::js::{JsNumber, JsonWriter};
 use uo_docx::model::media::MediaStore;
 use uo_docx::model::section::{ColWidth, Cols, LineNumbering, SectPr};
+use uo_docx::session::ops::header_footer::hf_templates::{
+    HfGallery, HfTemplateEnv, gallery_kind, hf_template_xml, hf_templates, placeholder_text,
+};
+use uo_docx::session::ops::page::cover_templates::{
+    COVER_NS, COVER_TEMPLATES, CoverEnv, CoverFields, CoverPage, cover_placeholders, cover_xml,
+};
 use uo_docx::session::ops::page::{GradientStyle, PageFillInput, PageLang, gradient_geometry, page_fill_from};
 use uo_docx::session::ops::sections::section_ops::{
     ColumnPreset, ColumnSpec, Orientation, column_widths, columns_for, columns_preset_of, content_width, max_columns, preset_columns,
@@ -26,7 +32,7 @@ use uo_docx::session::ops::text_layout::{
 };
 use uo_jsnum::json::number;
 use uo_jsnum::parse::to_number;
-use uo_testkit::{Capture, Replay};
+use uo_testkit::{Capture, Digest, Replay};
 
 fn js(x: f64) -> String {
     uo_jsnum::format::to_js_string(x)
@@ -139,6 +145,95 @@ fn ln_decode(s: &str) -> Option<LineNumbering> {
     Some(l)
 }
 
+fn lang_of(s: &str) -> PageLang {
+    match s {
+        "pt" => PageLang::Pt,
+        "es" => PageLang::Es,
+        _ => PageLang::En,
+    }
+}
+
+fn unhex(s: &str) -> String {
+    let b: Vec<u8> = (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect();
+    String::from_utf8(b).unwrap()
+}
+
+fn units(s: &str) -> usize {
+    s.encode_utf16().count()
+}
+
+/// `sha|length|ids drawn` (or `null|ids drawn`) of a template's XML.
+fn xml_summary(xml: Option<&str>, drawn: usize) -> String {
+    match xml {
+        None => format!("null|{drawn}"),
+        Some(x) => format!("{}|{}|{drawn}", Digest::of(x.as_bytes()).short(), units(x)),
+    }
+}
+
+/// The cover of a record: `lang|w|h|top|bottom|left|right|a1|a2|seed|hex fields`.
+fn cover_case(id: &str, input: &str) -> (Option<String>, usize) {
+    let f: Vec<&str> = input.split('|').collect();
+    let num = |i: usize| to_number(f[i]);
+    let fields: Vec<String> = f[10].split(';').map(unhex).collect();
+    let seed = num(9);
+    let mut n = 0usize;
+    let mut draw = || {
+        let v = seed + 37.0 * f64::from(u32::try_from(n).unwrap());
+        n += 1;
+        v
+    };
+    let hexv = |s: &str| if s == "-" { String::new() } else { s.to_owned() };
+    let mut env = CoverEnv {
+        lang: lang_of(f[0]),
+        page: CoverPage { w: num(1), h: num(2), top: num(3), bottom: num(4), left: num(5), right: num(6) },
+        accent1: hexv(f[7]),
+        accent2: hexv(f[8]),
+        fields: CoverFields {
+            title: fields[0].clone(),
+            subtitle: fields[1].clone(),
+            author: fields[2].clone(),
+            date: fields[3].clone(),
+            company: fields[4].clone(),
+            summary: fields[5].clone(),
+        },
+        drawing_id: &mut draw,
+    };
+    let xml = cover_xml(id, &mut env);
+    (xml, n)
+}
+
+/// The template of a record: `gallery|id|lang|style hex (- none, + empty)|accent|seed`.
+fn hf_case(input: &str) -> (Option<String>, usize) {
+    let f: Vec<&str> = input.split('|').collect();
+    let gallery = HfGallery::parse(f[0]).unwrap();
+    let id = if f[1] == "-" { "" } else { f[1] };
+    let style = match f[3] {
+        "-" => None,
+        "+" => Some(String::new()),
+        h => Some(unhex(h)),
+    };
+    let seed = to_number(f[5]);
+    let mut n = 0usize;
+    let mut draw = || {
+        let v = seed + 37.0 * f64::from(u32::try_from(n).unwrap());
+        n += 1;
+        v
+    };
+    let mut env = HfTemplateEnv { style_id: style.as_deref(), accent: f[4], lang: lang_of(f[2]), drawing_id: &mut draw };
+    let xml = hf_template_xml(gallery, id, &mut env);
+    (xml, n)
+}
+
+fn names_json(id: &str, n: [&str; 3]) -> String {
+    format!(
+        "{{\"id\":{},\"name\":{{\"en\":{},\"pt\":{},\"es\":{}}}}}",
+        uo_jsnum::json::string(id),
+        uo_jsnum::json::string(n[0]),
+        uo_jsnum::json::string(n[1]),
+        uo_jsnum::json::string(n[2])
+    )
+}
+
 fn gs(i: usize) -> GradientStyle {
     [
         GradientStyle::Horizontal,
@@ -239,6 +334,40 @@ fn d2b_f4_pure_files_match_the_ts() {
         } else if key.starts_with("geo#") {
             let (si, v) = input.split_once(',').unwrap();
             json_of(&gradient_geometry(gs(si.parse().unwrap()), to_number(v)))
+        } else if let Some(rest) = key.strip_prefix("cover#") {
+            let (xml, n) = cover_case(rest.split_once(':').unwrap().0, input);
+            xml_summary(xml.as_deref(), n)
+        } else if let Some(rest) = key.strip_prefix("coverxml#") {
+            cover_case(rest.split_once(':').unwrap().0, input).0.unwrap()
+        } else if key.starts_with("hf#") {
+            let (xml, n) = hf_case(input);
+            xml_summary(xml.as_deref(), n)
+        } else if key.starts_with("hfxml#") {
+            hf_case(input).0.unwrap()
+        } else if let Some(g) = key.strip_prefix("meta#hft:") {
+            let v: Vec<String> = hf_templates(HfGallery::parse(g).unwrap()).iter().map(|t| names_json(t.id, t.name)).collect();
+            format!("[{}]", v.join(","))
+        } else if let Some(g) = key.strip_prefix("meta#kind:") {
+            gallery_kind(HfGallery::parse(g).unwrap()).map_or("null", uo_docx::session::ops::header_footer::HfKind::as_str).to_owned()
+        } else if let Some(l) = key.strip_prefix("meta#ph:") {
+            placeholder_text(lang_of(l)).to_owned()
+        } else if let Some(l) = key.strip_prefix("meta#coverph:") {
+            let c = cover_placeholders(lang_of(l));
+            let q = uo_jsnum::json::string;
+            format!(
+                "{{\"title\":{},\"subtitle\":{},\"author\":{},\"date\":{},\"company\":{},\"summary\":{}}}",
+                q(&c.title),
+                q(&c.subtitle),
+                q(&c.author),
+                q(&c.date),
+                q(&c.company),
+                q(&c.summary)
+            )
+        } else if key == "meta#covertemplates" {
+            let v: Vec<String> = COVER_TEMPLATES.iter().map(|t| names_json(t.id, t.name)).collect();
+            format!("[{}]", v.join(","))
+        } else if key == "meta#coverns" {
+            COVER_NS.to_owned()
         } else if key.starts_with("fill#") {
             let f: Vec<&str> = input.split(',').collect();
             let style = gs(f[3].parse().unwrap());

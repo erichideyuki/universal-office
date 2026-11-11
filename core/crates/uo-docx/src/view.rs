@@ -562,6 +562,21 @@ pub trait LayoutOracle {
     /// Forced hyphenation (`nextManualHyphenation`): the first body hyphenation point at or after
     /// `from`, skipping `skip`; `None` when there is none.
     fn next_hyphenation(&mut self, doc: DocView<'_>, from: &DocRef, skip: &HyphenSkips) -> Result<Option<HyphenCandidate>, LayoutError>;
+
+    /// The page number the shell last showed for each paragraph (the TS `pageLabelOf`,
+    /// universal-write.ts:6623: `page.number` of the first line of the paragraph in the editor's
+    /// last layout, matched by paragraph identity; `None` when the paragraph has no line there).
+    /// D2b-F10: the TOC, table-of-figures and gallery sources read it for every entry (G21 revisit:
+    /// K17c dropped `pages_of` because TOC numbers come through `onField`, but this call site
+    /// exists and is observable). The session calls it ONCE, at the start of a command that builds
+    /// TOC sources, with the unchanged view. The default answers an error so that an oracle that
+    /// does not implement it fails loudly instead of showing page "1" everywhere.
+    ///
+    /// # Errors
+    /// The default always errs (`Internal`).
+    fn shown_page_numbers(&mut self, _doc: DocView<'_>, _paras: &[DocRef]) -> Result<Vec<Option<f64>>, LayoutError> {
+        Err(LayoutError { kind: LayoutErrorKind::Internal, detail: "shown_page_numbers: not implemented by this oracle".into() })
+    }
 }
 
 #[cfg(test)]

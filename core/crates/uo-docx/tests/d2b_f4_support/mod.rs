@@ -7,7 +7,10 @@ use uo_docx::ids::HfPartId;
 use uo_docx::read::blank::{BlankDocxOptions, blank_docx_package};
 use uo_docx::session::ops::context::ContextCmd;
 use uo_docx::session::ops::format::{ColorArg, ThemeColorRef};
-use uo_docx::session::ops::header_footer::{HeaderFooterCmd, HfAt, HfKind, HfReenter, HfSlot, PageNumberFormatPatch};
+use uo_docx::session::ops::header_footer::hf_templates::{HfGallery, hf_templates};
+use uo_docx::session::ops::header_footer::{HeaderFooterCmd, HfAt, HfEnter, HfKind, HfReenter, HfSlot, PageNumberFormatPatch};
+use uo_docx::session::ops::page::cover_templates::COVER_TEMPLATES;
+use uo_docx::session::ops::page::watermark::WatermarkArg;
 use uo_docx::session::ops::page::{GradientStyle, PageCmd, PageFillInput, PageLang};
 use uo_docx::session::ops::paragraph::ParagraphCmd;
 use uo_docx::session::ops::sections::section_ops::{ColumnPreset, ColumnSpec, Orientation};
@@ -19,6 +22,7 @@ use uo_docx::session::ops::text::TextCmd;
 use uo_docx::session::ops::text_layout::{HyphenationPatch, LineNumberMode, LineNumberingOptions, LineRestart, TextLayoutCmd};
 use uo_docx::session::{Command, DocPosition, Session};
 use uo_docx::text::Utf16;
+use uo_docx::write::emit::background::{WatermarkBox, WatermarkLayout, WatermarkPictureSpec, WatermarkTextSpec};
 use uo_testkit::generate::Rng;
 
 pub const W: &str = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"";
@@ -109,7 +113,7 @@ fn hostile_f64(rng: &mut Rng) -> f64 {
 /// A command of the F4 families a user could give now, mixed with typing and selections.
 pub fn f4_cmd(rng: &mut Rng, s: &Session) -> Command {
     let flag = |rng: &mut Rng| rng.below(2) == 0;
-    match rng.below(100) {
+    match rng.below(112) {
         0..=9 => Command::Text(TextCmd::Type { text: Utf16::from(["a", "Olá ", "😀"][rng.below(3)]) }),
         10..=12 => Command::Text(TextCmd::Enter),
         13..=15 => Command::Text(TextCmd::Backspace),
@@ -262,8 +266,211 @@ pub fn f4_cmd(rng: &mut Rng, s: &Session) -> Command {
                 limit: flag(rng).then(|| rng.below(4) as f64),
             },
         }),
+        100..=111 => remainder_cmd(rng, s),
         _ => Command::Paragraph(ParagraphCmd::SetAlignment { alignment: "center".into() }),
     }
+}
+
+fn lang(rng: &mut Rng) -> PageLang {
+    [PageLang::En, PageLang::Pt, PageLang::Es][rng.below(3)]
+}
+
+fn png() -> std::sync::Arc<[u8]> {
+    std::sync::Arc::from(vec![0x89u8, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3].into_boxed_slice())
+}
+
+const WM_IDS: [&str; 6] = ["confidential1", "draft2", "donotcopy1", "asap2", "urgent1", "nope"];
+const WM_TEXTS: [&str; 6] = ["Rascunho", "DRAFT", "A < B & \"C\"", " ", "Confidencial \u{1f600}", "X"];
+
+/// `enter` of `insertHeaderFooterTemplate`: the part the layout would show (an existing one, or the one a
+/// section creates).
+fn enter(rng: &mut Rng, s: &Session) -> Option<HfEnter> {
+    if rng.below(5) == 0 {
+        return None;
+    }
+    let part = part(rng, s).unwrap_or(HfReenter::Create { kind: HfKind::Header, section: 0, slot: HfSlot::Default });
+    Some(HfEnter { part, page: u32::try_from(rng.below(3)).unwrap() })
+}
+
+fn template_cmd(rng: &mut Rng, s: &Session, gallery: HfGallery, hostile: bool) -> Command {
+    let list = hf_templates(gallery);
+    let id = if rng.below(8) == 0 { "nope" } else { list[rng.below(list.len())].id };
+    Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+        gallery,
+        id: id.to_owned(),
+        lang: lang(rng),
+        enter: enter(rng, s),
+        page_numbers: (rng.below(2) == 0)
+            .then(|| if hostile { (hostile_f64(rng), hostile_f64(rng)) } else { (1.0 + rng.below(9) as f64, 12.0) }),
+    })
+}
+
+/// A command of the watermark, cover page and header/footer template families (plausible).
+pub fn remainder_cmd(rng: &mut Rng, s: &Session) -> Command {
+    let flag = |rng: &mut Rng| rng.below(2) == 0;
+    match rng.below(12) {
+        0 => Command::Page(PageCmd::SetWatermark {
+            spec: Box::new(WatermarkArg::Gallery(WM_IDS[rng.below(6)].to_owned())),
+            at: at(rng, s),
+            lang: lang(rng),
+            reenter: part(rng, s),
+        }),
+        1 => Command::Page(PageCmd::SetWatermark {
+            spec: Box::new(WatermarkArg::Text {
+                spec: WatermarkTextSpec {
+                    text: WM_TEXTS[rng.below(6)].to_owned(),
+                    font: ["calibri", "Arial"][rng.below(2)].to_owned(),
+                    size_pt: flag(rng).then(|| [20.0, 48.5, 0.0][rng.below(3)]),
+                    color: ["C0C0C0", "FF0000"][rng.below(2)].to_owned(),
+                    semitransparent: flag(rng),
+                    layout: if flag(rng) { WatermarkLayout::Diagonal } else { WatermarkLayout::Horizontal },
+                    lang: None,
+                },
+                measured_box: flag(rng).then_some(WatermarkBox { width_pt: 200.0, height_pt: 40.0 }),
+            }),
+            at: at(rng, s),
+            lang: lang(rng),
+            reenter: part(rng, s),
+        }),
+        2 => Command::Page(PageCmd::SetWatermark {
+            spec: Box::new(WatermarkArg::Picture {
+                spec: WatermarkPictureSpec {
+                    data: png(),
+                    ext: ["png", "PNG", "jpg"][rng.below(3)].to_owned(),
+                    title: "logo.png".to_owned(),
+                    scale: flag(rng).then_some(50.0),
+                    washout: flag(rng),
+                },
+                pixel_info: flag(rng).then_some([100.0, 50.0, 96.0]),
+            }),
+            at: at(rng, s),
+            lang: lang(rng),
+            reenter: part(rng, s),
+        }),
+        3 => Command::Page(PageCmd::RemoveWatermark { reenter: part(rng, s) }),
+        4..=5 => Command::Page(PageCmd::InsertCoverPage {
+            id: if rng.below(9) == 0 { "nope".to_owned() } else { COVER_TEMPLATES[rng.below(8)].id.to_owned() },
+            lang: lang(rng),
+        }),
+        6 => Command::Page(PageCmd::RemoveCoverPage),
+        7..=10 => {
+            let g = [HfGallery::Header, HfGallery::Footer, HfGallery::PageTop, HfGallery::PageBottom, HfGallery::PageMargin][rng.below(5)];
+            template_cmd(rng, s, g, false)
+        }
+        _ => template_cmd(rng, s, HfGallery::PageCurrent, false),
+    }
+}
+
+/// A command of the remainder with hostile arguments: ids that do not exist, sizes NaN/infinite, boxes
+/// and pixel sizes of zero, extensions that are not extensions, parts and sections past the end, a
+/// text of 200 KB.
+pub fn hostile_remainder_cmd(rng: &mut Rng, s: &Session) -> Command {
+    let n = hostile_f64(rng);
+    let page_set = |spec: WatermarkArg, rng: &mut Rng| {
+        Command::Page(PageCmd::SetWatermark {
+            spec: Box::new(spec),
+            at: HfAt { section: [0, 1, u32::MAX][rng.below(3)], slot: [HfSlot::Default, HfSlot::First, HfSlot::Even][rng.below(3)] },
+            lang: lang(rng),
+            reenter: [
+                None,
+                Some(HfReenter::Part(HfPartId(u32::MAX))),
+                Some(HfReenter::Create { kind: HfKind::Header, section: u32::MAX, slot: HfSlot::First }),
+            ][rng.below(3)],
+        })
+    };
+    match rng.below(11) {
+        0 => page_set(WatermarkArg::Gallery([String::new(), "nope".to_owned(), "\u{0}".to_owned()][rng.below(3)].clone()), rng),
+        1 => page_set(
+            WatermarkArg::Text {
+                spec: WatermarkTextSpec {
+                    text: "a".repeat(200_000),
+                    font: "x\"<&>".to_owned(),
+                    size_pt: Some(n),
+                    color: "zz".to_owned(),
+                    semitransparent: true,
+                    layout: WatermarkLayout::Diagonal,
+                    lang: None,
+                },
+                measured_box: Some(WatermarkBox { width_pt: n, height_pt: hostile_f64(rng) }),
+            },
+            rng,
+        ),
+        2 => page_set(
+            WatermarkArg::Picture {
+                spec: WatermarkPictureSpec {
+                    data: png(),
+                    ext: ["", "../x", "jp(g", "$&", "png", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"][rng.below(6)].to_owned(),
+                    title: "t\"<".to_owned(),
+                    scale: Some(n),
+                    washout: true,
+                },
+                pixel_info: Some(
+                    [[0.0, 0.0, 0.0], [f64::NAN, f64::NAN, f64::NAN], [1e9, 1.0, 1.0], [n, 1.0, hostile_f64(rng)]][rng.below(4)],
+                ),
+            },
+            rng,
+        ),
+        3 => Command::Page(PageCmd::RemoveWatermark { reenter: Some(HfReenter::Part(HfPartId(u32::MAX))) }),
+        4 => Command::Page(PageCmd::InsertCoverPage { id: ["", "nope", "\u{0}", "BAND"][rng.below(4)].to_owned(), lang: lang(rng) }),
+        5 => Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::ALL[rng.below(6)],
+            id: ["", "nope", "\u{0}"][rng.below(3)].to_owned(),
+            lang: lang(rng),
+            enter: Some(HfEnter { part: HfReenter::Part(HfPartId(u32::MAX)), page: u32::MAX }),
+            page_numbers: Some((n, hostile_f64(rng))),
+        }),
+        6 => Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::ALL[rng.below(6)],
+            id: "blank".to_owned(),
+            lang: lang(rng),
+            enter: Some(HfEnter { part: HfReenter::Create { kind: HfKind::Footer, section: u32::MAX, slot: HfSlot::Even }, page: 0 }),
+            page_numbers: None,
+        }),
+        7 => {
+            let g = HfGallery::ALL[rng.below(6)];
+            template_cmd(rng, s, g, true)
+        }
+        8 => Command::Page(PageCmd::RemoveCoverPage),
+        _ => remainder_cmd(rng, s),
+    }
+}
+
+/// A document with document properties (`dc:title`, `dc:creator`, `Company`) for the cover pages.
+pub fn doc_with_props() -> Vec<u8> {
+    let mut pkg = uo_opc::Package::open(&doc(3, 1), &uo_opc::Limits::default(), &uo_opc::package::OpenOptions::default()).unwrap();
+    pkg.set_part_text(
+        "docProps/core.xml",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>My &amp; Title</dc:title><dc:creator> Eric </dc:creator></cp:coreProperties>",
+    );
+    pkg.set_part_text(
+        "docProps/app.xml",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"><Company>ACME</Company></Properties>",
+    );
+    pkg.save(&uo_opc::package::SaveOptions::default()).unwrap()
+}
+
+/// A document whose `word/header9.xml` holds a watermark (the output of the W5 emitter).
+pub fn doc_with_watermark() -> Vec<u8> {
+    use uo_docx::write::emit::background::{WatermarkIds, WatermarkSpec, vml_color_attr, watermark_run_xml};
+    let mut pkg = uo_opc::Package::open(&doc(3, 1), &uo_opc::Limits::default(), &uo_opc::package::OpenOptions::default()).unwrap();
+    let spec = WatermarkSpec::Text(WatermarkTextSpec {
+        text: "DRAFT".to_owned(),
+        font: "calibri".to_owned(),
+        size_pt: None,
+        color: "C0C0C0".to_owned(),
+        semitransparent: true,
+        layout: WatermarkLayout::Diagonal,
+        lang: None,
+    });
+    let ids = WatermarkIds { n: 123_456_789.0, spid: 2049.0, anchor_id: "0A0B0C0D".to_owned() };
+    let run = watermark_run_xml(&spec, WatermarkBox { width_pt: 412.4, height_pt: 247.45 }, &ids, None, Some(&vml_color_attr));
+    pkg.set_part_text(
+        "word/header9.xml",
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:hdr {W} xmlns:v=\"urn:schemas-microsoft-com:vml\" xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:w10=\"urn:schemas-microsoft-com:office:word\" xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\"><w:p>{run}<w:r><w:t>Header text</w:t></w:r></w:p></w:hdr>"
+        ),
+    );
+    pkg.save(&uo_opc::package::SaveOptions::default()).unwrap()
 }
 
 fn gs(rng: &mut Rng) -> GradientStyle {
@@ -281,6 +488,7 @@ fn gs(rng: &mut Rng) -> GradientStyle {
 pub fn hostile_cmd(rng: &mut Rng, s: &Session) -> Command {
     let n = hostile_f64(rng);
     match rng.below(14) {
+        0 if rng.below(3) == 0 => hostile_remainder_cmd(rng, s),
         0 => Command::Section(SectionCmd::SetPageSetup(Box::new(PageSetup {
             custom_margins: Some([n, n, hostile_f64(rng), hostile_f64(rng)]),
             apply_to: Some(apply(rng)),

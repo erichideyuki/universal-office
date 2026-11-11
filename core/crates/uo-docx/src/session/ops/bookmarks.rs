@@ -478,7 +478,7 @@ impl Session {
 
     /// `newBookmarkId()`: a free `w:id` (above every bookmark of the document, the raw ones in the
     /// parts included), computed once per session.
-    fn new_bookmark_id(&mut self) -> f64 {
+    pub(crate) fn new_bookmark_id(&mut self) -> f64 {
         if self.next_bm_id < 0.0 {
             let mut max = -1.0_f64;
             // `allParagraphs()`: the body, the cells, the header/footer parts, the notes (textboxes inside)
@@ -504,7 +504,7 @@ impl Session {
 
     /// `dropBookmark(name)`: takes the marks of the bookmark off every story (and the raw entry);
     /// whether anything was found, and whether it was outside the active story.
-    fn drop_bookmark(&mut self, name: &str) -> (bool, bool) {
+    pub(crate) fn drop_bookmark(&mut self, name: &str) -> (bool, bool) {
         let mut hit = false;
         let mut elsewhere = false;
         for s in self.mark_stories() {

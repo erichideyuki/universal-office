@@ -652,7 +652,7 @@ impl Session {
     }
 
     /// `currentProps()`: the props at the caret.
-    fn current_props(&self) -> CarriedProps {
+    pub(crate) fn current_props(&self) -> CarriedProps {
         match self.paras() {
             Some(paras) => props_at(paras, self.selection.focus),
             None => CarriedProps::plain(default_run_props()),

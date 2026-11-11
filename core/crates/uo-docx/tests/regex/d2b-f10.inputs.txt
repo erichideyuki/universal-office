@@ -1,0 +1,437 @@
+
+ 
+1
+true
+TRUE
+ 1
+1 
+TOC
+ TOC \\o "1-3"
+xTOC TOC
+TOC_
+toc
+Toc\\h
+ TOC
+﻿TOC
+é toc
+ſ toc
+K TOC
+TOCé
+_TOC
+TOC1
+\tTOC\n
+val 12
+val -3x
+val-3
+val  
+val\t+5
+VAL 1
+<a:blipFillx/><a:blipFill r:embed="x"/>
+<a:blipFill
+<a:blipFill>
+<a:blipFill_/>
+a\r\nb\rc\nd\n\r
+<w:p w14:paraId="1" \t\n/>
+<w:p/>x
+<w:p>
+/>
+  />
+<dcterms:created xsi:type="x">2024-01-01T00:00:00Z</dcterms:created>
+<dcterms:createdX>v<
+<dcterms:created>no end
+<x/><dcterms:created a="<">t<
+_x0000_s1026
+pic.a-b_1
+pic a
+ab­cd­
+é😀
+TOC
+ TOC 
+toc
+REF x
+ REF  _Ref123 
+PAGEREF a
+NOTEREF a
+NOTEREF
+REFERENCE x
+SEQ Figure
+ SEQ "My label" 
+SEQ
+seq   a
+SEQ "" x
+SEQ "a
+SEQ \\* ARABIC
+TC "a b"
+ TC  text
+TC "a \\"q\\" b"
+TC "a\\\nb"
+TC
+TC "x
+tc "A" \\f C
+= SUM(ABOVE)
+=1
+  =
+PAGE
+PAGEREFx
+PAGEREF
+ PAGEREF a \\h
+DATE
+\\o "1-3"
+\\o
+\\u
+\\h
+\\z
+\\n
+\\n "2-3"
+\\p " "
+\\p ""
+\\f
+\\f x
+\\f "a b"
+\\f ""
+\\l "1-2"
+\\t "Heading 1;1;Heading 2;2"
+\\t "a,1,b"
+\\t ";"
+\\c "Figure"
+\\a "Table"
+\\w
+\\r
+\\d "-"
+\\x
+\\O
+\\U
+\\Z
+\\H
+\\p
+\\o"1-2"
+\\o  "1 - 2"
+\\o "9-9"
+\\o "x"
+\\t "x;y"
+\\t "x;0;y;-3;z;99"
+REFERENCE x \\t "a,1,b" \\H \\z
+TC "a\\\nb" \\H \\t "x;y"
+TC "a \\"q\\" b" \\H \\U \\U
+PAGEREFx \\u \\f "" \\d "-" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+REFERENCE x \\U \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TOC \\n "2-3" \\p " "
+SEQ "a \\o  "1 - 2" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+SEQ "" x \\u \\f "a b"
+DATE \\o
+NOTEREF \\z \\o  "1 - 2"
+REFERENCE x \\f x
+ PAGEREF a \\h \\t "x;y" \\f "a b" \\u
+TC "x \\f "a b" \\n "2-3"
+  tc "A" \\f C \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p\t
+TC "a b" \\H \\r \\O
+ TC  text \\o"1-2" \\x \\w \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+NOTEREF \\o "x" \\f
+TC
+REFERENCE x \\Z \\z
+SEQ \\f \\t "Heading 1;1;Heading 2;2" \\f x \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+SEQ \\* ARABIC \\O \\Z \\n "2-3"
+  SEQ \\* ARABIC \\t "Heading 1;1;Heading 2;2" \\f "a b" \\H\t
+TOC \\f "a b" \\p
+  TOC \\p " " \\p " "\t
+TC \\o "x" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  toc \\f x \\o\t
+TC "a b" \\n
+TC "a\\\nb" \\t "x;y" \\d "-" \\f ""
+SEQ \\* ARABIC \\f \\t "a,1,b" \\p ""
+PAGEREF a \\Z
+ TC  text \\t ";" \\t "x;0;y;-3;z;99"
+  TC \\H \\o  "1 - 2"\t
+ TOC  \\o "9-9" \\t "x;0;y;-3;z;99" \\h \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TC "a \\"q\\" b" \\o "9-9" \\O \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  PAGEREF a \\t "a,1,b" \\x \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p\t
+tc "A" \\f C \\o  "1 - 2" \\u
+  seq   a\t
+REFERENCE x \\o"1-2"
+seq   a \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ PAGEREF a \\h \\f "" \\n
+ TC  text \\f ""
+ PAGEREF a \\h \\r \\o "9-9" \\r
+=1 \\u \\o \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+   SEQ "My label"  \\n\t
+TC "a\\\nb" \\f
+ TC  text \\w \\w
+ SEQ "My label" 
+SEQ "" x \\t "x;0;y;-3;z;99"
+ TOC  \\t ";" \\u
+PAGEREF a \\u \\p ""
+ TOC  \\f x \\f "a b" \\O
+REFERENCE x \\a "Table" \\h
+SEQ "a \\o  "1 - 2"
+TOC \\l "1-2" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ PAGEREF a \\h \\o "x" \\x \\r
+SEQ \\o \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+REF x \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  NOTEREF a \\o  "1 - 2" \\o"1-2" \\n "2-3"\t
+SEQ Figure \\Z
+TC "x \\f x \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+SEQ Figure
+  = \\p " "
+PAGEREF a \\x \\Z
+PAGEREF a
+REFERENCE x \\a "Table" \\n \\t "x;y" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  SEQ "a \\o  "1 - 2"\t
+toc
+=1 \\t "a,1,b" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  TC "a \\"q\\" b" \\U \\o "9-9" \\o "1-3"\t
+PAGEREFx
+tc "A" \\f C \\h \\t "Heading 1;1;Heading 2;2"
+SEQ \\p " "
+tc "A" \\f C \\f "a b" \\x \\o
+ TOC  \\o "x" \\o"1-2" \\r \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ SEQ "My label"  \\w
+toc \\x
+ SEQ "My label"  \\H \\o \\t "a,1,b"
+  PAGEREF a \\f "a b" \\o "9-9" \\a "Table"\t
+ SEQ "My label"  \\f x \\f x \\f
+REFERENCE x \\n \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ PAGEREF a \\h \\l "1-2" \\w \\o "9-9"
+TC "a \\"q\\" b" \\o "9-9" \\z \\u
+toc \\h \\r
+ REF  _Ref123  \\Z
+TC \\f \\c "Figure" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TC "a b" \\w \\U \\r
+  SEQ \\* ARABIC \\d "-" \\t "Heading 1;1;Heading 2;2"\t
+= SUM(ABOVE) \\t ";"
+  seq   a \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p\t
+SEQ Figure \\n "2-3" \\o "9-9" \\H
+TOC \\o
+NOTEREF a \\o  "1 - 2" \\d "-" \\f
+ REF  _Ref123  \\r
+TC "a\\\nb" \\z
+REF x \\p " " \\p " " \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+=1 \\r \\f \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ SEQ "My label"  \\p ""
+ TC  text \\o "9-9" \\a "Table" \\o "9-9" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+SEQ \\o "9-9" \\t "x;y"
+PAGEREF a \\a "Table"
+TOC \\x \\t "x;y" \\o "9-9" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  =1\t
+DATE \\p "" \\t "a,1,b"
+ TOC  \\H
+tc "A" \\f C \\n "2-3" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+toc \\t "Heading 1;1;Heading 2;2" \\n "2-3" \\o  "1 - 2"
+  = \\z \\f x
+ PAGEREF a \\h \\o"1-2" \\n \\l "1-2"
+SEQ Figure \\u \\h
+TC "a \\"q\\" b" \\t "Heading 1;1;Heading 2;2"
+PAGEREF a \\p " " \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TC "a \\"q\\" b" \\U \\u \\p " "
+toc
+TC "a \\"q\\" b"
+REF x
+TC "x \\p "" \\o \\o "1-3"
+  SEQ \\f \\o  "1 - 2" \\f "a b" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p\t
+PAGEREFx \\p " " \\u
+=1 \\Z \\Z \\O
+TC "a\\\nb" \\o "x" \\o "9-9" \\f "a b"
+SEQ \\Z
+PAGEREF
+TC "a b" \\r
+NOTEREF \\t "x;y" \\t "x;y"
+TC "a\\\nb"
+SEQ "" x
+NOTEREF a \\f \\h \\p ""
+  PAGE \\n "2-3" \\Z \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p\t
+TC "a \\"q\\" b" \\t "Heading 1;1;Heading 2;2" \\Z \\H \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+   REF  _Ref123  \\p\t
+TC "a \\"q\\" b" \\l "1-2" \\t "x;0;y;-3;z;99" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ TC  text
+SEQ "" x \\f \\f x
+TC "a b" \\o "1-3" \\Z
+PAGEREF a \\o "x"
+ PAGEREF a \\h
+NOTEREF a \\f x \\o \\O
+DATE
+ TOC  \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TC "x
+REF x \\p \\p "" \\h \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+PAGEREFx \\o \\O
+SEQ "a \\w \\z \\n "2-3"
+ REF  _Ref123  \\o "9-9"
+NOTEREF \\U \\n "2-3" \\o "1-3"
+  DATE\t
+TC "a \\"q\\" b" \\c "Figure" \\t "x;y" \\o "x"
+=1 \\O \\H \\o "9-9"
+PAGE \\w \\p
+TC "a b"
+ REF  _Ref123  \\l "1-2" \\o"1-2"
+  TC "a \\"q\\" b" \\a "Table" \\f\t
+PAGE \\t "Heading 1;1;Heading 2;2"
+TC "a b"
+DATE
+ PAGEREF a \\h \\O \\o  "1 - 2" \\x
+seq   a \\z \\o"1-2" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+seq   a \\p
+REF x \\o "9-9" \\d "-" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TC "a\\\nb"
+seq   a \\o
+  = \\o"1-2" \\r
+tc "A" \\f C \\h \\p
+toc \\f "" \\a "Table" \\p
+ REF  _Ref123  \\o "1-3" \\f ""
+  TOC \\z\t
+SEQ Figure
+  SEQ Figure\t
+REFERENCE x \\p \\o "x" \\o "1-3"
+  NOTEREF a \\p "" \\n\t
+  NOTEREF a \\x \\f "a b" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p\t
+PAGE \\p " " \\o"1-2" \\f x
+REFERENCE x \\U \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ TC  text \\z \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+SEQ "a \\t ";" \\w
+PAGE \\n
+ TC  text \\o"1-2" \\o "1-3" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+PAGE
+REF x \\t "x;y" \\u \\f ""
+  = SUM(ABOVE) \\f "" \\o "x" \\o "9-9"\t
+TC "a b" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ TOC  \\c "Figure" \\z
+ PAGEREF a \\h \\H \\Z \\o "9-9" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+PAGE \\f "a b" \\f "a b" \\o  "1 - 2"
+TC "a \\"q\\" b" \\o \\u \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ SEQ "My label"  \\x \\x
+TOC \\o "1-3"
+REF x \\u \\t ";" \\r
+TC "a \\"q\\" b" \\O \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+PAGE \\o "1-3" \\f "a b" \\p "" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TC "x
+=1
+SEQ \\* ARABIC
+=1 \\o "1-3" \\u
+SEQ "a \\f "a b" \\f \\t ";" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+DATE \\z \\t "a,1,b" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+ TOC  \\f x \\w \\o "9-9"
+REF x \\l "1-2" \\l "1-2"
+SEQ "" x \\h \\U \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TC "x \\p \\n "2-3" \\n "2-3"
+DATE \\U \\l "1-2" \\t ";"
+TC "x \\f "a b"
+=1 \\f "a b"
+ PAGEREF a \\h \\f \\o "1-3" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  TC "x\t
+TOC \\Z \\w
+ TC  text \\p "" \\c "Figure" \\x \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  toc \\o\t
+toc \\Z
+SEQ Figure \\z \\a "Table"
+TC "a b" \\z
+  TC "a \\"q\\" b" \\n \\n \\u \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p\t
+TC "a b" \\c "Figure" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+PAGEREF a \\o \\c "Figure"
+NOTEREF a \\r \\t "x;y" \\n
+  REFERENCE x\t
+SEQ \\O \\t "a,1,b"
+TOC \\l "1-2"
+SEQ Figure
+SEQ Figure \\f "a b" \\h \\t "Heading 1;1;Heading 2;2"
+REFERENCE x \\U
+DATE
+ REF  _Ref123  \\c "Figure" \\o "9-9" \\l "1-2"
+  TC\t
+ REF  _Ref123 
+TOC \\h
+SEQ Figure
+TC "a \\"q\\" b" \\t "a,1,b"
+  PAGEREF \\O \\H\t
+SEQ \\* ARABIC \\t "x;0;y;-3;z;99" \\r
+seq   a \\p ""
+ REF  _Ref123 
+ REF  _Ref123 
+TC \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  toc \\o "1-3" \\t ";" \\H\t
+ REF  _Ref123  \\U \\O
+SEQ "a \\o"1-2" \\h \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TC "a\\\nb" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+SEQ \\* ARABIC
+ SEQ "My label" 
+TC "a \\"q\\" b" \\t ";" \\U \\U
+tc "A" \\f C \\p " " \\o "9-9"
+PAGEREFx \\p "" \\H
+SEQ "a \\a "Table" \\p "" \\n "2-3"
+REF x \\t ";"
+= SUM(ABOVE) \\o "1-3" \\t "Heading 1;1;Heading 2;2" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+  = \\o "1-3" \\l "1-2"
+  TC "a b" \\o"1-2" \\O \\f "a b"\t
+seq   a \\w \\x
+TC "a\\\nb" \\x \\u
+PAGEREF a
+REF x
+ PAGEREF a \\h \\f x \\z \\p
+NOTEREF a \\f "a b" \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+NOTEREF a \\u \\f ""
+toc \\c "Figure" \\c "Figure" \\w
+TC "a\\\nb" \\o "9-9" \\f "" \\o
+NOTEREF \\fx \\n9 \\f"z" \\l 2 \\l "3" \\n\\p
+TC "a\\\nb" \\o "x" \\p \\O
+SEQ \\* ARABIC
+
+ 
+\\
+\\f
+\\f x
+\\fx
+\\F "a" \\f b
+\\l
+\\l "2
+\\l 12
+\\l "x"
+\\n
+\\n.
+\\n_
+\\nx
+\\N"
+\\n 
+\\p"x"
+\\f\n"y"
+heading 1
+Heading 9
+heading 0
+heading  1
+HEADING 5
+heading 10
+heading 1 
+ heading 1
+Heading 1
+p:1
+p:
+p:99999999999999999999
+n:12
+n:NaN
+n:
+p:1x
+p:01
+P:1
+n:٣
+1-2
+1 - 2
+1-
+-2
+12-34
+a1-2b
+1 - 2
+1\n-\n2
+٣-٤
+<dc:creator>Eric</dc:creator>
+<dc:creator xml:lang="x">A &amp; B &lt;c&gt; &quot;d&quot;</dc:creator>
+<dc:creatorX>q</dc:creatorX>
+<dc:creator>
+<dc:creator
+<dc:creator>a
+<dc:title/><dc:title>T</dc:title>
+<dc:title a="b>c">T</dc:title>
+<dc:title>&amp;lt;</dc:title>
+<dc:title><b>x</b></dc:title>
+<dc:creator>1</dc:creator><dc:creator>2</dc:creator>
+\t\nx\r
+a\tb\ncde\rf
+  ﻿ x   
+a\\b"c
+"\\
+\\\\
+"a"

@@ -114,6 +114,78 @@ for (let i = 0; i < 200; i++) {
   inputs.forEach((inp, k) => rec(`fill#${i}:${k}`, `${k},${inp.color ?? inp.preset},${inp.degree ?? inp.color2 ?? '-'},${STYLES.indexOf(st)},${v}`, J(pd.pageFillFrom(inp, 'en', () => null))));
 }
 
+// ── D2b-F4 remainder (appended block): the cover page and header/footer template XML ────────
+// editor cover-templates.ts and hf-templates.ts (parameterised code, not data): the bytes are proven by the
+// SHA-256 of the XML (the first cases also carry the XML itself), its UTF-16 length and the number of
+// random drawing ids drawn (the order of the draws is part of the contract).
+{
+  const ct = await ed('cover-templates.ts');
+  const ht = await ed('hf-templates.ts');
+  const { createHash } = await import('node:crypto');
+  const r2 = new Rng(0xf4a1);
+  const sha256 = (t) => createHash('sha256').update(Buffer.from(t, 'utf8')).digest('hex').slice(0, 32);
+  const hex = (t) => Buffer.from(t, 'utf8').toString('hex');
+  const LANGS = ['pt', 'en', 'es'];
+  const DIMS = [595.3, 612, 841.9, 792, 0, 10, NaN, 1e6, -5, 72, 56.7, 85.05];
+  const dim = () => DIMS[r2.below(DIMS.length)];
+  const HEXES = ['156082', 'E97132', '4472C4', 'FF0000', '', '0F9ED5'];
+  const TEXTS = ['', 'A', 'Title & Co', '<tag> "quoted" \'single\'', 'a > b', '[Digite aqui]', 'Linha longa '.repeat(8), 'Ç\u{1d49c}é', '日本語', ' x ', '&amp;', '  '];
+  const txt = () => TEXTS[r2.below(TEXTS.length)];
+  const idGen = (seed) => { let n = 0; const f = () => seed + 37 * n++; f.count = () => n; return f; };
+  const SEEDS = [1, 5, 999, 1999, 12345, 2147483000, 7777777];
+  let n = 0;
+  for (const cid of [...ct.COVER_TEMPLATES.map((t) => t.id), 'nope']) {
+    for (let i = 0; i < 150; i++) {
+      const lang = LANGS[r2.below(3)];
+      const P = { w: dim(), h: dim(), top: dim(), bottom: dim(), left: dim(), right: dim() };
+      const a1 = HEXES[r2.below(HEXES.length)], a2 = HEXES[r2.below(HEXES.length)];
+      const fields = r2.below(3) === 0 ? ct.coverPlaceholders(lang)
+        : { title: txt(), subtitle: txt(), author: txt(), date: txt(), company: txt(), summary: txt() };
+      const seed = SEEDS[r2.below(SEEDS.length)];
+      const gen = idGen(seed);
+      const xml = ct.coverXml(cid, { lang, page: P, accent1: a1, accent2: a2, fields, drawingId: gen });
+      const input = [lang, P.w, P.h, P.top, P.bottom, P.left, P.right, a1 || '-', a2 || '-', seed,
+        [fields.title, fields.subtitle, fields.author, fields.date, fields.company, fields.summary].map(hex).join(';')].map(String).join('|');
+      const key = `cover#${cid}:${i}`;
+      rec(key, input, xml === null ? `null|${gen.count()}` : `${sha256(xml)}|${xml.length}|${gen.count()}`);
+      if (xml !== null && i < 3) rec(`coverxml#${cid}:${i}`, input, xml);
+      n++;
+    }
+  }
+  const STYLES = [undefined, 'Cabealho', 'Rodap', 'Header', 'a"b&<c>', ''];
+  const GALS = ['header', 'footer', 'pageTop', 'pageBottom', 'pageMargin', 'pageCurrent'];
+  for (const g of GALS) {
+    for (const id of [...ht.hfTemplates(g).map((t) => t.id), 'nope', '']) {
+      for (const lang of LANGS) {
+        for (let si = 0; si < STYLES.length; si++) {
+          for (const accent of ['156082', 'FF0000']) {
+            const seed = SEEDS[r2.below(SEEDS.length)];
+            const gen = idGen(seed);
+            const xml = ht.hfTemplateXml(g, id, { styleId: STYLES[si], accent, lang, drawingId: gen });
+            const input = [g, id || '-', lang, STYLES[si] === undefined ? '-' : hex(STYLES[si]) || '+', accent, seed].map(String).join('|');
+            const key = `hf#${g}:${id || '-'}:${lang}:${si}:${accent}`;
+            rec(key, input, xml === null ? `null|${gen.count()}` : `${sha256(xml)}|${xml.length}|${gen.count()}`);
+            if (xml !== null && lang === 'en' && si === 1 && accent === '156082') rec(`hfxml#${g}:${id}`, input, xml);
+            n++;
+          }
+        }
+      }
+    }
+  }
+  // metadata
+  for (const g of GALS) {
+    rec(`meta#hft:${g}`, g, J(ht.hfTemplates(g)));
+    rec(`meta#kind:${g}`, g, String(ht.galleryKind(g)));
+  }
+  for (const l of LANGS) {
+    rec(`meta#ph:${l}`, l, ht.placeholderText(l));
+    rec(`meta#coverph:${l}`, l, J(ct.coverPlaceholders(l)));
+  }
+  rec('meta#covertemplates', '-', J(ct.COVER_TEMPLATES));
+  rec('meta#coverns', '-', ct.COVER_NS);
+  console.log(`d2b-f4-ops: ${n} cover and header/footer template cases`);
+}
+
 import('node:path').then(async ({ join }) => {
   const { crate } = await import('./capture-r2-common.mjs');
   out.write(join(crate, 'tests', 'parity', 'd2b-f4-ops.capture'));

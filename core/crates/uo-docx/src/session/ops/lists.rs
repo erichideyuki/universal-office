@@ -218,7 +218,7 @@ fn clamp_u32(x: usize) -> u32 {
 }
 
 /// The text of the languages of the lists (`ListLocale`).
-struct ListLocale {
+pub(crate) struct ListLocale {
     lcid: &'static str,
     article: &'static str,
     section: &'static str,
@@ -227,7 +227,7 @@ struct ListLocale {
 }
 
 /// `libraryLevels(def, loc)`.
-fn library_levels(def: &LibraryList, loc: &ListLocale) -> Vec<String> {
+pub(crate) fn library_levels(def: &LibraryList, loc: &ListLocale) -> Vec<String> {
     def.levels
         .iter()
         .map(|l| {
@@ -331,7 +331,7 @@ impl Session {
     }
 
     /// `abstractOf(numId)`.
-    fn abstract_of(&mut self, num_id: f64) -> Option<f64> {
+    pub(crate) fn abstract_of(&mut self, num_id: f64) -> Option<f64> {
         let parsed = self.num_parsed();
         let doc = &self.doc;
         let f = |s: &str| Session::style_num_of(doc, s);
@@ -339,7 +339,7 @@ impl Session {
     }
 
     /// `numbering.level(numId, ilvl)`, cloned.
-    fn num_level(&mut self, num_id: f64, ilvl: f64) -> Option<NumLevel> {
+    pub(crate) fn num_level(&mut self, num_id: f64, ilvl: f64) -> Option<NumLevel> {
         let parsed = self.num_parsed();
         let doc = &self.doc;
         let f = |s: &str| Session::style_num_of(doc, s);
@@ -347,7 +347,7 @@ impl Session {
     }
 
     /// `paraNum(paragraphs[i])`.
-    fn para_num_at(&mut self, i: usize) -> Option<ParaNum> {
+    pub(crate) fn para_num_at(&mut self, i: usize) -> Option<ParaNum> {
         let defp = self.default_paragraph();
         let p = self.paras()?.get(i)?;
         para_num_of(p, &self.doc.formatting.styles, &defp)
@@ -380,7 +380,7 @@ impl Session {
 
     /// `applyPara(range, patch)` for one paragraph (`setParaAt`): tracked changes become
     /// `w:pPrChange`.
-    fn set_para_at(&mut self, pi: usize, patch: &ParaProps) -> Result<(), CommandError> {
+    pub(crate) fn set_para_at(&mut self, pi: usize, patch: &ParaProps) -> Result<(), CommandError> {
         let at = DocPosition { para: clamp_u32(pi), offset: 0 };
         self.apply_para_patch(DocRange { start: at, end: at }, patch)
     }
@@ -421,7 +421,7 @@ impl Session {
     }
 
     /// `listLocale()`.
-    fn list_locale(&mut self) -> ListLocale {
+    pub(crate) fn list_locale(&mut self) -> ListLocale {
         let lang = self.f2.lang;
         let idx = self.style_index();
         let all = super::styles::xform::list_styles_all(&idx, lang);

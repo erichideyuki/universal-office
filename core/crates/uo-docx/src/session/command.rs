@@ -120,8 +120,24 @@ pub enum JobResult {
         text: Option<Utf16>,
         html_tree: Option<std::sync::Arc<[u8]>>,
         fragment: Option<std::sync::Arc<[u8]>>,
+        /// an image on the clipboard (`PasteData.image`: the bytes and the extension, D2b-F8)
+        image: Option<ClipImage>,
+    },
+    /// the answer to [`Job::RenderClip`]: the PNG the shell painted and its size in twips
+    /// (`renderClipPng`'s `{ data, w, h }`, D2b-F8)
+    Rendered {
+        png: std::sync::Arc<[u8]>,
+        width_twips: f64,
+        height_twips: f64,
     },
     Failed,
+}
+
+/// An image read from the system clipboard (`{ data, ext }`, D2b-F8).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipImage {
+    pub ext: Str,
+    pub data: std::sync::Arc<[u8]>,
 }
 
 /// What changed in one story (A4: the layout's incremental relayout).

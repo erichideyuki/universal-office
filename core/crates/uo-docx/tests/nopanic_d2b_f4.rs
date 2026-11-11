@@ -16,7 +16,7 @@ use crate::d2b_f4_support;
 use crate::support;
 
 use d2a_support::{Cx, open, sample};
-use d2b_f4_support::{doc, hostile_cmd};
+use d2b_f4_support::{doc, doc_with_props, doc_with_watermark, hostile_cmd, hostile_remainder_cmd};
 use uo_docx::session::ops::settings::SettingsCmd;
 use uo_docx::session::{Command, Session};
 use uo_testkit::generate::Rng;
@@ -31,7 +31,7 @@ fn hammer(mut s: Session, seed: u32, steps: usize) -> bool {
         if s.document().sections.len() > MAX_SECTIONS || s.document().hf.len() > 400 {
             break;
         }
-        let c = hostile_cmd(&mut rng, &s);
+        let c = if rng.below(4) == 0 { hostile_remainder_cmd(&mut rng, &s) } else { hostile_cmd(&mut rng, &s) };
         let shown = format!("{c:?}");
         let _ = s.exec(c, &mut cx.cx());
         // the selection always lies in the story
@@ -79,7 +79,7 @@ fn hostile_f4_commands_on_the_corpus() {
         }
         n += 1;
     }
-    for (i, bytes) in [doc(4, 2), doc(3, 1), doc(8, 2)].iter().enumerate() {
+    for (i, bytes) in [doc(4, 2), doc(3, 1), doc(8, 2), doc_with_props(), doc_with_watermark()].iter().enumerate() {
         let s = open(bytes.clone()).unwrap();
         if hammer(s, 0xf4f0 + u32::try_from(i).unwrap(), 150) {
             reopened += 1;

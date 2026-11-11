@@ -346,12 +346,13 @@ pub fn sanitize_run_props(props: &RunProps, rp: Option<&ResolvedPolicy>) -> RunP
 /// `StyleResolver`: how the paste resolves styles in the target document.
 pub trait StyleResolver {
     fn key_of(&self, id: &str) -> String;
-    fn id_of(&self, key: &str) -> Option<String>;
+    /// `idOf(key)` (may create the built-in style in the target, `builtinStyleId`: D2b-F8)
+    fn id_of(&mut self, key: &str) -> Option<String>;
 }
 
 /// `sanitizeParaProps(mark, rp, styles)`.
 #[must_use]
-pub fn sanitize_para_props(mark: &ParaProps, rp: Option<&ResolvedPolicy>, styles: &dyn StyleResolver) -> ParaProps {
+pub fn sanitize_para_props(mark: &ParaProps, rp: Option<&ResolvedPolicy>, styles: &mut dyn StyleResolver) -> ParaProps {
     let mut m = mark.clone();
     let Some(rp) = rp else { return m };
     if rp.styles.is_some() {

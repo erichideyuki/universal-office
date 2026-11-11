@@ -243,7 +243,7 @@ pub fn for_each_node<'a>(doc: &'a Document, f: &mut dyn FnMut(Node<'a>)) {
 
 /// The textbox stories of runs: a run's textbox, and the textboxes of a group's items (groups
 /// nested in groups included), in order.
-fn textbox_stories<'a>(runs: &'a [Run], out: &mut Vec<&'a Story>) {
+pub(crate) fn textbox_stories<'a>(runs: &'a [Run], out: &mut Vec<&'a Story>) {
     let mut stack: Vec<&'a Run> = runs.iter().rev().collect();
     while let Some(r) = stack.pop() {
         let Some(ext) = r.ext() else { continue };

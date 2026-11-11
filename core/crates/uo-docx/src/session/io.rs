@@ -152,9 +152,11 @@ impl Session {
             numbering,
             f2: super::ops::lists::F2State::default(),
             f9: super::ops::navigation::F9State::default(),
+            f10: super::ops::references::F10State::default(),
             f5: super::ops::notes::F5State::default(),
             f4: super::ops::sections::F4State::default(),
             f7: super::ops::drawing::F7State::default(),
+            f8: super::ops::clipboard::F8State::default(),
             settings: Arc::new(SettingsStep::default()),
             sections: SectionState::default(),
             save: SaveState { baseline: crate::write::sig::Baseline::default(), gen_num_ids: None, fresh_id: 0.0 },
@@ -183,6 +185,9 @@ impl Session {
     /// `installFullDoc()` (see the module comment).
     fn install(&mut self, mut doc: Document, mode: SigMode) {
         self.generation = self.generation.wrapping_add(1);
+        // `this.lastPaste = null` with the new `docToken` (D2b-F8; the paste defaults and the
+        // document path are the element's, they survive a load)
+        self.f8.reset_for_install();
         // bookmarks: block → paragraph (`paraOfBlock`), before the empty paragraph is added
         let mut para_of_block: Vec<u32> = Vec::with_capacity(doc.body.block_count());
         let mut n = 0u32;

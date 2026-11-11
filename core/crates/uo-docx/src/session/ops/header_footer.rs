@@ -14,10 +14,12 @@
 //! What the TS reads from the layout comes as arguments (D2a-C2, G21b): [`HfAt`] is the answer of
 //! `hfContext()` (the section of the caret's page and the variant it shows) and `reenter` the
 //! part the layout shows on the page in edit AFTER the change (`None`: the part edited before).
-//! Not ported here (recorded in `F4.md`): the template galleries (`insertHeaderFooterTemplate`,
-//! `hf-templates.ts`), `insertDateTime`, `insertDocumentInfo`, `insertAlignmentTab` (field runs and
-//! `Intl` dates), `goToHeaderFooter`/`next`/`previous` (layout navigation), `showDocumentText`
+//! The template galleries (`insertHeaderFooterTemplate`, `hf-templates.ts`: [`hf_templates`] is the
+//! pure half) are here too. Not ported (recorded in `F4.md`): `insertDateTime`, `insertDocumentInfo`,
+//! `insertAlignmentTab` (F10: field runs and `Intl` dates), `goToHeaderFooter`/`next`/`previous` (layout navigation), `showDocumentText`
 //! (display).
+
+pub mod hf_templates;
 
 use std::sync::Arc;
 
@@ -28,6 +30,7 @@ use super::super::policy::GuardArg;
 use super::super::state::Selection;
 use super::super::{ExecCx, Session};
 use super::context::EditContext;
+use super::page::PageLang;
 use crate::ids::HfPartId;
 use crate::js::{JsNumber, Str};
 use crate::model::Document;
@@ -36,6 +39,7 @@ use crate::model::section::{HfPart, SectPr};
 use crate::model::story::Story;
 use crate::word::obj;
 use crate::write::emit::settings::{copy_hf_part_xml, page_number_group_ids};
+use hf_templates::{HfGallery, HfTemplateEnv, gallery_kind, hf_template_xml, hf_templates as templates_of, placeholder_text};
 
 /// The most header/footer parts a session holds (an undo leaves the parts an unlink created, as the
 /// TS `hfParts`; the cap keeps a hostile script from growing them without end).
@@ -148,6 +152,26 @@ pub enum HeaderFooterCmd {
     /// (`section`: the layout's `hfPartOfPage`) has none of this variant yet; the part and its
     /// reference are made, the shell then enters it with `EnterHeaderFooter`.
     CreateHeaderFooterPart { kind: HfKind, section: u32, slot: HfSlot },
+    /// `insertHeaderFooterTemplate(gallery, id)`: Header, Footer, Top/Bottom of Page and Page Margins
+    /// REPLACE the part of the caret's page (entering its edit as Word does: `enter` is the part
+    /// the layout shows on the page, used when the edit is not already of that kind); Current
+    /// Position inserts the number at the caret (`page_numbers` = `numPagesFor()` and
+    /// `pageNumberFor(caretPageIndex())`, the layout's answers).
+    InsertTemplate {
+        gallery: hf_templates::HfGallery,
+        id: String,
+        lang: PageLang,
+        enter: Option<HfEnter>,
+        page_numbers: Option<(f64, f64)>,
+    },
+}
+
+/// Where `insertHeaderFooterTemplate` enters the edit when it is not already in a part of the kind
+/// (`enterHeaderFooter(kind, page, true)`): the part and the page (the layout's answers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HfEnter {
+    pub part: HfReenter,
+    pub page: u32,
 }
 
 impl HeaderFooterCmd {
@@ -158,6 +182,7 @@ impl HeaderFooterCmd {
             HeaderFooterCmd::SetDifferentOddEven { .. } => Some(("setDifferentOddEven", GuardArg::None)),
             HeaderFooterCmd::SetHeaderFooterDistance { .. } => Some(("setHeaderFooterDistance", GuardArg::None)),
             HeaderFooterCmd::SetPageNumberFormat { .. } => Some(("setPageNumberFormat", GuardArg::None)),
+            HeaderFooterCmd::InsertTemplate { .. } => Some(("insertHeaderFooterTemplate", GuardArg::None)),
             _ => None,
         }
     }
@@ -248,6 +273,9 @@ impl Session {
                 })
             }
             HeaderFooterCmd::CreateHeaderFooterPart { kind, section, slot } => self.create_header_footer_part(kind, section, slot),
+            HeaderFooterCmd::InsertTemplate { gallery, id, lang, enter, page_numbers } => {
+                self.insert_header_footer_template(gallery, &id, lang, enter, page_numbers)
+            }
         }
     }
 
@@ -270,12 +298,12 @@ impl Session {
     }
 
     /// `Math.min(pageSections[page] ?? 0, sectionRanges(m).length - 1)`.
-    fn hf_section_of(&self, at: HfAt) -> usize {
+    pub(crate) fn hf_section_of(&self, at: HfAt) -> usize {
         (at.section as usize).min(self.body_section_count().saturating_sub(1))
     }
 
     /// `refsOfSection(m, sec, kind)`.
-    fn refs_of_section(&self, sec: usize, kind: HfKind) -> Vec<HfRefEdit> {
+    pub(crate) fn refs_of_section(&self, sec: usize, kind: HfKind) -> Vec<HfRefEdit> {
         let r = self.body_section_refs(sec);
         if kind == HfKind::Header { r.header_refs } else { r.footer_refs }
     }
@@ -313,22 +341,28 @@ impl Session {
 
     /// `hfStyleId(kind)`: the document's Header/Footer style (Word creates it with the first part).
     fn hf_style_id(&mut self, kind: HfKind) -> Option<String> {
+        let id = self.hf_style_lookup(kind);
+        self.ensure_style_used(Some(&id));
+        Some(id)
+    }
+
+    /// `this.docStyles.byName(kind)?.id ?? resolveStyleId(this.docStyles.xml, 'Cabealho' | 'Rodap')`
+    /// (no change to the styles: `templateEnv` uses it alone).
+    pub(crate) fn hf_style_lookup(&mut self, kind: HfKind) -> String {
         let idx = self.style_index();
         let k = kind.as_str();
         let found = idx.styles.iter().find(|s| uo_text::case::to_lowercase_str(&s.name) == k).map(|s| s.id.to_string());
-        let id = match found {
+        match found {
             Some(id) => id,
             None => {
                 let pt = if kind == HfKind::Header { "Cabealho" } else { "Rodap" };
                 super::styles::xform::resolve_style_id(self.styles.xml().map(|x| &**x), pt).to_string()
             }
-        };
-        self.ensure_style_used(Some(&id));
-        Some(id)
+        }
     }
 
     /// `newHfParas(kind)`: an empty paragraph in the Header/Footer style (Word).
-    fn new_hf_story(&mut self, kind: HfKind) -> Story {
+    pub(crate) fn new_hf_story(&mut self, kind: HfKind) -> Story {
         let style = self.hf_style_id(kind);
         let mut props = crate::model::para::ParaProps::default();
         if let Some(id) = style {
@@ -340,7 +374,7 @@ impl Session {
     }
 
     /// `newHfTarget(kind)`: the path and rId free for a new part (`headerN.xml`, `rIdN`, as Word).
-    fn new_hf_target(&self, kind: HfKind) -> (Str, Str) {
+    pub(crate) fn new_hf_target(&self, kind: HfKind) -> (Str, Str) {
         let k = kind.as_str();
         let mut used: std::collections::HashSet<String> = self.pkg.part_names().map(str::to_owned).collect();
         for p in self.doc.hf.iter() {
@@ -399,29 +433,80 @@ impl Session {
         // `refresh()` (the body is in context here: `syncSections`), then back to the page
         self.settle();
         if let Some((part, page)) = hf {
-            let target = match reenter {
-                None => Some(part),
-                Some(HfReenter::Part(p)) => Some(p),
-                Some(HfReenter::Create { kind, section, slot }) => self.make_section_part(kind, section, slot),
-            };
-            match target.filter(|p| self.doc.hf.get(p.index()).is_some()) {
-                Some(part) if !self.locked() => {
-                    let saved = self.selection;
-                    self.ctx = EditContext::HeaderFooter { part, page, saved };
-                    self.selection = Selection::default();
-                    self.set_pending_props(None);
-                    self.emit(Event::HfMode { active: true });
-                }
-                _ => self.emit(Event::HfMode { active: false }),
-            }
+            self.reenter_hf(page, part, reenter, true);
         }
         Ok(Outcome::Done(self.finish()))
+    }
+
+    /// The return to the page after a change of the sections (`enterHeaderFooter(kind, page, silent)`
+    /// at the end of `hfSectionOp`, `editSectionHeaders` and `removeWatermark`): the part the layout
+    /// shows there now (`reenter`; none: `fallback`, the one edited before). `emit` is the
+    /// `uw-hfmode` event: `hfSectionOp` sends it, the watermark commands enter silently.
+    pub(crate) fn reenter_hf(&mut self, page: u32, fallback: HfPartId, reenter: Option<HfReenter>, emit: bool) {
+        let target = match reenter {
+            None => Some(fallback),
+            Some(HfReenter::Part(p)) => Some(p),
+            Some(HfReenter::Create { kind, section, slot }) => self.make_section_part(kind, section, slot),
+        };
+        match target.filter(|p| self.doc.hf.get(p.index()).is_some()) {
+            Some(part) if !self.locked() => {
+                let saved = self.selection;
+                self.ctx = EditContext::HeaderFooter { part, page, saved };
+                self.selection = Selection::default();
+                self.set_pending_props(None);
+                if emit {
+                    self.emit(Event::HfMode { active: true });
+                }
+            }
+            _ => {
+                if emit {
+                    self.emit(Event::HfMode { active: false });
+                }
+            }
+        }
+    }
+
+    /// `this.hfEdit` as a part, the page it was entered on and the body selection to return to:
+    /// also while a textbox INSIDE the header is edited (the TS keeps `hfEdit` set then).
+    pub(crate) fn hf_in_edit(&self) -> Option<(HfPartId, u32, Selection)> {
+        let mut c = &self.ctx;
+        loop {
+            match c {
+                EditContext::HeaderFooter { part, page, saved } => return Some((*part, *page, *saved)),
+                EditContext::Textbox { outer, .. } => c = outer,
+                _ => return None,
+            }
+        }
+    }
+
+    /// `exitHeaderFooter(true, relayout)`: leaves the header/footer edit without the event (a
+    /// textbox in it first), the body selection back (clamped, D2a-C4); `relayout` runs the settle
+    /// step (`refresh()`).
+    pub(crate) fn exit_hf_silently(&mut self, relayout: bool) {
+        if matches!(self.ctx, EditContext::Textbox { .. }) {
+            self.exit_textbox();
+        }
+        if let EditContext::HeaderFooter { saved, .. } = self.ctx {
+            self.ctx = EditContext::Body;
+            self.selection = super::context::clamp_selection(self.paras(), saved);
+            self.set_pending_props(None);
+            self.float_sel = None;
+            if relayout {
+                self.settle();
+            }
+        }
+    }
+
+    /// `1 + Math.floor(Math.random() * 0x7ffffffe)`: a free drawing id (`createHfPart`'s copy,
+    /// `templateEnv`, `coverEnv`).
+    pub(crate) fn random_drawing_id(&mut self) -> f64 {
+        1.0 + floor(f64::from(self.env.random_u32()) / 4_294_967_296.0 * f64::from(0x7fff_fffe_u32))
     }
 
     /// `createHfPart(kind, target, srcKey)`: a new part registered: a copy of the source (as Word
     /// does when unlinking) or an empty one. A source never edited comes from its XML (byte for
     /// byte, new drawing ids, the relationships repeated); an edited one from the model.
-    fn create_hf_part(&mut self, kind: HfKind, target: (Str, Str), src: Option<HfPartId>) -> Result<HfPartId, CommandError> {
+    pub(crate) fn create_hf_part(&mut self, kind: HfKind, target: (Str, Str), src: Option<HfPartId>) -> Result<HfPartId, CommandError> {
         if self.doc.hf.len() >= MAX_HF_PARTS {
             return Err(CommandError::Position);
         }
@@ -445,9 +530,7 @@ impl Session {
         {
             copy_rels(self, sp);
             // `1 + Math.floor(Math.random() * 0x7ffffffe)` per drawing id, in the order of the text
-            let env = &mut *self.env;
-            let xml =
-                copy_hf_part_xml(&text, &mut || 1.0 + floor(f64::from(env.random_u32()) / 4_294_967_296.0 * f64::from(0x7fff_fffe_u32)));
+            let xml = copy_hf_part_xml(&text, &mut || self.random_drawing_id());
             if let Ok(Some(read)) = self.read_hf_part_story(&target.1, &xml) {
                 story = Some(read);
                 dirty = false;
@@ -672,8 +755,15 @@ impl Session {
             let list = if kind == HfKind::Header { h } else { f };
             list.push(HfRefEdit { kind: kind_str(kind), r#type: slot.as_str().into(), rid: target.0.clone(), ..HfRefEdit::default() });
         });
-        // the effective sections follow now (the TS patches the section object it is editing)
+        // the effective sections follow now (the TS patches the section object it is editing). The TS
+        // does NOT refresh `lastSectionRefs` here (`syncSections` returns while the edit is on), so a
+        // break that vanishes before the next sync outside the edit does not carry the new reference
+        // over: the snapshot is kept as it was, and marked stale so that the next sync (the fast path
+        // included) rebuilds it, as the TS `syncSections` does (F4-D21)
+        let last_refs = self.sections.last_refs.clone();
         self.sections.sync(&mut self.doc);
+        self.sections.last_refs = last_refs;
+        self.sections.last_refs_stale = true;
         self.doc.formatting_version = self.doc.formatting_version.wrapping_add(1);
         self.touch_formatting();
         let c = self.history.set_dirty(true);
@@ -727,7 +817,7 @@ impl Session {
 
     /// Reads a header/footer part from `xml` as if it came from the file at `path` (the reader with
     /// the document's sources); the signatures of the new nodes join the baseline.
-    fn read_hf_part_story(&mut self, path: &str, xml: &str) -> Result<Option<Story>, CommandError> {
+    pub(crate) fn read_hf_part_story(&mut self, path: &str, xml: &str) -> Result<Option<Story>, CommandError> {
         use crate::read::ctx::ReadCtx;
         let limits = crate::limits::DocxLimits::default();
         let opts = crate::read::ReadOptions { sources: false, limits };
@@ -770,7 +860,7 @@ impl Session {
 
     /// `store.baseline()` for the nodes a read just registered (source keys from `old_next`): the
     /// signatures of the new part's paragraphs and tables.
-    fn baseline_new_nodes(&mut self, story: &Story, old_next: u32) {
+    pub(crate) fn baseline_new_nodes(&mut self, story: &Story, old_next: u32) {
         let mode = self.save.baseline.mode;
         let media = &self.doc.media;
         let Some(store) = self.doc.sources.as_deref() else { return };
@@ -785,6 +875,8 @@ impl Session {
                     sig.node = Some(Arc::clone(p));
                     self.save.baseline.paras.insert(k, sig);
                 }
+                // the paragraphs of the textboxes of the runs are nodes the reader registered too
+                crate::write::sig::textbox_stories(&p.runs, &mut stack);
             }
             for a in s.tables.iter() {
                 let t = &a.table;
@@ -802,6 +894,224 @@ impl Session {
             }
         }
     }
+}
+
+// ───────────────────────── the template galleries (hf-templates.ts) ─────────────────────────
+
+impl Session {
+    /// The kind of a part (the key of `hfParts` starts with it).
+    fn hf_kind_of(&self, part: HfPartId) -> Option<HfKind> {
+        let (k, _) = self.sections.hf_parts.iter().find(|(_, id)| **id == part)?;
+        if k.starts_with("header:") {
+            Some(HfKind::Header)
+        } else if k.starts_with("footer:") {
+            Some(HfKind::Footer)
+        } else {
+            None
+        }
+    }
+
+    /// `templateEnv(kind)` and `hfTemplateXml(gallery, id, env)`: the style of the part, the theme's
+    /// first accent and the random ids drawn as the TS does. `style` comes from
+    /// [`Session::hf_style_lookup`].
+    fn hf_template_inner(&mut self, gallery: HfGallery, id: &str, lang: PageLang, style: &str) -> Option<String> {
+        let v = self.doc.formatting.theme.colors.get("accent1").map_or("156082", |s| &**s);
+        let accent = uo_text::case::to_uppercase_str(super::page::rx::strip_hash(v));
+        let mut draw = || self.random_drawing_id();
+        let mut env = HfTemplateEnv { style_id: Some(style), accent: &accent, lang, drawing_id: &mut draw };
+        hf_template_xml(gallery, id, &mut env)
+    }
+
+    /// `headerFooterTemplates(gallery)`: the ids and the names in the interface language.
+    #[must_use]
+    pub fn header_footer_templates(&self, gallery: HfGallery, lang: PageLang) -> Vec<(&'static str, &'static str)> {
+        templates_of(gallery).iter().map(|t| (t.id, t.name_for(lang))).collect()
+    }
+
+    /// `headerFooterTemplateXml(gallery, id)`: the XML of a template for the gallery's thumbnail
+    /// (consumes the random ids as the TS does).
+    pub fn header_footer_template_xml(&mut self, gallery: HfGallery, id: &str, lang: PageLang) -> Option<String> {
+        let style = self.hf_style_lookup(gallery_kind(gallery).unwrap_or(HfKind::Header));
+        self.hf_template_inner(gallery, id, lang, &style)
+    }
+
+    /// The model half of `paintHeaderFooterTemplate`: the template's story (read without sources,
+    /// at `word/uw-preview.xml`) and the section properties of the preview page (the caret's
+    /// section, without Different First Page and page borders).
+    pub fn hf_template_preview(&mut self, gallery: HfGallery, id: &str, lang: PageLang, at: HfAt) -> Option<(Story, SectPr)> {
+        let kind = gallery_kind(gallery).unwrap_or(HfKind::Header);
+        let style = self.hf_style_lookup(kind);
+        let inner = self.hf_template_inner(gallery, id, lang, &style)?;
+        let story = self.read_part_story_no_sources("word/uw-preview.xml", &hf_part_xml_of(kind, &inner)).ok().flatten()?;
+        let mut sp = (*self.body_sect_pr_at(self.hf_section_of(at))).clone();
+        obj::set(&mut sp, "titlePg", |x| x.title_pg = Some(false));
+        obj::delete(&mut sp, "pgBorders");
+        Some((story, sp))
+    }
+
+    /// `insertHeaderFooterTemplate(gallery, id)`.
+    fn insert_header_footer_template(
+        &mut self,
+        gallery: HfGallery,
+        id: &str,
+        lang: PageLang,
+        enter: Option<HfEnter>,
+        page_numbers: Option<(f64, f64)>,
+    ) -> Res {
+        if self.paras().is_none() || self.locked() {
+            return Ok(Outcome::Done(self.change_set()));
+        }
+        let Some(kind) = gallery_kind(gallery) else { return self.insert_page_number_here(id, lang, page_numbers) };
+        let in_edit = self.hf_in_edit();
+        if !in_edit.is_some_and(|(p, _, _)| self.hf_kind_of(p) == Some(kind)) {
+            let page = enter.map_or(0, |e| e.page);
+            if in_edit.is_some() {
+                self.exit_hf_silently(true);
+            }
+            // `enterHeaderFooter(kind, page, true)` of the part the layout shows on the page
+            let part = match enter.map(|e| e.part) {
+                Some(HfReenter::Part(p)) => Some(p),
+                Some(HfReenter::Create { kind, section, slot }) => self.make_section_part(kind, section, slot),
+                None => None,
+            };
+            match part.filter(|p| self.doc.hf.get(p.index()).is_some()) {
+                Some(part) if !self.locked() => {
+                    self.exit_cell();
+                    self.exit_note();
+                    if matches!(self.ctx, EditContext::Textbox { .. }) {
+                        self.exit_textbox();
+                    }
+                    let saved = self.selection;
+                    self.float_sel = None;
+                    self.ctx = EditContext::HeaderFooter { part, page, saved };
+                    self.selection = Selection::default();
+                    self.set_pending_props(None);
+                    self.emit(Event::HfMode { active: true });
+                }
+                _ => {
+                    self.emit(Event::HfMode { active: false });
+                    return Ok(Outcome::Done(self.change_set()));
+                }
+            }
+        }
+        // a textbox inside the header: the template replaces the part, so the edit goes to the header
+        if matches!(self.ctx, EditContext::Textbox { .. }) {
+            self.exit_textbox();
+        }
+        let Some((part, _, _)) = self.hf_in_edit() else { return Ok(Outcome::Done(self.change_set())) };
+        let style = self.hf_style_lookup(kind);
+        if !style.is_empty() {
+            self.ensure_style_used(Some(&style));
+        }
+        let Some(inner) = self.hf_template_inner(gallery, id, lang, &style) else { return Ok(Outcome::Done(self.change_set())) };
+        let Some(path) = self.doc.hf.get(part.index()).map(|h| h.path.to_string()) else { return Ok(Outcome::Done(self.change_set())) };
+        self.begin_step(false, &[]);
+        // `readTemplatePart`: with the document's sources; none: the paragraphs with a PAGE field
+        // are remembered (they are page-number paragraphs for `removePageNumbers`)
+        let Ok(Some(story)) = self.read_hf_part_story(&path, &hf_part_xml_of(kind, &inner)) else {
+            // the TS leaves the (empty) step it took (F4-D18)
+            return Ok(Outcome::Done(self.finish()));
+        };
+        if self.doc.sources.is_none() {
+            for p in story.paras.iter() {
+                if p.runs.iter().any(|r| r.ext().and_then(|e| e.field.as_deref()).is_some_and(|f| f.contains("PAGE"))) {
+                    self.f4.page_number_paras.insert(p.id);
+                }
+            }
+        }
+        // the first placeholder stays selected (typing replaces it), else the caret at the start
+        let ph: Vec<u16> = placeholder_text(lang).encode_utf16().collect();
+        let mut sel = Selection::default();
+        for (i, p) in story.paras.iter().enumerate() {
+            let text = crate::session::text::para_text(p);
+            if let Some(at) = find_units(&text, &ph) {
+                let (i, at) = (u32::try_from(i).unwrap_or(u32::MAX), u32::try_from(at).unwrap_or(u32::MAX));
+                let end = at.saturating_add(u32::try_from(ph.len()).unwrap_or(u32::MAX));
+                sel = Selection {
+                    anchor: crate::session::text::DocPosition::new(i, at),
+                    focus: crate::session::text::DocPosition::new(i, end),
+                };
+                break;
+            }
+        }
+        if let Some(h) = self.doc.hf.make_mut(part.index()) {
+            h.story = story;
+        }
+        self.dirty_hf.insert(part);
+        self.selection = sel;
+        self.touch_all();
+        Ok(Outcome::Done(self.finish()))
+    }
+
+    /// `insertPageNumberHere(id)`: Page Number > Current Position: the runs of the template at the
+    /// caret (`PAGE`/`NUMPAGES` show the numbers the layout gave).
+    fn insert_page_number_here(&mut self, id: &str, lang: PageLang, page_numbers: Option<(f64, f64)>) -> Res {
+        let style = self.hf_style_lookup(HfKind::Header);
+        let Some(inner) = self.hf_template_inner(HfGallery::PageCurrent, id, lang, &style) else {
+            return Ok(Outcome::Done(self.change_set()));
+        };
+        let story = self.read_part_story_no_sources("word/uw-template.xml", &hf_part_xml_of(HfKind::Header, &inner)).ok().flatten();
+        let runs: Vec<crate::model::run::Run> = story.and_then(|s| s.paras.first().map(|p| p.runs.clone())).unwrap_or_default();
+        if runs.is_empty() {
+            return Ok(Outcome::Done(self.change_set()));
+        }
+        self.begin_step(false, &[]);
+        if self.has_selection() {
+            match self.delete_selection() {
+                Ok(pos) => self.selection = Selection::caret(pos),
+                Err(e) => {
+                    self.discard_step();
+                    return Err(e);
+                }
+            }
+        }
+        let mut pos = self.selection.focus;
+        let carried = self.pending_props().cloned().unwrap_or_else(|| self.current_props());
+        let base = self.new_run_props_from(&carried.props);
+        for r in &runs {
+            let mut run = crate::model::run::Run {
+                text: r.text.clone(),
+                props: Arc::new(base.clone()),
+                rpr_link: carried.link.clone(),
+                ..crate::model::run::Run::default()
+            };
+            if let Some(f) = r.ext().and_then(|e| e.field.clone()).filter(|f| !f.is_empty()) {
+                if let Some((np, pn)) = page_numbers {
+                    use super::page::rx::contains_ci_ascii;
+                    if contains_ci_ascii(&f, "NUMPAGES") {
+                        run.text = uo_jsnum::format::to_js_string(np).into();
+                    } else if contains_ci_ascii(&f, "PAGE") {
+                        run.text = uo_jsnum::format::to_js_string(pn).into();
+                    }
+                }
+                run.ext_mut().field = Some(f);
+            }
+            let Some(paras) = self.paras_mut() else { break };
+            match crate::session::text::insert_run(paras, pos, run) {
+                Ok(p) => pos = p,
+                Err(_) => {
+                    self.discard_step();
+                    return Err(CommandError::Position);
+                }
+            }
+        }
+        self.touch_para(pos.para as usize);
+        self.selection = Selection::caret(pos);
+        Ok(Outcome::Done(self.finish()))
+    }
+}
+
+/// `hfPartXml(kind, inner)`.
+fn hf_part_xml_of(kind: HfKind, inner: &str) -> String {
+    crate::write::emit::settings::hf_part_xml(kind.as_str(), inner)
+}
+
+/// `indexOf(needle)` over UTF-16 units.
+fn find_units(hay: &[u16], needle: &[u16]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    hay.windows(needle.len()).position(|w| w == needle)
 }
 
 /// The `Id` attribute values of a relationships part (`/\bId="([^"]+)"/g`).

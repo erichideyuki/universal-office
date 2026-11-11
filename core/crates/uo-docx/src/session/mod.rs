@@ -149,12 +149,16 @@ pub struct Session {
     f2: ops::lists::F2State,
     /// the find and navigation family's own state (extra ranges, the last search; D2b-F9)
     f9: ops::navigation::F9State,
+    /// the layout family's own state (the last answer, the reference seed, the caption settings, the manual hyphenation; D2b-F10)
+    f10: ops::references::F10State,
     /// the notes family's own state (the loaded note settings, the last conversion; D2b-F5)
     f5: ops::notes::F5State,
     /// the sections / header-footer / page family's own state (D2b-F4)
     f4: ops::sections::F4State,
     /// the drawing objects / pictures family's own state (the inline selection, the multi-selection, the pending job results; D2b-F7)
     f7: ops::drawing::F7State,
+    /// the clipboard family's own state (the last paste, the Paste Special data, the paste defaults; D2b-F8)
+    f8: ops::clipboard::F8State,
     settings: Arc<SettingsStep>,
     sections: SectionState,
     save: SaveState,
@@ -571,7 +575,8 @@ impl Session {
             // every op checks its positions first)
             self.tx = Tx::default();
         }
-        out
+        // D2b-F8: the undo of a repaste whose paste went pending, was cancelled or failed
+        self.with_f8_carried(out)
     }
 
     /// Ends a command: the settle step, the history pricing and the change set.
@@ -611,12 +616,14 @@ impl Session {
         }
         self.pending = None;
         self.tx = Tx::default();
-        match command {
+        let out = match command {
             Command::Clipboard(c) => self.complete_clipboard(c, job, result, cx),
             Command::Picture(c) => self.complete_pictures(c, job, result, cx),
             Command::Drawing(c) => self.complete_drawing(c, job, result, cx),
             _ => Err(CommandError::UnknownJob),
-        }
+        };
+        // D2b-F8: the undo of a repaste whose paste went pending (F8-D18)
+        self.with_f8_carried(out)
     }
 
     /// Drops a pending two-phase command (the shell failed or the user cancelled).

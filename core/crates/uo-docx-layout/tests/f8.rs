@@ -324,6 +324,59 @@ fn the_oracle_answers_a_session() {
     }
 }
 
+/// D2b-F10 (`pageLabelOf`): the engine answers each paragraph's first-line page number in a
+/// layout of the same view (`None` for a path without lines), and a TOC built through a session
+/// over the REAL oracle succeeds (until this method existed it failed with a layout error).
+#[test]
+fn the_oracle_answers_the_shown_page_numbers() {
+    use uo_docx::session::ops::references::{ReferenceCmd, TableOfContentsOptions};
+    use uo_docx::session::{ClipboardRing, Command, ExecCx};
+    for (stem, docx, p) in fixture().into_iter().take(4) {
+        let mut s = uo_docx::session::Session::open(
+            docx.clone(),
+            uo_docx::session::OpenOptions::default(),
+            Box::new(uo_docx::session::FixedEnv::default()),
+        )
+        .unwrap();
+        let mut oracle = EngineOracle::new(&p, hyph_registry(), opts());
+        // the expectation, from a layout of the same view: first line of each paragraph
+        let l = layout(s.view(), &p, &opts());
+        let loc = Locator::new(s.view());
+        let mut refs: Vec<DocRef> = Vec::new();
+        let mut want: Vec<Option<f64>> = Vec::new();
+        for page in &l.pages {
+            for line in &page.lines {
+                let Some(para) = loc.locate(page.section, &line.at).para else { continue };
+                if para.story != StoryRef::Body {
+                    continue;
+                }
+                let r = DocRef { story: para.story, path: para.path, offset: 0 };
+                if !refs.contains(&r) {
+                    refs.push(r);
+                    want.push(Some(page.number));
+                }
+            }
+        }
+        // a path the layout has no line for, and a paragraph asked twice
+        refs.push(DocRef { story: StoryRef::Body, path: BlockPath::root(1_000_000), offset: 0 });
+        want.push(None);
+        if let Some(r) = refs.first().cloned() {
+            refs.push(r);
+            want.push(want[0]);
+        }
+        let got = oracle.shown_page_numbers(s.view(), &refs).unwrap();
+        assert_eq!(got, want, "{stem}");
+        // end to end: the TOC command asks the engine and succeeds
+        let mut clip = ClipboardRing::default();
+        let out = s.exec(
+            Command::Reference(ReferenceCmd::InsertTableOfContents { opts: TableOfContentsOptions::default(), replace: None }),
+            &mut ExecCx { layout: &mut oracle, clipboard: &mut clip },
+        );
+        assert!(out.is_ok(), "{stem}: {out:?}");
+        eprintln!("{stem}: {} paragraphs with a page, TOC inserted: {}", want.len() - 2, s.has_table_of_contents());
+    }
+}
+
 /// A provider that answers nothing for one family, and reports budget refusals.
 struct Picky<'p> {
     inner: &'p dyn FontProvider,

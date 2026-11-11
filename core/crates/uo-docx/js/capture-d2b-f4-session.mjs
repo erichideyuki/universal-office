@@ -24,12 +24,20 @@
 // (`hfContext()`: section and variant), `hp` (the page's section and variant), `hs` (the section of
 // the page in header/footer edit); and AFTER it: `reenter` (the path of the part in edit), `cr`
 // (the part a `enterHeaderFooter` created: kind, section, variant).
+// The watermark, cover page and header/footer template commands (D2b-F4 remainder) add: `lang` (the
+// element's `lang`, set per document: the interface language of the templates), `wb` (the box the TS
+// measured for an explicit font size), `pi` (`imagePixelInfo` of the picture), `pn` (the numbers of
+// Current Position) recorded BEFORE the op; `hpg` (`hfActivePage`), `rek` (kind:section:variant of the
+// part in edit), `wm` (`watermark()`), `hca` (`hfContext()` after the op), `cov` (`hasCoverPage()` and
+// the cover paragraph indices) AFTER it; `media` (the saved word/media parts, every 8 steps) and
+// `gal` (the galleries' labels, at #0).
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, extname, normalize } from 'node:path';
 import { createHash } from 'node:crypto';
-import { CaptureWriter, Rng, Stream } from '../../uo-testkit/js/testkit.mjs';
+import { deflateSync, crc32 } from 'node:zlib';
+import { CaptureWriter, Rng, Stream, importFrom } from '../../uo-testkit/js/testkit.mjs';
 import { Canon } from './canon.mjs';
 import { crate, corpus, readBytes, root, ts } from './capture-r2-common.mjs';
 
@@ -39,6 +47,7 @@ const opt = (k, d) => (argv.includes(k) ? Number(argv[argv.indexOf(k) + 1]) : d)
 const DOCS = opt('--docs', 40);
 const STEPS = opt('--steps', 60);
 const { DocxPackage } = await ts('package.js');
+const { imagePixelInfo } = await importFrom(root, 'write/packages/docx-layout/dist/page-fill.js');
 
 const pwFrom = [join(root, 'slides', 'package.json'), join(root, 'sheet', 'package.json')].find((p) => existsSync(p));
 const { chromium } = createRequire(pwFrom)('playwright');
@@ -97,9 +106,24 @@ function digest(paras) {
 }
 const sha = (t) => Digest.of(Buffer.from(t, 'utf8')).short;
 
+// a valid PNG (w x h, transparent, with a pHYs chunk for dpi != 0), as hex: the pictures of `wm:p`
+const chunk = (type, data) => {
+  const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+  const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+  const c = Buffer.alloc(4); c.writeUInt32BE(crc32(td) >>> 0);
+  return Buffer.concat([len, td, c]);
+};
+const tinyPng = (w, h, dpi) => {
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  const parts = [Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr)];
+  if (dpi) { const p = Buffer.alloc(9); const ppm = Math.round(dpi / 0.0254); p.writeUInt32BE(ppm, 0); p.writeUInt32BE(ppm, 4); p[8] = 1; parts.push(chunk('pHYs', p)); }
+  parts.push(chunk('IDAT', deflateSync(Buffer.alloc((w * 4 + 1) * h))), chunk('IEND', Buffer.alloc(0)));
+  return Buffer.concat(parts).toString('hex');
+};
+
 const out = new CaptureWriter([
   'D2b-F4 session in Chromium: the frozen <universal-write> driven by seeded scripts (page setup, section and page breaks, columns, line numbers, headers/footers, page colour, default tab, hyphenation)',
-  'facets: op, paras, sel, anc, ev, flags, docxml, sec, body, st, hfp, ctx, parts, hc, hp, hs, reenter, cr',
+  'facets: op, paras, sel, anc, ev, flags, docxml, sec, body, st, hfp, ctx, parts, hc, hp, hs, reenter, cr, lang, wb, pi, pn, hpg, rek, wm, hca, cov, media, gal',
 ]);
 out.meta('steps', STEPS);
 out.meta('browser', `chromium ${browser.version()}`);
@@ -124,15 +148,24 @@ function pick() {
   const take = (list, n, mod) => list.filter((_, i) => i % mod === 0).slice(0, n);
   return [...take(rich, Math.ceil(DOCS * 0.7), 1), ...take(plain, Math.floor(DOCS * 0.3), 17)].slice(0, DOCS);
 }
-const files = pick();
+const files = pick().filter((f) => !process.env.UO_F4_ONLY || f.rel.includes(process.env.UO_F4_ONLY));
 let n = 0;
+// F4-D21 (fixed script, appended block): the first document with no footer part runs sb:n, ehf:f, xhf, then
+// deletes the break (se over it + bs): the part `enterHeaderFooter` made while the edit was on must be carried
+// to the section that covers the text, because the exit's relayout refreshes `lastSectionRefs`
+let f21State = 'todo';
 for (const { rel, file } of files) {
   const page = await context.newPage();
   await page.goto(`http://127.0.0.1:${port}/__d2b.html`);
   await page.waitForFunction(() => window.__ready === true);
   const bytes = readBytes(file);
-  const ok = await page.evaluate(async ([b64, EVENTS]) => {
+  let seed = 0xf4f4;
+  for (let i = 0; i < rel.length; i++) seed = (Math.imul(seed, 31) + rel.charCodeAt(i)) >>> 0;
+  const rng = new Rng(seed);
+  const lang = ['pt', 'en', 'es'][rng.below(3)];
+  const ok = await page.evaluate(async ([b64, EVENTS, lang]) => {
     const el = document.createElement('universal-write');
+    el.setAttribute('lang', lang);
     el.setAttribute('fonts', '/write/packages/editor/demo/fonts');
     const ready = new Promise((r) => el.addEventListener('uw-ready', r, { once: true }));
     document.body.append(el);
@@ -145,12 +178,11 @@ for (const { rel, file } of files) {
       el.loadDocx(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)), { protected: false });
       return !!el.fonts;
     } catch { return false; }
-  }, [Buffer.from(bytes).toString('base64'), EVENTS]);
+  }, [Buffer.from(bytes).toString('base64'), EVENTS, lang]);
   if (!ok) { await page.close(); continue; }
-  let seed = 0xf4f4;
-  for (let i = 0; i < rel.length; i++) seed = (Math.imul(seed, 31) + rel.charCodeAt(i)) >>> 0;
-  const rng = new Rng(seed);
   const info = () => page.evaluate(() => ({ lens: window.__el.model.paragraphs.map((p) => p.runs.reduce((a, r) => a + r.text.length, 0)), hf: !!window.__el.hfEdit }));
+  const f21Doc = f21State === 'todo' && await page.evaluate(() => ![...window.__el.hfParts.keys()].some((k) => k.startsWith('footer:')) && window.__el.model.paragraphs.length > 0 && !window.__el.model.paragraphs.some((p) => p.props.sectionBreak));
+  if (f21Doc) f21State = rel;
   for (let j = 0; j <= STEPS; j++) {
     const key = `${rel}#${j}`;
     let code = 'init';
@@ -159,7 +191,7 @@ for (const { rel, file } of files) {
       const I = await info();
       const L = I.lens;
       const pos = () => { const para = rng.below(L.length); return { para, offset: rng.below(L[para] + 1) }; };
-      const k = rng.below(100);
+      const k = rng.below(112);
       const b = () => rng.below(2);
       const ap = () => ['s', 'd', 'f', 'x'][rng.below(4)];
       const st = () => ['n', 'c', 'k', 'e', 'o'][rng.below(5)];
@@ -212,11 +244,49 @@ for (const { rel, file } of files) {
       else if (k < 91) code = `ehf:${kindC()}`;
       else if (k < 93) code = 'xhf';
       else if (k < 97) code = 'un';
-      else code = 're';
+      else if (k < 100) code = 're';
+      else if (k === 100) code = `wm:g:${['confidential1', 'confidential2', 'donotcopy1', 'draft1', 'draft2', 'sample1', 'sample2', 'asap1', 'asap2', 'urgent1', 'urgent2', 'nope'][rng.below(12)]}`;
+      else if (k === 101) {
+        const texts = ['Rascunho', 'DRAFT', 'Muestra & Co', 'A < B', ' ', 'Confidencial 😀', 'Texto longo para a marca-d\'água', 'X'];
+        const tx = texts[rng.below(texts.length)];
+        code = `wm:t:${hex(tx)}:${['calibri', 'Arial', 'Times New Roman'][rng.below(3)]}:${['-', '20', '48.5', '0', '100'][rng.below(5)]}:${['C0C0C0', 'FF0000', '0000FF', '808080'][rng.below(4)]}:${b()}:${['d', 'h'][rng.below(2)]}`;
+      }
+      else if (k === 102) {
+        const kinds = ['v', 'v', 'v', 'j'];
+        const kd = kinds[rng.below(4)];
+        const w = [1, 2, 10, 200][rng.below(4)], h = [1, 3, 10, 100][rng.below(4)], dpi = [0, 72, 96, 300][rng.below(4)];
+        code = `wm:p:${kd === 'v' ? tinyPng(w, h, dpi) : 'deadbeef00112233'}:${['-', '50', '100', '150'][rng.below(4)]}:${b()}:${['png', 'PNG', 'jpg'][rng.below(3)]}:${['logo.png', 'a b.png', 'x&y.png'][rng.below(3)]}`;
+      }
+      else if (k === 103) code = 'rwm';
+      else if (k < 106) code = `cv:${['band', 'sidebar', 'frame', 'block', 'minimal', 'base', 'duotone', 'diagonal', 'nope'][rng.below(9)]}`;
+      else if (k === 106) code = 'rcv';
+      else if (k < 111) {
+        const g = ['header', 'footer', 'pageTop', 'pageBottom', 'pageMargin'][rng.below(5)];
+        const ids = { header: ['blank', 'blank3', 'title', 'rule', 'band', 'accent', 'nope'], footer: ['blank', 'blank3', 'pageXofY', 'rule', 'band', 'accent', 'nope'], pageTop: ['plainLeft', 'plainCenter', 'plainRight', 'pageXofY', 'accentRule', 'brackets', 'nope'], pageBottom: ['plainLeft', 'plainCenter', 'plainRight', 'pageXofY', 'accentRule', 'brackets', 'nope'], pageMargin: ['right', 'left', 'circle', 'nope'] }[g];
+        code = `hft:${g}:${ids[rng.below(ids.length)]}`;
+      }
+      else code = `hft:pageCurrent:${['plain', 'pageXofY', 'brackets', 'dashes', 'nope'][rng.below(5)]}`;
+      // F4-D21 script (fixed, drawn values above are discarded for these steps)
+      if (f21State === rel && j <= 6) {
+        code = ['', `se:0:${L[0]}:0:${L[0]}`, 'sb:n', 'ehf:f', 'xhf', `se:0:${L[0]}:1:0`, 'bs'][j];
+      }
       // the layout answers the Rust replay takes as arguments (before the op)
-      Object.assign(lay, await page.evaluate(() => {
+      lay.pi = '-';
+      if (code.startsWith('wm:p:')) {
+        const info = imagePixelInfo(Uint8Array.from(Buffer.from(code.split(':')[2], 'hex')));
+        lay.pi = info ? `${info.w},${info.h},${info.dpi}` : '-';
+      }
+      Object.assign(lay, await page.evaluate((code) => {
         const el = window.__el;
         const r = {};
+        if (!el.__wbWrapped) {
+          const o = el.watermarkTextBox;
+          el.watermarkTextBox = function (...a) { const v = o.apply(this, a); window.__wb = `${v.widthPt}|${v.heightPt}`; return v; };
+          el.__wbWrapped = true;
+        }
+        window.__wb = null;
+        r.pn = '-';
+        try { if (code.startsWith('hft:pageCurrent')) r.pn = `${el.numPagesFor()}:${el.pageNumberFor(el.caretPageIndex())}`; } catch { r.pn = '-'; }
         try {
           const c = el.hfContext();
           r.hc = c ? `${c.sec}:${c.type}` : '-';
@@ -226,7 +296,7 @@ for (const { rel, file } of files) {
         } catch { r.hc = '-'; r.hp = '-'; r.hs = '-'; }
         r.keys0 = [...el.hfParts.keys()].join(',');
         return r;
-      }));
+      }, code));
       await page.evaluate(([code, ST, AP, VA, MODES, PRESETS, GS]) => {
         const el = window.__el;
         window.__ev = [];
@@ -302,13 +372,26 @@ for (const { rel, file } of files) {
           }
           case 'ehf': el.enterHeaderFooter(kindOf(f[1]), 0); break;
           case 'xhf': el.exitHeaderFooter(); break;
+          case 'wm': {
+            const un = (h) => Uint8Array.from((h.match(/../g) ?? []).map((x) => parseInt(x, 16)));
+            if (f[1] === 'g') el.setWatermark(f[2]);
+            else if (f[1] === 't') {
+              const text = String.fromCharCode(...f[2].split('.').filter((x) => x).map((h) => parseInt(h, 16)));
+              el.setWatermark({ kind: 'text', text, font: f[3], ...(f[4] !== '-' ? { sizePt: +f[4] } : {}), color: f[5], semitransparent: f[6] === '1', layout: f[7] === 'd' ? 'diagonal' : 'horizontal' });
+            } else el.setWatermark({ kind: 'picture', data: un(f[2]), ext: f[5], title: f[6], ...(f[3] !== '-' ? { scale: +f[3] } : {}), washout: f[4] === '1' });
+            break;
+          }
+          case 'rwm': el.removeWatermark(); break;
+          case 'cv': el.insertCoverPage(f[1]); break;
+          case 'rcv': el.removeCoverPage(); break;
+          case 'hft': el.insertHeaderFooterTemplate(f[1], f[2]); break;
           case 'un': el.undo(); break;
           case 're': el.redo(); break;
         }
       }, [code, ST, AP, VA, MODES, PRESETS, GS]);
     }
     out.set(key, 'op', code);
-    const st = await page.evaluate((keys0) => {
+    const st = await page.evaluate(([keys0, first]) => {
       const el = window.__el;
       const enc = (v) => (v instanceof Uint8Array ? { __u8: btoa(String.fromCharCode(...v)) } : v);
       const walk = (v) => (v && typeof v === 'object' && !(v instanceof Uint8Array) ? (Array.isArray(v) ? v.map(walk) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(enc(x))]))) : enc(v));
@@ -353,7 +436,35 @@ for (const { rel, file } of files) {
           if (holder) { cr = `${kind}:${sIdx}:${holder.type}`; break; }
         }
       }
+      // the watermark, cover and template facets of the remainder
+      const mm = el.bodyModel();
+      let rek = '-';
+      if (el.hfEdit) {
+        const count = mm.paragraphs.filter((p) => p.props.sectionBreak).length + 1;
+        for (let sIdx = 0; sIdx < count; sIdx++) {
+          const holder = el.refsOfSection(mm, sIdx, el.hfEdit.kind).find((r) => r.rid === el.hfEdit.rid);
+          if (holder) { rek = `${el.hfEdit.kind}:${sIdx}:${holder.type}`; break; }
+        }
+      }
+      let wmS = '-';
+      try {
+        const w = el.watermark();
+        if (w) wmS = [w.kind, hx(w.text ?? ''), w.font ?? '', f(w.sizePt), w.color ?? '', f(w.semitransparent), w.layout ?? '', w.rid ?? '', hx(w.title ?? ''), f(w.washout), f(w.widthPt), f(w.heightPt), w.image ? w.image.length : '-'].join('|');
+      } catch { wmS = 'err'; }
+      let hca = '-';
+      try { const c = el.hfContext(); hca = c ? `${c.sec}:${c.type}` : '-'; } catch { hca = '-'; }
+      let cov = '-';
+      try { cov = `${el.hasCoverPage() ? 1 : 0}:${el.coverParaIndexes().join(',')}`; } catch { cov = 'err'; }
+      let gal = null;
+      if (first) {
+        gal = [el.watermarkGallery().map((g) => `${g.id}:${g.label}:${g.categoryLabel}`).join(';'), el.coverPages().map((c) => `${c.id}:${c.name}`).join(';'),
+          ...['header', 'footer', 'pageTop', 'pageBottom', 'pageMargin', 'pageCurrent'].map((g) => el.headerFooterTemplates(g).map((t) => `${t.id}:${t.name}`).join(';')),
+          el.watermarkTexts().join(',')].join('|');
+      }
       return {
+        wb: window.__wb ?? '-',
+        hpg: el.hfEdit ? String(el.hfActivePage) : '-',
+        rek, wm: wmS, hca, cov, gal,
         paras: walk(state.m.paragraphs),
         sel: JSON.stringify(state.s),
         anc: JSON.stringify(state.anc ?? null),
@@ -367,8 +478,9 @@ for (const { rel, file } of files) {
         reenter: el.hfEdit ? el.hfEdit.path : '-',
         cr,
       };
-    }, j > 0 ? (lay.keys0 ?? '') : null);
+    }, [j > 0 ? (lay.keys0 ?? '') : null, j === 0]);
     out.set(key, 'paras', digest(revive(st.paras)));
+    if (process.env.UO_F4_PJSON && process.env.UO_F4_PJSON === String(j)) out.set(key, 'pjson', JSON.stringify(st.paras).replace(/\s/g, ' '));
     if (process.env.UO_F4_TEXT) out.set(key, 'paras.text', revive(st.paras).map((p) => { const s = new Stream(); new Canon(s).value(p, 'paragraph'); return s.finish().short.slice(0, 6); }).join(','));
     out.set(key, 'sel', st.sel);
     out.set(key, 'anc', st.anc);
@@ -381,22 +493,43 @@ for (const { rel, file } of files) {
     out.set(key, 'ctx', st.ctx);
     out.set(key, 'reenter', st.reenter);
     out.set(key, 'cr', st.cr);
-    if (j > 0) { out.set(key, 'hc', lay.hc ?? '-'); out.set(key, 'hp', lay.hp ?? '-'); out.set(key, 'hs', lay.hs ?? '-'); }
+    if (j > 0) { out.set(key, 'hc', lay.hc ?? '-'); out.set(key, 'hp', lay.hp ?? '-'); out.set(key, 'hs', lay.hs ?? '-'); out.set(key, 'wb', st.wb); out.set(key, 'pi', lay.pi ?? '-'); out.set(key, 'pn', lay.pn ?? '-'); }
+    if (j === 0) { out.set(key, 'lang', lang); out.set(key, 'gal', sha(st.gal)); }
+    out.set(key, 'hpg', st.hpg);
+    out.set(key, 'rek', st.rek);
+    out.set(key, 'wm', st.wm);
+    out.set(key, 'hca', st.hca);
+    out.set(key, 'cov', st.cov);
     const nl = (t) => t.replace(/[\t\r\n]/g, (c) => (c === '\n' ? '\u23CE' : ' '));
     if (process.env.UO_F4_TEXT) { out.set(key, 'sec.text', nl(st.sec)); out.set(key, 'body.text', nl(st.body)); out.set(key, 'hfp.text', nl(st.hfp)); }
     if (j % 8 === 0 || j === STEPS) {
       const b64 = await page.evaluate(() => { try { const b = window.__el.saveDocx(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); } catch { return null; } });
+      // `saveDocx` in header mode leaves the edit and returns to the page: the part the layout shows now
+      out.set(key, 'savectx', await page.evaluate(() => {
+        const el = window.__el;
+        if (!el.hfEdit) return '-';
+        const mm = el.bodyModel();
+        const count = mm.paragraphs.filter((p) => p.props.sectionBreak).length + 1;
+        let r = '-';
+        for (let sIdx = 0; sIdx < count; sIdx++) {
+          const holder = el.refsOfSection(mm, sIdx, el.hfEdit.kind).find((x) => x.rid === el.hfEdit.rid);
+          if (holder) { r = `${el.hfEdit.kind}:${sIdx}:${holder.type}`; break; }
+        }
+        return `${el.hfEdit.path}|${r}`;
+      }));
       let d = 'err';
       let parts = 'err';
       if (b64) {
         const pkg = DocxPackage.load(Uint8Array.from(Buffer.from(b64, 'base64')));
         d = Digest.of(Buffer.from(pkg.getPartText('word/document.xml') ?? '', 'utf8')).short;
+        if (process.env.UO_F4_DOCXML === key) out.set(key, 'docxml.text', (pkg.getPartText('word/document.xml') ?? '').replace(/\s/g, (c) => (c === '\n' ? '\u23CE' : ' ')));
         const names = pkg.partNames().filter((nm) => /^word\/(header|footer)[^/]*\.xml$|^word\/settings\.xml$|^word\/styles\.xml$|^word\/_rels\/(document|header|footer)[^/]*\.xml\.rels$|^\[Content_Types\]\.xml$/.test(nm)).sort();
         parts = sha(names.map((nm) => `${nm}\n${pkg.getPartText(nm) ?? ''}`).join('\n#\n'));
         if (process.env.UO_F4_TEXT) out.set(key, 'parts.text', names.map((nm) => `${nm}\n${pkg.getPartText(nm) ?? ''}`).join('\n#\n').replace(/[\t\r\n]/g, (c) => (c === '\n' ? '\u23CE' : ' ')));
       }
       out.set(key, 'docxml', d);
       out.set(key, 'parts', parts);
+      out.set(key, 'media', b64 ? (() => { const pk = DocxPackage.load(Uint8Array.from(Buffer.from(b64, 'base64'))); return pk.partNames().filter((nm) => /^word\/media\//.test(nm)).sort().map((nm) => `${nm}:${pk.getPart(nm)?.length}`).join(',') || '-'; })() : 'err');
     }
   }
   await page.close();
@@ -404,5 +537,5 @@ for (const { rel, file } of files) {
 }
 await browser.close();
 server.close();
-out.write(join(crate, 'tests', 'parity', 'd2b-f4-session.capture'));
+out.write(process.env.UO_F4_OUT ?? join(crate, 'tests', 'parity', 'd2b-f4-session.capture'));
 console.log(`d2b-f4-session: ${n} documents x ${STEPS} steps`);

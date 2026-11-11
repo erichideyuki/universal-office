@@ -279,6 +279,69 @@ pub(crate) fn copy_abstract(st: &mut VersionStore, env: &mut dyn Env, abs: f64) 
     Some(id)
 }
 
+/// `raw.replace(/<w:abstractNum\b[^>]*>/, to)`: the first `<w:abstractNum` tag (a word boundary
+/// after the name) up to its first `>` (D2b-F8).
+pub(crate) fn replace_abstract_open(raw: &str, to: &str) -> String {
+    let mut at = 0;
+    while let Some(s) = next_open(raw, "w:abstractNum", at) {
+        let a = s + "<w:abstractNum".len();
+        if let Some(gt) = raw.get(a..).and_then(|r| r.find('>')).map(|p| a + p) {
+            return format!("{}{to}{}", raw.get(..s).unwrap_or(""), raw.get(gt + 1..).unwrap_or(""));
+        }
+        at = s + 1;
+    }
+    raw.to_owned()
+}
+
+/// `raw.replace(/<w:(?:styleLink|numStyleLink) w:val="[^"]*"\/>/g, '')` (D2b-F8).
+pub(crate) fn strip_style_links(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut at = 0;
+    let mut from = 0;
+    while let Some(p) = raw.get(from..).and_then(|r| r.find("<w:")) {
+        let s = from + p;
+        let rest = raw.get(s + 3..).unwrap_or("");
+        let name = if rest.starts_with("styleLink") {
+            "styleLink"
+        } else if rest.starts_with("numStyleLink") {
+            "numStyleLink"
+        } else {
+            from = s + 1;
+            continue;
+        };
+        let v = s + 3 + name.len();
+        let hit = raw.get(v..).filter(|r| r.starts_with(" w:val=\"")).and_then(|r| {
+            let q = 8 + r.get(8..)?.find('"')?;
+            r.get(q + 1..)?.starts_with("/>").then_some(v + q + 3)
+        });
+        match hit {
+            Some(end) => {
+                out.push_str(raw.get(at..s).unwrap_or(""));
+                at = end;
+                from = end;
+            }
+            None => from = s + 1,
+        }
+    }
+    out.push_str(raw.get(at..).unwrap_or(""));
+    out
+}
+
+/// `importAbstract(raw)` (numbering-store.ts:232): a `w:abstractNum` of another document (paste)
+/// with a new id and `nsid`, without its list-style links. The TS order of the side effects:
+/// `nextId`, `ensure` (the `w15` test), then `hex8()` (D2b-F8).
+pub(crate) fn import_abstract(st: &mut VersionStore, env: &mut dyn Env, raw: &str) -> f64 {
+    let id = next_id(st, true);
+    let w15 = if has_w15(&ensure(st)) { " w15:restartNumberingAfterBreak=\"0\"" } else { "" };
+    let open = format!("<w:abstractNum w:abstractNumId=\"{}\"{w15}>", id_str(id));
+    let abs = replace_abstract_open(raw, &open);
+    let nsid = format!("<w:nsid w:val=\"{}\"/>", hex8(env));
+    let abs = replace_hex_element(&abs, "<w:nsid w:val=\"", &nsid);
+    let abs = strip_style_links(&abs);
+    insert_abstract(st, &abs);
+    id
+}
+
 /// `replaceAbstract(absId, raw, next)`: the first occurrence of `raw` in the part.
 fn replace_abstract(st: &mut VersionStore, raw: &str, next: &str) {
     if raw == next {

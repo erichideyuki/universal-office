@@ -254,6 +254,10 @@ pub struct SectionState {
     pub hf_parts: IndexMap<Str, HfPartId>,
     pub last_ids: Vec<u32>,
     pub last_refs: HashMap<u32, SectionRefs>,
+    /// a reference was added while a header/footer was in edit (the TS patches the model and does
+    /// not refresh `lastSectionRefs` there): the next sync done outside an edit rebuilds `last_refs`
+    /// even on the fast path, as the TS `syncSections` always does (F4-D21)
+    pub last_refs_stale: bool,
     /// the body's `w:sectPr` (the last section's)
     pub body_sect_pr: Arc<SectPr>,
     /// the last section's references (`bodyRefs`; `None` until a section needs one)
@@ -362,7 +366,10 @@ impl SectionState {
         // are already these (D2a-S2: the TS rebuilds them at every layout, with the same result)
         if ids == self.last_ids {
             match self.sections_match(doc, &breaks) {
-                Match::Same => return,
+                Match::Same => {
+                    self.refresh_last_refs(doc, &breaks, &ids);
+                    return;
+                }
                 // only paragraphs moved: the same sections with their new block ranges (what
                 // `effectiveSection` gives: the rest depends only on the id, `sectPr` and refs)
                 Match::Moved(ranges) => {
@@ -373,6 +380,7 @@ impl SectionState {
                         .map(|(s, (bs, be))| Section { block_start: JsNumber::Num(bs), block_end: JsNumber::Num(be), ..s.clone() })
                         .collect();
                     doc.sections = out.into();
+                    self.refresh_last_refs(doc, &breaks, &ids);
                     return;
                 }
                 Match::Differ => {}
@@ -429,6 +437,16 @@ impl SectionState {
         out.push(self.effective(doc, 0, &sp, body_refs.as_ref(), start_para, None));
         doc.sections = out.into();
         self.last_ids = ids.clone();
+        self.last_refs_stale = true;
+        self.refresh_last_refs(doc, &breaks, &ids);
+    }
+
+    /// `lastSectionRefs` from the model, when it is due (see `last_refs_stale`).
+    fn refresh_last_refs(&mut self, doc: &Document, breaks: &[(usize, u32)], ids: &[u32]) {
+        if !self.last_refs_stale {
+            return;
+        }
+        self.last_refs_stale = false;
         self.last_refs = ids
             .iter()
             .map(|&id| {
@@ -633,7 +651,7 @@ enum Match {
 
 /// The block index of paragraph `p`: `p` plus the anchors before it (those with
 /// `before_para <= p`; the anchors are in non-decreasing order), by binary search.
-fn block_of_para(s: &Story, p: usize) -> usize {
+pub(crate) fn block_of_para(s: &Story, p: usize) -> usize {
     let (mut lo, mut hi) = (0usize, s.tables.len());
     while lo < hi {
         let mid = lo + (hi - lo) / 2;

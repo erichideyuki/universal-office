@@ -330,3 +330,371 @@ fn the_first_section_can_be_edited_in_the_document_scope_and_forward() {
     assert_eq!(sect_widths(&s)[2], (15840.0, 12240.0));
     assert_eq!(sect_widths(&s)[1], (12240.0, 15840.0));
 }
+
+// ───────────────── the watermark, cover pages and header/footer templates ─────────────────
+
+use d2b_f4_support::{doc_with_props, doc_with_watermark};
+use uo_docx::read::watermark::WatermarkInfo;
+use uo_docx::session::EditContext;
+use uo_docx::session::ops::header_footer::hf_templates::HfGallery;
+use uo_docx::session::ops::header_footer::{HfEnter, HfReenter};
+use uo_docx::session::ops::page::PageLang;
+use uo_docx::session::ops::page::watermark::WatermarkArg;
+use uo_docx::write::emit::background::{WatermarkLayout, WatermarkPictureSpec, WatermarkTextSpec};
+
+fn para_texts(s: &Session) -> Vec<String> {
+    s.paras().unwrap().iter().map(|p| String::from_utf16_lossy(&uo_docx::session::text::para_text(p))).collect()
+}
+
+fn wm_cmd(arg: WatermarkArg, section: u32) -> Command {
+    Command::Page(PageCmd::SetWatermark {
+        spec: Box::new(arg),
+        at: HfAt { section, slot: HfSlot::Default },
+        lang: PageLang::Pt,
+        reenter: None,
+    })
+}
+
+fn pic(ext: &str, info: Option<[f64; 3]>) -> WatermarkArg {
+    WatermarkArg::Picture {
+        spec: WatermarkPictureSpec {
+            data: std::sync::Arc::from(vec![0x89u8, 0x50, 1, 2, 3].into_boxed_slice()),
+            ext: ext.into(),
+            title: "logo.png".into(),
+            scale: Some(50.0),
+            washout: true,
+        },
+        pixel_info: info,
+    }
+}
+
+#[test]
+fn a_part_made_in_header_mode_is_carried_over_when_the_break_goes_after_the_exit() {
+    // F4-D21: `lastSectionRefs` is refreshed by the first sync outside the edit (the fast path too)
+    let mut s = open(doc(3, 2));
+    exec(&mut s, Command::Context(ContextCmd::EnterHeaderFooter { part: HfPartId(0), page: 0 }));
+    exec(
+        &mut s,
+        Command::HeaderFooter(HeaderFooterCmd::CreateHeaderFooterPart { kind: HfKind::Footer, section: 0, slot: HfSlot::Default }),
+    );
+    exec(&mut s, Command::Context(ContextCmd::ExitHeaderFooter));
+    assert_eq!(s.document().sections.len(), 2);
+    assert_eq!(s.document().sections[0].footer_refs.len(), 1);
+    assert_eq!(s.document().sections[1].footer_refs.len(), 0);
+    // the break of section 0 vanishes: its references pass to the section that covers the text
+    select(&mut s, (0, 23), (1, 0));
+    exec(&mut s, Command::Text(TextCmd::Backspace));
+    let secs = &s.document().sections;
+    assert_eq!(secs.len(), 1);
+    assert_eq!(secs[0].footer_refs.len(), 1);
+    assert_eq!(secs[0].header_refs.len(), 1);
+}
+
+#[test]
+fn a_gallery_watermark_goes_into_the_three_headers_in_one_step_and_undo_restores() {
+    let mut s = open(doc(3, 1));
+    let at = HfAt { section: 0, slot: HfSlot::Default };
+    assert!(s.watermark(at).is_none());
+    let parts = s.document().hf.len();
+    let cs = exec(&mut s, wm_cmd(WatermarkArg::Gallery("draft1".into()), 0));
+    assert!(cs.can_undo);
+    // the default header existed; the even and first headers are created in the section
+    assert_eq!(s.document().hf.len(), parts + 2);
+    let Some((WatermarkInfo::Text(t), None)) = s.watermark(at) else { panic!("no text mark") };
+    assert_eq!(&*t.text, "RASCUNHO");
+    assert_eq!(&*t.layout, "diagonal");
+    for slot in [HfSlot::First, HfSlot::Even] {
+        assert!(s.watermark(HfAt { section: 0, slot }).is_some());
+    }
+    let out = s.save_docx().unwrap();
+    assert!(part_text(&out, "word/header9.xml").contains("PowerPlusWaterMarkObject"));
+    undo(&mut s);
+    assert!(s.watermark(at).is_none());
+    redo(&mut s);
+    assert!(s.watermark(at).is_some());
+}
+
+#[test]
+fn a_blank_text_or_an_unknown_item_changes_nothing() {
+    let mut s = open(doc(3, 1));
+    let blank = WatermarkArg::Text {
+        spec: WatermarkTextSpec {
+            text: "   ".into(),
+            font: "calibri".into(),
+            size_pt: None,
+            color: "C0C0C0".into(),
+            semitransparent: true,
+            layout: WatermarkLayout::Horizontal,
+            lang: None,
+        },
+        measured_box: None,
+    };
+    assert!(!exec(&mut s, wm_cmd(blank, 0)).can_undo);
+    assert!(!exec(&mut s, wm_cmd(WatermarkArg::Gallery("nope".into()), 0)).can_undo);
+    // a picture whose pixel size is unknown, and an extension that is not one (F4-D13)
+    assert!(!exec(&mut s, wm_cmd(pic("png", None), 0)).can_undo);
+    let mut cx = Cx::new();
+    assert!(s.exec(wm_cmd(pic("../x", Some([1.0, 1.0, 96.0])), 0), &mut cx.cx()).is_err());
+    assert!(!s.can_undo());
+}
+
+#[test]
+fn remove_watermark_clears_every_header_and_undo_brings_it_back() {
+    let mut s = open(doc_with_watermark());
+    let at = HfAt { section: 0, slot: HfSlot::Default };
+    assert!(s.watermark(at).is_some(), "the mark of the file is read back");
+    let cs = exec(&mut s, Command::Page(PageCmd::RemoveWatermark { reenter: None }));
+    assert!(cs.can_undo);
+    assert!(s.watermark(at).is_none());
+    let out = s.save_docx().unwrap();
+    assert!(!part_text(&out, "word/header9.xml").contains("PowerPlusWaterMarkObject"));
+    // nothing left to remove: no step
+    let cs = exec(&mut s, Command::Page(PageCmd::RemoveWatermark { reenter: None }));
+    assert!(cs.events.is_empty());
+    undo(&mut s);
+    assert!(s.watermark(at).is_some());
+}
+
+#[test]
+fn a_picture_watermark_adds_the_media_the_relationship_and_the_content_type() {
+    let mut s = open(doc(3, 1));
+    exec(&mut s, wm_cmd(pic("PNG", Some([100.0, 50.0, 96.0])), 0));
+    let out = s.save_docx().unwrap();
+    let pkg = uo_opc::package::Package::open(&out, &uo_opc::Limits::default(), &uo_opc::package::OpenOptions::default()).unwrap();
+    assert!(pkg.part_names().any(|n| n == "word/media/image1.png"));
+    // one image per header part (even, default, first), each with its own relationship
+    assert!(pkg.part_names().any(|n| n == "word/media/image3.png"));
+    let rels = part_text(&out, "word/_rels/header9.xml.rels");
+    assert!(rels.contains("Target=\"media/image2.png\""), "{rels}");
+    assert!(part_text(&out, "[Content_Types].xml").contains("Extension=\"png\""));
+    let Some((WatermarkInfo::Picture(p), Some(img))) = s.watermark(HfAt { section: 0, slot: HfSlot::Default }) else {
+        panic!("no picture mark")
+    };
+    assert!(p.washout);
+    assert_eq!(&*p.title, "logo.png");
+    assert_eq!(img.len(), 5);
+}
+
+#[test]
+fn a_watermark_on_a_linked_section_lands_in_the_inherited_part_and_the_png_default_is_added_once() {
+    let mut s = open(doc(3, 2));
+    // section 1 has no header references of its own: it inherits section 0's
+    assert_eq!(s.document().sections[1].header_refs.len(), 0);
+    let refs0 = s.document().sections[0].header_refs.len();
+    exec(&mut s, wm_cmd(pic("png", Some([100.0, 50.0, 96.0])), 1));
+    // (the TS makes the even/first parts the section lacks, but never a default one: that is inherited)
+    assert!(s.document().sections[1].header_refs.iter().all(|r| &*r.r#type != "default"), "no default reference for the linked section");
+    // the part of section 0 (the inherited one) holds the mark
+    let out = s.save_docx().unwrap();
+    assert!(part_text(&out, "word/header9.xml").contains("WordPictureWatermark"), "{}", part_text(&out, "word/header9.xml"));
+    assert!(s.document().sections[0].header_refs.len() >= refs0);
+    // a second picture mark (and a redo after an undo) leave a single `png` Default
+    exec(&mut s, wm_cmd(pic("png", Some([10.0, 10.0, 96.0])), 1));
+    undo(&mut s);
+    redo(&mut s);
+    let ct = part_text(&s.save_docx().unwrap(), "[Content_Types].xml");
+    assert_eq!(ct.matches("Extension=\"png\"").count(), 1, "{ct}");
+}
+
+#[test]
+fn the_property_matcher_is_linear_on_text_without_a_closing_angle_bracket() {
+    use uo_docx::session::ops::page::rx;
+    let t = std::time::Instant::now();
+    let a = "<dc:title".repeat(120_000);
+    assert_eq!(rx::xml_prop(&a, "dc:title"), None);
+    let b = format!("{a}>");
+    assert_eq!(rx::xml_prop(&b, "dc:title"), None);
+    let c = format!("{b}x<");
+    assert_eq!(rx::xml_prop(&c, "dc:title").as_deref(), Some("x"));
+    assert!(t.elapsed() < std::time::Duration::from_secs(2), "{:?}", t.elapsed());
+}
+
+#[test]
+fn the_cover_goes_at_the_start_with_the_first_page_different_and_undo_removes_it() {
+    let mut s = open(doc_with_props());
+    let n = s.paras().unwrap().len();
+    assert!(!s.has_cover_page());
+    let cs = exec(&mut s, Command::Page(PageCmd::InsertCoverPage { id: "band".into(), lang: PageLang::En }));
+    assert!(cs.can_undo);
+    assert!(s.has_cover_page());
+    // the title comes from the document properties (not a placeholder: only the caret)
+    let texts = para_texts(&s);
+    assert!(texts.iter().any(|t| t == "My & Title"), "{texts:?}");
+    // the author and the company are in the text box of the first paragraph (raw in the saved sdt)
+    let saved = part_text(&s.save_docx().unwrap(), "word/document.xml");
+    assert!(saved.contains(">Eric<") && saved.contains(">ACME<") && saved.contains("Cover Pages"), "{saved}");
+    assert_eq!(s.document().sections[0].sect_pr.title_pg, Some(true));
+    let sel = s.selection();
+    assert_eq!(sel.anchor.offset, 0);
+    assert_eq!(sel.focus.offset, 0);
+    assert_eq!(s.paras().unwrap().len(), n + s.cover_para_indexes().len());
+    undo(&mut s);
+    assert!(!s.has_cover_page());
+    assert_eq!(s.paras().unwrap().len(), n);
+    assert_eq!(s.document().sections[0].sect_pr.title_pg, None);
+    redo(&mut s);
+    assert!(s.has_cover_page());
+    // a second cover replaces the first; the removal takes it away
+    exec(&mut s, Command::Page(PageCmd::InsertCoverPage { id: "frame".into(), lang: PageLang::Pt }));
+    assert!(s.has_cover_page());
+    let cs = exec(&mut s, Command::Page(PageCmd::RemoveCoverPage));
+    assert!(cs.can_undo);
+    assert!(!s.has_cover_page());
+    assert_eq!(s.paras().unwrap().len(), n);
+    // nothing to remove: no new step
+    let cs = exec(&mut s, Command::Page(PageCmd::RemoveCoverPage));
+    assert!(cs.events.is_empty());
+}
+
+#[test]
+fn a_cover_with_placeholders_selects_the_title() {
+    let mut s = open(doc(2, 1));
+    exec(&mut s, Command::Page(PageCmd::InsertCoverPage { id: "sidebar".into(), lang: PageLang::Es }));
+    let sel = s.selection();
+    // "[Título del documento]" is 22 UTF-16 units
+    assert_eq!((sel.anchor.offset, sel.focus.offset), (0, 22));
+    let texts = para_texts(&s);
+    assert_eq!(texts[sel.focus.para as usize], "[Título del documento]");
+    // an unknown cover changes nothing
+    let mut s2 = open(doc(2, 1));
+    assert!(!exec(&mut s2, Command::Page(PageCmd::InsertCoverPage { id: "nope".into(), lang: PageLang::En })).can_undo);
+}
+
+#[test]
+fn a_header_template_replaces_the_part_selects_the_placeholder_and_saves() {
+    let mut s = open(doc(3, 1));
+    let enter = Some(HfEnter { part: HfReenter::Part(HfPartId(0)), page: 0 });
+    let cs = exec(
+        &mut s,
+        Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::Header,
+            id: "blank".into(),
+            lang: PageLang::En,
+            enter,
+            page_numbers: None,
+        }),
+    );
+    assert!(has(&cs, &Event::HfMode { active: true }));
+    assert!(cs.can_undo);
+    assert!(matches!(s.context(), EditContext::HeaderFooter { .. }));
+    // the placeholder "[Type here]" (11 units) stays selected
+    let sel = s.selection();
+    assert_eq!((sel.anchor.offset, sel.focus.offset), (0, 11));
+    assert_eq!(para_texts(&s), vec!["[Type here]".to_owned()]);
+    // already editing a header: the next template replaces it in place (no placeholder: the caret at the start)
+    exec(
+        &mut s,
+        Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::Header,
+            id: "title".into(),
+            lang: PageLang::En,
+            enter: None,
+            page_numbers: None,
+        }),
+    );
+    assert_eq!(para_texts(&s), vec!["[Document title]".to_owned()]);
+    assert_eq!((s.selection().anchor.offset, s.selection().focus.offset), (0, 0));
+    let out = s.save_docx().unwrap();
+    let hdr = part_text(&out, "word/header9.xml");
+    assert!(hdr.contains("Document title") && hdr.contains("w:smallCaps"), "{hdr}");
+    // an unknown template leaves the part as it is
+    let cs = exec(
+        &mut s,
+        Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::Header,
+            id: "nope".into(),
+            lang: PageLang::En,
+            enter: None,
+            page_numbers: None,
+        }),
+    );
+    assert!(cs.events.is_empty());
+    // a template of the other kind, with no part to enter: the edit is off
+    let cs = exec(
+        &mut s,
+        Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::Footer,
+            id: "blank".into(),
+            lang: PageLang::En,
+            enter: None,
+            page_numbers: None,
+        }),
+    );
+    assert!(has(&cs, &Event::HfMode { active: false }));
+    assert!(matches!(s.context(), EditContext::Body));
+}
+
+#[test]
+fn current_position_inserts_the_page_numbers_at_the_caret() {
+    let mut s = open(doc(3, 1));
+    select(&mut s, (1, 0), (1, 0));
+    let cmd = |id: &str| {
+        Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::PageCurrent,
+            id: id.into(),
+            lang: PageLang::En,
+            enter: None,
+            page_numbers: Some((5.0, 12.0)),
+        })
+    };
+    let cs = exec(&mut s, cmd("pageXofY"));
+    assert!(cs.can_undo);
+    assert!(para_texts(&s)[1].starts_with("Page 12 of 5"), "{:?}", para_texts(&s));
+    exec(&mut s, cmd("nope"));
+    undo(&mut s);
+    assert!(!para_texts(&s)[1].starts_with("Page"));
+}
+
+#[test]
+fn a_locked_session_ignores_the_watermark_cover_and_template_commands() {
+    let mut s = open(doc_with_watermark());
+    exec(&mut s, Command::Settings(SettingsCmd::SetProtected { on: true }));
+    let before = para_texts(&s);
+    for c in [
+        wm_cmd(WatermarkArg::Gallery("draft1".into()), 0),
+        Command::Page(PageCmd::RemoveWatermark { reenter: None }),
+        Command::Page(PageCmd::InsertCoverPage { id: "band".into(), lang: PageLang::En }),
+        Command::Page(PageCmd::RemoveCoverPage),
+        Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::PageCurrent,
+            id: "plain".into(),
+            lang: PageLang::En,
+            enter: None,
+            page_numbers: None,
+        }),
+    ] {
+        assert!(!exec(&mut s, c).can_undo);
+    }
+    assert_eq!(para_texts(&s), before);
+    assert!(s.watermark(HfAt { section: 0, slot: HfSlot::Default }).is_some());
+}
+
+#[test]
+fn the_queries_of_the_galleries() {
+    let s = open(doc(1, 1));
+    assert_eq!(s.cover_pages(PageLang::En).len(), 8);
+    assert_eq!(s.cover_pages(PageLang::Pt)[0], ("band", "Faixa"));
+    assert_eq!(s.watermark_texts(PageLang::Es)[0], "ALTO SECRETO");
+    let g = s.watermark_gallery_entries(PageLang::En);
+    assert_eq!(g.len(), 12);
+    assert_eq!(g[0].label, "CONFIDENTIAL 1");
+    assert_eq!(g[1].category_label, "Confidential");
+    assert_eq!(s.header_footer_templates(HfGallery::Footer, PageLang::Es)[2], ("pageXofY", "Página X de Y"));
+    assert_eq!(s.header_footer_templates(HfGallery::PageMargin, PageLang::En).len(), 3);
+}
+
+#[test]
+fn the_previews_read_the_templates_without_touching_the_document() {
+    let mut s = open(doc(3, 1));
+    let (story, sp) = s.watermark_preview("draft1", PageLang::En).unwrap();
+    assert_eq!(story.paras.len(), 1);
+    assert_eq!((sp.page_width_twips.to_number(), sp.margin_top_twips.to_number()), (12240.0, 1440.0));
+    let (cover, sp) = s.cover_preview("band", PageLang::En).unwrap();
+    assert!(cover.paras.len() >= 3);
+    assert_eq!(sp.title_pg, Some(false));
+    let (hf, _) = s.hf_template_preview(HfGallery::Footer, "pageXofY", PageLang::En, HfAt::default()).unwrap();
+    assert_eq!(hf.paras.len(), 1);
+    assert!(s.watermark_preview("nope", PageLang::En).is_none());
+    assert!(!s.can_undo());
+    assert!(!s.has_cover_page());
+}

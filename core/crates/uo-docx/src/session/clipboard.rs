@@ -9,13 +9,18 @@
 //! Besides the TS count cap (24, `rememberClip`), the ring has a byte cap (M5): past it the
 //! oldest items go (the current clip stays).
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 use crate::js::Str;
 use crate::model::Story;
-use crate::model::run::Run;
-use crate::model::table::Table;
+use crate::model::TableAnchor;
+use crate::model::para::ParaProps;
+use crate::model::para::Paragraph;
+use crate::model::run::{
+    CustomInline, DrawingGroup, DrawingShape, DrawingTextbox, GroupItem, InlineImage, NoteRef, RprLink, Run, RunExt, RunProps,
+};
+use crate::model::table::{Cell, Row, Table};
 use crate::text::Utf16;
 
 use super::env::LocalNow;
@@ -42,15 +47,61 @@ pub struct ClipCells {
     pub whole: bool,
 }
 
+/// One run of a rich copy (`ClipRun`, universal-write.ts:1213). Its `props` are the TS spread
+/// `{ ...run.props }`, which copies the symbol keys too (`link`, [`Run::rpr_link`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ClipRun {
+    pub text: Utf16,
+    pub props: Arc<RunProps>,
+    /// the symbol keys the props spread carries (`RPR_REF`/`RPR_EDITED`)
+    pub link: Option<Box<RprLink>>,
+    /// a note reference (`noteRef`) and a copy of the note's content (`note`)
+    pub note_ref: Option<NoteRef>,
+    pub note: Option<Story>,
+    /// a picture/shape/box/group copied whole (`obj`)
+    pub obj: Option<Box<Run>>,
+    /// a plugin inline copied from this editor (`custom`)
+    pub custom: Option<CustomInline>,
+    /// the bold of an HTML block (`blockBold`)
+    pub block_bold: bool,
+}
+
+/// An HTML list item of a copy (`ClipPara.htmlList`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ClipHtmlList {
+    pub ordered: bool,
+    pub level: f64,
+    pub key: f64,
+}
+
+/// One paragraph of a rich copy (`ClipPara`): the runs and, when the mark (¶) was copied, its
+/// formatting (`mark`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ClipPara {
+    pub runs: Vec<ClipRun>,
+    pub mark: Option<Arc<ParaProps>>,
+    /// the list number as text (`marker`, "Keep Text Only")
+    pub marker: Option<Utf16>,
+    pub html_list: Option<ClipHtmlList>,
+}
+
+/// A whole table between the copied paragraphs (`tables[i]`): it goes in front of paragraph
+/// `before` of the copy.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipTable {
+    pub before: u32,
+    pub table: Arc<Table>,
+}
+
 /// A rich copy (`RichClip`).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Clip {
     /// the plain text (`text`)
     pub text: Utf16,
-    /// the copied paragraphs with the tables between them (`paras`, `tables` with `before`)
-    pub content: Story,
-    /// the list marker text of each paragraph (`ClipPara.marker`, "Keep Text Only")
-    pub markers: Vec<Option<Str>>,
+    /// the copied paragraphs (`paras`)
+    pub paras: Vec<ClipPara>,
+    /// the tables between them (`tables`; empty = the TS absent key)
+    pub tables: Vec<ClipTable>,
     pub origin: Option<ClipOrigin>,
     /// the document's path in the host (`path`)
     pub path: Option<Str>,
@@ -63,23 +114,194 @@ pub struct Clip {
     pub cells: Option<ClipCells>,
     /// a selected drawing object (`drawing`)
     pub drawing: Option<Run>,
+    /// the payloads the clip's pictures refer to (the TS objects hold the bytes; a run here refers
+    /// to a media id, so the clip keeps its own list: D2b-F8 `clone.rs`)
+    pub media: Vec<Arc<[u8]>>,
+}
+
+/// The size charged for one `Arc` allocation's header (strong + weak counts).
+const ARC_HEADER: usize = 16;
+
+/// A node still to price (an explicit stack: copied tables can nest deeper than the reader's 64).
+enum Work<'a> {
+    Story(&'a Story),
+    Table(&'a Table),
+    Run(&'a Run),
+}
+
+/// The estimate of [`Clip::bytes`]: every model node the clip keeps, each shared `Arc` (props,
+/// marks, `w:rPr`/`w:pPr`, tables) priced once per clip, the props at their struct size.
+struct Est<'a> {
+    seen: HashSet<*const ()>,
+    stack: Vec<Work<'a>>,
+    n: usize,
+}
+
+fn str_len(s: Option<&Str>) -> usize {
+    s.map_or(0, |s| s.len())
+}
+
+impl<'a> Est<'a> {
+    fn shared<T>(&mut self, a: &Arc<T>) -> bool {
+        let fresh = self.seen.insert(Arc::as_ptr(a).cast::<()>());
+        if fresh {
+            self.n += std::mem::size_of::<T>() + ARC_HEADER;
+        }
+        fresh
+    }
+
+    fn run(&mut self, r: &'a Run) {
+        self.n += r.text.heap_bytes();
+        self.shared(&r.props);
+        if let Some(x) = &r.rpr {
+            self.shared(x);
+        }
+        if let Some(l) = &r.rpr_link {
+            self.n += std::mem::size_of::<RprLink>();
+            if let Some(x) = &l.rpr {
+                self.shared(x);
+            }
+        }
+        let Some(e) = r.ext() else { return };
+        self.n += std::mem::size_of::<RunExt>() + str_len(e.field.as_ref()) + str_len(e.field_code.as_ref());
+        if let Some(i) = &e.image {
+            self.n += std::mem::size_of::<InlineImage>() + str_len(i.raw_drawing_xml.as_ref());
+        }
+        if let Some(t) = &e.textbox {
+            self.n += std::mem::size_of::<DrawingTextbox>() + str_len(t.raw_drawing_xml.as_ref());
+            self.stack.push(Work::Story(&t.content));
+        }
+        if let Some(sh) = &e.shape {
+            self.n += std::mem::size_of::<DrawingShape>() + str_len(sh.raw_drawing_xml.as_ref());
+        }
+        if let Some(g) = &e.group {
+            self.n += std::mem::size_of::<DrawingGroup>()
+                + str_len(g.raw_drawing_xml.as_ref())
+                + g.items.capacity() * std::mem::size_of::<GroupItem>();
+            for it in &g.items {
+                self.stack.push(Work::Run(&it.run));
+            }
+        }
+        if let Some(c) = &e.custom {
+            self.n += std::mem::size_of_val(&**c);
+        }
+        if let Some(rs) = &e.field_result {
+            self.n += rs.capacity() * std::mem::size_of::<Run>();
+            for x in rs {
+                self.stack.push(Work::Run(x));
+            }
+        }
+    }
+
+    fn story(&mut self, s: &'a Story) {
+        for p in s.paras.iter() {
+            self.n += std::mem::size_of::<Paragraph>() + ARC_HEADER + p.runs.capacity() * std::mem::size_of::<Run>();
+            self.shared(&p.props);
+            if let Some(x) = &p.ppr {
+                self.shared(x);
+            }
+            for r in &p.runs {
+                self.run(r);
+            }
+        }
+        for a in s.tables.iter() {
+            self.n += std::mem::size_of::<TableAnchor>() + ARC_HEADER;
+            self.table(&a.table);
+        }
+    }
+
+    fn table(&mut self, t: &'a Arc<Table>) {
+        if self.shared(t) {
+            self.stack.push(Work::Table(t));
+        }
+    }
+
+    fn table_body(&mut self, t: &'a Table) {
+        self.n += t.grid_cols_twips.capacity() * 8 + t.rows.capacity() * std::mem::size_of::<Row>();
+        if let Some(x) = &t.tbl_pr {
+            self.shared(x);
+        }
+        for row in &t.rows {
+            self.n += row.cells.capacity() * std::mem::size_of::<Cell>();
+            if let Some(x) = &row.tr_pr {
+                self.shared(x);
+            }
+            if let Some(x) = &row.tbl_pr_ex {
+                self.shared(x);
+            }
+            for c in &row.cells {
+                if let Some(x) = &c.tc_pr {
+                    self.shared(x);
+                }
+                self.n += str_len(c.shading_hex.as_ref()) + c.borders.as_ref().map_or(0, |b| std::mem::size_of_val(&**b));
+                self.stack.push(Work::Story(&c.content));
+            }
+        }
+    }
+
+    fn drain(&mut self) {
+        while let Some(w) = self.stack.pop() {
+            match w {
+                Work::Story(s) => self.story(s),
+                Work::Table(t) => self.table_body(t),
+                Work::Run(r) => {
+                    self.n += std::mem::size_of::<Run>();
+                    self.run(r);
+                }
+            }
+        }
+    }
 }
 
 impl Clip {
-    /// An estimate of the bytes the clip keeps alive (for the cap).
+    /// An estimate of the bytes the clip keeps alive (for the ring's byte cap): the paragraphs
+    /// with their runs, props, marks, notes and objects; the tables and the cells with their
+    /// stories (nested tables, textboxes, note stories); the media, lists and style names.
     #[must_use]
     pub fn bytes(&self) -> usize {
-        let mut n = std::mem::size_of::<Clip>() + self.text.heap_bytes();
-        for p in self.content.paras.iter() {
-            n += std::mem::size_of_val(p);
+        let mut e = Est { seen: HashSet::new(), stack: Vec::new(), n: std::mem::size_of::<Clip>() + self.text.heap_bytes() };
+        e.n += self.paras.capacity() * std::mem::size_of::<ClipPara>();
+        for p in &self.paras {
+            e.n += p.marker.as_ref().map_or(0, Utf16::heap_bytes) + p.runs.capacity() * std::mem::size_of::<ClipRun>();
+            if let Some(m) = &p.mark {
+                e.shared(m);
+            }
             for r in &p.runs {
-                n += std::mem::size_of_val(r) + r.text.heap_bytes();
+                e.n += r.text.heap_bytes();
+                e.shared(&r.props);
+                if let Some(l) = &r.link {
+                    e.n += std::mem::size_of::<RprLink>();
+                    if let Some(x) = &l.rpr {
+                        e.shared(x);
+                    }
+                }
+                if let Some(s) = &r.note {
+                    e.stack.push(Work::Story(s));
+                }
+                if let Some(o) = &r.obj {
+                    e.n += std::mem::size_of::<Run>();
+                    e.stack.push(Work::Run(o));
+                }
+                e.drain();
             }
         }
-        n += self.content.tables.len() * 256;
-        n += self.lists.iter().map(|(_, s)| s.len() + 16).sum::<usize>();
-        n += self.style_names.iter().map(|(a, b)| a.len() + b.len()).sum::<usize>();
-        n
+        e.n += self.tables.capacity() * std::mem::size_of::<ClipTable>();
+        for t in &self.tables {
+            e.table(&t.table);
+            e.drain();
+        }
+        if let Some(c) = &self.cells {
+            e.table(&c.table);
+            e.drain();
+        }
+        if let Some(d) = &self.drawing {
+            e.stack.push(Work::Run(d));
+            e.drain();
+        }
+        e.n += self.media.iter().map(|b| b.len() + ARC_HEADER).sum::<usize>();
+        e.n += self.lists.iter().map(|(_, s)| s.len() + ARC_HEADER + 8).sum::<usize>();
+        e.n += self.style_names.iter().map(|(a, b)| a.len() + b.len() + 2 * std::mem::size_of::<Str>()).sum::<usize>();
+        e.n
     }
 }
 

@@ -24,17 +24,20 @@ use std::fmt::Write as _;
 use std::hint::black_box;
 
 use d2a_support::{Cx, sample};
-use d2b_f4_support::{doc, f4_cmd, hostile_cmd};
+use d2b_f4_support::{doc, doc_with_props, f4_cmd, hostile_cmd};
 use uo_alloc::{assert_no_leak, measure};
 use uo_docx::read::blank::{BlankDocxOptions, blank_docx_package};
 use uo_docx::session::ops::format::ColorArg;
-use uo_docx::session::ops::header_footer::{HeaderFooterCmd, HfAt, HfKind, HfSlot};
-use uo_docx::session::ops::page::PageCmd;
+use uo_docx::session::ops::header_footer::hf_templates::HfGallery;
+use uo_docx::session::ops::header_footer::{HeaderFooterCmd, HfAt, HfEnter, HfKind, HfReenter, HfSlot};
+use uo_docx::session::ops::page::watermark::WatermarkArg;
+use uo_docx::session::ops::page::{PageCmd, PageLang};
 use uo_docx::session::ops::sections::section_ops::{ColumnPreset, Orientation};
 use uo_docx::session::ops::sections::{ColumnsArg, PageSetup, SectionApplyTo, SectionCmd, SectionType};
 use uo_docx::session::ops::settings::SettingsCmd;
 use uo_docx::session::ops::text::TextCmd;
 use uo_docx::session::{Command, DocPosition, FixedEnv, HistoryLimits, OpenOptions, Session};
+use uo_docx::write::emit::background::{WatermarkLayout, WatermarkPictureSpec, WatermarkTextSpec};
 use uo_testkit::generate::Rng;
 
 fn open_with(bytes: Vec<u8>, history: HistoryLimits) -> Option<Session> {
@@ -114,7 +117,10 @@ fn m1_session_lives_with_the_f4_commands_return_the_memory() {
             Command::Settings(SettingsCmd::SetProtected { on: true }),
             Command::Section(SectionCmd::InsertColumnBreak),
             Command::HeaderFooter(HeaderFooterCmd::SetDifferentFirstPage { on: true, at: at(0, HfSlot::Default), reenter: None }),
-        ] {
+        ]
+        .into_iter()
+        .chain(refusals())
+        {
             let _ = s.exec(c, &mut cx.cx());
         }
         s.undo(&mut cx.cx());
@@ -213,4 +219,154 @@ fn m3_section_commands_on_a_500_page_document() {
     );
     let hist = s.history_bytes() as u64;
     assert!(hist <= model, "history {hist} B against a model of {model} B");
+}
+
+/// The refusal and no-op paths of the watermark, cover page and template commands.
+fn refusals() -> Vec<Command> {
+    let at = HfAt { section: 0, slot: HfSlot::Default };
+    let wm = |arg: WatermarkArg| Command::Page(PageCmd::SetWatermark { spec: Box::new(arg), at, lang: PageLang::En, reenter: None });
+    let pic = |ext: &str, info| WatermarkArg::Picture {
+        spec: WatermarkPictureSpec {
+            data: std::sync::Arc::from(vec![1u8, 2].into_boxed_slice()),
+            ext: ext.into(),
+            title: "a".into(),
+            scale: None,
+            washout: false,
+        },
+        pixel_info: info,
+    };
+    let blank = WatermarkArg::Text {
+        spec: WatermarkTextSpec {
+            text: " ".into(),
+            font: "calibri".into(),
+            size_pt: None,
+            color: "C0C0C0".into(),
+            semitransparent: false,
+            layout: WatermarkLayout::Horizontal,
+            lang: None,
+        },
+        measured_box: None,
+    };
+    let tpl = |gallery, id: &str, enter| {
+        Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery,
+            id: id.into(),
+            lang: PageLang::Es,
+            enter,
+            page_numbers: Some((f64::NAN, 1.0)),
+        })
+    };
+    vec![
+        wm(WatermarkArg::Gallery("nope".into())),
+        wm(blank),
+        wm(pic("png", None)),
+        wm(pic("../x", Some([1.0, 1.0, 96.0]))),
+        wm(pic("png", Some([0.0, 0.0, 0.0]))),
+        Command::Page(PageCmd::RemoveWatermark { reenter: None }),
+        Command::Page(PageCmd::RemoveCoverPage),
+        Command::Page(PageCmd::InsertCoverPage { id: "nope".into(), lang: PageLang::En }),
+        tpl(HfGallery::Header, "nope", None),
+        tpl(HfGallery::Footer, "blank", None),
+        tpl(HfGallery::Footer, "blank", Some(HfEnter { part: HfReenter::Part(uo_docx::ids::HfPartId(u32::MAX)), page: u32::MAX })),
+        tpl(HfGallery::PageCurrent, "nope", None),
+        tpl(HfGallery::PageCurrent, "plain", None),
+        wm(WatermarkArg::Gallery("draft1".into())),
+        Command::Page(PageCmd::InsertCoverPage { id: "band".into(), lang: PageLang::En }),
+        tpl(
+            HfGallery::Header,
+            "band",
+            Some(HfEnter { part: HfReenter::Create { kind: HfKind::Header, section: 0, slot: HfSlot::Default }, page: 0 }),
+        ),
+        Command::Page(PageCmd::RemoveWatermark { reenter: None }),
+        Command::Page(PageCmd::RemoveCoverPage),
+    ]
+}
+
+#[test]
+fn m2b_soak_watermark_cover_and_template_cycles() {
+    let cycle = |s: &mut Session, cx: &mut Cx| {
+        let at = HfAt { section: 0, slot: HfSlot::Default };
+        let wm = Command::Page(PageCmd::SetWatermark {
+            spec: Box::new(WatermarkArg::Gallery("draft1".into())),
+            at,
+            lang: PageLang::En,
+            reenter: None,
+        });
+        let _ = s.exec(wm, &mut cx.cx());
+        s.undo(&mut cx.cx());
+        s.redo(&mut cx.cx());
+        let _ = s.exec(Command::Page(PageCmd::RemoveWatermark { reenter: None }), &mut cx.cx());
+        s.undo(&mut cx.cx());
+        let _ = s.exec(Command::Page(PageCmd::InsertCoverPage { id: "band".into(), lang: PageLang::En }), &mut cx.cx());
+        s.undo(&mut cx.cx());
+        s.redo(&mut cx.cx());
+        let _ = s.exec(Command::Page(PageCmd::RemoveCoverPage), &mut cx.cx());
+        s.undo(&mut cx.cx());
+        let tpl = Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::PageCurrent,
+            id: "pageXofY".into(),
+            lang: PageLang::En,
+            enter: None,
+            page_numbers: Some((3.0, 1.0)),
+        });
+        let _ = s.exec(tpl, &mut cx.cx());
+        s.undo(&mut cx.cx());
+    };
+    let mut cx = Cx::new();
+    let mut s = open_with(doc_with_props(), HistoryLimits::default()).unwrap();
+    for _ in 0..20 {
+        cycle(&mut s, &mut cx);
+    }
+    let base = uo_alloc::thread_stats().live;
+    for _ in 0..100 {
+        cycle(&mut s, &mut cx);
+    }
+    let after = uo_alloc::thread_stats().live;
+    let per = (after - base) / 100;
+    println!("M2b d2b-f4: live {base} -> {after} B after 100 cycles ({per} B per cycle), {} header parts", s.document().hf.len());
+    // an undone cover keeps its source groups and an undone picture mark its media (the TS does the same, F4-D17)
+    assert!(after - base < 16 << 20, "grew by {} B", after - base);
+}
+
+#[test]
+fn m3b_watermark_cover_and_template_on_a_500_page_document() {
+    let bytes = sectioned_document();
+    let mut s = open_with(bytes, HistoryLimits::default()).unwrap();
+    let mut cx = Cx::new();
+    let mut run = |name: &str, c: Command, budget: u64| {
+        s.exec(Command::Text(TextCmd::SetSelection { anchor: DocPosition::new(7000, 5), focus: DocPosition::new(7000, 5) }), &mut cx.cx())
+            .unwrap();
+        let t = std::time::Instant::now();
+        let (r, u) = measure(|| s.exec(c, &mut cx.cx()));
+        r.unwrap();
+        println!("M3b d2b-f4: {name}: {} B allocated in {} ms", u.allocated, t.elapsed().as_millis());
+        assert!(u.allocated <= budget, "{name} allocated {} B (budget {budget} B)", u.allocated);
+    };
+    let at = |section| HfAt { section, slot: HfSlot::Default };
+    for section in [0u32, 25, 50] {
+        run(
+            "set watermark",
+            Command::Page(PageCmd::SetWatermark {
+                spec: Box::new(WatermarkArg::Gallery("confidential2".into())),
+                at: at(section),
+                lang: PageLang::En,
+                reenter: None,
+            }),
+            4 << 20,
+        );
+    }
+    run("remove watermark", Command::Page(PageCmd::RemoveWatermark { reenter: None }), 4 << 20);
+    run("insert cover page", Command::Page(PageCmd::InsertCoverPage { id: "band".into(), lang: PageLang::En }), 8 << 20);
+    run("remove cover page", Command::Page(PageCmd::RemoveCoverPage), 8 << 20);
+    run(
+        "header template",
+        Command::HeaderFooter(HeaderFooterCmd::InsertTemplate {
+            gallery: HfGallery::Header,
+            id: "band".into(),
+            lang: PageLang::En,
+            enter: Some(HfEnter { part: HfReenter::Create { kind: HfKind::Header, section: 0, slot: HfSlot::Default }, page: 0 }),
+            page_numbers: None,
+        }),
+        4 << 20,
+    );
 }

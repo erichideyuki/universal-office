@@ -670,7 +670,7 @@ impl Session {
     // ── inserting ──────────────────────────────────────────────────────────────────────────
 
     /// `insertWholeRun(pos, run)`: tracked when the tracking is on.
-    fn insert_whole_run(&mut self, pos: DocPosition, run: Run) -> Result<DocPosition, CommandError> {
+    pub(crate) fn insert_whole_run(&mut self, pos: DocPosition, run: Run) -> Result<DocPosition, CommandError> {
         let out = if self.opts.tracking {
             let rev = self.new_rev();
             let paras = self.paras_mut().ok_or(CommandError::Position)?;

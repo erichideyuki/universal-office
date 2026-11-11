@@ -1072,6 +1072,28 @@ impl Session {
 
     // ── two-phase: insert ──────────────────────────────────────────────────────────────────
 
+    /// The picture of a new inline image run with the XML Word writes on insert (`newImageRun`
+    /// 5566 and `insertImage`): the random `wp:docPr` id first, then the picture count of the
+    /// context's paragraphs (`Imagem n`); the media joins at the save (`r:embed="uw:media"`). Also
+    /// used by the clipboard family (D2b-F8).
+    pub(crate) fn new_picture_image(&mut self, data: &[u8], ext: crate::js::Str, w: f64, h: f64) -> InlineImage {
+        let id = self.doc.ids.drawing();
+        let media = self.doc.media.add(data);
+        let mut img =
+            InlineImage { data: MediaRef(media), ext, width_twips: num(w), height_twips: num(h), drawing: id, ..InlineImage::default() };
+        let r = f64::from(self.env_mut().random_u32()) / 4_294_967_296.0;
+        let pid = 1.0 + math::floor(r * 2_000_000_000.0);
+        let count = self
+            .paras()
+            .map_or(0, |ps| ps.iter().map(|q| q.runs.iter().filter(|r| r.ext().is_some_and(|e| e.image.is_some())).count()).sum::<usize>());
+        let name = format!("Imagem {}", count + 1);
+        let xml = new_picture_xml(pid, &name, "uw:media", math::round(w * 635.0), math::round(h * 635.0));
+        obj::set(&mut img, "rawDrawingXml", |i| i.raw_drawing_xml = Some(xml.clone().into()));
+        obj::set(&mut img, "edited", |i| i.edited = Some(true));
+        crate::read::inline_objects::sync_image_from_xml(&mut img);
+        img
+    }
+
     fn content_width_twips(&self, max: Option<f64>) -> f64 {
         if let Some(m) = max {
             return m;
@@ -1130,35 +1152,24 @@ impl Session {
             Some(b) => self.new_run_props_from(b),
             None => self.new_run_props_from(&crate::read::plain::default_run_props()),
         };
-        let image = {
-            let id = self.doc.ids.drawing();
-            let media = self.doc.media.add(&data);
-            let mut img = InlineImage {
-                data: MediaRef(media),
-                ext: ext.clone(),
-                width_twips: num(w),
-                height_twips: num(h),
-                drawing: id,
-                ..InlineImage::default()
-            };
-            if let Some(o) = &ole {
+        let image = match &ole {
+            None => self.new_picture_image(&data, ext.clone(), w, h),
+            Some(o) => {
+                let id = self.doc.ids.drawing();
+                let media = self.doc.media.add(&data);
+                let mut img = InlineImage {
+                    data: MediaRef(media),
+                    ext: ext.clone(),
+                    width_twips: num(w),
+                    height_twips: num(h),
+                    drawing: id,
+                    ..InlineImage::default()
+                };
                 let om = self.doc.media.add(&o.data);
                 img.ole =
                     Some(Box::new(OleData { prog_id: o.prog_id.clone(), data: MediaRef(om), ext: o.ext.clone(), ..Default::default() }));
-            } else {
-                // the XML Word writes on insert; the media joins at the save (`r:embed="uw:media"`)
-                let r = f64::from(self.env_mut().random_u32()) / 4_294_967_296.0;
-                let pid = 1.0 + math::floor(r * 2_000_000_000.0);
-                let count = self.paras().map_or(0, |ps| {
-                    ps.iter().map(|q| q.runs.iter().filter(|r| r.ext().is_some_and(|e| e.image.is_some())).count()).sum::<usize>()
-                });
-                let name = format!("Imagem {}", count + 1);
-                let xml = new_picture_xml(pid, &name, "uw:media", math::round(w * 635.0), math::round(h * 635.0));
-                obj::set(&mut img, "rawDrawingXml", |i| i.raw_drawing_xml = Some(xml.clone().into()));
-                obj::set(&mut img, "edited", |i| i.edited = Some(true));
-                crate::read::inline_objects::sync_image_from_xml(&mut img);
+                img
             }
-            img
         };
         // the props copy carries the reference to the original `w:rPr` (the TS `RPR_REF` symbol, which the
         // spread copies): the image run gets it as the pieces of the split run do
