@@ -37,7 +37,9 @@ use super::ring::with_ring;
 use super::wire::{BindError, FromWire, IntoWire};
 use crate::pipeline::{self, JobError, code};
 use crate::render::{NONE, NULL_HANDLE, OK, UoBuf, buf, take_bytes};
-use crate::write::{UoLayout, UoWriteEnv, env_parts, layout_generation, layout_geom, layout_handle, session_layout_options};
+use crate::write::{
+    UoLayout, UoWriteEnv, env_parts, layout_edit_hint, layout_generation, layout_geom, layout_handle, session_layout_options,
+};
 
 /// `UoBuf` status: there is no pending font save (`uo_session_font_requests` first).
 pub const NO_FONT_SAVE: i32 = 2;
@@ -66,6 +68,11 @@ pub struct LinesCache {
     pub generation: u32,
     pub scope: String,
     pub lines: EditLines,
+    /// the located lines of the layout (wave 6, L: kept, the next incremental relayout patches both)
+    pub index: Option<LineIndex>,
+    /// the model changed since (an edit): not answered again for this layout, only patched for the next one (wave 6, L;
+    /// the commands dropped the cache)
+    pub edited: bool,
 }
 
 /// One open document being edited (see the module documentation of `session.rs`).
@@ -156,7 +163,7 @@ impl UoWriteSession {
 
     /// One command.
     pub(crate) fn command(&mut self, c: Command) -> Result<Outcome, CommandError> {
-        self.lines = None;
+        self.lines_edited();
         self.run(|s, cx| s.exec(c, cx))
     }
 
@@ -170,11 +177,11 @@ impl UoWriteSession {
                 outcome(self.command(c))
             }
             w::ExecOp::Undo => {
-                self.lines = None;
+                self.lines_edited();
                 done(self.run(|s, cx| s.undo(cx)))
             }
             w::ExecOp::Redo => {
-                self.lines = None;
+                self.lines_edited();
                 done(self.run(|s, cx| s.redo(cx)))
             }
             w::ExecOp::CancelPending => {
@@ -239,6 +246,14 @@ impl UoWriteSession {
         })
     }
 
+    /// An edit: the cached lines no longer answer for their layout (the model changed), but stay the base of the
+    /// patch after the next incremental relayout (wave 6, L; before, the cache was dropped).
+    pub(crate) fn lines_edited(&mut self) {
+        if let Some(c) = self.lines.as_mut() {
+            c.edited = true;
+        }
+    }
+
     /// The lines of the edited paragraphs in `layout` (cached by layout and scope); `None` when the
     /// context has no scope (a textbox).
     pub(crate) fn lines(&mut self, l: &UoLayout) -> Option<&EditLines> {
@@ -253,7 +268,7 @@ impl UoWriteSession {
             }
             None => scope_key(&self.session),
         };
-        let fresh = self.lines.as_ref().is_some_and(|c| c.generation == generation && c.scope == key);
+        let fresh = self.lines.as_ref().is_some_and(|c| c.generation == generation && c.scope == key && !c.edited);
         if !fresh {
             let scope = match &chain {
                 Some((c, page)) => EditScope::Textbox { chain: c, page: *page },
@@ -261,9 +276,26 @@ impl UoWriteSession {
             };
             let geom = layout_geom(l);
             let loc = Locator::new(self.session.view());
-            let index = LineIndex::new(&loc, geom);
-            let lines = EditLines::new(&loc, geom, &index, &scope);
-            self.lines = Some(LinesCache { generation, scope: key, lines });
+            // wave 6 (L, declared): after an incremental shell relayout over the layout these lines were built for, only the
+            // paragraphs on the changed pages get their lines again (`EditLines::patch_body`, the TS `tryFastLayout`); the body
+            // scope only, anything else rebuilds
+            let patched = matches!(scope, EditScope::Body)
+                && match (self.lines.as_mut(), layout_edit_hint(l)) {
+                    (Some(c), Some(hint)) if c.generation == hint.prev_generation && c.scope == key => {
+                        let ok = c.index.as_mut().is_some_and(|index| c.lines.patch_body(&loc, geom, index, &hint.changed));
+                        if ok {
+                            c.generation = generation;
+                            c.edited = false;
+                        }
+                        ok
+                    }
+                    _ => false,
+                };
+            if !patched {
+                let index = LineIndex::new(&loc, geom);
+                let lines = EditLines::new(&loc, geom, &index, &scope);
+                self.lines = Some(LinesCache { generation, scope: key, lines, index: Some(index), edited: false });
+            }
         }
         self.lines.as_ref().map(|c| &c.lines)
     }
@@ -499,7 +531,7 @@ pub unsafe extern "C" fn uo_session_complete(h: *mut UoWriteSession, ptr: *mut u
         Ok(r) => r,
         Err(e) => return bad(&e.to_string()),
     };
-    s.lines = None;
+    s.lines_edited();
     let r = s.run(|ss, cx| ss.complete(JobId(m.job), result, cx));
     exec_result(outcome(r))
 }
@@ -666,7 +698,8 @@ pub unsafe extern "C" fn uo_session_caret_rect(h: *mut UoWriteSession, layout: *
 pub unsafe extern "C" fn uo_session_selection_rects(h: *mut UoWriteSession, layout: *const UoLayout, page: u32) -> *mut UoBuf {
     // SAFETY: the caller guarantees the handles are null or live.
     let (Some(s), Some(l)) = (unsafe { session_mut(h) }, unsafe { layout.as_ref() }) else { return buf(NULL_HANDLE, Vec::new()) };
-    let r = s.session.range();
+    // the TS `paintEngineSelection` draws `normalizeRange(this.range())` (BUG-1: a backward selection, wave 6 C)
+    let r = uo_docx::session::text::normalize_range(s.session.range());
     let Some(el) = s.lines(l) else { return buf(NONE, Vec::new()) };
     let mut rects: Vec<SelRect> = Vec::new();
     if r.start != r.end {

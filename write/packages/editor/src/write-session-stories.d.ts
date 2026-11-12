@@ -11,7 +11,7 @@ declare module '@universal-office/write-session' {
     | { kind: 'cell'; anchor: number; hops: StoryHop[] }
     | { kind: 'note'; footnote: boolean; id: number }
     | { kind: 'hf'; hfKind: 'header' | 'footer'; part: number; page: number }
-    | { kind: 'textbox'; para: number; run: number; host: number; focus: number; page: number; outer: StoryCtx };
+    | { kind: 'textbox'; para: number | null; run: number | null; at: string; host: number; focus: number; page: number; outer: StoryCtx };
   export interface StoryContext {
     ctx: StoryCtx;
     tableSel: { anchor: number; path: StoryHop[]; rect: StoryRect; origin: { r: number; c: number } } | null;
@@ -37,7 +37,7 @@ declare module '@universal-office/write-session' {
     marginLeft?: number; marginRight?: number; marginTop?: number; marginBottom?: number; header: StoryHfSide; footer: StoryHfSide;
   }
   export interface StoryNoteRun { ref: { footnote: boolean; id: number } | null; mark: boolean }
-  export interface StoryTextbox { para: number; run: number; host: number; focus: number; page: number; rect: StoryBox; rot: number; onBorder: boolean; hf: boolean }
+  export interface StoryTextbox { para: number | null; run: number | null; host: number; focus: number; page: number; rect: StoryBox; rot: number; onBorder: boolean; hf: boolean }
   export type StoryTextSeparator = 'paragraph' | 'tab' | 'semicolon' | 'comma' | { char: string };
   export interface StoriesBinding {
     storyContext(s: WriteSession): StoryContext;

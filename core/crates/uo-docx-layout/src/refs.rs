@@ -76,6 +76,42 @@ impl<'a> Locator<'a> {
         walk_path(|b| self.body_block(b), segs)
     }
 
+    /// [`DocView::block`] with the body's first step through the indexed blocks (wave 6, L: the
+    /// per-line lookups of a whole-layout walk were O(i) each, `Story::block_at` = `blocks().nth(i)`).
+    /// The same answer by construction: `body` holds `view.body().blocks()` in order, and the cell
+    /// steps go as `DocView::block` goes; every other story is `view.block`.
+    #[must_use]
+    pub fn block(&self, story: &StoryRef, path: &BlockPath) -> Option<Block<'a>> {
+        if *story != StoryRef::Body {
+            return self.view.block(story, path);
+        }
+        let steps = path.steps();
+        let mut b = self.body_block(*steps.first()?)?;
+        let mut i = 0;
+        while i + 1 < steps.len() {
+            let Block::Table(t) = b else { return None };
+            let (row, cell, at) = (*steps.get(i + 1)? as usize, *steps.get(i + 2)? as usize, *steps.get(i + 3)? as usize);
+            b = t.cell(row, cell)?.content.block_at(at)?;
+            i += 3;
+        }
+        Some(b)
+    }
+
+    /// [`DocView::paragraph`] through [`Locator::block`].
+    #[must_use]
+    pub fn paragraph(&self, at: &ParaLoc) -> Option<&'a Paragraph> {
+        self.story_paragraph(&at.story, &at.path)
+    }
+
+    /// [`DocView::paragraph`] of `(story, path)` through [`Locator::block`].
+    #[must_use]
+    pub fn story_paragraph(&self, story: &StoryRef, path: &BlockPath) -> Option<&'a Paragraph> {
+        match self.block(story, path)? {
+            Block::Paragraph(p) => Some(p),
+            Block::Table(_) => None,
+        }
+    }
+
     /// `locateRef(ref, origins)` + `lineParagraph(loc, doc, section)` (`section` = the page's
     /// section, for `hfBlocksFor`).
     #[must_use]

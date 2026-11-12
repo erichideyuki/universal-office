@@ -98,7 +98,9 @@ export function enterTextbox(st: StState, tb: NonNullable<ReturnType<typeof text
   if (!c || c.locked || c.ctx.kind === 'textbox') return false;
   if (c.ctx.kind === 'cell') exec(st, { t: 'context', v: { t: 'exitCell' } }, 'exitCell');
   if (ctxOf(st)?.ctx.kind === 'note') exec(st, { t: 'context', v: { t: 'exitNote' } }, 'exitNote');
-  const o = run(st, { t: 'context', v: { t: 'enterTextbox', para: tb.para, run: tb.run, host: tb.host, focus: tb.focus, page: tb.page } }, 'enterTextbox');
+  // wave 6 (C): the TS `enterTextbox(focusRun)` by the clicked box's order in `contextTextboxRuns` (the session finds the
+  // chain's head: boxes in cells, groups and boxes too — ED-102 closed)
+  const o = run(st, { t: 'context', v: { t: 'enterTextboxAt', focus: tb.focus, page: tb.page } }, 'enterTextbox');
   const ok = apply(st, o, 'enterTextbox');
   if (ok && ctxOf(st)?.ctx.kind === 'textbox') tbRects.set(st, { page: tb.page, rect: tb.rect });
   st.ed.focusEditor();

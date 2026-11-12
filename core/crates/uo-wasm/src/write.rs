@@ -54,6 +54,7 @@
 //! code 10, stage none. The import must not call back into the module. The PDF is stoppable through
 //! `pdf_chunk` answering non-zero (code 13, sink); `uo_layout_pdf` has no poll.
 
+use std::cell::OnceCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -62,16 +63,20 @@ use uo_docx::read::ReadOptions;
 use uo_docx_layout::Layout;
 use uo_docx_layout::LayoutOptions;
 use uo_docx_layout::annotations::Annotations;
-use uo_docx_layout::section::{SectionError, SectionModel};
 use uo_docx_layout::fonts::FontProvider;
+#[cfg(feature = "session")]
+use uo_docx_layout::incr::LendTicket;
 use uo_docx_layout::options::{Clock, Hyphenation, RevisionMode, RevisionView, TimeZoneRule, ViewTransform};
-use uo_docx_layout::run_boxes::RunBox;
+use uo_docx_layout::run_boxes::{RunBox, RunFilter};
+use uo_docx_layout::section::{SectionError, SectionModel};
 use uo_fonts::hyphen::HyphenationRegistry;
 use uo_fonts::policy::{PolicyName, provider};
 use uo_fonts::registry::{AdvanceTable, FaceCache, FontProfile, FontRegistry, FontSource, HostFace, PushError};
 use uo_fonts::{VARIANTS, Variant};
 use uo_pdf::{ChunkedSink, PdfError};
 use uo_render::view::RenderView;
+#[cfg(feature = "session")]
+use uo_render::view::ViewRest;
 use uo_render::{LinkTarget, Navigation};
 
 use crate::pipeline::{self, JobError, LayoutJob, Opened, Trust, code};
@@ -272,9 +277,11 @@ pub unsafe extern "C" fn uo_write_env_register_hyphenation(env: *mut UoWriteEnv,
     let Some(p) = utf8(&text).and_then(uo_fonts::hyphen::parse_patterns) else {
         return pipeline::fail_with(code::INVALID_DATA, "not a hyphenation pattern set");
     };
-    // no layout holds the registry between calls (the sessions live for one layout)
-    let Some(reg) = Arc::get_mut(&mut env.hyphenation) else { return pipeline::fail_with(code::INVALID_OPERATION, "patterns in use") };
-    reg.register(&p);
+    // copy-on-write (wave 6, C): editor sessions and the shell's relayout engine keep a clone of the
+    // registry for their whole life (`HostFonts`, `ShellEngine::hyph`); they keep the old snapshot until
+    // their next layout, and the shell engine rebuilds itself on the pointer change (shell.rs). The
+    // first cut refused the patterns ('patterns in use') once any session had laid out on the page.
+    Arc::make_mut(&mut env.hyphenation).register(&p);
     code::OK
 }
 
@@ -346,13 +353,127 @@ pub unsafe extern "C" fn uo_write_hyphenation_patterns(
 
 /// One layout: the render view (pages and resources), the Write geometry, what the Write section
 /// reads from the model (G8), the navigation, the run boxes and the annotations.
+///
+/// Wave 6 (L, declared): the derived data of an editor shell layout (`layout_handle_shell`) is
+/// computed on first use from a snapshot of the model it was laid out over, not per keystroke: the
+/// navigation, the run boxes and the annotations once per handle, the Write section per encoded page
+/// (`SectionModel::page`, the same bytes). The viewer and the session's own layouts stay eager.
 pub struct UoLayout {
     view: UoRenderView,
     geom: Layout,
-    /// each body line's paragraph text and level, the placed objects' run names (gathered once)
-    section: SectionModel,
+    /// each body line's paragraph text and level, the placed objects' run names (gathered once);
+    /// `None`: gathered per encoded page from `model`
+    section: Option<SectionModel>,
     /// the layout id of its messages (the render view's mark has the same)
     generation: u32,
+    navigation: OnceCell<Navigation>,
+    links: OnceCell<Vec<RunBox>>,
+    inlines: OnceCell<Vec<RunBox>>,
+    annotations: OnceCell<Annotations>,
+    /// what only an editor shell layout has (wave 6, L)
+    #[cfg(feature = "session")]
+    shell: ShellPart,
+}
+
+/// The editor shell's part of a layout handle (wave 6, L).
+#[cfg(feature = "session")]
+#[derive(Default)]
+struct ShellPart {
+    /// the model the derived data is computed from on first use
+    model: Option<Box<ModelSnapshot>>,
+    /// the shell engine's lend this handle holds (its `Layout`, moved, not copied)
+    lend: Option<LendTicket>,
+    /// while the lent layout is back with its engine during a relayout: the rest of the render view
+    rest: Option<ViewRest>,
+    /// per face and per image of this layout: its bytes are the previous handle's of the same index
+    /// (the same `Arc`: the viewer keeps the font key and the decoded image)
+    shared: Option<SharedFlags>,
+    /// after an incremental relayout over a previous handle: that handle's layout id and the pages that
+    /// changed (the session patches the edit lines it built for the previous layout instead of
+    /// rebuilding them)
+    edit: Option<EditHint>,
+}
+
+/// Per face, per image: shared with the previous handle (wave 6, L).
+#[cfg(feature = "session")]
+type SharedFlags = (Box<[bool]>, Box<[bool]>);
+
+/// What an incremental shell relayout changed against the previous handle (wave 6, L).
+#[cfg(feature = "session")]
+pub(crate) struct EditHint {
+    pub(crate) prev_generation: u32,
+    pub(crate) changed: Vec<u32>,
+}
+
+/// The model a shell layout was laid out over (wave 6, L): a shallow copy (`Arc`s and persistent
+/// vectors, as LA7's `DocParts`) of the document and of the session's context story.
+#[cfg(feature = "session")]
+struct ModelSnapshot {
+    doc: uo_docx::Document,
+    ctx: Option<uo_docx::model::Story>,
+}
+
+#[cfg(feature = "session")]
+impl ModelSnapshot {
+    fn of(view: DocView<'_>) -> ModelSnapshot {
+        ModelSnapshot { doc: view.document().clone(), ctx: view.story(&uo_docx::view::StoryRef::Context).cloned() }
+    }
+
+    fn view(&self) -> DocView<'_> {
+        match &self.ctx {
+            Some(story) => DocView::with_context(&self.doc, uo_docx::view::ContextView { story }),
+            None => DocView::new(&self.doc),
+        }
+    }
+}
+
+impl UoLayout {
+    /// An eager handle (the viewer, the session's own layouts): every derived value given.
+    fn eager(view: UoRenderView, geom: Layout, section: SectionModel, generation: u32, laid: Derived) -> UoLayout {
+        UoLayout {
+            view,
+            geom,
+            section: Some(section),
+            generation,
+            navigation: OnceCell::from(laid.navigation),
+            links: OnceCell::from(laid.links),
+            inlines: OnceCell::from(laid.inlines),
+            annotations: OnceCell::from(laid.annotations),
+            #[cfg(feature = "session")]
+            shell: ShellPart::default(),
+        }
+    }
+
+    /// `f` over the snapshot of the model (the default value without one: never asked, an eager
+    /// handle has every value).
+    fn with_model<T: Default>(&self, f: impl FnOnce(DocView<'_>, &Layout) -> T) -> T {
+        #[cfg(feature = "session")]
+        if let Some(m) = &self.shell.model {
+            return f(m.view(), &self.geom);
+        }
+        drop(f);
+        T::default()
+    }
+
+    fn navigation(&self) -> &Navigation {
+        self.navigation.get_or_init(|| self.with_model(|v, g| g.navigation(v)))
+    }
+
+    fn links(&self) -> &[RunBox] {
+        self.links.get_or_init(|| self.with_model(|v, g| g.run_boxes(v, RunFilter::Links)))
+    }
+
+    fn inlines(&self) -> &[RunBox] {
+        self.inlines.get_or_init(|| self.with_model(|v, g| g.run_boxes(v, RunFilter::CustomInlines)))
+    }
+
+    fn annotations(&self) -> &Annotations {
+        self.annotations.get_or_init(|| self.with_model(|v, g| g.annotations(v)))
+    }
+}
+
+/// The derived values of an eager handle.
+struct Derived {
     navigation: Navigation,
     links: Vec<RunBox>,
     inlines: Vec<RunBox>,
@@ -491,16 +612,8 @@ pub unsafe extern "C" fn uo_write_layout(
             if env.phone {
                 view.limits.max_fx_px = view.limits.max_fx_px.min(PHONE_MAX_FX_PX);
             }
-            Box::into_raw(Box::new(UoLayout {
-                view: view_handle(view),
-                geom,
-                section,
-                generation,
-                navigation: laid.navigation,
-                links: laid.links,
-                inlines: laid.inlines,
-                annotations,
-            }))
+            let derived = Derived { navigation: laid.navigation, links: laid.links, inlines: laid.inlines, annotations };
+            Box::into_raw(Box::new(UoLayout::eager(view_handle(view), geom, section, generation, derived)))
         }
         Err(e) => {
             pipeline::fail(&e);
@@ -556,7 +669,16 @@ pub unsafe extern "C" fn uo_layout_view(l: *mut UoLayout) -> *mut UoRenderView {
 pub unsafe extern "C" fn uo_layout_encode_page(l: *mut UoLayout, page: usize) -> *mut UoBuf {
     // SAFETY: the caller guarantees `l` is null or live.
     let Some(l) = (unsafe { l.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
-    let app = match l.geom.write_section(page, &l.section, l.generation) {
+    // wave 6 (L): a shell layout gathers the model side of this page alone (the same bytes)
+    let lazy;
+    let section = match &l.section {
+        Some(s) => s,
+        None => {
+            lazy = l.with_model(|v, g| SectionModel::page(v, g, page));
+            &lazy
+        }
+    };
+    let app = match l.geom.write_section(page, section, l.generation) {
         Ok(a) => a,
         Err(SectionError::NoPage) => return buf(NO_PAGE, Vec::new()),
         Err(_) => return buf(NOT_ENCODED, Vec::new()),
@@ -585,7 +707,7 @@ pub unsafe extern "C" fn uo_layout_encode_page(l: *mut UoLayout, page: usize) ->
 pub unsafe extern "C" fn uo_layout_annotations(l: *const UoLayout) -> *mut UoBuf {
     // SAFETY: forwarded.
     let Some(l) = (unsafe { layout_ref(l) }) else { return buf(NULL_HANDLE, Vec::new()) };
-    let a = &l.annotations;
+    let a = l.annotations();
     let mut o = Out::default();
     o.u32(a.comments.len());
     for c in &a.comments {
@@ -672,7 +794,7 @@ fn units(o: &mut Out, u: &[u16]) {
 pub unsafe extern "C" fn uo_layout_navigation(l: *const UoLayout) -> *mut UoBuf {
     // SAFETY: forwarded.
     let Some(l) = (unsafe { layout_ref(l) }) else { return buf(NULL_HANDLE, Vec::new()) };
-    let n = &l.navigation;
+    let n = l.navigation();
     let mut o = Out::default();
     o.u32(n.links.len());
     for pl in &n.links {
@@ -705,8 +827,8 @@ pub unsafe extern "C" fn uo_layout_run_boxes(l: *const UoLayout, filter: u32) ->
     // SAFETY: forwarded.
     let Some(l) = (unsafe { layout_ref(l) }) else { return buf(NULL_HANDLE, Vec::new()) };
     let boxes = match filter {
-        0 => &l.links,
-        1 => &l.inlines,
+        0 => l.links(),
+        1 => l.inlines(),
         _ => return buf(BAD_ARGUMENT, Vec::new()),
     };
     let mut o = Out::default();
@@ -890,7 +1012,7 @@ pub unsafe extern "C" fn uo_layout_pdf(l: *const UoLayout, flags: u32, chunk: us
         if host::chunk(&c) { Ok(()) } else { Err(PdfError::Sink) }
     });
     let v = view_of(&l.view);
-    let r = uo_pdf::render_pdf_to(v.pages(), v.resources(), Some(&l.navigation), &o, sink).and_then(ChunkedSink::finish);
+    let r = uo_pdf::render_pdf_to(v.pages(), v.resources(), Some(l.navigation()), &o, sink).and_then(ChunkedSink::finish);
     match r {
         #[allow(clippy::cast_precision_loss, reason = "a file under the 256 MiB wasm32 output limit is exact in an f64")]
         Ok(_) => total as f64,
@@ -917,16 +1039,161 @@ pub(crate) fn layout_handle(laid: pipeline::LaidOut, model: DocView<'_>, phone: 
     if phone {
         view.limits.max_fx_px = view.limits.max_fx_px.min(PHONE_MAX_FX_PX);
     }
-    UoLayout {
-        view: view_handle(view),
+    UoLayout::eager(
+        view_handle(view),
         geom,
         section,
         generation,
-        navigation: laid.navigation,
-        links: laid.links,
-        inlines: laid.inlines,
-        annotations,
+        Derived { navigation: laid.navigation, links: laid.links, inlines: laid.inlines, annotations },
+    )
+}
+
+/// The layout handle of the editor shell's relayout (wave 6, L; additive, declared): `layout` over
+/// `model` with the derived data computed on first use from a snapshot of `model` (`UoLayout`'s
+/// documentation), so a keystroke no longer walks the whole layout for the navigation, the run boxes,
+/// the annotations and the Write section of every page.
+#[cfg(feature = "session")]
+pub(crate) fn layout_handle_shell(mut geom: Layout, model: DocView<'_>, phone: bool, lend: Option<LendTicket>) -> UoLayout {
+    let pages = pipeline::take_pages(&mut geom);
+    let res = std::mem::take(&mut geom.resources);
+    let generation = GENERATION.fetch_add(1, Ordering::Relaxed);
+    let mut view = RenderView::new(generation, res, pages);
+    if phone {
+        view.limits.max_fx_px = view.limits.max_fx_px.min(PHONE_MAX_FX_PX);
     }
+    UoLayout {
+        view: view_handle(view),
+        geom,
+        section: None,
+        generation,
+        navigation: OnceCell::new(),
+        links: OnceCell::new(),
+        inlines: OnceCell::new(),
+        annotations: OnceCell::new(),
+        shell: ShellPart { model: Some(Box::new(ModelSnapshot::of(model))), lend, ..ShellPart::default() },
+    }
+}
+
+/// The hint of an incremental shell relayout (wave 6, L).
+#[cfg(feature = "session")]
+pub(crate) fn layout_edit_hint(l: &UoLayout) -> Option<&EditHint> {
+    l.shell.edit.as_ref()
+}
+
+#[cfg(feature = "session")]
+pub(crate) fn layout_set_edit_hint(l: &mut UoLayout, hint: EditHint) {
+    l.shell.edit = Some(hint);
+}
+
+/// The lend of its shell engine's result `l` holds (wave 6, L).
+#[cfg(feature = "session")]
+pub(crate) fn layout_lend(l: &UoLayout) -> Option<LendTicket> {
+    l.shell.lend
+}
+
+/// The face and image bytes of `l` (`Arc` clones: they keep the allocations alive while a relayout
+/// compares them with its result's, so a pointer is never another allocation's).
+#[cfg(feature = "session")]
+pub(crate) type ResourceBytes = (Vec<Option<Arc<[u8]>>>, Vec<Arc<[u8]>>);
+
+#[cfg(feature = "session")]
+pub(crate) fn layout_resource_bytes(l: &UoLayout) -> ResourceBytes {
+    let r = view_of(&l.view).resources();
+    (r.faces.iter().map(|f| f.bytes.clone()).collect(), r.images.iter().map(|i| Arc::clone(&i.bytes)).collect())
+}
+
+/// Marks, per face and image of `l`, whether its bytes are `old`'s of the same index (the same `Arc`).
+#[cfg(feature = "session")]
+pub(crate) fn layout_set_shared(l: &mut UoLayout, old: &ResourceBytes) {
+    let r = view_of(&l.view).resources();
+    let faces = r
+        .faces
+        .iter()
+        .enumerate()
+        .map(|(i, f)| match (f.bytes.as_ref(), old.0.get(i).and_then(Option::as_ref)) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        })
+        .collect();
+    let images = r.images.iter().enumerate().map(|(i, im)| old.1.get(i).is_some_and(|b| Arc::ptr_eq(&im.bytes, b))).collect();
+    l.shell.shared = Some((faces, images));
+}
+
+/// Takes the lent `Layout` out of `l` to give it back to its engine (the pages and the resources out of
+/// the render view, the geometry); the rest of the view stays in `l` for [`layout_relend`]. `None`
+/// (and `l` untouched) when `l` holds no lend.
+#[cfg(feature = "session")]
+pub(crate) fn layout_take_lent(l: &mut UoLayout) -> Option<(LendTicket, Layout)> {
+    let t = l.shell.lend?;
+    let v = std::mem::replace(view_of_mut(&mut l.view), RenderView::from_messages(0));
+    let (res, pages, rest) = match v.into_parts() {
+        Ok(p) => p,
+        Err(v) => {
+            *view_of_mut(&mut l.view) = *v;
+            return None;
+        }
+    };
+    if pages.len() != l.geom.pages.len() {
+        *view_of_mut(&mut l.view) = RenderView::from_parts(res, pages, rest);
+        return None;
+    }
+    let mut geom = std::mem::take(&mut l.geom);
+    for (lp, p) in geom.pages.iter_mut().zip(pages) {
+        lp.page = p;
+    }
+    geom.resources = res;
+    l.shell.lend = None;
+    l.shell.rest = Some(rest);
+    Some((t, geom))
+}
+
+/// `l` as it was before [`layout_take_lent`], over `layout` (a failed relayout did not consume it); `l`
+/// owns it now (the engine kept nothing). Dropped when `l` has no view to rebuild.
+#[cfg(feature = "session")]
+pub(crate) fn layout_relend(l: &mut UoLayout, mut layout: Layout) {
+    let Some(rest) = l.shell.rest.take() else { return };
+    let pages = pipeline::take_pages(&mut layout);
+    let res = std::mem::take(&mut layout.resources);
+    *view_of_mut(&mut l.view) = RenderView::from_parts(res, pages, rest);
+    l.geom = layout;
+}
+
+/// After a relayout consumed the layout [`layout_take_lent`] took: `l` is STALE — no pages, no lines, no
+/// derived data, a new layout id (no cache keyed by the old one answers for it); every export answers
+/// as for an empty layout (a status, never a panic).
+#[cfg(feature = "session")]
+pub(crate) fn layout_make_stale(l: &mut UoLayout) {
+    l.shell = ShellPart::default();
+    l.section = None;
+    l.navigation = OnceCell::new();
+    l.links = OnceCell::new();
+    l.inlines = OnceCell::new();
+    l.annotations = OnceCell::new();
+    l.generation = GENERATION.fetch_add(1, Ordering::Relaxed);
+}
+
+/// The faces and images whose bytes are the previous layout's of the same index (wave 6, L, the shell's
+/// layouts; additive): `u32 n`, `n` flags (u8), `u32 m`, `m` flags. Status 1 when the handle was not made
+/// by a shell relayout over a previous handle.
+///
+/// # Safety
+/// `l` must be null or a live handle.
+#[cfg(feature = "session")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_layout_shared_resources(l: *const UoLayout) -> *mut UoBuf {
+    // SAFETY: forwarded.
+    let Some(l) = (unsafe { layout_ref(l) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some((faces, images)) = &l.shell.shared else { return buf(NONE, Vec::new()) };
+    let mut o = Out::default();
+    o.u32(faces.len());
+    for &f in faces.iter() {
+        o.u8(u8::from(f));
+    }
+    o.u32(images.len());
+    for &i in images.iter() {
+        o.u8(u8::from(i));
+    }
+    buf(OK, o.0)
 }
 
 /// The Write geometry of a layout (the session's caret, hit and selection exports read its lines).

@@ -49,7 +49,8 @@ export class SessionError extends Error {
   }
 }
 
-const DIRS = ['left', 'right', 'up', 'down', 'home', 'end', 'wordLeft', 'wordRight'];
+// docStart/docEnd (wave 6, C): Ctrl+Home/End, the selection assigned as the TS (no float selection or pending props cleared)
+const DIRS = ['left', 'right', 'up', 'down', 'home', 'end', 'wordLeft', 'wordRight', 'docStart', 'docEnd'];
 
 /** `{ local, utc }` date parts of a Date (the session's clock). */
 export function localNow(d) {
@@ -133,7 +134,7 @@ export function bindSession(w, uo) {
     setSelection(anchor, focus = anchor) {
       return call('setSelection', () => outcome(w.uo_session_set_selection(this.#live(), anchor.para, anchor.offset, focus.para, focus.offset), 'setSelection'));
     }
-    /** `dir`: left | right | up | down | home | end | wordLeft | wordRight; `layout` (a WriteLayout) for up/down/home/end */
+    /** `dir`: left | right | up | down | home | end | wordLeft | wordRight | docStart | docEnd; `layout` (a WriteLayout) for up/down/home/end */
     moveCaret(dir, extend = false, layout = null) {
       const d = DIRS.indexOf(dir);
       return call('moveCaret', () => outcome(w.uo_session_move_caret(this.#live(), layout ? layout.ptr : 0, d < 0 ? 99 : d, extend ? 1 : 0), 'moveCaret'));
@@ -275,7 +276,7 @@ export function bindSession(w, uo) {
     return [now, tz, flags, ...text(o.lang), ...text((o.hyphenationLanguages ?? []).join('\n')), o.maxPages ?? 0];
   };
   const REASONS = ['noBase', 'disabled', 'view', 'options', 'provider', 'document', 'context', 'chains', 'shape', 'prologue',
-    'noCheckpoint', 'passInput', 'unstable', 'tables', 'balancing', 'memory', 'failed'];
+    'noCheckpoint', 'passInput', 'unstable', 'tables', 'balancing', 'memory', 'failed', 'lent'];
   const engines = new FinalizationRegistry((ptr) => { if (!dead) w.uo_shell_engine_free(ptr); });
 
   /** The incremental layout engine of one edited document (`relayout` lays out only what an edit changed, LA7). */
@@ -289,6 +290,24 @@ export function bindSession(w, uo) {
     #live() { if (!this.#ptr) throw new SessionError(11, 'engine freed', 'engine'); return this.#ptr; }
     /** the layout of `session`'s view (a WriteLayout: free it); `o` as `WriteSession.layout` */
     relayout(session, env, o = {}) {
+      // wave 6 (L): with `o.prev` (the previous relayout's WriteLayout, or null) the engine LENDS its result to the new
+      // layout instead of copying it, and `prev` gives the previous result back first: `prev` is then STALE (`prev.stale`:
+      // no pages, no lines) until it is freed
+      if ('prev' in o) {
+        const prev = o.prev ?? null;
+        const p = call('relayout', () => w.uo_shell_relayout2(this.#live(), prev ? prev.ptr : 0, session.ptr, env.ptr, ...layoutArgs(o)));
+        if (prev && w.uo_layout_page_count(prev.ptr) === 0) prev.stale = true;
+        if (!p) throw uo.lastError('relayout');
+        const l = uo.wrapLayout(p);
+        // which faces and images of the new layout are `prev`'s of the same index (the viewer keeps their keys and bitmaps)
+        const { status, data } = take(w.uo_layout_shared_resources(p));
+        if (status === 0) {
+          const d = new DataView(data.buffer, data.byteOffset, data.byteLength);
+          const nf = d.getUint32(0, true), ni = d.getUint32(4 + nf, true);
+          l.shared = { faces: Array.from(data.subarray(4, 4 + nf), (x) => x === 1), images: Array.from(data.subarray(8 + nf, 8 + nf + ni), (x) => x === 1) };
+        }
+        return l;
+      }
       const p = call('relayout', () => w.uo_shell_relayout(this.#live(), session.ptr, env.ptr, ...layoutArgs(o)));
       if (!p) throw uo.lastError('relayout');
       return uo.wrapLayout(p);
@@ -307,6 +326,8 @@ export function bindSession(w, uo) {
         lineShift: d.getInt32(14, true),
         memoHits: d.getUint32(18, true),
         memoMisses: d.getUint32(22, true),
+        // wave 6 (L): the relaid pages whose page changed (the shell repaints only those)
+        changed: data.byteLength >= 30 ? Array.from({ length: d.getUint32(26, true) }, (_, i) => d.getUint32(30 + 4 * i, true)) : null,
       };
     }
     /** drops the incremental state (the next relayout is a full one) */

@@ -152,7 +152,7 @@ size, not of effort):**
 | Product | Done in Rust | Left | TS still to port |
 |---|---|---|---|
 | Write, milestone 1 (viewer + PDF + server) | everything: reader, writer, `.doc`, export/ODF/compare, layout, render, PDF, C# Editing API, viewer/FFI/C# bindings | the gate: push + first green CI, decisions G23–G31, D2a | — |
-| Write, milestone 2 (editor) | session core D2a, every D2b family F1–F10 (wave 1 `4c003113`), incremental relayout LA7, the session in wasm, the D3 C ABI + C# facade (wave 2, 2026-11-11) | the editor switch: first cut done (core editing behind `engine="rust"`, wave 4); left: the disabled command families, latency, gate; 0.10 | editor package 36.8k (most of it stays as the TS shell) |
+| Write, milestone 2 (editor) | session core D2a, every D2b family F1–F10 (wave 1 `4c003113`), incremental relayout LA7, the session in wasm, the D3 C ABI + C# facade (wave 2, 2026-11-11) | the editor switch (every family routed behind `engine="rust"`, waves 4–6, layout parity and Word oracle kept); left: the milestone-2 gate and 0.10 | editor package 36.8k (most of it stays as the TS shell) |
 | Slides | the shared parts only (fonts, drawingml) | everything else: `slides-core` (reader, model, layout, render), the editor, the viewer; charts | 25.9k + charts 5.2k |
 | Sheet | the shared parts only | everything: calc engine, `sheet-core`, the editor; charts (shared with Slides) | 34.7k |
 
@@ -162,6 +162,39 @@ milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects 
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
+
+## Update 2026-11-12 (later) — milestone 2, wave 6 committed: the Write editor switch is done
+
+Records: `uo-bindings.md` "Wave 6 — C/L/P". **Queue item 9 is done; what is left of milestone 2 is the gate (item 10).**
+- **C — clicks, keys, caret.** The big cause was hyphenation: `write.rs` refused pattern registration ("patterns in
+  use") once any session held the registry, so the Rust editor never hyphenated (and a viewer on a page with an editor
+  lost its patterns: `prepare()` swallowed the error, now logged). Copy-on-write registration fixed the wave-4 "caret x
+  on mixed-size lines", End on a wrapped line and most of gate item 10. Also: the TS keydown order with an object
+  selected, Ctrl+C/X through navigator.clipboard (CRLF as the TS, ED-16 closed), Ctrl+Up/Down, text boxes in groups and
+  linked chains (enter by order index, additive uo-docx context change), S-G1 (sections sync after insert table), BUG-1,
+  the harness's TS-only `setSelection` artefact. `editor_switch --mode parity` stride 1: 1 declared difference left
+  (was 18). Open: gate-O5 (bold in cells laid out narrower, now reproducible), gate-C1 entries (f7b__7__8/10, f8__7__5:
+  the TS-saved document differs in both engines the same way), gate-O3 (theme colour without a theme part), boxes in
+  cells/boxes not covered by the harness.
+- **L — typing latency** (real clock, same invocation): pages50 typing Rust 6.5–6.9 ms vs TS fast path 6.2–7.2 (tie on
+  the median, p95 lower; target "under" not met — maintainer call), Enter/Backspace 66/64 vs 129/121; pages500 typing
+  16 vs 24 ms, Enter 1,179 vs 1,254, Backspace 1,067 vs 1,258 (baseline 3.1 s per key). No `Layout` clone (shared),
+  EditLines per page, band repaint (`js/band.ts`), memo for Enter, the `uo-jsnum` integer fast path (merge fix: exact-size
+  allocation and no format flags). Bit-equal to a full layout. Open: `memory.buffer` grows while typing (pages500 ends
+  near 0.6 GB, D-L7).
+- **P — packaging, CI, docs.** `build-pkg` ships `chunks/uo-write-editor.wasm` (the session build) with notices and
+  refuses test builds (S11); `pkg_smoke.mjs` checks the published package in Chromium (default path loads no wasm; module
+  order rule); CI job `editor` (never run on GitHub); README "The Rust engine (preview)" and a CHANGELOG "Unreleased"
+  entry (corrected at merge for C's results); `docs/publishing.md` gained the two module builds (merge).
+  `publish-packages.yml` does not build the modules yet (maintainer).
+- Verified at merge: everything of wave 5's list plus — **layout parity regenerated from the frozen TS and replayed
+  strict: ci 200, f7a 300, f7b 200, f7c 300, f7d 200 (0 mismatches), f8 200 (3,000 equal), Word oracle 2,742/2,742
+  (8,226 facets)**; uo-docx-layout release suite; uo-jsnum, uo-render; shell_caret_native; `build-pkg font-files
+  document-viewer write` with `UO_REQUIRE_ENGINE_WASM=1` and `pkg_smoke` ok; the three front harnesses `--mode all` ok
+  (objects needed a rerun after a Chromium timeout); viewer_switch ok. D: 44 GB free.
+- **Next: the milestone-2 gate (maintainer):** CHANGELOG version and 0.10, the decisions in the wave records (ED lists,
+  gate lists of S/O/R/C/L/P, the latency tie, `ops/styles/listing.rs` in uo-docx, Web/Draft/Outline views still
+  disabled), first CI run on GitHub, `npm run docs:site` from the updated README.
 
 ## Update 2026-11-12 — milestone 2, wave 5 (the remaining editor families) committed
 
@@ -301,10 +334,7 @@ Milestone 2 (editor in Rust):
    family (fields, TOC, captions, manual hyphenation, galleries — needs F8 of the layout, done).
 7. ~~Incremental relayout~~ done (wave 2).
 8. ~~Editor bindings~~ done (wave 2): the session in wasm (`UoWriteSession`, session codec G15) and the D3 C ABI + C# facade.
-9. The editor switch: `universal-write.ts` reduced to the shell over the wasm session (the largest unknown).
-   **First cut done (wave 4):** core editing routed behind `engine="rust"`; left: the disabled families (tables,
-   pictures, shapes/text boxes, headers/footers, notes, comments/revisions, fields, page setup, find, spelling, views,
-   clipboard without event, styles list, context menu), typing latency, gate list 1–18 of the record.
+9. ~~The editor switch~~ done (waves 4–6, `d4279c16` and the wave-6 commit).
 10. Milestone-2 gate, `CHANGELOG.md` (API breaks: `uo-bindings.md` §4), docs, publish 0.10.
 
 Later: Sheet (calc engine on Opus, `sheet-core`), Slides (`slides-core`), charts, the converter — 0% today.

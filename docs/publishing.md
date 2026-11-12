@@ -99,7 +99,24 @@ that is a member of the `@universal-office` organization on npmjs.com, with 2FA 
 
 1. Set the version in the `package.json` of each package being released (and of the pairs
    above) and record the version in `CHANGELOG.md`.
-2. Generate the publishable folder of each package (or of all of them, with no arguments):
+2. With the Rust engine (0.10, `engine="rust"`): build the two engine modules first, from `core/`, without the
+   test features (`build-pkg` refuses a module with `count` or test exports), and put them where `build-pkg` looks
+   (`core/target/pkg-wasm/`, or point `UO_WRITE_WASM` / `UO_WRITE_EDITOR_WASM` at them;
+   `UO_REQUIRE_ENGINE_WASM=1` turns a missing module into a failure):
+
+   ```bash
+   cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm
+   ```
+
+   copy `core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm` to `core/target/pkg-wasm/uo-write.wasm` (the
+   viewer's), then
+
+   ```bash
+   cargo build -p uo-wasm --features session --target wasm32-unknown-unknown --profile wasm
+   ```
+
+   and copy the same output to `core/target/pkg-wasm/uo-write-editor.wasm` (the editor's).
+3. Generate the publishable folder of each package (or of all of them, with no arguments):
 
    ```bash
    node tools/build-pkg.mjs font-files write document-viewer
@@ -112,7 +129,7 @@ that is a member of the `@universal-office` organization on npmjs.com, with 2FA 
    GIFs in `media/`), `LICENSE` and the publishable `package.json` (description,
    keywords and license come from the `publish` block of the folder's `package.json`).
    The build fails if a product embeds the spell-checking engine or a dictionary.
-3. Pack from inside `publish/`, with the `.tgz` outside it (the next build
+4. Pack from inside `publish/`, with the `.tgz` outside it (the next build
    deletes the folder), and check the contents:
 
    ```bash
@@ -121,7 +138,7 @@ that is a member of the `@universal-office` organization on npmjs.com, with 2FA 
    tar -tzf ../../../../out/universal-office-write-0.9.3.tgz
    ```
 
-4. Publish the `.tgz` (a scoped package needs `--access public` on its 1st
+5. Publish the `.tgz` (a scoped package needs `--access public` on its 1st
    publication; npm asks for the 2FA code, or pass `--otp <code>`):
 
    ```bash
@@ -139,7 +156,7 @@ that is a member of the `@universal-office` organization on npmjs.com, with 2FA 
    `PUBLISHED_DICTIONARIES`) depends on the write build: starting with the build that has
    `es`, it requests `<base>/dictionary-es/index.js` when checking text
    in Spanish (a folder without it = 404 = no spell checking, no error).
-5. Check: `npm view @universal-office/write version dependencies homepage repository funding`.
+6. Check: `npm view @universal-office/write version dependencies homepage repository funding`.
    The `homepage` (https://universaloffice.org/), the `repository` (this
    repository, with the package folder), `bugs` and `funding` (GitHub
    Sponsors) come from `PROJECT` in `tools/build-pkg.mjs`, the same in all

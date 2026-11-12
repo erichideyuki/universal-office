@@ -89,6 +89,14 @@ pub struct RenderView {
     pub limits: PaintLimits,
 }
 
+/// What [`RenderView::into_parts`] keeps of a view besides its resources and pages (opaque).
+pub struct ViewRest {
+    apps: Vec<Vec<u8>>,
+    mark: DeltaMark,
+    opts: CanvasOptions,
+    limits: PaintLimits,
+}
+
 struct Bytes<'a>(&'a [u8]);
 impl AppSection for Bytes<'_> {
     fn write(&self, out: &mut Vec<u8>) {
@@ -110,6 +118,27 @@ impl RenderView {
             opts: CanvasOptions::default(),
             limits: PaintLimits::DEFAULT,
         }
+    }
+
+    /// The producer's resources and pages back, and the rest of the view (the encoder's mark, the
+    /// sections, the options and limits) to rebuild it as it was with [`RenderView::from_parts`]
+    /// (added by the bindings, wave 6 L: the editor shell gives a lent layout back to its engine).
+    ///
+    /// # Errors
+    /// The view itself (boxed) when it was fed by [`RenderView::push_message`] (its pages are decoded copies).
+    pub fn into_parts(self) -> Result<(Resources, Vec<Page>, ViewRest), Box<RenderView>> {
+        if self.dec.is_some() {
+            return Err(Box::new(self));
+        }
+        let RenderView { res, dec: _, pages, apps, mark, opts, limits } = self;
+        Ok((res, pages, ViewRest { apps, mark, opts, limits }))
+    }
+
+    /// The view [`RenderView::into_parts`] took apart, the same in every respect.
+    #[must_use]
+    pub fn from_parts(res: Resources, pages: Vec<Page>, rest: ViewRest) -> RenderView {
+        let ViewRest { apps, mark, opts, limits } = rest;
+        RenderView { res, dec: None, pages, apps, mark, opts, limits }
     }
 
     /// An empty view fed by [`RenderView::push_message`].

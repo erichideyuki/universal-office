@@ -98,6 +98,10 @@ declare module '@universal-office/write-engine' {
   /** The write binding's layout handle (js/write.mjs `WriteLayout`): what the editor's session reads besides the decoded pages. */
   export interface EngineLayout {
     readonly ptr: number;
+    /** wave 6 (L): a stale editor shell layout (its pages went back to the engine) */
+    stale?: boolean;
+    /** wave 6 (L): per face and image, whether its bytes are the previous shell layout's of the same index */
+    shared?: { faces: boolean[]; images: boolean[] } | null;
     readonly pageCount: number;
     pageInfo(i: number): { w: number; h: number; section: number; number: number; hfItems?: number };
     free(): void;
@@ -120,6 +124,11 @@ declare module '@universal-office/write-engine' {
     free(): void;
   }
 
+  /** wave 6 (L, D-L4): a decoded page kept for `DecodedLayout.bandSince` (opaque) */
+  export interface BandSnap {
+    readonly serial: number;
+  }
+
   export interface DecodedLayout {
     readonly engine: 'rust';
     /** the binding's layout handle (the editor's caret, hit and selection exports read it) */
@@ -129,10 +138,16 @@ declare module '@universal-office/write-engine' {
     readonly freed: boolean;
     paintBackground(ctx: CanvasRenderingContext2D, i: number, env: PaintEnv, opts: { devicePxTw: number; screen: boolean; paper: string }): void;
     paintItems(ctx: CanvasRenderingContext2D, i: number, env: PaintEnv, opts?: { from?: number; to?: number; alpha?: number }): void;
+    /** wave 6 (L, D-L4): page `i` as decoded so far (null when not decoded; never decodes), for the next layout's `bandSince` */
+    bandSnap(i: number, hf: number): BandSnap | null;
+    /** wave 6 (L, D-L4): the band (twips) of page `i` that paints differently from `prev`: 'same', the band, or null (unknown) */
+    bandSince(i: number, prev: BandSnap, hf: number, slackTw?: number): { y0: number; y1: number } | 'same' | null;
     faceIndex(face: Face): number;
     faceKey(i: number): string | null;
     dropFaceBytes(i: number): void;
     faceBytes(i: number): Uint8Array | null;
+    /** wave 6 (L): image `i`'s bytes are the previous editor layout's image `i` */
+    sharedImage(i: number): boolean;
     imageBytes(i: number): Uint8Array | null;
     imageSvg(i: number): Uint8Array | null;
     annotations(): Annotations;
@@ -164,7 +179,7 @@ declare module '@universal-office/write-engine' {
     /** the write binding of the instance (`bindSession`) */
     readonly binding: unknown;
     /** a layout made outside the viewer (a session's) adopted as a `DecodedLayout` (counts in `handles`) */
-    adopt(inner: EngineLayout): DecodedLayout;
+    adopt(inner: EngineLayout, prev?: DecodedLayout | null): DecodedLayout;
     /** marks the instance dead after a trap seen outside the viewer (the session's calls) */
     kill(): void;
   }

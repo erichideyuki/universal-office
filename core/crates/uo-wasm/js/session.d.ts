@@ -34,7 +34,7 @@ export declare class SessionError extends Error {
 /** `{ local, utc }` date parts of a Date (the session's clock). */
 export declare function localNow(d: Date): LocalNow;
 
-export type CaretDir = 'left' | 'right' | 'up' | 'down' | 'home' | 'end' | 'wordLeft' | 'wordRight';
+export type CaretDir = 'left' | 'right' | 'up' | 'down' | 'home' | 'end' | 'wordLeft' | 'wordRight' | 'docStart' | 'docEnd';
 
 export interface SessionOpenOptions {
   /** Modo Protegido (default false here; the TS `loadDocx` default is true) */
@@ -120,7 +120,7 @@ export interface SelectionState {
 
 export type RelayoutReason =
   | 'noBase' | 'disabled' | 'view' | 'options' | 'provider' | 'document' | 'context' | 'chains' | 'shape' | 'prologue'
-  | 'noCheckpoint' | 'passInput' | 'unstable' | 'tables' | 'balancing' | 'memory' | 'failed';
+  | 'noCheckpoint' | 'passInput' | 'unstable' | 'tables' | 'balancing' | 'memory' | 'failed' | 'lent';
 
 export interface RelayoutReport {
   path: 'full' | 'incremental';
@@ -132,13 +132,16 @@ export interface RelayoutReport {
   lineShift: number;
   memoHits: number;
   memoMisses: number;
+  /** wave 6 (L): the relaid pages whose page changed (null from an older engine) */
+  changed: number[] | null;
 }
 
 /** The incremental layout engine of one edited document (LA7): free it. */
 export declare class ShellEngine {
   readonly ptr: number;
   /** the layout of `session`'s view, laid out again only where the edits changed it (a WriteLayout: free it) */
-  relayout(session: WriteSession, env: WriteEnv, o?: Omit<LayoutOptions, 'cancelCheck' | 'view' | 'webWidthTw' | 'generation'>): WriteLayout;
+  /** wave 6 (L): with `o.prev` (the previous relayout's layout, or null) the result is lent, not copied, and `prev` is stale after */
+  relayout(session: WriteSession, env: WriteEnv, o?: Omit<LayoutOptions, 'cancelCheck' | 'view' | 'webWidthTw' | 'generation'> & { prev?: WriteLayout | null }): WriteLayout;
   report(): RelayoutReport | null;
   clear(): void;
   free(): void;

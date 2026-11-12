@@ -88,42 +88,24 @@ impl SectionModel {
     /// placed object's run name.
     #[must_use]
     pub fn new(view: DocView<'_>, layout: &Layout) -> SectionModel {
-        let loc = Locator::new(view);
-        let mut styles = StyleResolver::new();
-        let mut index: FxHashMap<ParaId, u32> = FxHashMap::default();
-        let mut paras = Vec::new();
-        let mut namer: Option<RunNames> = None;
-        let pages = layout
-            .pages
-            .iter()
-            .map(|p| {
-                let line_para = p
-                    .lines
-                    .iter()
-                    .map(|l| {
-                        let para = text_layer_paragraph(&loc, l)?;
-                        if let Some(&k) = index.get(&para.id) {
-                            return Some(k);
-                        }
-                        let k = u32::try_from(paras.len()).ok()?;
-                        paras.push(TextPara { text: paragraph_text(para), level: outline_level(view, &mut styles, para) });
-                        index.insert(para.id, k);
-                        Some(k)
-                    })
-                    .collect();
-                let object_run = p
-                    .objects
-                    .iter()
-                    .flatten()
-                    .map(|o| {
-                        let at = o.run.as_ref()?;
-                        namer.get_or_insert_with(|| RunNames::new(view)).name(at).map(|s| s.encode_utf16().collect())
-                    })
-                    .collect();
-                PageModel { line_para, object_run }
-            })
-            .collect();
-        SectionModel { paras, pages }
+        let mut g = Gather::new(view);
+        let pages = layout.pages.iter().map(|p| g.page(p)).collect();
+        SectionModel { paras: g.paras, pages }
+    }
+
+    /// The model-side part of page `i` alone (wave 6, L: the editor's shell encodes only the pages it
+    /// paints, so a keystroke no longer gathers every page): the same gathering as [`SectionModel::new`]
+    /// restricted to that page, its paragraphs deduplicated within the page. The encoded section is
+    /// the same bytes (`wire_page` re-indexes the paragraphs per page, in the order its lines first
+    /// point at them); the pages before `i` are empty (no allocation).
+    #[must_use]
+    pub fn page(view: DocView<'_>, layout: &Layout, i: usize) -> SectionModel {
+        let Some(p) = layout.pages.get(i) else { return SectionModel::default() };
+        let mut g = Gather::new(view);
+        let pm = g.page(p);
+        let mut pages = vec![PageModel::default(); i];
+        pages.push(pm);
+        SectionModel { paras: g.paras, pages }
     }
 
     /// The text-layer paragraphs (each once per layout).
@@ -150,6 +132,50 @@ impl SectionModel {
     }
 }
 
+/// The gathering of [`SectionModel::new`] (per page, each paragraph once).
+struct Gather<'a> {
+    view: DocView<'a>,
+    loc: Locator<'a>,
+    styles: StyleResolver,
+    index: FxHashMap<ParaId, u32>,
+    paras: Vec<TextPara>,
+    namer: Option<RunNames>,
+}
+
+impl<'a> Gather<'a> {
+    fn new(view: DocView<'a>) -> Gather<'a> {
+        Gather { view, loc: Locator::new(view), styles: StyleResolver::new(), index: FxHashMap::default(), paras: Vec::new(), namer: None }
+    }
+
+    fn page(&mut self, p: &LayoutPage) -> PageModel {
+        let view = self.view;
+        let line_para = p
+            .lines
+            .iter()
+            .map(|l| {
+                let para = text_layer_paragraph(&self.loc, l)?;
+                if let Some(&k) = self.index.get(&para.id) {
+                    return Some(k);
+                }
+                let k = u32::try_from(self.paras.len()).ok()?;
+                self.paras.push(TextPara { text: paragraph_text(para), level: outline_level(view, &mut self.styles, para) });
+                self.index.insert(para.id, k);
+                Some(k)
+            })
+            .collect();
+        let object_run = p
+            .objects
+            .iter()
+            .flatten()
+            .map(|o| {
+                let at = o.run.as_ref()?;
+                self.namer.get_or_insert_with(|| RunNames::new(view)).name(at).map(|s| s.encode_utf16().collect())
+            })
+            .collect();
+        PageModel { line_para, object_run }
+    }
+}
+
 /// `para(line.ref)` of the viewer: `/^b\d/.test(ref) ? paragraphAtPath(full.blocks, ref.split('/'))
 /// : null` (a body story with a non-empty path; every other story's ref starts with another letter).
 pub(crate) fn text_layer_paragraph<'a>(loc: &Locator<'a>, l: &LineGeom) -> Option<&'a Paragraph> {
@@ -157,7 +183,7 @@ pub(crate) fn text_layer_paragraph<'a>(loc: &Locator<'a>, l: &LineGeom) -> Optio
         return None;
     }
     let path = loc.body_path(&l.at.path.0)?;
-    loc.view.paragraph(&StoryRef::Body, &path)
+    loc.story_paragraph(&StoryRef::Body, &path)
 }
 
 /// `p.runs.map((r) => r.text).join('')`.

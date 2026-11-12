@@ -308,15 +308,15 @@ fn c_table_navigate_enters_and_leaves() {
     let (st, _) = take(unsafe { uo_shell_table_navigate(h, l2, 3, 0) });
     assert_eq!(st, 0);
     assert_eq!(ctx_kind(h), "body");
-    // S-G1 (record "For the milestone-2 gate"): the empty paragraph after the inserted table has no line in the live
-    // session's layout (`uo_layout_block_line(l, 1)` answers none; the same document saved and reopened has it): no caret here
+    // S-G1 (closed in wave 6, C): the empty paragraph after the inserted table has a line in the live session's layout,
+    // as in the same document saved and reopened (uo-docx `insert_table` syncs the sections; shell_caret_native D)
     // SAFETY: live handle.
     let (_, saved) = take(unsafe { uo_session_save(h) });
     let h2 = open(env, &saved);
     let l_re = layout(h2, env);
     // SAFETY: live handles.
     unsafe {
-        assert_eq!(take(uo_layout_block_line(l2, 1.0)).0, 1, "S-G1 fixed? remove this check and the declaration");
+        assert_eq!(take(uo_layout_block_line(l2, 1.0)).0, 0, "S-G1");
         assert_eq!(take(uo_layout_block_line(l_re, 1.0)).0, 0);
         uo_layout_free(l_re);
         uo_session_free(h2);
@@ -460,16 +460,8 @@ fn f_textbox_scope() {
             }
             if let Some((tb, x, y)) = hit {
                 let n = |k: &str| u32::try_from(num(get(&tb, k)) as i64).unwrap();
-                let (st, b) = exec(
-                    h,
-                    Command::Context(ContextCmd::EnterTextbox {
-                        para: n("para"),
-                        run: n("run"),
-                        host: n("host"),
-                        focus: n("focus"),
-                        page: n("page"),
-                    }),
-                );
+                // wave 6 (C): by the box's order (`para`/`run` are null for a head in a cell, a group or a box)
+                let (st, b) = exec(h, Command::Context(ContextCmd::EnterTextboxAt { focus: n("focus"), page: n("page") }));
                 assert_eq!(st, 0);
                 if ctx_kind(h) == "textbox" {
                     assert!(events(&b).iter().any(|e| e.contains("TbMode")));

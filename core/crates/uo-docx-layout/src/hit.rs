@@ -390,7 +390,7 @@ impl EditLines {
         out.paras = paras
             .into_iter()
             .map(|p| {
-                let len = crate::refs::paragraph(view, &p).map_or(0, para_length);
+                let len = loc.paragraph(&p).map_or(0, para_length);
                 EditPara { at: p, len, lines: Vec::new() }
             })
             .collect();
@@ -430,7 +430,7 @@ impl EditLines {
         let mut shared: FxHashMap<ShareKey, usize> = FxHashMap::default();
         for (p, locs) in layout.pages.iter().zip(&index.pages) {
             for (l, a) in p.lines.iter().zip(locs) {
-                if a.para.as_ref().and_then(|q| crate::refs::paragraph(view, q)).is_some_and(has_custom) {
+                if a.para.as_ref().and_then(|q| loc.paragraph(q)).is_some_and(has_custom) {
                     *shared.entry(share_key(p, l)).or_insert(0) += 1;
                 }
             }
@@ -471,7 +471,7 @@ impl EditLines {
                 };
                 let Some(pi) = pi else { continue };
                 // `installEngineResult` collapsed the plugin inlines of the line's paragraph
-                let custom = a.para.as_ref().and_then(|q| crate::refs::paragraph(view, q)).filter(|q| has_custom(q));
+                let custom = a.para.as_ref().and_then(|q| loc.paragraph(q)).filter(|q| has_custom(q));
                 let times = if custom.is_some() { shared.get(&share_key(p, l)).copied().unwrap_or(1) } else { 0 };
                 out.push_line(pi, pg32, p, l, LineCopy::Page(custom.map(|q| (q, times))));
             }
@@ -807,5 +807,155 @@ fn flatten(s: &crate::model::Story, base: Option<(&crate::model::BlockPath, u32,
                 }
             }
         }
+    }
+}
+
+// ───────────── wave 6 (L, declared; front C's file): the edit lines patched, not rebuilt ─────────────
+//
+// The TS fast path (`tryFastLayout`, universal-write.ts 16352) patches `layoutCache` for the edited
+// paragraph only. Here: after an INCREMENTAL relayout (the same blocks, the same page count; the pages
+// outside `changed` are the previous layout's, `Debug`-equal), only the paragraphs with a line on a
+// changed page (before or after) or whose length changed get their lines again, from the same pages in
+// the same order and through the same `push_line`, so the result is what `EditLines::new` builds
+// (checked by `same_as` after every step, tests/shell_native.rs H). Body scope only; anything else
+// (another scope, a plugin inline in a paragraph to redo, other counts) answers `false`: rebuild.
+
+impl LineIndex {
+    /// Locates again the lines of `pages` of `layout` (the other pages are this index's previous
+    /// layout's). `false` (the index untouched) when the page counts differ.
+    pub fn patch(&mut self, loc: &Locator<'_>, layout: &Layout, pages: &[u32]) -> bool {
+        if self.pages.len() != layout.pages.len() {
+            return false;
+        }
+        for &pg in pages {
+            let (Some(p), Some(slot)) = (layout.pages.get(pg as usize), self.pages.get_mut(pg as usize)) else { return false };
+            *slot = p.lines.iter().map(|l| loc.locate(p.section, &l.at)).collect();
+        }
+        true
+    }
+}
+
+impl EditLines {
+    /// The body paragraph index of a located line (`EditScope::Body`: the top-level paragraphs, in
+    /// block order; `roots` = their block indices, ascending).
+    fn body_para(roots: &[u32], a: &Located) -> Option<usize> {
+        if a.kind != LocKind::Body {
+            return None;
+        }
+        let p = a.para.as_ref()?;
+        let steps = p.path.steps();
+        if p.story != StoryRef::Body || steps.len() != 1 {
+            return None;
+        }
+        roots.binary_search(steps.first()?).ok()
+    }
+
+    /// Patches the lines of `EditScope::Body` built over the previous layout for `layout`, whose
+    /// pages outside `changed` are the previous layout's (`index` is the previous layout's index; it is
+    /// patched too). `false` when the patch does not apply: the caller rebuilds both.
+    pub fn patch_body(&mut self, loc: &Locator<'_>, layout: &Layout, index: &mut LineIndex, changed: &[u32]) -> bool {
+        if self.page.is_some() || index.pages.len() != layout.pages.len() {
+            return false;
+        }
+        let roots: Option<Vec<u32>> =
+            self.paras.iter().map(|p| (p.at.story == StoryRef::Body).then(|| p.at.path.steps().first().copied()).flatten()).collect();
+        let Some(roots) = roots else { return false };
+        if roots.windows(2).any(|w| w.first() >= w.last()) || roots.len() != loc.view.body().paras.len() {
+            return false;
+        }
+        let mut aff: Vec<usize> = Vec::new();
+        let mut note = |index: &LineIndex| {
+            for &pg in changed {
+                for a in index.pages.get(pg as usize).into_iter().flatten() {
+                    if let Some(pi) = Self::body_para(&roots, a) {
+                        aff.push(pi);
+                    }
+                }
+            }
+        };
+        note(index);
+        if !index.patch(loc, layout, changed) {
+            return false;
+        }
+        note(index);
+        // the paragraphs whose length changed (every `EditPara.len` of the new model)
+        let mut lens = Vec::with_capacity(self.paras.len());
+        for (pi, p) in self.paras.iter().enumerate() {
+            let Some(q) = loc.paragraph(&p.at) else { return false };
+            let len = para_length(q);
+            if len != p.len {
+                aff.push(pi);
+            }
+            lens.push(len);
+        }
+        aff.sort_unstable();
+        aff.dedup();
+        // a paragraph with plugin inlines collapses shared chars across pages (F8-15): not patched
+        if aff.iter().any(|&pi| self.paras.get(pi).and_then(|p| loc.paragraph(&p.at)).is_none_or(has_custom)) {
+            return false;
+        }
+        for &pi in &aff {
+            let Some(para) = self.paras.get_mut(pi) else { return false };
+            // the pages to scan: where it had lines (unchanged pages keep them) and the changed pages
+            let mut pages: Vec<u32> = para.lines.iter().map(|l| l.page).collect();
+            pages.extend_from_slice(changed);
+            pages.sort_unstable();
+            pages.dedup();
+            para.lines.clear();
+            para.len = lens.get(pi).copied().unwrap_or(0);
+            for pg in pages {
+                let (Some(p), Some(locs)) = (layout.pages.get(pg as usize), index.pages.get(pg as usize)) else { return false };
+                for (l, a) in p.lines.iter().zip(locs) {
+                    if Self::body_para(&roots, a) == Some(pi) {
+                        self.push_line(pi, pg, p, l, LineCopy::Page(None));
+                    }
+                }
+            }
+        }
+        self.finish();
+        self.compact();
+        true
+    }
+
+    /// Drops the characters no line points at when they pass a quarter of the live ones (amortised: a key leaves
+    /// one or two paragraphs of garbage), into columns with room for that quarter, so the patches between two
+    /// compactions never grow them (a doubling of the columns grew the wasm memory by 20 MB on 50 pages).
+    fn compact(&mut self) {
+        let live: usize = self.paras.iter().flat_map(|p| &p.lines).map(|l| l.chars.len()).sum();
+        let room = live + live / 4 + 4096;
+        if self.chars.o.len() <= room && self.chars.o.capacity() <= 2 * room {
+            return;
+        }
+        let mut c = CharsSoA { o: Vec::with_capacity(room), x: Vec::with_capacity(room), w: Vec::with_capacity(room) };
+        for l in self.paras.iter_mut().flat_map(|p| &mut p.lines) {
+            let s = c.o.len();
+            let v = CharsView::slice(&self.chars, l.chars.clone());
+            c.o.extend_from_slice(v.o);
+            c.x.extend_from_slice(v.x);
+            c.w.extend_from_slice(v.w);
+            l.chars = s..c.o.len();
+        }
+        self.chars = c;
+    }
+
+    /// The same edit lines as `other` (every field, the characters by value; their place in the
+    /// columns aside): the exactness check of [`EditLines::patch_body`].
+    #[must_use]
+    pub fn same_as(&self, other: &EditLines) -> bool {
+        let line = |a: &EditLine, b: &EditLine| {
+            let (ca, cb) = (self.chars(a), other.chars(b));
+            (a.page, a.start, a.end, a.line_start) == (b.page, b.start, b.end, b.line_start)
+                && [a.x, a.y, a.height, a.baseline, a.width].map(f64::to_bits)
+                    == [b.x, b.y, b.height, b.baseline, b.width].map(f64::to_bits)
+                && a.xf.map(|m| m.map(f64::to_bits)) == b.xf.map(|m| m.map(f64::to_bits))
+                && ca.o == cb.o
+                && ca.x.iter().map(|v| v.to_bits()).eq(cb.x.iter().map(|v| v.to_bits()))
+                && ca.w.iter().map(|v| v.to_bits()).eq(cb.w.iter().map(|v| v.to_bits()))
+        };
+        self.page == other.page
+            && self.paras.len() == other.paras.len()
+            && self.paras.iter().zip(&other.paras).all(|(a, b)| {
+                a.at == b.at && a.len == b.len && a.lines.len() == b.lines.len() && a.lines.iter().zip(&b.lines).all(|(x, y)| line(x, y))
+            })
     }
 }

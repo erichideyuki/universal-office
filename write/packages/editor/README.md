@@ -132,35 +132,79 @@ Without a `fonts` attribute the viewer looks for the fonts in the sibling
 
 With `engine="rust"` the element is a shell over the Rust editing session (WebAssembly): the document model, the
 editing commands, undo, the incremental layout and the page painting come from the engine; the element keeps the
-input (keyboard, IME, mouse), the bars, scrolling and zoom. It needs the editing build of the engine (the
-session build of the `.wasm`) and `'wasm-unsafe-eval'` in a strict CSP (Safari 15 needs `'unsafe-eval'`).
+input (keyboard, IME, mouse), the bars, scrolling and zoom. The default stays `ts`: an editor without
+`engine="rust"` never fetches the `.wasm` nor the engine's code. The attribute is read at initialization.
 
-**The published package does not ship the editing `.wasm` yet.** Until it does, give its location with
-`UniversalWriteElement.configureEngine({ wasm })` before the first `<universal-write engine="rust">` initializes (by
-default the element looks for `chunks/uo-write-editor.wasm` next to its code). There is one engine module per page and
-the first load wins: the editor's module must be the FIRST engine module on the page. A
-`<universal-document-viewer engine="rust">` that loads its own (viewer-only) module first makes `engine="rust"` on the
-editor fail with an error; loaded after the editor, the viewer uses the editor's module.
+**The module.** The package ships the editing build of the engine as `chunks/uo-write-editor.wasm` (the session
+build, about 9.7 MB, 3.2 MB gzip), fetched only with `engine="rust"`; by default the element resolves it next to its
+own code. `UniversalWriteElement.configureEngine({ wasm, js, engine })` (static, before the first
+`<universal-write engine="rust">` initializes) says where it comes from instead: `wasm` is the `.wasm` (bytes, URL,
+`Response`). The `js` (wasm2js) option is not available for the editing build. `UniversalWriteElement.engineStats()`
+reports the engine's memory and live handles (`null` until the first `engine="rust"` element).
 
-`UniversalWriteElement.configureEngine({ wasm, js, engine })` (static) says where the module comes from: `wasm` is the
-`.wasm` (bytes, URL, `Response`), `js` the wasm2js build. `UniversalWriteElement.engineStats()` reports the engine's
-memory and live handles.
+**One engine module per page, the first load wins.** The editor's module also serves a
+`<universal-document-viewer engine="rust">` of the same package loaded after it (`viewer.js` shares the code). The
+other way round does not work: a viewer that loaded its own (viewer-only, `chunks/uo-write.wasm`) module first makes
+`engine="rust"` on the editor fail at initialization with an error naming `uo-write-editor.wasm`. So load the editor
+(or at least initialize it) before any rust viewer on the page. The standalone `@universal-office/document-viewer`
+package carries its own copy of the viewer and so its own module and memory.
 
-In this preview the engine takes: opening (`.docx`, `.doc`), `newDocument()`, saving (`.docx`, `.docx` with fonts,
-PDF), dirty state, typing, Enter, Backspace/Delete (and by word), the arrow keys, Home/End, Page Up/Down, selection
-with the mouse (click, Shift+click, drag, double and triple click), undo/redo, select all, character formatting (bold,
-italic, underline styles, strikethrough, caps, super/subscript, font, size, grow/shrink, color, highlight, case,
-spacing, clear), paragraph formatting (alignment, indent, line spacing, spacing before/after, shading, clear),
-bullets and numbering (Tab / Shift+Tab change the list level), applying a style, the document's font embedding
-option, and copy/cut/paste through the keyboard (Ctrl+C, Ctrl+X, Ctrl+V with the text and HTML of the clipboard,
-Ctrl+Shift+V as plain text, and the Paste Options after a paste; the Cut, Copy and Paste buttons and menu items are
-disabled, and pasting an image is not supported yet). Saving as `.odt`, HTML, Markdown or XPS throws an error.
-The styles gallery lists no styles yet, and the pages have no context menu in this preview. Call `load*()` after
-`uw-ready`. Everything else (tables, pictures,
-shapes and text boxes, headers and footers, notes, comments and tracked changes, fields and references,
-page setup, find, spelling, the Web/Draft/Read views, the ruler…) is **disabled**: its bar buttons stay visible
-but grayed out and its methods do nothing (queries answer an empty document). The field shading, the formatting marks
-and the other screen adornments are not painted yet.
+**CSP.** The module needs `'wasm-unsafe-eval'` in a strict Content Security Policy; Safari 15 only knows
+`'unsafe-eval'` (see [Content Security Policy](../viewer/README.md#content-security-policy) of the viewer).
+
+**What `rust` takes** (checked against `ts` over the 74 fixture documents with scripted real input, and by a harness
+per family; every remaining difference is declared in the repository's engine record):
+
+- opening (`.docx`, `.doc`), `newDocument()`, saving (`.docx`, `.docx` with fonts, PDF), dirty state, undo/redo,
+  typing and IME, Enter, Backspace/Delete (and by word), the arrow keys, Home/End, Page Up/Down, the mouse (click,
+  Shift+click, drag, double and triple click), select all and the Alt key tips;
+- character formatting (bold, italic, underline styles, size, case, highlight, clear formatting; the Font Color
+  button is grayed out, see below), paragraph and style formatting (the styles list, the gallery, the Styles pane and creating, modifying,
+  renaming and deleting styles), bullets and numbering (Tab / Shift+Tab change the level);
+- clipboard: Ctrl+C/X/V (text and HTML), Ctrl+Shift+V, the Cut, Copy and Paste buttons, Paste Special and the
+  Clipboard ring (text items), pasting an image from the system clipboard, and the Paste Options after a paste;
+- tables, headers and footers, footnotes and endnotes, and the text of text boxes (top-level, in groups and linked
+  chains; boxes inside a table cell or inside another text box follow the same rule but are not covered by the parity
+  harness yet);
+- pictures, shapes and text boxes as objects (select, move, resize, rotate, wrap, effects, picture formatting), page
+  setup, sections and columns, page design (page color, watermark; page borders only through the API,
+  `setPageBorders`, not the Page Borders dialog), the Read view and the context menu;
+- comments and tracked changes, the Find and Replace pane (`findNextMatch`, `replaceAllMatches`), navigation,
+  bookmarks, links (insert, edit, follow), fields, the table of contents, captions and cross-references;
+- spelling, with the shared Hunspell engine and the `spellcheck-*` attributes above; the `author` and `lang`
+  attributes.
+
+**What stays disabled.** The bar buttons stay visible but grayed out, the methods do nothing and the queries answer
+for an empty document. At the command level the bar declares 462 commands, 381 of them routed and 81 grayed out
+(measured by registering the bar commands against the routing table; the rest of the 434 routed ids are the style, navigation, table
+and menu entries that the panes register). The 81 are:
+
+- File: Print, Fonts in the file, Compare, Mail Merge and Insert Merge Field, Word Count (Ctrl+Shift+G), Enable
+  Editing (the Protected View button), Font Access, and the Save as `.odt`, HTML, Markdown and XPS entries;
+- View: the Ruler (the whole view: its geometry query is disabled, so also the indent and tab drags), Gridlines,
+  Bookmark marks, and the Web, Draft and Outline views;
+- Font: the Font Color button (`setColor` works through the API; the button needs `documentThemeColors()`), gradient
+  font color, the Font dialog (`setFontFormat`, so also More Underlines), the Format Painter and Text Effects options;
+- Paragraph: the Paragraph, Tabs and Borders and Shading dialogs, the Home Borders button and its menu, the horizontal
+  line, Select Similar Formatting and Select Objects, manual hyphenation;
+- Lists: define a new bullet, number or multilevel list, list styles, Set Numbering Value, Adjust List Indents, Restart
+  at 1 and Continue numbering;
+- Paste: Keep Source, Merge and Text Only buttons of the Paste Options menu, Picture, and the paste-cells options
+  (the keyboard paths and Paste Special work);
+- Tables: New and Modify Table Style, Insert Excel spreadsheet, Draw Table / Eraser / Border Painter;
+- Objects and page: wrap points, transparent color, Change Picture > Clip, editing a shape's text, the Page Borders
+  dialog (borders work through `setPageBorders`), and the table of contents level entries.
+
+Of the public API, 65 mutators and 41 queries are disabled (511 methods in all: 381 routed, 26 of the shell): the Font,
+Paragraph and Tabs setters (`setFontFormat`, `setIndent`, `setTabs`...), `setTextGradient`, `setTextEffects` and OpenType
+features, underline color, Quick Tables, the text box gallery, the cover, watermark and table of contents gallery
+previews, plugin custom inlines (`insertCustomInline`), and `findNext(text)`, `replaceAll(...)`, `countMatches` and
+`getLinks()` (use `findNextMatch`/`replaceAllMatches`, which the Find pane uses). The engine record lists every name.
+Opening an `.odt` is not supported, and saving as `.odt`, HTML, Markdown or XPS throws an error.
+
+**Behaviours a host can see** (declared differences from `ts`): the events fire after the mutation, not before; call `load*()` after `uw-ready` (a call before it runs on the `ts` engine
+and its result is discarded); reconnecting the element reopens the document without the undo history; the document's
+Bookmarks marks and some screen adornments are not painted yet.
 
 ## Built-in bars
 

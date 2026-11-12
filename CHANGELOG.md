@@ -84,7 +84,7 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
   all 74 committed fixture documents (579 pages) both engines give the same page count and sizes,
   headings, link boxes, text layer, find hits, canvas pixels (byte for byte) and
   uncompressed PDF. Changing the attribute reloads the open document. The editor
-  `<universal-write>` is not part of this switch.
+  `<universal-write>` has its own switch (next entry).
 - The `.wasm` ships as `chunks/uo-write.wasm` and is fetched on first use only: a viewer
   without `engine="rust"` never requests it. `UniversalDocumentViewerElement.configureEngine({
   wasm, js, engine })` points to another source (bytes, URL, `Response`, or the wasm2js
@@ -97,6 +97,50 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
   the TS reader on first use; `udv-link-click` `detail.text` is the text of the link box, not
   of the whole run when the run wraps. Closing or moving the element frees the engine's
   memory; reconnecting reopens the document (the scroll position resets).
+
+### Editor: engine switch (`engine="rust"`, preview)
+
+- New attribute `engine` on `<universal-write>`: `ts` (default, the 0.9 engine,
+  unchanged and fetching nothing) or `rust`, the editing session of the Rust core compiled
+  to WebAssembly. With `rust` the document model, the editing commands, undo, the
+  incremental layout and the page painting come from the engine; the element keeps the
+  input, the bars, scrolling and zoom. The attribute is read at initialization.
+- What `rust` takes: opening `.docx`/`.doc`, saving `.docx` (with or without fonts) and PDF, typing and IME, the
+  keyboard and mouse selection, character, paragraph and style formatting (styles list,
+  gallery and pane), lists, the clipboard (keyboard, buttons, Paste Special, the ring's
+  text items, pasting an image from the system clipboard), tables, headers and footers,
+  notes, the text of top-level text boxes, pictures and shapes as objects, page setup,
+  sections, page design (color, watermark), the Read view, the context menu, comments and tracked changes, the
+  Find and Replace pane, fields, table of contents, captions, cross-references, bookmarks
+  and links, and spelling
+  with the shared Hunspell. Checked against `ts` over the 74 committed fixture documents
+  with 12 scripted steps of real input each, plus one harness per family; every remaining
+  difference is declared in `core/docs/modules/uo-bindings.md`.
+- The `.wasm` ships as `chunks/uo-write-editor.wasm` (the session build, about 9.7 MB, 3.2 MB
+  gzip) and is fetched only with `engine="rust"`. `UniversalWriteElement.configureEngine({
+  wasm, engine })` points to another source and `UniversalWriteElement.engineStats()`
+  reports memory and live handles. One engine module per page: the editor's module also
+  serves a `<universal-document-viewer engine="rust">` of the package loaded after it; a viewer
+  engine loaded first makes `engine="rust"` on the editor fail with an error naming the
+  editor module. `build:pkg` refuses to ship a test build (exports `test_`/`selftest_`/
+  `memtest_`/`fixture_`, the counting allocator) as either module.
+- A strict `script-src` needs `'wasm-unsafe-eval'` (Safari 15: `'unsafe-eval'`); see the
+  viewer README, "Content Security Policy".
+- Not yet in `rust` (the bar buttons stay visible but grayed out, the methods do nothing; of the 462
+  commands the bar declares, 81 are grayed out): Print, Fonts in the file, Compare, Mail Merge, Word Count,
+  Enable Editing and Font Access; the Ruler (whole view, so also its indent and tab drags), Gridlines, Bookmark
+  marks, and the Web, Draft and Outline views; the Font Color button (`setColor` works through the API), gradient
+  font color, the Font dialog and More Underlines, the Format Painter, text effects; the Paragraph, Tabs, Borders
+  and Page Borders dialogs (page borders work through `setPageBorders`), the Home Borders button, the horizontal
+  line, Select Similar Formatting and Select Objects, manual hyphenation; the multilevel list library, list styles,
+  Adjust List Indents, Change List Level and numbering restarts; the Paste Options buttons (Keep Source, Merge, Text
+  Only, Picture) and the paste-cells options; New and Modify Table Style, Quick Tables, Insert Excel spreadsheet,
+  Draw Table / Eraser / Border Painter; wrap points, transparent color, the text box gallery, plugin custom inlines,
+  OpenType features and underline color.
+  The public `findNext`, `replaceAll`, `countMatches` and `getLinks` do nothing (the Find
+  pane's `findNextMatch`/`replaceAllMatches` work). Opening `.odt` and saving as `.odt`, HTML, Markdown or XPS are not
+  supported (the saves throw). Events fire after the mutation; call `load*()` after `uw-ready`; reconnecting reopens the document without undo
+  history.
 
 ### Opening documents on slower machines
 

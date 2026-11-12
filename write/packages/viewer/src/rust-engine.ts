@@ -24,6 +24,8 @@ const WASM_FILE = 'uo-write.wasm';
 const LANGS = ['pt-BR', 'en', 'es'];
 /** Passadas de layout por carga: 1ª sem nada empurrado + as que as fontes pedidas refazem (o TS tem 4). */
 const MAX_PASSES = 5;
+/** wave 6 (C, D-C5): the refused pattern registration is said once per page */
+let patternsWarned = false;
 const VARIANTS: readonly FontVariant[] = ['regular', 'bold', 'italic', 'boldItalic'];
 
 /** O que o elemento passa à sessão. */
@@ -129,6 +131,8 @@ export class RustSession {
   private readonly envs = new WeakMap<DecodedLayout, PaintEnv>();
   private readonly texts = new WeakMap<DecodedLayout, Map<number, PageText>>();
   private readonly images = new WeakMap<DecodedLayout, Map<number, CanvasImageSource | 'loading' | null>>();
+  /** wave 6 (L): the decoded images a layout took over from the one it replaced (`inherit`), with the entry they were decoded for */
+  private readonly inherited = new WeakMap<DecodedLayout, Map<number, { image: CanvasImageSource; entry: DecodedLayout['tables']['images'][number] | undefined }>>();
   private readonly notified = new Set<string>();
 
   constructor(private readonly host: RustHost) {}
@@ -236,7 +240,11 @@ export class RustSession {
         }
         await reg;
       }
-    } catch { /* sem padrões: sem hifenização */ }
+    } catch (e) {
+      // sem padrões: sem hifenização. Wave 6 (C, D-C5): said once — a refused registration hid the editor's missing
+      // hyphenation for two waves ('patterns in use', fixed by the copy-on-write registration of uo-wasm write.rs)
+      if (!patternsWarned) { patternsWarned = true; console.warn('uo-wasm: hyphenation patterns not registered', e); }
+    }
   }
 
   /** Empurra a resposta do resolvedor para `family` se ela mudou; true se empurrou. */
@@ -371,12 +379,33 @@ export class RustSession {
     return { family: `"${entry.name}", "Liberation Sans", sans-serif`, weight: 400, italic: false };
   }
 
+  /**
+   * Wave 6 (L, the editor's relayouts): `dl` replaces `prev`; the images `prev` decoded whose bytes the engine says `dl` shares
+   * (the same bytes at the same index) are kept for `dl` — no decode again on every keystroke. `imageOf` uses one only when
+   * `dl`'s entry asks for the same decode (format, SVG, size).
+   */
+  inherit(dl: DecodedLayout, prev: DecodedLayout): void {
+    const pm = this.images.get(prev);
+    const kept = new Map<number, { image: CanvasImageSource; entry: DecodedLayout['tables']['images'][number] | undefined }>();
+    if (pm) for (const [id, c] of pm) if (c && c !== 'loading' && dl.sharedImage(id)) kept.set(id, { image: c, entry: prev.tables.images[id] });
+    // what `prev` itself inherited and never painted
+    const pi = this.inherited.get(prev);
+    if (pi) for (const [id, v] of pi) if (!kept.has(id) && dl.sharedImage(id)) kept.set(id, v);
+    if (kept.size) this.inherited.set(dl, kept);
+  }
+
   private imageOf(dl: DecodedLayout, id: number): CanvasImageSource | null {
     let m = this.images.get(dl);
     if (!m) this.images.set(dl, (m = new Map()));
     const c = m.get(id);
     if (c === 'loading' || c === null) return null;
     if (c) return c;
+    const h = this.inherited.get(dl)?.get(id);
+    const e = dl.tables.images[id];
+    if (h && h.entry && e && h.entry.ext === e.ext && h.entry.hasSvg === e.hasSvg && h.entry.widthTwips === e.widthTwips && h.entry.heightTwips === e.heightTwips) {
+      m.set(id, h.image);
+      return h.image;
+    }
     m.set(id, 'loading');
     const done = (b: ImageBitmap | HTMLCanvasElement | null): void => { m.set(id, b); if (b && !dl.freed && !this.disposed) this.host.repaint(); };
     const entry = dl.tables.images[id];

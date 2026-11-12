@@ -1,7 +1,7 @@
 import { convertDocToDocx, isWordBinary } from '@universal-office/docx-core';
 import { FontResolver, type FontVariant } from '@universal-office/fonts';
 import { uiLang } from '@universal-office/ui';
-import { loadViewerModule, type DecodedLayout, type LoadWriteOptions, type ViewerEnv, type ViewerModule } from '@universal-office/write-engine';
+import { loadViewerModule, type BandSnap, type DecodedLayout, type EngineLayout, type LoadWriteOptions, type ViewerEnv, type ViewerModule } from '@universal-office/write-engine';
 import { bindSession, encodePaste, type Caret, type ExecOutcome, type RelayoutReport, type SessionBinding, type SessionCommand, type SessionEvent, type ShellEngine, type WriteSession } from '@universal-office/write-session';
 import { RustSession, type EngineDocument } from '../../viewer/src/rust-engine.js';
 import { NEUTRAL_QUERIES, ROUTED_PRIVATE, ROUTED_PUBLIC, SHELL, isMutator, neutralOf } from './engine-routes.js';
@@ -32,6 +32,11 @@ const LANGS = ['pt-BR', 'en', 'es'];
 const PX_PER_TWIP = 96 / 1440;
 const HF_DIM_ALPHA = 0.5;
 const SEL_FILL = 'rgba(58,114,196,0.35)';
+/**
+ * wave 6 (L, D-L4): device pixels added above and below a repainted band (thin-line snapping and antialiasing reach past
+ * an item's extent; 2 px was measured short on one fixture, 8 px is exact on every fixture of the editor switch)
+ */
+const BAND_MARGIN_PX = 8;
 const VARIANTS: readonly FontVariant[] = ['regular', 'bold', 'italic', 'boldItalic'];
 
 type Pos = { para: number; offset: number };
@@ -98,6 +103,8 @@ export interface FrontApi {
 const live = { sessions: 0, shellEngines: 0, editors: 0 };
 let lastModule: ViewerModule | null = null;
 
+/** [a, b) */
+const range = (a: number, b: number): number[] => Array.from({ length: Math.max(0, b - a) }, (_, k) => a + k);
 const samePos = (a: Pos, b: Pos): boolean => a.para === b.para && a.offset === b.offset;
 const cmpPos = (a: Pos, b: Pos): number => a.para - b.para || a.offset - b.offset;
 
@@ -121,8 +128,14 @@ export class RustEditor {
   private parked: { bytes: Uint8Array; protected: boolean } | null = null;
   private epoch = 0;
   private fontLoop: Promise<void> = Promise.resolve();
-  private base = new Map<number, { key: string; canvas: HTMLCanvasElement }>();
+  /**
+   * the page cache (`engineBase`); wave 6 (L, D-L4): `hf` the header/footer item count it was painted with, `dirty` set when
+   * a relayout changed the page (the canvas is painted again before use: the band since `prev`, or whole)
+   */
+  private base = new Map<number, { key: string; canvas: HTMLCanvasElement; hf: number; dirty?: { prev: BandSnap | null } }>();
   private hfItems: (number | undefined)[] = [];
+  /** wave 6 (L, D-L4): the scratch canvas a changed band is painted in */
+  private bandCanvas: HTMLCanvasElement | null = null;
   private caretCache: { dl: DecodedLayout; sel: string; caret: Caret | null } | null = null;
   private stateCache: { gen: number; v: unknown } | null = null;
   private gen = 0;
@@ -175,7 +188,9 @@ export class RustEditor {
     return {
       layout: (env) => {
         this.pushElementFonts(env);
-        return this.mod.adopt(shell.relayout(session, env.inner, { hyphenationLanguages: LANGS, now: this.clock }));
+        // wave 6 (L): the engine lends its result (no copy); the installed layout gives the previous one back
+        const prev = this.dl && !this.dl.freed && this.shell === shell ? this.dl : null;
+        return this.adoptAfter(shell.relayout(session, env.inner, { hyphenationLanguages: LANGS, now: this.clock, prev: prev?.inner ?? null }), prev);
       },
       hyphenationPatterns: (env, langs) => session.hyphenationPatterns(env.inner, langs),
       free: () => {
@@ -306,9 +321,11 @@ export class RustEditor {
     const env = this.rs.env;
     if (!session || !shell || !env || env.freed) { this.runFontLoop(); return; }
     const t0 = performance.now();
+    // wave 6 (L): the engine lends its result (no copy); the installed layout gives the previous one back (it is stale after)
+    const prev = this.dl && !this.dl.freed ? this.dl : null;
     let inner;
     try {
-      inner = shell.relayout(session, env.inner, { hyphenationLanguages: LANGS, now: this.clock });
+      inner = shell.relayout(session, env.inner, { hyphenationLanguages: LANGS, now: this.clock, prev: prev?.inner ?? null });
     } catch (e) {
       // um trap mata a instância (o próximo uso carrega outra); sem fontes ainda, o laço de fontes refaz
       if (e instanceof WebAssembly.RuntimeError) { this.mod.kill(); throw e; }
@@ -316,7 +333,7 @@ export class RustEditor {
       return;
     }
     const t1 = performance.now();
-    const dl = this.mod.adopt(inner);
+    const dl = this.adoptAfter(inner, prev);
     const report = shell.report();
     const t2 = performance.now();
     this.install(dl, report);
@@ -327,25 +344,66 @@ export class RustEditor {
     if (env.takeMissing().length) this.runFontLoop();
   }
 
+  /** wave 6 (L): a relayout's layout adopted after `prev`: the font keys and decoded images of the shared faces and images */
+  private adoptAfter(inner: EngineLayout, prev: DecodedLayout | null): DecodedLayout {
+    const dl = this.mod.adopt(inner, prev);
+    if (prev) this.rs.inherit(dl, prev);
+    return dl;
+  }
+
   private install(dl: DecodedLayout, report: RelayoutReport | null): void {
     const old = this.dl;
     this.dl = dl;
     this.hfItems = [];
     this.caretCache = null;
     if (!report || report.path === 'full' || !old || old.pages.length !== dl.pages.length) this.base.clear();
-    else for (let i = report.relaid[0]; i < report.relaid[1]; i++) this.base.delete(i);
+    // wave 6 (L): only the relaid pages whose page changed lose their painting (`changed`, a subset of `relaid`); D-L4: the
+    // canvas stays with the previous layout's decoded page, so `baseOf` repaints only the band that differs
+    else for (const i of report.changed ?? range(report.relaid[0], report.relaid[1])) {
+      const hit = this.base.get(i);
+      if (hit) hit.dirty = { prev: old.bandSnap(i, hit.hf) };
+    }
     if (old) this.rs.release(old);
-    this.rebuildCanvases();
+    // wave 6 (L, D-L3, declared): the same canvas sizes keep the buffers of the pages `ensureVisiblePainted` would
+    // allocate again (the TS releases every buffer and allocates the visible ones again: ~3 ms a key) and release the
+    // others, so the same canvases hold pixels as in the TS; the kept ones are painted again below, overlays included, from
+    // the page cache but for the changed pages
+    const kept = this.rebuildCanvases(true);
     // the visible pages: allocated and painted (from the page cache, but for the pages laid out again)
     objectsAfterCanvases(this); // wave 5 (O): hooks (the Read mode spread, as the TS refresh)
+    let repaint: Set<number> | null = null;
+    if (kept) {
+      const el = this.el;
+      repaint = new Set();
+      for (const i of [...el.allocatedPages]) {
+        if (this.inVisibleWindow(i)) repaint.add(i);
+        else { const c = el.canvases[i]; if (c) { c.width = 1; c.height = 1; } el.allocatedPages.delete(i); }
+      }
+    }
     this.el.ensureVisiblePainted();
+    if (repaint && repaint.size) this.paint(repaint);
     this.positionProxy();
   }
 
-  rebuildCanvases(): void {
+  /**
+   * Whether `ensureVisiblePainted` allocates page `i` (universal-write.ts `ensureVisiblePainted`, the same window: one
+   * screen before, two after; hidden canvases out) — wave 6 (L, D-L3).
+   */
+  private inVisibleWindow(i: number): boolean {
+    const el = this.el;
+    const c = el.canvases[i];
+    if (!c || c.style.display === 'none') return false;
+    const viewH = el.clientHeight || 900;
+    const top = c.offsetTop;
+    const bottom = top + c.offsetHeight;
+    return bottom >= el.scrollTop - viewH && top <= el.scrollTop + viewH * 2;
+  }
+
+  /** `keep` (wave 6, L): with the same sizes the buffers stay (answers true: the caller paints the allocated pages) */
+  rebuildCanvases(keep = false): boolean {
     const el = this.el;
     const dl = this.dl;
-    if (!dl) return;
+    if (!dl) return false;
     const scale = PX_PER_TWIP * el.zoom;
     const css = (i: number): { w: string; h: string } => {
       const p = dl.pages[i]!;
@@ -354,11 +412,12 @@ export class RustEditor {
     const n = dl.pages.length;
     const same = el.canvases.length === n && el.canvases.every((c, i) => { const s = css(i); return c.style.width === s.w && c.style.height === s.h; });
     if (same) {
+      if (keep) return true;
       // as the TS `rebuildCanvases`: the same canvases (the dblclick target survives), the buffers released; the visible pages
       // are allocated again by ensureVisiblePainted and drawn from the page cache (the virtualization stays the TS one)
       for (const i of el.allocatedPages) { const c = el.canvases[i]; if (c) { c.width = 1; c.height = 1; } }
       el.allocatedPages.clear();
-      return;
+      return false;
     }
     el.container.replaceChildren();
     el.canvases = [];
@@ -375,6 +434,7 @@ export class RustEditor {
       el.container.append(c);
       el.canvases.push(c);
     }
+    return false;
   }
 
   private hfOf(i: number): number {
@@ -387,9 +447,43 @@ export class RustEditor {
   private baseOf(i: number, w: number, h: number, scale: number): HTMLCanvasElement {
     const el = this.el;
     const dl = this.dl!;
-    const key = `${w}x${h}|${scale.toFixed(6)}|${el.printRender ? 1 : 0}|${el.pageDark ? 1 : 0}` + this.hooks.baseKey.map((f) => f()).join(''); // wave 5 (S): hooks
+    const hooked = this.hooks.baseKey.map((f) => f()).join(''); // wave 5 (S): hooks
+    const key = `${w}x${h}|${scale.toFixed(6)}|${el.printRender ? 1 : 0}|${el.pageDark ? 1 : 0}` + hooked;
     const hit = this.base.get(i);
-    if (hit && hit.key === key) return hit.canvas;
+    if (hit && hit.key === key && !hit.dirty) return hit.canvas;
+    // wave 6 (L, D-L4, declared): a page a relayout changed, painted with the same key, no base hook on (the gridlines
+    // and the header/footer layers draw from more than the items): only the band whose items differ from the previous
+    // layout's page is cleared and painted again (background, hooks and every item, in a band-sized canvas); 'same':
+    // nothing to paint; unknown: the whole page, as before
+    if (hit && hit.key === key && hit.dirty) {
+      const prev = hit.dirty.prev;
+      hit.dirty = undefined;
+      const hf = Math.min(this.hfOf(i), dl.pages[i]!.items.length);
+      const band = prev && hooked === '' ? dl.bandSince(i, prev, hf, BAND_MARGIN_PX / scale) : null;
+      if (band === 'same') return hit.canvas;
+      if (band) {
+        const y0 = Math.max(0, Math.floor(band.y0 * scale) - BAND_MARGIN_PX), y1 = Math.min(h, Math.ceil(band.y1 * scale) + BAND_MARGIN_PX);
+        if (y1 > y0) {
+          // the band painted in a canvas of its own, shifted by whole rows and BAND_MARGIN_PX taller on each side, then
+          // only the band's rows copied over the cleared ones: measured, the rasterizer's antialiasing changes the row
+          // where a path is cut (by a clip or a canvas edge: one row, on 6 of 76 fixtures), so no cut row is copied
+          const s0 = Math.max(0, y0 - BAND_MARGIN_PX), s1 = Math.min(h, y1 + BAND_MARGIN_PX);
+          const sc = (this.bandCanvas ??= document.createElement('canvas'));
+          sc.width = w;
+          sc.height = s1 - s0;
+          const sctx = sc.getContext('2d')!;
+          sctx.imageSmoothingEnabled = true;
+          sctx.imageSmoothingQuality = 'high';
+          sctx.setTransform(scale, 0, 0, scale, 0, -s0);
+          this.paintBase(sctx, i, dl, scale);
+          const ctx = hit.canvas.getContext('2d')!;
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, y0, w, y1 - y0);
+          ctx.drawImage(sc, 0, y0 - s0, w, y1 - y0, 0, y0, w, y1 - y0);
+        }
+        return hit.canvas;
+      }
+    }
     const off = hit?.canvas ?? document.createElement('canvas');
     off.width = w;
     off.height = h;
@@ -397,6 +491,14 @@ export class RustEditor {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    const hf = this.paintBase(ctx, i, dl, scale);
+    this.base.set(i, { key, canvas: off, hf });
+    return off;
+  }
+
+  /** the page base painted in `ctx` (already in twips): background, the `under` hooks, the items; answers the hf count */
+  private paintBase(ctx: CanvasRenderingContext2D, i: number, dl: DecodedLayout, scale: number): number {
+    const el = this.el;
     const env = this.rs.paintEnv(dl);
     const page = dl.pages[i]!;
     if (el.printRender) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, page.widthTw, page.heightTw); }
@@ -410,8 +512,7 @@ export class RustEditor {
     if (hf > 0) dl.paintItems(ctx, i, env, { from: 0, to: hf, alpha: dim });
     if (n > hf) dl.paintItems(ctx, i, env, { from: hf, to: n, alpha: 1 });
     }
-    this.base.set(i, { key, canvas: off });
-    return off;
+    return hf;
   }
 
   /** O cursor da seleção no layout de agora (cache por layout e seleção). */
@@ -429,6 +530,9 @@ export class RustEditor {
     const el = this.el;
     const dl = this.dl;
     if (!dl || !this.session || el.canvases.length === 0) return;
+    // wave 6 (L, declared): a relayout that failed after its pages were consumed leaves the installed layout STALE (no
+    // pages): the canvases keep the previous pixels until the font loop installs a layout (painting would blank them)
+    if (dl.inner.stale) return;
     const active = filter ?? el.allocatedPages;
     const dpr = window.devicePixelRatio || 1;
     const { anchor, focus } = el.selection;
@@ -643,9 +747,9 @@ export class RustEditor {
     el.caretVisible = true;
     const changed = cs.stories.length > 0 || !!cs.formatting;
     if (changed && this.markOn) this.marks.push({ exec: 0, relayout: 0, adopt: 0, paint: 0, path: '', reason: null });
-    // wave 5, frontier R (ED-315, gate R-3): a style sheet / numbering change (`formatting`) is invisible to the incremental relayout
-    // (it relays out nothing: path incremental, relaid [0, 0)): drop the engine's incremental state, the next one is full
-    if (cs.formatting) this.shell?.clear();
+    // wave 6, L (ED-315 superseded, gate R-3): a `formatting` ChangeSet no longer clears the engine (wave 5's
+    // `shell.clear()` dropped the paragraph memo on every Enter: `sections.sync` flags `formatting`); LA7 itself sees the
+    // style edits (tests/shell_native.rs F) and the object scripts' end pages are the same with or without a drop (gate-C1)
     if (changed) { this.textGen++; this.relayoutNow(); }
     else { this.caretCache = null; this.paint(); this.positionProxy(); }
     for (const ev of cs.events) this.dispatch(ev);
@@ -714,12 +818,13 @@ export class RustEditor {
     if (!s || this.locked()) return;
     const { anchor, focus } = this.el.selection;
     if (samePos(anchor, focus)) {
-      const r = s.moveCaret(dir < 0 ? 'wordLeft' : 'wordRight', false, null);
+      // wave 6 (C): the word move extends from the caret (the TS `this.selection = { anchor: before, focus: after }`:
+      // the float selection and pending props kept, unlike the routed `setSelection`)
+      const r = s.moveCaret(dir < 0 ? 'wordLeft' : 'wordRight', true, null);
       if (r?.t !== 'done') return;
       const to = r.selection.focus;
       // as the TS: no word to delete (the story's start or end) = nothing at all (no snapshot, no event)
       if (samePos(to, focus)) return;
-      s.setSelection(focus, to);
     }
     this.apply(dir < 0 ? s.backspace() : s.delete(), 'deleteWord');
   }
@@ -857,7 +962,8 @@ export class RustEditor {
   private clip(e: ClipboardEvent, cut: boolean): void {
     if (!this.session) return;
     e.preventDefault();
-    if (samePos(this.el.selection.anchor, this.el.selection.focus)) return;
+    // wave 6 (C): no early return on a collapsed selection — the session's copy/cut port the TS early returns and the
+    // `floatSel` branch (a selected drawing object). The keyboard's Ctrl+C/X no longer reach here (onKey: `el.copy()`)
     const o = this.session.command({ t: 'clipboard', v: { t: cut ? 'cut' : 'copy' } });
     const c = this.session.copied();
     if (c && e.clipboardData) {
@@ -1042,8 +1148,10 @@ export class RustEditor {
   private onMouseDown(e: MouseEvent): void {
     if (objectsPointerFirst(this, e)) return; // wave 5 (O): hooks (the object handles, crop and draw modes: before the text hit, also off the text)
     const hit = this.hitAt(e);
-    if (!hit) return;
+    // wave 6 (C): the TS runs the objects and the text-box entry (10148-10209) before its hit test: the fronts' pointer
+    // hooks see a click off the text lines too (`hit` null); the rest needs a position
     if (this.hooks.pointer.some((f) => f(e, hit))) return; // wave 5 fronts: hooks
+    if (!hit) return;
     if (this.hooks.pointerLate.some((f) => f(e, hit))) return; // wave 5 (S): hooks (header/footer switch, cells, the story of the click)
     this.clickAt(e, hit); // wave 5 (S): hooks (the default click, also `frontApi().defaultClick`)
   }
@@ -1145,20 +1253,20 @@ export class RustEditor {
     if (arrows[k] && !e.altKey) {
       done();
       if (ctrl && (k === 'ArrowLeft' || k === 'ArrowRight')) this.moveCaret(k === 'ArrowLeft' ? 'wordLeft' : 'wordRight', e.shiftKey);
-      else if (!ctrl) this.moveCaret(arrows[k]!, e.shiftKey);
+      // wave 6 (C, gate-O4): Ctrl+Up/Down (with Shift) reach the TS `nav` (10731) — the Ctrl block handles Left/Right only
+      else this.moveCaret(arrows[k]!, e.shiftKey);
       return;
     }
     if ((k === 'Home' || k === 'End') && !e.altKey) {
       done();
-      if (ctrl) {
-        const s = this.session!;
-        const info = s.storyInfo();
-        const to = k === 'Home' ? { para: 0, offset: 0 } : { para: Math.max(0, info.paras - 1), offset: info.lastLength };
-        this.setSelection(e.shiftKey ? this.el.selection.anchor : to, to);
-      } else this.moveCaret(k === 'Home' ? 'home' : 'end', e.shiftKey);
+      // wave 6 (C): Ctrl+Home/End assign the selection as the TS (10606: `this.selection = …`, no float selection or
+      // pending props cleared), not the routed `setSelection`; front S's hook left the cells first
+      if (ctrl) this.apply(this.session!.moveCaret(k === 'Home' ? 'docStart' : 'docEnd', e.shiftKey, null), 'moveCaret');
+      else this.moveCaret(k === 'Home' ? 'home' : 'end', e.shiftKey);
       return;
     }
-    if ((k === 'PageUp' || k === 'PageDown') && !ctrl && !e.altKey) {
+    // wave 6 (C): PageUp/PageDown with Ctrl too, as the TS (10598 checks no modifier)
+    if ((k === 'PageUp' || k === 'PageDown') && !e.altKey) {
       done();
       // as the TS (bindEvents): 0.9 of the view, then ~one screen of line moves
       this.el.scrollTop += this.el.clientHeight * 0.9 * (k === 'PageUp' ? -1 : 1);
@@ -1174,7 +1282,16 @@ export class RustEditor {
       // copiar, recortar, colar: o navegador dispara os eventos (tratados acima); Ctrl+Shift+V = o próximo paste é só
       // texto (o `plainPasteNext = e.shiftKey` do TS a cada Ctrl+V)
       if (e.code === 'KeyV') this.plainNext = e.shiftKey;
-      if ((!e.shiftKey && (e.code === 'KeyC' || e.code === 'KeyX' || e.code === 'KeyV')) || (e.shiftKey && e.code === 'KeyV')) { e.stopImmediatePropagation(); return; }
+      // wave 6 (C, D-C2): Ctrl+C / Ctrl+X are the TS keydown's `copy()` / `cut()` over navigator.clipboard (10577, with
+      // or without Shift; the routed methods are frontier R's port): the session decides what is copied (a selected
+      // drawing object too) and the system clipboard gets the TS text (CRLF in Chromium on Windows: ED-16 closed)
+      if (e.code === 'KeyC' || e.code === 'KeyX') {
+        done();
+        const host = this.el as unknown as { copy(): Promise<void>; cut(): Promise<void> }; // the element's routed methods
+        void (e.code === 'KeyC' ? host.copy() : host.cut());
+        return;
+      }
+      if (e.code === 'KeyV') { e.stopImmediatePropagation(); return; }
       const shiftMap: Record<string, () => void> = {
         KeyD: () => this.toggleUnderline('double'), KeyW: () => this.toggleUnderline('words'),
         KeyH: () => this.toggleRunProp('hidden'), KeyK: () => this.toggleRunProp('smallCaps'), KeyA: () => this.toggleRunProp('allCaps'),
@@ -1208,8 +1325,8 @@ export class RustEditor {
   readonly hooks = {
     /** a keydown the front handles (true: handled; the shell stops it) */
     key: [] as ((e: KeyboardEvent) => boolean)[],
-    /** a mousedown on the pages at `hit` (true: handled) */
-    pointer: [] as ((e: MouseEvent, hit: Pos) => boolean)[],
+    /** a mousedown on the pages at `hit` (true: handled; `hit` null off the text lines, wave 6) */
+    pointer: [] as ((e: MouseEvent, hit: Pos | null) => boolean)[],
     /** a screen overlay of page `page` (page twips: the context is scaled by `scale`), under the selection */
     paint: [] as ((ctx: CanvasRenderingContext2D, page: number, scale: number) => void)[],
     /** after each new document */

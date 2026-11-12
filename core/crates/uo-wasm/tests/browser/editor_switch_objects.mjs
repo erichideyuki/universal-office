@@ -490,7 +490,9 @@ const DECLARED_O = {
   'f7c__7__2|page': COVER,
   'f7c__7__8|page': COVER,
   'blank|page': COVER,
-  'f7a__7__1|page': { from: 6, facets: ['pages'], end: ['end pages', 'thumbnail pixels', 'screen pixels'], id: 'gate-O2; gate-O1', why: 'three columns with a separator: the session lays out 11 pages, the TS 10, on equal section facts (to the end); the cover page box' },
+  // wave 6 (C): the end page count is equal with the builds holding frontier L's latest relayout code (the two runs before
+  // it still differed there); the page count of the steps after the three columns still differs
+  'f7a__7__1|page': { from: 6, facets: ['pages'], end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O2; gate-O1', why: 'three columns with a separator: the session lays out 11 pages, the TS 10, on equal section facts; the cover page box' },
   // ── objects (steps: 1 click, 2 move, 4 se, 6 nw, 8 rotate, 10 ArrowRight, 11 Ctrl+ArrowDown, 12… the Shape Format commands);
   //    exact steps (`at`), every one measured with UO_EO_MEASURE=1 UO_EO_COVERED=2 and the TS traced (UO_EO_TRACE) ──
   'f7b__7__0|objects': [
@@ -502,15 +504,14 @@ const DECLARED_O = {
     { intermittent: true, end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O5', why: 'in about one run of two: pages 0 and 2, the bold runs of the table cells laid out narrower by the Rust engine (another line break: the bold face measured before it loaded, a font load race of the shell, not front O); every step facet and the saved package are equal' },
   ],
   'f7b__7__1|objects': { intermittent: true, end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O5', why: 'seen once (first run of fix round 1): the end pixels only, as f7b__7__3 (the bold face load race); every step facet and the saved package equal' },
-  'f7b__7__8|objects': { at: { sel: '11-29' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], id: 'gate-O4', why: 'no object selected at step 11: Ctrl+ArrowDown moves the caret down in the TS (traced moveCaret(down)), the shell\'s onKey (wave 4) drops Ctrl+Up/Down; the later Delete (24) then deletes at another caret' },
-  'f7b__7__10|objects': { at: { sel: '11-22' }, end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O4', why: 'Ctrl+ArrowDown with the caret in the text (traced moveCaret(down)): the shell drops Ctrl+Up/Down (wave 4 onKey)' },
-  'f7d__7__0|objects': { at: { sel: '11-29' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], id: 'gate-O4', why: 'Ctrl+ArrowDown with no object selected: the TS moves the caret, the shell drops Ctrl+Up/Down (wave 4 onKey); the later Delete deletes at another caret' },
-  'f7d__7__3|objects': { at: { events: '1,23-24,29', pane: '1-34', sel: '1-29', shape: '1-29', answer: '21', count: '23,29' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], id: 'ED-216 (S ED-102)', why: 'the click lands in Caixa 4, a linked box whose chain head is inside Grupo 1: the TS enters it (uw-tbmode, traced enterTextbox), the session\'s textboxAt answers none (S ED-102), so the shell places the caret (front O no longer selects it as a shape); every later step runs in another context' },
   'f7d__7__10|objects': [
-    { at: { shape: '2-3,5-29' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], id: 'ED-202; gate-O4', why: 'the moved box keeps its effectExtent 0 (the TS 19050), to the end; Ctrl+ArrowDown in the box text (sel 11-22)' },
-    { at: { shape: '4', sel: '11-22' }, id: 'ED-213; gate-O4', why: 'the group Grupo 7 selected: the TS ShapeFormat of a group carries blip {} and a zero srcRect, the shell drops both (ED-213); sel: the shell drops Ctrl+Up/Down (gate-O4)' },
+    { at: { shape: '2-3,5-29' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], id: 'ED-202', why: 'the moved box keeps its effectExtent 0 (the TS 19050), to the end' },
+    { at: { shape: '4' }, id: 'ED-213', why: 'the group Grupo 7 selected: the TS ShapeFormat of a group carries blip {} and a zero srcRect, the shell drops both (ED-213)' },
   ],
-  'f8__7__5|objects': { at: { sel: '11-29' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], id: 'gate-O4', why: 'Ctrl+ArrowDown with no object selected: the TS moves the caret, the shell drops Ctrl+Up/Down (wave 4 onKey); the later Delete deletes at another caret' },
+  // wave 6 (C): gate-O4 (Ctrl+ArrowUp/Down) and ED-216 (S ED-102, f7d__7__3) closed; what is left of three of their documents:
+  'f7b__7__8|objects': { end: ['thumbnail pixels', 'screen pixels'], id: 'gate-C1', why: 'the end pixels of page 0 only (every step facet and word/document.xml equal): the TS-saved document reopened in both engines (--mode probe) differs the same way, so a layout difference of the content after the drags and nudges, not the keys or clicks (wave 6, C: exposed once gate-O4 was fixed; before, the gate-O4 entries covered it)' },
+  'f7b__7__10|objects': { end: ['thumbnail pixels', 'screen pixels'], id: 'gate-C1', why: 'the end pixels of page 0 only (every step facet and word/document.xml equal): the TS-saved document reopened in both engines (--mode probe) differs the same way, so a layout difference of the content after the drags and nudges, not the keys or clicks (wave 6, C: exposed once gate-O4 was fixed; before, the gate-O4 entries covered it)' },
+  'f8__7__5|objects': { end: ['thumbnail pixels', 'screen pixels'], id: 'gate-C1', why: 'the end pixels of page 0 only (every step facet and word/document.xml equal): the TS-saved document reopened in both engines (--mode probe) differs the same way, so a layout difference of the content after the drags and nudges, not the keys or clicks (wave 6, C: exposed once gate-O4 was fixed; before, the gate-O4 entries covered it)' },
   'f8__7__11|objects': { at: { events: '8' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], id: 'ED-219', why: 'the rotation handle lies on a table cell edge: the TS starts the table edge drag (tableMouseDown, traced true; one uw-change, the table differs to the end), the shell no-ops it (S does not route it)' },
   // ── keys ──
   'blank|keys': { end: ['screen pixels'], id: 'other front (S/R)', why: 'page 1: the TS paints a gray shading behind the footnote\'s own reference mark in the note area (x 113–117, y 1011–1029 px), the Rust shell does not (a note-area paint of frontier S or the field shading of R, not O); every step facet and the saved package are equal' },
@@ -518,7 +519,8 @@ const DECLARED_O = {
   'f2-3-0|pictures': { end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O3', why: 'the Strong style carries w:color C00000 with themeColor accent2 and the package has no theme part: the TS editor paints its default theme\'s accent2 (orange), the session the C00000 (the saved package is equal)' },
   'f2-3-0|views': { at: { answer: '13' }, end: ['thumbnail pixels', 'screen pixels'], id: 'ED-209; gate-O3', why: 'Web/Draft/Outline disabled; the theme-less accent2 of gate-O3' },
   'f7a__7__1|views': [
-    { at: { answer: '13' }, end: ['thumbnail pixels', 'screen pixels'], id: 'ED-209; gate-10 (wave 4)', why: 'Web/Draft/Outline disabled; the TS editor hyphenates the pt text at the end (gate item 10 of wave 4), the session does not' },
+    // wave 6 (C): the end pixels (gate item 10 of wave 4: the TS hyphenated, the session did not) are equal since the editor registers the patterns
+    { at: { answer: '13' }, id: 'ED-209', why: 'Web/Draft/Outline disabled' },
     { intermittent: true, at: { sel: '10-13' }, id: 'gate-O5', why: 'PageUp\'s 20 line moves after PageDown and typing land one offset apart in paragraph 0 (19 / 20): seen in one run of two, so not a fixed line-break difference: probably the moment of the layout (the Read view spread, the fonts) when PageUp runs; cause not isolated (gate-O5)' },
   ],
 };

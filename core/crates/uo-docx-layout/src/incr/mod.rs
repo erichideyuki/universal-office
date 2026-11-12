@@ -121,7 +121,24 @@ pub enum FallbackReason {
     /// the incremental attempt itself failed (an internal check of the splice or the restore, or
     /// a limit of its own budget): the state was dropped and the call laid out in full (D-LA7-15)
     Failed,
+    /// the previous result was lent ([`crate::LayoutEngine::lend_last`]) and not given back
+    /// (wave 6, L; appended last: its wire code in uo-wasm is 17)
+    Lent,
 }
+
+/// A lent result of [`crate::LayoutEngine::lend_last`] (wave 6, L): what
+/// [`crate::LayoutEngine::give_back`] checks before taking the `Layout` back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LendTicket {
+    /// unique over every engine of the process
+    id: u64,
+    /// the page count of the lent `Layout`
+    pages: usize,
+    /// where it came from: the kept run (`Base`) or the last result without one
+    in_base: bool,
+}
+
+static NEXT_LEND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// What the last relayout did (for the shell: repaint `relaid_pages`, or every page when the
 /// path is `Full`).
@@ -139,6 +156,10 @@ pub struct RelayoutReport {
     pub converged_page: Option<u32>,
     /// the pages of the result that were laid out again (`0..pages` for a full layout)
     pub relaid_pages: Range<u32>,
+    /// the pages of `relaid_pages` whose `LayoutPage` differs from the previous result's page of the
+    /// same index (wave 6, L; every page of `relaid_pages` on a full layout): a page outside it shows
+    /// the same items, lines and geometry as before (`Debug`-equal, the LA7 equality)
+    pub changed_pages: Vec<u32>,
     /// checkpoints kept for the next relayout, and their spacing in pages
     pub checkpoints: usize,
     pub spacing: usize,
@@ -178,6 +199,14 @@ pub struct IncrState {
     no_base: Option<FallbackReason>,
     /// the paragraph memo (level 1)
     memo: ParaMemo,
+    /// the result is lent out (wave 6, L): `layout()` answers `None` and the next relayout without a
+    /// give-back is a full one (reason `Lent`)
+    lent: Option<LendTicket>,
+    /// the result was given back since the last relayout
+    given_back: bool,
+    /// the given-back result when the relayout that used it failed before consuming it (the shell
+    /// lends it to the previous handle again)
+    spare: Option<Layout>,
 }
 
 impl Default for IncrState {
@@ -190,13 +219,87 @@ impl IncrState {
     pub(crate) fn new(cfg: IncrConfig) -> IncrState {
         let mut caps = cfg.memo;
         caps.enabled &= cfg.enabled;
-        IncrState { cfg, base: None, layout: None, report: None, no_base: None, memo: ParaMemo::new(caps) }
+        IncrState {
+            cfg,
+            base: None,
+            layout: None,
+            report: None,
+            no_base: None,
+            memo: ParaMemo::new(caps),
+            lent: None,
+            given_back: false,
+            spare: None,
+        }
     }
 
-    /// The last relayout's result.
+    /// The last relayout's result (`None` while it is lent).
     #[must_use]
     pub fn layout(&self) -> Option<&Layout> {
+        if self.lent.is_some() {
+            return None;
+        }
         self.base.as_deref().map(|b| &b.layout).or(self.layout.as_ref())
+    }
+
+    /// Lends the last relayout's result out (moved, not copied; wave 6, L): `None` when there is
+    /// none or it is lent already.
+    pub(crate) fn lend(&mut self) -> Option<(LendTicket, Layout)> {
+        if self.lent.is_some() {
+            return None;
+        }
+        let (layout, in_base) = match (self.base.as_deref_mut(), self.layout.take()) {
+            (Some(b), None) => (std::mem::take(&mut b.layout), true),
+            (None, Some(l)) => (l, false),
+            (Some(_), Some(l)) => {
+                // never both (`set` keeps one); answer none rather than guess
+                self.layout = Some(l);
+                return None;
+            }
+            (None, None) => return None,
+        };
+        let t = LendTicket { id: NEXT_LEND.fetch_add(1, std::sync::atomic::Ordering::Relaxed), pages: layout.pages.len(), in_base };
+        self.lent = Some(t);
+        Some((t, layout))
+    }
+
+    /// The lend in course, if any.
+    pub(crate) fn lent(&self) -> Option<LendTicket> {
+        self.lent
+    }
+
+    /// Takes a lent result back; `Err` (the layout returned) when `t` is not the lend in course or
+    /// the page count differs.
+    pub(crate) fn give_back(&mut self, t: LendTicket, layout: Layout) -> Result<(), Box<Layout>> {
+        if self.lent != Some(t) || layout.pages.len() != t.pages {
+            return Err(Box::new(layout));
+        }
+        if t.in_base {
+            match self.base.as_deref_mut() {
+                Some(b) => b.layout = layout,
+                None => return Err(Box::new(layout)),
+            }
+        } else {
+            self.layout = Some(layout);
+        }
+        self.lent = None;
+        self.given_back = true;
+        Ok(())
+    }
+
+    /// The given-back result a failed relayout did not consume.
+    pub(crate) fn take_spare(&mut self) -> Option<Layout> {
+        self.spare.take()
+    }
+
+    /// A relayout failed outside [`relayout`] (the derived document): drops the state, keeping a
+    /// given-back result aside.
+    pub(crate) fn fail(&mut self) {
+        if std::mem::take(&mut self.given_back) {
+            self.spare = self.base.take().map(|b| b.layout).or_else(|| self.layout.take());
+        }
+        let spare = self.spare.take();
+        self.clear();
+        self.spare = spare;
     }
 
     #[must_use]
@@ -208,14 +311,18 @@ impl IncrState {
     pub fn clear(&mut self) {
         self.drop_base();
         self.memo.clear();
+        self.spare = None;
     }
 
-    /// Drops the previous run (level 2) and the last result; the paragraph memo stays.
+    /// Drops the previous run (level 2) and the last result; the paragraph memo stays. A lend in
+    /// course ends (its give-back is refused: the borrower keeps the layout).
     fn drop_base(&mut self) {
         self.base = None;
         self.layout = None;
         self.report = None;
         self.no_base = None;
+        self.lent = None;
+        self.given_back = false;
     }
 
     /// A full relayout outside this state (another view).
@@ -255,10 +362,30 @@ pub(crate) fn relayout(
     o: &LayoutOptions,
     hyph: &mut HyphenSessions,
 ) -> LResult<()> {
+    if st.lent.take().is_some() {
+        // the previous result is out and was not given back: the kept run has no pages (wave 6, L)
+        st.base = None;
+        st.layout = None;
+        st.no_base = Some(FallbackReason::Lent);
+    }
     let r = relayout_in(st, ldoc, provider, o, hyph);
-    if r.is_err() {
-        // on any error nothing is kept, the paragraph memo included (decision 7)
-        st.clear();
+    st.given_back = false;
+    match &r {
+        Ok(()) => {
+            st.spare = None;
+            if let Some(rep) = st.report.as_mut()
+                && rep.path == RelayoutPath::Full
+            {
+                rep.changed_pages = rep.relaid_pages.clone().collect();
+            }
+        }
+        Err(_) => {
+            // on any error nothing is kept, the paragraph memo included (decision 7); a given-back
+            // result the call did not consume stays aside for the borrower
+            let spare = st.spare.take();
+            st.clear();
+            st.spare = spare;
+        }
     }
     r
 }
@@ -271,10 +398,18 @@ fn relayout_in(
     hyph: &mut HyphenSessions,
 ) -> LResult<()> {
     let mut report = RelayoutReport::default();
+    let given = st.given_back;
     let attempt = match st.base.take() {
-        Some(b) if st.cfg.enabled => {
+        Some(mut b) if st.cfg.enabled => {
             st.memo.begin_call(ldoc, &effective_opts(ldoc, o));
-            incremental(b, ldoc, provider, o, hyph, &mut st.memo, &mut report)
+            // the previous result apart from the kept run: when the attempt falls back before the page
+            // assembly takes its pages, a given-back result goes back to its borrower on an error
+            let mut prev = std::mem::take(&mut b.layout);
+            let r = incremental(b, &mut prev, ldoc, provider, o, hyph, &mut st.memo, &mut report);
+            if given && !prev.pages.is_empty() {
+                st.spare = Some(prev);
+            }
+            r
         }
         Some(_) => Ok(Err(FallbackReason::Disabled)),
         None => Ok(Err(if st.cfg.enabled { st.no_base.unwrap_or(FallbackReason::NoBase) } else { FallbackReason::Disabled })),
@@ -391,8 +526,10 @@ fn full(
 
 /// The incremental relayout on `base`: `Ok(Err(reason))` when it cannot be done (the caller lays
 /// out in full; `base` is consumed either way).
+#[expect(clippy::too_many_arguments, reason = "the previous result travels apart from the kept run (wave 6, L)")]
 fn incremental(
     mut base: Box<Base>,
+    prev: &mut Layout,
     ldoc: &LDoc<'_>,
     provider: &dyn FontProvider,
     o: &LayoutOptions,
@@ -428,6 +565,7 @@ fn incremental(
     let Some((b0, b1)) = range else {
         // nothing the layout reads changed: the previous layout is this one
         base.parts = keys::DocParts::of(doc);
+        base.layout = std::mem::take(prev);
         report.relaid_pages = 0..0;
         return Ok(Ok(base));
     };
@@ -476,7 +614,7 @@ fn incremental(
         if let Some(l) = call.resolver.log.take() {
             asks.extend(l);
         }
-        let (fonts, resolver, res, mut images) = restore(&base.tables, &base.layout.resources, &c.lens)?;
+        let (fonts, resolver, res, mut images) = restore(&base.tables, &prev.resources, &c.lens)?;
         images.warnings.clone_from(&c.img_warnings);
         (call.fonts, call.resolver, call.res, call.images, call.line_seq) = (fonts, resolver, res, images, c_line);
         let mut eng: Engine = (*c.eng).clone();
@@ -501,7 +639,7 @@ fn incremental(
             new_cps: Vec::new(),
             found: None,
             tables: &base.tables,
-            res: &base.layout.resources,
+            res: &prev.resources,
             c_lens,
             line_start: pr.line_start,
             shift,
@@ -564,7 +702,7 @@ fn incremental(
                 }
                 let mut end = pr.end;
                 end.line_seq = map_id(&tail_maps, end.line_seq);
-                let (fonts, resolver, res, images) = restore(&base.tables, &base.layout.resources, &pr.end)?;
+                let (fonts, resolver, res, images) = restore(&base.tables, &prev.resources, &pr.end)?;
                 (call.fonts, call.resolver, call.res, call.images, call.line_seq) = (fonts, resolver, res, images, end.line_seq);
                 call.images.warnings.clear();
                 if let (Some(all), Some(pf)) = (call.fields.as_mut(), pr.fields.as_ref()) {
@@ -584,7 +722,7 @@ fn incremental(
                 let fields = eng.fields.clone();
                 let end = CallLens::of_call(&call);
                 call.end_pass(&mut eng, Ok(()))?;
-                if i + 1 < m && !same_tables_at(&call, &base.tables, &base.layout.resources, &pr.end, &c_lens) {
+                if i + 1 < m && !same_tables_at(&call, &base.tables, &prev.resources, &pr.end, &c_lens) {
                     return Ok(Err(F::Tables));
                 }
                 let next_shift = i64::from(end.line_seq) - i64::from(pr.end.line_seq);
@@ -618,7 +756,7 @@ fn incremental(
     };
 
     // ── the page assembly, reusing the pages not laid out again ──
-    let mut old_pages: Vec<Option<crate::output::LayoutPage>> = std::mem::take(&mut base.layout.pages).into_iter().map(Some).collect();
+    let mut old_pages: Vec<Option<crate::output::LayoutPage>> = std::mem::take(&mut prev.pages).into_iter().map(Some).collect();
     let pass_end_warnings = fin.ctx.warnings.clone();
     let pages = std::mem::take(&mut fin.pages);
     let mut out = Vec::with_capacity(pages.len());
@@ -640,8 +778,18 @@ fn incremental(
             out.push(fin.finish_page(&mut cx, ps, &env, reuse)?);
         }
     }
+    // wave 6 (L): which pages laid out again differ from the previous result's page (the shell repaints
+    // only those); the LA7 equality, `Debug` (the bulk columns by bits: `bits::same_page`; a page not compared counts as changed)
+    report.changed_pages = report
+        .relaid_pages
+        .clone()
+        .filter(|&ix| match (out.get(ix as usize), old_pages.get(ix as usize).and_then(Option::as_ref)) {
+            (Some(new), Some(old)) => !bits::same_page(new, old),
+            _ => true,
+        })
+        .collect();
     fin.pages = pages;
-    if !same_tables_final(&call, &base.tables, &base.layout.resources, &resume_lens) {
+    if !same_tables_final(&call, &base.tables, &prev.resources, &resume_lens) {
         return Ok(Err(F::Tables));
     }
     call.take_fields(&mut fin);

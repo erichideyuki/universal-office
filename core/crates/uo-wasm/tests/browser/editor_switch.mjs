@@ -20,7 +20,9 @@
 //   shell engines, handles 0 after each remove, one page environment, live bytes flat after warm-up, memory.buffer stops growing.
 // - latency: the 50-page document of tools/bench/memory/gen_docs.mjs (seed 14, 310 paragraphs) per engine: 200 typed keys (the
 //   synchronous `input` event: TS type → fast path → paint; Rust exec → relayout → paint), 20 Enter, 20 Backspace; median / p95,
-//   the Rust breakdown and the incremental share. Recorded, not a gate.
+//   the Rust breakdown and the incremental share. Recorded, not a gate. Wave 6 (L): a real clock (its own BrowserContext), also
+//   the 500-page document (seed 14, 3,100 paragraphs: 30 keys, 5 Enter/Backspace), the per-stage medians, the Enter/Backspace
+//   report path and memo hits, the wasm memory per phase.
 // - keys: AltGr and Option characters (CDP) type the same in both engines; the browser's default of the keys the shell does not
 //   run survives or not as in the TS (F5, F11, Esc… run; Shift+Tab, Alt+ArrowLeft, F9… are prevented).
 // - chrome: compact and ribbon bars with engine="rust": routed buttons change the session state, a non-routed command is disabled;
@@ -29,6 +31,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { setup, core, NOW } from './editor_switch_lib.mjs';
 
 void NOW;
@@ -46,11 +49,17 @@ const target = process.env.CARGO_TARGET_DIR ?? join(core, 'target');
 const wasmPath = process.env.UO_WASM_PATH ?? join(target, 'es/uo_wasm_session.wasm');
 const outDir = join(target, 'es-editor');
 const pages50 = join(target, 'es/pages50.docx');
+/** wave 6 (L): the 500-page document of the latency mode (gen_docs seed 14, 3,100 paragraphs), generated when absent */
+const pages500 = join(target, 'es/pages500.docx');
 const { unzipSync } = createRequire(join(root, 'write/package.json'))('fflate');
+if (MODE === 'latency' && !existsSync(pages500) && existsSync(pages50) && !process.env.UO_ES_NO500) {
+  const { buildDocx, loadFflate } = await import(pathToFileURL(join(core, 'tools/bench/memory/gen_docs.mjs')).href);
+  writeFileSync(pages500, buildDocx({ fflate: await loadFflate(root), seed: 14, paragraphs: 3100 }));
+}
 
 const env = await setup({
   root, wasmPath, outDir, stride: STRIDE, only: process.env.UO_ES_ONLY,
-  extraDocs: existsSync(pages50) ? { 'pages50.docx': pages50 } : {},
+  extraDocs: { ...(existsSync(pages50) ? { 'pages50.docx': pages50 } : {}), ...(MODE === 'latency' && existsSync(pages500) && !process.env.UO_ES_NO500 ? { 'pages500.docx': pages500 } : {}) },
 });
 let failures = 0;
 const fail = (m) => { failures++; console.log(`FAIL ${m}`); };
@@ -236,30 +245,6 @@ const helpers = () => {
       return { pages: cs.length, sizes, thumbs, screen, withOverlays, shots, docx: btoa(bin) };
     },
     stats() { return window.__e.UniversalWriteElement.engineStats(); },
-    // latency: the synchronous cost of one input event / one keydown on the hidden textarea
-    async latency(n) {
-      const el = api.el;
-      el.setSelection({ para: 155, offset: 5 });
-      el.focusEditor();
-      const input = el.input;
-      if (el.rust) el.rust.setMarks(true);
-      const type = [], enter = [], back = [];
-      for (let i = 0; i < n; i++) {
-        input.value = 'a';
-        const t0 = performance.now();
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        type.push(performance.now() - t0);
-      }
-      const typeMarks = el.rust ? el.rust.marks.slice() : [];
-      for (const [list, key] of [[enter, 'Enter'], [back, 'Backspace']]) {
-        for (let i = 0; i < 20; i++) {
-          const t0 = performance.now();
-          input.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true }));
-          list.push(performance.now() - t0);
-        }
-      }
-      return { type, enter, back, marks: typeMarks, pages: el.layoutPageCount() };
-    },
     // memory: create → load → 20 typed characters → save → remove
     async soakOnce(n) {
       await api.make('rust');
@@ -318,7 +303,13 @@ let cdp = null;
 async function runStep(step) {
   const page = env.page;
   const at = async (s) => ev((t) => window.__es.scrollTo(t), s.scrollTop);
-  if (step.k === 'click') { await at(step); await page.mouse.click(step.x, step.y); }
+  // wave 6 (C, D-C3): `clickTarget` set the target's selection in the TS run only (to measure its caret); the same
+  // `setSelection` goes before the click in BOTH runs (a no-op in the TS run), so a click that lands on an object (which
+  // keeps the caret) starts from the same caret in the Rust run (record "Wave 6 — C")
+  if (step.k === 'click') {
+    if (step.para !== undefined) await ev((q) => { window.__es.el.setSelection({ para: q.para, offset: q.offset }); window.__es.drain(); }, step);
+    await at(step); await page.mouse.click(step.x, step.y);
+  }
   else if (step.k === 'shiftclick') { await at(step); await page.keyboard.down('Shift'); await page.mouse.click(step.x, step.y); await page.keyboard.up('Shift'); }
   else if (step.k === 'drag') { await at(step); await page.mouse.move(step.x, step.y); await page.mouse.down(); await page.mouse.move(step.x2, step.y2, { steps: 4 }); await page.mouse.up(); }
   else if (step.k === 'dblclick') { await at(step); await page.mouse.dblclick(step.x, step.y); }
@@ -352,32 +343,28 @@ async function runStep(step) {
  * is informative (ED-8).
  */
 const DECLARED = {
-  // ED-16 (a clipboard step, since fix round 2 only the copied text/plain: the TS joins paragraphs with CRLF, the shell
-  // with LF; the keyboard paste goes through the session's pasteData and is equal)
-  'f2-3-1': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'gate-10', why: 'the same saved bytes, other pages (the automatic hyphen of gate item 10)' },
-  'f2-3-2': { from: 0, facets: ['selection', 'caret rect', 'uw-* events'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'gate-1', why: 'a click at the TS caret x of offset 131 hits offset 128 (x 366.3 vs 367.1 px): the caret/hit x mapping' },
-  'f2-3-3': { from: 4, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'gate-1', why: 'a click at the TS caret x of paragraph 16 offset 162 hits offset 159: the caret/hit x mapping' },
-  'f7a__7__1': { from: 5, facets: ['selection', 'caret rect', 'state run'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'gate-1', why: 'PageUp: the 20 line moves over mixed-size lines land on another line (goal x = the caret x)' },
-  'f7a__7__13': { from: 0, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'clipboard text'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'gate-1', why: 'a click on a mixed-size line hits another offset' },
-  'f7a__7__14': { from: 3, facets: ['clipboard text'], id: 'ED-16', why: 'clip copy over a paragraph mark: the TS text/plain has CRLF, the shell LF' },
-  'f7a__7__2': { from: 0, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'clipboard text'], end: ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'gate-1', why: 'a click on a mixed-size line hits another offset' },
-  'f7a__7__3': { from: 4, facets: ['selection', 'caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'gate-1', why: 'ArrowDown from a mixed-size line: offset 84 vs 82' },
-  'f7a__7__4': { from: 0, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'clipboard text'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'gate-1', why: 'a click on a mixed-size line hits another offset' },
-  // front O (wave 5): floats are selectable now; this click lands on a shape that carries text (an ellipse with a txbx
-  // story). Fix round 1 (UO_ES_TRACE=1): the TS moves the caret to para 2 offset 256 (one uw-change), the shell selects the
-  // shape (ED-202b's uw-change, the caret stays at para 5 offset 100); the later steps act at the other caret. Facets
-  // narrowed to the ones that differ; the cause of the TS's caret is not isolated (front O gate list)
-  'f7b__7__10': { from: 6, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events', 'clipboard text'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216', why: 'a click on a text-bearing shape: the TS places the caret in the text (para 2 offset 256), the shell selects the shape; later steps follow' },
-  'f7c__7__1': { end: ['thumbnail pixels'], id: 'gate-10', why: 'the same saved bytes, other pages (gate item 10)' },
-  'f7c__7__5': { from: 6, facets: ['clipboard text'], end: ['thumbnail pixels'], id: 'ED-16; gate-10', why: 'clip cutplain: the TS text/plain has CRLF; end: the same saved bytes, other pages (gate item 10 family, not confirmed per page)' },
-  'f7d__7__10': { from: 3, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216; wave-6', why: 'wave 5 (orchestrator, stride 1): a click on a text box or text-bearing shape: one engine enters the box, the other selects the object or keeps the caret (the TS hitTextbox rule vs the S/O hit order; S ED-102, O ED-216); fix in wave 6, then drop this entry' },
-  'f7d__7__11': { from: 7, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216; wave-6', why: 'wave 5 (orchestrator, stride 1): a click on a text box or text-bearing shape: one engine enters the box, the other selects the object or keeps the caret (the TS hitTextbox rule vs the S/O hit order; S ED-102, O ED-216); fix in wave 6, then drop this entry' },
-  'f7d__7__6': { from: 3, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216; wave-6', why: 'wave 5 (orchestrator, stride 1): a click on a text box or text-bearing shape: one engine enters the box, the other selects the object or keeps the caret (the TS hitTextbox rule vs the S/O hit order; S ED-102, O ED-216); fix in wave 6, then drop this entry' },
-  'f7d__7__7': { from: 0, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events', 'clipboard text'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216; wave-6', why: 'wave 5 (orchestrator, stride 1): a click on a text box or text-bearing shape: one engine enters the box, the other selects the object or keeps the caret (the TS hitTextbox rule vs the S/O hit order; S ED-102, O ED-216); fix in wave 6, then drop this entry' },
-  'f7d__7__9': { end: ['screen pixels (TS overlays off)'], id: 'BUG-1', why: 'the final backward selection (focus before anchor) is not painted: uo_session_selection_rects does not normalize the range' },
-  // frontier S (wave 5): the ED-7 entries of tables, notes and text boxes (f7b__7__1/4/5/6/7/9, f7c__7__13, f7d__7__8) are
-  // equal since the stories routing (removed); f8__7__5 step 11 enters the text box in both engines now, the end differs:
-  'f8__7__5': { from: 3, facets: ['clipboard text'], end: ['screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-16; ED-106; ED-108', why: 'step 3: clip copyplain over a paragraph mark (CRLF text/plain); end: the TS paints the handles of the edited text box (frontier O) and saves a truncated document.xml with the caret inside the box (a TS defect, ED-108)' },
+  // wave 6 (C): the gate-1 entries (f2-3-2, f7a__7__1/2/3/4/13), gate-10 f2-3-1, the ED-16 CRLF entries (f7a__7__14 and the
+  // clipboard parts of f7c__7__5, f8__7__5), the click entries (f7b__7__10, f7d__7__6/7/10: ED-216; wave-6) and BUG-1
+  // (f7d__7__9) are equal and removed: the editor registers the hyphenation patterns (copy-on-write, uo-wasm write.rs), the
+  // parity driver replays the click target's selection in both runs (runStep), the keys with an object selected follow the
+  // TS keydown order, the keyboard copy/cut go through navigator.clipboard and the selection rectangles normalize the range
+  // (record "Wave 6 — C"). What is left:
+  // wave 6 (C), measured (the end screens dumped): the Strong runs are orange in the TS and red in the session — the style's
+  // w:color C00000 with themeColor accent2 and no theme part (gate-O3 of frontier O), not the hyphenation
+  'f2-3-3': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'gate-O3', why: 'a theme color without a theme part: the TS paints its default theme accent2, the session the C00000' },
+  // wave 6 (C), measured: the TS-saved document reopened in both engines (editor_switch_objects --mode probe) differs too
+  // (f7c__7__1: page 1, a run boundary drawn with a gap and the last glyph of a line; f7c__7__5: the screen of pages 0-1),
+  // with the incremental state dropped before the end the same: the layout of the content, not the editing path
+  'f7c__7__1': { end: ['thumbnail pixels'], id: 'gate-10', why: 'the same saved bytes; the reopened document differs as well (a layout difference of the content, not the editing)' },
+  'f7c__7__5': { end: ['thumbnail pixels'], id: 'gate-10', why: 'the same saved bytes; the reopened document differs as well (a layout difference of the content, not the editing)' },
+  // a frozen-TS defect (reference, not reproduced): typing in the anchor paragraph of a selected shape leaves the TS
+  // `floatSel` on a run that is no longer in the model (traced: selectedObjectCount 1, selectedFloat() null from step 9), so
+  // Delete misses the floatSel branch and deletes a character (one uw-change); the session keeps the shape selected and
+  // deletes it (two). The later state differs to the end
+  'f7d__7__11': { from: 11, facets: ['uw-* events', 'state para'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-600', why: 'Delete after typing with a shape selected: the TS floatSel went stale (a TS defect), the session deletes the shape' },
+  // frontier S (wave 5): f8__7__5 step 11 enters the text box in both engines; saving with the caret in it, the TS writes a
+  // truncated document.xml (a TS defect, ED-108)
+  'f8__7__5': { end: ['saved .docx part bytes'], id: 'ED-108', why: 'saving with the caret inside the text box, the TS writes a truncated document.xml (a TS defect)' },
 };
 const STEP_FACETS = ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'dirty', 'clipboard text'];
 const END_FACETS = ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part names', 'saved .docx part bytes'];
@@ -552,27 +539,145 @@ if (MODE === 'memory' || MODE === 'all') {
 }
 
 // ── latency ────────────────────────────────────────────────────────────────────────────────────
+// Wave 6 (L): a REAL clock (a new BrowserContext without `clock.setFixedTime`: Playwright's clock is per context, so a second
+// page of the harness context is still faked and `performance.now()` advances in whole ms), pages50 and pages500, the TS and
+// the Rust engine in the same invocation (interleaved per document: the machine's load drifts between runs), median/p95 of
+// typed keys, Enter and Backspace, the per-stage medians of the Rust key (the marks of rust-engine.ts plus instance wrappers),
+// the report path/reason/memo of Enter and Backspace, and the wasm memory (memory.buffer, live bytes with a count build).
+// UO_ES_ROUNDS (1), UO_ES_NTYPE/UO_ES_NKEY (200/20 on pages50, 30/5 on pages500), UO_ES_ENGINES (ts,rust), UO_ES_NO500.
+const latencyRun = async ({ engine, name, nType, nKey }) => {
+  const now = () => performance.now();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const el = document.createElement('universal-write');
+  if (engine === 'rust') el.setAttribute('engine', 'rust');
+  el.setAttribute('fonts', '/fonts');
+  el.style.cssText = 'display:block;width:1000px;height:800px';
+  const ready = new Promise((r) => el.addEventListener('uw-ready', r, { once: true }));
+  document.body.appendChild(el);
+  await ready;
+  const bytes = new Uint8Array(await (await fetch(`/docs/${name}`)).arrayBuffer());
+  el.loadDocx(bytes, { protected: false });
+  if (el.rust) await el.rust.idle(); else { await document.fonts.ready; await sleep(500); }
+  el.refresh();
+  if (el.rust) await el.rust.idle(); else await sleep(500);
+  const para = Math.floor((el.rust ? el.rust.session.storyInfo().paras : el.model.paragraphs.length) / 2);
+  el.setSelection({ para, offset: 5 });
+  el.focusEditor();
+  const stats = () => window.__e.UniversalWriteElement.engineStats?.() ?? null;
+  const mem = (phase) => { const s = stats(); return { phase, buffer: s?.buffer ?? null, live: s?.live ?? null }; };
+  const memory = [mem('open')];
+  const stages = {};
+  const add = (k, v) => { (stages[k] ??= []).push(v); };
+  let cur = null;
+  const wrap = (obj, key, label) => {
+    const f = obj?.[key];
+    if (typeof f !== 'function' || f.__w) return;
+    const g = function (...a) { const t = now(); try { return f.apply(this, a); } finally { if (cur) cur[label] = (cur[label] ?? 0) + now() - t; } };
+    g.__w = true;
+    obj[key] = g;
+  };
+  const ed = el.rust;
+  if (ed) {
+    ed.setMarks(true);
+    wrap(ed.session, 'caretRect', 'caret');
+    wrap(ed.session, 'selectionRects', 'selRects');
+    wrap(ed, 'rebuildCanvases', 'canvases');
+    wrap(ed, 'baseOf', 'baseOf');
+    wrap(ed, 'paint', 'paint');
+    wrap(ed, 'positionProxy', 'proxy');
+    const adopt = ed.mod.adopt;
+    ed.mod.adopt = function (...a) {
+      const dl = adopt.apply(ed.mod, a);
+      wrap(dl.inner, 'encodePage', 'decode');
+      wrap(dl, 'paintItems', 'paintItems');
+      wrap(dl, 'faceKey', 'faceKey');
+      return dl;
+    };
+  }
+  const type = [];
+  for (let i = 0; i < nType; i++) {
+    cur = {};
+    el.input.value = 'a';
+    const t0 = now();
+    el.input.dispatchEvent(new Event('input', { bubbles: true }));
+    type.push(now() - t0);
+    for (const [k, v] of Object.entries(cur)) add(k, v);
+    cur = null;
+    if (i % 10 === 9) await sleep(0);
+  }
+  const typeMarks = ed ? ed.marks.slice() : [];
+  memory.push(mem('type'));
+  const keys = { Enter: [], Backspace: [] };
+  const reports = { Enter: [], Backspace: [] };
+  for (const key of ['Enter', 'Backspace']) {
+    for (let i = 0; i < nKey; i++) {
+      cur = {};
+      const t0 = now();
+      el.input.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true }));
+      keys[key].push(now() - t0);
+      for (const [k, v] of Object.entries(cur)) add(`${key}.${k}`, v);
+      cur = null;
+      if (ed) { const r = ed.shell.report(); if (r) reports[key].push({ path: r.path, reason: r.reason, relaid: r.relaid, memoHits: r.memoHits, memoMisses: r.memoMisses }); }
+      await sleep(0);
+    }
+    memory.push(mem(key));
+  }
+  const pages = el.layoutPageCount();
+  el.remove();
+  await sleep(0);
+  memory.push(mem('removed'));
+  return { pages, type, keys, stages, typeMarks, reports, memory };
+};
+
 if (MODE === 'latency') {
-  if (!existsSync(pages50)) fail(`latency: ${pages50} is absent (tools/bench/memory/gen_docs.mjs, seed 14, 310 paragraphs)`);
-  else {
-    const stat = (a) => { const s = [...a].sort((x, y) => x - y); return { median: +s[Math.floor(s.length / 2)].toFixed(2), p95: +s[Math.min(s.length - 1, Math.floor(s.length * 0.95))].toFixed(2) }; };
-    for (const engine of ['ts', 'rust']) {
-      await env.openPage();
-      await env.page.evaluate(helpers);
-      await ev((e) => window.__es.make(e), engine);
-      await ev(() => window.__es.load('pages50.docx'));
-      const r = await ev((n) => window.__es.latency(n), 200);
-      console.log(`latency ${engine}: ${r.pages} pages; type ${JSON.stringify(stat(r.type))} ms; Enter ${JSON.stringify(stat(r.enter))} ms; Backspace ${JSON.stringify(stat(r.back))} ms`);
-      if (engine === 'rust' && r.marks.length) {
-        const m = (f) => stat(r.marks.map((x) => x[f]));
-        const inc = r.marks.filter((x) => x.path === 'incremental').length;
-        const reasons = {};
-        for (const x of r.marks) if (x.reason) reasons[x.reason] = (reasons[x.reason] ?? 0) + 1;
-        console.log(`  rust breakdown per typed key (median/p95 ms): exec ${JSON.stringify(m('exec'))}, relayout ${JSON.stringify(m('relayout'))}, adopt (handle + decode heads) ${JSON.stringify(m('adopt'))}, install + paint ${JSON.stringify(m('paint'))}; incremental ${inc}/${r.marks.length}; full reasons ${JSON.stringify(reasons)}`);
+  const docs = ['pages50.docx', 'pages500.docx'].filter((n) => env.docsByName.has(n));
+  if (!docs.includes('pages50.docx')) fail(`latency: ${pages50} is absent (tools/bench/memory/gen_docs.mjs, seed 14, 310 paragraphs)`);
+  if (!docs.includes('pages500.docx')) console.log(`latency: ${pages500} is absent: pages500 skipped`);
+  const st = (a) => { if (!a || !a.length) return '-'; const s = [...a].sort((x, y) => x - y); return `${s[Math.floor(s.length / 2)].toFixed(2)}/${s[Math.min(s.length - 1, Math.floor(s.length * 0.95))].toFixed(2)}`; };
+  const first = env.page ?? await env.openPage();
+  const url = first.url();
+  const ctx = await first.context().browser().newContext({ timezoneId: 'UTC', deviceScaleFactor: 1, viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => {
+    let s = 1;
+    Math.random = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+    window.__seed = (n) => { s = n >>> 0 || 1; };
+  });
+  const ROUNDS = Number(process.env.UO_ES_ROUNDS ?? 1);
+  for (const name of docs) {
+    const big = name === 'pages500.docx';
+    const nType = Number(process.env.UO_ES_NTYPE ?? (big ? 30 : 200));
+    const nKey = Number(process.env.UO_ES_NKEY ?? (big ? 5 : 20));
+    const engines = (process.env.UO_ES_ENGINES ?? 'ts,rust').split(',');
+    for (let round = 0; round < ROUNDS; round++) {
+      for (const engine of engines) {
+        const page = await ctx.newPage();
+        page.on('pageerror', (e) => { env.errors.push(e.message); console.log('PAGE ERROR', e.message); });
+        await page.goto(url);
+        await page.waitForFunction(() => window.__ready === true, null, { timeout: 60000 });
+        const r = await page.evaluate(latencyRun, { engine, name, nType, nKey });
+        await page.close();
+        console.log(`latency ${name} ${engine}${ROUNDS > 1 ? ` round ${round}` : ''}: ${r.pages} pages; type ${st(r.type)} (n=${r.type.length}); Enter ${st(r.keys.Enter)}; Backspace ${st(r.keys.Backspace)} (median/p95 ms, real clock)`);
+        if (engine !== 'rust') continue;
+        if (r.typeMarks.length) {
+          const m = (f) => st(r.typeMarks.map((x) => x[f]));
+          const inc = r.typeMarks.filter((x) => x.path === 'incremental').length;
+          const reasons = {};
+          for (const x of r.typeMarks) if (x.reason) reasons[x.reason] = (reasons[x.reason] ?? 0) + 1;
+          console.log(`  rust marks per typed key (median/p95 ms): exec ${m('exec')}, relayout ${m('relayout')}, adopt ${m('adopt')}, install + paint ${m('paint')}; incremental ${inc}/${r.typeMarks.length}; full reasons ${JSON.stringify(reasons)}`);
+        }
+        const typed = Object.entries(r.stages).filter(([k]) => !k.includes('.'));
+        console.log(`  rust stages per typed key (median/p95 ms, inclusive): ${typed.map(([k, v]) => `${k} ${st(v)}`).join(', ')}`);
+        for (const key of ['Enter', 'Backspace']) {
+          const rs = r.reports[key];
+          const paths = {};
+          for (const x of rs) { const k = `${x.path}${x.reason ? `/${x.reason}` : ''}`; paths[k] = (paths[k] ?? 0) + 1; }
+          console.log(`  ${key}: reports ${JSON.stringify(paths)}, memo hits ${st(rs.map((x) => x.memoHits))}, misses ${st(rs.map((x) => x.memoMisses))}`);
+        }
+        console.log(`  memory: ${r.memory.map((x) => `${x.phase} buffer ${x.buffer} live ${x.live}`).join('; ')}`);
       }
-      await ev(() => window.__es.remove());
     }
   }
+  await ctx.close();
 }
 
 // ── keys ───────────────────────────────────────────────────────────────────────────────────────

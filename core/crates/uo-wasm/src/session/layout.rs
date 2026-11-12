@@ -155,6 +155,6 @@ pub fn scope_key(s: &Session) -> String {
         }
         EditContext::HeaderFooter { part, page, .. } => format!("h{}@{page}", part.0),
         EditContext::Note { footnote, id, .. } => format!("n{footnote}{}", id.to_bits()),
-        EditContext::Textbox { para, run, .. } => format!("t{para}.{run}"),
+        EditContext::Textbox { at, .. } => format!("t{at}"),
     }
 }

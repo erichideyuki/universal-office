@@ -14,7 +14,7 @@ export type StoryCtx =
   | { kind: 'cell'; anchor: number; hops: StoryHop[] }
   | { kind: 'note'; footnote: boolean; id: number }
   | { kind: 'hf'; hfKind: 'header' | 'footer'; part: number; page: number }
-  | { kind: 'textbox'; para: number; run: number; host: number; focus: number; page: number; outer: StoryCtx };
+  | { kind: 'textbox'; para: number | null; run: number | null; at: string; host: number; focus: number; page: number; outer: StoryCtx };
 
 export interface StoryContext {
   ctx: StoryCtx;
@@ -89,8 +89,9 @@ export interface StoryHfPage {
 export interface StoryNoteRun { ref: { footnote: boolean; id: number } | null; mark: boolean }
 
 export interface StoryTextbox {
-  para: number;
-  run: number;
+  /** the chain head's top-level run (null: in a cell, a group or a box; wave 6) */
+  para: number | null;
+  run: number | null;
   host: number;
   focus: number;
   page: number;

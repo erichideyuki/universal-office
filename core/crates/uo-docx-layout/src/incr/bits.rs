@@ -105,3 +105,63 @@ pub(crate) fn prologue_string(e: &Engine) -> String {
     let geoms = e.geoms.get(..e.sect_geoms as usize).unwrap_or(&[]);
     format!("{:?};{:?};{:?};{:?}", e.cover_page, e.first_page_number, e.sect_geoms, geoms)
 }
+
+/// `format!("{a:?}") == format!("{b:?}")` without building the second string (wave 6, L: the pages an
+/// incremental relayout laid out again against the previous result's): `b`'s string once, then `a`'s
+/// `Debug` streamed against it, stopping at the first difference.
+pub(crate) fn same_debug<T: std::fmt::Debug>(a: &T, b: &T) -> bool {
+    struct Against<'s> {
+        want: &'s [u8],
+        at: usize,
+    }
+    impl Write for Against<'_> {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            let end = self.at + s.len();
+            if self.want.get(self.at..end) != Some(s.as_bytes()) {
+                return Err(std::fmt::Error);
+            }
+            self.at = end;
+            Ok(())
+        }
+    }
+    let want = format!("{b:?}");
+    let mut w = Against { want: want.as_bytes(), at: 0 };
+    write!(w, "{a:?}").is_ok() && w.at == want.len()
+}
+
+/// Whether two pages are the same, as `same_debug(a, b)` decides it but without formatting the bulk
+/// numeric columns (wave 6, L: the characters and the glyph columns were 85% of the comparison's
+/// cost): those compare by bits (stricter than `Debug` only for NaN payloads: a page then counts as
+/// changed), every other field by `Debug`. The destructuring is exhaustive: a new field does not
+/// compile until it is classed here.
+pub(crate) fn same_page(a: &crate::output::LayoutPage, b: &crate::output::LayoutPage) -> bool {
+    use crate::output::{CharsSoA, LayoutPage};
+    use uo_render::{GlyphColumns, ItemList, Page};
+    /// the character columns, the glyph columns, the text, the page size bits
+    type Bulk<'a> = (&'a [u32], &'a [f64], &'a [f64], &'a [u32], &'a [f64], &'a [u32], &'a [u16], [u64; 2]);
+    fn parts(p: &LayoutPage) -> (Bulk<'_>, impl std::fmt::Debug + '_) {
+        let LayoutPage { page, section, number, hf_items, lines, content_lines, chars, pfmts, objects, cells, item_meta, clip_src } = p;
+        let Page { w, h, list, background, background_fill, background_show } = page;
+        let ItemList { items, glyphs, runs, text, path_cmds } = list;
+        let GlyphColumns { cp, x: gx, gid } = glyphs;
+        let CharsSoA { o, x, w: cw } = chars;
+        let bulk = (&o[..], &x[..], &cw[..], &cp[..], &gx[..], &gid[..], &text[..], [w.to_bits(), h.to_bits()]);
+        let rest = (
+            (section, number, hf_items, lines, content_lines, pfmts, objects, cells),
+            (item_meta, clip_src, items, runs, path_cmds, background, background_fill, background_show),
+        );
+        (bulk, rest)
+    }
+    let bits = |x: &[f64], y: &[f64]| x.len() == y.len() && x.iter().zip(y).all(|(p, q)| p.to_bits() == q.to_bits());
+    let ((ao, ax, aw, acp, agx, agid, at, awh), ar) = parts(a);
+    let ((bo, bx, bw, bcp, bgx, bgid, bt, bwh), br) = parts(b);
+    ao == bo
+        && acp == bcp
+        && agid == bgid
+        && at == bt
+        && awh == bwh
+        && bits(ax, bx)
+        && bits(aw, bw)
+        && bits(agx, bgx)
+        && same_debug(&ar, &br)
+}

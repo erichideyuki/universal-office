@@ -4,7 +4,8 @@ name: Rust core
 # checks: format and clippy, tests on the three OSes, the memory gate (M1-M3 in the crates'
 # tests, the M2 soaks, M4 at the wasm and .NET boundaries, M6 with Miri and LeakSanitizer) and
 # the wasm build (with the memory tests and the parity self-tests of uo-fonts and uo-drawingml in
-# Node and WebKit), the fuzz targets (security, stage 4: core/fuzz) and the advisories of the
+# Node and WebKit), the viewer and editor switches (engine="rust": vitest, tsc, the package build and its
+# smoke test, the Chromium harnesses; the editor's three front harnesses only off push), the fuzz targets (security, stage 4: core/fuzz) and the advisories of the
 # dependencies. Opt-in tests (TS and .NET parity) print a SKIPPED line here. See
 # .claude/skills/rust-port/SKILL.md.
 
@@ -12,7 +13,7 @@ on:
   push:
     branches: [rust-core]
   pull_request:
-    paths: ['core/**', '.github/workflows/rust-core.yml']
+    paths: ['core/**', 'write/packages/editor/**', 'write/packages/viewer/**', 'tools/build-pkg.mjs', '.github/workflows/rust-core.yml']
   workflow_dispatch:
 
 permissions:
@@ -70,7 +71,9 @@ jobs:
             --exactOptionalPropertyTypes --erasableSyntaxOnly --verbatimModuleSyntax --skipLibCheck \
             crates/uo-codec/js/runtime.ts crates/uo-wasm/js/gen/*.ts tools/uo-schema/tests/fixtures/*.ts \
             crates/uo-wasm/js/paint.ts crates/uo-wasm/js/picture.ts crates/uo-wasm/js/viewer.ts crates/uo-wasm/js/viewer.check.ts \
-            ../write/packages/viewer/src/write-engine.d.ts crates/uo-wasm/js/session.d.ts
+            crates/uo-wasm/js/editor.check.ts ../write/packages/viewer/src/write-engine.d.ts ../write/packages/editor/src/write-session.d.ts \
+            crates/uo-wasm/js/session.d.ts crates/uo-wasm/js/session-stories.d.ts ../write/packages/editor/src/write-session-stories.d.ts \
+            ../write/packages/editor/src/write-session-objects.d.ts
       # the runtime builds for the browser (the generated codec is compiled for wasm32 by the lint job's clippy)
       - run: cargo build -p uo-codec --target wasm32-unknown-unknown --profile wasm
 
@@ -264,7 +267,8 @@ jobs:
       # libm and num-traits would bring non-JS float math back; every linked crate is under the [licenses] allow list (deny.toml)
       - run: cargo deny check bans licenses
       # core/licenses (the third-party notices that ship inside the npm products and the NuGet) equals what cargo tree says is
-      # linked into the write wasm and into uo_ffi; a new or bumped crate without regenerating them fails here
+      # linked into the write wasm (viewer module), the editor wasm (session module) and uo_ffi; a new or bumped crate without
+      # regenerating them fails here
       - run: node tools/licenses/gen-notices.mjs --check
 
   audit:
@@ -310,6 +314,14 @@ jobs:
       # FinalizationRegistry) and M2 (memory.buffer stops growing)
       # render-fixture adds the test-only render exports (the painter D/V tests below): one build runs every write and render test
       - run: cargo build -p uo-wasm --features count,write,render-fixture --target wasm32-unknown-unknown --profile wasm
+      # S11: this module is a TEST build (count, render-fixture): build-pkg must refuse to ship it. `if`, not `! cmd`: under bash -e a
+      # negated command never fails the step unless it is the last line
+      # The negative asserts the refusal itself (the message "build de teste"), so a broken build-pkg cannot pass it vacuously
+      - run: |
+          if UO_WRITE_WASM="$PWD/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm" node --input-type=module -e "const m = await import('../tools/build-pkg.mjs'); m.shipEngineWasm('write', process.env.RUNNER_TEMP + '/neg')" > "$RUNNER_TEMP/neg.log" 2>&1; then
+            echo 'a test build was shipped'; exit 1
+          fi
+          grep -q 'build de teste' "$RUNNER_TEMP/neg.log" || { echo 'refused for another reason:'; cat "$RUNNER_TEMP/neg.log"; exit 1; }
       - run: node --expose-gc --test crates/uo-wasm/tests/write_api.test.mjs
       # G4: cancellation inside the layout (uo_host.layout_poll, WriteError code 10)
       - run: node --expose-gc --test crates/uo-wasm/tests/write_cancel.test.mjs
@@ -371,6 +383,10 @@ jobs:
           cargo build -p uo-wasm --features session --target wasm32-unknown-unknown --profile wasm
           wasm-tools validate --features "$features" target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
           echo "session module: $(stat -c %s target/wasm32-unknown-unknown/wasm/uo_wasm.wasm) bytes"
+          # shipping of the editor module: chunks/uo-write-editor.wasm of the write package (content-checked: no test exports, no count)
+          cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm "$RUNNER_TEMP/uo-write-editor.wasm"
+          UO_WRITE_EDITOR_WASM="$RUNNER_TEMP/uo-write-editor.wasm" node --input-type=module -e "const m = await import('../tools/build-pkg.mjs'); if (!m.shipEngineWasm('write', process.env.RUNNER_TEMP + '/pkg', 'editor')) process.exit(1)"
+          test -f "$RUNNER_TEMP/pkg/chunks/uo-write-editor.wasm"
           echo '(module (func (drop (v128.const i32x4 0 0 0 0))))' | wasm-tools parse -o /tmp/simd.wasm
           ! wasm-tools validate --features "$features" /tmp/simd.wasm
       # the same tests inside WebKit, the engine of Safari
@@ -498,6 +514,124 @@ jobs:
           UO_TS_ROOT: ${{ github.workspace }}
           UO_WASM_PATH: ${{ github.workspace }}/core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
           UO_SW_STRIDE: '6'
+
+  editor:
+    name: Editor TS/Rust switch (engine=rust - vitest, tsc, package build and smoke, Chromium harnesses)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown && rustup default stable
+      # the products bundle the converter and the shared packages from source (as ci.yml)
+      - name: Install
+        working-directory: ${{ github.workspace }}
+        run: |
+          npm run install:converter
+          npm run install:fonts
+          npm run install:charts
+          npm run install:drawingml
+          npm run install:ui
+          npm run install:spell
+          npm install --prefix write
+          npm install --prefix sheet
+          npm install --prefix slides
+      - name: Build
+        working-directory: ${{ github.workspace }}
+        run: npm run build
+      # the editor and the viewer type-check (the harness writes the internal packages by source and runs the checkout's tsc; the same
+      # command that core/target/m2-verify-d.sh runs), and the engine's declarations under the strictest flags (the codec job)
+      - name: Editor and viewer tsc
+        working-directory: ${{ github.workspace }}
+        run: node core/crates/uo-wasm/tests/browser/editor_switch_tsc.mjs
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          CARGO_TARGET_DIR: ${{ runner.temp }}/es-target
+      # the session wasm with the counting allocator (`count`; never shipped): the shell's unit tests and every harness below
+      - run: cargo build -p uo-wasm --features session,count --target wasm32-unknown-unknown --profile wasm
+      - run: cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm "$RUNNER_TEMP/session_count.wasm"
+      # the editor's and the viewer's vitest through the harness config (the internal packages from source, the engine's JS side
+      # aliased; skips the wasm tests without UO_WASM_PATH)
+      - name: Editor unit tests
+        working-directory: ${{ github.workspace }}/write/packages/editor
+        run: node ../../node_modules/vitest/vitest.mjs run --config ${{ github.workspace }}/core/crates/uo-wasm/tests/browser/editor_switch_vitest.mjs
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          UO_ES_PKG: editor
+          UO_WASM_PATH: ${{ runner.temp }}/session_count.wasm
+      - name: Viewer unit tests
+        working-directory: ${{ github.workspace }}/write/packages/viewer
+        run: node ../../node_modules/vitest/vitest.mjs run --config ${{ github.workspace }}/core/crates/uo-wasm/tests/browser/editor_switch_vitest.mjs
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          UO_ES_PKG: viewer
+          UO_WASM_PATH: ${{ runner.temp }}/session_count.wasm
+      # the shell's API over the module (routes, handles, M4 through the FinalizationRegistry)
+      - run: node --expose-gc --test crates/uo-wasm/tests/shell_api.test.mjs
+        env:
+          UO_WASM_PATH: ${{ runner.temp }}/session_count.wasm
+          UO_ES_M4: '2000'
+      # the package, end to end (wave 6, front P): the two shipped modules (never `count` or `selftest`: build-pkg refuses them by
+      # content), then `build:pkg` of the editor package (the write package, with the viewer entry) and of document-viewer, with the
+      # modules REQUIRED, the licence notices and the types
+      - name: Package build
+        run: |
+          mkdir -p target/pkg-wasm
+          cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm
+          cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm target/pkg-wasm/uo-write.wasm
+          cargo build -p uo-wasm --features session --target wasm32-unknown-unknown --profile wasm
+          cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm target/pkg-wasm/uo-write-editor.wasm
+          cd "$GITHUB_WORKSPACE"
+          UO_WRITE_WASM="$PWD/core/target/pkg-wasm/uo-write.wasm" UO_WRITE_EDITOR_WASM="$PWD/core/target/pkg-wasm/uo-write-editor.wasm" \
+            UO_REQUIRE_ENGINE_WASM=1 node tools/build-pkg.mjs font-files document-viewer write
+          test -f write/packages/editor/publish/chunks/uo-write-editor.wasm
+          test -f write/packages/editor/publish/chunks/uo-write.wasm
+          test "$(ls write/packages/viewer/publish/chunks/*.wasm | wc -l)" = 1
+          test -f write/packages/editor/publish/licenses/uo-write-wasm/THIRD-PARTY-NOTICES.md
+          grep -q 'class UniversalWriteElement' write/packages/editor/publish/index.d.ts
+          grep -q 'class UniversalDocumentViewerElement' write/packages/editor/publish/viewer.d.ts
+          ls -l write/packages/editor/publish/chunks/*.wasm
+      - name: Chromium for the runners
+        working-directory: ${{ github.workspace }}
+        run: npx --prefix sheet playwright install --with-deps chromium
+      # the published package in Chromium: the default engine fetches no .wasm, the editor's module serves a viewer loaded after it,
+      # a viewer loaded first makes the rust editor refuse (the module order rule)
+      - run: node crates/uo-wasm/tests/browser/pkg_smoke.mjs
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+      # editor_switch.mjs in Chromium: phase 0 (an editor without engine="rust" never requests the wasm), parity TS vs Rust over every
+      # 6th fixture with scripted real input, the memory phase, the keys and the chrome. UO_TS_ROOT is this same checkout: the script
+      # takes only tools from it. Open fonts only (the DECLARED tables were measured on Windows; the first runs here are the Linux measure).
+      - run: node crates/uo-wasm/tests/browser/editor_switch.mjs --mode all
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          UO_WASM_PATH: ${{ runner.temp }}/session_count.wasm
+          UO_ES_STRIDE: '6'
+          UO_ES_SOAK: '50'
+      # the three front harnesses (stories, objects, review): longer (about 13 minutes together), so not on every push
+      - name: Stories, text boxes and notes harness
+        if: github.event_name != 'push'
+        run: node crates/uo-wasm/tests/browser/editor_switch_stories.mjs --mode all
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          UO_WASM_PATH: ${{ runner.temp }}/session_count.wasm
+          UO_ES_SOAK: '50'
+      - name: Objects harness
+        if: github.event_name != 'push'
+        run: node crates/uo-wasm/tests/browser/editor_switch_objects.mjs --mode all
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          UO_WASM_PATH: ${{ runner.temp }}/session_count.wasm
+          UO_EO_SOAK: '30'
+      - name: Review harness
+        if: github.event_name != 'push'
+        run: node crates/uo-wasm/tests/browser/editor_switch_review.mjs --mode all
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          UO_WASM_PATH: ${{ runner.temp }}/session_count.wasm
+          UO_ER_SOAK: '50'
 
   dotnet:
     name: .NET facade (server PDF parity, Editing API, frozen suite, D3 parity, boundary memory M4, thread soak) (${{ matrix.os }})

@@ -20,6 +20,7 @@ use super::super::command::{CommandError, Event, Outcome};
 use super::super::state::{CellHop, ContextStep, Selection};
 use super::super::text::{DocPosition, para_length};
 use super::super::{ExecCx, Session};
+use super::drawing::loc::{self, Step};
 use crate::ids::HfPartId;
 use crate::js::NumKey;
 use crate::model::Document;
@@ -27,6 +28,52 @@ use crate::model::para::Paragraph;
 use crate::model::story::{Block, Story};
 use crate::model::table::Table;
 use crate::word::refs::cell_at_grid;
+
+/// The box a [`EditContext::Textbox`] edits (the TS `tbEdit.hostRun`): its path into the outer
+/// context's story — a top-level paragraph run, or a box inside a table cell, a group or another box
+/// (`contextTextboxRuns`). Wave 6 (C): the first cut held `(para, run)` of a top-level run only.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TextboxAt(Arc<[Step]>);
+
+impl TextboxAt {
+    pub(crate) fn new(path: &[Step]) -> TextboxAt {
+        TextboxAt(Arc::from(path))
+    }
+
+    /// A top-level paragraph run of the outer story.
+    #[must_use]
+    pub fn top(para: u32, run: u32) -> TextboxAt {
+        TextboxAt::new(&[Step::Para { para, run }])
+    }
+
+    pub(crate) fn steps(&self) -> &[Step] {
+        &self.0
+    }
+
+    /// `(para, run)` when the box is a run of the outer story's own paragraphs.
+    #[must_use]
+    pub fn top_level(&self) -> Option<(u32, u32)> {
+        loc::top_level(&self.0)
+    }
+}
+
+impl std::fmt::Display for TextboxAt {
+    /// A short key (`p1.0/c0.1.2/i3/t`): the steps of the path.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, s) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_str("/")?;
+            }
+            match s {
+                Step::Cell { anchor, row, col } => write!(f, "c{anchor}.{row}.{col}")?,
+                Step::Para { para, run } => write!(f, "p{para}.{run}")?,
+                Step::Item(i) => write!(f, "i{i}")?,
+                Step::Content => f.write_str("t")?,
+            }
+        }
+        Ok(())
+    }
+}
 
 /// Where the edits go.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -40,10 +87,11 @@ pub enum EditContext {
     Note { footnote: bool, id: f64, saved: Selection },
     /// a header/footer part (`hfEdit`); `page` is the page it was entered on (`hfActivePage`)
     HeaderFooter { part: HfPartId, page: u32, saved: Selection },
-    /// a textbox (`tbEdit`): the run that holds it in the outer context's story; `host`/`focus`
-    /// are the box's order among that story's textbox runs and the focused box of a chain
-    /// (`te.h`/`te.f`), `page` the page it was entered on; `saved` the outer selection
-    Textbox { outer: Box<EditContext>, para: u32, run: u32, host: u32, focus: u32, page: u32, saved: Selection },
+    /// a textbox (`tbEdit`): `at` the run that holds it in the outer context's story (a path:
+    /// cells, group items and boxes in boxes too); `host`/`focus` are the box's order among that
+    /// story's textbox runs and the focused box of a chain (`te.h`/`te.f`), `page` the page it was
+    /// entered on; `saved` the outer selection
+    Textbox { outer: Box<EditContext>, at: TextboxAt, host: u32, focus: u32, page: u32, saved: Selection },
 }
 
 /// The context commands (D2a).
@@ -67,6 +115,10 @@ pub enum ContextCmd {
     EnterTextbox { para: u32, run: u32, host: u32, focus: u32, page: u32 },
     /// `exitTextbox()`
     ExitTextbox,
+    /// `enterTextbox(focusRun, …)` (wave 6, C): the box of order `focus` among the story's textbox
+    /// runs (`contextTextboxRuns`: cells, group items and boxes in boxes included); the edited content
+    /// is its chain's head (`textboxChain`), as the TS; `page` the page it was clicked on
+    EnterTextboxAt { focus: u32, page: u32 },
 }
 
 /// The block index `bi` of a story as a table anchor index.
@@ -123,8 +175,8 @@ fn resolve_cell_mut<'a>(t: &'a mut Table, hops: &[CellHop]) -> Option<&'a mut St
     resolve_cell_mut(Arc::make_mut(&mut a.table), rest)
 }
 
-fn textbox_story(outer: &Story, para: u32, run: u32) -> Option<&Story> {
-    let r = outer.paras.get(para as usize)?.runs.get(run as usize)?;
+fn textbox_story<'a>(outer: &'a Story, at: &TextboxAt) -> Option<&'a Story> {
+    let r = loc::run_at(outer, at.steps())?;
     r.ext().and_then(|e| e.textbox.as_deref()).map(|t| &t.content)
 }
 
@@ -142,8 +194,16 @@ pub fn story_of<'a>(doc: &'a Document, ctx: &EditContext) -> Option<&'a Story> {
             map.get(&NumKey::new(*id))
         }
         EditContext::HeaderFooter { part, .. } => doc.hf.get(part.index()).map(|h| &h.story),
-        EditContext::Textbox { outer, para, run, .. } => textbox_story(story_of(doc, outer)?, *para, *run),
+        EditContext::Textbox { outer, at, .. } => textbox_story(story_of(doc, outer)?, at),
     }
+}
+
+/// The box a [`EditContext::Textbox`] edits (the chain's head: its `drawing`, `story`, `link`), `None`
+/// in the other contexts (wave 6, C: the shell's chain of the box in edit, wherever it sits).
+#[must_use]
+pub fn textbox_of<'a>(doc: &'a Document, ctx: &EditContext) -> Option<&'a crate::model::run::DrawingTextbox> {
+    let EditContext::Textbox { outer, at, .. } = ctx else { return None };
+    loc::run_at(story_of(doc, outer)?, at.steps())?.ext()?.textbox.as_deref()
 }
 
 /// The story a context edits, for a change (copy-on-write down to it).
@@ -160,10 +220,9 @@ pub fn story_of_mut<'a>(doc: &'a mut Document, ctx: &EditContext) -> Option<&'a 
             map.get_mut(&NumKey::new(*id))
         }
         EditContext::HeaderFooter { part, .. } => doc.hf.make_mut(part.index()).map(|h| &mut h.story),
-        EditContext::Textbox { outer, para, run, .. } => {
+        EditContext::Textbox { outer, at, .. } => {
             let story = story_of_mut(doc, outer)?;
-            let p = story.paras.make_mut(*para as usize)?;
-            let r = p.runs.get_mut(*run as usize)?;
+            let r = loc::run_at_mut(story, at.steps())?;
             let tb = r.ext.as_deref_mut().and_then(|e| e.textbox.as_deref_mut())?;
             Some(&mut tb.content)
         }
@@ -459,7 +518,14 @@ impl Session {
                 if !matches!(self.ctx, EditContext::Body | EditContext::HeaderFooter { .. }) {
                     return Ok(Outcome::Done(self.change_set()));
                 }
-                let probe = EditContext::Textbox { outer: Box::new(self.ctx.clone()), para, run, host, focus, page, saved: self.selection };
+                let probe = EditContext::Textbox {
+                    outer: Box::new(self.ctx.clone()),
+                    at: TextboxAt::top(para, run),
+                    host,
+                    focus,
+                    page,
+                    saved: self.selection,
+                };
                 if story_of(&self.doc, &probe).is_none() {
                     return Ok(Outcome::Done(self.change_set()));
                 }
@@ -472,6 +538,12 @@ impl Session {
             }
             ContextCmd::ExitTextbox => {
                 self.exit_textbox();
+                Ok(Outcome::Done(self.change_set()))
+            }
+            ContextCmd::EnterTextboxAt { focus, page } => {
+                if matches!(self.ctx, EditContext::Body | EditContext::HeaderFooter { .. }) {
+                    self.enter_textbox_order(focus, page);
+                }
                 Ok(Outcome::Done(self.change_set()))
             }
         }

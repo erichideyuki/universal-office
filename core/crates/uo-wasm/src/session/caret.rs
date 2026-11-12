@@ -22,6 +22,11 @@ pub enum Dir {
     End,
     WordLeft,
     WordRight,
+    /// Ctrl+Home (wave 6, C): the story's start, assigned as the TS assigns `this.selection` (10606: no
+    /// canonical position, the pending properties and the float selection kept).
+    DocStart,
+    /// Ctrl+End: the story's end (the last paragraph's length), as [`Dir::DocStart`].
+    DocEnd,
 }
 
 impl Dir {
@@ -36,6 +41,8 @@ impl Dir {
             5 => Dir::End,
             6 => Dir::WordLeft,
             7 => Dir::WordRight,
+            8 => Dir::DocStart,
+            9 => Dir::DocEnd,
             _ => return None,
         })
     }
@@ -135,7 +142,7 @@ fn caret_focus(s: &Session, lines: Option<&EditLines>, dir: Dir) -> Option<DocPo
                 }
             }
         }
-        Dir::WordLeft | Dir::WordRight => return None,
+        Dir::WordLeft | Dir::WordRight | Dir::DocStart | Dir::DocEnd => return None,
     }
     Some(s.canon_pos(DocPosition { para, offset }))
 }
@@ -178,15 +185,31 @@ fn word_focus(s: &Session, right: bool) -> Option<DocPosition> {
     Some(DocPosition { para, offset })
 }
 
+/// Ctrl+Home/End (universal-write.ts 10606): `{ para: 0, offset: 0 }` or the last paragraph's end.
+fn doc_focus(s: &Session, end: bool) -> Option<DocPosition> {
+    let n = para_count(s);
+    if n == 0 {
+        return None;
+    }
+    Some(if end { DocPosition { para: n - 1, offset: plen(s, n - 1) } } else { DocPosition { para: 0, offset: 0 } })
+}
+
 /// The move: the new selection set (the anchor kept when `extend`), the pending properties cleared
-/// for the caret moves (not for the word moves, as the TS), and the change set. `None` when the
-/// session has no paragraphs in the context or the move needs lines it was not given.
+/// for the caret moves (not for the word moves nor Ctrl+Home/End, as the TS), and the change set.
+/// `None` when the session has no paragraphs in the context or the move needs lines it was not given.
 pub fn move_caret(s: &mut Session, lines: Option<&EditLines>, dir: Dir, extend: bool) -> Option<ChangeSet> {
     let word = matches!(dir, Dir::WordLeft | Dir::WordRight);
-    let focus = if word { word_focus(s, dir == Dir::WordRight)? } else { caret_focus(s, lines, dir)? };
+    let doc = matches!(dir, Dir::DocStart | Dir::DocEnd);
+    let focus = if word {
+        word_focus(s, dir == Dir::WordRight)?
+    } else if doc {
+        doc_focus(s, dir == Dir::DocEnd)?
+    } else {
+        caret_focus(s, lines, dir)?
+    };
     let sel = s.selection();
     s.set_selection_raw(if extend { Selection { anchor: sel.anchor, focus } } else { Selection { anchor: focus, focus } });
-    if !word {
+    if !word && !doc {
         s.set_pending_props(None);
     }
     Some(s.finish())
@@ -258,6 +281,12 @@ mod tests {
         at(&mut s, 1, 1);
         move_caret(&mut s, None, Dir::Right, false);
         assert_eq!(s.selection().focus, DocPosition { para: 1, offset: 1 });
+        // Ctrl+End / Ctrl+Shift+Home: no layout, the anchor kept with Shift
+        move_caret(&mut s, None, Dir::DocEnd, false);
+        assert_eq!(s.selection().focus, DocPosition { para: 1, offset: 1 });
+        move_caret(&mut s, None, Dir::DocStart, true);
+        assert_eq!(s.selection().anchor, DocPosition { para: 1, offset: 1 });
+        assert_eq!(s.selection().focus, DocPosition { para: 0, offset: 0 });
         // the line moves need a layout
         assert!(move_caret(&mut s, None, Dir::Up, false).is_none());
         assert_eq!(s.history().undo_len(), steps);

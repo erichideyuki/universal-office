@@ -559,7 +559,6 @@ const SCENARIOS = [
  * `from` the first step that may differ, `facets` the step facets ('*' all), `end` the end facets ('*' all).
  */
 const DECLARED = {
-  'T1': { steps: [18, 19, 49], facets: ['caret rect'], id: 'S-G1', why: 'the empty paragraph after the inserted table has no line in the live session layout (uo_layout_block_line answers none; saved and reopened it has one): no caret there (ArrowDown out of the last row, Ctrl+End)' },
   'X1 f8__7__5': { end: ['screen pixels'], id: 'ED-106', why: 'Esc in a text box: the TS leaves the box selected as a shape (the handles); the object selection is frontier O\'s' },
   'X1 f8__7__3': { end: ['screen pixels'], id: 'ED-106', why: 'Esc in a text box: the TS leaves the box selected as a shape (the handles); the object selection is frontier O\'s' },
   'X1 f7d__7__0': { end: ['screen pixels'], id: 'ED-106', why: 'Esc in a text box: the TS leaves the box selected as a shape (the handles); the object selection is frontier O\'s' },

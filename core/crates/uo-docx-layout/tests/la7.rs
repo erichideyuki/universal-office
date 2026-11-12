@@ -274,8 +274,11 @@ struct Tally {
     t_full: f64,
     /// the paragraph memo (level 1): hits, replayed, misses, not memoizable, over the cap
     memo: [u64; 5],
-    /// pages outside `relaid_pages` checked against the previous relayout's
+    /// pages outside `relaid_pages` (and, wave 6 L, relaid pages outside `changed_pages`) checked against the
+    /// previous relayout's
     kept_pages_checked: u64,
+    /// lend/give-back round trips (wave 6, L)
+    lends: u64,
 }
 
 impl Tally {
@@ -301,7 +304,7 @@ impl Tally {
 
     fn print(&self, what: &str) {
         eprintln!(
-            "{what}: {} relayouts, {} incremental ({:.1}%), {} errors, re-laid pages {} of {} ({:.1}%), time inc {:.0} ms vs full {:.0} ms; fallbacks {:?}; memo hits/replayed/misses/unmemoizable/over-cap {:?}; kept pages checked {}",
+            "{what}: {} relayouts, {} incremental ({:.1}%), {} errors, re-laid pages {} of {} ({:.1}%), time inc {:.0} ms vs full {:.0} ms; fallbacks {:?}; memo hits/replayed/misses/unmemoizable/over-cap {:?}; kept pages checked {}; lend round trips {}",
             self.relayouts,
             self.incremental,
             100.0 * self.incremental as f64 / self.relayouts.max(1) as f64,
@@ -313,7 +316,8 @@ impl Tally {
             self.t_full,
             self.reasons,
             self.memo,
-            self.kept_pages_checked
+            self.kept_pages_checked,
+            self.lends
         );
     }
 }
@@ -346,6 +350,16 @@ fn differential(f: &Fixture, steps: usize, seed: u32, cfg: IncrConfig, tally: &m
                 let now: Vec<(String, String)> = x.pages.iter().map(|p| (page_dbg(p, true), page_dbg(p, false))).collect();
                 tally.kept_pages_checked += kept_pages_unchanged(&f.stem, k, &inc, prev.as_deref(), &now);
                 prev = Some(now);
+                // wave 6 (L): the lend round trip (the editor shell's layout handle owns the result between
+                // relayouts): lent out, the engine answers no layout; given back, the same layout, and the next
+                // step's relayout works on it (the differential above checks it against a full layout)
+                let d0 = digest(inc.last().unwrap());
+                let (t, l) = inc.lend_last().unwrap_or_else(|| panic!("{} step {k}: a relayout's result lends", f.stem));
+                assert!(inc.last().is_none(), "{} step {k}: lent, no layout", f.stem);
+                assert!(inc.lend_last().is_none(), "{} step {k}: lent twice", f.stem);
+                inc.give_back(t, l).unwrap_or_else(|_| panic!("{} step {k}: the give-back is refused", f.stem));
+                assert_eq!(digest(inc.last().unwrap()), d0, "{} step {k}: the layout given back", f.stem);
+                tally.lends += 1;
             }
             (Err(x), Err(y)) => {
                 assert_eq!(x, y, "{} step {k}: error kinds", f.stem);
@@ -378,6 +392,12 @@ fn kept_pages_unchanged(stem: &str, k: usize, inc: &LayoutEngine, prev: Option<&
     for (i, (p, q)) in now.iter().enumerate() {
         let i32_ = u32::try_from(i).unwrap();
         if r.relaid_pages.contains(&i32_) {
+            // wave 6 (L): a relaid page outside `changed_pages` is the previous relayout's page, line ids included
+            if !r.changed_pages.contains(&i32_) {
+                let Some(old) = prev.get(i) else { panic!("{stem} step {k}: page {i} is new but not in changed_pages") };
+                assert!(*p == old.0, "{stem} step {k}: page {i} of {:?} changed but is not in {:?}", r.relaid_pages, r.changed_pages);
+                n += 1;
+            }
             continue;
         }
         let Some(old) = prev.get(i) else { panic!("{stem} step {k}: page {i} outside {:?} is new", r.relaid_pages) };

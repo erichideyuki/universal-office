@@ -177,7 +177,7 @@ impl LayoutEngine {
         let ldoc = match derive::build(view, o) {
             Ok(l) => l,
             Err(e) => {
-                self.incr.clear();
+                self.incr.fail();
                 return Err(e);
             }
         };
@@ -195,6 +195,39 @@ impl LayoutEngine {
     /// Drops the incremental state (the next relayout is a full one).
     pub fn clear_incremental(&mut self) {
         self.incr.clear();
+    }
+
+    /// Lends the last relayout's result out without copying it (wave 6, L; additive): the editor
+    /// shell's layout handle owns it until [`LayoutEngine::give_back`]. While it is out
+    /// [`LayoutEngine::last`] answers `None`, and a relayout before the give-back is a full one
+    /// (reason [`incr::FallbackReason::Lent`]). `None` when the newest result is not a relayout's
+    /// (a `layout()`, another view) or it is lent already.
+    pub fn lend_last(&mut self) -> Option<(incr::LendTicket, Layout)> {
+        if !self.newest_relayout || self.last.is_some() {
+            return None;
+        }
+        self.incr.lend()
+    }
+
+    /// The lend in course ([`LayoutEngine::lend_last`]), if any.
+    #[must_use]
+    pub fn lent(&self) -> Option<incr::LendTicket> {
+        self.incr.lent()
+    }
+
+    /// Takes a lent result back, unchanged (the next relayout reuses it).
+    ///
+    /// # Errors
+    /// The layout itself (boxed) when `ticket` is not the lend in course (another engine's, an older one, a
+    /// cleared state) or its page count differs: the caller keeps it.
+    pub fn give_back(&mut self, ticket: incr::LendTicket, layout: Layout) -> Result<(), Box<Layout>> {
+        self.incr.give_back(ticket, layout)
+    }
+
+    /// After a failed relayout: the given-back result it did not consume (the caller lends it to
+    /// its previous owner again; the engine keeps nothing of it).
+    pub fn take_spare(&mut self) -> Option<Layout> {
+        self.incr.take_spare()
     }
 
     /// The newer of the last [`LayoutEngine::layout`] and [`LayoutEngine::relayout`] results;

@@ -1140,6 +1140,18 @@ impl Session {
                     self.rollback_nested_step(was_dirty);
                     return Err(e);
                 }
+                // S-G1 (wave 6, C): a body table moved the body's blocks, but the caret is in its first cell now, so
+                // `touch_structure` (body context only) did not ask for `syncSections` and the sections kept their old
+                // block ranges: the paragraph after the new table was outside every section of the live layout (no
+                // line, no caret) until another body edit. The TS builds the sections from the body at every layout,
+                // also while a cell is edited: synced here (the body's, whatever the context; after the caption, which a
+                // failed layout question takes back with the table)
+                if !nested {
+                    self.sections.pending = false;
+                    self.sections.sync(&mut self.doc);
+                    self.doc.formatting_version = self.doc.formatting_version.wrapping_add(1);
+                    self.tx.formatting = true;
+                }
                 Ok(Outcome::Done(self.finish()))
             }
             None => {

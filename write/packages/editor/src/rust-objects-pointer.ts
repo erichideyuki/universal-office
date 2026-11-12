@@ -577,15 +577,9 @@ export function onPointer(o: ObjState, e: MouseEvent): boolean {
       if (ab && onBorder(o, e, ab)) { el.focusEditor(); startFloatDrag(o, e, 'move', ''); return true; }
       return false;
     }
+    // wave 6 (C): the session's `hitTextbox` answers every box of `contextTextboxRuns` (groups, cells, boxes in boxes:
+    // S ED-102 closed), so the first cut's fallback to a content-bearing text-box float is gone
     let tb = hitTextbox(o, e);
-    if (!tb) {
-      // a text box with laid-out content the session's hit test does not answer (front S's ED-102: a box inside a group,
-      // or a linked box whose chain head is inside one) is still a box for the TS (`hitTextbox` lists it): never selected
-      // as a shape from its inside here; its border selects it, its inside goes on to S (ED-216)
-      const f = hitFloat(o, e, 'textbox');
-      const fl = f ? objects(o)?.floats.find((x) => x.id === f.id) : undefined;
-      if (f && fl?.content) tb = { page: f.page, rect: f.rect, rot: f.rot };
-    }
     const img = tb ? hitFloat(o, e, 'image') : null;
     if (tb && img && img.rect.w * img.rect.h < tb.rect.w * tb.rect.h) tb = null;
     if (tb && onBorder(o, e, tb)) {
@@ -663,7 +657,9 @@ export function onKey(o: ObjState, e: KeyboardEvent): boolean {
       el.chromeSync?.();
       return done();
     }
-    if (k === 'Delete' || k === 'Backspace') {
+    // wave 6 (C): the TS Ctrl block (10563-10578: moveWord, deleteWord) runs before the `floatSel` branch, so
+    // Ctrl+Delete/Backspace and Ctrl+Left/Right go on to the shell's word keys with an object selected
+    if ((k === 'Delete' || k === 'Backspace') && !ctrl) {
       if (!o.api.locked()) {
         // um comando por objeto selecionado (o TS apaga todos num passo: ED-211)
         const all = selectedHandles(o);
@@ -675,7 +671,7 @@ export function onKey(o: ObjState, e: KeyboardEvent): boolean {
       }
       return done();
     }
-    if (!sel.inline && (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown')) {
+    if (!sel.inline && (k === 'ArrowUp' || k === 'ArrowDown' || (!ctrl && (k === 'ArrowLeft' || k === 'ArrowRight')))) {
       e.preventDefault();
       if (o.api.locked()) return true;
       const step = e.ctrlKey ? 15 : 90;

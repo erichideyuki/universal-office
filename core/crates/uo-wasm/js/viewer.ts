@@ -18,6 +18,8 @@ import type { LaidOutLine, TextPara } from './gen/write.ts';
 import { defaultCaches, paintItems, paintPageBackground } from './paint.ts';
 import type { PaintEnv, PaintPage } from './paint.ts';
 import { fnv } from './render.mjs';
+import { changedBand } from './band.ts';
+import type { BandPage } from './band.ts';
 import { hyphenationPatternText } from './hyphen-patterns.mjs';
 
 export { WriteError } from './write.mjs';
@@ -191,6 +193,13 @@ const NO_PAGE = Object.freeze({
   paras: Object.freeze([] as TextPara[]) as TextPara[],
 }) as { items: Item[]; lines: LaidOutLine[]; paras: TextPara[] };
 
+/** wave 6 (L, D-L4): a decoded page kept for `DecodedLayout.bandSince` (opaque to the caller) */
+export interface BandSnap extends BandPage {
+  readonly serial: number;
+}
+
+let layoutSerials = 0;
+
 /** One layout; its pages are decoded on demand (the page messages with one set of tables for each of the two decoders). */
 export class DecodedLayout {
   /** the discriminant of the viewer's `LayoutResult | DecodedLayout` union */
@@ -211,10 +220,14 @@ export class DecodedLayout {
   #faceHeld = new Map<number, Uint8Array>();
   #navigation: Navigation | null = null;
   #freed = false;
+  /** wave 6 (L, D-L4): this layout's serial and the one of the layout it was adopted after (`inner.shared` is against it) */
+  readonly #serial = ++layoutSerials;
+  readonly #prevSerial: number;
 
-  constructor(inst: Instance, inner: WriteLayout) {
+  constructor(inst: Instance, inner: WriteLayout, prev?: DecodedLayout | null) {
     this.inner = inner;
     this.#inst = inst;
+    this.#prevSerial = prev ? prev.#serial : -1;
     inst.handles++;
     try {
       this.#rasters = call(inst, () => inner.rasters());
@@ -223,10 +236,20 @@ export class DecodedLayout {
       this.free();
       throw e;
     }
+    // wave 6 (L): the font keys of the faces whose bytes are `prev`'s of the same index (the same `Arc`, said by the engine:
+    // `inner.shared`) are `prev`'s — no copy of the file out of the wasm memory, no hash again
+    const shared = inner.shared?.faces;
+    if (prev && shared) for (const [i, k] of prev.#faceKeys) if (shared[i]) this.#faceKeys.set(i, k);
   }
 
+  /** freed, its instance dead, or STALE (wave 6, L: an editor shell layout whose pages went back to the engine) */
   get freed(): boolean {
-    return this.#freed || this.#inst.dead;
+    return this.#freed || this.#inst.dead || this.inner.stale === true;
+  }
+
+  /** wave 6 (L): whether image `i`'s bytes are those of the previous layout's image `i` (`inner.shared`) */
+  sharedImage(i: number): boolean {
+    return this.inner.shared?.images[i] === true;
   }
 
   /**
@@ -243,7 +266,7 @@ export class DecodedLayout {
 
   #decode(i: number): PaintPage | undefined {
     const had = this.#paint[i];
-    if (had || this.#freed || this.#inst.dead || i < 0 || i >= this.pages.length || this.#failed.has(i)) return had;
+    if (had || this.freed || i < 0 || i >= this.pages.length || this.#failed.has(i)) return had;
     try {
       const page: Page = decodePage(call(this.#inst, () => this.inner.encodePage(i)), this.tables);
       const sec = decodeWritePage(page.app, this.#wt);
@@ -257,6 +280,28 @@ export class DecodedLayout {
       if (!this.#warned) { this.#warned = true; console.error('uo-wasm: decoding page', i, 'failed', e); }
       return undefined;
     }
+  }
+
+  /**
+   * wave 6 (L, D-L4): page `i` as decoded so far, kept for `bandSince` of the next layout (null when it was not decoded; never
+   * decodes). `hf`: the page's header/footer item count.
+   */
+  bandSnap(i: number, hf: number): BandSnap | null {
+    const p = this.#paint[i];
+    return p ? { page: p.page, tables: this.tables, hf, serial: this.#serial } : null;
+  }
+
+  /**
+   * wave 6 (L, D-L4): the band (twips) of page `i` that paints differently from `prev` (a `bandSnap` of the layout this one
+   * was adopted after): `'same'`, the band, or null (unknown: repaint the whole page). Decodes page `i`. `slackTw`: the
+   * caller's margin around the band, in twips (no picture, shape or path may reach into it).
+   */
+  bandSince(i: number, prev: BandSnap, hf: number, slackTw = 0): { y0: number; y1: number } | 'same' | null {
+    const shared = this.inner.shared;
+    if (prev.serial !== this.#prevSerial || !shared) return null;
+    const p = this.#decode(i);
+    if (!p) return null;
+    return changedBand(prev, { page: p.page, tables: this.tables, hf }, shared, slackTw);
   }
 
   /** the page background (colour and fill effect) in a context already in twips; a no-op after `free()` */
@@ -278,7 +323,7 @@ export class DecodedLayout {
 
   /** a content key of the font file of face `i` (FNV-1a of the bytes and their length), null when it has no file */
   faceKey(i: number): string | null {
-    if (this.#freed || this.#inst.dead) return null;
+    if (this.freed) return null;
     let k = this.#faceKeys.get(i);
     if (k === undefined) {
       const b = call(this.#inst, () => this.inner.faceBytes(i));
@@ -295,18 +340,18 @@ export class DecodedLayout {
   }
 
   faceBytes(i: number): Uint8Array | null {
-    if (this.#freed || this.#inst.dead) return null;
+    if (this.freed) return null;
     const held = this.#faceHeld.get(i);
     if (held) { this.#faceHeld.delete(i); return held; }
     return call(this.#inst, () => this.inner.faceBytes(i));
   }
 
   imageBytes(i: number): Uint8Array | null {
-    return this.#freed || this.#inst.dead ? null : call(this.#inst, () => this.inner.imageBytes(i));
+    return this.freed ? null : call(this.#inst, () => this.inner.imageBytes(i));
   }
 
   imageSvg(i: number): Uint8Array | null {
-    return this.#freed || this.#inst.dead ? null : call(this.#inst, () => this.inner.imageSvg(i));
+    return this.freed ? null : call(this.#inst, () => this.inner.imageSvg(i));
   }
 
   annotations(): Annotations {
@@ -365,8 +410,11 @@ export interface ViewerModule {
   readonly exports: WebAssembly.Exports;
   /** the write binding of the instance (for `bindSession`) */
   readonly binding: WriteBinding;
-  /** a layout made outside this module (a session's) adopted as a `DecodedLayout`: it counts in `handles` and is freed with it */
-  adopt(inner: WriteLayout): DecodedLayout;
+  /**
+   * a layout made outside this module (a session's) adopted as a `DecodedLayout`: it counts in `handles` and is freed with it;
+   * `prev` (wave 6, L): the layout it replaces, whose font keys it inherits for the faces the engine says are shared
+   */
+  adopt(inner: WriteLayout, prev?: DecodedLayout | null): DecodedLayout;
   /** marks the instance dead after a trap seen outside this module (the session's own calls) */
   kill(): void;
 }
@@ -420,7 +468,7 @@ function makeModule(inst: Instance, uo: WriteBinding, engine: 'wasm' | 'js', exp
     }),
     exports,
     binding: uo,
-    adopt: (inner) => new DecodedLayout(inst, inner),
+    adopt: (inner, prev) => new DecodedLayout(inst, inner, prev),
     kill: () => kill(inst),
   };
 }

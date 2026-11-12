@@ -764,6 +764,12 @@ struct ContextCmdEnterTextbox {
   page: u32,
 }
 
+/// the fields of `ContextCmd::EnterTextboxAt { .. }` (wave 6, C: the box by its order in `contextTextboxRuns`)
+struct ContextCmdEnterTextboxAt {
+  focus: u32,
+  page: u32,
+}
+
 /// `uo_docx::session::ops::context::ContextCmd`
 enum ContextCmd {
   EnterCell(ContextCmdEnterCell),
@@ -774,6 +780,7 @@ enum ContextCmd {
   ExitHeaderFooter,
   EnterTextbox(ContextCmdEnterTextbox),
   ExitTextbox,
+  EnterTextboxAt(ContextCmdEnterTextboxAt),
 }
 
 /// the fields of `SettingsCmd::SetTracking { .. }`

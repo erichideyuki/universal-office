@@ -15,6 +15,19 @@
  *     confere que a entrada extra não carrega, estaticamente, o código da principal;
  *   - chunks/: o que o código já importa sob demanda (padrões de hifenização,
  *     barra do editor, conversões raras) — baixado só quando usado;
+ *   - chunks/uo-write.wasm e chunks/uo-write-editor.wasm: o motor Rust (`engine="rust"`), só o que o
+ *     código carrega. Dois módulos, escolhidos pelo CONTEÚDO do bundle (não pelo nome): o do viewer
+ *     (`--features write`, sem `uo_session_*`) vai nos pacotes cujo bundle importa o viewer-rust-engine
+ *     (document-viewer; o write, quando só o viewer o usa); o do editor (`--features session`) vai no
+ *     pacote cujo bundle importa o rust-engine do editor (write). REGRA DE ORDEM: um módulo de motor por
+ *     página. O módulo do editor serve também o <universal-document-viewer> do MESMO pacote carregado
+ *     DEPOIS dele (a memória do motor é uma só); um motor de viewer carregado ANTES faz o `engine="rust"`
+ *     do editor falhar com erro claro. O pacote document-viewer avulso leva a própria cópia do viewer,
+ *     logo o próprio módulo (e a própria memória). `shipEngineWasm` recusa build de teste (exports
+ *     test/selftest/memtest/bench/fixture, alocador contador), editor sem `uo_session_open` e viewer COM ele;
+ *     UO_WRITE_WASM / UO_WRITE_EDITOR_WASM dizem de onde vêm (padrão core/target/pkg-wasm/);
+ *     UO_REQUIRE_ENGINE_WASM=1 torna a falta do arquivo fatal (CI); UO_TOOLS_ROOT (só desenvolvimento)
+ *     pega esbuild, dts-bundle-generator e node_modules de OUTRO checkout (worktree sem node_modules);
  *   - index.d.ts (e um .d.ts por entrada extra): tipos num arquivo só (os dos
  *     pacotes internos embutidos);
  *   - licenses/<pacote>/: os textos de licença de terceiros que os pacotes
@@ -120,8 +133,26 @@ const ENGINE = {
   // o editor (`engine="rust"`, src/rust-engine.ts) importa a sessão de edição: sem este alias o `build:pkg write` não resolve
   '@universal-office/write-session': 'core/crates/uo-wasm/js/session.mjs',
 };
-/** O .wasm do motor (build `--features write --profile wasm`, SEM `count`), copiado para `chunks/uo-write.wasm` dos pacotes do viewer. */
-const WRITE_WASM = process.env.UO_WRITE_WASM ?? 'core/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm';
+/**
+ * Os .wasm do motor (build `--profile wasm`, SEM `count` nem `selftest`): `--features write` → `chunks/uo-write.wasm` (viewer) e
+ * `--features session` → `chunks/uo-write-editor.wasm` (editor). O caminho padrão NÃO é a saída do cargo (que muitas vezes
+ * guarda um build de teste: S11); `checkEngineWasm` confere o conteúdo de qualquer jeito.
+ */
+const WRITE_WASM = () => process.env.UO_WRITE_WASM ?? 'core/target/pkg-wasm/uo-write.wasm';
+const EDITOR_WASM = () => process.env.UO_WRITE_EDITOR_WASM ?? 'core/target/pkg-wasm/uo-write-editor.wasm';
+/** Os fontes do lado JS do motor, por tipo de módulo (o que o bundle importa decide qual .wasm vai junto). */
+const ENGINE_SOURCES = { viewer: 'write/packages/viewer/src/rust-engine.ts', editor: 'write/packages/editor/src/rust-engine.ts' };
+
+/**
+ * Ferramentas de build (esbuild, dts-bundle-generator, node_modules). Normalmente `<projeto>/node_modules` deste checkout;
+ * UO_TOOLS_ROOT (só desenvolvimento, inerte sem ela) aponta outro checkout que as tenha (worktree sem node_modules).
+ */
+const TOOLS_ROOT = process.env.UO_TOOLS_ROOT ? path.resolve(process.env.UO_TOOLS_ROOT) : null;
+const TOOL_PROJECTS = ['write', 'converter', 'sheet', 'slides', 'shared/fonts', 'shared/ui', 'shared/spell', 'shared/charts', 'shared/drawingml'];
+const toolsRequire = (project) => createRequire(path.join(TOOLS_ROOT ?? ROOT, project, 'package.json'));
+const toolsNodePaths = (project) => (TOOLS_ROOT
+  ? TOOL_PROJECTS.map((d) => path.join(TOOLS_ROOT, d, 'node_modules')).filter((d) => existsSync(d))
+  : [p(project, 'node_modules')]);
 
 /** Pacotes internos → src (embutidos em todo bundle que os usa). */
 const INTERNAL = {
@@ -246,53 +277,106 @@ function staticClosure(metafile, out) {
   return [...seen];
 }
 
-/** Tipos num arquivo só por entrada: tsconfig temporário com os internos pelo src. */
+/**
+ * Tipos num arquivo só por entrada: tsconfig temporário com os internos pelo src. O dts-bundle-generator monta o programa só
+ * com os ARQUIVOS DE ENTRADA, então os módulos ambientes do pacote (`declare module '@universal-office/write-engine'`,
+ * `'@universal-office/write-session'`: `src/*.d.ts`) não entram e o build falha (TS2307). Cada entrada vira um arquivo
+ * de apoio com `/// <reference path>` para esses .d.ts + `export *` da entrada real (as entradas não têm export default).
+ */
 function writeTypes(pkgDir, dist, entryPoints, entries = {}) {
   const tsconfig = path.join(pkgDir, '.tsconfig.pkg.json');
   const rel = (f) => path.relative(pkgDir, p(f)).replace(/\\/g, '/');
+  const fwd = (f) => f.replace(/\\/g, '/');
+  const srcDirs = [path.join(pkgDir, 'src'), ...Object.values(entries).map((f) => path.dirname(p(f)))];
+  const ambient = srcDirs.flatMap((d) => (existsSync(d) ? readdirSync(d).filter((f) => f.endsWith('.d.ts')).sort().map((f) => path.join(d, f)) : []));
+  const compilerOptions = { noEmit: false, rootDir: path.relative(pkgDir, ROOT).replace(/\\/g, '/') || '.', baseUrl: '.', paths: Object.fromEntries(Object.entries(INTERNAL).map(([n, f]) => [n, [rel(f)]])) };
+  if (TOOLS_ROOT) { // checkout sem node_modules: tipos e dependências vêm de UO_TOOLS_ROOT
+    compilerOptions.typeRoots = [fwd(path.join(TOOLS_ROOT, 'write', 'node_modules', '@types'))];
+    compilerOptions.paths['*'] = toolsNodePaths('write').map((d) => fwd(path.join(d, '*')));
+  }
   writeFileSync(tsconfig, JSON.stringify({
     extends: './tsconfig.json',
     // rootDir na raiz: os fontes dos pacotes internos entram no programa
-    compilerOptions: { noEmit: false, rootDir: path.relative(pkgDir, ROOT).replace(/\\/g, '/') || '.', baseUrl: '.', paths: Object.fromEntries(Object.entries(INTERNAL).map(([n, f]) => [n, [rel(f)]])) },
+    compilerOptions,
     include: ['src', ...Object.values(entries).map((f) => rel(path.dirname(f)))],
   }, null, 2));
+  const wrappers = [];
   try {
-    const dts = createRequire(p('write', 'package.json')).resolve('dts-bundle-generator/dist/bin/dts-bundle-generator.js');
+    const dts = toolsRequire('write').resolve('dts-bundle-generator/dist/bin/dts-bundle-generator.js');
     for (const [name, entry] of Object.entries(entryPoints)) {
-      execFileSync(process.execPath, [dts, '--project', tsconfig, '--no-check', '--silent', '-o', path.join(dist, `${name}.d.ts`), entry], { cwd: pkgDir, stdio: 'inherit' });
+      const wrapper = path.join(pkgDir, `.pkg-entry-${name}.ts`);
+      wrappers.push(wrapper);
+      const refs = ambient.map((a) => `/// <reference path="${fwd(a)}" />`).join('\n');
+      writeFileSync(wrapper, `${refs}\nexport * from '${fwd(entry).replace(/\.ts$/, '.js')}';\n`);
+      execFileSync(process.execPath, [dts, '--project', tsconfig, '--no-check', '--silent', '-o', path.join(dist, `${name}.d.ts`), wrapper], { cwd: pkgDir, stdio: 'inherit' });
     }
   } finally {
     rmSync(tsconfig, { force: true });
+    for (const w of wrappers) rmSync(w, { force: true });
   }
 }
 
 /** Onde ficam os avisos de licença do núcleo Rust (gerados por core/tools/licenses/gen-notices.mjs, versionados). */
 const NOTICES = process.env.UO_RUST_NOTICES ?? 'core/licenses';
 
+/** Exports de um build de teste (test_/selftest_/memtest_/bench_/fixture_ no meio do nome, ou _fixture no fim). */
+const TEST_EXPORT = /(^|_)(test|selftest|memtest|bench|fixture)_|_fixture$/;
+
 /**
- * Copia o .wasm do motor Rust para `dist/chunks/uo-write.wasm` e, junto, os avisos de licença das caixas Rust de terceiros
- * compiladas nele (`dist/licenses/uo-write-wasm/`). Sem o .wasm só avisa (SW-9) e devolve false; com o .wasm e sem avisos
- * atuais (faltam ou o Cargo.lock mudou) o build FALHA. Devolve true quando copiou os avisos.
+ * Confere o CONTEÚDO de um .wasm do motor (S11: o caminho padrão do cargo já guardou um build de teste), sem cargo: compila
+ * com `WebAssembly.Module`, recusa exports de teste, instancia com imports que lançam e recusa o alocador contador
+ * (`uo_memory_live_bytes() !== -1`). `kind`: 'viewer' (SEM `uo_session_open`) ou 'editor' (COM ele: build `session`).
  */
-export function shipEngineWasm(id, dist) {
-  const wasm = path.isAbsolute(WRITE_WASM) ? WRITE_WASM : p(WRITE_WASM);
+export function checkEngineWasm(file, kind) {
+  let module;
+  try { module = new WebAssembly.Module(readFileSync(file)); } catch (e) { throw new Error(`${file} não compila como WebAssembly (${e.message})`); }
+  const exports = WebAssembly.Module.exports(module).map((e) => e.name);
+  const tests = exports.filter((n) => TEST_EXPORT.test(n));
+  if (tests.length) throw new Error(`${file} é um build de teste (exports: ${tests.slice(0, 6).join(', ')}${tests.length > 6 ? `, … +${tests.length - 6}` : ''}); use cargo build -p uo-wasm --features ${kind === 'editor' ? 'session' : 'write'} --target wasm32-unknown-unknown --profile wasm, sem count nem selftest`);
+  const imports = {};
+  for (const i of WebAssembly.Module.imports(module)) {
+    if (i.kind !== 'function') throw new Error(`${file} importa ${i.module}.${i.name} (${i.kind}), que não é função`);
+    (imports[i.module] ??= {})[i.name] = () => { throw new Error(`import ${i.module}.${i.name} chamado na verificação`); };
+  }
+  const live = new WebAssembly.Instance(module, imports).exports.uo_memory_live_bytes;
+  if (typeof live !== 'function' || live() !== -1) throw new Error(`${file} tem o alocador contador (build com a feature count)`);
+  const session = exports.includes('uo_session_open');
+  if (kind === 'editor' && !session) throw new Error(`${file} não tem uo_session_open: o editor precisa do build --features session`);
+  if (kind === 'viewer' && session) throw new Error(`${file} é o build session (tem uo_session_open): o uo-write.wasm do viewer é o build --features write`);
+}
+
+/**
+ * Copia o .wasm do motor Rust para `dist/chunks/uo-write.wasm` (kind 'viewer') ou `uo-write-editor.wasm` (kind 'editor') e, junto,
+ * os avisos de licença das caixas Rust de terceiros compiladas nele (`dist/licenses/uo-write-wasm/`, a união dos dois).
+ * Antes de copiar confere o conteúdo (checkEngineWasm). Sem o .wasm só avisa (SW-9) e devolve false (com UO_REQUIRE_ENGINE_WASM=1
+ * lança); com o .wasm e sem avisos atuais (faltam ou o Cargo.lock mudou) o build FALHA. Devolve true quando copiou os avisos.
+ */
+export function shipEngineWasm(id, dist, kind = 'viewer') {
+  const editor = kind === 'editor';
+  const name = editor ? 'uo-write-editor.wasm' : 'uo-write.wasm';
+  const env = editor ? 'UO_WRITE_EDITOR_WASM' : 'UO_WRITE_WASM';
+  const source = editor ? EDITOR_WASM() : WRITE_WASM();
+  const wasm = path.isAbsolute(source) ? source : p(source);
   if (!existsSync(wasm)) {
-    console.warn(`build-pkg: AVISO: ${path.relative(ROOT, wasm)} não existe (cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm, ou UO_WRITE_WASM); engine="rust" não funciona em ${id}`);
+    const msg = `${path.relative(ROOT, wasm)} não existe (cargo build -p uo-wasm --features ${editor ? 'session' : 'write'} --target wasm32-unknown-unknown --profile wasm e copiar para lá, ou ${env})`;
+    if (process.env.UO_REQUIRE_ENGINE_WASM === '1') throw new Error(`build-pkg: ${msg}; ${id} não pode sair sem ${name}`);
+    console.warn(`build-pkg: AVISO: ${msg}; engine="rust" não funciona em ${id}`);
     return false;
   }
+  try { checkEngineWasm(wasm, kind); } catch (e) { throw new Error(`build-pkg: ${id}/chunks/${name}: ${e.message}`); }
   mkdirSync(path.join(dist, 'chunks'), { recursive: true });
-  copyFileSync(wasm, path.join(dist, 'chunks', 'uo-write.wasm'));
-  console.log(`build-pkg: ${id}/chunks/uo-write.wasm (${(statSync(wasm).size / 1024).toFixed(0)} KB)`);
+  copyFileSync(wasm, path.join(dist, 'chunks', name));
+  console.log(`build-pkg: ${id}/chunks/${name} (${(statSync(wasm).size / 1024).toFixed(0)} KB)`);
   const notices = path.isAbsolute(NOTICES) ? NOTICES : p(NOTICES);
   try {
-    const files = verifyNotices(notices, p('core/Cargo.lock'), 'wasm');
+    const files = verifyNotices(notices, p('core/Cargo.lock'), editor ? 'wasm-editor' : 'wasm');
     for (const f of files) {
       const to = path.join(dist, 'licenses', 'uo-write-wasm', f);
       mkdirSync(path.dirname(to), { recursive: true });
       copyFileSync(path.join(notices, f), to);
     }
   } catch (e) {
-    throw new Error(`build-pkg: ${id} leva chunks/uo-write.wasm sem os avisos de licença das caixas Rust (${e.message})`);
+    throw new Error(`build-pkg: ${id} leva chunks/${name} sem os avisos de licença das caixas Rust (${e.message})`);
   }
   return true;
 }
@@ -300,8 +384,7 @@ export function shipEngineWasm(id, dist) {
 async function buildProduct(id) {
   const { project, entries = {} } = PRODUCTS[id];
   const { pkgDir, src, publish, dist } = prepare(id);
-  const req = createRequire(p(project, 'package.json'));
-  const esbuild = req('esbuild');
+  const esbuild = toolsRequire(project)('esbuild');
 
   // 1. JS: tudo dentro, partes sob demanda (e as compartilhadas entre entradas) em chunks/
   const alias = Object.fromEntries([...Object.entries(INTERNAL).filter(([n]) => n !== src.name), ...Object.entries(ENGINE)].map(([n, f]) => [n, p(f)]));
@@ -311,7 +394,7 @@ async function buildProduct(id) {
     entryPoints,
     outdir: dist, bundle: true, format: 'esm', platform: 'browser', target: 'es2022',
     minify: true, splitting: true, chunkNames: 'chunks/[name]-[hash]', legalComments: 'linked',
-    alias, absWorkingDir: pkgDir, nodePaths: [p(project, 'node_modules')], logLevel: 'warning',
+    alias, absWorkingDir: pkgDir, nodePaths: toolsNodePaths(project), logLevel: 'warning',
   });
   const inputs = Object.keys(built.metafile.inputs).map((f) => path.resolve(pkgDir, f));
   const spellData = inputs.filter((f) => SPELL_DATA.test(f));
@@ -329,9 +412,22 @@ async function buildProduct(id) {
     console.log(`build-pkg: ${id}/${name}.js importa estaticamente ${closure.length - 1} chunk(s): ${closure.map((o) => `${path.posix.relative(path.relative(pkgDir, dist).replace(/\\/g, '/'), o)} (${kb(o)} KB)`).join(', ')}`);
   }
 
-  // 1c. O .wasm do motor Rust (engine="rust") ao lado do chunk que o carrega, com os avisos de licença (shipEngineWasm).
+  // 1c. O(s) .wasm do motor Rust (engine="rust") ao lado do chunk que carrega o lado JS, com os avisos de licença. Quem decide é o
+  //     CONTEÚDO do bundle (metafile), não o nome do chunk: o rust-engine do viewer e o do editor ficam em chunks diferentes.
   let withLicenses = false;
-  if (Object.keys(built.metafile.outputs).some((o) => /(^|\/)chunks\/rust-engine-/.test(o))) withLicenses = shipEngineWasm(id, dist);
+  const outDir = path.relative(pkgDir, dist).replace(/\\/g, '/');
+  for (const kind of ['viewer', 'editor']) {
+    const holders = Object.entries(built.metafile.outputs).filter(([, o]) => Object.keys(o.inputs).some((f) => path.resolve(pkgDir, f) === p(ENGINE_SOURCES[kind])));
+    if (!holders.length) continue;
+    for (const [o] of holders) {
+      if (path.posix.dirname(o) !== `${outDir}/chunks`) throw new Error(`build-pkg: ${id}: o motor ${kind} (${o}) não está em chunks/: new URL(arquivo, import.meta.url) não acharia o .wasm ao lado`);
+    }
+    if (shipEngineWasm(id, dist, kind)) withLicenses = true;
+  }
+  // fase 0: o import estático da entrada principal não traz o lado JS do motor (nem o wasm: só com engine="rust")
+  const phase0 = staticClosure(built.metafile, `${outDir}/index.js`).flatMap((o) => Object.keys(built.metafile.outputs[o].inputs))
+    .map((f) => path.resolve(pkgDir, f)).filter((f) => Object.values(ENGINE_SOURCES).some((e) => f === p(e)) || f.startsWith(p('core/crates/uo-wasm/js') + path.sep));
+  if (phase0.length) throw new Error(`build-pkg: ${id}/index.js carrega o motor Rust estaticamente (fase 0): ${phase0.map((f) => path.relative(ROOT, f)).join(', ')}`);
 
   // 2. Tipos num arquivo só por entrada
   writeTypes(pkgDir, dist, entryPoints, entries);
@@ -382,7 +478,7 @@ function buildFonts(id) {
 async function buildData(id) {
   const { project, entry, types } = PRODUCTS[id];
   const { pkgDir, src, publish, dist } = prepare(id);
-  const esbuild = createRequire(p(project, 'package.json'))('esbuild');
+  const esbuild = toolsRequire(project)('esbuild');
   await esbuild.build({
     entryPoints: { index: p(entry) },
     outdir: dist, bundle: true, format: 'esm', platform: 'neutral', target: 'es2022',
@@ -413,7 +509,7 @@ async function buildData(id) {
 async function buildLibrary(id) {
   const { project } = PRODUCTS[id];
   const { pkgDir, src, publish, dist } = prepare(id);
-  const esbuild = createRequire(p(project, 'package.json'))('esbuild');
+  const esbuild = toolsRequire(project)('esbuild');
   const npmDeps = Object.fromEntries(Object.entries(src.dependencies ?? {}).filter(([n]) => !INTERNAL[n]));
   const alias = Object.fromEntries(Object.entries(INTERNAL).filter(([n]) => n !== src.name).map(([n, f]) => [n, p(f)]));
   const entryPoints = { index: path.join(pkgDir, 'src', 'index.ts') };

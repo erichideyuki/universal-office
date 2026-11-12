@@ -185,6 +185,10 @@ export declare class WriteEnv {
 export declare class WriteLayout {
   /** the handle (the session's caret exports take it; 0 once freed) */
   readonly ptr: number;
+  /** wave 6 (L): an editor shell layout whose pages went back to its engine (js/session.mjs `relayout` with `prev`): empty */
+  stale?: boolean;
+  /** wave 6 (L): per face and image, whether its bytes are the previous shell layout's of the same index */
+  shared?: { faces: boolean[]; images: boolean[] } | null;
   readonly pageCount: number;
   free(): void;
   pageInfo(i: number): PageInfo;

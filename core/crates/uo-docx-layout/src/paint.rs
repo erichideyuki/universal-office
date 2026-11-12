@@ -259,8 +259,8 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
     }
     // glyphs, grouped by face/size/colour/shift
     let mut run: Option<RunBuf> = None;
-    let mut run_key: Option<(RunKeyParts, Option<Vec<u16>>)> = None;
-    let flush = |run: &mut Option<RunBuf>, run_key: &mut Option<(RunKeyParts, Option<Vec<u16>>)>, out: &mut PassItems| -> LResult<()> {
+    let mut run_key: Option<(RunKeyParts, [f64; 4])> = None;
+    let flush = |run: &mut Option<RunBuf>, run_key: &mut Option<(RunKeyParts, [f64; 4])>, out: &mut PassItems| -> LResult<()> {
         if let Some(r) = run.take()
             && !r.glyphs.is_empty()
         {
@@ -341,17 +341,24 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
             fx_key: st.fx_key.clone().unwrap_or_default(),
             gid: g.sub_gid.is_some(),
         };
-        let bar = u16::from(b'|');
-        let key_units: Vec<u16> = env.sym_text(face_key);
-        let ambiguous = key_units.contains(&bar) || st.color.contains(&bar) || st.fx_key.as_deref().is_some_and(|f| f.contains('|'));
-        let full = if ambiguous { Some(parts.text([g.size_pt, st.shift, w_key, alpha_key], &st.color, &key_units)) } else { None };
+        let nums = [g.size_pt, st.shift, w_key, alpha_key];
+        // wave 6 (L): the run key strings only when they can decide (the same answer as building them per
+        // glyph): equal components print the same string (`num_eq_key` equality prints the same
+        // `String(x)`, a symbol is its text); different ones print the same string only through a `|`
+        // inside a string component of BOTH (F5-5), and then the full strings are compared
         let same = match &run_key {
-            Some((prev, prev_full)) => match (prev_full, &full) {
-                (Some(a), Some(b)) => a == b,
-                (None, None) => *prev == parts,
-                // one side ambiguous: equal strings would need the same components
-                _ => false,
-            },
+            Some((prev, prev_nums)) => {
+                *prev == parts || {
+                    let bar = u16::from(b'|');
+                    let ambiguous = |k: &RunKeyParts| -> bool {
+                        env.sym_text(k.face_key).contains(&bar) || env.sym_text(k.color).contains(&bar) || k.fx_key.contains('|')
+                    };
+                    ambiguous(prev)
+                        && ambiguous(&parts)
+                        && prev.text(*prev_nums, &env.sym_text(prev.color), &env.sym_text(prev.face_key))
+                            == parts.text(nums, &env.sym_text(parts.color), &env.sym_text(parts.face_key))
+                }
+            }
             None => false,
         };
         if !same {
@@ -380,7 +387,7 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
                 r.flags = r.flags.with(RunFlags::AS_PATH, true);
             }
             run = Some(r);
-            run_key = Some((parts, full));
+            run_key = Some((parts, nums));
         }
         let cp = if g.kind == GlyphKind::Shy { 0x2d } else { g.cp };
         if let Some(r) = run.as_mut() {

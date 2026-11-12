@@ -10,9 +10,10 @@
 //!   `RustSession`), and the text/HTML of the last copy (`copied()`).
 //!
 //! Declared (ED-2): the layout options are built as `uo_session_layout` builds them (≈ 20 lines repeated
-//! from `handle.rs`, which this frontier does not own); the engine's `Layout` is CLONED into the handle
-//! after each relayout (the handle owns its pages; folding the engine into the session handle removes
-//! the clone, a gate item). Conventions as `handle.rs`: input buffers consumed, null + the last error
+//! from `handle.rs`, which this frontier does not own); `uo_shell_relayout` CLONES the engine's `Layout`
+//! into the handle after each relayout. Wave 6 (L, ED-2 resolved): `uo_shell_relayout2` LENDS it instead
+//! (`LayoutEngine::lend_last`/`give_back`: the previous handle gives it back and becomes stale), and the
+//! handle's derived data is computed on first use. Conventions as `handle.rs`: input buffers consumed, null + the last error
 //! for a handle-creating call, `UoBuf` statuses 0 ok, 1 none, 5 bad argument, 11 null handle.
 
 use std::sync::Arc;
@@ -22,15 +23,17 @@ use uo_docx::session::text::para_length;
 use uo_docx_layout::LayoutEngine;
 use uo_docx_layout::fonts::FontProvider;
 use uo_docx_layout::incr::{FallbackReason, IncrConfig, RelayoutPath};
-use uo_docx_layout::run_boxes::RunFilter;
 use uo_fonts::hyphen::HyphenationRegistry;
 
 use super::handle::{BAD_ARGUMENT, HostFonts, UoWriteSession};
 use super::layout::editor_options;
 use super::oracle::font_provider;
-use crate::pipeline::{self, JobError, LaidOut};
+use crate::pipeline::{self, JobError};
 use crate::render::{NONE, NULL_HANDLE, OK, UoBuf, buf, take_bytes};
-use crate::write::{UoLayout, UoWriteEnv, env_parts, layout_handle, session_layout_options};
+use crate::write::{
+    EditHint, UoLayout, UoWriteEnv, env_parts, layout_generation, layout_handle_shell, layout_lend, layout_make_stale, layout_relend,
+    layout_resource_bytes, layout_set_edit_hint, layout_set_shared, layout_take_lent, session_layout_options,
+};
 
 /// The incremental layout engine of one edited document (owned by the shell; free it with
 /// `uo_shell_engine_free`). It keeps the previous run (LA7 levels 1 and 2) between relayouts.
@@ -106,7 +109,8 @@ unsafe fn session_ref<'a>(h: *const UoWriteSession) -> Option<&'a UoWriteSession
 /// Lays the session's view out through `e` (incremental when only body blocks changed in place, LA7)
 /// with the options of `uo_session_layout` (same arguments, same meaning), and answers an OWNED
 /// `UoLayout` (free it with `uo_layout_free`). Null with the last error set on failure. The buffers
-/// are consumed; `env` becomes the session's font environment, as in `uo_session_layout`.
+/// are consumed; `env` becomes the session's font environment, as in `uo_session_layout`. The handle
+/// holds a copy of the engine's result (ED-2); `uo_shell_relayout2` lends it instead.
 ///
 /// # Safety
 /// `e`, `h`, `env` null or live; each `(ptr, len)` a buffer of `uo_alloc_bytes(len)` filled by JS.
@@ -125,6 +129,68 @@ pub unsafe extern "C" fn uo_shell_relayout(
     hyph_len: usize,
     max_pages: u32,
 ) -> *mut UoLayout {
+    let args = Args { now_ms, tz_offset_min, flags, lang_ptr, lang_len, hyph_ptr, hyph_len, max_pages };
+    // SAFETY: forwarded.
+    unsafe { relayout(e, None, h, env, args) }
+}
+
+/// `uo_shell_relayout` without a copy of the result (wave 6, L; ED-2 resolved): the engine LENDS its
+/// result to the new handle, and `prev` — the handle of the previous relayout, or null — gives the
+/// engine's previous result back first (the incremental relayout reuses it). After the call `prev` is
+/// STALE when it gave its layout back: every export answers as for an empty layout (no pages, no
+/// lines; a status, never a panic) until it is freed. A `prev` that holds no lend of this engine (an
+/// older handle, another engine's, a stale one) is left as it is; without the give-back the relayout
+/// is a full one (reason `lent`, code 17). On a failure `prev` keeps its layout when the relayout did
+/// not consume it. The new handle also says which of its faces and images are `prev`'s
+/// (`uo_layout_shared_resources`).
+///
+/// # Safety
+/// As `uo_shell_relayout`; `prev` null or a live handle.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn uo_shell_relayout2(
+    e: *mut UoShellEngine,
+    prev: *mut UoLayout,
+    h: *mut UoWriteSession,
+    env: *const UoWriteEnv,
+    now_ms: f64,
+    tz_offset_min: i32,
+    flags: u32,
+    lang_ptr: *mut u8,
+    lang_len: usize,
+    hyph_ptr: *mut u8,
+    hyph_len: usize,
+    max_pages: u32,
+) -> *mut UoLayout {
+    let args = Args { now_ms, tz_offset_min, flags, lang_ptr, lang_len, hyph_ptr, hyph_len, max_pages };
+    // SAFETY: forwarded; `prev` null or live.
+    unsafe { relayout(e, Some(prev), h, env, args) }
+}
+
+/// The layout arguments of the two relayout exports.
+struct Args {
+    now_ms: f64,
+    tz_offset_min: i32,
+    flags: u32,
+    lang_ptr: *mut u8,
+    lang_len: usize,
+    hyph_ptr: *mut u8,
+    hyph_len: usize,
+    max_pages: u32,
+}
+
+/// The body of the relayout exports: `lend` = `Some(prev)` lends (wave 6, L), `None` copies (ED-2).
+///
+/// # Safety
+/// As the exports.
+unsafe fn relayout(
+    e: *mut UoShellEngine,
+    lend: Option<*mut UoLayout>,
+    h: *mut UoWriteSession,
+    env: *const UoWriteEnv,
+    a: Args,
+) -> *mut UoLayout {
+    let Args { now_ms, tz_offset_min, flags, lang_ptr, lang_len, hyph_ptr, hyph_len, max_pages } = a;
     pipeline::clear_last();
     // SAFETY: the caller guarantees the buffers; both are consumed here.
     let (lang, hyph) = unsafe { (take_bytes(lang_ptr, lang_len), take_bytes(hyph_ptr, hyph_len)) };
@@ -176,18 +242,60 @@ pub unsafe extern "C" fn uo_shell_relayout(
         },
     };
     let view = s.session.view();
-    let layout = match eng.engine.relayout(view, &[], &*provider, &o) {
-        Ok(l) => l.clone(),
-        Err(err) => {
-            pipeline::fail(&JobError::from(err));
-            return std::ptr::null_mut();
+    // wave 6 (L): the previous handle gives the engine's lent result back (no copy); its face and image
+    // bytes are kept (Arc clones) until the new handle is compared with them
+    // SAFETY: the caller guarantees `prev` is null or live.
+    let mut prev = lend.and_then(|p| unsafe { p.as_mut() });
+    let old_bytes = prev.as_deref().map(layout_resource_bytes);
+    let prev_generation = prev.as_deref().map(layout_generation);
+    let mut gave = false;
+    if let Some(p) = prev.as_deref_mut()
+        && layout_lend(p).is_some()
+        && layout_lend(p) == eng.engine.lent()
+        && let Some((t, l)) = layout_take_lent(p)
+    {
+        match eng.engine.give_back(t, l) {
+            Ok(()) => gave = true,
+            Err(l) => layout_relend(p, *l),
         }
+    }
+    if let Err(err) = eng.engine.relayout(view, &[], &*provider, &o) {
+        if gave && let Some(p) = prev.as_deref_mut() {
+            // the screen and the caret keep the previous layout until the font loop's relayout
+            match eng.engine.take_spare() {
+                Some(l) => layout_relend(p, l),
+                None => layout_make_stale(p),
+            }
+        }
+        pipeline::fail(&JobError::from(err));
+        return std::ptr::null_mut();
+    }
+    if gave && let Some(p) = prev {
+        layout_make_stale(p);
+    }
+    let (layout, ticket) = match lend.and_then(|_| eng.engine.lend_last()) {
+        Some((t, l)) => (l, Some(t)),
+        None => match eng.engine.last() {
+            Some(l) => (l.clone(), None),
+            None => {
+                pipeline::fail(&JobError::Argument("relayout: no layout"));
+                return std::ptr::null_mut();
+            }
+        },
     };
-    let navigation = layout.navigation(view);
-    let links = layout.run_boxes(view, RunFilter::Links);
-    let inlines = layout.run_boxes(view, RunFilter::CustomInlines);
-    let laid = LaidOut { layout, navigation, links, inlines };
-    Box::into_raw(Box::new(layout_handle(laid, view, phone, 0)))
+    // wave 6 (L): the navigation, the run boxes, the annotations and the Write section on first use
+    let mut out = layout_handle_shell(layout, view, phone, ticket);
+    if let Some(b) = &old_bytes {
+        layout_set_shared(&mut out, b);
+    }
+    // an incremental relayout over the previous handle: the session patches the edit lines it built for it
+    if let (Some(prev_generation), Some(r)) = (prev_generation, eng.engine.last_relayout())
+        && gave
+        && r.path == RelayoutPath::Incremental
+    {
+        layout_set_edit_hint(&mut out, EditHint { prev_generation, changed: r.changed_pages.clone() });
+    }
+    Box::into_raw(Box::new(out))
 }
 
 /// The index of a fallback reason on the wire (`uo_shell_relayout_report`).
@@ -210,12 +318,14 @@ fn reason_code(r: FallbackReason) -> u8 {
         FallbackReason::Balancing => 14,
         FallbackReason::Memory => 15,
         FallbackReason::Failed => 16,
+        FallbackReason::Lent => 17,
     }
 }
 
 /// What the last relayout of `e` did, little endian: u8 path (0 full, 1 incremental), u8 fallback
 /// reason (`FallbackReason` in declaration order, 255 none), u32 first and u32 end of the pages laid
-/// out again, u32 passes, i32 line shift (saturated), u32 memo hits, u32 memo misses (26 bytes).
+/// out again, u32 passes, i32 line shift (saturated), u32 memo hits, u32 memo misses (26 bytes); then
+/// (wave 6, L, appended) u32 n and the n pages of the relaid ones whose page changed (`changed_pages`).
 /// Status 1 when no relayout ran.
 ///
 /// # Safety
@@ -225,7 +335,7 @@ pub unsafe extern "C" fn uo_shell_relayout_report(e: *const UoShellEngine) -> *m
     // SAFETY: the caller guarantees `e` is null or live.
     let Some(e) = (unsafe { e.as_ref() }) else { return buf(NULL_HANDLE, Vec::new()) };
     let Some(r) = e.engine.last_relayout() else { return buf(NONE, Vec::new()) };
-    let mut out = Vec::with_capacity(26);
+    let mut out = Vec::with_capacity(30 + 4 * r.changed_pages.len());
     out.push(match r.path {
         RelayoutPath::Full => 0,
         RelayoutPath::Incremental => 1,
@@ -238,6 +348,10 @@ pub unsafe extern "C" fn uo_shell_relayout_report(e: *const UoShellEngine) -> *m
     out.extend_from_slice(&shift.to_le_bytes());
     out.extend_from_slice(&r.memo.hits.to_le_bytes());
     out.extend_from_slice(&r.memo.misses.to_le_bytes());
+    out.extend_from_slice(&u32_of(r.changed_pages.len()).to_le_bytes());
+    for p in &r.changed_pages {
+        out.extend_from_slice(&p.to_le_bytes());
+    }
     buf(OK, out)
 }
 

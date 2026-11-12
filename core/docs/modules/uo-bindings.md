@@ -3029,3 +3029,560 @@ focus only: the harness moves the caret there and back on both engines); the fir
 released cache's in-flight batch called the checker again: fixed; and shared/spell's startup race, R-7). Defects the new
 steps found besides the reviewer's: the unanswered `pasteSpecialFormats` job, the coarse f2-3-2 declaration hiding R-6.
 D: 38 GB free at the end.
+
+### Wave 6 — P: packaging, CI and docs of the Rust editor
+
+**D5 answered: two modules, one rule.** `@universal-office/write` ships `chunks/uo-write.wasm` (`--features write`, 4,122,173 B,
+1.47 MB gzip -9) for viewer-only use and `chunks/uo-write-editor.wasm` (`--features session`, 9,686,613 B, 3.18 MB gzip -9) for
+`engine="rust"` editors; `@universal-office/document-viewer` ships only `uo-write.wasm`. `tools/build-pkg.mjs` picks the module by the
+CONTENT of the bundle, not by the output name: step 1c reads each output's metafile inputs and ships the viewer module when
+`write/packages/viewer/src/rust-engine.ts` is in it and the editor module when `write/packages/editor/src/rust-engine.ts` is. The old
+name regex `/chunks\/rust-engine-/` matched two outputs of the write package (the editor's engine chunk and an empty facade) and
+would have shipped only the viewer module. It also asserts that the holding chunk sits in `chunks/` (so `new URL('uo-write-editor.wasm',
+import.meta.url)` resolves next to it) and that the static closure of `index.js` carries neither a `rust-engine.ts` nor anything of
+`core/crates/uo-wasm/js/` (phase 0 at package level). **Module order rule (measured by `pkg_smoke.mjs`):** one engine module per page,
+first load wins. Inside one package the editor and the viewer entries share the engine module (the viewer `rust-engine.ts` and the
+`js/viewer.ts` memo live in a shared chunk): the editor module serves a viewer loaded after it (1 request for
+`uo-write-editor.wasm`, 0 for `uo-write.wasm`); a viewer loaded FIRST fetches `uo-write.wasm` and the editor `initialize()` then
+rejects with "the engine module of this page has no session exports (load the editor build, uo-write-editor.wasm, before any viewer)".
+The standalone `document-viewer` package carries its own copy of `viewer.ts`, so a page with both packages instantiates two modules
+(two memories): documented, not a conflict.
+
+**S11 (milestone-1 finding) closed.** `checkEngineWasm(file, kind)` (exported by build-pkg, cargo-free, `WebAssembly.Module` in Node)
+refuses: a file that does not compile; any export matching `/(^|_)(test|selftest|memtest|bench|fixture)_|_fixture$/` (the trailing `_`
+keeps `uo_session_hit_test`); an instance (stub imports that throw) answering `uo_memory_live_bytes() !== -1` (the counting
+allocator); the editor module without `uo_session_open`; the viewer module WITH it (the session build must not ship as
+`uo-write.wasm`). Measured on existing builds, each refused: `session_count.wasm` (`uo_test_trap`), `selftest.wasm` (18
+`uo_session_test_*`), `viewer.wasm` count+write (`uo_test_trap`), the cargo default `uo_wasm.wasm` of 2026-11-03 (11
+`uo_fonts_memtest_*`: S11 reproduced, it was what `shipEngineWasm` would have copied), `session.wasm` as viewer, `viewer.wasm` as
+editor. The check runs BEFORE the copy. The default source is no longer the cargo output but
+`core/target/pkg-wasm/uo-write.wasm` / `uo-write-editor.wasm` (`UO_WRITE_WASM` / `UO_WRITE_EDITOR_WASM` override). A missing module still
+warns (SW-9) unless `UO_REQUIRE_ENGINE_WASM=1` (CI), which throws. `shipEngineWasm(id, dist, kind = 'viewer')` keeps the old
+two-argument form working (the wasm job line).
+
+**Licence notices.** `gen-notices.mjs` has a third artifact `wasm-editor` (`cargo tree -p uo-wasm --features session`); the markdown
+has one column per artifact. `cargo tree -e normal` gives the SAME 7 registry crates for `--features write` and `--features session`
+(adler2, equivalent, hashbrown, indexmap, miniz_oxide, rustc-hash, ryu-js); `session` adds only workspace code (`uo-text/collation`, an
+own port of `sheet/packages/calc/src/collation.ts`). So `core/deny.toml` is unchanged, `core/licenses` differs only in `notices.json`
+(+103 lines, the artifact) and `THIRD-PARTY-NOTICES.md` (the column), still 27 files, `--check` current. Both modules copy into ONE
+`licenses/uo-write-wasm/` (the union; identical today).
+
+**`writeTypes` defect (pre-existing since milestone 1) and fix.** `build:pkg write` and `document-viewer` failed at the types step on
+rust-core: dts-bundle-generator builds its program from the ENTRY files only, so the ambient `declare module
+'@universal-office/write-engine'` / `'@universal-office/write-session'` (`src/*.d.ts`) were never seen. Measured (`dts-probe.mjs plain`):
+index.d.ts 51 error lines (TS2307 on write-session), viewer.d.ts 15 (write-engine). Fix: per entry a wrapper
+`<pkg>/.pkg-entry-<name>.ts` with `/// <reference path>` to every `src/*.d.ts` of the package and of each extra entry plus `export *`
+of the real entry (neither `index.ts` has a default export), deleted in the existing `finally`. Result: `index.d.ts` 327,841 B
+(`class UniversalWriteElement`), `viewer.d.ts` 36,114 B (`class UniversalDocumentViewerElement`), no reference or write-session
+text in the output. Side finding: the published `configureEngine(source: NonNullable<typeof UniversalWriteElement.engineSource>)`
+declares `private static engineSource;` untyped, so the public parameter type is `any` (Wanted).
+
+**`UO_TOOLS_ROOT`** (dev only, inert when unset): esbuild and dts-bundle-generator are required from that checkout, `nodePaths` become
+every existing `<root>/{write,converter,sheet,slides,shared/*}/node_modules`, and the temporary tsconfig gets `typeRoots` and a `paths['*']`
+fallback. It is how the worktree (no node_modules) ran the real build.
+
+**CI (`.github/workflows/rust-core.yml`, parses with PyYAML; 17 jobs, 130 `run` blocks pass `bash -n`).** `pull_request.paths` +=
+`write/packages/editor/**`, `write/packages/viewer/**`, `tools/build-pkg.mjs`. `codec`: the strict tsc list gains
+`editor.check.ts`, `write-session.d.ts`, `session-stories.d.ts`, `write-session-stories.d.ts`, `write-session-objects.d.ts` (what
+`m2-verify-d.sh` checks). The `deny` comment names the editor wasm. `wasm`: (1) after the `count,write,render-fixture` build a negative
+S11 step written as `if UO_WRITE_WASM=... node ...; then echo ...; exit 1; fi`, NOT `! cmd`: under `bash -e` a negated command never
+fails a step unless it is the last line (the old shipping line worked only for that reason); (2) after the session build the editor module is
+copied and shipped with `shipEngineWasm('write', ..., 'editor')` and `test -f`. New job `editor` (ubuntu, 90 min; the viewer job Install,
+Build and Chromium steps verbatim): `editor_switch_tsc.mjs` (editor and viewer tsc), the `session,count` build, editor and viewer
+vitest through `editor_switch_vitest.mjs` (the verified harness config, `UO_TS_ROOT` = the checkout), `shell_api.test.mjs`
+(`UO_ES_M4=2000`), the package step (both modules built and copied, `UO_REQUIRE_ENGINE_WASM=1 node tools/build-pkg.mjs font-files
+document-viewer write` plus `test -f`/`grep` of the outputs), Chromium, `pkg_smoke.mjs`, `editor_switch.mjs --mode all`
+(`UO_ES_STRIDE=6`, `UO_ES_SOAK=50`), and the three front harnesses (`UO_ES_SOAK=50`, `UO_EO_SOAK=30`, `UO_ER_SOAK=50`) with `if:
+github.event_name != 'push'` (about 13 min together by the wave-5 logs). The stories, objects and review harnesses take no stride variable.
+
+**README and CHANGELOG.** The editor README "The Rust engine (preview)" section is rewritten for waves 5-6: the package ships the module,
+`configureEngine`/`engineStats`, the module order rule, CSP, what is routed by family, what stays disabled (from `routes-probe.mjs` at
+HEAD: 511 public methods = 381 routed + 26 shell + 65 disabled mutators + 41 disabled queries; 21 private routed; 434 bar commands
+routed) and the declared host-visible behaviours (ED-6, ED-16, ED-18, ED-19, ED-27, ED-310). `CHANGELOG.md` "Unreleased" gets "Editor:
+engine switch (`engine="rust"`, preview)"; the viewer entry no longer says the editor is outside the switch. No version bump.
+
+**`pkg_smoke.mjs`** (new, `core/crates/uo-wasm/tests/browser/`): the PUBLISHED `write/packages/editor/publish` + `font-files/publish` in
+headless Chromium, no esbuild: (a) default engine 0 `.wasm` and 0 `rust-engine-` requests, `engineStats()` null; (b) editor first,
+document loaded, one character typed then dirty, `engineStats()` not null, then the rust viewer of `viewer.js` loads a document: 1
+`uo-write-editor.wasm`, 0 `uo-write.wasm`; (c) viewer first, then the rust editor rejects naming `uo-write-editor.wasm`. Tooling is
+copy-adapted (declared P-3) from `editor_switch_lib.mjs`.
+
+**Verification (all run in this worktree, `CARGO_TARGET_DIR=core/target/m2-pkg`).**
+- Three wasm builds (`write`, `session`, `session,count`, `--profile wasm`, -j 3) then `cmp` against the copies in `publish/`.
+- `node tools/build-pkg.mjs font-files document-viewer write` with `UO_TOOLS_ROOT` = the frozen root, `UO_REQUIRE_ENGINE_WASM=1`: exit 0;
+  it RAN END TO END (not just the shipping function). `write/packages/editor/publish/chunks/` has `uo-write.wasm` (4026 KB) and
+  `uo-write-editor.wasm` (9460 KB), both `cmp`-equal to the sources; `document-viewer/publish/chunks` has `uo-write.wasm` only; the
+  notices folder is in both; exactly one `.js` mentions `uo-write-editor.wasm` (`chunks/rust-engine-*.js`); `files` includes `licenses`;
+  no stray `.pkg-entry-*` or `.tsconfig.pkg.json`. `npm pack --dry-run` of the editor package: 6,735,967 B tarball, 20,005,743 B
+  unpacked, 79 files.
+- Negatives (each throws with the build-pkg message): the six measured builds above and a missing file with
+  `UO_REQUIRE_ENGINE_WASM=1`. Positives: the two freshly built modules ship.
+- `pkg_smoke.mjs`: `pkg_smoke: ok` (all checks above). `editor_switch.mjs --mode phase0` (stride 6): ok, 0 `.wasm` requests, static
+  closure leaks 0, engine chunk 507 KB.
+- `yaml-check.py`: safe_load ok, `editor` job present, every step has `run`/`uses`, `bash -n` of every run block. `node --check` of
+  build-pkg, gen-notices, pkg_smoke. `check-changed.mjs`: 0 crates (no .rs changed). `editor_switch_tsc.mjs`: editor and viewer exit 0, no
+  output. The strict `tsc_strict` line of `m2-verify-d.sh`: exit 0.
+- NOT run here: the CI job itself (never run on GitHub), the vitest/shell_api/parity/front-harness lines of the `editor` job (the
+  orchestrator merge run covers them; they are the verified `m2-verify-d.sh` commands), `wasm-tools validate` (CI wasm job).
+
+**Declarations.** P-1 the default source of both modules is `core/target/pkg-wasm/` (not the cargo output). P-2 the `uo-write.wasm` guard
+(no `uo_session_open`) assumes decision 1(a); drop it if the maintainer ships the session build for both. P-3 `pkg_smoke.mjs` copies the
+server and browser launch of `editor_switch_lib.mjs` instead of importing it (the lib is not P's). P-4 `UO_TOOLS_ROOT` is a dev
+override, documented only in the build-pkg header. P-5 the README counts are those of HEAD d4279c16; fronts C and L may route more.
+P-6 `pkg_smoke.mjs` types through `insertText` when the element exposes it, else a real click and the key `x`; either path ends in
+`isDirty() === true`.
+
+**Files touched:** `tools/build-pkg.mjs`, `core/tools/licenses/gen-notices.mjs`, `core/licenses/notices.json`,
+`core/licenses/THIRD-PARTY-NOTICES.md`, `.github/workflows/rust-core.yml`, `write/packages/editor/README.md`, `CHANGELOG.md`,
+`core/crates/uo-wasm/tests/browser/pkg_smoke.mjs` (new), this record. No .rs/.ts edited; `core/deny.toml` unchanged.
+
+**Fix round 1 (reviewer).** README/CHANGELOG: text boxes are claimed only for the page's top-level boxes (S ED-102: boxes in cells,
+inside boxes and in groups are not entered at HEAD d4279c16; the claim comes back at the merge only if front C's work lands with the harness
+proof, a C-dependent line of Wanted (3)); the disabled lists are rebuilt from `routes-probe.mjs` (re-run: 511 = 381 + 26 + 65 + 41) and now name
+the Font dialog, the ruler indent drags, gridlines, list styles, Change List Level, Select Similar Formatting, the gallery previews, and say that
+the public `findNext`/`replaceAll`/`countMatches`/`getLinks` do nothing (the Find pane's `findNextMatch`/`replaceAllMatches` work); the
+CHANGELOG bullet splits open/save formats and qualifies image paste (system clipboard; no ring image items, no Paste Special link variants).
+CI: the wasm-job S11 negative captures the output and requires the "build de teste" refusal; `editor` job timeout 90 min until the first
+GitHub run gives a duration. `pkg_smoke.mjs` polls `layoutPageCount() > 0` (up to 20 s) instead of a fixed 1500 ms sleep (typing stays P-6).
+Re-checked: yaml-check.py ok (17 jobs, editor 18 steps, timeout 90), `node --check` pkg_smoke/build-pkg; pkg_smoke itself and the CI job were
+not re-run (no wasm rebuild; docs/CI/test-wait edits only).
+
+
+**Fix round 2 (reviewer).** The README and CHANGELOG disabled lists were checked only against the PUBLIC METHOD tables; the bar grays out by
+`ROUTED_COMMAND_IDS` (`chrome.ts`, engine="rust" loop). New probe `core/target/m2-pkg/probe/cmds-probe.mjs` (esbuild bundle of
+`registerWriteCommands` + `engine-routes.ts`, a Proxy registry and universal stubs for ed/app/ctl, no DOM) registers the bar commands
+and diffs them against the table. Measured at HEAD d4279c16 plus the uncommitted fronts: **462 commands declared by
+`registerWriteCommands`, 381 routed, 81 NOT routed** (`ROUTED_COMMAND_IDS` has 434 ids; the other 53 are registered by the panes: style,
+navigation, table menus, underline styles). The 81: `fontsInFile`, `export:odt/html/md/xps`, `print`, `compare`, `painter`,
+`view:web/outline/draft/ruler/gridlines/bookmarks`, `color`, `dlg:font`, `borders`, `dlg:paragraph`, `dlg:tabs`, `enableEditing`,
+`wordCount`, `mailmerge`, `mergefield`, `fontAccess`, `table:excel/style:new/style:modify/painter/draw/eraser`, `paste:cells:*` (4),
+`dlg:borders`, `dlg:pageBorders`, `pic:wrap:editPoints`, `shp:editText`, `pic:change:clip`, `pic:transparentColor`, `underline:more`,
+`home:border:*` (11), `home:borders`, `home:hrule`, `list:defineBullet/defineNumber/setValue/defineMultilevel/defineStyle/indents/restart/continue`,
+`paste:keep/merge/picture/text`, `fx:pane`, `select:objects`, `select:similar`, `toc:level0..9`, `hyph:manual`. Also not routed (declared
+only by the ribbon when `setTextGradient` exists): `color:gradient`. The README "What stays disabled" and the CHANGELOG bullet now list
+these by user-facing name and carry the counts; "character formatting" notes the Font Color button is grayed (`setColor` is routed, the
+button needs `documentThemeColors()`, ED-222); "page design" says page borders work through `setPageBorders` only. Two items of the review
+checked and not as stated: `styleInspector` is a pane id (the command `style:inspector` IS routed), and `pasteCells` is not a declared
+command (the four `paste:cells:*` are, all unrouted, listed). ED-16: the README/CHANGELOG no longer state LF or CRLF; they point to the engine
+record (front C's `copy()`/`cut()` path says "ED-16 closed" in an uncommitted edit; re-read C's final record at the merge). CI paragraph above now
+says 90 min.
+Re-run: `node tools/build-pkg.mjs font-files document-viewer write` (modules from copies of the earlier measured builds, because
+`core/target/pkg-wasm` is not there and a rebuild was not due: .rs changes of C/L are not P's): `document-viewer` builds (checked module
+shipped, no stray files); `write` still stops at `writeTypes` on front C's TS2339 (`rust-engine.ts`: `copy`/`cut` missing on
+`RustHostElement`), after the shipping step; any front's TS error breaks `build:pkg` (the CI `editor` tsc step catches it first). To redo at
+the wave-6 merge: the three wasm builds, this probe, and `build:pkg` end to end.
+**Wanted (orchestrator / maintainer).** (1) Export a named `WriteEngineSource` type from `universal-write.ts`/`index.ts` so the
+published `configureEngine` parameter is not `any`. (2) `docs/publishing.md`: the two `cargo build --profile wasm` commands and the
+`UO_WRITE_WASM`/`UO_WRITE_EDITOR_WASM` variables before `npm run build:pkg`; `publish-packages.yml` must build both modules before 0.10
+(it has no Rust toolchain; today it would warn, or fail with `UO_REQUIRE_ENGINE_WASM=1`). (3) Refresh the README/CHANGELOG lists and
+the sizes at the merge (re-run `routes-probe.mjs` and the session build). (4) Decide D5 (two modules, recommended) and SW-9 (fatal at
+0.10).
+
+**For the milestone-2 gate.** The first GitHub run of the `editor` job (npm install, build, vitest, the Chromium harnesses on Linux;
+the DECLARED tables were measured on Windows with chromium-headless-shell 1228: a platform-only difference must be declared, not
+hidden); SW-9 becoming fatal at 0.10; one `build:pkg` baseline from a real checkout with node_modules.
+
+**Process metrics.** Cold wasm builds of three feature sets in `core/target/m2-pkg` (-j 3): about 25 min in total; D: 61 GB free at the
+end. Gotchas: a Bash heredoc with backticks and apostrophes died twice (redone with the Write tool plus a splice script); `bash -n` on a
+Windows temp path lost its backslashes (the check pipes the script on stdin as bytes instead).
+
+### Wave 6 — L: typing latency of the Rust editor
+
+Goal: bring a typed key of `<universal-write engine="rust">` under the TS fast path WITHOUT changing a result (layout
+bit-equal to a full layout, the same pixels, the same saved file). Measured first (the planner's profile, at d4279c16),
+then steps 0–8 and, in the review's fix round, step 10 (D-L4, the band repaint) and ED-315 removed. Every change is exact
+by construction or checked against the unchanged path after every step (below).
+
+**What a key cost and why (baseline, d4279c16, real clock).** Of 54 ms per typed key on 50 pages, 13–14 ms were the O(i)
+`Story::block_at` (`blocks().nth(i)`) called once per LINE by the whole-layout walks (Write section, annotations, run
+boxes, navigation, `EditLines::new`) — quadratic, 93% of the 3.1 s key on 500 pages —; the rest was the per-key
+navigation/run boxes/annotations/`SectionModel` of the whole layout, the `Layout` clone (ED-2), `EditLines` rebuilt for
+every layout, every face file copied out of wasm and hashed again per layout, every visible canvas released and
+allocated again, and the incremental relayout itself (~7.7 ms in wasm). Enter/Backspace had lost the paragraph memo since
+wave 5 (ED-315's `shell.clear()` on every `formatting` ChangeSet; Enter sets `tx.sections` → `sections.sync` →
+`formatting`): a memo-less full layout per Enter (438 ms vs TS 194 ms under load).
+
+#### What changed (per step)
+
+0. **Harness** (`editor_switch.mjs --mode latency`, L's): a REAL clock (its own `BrowserContext` without
+   `clock.setFixedTime`: Playwright's clock is per context, so the old second page was still faked), pages50 and pages500
+   (`gen_docs` seed 14, 3,100 paragraphs, generated next to pages50 when absent), TS and Rust in the same invocation,
+   median/p95 of type (200 / 30 keys), Enter and Backspace (20 / 5), per-stage medians (instance wrappers: caret, paint,
+   baseOf, paintItems, decode, faceKey, canvases, proxy; plus the editor's marks), the Enter/Backspace report
+   path/reason/memo hits, `memory.buffer` and live bytes per phase. `UO_ES_ROUNDS`, `UO_ES_NTYPE`, `UO_ES_NKEY`,
+   `UO_ES_ENGINES`, `UO_ES_NO500`. `shell_native` E accepts `UO_ES_DOC=<path>` (pages500 without the target-dir trick),
+   runs the editor's path (`uo_shell_relayout2` with the previous handle) and times the caret of the new layout.
+1. **The quadratic block walk** (uo-docx-layout `refs.rs`, additive): `Locator::block/paragraph/story_paragraph` resolve
+   step 0 of a body path through the Locator's indexed blocks (the exact output of `Story::blocks`) and the cell steps as
+   `DocView::block` does — the same answer by construction. Used per line by `text_layer_paragraph` (SectionModel,
+   annotations), `run_boxes_with`, and `EditLines::new` (three lines of C's `hit.rs`, declared below). `Story::block_at`
+   in uo-docx unchanged (D-L2).
+2. **The memo on Enter/Backspace** (gate R-3, ED-315 superseded): reproduced natively first (`shell_native` F): LA7
+   itself sees `modifyStyle`, `updateStyleFromSelection`, their undo/redo and Enter (new `styles`/`formatting`/`sections`
+   objects, `formatting_version`): a full relayout, reason `document`, pages byte-equal to `uo_session_layout`; the memo
+   then answers 117 hits of 120 paragraphs on the next Enter. The `if (cs.formatting) this.shell?.clear()` of
+   `rust-engine.ts` `apply` is REMOVED: the editor never drops the engine's state on a ChangeSet. (The first round kept a
+   narrower `dropBase()` because f7b__7__8, f7b__7__10 and f8__7__5 of `editor_switch_objects` "ended with a stale page 0
+   without it"; that reading was wrong — with the drop those three still differ in the end pixels of page 0, and front C
+   showed the cause (gate-C1: the TS-saved document reopened in both engines differs the same way, a content layout
+   difference). Without any drop the three harnesses give the same sets: objects 4,729 equal / 272 different, all
+   declared, gate-C1 used for exactly those three; review and stories as before; `editor_switch --mode parity` stride 6
+   and stride 1 green. The drop API of the first round — `LayoutEngine::drop_incremental_base`,
+   `uo_shell_engine_drop_base`, `ShellEngine.dropBase()` — is removed with it.) Enter/Backspace are now `full/document`
+   through the memo every time (339 of 345 paragraphs from the memo on pages50).
+3. **Lazy derived data** (uo-wasm `write.rs`, additive `layout_handle_shell`, declared): a shell layout keeps a snapshot of
+   the model it was laid out over (`Document` + context story, shallow: `Arc`s and persistent vectors, as LA7's
+   `DocParts`) and computes the navigation, the run boxes (links, inlines) and the annotations on first request
+   (`OnceCell`), and the Write section PER ENCODED PAGE (`SectionModel::page`, new, additive: the gathering of
+   `SectionModel::new` restricted to one page; `wire_page` re-indexes paragraphs per page, so the bytes are the same —
+   asserted for every page of the g8 corpus in `tests/g8.rs`). The viewer (`uo_write_layout`) and `uo_session_layout`
+   stay eager (`UoLayout::eager`).
+4. **No clone of the `Layout`** (D-L1 (a), ED-2 resolved): `LayoutEngine::lend_last / lent / give_back / take_spare`
+   (additive) and `FallbackReason::Lent` (appended, wire code 17, `'lent'` in `REASONS`), uo-render
+   `RenderView::into_parts / from_parts` + opaque `ViewRest` (additive, declared). New export `uo_shell_relayout2(e, prev,
+   …)`: `prev` (the previous handle) gives the engine's result back (its pages out of the render view, the resources, the
+   geometry), the engine relays out, the new result is lent to the new handle (`take_pages`, no copy). `prev` is then
+   STALE: no pages, no lines, a fresh layout id, every export answers an empty layout's status (asserted: page count 0,
+   `encode_page` status 6, caret not ok, navigation empty). A handle whose lend is not the engine's (older, another
+   engine's, after `clear`) gives nothing back and keeps its pages; the relayout is then full, reason `lent`. A relayout
+   error after the give-back lends the unconsumed layout back to `prev` (`take_spare` + `layout_relend`: the same render
+   view mark and id, so the JS decode tables stay valid). **Declared:** when the failed relayout had already consumed the
+   pages (the page assembly takes them; `take_spare` answers `None`) `prev` is made stale while it is still the installed
+   layout; `rust-engine.ts` `paint` then returns early for a stale layout (`dl.inner.stale`), so the canvases KEEP the
+   previous pixels (no blank pages) until the font loop's relayout installs a layout; a page first allocated in that
+   window stays blank, the caret and the hit tests answer nothing. No clone is kept for that case (it would be the copy
+   this step removes). `uo_shell_relayout` (the copy) stays for the tests and the
+   other callers. JS: `ShellEngine.relayout(session, env, { …, prev })` (js/session.mjs) calls relayout2 and flags
+   `prev.stale`; `DecodedLayout.freed` is true for a stale layout (every engine read answers `NO_PAGE`/null);
+   `rust-engine.ts` `relayoutNow` and the font loop's `adapter.layout` pass the installed layout.
+5. **Repaint only pages that changed**: `RelayoutReport::changed_pages` (additive): the relaid pages whose `LayoutPage`
+   differs from the previous result's page of the same index — `bits::same_page`: the bulk columns (characters, glyph
+   columns, text) by bits, every other field by `Debug` (the LA7 equality; a first `Debug`-only version cost 4.2 ms a key,
+   85% of it formatting the character and glyph floats). Appended to the report wire (u32 n + n u32; `report().changed`).
+   `install` deletes the page cache only for those. **D-L3 (declared):** with the same canvas sizes the buffers are kept
+   (the TS releases every visible buffer per key and allocates them again: ~3 ms of `setTransform`/allocation a key) for
+   the pages `ensureVisiblePainted` would allocate again (the others are released, so the same canvases hold pixels as in
+   the TS), and those are painted again (overlays included) from the page cache; the TS sequence stays for a size or
+   page-count change.
+6. **Resources across layouts**: `uo_layout_shared_resources` (additive): per face and image, whether its bytes are the
+   previous handle's of the same index (the same `Arc`, compared while `prev`'s `Arc`s are held, so no address is reused);
+   `js/session.mjs` attaches it as `layout.shared`; `ViewerModule.adopt(inner, prev)` copies the font keys of the shared
+   faces (no copy out of wasm, no FNV again); the viewer's `RustSession.inherit(dl, prev)` (declared, viewer
+   `rust-engine.ts`) keeps the decoded images of the shared ids, used only when the new entry asks for the same decode
+   (format, SVG, size). faceKey: 3.3 ms → 0.0 ms a key.
+7. **Incremental EditLines** (C's `hit.rs`, additive delimited block, declared): `LineIndex::patch` and
+   `EditLines::patch_body` — after an INCREMENTAL relayout over the layout the lines were built for (same blocks, same page
+   count), only the paragraphs with a line on a changed page (before or after) or whose length changed get their lines
+   again, from the same pages in the same order through the same `push_line`; body scope only; a plugin inline in a
+   paragraph to redo, another scope or other counts rebuild. `handle.rs` `lines()` (declared; `LinesCache` keeps its
+   `LineIndex`) patches when the layout's hint (`EditHint`: the previous handle's id and `changed_pages`, set by
+   relayout2) names the cached generation. Checked: `shell_native` H — after each of 40 steps (33 incremental), every
+   page's `uo_shell_page_lines` and the caret equal a rebuild.
+8. **Engine micro-costs**: (a) `uo_jsnum::format::to_js_string` / `Js` integer fast path (`|x| < 2^53`, integral, `-0` →
+   `0`: the integer's digits are exactly `Number::toString`), property test against `ryu_js` over 200,000 integers of
+   every magnitude and the edges, plus the V8 capture parity of `tests/format.rs` (D-L6). (b) `paint_line`'s run key
+   strings (uo-docx-layout `paint.rs`, declared) only when they can decide: equal components print the same string, so
+   the strings are built only when the components differ and BOTH have a `|` in a string component (F5-5) — the same
+   answer as building them per glyph.
+10. **Band repaint of a changed page (plan step 10, D-L4, declared; fix round 1).** `install` no longer drops the page cache of a
+   changed page: it marks it dirty with the previous layout's decoded page (`DecodedLayout.bandSnap`, no decode; null
+   when that layout never decoded it). `baseOf` asks the new layout `bandSince(i, snap, hf, slack)` (js/viewer.ts; the
+   comparison is the new js/band.ts): the items of the two pages are compared from both ends (structural equality, a
+   table index equal only when it is the same index of an entry that paints the same — faces and images also need
+   `inner.shared`, i.e. the same bytes); the vertical extent of the items in between is the band (glyph run: baseline
+   −2 em … +1 em; rect, line: their geometry ± the line width). It answers `'same'` (nothing to paint), the band, or null
+   (the whole page, as before) when: the snapshot is not of the layout this one was adopted after, the page size,
+   background or header/footer item count differ, the changed items start inside the header/footer layer or under a
+   pushed transform, a changed item is a clip, transform, picture, shape or path or a glyph run with text effects, or
+   any picture/shape/path of the page is under a transform, has a picture look, shadow or effects, or reaches into the
+   band widened by the margin. `baseOf` also requires that no base hook is on (S's gridlines and header/footer layers:
+   their `baseKey` part is empty). The band (+ `BAND_MARGIN_PX` = 8 device px on each side) is painted — background,
+   `under` hooks, every item, as in a whole paint — in a scratch canvas ANOTHER 8 px taller on each side, shifted by
+   whole rows; only the band rows are copied (`clearRect` + 1:1 `drawImage`) over the cached canvas. Measured on the
+   way (probe below): a clip on the page canvas changed the antialiased row where it cut a path on 6 of 76 documents (one
+   row, 3–583 bytes); the edge of a band-sized scratch canvas changed the same rows the same way; a 2 px margin was short
+   on one more document. The extra rows that are painted but not copied remove both. Exactness check (scratch probe
+   `target/m2-latency/probe-band.mjs`, not in the repo): every fixture of the editor switch (75, stride 1) + pages50, at
+   three places per document 4 × 2 typed characters, a long insertion, Enter, a character, five Backspaces; after EVERY
+   step every cached page base (band-repainted or not) compared byte by byte with the same page painted whole into a
+   fresh canvas: 2,700 steps, 6,944 page checks, 1,433 band repaints, 176 'same', 132 whole — **0 differences** (the
+   same probe with the band forced off: 0; the clip version: 59, then 23 differing page checks, the cases above). The
+   visible canvases are still repainted whole from the cache (clear + `drawImage` + overlays) for the 3–4 allocated
+   pages, as in the first round.
+
+#### Numbers
+
+Same machine, real clock, TS and Rust in the same invocation (`editor_switch --mode latency`, count build; the machine was
+shared with two other agents, so compare within a column). Median / p95 ms.
+
+| | baseline (d4279c16) TS | baseline Rust | after steps 1–6 Rust | round 1 TS | round 1 Rust | fix round TS (3 rounds) | fix round Rust (3 rounds) |
+|---|---|---|---|---|---|---|---|
+| pages50 type | 7.4 / 11.6 | 54.3 / 65.7 | 27.3 / 35.4 | 6.6 / 9.2 | 10.1 / 18.2 | 7.2 · 6.4 · 6.2 / 9.9–11.3 | 6.9 · 6.7 · 6.5 / 8.5–8.9 |
+| pages50 Enter | 196.5 / 217.8 | 452.6 / 476.2 | 217.3 / 232.6 | 129.0 / 183.6 | 66.1 / 91.2 | 192.6–196.9 / 216–225 | 98.7–101.6 / 117–125 |
+| pages50 Backspace | 192.4 / 224.7 | 446.9 / 465.7 | 213.8 / 224.4 | 120.8 / 173.1 | 63.5 / 92.7 | 191.7–196.6 / 227–234 | 98.3–100.7 / 115–136 |
+| pages500 type | 28.9 / 31.3 | 3,097 / 3,137 | 51.7 / 60.7 | 23.6 / 36.5 | 16.2 / 22.9 | 26.9–28.1 / 29–46 | 17.7–18.8 / 21–24 |
+| pages500 Enter | 1,857 / 2,059 | 7,253 / 7,274 | 2,645 / 2,655 | 1,254 / 1,421 | 1,179 / 1,291 | 1,827–1,856 / 2,007–2,133 | 1,521–1,557 / 1,576–1,594 |
+| pages500 Backspace | 1,822 / 2,157 | 7,253 / 7,354 | 2,619 / 2,646 | 1,258 / 1,321 | 1,067 / 1,140 | 1,859–1,901 / 1,902–2,154 | 1,540–1,572 / 1,544–1,645 |
+
+The fix round ran `UO_ES_ROUNDS=3` (round medians separated by dots, p95 as a range). The machine was again shared, so the
+TS column moved between runs (round 1: 6.6; the reviewer's run: 7.0; the fix round: 6.2–7.2, and 8.3 in one single-round
+run under load where Rust gave 6.7). **Acceptance:** pages500 typing and Enter/Backspace on both documents are below the
+TS in every round. **pages50 typing is at the TS fast path, not clearly under it:** Rust 6.5–6.9 vs TS 6.2–7.2 median
+(below in round 0, +0.3 ms in rounds 1 and 2), p95 below in every round (8.5–8.9 vs 9.9–11.3). Not claimed as met; what
+is left is under "Not done"; accepting the median tie is a maintainer decision, not taken here. Enter/Backspace: path
+full (reason `document`: the keys do change the formatting objects), the memo answering 339 of 345 paragraphs (pages50)
+and 2,194 of 3,338 (pages500: the memo's 64 MiB wasm cap, LA7 `MemoCaps`), against 0 in the baseline. (Round 1's lower
+Enter numbers were a run with a TS of 121–129 ms, i.e. a lighter machine; in the fix round Rust is about half the TS on
+pages50 and about 0.83 of it on pages500.)
+
+Per-stage medians of a typed key (ms; marks of `rust-engine.ts` + the harness's instance wrappers, inclusive):
+
+| pages50 | baseline | steps 1–6 | round 1 | fix round (D-L4) |
+|---|---|---|---|---|
+| exec | 0.2 | 0.2 | 0.1 | 0.1 |
+| relayout (engine + give-back/lend + handle) | 27.2 | 14.6 | 4.2 | 3.5–3.7 |
+| install + paint | 26.5 | 12.3 | 5.6 | 2.8–3.0 |
+| caret (EditLines) | 7.3 | 1.5 | 0.1 | 0.1 |
+| decode | 0.9 | 0.5 | 0.4 | 0.3 |
+| faceKey | 3.3 | 0.0 | 0.0 | 0.0 |
+| paintItems | 6.9 | 1.7 | 1.0 | 0.3 |
+| baseOf | 10.4 | 3.4 | 2.6 | 1.1–1.2 |
+| canvases | 1.1 | 1.1 | 0.0 | 0.0 |
+
+pages500: relayout 2,150 → 13.5 → 7.1 → 8.6–9.0, install + paint 945 → 36.0 → 8.2 → 8.4–9.0 (`baseOf` 2.4–2.5: 30
+keys only, and the first key on a page paints it whole), caret 923 → 20.0 → 0.4 → 0.6.
+
+CDP profile (pages50, 40 keys, a `strip=false` build; ms per key): baseline 45 (planner) with `uo_shell_relayout` 21.3 and
+`Blocks::next` + `DocView::block` 13–14; after steps 1–6: 21.9 with `uo_shell_relayout2` 11.2 (of which 4.2 the
+`Debug`-only page comparison of step 5, then replaced by `same_page`); final 10.95: `uo_shell_relayout2` 4.32 (the
+engine's `incremental` 4.11: `run_from` 3.30 — page 24 is laid out again from its checkpoint although only page 25
+changed, the resume rule, untouched —, `Converge::before_block` 0.51, the page comparison 0.31), `paint` 5.15 (`baseOf`
+2.63 for one page, R's `paintEngineMarks` + `pageLines` 1.32, `drawImage` 0.80, `setTransform` 0.69). No `Blocks::next`,
+run boxes, annotations, `SectionModel::new`, navigation or `EditLines::new` per key.
+
+Native `shell_native` E (release, re-run on the fix round's tree, two runs each; the editor's path, `uo_shell_relayout2`
+with the previous handle): pages50 per key 2.74–3.05 ms (baseline 11.3), allocated 10,452,991 B (15.9 MB), peak
+952,898 B (7.6 MB); pages500 4.49–4.70 ms (1,158), 13,591,416 B (103.8 MB), peak 3,691,325 B (75.9 MB). The caret of a
+new layout as E measures it is the PATCHED one (E asks the previous layout's caret first, so the new layout's hint names
+the cached generation and `lines()` patches): 0.05 ms (pages50), 0.25 ms (pages500). Round 1's "rebuilt 1.21 / 24.6 ms"
+and "pages500 6.15 ms" came from a run before the final edits and are withdrawn; the rebuilt cost was not re-measured in
+release (H checks that the patch equals a rebuild; debug pages50: 0.37 ms patched vs 2.93 ms rebuilt). `bench_relayout` (release): pages50 type 3.17 ms (planner: 7.1 under load), Enter 51 ms with the memo
+(329 hits); pages500 type 7.95 ms, Enter 864 ms.
+
+**Memory.** Live bytes / `memory.buffer` after opening: pages50 52.5 / 69.0 MB → 45.1 / 64.7 MB; pages500 447.2 / 666.3 MB
+→ 373.4 / 624.2 MB: the handle's copy of the `Layout` is gone (−7.4 MB and −73.8 MB live). The engine's own incremental
+state is unchanged (`bench_relayout`: kept / `Layout` 2.43 at 50 pages and 2.46 at 500 without the memo; 3.5–4.1× with it
+in the LA7 record): sharing does not change that ratio, it removes the duplicate. Per key: allocated 10.5 / 13.6 MB (was
+15.9 / 103.8), peak 0.95 / 3.7 MB (was 7.6 / 75.9). `memory.buffer` still grows while typing (pages50 64.7 → 76.7 MB over
+200 keys while live bytes grow 0.9 MB; pages500 624 → 656 MB over the Enter phase): dlmalloc high-water marks (a first
+version that let the patched EditLines columns double grew it by 20 MB; their compaction now keeps them at ≤ 1.25× live).
+`--mode memory` (fix round too): sessions/engines/handles 0 after each remove, live bytes 16,986,450 at every cycle end
+after warm-up (as wave 4), buffer 29,163,520 (one value). D-L4 adds one scratch canvas per editor (page width × band
+height + 16 rows, reallocated per band) and keeps the previous layout's decoded page of a dirty cached page until it is
+painted (JS heap, no wasm memory); the wasm figures are unchanged. shell_api M4 2,000 (FinalizationRegistry, live back to 12,782,895); shell_native
+B (M1) 0 B left, C (M4) 10,000 engines 0 B left. pages500 still ends near 0.6 GB of wasm memory (D-L7: the LA7 retention
+decision stays open).
+
+#### Exactness checks
+
+- `shell_native` A (30 seeded steps, every page message byte-equal to `uo_session_layout`), G (the same script through
+  `uo_shell_relayout2`: pages equal, the previous handle stale — 0 pages, `encode_page` status 6, no caret —,
+  `changed ⊆ relaid`, 20/20 incremental mid-document keys with every face shared, a handle without the lend keeps its
+  pages and the relayout is full with reason 17), H (40 steps, 33 incremental: the patched edit lines and the caret equal
+  a rebuild), F (R-3: modifyStyle, updateStyleFromSelection, undo/redo: full, reason `document`, pages equal; memo 117/120
+  on Enter). `zero_generation` of the test also shrinks the Write section's length prefix with its layout id (two ids of
+  different varint lengths — a parallel run passing 16,384 layouts — made A and G fail spuriously).
+- `la7` 13/13 with two new checks in every differential step: the lend round trip (lent: no layout, no second lend; given
+  back: the same canonical digest) and every relaid page outside `changed_pages` `Debug`-equal to the previous relayout's
+  (line ids included); `layout_parity` 5, `g8` 4 (every page's per-page section bytes == the eager ones).
+- uo-jsnum `tests/format.rs` 12 (V8 captures) + the fast path against `ryu_js` (200,000 integers and the edges).
+
+#### Declarations (wave 6, L)
+
+- **ED-2 resolved** by `uo_shell_relayout2` (the copy stays in `uo_shell_relayout` for the tests and other callers).
+- **ED-315 superseded** (R's two lines in `apply` removed, fix round 1): no ChangeSet drops the engine's state; LA7 sees
+  R-3's style edits (test F). Round 1 kept a `dropBase()` and claimed that f7b__7__8, f7b__7__10 and f8__7__5 of
+  `editor_switch_objects` ended with a stale page 0 without it and had "0 undeclared differences" with it. That claim was
+  wrong: the three differ in the end pixels of page 0 WITH the drop too (272 different facets, all declared since front
+  C's gate-C1, whose probe shows a content layout difference of the TS-saved document in both engines, not a stale
+  incremental page); round 1's own 01:44 run (before gate-C1) showed 2 undeclared end-pixel differences on each of the
+  three with the drop. Without the drop: the same 4,729 / 272 facets and gate-C1 used for exactly those three; stories,
+  review, `editor_switch --mode parity` (stride 6 and stride 1) unchanged. The drop API is removed.
+- **D-L4 band repaint** (step 10): a changed page's cached base is painted again only in the band where its items differ
+  from the previous layout's (the whole page in every case the band cannot bound, listed in step 10). Exact on every
+  fixture of the editor switch by the byte-for-byte probe; `editor_switch --mode parity` at stride 1: every facet equal or
+  declared by the pre-existing entries (screen pixels 168 equal / 4 declared, thumbnails 1,138 / 12 declared).
+- **A stale installed layout is not painted** (step 4): the canvases keep their pixels after a failed relayout that
+  consumed the pages, until the font loop installs a layout.
+- **FallbackReason::Lent** (wire 17, `'lent'`), **stale handles** (`uo_layout_*`, caret and hit exports answer an empty
+  layout's statuses; `DecodedLayout.freed` true; `WriteLayout.stale`), `report().changed` (appended to the 26-byte wire).
+- **D-L3**: kept canvas buffers; only the allocated pages outside the `ensureVisiblePainted` window are released (the same
+  canvases hold pixels as in the TS — a first version that kept every buffer failed R's revisions screen facet), the kept
+  ones painted again with their overlays.
+- **Edits outside L's files** (each additive): C's `hit.rs` (three `Locator` lookups in `EditLines::new`, the delimited
+  patch block with `compact` and `same_as`), `handle.rs` (`LinesCache.index` / `edited`, the patch in `lines()`,
+  `lines_edited()` instead of dropping the cache on a command, undo, redo or job), uo-docx-layout `paint.rs` (the run key
+  strings), uo-render `view.rs` (`into_parts`/`from_parts`/`ViewRest`), uo-jsnum `format/mod.rs` (the fast path),
+  `write.rs` (`OnceCell` derived data, `ShellPart`, `ModelSnapshot`, `EditHint`, `layout_handle_shell`, the lend helpers,
+  `uo_layout_shared_resources`; its import order now passes rustfmt), the viewer `rust-engine.ts` (`inherit`),
+  `write-engine.d.ts` / `write.d.ts` / `session.d.ts` / `write-session.d.ts` (optional fields and methods; fix round:
+  `BandSnap`, `bandSnap`, `bandSince` in `write-engine.d.ts`, `dropBase` removed from the two session types), the new
+  `js/band.ts` (imported by `js/viewer.ts`, so the viewer bundle carries it too; the viewer never calls it).
+
+#### Not done / for the gate
+
+- **pages50 typing is at the TS fast path, not clearly under it** (median 6.5–6.9 vs 6.2–7.2, p95 below). What is left:
+  the engine's resumed run of the page before the edit (about 3.3 ms of the 3.5–3.7 ms relayout: the checkpoint rule, not
+  relaxed); the repaint of the 3–4 allocated visible canvases from the cache with their overlays (about 1.4 ms: R's
+  overlay hook `pageLines` per allocated page, which needs front R's agreement and a declaration (an index of the edit
+  lines by page in `shell_review.rs`), and the clear + `drawImage` per page; repainting only the canvases a key changed
+  needs the overlay hooks of the three fronts to say which pages they draw on); the band itself (`baseOf` 1.1 ms).
+  Whether the median tie is accepted is the maintainer's decision.
+- Verification of the fix round (wasm rebuilt after the drop API removal; logs `target/m2-latency/fix1-*.log`):
+  `editor_switch_objects --mode all` exit 0 in both runs (4,729 / 272, all declared; round 1's intermittent
+  `f7a__7__1|views` did not recur: views 358 / 4 declared). `editor_switch_review` and `editor_switch_stories` exit 0.
+  `editor_switch` parity stride 6 (13 documents, no declared entry used) and stride 1 (74 documents: only the
+  pre-existing entries gate-O3, gate-10, ED-600, ED-108 used). Latency and memory ok. `viewer_switch --mode parity`
+  stride 6 with the viewer build and the session build. shell/write/session API node tests. `shell_native` A–H (8), the
+  stories/objects/review natives, `la7` 13, `layout_parity` 5, `g8` 4, uo-jsnum format 12. `check-changed`, rustfmt
+  of the touched files, editor and viewer `tsc`, strict `tsc` (band.ts included), editor vitest 329, viewer 25 + 1
+  skipped.
+- `rust-engine.ts` after round 1's restore from a backup: L checked that front C's edits are in the working tree (the
+  `wave 6 (C)` blocks of `onKey` (word moves, Ctrl+Up/Down, Ctrl+Home/End, PageUp/PageDown, Ctrl+C/X), of
+  `onMouseDown`, and the collapsed-selection clipboard) and that C's three harnesses pass on this tree. Front C's own
+  confirmation is still to be given; L cannot give it.
+- `same_page` compares the rest of a page by `Debug` (≈ 0.3 ms per relaid page); the wasm `memory.buffer` high-water
+  growth while typing; D-L2 (`Story::block_at` O(i) in uo-docx) still open for the session ops.
+
+### Wave 6 — C: clicks, keys and caret (the remaining parity causes of the editor switch)
+
+Frontier C of wave 6 (plan of the wave's planner, measured at `d4279c16`; builds of `$T/m2-wsession/wave6-c`, which also
+hold frontier L's in-progress code). Every cause below was measured first; each closed one is a port of the TS rule, and
+its DECLARED entries are removed (not widened). ED numbers of this frontier: ED-600.. (decision D-C1).
+
+**Causes closed**
+
+1. **Gate item 1 (caret/hit x on mixed-size lines), gate item 2 (End on a wrapped line) and most of gate item 10 were one
+   cause: the editor never hyphenated** (D-C0). `uo_write_env_register_hyphenation` (uo-wasm `write.rs`) refused the
+   patterns with 'patterns in use' (`Arc::get_mut`) once any editor session had laid out on the page: the session's
+   `HostFonts` and the shell engine (`ShellEngine::hyph`, shell.rs) keep a clone of the environment's registry for their
+   whole life, and the viewer's `prepare` swallowed the error (`catch {}`). Measured: f7a__7__3 paragraph 0, TS line
+   `[0, 84]` ending in "câ-mera", the session 82 (End 81). Fix: copy-on-write registration (`Arc::make_mut`; uo-fonts
+   `HyphenationRegistry` derives `Clone`, additive: it holds `Arc<Hyphenator>`s): the holders keep the old snapshot until
+   their next layout; the shell engine already rebuilds itself when the registry pointer changes, so the relayout after
+   a registration is a FULL one (for frontier L's latency numbers: once per language and page). `hit.rs` and `caret.rs`
+   were right (their `lineEndOffset` port is faithful: a hyphenated line has no trailing space). Native test A
+   (`tests/shell_caret_native.rs`): registration OK, the relayout full, End at 84 (81 before the patterns); M1 of a
+   registration + the relayout after it: 21,743,660 B allocated, 0 B left. D-C5: the viewer's `prepare` says a refused
+   registration once (`console.warn`) instead of nothing.
+2. **The click on an object (the 'ED-216; wave-6' entries, f7b__7__10)**: the first divergence was the parity driver:
+   `clickTarget` sets the target's selection in the TS run only (to measure its caret), and a click that lands on a
+   shape selects it and keeps the caret in both engines, so the Rust run kept another caret (D-C3). `runStep` now replays
+   that `setSelection` before each click in both runs (a no-op in the TS run). What was left behind it was real (point 3).
+3. **The keys with an object selected follow the TS keydown order** (universal-write.ts 10516–10746: the Ctrl block —
+   `moveWord`, `deleteWord`, `copy`/`cut`, the map —, PageUp/Down, Ctrl+Home/End and Tab come before the `floatSel`
+   branch): front O's `onKey` leaves Ctrl+Delete/Backspace and Ctrl+Left/Right to the shell (it deleted or nudged the
+   shape); the shell's `deleteWord` extends the selection by the word move instead of the routed `setSelection` (which
+   cleared the float selection; the TS assigns `this.selection`); Ctrl+Home/End assign the selection through new
+   `Dir::DocStart`/`DocEnd` moves (uo-wasm `caret.rs`, codes 8/9; `js/session.mjs` dir names; no float selection or
+   pending props cleared, TS 10606); PageUp/PageDown run with Ctrl too (the TS checks no modifier).
+4. **Keyboard copy/cut (D-C2)**: Ctrl+C/Ctrl+X (with or without Shift) prevent the default and run the element's routed
+   `copy()`/`cut()` (frontier R's port over `navigator.clipboard`, TS 10577): the session decides what is copied (a
+   selected drawing object too) and the system clipboard gets the TS text — CRLF between paragraphs when read back in
+   Chromium on Windows: the ED-16 CRLF entries (f7a__7__14, f7c__7__5 step 6, f8__7__5 step 3) are equal. The shell's
+   `clip()` (copy/cut events that do not come from the keyboard) no longer returns early on a collapsed selection: the
+   session's copy ports the TS early returns and the `floatSel` branch.
+5. **gate-O4: Ctrl+ArrowUp/Down** (with Shift) move the caret as the TS `nav` (the Ctrl block handles Left/Right only);
+   with an object selected they nudge it by 15 twips (front O's `onKey`, the TS `floatSel` branch). The five gate-O4
+   entries of `editor_switch_objects.mjs` are removed.
+6. **The text-box click (S ED-102, S-G2, f7d__7__3's ED-216 entry; D-C4)**: uo-docx `EditContext::Textbox` addresses the
+   box by an opaque path into the outer story (`TextboxAt(Arc<[loc::Step]>)`: cells, group items, boxes in boxes;
+   `top_level()`, `Display` for scope keys) instead of `(para, run)`; `story_of`/`story_of_mut` walk it with
+   `loc::run_at(_mut)`; the new `ContextCmd::EnterTextboxAt { focus, page }` is the TS `enterTextbox(focusRun)` by the
+   clicked box's order in `contextTextboxRuns` (the chain's head is resolved as `reenter_textbox` does, whose `top_level`
+   restriction is gone, so undo re-enters nested boxes as the TS `te.h/te.f`); the old `EnterTextbox { para, run, … }`
+   stays (wire-compatible). Public read accessor `context::textbox_of(doc, ctx)`. Schema: `ContextCmdEnterTextboxAt` and
+   the enum variant appended (frontier R owned the schema in wave 5; codecs regenerated). `uo_shell_textbox_at` takes the
+   TS rule: a placed object with content, `hf` of the context, whose box is among the outer story's boxes (the TS
+   `mine`, by drawing), instead of top-level runs of the outer story only; it answers `focus`/`host` and `para`/`run`
+   only for a top-level head (null otherwise; the context JSON carries `at`). Front S's `enterTextbox` sends
+   `enterTextboxAt`; front O's `onPointer` drops its first-cut fallback (a content-bearing float the export did not
+   answer); the shell's `onMouseDown` runs the fronts' pointer hooks before it requires a text hit (the TS runs the
+   objects and the text-box entry before its `hitTest`, 10148–10209; the hooks get `hit: Pos | null`, R's comment hook
+   guards it). The session's font-usage replay (uo-docx `session_font_usage`) now opens the 11 boxes anchored in table
+   cells it could not (the pinned count 11 → 0, the replay still 1,401 equal, 0 mismatches).
+7. **S-G3, linked boxes**: the shell's `textbox_chain` (the edit lines of a box in edit) is the TS `textboxChain` over
+   the outer story in `forEachTextbox` order — group items included (f7d__7__10: 5 members, the first cut found 4).
+   The f7d__7__10 chain of story 2 still has no caret at its start: measured in the frozen TS (scratch probe entering
+   every box by order), the TS has none either (the head's first paragraph is laid out in no placed box; the fourth
+   member is a group item without content), so it is parity, not a gap.
+8. **S-G1**: the cause was not the layout: uo-docx `insert_table` entered the new table's first cell before
+   `touch_structure`, which asks for `syncSections` only in the body context, so the sections kept their old block
+   ranges and the paragraph after the table was outside every section of the live layouts (also in the body and after
+   a full layout; another body edit synced it — measured natively). The TS builds the sections from the body at every
+   layout, also during a cell edit: `insert_table` (a body table) syncs them right after the automatic caption (D-C6:
+   a uo-docx fix, no layout crate change). Native test D; `shell_stories_native` C asserts the line now; the stories
+   harness' T1 entry is removed.
+9. **BUG-1**: `uo_session_selection_rects` draws `normalize_range(range)` (the TS `paintEngineSelection`); native test B
+   (f7d__7__9 paragraph 6: 106 → 10 answers the rectangles of 10 → 106).
+
+**Declarations (outside the TS semantics or TS defects)**
+- **ED-600** (a frozen-TS defect, reference only, not reproduced; D-C7): typing in the anchor paragraph of a selected
+  shape leaves the TS `floatSel` on a run the model no longer holds (traced: `selectedObjectCount()` 1 and
+  `selectedFloat()` null from the typing on), so Delete misses the `floatSel` branch and deletes a character (one
+  `uw-change`); the session keeps the shape selected and deletes it (two). f7d__7__11 from step 11.
+- **ED-601** the shell keeps its `copy`/`cut` clipboard-event listeners (the TS has none: a copy event that is not the
+  keyboard's does the browser's default there); the keyboard path, the only one the harnesses drive, is the TS's.
+- **ED-602** the chain of a box in a header/footer is gathered over the part's story with its tables; the TS
+  `storyBlocksOf` gives the part's paragraphs only (a linked box inside a header table: not in the corpus).
+
+**What is still declared (each with its cause)**
+- `editor_switch.mjs` (5 of the 18 of HEAD): f2-3-3 (**gate-O3**, measured by the end screens: the Strong runs are orange
+  in the TS and red in the session — `w:color C00000` with `themeColor accent2` and no theme part; not hyphenation);
+  f7c__7__1 and f7c__7__5 (**gate-10**, end thumbnails only, the saved bytes equal: the TS-saved document reopened in both
+  engines (`editor_switch_objects --mode probe`) differs as well, and a full relayout before the end changes nothing — a
+  layout difference of the content, not the editing path); f7d__7__11 (**ED-600**); f8__7__5 (**ED-108**, the TS save
+  inside a text box).
+- `editor_switch_stories.mjs`: X1 ×3, X2, X3, X4 (**ED-106**, the TS paints the handles of the box in edit: front O's
+  paint, not the click) and X2's **ED-108**.
+- `editor_switch_objects.mjs`: O's ED-202, ED-209, ED-213, ED-219, gate-O1, gate-O2, gate-O3; new **gate-C1** for
+  f7b__7__8, f7b__7__10 and f8__7__5 (the end pixels of page 0 only, every step facet and `word/document.xml` equal; the
+  TS-saved document reopened in both engines differs the same way: a layout difference of the content after the drags
+  and nudges, exposed once gate-O4 was fixed — the gate-O4 entries had covered the end pixels); **gate-O5** stays: seen
+  in every run now (2 of 2, f7b__7__3 objects and f7a__7__1 views), and a full relayout (incremental state dropped) right
+  before the end changes nothing, so it is not the late-face race of an incremental relayout the record assumed: the
+  bold table runs of f7b__7__3 page 0 are narrower in the session after the edits (cause not isolated; the step-8 rule of
+  the plan — a full relayout on `onFontsResolved` — would not change it, so it was not made).
+
+**Files touched outside the frontier's own files (each declared)**: uo-fonts `hyphen/registry.rs` (`Clone`); uo-wasm
+`write.rs` (the registration, three lines; the file's pre-existing rustfmt diff untouched); uo-docx `session/ops/context.rs`,
+`drawing/textbox.rs`, `tables.rs` and `tests/session_font_usage.rs`; `schema/session.uos` and the generated codecs; uo-wasm
+`session/layout.rs` (frontier L's file: the scope key's one line, `t{at}`); `js/session.mjs`/`session.d.ts` (the two dir
+names), `js/session-stories.d.ts` and `write/packages/editor/src/write-session*.d.ts` (nullable `para`/`run`, `at`);
+`rust-engine-review.ts` (one guard line); `write/packages/viewer/src/rust-engine.ts` (D-C5); the parity driver of
+`editor_switch.mjs` (the click preset, D-C3) and the DECLARED tables of the three harnesses.
+
+**Numbers** (2026-11-12; builds of `$T/m2-wsession/wave6-c`)
+- Native `tests/shell_caret_native.rs` (new, 4 tests, ~90 s): A (End 81 → 84 after the registration; M1 of a
+  registration + relayout: 21,743,660 B allocated, 0 B left), B, C (37 boxes reached by the shell's `textbox_at` over the
+  f7b/f7d/f8 fixtures entered by order, typed into and re-entered by undo: chains whose head is a group item — f7d__7__3
+  `p0.2/i0`, f7d__7__4 `p2.2/i0` — and linked boxes; the two without a caret are the TS's too), D (S-G1). `shell_native`
+  8, `shell_stories_native` 8, `shell_objects_native` 4: pass.
+- uo-docx (`--test all`, the session/parity/no-panic/memory modules of d2a, f3, f4, f7, f8, f10 and `session_font_usage`):
+  128 passed (font usage: 160 documents, 1,401 equal, 0 mismatches, 0 boxes not opened — was 11).
+- wasm: `session_api` 5 pass; `session_replay` d2a/f3/f7/f10 0 mismatches (49,800 / 40,390 / 27,207 / 76,346 facets
+  equal); `shell_api` 2 pass; `write_api` 8 pass.
+- Chromium: `editor_switch --mode parity` (stride 1, 12 steps): 74 fixtures, selection 888/888, caret 888/888, clipboard
+  888/888, every difference declared by 5 entries (18 at HEAD), 0 page errors; `--mode all` ok; `editor_switch_stories
+  --mode all` ok (T1's S-G1 entry gone); `editor_switch_objects --mode all` ok after the declarations above (three full
+  runs); `editor_switch_review --mode all` ok; `viewer_switch --mode all` (stride 1, the write.rs change) 74 documents,
+  579 pages, 0 differences.
+- Editor vitest 33 files / 329 tests, viewer 6 files / 25 + 1 skipped; editor and viewer tsc exit 0; strict core tsc 0;
+  `uo-schema check` 20 files up to date; `check-changed` all steps passed; rustfmt clean on the touched files of this
+  frontier (`write.rs` and the lines of frontier L in `handle.rs` not formatted).
+
+**Process metrics**: one implementer (Opus) on the planner's measured plan; three measurement detours, each a scratch
+probe outside git (the stale-`floatSel` trace of ED-600, the TS caret of every box of f7d__7__10 for S-G3, the reopen
+probes of f7c__7__1/5 and gate-C1); the plan's step 8 (a full relayout on `onFontsResolved`) not made, measured as not
+the cause. Two harness runs were lost to frontier L's in-progress `js/session.mjs` asking for a newer wasm export
+(rebuilt from the shared tree).

@@ -46,6 +46,7 @@ export function reviewHandlers(ed: RustEditor): Record<string, (...args: never[]
     hooks.pointer.unshift(() => { author.sync(); return false; });
     hooks.key.push(keyHook(c, out, clip.pushDefaults));
     hooks.pointer.push((e, hit) => {
+      if (!hit) return false; // wave 6 (C): the pointer hooks run off the text lines too
       if (ctrlClick(e, hit)) { e.preventDefault(); return true; }
       // a click on commented text tells the comments pane (the TS `uw-comment-click`), then the click goes on
       if (e.button === 0 && c.s) {

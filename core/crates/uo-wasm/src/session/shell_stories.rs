@@ -372,10 +372,21 @@ fn write_context(j: &mut Js, doc: &Document, ctx: &EditContext) {
             j.key("page");
             j.int(*page);
         }
-        EditContext::Textbox { outer, para, run, host, focus, page, .. } => {
+        EditContext::Textbox { outer, at, host, focus, page, .. } => {
             j.key("kind");
             j.string("textbox");
-            for (k, v) in [("para", *para), ("run", *run), ("host", *host), ("focus", *focus), ("page", *page)] {
+            // wave 6 (C): `para`/`run` of a top-level box, null for a box in a cell, a group or a box (`at`: its path)
+            let top = at.top_level();
+            for (k, v) in [("para", top.map(|t| t.0)), ("run", top.map(|t| t.1))] {
+                j.key(k);
+                match v {
+                    Some(v) => j.int(v),
+                    None => j.null(),
+                }
+            }
+            j.key("at");
+            j.string(&at.to_string());
+            for (k, v) in [("host", *host), ("focus", *focus), ("page", *page)] {
                 j.key(k);
                 j.int(v);
             }
@@ -1430,72 +1441,57 @@ pub unsafe extern "C" fn uo_shell_note_at(h: *const UoWriteSession, para: u32, o
 
 // ───────────────────────── the text box scope (WS-D6) ─────────────────────────
 
-/// The linked boxes of story `sid` in `story` and everything below it (`link.id === sid`): `(seq, drawing)`.
-fn linked_boxes(story: &uo_docx::model::story::Story, sid: f64, out: &mut Vec<(f64, uo_docx::ids::DrawingId)>, depth: u32) {
-    if depth > 64 {
-        return;
-    }
-    for p in story.paras.iter() {
-        for r in &p.runs {
-            let Some(tb) = r.ext().and_then(|e| e.textbox.as_deref()) else { continue };
-            if let Some(l) = &tb.link
-                && l.id.to_number() == sid
-            {
-                out.push((l.seq.to_number(), tb.drawing));
-            }
-            linked_boxes(&tb.content, sid, out, depth + 1);
-        }
-    }
-    for a in story.tables.iter() {
-        for row in &a.table.rows {
-            for c in &row.cells {
-                linked_boxes(&c.content, sid, out, depth + 1);
-            }
-        }
-    }
-}
-
-/// The chain of the text box being edited (`textboxChain(tb)`, uo-docx `drawing.rs` 722): the drawing of the
-/// run at the context's `(para, run)` (the head: the session edits the head's content), then the boxes
-/// linked to its story in `seq` order; and the header/footer page when the box is in a header or footer.
-/// `None` outside a text box context.
+/// The chain of the text box being edited (`textboxChain(tb)`, universal-write.ts 2810, over the story that holds
+/// the box — `storyBlocksOf`: the body or the header/footer part — in `forEachTextbox` order: boxes in cells, group
+/// items and boxes included): the head's drawing (the session edits the head's content), then the boxes linked to
+/// its story in `seq` order (a stable sort, as the JS one); the head alone when the TS answers no chain (no head of
+/// that story or no linked box). And the header/footer page when the box is in a header or footer. `None` outside
+/// a text box context. Wave 6 (C): the first cut gathered the linked boxes of every story but not of group items
+/// (f7d__7__10: 4 of the TS's 5 members).
 #[must_use]
 pub fn textbox_chain(s: &uo_docx::session::Session) -> Option<(Vec<uo_docx::ids::DrawingId>, Option<u32>)> {
-    let EditContext::Textbox { outer, para, run, page, .. } = s.context() else { return None };
+    use uo_docx::js::JsNumber;
+    let ctx = s.context();
+    let EditContext::Textbox { outer, page, .. } = ctx else { return None };
     let doc = s.document();
-    let story = uo_docx::session::ops::context::story_of(doc, outer)?;
-    let r = story.paras.get(*para as usize)?.runs.get(*run as usize)?;
-    let tb = r.ext()?.textbox.as_deref()?;
+    let tb = uo_docx::session::ops::context::textbox_of(doc, ctx)?;
     let mut chain = vec![tb.drawing];
-    if let Some(sid) = tb.story.map(uo_docx::js::JsNumber::to_number)
-        && tb.link.is_none()
+    if (tb.story.is_some() || tb.link.is_some())
+        && let Some(story) = uo_docx::session::ops::context::story_of(doc, outer)
     {
-        let mut ms: Vec<(f64, uo_docx::ids::DrawingId)> = Vec::new();
-        linked_boxes(&doc.body, sid, &mut ms, 0);
-        for p in doc.hf.iter() {
-            linked_boxes(&p.story, sid, &mut ms, 0);
+        let mut order = Vec::new();
+        textbox_order(story, &mut order, 0);
+        let id = match &tb.link {
+            Some(l) => l.id.to_number(),
+            None => tb.story.map_or(f64::NAN, JsNumber::to_number),
+        };
+        // `heads`: the first box of each story id that links nowhere
+        let head = order.iter().find(|t| t.link.is_none() && t.story.is_some_and(|v| v.to_number() == id));
+        let mut ms: Vec<&uo_docx::model::run::DrawingTextbox> =
+            order.iter().copied().filter(|t| t.link.as_ref().is_some_and(|l| l.id.to_number() == id)).collect();
+        ms.sort_by(|a, b| {
+            let (x, y) = (a.link.as_ref().map_or(f64::NAN, |l| l.seq.to_number()), b.link.as_ref().map_or(f64::NAN, |l| l.seq.to_number()));
+            x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        if head.is_some() && !ms.is_empty() {
+            chain.extend(ms.into_iter().map(|t| t.drawing));
         }
-        for st in doc.notes.footnotes.values().chain(doc.notes.endnotes.values()) {
-            linked_boxes(st, sid, &mut ms, 0);
-        }
-        ms.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        chain.extend(ms.into_iter().map(|m| m.1));
     }
     let hf_page = matches!(**outer, EditContext::HeaderFooter { .. }).then_some(*page);
     Some((chain, hf_page))
 }
 
 /// The textbox runs of `story` in `forEachTextbox` order (fulldoc.ts 441: each box, then its content; cells;
-/// group items), as their drawings.
-fn textbox_order(story: &uo_docx::model::story::Story, out: &mut Vec<uo_docx::ids::DrawingId>, depth: u32) {
+/// group items) — the TS `contextTextboxRuns`, uo-docx `loc::textbox_paths` order.
+fn textbox_order<'a>(story: &'a uo_docx::model::story::Story, out: &mut Vec<&'a uo_docx::model::run::DrawingTextbox>, depth: u32) {
     if depth > 64 {
         return;
     }
-    fn runs(rs: &[uo_docx::model::run::Run], out: &mut Vec<uo_docx::ids::DrawingId>, depth: u32) {
+    fn runs<'a>(rs: &'a [uo_docx::model::run::Run], out: &mut Vec<&'a uo_docx::model::run::DrawingTextbox>, depth: u32) {
         for r in rs {
             let Some(e) = r.ext() else { continue };
             if let Some(tb) = e.textbox.as_deref() {
-                out.push(tb.drawing);
+                out.push(tb);
                 textbox_order(&tb.content, out, depth + 1);
             }
             if let Some(g) = e.group.as_deref() {
@@ -1532,16 +1528,17 @@ fn top_run_of(story: &uo_docx::model::story::Story, want: impl Fn(&uo_docx::mode
     None
 }
 
-/// `hitTextbox(e)` (13375) on `page`: the text box (with content) under `(x, y)` among the boxes of the
-/// story outside the box (the body, or the header/footer part in edit), turned with its shape, `tol` twips
+/// `hitTextbox(e)` (13338) on `page`: the text box (with content) under `(x, y)` among the boxes of the
+/// story outside the box (the body, or the header/footer part in edit: the TS `mine` =
+/// `contextTextboxRuns`, boxes in cells, groups and boxes included), turned with its shape, `tol` twips
 /// of border outside (5 px of the screen: the shell passes it), the top one winning (front layer first,
 /// then `relativeHeight`). JSON `{ para, run, host, focus, page, rect: { x, y, w, h }, rot, onBorder }`:
-/// `para`/`run` the head of the chain in the outer story (the content the session edits), `host`/`focus`
-/// the order of the head and of the hit box among the story's boxes (`contextTextboxRuns`), `onBorder`
-/// whether the point is in the band of `tol` on both sides of the outline (`onObjectBorder` 13673: the TS
-/// selects the shape there, frontier O's selection; the shell does not enter the box). Status 1 when
-/// no box is there. Declared (ED-102): a box inside a table cell or inside another box is not entered (the
-/// session enters the boxes of the outer story's top-level paragraphs).
+/// `host`/`focus` the order of the chain's head and of the hit box among the story's boxes (the session's
+/// `enterTextboxAt { focus }`), `para`/`run` the head when it is a top-level run of the outer story (null
+/// otherwise; the old `enterTextbox`), `onBorder` whether the point is in the band of `tol` on both sides
+/// of the outline (`onObjectBorder` 13673: the TS selects the shape there, frontier O's selection; the shell
+/// does not enter the box). Status 1 when no box is there. Wave 6 (C): ED-102 closed (the first cut kept the
+/// boxes of the outer story's top-level paragraphs only).
 ///
 /// # Safety
 /// `h`, `layout` null or live.
@@ -1556,7 +1553,6 @@ pub unsafe extern "C" fn uo_shell_textbox_at(
 ) -> *mut UoBuf {
     // SAFETY: the caller guarantees the handles are null or live.
     let (Some(s), Some(l)) = (unsafe { h.as_ref() }, unsafe { layout_ref(layout) }) else { return buf(NULL_HANDLE, Vec::new()) };
-    use uo_docx::view::StoryRef;
     let session = &s.session;
     let doc = session.document();
     let view = session.view();
@@ -1565,9 +1561,9 @@ pub unsafe extern "C" fn uo_shell_textbox_at(
         EditContext::Textbox { outer, .. } => outer,
         c => c,
     };
-    let (in_hf, outer_ref, hf_page) = match outer {
-        EditContext::HeaderFooter { part, page, .. } => (true, StoryRef::HeaderFooter(*part), Some(*page)),
-        _ => (false, StoryRef::Body, None),
+    let (in_hf, hf_page) = match outer {
+        EditContext::HeaderFooter { page, .. } => (true, Some(*page)),
+        _ => (false, None),
     };
     if hf_page.is_some_and(|p| p != page) || !x.is_finite() || !y.is_finite() {
         return buf(NONE, Vec::new());
@@ -1581,18 +1577,20 @@ pub unsafe extern "C" fn uo_shell_textbox_at(
     };
     let geom = layout_geom(l);
     let Some(p) = geom.pages.get(page as usize) else { return buf(NONE, Vec::new()) };
+    // the TS `mine`: the boxes of the outer story (`contextTextboxRuns`), by drawing
+    let mut order = Vec::new();
+    textbox_order(outer_story, &mut order, 0);
     let mut best: Option<(&uo_docx_layout::output::PlacedObject, &uo_docx::model::run::DrawingTextbox, f64, bool)> = None;
     let mut best_z = f64::NEG_INFINITY;
     for o in p.objects.as_deref().unwrap_or(&[]) {
         let Some(rr) = o.run.as_ref() else { continue };
-        if o.content.is_none() || o.hf != in_hf || rr.sub != uo_docx::view::RunSub::None {
-            continue;
-        }
-        let own = rr.story == outer_ref || (rr.story == StoryRef::Context && !matches!(ctx, EditContext::Textbox { .. }));
-        if !own || rr.path.depth() != 0 {
+        if o.content.is_none() || o.hf != in_hf {
             continue;
         }
         let Some(tb) = view.run(rr).and_then(|r| r.ext()).and_then(|e| e.textbox.as_deref()) else { continue };
+        if !order.iter().any(|t| t.drawing == tb.drawing) {
+            continue;
+        }
         let rot = tb.rot.map_or(0.0, uo_docx::js::JsNumber::to_number) * std::f64::consts::PI / 180.0;
         let (cx, cy) = (o.x + o.w / 2.0, o.y + o.h / 2.0);
         let (dx, dy) = (x - cx, y - cy);
@@ -1612,27 +1610,27 @@ pub unsafe extern "C" fn uo_shell_textbox_at(
         }
     }
     let Some((o, tb, rot, on_border)) = best else { return buf(NONE, Vec::new()) };
-    // the head of the chain (the session edits its content) and the orders of `contextTextboxRuns`
-    let head_story = tb.link.as_ref().map(|l| l.id.to_number());
-    let head = match head_story {
-        Some(sid) => top_run_of(outer_story, |t| t.link.is_none() && t.story.is_some_and(|v| v.to_number() == sid)),
-        None => top_run_of(outer_story, |t| t.drawing == tb.drawing),
-    };
-    let Some((para, run)) = head else { return buf(NONE, Vec::new()) };
-    let head_drawing = outer_story
-        .paras
-        .get(para as usize)
-        .and_then(|p| p.runs.get(run as usize))
-        .and_then(|r| r.ext())
-        .and_then(|e| e.textbox.as_deref())
-        .map(|t| t.drawing);
-    let mut order = Vec::new();
-    textbox_order(outer_story, &mut order, 0);
-    let host = head_drawing.and_then(|d| order.iter().position(|x| *x == d)).unwrap_or(0);
-    let focus = order.iter().position(|x| *x == tb.drawing).unwrap_or(host);
+    // the head of the chain (`textboxChain(tb)[0]`: the box whose story the link names; the session edits its
+    // content) and the orders of `contextTextboxRuns`
+    let focus = order.iter().position(|t| t.drawing == tb.drawing).unwrap_or(0);
+    let head = tb
+        .link
+        .as_ref()
+        .map(|l| l.id.to_number())
+        .and_then(|sid| order.iter().position(|t| t.link.is_none() && t.story.is_some_and(|v| v.to_number() == sid)))
+        .unwrap_or(focus);
+    let head_drawing = order.get(head).map(|t| t.drawing);
+    let top = head_drawing.and_then(|d| top_run_of(outer_story, |t| t.drawing == d));
     let mut j = Js::new();
     j.open('{');
-    for (k, v) in [("para", para), ("run", run), ("host", u32_of(host)), ("focus", u32_of(focus)), ("page", page)] {
+    for (k, v) in [("para", top.map(|t| t.0)), ("run", top.map(|t| t.1))] {
+        j.key(k);
+        match v {
+            Some(v) => j.int(v),
+            None => j.null(),
+        }
+    }
+    for (k, v) in [("host", u32_of(head)), ("focus", u32_of(focus)), ("page", page)] {
         j.key(k);
         j.int(v);
     }

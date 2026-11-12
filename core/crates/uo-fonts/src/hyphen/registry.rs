@@ -52,8 +52,9 @@ pub fn pattern_ids_to_load<'a>(langs: impl IntoIterator<Item = Option<&'a str>>,
     ids
 }
 
-/// The hyphenators loaded in one engine instance.
-#[derive(Debug, Default)]
+/// The hyphenators loaded in one engine instance. A clone shares the hyphenators (the bindings'
+/// copy-on-write registration while a layout or a session still holds the old set).
+#[derive(Debug, Default, Clone)]
 pub struct HyphenationRegistry {
     loaded: Vec<Arc<Hyphenator>>,
 }

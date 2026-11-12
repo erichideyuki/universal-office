@@ -399,17 +399,17 @@ impl Session {
         Ok(vec![Step::Para { para: at.para, run: u32::try_from(idx).unwrap_or(u32::MAX) }])
     }
 
-    /// The part of `enterTextbox` the model keeps: the box at `path` (a top-level run of the
-    /// context) is edited; `caret` the selection inside.
+    /// The part of `enterTextbox` the model keeps: the box at `path` (a run of the context's story)
+    /// is edited; `caret` the selection inside.
     fn enter_textbox_at(&mut self, path: &Path, page: u32) -> bool {
-        let Some((para, run)) = super::loc::top_level(path) else { return false };
         if !matches!(self.ctx, EditContext::Body | EditContext::HeaderFooter { .. }) {
             return false;
         }
         let all = self.textbox_paths();
         let Some(host) = all.iter().position(|p| p == path) else { return false };
         let host = u32::try_from(host).unwrap_or(u32::MAX);
-        let probe = EditContext::Textbox { outer: Box::new(self.ctx.clone()), para, run, host, focus: host, page, saved: self.selection };
+        let at = crate::session::ops::context::TextboxAt::new(path);
+        let probe = EditContext::Textbox { outer: Box::new(self.ctx.clone()), at, host, focus: host, page, saved: self.selection };
         if crate::session::ops::context::story_of(&self.doc, &probe).is_none() {
             return false;
         }
@@ -849,14 +849,15 @@ impl Session {
         let Some(path) = all.get(focus as usize).or_else(|| all.get(host as usize)).cloned() else { return };
         // the box holding the text is the head of its chain
         let head = self.textbox_chain(&path).and_then(|c| c.first().cloned()).unwrap_or_else(|| path.clone());
-        let Some((para, run)) = super::loc::top_level(&head) else { return };
         if !matches!(self.ctx, EditContext::Body | EditContext::HeaderFooter { .. }) {
             return;
         }
+        // wave 6 (C): any box of `contextTextboxRuns` (cells, group items, boxes in boxes), as the TS
+        // `te.h`/`te.f`; the first cut re-entered top-level runs only
         let hidx = all.iter().position(|p| *p == head).and_then(|i| u32::try_from(i).ok()).unwrap_or(host);
         let fidx = all.iter().position(|p| *p == path).and_then(|i| u32::try_from(i).ok()).unwrap_or(hidx);
-        let probe =
-            EditContext::Textbox { outer: Box::new(self.ctx.clone()), para, run, host: hidx, focus: fidx, page, saved: self.selection };
+        let at = crate::session::ops::context::TextboxAt::new(&head);
+        let probe = EditContext::Textbox { outer: Box::new(self.ctx.clone()), at, host: hidx, focus: fidx, page, saved: self.selection };
         if crate::session::ops::context::story_of(&self.doc, &probe).is_none() {
             return;
         }
@@ -865,5 +866,30 @@ impl Session {
         self.pending_props = None;
         self.emit(Event::TbMode { active: true });
         self.selection = crate::session::ops::context::clamp_selection(self.paras(), sel);
+    }
+
+    /// `enterTextbox(focusRun, rect, page)` (universal-write.ts 2737) by order (wave 6, C): `focus` is
+    /// the clicked box's index in `contextTextboxRuns`; the content edited is its chain's head
+    /// (`textboxChain(tb)[0]`, else the box itself); the caret at the start. False (nothing done) when
+    /// the order names no box or the context is not the body or a header/footer.
+    pub(crate) fn enter_textbox_order(&mut self, focus: u32, page: u32) -> bool {
+        if !matches!(self.ctx, EditContext::Body | EditContext::HeaderFooter { .. }) {
+            return false;
+        }
+        let all = self.textbox_paths();
+        let Some(path) = all.get(focus as usize).cloned() else { return false };
+        let head = self.textbox_chain(&path).and_then(|c| c.first().cloned()).unwrap_or_else(|| path.clone());
+        let hidx = all.iter().position(|p| *p == head).and_then(|i| u32::try_from(i).ok()).unwrap_or(focus);
+        let at = crate::session::ops::context::TextboxAt::new(&head);
+        let probe = EditContext::Textbox { outer: Box::new(self.ctx.clone()), at, host: hidx, focus, page, saved: self.selection };
+        if crate::session::ops::context::story_of(&self.doc, &probe).is_none() {
+            return false;
+        }
+        self.set_float_sel(None);
+        self.ctx = probe;
+        self.selection = Selection::default();
+        self.pending_props = None;
+        self.emit(Event::TbMode { active: true });
+        true
     }
 }

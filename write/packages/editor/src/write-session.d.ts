@@ -47,6 +47,8 @@ declare module '@universal-office/write-session' {
     lineShift: number;
     memoHits: number;
     memoMisses: number;
+    /** wave 6 (L): the relaid pages whose page changed (null from an older engine) */
+    changed: number[] | null;
   }
 
   export interface SessionLayoutOptions {
@@ -56,6 +58,8 @@ declare module '@universal-office/write-session' {
     hyphenationLanguages?: string[];
     lang?: string;
     maxPages?: number;
+    /** wave 6 (L, ShellEngine.relayout): the previous relayout's layout, which gives the lent result back (stale after) */
+    prev?: EngineLayout | null;
   }
 
   export interface WriteSession {
@@ -66,7 +70,7 @@ declare module '@universal-office/write-session' {
     backspace(): ExecOutcome | null;
     delete(): ExecOutcome | null;
     setSelection(anchor: DocPos, focus?: DocPos): ExecOutcome | null;
-    moveCaret(dir: 'left' | 'right' | 'up' | 'down' | 'home' | 'end' | 'wordLeft' | 'wordRight', extend?: boolean, layout?: EngineLayout | null): ExecOutcome | null;
+    moveCaret(dir: 'left' | 'right' | 'up' | 'down' | 'home' | 'end' | 'wordLeft' | 'wordRight' | 'docStart' | 'docEnd', extend?: boolean, layout?: EngineLayout | null): ExecOutcome | null;
     hitTest(layout: EngineLayout, page: number, x: number, y: number): DocPos | null;
     caretRect(layout: EngineLayout): Caret | null;
     selectionRects(layout: EngineLayout, page: number): SelRect[];

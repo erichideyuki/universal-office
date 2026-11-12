@@ -34,6 +34,10 @@ pub struct Js(pub f64);
 
 impl fmt::Display for Js {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(n) = small_integer(self.0) {
+            // write!, not Display::fmt(&n, f): width/fill/sign flags stay ignored, as on the ryu path
+            return write!(f, "{n}");
+        }
         let mut buffer = ryu_js::Buffer::new();
         f.write_str(buffer.format(self.0))
     }
@@ -42,8 +46,48 @@ impl fmt::Display for Js {
 /// `String(x)`: [`Js`] as a `String` (one allocation of exactly the text).
 #[must_use]
 pub fn to_js_string(x: f64) -> String {
+    if let Some(n) = small_integer(x) {
+        // digits on the stack, then one allocation of exactly the text (M1: `n.to_string()` over-allocates)
+        let mut digits = [0u8; 20];
+        return integer_text(n, &mut digits).to_owned();
+    }
     let mut buffer = ryu_js::Buffer::new();
     buffer.format(x).to_owned()
+}
+
+/// The integer fast path of `Number::toString` (wave 6, L: the layout keys its glyph runs by their
+/// numbers, mostly integral): an integral `x` with `|x| < 2^53` prints as its decimal digits — every
+/// integer there is a double, its neighbours are at most 1 away, so the shortest round-trip digits
+/// are the integer's own, and it is below `1e21` (no exponent) — and `-0` as `0`. `None` otherwise
+/// (fractions, larger magnitudes, NaN and the infinities go to `ryu_js`).
+#[inline]
+fn small_integer(x: f64) -> Option<i64> {
+    const TWO_53: f64 = 9_007_199_254_740_992.0;
+    // `x as i64` is exact when it is used: integral and inside ±2^53 (otherwise it saturates, unused)
+    (x.abs() < TWO_53 && x.trunc() == x).then_some(x as i64)
+}
+
+/// The decimal text of `n` (`|n| < 2^53`: at most 16 digits and a sign) written into `buf`.
+fn integer_text(n: i64, buf: &mut [u8; 20]) -> &str {
+    let mut i = buf.len();
+    let mut m = n.unsigned_abs();
+    loop {
+        i -= 1;
+        if let Some(d) = buf.get_mut(i) {
+            *d = b'0' + u8::try_from(m % 10).unwrap_or(0);
+        }
+        m /= 10;
+        if m == 0 {
+            break;
+        }
+    }
+    if n < 0 {
+        i -= 1;
+        if let Some(d) = buf.get_mut(i) {
+            *d = b'-';
+        }
+    }
+    std::str::from_utf8(buf.get(i..).unwrap_or(&[])).unwrap_or("")
 }
 
 /// `kMaxFractionDigits` of V8.

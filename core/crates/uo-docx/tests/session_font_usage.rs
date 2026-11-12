@@ -204,11 +204,11 @@ fn font_usage_matches_the_element() {
     }
     report.assert_clean();
     assert!(docs >= 50, "{docs} documents");
-    // the divergence is pinned (a known gap of session/ops/drawing or the reader, queue item "text boxes anchored in cells"):
-    // 11 boxes of the cellout/cellwrap oracle documents are not opened (reproducer write/packages/docx-layout/test/oracle/cellout/co11-in.docx);
-    // a fix makes the count drop and a regression makes it grow: either one fails here and asks for the record to be updated
+    // the 11 boxes of the cellout/cellwrap oracle documents (anchored in table cells) the session did not open are opened
+    // since wave 6 (C: `EditContext::Textbox` addresses the box by a path, uo-bindings.md "Wave 6 — C"); a regression
+    // makes the count grow and fails here
     if docs >= 160 {
-        assert_eq!(not_opened.len(), 11, "text boxes the session does not open: {not_opened:#?}");
+        assert_eq!(not_opened.len(), 0, "text boxes the session does not open: {not_opened:#?}");
         assert!(covered[5] >= 20, "text boxes reproduced: {}", covered[5]);
     }
 }

@@ -51,7 +51,6 @@ pub fn run_boxes(view: DocView<'_>, layout: &Layout, pick: RunFilter) -> Vec<Run
 /// [`run_boxes`] over a [`Locator`] the caller already built.
 #[must_use]
 pub fn run_boxes_with(loc: &Locator<'_>, layout: &Layout, pick: RunFilter) -> Vec<RunBox> {
-    let view = loc.view;
     let mut out = Vec::new();
     let mut own = CharsSoA::default();
     for (pi, page) in layout.pages.iter().enumerate() {
@@ -62,7 +61,7 @@ pub fn run_boxes_with(loc: &Locator<'_>, layout: &Layout, pick: RunFilter) -> Ve
                 continue;
             }
             let Some(path) = loc.body_path(&line.at.path.0) else { continue };
-            let Some(p) = view.paragraph(&StoryRef::Body, &path) else { continue };
+            let Some(p) = loc.story_paragraph(&StoryRef::Body, &path) else { continue };
             let raw = CharsView::of(page, line);
             if raw.is_empty() {
                 continue;

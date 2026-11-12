@@ -564,3 +564,42 @@ fn no_panic_on_any_double_and_any_argument() {
     }
     assert!(checked > 100_000);
 }
+
+/// Wave 6 (L): the integer fast path of `String(x)` (`|x| < 2^53`, integral, `-0`) prints what the
+/// `ryu_js` path prints, for random integers of every magnitude and the edges.
+#[test]
+fn integer_fast_path_equals_ryu() {
+    let ryu = |x: f64| ryu_js::Buffer::new().format(x).to_owned();
+    let two53 = 9_007_199_254_740_992.0_f64;
+    let mut edges =
+        vec![0.0, -0.0, 1.0, -1.0, 9.0, 10.0, 99.0, 100.0, 1e15, 1e16, two53 - 1.0, -(two53 - 1.0), two53, -two53, two53 + 2.0, 1e20, 1e21];
+    // the powers by repeated products (exact: 2^0..2^53 and 10^0..10^22 are doubles)
+    let mut p = 1.0_f64;
+    for _ in 0..=53 {
+        edges.extend([p, -p, p - 1.0, p + 1.0, -(p - 1.0)]);
+        p *= 2.0;
+    }
+    let mut p = 1.0_f64;
+    for _ in 0..=22 {
+        edges.extend([p, -p, p - 1.0, p + 1.0]);
+        p *= 10.0;
+    }
+    let mut s: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = || {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        s
+    };
+    for _ in 0..200_000 {
+        let r = next();
+        // magnitudes 2^0..2^60: below and above the fast path's bound
+        let bits = (r % 61) as u32;
+        let v = (next() >> (64 - bits.max(1))) as f64;
+        edges.push(if r & 1 == 0 { v } else { -v });
+    }
+    for x in edges {
+        assert_eq!(uo_jsnum::format::to_js_string(x), ryu(x), "{x:?}");
+        assert_eq!(format!("{}", uo_jsnum::format::Js(x)), ryu(x), "Js({x:?})");
+    }
+}

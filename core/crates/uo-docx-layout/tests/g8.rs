@@ -353,7 +353,11 @@ fn replay(capture: &Path, dump: &Path, docs: &Path) -> (Tally, uo_testkit::Repor
         t.paras += pages.iter().map(|p| p.paras.len()).sum::<usize>();
         t.lines += pages.iter().map(|p| p.lines.len()).sum::<usize>();
         for i in 0..layout.pages.len() {
-            t.section_bytes += layout.write_section(i, &m, 1).unwrap().0.len();
+            let eager = layout.write_section(i, &m, 1).unwrap().0;
+            // wave 6 (L): the shell's per-page gathering (`SectionModel::page`) gives the same section bytes
+            let lazy = layout.write_section(i, &SectionModel::page(view, &layout, i), 1).unwrap().0;
+            assert!(eager == lazy, "{} page {i}: the per-page section differs from the eager one", rec.key);
+            t.section_bytes += eager.len();
             let mut bare = Vec::new();
             uo_render::encode_page_for_canvas(
                 &layout.pages[i].page,
