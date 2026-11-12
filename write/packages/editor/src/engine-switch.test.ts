@@ -88,7 +88,9 @@ describe('engine="rust": a troca', () => {
     }
     expect([...names].sort()).toEqual([...PUBLIC_METHODS].sort());
     const proto = Ctor.prototype as unknown as Record<string, unknown>;
-    for (const n of ROUTED_PUBLIC) expect(names.has(n), `ROUTED ${n}`).toBe(true);
+    // (wave 5, front O: two public methods indented with 4 spaces in the source are not in engine-public.ts; routed, ED-212)
+    const fourSpace = new Set(['setImageLockAnchor', 'setImageEffect'].filter((n) => src.some((l) => l.startsWith(`    ${n}(`))));
+    for (const n of ROUTED_PUBLIC) expect(names.has(n) || fourSpace.has(n), `ROUTED ${n}`).toBe(true);
     for (const n of ROUTED_PRIVATE) expect(typeof proto[n], `private ${n}`).toBe('function');
     for (const n of SHELL) if (n !== 'constructor') expect(names.has(n), `SHELL ${n}`).toBe(true);
     for (const n of NEUTRAL_QUERIES) expect(names.has(n) && !ROUTED_PUBLIC.includes(n) && !SHELL.includes(n) && !isMutator(n), `NEUTRAL ${n}`).toBe(true);
@@ -135,9 +137,11 @@ describe('engine="rust": a troca', () => {
     ed.undo();
     expect(probe.calls).toEqual(['toggleRunProp', 'undo']);
     // mutadores desligados: no-op avisado, o modelo TS continua vazio
-    expect(ed.insertTable(2, 2)).toBeUndefined();
-    expect(ed.insertPageBreak()).toBeUndefined();
-    expect(probe.calls).toEqual(['toggleRunProp', 'undo', 'disabled:insertTable', 'disabled:insertPageBreak']);
+    // (wave 5, frontier S: insertTable is routed; Draw Table stays disabled)
+    expect(ed.setTableTool('draw')).toBeUndefined();
+    // (wave 5, front O: insertPageBreak is routed; Edit Wrap Points stays disabled)
+    expect(ed.startEditWrapPoints()).toBeUndefined();
+    expect(probe.calls).toEqual(['toggleRunProp', 'undo', 'disabled:setTableTool', 'disabled:startEditWrapPoints']);
     expect(model()).toBeNull();
     // consultas desligadas: o valor do TS com o modelo vazio
     expect(ed.getComments()).toEqual([]);

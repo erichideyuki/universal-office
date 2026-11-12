@@ -2161,6 +2161,871 @@ writes only its own subsection below. ED numbers continue from ED-28: S uses ED-
 
 ### Wave 5 — S: stories (tables, headers/footers, notes, the caret in a text box)
 
+Frontier S (implementer session, 2026-11-11, on the planner's measured plan). Under `engine="rust"` the caret now lives in
+the other stories of the document — table cells, header/footer parts, footnotes/endnotes and the text of a text box — with
+the TS editor's input rules: the click, double click, arrows, Tab and Esc of each context, the table commands and the
+contextual tabs (Table Design, Table Layout, Header & Footer). The session already had every command (D2a contexts,
+D2b-F3 tables, F4 headers/footers, F5 notes); what was missing were the TS decisions that read the LAYOUT (`eng.lines`,
+`page.cells`, `page.objects`): they are ported as shell exports over the session's last layout (decision D-S1: in Rust,
+not in TS over the decoded pages).
+
+**What is routed** (87 public methods, 116 bar command ids — since fix round 2 also the 27 template ids of
+`chrome-table.ts`, `cell:align:{tl…br}` (9), `table:look:{header,total,bandedRows,first,last,bandedCols}` (6),
+`table:border:{bottom…tr2bl}` (12), and the 7 ids of ED-109; handlers in `write/packages/editor/src/rust-engine-stories.ts`,
+input and hooks in `rust-stories.ts` / `rust-stories-input.ts`):
+
+| Element method / input | Session |
+|---|---|
+| `insertTable`, row/column/cell insert and delete, `deleteTable`, `mergeCells`, `splitCell`, `splitTable`, `select{Cell,Row,Column,Table}`, `distributeRows/Columns`, `setRowHeight`, `setColumnWidth`, `autoFitTable`, `setCellAlignment`, `setTextDirection`, `cycleTextDirection`, `toggleRepeatHeaderRows`, `setTableCellMargins`, `sort`, `convertTableToText`, `convertTextToTable`, `setTableStyle`, `setTableStyleOptions`, `setCellShading`, `setTableBorderSides`, `setCellBorders`, `setTableProperties`, `insertFormula`, `resizeTableColumn/Row` | `TableCmd` (the `TableLayoutIn.rowHeights` from `uo_shell_table_state`: the displayed height of every row of the target table; `contentWidthTwips` absent, ED-16) |
+| `getTableState`, `getSelectionState().table` (the contextual tabs read it), `sortInfo`, `textToTableGuess`, `suggestFormula`, `previewFormula`, `editingTableCell` | `uo_shell_table_state`, `uo_shell_sort_info`, `uo_shell_text_to_table_guess`, queries `suggestFormula`/`previewFormula`, `uo_shell_story_context` |
+| Tab / Shift+Tab in a cell (Tab in the last cell adds a row), the arrows between cells and between the body and its tables (also PageUp/PageDown's 20 line moves), Shift+arrow out of a cell, drag and Shift+click across cells, the keys of a selection of cells (arrows, Shift+arrows, Delete, Backspace, Esc), Ctrl+Shift+Enter, Alt+Shift+Up/Down, Ctrl+Home/End in a cell, Esc in a cell | `uo_shell_move_cell` (`moveCell`), `uo_shell_table_navigate` (`tableNavigate` + `enterRowAt` + `leaveTable`, one `ExecResult` merging the steps' change sets), `uo_shell_drag_cell_sel` (`dragCellSel`), `TableCmd::{TableSelArrow, TableSelDelete, ClearTableSelection, SplitTable, MoveTableRow}`, `ContextCmd::ExitCell` |
+| a click on a cell, a note line or the body (`routeEngineClick`) | `uo_shell_locate_at` (`engLineAt` + `locateRef`) → `ContextCmd::{EnterCell, ExitCell, EnterNote, ExitNote}` |
+| `enterHeaderFooter`, `exitHeaderFooter`, `editingHeaderFooter`, double click in the top/bottom margin zone (protected: `uw-blocked`), double click in the body to leave, click/double click in the other region (`switchHfFocus`), Esc, `goToHeaderFooter`, `next/previousHeaderFooter`, `showDocumentText`, `documentTextShown` | `uo_shell_hf_page` (`hfPartOfPage`, `hfBand`, `hfTypeOfPage`, `hfBandLabels`, `hfContext`) → `HeaderFooterCmd::CreateHeaderFooterPart` when the page shows no part yet, then `ContextCmd::EnterHeaderFooter`; the dim layer, the bands and their labels painted by the shell |
+| `setDifferentFirstPage`, `setDifferentOddEven`, `setHeaderFooterDistance`, `setLinkToPrevious`, `removeHeaderFooter`, `removePageNumbers`, `setPageNumberFormat`, `getHeaderFooterOptions`, `getPageNumberFormat`, `insertHeaderFooterTemplate` | `HeaderFooterCmd` with `HfAt` from `uo_shell_hf_page` of the caret's (or the edited) page; queries `headerFooterOptions`/`pageNumberFormat` (ED-104) |
+| `insertFootnote`, `insertEndnote` (Ctrl+Alt+F/D), `openNote`, `goToNoteRef`, `nextNote`, `showNotes`, `setNoteOptions`, `getNoteOptions`, `convertNotes`, `noteCount`, `canInsertNote`, `editingNote`, double click on a reference / on the note's number, click in the notes area, Esc in a note | `NoteCmd`, queries `noteOptions`/`noteCount`/`canInsertNote`/`lastConvertedNotes`, `uo_shell_note_at` (`noteRunAt` + `isNoteMark`), `uo_shell_locate_at` |
+| a click (one) or double click in a text box enters it (the caret at the point), outside it leaves, Esc, `exitTextbox`, `editingTextbox` | `uo_shell_textbox_at` (`hitTextbox`) → `ContextCmd::EnterTextbox { para, run, host, focus, page }` (the head of the chain); the caret, hit test, selection rectangles and line moves in the box through the textbox edit scope (WS-D6, below) |
+| shell state through the TS code (ED-105): `getBorderPen`, `setBorderPen`, `getTableTool` (null), `tableGridlinesShown`, `showTableGridlines` (the gridlines painted from `uo_shell_cell_boxes`), `tableStyleListNow`, `renderTableStyleThumb`, `headerFooterTemplates` | the element's prototype method on the element (they read and write element state only; a throw is warned once) |
+| `stylesVersion` | the session's `stylesVersion` query (frontier R's; ED-105) |
+
+**Shell exports** (`core/crates/uo-wasm/src/session/shell_stories.rs`; JSON answers, `UoBuf` statuses 0/1/5/11; JS
+`bindStories(exports, uo)` in `js/session-stories.mjs`, re-exported by `js/session.mjs`, typed by `js/session-stories.d.ts`):
+
+| Export | Port of (universal-write.ts) | Answer |
+|---|---|---|
+| `uo_shell_story_context(h)` | `cellEdit`/`noteEdit`/`hfEdit`+`hfActivePage`/`tbEdit`/`tableSel` | `{ ctx: { kind, … }, tableSel, locked }` |
+| `uo_shell_locate_at(h, l, page, x, y)` | `engLineAt` 18726 + `locateRef` | `{ kind: body/cell/hf/note/other, line, para / anchor+hops+block / which+slot+part / footnote+id }`, 1 = no line |
+| `uo_shell_cell_at(h, l, page, x, y)` | `cellBoxAtPoint` 20949 | `{ anchor, path, r, c, x, y, w, h, span }` |
+| `uo_shell_table_state(h, l)` | `getTableState` 21305, `tableTarget`, `tableAvail`, `rowHeights` | the TS `TableState` + `anchor`, `path`, `layoutIn.rowHeights` (1 = null) |
+| `uo_shell_table_sel_rects(h, l, page)`, `uo_shell_cell_boxes(l, page)` | `paintTableSel` 18628, `paintGridlines` | f64 quads |
+| `uo_shell_table_navigate(h, l, dir, extend)` | `tableNavigate` 21100, `enterRowAt` 21178, `leaveTable` 21195, `enterCellAt` 19363 | `ExecResult` (the TS `true`) or 1 (the default move) |
+| `uo_shell_move_cell(h, l, dir)` | `moveCell` 19272 (+ `tabNewRow`) | `ExecResult` or 1 |
+| `uo_shell_drag_cell_sel(h, l, page, x, y)` | `dragCellSel` 21013 | `ExecResult` when the selection of cells changed, else 1 |
+| `uo_shell_hf_page(h, l, page)` | `hfPartOfPage` 18686, `hfBand` 18708, `hfTypeOfPage` 11222, `hfBandLabels` 11202 | `{ page, section, sections, number, evenOdd, type, width, height, margins, header: { slot, section, part, top, bottom, linked }, footer }` |
+| `uo_shell_note_at(h, para, offset)` | `noteRunAt` 18934 + `isNoteMark` | `{ ref: { footnote, id } | null, mark }` |
+| `uo_shell_textbox_at(h, l, page, x, y, tol)` | `hitTextbox` 13375, `contextTextboxRuns`, `textboxChain` | `{ para, run, host, focus, page, rect, rot, onBorder, hf }` |
+| `uo_shell_sort_info(h, sep)`, `uo_shell_text_to_table_guess(h, sep, cols)` | `sortInfo` 19765 (+ `guessSortType`), `textToTableGuess` 21257 | the TS objects |
+| `textbox_chain(session)` (Rust fn, used by `handle.rs`) | `textboxChain` (uo-docx `drawing.rs` 722, crate-private there) | the head's drawing + the linked boxes by `seq`, the header/footer page |
+
+**The textbox edit scope (WS-D6, closed).** `handle.rs` `lines()` builds `EditScope::Textbox { chain, page }` (borrowed
+during `EditLines::new`) when the context is a text box: `caretRect`, `hitTest`, `selectionRects` and the line moves now
+answer inside a box (native test F: 18 of the 19 boxes of the f8/f7d/f7b fixtures entered with a caret; f7d__7__10 is
+S-G3).
+
+**Shell hooks** (`rust-engine.ts`, additive, each line marked `wave 5 (S): hooks`; frontier O had added the registry
+`hooks { key, pointer, paint, adopt }` and `frontApi()` first, so S extended it): `pointerLate` (after the fronts' pointer
+hooks), `dbl` (top of `onDblClick`), `move` (top of `moveCaret`: `tableNavigate`), `state` (`getSelectionState` before
+caching: `table`), `overlay` (over the selection, before the caret: the selection of cells, the header/footer bands),
+`hideSelection` (a selection of cells hides the text selection and the caret, as `paintEngine`), `baseKey` + `layers`
+(the page base: in header/footer mode the part at alpha 1 and the body dimmed, or hidden with Show Document Text off),
+and `frontApi().invalidateBase()`/`hitAt(e)`. Order (ED-107): S's key hook (selection of cells, cell shortcuts, Tab,
+Ctrl+Alt+F/D) and its text box pointer hook register first; S's Esc hook registers at the first `adopt`, after O's and
+R's key hooks (the TS checks a selected object before the contexts' Esc); `pointerLate` runs after every `pointer` hook.
+
+**Declarations (ED-100..):**
+- **ED-100** routing by the session's context: a context change (enter/exit) has no story change, so the shell does not
+  relay out; the page base cache key carries the header/footer mode (`baseKey`), and the session's `lines()` cache is
+  keyed by the scope.
+- **ED-101** the hit routing of the click and of the zones runs in Rust over the session's last layout (`LineIndex`,
+  `cell_at`, the lines' `LineStory` parts; D-S1); the line index is rebuilt per call (a click), not cached. The layout's
+  page section indexes the model's sections (as `Locator` assumes; no `sectionMap`); the page size of `hf_page` is the
+  section's `sectPr` size (the layout handle keeps the page sizes in its render view, not reachable from `session/`).
+  Tested on a two-section document (harness H2: double click in section 2's header, Link to Previous off/on, Different
+  First Page on section 2, previous/next across the sections, removals and the options in header mode — every step equal).
+  `uo_shell_table_state` answers no table in a header/footer or a text box, and in a note only the body's selection of
+  cells (the TS `tableTarget` excludes `hfEdit`/`tbEdit` only, and keeps `tableSel` when a note is entered from it: found
+  by the chrome mode, fixed).
+- **ED-102** a text box inside a table cell or inside another text box is not entered (the session enters the boxes of
+  the outer story's top-level paragraphs: `EnterTextbox` takes `(para, run)` of the outer story) — S-G2; Esc in a box
+  leaves it without selecting the shape (the TS selects it: frontier O's object selection). The `onBorder` of
+  `uo_shell_textbox_at` is the TS `onObjectBorder` band (fix round 2: `tol` on BOTH sides of the outline; it was the outside
+  half only): a click there is never entered by S (frontier O's hit test runs first and selects the shape). Measured in
+  harness X4 (f7b__7__10): 3 px inside and 3 px outside the left edge select a shape and enter nothing in both engines.
+- **ED-103** the answers are JSON (D-S4: also the pointer-frequency ones; packed binary only for the quads); the
+  `uw-notemode` detail the session emits (`{ active, footnote, id }`) is mapped by the shell to the TS form
+  (`{ active: true, kind, id }`, `{ active: false }`) on the S paths (an undo that leaves a note re-dispatches the session
+  form: RustEditor's `apply`); `uw-hfmode` gains `kind` on entering (the session's has `active` only).
+- **ED-104** a header/footer option taken in header mode: the session's step (no `reenter`), a relayout, then — when the
+  edited page shows another part (or none of the variant yet) — exit + enter (creating the part), and one
+  `uw-hfmode { active, kind }` as the TS `hfSectionOp` (D-S5). Equal in the harness (H1: Different First Page creates the
+  first-page header, saved parts equal).
+- **ED-105** shell-through table UI state (pen, gridlines, the styles gallery: built-in styles only, the default Office
+  theme colours through `documentThemeColors` over the empty TS model; document-defined table styles not listed) — D-S8;
+  the gridlines are painted into the page base over the background and under the content, as the TS `engineBase`
+  (fix round 2: a new `under` hook; they were painted over the content before — now pixel-equal, harness T3 step 37).
+  `setCellBorders(kind)` without a spec (the Borders menu, the Borders split button, Home's borders in a cell) sends the
+  pen read through `getBorderPen` (fix round 2: it sent no spec, i.e. no border — found by the new `table:border:outside`
+  step). Declared difference: the Border Styles menu (`borderStylesMenu`, opened by the routed `table:borderStyles`) sets
+  the pen but does NOT arm the Border Painter as the TS does (`setTableTool('painter')` is a disabled no-op: the tools are
+  the D7 remainder). A TS body that throws there is warned once
+  (`shell:<name>`) and answers `undefined`, never silently. `stylesVersion` is NOT shell-through: it answers the
+  session's style-sheet counter (frontier R's `stylesVersion` query; 0 when the query is absent), so the galleries keyed
+  on it refresh when R's routed style commands change the styles; its values are not the TS `docStyles.version` (a cache
+  key only, compared nowhere).
+- **ED-106** the header/footer gallery thumbnails are not painted (`paintHeaderFooterTemplate` answers false: no
+  session preview layout); the TS adornments of the edited text box (its handles) and the shape selection after Esc are
+  frontier O's (declared in both harnesses).
+- **ED-107** the hooks' order (above).
+- **ED-108** (a TS defect found) saving with the caret inside a text box, the frozen TS writes a document.xml of 8,180
+  bytes for f8__7__5 (most of the body missing; the session saves 82,578): declared in `editor_switch.mjs` (f8__7__5) and
+  the stories harness (X2). The frozen TS also throws `Cannot read properties of undefined (reading 'runs')` typing in
+  the linked box of f7d__7__1 (S-G4): that fixture is out of the X1 scenarios.
+- **ED-109** (fix round 2) bar ids of `chrome-hf.ts`/`chrome-table.ts` whose `run` reaches only frontier R's routed
+  methods are routed by S (they were off with nothing declared): `fields:update` (`updateFields`), `dlg:dateTime` and
+  `dlg:alignTab` (their dialogs `dateTimeDialog`/`alignTabDialog`: `dateTimeFormats`, `insertDateTime`,
+  `insertAlignmentTab`), `docinfo:{author,title,fileName,filePath}` (`insertDocumentInfo`). The behaviour is R's routes;
+  harness steps T3 `fields:update`, H2 `docinfo:author`, `dlg:dateTime`, `dlg:alignTab` (header mode) equal. The ids of
+  the two files that stay off are exactly the declared remainder (vitest (b3) and `--mode chrome` fail on any other):
+  `table:excel`, `table:style:new`, `table:style:modify`, `table:painter`, `table:draw`, `table:eraser`,
+  `paste:cells:{overwrite,rows,nest,text}`, `dlg:borders`, `dlg:pageBorders` (frontier O's page borders). The Quick
+  Tables submenu of the Table menu (a menu entry, not a registry command) stays visible: its list is the TS
+  `quickTables()` over the empty TS model and picking one is a no-op (`insertQuickTable` not routed; D7 remainder).
+
+**The f7b__7__10 parity entry (ED-216, frontier O's) — measured cause (fix round 2).** The reviewer read the step-6
+divergence of `editor_switch.mjs` as S's text box hit entering a text-bearing ellipse. Measured (`UO_ES_TRACE`, the
+stories harness `--mode tbhit`, scenario X3): NEITHER engine enters a text box at step 6. The click target is the TS caret
+point of body position (2, 256), which lies on the plain ellipse at (7205, 3164) tw (no text); the TS `hitTextbox` answers
+null and `hitFloat` the shape, and the shell's O hit test selects the same shape: both runs emit one `uw-change` and
+`editingTextbox()` is false in both. The selections differ because the parity harness's `clickTarget` computes the target
+by `setSelection` in the TS run only: a click that lands on an object does not move the caret, so the TS keeps the
+harness-placed (2, 256) and the shell keeps (5, 100) from step 5. Steps 7–11 then differ through keys with a shape
+selected (frontier O's). With the same preset selection in both runs (X3: `setSelection(2, 256)`, the click, then a click
+inside the text ellipse, typing, Esc) every step facet is equal; the end screen differs by the TS shape handles after Esc
+(ED-106). So the ED-216 entry's `why` ("the shell enters its text") does not hold; its blanket ('*' from step 6) covers a
+harness artifact plus O's object keys — for frontier O / the coordinator (S does not edit O's entry; gate list below).
+
+**Files touched outside S's own** (each additive): `src/session.rs` (one `mod` line); `src/session/handle.rs` (`lines()`
+builds the textbox scope, its cache key = the chain's drawing ids + the header/footer page — drawing ids are unique in the
+document, so a body box and a header box at the same `(para, run)`, or one header box entered on two pages, never share
+lines; `scope_key`'s `t{para}.{run}` is not used for a box; `outcome` and `exec_result` `pub(crate)`; one import);
+`write/packages/editor/src/rust-engine.ts` (the hooks above, 9 dispatch lines + the registry entries + 5 `frontApi`
+members: `invalidateBase`, `hitAt`, `defaultClick(e, moveFirst?)` — the tail of `onMouseDown` moved into a private
+`clickAt` that both use, with an optional drag step of the front, so S keeps no copy of the default click and no drag
+record of its own — and the getters `module`/`gen`, so S reads no RustEditor private through a cast; fix round 2: the
+registry entry `under` + one dispatch line in `baseOf`, painting into the page base under the content); `js/session.mjs` (one re-export line);
+`js/session.d.ts` (one re-export line); `js/editor.check.ts` (one line); `write/packages/editor/src/engine-switch.test.ts`
+(the disabled-mutator example `insertTable` → `setTableTool`, now routed); `tests/browser/editor_switch.mjs` (`DECLARED`:
+8 S entries removed, f8__7__5 rewritten, a marked block). New: `write-session-stories.d.ts` (the editor's declaration of
+the binding, an augmentation as front O's). No uo-docx or uo-docx-layout source edited; no codec/schema change.
+
+**Numbers, fix round 2** (2026-11-11 evening; wasm builds of `$T/es-stories` rebuilt with the `onBorder` band, which also
+hold O's and R's in-progress code; the round-1 numbers below stay as the history):
+- What the review found and what changed: (1) the 27 template ids were off under rust with nothing declared → routed;
+  vitest (b3) now registers `registerTableCommands` + `registerHfCommands` with a recording Proxy editor and fails on an id
+  that is neither routed nor in the declared remainder, on a routed id whose `run` calls an unrouted method, and on an off
+  id whose `run` only reaches routed methods (it found the 7 ids of ED-109 too); (b4) scans the WHOLE of `chrome-table.ts`
+  and `chrome-hf.ts` (menus, galleries, widgets: `borderStylesMenu`, `tableShadingMenu`, `bordersMenu`, `pageNumberMenu`,
+  `templateTiles`, `tableMenu`…) and fails unless every unrouted `ed.X(` is in the declared list (`setTableTool`,
+  `quickTables`, `insertQuickTable`, `canEmbedSpreadsheet`, `insertSpreadsheet`, `hasCellsClip`, `pasteCells`); (b2) also
+  reads `dateTimeDialog`/`alignTabDialog`. (2) `--mode chrome` now compares EVERY id the chrome registers from those two
+  files (the batches caught by the harness registry patch) plus S's routed list, TS against Rust: 97 registered ids, 116
+  routed ids × 5 contexts 580 equal, 0 different; the 12 remainder ids supported as the TS and disabled under rust in all 5
+  contexts (60); a registered id missing from both lists, or a stale remainder id, fails. (3) New harness steps
+  `cell:align:cc`, `table:look:bandedRows`, `table:border:outside` (found the pen bug of ED-105, fixed), `fields:update`,
+  `docinfo:author`, `dlg:dateTime`, `dlg:alignTab`; and mid-scenario screen captures (`{ k: 'screen' }`, facet `screen
+  pixels (step)`): T1 a selection of cells by drag and a row selected, H1 header mode (part at alpha 1, body dimmed, the
+  bands and labels), H2 section 2's header and Show Document Text off (2 pages), T3 gridlines on — 8 page captures, all
+  equal (the gridlines one only after the `under` fix). (4) X3/X4 on f7b__7__10 (above and ED-102).
+- Chromium `--mode stories` (2 min 20 s): 21 scenarios, 386 steps: selection, events, run/para/table state, contexts,
+  dirty 386 equal each; caret 383 + 3 declared (S-G1, T1 steps 18, 19, 49); API answers 380 equal; mid-scenario screens 8
+  equal; pages 21; thumbnails 172 equal; end screens 28 + 6 declared (ED-106 ×6: X1 ×3, X2, X3, X4; ED-108 with X2);
+  saved part names 21 equal, part bytes 165 + 1 declared (ED-108); page errors 0; `editor_switch_stories: ok`. Screen
+  pages one engine did not allocate: 4 (informative, as round 1; the pixels are compared where both painted).
+- `--mode memory` (count build `session_count.wasm`): 30 cycles, live bytes one value from cycle 5 (6,682,346 B),
+  `memory.buffer` 12,582,912 B; sessions/engines/handles 0 after every remove. The mode now FAILS with a build without the
+  counters (`live` = -1 passed vacuously before).
+- Native `shell_stories_native` (8 tests, `--features session,count`, 22 s): pass (F: 36 documents, 18 boxes entered, 1
+  without: S-G3).
+- `editor_switch.mjs --mode phase0` ok; `--mode parity` (`UO_ES_STRIDE=6`) ok, unchanged: 13 documents, every difference
+  declared (f7a__7__14 ED-16, f7b__7__10 ED-216 — see the measured cause above), 0 page errors.
+- Editor vitest 33 files / 329 tests, viewer 25 + 1 skipped; editor and viewer tsc exit 0; `check-changed` all steps
+  passed (clippy native + wasm32 on uo-docx, uo-docx-layout, uo-ffi, uo-wasm; float casts; bans); rustfmt clean on
+  `shell_stories.rs`.
+
+**Numbers** (2026-11-11, fix round 1; wasm builds of `$T/es-stories`, which also hold O's and R's in-progress code):
+- Native (`tests/shell_stories_native.rs`, 8 tests, 25 s): A–H pass; M1 1,000 rounds of the 11 read exports: 17,174,600 B
+  allocated, peak 3,357 B above the start, 0 B left; F: 36 documents scanned, 18 text boxes entered with a caret, 1
+  without (S-G3).
+- Chromium (`tests/browser/editor_switch_stories.mjs --mode stories`, 2 min 8 s): 19 scenarios, 360 steps. T1 a 3×3 table
+  from a new document (51 steps); T2 the 7 table fixtures; H1 headers/footers; N1/N2 notes; X1/X2 text boxes; and, new in
+  this round, BAR COMMANDS through the chrome's registry (a `{ k: 'cmd', id, dlg }` step: the registry is caught by a
+  harness-only patch of `CommandRegistry.prototype.add` in the bundle entry — the element's code is unchanged — and run
+  with `reg.run(id)`; the dialog it opens is snapshotted (title, every field, the actions), filled by field name and
+  accepted; the step's answer is supported/enabled/checked + that snapshot, so the dialogs' TS reads — `getTableState`,
+  `sortInfo`, `textToTableGuess`, `suggestFormula`, `getNoteOptions`, `getPageNumberFormat`, `getHeaderFooterOptions` —
+  are compared too):
+  - **T3** (49 steps, ribbon): Insert Table dialog, Sort dialog, select row, Merge, Split Cells dialog, rows/columns
+    above/below/left/right, Insert Cells and Delete Cells dialogs, Table Properties dialog (alignment), Table Options
+    dialog (margins + spacing), distribute rows/columns, the three AutoFits, Repeat Header Rows, Text Direction ×3, Clear
+    style, gridlines ×2, Formula dialog (formula + number format), select cell/column/table, Convert to Text dialog
+    (commas), Convert Text to Table dialog, Split Table, Delete Table, the Insert Table dialog cancelled.
+  - **T4** (48 steps, element API): the mutators no command reached with these arguments — `setTableStyle` (Grid Table 4
+    Accent 1), `setTableStyleOptions`, `setTableBorderSides` (table and cell), `setCellBorders` (outside, tl2br, none),
+    `setTableProperties` (table align, exact row height, header row, cell vAlign; pct table width, column width),
+    `setTableCellMargins`, `setCellAlignment`, `setTextDirection`, `setRowHeight`, `setColumnWidth`, distribute,
+    `insertCells`/`deleteCells`, `sortInfo`, `sort` (number, descending), `suggestFormula`, `previewFormula`,
+    `splitTable`, `convertTableToText`, `textToTableGuess`, `convertTextToTable`, column/row insert and delete.
+  - **H2** (36 steps, ribbon; a TWO-SECTION document built by `prep` in a TS run and loaded from the same bytes in both
+    engines): double click in section 2's header, `hf:link` off, typing, `hf:prev`/`hf:next` across the sections,
+    `hf:firstPage` on/off on section 2, `hf:link` on, `hf:gotoFooter`, the Page Number Format dialog (upper Roman),
+    `hf:removePageNumbers`, `setLinkToPrevious(false, 'footer')`, `removeHeaderFooter`, `removePageNumbers`,
+    `hf:removeHeader`, the Header & Footer Options dialog (odd/even), `hf:showText` ×2, previous/next,
+    `setHeaderFooterDistance`, `hf:close`, `header`.
+  - **N3** (26 steps, ribbon): `footnote`, `note:goRef`, `endnote`, `note:next/prev/nextEnd/prevEnd`, `note:show`, the
+    Footnote and Endnote dialog (format + start, Apply), the Convert Notes dialog, `openNote`, `note:toFootnote`,
+    `goToNoteRef` of a converted id, `showNotes`.
+
+  Result: selection 360 equal, caret 357 + 3 declared (S-G1, now by exact steps 18, 19, 47 — a declaration may list
+  `steps`; `from` still means every later step), events/run/para/table/contexts/dirty/API answers 360 equal each, pages
+  19, thumbnails 170 equal, screens 28 + 4 declared (ED-106/108), saved part names 19 equal, part bytes 153 + 1 declared
+  (ED-108), 0 page errors, `editor_switch_stories: ok`. Found and fixed by the new steps: `goToNoteRef` of a missing id
+  answered true (the TS false): the shell now checks the session's `noteRefs` first and leaves the note as the TS does.
+- `--mode chrome`: TS against Rust, both with the ribbon, in five contexts (body, cell, row selected, header, footnote
+  entered from the selected row): supported/enabled/checked of the 82 routed command ids 410 equal; the visible tabs equal
+  (cell: … Table Design | Table Layout; header: … Header & Footer); the ribbon buttons `row:above`, `cells:merge`,
+  `table:headerRows`, `table:deleteMenu`, `hf:close`, `hf:link`, `hf:firstPage` present and equal (a missing button
+  fails); `table:draw`/`table:eraser` present and disabled (declared remainder). Found and fixed: in a note entered from
+  a selection of cells the TS still has a table target (ED-101).
+- `--mode memory` (count build, 30 cycles of create → new document → 2×2 table, cell typing, Tab, header, Esc, footnote,
+  Esc → save → remove): sessions/shell engines/handles 0 after every remove, live bytes one value from cycle 5
+  (6,682,346 B), `memory.buffer` one value (12,582,912 B).
+- `editor_switch.mjs`: `--mode phase0` ok (0 `.wasm`, 0 engine chunk requests, 0 leaks; engine chunk 504 KB);
+  `--mode parity` with `UO_ES_STRIDE=6` ok (13 documents; every difference declared: f7a__7__14 ED-16, f7b__7__10
+  ED-216; 0 page errors).
+- Editor vitest 33 files / 325 tests (`engine-stories.test.ts` now also scans the dialogs the routed commands open:
+  `chrome-table-dialogs.ts` whole, `notesDialog`/`convertNotesDialog`/`showNotesDialog`,
+  `pageNumberFormatDialog`/`hfOptionsDialog` — every `ed.X(` routed or shell); viewer 25 + 1 skipped; editor and viewer
+  tsc exit 0 (`editor_switch_tsc.mjs`); `check-changed` all steps passed (clippy native + wasm32, float casts, bans);
+  rustfmt clean on the touched `.rs`.
+- The strict core tsc line exits 0 only with BOTH editor augmentations (`editor.check.ts` reads
+  `Declared.StoriesBinding` and frontier O's `Declared.ObjectsBinding`): the m2-verify-c.sh `tsc_strict` line plus
+  `crates/uo-wasm/js/session-stories.d.ts ../write/packages/editor/src/write-session-stories.d.ts
+  ../write/packages/editor/src/write-session-objects.d.ts` (with the stories files only: TS2694, no `ObjectsBinding`);
+  `core/target/m2-verify-c.sh` updated so.
+- Size: session build 9,686,607 B raw / 3,178,967 B gzip -9 (wave 4: 9,538,764 / 3,126,154; all three frontiers).
+- Observed in both engines (the frozen TS chrome in headless Chromium, not investigated): after the Insert Table and
+  Split Cells dialogs (number fields) typed keys reach the proxy as keydown/keypress but produce no beforeinput/input, in
+  the TS as in the shell; the harness types there through the proxy's `input` event (an `input` step). Not a parity
+  difference; listed for the gate.
+
+**For the milestone-2 gate**
+- **S-G1** (core: uo-docx session / uo-docx-layout derive) after `TableCmd::InsertTable` on the empty paragraph of a blank
+  document (body = table, empty paragraph), the live session's layout has no line for the paragraph after the table
+  (`uo_layout_block_line(l, 1)` answers none); the same document saved and reopened has it. No caret there (T1 steps 18,
+  19, 49 since fix round 2 — 47 before the two screen steps; regression check in `shell_stories_native` C).
+- **S-G2** the session cannot enter a text box inside a table cell (or inside another box): `EnterTextbox` is allowed
+  from Body/HeaderFooter only and addresses a top-level paragraph run (the TS enters it from the body).
+- **S-G3** f7d__7__10: entering the linked box (head para 1 run 0, focus 6) answers no caret at the start (`EditLines`
+  textbox scope finds no line of the head's first paragraph).
+- **S-G4** frozen-TS defects found (reference, not fixed): save inside a text box (ED-108), the `runs` TypeError typing in
+  f7d__7__1's linked box.
+- Move the stories exports into uo-docx (`Session::table_state`, `hf_page`…) or `QueryOp`s with frontier R's schema
+  ownership (D-S3, D-S4); the `uw-notemode`/`uw-hfmode` details in the session's events (ED-103).
+- Not routed (disabled, declared remainder D7): Draw Table/Eraser/Border Painter tools, edge-drag resize and the table
+  adorners (move handle, + buttons), Quick Tables (the submenu stays visible, its items are no-ops: ED-109), the Excel
+  spreadsheet, `pasteCells`/`hasCellsClip`, New/Modify Table Style, document-defined table styles in the gallery,
+  header/footer gallery thumbnails, `dlg:borders` (needs `setParagraphBorders`), `dlg:pageBorders` (frontier O's page
+  borders), the Border Styles menu arming the painter (ED-105), touch handles, the Ctrl+click multi-selection, Esc in a
+  text box selecting the shape (frontier O). (`insertDateTime`/`insertDocumentInfo`/`insertAlignmentTab`/`updateFields`
+  left this list in fix round 2: R routes them, S routes their bar ids — ED-109.)
+- **For frontier O / the coordinator**: the `editor_switch.mjs` DECLARED entry f7b__7__10 (ED-216, `facets: '*'`,
+  `end: '*'` from step 6) names "the shell enters its text" as the cause; measured, no text box is entered there (the
+  f7b__7__10 paragraph above): the step-6 divergence is the parity harness's TS-only `setSelection` in `clickTarget` when
+  the click lands on an object, then O's keys with a shape selected. A narrower entry (or a `clickTarget` that restores
+  the TS selection / presets the same selection in the Rust run) is O's/the coordinator's call; S did not edit it.
+- Harness page helpers copy-adapted in `editor_switch_stories.mjs` (as frontier R did; declared against the plan's
+  D-S7): move them into `editor_switch_lib.mjs` once the three frontiers have landed; the registry catch (`entryExtra`)
+  and the dialog driver (`cmd`) would move with them.
+- The typing after the Insert Table / Split Cells dialogs (Numbers, last item): find whether a real browser loses the
+  typed text too (a frozen-TS chrome defect would be S-G4's).
+- Not driven in the Chromium harness: the context-menu-only ids (`ctxTable*`, `tableFmt*`) and the gallery/menu openers
+  (`table:styles`, `table:shading`, `table:borders`, `table:borderStyles`, `hf:*Menu`) — their state is compared in
+  `--mode chrome` and their bodies scanned by the routing test (since fix round 2 the whole of `chrome-table.ts` and
+  `chrome-hf.ts`); the menus they open are not driven (their items that are registry commands are: the Borders menu's
+  `table:border:*`, the alignment submenus' `cell:align:*`).
+- No native test yet of the textbox lines key (two boxes at the same `(para, run)` in two stories within one layout
+  generation): the fix is structural (key = the chain's drawing ids + the page).
+
+**Process metrics.** Fix round 2 (≈ 19:10–19:50 local): wasm builds 2 (session + count), native runs 1 (+1 that ran 0
+tests without `count`), Chromium stories runs 2 full + 5 focused/probe, chrome 2, memory 2, `editor_switch` phase 0 +
+parity 1 + 1 traced single-document parity, vitest 4 focused + 1 full editor + 1 viewer, tsc 1, check-changed 1. Rework:
+a heredoc dropped a backslash in a harness string (fixed with the Edit tool); `--mode all` with the non-count build ran
+the memory soak vacuously (guard added). Fix round 1 (≈ 18:20–19:05 local): wasm builds 3, native runs 1, Chromium stories runs 9 (focused)
+and 2 full, chrome 2, memory 1, `editor_switch` phase 0 + parity 1 each. Rework: the first T3 lost every later table
+command after Delete Cells (the table left) and typed nothing after the dialogs (the same in both engines): reordered,
+`input` steps. First implementer session (≈ 16:55–18:20 local, ≈ 1 h 25 min). Native test runs 6, wasm builds 4,
+Chromium stories runs 8 (focused) + 2 full, `editor_switch` runs 5. Rework: `hf_page` read the page size from the layout's
+`Page` (moved into the render view: 0 × 0), so every body double click entered the footer — fixed with the section's
+`sectPr`; the harness first targeted a text box inside a table (S-G2) and f7d__7__1 (a TS throw); the `uw-notemode` detail
+and the Different-First-Page re-entry (ED-103/104) found by the harness and fixed; non-finite coordinates answered the
+first line (now none); shell scripts edited through `node -e` lost backquoted text twice (the comments restored).
+
 ### Wave 5 — O: objects and the page (pictures, shapes and text boxes as objects, page setup, views, context menu)
 
+Frontier O of wave 5 (2026-11-11, implementer Opus, plan by the wave's planner): pictures, shapes and text boxes as
+objects, the page (setup, columns, breaks, line numbers, hyphenation, page color/fill, watermark, cover page, page borders),
+the Read view and the context menu of `<universal-write engine="rust">` routed to the session (uo-docx's F7 drawing and
+picture commands, F4 sections, the page and text-layout commands, all ported in milestone 2 waves 1–2). The TS editor at
+`d0f45bc5` is the behaviour reference; every difference below is declared.
+
+#### Routes (`engine-routes-objects.ts`, handlers in `rust-engine-objects.ts`)
+
+- **105 public methods** (+ the two 4-space-indented ones, ED-212): the page family (31: `setPageSetup`, `setColumns`,
+  `insertPageBreak`, `insertColumnBreak`, `insertSectionBreak`, `insertBlankPage`, `setSectionStart`, `setVerticalAlignment`,
+  `setLineNumbering`, `setLineNumberingOptions`, `toggleLineNumberSuppression`, `lineNumbersSuppressed`, `getLineNumbering`,
+  `getSection`, `setPageBorders`, `getPageBorders`, `setHyphenation`, `setHyphenationOptions`, `getHyphenation`, `setPageColor`,
+  `setPageFill`, `pageBackground`, `setWatermark`, `removeWatermark`, `watermark`, `watermarkTexts`, `watermarkGallery`,
+  `insertCoverPage`, `removeCoverPage`, `hasCoverPage`, `coverPages`), pictures (35, `insertImage` … `compressImages`, the
+  crop mode), shapes and text boxes as objects (33: format, arrange, size, wrap, align, `insertTextbox`, Draw Text Box, the
+  link mode, Set as Default), the selection pane (6) and `setView` (print and read).
+- **161 bar command ids** (`ROUTES_OBJECTS.commands`), computed — not hand-listed — by running each command's `run` against
+  a recording `Proxy` editor (`engine-objects.test.ts` re-checks it on every run): every `ed.*` call is routed or SHELL, every
+  `ctl.*` call is one of the dialogs (`pageDialog`, `columnsDialog`, `pageBgDialog`, `textLayoutDialog`, `pictureDialog`,
+  `image`). The test whitelists those dialogs wholesale: their OK paths are NOT checked automatically, they were read by
+  hand in chrome-dialogs.ts, chrome-page.ts, chrome-picture-dialogs.ts, chrome-picture-pane.ts, chrome-textlayout.ts (the
+  page dialog's header/footer part reaches frontier S's routed methods; the hyphenation dialog's Manual button reaches the
+  disabled manual-hyphenation methods: a warned no-op, as `hyph:manual`).
+  Not routed (stay disabled, D7): `pic:wrap:editPoints`, `pic:transparentColor`, `pic:change:clip`, `shp:editText`,
+  `textbox:save`, `textbox:remove`, `hyph:manual`, `view:web`, `view:draft`, `view:outline`.
+- **Stay disabled (declared)**: `editSelectedTextbox`, `exitTextbox`, `editingTextbox` (S: the box context), the manual
+  hyphenation family, `paintCoverTemplate`, `paintWatermarkTemplate` (the galleries' previews are blank, ED-208),
+  `insertSpreadsheet`, `editEmbeddedObject`, `canEmbedSpreadsheet`, `setSelectObjectsMode`/`isSelectObjectsMode` (no lasso,
+  ED-211), `start/endEditWrapPoints`/`editingWrapPoints`, `startTransparentColorPick`, `changeImageFromClipboard`,
+  `saveSelectionToTextboxGallery`, `removeTextboxGalleryItem`, `goToPage`.
+- Modules (own files): `rust-objects-core.ts` (per-editor state in a `WeakMap`, the objects cache per layout and editor
+  generation, the section facts, the TS ⇄ wire conversions), `rust-objects-page.ts`, `rust-objects-pictures.ts`,
+  `rust-objects-pointer.ts` (hit tests, handles, drags, crop, Draw Text Box, link mode, keys, paint), `rust-objects-jobs.ts`
+  (the two-phase jobs), `write-session-objects.d.ts` (the binding's types, merged into the ambient module of
+  `write-session.d.ts` — no edit of the shared declaration).
+
+#### Exports (uo-wasm `src/session/shell_objects.rs`; js/session.mjs `bindObjects`)
+
+| Export | JS | Answer (JSON text, UTF-8) |
+|---|---|---|
+| `uo_shell_objects(h, l, active_page, flags)` | `bindObjects(w, uo).objects(session, layout, activePage)` | `{ scope: 'body'\|'hf'\|'tb', box, fs, sel: [drawing id…], floats: [{ i, kind, id, page, x, y, w, h, rot, behind, editable, content, key, image, frame }], inline: [{ para, run, id, page, x, y, w, h, rot, image }] }` |
+| `uo_shell_section_info(h, hf_section)` | `.sectionInfo(session, hfSection)` | `{ index, count, touched: [sectPr…], pageBorderSection, firstSect, suppressed, titlePg: [bool…], background, lastSect, bgShown, evenOdd }` (the model objects as their `JSON.stringify`, uo-docx `JsonWriter`) |
+
+- `objects` is the port of `enumFloats` (engine branch) and `enumInlinePics`: the layout's `PlacedObject.drawing` and
+  `ImageOrigin::Media { drawing }` joined with the session's drawing runs (`drawing_objects()`, `inline_pictures()`); `i` is the
+  `SelectObject { index }` of the object, `(para, run)` the `SelectInline` arguments, `key` the selection pane key, `frame` the
+  `ObjFacts` frame (the session's `ObjFrame` field names), `image` the layout image (`imageBytes`: the natural size, the crop
+  overlay, the previews). The image items are read from the layout's render view (`layout_handle` moves the display lists
+  out of the geometry: the first cut read the empty geometry lists and found no inline picture, caught by the native test).
+  The floats are listed in a text box too (`box`: the box in edit, its dashed outline and handles; the hit tests skip them
+  there, as `enumFloats` is empty in `tbEdit`).
+- `sectionInfo` gives what `getSection()`, `getLineNumbering()`, `getPageBorders()`, `lineNumbersSuppressed()`,
+  `pageBackground()`, `hfTypeOfPage` and the TS `sect()` (the body's FINAL sectPr: the Read mode zoom and `insertImage`'s
+  maximum width) read; the shell computes the TS answers with the SAME pure docx-core / text-layout helpers the TS calls
+  (`columnWidths`, `columnsPresetOf`, `maxColumns`, `contentWidth`, `COLUMN_SPACE_DEFAULT`, `lineNumberingInfo`).
+- Native test `tests/shell_objects_native.rs` (count build): A every float of f7b__7__0/1, f7d__7__3, f8__7__11 (14
+  objects) is selected by its index; B a picture inserted through `PictureCmd::Insert` + a synthetic decode answer is one
+  inline entry selected through `SelectInline`; C the section facts of f7a__7__1; D (M1) both exports return the live bytes
+  exactly (56,767,391 B allocated, peak 2,485,457 B, 0 B left).
+
+#### Hooks and shared edits (each additive, commented `wave 5 (O)` / `front O`)
+
+- `rust-engine.ts`: the import line; `objectsPointerFirst(this, e)` as the first line of `onMouseDown` (the handles, the crop
+  handles, Draw Text Box and the link mode before the text hit — the rotation handle sits off the text and `hitAt` would
+  answer null there); `objectsAfterCanvases(this)` in `install()` and `refreshView()` (the Read mode spread, as the TS
+  `refresh`/`refreshView`); `objectsJobs(this, o, what)` first in `apply()`'s jobs branch (the two-phase jobs reaching the
+  shell by another path, the HTML paste with pictures); the image-only paste branch of `onPaste` now calls
+  `objectsPasteImage` (`clipboard.pasteData` with `image`, answered by the job runner); the `contextmenu` capture listener is
+  removed (ED-210). The other hooks are the fronts' shared `hooks` (S's): `pointer` (unshifted: O before S, the TS order
+  10186–10240), `key`, `overlay` (the handles over the selection, as `paintFloatAndCaret`), `hideSelection` (an inline picture
+  selected hides the text highlight: the TS `picSel`), `adopt`; plus a `mousemove` listener on the element for the handle
+  cursors (the TS's own listeners return on the null TS model).
+- `uo-wasm/src/session.rs` one `pub mod shell_objects;` line; `uo-wasm/src/write.rs` one accessor `layout_view(l)` (the
+  render view of a layout; additive); `js/session.mjs` + `js/session.d.ts` an appended `bindObjects` block;
+  `js/editor.check.ts` one drift line for `bindObjects`.
+- uo-docx (ED-201): `Session::drawing_objects()`, `inline_pictures()`, `selected_drawings()`, `edited_box_drawing()`,
+  `drawing_scope()` (drawing.rs, the shell queries block; `DrawingObject`), `shell_section_now()` (sections.rs;
+  `ShellSection`). Read-only wrappers over the pub(crate) enumerations (`drawing_paths`, `pane_runs`, `sel_path`,
+  `focus_path`, `body_section_range`, `body_sect_pr_at`, `page_border_targets`, `line_numbers_suppressed`); no new behaviour.
+- `engine-switch.test.ts`: the disabled-mutator probe moved from `insertPageBreak` (routed now) to `startEditWrapPoints`;
+  the drift check accepts the two 4-space-indented public methods as routed (ED-212).
+
+#### Declarations (ED-200..ED-222)
+
+- **ED-200** the front reads the `RustEditor` internals through S's `frontApi()` only (session, layout, `apply`, `paint`,
+  `caret`, `locked`, `bumpGen`, `module` for `bindObjects`, `gen` for the objects cache; the typed cast of the first cut is
+  gone), and frontier S's stories binding read-only (`bindStories` of js/session.mjs: `storyContext` for the edit
+  context, `hfPage` for the section of the header/footer page in edit, `textboxAt` for the text box hit, `cellBoxes` for
+  the table edge guard of ED-219).
+- **ED-201** the uo-docx accessors above (additive, declared).
+- **ED-202** a drag (move, resize, rotate) and the arrow nudge commit ONE session command composed from `PictureCmd::SetLayout`
+  (`posH`/`posV` in the object's own references, `widthPt`/`heightPt`, `relWidth`/`relHeight: null` when the source had a
+  relative size) or `SetRotation`: the session has no port of `commitPictureDrag`/`commitDrawingDrag`. The position
+  arithmetic is the TS `posFor`/`refRect`/`applyResize` (ported in `rust-objects-pointer.ts`). The session writes
+  `round(offsetPt × 12700)` for the TS `round((xy − o) × 635)` and `round(pct × 1000)` / `round((o + pct/100 × span) × 635)`
+  for `round((xy − o)/span × 100000)` / `round(xy × 635)`: the same value in another floating-point order, so it can differ
+  by 1 EMU (or 1 thousandth of a percent) when a product falls on a .5 boundary. `engine-objects.test.ts` compares against
+  the REAL private `posFor` of the TS element (the prototype method, not a copy) on 4,000 random cases with integer twips
+  (0 differences, asserted) and 4,000 with the fractional rectangles and references of a real layout (at most 1, asserted;
+  measured 0/4,000). Measured differences: a moved
+  shape keeps its `effectExtent` (the TS `applyDrawingXml(…, true)` recomputes it on any drag; `SetLayout` with a position
+  only does not), a group's children are not rescaled from the drag start (the TS resets the group size first).
+- **ED-202b** a click on an object without a move: the TS takes and discards an undo step (`uw-dirty-change true`,
+  `uw-change`, `uw-dirty-change false` on a clean document, `uw-change` alone on a dirty one); the shell dispatches the same
+  events without touching the state.
+- **ED-203** the drag preview is a dashed outline (rotated with the object) painted by the overlay hook; the TS re-lays out
+  the document live on every frame.
+- **ED-204** dragging an inline picture (the TS `startInlineDrag`, a move in the text) does nothing.
+- **ED-205** the job runner (`runJobs`): `decodeImage` with `createImageBitmap` (+ `OffscreenCanvas.getImageData` when the
+  command needs pixels), `encodeImage` with `OffscreenCanvas.convertToBlob(mime, quality)` (the TS `encodePng` and
+  `compressImages` API), the jobs answered in order through `WriteSession.complete`; input on the pages and keys is ignored
+  while a runner is active; other job kinds answer `failed` unless registered in `jobKinds` (the seam for frontier R's
+  `readClipboard`/`renderClip`). The runner holds the session that issued the jobs: a document loaded or created while a
+  codec runs ends the run without applying anything (the old ids mean nothing to the new session); a throwing `complete`
+  or handler cancels the pending command (`cancelPending`, applied) so the session does not answer `busy` afterwards.
+- **ED-206** pixels are decoded only for the commands that read them (adjust, compress, the Tight/Through contour of
+  `setWrap`/`setLayout`); `insert`, `change`, `setShapePictureFill` and the image paste ask for the size only. A 12 MP photo
+  costs ≈ 96 MB in JS and the same in wasm during an adjust or a compress (the TS cost as well).
+- **ED-207** `insertTextbox` passes the caret's page before the insert as the page of the new box (the session needs it to
+  enter the box; equal unless the anchor moves the box to another page).
+- **ED-208** the watermark and cover page galleries' previews are blank (`paintWatermarkTemplate`/`paintCoverTemplate` lay
+  out a TS preview document: disabled); the custom text watermark with an explicit size sends no `measuredBox` (the TS
+  measures the text with the live font provider): the session uses the TS no-font fallback box.
+- **ED-209** views: Print and Read only. Read mode = the TS shell (`readPagesPerView`, `applyReadSpread`, `nudgeRead`, the
+  wheel and keys) + `settings.setReadView`; Web, Draft and Outline stay disabled (decision D2 of the plan: the TS views are
+  continuous tiles, Rust's ViewTransform pages; Outline is `LayoutError::Unported`). The Read mode keys: the shell stops the
+  arrows and PageUp/PageDown (they also move the caret, as the TS input listener does), so front O nudges for them; Space
+  is forwarded to the element and the TS Read-mode listener (not shadowed) nudges once (the first cut nudged twice).
+- **ED-210** the context menu on the pages is the bars' menu (chrome.ts) as in the TS: the shell's capture listener of
+  wave 4 is gone (ED-28 superseded); the right button selects a picture or a shape under the pointer first (the TS 10247);
+  the items of unrouted commands are grayed by the registry (D7).
+- **ED-211** Delete with several objects selected runs one command per object (the TS deletes all in one undo step); no
+  lasso (`setSelectObjectsMode`) and no Shift/Ctrl+click multi-selection by pointer; the arrow nudge moves the selected object
+  only (the TS `moveSelectedFloatsBy` moves all).
+- **ED-212** `setImageLockAnchor` and `setImageEffect` are indented with 4 spaces in universal-write.ts, so they are missing
+  from engine-public.ts and ran their TS bodies unshadowed under `engine="rust"` (wave 4); routed now. The drift regex and
+  engine-public.ts stay as they are (orchestrator).
+- **ED-213** `selectedShape().format` has no `fill`, `body`, `story`, `textbox` (the wire `ObjectState.format` is a
+  `PictureFormat`); the shell drops the `blip` and `srcRect` the wire's picture base always carries (the TS `ShapeFormat`
+  has neither — except a group's: the TS reads `blip: {}` and a zero `srcRect` for Grupo 7 of f7d__7__10, objects step 4,
+  which the shell drops as well). Visible: Shape Fill's checked state, the Format Shape pane's fill page and the text box options read nothing.
+- **ED-214** inline pictures in table cells are not listed (the TS `enumInlinePics` walks `model.paragraphs` only; the same).
+- **ED-215** the crop-mode drag commits `setCrop` (the source rectangle and the size); the TS also moves the position when
+  a left/top handle is dragged (two TS changes in one step; the session has one command).
+- **ED-216** the text box hit of the object branch is the TS `hitTextbox` (13338, engine branch) through the session's
+  port that frontier S exports (`uo_shell_textbox_at`: the boxes with laid-out content of the context's story, ±5 px
+  outside the border in the box's turned frame, the top one by front layer then `relativeHeight`), on the pages whose
+  canvas holds the point; its border (`onObjectBorder`, ±5 px both sides) selects the float with the same page and placed
+  rectangle and starts the move, its inside goes on to S (the entry). The first cut used `hitFloat(e, 'textbox')`
+  (no content test, no tolerance, last-painted instead of z order). Where S's export answers none for a box the TS lists
+  (S ED-102: a box inside a group, or a linked box whose chain head is inside one), a content-bearing text-box float under
+  the point is still treated as a box (never selected as a shape from its inside) — the TS then enters it, the shell places
+  the caret (f7d__7__3). The link mode's target is `hitTextbox(e) ?? hitFloat(e, 'textbox')` as in the TS (14947). The shell
+  does not exit a text box and select another object in the same click (frontier S's box context first).
+- **ED-217** random ids: the TS draws `wp:docPr` ids, `w14:anchorId` and the content control's `w:id` from `Math.random`,
+  the session from its xorshift32 seeded 1 at open (the same generator as the harness page). The harness seeds the page's
+  `Math.random` again right after the load, so both draw the same values as long as each command takes the same count
+  (the pictures mode is then equal byte for byte).
+- **ED-218** (measured in fix round 1; the first cut's "cause not isolated" is withdrawn) the TS behaviours the first cut
+  attributed to a stale float selection were traced in the TS run (the harness's `UO_EO_TRACE` wraps the TS element's private
+  methods; its `__diag` facet showed `floatSel` valid and in `enumFloats()` at every step): (a) the "ignored nw resize"
+  (f7b__7__0 step 6), the "no event after a resize" (f7b__7__1 steps 7, 9) and the rotation of f8__7__11 (step 8) are
+  mousedowns 4 px from a table cell edge: the TS `tableMouseDown` (10141) runs before the objects and starts the table edge
+  drag — ED-219; (b) "Ctrl+ArrowDown moves the caret" is the TS `nav.ArrowDown` (no object selected, or the caret in a
+  box: `moveCaret(down)` traced), which the shell's `onKey` (wave 4, rust-engine.ts) drops: it handles Ctrl only with
+  Left/Right — gate-O4, not front O. Neither is a TS quirk of the float selection.
+- **ED-219** a left mousedown 4 px around a table cell's left, right or bottom edge (the TS `tableEdgeAt` over the layout's
+  `page.cells`, under `tableMouseDown`'s conditions: not locked, Print view, outside a header/footer and a text box) is a
+  warned no-op in the shell (`tableEdgeDrag`, preventDefault, focus): the TS starts the table edge drag there BEFORE the
+  objects, frontier S does not route the drag (its declared remainder), so front O must not run an object handle at that
+  point. The TS then moves the column or row (one `uw-change`, the saved table differs); the shell changes nothing. Not
+  guarded: the table move/size handles (`tableHandleAt`, which needs the hover state), the edges of header/footer tables
+  (the TS keeps body cells only through `locateRef`; the export lists every placed cell).
+- **ED-220** the break keys follow the TS order: Ctrl+Enter / Ctrl+Shift+Enter insert a page / column break in the
+  body (and through the routed `insertPageBreak`/`insertColumnBreak`, which refuse like the TS where the TS refuses), but
+  in a note (also with a text box open inside one) nothing happens (`ctrl && this.noteEdit ? undefined`: the shell forwards
+  the owned key), and in a cell Ctrl+Shift+Enter (not locked) is `splitTable`, frontier S's key hook (front O's hook returns
+  false; the first cut ran `insertColumnBreak` in the cell).
+- **ED-221** in a header/footer context the objects export gets the page in edit (`hfActivePage`: only that page's
+  header/footer objects, as `enumFloats`) and the section queries (`getSection`, `getLineNumbering`, `getPageBorders`,
+  `lineNumbersSuppressed`, `pageBackground`) the section of that page (`pageSections[hfActivePage]`, through S's `hfPage`);
+  the first cut passed −1 (section 0 / the caret's section).
+- **ED-222** `documentThemeColors()` is not routed (an unrouted query: its TS body runs on the null TS model and answers the
+  default Office palette): the color pickers of every front (the watermark dialog's of front O, chrome-page.ts:66, but also
+  Home's font color, borders, effects) show the default theme, not the document's. One cross-front query for the
+  orchestrator (gate list).
+
+#### Numbers
+
+Harness `tests/browser/editor_switch_objects.mjs` (own file; it imports `setup` of editor_switch_lib.mjs, the page helpers
+are copy-adapted from editor_switch_review.mjs / editor_switch.mjs — declared duplicate): Chromium headless, 1100×850,
+`author="Ana"`, `lang="pt"`, the ribbon; TS first, then Rust, the same script of element calls, real keys and mouse
+events (pointer targets computed once on the TS element from its `enumFloats`/`enumInlinePics`/`handleCenters` and replayed at
+the same client point), bar buttons by id, synthetic paste events; after each step the facets (selection, `uw-*` events,
+dirty, page count, `selectedImage`, `selectedShape` with `fill`/`body` split into the always-declared `shapeFillBody` facet,
+`selectedObjectCount`, `selectionPaneItems`, `getSection`, `getView`, `getZoom`, `pageBackground`, `watermark`,
+`hasCoverPage`, `getLineNumbering`, `lineNumbersSuppressed`, `getHyphenation`, `getPageBorders`, the three modes; canonical
+JSON: keys sorted, null/undefined/false dropped — the wire drops false booleans); at the end page count and sizes,
+thumbnails (two passes: the Rust painter decodes pictures asynchronously), the screen with the caret hidden (the TS overlays
+no Rust front paints yet off), the saved package part by part. Fix round 1 (session build 9,686,613 B, the same front-O
+Rust as the first cut; `--mode all` 8 min 34 s, then `objects`, `views`, `keys` again after the intermittent entries below):
+
+| Mode | Documents | Steps | Facets equal | Different (all declared) | Declarations |
+|---|---|---|---|---|---|
+| page | f7a__7__0/1/5/10, f7c__7__1/2/8, blank | 33 | 3,760 | 44 | gate-O1 (8), gate-O2 (f7a__7__1) |
+| objects | f7b__7__0/1/3/8/10, f7d__7__0/3/10, f8__7__5/11 | 35 | 4,537 | 464 (the `shapeFillBody` facet of ED-213 included) | ED-202, ED-213, ED-216 (S ED-102), ED-219, gate-O4, gate-O5 (intermittent) |
+| pictures | blank, f2-3-0 | 30 | 853 | 2 | gate-O3 |
+| menu | f7b__7__0, f7d__7__3 | 8 | 217 | 2 (`shapeFillBody`) | — the opened menus' items and grayed states are equal |
+| views | f7a__7__1, f2-3-0 | 14 | 356 | 6 | ED-209, gate-O3, gate item 10 of wave 4, gate-O5 (intermittent) |
+| keys | blank | 12 | 170 | 1 | the note mark's shading (frontier S or R paint) |
+
+The objects declarations are exact since fix round 1: `at: { facet: steps }` per document, measured with
+`UO_EO_MEASURE=1 UO_EO_COVERED=2` and the TS traced with `UO_EO_TRACE`; a declared step that no longer differs fails the
+run (`declared but equal now`), so no `'*'` remains. What differs, per cause: the moved shape's `effectExtent` (ED-202:
+f7b__7__0/3 steps 2–3, f7d__7__10 to the end), the table edge under a handle (ED-219: f7b__7__0 step 6, f8__7__11 step 8;
+f7b__7__1, whose steps 7 and 9 are table edges too, is now equal in every step facet), the shell's Ctrl+ArrowDown (gate-O4:
+step 11 and the caret after it on five documents), a group's `blip`/`srcRect` (ED-213, one step), the linked box of
+f7d__7__3 (ED-216 via S ED-102: every step after the click). Intermittent (gate-O5, `intermittent: true`, not
+stale-checked): end pixels of f7b__7__1/3 in about one run of two (the bold runs in table cells laid out narrower by the
+Rust engine — the bold face measured before it loaded; every step facet and the saved package equal) and PageUp's caret in
+the views mode of f7a__7__1 (one run of two). The `keys` mode (new): Ctrl+Shift+Enter in a cell splits the table (S), Ctrl+Enter
+and Ctrl+Shift+Enter in a note do nothing, in the body after the split they break — every step facet and the saved package
+equal to the TS. The views mode now presses Space and PageDown (one nudge each, equal). 0 page errors in every mode. The
+pictures mode is equal in every step facet and in
+the saved package byte for byte (insert through `insertImage` — the bar's file chooser path calls it, not driven here —, wrap
+square/tight with the contour job,
+position, arrange, rotate, flip, size, crop fill/aspect/shape, border, effect, format, adjust (decode + encode jobs),
+transparency, recolor, alt text, reset, reset size, compress (jobs), crop mode, Delete, the image-only paste and the HTML
+paste with a data-URI picture through the jobs, Ctrl+Z). The page mode is equal in every step facet (setup, columns, breaks
+by keys and bar, line numbers, hyphenation, page color/fill, watermark gallery and custom, cover page, blank page, vertical
+alignment, section start, page borders, undo) and in the saved package; its differences are the cover page's box paint
+(gate-O1) and one document's column layout (gate-O2). `--mode probe` (first cut: the Rust-saved cover page document
+reopened in both engines): 30 facets equal, 0 different.
+
+Memory (`--mode memory`, count build 3 min 23 s, 40 cycles of create → load f7b__7__1 → `insertImage` PNG → wrap square →
+size → `setImageAdjust` → `compressImages` → the queries → `saveDocx` → remove): sessions, shell engines and handles 0
+after every remove; live bytes flat after warm-up at 9,189,992 B (as the first cut); `memory.buffer` 18,087,936 B over the
+last third. Native (count build, first cut): the exports return the live bytes exactly (D above).
+
+Unit (`engine-objects.test.ts`, 5 tests): the route names exist and do not collide; a handler per name, none throws
+without a session; the 161 bar commands reach only routed/SHELL methods and the dialogs (their OK paths read by hand); the
+drag arithmetic against the TS element's own `posFor` (4,000 integer cases: 0 differences; 4,000 fractional: at most 1
+allowed, 0 measured); the wire conversions. Editor vitest 33 files / 329 tests (all fronts' files), `engine-switch.test.ts`
+prints 511 public methods: routed 388, shell 26, disabled mutators 65, disabled queries 41; private routed 21; bar commands
+routed 434 (the three fronts together). Editor and viewer tsc exit 0, no output. `check-changed` (clippy native + wasm32,
+float casts, bans; the crates the three fronts changed): all steps passed (1 min 11 s). The editor's engine chunk 507 KB
+minified (the three fronts together).
+
+Wave-4 suites with this build: `editor_switch.mjs --mode phase0` ok (0 `.wasm` and 0 engine chunk requests, static closure
+11 outputs / 2,208 KB, no leak); `--mode parity` (stride 6) ok with 2 declared entries used (f7a__7__14 ED-16, f7b__7__10
+ED-216, narrowed in fix round 1 from `'*'` to the six facets and three end facets that differ: the TS places the caret
+at para 2 offset 256 on the click of step 6, the shell selects the text-bearing ellipse; block commented `front O`).
+First cut, not re-run in fix round 1: `--mode memory` (count build, 40 cycles) ok, live bytes one value (16,986,450);
+`--mode chrome` ok; `viewer_switch.mjs --mode parity` (stride 6) ok, 0 differences; native `shell_native` 5/5,
+`shell_objects_native` 4/4 (no Rust change of front O since).
+
+#### Process metrics (front O)
+
+One implementer session (Opus), ≈ 16:55–19:15 local, with two other frontiers building and running Chromium on the
+machine. Session wasm builds: 8 (2 min 20 s – 4 min each; two waited on the others' cargo); one rebuild was forced by
+frontier R's schema regeneration (the harness hung on a codec version mismatch until the module was rebuilt). Rework: the
+first inline-picture export read the geometry's display lists, which `layout_handle` had moved into the render view (the
+native test caught it: 0 items on every page); the Read mode zoom used the caret's section where the TS `sect()` is the
+body's final sectPr (the views mode caught it: zoom 1.061 vs 0.75); the random ids aligned by seeding the page's
+`Math.random` after the load; three harness artifacts fixed (the menu closer's mousedown inside the element deselected the
+TS's shape, the border target 1 twip inside the edge, the thumbnails captured before the pictures decoded); shell edits
+through `node -e` lost escaped text twice (repaired with the Edit tool).
+
+Fix round 1 (same day, ≈ 19:20–20:30, after the review): one session wasm build (1 min 58 s, no Rust change of front O:
+the build only picks up the other fronts' sources). Findings fixed: the break keys' order (ED-220), Space in Read mode
+nudging twice (ED-209), the text box hit (ED-216), the drag family's declarations (ED-218 measured, ED-219), the
+arithmetic test against the real TS `posFor` (ED-202), the job runner's session capture and cancel (ED-205), the
+header/footer section (ED-221), the `priv` cast, the duplicated `omit`/`locked`, `documentThemeColors` declared (ED-222),
+the dialogs' claim. The harness gained `UO_EO_MEASURE`, `UO_EO_COVERED`, `UO_EO_TRACE` (the TS private methods traced into
+a non-compared `__diag` facet), the exact `at` declarations (every declared step must still differ, else the run fails)
+and the `keys` mode. The tracing found the table edge order in four minutes of runs where the first cut had guessed a
+stale selection.
+
+#### For the milestone-2 gate (front O)
+
+1. **A drag commit in the session** (`PictureCmd::CommitDrag { mode, rect, rot, facts }`, the port of
+   `commitPictureDrag`/`commitDrawingDrag`/`startCropDrag`/`startInlineDrag`): the XML of a drag equal by construction
+   (`effectExtent`, the group's children, the crop's position), the inline-picture drag in the text (ED-202, ED-204, ED-215).
+2. **The cover page's text box is not painted after `insertCoverPage`** (gate-O1): the saved package is equal to the TS's
+   (byte for byte once the random ids align, ED-217), the screen and the thumbnail of page 0 lack the colored text box of
+   the first cover of the gallery. Repro: `editor_switch_objects.mjs --mode page`, any document, step 24. `--mode probe` with
+   `UO_EO_PROBE=<the Rust-saved .docx>` (the saved file reopened in both engines) is equal in every facet, the thumbnails
+   included: the in-memory model the session builds in `PageCmd::InsertCoverPage` (uo-docx `page` family) lacks what the
+   reader builds from the same XML (the box's fill), not the layout.
+3. **Three columns with a separator on f7a__7__1** (gate-O2): after `setColumns({ count: 3, sep: true, spaceTwips: 500 })` the
+   session's layout has 11 pages, the TS's 10, on equal section facts (`getSection()` equal); the page count stays different
+   until the page color step. The layout (uo-docx-layout columns), not the routing.
+4. **A theme color without a theme part** (gate-O3, f2-3-0): the character style Strong has `w:color w:val="C00000"
+   w:themeColor="accent2"` and the package has no theme: the TS editor paints its default theme's accent2 (orange), the
+   session's layout the C00000 (red); the saved packages are equal. Which one Word paints decides the fix (the editor's default
+   theme in the session, or the TS).
+5. The shape `fill`, text `body`, `story` and `textbox` of `ObjectState.format` (ED-213): a `ShapeFormat` on the wire.
+6. **gate-O4, the shell's Ctrl+ArrowUp/Down** (rust-engine.ts `onKey`, wave 4, not a front file): the TS moves the caret
+   as with ArrowUp/Down (`nav`, also with Shift), the shell drops the key. Measured on f7b__7__8/10, f7d__7__0/10, f8__7__5
+   (objects mode step 11; the later steps then act at another caret). Fix: `else this.moveCaret(arrows[k], e.shiftKey)` for
+   Ctrl+Up/Down (orchestrator; a behaviour edit of a shared file, so not done by front O).
+7. A text box hit inside groups and for linked boxes whose chain head is inside a group (S ED-102 in `uo_shell_textbox_at`:
+   f7d__7__3's Caixa 4, the TS enters it, the shell places the caret) and the exit-and-select click (ED-216), with
+   frontier S.
+7a. The table edge drag and the table move/size handles (ED-219): routed by frontier S, the guard of front O becomes S's
+   hook (the TS order: tables, then objects); the header/footer table edges then follow `locateRef`.
+7b. `documentThemeColors()` (ED-222): one query of the document's theme colors (a shell export or a settings query) for
+   every front's color pickers.
+7c. **gate-O5, intermittent end pixels** (objects mode, f7b__7__1/3, about one run of two under the machine's load): the
+   Rust engine lays out the bold runs of table cells narrower (another line break) — the bold face measured before its file
+   loaded; the shell's font loading should relayout once the face arrives (wave-4 shell, not front O). Repro:
+   `UO_EO_ONLY=f7b__7__3 UO_EO_DUMP=1 … --mode objects` twice; the dumps (`es-o/dump/f7b__7__3-objects-thumb0-*.png`) show
+   the cells of column 1. The views mode's PageUp caret (f7a__7__1, one run of two) is listed under the same id, cause not
+   isolated.
+7d. The parity click of f7b__7__10 step 6 (editor_switch.mjs): the TS places the caret at para 2 offset 256 with one
+   `uw-change` where the shell selects the text-bearing ellipse; trace the TS (`hitTextbox`, `hitFloat`, `routeEngineClick`)
+   as the objects harness does before deciding.
+8. The galleries' previews (ED-208): a preview session (`newBlank` + the gallery command + the layout of page 0) in the shell.
+9. Web and Draft views (ED-209): a `web_width_tw` for `uo_shell_relayout` (shell.rs) and the tile-vs-page difference accepted.
+10. The drift regex of engine-switch.test.ts matches 2-space methods only; engine-public.ts lacks the two 4-space ones
+    (ED-212): regenerate it (orchestrator).
+11. `--mode chrome` of editor_switch.mjs picks its "not routed" button from a fixed list that the fronts keep routing
+    (pagebreak and image are O's now; R moved it to painter/color): derive it from `ROUTED_COMMAND_IDS` instead.
+12. The corpus coverage of real pictures (EMF clips, cropped JPEG, VML images): no committed fixture has a picture; the
+    picture parity rests on the pictures generated in the harness.
+
 ### Wave 5 — R: review and document (comments, revisions, fields, find, spelling, styles, clipboard buttons, Alt keys)
+
+Frontier R of wave 5 (2026-11-11, implementer Opus, plan by the wave's planner): the review and document families of
+`<universal-write engine="rust">` routed to the session — tracked changes, comments, find/replace and the Navigation pane,
+fields and references (TOC, captions, cross-references, table of figures), bookmarks and hyperlinks, styles (list, look,
+Inspector, create/modify/rename/delete), spelling, the clipboard WITHOUT a clipboard event (the bars' Cut/Copy/Paste, Paste
+Special, the Office Clipboard pane, `pasteDefaults`) and the TS keys with Alt (gate items 12, 14, 15, 16). The TS default
+path is unchanged (phase 0 below).
+
+#### Routes
+
+Files of the frontier: `engine-routes-review.ts` (names), `rust-engine-review.ts` (the handler map and the hook
+registration), `rust-review-core.ts` (session/layout access through `RustEditor.frontApi()`, the line geometry caches),
+`rust-review-revisions.ts` (tracked changes, comments, `runsOf`, the author sync), `rust-review-find.ts` (find, navigation,
+fields, references, bookmarks, links), `rust-review-styles.ts`, `rust-review-spell.ts`, `rust-review-clipboard.ts` (buttons,
+the `readClipboard` job and the key hook), `rust-review-overlays.ts`. 128 public methods, 3 private, 100 bar commands
+(`engine-review.test.ts` prints them).
+
+| Element method / input | Session |
+|---|---|
+| `toggleTrackChanges`, `isTrackingChanges` | `settings.setTracking`; query `tracking` (new) |
+| the element's `author` (the TS reads it live for every new revision and comment) | `settings.setAuthor` (not an edit: no undo step, no dirty flag), pushed when the name changed: after each open (decision 6), from a `MutationObserver` on the `author` and `lang` attributes (the default name is per interface language), from an own accessor over the prototype's `author` property, and before each key and click (a hook first in the key and pointer lists: the other fronts' keys edit too). ED-318 |
+| `setMarkupMode`/`getMarkupMode`, `setMarkupOptions`/`getMarkupOptions` | `settings.setMarkup`, `revision.setMarkupOptions` (insDel ↔ insertionsDeletions, `authors: null` ↔ absent); queries `markupMode` (new), `markupOptions`; `uw-markup` gets the TS `{ mode }` detail |
+| `getRevisions`, `revisionSpans`, `revisionAuthors`, `authorColor` | query `revisionEntries` mapped to `WriteRevision` (the balloon text by the TS `formatDescription`, style names from `paragraphStyles()`), `revisionAuthorsNow`, `authorColorOf` |
+| `accept`/`rejectRevisionAt`, `accept`/`rejectChange`, `accept`/`rejectAllChanges` | `revision.acceptAt/rejectAt/accept/reject/acceptAll/rejectAll`; counts from `revisionCount` before/after |
+| `nextChange`, `previousChange`, `selectRevision`, `revisionAtCaret`, `revisionAnchors` | `revision.nextChange/previousChange/selectRevision` + scroll to 1/3 of the view (TS `scrollToSelection`); `revisionAt` of docx-core ported over the body entries; anchors from the paragraph's lines (`uo_shell_para_lines`, the engine line's visible range) |
+| `getComments`, `addComment`, `removeComment`, `goToComment`, `commentAnchorPx`; a click on commented text (`uw-comment-click`) | query `comments`; `comment.add/remove` (the new id = the new entry); the first run carrying the id (`paraRuns`, new) + `setSelection` + scroll (`#para:N` rule) |
+| `findNextMatch`, `replaceMatch`, `replaceAllMatches`, `highlightMatches`, `selectAllMatches`, `goTo` | `find.*`, outcomes from `navigationResult` (F9Result), the Find-box messages of the TS `findMsg`; `goTo('page'/'line')` in the shell over the layout (the session has none) |
+| `search`, `clearSearch`, `goToSearchResult`, headings (`getHeadings`, `currentHeading`, `goTo/select/promote/demote/move/insert/deleteHeading`), `getSelectionRanges`/`setSelectionRanges`, `goToPage` | `navigation.*`, queries `searchResults` (+ page from the lines), `headings`, `currentHeading`, `selectionRanges` |
+| fields, TOC, captions, cross-references, table of figures | `reference.*` (field kinds PAGE/NUMPAGES/DATE → page/numPages/date), queries `canInsertField`, `dateTimeFormats`, `tocTemplates`, `tocLevel`, `has/inTableOfContents`, `tableOfContentsOptions`, `captionLabels`, `captionNumbering`, `autoCaption` (`{ table: { label, position } }` ↔ the wire tuple), `captionTarget`, `nextCaptionNumber`, `crossReferenceKinds/Items`, `tableOfFiguresOptions`; booleans and counts from `referencesResult` |
+| bookmarks, hyperlinks (`insertBookmark`, `deleteBookmark`, `getBookmarks`, `hasBookmark`, `goToBookmark`, `insertHyperlink`, `setLink`, `removeLink`, `getLink`, `getLinkTargets`, `navigateTo`), Ctrl+click | `bookmark.*`, `find.goToBookmark`, query `bookmarks` (sorted by name in the shell with the TS collation); `getLink` = the TS `linkGroupAt` over `paraRuns`; Ctrl+click (pointer hook) → `openExternalLink`, else `navigateTo`; `navigateTo('#_top')` leaves the note, text box, header/footer and cell first (the TS `toBody()`: `context.exit*` by frontier S's `storyContext`), `#para:N` and a bookmark leave the cell (the TS `exitCell()`) |
+| `listStyles(filter)`, `paragraphStyles`, `styleFormatting`, `currentStyles`, `inspectStyle`, `selectionStyleFormat`, `stylesKey`, `knownFontFamilies` | queries `listStyles` (new: the `'all'` list with the use flags), `styleLook` (new: `lookOf` over `withLatent`), `defaultParagraphStyle`/`defaultCharacterStyle` (new, gate 15), `runPropsAt`/`paraPropsAt` (new), `stylesVersion` (new); the filter, the sort and the formatting policy in the shell (styles.ts tail, `policyStyleOk`); `embeddedFamilies()` (new export, gate 14) |
+| `createStyle`, `modifyStyle`, `renameStyle`, `deleteStyle`, `setStyleInGallery`, `updateStyleFromSelection`, `clearParagraphStyle`, `clearCharacterStyle`, `setDefaultFont` | `style.*` (the TS `StyleFormat` value/null/absent ↔ the wire `Ch*`); `createStyle` answers the new id |
+| spelling (`toggleSpellCheck`, `spellingAtCaret`, `spellingSuggestions`, `replaceSpelling`, `ignoreSpelling`, `addToDictionary`, `nextMisspelling`) | shared/spell's `SpellChecker.shared` loaded by the TS `import()`; the spans from `paraRuns` (language and `noProof` per run, what is not checked). On disconnect (the shell's `park` hook) the cache's listener and the shared checker's reference are released as the TS `disconnectedCallback` does (the Hunspell worker ends with the last editor); a released cache sends no further check (a call after the last `dispose` would start a new engine) |
+| `copy`, `cut`, `paste(mode)`, `pastePlain`, `pasteSpecialFormats`, `pasteSpecial`, `clipboardItems`, `pasteClipboardItem`, `pasteAllClipboardItems`, `removeClipboardItem`, `clearClipboardItems`, `onClipboardChange`, the `pasteDefaults` field | `clipboard.copy` / `clipboard.cut`: the session decides what is copied (a drawing object, selected cells, the ranges of a non-contiguous selection, the text, a note reference alone; the cut's cell rules), `copied()` null = nothing copied, nothing written; else the listeners, then `navigator.clipboard` (the TS `writeClipboard`). `navigator.clipboard.read()` → `clipboard.pasteData` (`encodePaste` tree, `withRich`, an image as the session's decode job through the shell's `apply` and frontier O's runner; read denied → the session's own copy). `pasteSpecialFormats`/`pasteSpecial` are two-phase: the session's `readClipboard` job is answered by R's handler registered in O's `jobKinds` (the system clipboard as the TS reads it; denied: `failed`, the session's own copy). Ring commands and query `clipboardItems`; a KEYBOARD copy/cut (the clipboard event of the shell) notifies the listeners too (the shell's `copied` hook; the TS `rememberClip`). `pasteDefaults` is an accessor on the element that pushes `clipboard.setPasteDefaults`; the bars change the object in place (`Object.assign`), so the defaults are pushed again (when changed) before every button paste, ring paste and Ctrl+V |
+| keys: Alt+Arrow/Home/End (+Shift), Alt+Enter, Alt+Backspace/Delete, Ctrl+Alt+Left/Right (word), Ctrl+Alt+Up/Down (line), Ctrl+Alt+Backspace/Delete, Ctrl+Alt+letter of the TS Ctrl map (b i u z y a e l r j; c and x = the buttons), Ctrl+Alt+V (`uw-paste-special`), Ctrl(+Alt)+Home/End (the document's edges; Shift extends), PageUp/PageDown with Ctrl or Alt (0.9 of the view + 20 line moves), Ctrl+Alt+Enter / Ctrl+Alt+Shift+Enter (page / column break; nothing in a note), Tab with Ctrl or Alt (the TS Tab rule), F9 (`uw-toc-update` first when the session's `inTableOfContents`, ED-317), Ctrl+hyphen / Ctrl+Shift+hyphen | the key hook, the TS `bindEvents` rules (universal-write.ts 10516–10790) in the TS order over routed methods; the TS rules for Home/End, PageUp/PageDown, Enter and Tab have no Alt check, so with Alt they run as without it. Ctrl+Alt+F/D (notes) and the cell keys are frontier S's hook (it runs first: in a cell Ctrl+Home leaves the cell, then this hook goes to the document's start); the breaks call frontier O's routed `insertPageBreak`/`insertColumnBreak` |
+| screen overlays (`paintEngineMarks` field shading + comment highlight, `paintEngineSpelling`, `paintSearchHits`) | routed under the TS private names (a harness's `el[m] = () => {}` turns them off on both engines); painted by the paint hook under the selection, over `uo_shell_page_lines` (body scope) |
+| the extra ranges of a non-contiguous selection | `paintExtraRanges` from the shell's `overlay` hook (with the selection, over it: the TS `extras()` in `paintEngineSelection`); NOT under the TS name `paintMultiSelection`, which is the floating objects' multi-selection and lasso (frontier O's) |
+
+Bar commands routed (100): cut, copy, paste, pastePlain, find, replace, find:advanced, goto, goto:f5, hl:all, hl:clear, in:sel,
+in:main, paste:strip, paste:special, paste:defaults, clipboard:pane, clip:paste, clip:delete, view:navpane, navigation, the 13
+nav:* ids, comments, link, comment, field:page/numpages/date, bookmark, crossref, caption, tof, tof:update, toc, toc:custom,
+toc:remove, toc:mark, toc:addText, styles, styles:pane, style:inspector, style:new, style:modifyCurrent, style:updateCurrent,
+style:h1–h3, style:create/update/modify/rename/ungallery/togallery/delete, comment:prev/next/delete/deleteAll, spelling,
+spellAsYouType, trackChanges, markup:simple/all/none/original, show:insdel, show:formatting, balloons:revisions/inline/mixed,
+people:all, reviewPane (+ vertical, horizontal), the 12 change:* accept/reject ids, change:prev, change:next.
+
+#### Session access added (schema, frontier R owns it)
+
+`core/schema/session.uos` (regenerated, `cargo run -p uo-schema -- check` up to date; three regenerations, all additive at the
+end of `QueryOp`/`QueryAnswer`, announced): QueryOps `Tracking`, `MarkupMode`, `ParaRuns(QParaRuns { para, fallback })` →
+`list<RunSpan { len, link?, link_tip?, field, comment_ids?, del, spell, lang, char_style? }>`, `ListStyles` →
+`list<StyleListItem>` (with `link_name`), `StyleLook(QStyleLook)` → `AStyleLook { value: StyleLookW? }`,
+`DefaultParagraphStyle`, `DefaultCharacterStyle`, `RunPropsAt(QRunPropsAt)` → `RunProps`, `ParaPropsAt(QParaPropsAt)` →
+`ParaProps`, `StylesVersion` → u32; message `ShellLines { lines: list<ShellLine> }`. Arms in `query.rs`, bodies in
+`src/session/review.rs` (the spelling half of `LangResolver` with `noProof`, `skipRun`, `lookOf`/`borderCss`). Shell exports
+(`src/session/shell_review.rs`): `uo_shell_page_lines(h, layout, page)`, `uo_shell_para_lines(h, layout, para)` (the cached
+`EditLines` of the layout, chars as o/x/w columns), `uo_shell_range_rects(h, layout, page, ap, ao, fp, fo)` (normalised:
+backward = forward), `uo_shell_embedded_families(h)`; JS `pageLines`, `paraLines`, `rangeRects`, `embeddedFamilies` (session.mjs
+R block, session.d.ts, the editor's write-session.d.ts).
+
+#### Declarations (ED-301..ED-319)
+
+- **ED-301** uo-docx additive accessors (decision 1, option A without widening the private types): a new
+  `session/ops/styles/listing.rs` (`pub mod listing;` in styles.rs) with `Session::style_list_entries()`,
+  `default_paragraph_style()`, `default_character_style()`, `styles_in_use()`, `style_look_formatting(id)` (`withLatent` +
+  `resolveStyleId`), read-only over `&Session` (the memoised index when fresh, else the part read again);
+  `captions.rs` `all_paragraphs` is `pub(crate)` (was private). No behaviour change (uo-docx styles tests 20/20).
+- **ED-302** `listStyles`: the session answers definition order + the latent built-ins; the filter, the sort (priority, then
+  `Intl.Collator(uiLocale(lang))`) and the policy filter run in the shell exactly as the TS (decision 2).
+- **ED-303** `stylesKey` = `${stylesVersion}:${editsSinceLoad}:${canUndo}:${canRedo}:${hfEdit}:${uiLang}` (the TS uses its
+  stacks' lengths; the key only has to change when the list can). `hfEdit` (fix round 1) is 1 while a header/footer is
+  edited, also with one of its text boxes open, read from frontier S's `storyContext` (the TS `this.hfEdit`).
+- **ED-304** the overlays, revision anchors and search pages use the BODY scope's lines: squiggles and field shading in
+  headers/footers, notes and text boxes (f8__7__0, measured) and the page of a search hit in a table cell (f2-3-2: -1 vs 0)
+  are not answered; the other stories' scopes are frontier S's. Also `selectRevision(i)` of an entry outside the body (a
+  header/footer, note or text box revision): `false` and no scroll, where the TS scrolls to its anchor.
+- **ED-305** the Office Clipboard ring is the session's (per instance, G7); the TS ring is page-global. `clipboardItems()`
+  answers kind `text` for every item.
+- **ED-306** `replaceSpelling` = the session's `delete` then `type` (two undo steps; the TS takes one). A single
+  `find.replaceMatch` or a `type` over the selection gives the same text but splits the run (measured: the saved
+  `document.xml` differed), so the two-step form was kept: equal saved bytes, one more undo step.
+- **ED-307** the spelling cache (`SessionSpell`) repeats ~60 lines of spell.ts's `ParagraphSpell` keyed by the spans'
+  content instead of the `Paragraph` object (decision 4: spell.ts untouched).
+- **ED-308** the Alt keys read `key` as the TS does: AltGr characters whose key is not a letter of the Ctrl map still type
+  (ED-21 stays true; `--mode keys` of the main harness: AltGr+2, AltGr+E, Option+2 unchanged).
+- **ED-309** formatting marks (the showMarks half of `paintEngineMarks`) are not painted (O / remainder).
+- **ED-310** bookmark brackets (`paintBookmarkMarks`) are not painted and `showBookmarks`/`view:bookmarks` stay disabled (no
+  session answer of the bookmark positions per paragraph).
+- **ED-311** not routed (disabled or TS-on-empty-model as before): `countMatches` (the session's count is a private alias),
+  `getLinks`, `hasExternalFields`, `tocEntrySuggestion`, `paintTocTemplate`, `ensureBuiltinStyle` (a mutation without a
+  command), list styles (`listStylesInDocument` neutral, create/apply/modify list style), `selectSimilarFormatting`, mail merge,
+  the Paste Special link variants, image clipboard items (two-phase), the `\h` REF Ctrl+click target, `stylesVersion` (routed
+  by frontier S through its shell path; R's `stylesKey` reads the session query).
+- **ED-312** `revisionSpans()` answers the session's wire entries (`{ span, story, loc }`): the TS entries hold model objects.
+- **ED-313** `selectionStyleFormat()` composes the TS `selectionFormat('linked')` from `runPropsAt`/the pending props and
+  `paraPropsAt` (not a session command).
+- **ED-314 (core)** a document WITHOUT a theme part: the TS editor resolves theme colors over `emptyFormatting().theme` (the
+  Office default palette), the session over an empty theme (the `w:val` fallback). Visible on f2-3-0/f2-3-2 (Strong =
+  accent2: TS ED7D31, session C00000) on the screen from the first step, and in `styleFormatting` of a latent text1-tinted
+  style (Subtle Reference 595959 vs 5A5A5A). The main harness's thumbnails do not show it (its TS thumbnail path agrees);
+  gate R-1.
+- **ED-315** (shared hook, `rust-engine.ts` `apply`) a ChangeSet with `formatting` drops the shell engine's incremental
+  state (`shell.clear()`): measured, after `style.updateStyleFromSelection`/`modifyStyle` the incremental relayout answered
+  path `incremental`, relaid `[0, 0)` (stale lines). The TS refreshes fully after a style edit. Gate R-3.
+- **ED-316** `uw-markup` from the session has no detail: the shell adds the TS `{ mode }`.
+- **ED-317** (fix round 1) F9 asks the TOC question (`uw-toc-update`) when the session's `inTableOfContents` is true: a TOC
+  table (not a table of figures) intersecting the selection, or the caret in the TOC content control. The TS asks when ANY
+  `TOC` field intersects the selection (a table of figures, `TOC c`, included) and never for the content control alone.
+  Both agree on the harness documents; a session query "a TOC field intersects the selection" (uo-docx `toc_fields` +
+  `toc_in_selection`, both `pub(crate)`) is gate R-4.
+- **ED-318** (fix round 1) the author is pushed from an attribute observer (a microtask) and before each key and click: a
+  programmatic mutator called in the SAME task right after `setAttribute('author', …)` (no key, no click in between) records
+  the previous name; the property setter pushes at once. The harness's mid-script changes (attribute, then the property)
+  are equal in `getRevisions` and the saved `document.xml`.
+- **ED-319** (fix round 1) the TS rules for PageUp/PageDown and Tab take any modifier: with Ctrl (no Alt), which the wave-4
+  shell forwarded as an owned key without running it, they run here too (Ctrl+PageDown = the scroll and 20 line moves,
+  Ctrl+Tab = the Tab rule), not only with Alt.
+
+#### Files touched outside R's own files
+
+- uo-docx: `session/ops/styles.rs` (+1 line `pub mod listing;`), `session/ops/references/captions.rs` (`all_paragraphs`
+  `pub(crate)`), new `session/ops/styles/listing.rs` (ED-301).
+- uo-wasm: `src/session.rs` (two mod lines, R-commented), `query.rs` (the R arms), schema + generated codec (R owns them),
+  `js/session.mjs` and `js/session.d.ts` (R blocks).
+- editor: `rust-engine.ts` — the shared hook block (`hooks`, `FrontApi`, `frontApi()`, the four dispatch lines; S and O
+  extended it), and ED-315's two lines in `apply`; fix round 1: two hook lists in the block (`park`: the element
+  disconnected, dispatched first in `park()`; `copied`: a keyboard copy/cut put an item in the ring, dispatched at the end of
+  `clip()`), one dispatch line each; `write-session.d.ts` (R block: the four methods, `ShellLine`).
+- editor, read only (imports, no edit): frontier S's `bindStories(...).storyContext` (the edit context: `hfEdit`, the note
+  for Ctrl+Alt+Enter, `toBody()`), frontier O's `jobKinds`/`runJobs` (`rust-objects-jobs.ts`: R registers the
+  `readClipboard` job there, as O's file announces).
+- harness: `editor_switch_lib.mjs` (`entryExtra`), `editor_switch.mjs` (R blocks: the shell's overlays off in the "TS overlays
+  off" capture; `--mode chrome`: Ctrl+K opens the hyperlink dialog, Cut/Copy/Paste enabled, the not-routed probe is
+  `painter`/`color` — decision 3 taken as recommended).
+
+#### Numbers
+
+Harness `core/crates/uo-wasm/tests/browser/editor_switch_review.mjs` (new; TS first, then Rust, the same script of element
+calls, real keys and bar buttons; author "Ana", `lang="pt"`, the ribbon; d3 review documents + f2-3-0, f2-3-2, f7a__7__0,
+f8__7__0; facets: answer, selection, uw-* events, dirty, toolbar run/para, the family's facets, end screen with R's overlays on
+and off, saved parts; FAILS on anything undeclared or a page error). `--mode all`: exit 0, 120 s:
+
+| Family (documents) | Facets equal | Different (all declared) |
+|---|---|---|
+| revisions (revisions, f7a__7__0; 27 steps) | 703 | 0 |
+| comments (comments, f2-3-0; 8) | 151 | 2 (ED-314) |
+| styles (styles, f2-3-0, headers; 12) | 396 | 42 (ED-314 looks of one latent style per step; end screens: ED-314, gate R-2) |
+| find (f2-3-0, f2-3-2, headers; 17) | 494 | 5 (ED-314, ED-304) |
+| fields (fields, many-fields, hyperlinks, f2-3-0; 16) | 759 | 2 (ED-314) |
+| clipboard (f2-3-0; 11) | 89 | 2 (ED-314) |
+| keys (f2-3-0; 21 Alt/F9/hyphen keys) | 138 | 2 (ED-314) |
+| spelling (f2-3-0 91 misspellings, f8__7__0 273) | lists, F7 path (next, at caret, suggestions, replace, ignore), saved parts equal | squiggle screens: ED-314 (f2-3-0), ED-304 (f8__7__0 header/footer/notes) |
+
+`--mode memory` (count build, 30 cycles of create → load revisions.docx → comment, accept all, replace all, list styles,
+search, getRevisions, paint → remove): sessions/shellEngines/handles 0 after every remove, live bytes flat at 6,420,155 after
+warm-up. Native `tests/shell_review_native.rs` 3/3 (A queries on comments/styles/hyperlinks; B lines vs rects, backward =
+forward, hostile handles; C M1: 2,055,985 B allocated, 0 B left). `shell_native` 5/5, `shell_api.test.mjs` 2/2 (M4 10,000
+engines, live bytes back to 12,782,879). uo-codec/uo-schema all pass; uo-docx `styles` 20/20. Editor vitest 33 files / 324
+(engine-switch unchanged and green; new `engine-review.test.ts`); editor and viewer tsc clean; the core strict tsc line
+(with the three `write-session*.d.ts`) clean; `check-changed` green (clippy native + wasm32 + bans over uo-docx, uo-docx-layout,
+uo-ffi, uo-wasm). Main harness: `--mode phase0` ok (0 `.wasm`, 0 engine chunk, 0 leaks), `--mode chrome` ok (both bars),
+`--mode memory` ok (live 16,986,450 flat); `--mode parity` stride 6: every R-related facet equal, ONE fixture fails —
+f7b__7__10 from step 6 (a click on a floating object: the selection now differs, beyond its ED-7 entry's facets): a click on
+an object is frontier O's (`objectsPointerFirst`), not this frontier's (R's pointer hook runs only on Ctrl+click and a
+commented run); left for O / the orchestrator.
+
+**Fix round 1** (the reviewer's 4 major and 8 minor findings). The harness gained: an author change mid-script (attribute,
+then the property without the attribute) with tracking on; a real click on commented text (`uw-comment-click` in the events
+facet) and a real Ctrl+click on a hyperlink (`window.open` stubbed: `https://example.com/x _blank` on both); a keyboard
+Ctrl+C / Ctrl+X with an `onClipboardChange` listener (notification counts and ring sizes compared), the bars' in-place
+`Object.assign(el.pasteDefaults, …)` before a button paste and a Ctrl+V; the keys Ctrl+Alt+Home/End (+Shift),
+Alt+PageDown/PageUp, Ctrl+PageDown, Ctrl+Alt+Shift+PageUp, Ctrl+Alt+Enter, Ctrl+Alt+Shift+Enter (page counts), Ctrl+Tab and
+Alt+Tab; an `overlay mask` end facet (the pixels R's overlays change, between the top and bottom margins: compared even where
+the page base differs by ED-314; the header/footer bands are ED-304's), and the `looks` facet declared per style id (only
+`RefernciaSutil` is left out) instead of the whole facet. The keys mode also found a defect: Ctrl+Alt+V left the session's
+`pasteSpecialFormats` job unanswered and every later command was held (a `setSelection` did nothing); the `readClipboard` job
+is answered now. `--mode all`: exit 0, 122 s, every family's step facets equal or declared:
+
+| Family (documents) | Facets equal | Different (all declared) |
+|---|---|---|
+| revisions (revisions, f7a__7__0; 32 steps) | 837 | 0 |
+| comments (comments, f2-3-0; 10) | 185 | 2 (ED-314 end screens) |
+| styles (styles, f2-3-0, headers; 12) | 398 | 43 (ED-314: the look of `RefernciaSutil` only; end screens ED-314, gate R-2; headers' overlay mask R-2) |
+| find (f2-3-0, f2-3-2, headers; 17) | 496 | 6 (ED-314, ED-304; f2-3-2's overlay mask R-6) |
+| fields (fields, many-fields, hyperlinks, f2-3-0; 19) | 907 | 2 (ED-314) |
+| clipboard (f2-3-0; 20) | 153 | 2 (ED-314) |
+| keys (f2-3-0; 38) | 241 | 2 (ED-314) |
+| spelling (f2-3-0 91, f8__7__0 273 misspellings) | lists, F7 path, saved parts, f2-3-0's overlay mask equal | screens ED-314 / ED-304; f8__7__0's overlay mask ED-304 (notes) |
+
+`--mode memory` (count build, 30 cycles; the spell checker now loaded, a dictionary in, before each remove): sessions,
+shell engines and handles 0 after every remove; the shared checker's references 1 → 0, listeners 1 → 0, its worker
+terminated (no transport), the cache released, in every cycle; live bytes flat at 7,925,251 after warm-up. The TS reference
+cycle in the same page: references 1 → 0, listeners 1 → 0, no transport. Editor vitest 33 files / 329 (`engine-review.test.ts`
++2: a released cache sends no check and drops its listener; the author push per change); editor and viewer tsc clean; main
+harness `--mode phase0` ok, `--mode parity` (stride 6, 13 fixtures) ok; `check-changed` green (no Rust change in this round).
+
+#### For the milestone-2 gate
+
+- R-1 (ED-314) the session's theme for a document without `theme1.xml` (the TS default palette).
+- R-2 styles.docx: select paragraph 0 offsets 0–2, italic, Update Style to Match Selection: the saved `.docx` is
+  byte-equal to the TS's, but the session lays the paragraph out with the runs after the first without Heading 1's
+  bold italic (reloading the saved bytes renders like the TS) — the session's model after `update_style_from_selection` is
+  not what it saves (uo-docx).
+- R-3 (ED-315) LA7's incremental relayout ignores a style sheet change (path incremental, relaid [0, 0)); the shell clears the
+  engine on `formatting` (and an undo of a style edit relies on the undo ChangeSet carrying `formatting`).
+- R-4 the other stories' lines for the overlays (ED-304) once S's scopes land; bookmark brackets and formatting marks
+  (ED-309/310); a session answer for `countMatches`, `getLinks`, `hasExternalFields`, `tocEntrySuggestion`,
+  `ensureBuiltinStyle` (ED-311); a page-level Office Clipboard ring (ED-305); a one-step replace for `replaceSpelling`
+  (ED-306).
+- R-5 the harness page helpers are copied from editor_switch.mjs (move them into the lib); the f7b__7__10 failure of the
+  main parity run (above; not reproduced in fix round 1: the stride-6 parity run is ok).
+- R-6 (wave-4 gate item 10, reproduced) f2-3-2 right after `loadDocx`: the TS editor sets automatic hyphens (dia-grama,
+  responsabili-dade, in-ternacionalização on page 1) and the session's layout does not; the saved bytes are equal. Visible
+  in R's harness as the overlay mask of `f2-3-2|find` (the squiggles on differently broken lines), declared.
+- R-7 shared/spell: `SpellChecker.dispose()` during the engine's startup (before the init answered) leaves the released
+  instance's worker (or a main-thread engine) alive: `startEngine` goes on after `dispose` and sets a new transport. Same on
+  the TS engine; the soak waits for a dictionary before each remove. Not this frontier's file.
+- R-8 ED-301: confirm option B (the style listing ported into uo-docx, `styles/listing.rs`, ~210 lines, read-only, tested)
+  or move it back behind narrow accessors.
+- R-9 a one-step `replaceSpelling` (ED-306: one undo step in the TS, two here; a session command "replace a range keeping
+  the props" or an undo group) and a session query for the F9 TOC question (ED-317).
+
+#### Process metrics
+
+One implementer session (Opus), ≈ 3 h wall time after the plan. Rust builds: 4 session wasm builds (2 min 20 s – 2 min 40 s
+each, warm) + 1 count build; the schema was regenerated three times (DefaultCharacterStyle, then ParaPropsAt/link_name, found
+by the harness's Inspector facets). Rework: two shell-quoting accidents (backquotes inside `node -e` lost text in the schema
+and two TS files; repaired with the Edit tool); a stale wasm (schema hash mismatch) hung the first browser run (the harness
+now has a 90 s deadline per page call); the screen captures raced the spell checker (the capture now waits for two equal
+paints). Defects found and fixed by the harness: `revisionAtCaret` (the docx-core `revisionAt` rule), revision anchors in
+markup views (the engine line's visible range), `goTo('page'/'line')` (layout rules in the shell), the Inspector's names and
+direct paragraph props (two queries added), `replaceSpelling`'s run split, the stale incremental layout after style edits.
+D: 38 GB free at the end.
+
+Fix round 1: ≈ 1 h 15 min. Two session wasm builds (2 min 07 s, 1 min 56 s; S's and O's Rust had moved since the last one),
+no Rust change. Rework: an inline `node -e` replacement failed on its own escaping (redone with the Edit tool and patch
+scripts written by the Write tool); the first click steps answered "no point" on Rust (the shell's `caretRectAt` answers the
+focus only: the harness moves the caret there and back on both engines); the first soak still showed a live transport (the
+released cache's in-flight batch called the checker again: fixed; and shared/spell's startup race, R-7). Defects the new
+steps found besides the reviewer's: the unanswered `pasteSpecialFormats` job, the coarse f2-3-2 declaration hiding R-6.
+D: 38 GB free at the end.

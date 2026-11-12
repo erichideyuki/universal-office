@@ -6,7 +6,7 @@ import { bindSession, encodePaste, type Caret, type ExecOutcome, type RelayoutRe
 import { RustSession, type EngineDocument } from '../../viewer/src/rust-engine.js';
 import { NEUTRAL_QUERIES, ROUTED_PRIVATE, ROUTED_PUBLIC, SHELL, isMutator, neutralOf } from './engine-routes.js';
 import { PUBLIC_METHODS } from './engine-public.js';
-import { objectsHandlers } from './rust-engine-objects.js';
+import { objectsAfterCanvases, objectsHandlers, objectsJobs, objectsPasteImage, objectsPointerFirst } from './rust-engine-objects.js'; // wave 5 (O): hooks
 import { reviewHandlers } from './rust-engine-review.js';
 import { storiesHandlers } from './rust-engine-stories.js';
 import { fragmentOf } from './paste-html.js';
@@ -61,6 +61,34 @@ export interface RustHostElement extends HTMLElement {
   animateScrollTo(target: number): void;
   spellDefaultLang(): string | undefined;
   cancelQueuedRefresh(): void;
+}
+
+/** wave 5 fronts: hooks — the editor's internals the fronts' modules read (`RustEditor.frontApi()`). */
+export interface FrontApi {
+  readonly el: RustHostElement;
+  readonly session: WriteSession | null;
+  readonly dl: DecodedLayout | null;
+  /** applies a session outcome (selection, dirty, undo flags, relayout, events, bars); false for none/error/jobs */
+  apply(o: ExecOutcome | null, what: string): boolean;
+  command(cmd: SessionCommand, what: string): boolean;
+  relayoutNow(): void;
+  /** the page cache dropped and the pages painted again */
+  repaint(): void;
+  paint(): void;
+  caret(): Caret | null;
+  warnOnce(key: string, msg: string, detail?: unknown): void;
+  locked(): boolean;
+  /** the toolbar state is read again (`getSelectionState()` cache) */
+  bumpGen(): void;
+  /** wave 5 (S): the page bases are painted again on the next paint */
+  invalidateBase(): void;
+  /** wave 5 (S): the position under the pointer in the edit scope (the hitTestRaw page rule) */
+  hitAt(e: MouseEvent): Pos | null;
+  /** wave 5 (S): the shell's default click at the pointer (`moveFirst`: a drag step of the front, true = handled) */
+  defaultClick(e: MouseEvent, moveFirst?: (ev: MouseEvent) => boolean): void;
+  /** wave 5 (S): the editor's module and the toolbar-state generation */
+  readonly module: ViewerModule;
+  readonly gen: number;
 }
 
 /**
@@ -204,6 +232,7 @@ export class RustEditor {
     }
     this.runFontLoop();
     el.dispatchEvent(new CustomEvent('uw-protected', { detail: { active: prot, hasFields: false } }));
+    for (const f of this.hooks.adopt) f(); // wave 5 fronts: hooks
   }
 
   /** O laço de fontes do viewer (passadas até as fontes pedidas chegarem). */
@@ -244,6 +273,7 @@ export class RustEditor {
   /** Desconectado: guarda o documento (bytes) e solta a sessão, o motor e os layouts. */
   park(): void {
     if (this.attached) { this.attached = false; live.editors--; }
+    for (const f of this.hooks.park) f(); // wave 5 (R): hooks (the spell checker's reference, as the TS disconnectedCallback)
     if (!this.session) return;
     try { this.parked = { bytes: this.session.save(), protected: this.el.protectedMode }; } catch { this.parked = null; }
     this.epoch++;
@@ -307,6 +337,7 @@ export class RustEditor {
     if (old) this.rs.release(old);
     this.rebuildCanvases();
     // the visible pages: allocated and painted (from the page cache, but for the pages laid out again)
+    objectsAfterCanvases(this); // wave 5 (O): hooks (the Read mode spread, as the TS refresh)
     this.el.ensureVisiblePainted();
     this.positionProxy();
   }
@@ -356,7 +387,7 @@ export class RustEditor {
   private baseOf(i: number, w: number, h: number, scale: number): HTMLCanvasElement {
     const el = this.el;
     const dl = this.dl!;
-    const key = `${w}x${h}|${scale.toFixed(6)}|${el.printRender ? 1 : 0}|${el.pageDark ? 1 : 0}`;
+    const key = `${w}x${h}|${scale.toFixed(6)}|${el.printRender ? 1 : 0}|${el.pageDark ? 1 : 0}` + this.hooks.baseKey.map((f) => f()).join(''); // wave 5 (S): hooks
     const hit = this.base.get(i);
     if (hit && hit.key === key) return hit.canvas;
     const off = hit?.canvas ?? document.createElement('canvas');
@@ -370,11 +401,15 @@ export class RustEditor {
     const page = dl.pages[i]!;
     if (el.printRender) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, page.widthTw, page.heightTw); }
     else dl.paintBackground(ctx, i, env, { devicePxTw: 1 / (PX_PER_TWIP * el.zoom), screen: true, paper: el.pageDark ? '#1e1e1e' : '#ffffff' });
+    if (!el.printRender) for (const f of this.hooks.under) f(ctx, i, scale); // wave 5 (S): hooks (the table gridlines, under the content as the TS)
     const n = page.items.length;
     const hf = Math.min(this.hfOf(i), n);
     const dim = el.printRender ? 1 : HF_DIM_ALPHA;
+    const layers = this.hooks.layers?.(i, hf, n, dim); // wave 5 (S): hooks (the header/footer edit dims the body)
+    if (layers) { for (const [from, to, alpha] of layers) if (to > from) dl.paintItems(ctx, i, env, { from, to, alpha }); } else {
     if (hf > 0) dl.paintItems(ctx, i, env, { from: 0, to: hf, alpha: dim });
     if (n > hf) dl.paintItems(ctx, i, env, { from: hf, to: n, alpha: 1 });
+    }
     this.base.set(i, { key, canvas: off });
     return off;
   }
@@ -398,7 +433,8 @@ export class RustEditor {
     const dpr = window.devicePixelRatio || 1;
     const { anchor, focus } = el.selection;
     const hasSel = !samePos(anchor, focus);
-    const caret = !hasSel && el.caretVisible && !el.printRender && el.view !== 'read' ? this.caret() : null;
+    const hideSel = this.hooks.hideSelection.some((f) => f()); // wave 5 (S): hooks (a selection of cells replaces the text selection and the caret)
+    const caret = !hasSel && !hideSel && el.caretVisible && !el.printRender && el.view !== 'read' ? this.caret() : null;
     for (const i of active) {
       const c = el.canvases[i];
       if (!c || c.width <= 1 || !dl.pages[i]) continue;
@@ -408,7 +444,9 @@ export class RustEditor {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, c.width, c.height);
       ctx.drawImage(this.baseOf(i, c.width, c.height, scale), 0, 0);
-      if (hasSel && !el.printRender) {
+      // wave 5 fronts: hooks (the screen overlays, under the selection, as the TS paintEngine)
+      if (!el.printRender && this.hooks.paint.length) { ctx.save(); ctx.setTransform(scale, 0, 0, scale, 0, 0); for (const f of this.hooks.paint) f(ctx, i, scale); ctx.restore(); }
+      if (hasSel && !hideSel && !el.printRender) {
         ctx.save();
         ctx.setTransform(scale, 0, 0, scale, 0, 0);
         ctx.fillStyle = SEL_FILL;
@@ -419,6 +457,7 @@ export class RustEditor {
         }
         ctx.restore();
       }
+      if (!el.printRender && this.hooks.overlay.length) { ctx.save(); ctx.setTransform(scale, 0, 0, scale, 0, 0); for (const f of this.hooks.overlay) f(ctx, i, scale); ctx.restore(); } // wave 5 (S): hooks (over the selection, as the TS hf bands)
       if (caret && caret.page === i) {
         ctx.fillStyle = el.pageDark ? '#e8eaed' : '#000';
         const xf = caret.xf;
@@ -475,6 +514,7 @@ export class RustEditor {
     this.base.clear();
     for (const i of this.el.allocatedPages) { const c = this.el.canvases[i]; if (c) { c.width = 1; c.height = 1; } }
     this.el.allocatedPages.clear();
+    objectsAfterCanvases(this); // wave 5 (O): hooks (the Read mode spread, as the TS refreshView)
     this.el.ensureVisiblePainted();
     this.positionProxy();
     this.el.onSelectionChange?.(); this.el.chromeSync?.();
@@ -587,6 +627,7 @@ export class RustEditor {
     if (!o) return false;
     if (o.t === 'error') { this.warnOnce(`error:${what}`, `[universal-write] engine="rust": ${what} refused`, o.v); return false; }
     if (o.t === 'jobs') {
+      if (objectsJobs(this, o, what)) return true; // wave 5 (O): hooks (the two-phase jobs: decode/encode images)
       // um comando de duas fases que esta onda não atende (decodificar imagem…): cancelado
       this.session?.cancelPending();
       this.warnOnce(`jobs:${what}`, `[universal-write] engine="rust": ${what} needs jobs, not routed`);
@@ -602,6 +643,9 @@ export class RustEditor {
     el.caretVisible = true;
     const changed = cs.stories.length > 0 || !!cs.formatting;
     if (changed && this.markOn) this.marks.push({ exec: 0, relayout: 0, adopt: 0, paint: 0, path: '', reason: null });
+    // wave 5, frontier R (ED-315, gate R-3): a style sheet / numbering change (`formatting`) is invisible to the incremental relayout
+    // (it relays out nothing: path incremental, relaid [0, 0)): drop the engine's incremental state, the next one is full
+    if (cs.formatting) this.shell?.clear();
     if (changed) { this.textGen++; this.relayoutNow(); }
     else { this.caretCache = null; this.paint(); this.positionProxy(); }
     for (const ev of cs.events) this.dispatch(ev);
@@ -658,6 +702,7 @@ export class RustEditor {
 
   moveCaret(dir: 'left' | 'right' | 'up' | 'down' | 'home' | 'end' | 'wordLeft' | 'wordRight', extend: boolean): void {
     if (!this.session) return;
+    if (this.hooks.move.some((f) => f(dir, extend))) return; // wave 5 (S): hooks (tableNavigate)
     this.apply(this.session.moveCaret(dir, extend, this.dl?.inner ?? null), 'moveCaret');
   }
 
@@ -739,6 +784,7 @@ export class RustEditor {
       return r;
     };
     const v = { run: flat(s?.run ?? {}), para: flat(s?.para ?? {}), view: this.el.view, marks: this.el.showMarks, table: null };
+    for (const f of this.hooks.state) f(v as Record<string, unknown>); // wave 5 (S): hooks (getTableState)
     this.stateCache = { gen: this.gen, v };
     return v;
   }
@@ -819,6 +865,7 @@ export class RustEditor {
       if (c.html) e.clipboardData.setData('text/html', c.html);
     }
     if (cut) this.apply(o, 'cut');
+    if (c) for (const f of this.hooks.copied) f(); // wave 5 (R): hooks (the Office Clipboard pane, the TS rememberClip)
   }
   // the TS methods are `async` (the bars chain `.then` on them)
   async copy(): Promise<void> { this.warnOnce('copy()', '[universal-write] engine="rust": copy() without a clipboard event is not routed (Ctrl+C works)'); }
@@ -842,10 +889,7 @@ export class RustEditor {
     const text = cd?.getData('text/plain') ?? '';
     const html = cd?.getData('text/html') ?? '';
     const file = cd ? [...cd.files].find((x) => /^image\/(png|jpeg|gif|bmp|webp)$/.test(x.type)) : undefined;
-    if (file && !text && !html) {
-      this.warnOnce('paste-image', '[universal-write] engine="rust": pasting an image is not routed in this wave (two-phase job)');
-      return;
-    }
+    if (file && !text && !html) { void objectsPasteImage(this, file, plain); return; } // wave 5 (O): hooks (the image paste: a decode job)
     let tree: Uint8Array | undefined;
     if (html) {
       try { tree = encodePaste(html, fragmentOf).bytes; } catch (err) { this.warnOnce('paste-tree', '[universal-write] engine="rust": the HTML paste tree failed (pasting the text)', err); }
@@ -992,12 +1036,20 @@ export class RustEditor {
     input.addEventListener('paste', (e) => { if (this.session) { own(e); this.onPaste(e); } }, true);
     el.addEventListener('mousedown', (e) => { if (this.session && this.inPages(e)) { own(e); this.onMouseDown(e); } }, true);
     el.addEventListener('dblclick', (e) => { if (this.session && this.inPages(e)) { own(e); this.onDblClick(e); } }, true);
-    el.addEventListener('contextmenu', (e) => { if (this.session && this.inPages(e)) { own(e); e.preventDefault(); } }, true);
+    // wave 5 (O): the context menu goes on to the bars' listener (chrome.ts), as the TS: the selection moved on mousedown (ED-210, ED-28 superseded)
   }
 
   private onMouseDown(e: MouseEvent): void {
+    if (objectsPointerFirst(this, e)) return; // wave 5 (O): hooks (the object handles, crop and draw modes: before the text hit, also off the text)
     const hit = this.hitAt(e);
     if (!hit) return;
+    if (this.hooks.pointer.some((f) => f(e, hit))) return; // wave 5 fronts: hooks
+    if (this.hooks.pointerLate.some((f) => f(e, hit))) return; // wave 5 (S): hooks (header/footer switch, cells, the story of the click)
+    this.clickAt(e, hit); // wave 5 (S): hooks (the default click, also `frontApi().defaultClick`)
+  }
+
+  /** The default click at `hit`: caret, Shift, triple click, drag (`moveFirst`: a front's drag step, true = handled). */
+  private clickAt(e: MouseEvent, hit: Pos, moveFirst?: (ev: MouseEvent) => boolean): void {
     const el = this.el;
     if (e.button !== 0) {
       const { anchor, focus } = el.selection;
@@ -1017,6 +1069,7 @@ export class RustEditor {
     }
     if (this.drag) { window.removeEventListener('mousemove', this.drag.move); window.removeEventListener('mouseup', this.drag.up); }
     const move = (ev: MouseEvent): void => {
+      if (moveFirst?.(ev)) return; // wave 5 (S): hooks (the drag across cells)
       const h = this.hitAt(ev);
       if (h && !samePos(h, el.selection.focus)) this.setSelection(anchor, h);
     };
@@ -1031,6 +1084,7 @@ export class RustEditor {
   }
 
   private onDblClick(e: MouseEvent): void {
+    if (this.hooks.dbl.some((f) => f(e))) return; // wave 5 (S): hooks
     const hit = this.hitAt(e);
     if (!hit || !this.session) return;
     const text = this.session.paraText(hit.para) ?? '';
@@ -1086,6 +1140,7 @@ export class RustEditor {
     const k = e.key;
     const done = (): void => { e.preventDefault(); e.stopImmediatePropagation(); };
     if (k === 'Control' || k === 'Shift' || k === 'Alt' || k === 'Meta' || this.composing || e.isComposing) { e.stopImmediatePropagation(); return; }
+    if (this.hooks.key.some((f) => f(e))) { e.stopImmediatePropagation(); return; } // wave 5 fronts: hooks
     const arrows: Record<string, 'left' | 'right' | 'up' | 'down'> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
     if (arrows[k] && !e.altKey) {
       done();
@@ -1147,6 +1202,70 @@ export class RustEditor {
 
   /** Liga as marcas de tempo do teclado (modo latency do harness). */
   setMarks(on: boolean): void { this.markOn = on; this.marks.length = 0; }
+
+  // ── wave 5 fronts (S, O, R): hooks ──
+  /** what the fronts' modules add to the shell's input and paint (registered once by their handler factories) */
+  readonly hooks = {
+    /** a keydown the front handles (true: handled; the shell stops it) */
+    key: [] as ((e: KeyboardEvent) => boolean)[],
+    /** a mousedown on the pages at `hit` (true: handled) */
+    pointer: [] as ((e: MouseEvent, hit: Pos) => boolean)[],
+    /** a screen overlay of page `page` (page twips: the context is scaled by `scale`), under the selection */
+    paint: [] as ((ctx: CanvasRenderingContext2D, page: number, scale: number) => void)[],
+    /** after each new document */
+    adopt: [] as (() => void)[],
+    // ── wave 5 (S): hooks ──
+    /** a mousedown after `pointer` (true: handled) */
+    pointerLate: [] as ((e: MouseEvent, hit: Pos) => boolean)[],
+    /** a dblclick on the pages (true: handled) */
+    dbl: [] as ((e: MouseEvent) => boolean)[],
+    /** a caret move (true: handled; the TS tableNavigate) */
+    move: [] as ((dir: string, extend: boolean) => boolean)[],
+    /** the toolbar state (`getSelectionState()`) before it is cached */
+    state: [] as ((v: Record<string, unknown>) => void)[],
+    /** a screen overlay over the selection (page twips) */
+    overlay: [] as ((ctx: CanvasRenderingContext2D, page: number, scale: number) => void)[],
+    /** the text selection and the caret are not painted */
+    hideSelection: [] as (() => boolean)[],
+    /** a suffix of the page base cache key */
+    baseKey: [] as (() => string)[],
+    /** the layers of the page base: [from, to, alpha] items (null: the default two) */
+    layers: null as null | ((page: number, hf: number, n: number, dim: number) => [number, number, number][] | null),
+    /** painted into the page base over the background, under the content (page twips; keyed by `baseKey`) */
+    under: [] as ((ctx: CanvasRenderingContext2D, page: number, scale: number) => void)[],
+    // ── wave 5 (R): hooks ──
+    /** the element disconnected (before the session is parked) */
+    park: [] as (() => void)[],
+    /** a keyboard copy/cut (the clipboard event) put an item in the session's ring */
+    copied: [] as (() => void)[],
+  };
+
+  /** The editor's internals the fronts' modules read (getters: the current session and layout). */
+  frontApi(): FrontApi {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ed = this;
+    return {
+      get el() { return ed.el; },
+      get session() { return ed.session; },
+      get dl() { return ed.dl; },
+      apply: (o, what) => ed.apply(o, what),
+      command: (cmd, what) => ed.command(cmd, what),
+      relayoutNow: () => ed.relayoutNow(),
+      repaint: () => { ed.base.clear(); ed.paint(); },
+      paint: () => ed.paint(),
+      caret: () => ed.caret(),
+      warnOnce: (key, msg, detail) => ed.warnOnce(key, msg, detail),
+      locked: () => ed.locked(),
+      bumpGen: () => { ed.gen++; },
+      // wave 5 (S): the selection mirrored without a relayout, the page bases dropped
+      invalidateBase: () => { ed.base.clear(); },
+      hitAt: (e) => ed.hitAt(e),
+      // wave 5 (S): the default click and the module/generation (no cast of the privates)
+      defaultClick: (e, moveFirst) => { const h = ed.hitAt(e); if (h) ed.clickAt(e, h, moveFirst); },
+      get module() { return ed.mod; },
+      get gen() { return ed.gen; },
+    };
+  }
 
   engineCounts(): { sessions: number; shellEngines: number; editors: number; layout: boolean } {
     return { ...live, layout: this.dl !== null };

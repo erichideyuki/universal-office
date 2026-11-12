@@ -32,10 +32,18 @@ pub mod layout;
 pub mod oracle;
 pub mod query;
 pub mod ring;
+// wave 5, frontier R (the editor switch: review and document)
+pub mod review;
 // the editor switch (record "Milestone 2: the editor switch"): the shell's incremental relayout and
 // story queries, and its toolbar state
 pub mod shell;
 pub mod shell_state;
+// wave 5, frontier R
+pub mod shell_review;
+// wave 5, front O (objects and the page): object geometry and section facts of the shell
+pub mod shell_objects;
+// wave 5, frontier S (stories: tables, headers/footers, notes, the caret in a text box)
+pub mod shell_stories;
 pub mod wire;
 
 #[cfg(all(feature = "session-selftest", not(test)))]

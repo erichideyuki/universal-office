@@ -935,6 +935,13 @@ pub(crate) fn layout_geom(l: &UoLayout) -> &Layout {
     &l.geom
 }
 
+/// The display lists of a layout (wave 5, front O: the shell's inline pictures read the image items; `layout_handle` moved
+/// the pages out of the geometry into the render view).
+#[cfg(feature = "session")]
+pub(crate) fn layout_view(l: &UoLayout) -> &uo_render::RenderView {
+    view_of(&l.view)
+}
+
 /// The layout options of [`uo_write_layout`] (its arguments: clock, flags, web width, language,
 /// hyphenation languages).
 #[cfg(feature = "session")]

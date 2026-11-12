@@ -18,3 +18,7 @@ export const types = {
 // a method signature on the declared side: the binding parameter is opaque there (`unknown`, the viewer module's `binding`)
 export const bind = null as unknown as { bindSession: typeof Real.bindSession } satisfies { bindSession(exports: WebAssembly.Exports, uo: unknown): Declared.SessionBinding };
 export const paste = null as unknown as { encodePaste: typeof Real.encodePaste } satisfies { encodePaste: typeof Declared.encodePaste };
+// wave 5, frontier S: the stories binding
+export const stories = null as unknown as { bindStories: typeof Real.bindStories } satisfies { bindStories(exports: WebAssembly.Exports, uo: unknown): Declared.StoriesBinding };
+// wave 5, front O: the objects binding (object geometry, section facts)
+export const objects = null as unknown as { bindObjects: typeof Real.bindObjects } satisfies { bindObjects(exports: WebAssembly.Exports, uo: unknown): Declared.ObjectsBinding };

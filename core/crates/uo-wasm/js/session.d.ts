@@ -19,6 +19,7 @@ import type {
   RunProps,
   SaveResult,
   SelRect,
+  ShellLine,
 } from './gen/session.ts';
 import type * as Codec from './gen/session.ts';
 import type { WriteBinding, WriteEnv, WriteLayout, LayoutOptions } from './write.js';
@@ -99,6 +100,15 @@ export declare class WriteSession {
   hyphenationPatterns(env: WriteEnv, langs?: string[]): string[];
   /** the text and HTML of the last copy or cut, or null */
   copied(): { text: string; html: string } | null;
+  // wave 5, frontier R (src/session/shell_review.rs; record uo-bindings.md "Wave 5 — R")
+  /** the lines of the edit scope on `page` (every paragraph, in order) */
+  pageLines(layout: WriteLayout, page: number): ShellLine[];
+  /** the lines of paragraph `para` of the edit scope */
+  paraLines(layout: WriteLayout, para: number): ShellLine[];
+  /** the selection rectangles of a range (either direction) on `page` */
+  rangeRects(layout: WriteLayout, page: number, a: { para: number; offset: number }, f: { para: number; offset: number }): SelRect[];
+  /** the families of the document's embedded fonts */
+  embeddedFamilies(): string[];
 }
 
 export interface SelectionState {
@@ -151,3 +161,78 @@ export declare function bindSession(exports: WebAssembly.Exports, uo: WriteBindi
 /** The payload of a `text/html` clipboard item (`ClipboardCmd` `pasteData.html`), re-exported from
  *  core/crates/uo-docx/js/paste-tree.mjs; `fragmentOf` is the editor's paste-html.ts one. Browser only (DOMParser). */
 export declare function encodePaste(html: string, fragmentOf: (html: string) => string): { bytes: Uint8Array; nodes: number; depth: number };
+
+// ── wave 5, front O (objects and the page; src/session/shell_objects.rs) ──
+/** One floating object of `ObjectsBinding.objects` (the TS `enumFloats`, engine branch). */
+export interface ShellFloat {
+  /** the `SelectObject { index }` index (`contextDrawingRuns`) */
+  i: number;
+  kind: 'image' | 'textbox' | 'shape' | 'group';
+  /** the drawing id */
+  id: number;
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** degrees, clockwise (`runRot`) */
+  rot: number;
+  behind: boolean;
+  /** `rawOf(r) && formatOf(r)` */
+  editable: boolean;
+  /** a text box with laid-out content */
+  content: boolean;
+  /** the selection pane key (paneRuns), if listed */
+  key: string | null;
+  /** a picture: its layout image index (imageBytes) */
+  image: number | null;
+  frame: { pageW: number; pageH: number; marL: number; marR: number; marT: number; marB: number; colX: number; colW: number; bodyTop: number; paraTop: number } | null;
+}
+/** One inline picture of `ObjectsBinding.objects` (the TS `enumInlinePics`). */
+export interface ShellInlinePic {
+  para: number;
+  run: number;
+  id: number;
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rot: number;
+  /** the layout's image index (`WriteLayout.imageBytes`) */
+  image: number;
+}
+export interface ShellObjects {
+  scope: 'body' | 'hf' | 'tb';
+  /** the drawing id of the text box in edit (its dashed outline and handles) */
+  box: number | null;
+  /** `floatSelection()` */
+  fs: number | null;
+  /** the selected drawing ids (the selected object first) */
+  sel: number[];
+  floats: ShellFloat[];
+  inline: ShellInlinePic[];
+}
+export interface ShellSectionInfo {
+  index: number;
+  count: number;
+  /** `JSON.stringify` of `sectionSectPr(m, k)` for the sections the selection touches */
+  touched: Record<string, unknown>[];
+  pageBorderSection: Record<string, unknown>;
+  firstSect: Record<string, unknown> | null;
+  suppressed: boolean;
+  titlePg: boolean[];
+  background: Record<string, unknown> | null;
+  /** the body's final sectPr (the TS `sect()`) */
+  lastSect: Record<string, unknown> | null;
+  bgShown: boolean;
+  evenOdd: boolean;
+}
+export interface ObjectsBinding {
+  objects(session: WriteSession, layout: WriteLayout, activePage?: number, inTextbox?: boolean): ShellObjects;
+  sectionInfo(session: WriteSession, hfSection?: number): ShellSectionInfo;
+}
+export declare function bindObjects(exports: WebAssembly.Exports, uo: WriteBinding): ObjectsBinding;
+
+// ── wave 5, frontier S (stories; js/session-stories.d.ts) ──
+export * from './session-stories.js';

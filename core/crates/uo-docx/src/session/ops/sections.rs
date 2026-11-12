@@ -426,6 +426,45 @@ impl Session {
         vec![section_index_at(m, (para as usize).min(last))]
     }
 
+    /// What the editor shell's section queries read (wave 5, front O; record uo-bindings.md ED-201):
+    /// additive, read-only, over the pub(crate) helpers above. `getSection()`, `getLineNumbering()`,
+    /// `getPageBorders()` and `lineNumbersSuppressed()` of the TS are computed by the shell from it.
+    #[must_use]
+    pub fn shell_section_now(&self, hf_section: Option<u32>) -> ShellSection {
+        let (k0, k1) = self.body_section_range(hf_section);
+        let pb = self.page_border_targets(false).first().copied().unwrap_or(0);
+        ShellSection {
+            first: k0,
+            count: self.body_section_count(),
+            touched: (k0..=k1.max(k0)).map(|k| self.body_sect_pr_at(k)).collect(),
+            page_border_section: self.body_sect_pr_at(pb),
+            first_section_props: self.doc.sections.first().and_then(|s| s.sect.clone()),
+            line_numbers_suppressed: self.line_numbers_suppressed(),
+            title_pg: (0..self.body_section_count()).map(|k| self.body_sect_pr_at(k).title_pg.unwrap_or(false)).collect(),
+        }
+    }
+}
+
+/// The answer of [`Session::shell_section_now`].
+#[derive(Debug, Clone)]
+pub struct ShellSection {
+    /// `bodySectionRange()[0]`
+    pub first: usize,
+    /// `sectionRanges(bodyModel()).length`
+    pub count: usize,
+    /// `sectionSectPr(m, k)` for k in `bodySectionRange()` (first..=last)
+    pub touched: Vec<Arc<SectPr>>,
+    /// `pageBorderTargets('section')[0]`
+    pub page_border_section: Arc<SectPr>,
+    /// `fullDoc.sections[0].sect` (the fallback of `getPageBorders`)
+    pub first_section_props: Option<Arc<crate::model::section::SectionProps>>,
+    /// `lineNumbersSuppressed()`
+    pub line_numbers_suppressed: bool,
+    /// `sectPr.titlePg` of every body section (the header slot of a page, `hfTypeOfPage`)
+    pub title_pg: Vec<bool>,
+}
+
+impl Session {
     /// `sectionTargets(applyTo, breakType)`: the sections (indices in the context's model) a setting
     /// reaches; `forward` and `selection` open the breaks they ask for.
     fn section_targets(&mut self, apply_to: SectionApplyTo, break_type: SectionType) -> Result<Vec<usize>, CommandError> {

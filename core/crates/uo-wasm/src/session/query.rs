@@ -149,6 +149,19 @@ pub fn answer(s: &Session, q: w::QueryOp) -> Result<Option<w::QueryAnswer>, Bind
         w::QueryOp::CanonPos(a) => w::QueryAnswer::CanonPos(s.canon_pos(FromWire::from_wire(a.pos)?).into_wire()?),
         w::QueryOp::HyphenationSettings => w::QueryAnswer::HyphenationSettings(s.hyphenation_settings().into_wire()?),
         w::QueryOp::Hyphenation => w::QueryAnswer::Hyphenation(s.hyphenation().into_wire()?),
+        // ── wave 5, frontier R (src/session/review.rs) ──
+        w::QueryOp::Tracking => w::QueryAnswer::Tracking(s.options().tracking),
+        w::QueryOp::MarkupMode => w::QueryAnswer::MarkupMode(s.options().markup.into_wire()?),
+        w::QueryOp::ParaRuns(a) => w::QueryAnswer::ParaRuns(super::review::para_runs(s, a.para, &String::from_wire(a.fallback)?)),
+        w::QueryOp::ListStyles => w::QueryAnswer::ListStyles(super::review::list_styles(s)),
+        w::QueryOp::StyleLook(a) => {
+            w::QueryAnswer::StyleLook(w::AStyleLook { value: Some(super::review::style_look(s, &String::from_wire(a.id)?)) })
+        }
+        w::QueryOp::DefaultParagraphStyle => w::QueryAnswer::DefaultParagraphStyle(s.default_paragraph_style().into_wire()?),
+        w::QueryOp::RunPropsAt(a) => w::QueryAnswer::RunPropsAt(super::review::run_props_at(s, FromWire::from_wire(a.pos)?).into_wire()?),
+        w::QueryOp::StylesVersion => w::QueryAnswer::StylesVersion(s.styles_store().version().0),
+        w::QueryOp::DefaultCharacterStyle => w::QueryAnswer::DefaultCharacterStyle(s.default_character_style().into_wire()?),
+        w::QueryOp::ParaPropsAt(a) => w::QueryAnswer::ParaPropsAt(super::review::para_props_at(s, a.para).into_wire()?),
         w::QueryOp::ClipboardItems | w::QueryOp::CopyFormat | w::QueryOp::FontUsage | w::QueryOp::FontEmbedding => return Ok(None),
     }))
 }

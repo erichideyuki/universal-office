@@ -163,6 +163,32 @@ of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebui
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
 
+## Update 2026-11-12 — milestone 2, wave 5 (the remaining editor families) committed
+
+Three frontiers in parallel over per-front files (`engine-routes-<front>.ts`, `rust-engine-<front>.ts`, `rust-<front>-*.ts`,
+`shell_<front>.rs`, `editor_switch_<front>.mjs`; records in `uo-bindings.md` "Milestone 2: the editor switch, wave 5"):
+- **S — stories:** tables (cells, tableNavigate/moveCell, Tab adds a row, cell selection, the Table Design/Layout tabs),
+  headers/footers (zones, bands, mode, options, page numbers), footnotes/endnotes, the caret inside a text box. The
+  wave-4 ED-7 table/note/text-box entries of the main parity are equal now. Gate S-G1..: the empty paragraph after a new
+  table has no line (core), text boxes in cells/boxes and in groups, linked boxes.
+- **O — objects and the page:** pictures (insert via the two-phase jobs, handles, crop, format, compress, image paste),
+  shapes/text boxes as objects, page setup/sections/page color/watermark/borders, Read view, the context menu. Web/Draft/
+  Outline stay disabled; drags commit through SetLayout/SetRotation (ED-202); gate-O1..O5.
+- **R — review and document:** comments, tracked changes, fields/TOC/captions/cross-references/bookmarks/hyperlinks,
+  find/replace + navigation pane, spelling (shared Hunspell), the styles list/gallery/pane and style CRUD (new
+  `uo-docx` `ops/styles/listing.rs`, ED-301, a maintainer point: model logic in uo-docx), clipboard buttons + Office
+  clipboard pane, the Alt keys. R owns the schema additions.
+- Verified at merge: lint; uo-schema check; strict tsc + editor/viewer tsc; editor vitest 329, viewer 25; three editor
+  bundles; uo-docx 775; uo-wasm native session/shell/stories/objects/review; wasm API/hostile/replay (10 families,
+  0 mismatches); shell/write API; `editor_switch --mode all` ok; the three front harnesses `--mode all` ok (memory flat);
+  `viewer_switch --mode all` ok; `editor_switch --mode parity` at stride 1 ok after the merge widened 4 f7d entries
+  (`ED-216; wave-6`: a click on a text box enters it in one engine and selects/keeps the caret in the other — the fronts
+  had run stride 6 only). `rustfmt --check` still flags the pre-existing `uo-wasm/src/write.rs`.
+- **Next: wave 6** — the text-box click rule (TS `hitTextbox` order; the 4 `wave-6` entries, f7b__7__10, S ED-102 groups,
+  S-G3 linked boxes), gate-O4 Ctrl+Up/Down in the shell `onKey`, gate-O5 relayout when a face arrives, typing latency
+  (no `Layout` clone, incremental EditLines, repaint only the changed region), the wave-4 parity causes (hit.rs mixed
+  sizes, End on a wrapped line, BUG-1), D5 shipping `uo-write-editor.wasm`, CI jobs for the editor harnesses and vitest.
+
 ## Update 2026-11-11 (evening) — milestone 2, wave 4 (queue item 9, first cut) committed
 
 - **E — the editor switch**, record `uo-bindings.md` "Milestone 2: the editor switch" (ED-1..ED-28, gate list 1–18):

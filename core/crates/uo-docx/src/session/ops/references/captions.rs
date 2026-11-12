@@ -119,7 +119,7 @@ impl Session {
     /// Every paragraph of the document in `allParagraphs()` order (the body with its textboxes,
     /// the body tables' cells, the header/footer parts, the notes), each visited once per path (the
     /// TS dedupes by identity; the callers here do not care).
-    fn all_paragraphs(&self, f: &mut dyn FnMut(&Paragraph)) {
+    pub(crate) fn all_paragraphs(&self, f: &mut dyn FnMut(&Paragraph)) {
         fn visit(ps: &mut dyn Iterator<Item = &Paragraph>, f: &mut dyn FnMut(&Paragraph), depth: usize) {
             for p in ps {
                 f(p);

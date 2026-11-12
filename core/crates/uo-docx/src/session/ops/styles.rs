@@ -9,6 +9,7 @@
 //! edited without loss; every command takes ONE undo step, the sheet is re-read after each commit
 //! (`syncStyleSheet`) and the paragraphs follow renames and deletions (`retargetStyles`).
 
+pub mod listing;
 pub mod sheet;
 pub(crate) mod xform;
 

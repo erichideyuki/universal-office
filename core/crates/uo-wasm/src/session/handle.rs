@@ -19,7 +19,7 @@ use uo_docx::session::{
 };
 use uo_docx::text::Utf16;
 use uo_docx_layout::LayoutOptions;
-use uo_docx_layout::hit::{EditLines, EditPos, LineIndex, SelRect};
+use uo_docx_layout::hit::{EditLines, EditPos, EditScope, LineIndex, SelRect};
 use uo_docx_layout::options::{Clock, TimeZoneRule};
 use uo_docx_layout::refs::Locator;
 use uo_fonts::embed::{FaceRequest, FontEmbeddingSettings, WORD_DEFAULT_EMBEDDING};
@@ -243,10 +243,22 @@ impl UoWriteSession {
     /// context has no scope (a textbox).
     pub(crate) fn lines(&mut self, l: &UoLayout) -> Option<&EditLines> {
         let generation = layout_generation(l);
-        let key = scope_key(&self.session);
+        // wave 5, frontier S (WS-D6): a text box context has a borrowed scope, its chain; the cache key is the chain's
+        // drawings (unique in the document: they name the outer story) and the header/footer page
+        let chain = super::shell_stories::textbox_chain(&self.session);
+        let key = match &chain {
+            Some((c, page)) => {
+                let ids: Vec<String> = c.iter().map(|d| d.0.to_string()).collect();
+                format!("t{}@{}", ids.join("."), page.map_or(-1, i64::from))
+            }
+            None => scope_key(&self.session),
+        };
         let fresh = self.lines.as_ref().is_some_and(|c| c.generation == generation && c.scope == key);
         if !fresh {
-            let scope = edit_scope(&self.session)?;
+            let scope = match &chain {
+                Some((c, page)) => EditScope::Textbox { chain: c, page: *page },
+                None => edit_scope(&self.session)?,
+            };
             let geom = layout_geom(l);
             let loc = Locator::new(self.session.view());
             let index = LineIndex::new(&loc, geom);
@@ -257,7 +269,7 @@ impl UoWriteSession {
     }
 }
 
-fn outcome(r: Result<Outcome, CommandError>) -> Result<w::ExecOutcome, String> {
+pub(crate) fn outcome(r: Result<Outcome, CommandError>) -> Result<w::ExecOutcome, String> {
     let e = |x: BindError| x.to_string();
     Ok(match r {
         Ok(Outcome::Done(cs)) => w::ExecOutcome::Done(cs.into_wire().map_err(e)?),
@@ -283,7 +295,7 @@ fn bad(detail: &str) -> *mut UoBuf {
     buf(BAD_ARGUMENT, detail.as_bytes().to_vec())
 }
 
-fn exec_result(r: Result<w::ExecOutcome, String>) -> *mut UoBuf {
+pub(crate) fn exec_result(r: Result<w::ExecOutcome, String>) -> *mut UoBuf {
     match r {
         Ok(outcome) => {
             let mut out = Vec::new();

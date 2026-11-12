@@ -87,6 +87,17 @@ declare module '@universal-office/write-session' {
     hyphenationPatterns(env: EngineEnv, langs?: string[]): string[];
     copied(): { text: string; html: string } | null;
     setFontEmbedding(patch: { embed?: boolean; subset?: boolean; skipCommonFonts?: boolean }): ExecOutcome | null;
+    // ── wave 5, frontier R (src/session/shell_review.rs) ──
+    pageLines(layout: EngineLayout, page: number): ShellLine[];
+    paraLines(layout: EngineLayout, para: number): ShellLine[];
+    rangeRects(layout: EngineLayout, page: number, a: DocPos, f: DocPos): SelRect[];
+    embeddedFamilies(): string[];
+  }
+
+  /** wave 5, frontier R: one line of the edit scope (page twips; the characters as offset/x/width columns) */
+  export interface ShellLine {
+    para: number; page: number; x: number; y: number; height: number; baseline: number; width: number;
+    start: number; end: number; xf?: number[]; o: number[]; cx: number[]; cw: number[];
   }
 
   export interface ShellEngine {
@@ -124,4 +135,5 @@ declare module '@universal-office/write-session' {
 
   /** O payload de um item `text/html` (a árvore do DOMParser, `pasteData.html`; paste-tree.mjs de uo-docx). */
   export function encodePaste(html: string, fragmentOf: (html: string) => string): { bytes: Uint8Array; nodes: number; depth: number };
+
 }

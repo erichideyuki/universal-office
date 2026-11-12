@@ -222,6 +222,12 @@ const helpers = () => {
         el.paint();
         await frame();
       }
+      // wave 5, frontier R: the shell paints the same overlays since wave 5 (routed under the TS names): off for the same capture
+      if (el.rust) {
+        for (const m of OVERLAYS) el[m] = () => {};
+        el.paint();
+        await frame();
+      }
       const screen = grab();
       const shots = window.__dump ? cs.map((cv) => (cv.width > 1 ? cv.toDataURL('image/png') : null)) : [];
       const bytes = el.saveDocx();
@@ -357,23 +363,21 @@ const DECLARED = {
   'f7a__7__2': { from: 0, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'clipboard text'], end: ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'gate-1', why: 'a click on a mixed-size line hits another offset' },
   'f7a__7__3': { from: 4, facets: ['selection', 'caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'gate-1', why: 'ArrowDown from a mixed-size line: offset 84 vs 82' },
   'f7a__7__4': { from: 0, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'clipboard text'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'gate-1', why: 'a click on a mixed-size line hits another offset' },
-  'f7b__7__1': { from: 9, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para'], id: 'ED-7', why: 'PageDown through a table: the TS enters the cells (uw-cellmode, tableNavigate)' },
-  'f7b__7__10': { from: 6, facets: ['uw-* events', 'clipboard text'], id: 'ED-7', why: 'a click on a floating object: the TS selects it (uw-change)' },
-  'f7b__7__4': { from: 7, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para'], end: ['screen pixels (TS overlays off)'], id: 'ED-7', why: 'PageUp through a table: the TS enters the cells (uw-cellmode, tableNavigate)' },
-  'f7b__7__5': { from: 9, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para'], id: 'ED-7', why: 'ArrowUp into a table: the TS enters a cell (uw-cellmode, tableNavigate)' },
-  'f7b__7__6': { from: 6, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para'], end: ['screen pixels (TS overlays off)'], id: 'ED-7', why: 'PageUp into a table: the TS enters a cell (uw-cellmode, tableNavigate)' },
-  'f7b__7__7': { from: 2, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para'], id: 'ED-7', why: 'PageUp into a table: the TS enters a cell (uw-cellmode, tableNavigate)' },
-  'f7b__7__9': { from: 4, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-7', why: 'PageUp through a table: the TS enters the cells (uw-cellmode, tableNavigate)' },
+  // front O (wave 5): floats are selectable now; this click lands on a shape that carries text (an ellipse with a txbx
+  // story). Fix round 1 (UO_ES_TRACE=1): the TS moves the caret to para 2 offset 256 (one uw-change), the shell selects the
+  // shape (ED-202b's uw-change, the caret stays at para 5 offset 100); the later steps act at the other caret. Facets
+  // narrowed to the ones that differ; the cause of the TS's caret is not isolated (front O gate list)
+  'f7b__7__10': { from: 6, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events', 'clipboard text'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216', why: 'a click on a text-bearing shape: the TS places the caret in the text (para 2 offset 256), the shell selects the shape; later steps follow' },
   'f7c__7__1': { end: ['thumbnail pixels'], id: 'gate-10', why: 'the same saved bytes, other pages (gate item 10)' },
-  'f7c__7__13': { from: 2, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'clipboard text'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-7', why: 'a double click on a note reference: the TS opens the note (uw-notemode)' },
   'f7c__7__5': { from: 6, facets: ['clipboard text'], end: ['thumbnail pixels'], id: 'ED-16; gate-10', why: 'clip cutplain: the TS text/plain has CRLF; end: the same saved bytes, other pages (gate item 10 family, not confirmed per page)' },
-  'f7d__7__10': { from: 3, facets: ['selection', 'caret rect', 'uw-* events'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-7', why: 'a click on a floating object: the TS selects it (uw-change)' },
-  'f7d__7__11': { from: 7, facets: ['selection', 'uw-* events', 'state run'], id: 'ED-7', why: 'a click on a floating object: the TS selects it (uw-change)' },
-  'f7d__7__6': { from: 3, facets: ['caret rect', 'uw-* events'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-7', why: 'a click on a floating object: the TS selects it (uw-change)' },
-  'f7d__7__7': { from: 0, facets: ['caret rect', 'uw-* events', 'clipboard text'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-7', why: 'a click on a floating object: snapshot + discardSnapshot in the TS (dirty pair, uw-change)' },
-  'f7d__7__8': { from: 5, facets: ['selection', 'caret rect', 'uw-* events', 'state run', 'state para'], end: ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part names', 'saved .docx part bytes'], id: 'ED-7', why: 'PageDown through a table: the TS enters the cells (uw-cellmode, tableNavigate)' },
+  'f7d__7__10': { from: 3, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216; wave-6', why: 'wave 5 (orchestrator, stride 1): a click on a text box or text-bearing shape: one engine enters the box, the other selects the object or keeps the caret (the TS hitTextbox rule vs the S/O hit order; S ED-102, O ED-216); fix in wave 6, then drop this entry' },
+  'f7d__7__11': { from: 7, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216; wave-6', why: 'wave 5 (orchestrator, stride 1): a click on a text box or text-bearing shape: one engine enters the box, the other selects the object or keeps the caret (the TS hitTextbox rule vs the S/O hit order; S ED-102, O ED-216); fix in wave 6, then drop this entry' },
+  'f7d__7__6': { from: 3, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216; wave-6', why: 'wave 5 (orchestrator, stride 1): a click on a text box or text-bearing shape: one engine enters the box, the other selects the object or keeps the caret (the TS hitTextbox rule vs the S/O hit order; S ED-102, O ED-216); fix in wave 6, then drop this entry' },
+  'f7d__7__7': { from: 0, facets: ['selection', 'caret rect', 'state run', 'state para', 'uw-* events', 'clipboard text'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-216; wave-6', why: 'wave 5 (orchestrator, stride 1): a click on a text box or text-bearing shape: one engine enters the box, the other selects the object or keeps the caret (the TS hitTextbox rule vs the S/O hit order; S ED-102, O ED-216); fix in wave 6, then drop this entry' },
   'f7d__7__9': { end: ['screen pixels (TS overlays off)'], id: 'BUG-1', why: 'the final backward selection (focus before anchor) is not painted: uo_session_selection_rects does not normalize the range' },
-  'f8__7__5': { from: 3, facets: ['clipboard text', 'selection', 'caret rect', 'uw-* events', 'state run', 'state para'], end: ['screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-16; ED-7', why: 'step 3: clip copyplain over a paragraph mark (CRLF text/plain); step 11: a click in a text box, the TS enters it (uw-tbmode) and saves from there' },
+  // frontier S (wave 5): the ED-7 entries of tables, notes and text boxes (f7b__7__1/4/5/6/7/9, f7c__7__13, f7d__7__8) are
+  // equal since the stories routing (removed); f8__7__5 step 11 enters the text box in both engines now, the end differs:
+  'f8__7__5': { from: 3, facets: ['clipboard text'], end: ['screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-16; ED-106; ED-108', why: 'step 3: clip copyplain over a paragraph mark (CRLF text/plain); end: the TS paints the handles of the edited text box (frontier O) and saves a truncated document.xml with the caret inside the box (a TS defect, ED-108)' },
 };
 const STEP_FACETS = ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'dirty', 'clipboard text'];
 const END_FACETS = ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part names', 'saved .docx part bytes'];
@@ -648,7 +652,9 @@ if (MODE === 'chrome' || MODE === 'all') {
       out.italicAfter = !!after.run.italic;
       out.alignAfter = after.para.alignment ?? 'left';
       // a command the session does not take yet: the first of these the bar shows
-      const off = ['pagebreak', 'link', 'image', 'comment', 'table:menu', 'color'].find((id) => es.button(id));
+      // wave 5, frontier R: link, comment and the clipboard buttons are routed now; the Format Painter and the font color are
+      // routed by no frontier of the wave
+      const off = ['painter', 'color'].find((id) => es.button(id));
       out.notRouted = off ? { id: off, ...es.buttonState(off) } : null;
       out.boldState = es.buttonState('bold');
       return out;
@@ -684,8 +690,10 @@ if (MODE === 'chrome' || MODE === 'all') {
     console.log(`chrome ${toolbar} shortcuts: ${JSON.stringify(sk)}`);
     if (sk.save !== 1) fail(`chrome ${toolbar}: Ctrl+S with the focus in the document did not reach the bar's save (${sk.save})`);
     if (!(sk.size1 > sk.size0)) fail(`chrome ${toolbar}: Ctrl+] did not grow the font (${sk.size0} → ${sk.size1})`);
-    if (sk.dialogs !== 0 || sk.warns.some((w) => /link|Hyperlink/i.test(w))) fail(`chrome ${toolbar}: Ctrl+K (not routed) ran (${sk.dialogs} dialog(s), ${sk.warns.join(' | ')})`);
-    for (const [id, s] of Object.entries(sk.clip)) if (s && !s.disabled) fail(`chrome ${toolbar}: the ${id} button is enabled (no clipboard event: not routed)`);
+    // wave 5, frontier R: Ctrl+K opens the hyperlink dialog (routed) and Cut/Copy/Paste are enabled with a selection (the
+    // buttons go through navigator.clipboard, routed): the opposite of wave 4's assertions
+    if (sk.dialogs !== 1 || sk.warns.some((w) => /link|Hyperlink/i.test(w))) fail(`chrome ${toolbar}: Ctrl+K did not open the hyperlink dialog (${sk.dialogs} dialog(s), ${sk.warns.join(' | ')})`);
+    for (const [id, s] of Object.entries(sk.clip)) if (s && s.disabled) fail(`chrome ${toolbar}: the ${id} button is disabled (routed in wave 5)`);
     if (env.errors.length !== errs0) fail(`chrome ${toolbar}: ${env.errors.length - errs0} page error(s)`);
     await ev(() => window.__es.remove());
   }

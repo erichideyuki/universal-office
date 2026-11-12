@@ -235,6 +235,27 @@ export function bindSession(w, uo) {
       const n = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0, true);
       return { text: utf16(data, 4, 4 + n * 2), html: dec.decode(data.subarray(4 + n * 2)) };
     }
+
+    // ── wave 5, frontier R (src/session/shell_review.rs; record uo-bindings.md "Wave 5 — R") ──
+    /** the lines of the edit scope on `page` of `layout`: `[{ para, page, x, y, height, baseline, width, start, end, xf?, o, cx, cw }]` */
+    pageLines(layout, page) {
+      return call('pageLines', () => answer(w.uo_shell_page_lines(this.#live(), layout.ptr, page >>> 0), codec.decodeShellLines, 'pageLines')?.lines ?? []);
+    }
+    /** the lines of paragraph `para` of the edit scope in `layout` (same shape) */
+    paraLines(layout, para) {
+      return call('paraLines', () => answer(w.uo_shell_para_lines(this.#live(), layout.ptr, para >>> 0), codec.decodeShellLines, 'paraLines')?.lines ?? []);
+    }
+    /** `[{ x, y, w, h, xf? }]` of the range `a`–`f` (either direction) on `page` */
+    rangeRects(layout, page, a, f) {
+      return call('rangeRects', () => answer(w.uo_shell_range_rects(this.#live(), layout.ptr, page >>> 0, a.para, a.offset, f.para, f.offset), codec.decodeSelRects, 'rangeRects')?.rects ?? []);
+    }
+    /** the families of the document's embedded fonts */
+    embeddedFamilies() {
+      const { status, data } = call('embeddedFamilies', () => take(w.uo_shell_embedded_families(this.#live())));
+      if (status !== 0) throw new SessionError(status, '', 'embeddedFamilies');
+      const s = dec.decode(data);
+      return s ? s.split('\n') : [];
+    }
   }
 
   /** UTF-16LE code units of `data[from, to)` as a string */
@@ -324,3 +345,37 @@ export function bindSession(w, uo) {
     get dead() { return dead; },
   };
 }
+
+// ── wave 5, front O (objects and the page; src/session/shell_objects.rs; record uo-bindings.md "Wave 5 — O") ──
+/**
+ * The object geometry and the section facts of a session for the editor shell: `objects(session, layout,
+ * activePage)` (the TS `enumFloats` + `enumInlinePics`: `{ scope, fs, sel, floats, inline }`) and
+ * `sectionInfo(session, hfSection)` (`{ index, count, touched, pageBorderSection, firstSect, suppressed }`, the
+ * model objects as their `JSON.stringify`). Both answer JSON text; a trap rethrows as `SessionError('trap')`.
+ */
+export function bindObjects(w, uo) {
+  const { Buf } = uo.render;
+  const json = (what, f) => {
+    let ptr;
+    try {
+      ptr = f();
+    } catch (e) {
+      if (e instanceof WebAssembly.RuntimeError) throw new SessionError('trap', e.message, what);
+      throw e;
+    }
+    const { status, data } = new Buf(ptr).take();
+    if (status !== 0) throw new SessionError(status, '', what);
+    return JSON.parse(dec.decode(data));
+  };
+  return {
+    objects(session, layout, activePage = -1, inTextbox = false) {
+      return json('objects', () => w.uo_shell_objects(session.ptr, layout.ptr, activePage | 0, inTextbox ? 1 : 0));
+    },
+    sectionInfo(session, hfSection = -1) {
+      return json('sectionInfo', () => w.uo_shell_section_info(session.ptr, hfSection | 0));
+    },
+  };
+}
+
+// ── wave 5, frontier S (stories: tables, headers/footers, notes, text boxes; src/session/shell_stories.rs) ──
+export { bindStories } from './session-stories.mjs';

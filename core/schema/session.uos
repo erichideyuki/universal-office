@@ -94,6 +94,11 @@ message Hit {
   offset: u32,
 }
 
+/// the lines of the edit scope (wave 5, frontier R: `uo_shell_page_lines`, `uo_shell_para_lines`)
+message ShellLines {
+  lines: list<ShellLine>,
+}
+
 /// `uo_session_selection_rects`
 message SelRects {
   rects: list<SelRect>,
@@ -282,6 +287,27 @@ enum QueryOp {
   FontUsage,
   /// the font embedding settings of the session
   FontEmbedding,
+  // ── wave 5, frontier R (the editor switch: review and document; record uo-bindings.md "Wave 5 — R") ──
+  /// `isTrackingChanges()`: `SessionOptions.tracking`
+  Tracking,
+  /// `getMarkupMode()`
+  MarkupMode,
+  /// the runs of paragraph `para` of the edit story (overlays, links, comments, spelling)
+  ParaRuns(QParaRuns),
+  /// `listStyles(…, 'all')` before the shell's filter and sort (ED-302)
+  ListStyles,
+  /// `styleFormatting(id)` (`styleLook` over `withLatent`)
+  StyleLook(QStyleLook),
+  /// `docStyles.defaultParagraph()`
+  DefaultParagraphStyle,
+  /// the run props at a position of the edit story (`propsAt`, `inspectStyle`)
+  RunPropsAt(QRunPropsAt),
+  /// `stylesVersion()`
+  StylesVersion,
+  /// `docStyles.defaultCharacter()` (`inspectStyle`)
+  DefaultCharacterStyle,
+  /// the paragraph props of paragraph `para` of the edit story, as stored (`inspectStyle`, `selectionStyleFormat`)
+  ParaPropsAt(QParaPropsAt),
 }
 
 enum QueryAnswer {
@@ -371,6 +397,119 @@ enum QueryAnswer {
   CopyFormat(bool),
   FontUsage(list<FontUse>),
   FontEmbedding(EmbeddingSettings),
+  // ── wave 5, frontier R ──
+  Tracking(bool),
+  MarkupMode(MarkupMode),
+  ParaRuns(list<RunSpan>),
+  ListStyles(list<StyleListItem>),
+  StyleLook(AStyleLook),
+  DefaultParagraphStyle(utf16),
+  RunPropsAt(RunProps),
+  StylesVersion(u32),
+  DefaultCharacterStyle(utf16),
+  ParaPropsAt(ParaProps),
+}
+
+// ── wave 5, frontier R: the wire-only types of its queries and shell exports ──
+
+struct QParaRuns {
+  para: u32,
+  /// the spelling language when neither the run, its styles nor the defaults say (`spellDefaultLang()`)
+  fallback: utf16,
+}
+
+/// one run of a paragraph (UTF-16 length; the flags the shell's overlays and commands read)
+struct RunSpan {
+  len: u32,
+  link: utf16?,
+  link_tip: utf16?,
+  /// a field run or a field result (the field shading)
+  field: bool,
+  comment_ids: list<f64>?,
+  /// `props.del` (tracked deletion)
+  del: bool,
+  /// the spell checker reads it (not a field, note mark, object, math, form field, deletion, nor `noProof`)
+  spell: bool,
+  /// the run's language (`LangResolver.run`: rPr → rStyle → pStyle → defaults → fallback)
+  lang: utf16,
+  char_style: utf16?,
+}
+
+/// one entry of `ListStyles` (`StyleInfo` of styles.ts)
+struct StyleListItem {
+  id: utf16,
+  name: utf16,
+  raw_name: utf16,
+  kind: utf16,
+  built_in: bool,
+  defined: bool,
+  quick: bool,
+  hidden: bool,
+  priority: f64,
+  in_use: bool,
+  is_default: bool,
+  based_on: utf16?,
+  next: utf16?,
+  link: utf16?,
+  /// the display name of `link` (the character twin of a linked style; `inspectStyle` names it)
+  link_name: utf16?,
+  auto_update: bool,
+}
+
+struct QStyleLook {
+  id: utf16,
+}
+
+struct AStyleLook { value: StyleLookW? }
+
+/// `StyleLook` of styles.ts `lookOf`
+struct StyleLookW {
+  font_family: utf16,
+  size_pt: f64,
+  bold: bool,
+  italic: bool,
+  underline: bool,
+  strike: bool,
+  all_caps: bool,
+  small_caps: bool,
+  color: utf16?,
+  char_spacing_twips: f64,
+  alignment: utf16,
+  space_before_twips: f64,
+  space_after_twips: f64,
+  line_twentieths: f64?,
+  indent_left_twips: f64,
+  indent_right_twips: f64,
+  indent_first_line_twips: f64,
+  shading_hex: utf16?,
+  border_top: utf16?,
+  border_bottom: utf16?,
+}
+
+struct QRunPropsAt {
+  pos: DocPosition,
+}
+
+struct QParaPropsAt {
+  para: u32,
+}
+
+/// one line of the edit scope (`uo_shell_page_lines`, `uo_shell_para_lines`): page twips, the
+/// characters as offset/x/width columns
+struct ShellLine {
+  para: u32,
+  page: u32,
+  x: f64,
+  y: f64,
+  height: f64,
+  baseline: f64,
+  width: f64,
+  start: u32,
+  end: u32,
+  xf: list<f64>?,
+  o: list<u32>,
+  cx: list<f64>,
+  cw: list<f64>,
 }
 
 struct ATableSelection { value: TableSel? }

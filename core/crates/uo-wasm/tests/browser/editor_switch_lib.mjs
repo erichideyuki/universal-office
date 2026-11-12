@@ -43,8 +43,9 @@ const INTERNAL = {
 /**
  * Bundles the editor into `<outDir>/out`, copies the wasm, starts the server and the browser.
  * `extraDocs`: more documents served under /docs/ by name.
+ * `entryExtra` (wave 5, frontier R): module code appended to the entry (editor_switch_review.mjs: the spelling sources).
  */
-export async function setup({ root, wasmPath, outDir, stride = 1, only, extraDocs = {} }) {
+export async function setup({ root, wasmPath, outDir, stride = 1, only, extraDocs = {}, entryExtra = '' }) {
   const out = join(outDir, 'out');
   rmSync(out, { recursive: true, force: true });
   mkdirSync(join(out, 'chunks'), { recursive: true });
@@ -52,6 +53,7 @@ export async function setup({ root, wasmPath, outDir, stride = 1, only, extraDoc
   writeFileSync(join(outDir, 'entry.mjs'), `
 import { UniversalWriteElement } from '${W('write/packages/editor/src/index.ts')}';
 export { UniversalWriteElement };
+${entryExtra}
 `);
   const alias = Object.fromEntries(Object.entries(INTERNAL).map(([n, f]) => [n, join(repo, f)]));
   alias['@universal-office/converter'] = join(root, 'converter/packages/converter/dist/index.js');

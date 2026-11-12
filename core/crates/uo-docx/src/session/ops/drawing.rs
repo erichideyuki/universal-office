@@ -22,6 +22,7 @@ use super::super::text::DocPosition;
 use super::super::{ExecCx, Session};
 use super::context::EditContext;
 use super::pictures::PictureCmd;
+use crate::ids::DrawingId;
 use crate::js::{JsNumber, Nullable, Str};
 use crate::model::Document;
 use crate::model::picture::{PicColor, PicLine, PictureFormat};
@@ -292,6 +293,31 @@ impl Fmt {
             Fmt::Shape(s) => &s.base,
         }
     }
+}
+
+/// One object of [`Session::drawing_objects`] (wave 5, front O: the editor shell's handles).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DrawingObject {
+    pub id: DrawingId,
+    pub kind: PaneKind,
+    /// degrees, clockwise (`runRot`)
+    pub rot: f64,
+    /// `formatOf(r)` answers (the XML the editor can change)
+    pub editable: bool,
+    /// the key of the object in the selection pane (`paneRuns()`), if it is listed there
+    pub pane_key: Option<String>,
+}
+
+/// The drawing id of a run, in the layout's order (picture, shape, group, box: uo-docx-layout
+/// `floats.rs` `drawing_of`).
+fn run_drawing_id(r: &Run) -> Option<DrawingId> {
+    let e = r.ext()?;
+    e.image
+        .as_ref()
+        .map(|x| x.drawing)
+        .or_else(|| e.shape.as_ref().map(|x| x.drawing))
+        .or_else(|| e.group.as_ref().map(|x| x.drawing))
+        .or_else(|| e.textbox.as_ref().map(|x| x.drawing))
 }
 
 /// The raw `w:drawing` of a run (`rawOf`): image, box, shape, group in that order.
@@ -1022,6 +1048,102 @@ impl Session {
             link_previous: link.is_some_and(|l| l.1),
             format: b.clone(),
         })
+    }
+
+    // ── the object geometry of the editor shell (wave 5, front O; record uo-bindings.md ED-201) ──
+    // Additive read-only accessors over the pub(crate) enumerations above: the shell joins them with
+    // the layout's `PlacedObject.drawing` / `ImageOrigin::Media { drawing }` (the TS `enumFloats` /
+    // `enumInlinePics` hold the `Run` objects themselves).
+
+    /// `contextDrawingRuns()`, one entry per object in that order (index = the `SelectObject` index):
+    /// the drawing id, the kind (`r.image ? 'image' : r.textbox ? … : 'group'`), the TS `runRot(r)`
+    /// and whether the object has the XML the editor can change (`rawOf(r) && formatOf(r)`: the
+    /// rotation handle of a shape).
+    #[must_use]
+    pub fn drawing_objects(&self) -> Vec<DrawingObject> {
+        let num = |x: Option<JsNumber>| x.map(JsNumber::to_number);
+        let pane = self.pane_runs();
+        self.drawing_paths()
+            .iter()
+            .filter_map(|p| {
+                let r = self.run_ref(p)?;
+                let e = r.ext()?;
+                let id = run_drawing_id(r)?;
+                let kind = if e.image.is_some() {
+                    PaneKind::Image
+                } else if e.textbox.is_some() {
+                    PaneKind::Textbox
+                } else if e.shape.is_some() {
+                    PaneKind::Shape
+                } else {
+                    PaneKind::Group
+                };
+                let rot = e
+                    .image
+                    .as_deref()
+                    .and_then(|i| i.style.as_deref())
+                    .and_then(|s| num(s.rot))
+                    .or_else(|| e.textbox.as_deref().and_then(|t| num(t.rot)))
+                    .or_else(|| e.shape.as_deref().and_then(|s| num(s.style.rot)))
+                    .or_else(|| e.group.as_deref().and_then(|g| num(g.rot)))
+                    .unwrap_or(0.0);
+                let pane_key = pane.iter().find(|x| x.0 == *p).map(|x| x.1.clone());
+                Some(DrawingObject { id, kind, rot, editable: format_of(r).is_some(), pane_key })
+            })
+            .collect()
+    }
+
+    /// The inline pictures of the edit story's own paragraphs (`enumInlinePics`' `byImg`): the
+    /// drawing id and the `SelectInline { para, run }` arguments.
+    #[must_use]
+    pub fn inline_pictures(&self) -> Vec<(DrawingId, u32, u32)> {
+        let mut out = Vec::new();
+        let Some(ps) = self.paras() else { return out };
+        for (pi, p) in ps.iter().enumerate() {
+            for (ri, r) in p.runs.iter().enumerate() {
+                let Some(i) = r.ext().and_then(|e| e.image.as_deref()) else { continue };
+                if i.floating.unwrap_or(false) {
+                    continue;
+                }
+                if let (Ok(pi), Ok(ri)) = (u32::try_from(pi), u32::try_from(ri)) {
+                    out.push((i.drawing, pi, ri));
+                }
+            }
+        }
+        out
+    }
+
+    /// The drawing ids of the selection: `floatSel` (or the selected inline picture) first, then the
+    /// other objects of `floatMulti`.
+    #[must_use]
+    pub fn selected_drawings(&self) -> Vec<DrawingId> {
+        let mut out = Vec::new();
+        let Some(sel) = self.sel_path() else { return out };
+        for p in std::iter::once(&sel).chain(self.f7.multi.iter()) {
+            if let Some(id) = self.run_ref(p).and_then(run_drawing_id)
+                && !out.contains(&id)
+            {
+                out.push(id);
+            }
+        }
+        out
+    }
+
+    /// The drawing id of the text box in edit (the TS `tbEdit.focusRun`: its dashed outline and handles).
+    #[must_use]
+    pub fn edited_box_drawing(&self) -> Option<DrawingId> {
+        self.focus_path().and_then(|p| self.run_ref(&p).and_then(run_drawing_id))
+    }
+
+    /// The context of the object handles: `(header/footer, text box)` (the TS `hfEdit` and `tbEdit`:
+    /// `enumFloats` is empty in a box and keeps the header/footer layer in a header/footer).
+    #[must_use]
+    pub fn drawing_scope(&self) -> (bool, bool) {
+        match &self.ctx {
+            EditContext::HeaderFooter { .. } => (true, false),
+            EditContext::Textbox { .. } => (false, true),
+            _ => (false, false),
+        }
     }
 
     // ── the commands ───────────────────────────────────────────────────────────────────────
