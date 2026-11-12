@@ -56,7 +56,7 @@ import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const p = (...s) => path.join(ROOT, ...s);
@@ -71,6 +71,10 @@ const SPELLCHECK_DTS = `/**
 export declare const glue: string;
 /** The WebAssembly binary, base64. */
 export declare const wasmBase64: string;
+/** Absolute URL of the engine Worker (worker.js, next to this module): no blob: needed. */
+export declare const workerUrl: string;
+/** Absolute URL of the emscripten glue as a file (hunspell.js, next to this module): no data:/blob: needed. */
+export declare const glueUrl: string;
 `;
 const dictionaryDts = (id) => `/**
  * The ${id} Hunspell dictionary for the spell checker of <universal-write>.
@@ -102,7 +106,11 @@ export const PRODUCTS = {
   'slides-viewer': { dir: 'slides/packages/viewer', project: 'slides', dependencies: ['font-files'] },
   slides: { dir: 'slides/packages/slides', project: 'slides', dependencies: ['font-files'] },
   'font-files': { dir: 'shared/fonts/packages/font-files', kind: 'fonts' },
-  spellcheck: { dir: 'shared/spell/packages/spellcheck', project: 'write', kind: 'data', entry: 'shared/spell/src/hunspell/wasm.ts', types: SPELLCHECK_DTS },
+  spellcheck: {
+    dir: 'shared/spell/packages/spellcheck', project: 'write', kind: 'data', entry: 'shared/spell/src/hunspell/package-entry.ts', types: SPELLCHECK_DTS,
+    // arquivos ao lado do index.js: o Worker e o glue sobem pela URL (CSP sem blob:/data:)
+    entries: { worker: 'shared/spell/src/worker-entry.ts' }, glueFile: 'hunspell.js',
+  },
   'dictionary-pt-br': { dir: 'shared/spell/packages/dictionary-pt-br', project: 'write', kind: 'data', entry: 'shared/spell/src/dicts/pt-BR.ts', types: dictionaryDts('pt-BR') },
   'dictionary-en-us': { dir: 'shared/spell/packages/dictionary-en-us', project: 'write', kind: 'data', entry: 'shared/spell/src/dicts/en-US.ts', types: dictionaryDts('en-US') },
   'dictionary-es': { dir: 'shared/spell/packages/dictionary-es', project: 'write', kind: 'data', entry: 'shared/spell/src/dicts/es.ts', types: dictionaryDts('es') },
@@ -330,18 +338,39 @@ function buildFonts(id) {
   console.log(`build-pkg: ${src.name}@${src.version} → ${path.relative(ROOT, dist)}`);
 }
 
-/** Motor ou dicionário da revisão: um módulo ES só (sem chunks) + licenças. */
+/**
+ * Motor ou dicionário da revisão: módulos ES sem chunks (o index.js e, no motor,
+ * o worker.js e o glue do emscripten como arquivo) + licenças.
+ */
 async function buildData(id) {
-  const { project, entry, types } = PRODUCTS[id];
+  const { project, entry, types, entries = {}, glueFile } = PRODUCTS[id];
   const { pkgDir, src, publish, dist } = prepare(id);
   const esbuild = createRequire(p(project, 'package.json'))('esbuild');
   await esbuild.build({
-    entryPoints: { index: p(entry) },
-    outdir: dist, bundle: true, format: 'esm', platform: 'neutral', target: 'es2022',
+    entryPoints: { index: p(entry), ...Object.fromEntries(Object.entries(entries).map(([n, f]) => [n, p(f)])) },
+    outdir: dist, bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', splitting: false,
     // UTF-8 cru (script de módulo é sempre lido como UTF-8): o "á" do dicionário
     // ocupa 2 bytes em vez dos 4 do escape á
     minify: true, charset: 'utf8', legalComments: 'linked', logLevel: 'warning',
   });
+  const extraFiles = Object.keys(entries).map((n) => `${n}.js`);
+  if (glueFile) {
+    // o glue já está no index.js como texto; sai também como módulo (servido do mesmo domínio)
+    // (cópia .mjs temporária: a pasta publish/ ainda não tem o package.json com "type": "module")
+    const tmp = path.join(dist, '.glue-probe.mjs');
+    copyFileSync(path.join(dist, 'index.js'), tmp);
+    let glue;
+    try { ({ glue } = await import(pathToFileURL(tmp).href)); } finally { rmSync(tmp, { force: true }); }
+    if (typeof glue !== 'string' || !/export\s*(default|\{)/.test(glue)) throw new Error(`build-pkg: ${id} sem o glue do emscripten como módulo ES`);
+    writeFileSync(path.join(dist, glueFile), glue);
+    extraFiles.push(glueFile);
+  }
+  for (const f of extraFiles) {
+    const file = path.join(dist, f);
+    if (!existsSync(file)) throw new Error(`build-pkg: ${id} sem ${f}`);
+    // sem import estático: o Worker sobe sozinho pela URL (o import() do glue é de URL montada)
+    if (f !== glueFile && /\bfrom\s*["']|\bimport\s*["']/.test(readFileSync(file, 'utf8'))) throw new Error(`build-pkg: ${id}/${f} precisa ser autocontido (sem import estático)`);
+  }
   writeFileSync(path.join(dist, 'index.d.ts'), types);
   const withLicenses = copyLicenseFiles(pkgDir, src.licenseFiles ?? [], path.join(dist, 'licenses'));
   writeReadme(pkgDir, dist, src);
@@ -352,7 +381,7 @@ async function buildData(id) {
     types: './index.d.ts',
     exports: { '.': { types: './index.d.ts', import: './index.js' } },
     sideEffects: false,
-    files: ['index.js', 'index.d.ts', '*.LEGAL.txt', ...(withLicenses ? ['licenses'] : []), 'README.md'],
+    files: ['index.js', ...extraFiles, 'index.d.ts', '*.LEGAL.txt', ...(withLicenses ? ['licenses'] : []), 'README.md'],
   });
   console.log(`build-pkg: ${src.name}@${src.version} → ${path.relative(ROOT, dist)}`);
 }

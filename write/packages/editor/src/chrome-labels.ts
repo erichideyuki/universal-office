@@ -23,7 +23,6 @@ export const LABELS = {
     findTitle: 'Find and replace', replaced: (n: number) => `${n} replacement${n === 1 ? '' : 's'}`, notFound: 'No matches',
     commentTitle: 'New comment', commentText: 'Comment', commentAdd: 'Comment', selectToComment: 'Select some text to comment on',
     comments: 'Comments', deleteComment: 'Delete comment', anonymous: 'Anonymous', commentAdded: 'Comment added ✓',
-    linkTitle: 'Insert link', linkUrl: 'Address (URL)', linkApply: 'Apply',
     compareWith: 'Compare with…', compareCurrent: (n: string) => `${n} (current)`, stillLoading: 'The editor is still loading — try again in a moment',
     readFailed: 'Could not read the selected file', compareNeedsFs: 'Comparison needs a browser with File System Access',
     compareStats: (s: { inserted: number; deleted: number; changed: number; formatOnly: number }) =>
@@ -74,7 +73,6 @@ export const LABELS = {
     findTitle: 'Localizar e substituir', replaced: (n: number) => `${n} substituiç${n === 1 ? 'ão' : 'ões'}`, notFound: 'Nenhuma ocorrência',
     commentTitle: 'Novo comentário', commentText: 'Comentário', commentAdd: 'Comentar', selectToComment: 'Selecione um trecho para comentar',
     comments: 'Comentários', deleteComment: 'Excluir comentário', anonymous: 'Anônimo', commentAdded: 'Comentário inserido ✓',
-    linkTitle: 'Inserir link', linkUrl: 'Endereço (URL)', linkApply: 'Aplicar',
     compareWith: 'Comparar com…', compareCurrent: (n: string) => `${n} (atual)`, stillLoading: 'O editor ainda está carregando — tente de novo em instantes',
     readFailed: 'Não foi possível ler o arquivo escolhido', compareNeedsFs: 'A comparação precisa de um navegador com File System Access',
     compareStats: (s: { inserted: number; deleted: number; changed: number; formatOnly: number }) =>
@@ -125,7 +123,6 @@ export const LABELS = {
     findTitle: 'Buscar y reemplazar', replaced: (n: number) => `${n} reemplazo${n === 1 ? '' : 's'}`, notFound: 'No hay coincidencias',
     commentTitle: 'Nuevo comentario', commentText: 'Comentario', commentAdd: 'Comentar', selectToComment: 'Selecciona un fragmento de texto para comentarlo',
     comments: 'Comentarios', deleteComment: 'Eliminar comentario', anonymous: 'Anónimo', commentAdded: 'Comentario agregado ✓',
-    linkTitle: 'Insertar vínculo', linkUrl: 'Dirección (URL)', linkApply: 'Aplicar',
     compareWith: 'Comparar con…', compareCurrent: (n: string) => `${n} (actual)`, stillLoading: 'El editor todavía se está cargando — vuelve a intentarlo en un momento',
     readFailed: 'No se pudo leer el archivo seleccionado', compareNeedsFs: 'La comparación requiere un explorador con File System Access',
     compareStats: (s: { inserted: number; deleted: number; changed: number; formatOnly: number }) =>

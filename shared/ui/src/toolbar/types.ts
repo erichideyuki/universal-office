@@ -214,5 +214,7 @@ export interface BarContribution {
     groups?: Placed<BarGroup & { tab: string }>[];
     /** barra de acesso rápido */
     qat?: BarItem[];
+    /** itens à direita da linha de título da ribbon, depois dos embutidos */
+    trailing?: BarItem[];
   };
 }

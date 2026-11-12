@@ -131,11 +131,12 @@ export function extendCompact(cfg: CompactConfig, contributions: readonly BarCon
   };
 }
 
-/** Ribbon com as contribuições: título, guias novas, grupos em guias existentes e acesso rápido. */
+/** Ribbon com as contribuições: título, guias novas, grupos em guias existentes, acesso rápido e itens à direita. */
 export function extendRibbon(cfg: RibbonConfig, contributions: readonly BarContribution[]): RibbonConfig {
   let tabs: RibbonTab[] = cfg.tabs;
   let qat: BarItem[] | undefined = cfg.qat;
   let title: BarItem | undefined = cfg.title;
+  let trailing: BarItem[] | undefined = cfg.trailing;
   for (const c of contributions) {
     if (!c.ribbon) continue;
     if (c.ribbon.title) title = c.ribbon.title;
@@ -147,6 +148,7 @@ export function extendRibbon(cfg: RibbonConfig, contributions: readonly BarContr
       tabs = tabs.map((t, k) => (k === i ? { ...t, groups: place(t.groups, [group]) } : t));
     }
     if (c.ribbon.qat?.length) qat = [...(qat ?? []), ...c.ribbon.qat];
+    if (c.ribbon.trailing?.length) trailing = [...(trailing ?? []), ...c.ribbon.trailing];
   }
-  return { ...cfg, tabs, ...(qat ? { qat } : {}), ...(title ? { title } : {}) };
+  return { ...cfg, tabs, ...(qat ? { qat } : {}), ...(title ? { title } : {}), ...(trailing ? { trailing } : {}) };
 }

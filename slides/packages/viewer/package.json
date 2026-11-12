@@ -1,6 +1,6 @@
 {
   "name": "@universal-office/slides-viewer",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "type": "module",
   "description": "Webcomponent <universal-slides-viewer> — visualizacao pura de .pptx (sem edicao)",
   "main": "dist/index.js",

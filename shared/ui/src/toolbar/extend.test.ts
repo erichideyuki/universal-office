@@ -212,6 +212,13 @@ describe('extendRibbon', () => {
     expect(barItemId(extendRibbon({ ...ribbon(), title: widget('title') }, [{ ribbon: { title: widget('host:title') } }]).title!)).toBe('host:title');
   });
 
+  it('trailing junta os itens do hospedeiro aos embutidos, na ordem das contribuições', () => {
+    const ids = (cfg: RibbonConfig) => cfg.trailing?.map(barItemId);
+    expect(extendRibbon(ribbon(), [{ ribbon: {} }]).trailing).toBeUndefined();
+    expect(ids(extendRibbon(ribbon(), [{ ribbon: { trailing: [widget('a')] } }, { ribbon: { trailing: [widget('b')] } }]))).toEqual(['a', 'b']);
+    expect(ids(extendRibbon({ ...ribbon(), trailing: [widget('share')] }, [{ ribbon: { trailing: [widget('host:actions')] } }]))).toEqual(['share', 'host:actions']);
+  });
+
   it('grupo para guia inexistente é ignorado', () => {
     const cfg = extendRibbon(ribbon(), [{ ribbon: { groups: [{ tab: 'nope', id: 'x', label: 'X', cells: [] }] } }]);
     expect(cfg.tabs.flatMap((t) => t.groups.map((g) => g.id))).toEqual(['clipboard', 'font', 'pages']);

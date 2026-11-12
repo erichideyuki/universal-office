@@ -62,6 +62,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.4" date="2026-11-12">
+      <description>
+        <p>Faster opening of documents, hyperlink addresses checked in Write, hidden slides and shapes respected in Slides, and spell checking that keeps working under strict security policies.</p>
+      </description>
+    </release>
     <release version="0.9.3" date="2026-10-31">
       <description>
         <p>First beta of the desktop suite: Universal Write, Universal Sheet and Universal Slides in one app.</p>

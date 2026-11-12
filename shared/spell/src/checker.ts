@@ -1,8 +1,10 @@
 /**
  * SpellChecker — o lado do CLIENTE (thread da interface). Fala com o motor
  * (Hunspell WASM, ver engine.ts) por mensagens: num Worker quando dá (padrão),
- * no próprio thread quando não (CSP sem blob:, Node). Tudo é assíncrono; o que
- * já foi revisado fica num cache que a pintura síncrona consulta (`cached`).
+ * no próprio thread quando não (CSP, Node). Tudo é assíncrono; o que já foi
+ * revisado fica num cache que a pintura síncrona consulta (`cached`). Motor que
+ * não sobe (nem no Worker nem no thread) fica indisponível até `retry()` ou até
+ * o registro mudar — não se tenta de novo a cada revisão.
  *
  * O motor e os dicionários NÃO vêm no pacote: vêm do registro de fontes
  * (sources.ts — o hospedeiro registra loaders ou uma pasta por URL) e são
@@ -54,34 +56,42 @@ export interface Transport {
   dispose(): void;
 }
 
-function localTransport(): Transport {
+function localTransport(glueUrl?: string): Transport {
   const t: Transport = { kind: 'thread', post: () => {}, onResponse: () => {}, onError: () => {}, dispose: () => {} };
   const scope: EngineScope = {
     onmessage: null,
     postMessage: (msg) => queueMicrotask(() => t.onResponse(msg)),
   };
-  spellEngineMain(scope);
+  spellEngineMain(scope, glueUrl);
   t.post = (req) => queueMicrotask(() => scope.onmessage?.({ data: req }));
   return t;
 }
 
-function workerTransport(): Transport | undefined {
-  if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL?.createObjectURL !== 'function') return undefined;
+/** Worker do motor: pela URL do pacote (`workerUrl`) quando há; senão a fonte do motor num Blob. */
+function workerTransport(module: SpellcheckModule): Transport | undefined {
+  if (typeof Worker === 'undefined') return undefined;
+  const opts: WorkerOptions = { type: 'module', name: 'universal-office-spell' };
   let w: Worker;
-  const src = `(${spellEngineMain.toString()})(self);`;
-  const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
-  try {
-    w = new Worker(url, { type: 'module', name: 'universal-office-spell' });
-  } catch {
-    URL.revokeObjectURL(url);
-    return undefined;
+  let blobUrl: string | undefined;
+  if (module.workerUrl) {
+    try { w = new Worker(module.workerUrl, opts); } catch { return undefined; }
+  } else {
+    if (typeof Blob === 'undefined' || typeof URL?.createObjectURL !== 'function') return undefined;
+    const src = `(${spellEngineMain.toString()})(self);`;
+    blobUrl = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    try {
+      w = new Worker(blobUrl, opts);
+    } catch {
+      URL.revokeObjectURL(blobUrl);
+      return undefined;
+    }
   }
   const t: Transport = {
     kind: 'worker',
     post: (req) => w.postMessage(req),
     onResponse: () => {},
     onError: () => {},
-    dispose: () => { w.terminate(); URL.revokeObjectURL(url); },
+    dispose: () => { w.terminate(); if (blobUrl) URL.revokeObjectURL(blobUrl); },
   };
   w.onmessage = (ev: MessageEvent<EngineResponse>) => t.onResponse(ev.data);
   w.onerror = (ev) => { ev.preventDefault(); t.onError(new Error(ev.message || 'falha no Worker de revisão')); };
@@ -90,8 +100,11 @@ function workerTransport(): Transport | undefined {
 
 /** @internal — opções só dos testes (Worker falso). */
 export interface SpellCheckerInternalOptions extends SpellCheckerOptions {
-  workerFactory?: () => Transport | undefined;
+  workerFactory?: (module: SpellcheckModule) => Transport | undefined;
 }
+
+/** Estado do motor: ainda não pedido, subindo, pronto ou indisponível (até `retry()`). */
+export type SpellEngineState = 'idle' | 'starting' | 'ready' | 'unavailable';
 
 export class SpellChecker {
   private static instance: SpellChecker | undefined;
@@ -139,6 +152,22 @@ export class SpellChecker {
   /** Onde o motor está rodando: 'worker', 'thread' (sem Worker/CSP) ou undefined (ainda não subiu). */
   get mode(): 'worker' | 'thread' | undefined {
     return this.transport?.kind;
+  }
+
+  /** Estado do motor (o diálogo de revisão diz "indisponível" em vez de "concluída"). */
+  get engineState(): SpellEngineState {
+    if (this.engineUnavailable) return 'unavailable';
+    if (this.transport && this.live.has(this.transport)) return 'ready';
+    return this.engineReady ? 'starting' : 'idle';
+  }
+
+  /**
+   * Nova chance ao motor e aos dicionários que falharam (ação do usuário, como o
+   * F7): o próximo pedido sobe o motor de novo e o hospedeiro revisa (evento `load`).
+   */
+  retry(): void {
+    this.resetFailures();
+    this.emit({ kind: 'load', words: [] });
   }
 
   // ── idiomas ────────────────────────────────────────────────────────────
@@ -345,11 +374,13 @@ export class SpellChecker {
    * outra chance e o hospedeiro revisa de novo (evento `load`).
    */
   private watchSources(): void {
-    this.offSources ??= onSpellSourcesChange(() => {
-      this.unavailable.clear();
-      this.engineUnavailable = false;
-      this.emit({ kind: 'load', words: [] });
-    });
+    this.offSources ??= onSpellSourcesChange(() => this.retry());
+  }
+
+  private resetFailures(): void {
+    this.unavailable.clear();
+    if (this.engineUnavailable) this.engineReady = undefined;
+    this.engineUnavailable = false;
   }
 
   /** Dados do dicionário pelo loader; falha do loader = idioma indisponível. */
@@ -404,18 +435,25 @@ export class SpellChecker {
     const wasm = await this.engineModule();
     const init = { op: 'init', glue: wasm.glue, wasmBase64: wasm.wasmBase64 } as const;
     if (this.opts.worker !== false) {
-      const wt = (this.opts.workerFactory ?? workerTransport)();
+      const wt = (this.opts.workerFactory ?? workerTransport)(wasm);
       if (wt) {
         try {
           await this.initOn(wt, init, WORKER_INIT_TIMEOUT_MS);
           return;
         } catch {
-          // Worker não sobe (CSP, módulo blob: bloqueado): mesmo motor no thread
+          // Worker não sobe (CSP, script bloqueado): mesmo motor no thread
           wt.dispose();
         }
       }
     }
-    await this.initOn(localTransport(), init);
+    try {
+      await this.initOn(localTransport(wasm.glueUrl), init);
+    } catch (err) {
+      // nem Worker nem thread: indisponível até retry() — repetir a cada revisão
+      // inundava o console (CSP) e travava a digitação
+      this.engineUnavailable = true;
+      throw err;
+    }
   }
 
   /** Liga o transporte e espera o init; falha (ou estoura o prazo) → rejeita. */

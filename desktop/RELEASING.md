@@ -7,7 +7,7 @@ Universal Slides (.pptx, .ppt):
 | | |
 | --- | --- |
 | Folder | `desktop/` |
-| Version | 0.9.3 (`desktop/package.json`) |
+| Version | 0.9.4 (`desktop/package.json`) |
 | appId | `org.universaloffice.UniversalOffice` |
 | Windows AppUserModelIDs | `org.universaloffice.UniversalOffice.write`, `.sheet`, `.slides` (one per editor) |
 | Release tag | `v<version>` (one tag per release of the whole project: web components, NuGet packages and desktop app share the version) |

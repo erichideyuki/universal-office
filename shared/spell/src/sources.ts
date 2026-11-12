@@ -26,6 +26,13 @@ export interface SpellcheckModule {
   glue: string;
   /** binário WASM em base64 */
   wasmBase64: string;
+  /**
+   * URL absoluta do Worker do motor (`worker.js` do pacote): com ela o Worker sobe
+   * pela URL, sem blob: — o que uma CSP com script-src 'self' permite.
+   */
+  workerUrl?: string;
+  /** URL absoluta do glue como arquivo (`hunspell.js` do pacote), para o motor no thread sem data:/blob:. */
+  glueUrl?: string;
 }
 
 export type SpellcheckLoader = () => Promise<SpellcheckModule>;

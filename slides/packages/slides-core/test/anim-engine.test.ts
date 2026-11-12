@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { shapeAnimHooks, evalFormula, mediaStateAt, type PlacedEffect, type AnimBase } from '../src/index.js';
+import { shapeAnimHooks, evalFormula, mediaStateAt, buildPlaybackTimeline, playbackStateAt, paintSlideTo, type PlacedEffect, type AnimBase } from '../src/index.js';
+import { buildPptx, sp } from './helpers/pptx-builder.js';
 import type { TimeNode, AnimTarget } from '../src/timing.js';
 
 // Nós de tempo montados à mão (a forma exata que o parser produz)
@@ -145,5 +146,35 @@ describe('mídia: pausa não consome a duração', () => {
     expect(mediaStateAt(fx, '3', 2500, { latencyMs: 66 })).toMatchObject({ ended: true });
     expect(mediaStateAt(fx, '3', 2500, { latencyMs: 66 }).timeSec).toBeCloseTo((2000 - 66) / 1000, 6);
     expect(mediaStateAt(fx, '3', 1900, { latencyMs: 66 }).ended).toBeUndefined();
+  });
+});
+
+describe('animação que aponta para forma oculta', () => {
+  const entrance = (spid: string): string => `<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst><p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst><p:par><p:cTn id="3" fill="hold"><p:stCondLst><p:cond delay="indefinite"/></p:stCondLst><p:childTnLst><p:par><p:cTn id="4" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst><p:par><p:cTn id="5" presetID="10" presetClass="entr" presetSubtype="0" fill="hold" grpId="0" nodeType="clickEffect"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:iterate type="lt"><p:tmPct val="10000"/></p:iterate><p:childTnLst><p:set><p:cBhvr><p:cTn id="6" dur="1" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl><p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set><p:animEffect transition="in" filter="fade"><p:cBhvr><p:cTn id="7" dur="500"/><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl></p:cBhvr></p:animEffect></p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn><p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst><p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst></p:seq></p:childTnLst></p:cTn></p:par></p:tnLst><p:bldLst><p:bldP spid="${spid}" grpId="0" animBg="1"/></p:bldLst></p:timing>`;
+  const XF = '<a:xfrm><a:off x="0" y="0"/><a:ext cx="1000000" cy="500000"/></a:xfrm>';
+
+  it('animação que aponta para forma oculta não lança, e a forma continua sem ser pintada', () => {
+    const tree = sp(2, '<a:p><a:r><a:t>Texto Oculto</a:t></a:r></a:p>', '', `${XF}<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>`, ' hidden="1"')
+      + sp(3, '<a:p><a:r><a:t>Texto visível</a:t></a:r></a:p>', '', XF);
+    const texts: string[] = [];
+    expect(() => {
+      const slide = buildPptx({ slides: [{ tree, root: entrance('2') }] }).slide();
+      expect(slide.shapes.find((s) => s.id === '2')!.hidden).toBe(true);
+      const tl = buildPlaybackTimeline([slide.timing], {});
+      const ctx = new Proxy({ canvas: { width: 100, height: 100 }, measureText: (t: string) => ({ width: t.length * 6 }), getTransform: () => ({}) } as Record<string, unknown>, {
+        get: (t, k: string) => (k in t ? t[k] : k === 'fillText' ? (s: string) => { texts.push(s); } : () => undefined),
+        set: (t, k: string, v) => { t[k] = v; return true; },
+      }) as unknown as CanvasRenderingContext2D;
+      for (const ms of [0, 250, 600, tl.durationMs]) {
+        const st = playbackStateAt(tl, ms);
+        if (!st.slide) continue;
+        const ps = st.slide;
+        paintSlideTo(ctx, slide, { slideW: 9144000, slideH: 5143500 }, 0.0001, {
+          shapeAnim: (sh) => shapeAnimHooks(ps.effects, [sh.id], st.animMs),
+        });
+      }
+    }).not.toThrow();
+    expect(texts.join('')).toContain('visível');
+    expect(texts.join('')).not.toContain('Oculto');
   });
 });

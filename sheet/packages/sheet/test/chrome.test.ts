@@ -83,6 +83,35 @@ describe('sem atributos: a grade como sempre foi', () => {
   });
 });
 
+/** abre um menu da barra compacta e devolve os ids dos itens */
+function openTopMenu(id: string): string[] {
+  const b = top().querySelectorAll<HTMLButtonElement>('.uo-mbtn').find((x) => x.dataset['menu'] === id);
+  if (!b) throw new Error(`menu ${id} ausente`);
+  b.click();
+  const menu = root().querySelector<HTMLElement>('.us-layer')!.querySelector('.uo-menu');
+  return menu ? [...menu.querySelectorAll<HTMLElement>('.uo-menu-item')].map((x) => x.dataset['a'] ?? '') : [];
+}
+
+describe('Sobre', () => {
+  it('sem o atributo about, o menu Ajuda e a guia Ajuda não têm o Sobre', async () => {
+    el.setAttribute('topbar', '');
+    await settle();
+    expect(openTopMenu('help')).toEqual(['shortcuts']);
+    el.setAttribute('toolbar', 'ribbon');
+    await settle();
+    expect(top().querySelector('.uo-ribbon')).not.toBeNull();
+    expect(button('shortcuts')?.hidden).toBe(false);
+    expect(button('about')?.hidden ?? true).toBe(true);
+  });
+
+  it('com o atributo about (demo e app desktop), o Sobre aparece', async () => {
+    el.setAttribute('about', '');
+    el.setAttribute('topbar', '');
+    await settle();
+    expect(openTopMenu('help')).toEqual(['shortcuts', 'about']);
+  });
+});
+
 describe('barra compacta (padrão)', () => {
   it('título acima dos menus do Excel, ferramentas, barra de fórmulas', async () => {
     el.setAttribute('topbar', '');

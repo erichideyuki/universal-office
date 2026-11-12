@@ -25,9 +25,9 @@ function unrotate(r: ShapeRect, px: number, py: number): [number, number] {
   return [cx + dx * Math.cos(a) - dy * Math.sin(a), cy + dx * Math.sin(a) + dy * Math.cos(a)];
 }
 
-/** A forma pode ser selecionada? (decoração do layout/master e partes de SmartArt, não) */
+/** A forma pode ser selecionada? (decoração do layout/master, forma oculta e partes de SmartArt, não) */
 export function selectable(sh: Shape): boolean {
-  return !sh.inherited && !sh.dgmId && !sh.dgmTextOf && !!sh.xfrm;
+  return !sh.inherited && !sh.hidden && !sh.dgmId && !sh.dgmTextOf && !!sh.xfrm;
 }
 
 /** Forma (índice) sob o ponto — a mais ao topo; -1 nenhuma. Linhas finas ganham 4 px de folga. */
@@ -107,7 +107,7 @@ const FOOTER_TYPES = new Set(['dt', 'ftr', 'sldNum', 'hdr']);
 
 /** Placeholder sem texto (o aviso aparece só nele). */
 export function isEmptyPlaceholder(sh: Shape): boolean {
-  if (sh.inherited || (sh.phType === undefined && sh.phIdx === undefined) || FOOTER_TYPES.has(sh.phType ?? '')) return false;
+  if (sh.inherited || sh.hidden || (sh.phType === undefined && sh.phIdx === undefined) || FOOTER_TYPES.has(sh.phType ?? '')) return false;
   if (sh.image || sh.table || sh.chartXml) return false;
   return !(sh.txBody?.paragraphs ?? []).some((p) => p.runs.some((r) => r.text.trim() !== ''));
 }

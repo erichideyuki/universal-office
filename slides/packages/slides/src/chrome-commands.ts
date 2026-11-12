@@ -182,7 +182,7 @@ export function registerSlidesCommands(reg: CommandRegistry, el: UniversalSlides
 
     // ── Ajuda ──
     { id: 'shortcuts', label: L('Keyboard shortcuts', 'Atalhos do teclado', 'Métodos abreviados de teclado'), icon: 'keyboard', run: () => ctl.shortcutsDialog() },
-    { id: 'about', label: L('About Universal Slides', 'Sobre o Universal Slides', 'Acerca de Universal Slides'), icon: 'info', run: () => ctl.aboutDialog() },
+    { id: 'about', label: L('About Universal Slides', 'Sobre o Universal Slides', 'Acerca de Universal Slides'), icon: 'info', supports: () => el.hasAttribute('about'), run: () => ctl.aboutDialog() },
   ];
   reg.add(...cmds);
 }

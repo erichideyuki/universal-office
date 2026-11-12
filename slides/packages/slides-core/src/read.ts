@@ -206,6 +206,7 @@ export function readSlide(pkg: PptxPackage, slidePath: string): Slide {
         const partRels = readRels(pkg, relsPathFor(part), part);
         for (const sh of readShapes(tree, theme, pkg, partRels)) {
           if (sh.phType !== undefined || sh.phIdx !== undefined) continue; // placeholder ≠ decoração
+          if (sh.hidden) continue; // oculta no layout/master: o app não desenha
           sh.inherited = true;
           inherited.push(sh);
         }
@@ -732,6 +733,7 @@ function collectPhStyles(root: XmlElement, theme: Theme, pkg: PptxPackage, map: 
 function readShapes(spTree: XmlElement, theme: Theme, pkg: PptxPackage, rels: Map<string, string>): Shape[] {
   const out: Shape[] = [];
   for (const c of childElements(spTree)) {
+    const from = out.length;
     if (c.name === 'p:sp' || c.name === 'p:cxnSp') out.push(readShape(c, theme, pkg, rels));
     else if (c.name === 'p:pic') out.push(readPic(c, theme, pkg, rels));
     else if (c.name === 'p:graphicFrame') {
@@ -746,6 +748,9 @@ function readShapes(spTree: XmlElement, theme: Theme, pkg: PptxPackage, rels: Ma
       const alt = firstChild(c, 'mc:Fallback') ?? firstChild(c, 'mc:Choice');
       if (alt) out.push(...readShapes(alt, theme, pkg, rels));
     }
+    // oculta (inclusive grupo oculto): MARCA todas as formas que o elemento gera —
+    // não poda, porque o editor localiza as formas no XML pela ordem
+    if (isHiddenDrawing(c)) for (let k = from; k < out.length; k++) out[k]!.hidden = true;
   }
   return out;
 }
@@ -770,14 +775,18 @@ export function readDrawingElements(src: PartSource, ownerPart: string, elements
   });
 }
 
-/** Tira da árvore as formas com `<p:cNvPr hidden="1">` (o app não as desenha). */
+/** Elemento de desenho oculto: `<p:nv…Pr><p:cNvPr hidden="1|true">` (o app não o desenha). */
+function isHiddenDrawing(el: XmlElement): boolean {
+  const nv = childElements(el).find((k) => /^p:nv\w*Pr$/.test(k.name));
+  const h = nv ? firstChild(nv, 'p:cNvPr')?.attrs['hidden'] : undefined;
+  return h === '1' || h === 'true';
+}
+
+/** Tira da árvore as formas ocultas (desenhos de planilha, `readDrawingElements`). */
 function pruneHidden(el: XmlElement): void {
   el.children = el.children.filter((c) => {
     if (typeof c === 'string') return true;
-    const nv = childElements(c).find((k) => /^p:nv\w*Pr$/.test(k.name));
-    const cNvPr = nv ? firstChild(nv, 'p:cNvPr') : undefined;
-    const h = cNvPr?.attrs['hidden'];
-    if (h === '1' || h === 'true') return false;
+    if (isHiddenDrawing(c)) return false;
     if (c.name === 'p:grpSp' || c.name === 'mc:AlternateContent' || c.name === 'mc:Choice' || c.name === 'mc:Fallback') pruneHidden(c);
     return true;
   });

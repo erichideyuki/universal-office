@@ -186,7 +186,7 @@ export function registerSheetCommands(reg: CommandRegistry, el: UniversalSheetEl
 
   // ── Ajuda ──
   cmd({ id: 'shortcuts', label: L('Keyboard shortcuts', 'Atalhos de teclado', 'Métodos abreviados de teclado'), icon: 'keyboard', run: () => ctl.shortcuts() });
-  cmd({ id: 'about', label: L('About Universal Sheet', 'Sobre o Universal Sheet', 'Acerca de Universal Sheet'), icon: 'info', run: () => ctl.about() });
+  cmd({ id: 'about', label: L('About Universal Sheet', 'Sobre o Universal Sheet', 'Acerca de Universal Sheet'), icon: 'info', supports: () => el.hasAttribute('about'), run: () => ctl.about() });
 }
 
 /** Próximo zoom da lista (setas de zoom). */

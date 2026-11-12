@@ -22,7 +22,7 @@ import { openListDialog, listContextItems } from './chrome-lists.js';
 import { ClipboardUI } from './chrome-clipboard.js';
 import { openTextEffectsPane } from './chrome-effects.js';
 import { FindReplaceDialog } from './chrome-find.js';
-import { aboutDialog, authorDialog, columnsDialog, commentDialog, convertNotesDialog, linkDialog, notesDialog, pageDialog, paragraphDialog, shortcutsDialog, showNotesDialog, spellingDialog, tabsDialog, wordCountDialog, type DialogEnv } from './chrome-dialogs.js';
+import { aboutDialog, authorDialog, columnsDialog, commentDialog, convertNotesDialog, notesDialog, pageDialog, paragraphDialog, shortcutsDialog, showNotesDialog, spellingDialog, tabsDialog, wordCountDialog, type DialogEnv } from './chrome-dialogs.js';
 import { NavPane } from './chrome-nav.js';
 import { RulerUI } from './chrome-ruler.js';
 import { ReviewPane, type PaneDir } from './chrome-review.js';

@@ -8,6 +8,7 @@ import type { DmlColor } from './picture-xml.js';
 import type { ShapeStyle } from './drawing.js';
 import { NOTE_REF_TEXT, notePropsXml, emptyNotesPart, ensureNoteParts, type NoteKind } from './notes.js';
 import { HF_NS } from './hf-ops.js';
+import { pruneEditorLinkRels } from './link-rels.js';
 import { runSig, type SourceStore, type StorySource, type StoryGroup, type ParaSource, type SegSource, type WrapSeg } from './source.js';
 import { patchRPr, patchPPr, patchSectPr, pgNumTypeXml, lnNumTypeXml, pPrFromProps, rPrFromProps, splitElement, colsXml, DEFAULT_NUM_IDS, type GenNumIds } from './lossless.js';
 import {
@@ -1609,6 +1610,8 @@ export function writeDocument(
   try {
     writeParts(pkg, model, hfParts, opts, store);
     if (opts.trackRevisions !== undefined) writeTrackRevisions(pkg, opts.trackRevisions);
+    // o pacote é o mesmo entre gravações: o link que saiu do texto sai do .rels
+    if (store) pruneEditorLinkRels(pkg);
   } finally {
     active = null;
   }

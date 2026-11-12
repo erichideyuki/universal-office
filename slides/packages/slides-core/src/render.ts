@@ -83,6 +83,51 @@ export interface PaintSlideOptions {
    * medido; no PowerPoint não medido, fica desligado no Slides).
    */
   clipOverflow?: boolean;
+  /**
+   * Coletor das áreas clicáveis dos hiperlinks de TEXTO (o componente zera a
+   * cada pintura e testa o clique com `hitLinkArea`). Ausente = não coleta
+   * (miniaturas, export).
+   */
+  linkAreas?: SlideLinkArea[];
+}
+
+/** Matriz 2D do canvas (a b c d e f, como `DOMMatrix`). */
+export interface Matrix2D { a: number; b: number; c: number; d: number; e: number; f: number }
+
+/**
+ * Área clicável registrada na pintura: o retângulo LOCAL (`x, y, w, h`, nas
+ * coordenadas em que foi desenhado) e a transformação do contexto naquele
+ * momento (`m`: local → pixels do canvas). `url` = o hiperlink de um pedaço de
+ * run; `null` = a caixa de uma forma com preenchimento, que cobre (bloqueia)
+ * os links desenhados antes dela.
+ */
+export interface SlideLinkArea { url: string | null; x: number; y: number; w: number; h: number; m: Matrix2D }
+
+/**
+ * Hiperlink no ponto (`x, y` em pixels do canvas, o espaço de `m`): a área de
+ * CIMA (a última registrada) que contém o ponto manda — uma forma com
+ * preenchimento por cima esconde o link de baixo. Nenhuma: null.
+ */
+export function hitLinkArea(areas: readonly SlideLinkArea[], x: number, y: number): string | null {
+  for (let i = areas.length - 1; i >= 0; i--) {
+    const r = areas[i]!;
+    const { a, b, c, d, e, f } = r.m;
+    const det = a * d - b * c;
+    if (!(Math.abs(det) > 1e-12)) continue;
+    const dx = x - e, dy = y - f;
+    const lx = (d * dx - c * dy) / det, ly = (a * dy - b * dx) / det;
+    if (lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h) return r.url;
+  }
+  return null;
+}
+
+/** Coletor de áreas de link da pintura em curso (a pintura é síncrona). */
+let linkSink: SlideLinkArea[] | null = null;
+
+/** Transformação atual do contexto (identidade quando ele não a expõe). */
+function matrixOf(ctx: CanvasRenderingContext2D): Matrix2D {
+  const t = typeof ctx.getTransform === 'function' ? ctx.getTransform() as Partial<Matrix2D> | undefined : undefined;
+  return { a: t?.a ?? 1, b: t?.b ?? 0, c: t?.c ?? 0, d: t?.d ?? 1, e: t?.e ?? 0, f: t?.f ?? 0 };
 }
 
 /** Pilha CSS padrão (sem resolvedor: Node, testes, hosts sem componente). */
@@ -218,15 +263,17 @@ export function paintSlideTo(
   scale: number,
   opts: PaintSlideOptions = {},
 ): void {
-  const prev = fontStack, prevImgs = paintImages;
+  const prev = fontStack, prevImgs = paintImages, prevLinks = linkSink;
   fontStack = opts.fontStack ?? DEFAULT_FONT_STACK;
   paintImages = resources.images;
+  linkSink = opts.linkAreas ?? null;
   advCache.clear();
   try {
     paintSlide(ctx, slide, resources, scale, opts);
   } finally {
     fontStack = prev;
     paintImages = prevImgs;
+    linkSink = prevLinks;
   }
 }
 
@@ -289,10 +336,11 @@ export function paintShapesTo(
   scale: number,
   opts: PaintSlideOptions = {},
 ): void {
-  const prev = fontStack, prevImgs = paintImages, prevClip = clipOverflow;
+  const prev = fontStack, prevImgs = paintImages, prevClip = clipOverflow, prevLinks = linkSink;
   fontStack = opts.fontStack ?? DEFAULT_FONT_STACK;
   paintImages = resources.images;
   clipOverflow = !!opts.clipOverflow;
+  linkSink = opts.linkAreas ?? null;
   advCache.clear();
   // o contexto vem do hospedeiro (a grade deixa textAlign/linha tracejada da
   // célula): a pintura assume o estado padrão do canvas
@@ -314,6 +362,7 @@ export function paintShapesTo(
     fontStack = prev;
     paintImages = prevImgs;
     clipOverflow = prevClip;
+    linkSink = prevLinks;
   }
 }
 
@@ -333,6 +382,7 @@ function paintShapeList(
   const scale = fit.scale;
   for (let i = 0; i < shapes.length; i++) {
     const shp = shapes[i]!;
+    if (shp.hidden) continue; // oculta (cNvPr hidden): o app não desenha — nem animada
     // uma forma com dados inválidos (raio negativo, NaN…) não derruba o slide:
     // pula ELA e a pilha save/restore volta ao nível de antes (sem vazar recorte)
     guarded(ctx, () => {
@@ -565,6 +615,8 @@ function paintShape(
       ctx.translate(-cx, -cy);
     }
   }
+  // caixa preenchida: cobre os links desenhados antes (por baixo) dela
+  if (linkSink && coversLinks(sh)) linkSink.push({ url: null, x, y, w, h, m: matrixOf(ctx) });
 
   // camada de FUNDO animada (efeito por letra/palavra com animBg, ou <p:bg/>)
   const bgSt = anim?.hooks.bg ? anim.hooks.bg(anim.base) : undefined;
@@ -1764,6 +1816,7 @@ function paintText(ctx: CanvasRenderingContext2D, sh: Shape, tb: TextBody, x: nu
         ctx.restore(); continue;
       }
     }
+    collectLineLinks(ctx, line, x, y, scale);
     if (line.bullet) {
       // marcador acompanha a 1ª unidade do parágrafo quando o texto entra por unidade
       let bulletOn = true;
@@ -1851,6 +1904,28 @@ function letterFill(ctx: CanvasRenderingContext2D, r: { gradFill?: Fill; fillIma
     pat.setTransform(new DOMMatrix([rr.w / imgW(img), 0, 0, rr.h / imgH(img), rr.x, rr.y]));
   }
   return pat;
+}
+
+/**
+ * A forma recebe o clique na caixa inteira (e esconde os links de baixo): tem
+ * preenchimento, mesmo transparente, imagem, tabela ou gráfico. Sem
+ * preenchimento ela deixa o clique passar, como no app.
+ */
+function coversLinks(sh: Shape): boolean {
+  return shapeFilled(sh) || !!sh.image || !!sh.table || !!sh.chartXml;
+}
+
+/** Registra no coletor as áreas dos runs com hiperlink de uma linha (contexto já transformado). */
+function collectLineLinks(ctx: CanvasRenderingContext2D, line: PlacedLine, x: number, y: number, scale: number): void {
+  if (!linkSink) return;
+  let m: Matrix2D | undefined;
+  const top = line.top ?? line.baseline - line.height * 0.8;
+  for (const r of line.runs) {
+    // letras 100% transparentes (sem contorno): não aparecem, não são clicáveis
+    if (!r.hyperlink || !(r.w > 0) || (r.alpha !== undefined && r.alpha <= 0 && !r.outline)) continue;
+    m ??= matrixOf(ctx);
+    linkSink.push({ url: r.hyperlink, x: x + r.x * scale, y: y + top * scale, w: r.w * scale, h: line.height * scale, m });
+  }
 }
 
 /** A forma tem preenchimento (aí a sombra da forma é só da caixa, não do texto). */

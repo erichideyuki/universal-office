@@ -8,7 +8,12 @@ they are published as separate, optional packages (`packages/`, see
 [Publishing](#publishing)), and the host says where they are.
 
 - **Hunspell 1.7.2 in WebAssembly**, in a **Worker** (the interface does not freeze);
-  without a Worker (CSP without `blob:`, Node), the SAME code runs on the thread.
+  without a Worker (blocked by a CSP, Node), the SAME code runs on the thread. The
+  published `@universal-office/spellcheck` package ships the Worker (`worker.js`) and
+  the emscripten glue (`hunspell.js`) as files next to `index.js`, so a CSP with
+  `script-src 'self' 'wasm-unsafe-eval'` (no `blob:`/`data:`) is enough. An engine that
+  does not start in the Worker nor on the thread stays unavailable until `retry()` or a
+  change in the registry — it is not retried on every check.
 - Only Hunspell, also in Electron (the user's decision): the desktop app
   (`desktop/`) turns off Chromium's spell checker in the Write window
   (`webPreferences.spellcheck: false`) and uses this engine — the result is the same

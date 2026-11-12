@@ -458,8 +458,9 @@ export async function hyperlinkDialog(env: RefsEnv): Promise<void> {
   const tip = el('input', { type: 'text', value: cur?.tip ?? '' });
   const isMail = !!cur?.address?.startsWith('mailto:');
   const address = el('input', { type: 'text', value: cur?.address && !isMail ? cur.address : 'https://', spellcheck: false });
-  const mail = el('input', { type: 'text', value: isMail ? decodeURIComponent(cur!.address!.slice(7).split('?')[0]!) : '', spellcheck: false });
-  const subject = el('input', { type: 'text', value: isMail ? decodeURIComponent(/[?&]subject=([^&]*)/i.exec(cur!.address!)?.[1] ?? '') : '' });
+  const mail = el('input', { type: 'text', value: isMail ? decodeUri(cur!.address!.slice(7).split('?')[0]!) : '', spellcheck: false });
+  const subject = el('input', { type: 'text', value: isMail ? decodeUri(/[?&]subject=([^&]*)/i.exec(cur!.address!)?.[1] ?? '') : '' });
+  const msg = el('div', { className: 'uw-style-msg' });
   const targets = ed.getLinkTargets();
   const place = listBox(220);
   const items = [
@@ -483,13 +484,33 @@ export async function hyperlinkDialog(env: RefsEnv): Promise<void> {
   const body = el('div', { style: 'display:flex;flex-direction:column;gap:10px;min-width:460px' },
     field(t('Text to display:', 'Texto para exibição:', 'Texto que se mostrará:'), display),
     tabs.el,
-    field(t('ScreenTip:', 'Dica de Tela:', 'Información en pantalla:'), tip));
+    field(t('ScreenTip:', 'Dica de Tela:', 'Información en pantalla:'), tip),
+    msg);
+  /** endereço digitado na aba atual (web ou e-mail); vazio = nada a inserir */
+  const typedAddress = (): string => {
+    const tab = tabs.current();
+    if (tab === 'mail') {
+      const a = mail.value.trim();
+      return a ? `mailto:${a.replace(/^mailto:/i, '')}${subject.value.trim() ? `?subject=${encodeURIComponent(subject.value.trim())}` : ''}` : '';
+    }
+    if (tab === 'web') {
+      const a = address.value.trim();
+      return a === 'https://' ? '' : a;
+    }
+    return '';
+  };
   const h = openDialog({
     title: cur ? t('Edit Hyperlink', 'Editar Hiperlink', 'Modificar hipervínculo') : t('Insert Hyperlink', 'Inserir Hiperlink', 'Insertar hipervínculo'), icon: 'link', body, layer: env.layer, lang: env.lang, width: 560,
     actions: [
       ...(cur ? [{ id: 'remove', label: t('Remove Link', 'Remover Link', 'Quitar vínculo') }] : []),
       { id: 'cancel', label: t('Cancel', 'Cancelar', 'Cancelar') }, { id: 'ok', label: 'OK', primary: true },
     ],
+    onAction: (id) => {
+      if (id !== 'ok') return true;
+      const error = hyperlinkAddressError(ed, typedAddress(), env.lang, tabs.current() === 'mail' ? 'mail' : 'web');
+      msg.textContent = error ?? '';
+      return !error;
+    },
   });
   const r = await h.result;
   if (r === 'remove') { ed.removeLink(); return; }
@@ -501,15 +522,31 @@ export async function hyperlinkDialog(env: RefsEnv): Promise<void> {
     const id = place.value();
     if (!id || id.startsWith('#sec')) return;
     ed.insertHyperlink({ anchor: id, ...opts });
-  } else if (tab === 'mail') {
-    const a = mail.value.trim();
-    if (!a) return;
-    ed.insertHyperlink({ address: `mailto:${a.replace(/^mailto:/i, '')}${subject.value.trim() ? `?subject=${encodeURIComponent(subject.value.trim())}` : ''}`, ...opts });
   } else {
-    const a = address.value.trim();
-    if (!a || a === 'https://') return;
+    const a = typedAddress();
+    if (!a) return;
     ed.insertHyperlink({ address: a, ...opts });
   }
+}
+
+/**
+ * Erro do diálogo para o endereço digitado na aba (pela lista `link-schemes` do
+ * elemento); nulo = pode inserir (ou não há endereço).
+ */
+export function hyperlinkAddressError(ed: Pick<UniversalWriteElement, 'checkLinkAddress'>, address: string, lang: UiLang, tab: 'web' | 'mail' = 'web'): string | null {
+  const checked = address ? ed.checkLinkAddress(address) : null;
+  if (!checked || checked.ok) return null;
+  if (checked.reason === 'scheme') {
+    return pickLabels(lang, { en: 'This kind of address is not allowed here.', pt: 'Este tipo de endereço não é permitido aqui.', es: 'Este tipo de dirección no está permitido aquí.' });
+  }
+  return tab === 'mail'
+    ? pickLabels(lang, { en: 'Enter a valid e-mail address, such as name@example.com.', pt: 'Digite um e-mail válido, como nome@exemplo.com.br.', es: 'Escribe un correo electrónico válido, como nombre@ejemplo.com.' })
+    : pickLabels(lang, { en: 'Enter a valid address, such as https://www.example.com.', pt: 'Digite um endereço válido, como https://www.exemplo.com.br.', es: 'Escribe una dirección válida, como https://www.ejemplo.com.' });
+}
+
+/** `decodeURIComponent` que não quebra com `%` solto (link vindo de outro programa). */
+function decodeUri(s: string): string {
+  try { return decodeURIComponent(s); } catch { return s; }
 }
 
 /** Abre o diálogo pedido (a barra chama). */

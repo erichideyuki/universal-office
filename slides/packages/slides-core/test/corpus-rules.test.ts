@@ -1,26 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { zipSync, strToU8 } from 'fflate';
 import {
-  PptxPackage, readPresentation, readSlide, layoutTextBody, isWmf, metafileSize, symbolToUnicode,
-  type TextBody,
+  layoutTextBody, isWmf, metafileSize, symbolToUnicode,
+  type TextBody, type Slide,
 } from '../src/index.js';
 import { symbolText, isSymbolFont } from '../src/symbol-fonts.js';
 import { patternDensity, patternRows } from '../src/patterns.js';
 import { SYMBOL_FAMILY } from '../src/text-layout.js';
 import { diagramFallbackShapes } from '../src/diagram-fallback.js';
 import { parseXml } from '../src/xml.js';
+import { buildPptx, REL } from './helpers/pptx-builder.js';
 
 /**
  * Regras medidas no app de referência contra o corpus real (E:\UniversalSlidesTest,
  * fora do git; ver tools/ppt-lab/CORPUS-REPORT.md). Cada caso aqui é a forma
  * mínima da regra.
  */
-
-const NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"';
-const REL = (id: string, type: string, target: string): string =>
-  `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}"/>`;
-const RELS = (body: string): Uint8Array => strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${body}</Relationships>`);
-const TREE = (s: string): string => `<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${s}</p:spTree></p:cSld>`;
 
 interface DeckParts {
   slide: string;
@@ -31,31 +25,13 @@ interface DeckParts {
   txStyles?: string;
   bg?: string;
   defaultTextStyle?: string;
-  theme?: string;
   media?: Record<string, Uint8Array>;
   slideRels?: string;
 }
 
-const THEME_COLORS = '<a:clrScheme name="t"><a:dk1><a:srgbClr val="111111"/></a:dk1><a:lt1><a:srgbClr val="EEEEEE"/></a:lt1><a:dk2><a:srgbClr val="222222"/></a:dk2><a:lt2><a:srgbClr val="DDDDDD"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2><a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4><a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme>';
-const FMT = '<a:fmtScheme name="f"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:gradFill><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="50000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"/></a:gs></a:gsLst><a:lin ang="5400000"/></a:gradFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="9525"/><a:ln w="12700"/><a:ln w="19050"/></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:gradFill><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"/></a:gs><a:gs pos="100000"><a:srgbClr val="000000"/></a:gs></a:gsLst><a:lin ang="5400000"/></a:gradFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme>';
-
-function deck(d: DeckParts): ReturnType<typeof readSlide> {
-  const files: Record<string, Uint8Array> = {
-    '[Content_Types].xml': strToU8('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/></Types>'),
-    '_rels/.rels': RELS(REL('rId1', 'officeDocument', 'ppt/presentation.xml')),
-    'ppt/presentation.xml': strToU8(`<?xml version="1.0"?><p:presentation ${NS}><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId2"/></p:sldMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/>${d.defaultTextStyle ?? ''}</p:presentation>`),
-    'ppt/_rels/presentation.xml.rels': RELS(REL('rId1', 'slide', 'slides/slide1.xml') + REL('rId2', 'slideMaster', 'slideMasters/slideMaster1.xml') + REL('rId3', 'theme', 'theme/theme1.xml')),
-    'ppt/theme/theme1.xml': strToU8(`<?xml version="1.0"?><a:theme ${NS} name="T"><a:themeElements>${THEME_COLORS}<a:fontScheme name="f"><a:majorFont><a:latin typeface="Major"/></a:majorFont><a:minorFont><a:latin typeface="Minor"/></a:minorFont></a:fontScheme>${FMT}</a:themeElements></a:theme>`),
-    'ppt/slideMasters/slideMaster1.xml': strToU8(`<?xml version="1.0"?><p:sldMaster ${NS}><p:cSld>${d.bg ?? ''}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${d.master ?? ''}</p:spTree></p:cSld><p:clrMap ${d.clrMap ?? 'bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"'}/>${d.txStyles ?? ''}</p:sldMaster>`),
-    'ppt/slideMasters/_rels/slideMaster1.xml.rels': RELS(REL('rId1', 'slideLayout', '../slideLayouts/slideLayout1.xml') + REL('rId2', 'theme', '../theme/theme1.xml')),
-    'ppt/slideLayouts/slideLayout1.xml': strToU8(`<?xml version="1.0"?><p:sldLayout ${NS}>${TREE(d.layout ?? '')}</p:sldLayout>`),
-    'ppt/slideLayouts/_rels/slideLayout1.xml.rels': RELS(REL('rId1', 'slideMaster', '../slideMasters/slideMaster1.xml')),
-    'ppt/slides/slide1.xml': strToU8(`<?xml version="1.0"?><p:sld ${NS}>${TREE(d.slide)}${d.slideRoot ?? ''}</p:sld>`),
-    'ppt/slides/_rels/slide1.xml.rels': RELS(REL('rId1', 'slideLayout', '../slideLayouts/slideLayout1.xml') + (d.slideRels ?? '')),
-    ...(d.media ?? {}),
-  };
-  const pkg = PptxPackage.load(zipSync(files));
-  return readSlide(pkg, readPresentation(pkg).slides[0]!.target!);
+function deck(d: DeckParts): Slide {
+  const { slide, slideRoot, slideRels, ...rest } = d;
+  return buildPptx({ ...rest, slides: [{ tree: slide, ...(slideRoot ? { root: slideRoot } : {}), ...(slideRels ? { rels: slideRels } : {}) }] }).slide();
 }
 
 const sp = (id: number, body: string, ph = '', spPr = ''): string =>

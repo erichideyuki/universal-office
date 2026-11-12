@@ -1,26 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { zipSync, strToU8 } from 'fflate';
 import {
-  PptxPackage, readPresentation, readSlide, readEmbeddedFonts, parseChart, layoutTextBody,
-  type TextBody, type Theme,
+  PptxPackage, readEmbeddedFonts, parseChart, layoutTextBody,
+  type TextBody, type Theme, type Slide,
 } from '../src/index.js';
+import { buildPptx } from './helpers/pptx-builder.js';
 
 const samples = join(__dirname, '..', '..', '..', 'samples');
-const NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"';
-
-/** Pacote mínimo com 1 slide cujo spTree é `tree`. */
-function deckWith(tree: string): ReturnType<typeof readSlide> {
-  const files: Record<string, Uint8Array> = {
-    '[Content_Types].xml': strToU8('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>'),
-    '_rels/.rels': strToU8('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>'),
-    'ppt/presentation.xml': strToU8(`<?xml version="1.0"?><p:presentation ${NS}><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/></p:presentation>`),
-    'ppt/_rels/presentation.xml.rels': strToU8('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/></Relationships>'),
-    'ppt/slides/slide1.xml': strToU8(`<?xml version="1.0"?><p:sld ${NS}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${tree}</p:spTree></p:cSld></p:sld>`),
-  };
-  const pkg = PptxPackage.load(zipSync(files));
-  return readSlide(pkg, readPresentation(pkg).slides[0]!.target!);
+/** Pacote mínimo (sem master/layout/tema) com 1 slide cujo spTree é `tree`. */
+function deckWith(tree: string): Slide {
+  return buildPptx({ template: false, slides: [tree] }).slide();
 }
 
 describe('fontes embutidas do Google Slides (EOT + MicroType Express)', () => {

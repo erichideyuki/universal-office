@@ -3,8 +3,8 @@ import {
   PptxPackage, readPresentation, readSlide, paintSlideTo,
   readEmbeddedFonts, collectDeckTypefaces, readSlideNotes,
   buildPlaybackTimeline, playbackStateAt, shapeAnimHooks, paintTransition, SlideShow, rasterizeSpecialImage,
-  specialImageNeedsPrepare, prepareSpecialImage, tableImages,
-  type ChartModel, type PaintImage, type PaintSlideOptions,
+  specialImageNeedsPrepare, prepareSpecialImage, tableImages, visibleSlideIndexes, hitLinkArea,
+  type ChartModel, type PaintImage, type PaintSlideOptions, type SlideLinkArea,
   type Presentation, type Slide, type Shape, type ImageRef,
   type PlaybackOptions, type PlaybackTimeline, type PlaybackSlide, type SlideShowAction, type SlideTimingModel,
 } from '@universal-office/slides-core';
@@ -168,6 +168,13 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   protected fileBytes: Uint8Array | null = null;
   /** Caminho da parte de cada slide (anotações) e anotações já lidas. */
   private slidePaths: string[] = [];
+  /** Posição de cada slide na lista do arquivo (o viewer pula os ocultos; a faixa `sldRg` é pela posição original). */
+  private slideOrigin: number[] = [];
+  /**
+   * Áreas clicáveis dos hiperlinks de texto do último quadro pintado no canvas
+   * (pixels do canvas, com o devicePixelRatio) — `hitLinkArea` acha o link.
+   */
+  protected linkAreas: SlideLinkArea[] = [];
   private notesCache: (string | undefined)[] = [];
   private anyNotes: boolean | null = null;
 
@@ -511,14 +518,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   loadPptx(bytes: Uint8Array): void {
     const pkg = PptxPackage.load(bytes);
     const pres = readPresentation(pkg);
-    const slides: Slide[] = [];
-    const paths: string[] = [];
-    for (const ref of pres.slides) {
-      if (!ref.target) continue;
-      paths.push(ref.target);
-      try { slides.push(readSlide(pkg, ref.target)); }
-      catch { slides.push({ shapes: [] }); }
-    }
+    const { slides, paths, origin } = this.readDeck(pkg, pres);
     // daqui em diante o deck novo é válido: troca o estado
     this.loadSeq++; // um `src` ainda baixando não sobrescreve este deck
     this.srcUrl = this.getAttribute('src');
@@ -532,6 +532,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     this.pres = pres;
     this.slides = slides;
     this.slidePaths = paths;
+    this.slideOrigin = origin;
     this.notesCache = [];
     this.anyNotes = null;
     this.fileBytes = bytes;
@@ -555,6 +556,33 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     this.controls?.renderThumbs();
     this.a11y?.setName(this.fileName());
     this.dispatchEvent(new CustomEvent('us-loaded', { detail: { count: this.slides.length } }));
+  }
+
+  /**
+   * Slides ocultos (`show="0"`) ficam fora do viewer: navegação, contador,
+   * miniaturas, leitor de tela e `getSlideCount()` só veem os visíveis (como a
+   * apresentação do PowerPoint). O editor mantém todos (`false`).
+   */
+  protected skipHiddenSlides(): boolean { return true; }
+
+  /**
+   * Lê os slides do pacote, com o caminho da parte e a posição original de
+   * cada um (`origin`); sem os ocultos quando `skipHiddenSlides()` (todos
+   * ocultos: ficam todos). Slide ilegível vira um slide vazio.
+   */
+  protected readDeck(pkg: PptxPackage, pres: Presentation): { slides: Slide[]; paths: string[]; origin: number[] } {
+    const slides: Slide[] = [];
+    const paths: string[] = [];
+    const origin: number[] = [];
+    pres.slides.forEach((ref, k) => {
+      if (!ref.target) return;
+      paths.push(ref.target);
+      origin.push(k);
+      try { slides.push(readSlide(pkg, ref.target)); } catch { slides.push({ shapes: [] }); }
+    });
+    if (!this.skipHiddenSlides()) return { slides, paths, origin };
+    const keep = visibleSlideIndexes(slides.map((s) => s.timing));
+    return { slides: keep.map((i) => slides[i]!), paths: keep.map((i) => paths[i]!), origin: keep.map((i) => origin[i]!) };
   }
 
   /** Imagens de um slide (fundo, pic, preenchimentos, tabelas, gráficos, marcadores) no cache. */
@@ -586,16 +614,11 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const pkg = this.pkg;
     if (!pkg) return;
     const pres = readPresentation(pkg);
-    const slides: Slide[] = [];
-    const paths: string[] = [];
-    for (const ref of pres.slides) {
-      if (!ref.target) continue;
-      paths.push(ref.target);
-      try { slides.push(readSlide(pkg, ref.target)); } catch { slides.push({ shapes: [] }); }
-    }
+    const { slides, paths, origin } = this.readDeck(pkg, pres);
     this.pres = pres;
     this.slides = slides;
     this.slidePaths = paths;
+    this.slideOrigin = origin;
     this.notesCache = [];
     this.anyNotes = null;
     for (const s of slides) this.warmSlideImages(s);
@@ -649,8 +672,10 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     // "Configurar apresentação" do arquivo: faixa de slides (fora dela = oculto), repetir, intervalos…
     const cfg = this.pres?.show ?? {};
     const range = cfg.range;
-    const models = this.slides.map((s, i) => (range && (i < range[0] || i > range[1])
-      ? { ...(s.timing ?? NO_TIMING), hidden: true } : s.timing));
+    const models = this.slides.map((s, i) => {
+      const k = this.slideOrigin[i] ?? i; // a faixa é pela posição no arquivo
+      return range && (k < range[0] || k > range[1]) ? { ...(s.timing ?? NO_TIMING), hidden: true } : s.timing;
+    });
     const kiosk = opts.kiosk ?? cfg.kiosk ?? false;
     const start = from === 'start' ? SlideShow.firstVisible(models) : from ?? this.index;
     const ss = new SlideShow(models, start, this.now(), {
@@ -959,7 +984,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * `animMs`. `media = false`: vídeo/GIF ficam na capa (imagem congelada).
    */
   private paintPlaybackSlide(ctx: CanvasRenderingContext2D, ps: PlaybackSlide, animMs: number,
-    fit: { ox: number; oy: number; scale: number }, media = true): void {
+    fit: { ox: number; oy: number; scale: number }, media = true, linkAreas?: SlideLinkArea[]): void {
     const slide = this.slides[ps.index];
     if (!slide || !this.pres) return;
     const bg = new Set(slide.timing?.animBg ?? []);
@@ -972,6 +997,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
       images: this.readyImages(slide), charts: this.chartCache,
     }, fit.scale, {
       ox: fit.ox, oy: fit.oy, fontStack: this.fontStackFor,
+      ...(linkAreas ? { linkAreas } : {}),
       // motor SMIL: cada forma toca os comportamentos gravados no arquivo
       shapeAnim: (sh) => (sh.inherited || !ps.effects.length ? null
         : shapeAnimHooks(ps.effects, sh.groupIds ? [sh.id, ...sh.groupIds] : [sh.id], animMs,
@@ -1041,7 +1067,8 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     if (!slide || !fit || !this.pres) return;
     this.media.fullScreen = null;
     if (progress >= 1) {
-      this.paintPlaybackSlide(ctx, slide, animMs, fit);
+      // slide parado em cena: os links dele são clicáveis (na transição, não)
+      this.paintPlaybackSlide(ctx, slide, animMs, fit, true, this.linkAreas);
       this.paintFullScreenVideo(ctx, fit);
       if (this.media.mode === 'realtime') this.media.syncRealtime();
       return;
@@ -1151,14 +1178,15 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   };
 
   /**
-   * Detecta hyperlink na posição (canvas-relativa) e abre URL se houver.
-   * v1: o link é "shape-wide" (a primeira run com hyperlink no txBody manda).
+   * Clique sobre um hiperlink de texto abre o endereço DAQUELE trecho numa nova
+   * aba (sem `opener` nem `Referer`). Na navegação o clique nunca avança o
+   * slide; na apresentação, avança (fora de link).
    */
   protected onClick = (e: MouseEvent): void => {
     if (this.isEditing()) return;
     const hit = this.hitTestHyperlink(e);
     if (hit) {
-      window.open(hit, '_blank', 'noopener');
+      window.open(hit, '_blank', 'noopener,noreferrer');
       e.preventDefault();
       return;
     }
@@ -1171,30 +1199,17 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     this.canvas.style.cursor = this.hitTestHyperlink(e) ? 'pointer' : 'default';
   };
 
-  /** Devolve a primeira URL de hyperlink sob (clientX, clientY) ou null. */
+  /**
+   * Hiperlink sob (clientX, clientY) ou null: o trecho de texto com link
+   * desenhado ali no último quadro (girado, animado…). Uma forma com
+   * preenchimento por cima esconde o link de baixo.
+   */
   protected hitTestHyperlink(e: MouseEvent): string | null {
     if (this.show?.ss.ended) return null; // tela de fim: nada clicável
-    const slide = this.slides[this.index];
-    const fit = this.fit();
-    if (!slide || !fit) return null;
+    if (!this.linkAreas.length) return null;
     const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    for (let i = slide.shapes.length - 1; i >= 0; i--) {
-      const sh = slide.shapes[i]!;
-      if (!sh.xfrm || !sh.txBody) continue;
-      const sx = fit.ox + sh.xfrm.x * fit.scale;
-      const sy = fit.oy + sh.xfrm.y * fit.scale;
-      const sw = sh.xfrm.cx * fit.scale;
-      const sh2 = sh.xfrm.cy * fit.scale;
-      if (x < sx || x > sx + sw || y < sy || y > sy + sh2) continue;
-      for (const p of sh.txBody.paragraphs) {
-        for (const r of p.runs) {
-          if (r.hyperlink) return r.hyperlink;
-        }
-      }
-    }
-    return null;
+    const dpr = window.devicePixelRatio || 1;
+    return hitLinkArea(this.linkAreas, (e.clientX - rect.left) * dpr, (e.clientY - rect.top) * dpr);
   }
 
   protected resize(): void {
@@ -1232,6 +1247,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   }
 
   private paintFrame(): void {
+    this.linkAreas = [];
     const ctx = this.canvas.getContext('2d');
     if (!ctx) return;
     if (this.auto) { this.paintPlayback(ctx); return; }
@@ -1254,7 +1270,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     }
 
     // conteúdo do slide (fundo + shapes) — função pura compartilhada
-    const paintOpts: PaintSlideOptions = { ox: fit.ox, oy: fit.oy, fontStack: this.fontStackFor };
+    const paintOpts: PaintSlideOptions = { ox: fit.ox, oy: fit.oy, fontStack: this.fontStackFor, linkAreas: this.linkAreas };
     const suppress = this.suppressTextIdx();
     if (suppress !== undefined) paintOpts.suppressTextShapeIdx = suppress;
     paintSlideTo(ctx, slide, {

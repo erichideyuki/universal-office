@@ -199,7 +199,7 @@ import {
   FontResolver, METRIC_SUBSTITUTES, DEFAULT_EMBEDDING, isFontFile, planFontEmbedding, readDocxEmbedding, writeDocxEmbedding,
   type ResolvedFont, type FontEmbeddingSettings, type FontUsage, type EmbeddingPlan,
 } from '@universal-office/fonts';
-import { uiLocale, onBrowserLangChange, uiLang, pickLabels, PluginRegistry, ColorSchemeWatcher, forceColorScheme, themeMode, COMPACT_NARROW_WIDTH, type ColorScheme } from '@universal-office/ui';
+import { uiLocale, onBrowserLangChange, uiLang, pickLabels, PluginRegistry, ColorSchemeWatcher, forceColorScheme, themeMode, COMPACT_NARROW_WIDTH, normalizeLinkAddress, parseLinkSchemes, type ColorScheme, type LinkAddressResult } from '@universal-office/ui';
 import {
   SfntFont,
   type LayoutFont,
@@ -646,6 +646,9 @@ export interface PasteData {
   /** a cópia rica deste editor (a mesma página) */
   rich?: RichClip;
 }
+
+/** Azuis de hiperlink (o do HTML e o do estilo Hyperlink do Word): saem do link colado que é recusado. */
+const HYPERLINK_BLUES: ReadonlySet<string> = new Set(['0000FF', '0563C1']);
 
 /** Parágrafo de uma cópia: os trechos e, se a marca (¶) veio junto, a formatação dela. */
 interface ClipPara {
@@ -1973,6 +1976,30 @@ export class UniversalWriteElement extends HTMLElement {
   set hiddenCommands(ids: readonly string[]) {
     this.hiddenCommandList = [...ids];
     if (this.initialized) void this.updateChrome();
+  }
+
+  /** Lista da propriedade `linkSchemes` (undefined = vale o atributo). */
+  private linkSchemeList: readonly string[] | null | undefined;
+
+  /**
+   * Esquemas permitidos nos hiperlinks inseridos pelo diálogo, pela API ou
+   * colados (`http`, `https`, `mailto`…). Atributo `link-schemes` (separado por
+   * vírgula ou espaço) ou esta propriedade. Nulo/ausente = sem restrição (o
+   * comportamento de sempre, com link para arquivo); com lista, endereço sem
+   * esquema vira `mailto:` (e-mail) ou `http://` (endereço web) e o resto é
+   * recusado. `javascript:`, `vbscript:`, `data:` e `blob:` nunca entram.
+   */
+  get linkSchemes(): readonly string[] | null {
+    return this.linkSchemeList !== undefined ? this.linkSchemeList : parseLinkSchemes(this.getAttribute('link-schemes'));
+  }
+
+  set linkSchemes(schemes: readonly string[] | null) {
+    this.linkSchemeList = schemes ? parseLinkSchemes(schemes.join(' ')) : null;
+  }
+
+  /** O endereço do link pela lista `link-schemes` (pronto para gravar) ou o motivo da recusa. */
+  checkLinkAddress(address: string): LinkAddressResult {
+    return normalizeLinkAddress(address, this.linkSchemes);
   }
 
   // ───────────────────── arquivos soltos ─────────────────────
@@ -3482,19 +3509,29 @@ export class UniversalWriteElement extends HTMLElement {
   }
 
   setAlignment(a: 'left' | 'center' | 'right' | 'both'): void { this.formatPara({ alignment: a }); }
-  /** Aplica hyperlink à seleção; sem seleção e com url, insere a url já linkada. */
-  setLink(url: string | undefined): void {
-    if (!this.model || this.locked() || (url && !this.canInsertField())) return;
+  /**
+   * Aplica hyperlink à seleção; sem seleção e com url, insere a url já linkada.
+   * Falso (sem efeito) quando o endereço é recusado pela lista `link-schemes`.
+   */
+  setLink(url: string | undefined): boolean {
+    if (!this.model || this.locked() || (url && !this.canInsertField())) return false;
+    let link: string | undefined;
+    if (url) {
+      const checked = this.checkLinkAddress(url);
+      if (!checked.ok) return false;
+      link = checked.address;
+    }
     this.snapshot();
     if (this.hasSelection()) {
-      applyRunProps(this.model, this.range(), { link: url || undefined });
-    } else if (url) {
+      applyRunProps(this.model, this.range(), { link });
+    } else if (url && link) {
       const start = this.selection.focus;
-      const pos = this.insertTyped(start, url);
-      applyRunProps(this.model, { start, end: pos }, { link: url });
+      const pos = this.insertTyped(start, url.trim());
+      applyRunProps(this.model, { start, end: pos }, { link });
       this.selection = { anchor: pos, focus: pos };
     }
     this.refresh();
+    return true;
   }
   // ───────────────────────── listas (Marcadores, Numeração, Vários Níveis) ─────────────────────────
   // O word/numbering.xml é editado sem perdas por DocNumbering (numbering-store.ts); as regras
@@ -5065,18 +5102,20 @@ export class UniversalWriteElement extends HTMLElement {
       this.pasteDrawing(rich.drawing); this.lastPaste = null; return;
     }
     if (rich?.cells && m !== 'text') {
-      const clip = rp ? { ...rich, cells: { ...rich.cells, table: this.policyTable(TOps.cloneTable(rich.cells.table), rp, rich) } } : rich;
+      const table = this.filterPastedLinksInTable(rp ? this.policyTable(TOps.cloneTable(rich.cells.table), rp, rich) : TOps.cloneTable(rich.cells.table));
+      const clip = { ...rich, cells: { ...rich.cells, table } };
       this.pasteRich(clip); this.lastPaste = null; this.onSelectionChange?.(); this.chromeSync?.(); return;
     }
     if (m === 'picture') { void this.pastePicture(d); return; }
     if (m === 'text') r = this.pasteTextOnly(rich ? clipText(rich) : d.text);
     else if (rich) {
       const c = rp ? this.policyClip(rich.paras, rp, rich, rich.tables) : { paras: rich.paras, tables: rich.tables };
-      r = this.insertClip(c.paras, { mode: m === 'merge' ? 'merge' : 'keep', tables: c.tables, from: rich });
+      const tables = c.tables?.map((t) => ({ before: t.before, table: this.filterPastedLinksInTable(rp ? t.table : TOps.cloneTable(t.table)) }));
+      r = this.insertClip(this.filterPastedLinks(c.paras), { mode: m === 'merge' ? 'merge' : 'keep', tables, from: rich });
     } else if (d.html && !/^\s*$/.test(d.html)) {
       if ((!rp || rp.allows('tables')) && /<table[\s>]/i.test(d.html) && !/<(?:p|h[1-6]|li|div)[\s>]/i.test(d.html.replace(/<table[\s\S]*?<\/table>/gi, '')) && this.pasteHtmlTables(d.html)) { this.lastPaste = null; this.onSelectionChange?.(); this.chromeSync?.(); return; }
       const paras = this.htmlClipParas(d.html, m);
-      r = this.insertClip(rp ? this.policyClip(paras, rp).paras : paras, { mode: m === 'merge' ? 'merge' : 'keep' });
+      r = this.insertClip(this.filterPastedLinks(rp ? this.policyClip(paras, rp).paras : paras), { mode: m === 'merge' ? 'merge' : 'keep' });
     } else if (d.image) {
       if (rp && !rp.allows('images')) return;
       void this.insertImage(d.image.data, d.image.ext); this.lastPaste = null; return;
@@ -5116,6 +5155,7 @@ export class UniversalWriteElement extends HTMLElement {
   private pasteDrawing(src: Run): void {
     if (!this.model || this.locked() || this.tbEdit) return;
     const run = UniversalWriteElement.cloneDrawingRun(src);
+    for (const p of run.textbox?.paras ?? []) this.filterPastedLinksInParagraph(p);
     const obj = (run.textbox ?? run.shape ?? run.group ?? run.image)!;
     const id = this.nextDrawingId();
     if (obj.rawDrawingXml) {
@@ -5288,6 +5328,53 @@ export class UniversalWriteElement extends HTMLElement {
       return listKindOfFormat(this.numbering.level(id, num.ilvl)?.numFmt);
     }
     return num.kind;
+  }
+
+  /**
+   * Link colado: endereço pela lista `link-schemes`; recusado vira texto comum
+   * (sem a dica, o estilo Hyperlink e o azul sublinhado que vinham com o link).
+   */
+  private withAllowedLink(props: RunProps): RunProps {
+    if (!props.link) return props;
+    const checked = this.checkLinkAddress(props.link);
+    if (checked.ok) return checked.address === props.link ? props : { ...props, link: checked.address };
+    const { link: _link, linkTip: _tip, ...rest } = props;
+    const hyperlinkStyle = !!rest.charStyle && rest.charStyle === this.builtinStyleId('Hyperlink');
+    const linkBlue = !!rest.color && HYPERLINK_BLUES.has(rest.color.toUpperCase());
+    if (hyperlinkStyle) delete rest.charStyle;
+    if (linkBlue) delete rest.color;
+    if ((hyperlinkStyle || linkBlue) && rest.underline === true) rest.underline = false;
+    return rest;
+  }
+
+  private filterPastedLinks(paras: ClipPara[]): ClipPara[] {
+    return paras.map((cp) => (cp.runs.some((run) => run.props?.link)
+      ? { ...cp, runs: cp.runs.map((run) => (run.props?.link ? { ...run, props: this.withAllowedLink(run.props) } : run)) }
+      : cp));
+  }
+
+  /** Mesmo filtro num parágrafo que já é uma cópia (muda no lugar). */
+  private filterPastedLinksInParagraph(p: Paragraph): void {
+    for (const run of p.runs) if (run.props?.link) run.props = this.withAllowedLink(run.props);
+  }
+
+  /** Mesmo filtro nas células (a tabela já é uma cópia: muda no lugar). */
+  private filterPastedLinksInTable(t: TableBlock): TableBlock {
+    const para = (p: Paragraph): void => this.filterPastedLinksInParagraph(p);
+    const table = (tb: TableBlock): void => {
+      for (const row of tb.rows) {
+        for (const cell of row.cells) {
+          for (const p of cell.paragraphs) para(p);
+          for (const nested of cell.tables) table(nested);
+          for (const b of cell.blocks ?? []) {
+            if (b.type === 'paragraph') para(b.paragraph);
+            else if (!cell.tables.includes(b)) table(b);
+          }
+        }
+      }
+    };
+    table(t);
+    return t;
   }
 
   /**
@@ -5689,7 +5776,7 @@ export class UniversalWriteElement extends HTMLElement {
     this.selection = { anchor: pos, focus: pos };
     // o resultado: a cópia (sem desfazer próprio — é o mesmo passo)
     const depth = this.undoStack.length;
-    const r = text ? this.pasteTextOnly(clipText(clip)) : this.insertClip(clip.paras, { mode: 'keep', from: clip });
+    const r = text ? this.pasteTextOnly(clipText(clip)) : this.insertClip(this.filterPastedLinks(clip.paras), { mode: 'keep', from: clip });
     while (this.undoStack.length > depth) this.undoStack.pop();
     pos = r?.end ?? pos;
     pos = this.insertWholeRun(pos, { text: '', props, fieldEnd: true });
@@ -7706,11 +7793,17 @@ export class UniversalWriteElement extends HTMLElement {
    * Inserir/editar hiperlink (diálogo Link): endereço (web, arquivo, mailto:) ou
    * destino no documento (indicador; título = _Toc oculto nele; "_top" = início),
    * Dica de Tela (w:tooltip) e texto para exibição. Os runs levam o estilo
-   * Hyperlink, como o Word grava (oráculo hl-*).
+   * Hyperlink, como o Word grava (oráculo hl-*). Falso (sem efeito) quando o
+   * endereço é recusado pela lista `link-schemes` (ver `checkLinkAddress`).
    */
   insertHyperlink(opts: HyperlinkOptions): boolean {
     if (!this.model || this.locked() || !this.canInsertField()) return false;
-    let link = opts.address?.trim() ?? '';
+    let link = '';
+    if (opts.address?.trim()) {
+      const checked = this.checkLinkAddress(opts.address);
+      if (!checked.ok) return false;
+      link = checked.address;
+    }
     this.snapshot();
     if (!link && opts.anchor) {
       const para = this.paraOfItem(opts.anchor);
@@ -17015,6 +17108,21 @@ export class UniversalWriteElement extends HTMLElement {
   async addToDictionary(word: string): Promise<void> { await this.spellEngine?.add(word); }
 
   /**
+   * Estado da revisão ortográfica: `off` sem motor/dicionário registrado (sem
+   * `spellcheck-url` nem registro), `unavailable` quando o motor não subiu (até
+   * `retrySpelling()`), senão o do motor.
+   */
+  get spellingState(): 'off' | 'idle' | 'starting' | 'ready' | 'unavailable' {
+    if (!spellcheckAvailable()) return 'off';
+    return this.spellEngine?.engineState ?? 'idle';
+  }
+
+  /** Nova chance ao motor da revisão que falhou (o F7 chama antes de revisar). */
+  retrySpelling(): void {
+    this.spellEngine?.retry?.();
+  }
+
+  /**
    * Próxima palavra errada a partir do cursor (diálogo Ortografia): revisa os
    * parágrafos na hora, seleciona a palavra e a traz para a vista. `skip`: as
    * "ignorar uma vez" do diálogo. null = nada mais (dá a volta no documento).
@@ -20483,7 +20591,7 @@ export class UniversalWriteElement extends HTMLElement {
    */
   pasteCells(mode: 'overwrite' | 'rows' | 'nest' | 'text' = 'overwrite', clip: RichClip['cells'] = this.richClip?.cells): boolean {
     if (!clip || !this.model || this.locked() || this.view === 'read') return false;
-    const src = clip.table;
+    const src = this.filterPastedLinksInTable(TOps.cloneTable(clip.table));
     if (mode === 'text') { this.pasteText(UniversalWriteElement.tableClipText(src).text); return true; }
     const tg = this.tableTarget();
     if (!tg) {
@@ -20593,7 +20701,7 @@ export class UniversalWriteElement extends HTMLElement {
     const tables = UniversalWriteElement.tablesFromHtml(html, this.contentWidthTwips());
     if (!tables.length) return false;
     const rp = this.resolvedFormattingPolicy();
-    return this.pasteCells('overwrite', { table: rp ? this.policyTable(tables[0]!, rp) : tables[0]!, rows: true, whole: true });
+    return this.pasteCells('overwrite', { table: this.filterPastedLinksInTable(rp ? this.policyTable(tables[0]!, rp) : tables[0]!), rows: true, whole: true });
   }
 
   // ───────────── tabelas: mouse (bordas, alças, pincel, borracha, lápis) ─────────────

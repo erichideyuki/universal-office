@@ -12,6 +12,9 @@ with a player-style control bar, like the browser's `<video>`.
 - Control bar: previous/next, play, mute, thumbnails, speaker notes,
   download, present, full screen and a seekable progress bar
 - Fonts embedded in the file are used; missing ones fall back like PowerPoint
+- Hidden items stay hidden, as in PowerPoint's slide show: hidden slides are
+  skipped and hidden shapes (Selection Pane) are not drawn
+- Text hyperlinks open in a new tab — each link its own address
 - Accessible: a text version of each slide for screen readers, announced on
   every change; full keyboard support; English, Portuguese and Spanish UI
 - Any control can be removed or restyled from outside
@@ -59,7 +62,7 @@ is letterbox.
 | Method | Description |
 |---|---|
 | `loadPptx(bytes: Uint8Array)` | Opens .pptx or .ppt. Throws on an invalid file and keeps the current one. |
-| `getSlideCount()` · `getSlideIndex()` · `selectSlide(i)` · `next()` · `prev()` | Navigation (0-based). |
+| `getSlideCount()` · `getSlideIndex()` · `selectSlide(i)` · `next()` · `prev()` | Navigation (0-based) over the visible slides: hidden slides (`show="0"`) are left out of the count, the indexes, the thumbnails and the screen-reader text (when every slide is hidden, all are shown). |
 | `present(from?, opts?)` · `stopPresentation()` · `isPresenting()` | Slide show. `from = 'start'` begins at the first visible slide. Call from a user gesture (full screen needs one). |
 | `play(opts?)` · `stopPlayback()` · `isPlaying()` | Automatic playback with the file's timings. |
 | `getSlideNotes(i)` | Speaker notes as plain text. |
@@ -70,12 +73,19 @@ is letterbox.
 `present()` options (defaults come from the file's slide-show settings):
 `{ useTimings, loop, fullscreen, animations, kiosk }`. `play()` options:
 `{ from, loop, useTimings, defaultSlideMs, media: 'realtime' | 'seek' }`.
+The slide range of the file's slide-show settings counts the slides by their
+position in the file, hidden ones included, as in PowerPoint.
+
+Clicking a text hyperlink (`http`/`https`) opens that link's address in a new
+tab (`noopener,noreferrer`), and the pointer becomes a hand only over a link.
+A link covered by a filled shape on top of it does not open; links on
+shapes, pictures and tables are not supported yet.
 
 ## Events
 
 | Event | `detail` | When |
 |---|---|---|
-| `us-loaded` | `{ count }` | A presentation finished loading. |
+| `us-loaded` | `{ count }` | A presentation finished loading (`count` = visible slides). |
 | `us-error` | `{ src, error }` | `src` could not be fetched or read. |
 | `us-slide` | `{ index }` (`{ index, step, steps }` while presenting) | The slide changed. |
 | `us-step` | `{ index, step, steps }` | A click step while presenting. |

@@ -4,7 +4,71 @@ Changes per version of the published UniversalOffice packages (npm
 `@universal-office/*` and NuGet `UniversalOffice.*`). How to publish:
 `docs/publishing.md`.
 
-## Unreleased
+## 0.9.4 — 2026-11-12
+
+All npm and NuGet packages ship as 0.9.4 (the products depend on
+`@universal-office/font-files` 0.9.4).
+
+### Hyperlink addresses in Write
+
+- New `link-schemes` attribute (and `linkSchemes` property) on `<universal-write>`:
+  the schemes allowed in links inserted by the Link dialog (Ctrl+K), by the API
+  (`insertHyperlink`, `setLink`) or pasted. Without it nothing changes (links to files
+  keep working), except that `www.…` becomes `http://www.…`. With a list, an address
+  without a scheme becomes `mailto:` (e-mail) or `http://` (web address; `https://`
+  when only it is allowed) and anything else is refused (web addresses also need a
+  valid host and a port up to 65535): the dialog shows the reason
+  and stays open, the API returns `false` (`setLink` now returns a boolean) and a
+  pasted link becomes plain text. `javascript:`, `vbscript:`, `data:` and `blob:` are
+  never accepted. `checkLinkAddress(address)` tells the normalized address or why it
+  is refused; `normalizeLinkAddress`/`parseLinkSchemes` live in `@universal-office/ui`.
+- A hyperlink relationship created by the editor (`rIdWnLink<n>`) leaves the part's
+  `.rels` when no link uses it anymore. The package is reused between saves, so a
+  removed link (e.g. one with an address the host refuses) used to stay in the file
+  for good.
+
+### Spell checking under a strict Content Security Policy
+
+- `@universal-office/spellcheck` now ships `worker.js` (the engine Worker) and
+  `hunspell.js` (the emscripten glue) next to `index.js`, which exports their URLs
+  (`workerUrl`, `glueUrl`). The Worker and the glue load from those files, so
+  `script-src 'self' 'wasm-unsafe-eval'` is enough — no `blob:` or `data:` (before,
+  both were blocked and spell checking did nothing). Hosts that serve the package
+  folder (`spellcheck-url`) must serve the two new files too.
+- An engine that does not start (in the Worker nor on the main thread) stays
+  unavailable until `SpellChecker.retry()` or a change in the registry: it used to
+  be started again for every paragraph on every repaint (thousands of console
+  errors and a stuttering editor). The WASM binary is decoded only after the glue
+  loads. New `SpellChecker.engineState`.
+- F7 (Spelling) retries an unavailable engine once and says "Spell checking is
+  unavailable" instead of "The spelling check is complete". New
+  `spellingState` and `retrySpelling()` on `<universal-write>`.
+
+### Slides: hidden slides, hidden shapes and links
+
+- `<universal-slides-viewer>` skips hidden slides (`show="0"`), as PowerPoint's slide
+  show does: navigation, counter, thumbnails, screen-reader text, `getSlideCount()`
+  and `us-loaded` only count the visible ones (if every slide is hidden, all are
+  shown). The slide show range (`sldRg`) still counts by position in the file. The
+  editor keeps showing hidden slides.
+- Shapes hidden in PowerPoint's Selection Pane (`cNvPr hidden`, also inside hidden
+  groups and on the layout/master) are no longer drawn (viewer, editor, thumbnails,
+  export), take no clicks and stay out of the accessible text. In the editor they
+  can no longer be selected (there is no Selection Pane yet to show them again);
+  they are kept in the file.
+- Each text hyperlink opens its own address (any click on the shape used to open its
+  first link); the pointer is a hand only over a link, a link covered by a filled
+  shape does not open, and the new tab opens with `noopener,noreferrer`. New in
+  slides-core: `PaintSlideOptions.linkAreas`, `hitLinkArea`, `visibleSlideIndexes`.
+
+### Bars
+
+- `BarContribution.ribbon.trailing`: host items to the right of the ribbon's title
+  row (until now only the compact bar took them, so a host's title actions vanished
+  when the user switched to the ribbon).
+- Help › About only appears with the new `about` attribute on `<universal-write>`,
+  `<universal-sheet>` and `<universal-slides>` (the demos and the desktop app set it;
+  an embedded editor does not show the library's About box).
 
 ### Opening documents on slower machines
 

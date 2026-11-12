@@ -98,6 +98,19 @@ describe('revisão ortográfica do Write', () => {
     expect(await spell.check(de)).toEqual([]);
   });
 
+  it('motor falhando: o parágrafo não volta para a fila a cada pintura', async () => {
+    const engine = fakeEngine();
+    engine.checkText = async () => { engine.calls++; throw new Error('motor indisponível'); };
+    const spell = new ParagraphSpell(engine, () => new LangResolver(sheet), () => {}, 5);
+    const p = para(run('palavrra errrada'));
+    expect(spell.get(p)).toBeUndefined();
+    await tick();
+    expect(engine.calls).toBe(1);
+    for (let i = 0; i < 5; i++) expect(spell.get(p)).toEqual([]);
+    await tick();
+    expect(engine.calls).toBe(1);
+  });
+
   it('misspellingAt acha o erro que contém ou toca o cursor', () => {
     const list = [{ word: 'axxb', start: 3, end: 7, lang: 'pt-BR' }];
     expect(misspellingAt(list, 3)?.word).toBe('axxb');

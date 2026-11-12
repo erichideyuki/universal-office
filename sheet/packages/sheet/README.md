@@ -82,6 +82,7 @@ spreadsheet app with menus, formula bar and sheet tabs, add the bars:
 | `accent` | `green` (default) · `teal` · `blue` · `amber` · `red` · `purple` · `neutral`: the element's own palette for the bars and the selection (used even when the page has `--u-color-*` tokens). |
 | `storage-key` | Remembers this instance's bar choices (toolbar style, formula bar, sheet tabs, theme, accent) in `localStorage`. Falls back to `id`; with neither, choices last only for the session. |
 | `hidden-commands` / `hiddenCommands` | Commands, menus, groups, tabs and bar controls to hide (comma- or space-separated), everywhere: bars, menus, context menu and shortcuts — like the Write's. Example: `hidden-commands="file title save print sheet:insert"`. |
+| `about` | Shows Help › About (the demo and the desktop app set it; embedded spreadsheets usually do not). |
 | `nofiledrop` | The bars never open dropped files (the cancelable `us-file-drop` still fires). |
 | `nounloadprompt` | No browser "leave page?" prompt for unsaved changes. |
 | `host` | Optional integration with the host app (Electron): native dialogs, OS fonts, close confirmation, window controls (see [Host integration](#host-integration)). |

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  SlideShow, mirrorTransition, STEP_PENDING,
+  SlideShow, mirrorTransition, STEP_PENDING, visibleSlideIndexes,
   type AnimStep, type EffectTiming, type SlideTimingModel, type SlideTransitionInfo,
 } from '../src/index.js';
 
@@ -224,5 +224,18 @@ describe('transição espelhada (voltar)', () => {
     const fade = tr({ type: 'fade' });
     expect(mirrorTransition(fade)).toBe(fade);
     expect(mirrorTransition(undefined)).toBeUndefined();
+  });
+});
+
+describe('visibleSlideIndexes', () => {
+  it('pula os slides ocultos (show="0"), na ordem do arquivo', () => {
+    expect(visibleSlideIndexes([slide(), slide({ hidden: true }), slide(), slide({ hidden: true })])).toEqual([0, 2]);
+  });
+  it('todos ocultos: devolve todos (o deck não fica vazio); deck vazio: nenhum', () => {
+    expect(visibleSlideIndexes([slide({ hidden: true }), slide({ hidden: true }), slide({ hidden: true })])).toEqual([0, 1, 2]);
+    expect(visibleSlideIndexes([])).toEqual([]);
+  });
+  it('slide sem modelo de tempo conta como visível', () => {
+    expect(visibleSlideIndexes([undefined, slide({ hidden: true })])).toEqual([0]);
   });
 });

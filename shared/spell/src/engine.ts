@@ -1,8 +1,12 @@
 /**
  * Lado do MOTOR: o Hunspell (WASM) atrás de um protocolo de mensagens. A mesma
- * função roda dentro do Worker (fonte = `spellEngineMain.toString()`, num Blob)
- * ou no próprio thread quando o Worker não está disponível (CSP sem blob:, Node
- * nos testes) — um caminho de código só.
+ * função roda dentro do Worker (o `worker.js` do pacote spellcheck, ou a fonte
+ * de `spellEngineMain.toString()` num Blob) ou no próprio thread quando o Worker
+ * não está disponível (CSP, Node nos testes) — um caminho de código só.
+ *
+ * `glueUrl`: o glue do emscripten como arquivo (o `hunspell.js` do pacote), para
+ * hospedeiro com CSP sem blob:/data: em script-src. Vem de quem chama (o próprio
+ * worker.js ou o módulo do motor), nunca de uma mensagem.
  *
  * Por isso `spellEngineMain` é AUTOCONTIDA: não pode referenciar nada de fora do
  * próprio corpo (nem imports, nem constantes do módulo), senão o Worker quebra.
@@ -25,7 +29,7 @@ export interface EngineScope {
   postMessage(msg: EngineResponse): void;
 }
 
-export function spellEngineMain(scope: EngineScope): void {
+export function spellEngineMain(scope: EngineScope, glueUrl?: string): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mod: any = null;
   /** h = instância Hunspell; added = palavras do usuário que entraram nela */
@@ -60,15 +64,21 @@ export function spellEngineMain(scope: EngineScope): void {
 
   async function init(glue: string, wasmBase64: string): Promise<void> {
     if (mod) return;
-    const bin = Uint8Array.from(atob(wasmBase64), (c) => c.charCodeAt(0));
     let factory;
-    try {
-      const url = URL.createObjectURL(new Blob([glue], { type: 'text/javascript' }));
-      try { factory = (await import(/* @vite-ignore */ url)).default; } finally { URL.revokeObjectURL(url); }
-    } catch {
-      // Node (testes) não importa blob: — data: funciona nos dois
-      factory = (await import(/* @vite-ignore */ 'data:text/javascript;charset=utf-8,' + encodeURIComponent(glue))).default;
+    if (glueUrl) {
+      // arquivo do próprio domínio: nada de blob:/data: (a CSP do hospedeiro barraria)
+      factory = (await import(/* @vite-ignore */ /* webpackIgnore: true */ glueUrl)).default;
+    } else {
+      try {
+        const url = URL.createObjectURL(new Blob([glue], { type: 'text/javascript' }));
+        try { factory = (await import(/* @vite-ignore */ url)).default; } finally { URL.revokeObjectURL(url); }
+      } catch {
+        // Node (testes) não importa blob: — data: funciona nos dois
+        factory = (await import(/* @vite-ignore */ 'data:text/javascript;charset=utf-8,' + encodeURIComponent(glue))).default;
+      }
     }
+    // o binário (~1 MB) só é decodificado depois que o glue carregou
+    const bin = Uint8Array.from(atob(wasmBase64), (c) => c.charCodeAt(0));
     // locateFile: o glue não monta new URL('hunspell.wasm', import.meta.url) (inválida em blob:/data:)
     mod = await factory({ wasmBinary: bin, locateFile: (p: string) => p, print: () => {}, printErr: () => {} });
   }

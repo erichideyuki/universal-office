@@ -79,6 +79,7 @@ const pptx = await deck.savePptx();
 | `lang` | Interface language (`en`, `pt`, `es`; any region: `es-MX`, `es-419`… → Spanish; default: the browser's). |
 | `theme="auto\|light\|dark"` | Forces light/dark; without it the bars follow the CSS `color-scheme` of the page (`light dark` = the system's). View › Theme chooses too. |
 | `hidden-commands` | Ids hidden in the bars, menus and shortcuts — commands (`new`, `open`, `print`, `textbox`…), menus (`file`, `slideshow`…), groups (`slides`, `shape`…) and tabs (`transitions`…). Comma or space separated; also the `hiddenCommands` property. |
+| `about` | Shows Help › About Universal Slides (hidden without it, in the menus and the ribbon). |
 | `storage-key` | Saves the interface choices (compact/ribbon, theme, panes) in `localStorage` under this key (or the `id`); without it they last for the page. |
 
 What the bars offer (menus of the compact bar; the ribbon has the same in
@@ -113,7 +114,7 @@ Slide Show, View, Shape Format):
 - **Animations** — Preview and a read-only Animation pane: the animations of
   the file play exactly as in the slide show, but adding or editing animations
   is not available yet.
-- **Help** — Keyboard shortcuts, About.
+- **Help** — Keyboard shortcuts, About (only with the `about` attribute).
 
 The thumbnails pane selects with a click, reorders by dragging, and has the
 slide context menu (new, duplicate, delete, hide, layout, background,

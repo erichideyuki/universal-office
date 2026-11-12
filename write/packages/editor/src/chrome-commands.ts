@@ -329,7 +329,7 @@ export function registerWriteCommands(reg: CommandRegistry, ed: UniversalWriteEl
     // ── Ferramentas / Ajuda ──
     { id: 'fontAccess', label: { en: 'Use installed fonts…', pt: 'Usar as fontes instaladas…', es: 'Usar las fuentes instaladas…' }, icon: 'font_download', run: () => ctl.requestFonts(), supports: () => !ed.hasHostSystemFonts() && typeof (window as unknown as { queryLocalFonts?: unknown }).queryLocalFonts === 'function' },
     { id: 'shortcuts', label: { en: 'Keyboard shortcuts', pt: 'Atalhos de teclado', es: 'Métodos abreviados de teclado' }, icon: 'keyboard', shortcut: 'Ctrl+/', run: () => ctl.shortcuts() },
-    { id: 'about', label: { en: 'About Universal Write', pt: 'Sobre o Universal Write', es: 'Acerca de Universal Write' }, icon: 'info', run: () => ctl.about() },
+    { id: 'about', label: { en: 'About Universal Write', pt: 'Sobre o Universal Write', es: 'Acerca de Universal Write' }, icon: 'info', supports: () => ed.hasAttribute('about'), run: () => ctl.about() },
   ];
   reg.add(...cmds);
   registerTableCommands(reg, ed, app, ctl);

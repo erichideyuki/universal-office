@@ -138,6 +138,32 @@ describe('contribuição title + kit de widgets', () => {
     expect(bar.querySelector('.host-title')?.classList.contains('uo-title-slot')).toBe(true);
   });
 
+  it('ribbon.trailing aparece à direita da linha de título da ribbon', async () => {
+    ed.use({
+      id: 'host.ribbon-actions',
+      toolbar: (ctx) => ({
+        ribbon: {
+          trailing: [{ id: 'host:actions', widget: () => {
+            const el = document.createElement('div');
+            el.id = 'host-actions';
+            el.append(ctx.ui.createBarButton({ icon: 'send', label: 'Enviar', variant: 'filled', onClick: () => {} }));
+            return { el };
+          } }],
+        },
+      }),
+    });
+    ed.setAttribute('toolbar', 'ribbon');
+    ed.setAttribute('topbar', '');
+    await settleChrome();
+    const titlebar = topbar().querySelector<HTMLElement>('.uo-ribbon .uo-titlebar')!;
+    expect(titlebar).not.toBeNull();
+    const children = [...titlebar.children] as HTMLElement[];
+    const spacer = children.findIndex((c) => c.classList.contains('uo-spacer'));
+    const actions = children.findIndex((c) => c.querySelector('#host-actions') !== null || c.id === 'host-actions');
+    expect(spacer).toBeGreaterThanOrEqual(0);
+    expect(actions).toBeGreaterThan(spacer);
+  });
+
   it('título do hospedeiro que é um <input> também recebe só o lugar (.uo-title-slot), não o visual de campo', async () => {
     ed.use({ id: 'host.input', toolbar: () => ({ compact: { title: { id: 'host:title', widget: () => ({ el: Object.assign(document.createElement('input'), { className: 'host-input' }) }) } } }) });
     ed.setAttribute('topbar', '');
@@ -166,6 +192,30 @@ describe('contribuição title + kit de widgets', () => {
     ed.setAttribute('topbar', '');
     await settleChrome();
     expect(topbar().querySelector('.uo-title')).not.toBeNull();
+  });
+});
+
+describe('Sobre', () => {
+  const helpItems = (): string[] => {
+    const b = [...topbar().querySelectorAll<HTMLButtonElement>('.uo-mbtn')].find((x) => x.dataset['menu'] === 'help');
+    if (!b) throw new Error('menu help ausente');
+    b.click();
+    const layer = (ed as unknown as { shadowRoot: ShadowRoot }).shadowRoot.querySelector<HTMLElement>('.uw-layer')!;
+    const menu = layer.querySelector('.uo-menu');
+    return menu ? [...menu.querySelectorAll<HTMLElement>('.uo-menu-item')].map((x) => x.dataset['a'] ?? '') : [];
+  };
+
+  it('sem o atributo about, o menu Ajuda não tem o Sobre', async () => {
+    ed.setAttribute('topbar', '');
+    await settleChrome();
+    expect(helpItems()).toEqual(['shortcuts']);
+  });
+
+  it('com o atributo about (demo e app desktop), o Sobre aparece', async () => {
+    ed.setAttribute('about', '');
+    ed.setAttribute('topbar', '');
+    await settleChrome();
+    expect(helpItems()).toEqual(['shortcuts', 'about']);
   });
 });
 

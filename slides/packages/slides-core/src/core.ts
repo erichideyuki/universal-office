@@ -12,7 +12,7 @@ export {
   type PlaybackOptions, type PlaybackTimeline, type PlaybackSlide, type PlaybackState, type PlacedEffect,
 } from './playback.js';
 export {
-  SlideShow, mirrorTransition,
+  SlideShow, mirrorTransition, visibleSlideIndexes,
   type SlideShowOptions, type SlideShowAction, type SlideShowFrame, type SlideShowOrigin,
 } from './slideshow.js';
 export {
@@ -50,8 +50,8 @@ export {
   type MediaCommand, type MediaPlayState, type MediaClock,
 } from './media.js';
 export {
-  paintSlideTo, paintShapesTo, DEFAULT_TITLE_PT, DEFAULT_BODY_PT,
-  type PaintImage, type PaintResources, type PaintSlideOptions,
+  paintSlideTo, paintShapesTo, hitLinkArea, DEFAULT_TITLE_PT, DEFAULT_BODY_PT,
+  type PaintImage, type PaintResources, type PaintSlideOptions, type SlideLinkArea, type Matrix2D,
 } from './render.js';
 export {
   EMU_PER_INCH, EMU_PER_POINT, EMU_PER_PX,

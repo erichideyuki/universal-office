@@ -17,6 +17,10 @@ export interface Misspelling {
 
 /** O pedaço do motor que o Write usa (o SpellChecker compartilhado). */
 export interface SpellEngine {
+  /** estado do motor (o SpellChecker o tem; o diálogo F7 diz "indisponível" em vez de "concluída") */
+  readonly engineState?: 'idle' | 'starting' | 'ready' | 'unavailable';
+  /** nova chance ao motor que falhou (ação do usuário, como o F7) */
+  retry?(): void;
   checkText(text: string, lang: string): Promise<{ word: string; start: number; end: number }[]>;
   suggest(word: string, lang: string): Promise<string[]>;
   add(word: string): Promise<void>;
@@ -172,7 +176,9 @@ export class ParagraphSpell {
     let changed = false;
     for (const [para, spans] of batch) {
       let list: Misspelling[];
-      try { list = await this.run(spans); } catch { continue; }
+      // falha do motor: o parágrafo fica sem erros até o motor mudar (onChange) —
+      // sem isso cada pintura o enfileirava de novo
+      try { list = await this.run(spans); } catch { list = []; }
       if (gen !== this.generation) return;
       this.store(para, keyOf(spans), list);
       changed = true;

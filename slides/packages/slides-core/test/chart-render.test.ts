@@ -114,3 +114,26 @@ describe('paintSlideTo: forma inválida não derruba o slide', () => {
     expect(painted).toEqual(['3']);
   });
 });
+
+describe('paintSlideTo: formas ocultas', () => {
+  it('paintSlideTo não pinta forma oculta (nem com animação ou opacidade pedindo)', () => {
+    const ctx = recCtx();
+    const slide = {
+      shapes: [
+        { id: '2', name: 'oculta', hidden: true, geom: 'rect', xfrm: { x: 0, y: 0, cx: 1000, cy: 1000 }, fill: { type: 'solid', color: '#FF0000' },
+          txBody: { paragraphs: [{ runs: [{ text: 'Texto Oculto' }] }] } },
+        { id: '3', name: 'visível', geom: 'rect', xfrm: { x: 0, y: 0, cx: 1000, cy: 1000 }, fill: { type: 'solid', color: '#00FF00' },
+          txBody: { paragraphs: [{ runs: [{ text: 'Texto visível' }] }] } },
+      ],
+    } as unknown as Slide;
+    const asked: string[] = [];
+    paintSlideTo(ctx, slide, { slideW: 9144000, slideH: 5143500 }, 0.0001, {
+      shapeOpacity: (sh) => { asked.push(sh.id); return 1; },
+    });
+    const texts = ctx.calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
+    expect(texts.join('')).not.toContain('Oculto');
+    expect(texts.join('')).toContain('visível');
+    expect(asked).toEqual(['3']);
+    expect(ctx.depth).toBe(0);
+  });
+});

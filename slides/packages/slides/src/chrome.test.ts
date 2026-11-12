@@ -126,6 +126,18 @@ describe('barra compacta (topbar)', () => {
     expect(openTopMenu('insert')).toEqual(['slide:new', 'slide:newLayout', 'slide:duplicate', 'textbox', 'image', 'shapes', 'link']);
     expect(openTopMenu('slide')).toEqual(['slide:new', 'slide:duplicate', 'slide:delete', 'slide:hide', 'slide:up', 'slide:down', 'layout', 'background', 'transition']);
     expect(openTopMenu('slideshow')).toEqual(['show:start', 'show:current', 'show:auto', 'show:setup', 'slide:hide', 'animation:preview', 'animation:pane']);
+    expect(openTopMenu('help')).toEqual(['shortcuts']);
+  });
+
+  it('"Sobre" no menu Ajuda só com o atributo `about`', async () => {
+    (el as unknown as FakeNode).remove();
+    el = new Ctor();
+    el.setAttribute('lang', 'pt');
+    el.setAttribute('about', '');
+    dom.document.body.appendChild(el as unknown as FakeNode);
+    el.openPresentation(showcase(), { name: 'Relatório.pptx' });
+    el.setAttribute('topbar', '');
+    await settle();
     expect(openTopMenu('help')).toEqual(['shortcuts', 'about']);
   });
 

@@ -466,6 +466,9 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   /** O editor tem a própria interface: sem a barra de controles do viewer. */
   protected override controlsBuiltIn(): boolean { return false; }
 
+  /** O editor mostra os slides ocultos (miniatura esmaecida, Slide › Mostrar). */
+  protected override skipHiddenSlides(): boolean { return false; }
+
   protected override isEditing(): boolean { return this.editingShape !== null; }
 
   protected override suppressTextIdx(): number | undefined {

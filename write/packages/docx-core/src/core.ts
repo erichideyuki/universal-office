@@ -146,6 +146,7 @@ export {
   type WatermarkSpec, type WatermarkTextSpec, type WatermarkPictureSpec, type WatermarkInfo, type WatermarkLayout, type WatermarkGalleryItem, type WatermarkIds,
 } from './watermark.js';
 export { copyHfPartXml, hfPartXml, pageNumberGroupIds, dropUnusedHfParts, HF_NS } from './hf-ops.js';
+export { dropUnusedEditorLinkRels, pruneEditorLinkRels } from './link-rels.js';
 export {
   serializeDocument,
   serializeBlocks,

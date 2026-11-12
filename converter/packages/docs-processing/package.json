@@ -1,6 +1,6 @@
 {
   "name": "@universal-office/docs-processing",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Office-independent DOCX reading, editing, and serialization for Node.js and browsers.",
   "type": "module",
   "sideEffects": false,

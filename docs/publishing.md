@@ -9,23 +9,23 @@ version goes in `CHANGELOG.md`.
 
 | Package | Source | Current version | Notes |
 |---|---|---|---|
-| `@universal-office/write` | `write/packages/editor` (+ `./viewer` entry) | 0.9.3 | |
-| `@universal-office/document-viewer` | `write/packages/viewer` | 0.9.3 | |
-| `@universal-office/font-files` | `shared/fonts/packages/font-files` | 0.9.3 | |
-| `@universal-office/spellcheck` | `shared/spell/packages/spellcheck` | 0.9.3 | |
-| `@universal-office/dictionary-pt-br` | `shared/spell/packages/dictionary-pt-br` | 0.9.3 | |
-| `@universal-office/dictionary-en-us` | `shared/spell/packages/dictionary-en-us` | 0.9.3 | |
-| `@universal-office/dictionary-es` | `shared/spell/packages/dictionary-es` | 0.9.3 | 1st publication in 0.9.2 (`--access public`) |
-| `@universal-office/compare` | `write/packages/compare` | 0.9.3 | previously 0.0.1 |
-| `@universal-office/slides-viewer` | `slides/packages/viewer` | 0.9.3 | 1st publication in 0.9.2 (`--access public`); replaces `@universal-office/presentation-viewer` (0.0.1 only, deprecated) |
-| `@universal-office/sheet` | `sheet/packages/sheet` | 0.9.3 | 1st publication in 0.9.2 (`--access public`) |
-| `@universal-office/slides` | `slides/packages/slides` | 0.9.3 | 1st publication in 0.9.2 (`--access public`) |
-| `@universal-office/converter` | `converter/packages/converter` | 0.9.3 | 1st publication in 0.9.2 (`--access public`); was `@tools-universal/office-converter`, never published |
-| `UniversalOffice.Core` (NuGet) | `dotnet/src/UniversalOffice.Core` (Core + Fonts + Pdf + DrawingML) | 0.9.3 | |
-| `UniversalOffice.Docx` (NuGet) | `dotnet/src/UniversalOffice.Docx` (Docx + Editing + DocxLayout + DocBinary + the docx exporters) | 0.9.3 | |
-| `UniversalOffice.Xlsx` (NuGet) | `dotnet/src/UniversalOffice.Xlsx` | 0.9.3 | packed; not published yet |
-| `UniversalOffice.Pptx` (NuGet) | `dotnet/src/UniversalOffice.Pptx` | 0.9.3 | packed; not published yet |
-| `UniversalOffice.Converter` (NuGet) | `dotnet/src/UniversalOffice.Converter` (+ the OOXML processors in `Processing/`) | 0.9.3 | 1st publication in 0.9.2; does not depend on the other UniversalOffice packages |
+| `@universal-office/write` | `write/packages/editor` (+ `./viewer` entry) | 0.9.4 | |
+| `@universal-office/document-viewer` | `write/packages/viewer` | 0.9.4 | |
+| `@universal-office/font-files` | `shared/fonts/packages/font-files` | 0.9.4 | |
+| `@universal-office/spellcheck` | `shared/spell/packages/spellcheck` | 0.9.4 | |
+| `@universal-office/dictionary-pt-br` | `shared/spell/packages/dictionary-pt-br` | 0.9.4 | |
+| `@universal-office/dictionary-en-us` | `shared/spell/packages/dictionary-en-us` | 0.9.4 | |
+| `@universal-office/dictionary-es` | `shared/spell/packages/dictionary-es` | 0.9.4 | 1st publication in 0.9.2 (`--access public`) |
+| `@universal-office/compare` | `write/packages/compare` | 0.9.4 | previously 0.0.1 |
+| `@universal-office/slides-viewer` | `slides/packages/viewer` | 0.9.4 | 1st publication in 0.9.2 (`--access public`); replaces `@universal-office/presentation-viewer` (0.0.1 only, deprecated) |
+| `@universal-office/sheet` | `sheet/packages/sheet` | 0.9.4 | 1st publication in 0.9.2 (`--access public`) |
+| `@universal-office/slides` | `slides/packages/slides` | 0.9.4 | 1st publication in 0.9.2 (`--access public`) |
+| `@universal-office/converter` | `converter/packages/converter` | 0.9.4 | 1st publication in 0.9.2 (`--access public`); was `@tools-universal/office-converter`, never published |
+| `UniversalOffice.Core` (NuGet) | `dotnet/src/UniversalOffice.Core` (Core + Fonts + Pdf + DrawingML) | 0.9.4 | |
+| `UniversalOffice.Docx` (NuGet) | `dotnet/src/UniversalOffice.Docx` (Docx + Editing + DocxLayout + DocBinary + the docx exporters) | 0.9.4 | |
+| `UniversalOffice.Xlsx` (NuGet) | `dotnet/src/UniversalOffice.Xlsx` | 0.9.4 | packed; not published yet |
+| `UniversalOffice.Pptx` (NuGet) | `dotnet/src/UniversalOffice.Pptx` | 0.9.4 | packed; not published yet |
+| `UniversalOffice.Converter` (NuGet) | `dotnet/src/UniversalOffice.Converter` (+ the OOXML processors in `Processing/`) | 0.9.4 | 1st publication in 0.9.2; does not depend on the other UniversalOffice packages |
 
 `@universal-office/presentation-viewer` (0.0.1) became
 `@universal-office/slides-viewer` in 0.9.2 (element `<universal-slides-viewer>`,

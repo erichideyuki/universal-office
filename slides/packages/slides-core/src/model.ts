@@ -389,6 +389,12 @@ export interface Shape {
   groupIds?: string[];
   /** Decoração herdada do layout/master (ids não pertencem ao slide — animações do slide não se aplicam). */
   inherited?: boolean;
+  /**
+   * Forma oculta (`<p:cNvPr hidden="1">`, Painel de Seleção do app; ou dentro de
+   * um grupo oculto): fica no modelo (o editor edita o XML pelo índice), mas não
+   * é pintada, não recebe clique nem entra na camada acessível.
+   */
+  hidden?: boolean;
 }
 
 /** Célula de tabela (`<a:tc>`). */

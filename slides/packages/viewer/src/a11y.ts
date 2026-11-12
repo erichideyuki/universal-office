@@ -40,7 +40,7 @@ const paraText = (p: { runs: { text: string }[] }): string => p.runs.map((r) => 
 /** Título do slide: o placeholder de título; sem ele, a 1ª linha de texto. */
 export function slideTitle(slide: Slide | undefined): string {
   if (!slide) return '';
-  const own = slide.shapes.filter((s) => !s.inherited);
+  const own = slide.shapes.filter((s) => !s.inherited && !s.hidden);
   const t = own.find((s) => s.phType && TITLE_PH.has(s.phType) && s.txBody);
   const text = t?.txBody?.paragraphs.map(paraText).filter(Boolean).join(' ');
   if (text) return text;
@@ -100,13 +100,13 @@ export class SlideA11y {
     h.textContent = label;
     this.content.appendChild(h);
     // título tirado da 1ª linha (sem placeholder de título): não repete como parágrafo
-    this.skipText = slide.shapes.some((s) => !s.inherited && s.phType && TITLE_PH.has(s.phType) && s.txBody) ? null : title;
+    this.skipText = slide.shapes.some((s) => !s.inherited && !s.hidden && s.phType && TITLE_PH.has(s.phType) && s.txBody) ? null : title;
     for (const s of slide.shapes) this.appendShape(s);
     if (announce && !first) this.live.announce(label);
   }
 
   private appendShape(s: Shape): void {
-    if (s.inherited || (s.phType && (SKIP_PH.has(s.phType) || TITLE_PH.has(s.phType)))) return;
+    if (s.inherited || s.hidden || (s.phType && (SKIP_PH.has(s.phType) || TITLE_PH.has(s.phType)))) return;
     const alt = usefulAlt(s.descr);
     if (alt && (s.image || s.media || !s.txBody?.paragraphs.some((p) => paraText(p)))) {
       const img = document.createElement('div');

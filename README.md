@@ -15,7 +15,7 @@
   Try it live: <a href="https://universaloffice.org/live.html">Write</a>,
   <a href="https://universaloffice.org/live-sheet.html">Sheet</a>,
   <a href="https://universaloffice.org/live-slides.html">Slides</a> ·
-  <a href="https://github.com/erichideyuki/universal-office/releases/tag/v0.9.3">Download the desktop app (Beta)</a>
+  <a href="https://github.com/erichideyuki/universal-office/releases/tag/v0.9.4">Download the desktop app (Beta)</a>
 </p>
 
 <p align="center">
@@ -196,8 +196,8 @@ machine.
 
 - **Windows** (installer), **macOS** (dmg, Apple Silicon and Intel) and
   **Linux** (AppImage, deb, rpm, tar.gz and Snap; Flathub planned)
-- [Download for Windows](https://github.com/erichideyuki/universal-office/releases/download/v0.9.3/Universal-Office-0.9.3-beta-Setup.exe)
-  · [all platforms](https://github.com/erichideyuki/universal-office/releases/tag/v0.9.3)
+- [Download for Windows](https://github.com/erichideyuki/universal-office/releases/download/v0.9.4/Universal-Office-0.9.4-beta-Setup.exe)
+  · [all platforms](https://github.com/erichideyuki/universal-office/releases/tag/v0.9.4)
 
 The builds are not signed yet, so SmartScreen and Gatekeeper warn on install.
 

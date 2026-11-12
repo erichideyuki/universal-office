@@ -124,6 +124,17 @@ export function mirrorTransition(tr: SlideTransitionInfo | undefined): SlideTran
   return m ? { ...tr, attrs: { ...tr.attrs, dir: m } } : tr;
 }
 
+/**
+ * Índices dos slides que a apresentação mostra: os não ocultos (`show="0"`),
+ * na ordem do arquivo. Todos ocultos → todos (o app abre o arquivo e mostra
+ * os slides mesmo assim); deck vazio → nenhum.
+ */
+export function visibleSlideIndexes(models: readonly (SlideTimingModel | undefined)[]): number[] {
+  const out: number[] = [];
+  models.forEach((m, i) => { if (!m?.hidden) out.push(i); });
+  return out.length ? out : models.map((_, i) => i);
+}
+
 export class SlideShow {
   private readonly useTimings: boolean;
   private readonly loop: boolean;

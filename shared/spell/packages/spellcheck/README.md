@@ -15,8 +15,12 @@ not check spelling.
 
 Nothing is downloaded until it is needed: the engine on the first check, each
 dictionary on the first text in that language. The editor runs the engine in a
-Web Worker (on the main thread when a Worker is not allowed, e.g. a CSP without
-`blob:`).
+Web Worker (on the main thread when a Worker is not allowed).
+
+The package has three modules side by side: `index.js` (the engine, with the URLs
+of the other two), `worker.js` (the Worker) and `hunspell.js` (the emscripten glue).
+Serve them together: with them, a Content Security Policy with
+`script-src 'self' 'wasm-unsafe-eval'` is enough — no `blob:` or `data:`.
 
 ## Installation
 

@@ -33,15 +33,6 @@ const check = (name: string, label: string, on: boolean): HTMLLabelElement => {
 // textos curtos dos diálogos: tabela { en, pt, es } escolhida por pickLabels (regra única de i18n)
 const tr = (lang: UiLang, en: string, pt: string, es: string): string => pickLabels(lang, { en, pt, es });
 
-export async function linkDialog(env: Env): Promise<void> {
-  const L = env.app.ui!.L;
-  const cur = (env.state().run.link as string | undefined) ?? '';
-  const url = await promptDialog({ title: L.linkTitle, label: L.linkUrl, value: cur || 'https://', ok: L.linkApply, layer: env.layer, lang: env.lang });
-  if (url === null) return;
-  const v = url.trim();
-  env.ed.setLink(v && v !== 'https://' ? v : undefined);
-}
-
 /** Nome do autor das revisões e dos comentários: sem atributo `author` nem host,
  *  pergunta uma vez (e a origem lembra — como o nome de usuário do Office, por
  *  máquina). false = cancelado. */
@@ -595,11 +586,15 @@ export type DialogEnv = Env;
  */
 export async function spellingDialog(env: Env): Promise<void> {
   const lang = env.lang, ed = env.ed;
-  const done = tr(lang, 'The spelling check is complete.', 'A verificação ortográfica foi concluída.', 'La revisión ortográfica ha finalizado.');
+  const complete = tr(lang, 'The spelling check is complete.', 'A verificação ortográfica foi concluída.', 'La revisión ortográfica ha finalizado.');
+  const unavailable = tr(lang, 'Spell checking is unavailable.', 'A revisão ortográfica está indisponível.', 'La revisión ortográfica no está disponible.');
+  // sem motor, "concluída" enganaria: diz que a revisão não está disponível
+  const done = (): string => (ed.spellingState === 'unavailable' || ed.spellingState === 'off' ? unavailable : complete);
   const skip = new Set<string>();
   const always = new Map<string, string>();
+  if (ed.spellingState === 'unavailable') ed.retrySpelling();
   let cur = await ed.nextMisspelling(skip);
-  if (!cur) { env.app.ui!.flash(done); return; }
+  if (!cur) { env.app.ui!.flash(done()); return; }
   const word = el('div', { style: 'font-size:18px;font-weight:600;color:#e81123;margin-bottom:2px' });
   const info = el('div', { style: 'opacity:.7;font-size:12px;margin-bottom:10px' });
   const list = el('select', { size: 6, style: 'width:100%;box-sizing:border-box;height:auto;min-height:132px;padding:4px' });
@@ -620,7 +615,7 @@ export async function spellingDialog(env: Env): Promise<void> {
       if (!ed.replaceSpelling(cur, always.get(cur.word)!)) skip.add(`${cur.para}:${cur.start}:${cur.word}`);
       cur = await ed.nextMisspelling(skip);
     }
-    if (!cur) { h.close(); env.app.ui!.flash(done); return; }
+    if (!cur) { h.close(); env.app.ui!.flash(done()); return; }
     await show(cur);
   };
   let busy = false;
