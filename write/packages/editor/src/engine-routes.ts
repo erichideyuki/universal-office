@@ -11,9 +11,11 @@
 import { ROUTES_OBJECTS } from './engine-routes-objects.js';
 import { ROUTES_REVIEW } from './engine-routes-review.js';
 import { ROUTES_STORIES } from './engine-routes-stories.js';
+import { ROUTES_FORMAT } from './engine-routes-format.js'; // wave 7 (A1)
+import { ROUTES_COMPLETION } from './engine-routes-completion.js'; // wave 7 (A2)
 
 /** As tabelas das frentes da leva 5 (cada uma no seu arquivo, para não disputarem este). */
-const FRONTS = [ROUTES_STORIES, ROUTES_OBJECTS, ROUTES_REVIEW];
+const FRONTS = [ROUTES_STORIES, ROUTES_OBJECTS, ROUTES_REVIEW, ROUTES_FORMAT, ROUTES_COMPLETION]; // wave 7 (A2): ROUTES_COMPLETION
 
 /** Métodos públicos que a sessão wasm atende (handler em rust-engine.ts ou rust-engine-<frente>.ts com o mesmo nome). */
 export const ROUTED_PUBLIC: readonly string[] = [
@@ -35,10 +37,11 @@ export const ROUTED_PUBLIC: readonly string[] = [
   'setHighlight', 'clearFormatting', 'clearCharacterFormatting', 'changeCase', 'toggleVertAlign', 'setCharSpacing',
   // parágrafo
   'setAlignment', 'indent', 'setLineSpacing', 'setSpaceBefore', 'setSpaceAfter', 'setShading', 'clearParagraphFormatting',
-  // listas, estilos
-  'toggleList', 'removeList', 'changeListLevel', 'applyStyle', 'currentStyles',
-  // área de transferência
-  'copy', 'cut', 'paste', 'pastePlain', 'pasteText', 'pasteOptions', 'repaste', 'pasteButtonRect',
+  // listas, estilos ('currentStyles' é da frente R, engine-routes-review.ts)
+  'toggleList', 'removeList', 'changeListLevel', 'applyStyle',
+  // área de transferência ('copy', 'cut', 'paste', 'pastePlain' são da frente R, engine-routes-review.ts: os tratadores
+  // das frentes ganham dos métodos do RustEditor em installRoutes; onda 7c, S: sem nomes repetidos)
+  'pasteText', 'pasteOptions', 'repaste', 'pasteButtonRect',
   // a revisão de memória (engineStats) e o fim
   'focusEditor',
   ...FRONTS.flatMap((f) => f.public),

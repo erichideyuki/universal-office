@@ -150,7 +150,7 @@ impl Session {
             let lang = self.lang_at(at.para, a);
             let letters_u: Vec<u16> = raw.iter().copied().filter(|&u| u != 0x00AD).collect();
             let letters = String::from_utf16_lossy(&letters_u);
-            let (l0, r0) = (2u32, if self.doc.formatting.settings.compatibility_mode.to_number() >= 15.0 { 3u32 } else { 2u32 });
+            let (l0, r0) = (2u32, if self.doc.word_compat_mode() >= 15.0 { 3u32 } else { 2u32 });
             let patterns: Vec<u32> = self
                 .f10
                 .hyphenation

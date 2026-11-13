@@ -304,3 +304,50 @@ fn d_m1_the_exports_return_the_live_bytes() {
     // SAFETY: freed once.
     unsafe { uo_write_env_free(env) };
 }
+
+/// Wave 7c (V, ED-106b): a text box inside another box (the fidelity harness's `box-in-box`, saved as
+/// `uo-docx-layout/tests/fidelity/box-in-box.docx`). Entering either box (`EnterTextboxAt` by its order in
+/// `contextTextboxRuns`) gives the shell a rectangle for the box in edit: the outer box is one of the context's floats
+/// (`box` names it), the inner one comes as `boxFloat`, equal to the layout's page object of that box (the TS
+/// `tbEdit.rectTwips`, universal-write.ts 16470–16497) — so `activeFloat()` frames and handles both.
+#[test]
+fn e_box_in_box_has_a_frame() {
+    use uo_docx::session::ops::context::ContextCmd;
+    let env = env_with_fonts();
+    let docx = std::fs::read(repo().join("core/crates/uo-docx-layout/tests/fidelity/box-in-box.docx")).unwrap();
+    let h = open(env, &docx);
+    let mut seen = Vec::new();
+    for focus in 0..2u32 {
+        let (st, _) = command(h, Command::Context(ContextCmd::EnterTextboxAt { focus, page: 0 }));
+        assert_eq!(st, 0);
+        let l = layout(h, env);
+        let j = objects(h, l);
+        println!("E: focus {focus}: {j}");
+        assert!(j.starts_with("{\"scope\":\"tb\""), "{j}");
+        let bx = numbers(&j, "box");
+        assert_eq!(bx.len(), 1, "a box in edit: {j}");
+        let floats = &j[j.find("\"floats\":").unwrap()..j.find(",\"boxFloat\":").unwrap()];
+        let own = floats.contains(&format!("\"id\":{}", bx[0]));
+        let bf = &j[j.find(",\"boxFloat\":").unwrap()..j.find(",\"inline\":").unwrap()];
+        if own {
+            assert_eq!(bf, ",\"boxFloat\":null", "an own box is in floats: {j}");
+        } else {
+            assert!(bf.contains(&format!("\"id\":{}", bx[0])) && bf.contains("\"kind\":\"textbox\""), "the nested box's rectangle: {j}");
+            let w = bf.find("\"w\":").map(|i| &bf[i + 4..]).unwrap();
+            assert!(!w.starts_with('0') && !w.starts_with('-'), "a laid-out width: {bf}");
+        }
+        seen.push((bx[0], own));
+        let (st, _) = command(h, Command::Context(ContextCmd::ExitTextbox));
+        assert_eq!(st, 0);
+        // SAFETY: freed once.
+        unsafe { uo_layout_free(l) };
+    }
+    assert!(seen.iter().any(|s| s.1) && seen.iter().any(|s| !s.1), "the outer box is the context's own, the inner one is nested: {seen:?}");
+    // SAFETY: freed once.
+    unsafe {
+        uo_session_free(h);
+        uo_write_env_free(env);
+    }
+    uo_session_clipboard_clear();
+    uo_last_error_clear();
+}

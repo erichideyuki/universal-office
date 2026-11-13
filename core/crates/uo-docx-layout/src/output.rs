@@ -125,6 +125,9 @@ pub struct LineGeom {
     pub y: f64,
     pub height: f64,
     pub baseline: f64,
+    /// wave 7c (V, fix round 2): the line's natural text descent (`Line::desc`, twips: the deepest glyph below the
+    /// baseline, before the line spacing) — the shell's field-shading band (Word's text-height band, ED-304)
+    pub desc: f64,
     pub width: f64,
     /// `chars` (a range of the page's `chars`)
     pub chars: Option<Span>,

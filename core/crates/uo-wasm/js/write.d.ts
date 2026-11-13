@@ -100,6 +100,29 @@ export interface LayoutOptions {
    * not call into the module; an exception counts as `true`. (G4)
    */
   cancelCheck?: () => boolean;
+  /**
+   * Wave 7 (B, gate-O3): the frozen TS's empty theme for a package without a theme part (its theme colours fall back to
+   * `w:color`). Off by default: the engine follows Word (the Office 2023 colours). For parity tests against TS captures.
+   */
+  tsEmptyTheme?: boolean;
+  /**
+   * ED-713 (wave 7, merge fixer F2, round 2): the frozen TS's PAGEREF page without the chapter numbers of a `w:chapStyle`
+   * section. Off by default: the engine follows Word (the bookmark page's PAGE text, chapter included). For parity tests
+   * against TS captures.
+   */
+  tsPagerefWithoutChapter?: boolean;
+  /** Wave 7c (W): the frozen TS's theme tint/shade rounding (Word's rule by default). For parity tests against TS captures. */
+  tsThemeTint?: boolean;
+  /** Wave 7c (W): compatibility mode 15 for a package without `settings.xml` (Word: 12). For parity tests against TS captures. */
+  tsMissingSettings?: boolean;
+  /** Wave 7c (W): the frozen TS's linked text-box chain in a table cell. For parity tests against TS captures. */
+  tsLinkedCell?: boolean;
+  /** Wave 7c (W): REF/PAGEREF/NOTEREF to a missing or unterminated bookmark as the frozen TS (Word writes an error). For parity tests. */
+  tsRefBookmarks?: boolean;
+  /** Wave 7c (W): the hyphenation pattern sets of the frozen TS. For parity tests against TS captures. */
+  tsHyphenation?: boolean;
+  /** Wave 7c (W): a keepLines paragraph taller than a page stays (the frozen TS; Word moves it). For parity tests. */
+  tsKeepLines?: boolean;
 }
 
 /** A result buffer of render.mjs (`take()` = status + a copy of the bytes, then free). */
@@ -211,6 +234,8 @@ export declare class WriteLayout {
   imageBytes(image: number): Uint8Array | null;
   /** the SVG version of image `image`, or null */
   imageSvg(image: number): Uint8Array | null;
+  /** image `image` decoded by the engine (PNG, GIF, BMP, TIFF; RGBA8 rows), or null (wave 7, F2: the editor's fallback) */
+  imageRgba(image: number): { width: number; height: number; data: Uint8Array } | null;
   pdf(o?: { compress?: boolean; untrusted?: boolean; chunk?: number }): { chunks: Uint8Array[]; length: number };
 }
 

@@ -203,7 +203,7 @@ fn the_picture_layer_exports() {
         assert!(m >= 6 && polys.len() >= 8 + m * 8);
         // the silhouette has coverage and is a mask of w * h f32
         let sil = &want("silhouette").2;
-        let cov: f32 = sil.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).sum();
+        let cov: f32 = sil.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).sum();
         assert!(cov > 100.0, "the silhouette covers pixels");
         // the bevel keeps the layer length and changes pixels; the adjustment does too
         assert_ne!(&want("bevel").2[..], &(0..want("bevel").2.len()).map(|i| (i * 7 % 251) as u8).collect::<Vec<_>>()[..]);
@@ -360,7 +360,8 @@ fn the_layer_set_follows_the_plan() {
         let mut ppts = Vec::new();
         for _ in 0..3 {
             ppts.push(f64::from_le_bytes(set[o..o + 8].try_into().unwrap()));
-            let (w, h) = (u32::from_le_bytes(set[o + 24..o + 28].try_into().unwrap()), u32::from_le_bytes(set[o + 28..o + 32].try_into().unwrap()));
+            let (w, h) =
+                (u32::from_le_bytes(set[o + 24..o + 28].try_into().unwrap()), u32::from_le_bytes(set[o + 28..o + 32].try_into().unwrap()));
             o += 32 + (w * h * 4) as usize;
         }
         assert_eq!(o, set.len());

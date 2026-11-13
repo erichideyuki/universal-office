@@ -855,7 +855,7 @@ impl Engine {
     /// `tbEnv(tb)` (engine.ts:3251): a dark SOLID fill lightens the automatic text colour; the
     /// `fontRef` colour for text without one.
     pub(crate) fn tb_env(cx: &Cx<'_, '_>, tb: &DrawingTextbox) -> (bool, Option<Box<str>>) {
-        let theme = &cx.ldoc.view.formatting().theme;
+        let theme = cx.ldoc.theme; // wave 7 (B, gate-O3)
         let fc = tb.font_color.as_ref().and_then(|c| crate::drawing::resolve_color(c, theme));
         let s = tb.shape.as_deref();
         let solid = s
@@ -957,9 +957,8 @@ impl Engine {
         let run: &Run = crate::paint::model_run(cx.ldoc, rk).ok_or(LayoutError::Internal("placeFloat: run"))?;
         let gi = self.ps(ps)?.geom;
         let g = self.geom(gi)?.clone();
-        let fmt = cx.ldoc.view.formatting();
-        let compat = fmt.settings.compatibility_mode.to_number();
-        let theme = &fmt.theme;
+        let compat = cx.ldoc.compat_mode(); // wave 7c (W, item 2)
+        let theme = cx.ldoc.theme; // wave 7 (B, gate-O3)
         let e = run.ext();
         let image = e.and_then(|e| e.image.as_deref());
         let shape = e.and_then(|e| e.shape.as_deref());
@@ -1181,7 +1180,13 @@ impl Engine {
             let wb = anchor.filter(|a| matches!(&*a.wrap, "tight" | "through")).and_then(|a| a.wrap_box.as_ref());
             let csw = wb.is_none() && swaps_box(float_rot(run));
             let cbox = match anchor {
-                Some(a) if wrapping(&a.wrap) && a.layout_in_cell != Some(false) => Some(self.float_box(a, wb, csw, x, y, w, h)),
+                // wave 7c (W, item 3; oracle txbxcell lc-cell-lic0): mode 15 ignores layoutInCell="0" for the wrap too —
+                // Word wraps the cell's text around such a box; the frozen TS does not (`ts_linked_box_cell_chain`)
+                Some(a)
+                    if wrapping(&a.wrap) && (a.layout_in_cell != Some(false) || (compat >= 15.0 && !cx.opts.ts_linked_box_cell_chain)) =>
+                {
+                    Some(self.float_box(a, wb, csw, x, y, w, h))
+                }
                 _ => None,
             };
             let zseq = self.z_seq;
@@ -1504,7 +1509,7 @@ impl Engine {
                 tc = Some(c);
             } else if let Some(tb) = e.textbox.as_deref() {
                 let blocks = self.tb_blocks(cx, tb)?;
-                let theme = &cx.ldoc.view.formatting().theme;
+                let theme = cx.ldoc.theme; // wave 7 (B, gate-O3)
                 let iw = jm::max(1.0, tb_frame(tb, theme, w, h).iw);
                 let (dark, dc) = Self::tb_env(cx, tb);
                 let env = ParaEnv { dark_background: dark, default_color: dc, ..ParaEnv::default() };
@@ -1607,7 +1612,7 @@ impl Engine {
     ) -> LResult<()> {
         cx.budget.charge(1)?;
         let Some(e) = run.ext() else { return Ok(()) };
-        let theme = &cx.ldoc.view.formatting().theme;
+        let theme = cx.ldoc.theme; // wave 7 (B, gate-O3)
         let r = MetafileFrame { x, y, w, h };
         if let Some(im) = e.image.as_deref() {
             let data = cx.ldoc.view.media(im.data.0).unwrap_or(&[]);

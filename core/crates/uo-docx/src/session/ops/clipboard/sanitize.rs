@@ -84,8 +84,15 @@ impl Session {
         if key == "normal" {
             return None;
         }
-        if let Some(b) = builtin_name_of_key(key) {
+        // `if (builtin && this.stylesEditable())` (2066; wave 7, A1)
+        if let Some(b) = builtin_name_of_key(key)
+            && self.styles_editable()
+        {
             return self.builtin_style_id(&b).ok().map(|s| s.to_string());
+        }
+        // `this.listStyles('all')`: the .odt lists the ODF's styles (4156)
+        if self.odt_style_list() {
+            return self.odt_style_entries().into_iter().find(|s| style_key(&s.raw_name) == key || style_key(&s.id) == key).map(|s| s.id);
         }
         let idx = self.style_index();
         let all = super::super::styles::xform::list_styles_all(&idx, self.f2.lang);

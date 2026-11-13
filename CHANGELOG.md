@@ -97,6 +97,10 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
   the TS reader on first use; `udv-link-click` `detail.text` is the text of the link box, not
   of the whole run when the run wraps. Closing or moving the element frees the engine's
   memory; reconnecting reopens the document (the scroll position resets).
+- `rust` follows Word where `ts` does not (measured in Word): a PAGEREF field (a table of
+  contents' page numbers, a cross-reference to a page) in a section with chapter page
+  numbering shows the chapter number and its separator before the page (`1-i`), where `ts`
+  shows the page alone (`i`); the editor also writes it so in the TOC entries it builds.
 
 ### Editor: engine switch (`engine="rust"`, preview)
 
@@ -105,18 +109,24 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
   to WebAssembly. With `rust` the document model, the editing commands, undo, the
   incremental layout and the page painting come from the engine; the element keeps the
   input, the bars, scrolling and zoom. The attribute is read at initialization.
-- What `rust` takes: opening `.docx`/`.doc`, saving `.docx` (with or without fonts) and PDF, typing and IME, the
-  keyboard and mouse selection, character, paragraph and style formatting (styles list,
-  gallery and pane), lists, the clipboard (keyboard, buttons, Paste Special, the ring's
-  text items, pasting an image from the system clipboard), tables, headers and footers,
-  notes, the text of top-level text boxes, pictures and shapes as objects, page setup,
-  sections, page design (color, watermark), the Read view, the context menu, comments and tracked changes, the
-  Find and Replace pane, fields, table of contents, captions, cross-references, bookmarks
-  and links, and spelling
-  with the shared Hunspell. Checked against `ts` over the 74 committed fixture documents
-  with 12 scripted steps of real input each, plus one harness per family; every remaining
-  difference is declared in `core/docs/modules/uo-bindings.md`.
-- The `.wasm` ships as `chunks/uo-write-editor.wasm` (the session build, about 9.7 MB, 3.2 MB
+- What `rust` takes: every public method (511) and every bar command (462) of the `ts` editor is
+  routed to the engine or the element's shell; nothing is grayed out. It is not yet 1:1 with `ts` everywhere (the
+  open items are listed below). That covers opening
+  `.docx`/`.doc`/`.odt`, saving `.docx` (with or without fonts), `.odt`, PDF, HTML, Markdown and XPS, Print,
+  Compare, Mail Merge, Word Count; typing and IME, the keyboard and mouse selection; the Ruler, Gridlines, Bookmark
+  marks and the Read, Web, Draft and Outline views; character formatting (the Font dialog, colors, text effects,
+  OpenType features, the Format Painter), paragraph formatting (the Paragraph, Tabs and Borders dialogs, hyphenation)
+  and styles; lists (libraries, new bullets and numbers, multilevel lists, list styles, numbering values and indents);
+  the clipboard (keyboard, buttons, Paste Special and Paste Link, the ring, the Paste Options, the paste-cells
+  options); tables (Quick Tables, table styles, Draw Table, an embedded spreadsheet), headers and footers, notes, text
+  boxes, pictures and shapes as objects (wrap points, transparent color, the text box gallery), page setup, sections,
+  page design (color, watermark, page borders), the cover/watermark/header/footer/TOC galleries, plugin custom inlines,
+  the context menu, comments and tracked changes, Find and Replace, fields, table of contents, captions,
+  cross-references, bookmarks and links, and spelling with the shared Hunspell. Checked against `ts` over the 74
+  committed fixture documents with 12 scripted steps of real input each, plus one harness per family; every remaining
+  difference is declared in `core/docs/modules/uo-bindings.md`. Where `ts` and Word differ, the engine follows Word
+  (measured; each case is declared there).
+- The `.wasm` ships as `chunks/uo-write-editor.wasm` (the session build, about 10.4 MB, 3.5 MB
   gzip) and is fetched only with `engine="rust"`. `UniversalWriteElement.configureEngine({
   wasm, engine })` points to another source and `UniversalWriteElement.engineStats()`
   reports memory and live handles. One engine module per page: the editor's module also
@@ -124,23 +134,22 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
   engine loaded first makes `engine="rust"` on the editor fail with an error naming the
   editor module. `build:pkg` refuses to ship a test build (exports `test_`/`selftest_`/
   `memtest_`/`fixture_`, the counting allocator) as either module.
+- Compare (`@universal-office/compare`): `loadPair(aBytes, bBytes, opts)` takes an optional
+  `opts.diff(aBytes, bBytes)` that answers the `DocDiff` from another engine; the documents are still
+  read by the element for the view. The editor's File > Compare under `engine="rust"` passes the Rust
+  port of `diffDocuments` (the session module gains about the compare code's size).
 - A strict `script-src` needs `'wasm-unsafe-eval'` (Safari 15: `'unsafe-eval'`); see the
   viewer README, "Content Security Policy".
-- Not yet in `rust` (the bar buttons stay visible but grayed out, the methods do nothing; of the 462
-  commands the bar declares, 81 are grayed out): Print, Fonts in the file, Compare, Mail Merge, Word Count,
-  Enable Editing and Font Access; the Ruler (whole view, so also its indent and tab drags), Gridlines, Bookmark
-  marks, and the Web, Draft and Outline views; the Font Color button (`setColor` works through the API), gradient
-  font color, the Font dialog and More Underlines, the Format Painter, text effects; the Paragraph, Tabs, Borders
-  and Page Borders dialogs (page borders work through `setPageBorders`), the Home Borders button, the horizontal
-  line, Select Similar Formatting and Select Objects, manual hyphenation; the multilevel list library, list styles,
-  Adjust List Indents, Change List Level and numbering restarts; the Paste Options buttons (Keep Source, Merge, Text
-  Only, Picture) and the paste-cells options; New and Modify Table Style, Quick Tables, Insert Excel spreadsheet,
-  Draw Table / Eraser / Border Painter; wrap points, transparent color, the text box gallery, plugin custom inlines,
-  OpenType features and underline color.
-  The public `findNext`, `replaceAll`, `countMatches` and `getLinks` do nothing (the Find
-  pane's `findNextMatch`/`replaceAllMatches` work). Opening `.odt` and saving as `.odt`, HTML, Markdown or XPS are not
-  supported (the saves throw). Events fire after the mutation; call `load*()` after `uw-ready`; reconnecting reopens the document without undo
-  history.
+- Nothing stays disabled in `rust`. A command or method added later without a route is shown grayed out and
+  does nothing (it never runs on the TS model). Declared differences a host can see: events fire after the mutation;
+  call `load*()` after `uw-ready`; reconnecting reopens the document without undo history; XPS is written from the
+  engine's pages (no text, shape or picture effects, pattern fills or EMF/WMF/SVG pictures); `ts` and `rust` editors
+  on one page do not share the Office Clipboard. Not yet 1:1 with `ts` (open, none disabled): the Web, Draft and
+  Outline views are one sheet per section, not the `ts` continuous canvas; no live text reflow while a wrap point is
+  dragged and no drop caret while an inline picture is dragged (the result at the drop is the same); the gray field
+  shading outside the body (headers, footers, notes) and the frame of a text box edited inside another box are not
+  painted; a gallery preview can show a cross-reference's page from the previous layout right after an edit; whether
+  `ts` also keeps the `Table Grid` style after a save between a table insert and its undo has not been compared.
 
 ### Opening documents on slower machines
 

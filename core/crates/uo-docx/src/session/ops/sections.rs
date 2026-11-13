@@ -228,7 +228,7 @@ impl F4State {
         F4State {
             loaded: LoadedSettings {
                 even_odd: s.even_and_odd_headers,
-                default_tab: s.default_tab_stop.to_number(),
+                default_tab: doc.word_default_tab_fallback().unwrap_or_else(|| s.default_tab_stop.to_number()), // wave 7c (W, item 2)
                 hyph: super::text_layout::hyphenation_of_formatting(s),
                 background: doc.background.clone(),
                 display_background: s.display_background_shape,

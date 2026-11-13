@@ -112,7 +112,7 @@ ${entryExtra}
     const exe = dirs.length && join(base, dirs[dirs.length - 1], 'chrome-headless-shell-win64', 'chrome-headless-shell.exe');
     return exe && existsSync(exe) ? exe : undefined;
   })();
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.UO_CHROMIUM ?? installed });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.UO_CHROMIUM ?? installed, args: (process.env.UO_ES_CHROMIUM_ARGS ?? '').split(' ').filter(Boolean) });
   const context = await browser.newContext({ timezoneId: 'UTC', deviceScaleFactor: 1, viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
   await context.addInitScript(() => {
     let s = 1;
@@ -122,9 +122,12 @@ ${entryExtra}
   const errors = [];
   const pageRequests = [];
   let page = null;
+  let cdp = null;
   async function openPage() {
     if (page) await page.close();
     page = await context.newPage();
+    // wave 7c (S): a CDP session per page for `gc()`
+    cdp = await context.newCDPSession(page);
     await page.clock.setFixedTime(NOW);
     page.on('crash', () => { console.log('PAGE CRASHED'); process.exit(2); });
     page.on('pageerror', (e) => { errors.push(e.message); console.log('PAGE ERROR', e.message); });
@@ -134,8 +137,27 @@ ${entryExtra}
     await page.waitForFunction(() => window.__ready === true, null, { timeout: 60000 });
     return page;
   }
+  /**
+   * wave 7c (S): a removed `engine="rust"` element keeps its document until it is collected (as the TS element keeps its
+   * model), so the memory checks collect garbage first: 3 × `HeapProfiler.collectGarbage` with a 30 ms task after each
+   * (the FinalizationRegistry callbacks run in a later task), up to 10 rounds until `engineStats()` shows no session and
+   * no shell engine. Answers the last `engineStats()` (null without the engine).
+   */
+  async function gc() {
+    const stats = () => page.evaluate(() => customElements.get('universal-write')?.engineStats?.() ?? null);
+    let s = null;
+    for (let k = 0; k < 10; k++) {
+      for (let j = 0; j < 3; j++) {
+        await cdp.send('HeapProfiler.collectGarbage');
+        await page.evaluate(() => new Promise((r) => setTimeout(r, 30)));
+      }
+      s = await stats();
+      if (!s || s.fake || (s.sessions === 0 && s.shellEngines === 0)) return s;
+    }
+    return s;
+  }
   return {
-    bundle, fixtures, docsByName, requests, pageRequests, errors, openPage,
+    bundle, fixtures, docsByName, requests, pageRequests, errors, openPage, gc,
     get page() { return page; },
     label: (n) => (fixtures.includes(docsByName.get(n)) ? relDoc(docsByName.get(n)) : n),
     close: async () => { await browser.close(); server.close(); },

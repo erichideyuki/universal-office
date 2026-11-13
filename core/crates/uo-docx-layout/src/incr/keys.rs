@@ -50,7 +50,7 @@ impl DocParts {
             && Arc::ptr_eq(&o.notes, &d.notes)
             && Arc::ptr_eq(&o.comments, &d.comments)
             && Arc::ptr_eq(&o.styles, &d.styles)
-            && Arc::ptr_eq(&o.bookmarks, &d.bookmarks)
+            // the bookmarks: `bookmarks_follow` (wave 7, B), once the changed blocks are known
             && Arc::ptr_eq(&o.formatting, &d.formatting)
             && match (&o.background, &d.background) {
                 (Some(a), Some(b)) => Arc::ptr_eq(a, b),
@@ -60,6 +60,34 @@ impl DocParts {
             && o.core_props == d.core_props
             && o.hf.len() == d.hf.len()
             && o.hf.iter_arcs().zip(d.hf.iter_arcs()).all(|(a, b)| Arc::ptr_eq(a, b))
+    }
+
+    /// Wave 7 (B): the bookmark index allows the resumed run. The editor's hosts rebuild it from the body's marks
+    /// before every layout (uo-docx `Session::sync_bookmarks`), so typing in a paragraph that holds a bookmark moves its
+    /// offsets. The layout reads a bookmark's offsets only together with its block (REF/NOTEREF text through
+    /// `bookmark_para` → `flow_block`, traced as a read of that block; `\p` compares the offset only when the field is
+    /// in the same block) and its page through `bookmark_pages` in `next_input` (the pass loop's reading, run on the
+    /// resumed result too). So the same names, in the same order, each start and end either unchanged or in the same
+    /// block inside the changed range, give the same layout as a full one. Anything else (a name added or removed, a
+    /// block moved) is a document change.
+    pub(crate) fn bookmarks_follow(&self, d: &Document, range: Option<(usize, usize)>) -> bool {
+        let (o, n) = (&*self.doc.bookmarks, &*d.bookmarks);
+        if Arc::ptr_eq(&self.doc.bookmarks, &d.bookmarks) || o == n {
+            return true;
+        }
+        let Some((b0, b1)) = range else { return false };
+        let inside = |x: f64| x >= b0 as f64 && x <= b1 as f64;
+        let starts = o.starts.len() == n.starts.len()
+            && o.starts
+                .iter()
+                .zip(n.starts.iter())
+                .all(|((ka, a), (kb, b))| ka == kb && (a == b || (a.block == b.block && inside(a.block.to_number()))));
+        starts
+            && o.ends.len() == n.ends.len()
+            && o.ends
+                .iter()
+                .zip(n.ends.iter())
+                .all(|((ka, a), (kb, b))| ka == kb && (a == b || (a.block == b.block && inside(a.block.to_number()))))
     }
 
     /// The body blocks the edit replaced, `[first, last]` in `Story::blocks` order; `Some(None)`

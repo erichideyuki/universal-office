@@ -72,7 +72,7 @@ with the editor — no need for this package too.
 | `getHeadings()` · `goToHeading(i)` | Outline: `{ level, text, page }[]`. |
 | `getComments()` · `selectComment(id)` | Comments: `{ id, author, text, page }[]`. |
 | `exportPdf(): Uint8Array` | PDF of the print layout. |
-| `UniversalDocumentViewerElement.configureEngine({ wasm, js, engine })` | Static. Where `engine="rust"` gets its module: `wasm` is the `.wasm` (bytes, URL, `Response`), `js` the wasm2js build, `engine` `'auto'` (default) · `'wasm'` · `'js'`. Without it: `chunks/uo-write.wasm` next to the engine's code. There is one module per page, so the first load wins; calls after it have no effect. |
+| `UniversalDocumentViewerElement.configureEngine({ wasm, js, engine })` | Static. Where `engine="rust"` gets its module: `wasm` is the `.wasm` (bytes, URL, `Response`), `js` the wasm2js build, `engine` `'auto'` (default) · `'wasm'` · `'js'`. Without it: `chunks/uo-write.wasm` next to the engine's code. There is one module per page, so the first load wins; calls after it have no effect. The module's memory grows to the largest document laid out and is returned to the browser only when the page reloads. |
 | `effectiveTheme` | `'light'` · `'dark'` — the UI theme in effect (getter). |
 | `print()` · `download()` · `downloadPdf()` · `toggleFullscreen()` | Same as the control-bar buttons: Download saves the original file; Print opens a menu with **Print…** and **Save as PDF** (`downloadPdf()`, the PDF of the print layout). |
 

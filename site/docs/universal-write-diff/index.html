@@ -102,7 +102,7 @@ wd.loadDocuments(aDoc, bDoc, { leftLabel: 'v1', rightLabel: 'v2' });</code></pre
       <table>
         <thead><tr><th>Member</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>loadPair(aBytes, bBytes, opts?)</code></td><td>Parses two <code>.docx</code> byte arrays and computes the diff. <code>opts</code>: <code>{ leftLabel?, rightLabel? }</code>.</td></tr>
+          <tr><td><code>loadPair(aBytes, bBytes, opts?)</code></td><td>Parses two <code>.docx</code> byte arrays and computes the diff. <code>opts</code>: <code>{ leftLabel?, rightLabel?, diff? }</code>; <code>diff(aBytes, bBytes)</code>, optional, answers the <code>DocDiff</code> from another engine (the editor with <code>engine="rust"</code> passes the Rust one).</td></tr>
           <tr><td><code>loadDocuments(aDoc, bDoc, opts?)</code></td><td>Compares two <code>FullDocument</code> objects from the document core (avoids re-parsing — ideal for comparing the editor's current state).</td></tr>
           <tr><td><code>view</code> (get/set)</td><td>Reads or changes the display mode (<code>'all' | 'diffs'</code>).</td></tr>
           <tr><td><code>stats</code> (get)</td><td><code>DocDiffStats | null</code> for the loaded diff.</td></tr>

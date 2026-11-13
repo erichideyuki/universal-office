@@ -362,6 +362,7 @@ impl Engine {
         };
         let base_lp = main.para(root_k).ok_or(LayoutError::Internal("engine: base paragraph"))?;
         let mut tiny = LDoc::empty(main.view);
+        tiny.theme = main.theme; // wave 7 (B, gate-O3)
         let mut back = Vec::with_capacity(rt.runs.len());
         let mut keys = Vec::with_capacity(rt.runs.len());
         for (i, &k) in rt.runs.iter().enumerate() {
@@ -741,6 +742,7 @@ impl Engine {
         // `{ runs: [run], props: {}, ppr: {} }`: no model id (F7a-4)
         let para = Paragraph { runs: vec![run], ppr: Some(Arc::new(PPr::default())), ..Paragraph::empty(crate::model::ParaId(u32::MAX)) };
         let mut tiny = LDoc::empty(cx.ldoc.view);
+        tiny.theme = cx.ldoc.theme; // wave 7 (B, gate-O3)
         tiny.runs.push(RunSrc::Synth(Box::new(para.runs.first().cloned().unwrap_or_default())));
         tiny.paras.push(LPara {
             src: ParaSrc::Model { para: &para, id: para.id },
@@ -795,7 +797,7 @@ impl Engine {
         grouped_next: bool,
         page: Option<ContainerId>,
     ) -> LResult<()> {
-        let has_fill = word::shading_fill(p.ppr.shd.as_deref(), &cx.ldoc.view.formatting().theme).is_some_and(|f| !f.is_empty());
+        let has_fill = word::shading_fill(p.ppr.shd.as_deref(), cx.ldoc.theme).is_some_and(|f| !f.is_empty());
         self.last_box = Some(LastBox { bottom, page });
         if p.ppr.p_bdr.is_none() && !has_fill {
             return Ok(());
@@ -819,13 +821,20 @@ impl Engine {
     }
 
     /// `placeParagraph(para0, ref, blockIdx, g)` (engine.ts:1743).
-    #[expect(clippy::too_many_lines, reason = "one TS method, ported as one")]
     pub(crate) fn place_paragraph(&mut self, cx: &mut Cx<'_, '_>, para0: LParaId, block_idx: usize, gi: u32) -> LResult<()> {
+        let r = self.place_paragraph_inner(cx, para0, block_idx, gi);
+        self.kl_col_to_page = false; // wave 7c (W, item 6): only within the paragraph
+        r
+    }
+
+    /// The body of [`Engine::place_paragraph`] (wave 7c, W: split so the keepLines column flag resets on every exit).
+    #[expect(clippy::too_many_lines, reason = "one TS method, ported as one")]
+    fn place_paragraph_inner(&mut self, cx: &mut Cx<'_, '_>, para0: LParaId, block_idx: usize, gi: u32) -> LResult<()> {
         let g = self.geom(gi)?.clone();
         let bi = f64::from(u32::try_from(block_idx).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?);
         let fmt = cx.ldoc.view.formatting();
         let settings = &fmt.settings;
-        let compat = settings.compatibility_mode.to_number();
+        let compat = cx.ldoc.compat_mode(); // wave 7c (W, item 2)
         // a frame: out of the flow (the box goes with the anchor paragraph; without an anchor it
         // stays here — liftFrames, F7b)
         if let Some(lp) = cx.ldoc.para(para0)
@@ -907,8 +916,10 @@ impl Engine {
         // after them, F7c)
         let next_geom = self.geoms.get(g.index as usize + 1).filter(|_| g.index + 1 < self.sect_geoms);
         let prev_is_para = block_idx.checked_sub(1).and_then(|i| self.block_at(cx, i)).is_some_and(|b| matches!(b, LBlock::Paragraph(_)));
+        // (wave 7c, V, fix round 2: not in Word's Draft/Outline, where that paragraph's one line is the section-break line)
         if js_eq(bi, g.blocks.1)
             && p.glyphs.is_empty()
+            && !cx.opts.view.word_break_lines()
             && self.en_flow.is_none()
             && next_geom.is_some_and(|n| &*n.kind == "continuous")
             && (prev_is_para || compat < 15.0)
@@ -948,7 +959,8 @@ impl Engine {
             p.marker = None;
         }
         // page break before (space before at the top: dropped in mode 15, kept in ≤ 14)
-        if p.page_break_before && !self.at_top {
+        // wave 7c (V): the editor's continuous views keep the break inside their one sheet (as the TS and Word's Draft)
+        if p.page_break_before && !self.at_top && !cx.opts.view.is_continuous() {
             let last_after = self.prev.as_ref().map_or(0.0, |pv| pv.after);
             let cg = self.cur_ps()?.geom;
             self.new_page(cx, cg, "nextPage")?;
@@ -1015,7 +1027,17 @@ impl Engine {
             let ps = self.cur_ps()?;
             let full = ps.body_bottom - self.col_top;
             let avail = ps.body_bottom - self.y;
-            if need > avail && need <= full && !self.at_top {
+            // wave 7c (W, item 6; oracle keeptall): Word moves a keepLines paragraph that does not fit what is left even
+            // when it is taller than a page (it then splits from the top of the next page); the frozen TS moves it only
+            // when it fits a whole page (`ts_keep_lines_within_page`). keepNext alone keeps the TS rule (measured equal).
+            let fits_or_word = need <= full || (p.keep_lines && !cx.opts.ts_keep_lines_within_page);
+            // and in mode 15, in a section of several columns, such a paragraph taller than the column goes to the next
+            // PAGE and each of its columns ends with a page break (at the top of a page too; mode 14 moves it to the next
+            // column: oracle keeptall kt-kl70-cols, the probes of the record)
+            if p.keep_lines && need > full && compat >= 15.0 && !cx.opts.ts_keep_lines_within_page && self.page_cols()?.len() > 1 {
+                self.kl_col_to_page = true;
+            }
+            if need > avail && fits_or_word && !self.at_top {
                 // keepNext WITHOUT keepLines (oracle keepsplit): a paragraph that does not fit whole
                 // splits as usual; if it fits and only the next one's start does not, in mode 15
                 // only its last lines go down
@@ -1418,7 +1440,9 @@ impl Engine {
                     self.y = jm::max_n(&below);
                 }
             }
-            let brk = last.break_after;
+            // wave 7c (V): the editor's continuous views (one sheet): a page or column break does not leave it (Word's Draft,
+            // Outline and Web views and the frozen TS show the text after it on the next line)
+            let brk = if cx.opts.view.is_continuous() { None } else { last.break_after };
             last_line = Some(last);
             match brk {
                 Some(BreakKind::Page) => {
@@ -1443,6 +1467,20 @@ impl Engine {
         }
         let _ = (frag_has_first, last_line);
         self.flush_frag(cx, &p, &rf, &pfmt, &mut frag, frag_top, true, grouped_next)?;
+        // wave 7c (V, fix round 2): in Word's Draft and Outline the section break after a paragraph with text is a line of
+        // its own, the paragraph mark's (measured: `v1-sections.docx` Draft — "secao um fim" at y 165, the break at 183,
+        // the next section at 212; Outline 154, 171, 188; tests/views_w7c.rs section_break_takes_a_line_in_draft_and_outline)
+        if cx.opts.view.word_break_lines()
+            && !p.glyphs.is_empty()
+            && js_eq(bi, g.blocks.1)
+            && self.geoms.get(g.index as usize + 1).is_some()
+            && g.index + 1 < self.sect_geoms
+        {
+            let mm = crate::paint::face_metrics_of(cx, p.mark_face)?;
+            let size = p.styles.get(p.mark_style.0 as usize).ok_or(LayoutError::Internal("section-break line: style"))?.size_pt;
+            let (asc, desc) = (mm.ascent * size * 20.0, mm.descent * size * 20.0);
+            self.y += crate::lines::line_box(asc, desc, &p, None, None).0;
+        }
         self.y += Self::border_bottom_extent(&p, grouped_next);
         // the column ends at the paragraph end: the "after" counts for the line between columns
         if !self.at_top {
@@ -1653,6 +1691,7 @@ pub(crate) fn line_record(
         y: top,
         height: line.height,
         baseline: top + line.baseline,
+        desc: line.desc,
         width: line.width,
         chars: Some(chars),
         hyph,

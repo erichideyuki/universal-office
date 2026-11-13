@@ -198,7 +198,7 @@ fn para_text(h: *mut UoWriteSession, i: u32) -> String {
     // SAFETY: live handle.
     let (st, b) = take(unsafe { uo_shell_para_text(h, i) });
     assert_eq!(st, 0);
-    let units: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    let units: Vec<u16> = b.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
     String::from_utf16_lossy(&units)
 }
 

@@ -131,6 +131,122 @@ fn is_pt(lang: &str) -> bool {
     lang.as_bytes().get(..2).is_some_and(|p| p.eq_ignore_ascii_case(b"pt"))
 }
 
+fn is_es(lang: &str) -> bool {
+    lang.as_bytes().get(..2).is_some_and(|p| p.eq_ignore_ascii_case(b"es"))
+}
+
+/// Wave 7c (W, item 4; oracle refbm): Word's REF result for an undefined bookmark (missing, without `w:bookmarkEnd`, or
+/// ending before it starts) — measured in Word 16 pt-BR (every switch: `\h \n \r \w \p`); the English and Spanish
+/// strings are Word's UI texts (not measured here).
+pub(crate) fn ref_error(lang: &str) -> &'static str {
+    if is_pt(lang) {
+        "Erro! Fonte de referência não encontrada."
+    } else if is_es(lang) {
+        "¡Error! No se encuentra el origen de la referencia."
+    } else {
+        "Error! Reference source not found."
+    }
+}
+
+/// Wave 7c (W, item 4; oracle refbm): Word's PAGEREF and NOTEREF result for an undefined bookmark (measured pt-BR).
+pub(crate) fn bookmark_error(lang: &str) -> &'static str {
+    if is_pt(lang) {
+        "Erro! Indicador não definido."
+    } else if is_es(lang) {
+        "¡Error! Marcador no definido."
+    } else {
+        "Error! Bookmark not defined."
+    }
+}
+
+/// Wave 7c (W, item 4; oracle refbm): a field value that is one of Word's reference error texts (REF, PAGEREF, NOTEREF,
+/// STYLEREF) — Word writes them in BOLD (measured: LiberationSans-Bold in its PDF). Read by the paragraph preparation on
+/// the value (the paragraph memo of the incremental relayout replays values, not flags).
+#[must_use]
+pub fn is_ref_error_text(v: &[u16]) -> bool {
+    const ALL: [&str; 8] = [
+        "Erro! Fonte de referência não encontrada.",
+        "¡Error! No se encuentra el origen de la referencia.",
+        "Error! Reference source not found.",
+        "Erro! Indicador não definido.",
+        "¡Error! Marcador no definido.",
+        "Error! Bookmark not defined.",
+        "Erro! Nenhum texto com o estilo especificado foi encontrado no documento.",
+        "Error! No text of specified style in document.",
+    ];
+    ALL.iter().any(|s| s.encode_utf16().eq(v.iter().copied()))
+}
+
+/// Whether derived paragraph `k` holds the start mark of bookmark `bm` (wave 7c, W, item 4).
+fn para_holds_start(cx: &Cx<'_, '_>, k: LParaId, bm: &str) -> bool {
+    cx.ldoc.para(k).is_some_and(|lp| {
+        lp.runs.iter().any(|&rk| {
+            crate::paint::model_run(cx.ldoc, rk)
+                .and_then(|r| r.ext())
+                .and_then(|e| e.bookmark.as_ref())
+                .is_some_and(|m| &*m.name == bm && m.end != Some(true))
+        })
+    })
+}
+
+/// Wave 7c (W, item 4, fix round 1): the bookmark marks of every derived paragraph (see [`crate::ldoc::BookmarkMarkIndex`]):
+/// the first paragraph that opens a name decides it — the text of the runs after its start mark up to the first end mark
+/// with its id in that paragraph (images, text boxes, shapes and groups skipped), or `None` when the paragraph ends first.
+fn bookmark_mark_index(ldoc: &crate::ldoc::LDoc<'_>) -> crate::ldoc::BookmarkMarkIndex {
+    let mut ix = crate::ldoc::BookmarkMarkIndex::default();
+    // (id, name, start in `text`) of the names open in the paragraph
+    let mut open: Vec<(f64, Box<str>, usize)> = Vec::new();
+    let mut text: Vec<u16> = Vec::new();
+    for lp in &ldoc.paras {
+        open.clear();
+        text.clear();
+        for &rk in &lp.runs {
+            let Some(e) = crate::paint::model_run(ldoc, rk).and_then(|r| r.ext()) else {
+                if !open.is_empty() {
+                    text.extend_from_slice(ldoc.run_text(rk));
+                }
+                continue;
+            };
+            if let Some(m) = e.bookmark.as_ref() {
+                if m.end == Some(true) {
+                    let id = m.id.to_number();
+                    let mut i = 0;
+                    while i < open.len() {
+                        if open.get(i).is_some_and(|o| js_eq(o.0, id)) {
+                            let (_, name, at) = open.remove(i);
+                            ix.insert(name, Some(text.get(at..).unwrap_or(&[]).to_vec()));
+                        } else {
+                            i += 1;
+                        }
+                    }
+                } else if !ix.contains_key(&*m.name) && !open.iter().any(|o| *o.1 == *m.name) {
+                    open.push((m.id.to_number(), Box::from(&*m.name), text.len()));
+                }
+                continue;
+            }
+            if !open.is_empty() && e.image.is_none() && e.textbox.is_none() && e.shape.is_none() && e.group.is_none() {
+                text.extend_from_slice(ldoc.run_text(rk));
+            }
+        }
+        for (_, name, _) in open.drain(..) {
+            ix.insert(name, None);
+        }
+    }
+    ix
+}
+
+/// Where a bookmark is, for Word's reference rules (wave 7c, W, item 4).
+pub(crate) enum BmWhere {
+    /// in the body index, with an end in its own block or after it
+    Body,
+    /// not defined for Word: missing, without an end, or ending before it starts
+    Undefined,
+    /// outside the body index (a header/footer, a text box, a note, a cell paragraph): the text of its range
+    Elsewhere(Vec<u16>),
+    /// a name the body index lacks, in a document read without bookmark marks: not knowable here
+    Unknown,
+}
+
 /// `ToIntegerOrInfinity(x)`.
 fn to_int_inf(x: f64) -> f64 {
     if x.is_nan() { 0.0 } else { jm::trunc(x) }
@@ -239,6 +355,57 @@ impl Engine {
         Some(utf16(w))
     }
 
+    /// Wave 7c (W, item 4): how Word sees bookmark `bm` (see [`BmWhere`]). The body index decides when the bookmark's
+    /// start is a body paragraph that holds it; otherwise (a name outside the index, a table block, a text box's bookmark
+    /// indexed on its anchor paragraph) the bookmark marks of every derived paragraph decide — headers/footers, notes,
+    /// text boxes, cells. The marks exist only in a lossless read (the editor's session: `ReadOptions::sources`); without
+    /// them a name the index lacks is `Unknown` (the frozen TS's behaviour stays: the cached result).
+    ///
+    /// Fix round 1 (reviewer W/4): the marks are read once per layout call — [`crate::ldoc::BookmarkMarkIndex`], built on
+    /// the first lookup that needs it, its runs charged to the budget — not once per reference and pass.
+    pub(crate) fn bookmark_where(&self, cx: &mut Cx<'_, '_>, bm: &str) -> LResult<BmWhere> {
+        let bmk = cx.ldoc.view.bookmarks();
+        let marks = cx.ldoc.bookmark_marks;
+        if let Some(st) = bmk.starts.get(bm) {
+            let b = st.block.to_number();
+            if let Some(k) = self.bookmark_para(cx, b)
+                && (!marks || para_holds_start(cx, k, bm))
+            {
+                let Some(end) = bmk.ends.get(bm) else { return Ok(BmWhere::Undefined) };
+                let eb = end.block.to_number();
+                if eb < b || (js_eq(eb, b) && end.offset.to_number() < st.offset.as_f64().unwrap_or(0.0)) {
+                    return Ok(BmWhere::Undefined);
+                }
+                return Ok(BmWhere::Body);
+            }
+        }
+        if !marks {
+            // without the marks the index still knows an end (a bookmark in a cell is indexed on its table's block)
+            let Some(st) = bmk.starts.get(bm) else { return Ok(BmWhere::Unknown) };
+            let b = st.block.to_number();
+            return Ok(match bmk.ends.get(bm) {
+                Some(end)
+                    if end.block.to_number() > b
+                        || (js_eq(end.block.to_number(), b) && end.offset.to_number() >= st.offset.as_f64().unwrap_or(0.0)) =>
+                {
+                    BmWhere::Body
+                }
+                _ => BmWhere::Undefined,
+            });
+        }
+        // every story can hold it: the whole document is read (LA7)
+        self.note_read_all();
+        if cx.ldoc.bookmark_mark_index.get().is_none() {
+            let runs: usize = cx.ldoc.paras.iter().map(|lp| lp.runs.len()).sum();
+            cx.budget.charge(u64::try_from(runs).unwrap_or(u64::MAX))?;
+            let _ = cx.ldoc.bookmark_mark_index.set(bookmark_mark_index(cx.ldoc));
+        }
+        Ok(match cx.ldoc.bookmark_mark_index.get().and_then(|ix| ix.get(bm)) {
+            Some(Some(text)) => BmWhere::Elsewhere(text.clone()),
+            _ => BmWhere::Undefined,
+        })
+    }
+
     /// The flow block of a bookmark (`this.full.blocks[b]`) when it is a paragraph.
     fn bookmark_para(&self, cx: &Cx<'_, '_>, b: f64) -> Option<LParaId> {
         match super::index_of(b).and_then(|i| self.flow_block(cx, i)) {
@@ -249,17 +416,32 @@ impl Engine {
 
     /// `noteRefValue(instr, block, at)` (engine.ts:461): NOTEREF bookmark — the mark of the note
     /// whose reference is in the bookmark's range.
-    pub(crate) fn note_ref_value(&mut self, cx: &Cx<'_, '_>, instr: &[u16], block: Option<i64>, at: Option<f64>) -> Option<Box<[u16]>> {
-        let bm = String::from_utf16_lossy(tok(instr, 1).filter(|t| !t.is_empty())?);
+    pub(crate) fn note_ref_value(
+        &mut self,
+        cx: &mut Cx<'_, '_>,
+        instr: &[u16],
+        block: Option<i64>,
+        at: Option<f64>,
+    ) -> LResult<Option<Box<[u16]>>> {
+        let Some(bm) = tok(instr, 1).filter(|t| !t.is_empty()).map(String::from_utf16_lossy) else { return Ok(None) };
+        // wave 7c (W, item 4; oracle refbm): an undefined bookmark is Word's error (the frozen TS keeps the cached result)
+        if !cx.opts.ts_ref_bookmarks && matches!(self.bookmark_where(cx, &bm)?, BmWhere::Undefined) {
+            return Ok(Some(utf16(bookmark_error(&cx.opts.lang))));
+        }
+        Ok(self.note_ref_body(cx, &bm, instr, block, at))
+    }
+
+    /// `noteRefValue`'s body once the bookmark is known (wave 7c, W, fix round 1: split from [`Engine::note_ref_value`]).
+    fn note_ref_body(&mut self, cx: &Cx<'_, '_>, bm: &str, instr: &[u16], block: Option<i64>, at: Option<f64>) -> Option<Box<[u16]>> {
         if has_switch(instr, b"p") {
-            return Self::position_word(cx, &bm, block, at);
+            return Self::position_word(cx, bm, block, at);
         }
         let bmk = cx.ldoc.view.bookmarks();
-        let st = bmk.starts.get(bm.as_str())?;
+        let st = bmk.starts.get(bm)?;
         let b = st.block.to_number();
         let k = self.bookmark_para(cx, b)?;
         let from = st.offset.as_f64().unwrap_or(0.0);
-        let to = match bmk.ends.get(bm.as_str()) {
+        let to = match bmk.ends.get(bm) {
             Some(e) if js_eq(e.block.to_number(), b) => e.offset.to_number(),
             _ => f64::INFINITY,
         };
@@ -297,6 +479,17 @@ impl Engine {
         at: Option<f64>,
     ) -> LResult<Option<Box<[u16]>>> {
         let Some(bm) = tok(instr, 1).filter(|t| !t.is_empty()).map(String::from_utf16_lossy) else { return Ok(None) };
+        // wave 7c (W, item 4; oracle refbm): Word's rules — an undefined bookmark (missing, no end, end before start) is
+        // its error text with every switch; a bookmark outside the body (header/footer, text box, note, cell) gives its
+        // range's text; a range over several paragraphs gives them all (a line break between them). The frozen TS
+        // (`ts_ref_bookmarks`) shows the start paragraph's text, or keeps the cached result.
+        if !cx.opts.ts_ref_bookmarks {
+            match self.bookmark_where(cx, &bm)? {
+                BmWhere::Undefined => return Ok(Some(utf16(ref_error(&cx.opts.lang)))),
+                BmWhere::Elsewhere(t) if !has_switch(instr, b"pnrw") => return Ok((!t.is_empty()).then(|| t.into_boxed_slice())),
+                _ => {}
+            }
+        }
         if has_switch(instr, b"p") {
             return Ok(Self::position_word(cx, &bm, block, at));
         }
@@ -333,6 +526,40 @@ impl Engine {
         let Some(k) = self.bookmark_para(cx, b) else { return Ok(None) };
         let lp = cx.ldoc.para(k).ok_or(LayoutError::Internal("REF: paragraph"))?;
         let ext = |rk: RunKey| crate::paint::model_run(cx.ldoc, rk).and_then(|r| r.ext());
+        // wave 7c (W, item 4; oracle refbm rb-multi, rb-multi3): the range goes on in later blocks — Word gives every
+        // paragraph of it (each break a line break here: the paragraphs' own formatting is not carried)
+        if !cx.opts.ts_ref_bookmarks
+            && let Some(end) = bmk.ends.get(bm.as_str())
+            && end.block.to_number() > b
+        {
+            let piece = |k: LParaId, from: f64, to: f64, out: &mut Vec<u16>| {
+                let Some(lp) = cx.ldoc.para(k) else { return };
+                let mut acc = 0.0;
+                for &rk in &lp.runs {
+                    let rs = acc;
+                    let t = cx.ldoc.run_text(rk);
+                    acc += num(t.len());
+                    if ext(rk).is_some_and(|e| e.image.is_some() || e.textbox.is_some() || e.shape.is_some() || e.group.is_some()) {
+                        continue;
+                    }
+                    out.extend_from_slice(js_slice(t, jm::max(0.0, from - rs), jm::max(0.0, to - rs)));
+                }
+            };
+            let mut text = Vec::new();
+            piece(k, st.offset.to_number(), f64::INFINITY, &mut text);
+            let last = end.block.to_number();
+            let mut i = b + 1.0;
+            while i <= last {
+                cx.budget.charge(1)?;
+                // (a traced read of each block: LA7)
+                if let Some(q) = self.bookmark_para(cx, i) {
+                    text.push(0x0a);
+                    piece(q, 0.0, if js_eq(i, last) { end.offset.to_number() } else { f64::INFINITY }, &mut text);
+                }
+                i += 1.0;
+            }
+            return Ok((!text.is_empty()).then(|| text.into_boxed_slice()));
+        }
         if let Some(end) = bmk.ends.get(bm.as_str())
             && js_eq(end.block.to_number(), b)
         {
@@ -534,6 +761,9 @@ impl Engine {
             }
         }
         let mut cap = word::text_cap(&opts.limits);
+        // Word writes the bookmark page as its PAGE field: the chapter numbers of a `w:chapStyle` section before it
+        // (ED-713, measured; `chapter_of` over this pass's headings). The frozen TS writes the bare number.
+        let chapters = (!opts.ts_pageref_without_chapter && self.geoms.iter().any(|g| g.chap.is_some())).then(|| self.chapter_index());
         let key_of = |b: f64| super::index_of(b).and_then(|i| u32::try_from(i).ok());
         for (name, st) in &ldoc.view.bookmarks().starts {
             let block = st.block.to_number();
@@ -549,9 +779,39 @@ impl Engine {
                 pg = key_of(b).and_then(|k| first_page.get(&k).copied());
                 b += 1.0;
             }
-            let Some(ps) = pg.and_then(|pi| self.pages.get(pi)) else { continue };
-            let fmt = self.geoms.get(ps.geom as usize).and_then(|g| g.pg_fmt.clone()).unwrap_or_else(|| "decimal".into());
-            out.insert(name.clone(), word::format_number(ps.page.number, Some(&fmt), &opts.lang, &mut cap).units().into());
+            let Some((pi, ps)) = pg.and_then(|pi| self.pages.get(pi).map(|ps| (pi, ps))) else { continue };
+            let g = self.geoms.get(ps.geom as usize);
+            let fmt = g.and_then(|g| g.pg_fmt.clone()).unwrap_or_else(|| "decimal".into());
+            let num = word::format_number(ps.page.number, Some(&fmt), &opts.lang, &mut cap);
+            // `chapter_of(level, page)`: the first heading of the level, then the last one on a page up to this one
+            let chap = chapters.as_ref().zip(g.and_then(|g| g.chap.as_ref())).and_then(|(idx, c)| {
+                let key = if c.level == jm::trunc(c.level) && c.level.abs() < 9.0e15 {
+                    uo_jsnum::conv::to_int32(c.level).into()
+                } else {
+                    i64::MIN
+                };
+                let list = idx.get(&key)?;
+                let page = f64::from(u32::try_from(pi).unwrap_or(u32::MAX));
+                let mut text = &list.first()?.text;
+                for h in list {
+                    if h.page > page {
+                        break;
+                    }
+                    text = &h.text;
+                }
+                Some((text.clone(), c.sep.clone()))
+            });
+            match chap {
+                Some((ch, sep)) => {
+                    let mut v = ch.to_vec();
+                    v.extend(sep.encode_utf16());
+                    v.extend_from_slice(num.units());
+                    out.insert(name.clone(), v.into_boxed_slice());
+                }
+                None => {
+                    out.insert(name.clone(), num.units().into());
+                }
+            }
         }
         out
     }

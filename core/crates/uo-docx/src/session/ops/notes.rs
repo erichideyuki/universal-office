@@ -664,7 +664,15 @@ impl Session {
     /// `ensureNoteStyles(this.docStyles, kind)`.
     fn ensure_note_styles(&mut self, footnote: bool) -> NoteStyleIds {
         let d = Defaults::of(&self.style_index());
-        ensure_note_styles_xml(&self.styles_base(), &d, footnote)
+        let base = self.styles_base();
+        let st = ensure_note_styles_xml(&base, &d, footnote);
+        // wave 7c (S, fix round 1; Word manda sobre o TS): the styles this defines stay in the saved file after an undo
+        for (id, raw) in super::super::save_parts::added_note_styles(&st.xml, &base) {
+            if !self.save_parts.note_styles.iter().any(|(k, _)| *k == id) {
+                self.save_parts.note_styles.push((id, raw));
+            }
+        }
+        st
     }
 
     // ── inserting ──────────────────────────────────────────────────────────────────────────
@@ -694,8 +702,12 @@ impl Session {
         // note (notes-lab fn-wb/en-wb)
         let st = self.ensure_note_styles(footnote);
         self.commit_styles(st.xml);
-        // a part that cannot be read leaves the package as it is (the TS would throw)
-        let _ = ensure_note_parts(&mut self.pkg);
+        // a part that cannot be read leaves the package as it is (the TS would throw); `if (this.pkg)` (19048; wave 7c,
+        // S): not into an `.odt`'s scratch package
+        if !self.pkg_scratch {
+            let _ = ensure_note_parts(&mut self.pkg);
+            self.save_parts.note_parts = true;
+        }
         let id = next_note_id(&self.doc, footnote);
         let mark = mark.map(|m| trim_units(m.units())).filter(|m| !m.is_empty());
         let mut reference = note_ref_run(kind, id, Some(&st.r#ref));
@@ -886,7 +898,11 @@ impl Session {
                 }
             }
         }
-        let _ = ensure_note_parts(&mut self.pkg);
+        // `if (this.pkg)` (19228; wave 7c, S)
+        if !self.pkg_scratch {
+            let _ = ensure_note_parts(&mut self.pkg);
+            self.save_parts.note_parts = true;
+        }
         self.touch_all();
         self.f5.last_converted = u32_of(new_ids.len());
         Ok(Outcome::Done(self.finish()))

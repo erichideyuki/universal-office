@@ -156,6 +156,20 @@ export class PaintCaches {
     return o;
   }
 
+  /**
+   * Wave 7 (A2): the picture layers and colour-adjusted bitmaps of the images layout `to` shares with `from` (`shared`: the
+   * same bytes at the same index) are `from`'s — the TS keeps them on the image object, which a relayout does not replace,
+   * so a layer built at the screen's resolution is the one a later paint with the same TS key reuses (the page thumbnail
+   * of a relaid-out page painted the picture from a fresh layer before: blank|objects).
+   */
+  inherit(from: object, to: object, shared: (id: number) => boolean): void {
+    const f = this.#owners.get(from);
+    if (!f || from === to) return;
+    const t = this.of(to);
+    for (const [id, m] of f.layers) if (!t.layers.has(id) && shared(id)) t.layers.set(id, m);
+    for (const [id, m] of f.adjusted) if (!t.adjusted.has(id) && shared(id)) t.adjusted.set(id, m);
+  }
+
   /** drops every entry (the global ones and every layout's) */
   clear(): void {
     this.fillTiles.clear();

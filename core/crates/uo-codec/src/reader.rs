@@ -169,7 +169,7 @@ impl<'a> Reader<'a> {
         let n = self.list_len(16)?;
         self.charge_alloc(n, 2)?;
         let bytes = self.take(n.checked_mul(2).ok_or(DecodeError::Truncated)?)?;
-        Ok(bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c.first().copied().unwrap_or(0), c.get(1).copied().unwrap_or(0)])).collect())
+        Ok(bytes.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect())
     }
 
     /// An inline byte string.

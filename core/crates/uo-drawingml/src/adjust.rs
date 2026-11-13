@@ -90,7 +90,7 @@ pub fn adjust_saturation(rgba: &mut [u8], s: f64) {
     if abs(s - 1.0) < 1e-6 {
         return;
     }
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         let [h, sat, l] = rgb_to_hsl(f64::from(px[0]) / 255.0, f64::from(px[1]) / 255.0, f64::from(px[2]) / 255.0);
         if sat == 0.0 {
             continue;
@@ -141,7 +141,7 @@ pub fn adjust_temperature(rgba: &mut [u8], kelvin: f64) {
             *out = store8(v + dc * (1.0 - (1.0 - x) * (1.0 - x)));
         }
     }
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         px[0] = lut[0][usize::from(px[0])];
         px[1] = lut[1][usize::from(px[1])];
         px[2] = lut[2][usize::from(px[2])];
@@ -219,7 +219,7 @@ pub fn adjust_brightness_contrast(rgba: &mut [u8], bright: f64, contrast: f64) {
         let y = lb.as_ref().map_or(v, |b| usize::from(b[v]));
         *out = lc.as_ref().map_or_else(|| u8::try_from(y).unwrap_or(0), |c| c[y]);
     }
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         px[0] = lut[usize::from(px[0])];
         px[1] = lut[usize::from(px[1])];
         px[2] = lut[usize::from(px[2])];
@@ -313,7 +313,7 @@ pub fn adjust_sharpen(rgba: &mut [u8], w: u32, h: u32, amount: f64, limits: &Lim
     let sigma = 2.35 * a;
     if amount < 0.0 {
         let b = blur_rgb(rgba, wu, hu, sigma)?;
-        for (px, bp) in rgba.chunks_exact_mut(4).zip(b.chunks_exact(3)) {
+        for (px, bp) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(b.as_chunks::<3>().0) {
             px[0] = store8(f64::from(bp[0]));
             px[1] = store8(f64::from(bp[1]));
             px[2] = store8(f64::from(bp[2]));
@@ -321,7 +321,7 @@ pub fn adjust_sharpen(rgba: &mut [u8], w: u32, h: u32, amount: f64, limits: &Lim
         return Ok(());
     }
     let mut luma = vec![0u8; n.checked_mul(4).ok_or(Error::Limit(LimitKind::ImagePixels))?];
-    for (px, y) in rgba.chunks_exact(4).zip(luma.chunks_exact_mut(4)) {
+    for (px, y) in rgba.as_chunks::<4>().0.iter().zip(luma.as_chunks_mut::<4>().0) {
         let v = to_uint8_clamp(0.2126 * f64::from(px[0]) + 0.7152 * f64::from(px[1]) + 0.0722 * f64::from(px[2]));
         y[0] = v;
         y[1] = v;
@@ -330,7 +330,7 @@ pub fn adjust_sharpen(rgba: &mut [u8], w: u32, h: u32, amount: f64, limits: &Lim
     let yb = blur_rgb(&luma, wu, hu, sigma)?;
     let k = 0.65 * exp(1.7 * a);
     let t = 2.5;
-    for (px, yp) in rgba.chunks_exact_mut(4).zip(yb.chunks_exact(3)) {
+    for (px, yp) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(yb.as_chunks::<3>().0) {
         let x = 0.2126 * f64::from(px[0]) + 0.7152 * f64::from(px[1]) + 0.0722 * f64::from(px[2]) - f64::from(yp[0]);
         let dl = if abs(x) <= t { 0.0 } else { k * (x - sign(x) * t) };
         if truthy(dl) {

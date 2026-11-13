@@ -45,6 +45,8 @@ pub struct UoShellEngine {
     /// provider's answers by face identity, and a provider built per call answers new faces (the
     /// relayout fell back to `Provider` on every keystroke, measured in tests/shell_native.rs)
     provider: Option<(ProviderKey, Arc<dyn FontProvider>)>,
+    /// wave 7 (A1): the view the shell lays out (Web/Draft/Outline; `None` = Print), set by `uo_shell_engine_set_view`
+    pub(crate) view: Option<uo_docx_layout::options::ViewTransform>,
 }
 
 /// What the kept provider was built from: the session, the registry and its generation (bumped by
@@ -59,7 +61,7 @@ struct ProviderKey {
 
 impl UoShellEngine {
     fn new() -> UoShellEngine {
-        UoShellEngine { engine: LayoutEngine::new().with_incremental(IncrConfig::default()), hyph: None, provider: None }
+        UoShellEngine { engine: LayoutEngine::new().with_incremental(IncrConfig::default()), hyph: None, provider: None, view: None }
     }
 }
 
@@ -207,6 +209,10 @@ unsafe fn relayout(
     let explicit = (flags >> crate::write::LAYOUT_REVISIONS_SHIFT) & 7 != 0;
     let keep = base.revisions.clone();
     let mut o = editor_options(&s.session, &base);
+    // wave 7 (A1): the view of the shell (Web/Draft/Outline)
+    if let Some(v) = eng.view {
+        o.view = v;
+    }
     if explicit {
         o.revisions = keep;
     }
@@ -218,7 +224,9 @@ unsafe fn relayout(
     let Some(fonts) = s.fonts.as_ref() else { return std::ptr::null_mut() };
     // the engine draws on the environment's patterns: a new environment, a new engine
     if !eng.hyph.as_ref().is_some_and(|k| Arc::ptr_eq(k, &fonts.hyphenation)) {
-        eng.engine = LayoutEngine::with_hyphenation(Arc::clone(&fonts.hyphenation)).with_incremental(IncrConfig::default());
+        // wave 7 (B, D-L7): the phone profile's lower retention caps
+        let cfg = if fonts.phone { IncrConfig::phone() } else { IncrConfig::default() };
+        eng.engine = LayoutEngine::with_hyphenation(Arc::clone(&fonts.hyphenation)).with_incremental(cfg);
         eng.hyph = Some(Arc::clone(&fonts.hyphenation));
     }
     let key = ProviderKey {
@@ -241,6 +249,8 @@ unsafe fn relayout(
             }
         },
     };
+    // wave 7 (B, gate-10): the bookmark index of the layout pass (engine-doc.ts `buildEngineDoc`), from the current marks
+    s.session.sync_bookmarks();
     let view = s.session.view();
     // wave 6 (L): the previous handle gives the engine's lent result back (no copy); its face and image
     // bytes are kept (Arc clones) until the new handle is compared with them

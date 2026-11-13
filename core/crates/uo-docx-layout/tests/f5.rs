@@ -345,8 +345,8 @@ fn automatic_hyphen_is_a_derived_glyph() {
     let mut env = TestEnv::new();
     // "aaaa bbbbbb": the second word hyphenates after its 3rd letter in a 900-twip line
     let mut p = para("aaaa bbbbbb");
-    for k in 5..10 {
-        p.glyphs[k].flags.0 |= GlyphFlags::HYPH;
+    for g in &mut p.glyphs[5..10] {
+        g.flags.0 |= GlyphFlags::HYPH;
     }
     let lines = break_all(&mut env, &p, frame(0.0, 900.0));
     let first = &lines[0];

@@ -81,8 +81,10 @@ export function sectPr({ w = 11906, h = 16838, top = 1417, right = 1701, bottom 
  *  compat     — compatibilityMode (default 15)
  *  extraCompat — elementos extras de w:compat (ex.: <w:doNotExpandShiftReturn/>)
  *  charSpacing — w:characterSpacingControl (doNotCompress | compressPunctuation | …)
+ *  noSettings — sem word/settings.xml (nem a relação nem o tipo) — wave 7c do port Rust (grupo nosettings)
+ *  rawSettings — o conteúdo de w:settings inteiro no lugar do padrão (defaultTab/compat/settings ignorados)
  */
-export function buildDocx({ body, sect, defaults, styles = '', normal = '', numbering, headers = {}, footers = {}, settings = '', media = {}, compat = 15, defaultTab = 708, extraParts = {}, extraCompat = '', charSpacing = 'doNotCompress' }) {
+export function buildDocx({ body, sect, defaults, styles = '', normal = '', numbering, headers = {}, footers = {}, settings = '', media = {}, compat = 15, defaultTab = 708, extraParts = {}, extraCompat = '', charSpacing = 'doNotCompress', noSettings = false, rawSettings = null }) {
   const files = {};
   const ct = ['<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
     '<Default Extension="xml" ContentType="application/xml"/>',
@@ -137,7 +139,13 @@ export function buildDocx({ body, sect, defaults, styles = '', normal = '', numb
   files['_rels/.rels'] = strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
   files['word/_rels/document.xml.rels'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.join('')}</Relationships>`);
   files['word/styles.xml'] = strToU8(DEFAULT_STYLES(defaults ?? docDefaults()).replace('__NORMAL__', normal).replace('__EXTRA__', styles));
-  files['word/settings.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ${W_NS}><w:defaultTabStop w:val="${defaultTab}"/><w:characterSpacingControl w:val="${charSpacing}"/>${settings}<w:compat>${extraCompat}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="${compat}"/></w:compat></w:settings>`);
+  if (noSettings) {
+    ct.splice(ct.findIndex((x) => x.includes('/word/settings.xml')), 1);
+    rels.splice(rels.findIndex((x) => x.includes('rIdSettings')), 1);
+    files['[Content_Types].xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">${ct.join('')}</Types>`);
+    files['word/_rels/document.xml.rels'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.join('')}</Relationships>`);
+  } else if (rawSettings !== null) files['word/settings.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ${W_NS}>${rawSettings}</w:settings>`);
+  else files['word/settings.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ${W_NS}><w:defaultTabStop w:val="${defaultTab}"/><w:characterSpacingControl w:val="${charSpacing}"/>${settings}<w:compat>${extraCompat}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="${compat}"/></w:compat></w:settings>`);
   files['word/document.xml'] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W_NS}><w:body>${body}${sp}</w:body></w:document>`);
   return zipSync(files, { level: 6 });
 }

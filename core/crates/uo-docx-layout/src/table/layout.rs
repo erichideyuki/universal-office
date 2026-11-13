@@ -11,21 +11,22 @@ use uo_jsnum::math as jm;
 use super::widths::{GeoCell, GeoSrc, MinMax, Pref, WidthIn, Wspec, column_widths, para_content_widths, pref_of, width_tw};
 use super::{
     CellContent, CellEnv, CellLayouter, MergeAt, MergeFill, MergeText, RowCell, RowLayout, RowSplit, TableLayout, VDir, at as js_at,
-    is_hidden_row, pure, slice, split_content, vertical_dir,
+    is_hidden_row, pure, slice, vertical_dir,
 };
 use crate::engine::Cx;
 use crate::error::{LResult, LayoutError, LimitKind};
 use crate::items::{PassItems, PassLine};
 use crate::keys::ObjId;
 use crate::model::{
-    BorderSpec, Cell, CellKey, CellMargins, DocFormatting, JsNumber, PPr, Paragraph, RPr, Row, ShadingSpec, Table, TblBorders, TblLook,
-    TblPr, TcBorders, TcPr, TrPr,
+    BorderSpec, Cell, CellKey, CellMargins, JsNumber, PPr, Paragraph, RPr, Row, ShadingSpec, Table, TblBorders, TblLook, TblPr, TcBorders,
+    TcPr, TrPr,
 };
 use crate::output::{LineRef, RefPath};
 use crate::paint::{Outer, border_width, paint_border};
 use crate::para::{ParaEnv, is_dark};
 use crate::word::obj::{assign, delete, js_sort, set, spread};
 use crate::word::{COND_ORDER, merge_ppr, merge_rpr, merge_tbl_pr, merge_tc_pr, shading_fill};
+use uo_docx::model::formatting::Theme;
 use uo_render::OptF64;
 use uo_render::types::Item;
 
@@ -239,13 +240,14 @@ fn nn(v: Option<JsNumber>) -> Option<f64> {
 
 /// `cellFill(tcPr, theme)` (table.ts:1267): only the CELL's `w:shd`; an empty string is falsy for
 /// every `if (fill)` of the TS.
-fn fill_of(tc: &TcPr, fmt: &DocFormatting) -> Option<String> {
-    shd_fill(tc.shd.as_deref(), fmt)
+fn fill_of(tc: &TcPr, theme: &Theme) -> Option<String> {
+    shd_fill(tc.shd.as_deref(), theme)
 }
 
 /// `shdFill(shd, theme)` (table.ts:1271), empty = none (every caller tests it with `if`).
-fn shd_fill(shd: Option<&ShadingSpec>, fmt: &DocFormatting) -> Option<String> {
-    shading_fill(shd, &fmt.theme).filter(|f| !f.is_empty())
+// wave 7 (B, gate-O3): the layout's theme (`LDoc::theme`), not the model's
+fn shd_fill(shd: Option<&ShadingSpec>, theme: &Theme) -> Option<String> {
+    shading_fill(shd, theme).filter(|f| !f.is_empty())
 }
 
 // ───────────────────────── swapLR ─────────────────────────
@@ -349,7 +351,7 @@ fn measure_cell(
                     max = jm::max(max, w);
                 }
                 crate::model::Block::Paragraph(p) => {
-                    let dts = cx.ldoc.view.formatting().settings.default_tab_stop.to_number();
+                    let dts = cx.ldoc.default_tab_stop(); // wave 7c (W, item 2)
                     let prep = host.prepare(cx, p, &env)?;
                     let w = para_content_widths(&prep, dts);
                     // an object anchored in the cell with wrapping: the automatic column widens
@@ -396,7 +398,7 @@ fn anchored_width(cx: &mut Cx<'_, '_>, host: &mut dyn CellLayouter, para: &Parag
             && tb.no_wrap == Some(true)
         {
             let mut tw = 0.0;
-            let dts = cx.ldoc.view.formatting().settings.default_tab_stop.to_number();
+            let dts = cx.ldoc.default_tab_stop(); // wave 7c (W, item 2)
             for tp in tb.content.paras.iter() {
                 let prep = host.prepare(cx, tp, &ParaEnv::default())?;
                 tw = jm::max(tw, para_content_widths(&prep, dts).max);
@@ -611,7 +613,7 @@ pub fn layout_table(
     let lk = |v: Option<bool>| v == Some(true);
     // the side margin of a cell without one: 108 twips only without any table style
     let def_mar = if style.has_style { 0.0 } else { 108.0 };
-    let compat_mode = settings.compatibility_mode.to_number();
+    let compat_mode = ldoc.compat_mode(); // wave 7c (W, item 2)
     let no_va_sp = compat_mode < 15.0 && settings.compat.get("doNotVertAlignCellWithSp").copied() == Some(true);
     let n_rows = src.rows.len();
     let nr_f = n_rows as f64;
@@ -1214,7 +1216,7 @@ pub fn layout_table(
                 bx1 - jm::max(wr - mar_r, wr / 2.0)
             };
             // a dark background in the cell: automatic text colour turns white
-            let dark = is_dark(fill_of(&s.tc, fmt).as_deref());
+            let dark = is_dark(fill_of(&s.tc, ldoc.theme).as_deref());
             let env =
                 CellEnv { table_ppr: Some(Arc::clone(&s.ppr)), table_rpr: Some(Arc::clone(&s.rpr)), dark_background: dark, cell_mar: None };
             let vertical = vertical_dir(s.tc.text_direction.as_deref());
@@ -1443,7 +1445,7 @@ pub fn layout_table(
         let sum_rows = |a: usize, b: f64| slice(&row_heights, a as f64, Some(b)).iter().fold(0.0, |x, y| x + y);
         let h = sum_rows(m.start_row, end_row as f64 + 1.0) - band_top_of(m.start_row) - band_bottom_of(end_row);
         let target_ix = if out_rows.get(end_row).is_some() { end_row } else { m.start_row };
-        if let Some(fill) = fill_of(&s.tc, fmt) {
+        if let Some(fill) = fill_of(&s.tc, ldoc.theme) {
             let o = ObjId(ids);
             ids = ids.saturating_add(1);
             let mut one = PassItems::new();
@@ -1550,7 +1552,7 @@ fn build(
 const SPLIT_OBJ_BASE: u32 = 1 << 30;
 
 /// The body of `r.split = (avail) => …` (table.ts:1193).
-pub(crate) fn split_row(cx: &mut Cx<'_, '_>, sp: &RowSplit, avail: f64) -> LResult<Option<(RowLayout, RowLayout)>> {
+pub(crate) fn split_row(cx: &mut Cx<'_, '_>, sp: &RowSplit, avail: f64, keep: bool) -> LResult<Option<(RowLayout, RowLayout)>> {
     let rc = &sp.rc;
     cx.budget.charge(1 + rc.infos.len() as u64)?;
     if sp.draw_top && rc.min_row > avail + 0.5 {
@@ -1572,7 +1574,7 @@ pub(crate) fn split_row(cx: &mut Cx<'_, '_>, sp: &RowSplit, avail: f64) -> LResu
             }
             continue;
         };
-        let parts = split_content(cx, &c, avail_content - ci.mar_t - ci.mar_b - rc.brk_w)?;
+        let parts = crate::table::split_content_keep(cx, &c, avail_content - ci.mar_t - ci.mar_b - rc.brk_w, keep)?;
         let Some((p0, p1)) = parts else {
             // a cell with text that puts not even its first line (or only the orphan) on this
             // page: the table row goes down whole (oracle rowwidow)
@@ -1634,7 +1636,6 @@ fn paint_row(
     let ri = rc.ri;
     let x = t.x;
     let ldoc = cx.ldoc;
-    let fmt = ldoc.view.formatting();
     cx.budget.charge(1 + rc.infos.len() as u64)?;
     // the cell boxes of the nested tables in the content placed in this row
     let mut nest: Vec<RowCell> = Vec::new();
@@ -1677,7 +1678,7 @@ fn paint_row(
         let cy0 = b_top - js_at(&t.sep_wt, ri as f64);
         let cy1 = b_top + ch + (if b_bottom > 0.0 { js_at(&t.sep_wb, ri as f64) } else { 0.0 });
         // the TABLE's w:shd paints only the spacing around the cells (oracle tblshd, ts-cellsp)
-        if let Some(tbl_fill) = shd_fill(t.tbl_shd.as_deref(), fmt) {
+        if let Some(tbl_fill) = shd_fill(t.tbl_shd.as_deref(), ldoc.theme) {
             let xl = x + t.g0;
             let xr = x + t.gn;
             let strip = |cx: &mut Cx<'_, '_>, its: &mut PassItems, x0: f64, y0: f64, x1: f64, y1: f64| -> LResult<()> {
@@ -1702,7 +1703,7 @@ fn paint_row(
             if s.merged {
                 continue;
             }
-            let fill = fill_of(&s.tc, fmt);
+            let fill = fill_of(&s.tc, ldoc.theme);
             let content = content_of(k);
             if let Some(f) = &fill {
                 rect(cx, &mut its, x + ci.bx0, cy0, ci.bx1 - ci.bx0, cy1 - cy0, f)?;
@@ -1793,7 +1794,7 @@ fn paint_row(
     let mut own_band: f64 = 0.0;
     for (k, ci) in rc.infos.iter().enumerate() {
         let s = rc.slot(ci)?;
-        let fill = fill_of(&s.tc, fmt);
+        let fill = fill_of(&s.tc, ldoc.theme);
         let content = content_of(k);
         if !s.merged && s.row_span > 1 {
             merge_at.push(MergeAt { col: s.col, at: pos(&its), end_row: u32::try_from(ri + s.row_span - 1).unwrap_or(u32::MAX) });

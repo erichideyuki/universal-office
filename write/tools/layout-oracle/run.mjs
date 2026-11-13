@@ -25,7 +25,10 @@ const onlyIdx = argv.indexOf('--only');
 const only = onlyIdx >= 0 ? new Set(argv[onlyIdx + 1].split(',')) : null;
 
 const { cases, vlines } = await import(pathToFileURL(join(here, 'cases', `${group}.mjs`)).href);
-const fixDir = join(writeRoot, 'packages', 'docx-layout', 'test', 'oracle', group);
+// --fixdir <dir>: the .docx/.word.json somewhere else (wave 7c do port Rust: core/crates/uo-docx-layout/tests/oracle_w7c/<grupo>,
+// fora do corpus de 2.742 documentos que os testes de paridade do uo-docx repetem)
+const fixIdx = argv.indexOf('--fixdir');
+const fixDir = fixIdx >= 0 ? argv[fixIdx + 1] : join(writeRoot, 'packages', 'docx-layout', 'test', 'oracle', group);
 const docxTmp = join(here, '.out', group, 'docx');
 const pdfDir = join(here, '.out', group, 'pdf');
 mkdirSync(fixDir, { recursive: true });

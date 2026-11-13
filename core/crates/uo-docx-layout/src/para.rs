@@ -716,6 +716,8 @@ struct DRun<'r> {
     no_form: bool,
     /// `GLUED_FIELD.has(run)`
     glued: bool,
+    /// wave 7c (W, item 4): Word's reference error text, written in bold
+    bold: bool,
     idx: u32,
     offset: u32,
 }
@@ -823,7 +825,7 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
 
     /// `resolveRunStyle(ctx, rpr, env, link)` (para.ts:206).
     fn resolve_run_style(&mut self, rpr: Arc<RPr>, link: Option<&[u16]>) -> LResult<RunStyle> {
-        let theme = &self.fmt.theme;
+        let theme = self.ldoc.theme; // wave 7 (B, gate-O3)
         let sz = num_or(rpr.sz, 20.0) / 2.0;
         let va = rpr.vert_align.as_deref();
         let sup_sub = matches!(va, Some("superscript" | "subscript"));
@@ -982,7 +984,7 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
         if !is_cjk_lang(rpr) {
             return Ok(false);
         }
-        Ok(self.fmt.settings.compatibility_mode.to_number() >= 15.0 || self.doc_east_asia_cjk()?)
+        Ok(self.ldoc.compat_mode() >= 15.0 || self.doc_east_asia_cjk()?)
     }
 
     /// `pushChars(text, run, rpr, style, offset0, runIdx, formText)` (para.ts:747).
@@ -1129,6 +1131,8 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
 
     /// `fieldValueRun(ctx, run, v, glued)` (para.ts:548).
     fn field_value_run<'r>(&mut self, run: &'r Run, at: &FieldRun, v: Box<[u16]>, glued: bool, idx: u32, offset: u32) -> DRun<'r> {
+        // wave 7c (W, item 4; oracle refbm): Word writes its reference error texts in bold
+        let bold = !self.cx.opts.ts_ref_bookmarks && crate::engine::field_refs::is_ref_error_text(&v);
         // the model run of `at` (F8): the keyed run, or the field result `sub[0]` of it (a
         // PAGEREF in a TOC's result); a run nested deeper in field results has no `RunRef` (F8-6)
         let model = field_model_ref(self.ldoc, self.cx.opts.collect_fields.is_some(), at);
@@ -1138,7 +1142,7 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             .and_then(|e| e.field_result.as_deref())
             .and_then(|fr| fr.iter().find(|r| r.ext().is_none_or(|e| e.image.is_none() && e.textbox.is_none())))
             .unwrap_or(run);
-        DRun { run: base, text: Cow::Owned(v.into_vec()), key: None, no_form: false, glued, idx, offset }
+        DRun { run: base, text: Cow::Owned(v.into_vec()), key: None, no_form: false, glued, bold, idx, offset }
     }
 
     /// `fieldRuns(ctx, run, env, at)` (para.ts:557).
@@ -1232,6 +1236,7 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             key,
             no_form: false,
             glued: false,
+            bold: false,
             idx,
             offset,
         };
@@ -1267,7 +1272,7 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             let ext = run.ext();
             let ff = ext.and_then(|e| e.form_field.as_deref());
             if ff.is_some_and(|f| &*f.r#type == "checkBox") {
-                out.push(DRun { run, text: Cow::Borrowed(text), key: Some(key), no_form: false, glued: false, idx, offset });
+                out.push(DRun { run, text: Cow::Borrowed(text), key: Some(key), no_form: false, glued: false, bold: false, idx, offset });
             } else if let Some(f) = ff.filter(|f| &*f.r#type == "dropDown")
                 && let Some(entries) = f.entries.as_deref()
             {
@@ -1275,18 +1280,34 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
                 let sel = num_or(f.selected, 0.0);
                 let entry = uo_jsnum::conv::js_index(sel, entries.len()).and_then(|k| entries.get(k)).map_or(&[][..], |e| e.units());
                 if !entry.is_empty() {
-                    out.push(DRun { run, text: Cow::Owned(entry.to_vec()), key: None, no_form: true, glued: false, idx, offset });
+                    out.push(DRun {
+                        run,
+                        text: Cow::Owned(entry.to_vec()),
+                        key: None,
+                        no_form: true,
+                        glued: false,
+                        bold: false,
+                        idx,
+                        offset,
+                    });
                 }
             } else if ext.is_some_and(|e| e.field.is_some()) {
                 match self.field_runs(run, FieldRun { run: Some(key), sub: Vec::new() }, idx, offset, 0)? {
                     Some(fr) => out.extend(fr),
-                    None if !text.is_empty() => {
-                        out.push(DRun { run, text: Cow::Borrowed(text), key: Some(key), no_form: false, glued: false, idx, offset })
-                    }
+                    None if !text.is_empty() => out.push(DRun {
+                        run,
+                        text: Cow::Borrowed(text),
+                        key: Some(key),
+                        no_form: false,
+                        glued: false,
+                        bold: false,
+                        idx,
+                        offset,
+                    }),
                     None => {}
                 }
             } else {
-                out.push(DRun { run, text: Cow::Borrowed(text), key: Some(key), no_form: false, glued: false, idx, offset });
+                out.push(DRun { run, text: Cow::Borrowed(text), key: Some(key), no_form: false, glued: false, bold: false, idx, offset });
             }
             offset = offset.wrapping_add(u32::try_from(text.len()).unwrap_or(u32::MAX));
         }
@@ -1855,7 +1876,7 @@ pub fn para_visibility(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPara
 pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LParaId, env0: &ParaEnv) -> LResult<PreparedPara> {
     let ldoc = cx.ldoc;
     let fmt: &DocFormatting = ldoc.view.formatting();
-    let theme = &fmt.theme;
+    let theme = ldoc.theme; // wave 7 (B, gate-O3)
     let settings = &fmt.settings;
     // the Original view: the paragraph formatting from before the tracked change
     let (ppr0, props, para_id) = view_fields(flow.ctx(), ldoc, para)?;
@@ -1899,6 +1920,10 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
             && is_hyperlink_style(fmt, rs)
         {
             crate::word::obj::delete(&mut direct, "rStyle");
+        }
+        if d.bold {
+            direct.b = Some(true); // wave 7c (W, item 4)
+            direct.b_cs = Some(true);
         }
         let rpr = Arc::new(p.run_rpr(&style_rpr, &direct));
         let link: Option<Vec<u16>> = run.props.link.as_deref().map(utf16);
@@ -2208,7 +2233,7 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
     }
     // the East Asian layout of modes ≤ 14 (oracle fecompress)
     if p.doc_east_asia_cjk()? {
-        let mode = settings.compatibility_mode.to_number();
+        let mode = p.ldoc.compat_mode(); // wave 7c (W, item 2)
         let csc = settings.character_spacing_control.as_deref();
         let compress = mode < 15.0 && str_truthy(csc) && csc != Some("doNotCompress");
         let balance = settings.compat.get("balanceSingleByteDoubleByteWidth") == Some(&true);

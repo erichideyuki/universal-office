@@ -189,7 +189,7 @@ impl<S: PdfSink> PdfDocument<S> {
             let _ = write!(smask, " /SMask {n} 0 R");
         }
         let mut rgb = vec![0u8; pixels.checked_mul(3).ok_or(PdfError::Invalid("image dimensions exceed the pixel data"))?];
-        for (out, px) in rgb.chunks_exact_mut(3).zip(rgba.chunks(4)) {
+        for (out, px) in rgb.as_chunks_mut::<3>().0.iter_mut().zip(rgba.chunks(4)) {
             for (o, i) in out.iter_mut().zip(0..3) {
                 *o = px.get(i).copied().unwrap_or(0);
             }

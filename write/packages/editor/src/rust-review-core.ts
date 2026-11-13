@@ -3,7 +3,7 @@
 // sobreposições de tela leem (as linhas do escopo de edição por página e por parágrafo, em cache por layout).
 // Sem sessão (o motor falso de engine-switch.test.ts, ou antes do 1º documento), cada handler responde o neutro.
 import type { DecodedLayout } from '@universal-office/write-engine';
-import { bindStories, type ExecOutcome, type SessionCommand, type ShellLine, type StoriesBinding, type StoryCtx, type WriteSession } from '@universal-office/write-session';
+import { bindStories, type ExecOutcome, type SessionCommand, type ShellLine, type StoriesBinding, type StoryCtx, type StoryLine, type StoryLines, type StoryPara, type WriteSession } from '@universal-office/write-session';
 import type { FrontApi, RustEditor, RustHostElement } from './rust-engine.js';
 
 export type Pos = { para: number; offset: number };
@@ -96,6 +96,55 @@ export function paraLines(c: Ctx, para: number): ShellLine[] {
     m.set(para, v);
   }
   return v;
+}
+
+// ───────────────────────── wave 7c (V, ED-304): as linhas de TODAS as histórias (o `eng.lines` do TS) ─────────────────────────
+
+/** Uma linha de `storyLines` com o seu parágrafo (chave, texto, runs com os offsets `a`/`z`, marcas de indicador). */
+export interface StoryLineP extends ShellLine {
+  kind: StoryLine['kind'];
+  key: string;
+  text: string;
+  runs: (StoryPara['runs'][number] & { a: number; z: number })[];
+  bm: StoryPara['bm'];
+  /** fix round 2 (V, ED-304): the line's natural text descent (twips; the engine's `Line::desc`) */
+  desc: number;
+}
+const storyCache = new WeakMap<DecodedLayout, Map<string, StoryLineP[]>>();
+
+/**
+ * As linhas de toda história na página `page` (corpo, células, cabeçalhos/rodapés e notas — o `eng.lines` do TS,
+ * installEngineResult 16515 — e, com `kind` 'tb', o conteúdo das caixas de texto no referencial delas), qualquer que seja
+ * o escopo de edição; em cache por layout. ED-304 fechado: o sombreamento de campo, o realce de comentário, os colchetes
+ * dos indicadores, os sublinhados da revisão e as ocorrências da busca seguem toda história, como no TS.
+ */
+export function storyLines(c: Ctx, page: number, fallback = 'pt-BR'): StoryLineP[] {
+  const s = c.s, dl = c.dl;
+  if (!s || !dl || typeof s.storyLines !== 'function') return [];
+  let m = storyCache.get(dl);
+  if (!m) { m = new Map(); storyCache.set(dl, m); }
+  const k = `${page}|${fallback}`;
+  let v = m.get(k);
+  if (!v) {
+    let r: StoryLines;
+    try { r = s.storyLines(dl.inner, page, fallback); } catch { r = { lines: [], paras: [] }; }
+    const paras = r.paras.map((p) => {
+      let acc = 0;
+      return { ...p, runs: p.runs.map((x) => { const a = acc; acc += x.n; return { ...x, a, z: acc }; }) };
+    });
+    v = r.lines.map((l) => {
+      const p = paras[l.p]!;
+      return { para: -1, page, x: l.x, y: l.y, height: l.height, baseline: l.baseline, width: l.width, start: l.start, end: l.end, ...(l.xf ? { xf: l.xf } : {}), o: l.o, cx: l.cx, cw: l.cw, kind: l.kind, key: p.key, text: p.text, runs: p.runs, bm: p.bm, desc: l.desc };
+    });
+    m.set(k, v);
+  }
+  return v;
+}
+
+/** A chave de uma localização de busca da sessão (`SearchLoc`), no formato das chaves de `storyLines`. */
+export function searchLocKey(loc: { t: string; para?: number; anchor?: number; hops?: { row: number; col: number; block?: number }[] }): string {
+  if (loc.t === 'cell') return `c${loc.anchor ?? 0}/${(loc.hops ?? []).map((h) => `${h.row}.${h.col}.${h.block ?? ''}`).join('/')}|${loc.para ?? 0}`;
+  return `b${loc.para ?? 0}`;
 }
 
 /** A extensão em x dos caracteres de offset em [a, b) na linha (no resultado de um campo os offsets recomeçam: o

@@ -6,6 +6,7 @@ import { encodePaste } from '@universal-office/write-session';
 import { fragmentOf } from './paste-html.js';
 import { Ctx, storyCtx } from './rust-review-core.js';
 import { jobKinds, runJobs, type JobOut } from './rust-objects-jobs.js';
+import { completionPasteLink, completionRingKinds } from './rust-engine-completion.js'; // wave 7 (A2)
 
 type Handlers = Record<string, (...args: never[]) => unknown>;
 type PasteDefaults = { within: string; between: string; other: string };
@@ -91,9 +92,10 @@ export function clipboardHandlers(c: Ctx): { handlers: Handlers; adopt: () => vo
     // an image: the session's decode job (the shell's `apply` hands the jobs to frontier O's runner)
     c.run({ t: 'clipboard', v: { t: 'pasteData', text, ...(tree ? { html: tree } : {}), ...(d?.image ? { image: d.image } : {}), rich: 'withRich', ...(mode ? { mode } : {}), layout: {} } }, 'paste');
   };
-  const items = (): { id: number; text: string; kind: 'text'; at: number }[] => {
+  const items = (): { id: number; text: string; kind: string; at: number }[] => {
     const r = c.q<{ version: number; items: { id: number; text: string; at: { utc: { year: number; month: number; day: number; hour: number; minute: number } } }[] }>({ t: 'clipboardItems' });
-    return (r?.items ?? []).map((x) => ({ id: x.id, text: x.text, kind: 'text' as const, at: Date.UTC(x.at.utc.year, x.at.utc.month - 1, x.at.utc.day, x.at.utc.hour, x.at.utc.minute) }));
+    // wave 7 (A2): the kind of each item from the ring (drawing, table, image, text; ED-305's 'text' only)
+    return completionRingKinds(c.api, (r?.items ?? []).map((x) => ({ id: x.id, text: x.text, kind: 'text', at: Date.UTC(x.at.utc.year, x.at.utc.month - 1, x.at.utc.day, x.at.utc.hour, x.at.utc.minute) })));
   };
 
   const handlers: Handlers = {
@@ -124,6 +126,7 @@ export function clipboardHandlers(c: Ctx): { handlers: Handlers; adopt: () => vo
     }) as never,
     pasteSpecial: (async (format: string, o: { link?: boolean } = {}) => {
       if (!c.s || c.locked()) return;
+      if (completionPasteLink(c.ed, format, o)) return; // wave 7 (A2, decision 3): a Paste Link whose copy came from another editor
       c.run({ t: 'clipboard', v: { t: 'pasteSpecial', format, link: !!o.link, layout: {} } }, 'pasteSpecial');
     }) as never,
     /** ED-305: the ring of THIS session (the TS ring is page-global) */

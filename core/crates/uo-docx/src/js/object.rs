@@ -198,9 +198,7 @@ pub const fn sort_keys<const N: usize>(names: &[&str]) -> [u8; N] {
     while i < N {
         let mut j = i;
         while j > 0 && str_lt(names[out[j] as usize], names[out[j - 1] as usize]) {
-            let t = out[j];
-            out[j] = out[j - 1];
-            out[j - 1] = t;
+            out.swap(j, j - 1);
             j -= 1;
         }
         i += 1;

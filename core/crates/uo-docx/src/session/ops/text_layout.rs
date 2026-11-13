@@ -288,6 +288,8 @@ impl Session {
         self.settings = Arc::new(st);
         let f = Arc::make_mut(&mut self.doc.formatting);
         obj::set(&mut f.settings, "defaultTabStop", |s| s.default_tab_stop = JsNumber::Num(v));
+        // wave 7c (W, item 2, fix round 1): the value is explicit now, so the layout follows it (no more Word's 708 fallback)
+        self.doc.read_facts.default_tab_absent = false;
         self.doc.formatting_version = self.doc.formatting_version.wrapping_add(1);
     }
 

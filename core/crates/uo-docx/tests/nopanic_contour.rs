@@ -42,11 +42,11 @@ fn random_pictures_never_panic() {
         let mut d = vec![0u8; n];
         match mode {
             0 => d.iter_mut().for_each(|b| *b = u8::try_from(rng.below(256)).unwrap()),
-            1 => d.chunks_exact_mut(4).for_each(|p| p[3] = if rng.below(50) == 0 { 255 } else { 0 }),
-            2 => d.chunks_exact_mut(4).for_each(|p| p[3] = if rng.below(50) == 0 { 0 } else { 7 }),
+            1 => d.as_chunks_mut::<4>().0.iter_mut().for_each(|p| p[3] = if rng.below(50) == 0 { 255 } else { 0 }),
+            2 => d.as_chunks_mut::<4>().0.iter_mut().for_each(|p| p[3] = if rng.below(50) == 0 { 0 } else { 7 }),
             3 => {
                 let (cx, cy) = (rng.below(u64::from(w)), rng.below(u64::from(h)));
-                for (i, p) in d.chunks_exact_mut(4).enumerate() {
+                for (i, p) in d.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                     let (x, y) = (u64::try_from(i).unwrap() % u64::from(w), u64::try_from(i).unwrap() / u64::from(w));
                     p[3] = u8::from(x.abs_diff(cx) + y.abs_diff(cy) < 1 + (u64::from(w) + u64::from(h)) / 8) * 255;
                 }

@@ -4,7 +4,7 @@
 // das consultas `navigationResult`/`referencesResult` da sessão depois do comando.
 import { openExternalLink } from './external-link.js';
 import { validBookmarkName } from './references.js';
-import { Ctx, changed, linePx, paraLines, scrollToPos, storyCtx, toBody, type Pos } from './rust-review-core.js';
+import { Ctx, changed, linePx, paraLines, scrollToPos, searchLocKey, storyCtx, storyLines, toBody, type Pos } from './rust-review-core.js';
 import { runsOf } from './rust-review-revisions.js';
 
 type Handlers = Record<string, (...args: never[]) => unknown>;
@@ -14,11 +14,11 @@ interface WireFind { found?: boolean; wrapped?: boolean; error?: QueryErr; budge
 type F9 = { t: 'bool'; v: boolean } | { t: 'count'; v: number } | ({ t: 'find' } & WireFind) | { t: 'replace'; find: WireFind; replaced?: boolean; count: number };
 type F10 = { t: 'unit' } | { t: 'bool'; v: boolean } | { t: 'count'; v: number } | { t: 'hyphenation' };
 interface WireHeading { index: number; level: number; text: string; para: number }
-interface WireResult { index: number; start: number; end: number; snippet: { before: string; match: string; after: string }; heading: number; inTable?: boolean; loc: { t: string; para?: number } }
+interface WireResult { index: number; start: number; end: number; snippet: { before: string; match: string; after: string }; heading: number; inTable?: boolean; loc: { t: string; para?: number; anchor?: number; hops?: { row: number; col: number; block?: number }[] } }
 type FindRunOptions = { direction?: 'down' | 'up' | 'all'; within?: 'document' | 'selection'; replaceFormat?: unknown };
 
 /** A view of the overlays the paint hook draws (rust-review-overlays.ts reads it). */
-export interface FindView { show: boolean; results: { para: number; start: number; end: number }[] }
+export interface FindView { show: boolean; results: { key: string; start: number; end: number }[] }
 
 /** The TS `findMsg`: the Find What box's message (pt by the element's or the browser's language, else en). */
 function errorText(el: HTMLElement | null, e: QueryErr): string {
@@ -161,6 +161,16 @@ export function findHandlers(c: Ctx, view: FindView): Handlers {
     }) as never,
     goToPage: ((page: number) => {
       const el = c.el;
+      // wave 7c (V): in the Web/Draft/Outline views the TS pages are its tiles (`canvases` = tiles, 18542): tile `page`'s top,
+      // no caret move (the TS legacy layout has no engine line there); here the strips of the one sheet, cut as the tiles
+      const view = (el as unknown as { view?: string } | null)?.view;
+      if (el && (view === 'web' || view === 'draft' || view === 'outline')) {
+        const cuts = (c.ed as unknown as { continuousCuts?: (i: number) => [number, number][] }).continuousCuts?.(0) ?? [];
+        const cv0 = el.canvases[0];
+        const top = page === 0 ? 0 : cuts[page]?.[0];
+        if (cv0 && top !== undefined) el.scrollTop = Math.max(0, cv0.offsetTop + top - 8);
+        return;
+      }
       const cv = el?.canvases[page];
       if (!el || !cv) return;
       el.scrollTop = Math.max(0, cv.offsetTop - 8);
@@ -175,11 +185,17 @@ export function findHandlers(c: Ctx, view: FindView): Handlers {
       if (!text) { c.run({ t: 'navigation', v: { t: 'clearSearch' } }, 'clearSearch'); view.results = []; view.show = false; c.api?.paint(); return []; }
       c.run({ t: 'navigation', v: { t: 'search', text, opts: { ...(opts.matchCase ? { matchCase: true } : {}), ...(opts.wholeWord ? { wholeWord: true } : {}) } } }, 'search');
       const rs = c.q<WireResult[]>({ t: 'searchResults' }) ?? [];
-      view.results = rs.filter((r) => r.loc.t === 'body').map((r) => ({ para: r.loc.para ?? 0, start: r.start, end: r.end }));
+      // wave 7c (V, ED-304): the hits and their pages keyed by the story paragraph (body or cell), as the TS `searchHits`
+      // and `pageOf(p, off)` over `eng.lines` (17874: the last page with a line of the paragraph starting at or before off)
+      view.results = rs.map((r) => ({ key: searchLocKey(r.loc), start: r.start, end: r.end }));
       view.show = opts.highlight !== false;
       c.api?.paint();
+      const pages = c.dl?.pages.length ?? 0;
+      const all = Array.from({ length: pages }, (_, pg) => storyLines(c, pg));
       return rs.map((r) => {
-        const page = r.loc.t === 'body' ? (paraLines(c, r.loc.para ?? 0).filter((l) => l.start <= r.start).pop()?.page ?? -1) : -1;
+        const key = searchLocKey(r.loc);
+        let page = -1;
+        all.forEach((ls, pg) => { if (ls.some((l) => l.key === key && l.kind !== 'tb' && l.start <= r.start)) page = pg; });
         return { index: r.index, start: r.start, end: r.end, ...r.snippet, page, heading: r.heading, inTable: !!r.inTable };
       });
     }) as never,

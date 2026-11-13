@@ -4045,3 +4045,28 @@ missing from the trace (`pin_floats_over_table`, `place_late_tables`; found by r
 test), the level-1 scope gap (now the open decision D-LA7-17), `Err` of an attempt failing the call (D-LA7-15), the
 context base (D-LA7-16), duplicated test helpers, invalid bench JSON (`None`/`Some(…)`; now `null`/numbers/strings,
 validated with `JSON.parse` on a `--gen 60` run) and 15 GB of captures left in the target dir (deleted).
+
+## Wave 7c — W: Word-measured rules over the frozen TS (2026-11-13)
+
+Word 16 pt-BR is the authority where it differs from the frozen TS ("Word manda sobre o TS"). Each rule below was measured
+with a Word oracle series (`write/tools/layout-oracle/cases/<group>.mjs`, Liberation Sans, Word under invisible COM through
+`tools/parallel/word-lock.mjs`; the expectations in `core/crates/uo-docx-layout/tests/oracle_w7c/<group>/*.word.json`, kept out of the frozen TS's 2,742-document corpus that the uo-docx parity tests replay) and is
+checked by `tests/word_w7c.rs` (a port of the TS `oracle-compare.ts`: pages, line texts, the page of each line, baseline
+±0.3 pt, x ±0.6 pt where the group measures it). The frozen TS behaviour stays behind a `LayoutOptions` switch;
+`LayoutOptions::ts_strict()` turns every switch on and is what every replay of TS captures uses (`layout_parity`,
+`f8_parity`, `f4_parity`, `f6_parity`, `g8`, uo-ffi `server_parity`, the wasm `wasmOptions` with flag bits 12–17).
+`word_w7c` also asserts, case by case, where `ts_strict()` differs from Word (`ts_diverges`), so each divergence stays
+documented.
+
+| Rule (switch) | Word | Frozen TS | Where |
+|---|---|---|---|
+| keepLines taller than what is left (`ts_keep_lines_within_page`) | the paragraph goes to the next page even when taller than a page, then splits; in mode 15 in a section of several columns a keepLines paragraph taller than the column goes to the next PAGE and each of its columns ends with a page break (at the top of a page too; mode 14: the next column); in a table cell (mode 15) a keepLines paragraph crossed by the row's split goes down whole (not at the top of a page; mode 14 ignores it) | moves only when `need <= full`; cells and columns: no rule | `engine/flow.rs` (place_paragraph), `engine/page.rs` `break_column` (`Engine::kl_col_to_page`, reset at the paragraph's end), `table.rs` `keep_cut` + `ParaSplitInfo::keep`, `RowSplit::split_keep` |
+| no `word/settings.xml` (`ts_missing_settings_mode15`) | compatibility mode 12 (COM `CompatibilityMode` = 12); a missing `w:defaultTabStop` = 708 tw (COM `DefaultTabStop` 35.4 pt) | mode 15; 720 tw | uo-docx `ReadFacts` (outside the model's JS shape and equality), `LDoc::compat_mode()`/`default_tab_stop()` at every read site (flow, floats, tables, static flow, lines, hyphenation, para, table layout) |
+| linked text boxes (`ts_linked_box_cell_chain`) | a box of a chain is never left empty: when widows/orphans (or its height) would send everything on, it keeps the lines that fit without the widow rule, at least the first line; mode 15 wraps a cell's text around a `layoutInCell="0"` box too | box 1 empty, the chain starts in box 2; no wrap | `engine/chain.rs` `keep_first_lines`, `engine/floats.rs` |
+| REF/PAGEREF/NOTEREF to an undefined bookmark (`ts_ref_bookmarks`) | missing, without `w:bookmarkEnd` or ending before it starts: REF (every switch) "Erro! Fonte de referência não encontrada.", PAGEREF/NOTEREF "Erro! Indicador não definido." — in BOLD (also STYLEREF's error); a range over several paragraphs = all of them (line breaks); a bookmark in a cell, a text box or a header = its range's text (with the bookmark marks of a lossless read) | the start paragraph's text, the page of its paragraph, the cached result | `engine/field_refs.rs` (`bookmark_where`, `ref_error`, `bookmark_error`, `is_ref_error_text`), `engine/fields.rs` PAGEREF, `para.rs` `DRun::bold` |
+
+Open (not applied): the theme tint/shade rounding (`ts_theme_tint` reserved: no model reproduces Word's 3,356 samples in
+`tests/oracle_w7c/tint/word-samples.tsv` — the TS rule hits 2,323, pinned by `word_w7c` `tint_shade_samples_against_the_ts_rule`)
+and the hyphenation patterns (`ts_hyphenation_patterns` reserved; the `hyphword` measurement: line splits equal to Word in
+pt 877/900, en 809/900, es 898/900 paragraphs) — uo-bindings.md "Wave 7c — W". The .NET port
+(`UniversalOffice.Docx/DocxLayout`) has none of these rules: to be ported with the parity dumps regenerated.

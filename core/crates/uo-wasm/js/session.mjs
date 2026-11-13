@@ -250,6 +250,16 @@ export function bindSession(w, uo) {
     rangeRects(layout, page, a, f) {
       return call('rangeRects', () => answer(w.uo_shell_range_rects(this.#live(), layout.ptr, page >>> 0, a.para, a.offset, f.para, f.offset), codec.decodeSelRects, 'rangeRects')?.rects ?? []);
     }
+    /** wave 7c (V, ED-304): the lines of EVERY story on `page` (the TS `eng.lines`: body, cells, headers/footers, notes;
+     *  then the text boxes' content in their frame) with their paragraphs: `{ lines: [{ p, kind, x, y, height, baseline,
+     *  width, start, end, xf?, o, cx, cw }], paras: [{ key, text, runs: [{ n, f, c, sp, lang }], bm: [{ at, end, id,
+     *  hidden }] }] }` (`fallback`: the spelling language of a run without one) */
+    storyLines(layout, page, fallback = 'pt-BR') {
+      const { status, data } = call('storyLines', () => take(w.uo_shell_story_lines(this.#live(), layout.ptr, page >>> 0, ...text(fallback))));
+      if (status === 1) return { lines: [], paras: [] };
+      if (status !== 0) throw new SessionError(status, '', 'storyLines');
+      return JSON.parse(dec.decode(data));
+    }
     /** the families of the document's embedded fonts */
     embeddedFamilies() {
       const { status, data } = call('embeddedFamilies', () => take(w.uo_shell_embedded_families(this.#live())));
@@ -400,3 +410,9 @@ export function bindObjects(w, uo) {
 
 // ── wave 5, frontier S (stories: tables, headers/footers, notes, text boxes; src/session/shell_stories.rs) ──
 export { bindStories } from './session-stories.mjs';
+
+// ── wave 7 (A2): lists, paste, tables, objects and the page (src/session/shell_completion.rs) ──
+export { bindCompletion } from './session-completion.mjs';
+
+// ── wave 7 (A1): File, View, Font and Paragraph (src/session/shell_format.rs) ──
+export { bindFormat } from './session-format.mjs';

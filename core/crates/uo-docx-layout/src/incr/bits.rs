@@ -71,6 +71,7 @@ pub(crate) fn state_string(e: &Engine) -> String {
         static_seq,
         field_page,
         en_blocks,
+        kl_col_to_page,
         sect_geoms,
         geoms,
         cover_page,
@@ -95,7 +96,7 @@ pub(crate) fn state_string(e: &Engine) -> String {
     put!(hf_frame_tbl, static_dx, cell_mar, col_max_y, sect_gap_after, pending_join, pending_del, float_table_gap);
     put!(carry_anchor_gap, note_carry, row_note_cut, flow_fills, en_flow, cur_endnote, endnotes_done, pinned_floats);
     put!(chain_slices, field_at, cell_ps, cell_collect, late_marks, scratch, static_seq, field_page, en_blocks, sect_geoms);
-    put!(geoms, cover_page, first_page_number, list_texts, note_cache, sep_cache, found, fields);
+    put!(geoms, cover_page, first_page_number, list_texts, note_cache, sep_cache, found, fields, kl_col_to_page);
     s
 }
 

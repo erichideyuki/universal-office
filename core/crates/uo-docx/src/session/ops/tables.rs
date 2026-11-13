@@ -20,6 +20,8 @@
 //! on the table accessors), and the auto caption of an inserted table (`autoCaptionTable`, the
 //! caption settings are D2b-F10's: never set in a session yet).
 
+/// wave 7 (A2): the table gestures and the Quick Tables of the editor switch
+pub mod completion;
 pub mod formula;
 pub mod sort;
 pub mod table_ops;
@@ -759,7 +761,8 @@ impl Session {
         if pending.is_empty() {
             return id;
         }
-        if self.styles.xml().is_some() {
+        // `this.stylesEditable() && this.docStyles.xml !== null` (19288; wave 7, A1)
+        if self.styles_editable() && self.styles.xml().is_some() {
             let mut xml = self.styles_base();
             for (sid, sx) in &pending {
                 if let Some(x) = put_style(&xml, sid, sx) {
@@ -767,8 +770,46 @@ impl Session {
                 }
             }
             self.commit_styles(xml);
+        } else {
+            // `else for (const [sid, sx] of pending) this.pendingTableStyles.set(sid, sx)` (19292; wave 7c, S): a Map —
+            // a repeated id keeps its place and takes the new XML; written by the save (`addStylesXml`, 8641)
+            let map = Arc::make_mut(&mut self.pending_tables);
+            for (sid, sx) in pending {
+                map.insert(sid, sx);
+            }
         }
         id
+    }
+
+    /// Wave 7c (S; Word manda sobre o TS): the pending table styles of an undo/redo step. An id that leaves the map
+    /// leaves the style sheet the tables are resolved against (so a later `insertTable` registers it again and the save
+    /// writes it); an id that comes back is registered again (`ensureTableStyle`'s registration).
+    pub(crate) fn swap_pending_tables(&mut self, next: Arc<indexmap::IndexMap<String, String>>) {
+        let cur = std::mem::take(&mut self.pending_tables);
+        let f = Arc::make_mut(&mut self.doc.formatting);
+        for id in cur.keys() {
+            if !next.contains_key(id) {
+                f.styles.styles.remove(id);
+                if f.styles.defaults.table.as_deref() == Some(id.as_str()) {
+                    f.styles.defaults.table = None;
+                }
+            }
+        }
+        for (id, xml) in next.iter() {
+            if cur.get(id) == Some(xml) {
+                continue;
+            }
+            if let Some(def) = style_def_of(xml).ok().flatten() {
+                let is_default = def.is_default;
+                f.styles.styles.insert(id, def);
+                if is_default == Some(true) && f.styles.defaults.table.is_none() {
+                    f.styles.defaults.table = Some(id.as_str().into());
+                }
+            }
+        }
+        self.pending_tables = next;
+        self.doc.formatting_version = self.doc.formatting_version.wrapping_add(1);
+        self.touch_formatting();
     }
 
     /// `tableAvail(tg)`: the width available to the table: the text column (or the cell outside)
@@ -1975,7 +2016,8 @@ impl Session {
     /// `saveTableStyle(xml, { apply, basedOnName })`: a table style (new or modified) into
     /// `styles.xml`, one undo step with the sheet; with `apply`, to the table of the cursor.
     fn save_table_style(&mut self, xml: &str, apply: bool, based_on: Option<&str>) -> Result<Outcome, CommandError> {
-        if self.paras().is_none() || self.locked() {
+        // `|| !this.stylesEditable()` (20235; wave 7, A1)
+        if self.paras().is_none() || self.locked() || !self.styles_editable() {
             return done(self);
         }
         let Some(id) = style_id_of(xml) else { return done(self) };
@@ -2316,7 +2358,7 @@ fn style_id_of(xml: &str) -> Option<String> {
 }
 
 /// The Office 2023 theme (Word uses it without `theme1.xml`).
-const OFFICE_THEME: [(&str, &str); 12] = [
+pub(crate) const OFFICE_THEME: [(&str, &str); 12] = [
     ("dk1", "000000"),
     ("lt1", "FFFFFF"),
     ("dk2", "0E2841"),
@@ -2359,7 +2401,7 @@ fn find_builtin_table_style(name: &str) -> Option<(String, String)> {
 /// `ensureTableStyle(f, name, pending, builtins)` (table-styles.ts:123): the id of the document's
 /// table style `name`; a style that is missing is registered in the sheet and in `pending` (the
 /// XML the save adds), with the Normal Table it is based on.
-fn ensure_table_style(f: &mut DocFormatting, name: &str, pending: &mut Vec<(String, String)>) -> Option<String> {
+pub(crate) fn ensure_table_style(f: &mut DocFormatting, name: &str, pending: &mut Vec<(String, String)>) -> Option<String> {
     if let Some(have) = style_id_by_name(Some(f), name) {
         return Some(have.to_owned());
     }

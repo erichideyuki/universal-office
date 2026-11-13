@@ -299,12 +299,7 @@ impl Reader<'_> {
             return Err(PasteTreeError::Truncated);
         }
         let s = self.take(bytes)?;
-        Ok(s.chunks_exact(2)
-            .map(|c| match c {
-                [a, b] => u16::from_le_bytes([*a, *b]),
-                _ => 0,
-            })
-            .collect())
+        Ok(s.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect())
     }
     fn utf16(&mut self) -> Result<Utf16, PasteTreeError> {
         Ok(Utf16::from_units(self.units()?))

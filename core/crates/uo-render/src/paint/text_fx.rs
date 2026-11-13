@@ -217,12 +217,12 @@ fn zeroed_f32(n: usize) -> PaintResult<Vec<f32>> {
 /// `over(m, hex, alpha)` of `fxLayers`: composites a coloured mask over the float RGBA layer.
 fn over(rgba: &mut [f32], m: &Mask, hex: &[u16], alpha: f64) {
     let [r, g, b] = hex_rgb(hex);
-    for (px, &mv) in rgba.chunks_exact_mut(4).zip(m.data()) {
+    for (px, &mv) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(m.data()) {
         let a = max(0.0, uo_jsnum::math::min(1.0, f64::from(mv) * alpha));
         if a <= 0.0 {
             continue;
         }
-        let [pr, pg, pb, pa] = px else { continue };
+        let [pr, pg, pb, pa] = px;
         let (r0, g0, b0, da) = (f64::from(*pr), f64::from(*pg), f64::from(*pb), f64::from(*pa));
         let oa = a + da * (1.0 - a);
         *pr = f32_store((r * a + r0 * da * (1.0 - a)) / oa);
@@ -637,13 +637,41 @@ mod tests {
     /// The resolutions the Word wrote (dpi = 200 / k) for one run per radius (fx_downscale's record).
     #[test]
     fn the_downscale_follows_the_word() {
-        let glow = [(2.0, 1.0), (18.0, 1.0), (19.0, 1.0), (20.0, 2.0), (21.0, 2.0), (36.0, 2.0), (40.0, 2.0), (41.0, 3.0), (60.0, 3.0), (61.0, 4.0), (79.0, 4.0), (80.0, 4.0), (81.0, 5.0), (100.0, 5.0), (150.0, 8.0)];
+        let glow = [
+            (2.0, 1.0),
+            (18.0, 1.0),
+            (19.0, 1.0),
+            (20.0, 2.0),
+            (21.0, 2.0),
+            (36.0, 2.0),
+            (40.0, 2.0),
+            (41.0, 3.0),
+            (60.0, 3.0),
+            (61.0, 4.0),
+            (79.0, 4.0),
+            (80.0, 4.0),
+            (81.0, 5.0),
+            (100.0, 5.0),
+            (150.0, 8.0),
+        ];
         for (rad, k) in glow {
             assert_eq!(fx_downscale(rad, 20.0), k, "glow {rad} pt");
             // the radius as the file stores it (EMU) and the reader converts it
             assert_eq!(fx_downscale(uo_jsnum::math::round(rad * 12_700.0) / 12_700.0, 20.0), k, "glow {rad} pt from EMU");
         }
-        let shadow = [(2.0, 1.0), (10.0, 2.0), (18.0, 2.0), (20.0, 2.0), (21.0, 3.0), (30.0, 3.0), (40.0, 4.0), (41.0, 5.0), (60.0, 6.0), (61.0, 7.0), (80.0, 8.0)];
+        let shadow = [
+            (2.0, 1.0),
+            (10.0, 2.0),
+            (18.0, 2.0),
+            (20.0, 2.0),
+            (21.0, 3.0),
+            (30.0, 3.0),
+            (40.0, 4.0),
+            (41.0, 5.0),
+            (60.0, 6.0),
+            (61.0, 7.0),
+            (80.0, 8.0),
+        ];
         for (blur, k) in shadow {
             assert_eq!(fx_downscale(blur, 10.0), k, "shadow blur {blur} pt");
         }
@@ -678,7 +706,21 @@ mod tests {
         assert_eq!(fx_plan(&at12(42.0), p96), FxPlan::Split { shadow: 1.0, glow: 2.0 });
         assert_eq!(fx_plan(&at12(79.0), 192.0 / 72.0), FxPlan::Split { shadow: 1.0, glow: 4.0 });
         // a shadow alone (40 pt blur at 12 pt: 50 dpi), and nonsense resolutions keep the plan of 200 dpi
-        let sh = ResolvedTextFx { shadow: Some(FxShadow { blur_pt: 40.0, dist_pt: 3.0, dir_deg: 45.0, sx: 1.0, sy: 1.0, kx_deg: 0.0, ky_deg: 0.0, algn: sym(), hex: sym(), alpha: 0.6 }), ..ResolvedTextFx::default() };
+        let sh = ResolvedTextFx {
+            shadow: Some(FxShadow {
+                blur_pt: 40.0,
+                dist_pt: 3.0,
+                dir_deg: 45.0,
+                sx: 1.0,
+                sy: 1.0,
+                kx_deg: 0.0,
+                ky_deg: 0.0,
+                algn: sym(),
+                hex: sym(),
+                alpha: 0.6,
+            }),
+            ..ResolvedTextFx::default()
+        };
         assert_eq!(fx_plan(&fx_for_word(&sh, 12.0), FX_PDF_PPT), FxPlan::Split { shadow: 4.0, glow: 1.0 });
         assert_eq!(fx_plan(&at12(79.0), f64::NAN), FxPlan::Split { shadow: 1.0, glow: 4.0 });
         assert_eq!(fx_plan(&ResolvedTextFx::default(), 3.0), FxPlan::One);
@@ -693,11 +735,33 @@ mod tests {
         assert_eq!(word_fx_scale(0.0), 1.0);
         assert_eq!(word_fx_scale(f64::NAN), 1.0);
         // (size, glow radius, the sigma the Word drew)
-        for (size, rad, sigma) in [(6.0, 80.0, 2.37), (12.0, 80.0, 3.795), (24.0, 150.0, 11.6), (48.0, 80.0, 9.89), (72.0, 150.0, 24.75), (144.0, 80.0, 21.41), (200.0, 80.0, 26.97)] {
+        for (size, rad, sigma) in [
+            (6.0, 80.0, 2.37),
+            (12.0, 80.0, 3.795),
+            (24.0, 150.0, 11.6),
+            (48.0, 80.0, 9.89),
+            (72.0, 150.0, 24.75),
+            (144.0, 80.0, 21.41),
+            (200.0, 80.0, 26.97),
+        ] {
             let ours = rad * word_fx_scale(size) / 6.0;
             assert!((ours / sigma - 1.0).abs() < 0.02, "{size} pt, glow {rad}: {ours} vs {sigma}");
         }
-        let sh = ResolvedTextFx { shadow: Some(FxShadow { blur_pt: 40.0, dist_pt: 20.0, dir_deg: 90.0, sx: 1.0, sy: 1.0, kx_deg: 0.0, ky_deg: 0.0, algn: sym(), hex: sym(), alpha: 1.0 }), ..ResolvedTextFx::default() };
+        let sh = ResolvedTextFx {
+            shadow: Some(FxShadow {
+                blur_pt: 40.0,
+                dist_pt: 20.0,
+                dir_deg: 90.0,
+                sx: 1.0,
+                sy: 1.0,
+                kx_deg: 0.0,
+                ky_deg: 0.0,
+                algn: sym(),
+                hex: sym(),
+                alpha: 1.0,
+            }),
+            ..ResolvedTextFx::default()
+        };
         let s = fx_for_word(&sh, 144.0).shadow.unwrap();
         // the Word: blur 40 pt drew sigma 22.1 at 144 pt (the fit's 2.5 %); distance 20 pt moved 32.4 pt
         assert!((s.blur_pt / 3.0 / 22.1 - 1.0).abs() < 0.03 && (s.dist_pt / 32.4 - 1.0).abs() < 0.02 && s.dir_deg == 90.0, "{s:?}");

@@ -65,7 +65,7 @@ fn oa_string(shape: &Shape<'_>, id: u16) -> Option<Vec<u16>> {
         return None;
     }
     let mut s = Vec::new();
-    for pair in c.chunks_exact(2) {
+    for pair in c.as_chunks::<2>().0 {
         let ch = u16::from(pair[0]) | (u16::from(pair[1]) << 8);
         if ch == 0 {
             break;

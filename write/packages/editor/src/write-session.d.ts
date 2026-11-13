@@ -96,6 +96,8 @@ declare module '@universal-office/write-session' {
     paraLines(layout: EngineLayout, para: number): ShellLine[];
     rangeRects(layout: EngineLayout, page: number, a: DocPos, f: DocPos): SelRect[];
     embeddedFamilies(): string[];
+    /** wave 7c (V, ED-304): the lines of every story on `page` (the TS `eng.lines`) and the text boxes' content */
+    storyLines(layout: EngineLayout, page: number, fallback?: string): StoryLines;
   }
 
   /** wave 5, frontier R: one line of the edit scope (page twips; the characters as offset/x/width columns) */
@@ -103,6 +105,19 @@ declare module '@universal-office/write-session' {
     para: number; page: number; x: number; y: number; height: number; baseline: number; width: number;
     start: number; end: number; xf?: number[]; o: number[]; cx: number[]; cw: number[];
   }
+  /** wave 7c (V, ED-304): a line of `storyLines` (`p` indexes `paras`) and a paragraph (key, text, runs, bookmark marks) */
+  export interface StoryLine {
+    p: number; kind: 'body' | 'cell' | 'hf' | 'note' | 'tb'; x: number; y: number; height: number; baseline: number; width: number;
+    /** fix round 2 (V, ED-304): the line's natural text descent (twips) */
+    desc: number;
+    start: number; end: number; xf?: number[]; o: number[]; cx: number[]; cw: number[];
+  }
+  export interface StoryPara {
+    key: string; text: string;
+    runs: { n: number; f: boolean; c: number[] | null; sp: boolean; lang: string }[];
+    bm: { at: number; end: boolean; id: unknown; hidden: boolean }[];
+  }
+  export interface StoryLines { lines: StoryLine[]; paras: StoryPara[] }
 
   export interface ShellEngine {
     readonly ptr: number;

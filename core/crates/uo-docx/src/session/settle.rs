@@ -573,8 +573,7 @@ impl SectionState {
         }
         match sp.cols.as_ref().and_then(|c| c.widths.as_ref()) {
             Some(ws) => {
-                let defs: Vec<ColDef> =
-                    ws.iter().map(|w| ColDef { w: w.width_twips, space: w.space_twips, ..ColDef::default() }).collect();
+                let defs: Vec<ColDef> = ws.iter().map(|w| ColDef { w: w.width_twips, space: w.space_twips, ..ColDef::default() }).collect();
                 obj::set(&mut sect, "colDefs", |s| s.col_defs = Some(defs));
                 obj::set(&mut sect, "equalWidth", |s| s.equal_width = Some(false));
             }
@@ -677,4 +676,98 @@ fn block_range(s: &Story, start_para: usize, end_para: Option<usize>) -> (f64, f
         None => s.block_count() as f64 - 1.0,
     };
     (block_start, block_end)
+}
+
+// ───────────────────────── wave 7 (B): the bookmarks of the layout pass ─────────────────────────
+
+/// `bookmarkMarks(blocks)` + the bookmark index of `buildEngineDoc` (engine-doc.ts:111-130, wave 7 B, gate-10): the
+/// body bookmarks the frozen TS editor hands its layout at every pass. Name → block from the session's paragraph index
+/// (`bookmarkParas`, offset 0: the TS has no offset for them), then the marks of the CURRENT runs override block and
+/// offset (the first start of a name; the first end of the start's id), ends only from the marks. The reader's
+/// offsets are those of the file's runs: once `markNoteRuns` gives a note reference its one character (or the text is
+/// edited) they no longer match the session's runs, so REF read the wrong range (f7c__7__1 page 2, f7c__7__5 page 6).
+#[must_use]
+pub fn bookmarks_of_marks(body: &Story, paras: &super::state::BookmarkParas) -> crate::model::document::Bookmarks {
+    use crate::model::document::{BookmarkEnd, BookmarkStart, Bookmarks};
+    use crate::model::story::Block;
+    let n_paras = body.paras.len();
+    let mut out = Bookmarks::default();
+    if n_paras > 0 {
+        for (name, pi) in paras.iter() {
+            let p = (pi as usize).min(n_paras - 1);
+            out.starts
+                .insert(name.clone(), BookmarkStart { block: JsNumber::Num(block_of_para(body, p) as f64), offset: JsNumber::Num(0.0) });
+        }
+    }
+    let mut names: HashMap<u64, Str> = HashMap::new();
+    let mut marked: HashSet<Str> = HashSet::new();
+    fn para(
+        p: &Paragraph,
+        block: f64,
+        out: &mut crate::model::document::Bookmarks,
+        names: &mut HashMap<u64, Str>,
+        marked: &mut HashSet<Str>,
+    ) {
+        let mut offset = 0.0;
+        for r in &p.runs {
+            if let Some(bm) = r.ext().and_then(|e| e.bookmark.as_ref()) {
+                let id = bm.id.to_number().to_bits();
+                if bm.end != Some(true) {
+                    if !marked.contains(&bm.name) {
+                        marked.insert(bm.name.clone());
+                        out.starts.insert(bm.name.clone(), BookmarkStart { block: JsNumber::Num(block), offset: JsNumber::Num(offset) });
+                        names.insert(id, bm.name.clone());
+                    }
+                } else if let Some(n) = names.get(&id)
+                    && !out.ends.contains_key(n)
+                {
+                    out.ends.insert(
+                        n.clone(),
+                        BookmarkEnd { block: JsNumber::Num(block), offset: JsNumber::Num(offset), ..BookmarkEnd::default() },
+                    );
+                }
+            }
+            offset += r.text.len() as f64;
+        }
+    }
+    fn walk(
+        s: &Story,
+        top: Option<f64>,
+        out: &mut crate::model::document::Bookmarks,
+        names: &mut HashMap<u64, Str>,
+        marked: &mut HashSet<Str>,
+        depth: u32,
+    ) {
+        if depth > 64 {
+            return;
+        }
+        for (i, b) in s.blocks().enumerate() {
+            let block = top.unwrap_or(i as f64);
+            match b {
+                Block::Paragraph(p) => para(p, block, out, names, marked),
+                Block::Table(t) => {
+                    for row in &t.rows {
+                        for c in &row.cells {
+                            walk(&c.content, Some(block), out, names, marked, depth + 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    walk(body, None, &mut out, &mut names, &mut marked, 0);
+    out
+}
+
+impl super::Session {
+    /// Wave 7 (B, gate-10): `doc.bookmarks` = [`bookmarks_of_marks`] of the current body, replaced only when it differs
+    /// (the incremental relayout compares the `Arc`: an unchanged index keeps its fast path). Run at the open and by the
+    /// hosts before a layout (the TS rebuilds it in the LAYOUT pass, `buildEngineDoc`), not after every command: a walk of
+    /// the whole body per keystroke allocated 1.6 MB on the 500-page document (M3 budget 64 KB, `memory_d2a`).
+    pub fn sync_bookmarks(&mut self) {
+        let now = bookmarks_of_marks(&self.doc.body, &self.bookmark_paras);
+        if *self.doc.bookmarks != now {
+            self.doc.bookmarks = Arc::new(now);
+        }
+    }
 }

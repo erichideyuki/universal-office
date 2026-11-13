@@ -842,12 +842,12 @@ fn border_color(cx: &mut Cx<'_, '_>, b: &BorderSpec) -> LResult<Option<Box<[u16]
         theme_tint: b.theme_tint.as_deref(),
         theme_shade: b.theme_shade.as_deref(),
     };
-    Ok(resolve_color(Some(spec), &cx.ldoc.view.formatting().theme).map(|c| c.encode_utf16().collect()))
+    Ok(resolve_color(Some(spec), cx.ldoc.theme).map(|c| c.encode_utf16().collect()))
 }
 
 /// `shadingFill(p.ppr.shd, ctx.fmt.theme)` (resolve.ts, F2's `uo_docx::word`).
 fn shading_fill_of(cx: &mut Cx<'_, '_>, p: &PreparedPara) -> LResult<Option<Box<[u16]>>> {
-    Ok(shading_fill(p.ppr.shd.as_deref(), &cx.ldoc.view.formatting().theme).map(|c| c.encode_utf16().collect()))
+    Ok(shading_fill(p.ppr.shd.as_deref(), cx.ldoc.theme).map(|c| c.encode_utf16().collect()))
 }
 
 /// `paintBorder(ctx, out, b, x1, y1, x2, y2, outer?)` (paint.ts:368): a horizontal/vertical border
@@ -1270,7 +1270,7 @@ impl PaintEnv for Cx<'_, '_> {
 
     fn east_asia_font(&mut self, rpr: &RPr) -> LResult<bool> {
         // `!!fontOfSlot(rpr.rFonts, 'eastAsia', theme)`: an empty name is falsy
-        let theme = &self.ldoc.view.formatting().theme;
+        let theme = self.ldoc.theme; // wave 7 (B, gate-O3)
         Ok(font_of_slot(rpr.r_fonts.as_deref(), FontSlot::EastAsia, theme).is_some_and(|s| !s.is_empty()))
     }
 

@@ -225,27 +225,23 @@ fn fast_row(ctx: &Ctx<'_>, line: &[u8], w: usize, out: &mut [u8], row_out: u64) 
     let Some(dst) = usize::try_from(row_out * 4).ok().and_then(|k| out.get_mut(k..k + w * 4)) else { return false };
     match ctx.ctype {
         0 => {
-            for (d, &g) in dst.chunks_exact_mut(4).zip(line) {
-                d.copy_from_slice(&[g, g, g, 255]);
+            for (d, &g) in dst.as_chunks_mut::<4>().0.iter_mut().zip(line) {
+                *d = [g, g, g, 255];
             }
         }
         2 => {
-            for (d, s) in dst.chunks_exact_mut(4).zip(line.chunks_exact(3)) {
-                if let [r, g, b] = *s {
-                    d.copy_from_slice(&[r, g, b, 255]);
-                }
+            for (d, &[r, g, b]) in dst.as_chunks_mut::<4>().0.iter_mut().zip(line.as_chunks::<3>().0) {
+                *d = [r, g, b, 255];
             }
         }
         4 => {
-            for (d, s) in dst.chunks_exact_mut(4).zip(line.chunks_exact(2)) {
-                if let [g, a] = *s {
-                    d.copy_from_slice(&[g, g, g, a]);
-                }
+            for (d, &[g, a]) in dst.as_chunks_mut::<4>().0.iter_mut().zip(line.as_chunks::<2>().0) {
+                *d = [g, g, g, a];
             }
         }
         _ => {
-            for (d, s) in dst.chunks_exact_mut(4).zip(line.chunks_exact(4)) {
-                d.copy_from_slice(s);
+            for (d, s) in dst.as_chunks_mut::<4>().0.iter_mut().zip(line.as_chunks::<4>().0) {
+                *d = *s;
             }
         }
     }

@@ -166,6 +166,8 @@ impl Session {
         }
         let (xml, title) = self.cover_xml_now(id, lang);
         let Some(xml) = xml else { return self.cv_nothing() };
+        // `const pkg = this.pkg ?? (this.pkg = DocxPackage.empty())` (12041; wave 7c, S)
+        self.own_package();
         let old_next = self.doc.sources.as_deref().map_or(0, |s| s.next);
         let Some((story, groups)) = self.read_cover_fragment(&xml, true) else { return self.cv_nothing() };
         self.begin_step(false, &[]);

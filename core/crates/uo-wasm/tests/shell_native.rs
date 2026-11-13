@@ -828,3 +828,60 @@ fn h_patched_edit_lines_equal_a_rebuild() {
         uo_write_env_free(env);
     }
 }
+
+/// Wave 7 (B, review fix round 1): the bookmark index of the layout pass (uo-docx `Session::sync_bookmarks`, run by the
+/// relayout) moves the offsets of a paragraph's bookmarks when the caret types in it. The incremental relayout keeps its
+/// fast path (`DocParts::bookmarks_follow`: same names, the moved entries in the edited block) and still equals a full
+/// layout — f8__7__8 (bm1/bm2/bm3 in paragraphs 0/4/8, a PAGEREF bm3) and the REF fixture of the fidelity tests.
+#[test]
+fn i_typing_in_a_bookmarked_paragraph_stays_incremental() {
+    let env = env_with_fonts();
+    for (doc, paras) in [
+        ("core/crates/uo-docx-layout/tests/captures/f8/docs/f8__7__8.docx", &[0u32, 4, 8, 1, 5][..]),
+        ("core/crates/uo-docx-layout/tests/fidelity/ref-after-note.docx", &[0u32, 1, 2][..]),
+    ] {
+        let docx = std::fs::read(repo().join(doc)).unwrap();
+        let h = open(env, &docx);
+        assert!(!h.is_null(), "{doc}");
+        let e = uo_shell_engine_new();
+        let l = relayout(e, h, env);
+        assert!(!l.is_null());
+        // SAFETY: freed once.
+        unsafe { uo_layout_free(l) };
+        let mut log = Vec::new();
+        for &p in paras {
+            for off in [0u32, 3] {
+                // SAFETY: live handle.
+                unsafe { assert_eq!(take(uo_session_set_selection(h, p, off, p, off)).0, 0) };
+                // the caret move alone: nothing the layout reads changed
+                let l = relayout(e, h, env);
+                // SAFETY: freed once.
+                unsafe { uo_layout_free(l) };
+                assert_eq!(type_text(h, "x"), 0);
+                let a = relayout(e, h, env);
+                let r = report(e).unwrap();
+                let b = full_layout(h, env);
+                assert!(!a.is_null() && !b.is_null());
+                let (pa, ha) = pages_of(a);
+                let (pb, hb) = pages_of(b);
+                assert_eq!(ha, hb, "{doc}: page heads, para {p} offset {off}");
+                assert!(pa == pb, "{doc}: pages, para {p} offset {off}");
+                log.push((p, off, r.0, r.3));
+                assert!(r.0, "{doc}: para {p} offset {off}: a full relayout, reason {}", r.3);
+                // SAFETY: freed once.
+                unsafe {
+                    uo_layout_free(a);
+                    uo_layout_free(b);
+                }
+            }
+        }
+        println!("I: {doc}: (para, offset, incremental, reason) {log:?}");
+        // SAFETY: freed once.
+        unsafe {
+            uo_shell_engine_free(e);
+            uo_session_free(h);
+        }
+    }
+    // SAFETY: freed once.
+    unsafe { uo_write_env_free(env) };
+}

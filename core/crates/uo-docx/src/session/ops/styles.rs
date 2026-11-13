@@ -32,7 +32,7 @@ pub use sheet::{Ch, StyleFormat, UiLang};
 use sheet::{StyleIndex, StyleMeta};
 use xform::{CreateStyle, Defaults, ModifyStyle};
 
-pub(crate) use xform::write_styles_part;
+pub(crate) use xform::{styles_part_text, write_styles_part};
 
 const EMPTY_STYLES: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"></w:styles>";
 
@@ -110,6 +110,9 @@ pub enum StyleCmd {
     ClearCharacterStyle,
     /// `clearCharacterFormatting()`
     ClearCharacterFormatting,
+    /// `ensureBuiltinStyle(name)` (universal-write.ts 6303; wave 7, A1, native only): defines the built-in when
+    /// missing (no undo step, as the TS `builtinStyleId`); the id is [`Session::builtin_style_id_of`]
+    EnsureBuiltinStyle { name: String },
 }
 
 impl StyleCmd {
@@ -127,7 +130,8 @@ impl StyleCmd {
             StyleCmd::ClearParagraphStyle
             | StyleCmd::ClearParagraphFormatting
             | StyleCmd::ClearCharacterStyle
-            | StyleCmd::ClearCharacterFormatting => return None,
+            | StyleCmd::ClearCharacterFormatting
+            | StyleCmd::EnsureBuiltinStyle { .. } => return None,
         })
     }
 }
@@ -285,14 +289,17 @@ impl Session {
         let pt = b.map(|b| xform::id_of(b.xml)).filter(|s| !s.is_empty()).unwrap_or_else(|| name.to_owned());
         let base = self.styles_base();
         let id = xform::resolve_style_id(Some(&base), &pt);
-        let out = xform::ensure_defined(&base, &id, true);
-        self.commit_styles(out);
+        // `if (this.stylesEditable())` (6634; wave 7, A1): the .odt sheet is not edited
+        if self.styles_editable() {
+            let out = xform::ensure_defined(&base, &id, true);
+            self.commit_styles(out);
+        }
         Ok(id.into())
     }
 
     /// `ensureStyleUsed(id)`: using a style takes the `semiHidden` off (`unhideWhenUsed`).
     pub(crate) fn ensure_style_used(&mut self, id: Option<&str>) {
-        if let Some(id) = id.filter(|s| !s.is_empty()) {
+        if let Some(id) = id.filter(|s| !s.is_empty() && self.styles_editable()) {
             let base = self.styles_base();
             self.commit_styles(xform::ensure_defined(&base, id, true));
         }
@@ -388,6 +395,9 @@ impl Session {
                 }
                 Ok(())
             })?,
+            StyleCmd::EnsureBuiltinStyle { name } => {
+                self.builtin_style_id(&name)?;
+            }
         }
         Ok(Outcome::Done(self.finish()))
     }
@@ -465,7 +475,7 @@ impl Session {
         let base = self.styles_base();
         let sid = style_id.map(|s| xform::resolve_style_id(self.styles.xml().map(|x| &**x), s));
         let id: Option<String> = sid.filter(|s| *s != defp);
-        if let Some(id) = &id {
+        if let Some(id) = id.as_ref().filter(|_| self.styles_editable()) {
             self.commit_styles(xform::ensure_defined(&base, id, true));
         }
         let meta = id.as_deref().and_then(|i| self.meta(i));
@@ -667,7 +677,7 @@ impl Session {
     /// selection) applied to the selection. The styleId (as Word generates it), or `None` when the
     /// name exists.
     pub fn create_style(&mut self, spec: &CreateStyleSpec) -> Result<Option<String>, CommandError> {
-        if !self.can_edit() {
+        if !self.can_edit() || !self.styles_editable() {
             return Ok(None);
         }
         let name = uo_jsnum::text::trim(&spec.name).to_owned();
@@ -704,7 +714,7 @@ impl Session {
     /// `modifyStyle(id, opts)`: name, base, next, gallery, auto-update and the formatting
     /// (`format`: value = set in the style, null = inherit). One undo step.
     pub fn modify_style(&mut self, id: &str, spec: &ModifyStyleSpec) -> Result<bool, CommandError> {
-        if !self.can_edit() {
+        if !self.can_edit() || !self.styles_editable() {
             return Ok(false);
         }
         if let Some(n) = spec.name.as_deref().map(uo_jsnum::text::trim)
@@ -738,6 +748,10 @@ impl Session {
     /// `setDefaultFont(f)`: "Set as Default" of the Font dialog writes the font into the rPr of the
     /// default paragraph style (Normal), not into `w:docDefaults` (measured).
     pub fn set_default_font(&mut self, f: &DefaultFont) -> Result<bool, CommandError> {
+        // `if (!this.stylesEditable()) return false` (4398; wave 7, A1)
+        if !self.styles_editable() {
+            return Ok(false);
+        }
         let mut format = StyleFormat::default();
         if let Some(v) = &f.font_family {
             format.font_ascii = Ch::Val(v.clone());
@@ -775,7 +789,7 @@ impl Session {
     /// paragraph's and the uniform character formatting) goes into the style and out of the
     /// paragraph. Default: the style of the current paragraph.
     pub fn update_style_from_selection(&mut self, id: Option<&str>) -> Result<bool, CommandError> {
-        if !self.can_edit() {
+        if !self.can_edit() || !self.styles_editable() {
             return Ok(false);
         }
         let pi = self.selection.focus.para as usize;
@@ -898,7 +912,7 @@ impl Session {
     /// built-in gets an alias (`w:aliases`), as Word.
     pub fn rename_style(&mut self, id: &str, name: &str) -> Result<bool, CommandError> {
         let n = uo_jsnum::text::trim(name).to_owned();
-        if !self.can_edit() || n.is_empty() || self.style_name_taken(&n, Some(id)) {
+        if !self.can_edit() || !self.styles_editable() || n.is_empty() || self.style_name_taken(&n, Some(id)) {
             return Ok(false);
         }
         let id = xform::resolve_style_id(self.styles.xml().map(|x| &**x), id);
@@ -918,7 +932,7 @@ impl Session {
     /// `deleteStyle(id)`: deletes a CUSTOM style: the paragraphs go back to Normal and the runs lose
     /// the character style. A built-in is not deleted (`false`).
     pub fn delete_style(&mut self, id: &str) -> Result<bool, CommandError> {
-        if !self.can_edit() {
+        if !self.can_edit() || !self.styles_editable() {
             return Ok(false);
         }
         let Some(xml) = self.styles.xml().map(|x| x.to_string()) else { return Ok(false) };
@@ -931,7 +945,7 @@ impl Session {
 
     /// `setStyleInGallery(id, on)`.
     fn set_style_in_gallery(&mut self, id: &str, on: bool) -> Result<(), CommandError> {
-        if !self.can_edit() {
+        if !self.can_edit() || !self.styles_editable() {
             return Ok(());
         }
         let rid = xform::resolve_style_id(self.styles.xml().map(|x| &**x), id);

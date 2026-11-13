@@ -1429,9 +1429,8 @@ fn read_tc80(r: ByteReader<'_>, o: u64) -> Tc {
 
 /// `forCells`: `itcFirst..min(itcLim, cells)`.
 fn for_cells(tap: &mut Tap, first: u8, lim: u8, mut f: impl FnMut(&mut Tc, usize)) {
-    let end = usize::from(lim).min(tap.tcs.len());
-    for i in usize::from(first)..end {
-        f(&mut tap.tcs[i], i);
+    for (i, tc) in tap.tcs.iter_mut().enumerate().take(usize::from(lim)).skip(usize::from(first)) {
+        f(tc, i);
     }
 }
 

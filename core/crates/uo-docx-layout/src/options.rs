@@ -65,6 +65,50 @@ pub enum ViewTransform {
     Draft,
     /// designed with milestone 2
     Outline,
+    /// wave 7c (V): the EDITOR's continuous views (Web, Draft, Outline) as the frozen TS shows them — ONE sheet for the
+    /// whole document (no new sheet at a section, page or column break), the TS margin (`contMarginTwips`) — with the
+    /// content as Word lays it out in those views (record `uo-bindings.md` "Wave 7c — V"). The viewer's `Web`/`Draft`
+    /// above stay as they are (its Web view, the f8 sweeps).
+    Continuous(ContinuousView),
+}
+
+/// Which continuous view of the editor (see [`ViewTransform::Continuous`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ContinuousKind {
+    Web,
+    Draft,
+    Outline,
+}
+
+/// The editor's continuous view (see [`ViewTransform::Continuous`]).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct ContinuousView {
+    pub kind: ContinuousKind,
+    /// Web: the sheet's width in twips, the TS `contentWidthTwips() + 2 × contMarginTwips()` (universal-write.ts 10777,
+    /// 21559); Draft and Outline: unused (the sheet is the last section's page width, as the TS canvas)
+    pub width_tw: f64,
+    /// the TS `contMarginTwips()` (10764): 600, or 240 on a narrow element
+    pub margin_tw: f64,
+    /// `true`: the frozen TS's rules where Word differs (Draft/Outline wrap every section at the LAST section's text
+    /// width; Outline = the TS `+720` rule for the unstyled paragraphs, spacing kept). The default `false` follows Word
+    /// (each section at its own text width; Outline by outline level, paragraph spacing dropped). Strict replays only.
+    pub ts_strict: bool,
+}
+
+impl ViewTransform {
+    /// Whether the view is one of the editor's continuous views (one sheet, the forced breaks inside it).
+    #[must_use]
+    pub fn is_continuous(&self) -> bool {
+        matches!(self, ViewTransform::Continuous(_))
+    }
+
+    /// Wave 7c (V, fix round 2): Word's Draft or Outline view (the editor's continuous view of those kinds without
+    /// `ts_strict`), where a page, column or section break takes a line of its own (measured: record "Wave 7c — V, fix
+    /// round 2").
+    #[must_use]
+    pub fn word_break_lines(&self) -> bool {
+        matches!(self, ViewTransform::Continuous(v) if !v.ts_strict && matches!(v.kind, ContinuousKind::Draft | ContinuousKind::Outline))
+    }
 }
 
 /// The time the date fields see (LQ10): the JS time value of `opts.now` and the rule that gives
@@ -122,6 +166,64 @@ pub struct LayoutOptions {
     /// G4: polled every `CANCEL_POLL_UNITS` work units (and at the first charge); `true`
     /// cancels. For hosts that cannot share a flag (wasm: the `uo_host.layout_poll` import).
     pub cancel_poll: Option<fn() -> bool>,
+    /// Wave 7 (B, gate-O3): `true` = the frozen TS's empty theme for a package without a theme part (its theme colours
+    /// fall back to `w:color`); the default `false` follows Word (the Office 2023 colour scheme, measured;
+    /// [`crate::theme_word`]). Only the strict parity replays against the frozen TS captures set it.
+    pub ts_empty_theme: bool,
+    /// Wave 7 (merge fixer F2, round 2; ED-713): `true` = the frozen TS's PAGEREF page (`bookmarkPages`, engine.ts:638:
+    /// the page's format without the chapter numbers); the default `false` follows Word, which writes a PAGEREF as the
+    /// PAGE field of the bookmark's page, chapter numbers (`w:chapStyle`/`w:chapSep`) included (measured: `1-1`,
+    /// `1-i`; uo-bindings.md "Wave 7 — merge fixer F2, round 2"). Only the strict parity replays against the frozen
+    /// TS captures set it.
+    pub ts_pageref_without_chapter: bool,
+    /// Wave 7c (W, item 1): reserved for the theme tint/shade rounding (the frozen TS's `applyTintShade`, resolve.ts:327:
+    /// HSL lightness, channels floored). Word's rule is NOT found yet (3,356 measured samples in
+    /// `tests/oracle_w7c/tint`: the TS rule hits 2,323, the best candidate 2,662; item 1 is OPEN, uo-bindings.md
+    /// "Wave 7c — W"), so both values give the TS rule today; the strict replays set it already, so the rule can land
+    /// without touching them.
+    pub ts_theme_tint: bool,
+    /// Wave 7c (W, item 2): `true` = the frozen TS's compatibility mode 15 for a package WITHOUT `word/settings.xml`
+    /// (parts.ts:411); the default `false` follows Word, which opens such a package in mode 12 (COM
+    /// `Document.CompatibilityMode` = 12, measured). Only the strict parity replays set it.
+    pub ts_missing_settings_mode15: bool,
+    /// Wave 7c (W, item 3): `true` = the frozen TS's chain of linked text boxes anchored in a table cell (mode 15: the
+    /// first box stays empty, the chain starts in the second); the default `false` follows Word (the first box holds
+    /// the chain's start; also in the body: a box of a chain is never left empty). It also holds the second rule of the
+    /// `txbxcell` series (fix round 1, reviewer W/6): in mode 15 Word wraps a table cell's text around ANY floating box
+    /// anchored in the cell with `layoutInCell="0"` (linked or not; `engine/floats.rs`), which the frozen TS does not.
+    /// Only the strict parity replays set it.
+    pub ts_linked_box_cell_chain: bool,
+    /// Wave 7c (W, item 4): `true` = the frozen TS's REF/PAGEREF/NOTEREF to a missing, unterminated or inverted
+    /// bookmark (the start paragraph's text, page 1, the cached result); the default `false` writes Word's error texts
+    /// (bold) and a multi-paragraph range as Word does. Only the strict parity replays set it.
+    pub ts_ref_bookmarks: bool,
+    /// Wave 7c (W, item 5): reserved for hyphenation pattern sets closer to Word's (proprietary) hyphenator; none ships
+    /// yet (item 5 is OPEN, uo-bindings.md "Wave 7c — W"), so both values use the frozen TS's sets today. The strict
+    /// replays set it already.
+    pub ts_hyphenation_patterns: bool,
+    /// Wave 7c (W, item 6; F2's f7a__7__0): `true` = the frozen TS's keepLines rule (engine.ts:1860: a keep-together
+    /// paragraph moves only when it fits a whole page); the default `false` follows Word, which moves it to the next
+    /// page even when it is taller than a page (measured). Only the strict parity replays set it.
+    pub ts_keep_lines_within_page: bool,
+}
+
+impl LayoutOptions {
+    /// Wave 7c (W): every `ts_*` switch on — the frozen TS's behaviour where Word (the authority) differs. For the
+    /// strict parity replays against the frozen TS captures ONLY; no product path calls it.
+    #[must_use]
+    pub fn ts_strict(self) -> LayoutOptions {
+        LayoutOptions {
+            ts_empty_theme: true,
+            ts_pageref_without_chapter: true,
+            ts_theme_tint: true,
+            ts_missing_settings_mode15: true,
+            ts_linked_box_cell_chain: true,
+            ts_ref_bookmarks: true,
+            ts_hyphenation_patterns: true,
+            ts_keep_lines_within_page: true,
+            ..self
+        }
+    }
 }
 
 /// Work units between two polls of `LayoutOptions::cancel_poll` (G4).
@@ -142,6 +244,14 @@ impl Default for LayoutOptions {
             limits: LayoutLimits::default(),
             cancel: None,
             cancel_poll: None,
+            ts_empty_theme: false,
+            ts_pageref_without_chapter: false,
+            ts_theme_tint: false,
+            ts_missing_settings_mode15: false,
+            ts_linked_box_cell_chain: false,
+            ts_ref_bookmarks: false,
+            ts_hyphenation_patterns: false,
+            ts_keep_lines_within_page: false,
         }
     }
 }

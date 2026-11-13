@@ -90,6 +90,7 @@ pub mod refs;
 pub mod run_boxes;
 pub mod section;
 pub mod table;
+pub mod theme_word;
 pub mod underline;
 pub mod view_transform;
 pub mod word;

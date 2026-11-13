@@ -660,6 +660,12 @@ fn styles_part_path(pkg: &Package) -> String {
     "word/styles.xml".to_owned()
 }
 
+/// The text of the styles part the document relationship names (`None`: no such part). Wave 7c (S): the save compares
+/// it with the style sheet (`save_parts.rs`).
+pub(crate) fn styles_part_text(pkg: &Package) -> Result<Option<String>, DocxError> {
+    Ok(pkg.part_text(&styles_part_path(pkg))?.map(std::borrow::Cow::into_owned))
+}
+
 /// `writeStylesPart(pkg, xml)`: the part, and for a new one its relationship and content type.
 pub(crate) fn write_styles_part(pkg: &mut Package, xml: &str) -> Result<(), DocxError> {
     let path = styles_part_path(pkg);

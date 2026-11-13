@@ -97,7 +97,15 @@ describe('engine="rust": a troca', () => {
     const routed = new Set(ROUTED_PUBLIC), shell = new Set(SHELL);
     const rest = PUBLIC_METHODS.filter((n) => !routed.has(n) && !shell.has(n));
     const mutators = rest.filter(isMutator).length;
-    console.log(`public methods ${PUBLIC_METHODS.length}: routed ${ROUTED_PUBLIC.length}, shell ${SHELL.length - 1}, disabled mutators ${mutators}, disabled queries ${rest.length - mutators}; private routed ${ROUTED_PRIVATE.length}; bar commands routed ${ROUTED_COMMAND_IDS.size}`);
+    // (wave 7c, S: no name twice — a front's list and the base list held 5 in common; the counts are distinct names over
+    // PUBLIC_METHODS, as the merge-state probe counts them)
+    expect(new Set(ROUTED_PUBLIC).size, 'ROUTED_PUBLIC without duplicates').toBe(ROUTED_PUBLIC.length);
+    expect(new Set(ROUTED_PRIVATE).size, 'ROUTED_PRIVATE without duplicates').toBe(ROUTED_PRIVATE.length);
+    const routedPub = PUBLIC_METHODS.filter((n) => routed.has(n)).length;
+    const shellPub = PUBLIC_METHODS.filter((n) => shell.has(n)).length;
+    const both = PUBLIC_METHODS.filter((n) => routed.has(n) && shell.has(n)).length;
+    const indented = ROUTED_PUBLIC.filter((n) => !PUBLIC_METHODS.includes(n)).length;
+    console.log(`public methods ${PUBLIC_METHODS.length}: routed ${routedPub} (+ ${indented} indented), shell ${shellPub}, of which both ${both}, disabled mutators ${mutators}, disabled queries ${rest.length - mutators}; private routed ${ROUTED_PRIVATE.length}; bar commands routed ${ROUTED_COMMAND_IDS.size}`);
   });
 
   it('nenhuma consulta desligada (que roda o código TS) é um mutador disfarçado', () => {
@@ -137,11 +145,40 @@ describe('engine="rust": a troca', () => {
     ed.undo();
     expect(probe.calls).toEqual(['toggleRunProp', 'undo']);
     // mutadores desligados: no-op avisado, o modelo TS continua vazio
-    // (wave 5, frontier S: insertTable is routed; Draw Table stays disabled)
-    expect(ed.setTableTool('draw')).toBeUndefined();
-    // (wave 5, front O: insertPageBreak is routed; Edit Wrap Points stays disabled)
-    expect(ed.startEditWrapPoints()).toBeUndefined();
-    expect(probe.calls).toEqual(['toggleRunProp', 'undo', 'disabled:setTableTool', 'disabled:startEditWrapPoints']);
+    // wave 7 (A2, decision 7 of the record): every public method is routed now (Draw Table, Edit Wrap Points…), so the
+    // fail-closed path is probed with SYNTHETIC public mutators no routing table classifies (one sync, one async): a second
+    // element started with them on the prototype answers a warned no-op and the TS model stays untouched
+    const routedNow = new Set([...ROUTED_PUBLIC, ...SHELL]);
+    expect(PUBLIC_METHODS.filter((n) => !routedNow.has(n) && isMutator(n))).toEqual([]);
+    const proto = Ctor.prototype as unknown as Record<string, unknown>;
+    const list = PUBLIC_METHODS as string[];
+    const synth = ['setUnclassifiedProbe', 'insertUnclassifiedProbeAsync'];
+    let tsRan = 0;
+    proto[synth[0]!] = function (this: unknown) { tsRan++; };
+    proto[synth[1]!] = async function (this: unknown) { tsRan++; };
+    list.push(...synth);
+    try {
+      expect(synth.every((n) => isMutator(n) && !routedNow.has(n))).toBe(true);
+      const ed2 = await make('rust');
+      const counts2 = (globalThis as Record<string, unknown>)['__routeCounts'] as Record<string, number>;
+      expect(counts2['disabledMutators']).toBe(2);
+      probe.calls.length = 0;
+      const call = (n: string): unknown => (ed2 as unknown as Record<string, () => unknown>)[n]!();
+      expect(call(synth[0]!)).toBeUndefined();
+      const r = call(synth[1]!);
+      expect(r).toBeInstanceOf(Promise);
+      expect(await r).toBeUndefined();
+      expect(probe.calls).toEqual(synth.map((n) => `disabled:${n}`));
+      expect(tsRan).toBe(0);
+      expect((ed2 as unknown as { model: unknown }).model).toBeNull();
+      (ed2 as unknown as FakeNode).remove();
+    } finally {
+      for (const n of synth) delete proto[n];
+      list.splice(list.length - synth.length, synth.length);
+    }
+    probe.calls.length = 0;
+    ed.toggleRunProp('bold');
+    expect(probe.calls).toEqual(['toggleRunProp']);
     expect(model()).toBeNull();
     // consultas desligadas: o valor do TS com o modelo vazio
     expect(ed.getComments()).toEqual([]);

@@ -141,8 +141,27 @@ jobs:
       - name: Fonts license check
         run: node tools/fonts/check-fonts.mjs
 
+      # the engine="rust" modules of document-viewer and write (docs/publishing.md step 2): the viewer build
+      # (feature `write`) and the editor's session build (feature `session`), never a test build (build-pkg
+      # refuses one: S11); UO_REQUIRE_ENGINE_WASM makes build-pkg fail when either is missing
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown && rustup default stable
+
+      - name: Engine modules (no test features)
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/pkg-wasm
+          cargo build -p uo-wasm --features write --target wasm32-unknown-unknown --profile wasm
+          cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm target/pkg-wasm/uo-write.wasm
+          cargo build -p uo-wasm --features session --target wasm32-unknown-unknown --profile wasm
+          cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm target/pkg-wasm/uo-write-editor.wasm
+
       # writes <package>/publish/ for every package (tools/build-pkg.mjs)
       - name: Build the publishable folders
+        env:
+          UO_REQUIRE_ENGINE_WASM: '1'
         run: node tools/build-pkg.mjs
 
       # order: font-files → spell checking → document-viewer and write → the

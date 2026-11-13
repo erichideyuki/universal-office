@@ -89,7 +89,7 @@ impl Rd<'_> {
         Ok(self.take(n)?.to_vec())
     }
     fn u16s(&mut self) -> R<Vec<u16>> {
-        Ok(self.bytes()?.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect())
+        Ok(self.bytes()?.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect())
     }
     fn string(&mut self) -> R<String> {
         Ok(String::from_utf16_lossy(&self.u16s()?))
@@ -544,7 +544,7 @@ impl Dec<'_> {
             for _ in 0..n {
                 let s = r.string()?;
                 let k = parse_ref(&s).ok_or_else(|| format!("ref {s}"))?;
-                m.insert(k, ParaSplitInfo { lines: r.num()?, widow: r.bool()?, after: r.num()?, band: r.opt_num()? });
+                m.insert(k, ParaSplitInfo { lines: r.num()?, widow: r.bool()?, keep: false, after: r.num()?, band: r.opt_num()? });
             }
             Some(Arc::new(m))
         } else {
@@ -602,6 +602,7 @@ fn line_of(p: &LayoutPage, l: &LineGeom) -> PassLine {
         y: l.y,
         height: l.height,
         baseline: l.baseline,
+        desc: l.desc,
         width: l.width,
         chars,
         hyph: l.hyph,
@@ -671,6 +672,7 @@ impl Enc<'_> {
                 y: l.y,
                 height: l.height,
                 baseline: l.baseline,
+                desc: l.desc,
                 width: l.width,
                 chars,
                 hyph: l.hyph,
@@ -1082,7 +1084,7 @@ fn replay_doc(key: &str, dump: &[u8], docx: &Path, transcript: &Transcript, font
     let model = build_model(&doc);
     let ldoc = LDoc::empty(DocView::new(&doc));
     let provider = TranscriptProvider::new(transcript, load_answers(transcript, fonts));
-    let opts = LayoutOptions::default();
+    let opts = LayoutOptions::default().ts_strict(); // wave 7c (W): a replay of the frozen TS
     let input = PassInput::default();
     let mut ftable = FaceTable::new();
     let mut resolver = FaceResolverCache::new();

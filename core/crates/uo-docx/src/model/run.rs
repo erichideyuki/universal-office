@@ -262,7 +262,10 @@ js_object! {
         pub txbx_src: Option<TxbxSrc>,
         /// the TS `paras` and `blocks` are equal copies, not the same objects: what the JSON round
         /// trip of an undo step leaves (D2a, U4; the TS relinks only the body tables)
-        pub copies: ViewsCopied
+        pub copies: ViewsCopied,
+        /// wave 7 (B): the flat editing view of the box in edit while it holds a table (the TS edits
+        /// `tb.paras` and reconciles `tb.blocks`); uo-docx `session/ops/hf_flat.rs`
+        pub flat: super::section::EditSlot<Arc<super::section::HfFlat>>
     }
 }
 

@@ -45,7 +45,27 @@ pub struct LDoc<'a> {
     /// sepPPr }` of `placeEndnotes`, engine.ts:2461): a copy with both overrides and no runs, so
     /// no model field of its base is read (added by F7c)
     pub en_sep: Option<LParaId>,
+    /// wave 7 (B, gate-O3): the theme every colour resolves with ([`crate::theme_word::theme_of`]): the document's,
+    /// or Word's Office 2023 colours for a package without a theme part
+    pub theme: &'a uo_docx::model::formatting::Theme,
+    /// wave 7c (W, item 2; oracle nosettings): Word's compatibility mode for a package WITHOUT `word/settings.xml` (12,
+    /// measured: COM `CompatibilityMode`); `None` = the model's (the frozen TS reads 15, `ts_missing_settings_mode15`)
+    pub compat_word: Option<f64>,
+    /// wave 7c (W, item 2): Word's default tab stop when the settings have no `w:defaultTabStop` (708 tw, measured);
+    /// `None` = the model's (the frozen TS's 720)
+    pub default_tab_word: Option<f64>,
+    /// wave 7c (W, item 4): the document carries bookmark marks in its runs (a lossless read, `sources`: the editor's session), so
+    /// a reference can find a bookmark outside the body index
+    pub bookmark_marks: bool,
+    /// wave 7c (W, item 4, fix round 1): the bookmark marks of every derived paragraph by name, built once per call on
+    /// the first reference that needs it (`Engine::bookmark_where`; its building charges the budget)
+    pub bookmark_mark_index: std::cell::OnceCell<BookmarkMarkIndex>,
 }
+
+/// Wave 7c (W, item 4, fix round 1): for each bookmark name, what the FIRST derived paragraph that opens it holds:
+/// `Some(text)` when its end mark (the same id) is in that paragraph (the range's text, objects skipped), `None` when it is
+/// not (Word's error: an unterminated bookmark).
+pub type BookmarkMarkIndex = rustc_hash::FxHashMap<Box<str>, Option<Vec<u16>>>;
 
 /// Where a derived paragraph comes from.
 #[derive(Clone, Copy, Debug)]
@@ -175,7 +195,26 @@ impl<'a> LDoc<'a> {
             note_stories: rustc_hash::FxHashMap::default(),
             tb_of_drawing: rustc_hash::FxHashMap::default(),
             en_sep: None,
+            theme: crate::theme_word::theme_of(view, false),
+            compat_word: None,
+            default_tab_word: None,
+            bookmark_marks: false,
+            bookmark_mark_index: std::cell::OnceCell::new(),
         }
+    }
+
+    /// The compatibility mode the layout follows (wave 7c, W, item 2): Word's for a package without settings, else the
+    /// model's `settings.compatibilityMode`.
+    #[must_use]
+    pub fn compat_mode(&self) -> f64 {
+        self.compat_word.unwrap_or_else(|| self.view.formatting().settings.compatibility_mode.to_number())
+    }
+
+    /// The default tab stop the layout follows (wave 7c, W, item 2): Word's 708 tw when the settings do not give one,
+    /// else the model's `settings.defaultTabStop`.
+    #[must_use]
+    pub fn default_tab_stop(&self) -> f64 {
+        self.default_tab_word.unwrap_or_else(|| self.view.formatting().settings.default_tab_stop.to_number())
     }
 
     #[must_use]

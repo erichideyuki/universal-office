@@ -202,9 +202,9 @@ fn explain(name: &str, make: Gen, seed: u32, n: usize) -> String {
     let mut rng = Rng::new(seed);
     let mut out = String::new();
     let mut shown = 0;
-    for (i, chunk) in raw.chunks_exact(8).take(n).enumerate() {
+    for (i, chunk) in raw.as_chunks::<8>().0.iter().take(n).enumerate() {
         let (x, y) = make(&mut rng);
-        let want = f64::from_le_bytes(chunk.try_into().unwrap());
+        let want = f64::from_le_bytes(*chunk);
         let got = canon(pow(x, y));
         if got.to_bits() != want.to_bits() {
             out.push_str(&format!("\n  #{i} pow({:e} [{}], {:e} [{}]) = {} want {}", x, hex(x), y, hex(y), hex(got), hex(want)));

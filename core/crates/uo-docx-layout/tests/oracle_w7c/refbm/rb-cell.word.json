@@ -1,0 +1,67 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 111.72,
+"size": 11.04,
+"text": "antes"
+},
+{
+"y": 93.86,
+"x0": 90.5,
+"x1": 151.64,
+"size": 11.04,
+"text": "nacelulafim"
+},
+{
+"y": 106.46,
+"x0": 90.5,
+"x1": 156.41,
+"size": 11.04,
+"text": "outrasemfim"
+},
+{
+"y": 119.18,
+"x0": 85.1,
+"x1": 117.11,
+"size": 11.04,
+"text": "depois"
+},
+{
+"y": 131.78,
+"x0": 85.1,
+"x1": 147.63,
+"size": 11.04,
+"text": "REF=[celula]"
+},
+{
+"y": 144.38,
+"x0": 85.1,
+"x1": 155.67,
+"size": 11.04,
+"text": "PAGEREF=[1]"
+},
+{
+"y": 157.1,
+"x0": 85.1,
+"x1": 345.2,
+"size": 11.04,
+"text": "REFE=[Erro!Fontedereferêncianãoencontrada.]"
+},
+{
+"y": 169.7,
+"x0": 85.1,
+"x1": 307.26,
+"size": 11.04,
+"text": "PAGEREFE=[Erro!Indicadornãodefinido.]"
+}
+],
+"objs": []
+}
+]
+}

@@ -77,7 +77,9 @@ fn selection_state(s: &UoWriteSession) -> (RunProps, uo_docx::model::para::ParaP
     if para.alignment.is_none() {
         para.alignment = st.and_then(|s| s.para.alignment.clone());
     }
-    let has_xml = session.package().contains("word/styles.xml");
+    // `this.docStyles.xml`: the styles part of NOW (wave 7, A1: the package's original part missed a styles.xml a command
+    // created in a document without one — ensureBuiltinStyle, a TOC — and the toolbar kept the default font)
+    let has_xml = session.styles_store().xml().is_some();
     let look = if has_xml && (run.font_ascii.is_none() || run.sz_half_pt.is_none()) {
         let fmt = &*doc.formatting;
         let default_para = fmt.styles.defaults.paragraph.as_deref().unwrap_or("Normal");

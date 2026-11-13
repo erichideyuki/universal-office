@@ -199,6 +199,9 @@ export async function tabsDialog(env: Env): Promise<void> {
   pos.setAttribute('aria-label', tr(lang, 'Tab stop position', 'Posição da parada de tabulação', 'Posición de tabulación'));
   const list = el('select', { name: 'list', size: 6, style: 'width:100%;height:132px' });
   const def = unitInput('default', cur.defaultTabTwips, u, lang);
+  // o valor exibido ao abrir: OK sem mexer no campo não muda a parada padrão (no Word, 708 tw aparece como 1,25 cm, que
+  // relido daria 709)
+  const defShown = def.value;
   const clearedEl = el('div', { style: 'font-size:12px;min-height:16px;color:var(--u-color-on-surface-variant,#44474f)' });
   const radios = (name: string, opts: readonly (readonly [string, string])[], value: string): HTMLElement => {
     const box = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:4px 12px' });
@@ -273,7 +276,7 @@ export async function tabsDialog(env: Env): Promise<void> {
   // posição digitada sem "Definir": o Word define ao dar OK
   if (pos.value && !tabs.some((t) => t.pos === parseUnit(pos.value, u))) define();
   const d = parseUnit(def.value, u);
-  if (Number.isFinite(d) && d > 0 && d !== cur.defaultTabTwips) ed.setDefaultTabStop(d);
+  if (def.value !== defShown && Number.isFinite(d) && d > 0 && d !== cur.defaultTabTwips) ed.setDefaultTabStop(d);
   const same = JSON.stringify(tabs) === JSON.stringify(cur.tabs.map((t) => ({ ...t })).sort((a, b) => a.pos - b.pos));
   if (!same) ed.setTabStops(tabs);
 }

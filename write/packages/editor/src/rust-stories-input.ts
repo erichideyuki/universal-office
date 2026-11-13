@@ -206,9 +206,22 @@ function lateRest(st: StState, e: MouseEvent): void {
   if (e.button === 0 && e.shiftKey && c.ctx.kind === 'cell') {
     if (dragCellSel(st, e)) { e.preventDefault(); st.ed.focusEditor(); return; }
   }
-  if (e.button === 0 && ctxOf(st)?.tableSel && !e.shiftKey) exec(st, { t: 'table', v: { t: 'clearTableSelection' } }, 'clearTableSelection');
-  if (e.button === 0 && !e.shiftKey) routeClick(st, e);
+  // wave 7 (A2, f2-3-0|tables step 24): the TS mousedown clears the cell selection and enters/leaves the cell without a
+  // scroll (`tableSel = null`, `exitCell`/`enterCellAt`); the shell's `apply` scrolled to the caret of the left cell's body
+  // selection BEFORE the click's own hit, which then landed on another page
+  noScroll(st, () => {
+    if (e.button === 0 && ctxOf(st)?.tableSel && !e.shiftKey) exec(st, { t: 'table', v: { t: 'clearTableSelection' } }, 'clearTableSelection');
+    if (e.button === 0 && !e.shiftKey) routeClick(st, e);
+  });
   defaultClick(st, e);
+}
+
+/** `fn` with the shell's caret scroll (`scrollCaretIntoView` → `animateScrollTo`) shadowed. */
+function noScroll(st: StState, fn: () => void): void {
+  const el = st.ed.el as unknown as { animateScrollTo?: (top: number) => void };
+  const own = Object.prototype.hasOwnProperty.call(el, 'animateScrollTo') ? el.animateScrollTo : undefined;
+  el.animateScrollTo = () => {};
+  try { fn(); } finally { if (own) el.animateScrollTo = own; else delete el.animateScrollTo; }
 }
 
 /**

@@ -32,6 +32,9 @@ pub enum TextCmd {
     Delete,
     /// `setSelection(anchor, focus)`: clamped to the story
     SetSelection { anchor: DocPosition, focus: DocPosition },
+    /// `insertCustomInline(type, data, { fallbackText })` (universal-write.ts 2108; wave 7, A1, native only): `data_json`
+    /// is `JSON.stringify(data)` (the shell's; an unparsable text is `null`), `fallback_text` resolved by the shell
+    InsertCustomInline { r#type: String, data_json: String, fallback_text: Utf16 },
 }
 
 fn u32_of(n: usize) -> u32 {
@@ -177,7 +180,7 @@ impl Session {
     }
 
     /// `trackedDelete(range, caret)`: `start` = Backspace (the caret before), else after.
-    fn tracked_delete(&mut self, range: DocRange, start: bool) -> Result<DocPosition, CommandError> {
+    pub(crate) fn tracked_delete(&mut self, range: DocRange, start: bool) -> Result<DocPosition, CommandError> {
         let rev = self.new_rev();
         let paras = self.paras_mut().ok_or(CommandError::Position)?;
         let r = guarded::track_delete(paras, range, &rev)?;
@@ -191,7 +194,12 @@ impl Session {
     }
 
     /// `insertTyped(pos, text, props)`.
-    pub(crate) fn insert_typed(&mut self, pos: DocPosition, text: &[u16], props: Option<&CarriedProps>) -> Result<DocPosition, CommandError> {
+    pub(crate) fn insert_typed(
+        &mut self,
+        pos: DocPosition,
+        text: &[u16],
+        props: Option<&CarriedProps>,
+    ) -> Result<DocPosition, CommandError> {
         let out = if self.opts.tracking {
             let rev = self.new_rev();
             let paras = self.paras_mut().ok_or(CommandError::Position)?;
@@ -482,7 +490,50 @@ impl Session {
             TextCmd::Backspace => self.press_backspace(),
             TextCmd::Delete => self.press_delete(),
             TextCmd::SetSelection { anchor, focus } => Ok(self.set_selection(anchor, focus)),
+            TextCmd::InsertCustomInline { r#type, data_json, fallback_text } => {
+                self.insert_custom_inline(&r#type, &data_json, fallback_text)
+            }
         }
+    }
+
+    /// `insertCustomInline(type, data, options)` (universal-write.ts 2108): the selection deleted, one object run (U+FFFC)
+    /// with `{ ...(pendingProps ?? currentProps()) }` and `custom: { type, data, fallbackText }` at the caret, the caret
+    /// after it, the pending props dropped; one undo step. The shell adds `data`/`fallbackText` to the event's detail.
+    fn insert_custom_inline(&mut self, ty: &str, data_json: &str, fallback_text: Utf16) -> Result<Outcome, CommandError> {
+        if self.paras().is_none() || self.locked() {
+            return Ok(Outcome::Done(self.change_set()));
+        }
+        let data = crate::read::json_parse::parse(data_json).unwrap_or_default();
+        self.begin_step(false, &[]);
+        let r = self.insert_custom_inline_step(ty, data, fallback_text);
+        if let Err(e) = r {
+            self.discard_step();
+            return Err(e);
+        }
+        self.emit(Event::CustomInlineInserted { r#type: ty.into() });
+        Ok(Outcome::Done(self.finish()))
+    }
+
+    fn insert_custom_inline_step(&mut self, ty: &str, data: crate::js::JsonValue, fallback_text: Utf16) -> Result<(), CommandError> {
+        if self.has_selection() {
+            let deleted = self.delete_selection()?;
+            self.caret_at(deleted);
+        }
+        let p = self.pending_props.clone().unwrap_or_else(|| self.current_props());
+        let mut run = Run { text: Utf16::from("￼"), props: std::sync::Arc::new(p.props), rpr_link: p.link, ..Run::default() };
+        run.ext = Some(Box::new(crate::model::run::RunExt {
+            custom: Some(Box::new(crate::model::run::CustomInline {
+                r#type: ty.into(),
+                data,
+                fallback_text,
+                ..crate::model::run::CustomInline::default()
+            })),
+            ..crate::model::run::RunExt::default()
+        }));
+        let pos = self.insert_whole_run(self.selection.focus, run)?;
+        self.pending_props = None;
+        self.caret_at(pos);
+        Ok(())
     }
 }
 

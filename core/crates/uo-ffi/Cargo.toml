@@ -15,7 +15,9 @@ crate-type = ["cdylib", "rlib"]
 # memory counters and the test-only buffer export exposed to the .NET tests (M4); never in the shipped library
 count = ["dep:uo-alloc", "uo-alloc/global"]
 
-[dependencies]
+# native only, as the crate (`#![cfg(not(target_arch = "wasm32"))]`): on wasm32 the crate is empty, and cargo 1.100's
+# `unused_dependencies` reported these dependencies there
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 uo-alloc = { path = "../uo-alloc", optional = true }
 # the read path of milestone 1 (record core/docs/modules/uo-bindings.md): docx (and .doc, D4) → model → layout → PDF
 uo-opc = { path = "../uo-opc" }
@@ -29,8 +31,10 @@ uo-drawingml = { path = "../uo-drawingml" }
 # the server font policy over the machine's fonts (`system`) and the hyphenation patterns compiled in (`hyphen-data`)
 uo-fonts = { path = "../uo-fonts", features = ["system", "hyphen-data"] }
 
-[dev-dependencies]
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }
+
+[dev-dependencies]
 # sha256 and the capture reader of the TS parity test (tests/server_parity.rs)
 uo-testkit = { path = "../uo-testkit" }
 

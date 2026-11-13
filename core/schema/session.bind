@@ -5,14 +5,14 @@ runtime crate::session::wire
 Command enum uo_docx::session::command::Command
 JobResult enum uo_docx::session::command::JobResult
 LocalNow struct uo_docx::session::env::LocalNow
-TextCmd enum uo_docx::session::ops::text::TextCmd
+TextCmd enum uo_docx::session::ops::text::TextCmd native_only=InsertCustomInline
 ContextCmd enum uo_docx::session::ops::context::ContextCmd
 SettingsCmd enum uo_docx::session::ops::settings::SettingsCmd
 FormatCmd enum uo_docx::session::ops::format::FormatCmd native_only=ApplyPainter
 TupParaBorderSideOptBorderSpec tuple
 ParagraphCmd enum uo_docx::session::ops::paragraph::ParagraphCmd
 ListCmd enum uo_docx::session::ops::lists::ListCmd
-StyleCmd enum uo_docx::session::ops::styles::StyleCmd
+StyleCmd enum uo_docx::session::ops::styles::StyleCmd native_only=EnsureBuiltinStyle
 TupI32I32 tuple
 TupUtf16OptBorderSpec tuple
 TableCmd enum uo_docx::session::ops::tables::TableCmd
@@ -30,7 +30,7 @@ PictureCmd enum uo_docx::session::ops::pictures::PictureCmd
 PageCmd enum uo_docx::session::ops::page::PageCmd
 TextLayoutCmd enum uo_docx::session::ops::text_layout::TextLayoutCmd
 ClipboardCmd enum uo_docx::session::ops::clipboard::ClipboardCmd native_only=RenderPictures
-FindCmd enum uo_docx::session::ops::find::FindCmd
+FindCmd enum uo_docx::session::ops::find::FindCmd native_only=ReplaceAllPlain
 NavigationCmd enum uo_docx::session::ops::navigation::NavigationCmd
 TupUtf16CaptionPosition tuple
 ReferenceCmd enum uo_docx::session::ops::references::ReferenceCmd

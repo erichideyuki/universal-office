@@ -212,7 +212,7 @@ pub(crate) fn push_image_item(
     r: MetafileFrame,
     out: &mut PassItems,
 ) -> LResult<()> {
-    let theme = &cx.ldoc.view.formatting().theme;
+    let theme = cx.ldoc.theme; // wave 7 (B, gate-O3)
     let pic = match im {
         Some(im) => picture_look(im, theme, &mut ResWriter::new(&mut *cx.res, &mut cx.images.origins))?,
         None => None,
@@ -285,7 +285,7 @@ pub(crate) fn push_shape_item(
     look: Option<&ShapeLook>,
     out: &mut PassItems,
 ) -> LResult<()> {
-    let theme = &cx.ldoc.view.formatting().theme;
+    let theme = cx.ldoc.theme; // wave 7 (B, gate-O3)
     let [x, y, w, h] = r;
     let mut item = {
         let mut rw = ResWriter::new(&mut *cx.res, &mut cx.images.origins);

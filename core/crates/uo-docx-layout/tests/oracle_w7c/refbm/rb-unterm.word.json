@@ -1,0 +1,81 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 269.36,
+"size": 11.04,
+"text": "antesalvosemfimrestodoparagrafo"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 159.94,
+"size": 11.04,
+"text": "outroparagrafo"
+},
+{
+"y": 106.46,
+"x0": 85.1,
+"x1": 337.88,
+"size": 11.04,
+"text": "REF=[Erro!Fontedereferêncianãoencontrada.]"
+},
+{
+"y": 119.18,
+"x0": 85.1,
+"x1": 299.94,
+"size": 11.04,
+"text": "PAGEREF=[Erro!Indicadornãodefinido.]"
+},
+{
+"y": 131.78,
+"x0": 85.1,
+"x1": 345.8,
+"size": 11.04,
+"text": "REFN=[Erro!Fontedereferêncianãoencontrada.]"
+},
+{
+"y": 144.38,
+"x0": 85.1,
+"x1": 345.2,
+"size": 11.04,
+"text": "REFP=[Erro!Fontedereferêncianãoencontrada.]"
+},
+{
+"y": 157.1,
+"x0": 85.1,
+"x1": 307.26,
+"size": 11.04,
+"text": "PAGEREFP=[Erro!Indicadornãodefinido.]"
+},
+{
+"y": 169.7,
+"x0": 85.1,
+"x1": 348.2,
+"size": 11.04,
+"text": "REFW=[Erro!Fontedereferêncianãoencontrada.]"
+},
+{
+"y": 182.42,
+"x0": 85.1,
+"x1": 345.8,
+"size": 11.04,
+"text": "REFR=[Erro!Fontedereferêncianãoencontrada.]"
+},
+{
+"y": 195.02,
+"x0": 85.1,
+"x1": 299.82,
+"size": 11.04,
+"text": "NOTEREF=[Erro!Indicadornãodefinido.]"
+}
+],
+"objs": []
+}
+]
+}

@@ -465,7 +465,7 @@ impl Engine {
         }
         self.sect_gap_after = None;
         let fr = self.col_frame()?;
-        let compat = cx.ldoc.view.formatting().settings.compatibility_mode.to_number();
+        let compat = cx.ldoc.compat_mode(); // wave 7c (W, item 2)
         let fp = table.tbl_pr.as_ref().and_then(|p| p.tblp_pr.as_deref());
         if let Some(fp) = fp
             && fp.tblp_y_spec.as_deref() != Some("inline")
@@ -585,7 +585,8 @@ impl Engine {
                 // goes down whole
                 let only_min = r.natural.or(r.height) + bw <= avail + 0.05;
                 let parts = match (&r.split, only_min) {
-                    (Some(s), false) => s.split(cx, avail)?,
+                    // wave 7c (W, item 6): the cells' keepLines paragraphs stay whole, except at the top of a page
+                    (Some(s), false) => s.split_keep(cx, avail, !self.at_top)?,
                     _ => None,
                 };
                 match parts {
@@ -853,7 +854,7 @@ impl Engine {
             return Ok(false);
         }
         Ok(match &row.split {
-            Some(s) => s.split(cx, avail)?.is_some_and(|(a, _)| a.height > 0.0),
+            Some(s) => s.split_keep(cx, avail, !self.at_top)?.is_some_and(|(a, _)| a.height > 0.0), // wave 7c (W, item 6)
             None => false,
         })
     }
@@ -922,7 +923,7 @@ impl Engine {
 
     /// `floatMinY(ps)` (engine.ts:2886).
     pub(crate) fn float_min_y(&self, cx: &Cx<'_, '_>, ps: PageIx) -> LResult<f64> {
-        Ok(if cx.ldoc.view.formatting().settings.compatibility_mode.to_number() >= 15.0 { self.ps(ps)?.body_top } else { 0.0 })
+        Ok(if cx.ldoc.compat_mode() >= 15.0 { self.ps(ps)?.body_top } else { 0.0 })
     }
 
     /// `pinFloatsOverTable(t, blockIdx)` (engine.ts:2900): a wrapping float of the paragraph AFTER
@@ -1220,7 +1221,7 @@ impl Engine {
     ) -> LResult<()> {
         let gi = self.ps(ps)?.geom;
         let g = self.geom(gi)?.clone();
-        let legacy = cx.ldoc.view.formatting().settings.compatibility_mode.to_number() < 15.0;
+        let legacy = cx.ldoc.compat_mode() < 15.0; // wave 7c (W, item 2)
         let h = rows_height(&t.rows);
         // the reference box (what is aligned): mode 15 = the outer border; older = the text —
         // without the margins of the first and last cell (t.x = −a of the left; oracle ftcellmar)
@@ -1280,7 +1281,7 @@ impl Engine {
         wrap: bool,
         split: bool,
     ) -> LResult<()> {
-        let legacy = cx.ldoc.view.formatting().settings.compatibility_mode.to_number() < 15.0;
+        let legacy = cx.ldoc.compat_mode() < 15.0; // wave 7c (W, item 2)
         let ref_x = carry.ref_x;
         let id = carry.id;
         let t = &*carry.t;
@@ -1601,7 +1602,7 @@ impl Engine {
     /// `noBreakWrapped()` (engine.ts:3092): `w:doNotBreakWrappedTables` (mode 15 ignores it).
     fn no_break_wrapped(&self, cx: &Cx<'_, '_>) -> bool {
         let s = &cx.ldoc.view.formatting().settings;
-        s.compatibility_mode.to_number() < 15.0 && s.compat.get("doNotBreakWrappedTables") == Some(&true)
+        cx.ldoc.compat_mode() < 15.0 && s.compat.get("doNotBreakWrappedTables") == Some(&true)
     }
 
     /// `placeFloatCarry()` (engine.ts:3097): the continuation of split floating tables at the top
@@ -1780,7 +1781,7 @@ impl Engine {
             return Ok(false);
         }
         let fp = b.tbl_pr.as_ref().and_then(|p| p.tblp_pr.as_deref()).filter(|f| f.tblp_y_spec.as_deref() != Some("inline"));
-        let compat = cx.ldoc.view.formatting().settings.compatibility_mode.to_number();
+        let compat = cx.ldoc.compat_mode(); // wave 7c (W, item 2)
         let n = |v: Option<crate::model::JsNumber>| v.and_then(crate::model::JsNumber::as_f64).unwrap_or(0.0);
         if let Some(fp) = fp
             && !hf_flow

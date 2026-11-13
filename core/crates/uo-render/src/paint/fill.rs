@@ -45,7 +45,7 @@ pub fn gradient_samples(stops: &[(f64, &[u16])], n: usize, lim: &PaintLimits) ->
     let sig = 0.25;
     let (p0, p1) = (phi(-0.5 / sig), phi(0.5 / sig));
     let nm1 = n as f64 - 1.0;
-    for (i, px) in out.chunks_exact_mut(3).enumerate() {
+    for (i, px) in out.as_chunks_mut::<3>().0.iter_mut().enumerate() {
         let t = i as f64 / nm1;
         let mut c = [0.0f64; 3];
         if two {
@@ -227,7 +227,7 @@ pub fn pattern_raster(
             let j = floor(y2 as f64 / k);
             let ridx = rem(rem(j0 + j, 8.0) + 8.0, 8.0);
             let row = js_index(ridx, 8).and_then(|i| rows.get(i)).map_or(0, |&r| i32::from(r));
-            for (x2, q) in row_px.chunks_exact_mut(4).enumerate() {
+            for (x2, q) in row_px.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                 let i = floor(x2 as f64 / k);
                 let on = shr(row, 7.0 - rem(rem(i0 + i, 8.0) + 8.0, 8.0)) & 1;
                 let c = if on != 0 { fgc } else { bgc };
@@ -366,7 +366,7 @@ pub fn rect_gradient_raster(g: &GradFill, syms: &SymbolTable, w: f64, h: f64, pp
             } else {
                 0.0
             };
-            for (x, q) in row.chunks_exact_mut(4).enumerate() {
+            for (x, q) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                 let px = x as f64 + 0.5;
                 let tx = if px < fx0 {
                     (fx0 - px) / max(1e-6, fx0)

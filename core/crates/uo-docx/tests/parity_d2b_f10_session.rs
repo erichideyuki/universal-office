@@ -614,7 +614,11 @@ fn d2b_f10_session_matches_the_element() {
         // value on, and the seed is the one the capture recorded
         let mut env = FixedEnv::default();
         uo_docx::session::Env::random_u32(&mut env);
-        let mut s = Session::open(bytes, OpenOptions { sig_mode: SigMode::Ts, ..OpenOptions::default() }, Box::new(env)).unwrap();
+        // wave 7c (S): the TS captures save after undone style edits — the frozen TS's stale parts (Word manda sobre o TS
+        // by default, `save_parts.rs`). Fix round 1: only the flag this family needs; without it the `stylexml` facet of
+        // step #16 differs on sep-times14, ln-objects and styleref-seq (an undone style edit saved: Word's sheet of now)
+        let o = OpenOptions { sig_mode: SigMode::Ts, ts_stale_parts: true, ..OpenOptions::default() };
+        let mut s = Session::open(bytes, o, Box::new(env)).unwrap();
         s.set_ui_lang(UiLang::Pt);
         s.set_ref_seed(cap.get(&rec.key, "i-seed").unwrap().parse().unwrap());
         let diverges = DIVERGENCES.iter().find(|(d, _, _)| rel.ends_with(d)).map(|(_, s, r)| (*s, *r));

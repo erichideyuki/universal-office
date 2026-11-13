@@ -97,7 +97,7 @@ impl R<'_> {
     }
     fn u16s(&mut self) -> Res<Vec<u16>> {
         let b = self.bytes()?;
-        Ok(b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect())
+        Ok(b.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect())
     }
     fn string(&mut self) -> Res<String> {
         Ok(String::from_utf16_lossy(&self.u16s()?))
@@ -577,7 +577,7 @@ impl R<'_> {
             p.pfmts.push(LineParaFormat { left, right, first_line, tabs: tabs.into() });
             u32::try_from(p.pfmts.len() - 1).map_err(|_| "pfmts".to_string())
         })?;
-        Ok(LineGeom { at, start: int(start)?, end: int(end)?, x, y, height, baseline, width, chars, hyph, rev, frame, pfmt })
+        Ok(LineGeom { at, start: int(start)?, end: int(end)?, x, y, height, baseline, desc: 0.0, width, chars, hyph, rev, frame, pfmt })
     }
 
     fn item(&mut self, p: &mut LayoutPage) -> Res<()> {

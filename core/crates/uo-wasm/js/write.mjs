@@ -186,6 +186,15 @@ export function bindWrite(w, host) {
       flags |= [undefined, 'final', 'simple', 'all', 'original'].indexOf(o.revisions) << 4;
       if (o.hyphenationLanguages) flags |= 1 << 8;
       if (typeof o.cancelCheck === 'function') flags |= 1 << 9;
+      if (o.tsEmptyTheme) flags |= 1 << 10; // wave 7 (B, gate-O3): parity tests against the frozen TS only
+      if (o.tsPagerefWithoutChapter) flags |= 1 << 11; // ED-713: parity tests against the frozen TS only
+      // wave 7c (W): the frozen TS's behaviour where Word differs — parity tests against the frozen TS only
+      if (o.tsThemeTint) flags |= 1 << 12;
+      if (o.tsMissingSettings) flags |= 1 << 13;
+      if (o.tsLinkedCell) flags |= 1 << 14;
+      if (o.tsRefBookmarks) flags |= 1 << 15;
+      if (o.tsHyphenation) flags |= 1 << 16;
+      if (o.tsKeepLines) flags |= 1 << 17;
       // a nested layout() from cancelCheck would re-enter the module mid-call and reset host.poll
       if (host.busy) throw new Error('layout() cannot be called from cancelCheck or while another layout runs');
       host.busy = true;
@@ -308,6 +317,13 @@ export function bindWrite(w, host) {
     imageBytes(i) { const { status, data } = new Buf(w.uo_layout_image_bytes(this.#live(), i)).take(); return status === 0 ? data : null; }
     /** the SVG version of image `i` (the vector the viewer paints in place of the raster), or null */
     imageSvg(i) { const { status, data } = new Buf(w.uo_layout_image_svg(this.#live(), i)).take(); return status === 0 ? data : null; }
+    /** image `i` decoded by the engine (PNG, GIF, BMP, TIFF): `{ width, height, data }` (RGBA8), or null (wave 7, F2) */
+    imageRgba(i) {
+      const { status, data } = new Buf(w.uo_layout_image_rgba(this.#live(), i)).take();
+      if (status !== 0 || data.length < 8) return null;
+      const d = new DataView(data.buffer, data.byteOffset, 8);
+      return { width: d.getUint32(0, true), height: d.getUint32(4, true), data: data.subarray(8) };
+    }
     /** the PDF in chunks: `{ chunks, length }` (`new Blob(chunks, { type: 'application/pdf' })` in a browser) */
     pdf({ compress = true, untrusted = false, chunk = 0 } = {}) {
       const chunks = [];

@@ -60,6 +60,7 @@ fn options_for(key: &str) -> LayoutOptions {
         revisions: base.starts_with("mk-").then(|| RevisionView { mode: RevisionMode::All, ..RevisionView::default() }),
         ..LayoutOptions::default()
     }
+    .ts_strict() // wave 7c (W): a replay of the frozen TS's captures
 }
 
 fn read_doc(docx: &[u8]) -> uo_docx::model::Document {

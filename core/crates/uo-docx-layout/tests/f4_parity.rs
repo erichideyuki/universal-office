@@ -75,7 +75,7 @@ impl Rd<'_> {
         Ok(self.take(n)?.to_vec())
     }
     fn u16s(&mut self) -> R<Vec<u16>> {
-        Ok(self.bytes()?.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect())
+        Ok(self.bytes()?.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect())
     }
     fn string(&mut self) -> R<String> {
         Ok(String::from_utf16_lossy(&self.u16s()?))
@@ -801,7 +801,8 @@ fn replay_doc(key: &str, dump: &[u8], docx: &Path, transcript: &Transcript, font
     let mut opts = LayoutOptions {
         hyphenation_loaded: uo_fonts::hyphen::HYPHENATION_PATTERN_IDS.iter().map(|s| Box::<str>::from(*s)).collect(),
         ..LayoutOptions::default()
-    };
+    }
+    .ts_strict(); // wave 7c (W): a replay of the frozen TS's dumps
     if r.tag()? != b'O' {
         return Err("f4 dump without options".into());
     }

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROUTES_STORIES } from './engine-routes-stories.js';
+import { ROUTES_COMPLETION } from './engine-routes-completion.js'; // wave 7 (A2)
 import { ROUTES_OBJECTS } from './engine-routes-objects.js';
 import { ROUTES_REVIEW } from './engine-routes-review.js';
 import { ROUTED_PUBLIC, SHELL } from './engine-routes.js';
@@ -24,30 +25,14 @@ const ALLOWED = new Set([
 ]);
 
 /** Os ids de chrome-table.ts / chrome-hf.ts que ficam DESLIGADOS com engine="rust" (o resto declarado, D7 do registro). */
+// wave 7 (A2): the Excel spreadsheet, the table tools, the cell paste options and Page Borders are routed (engine-completion.test.ts)
 const DISABLED_IDS: Record<string, string> = {
-  'table:excel': 'insertSpreadsheet/canEmbedSpreadsheet: the embedded spreadsheet (not routed)',
-  'table:style:new': 'saveTableStyle: New Table Style (not routed)',
-  'table:style:modify': 'saveTableStyle: Modify Table Style (not routed)',
-  'table:painter': 'setTableTool: the Border Painter tool (not routed)',
-  'table:draw': 'setTableTool: the Draw Table tool (not routed)',
-  'table:eraser': 'setTableTool: the Eraser tool (not routed)',
-  'paste:cells:overwrite': 'pasteCells/hasCellsClip (not routed)',
-  'paste:cells:rows': 'pasteCells/hasCellsClip (not routed)',
-  'paste:cells:nest': 'pasteCells/hasCellsClip (not routed)',
-  'paste:cells:text': 'pasteCells/hasCellsClip (not routed)',
   'dlg:borders': 'the Borders and Shading dialog: setParagraphBorders (not routed)',
-  'dlg:pageBorders': 'setPageBorders: frontier O (page borders)',
 };
 
 /** As chamadas `ed.X(` de chrome-table.ts / chrome-hf.ts a métodos não roteados (no-op ou neutro com engine="rust"). */
+// wave 7 (A2): every call of these files is routed now (the spreadsheet, the table tools, the cell paste, the Quick Tables)
 const DISABLED_CALLS: Record<string, string> = {
-  canEmbedSpreadsheet: 'table:excel (disabled id)',
-  insertSpreadsheet: 'table:excel (disabled id)',
-  setTableTool: 'table:painter/draw/eraser (disabled ids) AND the Border Styles menu: picking a style sets the pen but does not arm the Border Painter (ED-105)',
-  hasCellsClip: 'paste:cells:* (disabled ids)',
-  pasteCells: 'paste:cells:* (disabled ids)',
-  quickTables: 'the Quick Tables submenu of the Table menu: the TS list over the empty TS model; picking one is a no-op (D7 remainder)',
-  insertQuickTable: 'the Quick Tables submenu: a no-op (D7 remainder)',
 };
 
 /** Um valor universal: chamável, toda propriedade é ele mesmo, vira 0/'' em contas (o editor Proxy do teste da frente O). */
@@ -138,7 +123,7 @@ describe('wave 5 (S): rotas e handlers', () => {
     const ed = universal(log, 'ed.'), app = universal(log, 'app.'), ctl = universal(log, 'ctl.');
     registerTableCommands(reg as never, ed as never, app as never, ctl as never);
     registerHfCommands(reg as never, ed as never, app as never, ctl as never);
-    const routed = new Set([...ROUTES_STORIES.commands, ...ROUTES_OBJECTS.commands, ...ROUTES_REVIEW.commands]);
+    const routed = new Set([...ROUTES_STORIES.commands, ...ROUTES_OBJECTS.commands, ...ROUTES_REVIEW.commands, ...ROUTES_COMPLETION.commands]); // wave 7 (A2)
     const ok = new Set([...ROUTED_PUBLIC, ...SHELL, ...ALLOWED]);
     const off = [...cmds.keys()].filter((id) => !routed.has(id)).sort();
     // o resto declarado: exatamente estes ids ficam desligados (nem um a mais, nem um a menos)

@@ -57,7 +57,7 @@ pub struct HostFonts {
 }
 
 impl HostFonts {
-    fn of(env: &UoWriteEnv) -> HostFonts {
+    pub(crate) fn of(env: &UoWriteEnv) -> HostFonts {
         let (registry, hyphenation, phone) = env_parts(env);
         HostFonts { registry: Arc::clone(registry), hyphenation: Arc::clone(hyphenation), phone }
     }
@@ -106,7 +106,7 @@ fn clock_of(now: LocalNow) -> Clock {
 }
 
 impl UoWriteSession {
-    fn new(
+    pub(crate) fn new(
         session: Session,
         embedded: Vec<EmbeddedFont>,
         fonts: Option<HostFonts>,
@@ -201,7 +201,8 @@ impl UoWriteSession {
                 }
             }
             w::ExecOp::SetClock(n) => {
-                self.now.set(LocalNow::from_wire(n).map_err(|e| e.to_string())?);
+                // wave 7 (B): a hostile clock (month 15, day 40…) is refused (uo-docx `LocalNow::validated`)
+                self.now.set(LocalNow::from_wire(n).map_err(|e| e.to_string())?.validated()?);
                 done(self.session.finish())
             }
             w::ExecOp::SetUiLang(l) => {
@@ -366,7 +367,8 @@ fn open_options(m: w::SessionOpen) -> Result<(OpenOptions, LocalNow, u32), Strin
         history.max_steps = usize::try_from(n).unwrap_or(usize::MAX);
     }
     let now = match m.clock {
-        Some(c) => LocalNow::from_wire(c).map_err(e)?,
+        // wave 7 (B): the open's clock is validated as `SetClock`'s (a hostile clock never reaches the DATE arithmetic)
+        Some(c) => LocalNow::from_wire(c).map_err(e)?.validated()?,
         None => default_now(),
     };
     let o = OpenOptions {
@@ -380,12 +382,12 @@ fn open_options(m: w::SessionOpen) -> Result<(OpenOptions, LocalNow, u32), Strin
     Ok((o, now, m.seed))
 }
 
-fn decode_open(bytes: &[u8]) -> Result<(OpenOptions, LocalNow, u32), String> {
+pub(crate) fn decode_open(bytes: &[u8]) -> Result<(OpenOptions, LocalNow, u32), String> {
     let m = w::decode_session_open(bytes, &mut w::Tables::new(), &w::limits()).map_err(|e| format!("{e:?}"))?;
     open_options(m)
 }
 
-fn open_failed(e: OpenError) {
+pub(crate) fn open_failed(e: OpenError) {
     match e {
         OpenError::Docx(d) => {
             pipeline::fail(&JobError::Read(d));
@@ -584,8 +586,7 @@ pub unsafe extern "C" fn uo_session_type(h: *mut UoWriteSession, units_ptr: *mut
     if bytes.len() % 2 != 0 {
         return bad("UTF-16 units: an odd byte count");
     }
-    let units: Vec<u16> =
-        bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c.first().copied().unwrap_or(0), c.get(1).copied().unwrap_or(0)])).collect();
+    let units: Vec<u16> = bytes.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
     hot(h, || Command::Text(TextCmd::Type { text: Utf16::from_units(units) }))
 }
 
@@ -767,6 +768,8 @@ pub unsafe extern "C" fn uo_session_layout(
         o.limits.max_pages = max_pages;
     }
     s.fonts = Some(HostFonts::of(env));
+    // wave 7 (B, gate-10): the bookmark index of the layout pass, from the current marks
+    s.session.sync_bookmarks();
     let Some(fonts) = s.fonts.as_ref() else { return std::ptr::null_mut() };
     match lay_out_session(&s.session, &s.embedded, fonts, &o) {
         Ok(laid) => Box::into_raw(Box::new(layout_handle(laid, s.session.view(), fonts.phone, 0))),

@@ -685,6 +685,43 @@ jobs:
       - run: rustup toolchain install nightly --profile minimal && rustup default nightly
       - run: cargo test --workspace --all-features --target x86_64-unknown-linux-gnu
 
+  # G19 (wave 7, B): the C# facade's tests over a uo-ffi built with LeakSanitizer. The runtime is preloaded into `dotnet`
+  # (the library is loaded by the CLR, not linked into the host); the CLR's own allocations at exit are suppressed by
+  # module (`leak:libcoreclr.so` …), so a report names a leak whose stack runs through libuo_ffi.so. Never run yet (G30-CI).
+  leak-sanitizer-facade:
+    name: LeakSanitizer over the .NET facade (G19)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/lsan
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: rustup toolchain install nightly --profile minimal && rustup default nightly
+      - name: uo-ffi with LeakSanitizer
+        working-directory: core
+        env:
+          RUSTFLAGS: -Zsanitizer=leak
+        run: |
+          set -euo pipefail
+          cargo build -p uo-ffi --release --features count --target x86_64-unknown-linux-gnu
+          mkdir -p "$CARGO_TARGET_DIR/release"
+          cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release/libuo_ffi.so" "$CARGO_TARGET_DIR/release/"
+          printf 'leak:libcoreclr.so\nleak:libclrjit.so\nleak:libhostfxr.so\nleak:libhostpolicy.so\nleak:libSystem.Native.so\nleak:libSystem.Security.Cryptography.Native.OpenSsl.so\nleak:libicu\n' > "$RUNNER_TEMP/lsan.supp"
+          echo "LSAN_RT=$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib/librustc-nightly_rt.lsan.so" >> "$GITHUB_ENV"
+      - name: facade tests under LeakSanitizer
+        working-directory: core
+        run: |
+          set -euo pipefail
+          dotnet build dotnet/UniversalOffice.Docx.Tests -p:UoSkipCargo=true
+          LD_PRELOAD="$LSAN_RT" LSAN_OPTIONS="suppressions=$RUNNER_TEMP/lsan.supp:print_suppressions=0" \
+            dotnet test dotnet/UniversalOffice.Docx.Tests --no-build -m:1
+        env:
+          EXTRA_FONT_DIRS: ${{ github.workspace }}/shared/fonts/files
+
   fuzz:
     name: Fuzz (uo-opc, uo-jsnum, uo-fonts, uo-drawingml, uo-codec, libFuzzer)
     runs-on: ubuntu-latest

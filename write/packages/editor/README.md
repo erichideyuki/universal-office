@@ -152,59 +152,63 @@ package carries its own copy of the viewer and so its own module and memory.
 **CSP.** The module needs `'wasm-unsafe-eval'` in a strict Content Security Policy; Safari 15 only knows
 `'unsafe-eval'` (see [Content Security Policy](../viewer/README.md#content-security-policy) of the viewer).
 
-**What `rust` takes** (checked against `ts` over the 74 fixture documents with scripted real input, and by a harness
-per family; every remaining difference is declared in the repository's engine record):
+**What `rust` takes**: every public method and every bar command of the `ts` editor (checked against `ts` over the 74
+fixture documents with scripted real input, and by a harness per family; every remaining difference is declared in the
+repository's engine record). It is not yet 1:1 with `ts` everywhere: what is still open is listed under "Not yet 1:1
+with `ts`" below.
 
-- opening (`.docx`, `.doc`), `newDocument()`, saving (`.docx`, `.docx` with fonts, PDF), dirty state, undo/redo,
-  typing and IME, Enter, Backspace/Delete (and by word), the arrow keys, Home/End, Page Up/Down, the mouse (click,
+- File: opening (`.docx`, `.doc`, `.odt`), `newDocument()`, saving (`.docx`, `.docx` with fonts, `.odt`, PDF, HTML,
+  Markdown, XPS), Print, Fonts in the file, Compare, Mail Merge, Word Count, Enable Editing and Font Access; dirty
+  state, undo/redo;
+- typing and IME, Enter, Backspace/Delete (and by word), the arrow keys, Home/End, Page Up/Down, the mouse (click,
   Shift+click, drag, double and triple click), select all and the Alt key tips;
-- character formatting (bold, italic, underline styles, size, case, highlight, clear formatting; the Font Color
-  button is grayed out, see below), paragraph and style formatting (the styles list, the gallery, the Styles pane and creating, modifying,
-  renaming and deleting styles), bullets and numbering (Tab / Shift+Tab change the level);
-- clipboard: Ctrl+C/X/V (text and HTML), Ctrl+Shift+V, the Cut, Copy and Paste buttons, Paste Special and the
-  Clipboard ring (text items), pasting an image from the system clipboard, and the Paste Options after a paste;
-- tables, headers and footers, footnotes and endnotes, and the text of text boxes (top-level, in groups and linked
-  chains; boxes inside a table cell or inside another text box follow the same rule but are not covered by the parity
-  harness yet);
-- pictures, shapes and text boxes as objects (select, move, resize, rotate, wrap, effects, picture formatting), page
-  setup, sections and columns, page design (page color, watermark; page borders only through the API,
-  `setPageBorders`, not the Page Borders dialog), the Read view and the context menu;
-- comments and tracked changes, the Find and Replace pane (`findNextMatch`, `replaceAllMatches`), navigation,
-  bookmarks, links (insert, edit, follow), fields, the table of contents, captions and cross-references;
+- View: the Ruler (with its indent, tab and column drags), Gridlines, Bookmark marks, the Read, Web, Draft and Outline
+  views and zoom;
+- character formatting (the Font dialog, font color and gradient color, underline styles and color, text effects,
+  OpenType features, case, highlight, the Format Painter), paragraph formatting (the Paragraph, Tabs and Borders and
+  Shading dialogs, the Borders button, the horizontal line, manual hyphenation, Select Similar Formatting) and styles
+  (the styles list, the gallery, the Styles pane, creating, modifying, renaming and deleting styles);
+- lists: the bullet, numbering and multilevel libraries, new bullets (picture bullets too), numbers and multilevel
+  lists, list styles, Set Numbering Value, Adjust List Indents, Restart and Continue numbering, Tab / Shift+Tab levels;
+- clipboard: Ctrl+C/X/V (text and HTML), Ctrl+Shift+V, the Cut, Copy and Paste buttons, Paste Special and Paste Link,
+  the Clipboard ring, the Paste Options (Keep Source, Merge, Picture, Text Only) and the paste-cells options;
+- tables (Quick Tables, table styles new and modified, Draw Table, Eraser, Border Painter, an embedded Excel
+  spreadsheet), headers and footers, footnotes and endnotes, and the text of text boxes (top-level, in groups, in table
+  cells, inside another box and in linked chains);
+- pictures, shapes and text boxes as objects (select, Select Objects, move, resize, rotate, wrap and wrap points,
+  transparent color, Change Picture, effects, the text box gallery), page setup, sections and columns, page design
+  (page color, watermark, page borders and the Page Borders dialog), the cover, watermark, header/footer and table of
+  contents galleries with their previews, plugin custom inlines, and the context menu;
+- comments and tracked changes, the Find and Replace pane and `findNext`, `replaceAll`, `countMatches`, navigation,
+  bookmarks, links (insert, edit, follow, `getLinks()`), fields, the table of contents, captions and
+  cross-references;
 - spelling, with the shared Hunspell engine and the `spellcheck-*` attributes above; the `author` and `lang`
   attributes.
 
-**What stays disabled.** The bar buttons stay visible but grayed out, the methods do nothing and the queries answer
-for an empty document. At the command level the bar declares 462 commands, 381 of them routed and 81 grayed out
-(measured by registering the bar commands against the routing table; the rest of the 434 routed ids are the style, navigation, table
-and menu entries that the panes register). The 81 are:
+**What stays disabled.** Nothing. All 511 public methods reach the engine or the element's shell (0 disabled mutators,
+0 disabled queries), and all 462 commands the bars declare are routed (0 grayed out), measured by registering the bar
+commands against the routing table. A command or method that a later version adds without a route is shown grayed
+out and does nothing under `engine="rust"` (it never runs on the TS model); the tests check that path with a
+synthetic command.
 
-- File: Print, Fonts in the file, Compare, Mail Merge and Insert Merge Field, Word Count (Ctrl+Shift+G), Enable
-  Editing (the Protected View button), Font Access, and the Save as `.odt`, HTML, Markdown and XPS entries;
-- View: the Ruler (the whole view: its geometry query is disabled, so also the indent and tab drags), Gridlines,
-  Bookmark marks, and the Web, Draft and Outline views;
-- Font: the Font Color button (`setColor` works through the API; the button needs `documentThemeColors()`), gradient
-  font color, the Font dialog (`setFontFormat`, so also More Underlines), the Format Painter and Text Effects options;
-- Paragraph: the Paragraph, Tabs and Borders and Shading dialogs, the Home Borders button and its menu, the horizontal
-  line, Select Similar Formatting and Select Objects, manual hyphenation;
-- Lists: define a new bullet, number or multilevel list, list styles, Set Numbering Value, Adjust List Indents, Restart
-  at 1 and Continue numbering;
-- Paste: Keep Source, Merge and Text Only buttons of the Paste Options menu, Picture, and the paste-cells options
-  (the keyboard paths and Paste Special work);
-- Tables: New and Modify Table Style, Insert Excel spreadsheet, Draw Table / Eraser / Border Painter;
-- Objects and page: wrap points, transparent color, Change Picture > Clip, editing a shape's text, the Page Borders
-  dialog (borders work through `setPageBorders`), and the table of contents level entries.
+**Behaviours a host can see** (declared differences from `ts`): the events fire after the mutation, not before; call
+`load*()` after `uw-ready` (a call before it runs on the `ts` engine and its result is discarded); reconnecting the
+element reopens the document without the undo history; XPS is written from the engine's pages and leaves out text
+effects, shape and picture effects, pattern fills and EMF/WMF/SVG pictures; a page that mixes `ts` and `rust` editors
+has one Office Clipboard per engine.
 
-Of the public API, 65 mutators and 41 queries are disabled (511 methods in all: 381 routed, 26 of the shell): the Font,
-Paragraph and Tabs setters (`setFontFormat`, `setIndent`, `setTabs`...), `setTextGradient`, `setTextEffects` and OpenType
-features, underline color, Quick Tables, the text box gallery, the cover, watermark and table of contents gallery
-previews, plugin custom inlines (`insertCustomInline`), and `findNext(text)`, `replaceAll(...)`, `countMatches` and
-`getLinks()` (use `findNextMatch`/`replaceAllMatches`, which the Find pane uses). The engine record lists every name.
-Opening an `.odt` is not supported, and saving as `.odt`, HTML, Markdown or XPS throws an error.
+**Not yet 1:1 with `ts`** (open; none is a disabled command):
 
-**Behaviours a host can see** (declared differences from `ts`): the events fire after the mutation, not before; call `load*()` after `uw-ready` (a call before it runs on the `ts` engine
-and its result is discarded); reconnecting the element reopens the document without the undo history; the document's
-Bookmarks marks and some screen adornments are not painted yet.
+- the Web, Draft and Outline views are the engine's view of the pages (one sheet per section), not the `ts` editor's
+  single continuous canvas;
+- while a wrap point is dragged, the text does not flow around the new outline until the drop (`ts` reflows it live);
+- while an inline picture is dragged, no caret shows the drop point (`ts` moves the caret with the pointer);
+- the gray shading of fields outside the body (headers, footers, notes) is not painted;
+- the frame of a text box being edited inside another box is not painted;
+- the previews of the galleries (cover, watermark, header/footer, table of contents) can show a cross-reference with
+  the page of the previous layout right after an edit;
+- whether saving between inserting a table and undoing it leaves the `Table Grid` style behind in `ts` too has not
+  been compared (`rust` leaves it).
 
 ## Built-in bars
 

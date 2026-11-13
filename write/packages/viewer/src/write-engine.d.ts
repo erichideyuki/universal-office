@@ -148,8 +148,12 @@ declare module '@universal-office/write-engine' {
     faceBytes(i: number): Uint8Array | null;
     /** wave 6 (L): image `i`'s bytes are the previous editor layout's image `i` */
     sharedImage(i: number): boolean;
+    /** wave 7 (A2): the painter's picture caches of the images shared with `prev` carried over (the TS keeps them on the image) */
+    inheritPaint(prev: DecodedLayout): void;
     imageBytes(i: number): Uint8Array | null;
     imageSvg(i: number): Uint8Array | null;
+    /** wave 7 (F2): image `i` decoded by the engine (PNG, GIF, BMP, TIFF; RGBA8), or null: the editor's fallback decode */
+    imageRgba(i: number): { width: number; height: number; data: Uint8Array } | null;
     annotations(): Annotations;
     runBoxes(kind: 'links' | 'inlines'): RunBox[];
     navigation(): Navigation;

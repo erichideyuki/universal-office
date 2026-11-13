@@ -199,6 +199,12 @@ export interface BandSnap extends BandPage {
 }
 
 let layoutSerials = 0;
+/**
+ * wave 7c (S): a layout collected without `free()` (an editor element removed for good keeps its document until it is
+ * collected, as the TS element keeps its model): the inner handle's own FinalizationRegistry (write.mjs) frees the native
+ * side, this one takes it out of `handles`.
+ */
+const layoutGone = new FinalizationRegistry<Instance>((inst) => { if (!inst.dead) inst.handles--; });
 
 /** One layout; its pages are decoded on demand (the page messages with one set of tables for each of the two decoders). */
 export class DecodedLayout {
@@ -229,6 +235,7 @@ export class DecodedLayout {
     this.#inst = inst;
     this.#prevSerial = prev ? prev.#serial : -1;
     inst.handles++;
+    layoutGone.register(this, inst, this);
     try {
       this.#rasters = call(inst, () => inner.rasters());
       call(inst, () => inner.pageHeads()).forEach((h, i) => this.pages.push(new LazyPage(this, i, h)));
@@ -250,6 +257,11 @@ export class DecodedLayout {
   /** wave 6 (L): whether image `i`'s bytes are those of the previous layout's image `i` (`inner.shared`) */
   sharedImage(i: number): boolean {
     return this.inner.shared?.images[i] === true;
+  }
+
+  /** wave 7 (A2): the painter's picture caches of the images this layout shares with `prev` are `prev`'s (as the TS keeps them on the image) */
+  inheritPaint(prev: DecodedLayout): void {
+    defaultCaches.inherit(prev, this, (i) => this.sharedImage(i));
   }
 
   /**
@@ -354,6 +366,11 @@ export class DecodedLayout {
     return this.freed ? null : call(this.#inst, () => this.inner.imageSvg(i));
   }
 
+  /** wave 7 (F2): image `i` decoded by the engine (the editor's fallback when the browser refuses the raster), or null */
+  imageRgba(i: number): { width: number; height: number; data: Uint8Array } | null {
+    return this.freed ? null : call(this.#inst, () => this.inner.imageRgba(i));
+  }
+
   annotations(): Annotations {
     return call(this.#inst, () => this.inner.annotations());
   }
@@ -387,6 +404,7 @@ export class DecodedLayout {
     this.#lines = [];
     this.#failed.clear();
     this.#faceHeld.clear();
+    layoutGone.unregister(this);
     if (this.#inst.dead) return;
     this.#inst.handles--;
     call(this.#inst, () => this.inner.free());

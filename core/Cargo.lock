@@ -222,6 +222,7 @@ dependencies = [
  "uo-docx-layout",
  "uo-drawingml",
  "uo-fonts",
+ "uo-image",
  "uo-jsnum",
  "uo-opc",
  "uo-pdf",

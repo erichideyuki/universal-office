@@ -42,6 +42,26 @@ pub fn is_language_tag(value: Option<&str>) -> bool {
     value.is_some_and(|v| !v.is_empty() && matches_lang_tag(v))
 }
 
+/// `DocxPackage.empty()` (content types, root relationships, a body-less `document.xml`): the package of a
+/// document read from another format (`loadOdt`; wave 7, A1).
+#[must_use]
+pub fn empty_docx_package() -> Package {
+    let mut pkg = Package::new_empty(&Limits::DEFAULT, &OpenOptions::default());
+    pkg.set_part_text(
+        "[Content_Types].xml",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>",
+    );
+    pkg.set_part_text(
+        "_rels/.rels",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>",
+    );
+    pkg.set_part_text(
+        "word/document.xml",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body/></w:document>",
+    );
+    pkg
+}
+
 /// `blankDocxPackage(options)`: the package of a new blank document.
 #[must_use]
 pub fn blank_docx_package(options: &BlankDocxOptions<'_>) -> Package {

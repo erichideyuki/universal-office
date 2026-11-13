@@ -127,7 +127,7 @@ pub fn gradient_tile_rgba(f: &PageFill, syms: &SymbolTable, w: usize, h: usize, 
     if w > 0 {
         for (j, row) in out.chunks_exact_mut(w * 4).enumerate().take(h) {
             let y = if hf > 1.0 { j as f64 / (hf - 1.0) } else { 0.0 };
-            for (i, px) in row.chunks_exact_mut(4).enumerate() {
+            for (i, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                 let x = if wf > 1.0 { i as f64 / (wf - 1.0) } else { 0.0 };
                 let k = max(0.0, min((N - 1) as f64, round(fill_param(f, x, y, corner) * (N - 1) as f64))) * 3.0;
                 for (slot, off) in px.iter_mut().zip([0.0, 1.0, 2.0, f64::NAN]) {
@@ -144,10 +144,10 @@ pub fn gradient_tile_rgba(f: &PageFill, syms: &SymbolTable, w: usize, h: usize, 
 pub fn pattern_rgba(f: &PageFill, syms: &SymbolTable) -> Vec<u8> {
     let mut out = vec![0u8; 64 * 4];
     let (fg, bg) = (hex_rgb0(syms.get(f.c1)), hex_rgb0(syms.get(f.c2)));
-    for (y, row) in out.chunks_exact_mut(32).enumerate() {
+    for (y, row) in out.as_chunks_mut::<32>().0.iter_mut().enumerate() {
         // `(f.pattern?.[y] ?? 0) >> (7 - x)`
         let bits = f.pattern.as_ref().and_then(|p| p.get(y)).map_or(0, |&v| to_int32(v));
-        for (x, px) in row.chunks_exact_mut(4).enumerate() {
+        for (x, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let on = (bits >> (7 - x)) & 1;
             let c = if on != 0 { fg } else { bg };
             for (slot, v) in px.iter_mut().zip([c[0], c[1], c[2], 255.0]) {

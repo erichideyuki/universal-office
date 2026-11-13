@@ -30,6 +30,10 @@ const outDir = join(target, 'es-review');
 const { unzipSync } = createRequire(join(root, 'write/package.json'))('fflate');
 const D3 = join(core, 'crates/uo-docx/tests/parity/d3/fixtures');
 const extraDocs = Object.fromEntries(['comments', 'revisions', 'fields', 'many-fields', 'hyperlinks', 'styles', 'headers'].map((n) => [`${n}.docx`, join(D3, `${n}.docx`)]));
+// wave 7c (V, fix round 1): the document Word drew its field shading and comment highlight on (made by the oracle script)
+extraDocs['field-shading.docx'] = join(core, 'crates/uo-docx-layout/tests/fidelity/field-shading.docx');
+// wave 7c (V, fix round 2): a field in the footer and one in a footnote (ED-304, "When selected" in every story)
+extraDocs['field-shading-stories.docx'] = join(core, 'crates/uo-docx-layout/tests/fidelity/field-shading-stories.docx');
 
 const env = await setup({
   root, wasmPath, outDir, stride: 1, only: 'f2-3-0|f2-3-2|f7a__7__0|f7c__7__0|f8__7__0', extraDocs,
@@ -70,6 +74,7 @@ const helpers = () => {
       const ready = new Promise((r) => el.addEventListener('uw-ready', r, { once: true }));
       document.body.appendChild(el);
       await ready;
+      if (el.rust) el.rust.tsShading = true; // wave 7c (V, fix round 1): the TS field shading/comment look (ED-304: Word's is the default)
       for (const t of EVENTS) el.addEventListener(t, (e) => { log.push(`${t} ${J(e.detail ?? null)}`); });
       // the TS asks before replacing a TOC (uw-toc-update): no host answers, the default runs
       api.el = el;
@@ -226,17 +231,15 @@ const helpers = () => {
       await frame();
       const plain = cs.map((cv) => (cv.width > 1 ? fnv(new Uint8Array(cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data.buffer)) : '-'));
       // where R's overlays changed the page (the pixels that differ between the two captures: count and positions), so
-      // the overlays are compared even where the page base differs by a declared cause (ED-314: theme colors). Only the
-      // rows between the top and bottom margins: the header/footer overlays are the other stories' (ED-304, frontier S)
+      // the overlays are compared even where the page base differs by a declared cause (ED-314: theme colors). The whole page:
+      // the header/footer and note overlays included (wave 7c, V: ED-304 closed — the shell paints every story's lines)
       const off = dataOf();
-      const sec = el.getSection();
       const maskRows = [];
       const overlayMask = on.map((a, i) => {
         const b = off[i];
         if (!a || !b) return '-';
         const cv = cs[i];
-        const rowTw = sec && sec.pageHeightTwips ? cv.height / sec.pageHeightTwips : 0;
-        const y0 = Math.floor((sec?.margins.top ?? 0) * rowTw), y1 = Math.ceil(cv.height - (sec?.margins.bottom ?? 0) * rowTw);
+        const y0 = 0, y1 = cv.height;
         let h = 0x811c9dc5, n = 0;
         const rows = new Map();
         for (let k = y0 * cv.width * 4; k < Math.min(a.length, y1 * cv.width * 4); k += 4) {
@@ -443,29 +446,24 @@ const parts = (b64) => {
  * id, why }. Everything else fails.
  */
 const DECLARED = {
-  // a document without a theme part (word/theme/theme1.xml): the TS editor resolves theme colors over
-  // `emptyFormatting().theme` (the Office default palette: accent2 ED7D31, text1 tints), the session's model over an
-  // EMPTY theme (the w:val fallback: C00000, 5A5A5A). Not this frontier's code (uo-docx's model of the theme); the screen
-  // of f2-3-0 (the Strong style, accent2) differs from the first step on in every family, the gallery look of the latent
-  // Subtle Reference (text1 tinted) in the style documents. Gate item R-1. The end screens differ in the text colors only:
-  // where R's overlays change the page ('overlay mask', the pixels that differ with and without them) is still compared.
-  'f2-3-0|*': { end: ['screen (R overlays on)', 'screen (overlays off)'], id: 'ED-314 (core, gate R-1)', why: 'theme colors of a document without a theme part: TS default palette, session empty theme' },
-  // + from step 8 (Update Style to Match Selection after an italic on 2 characters of a Heading 1 paragraph): the saved
-  // .docx is byte-equal, but the session lays the paragraph out with the runs after the first without the style's bold
-  // italic (the TS: the whole line) — the session's model or its layout, not the shell (gate R-2, repro in the record)
-  'styles|styles': { looks: ['RefernciaSutil'], end: ['screen (R overlays on)', 'screen (overlays off)'], id: 'ED-314 (core, gate R-1); gate R-2', why: 'Subtle Reference (latent, text1 tint): 595959 in the TS (default theme) vs 5A5A5A (w:val); end: R-2' },
-  'f2-3-0|styles': { looks: ['RefernciaSutil'], end: ['screen (R overlays on)', 'screen (overlays off)'], id: 'ED-314 (core, gate R-1)', why: 'as styles|styles; and the f2-3-0 screen' },
-  // + the TS lays f2-3-2 out with automatic hyphens the session does not set (dia-grama, responsabili-dade,
-  // in-ternacionalização, from the load on: wave-4 gate item 10, reproduced here): the squiggles sit on differently broken
-  // lines, so the overlay mask differs too (gate R-6)
-  'f2-3-2|*': { end: ['screen (R overlays on)', 'screen (overlays off)', 'overlay mask'], id: 'ED-314 (core, gate R-1); wave-4 gate 10 (R-6)', why: 'as f2-3-0: Strong (accent2) without a theme part; automatic hyphens in the TS only' },
-  // a search hit inside a table cell: the TS page of the cell line; the shell's lines are the body scope (cells: frontier S)
-  'f2-3-2|find': { from: 9, facets: ['answer'], end: ['screen (R overlays on)', 'screen (overlays off)', 'overlay mask'], id: 'ED-304; ED-314; wave-4 gate 10 (R-6)', why: 'search(): page -1 for the hit in a table cell (the TS: 0); end: as f2-3-2|*' },
-  // squiggles and field shading in the headers/footers and the notes: the TS paints every story's lines, the shell's lines
-  // are the body scope (frontier S owns the other stories' scopes)
-  'f8__7__0|spell': { end: ['screen (R overlays on)', 'overlay mask'], id: 'ED-304', why: 'squiggles and field shading in the header, the footer and the notes (TS only)' },
-  // (R-2 also moves the squiggles of that line: the runs without bold are narrower)
-  'headers|styles': { looks: ['RefernciaSutil'], end: ['screen (R overlays on)', 'screen (overlays off)', 'overlay mask'], id: 'ED-314 (core, gate R-1); gate R-2', why: 'as styles|styles' },
+  // wave 7 (B): ED-314 / R-1 closed for the colours — a document without a theme part is laid out with the Office 2023
+  // colours Word paints (gate-O3, uo-docx-layout theme_word.rs), which the TS editor paints too; R-2 (Update Style to Match
+  // Selection) and R-6 (the hyphens) are equal in the wave-7 runs (screens with the overlays off equal). What is left, each
+  // measured with UO_ER_COVERED=1 and the dumped screens:
+  // (f2-3-0|*, the f2-3-0|styles footer part, f2-3-2|find and f8__7__0|spell: ED-304 closed in wave 7c, V — the shell's
+  // field shading, squiggles, bookmark brackets and search hits read every story's lines, and search() answers the page of
+  // a hit in a table cell from them)
+  // the gallery look of the latent Subtle Reference (w:color 5A5A5A, themeColor text1, themeTint A5): the TS computes 595959,
+  // the session's look 5A5A5A — Word paints 5A5A5A (measured: text1 tint A5 with and without a theme part, record "Wave 7 — B")
+  'styles|styles': { looks: ['RefernciaSutil'], id: 'Word authority over TS (Subtle Reference look)', why: 'Subtle Reference: TS 595959, session and Word 5A5A5A' },
+  'headers|styles': { looks: ['RefernciaSutil'], id: 'Word authority over TS (Subtle Reference look)', why: 'as styles|styles' },
+  'f2-3-0|styles': { looks: ['RefernciaSutil'], id: 'Word authority over TS (Subtle Reference look)', why: 'as styles|styles' },
+  // wave 7c (W, item 4; record uo-bindings.md "Wave 7c — W"): fields.docx's REF marca and NOTEREF n1 name bookmarks the
+  // document does not define: Word's result is its bold error text ("Erro! Fonte de referência não encontrada." / "Erro!
+  // Indicador não definido.", oracle refbm), the TS the start paragraph's text or the cached result. Attributed natively
+  // (word_w7c.rs attribute_documents_to_the_word_rules with UO_W7C_ATTR_SOURCES: only ts_ref_bookmarks changes its pages):
+  // updateFields('all') rewrites those two results too (11 against the TS's 9), and the screens and saved body follow
+  'fields|fields': { from: 10, facets: ['answer'], end: ['screen (R overlays on)', 'screen (overlays off)', 'overlay mask', 'saved word/document.xml'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF/NOTEREF to an undefined bookmark: the bold error text of Word' },
 };
 /** the style ids whose look is left out of the 'looks' facet (declared per id) */
 const looksOut = (key) => (DECLARED[key] ?? DECLARED[`${key.split('|')[0]}|*`])?.looks ?? [];
@@ -538,7 +536,8 @@ async function runFamily(fam) {
       if (same) { tally.same++; return; }
       tally.diff++;
       const d = declared(key, facet, step);
-      if (d) { tally.declared++; used.add(key); return; }
+      // wave 7 (B): UO_ER_COVERED=1 lists the declared differences met (to narrow or retire a declaration)
+      if (d) { tally.declared++; used.add(key); if (process.env.UO_ER_COVERED) console.log(`  declared ${key} ${facet}@${step ?? 'end'} (${d.id})`); return; }
       diffs.push({ facet, step, ts: x, rust: y });
     };
     if (a.errors || b.errors) fail(`${key}: page errors ts ${a.errors}, rust ${b.errors}`);
@@ -551,7 +550,7 @@ async function runFamily(fam) {
         if (out.length && sa.facets[k] && sb.facets[k]) {
           const strip = (v) => Object.fromEntries(Object.entries(v).filter(([id]) => !out.includes(id)));
           const [x, y] = [strip(sa.facets[k]), strip(sb.facets[k])];
-          if (JSON.stringify(sa.facets[k]) !== JSON.stringify(sb.facets[k]) && JSON.stringify(x) === JSON.stringify(y)) { tally.diff++; tally.declared++; used.add(key); continue; }
+          if (JSON.stringify(sa.facets[k]) !== JSON.stringify(sb.facets[k]) && JSON.stringify(x) === JSON.stringify(y)) { tally.diff++; tally.declared++; used.add(key); if (process.env.UO_ER_COVERED) console.log(`  declared ${key} looks@${i} (the declared looks only)`); continue; }
           check(k, x, y, i);
           continue;
         }
@@ -592,6 +591,107 @@ async function runFamily(fam) {
 }
 
 /** spelling: the misspellings of every paragraph on both engines (after both caches settle), then the F7 path */
+/**
+ * wave 7c (V, fix round 1, ED-304): Word's field shading and comment highlight (the Rust default; the TS look stays under
+ * `tsShading`), checked against Word's screen (record "Wave 7c — V", fix round 1: field-shading.docx, Word 16 at 96 dpi):
+ * "When selected" — no C0C0C0 with the caret outside the fields, the field the caret is in shaded alone; the band opaque
+ * C0C0C0 under the glyphs from the line top, 17 px for the 11-pt lines (1.5 and single spacing) and 31 px for the line with
+ * the 20-pt run; the comment band E8E8E8 of 17 px between 1-px brackets 424242; the band's x = the field's characters.
+ */
+async function runWordMarks() {
+  await env.openPage();
+  await env.page.evaluate(helpers);
+  await ev(() => window.__es.make('rust'));
+  await ev(() => { window.__es.el.rust.tsShading = false; });
+  await ev((x) => window.__es.load(x), docOf('field-shading.docx'));
+  const probe = (where) => ev(async (w) => {
+    const el = window.__es.el;
+    const sr = el.shadowRoot;
+    // the caret: 'end' (the last paragraph) or 'f<k>' (2 characters into the k-th field result: 'Um campo |campo A…',
+    // 'Um campo |campo B…', 'Grande XX e campo |campo C…')
+    const pos = { end: [4, 3], f1: [0, 11], f2: [1, 11], f3: [2, 20] }[w];
+    el.setSelection({ para: pos[0], offset: pos[1] });
+    await window.__es.settle(200);
+    window.clearInterval(el.caretTimer); el.caretVisible = false; el.paint();
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    const cv = sr.querySelectorAll('canvas.page')[0];
+    const g = cv.getContext('2d');
+    const { width: W, height: H } = cv;
+    const px = g.getImageData(0, 0, W, H).data;
+    const at = (x, y) => { const i = (y * W + x) * 4; return [px[i], px[i + 1], px[i + 2]]; };
+    const is = (c, v) => c[0] === v && c[1] === v && c[2] === v;
+    // bands: runs of rows with >= 4 pixels of the colour (the glyphs cover the rest of a row); their x extent
+    const bands = (v) => {
+      const rows = [];
+      for (let y = 0; y < H; y++) { let n = 0, x0 = W, x1 = -1; for (let x = 0; x < W; x++) if (is(at(x, y), v)) { n++; if (x < x0) x0 = x; x1 = x; } if (n >= 4) rows.push([y, x0, x1]); }
+      const out = [];
+      for (const r of rows) { const b = out[out.length - 1]; if (b && r[0] === b.y1 + 1) { b.y1 = r[0]; b.x0 = Math.min(b.x0, r[1]); b.x1 = Math.max(b.x1, r[2]); } else out.push({ y0: r[0], y1: r[0], x0: r[1], x1: r[2] }); }
+      return out.map((b) => ({ ...b, h: b.y1 - b.y0 + 1 }));
+    };
+    return { c0: bands(192), e8: bands(232) };
+  }, where);
+  const out = {};
+  for (const w of ['end', 'f1', 'f2', 'f3']) out[w] = await probe(w);
+  await ev(() => window.__es.remove());
+  console.log(`wordmarks: ${JSON.stringify(out)}`);
+  const want = { f1: 17, f2: 17, f3: 31 };
+  if (out.end.c0.length) fail(`wordmarks: C0C0C0 with the caret outside the fields: ${JSON.stringify(out.end.c0)}`);
+  for (const [w, h] of Object.entries(want)) {
+    const b = out[w].c0;
+    if (b.length !== 1) fail(`wordmarks ${w}: ${b.length} C0C0C0 band(s), want 1`);
+    else if (b[0].h !== h) fail(`wordmarks ${w}: band ${b[0].h} px, Word ${h} px`);
+  }
+  const cm = out.end.e8;
+  if (cm.length !== 1 || cm[0].h !== 17) fail(`wordmarks: comment band ${JSON.stringify(cm)}, Word one band of 17 px`);
+  console.log(`wordmarks: ${failures ? 'checked (failures above)' : 'Word bands equal (C0C0C0 17/17/31 px, "When selected"; comment E8E8E8 17 px)'}`);
+  // wave 7c (V, fix round 2): "When selected" in the other stories — a QUOTE field in the footer and one in a footnote
+  // (field-shading-stories.docx, 11-pt Liberation Sans, single spacing): no band with the caret outside the field, one
+  // C0C0C0 band of the line's natural text height (17 px, as in the body) with the caret 2 characters into it
+  const f0 = failures;
+  await env.openPage();
+  await env.page.evaluate(helpers);
+  await ev(() => window.__es.make('rust'));
+  await ev(() => { window.__es.el.rust.tsShading = false; });
+  await ev((x) => window.__es.load(x), docOf('field-shading-stories.docx'));
+  // the band found as the rows that change between the caret outside the field and inside it (the header/footer and note
+  // edit tints their story over the page base: the band is C0C0C0 under that tint, not C0C0C0 itself)
+  const story = (where) => ev(async (w) => {
+    const el = window.__es.el;
+    const sr = el.shadowRoot;
+    const snap = async (off) => {
+      // the footer's paragraph: 2 ('Ro|dape') / 15 (2 into 'campo R'); the note's: 3 / 15 (' Nota campo |campo N')
+      if (w === 'ftr') { if (!el.editingHeaderFooter()) el.enterHeaderFooter('footer', 0); el.setSelection({ para: 0, offset: off ? 15 : 2 }); }
+      else { if (el.editingHeaderFooter()) el.exitHeaderFooter(); if (!el.editingNote()) el.openNote('footnote', 1); el.setSelection({ para: 0, offset: off ? 15 : 3 }); }
+      await window.__es.settle(200);
+      window.clearInterval(el.caretTimer); el.caretVisible = false; el.paint();
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      const cv = sr.querySelectorAll('canvas.page')[0];
+      return { W: cv.width, H: cv.height, px: cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data };
+    };
+    // out, in, out again: the band's rows change in → out both ways; a row that also changes out → out again is something
+    // else arriving meanwhile (the spelling's squiggles come from a worker), left out
+    const a = await snap(false), b = await snap(true), a2 = await snap(false);
+    const diff = (p, q, y) => { let n = 0; for (let x = 0; x < p.W; x++) { const i = (y * p.W + x) * 4; if (p.px[i] !== q.px[i] || p.px[i + 1] !== q.px[i + 1] || p.px[i + 2] !== q.px[i + 2]) n++; } return n; };
+    const rows = [];
+    for (let y = 0; y < a.H; y++) if (diff(a, b, y) >= 4 && diff(a2, b, y) >= 4 && diff(a, a2, y) === 0) rows.push(y);
+    const bands = [];
+    for (const y of rows) { const q = bands[bands.length - 1]; if (q && y === q.y1 + 1) q.y1 = y; else bands.push({ y0: y, y1: y }); }
+    // and the out capture has no C0C0C0 (no field shading with the caret outside)
+    let grey = 0;
+    for (let i = 0; i < a.px.length; i += 4) if (a.px[i] === 192 && a.px[i + 1] === 192 && a.px[i + 2] === 192) grey++;
+    return { ctx: el.editingHeaderFooter() ? 'hf' : el.editingNote() ? 'note' : 'body', bands: bands.map((q) => q.y1 - q.y0 + 1), greyOut: grey };
+  }, where);
+  const so = {};
+  for (const w of ['ftr', 'note']) so[w] = await story(w);
+  await ev(() => window.__es.remove());
+  console.log(`wordmarks stories: ${JSON.stringify(so)}`);
+  for (const [w, k] of [['ftr', 'hf'], ['note', 'note']]) {
+    if (so[w].ctx !== k) fail(`wordmarks ${w}: editing ${so[w].ctx}, want ${k}`);
+    else if (so[w].bands.length !== 1 || so[w].bands[0] !== 17) fail(`wordmarks ${w}: bands ${JSON.stringify(so[w].bands)}, want one of 17 px`);
+  }
+  if (failures === f0) console.log('wordmarks stories: footer and note fields shaded only with the caret in them (17 px)');
+}
+
 async function runSpell() {
   for (const want of ['f2-3-0.docx', 'f8__7__0.docx']) {
     const n = docOf(want);
@@ -655,6 +755,74 @@ async function runSpell() {
 async function runMemory() {
   await env.openPage();
   await env.page.evaluate(helpers);
+  // UO_ER_TRACE=1 (wave 7c S, fix round 1): the module's exports wrapped (outermost calls only) to attribute each cycle's
+  // net live bytes to the export that left them; a cycle whose live bytes differ from the one before prints the exports
+  // whose net differs
+  const TRACE = process.env.UO_ER_TRACE === '1';
+  // wave 7c S, fix round 1 (the reviewer's major): the ribbon's Table Styles gallery lays its thumbnails out in batches of
+  // 8 per frame until the element is removed, so how far a cycle gets is timing. The first layout that uses a face
+  // variant (Table Classic 1: italic; Table Classic 3: bold italic; …) notes it missing, the host pushes it at the next
+  // relayout, and the first layout after that parses it (uo-fonts `Pushed::face`, a OnceLock into the shared
+  // `FaceCache`): +1,358 / +1,806 bytes once per page, in the page environment (`pageEnvs`, never an element's), bounded
+  // by the pushed faces (4 variants a family). Measured: `s7d/bisect-thumb.mjs` (TC1: 86 B noted missing; after the push
+  // TC1 again +1,358, a third time 0; TC3 the same +1,806) and the UO_ER_TRACE pairs (the soak's steps of +1,384, +1,376,
+  // +1,816 are such first layouts, never repeated for a style). One more: cycle 0 pushes "Calibri" twice (the second push,
+  // with the faces the thumbnails noted, REPLACES the family: `push_family`), and the element's live layout keeps the
+  // first answer (uo-fonts `AnswerCache` holds an answer while a layout does), so the replaced Bold is parsed again
+  // (+1,336 + its 24-byte argument = 1,360) by the first bold thumbnail of a LATER element — Plain Table 1 at cycle 2 in
+  // one traced run, cycle 18 in another (`s7d/trace-font-*.log`: the pushes and the take_missing notes per cycle; no
+  // push after cycle 0). So the warm-up runs in cycles 0 and 1 (a new element after every push): it lays every
+  // thumbnail out, lets the host push, and lays them out again; UO_ER_WARM_THUMBS=0 runs the old soak.
+  const WARM_THUMBS = process.env.UO_ER_WARM_THUMBS !== '0';
+  if (TRACE) await env.page.evaluate(() => {
+    const orig = WebAssembly.instantiate;
+    window.__wtrace = new Map();
+    // a handle or buffer an export returned (pointer → [export, net of that call]); its free closes the pair, and a
+    // pair whose two nets do not cancel is memory the producer left outside the handle (a shared cache)
+    const pending = new Map();
+    window.__wresid = [];
+    WebAssembly.instantiate = async (...a) => {
+      const r = await orig.apply(WebAssembly, a);
+      if (!r.instance) return r;
+      const ex = r.instance.exports;
+      const live = ex.uo_memory_live_bytes;
+      if (typeof live !== 'function') return r;
+      let depth = 0;
+      const w = {};
+      for (const [k, f] of Object.entries(ex)) {
+        if (typeof f !== 'function' || k === 'uo_memory_live_bytes') { w[k] = f; continue; }
+        const isFree = /_free$|^uo_free_bytes$/.test(k);
+        w[k] = (...args) => {
+          if (depth) return f(...args);
+          depth++;
+          const b = live();
+          // the preview's JSON argument (the thumbnail it lays out), read before the call consumes it
+          const str = (p, n) => new TextDecoder().decode(new Uint8Array(ex.memory.buffer, p, n));
+          const tag = k === 'uo_shell_preview' ? `(${args[2]} ${str(args[3], args[4])})` : '';
+          // the font traffic: the families pushed, the (family, variants) the engine noted missing
+          if (k === 'uo_write_env_push_family') window.__wresid.push(`push ${str(args[1], args[2])}`);
+          let ret;
+          try { ret = f(...args); return ret; } finally {
+            depth--;
+            const d = live() - b;
+            if (k === 'uo_write_env_take_missing' && ret) {
+              const m = str(ex.uo_buf_ptr(ret), ex.uo_buf_len(ret)).trim();
+              if (m) window.__wresid.push(`missing ${m.replace(/\n/g, ' / ').replace(/\t/g, ':')}`);
+            }
+            if (isFree) {
+              const p = pending.get(args[0]);
+              if (p) { pending.delete(args[0]); if (p[1] + d !== 0) window.__wresid.push(`${p[0]}${p[2]}→${k} ${p[1] + d}`); }
+            } else if (typeof ret === 'number' && ret > 65536 && d > 0) pending.set(ret, [k, d, tag]);
+            const e = window.__wtrace.get(k) ?? [0, 0];
+            e[0]++; e[1] += d;
+            window.__wtrace.set(k, e);
+          }
+        };
+      }
+      return { module: r.module, instance: { exports: w } };
+    };
+  });
+  const traces = [];
   const n = docOf('revisions.docx');
   const lives = [];
   // the TS reference (first, in the same page: it also warms the spell engine's module): its disconnectedCallback releases
@@ -678,7 +846,7 @@ async function runMemory() {
   }, n);
   console.log(`memory: TS reference: spell checker during ${JSON.stringify(tsRef.during)} after ${JSON.stringify(tsRef.after)}`);
   for (let i = 0; i < SOAK; i++) {
-    const r = await ev(async (x) => {
+    const r = await ev(async ({ x, warmThumbs }) => {
       const es = window.__es;
       await es.make('rust');
       await es.load(x);
@@ -698,19 +866,53 @@ async function runMemory() {
       // past the checker's engine startup (a dictionary loaded; gate R-7: a remove during it leaves the released instance's worker)
       for (let k = 0; k < 400 && eng && !eng.loaded.size; k++) await new Promise((r2) => setTimeout(r2, 25));
       const spellDuring = eng ? { refs: eng.refs, listeners: eng.listeners.size } : null;
+      if (warmThumbs) {
+        // every Table Styles gallery thumbnail laid out, the faces they noted missing pushed by the host (a relayout's
+        // take_missing), and laid out again (see WARM_THUMBS)
+        const all = async () => {
+          for (const s of el.tableStyleListNow() ?? []) {
+            const cv = document.createElement('canvas');
+            cv.width = 66; cv.height = 46;
+            await el.renderTableStyleThumb(cv, s.name);
+          }
+        };
+        await all();
+        el.refresh();
+        await es.settle();
+        await all();
+      }
       const during = es.stats();
       es.remove();
       await new Promise((r2) => setTimeout(r2, 0));
       const spellAfter = eng ? { refs: eng.refs, listeners: eng.listeners.size, transport: !!eng.transport, held: !!st.engine || !!st.spell } : null;
       return { during, after: es.stats(), spellDuring, spellAfter };
-    }, n);
+    }, { x: n, warmThumbs: WARM_THUMBS && i < 2 });
+    // wave 7c (S): the removed element keeps its document until it is collected (as the TS element its model): GC first
+    r.after = await env.gc();
     lives.push(r.after.live);
+    if (TRACE) {
+      const t = await env.page.evaluate(() => { const o = Object.fromEntries(window.__wtrace); window.__wtrace.clear(); return { o, res: window.__wresid.splice(0) }; });
+      traces.push(t.o);
+      // the producer/free pairs that left memory (a positive sum: what a call kept outside its handle or buffer; a negative
+      // one is the call's consumed input buffer)
+      const kept = t.res.filter((x) => !/ -\d+$/.test(x));
+      if (kept.length) console.log(`memory trace: cycle ${i}: ${kept.length} pair(s) left memory: ${kept.join('; ')}`);
+      if (i > 0 && lives[i] !== lives[i - 1]) {
+        const a = traces[i - 1], b = traces[i];
+        const diffs = [...new Set([...Object.keys(a), ...Object.keys(b)])]
+          .map((k) => [k, a[k] ?? [0, 0], b[k] ?? [0, 0]])
+          .filter(([, x, y]) => x[1] !== y[1] || x[0] !== y[0])
+          .map(([k, x, y]) => `${k} calls ${x[0]}→${y[0]} net ${x[1]}→${y[1]}`);
+        console.log(`memory trace: cycle ${i}: live ${lives[i - 1]} → ${lives[i]} (${lives[i] - lives[i - 1]}): ${diffs.join('; ')}`);
+      }
+    }
     if (r.after.sessions || r.after.shellEngines || r.after.handles) fail(`memory: cycle ${i}: after remove ${JSON.stringify(r.after)}`);
     if (!r.spellAfter) fail(`memory: cycle ${i}: the spell checker never loaded`);
     else if (r.spellAfter.refs || r.spellAfter.listeners || r.spellAfter.transport || r.spellAfter.held) fail(`memory: cycle ${i}: the spell checker is held after remove ${JSON.stringify(r.spellAfter)}`);
     if (i === 0 || i === SOAK - 1) console.log(`memory: cycle ${i}: spell checker during ${JSON.stringify(r.spellDuring)} after ${JSON.stringify(r.spellAfter)}`);
     if (i === 0 || i === SOAK - 1) console.log(`memory: cycle ${i}: during ${JSON.stringify(r.during)} after ${JSON.stringify(r.after)}`);
   }
+  if (TRACE) console.log(`memory trace: per cycle live/previews: ${lives.map((l, i) => `${l}/${traces[i]?.uo_shell_preview?.[0] ?? 0}`).join(' ')}`);
   const warm = lives.slice(Math.min(5, lives.length - 1));
   const flat = warm.every((x) => x === warm[0]);
   console.log(`memory: ${SOAK} cycles; live bytes after warm-up ${flat ? `flat at ${warm[0]}` : `NOT flat: ${warm.join(', ')}`}`);
@@ -725,6 +927,7 @@ const fams = MODE === 'all' ? Object.keys(SCRIPTS) : Object.keys(SCRIPTS).includ
 const t0 = Date.now();
 for (const f of fams) await runFamily(f);
 if (MODE === 'spell' || MODE === 'all') await runSpell();
+if (MODE === 'wordmarks' || MODE === 'all') await runWordMarks();
 if (MODE === 'memory') await runMemory();
 await env.close();
 console.log(`editor_switch_review (${MODE}): ${((Date.now() - t0) / 1000).toFixed(0)} s; ${failures ? `${failures} FAILURE(S)` : 'ok'}`);

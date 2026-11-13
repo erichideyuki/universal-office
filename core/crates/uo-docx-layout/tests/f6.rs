@@ -77,6 +77,7 @@ fn line(at: LineRef, y: f64, h: f64, w: f64) -> PassLine {
         y,
         height: h,
         baseline: y + h * 0.8,
+        desc: h * 0.2,
         width: w,
         chars: None,
         hyph: None,
@@ -125,7 +126,7 @@ impl CellLayouter for Synth {
                         let _ = i;
                         y += 240.0;
                     }
-                    paras.insert(r, ParaSplitInfo { lines, widow: true, after: 120.0, band: OptF64::NONE });
+                    paras.insert(r, ParaSplitInfo { lines, widow: true, keep: false, after: 120.0, band: OptF64::NONE });
                     y += 120.0;
                 }
                 Block::Table(t) => {

@@ -311,6 +311,7 @@ impl Relabel for Engine {
             static_seq: _,
             field_page: _,
             en_blocks: _,
+            kl_col_to_page: _,
             sect_geoms: _,
             geoms: _,
             cover_page: _,

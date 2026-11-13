@@ -904,8 +904,12 @@ class WriteChrome {
       this.root.querySelector('.pages')?.after(box);
     }
     const wd = box.firstElementChild as HTMLElement & {
-      loadPair(a: Uint8Array, b: Uint8Array, o: { leftLabel: string; rightLabel: string }): void;
+      loadPair(a: Uint8Array, b: Uint8Array, o: { leftLabel: string; rightLabel: string; diff?: (a: Uint8Array, b: Uint8Array) => unknown }): void;
     };
+    // engine="rust" (wave 7, A1): the diff is the Rust diffDocuments of the editor's module (rust-engine-format.ts)
+    const rustDiff = this.ed.engine === 'rust'
+      ? (this.ed as unknown as { rust?: { compareDiff?: (a: Uint8Array, b: Uint8Array) => unknown } | null }).rust?.compareDiff
+      : undefined;
     const fit = (): void => {
       const h = this.ed.clientHeight - this.topEl.offsetHeight - this.bottomEl.offsetHeight;
       box!.style.height = `${Math.max(200, h)}px`;
@@ -921,7 +925,7 @@ class WriteChrome {
     const ro = new ResizeObserver(fit);
     this.ac.signal.addEventListener('abort', () => ro.disconnect());
     try {
-      wd.loadPair(current, other.bytes, { leftLabel: this.L.compareCurrent(this.app.docName), rightLabel: other.name });
+      wd.loadPair(current, other.bytes, { leftLabel: this.L.compareCurrent(this.app.docName), rightLabel: other.name, ...(rustDiff ? { diff: rustDiff } : {}) });
     } catch {
       this.flash(`⚠ ${this.L.notValidDocx(other.name)}`);
       return;

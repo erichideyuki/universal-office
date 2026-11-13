@@ -177,7 +177,46 @@ pub unsafe extern "C" fn uo_shell_objects(h: *const UoWriteSession, l: *const Uo
             }
         }
     }
-    out.push_str("],\"inline\":[");
+    out.push(']');
+    // wave 7c (V, ED-106b): a box in edit that is not one of the context's own drawing runs (a box inside a box: the
+    // base story's drawing paths do not descend into a box) — its rectangle is the layout's page object of that run with
+    // laid-out content, as the TS `tbEdit.rectTwips` (universal-write.ts 16470–16497, `o.run === focusRun`), so
+    // `activeFloat()` frames it and gives it handles (13590)
+    out.push_str(",\"boxFloat\":");
+    match session.edited_box().filter(|(_, _, own)| !own) {
+        Some((d, rot, _)) => {
+            let hit = geom.pages.iter().enumerate().find_map(|(pg, page)| {
+                if !page_ok(pg) {
+                    return None;
+                }
+                page.objects.iter().flatten().find(|o| o.drawing == Some(d) && o.content.is_some() && o.hf == in_hf).map(|o| (pg, o))
+            });
+            match hit {
+                Some((pg, o)) => {
+                    out.push('{');
+                    field(&mut out, false, "i", -1.0);
+                    out.push_str(",\"kind\":\"textbox\"");
+                    field(&mut out, true, "id", f64::from(d.0));
+                    field(&mut out, true, "page", num(pg));
+                    field(&mut out, true, "x", o.x);
+                    field(&mut out, true, "y", o.y);
+                    field(&mut out, true, "w", o.w);
+                    field(&mut out, true, "h", o.h);
+                    field(&mut out, true, "rot", rot);
+                    out.push_str(if matches!(o.layer, Layer::Behind) { ",\"behind\":true" } else { ",\"behind\":false" });
+                    out.push_str(",\"editable\":true,\"content\":true,\"key\":null,\"image\":null,\"frame\":");
+                    match &o.frame {
+                        Some(f) => frame_json(&mut out, f),
+                        None => out.push_str("null"),
+                    }
+                    out.push('}');
+                }
+                None => out.push_str("null"),
+            }
+        }
+        None => out.push_str("null"),
+    }
+    out.push_str(",\"inline\":[");
     let mut first = true;
     if !in_box && !inline.is_empty() {
         let pic_of = |img: uo_render::ImageId| -> Option<&(uo_docx::ids::DrawingId, u32, u32)> {

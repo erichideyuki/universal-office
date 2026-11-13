@@ -53,7 +53,8 @@ const helpers = () => {
   const EVENTS = ['uw-change', 'uw-dirty-change', 'uw-pasted', 'uw-protected', 'uw-tbmode', 'uw-cellmode', 'uw-hfmode', 'uw-blocked', 'uw-zoom'];
   /** the TS screen overlays no Rust front paints yet (off in the end capture; front R paints the marks, field shading,
    *  squiggles, search hits and the multi-selection, so those stay on, as in editor_switch_review.mjs) */
-  const OTHERS = ['paintBookmarkMarks', 'paintTableAdorners', 'paintTocControl', 'paintEngineInlines'];
+  // wave 7 (B): `paintTableAdorners` is painted by the Rust shell since wave 7 (A2's table handles): compared, as editor_switch_completion.mjs
+  const OTHERS = ['paintBookmarkMarks', 'paintTocControl', 'paintEngineInlines'];
   const log = [];
   const canon = (v) => (Array.isArray(v) ? v.map(canon) : v instanceof Uint8Array ? `#bytes:${v.length}:${fnv(v)}` : v && typeof v === 'object'
     ? Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined && x !== null && x !== false).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, canon(x)]))
@@ -74,7 +75,11 @@ const helpers = () => {
       const ready = new Promise((r) => el.addEventListener('uw-ready', r, { once: true }));
       document.body.appendChild(el);
       await ready;
+      if (el.rust) el.rust.tsShading = true; // wave 7c (V, fix round 1): the TS field shading/comment look (ED-304: Word's is the default)
       for (const t of EVENTS) el.addEventListener(t, (e) => { log.push(`${t} ${J(e.detail ?? null)}`); });
+      // wave 7c (V): the onSelectionChange calls (the frames of a live drag count them)
+      api.selChanges = 0;
+      { const prev = el.onSelectionChange; el.onSelectionChange = function (...a) { api.selChanges++; return prev?.apply(this, a); }; }
       // UO_EO_TRACE=<names>: the TS element's (private) methods traced in the diagnostic facet (ED-218 measurements)
       if (engine !== 'rust' && window.__trace) for (const m of window.__trace) { const f0 = el[m]; if (typeof f0 === 'function') el[m] = function (...a) { const r = f0.apply(this, a); (api.traced ??= []).push(`${m}(${a.map((x) => (x instanceof Event ? x.type : typeof x === 'object' ? '{}' : String(x))).join(',')})=${r && typeof r === 'object' ? '{}' : String(r)}`); return r; }; }
       api.el = el;
@@ -91,6 +96,10 @@ const helpers = () => {
       if (n === 'blank') api.el.newDocument();
       else api.el.loadDocx(new Uint8Array(await (await fetch(`/docs/${n}`)).arrayBuffer()), { protected: false });
       await api.settle();
+      // wave 7 (B, LOAD-1): the TS settles its fonts as before an export (`settleDocumentFonts`: the families and faces the
+      // document and the engine asked for resolved, the layout redone with them) — the counterpart of `rust.idle()`; the
+      // fixed 300 ms after `document.fonts.ready` alone left the TS at 12 pages of f7a__7__5 (14 once settled) under load
+      if (!api.el.rust && typeof api.el.settleDocumentFonts === 'function') await api.el.settleDocumentFonts();
       api.el.refresh();
       await api.settle();
       // the TS draws its random ids (wp:docPr, w14:anchorId, w:id of a content control) from Math.random, the session from its
@@ -98,9 +107,57 @@ const helpers = () => {
       // open, the TS draws what the session draws as long as both take the same number of values per command (ED-217)
       window.__seed(1);
       log.length = 0;
+      // UO_EO_LOADTRACE=1 (wave 7, B, LOAD-1): the page count at the settle point and after 1.5 s more and a refresh (an
+      // engine whose fonts arrive late changes it), with the fonts the page's FontFaceSet and the TS resolver hold
+      if (window.__loadTrace) {
+        const el = api.el;
+        const at0 = el.layoutPageCount();
+        const fontsNow = () => [...document.fonts].filter((f) => f.status === 'loaded').map((f) => `${f.family}/${f.weight}/${f.style}`).sort().join(',');
+        const f0 = fontsNow();
+        await sleep(1500);
+        el.refresh();
+        await api.settle();
+        window.__loadTraceOut = `LOADTRACE ${el.rust ? 'rust' : 'ts'} pages ${at0} -> ${el.layoutPageCount()}; fonts at settle [${f0}]; after [${fontsNow()}]`;
+      }
       return api.el.layoutPageCount();
     },
     remove() { api.el?.remove(); api.el = null; },
+    /** wave 7c (V): one frame of a live pointer drag (`frames: true` steps), after two animation frames (and the Rust
+     *  engine's idle): the selection, the proxy textarea's left/top/height, the `onSelectionChange` calls and the uw-*
+     *  events since the drag began, and the hash of every page canvas (the caret hidden, the other fronts' TS overlays off
+     *  as at the end) — compared TS vs Rust frame by frame */
+    /** the counters at the drag's start (the frames report what the drag itself did) */
+    dragStart() { api.dragBase = api.selChanges ?? 0; api.dragLog = log.length; },
+    async dragFrame() {
+      const el = api.el;
+      await frame(); await frame();
+      if (el.rust) { await el.rust.idle(); await frame(); }
+      window.clearInterval(el.caretTimer);
+      el.caretVisible = false;
+      if (!el.rust) for (const m of OTHERS) el[m] = () => {};
+      // wave 7c (V, fix round 1): every allocated page buffer allocated again before the frame's paint, in both engines. Measured
+      // (f7b__7__0 nw, f8__7__11 rot: the table-edge guide at x 246.27 / 246.0 px, coverage 59.5/255 and 127.5/255): the
+      // same stroke with the same context state (transform, width, dash, alpha, composite, clip, attributes) rounds 1/255 apart
+      // on a canvas whose buffer outlived several paints (the shell keeps the buffers across relayouts, D-L3) and on a freshly
+      // allocated one (the TS allocates them again at every refresh); a fresh buffer in both makes the pixels history-free
+      for (const cv of el.shadowRoot.querySelectorAll('canvas.page')) if (cv.width > 1) { const w = cv.width, h = cv.height; cv.width = 1; cv.width = w; cv.height = h; }
+      el.paint();
+      await frame();
+      const sr = el.shadowRoot;
+      const ta = sr.querySelector('textarea');
+      const cs = [...sr.querySelectorAll('canvas.page')];
+      return {
+        sel: el.getSelection(),
+        proxy: ta ? [ta.style.left, ta.style.top, ta.style.height] : null,
+        selChanges: (api.selChanges ?? 0) - (api.dragBase ?? 0),
+        events: log.slice(api.dragLog ?? 0),
+        pages: cs.map((cv) => (cv.width > 1 ? fnv(new Uint8Array(cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data.buffer)) : '-')),
+        // UO_EO_FDIAG: the canvases' size and place (printed with the frames, not compared)
+        ...(window.__fdiag ? { diag: cs.map((cv) => (cv.width > 1 ? `${cv.width}x${cv.height} ${cv.style.width} ${cv.getBoundingClientRect().left},${cv.getBoundingClientRect().top}` : '-')).join(' | ') + ` tb ${JSON.stringify(el.editingTextbox?.())} cnt ${el.selectedObjectCount?.()} st ${el.scrollTop}` } : {}),
+        // UO_EO_DUMP: the frame's page canvases as PNG (written for the frames that differ)
+        ...(window.__dump ? { shots: cs.map((cv) => (cv.width > 1 ? cv.toDataURL() : null)) } : {}),
+      };
+    },
     drain() { const out = log.slice(); log.length = 0; return out; },
     focus() { api.el.focusEditor(); },
     /** a picture made in the page (the same bytes in both runs of the page's browser): PNG with an alpha region, or JPEG */
@@ -249,6 +306,7 @@ const helpers = () => {
       f.hyph = el.getHyphenation();
       f.borders = el.getPageBorders();
       f.modes = { crop: el.croppingImage(), draw: el.drawingTextbox(), link: el.linkingTextbox() };
+      if (window.__fdiag) { const ta = el.shadowRoot.querySelector('textarea'); f.__proxy = ta ? [ta.style.left, ta.style.top, ta.style.height].join(',') : null; }
       // the TS run only, not compared: the float selection's identity (ED-218: is `floatSel` still a run of the model's floats?)
       if (!el.rust) { const fs0 = el.floatSel; f.__diag = { floatSel: !!fs0, selectedFloat: !!el.selectedFloat(), inFloats: !!fs0 && el.enumFloats().some((h) => h.run === fs0), tbEdit: !!el.tbEdit, raw: !!fs0 && !!el.constructor.rawOf?.(fs0), format: !!fs0 && !!el.formatOf?.(fs0), objW: fs0 ? (fs0.shape ?? fs0.textbox ?? fs0.group ?? fs0.image)?.widthTwips : undefined, trace: api.traced?.splice(0) }; }
       return J(f);
@@ -342,13 +400,13 @@ const SCRIPTS = {
     steps: [
       { js: 'return null;' },
       { target: 'float:0', mouse: 'click' },
-      { target: 'float:0', mouse: 'drag', dx: 40, dy: 30 },
+      { target: 'float:0', mouse: 'drag', dx: 40, dy: 30, frames: true },
       { target: 'float:0', mouse: 'click' },
-      { target: 'handle:0:se', mouse: 'drag', dx: 30, dy: 20 },
+      { target: 'handle:0:se', mouse: 'drag', dx: 30, dy: 20, frames: true },
       { target: 'float:0', mouse: 'click' },
-      { target: 'handle:0:nw', mouse: 'drag', dx: -20, dy: -10 },
+      { target: 'handle:0:nw', mouse: 'drag', dx: -20, dy: -10, frames: true },
       { target: 'float:0', mouse: 'click' },
-      { target: 'handle:0:rot', mouse: 'drag', dx: 40, dy: 25 },
+      { target: 'handle:0:rot', mouse: 'drag', dx: 40, dy: 25, frames: true },
       { target: 'float:0', mouse: 'click' },
       { key: 'ArrowRight' },
       { key: 'Control+ArrowDown' },
@@ -445,7 +503,8 @@ const SCRIPTS = {
   },
   probe: {
     docs: ['probe.docx'],
-    steps: [{ js: 'return null;' }],
+    // UO_EO_PROBE_STEPS: the probe's steps as JSON (a diagnosis; the default is the bare load)
+    steps: process.env.UO_EO_PROBE_STEPS ? JSON.parse(process.env.UO_EO_PROBE_STEPS) : [{ js: 'return null;' }],
   },
   views: {
     docs: ['f7a__7__1.docx', 'f2-3-0.docx'],
@@ -480,52 +539,56 @@ const parts = (b64) => {
  * Declared differences: `doc|mode` → { from: first step, facets: the keys of the step facets (or '*'), end: end facets ('*'),
  * id (the ED of the record), why }. Everything else fails.
  */
-const COVER = { end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O1', why: 'the cover page inserted at step 24 has a colored text box the shell does not paint (page 0); the saved package is equal' };
 const DECLARED_O = {
   // ── page ──
-  'f7a__7__0|page': COVER,
-  'f7a__7__5|page': COVER,
-  'f7a__7__10|page': COVER,
-  'f7c__7__1|page': COVER,
-  'f7c__7__2|page': COVER,
-  'f7c__7__8|page': COVER,
-  'blank|page': COVER,
-  // wave 6 (C): the end page count is equal with the builds holding frontier L's latest relayout code (the two runs before
-  // it still differed there); the page count of the steps after the three columns still differs
-  'f7a__7__1|page': { from: 6, facets: ['pages'], end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O2; gate-O1', why: 'three columns with a separator: the session lays out 11 pages, the TS 10, on equal section facts; the cover page box' },
+  // wave 7 (B): gate-O1 (the cover page's text box not painted) and gate-O2 (f7a__7__1: 11 pages against 10 after three
+  // columns) are equal in the wave-7 runs (f7a__7__0/1/5/10, f7c__7__1, blank): the cover's fill is a theme colour and these
+  // packages have no theme part, so the Rust layout resolved it over an empty theme (no fill) until gate-O3's Word theme
+  // (uo-docx-layout theme_word.rs); gate-O2 equal with the same build (record "Wave 7 — B", Causes closed)
+  // (f7c__7__2/8 page, f2-3-0 pictures/views and blank|keys: the field shading of the headers, footers and notes — ED-304
+  // closed in wave 7c, V: the shell's overlays read every story's lines, uo_shell_story_lines)
+  // (LOAD-1, f7a__7__5 at 12 pages in the TS against 14 once in five runs: closed in the review fix round — the TS run was not
+  // settled; both engines have 14 pages at the settle point and 1.5 s later in 10 of 10 traced runs, and `load` now waits
+  // for the TS's `settleDocumentFonts`)
   // ── objects (steps: 1 click, 2 move, 4 se, 6 nw, 8 rotate, 10 ArrowRight, 11 Ctrl+ArrowDown, 12… the Shape Format commands);
   //    exact steps (`at`), every one measured with UO_EO_MEASURE=1 UO_EO_COVERED=2 and the TS traced (UO_EO_TRACE) ──
-  'f7b__7__0|objects': [
-    { at: { shape: '2-3' }, id: 'ED-202', why: 'the moved shape keeps its effectExtent 0 (the TS writes 19050 on every side: applyDrawingXml(…, true) on any drag)' },
-    { at: { events: '6' }, end: ['saved word/document.xml'], id: 'ED-219; ED-202', why: 'the nw handle lies 4 px from a table cell edge: the TS mousedown starts the table edge drag (tableMouseDown, traced true) and moves the column (one uw-change, the saved table differs), the shell no-ops it (S does not route the edge drag); plus the effectExtent of ED-202' },
-  ],
-  'f7b__7__3|objects': [
-    { at: { shape: '2-3' }, id: 'ED-202', why: 'the moved shape keeps its effectExtent 0 (the TS writes 19050)' },
-    { intermittent: true, end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O5', why: 'in about one run of two: pages 0 and 2, the bold runs of the table cells laid out narrower by the Rust engine (another line break: the bold face measured before it loaded, a font load race of the shell, not front O); every step facet and the saved package are equal' },
-  ],
-  'f7b__7__1|objects': { intermittent: true, end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O5', why: 'seen once (first run of fix round 1): the end pixels only, as f7b__7__3 (the bold face load race); every step facet and the saved package equal' },
-  'f7d__7__10|objects': [
-    { at: { shape: '2-3,5-29' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], id: 'ED-202', why: 'the moved box keeps its effectExtent 0 (the TS 19050), to the end' },
-    { at: { shape: '4' }, id: 'ED-213', why: 'the group Grupo 7 selected: the TS ShapeFormat of a group carries blip {} and a zero srcRect, the shell drops both (ED-213)' },
-  ],
+  // wave 7 (B): ED-202 (the drag's effectExtent) and ED-213 (the group's blip/srcRect, the shape fill/body facet) are equal
+  // since A2's wave-7 objects work: the f7b__7__0/3 and f7d__7__10 entries and GLOBAL_O.shapeFillBody removed (stale in the run)
   // wave 6 (C): gate-O4 (Ctrl+ArrowUp/Down) and ED-216 (S ED-102, f7d__7__3) closed; what is left of three of their documents:
-  'f7b__7__8|objects': { end: ['thumbnail pixels', 'screen pixels'], id: 'gate-C1', why: 'the end pixels of page 0 only (every step facet and word/document.xml equal): the TS-saved document reopened in both engines (--mode probe) differs the same way, so a layout difference of the content after the drags and nudges, not the keys or clicks (wave 6, C: exposed once gate-O4 was fixed; before, the gate-O4 entries covered it)' },
-  'f7b__7__10|objects': { end: ['thumbnail pixels', 'screen pixels'], id: 'gate-C1', why: 'the end pixels of page 0 only (every step facet and word/document.xml equal): the TS-saved document reopened in both engines (--mode probe) differs the same way, so a layout difference of the content after the drags and nudges, not the keys or clicks (wave 6, C: exposed once gate-O4 was fixed; before, the gate-O4 entries covered it)' },
-  'f8__7__5|objects': { end: ['thumbnail pixels', 'screen pixels'], id: 'gate-C1', why: 'the end pixels of page 0 only (every step facet and word/document.xml equal): the TS-saved document reopened in both engines (--mode probe) differs the same way, so a layout difference of the content after the drags and nudges, not the keys or clicks (wave 6, C: exposed once gate-O4 was fixed; before, the gate-O4 entries covered it)' },
-  'f8__7__11|objects': { at: { events: '8' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], id: 'ED-219', why: 'the rotation handle lies on a table cell edge: the TS starts the table edge drag (tableMouseDown, traced true; one uw-change, the table differs to the end), the shell no-ops it (S does not route it)' },
+  // wave 7 (B): gate-C1 (f7b__7__8/10, f8__7__5) closed — not a z-order: the inserted text box's fill is the scheme colour
+  // lt1 and these packages have no theme part; the Rust layout resolved it over an empty theme and painted FFC000 under
+  // the text, Word (PDF of the TS-saved bytes) and the TS paint FFFFFF, the Rust since gate-O3's Word theme too.
+  // ED-219 (f8__7__11) equal since A2 routes the table edge drag.
+  // wave 7 (B): with the TS paintTableAdorners compared (A2's request), the end screen of page 0 differs in the hovered
+  // table's move handle (⊞, top-left) and size handle (□, bottom-right): the TS paints them, the shell does not (two runs out
+  // of two; dumped crops). The shell's `tableMouseMove` now has the TS gate (no text-box exclusion) — not the cause; the
+  // hover state at the end differs (front O/A2's hover chain): cross-front, owner A2
+  // wave 7 (B, re-verification): f7b__7__8|objects retired — equal with A2's later tree ("declared but equal now")
+  // (f7b__7__0|menu, the same ED-219b, retired too: equal in the three latest runs with A2's later tree)
   // ── keys ──
-  'blank|keys': { end: ['screen pixels'], id: 'other front (S/R)', why: 'page 1: the TS paints a gray shading behind the footnote\'s own reference mark in the note area (x 113–117, y 1011–1029 px), the Rust shell does not (a note-area paint of frontier S or the field shading of R, not O); every step facet and the saved package are equal' },
   // ── pictures, views ──
-  'f2-3-0|pictures': { end: ['thumbnail pixels', 'screen pixels'], id: 'gate-O3', why: 'the Strong style carries w:color C00000 with themeColor accent2 and the package has no theme part: the TS editor paints its default theme\'s accent2 (orange), the session the C00000 (the saved package is equal)' },
-  'f2-3-0|views': { at: { answer: '13' }, end: ['thumbnail pixels', 'screen pixels'], id: 'ED-209; gate-O3', why: 'Web/Draft/Outline disabled; the theme-less accent2 of gate-O3' },
-  'f7a__7__1|views': [
-    // wave 6 (C): the end pixels (gate item 10 of wave 4: the TS hyphenated, the session did not) are equal since the editor registers the patterns
-    { at: { answer: '13' }, id: 'ED-209', why: 'Web/Draft/Outline disabled' },
-    { intermittent: true, at: { sel: '10-13' }, id: 'gate-O5', why: 'PageUp\'s 20 line moves after PageDown and typing land one offset apart in paragraph 0 (19 / 20): seen in one run of two, so not a fixed line-break difference: probably the moment of the layout (the Read view spread, the fonts) when PageUp runs; cause not isolated (gate-O5)' },
-  ],
+  // wave 7 (B): gate-O3 closed — the Strong style carries w:color C00000 + themeColor accent2 and the package has no theme
+  // part: Word paints E97132 (the Office 2023 accent2, measured in Word's PDF), the Rust layout too since wave 7
+  // (uo-docx-layout theme_word.rs), and the TS editor as well (the end screens are equal there: the only differing pixels,
+  // x 338–404 y 1046–1065, were the footer's field shading: ED-304 closed in wave 7c). ED-209 closed: the views are routed
+  // and answer@13 is equal
+  // ── wave 7c (W): Word's layout rules over the frozen TS (record uo-bindings.md "Wave 7c — W"; each document attributed
+  //    natively, uo-docx-layout word_w7c.rs attribute_documents_to_the_word_rules, with the harness's columns applied to the
+  //    package for the page family: core/target/m2-wsession/w7c-w/cols3.py) ──
+  // item 6: in a section of several columns (mode 15) a keepLines paragraph taller than the column goes to the next PAGE and
+  // each of its columns ends with a page break (Word, oracle keeptall kt-kl70-cols…): more pages from the setColumns steps on
+  'f7a__7__0|page': { from: 5, facets: '*', end: '*', id: 'Word manda sobre o TS (item 6, keepLines)', why: 'keepLines paragraphs taller than a column go to the next page in Word (mode 15): 12/13 pages after two/three columns, the TS 11' },
+  'f7c__7__2|page': { from: 6, facets: '*', end: '*', id: 'Word manda sobre o TS (items 6 and 4)', why: 'keepLines in three columns (Word: the next page) and the REF to the unterminated bm2 (Word\'s bold error text)' },
+  'f7c__7__8|page': { from: 6, facets: '*', end: '*', id: 'Word manda sobre o TS (item 6, keepLines)', why: 'keepLines paragraphs taller than a column go to the next page in Word (mode 15): 11 pages after three columns, the TS 9' },
+  // item 3: the first box of a chain of linked boxes keeps the chain's first lines (Word; the TS widow rule empties it): the
+  // scripted clicks on the boxes land on other text and the end screens differ
+  'f7d__7__0|objects': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box' },
+  'f7d__7__3|objects': { from: 1, facets: '*', end: '*', id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box: the scripted clicks land on other text' },
+  'f7d__7__10|objects': { from: 1, facets: '*', end: '*', id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box: the scripted clicks land on other text' },
+  'f7d__7__3|menu': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box' },
 };
 /** declared for every document (the facet itself is the declared gap) */
-const GLOBAL_O = { shapeFillBody: { id: 'ED-213', why: 'ObjectState.format is a PictureFormat: no shape fill, no text body' } };
+const GLOBAL_O = {};
 /** '2,6-9' → [2, 6, 7, 8, 9] */
 const stepsOf = (spec) => String(spec).split(',').flatMap((p) => { const [a, b] = p.split('-').map(Number); return b === undefined ? [a] : Array.from({ length: b - a + 1 }, (_, i) => a + i); });
 /** an entry: `at` = { facet: '2,6-9' } (exact steps; every one must still differ), or `from` + `facets` (a range), `end` = end facets;
@@ -548,6 +611,11 @@ const staleAt = (key, met) => entriesOf(key).filter((d) => !d.intermittent).flat
   ...(Array.isArray(d.end) ? d.end : []),
 ]).filter((x) => !met.has(x));
 
+/** wave 7c (V): the frames of the last `frames: true` drag (taken by runFamily into its step) */
+let lastFrames = null;
+/** wave 7c (V): the `frames: true` drags are compared frame by frame (on by default since the fix round 1; UO_EO_FRAMES=0 runs them as
+ *  plain six-step drags) */
+const FRAMES = process.env.UO_EO_FRAMES !== '0';
 async function runStep(st, i, targets) {
   let answer = null;
   if (st.js) answer = await ev((c) => window.__es.js(c), st.js);
@@ -572,6 +640,16 @@ async function runStep(st, i, targets) {
       const m = env.page.mouse;
       if (st.mouse === 'click') await m.click(t.x, t.y);
       else if (st.mouse === 'rclick') await m.click(t.x, t.y, { button: 'right' });
+      else if (st.mouse === 'drag' && st.frames && FRAMES) {
+        // wave 7c (V): the same six pointer moves as `{ steps: 6 }`, a frame captured after the down and after each move
+        lastFrames = [];
+        await m.move(t.x, t.y);
+        await ev(() => window.__es.dragStart());
+        await m.down();
+        lastFrames.push(await ev(() => window.__es.dragFrame()));
+        for (let k = 1; k <= 6; k++) { await m.move(t.x + (st.dx * k) / 6, t.y + (st.dy * k) / 6); lastFrames.push(await ev(() => window.__es.dragFrame())); }
+        await m.up();
+      }
       else if (st.mouse === 'drag') { await m.move(t.x, t.y); await m.down(); await m.move(t.x + st.dx, t.y + st.dy, { steps: 6 }); await m.up(); }
       await ev(() => window.__es.settle(200));
     }
@@ -593,14 +671,18 @@ async function runFamily(fam) {
       await env.openPage();
       await env.page.evaluate(helpers);
       if (DUMP) await ev(() => { window.__dump = true; });
+      if (process.env.UO_EO_FDIAG) await ev(() => { window.__fdiag = true; });
       if (process.env.UO_EO_TRACE) await ev((t) => { window.__trace = t.split(','); }, process.env.UO_EO_TRACE);
+      if (process.env.UO_EO_LOADTRACE) await ev(() => { window.__loadTrace = true; });
       const errs0 = env.errors.length;
       await ev((e) => window.__es.make(e), engine);
       const pages = await ev((x) => window.__es.load(x), n);
+      if (process.env.UO_EO_LOADTRACE) console.log(`  ${key} ${await ev(() => window.__loadTraceOut)}`);
       const steps = [];
       for (let i = 0; i < s.steps.length; i++) {
         const answer = await runStep(s.steps[i], i, targets);
-        steps.push({ answer, facets: JSON.parse(await ev(() => window.__es.facets())) });
+        steps.push({ answer, facets: JSON.parse(await ev(() => window.__es.facets())), frames: lastFrames });
+        lastFrames = null;
       }
       const end = await ev(() => window.__es.end());
       runs[engine] = { pages, steps, end, errors: env.errors.length - errs0 };
@@ -630,8 +712,19 @@ async function runFamily(fam) {
     check('pages after load', a.pages, b.pages);
     a.steps.forEach((sa, i) => {
       const sb = b.steps[i];
+      // wave 7c (V): a live drag compared frame by frame (caret, selection, events, page pixels)
+      if (sa.frames || sb.frames) (sa.frames ?? sb.frames).forEach((_, k) => {
+        const fa = sa.frames?.[k], fb = sb.frames?.[k];
+        for (const f of ['sel', 'proxy', 'selChanges', 'events', 'pages']) check(`frame ${k} ${f}`, fa?.[f], fb?.[f], i);
+        if (process.env.UO_EO_FDIAG && (fa?.diag || fb?.diag)) console.log(`  frame ${k} @${i} ts ${fa?.diag} ${JSON.stringify(fa?.proxy)} ${JSON.stringify(fa?.sel)}; rust ${fb?.diag} ${JSON.stringify(fb?.proxy)} ${JSON.stringify(fb?.sel)}`);
+        if (DUMP && JSON.stringify(fa?.pages) !== JSON.stringify(fb?.pages)) {
+          mkdirSync(dumpDir, { recursive: true });
+          for (const [e, fr] of [['ts', fa], ['rust', fb]]) (fr?.shots ?? []).forEach((u, p) => { if (u && fa?.pages?.[p] !== fb?.pages?.[p]) writeFileSync(join(dumpDir, `${key.replace(/\|/g, '-')}-s${i}-f${k}-p${p}-${e}.png`), Buffer.from(u.split(',')[1], 'base64')); });
+        }
+      });
       check('answer', sa.answer, sb.answer, i);
       for (const k of new Set([...Object.keys(sa.facets), ...Object.keys(sb.facets)])) if (!k.startsWith("__")) check(k, sa.facets[k], sb.facets[k], i);
+      if (process.env.UO_EO_FDIAG) console.log(`  proxy @${i} ts ${sa.facets.__proxy} rust ${sb.facets.__proxy}`);
       if (process.env.UO_EO_COVERED && sa.facets.__diag) console.log(`  ts diag @${i} ${JSON.stringify(sa.facets.__diag)}`);
     });
     check('end pages', [a.end.pages, a.end.sizes], [b.end.pages, b.end.sizes]);
@@ -689,6 +782,8 @@ async function runMemory() {
       await new Promise((r2) => setTimeout(r2, 0));
       return { during, after: es.stats() };
     }, n);
+    // wave 7c (S): the removed element keeps its document until it is collected (as the TS element its model): GC first
+    r.after = await env.gc();
     lives.push(r.after.live);
     bufs.push(r.after.buffer);
     if (r.after.sessions || r.after.shellEngines || r.after.handles) fail(`memory: cycle ${i}: after remove ${JSON.stringify(r.after)}`);

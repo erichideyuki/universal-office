@@ -47,7 +47,8 @@ uo-testkit = { path = "../uo-testkit" }
 uo-docx = { path = "../uo-docx", features = ["canon", "session"] }
 uo-opc = { path = "../uo-opc" }
 # F4 facet replay: the hyphenation patterns the TS capture loads (all seven, embedded)
-uo-fonts = { path = "../uo-fonts", features = ["hyphen-data"] }
+# wave 7c (W): `system` for the opt-in Word-agreement replay of word_w7c (the installed fonts)
+uo-fonts = { path = "../uo-fonts", features = ["hyphen-data", "system"] }
 
 [lints]
 workspace = true

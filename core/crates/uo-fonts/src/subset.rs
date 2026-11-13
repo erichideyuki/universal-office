@@ -300,5 +300,5 @@ fn try_subset(bytes: &[u8], used_gids: impl IntoIterator<Item = u32>, keep_layou
 
 /// The sum of the big-endian `u32` words of a slice whose length is a multiple of 4, modulo 2^32.
 fn checksum_of(data: &[u8]) -> u32 {
-    data.chunks_exact(4).fold(0u32, |sum, w| sum.wrapping_add(u32::from_be_bytes(w.try_into().unwrap_or([0; 4]))))
+    data.as_chunks::<4>().0.iter().fold(0u32, |sum, w| sum.wrapping_add(u32::from_be_bytes(*w)))
 }

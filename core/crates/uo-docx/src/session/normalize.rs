@@ -154,6 +154,17 @@ impl JsNormalize for crate::model::run::ViewsCopied {
     }
 }
 
+/// Wave 7 (B): an editing view is session state, not JSON: the round trip drops it (the session
+/// rebuilds it from the blocks, `session/ops/hf_flat.rs`).
+impl<T> JsNormalize for crate::model::section::EditSlot<T> {
+    fn js_needs(&self) -> bool {
+        self.0.is_some()
+    }
+    fn js_normalize(&mut self, _: &mut NormCx<'_>) {
+        self.0 = None;
+    }
+}
+
 impl JsNormalize for ParaId {
     fn js_needs(&self) -> bool {
         true

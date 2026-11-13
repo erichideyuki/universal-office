@@ -56,7 +56,7 @@ Properties: `view` (get/set) and `stats` (the last result's counts, or `null`).
 
 | Method | Description |
 |---|---|
-| `loadPair(aBytes, bBytes, { leftLabel?, rightLabel? })` | Compares two .docx files. |
+| `loadPair(aBytes, bBytes, { leftLabel?, rightLabel?, diff? })` | Compares two .docx files. `diff(aBytes, bBytes)`, optional, answers the `DocDiff` from another engine (the editor with `engine="rust"` passes the Rust one); the element still reads both documents for the view. |
 | `loadDocuments(aDoc, bDoc, opts)` | Compares documents already read with `readFullDocument` (exported). |
 
 ## Events

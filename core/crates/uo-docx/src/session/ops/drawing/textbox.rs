@@ -418,6 +418,10 @@ impl Session {
         self.selection = Selection::default();
         self.pending_props = None;
         self.emit(Event::TbMode { active: true });
+        // wave 7 (F1): the box's flat view (`tb.paras` = `flattenBlocks`) before a caller computes a
+        // caret from `self.paras()` (`editSelectedTextbox`: the end of the LAST flat paragraph;
+        // `insertTextbox`: the first non-empty one), as `reenter_textbox` and `enter_note`
+        self.sync_flat_views();
         true
     }
 
@@ -820,7 +824,7 @@ impl Session {
     }
 
     /// `moveFloatBy(h, dx, dy)` with a frame: the positions keep their references.
-    fn move_float_by(&mut self, path: &Path, o: &ObjFacts, dx: f64, dy: f64) {
+    pub(crate) fn move_float_by(&mut self, path: &Path, o: &ObjFacts, dx: f64, dy: f64) {
         let (Some(fr), Some(rc)) = (o.frame, o.rect) else { return };
         let Some(f) = self.run_ref(path).and_then(format_of) else { return };
         let b = f.base();
@@ -865,6 +869,8 @@ impl Session {
         self.ctx = probe;
         self.pending_props = None;
         self.emit(Event::TbMode { active: true });
+        // wave 7 (B): a box with a table is edited through its flat view (`tb.paras`, `hf_flat.rs`)
+        self.sync_flat_views();
         self.selection = crate::session::ops::context::clamp_selection(self.paras(), sel);
     }
 
@@ -890,6 +896,8 @@ impl Session {
         self.selection = Selection::default();
         self.pending_props = None;
         self.emit(Event::TbMode { active: true });
+        // wave 7 (F1): the flat view at once, as `enter_textbox_at`
+        self.sync_flat_views();
         true
     }
 }

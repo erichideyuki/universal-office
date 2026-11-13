@@ -24,7 +24,7 @@ declare module '@universal-office/write-session' {
     frame: ShellObjectFrame | null;
   }
   export interface ShellInlinePic { para: number; run: number; id: number; page: number; x: number; y: number; w: number; h: number; rot: number; image: number }
-  export interface ShellObjects { scope: 'body' | 'hf' | 'tb'; box: number | null; fs: number | null; sel: number[]; floats: ShellFloat[]; inline: ShellInlinePic[] }
+  export interface ShellObjects { scope: 'body' | 'hf' | 'tb'; box: number | null; fs: number | null; sel: number[]; floats: ShellFloat[]; boxFloat?: ShellFloat | null; inline: ShellInlinePic[] }
   export interface ShellSectionInfo {
     index: number;
     count: number;

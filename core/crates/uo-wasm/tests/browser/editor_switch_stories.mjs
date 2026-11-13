@@ -79,6 +79,7 @@ const helpers = () => {
       if (o.topbar) try { localStorage.clear(); } catch { /* none */ }
       document.body.appendChild(el);
       await ready;
+      if (el.rust) el.rust.tsShading = true; // wave 7c (V, fix round 1): the TS field shading/comment look (ED-304: Word's is the default)
       for (const t of EVENTS) el.addEventListener(t, (e) => { log.push(`${t} ${JSON.stringify(e.detail ?? null)}`); });
       api.el = el;
       api.reg = null;
@@ -302,7 +303,8 @@ const helpers = () => {
       // the Rust side: only this frontier's paint hooks (the other frontiers paint the overlays the TS has off here)
       const hk = el.rust?.hooks;
       const kept = hk ? { paint: hk.paint.slice(), overlay: hk.overlay.slice() } : null;
-      if (hk) for (const k of ['paint', 'overlay']) hk[k].splice(0, hk[k].length, ...kept[k].filter((f) => f.front === 'S'));
+      // wave 7 (B): front O's handles too (the TS paintFloatAndCaret is not among the TS overlays turned off: ED-106 was this filter)
+      if (hk) for (const k of ['paint', 'overlay']) hk[k].splice(0, hk[k].length, ...kept[k].filter((f) => f.front === 'S' || f.front === 'O'));
       el.paint();
       await frame();
       const screen = cs.map((cv) => (cv.width > 1 ? fnv(new Uint8Array(cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data.buffer)) : '-'));
@@ -559,12 +561,18 @@ const SCENARIOS = [
  * `from` the first step that may differ, `facets` the step facets ('*' all), `end` the end facets ('*' all).
  */
 const DECLARED = {
-  'X1 f8__7__5': { end: ['screen pixels'], id: 'ED-106', why: 'Esc in a text box: the TS leaves the box selected as a shape (the handles); the object selection is frontier O\'s' },
-  'X1 f8__7__3': { end: ['screen pixels'], id: 'ED-106', why: 'Esc in a text box: the TS leaves the box selected as a shape (the handles); the object selection is frontier O\'s' },
-  'X1 f7d__7__0': { end: ['screen pixels'], id: 'ED-106', why: 'Esc in a text box: the TS leaves the box selected as a shape (the handles); the object selection is frontier O\'s' },
-  'X3 f7b__7__10': { end: ['screen pixels'], id: 'ED-106', why: 'Esc in a text box: the TS leaves the box selected as a shape (the handles); the object selection is frontier O\'s' },
-  'X4 f7b__7__10': { end: ['screen pixels'], id: 'ED-106', why: 'the TS paints the frame and handles of the edited text box (frontier O)' },
-  'X2 f8__7__5': { end: ['screen pixels', 'saved .docx part bytes'], id: 'ED-106; ED-108', why: 'the TS paints the handles of the edited text box (frontier O); saving with the caret inside the box, the TS writes a document.xml of 8,180 bytes against 82,578 (a TS defect of saving inside a box: most of the body is missing)' },
+  // wave 7 (B): ED-106 closed — the TS frame and handles of a box (after Esc, in edit) are front O's paint, which this
+  // harness's Rust screen left out (it kept S's hooks only); with O's hooks kept (tagged front 'O') X1 ×3, X3, X4 and X2's screen
+  // are equal. What stays: ED-108, a TS defect (Word opens the Rust-saved package; record "Wave 7 — B")
+  'X2 f8__7__5': { end: ['saved .docx part bytes'], id: 'ED-108', why: 'saving with the caret inside the text box, the TS writes a document.xml of 8,180 bytes against 82,578 (a TS defect of saving inside a box: most of the body is missing)' },
+  // wave 7c (W): Word's layout rules over the frozen TS, each document attributed natively to ONE rule (uo-docx-layout
+  // word_w7c.rs attribute_documents_to_the_word_rules) and measured in Word 16 (record uo-bindings.md "Wave 7c — W").
+  // Item 3: the first box of a chain of linked boxes keeps the chain's first lines (Word; the TS widow rule empties it) —
+  // in f7d__7__0 X1's click lands in that box's text (the TS: on the body behind the empty box), so every step differs
+  'X1 f7d__7__0': { from: 0, facets: '*', end: '*', id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box; the scripted click lands in its text, the TS on the body under the empty box' },
+  'T2 f7d__7__8': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box; the TS widow rule empties it' },
+  // Item 4: REF/NOTEREF to the unterminated bm3 = Word's bold error text (the TS: the start paragraph's text)
+  'N2 f7c__7__13': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF/NOTEREF to the unterminated bm3: Word writes its bold error text, the TS the paragraph text' },
 };
 const STEP_FACETS = ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'state table', 'contexts', 'dirty', 'api answer', 'screen pixels (step)'];
 const END_FACETS = ['page count/sizes', 'thumbnail pixels', 'screen pixels', 'saved .docx part names', 'saved .docx part bytes'];
@@ -738,6 +746,8 @@ if (MODE === 'stories' || MODE === 'all') {
       count('screen pixels', tsEnd.screen[i] === rsEnd.screen[i], `${name} page ${i}`);
       if (tsEnd.screen[i] !== rsEnd.screen[i] && process.env.UO_ES_DUMP) for (const [e, r] of [['ts', tsEnd], ['rust', rsEnd]]) if (r.shots[i]) writeFileSync(join(outDir, `screen-${name.replace(/[^A-Za-z0-9]+/g, '_')}-p${i}-${e}.png`), Buffer.from(r.shots[i].split(',')[1], 'base64'));
     }
+    // wave 7 (B): UO_ES_DUMP also writes both saved packages (Word open checks of the TS-defect declarations)
+    if (process.env.UO_ES_DUMP) for (const [e, r] of [['ts', tsEnd], ['rust', rsEnd]]) writeFileSync(join(outDir, `saved-${name.replace(/[^A-Za-z0-9]+/g, '_')}-${e}.docx`), Buffer.from(r.docx, 'base64'));
     const za = unzipSync(Buffer.from(tsEnd.docx, 'base64')), zb = unzipSync(Buffer.from(rsEnd.docx, 'base64'));
     const partsA = Object.keys(za).sort(), partsB = Object.keys(zb).sort();
     count('saved .docx part names', JSON.stringify(partsA) === JSON.stringify(partsB), `${name}: ${partsA.filter((p) => !zb[p]).join(',')} | ${partsB.filter((p) => !za[p]).join(',')}`);
@@ -838,6 +848,8 @@ if (MODE === 'memory' || MODE === 'all') {
   let bad = 0;
   for (let i = 0; i < SOAK; i++) {
     const r = await ev(() => window.__es.soakOnce());
+    // wave 7c (S): the removed element keeps its document until it is collected (as the TS element its model): GC first
+    if (r.after && !r.after.fake) r.after = await env.gc();
     if (!r.after || r.after.fake) { fail('memory: engineStats() answers nothing (count build?)'); break; }
     // a build without the counters answers live -1: a flat -1 would pass vacuously (UO_WASM_PATH=<the count build>)
     if (!(r.after.live >= 0)) { fail(`memory: no live byte counter (${r.after.live}): run with the count build`); break; }
@@ -863,10 +875,14 @@ if (MODE === 'chrome' || MODE === 'all') {
   const { ROUTES_STORIES } = await routes('engine-routes-stories');
   const { ROUTES_OBJECTS } = await routes('engine-routes-objects');
   const { ROUTES_REVIEW } = await routes('engine-routes-review');
-  const routedAll = new Set([...ROUTES_STORIES.commands, ...ROUTES_OBJECTS.commands, ...ROUTES_REVIEW.commands]);
-  /** the declared remainder of these two files (disabled under engine="rust"; engine-stories.test.ts DISABLED_IDS, record D7) */
-  const REMAINDER = new Set(['table:excel', 'table:style:new', 'table:style:modify', 'table:painter', 'table:draw', 'table:eraser',
-    'paste:cells:overwrite', 'paste:cells:rows', 'paste:cells:nest', 'paste:cells:text', 'dlg:borders', 'dlg:pageBorders']);
+  // wave 7 (B): the wave-7 fronts' tables too (A2 `completion`, A1 `format`)
+  const { ROUTES_COMPLETION } = await routes('engine-routes-completion');
+  const { ROUTES_FORMAT } = await routes('engine-routes-format');
+  const routedAll = new Set([...ROUTES_STORIES.commands, ...ROUTES_OBJECTS.commands, ...ROUTES_REVIEW.commands,
+    ...(ROUTES_COMPLETION.commands ?? []), ...(ROUTES_FORMAT.commands ?? [])]);
+  /** the declared remainder of these two files (disabled under engine="rust"; record D7). Wave 7 (B): empty — every id of
+   *  it is routed (A2: table:excel/painter/draw/eraser/style:new/style:modify, paste:cells:*, dlg:pageBorders; A1: dlg:borders) */
+  const REMAINDER = new Set([]);
   await env.openPage();
   await env.page.evaluate(helpers);
   await ev(() => window.__es.make('ts', { topbar: true }));
@@ -925,8 +941,6 @@ if (MODE === 'chrome' || MODE === 'all') {
     for (const [id, st] of Object.entries(rs[label].buttons)) {
       if (!st) { fail(`chrome: ${label}: no ribbon button ${id}`); continue; }
       const t = ts[label].buttons[id];
-      const remainder = id === 'table:draw' || id === 'table:eraser';
-      if (remainder) { if (!st.disabled && label !== 'body') fail(`chrome: ${label}: ${id} (declared remainder) is enabled`); continue; }
       if (JSON.stringify(st) !== JSON.stringify(t)) fail(`chrome: ${label}: button ${id} ${JSON.stringify(t)} (ts) vs ${JSON.stringify(st)} (rust)`);
     }
     if (JSON.stringify(ts[label].tabs) !== JSON.stringify(rs[label].tabs)) fail(`chrome: ${label}: tabs ${ts[label].tabs.join('|')} (ts) vs ${rs[label].tabs.join('|')} (rust)`);

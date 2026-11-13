@@ -68,6 +68,23 @@ pub struct IndentInfo {
     pub first_line: f64,
 }
 
+/// `ParagraphFlow` (text-layout.ts): the flags of FLOW_FLAGS in that order, then `textboxTightWrap`; `None` = the TS
+/// `null` (the selected paragraphs differ). Wave 7 (A1).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ParagraphFlow {
+    pub flags: [Option<bool>; 6],
+    pub textbox_tight_wrap: Option<String>,
+}
+
+/// `ParagraphLayoutInfo` (text-layout.ts): `None` = the TS `null`. Wave 7 (A1).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ParagraphLayoutInfo {
+    pub left: Option<f64>,
+    pub right: Option<f64>,
+    pub before: Option<SpacingArg>,
+    pub after: Option<SpacingArg>,
+}
+
 /// `Partial<IndentInfo>`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct IndentPatch {
@@ -632,6 +649,76 @@ impl Session {
             .map(tab_info)
             .collect();
         dedupe_tabs(&tabs)
+    }
+
+    // ── wave 7 (A1): the remaining getters of the Paragraph dialogs ─────────────────────────
+
+    /// `getParagraphFlow()` (universal-write.ts 17555): the EFFECTIVE flags of the selected paragraphs, each the
+    /// common value or `None` (the TS `null`) when they differ; `None` overall without a story.
+    #[must_use]
+    pub fn paragraph_flow(&self) -> Option<ParagraphFlow> {
+        let paras = self.paras()?;
+        let (s, e) = self.selected_para_range();
+        let mut resolver = StyleResolver::new();
+        let eff: Vec<PPr> = (s..=e).filter_map(|i| paras.get(i)).map(|p| self.effective_of(p, &mut resolver)).collect();
+        let mut flags = [None; 6];
+        for (slot, k) in flags.iter_mut().zip(FLOW_FLAGS) {
+            let vals: Vec<bool> = eff.iter().map(|x| flow_value(x, k)).collect();
+            *slot = common(&vals, |v| v.to_string());
+        }
+        let tight: Vec<String> = eff.iter().map(|x| x.textbox_tight_wrap.as_deref().unwrap_or("none").to_owned()).collect();
+        Some(ParagraphFlow { flags, textbox_tight_wrap: common(&tight, Clone::clone) })
+    }
+
+    /// `getParagraphLayout()` (17597): the effective left/right indents and spacing before/after of the selected
+    /// paragraphs (`Auto` for autospacing), each common or `None`.
+    #[must_use]
+    pub fn paragraph_layout(&self) -> Option<ParagraphLayoutInfo> {
+        let paras = self.paras()?;
+        let (s, e) = self.selected_para_range();
+        let mut resolver = StyleResolver::new();
+        let eff: Vec<PPr> = (s..=e).filter_map(|i| paras.get(i)).map(|p| self.effective_of(p, &mut resolver)).collect();
+        let key = |v: &f64| uo_jsnum::format::to_js_string(*v);
+        let ind = |f: fn(&IndSpec) -> Option<JsNumber>| -> Option<f64> {
+            let vals: Vec<f64> = eff.iter().map(|x| x.ind.as_deref().and_then(f).map_or(0.0, JsNumber::to_number)).collect();
+            common(&vals, key)
+        };
+        let sp = |before: bool| -> Option<SpacingArg> {
+            let vals: Vec<SpacingArg> = eff
+                .iter()
+                .map(|x| {
+                    let s = x.spacing.as_deref();
+                    let auto = s.and_then(|s| if before { s.before_autospacing } else { s.after_autospacing }).unwrap_or(false);
+                    if auto {
+                        SpacingArg::Auto
+                    } else {
+                        SpacingArg::Twips(s.and_then(|s| if before { s.before } else { s.after }).map_or(0.0, JsNumber::to_number))
+                    }
+                })
+                .collect();
+            common(&vals, |v| match v {
+                SpacingArg::Auto => "\"auto\"".to_owned(),
+                SpacingArg::Twips(t) => uo_jsnum::format::to_js_string(*t),
+            })
+        };
+        Some(ParagraphLayoutInfo { left: ind(|i| i.left), right: ind(|i| i.right), before: sp(true), after: sp(false) })
+    }
+
+    /// `getParagraphBorders()` (20135): the borders of the paragraph at the caret as dialog specs, in the TS side
+    /// order (`color` 'auto' when absent).
+    #[must_use]
+    pub fn paragraph_borders(&self) -> Vec<(ParaBorderSide, BorderEdge)> {
+        let Some(b) = self.paras().and_then(|ps| ps.get(self.selection.focus.para as usize)).and_then(|p| p.props.borders.as_deref())
+        else {
+            return Vec::new();
+        };
+        ParaBorderSide::ALL.into_iter().filter_map(|sd| sd.edge(b).map(|e| (sd, e.clone()))).collect()
+    }
+
+    /// The document's `w:defaultTabStop` as `getDefaultTabStop()` answers it (17287).
+    #[must_use]
+    pub fn default_tab_stop_now(&self) -> f64 {
+        self.default_tab_stop()
     }
 
     // ── the commands ───────────────────────────────────────────────────────────────────────

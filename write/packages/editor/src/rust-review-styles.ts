@@ -6,6 +6,7 @@ import { uiLang, uiLocale } from '@universal-office/ui';
 import { styleKey, type ResolvedPolicy } from './formatting-policy.js';
 import type { RustEditor } from './rust-engine.js';
 import { Ctx, changed, outerCtx, storyCtx, type Pos } from './rust-review-core.js';
+import { loadedState } from './rust-format-core.js';
 import type { StyleFilter, StyleInfo, StyleLook } from './styles.js';
 
 type Handlers = Record<string, (...args: never[]) => unknown>;
@@ -50,6 +51,8 @@ export function styleHandlers(c: Ctx): Handlers {
     if (!el || !c.s) return [];
     const lang = uiLang(el);
     const out = all();
+    // wave 7 (A1): the .odt lists the ODF's paragraph styles whatever the filter, sorted by name (universal-write.ts 4156–4164)
+    if (loadedState(c)?.odtStyles) return out.sort((a, b) => a.name.localeCompare(b.name));
     const headingInUse = (n: number): boolean => out.some((s) => s.rawName.toLowerCase() === `heading ${n}` && s.inUse);
     const nextHeading = (s: StyleInfo): boolean => {
       const h = /^heading (\d)$/.exec(s.rawName.toLowerCase());

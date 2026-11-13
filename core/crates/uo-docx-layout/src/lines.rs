@@ -123,6 +123,10 @@ pub struct BreakSettings {
     pub consecutive_hyphen_limit: f64,
     /// `hyphenationZone` (`??` the default at the use site)
     pub hyphenation_zone: Option<f64>,
+    /// wave 7c (V, fix round 2): a page or column break on a line of its own — Word's Draft and Outline views (the editor's
+    /// continuous view of those kinds without `ts_strict`), measured: the text before the break ends its line, the break
+    /// takes the next line alone (`v1-breaks.docx`: line starts 0, 25 = the break, 26), the text after it the one after
+    pub break_own_line: bool,
 }
 
 /// `w:ptab` of a tab glyph (`g.ptab`): alignment and leader as the document wrote them.
@@ -552,6 +556,13 @@ impl LineBreaker {
                 break;
             }
             let gi = u32::try_from(i).map_err(|_| LayoutError::Internal("lines: glyph index"))?;
+            // wave 7c (V, fix round 2): Word's Draft/Outline give a page or column break a line of its own
+            if s.break_own_line
+                && matches!(g.kind, GlyphKind::Pb | GlyphKind::Cb)
+                && gs.get(start..i).is_some_and(|before| before.iter().any(|q| !(q.kind == GlyphKind::Obj && q.adv == 0.0)))
+            {
+                break;
+            }
             if matches!(g.kind, GlyphKind::Lb | GlyphKind::Pb | GlyphKind::Cb) {
                 close_pending(&mut pend_tab, &mut placed, &mut x, &mut content_end);
                 placed.push(PlacedGlyph { g: GlyphSrc::Para(gi), x, w: 0.0, leader: None });
@@ -1270,12 +1281,13 @@ impl LineEnv for Cx<'_, '_> {
         let st = &self.ldoc.view.formatting().settings;
         let nullish = |v: Option<crate::model::JsNumber>| v.and_then(crate::model::JsNumber::as_f64);
         BreakSettings {
-            default_tab_stop: st.default_tab_stop.to_number(),
-            compatibility_mode: st.compatibility_mode.to_number(),
+            default_tab_stop: self.ldoc.default_tab_stop(), // wave 7c (W, item 2)
+            compatibility_mode: self.ldoc.compat_mode(),    // wave 7c (W, item 2)
             no_indent_as_numbering_tab_stop: st.compat.get("doNotUseIndentAsNumberingTabStop").copied().unwrap_or(false),
             split_pg_break_and_para_mark: st.compat.get("splitPgBreakAndParaMark").copied().unwrap_or(false),
             consecutive_hyphen_limit: nullish(st.consecutive_hyphen_limit).unwrap_or(0.0),
             hyphenation_zone: nullish(st.hyphenation_zone),
+            break_own_line: self.opts.view.word_break_lines(),
         }
     }
 

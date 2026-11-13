@@ -115,7 +115,9 @@ that is a member of the `@universal-office` organization on npmjs.com, with 2FA 
    cargo build -p uo-wasm --features session --target wasm32-unknown-unknown --profile wasm
    ```
 
-   and copy the same output to `core/target/pkg-wasm/uo-write-editor.wasm` (the editor's).
+   and copy the same output to `core/target/pkg-wasm/uo-write-editor.wasm` (the editor's). The
+   `publish-packages.yml` workflow does exactly this (steps "Rust toolchain" and "Engine modules") before
+   "Build the publishable folders", which runs with `UO_REQUIRE_ENGINE_WASM=1`.
 3. Generate the publishable folder of each package (or of all of them, with no arguments):
 
    ```bash

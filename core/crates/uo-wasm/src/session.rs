@@ -44,6 +44,10 @@ pub mod shell_review;
 pub mod shell_objects;
 // wave 5, frontier S (stories: tables, headers/footers, notes, the caret in a text box)
 pub mod shell_stories;
+// wave 7, frontier A1 (File, View, Font and Paragraph): the reads, native-only commands and exports of its families
+pub mod shell_format;
+// wave 7 (A2): lists, paste, tables, objects and the page
+pub mod shell_completion;
 pub mod wire;
 
 #[cfg(all(feature = "session-selftest", not(test)))]

@@ -298,6 +298,10 @@ pub struct Engine {
     /// carried (F7c): the blocks of the endnote flow while it comes out (`this.full = { ...saved,
     /// blocks }`, engine.ts:2472): what the flow walks instead of `story`
     pub en_blocks: Option<Vec<notes::EnBlock>>,
+    /// carried within one paragraph (wave 7c, W, item 6; not TS state): a keepLines paragraph taller than a column of a
+    /// multi-column section in mode 15 — Word ends each of its columns with a PAGE break (oracle keeptall, the probes
+    /// `cols` of the record); reset when the paragraph ends, so never part of a block checkpoint
+    pub kl_col_to_page: bool,
     /// cache (F7c): the number of section geometries (`this.geoms.length`; the endnote flows'
     /// copies `gEn` come after them)
     pub sect_geoms: u32,
@@ -900,7 +904,7 @@ impl Engine {
                     theme_tint: b.theme_tint.as_deref().filter(|s| !s.is_empty()),
                     theme_shade: b.theme_shade.as_deref().filter(|s| !s.is_empty()),
                 }),
-                &fmt.theme,
+                cx.ldoc.theme, // wave 7 (B, gate-O3)
             )
         });
         let bg_fill = match bg_spec {
@@ -1101,6 +1105,7 @@ fn emit_page(lp: &mut LayoutPage, items: PassItems, lines: &[crate::items::PassL
             y: l.y,
             height: l.height,
             baseline: l.baseline,
+            desc: l.desc,
             width: l.width,
             chars,
             hyph: l.hyph,

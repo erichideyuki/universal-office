@@ -30,7 +30,7 @@ fn num(n: Option<JsNumber>) -> Option<f64> {
 }
 
 /// `skipRun(r)` of spell.ts: fields, note marks, plugin inlines, objects, math, form fields, deletions.
-fn skip_run(r: &Run) -> bool {
+pub(crate) fn skip_run(r: &Run) -> bool {
     if r.props.is_math == Some(true) || r.props.del.is_some() {
         return true;
     }
@@ -50,7 +50,7 @@ fn skip_run(r: &Run) -> bool {
 
 /// The `noProof` half of `LangResolver` (spell.ts 60): direct → character style → paragraph style →
 /// the defaults; a style's value through its `basedOn` chain (a style already seen counts as none).
-fn no_proof(fmt: &DocFormatting, run: &Run, para: &Paragraph) -> bool {
+pub(crate) fn no_proof(fmt: &DocFormatting, run: &Run, para: &Paragraph) -> bool {
     let sheet = &fmt.styles;
     let style = |id: Option<&str>| -> Option<bool> {
         let mut seen: Vec<String> = Vec::new();

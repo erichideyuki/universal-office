@@ -25,9 +25,11 @@
 //   report path and memo hits, the wasm memory per phase.
 // - keys: AltGr and Option characters (CDP) type the same in both engines; the browser's default of the keys the shell does not
 //   run survives or not as in the TS (F5, F11, Esc… run; Shift+Tab, Alt+ArrowLeft, F9… are prevented).
-// - chrome: compact and ribbon bars with engine="rust": routed buttons change the session state, a non-routed command is disabled;
-//   with the focus in the document Ctrl+S reaches the bar's save, Ctrl+] grows the font, Ctrl+K (not routed) does nothing; the
-//   Cut/Copy/Paste buttons are disabled; no page error.
+// - chrome: compact and ribbon bars with engine="rust": routed buttons change the session state, the Format Painter and the font
+//   colour are enabled (routed in wave 7), and a synthetic command outside ROUTED_COMMAND_IDS (registered only for the probe)
+//   is shown disabled and does not run, while the TS engine shows it enabled and runs it (wave 7, F3: the fail-closed check);
+//   with the focus in the document Ctrl+S reaches the bar's save, Ctrl+] grows the font, Ctrl+K opens the hyperlink dialog; the
+//   Cut/Copy/Paste buttons are enabled; no page error.
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -57,8 +59,12 @@ if (MODE === 'latency' && !existsSync(pages500) && existsSync(pages50) && !proce
   writeFileSync(pages500, buildDocx({ fflate: await loadFflate(root), seed: 14, paragraphs: 3100 }));
 }
 
+// wave 7 (F3): the chrome mode's fail-closed probe reaches the bars' CommandRegistry (a dynamic import: the entry's static
+// closure of phase 0 does not change; esbuild keeps one module instance, the one chrome.ts uses)
+const registryModule = join(core, '../shared/ui/src/toolbar/commands.ts').replace(/\\/g, '/');
 const env = await setup({
   root, wasmPath, outDir, stride: STRIDE, only: process.env.UO_ES_ONLY,
+  entryExtra: `export const probeCommands = () => import('${registryModule}');`,
   extraDocs: { ...(existsSync(pages50) ? { 'pages50.docx': pages50 } : {}), ...(MODE === 'latency' && existsSync(pages500) && !process.env.UO_ES_NO500 ? { 'pages500.docx': pages500 } : {}) },
 });
 let failures = 0;
@@ -88,11 +94,25 @@ const helpers = () => {
       el.setAttribute('fonts', '/fonts');
       if (o.topbar) el.setAttribute('topbar', '');
       if (o.toolbar) el.setAttribute('toolbar', o.toolbar);
+      // wave 7 (F3): the probe's synthetic command gets a button on both bars (compact trailing, ribbon quick access); the
+      // plugin contributes only the place, not the command (registered with the component's own, see probeUnrouted)
+      if (o.probeButton) el.use({ id: 'es-probe', toolbar: () => ({ compact: { trailing: [o.probeButton] }, ribbon: { qat: [o.probeButton] } }) });
       el.style.cssText = 'display:block;width:1000px;height:800px';
       const ready = new Promise((r) => el.addEventListener('uw-ready', r, { once: true }));
       document.body.appendChild(el);
       await ready;
+      if (el.rust) el.rust.tsShading = true; // wave 7c (V, fix round 1): the TS field shading/comment look (ED-304: Word's is the default)
       for (const t of EVENTS) el.addEventListener(t, (e) => { log.push(`${t} ${JSON.stringify(e.detail ?? null)}`); });
+      // UO_ES_NOBAND=1|2 (wave 7, B, SCR-1 bisection): 1 = no band repaint (a changed page is painted whole), 2 = every
+      // relayout handled as a full one (every page cache dropped): the paths of wave 6's D-L4/`changed` turned off
+      if (el.rust && window.__noBand) {
+        const ed = el.rust;
+        const inst = ed.install;
+        ed.install = function (dl, report) {
+          if (window.__noBand >= 1) { const p = Object.getPrototypeOf(dl); if (!p.__nb) { p.bandSince = () => null; p.__nb = true; } }
+          return inst.call(this, dl, window.__noBand >= 2 && report ? { ...report, path: 'full' } : report);
+        };
+      }
       api.el = el;
       return true;
     },
@@ -339,7 +359,8 @@ async function runStep(step) {
  *   engines edit different positions from that step on, so every later step and the end may differ);
  * - `end`: the end facets that may differ ('*' = all of page count/sizes, thumbnails, screen, saved parts);
  * - `id`: the declaration of the record (core/docs/modules/uo-bindings.md "Milestone 2: the editor switch").
- * 'pages after load' and page errors are never declarable; 'screen pixels (TS overlays on)'
+ * 'pages after load' and page errors are never declarable — except (wave 7c, W) a Word-authority entry with
+ * `pagesAfterLoad: true`, where Word's own page count (measured) is the engine's; 'screen pixels (TS overlays on)'
  * is informative (ED-8).
  */
 const DECLARED = {
@@ -351,12 +372,17 @@ const DECLARED = {
   // (record "Wave 6 — C"). What is left:
   // wave 6 (C), measured (the end screens dumped): the Strong runs are orange in the TS and red in the session — the style's
   // w:color C00000 with themeColor accent2 and no theme part (gate-O3 of frontier O), not the hyphenation
-  'f2-3-3': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'gate-O3', why: 'a theme color without a theme part: the TS paints its default theme accent2, the session the C00000' },
-  // wave 6 (C), measured: the TS-saved document reopened in both engines (editor_switch_objects --mode probe) differs too
-  // (f7c__7__1: page 1, a run boundary drawn with a gap and the last glyph of a line; f7c__7__5: the screen of pages 0-1),
-  // with the incremental state dropped before the end the same: the layout of the content, not the editing path
-  'f7c__7__1': { end: ['thumbnail pixels'], id: 'gate-10', why: 'the same saved bytes; the reopened document differs as well (a layout difference of the content, not the editing)' },
-  'f7c__7__5': { end: ['thumbnail pixels'], id: 'gate-10', why: 'the same saved bytes; the reopened document differs as well (a layout difference of the content, not the editing)' },
+  // wave 7 (B): Word is the authority (the maintainer's ruling). After the load and these 12 steps the frozen TS editor paints the
+  // w:color fallback C00000 ((192,0,0) on its screens of f2-3-0..2, measured on the dumped screens), Word the Office 2023
+  // accent2 E97132 (its PDF), the Rust layout too since wave 7 ((233,113,50), uo-docx-layout theme_word.rs). (The TS editor
+  // itself paints E97132 once its style sheet is rewritten — the objects harness's end screens of f2-3-0 are equal.)
+  // (f2-3-3 retired: equal in the five wave-7 parity runs, "declared but equal now")
+  ...Object.fromEntries(['f2-3-0', 'f2-3-1', 'f2-3-2'].map((d) => [d, { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word authority over TS (gate-O3)', why: 'a theme colour without a theme part: the TS C00000, Word and Rust E97132' }])),
+  // (SCR-1, f7d__7__8's end screen: closed in the review fix round — the hovered table's move/resize handles after the
+  // Shift+click in a cell, which the capture turns off on the TS element (`paintTableAdorners`, OVERLAYS) while the shell
+  // painted them through a hook; the shell's adorners go through the element's TS name now, rust-engine-completion.ts)
+  // wave 7 (B): gate-10 f7c__7__1/5 closed — the session's bookmark index is the TS editor's (engine-doc.ts bookmarkMarks over
+  // the current runs, uo-docx session/settle.rs bookmarks_of_marks): the note runs marked with U+FFFC had shifted the REF ranges
   // a frozen-TS defect (reference, not reproduced): typing in the anchor paragraph of a selected shape leaves the TS
   // `floatSel` on a run that is no longer in the model (traced: selectedObjectCount 1, selectedFloat() null from step 9), so
   // Delete misses the floatSel branch and deletes a character (one uw-change); the session keeps the shape selected and
@@ -365,6 +391,24 @@ const DECLARED = {
   // frontier S (wave 5): f8__7__5 step 11 enters the text box in both engines; saving with the caret in it, the TS writes a
   // truncated document.xml (a TS defect, ED-108)
   'f8__7__5': { end: ['saved .docx part bytes'], id: 'ED-108', why: 'saving with the caret inside the text box, the TS writes a truncated document.xml (a TS defect)' },
+  // wave 7c (W): Word's layout rules over the frozen TS, each document attributed to ONE rule natively (uo-docx-layout
+  // word_w7c.rs attribute_documents_to_the_word_rules) and measured in Word 16 (record uo-bindings.md "Wave 7c — W").
+  // Item 4: a REF to an unterminated bookmark is Word's bold error text, not the start paragraph's text — f7c__7__10's REF
+  // bm1 sits in the first lines the script clicks, so every later step lands on other text (and the saved field result is
+  // Word's error, bold, as Word's Fields.Update + SaveAs2 writes it)
+  'f7c__7__10': { from: 1, facets: '*', end: '*', id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF to the unterminated bm1: Word writes "Erro! Fonte de referência não encontrada." in bold; the TS the paragraph text' },
+  ...Object.fromEntries(['f7c__7__2', 'f8__7__2'].map((d) => [d, { end: ['thumbnail pixels'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF to the unterminated bm2 on a later page: Word\'s bold error text' }])),
+  // item 3: the chain of linked boxes keeps its first lines in the first box (Word; the TS widow rule empties it)
+  ...Object.fromEntries(['f7d__7__0', 'f7d__7__3', 'f7d__7__6', 'f7d__7__7', 'f7d__7__8', 'f7d__7__10'].map((d) => [d, { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box' }])),
+  // item 4 in the parity mode's other documents (a REF/PAGEREF/NOTEREF to an unterminated bookmark)
+  'f7c__7__13': { from: 1, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF/NOTEREF to the unterminated bm3: Word\'s bold error text moves the lines' },
+  'f7c__7__14': { end: ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF to the unterminated bm2: Word\'s error text' },
+  ...Object.fromEntries(['f7c__7__5', 'f7c__7__15'].map((d) => [d, { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF/NOTEREF/PAGEREF to an unterminated bookmark: Word\'s bold error text' }])),
+  'f8__7__10': { from: 0, facets: '*', end: '*', id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF to the unterminated bm1 in the lines the script clicks: Word\'s bold error text' },
+  // item 6: a keepLines paragraph taller than what is left goes to the next page (Word: 4 pages for f7c__7__11 — the TS 3 —
+  // and 15 for f7a__7__12; measured): the scripted clicks land on other text
+  'f7c__7__11': { from: 0, facets: '*', end: '*', pagesAfterLoad: true, id: 'Word manda sobre o TS (item 6, keepLines)', why: 'Word moves the keepLines paragraph to the next page: 4 pages (Word 4), the TS 3' },
+  'f7a__7__12': { from: 1, facets: '*', end: '*', id: 'Word manda sobre o TS (item 6, keepLines)', why: 'Word moves the keepLines paragraph to the next page' },
 };
 const STEP_FACETS = ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'dirty', 'clipboard text'];
 const END_FACETS = ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part names', 'saved .docx part bytes'];
@@ -373,6 +417,7 @@ const declaredFor = (file, facet, step) => {
   if (SEED !== 1 || STEPS !== 12) return null;
   const d = DECLARED[file];
   if (!d) return null;
+  if (facet === 'pages after load') return d.pagesAfterLoad && /^Word manda sobre o TS/.test(d.id) ? d : null;
   if (step === undefined) return END_FACETS.includes(facet) && (d.end === '*' || (d.end ?? []).includes(facet)) ? d : null;
   return d.from !== undefined && step >= d.from && (d.facets === '*' || (d.facets ?? []).includes(facet)) ? d : null;
 };
@@ -441,6 +486,7 @@ if (MODE === 'parity' || MODE === 'all') {
     const tsEnd = await ev(() => window.__es.end());
     await ev(() => window.__es.remove());
     // Rust: the same events
+    if (process.env.UO_ES_NOBAND) await ev((v) => { window.__noBand = v; }, Number(process.env.UO_ES_NOBAND));
     await ev(() => window.__es.make('rust'));
     const pagesRs = await ev((x) => window.__es.load(x), n);
     await ev(() => window.__es.focus());
@@ -477,6 +523,8 @@ if (MODE === 'parity' || MODE === 'all') {
       count('screen pixels (TS overlays on)', tsEnd.withOverlays[i] === rsEnd.withOverlays[i], `${label} page ${i}`);
       if (!same && DUMP) for (const [e, r] of [['ts', tsEnd], ['rust', rsEnd]]) if (r.shots[i]) writeFileSync(join(outDir, `screen-${n}-p${i}-${e}.png`), Buffer.from(r.shots[i].split(',')[1], 'base64'));
     }
+    // wave 7 (B): UO_ES_DUMP also writes both saved packages (Word open checks of the TS-defect declarations)
+    if (DUMP) for (const [e, r] of [['ts', tsEnd], ['rust', rsEnd]]) writeFileSync(join(outDir, `saved-${String(label).replace(/^.*\//, '').replace(/\.docx$/, '')}-${e}.docx`), Buffer.from(r.docx, 'base64'));
     const za = unzipSync(Buffer.from(tsEnd.docx, 'base64')), zb = unzipSync(Buffer.from(rsEnd.docx, 'base64'));
     const partsA = Object.keys(za).sort(), partsB = Object.keys(zb).sort();
     count('saved .docx part names', JSON.stringify(partsA) === JSON.stringify(partsB), `${label}: ${partsA.filter((p) => !zb[p]).join(',')} | ${partsB.filter((p) => !za[p]).join(',')}`);
@@ -516,6 +564,8 @@ if (MODE === 'memory' || MODE === 'all') {
   const t0 = Date.now();
   for (let i = 0; i < SOAK; i++) {
     const r = await ev((n) => window.__es.soakOnce(n), cycle[i % cycle.length]);
+    // wave 7c (S): the removed element keeps its document until it is collected (as the TS element its model): GC first
+    r.after = await env.gc();
     series.push({ k: i, ...r.after, duringLayouts: r.during?.handles, duringEditors: r.during?.editors });
     if (i % 20 === 0 || i === SOAK - 1) console.log(`  #${String(i).padStart(3)} live ${r.after.live} buffer ${r.after.buffer} handles ${r.after.handles} (open: ${r.during?.handles}) sessions ${r.after.sessions} shells ${r.after.shellEngines} pageEnvs ${r.after.pageEnvs}`);
   }
@@ -545,7 +595,7 @@ if (MODE === 'memory' || MODE === 'all') {
 // typed keys, Enter and Backspace, the per-stage medians of the Rust key (the marks of rust-engine.ts plus instance wrappers),
 // the report path/reason/memo of Enter and Backspace, and the wasm memory (memory.buffer, live bytes with a count build).
 // UO_ES_ROUNDS (1), UO_ES_NTYPE/UO_ES_NKEY (200/20 on pages50, 30/5 on pages500), UO_ES_ENGINES (ts,rust), UO_ES_NO500.
-const latencyRun = async ({ engine, name, nType, nKey }) => {
+const latencyRun = async ({ engine, name, nType, nKey, bm }) => {
   const now = () => performance.now();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const el = document.createElement('universal-write');
@@ -555,12 +605,16 @@ const latencyRun = async ({ engine, name, nType, nKey }) => {
   const ready = new Promise((r) => el.addEventListener('uw-ready', r, { once: true }));
   document.body.appendChild(el);
   await ready;
+  if (el.rust) el.rust.tsShading = true; // wave 7c (V, fix round 1): the TS field shading/comment look (ED-304: Word's is the default)
   const bytes = new Uint8Array(await (await fetch(`/docs/${name}`)).arrayBuffer());
   el.loadDocx(bytes, { protected: false });
   if (el.rust) await el.rust.idle(); else { await document.fonts.ready; await sleep(500); }
   el.refresh();
   if (el.rust) await el.rust.idle(); else await sleep(500);
   const para = Math.floor((el.rust ? el.rust.session.storyInfo().paras : el.model.paragraphs.length) / 2);
+  // UO_ES_LAT_BM=1 (wave 7, B): a bookmark after the caret in the typed paragraph (as a heading's _Toc): its offsets move
+  // with every key, so the session's bookmark index changes per layout
+  if (bm) { el.setSelection({ para, offset: 8 }); el.insertBookmark('lat_bm'); if (el.rust) await el.rust.idle(); else await sleep(300); }
   el.setSelection({ para, offset: 5 });
   el.focusEditor();
   const stats = () => window.__e.UniversalWriteElement.engineStats?.() ?? null;
@@ -654,7 +708,7 @@ if (MODE === 'latency') {
         page.on('pageerror', (e) => { env.errors.push(e.message); console.log('PAGE ERROR', e.message); });
         await page.goto(url);
         await page.waitForFunction(() => window.__ready === true, null, { timeout: 60000 });
-        const r = await page.evaluate(latencyRun, { engine, name, nType, nKey });
+        const r = await page.evaluate(latencyRun, { engine, name, nType, nKey, bm: !!process.env.UO_ES_LAT_BM });
         await page.close();
         console.log(`latency ${name} ${engine}${ROUNDS > 1 ? ` round ${round}` : ''}: ${r.pages} pages; type ${st(r.type)} (n=${r.type.length}); Enter ${st(r.keys.Enter)}; Backspace ${st(r.keys.Backspace)} (median/p95 ms, real clock)`);
         if (engine !== 'rust') continue;
@@ -735,11 +789,85 @@ if (MODE === 'keys' || MODE === 'all') {
 // ── chrome ─────────────────────────────────────────────────────────────────────────────────────
 if (MODE === 'chrome' || MODE === 'all') {
   const n = [...env.docsByName.keys()][0];
+  // wave 7 (F3): the fail-closed check of the engine gate (chrome.ts: a bar command outside ROUTED_COMMAND_IDS is visible and
+  // DISABLED under engine="rust"). Every real command is routed since wave 7, so the probe registers a synthetic one with the
+  // component's own commands (in the same registry, right after registerWriteCommands adds them, i.e. before the gate runs),
+  // gives it a button on both bars and expects it disabled and inert with engine="rust", enabled and running with the TS engine.
+  const PROBE = 'es-probe:unrouted';
+  const probeUnrouted = (id) => ev(async (P) => {
+    const { CommandRegistry } = await window.__e.probeCommands();
+    window.__probe = { ran: 0, registries: 0 };
+    if (CommandRegistry.prototype.__esProbe) return;
+    const add = CommandRegistry.prototype.add;
+    CommandRegistry.prototype.add = function (...cmds) {
+      add.apply(this, cmds);
+      const bold = cmds.find((c) => c.id === 'bold');
+      if (bold && !this.get(P)) {
+        window.__probe.registries++;
+        add.call(this, { id: P, label: { en: 'Probe', pt: 'Sonda', es: 'Sonda' }, icon: bold.icon, run: () => { window.__probe.ran++; } });
+      }
+      return this;
+    };
+    CommandRegistry.prototype.__esProbe = true;
+  }, id);
+  // wave 7c (S): the clipboard commands on each bar, read BEFORE any dialog is open. The ribbon has cut/copy/paste buttons;
+  // the compact bar has them only as items of the Edit menu (chrome-layout.ts; menu trigger [data-menu="edit"]), so the
+  // menu is opened and its items read (disabled from the registry's isEnabled), then closed. A missing control fails; the
+  // negative control (a collapsed selection: cut and copy disabled, chrome-commands.ts isEnabled = selectedText() !== '')
+  // proves the check can fail.
+  const clipCheck = (toolbar) => ev(async (t) => {
+    const es = window.__es;
+    const el = es.el;
+    const tick = () => new Promise((r2) => setTimeout(r2, 60));
+    const deep = (root, sel) => {
+      const hit = root.querySelector?.(sel);
+      if (hit) return hit;
+      for (const n of root.querySelectorAll?.('*') ?? []) if (n.shadowRoot) { const h = deep(n.shadowRoot, sel); if (h) return h; }
+      return null;
+    };
+    const read = async () => {
+      let trigger = null;
+      if (t === 'compact') {
+        trigger = deep(el.shadowRoot, '[data-menu="edit"]');
+        if (!trigger) return { error: 'no Edit menu' };
+        trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }));
+        trigger.click();
+        await tick();
+      }
+      const sel = (id) => (t === 'compact' ? `.uo-menu-item[data-a="${id}"]` : `[data-a="${id}"]`);
+      const out = {};
+      for (const id of ['cut', 'copy', 'paste']) {
+        const b = deep(el.shadowRoot, sel(id)) ?? deep(document, sel(id));
+        out[id] = b ? { disabled: !!(b.disabled || b.getAttribute('aria-disabled') === 'true' || b.classList.contains('disabled')) } : null;
+      }
+      if (trigger) { trigger.click(); await tick(); }
+      return out;
+    };
+    el.setSelection({ para: 0, offset: 0 }, { para: 0, offset: 3 });
+    await tick();
+    const selected = await read();
+    el.setSelection({ para: 0, offset: 1 }, { para: 0, offset: 1 });
+    await tick();
+    const collapsed = await read();
+    el.setSelection({ para: 0, offset: 0 }, { para: 0, offset: 3 });
+    await tick();
+    return { selected, collapsed };
+  }, toolbar);
+  const clipFail = (toolbar, engine, c) => {
+    if (c.selected.error || c.collapsed.error) { fail(`chrome ${toolbar} ${engine}: ${c.selected.error ?? c.collapsed.error}`); return; }
+    for (const id of ['cut', 'copy', 'paste']) {
+      if (!c.selected[id]) fail(`chrome ${toolbar} ${engine}: the ${id} control is missing`);
+      else if (c.selected[id].disabled) fail(`chrome ${toolbar} ${engine}: ${id} is disabled with a selection`);
+    }
+    for (const id of ['cut', 'copy']) if (!c.collapsed[id] || !c.collapsed[id].disabled) fail(`chrome ${toolbar} ${engine}: ${id} is not disabled with a collapsed selection (${JSON.stringify(c.collapsed[id])}): the clipboard check cannot fail`);
+  };
+  const probeState = (id) => ev((P) => { const es = window.__es; const s = es.buttonState(P); const click = s ? es.clickButton(P) : 'missing'; return { ...window.__probe, state: s, click, ranAfterClick: window.__probe.ran }; }, id);
   for (const toolbar of ['compact', 'ribbon']) {
     await env.openPage();
     await env.page.evaluate(helpers);
     const errs0 = env.errors.length;
-    await ev((t) => window.__es.make('rust', { topbar: true, toolbar: t }), toolbar);
+    await probeUnrouted(PROBE);
+    await ev(([t, p]) => window.__es.make('rust', { topbar: true, toolbar: t, probeButton: p }), [toolbar, PROBE]);
     await ev((x) => window.__es.load(x), n);
     await env.page.waitForTimeout(500);
     const r = await ev(async () => {
@@ -756,17 +884,22 @@ if (MODE === 'chrome' || MODE === 'all') {
       out.boldAfter = !!after.run.bold;
       out.italicAfter = !!after.run.italic;
       out.alignAfter = after.para.alignment ?? 'left';
-      // a command the session does not take yet: the first of these the bar shows
-      // wave 5, frontier R: link, comment and the clipboard buttons are routed now; the Format Painter and the font color are
-      // routed by no frontier of the wave
-      const off = ['painter', 'color'].find((id) => es.button(id));
-      out.notRouted = off ? { id: off, ...es.buttonState(off) } : null;
+      // wave 7 (A1/A2): the Format Painter and the font colour, wave 4-6's examples of a non-routed command, are routed now
+      out.formerlyOff = ['painter', 'color'].filter((id) => es.button(id)).map((id) => ({ id, ...es.buttonState(id) }));
       out.boldState = es.buttonState('bold');
       return out;
     });
-    console.log(`chrome ${toolbar}: ${JSON.stringify(r)}; page errors ${env.errors.length - errs0}`);
+    const probe = await probeState(PROBE);
+    console.log(`chrome ${toolbar}: ${JSON.stringify(r)}; probe ${JSON.stringify(probe)}; page errors ${env.errors.length - errs0}`);
+    const clipRust = await clipCheck(toolbar);
+    console.log(`chrome ${toolbar} clipboard (rust): ${JSON.stringify(clipRust)}`);
+    clipFail(toolbar, 'rust', clipRust);
     if (r.boldAfter === r.boldBefore || !r.italicAfter || r.alignAfter !== 'center') fail(`chrome ${toolbar}: the routed buttons did not change the session state`);
-    if (!r.notRouted || !r.notRouted.disabled) fail(`chrome ${toolbar}: a non-routed command is not shown disabled (${JSON.stringify(r.notRouted)})`);
+    if (!r.formerlyOff.length || r.formerlyOff.some((s) => s.disabled)) fail(`chrome ${toolbar}: the Format Painter / font colour is missing or shown disabled (${JSON.stringify(r.formerlyOff)}): both are routed in wave 7`);
+    // the fail-closed gate (wave 7, F3): the synthetic command outside ROUTED_COMMAND_IDS is on the bar, disabled, and a click
+    // does not run it
+    if (probe.registries < 1 || !probe.state) fail(`chrome ${toolbar}: the unrouted probe command did not reach the bar (${JSON.stringify(probe)})`);
+    else if (!probe.state.disabled || probe.ranAfterClick !== 0) fail(`chrome ${toolbar}: a command outside ROUTED_COMMAND_IDS is not shown disabled or ran (${JSON.stringify(probe)})`);
     // the bars' shortcuts with the focus in the document (real keys on the hidden textarea): a routed command runs, a
     // non-routed one stays disabled; the clipboard buttons are disabled (they need a clipboard event, ED-16)
     await ev(() => {
@@ -789,8 +922,7 @@ if (MODE === 'chrome' || MODE === 'all') {
       const es = window.__es;
       const el = es.el;
       const dialogs = [...el.shadowRoot.querySelectorAll('dialog')].filter((d) => d.open).length;
-      const clip = Object.fromEntries(['cut', 'copy', 'paste'].map((id) => [id, es.buttonState(id)]));
-      return { ...window.__sk, size1: el.getSelectionState().run.szHalfPt, dialogs, clip, active: el.shadowRoot.activeElement?.className ?? null };
+      return { ...window.__sk, size1: el.getSelectionState().run.szHalfPt, dialogs, active: el.shadowRoot.activeElement?.className ?? null };
     });
     console.log(`chrome ${toolbar} shortcuts: ${JSON.stringify(sk)}`);
     if (sk.save !== 1) fail(`chrome ${toolbar}: Ctrl+S with the focus in the document did not reach the bar's save (${sk.save})`);
@@ -798,9 +930,20 @@ if (MODE === 'chrome' || MODE === 'all') {
     // wave 5, frontier R: Ctrl+K opens the hyperlink dialog (routed) and Cut/Copy/Paste are enabled with a selection (the
     // buttons go through navigator.clipboard, routed): the opposite of wave 4's assertions
     if (sk.dialogs !== 1 || sk.warns.some((w) => /link|Hyperlink/i.test(w))) fail(`chrome ${toolbar}: Ctrl+K did not open the hyperlink dialog (${sk.dialogs} dialog(s), ${sk.warns.join(' | ')})`);
-    for (const [id, s] of Object.entries(sk.clip)) if (s && s.disabled) fail(`chrome ${toolbar}: the ${id} button is disabled (routed in wave 5)`);
-    if (env.errors.length !== errs0) fail(`chrome ${toolbar}: ${env.errors.length - errs0} page error(s)`);
     await ev(() => window.__es.remove());
+    // the control: the same probe with the TS engine (no gate) is enabled and a click runs it, so the check above is real
+    await ev(([t, p]) => window.__es.make('ts', { topbar: true, toolbar: t, probeButton: p }), [toolbar, PROBE]);
+    await ev((x) => window.__es.load(x), n);
+    await env.page.waitForTimeout(300);
+    const control = await probeState(PROBE);
+    console.log(`chrome ${toolbar} control (TS engine): probe ${JSON.stringify(control)}`);
+    const clipTs = await clipCheck(toolbar);
+    console.log(`chrome ${toolbar} clipboard (ts): ${JSON.stringify(clipTs)}`);
+    clipFail(toolbar, 'ts', clipTs);
+    if (JSON.stringify(clipTs) !== JSON.stringify(clipRust)) fail(`chrome ${toolbar}: the clipboard controls differ (ts ${JSON.stringify(clipTs)}, rust ${JSON.stringify(clipRust)})`);
+    if (!control.state || control.state.disabled || control.ranAfterClick !== 1) fail(`chrome ${toolbar}: the probe command is not enabled and running with the TS engine (${JSON.stringify(control)}): the fail-closed check is not real`);
+    await ev(() => window.__es.remove());
+    if (env.errors.length !== errs0) fail(`chrome ${toolbar}: ${env.errors.length - errs0} page error(s)`);
   }
 }
 

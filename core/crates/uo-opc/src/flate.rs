@@ -884,8 +884,8 @@ const CRC: [[u32; 256]; 8] = {
 /// Continues a CRC-32 (start with `0`).
 pub fn crc32_update(crc: u32, data: &[u8]) -> u32 {
     let mut c = !crc;
-    let mut words = data.chunks_exact(8);
-    for w in &mut words {
+    let (words, rest) = data.as_chunks::<8>();
+    for w in words {
         let lo = c ^ u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
         c = CRC[7][(lo & 0xFF) as usize]
             ^ CRC[6][((lo >> 8) & 0xFF) as usize]
@@ -896,7 +896,7 @@ pub fn crc32_update(crc: u32, data: &[u8]) -> u32 {
             ^ CRC[1][w[6] as usize]
             ^ CRC[0][w[7] as usize];
     }
-    for &b in words.remainder() {
+    for &b in rest {
         c = CRC[0][((c ^ u32::from(b)) & 0xFF) as usize] ^ (c >> 8);
     }
     !c

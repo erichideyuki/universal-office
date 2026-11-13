@@ -341,6 +341,10 @@ impl Session {
 
     /// `hfStyleId(kind)`: the document's Header/Footer style (Word creates it with the first part).
     fn hf_style_id(&mut self, kind: HfKind) -> Option<String> {
+        // `if (!this.stylesEditable()) return undefined` (11138; wave 7, A1)
+        if !self.styles_editable() {
+            return None;
+        }
         let id = self.hf_style_lookup(kind);
         self.ensure_style_used(Some(&id));
         Some(id)
@@ -1187,6 +1191,8 @@ impl Session {
                     _ if p == old => sel_before,
                     _ => Selection::default(),
                 };
+                // wave 7 (B, HF-T1): the part's flat view before the clamp (`hf_flat.rs`)
+                self.sync_flat_views();
                 self.selection = super::context::clamp_selection(self.paras(), want);
             }
             None => {

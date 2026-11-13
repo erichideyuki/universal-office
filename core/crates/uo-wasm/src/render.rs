@@ -538,8 +538,8 @@ pub unsafe extern "C" fn uo_render_colored_mask(
 ) -> *mut UoBuf {
     // SAFETY: the caller guarantees both buffers; they are consumed here.
     let (mask_bytes, hex_bytes) = unsafe { (take_bytes(mask_ptr, mask_len), take_bytes(hex_ptr, hex_len)) };
-    let a: Vec<f32> = mask_bytes.chunks_exact(4).filter_map(|c| <[u8; 4]>::try_from(c).ok().map(f32::from_le_bytes)).collect();
-    let hex: Vec<u16> = hex_bytes.chunks_exact(2).filter_map(|c| <[u8; 2]>::try_from(c).ok().map(u16::from_le_bytes)).collect();
+    let a: Vec<f32> = mask_bytes.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect();
+    let hex: Vec<u16> = hex_bytes.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
     match Mask::from_vec(w, h, a) {
         Ok(m) => buf(OK, colored_mask(&m, &hex, alpha, ChannelStore::Clamp)),
         Err(_) => buf(5, Vec::new()),
@@ -554,7 +554,7 @@ pub unsafe extern "C" fn uo_render_colored_mask(
 pub unsafe extern "C" fn uo_render_dash(name_ptr: *mut u8, name_len: usize) -> *mut UoBuf {
     // SAFETY: the caller guarantees the buffer; it is consumed here.
     let bytes = unsafe { take_bytes(name_ptr, name_len) };
-    let name: Vec<u16> = bytes.chunks_exact(2).filter_map(|c| <[u8; 2]>::try_from(c).ok().map(u16::from_le_bytes)).collect();
+    let name: Vec<u16> = bytes.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
     match dash(&name) {
         Some(d) => {
             let mut o = Out::default();
@@ -588,7 +588,7 @@ unsafe fn mask_in(ptr: *mut u8, len: usize, w: u32, h: u32) -> Option<Mask> {
     if bytes.len() % 4 != 0 {
         return None;
     }
-    let a: Vec<f32> = bytes.chunks_exact(4).filter_map(|c| <[u8; 4]>::try_from(c).ok().map(f32::from_le_bytes)).collect();
+    let a: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect();
     Mask::from_vec(w, h, a).ok()
 }
 

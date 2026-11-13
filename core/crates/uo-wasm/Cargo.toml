@@ -47,14 +47,17 @@ render = ["dep:uo-render", "dep:uo-codec", "dep:uo-drawingml", "dep:uo-jsnum", "
 
 # the Write read path for the browser (milestone 1, src/write.rs): open, layout with the viewer font policy, pages for
 # the canvas, navigation and run boxes, the PDF in chunks to the host import uo_host.pdf_chunk. The module of the
-# viewer: render + write (uo-bindings.md)
-write = ["render", "dep:uo-opc", "dep:uo-docx", "dep:uo-docx-layout", "dep:uo-pdf"]
+# viewer: render + write (uo-bindings.md). uo-image (wave 7, F2): `uo_layout_image_rgba`, the editor's fallback decode
+write = ["render", "dep:uo-opc", "dep:uo-docx", "dep:uo-docx-layout", "dep:uo-pdf", "dep:uo-image"]
 
 # the Write editing session for the browser (milestone 2, src/session.rs; record uo-bindings.md "Milestone 2: the
 # session in wasm"): one `UoWriteSession` handle over uo-docx's `Session` and the layout's `LayoutOracle`, the hot
 # paths, `exec`/`query`/`complete` through the schema-generated codec (schema/session.uos), layouts, caret and
 # hit tests, the font save in two phases. The editor's module: write + session (the viewer module stays as it is)
-session = ["write", "uo-docx/session", "uo-docx-layout/oracle", "dep:indexmap"]
+# wave 7 (A1, decision D-A1-4): the ODF reader/writer and the HTML/Markdown exporters of uo-docx in the editor module;
+# (A1, D-A1-3) the document comparison of uo-docx (`compare`, the Rust `diffDocuments` of File > Compare); (A1, D-A1-2, fix
+# round 2) the XPS writer of uo-pdf (`xps`: File > Save as XPS from the session's display list)
+session = ["write", "uo-docx/session", "uo-docx-layout/oracle", "dep:indexmap", "uo-docx/odf", "uo-docx/export", "uo-docx/compare", "uo-pdf/xps"]
 
 # test-only exports of the session (tests/session_*.test.mjs): the capture replay of the D2a/D2b families inside the
 # module (the native parity tests' support modules, included with #[path]), the facets, random messages; never shipped
@@ -80,6 +83,7 @@ uo-docx = { path = "../uo-docx", optional = true }
 # the layout without its oracle (the LayoutOracle is the editor's, milestone 2)
 uo-docx-layout = { path = "../uo-docx-layout", optional = true, default-features = false }
 uo-pdf = { path = "../uo-pdf", optional = true }
+uo-image = { path = "../uo-image", optional = true }
 # the maps of the session's wire conversions (uo-docx's JsMap is an IndexMap; same version)
 indexmap = { version = "2", optional = true }
 

@@ -155,13 +155,19 @@ pub fn answer(s: &Session, q: w::QueryOp) -> Result<Option<w::QueryAnswer>, Bind
         w::QueryOp::ParaRuns(a) => w::QueryAnswer::ParaRuns(super::review::para_runs(s, a.para, &String::from_wire(a.fallback)?)),
         w::QueryOp::ListStyles => w::QueryAnswer::ListStyles(super::review::list_styles(s)),
         w::QueryOp::StyleLook(a) => {
-            w::QueryAnswer::StyleLook(w::AStyleLook { value: Some(super::review::style_look(s, &String::from_wire(a.id)?)) })
+            // `styleFormatting` answers null for the .odt (universal-write.ts 4176; wave 7, A1)
+            let id = String::from_wire(a.id)?;
+            w::QueryAnswer::StyleLook(w::AStyleLook { value: s.style_formatting_available().then(|| super::review::style_look(s, &id)) })
         }
         w::QueryOp::DefaultParagraphStyle => w::QueryAnswer::DefaultParagraphStyle(s.default_paragraph_style().into_wire()?),
         w::QueryOp::RunPropsAt(a) => w::QueryAnswer::RunPropsAt(super::review::run_props_at(s, FromWire::from_wire(a.pos)?).into_wire()?),
         w::QueryOp::StylesVersion => w::QueryAnswer::StylesVersion(s.styles_store().version().0),
         w::QueryOp::DefaultCharacterStyle => w::QueryAnswer::DefaultCharacterStyle(s.default_character_style().into_wire()?),
         w::QueryOp::ParaPropsAt(a) => w::QueryAnswer::ParaPropsAt(super::review::para_props_at(s, a.para).into_wire()?),
+        // wave 7, frontier A1: `countMatches` (the TS answers 0 for a bad query; the budget, which the TS has not, 0 too)
+        w::QueryOp::CountMatches(a) => {
+            w::QueryAnswer::CountMatches(s.count_matches(&FromWire::from_wire(a.query)?, FromWire::from_wire(a.within)?).unwrap_or(0))
+        }
         w::QueryOp::ClipboardItems | w::QueryOp::CopyFormat | w::QueryOp::FontUsage | w::QueryOp::FontEmbedding => return Ok(None),
     }))
 }

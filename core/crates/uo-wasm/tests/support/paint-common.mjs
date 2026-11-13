@@ -55,4 +55,11 @@ export function openEnv(uo) {
 }
 
 /** the layout options of the wasm side that match the frozen TS call `layoutDocument(full, provider, { now })` */
-export const wasmOptions = () => ({ generation: 1, now: NOW, tzOffsetMin: 0 });
+// wave 7 (B, gate-O3): `tsEmptyTheme` keeps the frozen TS's empty theme for a package without a theme part (the product
+// follows Word's Office 2023 colours there; f2-3-0..3 are the fixtures it changes)
+// ED-713: `tsPagerefWithoutChapter` keeps its PAGEREF page without the chapter numbers (Word writes them)
+// wave 7c (W): and the six Word-over-TS switches of wave 7c (uo-docx-layout `LayoutOptions::ts_strict`)
+export const wasmOptions = () => ({
+  generation: 1, now: NOW, tzOffsetMin: 0, tsEmptyTheme: true, tsPagerefWithoutChapter: true,
+  tsThemeTint: true, tsMissingSettings: true, tsLinkedCell: true, tsRefBookmarks: true, tsHyphenation: true, tsKeepLines: true,
+});

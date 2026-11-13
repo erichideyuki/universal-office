@@ -12,7 +12,9 @@
 // sincronização de scroll (um único scroll surface).
 //
 // API:
-//   el.loadPair(aBytes, bBytes, { leftLabel?, rightLabel? })  — carrega .docx
+//   el.loadPair(aBytes, bBytes, { leftLabel?, rightLabel?, diff? })  — carrega .docx
+//     (`diff(aBytes, bBytes)`: outro motor calcula o DocDiff — o <universal-write engine="rust"> passa o
+//     diffDocuments do núcleo Rust; os documentos continuam lidos aqui para a exibição)
 //   el.loadDocuments(aDoc, bDoc, { leftLabel?, rightLabel? }) — já parseados
 //   atributos: view="all" | "diffs", left-label, right-label
 //   eventos: "ready" {stats}, "close-request", "block-click" {editIndex, side, blockIndex}
@@ -239,6 +241,11 @@ interface RowSpec {
 interface LoadOpts {
   leftLabel?: string;
   rightLabel?: string;
+  /**
+   * Só no `loadPair`: calcula o diff dos dois .docx em outro motor (o mesmo `DocDiff` de `diffDocuments`
+   * sobre os mesmos bytes — o editor com engine="rust" passa o porte em Rust). Sem ele, `diffDocuments`.
+   */
+  diff?: (aBytes: Uint8Array, bBytes: Uint8Array) => DocDiff;
 }
 
 export class UniversalWriteDiffElement extends Base {
@@ -291,11 +298,15 @@ export class UniversalWriteDiffElement extends Base {
   loadPair(aBytes: Uint8Array, bBytes: Uint8Array, opts: LoadOpts = {}): void {
     const aDoc = readFullDocument(DocxPackage.load(aBytes));
     const bDoc = readFullDocument(DocxPackage.load(bBytes));
-    this.loadDocuments(aDoc, bDoc, opts);
+    this._load(aDoc, bDoc, opts, opts.diff?.(aBytes, bBytes));
   }
 
   /** Compara dois documentos já parseados. */
   loadDocuments(aDoc: FullDocument, bDoc: FullDocument, opts: LoadOpts = {}): void {
+    this._load(aDoc, bDoc, opts, undefined);
+  }
+
+  private _load(aDoc: FullDocument, bDoc: FullDocument, opts: LoadOpts, diff: DocDiff | undefined): void {
     // controle de alterações: compara e mostra a visão final (como o diff do Word)
     aDoc = { ...aDoc, blocks: finalBlocks(aDoc.blocks) };
     bDoc = { ...bDoc, blocks: finalBlocks(bDoc.blocks) };
@@ -303,7 +314,7 @@ export class UniversalWriteDiffElement extends Base {
     this._bDoc = bDoc;
     if (opts.leftLabel !== undefined) this.setAttribute('left-label', opts.leftLabel);
     if (opts.rightLabel !== undefined) this.setAttribute('right-label', opts.rightLabel);
-    this._diff = diffDocuments(aDoc, bDoc);
+    this._diff = diff ?? diffDocuments(aDoc, bDoc);
     this._expandedBands.clear();
     this._schedule();
     queueMicrotask(() => {

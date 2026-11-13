@@ -83,6 +83,9 @@ pub struct ParaSplitInfo {
     /// `lines` (a JS number)
     pub lines: f64,
     pub widow: bool,
+    /// wave 7c (W, item 6; oracle keeptall `kt-*-cell`): keepLines in mode 15 — Word keeps the paragraph whole when the
+    /// row splits between pages (not at the top of a page); the frozen TS ignores it (`ts_keep_lines_within_page`)
+    pub keep: bool,
     pub after: f64,
     pub band: OptF64,
 }
@@ -145,7 +148,13 @@ impl RowSplit {
     /// `row.split(avail)` (table.ts:1193): `[part that fits, rest]`, or `None` when no text line
     /// fits (the whole row goes down).
     pub fn split(&self, cx: &mut Cx<'_, '_>, avail: f64) -> LResult<Option<(RowLayout, RowLayout)>> {
-        layout::split_row(cx, self, avail)
+        layout::split_row(cx, self, avail, false)
+    }
+
+    /// [`RowSplit::split`] that also keeps the cells' keepLines paragraphs whole when `keep` (wave 7c, W: the row is
+    /// not at the top of a page).
+    pub fn split_keep(&self, cx: &mut Cx<'_, '_>, avail: f64, keep: bool) -> LResult<Option<(RowLayout, RowLayout)>> {
+        layout::split_row(cx, self, avail, keep)
     }
 }
 
@@ -350,10 +359,21 @@ fn fresh(next: &mut u32) -> ObjId {
 /// `splitContent(c, availContent)` (table.ts:91): the content cut at the end of the last line that
 /// fits (`None`: nothing fits). A nested row crossed by the cut splits as a table row.
 pub fn split_content(cx: &mut Cx<'_, '_>, c: &CellContent, avail: f64) -> LResult<Option<(CellContent, CellContent)>> {
-    split_content_at(cx, c, avail, 0)
+    split_content_at(cx, c, avail, 0, false)
 }
 
-fn split_content_at(cx: &mut Cx<'_, '_>, c: &CellContent, avail: f64, depth: u32) -> LResult<Option<(CellContent, CellContent)>> {
+/// [`split_content`] that also keeps the keepLines paragraphs whole when `keep` (wave 7c, W).
+pub fn split_content_keep(cx: &mut Cx<'_, '_>, c: &CellContent, avail: f64, keep: bool) -> LResult<Option<(CellContent, CellContent)>> {
+    split_content_at(cx, c, avail, 0, keep)
+}
+
+fn split_content_at(
+    cx: &mut Cx<'_, '_>,
+    c: &CellContent,
+    avail: f64,
+    depth: u32,
+    keep: bool,
+) -> LResult<Option<(CellContent, CellContent)>> {
     if depth > cx.opts.limits.max_depth {
         return Err(LayoutError::Limit(LimitKind::Depth));
     }
@@ -368,7 +388,7 @@ fn split_content_at(cx: &mut Cx<'_, '_>, c: &CellContent, avail: f64, depth: u32
         let parts = match &n.row.split {
             Some(sp) => {
                 cx.depth += 1;
-                let r = sp.split(cx, avail - n.top);
+                let r = sp.split_keep(cx, avail - n.top, keep);
                 cx.depth -= 1;
                 r?
             }
@@ -380,7 +400,7 @@ fn split_content_at(cx: &mut Cx<'_, '_>, c: &CellContent, avail: f64, depth: u32
             return split_at_nest(c, k, p0, p1).map(Some);
         }
         if n.top > 0.5 {
-            return split_content_at(cx, c, n.top, depth + 1);
+            return split_content_at(cx, c, n.top, depth + 1, keep);
         }
     }
     let paras = c.paras.as_deref();
@@ -411,6 +431,9 @@ fn split_content_at(cx: &mut Cx<'_, '_>, c: &CellContent, avail: f64, depth: u32
         && let Some(ps) = paras
     {
         cut = widow_cut(c, ps, cut);
+        if keep {
+            cut = keep_cut(c, ps, cut);
+        }
     }
     if cut > 0.0 {
         cut = nested_row_cut(c, cut);
@@ -674,6 +697,38 @@ fn widow_cut(c: &CellContent, paras: &IndexMap<LineRef, ParaSplitInfo>, cut: f64
             continue;
         }
         // the whole paragraph goes down: cut at the end of the content before it
+        let Some(first) = mine.first() else { continue };
+        let mut prev = 0.0;
+        for l in &c.lines {
+            if l.y + l.height <= first.y + 0.5 {
+                prev = jm::max(prev, l.y + l.height);
+            }
+        }
+        out = jm::min_n(&[out, prev, first.y]);
+    }
+    out
+}
+
+/// Wave 7c (W, item 6; oracle keeptall `kt-kl20-cell-f50`, `kt-two-cell`, `kt-kl70-cell`): a keepLines paragraph of a
+/// cell (mode 15) that the cut crosses and that starts in this part goes down whole — the cut moves to the end of the
+/// content before it (none: the row goes down whole). Not called at the top of a page (there Word splits it as usual).
+fn keep_cut(c: &CellContent, paras: &IndexMap<LineRef, ParaSplitInfo>, cut: f64) -> f64 {
+    let mut by_ref: IndexMap<&LineRef, Vec<&PassLine>> = IndexMap::new();
+    for l in &c.lines {
+        by_ref.entry(&l.at).or_default().push(l);
+    }
+    let mut out = cut;
+    for (r, mine) in &by_ref {
+        let Some(info) = paras.get(*r) else { continue };
+        if !info.keep {
+            continue;
+        }
+        let n1 = mine.iter().filter(|l| l.y + l.height <= cut + 0.5).count();
+        #[expect(clippy::float_cmp, reason = "as widow_cut: the paragraph's first line is in this part")]
+        let has_first = mine.len() as f64 == info.lines;
+        if n1 == 0 || n1 == mine.len() || !has_first {
+            continue;
+        }
         let Some(first) = mine.first() else { continue };
         let mut prev = 0.0;
         for l in &c.lines {

@@ -179,7 +179,17 @@ impl Engine {
             "PAGEREF" => {
                 self.found.used_page_ref = true;
                 let bm = super::field_refs::tok(instr.unwrap_or(&[]), 1).map(String::from_utf16_lossy);
-                bm.filter(|b| !b.is_empty()).and_then(|b| cx.input.marks_guess.get(b.as_str()).cloned())
+                match bm.filter(|b| !b.is_empty()) {
+                    // wave 7c (W, item 4; oracle refbm): an undefined bookmark is Word's error (the frozen TS keeps the
+                    // cached result or shows the page of its paragraph)
+                    Some(b)
+                        if !cx.opts.ts_ref_bookmarks && matches!(self.bookmark_where(cx, &b)?, super::field_refs::BmWhere::Undefined) =>
+                    {
+                        Some(super::field_refs::bookmark_error(&cx.opts.lang).encode_utf16().collect())
+                    }
+                    Some(b) => cx.input.marks_guess.get(b.as_str()).cloned(),
+                    None => None,
+                }
             }
             "SEQ" => self.seq_value(instr.unwrap_or(&[]), &lang, &mut cap),
             // the endnote's own number (w:endnoteRef) in the endnote flow
@@ -188,7 +198,7 @@ impl Engine {
                 Some(self.ctx.note_mark_of(crate::context::NoteKindFlow::Endnote, id).map(Into::into).unwrap_or_default())
             }
             "REF" => self.ref_value(cx, instr.unwrap_or(&[]), block, at)?,
-            "NOTEREF" => self.note_ref_value(cx, instr.unwrap_or(&[]), block, at),
+            "NOTEREF" => self.note_ref_value(cx, instr.unwrap_or(&[]), block, at)?,
             "STYLEREF" => self.style_ref_value(cx, instr.unwrap_or(&[]), block)?,
             "PAGE" => {
                 let p = self.ps(ps)?;

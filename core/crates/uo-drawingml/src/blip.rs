@@ -56,7 +56,7 @@ pub fn apply_image_effects(rgba: &mut [u8], fx: &ImageEffects) {
         Some(b) => b * 255.0,
         None => -1.0,
     };
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         let mut r = f64::from(px[0]);
         let mut g = f64::from(px[1]);
         let mut b = f64::from(px[2]);
@@ -125,7 +125,7 @@ pub fn apply_picture_adjust(rgba: &mut [u8], o: &PictureAdjust<'_>) {
         let [fr, fg, fb] = hex(c.from);
         let [tr, tg, tb] = hex(c.to);
         let ta = round(c.to_alpha * 255.0);
-        for px in rgba.chunks_exact_mut(4) {
+        for px in rgba.as_chunks_mut::<4>().0 {
             if abs(f64::from(px[0]) - fr) <= 2.0 && abs(f64::from(px[1]) - fg) <= 2.0 && abs(f64::from(px[2]) - fb) <= 2.0 {
                 let a = round((f64::from(px[3]) * ta) / 255.0);
                 px[0] = to_uint8_clamp(tr);
@@ -138,7 +138,7 @@ pub fn apply_picture_adjust(rgba: &mut [u8], o: &PictureAdjust<'_>) {
     if let Some((c0, c1)) = o.duotone {
         let a = hex(c0);
         let b = hex(c1);
-        for px in rgba.chunks_exact_mut(4) {
+        for px in rgba.as_chunks_mut::<4>().0 {
             let t = (0.2126 * f64::from(px[0]) + 0.7152 * f64::from(px[1]) + 0.0722 * f64::from(px[2])) / 255.0;
             px[0] = to_uint8_clamp(round(a[0] + (b[0] - a[0]) * t));
             px[1] = to_uint8_clamp(round(a[1] + (b[1] - a[1]) * t));
@@ -146,7 +146,7 @@ pub fn apply_picture_adjust(rgba: &mut [u8], o: &PictureAdjust<'_>) {
         }
     }
     if let Some(alpha) = o.alpha {
-        for px in rgba.chunks_exact_mut(4) {
+        for px in rgba.as_chunks_mut::<4>().0 {
             px[3] = to_uint8_clamp(round(f64::from(px[3]) * alpha));
         }
     }

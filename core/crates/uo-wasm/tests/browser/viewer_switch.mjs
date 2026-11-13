@@ -97,7 +97,11 @@ function relative(f) { return f.replace(fwd(repo) + '/', ''); }
 
 // ── the server ──────────────────────────────────────────────────────────────────────────────────
 const ONLY = process.env.UO_SW_ONLY; // a substring of the fixture path: run those documents only
-const fixtures = fixtureDocs().filter((p, i) => i % STRIDE === 0 && (!ONLY || new RegExp(ONLY).test(p)));
+// wave 7, merge fixer F2 round 2: besides the layout captures, pictures.docx (its 70-byte truncated PNG: neither viewer has the
+// editor's decode fallback, so both leave the same placeholder) and Word's TOC documents with chapter page numbering (ED-713)
+const F2_DOCS = [join(core, 'crates/uo-docx/tests/parity/d3/fixtures/pictures.docx'),
+  ...['chapter', 'chapter-roman', 'roman'].map((v) => join(core, `crates/uo-docx-layout/tests/fidelity/toc-chap-${v}.docx`))];
+const fixtures = [...fixtureDocs().filter((p, i) => i % STRIDE === 0), ...F2_DOCS].filter((p) => !ONLY || new RegExp(ONLY).test(p));
 const docsByName = new Map(fixtures.map((p, i) => [`d${i}.docx`, p]));
 const FONT_DIRS = [join(repo, 'site/assets/fonts'), join(repo, 'shared/fonts/files')];
 const requests = [];
@@ -605,6 +609,58 @@ if (MODE === 'phase0' || MODE === 'parity' || MODE === 'all') {
 }
 
 // ── parity ──────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Wave 7 (B, gate-O3; the maintainer's ruling: Word is the authority): the documents whose theme colours have no theme part
+ * (w:color C00000 + w:themeColor accent2 and others, no word/theme/theme1.xml). Word paints the Office 2023 colour scheme
+ * (accent2 E97132; measured in Word's PDF of these bytes and of 26 generated colour/tint cases, record "Wave 7 — B"), the
+ * Rust layout too (uo-docx-layout theme_word.rs), the frozen TS viewer the w:color fallback (C00000): its pixels and its PDF
+ * differ in those runs only (text, layout, find and pages equal).
+ */
+const WORD_AUTHORITY = Object.fromEntries(['f2-3-0', 'f2-3-1', 'f2-3-2', 'f2-3-3'].map((d) => [d, { facets: ['pixels', 'pdf'], id: 'Word authority over TS (gate-O3)' }]));
+// ED-713 (F2 round 2): Word's PAGEREF with chapter page numbering (`1-i`), the TS without the chapter (`i`): the TOC page's text
+// layer, pixels and PDF. Wave 7c (S): `pages` scopes a facet to the pages listed — a textLayer or pixels mismatch is declared
+// only when its detail names one of them (`page N …`), so a difference on any other page of these documents fails. The pdf
+// facet cannot be scoped: it is one hash of the whole file (the comparison above), so it stays declared for the document.
+for (const d of ['toc-chap-chapter', 'toc-chap-chapter-roman']) WORD_AUTHORITY[d] = { facets: ['textLayer', 'pixels', 'pdf'], pages: { textLayer: [0], pixels: [0] }, id: 'Word authority over TS (ED-713)' };
+// Wave 7c (W): Word's rules over the frozen TS's, each document attributed natively to ONE rule (uo-docx-layout
+// `word_w7c.rs` `attribute_documents_to_the_word_rules`: that switch alone changes its pages) and measured in Word 16 pt-BR
+// (`adhoc_documents_against_word`, installed fonts: Word-equal lines/same-page lines go UP under Word's rules on every
+// one; record uo-bindings.md "Wave 7c — W"). Item 4: REF/PAGEREF/NOTEREF to an unterminated bookmark = Word's bold error
+// text; item 6: a keepLines paragraph taller than what is left of the page goes to the next page; item 3: a chain of
+// linked text boxes keeps its first lines in the first box.
+const W7C = {
+  'Word manda sobre o TS (item 4, REF error)': ['f7c__7__2', 'f7c__7__5', 'f7c__7__10', 'f7c__7__13', 'f7c__7__14', 'f7c__7__15', 'f8__7__2', 'f8__7__10'],
+  'Word manda sobre o TS (item 6, keepLines)': ['f7a__7__12', 'f7c__7__11'],
+  'Word manda sobre o TS (item 3, linked boxes)': ['f7d__7__0', 'f7d__7__3', 'f7d__7__6', 'f7d__7__7', 'f7d__7__8', 'f7d__7__10'],
+};
+const W7C_FACETS = {
+  f7c__7__2: ['textLayer', 'pixels', 'pdf'], f7c__7__5: ['textLayer', 'find', 'pixels', 'pdf'], f7c__7__10: ['textLayer', 'find', 'pixels', 'pdf'],
+  f7c__7__13: ['textLayer', 'find', 'pixels', 'pdf'], f7c__7__14: ['textLayer', 'pixels', 'pdf'], f7c__7__15: ['textLayer', 'pixels', 'pdf'],
+  f8__7__2: ['textLayer', 'pixels', 'pdf'], f8__7__10: ['linkBoxes', 'textLayer', 'find', 'pixels', 'pdf'],
+  f7a__7__12: ['headings', 'textLayer', 'find', 'pixels', 'pdf'], f7c__7__11: ['pages', 'headings', 'linkBoxes', 'textLayer', 'find', 'pixels', 'pdf'],
+  f7d__7__0: ['pixels', 'pdf'], f7d__7__3: ['pixels', 'pdf'], f7d__7__6: ['pixels', 'pdf'], f7d__7__7: ['pixels', 'pdf'],
+  f7d__7__8: ['pixels', 'pdf'], f7d__7__10: ['pixels', 'pdf'],
+};
+// Wave 7c (W, fix round 1; reviewer W/5): the textLayer and pixels facets are scoped to the pages the attributed rule changes
+// (0-based; uo-docx-layout word_w7c.rs `attribute_documents_to_the_word_rules` prints them: the pages whose painted content
+// differs between ts_strict() and ts_strict() with that one switch off) — a difference on any other page fails. find,
+// headings, linkBoxes, pages and pdf stay per document (no page in their detail; the pdf is one hash).
+const W7C_PAGES = {
+  f7a__7__12: [1, 2, 3, 8, 9], f7c__7__11: [0, 1, 2, 3], f7c__7__10: [1, 2], f7c__7__13: [1, 2, 4, 5, 8, 11, 12, 13, 14, 15],
+  f7c__7__14: [3, 4, 5], f7c__7__15: [0, 3], f7c__7__2: [9], f7c__7__5: [2, 6, 7], f7d__7__0: [0], f7d__7__10: [0], f7d__7__3: [0],
+  f7d__7__6: [0], f7d__7__7: [0], f7d__7__8: [0, 1], f8__7__10: [1, 2], f8__7__2: [10],
+};
+for (const [id, docs] of Object.entries(W7C)) for (const d of docs) WORD_AUTHORITY[d] = { facets: W7C_FACETS[d], pages: { textLayer: W7C_PAGES[d], pixels: W7C_PAGES[d] }, id };
+/** whether a mismatch is the declaration's: its facet, and (with `pages`) a page the declaration lists */
+const declares = (decl, m) => {
+  if (!decl.facets.includes(m.facet)) return false;
+  const pages = decl.pages?.[m.facet];
+  if (!pages) return true;
+  const p = /^page (\d+)\b/.exec(m.detail ?? '');
+  return !!p && pages.includes(Number(p[1]));
+};
+const declaredUsed = [];
+
 if (MODE === 'parity' || MODE === 'all') {
   const scales = [1 / 15, 2 / 15];
   const rows = [];
@@ -626,8 +682,17 @@ if (MODE === 'parity' || MODE === 'all') {
     clearTimeout(timer);
     rows.push(r);
     if (process.env.UO_SW_VERBOSE) console.log(`  ${label(n)}: ${r.pages}p TS ${r.tsMs?.toFixed(0)} ms Rust ${r.rustMs?.toFixed(0)} ms${r.mismatches.length ? ' MISMATCH' : ''}`);
+    // wave 7 (B): the declared facets of a document (WORD_AUTHORITY) are left out; a declaration no mismatch meets is stale
+    const decl = WORD_AUTHORITY[label(n).replace(/^.*\//, '').replace(/\.docx$/, '')];
+    if (decl) {
+      const met = new Set(r.mismatches.filter((m) => declares(decl, m)).map((m) => m.facet));
+      for (const f of decl.facets) if (!met.has(f)) fail(`${label(n)}: declared ${f} (${decl.id}) is equal now (stale)`);
+      r.mismatches = r.mismatches.filter((m) => !declares(decl, m));
+      if (met.size) declaredUsed.push(`${label(n)} ${[...met].join('+')} (${decl.id.replace(/^.*\((.*)\)$/, '$1')})`);
+    }
     if (r.mismatches.length) fail(`${label(n)}: ${r.mismatches.slice(0, 3).map((m) => `${m.facet}: ${m.detail}`).join(' | ')}`);
   }
+  if (declaredUsed.length) console.log(`  declared (Word authority over TS): ${declaredUsed.join(', ')}`);
   const by = (facet) => rows.filter((r) => r.mismatches.some((m) => m.facet === facet)).length;
   const F = (k) => sumBy(rows, (r) => r.facets[k]);
   console.log(`parity: ${rows.length} documents, ${sumBy(rows, (r) => r.pages)} pages in ${((Date.now() - t00) / 1000).toFixed(0)} s`);

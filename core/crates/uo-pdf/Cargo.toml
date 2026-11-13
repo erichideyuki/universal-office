@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# the XPS writer of the display list (src/xps.rs; milestone 2, wave 7, A1, D-A1-2): the Write editor module's File > Save as XPS
+xps = []
+
 [dependencies]
 # fmt(), parseInt, trim, Math.round/min/max/cos/sin: every number and string rule of the TS (record PQ5, "Numbers")
 uo-jsnum = { path = "../uo-jsnum" }

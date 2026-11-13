@@ -26,6 +26,18 @@ pub enum SettingsCmd {
 }
 
 impl Session {
+    /// `hasExternalFields()` (universal-write.ts 2153; wave 7, A1): a TOC instruction, a TOC entry or a field run in the
+    /// paragraphs of the story in edit (`this.model`).
+    pub fn has_external_fields(&self) -> bool {
+        self.paras().is_some_and(|ps| {
+            ps.iter().any(|p| {
+                p.props.toc_instr.is_some()
+                    || p.props.toc_entry == Some(true)
+                    || p.runs.iter().any(|r| r.ext().is_some_and(|e| e.field.is_some()))
+            })
+        })
+    }
+
     pub(crate) fn exec_settings(&mut self, cmd: SettingsCmd, _cx: &mut ExecCx<'_>) -> Result<Outcome, CommandError> {
         match cmd {
             SettingsCmd::SetTracking { on } => {
@@ -41,7 +53,8 @@ impl Session {
             SettingsCmd::SetProtected { on } => {
                 if self.opts.protected != on {
                     self.opts.protected = on;
-                    let has_fields = false;
+                    // wave 7 (A1): the TS detail `hasFields: this.hasExternalFields()` (2146), was `false`
+                    let has_fields = self.has_external_fields();
                     self.emit(Event::Protected { active: on, has_fields });
                 }
             }

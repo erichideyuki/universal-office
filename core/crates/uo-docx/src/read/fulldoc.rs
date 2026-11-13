@@ -50,7 +50,7 @@ use super::ctx::ReadCtx;
 use super::matchers::element_text;
 use super::page_background::read_page_background;
 use super::paragraph::{BlocksMode, ReadContext};
-use super::parts::{part_doc, read_doc_formatting};
+use super::parts::{part_doc, read_doc_formatting_facts};
 use super::plain::{default_run_props, plain_paragraphs_with};
 use super::props::{read_border, read_tbl_pr, read_tc_pr, read_tr_pr};
 use super::props_map::{read_border_edge, read_sect_pr};
@@ -1309,7 +1309,7 @@ pub fn read_document(pkg: &Package, opts: &ReadOptions) -> Result<Document> {
         }
     }
     let styles = read_styles(rc.ctx)?;
-    let formatting = read_doc_formatting(rc.ctx)?;
+    let (formatting, read_facts) = read_doc_formatting_facts(rc.ctx)?; // wave 7c (W, item 2)
     let core_props = read_core_props(rc.ctx)?;
     let background = read_background(&mut rc, root)?;
     let ctx = rc.ctx;
@@ -1321,6 +1321,7 @@ pub fn read_document(pkg: &Package, opts: &ReadOptions) -> Result<Document> {
             footnotes: footnotes.notes,
             endnotes: endnotes.notes,
             special_ids: NoteSpecialIds { footnote: footnotes.special, endnote: endnotes.special, ..NoteSpecialIds::default() },
+            ..Notes::default()
         }),
         comments: comments.into(),
         styles: Arc::new(styles),
@@ -1332,6 +1333,7 @@ pub fn read_document(pkg: &Package, opts: &ReadOptions) -> Result<Document> {
         sources: ctx.sources.take().map(Arc::new),
         ids: std::mem::take(&mut ctx.ids),
         formatting_version: 0,
+        read_facts,
     })
 }
 

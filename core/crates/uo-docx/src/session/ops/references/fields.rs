@@ -37,6 +37,20 @@ use crate::word::obj;
 /// must not overflow the stack).
 const MAX_DEPTH: usize = 64;
 
+/// Wave 7c (W, item 4): Word's result texts of a REF/PAGEREF/NOTEREF to an undefined bookmark (pt-BR measured; en/es Word's
+/// UI strings), the ones the layout writes (uo-docx-layout `engine/field_refs.rs`).
+fn is_word_ref_error(v: &Utf16) -> bool {
+    const ALL: [&str; 6] = [
+        "Erro! Fonte de referência não encontrada.",
+        "Erro! Indicador não definido.",
+        "Error! Reference source not found.",
+        "Error! Bookmark not defined.",
+        "¡Error! No se encuentra el origen de la referencia.",
+        "¡Error! Marcador no definido.",
+    ];
+    ALL.iter().any(|s| s.encode_utf16().eq(v.units().iter().copied()))
+}
+
 /// The paragraph index of block `bi` of a story (`None` for a table block), by binary search over
 /// `block_of_para` (strictly increasing).
 pub(super) fn para_of_block(s: &Story, bi: usize) -> Option<usize> {
@@ -192,11 +206,39 @@ impl Session {
         }
         // `syncRunRPr(this.bodyModel().paragraphs)`
         sync_paras(&mut self.doc.body.paras);
+        // wave 7c (S): the TS lays the fields out through `buildEngineDoc`, which rebuilds the bookmark index from the marks,
+        // so a bookmark the command just wrote (the `_Toc` names of a TOC built or rebuilt) has its page in this pass: the
+        // refresh rewrites the entries' `String(page.number)` labels with the layout's PAGEREF, and `updateFields` counts
+        // them as the TS does (without it `updateFields('all','all')` answered 1 where the TS answers 4: the F2 review). A
+        // derived index: a failed layout puts the previous one back (the rolled-back step leaves the document as it was).
+        let prev = Arc::clone(&self.doc.bookmarks);
+        self.sync_bookmarks();
+        // and the sections from the body (`syncSections`: the TS builds them at every layout, S-G1), so a command that moved
+        // the body's blocks (a TOC inserted at the start) lays its fields out with the sections of now, not the last settle's
+        let prev_sections = matches!(self.ctx, super::super::context::EditContext::Body).then(|| {
+            let p = (Arc::clone(&self.doc.sections), self.doc.formatting_version);
+            self.sections.sync(&mut self.doc);
+            if !Arc::ptr_eq(&p.0, &self.doc.sections) {
+                self.doc.formatting_version = self.doc.formatting_version.wrapping_add(1);
+                self.tx.formatting = true;
+            }
+            p
+        });
         let scope = match only {
             Some(s) => FieldScope::Runs(s),
             None => FieldScope::All,
         };
-        let values = cx.layout.field_values(self.view(), &scope).map_err(CommandError::Layout)?;
+        let values = match cx.layout.field_values(self.view(), &scope) {
+            Ok(v) => v,
+            Err(e) => {
+                self.doc.bookmarks = prev;
+                if let Some((sections, version)) = prev_sections {
+                    self.doc.sections = sections;
+                    self.doc.formatting_version = version;
+                }
+                return Err(CommandError::Layout(e));
+            }
+        };
         // a Map: the first insertion keeps its place, the last value wins
         let mut order: Vec<(RunRef, Utf16)> = Vec::with_capacity(values.len());
         let mut at: std::collections::HashMap<RunRef, usize> = std::collections::HashMap::new();
@@ -285,6 +327,22 @@ impl Session {
             vec![plain(v, p)]
         } else {
             vec![plain(v, base.clone())]
+        };
+        // wave 7c (W, item 4): Word saves its error result of a REF/PAGEREF/NOTEREF to an undefined bookmark in bold
+        // (measured: `<w:b/><w:bCs/>` on the result run after Fields.Update + SaveAs2; the layout gives the text, uo-docx-layout
+        // `field_refs::ref_error`/`bookmark_error`); the frozen TS never produces these texts, so its replays are unchanged
+        let result: Vec<Run> = if matches!(name.as_str(), "REF" | "PAGEREF" | "NOTEREF") && is_word_ref_error(v) {
+            result
+                .into_iter()
+                .map(|mut r| {
+                    let mut p = (*r.props).clone();
+                    obj::set(&mut p, "bold", |x| x.bold = Some(true));
+                    r.props = Arc::new(p);
+                    r
+                })
+                .collect()
+        } else {
+            result
         };
         let has_src = props.src.is_some();
         let had_result = old_result.is_some();

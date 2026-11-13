@@ -1,0 +1,39 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 299.94,
+"size": 11.04,
+"text": "PAGEREF=[Erro!Indicadornãodefinido.]"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 337.88,
+"size": 11.04,
+"text": "REF=[Erro!Fontedereferêncianãoencontrada.]"
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 164.22,
+"size": 11.04,
+"text": "paginadoisalvo"
+}
+],
+"objs": []
+}
+]
+}

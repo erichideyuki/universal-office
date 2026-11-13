@@ -347,6 +347,8 @@ fn m1_every_export_returns_the_live_bytes() {
                 let (sb, _) = take(uo_layout_image_bytes(l, i));
                 let (ss, _) = take(uo_layout_image_svg(l, i));
                 assert!([0, 6, 8].contains(&sb) && [0, 6, 8].contains(&ss), "image {i}: {sb} {ss}");
+                let (sr, _) = take(uo_layout_image_rgba(l, i)); // wave 7 (F2)
+                assert!([0, 6, 8].contains(&sr), "image {i} rgba: {sr}");
             }
             assert_eq!(take(uo_layout_image_svg(l, 9999)).0, 6);
             assert_eq!(take(uo_layout_image_svg(std::ptr::null(), 0)).0, 11);
@@ -408,7 +410,10 @@ fn the_page_message_carries_the_write_section() {
                         texts += 1;
                     } else {
                         let r = String::from_utf16_lossy(&l.r#ref);
-                        assert!(!(r.starts_with('b') && r.as_bytes().get(1).is_some_and(u8::is_ascii_digit)), "{key}: body line {r} without its paragraph");
+                        assert!(
+                            !(r.starts_with('b') && r.as_bytes().get(1).is_some_and(u8::is_ascii_digit)),
+                            "{key}: body line {r} without its paragraph"
+                        );
                     }
                 }
             }
@@ -418,5 +423,48 @@ fn the_page_message_carries_the_write_section() {
             uo_write_document_free(doc);
             uo_write_env_free(env);
         }
+    }
+}
+
+/// Wave 7 (F2): `uo_layout_image_rgba` decodes what the browser refuses as the TS `decodeRaster` does — the
+/// 70-byte truncated PNG of the d3 `pictures.docx` (1200×600 RGBA, an IDAT of one pixel row's start). The digest is
+/// the frozen TS `decodeRaster` output of the same bytes (`write/packages/docx-layout/src/images.ts`, run under Node:
+/// 1200×600, first pixel 255,0,0,127, the rest zero). Status 6 for an unknown index, 11 for a null layout.
+#[test]
+fn the_editor_fallback_decodes_the_truncated_png_as_the_ts() {
+    let docx = std::fs::read(repo().join("core/crates/uo-docx/tests/parity/d3/fixtures/pictures.docx")).unwrap();
+    let env = env_with_fonts();
+    let doc = open(&docx);
+    assert!(!doc.is_null());
+    let l = layout(doc, env, 0, 0);
+    assert!(!l.is_null());
+    // SAFETY: live handles; results released by `take`; each handle freed once.
+    unsafe {
+        let mut seen = 0;
+        for i in 0..8 {
+            let (sb, bytes) = take(uo_layout_image_bytes(l, i));
+            let (sr, rgba) = take(uo_layout_image_rgba(l, i));
+            if sb == 6 {
+                assert_eq!(sr, 6, "image {i}");
+                continue;
+            }
+            if bytes.len() != 70 {
+                continue;
+            }
+            seen += 1;
+            assert_eq!(sr, 0, "image {i}");
+            let w = u32::from_le_bytes(rgba[0..4].try_into().unwrap());
+            let h = u32::from_le_bytes(rgba[4..8].try_into().unwrap());
+            assert_eq!((w, h), (1200, 600));
+            assert_eq!(rgba.len(), 8 + 1200 * 600 * 4);
+            let hex: String = uo_testkit::sha256::sha256(&rgba[8..]).iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(hex, "ed2ce009d408b0902cd816aa06b676c25ac6767e220049bc61f0687afd8a836c");
+        }
+        assert!(seen >= 1, "pictures.docx has the 70-byte PNG");
+        assert_eq!(take(uo_layout_image_rgba(l, 9999)).0, 6);
+        assert_eq!(take(uo_layout_image_rgba(std::ptr::null(), 0)).0, 11);
+        uo_layout_free(l);
+        uo_write_document_free(doc);
+        uo_write_env_free(env);
     }
 }

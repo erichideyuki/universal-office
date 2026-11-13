@@ -73,6 +73,18 @@ impl Default for IncrConfig {
     }
 }
 
+impl IncrConfig {
+    /// Wave 7 (B, decision D-L7): the phone font profile's caps — a third of the wasm32 default (32 MiB of checkpoints and
+    /// retained pages, 16 MiB of paragraph memo). Past a cap the relayout keeps fewer checkpoints or memo entries and falls
+    /// back to more full layouts: the pages stay bit-identical (la7 `m5_memo_caps`), only the typing latency of very long
+    /// documents grows. The desktop profile keeps [`IncrConfig::default`].
+    #[must_use]
+    pub fn phone() -> IncrConfig {
+        let d = IncrConfig::default();
+        IncrConfig { checkpoint_bytes: d.checkpoint_bytes / 3, memo: MemoCaps { bytes: d.memo.bytes / 4, ..d.memo }, ..d }
+    }
+}
+
 /// How a relayout was computed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum RelayoutPath {
@@ -558,6 +570,10 @@ fn incremental(
         return Ok(Err(F::Provider));
     }
     let Some(range) = base.parts.changed_blocks(&doc.body) else { return Ok(Err(F::Shape)) };
+    // wave 7 (B): the bookmark index rebuilt from the marks moves with the edited blocks only
+    if !base.parts.bookmarks_follow(doc, range) {
+        return Ok(Err(F::Document));
+    }
     if keys::shape(ldoc) != base.shape {
         return Ok(Err(F::Shape));
     }

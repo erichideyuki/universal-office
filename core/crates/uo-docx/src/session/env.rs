@@ -36,6 +36,76 @@ pub struct LocalNow {
     pub utc: DateParts,
 }
 
+impl DateParts {
+    /// Wave 7 (B, decision "SetClock validation"): a real calendar instant as a JS `Date` gives it — year inside the
+    /// `Date` range (±275,760; the session's date arithmetic and `w:date` assume four digits, so 0–9999 here), month
+    /// 1–12, day 1 to the month's length (leap years by the Gregorian rule), hour 0–23, minute 0–59. A host clock is
+    /// always valid; a hostile clock (`SetClock` or the open message's; month 15, day 40…) is refused instead of reaching the DATE-field arithmetic,
+    /// whose overflow differs from JS (WS-D14).
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        let leap = (self.year % 4 == 0 && self.year % 100 != 0) || self.year % 400 == 0;
+        let days = match self.month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 if leap => 29,
+            2 => 28,
+            _ => return false,
+        };
+        (0..=9999).contains(&self.year) && (1..=days).contains(&self.day) && self.hour < 24 && self.minute < 60
+    }
+}
+
+impl LocalNow {
+    /// Both instants valid ([`DateParts::is_valid`]); `Err` names the first bad one.
+    ///
+    /// # Errors
+    /// `"local"` or `"utc"`: that instant is not a calendar instant.
+    pub fn validated(self) -> Result<LocalNow, &'static str> {
+        if !self.local.is_valid() {
+            return Err("clock: the local instant is not a calendar date");
+        }
+        if !self.utc.is_valid() {
+            return Err("clock: the UTC instant is not a calendar date");
+        }
+        Ok(self)
+    }
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+
+    const fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateParts {
+        DateParts { year, month, day, hour, minute }
+    }
+
+    #[test]
+    fn hostile_clocks_are_refused() {
+        let ok = at(2026, 2, 28, 23, 59);
+        assert!(LocalNow { local: ok, utc: ok }.validated().is_ok());
+        assert!(at(2024, 2, 29, 0, 0).is_valid());
+        for bad in [
+            at(2026, 2, 29, 0, 0),
+            at(2026, 15, 1, 0, 0),
+            at(2026, 0, 1, 0, 0),
+            at(2026, 4, 31, 0, 0),
+            at(2026, 1, 0, 0, 0),
+            at(2026, 1, 40, 0, 0),
+            at(2026, 1, 1, 24, 0),
+            at(2026, 1, 1, 0, 60),
+            at(-1, 1, 1, 0, 0),
+            at(10_000, 1, 1, 0, 0),
+            at(1900, 2, 29, 0, 0),
+        ] {
+            assert!(!bad.is_valid(), "{bad:?}");
+            assert!(LocalNow { local: bad, utc: ok }.validated().is_err());
+            assert!(LocalNow { local: ok, utc: bad }.validated().is_err());
+        }
+        assert!(LocalNow::default().validated().is_err(), "the zero date (month 0) is not a calendar date");
+    }
+}
+
 /// The environment of a session.
 pub trait Env {
     /// The current instant.

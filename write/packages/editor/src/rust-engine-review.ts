@@ -6,7 +6,7 @@ import type { RustEditor } from './rust-engine.js';
 import { clipboardHandlers, keyHook } from './rust-review-clipboard.js';
 import { Ctx, apiOf, type Pos } from './rust-review-core.js';
 import { findHandlers, type FindView } from './rust-review-find.js';
-import { OVERLAY_METHODS, overlayHandlers, paintExtraRanges } from './rust-review-overlays.js';
+import { OVERLAY_METHODS, overlayHandlers, paintExtraRanges, paintWordMarks, wordMarksKey } from './rust-review-overlays.js';
 import { authorSync, commentHandlers, revisionHandlers, runsOf } from './rust-review-revisions.js';
 import { spellHandlers } from './rust-review-spell.js';
 import { styleHandlers } from './rust-review-styles.js';
@@ -60,6 +60,10 @@ export function reviewHandlers(ed: RustEditor): Record<string, (...args: never[]
       const el = c.el as unknown as Record<string, ((ctx: CanvasRenderingContext2D, pg: number) => void) | undefined> | null;
       for (const m of OVERLAY_METHODS) el?.[m]?.(ctx, page);
     });
+    // wave 7c (V, fix round 1, ED-304): Word's field shading and comment highlight, under the text (the page base; its key
+    // carries the field the selection is in, so the base is painted again when that changes)
+    hooks.under.push((ctx, page, scale) => paintWordMarks(c, ctx, page, scale));
+    hooks.baseKey.push(() => wordMarksKey(c));
     // the extra ranges of a non-contiguous selection: with the selection, over it (the TS `extras()` in paintEngineSelection)
     hooks.overlay.push((ctx, page) => paintExtraRanges(c, ctx, page));
     hooks.adopt.push(() => { view.show = false; view.results = []; clip.adopt(); author.adopt(); });

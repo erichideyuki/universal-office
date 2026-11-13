@@ -42,6 +42,88 @@ pub(crate) fn ensure(st: &VersionStore) -> String {
     st.xml().map_or_else(|| format!("{PART_HEAD}{ROOT_OPEN}</w:numbering>"), |x| x.to_string())
 }
 
+/// `SHAPETYPE_75` of numbering-store.ts (the picture frame type Word writes once per part).
+const SHAPETYPE_75: &str = "<v:shapetype id=\"_x0000_t75\" coordsize=\"21600,21600\" o:spt=\"75\" o:preferrelative=\"t\" path=\"m@4@5l@4@11@9@11@9@5xe\" filled=\"f\" stroked=\"f\">\
+<v:stroke joinstyle=\"miter\"/><v:formulas><v:f eqn=\"if lineDrawn pixelLineWidth 0\"/><v:f eqn=\"sum @0 1 0\"/><v:f eqn=\"sum 0 0 @1\"/>\
+<v:f eqn=\"prod @2 1 2\"/><v:f eqn=\"prod @3 21600 pixelWidth\"/><v:f eqn=\"prod @3 21600 pixelHeight\"/><v:f eqn=\"sum @0 0 1\"/>\
+<v:f eqn=\"prod @6 1 2\"/><v:f eqn=\"prod @7 21600 pixelWidth\"/><v:f eqn=\"sum @8 21600 0\"/><v:f eqn=\"prod @7 21600 pixelHeight\"/>\
+<v:f eqn=\"sum @10 21600 0\"/></v:formulas><v:path o:extrusionok=\"f\" gradientshapeok=\"t\" o:connecttype=\"rect\"/><o:lock v:ext=\"edit\" aspectratio=\"t\"/></v:shapetype>";
+
+/// The prefixes a picture bullet needs on the root (`NS` of numbering-store.ts, in its order).
+const PIC_NS: [(&str, &str); 3] = [
+    ("v", "urn:schemas-microsoft-com:vml"),
+    ("o", "urn:schemas-microsoft-com:office:office"),
+    ("r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships"),
+];
+
+/// `addPicBullet(img, wPt, hPt, title)` (numbering-store.ts 90, wave 7 A2): a new `w:numPicBullet` with the VML Word
+/// writes (`v:shape o:bullet` of the natural size, `v:imagedata` by the part's relationship `rIdUwPb<n>`); `taken`
+/// says whether a relationship id is already one of the store's images. Answers the `w:numPicBulletId` and the id.
+pub(crate) fn add_pic_bullet(st: &mut VersionStore, taken: &dyn Fn(&str) -> bool, w_pt: f64, h_pt: f64, title: &str) -> (f64, String) {
+    let mut xml = ensure(st);
+    // `/<w:numPicBullet\b[^>]*\bw:numPicBulletId="(\d+)"/g`
+    let mut max: Option<f64> = None;
+    let mut at = 0;
+    while let Some(k) = xml.get(at..).and_then(|r| r.find("<w:numPicBullet")) {
+        let from = at + k + "<w:numPicBullet".len();
+        at = from;
+        if xml.as_bytes().get(from).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_') {
+            continue;
+        }
+        let Some(end) = xml.get(from..).and_then(|r| r.find('>')) else { break };
+        let tag = xml.get(from..from + end).unwrap_or("");
+        if let Some(i) = tag.find("w:numPicBulletId=\"") {
+            let v = tag.get(i + "w:numPicBulletId=\"".len()..).unwrap_or("");
+            let digits: String = v.chars().take_while(char::is_ascii_digit).collect();
+            if !digits.is_empty() && v.get(digits.len()..).is_some_and(|r| r.starts_with('"')) {
+                let n: f64 = uo_jsnum::parse::to_number(&digits);
+                max = Some(max.map_or(n, |m: f64| uo_jsnum::math::max(m, n)));
+            }
+        }
+    }
+    let id = max.map_or(0.0, |m| m + 1.0);
+    let mut n = 1u32;
+    while taken(&format!("rIdUwPb{n}")) || xml.contains(&format!("\"rIdUwPb{n}\"")) {
+        n += 1;
+    }
+    let rid = format!("rIdUwPb{n}");
+    // the root needs the v:, o: and r: prefixes
+    if let Some(o) = xml.find("<w:numbering") {
+        let o_end = xml.get(o..).and_then(|r| r.find('>')).map(|e| o + e + 1);
+        if let Some(o_end) = o_end {
+            let open = xml.get(o..o_end).unwrap_or("").to_owned();
+            let mut open2 = open.clone();
+            for (pfx, uri) in PIC_NS {
+                if !open2.contains(&format!("xmlns:{pfx}=")) {
+                    open2.pop();
+                    open2.push_str(&format!(" xmlns:{pfx}=\"{uri}\">"));
+                }
+            }
+            if open2 != open {
+                xml = format!("{}{open2}{}", xml.get(..o).unwrap_or(""), xml.get(o_end..).unwrap_or(""));
+            }
+        }
+    }
+    let num = |v: f64| to_js_string(uo_jsnum::math::round(v * 100.0) / 100.0);
+    let esc_t = title.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
+    let shapetype = if xml.contains("id=\"_x0000_t75\"") { "" } else { SHAPETYPE_75 };
+    let pb = format!(
+        "<w:numPicBullet w:numPicBulletId=\"{}\"><w:pict>{shapetype}<v:shape id=\"_x0000_i{}\" type=\"#_x0000_t75\" style=\"width:{}pt;height:{}pt\" o:bullet=\"t\"><v:imagedata r:id=\"{rid}\" o:title=\"{esc_t}\"/></v:shape></w:pict></w:numPicBullet>",
+        to_js_string(id),
+        to_js_string(1025.0 + id),
+        num(w_pt),
+        num(h_pt),
+    );
+    // the w:numPicBullet come first (CT_Numbering)
+    let at = match xml.rfind("</w:numPicBullet>") {
+        Some(i) => i + "</w:numPicBullet>".len(),
+        None => xml.find("<w:numbering").and_then(|o| xml.get(o..).and_then(|r| r.find('>')).map(|e| o + e + 1)).unwrap_or(xml.len()),
+    };
+    let out = format!("{}{pb}{}", xml.get(..at).unwrap_or(""), xml.get(at..).unwrap_or(""));
+    set(st, out);
+    (id, rid)
+}
+
 /// `set(xml)`: a new version unless the text is the current one.
 pub(crate) fn set(st: &mut VersionStore, xml: String) {
     if st.xml().is_some_and(|x| **x == *xml) {

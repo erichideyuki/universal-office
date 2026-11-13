@@ -216,8 +216,9 @@ impl Session {
         hit.or_else(|| all.into_iter().next())
     }
 
-    /// `tocSdtRange(pi)`: the paragraphs of the TOC content control around body paragraph `pi`.
-    fn toc_sdt_range(&self, pi: usize) -> Option<(usize, usize)> {
+    /// `tocSdtRange(pi)`: the paragraphs of the TOC content control around body paragraph `pi` (public since wave 7, A1:
+    /// the shell's TOC control frame, `paintTocControl`).
+    pub fn toc_sdt_range(&self, pi: usize) -> Option<(usize, usize)> {
         if !self.in_body_ctx() {
             return None;
         }
@@ -576,6 +577,10 @@ impl Session {
             }
         }
         let pages = cx.layout.shown_page_numbers(self.view(), &refs).map_err(CommandError::Layout)?;
+        // `pageLabelOf` (universal-write.ts 6620–6624): `String(page.number)`. The field refresh that ends every TOC
+        // command (with the bookmark index and the sections rebuilt, as the TS layout pass) rewrites it with the layout's
+        // PAGEREF text (`bookmark_pages`, where Word's format and chapter live: ED-713), so `updateFields` counts what the TS
+        // counts (wave 7c, S: F2's session label reverted).
         for (i, id) in ids.iter().enumerate() {
             let label: Str = match pages.get(i).copied().flatten() {
                 Some(n) => uo_jsnum::format::to_js_string(n).into(),
@@ -1056,7 +1061,8 @@ impl Session {
     /// `applyTofFormat(f)`: the style "table of figures" takes the format's pPr/rPr.
     fn apply_tof_format(&mut self, f: TofFormat) -> Result<(), CommandError> {
         let id = self.builtin_style_id("table of figures")?;
-        if f == TofFormat::Template {
+        // `|| !this.stylesEditable()` (6899; wave 7, A1)
+        if f == TofFormat::Template || !self.styles_editable() {
             return Ok(());
         }
         let base = self.styles_base();
@@ -1399,6 +1405,10 @@ impl Session {
     /// `applyTocFormat(f, levels)`: the pPr/rPr of every style `toc N` (the levels shown and the
     /// ones already defined); "From template" goes back to the built-in definition.
     fn apply_toc_format(&mut self, f: TocFormat, levels: f64) -> Result<(), CommandError> {
+        // `if (!this.stylesEditable()) return` (7245; wave 7, A1)
+        if !self.styles_editable() {
+            return Ok(());
+        }
         for n in 1..=9u32 {
             let name = format!("toc {n}");
             let k = lower(&name);

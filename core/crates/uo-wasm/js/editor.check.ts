@@ -22,3 +22,7 @@ export const paste = null as unknown as { encodePaste: typeof Real.encodePaste }
 export const stories = null as unknown as { bindStories: typeof Real.bindStories } satisfies { bindStories(exports: WebAssembly.Exports, uo: unknown): Declared.StoriesBinding };
 // wave 5, front O: the objects binding (object geometry, section facts)
 export const objects = null as unknown as { bindObjects: typeof Real.bindObjects } satisfies { bindObjects(exports: WebAssembly.Exports, uo: unknown): Declared.ObjectsBinding };
+// wave 7 (A2): the completion binding (lists, tables, the ring, the shell edits)
+export const completion = null as unknown as { bindCompletion: typeof Real.bindCompletion } satisfies { bindCompletion(exports: WebAssembly.Exports, uo: unknown): Declared.CompletionBinding };
+// wave 7 (A1, fix round 2): the format binding (File, View, Font and Paragraph; the XPS writer)
+export const format = null as unknown as { bindFormat: typeof Real.bindFormat } satisfies { bindFormat(exports: WebAssembly.Exports, uo: unknown): Declared.FormatBinding };

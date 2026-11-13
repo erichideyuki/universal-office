@@ -59,6 +59,9 @@ fn options_for(key: &str) -> LayoutOptions {
         revisions: base.starts_with("mk-").then(|| RevisionView { mode: RevisionMode::All, ..RevisionView::default() }),
         ..LayoutOptions::default()
     }
+    // wave 7c (W): every Word-over-TS switch on (ts_empty_theme, ts_pageref_without_chapter and the six of wave 7c):
+    // replays against the frozen TS captures
+    .ts_strict()
 }
 
 /// The transcript provider with a log of every request and the answer label it got (P2).

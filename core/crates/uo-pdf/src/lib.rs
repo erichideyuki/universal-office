@@ -32,6 +32,8 @@ mod types;
 mod uri;
 mod word_spaces;
 mod writer;
+#[cfg(feature = "xps")]
+mod xps;
 
 pub use color::{PdfColor, hex_color, hex_color_units, rgb255};
 pub use document::PdfDocument;
@@ -47,6 +49,8 @@ pub use types::{
 pub use uri::safe_pdf_uri;
 pub use word_spaces::{WordSpaceCursor, advance_twips, with_word_spaces};
 pub use writer::{PdfWriter, StreamBody};
+#[cfg(feature = "xps")]
+pub use xps::{XpsOptions, render_xps};
 
 /// Nothing here outlives a document (no process-wide cache); kept for the memory-gate convention (M1).
 pub fn clear_caches() {}

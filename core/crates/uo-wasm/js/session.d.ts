@@ -107,8 +107,42 @@ export declare class WriteSession {
   paraLines(layout: WriteLayout, para: number): ShellLine[];
   /** the selection rectangles of a range (either direction) on `page` */
   rangeRects(layout: WriteLayout, page: number, a: { para: number; offset: number }, f: { para: number; offset: number }): SelRect[];
+  /** wave 7c (V, ED-304): the lines of every story on `page` (the TS `eng.lines`) and the text boxes' content, with their
+   *  paragraphs (see `StoryLines`) */
+  storyLines(layout: WriteLayout, page: number, fallback?: string): StoryLines;
   /** the families of the document's embedded fonts */
   embeddedFamilies(): string[];
+}
+
+/** wave 7c (V, ED-304): one line of `WriteSession.storyLines` (`p` indexes `paras`; `xf` the frame of a text box line) */
+export interface StoryLine {
+  p: number;
+  kind: 'body' | 'cell' | 'hf' | 'note' | 'tb';
+  x: number;
+  y: number;
+  height: number;
+  baseline: number;
+  width: number;
+  /** fix round 2 (V, ED-304): the line's natural text descent (twips) */
+  desc: number;
+  start: number;
+  end: number;
+  xf?: number[];
+  o: number[];
+  cx: number[];
+  cw: number[];
+}
+/** wave 7c (V, ED-304): a paragraph of `WriteSession.storyLines`: its key (`b<para>`, `c<anchor>/<r>.<c>.<b>…|<k>`, `h…`,
+ *  `n…`, `t…`), text, runs (`n` length, `f` field, `c` comment ids, `sp` spell-checked, `lang`) and bookmark marks */
+export interface StoryPara {
+  key: string;
+  text: string;
+  runs: { n: number; f: boolean; c: number[] | null; sp: boolean; lang: string }[];
+  bm: { at: number; end: boolean; id: unknown; hidden: boolean }[];
+}
+export interface StoryLines {
+  lines: StoryLine[];
+  paras: StoryPara[];
 }
 
 export interface SelectionState {
@@ -214,6 +248,9 @@ export interface ShellObjects {
   /** the selected drawing ids (the selected object first) */
   sel: number[];
   floats: ShellFloat[];
+  /** wave 7c (V, ED-106b): the box in edit when it is not one of `floats` (a box inside a box), its rectangle from the
+   *  layout's page objects (the TS `tbEdit.rectTwips`); `i` is -1 */
+  boxFloat: ShellFloat | null;
   inline: ShellInlinePic[];
 }
 export interface ShellSectionInfo {
@@ -239,3 +276,9 @@ export declare function bindObjects(exports: WebAssembly.Exports, uo: WriteBindi
 
 // ── wave 5, frontier S (stories; js/session-stories.d.ts) ──
 export * from './session-stories.js';
+
+// ── wave 7 (A2): lists, paste, tables, objects and the page (js/session-completion.d.ts) ──
+export * from './session-completion.js';
+
+// ── wave 7 (A1): File, View, Font and Paragraph (js/session-format.d.ts) ──
+export * from './session-format.js';

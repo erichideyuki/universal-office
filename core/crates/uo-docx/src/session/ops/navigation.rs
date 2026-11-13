@@ -489,7 +489,8 @@ impl Session {
             let rev = self.new_rev();
             obj::set(&mut props, "markIns", |p| p.mark_ins = Some(Box::new(rev)));
         }
-        if let Some(id) = &id {
+        // `if (id && this.stylesEditable())` (17810; wave 7, A1)
+        if let Some(id) = id.as_ref().filter(|_| self.styles_editable()) {
             let base = self.styles_base();
             self.commit_styles(super::styles::xform::ensure_defined(&base, id, true));
         }

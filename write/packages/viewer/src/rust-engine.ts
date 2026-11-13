@@ -37,6 +37,12 @@ export interface RustHost {
   repaint(): void;
   /** o .wasm configurado (`configureEngine`); sem ele, o do pacote */
   source(): LoadWriteOptions | undefined;
+  /**
+   * wave 7 (F2): a raster the browser refuses (`createImageBitmap` rejects) is decoded by the engine (`imageRgba`, uo-image's
+   * `decodeRaster`), as the TS EDITOR's `decodeImage` does with the TS `decodeRaster` (a truncated PNG paints and prints).
+   * The editor sets it; the viewer does not (the TS viewer has no such fallback: the picture stays a placeholder).
+   */
+  rasterFallback?: boolean;
 }
 
 export interface RelayoutOptions { view: 'print' | 'web'; webWidthTw: number }
@@ -134,6 +140,14 @@ export class RustSession {
   /** wave 6 (L): the decoded images a layout took over from the one it replaced (`inherit`), with the entry they were decoded for */
   private readonly inherited = new WeakMap<DecodedLayout, Map<number, { image: CanvasImageSource; entry: DecodedLayout['tables']['images'][number] | undefined }>>();
   private readonly notified = new Set<string>();
+  /**
+   * wave 7c (V, fix round 1): how many times a paint met an image still decoding (`imageOf` answered null for `loading`).
+   * The editor's page caches compare it around a base paint: a base painted without one of its pictures is not reused —
+   * the layout it was painted for may be replaced before the decode ends (its `done` repaints nothing then), and the
+   * successor's band check would keep the picture-less canvas (measured: an inline picture inserted in a blank document
+   * and dragged at once painted blank on every live frame; the TS decodes before it paints).
+   */
+  pendingImages = 0;
 
   constructor(private readonly host: RustHost) {}
 
@@ -141,6 +155,9 @@ export class RustSession {
 
   /** o ambiente do motor da página (o mesmo de todos os elementos), null antes do 1º layout */
   get env(): ViewerEnv | null { return this.page?.env ?? null; }
+
+  /** wave 7 (A2): the families the engine asked for and the resolver answered (pushed to the page's environment), as asked */
+  pushedFamilies(): string[] { return [...(this.page?.pushedNames.values() ?? [])]; }
 
   /** O ambiente da página para a base de fontes de agora (a base é o atributo `fonts`, que pode mudar). */
   private ensurePage(): PageFonts | null {
@@ -274,9 +291,30 @@ export class RustSession {
   private pushNow(page: PageFonts, missing: MissingFont[]): { any: boolean; later: MissingFont[] } {
     let any = false;
     const later: MissingFont[] = [];
-    for (const m of missing) { if (this.push(page, m.family)) any = true; else later.push(m); }
+    for (const m of missing) {
+      if (!this.push(page, m.family)) { later.push(m); continue; }
+      any = true;
+      // wave 7 (B, gate-O5): what was pushed may still lack a requested face (the resolver had only the regular one). The
+      // engine notes each (family, variant) once per environment (uo-fonts `take_missing`), so a bold not fetched now is
+      // never asked again and the layout measures it with the regular advances (synthetic bold): fetch it too.
+      const r = this.host.resolver.getWithFile(m.family);
+      if (r && m.variants.some((v) => !r.faces[v])) later.push(m);
+    }
     return { any, later };
   }
+
+  /**
+   * wave 7 (B, gate-O5): missing fonts taken from the environment outside `relayout` (the editor's synchronous relayout)
+   * go to the next pass here instead of being lost (the engine reports each face once per environment).
+   */
+  carryMissing(list: MissingFont[]): void {
+    for (const m of list) {
+      const hit = this.carried.find((c) => c.family === m.family);
+      if (!hit) this.carried.push({ family: m.family, variants: [...m.variants] });
+      else for (const v of m.variants) if (!hit.variants.includes(v)) hit.variants.push(v);
+    }
+  }
+  private carried: MissingFont[] = [];
 
   /** Busca o que `pushNow` deixou para depois e empurra; true se algo novo foi empurrado (refazer o layout). */
   private async fetchLater(page: PageFonts, later: MissingFont[]): Promise<boolean> {
@@ -316,6 +354,7 @@ export class RustSession {
         throw e;
       }
       const missing = env.takeMissing();
+      if (this.carried.length) { this.carryMissing(missing); missing.splice(0, missing.length, ...this.carried); this.carried = []; } // wave 7 (B)
       const { any, later } = this.pushNow(page, missing);
       // as fontes pedidas já estavam no resolvedor: o layout de agora seria trocado já pelo da próxima passada, que começa
       // sem mostrar (nem decodificar) este; a última passada sempre é entregue
@@ -385,6 +424,7 @@ export class RustSession {
    * `dl`'s entry asks for the same decode (format, SVG, size).
    */
   inherit(dl: DecodedLayout, prev: DecodedLayout): void {
+    dl.inheritPaint(prev); // wave 7 (A2): the picture layers too (the TS keeps them on the image across relayouts)
     const pm = this.images.get(prev);
     const kept = new Map<number, { image: CanvasImageSource; entry: DecodedLayout['tables']['images'][number] | undefined }>();
     if (pm) for (const [id, c] of pm) if (c && c !== 'loading' && dl.sharedImage(id)) kept.set(id, { image: c, entry: prev.tables.images[id] });
@@ -394,11 +434,21 @@ export class RustSession {
     if (kept.size) this.inherited.set(dl, kept);
   }
 
+  /**
+   * The decode state of image `id` of `dl` (wave 7, A1: the editor's print waits for the `loading` ones and not for the
+   * `failed`, as the TS resolves an undecodable picture to its placeholder at once): `idle` before the first `imageOf`.
+   */
+  imageState(dl: DecodedLayout, id: number): 'ready' | 'loading' | 'failed' | 'idle' {
+    const c = this.images.get(dl)?.get(id);
+    return c === undefined ? 'idle' : c === 'loading' ? 'loading' : c === null ? 'failed' : 'ready';
+  }
+
   private imageOf(dl: DecodedLayout, id: number): CanvasImageSource | null {
     let m = this.images.get(dl);
     if (!m) this.images.set(dl, (m = new Map()));
     const c = m.get(id);
-    if (c === 'loading' || c === null) return null;
+    if (c === 'loading') { this.pendingImages++; return null; }
+    if (c === null) return null;
     if (c) return c;
     const h = this.inherited.get(dl)?.get(id);
     const e = dl.tables.images[id];
@@ -407,13 +457,28 @@ export class RustSession {
       return h.image;
     }
     m.set(id, 'loading');
-    const done = (b: ImageBitmap | HTMLCanvasElement | null): void => { m.set(id, b); if (b && !dl.freed && !this.disposed) this.host.repaint(); };
+    // wave 7c (V, fix round 1): a decode that ends after its layout was replaced repaints too (the current layout's pages
+    // painted while it decoded are `incomplete` in the editor's caches, and nothing else would paint them again)
+    const done = (b: ImageBitmap | HTMLCanvasElement | null): void => { m.set(id, b); if (b && !this.disposed) this.host.repaint(); };
     const entry = dl.tables.images[id];
     if (!entry) { done(null); return null; }
     const svg = entry.hasSvg ? dl.imageSvg(id) : null;
     const data = svg ? new Uint8Array(0) : dl.imageBytes(id);
     if (!svg && !data) { done(null); return null; }
-    decodeImage({ data: data ?? new Uint8Array(0), ext: entry.ext, svg: svg ?? undefined, widthTwips: entry.widthTwips, heightTwips: entry.heightTwips }, done);
+    // wave 7 (F2): the editor's fallback (`RustHost.rasterFallback`, the TS editor's `decodeImage` catch): a raster the
+    // browser refuses goes through the engine's decoder; the SVG path has none (as the TS)
+    const fallback = !svg && this.host.rasterFallback
+      ? (b: ImageBitmap | HTMLCanvasElement | null): void => {
+        if (b) { done(b); return; }
+        try {
+          const r = dl.freed || this.disposed ? null : dl.imageRgba(id);
+          if (!r) { done(null); return; }
+          void createImageBitmap(new ImageData(new Uint8ClampedArray(r.data), r.width, r.height)).then(done, () => done(null));
+        } catch { done(null); }
+      }
+      : done;
+    decodeImage({ data: data ?? new Uint8Array(0), ext: entry.ext, svg: svg ?? undefined, widthTwips: entry.widthTwips, heightTwips: entry.heightTwips }, fallback);
+    if (m.get(id) === 'loading') this.pendingImages++; // wave 7c (V): still decoding after the call (an SVG/raster decode is async)
     return null;
   }
 

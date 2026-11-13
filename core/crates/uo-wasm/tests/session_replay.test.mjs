@@ -443,6 +443,11 @@ function replayFamily(family) {
     const s = openProduction(family, readFileSync(join(repo, rel)));
     const rec0 = cap.records.get(k0);
     if (family === 'f10') f10Setup(s, Number(rec0.get('i-seed').replace(/\r$/, '')));
+    // wave 7c (S): the F5 and F10 captures save after an undone style edit or note options set back to the loaded ones; the
+    // frozen TS leaves the earlier save's part (Word saves the current state: the default, `save_parts.rs`), as the native
+    // replays open with `ts_stale_parts` (fix round 1: that flag only; the steps it covers are listed in uo-bindings.md,
+    // "Wave 7c — S, fix round 1")
+    if ((family === 'f5' || family === 'f10') && process.env.UO_WS_TS_SAVE_FLAGS !== '0') assert.equal(take(w.uo_session_test_ts_save_compat(s.ptr, 1)).status, 0);
     const diverges = family === 'f10' ? (F10_DIVERGENCES.find(([d]) => rel.endsWith(d))?.[1] ?? Infinity) : Infinity;
     let pending = null;
     let stale = false;
@@ -529,7 +534,11 @@ function replayFamily(family) {
         else if (acceptAll || throwAccept) counts.accepted++;
         else {
           counts.mismatches++;
-          if (first.length < 12) first.push(`${key} ${facet}: want ${want.slice(0, 120)} got ${got.slice(0, 120)}`);
+          // UO_WS_FULL=1 (wave 7c S, fix round 1): every mismatch, with the comma-separated items only one side has
+          if (process.env.UO_WS_FULL === '1') {
+            const w = want.split(','), g = got.split(',');
+            first.push(`${key} ${facet}: want-only ${w.filter((x) => !g.includes(x)).join(',')} | got-only ${g.filter((x) => !w.includes(x)).join(',')}`);
+          } else if (first.length < 12) first.push(`${key} ${facet}: want ${want.slice(0, 120)} got ${got.slice(0, 120)}`);
         }
       }
     }

@@ -1851,8 +1851,10 @@ cascade (`styleLook`: `StyleResolver` para/char style, `cascade_rpr`, `font_of_s
   answered by the TS code over the empty model: `knownFontFamilies()` (SHELL) lists the fonts installed through
   `initialize({ fonts })`/the `fonts` base but NOT the document's embedded families (the TS adds them at load:
   `registerEmbeddedFontMetrics`; the session reads them for layout, no query lists them), so the font menus lack them.
-- **ED-25** (fix round 2) `engineStats().editors` counts the CONNECTED `engine="rust"` elements: a disconnect parks the
-  editor (document saved, session freed) and leaves the count, a reconnect re-enters it. The first rounds had a
+- **ED-25** — **retired in wave 7c (S)** ("Wave 7c — S", item 3: a detached element keeps its session, shell engine, layout
+  and every front's state, as the TS; freed when the element is collected). Was: (fix round 2) `engineStats().editors`
+  counts the CONNECTED `engine="rust"` elements: a disconnect parks the editor (document saved, session freed) and leaves
+  the count, a reconnect re-enters it. The first rounds had a
   `dispose()` that nothing called (the count only grew; review finding): removed. `--mode memory` asserts 1 while open
   and 0 after each remove.
 - **ED-26** (fix round 2) Tab / Shift+Tab are the TS `bindEvents` rule: at the start of a list item or with several
@@ -3586,3 +3588,2537 @@ probe outside git (the stale-`floatSel` trace of ED-600, the TS caret of every b
 probes of f7c__7__1/5 and gate-C1); the plan's step 8 (a full relayout on `onFontsResolved`) not made, measured as not
 the cause. Two harness runs were lost to frontier L's in-progress `js/session.mjs` asking for a newer wasm export
 (rebuilt from the shared tree).
+
+### Wave 7 — A2: lists, paste, tables, objects and the page
+
+Frontier A2 of wave 7 (the maintainer: "do everything that is missing"): the A2 families of the README's "What stays
+disabled" list (lists, paste, tables, objects and the page), routed to the wasm session, 1:1 with the frozen TS
+(`clickcompliance-docx` d0f45bc5). Plan: `core/target/m2-latency/a2-plan` (outside git). Front name `completion`. Two
+implementer sessions: the first routed the families and wrote a first record (blockers: the previews, the text box gallery
+save, the OLE edit, the cross-session Paste Link, ED-202/204/208/213/215, the picture bullet); the second ("tente
+novamente") closed every one of them. This section replaces the first record.
+
+**Routing result** (`node core/target/m2-latency/a2-plan/routes-probe.mjs`, all routing tables of the tree): public methods
+511 — routed 494, shell 26, **disabled mutators 0, disabled queries 0** (8bf0d483: 65 + 41). Of the plan's 51 A2 names: 49
+routed by A2, `ensureBuiltinStyle` and `paintTocTemplate` by A1. A2 also routed the two queries no frontier had
+(`headerFooterTemplateXml`, `sectPrAt`) and front S's `paintHeaderFooterTemplate` (decision 5, ED-106 closed).
+
+**Routes** (`engine-routes-completion.ts`, handlers `rust-engine-completion.ts` + `rust-completion-{core,lists,paste,tables,
+objects,previews}.ts`; one additive line each in `engine-routes.ts` FRONTS and `rust-engine.ts` installRoutes):
+- public (49): `applyListLibrary`, `applyMultilevelLibrary`, `applyListLevels`, `applyListStyle`, `createListStyle`,
+  `modifyListStyle`, `defineListLevel` (a picture bullet too), `defineMultilevelList`, `setListLevel`, `restartNumbering`,
+  `continueNumbering`, `setNumberingValue`; `listInfo`, `documentLists`, `listStylesInDocument`, `numberingValueInfo`,
+  `listLibrary`, `markerPreview`; `pasteCells`, `hasCellsClip`, `pasteData`, `changeImageFromClipboard`; `insertQuickTable`,
+  `quickTables`, `insertSpreadsheet`, `canEmbedSpreadsheet`, `editEmbeddedObject`, `setTableTool`, `tableStyleList`,
+  `tableStyleXml`, `tableStyleBases`, `newTableStyleId`, `saveTableStyle`, `renderTableStyleXmlThumb`;
+  `startEditWrapPoints`, `endEditWrapPoints`, `editingWrapPoints`, `startTransparentColorPick`, `editSelectedTextbox`,
+  `textboxTemplates`, `saveSelectionToTextboxGallery`, `removeTextboxGalleryItem`, `setSelectObjectsMode`,
+  `isSelectObjectsMode`, `pageFillOptions`, `shapeGradientVariations`, `resolveDmlColor`; `paintCoverTemplate`,
+  `paintWatermarkTemplate`, `headerFooterTemplateXml`, `sectPrAt`.
+- handlers of earlier fronts changed in A2-owned parts: S's `getTableTool`, `tableStyleListNow`, `renderTableStyleThumb`
+  (the session's mini-document) and `paintHeaderFooterTemplate`; O's `insertImage` (`ole`, size), `insertTextbox('user:…')`
+  (the stored drawing as `GalleryBox`), `selectedShape` (the shape parts, ED-213), `setWatermark` (`measuredBox`, ED-208),
+  the pointer module (drag commits, inline drag, crop drag, the hover order); R's `clipboardItems` (ring kinds) and
+  `pasteSpecial` (cross-editor Paste Link): one additive call each (decision 3).
+- bar ids (all 38 of the plan): `list:defineBullet`, `list:defineNumber`, `list:setValue`, `list:defineMultilevel`,
+  `list:defineStyle`, `list:indents`, `list:restart`, `list:continue`, `paste:keep`, `paste:merge`, `paste:picture`,
+  `paste:text`, `paste:cells:overwrite|rows|nest|text`, `table:excel`, `table:style:new`, `table:style:modify`,
+  `table:painter`, `table:draw`, `table:eraser`, `dlg:pageBorders`, `pic:wrap:editPoints`, `pic:transparentColor`,
+  `pic:change:clip`, `shp:editText`, `select:objects`, `toc:level0`…`toc:level9`.
+
+**Through the TS shell code** (`through()`: the TS body runs on the element and only reads the shell's state or calls routed
+methods): `markerPreview`, `changeImageFromClipboard`, `quickTables`, `canEmbedSpreadsheet`, `setTableTool`/`getTableTool`,
+`setSelectObjectsMode`/`isSelectObjectsMode`, `textboxTemplates`/`removeTextboxGalleryItem` (and `userTextboxes`/
+`storeUserTextboxes` for the gallery save), `pageFillOptions`, `shapeGradientVariations`, `resolveDmlColor`.
+
+**uo-docx** (additive; one `mod` line each in `ops/mod.rs` and `tables.rs`):
+- `session/ops/completion.rs`: the read-only answers (lists, table style gallery/XML/bases/id, `textbox_gallery_item`,
+  `ole_at`, `sect_pr_json` = `JSON.stringify` of the body section's `SectPr` through `JsonWriter`, `selected_shape_parts_json`
+  = the `fill`/`style`/`textbox`/`body`/`story`/`normalEastAsianFlow` of `readShapeFormat`).
+- `session/ops/previews.rs`: `PreviewKind` {`Cover`, `Watermark`, `TableStyleXml`, `TableStyleName`, `RenderClip`,
+  `HeaderFooter`} and `Session::preview_document` (the TS `paintPreviewPage` 12142, `paintStyleThumb` 20178,
+  `renderClipPng` 5641, `paintHeaderFooterTemplate` 18521 mini-documents; the session is not changed).
+- `session/ops/shell_edits.rs`: `ShellEdit` + `Session::exec_shell_edit` (decision 1: outside `Command`; Busy while
+  pending, one undo step each): `FilledTable` (insertQuickTable 20394), `Table(TableGesture)` (Edge/Move/Size/Paint/Erase/
+  DrawSplit/DrawNew, 20646–21000), `SetWrapPolygon` (14280), `MoveSelectedBy` (9256), `DeleteSelectedObjects` (9266),
+  `ReplaceOle` (editEmbeddedObject 20345), `MoveInlineRun` (moveInlineRun 13972, ED-204: the drop caret is the step's
+  snapshot selection, as the TS caret follows the pointer), `CommitDrag(DragCommit)` (commitPictureDrag 13853,
+  commitDrawingDrag 13881, the Crop drag's mouseup 14152; ED-202/215: rotation, size with a relative size made absolute,
+  source rectangle, `posH`/`posV` by `pos_for` in the same references, written through `apply_drawing_xml(…, true)` = the
+  effect extent recomputed), `DefineListLevelPicture` (defineListLevel 4010 with `o.picture`).
+- `session/ops/tables/completion.rs`: the table gestures; `lists.rs`: `define_list_level_with` (the picture variant; the
+  old entry calls it with `None`), `add_pic_bullet` over `lists/store.rs` `add_pic_bullet` (numbering-store.ts 90),
+  `F2State.fresh_images` and `write_pic_bullet_images` at save (numbering-store.ts `writeImages` 115: `word/media/
+  uwbulletN.ext`, the part's relationship, the content type). Visibility only: `previous_list`/`parse_level`,
+  `OFFICE_THEME`/`ensure_table_style`, `move_float_by` → `pub(crate)`.
+
+**uo-wasm** `src/session/shell_completion.rs` (+ one line in `session.rs`) and the wave-7 block of `shell_stories.rs`:
+`uo_shell_list_info`, `_document_lists`, `_list_styles`, `_numbering_value`, `_list_library`, `_table_styles`,
+`_table_style_xml`, `_table_style_bases`, `_new_table_style_id`, `_table_grid`, `_has_cells_clip`, `_clipboard_kinds`,
+`_edit` (a `ShellEdit` as JSON: `filledTable`, `edge`, `move`, `size`, `paint`, `erase`, `drawSplit`, `drawNew`,
+`wrapPolygon`, `moveSelected`, `deleteSelected`, `moveInline`, `commitDrag`), `_preview` (kind 0–5, an owned layout
+handle laid out with the editor's options without revisions; the pipeline is a declared duplicate of A1's
+`uo_shell_fmt_toc_template`), `_render_clip_margins`, `_textbox_gallery_item`, `_ole_at`, `_ole_data`, `_replace_ole`,
+`_hf_template_xml`, `_sect_pr_at`, `_link_origin`, `_shape_parts`, `_watermark_text_box` (watermarkTextBox 11901 over the
+session's fonts: the sfnt advance at the 600-dpi em, `(usWinAscent + usWinDescent) / unitsPerEm`, `explicit_text_box`),
+`_define_list_level_picture`; `uo_shell_page_cells`, `uo_shell_table_rows`. JS `js/session-completion.mjs` + `.d.ts`
+(`bindCompletion`), re-exported by `session.mjs`/`session.d.ts`, drift line in `editor.check.ts`; editor ambient
+`write-session-completion.d.ts`.
+
+**Shell**: `rust-completion-previews.ts` lays the preview out (`uo_shell_preview`) and paints page 0 with the TS crop and
+scale (covers, watermarks, table style thumbnails and the dialog's preview, header/footer thumbnails) and runs the
+session's `renderClip` job (Paste as Picture: the PNG at 2 px per 96-dpi pixel). The pointer: `a2Hooks` (rust-objects-
+pointer.ts) — the pick, table tools/edges/handles and Select Objects before the objects (TS mousedown 10171–10180), the wrap
+points after Draw/Link; the hover now in the TS mousemove order (10437: wrap points, crop, handles, floats, THEN the tables —
+the table hover only changes with no object under the pointer; closes `f7b__7__0|menu` ED-219b). The dblclick on an
+embedded spreadsheet runs before the other double clicks and selects the picture first (the TS picture stays selected
+through the double click). Paste Link from another editor: a page registry of the Rust editors (`WeakRef`), the source by
+its clip identity (`uo_shell_link_origin`), `AddLinkSource` on the source's session, `linkSourceName`, `PasteLinkWith` here.
+
+**Declared** (A2):
+1. `pasteData(d)` ignores a TS `d.rich` (a TS-model RichClip only exists in a TS-engine element); text, HTML and image go
+   to `PasteData`.
+2. A page mixing TS and Rust editors does not share the Office Clipboard (one ring per wasm instance: Rust editors share
+   it, and Paste Link between two Rust editors works).
+3. (open parity item, see "Wave 7 — merge state") The wrap-point drag shows the polygon live; the TS also relays the
+   text out live during the drag (one step in both).
+4. (open parity item, see "Wave 7 — merge state") The inline picture drag does not paint the drop caret during the
+   drag (the TS moves its caret with the pointer; the session's selection is not changed before the drop); the end
+   state, the undo step and its selection are the TS's.
+5. `editEmbeddedObject(run)` takes the body position `{ para, offset }` of the run (the dblclick's `oleRunAt` hit) or the
+   caret: a TS `Run` object does not exist in a Rust editor.
+6. The harness's `<universal-sheet>` is a deterministic stub registered on both engines' pages (decision 6); the real
+   Sheet editor in the dialog is checked by hand only.
+7. (open, not measured, see "Wave 7 — merge state") Session rule seen by the native test, not A2's (plain
+   `InsertTable` has it too): a `save_docx` between a table insert and its undo commits the pending table style (`Table
+   Grid`) to the styles part outside the history, so the undo leaves it there. The tests compare without a save in
+   between; whether the TS `saveDocx` does the same was not measured (for the milestone gate).
+
+**Numbers** (D: free 47 GB at the start of the wave, 28–36 GB during this session with the other frontiers):
+- uo-docx `completion_a2::` **10/10** (lists and table styles as the TS; every shell edit one undo step giving the package
+  back; Draw Table two steps; the inline move (no step on itself, one step, the picture selected); the drag commits
+  (`cx`/`cy` 571500×444500, `rot` 1800000, `a:srcRect l=10000 … b=20000`); the picture bullet (`w:numPicBullet` 0 with
+  `o:title`, `w:lvlPicBulletId`, the Symbol character in reserve, `rIdUwPb1` → `media/uwbullet1.png`, the image in the
+  layout's numbering); the queries (`sectPrAt`, the hf template XML, the previews of header/footer/current position, the
+  shape parts, the gallery item); M1 0 B left).
+- uo-wasm native `shell_completion_native` **5/5**: A lists, B table styles, C every edit through `uo_shell_edit` (one
+  undo restores the package, redo changes it), D M1 13,007,399 B allocated, peak 917,960 B, 0 B left; E the second leva —
+  every preview kind lays a page out (6/6), the queries' statuses, `watermarkTextBox` `{widthPt 412, heightPt 80}` for
+  RASCUNHO 72 pt Liberation Sans, the picture bullet's media in the saved package; M1 6,220,203 B allocated, peak 644,011 B,
+  0 B left.
+- Native regressions: `shell_objects_native` 4/4, `shell_stories_native` 8/8, `shell_native` 8/8, `shell_caret_native`
+  4/4, `shell_review_native` 3/3, `session_native` (selftest) 11/11.
+- Wasm API: `session_api.test.mjs` 5/5 (M4 10,000 sessions, live bytes back exactly; M2 flat), `session_replay.test.mjs`
+  (d2a,f1–f3,f5–f10) 10/10, `shell_api.test.mjs` (M4 2000) 2/2.
+- Editor vitest 34 files / **334 tests green** (engine-completion 5/5: the 51-name inventory with no blocker left, the 38
+  bar ids routed and reaching only routed or shell methods); viewer 28 passed, 1 skipped. Editor/viewer tsc: exit 0, no
+  output. `check-changed.mjs`: it stopped on the Rust 1.100 clippy lints of files no frontier touched (the toolchain updated
+  itself during the wave, see fix round 1 below); fixed in code at the merge (F3, "Wave 7 — merge state").
+- `editor_switch_completion.mjs`, final (fix round 1's build; the per-mode numbers are under "Numbers of the fix round"
+  below, the first session's per-mode runs are superseded): every cover (8), watermark (12), TOC (3), header/footer (all
+  galleries) and table-style thumbnail (24 gallery + 3 dialog previews) **pixel-identical** in both engines; page
+  (`sectPrAt`, `headerFooterTemplateXml`, the explicit-size watermarks 337×88 and 156×60 pt) equal; Paste as Picture and the
+  cross-editor Paste Link `OLE_LINK1` equal. What the first session had left open, all closed in fix round 1:
+  - `markerPreview` css (ED-C1: `"Carlito", "Liberation Sans"` in the TS, `"Liberation Sans"` in the Rust editor): the
+    shell's TS font registry now gets the Rust engine's families before the TS body runs (fix round 1, below).
+  - blank|objects end thumbnail — **corrected and fixed in the fix round** (the first session read it as a line break): the
+    saved parts, the screen and the picture item (`x 2676, y 2107, w 4575, h 3075`, crop `l 0.07576 t 0.06818`, `pic.clrChange`,
+    the same 300×200 ImageBitmap; `UO_EC_ITEMS=1`) are equal; only the resampled edges of the recoloured picture differ (2,301
+    px in y 94–294, x 113–413). Cause: the picture painter's layer cache. The TS keys it on the image OBJECT, which survives a
+    relayout, so the thumbnail reuses the layer built at the screen's resolution (ppt 1.3333; the thumbnail's 1.3338 rounds to
+    the same TS key); the Rust cache hung from the layout, so the relayout of `end()`'s `refresh()` dropped it and the thumbnail
+    built a fresh layer at 1.3338. Painting at 780 px (another key in both) gave the same hash in both engines.
+  - f2-3-0|tables step 24 (`tbl:move` handledrag 2×1 px) — **fixed in the fix round** (`edit`/`applyNoScroll` of
+    rust-completion-core.ts): the table gestures, drag commits, wrap points, multi-selection and OLE edit no longer scroll the
+    caret into view (the TS paths only `refresh()`; only Quick Tables and Draw Table's new table go through `insertTable`,
+    which scrolls). The shell's scroll after the step-23 size drag had moved the page under the move handle's pointer.
+  - What differs at the end is the ED-304 field shading of the footer only (f2-3-0, f2-3-1 and f7c__7__2 lists; f2-3-0 paste,
+    inline, previews and tables), declared in DECLARED_C as `FIELD_SHADING` — not an A2 path.
+- Front regressions with the fix-round build: `editor_switch_review.mjs`, `editor_switch_stories.mjs` and
+  `editor_switch_objects.mjs --mode all` ok; ED-219b (`f7b__7__8|objects`, `f7b__7__0|menu`, the hovered table's handles)
+  closed by the hover order and the draw-mode hover of fix round 1, and B retired both entries. `editor_switch.mjs --mode
+  all`: its chrome probe used the Format Painter as the example of a non-routed command, and A1 routes it now; at the merge
+  F3 replaced the example with a synthetic command registered only for the probe (disabled and inert under
+  `engine="rust"`, enabled and running with the TS engine), so the fail-closed check stays real.
+- `editor_switch.mjs --mode parity` (session.wasm, stride 1, 12 steps): ok, 0 undeclared.
+- uo-docx `--release --test all`: **795 passed, 0 failed**, 1 ignored (fix round 1). The first session's 791 / 2 (the two
+  500-page budgets `memory_d2a::m3_per_keystroke…` and `memory_d2b_f1::m3_per_command…`, 1.6 MB per command) came from
+  B's per-settle `sync_bookmarks`, which B moved to the layout pass before the fix round.
+
+**DECLARED entries** (the tables are B's, A2 did not edit them): the entries the first session found stale were retired by B
+(`editor_switch_objects.mjs` `f7b__7__8|objects` and `f7b__7__0|menu`, ED-219b; DECLARED_C's `MARKER_CSS`, ED-C1). The
+one entry A2 asked for, `'f2-3-0|tables': FIELD_SHADING` (the ED-304 footer band: 473 px at x 338–403, y 1046–1064 on both
+pages, thumbnails equal; dumps `es-c/dump/f2-3-0-tables-p{0,1}-{ts,rust}.png`), was added at the merge (F3).
+
+**What A2 leaves disabled**: nothing — no public method and no bar command of the A2 families is disabled or a no-op under
+`engine="rust"`. Open parity items: none of A2's (ED-C1, ED-219b, f2-3-0 tables step 24 and the blank|objects thumbnail
+closed in the fix round).
+
+**Fix round 1** (reviewer findings: the harness not passing, no policy guard on the shell edits, ED-219b, ED-C1, the
+blank|objects attribution, the fail-closed probe, the harness coverage). Two sessions (the first was cut off by a usage
+limit after the guard, the step-24 scroll and part of the investigation; the second checked and finished them).
+- **Formatting policy on the shell edits** (major): `ShellEdit::guard()` answers the guarded TS method the edit reaches —
+  `insertTable` for `FilledTable` (insertQuickTable calls the guarded `this.insertTable`) and `Table(DrawNew)` (finishDraw's
+  `insertTable(1, 1, …)`), `defineListLevel` for `DefineListLevelPicture`; `exec_shell_edit` refuses as `exec` does (no
+  effect, `Event::Blocked`, the change set). The other shell edits reach no `POLICY_GUARDS` method in the TS (table gestures
+  through `editTableAt`; drag commits through `applyPictureXml`/`applyDrawingXml`; wrap points through `applyPictureXml`;
+  multi-selection through `moveFloatBy`/`deleteSelectedFloat`; the OLE edit and inline move write the model; `pasteCells`
+  through `editTable`/`pasteText`; `changeImageFromClipboard` → the routed `changeImage`). Test
+  `completion_a2::shell_edits_follow_the_formatting_policy` (each variant a no-op raising `Blocked` under a policy without
+  tables/lists; a move-handle gesture runs under the same policy; all run without it).
+- **f2-3-0|tables step 24**: see the corrected bullet above (no caret scroll after the table gestures).
+- **blank|objects thumbnail**: see the corrected bullet above. Fix: `PaintCaches.inherit(from, to, shared)` (uo-wasm
+  js/paint.ts) carries the picture layers and adjusted bitmaps of the images a relayout shares (`sharedImage`) to the new
+  layout, called by `DecodedLayout.inheritPaint(prev)` (js/viewer.ts, declared in write-engine.d.ts) from the viewer's
+  `RustSession.inherit` (wave 6's decoded-image inheritance) — the TS lifetime of the cache (the image object).
+- **ED-219b on f7b__7__8** (the hovered table's adorners after Draw Text Box): the TS `mousemove` gate is `floatDrag` only
+  (10400), so the hover (and `tableMouseMove`) runs in the Draw Text Box / Create Link modes and through the draw drag (its
+  ghost is a DOM div in the TS); the shell's `onHover` returned on `o.mode` and on the draw ghost `o.drag`. Now it returns
+  only for a drag that is not the draw ghost.
+- **ED-C1 `markerPreview` css**: before the TS body runs, the shell's TS font registry gets the families the Rust engine
+  asked for (`applyResolvedFont` over `RustSession.pushedFamilies()` — new, the page environment's pushed names — plus the
+  layout's faces), as the TS layout registers every family it asks for (f2-3-0: TS Aptos, Calibri, Arial, Times New Roman,
+  Liberation Serif, Wingdings, Cambria; the layout's faces alone were only Liberation Serif). Declared: the pushed names are
+  the page environment's (shared by the Rust editors of a page), so a family another Rust editor of the page asked for is
+  in the registry too; the TS registry is per element.
+- **Selection bug found by the new coverage** (front O's model, fixed here): `settle_float_sel` kept an inline picture of the
+  body selected after `insertTable` + `selectTable` (the path `[Para 0, run 0]` checked against the new cell's empty
+  paragraph answered "over": 0 = 0 + 0). It now requires the run to exist and be an inline picture of the edit context (the
+  TS compares the run object, `picSel`).
+- **Debug lines removed**: the two `A2TRACE` pointer-trace lines of the first session (rust-completion-tables.ts,
+  rust-objects-pointer.ts); the harness's `window.__a2trace` read is optional.
+- **engine-switch.test.ts**: the fail-closed path is probed with two SYNTHETIC public mutators on the prototype (one sync,
+  one async) that no routing table classifies: a second element started with them counts 2 disabled mutators, answers
+  `undefined` / a promise of `undefined`, records `disabled:<name>`, never runs the TS body, and `model()` stays null; the
+  real list is asserted to have no unclassified mutator.
+- **Harness coverage** (`editor_switch_completion.mjs`): paste — the Office Clipboard's IMAGE item (a picture copied and
+  pasted from the ring with `pasteClipboardItem`), Change Picture › From Clipboard (`pic:change:clip` over a PNG written to
+  the system clipboard), all in the body before the cell steps; the Paste Options re-paste (`repaste` text/merge/keep after
+  `pasteData`); objects — an existing text box: border click (shape), `shp:editText`, Esc back to the shape, Esc; the memory
+  cycle now has two editors per cycle: a blank one with real mouse drags (the inline picture's MoveInlineRun, undo, Wrap
+  Square, the float's CommitDrag) removed and counted, then the document's with lists, Quick Table, cell paste, table-style
+  queries and the preview paints (two covers, a watermark, a table-style thumbnail). `UO_EC_ITEMS=1` prints the image items
+  of page 0 of each engine's layout (the thumbnail measurement).
+- **Seen, not A2's** (for the merge): `el.newDocument()` right after `load` leaks one layout handle intermittently under
+  `engine="rust"` (memory cycle variant "make → load f7b__7__1 → newDocument → insertImage → save → remove": `handles` 1
+  after remove in some cycles; without the newDocument 0 in every cycle) — the adopt/font-loop path of rust-engine.ts. The
+  memory cycle avoids it (a separate blank editor). **Closed by F1** ("Wave 7 — F1" below): `adopt` did not release the
+  installed layout of a `refresh()`; the memory cycle now does load → newDocument again. And the toolchain moved to rustc/clippy 1.100.0 (2026-11-09): clippy
+  `-D warnings` now fails on files nobody touched (`chunks_exact_to_as_chunks` in uo-codec reader.rs 172, uo-testkit
+  sha256.rs 56/77/93, uo-opc cfb.rs 276/282 and flate.rs 887; `needless_range_loop` uo-docx doc/props.rs 1433;
+  `manual_swap` uo-docx js/object.rs 201), so `check-changed.mjs` stops there; with those three lints allowed, clippy native
+  and wasm32 over the four changed crates is clean. (Fixed in code at the merge, F3: no lint is allowed.)
+- **Numbers of the fix round** (session_count.wasm rebuilt with the guard and the selection fix; CARGO_TARGET_DIR
+  m2-latency): `editor_switch_completion.mjs --mode all` 445 s, **6 failures, all B's table**: the four stale MARKER_CSS
+  entries (5 lines: `blank|lists` reported twice) and the undeclared ED-304 band of `f2-3-0|tables`; with DECLARED_C as
+  proposed above (a scratch copy, the repository file untouched) **`ok`** — lists 1,460 equal / 3 ED-304, paste 1,068 / 1,
+  tables 1,003 / 1, objects 1,971 / 0, inline 254 / 1, page 134 / 0, previews 199 / 1, memory 30 cycles: 0 sessions,
+  engines and handles after each remove (both editors of the cycle), live bytes flat at 13,139,221 (15,383,165 in the
+  second run), `memory.buffer` constant. `editor_switch_objects.mjs --mode all`: only the stale `f7b__7__8|objects`
+  (2 lines). `editor_switch_stories.mjs` ok, `editor_switch_review.mjs` ok. `editor_switch.mjs --mode all`: the 2 known
+  `chrome compact|ribbon … {"id":"painter"}` probe failures (B's harness). (Both harness items were resolved at the merge by F3: the
+  DECLARED_C entry above and the synthetic probe command.) uo-docx `--release --test all` **795 passed, 0
+  failed**, 1 ignored (`completion_a2::` 11/11 with the policy test). uo-wasm `shell_completion_native` 5/5,
+  `shell_objects_native` 4/4. Editor vitest 34 files / 334 tests, viewer 28 passed + 1 skipped; editor/viewer tsc exit 0;
+  the strict tsc over the uo-wasm js (paint.ts, viewer.ts, the d.ts) exit 0; rustfmt clean on the touched .rs.
+
+**For the milestone gate**: fold `ShellEdit` and the JSON exports into `Command` + `session.uos` (replay/capture families,
+C ABI, C# facade see them); decide declaration 7 (the pending table style committed by a save) against the TS `saveDocx`.
+
+**Process metrics**: two implementer sessions (Opus) on the planner's plan; the second resumed from the first's tree
+(`tente novamente`). Rework: the Select Objects overlap with A1 (first session), the OLE dblclick selection (the second
+mousedown of a fast double click), the inline drag's undo selection (the TS snapshot holds the drop caret), the harness
+targets (`inline:last`, an engine-neutral check instead of the TS-only `enumInlinePics`), `__seed` in a step (desynced the
+random ids), two lint findings in the store port (`f64::max`, a float parse). Other frontiers edited A2 files during the
+wave (B: `tableMouseMove`'s TS gate in rust-completion-tables.ts); A2 kept their lines.
+
+### Wave 7 — A1: File, View, Font and Paragraph
+
+Frontier A1 of wave 7 (the maintainer: "do everything that is missing"): the File, View, Font and Paragraph families of the
+README's "What stays disabled" list, routed to the wasm session, 1:1 with the frozen TS (`clickcompliance-docx` d0f45bc5).
+Plan and probes: `core/target/m2-wsession/plan-a1` (outside git). Front name `format`. The first implementer was cut off by a
+usage limit; the second one kept its tree, fixed what the verification found (below) and verified everything.
+
+**Routes** (`write/packages/editor/src/engine-routes-format.ts`; handlers `rust-engine-format.ts` joining
+`rust-format-{core,file,text,view}.ts`; one additive line each in `engine-routes.ts` FRONTS and `rust-engine.ts` installRoutes,
+where A1's handlers are merged LAST, over the other fronts, so `setView`, `save`, `load`, `loadOdt`, `exportOdt/Html/Markdown/
+Xps` and `stats` of the main table are overridden from A1's own file):
+- public (57 + the overrides): `print`, `printPages`; `getRulerInfo`, `showGridlines`, `gridlinesShown`, `showBookmarks`,
+  `bookmarksShown`; `setFontFormat`, `setOpenType`, `setUnderlineColor`, `setTextEffects`, `applyTextEffectPreset`,
+  `setTextGradient`, `textEffects`, `documentThemeColors`, `copyFormat`, `cancelFormatPainter`, `painterActive`, `painterSticky`;
+  `setParagraphIndents`, `setSpecialIndent`, `setIndentRight`, `setTabStops`, `setDefaultTabStop`, `setParagraphFlow`,
+  `setParagraphLayout`, `setParagraphBorders`, `paragraphBorderPreset`, `toggleBorder`, `insertHorizontalLine`,
+  `getParagraphIndents`, `getTabStops`, `getDefaultTabStop`, `getParagraphFlow`, `getParagraphLayout`, `getParagraphBorders`,
+  `paragraphBorderSides`; `selectSimilarFormatting`; `nextManualHyphenation`, `applyManualHyphenation`, `skipManualHyphenation`,
+  `endManualHyphenation`; `findNext`, `replaceAll`, `countMatches`, `getLinks`, `getCustomInlines`, `insertCustomInline`,
+  `hasExternalFields`, `styleKeyOf`, `ensureBuiltinStyle`, `paintTocTemplate`, `tocEntrySuggestion`, `hasAuthor`,
+  `validBookmarkName`. Overrides: `load` (sniffs `.odt` as TS `detectFormat` 2184), `loadOdt`, `save` (odt/html/markdown/xps;
+  `'auto'` = the loaded format), `exportOdt`, `exportHtml`, `exportMarkdown`, `exportXps`, `setView` (Web/Draft/Outline; print
+  and read delegate to front O's), `refresh` (Web relays out to the viewport width), `stats` (words/characters over the session's
+  plain text: a plugin inline counts as its fallback text).
+- private: `ensureImagesDecoded`, `paintBookmarkMarks`, `paintTocControl`, `paintEngineInlines`, `paintDocGrid`,
+  `tocTabMouseDown`.
+- bar ids (51): `fontsInFile`, `export:odt|html|md|xps`, `print`, `compare`, `enableEditing`, `wordCount`, `mailmerge`,
+  `mergefield`, `fontAccess`; `view:web|draft|outline|ruler|gridlines|bookmarks`; `color`, `color:gradient`, `dlg:font`,
+  `underline:more`, `painter`, `fx:pane`; `borders`, `dlg:paragraph`, `dlg:tabs`, `dlg:borders`, `home:border:*` (12),
+  `home:borders`, `home:hrule`, `select:similar`, `hyph:manual`. `select:objects` and `toc:level0…9` are in A2's table (agreed:
+  A2 keeps Select Objects with its lasso and multi-selection; A1 dropped its copy).
+
+**Rust** (each a port with the TS line in its doc comment; the native-only commands are `native_only` in `session.bind`):
+- uo-docx: paragraph getters `paragraph_flow`/`paragraph_layout`/`paragraph_borders` and `default_tab_stop_now`
+  (`ops/paragraph.rs` 654…), `FindCmd::ReplaceAllPlain` (`ops/find.rs` 178, TS 4764: JS `toLowerCase`, tracked =
+  trackedDelete + insertTyped, one undo step; `tracked_delete` made `pub(crate)` in `ops/text.rs`),
+  `TextCmd::InsertCustomInline` (`ops/text.rs` 35, TS 2108), `StyleCmd::EnsureBuiltinStyle` (`ops/styles.rs` 113) with
+  `style_key_for`/`builtin_style_id_of` (`ops/styles/listing.rs` 71/88), `toc_sdt_range` public (`toc_cmds.rs` 219),
+  `Session::open_odt` (`io.rs` 132, TS `loadOdt` 2275: the ODF reader over the empty package of `read/blank.rs` 46),
+  `Session::has_external_fields` (`ops/settings.rs` 29) — also used for the `uw-protected` event's `hasFields`, which the
+  session always sent `false` (`settings.rs` 56; found by the new `bar` family: the TS asks to update fields after Enable
+  Editing, Rust did not). Tests: `tests/session_wave7_format.rs` (8, `mod` line in `tests/all.rs` 223).
+- schema: `QueryOp::CountMatches(QCountMatches)` at the end of the enum (`session.uos` 311), regenerated codec/js.
+- uo-wasm: `src/session/shell_format.rs` (one `mod` line in `src/session.rs`): `uo_shell_fmt_json` (the reads: flow, layout,
+  borders, default tab, theme colours, external fields, links, custom inlines, style key, built-in id, drawing grid, a section,
+  bookmark marks, TOC range, custom inlines of a paragraph, the plain text, section ends), `uo_shell_fmt_exec` (the three
+  native-only commands), `uo_shell_fmt_hyphenation`, `uo_shell_fmt_export` (ODT, HTML, Markdown, the image list),
+  `uo_shell_open_odt`, `uo_shell_fmt_ruler`, `uo_shell_engine_set_view` (stored in `ShellEngine.view`, applied in
+  `uo_shell_relayout`: `shell.rs` 48/212), `uo_shell_fmt_toc_template`, `uo_shell_fmt_toc_crop`. `shell_state.rs` 80: the
+  styles part of now. JS: `js/session-format.mjs` + `.d.ts` (re-exported by `session.mjs` 407 / `session.d.ts` 246),
+  `write/packages/editor/src/write-session-format.d.ts`. Native tests `tests/shell_format_native.rs` (3: the reads, the
+  commands/exports/.odt reopen, M1 live bytes; fix round 1: `d_compare`, the Rust diff over two fixtures with each option).
+- Cargo: `session` gains `uo-docx/odf`, `uo-docx/export` (D-A1-4) and (fix round 1) `uo-docx/compare` (D-A1-3):
+  `uo_shell_fmt_compare(a, b, flags)` in `shell_format.rs` answers `JSON.stringify` of the TS `DocDiff`
+  (`DocDiff::to_json`), `compare(a, b, opts)` in `js/session-format.mjs`/`.d.ts` and `write-session-format.d.ts`.
+
+**Shared TS edits** (additive, marked `wave 7 (A1)`): `rust-engine.ts` 12 (import), 99 (FrontApi: `paintEnv`, `adoptSession`,
+`setUlButton`, `ss`, `pageEnv`, `shellEngine`), 263/865/869 (`hasFields` of `uw-protected` from `hasExternalFields()`, was
+`false`), 566 + 1381 (`hooks.content`: painted after the base and before the print guard, so plugin inlines print), 1441
+(installRoutes); `rust-review-overlays.ts` 9/14/18 (`paintBookmarkMarks` in OVERLAY_METHODS, ED-310 closed; the formatting
+marks of `paintEngineMarks`, ED-309 closed); `engine-routes.ts` 14. Fix round 1: `rust-engine.ts` `hooks.pageHeight` (the
+shown sheet height, read by `rebuildCanvases`) and FrontApi `imageState`; `write/packages/viewer/src/rust-engine.ts`
+`RustSession.imageState(dl, id)` (`ready|loading|failed|idle`, additive); `chrome.ts` `compare()` passes
+`{ diff: ed.rust.compareDiff }` to `loadPair` under `engine="rust"`; `write/packages/editor/src/xps.ts` the optional
+`XpsGlyphRun.indices` (written as the XPS `Indices` attribute; the TS legacy runs have none, so its output is unchanged);
+the compare product `write/packages/compare/src/universal-write-diff.ts` `loadPair(a, b, { diff })` (optional; without it
+`diffDocuments` as before) with its README, `site/docs/universal-write-diff/index.html` and a CHANGELOG line.
+
+**Decisions taken** (the plan's D-A1-n; the maintainer can still reverse them):
+- D-A1-1 Web/Draft/Outline = the engine transforms (LQ2); Outline is front B's `ViewTransform::Outline`; one canvas per sheet,
+  its SHOWN height the content's end plus the 288-tw margin (fix round 1: `hooks.pageHeight` = the viewer's `webPageHeight`,
+  views.ts 62; before, the canvas was the whole 633,600-tw sheet, 42,240 CSS px with its buffer scaled to 0.39). The canvas
+  CSS box and its buffer follow that height; hit-testing reads the canvas box, so it is unchanged. Fix round 2 (A1-G4 done):
+  a sheet taller than 4000 CSS px is painted in STRIPS of at most 4000 CSS px (the TS `CONT_TILE_PX`, 12516), new
+  `rust-format-tiles.ts`: the page canvas keeps its box (hit tests, `engPoint`, caret, scrolling, every front's
+  `canvases[page]`) with a 1×1 buffer, and the strips (`canvas.page-strip`, absolutely placed over it, no pointer events,
+  `bufferScaleFor` of 4000 px: the full DPR) exist only in the `ensureVisiblePainted` window and follow the scroll. Each
+  strip's 2D context offsets every transform by its top (`setTransform`/`resetTransform`/`getTransform` patched), so the
+  base, every front's hooks, the selection and the caret paint on it as on the page; the shell's `paint` asks the new
+  `hooks.tiles` first (`rust-engine.ts`: the page body split into `paintOn`, the base painted directly on a strip, the
+  cached base for a page). Memory: two or three 4000-px strips instead of one 16384-px canvas. The TS tiles are pages of its
+  legacy layout; the Rust sheets stay one per section (the engine's transform), so the page canvases differ (ED-707/708 as
+  before). In the continuous views `layoutPageCount()` answers 0 and `stats().pages`/`page` and `currentPage()` 1 (the TS:
+  no engine layout, one logical page; 18539, 12804, 8831).
+- D-A1-2 XPS (fix round 2: the plan's recommended route, done in Rust; the TS writer route of fix round 1 was an unapproved
+  choice and is gone, `xps.ts` back to HEAD): uo-pdf `xps` (feature `xps`, `src/xps.rs`, enabled by uo-wasm `session`) writes
+  the package from the same pages and resources as `render_pdf`: `Glyphs` with each face embedded once (`/Resources/Fonts/F<n>.ttf`),
+  every glyph's index and placed advance (`Indices`), the run's alpha (`Opacity`), synthetic bold/italic (`StyleSimulations`),
+  the character scale (`RenderTransform`); rects (a 6-digit hex fill only, as paint.ts; alpha), lines with their dashes, paths,
+  shapes (the preset geometry of `uo_render::geom`, solid or gradient brush, outline, the outer shadow, a picture fill),
+  pictures (`ImageBrush`: crop, rotation, flips, the pixel adjustments of the image and of Picture Format; JPEG/PNG as they are,
+  the other rasters as PNG), clips and transforms as nested `Canvas`, the page colour and the page fill (a tiled `ImageBrush` of
+  the PDF's tile). Shell export `uo_shell_fmt_xps(layout)`; `exportXps` in `rust-format-file.ts` (Web/Draft/Outline: the shell
+  engine lays out the pages for the export, then the view again, as the TS export is always of the pages).
+  Not written (declared, ED-704): text effects (the run plain), WordArt's outlined text (as glyphs), shape and picture effects
+  (glow, soft edges, bevel, reflection), a picture's preset outline/frame, pattern fills of shapes, images without a raster
+  decoder (EMF/WMF/SVG). The bytes differ from the TS legacy-layout XPS (ED-704); the harness checks the structure, per page
+  the session's painted text in the `UnicodeString` runs in order, and per page the elements against the display list (`Glyphs`
+  = the runs written, `ImageBrush` ≥ the pictures, `Opacity` ≥ the glyph runs and hex rects with an alpha under 1).
+- D-A1-3 Compare (fix round 1: the recommended route): the Rust `diffDocuments` (uo-docx `compare`, D5a) over the session's
+  `saveDocx()` and the picked file; `<universal-write-diff>` still reads both documents for its view (its own TS reader) and
+  takes the `DocDiff` from `opts.diff`. The bar family compares the whole `DocDiff` TS vs Rust and checks that the Rust diff
+  ran (and not in the TS element).
+- D-A1-4 exporters in the shipped module: yes (ODF + HTML/Markdown).
+- D-A1-5 no Ctrl+Shift+C/V painter keys (the TS has none): 1:1. Esc cancels the painter (key hook first). Fix round 2: the
+  painter applies at the end of the shell's DEFAULT text click only (new `hooks.clickUp` called by `RustEditor.clickAt`'s
+  mouseup, after its drag logic, and on the triple click; the TS `up` of 10311): a click another front handles (an object,
+  a picture, Ctrl+click on a link, a cell selection, a text box) leaves it armed, as the TS.
+- D-A1-6 exports are of the BODY (as Word); the plain find/replace work on the edit story as the TS. Exercised since fix
+  round 2 (ED-711: the harness's `extra` family exports from the header).
+- D-A1-7 the image compression stays the browser canvas (copied `compressImagesForExport`): HTML/MD byte-equal.
+- D-A1-10 the harness owns its DECLARED table, each entry tied to an ED below.
+
+**Declarations**:
+- ED-701 copies of TS module code in the shell (declared duplicates): `compressImagesForExport` (8731), `detectFormat` (2184),
+  `sectionColumns` (492), `BREAK_MARK_LABELS` (324), `DEFAULT_FONT_CSS`.
+- ED-704 XPS: the session's pages through uo-pdf `xps` (fix round 2; was `xps.ts`), not the TS legacy layout; checked for
+  structure (`[Content_Types].xml`, pages, embedded fonts), the page text and the elements per page (see D-A1-2), not
+  byte-compared; what the writer leaves out is listed in D-A1-2.
+- ED-711 (fix round 2, exercised): an export (HTML/Markdown/ODT/XPS) while a header/footer, note, text box or cell is edited
+  writes the BODY, as Word; the TS swaps `this.model` to the edited story (universal-write.ts 2668, 2750, 18753, 18811) and
+  exports that story. The `extra` family checks on `headers.docx` that the Rust export from the header equals its body export
+  and that the body exports equal the TS ones (the TS story export logged as the declared difference).
+- ED-712 (merge fixer F2: Word manda sobre o TS, measured; was "observed" in fix round 2) `insertTocTemplate('auto1')` on `f7a__7__0` writes the first entry's page number
+  `vi` in the TS and `5` in the session; after `updateToc('all')` both write `5` (the TS insertion and update disagree; the
+  references front's). The TOC-tab step compares after the update.
+- ED-713 (merge fixer F2 round 2: Word manda sobre o TS, measured) a PAGEREF of a section with chapter page numbering
+  (`w:chapStyle`): Word writes the chapter numbers and `w:chapSep` before the page (`1-i`), the frozen TS the page alone
+  (`i`), on screen and in what `updateToc` writes. See "merge fixer F2, round 2".
+- ED-707/708 Web/Draft/Outline: the ruler and the canvas sizes of the Web/Draft/Outline steps (and the Web screen) differ
+  from the TS legacy continuous layout (600 tw margins, its strip); text/selection/events/saved document equal. Declared per
+  step tag (`web`, `draft`, `outline`, `web-shot`), not over the print-view steps; undeclarable checks: every canvas keeps the
+  full buffer scale, and a continuous view's sheets are not taller than the TS strip + 15 % + 40 px.
+- ED-709 (fix round 1) custom-inline data that is not plain JSON (a `Date`, an `undefined` member): the session stores the
+  data as JSON text (as the saved .docx does), the TS element keeps the object until it saves; declared on the one step that
+  inserts such data (`inline-json`).
+- Referenced, not A1's: ED-314 / front B's gate-O3 (`f2-3-0` has no theme part; the TS paints the written `w:color` C00000,
+  the session now Word's 2023 scheme accent2 E97132 — B's `uo-docx-layout/src/theme_word.rs`, "Word decides" — on screen and
+  in the pages the bar's Print sends to `host.print`; the same change makes `editor_switch.mjs --mode all` report f2-3-0's
+  thumbnails/screen, B's DECLARED table), ED-304 (front R, the footer's field shading on `f2-3-2`).
+
+**Harness** `core/crates/uo-wasm/tests/browser/editor_switch_format.mjs` (new; the page helpers copy-adapted from
+`editor_switch_review.mjs`, declared): families `font` (29 steps), `para` (28), `text` (17), `view` (20), `bar` (23, compact
+bar + host hooks), `file`, `memory`. The `bar` family was added by the second implementer: the compact bar's menus
+(`dlg:tabs`, `dlg:borders`), commands in no layout through the chrome's registry (`borders`), the File commands ending in
+host hooks (`exportFile` for `export:html|md|odt|xps`, `print` → `host.print` page hashes, `compare` → `openFileForCompare` +
+the diff element's `stats` and text), `fontsInFile`, `wordCount`, `fontAccess`, `mailmerge`/`mergefield` (hidden in both: the
+TS has no such methods), Enable Editing after a protected load.
+
+Fix round 1 (the review's findings): the print step waits for `host.print` up to 120 s and fails explicitly (the printed
+pages are a facet taken once both engines printed: no timing answer); the DECLARED entries narrowed to the facets and steps
+they cover (no `f2-3-0|*`: the font and para scripts run on `f7a__7__0`, every end screen compared; the view declarations
+only on the Web/Draft/Outline steps by tag, ruler and canvas sizes, plus the Web screen; the glow capture ED-710); captures
+while the text effects are applied (glow, outline, preset, gradient); the dialogs edited before OK (More Underlines: wavy
+red; Font: 13 pt and a colour; Paragraph: left 1,5 cm, hanging 0,5 cm, 6 pt before; Tabs: a right hyphen stop at 7 cm by
+Set and a centred dot stop at 3 cm by OK; Borders: a red 1½ pt Box); a `ruler` family of real mouse drags on the ruler
+(first-line, hanging, left and right indents, a tab added, moved and dragged off, the right and top margins, a section
+column, a table cell boundary and an indent inside the cell; f7a__7__0, tables, sections); a canvas facet (CSS and buffer
+sizes) in the view family with two checks no declaration covers (the buffer scale, the continuous sheet's height); the
+compare `DocDiff` compared and the Rust diff required; the XPS page text equal to the text of every glyph run the session's
+layout painted on that page.
+
+Final run `--mode all` (fix round 1, session_count build of the tree at 19:24, `verify-a1/fix2_*.log`): font 859 facets
+equal / 2 declared (ED-710), para 1078 / 0, ruler 654 / 0, text 708 / 7 declared (ED-709, ED-304), view 986 / 52 declared
+(ED-707/708), bar 585 / 0 (the Rust `diffDocuments` ran, its `DocDiff` equal to the TS one); file: HTML, HTML without
+images, Markdown, save(markdown), ODT and save(odt) part by part, printed pages equal on 3 documents, XPS well-formed with
+every page's text equal to the session's painted text (1 + 1 + 3 pages), the TS `.odt` reopened in both engines equal
+(pages, text, `currentStyles()` — the only style facet then —, `load('auto')`, `save('auto')` 0 parts different); 0 undeclared differences, 0 page errors; memory 30
+cycles, handles/sessions/engines back to 0, live bytes flat after warm-up (8,247,280).
+
+**Numbers**:
+- probes (`plan-a1/routes-probe.mjs`, `cmds-probe.mjs`): before 511 public = 381 routed + 26 shell + 65 disabled mutators +
+  41 disabled queries, bar 462 declared / 381 routed / 81 unrouted; after (with A2's tree of the same moment): 511 = 487
+  routed + 26 shell + 0 + 0, bar 462 / 462 / 0. A1's share: 0 / 0 / 0.
+- size: session module 9,731,936 raw / 3,218,551 gzip at HEAD → 10,306,895 / 3,428,195 with the whole wave-7 tree (A1 + A2 +
+  B). A1's own share (names build, `wasm-share.mjs`): `uo_docx::odf` 135,103 raw code / 49.4 KB gzip, `uo_docx::export`
+  63,135 / 20.9 KB, `shell_format` exports 40,325 / 13.9 KB — about 84 KB gzip. Fix round 1 (names build of the tree at
+  19:50, `verify-a1/fix2_session_names.wasm`): `uo_docx::compare` 48 functions, 52,669 raw code / 19.9 KB gzip / 13.3 KB
+  brotli, `uo_shell_fmt_compare` 1,892 / 1.0 KB; the shipped session module (stripped) 10,308,673 raw / 3,450,101 gzip -9
+  (the whole wave-7 tree, the other frontiers' changes included). Viewer module (`write`): 4,126,839 →
+  4,142,574 (not A1's: A1 changed no code in the viewer build's path; B's layout work is).
+- layout parity: uo-docx-layout not touched by A1.
+
+**Verification** (`core/target/m2-wsession/verify-a1/run.sh`, the m2-verify-e.sh commands with -j 3, own target dir; the whole
+wave-7 tree of the moment, A2 and B still editing): schema check and uo-codec/uo-schema ok; uo-docx `--test all` 787 passed,
+2 failed (`memory_d2a::m3_per_keystroke…` 1,613,233 B and `memory_d2b_f1::m3_per_command…` 1,608,720 B on the 500-page
+document: per-command allocation, not A1's code path — most likely B's per-settle `sync_bookmarks`, unverified, for B/merge);
+`session_wave7_format` 8/8; natives shell_format 3, shell 8, stories 8, objects 4, review 3, caret 4, session_native 11 ok;
+session_api, hostile (10 s), replay (10 families, 0 mismatches), shell_api, write_api ok; editor/viewer tsc clean, vitest
+editor 34 files / 334 tests, viewer 7 / 28 (+1 skipped); `editor_switch_review --mode all` ok, `editor_switch_stories --mode
+all` ok, `viewer_switch --mode all` ok, `build-pkg font-files document-viewer write` (UO_REQUIRE_ENGINE_WASM=1) + `pkg_smoke`
+ok. Failing, not A1's: `editor_switch --mode all/parity` (f2-3-0/1/2 thumbnails and screen: B's gate-O3 theme change, "f2-3-3
+declared but equal now"; f7d__7__8 screen with every overlay off), `editor_switch_objects --mode all` (the drags of the objects
+family: 147 differences on f7b__7__0 — identical with A1's pointer hook removed AND with A1's whole handler set removed from
+installRoutes, so A2's in-flight objects code). `check-changed`: clippy native and wasm32 clean with the one blocker
+`-A clippy::disallowed-methods` (A2's `f64::max` and float parse in `ops/lists/store.rs` 79–80); A1's own float parse and a
+missing SAFETY comment fixed; rustfmt clean on A1's files.
+
+**Verification, fix round 1** (`verify-a1/fix2_*.log`; the whole wave-7 tree of the moment, A2 and B still editing): session
+count build ok; `editor_switch_format --mode all` 0 undeclared differences, 0 page errors (the numbers under Harness; the
+font and file families re-run after the last harness edits: ok); routing probes (`plan-a1/probe.sh`): 511 public = 487 routed
++ 26 shell + 0 disabled mutators + 0 disabled queries, bar 462 declared / 462 routed / 0 unrouted; `shell_format_native` 4/4
+(incl. `d_compare`); editor/viewer tsc clean; vitest editor 34 files / 334 tests, viewer 7 / 28 (+1 skipped); rustfmt clean
+on A1's files. `check-changed`: the two clippy steps FAIL on lints the stable toolchain gained when it updated itself today at
+16:25 (rustc/clippy 1.100.0): `chunks_exact_to_as_chunks` (uo-opc `cfb.rs` 276/282, `flate.rs` 887; uo-fonts
+`registry/digest.rs`, `subset.rs` 303; uo-testkit `sha256.rs`), `needless_range_loop` (uo-docx `doc/props.rs` 1433) and
+`manual_swap` (uo-docx `js/object.rs` 201) — files unchanged since HEAD, none A1's; with those three lints allowed, clippy
+native and wasm32 over uo-docx/uo-docx-layout/uo-ffi/uo-wasm are clean (the `disallowed-methods` blocker is gone), and
+float-casts and grep-bans pass. For the merge: fix those sites or pin the toolchain.
+
+**Fix round 2** (the second review: 3 major, 4 minor; every one fixed):
+- `.odt` styles (major): the session keeps the loaded format (`Session::loaded_odt`, set by `open_odt`; `loaded_format()`,
+  `styles_editable()` in `io.rs`) and ports `stylesEditable()` (universal-write.ts 4582) at every place the TS checks it: the
+  style commands refuse (`create_style`, `modify_style`, `set_default_font`, `update_style_from_selection`, `rename_style`,
+  `delete_style`, `set_style_in_gallery`, `create_list_style`, `save_table_style`), and `builtin_style_id`,
+  `ensure_style_used`, `apply_style_core`, the heading insertion (`navigation.rs`), `hf_style_id`, the TOC and
+  table-of-figures formats, `use_builtin_style` (lists), the table-style definitions and `policy_style_id` define nothing
+  (ops/styles.rs, lists.rs, tables.rs, header_footer.rs, navigation.rs, references/toc_cmds.rs, clipboard/sanitize.rs: one
+  guard each, marked `wave 7, A1`). `style_list_entries` answers the `.odt` branch of `listStyles` (4156: the ODF paragraph
+  styles of `doc.styles`, read-only entries; `odt_style_list()`, `odt_style_entries()` in `listing.rs`) and the shell
+  (`rust-review-styles.ts`) skips the filter and the policy and sorts them by `localeCompare` there; the `styleLook` query
+  answers no value when `style_formatting_available()` is false (`styleFormatting` null, 4176). The shell-only `st.loaded`
+  is gone: `uo_shell_fmt_json` 18 answers `{ format, odtStyles }` (`loadedState` in `rust-format-core.ts`, used by
+  `save('auto')` and `listStyles`). Test `odt_styles_are_read_only` (`session_wave7_format`, 9 tests); harness: after the
+  `.odt` reopen, `listStyles` all/recommended/gallery/inUse/document, `paragraphStyles`, `styleFormatting` (Normal and the
+  first ODF style), `createStyle`, `renameStyle`, `modifyStyle`, `deleteStyle`, `setDefaultFont`, `updateStyleFromSelection`,
+  `ensureBuiltinStyle`, `applyStyle('Ttulo1')` + `currentStyles()`, `listStyles` after, and the `.odt` saved after them part
+  by part — equal on the five documents of the file family (15–72 ODF styles).
+- Tall continuous sheets (major): done, see D-A1-1 (`rust-format-tiles.ts`, `hooks.tiles`, `paintOn`).
+- XPS (major): written in Rust, see D-A1-2 (uo-pdf `xps`, 3 unit tests; `uo_shell_fmt_xps`; `xps.ts` back to HEAD).
+- Harness (minor): new `extra` family (`--mode extra`, in `all`): ED-711 exports from the header; the TOC tab clicked with
+  the mouse in three loads ("Update Table…" with the update prevented, the menu button, "Update Table…" let through with
+  the bar's dialog confirmed and the document text compared); `printPages()` of a page with a plugin inline (equal, the
+  plugin's red box on the printed page); the Format Painter armed then a Ctrl+click on a link (stays armed in both), a click
+  on a floating text box and a plain text click (equal); the XPS of a page with a semi-transparent text watermark (`Opacity`
+  written for the alpha run); a section of 105,574 CSS px (160 pasted paragraphs) in the Web view at zoom 250 % and DPR 2
+  (CDP `setDeviceMetricsOverride`): strips of 1052×4000 CSS px with 2104×8000 buffers at the top and in the middle (after the
+  scroll), painted, and a click there lands in paragraph 27. The view family gains `layoutPageCount()`/`stats()` in every
+  step (equal, Web/Draft/Outline included) and the strips in its `canvases` facet (the declared one of those steps) with the
+  full-scale check. The file family gains `f7b__7__0` (shapes: 177 XPS paths) and `pictures.docx` (3 `ImageBrush`).
+- Format Painter (minor): see D-A1-5 (`hooks.clickUp`).
+- `editor.check.ts` (minor): the `format` line (`bindFormat` satisfies the editor's `FormatBinding`), compiled with both
+  `session-format.d.ts` files (the strict tsc line of m2-verify-e.sh must list them: `crates/uo-wasm/js/session-format.d.ts
+  ../write/packages/editor/src/write-session-format.d.ts`, with the completion pair of A2).
+- Print: `ensureImagesDecoded` decodes every page before it asks for the images (the images table fills as pages decode).
+- Observed, not A1's (for the merge; FIXED by the merge fixer F2, below): `pictures.docx`'s 70-byte PNG decodes in the TS element and FAILS in the Rust viewer's
+  `decodeImage` (`imageState` 'failed': a placeholder on screen, nothing printed; the TS prints the picture) — the pictures
+  path of the viewer/objects front; the file family logs its printed pages instead of comparing them. And the TOC gallery's
+  first page number (`vi` vs `5`, ED list above).
+
+**Verification, fix round 2** (`verify-a1/fix3_*.log`; session_count build of the tree at 20:45, the whole wave-7 tree of the
+moment, A2 and B still editing): `editor_switch_format --mode all` 0 undeclared differences, 0 page errors (font, para,
+ruler, text, view, bar, file, extra, memory), then view, bar, file, extra and memory again after the last TS edits (strip
+base cache, the decode of every page before printing): ok; memory 30 cycles, handles/sessions/engines 0, live bytes flat at
+8,247,280; `editor_switch_review`, `editor_switch_stories` and `editor_switch_objects --mode all` ok (the shell's `paintOn`
+split and `clickUp` hook under every front's screens); routing probes (`plan-a1/probe.sh`): 511 public = 487 routed + 26 shell
++ 0 disabled mutators + 0 disabled queries, bar 462 declared / 462 routed / 0 unrouted; uo-docx `--test all` (`--skip memory_`,
+the 500-page soaks are the orchestrator's) 649 passed, 0 failed; `session_wave7_format` 9/9; `shell_format_native` 4/4
+(XPS and the loaded format added to B and to the M1 round); uo-pdf `xps` 3/3; the strict tsc line with the format and
+completion d.ts pairs and the `format` check clean; editor/viewer tsc clean; vitest editor 34 files / 334 tests, viewer
+7 / 28 (+1 skipped); rustfmt clean on A1's files (`xps.rs` formatted; `io.rs` 383, `text.rs`, `settle.rs`, uo-pdf `render.rs`
+were unformatted before A1's lines). `check-changed --jobs 3` FAILS as in fix round 1 on the toolchain's new lints, now
+reported in uo-testkit `sha256.rs` 56/77/93 and uo-codec `reader.rs` 172 (`chunks_exact_to_as_chunks`; files unchanged,
+none A1's); with `-A clippy::chunks_exact_to_as_chunks -A clippy::needless_range_loop -A clippy::manual_swap` its two clippy
+steps (native and wasm32 over uo-docx, uo-docx-layout, uo-ffi, uo-pdf, uo-wasm) are clean, float-casts and grep-bans pass.
+For the merge: pin the toolchain or fix those sites. Size: the shipped session module (stripped, the whole wave-7 tree)
+10,374,269 raw / 3,469,318 gzip -9 (fix round 1: 10,308,673 / 3,450,101; the XPS writer and the other frontiers' changes of
+the interval together). `editor_switch --mode all/parity` and `viewer_switch` were not re-run in this round.
+
+**Remaining** (explicit, none is "disabled"; updated by fix round 2):
+- ~~A1-G1 XPS~~: done in Rust (D-A1-2, fix round 2: uo-pdf `xps`); what it leaves out is declared (ED-704).
+- ~~A1-G2 compare in Rust~~: done (D-A1-3).
+- ~~A1-G3~~ → declaration ED-711 (D-A1-6), exercised by the `extra` family since fix round 2.
+- ~~A1-G4~~ tall continuous sheets: done (fix round 2, D-A1-1: the strips of `rust-format-tiles.ts`; the `extra` family's
+  section of 105,574 CSS px at zoom 250 % and DPR 2 keeps the full buffer scale).
+- ~~`engine-switch.test.ts` 141–144 name A2's `setTableTool`/`startEditWrapPoints` as disabled examples~~: replaced by A2's
+  fix round 1 (two synthetic unclassified mutators probe the fail-closed path).
+- ~~`check-changed` stops on the Rust 1.100 lints~~ (fix rounds 1–2 above): fixed in code at the merge (F3), no allowance.
+- rustfmt: `ops/text.rs` and `io.rs` were already unformatted at HEAD 8bf0d483 (`insert_typed`, the page-colour condition);
+  A1 did not reformat lines it did not write.
+
+**Merge fixer F2 (print/picture/TOC divergences found by A1, and the A1 harness gaps)** — scratch in
+`core/target/m2-wsession/f2` and `f2-toc` (outside git: the probes `probe-xps.mjs`, `probe-png.mjs`, the Word script
+`toc-auto1-probe.ps1` and its `result*.txt`, the logs):
+- **pictures.docx's picture (fixed)**. Cause: the image is a truncated PNG (70 bytes, IHDR 1200×600 RGBA, an IDAT of 13
+  bytes); Chromium's `createImageBitmap` rejects it (`InvalidStateError: The source image could not be decoded`, measured),
+  and the TS EDITOR's `decodeImage` (universal-write.ts 8384) catches that and decodes with the engine's `decodeRaster`
+  (1200×600, first pixel 255,0,0,127, the rest zero), so its picture paints and prints. The Rust editor painted through the
+  viewer's `decodeImage` (`image-decode.ts`), which has no fallback (`imageState` 'failed'). Now: new export
+  `uo_layout_image_rgba(layout, image)` (src/write.rs: uo-image `decode_raster` at `ImageLimits::DEFAULT`; `width u32, height
+  u32` + RGBA8, status 8 when refused, 6 unknown index; uo-image is a dependency of the `write` feature), `imageRgba(i)` in
+  write.mjs/write.d.ts/viewer.ts/write-engine.d.ts, and `RustHost.rasterFallback` (viewer `rust-engine.ts` `imageOf`: a raster
+  the browser refuses goes through `imageRgba` → `ImageData` → `createImageBitmap`, as the TS catch; the SVG path has none, as
+  the TS). The editor sets it (`rust-engine.ts` `newRustSession`); the VIEWER does not, because the TS viewer
+  (`universal-document-viewer.ts` `bitmapFor`) has no fallback either: in both viewers the picture stays a placeholder (the
+  same `decodeImage` code; since round 2 pictures.docx is in `viewer_switch.mjs`'s corpus and both viewers are equal on it
+  in every facet). Native test
+  `write_native::the_editor_fallback_decodes_the_truncated_png_as_the_ts` (the RGBA's sha256 equals the frozen TS
+  `decodeRaster` of the same bytes run under Node, `ed2ce009…836c`) and the export in the M1 loop. The format harness now
+  COMPARES pictures.docx's printed pages (equal) and checks every Rust image `ready` after the print; no "not compared" path is
+  left in it.
+- **ED-712 — the TOC gallery's first page number (Word manda sobre o TS)**. `insertTocTemplate('auto1')` at the start of
+  `f7a__7__0`: the TS shows `vi`, the session `5`. Measured in Word (16.0, pt-BR, invisible COM under `word-lock.mjs`,
+  `toc-auto1-probe.ps1`): "Sumário Automático 1" inserted at `Range(0,0)` and `TablesOfContents(1).Update()` → `PAGEREF
+  _Toc… \h` = **5** (the heading is in section 1, decimal numbering, page 5; section 2 is the `lowerRoman` one). Through COM
+  the raw `BuildingBlock.Insert` shows `1` (Word has not repaginated yet: `result.txt`, "after insert"); `Update()` and
+  `UpdatePageNumbers()` give `5`. The gallery insertion in Word's UI shows the paginated number, which is why `5` is the
+  reference. Word agrees with Rust: kept. (A heading in section 2: see "merge fixer F2, round 2" below, ED-713.) Declared in
+  the harness's TOC step: the text right after the insertion is compared, the only allowed difference is the TS `\tvi`
+  where Rust and Word have `\t5` (`\tv` when a paragraph of section 2 was made a heading first).
+- **Format Painter, sticky, applied twice** (harness): the font family's sticky painter now clicks a second place (still
+  armed, `[true,true]`), then Esc (`[false,false]`): equal in both engines on `f7a__7__0` and `styles`.
+- **exportXps from every view (fixed side effects)**. Measured on both engines (fixed page clock, a `TIME \@ "HH:mm:ss"` field,
+  the clock moved 1 h 2 min 3 s before the export): the TS (`withLegacyLayout` 15996) in the Print view leaves a cell being
+  edited (`exitCell`), exports and `refresh()`es (the date field moves on screen); in Web/Draft/Outline it has no engine
+  (`!this.eng`) so it only exports (no clock move, no cell exit); the XPS holds the inserted time in every view. The shell
+  did the opposite (Print: no refresh; Web/Draft/Outline: two `refresh()`, the field moved and the XPS held the new time).
+  `rust-format-file.ts` now: Print view = `exitCell` if a cell is edited, export, `refresh()`; Web/Draft/Outline = the print
+  layout through `relayoutNow` (the clock epoch kept, D-LA7-24), export, the view back with `relayoutNow`. The `extra` family
+  checks Print/Web/Draft/Outline and Print with a cell being edited: view, selection, dirty flag, `uw-cellmode`, whether the
+  export moved the field on screen, the XPS page count and the time written in it (Print: the screen after the export too)
+  equal to the TS; the Rust XPS bytes are the same from the four views.
+
+**Verification, F2** (`core/target/m2-wsession/f2/*.log`; `session_count.wasm` and `viewer.wasm` built from the tree at
+F2's end): `editor_switch_format --mode all` ok, 0 undeclared differences, 0 "not compared" lines (font 947 equal / 2
+declared, para 1078/0, ruler 654/0, text 708/7 declared, view 1070/52 declared, bar 585/0; file: pictures.docx printed pages
+equal and every image `ready`; extra: ED-712 as declared, the five exportXps side-effect variants equal, the Rust XPS bytes
+equal from the four views; memory 30 cycles flat at 9,076,334); `editor_switch_objects --mode all` ok; `viewer_switch --mode
+all` ok (74 documents, 579 pages, 0 pixel differences, memory flat); `write_native` 8/8 (the new test included);
+`shell_format_native` 4/4; uo-image tests ok; `write_api.test.mjs` 8/8; clippy `-D warnings` (the three toolchain lints
+allowed) native and wasm32 on uo-wasm clean; editor/viewer tsc and the strict tsc line clean; vitest editor 34 files / 334
+tests, viewer 7 / 28 (+1 skipped). No layout or render file changed (no layout parity run).
+
+**Merge fixer F2, round 2** (the review of F2: one major, three minors) — scratch in `core/target/m2-wsession/f2-toc` (the Word
+scripts `toc-chapter-probe.ps1`, `toc-roman-probe.ps1`, `list-paras.ps1` and their `result-chapter.txt`,
+`result-roman.txt`, `result-roman-28.txt`, `paras.txt`) and `f2r2` (the wasm builds and the logs). Every Word measurement:
+Word 16.0 pt-BR, invisible COM under `tools/parallel/word-lock.mjs`.
+- **ED-713 — the page a PAGEREF holds (Word manda sobre o TS)**. Measured: Word writes a PAGEREF as the PAGE field of the
+  bookmark's page — the section's `w:pgNumType w:fmt` and, with `w:chapStyle`, the chapter numbers and `w:chapSep` before
+  it. A new document with Heading 1 numbered `%1`, one chapter per page and a TOC (`result-chapter.txt`): chapter numbering
+  → `1-1 2-2 3-3`; chapter + `lowerRoman` → `1-i 2-ii 3-iii`; `lowerRoman` alone → `i ii iii`. On `f7a__7__0` (section 2
+  is `lowerRoman`, continuing; Word pages 6–12): Word's paragraph 28 made Heading 1 and "Sumário Automático 1" inserted and
+  updated → `5` and `viii` (`result-roman-28.txt`); its last paragraph → `xiii` (`result-roman.txt`, see the open item
+  below). The frozen TS: the layout's PAGEREF (`bookmarkPages`, engine.ts:638) is formatted by the page's section but
+  leaves the chapter out, and its TOC entry label (`pageLabelOf`, universal-write.ts 6623) is `String(page.number)`.
+  Measured in both editors (the format harness, below): the TOC text after `updateToc('all')` comes from the field refresh
+  (`refreshFieldCache` → the layout's bookmark pages), so on `f7a__7__0` both write `5`/`viii` like Word (the reviewer's
+  "`13` saved" does not happen with a real layout); the difference is the chapter. Now:
+  - uo-docx-layout `bookmark_pages` (engine/field_refs.rs) puts the chapter numbers and the separator before the page
+    (`chapter_of` over the pass's headings, as PAGE), unless `LayoutOptions::ts_pageref_without_chapter` (new; the strict
+    parity replays against the TS captures set it: `layout_parity.rs`, `f8_parity.rs`, uo-ffi `server_parity.rs`, wasm flag
+    bit 11 `LAYOUT_TS_PAGEREF_WITHOUT_CHAPTER` / `tsPagerefWithoutChapter` in write.mjs, write.d.ts and
+    `paint-common.mjs`'s `wasmOptions`).
+  - ~~the session's TOC entry label (toc_cmds.rs `prepare_pages` → `page_numbering_of`, `PageNumbering::label`)~~:
+    **reverted in wave 7c (S); ED-713 is the layout's only** (`bookmark_pages`). The label is the TS `String(page.number)`
+    again and the refresh that ends every TOC command rebuilds the bookmark index and the sections first, as the TS layout
+    pass ("Wave 7c — S", item 1); `OutlineParagraph::chapter` is gone.
+  - Declared: `editor_switch_format` `extra` (Word's `toc-chap-chapter-roman.docx`: the TS writes `\ti` where Rust and Word
+    write `\t1-i` after `updateToc('all')`, and the TS `updateToc('pages')` rewrites the 2nd and 3rd entries without the
+    chapter; the printed TOC page differs, the other pages equal); `viewer_switch` (`WORD_AUTHORITY`: the two chapter
+    documents, facets textLayer + pixels + pdf — scoped to page 0 for textLayer and pixels in wave 7c); ~~the d2b-F10
+    replays' acceptance of the step result on `hfopts/chap-*.docx`~~ (dropped in wave 7c: with the TS label the counts
+    are the TS's, 0 mismatches, 53 accepted instead of 55).
+  - Native tests: uo-docx-layout `tests/toc_pages_w7.rs` (the three `fidelity/toc-chap-*.docx` are the documents the Word
+    probe saved, with Word's PAGEREF results; `updateToc` all/pages write them; the layout shows them, and the TS flag the
+    bare page; `f7a__7__0` paragraph 31 (Word's 28) → `5`, `viii`; its last paragraph → a roman label).
+- ED-712's record now says that the raw COM insertion shows `1` before Word repaginates (above).
+- pictures.docx: the format harness fails when the Rust image states are missing (fewer than its 3 pictures) before it
+  requires every one `ready`; `viewer_switch.mjs` now runs pictures.docx and the three chapter documents besides the
+  captures (78 documents): both viewers equal on pictures.docx in every facet (the same placeholder).
+- **Open (layout, not F2's files)** — **closed in wave 7c (W, item 6: applied, `xiii` asserted in `toc_pages_w7.rs`; "Wave 7c — W")**: Word moves a "keep lines together" paragraph that is taller than a page to the next
+  page when it does not fit: `f7a__7__0`'s last paragraph (1,543 characters, started on page 12) made Heading 1 (Título 1:
+  16 pt, keepNext, keepLines) starts on page 13 in Word and spans 13–15 (`result-roman.txt`); the layout (= the frozen TS
+  rule, flow.rs `need <= full` in the keepNext/keepLines check) keeps it on page 12, so its TOC entry is `xii` where Word
+  writes `xiii`. The label is right for the layout's page; the page rule needs its own oracle series (keepLines and
+  keepNext-only paragraphs taller than a page, at the top and mid-page, in a cell) and the parity-flag treatment before it
+  changes — for the coordinator to assign to the layout front.
+
+**Verification, F2 round 2** (`core/target/m2-wsession/f2r2/*.log`; `session_count.wasm`, `viewer.wasm` and `selftest.wasm`
+built from the tree): `editor_switch_format --mode all` ok, 0 undeclared differences, no "not compared" line (font 947 equal
+/ 2 declared, para 1078/0, ruler 654/0, text 708/7 declared, view 1070/52 declared, bar 585/0; extra: ED-712, ED-713 on
+`f7a__7__0` — after the update both `5`/`viii` = Word, printed pages equal (11) — and on the chapter document as declared;
+memory 30 cycles flat); `viewer_switch --mode all` ok (78 documents, 592 pages, 0 undeclared differences; declared gate-O3
+×4 and ED-713 ×2; memory flat); uo-docx `--test all` 801 passed, 1 ignored, the d2b-F10 replay failed (2 mismatches on
+`chap-endash`) before its ED-713 acceptance and passed when re-run after it (81,016 equal, 0 mismatches, 55 accepted, 2 of
+them ED-713); wasm `session_replay` all families 0 mismatches (f10: 76,344 equal, 55 accepted); uo-docx-layout
+suite 151 passed (`toc_pages_w7` 4/4 included); layout parity strict, captured from the frozen TS: group ci 200 documents
+600 equal / 0 mismatches, group oracle 2,742 documents 8,226 equal / 0 mismatches; `paint_parity.test.mjs` with the frozen
+TS 2 passed (1 skipped: `UO_V_ORACLE`); `write_api.test.mjs` 8/8; the strict tsc line (with `write.d.ts`) clean;
+`check-changed` (clippy native + wasm32 `-D warnings`, float casts, bans) all steps passed.
+
+### Wave 7 — B: fidelity with Word, the declared differences and the internal decisions
+
+Frontier B of wave 7 (the maintainer: "do everything that is missing"; Word is the authority for the layout facts). Plan and
+scratch: `core/target/m2-w7b` (outside git: `tools/` with the Word export script `word-pdf-save.ps1`, `rpdf.mjs` = the Rust
+viewer module over any bytes, `lines.py`/`colors.py`/`order.py` over PDFs, `routes-probe.mjs`; `harn.sh` = the module builds
+plus every front harness; `lp.sh` = the seven layout parity groups; `verify.sh` = the merge script with this wave's lines).
+Two implementers (the first was cut off by a usage limit; the second resumed from its tree and verified it). Frozen TS:
+`clickcompliance-docx` d0f45bc5.
+
+#### Measurements (Word)
+
+Hidden Word via COM under `tools/parallel/word-lock.mjs` (`Documents.Open` read-only, `ExportAsFixedFormat`, `SaveAs2`; one
+Word session per file where it mattered), PDFs read with pdfplumber (`non_stroking_color`, words) and pypdfium2 (paint
+order, rasters). Never a visible window, no desktop capture.
+
+| Case | Word | TS | Rust now |
+|---|---|---|---|
+| gate-O3: `w:color C00000` + `w:themeColor`, package WITHOUT `theme1.xml` (generated `theme-none`: 13 slots + 13 tints/shades) | the Office 2023 scheme, identical to the same document WITH the 2023 theme part: accent1..6 `156082 E97132 196B24 0F9ED5 A02B93 4EA72E`, text1 `000000`, text2/dark2 `0E2841`, background2/light2 `E8E8E8`, hyperlink `467886`, followed `96607D` | viewer: the `w:color` (C00000…); editor: C00000 after the load and these parity steps (192,0,0 on its screens), E97132 once its style sheet is rewritten (the objects harness's f2-3-0 end screens: (233,113,50) on both sides) | the 2023 scheme, every base colour exact (233,113,50 on the editor screen; native test `theme_fallback_word`) |
+| tints/shades of the same (accent2 t BF/99/66/33, s BF/80; text1 t A5/80; accent1 t 99, s BF; text2 t BF; background1 s BF/A6) | `EE9465 F1A983 F6C5AC FAE2D5 BF4E14 80340D 5A5A5A 7F7F7F 45B0E1 0F4761 215E99 BFBFBF A6A6A6` | its tint rule | 8 of 13 equal; `F1A984 F6C6AD FAE2D6 BF4F14 80350D 595959 215E9A`: one unit in one channel, the TS rule. **Wave 7c (W): still OPEN** — Word's rule not found (3,356 measured samples: the TS rule 2,323, the best candidate 2,662; "Wave 7c — W", item 1) |
+| gate-C1: the TS-inserted text box over the ellipses (f7b__7__8, TS-saved bytes) | the box filled `FFFFFF` (scheme `lt1`), painted last | `FFFFFF` | `FFFFFF` (before: `FFC000` — `lt1` over the empty theme; the paint order was always Word's: not a z-order) |
+| text boxes in cells (generated `cell-lic1/0`, `cell-nested`, `hf-cell`, `linked`) | opens all; the cell text at x 85.10 pt (= the margin) | = Rust (layout parity) | the whole table 5.67 pt (113 tw) right of Word's: a package WITHOUT `settings.xml` — Word lays the table out with its pre-2013 rule (the cell margin hangs left of the margin), both engines use compatibility mode 15 (`emptyFormatting`). **Wave 7c (W): applied** — Word opens such a package in mode 12 (COM `CompatibilityMode` 12), the Rust layout follows (`ts_missing_settings_mode15` keeps the TS); "Wave 7c — W", item 2 |
+| two LINKED boxes in one cell (`linked`) | box 1 shows "primeira caixa" (y 92 pt), the chain continues in box 2 (y 129) | = Rust | the chain's text starts in box 2 (y 129 pt): both engines. **Wave 7c (W): applied** — the first box keeps the chain's first lines (re-measured baselines 100.82/137.78 pt; `ts_linked_box_cell_chain`); "Wave 7c — W", item 3 |
+| a text box inside another box (`box-in-box`) | `Documents.Open` fails with RPC 0x800706BE and the Word process ends (twice, a fresh session each) | opens | opens (parity only) |
+| ED-108: saving with the caret in a text box (stories X2, f8__7__5) | opens both: TS-saved 1 page / 11 paragraphs / 2 shapes; Rust-saved 16 / 194 / 13 = the original fixture (16 / 194 / 13) | the truncated `document.xml` (8,181 B against 82,596) | — |
+| ED-600: Delete after typing with a shape selected (parity f7d__7__11) | opens both: TS-saved 22 paragraphs / 6 shapes (a character deleted), Rust-saved 23 / 5 (the shape deleted, as Word's Delete on a selected shape) | — | — |
+| gate-O5 bold in cells (f7b__7__3, the first implementer) | 'quebra de linhas celulas' does not fit 109.2 pt in Carlito Bold (109.78 pt): Word breaks it | breaks | breaks (end screens equal the TS in three objects runs) |
+| f7c__7__5: `REF bm2 \h`, `bm2` without `bookmarkEnd` | "Erro! Fonte de referência não encontrada." | 'brown dog quebra cada…' | = TS (gate-10). **Wave 7c (W): applied** — Word's error text, bold (`ts_ref_bookmarks`); "Wave 7c — W", item 4 |
+| hyphenation f2-3-1/2/3 | 'responsabi-lidade', 're-', 'autom-' | 'responsabili-dade' | = TS; Word's hyphenator is not available (open hyph-utf8 patterns). **Wave 7c (W): OPEN** (licence + the maintainer's directive against exceptions from Word's output; "Wave 7c — W", item 5) |
+
+#### Causes closed
+
+- **gate-O5** (bold in table cells laid out narrower, f7b__7__1/3 objects, f7a__7__1 views, intermittent): the font supply.
+  uo-fonts reports each missing (family, variant) ONCE per environment (`take_missing`); the viewer's `RustSession.pushNow`
+  pushed a family the resolver held with its regular face only and never queued the bold, and the editor's synchronous
+  `relayoutNow` took the missing list and dropped it. `write/packages/viewer/src/rust-engine.ts`: a pushed family still
+  lacking a requested face is queued for `fetchLater`, and `carryMissing` keeps a list taken outside the loop for the next
+  pass (the editor's one line below). Test `write/packages/viewer/test/engine-fonts.test.ts`.
+- **gate-10 f7c__7__1 (page 2), f7c__7__5 (page 6)**: the session kept the READER's bookmark offsets, which stopped matching
+  its runs once `markNoteRuns` gave each note reference its U+FFFC or the text was edited, so REF read a shifted range. The
+  session builds the bookmark index of the TS editor's layout pass (`buildEngineDoc` + `bookmarkMarks`, engine-doc.ts
+  111–130) from its current runs: uo-docx `session/settle.rs` `bookmarks_of_marks` + `Session::sync_bookmarks` (pub), run at
+  the open (`io.rs`) and by the hosts right before a layout (the relayout path of `shell.rs`, `uo_session_layout` in
+  `handle.rs`) — as the TS, in the layout pass. (The first cut ran it after EVERY command: a whole-body walk allocating 1.6 MB
+  per keystroke on the 500-page document, which failed uo-docx `memory_d2a`/`memory_d2b_f1` M3, budget 64 KB; moved to the
+  layout pass.) The `Arc` is replaced only when the index changes. **Correction (review fix round 1):** that did NOT keep
+  LA7's fast path — typing in a paragraph that holds a bookmark moves its offsets, so the index changed at every key and
+  `DocParts::same_parts` (`Arc::ptr_eq` on `bookmarks`) refused the incremental path (`full (document)`, 43–79 ms on
+  f8__7__8 paras 0/4/8; measured by the reviewer). Fixed in uo-docx-layout `incr/keys.rs` `DocParts::bookmarks_follow`
+  (called by `incr/mod.rs` once the changed blocks are known): the same names in the same order, each start/end either
+  equal or in the same block inside the changed range, keep the fast path — the layout reads a bookmark's offsets only
+  with its block (REF/NOTEREF text through `bookmark_para` → `flow_block`, a traced read of that block; `p` compares
+  the offset only for a field in the same block) and its page through `bookmark_pages` in `next_input`, which the
+  resumed run runs too. Anything else (a name added or removed, a block moved) stays `document`. Test `shell_native`
+  `i_typing_in_a_bookmarked_paragraph_stays_incremental` (f8__7__8 paras 0/4/8/1/5 and the REF fixture, offsets 0 and 3:
+  every key incremental and its pages byte-equal to a full layout); the reviewer's probe over the rebuilt module: paras
+  0/1/4/5/8/9 all `incremental` (11–35 ms). Not synced: the layouts
+  other frontiers added this wave outside those two paths (A1's print pages in `shell_format.rs`, A2's previews): a REF to a
+  bookmark in an edited document can read the open's offsets there — for the merge. Repro `core/crates/uo-docx-layout/tests/fidelity/ref-after-note.docx`, `tests/fidelity_w7.rs`.
+- **gate-O3 / ED-314 / R-1** (theme colours without a theme part; Word is the authority): uo-docx-layout `theme_word.rs`.
+  When the model's theme is the empty one (`readTheme(undefined)`), every theme colour of the layout (`w:themeColor`,
+  `w:themeFill`, DrawingML scheme colours: text, borders, shading, cells, shapes, boxes, pictures, the page background)
+  resolves over the Office 2023 colour scheme — the ONE copy of the palette the writer already has
+  (`uo_docx::write::ctx::DEFAULT_SHAPE_THEME`); fonts and format scheme unchanged (not measured). `LDoc::theme` carries it;
+  nothing is written. `LayoutOptions::ts_empty_theme` (wasm layout flag bit 10, `tsEmptyTheme` in `write.mjs`) keeps the
+  frozen TS behaviour for the strict replays only (`layout_parity.rs`, `f8_parity.rs`, `server_parity.rs`,
+  `paint-common.mjs wasmOptions`); no product path sets it.
+- **gate-C1** (f7b__7__8/10, f8__7__5): the inserted box's `lt1` fill over the empty theme (table above); closed by gate-O3.
+- **gate-O1** (the cover page's coloured box, 7 documents): equal in every wave-7 run with the gate-O3 theme (the covers'
+  colours are theme colours, these fixtures have no theme part); covered by `theme_fallback_word` and the harness.
+- **gate-O2** (f7a__7__1: 11 pages against 10 after three columns): **equal in the wave-7 runs, cause NOT established**
+  (correction of the review fix round: colours cannot change a page count, so it is not gate-O3's; the entry stays retired
+  because it was never met again, not because a cause was found).
+- **ED-106** (stories X1 ×3, X3, X4, X2's screen): a HARNESS artefact. The TS frame and handles of a box (after Esc, in edit)
+  are front O's paint, which `editor_switch_stories.mjs` left out of the Rust screen (it kept front S's hooks only). Front O's
+  overlay hook is tagged `front: 'O'` (`rust-engine-objects.ts`, one line) and both harnesses keep S and O: equal.
+- **R-2** (Update Style to Match Selection) and **R-6** (the hyphens of f2-3-2): equal in the wave-7 runs (the review screens
+  with the overlays off are equal), closed by the other frontiers' and wave 6's work; their entries retired.
+- **f7b__7__0|menu, f7b__7__8 end screens**: the TS `tableMouseMove` gate is `print && !hfEdit && eng` (no `tbEdit`: only the
+  mousedown has it); the shell's skipped a text box in edit — `rust-completion-tables.ts tableMouseMove` follows the TS gate
+  (A2's file, additive). The two screens still differ (ED-219b below): that was not their cause.
+- **SetClock validation** (decision; the open message's clock too since the review fix round: `open_options` in `handle.rs`
+  calls `validated()`, test `session_native` `refusals_and_errors` opens with month 15, day 40, 29 Feb 2026 and month 0 —
+  refused — and 28 Feb — opened): uo-docx `DateParts::is_valid` / `LocalNow::validated`; `uo_session_exec` `SetClock`
+  refuses a hostile clock (`handle.rs`, one line) instead of reaching the DATE arithmetic (WS-D14). Test `clock_tests`.
+- **The stories harness's chrome remainder**: empty — every id of it is routed now (A2: `table:excel/painter/draw/eraser/
+  style:new/style:modify`, `paste:cells:*`, `dlg:pageBorders`; A1: `dlg:borders`): 128 routed ids × 5 contexts equal.
+
+#### Declarations kept (each with its evidence and owner)
+
+`editor_switch.mjs`: f2-3-0..2 **Word authority over TS (gate-O3)** (thumbnails and the screen: TS C00000, Word and Rust
+E97132; f2-3-3 retired in the re-verification: equal in all five wave-7 parity runs); f7d__7__11 **ED-600** (TS defect, Word evidence above); f8__7__5 **ED-108** (TS defect); f7d__7__8 **SCR-1** (CLOSED in the review fix round, below — the
+entry removed):
+new in the final runs (3 of 3): after PageDown into a table, typing, Enter and a Shift+click in a cell, page 0's END SCREEN
+differs (a text box and the lines around it) while thumbnails, every step facet and the saved package are equal, and the
+saved bytes laid out fresh are the TS layout (`fidelity_w7` over them: session = reader): a screen paint state of the shell
+with the wave-7 tree, cause not isolated — cross-front blocker.
+`editor_switch_objects.mjs`: f2-3-0|pictures, f2-3-0|views, f7c__7__2|page, f7c__7__8|page, blank|keys **ED-304 (front R,
+frontier A1)** — the only differing pixels are the gray shading of the field runs (and the note's own mark) in the header,
+the footer and the notes: the TS `paintEngineMarks` shades field runs over every story's lines (`loc.kind !== 'other'`), the
+shell's over the body; (f7b__7__8|objects, f7b__7__0|menu **ED-219b**, the hovered table's handles: retired in the
+re-verification, equal in its two runs with A2's later tree); f7a__7__5|page **LOAD-1** (CLOSED in the review fix
+round, below — the entry removed): one run in five, 14 pages against 12 right after the load.
+Retired: every COVER/gate-O1/O2/O5/C1 entry, ED-202, ED-213 (+ `GLOBAL_O.shapeFillBody`), ED-219 and ED-209 (equal now).
+`editor_switch_stories.mjs`: X2 f8__7__5 **ED-108** only (TS defect; Word evidence above).
+`editor_switch_review.mjs` (rewritten from `UO_ER_COVERED=1`, a new switch listing the declared differences met):
+`f2-3-0|*` ED-304 (the footer's field shading, overlays on only); styles|styles, headers|styles, f2-3-0|styles **Word authority
+over TS (Subtle Reference look)**: the gallery look of the latent Subtle Reference (`5A5A5A`, text1, tint A5) is TS 595959 /
+session 5A5A5A, and Word paints 5A5A5A (text1 tint A5 measured above); f2-3-2|find ED-304 (a search hit in a table cell, its
+highlight and the footer shading); f8__7__0|spell ED-304. R-1/R-2/R-6 retired.
+`editor_switch_completion.mjs` (A2's harness, its first declarations): ED-304 (the footer's field shading and the
+shading of the pasted fields) on f2-3-0/f2-3-1/f7c__7__2 lists, f2-3-0 paste, inline and previews. (`markerPreview` css
+**ED-C1** retired in the re-verification: equal on its 4 documents since A2's `shellFonts`.) f2-3-0|tables step 24 (the
+move-handle drag, left undeclared here as A2's open item) was fixed in A2's fix round 1 (no caret scroll after the table
+gestures); the end screens' ED-304 footer band it leaves is declared as `FIELD_SHADING` since the merge (F3). blank|objects
+(the end thumbnail) is equal in both re-verification runs.
+`editor_switch_fidelity.mjs` (new): box-in-box outer/inner **ED-106b (front O / A2)**: the TS paints the dashed frame and
+handles of a box INSIDE a box in edit; the shell lists the context's own drawings only (`contextDrawingRuns`, uo-docx
+`loc::drawing_paths` does not descend into a box), so it has no rectangle for it (Word refuses such a document); hf-cell,
+hf-cell edge **HF-T1** (CLOSED in the review fix round, below — both entries removed): a click in a header TABLE cell — the TS header model flattens the cell paragraphs
+(the caret lands in the cell), the session keeps the table and its header hit test answers the paragraph after the table,
+where the typing goes (saved `header1.xml` differs). box-table, note-cell undo **TS defect, Word agrees with Rust** (review
+fix round 2): Ctrl+Z inside a box or a note that holds a table — the TS undo parses its state from JSON, the edited list
+and the blocks come back as separate copies, and the next `reconcileBlocks` moves every paragraph before the table and
+leaves each cell an empty paragraph; Word (the same edits through COM) keeps the paragraphs in their cells, as the Rust
+session. Evidence in the fix-round-2 entry below.
+`viewer_switch.mjs` (a declared table with a stale check, new): f2-3-0..3 **Word authority over TS (gate-O3)**: pixels and
+PDF (the TS viewer C00000; text, layout, find and pages equal).
+
+#### Decisions taken (wave 7)
+
+| Id | Choice | Reason | Evidence |
+|---|---|---|---|
+| G1, G2, G3, G6, G9, G10, G13, G15–G18, G20 | accepted as built | the milestone-1 review's recommendation; no result change | "For the milestone-1 gate" |
+| G23 | keep the conversion thread (16 MiB; 64 MiB debug) | 64 and 200 nesting levels convert from a 1 MiB caller | G23 row |
+| G25 | the trust limits as implemented | the frozen C# limits for untrusted input | G25 tests |
+| G26 | accept | wasm2js is not the default engine | G26 row |
+| G27 | keep the fallback | rebuilding a full environment needs session refcounts for a rare case | `write_hostile` M5 |
+| G28 | accept and document | one module per page (SW-10) | viewer README: "returned to the browser only when the page reloads" |
+| G29 | approve the page-lifetime baseline | flat, 0 handles, one environment (SPEED-1) | G29 row |
+| G24 | Word's resolution rule in the PDF, the screen painter uncapped (TS parity), declared | a budget changes results against the TS | G24 row |
+| G5 / G31 | keep the untrusted caps | the whole real corpus: **860 documents (E:\UniversalWriteTest), trusted and untrusted both converted, 860 byte-equal, 0 false refusals** (157 s) | `uo-ffi/tests/caps_sweep.rs` (opt-in `UO_CAPS_SWEEP_DIR`, bounded by `UO_CAPS_SWEEP_MAX`) |
+| G19 | LSan over the C# facade: job `leak-sanitizer-facade` in `rust-core.yml` (uo-ffi with `-Zsanitizer=leak`, the runtime preloaded into `dotnet`, the CLR's modules suppressed) | the existing job covers the Rust tests only | the YAML parses (18 jobs); never run (G30-CI) |
+| G21 | **open item for the maintainer** (not taken): the wasm-session fuzz target is NOT added to `core/fuzz` | `core/fuzz` links uo-ffi, and uo-wasm `#[path]`-includes uo-ffi's `pipeline.rs`: both export the same C symbols, the fuzz binaries fail to link (LNK1169, measured with a `session_exec` target over exec/query/layout/save). It needs its own fuzz crate (own lock file); the session's hostile input stays covered by `session_hostile.test.mjs` (fuzz loop) and the no-panic tests | the attempt in `core/target/m2-w7b/fuzz-session-attempt/` (outside git) |
+| G8-W, G8-2, G11 | keep | as built | — |
+| SW-1..SW-16, SPEED-1..5 | keep; SW-9 fatal in the publish workflow (`UO_REQUIRE_ENGINE_WASM=1`) | — | `publish-packages.yml` |
+| D5 | two modules (viewer `write`, editor `session`) | as shipped since wave 6 | build-pkg |
+| D2a (1)(2)(3) | keep the implemented variants | each is the implemented and tested one | D2a record |
+| D2a-C1 (headers/footers, notes, text boxes) | the TS shape: a header/footer part, a note or a text box (`Synced` view: read from a .docx) that holds a table is edited through its flat paragraph list (`hf_flat.rs`); a box of the ODF reader (`TopLevel`, the TS `paras` = its top-level paragraphs) keeps its top-level list, as the TS (fix round 2: notes and boxes were the reviewer's major finding) | HF-T1 and the note/box case: 1:1 with the TS (the caret and the typing in the clicked cell); after an undo in a note or a box with a table, Word over the TS (declared, Word measured) | `session_wave7_hf_flat.rs` (4 tests, the TS `header1.xml` and `footnotes.xml` byte for byte), fidelity hf-cell, note-cell, note-plain, note-cell undo, box-table, box-table typing |
+| R-8 / ED-301 | `ops/styles/listing.rs` stays in uo-docx | model logic of the C ABI and C# too | — |
+| D-L7 | `IncrConfig::phone()` (a third of the wasm32 checkpoint cap, a quarter of the memo cap) for a phone font profile; the desktop unchanged | bit-exact (more full relayouts only: la7 `m5_memo_caps`); today's editor creates desktop environments only, so nothing measured changes until a host passes the phone profile (pages500 not re-measured) | `uo-docx-layout/src/incr/mod.rs`, `uo-wasm/src/session/shell.rs` |
+| SetClock | validate (`SetClock` and the open message's clock) | a hostile clock reached the DATE arithmetic | `clock_tests`, `session_native` `refusals_and_errors` |
+| `CommandError::Locked`, f4 `ExecOp::UndoReentering` | handed to A1 (the schema owner): remove the dead variant, add the op | schema changes are A1's | — |
+| gate-O3 | follow Word in both Rust paths with the 2023 colour scheme; strict TS parity through the test-only switch | the maintainer's ruling | Measurements |
+| f7c__7__5 REF to an unterminated bookmark | the session equals the reader and the TS | following Word changes the TS-capture parity of the generated corpora | Measurements. **Superseded in wave 7c (W)**: Word's error text in the Rust layout, the TS behind `ts_ref_bookmarks` for the strict replays ("Wave 7c — W", item 4) |
+| the ED lists of waves 4–6 | ED-108, ED-600: TS defects (Word evidence above); gate-O3 and the Subtle Reference look: Word authority over TS; ED-6, ED-202b, ED-203, ED-205/206, ED-217, ED-601/602: engine-boundary differences with no TS behaviour missing (records of waves 4–6; not a maintainer acceptance); open with an owner: ED-106b, ED-304, and, at the merge, ED-707/708 and A2's declarations 3, 4 and 7 ("Wave 7 — merge state") (ED-219b and ED-C1 closed by A2 during the re-verification; HF-T1, SCR-1 and LOAD-1 closed in the review fix round, below); ED-106, ED-202, ED-213, ED-219, ED-209 and the rest: closed in wave 7 | — | the harness tables |
+
+#### For the maintainer
+
+- (review fix round; **applied at the merge**, F3: the lint sites fixed in code, no allowance, see "Wave 7 — merge
+  state") **The Rust toolchain drift**: rustup `stable` = Rust 1.100.0 since 2026-11-12 16:25; `check-changed`
+  (clippy `chunks_exact_to_as_chunks`, wider `manual_swap`/`needless_range_loop`), `rustfmt --check` (`io.rs:366`,
+  `settle.rs:573`) and uo-jsnum `text_v8` (Unicode 17 case tables) fail on HEAD lines; `rust-core.yml` and the publish
+  steps run `rustup default stable`, so the first CI run fails lint as the tree stands. Choice: pin
+  `core/rust-toolchain.toml` to 1.99 and make the CI honour it, or fix the ~45 lint sites and give uo-jsnum its own
+  Unicode-16 lowercase table. Not B's to take (it touches every crate and the CI policy).
+- (review fix round) **G21**: a cargo-fuzz target over the session codec decode + exec needs its own fuzz crate with its
+  own lock file depending on uo-wasm's session only (not uo-ffi: the two export the same C symbols, LNK1169 measured);
+  adding a crate to the workspace layout and a nightly fuzz job is left to the maintainer. Until then the hostile input is
+  covered by `session_hostile.test.mjs` (10 s fuzz loop), the no-panic tests and the hostile-clock tests.
+- Pushing `rust-core` and the first GitHub CI run (`rust-core.yml` with the new `leak-sanitizer-facade` job, the editor job,
+  `publish-packages.yml`'s engine steps); publishing; the 0.10 version and the CHANGELOG version; G14 (NuGet RID matrix) and
+  G30 (the Chromium speed gap); the frozen-main security items (D3 S1/S6, the Slides/Sheet hyperlink schemes).
+- (**wave 7c, W**: items 2, 3, 4 and the keepLines item APPLIED behind `ts_*` switches; the tint rounding and the hyphenation OPEN — see "Wave 7c — W") Result-changing Word facts measured and NOT applied (each changes the TS-capture parity of many documents): the theme
+  tint/shade rounding (one unit, 5 of 13 cases); a table in a package without `settings.xml` (Word's pre-2013 position,
+  5.67 pt left of both engines); linked boxes anchored in a cell; REF to an unterminated bookmark (Word's error text); Word's
+  hyphenation (proprietary; the open patterns differ).
+- Web, Draft and Outline under `engine="rust"`: the engine's view transforms (Outline added: `uo-docx-layout
+  view_transform.rs` = the TS editor's outline rule — unstyled top-level body paragraphs 720 tw further in — over the Draft
+  sheet), not the TS editor's legacy continuous canvas (A1's ED-707/708). B recommended accepting it for 0.10; the
+  maintainer has not ruled, so at the merge it is an **open parity item** (the TS does it, the Rust editor does not), listed
+  with its evidence in "Wave 7 — merge state".
+- Typing latency at pages50 ties the TS fast path (wave 6, L): recommended to accept for 0.10.
+
+#### What stays disabled (for the README at the merge)
+
+Routing probe (`core/target/m2-w7b/tools/routes-probe.mjs` over the current sources) and `engine-switch.test.ts`: **public
+methods 511 — routed 494, shell 26, disabled mutators 0, disabled queries 0; private routed 27; bar commands routed 516**;
+`engine-completion.test.ts`: A2 49 of 51 routed + 2 by A1, no blocker. Nothing is disabled under `engine="rust"`. What
+differs from the TS editor is the declared list above (owners named), not a disabled command. (The test's 494/26 count
+the entries of its tables, with duplicates; the distinct counts at the merge — 485 routed, 24 shell, 2 both; 462 bar
+commands declared and routed of 516 routed ids — and the open parity items are in "Wave 7 — merge state".)
+
+#### Files touched outside B's files (each additive, commented `wave 7 (B…)`)
+
+- `write/packages/editor/src/rust-engine.ts` (the font section, one line: `carryMissing` before `runFontLoop`);
+  `rust-engine-objects.ts` (front O's overlay hook tagged `front: 'O'`); `rust-completion-tables.ts` (A2's: the hover gate).
+- uo-docx: `session/settle.rs` (`bookmarks_of_marks`, `sync_bookmarks`), `session/io.rs` (one call), `session/mod.rs` (a
+  comment where the first cut called it per command), `session/env.rs` (`is_valid`, `validated`, `clock_tests`).
+- uo-wasm: `src/session/handle.rs` (SetClock, one line; `sync_bookmarks` before `uo_session_layout`), `src/session/shell.rs`
+  (D-L7, two lines; `sync_bookmarks` before the relayout), `src/write.rs` +
+  `js/write.mjs` + `js/write.d.ts` (layout flag bit 10), `tests/support/paint-common.mjs` (`wasmOptions`); uo-ffi
+  `tests/server_parity.rs` (`ts_empty_theme`), new `tests/caps_sweep.rs`.
+- Harnesses beyond their DECLARED tables: `editor_switch_objects.mjs` (`paintTableAdorners` compared, as A2 asked),
+  `editor_switch_stories.mjs` and the new `editor_switch_fidelity.mjs` (front O's hooks kept; the routed tables of A1/A2 in
+  `--mode chrome`), `editor_switch_review.mjs` (`UO_ER_COVERED`), `editor_switch.mjs`/`editor_switch_stories.mjs` (with
+  `UO_ES_DUMP` the saved packages too), `viewer_switch.mjs` (its declared table).
+- `.github/workflows/rust-core.yml` (G19); `docs/publishing.md` (step 2: the workflow builds the modules);
+  `write/packages/viewer/README.md` (G28).
+- Review fix round 1: `write/packages/editor/src/rust-engine-completion.ts` (A2's: the table adorners through the element's
+  `paintTableAdorners`, SCR-1); uo-docx `model/section.rs` (`HfPart::flat`, `HfFlat`, `edit_story(_mut)`),
+  `session/ops/context.rs` (two arms and the context step), `session/ops/drawing.rs` (`base_story(_mut)`), `session/mod.rs`
+  (`sync_hf_flat` in `change_set`), `session/ops/mod.rs` (the module line), new `session/ops/hf_flat.rs`, `tests/all.rs` (one
+  module line) and new `tests/session_wave7_hf_flat.rs`; uo-docx-layout `incr/keys.rs` + `incr/mod.rs` (`bookmarks_follow`);
+  uo-wasm `tests/shell_native.rs` (I), `tests/session_native.rs` (the hostile open clock); the harness switches
+  `UO_ES_NOBAND`, `UO_ES_LAT_BM` (`editor_switch.mjs`) and `UO_EO_LOADTRACE` + the TS `settleDocumentFonts` at load
+  (`editor_switch_objects.mjs`).
+- For A2 (through the orchestrator): B touched `rust-completion-tables.ts` (the hover gate) and `rust-engine-objects.ts` (the
+  tag); ED-106b, ED-219b, ED-C1 and the completion harness's tables/objects/inline/previews differences are A2's.
+
+#### Numbers
+
+All on the final tree of the wave (A1/A2 still editing until the end; modules rebuilt for every final run). D: 29 GB free.
+- Native: `fidelity_w7` 4/4 (`ref_after_a_note…`, `bookmark_index_follows_edits`, `session_equals_reader_on_the_fixtures`: 76
+  documents — the committed captures and the dumps — session layout = reader layout but the 3 declared, `theme_fallback_word`);
+  `clock_tests` 1/1; `theme_word` + `view_transform` units 3/3; the uo-docx-layout release suite green (`f8` 6/6 after its
+  Outline assertion was updated: Outline lays out now); `caps_sweep` (opt-in) 860/860.
+- Layout parity regenerated from the frozen TS and replayed with `ts_empty_theme` (lp.sh = verify.sh's `layout_group`): ci
+  200 documents / 600 facets, f7a 300 / 900 strict, f7b 200 / 600 strict, f7c 300 / 900 strict, f7d 200 / 600 strict, f8 200 /
+  3,000, Word oracle 2,742 / 8,226 strict — **0 mismatches** in every group (each capture deleted after its run).
+- Chromium, final runs: `editor_switch --mode parity` (stride 1, 12 steps) ok — 74 documents, every step facet equal but the
+  declared ED-600 (1 event, 1 para state); thumbnails 1,140 + 10 declared, screens 166 + 6 declared, saved parts 660 + 2
+  declared; run twice. `editor_switch_fidelity --mode all` ok — 9 scenarios, 0 undeclared, memory 20 cycles flat (live
+  4,374,500, buffer 8,519,680), run twice. `editor_switch_objects --mode all`: page 3,802 + 2 declared, objects 5,000 + 1, pictures
+  854 + 1, menu 219 + 0, keys 170 + 1, views 361 + 1, memory 30 cycles flat (13,400,333); three runs (2, 4, 5): gate-O5 entries
+  never met. `editor_switch_stories --mode all` ok — every facet equal but ED-108 (1 saved part), chrome 640 equal / 0
+  different with an empty remainder, memory flat (6,682,346). `editor_switch_review --mode all` ok (0 undeclared in every
+  family). `editor_switch_completion --mode all`: lists 1,456 + 7 declared, paste 808 + 1, inline/previews the footer shading
+  (declared after the run), tables 999 + 5 and objects 1,706 + 1 open (A2, above), page 134 + 0, memory flat (15,234,456).
+  `viewer_switch --mode all` ok — 74 documents, 579 pages, 0 undeclared (f2-3-0..3 pixels+PDF declared), memory 200 cycles
+  flat (18,445,397 live, 31,719,424 buffer).
+- Routing (`engine-switch.test.ts`, the probe): public 511, routed 494, shell 26, disabled 0 + 0; bar commands routed 516.
+- Editor vitest 334/334, viewer 28 + 1 skipped (`engine-fonts.test.ts` included); editor and viewer tsc exit 0; the strict tsc
+  line exit 0 once it lists the wave-7 declaration files (`write-session*.d.ts`, `session*.d.ts`, `write.d.ts` — verify.sh
+  updated: the old line misses A2's `CompletionBinding`).
+- Publish: `publish-packages.yml` parses, steps toolchain → engine modules → build (with `UO_REQUIRE_ENGINE_WASM=1`); the same
+  two builds locally (`uo-write.wasm` 4,142,574 B, `uo-write-editor.wasm` 10,306,989 B), `build-pkg font-files
+  document-viewer write` with `UO_REQUIRE_ENGINE_WASM=1` ok, `pkg_smoke` 17 ok.
+- Lint (**corrected in the review fix round**; the re-verification below is the valid statement): rustfmt clean on every
+  line B wrote; `io.rs:366` and `settle.rs:573` are HEAD lines that the current rustfmt (Rust 1.100) reformats, not other
+  frontiers' lines. `node tools/check-changed.mjs` passed ("all steps passed") on the Rust 1.99 toolchain at 16:23; under
+  Rust 1.100 (rustup `stable` since 16:25) it FAILS on HEAD lines (three new/wider clippy lints) and passes only with those
+  three lints allowed (`lint-allow.sh`).
+
+#### Process metrics
+
+Two implementers on one plan. The first wrote gate-O5, gate-10, gate-O3, Outline and the publish steps, then was cut off; the
+second verified them and found that gate-C1/O1/O2 were the theme too, that ED-106 was the stories harness's own hook filter,
+and that the plan's "TS editor ED7D31" was a misreading (no ED7D31 exists in the TS sources; the TS editor paints C00000 after
+the load and E97132 after a style-sheet rewrite). Rework: the G21 fuzz target (the link conflict, reverted), a pointer-module
+change for ED-106b (reverted: the shell has no geometry for a nested box), a `JobError` formatting fix of the sweep. The tree
+changed under the harness runs (A1/A2 editing until the end), so the modules were rebuilt and every harness ran again on the
+final tree.
+
+#### Re-verification (third implementer, 2026-11-12 evening)
+
+The second implementer's last native runs were cut off (the uo-docx suite, `session_native`) after the `sync_bookmarks` move to
+the layout pass, so the whole merge script ran again on the tree as it stood at 19:20–22:00 (A1 and A2 were still editing;
+the four modules were rebuilt at 20:43–20:47 and every Chromium run used them). Scripts: `core/target/m2-w7b/verify-final.sh`
+(= `verify.sh` without the layout groups: no layout source changed since their 15:16 runs, only `lib.rs`'s `pub mod
+theme_word` line, which was in them), `verify-resume.sh`/`verify-tail*.sh` (the same steps, resumed after the disk stops),
+`lint-allow.sh`. Log: `verify-final.log`.
+
+- **Toolchain drift, not wave 7** (for the orchestrator): rustup's `stable` became **Rust 1.100.0** (2026-11-09) at 16:25
+  today, after the last green lint (16:23). Three results changed on lines nobody touched this wave:
+  - clippy: the new lint `chunks_exact_to_as_chunks` (~40 constant-size `chunks_exact[_mut]` lines in uo-testkit, uo-codec,
+    uo-opc, uo-docx, uo-drawingml, uo-fonts, uo-image, uo-pdf, uo-render and tests) and wider `manual_swap`
+    (`uo-docx/src/js/object.rs:201`) / `needless_range_loop` (`uo-docx/src/doc/props.rs:1433`) fail `check-changed`. With
+    only those three allowed (`lint-allow.sh`, the crate list of `check-changed --dry-run`, native + wasm32 clippy,
+    float-casts, grep-bans): **all steps passed** — nothing else fails on the wave-7 tree.
+  - rustfmt: `uo-docx/src/session/io.rs:366` and `settle.rs:573` are reformatted — both HEAD lines, untouched (every line B
+    added is clean).
+  - `uo-jsnum` `text_v8`: `lower_cp`/`to_lowercase` follow std's Unicode 17 case tables in 1.100 (U+A7DD, U+A7E2, U+AB6C/D,
+    U+1DF40… gain lowercase mappings) while the V8 table of the test is Unicode 16: 2 tests fail (20 code points). A product
+    difference against the frozen TS for those code points only.
+  The choice — pin `rust-toolchain.toml` to 1.99 (the CI's `rustup default stable` would pick 1.100 too) or fix the ~45
+  lines and give uo-jsnum its own Unicode-16 table — is the orchestrator's/maintainer's; B changed none of it.
+- **Disk**: D: fell to 14 GB, then 8 GB and 12 GB (the other agents' builds); the scripts stop under 15 GB before a build.
+  B freed its own target twice (the 1.99 artifacts made stale by the toolchain, 6.3 GB; then the incremental caches and the
+  debug tree once every native step had run, 7.5 GB); the remaining steps (Chromium harnesses, build-pkg, pkg_smoke — no
+  cargo build) ran with a 5 GB guard. `core/target/m2-w7b` is 2 GB at the end.
+- **Results** (re-verification): editor tsc + viewer tsc (`editor_switch_tsc`), the strict tsc line, schema tests and
+  `uo-schema check`: exit 0. Editor vitest **334/334**, viewer **28 + 1 skipped**. Demo builds ok (36 outputs). uo-docx
+  `--all-features --test all` **794 passed, 1 ignored** (`memory_d2a` M1/M3/M5 and every `memory_d2b_*` included: the per-layout
+  bookmark sync keeps the keystroke budget). `session_native` 11/11, `shell_native` 8/8, stories 8/8, objects 4/4, caret 4/4,
+  review 3/3, uo-render green, `fidelity_w7` **4/4**, `clock_tests` 1/1, uo-docx-layout release suite **147/147**.
+  `session_api`, `session_hostile` (10 s fuzz), `shell_api` (M4 2,000), `write_api`: ok; `session_replay` d2a…f10: 0
+  mismatches, every TS re-encode byte-identical. `editor_switch --mode parity` (stride 1, 12 steps), twice: **ok** — 74
+  documents, step facets equal but ED-600 (1 + 1), thumbnails 1,140 + 10 declared, screens 166 + 6 declared, saved parts 660
+  + 2 declared, page errors 0. `editor_switch --mode all`: the chrome check failed on a wave-4 assertion ("a non-routed
+  command is shown disabled", with the Format Painter as its example) — the painter is routed now, so the check is turned
+  around (nothing may be disabled; `--mode chrome` ok after it). At the merge F3 put the fail-closed half back with a
+  synthetic command registered only for the probe ("Wave 7 — merge state"). Stories `--mode all` ok (chrome 640 equal, remainder
+  disabled 0; memory flat 6,682,346). Objects `--mode all` twice: the second ok (page 3,802 + 2, objects 5,001 + 0, pictures 854
+  + 1, menu 219 + 0, keys 170 + 1, views 361 + 1; memory flat 13,400,333). Fidelity `--mode all` ok (9 documents; memory flat
+  4,374,500). Format (A1's) `--mode all` ok. Review `--mode all` ok. Completion (A2's) twice: lists 1,460 + 3, paste 1,068 + 1,
+  objects 1,971 + 0, inline 254 + 1, page 134 + 0, previews 199 + 1; **f2-3-0|tables step 24 the only undeclared difference
+  (A2's open hit test, left undeclared on purpose: exit 1)**; memory flat 16,071,393. `viewer_switch --mode all` ok (74
+  documents, 579 pages, 0 differing; f2-3-0..3 declared gate-O3; 200 cycles flat at 18,445,397). `build-pkg font-files
+  document-viewer write` with `UO_REQUIRE_ENGINE_WASM=1` ok, `pkg_smoke` ok. `publish-packages.yml` and `rust-core.yml` parse
+  (18 jobs); step order toolchain → engine modules → build.
+- **Declarations retired** (stale in these runs): `editor_switch.mjs` f2-3-3 (equal in all five wave-7 parity runs);
+  `editor_switch_objects.mjs` f7b__7__8|objects and f7b__7__0|menu (ED-219b: A2's hovered-table adorners, equal in both runs,
+  menu mode once more after the edit); `editor_switch_completion.mjs` the four `markerPreview` css entries (ED-C1: A2's
+  `shellFonts`). The lists above ("Declarations kept", the ED row of the decisions) are updated.
+- **Declared entries left** (owner): editor_switch f2-3-0..2 Word authority over TS (gate-O3, B), f7d__7__11 ED-600 (TS
+  defect), f8__7__5 ED-108 (TS defect), f7d__7__8 SCR-1 (open, cross-front); objects f7c__7__2|page, f7c__7__8|page,
+  f2-3-0|pictures, f2-3-0|views, blank|keys ED-304 (A1), f7a__7__5|page LOAD-1 (intermittent); stories X2 f8__7__5 ED-108;
+  review f2-3-0|* and f2-3-2|find, f8__7__0|spell ED-304 (A1), styles|styles, headers|styles, f2-3-0|styles Word authority over
+  TS (Subtle Reference look); completion f2-3-0/f2-3-1/f7c__7__2 lists, f2-3-0 paste/inline/previews ED-304 (A1); fidelity
+  box-in-box ED-106b (A2/front O), hf-cell HF-T1 (front S model); viewer_switch f2-3-0..3 gate-O3. Undeclared and open at
+  this point: completion f2-3-0|tables step 24 (A2) — closed by A2's fix round 1 and the merge's `FIELD_SHADING` entry.
+- Not re-run: the seven layout parity groups (no layout source changed since their green 15:16 runs) and the Word
+  measurements (the facts did not change).
+
+#### Review fix round 1 (fourth implementer, 2026-11-12 night)
+
+The reviewer's eight findings on B's uncommitted work. Nothing of the earlier fixer of this round was in the tree (no file
+changed after the re-verification log), so every fix below is new. Modules rebuilt at 22:58 (`session_count`) and 23:13
+(`session`) in `core/target/m2-w7b/verify-e`; scratch logs `core/target/m2-w7b/fx-*.log`, `load1.log`.
+
+- **The bookmark sync and LA7 (major)**: fixed — `DocParts::bookmarks_follow` (Causes closed, gate-10, the correction).
+  Typing latency measured again (`editor_switch.mjs --mode latency`, new switch `UO_ES_LAT_BM=1`: a bookmark after the
+  caret in the typed paragraph, so its offsets move at every key; `session.wasm`, real clock, the machine shared with two
+  agents): pages50 Rust type 11.5/29.5 ms with the bookmark (TS 10.0/12.8) against 7.1/9.9 without it (TS 7.5/11.1) in
+  the same invocation, and 8.2–9.0 against 8.5 in three Rust-only repeats; pages500 21.1 against 21.3 (TS 33.2); every
+  typed key `incremental` (200/200, 30/30) in both variants; Enter/Backspace full (`document`) in both, memo hits
+  identical. The bookmark does not change the per-key path; the spread on pages50 is the machine's.
+- **LOAD-1 (major)**: closed. `UO_EO_LOADTRACE=1` (new, objects harness): the page count at the load's settle point and
+  1.5 s later after a refresh, with the FontFaceSet's loaded faces. Ten traced runs of `UO_EO_ONLY=f7a__7__5 --mode page`
+  with a release cargo build on the machine: TS 14 → 14 and Rust 14 → 14 in 10 of 10. The one occurrence
+  (`h-objects-4.log`: `ts 12, rust 14`) was the TS run: its settle is `document.fonts.ready` + 300 ms, while the TS
+  fetches the engine's faces later (`engFontLoad`); the Rust run waits for its font loop (`rust.idle()`). The harness's
+  `load` now also awaits the TS's own `settleDocumentFonts()` (what the TS runs before an export) — the counterpart of
+  `idle()`; nothing in `viewer/src/rust-engine.ts` was at fault. Entry removed.
+- **SCR-1 (major)**: closed, a harness/routing asymmetry, not a layout or band-repaint regression. Bisection switches
+  `UO_ES_NOBAND=1` (no band repaint) and `=2` (every relayout handled as full, every page cache dropped) left the
+  difference unchanged, so neither wave 6's band repaint nor the `changed` pages caused it; the dumped screens showed the
+  hovered table's move/resize handles in the Rust screen only: after the Shift+click in a cell the pointer rests over the
+  table, and the "TS overlays off" capture turns `paintTableAdorners` off on the TS element while A2's wave-7 adorners
+  were painted by a hook. `rust-engine-completion.ts` (A2's file, one routing line, commented) installs the shell's painter
+  as the element's `paintTableAdorners` (instance shadowing, as front R's overlays) and the hook calls it:
+  `editor_switch --mode parity` f7d__7__8 then equal (screens 2 of 2). Entry removed. B's bookmark sync was not involved
+  (the fixture has no bookmark).
+- **HF-T1 (major)**: closed in uo-docx — the TS shape of D2a-C1 for header/footer parts. A part that holds a table is
+  edited through its flat paragraph list (`hfParts.paras` = `flattenBlocks`), as the TS and as the edit lines' hit test
+  already were: `HfPart::flat` (`model/section.rs`, never read by the layout or the writer), the context story of
+  `story_of`/`story_of_mut` and `drawing.rs`'s `base_story` through `HfPart::edit_story(_mut)`; new
+  `session/ops/hf_flat.rs`: `Session::sync_hf_flat` at the head of every `change_set` reconciles the view into the
+  blocks by paragraph identity (`ParaId`, G22) with the TS `reconcileBlocks(blocks, paras, true)` rule (a new paragraph
+  right after the previous one of the list that was there; a removed one leaves; an emptied cell gets an empty
+  paragraph) and rebuilds the view from the blocks; the context step of the history keeps the BLOCKS (an undo restores
+  them and the view follows). Two edge differences from the TS are written in the module comment (the TS reconciles from
+  the blocks it read, every time; the empty paragraph of an emptied cell is in the list here). Notes and text boxes
+  holding tables keep the top-level model (D2a-C1 for notes unchanged; no harness case) — **superseded in review fix
+  round 2** (below): notes and boxes now follow the same rule. Tests: `hf_flat` unit
+  (`reconcile_follows_the_ts_rule`), `tests/session_wave7_hf_flat.rs` (the TS `header1.xml` of `hf-cell edge` byte for
+  byte; Enter/Backspace in a cell, undo, redo), fixtures `uo-docx-layout/tests/fidelity/hf-cell.docx` (generated by the
+  fidelity harness, no fonts) and `hf-cell-edge-ts-header1.xml` (the frozen TS's saved part). Fidelity harness: both
+  scenarios equal in every facet (20 + 2 steps, saved parts 12 of 12); entries removed.
+- **The record (minor)**: Numbers' lint line, gate-O2 ("equal, cause not established") and the fast-path sentence
+  corrected above.
+- **The open clock (minor)**: validated (Causes closed, SetClock).
+- **The toolchain drift (minor)** and **G21 (minor)**: not B's to take; both listed in "For the maintainer" with the
+  choice each needs.
+
+Results of this round (the tree as of 23:13; A1/A2 files unchanged since the re-verification):
+- uo-docx `--all-features --test all` (release) **797 passed, 1 ignored** (the two HF tests added; `memory_d2a`/`d2b`
+  budgets included); `hf_flat` unit 1/1; `clock_tests` 1/1; uo-docx-layout release suite **147/147** (la7's incremental
+  = full tests included); `session_native` 11/11 (the hostile open clock), `shell_native` **9/9** (I new), stories 8/8,
+  objects 4/4, caret 4/4, review 3/3, completion 5/5, format 4/4. The reviewer's probe (`bm-incr.mjs`) over the rebuilt
+  module: f8__7__8 paras 0/1/4/5/8/9, offsets 0 and 3, all `incremental`.
+- Chromium (`UO_WASM_PATH` = the rebuilt modules): `editor_switch --mode parity` (stride 1, 12 steps) **ok** —
+  thumbnails 1,140 + 10 declared, screens **167 + 5** declared (SCR-1 gone), saved parts 660 + 2, step facets 887 + 1
+  (ED-600); `--mode all` ok; fidelity `--mode all` ok (only ED-106b declared; memory flat 3,904,612); stories ok (ED-108
+  only; memory flat 6,682,346); objects `--mode all` ok (memory flat 13,400,333); format ok; review: the first `--mode all`
+  (run while a release cargo test held 3 cores) failed twice with the shell's overlays absent from the end capture
+  (revisions|revisions "overlays painted ts 1 / rust 0", f2-3-2|find overlay mask), the same modes re-run alone and a
+  second `--mode all` ok (0 undeclared) — a capture-timing flake under load, recorded for the orchestrator, no
+  declaration added; completion: only A2's open f2-3-0|tables step 24 (as before; closed later, see above).
+- Editor and viewer tsc exit 0; editor vitest 334/334, viewer 28 + 1 skipped; routing probe: public 511, disabled
+  mutators 0, queries 0 (routed 487 + shell 26 on the current sources). rustfmt clean on every line B wrote this round;
+  `grep-bans` ok; `float-casts` over uo-docx, uo-docx-layout and uo-wasm: no hit (run by mistake without
+  `CARGO_TARGET_DIR`, i.e. in the shared `core/target`: its three new incremental directories, ~120 MB, deleted after).
+- NOT run this round: `check-changed`/clippy (native and wasm32), the viewer modules and build-pkg/pkg_smoke, and the
+  seven layout parity groups — **D: fell to 2.3 GB free** during the round (the other agents' builds; B deleted its own
+  debug and release trees, 6 GB, leaving 8.4 GB), below the 15 GB stop line. The layout change of this round is in the
+  incremental path only (`incr/keys.rs`, `incr/mod.rs`): the parity groups replay full layouts, which it does not touch;
+  la7's incremental-equals-full tests and shell_native A/G/H/I cover it.
+
+#### Review fix round 2 (fifth and sixth implementers, 2026-11-13 night)
+
+The reviewer's findings on fix round 1: one major and three minor. The fifth implementer wrote the code, the tests and the
+harness scenarios, then was cut off by a usage limit before running the Chromium harnesses. The sixth implementer checked
+that work, kept it, rebuilt the modules, ran everything, and closed what the runs showed: the two undo declarations and
+the old note test.
+
+- **Notes and text boxes holding a table (major)**: closed in uo-docx. `hf_flat.rs` now covers every story kind the TS
+  edits through `flattenBlocks`:
+  - A NOTE: `enterNote` sets `this.model = { paragraphs: flattenBlocks(blocks) }`, and `syncNoteEdit` runs
+    `reconcileBlocks(blocks, paragraphs, true)`.
+  - A TEXT BOX read from a .docx: `tb.paras` = `flattenBlocks(tb.blocks)` (the `Synced` view), and
+    `reconcileBlocks(tb.blocks, tb.paras, true)` runs in `liveEngineDoc` and `exitTextbox`.
+  - The layout's hit test already flattened both scopes (`scope_paras`).
+  - Where the views live: `Notes::flat` (`model/document.rs`, `NoteFlat { footnote, id, view }`, one note in edit at a
+    time) and a hidden `flat` field of `DrawingTextbox` (`model/run.rs`). These two and `HfPart::flat` are now
+    `model::section::EditSlot`s: session state kept next to the model it views. They are outside the model's equality
+    (`PartialEq` is always true), and the JSON round trip of an undo step drops them (`JsNormalize`). So the history, the
+    snapshots and the writer see only the blocks.
+  - `story_of`, `story_of_mut` and `textbox_story` return the view while there is one. The note's context step in the
+    history keeps the BLOCKS (`note_story`), as the header's step does.
+  - `Session::sync_flat_views` (was `sync_hf_flat`, at the head of `change_set`) settles three kinds of view, in this
+    order: the box in edit first (its edits change a paragraph of the outer story), then the note, then the header/footer
+    parts. All three share one `settle_flat`, with round 1's rule unchanged. A box that is LEFT is reconciled and its view
+    dropped; `Session::flat_box` remembers which box carries a view.
+  - `sync_flat_views` also runs wherever a command indexes a story it has just entered or restored, so the caret lands on
+    the flat list: `enter_note`, `reenter_textbox`, `restore_context` (undo/redo) and the header re-entry of an undo
+    (`header_footer.rs`). In `enter_note`, a click on a note line inside a cell gives the shell's caret as a flat index.
+    Before this fix that index was clamped to the top-level list.
+  - A box from the ODF reader (`TopLevel`) keeps editing its top-level paragraphs, as the TS `paras` of that reader do.
+  - The `D2a-C1` decision row now covers all three stories, and the line "notes keep the top-level model" is gone.
+  - Native tests in `tests/session_wave7_hf_flat.rs`: 2 added, 4 in all.
+    - `typing_in_a_note_cell_lands_in_the_cell` is the review's probe. Footnote 1 = a 2-cell table then
+      `nota depois`. The test enters at flat (0,2) and types `xy`, Enter, `z`. The saved `word/footnotes.xml` equals the
+      frozen TS's BYTE FOR BYTE, both when saved inside the note and after leaving it. Between commands, cell (0,0) holds
+      the two paragraphs and the paragraph after the table is untouched. After an undo, the note's list is the flat list
+      of the restored blocks.
+    - `typing_in_a_box_cell_lands_in_the_cell`: a body box = a 2-cell table then `caixa depois`. The new paragraph lands
+      in the box's first cell, before and after leaving the box, and in that order in the saved `document.xml`.
+  - `session_d2b_f5::a_note_with_a_table_keeps_it_while_the_note_is_edited_as_its_top_level_paragraphs` asserted the old
+    model: the note's story was 2 paragraphs and 1 table. It is now
+    `…_edited_through_its_flat_list`: the context story is 3 paragraphs and 0 tables, the note's blocks stay 2 paragraphs
+    and 1 table, and the saved `footnotes.xml` keeps `in the cell` inside the table and `last!` after it. The full suite
+    found this; it was the only failure.
+  - Fixtures in `uo-docx-layout/tests/fidelity/`: `note-cell.docx` and `box-table.docx`, made by the fidelity harness's
+    generators (open fonts only), and `note-cell-ts-footnotes.xml`, the frozen TS's saved part from the reviewer's probe.
+  - Harness `editor_switch_fidelity.mjs`, all with real clicks and keys:
+    - New documents: `note-cell`, `note-plain` (the control) and `box-table`.
+    - New scenarios: `note-cell` and `note-plain` run the review's NOTE script (click the first note line, `xy`, Enter,
+      `z`). `note-cell undo` runs the same script, then Ctrl+Z, `w` and Escape. `box-table` runs the box script
+      `BOX(tb(0))`, and `box-table typing` runs that script without its Ctrl+Z.
+    - Results: `note-cell`, `note-plain`, `box-table typing`, `hf-cell` and `hf-cell edge` are equal on every facet,
+      saved parts included.
+- **Two new declarations: TS defect, Word agrees with Rust (undo inside a note or box that holds a table)**. The first
+  `box-table` run differed from the Ctrl+Z on (step 9): the caret, the following click's offset, the screen, the
+  thumbnail and the saved `document.xml`. `note-cell undo` differed the same way from its Ctrl+Z (step 5).
+  - Cause, in the frozen TS: `popHistory` → `parseState` = `JSON.parse`. After an undo, the box's `tb.paras` and
+    `tb.blocks` (the note's model and its blocks) are separate copies. The next `reconcileBlocks` finds none of the list's
+    paragraphs in the blocks (it matches by object identity). It puts them ALL before the table and gives each cell an
+    empty paragraph.
+  - What each saved: the TS saved the box as `caefb` / `caixa celula 00` / `caixa celula 01` / `caixa depois`, then a
+    table of two empty cells. It saved the note as `noxy` / `wta celula 00` / `nota celula 01` / `nota depois`, then two
+    empty cells. Rust keeps the same texts in their cells.
+  - Word, measured through COM (invisible, under `word-lock.mjs`) on the same bytes, scripts
+    `target/m2-w7b/word/box-undo.ps1` and `note-undo.ps1`, outputs in `word/out8/`:
+    - The box: the same keys up to Bold, then Undo. Cell (1,1) keeps `ab` and `ccaixa celula 00`, cell (1,2) keeps
+      `caixa celula 01`, and `caixa depois` stays after the table (`Information(wdWithInTable)` = False).
+    - The note: caret at offset 2 of cell (1,1), `xy`, Enter, `z`, Undo, `w`. The text stays in cell (1,1), cell (1,2) is
+      unchanged, and `nota depois` stays after the table.
+    - Word's COM `Undo(1)` also took back the paragraph break typed with `TypeText`/`TypeParagraph` (one undo unit). That
+      is an undo-grouping question that the COM typing cannot settle (keystroke grouping was not measured), and both
+      engines agree on it; it is not a parity item.
+  - Declared in the harness, with that evidence: `box-table` from step 9 and `note-cell undo` from step 5. Each covers
+    the caret, the selection, the step screen, and at the end the thumbnail, the screen and the saved bytes. Every facet
+    before the Ctrl+Z is equal.
+- **Verification provenance (minor)**: the modules were rebuilt from the final tree. The newest `.rs` was then
+  `uo-pdf/src/lib.rs` at 00:43:07; the only later Rust edit is the `session_d2b_f5.rs` test. `verify-e/session_count.wasm`
+  was built at **01:35:26** and `verify-e/session.wasm` at **01:36:02** (`target/m2-w7b/tmp/fx3-build.sh`). Every
+  Chromium result below ran on those two modules.
+- **Lint (minor)**:
+  - The full run was over the tree with this round's Rust code, with `CARGO_INCREMENTAL=0`, using
+    `target/m2-w7b/lint-allow.sh`: check-changed's steps plus the three Rust 1.100 allowances
+    (`chunks_exact_to_as_chunks`, `manual_swap`, `needless_range_loop`). Clippy ran with `-D warnings`, native AND wasm32,
+    over uo-docx, uo-docx-layout, uo-ffi, uo-pdf and uo-wasm (`--all-targets --all-features`), then `float-casts` and
+    `grep-bans`. **All steps passed** (`fx2-lint.log`, 00:43). The only other output is four manifest-level "unused
+    dependency" notes from uo-ffi; they are not lint failures.
+  - After the test edit, clippy for uo-docx (`--all-targets --all-features`, the same allowances) and `grep-bans` were
+    re-run: both exit 0.
+  - rustfmt `--check` is clean on every file B wrote this round: `hf_flat.rs`, `context.rs`, `model/section.rs`,
+    `document.rs`, `run.rs`, `normalize.rs`, `header_footer.rs`, `drawing.rs`, the incremental keys and the two tests.
+  - The plain `check-changed` (without the allowances) still stopped on the Rust 1.100 lints in unowned crates (the
+    toolchain drift of "For the maintainer"); fixed in code at the merge (F3), it passes without allowances.
+  - **D-L7 is NOT EXERCISED**: `IncrConfig::phone()` only takes effect when a host passes the phone font profile, and no
+    host does today. pages500 memory and latency were not measured again with a phone-profile environment.
+- **Editor vitest flake (minor, not B's)**: no change. No TS or `js/` file changed after the reviewer's vitest run, and
+  `formatting-policy-bar.test.ts` passes alone. A similar load flake hit `editor_switch_review` once this round (below).
+
+Results of this round (modules as above; harness logs `target/m2-w7b/fx3-h-*.log`):
+- uo-docx `--all-features --test all` (test profile, 3 threads): **798 passed, 1 failed, 1 ignored**. The failure was the
+  old note test above. After its update, `session_d2b_f5` and `session_wave7_hf_flat` pass 20/20, so the suite stands at
+  799 passed and 1 ignored. (No log of that 20/20 run was kept. F1 reran the whole binary into
+  `target/m2-w7b/f1/docx-all.log`: 802 passed, 1 ignored — the 799 plus F1's three new tests; `session_d2b_f5` 16/16 and
+  `session_wave7_hf_flat` 6/6 among them.)
+- uo-wasm natives (`session,count`, run after the hf_flat edits): `shell_native` 9/9, stories 8/8, objects 4/4, caret
+  4/4, review 3/3, completion 5/5, format 4/4.
+- Chromium:
+  - `editor_switch_fidelity --mode all` **ok**: 14 documents, step facets 205. The only declared differences are
+    ED-106b ×2, `box-table` and `note-cell undo`. Memory is flat at 4,374,500 live bytes from cycle 5 within this run.
+    (Corrected by F1: the memory mode runs only the `cell-lic1` box script, so the number of scenarios cannot change it.
+    The baseline after warm-up varies between runs — 3,904,612 in round 1 and again in the reviewer's rerun on the same
+    modules, 4,374,500 here — and is flat within each run.)
+  - `editor_switch_stories` **ok**: only ED-108 is declared, and memory is flat at 6,682,346. The chrome routing is 640
+    equal, with 0 commands left disabled.
+  - `editor_switch_objects` **ok**: only ED-304 is declared, and memory is flat at 13,400,333.
+  - `editor_switch --mode parity` (stride 1, 12 steps) **ok**, with the same declarations as round 1: gate-O3 ×3, ED-600
+    and ED-108. Thumbnails: 1,140 equal + 10 declared. Screens: 167 + 5. Saved parts: 660 + 2.
+  - `editor_switch --mode all` **ok**: 100 memory cycles.
+  - `editor_switch_review`: the first run, while the uo-docx debug suite held 3 cores, failed with
+    `f2-3-0|clipboard`. The bar's paste landed one step late in Rust (step 17 had no events; step 18 had 4 against 2). Run
+    again alone, it was **ok** (0 undeclared). That is a load flake like round 1's, and no declaration was added.
+- Not run this round: the layout parity groups, the viewer modules, build-pkg and pkg_smoke. No uo-docx-layout,
+  uo-fonts, uo-render or viewer file changed this round. D: was at 13–16 GB, near the 15 GB stop line. To stay above it,
+  B deleted its own `debug/incremental` and the partial `release` tree under `target/m2-w7b` (2.9 GB).
+
+### Wave 7 — F1: session and shell correctness (fix round after the final review)
+
+The open items of the wave-7 final review that touch the session and the shell (B's major, the A1/A2 minors, A2's handle
+leak, B's memory sentence). Logs under `target/m2-w7b/f1/`; modules built from this tree
+(`target/m2-w7b/f1/wasm/session_count.wasm`, `session,count`).
+
+Fixes:
+- **B major — Edit Text on a box that holds a table** (`shp:editText`, `editSelectedTextbox`): the session computed the
+  caret from the box's top-level paragraphs before the box's flat view (`tb.paras` = `flattenBlocks`, `hf_flat.rs`)
+  existed, so the caret landed at {para 0, offset 12} and typing went into the first cell (`caixa celulaQ 00`).
+  `enter_textbox_at`, `enter_textbox_order` and `ContextCmd::EnterTextbox` now install the view at once
+  (`sync_flat_views()`, as `reenter_textbox` and `enter_note` already did). The same cause in `insertTextbox` of a user
+  gallery item (the first non-empty FLAT paragraph selected, TS 14788) is fixed by it. The note entry
+  (`enter_note`) already synced; the header/footer entries set the caret to (0, 0), which is the same position in both
+  views, so they did not share the bug. Native tests `session_wave7_hf_flat::edit_selected_box_with_a_table_puts_the_caret_after_the_table`
+  and `::inserting_a_user_box_with_a_table_selects_the_first_flat_paragraph`; Chromium scenarios `box-table edit text`
+  (the API) and `box-table edit text (bar)` (the bar's `shp:editText` through the command registry) in
+  `editor_switch_fidelity.mjs`: caret {para 2, offset 12} after the table in both engines, `Q` typed there, every facet
+  equal.
+- **A2 minor — the inline picture selection by identity**: `F7State.inline_owner` keeps the `ParaId` of the paragraph
+  the picture was selected in; `settle_float_sel` drops the selection when the paragraph at the stored index is another
+  one (the TS `picSel` is the run object). Native test `completion_a2::inline_selection_is_the_run_not_its_index` (a
+  body picture at [0, 0] selected, then a cell whose paragraph 0 holds a picture at run 0 under the selection: nothing
+  selected, as the TS).
+- **A2 minor — `pasteCells` in the Read view**: the shell's `locked()` is now the TS `locked()` (2124:
+  `protectedMode || view === 'read'`, and no session), so every shell path guarded by it refuses in the Read view as the
+  TS does; `pasteCells` also checks `view === 'read'` as TS 20485. Chromium scenario `read view paste`: `pasteCells`
+  answers `false` twice in the Read view in both engines, nothing dirty, then pastes again in Print.
+- **Found by that scenario — `setView('read')` inside a table cell**: the TS (2886) leaves the cell for every view but
+  Print; the shell left it only for Web/Draft/Outline. `rust-format-view.ts` now leaves it for Read too (`uw-cellmode`,
+  the body selection back). Equal in `read view paste` (step 4); the format harness `--mode view` stays ok (1070 equal,
+  52 declared as before). The line is in A1's file, outside F1's ownership: the coordinating session confirms it at the
+  merge.
+- **A1 minor — an `.odt` across a DOM move** (fix round 2; round 1's route withdrawn): an `.odt` session is KEPT
+  whole while the element is detached: `park()` releases the shell engine, the layouts and the viewer side as before but
+  not the session; `unpark()` adopts the same session again (`adopt(…, reattach)`: selection, dirty, undo history and
+  protection stay, no `uw-protected`, as the TS whose model survives the move). A `.docx` is parked as its package as
+  before (ED-25). Round 1 parked the `.odt` export and read it back through `openOdt`; the final review measured that
+  this loses data on a plain DOM move: the ODF writer has no `text:bookmark`/`text:note` and the reader inlines note
+  bodies (a bookmark gone, a footnote back as body text, 76 → 77 characters), and lengths go through cm on both sides
+  (writer `t/1440*2.54`, reader 567 per cm), so the page grew ~1.5 twips per move (11908 → 11909 → 11911 → 11912 wide).
+  The harness hid it (one move, save('auto') only, a 0.01 cm matcher). The `.docx` route measured in round 1 (no styles
+  part over the empty package, ODF text frames dropped) was not lossless either. **ED-F1-1 is retired** (no declaration
+  remains; the cm matcher is deleted). While detached `engineStats()` counts the kept session (`sessions` 1, shell
+  engines 0, layout handles 0). An element dropped while detached (never re-attached) frees it through the session
+  binding's FinalizationRegistry, and an editor-side registry takes it out of `live.sessions`.
+  - **Found by that check — the session binding died with its editor**: `startRustEditor` called `bindSession` per
+    element, so each binding's FinalizationRegistry (sessions and shell engines) was collected with its editor and never
+    ran its callbacks. Measured (`target/m2-w7b/f1/odt-drop-probe.mjs`, CDP `HeapProfiler.collectGarbage`): 20 elements,
+    each loaded with the `.odt`, edited and dropped while detached; the JS objects (session, editor, element) were all
+    collected, but live bytes grew +33,730 per cycle (3,361,350 → 4,002,220). With one binding per module (a `WeakMap`
+    keyed by the module, as the format binding already was) they stay flat at 3,327,620 from cycle 0, sessions 0 after GC
+    (`odt-drop-probe.log`); the same probe that frees the kept session explicitly gives 3,327,620 too. The `.docx`
+    variant (session freed at park) was already flat (4,374,500).
+  - The park step (`editor_switch_fidelity.mjs --mode park`, in `all`): the TS `.odt` of `note-plain`, loaded in both
+    engines and edited after the load (`insertBookmark('marca1')`, `insertFootnote()` then `goToNoteRef`,
+    `insertTextbox('simple')` then `exitTextbox`). It is moved in the DOM 3 times, then `undo()` runs twice. Before the
+    moves, after each move and after each undo, these must equal the TS: `listStyles('all')`/`listStyles()`,
+    `styleFormatting`, `getBookmarks`, `noteCount`, `getSection()` (page size), `dirty`, `selection`, the text, the kind
+    and every part of save('auto'), and `createStyle`. The Rust answers after each move must also equal its answers before
+    the moves. A guard fails the step if the edits are gone after the last move (`marca1`, 1 footnote) or if the undos do
+    not change the document (the box, then the footnote: 0 footnotes).
+- **A2 not_done — the layout handle after `newDocument()`**: `adopt()` set `this.dl = null` without releasing it. A
+  layout of the synchronous relayout (`relayoutNow`: `refresh()` and every edit) is not in the `RustSession`'s set, so
+  `adoptDocument` did not free it either: load → `refresh()` → `newDocument()` left one handle per document (the
+  harness's `load()` calls `refresh()`, hence "some cycles"). `adopt()` now releases the installed layout first.
+  Measured (`target/m2-w7b/f1/leak-probe.mjs`): before, 8 of 8 cycles kept a handle (1, 2, … 8 after each remove); after,
+  30/30 cycles at 0 with the refresh and 30/30 without it, live bytes flat (9,826,503 and 9,035,525 from cycle 5). The
+  completion harness's memory cycle now does load → newDocument in its first editor: 30 cycles, sessions/engines/handles
+  0 after each remove, live bytes flat at 13,829,745, memory.buffer 25,034,752.
+- **B minor — the fidelity memory sentence**: corrected in B's results (the memory mode runs only `cell-lic1`; the
+  baseline varies between runs — 3,904,612 / 4,374,500 — and is flat within each), and the missing 20/20 log replaced by
+  this round's full run.
+
+Results (this tree):
+- uo-docx `--release --all-features --test all` (3 threads): **802 passed, 0 failed, 1 ignored** (`f1/docx-all.log`).
+- uo-wasm natives (`session,count`): shell_completion 5/5, shell_format 4/4, shell_objects 4/4, shell_stories 8/8.
+- clippy uo-docx `--all-targets --all-features -D warnings`: exit 0;
+  rustfmt `--check` clean on the touched `.rs`.
+- editor/viewer tsc: exit 0, no output. Editor vitest (engine switch config): 34 files / 334 tests passed.
+- Chromium (count module above):
+  - round 2 (the reviewer's re-run, `target/m2-w7b/f1-rev2`): `editor_switch_fidelity --mode all` **ok**, 17 scenarios, 0
+    undeclared, declared ED-106b ×2 + `note-cell undo` + `box-table`; the park step equal after 3 moves and 2 undos; memory
+    flat at 4,374,500; the odt-drop probe flat at 3,327,620, sessions 0 after GC; completion memory flat at 14,679,681;
+    completion paste 1,068 equal + 1 declared ED-304; `editor_switch --mode all` ok (16,986,957); stories ok, review ok,
+    format `file` ok, format memory flat at 8,247,280, objects memory flat at 13,400,333; vitest 34 files / 334 tests; tsc
+    exit 0. (Round 1's lines below are superseded by these.)
+  - **Wave 7c (S) supersedes the park design** above: nothing is released at a detach any more (no kept-session special
+    case for the `.odt`, no `.docx` reopened from bytes); see "Wave 7c — S", item 3.
+  - `editor_switch_completion`, each family alone: paste 1068 + 1 declared, lists 1460 + 3, tables 1003 + 1, objects
+    1971 + 0, inline 254 + 1, page 134 + 0, previews 199 + 1 (all declared ED-304) — all ok; memory as above.
+  - `editor_switch_format --mode view` ok (1070 equal, 52 declared).
+  - `editor_switch_format --mode all` ok (memory flat at 8,561,649), `editor_switch_objects --mode all` ok (memory flat
+    at 13,400,333), `editor_switch_stories` ok (memory flat at 6,682,346), `editor_switch_review --mode all` ok,
+    `editor_switch --mode all` ok (only gate-O3 declared; 100 memory cycles).
+- Not run: the layout parity groups, the viewer, build-pkg and pkg_smoke (no layout, viewer or packaging file changed);
+  `check-changed.mjs` without the allowances (the Rust 1.100 lints in unowned crates, as the other records say).
+- Files: uo-docx `session/ops/drawing.rs`, `session/ops/drawing/textbox.rs`, `session/ops/context.rs`; tests
+  `session_wave7_hf_flat.rs`, `completion_a2.rs`; editor `rust-engine.ts`, `rust-completion-paste.ts`,
+  `rust-format-view.ts` (one line, the Read view); harnesses `editor_switch_fidelity.mjs` (3 scenarios, the park step, the
+  command registry for `bar` scenarios), `editor_switch_completion.mjs` (the memory cycle's load → newDocument).
+
+### Wave 7 — merge state
+
+The final state of wave 7 after the three frontiers (A1, A2, B), their review rounds and the merge fixers F1 (session and
+shell correctness), F2 (print, picture and TOC divergences, the A1 harness gaps) and F3 (toolchain, harness hygiene,
+records and the final count). Where a subsection above reports an intermediate result, this one is the valid statement.
+F3's logs and scripts: `core/target/m2-latency/f3*` (outside git).
+
+**Nothing stays disabled under `engine="rust"`** (the maintainer's rule). Final count over the current sources
+(`core/target/m2-wsession/plan-a1/probe.sh`, its two bundles rebuilt from the tree, and `engine-switch.test.ts`):
+- public methods **511**: 485 routed, 24 handled by the shell, 2 both (`knownFontFamilies`, `onClipboardChange`) —
+  **0 disabled mutators, 0 disabled queries**. Private routed: 27. **Wave 7c (S): the 5 duplicate names are gone** from
+  `ROUTED_PUBLIC` (`currentStyles`, `copy`, `cut`, `paste`, `pastePlain` were in the base list and in front R's
+  `engine-routes-review.ts`; the base list's copies dropped — the front handlers already won in `installRoutes`, no
+  behaviour changed): 489 entries, 489 distinct. `engine-switch.test.ts` now asserts no duplicate in `ROUTED_PUBLIC` or
+  `ROUTED_PRIVATE` and prints distinct names over `PUBLIC_METHODS`: "public methods 511: routed 487 (+ 2 indented), shell
+  26, of which both 2, disabled mutators 0, disabled queries 0; private routed 27" (487 = 485 routed-only + the 2 both;
+  the 2 indented are `setImageLockAnchor` and `setImageEffect`, outside `engine-public.ts`), equal to the probe's.
+- bar commands: **462 declared, 462 routed, 0 unrouted** (`cmds-probe.mjs`: every command `registerWriteCommands`
+  adds, against `ROUTED_COMMAND_IDS`; that set has 516 ids, the other 54 are pane and menu entries).
+- the fail-closed path stays tested: `engine-switch.test.ts` (two synthetic public mutators, A2) and
+  `editor_switch.mjs --mode chrome` (F3: a synthetic bar command registered with the component's own commands, before
+  chrome.ts's gate, with a button on both bars: disabled and inert under `engine="rust"` — `ran 0` after a click — and
+  enabled and run once with the TS engine, the control).
+
+**What still differs from the TS editor** (none is a disabled command; each is declared in the harness tables with its
+evidence). Nothing below is a maintainer acceptance: the maintainer has accepted none of these differences, and the
+only rulings are the Word-authority ones (gate-O3 among them):
+- Word authority over the TS (measured in Word, "Word manda sobre o TS"): gate-O3 (a theme colour without a theme part:
+  Word and Rust E97132, the TS C00000), the Subtle Reference look, ED-710 (the text glow scaled by the font size, uo-render
+  `fx_for_word`), ED-712 (the TOC gallery's first page number: Word and Rust `5`, the TS `vi`), ED-713 (a chapter-numbered
+  PAGEREF: Word and Rust `1-i`, the TS `i`); TS defects with Word evidence: ED-108, ED-600.
+- differences at the engine boundary, with no TS behaviour missing (recorded, not accepted by anyone): ED-704 (XPS: the
+  engine writes the session's pages; the frozen TS `xps.ts` writes glyphs, lines and solid rects only — `XpsPage` has
+  `fills`, `lines`, `glyphs` —, so the Rust package holds more, and the bytes differ), ED-709 (custom-inline data that is
+  not plain JSON is kept as JSON text, as the saved `.docx` does), A2's declarations 1 (`pasteData` ignores a TS-model
+  `d.rich`), 2 (one Office Clipboard ring per engine on a mixed page), 5 (`editEmbeddedObject` takes a position: a TS
+  `Run` object does not exist) and 6 (the harness's `<universal-sheet>` stub), and those of waves 4–6 (ED-6, ED-202b,
+  ED-203, ED-205/206, ED-217, ED-601/602 — the event timing, the job runner, the random ids, the clipboard listeners;
+  each record says what a host can see). ED-F1-1 is retired (F1, above), not a difference. D-L3 (wave 6, the page buffers
+  kept across relayouts; wave 7c V, fix round 1's evidence): a stroke on a rounding tie can come out 1/255 different on a
+  canvas whose buffer outlived several paints (the table guide line of `paintTableAdorners`, 2 pixel columns, frames 0–1
+  of f7b__7__0 nw and f8__7__11 rot); the drag-frame comparisons allocate every page buffer again in both engines
+  (`dragFrame`), so they do not exercise the kept buffers (record "Wave 7c — V, fix round 2").
+- **open parity items** (the TS does it, the Rust editor does not yet; not disabled, owner named). Each is a gap under
+  the maintainer's rule, none was small enough for the merge fixers (F3's brief: route to an existing session op), and
+  none is in F3's files:
+  - **ED-707/708 — the presentation equal to the TS, the geometry Word's where measured (V, fix round 2); two parts
+    open.** `editor_switch_format --mode view`: 2,888 facets equal, 302 declared (LQ2's line geometry and W's item 4), **0
+    undeclared**, with the V5 interaction steps on. Fixed: the Web view lays out again at a selection change after a resize
+    (the TS `refreshSelection` → `refresh()`), Word's at once on a resize (measured), the ruler frame read from the element's
+    width (the TS 17141); the harness's two stale reads (a detached canvas after the TS rebuilt its canvases; a click point
+    measured before the selection scrolled back). Word measured and applied (tests/views_w7c.rs, 171 line starts of 6
+    documents equal to Word's in Web, Draft and Outline): the Outline wrap cap (8640 twips), Outline's left alignment, a
+    page/column break's own line and the section break's line in Draft/Outline, Word's break rule and label, the Outline
+    symbols. Declared as LQ2 (the legacy canvas layout of these views not ported): the line geometry's facets (`rulerLine`,
+    `canvases`, the Web screen, the caret after PageDown). **Open**: (a) Word's PageDown (`MoveDown(wdScreen)`, measured)
+    is neither engine's — both move 20 lines (the TS rule, every view); (b) f7a__7__0's lines differ from Word's in Print
+    too (13 of 326 equal): not a view rule. Record "Wave 7c — V, fix round 2".
+  - ~~**A2's declaration 3**~~ — **closed (V; frames on by default since fix round 1)**: the wrap-point drag relays the
+    text out live, one undo step, the TS snapshot/discard events; `editor_switch_completion` `blank|objects` compares its
+    frames by default, equal with no declaration. Record "Wave 7c — V" (2).
+  - **the float move/resize/rotate and Crop drags** — live (no ghost), frames on by default since fix round 1; every frame
+    equal in both harnesses but ONE facet (**open, F-1**): `editor_switch_objects` f7b__7__0, frame 0 of the float move, the
+    proxy textarea's top (TS 284 px, Rust 258 px). Fix round 2 traced it: the TS's layout of the click's `refresh()` asks
+    the resolver for "Times New Roman" for the first time (`loadEngineFonts`, 50 ms), the answer comes back as
+    `onFontsResolved` (57 ms) → `queueRefresh` → `refresh` (137 ms) → `positionProxy` (194 ms), after the Shape Format tab
+    grew the bar (178 → 204 px at ~94 ms); the Rust shell resolved every family with its first layout and asks nothing
+    after the click (no reposition). A reposition on the bar's growth moves f7b__7__1/3, where the TS stays (fix round 1). Not resolved:
+    the TS's late face request is not reproduced. Record "Wave 7c — V, fix round 2", F-1.
+  - ~~**A2's declaration 4**~~ — **closed (V, fix round 1)**: the drop caret follows the pointer, and the picture now paints
+    on every frame (a page base painted while a picture decoded was reused by the band repaint); `editor_switch_completion
+    --mode inline` frames equal by default. Record "Wave 7c — V" (3) and fix round 1.
+  - ~~**A2's declaration 7**~~ — **closed in wave 7c (S)**: compared with the TS and measured in Word. The TS keeps the
+    table style after insert → save → undo → save (its `pendingTableStyles` is outside the history; its reused package
+    keeps the styles part a save wrote), and so did Rust; Word removes it ("Tabela com grade": styles 14 → 13 in the
+    `.odt`, 5 → 4 in the `.docx`; deleting the table instead keeps it), and likewise an undone `createStyle`, list,
+    odd/even pages, hyphenation and footnote format. Rust now follows Word (the pending map travels with the undo step,
+    a save takes back what an earlier save wrote outside the writer: `session/save_parts.rs`), the TS behind
+    `OpenOptions::ts_stale_parts` / `ts_table_style_survives_undo` for the strict replays; and the missing
+    `pendingTableStyles` branch of a non-editable (`.odt`) or absent style sheet is ported (`addStylesXml`, 8641) — the
+    F3 major. Record "Wave 7c — S", item 2.
+  - ~~**ED-304**~~ — **closed (V, fix round 2)**: Word's look is the default in EVERY story — "When selected" in the
+    header/footer, the footnotes/endnotes and the text boxes (the story line the caret is on); Word measured in the footer
+    and a footnote (`v3/word-shading-stories.ps1`: no C0C0C0 with the caret outside, a 17-px band with it inside); the
+    band's height from the engine's natural descent (`LineGeom::desc`, exposed in `uo_shell_story_lines`), not estimated;
+    `editor_switch_review --mode wordmarks` checks the footer and the note too. The TS look under `tsShading`/`tsStrict`.
+    Not measured: Word's black Office theme (an account setting; the dark values are a dark page colour's). Record
+    "Wave 7c — V, fix round 2", ED-304.
+  - ~~**ED-106b**~~ — **closed in wave 7c (V)**: the box inside a box in edit has its frame and handles (`boxFloat`, the
+    layout's page object of that box). Record "Wave 7c — V" (5).
+  - ~~the preview bookmark sync~~ — **not a difference (wave 7c, V, evidence)**: every preview mini-document (TOC gallery,
+    covers, watermarks, header/footer galleries, table styles, Paste as Picture) lays out with an EMPTY bookmark index, as
+    the TS's `bookmarks: new Map()` — 159 previews checked after an edit (`uo-docx/tests/previews_bookmarks_w7c.rs`); no
+    stale offset can be read. Record "Wave 7c — V" (6).
+  - **Word's layout rules not applied at the merge** (B's "For the maintainer" list and F2's keepLines item) — **wave 7c
+    (W)**: four **applied** as "Word manda sobre o TS", each measured in a Word oracle series and asserted by
+    `uo-docx-layout/tests/word_w7c.rs`, the frozen TS behind a `ts_*` switch for the strict replays: keepLines taller
+    than what is left of the page (item 6, F2's `xiii`), a package without `settings.xml` = mode 12 with 708-tw tab stops
+    (item 2), the first box of a linked chain keeps its first lines (item 3), REF/PAGEREF/NOTEREF to an undefined
+    bookmark = Word's bold error text (item 4; its saved bold in the editor's lossless read is open, for the writer owner).
+    Fix round 1 ("Wave 7c — W, fix round 1"): item 2's 708 tw is a fallback an explicit `setDefaultTabStop` overrides,
+    `getDefaultTabStop` answers it, the session's compat reads use mode 12; the format harness's `tables|ruler` and
+    print-cell differences attributed to item 2 and declared; `bookmark_where` reads a per-call index.
+    Two stay **OPEN** with numbers (not relabelled, not accepted): the theme
+    tint/shade rounding (item 1: Word's rule not found; 3,356 samples, the TS rule hits 2,323) and the hyphenation
+    patterns (item 5: line splits equal to Word in pt 877/900, en 809/900, es 898/900 paragraphs; closing it needs
+    licence-checked pattern sources or the maintainer lifting his directive against exceptions taken from Word's output).
+    Record "Wave 7c — W".
+
+**Toolchain (Rust 1.100.0 / clippy 0.1.100, rustup `stable` since 2026-11-12 16:25)**: the internal choice of B's
+"For the maintainer" list ("pin 1.99 or fix the sites"), applied: fixed in code, behaviour-preserving, **no allowance
+anywhere** (none of the wave's temporary `-A` flags is in a committed file):
+- `chunks_exact_to_as_chunks` (64 reported sites, native and wasm32): `as_chunks::<N>()` / `as_chunks_mut::<N>()` with the
+  remainder where the code used it (the SHA-256 of uo-testkit, uo-fonts and uo-schema now hash `&[u8; 64]` blocks; CRC-32
+  of uo-opc; the cfb mini-FAT and directory; uo-codec `utf16`; the pixels of uo-drawingml, uo-image, uo-render, uo-pdf;
+  uo-wasm `render.rs`, `handle.rs`, `shell_format.rs` and four native tests; uo-docx `docx_writer/drawing.rs`, the paste
+  tree reader and two contour tests; the uo-docx-layout and uo-jsnum test decoders); `needless_range_loop` (uo-docx
+  `doc/props.rs` `for_cells`, uo-docx-layout test `f5.rs`, uo-drawingml `tables/tests.rs`); `manual_swap` (uo-docx
+  `js/object.rs` `sort_keys`, `<[u8]>::swap` is const); an irrefutable `let … else` (uo-render `text_fx.rs` `over`).
+- uo-jsnum `text_v8` (2 tests failed under 1.100): the std lowercase tables are Unicode 17, the V8 of the frozen TS
+  (Node 24.15) has 20 code points without a lowercase mapping (`UNICODE17_LOWER` in `text.rs`: U+A7DD, U+A7E2, U+AB6C/D
+  and 16 of U+1DF40–U+1DF7E). `to_lowercase` and `lower_cp` keep them as V8 does (lowercasing the runs between them,
+  which gives V8's Final_Sigma contexts: they were unassigned, neither cased nor case-ignorable). `text_v8` 12/12.
+- rustfmt 1.100 reformats HEAD lines (no code change): uo-docx `session/io.rs`, `ops/text.rs`, `settle.rs`,
+  `tests/all.rs` (the new module sort order), uo-pdf `render.rs`, uo-render `text_fx.rs`, uo-wasm tests `write_native.rs`
+  and `render_native.rs` (formatted one file at a time through stdin, so no `mod` child was touched).
+- cargo 1.100's `unused_dependencies` (a warning, not a failure: `check-changed` passed with it) reported four uo-ffi
+  dependencies on wasm32 (`uo-alloc` normal and dev, `uo-docx-layout`, `uo-pdf`), where the crate is empty
+  (`#![cfg(not(target_arch = "wasm32"))]`). F3 round 2: uo-ffi's normal dependencies and its `uo-alloc` dev-dependency
+  are now `[target.'cfg(not(target_arch = "wasm32"))'…]` tables; `Cargo.lock` unchanged; uo-ffi clippy `--all-targets
+  --all-features -D warnings` native and wasm32 with no warning.
+
+**Harness hygiene (F3)**: `editor_switch.mjs` — the chrome probe above (the bundle exports the toolbar's
+`CommandRegistry` through a dynamic import, so phase 0's static closure is unchanged); the Format Painter and the font
+colour are checked enabled. `editor_switch_completion.mjs` DECLARED_C — `'f2-3-0|tables': FIELD_SHADING` (ED-304, the
+473 px footer band; the thumbnails and every step facet equal). The retirements of B's re-verification hold in three runs
+each: `MARKER_CSS`/ED-C1 (completion lists ×3 ok), ED-219b `f7b__7__8|objects` and `f7b__7__0|menu` (objects objects and
+menu modes ×3 ok), f2-3-0|tables (×3 ok).
+
+**Final numbers** (F3; the session_count module built from the tree at 03:57, `target/m2-latency/f3/session_count.wasm`,
+10,396,603 B):
+- `node tools/check-changed.mjs --jobs 3`: **all steps passed** (16 crates: clippy `-D warnings` native and wasm32,
+  `--all-targets --all-features`, float-casts, grep-bans); whole-workspace clippy native and wasm32: 0 warnings.
+  Re-run at 05:15 over the tree of that moment (157 changed files; F1 and F2 still editing): one failure, the new F2 test
+  `uo-docx-layout/tests/toc_pages_w7.rs:61` (`str::trim_start`, banned by clippy.toml) — F3 changed that line to
+  `uo_jsnum::text::trim_start` (the test 4/4), then **all steps passed**. The routing probe, tsc and the editor vitest were
+  re-run at 05:11 on the same tree: the same numbers as above (511 / 0 / 0; 462 / 462 / 0; 34 files / 334 tests).
+- tests: uo-testkit, uo-codec, uo-opc, uo-fonts, uo-drawingml, uo-image, uo-render, uo-pdf, uo-jsnum, uo-schema
+  (`--all-features`): **1,141 passed, 0 failed**; uo-docx `--release --all-features --lib` 153 passed and `--test all
+  --skip memory_` 657 passed, 0 failed, 1 ignored (the 500-page memory soaks are the orchestrator's).
+- editor/viewer tsc exit 0, no output; editor vitest (engine-switch config) **34 files / 334 tests** passed;
+  `engine-switch.test.ts` alone 4/4 in four of five runs — one run under the other agents' load failed "roteados chegam ao
+  motor, desligados não tocam o modelo TS" and passed on the three reruns (a load flake, no change made).
+- Chromium: `editor_switch.mjs --mode all` **ok** (parity 13 documents × 12 steps: every step facet equal, thumbnails 214
+  + 2 declared, screens 28 + 1 declared, saved parts 133 equal; 100 memory cycles; keys; chrome as above);
+  `editor_switch_completion.mjs --mode all` **ok** in 455 s (lists 1,460 + 3, paste 1,068 + 1, tables 1,003 + 1, objects
+  1,971 + 0, inline 254 + 1, page 134 + 0, previews 199 + 1, every declared one ED-304; memory 30 cycles flat at
+  15,073,265 live bytes, `memory.buffer` 26,607,616, handles and sessions 0 after each remove);
+  `editor_switch_objects.mjs --mode all` **ok** in 499 s (page 3,802 + 2, objects 5,001 + 0, pictures 854 + 1, menu 219 +
+  0, keys 170 + 1, views 361 + 1, all ED-304; memory flat at 13,400,333).
+
+### Wave 7c — V: the continuous views, the live object drags, the overlays of every story, the nested box, the previews
+
+Frontier V of wave 7c (one implementer; the planner's report and the brief: the merge-state items ED-707/708, A2's
+declarations 3 and 4, ED-304, ED-106b and "preview bookmark sync", plus the same-class float/crop live drags the planner
+found). Scratch, logs and the Word scripts: `core/target/m2-latency/v-*`, `v1/`, `v-plan/` (outside git); the Word
+screenshots in `E:\UniversalWriteTest\_lab\views`. Nothing committed.
+
+**V1 — Word measured** (Word 16, invisible COM under `tools/parallel/word-lock.mjs`, the planner's guarded
+`word-views.ps1` copied to `v1/word-views-v1.ps1`: the window 1100 × 1300 at −20000, `foreground unchanged=True`; 96 dpi,
+zoom 100; `GetPoint` of the first character of each paragraph). Documents made by `v1/mkdoc.py` (open fonts, no embedded
+font), committed as `uo-docx-layout/tests/fidelity/v1-outline.docx` and `v1-breaks.docx`:
+
+| `v1-outline.docx` paragraph (x from the window, pane at 8) | Draft (1) | Web (6) | Outline (2) |
+|---|---|---|---|
+| body before any heading, `w:ind/@left` 720 | 80 | 86 | 80 |
+| Heading 1 (`outlineLvl` 0) | 32 | 38 | 56 |
+| body | 32 | 38 | 80 |
+| Heading 2 | 32 | 38 | 103 |
+| body, `w:ind/@left` 1440, `before` 480 | 128 | 134 | 127 |
+| Heading 3 | 32 | 38 | 150 |
+| body | 32 | 38 | 174 |
+| body with a direct `w:outlineLvl` 1 | 32 | 38 | 103 |
+| body (× 2, the first wraps) | 32 | 38 | 127 |
+
+Read: Draft puts the text 24 px into the pane and keeps the indents and the paragraph spacing (29-px pitch of the 11-pt
+body with `after` 160 / `line` 259, as Print); Web 30 px in, the same content rules at the window's width; Outline
+ignores the paragraph's indents and spacing: a heading of level *n* at Draft-left + 24 + 47·(*n*−1) px, body text 24 px
+under the last heading before it (a body paragraph before any heading as under level 1), 17-px lines (single).
+`v1-breaks.docx` (the second document ran with a tiny window: partly n/a): in Draft and Outline the text after a page or
+column break continues on the next line of the same pane (no new sheet). The planner's V1 (f2-3-0, f7a__7__0, f8__7__0)
+holds the rest used here: Web wraps at the window and keeps the list indents; Draft/Outline draw a page/column break as
+a dotted line with its label right-aligned; Outline's ⊕ (heading) / ○ (body) 18 px left of the text; field shading
+"Always" shades the footer fields too (C0C0C0, a text-height band), Word's default is "When selected".
+
+**(1) ED-707/708 — closed.** The editor's Web, Draft and Outline are ONE sheet now, a new engine view
+`ViewTransform::Continuous(ContinuousView { kind, width_tw, margin_tw, ts_strict })` (uo-docx-layout `options.rs`,
+`view_transform.rs` `continuous_document`, `engine/flow.rs` behind `ViewTransform::is_continuous`): every section on the
+sheet (continuous starts, no columns, no title page, no headers/footers), height `CONT_SHEET_H` = 100,000,000 twips (the
+TS legacy layout had none: one logical page), margins = the TS `contMarginTwips()` (600, 240 narrow), the sheet width =
+the TS canvas (Web: `contentWidthTwips() + 2 × margin`, universal-write.ts 10777/21559; Draft/Outline: the last section's
+page width, widened to the widest section's text + 2 × margin), a page break, a column break and `pageBreakBefore` stay
+on the sheet (flow.rs: `page_break_before` and `break_after` ignored in the continuous view). Content = Word: each
+section at its own text width (Draft/Outline); Outline by outline level with Word's numbers (`OUTLINE_HEADING_INSET` 360,
+`OUTLINE_LEVEL_STEP` 705, `OUTLINE_BODY_INSET` 360 twips; the paragraph's indents replaced, spacing 0, single lines —
+`word_outline_document`, the keys written through `obj::set` and the editor props matched to the new pPr, as
+`direct_ppr` reads both). `ts_strict` keeps the frozen TS's rules where Word differs (every section at the last one's
+text width; Outline = the TS `+720` rule, spacing kept) — set by the harness only (`ed.tsStrict = true`). The viewer's
+`ViewTransform::Web`/`Draft` and the f8 sweeps are unchanged (the viewer's views.ts and `uo-wasm write.rs` untouched).
+Shell (`rust-format-view.ts`): `applyView` calls the new `uo_shell_engine_set_continuous` with the element's own
+`contMarginTwips()`/`contGutterPx()` and the TS Web width; the sheet is shown to the content + the TS margin (the TS
+`continuousHeight = y + 600`); the strips (`rust-format-tiles.ts`) are cut as the TS cuts its tiles (`contTileBreak`: a
+strip ends at the top of the first line whose bottom passes 4000 CSS px; contiguous; past the last line plain 4000-px
+cuts) and exposed as `ed.continuousCuts(i)`; `goToPage(n)` in those views scrolls to strip n (the TS tiles, 18542; no
+caret move, as the TS without an engine line); `currentPage()` 1, `layoutPageCount()` 0 (A1's, unchanged); the ruler is
+null in Outline (A1's). Word manda sobre o TS (V1): in Draft and Outline the page/column/section breaks are always drawn
+(the dotted line and label of `paintBreakMark`; the TS only with Show Marks — `tsStrict` keeps it), and Outline paints
+Word's symbols (⊕ heading with text under it, ⊖ without, ○ body; 270 twips left of the first line; the TS has none —
+`tsStrict`). Collapse/expand and the Outlining tab: the frozen TS has neither (no outline code besides
+universal-write.ts 12582/17122; `promoteHeading`/`demoteHeading` stay A1/R's routed commands) — not added.
+Harness (`editor_switch_format.mjs`, family `view`): `VIEW_DECL` deleted; the view facets split into the presentation —
+`present` (the first sheet's CSS width and `offsetLeft`, the text's left inset from the sheet at (0, 0), `currentPage`),
+`ruler` (the frame, page geometry, indents, tabs), `pages` — compared strictly (TS vs Rust with `tsStrict`), and the
+content geometry — `rulerLine` (the focus line's top) and `canvases` (the sheet/tile heights) and the Web screen —
+declared once per document as `WORD_VIEWS` (id "Word manda sobre o TS (V1 measurement)", the numbers above); a strip
+check fails any gap or strip over 4000 px (no declaration covers it); new steps type, Enter, Backspace and two zoom
+changes in the Web view. Native: `uo-docx-layout/tests/views_w7c.rs` (the engine's Outline and Draft first-line x of all
+ten paragraphs equal Word's to ≤ 1 px — every one exact to the pixel —, the Outline pitch 16.9 px vs Word 17, Draft
+28.9 vs 29; `v1-breaks.docx` on one sheet in all three kinds) and unit tests in `view_transform.rs`.
+
+**(2) A2's declaration 3, and the float/crop drags of the same class — closed.** One mechanism for every live gesture,
+uo-docx `ShellEdit::LiveBegin` (the TS `snapshot()` at the mousedown: one undo step, dirty, `uw-change`),
+`LiveSet(LiveForm { wrap, size, offset, page_at, rot, crop })` (the model fields the TS writes on every move, in place:
+the anchor's `wrapPoly`/`wrapBox` and the format's `polygon`; `widthTwips`/`heightTwips`, the offsets, `moveAnchorTo`'s
+page-relative `posH`/`posV` or `simplePos`, the rotation of the picture style / box / shape style / group, `pic.crop`; no
+step, no event, the paragraph touched for the relayout), `LiveEnd(commit)` (the existing `SetWrapPolygon`/`CommitDrag`
+writer inside the gesture's step — `collapse_to` keeps the mousedown's state —, `uw-change` once) and `LiveCancel`
+(`discardSnapshot()`: the step goes, a document it made dirty is clean again). Wire: `uo_shell_edit` JSON `liveBegin`,
+`liveSet`, `liveEnd { commit }`, `liveCancel`. Shell: `wrapPointsMouseDown` (rust-completion-objects.ts),
+`startFloatDrag` and `startCropDrag` (rust-objects-pointer.ts) begin at the mousedown, send the live form once per
+animation frame (the TS `refresh()` per frame) and end/cancel at the mouseup; the dashed ghost is gone for the
+picture/shape move, resize, rotate and crop (`ghost: false`: the object itself moves live, as the TS paints it); the box in
+edit keeps its handles at the dragged rectangle (`editingTb.rectTwips`); the crop overlay reads the live crop (the TS
+`cropGeom` reads `pic.crop`); a group's commit carries its start size (`groupStart`, the TS reset 13893). The click
+without a drag is the real snapshot/discard now (ED-202b's replayed `snapshotDiscardEvents` deleted).
+Tests: `uo-docx/tests/live_drags_w7c.rs` (in `tests/all.rs`): 25 live forms + the commit = 1 undo step, undo gives the
+package of the mousedown back byte for byte, redo the end; `LiveEnd` equals the one-shot `CommitDrag` and the one-shot
+`SetWrapPolygon` byte for byte in `save_docx`; cancel: history depth and dirty as before (clean again, `DirtyChange
+false`); events LiveBegin = [dirty, change], LiveSet = [], LiveEnd = [change]; 1,000 live forms: 400,000 B allocated,
+0 B left.
+
+**(3) A2's declaration 4 — closed.** `startInlineDrag`: on every move with a hit the caret goes to the point (the session's
+`setSelection`, applied without the caret scroll: paint, proxy, `onSelectionChange`, `chromeSync` — the TS
+`refreshSelection()`), which drops the picture's selection as the TS `selectedFloat()` does once the text selection left
+the run (13550); a move without a hit clears the target (`target = this.hitTest(ev)`); without a drop the old selection
+comes back (13928). The drop stays `MoveInlineRun` (its undo selection unchanged).
+
+**L5 — frame by frame.** `editor_switch_completion.mjs` and `editor_switch_objects.mjs`: a drag step with `frames: true`
+does the same six pointer moves as `{ steps: 6 }` and captures after the down and after each move (two animation frames
+and the Rust idle): the selection, the proxy textarea's left/top/height, the `onSelectionChange` calls, the uw-* events
+since the drag began and the hash of every page canvas — compared as facets `frame k sel|proxy|selChanges|events|pages`
+with no declaration. Completion: `wrap:1`, `float:0`, `handle:0:se`, `handle:0:rot`, the crop `handle:0:w`/`n`, the two
+`inline:0` drags; objects: `float:0`, `handle:0:se`/`nw`/`rot`. The memory modes keep their inline and float drags (now
+the live path).
+
+**(4) ED-304 — closed.** New export `uo_shell_story_lines(h, layout, page, fallback)` (shell_review.rs, JSON): the lines of
+EVERY story on the page — the TS `eng.lines` (installEngineResult 16515: body, body table cells at any depth, the
+header/footer parts the page shows, footnotes/endnotes; `other` skipped; `collapseCustomChars` applied) — then the text
+boxes' content lines in their frame (`xf`; a follower of a linked chain in its head's content, the head = the lowest
+`seq`), each with its paragraph once (key, text, runs `{ n, f, c, sp, lang }`, bookmark marks). Keys: `b<para>`,
+`c<anchor>/<row>.<col>.<block>…|<k>` (the TS search location: the grid column, the cell's paragraph index), `h…`, `n…`,
+`t…`. The shell (`storyLines` in rust-review-core.ts) feeds `paintEngineMarks` (field shading, comment highlight; the
+boxes' content excluded as the TS), `paintBookmarkMarks` (every story), `paintEngineSpelling` (every story and the boxes'
+content) and `paintSearchHits` (hits keyed by story paragraph: body and cells, the TS `searchHits` map), and `search()`
+answers the page of a hit in a cell (the TS `pageOf` over `eng.lines`: f2-3-2's cell hit 0, was −1). F2 (Word's colour
+C0C0C0, the text-height band, the "When selected" default): NOT applied — see "Not done".
+Declarations removed: completion `FIELD_SHADING` (7 entries), objects `HF_SHADING` (4) and `blank|keys`, review
+`f2-3-0|*`, the `f2-3-0|styles` ED-304 part, `f2-3-2|find`, `f8__7__0|spell`, format `f2-3-2|text`'s ED-304 end facet;
+the review harness's overlay mask covers the whole page now (headers, footers and notes included). Native:
+`shell_review_native` `d_story_lines_cover_every_story` (f2-3-0: body + footer lines and its field runs; f8__7__0: body,
+header/footer and note lines; M1 0 B left).
+
+**(5) ED-106b — closed.** uo-docx `Session::edited_box()` (the box in edit's drawing id, `rot`, and whether it is one of
+the base story's own drawing runs); `uo_shell_objects` answers `boxFloat` for a box inside a box — the layout's page object
+of that drawing with laid-out content (the TS `tbEdit.rectTwips`, 16470–16497), `i` −1 — and `activeHandle` takes it when
+the box is not in `floats`. The two `box-in-box outer/inner` declarations deleted; the fidelity header's "Word opens it"
+corrected (Word's COM `Documents.Open` fails, RPC 0x800706BE). The fixture is committed as
+`uo-docx-layout/tests/fidelity/box-in-box.docx`; native `shell_objects_native` `e_box_in_box_has_a_frame` (the outer box
+in `floats`, the inner as `boxFloat` at x 3823.5, y 1577.7, 1889.8 × 629.9 twips).
+
+**(6) Preview bookmark sync — not a difference (evidence).** Every preview mini-document lays out with an EMPTY bookmark
+index, as the TS's `bookmarks: new Map()` (7118 TOC, 12113 covers/watermarks, 18505 header/footer, 7874 Paste as
+Picture, 20182 table styles): `uo-docx/tests/previews_bookmarks_w7c.rs` builds, after an edit that moved the bookmarks
+of `ref-after-note.docx`, every cover, watermark and header/footer gallery item in pt/en/es, both table-style kinds, the
+three TOC templates and a Paste as Picture of the paragraph holding `REF bm1`: 159 previews, every index empty, the
+session's own index untouched. The layout reads bookmarks only through `DocView::bookmarks()` (no mark scan).
+Not captured: the frozen TS's text of a REF inside a Paste-as-Picture preview (its empty map gives the cached result; the
+Rust default follows W's `ts_ref_bookmarks` rule there).
+
+**Files** (V's own: `rust-format-view.ts`, `rust-format-tiles.ts`, `rust-completion-objects.ts`, `rust-objects-pointer.ts`,
+`rust-objects-core.ts`, the view/objects/completion scenarios and frames of the harnesses). Outside them (each additive,
+re-read before every edit): uo-docx-layout `options.rs` (`ViewTransform::Continuous`, `ContinuousView`, `ContinuousKind`,
+`is_continuous`), `view_transform.rs` (`continuous_document`, `word_outline_document`, the Outline constants, tests),
+`engine/flow.rs` (two gates), `tests/views_w7c.rs`, `tests/fidelity/{box-in-box,v1-outline,v1-breaks}.docx`; uo-docx
+`session/ops/shell_edits.rs` (the live variants, `LiveForm`, `shell_wrap_polygon` split out), `session/ops/drawing.rs`
+(`F7State::live`, `Session::edited_box`), `tests/live_drags_w7c.rs`, `tests/previews_bookmarks_w7c.rs`, `tests/all.rs`
+(two `mod` lines); uo-wasm `session/shell_review.rs` (`uo_shell_story_lines`), `session/review.rs` (`skip_run`/`no_proof`
+`pub(crate)`), `session/shell_stories.rs` (`cell_ref` `pub(crate)`), `session/shell_objects.rs` (`boxFloat`),
+`session/shell_completion.rs` (the live JSON), `session/shell_format.rs` (`uo_shell_engine_set_continuous`), `js/session.mjs`
++ `.d.ts` (`storyLines`, `StoryLine`/`StoryPara`/`StoryLines`, `boxFloat`), `js/session-completion.d.ts`,
+`js/session-format.mjs` + `.d.ts` (`setContinuous`), `tests/shell_review_native.rs` (test d), `tests/shell_objects_native.rs`
+(test e); editor `rust-review-core.ts` (`storyLines`, `searchLocKey`), `rust-review-overlays.ts`, `rust-review-find.ts`
+(search hits/page, `goToPage`), `rust-review-spell.ts`, `rust-engine-format.ts` (`continuousCuts`), `write-session.d.ts`,
+`write-session-objects.d.ts`, `write-session-completion.d.ts`, `write-session-format.d.ts`; harnesses
+`editor_switch_{format,completion,objects,review,fidelity}.mjs`.
+
+**Verification** (`target/m2-latency/v-verify.sh`, `v-parity.sh`; logs `v-verify-*.log`, `v-parity-*.log`; `-j 3`, ≤ 3 test
+threads, the one target `core/target/m2-latency`; D: 52 → 44 GB free). The tree changed under the run: frontiers W and S
+edited the layout engine and `rust-engine.ts` at the same time (W's Word-authority layout switches, S's detach lifecycle),
+so the full harness runs at the end mix their open work with V's; V's items were each verified in isolated runs as they
+landed, and the end runs are classified below.
+- Rust: uo-docx `--test all -- previews_bookmarks_w7c:: live_drags_w7c:: completion_a2::` 17/17; uo-docx-layout `--test f8
+  --test views_w7c` 6 + 2, `--lib` 13 (`view_transform` 4 of them); uo-wasm natives `shell_format/completion/objects/
+  review/native/stories` 4 + 5 + 5 + 4 + 9 + 8 = 35 passed (corrected in fix round 1: the suites run format 4, completion 5,
+  objects 5, review 4, shell 9, stories 8; the first count had the labels out of order) (after one fix of the new review test's `u32` page);
+  `shell_review_native` d: f2-3-0 kinds body/cell/hf with 8 field runs, f8__7__0 body/hf/note with 15, M1 0 B left.
+  `rustfmt --check` on every V-touched `.rs`: clean (formatted through stdin). `check-changed --jobs 3`: fails in
+  uo-docx-layout on W's open lines only (`engine/chain.rs:60` `f64::min`, `engine/flow.rs:824` unfulfilled
+  `too_many_lines` expectation); V's one finding there (`view_transform.rs` `&*ppr`) fixed.
+- TS: the strict `tsc` line exit 0; `editor_switch_tsc.mjs` editor and viewer exit 0; vitest editor 34 files / 334 tests,
+  viewer 7 files / 28 (+1 skipped).
+- Wasm: session_count, session, selftest, viewer built (`target/m2-latency/v/`); `build-pkg font-files document-viewer
+  write` with `UO_REQUIRE_ENGINE_WASM=1` (the clean `--features write` viewer module and the session module of this
+  target) exit 0 (`uo-write.wasm` 4,043 KB, `uo-write-editor.wasm` 10,242 KB) and `pkg_smoke` ok.
+- Layout parity (frozen TS captures, strict): ci 200, f7a 300, f7b 200, f7c 300, f7d 200 documents equal, 0 mismatches
+  ; f8 200 documents (3,000 facets equal); the Word oracle 2,742/2,742 (8,226 facets), 0 mismatches.
+- `viewer_switch --mode all` (viewer.wasm, stride 1): **ok** — 78 documents, 592 pages, 0 differences in pages, text layer,
+  find, pixels (tolerance 0) and PDF; the Web view of the viewer unchanged.
+- Isolated runs of V's items, each with the declarations removed: `editor_switch_fidelity --mode boxes` box-in-box outer
+  and inner **ok** (36 selections, 36 caret rects, the step and end screens, the thumbnails and the saved parts equal;
+  "declared differences used: none"); `editor_switch_review --mode all` **ok** in 121 s (f2-3-0|*, f2-3-0|styles,
+  f2-3-2|find, f8__7__0|spell: squiggles, page base and the whole-page overlay mask equal); `editor_switch_completion
+  --mode all` **ok** in 385 s (FIELD_SHADING gone; memory 30 cycles flat at 13,829,745, handles and sessions 0);
+  `editor_switch_format --mode view` **ok** on all four documents (the `present`/`ruler`/`pages` facets strict).
+- The end runs (the mixed tree): format view and the other families pass except `tables|ruler` (a cell's ruler frame
+  x1 3485 vs 10205 in Print), `fields|text` and `fields|view` (the TOC/REF text: 196 vs 130 characters, the field
+  shading over W's Word REF error text), the `extra TOC`/`updateFields` checks (W's ED-712/713 and REF items) and the
+  `exportXps` print-cell case; objects pass every family except the page counts after `setColumns` of
+  f7a__7__0/f7c__7__2/8 (TS 11 vs Rust 12–13: W's keepLines item 6) — `blank|keys` and the f2-3-0/f7c pictures/views/page
+  screens equal with HF_SHADING removed; review passes except `fields|fields` (updateFields 9 vs 11, W); fidelity boxes,
+  stories and `editor_switch --mode all`/`parity` differ in caret x after Tab in boxes, pagination and REF text (W's
+  layout switches) — none on a V facet. (Superseded — fix round 1 reran the memory modes on the current tree: objects 30
+  cycles flat at 13,400,333 live bytes, completion flat at 13,829,745, handles and sessions 0 after each remove; the
+  one-handle-per-cycle reading of this run was S's detach work in progress, gone with S's GC step in the harnesses.)
+- After V's last shell changes (the mousedown/mouseup callbacks of the drags, the bare snapshot), frames off:
+  `editor_switch_completion --mode all` lists 1,462 + 1, paste 1,067 + 2, tables 1,004 + 0, objects 1,969 + 2, inline
+  255 + 0, page 134 + 0, previews 200 + 0 — the differences: f7c__7__2|lists (a page-10 thumbnail: W's pagination),
+  blank|paste (`naturalPt` of a changed picture read before its decode), f7d__7__10|objects (the linked boxes' chain: W's
+  item 3, dumped thumbnails: the same model, the text in other boxes); `editor_switch_objects --mode all` pictures 855 +
+  0, keys 171 + 0, views 362 + 0, objects f7b/f8 documents equal, the f7d__7__0/3/10 objects and f7d__7__3 menu
+  differences (W's linked boxes: a click lands on another object) and the page counts after `setColumns` (W's keepLines).
+
+**Not done / open (under the maintainer's rule these stay open, not decisions):**
+1. **L5 frames** — the `frames: true` drags compare frame by frame only with `UO_EC_FRAMES=1` / `UO_EO_FRAMES=1` (off by
+   default so the families keep their end-state checks while the frames are open). Measured with the frames on, after
+   the mousedown/mouseup sequences were matched to the TS (the mousedown's snapshot and the no-move discard apply no paint,
+   proxy or selection callback; the float mousedown raises the TS's `onSelectionChange`/`chromeSync` once, an already
+   selected inline picture is refreshed as `selectInlineRun` does; the mouseup always runs the callbacks and `refresh()`):
+   completion `blank|objects` (the wrap-point drag, the float move, the se resize, the rotation and both crop drags) 868
+   facets equal, 0 different — every frame's selection, proxy, callbacks, events and page pixels; objects f7b__7__8 and
+   f8__7__5 every frame equal. Still different: completion `blank|inline` — the page pixels of all 7 frames of the first
+   inline drag (selection, proxy, callbacks and events equal); objects f7b__7__0 — frame 0 of the float move (the proxy top
+   284 vs 258 px and one more allocated page canvas in Rust) and frames 0–1 of the nw resize (page pixels). Not resolved
+   here.
+2. **F2 (ED-304 against Word)** — Word's field shading colour (C0C0C0 behind the glyphs, a text-height band) and its
+   default "When selected" are measured (planner) but not applied; the shell keeps the TS's always-on rgba(0,0,0,.10)
+   over the line height. Applying it means a Word default plus `tsStrict` in every harness screen that shows a field.
+3. **V1 not complete**: Word's continuous views were measured at zoom 100 and one window width; zoom 200, an 800-px
+   window, sections of different widths/orientations, floats/notes in the views and the exact break-line drawing (dash,
+   label font) were not. The Draft/Outline break lines use the TS `paintBreakMark` look; the Outline symbols' geometry is
+   approximate (planner's positions); the TS chrome (sheet, 48-px gutter, 600-tw margin) is kept where Word's pane is
+   white edge to edge (24/30 px insets) — the planner's scope question for the coordinator stands.
+4. **Collapse/expand and the Outlining tab** — not in the frozen TS (no outline code besides universal-write.ts 12582/17122),
+   so not added; Word has them.
+5. **The continuous views' interaction coverage** — typing, Enter, Backspace and zoom are in the harness; clicks at caret
+   points, Shift+click across a strip, PageDown, scrolling to a strip and an element resize are not.
+6. **Typing latency and a 500-page document in the continuous views** — not measured (a continuous view relays the whole
+   document out per edit: `FallbackReason::View`, as before).
+7. **P1** — the frozen TS's text of a REF inside a Paste-as-Picture preview was not captured (evidence is the empty index).
+8. **A linked text box's spelling** in a follower box resolves through the chain head chosen as the lowest `seq`
+   (heuristic, not the TS `textboxChain`).
+9. The memory soak has no wrap-point drag (the float and inline drags of the memory modes run the live path).
+
+### Wave 7c — S: session, save and shell divergences
+
+Frontier S of wave 7c (a planner, then an implementer cut off by a usage limit, then a second implementer that kept its
+edits, finished the plan and verified everything). Items: F2's open major (the `updateFields` count), A2's declaration 7
+with F3's major (the table style of a non-editable or absent style sheet), F1's minor and ED-25 (the element across a DOM
+move), the duplicate `ROUTED_PUBLIC` names, the compact bar's clipboard check, F1's stale Results block. Scratch, probes,
+Word scripts and logs: `core/target/m2-w7b/s-plan/` (planner: `probe-s.mjs`, `routes-dups.mjs`, the Word `.ps1` and
+`w-out/`) and `core/target/m2-w7b/s7c/` (implementers: `verify-s.sh`, `verify.log`, `v-*.log`, `h-*.log`, `h2-*.log`,
+`word-settings-undo.ps1`, `w-out/`), outside git. Nothing committed.
+
+**Item 1 — `updateFields()` returns the TS count (F2 major).** F2 had made the session's TOC entry label Word's formatted
+PAGEREF (`prepare_pages` → `page_numbering_of`, `PageNumbering::label`), so the refresh that ends `updateFields` found
+the label already right and counted nothing (TS 4, Rust 1 on `toc-chap-chapter-roman`). Reverted: the label is the TS
+`String(page.number)` again (`pageLabelOf`, universal-write.ts 6620–6624; `toc_cmds.rs` `prepare_pages`, the struct and
+`page_numbering_of` deleted), and F2's `OutlineParagraph::chapter` (uo-docx `word/outline.rs`, outside `session/**`) is
+back to HEAD — the revert of F2's addition. ED-713 lives only in the layout's PAGEREF (`bookmark_pages`,
+`LayoutOptions::ts_pageref_without_chapter`). The refresh that ends a TOC command rebuilds the bookmark index and the
+sections first (`fields.rs`, the TS layout pass `buildEngineDoc`/`syncSections`). Measured (probe A and the format
+harness's new `extra updateFields` block; n1/n2 = first/second call on a fresh load):
+
+| document | `('all','all')` TS / Rust | `('all','pages')` TS / Rust |
+|---|---|---|
+| `f7a__7__0` (para 31 → Titulo1, `insertTocTemplate('auto1')`) | 2,2 / 2,2 | **1,0 / 0,0** — ED-712 |
+| `toc-chap-chapter-roman.docx` | 4,4 / 4,4 | 3,0 / 3,0 |
+| `toc-chap-roman.docx` | 4,4 / 4,4 | 3,0 / 3,0 |
+| `toc-chap-chapter.docx` | **1,1 / 4,4** — ED-713 | 3,0 / 3,0 |
+
+The two remaining differences are consequences of Word-authority items, declared with these exact numbers in
+`editor_switch_format.mjs` (anything else fails; a declaration no run meets fails as stale): ED-712 — the TS insertion
+leaves a stale first label (`v`) that its refresh rewrites to Word's `5`, Rust already wrote `5`; ED-713 — the TS layout
+has no chapter, so its rebuilt entries' `1` stays `1` (only the TOC field counts), the Rust layout writes Word's `1-1` in
+the three entries. Native: uo-docx-layout `toc_pages_w7.rs` `update_fields_counts_follow_the_ts_algorithm` (default:
+chapter 4, chapter-roman 4, roman 4; `ts_pageref_without_chapter`: chapter **1** = the TS's measured 1, the others 4;
+`TocMode::Pages` 3 everywhere); its module header and the `viii` comment corrected (F2 minors). d2b-F10 replays: the two
+ED-713 acceptances on `hfopts/chap-*.docx` dropped (native `parity_d2b_f10_session.rs`, wasm `session_replay.test.mjs`):
+f10 **0 mismatches, 53 accepted** (was 55). `viewer_switch.mjs`: `WORD_AUTHORITY` entries take an optional `pages` map;
+ED-713 on `toc-chap-chapter` and `toc-chap-chapter-roman` is scoped to page 0 for textLayer and pixels (a mismatch on any
+other page fails), pdf stays per document (one hash of the file).
+
+**Item 2 — the table style without an editable style sheet; parts after save → undo → save (A2 declaration 7, F3
+major). Word manda sobre o TS.**
+- Ported (TS 1:1): `tableStyleId`'s `else` branch (universal-write.ts 19283–19293: a non-editable `.odt` sheet or no styles
+  part puts the built-in style in `pendingTableStyles`) — `Session::pending_tables` (an insertion-ordered map, the TS
+  `Map` semantics) in `ops/tables.rs` `table_style_id`; `addStylesXml` (docx-core table-styles.ts 149–171, called last by
+  the save, 8641) — `session/save_parts.rs` `add_styles_xml` (creates `word/styles.xml` with the TS namespace, the content
+  type override, the relationship with the first free `rId<n>`; appends only the ids not already defined; replacements
+  by closure). Before: a Rust `.odt` saved as `.docx` after `insertTable` had `<w:tblStyle w:val="Tabelacomgrade">` and no
+  definition anywhere (3 parts, the TS 5), and so did `hyperlinks.docx` (no styles part).
+- The `.odt` saves into a fresh empty package each time (`this.pkg ?? DocxPackage.empty()`, 8552; `pkg_scratch` from
+  `open_odt`; the watermark and the cover page make the package the document's, `own_package`, TS 11877/12041; the note
+  commands' `if (this.pkg)` guards, 19048/19228). The 26 `self.pkg` uses in `session/ops` audited: the others read an
+  empty scratch package as the TS reads `null` (nothing found).
+- Word measured (16.0 pt-BR, invisible COM under `tools/parallel/word-lock.mjs`, `Quit()` with no argument, no
+  `/Automation` WINWORD left after the runs; logs in `s-plan/w-out` and `s7c/w-out`):
+
+| edit → SaveAs2 → Undo → SaveAs2 | Word, first save | Word, after the undo |
+|---|---|---|
+| `Tables.Add` (Tabela com grade), `.odt`-derived | Tabelanormal + Tabelacomgrade (14 styles) | Tabelacomgrade gone (13) |
+| the same, `.docx` | 5 styles | 4 |
+| `Tables(1).Delete` instead of undo | — | Tabelacomgrade kept |
+| `Styles.Add('Meu')` | 6 styles | 4 (Meu gone) |
+| `ApplyNumberDefault` | 1 `w:num`, 1 `w:abstractNum` | 0 / 0, `w:numPr` gone |
+| `OddAndEvenPagesHeaderFooter` | `<w:evenAndOddHeaders/>` | gone |
+| `AutoHyphenation` | `<w:autoHyphenation/>` | gone |
+| `Footnotes.NumberStyle = lowerRoman` | `w:footnotePr/w:numFmt lowerRoman` (settings and sectPr) | gone |
+| `Footnotes.Add` | 2 footnotes | 1 (the note styles stay) |
+| `DefaultTabStop = 72` | 1440 | `Undo()` → False: no undo step through COM (not measurable this way) |
+
+  The frozen TS keeps all of them (its pending map is outside the history; its package is reused between saves and a part
+  is written only when dirty against the load), and so did Rust. Rust now follows Word: the pending map belongs to the
+  undo step (`EditState::pending_tables`, counted in the step cost; `swap_pending_tables` takes an id that leaves the map
+  out of the sheet the tables resolve against and registers one that comes back, so a later `insertTable` writes its
+  definition again), and `save_parts.rs` takes back first what an earlier save wrote outside the writer: the
+  `addStylesXml` additions, a styles part that differs from the current sheet (keeping the note styles a save added, as
+  Word keeps them), the numbering part (the loaded text back, or the part, its override and its relationship removed),
+  and `settings.xml` (the loaded text, re-derived at each save from the current values; the note-part separators and
+  `w:displayBackgroundShape`, which Word writes from a view option, made again). The TS behaviour stays behind
+  `OpenOptions::ts_table_style_survives_undo` and `OpenOptions::ts_stale_parts` (`Session::set_ts_save_compat`; wasm
+  self-test `uo_session_test_ts_save_compat`): the strict replays set them where a TS capture saves after an undo or a
+  change back (`parity_d2b_f5_session.rs` and the f5/f10 wasm replays; fix round 1: `ts_stale_parts` only, and the
+  steps it covers listed in "Wave 7c — S, fix round 1").
+- Chromium (`editor_switch_format.mjs` `extra`, new "parts" block; TS vs Rust, every part byte-compared):
+
+| case | before the edit | after the edit | after the undo | after redo + 2nd table |
+|---|---|---|---|---|
+| B `hyperlinks` as `.odt`, `insertTable` | equal (3 parts) | equal (5) | declared Word: TS keeps `Tabelanormal,Tabelacomgrade`, Rust = before (3 parts), body equal | equal (5) |
+| D `hyperlinks.docx` (no styles part), `insertTable` | equal (4) | equal (5) | declared Word, as B (Rust 4 parts) | — |
+| E `styles.docx`, `createStyle('Meu')` | equal (9) | equal (9) | declared Word: TS keeps `Meu`, Rust = before | — |
+| E `toc-chap-roman.docx` (no numbering part), `toggleList` | equal (19) | equal (20) | declared Word: TS keeps `numbering.xml`, Rust = before | — |
+| E' `styles.docx` (a numbering part toggleList reuses) | equal (9) | equal (9) | equal | — |
+| F `hyperlinks` as `.odt`, `toggleList` | equal (3) | equal (5) | equal (3; both a fresh package) | — |
+
+- Native: `tests/session_w7c_save_parts.rs` (6 tests: the `.odt` table style written and undone with the table, and kept
+  with `ts_table_style_survives_undo`; redo + a 2nd table both defined; a `.docx` without a styles part; the `.odt` saved
+  from an empty package; save → undo → save of the styles part; `createStyle`, list, odd/even pages and the footnote
+  format undone after a save, Word and TS; M1 no leak).
+
+**Item 3 — the element across a DOM move; ED-25 retired.** The TS `disconnectedCallback` frees nothing of the document
+(universal-write.ts 1730–1757). `rust-engine.ts` now matches it: `park()` only leaves the connected count, runs the
+fronts' `park` hooks (the spell checker's reference, as the TS) and stops the font loop; the session, shell engine, layout
+and every front's state stay, and every API works while detached (queries, edits, undo, save). `unpark()` re-enters the
+count and resumes a font loop the detach cut; it does NOT run `adopt()`, so the fronts' `adopt` hooks (new-document
+resets) no longer clear the Format Painter, the search results and highlight, the crop mode, the table/drag/wrap state
+across a move (F1's minor). `adopt` lost its `reattach` parameter; F1's `.odt` kept-session special case and the
+`.docx` reopened from bytes are gone. An element removed for good frees its document when it is collected:
+`parkedGone` (a FinalizationRegistry holding the editor's own live counters, so an explicit free while detached is never
+counted twice), the session binding's registries, and `viewer.ts` `layoutGone` for a layout collected without `free()`.
+Harness memory contract: `editor_switch_lib.mjs` `env.gc()` (a CDP session per page, 3 × `HeapProfiler.collectGarbage`
+with a 30-ms task after each, up to 10 rounds until no session and no shell engine); every memory loop reads the counters
+after `remove()` + `gc()` (`editor_switch.mjs`, `_fidelity`, `_format`, and — cross-ownership, needed by the contract —
+`_completion` (both checks of the cycle), `_objects`, `_review`, `_stories`; `_format`'s `remove()` also drops the
+harness's own reference to the element's command registry, which otherwise kept the element alive). Measured:
+- probe C (`note-plain`: bookmark, search `a` (8 hits), `copyFormat(true)`, remove, queries and save while detached,
+  re-append, `goToSearchResult(0)`, undo): `.docx` and `.odt` — every field equal to the TS (detached: bookmarks 1,
+  dirty, selection `{0,1}–{0,3}`, painter true, `save('auto')` works; after the move: the same, goto true; undo → 0
+  bookmarks). Only `engineStats()` differs (the TS has no engine: null).
+- `editor_switch_fidelity --mode park` (now `.docx` and `.odt`, plus a crop variant on `pictures.docx`): equal to the TS
+  before the moves, after each of 3 moves and after 2 undos; while detached bookmarks, dirty, selection, painter,
+  `save('auto')` parts (8 / 4), an edit (`insertBookmark('m2')`) and its undo equal; `goToSearchResult(0)` equal;
+  `croppingImage()` true before, while detached and after in both; while detached sessions 1, shellEngines 1, handles 1
+  (= attached).
+- `editor_switch_fidelity --mode drop` (F1's probe promoted, part of `all`): 20 cycles each of a `.docx` and an `.odt`
+  element created, loaded, edited, removed and never re-attached, held by WeakRefs: after `gc()` sessions, engines and
+  handles 0 and session, editor and element collected in every cycle; live bytes flat from cycle 5 (4,374,500 `.docx`,
+  4,375,876 `.odt`).
+- ED-25 (uo-bindings "Declarations") marked retired; the README/CHANGELOG sentence is the coordinator's (below).
+
+**Item 4 — `ROUTED_PUBLIC` duplicates.** `engine-routes.ts`: `currentStyles` and `copy`, `cut`, `paste`, `pastePlain`
+dropped from the base list (front R routes them, `engine-routes-review.ts` 29/35; front handlers win in `installRoutes`,
+so no behaviour changed). `routes-dups.mjs`: 489 entries, 489 distinct, no duplicate in `ROUTED_PUBLIC`,
+`ROUTED_PRIVATE` (27) or `SHELL` (27); over `PUBLIC_METHODS` (511): routed-only 485, shell-only 24, both 2, neither 0.
+`engine-switch.test.ts` (declared: outside the brief's list, the routing test) asserts no duplicates and prints the
+distinct counts (merge-state line updated).
+
+**Item 5 — the compact bar's clipboard check.** `editor_switch.mjs --mode chrome` read `[data-a=cut|copy|paste]`, which
+the compact bar does not have (Edit-menu items only), and a missing button passed; it also read after Ctrl+K had opened a
+dialog. Now, before any dialog: the ribbon's buttons, and on the compact bar the Edit menu opened (`[data-menu="edit"]`)
+and its `.uo-menu-item[data-a=…]` items; a missing control fails; with a selection cut/copy/paste enabled, with a
+collapsed selection cut and copy disabled (the negative control, `isEnabled = selectedText().length > 0`), paste enabled;
+the TS engine runs the same check (positive control) and the two must be equal. Result: compact and ribbon, rust = ts =
+`selected` all enabled, `collapsed` cut/copy disabled, paste enabled.
+
+**Item 6 — records.** F1's Results block: the round-2 numbers, the Rust 1.100 allowances sentence removed, the pointer
+to this subsection; F2 round 2: the session label marked reverted and the d2b-F10 acceptances dropped; merge state:
+ROUTED_PUBLIC, A2's declaration 7 (closed), ED-25 (retired).
+
+**Results** (this tree; `s7c/verify.log` and the logs named there; wasm built from the tree with `-j 3` into
+`target/m2-w7b`; the four modules `session_count.wasm`, `selftest.wasm`, `session.wasm`, `viewer.wasm` in `s7c/`):
+- uo-docx `--release --all-features --test all` (3 threads): **813 passed, 0 failed, 1 ignored** (F1: 802; + the 6
+  save-parts tests and the other frontiers' new tests).
+- uo-docx-layout `toc_pages_w7`: **5 passed**.
+- uo-wasm natives: session_native (session,count,session-selftest, 1 thread) 11/11; shell_native 9/9,
+  shell_stories_native 8/8, shell_objects_native 5/5, shell_completion_native 5/5, shell_format_native 4/4.
+- wasm replays (`selftest.wasm`, d2a,f1,f2,f3,f5,f6,f7,f8,f9,f10): **0 mismatches in every family**, f10 53 accepted
+  (was 55), every TS re-encode byte-identical; `session_api.test.mjs` 5/5.
+- editor/viewer tsc: exit 0, no output. Editor vitest (engine-switch config): **34 files / 334 tests**; the routing test
+  prints "public methods 511: routed 487 (+ 2 indented), shell 26, of which both 2, disabled mutators 0, disabled
+  queries 0; private routed 27; bar commands routed 516".
+- clippy `-D warnings`, uo-docx and uo-wasm each `--all-targets --all-features` native and `--all-features` wasm32: 0
+  warnings. `node
+  tools/check-changed.mjs --jobs 3` over the whole tree: **2 steps failed, none in S's files** — the clippy steps stop
+  compiling uo-docx-layout on the other frontiers' in-progress code (`engine/chain.rs:60` disallowed `f64::min`, an
+  unfulfilled lint expectation in `lib.rs:36`, `indexing_slicing` in `engine/flow.rs:824` and `view_transform.rs`
+  303/306/309), so uo-wasm was linted alone (the line above). float-casts and grep-bans passed. rustfmt `--edition 2024
+  --check` on every touched `.rs` (and the session modules they declare): clean.
+- Chromium (`session_count.wasm` of this tree; `s7c/h-*.log`, `h2-*.log`):
+  - `editor_switch.mjs --mode all` **ok**: parity 13 documents × 12 steps, every step facet equal or declared (0
+    undeclared), saved parts 132 equal + 1 declared; 100 memory cycles, live bytes flat at 16,986,957, sessions/shell
+    engines/handles 0 after each remove + `gc()`; chrome: the clipboard check above, compact and ribbon, rust = ts.
+    `--mode parity` with `session.wasm`, stride 1, 12 steps: **ok** (thumbnails 1,088 + 64 declared, screens 148 + 25,
+    saved parts 658 + 4; every declared one gate-O3 or W's Word-authority items).
+  - `editor_switch_fidelity.mjs --mode all` **ok**: 18 box scenarios, 0 undeclared; park `.docx` and `.odt` and crop
+    equal to the TS (above); drop flat at 4,374,500 / 4,375,876; memory 20 cycles flat at 4,374,500.
+  - `editor_switch_format.mjs`: `--mode memory` **ok** (30 cycles flat at 8,563,009, sessions 0 after remove + GC — the
+    first run failed with sessions 1: the harness's `api.reg` / `window.__lastReg` held the element's command registry;
+    `remove()` drops them now); `--mode extra`: the `updateFields` and "parts" blocks as above, all equal or declared;
+    **1 failure not S's**: `exportXps side effects, print-cell` — the screen after inserting a table in `hyperlinks.docx`
+    (a package without `settings.xml`): the Rust table sits ~6 px left (Word's mode-12 rule, W's item 2,
+    `ts_missing_settings_mode15`; the TS hash `fcd571a5`, Rust `13814fe5`, also in V's 08:00 run); `--mode all`: font
+    947 + 2 declared, para 1,078, bar 585, file ok; **not S's**: `tables|ruler` 4 (the same no-settings table),
+    `fields|text` 1 and `fields|view` 24 (fields.docx: after `insertTableOfContents` Rust shows W's REF error text "Erro!
+    Fonte de referência não encontrada." / "Erro! Indicador não definido." where the TS shows the cached text —
+    `s7c/probe-fields.mjs`; W's item 4).
+  - `editor_switch_completion.mjs`: `--mode memory` **ok** (30 cycles flat at 13,829,745, `memory.buffer` 25,231,360;
+    sessions 0 after both removes + GC — the first run kept one element: the `<universal-sheet>` stub class was defined
+    inside `make()` and its context held the first `el` for good (found with a CDP heap snapshot, `s7c/heap-retainers.mjs`);
+    it is defined outside `make()` now, and `remove()` drops the registry references); families paste 1,069, tables
+    1,004, inline 255, page 134, previews 200 equal; **not S's**: `f7c__7__2|lists` 1 thumbnail (REF error, W item 4),
+    `f7d__7__10|objects` 2 (linked boxes, W item 3).
+  - `editor_switch_review.mjs`: `--mode memory` — **corrected in "Wave 7c — S, fix round 1"**: the 8,621,016 of this
+    run was the second plateau of a timing-dependent growth (the Table Styles thumbnails' first use of a pushed face, in
+    the page environment), not reproducibly flat; `--mode all` revisions 837,
+    comments 187, styles 405 + 36 declared, find 502, clipboard 155, keys 243, spell equal; **not S's**: `fields|fields`
+    5 (the same fields.docx REF error text, W item 4).
+  - `editor_switch_objects.mjs --mode all`: memory **ok** (30 cycles flat at 13,400,333); pictures 855, keys 171, views
+    362 equal; **not S's**: `f7a__7__0|page` 31 and `f7c__7__8|page` 4 (page count 14 vs 16 / a landscape page one
+    later: W's keepLines item 6), `f7c__7__2|page` 30 (REF error), `f7d__7__0|objects` 2, `f7d__7__3|objects` 30,
+    `f7d__7__10|objects` 26, `f7d__7__3|menu` 2 (linked boxes, W item 3).
+  - `editor_switch_stories.mjs --mode all`: memory **ok** (30 cycles flat at 6,682,346); **not S's**: 30 undeclared on
+    `f7d__7__8` (T2), `f7d__7__0` (X1) — linked boxes, W item 3 — and `f7c__7__13` (N2) — REF error, W item 4.
+  - `viewer_switch.mjs --mode all` (`viewer.wasm`, stride 1): **ok**, 78 documents, 592 pages, 0 undeclared; ED-713
+    used on `toc-chap-chapter` and `toc-chap-chapter-roman` (textLayer + pixels on page 0, pdf).
+  - probe `s-plan/probe-s.mjs A B C D E F`: A as the table of item 1; B/D/E — Rust equal to the TS before the undo, the
+    style/table style/numbering gone after it (Word); F equal; C equal in every field but `engineStats` (TS null).
+- Word: no `/Automation` WINWORD process left (`Get-CimInstance Win32_Process`: only the user's two instances).
+
+**Files** (S's; the other frontiers' edits in the same files untouched): uo-docx `session/io.rs`, `session/mod.rs`,
+`session/state.rs`, `session/versions.rs`, `session/save_parts.rs` (new), `session/ops/tables.rs`, `ops/notes.rs`,
+`ops/page/cover.rs`, `ops/page/watermark.rs`, `ops/references/toc_cmds.rs`, `ops/references/fields.rs` (the refresh's
+index/section rebuild), `ops/styles/xform.rs` (`styles_part_text`), `word/outline.rs` (the revert of F2's addition);
+tests `session_w7c_save_parts.rs` (new), `all.rs` (one `mod` line), `parity_d2b_f10_session.rs`,
+`parity_d2b_f5_session.rs` (`ts_stale_parts` for its TS captures); uo-docx-layout `tests/toc_pages_w7.rs`; uo-wasm
+`src/session/selftest.rs` (`uo_session_test_ts_save_compat`), `js/viewer.ts` (`layoutGone`), `tests/session_replay.test.mjs`;
+editor `rust-engine.ts`, `engine-routes.ts`, `engine-switch.test.ts` (declared above); harnesses `editor_switch.mjs`,
+`editor_switch_lib.mjs` (`gc()`), `editor_switch_fidelity.mjs` (park `.docx`/`.odt`/crop, `drop` mode, memory),
+`editor_switch_format.mjs` (`updateFields`, parts, extra docs, memory, `remove()`), `viewer_switch.mjs` (`pages` scoping),
+and — cross-ownership, the memory contract — `editor_switch_completion.mjs` (both memory checks after `gc()`, `remove()`,
+the sheet stub outside `make()`), `editor_switch_objects.mjs`, `editor_switch_review.mjs`, `editor_switch_stories.mjs`
+(their memory loops after `gc()`). Records: this subsection; F1 Results; F2 round 2; ED-25; the merge-state lines.
+
+**For the coordinator** (README/CHANGELOG are rewritten at the merge): drop "reconnecting the element reopens the document
+without the undo history;" from `write/packages/editor/README.md` (line 195–196) and "reconnecting reopens the document
+without undo history;" from `CHANGELOG.md` (line 145) — a moved element now keeps its document, history, selection and
+state, as `ts`. (CHANGELOG line 99, "reconnecting reopens the document (the scroll position resets)", is the viewer's and
+is not changed by S.) The harness failures listed as "not S's" are W's Word-authority items (no settings → mode 12, REF
+error text, linked boxes, keepLines), which W must declare in those harnesses.
+
+**Not done / open (none is a decision):**
+1. ~~The `DefaultTabStop` edit records no undo step through COM~~ — closed in fix round 1: measured through the Tabs
+   dialog's command (`WordBasic.FormatTabs DefTabs`, which records an undo step): the undone default tab is gone at the
+   next save, the rule Rust applies.
+2. `check-changed.mjs` as a whole fails on the other frontiers' uo-docx-layout code (above); S's crates were linted one
+   by one instead: uo-docx and uo-wasm `--all-features -D warnings`, native `--all-targets` and wasm32, 0 warnings.
+
+### Wave 7c — V, fix round 1 (the reviewer's findings on V)
+
+One implementer; scratch, logs and Word scripts in `core/target/m2-latency/v2/` (outside git), Word screenshots in
+`E:\UniversalWriteTest\_lab\views\shading` and `views\v2`. The session_count module of this round: `v2/session_count.wasm`
+(10,493,139 B, the tree's Rust; V changed no Rust source in this round). Nothing committed. Where this subsection and
+"Wave 7c — V" differ, this one is valid.
+
+**L5 — the live drags frame by frame, on by default.** `UO_EC_FRAMES`/`UO_EO_FRAMES` now default ON (`=0` runs plain
+six-step drags). The four frame findings, each traced to its cause:
+- *completion `blank|inline`, all 7 frames*: the inserted picture did not paint at all during the drag (diag: the frame's
+  layout held the decoded bitmap, the canvas was white there). Cause: the page base painted while the picture was still
+  decoding was reused — the decode's repaint skipped a layout already replaced, and the successor's band check (D-L4) or
+  key hit kept the picture-less canvas. Fix (`viewer/src/rust-engine.ts` `pendingImages`, `editor/src/rust-engine.ts`
+  `incomplete` on the page and strip bases): a base painted while a picture decoded is painted again whole; a decode that
+  ends after its layout was replaced repaints. Now 7/7 frames equal.
+- *objects f7b__7__0 nw resize frames 0–1 and f8__7__11 rot frames 0–1*: both mousedowns land on a table edge in BOTH
+  engines (the guide line of `paintTableAdorners`); the pixels differed by 1/255 on the guide's two columns only. Measured:
+  the same `tableDrag` (x 3694/3690), the same context state (transform 0.06666667 float32, width 15, dash [45,45], alpha 1,
+  source-over, no clip, the same context attributes), and the same stroke on a fresh canvas gives the TS's pixels; the
+  coverage is a rounding tie (59.5/255 at x 246.27 px, 127.5/255 at 246.0) that the visible canvas rounds differently
+  when its buffer outlived several paints (the shell keeps the buffers across relayouts, D-L3; the TS allocates them again
+  at every refresh). In-hook bisection: painting the base directly instead of `drawImage(base)` gave the TS's value;
+  `--disable-gpu`, `--disable-accelerated-2d-canvas` and `willReadFrequently` changed nothing. The harnesses' `dragFrame`
+  now allocates every page buffer again before the frame's paint, in both engines (pixels independent of the buffer's
+  history). Equal.
+- *objects f7b__7__0 float move frame 0 (one more page canvas) and f7b__7__1 (canvas 8)*: the click before the drag
+  selected the shape through `apply`, whose caret scroll jumped the view from 5612 px to 244 px (pages 0–1 allocated
+  there and kept). The TS selects with `floatSel = run; refreshSelection()` (no scroll). Fix (`rust-objects-pointer.ts`
+  `selectCmd`): the click's object selection (and deselection) applies without the caret scroll. Equal.
+- *objects f7b__7__0 float move frame 0, proxy top 284 vs 258 px* — **open (F-1)**. After the click the Shape Format tab
+  grows the top bar by 26 px (178 → 204); the TS proxy follows because a resolver change (Liberation Serif / Times New
+  Roman) reaches `onFontsResolved` → `queueRefresh` (80 ms) after the bar grew; in the shell that change arrives 18 ms
+  after the click, before the tab grows (the shell's bar grows ~130 ms after the click, the TS's ~60 ms), and the routed
+  `onFontsResolved` runs the font pass at once. Tried and reverted (each made other documents differ): a ResizeObserver
+  on the bar (f7b__7__1: the TS stays at 7852, Rust 7878); a TS-timed refresh tail after every font pass
+  (`onSelectionChange` mid-drag on f7b__7__1); the TS `queueRefresh`/`askedFonts` semantics on the routed methods (the
+  shell gets the emit on f7b__7__1/3 too: its pushed names differ from the TS `askedFonts`, and its Times New Roman
+  resolution comes after the click, the TS's at load). Not resolved.
+
+Results with the frames on (no declaration for V): `editor_switch_completion --mode all` **ok** (497 s; lists 1,462 + 1,
+paste 1,069, tables 1,004, objects 2,557 + 44 declared W item 3, inline 395, page 134, previews 200; memory 30 cycles
+flat at 13,829,745 live bytes, handles 0); `editor_switch_objects --mode all` **1 failure = F-1** (561 s; page 3,739 + 65
+declared W, objects 5,558 + 72 declared W items 3 + F-1, pictures 855, menu 217 + 2 W, keys 171, views 362; memory 30
+cycles flat at 13,400,333, handles and sessions 0).
+
+**ED-304 — Word measured and applied** (`v2/word-shading.ps1`, Word 16, invisible COM through `word-lock.mjs`, the window
+off screen at −20000 without activation, `PrintWindow`, 96 dpi, zoom 100; foreground unchanged). A document of 11-pt
+Liberation Sans paragraphs with QUOTE fields (1.5 lines, single, a 20-pt run on the field's line) and a comment, saved as
+`uo-docx-layout/tests/fidelity/field-shading.docx` (the author scrubbed to "Ana"). Measured:
+
+| case | Word |
+|---|---|
+| shading colour | C0C0C0, opaque, under the glyphs (black text on it; white text on a #202020 page colour) |
+| default "When selected" (2) | no shading with the caret outside; only the field the caret is in |
+| band, 11-pt line, 1.5 lines / single | rows 142–158 / 178–194: 17 px from the line top (not the 36/28-px line box) |
+| band, 11-pt field on a line with a 20-pt run | 31 px from the line top (the line's natural height) |
+| band x | the field result's first to last character (333–388; GetPoint 333…389) |
+| comment | band E8E8E8, 17 px, 1-px brackets 424242 at the first and last character's edges; on #202020: 787878, white brackets |
+
+Applied (Word manda sobre o TS): `rust-review-overlays.ts` `paintWordMarks` in the page base's `under` hook (under the
+glyphs), its base key `wordMarksKey` = the field run the selection is in (the base repaints only when that changes); the
+TS look (`rgba(0,0,0,.10)` over the line, every field; `rgba(255,187,0,.28)` comments, over the text) under
+`ed.tsShading` / `ed.tsStrict`, set by every harness's strict replay (`editor_switch{,_completion,_fidelity,_format,
+_objects,_review,_stories}.mjs`, after `uw-ready`). Check: `editor_switch_review --mode wordmarks` (also in `--mode all`):
+Rust's bands on field-shading.docx 17/17/31 px and the comment band 17 px, none with the caret outside — as Word. Not
+done: "When selected" in headers/footers, notes and text boxes (keyed for body and cells only; those get no shading); the
+descent of a multiple-spaced line is estimated as 0.234 × the ascent (the lines expose no descent; exact for Liberation
+Sans, ~0.6 px short for Carlito at 11 pt); Word's black Office theme (an account setting) not measured — the dark values
+are a dark page colour's.
+
+**V1b — Word measured (continuous views)** (`v2/word-views-v2.ps1`, the same recipe; `v2/mkdoc2.py` →
+`v2/v1-sections.docx`: section 1 A4 portrait, text 8504 tw; section 2 landscape, text 14570 tw; a long paragraph in each):
+Web wraps at the window at zoom 100 and 200 (3 lines at 100, 6 at 200 for the same text: the twips width halves); Draft
+wraps each section at its own text width at both zooms (5 and 3 lines; section 2's lines run past the 814-px pane to
+x 713 / 1370) — both as the engine's rules. Outline: section 1 6 lines and section 2 5 lines at zoom 100, 5 and 5 at zoom
+200, text at +48 px (+95 at 200) — a rule not derived, not applied. The 800-px window collapsed to a 39-px-high Word
+window (usable height 1): those numbers are not valid. Not measured: the break line's drawing, the Outline symbols'
+positions, floats and notes in the views.
+
+**V5 — interaction steps** (`editor_switch_format.mjs`, view family, `v5: true`, on by default, `UO_EF_V5=0` leaves them
+out): in Web, Draft and Outline a real click at a caret point, a Shift+click at the last paragraph, PageDown, Ctrl+End and
+an element resize to 800 px and back. Results (`--mode view`, 93 s): 34 undeclared differences — the resize (the shell's
+Web sheet keeps its width: ruler frame 14580 vs the TS 10080 twips at 800 px; back at 1100 px the TS sheet 752 px, the
+shell's 1052), the Shift+click (TS focus offset 143, Rust 0, at the paragraph's own caret point), PageDown (another
+offset); the plain click, Ctrl+End and the typing steps equal. Open. With `UO_EF_V5=0`: 1 difference, the `fields|view`
+saved REF text (W's item 4), as before.
+
+**Other verification**: `editor_switch_review --mode all` **ok** (131 s; wordmarks included); editor/viewer tsc exit 0;
+vitest editor 34 files / 334 tests, viewer 7 / 28 (+1 skipped); natives `shell_format/completion/objects/review/native/
+stories` 4 + 5 + 5 + 4 + 9 + 8 = 35 passed; `tools/fonts/check-fonts.mjs` on field-shading.docx: no proprietary font. Not
+rerun this round (no Rust or layout file changed by V): layout parity, the Word oracle, build-pkg/pkg_smoke,
+viewer_switch, `editor_switch --mode all`/`parity`, fidelity, stories.
+
+**Files (fix round 1)**: `write/packages/viewer/src/rust-engine.ts` (`pendingImages`, the late-decode repaint),
+`write/packages/editor/src/rust-engine.ts` (the bases' `incomplete`), `rust-objects-pointer.ts` (`selectCmd`),
+`rust-review-overlays.ts` (`tsShading`, `paintWordMarks`, `wordMarksKey`), `rust-engine-review.ts` (the `under`/`baseKey`
+hooks); harnesses `editor_switch_{completion,objects}.mjs` (frames default on, buffer re-allocation, frame dumps,
+`UO_EO_FDIAG`, the probe's `UO_EO_PROBE_STEPS`), `editor_switch_review.mjs` (`wordmarks`), `editor_switch_format.mjs` (V5
+steps, Shift+click), `editor_switch_lib.mjs` (`UO_ES_CHROMIUM_ARGS`, empty by default), `editor_switch{,_fidelity,
+_stories}.mjs` (the `tsShading` line); fixture `uo-docx-layout/tests/fidelity/field-shading.docx`. Noticed, not V's: three
+F2/W fixtures (`toc-chap-*.docx`) carry a real author name in `docProps/core.xml`.
+
+**Not done / open (none is a decision):** F-1 above; ED-707/708 (a) and (b) in the merge state; ED-304's other stories and
+estimated descent; the memory soak has no wrap-point drag; typing latency and a 500-page document in the continuous views
+not measured; a follower box's spelling still resolves the chain head by the lowest `seq` (not the TS `textboxChain`); the
+frozen TS's REF text inside a Paste-as-Picture preview not captured.
+
+### Wave 7c — S, fix round 1 (the reviewer's findings on S)
+
+One major (the review memory soak not reproducibly flat) and three minors. Scratch, probes, Word script and logs:
+`core/target/m2-w7b/s7d/` (`verify-s2.sh`, `verify.log`, `v-*.log`, `trace*.log`, `warm*.log`, `trace-font-*.log`,
+`bisect-thumb.mjs`, `word-undo-nosave.ps1`, `w-out/`, `h-*.log`, `h2-review-mem80-*.log`), outside git. Nothing committed.
+
+**Major — the review soak's growth, attributed and made deterministic.** Not an element's memory: sessions, shell
+engines and handles were 0 after every GC, and every step lives in the page environment (`pageEnvs`, the shared font
+registry), independent of the GC path. Attribution:
+- `editor_switch_review.mjs` `UO_ER_TRACE=1` (new, diagnostic): every wasm export wrapped (outermost calls), each
+  cycle's net per export, and the producer/free pairs (a returned handle or buffer and its free) whose nets do not
+  cancel, with the preview's argument and the font traffic (`push_family` names, `take_missing` notes). In every
+  growth cycle the only extra pair was a Table Styles gallery thumbnail (`uo_shell_preview` → `uo_layout_free`): Plain
+  Table 1 left 1,792 (+ its 24-byte argument = the reviewer's +1,816), Table Classic 1 1,358 (+26 = +1,384), Table
+  Classic 3 1,806, Grid Table 1 Light Accent 4 2,714 (cycle 0), never twice for a style in a page.
+- `bisect-thumb.mjs` on a fresh page: Table Classic 1's first thumbnail notes the italic face missing (86 B); after the
+  host pushes it (a relayout's `take_missing`), the next one keeps 1,358 and a third one 0; Table Classic 3 the same with
+  bold italic (1,806). So: a pushed face is parsed on its first use (uo-fonts `Pushed::face`, a `OnceLock` into the
+  shared `FaceCache`), bounded by the pushed faces (4 variants a family).
+- The gallery lays its thumbnails out 8 per frame until the element is removed, so which faces a cycle first uses is
+  timing. One late case: cycle 0 pushes "Calibri" twice (the second push, with the faces the thumbnails noted,
+  replaces the family), and `trace-font-*.log` shows no push after cycle 0 but Plain Table 1's +1,336 at cycle 2 in one
+  run and at cycle 18 in another: the replaced Bold parsed again by a later element's first bold thumbnail (that the
+  removed element's layouts kept the first answer is the likely reason; not measured further).
+- Fix (harness): the warm-up cycles 0 and 1 lay every thumbnail of `tableStyleListNow()` out, `refresh()` (the push),
+  and lay them out again (`UO_ER_WARM_THUMBS=0` runs the old soak). Results with this tree's `session_count.wasm`,
+  `UO_ER_SOAK=80`: 4 runs, **all flat at 8,621,016** (`h2-review-mem80-1..4.log`). With the warm-up in cycle 0 only,
+  1 of 3 runs was not flat (+1,360 at cycle ~77); the reviewer saw 3 of 4. The S record's "flat at 8,621,016" is
+  corrected there.
+
+**Minor — the note styles after an undo without a save between (Word measured).** `word-undo-nosave.ps1` (invisible
+COM under word-lock, `Quit()`, no `/Automation` WINWORD left: the two Word processes are the user's, started 02:47):
+note-plain, `Footnotes.Add` → `Undo` (True, 1 footnote) → `SaveAs2` with no save before: Textodenotaderodap,
+TextodenotaderodapChar, Refdenotaderodap in the file (as with the save between). Rust now keeps them from the command,
+not from the package: `SaveParts::note_styles` (the ids `ensure_note_styles` added, `save_parts::added_note_styles`,
+outside the history), put into the saved sheet when it lacks them (`put_missing_styles`; in the dirty branch, the
+not-dirty branch, and a package without a sheet through `add_styles_xml`); `ts_stale_parts` keeps the TS (gone without
+a save between). Native: `session_w7c_save_parts.rs` `note_styles_after_undo_and_note_options_set_back` (Word and TS,
+with and without the save between).
+
+**Minor — the flags of the strict replays.** f10 (native and wasm) now sets `ts_stale_parts` only (wasm flag 1, not 3);
+`session_replay.test.mjs` takes `UO_WS_TS_SAVE_FLAGS=0` (no flags) and `UO_WS_FULL=1` (every mismatch, with the items
+only one side has). With the flag: f5 0 mismatches, f10 **0 mismatches, 53 accepted**. Without the flag (this tree,
+after the note-styles fix), the steps it covers:
+- f5, 41 items of the `parts` facet. 10 `word/settings.xml` — a note option **set back** (a change, not an undo): Word
+  saves the current options (measured: `noteopts-setback`, `w:numFmt lowerRoman` in the first copy, gone in the
+  second; native assertion in the test above), the TS keeps the first save's: cn-span-mid #40/#48/#56/#60, cb-long-1
+  #48, cb-emptysect-1col #40/#48/#56, cw-vc-none-c14 #56/#60. 31 `word/styles.xml` — a note insertion undone (Word keeps
+  the note styles; the TS drops them with no save between), new with the fix above: bf-front #24/#32/#40/#48/#56/#60,
+  b2-20 #48/#56, b3-10 #8/#16/#24, b3-20 #32/#40, b3-60 #8, cb-3col-long #48, cb-empty-2 #8, cb-long-2 #16,
+  cb-emptysect-aftertbl-c11 #8/#16/#24/#32/#40/#48/#56, cb-emptysect-big #16, cb-end-of-num #24, bt-sz4 #32,
+  cft-text-page-x5000-300-empty #24, cs2f-0-3col #16/#24, txt-times-new-roman-c15 #48 (attributed by the facet — only
+  `styles.xml` differs — and by the f5 script's `nf` insert and `un` undo; not inspected one by one).
+- f10, 3 items: `stylexml` #16 on sep-times14, ln-objects, styleref-seq — an undone style edit saved (Word: the sheet
+  of now; the TS: the earlier save's).
+
+**Minor — `DefaultTabStop` undone after a save (the S record's open item 1, closed).** Through the Tabs dialog's
+command (`WordBasic.FormatTabs DefTabs:="72 pt"`, which records an undo step; `Document.DefaultTabStop` does not):
+`deftab 72`, `Undo()` True → 35.4; the first copy `w:defaultTabStop 1440`, the second 708 (the loaded value), and 708
+also with no save between. Rust's rule (`settings_back`, the loaded text back) is Word's. `save_parts.rs` module comment
+updated.
+
+**Results** (this tree; `s7d/verify.log`; wasm built with `-j 3` into `target/m2-w7b`, copies in `s7d/`):
+- uo-docx `--release --all-features --test all`: **814 passed, 0 failed, 1 ignored** (the 7 save-parts tests among
+  them; the f5/f10 native replays with `ts_stale_parts` only); uo-docx-layout `toc_pages_w7` 5 passed.
+- uo-wasm natives: session_native 11/11, shell_native 9/9, shell_stories_native 8/8, shell_objects_native 5/5,
+  shell_completion_native 5/5, shell_format_native 4/4. wasm replays (d2a,f1–f3,f5–f10): 0 mismatches in every family,
+  f10 53 accepted, every TS re-encode byte-identical; `session_api.test.mjs` 5/5.
+- editor/viewer tsc exit 0; editor vitest 34 files / 334 tests. clippy uo-docx `--all-targets --all-features -D
+  warnings`: 0; rustfmt `--edition 2024 --check` on the touched files: clean.
+- Chromium (`s7d/session_count.wasm`): review `--mode memory` 4 × 80 flat (above); `editor_switch.mjs --mode all` ok;
+  `editor_switch_stories --mode all` ok; `editor_switch_format --mode extra`: the `updateFields` block (ED-712/713 as
+  declared, the rest equal) and the "parts" block (B/D/E as declared, E'/F equal) as in the S record, 1 failure not
+  S's (`exportXps side effects, print-cell`, W's no-settings table, as before); `editor_switch_review --mode all`: 3
+  failures not S's (`wordmarks`: comment/field band heights against Word, V's fix-round item).
+
+**Files** (this round): `editor_switch_review.mjs` (`UO_ER_TRACE`, the thumbnail warm-up), uo-docx
+`session/save_parts.rs` (`put_missing_styles`, `added_note_styles`, `SaveParts::note_styles`, module comment),
+`session/io.rs` (the styles branch of the save), `session/ops/notes.rs` (`ensure_note_styles` records), tests
+`session_w7c_save_parts.rs` (one test), `parity_d2b_f10_session.rs` (flag), `parity_d2b_f5_session.rs` (comment),
+uo-wasm `tests/session_replay.test.mjs` (flag 1, `UO_WS_TS_SAVE_FLAGS`, `UO_WS_FULL`); records: the S subsection (review
+soak number, item 2's flag sentence, open item 1) and this one.
+
+**Not done / open (none is a decision):** the in-memory style list after an undone note insertion still drops the note
+styles (only the saved file keeps them, as measured in Word's file; whether Word's Styles pane lists them after the undo
+is not measured).
+
+### Wave 7c — W: Word-measured layout rules (B's "NOT applied" list and F2's keepLines item)
+
+Frontier W of wave 7c (2026-11-13; one implementer cut off by a usage limit, resumed by a second one that kept its
+work, finished items 1 and 5's measurements, the remaining harness declarations and the verification). Word 16 pt-BR is
+the authority where it differs from the frozen TS ("Word manda sobre o TS"); every rule applied below was measured with
+an oracle series in Word (invisible COM under `tools/parallel/word-lock.mjs`, `write/tools/layout-oracle/run.mjs <group>
+--fixdir core/crates/uo-docx-layout/tests/oracle_w7c/<group>`, Liberation Sans, PDFs in `write/tools/layout-oracle/.out`,
+not versioned) and is asserted by the new native test `uo-docx-layout/tests/word_w7c.rs` (a port of the TS
+`oracle-compare.ts`: pages, line texts, the page of each line, baseline ±0.3 pt, x ±0.6 pt where the group measures it).
+The frozen TS behaviour of each rule stays behind a `LayoutOptions::ts_*` switch; `LayoutOptions::ts_strict()` (new)
+turns all eight on and is what every replay of TS captures uses. Scratch, scripts and logs: `core/target/m2-wsession/w7c-w`
+(outside git). The groups live in `tests/oracle_w7c`, NOT in `write/packages/docx-layout/test/oracle`: that directory is
+the frozen TS's 2,742-document corpus, which the uo-docx parity tests (`parity_full`, `parity_export`, `parity_odf`, …)
+replay against TS captures — the first placement failed 46 of them ("not captured"), so the groups were moved.
+
+#### Items
+
+| Item | Word (measured) | Frozen TS | Status | Switch / wasm bit |
+|---|---|---|---|---|
+| 6 keepLines taller than what is left (F2: `f7a__7__0` last paragraph as Heading 1) | moves to the next page even when taller than a page, then splits (64 cases `keeptall`, modes 14/15: 1/30/54 filler lines × 56/70/120-line paragraphs, keepNext+keepLines, the exact page, keepNext only, widow control off); mode 15, 2 columns: a keepLines paragraph taller than the column goes to the next PAGE and each of its columns ends with a page break (top of a page too; mode 14 → next column); mode 15, in a table cell: a keepLines paragraph crossed by the row's split goes down whole (not at the top of a page; mode 14 ignores keepLines in cells) | moves only if `need <= full`; no column or cell rule | **applied**: 64/64 cases equal to Word (6,884 lines, max Δy 0.15 pt, max Δx 0.08 pt); `ts_strict()` differs in 37 of them; `toc_pages_w7` asserts F2's `xiii` (Word) and `xii` (`ts_strict`) | `ts_keep_lines_within_page` / bit 17 |
+| 2 package without `word/settings.xml` | COM `CompatibilityMode` = 12 (and 12 for a part without `compatSetting`); `DefaultTabStop` 35.4 pt = 708 tw whenever `w:defaultTabStop` is absent (part absent, empty part, mode-15 part without it) | mode 15; 720 tw | **applied**: 25/25 cases `nosettings` (tables, nested table, default tab stops, justification, negative indents × no part / empty part / mode 15 without the tab / controls 12 and 15) equal (190 lines, max Δy 0.11 pt, max Δx 0.10 pt; `ts_strict` differs in 7); B's `cell-lic1` (no settings part): cell text 220.01 pt, box text 100.58 pt as Word (`ts_strict`: 225.65 / 106.22) | `ts_missing_settings_mode15` / bit 13 |
+| 3 linked text boxes (B: two linked boxes in one cell) | a box of a chain is never left empty: box 1 keeps "primeira caixa" (re-measured baselines 100.82 / 137.78 pt; the planner's 92.10 / 129.06 were not baselines), in the body too; a box too low for one line still takes the first line; mode 15 wraps a cell's text around a `layoutInCell="0"` box | box 1 empty in mode 15 (the widow/orphan cut sends the whole paragraph on); no wrap | **applied**: 21/22 cases `txbxcell` equal (480 lines, max Δy 0.13 pt; `ts_strict` differs in 9); the 22nd (`lc-cell-lic0-c12`) is a mode-12 table rule outside the chain, listed under "Not done" | `ts_linked_box_cell_chain` / bit 14 |
+| 4 REF/PAGEREF/NOTEREF to an undefined bookmark | missing, without `w:bookmarkEnd` or ending before it starts: REF with every switch (`\h \n \r \w \p`) "Erro! Fonte de referência não encontrada.", PAGEREF (also `\p`) and NOTEREF "Erro! Indicador não definido.", in BOLD in the PDF (STYLEREF's error too) and saved bold (`Fields.Update` + `SaveAs2`: `<w:b/><w:bCs/>`, PAGEREF also `<w:noProof/>`); a range over several paragraphs = all of them (each a new line); a bookmark in a cell, a text box or a header = its range's text | the start paragraph's text, page 1, the cached result | **applied**: 10/10 cases `refbm` equal (51 lines, max Δy 0.17 pt; read as the editor does, `sources`; `ts_strict` differs in 9); `ref_errors_are_bold`; the SAVED bold of the editor's lossless read stays open ("Not done") | `ts_ref_bookmarks` / bit 15 |
+| 1 theme tint/shade rounding | **3,356** distinct (base, tint/shade byte) → Word colour samples, no two in conflict: 3,264 from a new COM series (`core/target/m2-wsession/w7c-w/tint`: 48 bases — greys, primaries, the 2007/2013/2023 accents, near-white/black, every hue sector — in the 12 theme slots, × 34 tint and 34 shade bytes 01…FE incl. the UI's 33/66/99/BF/A5/80/7F/E6/D9/F2/A6/CC; `w:color` a decoy; Word's PDF read with pypdfium2) + 92 hex values Word wrote in its own corpus documents; B's 15 PDF samples all coincide. Facts: greys are exact (`floor(L′·255)`, L′ = L·s or L·t+1−t); chromatic colours deviate from exact HSL by −1.75…+0.2 per channel, with no fixed (H, S) per base explaining a base's series (grid search) | HSL lightness, channels truncated: **2,323 / 3,356** | **OPEN**: no closed form found — exact HSL with a floor epsilon 2,557 (but it loses 16 samples the TS rule hits: Word has its own float error), the KB29240 integer HLS family ≤ 1,607, linear RGB 318, 255/256 scale variants ≤ 1,796, best quantisation (L′ to 1/1020, S to 1/1000, floored) **2,662**; none applied (a partial model trades samples). The samples are versioned (`tests/oracle_w7c/tint/word-samples.tsv`) and `word_w7c` `tint_shade_samples_against_the_ts_rule` pins 2,323 | bit 12 (reserved) |
+| 5 hyphenation | measured anew (`hyphword`, `write/tools/layout-oracle/cases/hyphword.mjs`: 150 long words per language drawn with a fixed seed from the repository's open Hunspell dictionaries, each alone at 30/40/50/60/70/80 pt, Liberation Sans 11, Word's line splits against the Rust layout's): **pt-BR 877/900 paragraphs equal (135/150 words at every width), en-US 809/900 (105/150), es 898/900 (148/150)**; split points Word/Rust/common pt 425/431/416, en 382/384/337, es 438/438/437 (residuals listed in `w7c-w/hyph-agree.txt`, e.g. en geo-graph-ical × geo-graph-i-cal, pt oxirri-n-quídeo × oxir-rin-quídeo) | the same patterns (hyph-utf8) | **OPEN** for the maintainer: Word's hyphenator is proprietary; closing it needs either pattern sets from licence-checked sources (patgen over the public-domain Moby Hyphenator II for en; pt/es candidates — each a DOWNLOAD this frontier may not make without the maintainer, and each to be checked against the CLAUDE.md licence rules) or exceptions derived from Word's output, which the maintainer's standing directive forbids ("não derivar exceções em massa da saída do Word"). Not taken here | `ts_hyphenation_patterns` / bit 16 (reserved) |
+
+#### What changed
+
+- uo-docx-layout: `options.rs` (six switches, `ts_strict()`), `engine/flow.rs` (keepLines; `place_paragraph` wraps
+  `place_paragraph_inner` to reset `Engine::kl_col_to_page`), `engine/page.rs` (`break_column`), `engine/mod.rs` (the new
+  carried field; `incr/relabel.rs`, `incr/bits.rs` list it), `table.rs` (`ParaSplitInfo::keep`, `keep_cut`,
+  `split_content_keep`, `RowSplit::split_keep`), `table/layout.rs` (`split_row(…, keep)`, `ldoc.compat_mode()`),
+  `engine/static_layout.rs`, `engine/tables.rs` (`split_keep(…, !at_top)`, compat reads), `ldoc.rs` (`compat_word`,
+  `default_tab_word`, `bookmark_marks`, `compat_mode()`, `default_tab_stop()`), `derive.rs`, `lines.rs`, `hyphenate.rs`,
+  `para.rs` (compat reads; `DRun::bold` for the error texts), `engine/floats.rs`, `engine/chain.rs` (`keep_first_lines`),
+  `engine/field_refs.rs` (`bookmark_where`, `ref_error`, `bookmark_error`, `is_ref_error_text`, the multi-paragraph
+  range), `engine/fields.rs` (PAGEREF). Lint fixed in the resumed session: `chain.rs` `reduce(jm::min)` (clippy.toml bans
+  `f64::min`), the `too_many_lines` expectation moved to `place_paragraph_inner`.
+- uo-docx (outside W's crates, additive): `model/document.rs` `ReadFacts` (`settings_absent`, `default_tab_absent`;
+  outside the JS shape and equality, never written) + `Document::read_facts`; `read/parts.rs`
+  `read_doc_formatting_facts`; `read/fulldoc.rs`; `session/ops/references/fields.rs` `set_field_result` writes Word's error
+  result of a REF/PAGEREF/NOTEREF in bold (the TS never produces these texts, so its replays are unchanged) — on the model's `fieldResult` path only (see "Not done": the lossless read's path).
+- Strict replays → `.ts_strict()`: `layout_parity.rs`, `f8_parity.rs`, `f4_parity.rs`, `f6_parity.rs`, `g8.rs`, uo-ffi
+  `server_parity.rs`; wasm `write.rs` bits 12–17 (`LAYOUT_TS_THEME_TINT` … `LAYOUT_TS_KEEP_LINES`), `js/write.mjs`
+  (`tsThemeTint`, `tsMissingSettings`, `tsLinkedCell`, `tsRefBookmarks`, `tsHyphenation`, `tsKeepLines`), `write.d.ts`,
+  `tests/support/paint-common.mjs` `wasmOptions`. No product path sets any of them.
+- Tests: `word_w7c.rs` (new: the four groups, `cell_lic1_without_settings_is_laid_out_in_mode_12`,
+  `linked_boxes_in_a_cell_start_in_the_first_box`, `ref_errors_are_bold`, `tint_shade_samples_against_the_ts_rule`; opt-ins
+  `UO_W7C_ORACLE` — the Word-agreement replay —, `UO_W7C_ATTR` (+ `UO_W7C_ATTR_SOURCES` for the editor's read) — which
+  switch changes a document —, `UO_W7C_ADHOC` — documents against their Word PDF with the installed fonts —,
+  `UO_W7C_LINES` — the line dumps of the hyphenation measurement), `toc_pages_w7.rs` (`xiii`/`xii`), `fidelity_w7.rs` (the
+  unterminated REF: Word's error; the TS text with `ts_strict`), `f6.rs`/`f6_parity.rs` (`keep: false`); fixtures
+  `tests/fidelity/cell-lic1-nosettings.docx`, `linked-cell-c15.docx` (open fonts only, `check-fonts` clean),
+  `tests/oracle_w7c/{keeptall,nosettings,txbxcell,refbm}` (121 `.docx` + `.word.json`) and `tests/oracle_w7c/tint/word-samples.tsv`;
+  uo-docx-layout dev-dependency `uo-fonts` gains the `system` feature (the opt-in replays). uo-wasm `write_api.test.mjs`:
+  the pin of `f8__7__10` (its REF bm1 is Word's error now; native `write_native` prints the same).
+- Oracle tooling (additive): `docx-builder.mjs` `noSettings`, `rawSettings`; `run.mjs --fixdir`; cases `keeptall`,
+  `nosettings`, `txbxcell`, `refbm`, `hyphword` (the last one measures only; its Word output stays in the scratch folder).
+
+#### Harness declarations (Word authority only; each document attributed natively to ONE switch)
+
+`word_w7c.rs attribute_documents_to_the_word_rules` over the committed captures: `f7a__7__12`, `f7c__7__11` keepLines;
+`f7c__7__2/5/10/13/14/15`, `f8__7__2/10` REF; `f7d__7__0/3/6/7/8/10` linked boxes — nothing else changes. Each was exported
+by Word and compared with the installed fonts (`adhoc_documents_against_word`): Word-equal lines/same-page lines go up under
+Word's rules on every one (e.g. `f7d__7__0` 51 → 58 of 58 lines, equal to Word; `f7c__7__11` pages 3 → 4 = Word;
+`f7a__7__12` same-page lines 422 → 523; `f8__7__10` 95 → 99). The editor harnesses' own documents, attributed the same way:
+`fields.docx` (uo-docx d3 fixtures) — only `ts_ref_bookmarks` with the editor's read (`UO_W7C_ATTR_SOURCES`: its `REF
+marca`/`NOTEREF n1` name bookmarks it does not define); `tables.docx` — only `ts_missing_settings_mode15`; the other seven
+d3 documents — none; `f7a__7__0`, `f7c__7__2`, `f7c__7__8` with the objects harness's columns applied to the package
+(`w7c-w/cols3.py`) — `keep_lines` (and `ref_bookmarks` for `f7c__7__2`).
+- `viewer_switch.mjs` `W7C` table (16 documents, facets as measured).
+- `editor_switch.mjs` DECLARED: `f7c__7__10`, `f8__7__10` (every facet: their REF sits where the script clicks), `f7c__7__2`,
+  `f8__7__2`, `f7c__7__5/13/14/15` (end thumbnails/screens; `f7c__7__14` page sizes), `f7c__7__11`, `f7a__7__12` (keepLines:
+  every facet, pages after load), `f7d__7__0/3/6/7/8/10` (end thumbnails and screen).
+- `editor_switch_fidelity.mjs`: the generator now writes a mode-15 settings part (`defaultTabStop` 720) so the scenarios
+  compare the engines in one mode; the new scenario `cell-lic1 nosettings` keeps a package without settings (declared,
+  item 2); `linked first`/`linked second` (item 3, end screens); `cell-lic0` (item 3: the mode-15 wrap moves every
+  scripted click, declared `*`).
+- (resumed session) `editor_switch_stories.mjs`: `X1 f7d__7__0` (item 3: the click lands in the first box's text; every
+  facet), `T2 f7d__7__8` (item 3) and `N2 f7c__7__13` (item 4) end thumbnails/screens. `editor_switch_objects.mjs`
+  `DECLARED_O`: `f7a__7__0|page` (from step 5), `f7c__7__2|page`, `f7c__7__8|page` (from step 6: the setColumns steps —
+  item 6 in columns), `f7d__7__3|objects`, `f7d__7__10|objects` (from step 1, item 3), `f7d__7__0|objects`,
+  `f7d__7__3|menu` (end, item 3). `editor_switch_review.mjs`: `fields|fields` (item 4: `updateFields('all')` answers 11
+  against the TS's 9 — the two error results —, the screens, the overlay mask, the saved body). `editor_switch_completion.mjs`
+  `DECLARED_C`: `f7c__7__2|lists` (end thumbnail page 10, item 4), `f7d__7__10|objects` (from step 5, item 3).
+  `editor_switch_format.mjs`: `fields|text` and `fields|view` gain `W7C_FIELDS_REF` (item 4: the TOC statistics from step 5,
+  the end pages, the overlay screen and the saved body) — the matcher accepts an array of declarations per key and `from` + `facets`
+  (additive; the existing tag entries unchanged).
+
+#### Not done / open (for the coordinator)
+
+- Items 1 and 5 above (OPEN, with the numbers; not relabelled, not accepted).
+- PAGEREF to a bookmark in a header/footer: Word `1` on a one-page document; the layout keeps the cached result (no page
+  of a header bookmark is known). REF/PAGEREF to a bookmark outside the body index in a document read WITHOUT the
+  bookmark marks (the viewer's read, `sources` off: the reader indexes body bookmarks only and keeps no mark runs) keeps
+  the TS behaviour (cached result); the editor's read has the marks and follows Word. A reader-side index of non-body
+  bookmarks would close it (uo-docx).
+- A multi-paragraph REF range carries the text and line breaks; Word also carries each run's formatting (bold "parte" in
+  `rb-multi`) and the paragraphs' own properties.
+- STYLEREF to a style NAME (`STYLEREF "Título 1"`): the engine (as the TS) knows only the numeric level form; Word resolves
+  the localized name. Not one of W's items (found by the `refbm` series).
+- Mode 12, `layoutInCell="0"`: Word lays the whole TABLE out beside the out-of-cell boxes (`lc-cell-lic0-c12`, left border
+  at 196.4 pt; Δx 116.96 pt); both engines keep it at the margin (listed `open` in `word_w7c`). With item 2 this now
+  concerns every package without `settings.xml` that has a table next to a float.
+- A line 0.01–0.5 pt short of the inner width of a 0.5-pt-bordered box (102.36 pt, "aprovação gestão" 87.45 pt of 87.96)
+  breaks in Word, not in either engine (the `txbxcell` boxes were widened to 104 pt to keep item 3's series on its rule).
+- The SAVED form of the error result in the editor's (lossless) read: Word writes `<w:b/><w:bCs/>` on the result run; the
+  session keeps the field's source runs there and replaces only the text, so the error is saved unbolded (seen in the end
+  runs: `editor_switch_format` fields|view saved `<w:r><w:t>Erro! Fonte de referência não encontrada.</w:t></w:r>`). The
+  resumed session tried giving the field run `bold` on that path (`set_field_result`): the lossless field writer does not
+  emit it (a native test over `open_body` with REF/PAGEREF/NOTEREF to `nada` saved no `w:b`), so the attempt was reverted;
+  closing it needs the lossless writer to patch the result run's `w:rPr` — for the session/writer owner. The layout paints
+  the error bold in every read (`ref_errors_are_bold`).
+- Writer: Word SAVES a package without settings with `compatibilityMode` 12 (+ `useWord2013TrackBottomHyphenation`); the
+  session writes 15 (model unchanged on purpose: no saved-byte change) — for the session owner.
+- **Corrected in fix round 1** (reviewer W/2; this paragraph called them "not W's" without evidence — wrong):
+  `editor_switch_format` `tables|ruler` and the `exportXps` print-cell screen ARE item 2's — attributed with ONLY
+  `ts_missing_settings_mode15` switched on ("Wave 7c — W, fix round 1") and declared there. Not W's (owners in their
+  records): `sections|view` (the Web view's left 48 vs 24: V's continuous view; the document is changed by no W switch);
+  `editor_switch_objects` `f7b__7__0|objects` frame 0 of the float move (V's "Not done 1").
+- .NET (`UniversalOffice.Docx/DocxLayout`): none of the four applied rules ported; port them and regenerate the parity
+  dumps (CLAUDE.md "porta com paridade").
+
+#### Verification (resumed session; logs `core/target/m2-wsession/w7c-w/*.log`, `-j 3`, ≤ 3 test threads, the one target
+`core/target/m2-wsession`; D: 51 → 43 GB free)
+
+- Word series, `word_w7c` (release, 3 threads): **12 passed** — keeptall 64 cases / 6,884 lines / max Δy 0.15 pt / max Δx
+  0.08 pt (`ts_strict` differs in 37); nosettings 25 / 190 / 0.11 / 0.10 (7); txbxcell 22 / 480 / 0.13 / — (9; 21 equal,
+  `lc-cell-lic0-c12` open, Δx 116.96 pt); refbm 10 / 51 / 0.17 / 0.05 (9); tint 2,323 / 3,356 pinned; the opt-ins run by hand
+  (`UO_W7C_ATTR`, `UO_W7C_ORACLE`, `UO_W7C_LINES`).
+- uo-docx-layout, all targets (release): **168 passed, 0 failed** (13 unit + 155 in 27 test binaries: fidelity_w7 4,
+  toc_pages_w7 5 with `xiii`, la7 13 incremental = full, views_w7c 2, layout_parity 5, f8_parity 2, …). uo-fonts
+  `--all-features` + uo-render: **434 passed, 0 failed**. uo-docx `--release --all-features --test all --skip memory_`:
+  **667 passed, 0 failed, 1 ignored** (11:15 run; the 500-page memory soaks are the orchestrator's), `--lib` 153. uo-ffi
+  `server_parity` 3/3.
+- Full layout parity, strict, captured from the frozen TS (`w7c-w/lp-*.log`): ci 200 documents / 600 facets, f7a 300 / 900,
+  f7b 200 / 600, f7c 300 / 900, f7d 200 / 600 — **0 mismatches each**; f8 200 documents, **3,000 equal**, 0 mismatches; the Word
+  oracle **2,742 documents / 8,226 facets, 0 mismatches**. The new groups (121 `.docx` of `tests/oracle_w7c`, captured in the
+  capture's files mode, replayed strict): **363 equal, 0 mismatches**.
+- Word agreement (`UO_W7C_ORACLE` over the frozen TS's 2,742 oracle documents, installed fonts): 2,741 cases with a
+  `.word.json`; 21 change under Word's rules (hftpl 3, inside 8, rotwrap 5, tbinset 5) and every one is Word-equal before and
+  after (21 → 21): the count does not go down (the changes stay within the comparer's tolerances; W's rules were measured
+  with W's own groups, above).
+- Wasm (`--profile wasm`, `-j 3`): viewer 4,142,626 B, session_count 10,498,171 B, session 10,497,667 B, write 4,142,647 B,
+  selftest 11,853,874 B (built after V's concurrent `LineGeom::desc` edit had landed). Node: `paint_parity` 2 + 1 skipped,
+  `session_replay` (d2a,f1,f2,f3,f5,f6,f7,f8,f9,f10) **10/10, 0 mismatches in every family** (f2 1, f7 8, f8 122, f9 10, f10 53
+  accepted — F3's numbers, unchanged), `write_api` 8/8, `session_api` 5/5, `shell_api` 2/2, `write_section` 2/2.
+- Natives: `session_native` 11/11, `shell_native` 9/9, `shell_stories_native` 8/8, `shell_objects_native` 5/5,
+  `shell_caret_native` 4/4, `shell_review_native` 4/4.
+- Chromium (headless; the final pass 12:54–13:48 on the tree of that moment, frontiers V and S still editing):
+  `viewer_switch --mode all` (stride 1) **ok** — 78 documents, 592 pages, 0 undeclared, the 16 W7C entries used;
+  `editor_switch --mode parity` (13 documents × 12 steps) **ok**; `--mode all` **ok**; `editor_switch_fidelity` **ok**;
+  `editor_switch_stories` **ok**; `editor_switch_completion` **ok**; `editor_switch_format` 2 failures, `editor_switch_objects`
+  1, `editor_switch_review` 2 — `tables|ruler` (the cell's ruler frame x1 3485 vs 10205 at load) and the `exportXps` print-cell
+  screen are W's item 2 (this line said otherwise without evidence: corrected and declared in "Wave 7c — W, fix round 1"); not
+  W's: `f7b__7__0|objects` frame 0 of the float
+  move (V's open frames; no W switch changes f7b documents), `wordmarks` (a new C0C0C0 band check of V's field-shading work,
+  26 px vs Word 17). Each W declaration was exercised in a run where its document's other facets passed.
+- Packaging: `build-pkg font-files document-viewer write` with `UO_REQUIRE_ENGINE_WASM=1` and this target's `write.wasm` /
+  `session.wasm` exit 0 (`uo-write.wasm` 4,046 KB, `uo-write-editor.wasm` 10,252 KB); `pkg_smoke` ok. No pattern data shipped,
+  so no notice or size change.
+- Lint: `check-changed --jobs 3` **all steps passed** (16 crates, after the fixes of `word_w7c.rs`: the first run failed on
+  the test's `char::is_whitespace`, `f64::round`/`f64::max` — now `uo_jsnum` `is_js_space`/`round`/`max`, as the TS's `\s`,
+  `Math.round`, `Math.max` — and on its system-font opt-ins under wasm32 — the file is `cfg(not(target_family = "wasm"))`);
+  `rustfmt --edition 2024 --check` clean on every W-touched `.rs`; `check-fonts` on `tests/oracle_w7c` and
+  `tests/fidelity`: 54 fonts, none proprietary.
+
+#### For README/CHANGELOG (the coordinator's merge)
+
+- Word's rules over the frozen TS in the Rust layout ("Word manda sobre o TS", measured in Word 16): a keep-lines-together
+  paragraph taller than what is left of the page goes to the next page (in columns: the next page; in a cell: below the
+  row's split); a package without `word/settings.xml` is laid out in compatibility mode 12 with 708-twip default tab stops;
+  the first box of a chain of linked text boxes keeps the chain's first lines; REF/PAGEREF/NOTEREF to an undefined,
+  unterminated or inverted bookmark shows Word's error text ("Erro! Fonte de referência não encontrada." / "Erro!
+  Indicador não definido."), painted bold (the editor still SAVES it unbolded — Word writes `<w:b/><w:bCs/>`, PAGEREF also
+  `<w:noProof/>`: open, for the lossless writer), a multi-paragraph bookmark gives all its paragraphs.
+- Open, not accepted: theme tint/shade rounding (Word's rule not found; 3,356 samples, the current rule matches 2,323),
+  hyphenation (open patterns: pt 97.4 %, en 89.9 %, es 99.8 % of the measured line splits equal to Word).
+- .NET: the four rules are not ported yet.
+
+### Wave 7c — V, fix round 2 (the reviewer's second findings on V)
+
+One implementer; scratch, logs, probes and Word scripts in `core/target/m2-latency/v3/` (outside git), Word screenshots in
+`E:\UniversalWriteTest\_lab\views\v3`. The session_count module of this round: `v3/session_count.wasm`, built from the
+tree with this round's Rust. Nothing committed. Where this subsection and the earlier V subsections differ, this one is
+valid.
+
+**Word measured** (Word 16, invisible COM through `tools/parallel/word-lock.mjs`, the window off screen at −20000 shown
+without activation, PrintWindow; 96 dpi):
+- `v3/word-v3.ps1` (window 1100 × 1000 px, zoom 100 and 200 for the shots): every LINE start (paragraph, offset, x, y) of
+  seven documents in Web, Draft and Outline, walked with `Selection.MoveDown(wdLine)` + `HomeKey(wdLine)` and `GetPoint`;
+  the end mark of each paragraph; `Selection.MoveDown(wdScreen)` from the start (PageDown); the Web view after the window
+  is narrowed 1100 → 900 px with no view, zoom or selection change; PNG shots with the formatting marks off. Documents
+  (open fonts, no embedded font; `v3/mkdoc3.py`), committed in `uo-docx-layout/tests/fidelity/`: `v3-web-edges.docx`
+  (left/right/centred short paragraphs, a long one), `v3-sections-rev.docx` (fix round 1's two sections with landscape
+  first), `v3-outline-wide.docx` (headings and body on a landscape page), `v1-sections.docx` (fix round 1's, now committed),
+  and the committed `v1-outline.docx`, `v1-breaks.docx`, `captures/f7a/docs/f7a__7__0.docx`; `v3/word-lines.py` turns the
+  log into `tests/fidelity/views-word-v3.tsv` (1,231 line starts; f7a__7__0 also in Print view, `-Views 3`). The first run
+  ended with "foreground unchanged=False" (6 minutes of COM; no window of ours was activated — SW_SHOWNOACTIVATE, a tool
+  window off screen —, so most likely the user's own switch); the two later runs: True.
+- `v3/word-shading-stories.ps1` on `field-shading-stories.docx` (a QUOTE field in the footer and one in a footnote, 11-pt
+  Liberation Sans, single; `v3/mkdoc-stories.py`), View.FieldShading = 2 ("When selected"): C0C0C0 rows — body caret none;
+  footer caret outside the field none, inside 17 rows; footnote caret outside none, inside 17 rows (StoryType 9 and 2).
+
+Findings: Web wraps again AT ONCE when the window is resized (the right-aligned paragraph's end 1045 → 845 px, a long one 2
+→ 3 lines, no view or selection change). Web's text runs 38 → 1045 px in a 1100-px window (1007 px = 15105 twips). Outline
+wraps a section at most 8640 twips (6") from Draft's text left — A4 portrait text 567 px stays 567 (break line 519 px from
+the +48-px body indent); A4 landscape text 971 px → 576 (528 px), with the landscape section first, last or alone; Draft
+keeps each section's own width. Outline sets every paragraph from the left (right-aligned and centred text at the body
+indent). Draft and Outline give a page or column break a LINE of its own (`v1-breaks`: line starts 0, 25 = the break, 26)
+and the section break a line after its paragraph (`v1-sections` Draft 165 → 183 → 212 px; Outline 154 → 171 → 188); Web
+does neither. The break is drawn across the whole pane: 1-px black dots every 2 px (page), every 4 px (column), two rows
+2 px apart (section), 2.3 px above the break line's baseline at zoom 100 (scaled at 200), the label ("Quebra de página",
+"Quebra de coluna", "Quebra de seção (Próxima página)") in 9-pt Segoe UI NOT scaled by the zoom, centred in the pane,
+its baseline 2 px under the rule, the dots stopping 3 px either side. Outline symbols (scale with the zoom): a heading's
+circle 14 px across, a body paragraph's 8 px, fill E1E1E1, a 1-px 777777 ring, centred 17.5 px left of the first line's
+text and 1 px above the line's middle; the heading's plus (minus without text under it) 444444, 2 px thick, 8 px long.
+PageDown (`MoveDown(wdScreen)`) from the start of f7a__7__0: Web paragraph 5 offset 102, Draft 7/333 (the last full line of
+the 963-px pane), Outline 8/363 (0-based) — a screen, not the TS's 20 lines; no consistent rule derived (Web lands
+473 px down, Draft 912). f7a__7__0 in Print: the engine's first 13 lines equal Word's, then differ (paragraph 4: 305 vs
+311), so its continuous-view lines differing from Word's is the engine's layout of that generated document (hidden
+paragraph marks, mixed fonts and scales), not a view rule.
+
+**(1) ED-707/708 — the blocker.** `editor_switch_format --mode view` (V5 steps on): **2,888 facets equal, 302 declared, 0
+undeclared, ok** (fix round 1: 34/35 undeclared). Each difference the reviewer listed, traced:
+- *the resize* — the TS lays a continuous view out on every `refresh()` and every selection change (`refreshSelection`
+  without an engine line → `refresh()`, 21379; its `contentWidthTwips()` reads the element's width then), not on the
+  resize itself (`measureSides` returns when no side panel changed); its ruler frame is computed from the element's width
+  at the call (17141). Shell (`rust-format-view.ts`): `webRelayout` — the Web view laid out again at the viewport's width
+  when it changed — on every selection-only change (new `hooks.selection` in `rust-engine.ts`: `apply`'s no-story-change
+  branch and `refreshSelection`; registered in `rust-engine-format.ts`), and Word's rule (measured above) by default: a
+  `ResizeObserver` on the element lays the Web view out at once, off under `tsStrict`; `getRulerInfo`'s Web frame =
+  the TS's formula. Checked by `editor_switch_format --mode extra` "extra web resize" (Rust: the default 1052 → 752 px at
+  once, back to 1052; `tsStrict` keeps 1052 until the next selection change, then 752; the frame 10680 at 800 px in both).
+- *the TS "inset 64 / left 0 / w 752px"* — harness reads of a DETACHED canvas: `firstInset` and the `present` facet took
+  the canvas before `firstInset`'s selection change, which (above) makes the TS rebuild its canvases. Both now read the
+  canvas after it. With that, every `present`/`ruler` facet of the resize steps is equal.
+- *the Shift+click (TS 143, Rust 0) and the `selected` facets* — the harness's `clickPoint` measured the point with the
+  caret at the target, then put the selection back, which scrolls both engines back to the old caret: the click landed on
+  another paragraph in each (TS 12, Rust 11, by their own line geometry). The view is now put back at the scroll the point
+  was measured at; the Shift+click lands on the target in both (equal). The `fields|view` Shift+click selects across the
+  TOC, whose REF/NOTEREF results are W's item 4: that entry declares `selected` for `fields|view` too.
+- *`view:web` canvas left (TS 24, Rust 48)* — the same stale width: equal after the selection-change relayout.
+- *PageDown* — the same code in both (0.9 of the view, 20 line moves, universal-write.ts 10597 / `rust-engine.ts`); the
+  landing differs where the lines fall differently (the engine's layout vs the TS legacy canvas layout, LQ2). Declared
+  with tags of their own (`web-pgdn`, `draft-pgdn`, `outline-pgdn`), not hidden under the view tags; Word's PageDown
+  (measured above) is neither engine's: **open**.
+- *the declaration* — `WORD_VIEWS` (290 facets "Word manda sobre o TS (V1 measurement)") is gone. `LQ2_VIEWS` (id "LQ2 (the
+  engine's line geometry in the continuous views)") declares only the facets that follow from where the lines fall:
+  `rulerLine` and `canvases` of the view steps, the Web screen, and the PageDown steps' caret facets. It does NOT claim
+  Word: the engine equals Word line by line where measured (below); the harness documents were not measured in Word
+  (f7a__7__0's lines differ from Word in Print too). The stale "ED-707/708 closed" comment is replaced.
+
+**V1/V4 — Word's views applied** (all behind `!ts_strict`, the frozen TS kept for the strict replays):
+- engine (`uo-docx-layout`): `view_transform.rs` `OUTLINE_WRAP_MAX` = 8640 (Outline wraps at min(the section's text
+  width, 8640)), `word_outline_document` sets `jc` left (pPr and the editor props); `options.rs`
+  `ViewTransform::word_break_lines()` (Continuous Draft/Outline, not strict); `lines.rs` `BreakSettings::break_own_line`
+  (a page/column break that follows text ends the line before it and takes a line alone); `engine/flow.rs` the section
+  break's line after a section-ending paragraph with text (the mark's line box: `line_box` of the mark face) and the empty
+  section-carrier paragraph keeps its line in those views.
+- shell (`rust-format-view.ts`): `paintWordBreak`/`paintWordBreaks` draw Word's rule and label in device pixels on the
+  break's own line (the section break's on the line after its paragraph), with or without Show Marks; the TS's
+  `paintBreakMark` only under `tsStrict` (or with Show Marks there); `paintOutlineSymbols` with the measured geometry and
+  colours (dark page: not measured, the same colours).
+- native test `uo-docx-layout/tests/views_w7c.rs` (the planned one): `continuous_views_wrap_and_place_lines_as_word` — every
+  line start of `v3-web-edges`, `v1-sections`, `v3-sections-rev`, `v3-outline-wide`, `v1-outline`, `v1-breaks` in Web
+  (the sheet = Word's 15105 twips + the TS margins), Draft and Outline equal to Word's (paragraph and offset; Word's
+  section-break pseudo-lines left out), each line's x within 1.5 px, the pitch inside a paragraph within 1 px: **171 lines,
+  0 differences**; `section_break_takes_a_line_in_draft_and_outline` (Draft 47.1 px vs Word 47, Outline 33.7 vs 34);
+  `f7a_against_word_probe` (`UO_VIEWS_F7A=1`, prints only: the Print/Web/Draft/Outline comparison above); the earlier two
+  tests unchanged and passing.
+
+**(2) F-1 — open.** Traced with a probe (`v3/s-f1b.json`, both engines, the click at the TS target of float 0): the TS
+calls `positionProxy` at 5 and 45 ms (258 px); its layout of the click's `refresh()` (7 ms) asks the resolver for "Times
+New Roman" for the first time (`layoutEngine` → `scheduleEngineFonts` → `loadEngineFonts` → `resolveWithFile`, 50 ms —
+`s-f1c.json`, a stack per call), the answer comes back as `onFontsResolved` (57 ms) → `queueRefresh` → `refresh` (137 ms)
+→ `positionProxy` (194 ms): 284 px, after the Shape Format tab grew the bar 178 → 204 px (~94 ms). The Rust shell resolved
+every family of the document with its first layout and asks nothing after the click (no resolver call, no event): 258 px. A
+reposition on the bar's growth would move f7b__7__1/3, where the TS stays (fix round 1). Reproducing it needs the TS's
+lazy face request; not done.
+
+**(3) ED-304 — closed.** `rust-review-overlays.ts`: `selectionKey` answers the header/footer, note and text-box
+paragraph the caret is on (the story line of the caret's page and frame holding the caret point and the focus offset);
+Word's marks are painted over every story's lines (text boxes included; the TS look keeps its exclusion); the base key
+reads the field runs from that story line (`runsOf` caches by layout and paragraph index only — after the body's
+paragraph 0, a footer's paragraph 0 read the body's runs: the bug that hid the footer band in the first harness run;
+R's other `runsOf` callers in a non-body story may meet the same cache, not changed here); the base is painted with the
+selection that keyed it. The band's height: the engine's natural text descent — new `desc` on `PassLine`/`LineGeom`
+(`Line::desc`; `items.rs`, `output.rs`, `engine/flow.rs`, `engine/mod.rs`; the TS captures decode 0, not compared:
+`layout_parity` compares a list of named fields), `uo_shell_story_lines` writes it (`shell_review.rs`), `StoryLine.desc`
+(`session.d.ts`, `write-session.d.ts`), `StoryLineP.desc` (`rust-review-core.ts`); the 0.234 × ascent estimate is gone.
+`editor_switch_review --mode wordmarks`: body 17/17/31 px and the comment 17 px as before; footer and note: one 17-px band
+with the caret in the field, none outside (found as the rows that change: the hf/note edit tints its story).
+
+**Minor**: D-L3 recorded in the merge state's engine-boundary list with fix round 1's evidence (the frame comparisons
+re-allocate the buffers). The memory soak's wrap-point drag: **not added** (the soak runs Rust only; the wrap-point target
+needs the selected picture's rectangle, which only the TS internals or the shell's private handle give).
+
+**Verification** (`v3/verify-rust.sh`, `v3/verify-b.sh`, `v3/run-harness.sh`; logs `v3/vr-*.log`, `v3/vb-*.log`,
+`v3/h-*.log`; `-j 3`, ≤ 3 test threads, the one target `core/target/m2-latency`; D: 45 → 43 GB free; the session_count
+module `v3/session_count.wasm`, 10,498,815 B):
+- Rust: `uo-docx-layout --lib` 13 passed; `--test views_w7c --test word_w7c --test f5 --test f6 --test f8` 14 + 4 + 6 + 5
+  + 12 passed (views_w7c 5: 171 Word line starts, 0 differences); uo-wasm natives `shell_review/format/native/stories/
+  objects/completion` 4 + 4 + 9 + 8 + 5 + 5 = 35 passed; clippy `-D warnings` native (`uo-docx-layout` lib and the tests
+  views_w7c, f5, f6, f6_parity, f8, layout_parity) and wasm32 (`uo-wasm` lib, `uo-docx-layout` lib), `--all-features`: 0
+  warnings; `rustfmt --check` on every touched `.rs`: clean. `node tools/check-changed.mjs --jobs 3`: float-casts and
+  grep-bans pass; clippy fails ONLY in W's `tests/word_w7c.rs` (13 lints and `uo_fonts::system` not found — W's work in
+  progress in the tree; my first run's two findings, `view_transform.rs` test indexing and a `str::parse` in views_w7c.rs,
+  fixed).
+- Layout parity (frozen TS captures, this tree): ci 200 documents equal (600 facets, 0 mismatches); the Word oracle
+  2,742/2,742 (8,226 facets), 0 mismatches; f8 200 documents (3,000 facets), 0 mismatches.
+- TS: `editor_switch_tsc.mjs` editor and viewer exit 0, no output; vitest editor 34 files / 334 tests, viewer 7 / 28 (+1
+  skipped).
+- Chromium, V5 steps and frames ON, no V declaration but LQ2's geometry facets: `editor_switch_format --mode view` **ok**
+  (2,888 equal, 302 declared, 0 undeclared, 96 s); `--mode extra` 1 failure **not V's**: `exportXps side effects,
+  print-cell` (the same TS/Rust screen hashes `fcd571a5`/`13814fe5` S recorded: W's item 2, a package without
+  settings.xml), the new "extra web resize" check passes; `editor_switch_review --mode all` 1 failure in the first run
+  (the note's wordmarks band picked up a 3-row change from the spelling's squiggles arriving between the captures — the
+  check now takes out, in, out again), `--mode wordmarks` ok ×3 after the fix, every other family 0 undeclared (styles 36
+  and fields 5 declared: B's and W's); `editor_switch_completion --mode all` **ok** in 502 s (lists 1,462 + 1 W, paste
+  1,069, tables 1,004, objects 2,557 + 44 W item 3, inline 395, page 134, previews 200; memory 30 cycles flat at
+  13,829,745 live bytes, handles/sessions 0); `editor_switch_objects --mode all` in 534 s: 2 failures — **F-1**
+  (f7b__7__0 frame 0 proxy 284 vs 258) and f7b__7__1 frame 0 proxy (TS 7852, Rust 7883: under the parallel cargo load;
+  `UO_EO_ONLY` rerun of f7b__7__0/1: f7b__7__1 equal, F-1 alone) — page 3,739 + 65 W, objects 5,557 + 72 W, pictures 855,
+  menu 217 + 2 W, keys 171, views 362; memory 30 cycles flat at 13,400,333, handles 0; `editor_switch --mode all` **ok**;
+  `--mode parity` (session.wasm, stride 1, 12 steps) **ok** (every facet equal or declared); `editor_switch_stories --mode
+  all` **ok**; `editor_switch_fidelity --mode all` **ok**; `viewer_switch --mode all` (viewer.wasm) **ok** — 78
+  documents, 592 pages, 0 differences in pages, text layer, find, pixels (tolerance 0) and PDF, 200 open/close cycles
+  flat; `build-pkg font-files document-viewer write` (`UO_REQUIRE_ENGINE_WASM=1`) exit 0, `pkg_smoke` ok.
+- Not measured this round: typing latency and a 500-page document in the continuous views (a continuous view still lays
+  the whole document out per edit, `FallbackReason::View`).
+
+**Files (fix round 2)**: `write/packages/editor/src/rust-format-view.ts` (`webRelayout`, the Web relayout on a selection
+change and Word's on a resize, the Web ruler frame, `paintWordBreak(s)`, the Outline symbols, `selectionRelayout`),
+`rust-engine.ts` (`hooks.selection` + its two calls), `rust-engine-format.ts` (registers it), `rust-review-overlays.ts`
+(`selectionKey` for every story, Word's marks on every story, the keyed selection, the real descent),
+`rust-review-core.ts` (`StoryLineP.desc`), `write-session.d.ts` (`StoryLine.desc`); `core/crates/uo-wasm/js/session.d.ts`
+(`StoryLine.desc`), `src/session/shell_review.rs` (`desc` in the story lines); uo-docx-layout `src/options.rs`
+(`word_break_lines`), `src/view_transform.rs` (`OUTLINE_WRAP_MAX`, Outline `jc`, the tests' clippy allowance),
+`src/lines.rs` (`BreakSettings::break_own_line`), `src/engine/flow.rs` (the section-break line; `PassLine.desc`),
+`src/items.rs` + `src/output.rs` + `src/engine/mod.rs` (`desc`), `tests/f6.rs`, `tests/f6_parity.rs`,
+`tests/common/decode.rs` (the new field), `tests/views_w7c.rs` (three tests), fixtures `tests/fidelity/v1-sections.docx`,
+`v3-sections-rev.docx`, `v3-web-edges.docx`, `v3-outline-wide.docx`, `field-shading-stories.docx`, data
+`tests/fidelity/views-word-v3.tsv`; harnesses `editor_switch_format.mjs` (`firstInset`/`present` read after the
+selection change, `clickPoint` keeps the scroll, `LQ2_VIEWS` replacing `WORD_VIEWS`, the PageDown tags, W's REF entry
+with `selected` for `fields|view`, the "extra web resize" check, the stale comment), `editor_switch_review.mjs` (the
+footer/note wordmarks); this subsection and the merge state's ED-707/708, F-1, ED-304 and D-L3 lines. No fixture holds a
+font (`tools/fonts/check-fonts.mjs`: no proprietary font).
+
+**Not done / open (none is a decision):** (1) F-1 (the TS's late "Times New Roman" request; a timing variant on
+f7b__7__1 under load); (2) Word's PageDown (`MoveDown(wdScreen)`) differs from both engines' 20-line rule in every view,
+its rule not derived (Web 473 px, Draft 912 px from the same start); (3) f7a__7__0's engine layout differs from Word's in
+Print as well (13 of 326 lines) — a layout item of that generated document, not of the views; (4) the memory soak still
+has no wrap-point drag; (5) typing latency and a 500-page document in the continuous views not measured; (6) Word's black
+Office theme not measured (the dark break/symbol colours are invented for visibility: light ink on a dark page); (7)
+R's `runsOf` cache (by layout and paragraph index) can hand a header/footer or note paragraph the body paragraph's runs
+— avoided in V's code, the other callers unchanged; (8) from fix round 1, unchanged: a follower box's spelling resolves
+the chain head by the lowest `seq`; the frozen TS's REF text inside a Paste-as-Picture preview not captured.
+
+### Wave 7c — W, fix round 1 (the reviewer's findings on W)
+
+Frontier W, fix round 1 (2026-11-13). Scratch, scripts and logs: `core/target/m2-wsession/w7c-w/fr1*` (outside git); the one
+target `core/target/m2-wsession`, `-j 3`, ≤ 3 test threads.
+
+**W/1 (major) — item 2's 708 tw was not a fallback.** The layout took Word's 708 tw from `Document::read_facts`, which no
+session op updates, so `setDefaultTabStop` did nothing under `engine="rust"` on a package without `w:defaultTabStop`,
+`getDefaultTabStop` said 720 while the text was laid out at 708, 720 could not be chosen, and two session reads used the
+model's mode 15. Fixed:
+- uo-docx `model/document.rs`: `Document::word_compat_mode()` (12 for a package without settings, else the model's) and
+  `Document::word_default_tab_fallback()` (708 while `read_facts.default_tab_absent`), outside the `canon` gate.
+- `session/ops/text_layout.rs` `apply_default_tab` clears `read_facts.default_tab_absent`: an explicit value (the dialog,
+  the undo's restore) is what the layout follows from then on.
+- `session/ops/lists.rs` `default_tab_stop()` (`getDefaultTabStop`, the ruler's and `getTabStops`' `defaultTabTwips`, the
+  list indent shift, `set_default_tab_stop`'s early return) answers Word's 708 when the settings give none;
+  `session/ops/sections.rs` `F4State::install` loads that value (the undo restores 708).
+- `session/ops/references/manual_hyph.rs` (the manual hyphenation minimums) and `session/ops/completion.rs` (the table style
+  gallery's modern/2010 choice) read the effective mode.
+- `session/io.rs` `OpenOptions::ts_missing_settings` (default `false`): drops the reader's facts at the open, so the session
+  and the layout answer the frozen TS's 720 and mode 15 (for strict replays; none needed it: uo-docx 668/668 and the wasm
+  `session_replay` 10/10 families with 0 mismatches unchanged).
+- Test `uo-docx-layout/tests/word_w7c.rs` `default_tab_stop_of_a_package_without_one_follows_the_session` over
+  `ns-tabs-none` (no part), `ns-tabs-bare` (empty part), `ns-tabs-c15notab`: `getDefaultTabStop` 708 at load, the session's
+  layout = the reader's under Word's rules, `setDefaultTabStop(720)` and `(1440)` each move the tab-led lines, two undos
+  return to 708 and the loaded layout; `ts_missing_settings` answers 720.
+- Found by the format harness after the fix: the Tabs dialog re-read its own display — 708 tw shown "1,25 cm" parses to
+  709 — so OK without touching the field called `setDefaultTabStop(709)` (a change event and a dirty document; Word keeps
+  the value). `write/packages/editor/src/chrome-dialogs.ts`: the default tab stop is applied only when the field's text
+  changed (both engines; the frozen TS's 720 = "1,27 cm" parsed back to 720 was unaffected).
+
+**W/2 (major) — the two `editor_switch_format` failures are item 2's; the record's "not W's" was wrong.** Attributed:
+- `uo-wasm/tests/w7c_item2_native.rs` (new): the shell's ruler line (`uo_shell_fmt_ruler`, what `getRulerInfo` reads) of
+  `tables.docx` (no settings part) on the session's layout with the default options = `{"x":1701,"frame":[0,1784]}`
+  (1701..3485, the first cell), with ONLY the layout bit 13 (`LAYOUT_TS_MISSING_SETTINGS`) = `{"x":1701,"frame":[0,8504]}`
+  (1701..10205, the TS editor's answer in the harness).
+- `word_w7c.rs` `item2_attribution_of_the_editor_harness_documents`: `tables.docx`, and `hyperlinks.docx` with a 2×2 table
+  inserted at its start (the `print-cell` scenario): Word's rules with only `ts_missing_settings_mode15` on lay out exactly as
+  `ts_strict()` (every line's x and frame, every painted page) and differently from Word's rules; the first cell's text at
+  x 1701 (mode 12) against 1809 / 1814 (mode 15).
+- Declared in `editor_switch_format.mjs`: `W7C_TABLES_RULER` (`tables|ruler`, the `ruler` facet of steps 0–2 — the matcher's
+  new `to` bound — and the end screen; Word's own ruler over that cell is not measured, the frame follows from item 2's
+  geometry), the `print-cell` check accepts a difference in the Print screen alone (logged as declared; TS `fcd571a5`, Rust
+  `13814fe5`); W's record paragraphs "Not done" and "Verification" corrected in place.
+- With W/1 the session answers 708 on every d3 fixture (none has `w:defaultTabStop`; `styles.docx` has a settings part
+  without it): the format harness now keeps the default tab stop in ONE facet, `defTab` (`getDefaultTabStop` and the copies
+  in `getTabStops`/`getRulerInfo`, checked to agree within each engine, stripped from `tabs` and `ruler`, which stay strict;
+  the Outline step's answer drops it too), declared `W7C_DEFTAB` ("Word manda sobre o TS (item 2, default tab stop 708)":
+  COM `DefaultTabStop` 35.4 pt, oracle `nosettings`) on `headers|para`, `tables|ruler`, `sections|ruler`, `hyperlinks|bar`,
+  `fields|view`, `many-fields|view`, `sections|view`.
+
+**W/3 (minor)** — the README/CHANGELOG bullet now says the error text is painted bold and that the editor's SAVED bold is
+open (`<w:b/><w:bCs/>`, PAGEREF also `<w:noProof/>`: the lossless writer, for the session/writer owner). Not closed here.
+
+**W/4 (minor) — `bookmark_where` scanned the whole document per reference and pass.** `ldoc.rs` `LDoc::bookmark_mark_index`
+(a `OnceCell<BookmarkMarkIndex>`, name → the first paragraph's range text or `None` when unterminated there), built on the
+first lookup of a layout call by `engine/field_refs.rs` `bookmark_mark_index`, its runs charged to the budget (`bookmark_where`
+now takes `&mut Cx` and returns `LResult`; `note_ref_value` split into the bookmark check and `note_ref_body`). Same answers
+(the `refbm` series 10/10 Word-equal, `ref_errors_are_bold`, fidelity_w7 4/4); `note_read_all()` stays (the result depends
+on every story, LA7).
+
+**W/5 (minor) — viewer_switch page scoping.** The 16 W7C entries scope `textLayer` and `pixels` to the pages the attributed
+switch changes (`W7C_PAGES`, 0-based, printed by `attribute_documents_to_the_word_rules` — now with `[pages a → b; changed …]`
+per switch): f7a__7__12 1 2 3 8 9; f7c__7__11 0–3 (3 → 4 pages); f7c__7__10 1 2; f7c__7__13 1 2 4 5 8 11–15; f7c__7__14
+3 4 5; f7c__7__15 0 3; f7c__7__2 9; f7c__7__5 2 6 7; f7d__7__0/3/6/7/10 0; f7d__7__8 0 1; f8__7__10 1 2; f8__7__2 10.
+`find`, `headings`, `linkBoxes`, `pages` and `pdf` stay per document (no page in their detail; the pdf is one hash).
+
+**W/6 (minor)** — `options.rs` `ts_linked_box_cell_chain` documents its second rule: mode 15 wraps a cell's text around ANY
+`layoutInCell="0"` box (linked or not); the uo-docx-layout.md row already listed it.
+
+**W/7 (escalation, unchanged — still OPEN, not relabelled)**: item 1, tint/shade rounding (TS rule 2,323 / 3,356 samples,
+best model 2,662; no closed form) — for the coordinator; item 5, hyphenation (pt 877/900, en 809/900, es 898/900; closing it
+needs a download of licence-checked pattern sources, the maintainer's call) — for the coordinator/maintainer; smaller item-4
+residuals — REF/PAGEREF to a missing or non-body bookmark in the viewer's non-lossless read (a reader-side index of non-body
+bookmarks: uo-docx reader owner), PAGEREF to a header bookmark, run formatting of multi-paragraph REF ranges (uo-docx-layout,
+W's next round), the saved bold (lossless writer: session/writer owner); the mode-12 `layoutInCell="0"` table placement
+(`lc-cell-lic0-c12`, Δx 116.96 pt: uo-docx-layout, W's next round); the writer saving mode 12 for a package without settings
+(session owner); the .NET port of the four rules and of this round's fallback (`UniversalOffice.Docx`, not touched).
+
+#### Files (this round)
+
+uo-docx: `src/model/document.rs`, `src/session/io.rs`, `src/session/ops/{lists,text_layout,sections,completion}.rs`,
+`src/session/ops/references/manual_hyph.rs`. uo-docx-layout: `src/ldoc.rs`, `src/options.rs`, `src/engine/field_refs.rs`,
+`src/engine/fields.rs`, `tests/word_w7c.rs`. uo-wasm: `tests/w7c_item2_native.rs` (new), `tests/browser/editor_switch_format.mjs`,
+`tests/browser/viewer_switch.mjs`. Editor: `write/packages/editor/src/chrome-dialogs.ts`. Docs: this file.
+
+#### Verification (logs `core/target/m2-wsession/w7c-w/fr1/`)
+
+- Natives: uo-docx-layout all targets (release) **173 passed, 0 failed** (word_w7c **14**: the 12 + `default_tab_stop_of_a_package_without_one_follows_the_session`, `item2_attribution_of_the_editor_harness_documents`); uo-fonts `--all-features` + uo-render **434 passed, 0 failed**; uo-docx `--release --all-features --test all --skip memory_` **668 passed, 0 failed, 1 ignored**; uo-wasm `w7c_item2_native` 1/1, `session_native` 11/11, `shell_native` 9/9, `shell_stories_native` 8/8, `shell_objects_native` 5/5, `shell_caret_native` 4/4, `shell_review_native` 4/4, `shell_format_native` 4/4; uo-ffi `server_parity` 3/3.
+- Full layout parity, strict, captured from the frozen TS: ci 200 documents / 600 facets, f7a 300 / 900, f7b 200 / 600, f7c 300 / 900, f7d 200 / 600 — **0 mismatches each**; f8 200 documents, **3,000 equal**, 0 mismatches; the Word oracle **2,742 documents / 8,226 facets, 0 mismatches** (= 2,742/2,742, unchanged). Word agreement (`UO_W7C_ORACLE`, installed fonts): 2,741 cases, 21 change under Word's rules, Word-equal 21 → 21 (unchanged).
+- Wasm (`--profile wasm`, `-j 3`): selftest 11,872,102 B, session_count 10,502,583 B, session 10,502,079 B, viewer 4,146,725 B. Node: `session_api` 5/5, `session_replay` (d2a,f1,f2,f3,f5,f6,f7,f8,f9,f10) **10/10, 0 mismatches in every family** (accepted f2 1, f7 8, f8 122, f9 10, f10 53 — unchanged), `shell_api` 2/2, `write_api` 8/8.
+- Chromium (headless): `viewer_switch --mode all` (stride 1) **ok** — 78 documents, 592 pages, 0 undeclared, the 16 W7C entries page-scoped; `editor_switch_format --mode all` **ok** (after the Tabs dialog fix; font 947 equal + 2 declared, para 1,073 + 5 (`headers|para` defTab), ruler 669 + 42 (`tables|ruler` defTab + item-2 frame/screen, `sections|ruler` defTab), text 708 + 7, view 2,931 + 431 (LQ2 + W7C_DEFTAB + item 4), bar 608 + 23 (`hyperlinks|bar` defTab); print-cell: the Print screen alone, declared); `editor_switch --mode all` **ok**; `--mode parity` **ok**; `editor_switch_fidelity` **ok**; `editor_switch_stories` **ok**; `editor_switch_review` **ok**; `editor_switch_completion` **ok**; `editor_switch_objects` 1 failure, **not W's**: `f7b__7__0|objects` frame 0 proxy 284 vs 258 (V's F-1, the same numbers as before this round; f7b documents carry settings with `w:defaultTabStop` and no W switch changes them).
+- TS: `editor_switch_tsc.mjs` editor and viewer exit 0, no output; vitest editor 34 files / 334 tests.
+- Packaging: `build-pkg font-files document-viewer write` (`UO_REQUIRE_ENGINE_WASM=1`) exit 0 (`uo-write.wasm` 4,049 KB, `uo-write-editor.wasm` 10,256 KB); `pkg_smoke` ok.
+- Lint: `check-changed --jobs 3` **all steps passed** (after factoring `word_w7c.rs`'s closure type: `clippy::type_complexity`, and a SAFETY comment per unsafe block in `w7c_item2_native.rs`); `rustfmt --edition 2024 --check` clean on every file this round touched. D: 42 GB free at the end.

@@ -23,7 +23,8 @@ export function objectsHandlers(ed: RustEditor): Record<string, (...args: never[
     ed.hooks.key.unshift((e) => onKey(o, e));
     // the handles over the selection (the TS paintFloatAndCaret runs after the selection); the overlay hook is S's, the paint hook the fallback
     const hk = ed.hooks as typeof ed.hooks & { overlay?: ((ctx: CanvasRenderingContext2D, page: number, scale: number) => void)[]; hideSelection?: (() => boolean)[] };
-    (hk.overlay ?? hk.paint).push((ctx, page, scale) => paintPage(o, ctx, page, scale));
+    // wave 7 (B): tagged `front: 'O'` (as S's hooks) so the stories harness keeps the handles the TS paintFloatAndCaret draws too
+    (hk.overlay ?? hk.paint).push(Object.assign((ctx: CanvasRenderingContext2D, page: number, scale: number) => paintPage(o, ctx, page, scale), { front: 'O' }));
     // an inline picture selected: no text selection highlight (the TS picSel)
     hk.hideSelection?.push(() => hideTextSelection(o));
     ed.hooks.adopt.push(() => { o.cache = null; o.crop = null; o.mode = null; o.drag = null; for (const b of o.bitmaps.values()) if (b !== 'loading') b.close(); o.bitmaps.clear(); });

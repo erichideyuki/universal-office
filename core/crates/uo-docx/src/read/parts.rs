@@ -697,6 +697,11 @@ pub fn numbering_images(ctx: &ReadCtx<'_>, part: &str) -> Result<Vec<(String, St
 /// `readDocFormatting` (parts.ts:539): styles, numbering (with its picture bullets' images),
 /// theme, settings and font table of the package.
 pub fn read_doc_formatting(ctx: &mut ReadCtx<'_>) -> Result<DocFormatting, DocxError> {
+    read_doc_formatting_facts(ctx).map(|(f, _)| f)
+}
+
+/// [`read_doc_formatting`] and what it saw of the settings part (wave 7c, W, item 2: [`crate::model::ReadFacts`]).
+pub fn read_doc_formatting_facts(ctx: &mut ReadCtx<'_>) -> Result<(DocFormatting, crate::model::ReadFacts), DocxError> {
     let rels = match part_doc(ctx, "word/_rels/document.xml.rels")? {
         Some(d) => rels::from_document(&d),
         None => Vec::new(),
@@ -730,12 +735,17 @@ pub fn read_doc_formatting(ctx: &mut ReadCtx<'_>) -> Result<DocFormatting, DocxE
     let (_, theme_doc) = load(ctx, "theme", "word/theme/theme1.xml")?;
     let (_, settings) = load(ctx, "settings", "word/settings.xml")?;
     let (_, fonts) = load(ctx, "fontTable", "word/fontTable.xml")?;
-    Ok(DocFormatting {
+    let facts = crate::model::ReadFacts {
+        settings_absent: settings.is_none(),
+        default_tab_absent: settings.as_ref().is_none_or(|d| d.root().first_child("w:defaultTabStop").is_none()),
+    };
+    let f = DocFormatting {
         styles: read_style_sheet(styles.as_ref()),
         numbering,
         theme: read_theme(theme_doc.as_ref())?,
         settings: read_settings(settings.as_ref()),
         font_table: read_font_table(fonts.as_ref()),
         ..DocFormatting::default()
-    })
+    };
+    Ok((f, facts))
 }

@@ -34,7 +34,7 @@ pub mod sources;
 pub mod story;
 pub mod table;
 
-pub use document::{Bookmarks, Comment, CoreProps, Document, Notes};
+pub use document::{Bookmarks, Comment, CoreProps, Document, Notes, ReadFacts};
 pub use media::{MediaRef, MediaStore};
 pub use para::{ParaProps, Paragraph};
 pub use run::{Run, RunExt, RunProps};

@@ -34,7 +34,8 @@
 //!   and the value string (the link, or the plugin inline's type).
 //! - `uo_layout_block_line`: `page u32, y f64` (twips), status 1 when the block has no line.
 //! - `uo_layout_image_bytes` / `uo_layout_image_svg`: the bytes of image `i` / its SVG version; status 8 when
-//!   there is none (no SVG), 6 for an unknown index.
+//!   there is none (no SVG), 6 for an unknown index. `uo_layout_image_rgba`: image `i` decoded by uo-image,
+//!   `width u32, height u32` then the RGBA8 rows; status 8 when the decoder refuses it (the editor's fallback, F2).
 //! - `uo_layout_warnings`: UTF-8 lines. `uo_layout_missing_faces`: UTF-8 lines `family\tbold\titalic`
 //!   (`0`/`1`). `uo_write_env_take_missing`: UTF-8 lines `family\tregular,bold,…`.
 //! - `uo_write_hyphenation_patterns`: UTF-8 lines, the pattern ids to fetch and register.
@@ -490,6 +491,22 @@ pub const LAYOUT_REVISIONS_SHIFT: u32 = 4;
 pub const LAYOUT_HYPHENATION_LANGUAGES: u32 = 1 << 8;
 /// bit 9: poll the host import `uo_host.layout_poll()` during the layout; non-zero cancels (G4).
 pub const LAYOUT_CANCEL_POLL: u32 = 1 << 9;
+/// bit 10 (wave 7, B, gate-O3): the frozen TS's empty theme for a package without a theme part
+/// (`LayoutOptions::ts_empty_theme`): only the parity tests against the TS captures set it; the product follows Word.
+pub const LAYOUT_TS_EMPTY_THEME: u32 = 1 << 10;
+/// bit 11 (wave 7, merge fixer F2, round 2; ED-713): the frozen TS's PAGEREF page without the chapter numbers
+/// (`LayoutOptions::ts_pageref_without_chapter`): only the parity tests against the TS captures set it; the product follows
+/// Word.
+pub const LAYOUT_TS_PAGEREF_WITHOUT_CHAPTER: u32 = 1 << 11;
+/// bits 12–17 (wave 7c, W): the frozen TS's behaviour where Word differs (`LayoutOptions::ts_theme_tint`,
+/// `ts_missing_settings_mode15`, `ts_linked_box_cell_chain`, `ts_ref_bookmarks`, `ts_hyphenation_patterns`,
+/// `ts_keep_lines_within_page`): only the parity tests against the TS captures set them; the product follows Word.
+pub const LAYOUT_TS_THEME_TINT: u32 = 1 << 12;
+pub const LAYOUT_TS_MISSING_SETTINGS: u32 = 1 << 13;
+pub const LAYOUT_TS_LINKED_CELL: u32 = 1 << 14;
+pub const LAYOUT_TS_REF_BOOKMARKS: u32 = 1 << 15;
+pub const LAYOUT_TS_HYPHENATION: u32 = 1 << 16;
+pub const LAYOUT_TS_KEEP_LINES: u32 = 1 << 17;
 
 static GENERATION: AtomicU32 = AtomicU32::new(1);
 
@@ -535,6 +552,15 @@ fn layout_options(
     if flags & LAYOUT_CANCEL_POLL != 0 {
         o.cancel_poll = Some(host::layout_poll);
     }
+    o.ts_empty_theme = flags & LAYOUT_TS_EMPTY_THEME != 0; // wave 7 (B)
+    o.ts_pageref_without_chapter = flags & LAYOUT_TS_PAGEREF_WITHOUT_CHAPTER != 0; // ED-713
+    // wave 7c (W)
+    o.ts_theme_tint = flags & LAYOUT_TS_THEME_TINT != 0;
+    o.ts_missing_settings_mode15 = flags & LAYOUT_TS_MISSING_SETTINGS != 0;
+    o.ts_linked_box_cell_chain = flags & LAYOUT_TS_LINKED_CELL != 0;
+    o.ts_ref_bookmarks = flags & LAYOUT_TS_REF_BOOKMARKS != 0;
+    o.ts_hyphenation_patterns = flags & LAYOUT_TS_HYPHENATION != 0;
+    o.ts_keep_lines_within_page = flags & LAYOUT_TS_KEEP_LINES != 0;
     if flags & LAYOUT_HYPHENATION_LANGUAGES != 0 {
         o.hyphenation_languages = Some(utf8(hyph)?.split('\n').filter(|l| !l.is_empty()).map(Box::<str>::from).collect());
     }
@@ -926,6 +952,36 @@ pub unsafe extern "C" fn uo_layout_image_svg(l: *const UoLayout, image: usize) -
     match view_of(&l.view).resources().images.get(image) {
         Some(im) => im.svg.as_ref().map_or_else(|| buf(NO_RESOURCE, Vec::new()), |b| buf(OK, b.to_vec())),
         None => buf(NO_PAGE, Vec::new()),
+    }
+}
+
+/// Image `image` of the layout decoded by uo-image (`decodeRaster`: PNG, GIF, BMP, TIFF) at the target's
+/// limits: `width u32, height u32` (little endian) then the RGBA8 rows. Status 8 when the decoder refuses the
+/// bytes (JPEG, a metafile, malformed, over the limits), 6 for an unknown index.
+///
+/// Wave 7 (F2): the editor's fallback when the browser refuses a raster — the TS editor's `decodeImage` catches
+/// `createImageBitmap` and decodes with the engine's `decodeRaster` (a truncated PNG: `pictures.docx`), so its
+/// picture paints and prints; the viewer has no such fallback (neither does the TS viewer).
+///
+/// # Safety
+/// `l` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_layout_image_rgba(l: *const UoLayout, image: usize) -> *mut UoBuf {
+    // SAFETY: forwarded.
+    let Some(l) = (unsafe { layout_ref(l) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(im) = view_of(&l.view).resources().images.get(image) else { return buf(NO_PAGE, Vec::new()) };
+    match uo_image::decode_raster(&im.bytes, &uo_image::ImageLimits::DEFAULT) {
+        Ok(r) => {
+            let mut out = Vec::new();
+            if out.try_reserve_exact(8 + r.data.len()).is_err() {
+                return buf(NO_RESOURCE, Vec::new());
+            }
+            out.extend_from_slice(&r.width.to_le_bytes());
+            out.extend_from_slice(&r.height.to_le_bytes());
+            out.extend_from_slice(&r.data);
+            buf(OK, out)
+        }
+        Err(_) => buf(NO_RESOURCE, Vec::new()),
     }
 }
 

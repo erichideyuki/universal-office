@@ -57,6 +57,20 @@ pub struct F2State {
     /// the picture bullets' images by relationship id (`DocNumbering.images`)
     images: Option<Vec<(Str, ImageData)>>,
     pub(crate) style_idx: Option<(VersionId, Arc<StyleIndex>)>,
+    /// wave 7 (A2): the picture bullets added by the editor (`images` with `fresh` of numbering-store.ts): the relationship
+    /// id, the bytes and the extension, written at save (`writeImages`)
+    pub(crate) fresh_images: Vec<(Str, Arc<[u8]>, Str)>,
+}
+
+/// wave 7 (A2): the picture of a picture bullet (`defineListLevel({ picture })`): the bytes, the extension, the natural
+/// size in points (`imageSize(data)` × 0.75, 96 × 0.75 without one: the shell measures it) and the title.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PicBulletIn {
+    pub data: Arc<[u8]>,
+    pub ext: Str,
+    pub w_pt: f64,
+    pub h_pt: f64,
+    pub name: Str,
 }
 
 // ───────────────────────── the public types ─────────────────────────
@@ -309,6 +323,22 @@ impl Session {
         n
     }
 
+    /// `numbering.addPicBullet(img, wPt, hPt, title)` (wave 7, A2): the store's new `w:numPicBullet`; the picture joins the
+    /// numbering's images (the parsed numbering attaches it; the save writes it). Answers the `w:numPicBulletId`.
+    fn add_pic_bullet(&mut self, pb: &PicBulletIn) -> f64 {
+        let _ = self.num_parsed();
+        let imgs: Vec<String> = self.f2.images.as_ref().map(|v| v.iter().map(|(r, _)| r.to_string()).collect()).unwrap_or_default();
+        let fresh: Vec<String> = self.f2.fresh_images.iter().map(|(r, _, _)| r.to_string()).collect();
+        let taken = |r: &str| imgs.iter().any(|x| x == r) || fresh.iter().any(|x| x == r);
+        let (id, rid) = store::add_pic_bullet(&mut self.numbering, &taken, pb.w_pt, pb.h_pt, &pb.name);
+        let media = self.doc.media.add(&pb.data);
+        let image = ImageData { data: crate::model::media::MediaRef(media), ext: pb.ext.clone(), ..ImageData::default() };
+        self.f2.images.get_or_insert_with(Vec::new).push((rid.as_str().into(), image));
+        self.f2.fresh_images.push((rid.as_str().into(), Arc::clone(&pb.data), pb.ext.clone()));
+        self.f2.parsed = None;
+        id
+    }
+
     /// `syncNumbering()`: the engine uses the current numbering.
     pub(crate) fn sync_numbering(&mut self) {
         let n = self.num_parsed();
@@ -448,6 +478,10 @@ impl Session {
 
     /// `useBuiltinStyle(name)`: the built-in becomes defined and visible in the style sheet.
     fn use_builtin_style(&mut self, name: &str) -> Option<String> {
+        // `this.stylesEditable() ? … : undefined` (3561; wave 7, A1)
+        if !self.styles_editable() {
+            return None;
+        }
         self.builtin_style_id(name).ok().map(|s| s.to_string())
     }
 
@@ -898,9 +932,14 @@ impl Session {
         Ok(true)
     }
 
-    /// `defaultTabStop()`: the one the dialog set, the file's, or 708.
+    /// `defaultTabStop()`: the one the dialog set, the file's, or 708. Wave 7c (W, item 2, fix round 1): a file whose
+    /// settings give no `w:defaultTabStop` answers Word's 708 (the value the layout uses; the frozen TS's model says 720,
+    /// kept by a strict replay's `OpenOptions::ts_missing_settings`).
     pub(crate) fn default_tab_stop(&self) -> f64 {
         self.settings.default_tab.unwrap_or_else(|| {
+            if let Some(w) = self.doc.word_default_tab_fallback() {
+                return w;
+            }
             let t = self.doc.formatting.settings.default_tab_stop;
             t.as_f64().unwrap_or(708.0)
         })
@@ -954,7 +993,7 @@ impl Session {
     }
 
     /// `previousList(pi)`: the list before `pi` with the same format as the item's level; 0 if none.
-    fn previous_list(&mut self, pi: usize) -> f64 {
+    pub(crate) fn previous_list(&mut self, pi: usize) -> f64 {
         let Some(n) = self.para_num_at(pi).filter(|n| n.num_id > 0.0) else { return 0.0 };
         let lvl = self.num_level(n.num_id, n.ilvl);
         for k in (0..pi).rev() {
@@ -1031,9 +1070,26 @@ impl Session {
     /// `defineListLevel(o)`: the item's level (or a new list) with the bullet character, or the
     /// number format and text, its formatting and alignment. No `w:tplc` (a format of its own).
     pub(crate) fn define_list_level(&mut self, o: &ListLevelFormat) -> Result<(), CommandError> {
-        if !self.can_edit() || (o.bullet.is_none() && o.num_fmt.as_deref().is_none_or(str::is_empty)) {
+        self.define_list_level_with(o, None)
+    }
+
+    /// `defineListLevel(o)` with `o.picture` (wave 7, A2): a picture bullet keeps the Symbol character in reserve (as Word
+    /// writes it) and gets a new `w:numPicBullet` (`addPicBullet`) and the level's `w:lvlPicBulletId`.
+    pub(crate) fn define_list_level_with(&mut self, o: &ListLevelFormat, pic: Option<&PicBulletIn>) -> Result<(), CommandError> {
+        if !self.can_edit() || (o.bullet.is_none() && o.num_fmt.as_deref().is_none_or(str::is_empty) && pic.is_none()) {
             return Ok(());
         }
+        let picked;
+        let o = if pic.is_some() && o.bullet.is_none() {
+            picked = ListLevelFormat {
+                bullet: Some("\u{F0B7}".to_owned()),
+                font: Some(o.font.clone().unwrap_or_else(|| "Symbol".to_owned())),
+                ..o.clone()
+            };
+            &picked
+        } else {
+            o
+        };
         let had = self.list_info();
         if had.is_none_or(|h| h.abs_id < 0.0) {
             self.apply_list_library_inner(o.bullet.is_some(), Some(0))?;
@@ -1052,10 +1108,13 @@ impl Session {
             (None, Some(t)) => esc(t),
             (None, None) => esc(&format!("%{}.", to_js_string(cur.ilvl + 1.0))),
         };
+        // a picture bullet: a new w:numPicBullet (the picture's natural size) and the level's w:lvlPicBulletId
+        let pic_id = pic.map(|pb| self.add_pic_bullet(pb));
         let lvl = format!(
-            "<w:lvl w:ilvl=\"{}\"><w:start w:val=\"{}\"/><w:numFmt w:val=\"{num_fmt}\"/><w:lvlText w:val=\"{lvl_text}\"/><w:lvlJc w:val=\"{}\"/><w:pPr>{ind}</w:pPr>{}</w:lvl>",
+            "<w:lvl w:ilvl=\"{}\"><w:start w:val=\"{}\"/><w:numFmt w:val=\"{num_fmt}\"/><w:lvlText w:val=\"{lvl_text}\"/>{}<w:lvlJc w:val=\"{}\"/><w:pPr>{ind}</w:pPr>{}</w:lvl>",
             to_js_string(cur.ilvl),
             to_js_string(start),
+            pic_id.map_or_else(String::new, |id| format!("<w:lvlPicBulletId w:val=\"{}\"/>", to_js_string(id))),
             o.align.as_deref().unwrap_or("left"),
             level_rpr_xml(o.font.as_deref(), o.bold, o.italic, o.size_pt, o.color.as_deref()),
         );
@@ -1110,7 +1169,7 @@ impl Session {
     /// `None` when it was refused.
     pub fn create_list_style(&mut self, name: &str, levels: &[ListLevelSpec], apply: bool) -> Result<Option<String>, CommandError> {
         let nm = uo_jsnum::text::trim(name);
-        if !self.can_edit() || nm.is_empty() || self.style_name_taken(nm, None) {
+        if !self.can_edit() || !self.styles_editable() || nm.is_empty() || self.style_name_taken(nm, None) {
             return Ok(None);
         }
         if !self.inner_guard("createListStyle", GuardArg::None) {
@@ -1311,7 +1370,51 @@ pub(crate) fn save_numbering(
         }
     }
     let out = store::with_tentative(store_, &f2.num_touched, &used).unwrap_or_default();
-    crate::write::parts::write_numbering_part(pkg, out)
+    crate::write::parts::write_numbering_part(pkg, out)?;
+    write_pic_bullet_images(pkg, f2, xml)
+}
+
+/// `numbering.writeImages(pkg, partPath)` (numbering-store.ts 115, wave 7 A2): the new picture bullets the part uses — the
+/// media (`word/media/uwbulletN.ext`), the part's relationship and the content type of the extension.
+fn write_pic_bullet_images(pkg: &mut uo_opc::Package, f2: &F2State, xml: &str) -> Result<(), DocxError> {
+    let used: Vec<&(Str, Arc<[u8]>, Str)> = f2.fresh_images.iter().filter(|(rid, _, _)| xml.contains(&format!("r:id=\"{rid}\""))).collect();
+    if used.is_empty() {
+        return Ok(());
+    }
+    let part =
+        crate::write::parts::part_by_rel_type(pkg, "numbering", "word/numbering.xml")?.unwrap_or_else(|| "word/numbering.xml".to_owned());
+    let slash = part.rfind('/').map_or(0, |i| i + 1);
+    let rels_path = format!("{}_rels/{}.rels", &part[..slash], &part[slash..]);
+    let mut rels = pkg.part_text(&rels_path)?.map(std::borrow::Cow::into_owned).unwrap_or_else(|| {
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"></Relationships>".to_owned()
+    });
+    let mut ct = pkg.part_text("[Content_Types].xml")?.map(std::borrow::Cow::into_owned);
+    for (rid, data, ext0) in used {
+        if rels.contains(&format!("Id=\"{rid}\"")) {
+            continue;
+        }
+        let ext = if &**ext0 == "jpg" { "jpeg" } else { &**ext0 };
+        let mut k = 1;
+        while pkg.contains(&format!("word/media/uwbullet{k}.{ext}")) {
+            k += 1;
+        }
+        pkg.set_part(format!("word/media/uwbullet{k}.{ext}"), data.to_vec());
+        rels = rels.replacen(
+            "</Relationships>",
+            &format!("<Relationship Id=\"{rid}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/uwbullet{k}.{ext}\"/></Relationships>"),
+            1,
+        );
+        if let Some(c) = ct.as_mut()
+            && !c.to_ascii_lowercase().contains(&format!("extension=\"{}\"", ext.to_ascii_lowercase()))
+        {
+            *c = c.replacen("</Types>", &format!("<Default Extension=\"{ext}\" ContentType=\"image/{ext}\"/></Types>"), 1);
+        }
+    }
+    pkg.set_part_text(rels_path, rels);
+    if let Some(c) = ct {
+        pkg.set_part_text("[Content_Types].xml", c);
+    }
+    Ok(())
 }
 
 // ───────────────────────── text helpers ─────────────────────────
@@ -1322,7 +1425,7 @@ fn count_level_refs(t: &str) -> usize {
 }
 
 /// `parseLevel(lvl)`: a raw `w:lvl` read as the engine reads it.
-fn parse_level(lvl: &str) -> Option<NumLevel> {
+pub(crate) fn parse_level(lvl: &str) -> Option<NumLevel> {
     let wrap = format!("<w:numbering><w:abstractNum w:abstractNumId=\"0\">{lvl}</w:abstractNum></w:numbering>");
     let n = crate::read::parts::read_numbering_text(&wrap, &DocxLimits::default()).ok()?;
     n.abstract_nums.get("0")?.levels.values().next().cloned()

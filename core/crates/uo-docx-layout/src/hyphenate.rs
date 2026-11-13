@@ -127,7 +127,7 @@ pub fn mark_hyphenation(
     {
         return Ok(());
     }
-    let (left, right) = hyphen_mins(s.compatibility_mode.to_number());
+    let (left, right) = hyphen_mins(cx.ldoc.compat_mode()); // wave 7c (W, item 2)
     let default_lang: &str = &opts.lang;
     let ch_of = |g: &Glyph| -> Vec<u16> { g.ch.as_units().to_vec() };
     let mut k = 0;

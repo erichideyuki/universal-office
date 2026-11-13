@@ -37,6 +37,12 @@ impl VersionStore {
         self.texts.get(&self.cur).and_then(Option::as_ref)
     }
 
+    /// The text loaded with the document (`versions[0]`; wave 7c, S: the numbering part a save puts back).
+    #[must_use]
+    pub fn base_text(&self) -> Option<&Arc<str>> {
+        self.base.as_ref()
+    }
+
     /// `version`.
     #[must_use]
     pub fn version(&self) -> VersionId {

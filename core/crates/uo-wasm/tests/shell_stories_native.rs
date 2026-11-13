@@ -196,7 +196,7 @@ fn boxes(l: *const UoLayout) -> Vec<[f64; 4]> {
     // SAFETY: live layout.
     let (st, b) = take(unsafe { uo_shell_cell_boxes(l, 0) });
     assert_eq!(st, 0);
-    b.chunks_exact(32).map(|c| std::array::from_fn(|i| f64::from_le_bytes(c[i * 8..i * 8 + 8].try_into().unwrap()))).collect()
+    b.as_chunks::<32>().0.iter().map(|c| std::array::from_fn(|i| f64::from_le_bytes(c[i * 8..i * 8 + 8].try_into().unwrap()))).collect()
 }
 
 fn caret(h: *mut UoWriteSession, l: *const UoLayout) -> Option<w::Caret> {

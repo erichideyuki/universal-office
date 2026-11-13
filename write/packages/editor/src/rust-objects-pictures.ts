@@ -5,6 +5,7 @@
 // (decodificar/codificar) vão ao executor (rust-objects-jobs.ts).
 import { uiLang } from '@universal-office/ui';
 import { contentWidthTwips } from './rust-objects-page.js';
+import { ask, cstate as a2State } from './rust-completion-core.js'; // wave 7 (A2): the shape parts (ED-213)
 import {
   cmd, fromWire, locked, nullable, objects, omit, selectedHandle, selectedHandles, send, stateOf, wireColor, wireFormat, wireLine, wireShapeFill,
   type Handle, type ObjState,
@@ -122,6 +123,11 @@ export function picturesHandlers(o: ObjState): Record<string, (...args: never[])
       format: f,
     };
   };
+  /** wave 7 (A2, ED-213): the session's shape parts of the selected shape or box (rust-completion-core.ts binding) */
+  const shapeParts = (): Dict | null => {
+    const c = a2State(o.ed);
+    return ask(c, 'shapeParts', (b, ss) => b.shapeParts(ss)) as Dict | null;
+  };
   const shapeState = (): Dict | null => {
     const s = objectState(o, false);
     if (!s || s['kind'] === 'image') return null;
@@ -132,9 +138,11 @@ export function picturesHandlers(o: ObjState): Record<string, (...args: never[])
       lockAspect: !!s['lockAspect'], moveWithText: !!s['moveWithText'], lockAnchor: !!s['lockAnchor'],
       name: s['name'] ?? '', altText: s['altText'] ?? '', decorative: !!s['decorative'],
       geometry: s['geometry'] ?? '', styleIndex: s['styleIndex'] ?? 0, editingText: !!s['editingText'],
-      // the TS ShapeFormat has no `blip` nor `srcRect` (the wire's PictureFormat base always has them); `fill`, `body`, `story`
-      // and `textbox` are not on the wire (ED-213)
-      format: (({ blip: _b, srcRect: _s, ...rest }) => { void _b; void _s; return rest; })(fromWire(s['format']) as Dict),
+      // the TS ShapeFormat has no `blip` nor `srcRect` (the wire's PictureFormat base always has them); a group's format IS
+      // a PictureFormat (the TS `readPictureFormat(raw, { anyShape: true })`): it keeps both. wave 7 (A2, ED-213 closed): the
+      // shape parts (`fill`, `style`, `textbox`, `body`, `story`) come from the session's `readShapeFormat`
+      format: s['kind'] === 'group' ? (fromWire(s['format']) as Dict)
+        : { ...(({ blip: _b, srcRect: _s, ...rest }) => { void _b; void _s; return rest; })(fromWire(s['format']) as Dict), ...(shapeParts() ?? {}) },
     };
     const t = s['text'] as { marginsEmu: number[]; anchor: string; direction: string; wrap?: boolean; autofit: string; upright?: boolean } | undefined;
     if (t) {
@@ -147,12 +155,25 @@ export function picturesHandlers(o: ObjState): Record<string, (...args: never[])
 
   const h: Record<string, (...args: any[]) => unknown> = {
     // ── inserir ──
-    insertImage: async (data: Uint8Array, ext: string) => {
+    insertImage: async (data: Uint8Array, ext: string, obj?: { ole: { progId: string; data: Uint8Array; ext: string }; widthTwips: number; heightTwips: number }) => {
       if (locked(o)) return;
       const maxW = contentWidthTwips(o);
-      await send(o, { t: 'picture', v: omit({ $t: 'insert', data: new Uint8Array(data), ext, maxWidthTwips: maxW }) }, 'insertImage', false);
+      // wave 7 (A2): an embedded object (Insert › Excel Spreadsheet) carries its OLE data and its size (the TS `obj`)
+      const ole = obj ? { progId: obj.ole.progId, data: new Uint8Array(obj.ole.data), ext: obj.ole.ext, widthTwips: obj.widthTwips, heightTwips: obj.heightTwips } : undefined;
+      await send(o, { t: 'picture', v: omit({ $t: 'insert', data: new Uint8Array(data), ext, ole, maxWidthTwips: maxW }) }, 'insertImage', false);
     },
-    insertTextbox: (id = 'simple') => !locked(o) && draw(omit({ t: 'insertTextbox', id, page: o.api.caret()?.page ?? 0, lang: uiLang(o.ed.el) }), 'insertTextbox'),
+    insertTextbox: (id = 'simple') => {
+      if (locked(o)) return false;
+      // wave 7 (A2): an item of the user's gallery (Save Selection to Text Box Gallery) is its stored drawing (the TS `user`)
+      let user: { xml: string } | undefined;
+      if (String(id).startsWith('user:')) {
+        const proto = Object.getPrototypeOf(o.ed.el) as { userTextboxes?: () => { id: string; xml: string }[] };
+        const u = proto.userTextboxes?.call(o.ed.el).find((x) => x.id === id);
+        if (!u) return false;
+        user = { xml: u.xml };
+      }
+      return draw(omit({ t: 'insertTextbox', id, page: o.api.caret()?.page ?? 0, lang: uiLang(o.ed.el), user }), 'insertTextbox');
+    },
     // ── estado ──
     selectedImage: () => imageState(),
     selectedShape: () => shapeState(),

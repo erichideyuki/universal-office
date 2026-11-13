@@ -308,6 +308,9 @@ enum QueryOp {
   DefaultCharacterStyle,
   /// the paragraph props of paragraph `para` of the edit story, as stored (`inspectStyle`, `selectionStyleFormat`)
   ParaPropsAt(QParaPropsAt),
+  // ── wave 7, frontier A1 (File, View, Font and Paragraph; record uo-bindings.md "Wave 7 — A1") ──
+  /// `countMatches(q, { within })` (0 for a bad query; the search budget answers 0 too)
+  CountMatches(QCountMatches),
 }
 
 enum QueryAnswer {
@@ -408,6 +411,14 @@ enum QueryAnswer {
   StylesVersion(u32),
   DefaultCharacterStyle(utf16),
   ParaPropsAt(ParaProps),
+  // ── wave 7, frontier A1 ──
+  CountMatches(u32),
+}
+
+/// wave 7, frontier A1: `countMatches(q, o)`
+struct QCountMatches {
+  query: FindQuery,
+  within: Within,
 }
 
 // ── wave 5, frontier R: the wire-only types of its queries and shell exports ──

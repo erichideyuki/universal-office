@@ -600,7 +600,8 @@ impl Engine {
     pub(crate) fn break_column(&mut self, cx: &mut Cx<'_, '_>) -> LResult<()> {
         let gi = self.cur_ps()?.geom;
         let n = self.page_cols()?.len();
-        if (self.col as usize) < n.saturating_sub(1) {
+        // wave 7c (W, item 6): a keepLines paragraph taller than a column in mode 15 goes on on the next PAGE
+        if (self.col as usize) < n.saturating_sub(1) && !self.kl_col_to_page {
             self.col_used.push(self.y - self.col_top);
             self.col_max_y = jm::max(self.col_max_y, self.y);
             self.col += 1;

@@ -273,13 +273,13 @@ impl<'a> CfbFile<'a> {
         } else {
             Vec::new()
         };
-        let mini_fat: Vec<u32> = mini_fat_bytes.chunks_exact(4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+        let mini_fat: Vec<u32> = mini_fat_bytes.as_chunks::<4>().0.iter().map(|b| u32::from_le_bytes(*b)).collect();
         drop(mini_fat_bytes);
 
         // directory: 128-byte entries in a FAT chain (cfb.ts:127-145)
         let dir = read_chain(bytes, sector_shift, &fat, first_dir_sector, None)?;
         let mut raw: Vec<RawEntry> = Vec::with_capacity(dir.len() / 128);
-        for chunk in dir.chunks_exact(128) {
+        for chunk in dir.as_chunks::<128>().0 {
             let units: Vec<u16> = (0..name_units(u16_le(chunk, 0x40))).map(|i| u16_le(chunk, i * 2)).collect();
             // JS keeps lone surrogates in names; they become U+FFFD here
             let name = String::from_utf16_lossy(&units);

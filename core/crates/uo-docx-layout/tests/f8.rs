@@ -434,7 +434,10 @@ fn views_lay_out_a_transformed_document() {
     let s0 = &doc.sections[0].sect_pr;
     let text_w = s0.page_width_twips.to_number() - s0.margin_left_twips.to_number() - s0.margin_right_twips.to_number();
     assert_eq!(draft.pages[0].page.w, uo_jsnum::math::max(2880.0, uo_jsnum::math::round(text_w + 576.0)));
+    // wave 7 (B): Outline = the Draft sheet with the TS editor's outline indent (view_transform.rs), no longer an error
+    let draft_w = draft.pages[0].page.w;
     o.view = ViewTransform::Outline;
-    assert!(eng.layout(DocView::new(&doc), p, &o).is_err());
+    let outline = eng.layout(DocView::new(&doc), p, &o).unwrap();
+    assert_eq!(outline.pages[0].page.w, draft_w);
     eng.clear_caches();
 }

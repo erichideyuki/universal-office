@@ -175,6 +175,9 @@ pub enum FindCmd {
     GoToBookmark { name: String },
     /// `goToComment(id)`
     GoToComment { id: f64 },
+    /// `replaceAll(needle, replacement)` (universal-write.ts 4764; wave 7, A1, native only): the plain, case-insensitive
+    /// replacement over the edit story's paragraphs; the count is `F9Result::Count`
+    ReplaceAllPlain { needle: Vec<u16>, replacement: Vec<u16> },
 }
 
 /// A story of the search (`FindStory`): a stretch of body paragraphs between tables, or a cell.
@@ -1108,8 +1111,84 @@ impl Session {
                 self.go_to_comment(id);
                 Ok(Outcome::Done(self.change_set()))
             }
+            FindCmd::ReplaceAllPlain { needle, replacement } => self.replace_all_plain(&needle, &replacement),
         }
     }
+
+    /// `replaceAll(needle, replacement)` (universal-write.ts 4764): every paragraph of the edit story (`this.model`), the
+    /// text lowered by JS `toLowerCase` (indices of the lowered text, as the TS), past each replacement; a hit over deleted
+    /// text (`rangeHasDeleted`) moves one unit on; tracked: `trackedDelete(range, 'end')` + `insertTyped`, else
+    /// `deleteRange` + `insertText`. One undo step (the TS snapshots even when nothing matches; no lock check, as the TS).
+    fn replace_all_plain(&mut self, needle: &[u16], repl: &[u16]) -> Result<Outcome, CommandError> {
+        if self.paras().is_none() || needle.is_empty() {
+            return self.find_result(F9Result::Count(0));
+        }
+        self.begin_step(false, &[]);
+        let lower = uo_text::case::to_lowercase(needle).into_owned();
+        let mut count = 0u32;
+        let mut pi = 0usize;
+        while pi < self.paras().map_or(0, PVec::len) {
+            let mut from = 0usize;
+            while let Some(p) = self.paras().and_then(|ps| ps.get(pi)) {
+                let text = uo_text::case::to_lowercase(&super::super::text::para_text(p)).into_owned();
+                let Some(idx) = index_of_from(&text, &lower, from) else { break };
+                let (a, b) = (u32::try_from(idx).unwrap_or(u32::MAX), u32::try_from(idx + needle.len()).unwrap_or(u32::MAX));
+                let pu = u32::try_from(pi).unwrap_or(u32::MAX);
+                let range = DocRange::new(DocPosition::new(pu, a), DocPosition::new(pu, b));
+                if range_has_deleted(p, a as usize, b as usize) {
+                    from = idx + 1;
+                    continue;
+                }
+                let r = if self.opts.tracking {
+                    self.tracked_delete(range, false).and_then(|pos| {
+                        self.insert_typed(pos, repl, None)?;
+                        Ok(pos.offset as usize + repl.len())
+                    })
+                } else {
+                    match self.paras_mut().ok_or(CommandError::Position) {
+                        Ok(paras) => guarded::delete_range(paras, range)
+                            .and_then(|pos| guarded::insert_text(paras, pos, repl, None))
+                            .map(|_| idx + repl.len())
+                            .map_err(CommandError::from),
+                        Err(e) => Err(e),
+                    }
+                };
+                match r {
+                    Ok(next) => from = next,
+                    Err(e) => {
+                        self.discard_step();
+                        return Err(e);
+                    }
+                }
+                self.touch_para(pi);
+                count += 1;
+            }
+            pi += 1;
+        }
+        self.f9.result = Some(F9Result::Count(count));
+        Ok(Outcome::Done(self.finish()))
+    }
+}
+
+/// `text.indexOf(needle, from)` over UTF-16 units (`from` past the end: none, unless the needle is empty).
+fn index_of_from(text: &[u16], needle: &[u16], from: usize) -> Option<usize> {
+    if needle.len() > text.len() {
+        return None;
+    }
+    (from..=text.len() - needle.len()).find(|&i| text.get(i..i + needle.len()) == Some(needle))
+}
+
+/// `rangeHasDeleted` for a range inside one paragraph: a deleted run (`props.del`) overlapping `[from, to)`.
+fn range_has_deleted(p: &Paragraph, from: usize, to: usize) -> bool {
+    let mut acc = 0usize;
+    for r in &p.runs {
+        let rs = acc;
+        acc += r.text.len();
+        if r.props.del.is_some() && rs < to && acc > from {
+            return true;
+        }
+    }
+    false
 }
 
 /// `goTo`'s target: `rel` (`+n`, `-n`, `+`, `-`, empty = the next) and `abs` (`n`), from the

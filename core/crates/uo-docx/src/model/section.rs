@@ -157,6 +157,56 @@ pub struct HfPart {
     pub path: Str,
     pub story: Story,
     pub view: HfView,
+    /// Wave 7 (B, HF-T1): while the part is edited and holds a table, the editing view of the TS
+    /// (`hfParts.paras` = `flattenBlocks(blocks)`: the paragraphs with those of the cells), which the
+    /// session's context story is; reconciled into `story` after every command (uo-docx
+    /// `session/ops/hf_flat.rs`). Never read by the layout or the writer.
+    pub flat: EditSlot<Arc<HfFlat>>,
+}
+
+/// The flat editing view of a story that holds a table (wave 7, B: a header/footer part, a note, a
+/// textbox): `story` holds paragraphs only; `base` the paragraphs of `story` when it was last
+/// reconciled with the story's blocks.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HfFlat {
+    pub story: Story,
+    pub base: Vec<Arc<crate::model::para::Paragraph>>,
+}
+
+/// A slot for an editing view (wave 7, B): session state kept next to the model it views, outside
+/// the model's equality (two documents with the same blocks are equal whatever view they carry).
+#[derive(Debug, Clone)]
+pub struct EditSlot<T>(pub Option<T>);
+
+impl<T> Default for EditSlot<T> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+impl<T> PartialEq for EditSlot<T> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl HfPart {
+    /// The story the editor edits: the flat view while there is one, else the part's blocks.
+    #[must_use]
+    pub fn edit_story(&self) -> &Story {
+        match &self.flat.0 {
+            Some(f) => &f.story,
+            None => &self.story,
+        }
+    }
+
+    /// [`HfPart::edit_story`], for a change.
+    pub fn edit_story_mut(&mut self) -> &mut Story {
+        match self.flat.0 {
+            Some(ref mut f) => &mut Arc::make_mut(f).story,
+            None => &mut self.story,
+        }
+    }
 }
 
 js_object! {

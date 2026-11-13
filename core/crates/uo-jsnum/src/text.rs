@@ -112,10 +112,59 @@ impl<'a> Iterator for SplitJsSpace<'a> {
 /// `s.toLowerCase()`: the full Unicode lowercase mapping with the Final_Sigma context (what
 /// `str::to_lowercase` implements). The Unicode versions of the Rust std and of V8 (ICU) can
 /// differ: `tests/text_v8.rs` compares every code point and the Final_Sigma contexts with Node
-/// 24.15 (Unicode 17.0) and names any difference.
+/// 24.15 and names any difference.
+///
+/// Rust 1.100's std follows Unicode 17, where the code points of [`UNICODE17_LOWER`] (new
+/// capitals of Latin Extended-D and -G and two of Latin Extended-E) gained a lowercase mapping;
+/// the V8 of the frozen TS (Node 24.15's ICU) does not have them and keeps them as they are, so
+/// they are kept here too. They were unassigned before, so they are neither cased nor
+/// case-ignorable for V8: the text is lowercased in the runs between them, which gives the same
+/// Final_Sigma contexts.
 #[must_use]
 pub fn to_lowercase(s: &str) -> String {
-    s.to_lowercase()
+    if !s.chars().any(is_unicode17_lower) {
+        return s.to_lowercase();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut start = 0;
+    for (i, c) in s.char_indices() {
+        if is_unicode17_lower(c) {
+            out.push_str(&s.get(start..i).unwrap_or("").to_lowercase());
+            out.push(c);
+            start = i + c.len_utf8();
+        }
+    }
+    out.push_str(&s.get(start..).unwrap_or("").to_lowercase());
+    out
+}
+
+/// The code points whose lowercase mapping Unicode 17 added (Rust 1.100's std has it, the V8 of
+/// the frozen TS does not): measured by `tests/text_v8.rs` over every code point.
+pub const UNICODE17_LOWER: [char; 20] = [
+    '\u{A7DD}',
+    '\u{A7E2}',
+    '\u{AB6C}',
+    '\u{AB6D}',
+    '\u{1DF40}',
+    '\u{1DF48}',
+    '\u{1DF4A}',
+    '\u{1DF4D}',
+    '\u{1DF51}',
+    '\u{1DF68}',
+    '\u{1DF6A}',
+    '\u{1DF6C}',
+    '\u{1DF6E}',
+    '\u{1DF72}',
+    '\u{1DF74}',
+    '\u{1DF76}',
+    '\u{1DF78}',
+    '\u{1DF7A}',
+    '\u{1DF7C}',
+    '\u{1DF7E}',
+];
+
+fn is_unicode17_lower(c: char) -> bool {
+    UNICODE17_LOWER.binary_search(&c).is_ok()
 }
 
 /// The lowercase of one code point as liang.ts `lowerCp` takes it:
@@ -124,6 +173,9 @@ pub fn to_lowercase(s: &str) -> String {
 /// itself (U+0130 stays U+0130: its lowercase is two code points, 2 units against 1).
 #[must_use]
 pub fn lower_cp(c: char) -> char {
+    if is_unicode17_lower(c) {
+        return c;
+    }
     let (mut first, mut count, mut units) = (c, 0usize, 0usize);
     for l in c.to_lowercase() {
         if count == 0 {

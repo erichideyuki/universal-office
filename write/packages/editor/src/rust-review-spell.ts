@@ -5,7 +5,7 @@
 // spell.ts, cujo cache é por objeto `Paragraph`). O sublinhado é adorno de tela (o gancho de pintura), nunca no PDF.
 import { spellcheckAvailable } from '@universal-office/spell-sources';
 import { misspellingAt, wavePath, type Misspelling, type SpellEngine, type SpellSpan, DEFAULT_SPELL_LANG } from './spell.js';
-import { Ctx, charExtent, onLine, pageLines, type Pos } from './rust-review-core.js';
+import { Ctx, charExtent, onLine, storyLines, type Pos } from './rust-review-core.js';
 import { runsOf } from './rust-review-revisions.js';
 
 type Handlers = Record<string, (...args: never[]) => unknown>;
@@ -168,7 +168,8 @@ export function spellHandlers(c: Ctx): { handlers: Handlers; paint: (ctx: Canvas
     const el = c.el as unknown as { paintEngineSpelling?: (ctx: CanvasRenderingContext2D, pg: number) => void } | null;
     el?.paintEngineSpelling?.(ctx, page);
   };
-  /** the TS `paintEngineSpelling` over the session's lines (body scope; text boxes not: ED-304) */
+  /** the TS `paintEngineSpelling` (16913) over EVERY story's lines (body, cells, headers/footers, notes) and the text boxes'
+   *  content in their frame, whatever the edit scope (wave 7c, V: ED-304 closed) */
   const paintEngineSpelling = (ctx: CanvasRenderingContext2D, page: number): void => {
     if (!active() || !c.s || !c.dl) return;
     const spell = ensure();
@@ -176,10 +177,13 @@ export function spellHandlers(c: Ctx): { handlers: Handlers; paint: (ctx: Canvas
     ctx.save();
     ctx.strokeStyle = c.el?.pageDark ? '#ff6b6b' : '#e81123';
     ctx.lineWidth = 11;
-    const cache = new Map<number, Misspelling[] | undefined>();
-    for (const l of pageLines(c, page)) {
-      let list = cache.get(l.para);
-      if (!cache.has(l.para)) { list = getPara(l.para); cache.set(l.para, list); }
+    const cache = new Map<string, Misspelling[] | undefined>();
+    for (const l of storyLines(c, page, fallback())) {
+      let list = cache.get(l.key);
+      if (!cache.has(l.key)) {
+        list = /\p{L}/u.test(l.text) ? spell.get(sessionSpellSpans(l.text, l.runs.map((r) => ({ a: r.a, z: r.z, spell: r.sp, lang: r.lang })))) : [];
+        cache.set(l.key, list);
+      }
       if (!list?.length) continue;
       onLine(ctx, l, () => {
         for (const m of list!) {

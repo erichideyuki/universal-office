@@ -214,6 +214,7 @@ pub fn sample_document() -> Document {
         footnotes,
         endnotes: JsMap::new(),
         special_ids: NoteSpecialIds { footnote: vec![n(-1.0), n(0.0)], ..NoteSpecialIds::default() },
+        ..Notes::default()
     };
 
     let mut comment = Comment { id: n(0.0), text: Utf16::from("c"), ..Comment::default() };

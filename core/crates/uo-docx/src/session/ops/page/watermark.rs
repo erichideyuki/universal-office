@@ -312,6 +312,8 @@ impl Session {
     /// `watermarkRun(spec, box, path)`: the run of the mark for the header part `path` (the picture
     /// gets its relationship and media in the package first).
     fn watermark_run(&mut self, spec: &WatermarkSpec, box_: WatermarkBox, path: &str) -> Result<Option<Run>, CommandError> {
+        // `const pkg = this.pkg ?? (this.pkg = DocxPackage.empty())` (11877; wave 7c, S)
+        self.own_package();
         let rid = match spec {
             WatermarkSpec::Picture(p) => Some(self.add_part_image(path, &p.data, &p.ext)),
             WatermarkSpec::Text(_) => None,

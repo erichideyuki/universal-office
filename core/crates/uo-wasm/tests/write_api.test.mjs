@@ -60,7 +60,8 @@ const concat = (chunks) => { const out = new Uint8Array(chunks.reduce((n, c) => 
 const PINNED = {
   f8__7__0: 'pages=3 messages=ea592122 sections=8cea474e annotations=4ceffb56 navigation=77ac1ff2 links=fed3646f pdf=c28b3c53 raw=28d8e9a7',
   f8__7__3: 'pages=4 messages=2d10de80 sections=0f5959f7 annotations=9be17165 navigation=ccaab767 links=dd8e9a5b pdf=a2cf1bd6 raw=8484558e',
-  f8__7__10: 'pages=5 messages=f48e4c99 sections=188af57d annotations=e37051ed navigation=407f607c links=bf8ec749 pdf=88d31b5b raw=7b595536',
+  // wave 7c (W, item 4): its REF to the unterminated bm1 is Word's bold error text now (was f48e4c99/…/7b595536)
+  f8__7__10: 'pages=5 messages=06bed89e sections=321c2b87 annotations=6ebaa664 navigation=14697a8d links=2c7c1968 pdf=7b35354f raw=1900cff5',
 };
 
 function session(key) {

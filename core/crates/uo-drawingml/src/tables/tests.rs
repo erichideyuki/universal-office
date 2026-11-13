@@ -186,8 +186,8 @@ fn parse_guides(s: &str) -> Vec<(String, Vec<String>)> {
 fn check_guide(got: &Guide, want: &(String, Vec<String>), what: &str) {
     assert_eq!(got.name, want.0, "{what}");
     assert_eq!(got.op, Op::parse(&want.1[0]), "{what} {}", want.0);
-    for k in 0..3 {
-        assert_eq!(got.args[k], want.1.get(k + 1).map_or("0", String::as_str), "{what} {} arg {k}", want.0);
+    for (k, arg) in got.args.iter().enumerate().take(3) {
+        assert_eq!(*arg, want.1.get(k + 1).map_or("0", String::as_str), "{what} {} arg {k}", want.0);
     }
 }
 

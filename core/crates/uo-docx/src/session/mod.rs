@@ -31,6 +31,7 @@ pub mod normalize;
 pub mod ops;
 pub mod policy;
 pub mod revisions;
+mod save_parts;
 pub mod settle;
 pub mod state;
 pub mod text;
@@ -176,12 +177,28 @@ pub struct Session {
     next_job: u32,
     /// header/footer parts edited since the install (`dirtyHf`, by part)
     dirty_hf: HashSet<HfPartId>,
+    /// wave 7 (B): the textbox context whose box carries a flat editing view (`ops/hf_flat.rs`)
+    flat_box: Option<ops::context::EditContext>,
     policy: Option<(FormattingPolicy, policy::ResolvedPolicy)>,
     /// the clipboard identity of this session (U3, G7: session id + generation)
     session_id: u32,
     generation: u32,
     quiet: bool,
     tx: Tx,
+    /// `loadedFormat === 'odt'` (universal-write.ts 2129; wave 7, A1): set by [`Session::open_odt`]; the style sheet is
+    /// not editable (`stylesEditable()` 4582)
+    loaded_odt: bool,
+    /// wave 7c (S): `this.pkg === null` of the TS for an `.odt` (`loadOdt` 2240): every save writes into a fresh
+    /// empty package (`this.pkg ?? DocxPackage.empty()`, 8552) until the watermark or the cover page makes one (11877,
+    /// 12041); the paths the TS guards with `this.pkg ?` / `if (this.pkg)` treat it as no package
+    pkg_scratch: bool,
+    /// wave 7c (S): `pendingTableStyles` (19268): the built-in table styles a table took where the style sheet is not
+    /// editable (an `.odt`, a `.docx` without a styles part), written by the save (`addStylesXml`, 8641). A step of the
+    /// history holds it (Word manda sobre o TS: an undone table takes its style out of the file;
+    /// `OpenOptions::ts_table_style_survives_undo` keeps the TS map outside the history)
+    pending_tables: Arc<indexmap::IndexMap<String, String>>,
+    /// wave 7c (S): what the saves wrote outside the writer (`save_parts.rs`)
+    save_parts: save_parts::SaveParts,
 }
 
 impl std::fmt::Debug for Session {
@@ -664,6 +681,9 @@ impl Session {
     }
 
     fn change_set(&mut self) -> ChangeSet {
+        // wave 7 (B, HF-T1): the edits of the flat editing views (header/footer part, note, textbox)
+        // into their blocks
+        self.sync_flat_views();
         self.settle_float_sel();
         let tx = std::mem::take(&mut self.tx);
         let story = if tx.all {
@@ -710,6 +730,8 @@ impl Session {
         if let Some(paras) = self.paras_mut() {
             settle::sync_paras(paras);
         }
+        // wave 7 (B, gate-10): the bookmark index of the layout pass is rebuilt by the hosts before a layout
+        // (`Session::sync_bookmarks`; per command it broke the M3 keystroke budget)
     }
 
     fn price_history(&mut self) {
@@ -774,6 +796,7 @@ impl Session {
             float_sel: if matches!(self.ctx, EditContext::Cell { .. } | EditContext::Note { .. }) { None } else { self.float_sel },
             styles: Some(self.styles.version()),
             numbering: Some(self.numbering.version()),
+            pending_tables: Arc::clone(&self.pending_tables),
             settings: Arc::clone(&self.settings),
             body_sect_pr: Arc::clone(&self.sections.body_sect_pr),
             body_refs: self.sections.body_refs.clone(),
@@ -920,6 +943,10 @@ impl Session {
         {
             // `syncNumbering()` (D2b-F2)
             self.sync_numbering();
+        }
+        // wave 7c (S; Word manda sobre o TS): the table styles the step's tables took come and go with it
+        if !self.save_parts.ts_table_style_survives_undo && !Arc::ptr_eq(&self.pending_tables, &state.pending_tables) {
+            self.swap_pending_tables(state.pending_tables);
         }
         // `dt`, `hy`, `bg`/`bgd`, `eo`, `np`: a value of the step that differs from the current one
         // is applied (D2b-F4: `restore_settings`)

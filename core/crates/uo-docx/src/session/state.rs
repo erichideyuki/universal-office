@@ -226,6 +226,9 @@ pub struct EditState {
     /// `sv`, `nv`: the style sheet and numbering versions (U12)
     pub styles: Option<VersionId>,
     pub numbering: Option<VersionId>,
+    /// wave 7c (S): `pendingTableStyles` (styleId → XML, insertion order): Word takes an undone table's style out of the
+    /// file, so the map travels with the step (the TS keeps it outside the history)
+    pub pending_tables: Arc<indexmap::IndexMap<String, String>>,
     pub settings: Arc<SettingsStep>,
     /// the body's last-section `sectPr` (`m.sectPr`: in the TS it travels with the model; the other
     /// sections' are in the break paragraphs of `body`; D2b-F5 `setNoteOptions` edits it)
@@ -305,6 +308,9 @@ impl StepCost for EditState {
             n += self.bookmarks.bytes();
         } else if !Arc::ptr_eq(&self.bookmarks.shifts, &next.bookmarks.shifts) {
             n += self.bookmarks.shifts.len() * 16;
+        }
+        if !Arc::ptr_eq(&self.pending_tables, &next.pending_tables) {
+            n += self.pending_tables.iter().map(|(k, v)| k.len() + v.len() + 2 * std::mem::size_of::<String>()).sum::<usize>();
         }
         if !Arc::ptr_eq(&self.hf_parts, &next.hf_parts) {
             n += self.hf_parts.iter().map(|(_, s)| story_bytes(s, 0)).sum::<usize>();

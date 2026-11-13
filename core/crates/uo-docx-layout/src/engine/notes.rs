@@ -300,6 +300,7 @@ impl Engine {
         let props = uo_docx::read::props_map::para_props_from_ppr(Some(&ppr));
         let para = Paragraph { ppr: Some(Arc::new(ppr)), props: Arc::new(props), ..Paragraph::empty(crate::model::ParaId(u32::MAX)) };
         let mut tiny = LDoc::empty(cx.ldoc.view);
+        tiny.theme = cx.ldoc.theme; // wave 7 (B, gate-O3)
         tiny.paras.push(LPara {
             src: ParaSrc::Model { para: &para, id: para.id },
             ppr: None,

@@ -314,3 +314,86 @@ fn c_m1_every_new_export_returns_the_live_bytes() {
     // SAFETY: freed once.
     unsafe { uo_write_env_free(env) };
 }
+
+// ───────────────────────── wave 7c (V, ED-304): the lines of every story ─────────────────────────
+
+fn capture(name: &str) -> Vec<u8> {
+    let base = repo().join("core/crates/uo-docx-layout/tests/captures");
+    for dir in std::fs::read_dir(&base).unwrap() {
+        let p = dir.unwrap().path().join("docs").join(name);
+        if p.exists() {
+            return std::fs::read(p).unwrap();
+        }
+    }
+    panic!("no capture document {name}");
+}
+
+/// `uo_shell_story_lines` over every page: the line kinds and the field runs it answers.
+fn story_lines(h: *mut UoWriteSession, l: *mut UoLayout) -> (Vec<String>, usize, usize) {
+    let mut kinds = Vec::new();
+    let (mut fields, mut paras) = (0usize, 0usize);
+    // SAFETY: live handles.
+    let n = unsafe { uo_layout_page_count(l) };
+    for pg in 0..n {
+        let (fp, fl) = put(b"pt-BR");
+        // SAFETY: live handles; the buffer is consumed.
+        let (st, data) = take(unsafe { uo_shell_story_lines(h, l, u32::try_from(pg).unwrap(), fp, fl) });
+        assert_eq!(st, 0, "page {pg}");
+        let j = String::from_utf8(data).unwrap();
+        for k in ["body", "cell", "hf", "note", "tb"] {
+            if j.contains(&format!("\"kind\":\"{k}\"")) && !kinds.contains(&k.to_owned()) {
+                kinds.push(k.to_owned());
+            }
+        }
+        fields += j.matches("\"f\":true").count();
+        paras += j.matches("\"key\":").count();
+    }
+    (kinds, fields, paras)
+}
+
+/// ED-304: the overlays read every story (the TS `eng.lines`: body, cells, headers/footers, notes; then the text boxes'
+/// content). f2-3-0 has PAGE/DATE fields in its footer, f8__7__0 headers, footers and notes; the body scope of
+/// `uo_shell_page_lines` has none of those lines.
+#[test]
+fn d_story_lines_cover_every_story() {
+    let env = env_with_fonts();
+    for (name, want) in [("f2-3-0.docx", &["body", "hf"][..]), ("f8__7__0.docx", &["body", "hf", "note"][..])] {
+        let h = open(env, &capture(name));
+        let l = layout(h, env);
+        let (kinds, fields, paras) = story_lines(h, l);
+        println!("D: {name}: kinds {kinds:?}, {fields} field runs, {paras} paragraphs");
+        for k in want {
+            assert!(kinds.iter().any(|x| x == k), "{name}: no {k} line in {kinds:?}");
+        }
+        if name == "f2-3-0.docx" {
+            assert!(fields > 0, "{name}: the footer's fields are answered");
+        }
+        // the edit scope's lines stay the body's (the caret and the selection)
+        // SAFETY: live handles.
+        let body = lines(take(unsafe { uo_shell_page_lines(h, l, 0) }));
+        assert!(!body.is_empty());
+        // SAFETY: freed once.
+        unsafe {
+            uo_layout_free(l);
+            uo_session_free(h);
+        }
+    }
+    // M1: the export returns the live bytes
+    let docx = capture("f8__7__0.docx");
+    let once = || {
+        let h = open(env, &docx);
+        let l = layout(h, env);
+        drop(story_lines(h, l));
+        // SAFETY: freed once.
+        unsafe {
+            uo_layout_free(l);
+            uo_session_clear_caches(h);
+            uo_session_free(h);
+        }
+    };
+    once();
+    let u = uo_alloc::assert_no_leak(once);
+    println!("D (M1): story lines: {} B allocated, 0 B left", u.allocated);
+    // SAFETY: freed once.
+    unsafe { uo_write_env_free(env) };
+}

@@ -177,7 +177,7 @@ fn anchor_of_block(doc: &Document, b: u32) -> Option<u32> {
 
 /// `locateRef` of a body cell ref (`b<n>/r/c/b…`, the TS `{ kind: 'cell', anchor, hops, block }`): the
 /// anchor and the hops (the `b` of each hop but the last is the block of the next level).
-fn cell_ref(doc: &Document, segs: &[u32]) -> Option<(u32, Vec<CellHop>, u32)> {
+pub(crate) fn cell_ref(doc: &Document, segs: &[u32]) -> Option<(u32, Vec<CellHop>, u32)> {
     let (&b, rest) = segs.split_first()?;
     let anchor = anchor_of_block(doc, b)?;
     let mut hops: Vec<CellHop> = Vec::new();
@@ -1921,4 +1921,127 @@ pub unsafe extern "C" fn uo_shell_drag_cell_sel(h: *mut UoWriteSession, layout: 
     let mut steps = Steps::new();
     steps.run(s, cmd);
     steps.answer(s)
+}
+
+// ───────────────────────── wave 7 (A2): the cells of a page, the rows of a table ─────────────────────────
+
+/// Every located body cell box of `page` (JSON `[{ anchor, path, r, c, x, y, w, h, span }]`): what the TS
+/// `tableEdgeAt` and `cellBoxAtPoint` (universal-write.ts 20667, 20945) loop over (`locateRef(box.ref + '/b0')`).
+///
+/// # Safety
+/// `h`, `layout` null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_shell_page_cells(h: *const UoWriteSession, layout: *const UoLayout, page: u32) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the handles are null or live.
+    let (Some(s), Some(l)) = (unsafe { h.as_ref() }, unsafe { layout_ref(layout) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let geom = layout_geom(l);
+    let doc = s.session.document();
+    let mut j = Js::new();
+    j.open('[');
+    if let Some(p) = geom.pages.get(page as usize) {
+        for b in p.cells.as_deref().unwrap_or(&[]) {
+            if b.at.story != LineStory::Body {
+                continue;
+            }
+            let mut segs: Vec<u32> = b.at.path.0.to_vec();
+            segs.push(0);
+            let Some((anchor, hops, _)) = cell_ref(doc, &segs) else { continue };
+            let Some((last, path)) = hops.split_last() else { continue };
+            j.open('{');
+            j.key("anchor");
+            j.int(anchor);
+            j.key("path");
+            write_hops(&mut j, path);
+            j.key("r");
+            j.int(last.row);
+            j.key("c");
+            j.int(last.col);
+            for (k, v) in [("x", b.x), ("y", b.y), ("w", b.w), ("h", b.h), ("span", b.span)] {
+                j.key(k);
+                j.num(v);
+            }
+            j.close('}');
+        }
+    }
+    j.close(']');
+    j.done()
+}
+
+/// The placed boxes and the displayed row heights of the table at `anchor` and the hops `path_json`
+/// (`[[row, col, block|-1]…]`): JSON `{ rowHeights: [...], boxes: [{ pg, r, c, x, y, w, h }] }` (`tableBoxes`,
+/// `rowHeights` of the TS; every row of the table).
+///
+/// # Safety
+/// `h`, `layout` null or live; `(ptr, len)` a buffer of `uo_alloc_bytes(len)` (consumed).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_shell_table_rows(
+    h: *const UoWriteSession,
+    layout: *const UoLayout,
+    anchor: u32,
+    ptr: *mut u8,
+    len: usize,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer; consumed here.
+    let text = String::from_utf8_lossy(&unsafe { crate::render::take_bytes(ptr, len) }).into_owned();
+    // SAFETY: the caller guarantees the handles are null or live.
+    let (Some(s), Some(l)) = (unsafe { h.as_ref() }, unsafe { layout_ref(layout) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(path) = parse_hops(&text) else { return buf(super::handle::BAD_ARGUMENT, b"path".to_vec()) };
+    let doc = s.session.document();
+    let Some(t) = table_at(doc, anchor, &path) else { return buf(NONE, Vec::new()) };
+    let boxes = table_boxes(doc, layout_geom(l), anchor, &path);
+    let n = i64::try_from(t.rows.len()).unwrap_or(0);
+    let mut j = Js::new();
+    j.open('{');
+    j.key("rowHeights");
+    j.open('[');
+    for v in row_heights(&boxes, 0, n - 1) {
+        j.num(v);
+    }
+    j.close(']');
+    j.key("boxes");
+    j.open('[');
+    for b in &boxes {
+        j.open('{');
+        j.key("pg");
+        j.int(b.pg);
+        j.key("r");
+        j.int(b.r);
+        j.key("c");
+        j.int(b.c);
+        for (k, v) in [("x", b.x), ("y", b.y), ("w", b.w), ("h", b.h)] {
+            j.key(k);
+            j.num(v);
+        }
+        j.close('}');
+    }
+    j.close(']');
+    j.close('}');
+    j.done()
+}
+
+/// `[[row, col, block|-1]…]` (the hops of the wave-7 exports).
+fn parse_hops(text: &str) -> Option<Vec<CellHop>> {
+    let v = uo_docx::read::json_parse::parse(text)?;
+    let uo_docx::js::JsonValue::Array(a) = v else { return None };
+    let u = |x: &uo_docx::js::JsonValue| -> Option<Option<u32>> {
+        match x {
+            uo_docx::js::JsonValue::Num(n) if n.is_finite() && n.fract() == 0.0 && *n < 0.0 => Some(None),
+            uo_docx::js::JsonValue::Num(n) if n.is_finite() && n.fract() == 0.0 && *n <= 4_294_967_295.0 => {
+                n.to_string().parse::<u32>().ok().map(Some)
+            }
+            _ => None,
+        }
+    };
+    a.iter()
+        .map(|h| {
+            let uo_docx::js::JsonValue::Array(t) = h else { return None };
+            let row = u(t.first()?)??;
+            let col = u(t.get(1)?)??;
+            let block = match t.get(2) {
+                Some(b) => u(b)?,
+                None => None,
+            };
+            Some(CellHop { row, col, block })
+        })
+        .collect()
 }

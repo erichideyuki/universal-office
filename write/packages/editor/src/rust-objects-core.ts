@@ -46,7 +46,9 @@ export interface ObjState {
   /** o modo Cortar (o id do desenho) */
   crop: number | null;
   /** o arrasto em curso (o fantasma pintado pelo gancho de pintura, ED-203) */
-  drag: null | { page: number; rect: { x: number; y: number; w: number; h: number }; rot: number; dashed?: boolean };
+  drag: null | { page: number; rect: { x: number; y: number; w: number; h: number }; rot: number; dashed?: boolean; ghost?: boolean; box?: boolean };
+  /** wave 7c (V): the live crop of a Crop drag (the overlay reads it, as the TS `cropGeom` reads `pic.crop`) */
+  liveCrop: null | { l: number; t: number; r: number; b: number };
   /** o zoom antes do Modo de Leitura */
   zoomBeforeRead: number | null;
   readFirst: number;
@@ -60,7 +62,7 @@ export function stateOf(ed: RustEditor): ObjState {
   let s = states.get(ed);
   if (!s) {
     const api = typeof (ed as { frontApi?: unknown }).frontApi === 'function' ? ed.frontApi() : (null as unknown as FrontApi);
-    s = { ed, api, ob: null, sb: null, cache: null, mode: null, crop: null, drag: null, zoomBeforeRead: null, readFirst: 0, bitmaps: new Map() };
+    s = { ed, api, ob: null, sb: null, cache: null, mode: null, crop: null, drag: null, liveCrop: null, zoomBeforeRead: null, readFirst: 0, bitmaps: new Map() };
     states.set(ed, s);
   }
   return s;

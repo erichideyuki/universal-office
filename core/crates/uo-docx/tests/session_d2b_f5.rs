@@ -478,9 +478,10 @@ fn unknown_notes_and_a_locked_editor_change_nothing() {
 }
 
 #[test]
-fn a_note_with_a_table_keeps_it_while_the_note_is_edited_as_its_top_level_paragraphs() {
-    // D2a-C1 (gate question 3): the TS edits the cells' paragraphs in the note's flat list; the
-    // session edits the top-level paragraphs and keeps the table where it is
+fn a_note_with_a_table_keeps_it_while_the_note_is_edited_through_its_flat_list() {
+    // D2a-C1 (gate question 3; wave 7, B, review fix round 2: the TS shape): the TS edits the
+    // note's flat list (`flattenBlocks`, the cells' paragraphs included) and reconciles it into the
+    // blocks; the session does the same (`hf_flat.rs`), and the table stays where it is
     let w = W;
     let mut pkg = blank_docx_package(&BlankDocxOptions::default());
     let xml = format!(
@@ -513,12 +514,21 @@ fn a_note_with_a_table_keeps_it_while_the_note_is_edited_as_its_top_level_paragr
     );
     let mut s = open(pkg.save(&uo_opc::package::SaveOptions::default()).unwrap());
     note(&mut s, NoteCmd::Open { footnote: true, id: 1.0 });
+    // the context story is the flat list: the first paragraph, the cell's, the last
     let story = s.story().unwrap();
-    assert_eq!((story.paras.len(), story.tables.len()), (2, 1));
-    // typing at the end of the note goes into its last top-level paragraph
+    assert_eq!((story.paras.len(), story.tables.len()), (3, 0));
+    let blocks = |s: &Session| {
+        let b = s.document().notes.footnotes.get(&uo_docx::js::NumKey::new(1.0)).unwrap();
+        (b.paras.len(), b.tables.len())
+    };
+    assert_eq!(blocks(&s), (2, 1));
+    // typing at the end of the note goes into its last paragraph, after the table
     exec(&mut s, Command::Text(TextCmd::Type { text: Utf16::from("!") }));
+    assert_eq!(blocks(&s), (2, 1));
     let saved = part(&mut s, "word/footnotes.xml").unwrap();
-    assert!(saved.contains("in the cell") && saved.contains("last!"), "{saved}");
+    let (cell, last) = (saved.find("in the cell").unwrap(), saved.find("last!").unwrap());
+    let tbl_end = saved.find("</w:tbl>").unwrap();
+    assert!(cell < tbl_end && tbl_end < last, "{saved}");
 }
 
 #[test]

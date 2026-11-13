@@ -52,8 +52,8 @@ mod memory_contour;
 mod memory_d1b_fonts;
 mod memory_d1b_writer;
 mod memory_d2a;
-mod memory_d2b_f10;
 mod memory_d2b_f1;
+mod memory_d2b_f10;
 mod memory_d2b_f2;
 mod memory_d2b_f3;
 mod memory_d2b_f4;
@@ -87,8 +87,8 @@ mod nopanic_contour;
 mod nopanic_d1b_fonts;
 mod nopanic_d1b_writer;
 mod nopanic_d2a;
-mod nopanic_d2b_f10;
 mod nopanic_d2b_f1;
+mod nopanic_d2b_f10;
 mod nopanic_d2b_f2;
 mod nopanic_d2b_f3;
 mod nopanic_d2b_f4;
@@ -211,10 +211,22 @@ mod word_unit;
 // ── D2b-F8 (clipboard) ──
 #[cfg(feature = "session")]
 mod d2b_f8_support;
-mod parity_d2b_f8_ops;
-mod parity_d2b_f8_html;
-mod session_d2b_f8;
 mod memory_d2b_f8;
 mod nopanic_d2b_f8;
-mod regex_d2b_f8;
+mod parity_d2b_f8_html;
+mod parity_d2b_f8_ops;
 mod parity_d2b_f8_session;
+mod regex_d2b_f8;
+mod session_d2b_f8;
+// wave 7 (A2): lists, table styles and the shell edits of the editor switch
+mod completion_a2;
+// wave 7 (A1): the File, Font and Paragraph reads and native-only commands of the editor switch
+mod session_wave7_format;
+// wave 7 (B, HF-T1): the flat editing view of a header part with a table
+mod session_wave7_hf_flat;
+// wave 7c (S): the table styles of a sheet the table cannot use, and the parts a save takes back after an undo (Word)
+mod session_w7c_save_parts;
+// wave 7c (V, P1): every preview mini-document lays out with an empty bookmark index (as the TS's `new Map()`)
+mod previews_bookmarks_w7c;
+// wave 7c (V, L1): the live object gestures (LiveBegin/LiveSet/LiveEnd/LiveCancel)
+mod live_drags_w7c;

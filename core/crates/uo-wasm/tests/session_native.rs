@@ -379,6 +379,25 @@ fn refusals_and_errors() {
     let (op, ol) = put(b"bad options");
     // SAFETY: consumed buffer.
     assert!(unsafe { uo_session_new_blank(std::ptr::null(), op, ol) }.is_null());
+    // wave 7 (B): a hostile clock in the open message is refused as `SetClock`'s is (month 15, day 40); a real one opens
+    let clocked = |month: u32, day: u32| {
+        let t = w::DateParts { year: 2026, month, day, hour: 3, minute: 4 };
+        let mut m = w::decode_session_open(&open_msg(false), &mut w::Tables::new(), &w::limits()).unwrap();
+        m.clock = Some(w::LocalNow { local: t.clone(), utc: t });
+        let mut out = Vec::new();
+        w::encode_session_open(&mut out, &w::Delta::default(), &m).unwrap();
+        let (op, ol) = put(&out);
+        let (dp, dl) = put(&docx);
+        // SAFETY: consumed buffers.
+        unsafe { uo_session_open(std::ptr::null(), op, ol, dp, dl) }
+    };
+    for (month, day) in [(15, 1), (1, 40), (2, 29), (0, 1)] {
+        assert!(clocked(month, day).is_null(), "a hostile open clock {month}/{day} is refused");
+    }
+    let real = clocked(2, 28);
+    assert!(!real.is_null());
+    // SAFETY: live handle, freed once.
+    unsafe { uo_session_free(real) };
     uo_last_error_clear();
     // SAFETY: live handles, freed once.
     unsafe {

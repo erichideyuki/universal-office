@@ -32,7 +32,9 @@ use uo_render::paint::fill::{
 };
 use uo_render::paint::page_fill::{gradient_tile_rgba, page_fill_tile_tw, pattern_rgba};
 use uo_render::paint::picture::AdjustParts;
-use uo_render::paint::text_fx::{FxPlan, RunView, dash_pattern, fx_for_word, fx_layers_pooled, fx_only, fx_plan, fx_pool, grad_of, run_box};
+use uo_render::paint::text_fx::{
+    FxPlan, RunView, dash_pattern, fx_for_word, fx_layers_pooled, fx_only, fx_plan, fx_pool, grad_of, run_box,
+};
 use uo_render::paint::{GradGeom, PaintLimits};
 use uo_render::types::{
     ImageItem, Item, Ltrb, PageFill, PageFillKind, PathCmd as RPath, ResolvedFill, ResolvedTextFx, ShapeItem, Stroke as RStroke,
@@ -80,7 +82,14 @@ pub struct PdfOptions {
 
 impl Default for PdfOptions {
     fn default() -> Self {
-        PdfOptions { compress: true, limits: PdfLimits::DEFAULT, paint: PaintLimits::DEFAULT, image: ImageLimits::DEFAULT, cancel: None, frozen_text_fx: false }
+        PdfOptions {
+            compress: true,
+            limits: PdfLimits::DEFAULT,
+            paint: PaintLimits::DEFAULT,
+            image: ImageLimits::DEFAULT,
+            cancel: None,
+            frozen_text_fx: false,
+        }
     }
 }
 

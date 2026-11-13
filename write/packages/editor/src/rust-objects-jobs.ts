@@ -12,8 +12,9 @@ export interface JobIn { t: string; id: number; bytes?: Uint8Array; ext?: string
 /** A resposta (`JobResult`). */
 export type JobOut = { t: 'image'; width: number; height: number; rgba?: Uint8Array } | { t: 'bytes'; v: Uint8Array } | { t: 'failed' } | { t: string; [k: string]: unknown };
 
-/** Tratadores de outros tipos de trabalho (a frente R registra `readClipboard`/`renderClip` aqui). */
-export const jobKinds = new Map<string, (job: JobIn) => Promise<JobOut>>();
+/** Tratadores de outros tipos de trabalho (a frente R registra `readClipboard`; a A2 da leva 7, `renderClip`), com o motor do
+ *  editor que roda o trabalho. */
+export const jobKinds = new Map<string, (job: JobIn, api: FrontApi) => Promise<JobOut>>();
 
 /** Os executores ativos (a entrada de ponteiro e teclado da frente O espera; ED-205). */
 const active = new WeakSet<FrontApi>();
@@ -69,7 +70,7 @@ export async function runJobs(api: FrontApi, first: ExecOutcome, what: string, p
       for (const job of jobs) {
         const r = job.t === 'decodeImage' ? await decode(job, pixels)
           : job.t === 'encodeImage' ? await encode(job)
-            : jobKinds.has(job.t) ? await jobKinds.get(job.t)!(job).catch((): JobOut => ({ t: 'failed' }))
+            : jobKinds.has(job.t) ? await jobKinds.get(job.t)!(job, api).catch((): JobOut => ({ t: 'failed' }))
               : { t: 'failed' } as JobOut;
         if (api.session !== s0) return null;
         next = s0.complete(job.id, r as { t: string });

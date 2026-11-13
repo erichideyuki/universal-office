@@ -50,6 +50,17 @@ enum RBlock<'a> {
     Rows(&'a Table, usize),
 }
 
+/// Wave 7c (W, item 3): the cut of a chain's content when `split_content` keeps nothing in the box — without the widow
+/// and orphan rule (and the space after), or else right after the first line (Word puts it in the box, overflowing).
+fn keep_first_lines(cx: &mut Cx<'_, '_>, c: &CellContent, ih: f64) -> LResult<Option<(CellContent, CellContent)>> {
+    let bare = CellContent { paras: None, ..c.clone() };
+    if let Some(parts) = crate::table::split_content(cx, &bare, ih)? {
+        return Ok(Some(parts));
+    }
+    let Some(first) = c.lines.iter().map(|l| l.y + l.height).reduce(jm::min) else { return Ok(None) };
+    crate::table::split_content(cx, &bare, first)
+}
+
 /// `{ items: [], lines: [], height: 0 }`.
 fn empty() -> CellContent {
     CellContent {
@@ -265,7 +276,7 @@ impl Engine {
                 self.chain_put(cid, m, empty());
                 continue;
             }
-            let theme = &cx.ldoc.view.formatting().theme;
+            let theme = cx.ldoc.theme; // wave 7 (B, gate-O3)
             let fr = super::floats::tb_frame(mtb, theme, mtb.width_twips.to_number(), mtb.height_twips.to_number());
             // `{ ...env0, ...this.tbEnv(m) }`
             let (dark, dc) = Self::tb_env(cx, mtb);
@@ -322,7 +333,14 @@ impl Engine {
             let mut slice: Option<CellContent> = None;
             let blocks = std::mem::take(&mut rem);
             if k + 1 < n_members {
-                let Some(mut parts) = crate::table::split_content(cx, &c, fr.ih)? else {
+                let mut first_cut = crate::table::split_content(cx, &c, fr.ih)?;
+                // wave 7c (W, item 3; oracle txbxcell): Word never leaves a linked box empty — when widows/orphans (or
+                // the box's height) would send everything on, the box keeps the lines that fit without the widow rule,
+                // and at least the first line (it overflows a box too low for it); the frozen TS leaves it empty
+                if first_cut.is_none() && !cx.opts.ts_linked_box_cell_chain {
+                    first_cut = keep_first_lines(cx, &c, fr.ih)?;
+                }
+                let Some(mut parts) = first_cut else {
                     // not even the first line fits: the box stays empty and everything goes on
                     self.chain_put(cid, m, empty());
                     rem = blocks;

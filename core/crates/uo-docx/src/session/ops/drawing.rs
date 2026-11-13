@@ -238,6 +238,10 @@ pub enum DrawingCmd {
 pub struct F7State {
     /// the selected inline picture (`floatSel` on a picture that does not float)
     pub(crate) inline_sel: Option<Path>,
+    /// the identity of `inline_sel`'s paragraph (its `ParaId`) when it was selected: the TS `picSel`
+    /// is the run OBJECT, so a picture at the same `[para, run]` of ANOTHER story (a cell entered
+    /// afterwards) is not the selected one (wave 7, F1)
+    pub(crate) inline_owner: Option<crate::ids::ParaId>,
     /// `floatMulti`
     pub(crate) multi: Vec<Path>,
     /// the answers of the jobs of the pending command, in arrival order
@@ -254,6 +258,9 @@ pub struct F7State {
     pub(crate) compressed: usize,
     /// the box a step was taken in (host, focus, page, selection): entered again after the pop
     pub(crate) reenter: Option<(u32, u32, u32, Selection)>,
+    /// wave 7c (V): a live object gesture is open (`ShellEdit::LiveBegin`): the undo depth with its step (the TS
+    /// `snapshot()` of the mousedown)
+    pub(crate) live: Option<usize>,
 }
 
 impl F7State {
@@ -262,6 +269,7 @@ impl F7State {
         self.inline_sel = None;
         self.multi.clear();
         self.placed = None;
+        self.live = None;
     }
 
     pub(crate) fn stash(&mut self, job: JobId, r: JobResult) {
@@ -407,7 +415,10 @@ impl Session {
     fn base_story(&self) -> &Story {
         fn go<'a>(doc: &'a Document, ctx: &EditContext) -> &'a Story {
             match ctx {
-                EditContext::HeaderFooter { part, .. } => doc.hf.get(part.index()).map_or(&doc.body, |h| &h.story),
+                // wave 7 (B, HF-T1): the flat editing view (the context story)
+                EditContext::HeaderFooter { part, .. } => {
+                    doc.hf.get(part.index()).map_or(&doc.body, crate::model::section::HfPart::edit_story)
+                }
                 EditContext::Textbox { outer, .. } => go(doc, outer),
                 _ => &doc.body,
             }
@@ -419,7 +430,7 @@ impl Session {
         fn go<'a>(doc: &'a mut Document, ctx: &EditContext) -> &'a mut Story {
             match ctx {
                 EditContext::HeaderFooter { part, .. } => match doc.hf.make_mut(part.index()) {
-                    Some(h) => &mut h.story,
+                    Some(h) => h.edit_story_mut(),
                     None => &mut doc.body,
                 },
                 EditContext::Textbox { outer, .. } => go(doc, outer),
@@ -502,6 +513,10 @@ impl Session {
                     None => {
                         // an inline picture
                         self.float_sel = None;
+                        self.f7.inline_owner = match p.as_slice() {
+                            [Step::Para { para, .. }] => self.paras().and_then(|ps| ps.get(*para as usize)).map(|pp| pp.id),
+                            _ => None,
+                        };
                         self.f7.inline_sel = Some(p);
                     }
                 }
@@ -515,8 +530,20 @@ impl Session {
         let Some(p) = self.f7.inline_sel.clone() else { return };
         let over = match p.as_slice() {
             [Step::Para { para, run }] => self.paras().and_then(|ps| ps.get(*para as usize)).is_some_and(|pp| {
+                // wave 7 (A2, fix round): the run must still be an inline picture of the edit context — the TS compares
+                // the run OBJECT (`picSel`), so a picture of the body is not selected once the context is a new table's
+                // cell, where an empty paragraph without that run answered `over` (0 = 0 + 0) and kept it selected
+                // F1: and the paragraph must be the one the picture was selected in (by identity: a
+                // cell entered afterwards with an inline picture at the same `[para, run]` is another run)
+                if self.f7.inline_owner != Some(pp.id) {
+                    return false;
+                }
+                let Some(r) = pp.runs.get(*run as usize) else { return false };
+                if r.ext().and_then(|e| e.image.as_deref()).is_none() {
+                    return false;
+                }
                 let at: usize = pp.runs.iter().take(*run as usize).map(|r| r.text.len()).sum();
-                let len = pp.runs.get(*run as usize).map_or(0, |r| r.text.len());
+                let len = r.text.len();
                 let (s, e) = {
                     let r = super::super::text::normalize_range(self.range());
                     (r.start, r.end)
@@ -1133,6 +1160,20 @@ impl Session {
     #[must_use]
     pub fn edited_box_drawing(&self) -> Option<DrawingId> {
         self.focus_path().and_then(|p| self.run_ref(&p).and_then(run_drawing_id))
+    }
+
+    /// Wave 7c (V, ED-106b): the text box in edit as the TS `activeFloat()` reads it (universal-write.ts 13590): its
+    /// drawing id, its rotation (`focusRun.textbox.rot ?? 0`) and whether it is one of the base story's own drawing runs
+    /// (`drawing_paths`, which do not descend into a box). A box inside a box is not: the shell takes its rectangle from
+    /// the layout's page objects (the TS `tbEdit.rectTwips`, 16470–16497).
+    #[must_use]
+    pub fn edited_box(&self) -> Option<(DrawingId, f64, bool)> {
+        let p = self.focus_path()?;
+        let r = self.run_ref(&p)?;
+        let id = run_drawing_id(r)?;
+        let rot = r.ext().and_then(|e| e.textbox.as_deref()).and_then(|t| t.rot).map_or(0.0, JsNumber::to_number);
+        let own = self.drawing_paths().contains(&p);
+        Some((id, rot, own))
     }
 
     /// The context of the object handles: `(header/footer, text box)` (the TS `hfEdit` and `tbEdit`:

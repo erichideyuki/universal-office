@@ -645,6 +645,20 @@ pub unsafe extern "C" fn uo_session_test_facets_fam(
     }
 }
 
+/// Wave 7c (S): the frozen TS's save behaviour on a handle (bit 0: the stale parts a save leaves after an undo or a
+/// change back; bit 1: the pending table styles outside the history), for the strict replays of TS captures
+/// (`Session::set_ts_save_compat`; Word's behaviour is the default).
+///
+/// # Safety
+/// `h` null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_ts_save_compat(h: *mut UoWriteSession, flags: u32) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `h` is null or live.
+    let Some(s) = (unsafe { h.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    s.session.set_ts_save_compat(flags & 1 != 0, flags & 2 != 0);
+    buf(OK, Vec::new())
+}
+
 /// F10 setup of a handle: the scripted oracle (`ReplayOracle`), the reference seed the capture recorded and the
 /// hyphenation patterns of the element (pt-BR, en, es). The session must have been opened with the F10 environment (the
 /// replay's one extra draw, `setUiLang('pt')`).

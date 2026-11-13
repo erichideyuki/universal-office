@@ -64,6 +64,34 @@ pub struct Notes {
     pub footnotes: JsMap<NumKey, Story>,
     pub endnotes: JsMap<NumKey, Story>,
     pub special_ids: NoteSpecialIds,
+    /// Wave 7 (B): the flat editing view of the note in edit while it holds a table (the TS note
+    /// model is `flattenBlocks(blocks)`, universal-write.ts `enterNote`); uo-docx `session/ops/hf_flat.rs`.
+    pub flat: super::section::EditSlot<NoteFlat>,
+}
+
+/// The flat editing view of one note (wave 7, B): `footnote`/`id` name the note.
+#[derive(Debug, Clone)]
+pub struct NoteFlat {
+    pub footnote: bool,
+    pub id: NumKey,
+    pub view: Arc<super::section::HfFlat>,
+}
+
+/// Wave 7c (W, item 2): facts of the package the reader saw that the TS model does not keep, for the layout's Word rules.
+/// Outside the model's JS shape and equality (two documents with the same model are equal whatever package they came
+/// from), like [`super::section::EditSlot`]; never written.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReadFacts {
+    /// the package has no `word/settings.xml` (Word opens it in compatibility mode 12, measured; the TS model says 15)
+    pub settings_absent: bool,
+    /// the settings (part or not) have no `w:defaultTabStop` (Word uses 708 tw, measured; the TS model says 720)
+    pub default_tab_absent: bool,
+}
+
+impl PartialEq for ReadFacts {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 js_object! {
@@ -97,6 +125,8 @@ pub struct Document {
     /// bumps on any style, numbering, settings, font table, theme or section change (A4; the
     /// session's; 0 after the read)
     pub formatting_version: u64,
+    /// wave 7c (W, item 2): what the reader saw of the package that the model does not keep ([`ReadFacts`])
+    pub read_facts: ReadFacts,
 }
 
 impl JsValue for BookmarkStart {
@@ -106,6 +136,25 @@ impl JsValue for BookmarkStart {
     }
     fn json(&self, w: &mut JsonWriter<'_>) -> bool {
         self.block.json(w)
+    }
+}
+
+impl Document {
+    /// The compatibility mode Word follows (wave 7c, W, item 2; oracle `nosettings`): 12 for a package without
+    /// `word/settings.xml` ([`ReadFacts::settings_absent`]), else the model's `settings.compatibilityMode`. The session's
+    /// reads (manual hyphenation minimums, the table style gallery) and the layout (`uo-docx-layout` `LDoc::compat_mode`)
+    /// use the same answer; a strict replay of TS captures clears the facts (`OpenOptions::ts_missing_settings`).
+    #[must_use]
+    pub fn word_compat_mode(&self) -> f64 {
+        if self.read_facts.settings_absent { 12.0 } else { self.formatting.settings.compatibility_mode.to_number() }
+    }
+
+    /// The default tab stop Word follows while the settings give none (wave 7c, W, item 2): 708 tw
+    /// ([`ReadFacts::default_tab_absent`]; the session clears the fact when it writes an explicit value), else `None` (the
+    /// model's `settings.defaultTabStop`).
+    #[must_use]
+    pub fn word_default_tab_fallback(&self) -> Option<f64> {
+        self.read_facts.default_tab_absent.then_some(708.0)
     }
 }
 

@@ -69,7 +69,7 @@ impl Rd<'_> {
         Ok(self.take(usize::try_from(n).unwrap())?.to_vec())
     }
     fn u16s(&mut self) -> R<Vec<u16>> {
-        Ok(self.bytes()?.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect())
+        Ok(self.bytes()?.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect())
     }
     fn string(&mut self) -> R<String> {
         Ok(String::from_utf16_lossy(&self.u16s()?))

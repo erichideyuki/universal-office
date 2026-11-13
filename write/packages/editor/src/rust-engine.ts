@@ -9,6 +9,8 @@ import { PUBLIC_METHODS } from './engine-public.js';
 import { objectsAfterCanvases, objectsHandlers, objectsJobs, objectsPasteImage, objectsPointerFirst } from './rust-engine-objects.js'; // wave 5 (O): hooks
 import { reviewHandlers } from './rust-engine-review.js';
 import { storiesHandlers } from './rust-engine-stories.js';
+import { formatHandlers } from './rust-engine-format.js'; // wave 7 (A1)
+import { completionHandlers } from './rust-engine-completion.js'; // wave 7 (A2)
 import { fragmentOf } from './paste-html.js';
 
 /**
@@ -94,6 +96,20 @@ export interface FrontApi {
   /** wave 5 (S): the editor's module and the toolbar-state generation */
   readonly module: ViewerModule;
   readonly gen: number;
+  // ── wave 7 (A1) ──
+  /** the paint environment of the installed layout (null without one) */
+  paintEnv(dl?: DecodedLayout): ReturnType<RustSession['paintEnv']> | null;
+  /** a session (open elsewhere, an .odt) adopted as the document, as loadDocx does */
+  adoptSession(session: WriteSession, bytes: Uint8Array | null, prot: boolean): void;
+  /** the Underline button's style (the TS ulButton) */
+  setUlButton(style: string): void;
+  readonly ss: SessionBinding;
+  /** the page's font environment (null before the first layout) */
+  readonly pageEnv: ViewerEnv | null;
+  /** the incremental engine of the document (the view it lays out) */
+  readonly shellEngine: ShellEngine | null;
+  /** the decode state of image `id` of the installed layout (print waits for the loading ones only, not the failed) */
+  imageState(id: number): 'ready' | 'loading' | 'failed' | 'idle';
 }
 
 /**
@@ -102,6 +118,15 @@ export interface FrontApi {
  */
 const live = { sessions: 0, shellEngines: 0, editors: 0 };
 let lastModule: ViewerModule | null = null;
+/**
+ * wave 7c (S): an editor dropped while detached (the element removed for good) keeps its document until it is collected,
+ * as the TS element keeps its model: the session binding's FinalizationRegistry frees the session and the shell engine,
+ * this one takes them out of `live` (the held counter is the editor's own, kept current by `adopt` and the adapter's
+ * `free`, so an explicit free while detached is never counted twice).
+ */
+const parkedGone = new FinalizationRegistry<{ sessions: number; shellEngines: number }>((h) => { live.sessions -= h.sessions; live.shellEngines -= h.shellEngines; });
+/** the session binding of each module (its registry must outlive the editors: `startRustEditor`) */
+const sessionBindings = new WeakMap<ViewerModule, SessionBinding>();
 
 /** [a, b) */
 const range = (a: number, b: number): number[] => Array.from({ length: Math.max(0, b - a) }, (_, k) => a + k);
@@ -124,15 +149,17 @@ export class RustEditor {
   private clock = new Date();
   /** os bytes abertos (PDF sem edições, como o TS) */
   private loaded: Uint8Array | null = null;
-  /** o documento guardado ao desconectar (reabre ao reconectar) */
-  private parked: { bytes: Uint8Array; protected: boolean } | null = null;
+  /** wave 7c (S): what this editor counts in `live` (the held value of `parkedGone` while detached) */
+  private readonly held = { sessions: 0, shellEngines: 0 };
+  /** wave 7c (S): the font loop was cut by a detach before it finished (re-attaching runs it again) */
+  private loopCut = false;
   private epoch = 0;
   private fontLoop: Promise<void> = Promise.resolve();
   /**
    * the page cache (`engineBase`); wave 6 (L, D-L4): `hf` the header/footer item count it was painted with, `dirty` set when
    * a relayout changed the page (the canvas is painted again before use: the band since `prev`, or whole)
    */
-  private base = new Map<number, { key: string; canvas: HTMLCanvasElement; hf: number; dirty?: { prev: BandSnap | null } }>();
+  private base = new Map<number, { key: string; canvas: HTMLCanvasElement; hf: number; dirty?: { prev: BandSnap | null }; incomplete?: boolean }>();
   private hfItems: (number | undefined)[] = [];
   /** wave 6 (L, D-L4): the scratch canvas a changed band is painted in */
   private bandCanvas: HTMLCanvasElement | null = null;
@@ -173,6 +200,8 @@ export class RustEditor {
       resolver: FontResolver.shared(),
       repaint: () => { this.base.clear(); this.paint(); },
       source: this.source,
+      // wave 7 (F2): the TS editor's decodeImage falls back to the engine's decodeRaster (the viewer does not)
+      rasterFallback: true,
     });
   }
 
@@ -195,9 +224,11 @@ export class RustEditor {
       hyphenationPatterns: (env, langs) => session.hyphenationPatterns(env.inner, langs),
       free: () => {
         session.free();
-        shell.free();
         live.sessions--;
+        this.held.sessions--;
+        shell.free();
         live.shellEngines--;
+        this.held.shellEngines--;
         if (this.session === session) { this.session = null; this.shell = null; }
       },
     };
@@ -215,11 +246,18 @@ export class RustEditor {
     }
   }
 
+  /** A new document (load, `newDocument`, an adopted `.odt` session): the hooks of the fronts reset their state. */
   private adopt(session: WriteSession, bytes: Uint8Array | null, prot: boolean): void {
     const shell = this.ss.newShellEngine();
     live.sessions++;
+    this.held.sessions++;
     live.shellEngines++;
+    this.held.shellEngines++;
     this.epoch++;
+    // wave 7 (F1): the installed layout of the previous document released first. A layout of the synchronous relayout
+    // (`relayoutNow`: `refresh()`, every edit) is not in the RustSession's set, so `adoptDocument` did not free it: a
+    // `newDocument()`/load after a `refresh()` left one layout handle per document (the A2 memory soak)
+    if (this.dl) { this.rs.release(this.dl); this.dl = null; }
     this.rs.adoptDocument(this.mod, this.adapter(session, shell));
     this.session = session;
     this.shell = shell;
@@ -230,10 +268,10 @@ export class RustEditor {
     this.loaded = bytes;
     this.gen++;
     this.textGen++;
-    this.canUndoV = false;
-    this.canRedoV = false;
     session.setUiLang(uiLang(this.el));
     const el = this.el;
+    this.canUndoV = false;
+    this.canRedoV = false;
     el.protectedMode = prot;
     el.selection = { anchor: { para: 0, offset: 0 }, focus: { para: 0, offset: 0 } };
     if (el.dirty) { el.dirty = false; el.dispatchEvent(new CustomEvent('uw-dirty-change', { detail: { dirty: false } })); }
@@ -246,7 +284,7 @@ export class RustEditor {
       } catch { /* o laço de fontes */ }
     }
     this.runFontLoop();
-    el.dispatchEvent(new CustomEvent('uw-protected', { detail: { active: prot, hasFields: false } }));
+    el.dispatchEvent(new CustomEvent('uw-protected', { detail: { active: prot, hasFields: this.hasFields() } })); // wave 7 (A1): was false
     for (const f of this.hooks.adopt) f(); // wave 5 fronts: hooks
   }
 
@@ -254,7 +292,12 @@ export class RustEditor {
   private runFontLoop(): void {
     const epoch = this.epoch;
     const stale = (): boolean => epoch !== this.epoch || !this.attached;
-    const run = this.fontLoop.then(() => this.rs.relayout(stale, { view: 'print', webWidthTw: 0 }, (dl) => this.install(dl, this.shell?.report() ?? null)));
+    this.loopCut = false;
+    const run = this.fontLoop.then(async () => {
+      await this.rs.relayout(stale, { view: 'print', webWidthTw: 0 }, (dl) => this.install(dl, this.shell?.report() ?? null));
+      // wave 7c (S): a detach stops the loop (no font pass for a detached element); re-attaching resumes it
+      if (epoch === this.epoch && !this.attached) this.loopCut = true;
+    });
     this.fontLoop = run.catch((e: unknown) => { console.error('[universal-write] engine="rust": layout failed', e); });
   }
 
@@ -285,32 +328,24 @@ export class RustEditor {
     this.adopt(session, null, false);
   }
 
-  /** Desconectado: guarda o documento (bytes) e solta a sessão, o motor e os layouts. */
+  /**
+   * Desconectado (wave 7c, S): nothing of the document is freed, as the TS `disconnectedCallback` (universal-write.ts
+   * 1765–1793 frees no model, layout, history, selection, painter, search or crop state): the session, the shell engine,
+   * the layout and every front's state stay, and every API works while detached (queries, edits, undo, save). Only the
+   * font loop stops (`stale`) and the spell checker lets its reference go (`hooks.park`, as the TS). An element removed
+   * for good frees its document when it is collected (`parkedGone` and the session binding's registries).
+   */
   park(): void {
     if (this.attached) { this.attached = false; live.editors--; }
     for (const f of this.hooks.park) f(); // wave 5 (R): hooks (the spell checker's reference, as the TS disconnectedCallback)
-    if (!this.session) return;
-    try { this.parked = { bytes: this.session.save(), protected: this.el.protectedMode }; } catch { this.parked = null; }
-    this.epoch++;
-    this.release();
+    parkedGone.register(this, this.held, this);
   }
 
-  /** Reconectado: reabre o documento guardado (o histórico de desfazer não volta). */
+  /** Reconectado (wave 7c, S): the same document and element state (no `adopt`: the fronts' state is kept, as the TS). */
   unpark(): void {
+    parkedGone.unregister(this);
     if (!this.attached) { this.attached = true; live.editors++; }
-    const p = this.parked;
-    this.parked = null;
-    if (p && !this.session) this.loadDocx(p.bytes, { protected: p.protected });
-  }
-
-  private release(): void {
-    if (this.dl) { this.rs.release(this.dl); this.dl = null; }
-    this.rs.dispose();
-    this.rs = this.newRustSession();
-    // `dispose` libera o documento (a sessão e o motor, pelo adaptador); um RustSession descartado não aceita outro
-    this.session = null;
-    this.shell = null;
-    this.base.clear();
+    if (this.session && (this.loopCut || !this.dl)) this.runFontLoop();
   }
 
   // ───────────────────────── layout e pintura ─────────────────────────
@@ -341,7 +376,8 @@ export class RustEditor {
       const m = this.marks[this.marks.length - 1];
       if (m) { m.relayout = t1 - t0; m.adopt = t2 - t1; m.paint = performance.now() - t2; m.path = report?.path ?? 'full'; m.reason = report?.reason ?? null; }
     }
-    if (env.takeMissing().length) this.runFontLoop();
+    const miss = env.takeMissing(); // wave 7 (B, gate-O5): carried to the font loop, not dropped
+    if (miss.length) { this.rs.carryMissing(miss); this.runFontLoop(); }
   }
 
   /** wave 6 (L): a relayout's layout adopted after `prev`: the font keys and decoded images of the shared faces and images */
@@ -407,7 +443,8 @@ export class RustEditor {
     const scale = PX_PER_TWIP * el.zoom;
     const css = (i: number): { w: string; h: string } => {
       const p = dl.pages[i]!;
-      return { w: `${Math.round(p.widthTw * scale)}px`, h: `${Math.round(p.heightTw * scale)}px` };
+      const hTw = this.hooks.pageHeight?.(i) ?? p.heightTw; // wave 7 (A1): hooks (the continuous views' sheet ends at the content)
+      return { w: `${Math.round(p.widthTw * scale)}px`, h: `${Math.round(hTw * scale)}px` };
     };
     const n = dl.pages.length;
     const same = el.canvases.length === n && el.canvases.every((c, i) => { const s = css(i); return c.style.width === s.w && c.style.height === s.h; });
@@ -450,12 +487,13 @@ export class RustEditor {
     const hooked = this.hooks.baseKey.map((f) => f()).join(''); // wave 5 (S): hooks
     const key = `${w}x${h}|${scale.toFixed(6)}|${el.printRender ? 1 : 0}|${el.pageDark ? 1 : 0}` + hooked;
     const hit = this.base.get(i);
-    if (hit && hit.key === key && !hit.dirty) return hit.canvas;
+    // wave 7c (V, fix round 1): a base painted while one of its pictures was decoding is painted again whole (`incomplete`)
+    if (hit && hit.key === key && !hit.dirty && !hit.incomplete) return hit.canvas;
     // wave 6 (L, D-L4, declared): a page a relayout changed, painted with the same key, no base hook on (the gridlines
     // and the header/footer layers draw from more than the items): only the band whose items differ from the previous
     // layout's page is cleared and painted again (background, hooks and every item, in a band-sized canvas); 'same':
     // nothing to paint; unknown: the whole page, as before
-    if (hit && hit.key === key && hit.dirty) {
+    if (hit && hit.key === key && hit.dirty && !hit.incomplete) {
       const prev = hit.dirty.prev;
       hit.dirty = undefined;
       const hf = Math.min(this.hfOf(i), dl.pages[i]!.items.length);
@@ -475,7 +513,9 @@ export class RustEditor {
           sctx.imageSmoothingEnabled = true;
           sctx.imageSmoothingQuality = 'high';
           sctx.setTransform(scale, 0, 0, scale, 0, -s0);
+          const p0 = this.rs.pendingImages;
           this.paintBase(sctx, i, dl, scale);
+          if (this.rs.pendingImages !== p0) hit.incomplete = true;
           const ctx = hit.canvas.getContext('2d')!;
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.clearRect(0, y0, w, y1 - y0);
@@ -491,8 +531,9 @@ export class RustEditor {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    const p0 = this.rs.pendingImages;
     const hf = this.paintBase(ctx, i, dl, scale);
-    this.base.set(i, { key, canvas: off, hf });
+    this.base.set(i, { key, canvas: off, hf, ...(this.rs.pendingImages !== p0 ? { incomplete: true } : {}) });
     return off;
   }
 
@@ -541,20 +582,75 @@ export class RustEditor {
     const caret = !hasSel && !hideSel && el.caretVisible && !el.printRender && el.view !== 'read' ? this.caret() : null;
     for (const i of active) {
       const c = el.canvases[i];
-      if (!c || c.width <= 1 || !dl.pages[i]) continue;
+      if (!c || !dl.pages[i]) continue;
+      // wave 7 (A1): hooks (a continuous view's sheet taller than a strip: painted in strips of at most 4000 CSS px over its
+      // canvas, as the TS tiles; each strip's context offsets every transform by its top, so the painting below is the page's)
+      const tiles = this.hooks.tiles?.(i, c) ?? null;
+      if (tiles) {
+        for (const t of tiles) this.paintOn(i, t.ctx, t.w, t.h, t.oy, t.scale, this.stripBaseOf(i, t, dl), hasSel, hideSel, caret, dpr);
+        continue;
+      }
+      if (c.width <= 1) continue;
       const bs = c.width / (parseFloat(c.style.width) || c.width);
       const scale = PX_PER_TWIP * el.zoom * bs;
-      const ctx = c.getContext('2d')!;
+      this.paintOn(i, c.getContext('2d')!, c.width, c.height, 0, scale, this.baseOf(i, c.width, c.height, scale), hasSel, hideSel, caret, dpr);
+    }
+  }
+
+  /** wave 7 (A1): the base of each strip of a tall continuous sheet (the page's base cache, per strip: by layout and key) */
+  private readonly stripBases = new WeakMap<object, { dl: DecodedLayout; key: string; canvas: HTMLCanvasElement; incomplete?: boolean }>();
+
+  /** wave 7 (A1): strip `t`'s base (background, `under` hooks, items) for page `i`, painted again when the layout or the key changes */
+  private stripBaseOf(i: number, t: { ref: object; base: HTMLCanvasElement; baseCtx: CanvasRenderingContext2D; w: number; h: number; oy: number; scale: number }, dl: DecodedLayout): HTMLCanvasElement {
+    const el = this.el;
+    const key = `${t.w}x${t.h}|${t.oy}|${t.scale.toFixed(6)}|${el.printRender ? 1 : 0}|${el.pageDark ? 1 : 0}` + this.hooks.baseKey.map((f) => f()).join('');
+    const hit = this.stripBases.get(t.ref);
+    if (hit && hit.dl === dl && hit.key === key && !hit.incomplete) return hit.canvas;
+    // the strip's own base canvas, its context offset by the strip's top as the strip's (the page's painting lands on it)
+    const off = t.base, ctx = t.baseCtx;
+    if (off.width !== t.w || off.height !== t.h) { off.width = t.w; off.height = t.h; }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, t.oy, t.w, t.h);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.setTransform(t.scale, 0, 0, t.scale, 0, 0);
+    const p0 = this.rs.pendingImages;
+    this.paintBase(ctx, i, dl, t.scale);
+    this.stripBases.set(t.ref, { dl, key, canvas: off, ...(this.rs.pendingImages !== p0 ? { incomplete: true } : {}) });
+    return off;
+  }
+
+  /**
+   * Page `i` painted on `ctx` (`w` × `h` device px, the page's rows from `oy`): the base (the cached `base` canvas, or painted
+   * directly), the hooks, the selection, the caret. Wave 7 (A1): split from `paint` for the strips of the continuous views.
+   */
+  private paintOn(
+    i: number, ctx: CanvasRenderingContext2D, w: number, h: number, oy: number, scale: number, base: HTMLCanvasElement | null,
+    hasSel: boolean, hideSel: boolean, caret: Caret | null, dpr: number,
+  ): void {
+    const el = this.el;
+    const dl = this.dl!;
+    {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, c.width, c.height);
-      ctx.drawImage(this.baseOf(i, c.width, c.height, scale), 0, 0);
+      ctx.clearRect(0, oy, w, h);
+      if (base) ctx.drawImage(base, 0, oy);
+      else {
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.setTransform(scale, 0, 0, scale, 0, 0);
+        this.paintBase(ctx, i, dl, scale);
+        ctx.restore();
+      }
+      // wave 7 (A1): hooks (the page content the TS paints in print too: the plugin inlines' own drawing)
+      if (this.hooks.content.length) { ctx.save(); ctx.setTransform(scale, 0, 0, scale, 0, 0); for (const f of this.hooks.content) f(ctx, i, scale); ctx.restore(); }
       // wave 5 fronts: hooks (the screen overlays, under the selection, as the TS paintEngine)
       if (!el.printRender && this.hooks.paint.length) { ctx.save(); ctx.setTransform(scale, 0, 0, scale, 0, 0); for (const f of this.hooks.paint) f(ctx, i, scale); ctx.restore(); }
       if (hasSel && !hideSel && !el.printRender) {
         ctx.save();
         ctx.setTransform(scale, 0, 0, scale, 0, 0);
         ctx.fillStyle = SEL_FILL;
-        for (const r of this.session.selectionRects(dl.inner, i)) {
+        for (const r of this.session!.selectionRects(dl.inner, i)) {
           if (r.xf) { ctx.save(); ctx.transform(r.xf[0]!, r.xf[1]!, r.xf[2]!, r.xf[3]!, r.xf[4]!, r.xf[5]!); }
           ctx.fillRect(r.x, r.y, Math.max(0, r.w), r.h);
           if (r.xf) ctx.restore();
@@ -625,6 +721,7 @@ export class RustEditor {
   }
 
   refreshSelection(): void {
+    if (this.hooks.selection.some((f) => f())) { this.el.onSelectionChange?.(); this.el.chromeSync?.(); return; }
     this.paint();
     this.positionProxy();
     this.el.onSelectionChange?.(); this.el.chromeSync?.();
@@ -751,7 +848,7 @@ export class RustEditor {
     // `shell.clear()` dropped the paragraph memo on every Enter: `sections.sync` flags `formatting`); LA7 itself sees the
     // style edits (tests/shell_native.rs F) and the object scripts' end pages are the same with or without a drop (gate-C1)
     if (changed) { this.textGen++; this.relayoutNow(); }
-    else { this.caretCache = null; this.paint(); this.positionProxy(); }
+    else if (!this.hooks.selection.some((f) => f())) { this.caretCache = null; this.paint(); this.positionProxy(); }
     for (const ev of cs.events) this.dispatch(ev);
     this.scrollCaretIntoView();
     el.onSelectionChange?.(); el.chromeSync?.();
@@ -770,7 +867,9 @@ export class RustEditor {
     return this.apply(this.session.command(cmd), what);
   }
 
-  private locked(): boolean { return this.el.protectedMode || !this.session; }
+  /** The TS `locked()` (universal-write.ts 2124: `protectedMode || view === 'read'`), and no session. Wave 7 (F1): the read
+   *  view too — the session refuses there as well, but the shell answered as if the edit ran (`pasteCells` true). */
+  private locked(): boolean { return this.el.protectedMode || this.el.view === 'read' || !this.session; }
 
   type(text: string): void {
     if (this.locked()) return;
@@ -845,8 +944,14 @@ export class RustEditor {
     this.el.protectedMode = false;
     const had = o?.t === 'done' && o.events.some((e) => e.t === 'uw-protected');
     this.apply(o, 'enableEditing');
-    if (!had) this.el.dispatchEvent(new CustomEvent('uw-protected', { detail: { active: false, hasFields: false } }));
+    if (!had) this.el.dispatchEvent(new CustomEvent('uw-protected', { detail: { active: false, hasFields: this.hasFields() } })); // wave 7 (A1): was false
     this.el.input.focus({ preventScroll: true });
+  }
+
+  /** wave 7 (A1): `hasExternalFields()` of the element (front A1's handler over the session) for the uw-protected detail */
+  private hasFields(): boolean {
+    const f = (this.el as unknown as { hasExternalFields?: () => boolean }).hasExternalFields;
+    try { return !!f?.call(this.el); } catch { return false; }
   }
 
   isEmpty(): boolean {
@@ -1173,6 +1278,9 @@ export class RustEditor {
     if (e.detail === 3) {
       const text = this.session?.paraText(hit.para) ?? '';
       this.setSelection({ para: hit.para, offset: 0 }, { para: hit.para, offset: text.length });
+      // wave 7 (A1): the text click's mouseup hooks run on the triple click too (the TS `up` is registered before it)
+      const up3 = (): void => { window.removeEventListener('mouseup', up3); for (const f of this.hooks.clickUp) f(); };
+      window.addEventListener('mouseup', up3);
       return;
     }
     if (this.drag) { window.removeEventListener('mousemove', this.drag.move); window.removeEventListener('mouseup', this.drag.up); }
@@ -1185,6 +1293,7 @@ export class RustEditor {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
       this.drag = null;
+      for (const f of this.hooks.clickUp) f(); // wave 7 (A1): hooks (the Format Painter applies, universal-write.ts 10320)
     };
     this.drag = { anchor, move, up };
     window.addEventListener('mousemove', move);
@@ -1332,6 +1441,11 @@ export class RustEditor {
     /** after each new document */
     adopt: [] as (() => void)[],
     // ── wave 5 (S): hooks ──
+    /** wave 7 (A1): the strips page `i` is painted on instead of its canvas `c` (null: the canvas): each `{ ctx, w, h, oy, scale }`,
+     *  `oy` the strip's first row in the page's device rows (its context's transforms are offset by it) */
+    tiles: null as null | ((i: number, c: HTMLCanvasElement) => { ref: object; ctx: CanvasRenderingContext2D; base: HTMLCanvasElement; baseCtx: CanvasRenderingContext2D; w: number; h: number; oy: number; scale: number }[] | null),
+    /** wave 7 (A1): the end of the default text click (its mouseup; the TS `up` of 10311: the Format Painter) */
+    clickUp: [] as (() => void)[],
     /** a mousedown after `pointer` (true: handled) */
     pointerLate: [] as ((e: MouseEvent, hit: Pos) => boolean)[],
     /** a dblclick on the pages (true: handled) */
@@ -1355,6 +1469,14 @@ export class RustEditor {
     park: [] as (() => void)[],
     /** a keyboard copy/cut (the clipboard event) put an item in the session's ring */
     copied: [] as (() => void)[],
+    // ── wave 7 (A1): hooks ──
+    /** painted over the page base before the screen overlays, ALSO when printing (page twips) */
+    content: [] as ((ctx: CanvasRenderingContext2D, page: number, scale: number) => void)[],
+    /** the SHOWN height of page `i` in twips (null: the page's own): the Web/Draft/Outline sheets end at the content */
+    pageHeight: null as null | ((i: number) => number | null),
+    /** wave 7c (V, fix round 2): a selection-only change (no story changed), before its paint (true: the front laid the
+     *  document out again and painted — the TS `refreshSelection` without an engine line runs `refresh()`, 21379) */
+    selection: [] as (() => boolean)[],
   };
 
   /** The editor's internals the fronts' modules read (getters: the current session and layout). */
@@ -1379,6 +1501,14 @@ export class RustEditor {
       hitAt: (e) => ed.hitAt(e),
       // wave 5 (S): the default click and the module/generation (no cast of the privates)
       defaultClick: (e, moveFirst) => { const h = ed.hitAt(e); if (h) ed.clickAt(e, h, moveFirst); },
+      // wave 7 (A1): the page paint environment (image decodes), a session adopted as the document (.odt), the Underline button
+      paintEnv: (dl) => { const d = dl ?? ed.dl; return d && !d.freed ? ed.rs.paintEnv(d) : null; },
+      adoptSession: (session, bytes, prot) => ed.adopt(session, bytes, prot),
+      setUlButton: (style) => { ed.ulButton = style; },
+      get ss() { return ed.ss; },
+      get pageEnv() { const e = ed.rs.env; return e && !e.freed ? e : null; },
+      get shellEngine() { return ed.shell; },
+      imageState: (id) => { const d = ed.dl; return d && !d.freed ? ed.rs.imageState(d, id) : 'idle'; },
       get module() { return ed.mod; },
       get gen() { return ed.gen; },
     };
@@ -1404,7 +1534,8 @@ export function installRoutes(el: HTMLElement, editor: RustEditor, proto: object
   const rec = editor as unknown as Record<string, unknown>;
   const define = (name: string, value: unknown): void => { Object.defineProperty(el, name, { value, configurable: true, writable: true }); };
   // os handlers das frentes da leva 5 (rust-engine-<frente>.ts) vêm antes dos métodos do RustEditor
-  const fronts: Record<string, unknown> = { ...storiesHandlers(editor), ...objectsHandlers(editor), ...reviewHandlers(editor) };
+  const fronts: Record<string, unknown> = { ...storiesHandlers(editor), ...objectsHandlers(editor), ...reviewHandlers(editor), ...completionHandlers(editor) }; // wave 7 (A2): completionHandlers
+  Object.assign(fronts, formatHandlers(editor, { ...fronts }, proto)); // wave 7 (A1): last, over the others (setView, save, load)
   for (const name of [...ROUTED_PUBLIC, ...ROUTED_PRIVATE]) {
     const g = fronts[name];
     const f = rec[name];
@@ -1458,7 +1589,11 @@ export async function startRustEditor(el: HTMLElement, proto: object, source: ()
     throw new Error('engine="rust": the engine module of this page has no session exports (load the editor build, uo-write-editor.wasm, before any viewer)');
   }
   lastModule = mod;
-  const ss = bindSession(mod.exports, mod.binding);
+  // wave 7 (F1, fix round 2): one session binding per module, not per element. The binding owns the FinalizationRegistry
+  // of its sessions and shell engines; a binding dropped with its editor took the registry along, so a session dropped
+  // with an element (a parked .odt never re-attached) was never freed (measured: +33,730 live bytes per dropped element)
+  let ss = sessionBindings.get(mod);
+  if (!ss) { ss = bindSession(mod.exports, mod.binding); sessionBindings.set(mod, ss); }
   const editor = new RustEditor(el as RustHostElement, mod, ss, source);
   installRoutes(el, editor, proto);
   return editor;

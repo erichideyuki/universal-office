@@ -12,6 +12,7 @@ import {
   tsTableState, type HfKindName, type StState,
 } from './rust-stories.js';
 import { enterHf, exitHf, exitTextbox, goToNoteRef, insertNote, mapEvents, openNote } from './rust-stories-input.js';
+import { completionHfThumb, completionTableStyleThumb, completionTableStyles, completionTableTool } from './rust-engine-completion.js'; // wave 7 (A2)
 
 type NoteKind = 'footnote' | 'endnote';
 type Width = { w: number; type: string } | null | undefined;
@@ -213,11 +214,12 @@ export function storiesHandlers(ed: RustEditor): Record<string, (...args: never[
     // shell-through (estado da casca; ED-105): a caneta das bordas, a ferramenta, as linhas de grade, a galeria
     getBorderPen: () => shellThrough(st, 'getBorderPen', []),
     setBorderPen: (p: unknown) => shellThrough(st, 'setBorderPen', [p]),
-    getTableTool: () => null,
+    getTableTool: () => completionTableTool(st.ed), // wave 7 (A2): the shell's tool (its gestures: rust-completion-tables.ts)
     tableGridlinesShown: () => shellThrough(st, 'tableGridlinesShown', []),
     showTableGridlines: (on: boolean) => shellThrough(st, 'showTableGridlines', [on]),
-    tableStyleListNow: () => shellThrough(st, 'tableStyleListNow', []),
-    renderTableStyleThumb: (canvas: HTMLCanvasElement, name: string, look?: unknown) => shellThrough(st, 'renderTableStyleThumb', [canvas, name, look]),
+    tableStyleListNow: () => completionTableStyles(st.ed), // wave 7 (A2): the session's gallery (ED-105 for the list closed)
+    // wave 7 (A2): the session's mini-document (the document's styles and theme; uo_shell_preview)
+    renderTableStyleThumb: (canvas: HTMLCanvasElement, name: string, look?: unknown) => completionTableStyleThumb(st.ed, canvas, name, look),
     // the session's style-sheet counter (frontier R's query): a cache key of the galleries (ED-105)
     stylesVersion: () => qv<number>(st, { t: 'stylesVersion' }) ?? 0,
 
@@ -298,8 +300,9 @@ export function storiesHandlers(ed: RustEditor): Record<string, (...args: never[
       const num = hfPageOf(st, pg)?.number ?? pg + 1;
       exec(st, { t: 'headerFooter', v: { t: 'insertTemplate', gallery, id, lang, pageNumbers: { f0: n, f1: num } } }, 'insertHeaderFooterTemplate');
     },
-    // sem miniaturas da galeria (a sessão não diagrama uma parte de prévia): a galeria mostra os nomes (ED-106)
-    paintHeaderFooterTemplate: () => false,
+    // wave 7 (A2, decision 5): the gallery's thumbnails from the session's preview mini-document (ED-106 closed)
+    paintHeaderFooterTemplate: (gallery: string, id: string, canvas: HTMLCanvasElement, cssWidth: number) =>
+      completionHfThumb(st.ed, gallery, id, canvas, cssWidth, hfPageOf(st, caretPage(st))),
     goToHeaderFooter: (kind?: HfKindName) => {
       const c = ctxOf(st);
       if (!c || c.locked) return;

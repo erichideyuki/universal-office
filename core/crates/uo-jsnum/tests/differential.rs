@@ -63,7 +63,7 @@ fn dump_report(rec: &Rec) {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/jsnum-dump").join(format!("{}.f64", rec.key.replace('/', "_")));
     let Ok(bytes) = std::fs::read(&path) else { return eprintln!("no dump at {}", path.display()) };
     let width = rec.gens.len() + 1;
-    let values: Vec<f64> = bytes.chunks_exact(8).map(|c| f64::from_le_bytes(c.try_into().unwrap())).collect();
+    let values: Vec<f64> = bytes.as_chunks::<8>().0.iter().map(|c| f64::from_le_bytes(*c)).collect();
     let specials = inputs().specials;
     let mut rng = make_rng(&rec.key);
     let f = op(rec.op);

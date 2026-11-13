@@ -177,7 +177,8 @@ fn resolve_cell_mut<'a>(t: &'a mut Table, hops: &[CellHop]) -> Option<&'a mut St
 
 fn textbox_story<'a>(outer: &'a Story, at: &TextboxAt) -> Option<&'a Story> {
     let r = loc::run_at(outer, at.steps())?;
-    r.ext().and_then(|e| e.textbox.as_deref()).map(|t| &t.content)
+    // wave 7 (B): the flat editing view of a box with a table (`tb.paras`, `hf_flat.rs`)
+    r.ext().and_then(|e| e.textbox.as_deref()).map(|t| t.flat.0.as_deref().map_or(&t.content, |f| &f.story))
 }
 
 /// The story a context edits.
@@ -190,10 +191,17 @@ pub fn story_of<'a>(doc: &'a Document, ctx: &EditContext) -> Option<&'a Story> {
             resolve_cell(&a.table, hops)
         }
         EditContext::Note { footnote, id, .. } => {
+            // wave 7 (B): the flat editing view while the note holds a table (the TS note model is
+            // `flattenBlocks(blocks)`, `hf_flat.rs`)
+            let key = NumKey::new(*id);
+            if let Some(f) = doc.notes.flat.0.as_ref().filter(|f| f.footnote == *footnote && f.id == key) {
+                return Some(&f.view.story);
+            }
             let map = if *footnote { &doc.notes.footnotes } else { &doc.notes.endnotes };
-            map.get(&NumKey::new(*id))
+            map.get(&key)
         }
-        EditContext::HeaderFooter { part, .. } => doc.hf.get(part.index()).map(|h| &h.story),
+        // wave 7 (B, HF-T1): the flat editing view while the part holds a table (`hfParts.paras`)
+        EditContext::HeaderFooter { part, .. } => doc.hf.get(part.index()).map(crate::model::section::HfPart::edit_story),
         EditContext::Textbox { outer, at, .. } => textbox_story(story_of(doc, outer)?, at),
     }
 }
@@ -215,16 +223,25 @@ pub fn story_of_mut<'a>(doc: &'a mut Document, ctx: &EditContext) -> Option<&'a 
             resolve_cell_mut(Arc::make_mut(&mut a.table), hops)
         }
         EditContext::Note { footnote, id, .. } => {
+            let key = NumKey::new(*id);
             let notes = Arc::make_mut(&mut doc.notes);
+            // wave 7 (B): the flat editing view (see `story_of`)
+            if notes.flat.0.as_ref().is_some_and(|f| f.footnote == *footnote && f.id == key) {
+                return notes.flat.0.as_mut().map(|f| &mut Arc::make_mut(&mut f.view).story);
+            }
             let map = if *footnote { &mut notes.footnotes } else { &mut notes.endnotes };
-            map.get_mut(&NumKey::new(*id))
+            map.get_mut(&key)
         }
-        EditContext::HeaderFooter { part, .. } => doc.hf.make_mut(part.index()).map(|h| &mut h.story),
+        EditContext::HeaderFooter { part, .. } => doc.hf.make_mut(part.index()).map(crate::model::section::HfPart::edit_story_mut),
         EditContext::Textbox { outer, at, .. } => {
             let story = story_of_mut(doc, outer)?;
             let r = loc::run_at_mut(story, at.steps())?;
             let tb = r.ext.as_deref_mut().and_then(|e| e.textbox.as_deref_mut())?;
-            Some(&mut tb.content)
+            // wave 7 (B): the flat editing view (see `textbox_story`)
+            match tb.flat.0 {
+                Some(ref mut f) => Some(&mut Arc::make_mut(f).story),
+                None => Some(&mut tb.content),
+            }
         }
     }
 }
@@ -253,10 +270,18 @@ pub fn context_step(doc: &Document, ctx: &EditContext, selection: Selection) -> 
         EditContext::Body => ContextStep::Body,
         EditContext::Cell { anchor, hops, .. } => ContextStep::Cell { anchor: *anchor, hops: Arc::clone(hops), selection },
         EditContext::Note { footnote, id, .. } => {
-            ContextStep::Note { footnote: *footnote, id: *id, story: story_of(doc, ctx).cloned().unwrap_or_default(), selection }
+            // wave 7 (B): the note's blocks (the flat view is rebuilt from them, `hf_flat.rs`)
+            let story = super::notes::note_story(doc, *footnote, *id).cloned().unwrap_or_default();
+            ContextStep::Note { footnote: *footnote, id: *id, story, selection }
         }
         EditContext::HeaderFooter { part, page, .. } => {
-            ContextStep::HeaderFooter { part: *part, story: story_of(doc, ctx).cloned().unwrap_or_default(), selection, page: *page }
+            // wave 7 (B, HF-T1): the part's blocks (the flat view is rebuilt from them, `hf_flat.rs`)
+            ContextStep::HeaderFooter {
+                part: *part,
+                story: doc.hf.get(part.index()).map(|h| h.story.clone()).unwrap_or_default(),
+                selection,
+                page: *page,
+            }
         }
         EditContext::Textbox { outer, host, focus, page, .. } => {
             let outer = match &**outer {
@@ -340,6 +365,8 @@ pub fn restore_context(s: &mut Session, step: ContextStep, prev: &EditContext) {
         // the step was not taken in the header: still re-entered, the cursor of then
         s.ctx = EditContext::HeaderFooter { part: *p0, page: *page, saved: body_sel };
     }
+    // wave 7 (B): the restored blocks' flat view before the selection is clamped to it (`hf_flat.rs`)
+    s.sync_flat_views();
     let paras = story_of(&s.doc, &s.ctx).map(|st| &st.paras);
     s.selection = clamp_selection(paras, s.selection);
 }
@@ -389,6 +416,9 @@ impl Session {
             self.float_sel = None;
             self.ctx = EditContext::Note { footnote, id, saved: self.selection };
             self.tx.events.push(Event::NoteMode { active: true, footnote, id });
+            // wave 7 (B): a note with a table is edited through its flat view (`flattenBlocks`): the
+            // caret below indexes it (`hf_flat.rs`)
+            self.sync_flat_views();
         }
         let at = match (at_end, caret) {
             (true, _) => {
@@ -534,6 +564,8 @@ impl Session {
                 self.selection = Selection::default();
                 self.pending_props = None;
                 self.tx.events.push(Event::TbMode { active: true });
+                // wave 7 (F1): the box's flat view at once (`enter_textbox_at`)
+                self.sync_flat_views();
                 Ok(Outcome::Done(self.change_set()))
             }
             ContextCmd::ExitTextbox => {

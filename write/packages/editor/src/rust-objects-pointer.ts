@@ -9,9 +9,10 @@
 import { uiLang } from '@universal-office/ui';
 import type { ShellObjectFrame } from '@universal-office/write-session';
 import { jobsBusy } from './rust-objects-jobs.js';
+import { applyNoScroll, cstate as a2State, edit as a2Edit } from './rust-completion-core.js'; // wave 7 (A2): the drag commits (ED-202/204/215)
 import { bitmapOf } from './rust-objects-pictures.js';
 import {
-  cellBoxesOn, cmd, floatHandle, inlineHandle, objects, objectsInBox, outerCtx, PX_PER_TWIP, selectedHandle, selectedHandles, storyCtx, textboxHit,
+  cmd, floatHandle, inlineHandle, objects, objectsInBox, outerCtx, PX_PER_TWIP, selectedHandle, selectedHandles, storyCtx, textboxHit,
   type Handle, type ObjState,
 } from './rust-objects-core.js';
 
@@ -178,32 +179,7 @@ function floatOfBox(o: ObjState, b: BoxHit): Handle | null {
   return f ? floatHandle(f) : null;
 }
 
-/**
- * `tableEdgeAt(e)` under the conditions of `tableMouseDown` (10141): the TS takes a mousedown 4 px around a cell's left,
- * right or bottom edge for the table edge drag BEFORE the objects (an object handle lying on a table edge does not
- * resize the object). Frontier S does not route the edge drag (its declared remainder); this guard keeps front O's object
- * branch off such a point, so the object stays unchanged as in the TS. The table move/size handles (`tableHandleAt`,
- * hover state) are not guarded (ED-218).
- */
-function onTableEdge(o: ObjState, e: MouseEvent): boolean {
-  const el = elOf(o);
-  if (e.button !== 0 || o.api.locked() || el.view !== 'print') return false;
-  const c = storyCtx(o);
-  if (c && (c.ctx.kind === 'textbox' || outerCtx(c.ctx).kind === 'hf')) return false;
-  const s = scaleOf(o);
-  const tol = 4 / s;
-  for (let pg = 0; pg < el.canvases.length; pg++) {
-    const cr = el.canvases[pg]!.getBoundingClientRect();
-    if (e.clientY < cr.top || e.clientY > cr.bottom || e.clientX < cr.left || e.clientX > cr.right) continue;
-    const x = (e.clientX - cr.left) / s, y = (e.clientY - cr.top) / s;
-    for (const b of cellBoxesOn(o, pg)) {
-      if (y >= b.y && y <= b.y + b.h && (Math.abs(x - b.x) <= tol || Math.abs(x - (b.x + b.w)) <= tol)) return true;
-      if (x >= b.x && x <= b.x + b.w && Math.abs(y - (b.y + b.h)) <= tol) return true;
-    }
-    return false;
-  }
-  return false;
-}
+// wave 7 (A2): the table edge guard (ED-219) is gone: the edge drag runs in rust-completion-tables.ts (a2Hooks.first)
 
 /** `hitInlinePic(e)`. */
 function hitInline(o: ObjState, e: MouseEvent): Handle | null {
@@ -263,35 +239,46 @@ function handleAt(o: ObjState, e: MouseEvent): string | null {
 function activeHandle(o: ObjState): Handle | null {
   const v = objects(o);
   if (!v) return null;
-  if (v.scope === 'tb') { const f = v.floats.find((x) => x.id === v.box); return f ? { ...floatHandle(f), editing: true } : null; }
+  // wave 7c (V): the box in edit being dragged — its handles at `editingTb.rectTwips` (13782–13788)
+  const g = o.drag;
+  if (v.scope === 'tb' && g?.box) {
+    const f0 = v.floats.find((x) => x.id === v.box) ?? v.boxFloat ?? undefined;
+    if (f0) return { ...floatHandle(f0), editing: true, page: g.page, rect: { ...g.rect } };
+  }
+  // wave 7c (V, ED-106b): a box inside a box is not one of the context's floats; its rectangle comes as `boxFloat` (the
+  // layout's page object of the box, the TS `tbEdit.rectTwips`)
+  if (v.scope === 'tb') { const f = v.floats.find((x) => x.id === v.box) ?? v.boxFloat ?? undefined; return f ? { ...floatHandle(f), editing: true } : null; }
   return selectedHandle(o);
 }
 
 // ───────────────────────── seleção ─────────────────────────
 
+/**
+ * wave 7c (V, fix round 1): the object selection of a click is the TS `this.floatSel = run; this.refreshSelection()`
+ * (10197, 10205, 10213: paint, proxy, the selection callbacks) — no caret scroll. Through `apply` the shell scrolled the
+ * view to the text caret (measured: a click on f7b__7__0's shape on page 6 jumped the view from 5612 to 244 px, the
+ * pages 0–1 allocated there and kept, the frame-0 canvases and proxy of the next drag different from the TS).
+ */
+function selectCmd(o: ObjState, v: Record<string, unknown>, what: string): void {
+  const s = o.api?.session;
+  if (!s) return;
+  applyNoScroll(a2State(o.ed), s.command({ t: 'drawing', v } as never), what);
+}
+
 function selectHandle(o: ObjState, h: Handle): void {
   const v = objects(o);
   if (v?.sel[0] === h.id && v.sel.length === 1) return;
-  if (h.inline && h.at) cmd(o, { t: 'drawing', v: { t: 'selectInline', para: h.at.para, run: h.at.run } }, 'selectInline');
-  else cmd(o, { t: 'drawing', v: { t: 'selectObject', index: h.index } }, 'selectObject');
+  if (h.inline && h.at) selectCmd(o, { t: 'selectInline', para: h.at.para, run: h.at.run }, 'selectInline');
+  else selectCmd(o, { t: 'selectObject', index: h.index }, 'selectObject');
 }
 
 function deselect(o: ObjState): void {
   const v = objects(o);
-  if (v && v.sel.length) cmd(o, { t: 'drawing', v: { t: 'selectObject' } }, 'selectObject');
+  if (v && v.sel.length) selectCmd(o, { t: 'selectObject' }, 'selectObject');
 }
 
-/**
- * O clique sem arrasto num objeto: o TS toma e descarta um passo de desfazer (`snapshot()` + `discardSnapshot()`), o que
- * dispara `uw-dirty-change` (true), `uw-change` e `uw-dirty-change` (false) num documento limpo — reproduzido aqui sem
- * mexer no estado (ED-202b).
- */
-function snapshotDiscardEvents(o: ObjState): void {
-  const el = elOf(o);
-  if (!el.dirty) el.dispatchEvent(new CustomEvent('uw-dirty-change', { detail: { dirty: true } }));
-  el.dispatchEvent(new CustomEvent('uw-change'));
-  if (!el.dirty) el.dispatchEvent(new CustomEvent('uw-dirty-change', { detail: { dirty: false } }));
-}
+// (wave 7c, V: the click without a drag on an object is the real `snapshot()` + `discardSnapshot()` now — `LiveBegin` and
+// `LiveCancel` — instead of the replayed events of ED-202b)
 
 // ───────────────────────── arrastos ─────────────────────────
 
@@ -302,13 +289,20 @@ function formatNow(o: ObjState, h: Handle): StateFmt | null {
   return a?.value?.format ?? null;
 }
 
-/** `startFloatDrag(e, mode, handle)`: o fantasma durante o arrasto; o fim é UM comando da sessão. */
+/**
+ * `startFloatDrag(e, mode, handle)` (universal-write.ts 13719). Wave 7c (V, the live drags): the TS `snapshot()` at the
+ * mousedown (13730: `ShellEdit::LiveBegin`), the object's model fields written on every move — the size, the rotation and
+ * the anchor relative to the PAGE at the shown position (`moveAnchorTo`, 13784/21389) — and the document laid out once per
+ * animation frame (13790: `LiveSet`), so the object itself and the text around it move live, no ghost; the commit at the
+ * mouseup in the same step (`LiveEnd`), `discardSnapshot()` without a move (`LiveCancel`). The box in edit (TS
+ * `editingTb`, no `engStart`): its handles follow `rectTwips` (13782–13788), its anchor stays until the drop.
+ */
 function startFloatDrag(o: ObjState, e: MouseEvent, mode: 'move' | 'resize' | 'rotate', handle: string): void {
   const h = activeHandle(o);
   if (!h) return;
   e.preventDefault();
-  // em linha: arrastar move NO TEXTO no TS (startInlineDrag); não roteado nesta onda (ED-204)
-  if (h.inline && mode === 'move') return;
+  // wave 7 (A2): em linha, arrastar move NO TEXTO (startInlineDrag 13949; ED-204 closed)
+  if (h.inline && mode === 'move') { startInlineDrag(o, e, h); return; }
   const f = formatNow(o, h);
   if (!f) return;
   const s = scaleOf(o);
@@ -322,6 +316,19 @@ function startFloatDrag(o: ObjState, e: MouseEvent, mode: 'move' | 'resize' | 'r
   let rot = startRot;
   let res = { w: startW, h: startH, dx: 0, dy: 0 };
   const lock0 = h.kind === 'image' ? (f.noChangeAspect ?? true) : !!f.noChangeAspect;
+  // `engStart` (13749): a floating object outside the box in edit moves its anchor live
+  const engStart = !h.editing && !h.inline;
+  const c2 = a2State(o.ed);
+  a2Edit(c2, { t: 'liveBegin' }, 'dragBegin');
+  let frame = 0;
+  const liveForm = (): Record<string, unknown> => {
+    if (mode === 'rotate') return { t: 'liveSet', rot };
+    return {
+      t: 'liveSet',
+      ...(mode === 'resize' ? { size: [res.w, res.h] } : {}),
+      ...(engStart ? { pageAt: [h.rect.x + res.dx, h.rect.y + res.dy] } : {}),
+    };
+  };
   const move = (ev: MouseEvent): void => {
     if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 2) moved = true;
     if (!moved) return;
@@ -337,37 +344,82 @@ function startFloatDrag(o: ObjState, e: MouseEvent, mode: 'move' | 'resize' | 'r
       const dxT = rx * Math.cos(ar) - ry * Math.sin(ar), dyT = rx * Math.sin(ar) + ry * Math.cos(ar);
       res = resizeRect({ handle, startW, startH }, dxT, dyT, lock0 !== ev.shiftKey, ev.ctrlKey, startRot);
     }
-    o.drag = { page: h.page, rect: { x: h.rect.x + res.dx, y: h.rect.y + res.dy, w: res.w, h: res.h }, rot };
-    o.api.paint();
+    // the box in edit: its handles follow the drag (`editingTb.rectTwips`); no ghost anywhere (`ghost: false`: the TS paints
+    // the object itself at its live place)
+    o.drag = { page: h.page, rect: { x: h.rect.x + res.dx, y: h.rect.y + res.dy, w: res.w, h: res.h }, rot, ghost: false, ...(h.editing ? { box: true } : {}) };
+    // one layout per animation frame (the TS `refresh()` once per frame, 13790)
+    if (!frame) frame = requestAnimationFrame(() => { frame = 0; a2Edit(c2, liveForm() as never, 'dragLive'); });
   };
   const up = (): void => {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
+    cancelAnimationFrame(frame);
+    frame = 0;
     o.drag = null;
-    if (!moved) { snapshotDiscardEvents(o); o.api.paint(); return; }
-    commitDrag(o, h, f, mode, rot, res);
+    if (!moved) a2Edit(c2, { t: 'liveCancel' }, 'dragCancel');
+    else commitDrag(o, h, f, mode, rot, res, startW, startH);
+    // the TS mouseup (13807–13809), with or without a move: the selection callbacks and `refresh()`
+    const el = elOf(o);
+    el.onSelectionChange?.(); el.chromeSync?.();
+    (o.ed as unknown as { refresh?: () => void }).refresh?.();
   };
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', up);
 }
 
-/** `commitPictureDrag`/`commitDrawingDrag` do TS como `setRotation` ou `setLayout` (posição nas mesmas referências, tamanho). */
-function commitDrag(o: ObjState, h: Handle, f: StateFmt, mode: string, rot: number, res: { w: number; h: number; dx: number; dy: number }): void {
-  const wrap = (v: Record<string, unknown>): { t: string; v: unknown } => (h.kind === 'image' ? { t: 'picture', v } : { t: 'drawing', v: { t: 'onShape', v } });
-  if (mode === 'rotate') { cmd(o, wrap({ $t: 'setRotation', deg: rot }), 'dragRotate'); return; }
-  const lo: Record<string, unknown> = {};
-  if (mode === 'resize') {
-    lo['widthPt'] = res.w / 20;
-    lo['heightPt'] = res.h / 20;
-    if (f.sizeRelH?.pct) lo['relWidth'] = {};
-    if (f.sizeRelV?.pct) lo['relHeight'] = {};
-  }
-  if (h.frame && !h.inline && !f.inline) {
-    const nh = layoutPosFor(f.posH, 'h', h.rect.x + res.dx, h.frame), nv = layoutPosFor(f.posV, 'v', h.rect.y + res.dy, h.frame);
-    if (nh) lo['posH'] = nh;
-    if (nv) lo['posV'] = nv;
-  }
-  cmd(o, wrap({ $t: 'setLayout', o: lo, facts: { rect: { ...h.rect }, ...(h.frame ? { frame: h.frame } : {}) } }), mode === 'move' ? 'dragMove' : 'dragResize');
+/**
+ * wave 7 (A2, ED-202 closed): `commitPictureDrag` 13853 / `commitDrawingDrag` 13881 as ONE shell edit (`ShellEdit::CommitDrag`):
+ * the rotation, or the size (a relative size made absolute) and the position in the same references, written with the
+ * effect extent recomputed as the TS `applyDrawingXml(…, true)` does (the session's model is not moved during the drag, so a
+ * group's children scale from its start size without the TS reset).
+ */
+function commitDrag(o: ObjState, h: Handle, f: StateFmt, mode: string, rot: number, res: { w: number; h: number; dx: number; dy: number }, startW: number, startH: number): void {
+  const at = h.frame && !h.inline && !f.inline && mode !== 'rotate' ? { at: [h.rect.x + res.dx, h.rect.y + res.dy], frame: h.frame } : {};
+  // wave 7c (V): a group's children scale from its start size (the TS resets `run.group.widthTwips` first, 13893: the live
+  // forms moved it)
+  const group = h.kind === 'group' && mode !== 'rotate' ? { groupStart: [startW, startH] } : {};
+  const e = mode === 'rotate' ? { t: 'commitDrag', rot } : { t: 'commitDrag', size: [res.w, res.h], resetRel: true, ...at, ...group };
+  // wave 7c (V): inside the gesture's step (`LiveEnd`)
+  a2Edit(a2State(o.ed), { t: 'liveEnd', commit: e } as never, mode === 'rotate' ? 'dragRotate' : mode === 'move' ? 'dragMove' : 'dragResize');
+}
+
+/**
+ * wave 7 (A2, ED-204 closed): `startInlineDrag(e, h)` (universal-write.ts 13912) — dragging an inline picture moves it IN THE
+ * TEXT: past 4 px the drop point follows the pointer; the drop moves the run there (`ShellEdit::MoveInlineRun`, one step, the
+ * picture selected at its new place). Wave 7c (V, A2's declaration 4 closed): on every move the caret goes to the point under
+ * the pointer (the TS `this.selection = { anchor: target, focus: target }; this.refreshSelection()`, 13921–13922: paint,
+ * proxy, `onSelectionChange`, `chromeSync`, no scroll) — the session's selection, which also drops the picture's selection
+ * as the TS `selectedFloat()` does once the text selection left the run (13550); a move with no hit leaves the caret and
+ * clears the target (`target = this.hitTest(ev)`); without a drop the old selection comes back (13928).
+ */
+function startInlineDrag(o: ObjState, e: MouseEvent, h: Handle): void {
+  e.preventDefault();
+  const at = h.at;
+  if (!at) return;
+  const sx = e.clientX, sy = e.clientY;
+  let moved = false;
+  let target: Pos | null = null;
+  const el = elOf(o);
+  const keep = { anchor: { ...el.selection.anchor }, focus: { ...el.selection.focus } };
+  const caretTo = (a: Pos, f: Pos, what: string): void => {
+    const s = o.api.session;
+    if (!s) return;
+    applyNoScroll(a2State(o.ed), s.setSelection(a, f), what);
+  };
+  const move = (ev: MouseEvent): void => {
+    if (!moved && Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 4) moved = true;
+    if (!moved) return;
+    target = o.api.hitAt(ev);
+    if (target) caretTo(target, target, 'inlineDragCaret');
+  };
+  const up = (): void => {
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', up);
+    if (moved && target) a2Edit(a2State(o.ed), { t: 'moveInline', para: at.para, run: at.run, toPara: target.para, toOffset: target.offset } as never, 'moveInlineRun');
+    else caretTo(keep.anchor, keep.focus, 'inlineDragCancel');
+  };
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
 }
 
 /** As setas com um objeto flutuante selecionado (90 tw; Ctrl: 15 tw), nas mesmas referências. */
@@ -425,19 +477,29 @@ function cropHit(o: ObjState, e: MouseEvent): string | null {
   return inFull || inFrame ? 'pan' : null;
 }
 
-/** `startCropDrag`: o fim grava o recorte (`setCrop`: a:srcRect e o tamanho; a posição não anda, ED-215). */
+/**
+ * `startCropDrag` (universal-write.ts 14059): the crop, the size and the position in one step at the mouseup (ED-215).
+ * Wave 7c (V, the live drags): `snapshot()` at the mousedown (`LiveBegin`), `pic.crop`, the size and the anchor at the
+ * page written on every move and the document laid out once per frame (14090–14106: `LiveSet`), the crop overlay drawn
+ * from the live crop (the TS `cropGeom` reads `pic.crop`); the commit in the same step (`LiveEnd`).
+ */
 function startCropDrag(o: ObjState, e: MouseEvent, handle: string): void {
   const h = cropHandle(o);
   const f = h && formatNow(o, h);
   if (!h || !f) return;
   e.preventDefault();
+  const c2 = a2State(o.ed);
+  a2Edit(c2, { t: 'liveBegin' }, 'cropBegin');
+  let frame = 0;
   const s = scaleOf(o);
   const g0 = cropGeom(h, f);
   const rot = h.rot;
   const sx = e.clientX, sy = e.clientY;
   const MIN = 120;
   let moved = false;
+  const R0 = Math.round;
   let crop = { l: 0, t: 0, r: 0, b: 0 };
+  let last = { L: g0.L, R: g0.R, T: g0.T, B: g0.B };
   const move = (ev: MouseEvent): void => {
     if (!moved && Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) <= 2) return;
     moved = true;
@@ -453,15 +515,35 @@ function startCropDrag(o: ObjState, e: MouseEvent, handle: string): void {
     }
     const dl = (L - fL) / g0.fW, dr = (fL + g0.fW - R) / g0.fW, dt = (T - fT) / g0.fH, db = (fT + g0.fH - B) / g0.fH;
     crop = { l: f.flipH ? dr : dl, r: f.flipH ? dl : dr, t: f.flipV ? db : dt, b: f.flipV ? dt : db };
-    o.drag = { page: h.page, rect: { x: h.rect.x + h.rect.w / 2 + L, y: h.rect.y + h.rect.h / 2 + T, w: R - L, h: B - T }, rot, dashed: true };
-    o.api.paint();
+    last = { L, R, T, B };
+    o.drag = { page: h.page, rect: { x: h.rect.x + h.rect.w / 2 + L, y: h.rect.y + h.rect.h / 2 + T, w: R - L, h: B - T }, rot, ghost: false };
+    o.liveCrop = { ...crop };
+    if (!frame) frame = requestAnimationFrame(() => { frame = 0; a2Edit(c2, liveForm() as never, 'cropLive'); });
+  };
+  /** the TS move (14097–14105): `pic.crop`, the size and offsets rounded, `moveAnchorTo` at the page (a floating picture) */
+  const liveForm = (): Record<string, unknown> => {
+    const w = R0(last.R - last.L), hh = R0(last.B - last.T);
+    const a = (rot * Math.PI) / 180, cxl = (last.L + last.R) / 2, cyl = (last.T + last.B) / 2;
+    const cx = cxl * Math.cos(a) - cyl * Math.sin(a), cy = cxl * Math.sin(a) + cyl * Math.cos(a);
+    const nx = h.rect.x + R0(h.rect.w / 2 + cx - (last.R - last.L) / 2), ny = h.rect.y + R0(h.rect.h / 2 + cy - (last.B - last.T) / 2);
+    return { t: 'liveSet', crop: [crop.l, crop.t, crop.r, crop.b], size: [w, hh], ...(!h.inline && !f.inline ? { pageAt: [nx, ny] } : {}) };
   };
   const up = (): void => {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
+    cancelAnimationFrame(frame);
+    frame = 0;
     o.drag = null;
-    if (!moved) { snapshotDiscardEvents(o); o.api.paint(); return; }
-    cmd(o, { t: 'picture', v: { $t: 'setCrop', ...crop } }, 'cropDrag');
+    o.liveCrop = null;
+    if (!moved) { a2Edit(c2, { t: 'liveCancel' }, 'cropCancel'); o.api.paint(); return; }
+    // wave 7 (A2, ED-215 closed): the crop, the size and the position in one step (the TS mouseup 14152: `srcRect`, `size`,
+    // `posH`/`posV` from the new offsets in the same references, the effect extent recomputed)
+    const w = Math.round(last.R - last.L), hh = Math.round(last.B - last.T);
+    const a = (rot * Math.PI) / 180, cxl = (last.L + last.R) / 2, cyl = (last.T + last.B) / 2;
+    const cx = cxl * Math.cos(a) - cyl * Math.sin(a), cy = cxl * Math.sin(a) + cyl * Math.cos(a);
+    const nx = h.rect.x + Math.round(h.rect.w / 2 + cx - (last.R - last.L) / 2), ny = h.rect.y + Math.round(h.rect.h / 2 + cy - (last.B - last.T) / 2);
+    const pos = h.frame && !h.inline && !f.inline ? { at: [nx, ny], frame: h.frame } : {};
+    a2Edit(c2, { t: 'liveEnd', commit: { t: 'commitDrag', srcRect: [crop.l, crop.t, crop.r, crop.b], size: [w, hh], ...pos } } as never, 'cropDrag');
   };
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', up);
@@ -538,6 +620,16 @@ function linkMouseDown(o: ObjState, e: MouseEvent): boolean {
 
 // ───────────────────────── ganchos ─────────────────────────
 
+/** wave 7 (A2): the gestures of front A2 the TS runs around the objects' (transparent pick, table tools/edges/handles,
+ *  Select Objects first; the wrap points after Draw/Link), its keys before the objects' keys, and the wrap points painted
+ *  instead of the handles. Registered by rust-engine-completion.ts. */
+export const a2Hooks = new WeakMap<ObjState, {
+  first: (e: MouseEvent) => boolean; wrap: (e: MouseEvent) => boolean; key: (e: KeyboardEvent) => boolean;
+  paintHandle: (h: Handle, ctx: CanvasRenderingContext2D, scale: number, dpr: number) => boolean;
+  /** the wrap points' cursor (first in the TS mousemove) and the tables' hover (last: after the crop, handles and floats) */
+  wrapHover: (e: MouseEvent) => boolean; tableHover: (e: MouseEvent) => boolean;
+}>();
+
 /** O `mousedown` nas páginas: o acerto de modos e alças vem antes de tudo (`onPointerFirst`, também fora do texto), depois
  *  objetos e bordas antes do caminho do corpo e da frente S (a entrada na caixa), como no TS. */
 export function onPointerFirst(o: ObjState, e: MouseEvent): boolean {
@@ -545,15 +637,12 @@ export function onPointerFirst(o: ObjState, e: MouseEvent): boolean {
   if (jobsBusy(o.api)) { e.preventDefault(); return true; }
   const el = elOf(o);
   if (e.button !== 0 || el.protectedMode) return false;
-  // the TS `tableMouseDown` comes first (10141): a mousedown on a table edge starts the edge drag there, which frontier S
-  // does not route: a warned no-op here (no object handle, no caret move: ED-219)
-  if (onTableEdge(o, e)) {
-    e.preventDefault();
-    el.focusEditor();
-    o.api.warnOnce('tableEdgeDrag', '[universal-write] engine="rust": the table edge drag is not routed in this wave (disabled)');
-    return true;
-  }
+  // wave 7 (A2): the transparent pick, the table tools, edges and handles (`tableMouseDown`, ED-219 closed) and Select
+  // Objects run first, as the TS mousedown; the wrap points after Draw/Link
+  const a2 = a2Hooks.get(o);
+  if (a2?.first(e)) return true;
   if (drawMouseDown(o, e) || linkMouseDown(o, e)) { el.focusEditor(); return true; }
+  if (a2?.wrap(e)) { el.focusEditor(); return true; }
   if (o.crop !== null) {
     const ch = cropHit(o, e);
     if (ch) { el.focusEditor(); startCropDrag(o, e, ch); return true; }
@@ -589,15 +678,24 @@ export function onPointer(o: ObjState, e: MouseEvent): boolean {
       if (fh) selectHandle(o, fh);
       el.focusEditor();
       startFloatDrag(o, e, 'move', '');
+      // the TS mousedown (10186): the selection callbacks after the drag began
+      el.onSelectionChange?.(); el.chromeSync?.();
       return true;
     }
     // o miolo de uma caixa de texto: a entrada na caixa é da frente S
     if (tb) return false;
     const fh = img ?? hitFloat(o, e) ?? hitInline(o, e);
     if (fh) {
+      const v0 = objects(o);
+      const already = !!v0 && v0.sel[0] === fh.id && v0.sel.length === 1;
       selectHandle(o, fh);
+      // wave 7c (V): an inline picture is selected again even when it is (`selectInlineRun` → `refreshSelection()`, 10198:
+      // the paint, the proxy, the selection callbacks)
+      if (fh.inline && already) { o.api.paint(); (o.ed as unknown as { positionProxy?: () => void }).positionProxy?.(); el.onSelectionChange?.(); el.chromeSync?.(); }
       el.focusEditor();
       startFloatDrag(o, e, 'move', '');
+      // the TS mousedown (10201): the selection callbacks after the drag began
+      el.onSelectionChange?.(); el.chromeSync?.();
       return true;
     }
     deselect(o);
@@ -643,6 +741,7 @@ export function onKey(o: ObjState, e: KeyboardEvent): boolean {
     return false;
   }
   const sel = v && v.scope !== 'tb' ? selectedHandle(o) : null;
+  if (a2Hooks.get(o)?.key(e)) return true; // wave 7 (A2): wrap points, Select Objects, several objects
   if (sel) {
     // caixa de texto selecionada: digitar entra no texto dela (a frente S)
     if (sel.kind === 'textbox' && k.length === 1 && !ctrl && !e.altKey) return false;
@@ -693,7 +792,14 @@ export function onKey(o: ObjState, e: KeyboardEvent): boolean {
 
 /** O cursor do ponteiro sobre alças e objetos (o `mousemove` do TS). */
 export function onHover(o: ObjState, e: MouseEvent): void {
-  if (!o.api?.session || o.drag || o.mode) return;
+  // wave 7 (A2, fix round, ED-219b on f7b__7__8): the TS gate is `floatDrag` only (10400) — Draw Text Box and Create Link
+  // modes, and the Draw Text Box drag itself (its ghost is `o.drag` here, a DOM ghost in the TS), keep the hover, so the
+  // hovered table and its adorners follow the pointer through the draw drag as in the TS
+  if (!o.api?.session || (o.drag && o.mode?.t !== 'draw')) return;
+  // wave 7 (A2): the TS mousemove order (10437): the wrap points, the crop, the handles, the floats (not while a box is
+  // edited), THEN the tables (their hover state only changes when no object is under the pointer: ED-219b)
+  const a2 = a2Hooks.get(o);
+  if (a2?.wrapHover(e)) return;
   const el = elOf(o);
   if (o.crop !== null) {
     const ch = cropHit(o, e);
@@ -701,7 +807,8 @@ export function onHover(o: ObjState, e: MouseEvent): void {
   }
   const hn = handleAt(o, e);
   if (hn) { el.style.cursor = cursorForHandle(hn, activeHandle(o)?.rot ?? 0); return; }
-  if (hitFloat(o, e)) { el.style.cursor = 'move'; return; }
+  if (objects(o)?.scope !== 'tb' && hitFloat(o, e)) { el.style.cursor = 'move'; return; }
+  if (a2?.tableHover(e)) return;
   if (el.style.cursor === 'move' || el.style.cursor.endsWith('-resize') || el.style.cursor === 'grab') el.style.cursor = '';
 }
 
@@ -722,12 +829,15 @@ export function paintPage(o: ObjState, ctx: CanvasRenderingContext2D, page: numb
   try {
     const h = activeHandle(o);
     if (h && h.page === page) {
-      const crop = o.crop !== null && h.id === o.crop && h.kind === 'image' ? formatNow(o, h) : null;
+      const crop0 = o.crop !== null && h.id === o.crop && h.kind === 'image' ? formatNow(o, h) : null;
+      // wave 7c (V): during a Crop drag the overlay reads the live crop (the TS `cropGeom` reads `pic.crop`, 14027)
+      const lc = o.liveCrop;
+      const crop = crop0 && lc ? { ...crop0, srcRect: { l: lc.l * 100000, t: lc.t * 100000, r: lc.r * 100000, b: lc.b * 100000 } } : crop0;
       if (crop) paintCrop(o, ctx, h, crop, scale, dpr);
-      else paintHandles(ctx, h, scale, dpr, (h.kind === 'image' && !h.editing) || h.editable);
+      else if (!a2Hooks.get(o)?.paintHandle(h, ctx, scale, dpr)) paintHandles(ctx, h, scale, dpr, (h.kind === 'image' && !h.editing) || h.editable); // wave 7 (A2): the wrap points
     }
     const g = o.drag;
-    if (g && g.page === page) {
+    if (g && g.page === page && g.ghost !== false) {
       ctx.save();
       ctx.translate((g.rect.x + g.rect.w / 2) * scale, (g.rect.y + g.rect.h / 2) * scale);
       if (g.rot) ctx.rotate((g.rot * Math.PI) / 180);

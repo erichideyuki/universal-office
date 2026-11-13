@@ -79,7 +79,7 @@ fn nothing_to_wrap_is_none() {
 fn only_the_alpha_byte_is_read() {
     let mut d = img(64, 64, |x, y| x > 10 && x < 50 && y > 5 && y < 40);
     let a = contour(&d, 64, 64);
-    for px in d.chunks_exact_mut(4) {
+    for px in d.as_chunks_mut::<4>().0 {
         px[0] = 0xff;
         px[1] = 0x13;
         px[2] = 0x77;

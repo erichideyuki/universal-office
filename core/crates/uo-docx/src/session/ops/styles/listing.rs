@@ -68,6 +68,80 @@ impl Session {
         Arc::new(self.styles.xml().map_or_else(StyleIndex::default, |x| sheet::read_style_index(x)))
     }
 
+    /// `styleKeyOf(id)` (universal-write.ts 2086; wave 7, A1): the key of the style's `w:name` in the index, else of
+    /// its raw name in `listStyles(…, 'en', ∅, 'all')`, else of the id (no styles part: the id).
+    #[must_use]
+    pub fn style_key_for(&self, id: &str) -> String {
+        if self.styles.xml().is_none() {
+            return crate::session::policy::style_key(id);
+        }
+        let idx = self.style_index_now();
+        if let Some(m) = idx.styles.iter().find(|m| m.id == id)
+            && !m.name.is_empty()
+        {
+            return crate::session::policy::style_key(&m.name);
+        }
+        let raw = list_styles_all(&idx, sheet::UiLang::En).into_iter().find(|s| s.id == id).map(|s| s.raw_name);
+        crate::session::policy::style_key(raw.as_deref().unwrap_or(id))
+    }
+
+    /// The id `builtinStyleId(name)` answers (`ensureBuiltinStyle`, universal-write.ts 6303; wave 7, A1), without
+    /// defining it: the id the document gives the built-in now (after the command defined it, the same).
+    #[must_use]
+    pub fn builtin_style_id_of(&self, name: &str) -> String {
+        let b = sheet::builtin_style(name);
+        let pt = b.map(|b| xform::id_of(b.xml)).filter(|s| !s.is_empty()).unwrap_or_else(|| name.to_owned());
+        let base = self.styles_base();
+        xform::resolve_style_id(Some(&base), &pt)
+    }
+
+    /// `!this.docStyles.xml && this.loadedFormat === 'odt'` (universal-write.ts 4156; wave 7, A1): `listStyles` lists the
+    /// ODF's styles (whatever the filter, without the policy, sorted by name in the shell).
+    #[must_use]
+    pub fn odt_style_list(&self) -> bool {
+        self.styles.xml().is_none() && !self.styles_editable()
+    }
+
+    /// The `.odt` branch of `listStyles` (universal-write.ts 4156–4164; wave 7, A1): the paragraph styles of the read
+    /// document (`fullDoc.styles`, `docDefaults` and the non-paragraph ones out) in the map's order, read-only entries;
+    /// the shell sorts them by name (`localeCompare`).
+    #[must_use]
+    pub fn odt_style_entries(&self) -> Vec<StyleListEntry> {
+        let mut out = Vec::new();
+        for (id, v) in self.doc.styles.iter() {
+            if &**id == "docDefaults" || v.r#type.as_deref().is_some_and(|t| !t.is_empty() && t != "paragraph") {
+                continue;
+            }
+            let name = v.name.as_deref().map_or_else(|| id.to_string(), str::to_owned);
+            out.push(StyleListEntry {
+                id: id.to_string(),
+                raw_name: name.clone(),
+                name,
+                kind: "paragraph",
+                built_in: false,
+                defined: true,
+                quick: true,
+                hidden: false,
+                priority: 0.0,
+                in_use: false,
+                is_default: false,
+                based_on: None,
+                next: None,
+                link: None,
+                link_name: None,
+                auto_update: false,
+            });
+        }
+        out
+    }
+
+    /// Whether `styleFormatting(id)` answers (universal-write.ts 4176; wave 7, A1): null without a sheet when the styles are
+    /// not editable (the `.odt`).
+    #[must_use]
+    pub fn style_formatting_available(&self) -> bool {
+        self.styles.xml().is_some() || self.styles_editable()
+    }
+
     /// `docStyles.defaultParagraph()`: the index's first paragraph style with `w:default`, else
     /// `Normal`.
     #[must_use]
@@ -104,6 +178,9 @@ impl Session {
     /// in the session's interface language.
     #[must_use]
     pub fn style_list_entries(&self) -> Vec<StyleListEntry> {
+        if self.odt_style_list() {
+            return self.odt_style_entries();
+        }
         let idx = self.style_index_now();
         let in_use = self.styles_in_use();
         let def_para = Defaults::of(&idx).paragraph;

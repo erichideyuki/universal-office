@@ -29,6 +29,18 @@ pub const BODY: u32 = 0;
 /// The derived document of `view` for one call.
 pub fn build<'a>(view: DocView<'a>, opts: &LayoutOptions) -> LResult<LDoc<'a>> {
     let mut b = Builder { ldoc: LDoc::empty(view), max_depth: opts.limits.max_depth };
+    b.ldoc.theme = crate::theme_word::theme_of(view, opts.ts_empty_theme); // wave 7 (B, gate-O3)
+    // wave 7c (W, item 2; oracle nosettings): Word opens a package without settings in mode 12, and a missing
+    // `w:defaultTabStop` is 708 tw (the frozen TS: 15 and 720)
+    if !opts.ts_missing_settings_mode15 {
+        let facts = view.document().read_facts;
+        if facts.settings_absent {
+            b.ldoc.compat_word = Some(12.0);
+        }
+        if facts.default_tab_absent {
+            b.ldoc.default_tab_word = Some(708.0);
+        }
+    }
     let body = b.story(view.body(), StoryRef::Body, 0)?;
     debug_assert_eq!(body, BODY);
     let mut seen = Vec::new();
@@ -66,6 +78,9 @@ pub fn build<'a>(view: DocView<'a>, opts: &LayoutOptions) -> LResult<LDoc<'a>> {
     if !notes.endnotes.is_empty() {
         b.ldoc.en_sep = crate::engine::notes::endnote_separator(&mut b.ldoc)?;
     }
+    // wave 7c (W, item 4): a lossless read (the editor's session) keeps the bookmark marks in the runs of every story, which
+    // the references' Word rules read
+    b.ldoc.bookmark_marks = !opts.ts_ref_bookmarks && view.document().sources.is_some();
     Ok(b.ldoc)
 }
 

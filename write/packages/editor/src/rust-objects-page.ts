@@ -6,6 +6,7 @@
 import { COLUMN_SPACE_DEFAULT, columnsPresetOf, columnWidths, contentWidth, maxColumns } from '@universal-office/docx-core';
 import { imagePixelInfo } from '@universal-office/docx-layout';
 import { uiLang } from '@universal-office/ui';
+import { ask, cstate as a2State } from './rust-completion-core.js'; // wave 7 (A2): the watermark's measured box (ED-208)
 import { lineNumberingInfo, type LineNumberingInfo } from './text-layout.js';
 import { cmd, locked, omit, pageLang, PX_PER_TWIP, sectionInfo, type ObjState } from './rust-objects-core.js';
 
@@ -166,7 +167,14 @@ export function pageHandlers(o: ObjState): Record<string, (...args: never[]) => 
       else if (spec.kind === 'text') {
         const { kind: _k, ...s } = spec;
         void _k;
-        arg = { t: 'text', spec: omit(s) };
+        // wave 7 (A2, ED-208 closed): an explicit size measures the text with the session's fonts (`watermarkTextBox`)
+        const env = o.api?.pageEnv, ss = o.api?.session;
+        let measuredBox: { widthPt: number; heightPt: number } | null | undefined;
+        if (s['sizePt'] && env && ss) {
+          const c = a2State(o.ed);
+          measuredBox = ask(c, 'watermarkTextBox', (b, x) => b.watermarkTextBox(x, env.inner as never, String(s['text'] ?? ''), String(s['font'] ?? ''), Number(s['sizePt'])));
+        }
+        arg = omit({ t: 'text', spec: omit(s), measuredBox: measuredBox ?? undefined });
       } else {
         const { kind: _k, ...s } = spec;
         void _k;

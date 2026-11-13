@@ -355,8 +355,14 @@ fn d2b_f5_session_matches_the_element() {
     for rec in cap.records().iter().filter(|r| r.key.ends_with("#0")) {
         let rel = rec.key.trim_end_matches("#0");
         let bytes = std::fs::read(root.join(rel)).unwrap();
-        let mut s =
-            Session::open(bytes, OpenOptions { sig_mode: SigMode::Ts, ..OpenOptions::default() }, Box::new(FixedEnv::default())).unwrap();
+        // wave 7c (S): the TS captures save after note options set back to the loaded ones; the frozen TS writes them only when
+        // they differ from the load, into the package it reuses, so the earlier save's `w:footnotePr` stays (Word saves
+        // the current options: measured, an undone number format is gone and a number format set back is the current one;
+        // `save_parts.rs`). Fix round 1: the TS also drops the note styles of an undone note insertion when no save came
+        // in between (Word keeps them, measured). The steps the flag covers are listed in uo-bindings.md "Wave 7c — S, fix
+        // round 1" (wasm, no flags: 10 `settings.xml` and 31 `styles.xml` items of the `parts` facet)
+        let o = OpenOptions { sig_mode: SigMode::Ts, ts_stale_parts: true, ..OpenOptions::default() };
+        let mut s = Session::open(bytes, o, Box::new(FixedEnv::default())).unwrap();
         s.exec(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }), &mut cx.cx()).unwrap();
         let mut pending: Option<&str> = None;
         for j in 0..=steps {

@@ -195,7 +195,7 @@ impl Engine {
         let n = blocks.len();
         let hf_flow = is_hf_ref(at);
         let is_hf = ps.is_some() && hf_flow;
-        let compat = cx.ldoc.view.formatting().settings.compatibility_mode.to_number();
+        let compat = cx.ldoc.compat_mode(); // wave 7c (W, item 2)
         // cell floats, floating tables nested in a cell, nested rows (F7b)
         let mut sf = super::tables::StaticFloats::default();
         let mut cell_shape = false;
@@ -567,6 +567,7 @@ impl Engine {
                         after,
                         band: if uo_jsnum::conv::truthy(band_b) { OptF64::some(band_b) } else { OptF64::NONE },
                         widow: compat >= 15.0 && (p.widow_control || p.ppr.widow_control.is_none()),
+                        keep: compat >= 15.0 && p.keep_lines && !cx.opts.ts_keep_lines_within_page, // wave 7c (W, item 6)
                     };
                     paras.insert(rf.clone(), info);
                     last_para = Some(rf);
