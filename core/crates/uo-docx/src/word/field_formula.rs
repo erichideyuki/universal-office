@@ -383,6 +383,712 @@ fn parse_arithmetic(src: &[u16], max_depth: u32) -> Result<Option<(f64, f64)>, F
     }
 }
 
+// ─────────────── Word's formula field (WordCraft study, area "fields", item B25) ───────────────
+
+/// The number notation of the formula parser: the UI language's (Word parses with the UI locale: pt-BR `,` decimal,
+/// `.` thousands, `;` list separator — measured: `0.256` is 256 and an en-US document gives the same results).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Notation {
+    dec: u16,
+    thou: u16,
+    list: u16,
+}
+
+impl Notation {
+    fn of(ui_lang: &str) -> Notation {
+        match super::numwords::WordsLang::of(ui_lang) {
+            // (en: Word's US notation, not measured here)
+            super::numwords::WordsLang::En => Notation { dec: u16::from(b'.'), thou: u16::from(b','), list: u16::from(b',') },
+            _ => Notation { dec: u16::from(b','), thou: u16::from(b'.'), list: u16::from(b';') },
+        }
+    }
+}
+
+/// Word's formula errors (measured texts in pt-BR; en/es Word's UI strings, unverified).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WordFormulaError {
+    DivZero,
+    UnexpectedEnd,
+    MissingOperator,
+    /// the offending token
+    Syntax(String),
+    /// the bookmark name, upper-cased
+    Bookmark(String),
+}
+
+impl WordFormulaError {
+    /// The text Word writes as the field result, in the UI language.
+    #[must_use]
+    pub fn text(&self, ui_lang: &str) -> String {
+        use super::numwords::WordsLang;
+        let l = WordsLang::of(ui_lang);
+        match (self, l) {
+            (WordFormulaError::DivZero, WordsLang::Pt) => "!Divisão por zero".into(),
+            (WordFormulaError::DivZero, WordsLang::Es) => "!División entre cero".into(),
+            (WordFormulaError::DivZero, WordsLang::En) => "!Zero Divide".into(),
+            (WordFormulaError::UnexpectedEnd, WordsLang::Pt) => "!Fim imprevisto da fórmula".into(),
+            (WordFormulaError::UnexpectedEnd, WordsLang::Es) => "!Final inesperado de la fórmula".into(),
+            (WordFormulaError::UnexpectedEnd, WordsLang::En) => "!Unexpected End of Formula".into(),
+            (WordFormulaError::MissingOperator, WordsLang::Pt) => "!Está faltando operador".into(),
+            (WordFormulaError::MissingOperator, WordsLang::Es) => "!Falta un operador".into(),
+            (WordFormulaError::MissingOperator, WordsLang::En) => "!Missing Operator".into(),
+            (WordFormulaError::Syntax(t), WordsLang::Pt) => format!("!Erro de sintaxe, {t}"),
+            (WordFormulaError::Syntax(t), WordsLang::Es) => format!("!Error de sintaxis, {t}"),
+            (WordFormulaError::Syntax(t), WordsLang::En) => format!("!Syntax Error, {t}"),
+            (WordFormulaError::Bookmark(t), WordsLang::Pt) => format!("!Indicador não definido, {t}"),
+            (WordFormulaError::Bookmark(t), WordsLang::Es) => format!("!Marcador no definido, {t}"),
+            (WordFormulaError::Bookmark(t), WordsLang::En) => format!("!Undefined Bookmark, {t}"),
+        }
+    }
+}
+
+/// One token of Word's formula.
+#[derive(Clone, Debug, PartialEq)]
+enum WTok {
+    /// a number literal: its value, its decimals, whether it groups thousands, whether it has a decimal part, the text
+    Num {
+        v: f64,
+        decimals: f64,
+        thousands: bool,
+        frac: bool,
+        text: String,
+    },
+    Ident(String),
+    /// an operator or a separator (`+ - * / ^ % ( ) = < > <= >= <>` and the list separator)
+    Op(String),
+    /// any other character (a syntax error where it is read)
+    Stray(String),
+}
+
+impl WTok {
+    fn text(&self) -> String {
+        match self {
+            WTok::Num { text, .. } | WTok::Ident(text) | WTok::Op(text) | WTok::Stray(text) => text.clone(),
+        }
+    }
+
+    fn starts_operand(&self) -> bool {
+        matches!(self, WTok::Num { .. } | WTok::Ident(_)) || *self == WTok::Op("(".into())
+    }
+}
+
+fn wdigit(u: Option<&u16>) -> bool {
+    u.is_some_and(|&u| is_digit(u))
+}
+
+fn unit_char(u: Option<&u16>) -> char {
+    u.and_then(|&u| char::from_u32(u32::from(u))).unwrap_or('0')
+}
+
+/// The tokens of Word's formula in a notation: a number is digits, optional thousands groups (exactly three digits
+/// after each separator), an optional decimal part; a leading decimal separator followed by digits is a number too
+/// (`1,2,3` is two numbers: "Está faltando operador", measured); `1.5` (pt) is `1` and a stray `.` ("Erro de sintaxe,
+/// .", measured).
+fn wtokenize(src: &[u16], nt: Notation) -> Vec<WTok> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    let txt = |a: usize, b: usize| String::from_utf16_lossy(src.get(a..b).unwrap_or(&[]));
+    while let Some(&u) = src.get(i) {
+        if is_js_space_unit(u) {
+            i += 1;
+            continue;
+        }
+        let s = i;
+        if is_digit(u) || (u == nt.dec && wdigit(src.get(i + 1))) {
+            let mut int = String::new();
+            let mut thousands = false;
+            while wdigit(src.get(i)) {
+                int.push(unit_char(src.get(i)));
+                i += 1;
+            }
+            while !int.is_empty() && src.get(i) == Some(&nt.thou) && (1..=3).all(|k| wdigit(src.get(i + k))) && !wdigit(src.get(i + 4)) {
+                for k in 1..=3 {
+                    int.push(unit_char(src.get(i + k)));
+                }
+                i += 4;
+                thousands = true;
+            }
+            let mut frac = String::new();
+            let mut has_frac = false;
+            if src.get(i) == Some(&nt.dec) && wdigit(src.get(i + 1)) {
+                has_frac = true;
+                i += 1;
+                while wdigit(src.get(i)) {
+                    frac.push(unit_char(src.get(i)));
+                    i += 1;
+                }
+            }
+            let lit = format!("{}{}{}", if int.is_empty() { "0" } else { &int }, if has_frac { "." } else { "" }, frac);
+            let decimals = f64::from(u32::try_from(frac.len()).unwrap_or(0));
+            out.push(WTok::Num { v: uo_jsnum::parse::parse_float(&lit), decimals, thousands, frac: has_frac, text: txt(s, i) });
+            continue;
+        }
+        let ch = char::from_u32(u32::from(u)).unwrap_or('\u{fffd}');
+        if ch.is_alphabetic() || ch == '_' {
+            while src.get(i).and_then(|&u| char::from_u32(u32::from(u))).is_some_and(|c| c.is_alphanumeric() || c == '_') {
+                i += 1;
+            }
+            out.push(WTok::Ident(txt(s, i)));
+            continue;
+        }
+        let two = src.get(i + 1).and_then(|&n| char::from_u32(u32::from(n)));
+        if matches!((ch, two), ('<', Some('=' | '>')) | ('>', Some('='))) {
+            i += 2;
+            out.push(WTok::Op(txt(s, i)));
+            continue;
+        }
+        i += 1;
+        // (`:` joins the two cells of a table range, `A1:B2`; where no name is a cell it is an operator nothing reads, a
+        // syntax error at it as a stray character)
+        if u == nt.list || "+-*/^%()=<>:".contains(ch) {
+            out.push(WTok::Op(txt(s, i)));
+        } else {
+            out.push(WTok::Stray(txt(s, i)));
+        }
+    }
+    out
+}
+
+/// The functions of Word's formula field.
+const WORD_FUNCTIONS: [&str; 18] = [
+    "ABS", "AND", "AVERAGE", "COUNT", "DEFINED", "FALSE", "IF", "INT", "MAX", "MIN", "MOD", "NOT", "OR", "PRODUCT", "ROUND", "SIGN", "SUM",
+    "TRUE",
+];
+
+/// The list functions: a literal with a decimal part as an argument is a syntax error at that literal (`SUM(1,2)` →
+/// "Erro de sintaxe, 1,2", measured; inferred from that one case for the others).
+const LIST_FUNCTIONS: [&str; 6] = ["AVERAGE", "COUNT", "MAX", "MIN", "PRODUCT", "SUM"];
+
+/// The value of a name of a table formula: one number (a cell) or a list (a range, `ABOVE`/`LEFT`/…).
+#[derive(Clone, Debug, PartialEq)]
+pub enum NameValue {
+    Num(f64),
+    List(Vec<f64>),
+}
+
+/// What the names of a formula stand for beyond Word's functions, `TRUE` and `FALSE`: the session's table formula
+/// answers its cells, ranges, `ABOVE`/`BELOW`/`LEFT`/`RIGHT` and the bookmarks with a number; the header/footer
+/// evaluator knows none ([`NoNames`]: every other name is an undefined bookmark).
+pub trait FormulaNames {
+    /// Whether `name` is a cell reference (`A1`): `name:name2` is then read as a range.
+    fn is_cell(&self, _name: &str) -> bool {
+        false
+    }
+    /// The value of a name that is no function call (`to`: the second cell of a range); `None` = a bookmark.
+    fn value(&mut self, _name: &str, _to: Option<&str>) -> Option<NameValue> {
+        None
+    }
+    /// A bookmark's number; `None` = not defined.
+    fn bookmark(&mut self, _name: &str) -> Option<f64> {
+        None
+    }
+}
+
+/// No names: the header/footer formula.
+pub struct NoNames;
+
+impl FormulaNames for NoNames {}
+
+/// A parsed formula. A run of operators of one precedence (`1+2-3`, `2*3/4`, `2^3^2`) is one [`WNode::Chain`]
+/// evaluated left to right, and a run of `%` one [`WNode::Pct`] with its count: the height of the tree grows only
+/// through the nesting `WParser::enter` bounds, so a 100,000-term sum overflows neither the evaluation nor the drop.
+#[derive(Clone, Debug)]
+enum WNode {
+    Num(f64),
+    Bookmark(String),
+    Neg(Box<WNode>),
+    /// the operand and how many `%` follow it
+    Pct(Box<WNode>, usize),
+    /// a comparison (`=`, `<`, `>`, `<=`, `>=`, `<>`)
+    Bin(String, Box<WNode>, Box<WNode>),
+    /// the first operand, then each operator with its right operand (left-associative)
+    Chain(Box<WNode>, Vec<(String, WNode)>),
+    Call(String, Vec<WNode>),
+    /// `DEFINED(name)`: whether the name is a defined bookmark
+    Defined(bool),
+    /// a table range or direction (its text, its numbers): a list function takes every number, anything else one
+    List(String, Vec<f64>),
+}
+
+struct WParser<'n> {
+    toks: Vec<WTok>,
+    i: usize,
+    list: String,
+    decimals: f64,
+    thousands: bool,
+    depth: u32,
+    max_depth: u32,
+    names: &'n mut dyn FormulaNames,
+}
+
+/// Why Word's parse stopped.
+enum WStop {
+    Err(WordFormulaError),
+    Depth,
+}
+
+impl From<WordFormulaError> for WStop {
+    fn from(e: WordFormulaError) -> WStop {
+        WStop::Err(e)
+    }
+}
+
+type WRes<T> = Result<T, WStop>;
+
+impl WParser<'_> {
+    fn peek(&self) -> Option<&WTok> {
+        self.toks.get(self.i)
+    }
+
+    fn is_op(&self, o: &str) -> bool {
+        matches!(self.peek(), Some(WTok::Op(x)) if x == o)
+    }
+
+    fn enter(&mut self) -> WRes<()> {
+        self.depth += 1;
+        if self.depth > self.max_depth { Err(WStop::Depth) } else { Ok(()) }
+    }
+
+    /// The error at the current token (the end: "Fim imprevisto").
+    fn here(&self) -> WStop {
+        match self.peek() {
+            None => WStop::Err(WordFormulaError::UnexpectedEnd),
+            Some(t) => WStop::Err(WordFormulaError::Syntax(t.text())),
+        }
+    }
+
+    fn comparison(&mut self) -> WRes<WNode> {
+        self.enter()?;
+        let mut a = self.additive()?;
+        if let Some(WTok::Op(o)) = self.peek()
+            && ["=", "<", ">", "<=", ">=", "<>"].contains(&o.as_str())
+        {
+            let o = o.clone();
+            self.i += 1;
+            let b = self.additive()?;
+            a = WNode::Bin(o, Box::new(a), Box::new(b));
+        }
+        self.depth -= 1;
+        Ok(a)
+    }
+
+    fn additive(&mut self) -> WRes<WNode> {
+        let a = self.term()?;
+        let mut rest = Vec::new();
+        while self.is_op("+") || self.is_op("-") {
+            let o = self.peek().map(WTok::text).unwrap_or_default();
+            self.i += 1;
+            rest.push((o, self.term()?));
+        }
+        Ok(chain(a, rest))
+    }
+
+    fn term(&mut self) -> WRes<WNode> {
+        let a = self.power()?;
+        let mut rest = Vec::new();
+        while self.is_op("*") || self.is_op("/") {
+            let o = self.peek().map(WTok::text).unwrap_or_default();
+            self.i += 1;
+            rest.push((o, self.power()?));
+        }
+        Ok(chain(a, rest))
+    }
+
+    fn power(&mut self) -> WRes<WNode> {
+        let a = self.unary()?;
+        let mut rest = Vec::new();
+        while self.is_op("^") {
+            self.i += 1;
+            rest.push(("^".to_owned(), self.unary()?));
+        }
+        Ok(chain(a, rest))
+    }
+
+    fn unary(&mut self) -> WRes<WNode> {
+        self.enter()?;
+        let r = if self.is_op("-") {
+            self.i += 1;
+            self.unary().map(|v| WNode::Neg(Box::new(v)))
+        } else if self.is_op("+") {
+            self.i += 1;
+            self.unary()
+        } else {
+            self.postfix()
+        };
+        self.depth -= 1;
+        r
+    }
+
+    fn postfix(&mut self) -> WRes<WNode> {
+        let v = self.primary()?;
+        let mut n = 0usize;
+        while self.is_op("%") {
+            self.i += 1;
+            n += 1;
+        }
+        Ok(if n == 0 { v } else { WNode::Pct(Box::new(v), n) })
+    }
+
+    fn close(&mut self) -> WRes<()> {
+        if !self.is_op(")") {
+            return Err(self.here());
+        }
+        self.i += 1;
+        Ok(())
+    }
+
+    /// A name that is no function call (already read): a cell or range, a direction, a bookmark with a number, else an
+    /// undefined bookmark (an error when evaluated).
+    fn name(&mut self, name: String, up: String) -> WRes<WNode> {
+        let mut to = None;
+        if self.names.is_cell(&name) && self.is_op(":") {
+            self.i += 1;
+            match self.peek() {
+                Some(WTok::Ident(n)) if self.names.is_cell(n) => {
+                    to = Some(n.clone());
+                    self.i += 1;
+                }
+                _ => return Err(self.here()),
+            }
+        }
+        match self.names.value(&name, to.as_deref()) {
+            Some(NameValue::Num(v)) => Ok(WNode::Num(v)),
+            Some(NameValue::List(v)) => {
+                let text = match to {
+                    Some(t) => format!("{name}:{t}"),
+                    None => name,
+                };
+                Ok(WNode::List(text, v))
+            }
+            None => Ok(self.names.bookmark(&name).map_or(WNode::Bookmark(up), WNode::Num)),
+        }
+    }
+
+    fn primary(&mut self) -> WRes<WNode> {
+        let Some(t) = self.peek().cloned() else { return Err(WordFormulaError::UnexpectedEnd.into()) };
+        match t {
+            WTok::Num { v, decimals, thousands, .. } => {
+                self.i += 1;
+                self.decimals = max(self.decimals, decimals);
+                self.thousands |= thousands;
+                Ok(WNode::Num(v))
+            }
+            WTok::Op(o) if o == "(" => {
+                self.i += 1;
+                let v = self.comparison()?;
+                self.close()?;
+                Ok(v)
+            }
+            WTok::Ident(name) => {
+                self.i += 1;
+                let up = uo_text::case::to_uppercase_str(&name);
+                if !self.is_op("(") {
+                    return match up.as_str() {
+                        "TRUE" => Ok(WNode::Num(1.0)),
+                        "FALSE" => Ok(WNode::Num(0.0)),
+                        _ => self.name(name, up),
+                    };
+                }
+                self.i += 1;
+                if !WORD_FUNCTIONS.contains(&up.as_str()) {
+                    // an unknown function: the error is at the token after its parenthesis (`FOO(1)` → ", 1")
+                    return Err(self.here());
+                }
+                if up == "DEFINED" {
+                    // `DEFINED(name)`: whether the bookmark exists (the layout knows no bookmark values: 0)
+                    let defined = if let Some(WTok::Ident(n)) = self.peek().cloned() {
+                        self.i += 1;
+                        self.names.bookmark(&n).is_some()
+                    } else {
+                        self.comparison()?;
+                        false
+                    };
+                    self.close()?;
+                    return Ok(WNode::Defined(defined));
+                }
+                let mut args = Vec::new();
+                if !(matches!(up.as_str(), "TRUE" | "FALSE") && self.is_op(")")) {
+                    let list = self.list.clone();
+                    loop {
+                        if LIST_FUNCTIONS.contains(&up.as_str())
+                            && let Some(WTok::Num { frac: true, text, .. }) = self.peek()
+                        {
+                            return Err(WordFormulaError::Syntax(text.clone()).into());
+                        }
+                        args.push(self.comparison()?);
+                        if self.is_op(&list) {
+                            self.i += 1;
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                // a function short of its arguments: the error is where the separator was due (`MOD(-7,3)` in pt-BR is
+                // one argument, -7,3: "Erro de sintaxe, )", measured)
+                let min = match up.as_str() {
+                    "IF" => 3,
+                    "ROUND" | "MOD" | "AND" | "OR" => 2,
+                    "TRUE" | "FALSE" => 0,
+                    _ => 1,
+                };
+                if args.len() < min {
+                    return Err(self.here());
+                }
+                self.close()?;
+                Ok(WNode::Call(up, args))
+            }
+            WTok::Op(_) | WTok::Stray(_) => Err(self.here()),
+        }
+    }
+}
+
+/// One of Word's formula functions over its evaluated arguments (`xs`: every argument in order). `ROUND` is half away
+/// from zero at the decimals (`ROUND(2,345;2)` = 2,35, measured), `INT` truncates, `MOD` takes the dividend's sign.
+pub fn word_function(name: &str, xs: &[f64]) -> Result<f64, WordFormulaError> {
+    let one = |k: usize| xs.get(k).copied().unwrap_or(0.0);
+    let b = |x: bool| if x { 1.0 } else { 0.0 };
+    let t = |x: f64| x != 0.0 && !x.is_nan();
+    let count = || f64::from(u32::try_from(xs.len()).unwrap_or(u32::MAX));
+    Ok(match name {
+        "ABS" => abs(one(0)),
+        "AND" => b(t(one(0)) && t(one(1))),
+        "OR" => b(t(one(0)) || t(one(1))),
+        "NOT" => b(!t(one(0))),
+        "AVERAGE" => {
+            if xs.is_empty() {
+                return Err(WordFormulaError::DivZero);
+            }
+            xs.iter().sum::<f64>() / count()
+        }
+        "COUNT" => count(),
+        "TRUE" => 1.0,
+        "FALSE" | "DEFINED" => 0.0,
+        "IF" => {
+            if t(one(0)) {
+                one(1)
+            } else {
+                one(2)
+            }
+        }
+        "INT" => uo_jsnum::math::trunc(one(0)),
+        // (no number — only an empty table list gives none: 0, as the table formula always had)
+        "MAX" | "MIN" if xs.is_empty() => 0.0,
+        "MAX" => xs.iter().copied().fold(f64::NEG_INFINITY, uo_jsnum::math::max),
+        "MIN" => xs.iter().copied().fold(f64::INFINITY, uo_jsnum::math::min),
+        "MOD" => {
+            if one(1) == 0.0 {
+                return Err(WordFormulaError::DivZero);
+            }
+            uo_jsnum::math::rem(one(0), one(1))
+        }
+        "PRODUCT" => xs.iter().product(),
+        "ROUND" => round_away(one(0), uo_jsnum::math::trunc(one(1))),
+        "SIGN" => sign(one(0)),
+        "SUM" => xs.iter().sum(),
+        _ => return Err(WordFormulaError::Syntax(name.to_owned())),
+    })
+}
+
+/// `a` and its operators: `a` itself when there is none.
+fn chain(a: WNode, rest: Vec<(String, WNode)>) -> WNode {
+    if rest.is_empty() { a } else { WNode::Chain(Box::new(a), rest) }
+}
+
+/// One binary operator over its evaluated operands.
+fn wbin(o: &str, x: f64, y: f64) -> Result<f64, WordFormulaError> {
+    let c = |v: bool| if v { 1.0 } else { 0.0 };
+    Ok(match o {
+        "+" => x + y,
+        "-" => x - y,
+        "*" => x * y,
+        "/" => {
+            if y == 0.0 {
+                return Err(WordFormulaError::DivZero);
+            }
+            x / y
+        }
+        "^" => pow(x, y),
+        "=" => c(x == y),
+        "<" => c(x < y),
+        ">" => c(x > y),
+        "<=" => c(x <= y),
+        ">=" => c(x >= y),
+        _ => c(x != y),
+    })
+}
+
+fn weval(n: &WNode) -> Result<f64, WordFormulaError> {
+    Ok(match n {
+        WNode::Num(v) => *v,
+        WNode::Bookmark(name) => return Err(WordFormulaError::Bookmark(name.clone())),
+        WNode::Neg(a) => -weval(a)?,
+        WNode::Pct(a, k) => {
+            let mut v = weval(a)?;
+            for _ in 0..*k {
+                v /= 100.0;
+            }
+            v
+        }
+        WNode::Defined(d) => {
+            if *d {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        // one number: a list of one, else the syntax error at the list (not measured)
+        WNode::List(text, v) => match v.as_slice() {
+            [x] => *x,
+            _ => return Err(WordFormulaError::Syntax(text.clone())),
+        },
+        WNode::Bin(o, a, b) => {
+            let (x, y) = (weval(a)?, weval(b)?);
+            wbin(o, x, y)?
+        }
+        WNode::Chain(a, rest) => {
+            // left to right, as the nested `((a o b) o c)` it stands for: each operand evaluated, then applied
+            let mut x = weval(a)?;
+            for (o, b) in rest {
+                let y = weval(b)?;
+                x = wbin(o, x, y)?;
+            }
+            x
+        }
+        WNode::Call(f, args) => {
+            // a list function takes every number of a table list; the others one number per argument
+            let mut xs = Vec::with_capacity(args.len());
+            for a in args {
+                match a {
+                    WNode::List(_, v) if LIST_FUNCTIONS.contains(&f.as_str()) => xs.extend_from_slice(v),
+                    _ => xs.push(weval(a)?),
+                }
+            }
+            word_function(f, &xs)?
+        }
+    })
+}
+
+/// What Word's evaluation of an expression gives: the value, the decimals of its literals and whether a literal
+/// grouped thousands, or Word's error.
+pub type WordValue = Result<(f64, f64, bool), WordFormulaError>;
+
+/// Word's evaluation of a formula expression (no switches); `Err(Depth)` past `max_depth`.
+fn word_arithmetic(expr: &[u16], nt: Notation, max_depth: u32, names: &mut dyn FormulaNames) -> Result<WordValue, FormulaError> {
+    let toks = wtokenize(expr, nt);
+    let list = String::from_utf16_lossy(&[nt.list]);
+    let mut p = WParser { toks, i: 0, list, decimals: 0.0, thousands: false, depth: 0, max_depth, names };
+    let node = match p.comparison() {
+        Ok(n) => n,
+        Err(WStop::Depth) => return Err(FormulaError::Depth),
+        Err(WStop::Err(e)) => return Ok(Err(e)),
+    };
+    if let Some(t) = p.peek() {
+        return Ok(Err(if t.starts_operand() { WordFormulaError::MissingOperator } else { WordFormulaError::Syntax(t.text()) }));
+    }
+    // a table list alone is its sum (the table formula's rule)
+    let v = match &node {
+        WNode::List(_, v) => Ok(v.iter().fold(0.0, |a, x| a + x)),
+        n => weval(n),
+    };
+    Ok(v.map(|v| (v, p.decimals, p.thousands)))
+}
+
+/// Word's formula grammar over the names of a table formula (WordCraft study, fields B25: the session's table formula
+/// under Word's rules): the expression after `=` (no switches) in the UI language's notation, the names answered by
+/// `names`. `Err(Depth)` past `max_depth`.
+pub fn evaluate_word_expression(
+    expr: &[u16],
+    ui_lang: &str,
+    max_depth: u32,
+    names: &mut dyn FormulaNames,
+) -> Result<WordValue, FormulaError> {
+    word_arithmetic(expr, Notation::of(ui_lang), max_depth, names)
+}
+
+/// `substituteNested` for Word's evaluator: each nested `{ … }` (innermost first) replaced by its numeric value in the
+/// notation; a nested formula is Word's; a nested field without a number keeps the cached result (`None`).
+fn substitute_nested_word(
+    code: &[u16],
+    value: &mut FieldValue<'_>,
+    words: super::numwords::WordsLang,
+    ui_lang: &str,
+    max_depth: u32,
+    cap: &mut TextCap,
+) -> Result<Option<Vec<u16>>, FormulaError> {
+    let nt = Notation::of(ui_lang);
+    let mut out: Vec<u16> = code.to_vec();
+    for _ in 0..200 {
+        let Some((a, b)) = inner_braces(&out) else { return Ok(Some(out)) };
+        let inner: Vec<u16> = out.get(a + 1..b - 1).unwrap_or(&[]).to_vec();
+        let name = field_name(&inner);
+        let v = if name == [u16::from(b'=')] {
+            evaluate_field_formula_word(&inner, value, words, ui_lang, max_depth, cap)?.map(|u| u.units().to_vec())
+        } else {
+            let mut instr = vec![u16::from(b' ')];
+            instr.extend_from_slice(uo_text::space::trim(&inner));
+            instr.push(u16::from(b' '));
+            value(&String::from_utf16_lossy(&name), &instr)
+        };
+        let Some(v) = v else { return Ok(None) };
+        let Ok((n, _, _)) = word_arithmetic(uo_text::space::trim(&v), nt, max_depth, &mut NoNames)? else { return Ok(None) };
+        let mut text = to_js_string(n);
+        if nt.dec != u16::from(b'.') {
+            text = text.replacen('.', &String::from_utf16_lossy(&[nt.dec]), 1);
+        }
+        let mut next: Vec<u16> = out.get(..a).unwrap_or(&[]).to_vec();
+        next.push(u16::from(b' '));
+        next.extend(text.encode_utf16());
+        next.push(u16::from(b' '));
+        next.extend_from_slice(out.get(b..).unwrap_or(&[]));
+        out = next;
+    }
+    Ok(None)
+}
+
+/// Word's formula field (WordCraft study, area "fields", item B25; measured in Word 365 pt-BR, the 104 `hf-*` rows of
+/// `tests/oracle_wc/fields/word-fields-dump.tsv` of uo-docx-layout): comparisons, `^`, postfix `%`, the 18 functions
+/// (case-insensitive, `;` between the arguments), Word's error texts with the offending token, the thousands of a
+/// grouped literal kept in the result, `\#` pictures, and the `\*` switches of [`super::field_switch`] in the field's
+/// language (`words`). Numbers are read in the UI language's notation (`ui_lang`). `Ok(None)`: keep the cached result
+/// (a nested field without a number, pt-BR DollarText).
+pub fn evaluate_field_formula_word(
+    code: &[u16],
+    value: &mut FieldValue<'_>,
+    words: super::numwords::WordsLang,
+    ui_lang: &str,
+    max_depth: u32,
+    cap: &mut TextCap,
+) -> Result<Option<Utf16>, FormulaError> {
+    let Some(flat) = substitute_nested_word(code, value, words, ui_lang, max_depth, cap)? else { return Ok(None) };
+    let mut k = 0;
+    while flat.get(k).is_some_and(|&u| is_js_space_unit(u)) {
+        k += 1;
+    }
+    if flat.get(k) != Some(&u16::from(b'=')) {
+        return Ok(None);
+    }
+    let body = flat.get(k + 1..).unwrap_or(&[]);
+    let bs = body.iter().position(|&u| u == u16::from(b'\\')).unwrap_or(body.len());
+    let (expr, switches) = body.split_at(bs);
+    let (v, decimals, thousands) = match word_arithmetic(expr, Notation::of(ui_lang), max_depth, &mut NoNames)? {
+        Ok(r) => r,
+        Err(e) => return Ok(Some(capped(&e.text(ui_lang), cap))),
+    };
+    if let Some(pic) = find_switch_picture(switches, u16::from(b'#')) {
+        return Ok(format_picture(v, &String::from_utf16_lossy(pic)).map(|s| capped(&s, cap)));
+    }
+    let sw = super::field_switch::parse_general(switches);
+    if sw.format.is_some() || sw.unknown {
+        return Ok(match super::field_switch::apply_number(v, &sw, words, ui_lang) {
+            Ok(Some(t)) => Some(capped(&t, cap)),
+            Ok(None) => None,
+            Err(e) => Some(capped(e, cap)),
+        });
+    }
+    Ok(format_formula_result(v, &CellNumber { n: v, decimals, thousands, prefix: None, suffix: None })
+        .map(|s| capped(&super::field_switch::apply_case(&s, &sw.cases), cap)))
+}
+
 // ─────────────── docx-core table-formula.ts: the result formats ───────────────
 
 /// `CellNumber` (table-formula.ts:14): a number and the format it passes to the result.
@@ -642,6 +1348,63 @@ mod tests {
             evaluate_field_formula(&u(&ok), &mut none, None, 256, &mut cap).map(|v| v.map(|v| String::from_utf16_lossy(v.units()))),
             Ok(Some("1".into()))
         );
+    }
+
+    fn weval_str(code: &str, words: super::super::numwords::WordsLang) -> String {
+        let mut cap = TextCap::default();
+        let mut value = |_: &str, _: &[u16]| -> Option<Vec<u16>> { None };
+        evaluate_field_formula_word(&u(code), &mut value, words, "pt-BR", 256, &mut cap)
+            .ok()
+            .flatten()
+            .map_or_else(|| "<cache>".into(), |v| String::from_utf16_lossy(v.units()))
+    }
+
+    /// WordCraft study, item B25: rows of the measured `hf-*` dump (the full 104 rows run in uo-docx-layout's
+    /// `word_wc_fields`).
+    #[test]
+    fn word_formulas() {
+        use super::super::numwords::WordsLang;
+        let pt = WordsLang::Pt;
+        for (code, want) in [
+            ("= SUM(1;2;3)", "6"),
+            ("= AVERAGE(1;2)", "1,5"),
+            ("= IF(1>0;5;6)", "5"),
+            ("= DEFINED(nada)", "0"),
+            ("= 2^3", "8"),
+            ("= 3<>3", "0"),
+            ("= 200*10%", "20"),
+            ("= INT(-2,5)", "-2"),
+            ("= ROUND(2,345;2)", "2,35"),
+            ("= ROUND(-2,345;2)", "-2,35"),
+            ("= ROUND(1234,5;-2)", "1200"),
+            ("= MOD(7;-3)", "1"),
+            ("= MOD(7,5;2)", "1,5"),
+            ("= 1/0", "!Divisão por zero"),
+            ("= SUM(", "!Fim imprevisto da fórmula"),
+            ("= 2 3", "!Está faltando operador"),
+            ("= FOO(1)", "!Erro de sintaxe, 1"),
+            ("= nada", "!Indicador não definido, NADA"),
+            ("= (1+2", "!Fim imprevisto da fórmula"),
+            ("= 1,2,3", "!Está faltando operador"),
+            ("= 1.000,5", "1.000,5"),
+            ("= 1.5", "!Erro de sintaxe, ."),
+            ("= INT(-2.5)", "!Erro de sintaxe, ."),
+            ("= SUM(1,2)", "!Erro de sintaxe, 1,2"),
+            ("= 1;2", "!Erro de sintaxe, ;"),
+            ("= int(2,5)", "2"),
+            ("= Round(2,5;0)", "3"),
+            ("= MAX()", "!Erro de sintaxe, )"),
+            ("= 1+", "!Fim imprevisto da fórmula"),
+            ("= )", "!Erro de sintaxe, )"),
+            ("= 2*(3", "!Fim imprevisto da fórmula"),
+            ("= 0,5 \\# \"0%\"", "1%"),
+            ("= -2,5 \\# \"0,0\"", "-2,5"),
+            ("= 5 \\* CardText", "Cinco"),
+        ] {
+            assert_eq!(weval_str(code, pt), want, "{code}");
+        }
+        assert_eq!(weval_str("= 5 \\* CardText", WordsLang::En), "five");
+        assert_eq!(weval_str("= 14,55 \\* DollarText", WordsLang::En), "fourteen and 55/100");
     }
 
     #[test]

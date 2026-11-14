@@ -174,7 +174,16 @@ pub fn is_ref_error_text(v: &[u16]) -> bool {
         "Erro! Nenhum texto com o estilo especificado foi encontrado no documento.",
         "Error! No text of specified style in document.",
     ];
+    // WordCraft study (fields, B21): Word's STYLEREF error for a name no style answers to, bold as the others (measured:
+    // the line breaks of `oracle_wc/styleref` sr-body, sr-n)
+    const UNKNOWN_STYLE: [(&str, &str); 3] = [
+        ("Erro! Use a guia Página Inicial para aplicar ", " ao texto que deverá aparecer aqui."),
+        ("Error! Use the Home tab to apply ", " to the text that you want to appear here."),
+        ("¡Error! Utilice la pestaña Inicio para aplicar ", " al texto que desea que aparezca aquí."),
+    ];
+    let t = String::from_utf16_lossy(v);
     ALL.iter().any(|s| s.encode_utf16().eq(v.iter().copied()))
+        || UNKNOWN_STYLE.iter().any(|(a, b)| t.len() > a.len() + b.len() && t.starts_with(a) && t.ends_with(b))
 }
 
 /// Whether derived paragraph `k` holds the start mark of bookmark `bm` (wave 7c, W, item 4).
@@ -280,12 +289,58 @@ fn seq_format(f: &[u16]) -> &'static str {
     }
 }
 
+/// What a STYLEREF looks for (WordCraft study, fields B21).
+enum SrMatch {
+    /// a heading level (`STYLEREF 1`)
+    Level(f64),
+    /// a paragraph style id
+    Para(Box<str>),
+    /// a character style id
+    Char(Box<str>),
+}
+
+/// The character style of a run (`w:rStyle`).
+fn run_char_style(r: &crate::model::Run) -> Option<&str> {
+    r.props.char_style.as_deref().or_else(|| r.rpr.as_deref().and_then(|p| p.r_style.as_deref())).filter(|s| !s.is_empty())
+}
+
+/// The name of `STYLEREF name …` (WordCraft study, fields B21): a quoted name (the quotes dropped), else the token up to
+/// a space or a backslash; `None` without one.
+fn styleref_target(instr: &[u16]) -> Option<String> {
+    let s = uo_text::space::trim_start(instr);
+    let kw = b"STYLEREF";
+    if s.len() < kw.len() || !s.iter().zip(kw).all(|(&u, &c)| ieq(u, c)) {
+        return None;
+    }
+    let rest = s.get(kw.len()..).unwrap_or(&[]);
+    let r = uo_text::space::trim_start(rest);
+    if r.len() == rest.len() {
+        return None;
+    }
+    let name: &[u16] = if r.first() == Some(&0x22) {
+        let body = r.get(1..).unwrap_or(&[]);
+        body.get(..body.iter().position(|&u| u == 0x22).unwrap_or(body.len())).unwrap_or(&[])
+    } else {
+        r.get(..r.iter().position(|&u| uo_text::space::is_space(u) || u == BSL).unwrap_or(r.len())).unwrap_or(&[])
+    };
+    let name = String::from_utf16_lossy(name);
+    let t = uo_jsnum::text::trim(&name);
+    (!t.is_empty()).then(|| t.to_owned())
+}
+
 /// `n?.numId ? st.next(n.numId, n.ilvl ?? 0) : null` of `listNumberOf`.
 fn list_next(st: &mut word::NumberingState, fmt: &crate::model::DocFormatting, r: &word::ResolvedPPr) -> Option<NumberMarker> {
     let n = r.ppr.num_pr.as_deref()?;
     let id = n.num_id.filter(|v| v.truthy())?;
     let ilvl = n.ilvl.filter(|v| !v.is_null()).unwrap_or(crate::model::JsNumber::Num(0.0));
-    st.next(fmt, id, ilvl)
+    if !st.rules.word_lang {
+        return st.next(fmt, id, ilvl);
+    }
+    // WordCraft study (fields, B26): the words of the marker in the language of the paragraph MARK (its direct run
+    // properties, the paragraph style's, the document defaults), as the paragraph's own marker (`para.rs`)
+    let of = |p: Option<&crate::model::RPr>| p.and_then(|p| p.lang.as_ref()).and_then(|l| l.val.clone()).filter(|v| !v.is_empty());
+    let lang = of(r.ppr.r_pr.as_deref()).or_else(|| of(Some(&*r.style_rpr))).or_else(|| of(fmt.styles.doc_defaults.r_pr.as_deref()));
+    st.next_in(fmt, id, ilvl, lang.as_deref())
 }
 
 /// A block index as a JS number.
@@ -298,11 +353,25 @@ fn run_len(cx: &Cx<'_, '_>, k: RunKey) -> f64 {
     num(cx.ldoc.run_text(k).len())
 }
 
+/// [`Engine::bookmark_pages_with_numbers`]: each bookmark's page text and its page number.
+pub type BookmarkPages = (IndexMap<Box<str>, Box<[u16]>>, IndexMap<Box<str>, f64>);
+
 impl Engine {
     /// `seqValue(instr)` (engine.ts:426): `SEQ id [\* format] [\r n] [\c] [\h] [\s n]` — counters in
     /// document order; `\s n` resets the counter after a heading of level ≤ n since it last counted
     /// (oracle refs-lab, sr-*).
     pub(crate) fn seq_value(&mut self, instr: &[u16], lang: &str, cap: &mut word::TextCap) -> Option<Box<[u16]>> {
+        let (v, hidden) = self.seq_number(instr)?;
+        if hidden {
+            return Some(Box::default());
+        }
+        let fmt = star_format(instr).map_or("decimal", seq_format);
+        Some(word::format_number(v, Some(fmt), lang, cap).units().into())
+    }
+
+    /// The counter of `seqValue` (the sequence advanced as the TS does) and whether `\h` hides it (WordCraft study,
+    /// fields B22: the format is then Word's `\*`, applied by the caller).
+    pub(crate) fn seq_number(&mut self, instr: &[u16]) -> Option<(f64, bool)> {
         let id16 = uo_text::case::to_lowercase(tok(instr, 1)?).into_owned();
         if id16.is_empty() || id16.first() == Some(&BSL) {
             return None;
@@ -329,30 +398,55 @@ impl Engine {
             v += 1.0;
         }
         flow.seq.insert(id, v);
-        if has_switch(instr, b"h") {
-            return Some(Box::default());
-        }
-        let fmt = star_format(instr).map_or("decimal", seq_format);
-        Some(word::format_number(v, Some(fmt), lang, cap).units().into())
+        Some((v, has_switch(instr, b"h")))
     }
 
     /// `positionWord(bm, block, at)` (engine.ts:450): "above"/"below" (REF/NOTEREF `\p`): the field
     /// comes after or before the bookmark in document order; in the same paragraph the offset
     /// decides (oracle refs, ref-pos). Without the field's position, the cache stays.
-    fn position_word(cx: &Cx<'_, '_>, bm: &str, block: Option<i64>, at: Option<f64>) -> Option<Box<[u16]>> {
+    fn position_word(&mut self, cx: &Cx<'_, '_>, bm: &str, block: Option<i64>, at: Option<f64>) -> Option<Box<[u16]>> {
         let b = cx.ldoc.view.bookmarks().starts.get(bm)?;
         let block = block.filter(|b| *b >= 0)?;
         let bk = b.block.to_number();
         let off = b.offset.as_f64().unwrap_or(0.0);
         let blk = f64::from(u32::try_from(block).unwrap_or(u32::MAX));
         let below = blk < bk || (js_eq(blk, bk) && at.is_some_and(|a| a < off));
-        let w = match (below, is_pt(&cx.opts.lang)) {
-            (true, true) => "abaixo",
-            (true, false) => "below",
-            (false, true) => "acima",
-            (false, false) => "above",
+        // WordCraft study (fields, B24): Word writes the word in the language of the field paragraph's STYLE (its run
+        // properties, then the document defaults; measured: the field runs and the mark's direct lang do not count);
+        // the frozen TS in the UI language (`ts_ref_relative`), pt or else English (engine.ts:450 knows no Spanish)
+        if cx.opts.ts_ref_relative {
+            let pt = is_pt(&cx.opts.lang);
+            return Some(utf16(match (below, pt) {
+                (true, true) => "abaixo",
+                (true, false) => "below",
+                (false, true) => "acima",
+                (false, false) => "above",
+            }));
+        }
+        let lang = self.para_style_lang(cx, block);
+        let w = match (below, uo_docx::word::numwords::WordsLang::of(&lang)) {
+            (true, uo_docx::word::numwords::WordsLang::Pt) => "abaixo",
+            (true, uo_docx::word::numwords::WordsLang::En) => "below",
+            (true, uo_docx::word::numwords::WordsLang::Es) => "más adelante",
+            (false, uo_docx::word::numwords::WordsLang::Pt) => "acima",
+            (false, uo_docx::word::numwords::WordsLang::En) => "above",
+            (false, uo_docx::word::numwords::WordsLang::Es) => "más atrás",
         };
         Some(utf16(w))
+    }
+
+    /// WordCraft study (fields, B24): the `w:lang` of a flow block's paragraph style (its run properties), else of the
+    /// document defaults, else the layout's language.
+    fn para_style_lang(&mut self, cx: &Cx<'_, '_>, block: i64) -> Box<str> {
+        let fmt = cx.ldoc.view.formatting();
+        let style = usize::try_from(block).ok().and_then(|i| match self.flow_block(cx, i) {
+            Some(LBlock::Paragraph(k)) => fields_of(cx.ldoc, &PSrc::Doc(k))
+                .ok()
+                .map(|(ppr, props, _, _)| word::resolve_ppr(fmt, &mut self.ctx.resolver, ppr.as_deref(), &props, None).style_rpr),
+            _ => None,
+        });
+        let of = |r: Option<&crate::model::RPr>| r.and_then(|r| r.lang.as_ref()).and_then(|l| l.val.clone()).filter(|v| !v.is_empty());
+        of(style.as_deref()).or_else(|| of(fmt.styles.doc_defaults.r_pr.as_deref())).unwrap_or_else(|| cx.opts.lang.clone())
     }
 
     /// Wave 7c (W, item 4): how Word sees bookmark `bm` (see [`BmWhere`]). The body index decides when the bookmark's
@@ -434,7 +528,7 @@ impl Engine {
     /// `noteRefValue`'s body once the bookmark is known (wave 7c, W, fix round 1: split from [`Engine::note_ref_value`]).
     fn note_ref_body(&mut self, cx: &Cx<'_, '_>, bm: &str, instr: &[u16], block: Option<i64>, at: Option<f64>) -> Option<Box<[u16]>> {
         if has_switch(instr, b"p") {
-            return Self::position_word(cx, bm, block, at);
+            return self.position_word(cx, bm, block, at);
         }
         let bmk = cx.ldoc.view.bookmarks();
         let st = bmk.starts.get(bm)?;
@@ -491,7 +585,7 @@ impl Engine {
             }
         }
         if has_switch(instr, b"p") {
-            return Ok(Self::position_word(cx, &bm, block, at));
+            return Ok(self.position_word(cx, &bm, block, at));
         }
         let bmk = cx.ldoc.view.bookmarks();
         if has_switch(instr, b"nrw") {
@@ -505,6 +599,43 @@ impl Engine {
                 return Ok(None);
             }
             let Some(m) = self.list_number_of(cx, bi)?.filter(|m| !m.text.is_empty()) else { return Ok(Some(utf16("0"))) };
+            // WordCraft study (fields, B24): `\r` is Word's relative context — the full number less the leading levels the
+            // field's own list position shares with the target (same list, equal parts); the frozen TS gives the level's
+            // own number (`ts_ref_relative`)
+            if !cx.opts.ts_ref_relative
+                && has_switch(instr, b"r")
+                && !has_switch(instr, b"w")
+                && let Some(parts) = m.parts.as_ref()
+            {
+                let mut own = match block.filter(|b| *b >= 0) {
+                    Some(b) => self.list_number_of(cx, f64::from(u32::try_from(b).unwrap_or(u32::MAX)))?,
+                    None => None,
+                };
+                // an unnumbered field paragraph stands where the list last was: the nearest numbered paragraph of the
+                // target's list before it (oracle `refs/ref-num`: after "b)" of "2.", `\r` gives "b)"; b24 `fim`, after
+                // "2.", the full "1.a)i"; before the list, the full number)
+                if own.as_ref().is_none_or(|o| o.text.is_empty())
+                    && let Some(b) = block.filter(|b| *b > 0).and_then(|b| u32::try_from(b).ok())
+                {
+                    own = None;
+                    for k in (0..b).rev() {
+                        cx.budget.charge(1)?;
+                        if let Some(o) = self.list_number_of(cx, f64::from(k))?.filter(|o| !o.text.is_empty() && o.list_key == m.list_key) {
+                            own = Some(o);
+                            break;
+                        }
+                    }
+                }
+                let shared = match own.as_ref().filter(|o| o.list_key == m.list_key).and_then(|o| o.parts.as_ref()) {
+                    Some(fp) => fp.iter().zip(parts.iter()).take_while(|(a, b)| a == b).count().min(parts.len().saturating_sub(1)),
+                    None => 0,
+                };
+                let mut v = Vec::new();
+                for p in parts.iter().skip(shared) {
+                    v.extend_from_slice(p.units());
+                }
+                return Ok(Some(strip_dots(&v)));
+            }
             let t: Vec<u16> = match (&m.parts, has_switch(instr, b"w")) {
                 (Some(parts), true) => {
                     let sep = d_separator(instr).unwrap_or(&[]);
@@ -596,7 +727,7 @@ impl Engine {
             // the list markers of every block (LA7)
             self.note_read_all();
             let fmt = cx.ldoc.view.formatting();
-            let mut st = word::numbering_state(&cx.opts.lang, &cx.opts.limits);
+            let mut st = word::numbering_state_for(cx.opts);
             let mut out: IndexMap<u32, Option<NumberMarker>> = IndexMap::new();
             let n = self.story_len(cx);
             let mut i = 0usize;
@@ -738,13 +869,150 @@ impl Engine {
         Ok(Some(clean_text(&all)))
     }
 
+    /// WordCraft study (fields, B21): STYLEREF as Word evaluates it (measured: `oracle_wc/styleref`). The target is a
+    /// heading level (`STYLEREF 1`) or a style NAME (`uo_docx::word::style_names`: the UI name, a custom name, an alias);
+    /// a name no style answers to is Word's "Use a guia Página Inicial…" error, a style no text has its "Nenhum texto…".
+    /// In the body: the nearest paragraph with the style before the field (its own included), else the first after. In a
+    /// header/footer (`block` = `None`), per page `ps`: the first paragraph with the style on the page (`\l`: the last),
+    /// else the nearest before the page, else the first after it — over the previous pass's body lines per page
+    /// (`PassInput::page_ranges_guess`; the first pass reads from the start). A paragraph style matches its own
+    /// paragraphs (no basedOn inheritance), a character style the paragraph holding a run of it (the text: that run
+    /// group). `\n \r \w \s` give the paragraph's number without its final period (`\w`: the full context, `\s`:
+    /// the numbers only). The frozen TS (`ts_styleref_per_page`) keeps [`Engine::style_ref_value`].
+    pub(crate) fn style_ref_at(
+        &mut self,
+        cx: &mut Cx<'_, '_>,
+        instr: &[u16],
+        block: Option<i64>,
+        ps: crate::keys::PageIx,
+    ) -> LResult<Option<Box<[u16]>>> {
+        if cx.opts.ts_styleref_per_page {
+            return self.style_ref_value(cx, instr, block);
+        }
+        let Some(name) = styleref_target(instr) else { return Ok(None) };
+        let fmt = cx.ldoc.view.formatting();
+        let want = match name.as_bytes() {
+            [d @ b'1'..=b'9'] => SrMatch::Level(f64::from(d - b'0')),
+            _ => match uo_docx::word::style_names::style_by_ui_name(fmt, &name, &cx.opts.lang) {
+                Some(uo_docx::word::style_names::StyleTarget::Para(id)) => SrMatch::Para(id),
+                Some(uo_docx::word::style_names::StyleTarget::Char(id)) => SrMatch::Char(id),
+                None => return Ok(Some(utf16(&uo_docx::word::style_names::style_ref_unknown_error(&cx.opts.lang, &name)))),
+            },
+        };
+        let len = self.story_len(cx);
+        let n = if len > 0.0 { uo_jsnum::conv::to_uint32(len) as usize } else { 0 };
+        let last = has_switch(instr, b"l");
+        let mut found: Option<usize> = None;
+        let try_range = |e: &mut Self, cx: &mut Cx<'_, '_>, it: &mut dyn Iterator<Item = usize>| -> LResult<Option<usize>> {
+            for i in it {
+                cx.budget.charge(1)?;
+                if e.styleref_matches(cx, i, &want) {
+                    return Ok(Some(i));
+                }
+            }
+            Ok(None)
+        };
+        match block.filter(|b| *b >= 0).and_then(|b| usize::try_from(b).ok()) {
+            Some(b) => {
+                let from = b.min(n.saturating_sub(1));
+                if n > 0 {
+                    found = try_range(self, cx, &mut (0..=from).rev())?;
+                }
+                if found.is_none() {
+                    found = try_range(self, cx, &mut (b.saturating_add(1)..n))?;
+                }
+            }
+            None => {
+                self.found.used_styleref_hf = true;
+                let range = cx.input.page_ranges_guess.get(ps.0 as usize).copied().flatten().filter(|&(a, z)| a <= z && z < n);
+                match range {
+                    Some((a, z)) => {
+                        found = if last { try_range(self, cx, &mut (a..=z).rev())? } else { try_range(self, cx, &mut (a..=z))? };
+                        if found.is_none() {
+                            found = try_range(self, cx, &mut (0..a).rev())?;
+                        }
+                        if found.is_none() {
+                            found = try_range(self, cx, &mut (z + 1..n))?;
+                        }
+                    }
+                    None => found = try_range(self, cx, &mut (0..n))?,
+                }
+            }
+        }
+        let Some(hit) = found else { return Ok(Some(utf16(uo_docx::word::style_names::style_ref_no_text_error(&cx.opts.lang)))) };
+        if !matches!(want, SrMatch::Char(_)) && has_switch(instr, b"nrws") {
+            let Some(m) = self.list_number_of(cx, num(hit))?.filter(|m| !m.text.is_empty()) else { return Ok(Some(utf16("0"))) };
+            let t: Vec<u16> = if has_switch(instr, b"s") {
+                let bullet = m.level.get(cx.ldoc.view.formatting()).and_then(|l| l.num_fmt.as_deref()) == Some("bullet");
+                if bullet { m.text.units().to_vec() } else { m.chapter.as_ref().map(|c| c.units().to_vec()).unwrap_or_default() }
+            } else if has_switch(instr, b"w") {
+                m.parts.as_ref().map_or_else(|| m.text.units().to_vec(), |ps| ps.iter().flat_map(|p| p.units().iter().copied()).collect())
+            } else {
+                m.text.units().to_vec()
+            };
+            return Ok(Some(strip_dots(&t)));
+        }
+        let Some(LBlock::Paragraph(k)) = self.flow_block(cx, hit) else { return Ok(None) };
+        let lp = cx.ldoc.para(k).ok_or(LayoutError::Internal("STYLEREF: paragraph"))?;
+        let mut all = Vec::new();
+        let mut started = false;
+        for &rk in &lp.runs {
+            let run = crate::paint::model_run(cx.ldoc, rk);
+            let skip = run
+                .and_then(|r| r.ext())
+                .is_some_and(|e| e.image.is_some() || e.textbox.is_some() || e.shape.is_some() || e.group.is_some());
+            if let SrMatch::Char(id) = &want {
+                // the first group of runs with the character style
+                let styled = run.is_some_and(|r| run_char_style(r) == Some(&**id));
+                if !styled {
+                    if started {
+                        break;
+                    }
+                    continue;
+                }
+                started = true;
+            }
+            if !skip {
+                all.extend_from_slice(cx.ldoc.run_text(rk));
+            }
+        }
+        Ok(Some(clean_text(&all)))
+    }
+
+    /// Whether flow block `i` is what a STYLEREF looks for (WordCraft study, fields B21).
+    fn styleref_matches(&self, cx: &Cx<'_, '_>, i: usize, want: &SrMatch) -> bool {
+        match want {
+            SrMatch::Level(n) => self.block_heading_level(cx, i) == *n,
+            SrMatch::Para(id) => {
+                let Some(LBlock::Paragraph(k)) = self.flow_block(cx, i) else { return false };
+                fields_of(cx.ldoc, &PSrc::Doc(k)).is_ok_and(|(ppr, props, _, _)| {
+                    props.style_id.as_deref().or_else(|| ppr.as_deref().and_then(|q| q.p_style.as_deref())) == Some(&**id)
+                })
+            }
+            SrMatch::Char(id) => {
+                let Some(LBlock::Paragraph(k)) = self.flow_block(cx, i) else { return false };
+                cx.ldoc.para(k).is_some_and(|lp| {
+                    lp.runs.iter().any(|&rk| crate::paint::model_run(cx.ldoc, rk).is_some_and(|r| run_char_style(r) == Some(&**id)))
+                })
+            }
+        }
+    }
+
     /// `bookmarkPages()` (engine.ts:638): the displayed (formatted) page of each bookmark's
     /// paragraph — inside the paragraph the line holding the bookmark's offset (after a page break
     /// in the middle of the paragraph, the next page — oracle tocref-pbstart); a bookmark in a
     /// block without lines takes the next laid-out line (≤ 50 blocks on).
     #[must_use]
     pub fn bookmark_pages(&self, ldoc: &crate::ldoc::LDoc<'_>, opts: &crate::options::LayoutOptions) -> IndexMap<Box<str>, Box<[u16]>> {
+        self.bookmark_pages_with_numbers(ldoc, opts).0
+    }
+
+    /// [`Engine::bookmark_pages`] and the page NUMBER of each bookmark (WordCraft study, fields B22: PAGEREF with a `\*`
+    /// format numbers the page itself).
+    #[must_use]
+    pub fn bookmark_pages_with_numbers(&self, ldoc: &crate::ldoc::LDoc<'_>, opts: &crate::options::LayoutOptions) -> BookmarkPages {
         let mut out: IndexMap<Box<str>, Box<[u16]>> = IndexMap::new();
+        let mut nums: IndexMap<Box<str>, f64> = IndexMap::new();
         // `/^b(\d+)/.exec(l.ref)`: a body line, by its first block
         let mut first_page: IndexMap<u32, usize> = IndexMap::new();
         let mut para_lines: IndexMap<u32, Vec<(u32, usize)>> = IndexMap::new();
@@ -780,6 +1048,7 @@ impl Engine {
                 b += 1.0;
             }
             let Some((pi, ps)) = pg.and_then(|pi| self.pages.get(pi).map(|ps| (pi, ps))) else { continue };
+            nums.insert(name.clone(), ps.page.number);
             let g = self.geoms.get(ps.geom as usize);
             let fmt = g.and_then(|g| g.pg_fmt.clone()).unwrap_or_else(|| "decimal".into());
             let num = word::format_number(ps.page.number, Some(&fmt), &opts.lang, &mut cap);
@@ -813,6 +1082,6 @@ impl Engine {
                 }
             }
         }
-        out
+        (out, nums)
     }
 }

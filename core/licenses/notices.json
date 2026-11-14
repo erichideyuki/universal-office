@@ -206,7 +206,7 @@
         ]
       },
       {
-        "component": "Hyphenation patterns (hyph-utf8) compiled into uo-fonts",
+        "component": "Hyphenation patterns (hyph-utf8, CC0, Moby) compiled into uo-fonts",
         "version": "",
         "licence": "see the notice file",
         "files": [

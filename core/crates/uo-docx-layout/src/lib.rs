@@ -89,6 +89,8 @@ pub mod query;
 pub mod refs;
 pub mod run_boxes;
 pub mod section;
+pub mod supsub_word;
+pub mod symbol_map;
 pub mod table;
 pub mod theme_word;
 pub mod underline;

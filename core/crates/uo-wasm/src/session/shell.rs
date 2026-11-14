@@ -410,7 +410,8 @@ pub unsafe extern "C" fn uo_shell_para_text(h: *const UoWriteSession, para: u32)
 
 /// The hyphenation pattern ids the session's document needs and `env` does not have yet: the body of
 /// `uo_write_hyphenation_patterns` over the session's document (`'\n'`-separated UTF-8 app languages,
-/// consumed). Status 5 for languages that are not UTF-8.
+/// consumed). Status 5 for languages that are not UTF-8. `flags`: the layout flags (WordCraft study, fields D1:
+/// English is `en-us-word` unless `LAYOUT_TS_HYPHENATION` asks for the frozen TS's `en-us`; 0 when not passed).
 ///
 /// # Safety
 /// `h`, `env` null or live; `(ptr, len)` a buffer of `uo_alloc_bytes(len)` filled by JS.
@@ -420,6 +421,7 @@ pub unsafe extern "C" fn uo_shell_hyphenation_patterns(
     env: *const UoWriteEnv,
     ptr: *mut u8,
     len: usize,
+    flags: u32,
 ) -> *mut UoBuf {
     // SAFETY: the caller guarantees the buffer; it is consumed here.
     let langs = unsafe { take_bytes(ptr, len) };
@@ -433,7 +435,9 @@ pub unsafe extern "C" fn uo_shell_hyphenation_patterns(
         app.iter().any(|z| x == *z || x.strip_prefix(z.as_str()).is_some_and(|r| r.starts_with('-')))
     });
     let (_, hyphenation, _) = env_parts(env);
-    let ids = uo_fonts::hyphen::pattern_ids_to_load(wanted.map(|l| Some(&**l)), hyphenation);
+    // WordCraft study (fields, D1): English with Word's data (`en-us-word`), or `en-us` under the strict TS bit
+    let word = flags & crate::write::LAYOUT_TS_HYPHENATION == 0;
+    let ids = uo_fonts::hyphen::pattern_ids_to_load_with(wanted.map(|l| Some(&**l)), hyphenation, word);
     buf(OK, ids.join("\n").into_bytes())
 }
 

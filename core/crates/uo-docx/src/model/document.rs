@@ -86,6 +86,14 @@ pub struct ReadFacts {
     pub settings_absent: bool,
     /// the settings (part or not) have no `w:defaultTabStop` (Word uses 708 tw, measured; the TS model says 720)
     pub default_tab_absent: bool,
+    /// WordCraft study (page): `w:settings/w:gutterAtTop` (Word puts the gutter above the top margin and ignores
+    /// mirrorMargins and rtlGutter; measured)
+    pub gutter_at_top: bool,
+    /// WordCraft study (page): `w:bookFoldPrinting` (`Some(false)`) or `w:bookFoldRevPrinting` (`Some(true)`): the margins
+    /// Word's PDF applies (measured)
+    pub book_fold: Option<bool>,
+    /// WordCraft study (page): `w:printTwoOnOne` (measured in Word's PDF)
+    pub print_two_on_one: bool,
 }
 
 impl PartialEq for ReadFacts {

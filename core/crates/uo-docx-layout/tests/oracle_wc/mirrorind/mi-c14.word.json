@@ -1,0 +1,95 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 105.14,
+"x1": 386.42,
+"size": 11.04,
+"text": "Umaquerelatórioprazoatendimentoinformaçãoasemà"
+},
+{
+"y": 93.86,
+"x0": 105.14,
+"x1": 372.9,
+"size": 11.04,
+"text": "períododadoscontratoprocedimentoosdeéempresa"
+},
+{
+"y": 106.46,
+"x0": 105.14,
+"x1": 394.54,
+"size": 11.04,
+"text": "segurançaoperaçãonãodocumentooanáliseserviçoárea"
+},
+{
+"y": 119.18,
+"x0": 105.14,
+"x1": 408.09,
+"size": 11.04,
+"text": "execuçãoprocessoparaqualidadeaprovaçãogestãocontrole"
+},
+{
+"y": 131.78,
+"x0": 105.14,
+"x1": 408.51,
+"size": 11.04,
+"text": "responsávelconformecomregistroúltimotécnicaserácliente."
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 141.43,
+"size": 11.04,
+"text": "quebraHxg"
+},
+{
+"y": 93.86,
+"x0": 185.09,
+"x1": 466.37,
+"size": 11.04,
+"text": "Umaquerelatórioprazoatendimentoinformaçãoasemà"
+},
+{
+"y": 106.46,
+"x0": 185.09,
+"x1": 452.85,
+"size": 11.04,
+"text": "períododadoscontratoprocedimentoosdeéempresa"
+},
+{
+"y": 119.18,
+"x0": 185.09,
+"x1": 474.49,
+"size": 11.04,
+"text": "segurançaoperaçãonãodocumentooanáliseserviçoárea"
+},
+{
+"y": 131.78,
+"x0": 185.09,
+"x1": 488.04,
+"size": 11.04,
+"text": "execuçãoprocessoparaqualidadeaprovaçãogestãocontrole"
+},
+{
+"y": 144.38,
+"x0": 185.09,
+"x1": 488.46,
+"size": 11.04,
+"text": "responsávelconformecomregistroúltimotécnicaserácliente."
+}
+],
+"objs": []
+}
+]
+}

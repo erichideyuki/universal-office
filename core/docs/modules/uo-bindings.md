@@ -59,9 +59,10 @@ Environment: `uo_write_env_push_family(env, family, source, embeddable, faces)` 
 assets; the `*-advances.json` table for the PDF, PQ1), `uo_write_env_clear_fonts`, `uo_write_env_take_missing` (the TS
 `loadMissing` selection), `uo_write_env_register_hyphenation(env, text)`.
 
-Document: `uo_write_hyphenation_patterns(doc, env, app_langs)` = the viewer's `hyphenationLangs(full)`
+Document: `uo_write_hyphenation_patterns(doc, env, app_langs, flags)` = the viewer's `hyphenationLangs(full)`
 (`documentHyphenationLanguages(full)` filtered by the app list, prefix match) → pattern ids **not yet registered**, so
-the host fetches only those.
+the host fetches only those; English is `en-us-word` (Word's data) unless `flags` has `LAYOUT_TS_HYPHENATION` (bit 16:
+the frozen TS's `en-us`) — WordCraft study, fields D1 (record uo-docx-layout.md "WordCraft study — fields").
 
 Layout: `uo_layout_page_count`, `uo_layout_page_info` (w, h, section, number, hf_items), `uo_layout_encode_page(page)` (the page message with the Write section as its `app`, G8), `uo_layout_annotations` (`collectAnnotations`), `uo_layout_view` (then every
 `uo_render_*` paint export of frontier E: `encode_page`, `fx_layers`, `pattern`, `rect_gradient`, `blip_tiles`,
@@ -1736,7 +1737,7 @@ reports missing faces or the resolver changes.
 | `uo_shell_relayout_report(e)` | `engine.report()` | `{ path, reason, relaid: [a, b), passes, lineShift, memoHits, memoMisses }` (26 bytes) |
 | `uo_shell_story_info(h)` | `storyInfo()` | `{ paras, lastLength }` |
 | `uo_shell_para_text(h, i)` | `paraText(i)` | UTF-16 text or null |
-| `uo_shell_hyphenation_patterns(h, env, langs)` | `hyphenationPatterns(env, langs)` | the pattern ids the document needs (`uo_write_hyphenation_patterns` over the session) |
+| `uo_shell_hyphenation_patterns(h, env, langs, flags)` | `hyphenationPatterns(env, langs, { tsHyphenation })` | the pattern ids the document needs (`uo_write_hyphenation_patterns` over the session) |
 | `uo_shell_copied(h)` | `copied()` | `{ text, html }` of the last copy/cut, or null |
 | `uo_shell_selection_state(h)` | `selectionState()` | `{ run, para, pending }`: the generated wire `RunProps`/`ParaProps` structs (no header) decoded with the generated `readRunProps`/`readParaProps` |
 
@@ -4916,7 +4917,9 @@ only rulings are the Word-authority ones (gate-O3 among them):
     `onFontsResolved` (57 ms) → `queueRefresh` → `refresh` (137 ms) → `positionProxy` (194 ms), after the Shape Format tab
     grew the bar (178 → 204 px at ~94 ms); the Rust shell resolved every family with its first layout and asks nothing
     after the click (no reposition). A reposition on the bar's growth moves f7b__7__1/3, where the TS stays (fix round 1). Not resolved:
-    the TS's late face request is not reproduced. Record "Wave 7c — V, fix round 2", F-1.
+    the TS's late face request is not reproduced. Record "Wave 7c — V, fix round 2", F-1. (**Closed** in the WordCraft
+    study, page: the proxy follows the caret on every chrome/scroll-container resize; the TS's stale proxy on f7b__7__1/3
+    and f8__7__11 is declared — record "Wave 7c — V, fix round 2", F-1.)
   - ~~**A2's declaration 4**~~ — **closed (V, fix round 1)**: the drop caret follows the pointer, and the picture now paints
     on every frame (a page base painted while a picture decoded was reused by the band repaint); `editor_switch_completion
     --mode inline` frames equal by default. Record "Wave 7c — V" (3) and fix round 1.
@@ -5513,6 +5516,14 @@ six-step drags). The four frame findings, each traced to its cause:
   (`onSelectionChange` mid-drag on f7b__7__1); the TS `queueRefresh`/`askedFonts` semantics on the routed methods (the
   shell gets the emit on f7b__7__1/3 too: its pushed names differ from the TS `askedFonts`, and its Times New Roman
   resolution comes after the click, the TS's at load). Not resolved.
+  **Closed in the WordCraft study (page, 2026-11-14), by the behaviour, not by copying the TS's timing:** the Rust editor
+  keeps the IME proxy at the caret whenever its chrome or scroll container changes size (`rust-engine.ts` `listen`: a
+  `ResizeObserver` on the scroll container, the shadow root's other children and the element; `positionProxy` runs again
+  when the caret's page canvas moved since the proxy was placed, `proxyMoved`). f7b__7__0 frame 0 is now equal (284 px in
+  both). On f7b__7__1, f7b__7__3 and f8__7__11 the frozen TS has no late font event after the bar grew and leaves its
+  proxy 26 px above the caret (7852/351/2900 px against the caret's 7878/377/2926; both engines equal again at @4, after
+  the TS's next refresh): declared in `editor_switch_objects.mjs` as "WordCraft page F-1 (TS proxy stale after the bar
+  grows)" — a TS defect, not a rule to copy. The memory soak stays flat at 13,400,333 live bytes (30 cycles).
 
 Results with the frames on (no declaration for V): `editor_switch_completion --mode all` **ok** (497 s; lists 1,462 + 1,
 paste 1,069, tables 1,004, objects 2,557 + 44 declared W item 3, inline 395, page 134, previews 200; memory 30 cycles

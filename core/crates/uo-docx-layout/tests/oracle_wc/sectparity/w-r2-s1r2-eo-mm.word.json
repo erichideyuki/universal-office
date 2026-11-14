@@ -1,0 +1,151 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 56.64,
+"x1": 82.53,
+"size": 11.04,
+"text": "Par2"
+},
+{
+"y": 81.12,
+"x0": 56.64,
+"x1": 120.89,
+"size": 11.04,
+"text": "pagina1Hxg"
+},
+{
+"y": 93.86,
+"x0": 76.7,
+"x1": 393.97,
+"size": 11.04,
+"text": "Qualidadeaprovaçãogestãocontroleresponsávelconformecom"
+},
+{
+"y": 106.46,
+"x0": 76.7,
+"x1": 361.85,
+"size": 11.04,
+"text": "registroúltimotécnicaseráclienteumaquerelatórioprazo"
+},
+{
+"y": 119.18,
+"x0": 76.7,
+"x1": 352.62,
+"size": 11.04,
+"text": "atendimentoinformaçãoasemàperíododadoscontrato"
+},
+{
+"y": 131.78,
+"x0": 76.7,
+"x1": 284.87,
+"size": 11.04,
+"text": "procedimentoosdeéempresasegurança."
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 114.03,
+"size": 11.04,
+"text": "Cab3"
+},
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 149.36,
+"size": 11.04,
+"text": "pagina2Hxg"
+},
+{
+"y": 93.86,
+"x0": 185.09,
+"x1": 502.36,
+"size": 11.04,
+"text": "Qualidadeaprovaçãogestãocontroleresponsávelconformecom"
+},
+{
+"y": 106.46,
+"x0": 185.09,
+"x1": 470.23,
+"size": 11.04,
+"text": "registroúltimotécnicaseráclienteumaquerelatórioprazo"
+},
+{
+"y": 119.18,
+"x0": 185.09,
+"x1": 461.0,
+"size": 11.04,
+"text": "atendimentoinformaçãoasemàperíododadoscontrato"
+},
+{
+"y": 131.78,
+"x0": 185.09,
+"x1": 393.26,
+"size": 11.04,
+"text": "procedimentoosdeéempresasegurança."
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 56.64,
+"x1": 82.76,
+"size": 11.04,
+"text": "Par4"
+},
+{
+"y": 81.12,
+"x0": 56.64,
+"x1": 120.89,
+"size": 11.04,
+"text": "pagina3Hxg"
+},
+{
+"y": 93.86,
+"x0": 76.7,
+"x1": 393.97,
+"size": 11.04,
+"text": "Qualidadeaprovaçãogestãocontroleresponsávelconformecom"
+},
+{
+"y": 106.46,
+"x0": 76.7,
+"x1": 361.85,
+"size": 11.04,
+"text": "registroúltimotécnicaseráclienteumaquerelatórioprazo"
+},
+{
+"y": 119.18,
+"x0": 76.7,
+"x1": 352.62,
+"size": 11.04,
+"text": "atendimentoinformaçãoasemàperíododadoscontrato"
+},
+{
+"y": 131.78,
+"x0": 76.7,
+"x1": 284.87,
+"size": 11.04,
+"text": "procedimentoosdeéempresasegurança."
+}
+],
+"objs": []
+}
+]
+}

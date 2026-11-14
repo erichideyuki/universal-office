@@ -1,0 +1,651 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 176.2,
+"size": 11.04,
+"text": "CabesquerdaHxg"
+},
+{
+"y": 58.32,
+"x0": 462.94,
+"x1": 538.21,
+"size": 11.04,
+"text": "CabdireitaHxg"
+},
+{
+"y": 804.24,
+"x0": 297.17,
+"x1": 326.07,
+"size": 11.04,
+"text": "Rod1"
+},
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 538.1,
+"size": 11.04,
+"text": "Nãodocumentooanáliseserviçoáreaexecuçãoprocessoparaqualidadeaprovaçãogestão"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 538.04,
+"size": 11.04,
+"text": "controleresponsávelconformecomregistroúltimotécnicaseráclienteumaquerelatório"
+},
+{
+"y": 106.46,
+"x0": 85.1,
+"x1": 539.05,
+"size": 11.04,
+"text": "prazoatendimentoinformaçãoasemàperíododadoscontratoprocedimentoosdeéempresa"
+},
+{
+"y": 119.18,
+"x0": 85.1,
+"x1": 538.53,
+"size": 11.04,
+"text": "segurançaoperaçãonãodocumentooanáliseserviçoáreaexecuçãoprocessopara"
+},
+{
+"y": 131.78,
+"x0": 85.1,
+"x1": 538.68,
+"size": 11.04,
+"text": "qualidadeaprovaçãogestãocontroleresponsávelconformecomregistroúltimotécnicaserá"
+},
+{
+"y": 144.38,
+"x0": 85.1,
+"x1": 401.41,
+"size": 11.04,
+"text": "clienteumaquerelatórioprazoatendimentoinformaçãoasemà."
+},
+{
+"y": 157.1,
+"x0": 476.98,
+"x1": 538.19,
+"size": 11.04,
+"text": "direita1Hxg"
+},
+{
+"y": 169.7,
+"x0": 280.73,
+"x1": 342.55,
+"size": 11.04,
+"text": "centro1Hxg"
+},
+{
+"y": 182.9,
+"x0": 90.74,
+"x1": 391.18,
+"size": 11.04,
+"text": "celulaumHxgceluladoisHxg"
+}
+],
+"objs": [
+{
+"t": "path",
+"x0": 85.1,
+"y0": 172.1,
+"x1": 85.58,
+"y1": 172.58
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 172.1,
+"x1": 85.58,
+"y1": 172.58
+},
+{
+"t": "path",
+"x0": 85.58,
+"y0": 172.1,
+"x1": 311.71,
+"y1": 172.58
+},
+{
+"t": "path",
+"x0": 311.71,
+"y0": 172.1,
+"x1": 312.19,
+"y1": 172.58
+},
+{
+"t": "path",
+"x0": 312.19,
+"y0": 172.1,
+"x1": 538.29,
+"y1": 172.58
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 172.1,
+"x1": 538.78,
+"y1": 172.58
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 172.1,
+"x1": 538.78,
+"y1": 172.58
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 172.58,
+"x1": 85.58,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 185.18,
+"x1": 85.58,
+"y1": 185.66
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 185.18,
+"x1": 85.58,
+"y1": 185.66
+},
+{
+"t": "path",
+"x0": 85.58,
+"y0": 185.18,
+"x1": 311.71,
+"y1": 185.66
+},
+{
+"t": "path",
+"x0": 311.71,
+"y0": 172.58,
+"x1": 312.19,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 311.71,
+"y0": 185.18,
+"x1": 312.19,
+"y1": 185.66
+},
+{
+"t": "path",
+"x0": 312.19,
+"y0": 185.18,
+"x1": 538.29,
+"y1": 185.66
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 172.58,
+"x1": 538.78,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 185.18,
+"x1": 538.78,
+"y1": 185.66
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 185.18,
+"x1": 538.78,
+"y1": 185.66
+}
+]
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 176.2,
+"size": 11.04,
+"text": "CabesquerdaHxg"
+},
+{
+"y": 58.32,
+"x0": 462.94,
+"x1": 538.21,
+"size": 11.04,
+"text": "CabdireitaHxg"
+},
+{
+"y": 804.24,
+"x0": 297.17,
+"x1": 326.06,
+"size": 11.04,
+"text": "Rod2"
+},
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 149.36,
+"size": 11.04,
+"text": "pagina2Hxg"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 538.63,
+"size": 11.04,
+"text": "Procedimentoosdeéempresasegurançaoperaçãonãodocumentooanáliseserviçoárea"
+},
+{
+"y": 106.46,
+"x0": 85.1,
+"x1": 537.78,
+"size": 11.04,
+"text": "execuçãoprocessoparaqualidadeaprovaçãogestãocontroleresponsávelconformecom"
+},
+{
+"y": 119.18,
+"x0": 85.1,
+"x1": 538.78,
+"size": 11.04,
+"text": "registroúltimotécnicaseráclienteumaquerelatórioprazoatendimentoinformaçãoasemà"
+},
+{
+"y": 131.78,
+"x0": 85.1,
+"x1": 538.13,
+"size": 11.04,
+"text": "períododadoscontratoprocedimentoosdeéempresasegurançaoperaçãonãodocumento"
+},
+{
+"y": 144.38,
+"x0": 85.1,
+"x1": 538.12,
+"size": 11.04,
+"text": "oanáliseserviçoáreaexecuçãoprocessoparaqualidadeaprovaçãogestãocontrole"
+},
+{
+"y": 157.1,
+"x0": 85.1,
+"x1": 434.28,
+"size": 11.04,
+"text": "responsávelconformecomregistroúltimotécnicaseráclienteumaque."
+},
+{
+"y": 169.7,
+"x0": 476.98,
+"x1": 538.19,
+"size": 11.04,
+"text": "direita2Hxg"
+},
+{
+"y": 182.42,
+"x0": 280.73,
+"x1": 342.55,
+"size": 11.04,
+"text": "centro2Hxg"
+},
+{
+"y": 195.5,
+"x0": 90.74,
+"x1": 391.18,
+"size": 11.04,
+"text": "celulaumHxgceluladoisHxg"
+}
+],
+"objs": [
+{
+"t": "path",
+"x0": 85.1,
+"y0": 184.7,
+"x1": 85.58,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 184.7,
+"x1": 85.58,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 85.58,
+"y0": 184.7,
+"x1": 311.71,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 311.71,
+"y0": 184.7,
+"x1": 312.19,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 312.19,
+"y0": 184.7,
+"x1": 538.29,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 184.7,
+"x1": 538.78,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 184.7,
+"x1": 538.78,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 185.18,
+"x1": 85.58,
+"y1": 197.9
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 197.9,
+"x1": 85.58,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 197.9,
+"x1": 85.58,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 85.58,
+"y0": 197.9,
+"x1": 311.71,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 311.71,
+"y0": 185.18,
+"x1": 312.19,
+"y1": 197.9
+},
+{
+"t": "path",
+"x0": 311.71,
+"y0": 197.9,
+"x1": 312.19,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 312.19,
+"y0": 197.9,
+"x1": 538.29,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 185.18,
+"x1": 538.78,
+"y1": 197.9
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 197.9,
+"x1": 538.78,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 197.9,
+"x1": 538.78,
+"y1": 198.38
+}
+]
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 176.2,
+"size": 11.04,
+"text": "CabesquerdaHxg"
+},
+{
+"y": 58.32,
+"x0": 462.94,
+"x1": 538.21,
+"size": 11.04,
+"text": "CabdireitaHxg"
+},
+{
+"y": 804.24,
+"x0": 297.17,
+"x1": 326.12,
+"size": 11.04,
+"text": "Rod3"
+},
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 149.36,
+"size": 11.04,
+"text": "pagina3Hxg"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 537.89,
+"size": 11.04,
+"text": "Execuçãoprocessoparaqualidadeaprovaçãogestãocontroleresponsávelconformecom"
+},
+{
+"y": 106.46,
+"x0": 85.1,
+"x1": 538.4,
+"size": 11.04,
+"text": "registroúltimotécnicaseráclienteumaquerelatórioprazoatendimentoinformaçãoasemà"
+},
+{
+"y": 119.18,
+"x0": 85.1,
+"x1": 538.45,
+"size": 11.04,
+"text": "períododadoscontratoprocedimentoosdeéempresasegurançaoperaçãonãodocumento"
+},
+{
+"y": 131.78,
+"x0": 85.1,
+"x1": 538.12,
+"size": 11.04,
+"text": "oanáliseserviçoáreaexecuçãoprocessoparaqualidadeaprovaçãogestãocontrole"
+},
+{
+"y": 144.38,
+"x0": 85.1,
+"x1": 538.05,
+"size": 11.04,
+"text": "responsávelconformecomregistroúltimotécnicaseráclienteumaquerelatórioprazo"
+},
+{
+"y": 157.1,
+"x0": 85.1,
+"x1": 463.1,
+"size": 11.04,
+"text": "atendimentoinformaçãoasemàperíododadoscontratoprocedimentoosde."
+},
+{
+"y": 169.7,
+"x0": 476.98,
+"x1": 538.19,
+"size": 11.04,
+"text": "direita3Hxg"
+},
+{
+"y": 182.42,
+"x0": 280.73,
+"x1": 342.55,
+"size": 11.04,
+"text": "centro3Hxg"
+},
+{
+"y": 195.5,
+"x0": 90.74,
+"x1": 391.18,
+"size": 11.04,
+"text": "celulaumHxgceluladoisHxg"
+}
+],
+"objs": [
+{
+"t": "path",
+"x0": 85.1,
+"y0": 184.7,
+"x1": 85.58,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 184.7,
+"x1": 85.58,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 85.58,
+"y0": 184.7,
+"x1": 311.71,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 311.71,
+"y0": 184.7,
+"x1": 312.19,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 312.19,
+"y0": 184.7,
+"x1": 538.29,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 184.7,
+"x1": 538.78,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 184.7,
+"x1": 538.78,
+"y1": 185.18
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 185.18,
+"x1": 85.58,
+"y1": 197.9
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 197.9,
+"x1": 85.58,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 85.1,
+"y0": 197.9,
+"x1": 85.58,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 85.58,
+"y0": 197.9,
+"x1": 311.71,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 311.71,
+"y0": 185.18,
+"x1": 312.19,
+"y1": 197.9
+},
+{
+"t": "path",
+"x0": 311.71,
+"y0": 197.9,
+"x1": 312.19,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 312.19,
+"y0": 197.9,
+"x1": 538.29,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 185.18,
+"x1": 538.78,
+"y1": 197.9
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 197.9,
+"x1": 538.78,
+"y1": 198.38
+},
+{
+"t": "path",
+"x0": 538.3,
+"y0": 197.9,
+"x1": 538.78,
+"y1": 198.38
+}
+]
+}
+]
+}

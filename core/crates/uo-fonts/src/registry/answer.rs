@@ -146,6 +146,14 @@ pub trait FontProvider: Send + Sync {
     fn budget_refusals(&self) -> u64 {
         0
     }
+
+    /// WordCraft study (fields, C5): the face whose FULL name (name ID 4) is `name` in the UI language `ui_lcid` — or
+    /// in en-US when the font has no record for that language —, or the named instance "<family> <subfamily>" of a
+    /// variable font: `(family, bold, italic)` to ask [`FontProvider::face`] for. Providers without a name index
+    /// answer `None` (only the PostScript and camel-case rules apply then).
+    fn full_name_face(&self, _name: &str, _ui_lcid: u16) -> Option<(String, bool, bool)> {
+        None
+    }
 }
 
 /// A face picked from a font index for a request, before a policy gives it an identity.
@@ -170,4 +178,9 @@ pub trait FaceSource: Send + Sync {
     /// are loaded (a face of a `.ttc` as a standalone sfnt). `None` when the family is unknown or
     /// the face cannot be loaded.
     fn pick(&self, family: &str, bold: bool, italic: bool) -> Option<SourceFace>;
+
+    /// WordCraft study (fields, C5): see [`FontProvider::full_name_face`].
+    fn full_name(&self, _name: &str, _ui_lcid: u16) -> Option<(String, bool, bool)> {
+        None
+    }
 }

@@ -26,23 +26,27 @@
 pub mod datefmt;
 pub mod direct;
 pub mod field_formula;
+pub mod field_switch;
 pub mod hyphlangs;
 pub mod num;
 pub mod numbering;
 pub mod numpages;
+pub mod numwords;
 pub mod obj;
 pub mod outline;
 pub mod refs;
 pub mod resolve;
 pub mod revisions;
+pub mod style_names;
 
 pub use datefmt::{LocalDateTime, date_field_value, format_word_date, time_clip};
 pub use direct::{ResolvedPPr, direct_ppr, direct_rpr, direct_rpr_with, effective_ppr, inherited_ppr, resolve_ppr};
 pub use field_formula::{
-    CellNumber, FieldValue, FormulaError, evaluate_field_formula, field_name, format_formula_result, format_picture, has_nested_field,
+    CellNumber, FieldValue, FormulaError, WordFormulaError, evaluate_field_formula, evaluate_field_formula_word, field_name,
+    format_formula_result, format_picture, has_nested_field, word_function,
 };
 pub use hyphlangs::document_hyphenation_languages;
-pub use numbering::{LevelCount, LevelSrc, NumberMarker, NumberingState, TextCap, format_number};
+pub use numbering::{LevelCount, LevelSrc, NumRules, NumberMarker, NumberingState, TextCap, format_number, format_number_word};
 pub use numpages::{COVER_PAGES_GALLERY, has_cover_page, num_pages_shown};
 pub use outline::{
     ListItemValue, NumberedItem, OutlineHeading, OutlineParagraph, document_outline, heading_text, list_item_values, numbered_items,

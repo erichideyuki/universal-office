@@ -175,6 +175,8 @@ export class RustEditor {
   private warned = new Set<string>();
   private pushedFonts = new WeakSet<ViewerEnv>();
   private composing = false;
+  /** WordCraft study (page, F-1): the caret canvas and its offsets when the proxy was last placed */
+  private proxyCanvasAt: [HTMLCanvasElement, number, number] | null = null;
   private drag: { anchor: Pos; move: (e: MouseEvent) => void; up: () => void } | null = null;
   /** o elemento está conectado (desconectado: estacionado, fora de `live.editors`) */
   private attached = true;
@@ -679,8 +681,9 @@ export class RustEditor {
     const el = this.el;
     const c = this.caret();
     const canvas = c ? el.canvases[c.page] : undefined;
-    if (!c || !canvas) { el.input.style.top = '0px'; el.input.style.left = '0px'; return; }
+    if (!c || !canvas) { el.input.style.top = '0px'; el.input.style.left = '0px'; this.proxyCanvasAt = null; return; }
     const scale = PX_PER_TWIP * el.zoom;
+    this.proxyCanvasAt = [canvas, canvas.offsetLeft, canvas.offsetTop]; // (WordCraft study, page, F-1)
     el.input.style.left = `${Math.round(canvas.offsetLeft + c.x * scale)}px`;
     el.input.style.top = `${Math.round(canvas.offsetTop + c.y * scale)}px`;
     el.input.style.height = `${Math.max(8, Math.round(c.h * scale))}px`;
@@ -1248,6 +1251,25 @@ export class RustEditor {
     el.addEventListener('mousedown', (e) => { if (this.session && this.inPages(e)) { own(e); this.onMouseDown(e); } }, true);
     el.addEventListener('dblclick', (e) => { if (this.session && this.inPages(e)) { own(e); this.onDblClick(e); } }, true);
     // wave 5 (O): the context menu goes on to the bars' listener (chrome.ts), as the TS: the selection moved on mousedown (ED-210, ED-28 superseded)
+    // WordCraft study (page, F-1): the IME proxy stays at the caret when the element's chrome or scroll container changes
+    // size (a contextual ribbon tab growing the bar, a bar collapsed, the window): the pages move under the bars, so the
+    // proxy is placed again whenever the caret's page canvas moved. The frozen TS only follows when a late font event
+    // happens to refresh after the bar grew (record uo-bindings.md "Wave 7c — V" F-1)
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => { if (this.session && this.proxyMoved()) this.positionProxy(); });
+      ro.observe(el.container);
+      for (const c of Array.from(el.shadowRoot?.children ?? [])) if (c instanceof HTMLElement && c !== el.container) ro.observe(c);
+      ro.observe(el);
+    }
+  }
+
+  /** WordCraft study (page, F-1): whether the caret's page canvas moved since the proxy was placed. */
+  private proxyMoved(): boolean {
+    const c = this.caret();
+    const canvas = c ? this.el.canvases[c.page] : undefined;
+    if (!canvas) return false;
+    const at = this.proxyCanvasAt;
+    return !at || at[0] !== canvas || at[1] !== canvas.offsetLeft || at[2] !== canvas.offsetTop;
   }
 
   private onMouseDown(e: MouseEvent): void {

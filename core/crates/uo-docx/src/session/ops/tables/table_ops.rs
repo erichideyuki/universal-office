@@ -501,6 +501,8 @@ fn tr_pr_of(row: &mut Row) -> &mut TrPr {
 }
 
 fn tbl_pr_of(t: &mut Table) -> &mut TblPr {
+    // WordCraft study (tables, the TCond aside): an edited table is laid out as written (the writer puts tblStyle first)
+    t.word_tbl_pr = None;
     if t.tbl_pr.is_none() {
         obj::set(t, "tblPr", |t| t.tbl_pr = Some(Arc::new(TblPr::default())));
     }
@@ -1604,6 +1606,8 @@ pub fn split_table(t: &mut Table, r: i64, ids: &mut IdAlloc) -> Option<Table> {
     let ru = ix(r).filter(|r| *r > 0 && *r < t.rows.len())?;
     let rows = t.rows.split_off(ru);
     let mut t2 = Table { r#type: TableTag, rows, grid_cols_twips: t.grid_cols_twips.clone(), id: ids.table(), ..Table::default() };
+    // WordCraft study (tables, the TCond aside): the lower part keeps the upper part's Word view of `tblPr`
+    t2.word_tbl_pr.clone_from(&t.word_tbl_pr);
     if let Some(p) = &t.tbl_pr {
         let c = jarc(p, ids);
         obj::set(&mut t2, "tblPr", |t| t.tbl_pr = Some(c));

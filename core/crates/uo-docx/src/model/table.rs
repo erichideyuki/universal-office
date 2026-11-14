@@ -120,7 +120,11 @@ js_object! {
         opt src: SourceKey = "src",
     }
     hidden {
-        pub id: TableId
+        pub id: TableId,
+        /// WordCraft study (tables, the TCond aside): Word's view of `tblPr` when its `w:tblStyle` is not the first
+        /// child (`read::props::read_tbl_pr_word`: the style and what follows it); outside the JS shape, never
+        /// written; dropped by every table-property edit of the session (the edited table is then laid out as written)
+        pub word_tbl_pr: Option<Arc<TblPr>>
     }
 }
 

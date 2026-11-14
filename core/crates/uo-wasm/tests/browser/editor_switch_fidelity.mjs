@@ -552,6 +552,11 @@ const DECLARED = {
   // Item 3: mode 15 ignores layoutInCell="0" — Word wraps the cell's text around the box (oracle txbxcell lc-cell-lic0); the
   // TS does not, so the scripted clicks land on other text and every step after the first click differs
   'cell-lic0': { from: 0, facets: '*', end: '*', id: 'Word manda sobre o TS (item 3, layoutInCell="0" wrap)', why: 'Word (mode 15) wraps the cell text around a layoutInCell="0" box; the TS lays the text under it' },
+  // WordCraft study — tables (record uo-docx-layout.md "WordCraft study — harness declarations"): B15 rule A, Word clamps a
+  // wrapping object laid out in a cell into the cell's interior (the TS leaves it where its offset puts it) — the nested
+  // cell's box of cell-nested. Attributed by this harness's runs with ONE area, then ONE tables switch, at Word's rule
+  // (local wasm builds): only the tables area and only ts_cell_float_no_clamp change it
+  'cell-nested': { steps: [17], facets: ['screen pixels (step)'], end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (WordCraft tables B15 A, cell clamp)', why: 'Word clamps the wrapping box into its (nested) cell\'s interior' },
   'note-cell undo': { from: 5, facets: ['caret rect', 'screen pixels (step)'], end: ['thumbnail pixels', 'screen pixels', 'saved .docx part bytes'], id: 'TS defect, Word agrees with Rust (note undo)', why: 'the TS undo in a note holding a table moves the note paragraphs out of the cells; Word and Rust keep them there' },
 };
 const STEP_FACETS = ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'state table', 'contexts', 'dirty', 'api answer', 'screen pixels (step)'];

@@ -175,7 +175,12 @@ fn d2b_f3_session_matches_the_element() {
         let rel = rec.key.trim_end_matches("#0");
         let bytes = std::fs::read(root.join(rel)).unwrap();
         let sig_mode = if std::env::var("UO_D2A_SIG").is_ok_and(|v| v == "canon") { SigMode::Canonical } else { SigMode::Ts };
-        let mut s = Session::open(bytes, OpenOptions { sig_mode, ..OpenOptions::default() }, Box::new(FixedEnv::default())).unwrap();
+        let mut s = Session::open(
+            bytes,
+            OpenOptions { sig_mode, ts_formula_errors: true, ts_numbering: true, ..OpenOptions::default() },
+            Box::new(FixedEnv::default()),
+        )
+        .unwrap();
         s.exec(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }), &mut cx.cx()).unwrap();
         for j in 0..=steps {
             let key = format!("{rel}#{j}");

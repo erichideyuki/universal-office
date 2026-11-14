@@ -1,0 +1,345 @@
+cs-pt-BR	1	0	REF alvo	C?	texto de Exemplo ágil-mente
+cs-pt-BR	1	1	REF alvo \* Upper	C?	TEXTO DE EXEMPLO ÁGIL-MENTE
+cs-pt-BR	1	2	REF alvo \* Lower	C?	texto de exemplo ágil-mente
+cs-pt-BR	1	3	REF alvo \* Caps	C?	Texto De Exemplo Ágil-Mente
+cs-pt-BR	1	4	REF alvo \* FirstCap	C?	Texto de Exemplo ágil-mente
+cs-pt-BR	1	5	STYLEREF 1 \* Upper	C?	CAPÍTULO DE TESTE ÁGIL
+cs-pt-BR	1	6	STYLEREF 1 \* Caps	C?	Capítulo De Teste Ágil
+cs-pt-BR	1	7	STYLEREF "Título 1" \* Lower	C?	capítulo de teste ágil
+cs-pt-BR	1	8	REF alvo \* roman	C?	texto de Exemplo ágil-mente
+fl-all	1	0	= 21 \* CardText	C?	twenty-one
+fl-all	1	1	PAGE \* OrdText	C?	first
+fl-all	1	2	REF alvo \p	C?	acima
+fl-all	1	3	SEQ Fig \* CardText	C?	one
+fl-begin	1	0	= 21 \* CardText	C?	Vinte e um
+fl-begin	1	1	PAGE \* OrdText	C?	Primeiro
+fl-begin	1	2	REF alvo \p	C?	acima
+fl-begin	1	3	SEQ Fig \* CardText	C?	Um
+fl-charstyle	1	0	= 21 \* CardText	C?	twenty-one
+fl-charstyle	1	1	PAGE \* OrdText	C?	first
+fl-charstyle	1	2	REF alvo \p	C?	acima
+fl-charstyle	1	3	SEQ Fig \* CardText	C?	one
+fl-instr	1	0	= 21 \* CardText	C?	twenty-one
+fl-instr	1	1	PAGE \* OrdText	C?	first
+fl-instr	1	2	REF alvo \p	C?	acima
+fl-instr	1	3	SEQ Fig \* CardText	C?	one
+fl-mark	1	0	= 21 \* CardText	C?	Vinte e um
+fl-mark	1	1	PAGE \* OrdText	C?	Primeiro
+fl-mark	1	2	REF alvo \p	C?	acima
+fl-mark	1	3	SEQ Fig \* CardText	C?	Um
+fl-none	1	0	= 21 \* CardText	C?	Vinte e um
+fl-none	1	1	PAGE \* OrdText	C?	Primeiro
+fl-none	1	2	REF alvo \p	C?	acima
+fl-none	1	3	SEQ Fig \* CardText	C?	Um
+fl-res	1	0	= 21 \* CardText	C?	Vinte e um
+fl-res	1	1	PAGE \* OrdText	C?	Primeiro
+fl-res	1	2	REF alvo \p	C?	acima
+fl-res	1	3	SEQ Fig \* CardText	C?	Um
+fl-style	1	0	= 21 \* CardText	C?	twenty-one
+fl-style	1	1	PAGE \* OrdText	C?	first
+fl-style	1	2	REF alvo \p	C?	above
+fl-style	1	3	SEQ Fig \* CardText	C?	one
+fl-text	1	0	= 21 \* CardText	C?	Vinte e um
+fl-text	1	1	PAGE \* OrdText	C?	Primeiro
+fl-text	1	2	REF alvo \p	C?	acima
+fl-text	1	3	SEQ Fig \* CardText	C?	Um
+hf-en-US	9	0	= SUM(1;2;3)	6	6
+hf-en-US	9	1	= AVERAGE(1;2)	1,5	1,5
+hf-en-US	9	2	= MAX(1;5;3)	5	5
+hf-en-US	9	3	= MIN(4;2)	2	2
+hf-en-US	9	4	= PRODUCT(2;3)	6	6
+hf-en-US	9	5	= SIGN(-2)	-1	-1
+hf-en-US	9	6	= SIGN(0)	0	0
+hf-en-US	9	7	= IF(1>0;5;6)	5	5
+hf-en-US	9	8	= IF(1<0;5;6)	6	6
+hf-en-US	9	9	= AND(1;0)	0	0
+hf-en-US	9	10	= OR(0;1)	1	1
+hf-en-US	9	11	= NOT(1)	0	0
+hf-en-US	9	12	= TRUE	1	1
+hf-en-US	9	13	= FALSE	0	0
+hf-en-US	9	14	= COUNT(1;2;3)	3	3
+hf-en-US	9	15	= DEFINED(nada)	0	0
+hf-en-US	9	16	= 2^3	8	8
+hf-en-US	9	17	= 1=1	1	1
+hf-en-US	9	18	= 3<>3	0	0
+hf-en-US	9	19	= 50%	0,5	0,5
+hf-en-US	9	20	= 200*10%	20	20
+hf-en-US	9	21	= INT(7,9)	7	7
+hf-en-US	9	22	= ROUND(2,345;2)	2,35	2,35
+hf-en-US	9	23	= ROUND(-2,345;2)	-2,35	-2,35
+hf-en-US	9	24	= ROUND(1234,5;-2)	1200	1200
+hf-en-US	9	25	= MOD(7;-3)	1	1
+hf-en-US	9	26	= MOD(7,5;2)	1,5	1,5
+hf-en-US	9	27	= ABS(-3)	3	3
+hf-en-US	9	28	= 1/0	!Divisão por zero	!Divisão por zero
+hf-en-US	9	29	= SUM(	!Fim imprevisto da fórmula	!Fim imprevisto da fórmula
+hf-en-US	9	30	= 2 3	!Está faltando operador	!Está faltando operador
+hf-en-US	9	31	= FOO(1)	!Erro de sintaxe, 1	!Erro de sintaxe, 1
+hf-en-US	9	32	= nada	!Indicador não definido, NADA	!Indicador não definido, NADA
+hf-en-US	9	33	= (1+2	!Fim imprevisto da fórmula	!Fim imprevisto da fórmula
+hf-en-US	9	34	= 1,2,3	!Está faltando operador	!Está faltando operador
+hf-en-US	9	35	= 1.000,5	1.000,5	1.000,5
+hf-en-US	9	36	= 1.5	!Erro de sintaxe, .	!Erro de sintaxe, .
+hf-en-US	9	37	= 3 \# "0,00"	3,00	3,00
+hf-en-US	9	38	= INT(-2.5)	!Erro de sintaxe, .	!Erro de sintaxe, .
+hf-en-US	9	39	= SUM(1,2)	!Erro de sintaxe, 1,2	!Erro de sintaxe, 1,2
+hf-en-US	9	40	= 1;2	!Erro de sintaxe, ;	!Erro de sintaxe, ;
+hf-en-US	9	41	= int(2,5)	2	2
+hf-en-US	9	42	= Round(2,5;0)	3	3
+hf-en-US	9	43	= -2,5 \# "0,0"	-2,5	-2,5
+hf-en-US	9	44	= 1234,5 \# "#.##0,00"	1.234,50	1.234,50
+hf-en-US	9	45	= 0,5 \# "0%"	1%	1%
+hf-en-US	9	46	= 7 \# "00%"	07%	07%
+hf-en-US	9	47	= 5 \* CardText	five	five
+hf-en-US	9	48	= MAX()	!Erro de sintaxe, )	!Erro de sintaxe, )
+hf-en-US	9	49	= 1+	!Fim imprevisto da fórmula	!Fim imprevisto da fórmula
+hf-en-US	9	50	= )	!Erro de sintaxe, )	!Erro de sintaxe, )
+hf-en-US	9	51	= 2*(3	!Fim imprevisto da fórmula	!Fim imprevisto da fórmula
+hf-pt-BR	9	0	= SUM(1;2;3)	6	6
+hf-pt-BR	9	1	= AVERAGE(1;2)	1,5	1,5
+hf-pt-BR	9	2	= MAX(1;5;3)	5	5
+hf-pt-BR	9	3	= MIN(4;2)	2	2
+hf-pt-BR	9	4	= PRODUCT(2;3)	6	6
+hf-pt-BR	9	5	= SIGN(-2)	-1	-1
+hf-pt-BR	9	6	= SIGN(0)	0	0
+hf-pt-BR	9	7	= IF(1>0;5;6)	5	5
+hf-pt-BR	9	8	= IF(1<0;5;6)	6	6
+hf-pt-BR	9	9	= AND(1;0)	0	0
+hf-pt-BR	9	10	= OR(0;1)	1	1
+hf-pt-BR	9	11	= NOT(1)	0	0
+hf-pt-BR	9	12	= TRUE	1	1
+hf-pt-BR	9	13	= FALSE	0	0
+hf-pt-BR	9	14	= COUNT(1;2;3)	3	3
+hf-pt-BR	9	15	= DEFINED(nada)	0	0
+hf-pt-BR	9	16	= 2^3	8	8
+hf-pt-BR	9	17	= 1=1	1	1
+hf-pt-BR	9	18	= 3<>3	0	0
+hf-pt-BR	9	19	= 50%	0,5	0,5
+hf-pt-BR	9	20	= 200*10%	20	20
+hf-pt-BR	9	21	= INT(7,9)	7	7
+hf-pt-BR	9	22	= ROUND(2,345;2)	2,35	2,35
+hf-pt-BR	9	23	= ROUND(-2,345;2)	-2,35	-2,35
+hf-pt-BR	9	24	= ROUND(1234,5;-2)	1200	1200
+hf-pt-BR	9	25	= MOD(7;-3)	1	1
+hf-pt-BR	9	26	= MOD(7,5;2)	1,5	1,5
+hf-pt-BR	9	27	= ABS(-3)	3	3
+hf-pt-BR	9	28	= 1/0	!Divisão por zero	!Divisão por zero
+hf-pt-BR	9	29	= SUM(	!Fim imprevisto da fórmula	!Fim imprevisto da fórmula
+hf-pt-BR	9	30	= 2 3	!Está faltando operador	!Está faltando operador
+hf-pt-BR	9	31	= FOO(1)	!Erro de sintaxe, 1	!Erro de sintaxe, 1
+hf-pt-BR	9	32	= nada	!Indicador não definido, NADA	!Indicador não definido, NADA
+hf-pt-BR	9	33	= (1+2	!Fim imprevisto da fórmula	!Fim imprevisto da fórmula
+hf-pt-BR	9	34	= 1,2,3	!Está faltando operador	!Está faltando operador
+hf-pt-BR	9	35	= 1.000,5	1.000,5	1.000,5
+hf-pt-BR	9	36	= 1.5	!Erro de sintaxe, .	!Erro de sintaxe, .
+hf-pt-BR	9	37	= 3 \# "0,00"	3,00	3,00
+hf-pt-BR	9	38	= INT(-2.5)	!Erro de sintaxe, .	!Erro de sintaxe, .
+hf-pt-BR	9	39	= SUM(1,2)	!Erro de sintaxe, 1,2	!Erro de sintaxe, 1,2
+hf-pt-BR	9	40	= 1;2	!Erro de sintaxe, ;	!Erro de sintaxe, ;
+hf-pt-BR	9	41	= int(2,5)	2	2
+hf-pt-BR	9	42	= Round(2,5;0)	3	3
+hf-pt-BR	9	43	= -2,5 \# "0,0"	-2,5	-2,5
+hf-pt-BR	9	44	= 1234,5 \# "#.##0,00"	1.234,50	1.234,50
+hf-pt-BR	9	45	= 0,5 \# "0%"	1%	1%
+hf-pt-BR	9	46	= 7 \# "00%"	07%	07%
+hf-pt-BR	9	47	= 5 \* CardText	Cinco	Cinco
+hf-pt-BR	9	48	= MAX()	!Erro de sintaxe, )	!Erro de sintaxe, )
+hf-pt-BR	9	49	= 1+	!Fim imprevisto da fórmula	!Fim imprevisto da fórmula
+hf-pt-BR	9	50	= )	!Erro de sintaxe, )	!Erro de sintaxe, )
+hf-pt-BR	9	51	= 2*(3	!Fim imprevisto da fórmula	!Fim imprevisto da fórmula
+sec-en-US	1	0	PAGE	C?	XXI
+sec-en-US	1	1	PAGE \* Arabic	C?	21
+sec-en-US	1	2	PAGE \* CardText	C?	twenty-one
+sec-en-US	1	3	PAGE \* Lower	C?	xxi
+sec-en-US	1	4	PAGE \* Caps	C?	Xxi
+sec-en-US	1	5	PAGE \* ArabicDash	C?	- 21 -
+sec-en-US	1	6	PAGE \* roman	C?	xxi
+sec-en-US	1	7	SECTION	C?	2
+sec-en-US	1	8	SECTION \* roman	C?	ii
+sec-en-US	1	9	SECTION \* CardText	C?	two
+sec-en-US	1	10	SECTIONPAGES \* CardText	C?	one
+sec-en-US	1	11	NUMPAGES \* roman	C?	ii
+sec-en-US	1	12	PAGEREF alvo	C?	XXI
+sec-en-US	1	13	PAGEREF alvo \* Arabic	C?	21
+sec-en-US	1	14	PAGEREF alvo \* CardText	C?	twenty-one
+sec-en-US	1	15	PAGEREF alvo \* Lower	C?	xxi
+sec-pt-BR	1	0	PAGE	C?	XXI
+sec-pt-BR	1	1	PAGE \* Arabic	C?	21
+sec-pt-BR	1	2	PAGE \* CardText	C?	Vinte e um
+sec-pt-BR	1	3	PAGE \* Lower	C?	xxi
+sec-pt-BR	1	4	PAGE \* Caps	C?	Xxi
+sec-pt-BR	1	5	PAGE \* ArabicDash	C?	- 21 -
+sec-pt-BR	1	6	PAGE \* roman	C?	xxi
+sec-pt-BR	1	7	SECTION	C?	2
+sec-pt-BR	1	8	SECTION \* roman	C?	ii
+sec-pt-BR	1	9	SECTION \* CardText	C?	Dois
+sec-pt-BR	1	10	SECTIONPAGES \* CardText	C?	Um
+sec-pt-BR	1	11	NUMPAGES \* roman	C?	ii
+sec-pt-BR	1	12	PAGEREF alvo	C?	XXI
+sec-pt-BR	1	13	PAGEREF alvo \* Arabic	C?	21
+sec-pt-BR	1	14	PAGEREF alvo \* CardText	C?	Vinte e um
+sec-pt-BR	1	15	PAGEREF alvo \* Lower	C?	xxi
+sw-en	1	0	= 21 \* Roman	C?	XXI
+sw-en	1	1	= 21 \* roman	C?	xxi
+sw-en	1	2	= 21 \* ROMAN	C?	XXI
+sw-en	1	3	= 21 \* cardtext	C?	twenty-one
+sw-en	1	4	= 21 \* CARDTEXT	C?	twenty-one
+sw-en	1	5	= 21 \* ORDTEXT	C?	twenty-first
+sw-en	1	6	= 21 \* ordinal	C?	21st
+sw-en	1	7	= 21 \* Alphabetic	C?	U
+sw-en	1	8	= 21 \* alphabetic	C?	u
+sw-en	1	9	= 21 \* CardText \* FIRSTCAP	C?	Twenty-one
+sw-en	1	10	= 21 \* CardText \* caps	C?	Twenty-One
+sw-en	1	11	= 21 \* CardText \* upper	C?	TWENTY-ONE
+sw-en	1	12	= 21 \* ROMAN \* Lower	C?	xxi
+sw-en	1	13	= 21 \* Arabic	C?	21
+sw-en	1	14	= 21 \* ArabicDash	C?	- 21 -
+sw-en	1	15	= 0 \* ArabicDash	C?	- 0 -
+sw-en	1	16	= 0 \* roman	C?	 
+sw-en	1	17	= 0 \* CardText	C?	zero
+sw-en	1	18	= 2,5 \* CardText	C?	three
+sw-en	1	19	= -5 \* CardText	C?	Erro! Não é possível representar o número no formato especificado.
+sw-en	1	20	= -5 \* roman	C?	Erro! Não é possível representar o número no formato especificado.
+sw-en	1	21	= 255 \* Hex	C?	FF
+sw-en	1	22	= 4096 \* hex	C?	1000
+sw-en	1	23	= 27 \* alphabetic	C?	aa
+sw-en	1	24	= 52 \* alphabetic	C?	zz
+sw-en	1	25	= 53 \* ALPHABETIC	C?	AAA
+sw-en	1	26	= 3999 \* ROMAN	C?	MMMCMXCIX
+sw-en	1	27	= 4000 \* ROMAN	C?	MMMM
+sw-en	1	28	= 10000 \* roman	C?	mmmmmmmmmm
+sw-en	1	29	= 21 \* Ordinal \* Upper	C?	21ST
+sw-en	1	30	= 21 \* OrdText \* Caps	C?	Twenty-First
+sw-en	1	31	= 1 \* Ordinal	C?	1st
+sw-en	1	32	= 2 \* Ordinal	C?	2nd
+sw-en	1	33	= 3 \* Ordinal	C?	3rd
+sw-en	1	34	= 11 \* Ordinal	C?	11th
+sw-en	1	35	= 12 \* Ordinal	C?	12th
+sw-en	1	36	= 13 \* Ordinal	C?	13th
+sw-en	1	37	= 111 \* Ordinal	C?	111th
+sw-en	1	38	= 21 \* bogus	C?	Erro! Argumento de opção desconhecido.
+sw-en	1	39	= 21 \* MERGEFORMAT	C?	21
+sw-en	1	40	= 21 \* CardText \* MERGEFORMAT	C?	twenty-one
+sw-es-ES	1	0	= 21 \* Roman	C?	XXI
+sw-es-ES	1	1	= 21 \* cardtext	C?	Veintiuno
+sw-es-ES	1	2	= 21 \* CardText \* caps	C?	Veintiuno
+sw-es-ES	1	3	= 21 \* OrdText \* Caps	C?	Vigésimo Primero
+sw-es-ES	1	4	= 21 \* CardText \* FirstCap	C?	Veintiuno
+sw-es-ES	1	5	= 0 \* CardText	C?	Cero
+sw-es-ES	1	6	= 2,5 \* CardText	C?	Tres
+sw-es-ES	1	7	= 1 \* Ordinal	C?	1º
+sw-es-ES	1	8	= 1 \* OrdText \* Upper	C?	PRIMERO
+sw-pt-BR	1	0	= 21 \* Roman	C?	XXI
+sw-pt-BR	1	1	= 21 \* cardtext	C?	Vinte e um
+sw-pt-BR	1	2	= 21 \* CardText \* caps	C?	Vinte E Um
+sw-pt-BR	1	3	= 21 \* OrdText \* Caps	C?	Vigésimo Primeiro
+sw-pt-BR	1	4	= 21 \* CardText \* FirstCap	C?	Vinte e um
+sw-pt-BR	1	5	= 0 \* CardText	C?	Zero
+sw-pt-BR	1	6	= 2,5 \* CardText	C?	Três
+sw-pt-BR	1	7	= 1 \* Ordinal	C?	1º
+sw-pt-BR	1	8	= 1 \* OrdText \* Upper	C?	PRIMEIRO
+swx-en-US	1	0	= 255 \* hex	C?	FF
+swx-en-US	1	1	= 255 \* HEX	C?	FF
+swx-en-US	1	2	= 255 \* Hex \* Lower	C?	ff
+swx-en-US	1	3	= 3,5 \* CardText	C?	four
+swx-en-US	1	4	= 2,4 \* CardText	C?	two
+swx-en-US	1	5	= 2,5 \* roman	C?	iii
+swx-en-US	1	6	= 3,5 \* Ordinal	C?	4th
+swx-en-US	1	7	= 0,4 \* CardText	C?	zero
+swx-en-US	1	8	= -0,4 \* CardText	C?	zero
+swx-en-US	1	9	= 0 \* OrdText	C?	zeroth
+swx-en-US	1	10	= 0 \* Ordinal	C?	0th
+swx-en-US	1	11	= 0 \* alphabetic	C?	 
+swx-en-US	1	12	= 0 \* Hex	C?	0
+swx-en-US	1	13	= 0 \* Arabic	C?	0
+swx-en-US	1	14	= -3 \* Arabic	C?	-3
+swx-en-US	1	15	= -3 \* ArabicDash	C?	- -3 -
+swx-en-US	1	16	= -3 \* Hex	C?	Erro! Não é possível representar o número no formato especificado.
+swx-en-US	1	17	= -3 \* alphabetic	C?	Erro! Não é possível representar o número no formato especificado.
+swx-en-US	1	18	= -3 \* Ordinal	C?	-3rd
+swx-en-US	1	19	= 2,5 \* Arabic	C?	3
+swx-en-US	1	20	= 2,5 \* ArabicDash	C?	- 3 -
+swx-en-US	1	21	= 2,5 \* Hex	C?	3
+swx-en-US	1	22	= 999999 \* OrdText	C?	nine hundred ninety-nine thousand nine hundred ninety-ninth
+swx-en-US	1	23	= 1000000 \* roman	C?	Erro! Não é possível representar o número no formato especificado.
+swx-en-US	1	24	= 1000000 \* Hex	C?	Erro! Não é possível representar o número no formato especificado.
+swx-en-US	1	25	= 16777216 \* Hex	C?	Erro! Não é possível representar o número no formato especificado.
+swx-en-US	1	26	= 1000000 \* alphabetic	C?	Erro! Não é possível representar o número no formato especificado.
+swx-en-US	1	27	= 32767 \* ROMAN	C?	MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMDCCLXVII
+swx-en-US	1	28	= 1000000 \* DollarText	C?	Erro! Não é possível representar o número no formato especificado.
+swx-en-US	1	29	= 999999,99 \* DollarText	C?	nine hundred ninety-nine thousand nine hundred ninety-nine and 99/100
+swx-en-US	1	30	= -5 \* DollarText	C?	Erro! Não é possível representar o número no formato especificado.
+swx-en-US	1	31	= 0 \* DollarText	C?	zero and 00/100
+swx-en-US	1	32	= 2,999 \* DollarText	C?	two and 00/100
+swx-en-US	1	33	= 2,005 \* DollarText	C?	two and 01/100
+swx-en-US	1	34	= 21 \* CardText \* Upper \* Lower	C?	twenty-one
+swx-en-US	1	35	= 21 \* Lower \* CardText	C?	twenty-one
+swx-en-US	1	36	= 21 \* Caps \* FirstCap	C?	21
+swx-es-ES	1	0	= 255 \* hex	C?	FF
+swx-es-ES	1	1	= 255 \* HEX	C?	FF
+swx-es-ES	1	2	= 255 \* Hex \* Lower	C?	ff
+swx-es-ES	1	3	= 3,5 \* CardText	C?	Cuatro
+swx-es-ES	1	4	= 2,4 \* CardText	C?	Dos
+swx-es-ES	1	5	= 2,5 \* roman	C?	iii
+swx-es-ES	1	6	= 3,5 \* Ordinal	C?	4º
+swx-es-ES	1	7	= 0,4 \* CardText	C?	Cero
+swx-es-ES	1	8	= -0,4 \* CardText	C?	Cero
+swx-es-ES	1	9	= 0 \* OrdText	C?	Cero
+swx-es-ES	1	10	= 0 \* Ordinal	C?	0º
+swx-es-ES	1	11	= 0 \* alphabetic	C?	 
+swx-es-ES	1	12	= 0 \* Hex	C?	0
+swx-es-ES	1	13	= 0 \* Arabic	C?	0
+swx-es-ES	1	14	= -3 \* Arabic	C?	-3
+swx-es-ES	1	15	= -3 \* ArabicDash	C?	- -3 -
+swx-es-ES	1	16	= -3 \* Hex	C?	Erro! Não é possível representar o número no formato especificado.
+swx-es-ES	1	17	= -3 \* alphabetic	C?	Erro! Não é possível representar o número no formato especificado.
+swx-es-ES	1	18	= -3 \* Ordinal	C?	-3º
+swx-es-ES	1	19	= 2,5 \* Arabic	C?	3
+swx-es-ES	1	20	= 2,5 \* ArabicDash	C?	- 3 -
+swx-es-ES	1	21	= 2,5 \* Hex	C?	3
+swx-es-ES	1	22	= 999999 \* OrdText	C?	Nuevecientosnoventa y nuevemilésimo noningentésimo nonagésimo noveno
+swx-es-ES	1	23	= 1000000 \* roman	C?	Erro! Não é possível representar o número no formato especificado.
+swx-es-ES	1	24	= 1000000 \* Hex	C?	Erro! Não é possível representar o número no formato especificado.
+swx-es-ES	1	25	= 16777216 \* Hex	C?	Erro! Não é possível representar o número no formato especificado.
+swx-es-ES	1	26	= 1000000 \* alphabetic	C?	Erro! Não é possível representar o número no formato especificado.
+swx-es-ES	1	27	= 32767 \* ROMAN	C?	MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMDCCLXVII
+swx-es-ES	1	28	= 1000000 \* DollarText	C?	Erro! Não é possível representar o número no formato especificado.
+swx-es-ES	1	29	= 999999,99 \* DollarText	C?	Novecientos noventa y nueve mil novecientos noventa y nueve con 99/100
+swx-es-ES	1	30	= -5 \* DollarText	C?	Erro! Não é possível representar o número no formato especificado.
+swx-es-ES	1	31	= 0 \* DollarText	C?	Cero con 00/100
+swx-es-ES	1	32	= 2,999 \* DollarText	C?	Dos con 00/100
+swx-es-ES	1	33	= 2,005 \* DollarText	C?	Dos con 01/100
+swx-es-ES	1	34	= 21 \* CardText \* Upper \* Lower	C?	veintiuno
+swx-es-ES	1	35	= 21 \* Lower \* CardText	C?	Veintiuno
+swx-es-ES	1	36	= 21 \* Caps \* FirstCap	C?	21
+swx-pt-BR	1	0	= 255 \* hex	C?	FF
+swx-pt-BR	1	1	= 255 \* HEX	C?	FF
+swx-pt-BR	1	2	= 255 \* Hex \* Lower	C?	ff
+swx-pt-BR	1	3	= 3,5 \* CardText	C?	Quatro
+swx-pt-BR	1	4	= 2,4 \* CardText	C?	Dois
+swx-pt-BR	1	5	= 2,5 \* roman	C?	iii
+swx-pt-BR	1	6	= 3,5 \* Ordinal	C?	4º
+swx-pt-BR	1	7	= 0,4 \* CardText	C?	Zero
+swx-pt-BR	1	8	= -0,4 \* CardText	C?	Zero
+swx-pt-BR	1	9	= 0 \* OrdText	C?	Zero
+swx-pt-BR	1	10	= 0 \* Ordinal	C?	0º
+swx-pt-BR	1	11	= 0 \* alphabetic	C?	 
+swx-pt-BR	1	12	= 0 \* Hex	C?	0
+swx-pt-BR	1	13	= 0 \* Arabic	C?	0
+swx-pt-BR	1	14	= -3 \* Arabic	C?	-3
+swx-pt-BR	1	15	= -3 \* ArabicDash	C?	- -3 -
+swx-pt-BR	1	16	= -3 \* Hex	C?	Erro! Não é possível representar o número no formato especificado.
+swx-pt-BR	1	17	= -3 \* alphabetic	C?	Erro! Não é possível representar o número no formato especificado.
+swx-pt-BR	1	18	= -3 \* Ordinal	C?	-3º
+swx-pt-BR	1	19	= 2,5 \* Arabic	C?	3
+swx-pt-BR	1	20	= 2,5 \* ArabicDash	C?	- 3 -
+swx-pt-BR	1	21	= 2,5 \* Hex	C?	3
+swx-pt-BR	1	22	= 999999 \* OrdText	C?	Novecentos noventa e nove milésimos nongentésimo nonagésimo nono
+swx-pt-BR	1	23	= 1000000 \* roman	C?	Erro! Não é possível representar o número no formato especificado.
+swx-pt-BR	1	24	= 1000000 \* Hex	C?	Erro! Não é possível representar o número no formato especificado.
+swx-pt-BR	1	25	= 16777216 \* Hex	C?	Erro! Não é possível representar o número no formato especificado.
+swx-pt-BR	1	26	= 1000000 \* alphabetic	C?	Erro! Não é possível representar o número no formato especificado.
+swx-pt-BR	1	27	= 32767 \* ROMAN	C?	MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMDCCLXVII
+swx-pt-BR	1	28	= 21 \* CardText \* Upper \* Lower	C?	vinte e um
+swx-pt-BR	1	29	= 21 \* Lower \* CardText	C?	Vinte e um
+swx-pt-BR	1	30	= 21 \* Caps \* FirstCap	C?	21

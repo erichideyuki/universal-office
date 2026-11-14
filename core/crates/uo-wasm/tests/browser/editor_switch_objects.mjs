@@ -539,6 +539,8 @@ const parts = (b64) => {
  * Declared differences: `doc|mode` → { from: first step, facets: the keys of the step facets (or '*'), end: end facets ('*'),
  * id (the ED of the record), why }. Everything else fails.
  */
+// WordCraft study — fields C1b (used by entries of DECLARED_O and by the WordCraft block after it)
+const WC_C1B = { id: 'Word manda sobre o TS (WordCraft fields C1b)', why: 'Word\'s text height of multiple-spaced lines over several faces moves the lines under the boxes and on the end pages' };
 const DECLARED_O = {
   // ── page ──
   // wave 7 (B): gate-O1 (the cover page's text box not painted) and gate-O2 (f7a__7__1: 11 pages against 10 after three
@@ -586,7 +588,63 @@ const DECLARED_O = {
   'f7d__7__3|objects': { from: 1, facets: '*', end: '*', id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box: the scripted clicks land on other text' },
   'f7d__7__10|objects': { from: 1, facets: '*', end: '*', id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box: the scripted clicks land on other text' },
   'f7d__7__3|menu': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box' },
+  // ── WordCraft study (page, F-1; record uo-bindings.md "Wave 7c — V" F-1): the Rust editor keeps the IME proxy at the caret
+  //    whenever its chrome or scroll container changes size (the Shape Format contextual tab grows the bar 26 px after the
+  //    click). The frozen TS only follows when a late font event happens to refresh after the bar grew: on f7b__7__0 it does
+  //    (284 px both), on f7b__7__1 it does not — its proxy stays 26 px above the caret (7852 px) until the next step's
+  //    refresh (7878 px at @4 in both). Measured with UO_EO_FDIAG=1 (the canvases at the same place in both engines). The
+  //    same on f7b__7__3 (351 vs 377 px) and f8__7__11 (2900 vs 2926 px), equal again at @4. ──
+  'f7b__7__1|objects': [
+    { at: { 'frame 0 proxy': '2' }, id: 'WordCraft page F-1 (TS proxy stale after the bar grows)', why: 'the TS leaves the IME proxy 26 px above the caret after the contextual tab grows the bar (7852 vs 7878 px); the Rust editor follows the caret' },
+    // WordCraft fields C1b (below)
+    { at: { 'frame 0 pages': '2,4,6,8', 'frame 1 pages': '2,4,6,8', 'frame 2 pages': '2,4,6,8', 'frame 3 pages': '2,4,6,8', 'frame 4 pages': '2,4,6,8', 'frame 5 pages': '2,4,6,8', 'frame 6 pages': '2,4,6,8' }, end: ['thumbnail pixels', 'screen pixels'], ...WC_C1B },
+  ],
+  'f8__7__11|objects': [
+    { at: { 'frame 0 proxy': '2' }, id: 'WordCraft page F-1 (TS proxy stale after the bar grows)', why: 'the TS leaves the IME proxy 26 px above the caret after the contextual tab grows the bar (2900 vs 2926 px); the Rust editor follows the caret' },
+    // WordCraft fields C1b and tables (below): the frames of both drags, the end screens and the saved body (the dragged
+    // box lands on other lines)
+    { at: { 'frame 0 pages': '2,4,6,8', 'frame 1 pages': '2,4,6,8', 'frame 2 pages': '2,4,6,8', 'frame 3 pages': '2,4,6,8', 'frame 4 pages': '2,4,6,8', 'frame 5 pages': '2,4,6,8', 'frame 6 pages': '2,4,6,8' }, end: ['thumbnail pixels', 'screen pixels', 'saved word/document.xml'], ...WC_C1B, id: 'Word manda sobre o TS (WordCraft fields C1b; tables B5, row keep)' },
+  ],
+  // ── WordCraft study (page; record uo-docx-layout.md "WordCraft study — page"): Word's page rules over the frozen TS. Each
+  //    attributed by a run with the page area's `ts_*` switches on in the session (a local wasm build, not committed): these
+  //    facets are equal then; the thumbnails also carry other areas' rules ──
+  // A16 (section parity): the evenPage/oddPage breaks inserted in a section restarted at 3 (the new section copies its
+  // pgNumType): Word bumps the restarted number, no blank page (12 pages, the TS 13)
+  'f7a__7__1|page': { from: 11, facets: ['pages'], end: ['end pages', 'thumbnail pixels', 'screen pixels'], id: 'WordCraft page A16 (section parity)', why: 'Word bumps a restarted section\'s number to the break\'s parity instead of adding a blank page (12 pages, the TS 13)' },
+  // B10/B11 (floats on their anchor line, the page laid out again around a pinned float): the line/paragraph-relative
+  // text boxes of f7b__7__3 while they are dragged
+  'f7b__7__3|objects': [
+    { at: { 'frame 0 pages': '2,4,6,8', 'frame 1 pages': '2,4,6,8', 'frame 2 pages': '2,4,6,8', 'frame 3 pages': '2,4,6,8', 'frame 4 pages': '2,4,6,8', 'frame 5 pages': '2,4,6,8', 'frame 6 pages': '2,4,6,8' }, end: ['thumbnail pixels', 'screen pixels'], id: 'WordCraft page B10/B11 (floats)', why: 'Word places a float on the page/line of its anchor run and lays the page out again around it' },
+    // F-1 (above): the same stale TS proxy
+    { at: { 'frame 0 proxy': '2' }, id: 'WordCraft page F-1 (TS proxy stale after the bar grows)', why: 'the TS leaves the IME proxy 26 px above the caret after the contextual tab grows the bar (351 vs 377 px); the Rust editor follows the caret' },
+  ],
+  // ── WordCraft study (tables; record uo-docx-layout.md "WordCraft study — tables", "Harness documents"): B5, Word keeps a
+  //    table row with the next by the first paragraph of its first cell only — f8__7__5 has 15 pages (the TS 16; Word 16:
+  //    the document differs from Word elsewhere too, and Word's PDF of a copy without the keepNext the rule ignores equals
+  //    Word's PDF of the document). The facets are those of the page area's run with its own switches on (core/target/
+  //    wc-page diffs-attr-objects.json: what is left there is this rule's); f7b__7__3's thumbnail (B12, its page 4) is
+  //    inside the page entry above ──
+  'f8__7__5|objects': { from: 0, facets: ['pages'], end: ['pages after load', 'end pages', 'thumbnail pixels', 'screen pixels'], id: 'WordCraft tables B5 (row keep)', why: 'Word keeps a row with the next by the first paragraph of its first cell only: 15 pages, the TS 16' },
 };
+// ── WordCraft study — fields (record uo-docx-layout.md "WordCraft study — harness declarations"): C1b (a multiple-spaced
+//    line over runs of several faces: Word's text height, a few hundredths of a point per line) moves the lines of these
+//    fuzz documents, so the dragged boxes' frames, the end thumbnails and screens differ. Attributed by this harness's
+//    runs with ONE area at Word's rules (local wasm builds with the other areas' ts_* switches on, every difference listed:
+//    UO_EO_MEASURE=1 UO_EO_COVERED=1): these facets are the fields-alone run's (and uo-docx-layout's native attribution
+//    names C1b — with B23 on f7a__7__10 — for each document). The existing entries' end facets of f7a__7__1|page (A16),
+//    f7b__7__3|objects (B10/B11; tables B12 and fields C1b move its thumbnails too) and f8__7__5|objects (tables B5) hold
+//    the fields run's thumbnails and screens as well ──
+Object.assign(DECLARED_O, {
+  'f7a__7__5|page': { end: ['thumbnail pixels'], ...WC_C1B },
+  'f7a__7__10|page': { end: ['thumbnail pixels'], ...WC_C1B, id: 'Word manda sobre o TS (WordCraft fields C1b and B23)' },
+  'f7c__7__1|page': { end: ['thumbnail pixels'], ...WC_C1B },
+  'f7b__7__0|objects': { at: { 'frame 0 pages': '2,4,6,8', 'frame 1 pages': '2,4,6,8', 'frame 2 pages': '2,4,6,8', 'frame 3 pages': '2,4,6,8', 'frame 4 pages': '2,4,6,8', 'frame 5 pages': '2,4,6,8', 'frame 6 pages': '2,4,6,8' }, end: ['thumbnail pixels', 'screen pixels'], ...WC_C1B },
+  'f7b__7__8|objects': { end: ['thumbnail pixels'], ...WC_C1B },
+  // (page B10 alone moves f7b__7__10's end pages too: its float on its anchor line)
+  'f7b__7__10|objects': { end: ['thumbnail pixels', 'screen pixels'], ...WC_C1B, id: 'Word manda sobre o TS (WordCraft fields C1b; page B10)' },
+  'f7b__7__0|menu': { end: ['thumbnail pixels', 'screen pixels'], ...WC_C1B },
+  'f7a__7__1|views': { end: ['thumbnail pixels', 'screen pixels'], ...WC_C1B },
+});
 /** declared for every document (the facet itself is the declared gap) */
 const GLOBAL_O = {};
 /** '2,6-9' → [2, 6, 7, 8, 9] */

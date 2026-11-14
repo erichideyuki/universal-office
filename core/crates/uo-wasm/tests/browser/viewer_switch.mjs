@@ -70,11 +70,34 @@ alias['@universal-office/write-engine'] = join(repo, 'core/crates/uo-wasm/js/vie
 alias['@universal-office/converter'] = join(root, 'converter/packages/converter/dist/index.js'); // the worktree has no node_modules: the converter's dist of the frozen root
 const esbuildPath = join(root, 'write/node_modules/esbuild/lib/main.js');
 const esbuild = createRequire(join(root, 'write/package.json'))(existsSync(esbuildPath) ? esbuildPath : 'esbuild');
+// WordCraft study (attribution only): UO_SW_TS_WC=lines,page,tables,fields,d1 lays the Rust viewer out with those areas'
+// frozen-TS rules (the `tsWc*` layout options, wasm bits 18–21; `d1` = the fields area's D1, the frozen English hyphenation
+// data, `tsHyphenation`, bit 16), patched into the BUNDLED copy of write.mjs (nothing shipped changes); those areas' WordCraft
+// declarations below are then left out. With all five, the Rust viewer must equal the TS on every document but for the
+// declarations that are not WordCraft's — the proof that every WordCraft declaration is a WordCraft rule.
+const TS_WC = (process.env.UO_SW_TS_WC ?? '').split(',').filter(Boolean);
+const TS_WC_OPTION = { lines: ['tsWcLines'], page: ['tsWcPage'], tables: ['tsWcTables'], fields: ['tsWcFields'], d1: ['tsHyphenation'] };
+for (const a of TS_WC) if (!TS_WC_OPTION[a]) throw new Error(`UO_SW_TS_WC: unknown area ${a} (lines, page, tables, fields, d1)`);
+const tsWcPlugin = {
+  name: 'ts-wc', setup(b) {
+    b.onLoad({ filter: /[\\/]uo-wasm[\\/]js[\\/]write\.mjs$/ }, (args) => {
+      let src = readFileSync(args.path, 'utf8');
+      const force = `o = { ...o, ${TS_WC.flatMap((a) => TS_WC_OPTION[a]).map((k) => `${k}: true`).join(', ')} };`;
+      for (const head of ['    layout(env, o = {}) {', "    hyphenationPatterns(env, appLanguages = ['pt-BR', 'en', 'es'], o = {}) {"]) {
+        if (!src.includes(head)) throw new Error(`UO_SW_TS_WC: ${head.trim()} not found in write.mjs`);
+        src = src.replace(head, () => `${head} ${force}`);
+      }
+      return { contents: src, loader: 'js' };
+    });
+  },
+};
 const built = await esbuild.build({
   entryPoints: { entry: join(outDir, 'entry.mjs'), stats: join(outDir, 'stats.mjs') },
   outdir: out, bundle: true, format: 'esm', platform: 'browser', target: 'es2022', splitting: true, chunkNames: 'chunks/[name]-[hash]',
   minify: true, legalComments: 'none', alias, absWorkingDir: repo, nodePaths: [join(root, 'write/node_modules')], logLevel: 'warning', metafile: true,
+  plugins: TS_WC.length ? [tsWcPlugin] : [],
 });
+if (TS_WC.length) console.log(`UO_SW_TS_WC: the Rust viewer with the frozen TS's rules of ${TS_WC.join(', ')} (WordCraft declarations left out)`);
 copyFileSync(wasmPath, join(out, 'chunks', 'uo-write.wasm'));
 
 // the closure the entry loads statically, and what only the dynamic import reaches
@@ -651,6 +674,184 @@ const W7C_PAGES = {
   f7d__7__6: [0], f7d__7__7: [0], f7d__7__8: [0, 1], f8__7__10: [1, 2], f8__7__2: [10],
 };
 for (const [id, docs] of Object.entries(W7C)) for (const d of docs) WORD_AUTHORITY[d] = { facets: W7C_FACETS[d], pages: { textLayer: W7C_PAGES[d], pixels: W7C_PAGES[d] }, id };
+// WordCraft study (record uo-docx-layout.md, the four "WordCraft study — <area>" sections and "WordCraft study — harness
+// declarations"): Word's rules over the frozen TS, per area and switch. Facets and pages (0-based) are this harness's own:
+// each area alone at Word's rules (UO_SW_TS_WC = the other areas at the TS's, every mismatch dumped with UO_SW_MISMATCHES)
+// less what is left with all of them at the TS's (the non-WordCraft declarations above); an area's pages are split by switch
+// with uo-docx-layout `attribute_documents_to_the_<area>_rules` (the pages each switch alone changes over ts_strict()).
+// `textLayer`/`pixels` are scoped to the pages listed (one list for both, or { textLayer, pixels } where they differ); find,
+// headings, linkBoxes, pages and pdf stay per document. With
+// UO_SW_TS_WC=lines,page,tables,fields,d1 every document is equal to the TS but for the declarations above (the proof).
+// The lines area moves no document of this harness (its run equals the all-TS run). `d1` is the fields area's D1 (the
+// English hyphenation data, wasm bit 16 — not bit 21).
+const WC = {
+  page: {
+    'Word manda sobre o TS (WordCraft page A15, no space before after an opening page break)': {
+      f7a__7__13: [['textLayer', 'pixels', 'pdf'], [1]],
+      f7a__7__15: [['textLayer', 'pixels', 'pdf'], [3]],
+      f7a__7__6: [['textLayer', 'pixels', 'pdf'], [11]],
+    },
+    'Word manda sobre o TS (WordCraft page A16, section parity)': {
+      f7a__7__2: [['pixels', 'pdf'], [10]],
+      f7a__7__5: [['pixels', 'pdf'], [8]],
+      f7c__7__13: [['pixels'], [3]],
+      f7c__7__6: [['pages', 'headings', 'linkBoxes', 'textLayer', 'find', 'pixels', 'pdf'], { textLayer: [4, 5], pixels: [0, 1, 2, 4, 5] }],
+      f8__7__6: [['pages', 'headings', 'linkBoxes', 'textLayer', 'find', 'pixels', 'pdf'], { textLayer: [4, 5], pixels: [0, 1, 2, 4, 5] }],
+    },
+    'Word manda sobre o TS (WordCraft page B10, a float on its anchor line)': {
+      f7b__7__10: [['pixels', 'pdf'], [0]],
+      f7b__7__3: [['textLayer', 'pixels', 'pdf'], [1]],
+      f7b__7__5: [['pixels', 'pdf'], [0]],
+      f7b__7__6: [['textLayer', 'pixels', 'pdf'], [5]],
+      f8__7__3: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], [1]],
+      f8__7__5: [['pixels', 'pdf'], [0]],
+    },
+  },
+  tables: {
+    'Word manda sobre o TS (WordCraft tables B5, row keep)': {
+      f7b__7__11: [['textLayer', 'find', 'pixels', 'pdf'], [2]],
+      f7b__7__5: [['pages', 'linkBoxes', 'textLayer', 'find', 'pixels', 'pdf'], [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]],
+      f7b__7__6: [['textLayer', 'pixels', 'pdf'], [6, 7, 8]],
+      f8__7__1: [['linkBoxes', 'textLayer', 'find', 'pixels', 'pdf'], [14, 15]],
+      f8__7__5: [['pages', 'linkBoxes', 'textLayer', 'find', 'pixels', 'pdf'], [11, 12, 13, 14]],
+    },
+    'Word manda sobre o TS (WordCraft tables B15 A, cell clamp)': {
+      f7b__7__2: [['pixels', 'pdf'], [3]],
+    },
+    'Word manda sobre o TS (WordCraft tables B12, floating-table edges)': {
+      f7b__7__3: [['textLayer', 'pixels', 'pdf'], [3]],
+      f8__7__3: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], [3]],
+    },
+    'Word manda sobre o TS (WordCraft tables B15 B, gap word)': {
+      f7b__7__4: [['textLayer', 'pixels', 'pdf'], { textLayer: [1], pixels: [1, 2] }],
+      f7b__7__7: [['textLayer', 'find', 'pixels', 'pdf'], [8, 9, 10, 11, 12, 13, 14, 15]],
+      f7b__7__9: [['textLayer', 'find', 'pixels', 'pdf'], [21, 22]],
+      f8__7__7: [['pages', 'linkBoxes', 'textLayer', 'find', 'pixels', 'pdf'], [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]],
+      f8__7__9: [['linkBoxes', 'textLayer', 'find', 'pixels', 'pdf'], [22, 23]],
+    },
+  },
+  fields: {
+    'Word manda sobre o TS (WordCraft fields B25, header/footer formulas)': {
+      'f2-3-1': [['textLayer'], [0]],
+    },
+    'Word manda sobre o TS (WordCraft fields C1b, multiple spacing over mixed faces)': {
+      gen__1__4: [['textLayer', 'pixels', 'pdf'], [0, 1]],
+      gen__1__7: [['textLayer', 'pixels', 'pdf'], [0, 2, 3]],
+      f7a__7__0: [['textLayer', 'pixels', 'pdf'], [0, 1, 2, 3, 5]],
+      f7a__7__1: [['textLayer', 'pixels', 'pdf'], [0, 2, 3, 7, 10]],
+      f7a__7__10: [['textLayer', 'pixels', 'pdf'], [1, 2, 3, 4, 5]],
+      f7a__7__11: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 2, 4, 5], pixels: [0, 1, 2, 3, 4, 5] }],
+      f7a__7__12: [['textLayer', 'pixels'], { textLayer: [0, 4, 5, 6, 7, 10, 11, 12], pixels: [0, 5, 6, 7, 10, 11, 12] }],
+      f7a__7__13: [['textLayer', 'pixels', 'pdf'], [1, 3]],
+      f7a__7__15: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 3, 4, 6, 7, 8, 9, 10, 11], pixels: [0, 1, 3, 4, 6, 9, 10, 11] }],
+      f7a__7__2: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14], pixels: [0, 1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14] }],
+      f7a__7__3: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 2, 3], pixels: [0, 1, 2] }],
+      f7a__7__4: [['textLayer', 'pixels', 'pdf'], [0, 1, 2]],
+      f7a__7__5: [['textLayer', 'pixels', 'pdf'], [8, 9, 10]],
+      f7a__7__6: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 3, 4, 5, 14, 15, 16], pixels: [0, 3, 14, 15, 16] }],
+      f7a__7__7: [['textLayer', 'pixels', 'pdf'], [0]],
+      f7a__7__8: [['textLayer', 'pixels', 'pdf'], [4, 6, 7]],
+      f7a__7__9: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 2, 3, 4, 5, 6, 8, 9, 10], pixels: [0, 1, 2, 3, 4, 5, 8, 9, 10] }],
+      f7b__7__0: [['textLayer', 'pixels', 'pdf'], [0, 1, 2, 3, 4, 5]],
+      f7b__7__1: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 3, 6, 8, 9, 10, 11, 12, 14], pixels: [8, 9, 10, 11, 12, 14] }],
+      f7b__7__10: [['textLayer', 'pixels', 'pdf'], [0]],
+      f7b__7__11: [['textLayer', 'pixels', 'pdf'], [1, 2, 3, 5]],
+      f7b__7__2: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 2, 4, 5, 6, 8], pixels: [0, 1, 2, 4, 5, 6] }],
+      f7b__7__3: [['textLayer', 'pixels', 'pdf'], [2]],
+      f7b__7__4: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 2, 4, 6], pixels: [2, 6] }],
+      f7b__7__5: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 4, 5], pixels: [0, 4, 5] }],
+      f7b__7__6: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 3, 4, 6, 7, 8, 9, 10, 11, 12], pixels: [0, 1, 3, 4, 6, 7, 8, 9, 10, 11] }],
+      f7b__7__7: [['textLayer', 'pixels', 'pdf'], { textLayer: [2, 3, 4, 6, 7, 10, 11, 13, 15, 20, 23], pixels: [2, 4, 6, 10, 11, 20, 23] }],
+      f7b__7__8: [['textLayer', 'pixels', 'pdf'], { textLayer: [1, 3], pixels: [3] }],
+      f7b__7__9: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 2, 5, 7, 9, 10, 11, 12, 13, 14, 15, 17, 20], pixels: [0, 1, 2, 5, 9, 10, 11, 12, 13, 14, 15, 17, 20] }],
+      f7c__7__0: [['textLayer', 'pixels', 'pdf'], [1]],
+      f7c__7__1: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 2, 3, 5], pixels: [0, 1, 2, 5] }],
+      f7c__7__12: [['textLayer', 'pixels', 'pdf'], [3, 5]],
+      f7c__7__13: [['textLayer', 'pixels'], [0, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15]],
+      f7c__7__14: [['textLayer', 'pixels'], { textLayer: [0, 1, 3], pixels: [0, 1] }],
+      f7c__7__2: [['textLayer', 'pixels'], [1, 2, 5, 6]],
+      f7c__7__3: [['textLayer', 'pixels', 'pdf'], { textLayer: [2, 5, 10], pixels: [2, 5] }],
+      f7c__7__6: [['textLayer', 'pixels', 'pdf'], [0, 2]],
+      f7c__7__7: [['textLayer', 'pixels', 'pdf'], [0]],
+      f7c__7__8: [['textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 3, 4, 5, 6, 7, 8], pixels: [0, 3, 4, 5, 6, 7, 8] }],
+      f7d__7__0: [['textLayer'], [0]],
+      f7d__7__11: [['textLayer', 'pixels', 'pdf'], [0]],
+      f7d__7__2: [['textLayer', 'pixels', 'pdf'], [0]],
+      f7d__7__3: [['textLayer'], [0]],
+      f7d__7__4: [['textLayer', 'pixels', 'pdf'], [0]],
+      f7d__7__5: [['pdf'], []],
+      f7d__7__7: [['textLayer'], [0]],
+      f7d__7__8: [['textLayer'], [0]],
+      f8__7__0: [['textLayer', 'pixels', 'pdf'], [1]],
+      f8__7__1: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], { textLayer: [0, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 15], pixels: [0, 7, 8, 9, 10, 12, 13, 15] }],
+      f8__7__11: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], [1, 2, 3, 5]],
+      f8__7__2: [['linkBoxes', 'textLayer', 'pixels'], [1, 2, 5, 6]],
+      f8__7__4: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], [1]],
+      f8__7__5: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], [0, 1, 3, 4, 5]],
+      f8__7__6: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], [0, 2]],
+      f8__7__7: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], { textLayer: [2, 3, 5, 6, 9, 10, 11, 12, 14, 20, 24, 32], pixels: [2, 3, 5, 10, 11, 12, 14, 20, 24] }],
+      f8__7__8: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], [0, 1, 3, 4, 5, 6, 7, 8]],
+      f8__7__9: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], { textLayer: [0, 1, 2, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 19, 20, 21], pixels: [0, 1, 2, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 20, 21] }],
+    },
+    'Word manda sobre o TS (WordCraft fields B22, \\* format switches)': {
+      f7a__7__0: [['textLayer', 'pixels', 'pdf'], [6]],
+      f7a__7__1: [['textLayer', 'pixels', 'pdf'], [1]],
+      f7a__7__12: [['textLayer', 'pixels'], [0]],
+      f7a__7__15: [['textLayer', 'pixels', 'pdf'], [9]],
+      f7a__7__2: [['textLayer', 'pixels', 'pdf'], [1]],
+      f7a__7__6: [['textLayer', 'pixels', 'pdf'], [14]],
+      f7a__7__9: [['textLayer', 'pixels', 'pdf'], [4]],
+      f7c__7__0: [['textLayer', 'pixels', 'pdf'], [1]],
+      f7c__7__10: [['pixels'], [3, 4]],
+      f7c__7__12: [['textLayer', 'pixels', 'pdf'], { textLayer: [3], pixels: [0, 1, 2, 3] }],
+      f7c__7__13: [['textLayer', 'pixels'], { textLayer: [4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15], pixels: [3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15] }],
+      f7c__7__14: [['textLayer', 'pixels'], [0]],
+      f7c__7__15: [['pixels'], [2, 4]],
+      f7c__7__2: [['textLayer', 'pixels'], { textLayer: [1, 2, 5, 6], pixels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11] }],
+      f7c__7__3: [['textLayer', 'pixels', 'pdf'], { textLayer: [2, 5, 14], pixels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15] }],
+      f7c__7__4: [['pixels', 'pdf'], [0, 1, 2]],
+      f7c__7__5: [['pixels'], [0, 1, 4, 5]],
+      f7c__7__6: [['textLayer', 'pixels', 'pdf'], { textLayer: [0], pixels: [0, 4, 5] }],
+      f7c__7__7: [['textLayer', 'pixels', 'pdf'], [0]],
+      f7c__7__8: [['textLayer', 'pixels', 'pdf'], [6, 7, 8]],
+      f7c__7__9: [['pixels', 'pdf'], [0]],
+      f8__7__0: [['textLayer', 'pixels', 'pdf'], [1]],
+      f8__7__10: [['pixels'], [3, 4]],
+      f8__7__2: [['linkBoxes', 'textLayer', 'pixels'], { textLayer: [1, 2, 5, 6], pixels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12] }],
+      f8__7__4: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], { textLayer: [1], pixels: [0, 1, 2] }],
+      f8__7__6: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], { textLayer: [0], pixels: [0, 4, 5] }],
+      f8__7__8: [['linkBoxes', 'textLayer', 'pixels', 'pdf'], [6, 7, 8]],
+    },
+    'Word manda sobre o TS (WordCraft fields B23, SECTIONPAGES on shared pages)': {
+      f7a__7__10: [['textLayer', 'pixels', 'pdf'], [2]],
+    },
+    'Word manda sobre o TS (WordCraft fields B24, REF \\r relative)': {
+      f7c__7__3: [['textLayer', 'pixels', 'pdf'], [14]],
+    },
+  },
+  d1: {
+    'Word manda sobre o TS (WordCraft fields D1, English hyphenation data)': {
+      'f2-3-1': [['textLayer'], [0]],
+      'f2-3-3': [['textLayer'], [0]],
+    },
+  },
+};
+// a document another declaration already covers keeps it: the facets and the scoped pages are joined (a facet the earlier
+// declaration holds unscoped stays unscoped)
+const joinPages = (prev, f, pages) => {
+  if (prev.facets.includes(f) && !prev.pages?.[f]) return undefined;
+  return [...new Set([...(prev.pages?.[f] ?? []), ...pages])].sort((x, y) => x - y);
+};
+for (const [area, rules] of Object.entries(WC)) {
+  if (TS_WC.includes(area)) continue; // the attribution run: this area at the TS's rules
+  for (const [id, docs] of Object.entries(rules)) for (const [d, [facets, pages]] of Object.entries(docs)) {
+    const prev = WORD_AUTHORITY[d];
+    const scoped = (f) => (facets.includes(f) ? (Array.isArray(pages) ? pages : pages[f]) : []);
+    WORD_AUTHORITY[d] = prev
+      ? { facets: [...new Set([...prev.facets, ...facets])], pages: { textLayer: joinPages(prev, 'textLayer', scoped('textLayer')), pixels: joinPages(prev, 'pixels', scoped('pixels')) }, id: `${prev.id.replace(/\)$/, '')}; ${id.replace(/^.*?\(/, '').replace(/^Word manda sobre o TS \(/, '')}` }
+      : { facets, pages: { textLayer: scoped('textLayer'), pixels: scoped('pixels') }, id };
+  }
+}
 /** whether a mismatch is the declaration's: its facet, and (with `pages`) a page the declaration lists */
 const declares = (decl, m) => {
   if (!decl.facets.includes(m.facet)) return false;
@@ -664,6 +865,8 @@ const declaredUsed = [];
 if (MODE === 'parity' || MODE === 'all') {
   const scales = [1 / 15, 2 / 15];
   const rows = [];
+  /** UO_SW_MISMATCHES=<file>: every document's mismatches (declared ones too) written there as JSON, to write declarations from */
+  const allMismatches = [];
   let inBatch = 0;
   for (const n of names) {
     if (BATCH > 0 && inBatch++ >= BATCH) { await openPage(); api = await evalDriver(); inBatch = 1; }
@@ -681,6 +884,7 @@ if (MODE === 'parity' || MODE === 'all') {
     ]);
     clearTimeout(timer);
     rows.push(r);
+    if (process.env.UO_SW_MISMATCHES) allMismatches.push({ doc: label(n), mismatches: r.mismatches }); // every mismatch, before the declarations
     if (process.env.UO_SW_VERBOSE) console.log(`  ${label(n)}: ${r.pages}p TS ${r.tsMs?.toFixed(0)} ms Rust ${r.rustMs?.toFixed(0)} ms${r.mismatches.length ? ' MISMATCH' : ''}`);
     // wave 7 (B): the declared facets of a document (WORD_AUTHORITY) are left out; a declaration no mismatch meets is stale
     const decl = WORD_AUTHORITY[label(n).replace(/^.*\//, '').replace(/\.docx$/, '')];
@@ -692,6 +896,7 @@ if (MODE === 'parity' || MODE === 'all') {
     }
     if (r.mismatches.length) fail(`${label(n)}: ${r.mismatches.slice(0, 3).map((m) => `${m.facet}: ${m.detail}`).join(' | ')}`);
   }
+  if (process.env.UO_SW_MISMATCHES) writeFileSync(process.env.UO_SW_MISMATCHES, JSON.stringify(allMismatches, null, 1));
   if (declaredUsed.length) console.log(`  declared (Word authority over TS): ${declaredUsed.join(', ')}`);
   const by = (facet) => rows.filter((r) => r.mismatches.some((m) => m.facet === facet)).length;
   const F = (k) => sumBy(rows, (r) => r.facets[k]);

@@ -843,6 +843,68 @@ fn scripted_reports(stem: &str, bytes: &[u8], script: &[Step], cfg: IncrConfig) 
     out
 }
 
+/// WordCraft study (L5, review): the section's character grid is part of the memo's key. A section edit replaces
+/// `doc.sections` but neither the formatting nor the styles: the margins / orientation of a snapToChars document
+/// change the cell, the charSpace of a linesAndChars one the pitch — the unchanged paragraphs are prepared again
+/// (exact against a fresh full layout at every step; a typed character afterwards is served by the memo again).
+#[test]
+fn memo_keys_the_character_grid() {
+    use uo_docx::session::ops::sections::section_ops::Orientation;
+    use uo_docx::session::ops::sections::{PageSetup, SectionCmd};
+    let body: String = (0..12).map(|i| common::docgen::para("", 40, i)).collect();
+    let snap = common::docgen::docx(
+        &body,
+        &common::docgen::sect(1, r#"<w:docGrid w:type="snapToChars" w:linePitch="360" w:charSpace="1024"/>"#, ""),
+        "",
+    );
+    let setup = |p: PageSetup| cmd(Command::Section(SectionCmd::SetPageSetup(Box::new(p))));
+    let script = [
+        setup(PageSetup { custom_margins: Some([1417.0, 2600.0, 1417.0, 2300.0]), ..PageSetup::default() }),
+        Step::Relayout,
+        setup(PageSetup { orientation: Some(Orientation::Landscape), ..PageSetup::default() }),
+        Step::Relayout,
+        caret(3, 5),
+        typed("a"),
+        Step::Relayout,
+    ];
+    let reports = scripted_reports("snapToChars margins", &snap, &script, IncrConfig::default());
+    let [margins, landscape, typed1] = reports.as_slice() else { panic!("{reports:?}") };
+    eprintln!("snapToChars: memo of each relayout {:?}", reports.iter().map(|r| (r.path, r.memo)).collect::<Vec<_>>());
+    assert_eq!(margins.memo.hits, 0, "margins: {:?}", margins.memo);
+    assert_eq!(landscape.memo.hits, 0, "landscape: {:?}", landscape.memo);
+    assert!(typed1.memo.hits > 0, "typed: {:?}", typed1.memo);
+
+    // linesAndChars: the charSpace of the section (no command edits it: the section list is replaced as an edit does)
+    let lc = common::docgen::docx(
+        &body,
+        &common::docgen::sect(1, r#"<w:docGrid w:type="linesAndChars" w:linePitch="360" w:charSpace="0"/>"#, ""),
+        "",
+    );
+    let reg = hyph_registry();
+    let o = opts();
+    let fonts = OpenFonts::at(&common::repo());
+    let s = open(&lc);
+    let doc0 = s.view().document().clone();
+    let mut inc = LayoutEngine::with_hyphenation(Arc::clone(&reg)).with_incremental(IncrConfig::default());
+    inc.relayout(uo_docx::DocView::new(&doc0), &[], &fonts, &o).unwrap();
+    for (step, cs) in [4096.0, -2048.0, 2048.0].into_iter().enumerate() {
+        let mut doc1 = doc0.clone();
+        let mut secs = doc1.sections.to_vec();
+        for sec in &mut secs {
+            let mut sp = sec.sect.as_deref().cloned().unwrap();
+            sp.doc_grid.as_mut().unwrap().char_space = Some(uo_docx_layout::model::JsNumber::from(cs));
+            sec.sect = Some(Arc::new(sp));
+        }
+        doc1.sections = secs.into();
+        doc1.formatting_version += 1;
+        inc.relayout(uo_docx::DocView::new(&doc1), &[], &fonts, &o).unwrap();
+        let full = LayoutEngine::with_hyphenation(Arc::clone(&reg)).layout(uo_docx::DocView::new(&doc1), &fonts, &o).unwrap().clone();
+        assert_same_layout(&format!("linesAndChars charSpace {cs}"), step, inc.last().unwrap(), &full);
+        let r = inc.last_relayout().unwrap();
+        assert_eq!(r.memo.hits, 0, "charSpace {cs}: {:?}", r.memo);
+    }
+}
+
 /// M5 of the memo: a byte cap below what the document needs keeps the first paragraphs (in
 /// document order) and refuses the rest (`over_cap`), still exact; the memo off serves nothing.
 #[test]

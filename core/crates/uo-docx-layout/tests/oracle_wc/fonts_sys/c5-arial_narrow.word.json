@@ -1,0 +1,39 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.24,
+"x0": 85.1,
+"x1": 134.1,
+"size": 11.04,
+"text": "BeforeHxg"
+},
+{
+"y": 95.54,
+"x0": 85.1,
+"x1": 507.71,
+"size": 12.0,
+"text": "HxgWMwmiIl10Oquickbrownfoxjumpsoverthelazydog;HxgWMwmiIl10Oquickbrownfox"
+},
+{
+"y": 109.34,
+"x0": 85.1,
+"x1": 458.09,
+"size": 12.0,
+"text": "jumpsoverthelazydog;HxgWMwmiIl10Oquickbrownfoxjumpsoverthelazydog."
+},
+{
+"y": 122.3,
+"x0": 85.1,
+"x1": 126.93,
+"size": 11.04,
+"text": "AfterHxg"
+}
+],
+"objs": []
+}
+]
+}

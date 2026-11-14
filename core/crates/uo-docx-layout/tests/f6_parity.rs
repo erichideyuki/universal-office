@@ -584,7 +584,7 @@ impl Dec<'_> {
         } else {
             None
         };
-        Ok(CellContent { items, lines, height, keep_next, paras, nest, align_h, shape })
+        Ok(CellContent { items, lines, height, keep_next, first_keep_next: false, paras, nest, align_h, shape })
     }
 }
 
@@ -1048,6 +1048,7 @@ fn read_prep(r: &mut Rd<'_>) -> R<PreparedPara> {
         empty: false,
         rev_bars: None,
         math: Vec::new(),
+        char_grid: None,
     })
 }
 

@@ -821,6 +821,17 @@ const W7C_DEFTAB = { from: 0, facets: ['defTab'], end: [], id: 'Word manda sobre
  *  word_w7c.rs item2_attribution_of_the_editor_harness_documents (only that switch gives the TS's layout); the end screen
  *  shows the table placed as Word places it. Word's own ruler over that cell is not measured. */
 const W7C_TABLES_RULER = { from: 0, to: 2, facets: ['ruler'], end: ['screen (A1 overlays on)'], id: 'Word manda sobre o TS (item 2, mode 12 table)', why: 'a package without settings: the mode-12 cell geometry (the ruler frame of the caret cell)' };
+// WordCraft study — fields (record uo-docx-layout.md "WordCraft study — harness declarations"): f7a__7__0, f8__7__0 and
+// f7b__7__0 are moved by C1b (a multiple-spaced line over runs of several faces: Word's text height, a few hundredths of a
+// point per line) and f7a__7__0, f8__7__0 by B22 (Word's \* format switches: f7a__7__0's two `PAGE \* ROMAN` fields are
+// Word's upper-case roman, the TS's lower-case), each attributed natively (uo-docx-layout attribute_documents_to_the_fields_
+// rules, the editor's read too) and by this harness's run with only the fields area at Word's rules (local wasm build; all
+// four areas at the TS's: every family and extra equal). The facets below are that run's.
+const WC_F7A0 = { id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: 'Word\'s text height of multiple-spaced lines over several faces and the PAGE \\* ROMAN results move the lines and pages' };
+/** f7a__7__0's two `PAGE \* ROMAN` results (after "coração" ending its paragraph, after "documento"): Word's upper case (B22) */
+const wcRoman = (t) => (typeof t === 'string' ? t.replace(/(coração|documento)([ivxlc]+)(?=\s)/g, (_, w, r) => w + r.toUpperCase()) : t);
+/** the printed pages of the ED-713 block (f7a__7__0, a heading and the TOC added) that C1b and B22 change */
+const WC_ED713_PRINTED = [0, 1, 2, 3, 5, 6];
 const DECLARED = {
   'headers|para': W7C_DEFTAB,
   'tables|ruler': [W7C_DEFTAB, W7C_TABLES_RULER],
@@ -843,7 +854,15 @@ const DECLARED = {
   ],
   // the glow on screen: the session's text effects scale with the font size (the Word's measured rule, milestone 1); only the
   // capture taken while the glow is on (the outline, preset and gradient captures are compared)
-  'f7a__7__0|font': { tags: { 'glow-shot': ['answer'] }, end: [], id: 'ED-710', why: 'text glow scaled by the font size (Word rule, uo-render fx_for_word)' },
+  'f7a__7__0|font': [
+    { tags: { 'glow-shot': ['answer'] }, end: [], id: 'ED-710', why: 'text glow scaled by the font size (Word rule, uo-render fx_for_word)' },
+    { ...WC_F7A0, from: 9, facets: ['answer'], end: ['screen (A1 overlays on)'] },
+  ],
+  'f7a__7__0|para': [{ ...WC_F7A0, from: 4, facets: ['ruler'], end: ['screen (A1 overlays on)'] }, { ...WC_F7A0, from: 32, facets: ['answer'], end: [] }],
+  'f7a__7__0|ruler': { ...WC_F7A0, from: 2, facets: ['ruler'], end: ['screen (A1 overlays on)'] },
+  'f7a__7__0|bar': { ...WC_F7A0, from: 11, facets: ['printed'], end: ['screen (A1 overlays on)'] },
+  'f8__7__0|file': { end: ['printed pages'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: 'the printed pages: Word\'s text height of multiple-spaced lines over several faces, Word\'s \\* switch results' },
+  'f7b__7__0|file': { end: ['printed pages'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: 'the printed pages: Word\'s text height of multiple-spaced lines over several faces' },
   'styles|font': { tags: { 'glow-shot': ['answer'] }, end: [], id: 'ED-710', why: 'as f7a__7__0|font' },
   // Web/Draft/Outline: the TS draws them with the legacy continuous layout, not ported (LQ2); the session lays them out with the
   // engine: the line geometry's facets of those steps (LQ2_VIEWS above)
@@ -851,7 +870,7 @@ const DECLARED = {
   // than the TS's start-paragraph text (the TOC statistics of every later step, the end pages and screen)
   // (the V5 Shift+click selects across the TOC: the selected text holds the same REF/NOTEREF results)
   'fields|view': [LQ2_VIEWS, { ...W7C_FIELDS_REF, facets: ['pages', 'selected'] }, W7C_DEFTAB],
-  'f7a__7__0|view': LQ2_VIEWS,
+  'f7a__7__0|view': [LQ2_VIEWS, { ...WC_F7A0, from: 3, facets: ['rulerLine', 'selected', 'canvases'], end: ['screen (A1 overlays on)', 'saved word/document.xml'] }],
   'many-fields|view': [LQ2_VIEWS, W7C_DEFTAB],
   'sections|view': [LQ2_VIEWS, W7C_DEFTAB],
 };
@@ -1277,6 +1296,13 @@ async function runExtra() {
     // number `vi`, the session `5`; Word (Sumário Automático 1 inserted at the start of f7a__7__0 and updated, measured through
     // COM: PAGEREF = 5, the heading in section 1, arabic) writes 5. The only difference allowed: TS `\tvi` where Rust has `\t5`
     const insDecl = [];
+    // WordCraft study (fields B22; record uo-docx-layout.md "WordCraft study — harness declarations"): wcRoman below
+    const romanDecl = new Set();
+    for (const [k, x] of [['update', a1], ['menu', a2], ['apply', a3]]) for (const f of ['inserted', 'text']) {
+      if (typeof x[f] !== 'string') continue;
+      const t = wcRoman(x[f]);
+      if (t !== x[f]) { romanDecl.add(`${k}.${f}`); x[f] = t; }
+    }
     for (const [k, x, y] of [['update', a1, b1], ['menu', a2, b2], ['apply', a3, b3]]) {
       if (x.inserted === y.inserted) continue;
       const ok712 = typeof x.inserted === 'string' && typeof y.inserted === 'string' && x.inserted.replace('\tvi', '\t5') === y.inserted && y.inserted.includes('\t5');
@@ -1284,7 +1310,8 @@ async function runExtra() {
       else { fail(`extra TOC: the text after insertTocTemplate('auto1') differs (${k}), not as declared ED-712`); const p = JSON.stringify(x.inserted) ?? '', q = JSON.stringify(y.inserted) ?? ''; let i = 0; while (i < p.length && p[i] === q[i]) i++; console.log(`    ${k}.inserted @${i}\n      ts   …${p.slice(Math.max(0, i - 100), i + 160)}\n      rust …${q.slice(Math.max(0, i - 100), i + 160)}`); }
       x.inserted = y.inserted = null;
     }
-    console.log(`extra f7a__7__0 (TOC inserted from the gallery): text ${insDecl.length ? `different as declared ED-712 (TS 'vi', Rust and Word '5') in ${insDecl.join(', ')}` : 'equal'}`);
+    console.log(`extra f7a__7__0 (TOC inserted from the gallery): text ${insDecl.length ? `different as declared ED-712 (TS 'vi', Rust and Word '5') in ${insDecl.join(', ')}` : 'equal'}${romanDecl.size ? `; the PAGE \\* ROMAN results different as declared WordCraft fields B22 (TS lower-case, Rust and Word upper-case) in ${[...romanDecl].join(', ')}` : ''}`);
+    if (!romanDecl.size) fail('extra TOC: the declared WordCraft fields B22 (PAGE \\* ROMAN) difference is not there (stale?)');
     const a = { update: a1, menu: a2, apply: a3 }, b = { update: b1, menu: b2, apply: b3 };
     const ok = same(a, b) && b1.painted && same(b1.events, ['uw-toc-update']) && same(b2.events, ['uw-toc-menu']);
     console.log(`extra f7a__7__0 (TOC tab clicked): ts ${JSON.stringify([a1.events, a2.events])} rust ${JSON.stringify([b1.events, b2.events])} ${ok ? 'equal' : 'DIFFERENT'}`);
@@ -1329,10 +1356,17 @@ async function runExtra() {
     }));
     const entry = (t) => (typeof t === 'string' ? (t.match(/\t[0-9ivxlcdm-]+(?=[\r\n]|$)/g) ?? []) : []);
     const decl = (t) => (typeof t === 'string' ? t.replace(/\t(v|vi)(?=[\r\n]|$)/, '\t5') : t);
+    // WordCraft study (record uo-docx-layout.md "WordCraft study — harness declarations"): the two PAGE \* ROMAN results
+    // (fields B22, wcRoman) in the texts, and the printed pages C1b and B22 move (WC_ED713_PRINTED; every other page equal)
+    const romanWas = [a.inserted, a.updated];
+    a.inserted = wcRoman(a.inserted); a.updated = wcRoman(a.updated);
+    if (a.inserted === romanWas[0] && a.updated === romanWas[1]) fail('extra ED-713: the declared WordCraft fields B22 (PAGE \\* ROMAN) difference is not there (stale?)');
     const okIns = a.inserted === b.inserted || (decl(a.inserted) === b.inserted && entry(b.inserted)[0] === '\t5');
     const okUpd = a.updated === b.updated;
     const okWord = JSON.stringify(entry(b.updated).slice(0, 2)) === JSON.stringify(['\t5', '\tviii']);
-    const okRest = same([a.ok, a.print, a.dirty], [b.ok, b.print, b.dirty]);
+    const printOff = Array.isArray(a.print) && Array.isArray(b.print) && a.print.length === b.print.length ? a.print.map((x, i) => (x === b.print[i] ? null : i)).filter((i) => i !== null) : null;
+    const okRest = same([a.ok, a.dirty], [b.ok, b.dirty]) && same(printOff, WC_ED713_PRINTED);
+    if (printOff) console.log(`extra f7a__7__0 (ED-713) printed pages: ${a.print.length}, different ${JSON.stringify(printOff)} (declared WordCraft fields C1b and B22: ${JSON.stringify(WC_ED713_PRINTED)})`);
     console.log(`extra f7a__7__0 (TOC entry in the lowerRoman section): entries after the insertion ts ${JSON.stringify(entry(a.inserted))} rust ${JSON.stringify(entry(b.inserted))}, after updateToc('all') ts ${JSON.stringify(entry(a.updated))} rust ${JSON.stringify(entry(b.updated))} (Word ["\\t5","\\tviii"]); text after the insertion ${a.inserted === b.inserted ? 'equal' : okIns ? 'different as declared ED-712' : 'DIFFERENT'}, after the update ${okUpd ? 'equal' : 'DIFFERENT'}; printed pages ${same(a.print, b.print) ? `equal (${b.print.length})` : 'DIFFERENT'}`);
     if (!okIns || !okUpd) {
       fail('extra ED-713: the TOC text differs beyond the declared ED-712 label');

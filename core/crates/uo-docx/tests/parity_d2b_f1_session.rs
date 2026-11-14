@@ -166,7 +166,12 @@ fn d2b_f1_session_matches_the_element() {
         let bytes = std::fs::read(root.join(rel)).unwrap();
         // `UO_D2A_SIG=canon`: the canonical signatures of G23 (the U6 count); default `Ts` (D2a-U6)
         let sig_mode = if std::env::var("UO_D2A_SIG").is_ok_and(|v| v == "canon") { SigMode::Canonical } else { SigMode::Ts };
-        let mut s = Session::open(bytes, OpenOptions { sig_mode, ..OpenOptions::default() }, Box::new(FixedEnv::default())).unwrap();
+        let mut s = Session::open(
+            bytes,
+            OpenOptions { sig_mode, ts_formula_errors: true, ts_numbering: true, ..OpenOptions::default() },
+            Box::new(FixedEnv::default()),
+        )
+        .unwrap();
         s.exec(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }), &mut cx.cx()).unwrap();
         sh = d2b_f1_support::Shell::default();
         let mut pending: Option<&str> = None;

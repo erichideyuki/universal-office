@@ -659,6 +659,21 @@ pub unsafe extern "C" fn uo_session_test_ts_save_compat(h: *mut UoWriteSession, 
     buf(OK, Vec::new())
 }
 
+/// WordCraft study (fields, B25–B27): the frozen TS's session rules on a handle (bit 0: the table-formula error texts
+/// and ROUND, `OpenOptions::ts_formula_errors`; bit 1: the list words and `w:isLgl` of the outline, TOC sources and
+/// cross-reference items, `OpenOptions::ts_numbering`), for the strict replays of TS captures (`Session::set_ts_wc_fields`;
+/// Word's rules are the default).
+///
+/// # Safety
+/// `h` null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_session_test_ts_wc_fields(h: *mut UoWriteSession, flags: u32) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `h` is null or live.
+    let Some(s) = (unsafe { h.as_mut() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    s.session.set_ts_wc_fields(flags & 1 != 0, flags & 2 != 0);
+    buf(OK, Vec::new())
+}
+
 /// F10 setup of a handle: the scripted oracle (`ReplayOracle`), the reference seed the capture recorded and the
 /// hyphenation patterns of the element (pt-BR, en, es). The session must have been opened with the F10 environment (the
 /// replay's one extra draw, `setUiLang('pt')`).

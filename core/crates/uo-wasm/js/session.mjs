@@ -222,8 +222,10 @@ export function bindSession(w, uo) {
       return { run, para, pending: (data[data.length - 1] & 1) === 1 };
     }
     /** the hyphenation pattern ids the document needs and `env` lacks (the viewer's `hyphenationPatterns`) */
-    hyphenationPatterns(env, langs = []) {
-      const { status, data } = call('hyphenationPatterns', () => take(w.uo_shell_hyphenation_patterns(this.#live(), env.ptr, ...text(langs.join('\n')))));
+    hyphenationPatterns(env, langs = [], o = {}) {
+      // (`o.tsHyphenation`: the frozen TS's English `en-us`, parity tests only; else Word's `en-us-word`, WordCraft study D1)
+      const flags = o.tsHyphenation ? 1 << 16 : 0;
+      const { status, data } = call('hyphenationPatterns', () => take(w.uo_shell_hyphenation_patterns(this.#live(), env.ptr, ...text(langs.join('\n')), flags)));
       if (status !== 0) throw new SessionError(status, '', 'hyphenationPatterns');
       const s = dec.decode(data);
       return s ? s.split('\n') : [];

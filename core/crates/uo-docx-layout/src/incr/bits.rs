@@ -49,6 +49,7 @@ pub(crate) fn state_string(e: &Engine) -> String {
         hf_frame_tbl,
         static_dx,
         cell_mar,
+        cell_interior,
         col_max_y,
         sect_gap_after,
         pending_join,
@@ -72,6 +73,10 @@ pub(crate) fn state_string(e: &Engine) -> String {
         field_page,
         en_blocks,
         kl_col_to_page,
+        mirror_static,
+        float_line_top,
+        body_early,
+        field_lang,
         sect_geoms,
         geoms,
         cover_page,
@@ -93,10 +98,11 @@ pub(crate) fn state_string(e: &Engine) -> String {
     put!(story, cur, col, y, col_top, at_top, top_gap_prev_after, prev, last_box, first_in_doc, ln_count, ln_page, ln_sect);
     put!(last_row_emit, tbl_x0, in_hf, float_carry, float_flow, next_table_layout, only_text_floats, pre_placed, z_seq);
     put!(col_used, balance_saved, balance_last_free, placed_tables, late_split, col_bottoms, in_cell, hf_frame_after);
-    put!(hf_frame_tbl, static_dx, cell_mar, col_max_y, sect_gap_after, pending_join, pending_del, float_table_gap);
+    put!(hf_frame_tbl, static_dx, cell_mar, cell_interior, col_max_y, sect_gap_after, pending_join, pending_del, float_table_gap);
     put!(carry_anchor_gap, note_carry, row_note_cut, flow_fills, en_flow, cur_endnote, endnotes_done, pinned_floats);
     put!(chain_slices, field_at, cell_ps, cell_collect, late_marks, scratch, static_seq, field_page, en_blocks, sect_geoms);
-    put!(geoms, cover_page, first_page_number, list_texts, note_cache, sep_cache, found, fields, kl_col_to_page);
+    put!(geoms, cover_page, first_page_number, list_texts, note_cache, sep_cache, found, fields, kl_col_to_page, mirror_static);
+    put!(float_line_top, body_early, field_lang);
     s
 }
 

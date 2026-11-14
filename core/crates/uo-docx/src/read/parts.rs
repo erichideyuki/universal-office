@@ -136,6 +136,9 @@ pub fn read_style_sheet(doc: Option<&XmlDocument>) -> StyleSheet {
         if let Some(name) = val_of(st, "w:name") {
             def.name = Some(name.into());
         }
+        if let Some(a) = non_empty(val_of(st, "w:aliases")) {
+            def.aliases = crate::model::formatting::StyleAliases(Some(a.into())); // WordCraft study (fields, B21)
+        }
         if let Some(v) = non_empty(val_of(st, "w:basedOn")) {
             def.based_on = Some(v.into());
         }
@@ -738,6 +741,19 @@ pub fn read_doc_formatting_facts(ctx: &mut ReadCtx<'_>) -> Result<(DocFormatting
     let facts = crate::model::ReadFacts {
         settings_absent: settings.is_none(),
         default_tab_absent: settings.as_ref().is_none_or(|d| d.root().first_child("w:defaultTabStop").is_none()),
+        // WordCraft study (page): print settings Word's layout applies
+        gutter_at_top: settings.as_ref().is_some_and(|d| d.root().first_child("w:gutterAtTop").is_some_and(on_off_val)),
+        book_fold: settings.as_ref().and_then(|d| {
+            let on = |n: &str| d.root().first_child(n).is_some_and(on_off_val);
+            if on("w:bookFoldRevPrinting") {
+                Some(true)
+            } else if on("w:bookFoldPrinting") {
+                Some(false)
+            } else {
+                None
+            }
+        }),
+        print_two_on_one: settings.as_ref().is_some_and(|d| d.root().first_child("w:printTwoOnOne").is_some_and(on_off_val)),
     };
     let f = DocFormatting {
         styles: read_style_sheet(styles.as_ref()),

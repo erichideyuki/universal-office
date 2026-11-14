@@ -55,6 +55,39 @@ fn soup(rng: &mut Rng, alphabet: &[&str], max: usize) -> Vec<u16> {
     out
 }
 
+/// Word's formula evaluator (WordCraft study, B25) over operator runs of 100,000 and 400,000 terms on a 1 MiB stack
+/// (the stack of wasm32): a run of one precedence is one flat node, so neither the evaluation nor the drop of the
+/// tree recurses per operator (a left-deep tree aborted the process at 10,000 terms).
+#[test]
+fn word_formula_operator_runs_on_a_small_stack() {
+    let run = std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(|| {
+            let u = |s: String| -> Vec<u16> { s.encode_utf16().collect() };
+            let mut cap = TextCap::new(4096);
+            let mut none = |_: &str, _: &[u16]| -> Option<Vec<u16>> { None };
+            let pt = word::numwords::WordsLang::Pt;
+            let mut eval = |code: String| -> Option<String> {
+                word::evaluate_field_formula_word(&u(code), &mut none, pt, "pt-BR", 256, &mut cap)
+                    .ok()
+                    .flatten()
+                    .map(|v| String::from_utf16_lossy(v.units()))
+            };
+            let sum = |n: usize, op: &str, t: &str| format!("= {t}{}", format!("{op}{t}").repeat(n - 1));
+            assert_eq!(eval(sum(100_000, "+", "1")).as_deref(), Some("100000"));
+            assert_eq!(eval(sum(400_000, "+", "1")).as_deref(), Some("400000"));
+            assert_eq!(eval(sum(100_000, "*", "1")).as_deref(), Some("1"));
+            assert_eq!(eval(sum(100_000, "^", "1")).as_deref(), Some("1"));
+            assert_eq!(eval(sum(100_000, "-", "1")).as_deref(), Some("-99998"));
+            let _ = eval(format!("= 1{}", "%".repeat(100_000)));
+            let _ = eval(format!("= {}", "1+2*3^4%-".repeat(50_000) + "1"));
+            let _ = eval(format!("= SUM({})", "1;".repeat(100_000) + "1"));
+            let _ = eval(format!("= ({}) = 1", "(1+1)+".repeat(100_000) + "1"));
+        })
+        .unwrap();
+    run.join().unwrap();
+}
+
 #[test]
 fn hostile_field_codes() {
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
@@ -121,6 +154,15 @@ fn hostile_field_codes() {
     assert!(cap.take_truncated());
     let decimals = format!("=1 \\# \"0,{}\"", "0".repeat(500));
     assert_eq!(word::evaluate_field_formula(&u(decimals), &mut none, None, 256, &mut cap), Ok(None));
+    // Word's evaluator (WordCraft study, B25) over the same soup
+    for _ in 0..20_000 {
+        let code = soup(&mut rng, &alphabet, 120);
+        let mut value = |_: &str, _: &[u16]| -> Option<Vec<u16>> { Some("1,5".encode_utf16().collect()) };
+        let words = word::numwords::WordsLang::of(rng.pick(&["pt-BR", "en-US", "es-ES"]));
+        if let Ok(Some(v)) = word::evaluate_field_formula_word(&code, &mut value, words, "pt-BR", 256, &mut cap) {
+            assert!(v.len() <= 4096);
+        }
+    }
     for v in [f64::NAN, f64::INFINITY, -1e308, 1e21, 0.5, -0.0] {
         let _ = word::format_picture(v, "#.##0,00x;(0);'z'");
         let _ = word::format_formula_result(

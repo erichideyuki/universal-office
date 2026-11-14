@@ -1,0 +1,67 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 161.51,
+"size": 11.04,
+"text": "1.CapituloA"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 130.95,
+"size": 11.04,
+"text": "textoHxg"
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 483.98,
+"size": 11.04,
+"text": "n1=CapituloAn2=ParagrafoMeun3=MarcaDoisn4=Erro!UseaguiaPágina"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 475.76,
+"size": 11.04,
+"text": "InicialparaaplicarInexistenteaotextoquedeveráapareceraqui.n5=Erro!"
+},
+{
+"y": 106.46,
+"x0": 85.1,
+"x1": 478.81,
+"size": 11.04,
+"text": "Nenhumtextocomoestiloespecificadofoiencontradonodocumento.Hxg"
+},
+{
+"y": 119.18,
+"x0": 85.1,
+"x1": 157.23,
+"size": 11.04,
+"text": "ParagrafoMeu"
+},
+{
+"y": 131.78,
+"x0": 85.1,
+"x1": 149.03,
+"size": 11.04,
+"text": "xMarcaDois"
+}
+],
+"objs": []
+}
+]
+}

@@ -207,6 +207,8 @@ mod session_d2b_f9;
 mod session_font_usage;
 mod sources_unit;
 mod word_unit;
+#[cfg(feature = "session")]
+mod word_wc_fields_session;
 
 // ── D2b-F8 (clipboard) ──
 #[cfg(feature = "session")]
@@ -230,3 +232,5 @@ mod session_w7c_save_parts;
 mod previews_bookmarks_w7c;
 // wave 7c (V, L1): the live object gestures (LiveBegin/LiveSet/LiveEnd/LiveCancel)
 mod live_drags_w7c;
+// WordCraft study — tables (TCond aside): Word's in-order read of `w:tblPr` (`read_tbl_pr_word`)
+mod tblpr_word_unit;

@@ -1,0 +1,88 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 135.28,
+"size": 11.04,
+"text": "AntesHxg"
+},
+{
+"y": 93.86,
+"x0": 97.7,
+"x1": 202.24,
+"size": 11.04,
+"text": "abcdefghijabcdef"
+},
+{
+"y": 106.46,
+"x0": 86.66,
+"x1": 201.59,
+"size": 11.04,
+"text": "ghijabcdefghijabcd"
+},
+{
+"y": 119.18,
+"x0": 89.18,
+"x1": 201.97,
+"size": 11.04,
+"text": "efghijabcdefghijab"
+},
+{
+"y": 131.78,
+"x0": 89.78,
+"x1": 201.61,
+"size": 11.04,
+"text": "cdefghijabcdefghij"
+},
+{
+"y": 144.38,
+"x0": 97.7,
+"x1": 202.24,
+"size": 11.04,
+"text": "abcdefghijabcdef"
+},
+{
+"y": 157.1,
+"x0": 97.46,
+"x1": 509.33,
+"size": 11.04,
+"text": "ghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+},
+{
+"y": 169.7,
+"x0": 90.62,
+"x1": 509.45,
+"size": 11.04,
+"text": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcd"
+},
+{
+"y": 182.42,
+"x0": 346.99,
+"x1": 509.53,
+"size": 11.04,
+"text": "efghijabcdefghijabcdefghij"
+},
+{
+"y": 195.02,
+"x0": 85.1,
+"x1": 125.43,
+"size": 11.04,
+"text": "FimHxg"
+},
+{
+"y": 93.86,
+"x0": 209.57,
+"x1": 265.18,
+"size": 11.04,
+"text": "TabelaHxg"
+}
+],
+"objs": []
+}
+]
+}

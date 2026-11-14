@@ -94,13 +94,43 @@ pub struct MemoReport {
 
 /// One flow call of a prepare, with its answer (the run keys of the recorded log are relative:
 /// indices into [`Entry::refs`]).
+/// The language of a recorded field or number call (WordCraft study, fields).
+type OptLang = Option<Box<str>>;
+
 #[derive(Clone, Debug)]
 enum FlowOp {
-    Field { src: FieldSource, name: Box<[u16]>, instr: Box<[u16]>, at: f64, ans: Option<Box<[u16]>> },
-    Number { num_id: JsNumber, ilvl: JsNumber, ans: Option<NumberMarker> },
-    NoteMark { kind: NoteKindFlow, id: f64, custom: bool, lang: Box<str>, cap0: TextCap, cap1: TextCap, ans: Box<[u16]> },
-    OnField { run: FieldRun, v: Box<[u16]> },
-    Warn { msg: Box<str> },
+    /// (`lang`: WordCraft study, fields B22 — the field's language, part of the call)
+    Field {
+        src: FieldSource,
+        name: Box<[u16]>,
+        instr: Box<[u16]>,
+        at: f64,
+        lang: OptLang,
+        ans: Option<Box<[u16]>>,
+    },
+    /// (`lang`: WordCraft study, fields B26 — the paragraph mark's language, part of the call)
+    Number {
+        num_id: JsNumber,
+        ilvl: JsNumber,
+        lang: OptLang,
+        ans: Option<NumberMarker>,
+    },
+    NoteMark {
+        kind: NoteKindFlow,
+        id: f64,
+        custom: bool,
+        lang: Box<str>,
+        cap0: TextCap,
+        cap1: TextCap,
+        ans: Box<[u16]>,
+    },
+    OnField {
+        run: FieldRun,
+        v: Box<[u16]>,
+    },
+    Warn {
+        msg: Box<str>,
+    },
 }
 
 /// `Debug` equality (a JS number: `-0`/`+0` and NaN stay apart as the printed value does).
@@ -112,10 +142,12 @@ impl FlowOp {
     /// The same call (kind and arguments, the answer aside).
     fn same_call(&self, o: &FlowOp) -> bool {
         match (self, o) {
-            (FlowOp::Field { src, name, instr, at, .. }, FlowOp::Field { src: s, name: n, instr: i, at: a, .. }) => {
-                src == s && name == n && instr == i && at.to_bits() == a.to_bits()
+            (FlowOp::Field { src, name, instr, at, lang, .. }, FlowOp::Field { src: s, name: n, instr: i, at: a, lang: g, .. }) => {
+                src == s && name == n && instr == i && at.to_bits() == a.to_bits() && lang == g
             }
-            (FlowOp::Number { num_id, ilvl, .. }, FlowOp::Number { num_id: n, ilvl: l, .. }) => dbg_eq(num_id, n) && dbg_eq(ilvl, l),
+            (FlowOp::Number { num_id, ilvl, lang, .. }, FlowOp::Number { num_id: n, ilvl: l, lang: g, .. }) => {
+                dbg_eq(num_id, n) && dbg_eq(ilvl, l) && lang == g
+            }
             (
                 FlowOp::NoteMark { kind, id, custom, lang, cap0, .. },
                 FlowOp::NoteMark { kind: k, id: i, custom: c, lang: l, cap0: c0, .. },
@@ -335,7 +367,10 @@ pub(crate) fn prepare(m: &mut ParaMemo, eng: &mut Engine, cx: &mut Cx<'_, '_>, k
         m.report.skipped += 1;
         return prepare_paragraph(cx, eng, k, env);
     }
-    let env_key = format!("{env:?}");
+    // (WordCraft study, L5: the section's character grid is part of the key — a section edit leaves the formatting and
+    // the styles as they were)
+    let grid = crate::para::prep_char_grid(cx, &mut eng.ctx, lp);
+    let env_key = format!("{env:?}{grid:?}");
     let mut served = VecDeque::new();
     let mut lens0 = None;
     let found = m.entries.get(&id).and_then(|v| v.iter().position(|e| e.env == env_key && e.depth == cx.depth));
@@ -439,15 +474,15 @@ fn replay(e: &Entry, eng: &mut Engine, cx: &mut Cx<'_, '_>, keys: &[RunKey]) -> 
     for op in &e.ops {
         let op = op.map_keys(&mut |r| keys.get(r.ix()).copied()).ok_or(LayoutError::Internal(MEMO_ERR))?;
         let (live, same) = match op {
-            FlowOp::Field { src, name, instr, at, ans } => {
-                let live = PrepFlow::field(eng, cx, src, &name, &instr, at)?;
+            FlowOp::Field { src, name, instr, at, lang, ans } => {
+                let live = PrepFlow::field_in(eng, cx, src, &name, &instr, at, lang.as_deref())?;
                 let same = live == ans;
-                (FlowOp::Field { src, name, instr, at, ans: live }, same)
+                (FlowOp::Field { src, name, instr, at, lang, ans: live }, same)
             }
-            FlowOp::Number { num_id, ilvl, ans } => {
-                let live = PrepFlow::number_next(eng, cx.ldoc.view.formatting(), num_id, ilvl);
+            FlowOp::Number { num_id, ilvl, lang, ans } => {
+                let live = PrepFlow::number_next_in(eng, cx.ldoc.view.formatting(), num_id, ilvl, lang.as_deref());
                 let same = dbg_eq(&live, &ans);
-                (FlowOp::Number { num_id, ilvl, ans: live }, same)
+                (FlowOp::Number { num_id, ilvl, lang, ans: live }, same)
             }
             FlowOp::NoteMark { kind, id, custom, lang, cap0, cap1, ans } => {
                 let mut cap = cap0;
@@ -503,7 +538,19 @@ impl PrepFlow for RecFlow<'_> {
     }
 
     fn field(&mut self, cx: &mut Cx<'_, '_>, src: FieldSource, name: &[u16], instr: &[u16], at: f64) -> LResult<Option<Box<[u16]>>> {
-        let want = FlowOp::Field { src, name: name.into(), instr: instr.into(), at, ans: None };
+        self.field_in(cx, src, name, instr, at, None)
+    }
+
+    fn field_in(
+        &mut self,
+        cx: &mut Cx<'_, '_>,
+        src: FieldSource,
+        name: &[u16],
+        instr: &[u16],
+        at: f64,
+        lang: Option<&str>,
+    ) -> LResult<Option<Box<[u16]>>> {
+        let want = FlowOp::Field { src, name: name.into(), instr: instr.into(), at, lang: lang.map(Into::into), ans: None };
         if let Some(op) = self.serve(&want) {
             return match op {
                 FlowOp::Field { ans, .. } => Ok(ans),
@@ -511,24 +558,28 @@ impl PrepFlow for RecFlow<'_> {
             };
         }
         let s0 = cx.budget.spent();
-        let r = PrepFlow::field(&mut *self.eng, cx, src, name, instr, at);
+        let r = PrepFlow::field_in(&mut *self.eng, cx, src, name, instr, at, lang);
         self.flow_charge = self.flow_charge.saturating_add(cx.budget.spent().saturating_sub(s0));
-        if let (Ok(ans), FlowOp::Field { src, name, instr, at, .. }) = (&r, want) {
-            self.ops.push(FlowOp::Field { src, name, instr, at, ans: ans.clone() });
+        if let (Ok(ans), FlowOp::Field { src, name, instr, at, lang, .. }) = (&r, want) {
+            self.ops.push(FlowOp::Field { src, name, instr, at, lang, ans: ans.clone() });
         }
         r
     }
 
     fn number_next(&mut self, fmt: &DocFormatting, num_id: JsNumber, ilvl: JsNumber) -> Option<NumberMarker> {
-        let want = FlowOp::Number { num_id, ilvl, ans: None };
+        self.number_next_in(fmt, num_id, ilvl, None)
+    }
+
+    fn number_next_in(&mut self, fmt: &DocFormatting, num_id: JsNumber, ilvl: JsNumber, lang: Option<&str>) -> Option<NumberMarker> {
+        let want = FlowOp::Number { num_id, ilvl, lang: lang.map(Into::into), ans: None };
         if let Some(op) = self.serve(&want) {
             return match op {
                 FlowOp::Number { ans, .. } => ans,
                 _ => None,
             };
         }
-        let ans = PrepFlow::number_next(&mut *self.eng, fmt, num_id, ilvl);
-        self.ops.push(FlowOp::Number { num_id, ilvl, ans: ans.clone() });
+        let ans = PrepFlow::number_next_in(&mut *self.eng, fmt, num_id, ilvl, lang);
+        self.ops.push(FlowOp::Number { num_id, ilvl, lang: lang.map(Into::into), ans: ans.clone() });
         ans
     }
 
@@ -687,6 +738,7 @@ fn map_prepared(p: &mut PreparedPara, f: &mut impl FnMut(RunKey) -> Option<RunKe
         empty: _,
         rev_bars: _,
         math: _,
+        char_grid: _,
     } = p;
     for s in styles.iter() {
         let RunStyle {

@@ -235,7 +235,7 @@ impl Session {
         }
         let pi = self.selection.focus.para as usize;
         let id = self.paras()?.get(pi)?.id;
-        let value = crate::word::list_item_values(DocView::new(&self.doc), None).get(&id).map(|v| v.value);
+        let value = crate::word::outline::list_item_values_with(DocView::new(&self.doc), None, self.num_rules()).get(&id).map(|v| v.value);
         let lv = info.level.as_ref();
         Some((
             info.can_continue,

@@ -192,6 +192,22 @@ impl JsNormalize for DrawingId {
     }
 }
 
+/// WordCraft study (fields, B21): the reader's fact stays with the style.
+impl JsNormalize for crate::model::formatting::StyleAliases {
+    fn js_needs(&self) -> bool {
+        false
+    }
+    fn js_normalize(&mut self, _: &mut NormCx<'_>) {}
+}
+
+/// WordCraft study (fields, B22): the reader's fact stays with the run (the field's language for the layout).
+impl JsNormalize for crate::model::run::InstrRPr {
+    fn js_needs(&self) -> bool {
+        false
+    }
+    fn js_normalize(&mut self, _: &mut NormCx<'_>) {}
+}
+
 /// The symbol keys vanish: the link is emptied (an empty link is no link: `syncRunRPr` reads
 /// `props[RPR_REF]` and `props[RPR_EDITED]` as falsy).
 impl JsNormalize for RprLink {

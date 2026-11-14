@@ -204,7 +204,7 @@ pub fn run(code: &str, t: &mut Table, ids: &mut IdAlloc, media: &MediaStore) -> 
             let fu: Vec<u16> = formula.encode_utf16().collect();
             let pic: Option<Vec<u16>> = PICS[int(4) as usize].map(|p| p.encode_utf16().collect());
             let instr = formula_instr(&fu, pic.as_deref());
-            let env = FormulaEnv { table: t, r: int(1), c: int(2), bookmarks: None };
+            let env = FormulaEnv { table: t, r: int(1), c: int(2), bookmarks: None, word: false };
             let txt = formula_result_text(&instr, &env).unwrap_or_else(|| "THROW".into());
             let ev = match evaluate_formula(&fu, &env) {
                 Err(e) => hex(e),

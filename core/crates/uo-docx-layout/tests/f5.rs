@@ -224,6 +224,7 @@ fn para(text: &str) -> PreparedPara {
         empty: false,
         rev_bars: None,
         math: Vec::new(),
+        char_grid: None,
     }
 }
 
@@ -269,6 +270,23 @@ fn line_box_follows_the_spacing_rules() {
     // a grid of 0 or NaN is no grid (`grid && grid > 0`)
     assert_eq!(line_box(200.0, 50.0, &p, None, Some(0.0)), (250.0, 200.0));
     assert_eq!(line_box(200.0, 50.0, &p, None, Some(f64::NAN)), (250.0, 200.0));
+}
+
+/// WordCraft study (fields, C1b; record uo-docx-layout.md "WordCraft study — fields"): Calibri 11 + Tahoma 11 at
+/// multiple 1.5 — Word's extra is 0.5 × the LARGEST OWN height (Calibri's 1950 + 550 of 2048 em), not 0.5 × (Tahoma's
+/// ascent 2049 + Calibri's descent 550): Word's pitch 20.67 pt, the frozen TS's rule 20.94 (measured `wcfonts3/c1y-*`).
+#[test]
+fn multiple_spacing_takes_the_largest_own_text_height() {
+    let em = 220.0 / 2048.0;
+    let (asc, desc) = (2049.0 * em, 550.0 * em); // max ascent (Tahoma), max descent (Calibri)
+    let own = (1950.0 + 550.0) * em; // Calibri's own height (Tahoma's: 2049 + 423)
+    let mut p = para("a");
+    p.line_rule = LineRule::Auto;
+    p.line = 360.0;
+    let word = line_box(asc, desc, &p, Some(own), None).0 / 20.0;
+    let ts = line_box(asc, desc, &p, Some(asc + desc), None).0 / 20.0;
+    assert!((word - 20.67).abs() < 0.01, "{word}");
+    assert!((ts - 20.94).abs() < 0.01, "{ts}");
 }
 
 #[test]

@@ -334,8 +334,12 @@ fn d2b_f9_session_matches_the_element() {
     for rec in cap.records().iter().filter(|r| r.key.ends_with("#0")) {
         let rel = rec.key.trim_end_matches("#0");
         let bytes = std::fs::read(root.join(rel)).unwrap();
-        let mut s =
-            Session::open(bytes, OpenOptions { sig_mode: SigMode::Ts, ..OpenOptions::default() }, Box::new(FixedEnv::default())).unwrap();
+        let mut s = Session::open(
+            bytes,
+            OpenOptions { sig_mode: SigMode::Ts, ts_formula_errors: true, ts_numbering: true, ..OpenOptions::default() },
+            Box::new(FixedEnv::default()),
+        )
+        .unwrap();
         s.exec(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }), &mut cx.cx()).unwrap();
         // F9-A2: `goToSearchResult` of a stale result leaves the TS selection outside the story; the
         // D2a undo/redo clamps a restored selection (D2a-C4) where the TS keeps it: from there the

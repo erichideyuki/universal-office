@@ -24,6 +24,10 @@ pub(crate) struct FaceInfo {
     pub(crate) bold: bool,
     pub(crate) italic: bool,
     pub(crate) weight: u16,
+    /// WordCraft study (fields, C5): the full names (name ID 4, platform 3) by language id
+    pub(crate) full_names: Vec<(u16, String)>,
+    /// WordCraft study (fields, C5): the named instances of a variable font ("<family> <subfamily>", `fvar`)
+    pub(crate) instances: Vec<String>,
 }
 
 fn u16_at(b: &[u8], o: u64) -> Result<u16, Fail> {
@@ -180,7 +184,39 @@ fn info_inner(file: &mut File, base: u64) -> Result<Option<FaceInfo>, Fail> {
         }
     }
     let typo = get(16)?.map(|t| trim(&t).to_owned());
-    Ok(Some(FaceInfo { family, typo, bold, italic, weight }))
+    // WordCraft study (fields, C5): every full name by language, and the named instances of `fvar`
+    let mut full_names = Vec::new();
+    for i in 0..count {
+        let r = 6 + i * 12;
+        if u16_at(&name, r)? != 3 || u16_at(&name, r + 6)? != 4 {
+            continue;
+        }
+        let len = u64::from(u16_at(&name, r + 8)?);
+        let o = strings + u64::from(u16_at(&name, r + 10)?);
+        let s0 = o.min(name.len() as u64) as usize;
+        let s1 = (o + len).min(name.len() as u64) as usize;
+        let Some(bytes) = name.get(s0..s1) else { continue };
+        let units: Vec<u16> = bytes.as_chunks::<2>().0.iter().map(|w| u16::from_be_bytes(*w)).collect();
+        full_names.push((u16_at(&name, r + 4)?, trim(&String::from_utf16_lossy(&units)).to_owned()));
+    }
+    let mut instances = Vec::new();
+    if let Some(&(fvar_off, fvar_len)) = tables.get(b"fvar") {
+        let fvar = read_at(file, fvar_off, fvar_len.min(1 << 16) as usize)?;
+        let (axes_off, axis_count, axis_size) = (u64::from(u16_at(&fvar, 4)?), u64::from(u16_at(&fvar, 8)?), u64::from(u16_at(&fvar, 10)?));
+        let (inst_count, inst_size) = (u64::from(u16_at(&fvar, 12)?), u64::from(u16_at(&fvar, 14)?));
+        let base_family = typo.clone().unwrap_or_else(|| family.clone());
+        for k in 0..inst_count.min(256) {
+            let at = axes_off + axis_count * axis_size + k * inst_size;
+            let Ok(sub_id) = u16_at(&fvar, at) else { break };
+            if let Some(sub) = get(sub_id)? {
+                let sub = trim(&sub);
+                if !sub.is_empty() {
+                    instances.push(format!("{base_family} {sub}"));
+                }
+            }
+        }
+    }
+    Ok(Some(FaceInfo { family, typo, bold, italic, weight, full_names, instances }))
 }
 
 #[cfg(test)]

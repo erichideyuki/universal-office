@@ -213,6 +213,7 @@ impl CellLayouter for Synth {
             empty: false,
             rev_bars: None,
             math: Vec::new(),
+            char_grid: None,
         })
     }
 

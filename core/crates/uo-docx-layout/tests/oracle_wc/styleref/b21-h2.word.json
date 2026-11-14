@@ -1,0 +1,172 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 491.55,
+"size": 11.04,
+"text": "CabErro!UseaguiaPáginaInicialparaaplicarheading2aotextoquedeverá"
+},
+{
+"y": 58.32,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 139.92,
+"size": 11.04,
+"text": "CapituloA"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 146.31,
+"size": 11.04,
+"text": "textoa1Hxg"
+},
+{
+"y": 106.46,
+"x0": 85.1,
+"x1": 139.71,
+"size": 11.04,
+"text": "CapituloB"
+},
+{
+"y": 119.18,
+"x0": 85.1,
+"x1": 146.31,
+"size": 11.04,
+"text": "textob1Hxg"
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 491.53,
+"size": 11.04,
+"text": "CabErro!UseaguiaPáginaInicialparaaplicarheading2aotextoquedeverá"
+},
+{
+"y": 58.32,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 146.31,
+"size": 11.04,
+"text": "textop2Hxg"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 121.22,
+"size": 11.04,
+"text": "corpox"
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 491.53,
+"size": 11.04,
+"text": "CabErro!UseaguiaPáginaInicialparaaplicarheading2aotextoquedeverá"
+},
+{
+"y": 58.32,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 146.31,
+"size": 11.04,
+"text": "textop3Hxg"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 139.91,
+"size": 11.04,
+"text": "CapituloC"
+},
+{
+"y": 106.46,
+"x0": 85.1,
+"x1": 145.74,
+"size": 11.04,
+"text": "textoc1Hxg"
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 491.53,
+"size": 11.04,
+"text": "CabErro!UseaguiaPáginaInicialparaaplicarheading2aotextoquedeverá"
+},
+{
+"y": 58.32,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 223.25,
+"size": 11.04,
+"text": "antesMarcaUmdepoisHxg"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 126.84,
+"size": 11.04,
+"text": "SecaoD"
+},
+{
+"y": 106.46,
+"x0": 85.1,
+"x1": 121.82,
+"size": 11.04,
+"text": "fimHxg"
+}
+],
+"objs": []
+}
+]
+}

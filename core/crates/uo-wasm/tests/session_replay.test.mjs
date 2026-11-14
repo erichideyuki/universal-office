@@ -448,6 +448,9 @@ function replayFamily(family) {
     // replays open with `ts_stale_parts` (fix round 1: that flag only; the steps it covers are listed in uo-bindings.md,
     // "Wave 7c — S, fix round 1")
     if ((family === 'f5' || family === 'f10') && process.env.UO_WS_TS_SAVE_FLAGS !== '0') assert.equal(take(w.uo_session_test_ts_save_compat(s.ptr, 1)).status, 0);
+    // WordCraft study (fields, B25–B27): the frozen TS's table-formula texts and list rules, as the native strict
+    // replays open with `ts_formula_errors` and `ts_numbering`
+    assert.equal(take(w.uo_session_test_ts_wc_fields(s.ptr, 3)).status, 0);
     const diverges = family === 'f10' ? (F10_DIVERGENCES.find(([d]) => rel.endsWith(d))?.[1] ?? Infinity) : Infinity;
     let pending = null;
     let stale = false;

@@ -305,6 +305,31 @@ fn mar_side(m: &CellMargins, side: Side) -> Option<&crate::model::WidthSpec> {
     }
 }
 
+/// WordCraft study (tables, B5): the keepNext of a model cell's first paragraph in document order — direct, from its
+/// paragraph style, from the slot's table-style pPr — for a first cell without a laid-out content (a vMerge
+/// continuation, a merged vertical cell); a nested table first: its first row's first cell (unmeasured in a merged
+/// cell: without the nested table's own style pPr).
+fn cell_first_keep_next(cx: &Cx<'_, '_>, host: &mut dyn CellLayouter, cell: &Cell, table_ppr: Option<&PPr>, depth: u32) -> bool {
+    if depth > cx.opts.limits.max_depth {
+        return false;
+    }
+    match cell.content.blocks().next() {
+        Some(crate::model::Block::Paragraph(p)) => {
+            let fmt = cx.ldoc.view.formatting();
+            let ctx = host.ctx();
+            let (ppr, props) = match ctx.rev.paragraph(p) {
+                Some((pp, q)) => (Some(Arc::new(pp)), Arc::new(q)),
+                None => (p.ppr.clone(), Arc::clone(&p.props)),
+            };
+            crate::word::resolve_ppr(fmt, &mut ctx.resolver, ppr.as_deref(), &props, table_ppr).ppr.keep_next == Some(true)
+        }
+        Some(crate::model::Block::Table(t)) => {
+            t.rows.first().and_then(|r| r.cells.first()).is_some_and(|c| cell_first_keep_next(cx, host, c, None, depth + 1))
+        }
+        None => false,
+    }
+}
+
 // ───────────────────────── measureCell, anchoredWidth ─────────────────────────
 
 /// `measureCell(ctx, cell, r, mar)` (table.ts:524): the content's min/max widths for the autofit,
@@ -329,7 +354,7 @@ fn measure_cell(
             cx.budget.charge(1)?;
             match b {
                 crate::model::Block::Table(t) => {
-                    let tw = t.tbl_pr.as_deref().and_then(|p| p.tbl_w.as_ref()).map(Wspec::of);
+                    let tw = super::table_props(cx, t).and_then(|p| p.tbl_w.as_ref()).map(Wspec::of);
                     let w = match pref_of(tw.as_ref()) {
                         Pref::Dxa => tw.map_or(0.0, |w| w.w),
                         Pref::Pct => 0.0,
@@ -594,7 +619,7 @@ pub fn layout_table(
     let fmt = ldoc.view.formatting();
     let settings = &fmt.settings;
     let empty_tbl = TblPr::default();
-    let direct = table0.tbl_pr.as_deref().unwrap_or(&empty_tbl);
+    let direct = super::table_props(cx, table0).map_or(&empty_tbl, |p| &**p); // WordCraft study (tables, the TCond aside)
     let style = host.ctx().resolver.table_style(fmt, direct.tbl_style.as_deref());
     let tbl_pr = merge_tbl_pr(Some(&style.tbl_pr), Some(direct));
     // `{ ...DEFAULT_LOOK, ...(direct.tblLook ?? style.tblPr.tblLook ?? {}) }`
@@ -738,6 +763,23 @@ pub fn layout_table(
     // ── conditional formatting ──
     let row_band = jm::max(1.0, nn(tbl_pr.tbl_style_row_band_size).unwrap_or(1.0));
     let col_band = jm::max(1.0, nn(tbl_pr.tbl_style_col_band_size).unwrap_or(1.0));
+    // WordCraft study (tables, B6; measured `oracle_wc/condbd` bb-*): Word shifts the row bands past the header row
+    // (the column bands past the first column) only when the style has a non-empty firstRow (firstCol) part, and keeps
+    // the last row (column) out of the bands only with a lastRow (lastCol) part; the frozen TS by the look bits alone
+    let ts_bands = cx.opts.ts_table_style_cell_borders;
+    let has_part = |t: &str| {
+        style.cond.get(t).is_some_and(|p| {
+            !(p.p_pr.as_deref().is_none_or(|x| *x == PPr::default())
+                && p.r_pr.as_deref().is_none_or(|x| *x == RPr::default())
+                && p.tbl_pr.as_deref().is_none_or(|x| *x == TblPr::default())
+                && p.tr_pr.as_deref().is_none_or(|x| *x == TrPr::default())
+                && p.tc_pr.as_deref().is_none_or(|x| *x == TcPr::default()))
+        })
+    };
+    let fr_shift = lk(look.first_row) && (ts_bands || has_part("firstRow"));
+    let fc_shift = lk(look.first_column) && (ts_bands || has_part("firstCol"));
+    let lr_out = ts_bands || has_part("lastRow");
+    let lc_out = ts_bands || has_part("lastCol");
     let cond_for = |ri: usize, s: &Slot| -> Vec<&'static str> {
         let mut out = vec!["wholeTable"];
         let header = src.row(ri).and_then(|r| r.tr_pr.as_ref()).is_some_and(|t| t.tbl_header == Some(true));
@@ -746,14 +788,14 @@ pub fn layout_table(
         let first_col = lk(look.first_column) && s.lcol == 0.0;
         let last_col = lk(look.last_column) && s.lcol + s.span >= nc;
         if !lk(look.no_v_band) {
-            let c0 = s.lcol - (if lk(look.first_column) { 1.0 } else { 0.0 });
-            if c0 >= 0.0 && !(last_col && lk(look.last_column)) {
+            let c0 = s.lcol - (if fc_shift { 1.0 } else { 0.0 });
+            if c0 >= 0.0 && !(last_col && lk(look.last_column) && lc_out) {
                 out.push(if jm::rem(jm::floor(c0 / col_band), 2.0) == 0.0 { "band1Vert" } else { "band2Vert" });
             }
         }
         if !lk(look.no_h_band) {
-            let r0 = ri as f64 - (if lk(look.first_row) { 1.0 } else { 0.0 });
-            if r0 >= 0.0 && !last_row {
+            let r0 = ri as f64 - (if fr_shift { 1.0 } else { 0.0 });
+            if r0 >= 0.0 && !(last_row && lr_out) {
                 out.push(if jm::rem(jm::floor(r0 / row_band), 2.0) == 0.0 { "band1Horz" } else { "band2Horz" });
             }
         }
@@ -784,9 +826,88 @@ pub fn layout_table(
         COND_ORDER.iter().copied().filter(|t| out.contains(t)).collect()
     };
 
+    // WordCraft study (tables, B6): whether a row / a single grid column receives a row-type / column-type conditional
+    // part — the same tests as `cond_for` (a grid column as a slot of span 1)
+    let row_has = |c: &str, r: usize| -> bool {
+        let header = src.row(r).and_then(|r| r.tr_pr.as_ref()).is_some_and(|t| t.tbl_header == Some(true));
+        let last_row = lk(look.last_row) && r + 1 == n_rows;
+        match c {
+            "firstRow" => lk(look.first_row) && r == 0 || header && lk(look.first_row),
+            "lastRow" => last_row,
+            "band1Horz" | "band2Horz" => {
+                let r0 = r as f64 - (if fr_shift { 1.0 } else { 0.0 });
+                !lk(look.no_h_band)
+                    && r0 >= 0.0
+                    && !(last_row && lr_out)
+                    && (jm::rem(jm::floor(r0 / row_band), 2.0) == 0.0) == (c == "band1Horz")
+            }
+            _ => false,
+        }
+    };
+    let col_has = |c: &str, g: f64| -> bool {
+        let last_col = lk(look.last_column) && g + 1.0 >= nc;
+        match c {
+            "firstCol" => lk(look.first_column) && g == 0.0,
+            "lastCol" => last_col,
+            "band1Vert" | "band2Vert" => {
+                let c0 = g - (if fc_shift { 1.0 } else { 0.0 });
+                !lk(look.no_v_band)
+                    && c0 >= 0.0
+                    && !(last_col && lc_out)
+                    && (jm::rem(jm::floor(c0 / col_band), 2.0) == 0.0) == (c == "band1Vert")
+            }
+            _ => false,
+        }
+    };
+    // a part's `w:tcBorders` as the borders of ONE cell of its region (measured `oracle_wc/condbd`): the outer sides on
+    // the region's edges, insideV/insideH between its cells; wholeTable's ignored (`None` = the part as it is)
+    let region_tc = |c: &str, ri: usize, s: &Slot, part: &TcPr| -> Option<TcPr> {
+        let b = part.tc_borders.as_deref()?;
+        let mut out = part.clone();
+        if c == "wholeTable" {
+            delete(&mut out, "tcBorders");
+            return Some(out);
+        }
+        let (last_r, end_c) = (ri + s.row_span.max(1) - 1, s.lcol + s.span);
+        let (l, r, t, bt) = match c {
+            "firstRow" | "lastRow" | "band1Horz" | "band2Horz" => {
+                (s.lcol <= 0.0, end_c >= nc, ri == 0 || !row_has(c, ri - 1), last_r + 1 >= n_rows || !row_has(c, last_r + 1))
+            }
+            "firstCol" | "lastCol" | "band1Vert" | "band2Vert" => {
+                (s.lcol <= 0.0 || !col_has(c, s.lcol - 1.0), end_c >= nc || !col_has(c, end_c), ri == 0, last_r + 1 >= n_rows)
+            }
+            // the corner parts: the cell itself
+            _ => (true, true, true, true),
+        };
+        let pick = |edge: bool, outer: &Option<Box<BorderSpec>>, inner: &Option<Box<BorderSpec>>| {
+            if edge { outer.clone() } else { inner.clone() }
+        };
+        let (top, left, bottom, right) =
+            (pick(t, &b.top, &b.inside_h), pick(l, &b.left, &b.inside_v), pick(bt, &b.bottom, &b.inside_h), pick(r, &b.right, &b.inside_v));
+        let mut nb = b.clone();
+        for k in ["top", "left", "bottom", "right", "insideH", "insideV"] {
+            delete(&mut nb, k);
+        }
+        if let Some(v) = top {
+            set(&mut nb, "top", |o| o.top = Some(v));
+        }
+        if let Some(v) = left {
+            set(&mut nb, "left", |o| o.left = Some(v));
+        }
+        if let Some(v) = bottom {
+            set(&mut nb, "bottom", |o| o.bottom = Some(v));
+        }
+        if let Some(v) = right {
+            set(&mut nb, "right", |o| o.right = Some(v));
+        }
+        set(&mut out, "tcBorders", |o| o.tc_borders = Some(Box::new(nb)));
+        Some(out)
+    };
+
     // ── the resolved properties per cell (style + conditions + direct) ──
     let base_ppr = Arc::new(style.p_pr.clone());
     let base_rpr = Arc::new(style.r_pr.clone());
+    let region_borders = !cx.opts.ts_table_style_cell_borders;
     for (ri, rs) in slots.iter_mut().enumerate() {
         for s in rs.iter_mut() {
             let mut tc: Option<TcPr> = None;
@@ -794,7 +915,8 @@ pub fn layout_table(
             let mut rpr = Arc::clone(&base_rpr);
             for c in cond_for(ri, s) {
                 let Some(part) = style.cond.get(c) else { continue };
-                tc = Some(merge_tc_pr(Some(tc.as_ref().unwrap_or(&style.tc_pr)), part.tc_pr.as_deref()));
+                let own = if region_borders { part.tc_pr.as_deref().and_then(|p| region_tc(c, ri, s, p)) } else { None };
+                tc = Some(merge_tc_pr(Some(tc.as_ref().unwrap_or(&style.tc_pr)), own.as_ref().or(part.tc_pr.as_deref())));
                 ppr = Arc::new(merge_ppr(Some(&ppr), part.p_pr.as_deref()));
                 rpr = Arc::new(merge_rpr(Some(&rpr), part.r_pr.as_deref()));
             }
@@ -1217,8 +1339,31 @@ pub fn layout_table(
             };
             // a dark background in the cell: automatic text colour turns white
             let dark = is_dark(fill_of(&s.tc, ldoc.theme).as_deref());
-            let env =
-                CellEnv { table_ppr: Some(Arc::clone(&s.ppr)), table_rpr: Some(Arc::clone(&s.rpr)), dark_background: dark, cell_mar: None };
+            let env = CellEnv {
+                table_ppr: Some(Arc::clone(&s.ppr)),
+                table_rpr: Some(Arc::clone(&s.rpr)),
+                dark_background: dark,
+                cell_mar: None,
+                cell_interior: None,
+            };
+            // WordCraft study (tables, B15): the cell's interior — between the inner edges of its painted left and right
+            // borders (the painter's: the heavier of the two cells at a boundary, centred on it; measured `oracle_wc/cellclamp`)
+            #[expect(clippy::float_cmp, reason = "the painter's `o.col + o.span === s.col`, `o.col === s.col + s.span`")]
+            let interior = if separated {
+                (-mar_l, mar_r)
+            } else {
+                let prev = tbl.slots.get(ri).and_then(|r| r.iter().find(|o| o.col + o.span == s.col));
+                let next = tbl.slots.get(ri).and_then(|r| r.iter().find(|o| o.col == s.col + s.span));
+                let wl = bw(match prev {
+                    Some(p) => heavier(tbl.edge(p, Side::Right), tbl.edge(s, Side::Left)),
+                    None => tbl.edge(s, Side::Left),
+                });
+                let wr = bw(match next {
+                    Some(n) => heavier(tbl.edge(s, Side::Right), tbl.edge(n, Side::Left)),
+                    None => tbl.edge(s, Side::Right),
+                });
+                (wl / 2.0 - mar_l, mar_r - wr / 2.0)
+            };
             let vertical = vertical_dir(s.tc.text_direction.as_deref());
             let mut content: Option<Arc<CellContent>> = None;
             if !s.merged {
@@ -1243,7 +1388,11 @@ pub fn layout_table(
                 } else {
                     // (t: from the row top to the content top — border band + top margin)
                     let (cell, key) = src.cell(s)?;
-                    let cenv = CellEnv { cell_mar: Some((mar_l, mar_r, OptF64::some(band_top_of(ri) + mar_t))), ..env.clone() };
+                    let cenv = CellEnv {
+                        cell_mar: Some((mar_l, mar_r, OptF64::some(band_top_of(ri) + mar_t))),
+                        cell_interior: Some(interior),
+                        ..env.clone()
+                    };
                     let cref = cell_ref(at, ri, s.lcol);
                     let c = Arc::new(call_cell(cx, host, cell, key, x + x0 + mar_l, jm::max(1.0, x1 - x0 - mar_l - mar_r), &cenv, &cref)?);
                     if s.row_span == 1 {
@@ -1342,8 +1491,31 @@ pub fn layout_table(
                 *slot = Some(Arc::new(c));
             }
         }
-        // keepNext in any paragraph of any cell (oracle keeptbl)
-        let row_keep_next = contents.iter().any(|c| c.as_ref().is_some_and(|c| c.keep_next));
+        // keepNext in any paragraph of any cell (oracle keeptbl): the frozen TS. WordCraft study (tables, B5): Word keeps
+        // the row with the next by the first paragraph (document order) of the row's FIRST cell (the smallest logical
+        // column) only — a vMerge continuation by its own paragraph (measured `oracle_wc/rowkeep`)
+        let row_keep_next = if cx.opts.ts_row_keep_any_paragraph {
+            contents.iter().any(|c| c.as_ref().is_some_and(|c| c.keep_next))
+        } else {
+            let mut first: Option<(f64, usize)> = None;
+            for (k, ci) in infos.iter().enumerate() {
+                let s = tbl.slot(ri, ci.j).ok_or(LayoutError::Internal("table.ts slot"))?;
+                if first.is_none_or(|(l, _)| s.lcol < l) {
+                    first = Some((s.lcol, k));
+                }
+            }
+            match first {
+                Some((_, k)) => match contents.get(k).and_then(Option::as_ref) {
+                    Some(c) => c.first_keep_next,
+                    None => {
+                        let s = tbl.slot(ri, infos.get(k).map_or(0, |ci| ci.j)).ok_or(LayoutError::Internal("table.ts slot"))?;
+                        let (cell, _) = src.cell(s)?;
+                        cell_first_keep_next(cx, host, cell, Some(&s.ppr), 0)
+                    }
+                },
+                None => false,
+            }
+        };
         // the row's height (without the border bands)
         let mut h = content_h;
         if let Some((val, ex)) = th {
@@ -1515,11 +1687,20 @@ pub fn layout_table(
     }
 
     let border_left = tbl.slot(0, 0).map_or(0.0, |s| bw(tbl.edge(s, Side::Left)));
+    // WordCraft study (tables, B12): the right edge's widest border (the cell of each row that ends the grid on screen)
+    let mut border_right: f64 = 0.0;
+    for rs in &tbl.slots {
+        let last = rs.iter().fold(None::<&Slot>, |m, s| if m.is_none_or(|m| s.col + s.span > m.col + m.span) { Some(s) } else { m });
+        if let Some(s) = last {
+            border_right = jm::max(border_right, bw(tbl.edge(s, Side::Right)));
+        }
+    }
     Ok(TableLayout {
         x,
         width,
         rows: out_rows,
         border_left: OptF64::some(border_left),
+        border_right,
         eff_r: if legacy { OptF64::some(eff_r) } else { OptF64::NONE },
         tblp_pr: tbl_pr.tblp_pr.clone(),
     })

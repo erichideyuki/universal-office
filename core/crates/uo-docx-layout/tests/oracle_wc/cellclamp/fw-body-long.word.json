@@ -1,0 +1,39 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 135.28,
+"size": 11.04,
+"text": "AntesHxg"
+},
+{
+"y": 153.86,
+"x0": 85.1,
+"x1": 267.15,
+"size": 11.04,
+"text": "responsabilidadesadministrativasfim"
+},
+{
+"y": 166.46,
+"x0": 85.1,
+"x1": 141.29,
+"size": 11.04,
+"text": "DepoisHxg"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 135.19,
+"size": 11.04,
+"text": "CaixaHxg"
+}
+],
+"objs": []
+}
+]
+}

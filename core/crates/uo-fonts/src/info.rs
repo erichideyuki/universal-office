@@ -136,6 +136,39 @@ fn name_string(view: View<'_>, id: u16, budget: &mut WorkBudget) -> Result<Vec<u
     Ok(any)
 }
 
+/// WordCraft study (fields, C5): every platform-3 record of the name id `id` of a standalone sfnt, as
+/// `(language id, UTF-16 code units)` in record order (an odd length drops the last byte). One work budget of
+/// [`FontLimits::DEFAULT`] covers the records and the characters; a read past the end fails the call.
+pub(crate) fn platform3_names(bytes: &[u8], id: u16) -> Result<Vec<(u16, Vec<u16>)>> {
+    let view = View::new(bytes);
+    let Some(name) = table_of(view, 0, Tag::NAME)? else {
+        return Ok(Vec::new());
+    };
+    let mut budget = FontLimits::DEFAULT.work();
+    let off = u64::from(name.offset);
+    let count = view.u16(off + 2)?;
+    let str_off = off + u64::from(view.u16(off + 4)?);
+    let mut out = Vec::new();
+    for i in 0..u64::from(count) {
+        budget.tick()?;
+        let r = off + 6 + i * 12;
+        if view.u16(r)? != 3 || view.u16(r + 6)? != id {
+            continue;
+        }
+        let len = u64::from(view.u16(r + 8)?);
+        let o = str_off + u64::from(view.u16(r + 10)?);
+        let mut s: Vec<u16> = Vec::new();
+        let mut k = 0;
+        while k + 1 < len {
+            budget.tick()?;
+            s.push(view.u16(o + k)?);
+            k += 2;
+        }
+        out.push((view.u16(r + 4)?, s));
+    }
+    Ok(out)
+}
+
 /// `postscriptName`: the name id 6 of the face that starts at `base`, platforms 3 and 0 as UTF-16
 /// code units, the others as Latin-1 bytes; the first non-empty one. The directory scan, every
 /// name record and every character count against `budget` (R-BUDGET).

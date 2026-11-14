@@ -62,4 +62,8 @@ export function openEnv(uo) {
 export const wasmOptions = () => ({
   generation: 1, now: NOW, tzOffsetMin: 0, tsEmptyTheme: true, tsPagerefWithoutChapter: true,
   tsThemeTint: true, tsMissingSettings: true, tsLinkedCell: true, tsRefBookmarks: true, tsHyphenation: true, tsKeepLines: true,
+  tsWcLines: true, // WordCraft study (lines)
+  tsWcPage: true, // WordCraft study (page)
+  tsWcTables: true, // WordCraft study (tables)
+  tsWcFields: true, // WordCraft study (fields)
 });

@@ -429,7 +429,7 @@ impl Session {
             None => HashSet::new(),
         };
         let view = crate::view::DocView::new(&self.doc);
-        let all = crate::word::outline::outline_paragraphs(view, None);
+        let all = crate::word::outline::outline_paragraphs_with(view, None, self.num_rules()); // WordCraft study (fields, B26)
         let mut rows: Vec<TocRow> = Vec::new();
         for h in &all {
             let p = h.paragraph;

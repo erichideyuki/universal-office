@@ -67,6 +67,14 @@ pub struct OpenOptions {
     /// (`getDefaultTabStop`, the manual hyphenation minimums, the table style gallery) and the layout answer the TS's
     /// values. Default `false`: Word's (mode 12, 708 tw, measured: oracle `nosettings`). For the strict replays of TS captures.
     pub ts_missing_settings: bool,
+    /// WordCraft study (fields, B25): the frozen TS's table-formula texts ("!Operador ausente", "!Erro de sintaxe" without
+    /// the token, the bookmark without its name) and ROUND without the decimal correction. Default `false`: Word's
+    /// (measured: "!Está faltando operador", "!Erro de sintaxe, <token>", "!Indicador não definido, <NAME>", ROUND(2,345;2)
+    /// = 2,35). For the strict replays of TS captures.
+    pub ts_formula_errors: bool,
+    /// WordCraft study (fields, B26/B27): the frozen TS's list words (pt-BR up to 99) and `w:isLgl` in the session's
+    /// outline, TOC sources and cross-reference items. Default `false`: Word's. For the strict replays of TS captures.
+    pub ts_numbering: bool,
 }
 
 impl Default for OpenOptions {
@@ -82,6 +90,8 @@ impl Default for OpenOptions {
             ts_table_style_survives_undo: false,
             ts_stale_parts: false,
             ts_missing_settings: false,
+            ts_formula_errors: false,
+            ts_numbering: false,
         }
     }
 }
@@ -195,6 +205,8 @@ impl Session {
         let mut opts = o.session.clone();
         opts.tracking = tracking;
         opts.protected = o.protected;
+        opts.ts_formula_errors |= o.ts_formula_errors; // WordCraft study (fields, B25)
+        opts.ts_numbering |= o.ts_numbering; // WordCraft study (fields, B26/B27)
         let settings_path = part_by_rel_type(&pkg, "settings", "word/settings.xml")?;
         let loaded_settings = settings_path.and_then(|p| part_text(&pkg, &p).filter(|t| !t.is_empty()).map(|t| (p, t)));
         let numbering_path = part_by_rel_type(&pkg, "numbering", "word/numbering.xml")?.filter(|p| pkg.contains(p));
@@ -366,6 +378,14 @@ impl Session {
     pub fn set_ts_save_compat(&mut self, stale_parts: bool, table_style_survives_undo: bool) {
         self.save_parts.ts_stale_parts = stale_parts;
         self.save_parts.ts_table_style_survives_undo = table_style_survives_undo;
+    }
+
+    /// WordCraft study (fields, B25–B27): the frozen TS's table-formula texts and list rules on an open session
+    /// (`OpenOptions::ts_formula_errors`, `OpenOptions::ts_numbering`), for the strict replays of TS captures; the wasm
+    /// self-test sets them through `uo_session_test_ts_wc_fields`, the production open has no field for them.
+    pub fn set_ts_wc_fields(&mut self, formula_errors: bool, numbering: bool) {
+        self.opts.ts_formula_errors = formula_errors;
+        self.opts.ts_numbering = numbering;
     }
 
     /// Whether the session's package is the `.odt`'s scratch one (the TS `this.pkg === null`; wave 7c, S).

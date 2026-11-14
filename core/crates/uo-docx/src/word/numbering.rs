@@ -255,6 +255,42 @@ pub fn format_number(n: f64, fmt: Option<&str>, lang: &str, cap: &mut TextCap) -
     Utf16::from_units(s.encode_utf16().collect::<Vec<u16>>())
 }
 
+/// `formatNumber` under Word's list rules (WordCraft study, area "fields", item B26; measured in Word 365: the list
+/// strings of `wcflst2`/`wcblst`, 189/189): `cardinalText` and `ordinalText` are the field words of
+/// [`super::numwords`] in the language of the paragraph mark, with the first letter upper-cased; `ordinal` takes the
+/// language's suffix (pt and es `º`); 1,000,000 and more, negatives and fractions keep the decimal number (Word lists
+/// were not measured past 21,000). Every other format is [`format_number`]'s.
+#[must_use]
+pub fn format_number_word(n: f64, fmt: Option<&str>, lang: &str, cap: &mut TextCap) -> Utf16 {
+    let words = super::numwords::WordsLang::of(lang);
+    let whole = is_integer(n) && (0.0..1_000_000.0).contains(&n);
+    let nu = if whole { uo_jsnum::conv::to_uint32(n) } else { 0 };
+    let s = match fmt {
+        Some("cardinalText") if whole => super::numwords::card_text(nu, words).map(|t| super::numwords::cap_first(&t)),
+        Some("ordinalText") if whole => super::numwords::ord_text(nu, words).map(|t| super::numwords::cap_first(&t)),
+        Some("ordinal") if is_integer(n) && n.abs() < 9.0e15 => Some(super::numwords::ordinal(super::numwords::int_of(n), words)),
+        Some("cardinalText" | "ordinalText" | "ordinal") => Some(to_js_string(n)),
+        _ => None,
+    };
+    match s {
+        Some(s) => Utf16::from_units(s.encode_utf16().collect::<Vec<u16>>()),
+        None => format_number(n, fmt, lang, cap),
+    }
+}
+
+/// Which rules a [`NumberingState`] formats with (WordCraft study, area "fields"): the default is the frozen TS's
+/// (`numbering.ts`); the layout turns Word's on unless its strict replays ask for the TS (`ts_list_number_language`,
+/// `ts_is_lgl`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NumRules {
+    /// item B26: the words of `cardinalText`/`ordinalText`/`ordinal` in the paragraph mark's language
+    /// ([`format_number_word`]; the TS: pt-BR words up to 99, "1º" for ordinalText)
+    pub word_lang: bool,
+    /// item B27: `w:isLgl` turns EVERY placeholder of the level's text Arabic, its own level included; decimalZero keeps
+    /// its zero and a bullet placeholder is empty (the TS: only the parents, a bullet as decimal)
+    pub word_lgl: bool,
+}
+
 /// Where a marker's level comes from (the TS keeps the `NumLevel` object; here its place in the
 /// formatting, read back with [`NumberMarker::level_in`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -364,6 +400,8 @@ pub struct NumberingState {
     lang: Box<str>,
     /// the cap of the generated texts
     pub cap: TextCap,
+    /// the rules of the formats (WordCraft study: the frozen TS's by default)
+    pub rules: NumRules,
 }
 
 impl Default for NumberingState {
@@ -381,7 +419,15 @@ impl NumberingState {
             deferred: indexmap::IndexSet::new(),
             lang: lang.into(),
             cap,
+            rules: NumRules::default(),
         }
+    }
+
+    /// The same state with other format rules (WordCraft study, area "fields").
+    #[must_use]
+    pub fn with_rules(mut self, rules: NumRules) -> NumberingState {
+        self.rules = rules;
+        self
     }
 
     /// The language of the number formats.
@@ -451,6 +497,13 @@ impl NumberingState {
     /// `next(numId, ilvl)` (numbering.ts:164): advances the counter and returns the paragraph's
     /// marker (`None` = no numbering). The rules measured in Word are in the TS doc comment.
     pub fn next(&mut self, fmt: &DocFormatting, num_id: JsNumber, ilvl: JsNumber) -> Option<NumberMarker> {
+        self.next_in(fmt, num_id, ilvl, None)
+    }
+
+    /// [`NumberingState::next`] for a paragraph whose mark is in `para_lang` (the `w:lang` of the paragraph mark's
+    /// resolved run properties): under [`NumRules::word_lang`] the words of the marker are in that language (else the
+    /// state's).
+    pub fn next_in(&mut self, fmt: &DocFormatting, num_id: JsNumber, ilvl: JsNumber, para_lang: Option<&str>) -> Option<NumberMarker> {
         if !num_id.truthy() {
             return None;
         }
@@ -521,7 +574,11 @@ impl NumberingState {
         }
         let lvl_text: Vec<u16> = if lvl.lvl_text_null == Some(true) { Vec::new() } else { units(lvl.lvl_text.as_deref()) };
         let is_bullet = lvl.num_fmt.as_deref() == Some("bullet");
-        let lang = &*self.lang;
+        let rules = self.rules;
+        let lang: &str = match para_lang.filter(|l| rules.word_lang && !l.is_empty()) {
+            Some(l) => l,
+            None => &self.lang,
+        };
         let mut cap = self.cap;
         // what the placeholders read, per level (pure within this call; the TS looks them up per
         // placeholder, which a level text with thousands of them makes slow, not different)
@@ -538,14 +595,24 @@ impl NumberingState {
                     Some(n) if n.real => n.v,
                     _ => at(&level_starts, l).unwrap_or_else(|| lvl_start(l)),
                 };
-                let f: Option<&str> = if own.is_lgl == Some(true) && l != ilvl {
+                let lf = level_index(l).and_then(|i| level_fmts.get(i).copied()).flatten();
+                let f: Option<&str> = if rules.word_lgl && own.is_lgl == Some(true) {
+                    // Word (item B27): every placeholder Arabic, decimalZero kept, a bullet empty
+                    match lf {
+                        Some("decimalZero") => Some("decimalZero"),
+                        Some("bullet") => return Vec::new(),
+                        _ => Some("decimal"),
+                    }
+                } else if own.is_lgl == Some(true) && l != ilvl {
                     Some("decimal")
                 } else {
-                    level_index(l).and_then(|i| level_fmts.get(i).copied()).flatten().or(Some("decimal"))
+                    lf.or(Some("decimal"))
                 };
                 let f = if f == Some("bullet") { Some("decimal") } else { f };
                 let mut c2 = TextCap::new(max);
-                let s = format_number(v, f, lang, &mut c2).units().to_vec();
+                let s = if rules.word_lang { format_number_word(v, f, lang, &mut c2) } else { format_number(v, f, lang, &mut c2) }
+                    .units()
+                    .to_vec();
                 cut |= c2.take_truncated();
                 s
             });

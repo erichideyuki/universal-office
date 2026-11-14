@@ -827,7 +827,12 @@ fn d2b_f7_session_matches_the_element() {
         let rel = rec.key.trim_end_matches("#0");
         let bytes = std::fs::read(root.join(rel)).unwrap();
         let env = SharedEnv::new();
-        let mut s = Session::open(bytes, OpenOptions { sig_mode: SigMode::Ts, ..OpenOptions::default() }, Box::new(env.clone())).unwrap();
+        let mut s = Session::open(
+            bytes,
+            OpenOptions { sig_mode: SigMode::Ts, ts_formula_errors: true, ts_numbering: true, ..OpenOptions::default() },
+            Box::new(env.clone()),
+        )
+        .unwrap();
         s.exec(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }), &mut cx.cx()).unwrap();
         let mut tb_before = false;
         for j in 0..=steps {

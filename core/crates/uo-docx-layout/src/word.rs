@@ -97,6 +97,15 @@ pub fn numbering_state(lang: &str, limits: &LayoutLimits) -> NumberingState {
     NumberingState::new(lang, text_cap(limits))
 }
 
+/// [`numbering_state`] of a layout call: Word's list rules (WordCraft study, area "fields": B26 the words in the
+/// paragraph mark's language, B27 `w:isLgl`) unless the strict replays ask for the frozen TS's (`ts_list_number_language`,
+/// `ts_is_lgl`).
+#[must_use]
+pub fn numbering_state_for(opts: &crate::options::LayoutOptions) -> NumberingState {
+    numbering_state(&opts.lang, &opts.limits)
+        .with_rules(uo_docx::word::NumRules { word_lang: !opts.ts_list_number_language, word_lgl: !opts.ts_is_lgl })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

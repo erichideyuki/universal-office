@@ -179,7 +179,7 @@ function build() {
     if (fonts?.features.has('hyphen-data')) {
       const hyph = path.join(dirOf.get(`uo-fonts@${fonts.version}`), 'data', 'hyphen', 'THIRD-PARTY-NOTICES.md');
       put('texts/hyphenation/THIRD-PARTY-NOTICES.md', Buffer.from(lf(readFileSync(hyph, 'latin1')), 'latin1'));
-      entries.push({ component: 'Hyphenation patterns (hyph-utf8) compiled into uo-fonts', version: '', licence: 'see the notice file', files: ['texts/hyphenation/THIRD-PARTY-NOTICES.md'] });
+      entries.push({ component: 'Hyphenation patterns (hyph-utf8, CC0, Moby) compiled into uo-fonts', version: '', licence: 'see the notice file', files: ['texts/hyphenation/THIRD-PARTY-NOTICES.md'] });
     }
     entries.push({ component: 'Rust standard library (std, core, alloc and their dependencies)', version: '', licence: 'MIT OR Apache-2.0', files: stdFiles.map(([rel]) => rel) });
   }

@@ -45,7 +45,8 @@ fn json_keys_follow_the_js_rules() {
 fn the_work_budget_is_proportional_to_the_input() {
     let l = LayoutLimits::default();
     let small = Budget::new(&l, &WorkInput { glyphs: 10, ..WorkInput::default() });
-    let mut big = Budget::new(&l, &WorkInput { glyphs: 10_000_000, balanced_sections: 20, nesting: 2, max_page_h: 16838.0 });
+    let mut big =
+        Budget::new(&l, &WorkInput { glyphs: 10_000_000, balanced_sections: 20, nesting: 2, max_page_h: 16838.0, extra_passes: 0 });
     let mut tiny = small.clone();
     assert!(tiny.charge(l.work_floor + 1_000_000_000).is_err_and(|e| e == LayoutError::Limit(LimitKind::Work)));
     assert!(big.charge(l.work_floor * 10).is_ok());

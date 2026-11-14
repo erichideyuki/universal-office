@@ -240,7 +240,12 @@ fn d2b_f2_session_matches_the_element() {
         // session's source starts one value on
         let mut env = FixedEnv::default();
         uo_docx::session::Env::random_u32(&mut env);
-        let mut s = Session::open(bytes, OpenOptions { sig_mode: SigMode::Ts, ..OpenOptions::default() }, Box::new(env)).unwrap();
+        let mut s = Session::open(
+            bytes,
+            OpenOptions { sig_mode: SigMode::Ts, ts_formula_errors: true, ts_numbering: true, ..OpenOptions::default() },
+            Box::new(env),
+        )
+        .unwrap();
         // the page locale of the capture is pt-BR
         s.set_ui_lang(UiLang::Pt);
         s.exec(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }), &mut cx.cx()).unwrap();

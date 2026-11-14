@@ -110,8 +110,10 @@ Each item has cases in `test/oracle/<group>` (in parentheses).
 - Header/footer (`hffloat`):
   - absolutely positioned floating objects go first; the header text wraps
     around them, and tables move down below them;
-  - in compat ≤ 14, header/footer floating objects push no text away,
-    not even the body's.
+  - in compat ≤ 14, header/footer floating objects do not push the
+    header/footer's own text; square and topAndBottom ones DO push the body
+    (the first body line of each page goes below them, with its space before
+    applied there), wrapNone pushes nothing (re-measured: `hff14wrap`).
 - A text box with `wrap="none"` + auto-fit takes the width of the text.
   The fitted height is the content's (the stored `cy` is ignored).
 - "Inside"/"outside" on an EVEN page (by the displayed number) (`inside`): horizontally

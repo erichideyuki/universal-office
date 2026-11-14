@@ -81,6 +81,11 @@ pub trait PaintEnv {
     fn hr_shape(&mut self, p: &PreparedPara, g: &Glyph) -> LResult<Option<HrShape>>;
     /// charges the work budget (loops whose length comes from coordinates)
     fn charge(&mut self, units: u64) -> LResult<()>;
+    /// WordCraft study (L12): the face of an emphasis mark's font family (`None`: the marks are not painted — the facet
+    /// replays of the frozen TS, which has no marks)
+    fn emphasis_face(&mut self, _family: &str) -> LResult<Option<FaceId>> {
+        Ok(None)
+    }
 }
 
 // ── PassItems with their side data ──────────────────────────────────────────────────────────
@@ -258,6 +263,10 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
         rect(out, frame_x + pg.x, base_y - asc, pg.w, asc + desc, fill);
     }
     // glyphs, grouped by face/size/colour/shift
+    // (WordCraft study, L12: the emphasis marks of a run follow its glyphs, as in Word's PDF)
+    let emph = env.settings().word.emphasis_marks;
+    let mut pending_marks: Vec<PlacedGlyph> = Vec::new();
+    let mut run_em = false;
     let mut run: Option<RunBuf> = None;
     let mut run_key: Option<(RunKeyParts, [f64; 4])> = None;
     let flush = |run: &mut Option<RunBuf>, run_key: &mut Option<(RunKeyParts, [f64; 4])>, out: &mut PassItems| -> LResult<()> {
@@ -273,6 +282,7 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
         let g = glyph(pg)?;
         if let Some(mi) = g.math {
             flush(&mut run, &mut run_key, out)?;
+            emph_flush(env, p, &mut pending_marks, out, frame_x, base_y)?;
             let mb = p.math.get(mi as usize).ok_or(LayoutError::Internal("paint: g.math"))?;
             paint_math(env, p, out, mb, frame_x, pg.x, base_y, line, line_id)?;
             continue;
@@ -282,6 +292,7 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
                 continue;
             }
             flush(&mut run, &mut run_key, out)?;
+            emph_flush(env, p, &mut pending_marks, out, frame_x, base_y)?;
             if g.kind == GlyphKind::Tab && pg.leader.is_some() {
                 paint_leader(env, p, out, &all, k, frame_x, base_y)?;
             }
@@ -317,6 +328,7 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
         // writes it to the PDF (oracle hidetext/tf-nofill, tf-alpha100)
         if st.alpha.get() == Some(0.0) && !st.outline && !st.fx.is_some_and(|fx| env.fx_draws(fx)) {
             flush(&mut run, &mut run_key, out)?;
+            emph_flush(env, p, &mut pending_marks, out, frame_x, base_y)?;
             continue;
         }
         // colour emoji (COLR): Word draws the coloured layers, no extractable text (oracle
@@ -346,23 +358,28 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
         // glyph): equal components print the same string (`num_eq_key` equality prints the same
         // `String(x)`, a symbol is its text); different ones print the same string only through a `|`
         // inside a string component of BOTH (F5-5), and then the full strings are compared
-        let same = match &run_key {
-            Some((prev, prev_nums)) => {
-                *prev == parts || {
-                    let bar = u16::from(b'|');
-                    let ambiguous = |k: &RunKeyParts| -> bool {
-                        env.sym_text(k.face_key).contains(&bar) || env.sym_text(k.color).contains(&bar) || k.fx_key.contains('|')
-                    };
-                    ambiguous(prev)
-                        && ambiguous(&parts)
-                        && prev.text(*prev_nums, &env.sym_text(prev.color), &env.sym_text(prev.face_key))
-                            == parts.text(nums, &env.sym_text(parts.color), &env.sym_text(parts.face_key))
+        // (L12: a change of emphasis starts a new run, so the marks follow their own glyphs)
+        let em_now = emph && crate::lines::emphasis_mark(p, &g).is_some();
+        let same = run_em == em_now
+            && match &run_key {
+                Some((prev, prev_nums)) => {
+                    *prev == parts || {
+                        let bar = u16::from(b'|');
+                        let ambiguous = |k: &RunKeyParts| -> bool {
+                            env.sym_text(k.face_key).contains(&bar) || env.sym_text(k.color).contains(&bar) || k.fx_key.contains('|')
+                        };
+                        ambiguous(prev)
+                            && ambiguous(&parts)
+                            && prev.text(*prev_nums, &env.sym_text(prev.color), &env.sym_text(prev.face_key))
+                                == parts.text(nums, &env.sym_text(parts.color), &env.sym_text(parts.face_key))
+                    }
                 }
-            }
-            None => false,
-        };
+                None => false,
+            };
         if !same {
             flush(&mut run, &mut run_key, out)?;
+            emph_flush(env, p, &mut pending_marks, out, frame_x, base_y)?;
+            run_em = em_now;
             let mut r = RunBuf::new(g.face, g.size_pt, color, base_y - st.shift);
             // `st.rpr.w && st.rpr.w !== 100`
             if let Some(w) = w_num.filter(|&w| uo_jsnum::conv::truthy(w) && w != 100.0) {
@@ -394,10 +411,81 @@ pub fn paint_line_in<E: PaintEnv + ?Sized>(
             r.glyphs.push((cp, frame_x + pg.x, g.sub_gid));
             push_code_point(&mut r.text, cp)?;
         }
+        if emph && crate::lines::emphasis_mark(p, &g).is_some() {
+            pending_marks.push(*pg);
+        }
     }
     flush(&mut run, &mut run_key, out)?;
+    emph_flush(env, p, &mut pending_marks, out, frame_x, base_y)?;
     // underline / strike — by contiguous stretches with the same style
     paint_decorations(env, p, out, &all, frame_x, base_y)
+}
+
+/// Paints the emphasis marks of the glyphs just flushed (L12).
+fn emph_flush<E: PaintEnv + ?Sized>(
+    env: &mut E,
+    p: &PreparedPara,
+    pending: &mut Vec<PlacedGlyph>,
+    out: &mut PassItems,
+    frame_x: f64,
+    base_y: f64,
+) -> LResult<()> {
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let marks = std::mem::take(pending);
+    paint_emphasis_marks(env, p, out, &marks, frame_x, base_y)
+}
+
+/// WordCraft study (L12, `wcl3/m-emph-*`, `wcl4/n-emph-mix`; record "WordCraft study — lines"): Word's emphasis marks, one
+/// per non-space character of a run with `w:em`, at the run's size and colour — dot U+FF0E and comma U+3001 in
+/// "MS Mincho" at the baseline − 1.0·size, circle U+02DA in "Batang" at − 0.294·size, underDot U+FF0E in "SimSun" at the
+/// baseline + 0.382·size (the names of Word's PDF, resolved through the provider's fallback; never shipped), centred on the
+/// character: x + (advance − w·size)/2. The mark runs are decoration: glyphs with an EMPTY run text (the display list's
+/// text, read by the canonical form, holds the document's characters only).
+fn paint_emphasis_marks<E: PaintEnv + ?Sized>(
+    env: &mut E,
+    p: &PreparedPara,
+    out: &mut PassItems,
+    placed: &[PlacedGlyph],
+    frame_x: f64,
+    base_y: f64,
+) -> LResult<()> {
+    let mut run: Option<(RunBuf, Sym, u64, u8)> = None;
+    for pg in placed {
+        let g = glyph_of(p, pg.g).ok_or(LayoutError::Internal("paint: placed glyph out of range"))?;
+        if crate::lines::emphasis_mark(p, &g).is_none() {
+            continue;
+        }
+        let st = p.styles.get(g.style.0 as usize).ok_or(LayoutError::Internal("paint: glyph style"))?;
+        // (the mark's width w: `wcfix-lines` emph — dot/comma 0.337, circle 0.316, underDot 0.40 of the size)
+        let (cp, family, dy, mw, kind): (u32, &str, f64, f64, u8) = match st.rpr.em.as_deref() {
+            Some("dot") => (0xff0e, "MS Mincho", -1.0, 0.337, 0),
+            Some("comma") => (0x3001, "MS Mincho", -1.0, 0.337, 1),
+            Some("circle") => (0x02da, "Batang", -0.294, 0.316, 2),
+            _ => (0xff0e, "SimSun", 0.382, 0.40, 3),
+        };
+        let Some(face) = env.emphasis_face(family)? else { return Ok(()) };
+        let size = g.size_pt;
+        let color = env.intern(&st.color)?;
+        let y = base_y + dy * size * 20.0;
+        let key = num_eq_key(size);
+        if run.as_ref().is_none_or(|(_, c, k, kd)| *c != color || *k != key || *kd != kind) {
+            if let Some((r, ..)) = run.take() {
+                r.push(out)?;
+            }
+            run = Some((RunBuf::new(face, size, color, y), color, key, kind));
+        }
+        // a decoration: the glyph is drawn (its code point picks the glyph; Word's PDF holds it too) but the run carries
+        // NO text — the marks are no characters of the document (Word's selectable text has none)
+        if let Some((r, ..)) = run.as_mut() {
+            r.glyphs.push((cp, frame_x + pg.x + (g.adv - mw * size * 20.0) / 2.0, None));
+        }
+    }
+    if let Some((r, ..)) = run.take() {
+        r.push(out)?;
+    }
+    Ok(())
 }
 
 /// `paintLeader(ctx, out, pg, frameX, baseY, all)` (paint.ts:102): a tab leader as Word draws it
@@ -1303,5 +1391,9 @@ impl PaintEnv for Cx<'_, '_> {
 
     fn charge(&mut self, units: u64) -> LResult<()> {
         self.budget.charge(units)
+    }
+
+    fn emphasis_face(&mut self, family: &str) -> LResult<Option<FaceId>> {
+        self.face(Some(family), false, false).map(Some)
     }
 }

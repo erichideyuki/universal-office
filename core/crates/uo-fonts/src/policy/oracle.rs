@@ -44,6 +44,10 @@ impl FontProvider for OracleProvider {
         self.ledger.as_ref().map_or(0, |l| l.refused())
     }
 
+    fn full_name_face(&self, name: &str, ui_lcid: u16) -> Option<(String, bool, bool)> {
+        self.source.full_name(name, ui_lcid)
+    }
+
     fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>> {
         let lower = to_lowercase(family);
         let key: Key = (lower.clone(), bold, italic);

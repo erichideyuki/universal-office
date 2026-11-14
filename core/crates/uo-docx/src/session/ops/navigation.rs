@@ -287,7 +287,7 @@ impl Session {
     #[must_use]
     pub fn headings(&self) -> Vec<HeadingInfo> {
         let view = DocView::new(&self.doc);
-        let outline = crate::word::document_outline(view, None);
+        let outline = crate::word::outline::document_outline_with(view, None, self.num_rules());
         if outline.is_empty() {
             return Vec::new();
         }

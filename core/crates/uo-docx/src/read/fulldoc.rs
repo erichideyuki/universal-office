@@ -52,7 +52,7 @@ use super::page_background::read_page_background;
 use super::paragraph::{BlocksMode, ReadContext};
 use super::parts::{part_doc, read_doc_formatting_facts};
 use super::plain::{default_run_props, plain_paragraphs_with};
-use super::props::{read_border, read_tbl_pr, read_tc_pr, read_tr_pr};
+use super::props::{read_border, read_tbl_pr, read_tbl_pr_word, read_tc_pr, read_tr_pr};
 use super::props_map::{read_border_edge, read_sect_pr};
 use super::sources::{cell_source, el_span, group_of, note_item, note_story_of, notes_part_of, row_source, span, story_of, table_source};
 use super::styles::read_styles;
@@ -517,6 +517,8 @@ pub fn read_table(rc: &mut ReadContext<'_, '_>, tbl_el: Element<'_>) -> Result<T
         borders: tbl_borders,
         tbl_pr: read_tbl_pr(tbl_pr_el).map(|t| rc.ctx.intern(t)),
         id: rc.ctx.ids.table(),
+        // WordCraft study (tables, the TCond aside): Word's view of an out-of-order tblStyle
+        word_tbl_pr: read_tbl_pr_word(tbl_pr_el).map(std::sync::Arc::new),
         ..Table::default()
     };
     if table.borders.is_none() {

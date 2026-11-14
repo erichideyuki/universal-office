@@ -322,6 +322,20 @@ fn widow_on(p: &PreparedPara) -> bool {
 
 /// The paragraph frame of a line: `{ left, right }` (no float on the page; `wrapFrame` with floats
 /// is `floats.rs`).
+/// WordCraft study (page): Word's mirrored indents (measured, oracle_wc/mirrorind): `right' = left + firstLine` (the
+/// first line's start, signed: a hanging indent gives the leftmost extent) and `left' = right − min(0, firstLine)`, the
+/// first-line indent unchanged — `left 400, right 2000, firstLine 720` breaks its mirrored lines at `right' = 1120`
+/// (mi-forms p2), `left 1440, hanging 720` at `right' = 720`. `orig` = the paragraph's own `(left, right)`; `on = false`
+/// restores them.
+pub(super) fn mirror_indents(p: &mut PreparedPara, orig: (f64, f64), on: bool) {
+    if on {
+        p.ind_right = orig.0 + p.first_line;
+        p.ind_left = orig.1 - jm::min(0.0, p.first_line);
+    } else {
+        (p.ind_left, p.ind_right) = orig;
+    }
+}
+
 pub(super) fn plain_frame(left: f64, right: f64) -> LineFrame {
     LineFrame { left, right, gap: false, next: None }
 }
@@ -948,7 +962,13 @@ impl Engine {
             p.glyphs.remove(0);
             let cg = self.cur_ps()?.geom;
             self.new_page(cx, cg, "nextPage")?;
-            self.top_gap_prev_after = Some(last_after);
+            // WordCraft study (page, A15; Word 16.0.20527): in mode 15 the text starts the new page with no space before,
+            // as at any page top (also the document's first paragraph); modes ≤ 14 keep `before − previous after`
+            if compat < 15.0 || cx.opts.ts_page_break_keeps_space_before {
+                self.top_gap_prev_after = Some(last_after);
+            } else {
+                self.first_in_doc = false;
+            }
         }
         // a numbered paragraph with only the page break: Word draws no number (oracle numpgbr)
         if p.marker.is_some()
@@ -967,6 +987,27 @@ impl Engine {
             if compat < 15.0 {
                 self.top_gap_prev_after = Some(last_after);
             }
+        }
+        // WordCraft study (page, B11; b11x-push2): a paragraph that the float pinned before it pushed off its page starts
+        // the next column/page (as a page break before) and places its floats as usual
+        if !cx.opts.ts_float_no_reflow
+            && self.en_blocks.is_none()
+            && !self.at_top
+            && !cx.opts.view.is_continuous()
+            && cx.input.anchor_pushed.contains(&u32::try_from(block_idx).unwrap_or(u32::MAX))
+        {
+            let last_after = self.prev.as_ref().map_or(0.0, |pv| pv.after);
+            self.break_column(cx)?;
+            if compat < 15.0 {
+                self.top_gap_prev_after = Some(last_after);
+            }
+        }
+        // WordCraft study (page): mirrorIndents — the indents swap on the pages Word mirrors (re-applied per page below)
+        let mi_orig = (p.ind_left, p.ind_right);
+        let mut mi_on = false;
+        if self.mirror_here(cx, &p)? {
+            mirror_indents(&mut p, mi_orig, true);
+            mi_on = true;
         }
         // keepNext / keepLines: decided before placing the first line
         let frame_base = self.col_frame()?;
@@ -1094,10 +1135,13 @@ impl Engine {
         let grouped_next = bi + 1.0 <= g.blocks.1 && self.groups_with_next(cx, &p, next_block, &ParaEnv::default())?;
         let widow = widow_on(&p);
         let rf = self.flow_ref(block_idx);
-        let pfmt = Arc::new(LineParaFormat { left: p.ind_left, right: p.ind_right, first_line: p.first_line, tabs: p.tabs.clone().into() });
+        let mut pfmt =
+            Arc::new(LineParaFormat { left: p.ind_left, right: p.ind_right, first_line: p.first_line, tabs: p.tabs.clone().into() });
         // the lines placed on the current page (moved for widows/orphans)
         let mut frag: Vec<FragLine> = Vec::new();
         let mut frag_top = self.y;
+        // (WordCraft study, page, B10: the top of the paragraph's part in each page/column it reaches)
+        let mut part_tops: Vec<(crate::keys::PageIx, u32, f64, f64, f64)> = Vec::new();
         // the current fragment holds the paragraph's first line
         let mut frag_has_first = true;
         let prev_top = Self::border_top_extent(&p, self.prev.as_ref());
@@ -1108,7 +1152,7 @@ impl Engine {
         // where the first line went: the objects anchored in the paragraph go to THAT page (not
         // the last line's — a paragraph with a page break at its end)
         let mut anchor_at = self.anchor_here(Some(para_ref))?;
-        let mut early = self.place_floats_early(cx, &p, anchor_at.ps, anchor_at.x, anchor_at.w, self.y, None, Some(para_ref))?;
+        let mut early = self.early_floats(cx, &p, anchor_at.ps, anchor_at.x, anchor_at.w, self.y, None, Some(para_ref))?;
         // a wrapping object relative to the paragraph would pass the bottom margin: Word LIFTS it to
         // the margin if it then does not cross the paragraph's own lines; else the paragraph goes
         // down with it to the next page/column (oracle selffloat)
@@ -1130,12 +1174,12 @@ impl Engine {
             if lift {
                 // (the other objects keep measuring from the top before the "before" — oracle liftref)
                 let a = self.anchor_here(None)?;
-                early = self.place_floats_early(cx, &p, a.ps, a.x, a.w, self.y, Some(body_bottom0), Some(para_ref))?;
+                early = self.early_floats(cx, &p, a.ps, a.x, a.w, self.y, Some(body_bottom0), Some(para_ref))?;
             } else {
                 self.break_column(cx)?;
                 self.y += Self::border_top_extent(&p, self.prev.as_ref());
                 anchor_at = self.anchor_here(None)?;
-                early = self.place_floats_early(cx, &p, anchor_at.ps, anchor_at.x, anchor_at.w, self.y, None, None)?;
+                early = self.early_floats(cx, &p, anchor_at.ps, anchor_at.x, anchor_at.w, self.y, None, None)?;
             }
         }
         let mut early_at = (self.cur_ix()?, self.col_frame()?.x);
@@ -1149,6 +1193,18 @@ impl Engine {
         let mark_h = super::floats::mark_line_h(cx, &p)?;
         let mut last_line: Option<Line>;
         loop {
+            // (WordCraft study, page: mirrorIndents after a page change)
+            let mi_want = self.mirror_here(cx, &p)?;
+            if mi_want != mi_on {
+                mirror_indents(&mut p, mi_orig, mi_want);
+                mi_on = mi_want;
+                pfmt = Arc::new(LineParaFormat {
+                    left: p.ind_left,
+                    right: p.ind_right,
+                    first_line: p.first_line,
+                    tabs: p.tabs.clone().into(),
+                });
+            }
             let y0 = self.y;
             let mut frame = self.frame_here(&p, mark_h)?;
             // pushed below a float: the "before" holds again there — a floating table's anchor's
@@ -1216,8 +1272,14 @@ impl Engine {
                 }
             }
             // a word that does not fit the gap beside a float: Word does not split it by character —
-            // the line goes below it (oracle gapind, gi-*-r0)
-            if has_floats && !line.last && line.end > line.start && (line.end as usize) < p.glyphs.len() {
+            // the line goes below it (oracle gapind, gi-*-r0) — in mode 15 only: modes ≤ 14 split the word by characters
+            // into the strip (WordCraft study, tables, B15 rule B; measured `oracle_wc/cellclamp` fw-body-*-c14)
+            if has_floats
+                && (compat >= 15.0 || cx.opts.ts_gap_word_any_mode)
+                && !line.last
+                && line.end > line.start
+                && (line.end as usize) < p.glyphs.len()
+            {
                 let fr = self.col_frame()?;
                 let narrowed = frame.left > p.ind_left + 0.5 || frame.right < fr.w - p.ind_right - 0.5;
                 let word = |g: &crate::para::Glyph| {
@@ -1309,6 +1371,7 @@ impl Engine {
                 frag_has_first = false;
                 self.break_column(cx)?;
                 frag_top = self.y;
+                self.note_part_top(&mut part_tops, frag_top)?;
                 page_changed = true;
             // (no tolerance: 0.21 tw past the margin already goes down — oracle bodyfit)
             } else if note_cut.is_none()
@@ -1343,6 +1406,7 @@ impl Engine {
                 frag_has_first = all_moved;
                 self.break_column(cx)?;
                 frag_top = self.y;
+                self.note_part_top(&mut part_tops, frag_top)?;
                 if all_moved {
                     anchor_at = self.anchor_here(None)?;
                 }
@@ -1362,7 +1426,7 @@ impl Engine {
                         self.unplace_float(e)?;
                     }
                     let a = self.anchor_here(None)?;
-                    early = self.place_floats_early(cx, &p, a.ps, a.x, a.w, self.y, None, None)?;
+                    early = self.early_floats(cx, &p, a.ps, a.x, a.w, self.y, None, None)?;
                     early_at = here;
                 }
                 // the first line pushed below a float (table or figure) on the SAME page: the
@@ -1377,6 +1441,18 @@ impl Engine {
                 // the line was broken in the previous page's frame (wrap around objects): redone in
                 // the new one's
                 let y_top = self.y;
+                // (WordCraft study, page: mirrorIndents on the new page)
+                let mi_want = self.mirror_here(cx, &p)?;
+                if mi_want != mi_on {
+                    mirror_indents(&mut p, mi_orig, mi_want);
+                    mi_on = mi_want;
+                    pfmt = Arc::new(LineParaFormat {
+                        left: p.ind_left,
+                        right: p.ind_right,
+                        first_line: p.first_line,
+                        tabs: p.tabs.clone().into(),
+                    });
+                }
                 let mut nf = self.frame_here(&p, mark_h)?;
                 // the first line pushed below a float at the new page's top: the "before" holds
                 // there, as on the same page (oracle hff14wrap)
@@ -1451,6 +1527,7 @@ impl Engine {
                     let cg = self.cur_ps()?.geom;
                     self.new_page(cx, cg, "nextPage")?;
                     frag_top = self.y;
+                    self.note_part_top(&mut part_tops, frag_top)?;
                     self.at_top = true;
                 }
                 Some(BreakKind::Column) => {
@@ -1458,6 +1535,7 @@ impl Engine {
                     frag_has_first = false;
                     self.break_column(cx)?;
                     frag_top = self.y;
+                    self.note_part_top(&mut part_tops, frag_top)?;
                 }
                 None => {}
             }
@@ -1487,11 +1565,21 @@ impl Engine {
             let a = after_of(&p);
             self.note_col_content(self.y + a)?;
         }
+        // WordCraft study (page, B10/B11): floats on the page/column of their anchor line; pinned floats whose paragraph
+        // left their page
+        self.check_pinned_anchor(cx, &p, block_idx, anchor_at.ps);
+        let first = (anchor_at.ps, anchor_at.x, anchor_at.w, anchor_at.top, anchor_at.para_ref);
+        let at_lines = self.place_floats_at_lines(cx, &p, &rf, first, tail_ps, &part_tops, &early)?;
         // the floating objects anchored in this paragraph
         for r in &early_runs {
             self.pre_placed.insert(*r);
         }
         self.place_floats(cx, &p, anchor_at.ps, anchor_at.x, anchor_at.w, anchor_at.top, None, 0.0, anchor_at.para_ref)?;
+        for r in &at_lines {
+            if !early_runs.contains(r) {
+                self.pre_placed.shift_remove(r);
+            }
+        }
         for r in &early_runs {
             self.pre_placed.shift_remove(r);
         }
@@ -1516,6 +1604,154 @@ impl Engine {
             box_page: lb.and_then(|b| b.page),
         });
         Ok(())
+    }
+
+    /// WordCraft study (page; measured, record "WordCraft study — page"): whether a mirrorIndents paragraph of the body
+    /// (or the endnote flow) mirrors its indents on the current page — in mode 15 on the pages whose DOCUMENT parity is
+    /// even, in modes ≤ 14 on the odd ones; never in the editor's continuous views.
+    pub(super) fn mirror_here(&self, cx: &Cx<'_, '_>, p: &PreparedPara) -> LResult<bool> {
+        if cx.opts.ts_no_mirror_indents || p.ppr.mirror_indents != Some(true) || cx.opts.view.is_continuous() {
+            return Ok(false);
+        }
+        Ok(self.cur_ps()?.doc_even == (cx.ldoc.compat_mode() >= 15.0))
+    }
+
+    /// `placeFloatsEarly` of a body paragraph (WordCraft study, page, B11: marked as such for the re-layout rule).
+    #[expect(clippy::too_many_arguments, reason = "the TS signature")]
+    fn early_floats(
+        &mut self,
+        cx: &mut Cx<'_, '_>,
+        p: &PreparedPara,
+        ps: crate::keys::PageIx,
+        col_x: f64,
+        col_w: f64,
+        para_top: f64,
+        clamp_bottom: Option<f64>,
+        para_ref: Option<f64>,
+    ) -> LResult<Vec<super::floats::FloatReceipt>> {
+        self.body_early = self.en_blocks.is_none() && !self.in_cell && !self.in_hf;
+        let r = self.place_floats_early(cx, p, ps, col_x, col_w, para_top, clamp_bottom, para_ref);
+        self.body_early = false;
+        r
+    }
+
+    /// WordCraft study (page, B10): records where the paragraph's part on the current page/column begins.
+    fn note_part_top(&self, tops: &mut Vec<(crate::keys::PageIx, u32, f64, f64, f64)>, top: f64) -> LResult<()> {
+        let fr = self.col_frame()?;
+        tops.push((self.cur_ix()?, self.col, fr.x, fr.w, top));
+        Ok(())
+    }
+
+    /// WordCraft study (page, B10; measured, record "WordCraft study — page"): a floating object belongs to the page
+    /// and column of the line that holds its anchor run, and a line-relative one measures from that line's top. After
+    /// the paragraph's lines: each float whose anchor line is on another page/column than the paragraph's first line
+    /// (or a line-relative one whose line is not the first) is placed there; a wrapping one is also pinned to that
+    /// page/column start for the next pass, where the text there (the paragraph's own earlier lines too) wraps around
+    /// it. Returns the runs placed here.
+    #[expect(clippy::too_many_arguments, reason = "the paragraph's flow state")]
+    fn place_floats_at_lines(
+        &mut self,
+        cx: &mut Cx<'_, '_>,
+        p: &PreparedPara,
+        rf: &LineRef,
+        first: (crate::keys::PageIx, f64, f64, f64, Option<f64>),
+        tail_ps: crate::keys::PageIx,
+        part_tops: &[(crate::keys::PageIx, u32, f64, f64, f64)],
+        early: &[super::floats::FloatReceipt],
+    ) -> LResult<Vec<RunKey>> {
+        let mut out = Vec::new();
+        if cx.opts.ts_float_anchor_first_line || cx.opts.view.is_continuous() || self.en_blocks.is_some() || self.in_cell {
+            return Ok(out);
+        }
+        let (first_ps, first_x, first_w, first_top, first_ref) = first;
+        let cur = self.cur_ix()?;
+        for gl in &p.glyphs {
+            let Some(k) = gl.obj else { continue };
+            let Some(run) = crate::paint::model_run(cx.ldoc, k) else { continue };
+            if !super::static_layout::run_floats(run) {
+                continue;
+            }
+            // placed from its settled pin at its page/column start already
+            if self.pre_placed.contains(&k) {
+                continue;
+            }
+            // the pin of a first detection is provisional: that pass laid the first line's page out with the float
+            // there; the next pass (the float off every earlier page) measures the anchor line again and settles it
+            let settled = cx.input.late_floats.values().flatten().any(|l| l.run == k && l.pin.is_some_and(|q| !q.reflow && !q.settled));
+            let anchor = super::floats::float_anchor(run);
+            if anchor.is_none_or(|a| a.simple_pos.is_some()) {
+                continue;
+            }
+            // the anchor run's line: the first of the paragraph's lines (pages from its first to the current) that
+            // holds the run's text offset
+            let off = gl.offset;
+            let mut found: Option<(crate::keys::PageIx, f64, f64, bool)> = None;
+            let mut first_line_y: Option<f64> = None;
+            for pix in tail_ps.0..=cur.0 {
+                let ix = crate::keys::PageIx(pix);
+                for l in self.ps(ix)?.page.lines.iter().filter(|l| l.at == *rf) {
+                    if first_line_y.is_none() {
+                        first_line_y = Some(l.y);
+                    }
+                    if found.is_none() && l.start <= off && (off < l.end || (off == l.end && l.start == l.end)) {
+                        let is_first = first_line_y.is_some_and(|y| js_eq(y, l.y)) && ix == first_ps;
+                        found = Some((ix, l.x, l.y, is_first));
+                    }
+                }
+            }
+            let Some((q, lx, ly, is_first)) = found else { continue };
+            // the column of the line on its page (the part tops of that page; the first part's column otherwise)
+            let part = part_tops.iter().filter(|t| t.0 == q && t.2 <= lx + 1.0).max_by(|a, b| a.2.total_cmp(&b.2)).copied();
+            let (col, col_x, col_w, part_top) = match part {
+                Some(t) => (t.1, t.2, t.3, t.4),
+                None if q == first_ps => (0, first_x, first_w, first_top),
+                None => continue,
+            };
+            let same_part = q == first_ps && js_eq(col_x, first_x);
+            let line_rel = anchor.is_some_and(|a| &*a.pos_v.relative_from == "line");
+            if same_part && (!line_rel || is_first) {
+                continue;
+            }
+            let (para_top, para_ref) = if same_part { (first_top, first_ref.unwrap_or(first_top)) } else { (part_top, part_top) };
+            let pin = super::FloatPin { col_x, col_w, para_top, para_ref, line_top: Some(ly), reflow: false, settled };
+            // the early placement (on the first line's page) is undone, with the late entry it may have made there
+            if let Some(e) = early.iter().find(|e| e.run == k) {
+                self.unplace_float(e)?;
+            }
+            for v in self.found.late_found.values_mut() {
+                v.retain(|l| l.run != k);
+            }
+            self.found.late_found.retain(|_, v| !v.is_empty());
+            let wraps = anchor.is_some_and(|a| super::floats::wrapping(&a.wrap));
+            if wraps {
+                let pi = u32::try_from(q.ix()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
+                self.found.late_found.entry(pi).or_default().push(super::LateFloat { run: k, col, pin: Some(pin) });
+            }
+            self.float_line_top = pin.line_top;
+            let r = self.place_float(cx, k, q, col_x, col_w, para_top, None, 0.0, None, Some(para_ref));
+            self.float_line_top = None;
+            r?;
+            self.pre_placed.insert(k);
+            out.push(k);
+        }
+        Ok(out)
+    }
+
+    /// WordCraft study (page, B11): a pinned float whose anchor paragraph no longer starts on its pinned page (the page
+    /// laid out again around it pushed the paragraph on): dropped, and the paragraph starts the next page in the next
+    /// pass (`b11x-push2`).
+    fn check_pinned_anchor(&mut self, cx: &Cx<'_, '_>, p: &PreparedPara, block_idx: usize, first_ps: crate::keys::PageIx) {
+        if cx.opts.ts_float_no_reflow || self.en_blocks.is_some() {
+            return;
+        }
+        for k in p.glyphs.iter().filter_map(|g| g.obj) {
+            for (pg, v) in &cx.input.late_floats {
+                if v.iter().any(|l| l.run == k && l.pin.is_some_and(|q| q.reflow)) && *pg as usize != first_ps.ix() {
+                    self.found.late_dropped.insert(k);
+                    self.found.anchor_pushed.insert(u32::try_from(block_idx).unwrap_or(u32::MAX));
+                }
+            }
+        }
     }
 
     /// `{ left: p.indLeft, right: fr.w − p.indRight }` as a wrap frame.
@@ -1769,6 +2005,22 @@ impl PrepFlow for Engine {
                 self.field_value(cx, ps, None, name, None, None)
             }
         }
+    }
+
+    /// WordCraft study (fields, B22): the field's value with its language (the `\*` words) known to `field_value`.
+    fn field_in(
+        &mut self,
+        cx: &mut Cx<'_, '_>,
+        src: FieldSource,
+        name: &[u16],
+        instr: &[u16],
+        at: f64,
+        lang: Option<&str>,
+    ) -> LResult<Option<Box<[u16]>>> {
+        let saved = std::mem::replace(&mut self.field_lang, lang.map(Into::into));
+        let r = PrepFlow::field(self, cx, src, name, instr, at);
+        self.field_lang = saved;
+        r
     }
 
     /// `ctx.opts.onField?.(run, v)` (F8): the editor's map keeps the last value per model run in

@@ -21,7 +21,9 @@ use uo_jsnum::text::is_js_space_unit;
 use super::table_ops::{GridCell, TableMap, VMerge, cell_at, cell_content, map_table, v_merge_of};
 use crate::model::story::OwnedBlock;
 use crate::model::table::{Cell, Table};
-use crate::word::field_formula::{CellNumber, format_formula_result, format_picture};
+use crate::word::field_formula::{
+    CellNumber, FormulaNames, NameValue, WordFormulaError, evaluate_word_expression, format_formula_result, format_picture,
+};
 
 /// Word's pt-BR messages.
 pub mod errors {
@@ -30,6 +32,8 @@ pub mod errors {
     pub const SYNTAX: &str = "!Erro de sintaxe";
     pub const MISSING_OPERATOR: &str = "!Operador ausente";
     pub const UNDEFINED_BOOKMARK: &str = "!Indicador não definido";
+    /// WordCraft study (fields, B25): Word's text for a missing operator (measured: `= 2 3`, `= 1,2,3`)
+    pub const WORD_MISSING_OPERATOR: &str = "!Está faltando operador";
 }
 
 /// `FORMULA_FUNCTIONS`.
@@ -170,6 +174,13 @@ pub struct FormulaEnv<'a> {
     pub c: i64,
     /// the bookmarks with a number (`DEFINED`/value)
     pub bookmarks: Option<&'a HashMap<String, f64>>,
+    /// WordCraft study (fields, B25): Word's grammar — the header/footer evaluator's parser
+    /// (`word::field_formula::evaluate_word_expression`) with this table's cells, ranges and directions and the bookmarks
+    /// as its names — and its error texts (the offending token after "!Erro de sintaxe, ", the bookmark's name after
+    /// "!Indicador não definido, ", "!Está faltando operador"), ROUND half away from zero at the decimals
+    /// (`ROUND(2,345;2)` = 2,35), the literals' decimals and thousands in the result; `false` = the frozen TS's parser
+    /// and texts (`OpenOptions::ts_formula_errors`)
+    pub word: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -297,6 +308,53 @@ struct Parser<'a> {
 
 type Fx<T> = Result<T, &'static str>;
 
+/// The format a number read from a cell passes to the result (the most decimals, thousands, the first currency and
+/// suffix); its value.
+fn seen(fmt: &mut CellNumber, x: &CellNumber) -> f64 {
+    fmt.decimals = uo_jsnum::math::max(fmt.decimals, x.decimals);
+    fmt.thousands = fmt.thousands || x.thousands;
+    if x.prefix.is_some() && fmt.prefix.is_none() {
+        fmt.prefix.clone_from(&x.prefix);
+    }
+    if x.suffix.is_some() && fmt.suffix.is_none() {
+        fmt.suffix.clone_from(&x.suffix);
+    }
+    x.n
+}
+
+/// The numbers of the reference `l1d1` or the range `l1d1:l2d2` (`range`): a single cell without a number is 0, a
+/// range skips it.
+fn cells_value(table: &Table, fmt: &mut CellNumber, (l1, d1): (&str, &str), range: Option<(&str, &str)>) -> Val {
+    let (l2, d2) = range.unwrap_or((l1, d1));
+    let (c1, c2) = (col_index(l1), col_index(l2));
+    let (w1, w2) = (parse_float(d1) - 1.0, parse_float(d2) - 1.0);
+    let mut vals: Vec<f64> = Vec::new();
+    let single = range.is_none();
+    let (r_lo, r_hi) = (uo_jsnum::math::min(w1, w2), uo_jsnum::math::max(w1, w2));
+    let (c_lo, c_hi) = (uo_jsnum::math::min(c1, c2), uo_jsnum::math::max(c1, c2));
+    // only the rows and columns that exist matter (the others add nothing to a range, and
+    // a single cell is one lookup)
+    let rows_n = f64::from(u32::try_from(table.rows.len()).unwrap_or(u32::MAX));
+    let mut row = r_lo;
+    while row <= r_hi && row < uo_jsnum::math::max(rows_n, r_lo + 1.0) {
+        let mut ci = c_lo;
+        while ci <= c_hi {
+            let cell = uo_jsnum::conv::js_index(row, table.rows.len())
+                .and_then(|r| table.rows.get(r))
+                .and_then(|r| uo_jsnum::conv::js_index(ci, r.cells.len()).and_then(|c| r.cells.get(c)));
+            let x = cell.and_then(|c| parse_cell_number(&cell_text(c)));
+            match x {
+                Some(x) => vals.push(seen(fmt, &x)),
+                None if single => vals.push(0.0),
+                None => {}
+            }
+            ci += 1.0;
+        }
+        row += 1.0;
+    }
+    if single { Val::Num(vals.first().copied().unwrap_or(0.0)) } else { Val::List(vals) }
+}
+
 impl Parser<'_> {
     fn peek(&self) -> Option<&str> {
         self.toks.get(self.i).map(String::as_str)
@@ -313,15 +371,7 @@ impl Parser<'_> {
     }
 
     fn seen(&mut self, x: &CellNumber) -> f64 {
-        self.fmt.decimals = uo_jsnum::math::max(self.fmt.decimals, x.decimals);
-        self.fmt.thousands = self.fmt.thousands || x.thousands;
-        if x.prefix.is_some() && self.fmt.prefix.is_none() {
-            self.fmt.prefix.clone_from(&x.prefix);
-        }
-        if x.suffix.is_some() && self.fmt.suffix.is_none() {
-            self.fmt.suffix.clone_from(&x.suffix);
-        }
-        x.n
+        seen(&mut self.fmt, x)
     }
 
     fn enter(&mut self) -> Fx<()> {
@@ -457,7 +507,7 @@ impl Parser<'_> {
             return Ok(Val::Num(call(&up, &args)?));
         }
         // reference A1 or A1:B2
-        if let Some((l1, d1)) = cell_ref(&t) {
+        if let Some(first) = cell_ref(&t) {
             let range = if self.peek() == Some(":") {
                 self.i += 1;
                 let t2 = self.next()?;
@@ -466,35 +516,8 @@ impl Parser<'_> {
             } else {
                 None
             };
-            let (l2, d2) = range.clone().unwrap_or_else(|| (l1.to_owned(), d1.to_owned()));
-            let (c1, c2) = (col_index(l1), col_index(&l2));
-            let (w1, w2) = (parse_float(d1) - 1.0, parse_float(&d2) - 1.0);
-            let mut vals: Vec<f64> = Vec::new();
-            let single = range.is_none();
-            let (r_lo, r_hi) = (uo_jsnum::math::min(w1, w2), uo_jsnum::math::max(w1, w2));
-            let (c_lo, c_hi) = (uo_jsnum::math::min(c1, c2), uo_jsnum::math::max(c1, c2));
-            let table = self.env.table;
-            // only the rows and columns that exist matter (the others add nothing to a range, and
-            // a single cell is one lookup)
-            let rows_n = f64::from(u32::try_from(table.rows.len()).unwrap_or(u32::MAX));
-            let mut row = r_lo;
-            while row <= r_hi && row < uo_jsnum::math::max(rows_n, r_lo + 1.0) {
-                let mut ci = c_lo;
-                while ci <= c_hi {
-                    let cell = uo_jsnum::conv::js_index(row, table.rows.len())
-                        .and_then(|r| table.rows.get(r))
-                        .and_then(|r| uo_jsnum::conv::js_index(ci, r.cells.len()).and_then(|c| r.cells.get(c)));
-                    let x = cell.and_then(|c| parse_cell_number(&cell_text(c)));
-                    match x {
-                        Some(x) => vals.push(self.seen(&x)),
-                        None if single => vals.push(0.0),
-                        None => {}
-                    }
-                    ci += 1.0;
-                }
-                row += 1.0;
-            }
-            return Ok(if single { Val::Num(vals.first().copied().unwrap_or(0.0)) } else { Val::List(vals) });
+            let range = range.as_ref().map(|(l, d)| (l.as_str(), d.as_str()));
+            return Ok(cells_value(self.env.table, &mut self.fmt, first, range));
         }
         // bookmark
         if let Some(v) = self.env.bookmarks.and_then(|b| b.get(&t)) {
@@ -590,9 +613,16 @@ pub struct Evaluated {
 
 /// `evaluateFormula(formula, env)`: `Ok` the number and the inherited format, `Err` the message.
 pub fn evaluate_formula(formula: &[u16], env: &FormulaEnv<'_>) -> Result<Evaluated, &'static str> {
-    // formula.replace(/^\s*=/, '')
-    let i = skip_ws(formula, 0);
-    let src = if unit_is(formula, i, '=') { formula.get(i + 1..).unwrap_or(&[]) } else { formula };
+    if env.word {
+        return evaluate_word(formula, env).map_err(|e| match e {
+            None | Some(WordFormulaError::Syntax(_)) => errors::SYNTAX,
+            Some(WordFormulaError::DivZero) => errors::DIV_ZERO,
+            Some(WordFormulaError::UnexpectedEnd) => errors::UNEXPECTED_END,
+            Some(WordFormulaError::MissingOperator) => errors::WORD_MISSING_OPERATOR,
+            Some(WordFormulaError::Bookmark(_)) => errors::UNDEFINED_BOOKMARK,
+        });
+    }
+    let src = formula_body(formula);
     let fmt = CellNumber { n: 0.0, decimals: 0.0, thousands: false, prefix: None, suffix: None };
     let toks = tokenize(src);
     let mut p = Parser { toks, i: 0, env, m: map_table(env.table), fmt, depth: 0 };
@@ -610,12 +640,74 @@ pub fn evaluate_formula(formula: &[u16], env: &FormulaEnv<'_>) -> Result<Evaluat
     Ok(Evaluated { value, fmt: p.fmt })
 }
 
+/// `formula.replace(/^\s*=/, '')`: the expression after the `=`.
+fn formula_body(formula: &[u16]) -> &[u16] {
+    let i = skip_ws(formula, 0);
+    if unit_is(formula, i, '=') { formula.get(i + 1..).unwrap_or(&[]) } else { formula }
+}
+
+/// The names of a table formula under Word's grammar: the cells and ranges, `ABOVE`/`BELOW`/`LEFT`/`RIGHT` (with the
+/// format their numbers pass to the result) and the bookmarks with a number.
+struct TableNames<'e, 'a> {
+    env: &'e FormulaEnv<'a>,
+    m: TableMap,
+    fmt: CellNumber,
+}
+
+impl FormulaNames for TableNames<'_, '_> {
+    fn is_cell(&self, name: &str) -> bool {
+        cell_ref(name).is_some()
+    }
+
+    fn value(&mut self, name: &str, to: Option<&str>) -> Option<NameValue> {
+        let up = name.to_ascii_uppercase();
+        if ["ABOVE", "BELOW", "LEFT", "RIGHT"].contains(&up.as_str()) {
+            let xs = directional(self.env.table, &self.m, self.env, &up);
+            return Some(NameValue::List(xs.iter().map(|x| seen(&mut self.fmt, x)).collect()));
+        }
+        let first = cell_ref(name)?;
+        let v = match to {
+            Some(t) => cells_value(self.env.table, &mut self.fmt, first, Some(cell_ref(t)?)),
+            None => cells_value(self.env.table, &mut self.fmt, first, None),
+        };
+        Some(match v {
+            Val::Num(x) => NameValue::Num(x),
+            Val::List(l) => NameValue::List(l),
+        })
+    }
+
+    fn bookmark(&mut self, name: &str) -> Option<f64> {
+        let b = self.env.bookmarks?;
+        // (Word's bookmark names are case-insensitive; among names differing in case only, the least)
+        b.get(name).or_else(|| b.iter().filter(|(k, _)| k.eq_ignore_ascii_case(name)).min_by(|x, y| x.0.cmp(y.0)).map(|(_, v)| v)).copied()
+    }
+}
+
+/// WordCraft study (fields, B25): the table formula under Word's grammar (`word::field_formula`, the header/footer
+/// evaluator's parser, measured `hf-*` rows) in the pt-BR notation; the format is the cells' and the literals' (their
+/// decimals, a grouped literal's thousands). `Err(None)`: deeper than [`MAX_DEPTH`].
+fn evaluate_word(formula: &[u16], env: &FormulaEnv<'_>) -> Result<Evaluated, Option<WordFormulaError>> {
+    let src = formula_body(formula);
+    let fmt = CellNumber { n: 0.0, decimals: 0.0, thousands: false, prefix: None, suffix: None };
+    let mut names = TableNames { env, m: map_table(env.table), fmt };
+    match evaluate_word_expression(src, "pt-BR", MAX_DEPTH, &mut names) {
+        Err(_) => Err(None),
+        Ok(Err(e)) => Err(Some(e)),
+        Ok(Ok((value, decimals, thousands))) => {
+            let mut fmt = names.fmt;
+            fmt.decimals = uo_jsnum::math::max(fmt.decimals, decimals);
+            fmt.thousands = fmt.thousands || thousands;
+            Ok(Evaluated { value, fmt })
+        }
+    }
+}
+
 /// `defaultFormula(table, r, c)`: the dialog's suggestion: `SUM(ABOVE)` with numbers above, else
 /// `SUM(LEFT)` with numbers to the left, else `=`.
 #[must_use]
 pub fn default_formula(table: &Table, r: i64, c: i64) -> &'static str {
     let m = map_table(table);
-    let env = FormulaEnv { table, r, c, bookmarks: None };
+    let env = FormulaEnv { table, r, c, bookmarks: None, word: false };
     if !directional(table, &m, &env, "ABOVE").is_empty() {
         return "=SUM(ABOVE)";
     }
@@ -691,12 +783,22 @@ pub fn parse_formula_instr(instr: &[u16]) -> Option<(Vec<u16>, Option<Vec<u16>>)
 #[must_use]
 pub fn formula_result_text(instr: &[u16], env: &FormulaEnv<'_>) -> Option<String> {
     let Some((formula, picture)) = parse_formula_instr(instr) else { return Some(errors::SYNTAX.to_owned()) };
-    match evaluate_formula(&formula, env) {
-        Err(e) => Some(e.to_owned()),
-        Ok(r) => match picture {
-            Some(p) => format_picture(r.value, &string_of(&p)),
-            None => format_formula_result(r.value, &r.fmt),
-        },
+    let r = if env.word {
+        // WordCraft study (fields, B25): Word's grammar and texts (the offending token, the bookmark's name)
+        match evaluate_word(&formula, env) {
+            Err(Some(e)) => return Some(e.text("pt-BR")),
+            Err(None) => return Some(errors::SYNTAX.to_owned()),
+            Ok(r) => r,
+        }
+    } else {
+        match evaluate_formula(&formula, env) {
+            Err(e) => return Some(e.to_owned()),
+            Ok(r) => r,
+        }
+    };
+    match picture {
+        Some(p) => format_picture(r.value, &string_of(&p)),
+        None => format_formula_result(r.value, &r.fmt),
     }
 }
 

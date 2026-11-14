@@ -1,0 +1,158 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 83.54,
+"x0": 85.1,
+"x1": 493.78,
+"size": 11.04,
+"text": "Thequickbrownfoxjumpsoverthelazydog"
+},
+{
+"y": 101.54,
+"x0": 85.1,
+"x1": 489.12,
+"size": 11.04,
+"text": "andkeepsrunningfarawayThequickbrown"
+},
+{
+"y": 119.54,
+"x0": 85.1,
+"x1": 434.72,
+"size": 11.04,
+"text": "foxjumpsoverthelazydogandkeeps"
+},
+{
+"y": 137.54,
+"x0": 85.1,
+"x1": 235.29,
+"size": 11.04,
+"text": "runningfaraway"
+},
+{
+"y": 155.54,
+"x0": 85.1,
+"x1": 314.17,
+"size": 11.04,
+"text": "abcdef12Hxgmixedend"
+},
+{
+"y": 185.66,
+"x0": 85.1,
+"x1": 489.25,
+"size": 20.04,
+"text": "Thequickbrownfoxjumpsover"
+},
+{
+"y": 221.66,
+"x0": 85.1,
+"x1": 481.44,
+"size": 20.04,
+"text": "thelazydogandkeepsrunning"
+},
+{
+"y": 257.66,
+"x0": 85.1,
+"x1": 189.45,
+"size": 20.04,
+"text": "faraway"
+},
+{
+"y": 281.57,
+"x0": 85.1,
+"x1": 504.66,
+"size": 11.04,
+"text": "Thequickbrownfoxjumpsoverthelazydog"
+},
+{
+"y": 299.57,
+"x0": 85.1,
+"x1": 504.23,
+"size": 11.04,
+"text": "andkeepsrunningfarawayThequickbrown"
+},
+{
+"y": 317.57,
+"x0": 85.1,
+"x1": 504.56,
+"size": 11.04,
+"text": "foxjumpsoverthelazydogandkeepsrunning"
+},
+{
+"y": 335.57,
+"x0": 85.1,
+"x1": 158.23,
+"size": 11.04,
+"text": "faraway"
+},
+{
+"y": 353.57,
+"x0": 282.29,
+"x1": 307.72,
+"size": 11.04,
+"text": "abc"
+},
+{
+"y": 371.57,
+"x0": 442.54,
+"x1": 505.17,
+"size": 11.04,
+"text": "abcdef"
+},
+{
+"y": 389.57,
+"x0": 106.1,
+"x1": 475.63,
+"size": 11.04,
+"text": "Thequickbrownfoxjumpsoverthelazy"
+},
+{
+"y": 407.57,
+"x0": 106.1,
+"x1": 393.17,
+"size": 11.04,
+"text": "dogandkeepsrunningfaraway"
+},
+{
+"y": 425.57,
+"x0": 110.06,
+"x1": 479.59,
+"size": 11.04,
+"text": "Thequickbrownfoxjumpsoverthelazy"
+},
+{
+"y": 443.59,
+"x0": 110.06,
+"x1": 397.13,
+"size": 11.04,
+"text": "dogandkeepsrunningfaraway"
+},
+{
+"y": 461.59,
+"x0": 85.1,
+"x1": 161.73,
+"size": 11.04,
+"text": "Hxgabc"
+},
+{
+"y": 479.59,
+"x0": 85.1,
+"x1": 223.84,
+"size": 11.04,
+"text": "abcdefghijklmno"
+},
+{
+"y": 495.31,
+"x0": 85.1,
+"x1": 253.93,
+"size": 11.04,
+"text": "semgradedelinha"
+}
+],
+"objs": []
+}
+]
+}

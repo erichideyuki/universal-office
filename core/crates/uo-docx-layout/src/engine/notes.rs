@@ -190,7 +190,13 @@ impl Engine {
         let g = self.geom(gi)?;
         let w = Self::note_cols(g)?.w;
         let mar_l = g.mar_l;
-        let key: Box<str> = format!("{}:{}", uo_jsnum::format::to_js_string(id.get()), uo_jsnum::format::to_js_string(jm::round(w))).into();
+        let mut key = format!("{}:{}", uo_jsnum::format::to_js_string(id.get()), uo_jsnum::format::to_js_string(jm::round(w)));
+        // WordCraft study (page): the page's mirror margins and mirrorIndents side are part of the content
+        let mirror = self.cur_ps()?.doc_even == (cx.ldoc.compat_mode() >= 15.0);
+        if !(cx.opts.ts_no_gutter_mirror && cx.opts.ts_no_print_fold && cx.opts.ts_no_mirror_indents) {
+            key.push_str(&format!(":{}:{}", uo_jsnum::format::to_js_string(mar_l), u8::from(mirror)));
+        }
+        let key: Box<str> = key.into();
         if let Some(c) = self.note_cache.get(&key) {
             return Ok(c.clone());
         }
@@ -199,10 +205,12 @@ impl Engine {
             None => Vec::new(),
         };
         // the note's own number is the reference's mark (in its section's format)
-        let saved = std::mem::replace(&mut self.ctx.flow.numbering, word::numbering_state(&cx.opts.lang, &cx.opts.limits));
+        let saved = std::mem::replace(&mut self.ctx.flow.numbering, word::numbering_state_for(cx.opts));
         let env = ParaEnv { field: Some(FieldSource::Footnote(id)), ..ParaEnv::default() };
         let at = LineRef { story: LineStory::Note(NoteKind::Footnote, id), path: RefPath::default() };
+        self.mirror_static = mirror; // (WordCraft study, page: mi5-fn)
         let r = self.layout_static(cx, &blocks, mar_l, w, &env, &at, None, 0.0, None);
+        self.mirror_static = false;
         self.ctx.flow.numbering = saved;
         let c = r?;
         self.note_cache.insert(key, c.clone());
@@ -610,7 +618,23 @@ impl Engine {
             g_en.bal_key = Some(-1 - i64::from(g.index));
         }
         let gen_ix = u32::try_from(self.geoms.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
+        // (WordCraft study, page: the copy is canonical; its even-page variant is a copy of the section's)
+        g_en.base = gen_ix;
+        let g_ev = match g.even {
+            Some(ev) => {
+                let mut v = self.geom(ev)?.clone();
+                v.blocks = g_en.blocks;
+                v.bal_key = g_en.bal_key;
+                v.base = gen_ix;
+                g_en.even = Some(gen_ix + 1);
+                Some(v)
+            }
+            None => None,
+        };
         self.geoms.push(g_en);
+        if let Some(v) = g_ev {
+            self.geoms.push(v);
+        }
         // the flow of the notes uses the body's machinery, over their blocks
         self.en_blocks = Some(blocks);
         let r = self.place_endnotes_in(cx, gen_ix, n, multi);

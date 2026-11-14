@@ -8,6 +8,7 @@ pub mod decode;
 pub mod docgen;
 pub mod hyph;
 pub mod open_fonts;
+pub mod word_cmp;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

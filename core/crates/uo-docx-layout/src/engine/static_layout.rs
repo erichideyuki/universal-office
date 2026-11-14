@@ -192,6 +192,8 @@ impl Engine {
         // the list of the previous paragraph (automatic spacing between items)
         let mut prev_list: Option<Box<str>> = None;
         let mut keep_next = false;
+        // WordCraft study (tables, B5): the keepNext of the first paragraph (or of a first nested table's first row)
+        let mut first_keep_next: Option<bool> = None;
         let n = blocks.len();
         let hf_flow = is_hf_ref(at);
         let is_hf = ps.is_some() && hf_flow;
@@ -325,6 +327,7 @@ impl Engine {
                         ..env.clone()
                     };
                     let mut p = self.prepare(cx, &para, &penv)?;
+                    first_keep_next.get_or_insert(p.keep_next);
                     if let Some(j) = join.take() {
                         super::flow::attach_marker(&mut p, j.marker, &j.marker_styles);
                     }
@@ -398,6 +401,18 @@ impl Engine {
                     let para_ref_s = y + jm::min(prev_after, gap_s);
                     y += gap_s;
                     let top = y;
+                    // WordCraft study (page): mirrorIndents in a header/footer or footnote on a page Word mirrors (never in
+                    // a cell or a text box: mi5-hdr, mi5-fn, mi-cell, mi5-txbx)
+                    if self.mirror_static
+                        && !self.in_cell
+                        && at.path.0.is_empty()
+                        && matches!(at.story, crate::output::LineStory::HeaderFooter { .. } | crate::output::LineStory::Note(..))
+                        && !cx.opts.ts_no_mirror_indents
+                        && p.ppr.mirror_indents == Some(true)
+                    {
+                        let orig = (p.ind_left, p.ind_right);
+                        super::flow::mirror_indents(&mut p, orig, true);
+                    }
                     let mut br = LineBreaker::new(&p, None);
                     let frame0 = super::page::WrapFrame {
                         left: p.ind_left,
@@ -485,6 +500,30 @@ impl Engine {
                                 line = br.next(cx, &p, f)?;
                             } else if super::floats::narrower(&f2, &frame) {
                                 frame = f2;
+                                br.reset(mark);
+                                let (k, f) = Engine::pick_seg(&br, &p, &frame);
+                                seg_k = k;
+                                line = br.next(cx, &p, f)?;
+                            }
+                        }
+                        // WordCraft study (tables, B15 rule B; measured `oracle_wc/cellclamp` fw-cell-*): in mode 15 a word
+                        // that does not fit the strip beside a cell's float goes below it, as in the body (`gapind`); the
+                        // frozen TS splits it by characters (Word's modes ≤ 14 do)
+                        if use_cell
+                            && compat >= 15.0
+                            && !cx.opts.ts_gap_word_any_mode
+                            && super::floats::gap_word_cut(&p, &line, &frame, width)
+                        {
+                            let lh0 = jm::max(mark_h, line.height);
+                            let below = sf
+                                .cell_floats
+                                .iter()
+                                .filter(|f| matches!(&*f.wrap, "square" | "tight" | "through"))
+                                .filter(|f| y + lh0 > f.y - f.dist_t + 0.5 && y < f.y + f.h + f.dist_b - 0.5)
+                                .fold(f64::INFINITY, |b, f| jm::min(b, f.y + f.h + f.dist_b));
+                            if below < f64::INFINITY && below > y {
+                                y = below;
+                                frame = wrap(self, &sf, y, mark_h)?;
                                 br.reset(mark);
                                 let (k, f) = Engine::pick_seg(&br, &p, &frame);
                                 seg_k = k;
@@ -587,6 +626,7 @@ impl Engine {
                 }
                 SBlock::Table(t) => {
                     // nested and floating tables, through the engine's `layoutCell` (F7b)
+                    let nest0 = sf.nest.len();
                     let mut acc = super::tables::StaticAcc {
                         items: &mut items,
                         lines: &mut lines,
@@ -598,6 +638,13 @@ impl Engine {
                     };
                     if self.static_table(cx, t, &child_ref(at, bi32), x, width, ps, y_origin, is_hf, hf_flow, bi == 0, nb, &mut acc)? {
                         prev_list = None;
+                    }
+                    // WordCraft study (tables, B5): a nested table first in the cell — its first row's keepNext (the
+                    // first paragraph inside it, measured `kn-nested-kn`)
+                    if first_keep_next.is_none()
+                        && let Some(r) = sf.nest.get(nest0)
+                    {
+                        first_keep_next = Some(r.row.keep_next);
                     }
                 }
                 SBlock::Rt(_) => return Err(LayoutError::Internal("static: block")),
@@ -619,6 +666,7 @@ impl Engine {
             lines,
             height,
             keep_next,
+            first_keep_next: first_keep_next.unwrap_or(false),
             paras: (!paras.is_empty()).then(|| Arc::new(paras)),
             nest: (!sf.nest.is_empty()).then(|| std::mem::take(&mut sf.nest)),
             align_h: if sf.align_bottom > height { OptF64::some(sf.align_bottom) } else { OptF64::NONE },

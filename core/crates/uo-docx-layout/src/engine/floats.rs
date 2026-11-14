@@ -552,6 +552,25 @@ pub fn narrower(a: &WrapFrame, b: &WrapFrame) -> bool {
     a.left > b.left + 0.5 || a.right < b.right - 0.5 || a.segs.as_ref().map_or(0, Vec::len) != b.segs.as_ref().map_or(0, Vec::len)
 }
 
+/// WordCraft study (tables, B15 rule B): the `gapind` test of `placeParagraph` for a static flow — a line in a strip
+/// narrowed by a float (`full_w` = the flow's width) that ends inside a word: no break opportunity after its last
+/// glyph, a word glyph next, not an automatic hyphen.
+#[must_use]
+pub(crate) fn gap_word_cut(p: &PreparedPara, line: &Line, frame: &WrapFrame, full_w: f64) -> bool {
+    use crate::para::{Glyph, GlyphFlags, GlyphKind};
+    if line.last || line.end <= line.start || (line.end as usize) >= p.glyphs.len() {
+        return false;
+    }
+    let narrowed = frame.left > p.ind_left + 0.5 || frame.right < full_w - p.ind_right - 0.5;
+    let word = |g: &Glyph| {
+        g.kind == GlyphKind::Char && !g.ch.units.get(..usize::from(g.ch.len)).unwrap_or(&[]).iter().any(|&u| uo_text::space::is_space(u))
+    };
+    let g0 = p.glyphs.get(line.end as usize - 1);
+    let g1 = p.glyphs.get(line.end as usize);
+    let last_auto = line.placed.last().is_some_and(|t| matches!(t.g, crate::lines::GlyphSrc::AutoHyphen(_)));
+    narrowed && g0.is_some_and(|g| word(g) && !g.flags.has(GlyphFlags::BREAK_AFTER)) && g1.is_some_and(word) && !last_auto
+}
+
 /// `polyBandIntervals(poly, ya, yb)` (engine.ts:89): the x projection of the polygon cut by the
 /// band [ya, yb] (merged intervals).
 #[must_use]
@@ -1075,7 +1094,9 @@ impl Engine {
             tb_content = Some(c);
         }
         // an even page: "inside"/"outside" and the inner/outer margins swap sides (oracle inside)
-        let even = js_eq(jm::rem(self.ps(ps)?.page.number, 2.0), 0.0);
+        // (WordCraft study, page: Word takes the page's DOCUMENT parity, not its displayed number — f5-inside-r1)
+        let even =
+            if cx.opts.ts_page_parity_by_number { js_eq(jm::rem(self.ps(ps)?.page.number, 2.0), 0.0) } else { self.ps(ps)?.doc_even };
         let h_align = side_of(anchor.and_then(|a| a.pos_h.align.as_deref()), even, true);
         let v_align = side_of(anchor.and_then(|a| a.pos_v.align.as_deref()), even, false);
         let ee = anchor.and_then(|a| a.effect_extent.as_ref());
@@ -1099,6 +1120,11 @@ impl Engine {
             } else {
                 let v_from0 = side_of(anchor.map(|a| &*a.pos_v.relative_from), even, false).unwrap_or("paragraph");
                 let base = if v_from0 == "paragraph" && para_ref.is_some() { para_ref.unwrap_or(para_top) } else { para_top };
+                // WordCraft study (page, B10): a line-relative float measures from its anchor LINE's top
+                let base = match self.float_line_top {
+                    Some(lt) if v_from0 == "line" => lt,
+                    _ => base,
+                };
                 let (vy, vh) = vert_ref(v_from0, &g, self.ps(ps)?.body_top, base);
                 y = align_pos(v_align, off_v, vy, vh, h, pct_v, g.page_h, ee_t, ee_b);
                 if let Some(cb) = clamp_bottom
@@ -1139,6 +1165,15 @@ impl Engine {
                 x = align_pos(h_align, off_h, rx, rw, w, pct_h, g.page_w, ee_l, ee_r);
             } else {
                 x = align_pos(h_align, off_h, hx, hw, w, None, g.page_w, ee_l, ee_r);
+                // WordCraft study (tables, B15 rule A; measured `oracle_wc/cellclamp`): a wrapping object stays inside the
+                // cell's interior (the left edge first: one wider than the interior overflows on the right)
+                if !cx.opts.ts_cell_float_no_clamp
+                    && anchor.is_some_and(|a| wrapping(&a.wrap))
+                    && let Some((il, ir)) = self.cell_interior
+                {
+                    let (lo, hi) = (col_x + il, col_x + col_w + ir);
+                    x = jm::max(lo, jm::min(x, jm::max(lo, hi - w)));
+                }
             }
             let v_ref = if out_cell && (v_from == "paragraph" || v_from == "line") {
                 y_origin - cm_t.unwrap_or(0.0)
@@ -1327,7 +1362,17 @@ impl Engine {
             box_placed = true;
             // an absolute position covering body lines already placed on this page: in the next
             // pass it goes at the page start (oracle latefloat)
-            if !self.in_hf && !follows_text(anchor) && !self.pre_placed.contains(&rk) && ps != super::SCRATCH {
+            // WordCraft study (page, B11): a paragraph/line-relative wrapping float placed before its body paragraph's
+            // lines that covers text laid before it on the page: Word lays the page out again around it, the float kept
+            // where this placement put it — the FIRST such float of the page per pass (the next one's position depends
+            // on that re-layout)
+            let pi0 = u32::try_from(ps.ix()).unwrap_or(u32::MAX);
+            let reflow = follows_text(anchor)
+                && self.body_early
+                && !cx.opts.ts_float_no_reflow
+                && !cx.input.late_dropped.contains(&rk)
+                && !self.found.late_found.get(&pi0).is_some_and(|v| v.iter().any(|l| l.pin.is_some_and(|p| p.reflow)));
+            if !self.in_hf && (!follows_text(anchor) || reflow) && !self.pre_placed.contains(&rk) && ps != super::SCRATCH {
                 let p = self.ps(ps)?;
                 let pg = self.geom(p.geom)?;
                 let hit = p.page.lines.iter().any(|l| {
@@ -1339,7 +1384,21 @@ impl Engine {
                 });
                 if hit {
                     let pi = u32::try_from(ps.ix()).map_err(|_| cap())?;
-                    self.found.late_found.entry(pi).or_default().push(rk);
+                    let lf = if follows_text(anchor) {
+                        let pin = super::FloatPin {
+                            col_x,
+                            col_w,
+                            para_top,
+                            para_ref: para_ref.unwrap_or(para_top),
+                            line_top: self.float_line_top,
+                            reflow: true,
+                            settled: true,
+                        };
+                        super::LateFloat { run: rk, col: self.col, pin: Some(pin) }
+                    } else {
+                        super::LateFloat { run: rk, col: 0, pin: None }
+                    };
+                    self.found.late_found.entry(pi).or_default().push(lf);
                 }
             }
         }
@@ -1453,6 +1512,10 @@ impl Engine {
             let Some(anc) = float_anchor(run) else { continue };
             // (already placed at the page start as a late float: not duplicated)
             if !wrapping(&anc.wrap) || self.pre_placed.contains(&k) {
+                continue;
+            }
+            // (WordCraft study, page, B10/B11: a float Word pins to a page or column start is placed there)
+            if cx.input.late_floats.values().flatten().any(|l| l.run == k && l.pin.is_some()) {
                 continue;
             }
             let ft = follows_text(Some(anc));

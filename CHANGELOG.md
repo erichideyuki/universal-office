@@ -72,6 +72,43 @@ are not published: their APIs are internal until the npm, wasm and NuGet APIs of
   checks a part name before a host extracts it to disk; `xml::parse` takes the text
   by value (`String` or `Arc<str>`, kept by the tree without a copy).
 
+### Write layout (Rust engine): rules measured in Word where 0.9 differed
+
+Found by comparing with the WordCraft engine and measured in Word 365 for Windows
+(pt-BR); each rule is in `core/docs/modules/uo-docx-layout.md` ("WordCraft study —
+lines / page / tables / fields") with its cases. The 0.9 behaviour stays behind a
+`LayoutOptions::ts_*` switch (wasm layout flag bits 18–21), used only by the parity
+tests. The .NET port and the 0.9 TS engine keep the 0.9 rules.
+
+- Lines: spaces of the space-like set give no line height; Arial's space after a list
+  number; the jc=both compression tolerance; kinsoku per East Asian language with
+  hanging punctuation; the character grid (linesAndChars, snapToChars) and the
+  `*Chars` indents; doNotExpandShiftReturn; `w:ptab` relative to margin or indent; jc=
+  distribute spreads over character gaps; a default tab left of the margin; bar tabs
+  do not move the default stops; emphasis marks (`w:em`) are drawn and grow the line;
+  superscript/subscript sizes above 24 pt per font.
+- Page: no space before a paragraph that opens with a page break (compat 15); odd/even
+  section starts with blank pages as Word; gutter, rtlGutter, gutterAtTop, mirror
+  margins, book fold and two-on-one printing; inside/outside floats by the page's
+  document parity; a float sits on the page and column of its anchor line, and Word's
+  re-layout around it; mirrorIndents.
+- Tables: a row kept with the next by its first cell's first paragraph; conditional
+  table-style borders by region (insideH/insideV); floating-table wrap edges; wrapping
+  objects clamped into the cell; a word that does not fit beside a float (mode 15 goes
+  below it); a `w:tblStyle` after other `w:tblPr` children discards those before it.
+- Fields and fonts: `\*` format switches on PAGE/NUMPAGES/SECTIONPAGES/PAGEREF/SEQ and
+  formulas with the number words of pt-BR, en-US and es-ES; STYLEREF per page in
+  headers/footers, by the style's UI name; SECTIONPAGES on shared pages; REF `\r`
+  relative and `\p` per language; Word's formula grammar and error texts (header/footer
+  and table formulas); list words per paragraph-mark language and `w:isLgl`; Symbol
+  and Wingdings line metrics when missing and multiple spacing by the tallest run;
+  PostScript, camel-case and full font names, charset-suffix names ("Arial CE",
+  "Times New Roman Cyr"), a missing symbol-charset font, Thai and East Asian fallbacks.
+- English hyphenation: CC0 patterns plus the Moby Hyphenator II exceptions (public
+  domain) give Word's points on 95.8% of the measured paragraphs (hyph-utf8: 88.3%).
+  The data is a new pattern set `en-us-word` (593,877 B raw, 220,531 B gzip), fetched
+  instead of `en-us`; notices in `core/licenses`.
+
 ## Unreleased
 
 ### Document viewer: engine switch (`engine="rust"`)

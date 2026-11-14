@@ -101,8 +101,13 @@ struct Ctx<'f> {
 }
 
 impl<'f> Ctx<'f> {
-    fn new(fmt: &'f DocFormatting, lang: Option<&str>) -> Ctx<'f> {
-        Ctx { fmt, resolver: StyleResolver::new(), numbering: NumberingState::new(lang.unwrap_or("pt-BR"), TextCap::default()) }
+    /// WordCraft study (fields, B26/B27): the walk with Word's list rules (`rules`), the session's default.
+    fn with_rules(fmt: &'f DocFormatting, lang: Option<&str>, rules: super::numbering::NumRules) -> Ctx<'f> {
+        Ctx {
+            fmt,
+            resolver: StyleResolver::new(),
+            numbering: NumberingState::new(lang.unwrap_or("pt-BR"), TextCap::default()).with_rules(rules),
+        }
     }
 
     /// `resolvePPr(ctx, p, {})` and the marker `ctx.numbering.next(numId, ilvl ?? 0)` if numbered.
@@ -114,12 +119,22 @@ impl<'f> Ctx<'f> {
                     Some(JsNumber::Num(x)) => JsNumber::Num(x),
                     _ => JsNumber::Num(0.0),
                 };
-                self.numbering.next(self.fmt, n.num_id.unwrap_or(JsNumber::Null), ilvl)
+                // WordCraft study (fields, B26): the words in the paragraph mark's language under Word's rules
+                let lang = if self.numbering.rules.word_lang { mark_lang(self.fmt, &r) } else { None };
+                self.numbering.next_in(self.fmt, n.num_id.unwrap_or(JsNumber::Null), ilvl, lang.as_deref())
             }
             _ => None,
         };
         (r, m)
     }
+}
+
+/// WordCraft study (fields, B26): the `w:lang` of a paragraph mark — its direct run properties over the paragraph style's
+/// and the document defaults.
+#[must_use]
+pub fn mark_lang(fmt: &DocFormatting, r: &super::direct::ResolvedPPr) -> Option<Box<str>> {
+    let of = |p: Option<&crate::model::props::RPr>| p.and_then(|p| p.lang.as_deref()).and_then(|l| l.val.clone()).filter(|v| !v.is_empty());
+    of(r.ppr.r_pr.as_deref()).or_else(|| of(Some(&*r.style_rpr))).or_else(|| of(fmt.styles.doc_defaults.r_pr.as_deref()))
 }
 
 fn idx(i: usize) -> u32 {
@@ -129,8 +144,14 @@ fn idx(i: usize) -> u32 {
 /// `documentOutline(full, { lang })` (outline.ts:66): the Navigation pane's headings.
 #[must_use]
 pub fn document_outline(view: DocView<'_>, lang: Option<&str>) -> Vec<OutlineHeading> {
+    document_outline_with(view, lang, super::numbering::NumRules::default())
+}
+
+/// [`document_outline`] under list rules `rules` (WordCraft study, fields B26/B27).
+#[must_use]
+pub fn document_outline_with(view: DocView<'_>, lang: Option<&str>, rules: super::numbering::NumRules) -> Vec<OutlineHeading> {
     let fmt = view.formatting();
-    let mut cx = Ctx::new(fmt, lang);
+    let mut cx = Ctx::with_rules(fmt, lang, rules);
     let mut out = Vec::new();
     walk_outline(&mut cx, view.body(), true, &mut out);
     out
@@ -198,7 +219,13 @@ pub struct ListItemValue {
 /// paragraph (body and cells), by paragraph.
 #[must_use]
 pub fn list_item_values(view: DocView<'_>, lang: Option<&str>) -> IndexMap<ParaId, ListItemValue> {
-    let mut cx = Ctx::new(view.formatting(), lang);
+    list_item_values_with(view, lang, super::numbering::NumRules::default())
+}
+
+/// [`list_item_values`] under list rules `rules` (WordCraft study, fields B26/B27).
+#[must_use]
+pub fn list_item_values_with(view: DocView<'_>, lang: Option<&str>, rules: super::numbering::NumRules) -> IndexMap<ParaId, ListItemValue> {
+    let mut cx = Ctx::with_rules(view.formatting(), lang, rules);
     let mut out = IndexMap::new();
     walk_values(&mut cx, view.body(), &mut out);
     out
@@ -237,7 +264,13 @@ pub struct NumberedItem {
 /// numbering that is not a bullet, in document order.
 #[must_use]
 pub fn numbered_items(view: DocView<'_>, lang: Option<&str>) -> Vec<NumberedItem> {
-    let mut cx = Ctx::new(view.formatting(), lang);
+    numbered_items_with(view, lang, super::numbering::NumRules::default())
+}
+
+/// [`numbered_items`] under list rules `rules` (WordCraft study, fields B26/B27).
+#[must_use]
+pub fn numbered_items_with(view: DocView<'_>, lang: Option<&str>, rules: super::numbering::NumRules) -> Vec<NumberedItem> {
+    let mut cx = Ctx::with_rules(view.formatting(), lang, rules);
     let mut out = Vec::new();
     walk_numbered(&mut cx, view.body(), true, &mut out);
     out
@@ -284,7 +317,13 @@ pub struct OutlineParagraph<'a> {
 /// table cells included, with its outline level (the TOC sources).
 #[must_use]
 pub fn outline_paragraphs<'a>(view: DocView<'a>, lang: Option<&str>) -> Vec<OutlineParagraph<'a>> {
-    let mut cx = Ctx::new(view.formatting(), lang);
+    outline_paragraphs_with(view, lang, super::numbering::NumRules::default())
+}
+
+/// [`outline_paragraphs`] under list rules `rules` (WordCraft study, fields B26/B27).
+#[must_use]
+pub fn outline_paragraphs_with<'a>(view: DocView<'a>, lang: Option<&str>, rules: super::numbering::NumRules) -> Vec<OutlineParagraph<'a>> {
+    let mut cx = Ctx::with_rules(view.formatting(), lang, rules);
     let mut out = Vec::new();
     walk_paragraphs(&mut cx, view.body(), None, &mut out);
     out

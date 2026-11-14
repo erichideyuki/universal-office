@@ -122,7 +122,8 @@ fn embedding_plan_has_its_two_phases() {
 
 #[test]
 fn hyphenation_has_its_types() {
-    assert_eq!(HYPHENATION_PATTERN_IDS, ["pt", "en-us", "es", "fr", "de-1996", "it", "nl"]);
+    assert_eq!(HYPHENATION_PATTERN_IDS, ["pt", "en-us", "es", "fr", "de-1996", "it", "nl", "en-us-word"]);
+    assert_eq!(uo_fonts::hyphen::TS_HYPHENATION_PATTERN_IDS, ["pt", "en-us", "es", "fr", "de-1996", "it", "nl"]);
     let patterns = HyphenationPatterns { id: "pt", left: 2, right: 3, patterns: "a1b", exceptions: "" };
     assert_no_leak(|| {
         let h = Hyphenator::new(&patterns);

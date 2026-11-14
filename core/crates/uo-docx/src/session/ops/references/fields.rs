@@ -418,7 +418,7 @@ impl Session {
         for (ai, a) in body.tables.iter().enumerate() {
             let block = (a.before_para as usize).min(body.paras.len()) + ai;
             let Ok(block) = u32::try_from(block) else { continue };
-            visit_formulas(&a.table, &BlockPath::root(block), only, &mut out, 0);
+            visit_formulas(&a.table, &BlockPath::root(block), only, &mut out, 0, !self.options().ts_formula_errors);
         }
         out
     }
@@ -742,6 +742,7 @@ fn visit_formulas(
     only: Option<&HashSet<RunRef>>,
     out: &mut Vec<(RunRef, Utf16)>,
     depth: usize,
+    word: bool,
 ) {
     use super::super::tables::formula::{FormulaEnv, formula_result_text};
     if depth > MAX_DEPTH {
@@ -756,7 +757,7 @@ fn visit_formulas(
                 let Ok(bi32) = u32::try_from(bi) else { continue };
                 let bpath = path.cell_block(r32, c32, bi32);
                 match b {
-                    Block::Table(nt) => visit_formulas(nt, &bpath, only, out, depth + 1),
+                    Block::Table(nt) => visit_formulas(nt, &bpath, only, out, depth + 1, word),
                     Block::Paragraph(p) => {
                         for (rj, run) in p.runs.iter().enumerate() {
                             let Some(field) = run.ext().and_then(|e| e.field.as_deref()) else { continue };
@@ -773,7 +774,7 @@ fn visit_formulas(
                                 continue;
                             }
                             let units: Vec<u16> = field.encode_utf16().collect();
-                            let env = FormulaEnv { table: t, r: i64::try_from(g.ri).unwrap_or(0), c: g.col, bookmarks: None };
+                            let env = FormulaEnv { table: t, r: i64::try_from(g.ri).unwrap_or(0), c: g.col, bookmarks: None, word };
                             let Some(text) = formula_result_text(&units, &env) else { continue };
                             let new = Utf16::from(text.as_str());
                             if new != run.text {

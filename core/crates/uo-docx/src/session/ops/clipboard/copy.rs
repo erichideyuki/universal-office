@@ -141,7 +141,7 @@ impl Session {
         if !any {
             return out;
         }
-        let vals = crate::word::list_item_values(crate::view::DocView::new(&self.doc), None);
+        let vals = crate::word::outline::list_item_values_with(crate::view::DocView::new(&self.doc), None, self.num_rules());
         let Some(paras) = self.paras() else { return out };
         for i in from..=to {
             let Some(p) = paras.get(i as usize) else { break };

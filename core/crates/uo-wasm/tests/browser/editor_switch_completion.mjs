@@ -723,11 +723,52 @@ const DECLARED_C = {
   // wave 7c (W): Word's layout rules over the frozen TS, each document attributed natively to ONE rule (uo-docx-layout
   // word_w7c.rs attribute_documents_to_the_word_rules) and measured in Word 16 (record uo-bindings.md "Wave 7c — W").
   // Item 4: f7c__7__2's REF to the unterminated bm2 (page 10) is Word's bold error text, the TS the paragraph text
-  'f7c__7__2|lists': { end: ['thumbnail pixels'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF to the unterminated bm2 on page 10: the bold error text of Word' },
+  'f7c__7__2|lists': [
+    { end: ['thumbnail pixels'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF to the unterminated bm2 on page 10: the bold error text of Word' },
+    // WordCraft fields C1b and B22 (below)
+    { end: ['screen pixels'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: 'Word\'s text height of multiple-spaced lines over several faces and its \\* switch results move the lines on the end screen' },
+  ],
   // Item 3: the first box of f7d__7__10's chain of linked boxes keeps the chain's first lines (Word; the TS widow rule
   // empties it): the frames and screens of the drags over that page differ from the first drag on
   'f7d__7__10|objects': { from: 5, facets: '*', end: '*', id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box' },
+  // WordCraft study (tables, B12; record uo-docx-layout.md "WordCraft study — tables", "Harness documents"): Word's wrap edges
+  // of f7b__7__3's floating table (its page 4: the right border and max(fromText, 10 tw)) — the end thumbnails (predicted
+  // natively, as editor_switch_objects.mjs's f7b__7__3 thumbnail in the page area's run)
+  'f7b__7__3|objects': [
+    { end: ['thumbnail pixels'], id: 'Word manda sobre o TS (WordCraft tables B12, floating-table edges)', why: 'Word\'s wrap edges of a floating table move the text beside it on page 4' },
+    // WordCraft page B10/B11 (below): the page area alone gives these (the page count of every step from the first drag)
+    { at: { pages: '2-5,12-27,29-57', 'frame 0 pages': '5,41-43,47,48', 'frame 1 pages': '5,41-43,47,48', 'frame 2 pages': '5,41-43,47,48', 'frame 3 pages': '5,41-43,47,48', 'frame 4 pages': '5,41-43,47,48', 'frame 5 pages': '5,41-43,47,48', 'frame 6 pages': '5,41-43,47,48' }, end: ['end pages', 'screen pixels'], id: 'Word manda sobre o TS (WordCraft page B10/B11, floats)', why: 'Word places a float on the page/line of its anchor run and lays the page out again around it: the drags of the text boxes move the pages' },
+    // WordCraft page F-1 (below)
+    { at: { 'frame 0 proxy': '41' }, id: 'WordCraft page F-1 (TS proxy stale after the bar grows)', why: 'after the drag the Rust editor keeps the IME proxy at the caret, the TS leaves it where the bar was' },
+  ],
 };
+// ── WordCraft study (record uo-docx-layout.md "WordCraft study — harness declarations"): attributed by this harness's
+//    runs with ONE area at Word's rules (local wasm builds with the other areas' ts_* switches on, every difference listed:
+//    UO_EC_MEASURE=1 UO_EC_COVERED=1) and inside the tables area with ONE switch at Word's rule; all four areas and D1 at the
+//    TS's rules leave only item 3/4 entries and the F-1 proxies. Fields C1b (a multiple-spaced line over runs of several
+//    faces: Word's text height) moves f7a__7__1 and f7b__7__0 (natively attributed too); D1 (Word's English hyphenation
+//    data) f2-3-1's English lines (B25 is native too: its header formula); tables B6 (a conditional table-style part's
+//    borders by REGION) the table the scripts insert with a style and the table-style gallery previews (answer 4 and 5:
+//    the preview images) ──
+//    F-1 (page; record uo-bindings.md "Wave 7c — V" F-1): the Rust editor keeps the IME proxy at the caret when the bar or
+//    the scroll container change size (a contextual tab shown or hidden around a drag); the frozen TS leaves it where it
+//    was. Proved by a run with the ResizeObserver of rust-engine.ts disabled (local, not committed): these proxies equal.
+const WC_C = {
+  'f2-3-1|lists': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (WordCraft fields D1, English hyphenation data)', why: 'Word\'s English hyphenation data breaks the English lines elsewhere' },
+  'blank|tables': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (WordCraft tables B6, conditional table-style borders)', why: 'Word gives a table-style part its borders by region: the inserted styled table\'s borders and rows' },
+  'f2-3-0|tables': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (WordCraft tables B6, conditional table-style borders)', why: 'Word gives a table-style part its borders by region: the inserted styled table\'s borders and rows' },
+  'blank|objects': { at: { 'frame 0 proxy': '41' }, id: 'WordCraft page F-1 (TS proxy stale after the bar grows)', why: 'after the drag the Rust editor keeps the IME proxy at the caret (335 px), the TS leaves it where the bar was (304 px)' },
+  'blank|inline': { at: { 'frame 1 proxy': '5', 'frame 2 proxy': '7' }, id: 'WordCraft page F-1 (TS proxy stale after the bar grows)', why: 'during the inline drags the Rust editor keeps the IME proxy at the caret (304 px), the TS leaves it where the bar was (335 px)' },
+  'f2-3-0|inline': { at: { 'frame 1 proxy': '5', 'frame 2 proxy': '7' }, id: 'WordCraft page F-1 (TS proxy stale after the bar grows)', why: 'during the inline drags the Rust editor keeps the IME proxy at the caret (304 px), the TS leaves it where the bar was (335 px)' },
+  'f7a__7__1|page': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: 'Word\'s text height of multiple-spaced lines over several faces moves the lines' },
+  'f7b__7__0|previews': [
+    { at: { answer: '3' }, end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: 'Word\'s text height of multiple-spaced lines over several faces moves the lines of the preview and the end pages' },
+    { at: { answer: '4,5' }, id: 'Word manda sobre o TS (WordCraft tables B6, conditional table-style borders)', why: 'the table-style gallery previews: the borders by region' },
+  ],
+  'f2-3-0|previews': { at: { answer: '4,5' }, id: 'Word manda sobre o TS (WordCraft tables B6, conditional table-style borders)', why: 'the table-style gallery previews: the borders by region' },
+  'blank|previews': { at: { answer: '4,5' }, id: 'Word manda sobre o TS (WordCraft tables B6, conditional table-style borders)', why: 'the table-style gallery previews: the borders by region' },
+};
+for (const [k, d] of Object.entries(WC_C)) DECLARED_C[k] = DECLARED_C[k] ? [DECLARED_C[k], d].flat() : d;
 /** declared for every document (the facet itself is the declared gap) */
 const GLOBAL_O = {};
 /** '2,6-9' → [2, 6, 7, 8, 9] */

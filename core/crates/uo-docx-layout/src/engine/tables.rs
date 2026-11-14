@@ -238,12 +238,14 @@ impl Engine {
         at: &LineRef,
         ps: Option<PageIx>,
     ) -> LResult<CellContent> {
-        let (prev_in, prev_mar) = (self.in_cell, self.cell_mar);
+        let (prev_in, prev_mar, prev_int) = (self.in_cell, self.cell_mar, self.cell_interior);
         self.in_cell = true;
         self.cell_mar = env.cell_mar.map(|(l, r, t)| (l, r, t.get()));
+        self.cell_interior = env.cell_interior;
         let r = self.layout_cell_in(cx, cell, key, x, width, env, at, ps);
         self.in_cell = prev_in;
         self.cell_mar = prev_mar;
+        self.cell_interior = prev_int;
         r
     }
 
@@ -466,7 +468,7 @@ impl Engine {
         self.sect_gap_after = None;
         let fr = self.col_frame()?;
         let compat = cx.ldoc.compat_mode(); // wave 7c (W, item 2)
-        let fp = table.tbl_pr.as_ref().and_then(|p| p.tblp_pr.as_deref());
+        let fp = crate::table::table_props(cx, table).and_then(|p| p.tblp_pr.as_deref());
         if let Some(fp) = fp
             && fp.tblp_y_spec.as_deref() != Some("inline")
         {
@@ -1235,9 +1237,12 @@ impl Engine {
         let even = js_eq(jm::rem(self.ps(ps)?.page.number, 2.0), 0.0);
         let xs = super::floats::side_of(fp.tblp_x_spec.as_deref(), even, true);
         let n = |v: Option<crate::model::JsNumber>| v.and_then(crate::model::JsNumber::as_f64).unwrap_or(0.0);
+        // WordCraft study (tables, B12; measured `oracle_wc/ftedge` ft-l-*): mode 15 aligns a table to the right by its grid
+        // plus the right border's width (15 tw without one) — the same right edge Word wraps the text at
+        let ref_w_r = if legacy || cx.opts.ts_float_table_wrap_edge { ref_w } else { ref_w + right_edge_w(t.border_right) };
         let ref_x = match xs {
             Some("center") => a_l + (a_r - a_l - ref_w) / 2.0,
-            Some("right" | "outside") => a_r - ref_w,
+            Some("right" | "outside") => a_r - ref_w_r,
             Some(s) if !s.is_empty() => a_l,
             _ => a_l + n(fp.tblp_x),
         };
@@ -1482,16 +1487,23 @@ impl Engine {
         }
         if wrap {
             let bl = t.border_left.or(0.0);
+            let lft = carry.fp.left_from_text.and_then(crate::model::JsNumber::as_f64).unwrap_or(0.0);
+            let rft = carry.fp.right_from_text.and_then(crate::model::JsNumber::as_f64).unwrap_or(0.0);
+            // box = the outer borders (old mode: the grid sits on the cell margin before the text)
+            let (bx, bw, dl, dr) = if cx.opts.ts_float_table_wrap_edge {
+                (ref_x + if legacy { t.x - bl / 2.0 } else { 0.0 }, t.width + if legacy { bl } else { 0.0 }, lft, rft)
+            } else {
+                float_table_wrap_box(ref_x + t.x, t.width, bl, t.border_right, legacy, lft, rft, ref_x)
+            };
             self.ps_mut(ps)?.floats.push(FloatBox {
-                // box = the outer borders (old mode: the grid sits on the cell margin before the text)
-                x: ref_x + if legacy { t.x - bl / 2.0 } else { 0.0 },
+                x: bx,
                 y: top,
-                w: t.width + if legacy { bl } else { 0.0 },
+                w: bw,
                 h: y - top,
                 wrap: "square".into(),
                 side: None,
-                dist_l: carry.fp.left_from_text.and_then(crate::model::JsNumber::as_f64).unwrap_or(0.0),
-                dist_r: carry.fp.right_from_text.and_then(crate::model::JsNumber::as_f64).unwrap_or(0.0),
+                dist_l: dl,
+                dist_r: dr,
                 dist_t: carry.fp.top_from_text.and_then(crate::model::JsNumber::as_f64).unwrap_or(0.0),
                 dist_b: carry.fp.bottom_from_text.and_then(crate::model::JsNumber::as_f64).unwrap_or(0.0),
                 body_only: false,
@@ -1655,7 +1667,7 @@ impl Engine {
                 continue;
             };
             let table = story_table(cx, self.story, block)?;
-            let Some(fp) = table.tbl_pr.as_ref().and_then(|p| p.tblp_pr.as_deref()) else { continue };
+            let Some(fp) = crate::table::table_props(cx, table).and_then(|p| p.tblp_pr.as_deref()) else { continue };
             self.placed_tables.insert(bi);
             let fr = self.col_frame()?;
             let cur = self.cur_ix()?;
@@ -1719,6 +1731,29 @@ impl Engine {
     }
 }
 
+/// WordCraft study (tables, B12; measured `oracle_wc/ftedge`): Word's wrap box of a floating table, `(x, w, dist_l,
+/// dist_r)`. Mode 15 (`legacy` false): from the reference x (`ref_x`, where the table is placed) to the grid's right
+/// end plus the right border's width, or 15 tw without a right border; mode ≤ 14: from the painted outer left edge
+/// (`grid_x` less half the left border) to the painted outer right edge (half the right border past the grid) — 15 tw
+/// past the grid on a side without a border. The fromText distances count at least 10 tw on each side.
+#[expect(clippy::too_many_arguments, reason = "the table's geometry and its two distances")]
+fn float_table_wrap_box(grid_x: f64, width: f64, bl: f64, br: f64, legacy: bool, lft: f64, rft: f64, ref_x: f64) -> (f64, f64, f64, f64) {
+    let (dl, dr) = (jm::max(lft, 10.0), jm::max(rft, 10.0));
+    if legacy {
+        let left = grid_x - if bl > 0.0 { bl / 2.0 } else { 15.0 };
+        let right = grid_x + width + if br > 0.0 { br / 2.0 } else { 15.0 };
+        (left, right - left, dl, dr)
+    } else {
+        (ref_x, width + right_edge_w(br), dl, dr)
+    }
+}
+
+/// WordCraft study (tables, B12): what a floating table's right border adds past its grid in mode 15 — its width, or
+/// 15 tw without one (measured `oracle_wc/ftedge`).
+fn right_edge_w(br: f64) -> f64 {
+    if br > 0.0 { br } else { 15.0 }
+}
+
 /// The floats of a static flow (`layoutStatic`'s cell floats, floating tables nested in a cell,
 /// the rows of nested tables): what the table and float branches add to the content (F7b).
 #[derive(Debug, Default)]
@@ -1780,7 +1815,7 @@ impl Engine {
             // a table of only hidden rows: gone (oracle hidden)
             return Ok(false);
         }
-        let fp = b.tbl_pr.as_ref().and_then(|p| p.tblp_pr.as_deref()).filter(|f| f.tblp_y_spec.as_deref() != Some("inline"));
+        let fp = crate::table::table_props(cx, b).and_then(|p| p.tblp_pr.as_deref()).filter(|f| f.tblp_y_spec.as_deref() != Some("inline"));
         let compat = cx.ldoc.compat_mode(); // wave 7c (W, item 2)
         let n = |v: Option<crate::model::JsNumber>| v.and_then(crate::model::JsNumber::as_f64).unwrap_or(0.0);
         if let Some(fp) = fp
@@ -1809,6 +1844,8 @@ impl Engine {
             let xs = fp.tblp_x_spec.as_deref().filter(|s| !s.is_empty());
             let ref_x = match xs {
                 Some("center") => a_l + (a_r - a_l - t0.width) / 2.0,
+                // WordCraft study (tables, B12): as in the body (mode 15), the right border's width counts
+                Some("right" | "outside") if !cx.opts.ts_float_table_wrap_edge => a_r - t0.width - right_edge_w(t0.border_right),
                 Some("right" | "outside") => a_r - t0.width,
                 Some(_) => a_l,
                 None => a_l + n(fp.tblp_x),
@@ -1827,15 +1864,30 @@ impl Engine {
                 }
                 ry += row.height;
             }
+            // WordCraft study (tables, B12): Word's edges (a table in a cell is always laid out as in mode 15)
+            let (bx, bw, dl, dr) = if cx.opts.ts_float_table_wrap_edge {
+                (t.x, t.width, n(fp.left_from_text), n(fp.right_from_text))
+            } else {
+                float_table_wrap_box(
+                    t.x,
+                    t.width,
+                    t.border_left.or(0.0),
+                    t.border_right,
+                    false,
+                    n(fp.left_from_text),
+                    n(fp.right_from_text),
+                    t.x,
+                )
+            };
             acc.sf.cell_floats.push(FloatBox {
-                x: t.x,
+                x: bx,
                 y: top,
-                w: t.width,
+                w: bw,
                 h,
                 wrap: "square".into(),
                 side: Some("bothSides".into()),
-                dist_l: n(fp.left_from_text),
-                dist_r: n(fp.right_from_text),
+                dist_l: dl,
+                dist_r: dr,
                 dist_t: n(fp.top_from_text),
                 dist_b: n(fp.bottom_from_text),
                 body_only: false,

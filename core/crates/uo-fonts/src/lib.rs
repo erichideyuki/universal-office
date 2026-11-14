@@ -57,7 +57,7 @@ pub use gsub::LigGroup;
 pub use hyphen::embedded_patterns;
 pub use hyphen::{
     HYPHENATION_PATTERN_IDS, HyphenSession, HyphenationPatterns, HyphenationRegistry, Hyphenator, hyphenation_pattern_id,
-    pattern_ids_to_load,
+    hyphenation_pattern_id_with, pattern_ids_to_load, pattern_ids_to_load_with,
 };
 pub use info::{FaceInfo, FaceNames, face_info, has_true_type_outlines, is_embeddable};
 pub use limits::{FontLimits, WorkBudget};

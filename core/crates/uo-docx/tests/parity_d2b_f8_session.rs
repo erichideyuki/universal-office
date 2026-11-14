@@ -402,7 +402,13 @@ fn d2b_f8_session_matches_the_element() {
         let env = CountEnv { inner: FixedEnv::new(LocalNow { local: t, utc: t }, seed), n: std::rc::Rc::clone(&rc) };
         let mut s = Session::open(
             bytes,
-            OpenOptions { sig_mode: SigMode::Ts, session_id: u32::try_from(di).unwrap() + 1, ..OpenOptions::default() },
+            OpenOptions {
+                sig_mode: SigMode::Ts,
+                session_id: u32::try_from(di).unwrap() + 1,
+                ts_formula_errors: true,
+                ts_numbering: true,
+                ..OpenOptions::default()
+            },
             Box::new(env),
         )
         .unwrap();

@@ -40,6 +40,22 @@ use uo_render::types::Item;
 use layout::RowCtx;
 pub use layout::layout_table;
 
+/// WordCraft study (tables, the TCond aside; `oracle_wc/tblorder`): the direct table properties the layout reads. Word
+/// reads `w:tblPr` in order: a `w:tblStyle` naming an EXISTING table style after other children discards them
+/// (`Table::word_tbl_pr`, measured); `ts_tbl_style_order` keeps the frozen TS's (every child read).
+#[must_use]
+pub fn table_props<'t>(cx: &Cx<'_, '_>, t: &'t crate::model::Table) -> Option<&'t Arc<crate::model::TblPr>> {
+    if !cx.opts.ts_tbl_style_order
+        && let Some(w) = t.word_tbl_pr.as_ref()
+        && w.tbl_style
+            .as_deref()
+            .is_some_and(|id| cx.ldoc.view.formatting().styles.styles.get(id).is_some_and(|s| s.r#type.as_ref() == "table"))
+    {
+        return Some(w);
+    }
+    t.tbl_pr.as_ref()
+}
+
 /// `CellContent` (table.ts:18): items and lines relative to the top of the cell.
 #[derive(Clone, Debug, Default)]
 pub struct CellContent {
@@ -47,6 +63,9 @@ pub struct CellContent {
     pub lines: Vec<PassLine>,
     pub height: f64,
     pub keep_next: bool,
+    /// WordCraft study (tables, B5): the keepNext of the content's FIRST paragraph in document order (a nested table
+    /// first: its first row's); Word keeps a row with the next by its first cell's value only
+    pub first_keep_next: bool,
     /// `paras`: line ref → where the row may split (`Map` order). One TS `Map` object shared by
     /// the parts of a split (`{ ...w }`), only read: an `Arc`
     pub paras: Option<Arc<IndexMap<LineRef, ParaSplitInfo>>>,
@@ -190,6 +209,8 @@ pub struct TableLayout {
     pub width: f64,
     pub rows: Vec<RowLayout>,
     pub border_left: OptF64,
+    /// WordCraft study (tables, B12): the widest border on the right edge of the rows (twips; 0 = none)
+    pub border_right: f64,
     pub eff_r: OptF64,
     /// `tblpPr` (the merged table properties' floating position)
     pub tblp_pr: Option<Box<TblpPr>>,
@@ -205,6 +226,9 @@ pub struct CellEnv {
     pub dark_background: bool,
     /// `cellMar`: `{ l, r, t? }`
     pub cell_mar: Option<(f64, f64, OptF64)>,
+    /// WordCraft study (tables, B15): the cell's interior (between the inner edges of its painted left and right
+    /// borders) as offsets from the text area's left and right edges
+    pub cell_interior: Option<(f64, f64)>,
 }
 
 /// What `layoutTable` reaches of the engine (the TS `layoutCell` callback and the `ctx` it shares

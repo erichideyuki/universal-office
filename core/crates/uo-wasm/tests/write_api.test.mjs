@@ -58,10 +58,18 @@ const concat = (chunks) => { const out = new Uint8Array(chunks.reduce((n, c) => 
 
 // printed by `cargo test -p uo-wasm --features write,count --test write_native -- --nocapture`
 const PINNED = {
-  f8__7__0: 'pages=3 messages=ea592122 sections=8cea474e annotations=4ceffb56 navigation=77ac1ff2 links=fed3646f pdf=c28b3c53 raw=28d8e9a7',
-  f8__7__3: 'pages=4 messages=2d10de80 sections=0f5959f7 annotations=9be17165 navigation=ccaab767 links=dd8e9a5b pdf=a2cf1bd6 raw=8484558e',
+  // WordCraft study (fields, C1b and B22; record uo-docx-layout.md "WordCraft study — fields"): page 2 only — multiple spacing
+  // over the largest OWN text height, and `PAGE \* upperLetter` in header2 is Word's unknown-switch error text (`upperLetter`
+  // is no field keyword); bit 21 gives the old pages back (was ea592122/8cea474e/…/c28b3c53/28d8e9a7)
+  f8__7__0: 'pages=3 messages=05fc37d7 sections=58a6a885 annotations=4ceffb56 navigation=77ac1ff2 links=fed3646f pdf=d8c35a91 raw=a3d68b20',
+  // WordCraft study (page, B10/B11): its line-relative box on page 2 sits on its anchor line, measured after the earlier
+  // float Word lays the page out again around (uo-docx-layout word_wc_page.rs; was 2d10de80/0f5959f7/…/8484558e)
+  f8__7__3: 'pages=4 messages=0ef108a7 sections=f99ce431 annotations=9be17165 navigation=a6fffdf2 links=efdc3cac pdf=96122dcc raw=0b45c8da',
   // wave 7c (W, item 4): its REF to the unterminated bm1 is Word's bold error text now (was f48e4c99/…/7b595536)
-  f8__7__10: 'pages=5 messages=06bed89e sections=321c2b87 annotations=6ebaa664 navigation=14697a8d links=2c7c1968 pdf=7b35354f raw=1900cff5',
+  // WordCraft study (fields, C1b and B22): pages 2–5 — C1b on page 2, and the header's `PAGE \* upperLetter` (Word's
+  // unknown-switch error) on every page from 2; bit 21 gives the old pages back (was 06bed89e/321c2b87/6ebaa664/14697a8d/
+  // 2c7c1968/7b35354f/1900cff5)
+  f8__7__10: 'pages=5 messages=335e3ea3 sections=ba9074e5 annotations=d5ee2e6d navigation=352b6253 links=d974a1ae pdf=5e0a6e8b raw=87f42761',
 };
 
 function session(key) {

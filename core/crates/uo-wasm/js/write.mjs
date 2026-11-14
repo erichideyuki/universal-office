@@ -173,9 +173,11 @@ export function bindWrite(w, host) {
       w.uo_write_document_free(this.#ptr);
       this.#ptr = 0;
     }
-    /** the pattern ids to fetch and `env.registerHyphenation` before laying out */
-    hyphenationPatterns(env, appLanguages = ['pt-BR', 'en', 'es']) {
-      return lines(take(w.uo_write_hyphenation_patterns(this.#live(), env.ptr, ...text(appLanguages.join('\n'))), 'hyphenationPatterns'));
+    /** the pattern ids to fetch and `env.registerHyphenation` before laying out; `o.tsHyphenation`: the layout will run under
+     *  the frozen TS's English data (bit 16, parity tests only), else English is Word's `en-us-word` (WordCraft study, D1) */
+    hyphenationPatterns(env, appLanguages = ['pt-BR', 'en', 'es'], o = {}) {
+      const flags = o.tsHyphenation ? 1 << 16 : 0;
+      return lines(take(w.uo_write_hyphenation_patterns(this.#live(), env.ptr, ...text(appLanguages.join('\n')), flags), 'hyphenationPatterns'));
     }
     /** `layoutDocument(full, viewer provider, options)` */
     layout(env, o = {}) {
@@ -195,6 +197,10 @@ export function bindWrite(w, host) {
       if (o.tsRefBookmarks) flags |= 1 << 15;
       if (o.tsHyphenation) flags |= 1 << 16;
       if (o.tsKeepLines) flags |= 1 << 17;
+      if (o.tsWcLines) flags |= 1 << 18; // WordCraft study (lines): the lines area's TS rules, parity tests only
+      if (o.tsWcPage) flags |= 1 << 19; // WordCraft study (page): the page area's TS rules, parity tests only
+      if (o.tsWcTables) flags |= 1 << 20; // WordCraft study (tables): the tables area's TS rules, parity tests only
+      if (o.tsWcFields) flags |= 1 << 21; // WordCraft study (fields): the fields area's TS rules, parity tests only
       // a nested layout() from cancelCheck would re-enter the module mid-call and reset host.poll
       if (host.busy) throw new Error('layout() cannot be called from cancelCheck or while another layout runs');
       host.busy = true;

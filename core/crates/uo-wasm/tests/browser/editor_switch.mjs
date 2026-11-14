@@ -390,7 +390,8 @@ const DECLARED = {
   'f7d__7__11': { from: 11, facets: ['uw-* events', 'state para'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], id: 'ED-600', why: 'Delete after typing with a shape selected: the TS floatSel went stale (a TS defect), the session deletes the shape' },
   // frontier S (wave 5): f8__7__5 step 11 enters the text box in both engines; saving with the caret in it, the TS writes a
   // truncated document.xml (a TS defect, ED-108)
-  'f8__7__5': { end: ['saved .docx part bytes'], id: 'ED-108', why: 'saving with the caret inside the text box, the TS writes a truncated document.xml (a TS defect)' },
+  // (WordCraft tables fix round: this entry — end: ['saved .docx part bytes'], id 'ED-108' — is part of f8__7__5's row-keep
+  // entry below; one key per document)
   // wave 7c (W): Word's layout rules over the frozen TS, each document attributed to ONE rule natively (uo-docx-layout
   // word_w7c.rs attribute_documents_to_the_word_rules) and measured in Word 16 (record uo-bindings.md "Wave 7c — W").
   // Item 4: a REF to an unterminated bookmark is Word's bold error text, not the start paragraph's text — f7c__7__10's REF
@@ -409,17 +410,103 @@ const DECLARED = {
   // and 15 for f7a__7__12; measured): the scripted clicks land on other text
   'f7c__7__11': { from: 0, facets: '*', end: '*', pagesAfterLoad: true, id: 'Word manda sobre o TS (item 6, keepLines)', why: 'Word moves the keepLines paragraph to the next page: 4 pages (Word 4), the TS 3' },
   'f7a__7__12': { from: 1, facets: '*', end: '*', id: 'Word manda sobre o TS (item 6, keepLines)', why: 'Word moves the keepLines paragraph to the next page' },
+  // WordCraft study — tables (record uo-docx-layout.md "WordCraft study — tables", "Harness documents"): Word's table rules
+  // over the frozen TS, each document attributed natively to ONE switch (word_wc_tables.rs
+  // attribute_documents_to_the_tables_rules, with the editor's read UO_WC_ATTR_SOURCES=1 too) and checked against Word's PDF
+  // of the document. The scripted clicks land on any paragraph of the document (clickTarget), so every step and end facet
+  // may differ from the first click on; a facet the run finds equal is listed as "declared but equal now". `pagesAfterLoad`:
+  // the rule changes the page count — the rule is Word's (for the row keep: Word's PDF of copies without the keepNext the
+  // rule ignores equals Word's PDF of the document; for the gap word: Word's lines where the switch acts are the switch's),
+  // but Word's own page count is not the engine's (15/16/33; these documents differ from Word elsewhere too)
+  ...Object.fromEntries(['f7b__7__11', 'f7b__7__6', 'f8__7__1'].map((d) => [d, { from: 0, facets: '*', end: '*', id: 'Word manda sobre o TS (WordCraft tables B5, row keep)', why: 'Word keeps a row with the next by the first paragraph of its first cell only' }])),
+  'f7b__7__5': { from: 0, facets: '*', end: '*', pagesAfterLoad: true, id: 'Word manda sobre o TS (WordCraft tables B5, row keep)', why: 'Word keeps a row with the next by the first paragraph of its first cell only: 14 pages (the TS 15, Word 15)' },
+  // (also ED-108, above: the TS's truncated document.xml when saving inside the text box — end saved part bytes)
+  'f8__7__5': { from: 0, facets: '*', end: '*', pagesAfterLoad: true, id: 'Word manda sobre o TS (WordCraft tables B5, row keep; ED-108)', why: 'Word keeps a row with the next by the first paragraph of its first cell only: 15 pages (the TS 16, Word 16); saving in the text box, the TS writes a truncated document.xml (ED-108)' },
+  'f7b__7__2': { from: 0, facets: '*', end: '*', id: 'Word manda sobre o TS (WordCraft tables B15 A, cell clamp)', why: 'Word clamps a wrapping object into its cell\'s interior' },
+  ...Object.fromEntries(['f7b__7__3', 'f8__7__3'].map((d) => [d, { from: 0, facets: '*', end: '*', id: 'Word manda sobre o TS (WordCraft tables B12, floating-table edges)', why: 'Word\'s wrap edges of a floating table: the right border and max(fromText, 10 tw)' }])),
+  ...Object.fromEntries(['f7b__7__4', 'f7b__7__7', 'f7b__7__9', 'f8__7__9'].map((d) => [d, { from: 0, facets: '*', end: '*', id: 'Word manda sobre o TS (WordCraft tables B15 B, gap word)', why: 'mode 15: a word that does not fit the strip beside a float goes below it in a cell too (the TS splits it)' }])),
+  'f8__7__7': { from: 0, facets: '*', end: '*', pagesAfterLoad: true, id: 'Word manda sobre o TS (WordCraft tables B15 B, gap word)', why: 'mode 15: a word that does not fit the strip beside a float goes below it in a cell too: 34 pages (the TS 33, Word 33)' },
 };
+// WordCraft study — fields and page (record uo-docx-layout.md "WordCraft study — harness declarations"): Word's rules over the
+// frozen TS, attributed by this harness's own runs with the session laid out under ONE area at Word's rules (local wasm
+// builds with the other areas' ts_* switches on, not committed): the fields area alone gives every entry below (with the
+// page rules' additions taken out: f7a__7__11, f7a__7__13, f7a__7__6, f7c__7__6, f8__7__6 differ more with page alone too),
+// the page area alone the page rules named; the tables and lines areas alone none besides the tables entries above; all four
+// at the TS's rules leave only f2-3-3 (D1). Inside an area the rules named are uo-docx-layout's native attribution of the
+// document (`attribute_documents_to_the_<area>_rules`, the editor's read too). C1b (a multiple-spaced line over runs of
+// several faces: Word's text height) moves almost every line of these fuzz documents by a few hundredths of a point, so the
+// caret of the first click already differs; B22 (\* format switches: Word's case/format order, an unknown switch = Word's
+// error text), B23 (SECTIONPAGES over shared pages), B24 (REF \r) and D1 (Word's English hyphenation data) change field
+// results and line breaks; page A15 (no space before after an opening page break — the scripts' Ctrl+Enter too), A16
+// (section parity: f7c__7__6 and f8__7__6 have 7 pages, Word's own count, the TS 6) and B10 (a float on its anchor line).
+// f7a__7__9: 11 pages after load (the TS 12; Word's count not measured) — C1b alone (a session build with only
+// ts_multiple_text_height at the TS's rule gives 12 again). A key that already holds a declaration gets an array (both kept).
+const WC_FIELDS_WHY = 'Word\'s text height of a multiple-spaced line over several faces (C1b) and its field results (B22–B24): the lines move';
+const WC_DECLARED = {
+  'f2-3-3': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields D1, English hyphenation data)', why: 'Word\'s English hyphenation data breaks an English line elsewhere' },
+  'f7a__7__0': { from: 11, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7a__7__1': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7a__7__10': { from: 2, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B23)', why: WC_FIELDS_WHY },
+  'f7a__7__11': { from: 0, facets: ['selection', 'caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b; page A15)', why: WC_FIELDS_WHY },
+  'f7a__7__12': { from: 0, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7a__7__13': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b; page A15)', why: WC_FIELDS_WHY },
+  'f7a__7__15': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22; page A15)', why: WC_FIELDS_WHY },
+  'f7a__7__2': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22; page A16)', why: WC_FIELDS_WHY },
+  'f7a__7__3': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7a__7__4': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7a__7__5': { from: 10, facets: ['caret rect'], end: ['thumbnail pixels'], id: 'Word manda sobre o TS (WordCraft fields C1b; page A16)', why: WC_FIELDS_WHY },
+  'f7a__7__6': { from: 7, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22; page A15)', why: WC_FIELDS_WHY },
+  'f7a__7__7': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7a__7__8': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7a__7__9': { from: 0, facets: ['selection', 'caret rect', 'state run', 'state para'], end: ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part bytes'], pagesAfterLoad: true, id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: 'C1b: 11 pages after load (the TS 12), so the first click lands in another paragraph and the edits go there' },
+  'f7b__7__0': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7b__7__1': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7b__7__10': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b; page B10)', why: WC_FIELDS_WHY },
+  'f7b__7__8': { from: 3, facets: ['caret rect'], end: ['thumbnail pixels'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7c__7__0': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7c__7__1': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7c__7__12': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7c__7__13': { from: 0, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7c__7__14': { from: 0, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7c__7__15': { from: 0, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7c__7__2': { end: ['screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7c__7__3': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b, B22 and B24)', why: WC_FIELDS_WHY },
+  'f7c__7__4': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields B22)', why: WC_FIELDS_WHY },
+  'f7c__7__5': { from: 0, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b, B22 and B24)', why: WC_FIELDS_WHY },
+  'f7c__7__6': { from: 0, facets: ['caret rect'], end: ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)'], pagesAfterLoad: true, id: 'Word manda sobre o TS (WordCraft fields C1b and B22; page A16)', why: 'A16: a blank page for the section\'s parity, 7 pages (Word 7, the TS 6); C1b/B22 move the lines' },
+  'f7c__7__7': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7c__7__8': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f7c__7__9': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields B22)', why: WC_FIELDS_WHY },
+  'f7d__7__0': { from: 3, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7d__7__11': { from: 0, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7d__7__2': { from: 3, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7d__7__3': { from: 0, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7d__7__4': { from: 1, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7d__7__5': { from: 5, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7d__7__7': { from: 0, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f7d__7__8': { from: 5, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f8__7__0': { end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f8__7__11': { from: 4, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'f8__7__2': { from: 0, facets: ['caret rect'], end: ['screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f8__7__4': { from: 4, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'f8__7__6': { from: 0, facets: ['caret rect'], end: ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)'], pagesAfterLoad: true, id: 'Word manda sobre o TS (WordCraft fields C1b and B22; page A16)', why: 'A16: a blank page for the section\'s parity, 7 pages (Word 7, the TS 6); C1b/B22 move the lines' },
+  'f8__7__8': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: WC_FIELDS_WHY },
+  'gen__1__4': { from: 1, facets: ['caret rect'], end: [], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+  'gen__1__7': { from: 2, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels (TS overlays off)'], id: 'Word manda sobre o TS (WordCraft fields C1b)', why: WC_FIELDS_WHY },
+};
+for (const [k, d] of Object.entries(WC_DECLARED)) DECLARED[k] = DECLARED[k] ? [DECLARED[k], d].flat() : d;
 const STEP_FACETS = ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'dirty', 'clipboard text'];
 const END_FACETS = ['page count/sizes', 'thumbnail pixels', 'screen pixels (TS overlays off)', 'saved .docx part names', 'saved .docx part bytes'];
 const INFORMATIVE = new Set(['screen pixels (TS overlays on)']);
 const declaredFor = (file, facet, step) => {
   if (SEED !== 1 || STEPS !== 12) return null;
-  const d = DECLARED[file];
-  if (!d) return null;
-  if (facet === 'pages after load') return d.pagesAfterLoad && /^Word manda sobre o TS/.test(d.id) ? d : null;
-  if (step === undefined) return END_FACETS.includes(facet) && (d.end === '*' || (d.end ?? []).includes(facet)) ? d : null;
-  return d.from !== undefined && step >= d.from && (d.facets === '*' || (d.facets ?? []).includes(facet)) ? d : null;
+  // (WordCraft study: a key may hold several declarations, an array; the first that declares the facet answers)
+  for (const d of [DECLARED[file] ?? []].flat()) {
+    if (facet === 'pages after load') { if (d.pagesAfterLoad && /^Word manda sobre o TS/.test(d.id)) return d; continue; }
+    if (step === undefined) { if (END_FACETS.includes(facet) && (d.end === '*' || (d.end ?? []).includes(facet))) return d; continue; }
+    if (d.from !== undefined && step >= d.from && (d.facets === '*' || (d.facets ?? []).includes(facet))) return d;
+  }
+  return null;
 };
 
 if (MODE === 'parity' || MODE === 'all') {
@@ -548,7 +635,7 @@ if (MODE === 'parity' || MODE === 'all') {
     const tag = INFORMATIVE.has(f) ? ' (informative, ED-8)' : t.declared ? ` (declared ${t.declared}, undeclared ${t.diff - t.declared})` : '';
     console.log(`  ${f.padEnd(32)} equal ${t.same}, different ${t.diff}${tag}${t.first.length ? `\n      e.g. ${t.first.join('\n      e.g. ')}` : ''}`);
   }
-  console.log(`  declared differences used: ${[...used].map((f) => `${f} (${DECLARED[f].id})`).join(', ') || 'none'}`);
+  console.log(`  declared differences used: ${[...used].map((f) => `${f} (${[DECLARED[f]].flat().map((d) => d.id).join(' + ')})`).join(', ') || 'none'}`);
   const ran = new Set(names.map((x) => env.label(x).replace(/^.*\//, '').replace(/\.docx$/, '')));
   const stale = Object.keys(DECLARED).filter((f) => ran.has(f) && !used.has(f));
   if (stale.length && !other) console.log(`  declared but equal now (remove from DECLARED): ${stale.join(', ')}`);

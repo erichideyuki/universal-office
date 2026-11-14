@@ -236,6 +236,12 @@ pub fn hostile_formula(rng: &mut Rng, t: &uo_docx::model::table::Table) -> Optio
     let instr = uo_docx::session::ops::tables::formula::formula_instr(&f, None);
     formula_result_text(
         &instr,
-        &FormulaEnv { table: t, r: i64::try_from(rng.below(5)).unwrap(), c: i64::try_from(rng.below(5)).unwrap(), bookmarks: None },
+        &FormulaEnv {
+            table: t,
+            r: i64::try_from(rng.below(5)).unwrap(),
+            c: i64::try_from(rng.below(5)).unwrap(),
+            bookmarks: None,
+            word: false,
+        },
     )
 }

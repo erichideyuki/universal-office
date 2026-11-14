@@ -41,6 +41,21 @@ js_object! {
         opt tc_pr: Box<TcPr> = "tcPr",
         opt tbl_style_pr: JsRecord<TblStylePart> = "tblStylePr",
     }
+    hidden {
+        /// WordCraft study (fields, B21): `w:aliases` (a STYLEREF may name the style by any of them, measured); a fact
+        /// of the reader outside the TS shape, the JSON and the equality ([`StyleAliases`])
+        pub aliases: StyleAliases
+    }
+}
+
+/// The `w:aliases` of a style (see [`StyleDef::aliases`]): never makes two styles different.
+#[derive(Debug, Clone, Default)]
+pub struct StyleAliases(pub Option<Box<str>>);
+
+impl PartialEq for StyleAliases {
+    fn eq(&self, _: &StyleAliases) -> bool {
+        true
+    }
 }
 
 js_object! {

@@ -93,6 +93,35 @@ pub struct LateTable {
     pub flow_y: f64,
 }
 
+/// WordCraft study (page, B10/B11; not TS state): the position Word keeps for a float laid out again at its page (or
+/// column) start — the anchor column, the paragraph top there and the anchor line's top, as the pass that found it
+/// placed them (the first pin of a run wins: Word keeps the position from before the re-layout).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FloatPin {
+    pub col_x: f64,
+    pub col_w: f64,
+    pub para_top: f64,
+    pub para_ref: f64,
+    /// the anchor line's top (a line-relative float; B10)
+    pub line_top: Option<f64>,
+    /// B11: a paragraph/line-relative wrapping float that overlapped text laid before it on its paragraph's page (the
+    /// page is laid out again around it; its anchor paragraph must still start on that page)
+    pub reflow: bool,
+    /// B10: measured in a pass that laid the earlier pages out without the float (a first detection is provisional:
+    /// the float is then placed after its paragraph only, and the next pass measures the anchor line again). B11 pins
+    /// are settled.
+    pub settled: bool,
+}
+
+/// `lateFloats` entry: a float placed at the start of a page (column `col`) in the next pass. `pin: None` = the TS's
+/// absolute late float (placed from the page's first column and body top).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LateFloat {
+    pub run: RunKey,
+    pub col: u32,
+    pub pin: Option<FloatPin>,
+}
+
 /// The constructor parameters of `Engine` and the guesses `layoutDocument` sets on it: the input
 /// of one pass, from the previous one (engine.ts:197–251, 385–396).
 #[derive(Clone, Debug, Default)]
@@ -101,8 +130,17 @@ pub struct PassInput {
     pub total_pages_guess: f64,
     /// `marksGuess`: the displayed page of each bookmark (PAGEREF)
     pub marks_guess: IndexMap<Box<str>, Box<[u16]>>,
-    /// `lateFloats`: page index → floats placed at the page start
-    pub late_floats: IndexMap<u32, Vec<RunKey>>,
+    /// WordCraft study (fields, B22): the page NUMBER of each bookmark (PAGEREF with a `\*` format)
+    pub marks_num_guess: IndexMap<Box<str>, f64>,
+    /// WordCraft study (fields, B21): the first and last body block of each page's lines (STYLEREF in a header/footer)
+    pub page_ranges_guess: Vec<Option<(usize, usize)>>,
+    /// `lateFloats`: page index → floats placed at the page start (WordCraft study, page: with their column and pin)
+    pub late_floats: IndexMap<u32, Vec<LateFloat>>,
+    /// WordCraft study (page, B11): body blocks whose pinned float pushed them off its page — they start the next page
+    /// (column) and place their floats as usual
+    pub anchor_pushed: IndexSet<u32>,
+    /// WordCraft study (page, B11): the pinned floats dropped for that reason (never pinned again)
+    pub late_dropped: IndexSet<RunKey>,
     /// `lateTables`: block → page and reference y
     pub late_tables: IndexMap<u32, LateTable>,
     /// `balance`: balance key → spec
@@ -125,8 +163,14 @@ pub struct PassFindings {
     pub used_page_ref: bool,
     pub used_chapter: bool,
     pub used_note_ref: bool,
+    /// WordCraft study (fields, B21): a header/footer STYLEREF read the body blocks per page
+    pub used_styleref_hf: bool,
     /// `lateFound`
-    pub late_found: IndexMap<u32, Vec<RunKey>>,
+    pub late_found: IndexMap<u32, Vec<LateFloat>>,
+    /// WordCraft study (page, B11): see [`PassInput::anchor_pushed`]
+    pub anchor_pushed: IndexSet<u32>,
+    /// WordCraft study (page, B11): see [`PassInput::late_dropped`]
+    pub late_dropped: IndexSet<RunKey>,
     /// `lateTablesFound`
     pub late_tables_found: IndexMap<u32, LateTable>,
     /// `balanceFound`
@@ -248,6 +292,9 @@ pub struct Engine {
     pub static_dx: f64,
     /// carried: `cellMar`
     pub cell_mar: Option<(f64, f64, Option<f64>)>,
+    /// carried (WordCraft study, tables, B15): the cell's interior (between its painted borders' inner edges) as
+    /// offsets from the text area's left and right edges
+    pub cell_interior: Option<(f64, f64)>,
     /// carried: `colMaxY`
     pub col_max_y: f64,
     /// carried: `sectGapAfter`
@@ -302,6 +349,19 @@ pub struct Engine {
     /// multi-column section in mode 15 — Word ends each of its columns with a PAGE break (oracle keeptall, the probes
     /// `cols` of the record); reset when the paragraph ends, so never part of a block checkpoint
     pub kl_col_to_page: bool,
+    /// carried within one header/footer or footnote layout (WordCraft study, page; not TS state): the static flow
+    /// being laid out sits on a page where Word mirrors mirrorIndents paragraphs; reset after it, so never part of a
+    /// block checkpoint
+    pub mirror_static: bool,
+    /// carried within one float placement (WordCraft study, page, B10; not TS state): the anchor line's top a
+    /// line-relative float measures from; reset after the placement
+    pub float_line_top: Option<f64>,
+    /// carried within one early placement (WordCraft study, page, B11; not TS state): the body paragraph's wrapping
+    /// floats are being placed before its lines; reset after them
+    pub body_early: bool,
+    /// carried within one field value (WordCraft study, fields, B22; not TS state): the language of the field being
+    /// evaluated (its `\*` words); set and reset by `PrepFlow::field_in`, so never part of a block checkpoint
+    pub field_lang: Option<Box<str>>,
     /// cache (F7c): the number of section geometries (`this.geoms.length`; the endnote flows'
     /// copies `gEn` come after them)
     pub sect_geoms: u32,
@@ -498,11 +558,51 @@ impl Engine {
         out
     }
 
+    /// WordCraft study (fields, B21): the first and last body block of each page's lines (a page without body lines:
+    /// `None`), what a header/footer STYLEREF searches per page.
+    #[must_use]
+    pub fn page_block_ranges(&self) -> Vec<Option<(usize, usize)>> {
+        self.pages
+            .iter()
+            .map(|ps| {
+                let mut r: Option<(usize, usize)> = None;
+                for l in &ps.page.lines {
+                    if l.at.story != crate::output::LineStory::Body {
+                        continue;
+                    }
+                    let Some(&b) = l.at.path.0.first() else { continue };
+                    let b = b as usize;
+                    r = Some(r.map_or((b, b), |(a, z)| (a.min(b), z.max(b))));
+                }
+                r
+            })
+            .collect()
+    }
+
     /// `sectionPageCounts()` (engine.ts:1083).
     #[must_use]
-    pub fn section_page_counts(&self) -> IndexMap<u32, f64> {
+    pub fn section_page_counts(&self, ts_shared: bool) -> IndexMap<u32, f64> {
         let mut out: IndexMap<u32, f64> = IndexMap::new();
         for p in &self.pages {
+            // (WordCraft study, page, A16: Word's parity page counts in no section)
+            if p.blank {
+                continue;
+            }
+            // WordCraft study (fields, B23): a page shared through a continuous break counts for every section with
+            // content on it (Word, measured); the frozen TS for the page's last section (`ts_section_pages_shared`)
+            if !ts_shared {
+                let mut seen: Vec<u32> = Vec::with_capacity(p.sections.len());
+                for gi in &p.sections {
+                    let idx = self.geoms.get(*gi as usize).map_or(0, |g| g.index);
+                    if !seen.contains(&idx) {
+                        seen.push(idx);
+                        *out.entry(idx).or_insert(0.0) += 1.0;
+                    }
+                }
+                if !seen.is_empty() {
+                    continue;
+                }
+            }
             let idx = self.geoms.get(p.geom as usize).map_or(0, |g| g.index);
             *out.entry(idx).or_insert(0.0) += 1.0;
         }
@@ -532,14 +632,32 @@ impl Engine {
         // this.geoms)
         self.geoms = Vec::new();
         for (i, s) in sections.iter().enumerate() {
-            let g = self.geom_of(cx, Some(s), i)?;
+            let g = self.geom_of(cx, Some(s), i, false)?;
             self.geoms.push(g);
         }
         if self.geoms.is_empty() {
-            let g = self.geom_of(cx, None, 0)?;
+            let g = self.geom_of(cx, None, 0, false)?;
             self.geoms.push(g);
         }
         self.sect_geoms = u32::try_from(self.geoms.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
+        // WordCraft study (page): the even-page geometry of each section whose margins Word changes there (mirror
+        // margins, book folds, two pages per sheet), after the section geometries
+        for i in 0..self.sect_geoms as usize {
+            let ev = self.geom_of(cx, sections.get(i), i, true)?;
+            let Some(base) = self.geoms.get(i) else { continue };
+            let same = js_eq(ev.mar_l, base.mar_l)
+                && js_eq(ev.mar_r, base.mar_r)
+                && js_eq(ev.mar_t, base.mar_t)
+                && js_eq(ev.mar_b, base.mar_b)
+                && ev.hf_mar == base.hf_mar;
+            if !same {
+                let ix = u32::try_from(self.geoms.len()).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
+                self.geoms.push(ev);
+                if let Some(b) = self.geoms.get_mut(i) {
+                    b.even = Some(ix);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1157,10 +1275,10 @@ impl<'r, 'a> Call<'r, 'a> {
             provider,
             hyph,
             fonts: FaceTable::new(),
-            resolver: FaceResolverCache::new(),
+            resolver: FaceResolverCache::new().with_rules(crate::fonts::LookupRules::of(opts)), // WordCraft study (fields)
             res: Resources::new(),
             images: objects::ImageTable::new(),
-            budget: Budget::new(&opts.limits, &work_input(ldoc)).with_cancel(opts.cancel.clone(), opts.cancel_poll),
+            budget: Budget::new(&opts.limits, &work_input_for(ldoc, opts)).with_cancel(opts.cancel.clone(), opts.cancel_poll),
             line_seq: 0,
             fields: opts.collect_fields.as_ref().map(|_| IndexMap::new()),
             rec: None,
@@ -1200,7 +1318,7 @@ impl<'r, 'a> Call<'r, 'a> {
     pub(crate) fn new_engine(&self, input: &PassInput) -> Engine {
         let mut ctx = DocContext::new(
             word::StyleResolver::new(),
-            word::numbering_state(&self.opts.lang, &self.opts.limits),
+            word::numbering_state_for(self.opts),
             word::revision_display(self.opts.revisions.as_ref()),
         );
         ctx.note_mark_override.clone_from(&input.note_marks);
@@ -1257,11 +1375,29 @@ impl<'r, 'a> Call<'r, 'a> {
     pub(crate) fn next_input(&mut self, eng: &Engine, input: &PassInput) -> (bool, PassInput) {
         let (ldoc, opts) = (self.ldoc, self.opts);
         let new_chaps = eng.found.used_chapter.then(|| eng.chapter_index());
-        let new_sect_pages = eng.found.used_section_pages.then(|| eng.section_page_counts());
+        let new_sect_pages = eng.found.used_section_pages.then(|| eng.section_page_counts(opts.ts_section_pages_shared));
         let f = &eng.found;
-        let new_marks: Option<IndexMap<Box<str>, Box<[u16]>>> = if f.used_page_ref { Some(eng.bookmark_pages(ldoc, opts)) } else { None };
+        let (new_marks, new_mark_nums) = if f.used_page_ref {
+            let (m, n) = eng.bookmark_pages_with_numbers(ldoc, opts);
+            (Some(m), Some(n))
+        } else {
+            (None, None)
+        };
         let new_note_refs = f.used_note_ref.then(|| eng.ctx.all_note_marks());
-        let new_late = if f.late_found.is_empty() { None } else { merge_late(&input.late_floats, &f.late_found) };
+        let new_ranges = f.used_styleref_hf.then(|| eng.page_block_ranges());
+        let mut new_late = if f.late_found.is_empty() { None } else { merge_late(&input.late_floats, &f.late_found, &input.late_dropped) };
+        // WordCraft study (page, B11): a pinned float whose anchor paragraph left its page is dropped from the late set,
+        // and the paragraph starts the next page in the next pass
+        let new_dropped: Vec<RunKey> = f.late_dropped.iter().filter(|r| !input.late_dropped.contains(*r)).copied().collect();
+        let new_pushed: Vec<u32> = f.anchor_pushed.iter().filter(|b| !input.anchor_pushed.contains(*b)).copied().collect();
+        if !new_dropped.is_empty() {
+            let mut l = new_late.take().unwrap_or_else(|| input.late_floats.clone());
+            for v in l.values_mut() {
+                v.retain(|x| !new_dropped.contains(&x.run));
+            }
+            l.retain(|_, v| !v.is_empty());
+            new_late = Some(l);
+        }
         let new_late_tables = (!f.late_tables_found.is_empty()).then(|| {
             let mut m = input.late_tables.clone();
             for (k, v) in &f.late_tables_found {
@@ -1277,8 +1413,11 @@ impl<'r, 'a> Call<'r, 'a> {
         let stable = (!f.used_num_pages || js_eq(total, input.total_pages_guess))
             && new_sect_pages.as_ref().is_none_or(|n| same_counts(n, &input.section_pages_guess))
             && new_marks.as_ref().is_none_or(|n| same_map(n, &input.marks_guess))
+            && new_mark_nums.as_ref().is_none_or(|n| same_counts(n, &input.marks_num_guess))
             && new_note_refs.as_ref().is_none_or(|n| same_map(n, &input.note_ref_guess))
+            && new_ranges.as_ref().is_none_or(|n| *n == input.page_ranges_guess)
             && new_late.is_none()
+            && new_pushed.is_empty()
             && new_late_tables.is_none()
             && cx_fix.is_none()
             && new_chaps.as_ref().is_none_or(|n| same_chapters(n, &input.chapters_guess));
@@ -1296,12 +1435,20 @@ impl<'r, 'a> Call<'r, 'a> {
         if let Some(m) = new_marks {
             next.marks_guess = m;
         }
+        if let Some(m) = new_mark_nums {
+            next.marks_num_guess = m;
+        }
         if let Some(n) = new_note_refs {
             next.note_ref_guess = n;
+        }
+        if let Some(r) = new_ranges {
+            next.page_ranges_guess = r;
         }
         if let Some(l) = new_late {
             next.late_floats = l;
         }
+        next.late_dropped.extend(new_dropped);
+        next.anchor_pushed.extend(new_pushed);
         if let Some(l) = new_late_tables {
             next.late_tables = l;
         }
@@ -1325,23 +1472,65 @@ impl<'r, 'a> Call<'r, 'a> {
     }
 }
 
-/// `mergeLate(a, b)` (engine.ts:304): `None` when nothing new (the TS returns `a` itself).
-fn merge_late(a: &IndexMap<u32, Vec<RunKey>>, b: &IndexMap<u32, Vec<RunKey>>) -> Option<IndexMap<u32, Vec<RunKey>>> {
-    let mut seen: IndexSet<RunKey> = a.values().flatten().copied().collect();
-    let mut out: Option<IndexMap<u32, Vec<RunKey>>> = None;
+/// `mergeLate(a, b)` (engine.ts:304): `None` when nothing new (the TS returns `a` itself). A run already late keeps its
+/// first entry (WordCraft study, page: its first pin — Word keeps the position from before the re-layout); a dropped
+/// run (B11) is never added again.
+fn merge_late(
+    a: &IndexMap<u32, Vec<LateFloat>>,
+    b: &IndexMap<u32, Vec<LateFloat>>,
+    dropped: &IndexSet<RunKey>,
+) -> Option<IndexMap<u32, Vec<LateFloat>>> {
+    let mut seen: IndexSet<RunKey> = a.values().flatten().map(|l| l.run).collect();
+    let mut out: Option<IndexMap<u32, Vec<LateFloat>>> = None;
+    let b10 = |l: &LateFloat| l.pin.is_some_and(|p| !p.reflow);
     for (pg, runs) in b {
         for r in runs {
-            if seen.contains(r) {
+            if dropped.contains(&r.run) {
                 continue;
             }
-            seen.insert(*r);
+            // (WordCraft study, page, B10: a provisional pin gives way to the settled one of the next pass; settled pins,
+            // B11 pins and the TS's entries: the first one)
+            if seen.contains(&r.run) {
+                let replace = b10(r)
+                    && r.pin.is_some_and(|p| p.settled)
+                    && a.values().flatten().any(|l| l.run == r.run && b10(l) && l.pin.is_some_and(|p| !p.settled));
+                if replace {
+                    let o = out.get_or_insert_with(|| a.clone());
+                    for v in o.values_mut() {
+                        v.retain(|l| l.run != r.run);
+                    }
+                    o.retain(|_, v| !v.is_empty());
+                    o.entry(*pg).or_default().push(*r);
+                }
+                continue;
+            }
+            seen.insert(r.run);
             out.get_or_insert_with(|| a.clone()).entry(*pg).or_default().push(*r);
+        }
+    }
+    // (WordCraft study, page, B10/B11: Word measures each float's anchor line in the layout where the floats BEFORE it on
+    // its page are already applied — a settled B10 pin of a page that takes a new, earlier late float in this pass was
+    // measured without that float: it becomes provisional and the next pass measures its line again. The late set only
+    // grows, so this happens at most once per added float.)
+    if let Some(o) = out.as_mut() {
+        let known: IndexSet<RunKey> = a.values().flatten().map(|l| l.run).collect();
+        for (pg, v) in o.iter_mut() {
+            let Some(first_new) =
+                b.get(pg).into_iter().flatten().filter(|r| !known.contains(&r.run) && !dropped.contains(&r.run)).map(|r| r.run).min()
+            else {
+                continue;
+            };
+            for l in v.iter_mut().filter(|l| l.run > first_new) {
+                if let Some(p) = l.pin.as_mut().filter(|p| !p.reflow && p.settled) {
+                    p.settled = false;
+                }
+            }
         }
     }
     out
 }
 
-fn same_counts(a: &IndexMap<u32, f64>, b: &IndexMap<u32, f64>) -> bool {
+fn same_counts<K: std::hash::Hash + Eq>(a: &IndexMap<K, f64>, b: &IndexMap<K, f64>) -> bool {
     a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|w| js_eq(*v, *w)))
 }
 
@@ -1358,6 +1547,20 @@ fn same_chapters(a: &ChapterIndex, b: &ChapterIndex) -> bool {
 
 /// The work estimate of a call (K16): the UTF-16 units of every run, the sections with columns,
 /// the table nesting, the tallest page.
+/// [`work_input`] with the passes Word's float re-layout may add (WordCraft study, page, B10/B11: one per floating
+/// object, at most 20; none under the frozen TS's switches).
+pub(crate) fn work_input_for(ldoc: &LDoc<'_>, opts: &LayoutOptions) -> WorkInput {
+    let mut w = work_input(ldoc);
+    if !(opts.ts_float_no_reflow && opts.ts_float_anchor_first_line) {
+        let floats = (0..ldoc.runs.len())
+            .filter(|&k| crate::paint::model_run(ldoc, RunKey(u32::try_from(k).unwrap_or(u32::MAX))).is_some_and(static_layout::run_floats))
+            .take(20)
+            .count();
+        w.extra_passes = u32::try_from(floats).unwrap_or(20);
+    }
+    w
+}
+
 pub(crate) fn work_input(ldoc: &LDoc<'_>) -> WorkInput {
     let glyphs = (0..ldoc.runs.len()).map(|k| ldoc.run_text(RunKey(u32::try_from(k).unwrap_or(u32::MAX))).len() as u64).sum::<u64>();
     let secs = ldoc.view.sections();
@@ -1369,6 +1572,7 @@ pub(crate) fn work_input(ldoc: &LDoc<'_>) -> WorkInput {
         balanced_sections: u32::try_from(balanced).unwrap_or(u32::MAX),
         nesting: u32::try_from(nesting).unwrap_or(u32::MAX),
         max_page_h,
+        extra_passes: 0,
     }
 }
 
@@ -1418,7 +1622,12 @@ pub(crate) fn layout_document_with(
     let mut input = PassInput { total_pages_guess: 1.0, ..PassInput::default() };
     let mut exec: Option<Engine> = None;
     let mut last_found: Option<IndexMap<i64, BalanceInfo>> = None;
-    for _pass in 0..5 {
+    // WordCraft study (page, B10/B11): Word lays a page out again per float it pins there, one after the other — the loop
+    // runs 5 passes plus one per late float (at most 20 more); the frozen TS's 5 under its switches
+    let reflow = !opts.ts_float_no_reflow || !opts.ts_float_anchor_first_line;
+    let mut max_passes = 5usize;
+    let mut pass = 0usize;
+    while pass < max_passes {
         let eng = call.pass(&input)?;
         let (stable, next) = call.next_input(&eng, &input);
         last_found = Some(eng.found.balance_found.clone());
@@ -1427,6 +1636,10 @@ pub(crate) fn layout_document_with(
             break;
         }
         input = next;
+        pass += 1;
+        if reflow {
+            max_passes = 5 + input.late_floats.values().map(Vec::len).sum::<usize>().min(20);
+        }
     }
     // multi-column sections ended by a CONTINUOUS break: Word balances the columns of the
     // section's last page (oracles colbal, colbal3)

@@ -1,0 +1,396 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 447.8,
+"size": 11.04,
+"text": "Análiseserviçoáreaexecuçãoprocessoparaqualidadeaprovaçãogestão"
+},
+{
+"y": 93.86,
+"x0": 121.1,
+"x1": 464.2,
+"size": 11.04,
+"text": "controleresponsávelconformecomregistroúltimotécnicaserácliente"
+},
+{
+"y": 106.46,
+"x0": 121.1,
+"x1": 473.6,
+"size": 11.04,
+"text": "umaquerelatórioprazoatendimentoinformaçãoasemàperíododados"
+},
+{
+"y": 119.18,
+"x0": 121.1,
+"x1": 440.0,
+"size": 11.04,
+"text": "contratoprocedimentoosdeéempresasegurançaoperaçãonão"
+},
+{
+"y": 131.78,
+"x0": 121.1,
+"x1": 186.89,
+"size": 11.04,
+"text": "documentoo."
+},
+{
+"y": 144.38,
+"x0": 221.09,
+"x1": 437.14,
+"size": 11.04,
+"text": "Registroúltimotécnicaseráclienteumaque"
+},
+{
+"y": 157.1,
+"x0": 185.09,
+"x1": 418.73,
+"size": 11.04,
+"text": "relatórioprazoatendimentoinformaçãoasemà"
+},
+{
+"y": 169.7,
+"x0": 185.09,
+"x1": 452.85,
+"size": 11.04,
+"text": "períododadoscontratoprocedimentoosdeéempresa"
+},
+{
+"y": 182.42,
+"x0": 185.09,
+"x1": 448.82,
+"size": 11.04,
+"text": "segurançaoperaçãonãodocumentooanáliseserviço"
+},
+{
+"y": 195.02,
+"x0": 185.09,
+"x1": 434.8,
+"size": 11.04,
+"text": "áreaexecuçãoprocessoparaqualidadeaprovação"
+},
+{
+"y": 207.62,
+"x0": 185.09,
+"x1": 397.41,
+"size": 11.04,
+"text": "gestãocontroleresponsávelconformecom."
+},
+{
+"y": 220.34,
+"x0": 105.14,
+"x1": 409.84,
+"size": 11.04,
+"text": "Qualidadeaprovaçãogestãocontroleresponsávelconforme"
+},
+{
+"y": 232.94,
+"x0": 105.14,
+"x1": 409.78,
+"size": 11.04,
+"text": "comregistroúltimotécnicaseráclienteumaquerelatório"
+},
+{
+"y": 245.66,
+"x0": 105.14,
+"x1": 409.87,
+"size": 11.04,
+"text": "prazoatendimentoinformaçãoasemàperíododados"
+},
+{
+"y": 258.26,
+"x0": 105.14,
+"x1": 409.84,
+"size": 11.04,
+"text": "contratoprocedimentoosdeéempresasegurançaoperação"
+},
+{
+"y": 271.01,
+"x0": 105.14,
+"x1": 409.88,
+"size": 11.04,
+"text": "nãodocumentooanáliseserviçoáreaexecuçãoprocesso"
+},
+{
+"y": 283.61,
+"x0": 105.14,
+"x1": 129.3,
+"size": 11.04,
+"text": "para."
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 141.43,
+"size": 11.04,
+"text": "quebraHxg"
+},
+{
+"y": 93.86,
+"x0": 121.1,
+"x1": 483.8,
+"size": 11.04,
+"text": "Análiseserviçoáreaexecuçãoprocessoparaqualidadeaprovaçãogestão"
+},
+{
+"y": 106.46,
+"x0": 157.1,
+"x1": 500.2,
+"size": 11.04,
+"text": "controleresponsávelconformecomregistroúltimotécnicaserácliente"
+},
+{
+"y": 119.18,
+"x0": 157.1,
+"x1": 509.6,
+"size": 11.04,
+"text": "umaquerelatórioprazoatendimentoinformaçãoasemàperíododados"
+},
+{
+"y": 131.78,
+"x0": 157.1,
+"x1": 476.0,
+"size": 11.04,
+"text": "contratoprocedimentoosdeéempresasegurançaoperaçãonão"
+},
+{
+"y": 144.38,
+"x0": 157.1,
+"x1": 222.89,
+"size": 11.04,
+"text": "documentoo."
+},
+{
+"y": 157.1,
+"x0": 141.14,
+"x1": 399.95,
+"size": 11.04,
+"text": "Registroúltimotécnicaseráclienteumaquerelatório"
+},
+{
+"y": 169.7,
+"x0": 105.14,
+"x1": 368.9,
+"size": 11.04,
+"text": "prazoatendimentoinformaçãoasemàperíododados"
+},
+{
+"y": 182.42,
+"x0": 105.14,
+"x1": 402.7,
+"size": 11.04,
+"text": "contratoprocedimentoosdeéempresasegurançaoperação"
+},
+{
+"y": 195.02,
+"x0": 105.14,
+"x1": 388.45,
+"size": 11.04,
+"text": "nãodocumentooanáliseserviçoáreaexecuçãoprocesso"
+},
+{
+"y": 207.62,
+"x0": 105.14,
+"x1": 372.23,
+"size": 11.04,
+"text": "paraqualidadeaprovaçãogestãocontroleresponsável"
+},
+{
+"y": 220.34,
+"x0": 105.14,
+"x1": 176.9,
+"size": 11.04,
+"text": "conformecom."
+},
+{
+"y": 232.94,
+"x0": 185.09,
+"x1": 489.79,
+"size": 11.04,
+"text": "Qualidadeaprovaçãogestãocontroleresponsávelconforme"
+},
+{
+"y": 245.66,
+"x0": 185.09,
+"x1": 489.84,
+"size": 11.04,
+"text": "comregistroúltimotécnicaseráclienteumaquerelatório"
+},
+{
+"y": 258.26,
+"x0": 185.09,
+"x1": 489.82,
+"size": 11.04,
+"text": "prazoatendimentoinformaçãoasemàperíododados"
+},
+{
+"y": 271.01,
+"x0": 185.09,
+"x1": 489.79,
+"size": 11.04,
+"text": "contratoprocedimentoosdeéempresasegurançaoperação"
+},
+{
+"y": 283.61,
+"x0": 185.09,
+"x1": 489.83,
+"size": 11.04,
+"text": "nãodocumentooanáliseserviçoáreaexecuçãoprocesso"
+},
+{
+"y": 296.21,
+"x0": 185.09,
+"x1": 209.25,
+"size": 11.04,
+"text": "para."
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 162.74,
+"size": 11.04,
+"text": "quebratresHxg"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 447.8,
+"size": 11.04,
+"text": "Análiseserviçoáreaexecuçãoprocessoparaqualidadeaprovaçãogestão"
+},
+{
+"y": 106.46,
+"x0": 121.1,
+"x1": 464.2,
+"size": 11.04,
+"text": "controleresponsávelconformecomregistroúltimotécnicaserácliente"
+},
+{
+"y": 119.18,
+"x0": 121.1,
+"x1": 473.6,
+"size": 11.04,
+"text": "umaquerelatórioprazoatendimentoinformaçãoasemàperíododados"
+},
+{
+"y": 131.78,
+"x0": 121.1,
+"x1": 440.0,
+"size": 11.04,
+"text": "contratoprocedimentoosdeéempresasegurançaoperaçãonão"
+},
+{
+"y": 144.38,
+"x0": 121.1,
+"x1": 186.89,
+"size": 11.04,
+"text": "documentoo."
+},
+{
+"y": 157.1,
+"x0": 221.09,
+"x1": 437.14,
+"size": 11.04,
+"text": "Registroúltimotécnicaseráclienteumaque"
+},
+{
+"y": 169.7,
+"x0": 185.09,
+"x1": 418.73,
+"size": 11.04,
+"text": "relatórioprazoatendimentoinformaçãoasemà"
+},
+{
+"y": 182.42,
+"x0": 185.09,
+"x1": 452.85,
+"size": 11.04,
+"text": "períododadoscontratoprocedimentoosdeéempresa"
+},
+{
+"y": 195.02,
+"x0": 185.09,
+"x1": 448.82,
+"size": 11.04,
+"text": "segurançaoperaçãonãodocumentooanáliseserviço"
+},
+{
+"y": 207.62,
+"x0": 185.09,
+"x1": 434.8,
+"size": 11.04,
+"text": "áreaexecuçãoprocessoparaqualidadeaprovação"
+},
+{
+"y": 220.34,
+"x0": 185.09,
+"x1": 397.41,
+"size": 11.04,
+"text": "gestãocontroleresponsávelconformecom."
+},
+{
+"y": 232.94,
+"x0": 105.14,
+"x1": 409.84,
+"size": 11.04,
+"text": "Qualidadeaprovaçãogestãocontroleresponsávelconforme"
+},
+{
+"y": 245.66,
+"x0": 105.14,
+"x1": 409.78,
+"size": 11.04,
+"text": "comregistroúltimotécnicaseráclienteumaquerelatório"
+},
+{
+"y": 258.26,
+"x0": 105.14,
+"x1": 409.87,
+"size": 11.04,
+"text": "prazoatendimentoinformaçãoasemàperíododados"
+},
+{
+"y": 271.01,
+"x0": 105.14,
+"x1": 409.84,
+"size": 11.04,
+"text": "contratoprocedimentoosdeéempresasegurançaoperação"
+},
+{
+"y": 283.61,
+"x0": 105.14,
+"x1": 409.88,
+"size": 11.04,
+"text": "nãodocumentooanáliseserviçoáreaexecuçãoprocesso"
+},
+{
+"y": 296.21,
+"x0": 105.14,
+"x1": 129.3,
+"size": 11.04,
+"text": "para."
+}
+],
+"objs": []
+}
+]
+}

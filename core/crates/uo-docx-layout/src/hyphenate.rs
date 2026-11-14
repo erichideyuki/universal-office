@@ -26,6 +26,10 @@ pub struct HyphenUnit {
     pub rest_w: f64,
     pub n_spaces: f64,
     pub hyphen_run: f64,
+    /// WordCraft study (L9): jc=distribute under Word's rule — the expansion side × f, no per-space slack
+    pub distribute: bool,
+    /// the line's spaces' xAvgCharWidth at their sizes (twips; read only with `distribute`)
+    pub spaces_xavg: f64,
 }
 
 /// `HyphenChoice` (hyphenate.ts:158).
@@ -58,7 +62,17 @@ impl HyphenSessions {
     /// `hyphenatorFor(lang)`: the session of the language's pattern set when the call may use it
     /// (`loaded`) and the registry holds it.
     pub fn session(&mut self, lang: &str, loaded: &indexmap::IndexSet<PatternId>) -> Option<&mut HyphenSession> {
-        let id = hyphenation_pattern_id(Some(lang))?;
+        self.session_with(lang, loaded, false)
+    }
+
+    /// [`HyphenSessions::session`] under Word's data when `word` (WordCraft study, fields D1; `!ts_hyphenation_patterns`):
+    /// English takes `en-us-word` (CC0 patterns + Moby exceptions, 96.0 % of Word's paragraphs against 88.3 %) when it
+    /// is loaded and registered, else `en-us` — a host without the new data still hyphenates.
+    pub fn session_with(&mut self, lang: &str, loaded: &indexmap::IndexSet<PatternId>, word: bool) -> Option<&mut HyphenSession> {
+        let mut id = hyphenation_pattern_id(Some(lang))?;
+        if word && id == "en-us" && loaded.contains("en-us-word") && self.registry.as_ref().is_some_and(|r| r.contains("en-us-word")) {
+            id = "en-us-word";
+        }
         if !loaded.contains(id) {
             return None;
         }
@@ -184,7 +198,7 @@ pub fn mark_hyphenation(
         {
             continue;
         }
-        let Some(h) = cx.hyph.session(&lang, &opts.hyphenation_loaded) else { continue };
+        let Some(h) = cx.hyph.session_with(&lang, &opts.hyphenation_loaded, !opts.ts_hyphenation_patterns) else { continue };
         // letter + combining marks -> one NFC code point (the patterns are NFC)
         let mut clusters: Vec<Vec<usize>> = Vec::new();
         for &j in &idx {
@@ -358,6 +372,12 @@ pub fn choose_hyphenation<E: crate::lines::LineEnv + ?Sized>(
         fits.push(end_of(n) + hyphen_w(env, k)? - u.right);
     }
     let shrink = crate::lines::JUSTIFY_SHRINK;
+    // Word (WordCraft study L3, jsweep + `wcl/l-jboth-*`): slacks 0.035 tw on the cap and 0.025 tw per space
+    // (jc=distribute, L9: the same test as the word fit in `lines.rs` — no per-space slack, the expansion side × f)
+    let dist = u.distribute;
+    let (cap_tol, sp_tol) =
+        if dist || env.settings().word.justify_tolerance { (0.035, if dist { 0.0 } else { 0.025 }) } else { (0.0175, 0.0075) };
+    let f = if dist && u.spaces_w > 0.0 { u.spaces_w / (u.spaces_w + 0.1271 * u.spaces_xavg) } else { 1.0 };
     for n in (0..cands.len()).rev() {
         let k = cands.get(n).copied().unwrap_or(0);
         let ov = fits.get(n).copied().unwrap_or(f64::NAN);
@@ -370,19 +390,19 @@ pub fn choose_hyphenation<E: crate::lines::LineEnv + ?Sized>(
         // justified (mode 15): compress up to 25% of the spaces, losing at most half of the slack
         // the previous point would leave (oracle hyphfit); the last point compares with the word
         // going down (the jsweep rule)
-        if ov > shrink.ratio * u.spaces_w + 0.0175 {
+        if ov > shrink.ratio * u.spaces_w + cap_tol {
             continue;
         }
         if n > 0 {
             let slack_prev = -fits.get(n - 1).copied().unwrap_or(f64::NAN);
-            if ov <= shrink.expand_ratio * slack_prev + 0.02 {
+            if ov <= shrink.expand_ratio * slack_prev * f + 0.02 {
                 return Ok(Some(HyphenChoice { k, w: hyphen_w(env, k)? }));
             }
         } else {
             let slack = u.right - u.content_end;
             if u.line_start
                 || u.rest_w <= 0.0
-                || ov / u.spaces_w <= (shrink.expand_ratio * slack) / u.rest_w + 0.0075 * u.n_spaces / u.spaces_w
+                || ov / u.spaces_w <= (shrink.expand_ratio * slack * f) / u.rest_w + sp_tol * u.n_spaces / u.spaces_w
             {
                 return Ok(Some(HyphenChoice { k, w: hyphen_w(env, k)? }));
             }

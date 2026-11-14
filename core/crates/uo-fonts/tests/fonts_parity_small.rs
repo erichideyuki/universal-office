@@ -35,12 +35,12 @@ use std::sync::Arc;
 use fonts_parity_support::corpus::embed_pool;
 use fonts_parity_support::facets::write_info;
 use uo_fonts::catalog::BUNDLED;
-use uo_fonts::hyphen::parse_patterns;
+use uo_fonts::hyphen::{TS_HYPHENATION_PATTERN_IDS, parse_patterns};
 use uo_fonts::{
-    DEFAULT_FAMILY, EmbeddingPolicy, FaceRequest, FontLimits, FontUsage, FxHashSet, HYPHENATION_PATTERN_IDS, HyphenationRegistry,
-    Hyphenator, METRIC_SUBSTITUTES, POWERPOINT_COMMON_FONTS, PROBE_FAMILIES, SkipReason, VARIANTS, Variant, WORD_COMMON_FONTS,
-    bundled_file_name, embedding_requests, hyphenation_pattern_id, is_bold_variant, is_italic_variant, odttf, pattern_ids_to_load,
-    plan_font_embedding, variant_of, variant_of_style,
+    DEFAULT_FAMILY, EmbeddingPolicy, FaceRequest, FontLimits, FontUsage, FxHashSet, HyphenationRegistry, Hyphenator, METRIC_SUBSTITUTES,
+    POWERPOINT_COMMON_FONTS, PROBE_FAMILIES, SkipReason, VARIANTS, Variant, WORD_COMMON_FONTS, bundled_file_name, embedding_requests,
+    hyphenation_pattern_id, is_bold_variant, is_italic_variant, odttf, pattern_ids_to_load, plan_font_embedding, variant_of,
+    variant_of_style,
 };
 use uo_testkit::stream::Digest;
 use uo_testkit::{Capture, Replay, Stream, repo_root};
@@ -138,7 +138,7 @@ fn small_facets(replay: &mut Replay<'_>) -> [usize; 6] {
             );
             let registry = HyphenationRegistry::new();
             let loaded = pattern_ids_to_load(list.iter().map(Option::as_deref), &registry);
-            let ids = HYPHENATION_PATTERN_IDS.iter().filter(|id| loaded.contains(id)).copied().collect::<Vec<_>>().join(",");
+            let ids = TS_HYPHENATION_PATTERN_IDS.iter().filter(|id| loaded.contains(id)).copied().collect::<Vec<_>>().join(",");
             if replay.capture().get(&key, "ids") == Some("R") {
                 n_load_rejected += 1;
                 replay.accept(&key, "ids", &ids, "G9: the TS indexes a plain object (LOADERS['constructor'] is Object.prototype.constructor) and rejects; own keys only here");
@@ -183,7 +183,7 @@ fn small_facets(replay: &mut Replay<'_>) -> [usize; 6] {
 
     let oracle = std::fs::read_to_string(parity.join("fonts_oracle_words.txt")).unwrap();
     let oracle: Vec<&str> = oracle.lines().filter(|l| !l.is_empty()).collect();
-    replay.check("hyphen", "ids", &HYPHENATION_PATTERN_IDS.join(","));
+    replay.check("hyphen", "ids", &TS_HYPHENATION_PATTERN_IDS.join(","));
     let mut hyphen_words = 0;
     for id in LANGS {
         let file = std::fs::read_to_string(Path::new(MANIFEST).join(format!("data/hyphen/{id}.txt"))).unwrap();

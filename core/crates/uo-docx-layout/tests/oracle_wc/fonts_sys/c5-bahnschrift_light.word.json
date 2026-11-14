@@ -1,0 +1,68 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.24,
+"x0": 85.1,
+"x1": 134.1,
+"size": 11.04,
+"text": "BeforeHxg"
+},
+{
+"y": 96.14,
+"x0": 85.1,
+"x1": 478.27,
+"size": 12.0,
+"text": "HxgWMwmiIl10Oquickbrownfoxjumpsoverthelazydog;HxgWMwmiIl10O"
+},
+{
+"y": 110.54,
+"x0": 85.1,
+"x1": 462.58,
+"size": 12.0,
+"text": "quickbrownfoxjumpsoverthelazydog;HxgWMwmiIl10Oquickbrownfox"
+},
+{
+"y": 124.94,
+"x0": 85.1,
+"x1": 203.02,
+"size": 12.0,
+"text": "jumpsoverthelazydog."
+},
+{
+"y": 137.9,
+"x0": 85.1,
+"x1": 126.93,
+"size": 11.04,
+"text": "AfterHxg"
+}
+],
+"objs": [
+{
+"t": "image",
+"x0": 85.1,
+"y0": 84.26,
+"x1": 515.64,
+"y1": 98.66
+},
+{
+"t": "image",
+"x0": 85.1,
+"y0": 98.66,
+"x1": 503.43,
+"y1": 113.06
+},
+{
+"t": "image",
+"x0": 85.1,
+"y0": 113.06,
+"x1": 221.38,
+"y1": 127.46
+}
+]
+}
+]
+}

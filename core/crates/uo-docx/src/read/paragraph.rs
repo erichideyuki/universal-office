@@ -153,6 +153,8 @@ struct FieldFrame {
     props: RunProps,
     rpr: Option<Arc<RPr>>,
     rpr_el: Option<ElSpan>,
+    /// WordCraft study (fields, B22): the direct `w:rPr` of the first `w:instrText` run (`RunExt::instr_rpr`)
+    instr_rpr: Option<Option<Arc<RPr>>>,
 }
 
 /// Where the runs of the moment go (`runTarget`).
@@ -1053,7 +1055,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
         match name {
             "w:rPr" => {}
             "w:fldChar" => self.run_fld_char(rf, child, pick(base, lists, li))?,
-            "w:instrText" | "w:delInstrText" => self.run_instr_text(child),
+            "w:instrText" | "w:delInstrText" => self.run_instr_text(rf, child),
             "w:t" | "w:delText" => run_text(&mut rf.text, child),
             "w:tab" => rf.text.push('\t'),
             "w:br" | "w:cr" => rf.text.push(break_char(child)),
@@ -1092,10 +1094,13 @@ impl<'c, 'p> ReadContext<'c, 'p> {
 
     /// `w:instrText`: the text goes to the open field while it is in its instruction.
     #[inline(never)]
-    fn run_instr_text(&mut self, child: Element<'_>) {
+    fn run_instr_text(&mut self, rf: &RunFrame<'_>, child: Element<'_>) {
         if let Some(top) = self.field_stack.last_mut()
             && top.phase == Phase::Instr
         {
+            if top.instr_rpr.is_none() {
+                top.instr_rpr = Some(rf.rpr.clone());
+            }
             let t = child.text_content();
             top.instr.push_str(&t);
             top.code.push_str(&t);
@@ -1277,6 +1282,7 @@ impl<'c, 'p> ReadContext<'c, 'p> {
             props,
             rpr: rf.rpr.clone(),
             rpr_el: rf.rpr_el,
+            instr_rpr: None,
         });
         Ok(())
     }
@@ -1310,6 +1316,8 @@ impl<'c, 'p> ReadContext<'c, 'p> {
         let ext = run.ext_mut();
         ext.field = Some(format!(" {} ", jstext::trim(&f.instr)).into());
         ext.mark("field");
+        // (an instruction run without `w:rPr`: empty direct properties; no instruction run seen: unknown)
+        ext.instr_rpr = crate::model::run::InstrRPr(f.instr_rpr.map(Option::unwrap_or_default));
         if f.nested {
             ext.field_code = Some(format!(" {} ", jstext::trim(&f.code)).into());
             ext.mark("fieldCode");

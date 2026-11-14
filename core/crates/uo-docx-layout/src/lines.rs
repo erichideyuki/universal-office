@@ -127,6 +127,50 @@ pub struct BreakSettings {
     /// continuous view of those kinds without `ts_strict`), measured: the text before the break ends its line, the break
     /// takes the next line alone (`v1-breaks.docx`: line starts 0, 25 = the break, 26), the text after it the one after
     pub break_own_line: bool,
+    /// WordCraft study (lines): Word's line rules the frozen TS lacks (all off = the TS: the facet replays and the
+    /// breaker's unit tests build `BreakSettings::default()`)
+    pub word: WordLineRules,
+}
+
+/// WordCraft study (lines, plan `PLAN-L.md`; record `uo-docx-layout.md` "WordCraft study — lines"): each rule is on when
+/// its `LayoutOptions::ts_*` switch is off (the engine's [`Cx`] fills them).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WordLineRules {
+    /// L1 (`!ts_space_like_height`): no SPACE_LIKE character gives a line height
+    pub space_like_height: bool,
+    /// L2 (`!ts_number_suffix_font_space`): the number's SPACE suffix is Arial's space at the number's size, aligned
+    /// with the number for lvlJc right/center
+    pub number_suffix: bool,
+    /// L3 (`!ts_justify_tolerance`): jc=both compression slacks 0.035 tw (cap) and 0.025 tw per space
+    pub justify_tolerance: bool,
+    /// L7 (`!ts_shift_return_expands` and `w:doNotExpandShiftReturn`): a jc=both line ending in a `w:br` is not
+    /// expanded
+    pub no_expand_shift_return: bool,
+    /// L8 (`!ts_ptab_indent_frame`): Word's `w:ptab` targets and line break
+    pub ptab: bool,
+    /// L9 (`!ts_distribute_spaces_only`): Word's jc=distribute (letter gaps, last line, compression factor)
+    pub distribute: bool,
+    /// L10 (`!ts_default_tab_after_negative`): the default stop AT or after a negative pen
+    pub default_tab_negative: bool,
+    /// L11 (`!ts_bar_tab_counts`): bar tabs are not the last custom stop of the default grid
+    pub bar_tabs_ignored: bool,
+    /// L12 (`!ts_no_emphasis_marks`): the extra ascent/descent of a line with emphasis marks
+    pub emphasis_marks: bool,
+    /// L5 (`!ts_no_char_grid`): the character grid of `w:docGrid type="snapToChars"` (the paragraph's
+    /// [`PreparedPara::char_grid`])
+    pub char_grid: bool,
+    /// L4 (`!ts_kinsoku_lists`; `wcl3/m-kinsoku-hang-*`): a justified jc=both line of East Asian text without spaces (the
+    /// line a kinsoku push left short) spreads its slack over the gaps between its characters
+    pub cjk_justify: bool,
+    /// WordCraft study (fields, C1b; `!ts_multiple_text_height`): "multiple" spacing adds (factor − 1) × the largest
+    /// OWN height (ascent + descent) of the line's text runs, not of max ascent + max descent
+    pub multiple_own_height: bool,
+}
+
+/// `SPACE_LIKE` (para.ts:674): the characters that are spaces of the breaker (and, Word, L1: give a line no height).
+#[must_use]
+pub fn space_like_cp(cp: u32) -> bool {
+    matches!(cp, 0x20 | 0x2002 | 0x2003 | 0x2005 | 0x200b | 0x3000)
 }
 
 /// `w:ptab` of a tab glyph (`g.ptab`): alignment and leader as the document wrote them.
@@ -135,6 +179,8 @@ pub struct PtabSpec {
     pub alignment: PtabAlign,
     /// `leader` when present and not `'none'`
     pub leader: Option<TabLeader>,
+    /// WordCraft study (L8): `w:relativeTo="margin"` (else `indent`); the frozen TS ignores it
+    pub relative_to_margin: bool,
 }
 
 /// `g.ptab.alignment`: `'center'`, `'right'`, anything else is left.
@@ -158,6 +204,11 @@ pub trait LineEnv {
     fn ptab(&self, p: &PreparedPara, g: &Glyph) -> Option<PtabSpec>;
     /// charges the work budget (LQ14: the TS has no limit; one unit per glyph visited)
     fn charge(&mut self, units: u64) -> LResult<()>;
+    /// WordCraft study (L9): the face's OS/2 `xAvgCharWidth` as a fraction of the em (`None`: absent or 0); only read
+    /// under Word's jc=distribute rule
+    fn x_avg(&mut self, _face: FaceId) -> LResult<Option<f64>> {
+        Ok(None)
+    }
 }
 
 /// `FIXED_SPACE(cp)` (lines.ts:9): fixed-width spaces (en, em, thin, ideographic…), outside
@@ -219,7 +270,7 @@ struct TabHit {
 
 /// `nextTab(x, tabs, defaultTab, hangingStop, rightLimit)` (lines.ts:76); `rightLimit` is unused
 /// in the TS (`void rightLimit`).
-fn next_tab(x: f64, tabs: &[TabStop], default_tab: f64, hanging_stop: Option<f64>) -> TabHit {
+fn next_tab(x: f64, tabs: &[TabStop], default_tab: f64, hanging_stop: Option<f64>, w: WordLineRules) -> TabHit {
     let mut best: Option<TabHit> = None;
     for t in tabs {
         if t.val == TabAlign::Bar {
@@ -240,9 +291,16 @@ fn next_tab(x: f64, tabs: &[TabStop], default_tab: f64, hanging_stop: Option<f64
         return b;
     }
     // `tabs.length ? Math.max(...tabs.map((t) => t.pos)) : -Infinity`
-    let last_custom = if tabs.is_empty() { f64::NEG_INFINITY } else { tabs.iter().fold(f64::NEG_INFINITY, |m, t| jm::max(m, t.pos)) };
+    // (Word, L11 — `wcl/l-bartab`: the default stops are counted as if the bar tabs did not exist)
+    let counts = |t: &&TabStop| !w.bar_tabs_ignored || !matches!(t.val, TabAlign::Bar | TabAlign::Clear);
+    let last_custom =
+        if tabs.is_empty() { f64::NEG_INFINITY } else { tabs.iter().filter(counts).fold(f64::NEG_INFINITY, |m, t| jm::max(m, t.pos)) };
     let from = jm::max(x, last_custom);
     let dts = if default_tab > 0.0 { default_tab } else { 720.0 };
+    // Word, L10 (`wcl/l-negtab`): left of the margin the next default stop is the first multiple AT or after the pen
+    if w.default_tab_negative && from < 0.0 {
+        return TabHit { pos: jm::ceil(from / dts - 1e-6) * dts, tab: None };
+    }
     let mut pos = (jm::floor(from / dts + 1e-6) + 1.0) * dts;
     if pos <= x + 0.5 {
         pos += dts;
@@ -316,10 +374,110 @@ pub fn shadow_extent(style: &crate::para::RunStyle) -> (f64, f64) {
     (k * jm::max(0.0, blur - dy) * 20.0, k * jm::max(0.0, blur + dy) * 20.0)
 }
 
+/// WordCraft study (L12): the emphasis mark of a glyph's run (`w:em`): `Some(true)` above (dot, comma, circle),
+/// `Some(false)` below (underDot), `None` without.
+#[must_use]
+pub fn emphasis_mark(p: &PreparedPara, g: &Glyph) -> Option<bool> {
+    if g.kind != GlyphKind::Char {
+        return None;
+    }
+    match p.styles.get(g.style.0 as usize)?.rpr.em.as_deref()? {
+        "dot" | "comma" | "circle" => Some(true),
+        "underDot" => Some(false),
+        _ => None,
+    }
+}
+
+/// Whether a line's content holds emphasis marks above and below (L12).
+fn emphasis_of(p: &PreparedPara, content: &[Cow<'_, Glyph>]) -> (bool, bool) {
+    let (mut above, mut below) = (false, false);
+    for v in content {
+        match emphasis_mark(p, v) {
+            Some(true) => above = true,
+            Some(false) => below = true,
+            None => {}
+        }
+    }
+    (above, below)
+}
+
+/// WordCraft study (L5): the snapToChars placement of a line (see `next_in`). The East Asian glyphs come prepared with
+/// whole cells as their advance (`para.rs`); their natural advance is the font's.
+fn snap_to_chars<E: LineEnv + ?Sized>(
+    env: &mut E,
+    p: &PreparedPara,
+    placed: &mut [PlacedGlyph],
+    x_start: f64,
+    cell: f64,
+    auto_break: bool,
+) -> LResult<()> {
+    let mut pos = x_start;
+    let mut seg: Vec<usize> = Vec::new();
+    let flush = |placed: &mut [PlacedGlyph], seg: &mut Vec<usize>, pos: &mut f64, at_end: bool| -> LResult<()> {
+        if seg.is_empty() {
+            return Ok(());
+        }
+        // trailing blanks of the line do not take cells
+        let mut n = seg.len();
+        if at_end {
+            while n > 0 {
+                let Some(q) = seg.get(n - 1).and_then(|&k| placed.get(k)) else { break };
+                let v = view(p, q)?;
+                if matches!(v.kind, GlyphKind::Space | GlyphKind::Lb | GlyphKind::Pb | GlyphKind::Cb)
+                    || (v.kind == GlyphKind::Obj && v.adv == 0.0)
+                {
+                    n -= 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        let sum: f64 = seg.get(..n).unwrap_or(&[]).iter().filter_map(|&k| placed.get(k)).map(|q| q.w).sum();
+        let span = jm::ceil(sum / cell - 1e-9) * cell;
+        let mut x = *pos + if at_end && auto_break { 0.0 } else { (span - sum) / 2.0 };
+        for &k in seg.iter() {
+            if let Some(q) = placed.get_mut(k) {
+                q.x = x;
+                x += q.w;
+            }
+        }
+        *pos += span;
+        seg.clear();
+        Ok(())
+    };
+    for k in 0..placed.len() {
+        let Some(q) = placed.get(k).copied() else { break };
+        let v = view(p, &q)?;
+        let snaps = v.kind == GlyphKind::Char
+            && crate::para::cjk(v.cp)
+            && p.styles.get(v.style.0 as usize).is_none_or(|st| st.rpr.snap_to_grid != Some(false));
+        if v.kind == GlyphKind::Tab {
+            flush(placed, &mut seg, &mut pos, false)?;
+            pos = jm::max(pos, q.x + q.w);
+            continue;
+        }
+        if !snaps {
+            seg.push(k);
+            continue;
+        }
+        flush(placed, &mut seg, &mut pos, false)?;
+        let natural = env.advance_twips(v.face, v.cp, v.size_pt)?;
+        let off = jm::max(0.0, (v.adv - natural) / 2.0);
+        if let Some(q) = placed.get_mut(k) {
+            q.x = pos + off;
+            q.w = v.adv - off;
+        }
+        pos += v.adv;
+    }
+    flush(placed, &mut seg, &mut pos, true)
+}
+
 /// `pendTab` (lines.ts:272): an aligned tab whose advance follows the segment after it.
 #[derive(Clone, Copy, Debug)]
 struct PendTab {
     idx: usize,
+    /// WordCraft study (L8): a `w:ptab` (Word aligns the part that fits when the line breaks in its segment)
+    ptab: bool,
     pos: f64,
     tab: TabStop,
     seg_start: f64,
@@ -428,6 +586,11 @@ impl LineBreaker {
     /// returns `frame.right` for the lab options `advanceRound !== 'word'` / `advanceEm: 'device'`,
     /// which are dropped (LQ12).
     fn fit_right(p: &PreparedPara, frame_left: f64, frame_right: f64, x_start: f64, first: bool) -> f64 {
+        // WordCraft study (L5, `wcl4/n-charsind-sc-4096`): on a snapToChars grid the cells fill the line exactly (36
+        // cells of 236.22 tw in 8,504 tw) — the indents are whole cells, not rounded to the internal unit
+        if p.char_grid.is_some_and(|g| g.cell.is_some()) {
+            return frame_right;
+        }
         let q = crate::para::to_word_unit;
         x_start + q(frame_right + p.ind_right)
             - q(p.ind_right)
@@ -461,11 +624,21 @@ impl LineBreaker {
 
         // the numbering marker (first line only)
         if let (true, Some(mk)) = (ind_first, p.marker.as_ref()) {
+            // Word (L2, `wcl/l-numsp`): the SPACE suffix is Arial's space (569/2048 em) at the NUMBER's size, whatever
+            // the number's font; with lvlJc right/center the number and the suffix are aligned as one unit
+            let word_suffix = (s.word.number_suffix && mk.suff == crate::para::MarkerSuffix::Space).then(|| {
+                let size = mk
+                    .glyphs
+                    .first()
+                    .map_or_else(|| p.styles.get(p.mark_style.0 as usize).map_or(f64::NAN, |st| st.size_pt), |g| g.size_pt);
+                crate::para::word_width(569.0, size, 2048.0)
+            });
+            let unit_w = mk.width + word_suffix.unwrap_or(0.0);
             let mut mx = x_start;
             if &*mk.jc == "right" {
-                mx -= mk.width;
+                mx -= unit_w;
             } else if &*mk.jc == "center" {
-                mx -= mk.width / 2.0;
+                mx -= unit_w / 2.0;
             }
             let mut mp = Vec::with_capacity(mk.glyphs.len());
             for (k, g) in mk.glyphs.iter().enumerate() {
@@ -480,14 +653,17 @@ impl LineBreaker {
                     // tab after the number: the next stop (the left indent counts as a stop); the
                     // number may END ON the stop (end ≤ stop) — oracle numrpr (nrs-*)
                     let xe = x - 0.5 - 1e-3;
-                    let mut ns = next_tab(xe, &p.tabs, default_tab, if frame.left > xe + 0.5 { Some(frame.left) } else { None });
+                    let mut ns = next_tab(xe, &p.tabs, default_tab, if frame.left > xe + 0.5 { Some(frame.left) } else { None }, s.word);
                     // doNotUseIndentAsNumberingTabStop (modes ≤ 14): the hanging indent has no
                     // priority — the nearest stop wins, default or the indent (oracle numtabind)
                     if s.no_indent_as_numbering_tab_stop && s.compatibility_mode < 15.0 {
-                        let plain = next_tab(xe, &p.tabs, default_tab, None);
+                        let plain = next_tab(xe, &p.tabs, default_tab, None, s.word);
                         ns = if frame.left > xe + 0.5 && frame.left < plain.pos { TabHit { pos: frame.left, tab: None } } else { plain };
                     }
                     x = ns.pos;
+                }
+                crate::para::MarkerSuffix::Space if word_suffix.is_some() => {
+                    x = jm::max(mx + word_suffix.unwrap_or(0.0), x_start);
                 }
                 crate::para::MarkerSuffix::Space => {
                     let (face, size) = mk.glyphs.first().map_or_else(
@@ -508,6 +684,8 @@ impl LineBreaker {
         let justify = (&*p.jc == "both" || &*p.jc == "distribute") && s.compatibility_mode >= 15.0;
         let shrink = JUSTIFY_SHRINK;
         let mut spaces_w = 0.0; // sum of the line's spaces (after the last tab)
+        let mut spaces_xavg = 0.0; // Word, L9: their faces' xAvgCharWidth at their sizes (twips; jc=distribute only)
+        let dist_rule = s.word.distribute && &*p.jc == "distribute";
         let mut n_spaces = 0.0;
         // spaces BEFORE the segment's first word (line start / after a tab) neither compress nor
         // expand (oracle jlead)
@@ -620,6 +798,24 @@ impl LineBreaker {
                         PtabAlign::Right => right,
                         PtabAlign::Left => frame.left,
                     };
+                    if s.word.ptab {
+                        // Word (L8, `wcl/l-ptab-*`): left = the left margin (relativeTo margin) or the left indent;
+                        // center = the centre of the margins, or of [left indent, right MARGIN]; right = the right
+                        // indent (both), at most the right margin
+                        let (m_left, m_right) = (frame.left - p.ind_left, right + p.ind_right);
+                        pos = match (pt.alignment, pt.relative_to_margin) {
+                            (PtabAlign::Left, true) => m_left,
+                            (PtabAlign::Left, false) => frame.left,
+                            (PtabAlign::Center, true) => (m_left + m_right) / 2.0,
+                            (PtabAlign::Center, false) => (frame.left + m_right) / 2.0,
+                            // (a negative right indent: the margin — `l-ptab-short`, R −720)
+                            (PtabAlign::Right, _) => jm::min(right, m_right),
+                        };
+                        // a left or centre target left of the pen ends the line; the tab opens the next one
+                        if pt.alignment != PtabAlign::Right && pos < x - 0.5 && i > start {
+                            break;
+                        }
+                    }
                     let val = match pt.alignment {
                         PtabAlign::Center => TabAlign::Center,
                         PtabAlign::Right => TabAlign::Right,
@@ -627,7 +823,7 @@ impl LineBreaker {
                     };
                     tab = Some(TabStop { val, pos, leader: pt.leader });
                 } else {
-                    let h = next_tab(x, &p.tabs, default_tab, hanging_stop);
+                    let h = next_tab(x, &p.tabs, default_tab, hanging_stop, s.word);
                     pos = h.pos;
                     tab = h.tab;
                 }
@@ -639,7 +835,7 @@ impl LineBreaker {
                     // crosses the float and the line goes on there — centred as a whole line
                     // (oracle ftrtabs; corpus t20); without one, the line ends here (tabgap)
                     let nx = match frame.next {
-                        Some((nl, _)) if !spanned => Some(next_tab(nl, &p.tabs, default_tab, hanging_stop)),
+                        Some((nl, _)) if !spanned => Some(next_tab(nl, &p.tabs, default_tab, hanging_stop, s.word)),
                         _ => None,
                     };
                     match (nx, frame.next) {
@@ -702,7 +898,16 @@ impl LineBreaker {
                 let idx = placed.len() - 1;
                 match tab {
                     Some(t) if aligned(Some(&t)) => {
-                        pend_tab = Some(PendTab { idx, pos, tab: t, seg_start: x, start_x: x, decimal_seen: false, decimal_x: 0.0 });
+                        pend_tab = Some(PendTab {
+                            idx,
+                            ptab: ptab.is_some(),
+                            pos,
+                            tab: t,
+                            seg_start: x,
+                            start_x: x,
+                            decimal_seen: false,
+                            decimal_x: 0.0,
+                        });
                     }
                     _ => {
                         if let Some(q) = placed.get_mut(idx) {
@@ -717,6 +922,7 @@ impl LineBreaker {
                 last_break = Some(if i > start { i - 1 } else { i });
                 width_at_break = content_end - x_start;
                 spaces_w = 0.0;
+                spaces_xavg = 0.0;
                 n_spaces = 0.0;
                 fe_shrink_w = 0.0;
                 seg_word = false;
@@ -805,11 +1011,18 @@ impl LineBreaker {
                     let slack = x + word_w - unit_x + unit_gap_w - over;
                     let rest = unit_spaces_w - unit_gap_sp;
                     let ov = over - hang_w; // the hanging punctuation need not fit (oracle hang15)
+                    // Word (L3, jsweep + `wcl/l-jboth-*`): slacks 0.035 tw on the cap and 0.025 tw per space; jc=distribute
+                    // (L9, `wcl/l-jdist-*`, `wcl3/m-jdist-*`): the expansion side × f = Σg / (Σg + 0.1271·ΣxAvg), no
+                    // per-space slack
+                    let dist = dist_rule;
+                    let (cap_tol, sp_tol) =
+                        if dist || s.word.justify_tolerance { (0.035, if dist { 0.0 } else { 0.025 }) } else { (0.0175, 0.0075) };
+                    let f = if dist && spaces_w > 0.0 { spaces_w / (spaces_w + 0.1271 * spaces_xavg) } else { 1.0 };
                     word_ok = n_spaces > 0.0
-                        && ov <= shrink.ratio * spaces_w + 0.0175
+                        && ov <= shrink.ratio * spaces_w + cap_tol
                         && (n_spaces <= 1.0
                             || rest <= 0.0
-                            || ov / spaces_w <= (shrink.expand_ratio * slack) / rest + 0.0075 * n_spaces / spaces_w);
+                            || ov / spaces_w <= (shrink.expand_ratio * slack * f) / rest + sp_tol * n_spaces / spaces_w);
                 }
                 // a word that only fit by compressing the spaces (or hanging the punctuation): the
                 // line ends with it — the next goes down, even if it would fit compressing more
@@ -834,6 +1047,8 @@ impl LineBreaker {
                         rest_w: unit_spaces_w - unit_gap_sp,
                         n_spaces,
                         hyphen_run: self.hyphen_run,
+                        distribute: dist_rule,
+                        spaces_xavg,
                     };
                     if let Some(ch) = choose_hyphenation(env, gs, &u)? {
                         hyph_at = Some(ch.k as usize);
@@ -879,6 +1094,11 @@ impl LineBreaker {
                         }
                         i = keep;
                         content_end = x_start + width_at_break;
+                        // Word (L8, `wcl/l-ptab-past`): a right `w:ptab` whose segment overflows aligns the part that fits
+                        if s.word.ptab && pend_tab.is_some_and(|t| t.ptab && t.tab.val == TabAlign::Right && t.idx < placed.len()) {
+                            x = content_end;
+                            close_pending(&mut pend_tab, &mut placed, &mut x, &mut content_end);
+                        }
                         pend_tab = None;
                         break;
                     }
@@ -906,6 +1126,9 @@ impl LineBreaker {
                 // fixed-width spaces (en/em/thin… U+2000–U+200A) neither compress nor expand
                 if seg_word && !fixed_space(g.cp) && !g.flags.has(GlyphFlags::FIXED) {
                     spaces_w += g.adv;
+                    if dist_rule {
+                        spaces_xavg += env.x_avg(g.face)?.unwrap_or(0.0) * g.size_pt * 20.0;
+                    }
                     n_spaces += 1.0;
                     last_gap_sp += g.adv;
                     fe_shrink_w += g.fe_shrink.or(0.0);
@@ -981,6 +1204,8 @@ impl LineBreaker {
 
         // vertical metrics
         let (mut asc, mut desc, mut t_asc, mut t_desc) = (0.0, 0.0, 0.0, 0.0);
+        // WordCraft study (fields, C1b): the largest own height (ascent + descent) of the line's text glyphs
+        let mut t_own: f64 = 0.0;
         // the face of the object runs (text height of a line with objects only)
         let (mut o_asc, mut o_desc) = (0.0, 0.0);
         // `content = placed.filter((pg) => pg.g.kind !== 'obj' || pg.g.adv > 0)`
@@ -1003,7 +1228,8 @@ impl LineBreaker {
             }
             // the plain space (U+0020) and the tab give the line no height — at the end, in the
             // middle or alone (then the paragraph mark counts); the NBSP does — oracles trailsp/hfimg
-            if ch_is(v, 0x20) || v.kind == GlyphKind::Tab {
+            // (Word, L1 — `wcl/l-spaces-*`: none of the SPACE_LIKE set does: U+2002, U+2003, U+2005, U+200B, U+3000 too)
+            if ch_is(v, 0x20) || v.kind == GlyphKind::Tab || (s.word.space_like_height && space_like_cp(v.cp)) {
                 continue;
             }
             asc = jm::max(asc, v.asc);
@@ -1012,6 +1238,7 @@ impl LineBreaker {
             if v.kind != GlyphKind::Obj {
                 t_asc = jm::max(t_asc, v.n_asc.or(v.asc));
                 t_desc = jm::max(t_desc, v.n_desc.or(v.desc));
+                t_own = jm::max(t_own, v.n_asc.or(v.asc) + v.n_desc.or(v.desc));
             } else {
                 let om = env.face_metrics(v.face)?;
                 o_asc = jm::max(o_asc, om.ascent * v.size_pt * 20.0);
@@ -1049,7 +1276,7 @@ impl LineBreaker {
             && asc == 0.0
             && desc == 0.0
             && content.iter().any(|v| v.kind == GlyphKind::Tab)
-            && content.iter().all(|v| v.kind == GlyphKind::Tab || ch_is(v, 0x20))
+            && content.iter().all(|v| v.kind == GlyphKind::Tab || ch_is(v, 0x20) || (s.word.space_like_height && space_like_cp(v.cp)))
         {
             for v in &content {
                 if v.kind != GlyphKind::Tab {
@@ -1108,12 +1335,59 @@ impl LineBreaker {
                 asc = jm::max(asc, view(p, q)?.asc);
             }
         }
-        let (height, baseline) = line_box(asc, desc, p, if t_asc + t_desc > 0.0 { Some(t_asc + t_desc) } else { None }, self.grid);
+        let text_nat = if t_asc + t_desc > 0.0 { Some(t_asc + t_desc) } else { None };
+        // WordCraft study (fields, C1b; `wcfonts2/c1x-*`, `wcfonts3/c1y-*`): Word's multiple spacing over the largest
+        // OWN height of the text runs (Calibri 11 + Tahoma 11 at 1.5: 20.67 pt, not 20.94); the objects-only, empty-line
+        // and rule lines keep the single face's height (own = sum there)
+        let text_nat = match text_nat {
+            Some(_) if s.word.multiple_own_height && t_own > 0.0 && !empty_line && t_own <= t_asc + t_desc => Some(t_own),
+            t => t,
+        };
+        // Word (L12, `wcl3/m-emph-*`, `wcl4/n-emph-mix`, `wcl5/o-emph-sp-*`): a line with emphasis marks (w:em) gets
+        // E = ¼ of its natural height above (dot/comma/circle) or below (underDot): single spacing and multiple < 1.25
+        // add it to the height; multiple ≥ 1.25 keeps the height and moves the baseline E down (marks above) or absorbs
+        // it (below); at least: the value when it holds natural + E, else max(natural, value) + E; exact: unchanged
+        let (em_above, em_below) = if s.word.emphasis_marks { emphasis_of(p, &content) } else { (false, false) };
+        let (height, baseline) = if em_above || em_below {
+            let e = (asc + desc) / 4.0;
+            let ea = if em_above { e } else { 0.0 };
+            let (h, b) = line_box(asc, desc, p, text_nat, self.grid);
+            match p.line_rule {
+                LineRule::Exact => (h, b),
+                LineRule::Auto if self.grid.is_none() && p.line >= 1.25 * 240.0 => (h, b + ea),
+                // (`wcfix-lines` emph: at least 15 pt over a 13.4 pt line → 18.4; at least 25 pt → 25)
+                // (marks below: the text rises by E — `wcfix-lines` emph, at least 25 pt)
+                LineRule::AtLeast if p.line >= asc + desc + e => (h, if em_above { b } else { b - e }),
+                _ => (h + e, b + ea),
+            }
+        } else {
+            line_box(asc, desc, p, text_nat, self.grid)
+        };
 
+        // WordCraft study (L5, `wcl2/l-cgrid-sc-*`, `wcl3/m-cgrid-sc-*`): snapToChars — each East Asian character in
+        // its whole cells (prepared) and centred in them, each stretch of other characters between them on the fewest
+        // cells that hold it, centred (not when it ends at an automatic line break); the alignment is ignored
+        let snapped = match p.char_grid.and_then(|g| g.cell).filter(|_| s.word.char_grid) {
+            Some(cell) => {
+                let auto_break = !last && break_after.is_none() && lk != Some(GlyphKind::Lb);
+                snap_to_chars(env, p, &mut placed, x_start, cell, auto_break)?;
+                width = 0.0;
+                for q in &placed {
+                    let v = view(p, q)?;
+                    if !matches!(v.kind, GlyphKind::Space | GlyphKind::Lb | GlyphKind::Pb | GlyphKind::Cb)
+                        && !(v.kind == GlyphKind::Obj && v.adv == 0.0)
+                    {
+                        width = jm::max(width, q.x + q.w - x_start);
+                    }
+                }
+                true
+            }
+            None => false,
+        };
         // alignment/justification
         let avail = right - x_start;
         let mut dx = 0.0;
-        let jc = &*p.jc;
+        let jc = if snapped { "left" } else { &*p.jc };
         // East Asian layout of modes ≤ 14 (oracle fecompress): the hanging punctuation stays past
         // the margin and does not count in the alignment; unjustified, the spaces compress what
         // passes the margin
@@ -1132,7 +1406,12 @@ impl LineBreaker {
             }
             _ => width,
         };
-        let justified = (jc == "both" || jc == "distribute") && (!last || jc == "distribute") && break_after.is_none();
+        let mut justified = (jc == "both" || jc == "distribute") && (!last || jc == "distribute") && break_after.is_none();
+        // Word (L7, `wcl2/l-shiftret*`): with w:doNotExpandShiftReturn a jc=both line ending in a `w:br` is not expanded
+        // (jc=distribute still is)
+        if justified && jc == "both" && s.word.no_expand_shift_return && lk == Some(GlyphKind::Lb) {
+            justified = false;
+        }
         if !justified && align_w > avail + FIT_EPS {
             // `(lastC?.x ?? 0)`
             let lc_x = last_c.and_then(|k| placed.get(k)).map_or(0.0, |q| q.x);
@@ -1196,8 +1475,57 @@ impl LineBreaker {
                 .collect();
             let n_sp = spaces.iter().filter(|b| **b).count();
             let extra = avail - align_w;
-            // `extra > 0 || extra < 0` (false for NaN)
-            if n_sp > 0 && uo_jsnum::conv::truthy(extra) {
+            // Word's jc=distribute (L9, `wcl/l-jspread-*`, `wcl3/m-jspread48-*`, `wcl4/n-dist-tab`; 2,002/2,004 lines
+            // within 0.6 pt): up to half a space per space the slack goes to the spaces (as "both"); past it each space
+            // takes 0.46 of its advance and every gap between the characters after the last tab (spaces count as
+            // characters) an equal share of the rest — on the last line too
+            // (Word, L4 — `wcl3/m-kinsoku-hang-*`: a jc=both line of East Asian text without spaces, e.g. the nine
+            // ideographs a kinsoku push left, spreads its slack over the gaps between its characters, as distribute —
+            // in an East Asian document only: `l-kinsoku-sw-latdef` keeps them unspread)
+            let cjk_spread =
+                s.word.cjk_justify && jc == "both" && n_sp == 0 && extra > 0.0 && views.iter().any(|v| v.flags.has(GlyphFlags::EA_JUSTIFY));
+            let gaps: Vec<bool> = if ((s.word.distribute && jc == "distribute") || cjk_spread) && extra > 0.0 {
+                let lc = last_content.unwrap_or(0);
+                views
+                    .iter()
+                    .enumerate()
+                    .map(|(k, v)| {
+                        k >= first_content
+                            && k < lc
+                            && !(v.kind == GlyphKind::Obj && v.adv == 0.0)
+                            && !matches!(v.kind, GlyphKind::Shy | GlyphKind::Lb | GlyphKind::Tab)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let n_gaps = gaps.iter().filter(|b| **b).count();
+            let g_avg =
+                if n_sp > 0 { views.iter().zip(&spaces).filter(|(_, s)| **s).map(|(v, _)| v.adv).sum::<f64>() / n_sp as f64 } else { 0.0 };
+            // (modes ≤ 14 — `wcfix-l14`, Carlito/Liberation 11–22 pt, 80 lines each, all within 0.6 pt: the spaces take up
+            // to 1.17 of their advance before the gaps get any)
+            let (t_sp, c_sp) = if s.compatibility_mode >= 15.0 { (0.5, 0.46) } else { (1.17, 1.17) };
+            if n_gaps > 0 && !(n_sp > 0 && extra <= n_sp as f64 * t_sp * g_avg) {
+                let each_sp = if n_sp > 0 { c_sp * g_avg } else { 0.0 };
+                // (the plan's floor of the gap share to 0.025 pt — Word's line ending up to ~0.6 pt short — is NOT taken:
+                // it scores better in the plan's model, 2/2,004 lines over 0.6 pt against 16, but worse in this engine
+                // against Word with the installed fonts — `l-jspread-*`/`m-jspread48-*` 14 of 16 cases equal against 15,
+                // `l-jdist-*`/`m-jdist-*` 5 of 12 against 6 — and `oracle_wc/l-jdist` m-jdist-liberationsans goes from
+                // 0.48 to 0.63 pt; record "WordCraft study — lines", L9)
+                let each_gap = (extra - n_sp as f64 * each_sp) / n_gaps as f64;
+                let mut acc = 0.0;
+                for (k, q) in placed.iter_mut().enumerate() {
+                    q.x += acc;
+                    if spaces.get(k).copied().unwrap_or(false) {
+                        q.w += each_sp;
+                        acc += each_sp;
+                    }
+                    if gaps.get(k).copied().unwrap_or(false) {
+                        q.w += each_gap;
+                        acc += each_gap;
+                    }
+                }
+            } else if n_sp > 0 && uo_jsnum::conv::truthy(extra) {
                 let each = extra / n_sp as f64;
                 let mut acc = 0.0;
                 for (k, q) in placed.iter_mut().enumerate() {
@@ -1273,7 +1601,7 @@ fn ptab_of_cx(cx: &Cx<'_, '_>, p: &PreparedPara, g: &Glyph) -> Option<PtabSpec> 
     };
     // `g.ptab.leader && g.ptab.leader !== 'none'`
     let leader = pt.leader.as_deref().filter(|l| !l.is_empty() && *l != "none").map(leader_from_ts);
-    Some(PtabSpec { alignment, leader })
+    Some(PtabSpec { alignment, leader, relative_to_margin: &*pt.relative_to == "margin" })
 }
 
 impl LineEnv for Cx<'_, '_> {
@@ -1288,7 +1616,28 @@ impl LineEnv for Cx<'_, '_> {
             consecutive_hyphen_limit: nullish(st.consecutive_hyphen_limit).unwrap_or(0.0),
             hyphenation_zone: nullish(st.hyphenation_zone),
             break_own_line: self.opts.view.word_break_lines(),
+            word: WordLineRules {
+                space_like_height: !self.opts.ts_space_like_height,
+                number_suffix: !self.opts.ts_number_suffix_font_space,
+                justify_tolerance: !self.opts.ts_justify_tolerance,
+                no_expand_shift_return: !self.opts.ts_shift_return_expands
+                    && st.compat.get("doNotExpandShiftReturn").copied().unwrap_or(false),
+                ptab: !self.opts.ts_ptab_indent_frame,
+                distribute: !self.opts.ts_distribute_spaces_only,
+                default_tab_negative: !self.opts.ts_default_tab_after_negative,
+                bar_tabs_ignored: !self.opts.ts_bar_tab_counts,
+                emphasis_marks: !self.opts.ts_no_emphasis_marks,
+                char_grid: !self.opts.ts_no_char_grid,
+                cjk_justify: !self.opts.ts_kinsoku_lists,
+                multiple_own_height: !self.opts.ts_multiple_text_height, // WordCraft study (fields, C1b)
+            },
         }
+    }
+
+    fn x_avg(&mut self, face: FaceId) -> LResult<Option<f64>> {
+        let f = self.fonts.face(face).ok_or(LayoutError::Internal("lines: face not in the layout"))?;
+        let m = f.metrics();
+        Ok(m.x_avg_char_width.filter(|&a| a != 0).map(|a| f64::from(a) / f64::from(m.units_per_em)))
     }
 
     fn advance_twips(&mut self, face: FaceId, cp: u32, size_pt: f64) -> LResult<f64> {

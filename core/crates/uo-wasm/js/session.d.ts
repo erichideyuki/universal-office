@@ -97,7 +97,7 @@ export declare class WriteSession {
   /** the toolbar state at the selection (`getSelectionState()` without view, marks and table) */
   selectionState(): SelectionState;
   /** the hyphenation pattern ids the document needs and `env` does not have yet */
-  hyphenationPatterns(env: WriteEnv, langs?: string[]): string[];
+  hyphenationPatterns(env: WriteEnv, langs?: string[], o?: { tsHyphenation?: boolean }): string[];
   /** the text and HTML of the last copy or cut, or null */
   copied(): { text: string; html: string } | null;
   // wave 5, frontier R (src/session/shell_review.rs; record uo-bindings.md "Wave 5 — R")

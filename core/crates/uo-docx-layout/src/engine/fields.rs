@@ -175,6 +175,25 @@ impl Engine {
         let name = String::from_utf16_lossy(name16);
         let lang = cx.opts.lang.clone();
         let mut cap = word::text_cap(&cx.opts.limits);
+        // WordCraft study (fields, B22): Word's `\*` switches on every number field and the case switches on text results,
+        // the words in the field's language (the frozen TS: SEQ only, `ts_field_format_switches`)
+        let sw = match instr {
+            Some(i) if !cx.opts.ts_field_format_switches => uo_docx::word::field_switch::parse_general(i),
+            _ => uo_docx::word::field_switch::GeneralSwitches::default(),
+        };
+        let words = uo_docx::word::numwords::WordsLang::of(self.field_lang.as_deref().unwrap_or(&lang));
+        // a number field's value: the switches' format over the number, or their case switches over `plain` (the
+        // number in its own format)
+        let num_sw = |n: f64, plain: Box<[u16]>| -> Option<Box<[u16]>> {
+            if sw.format.is_none() && !sw.unknown {
+                return Some(if sw.cases.is_empty() { plain } else { uo_docx::word::field_switch::apply_text(&plain, &sw, &lang).into() });
+            }
+            match uo_docx::word::field_switch::apply_number(n, &sw, words, &lang) {
+                Ok(Some(t)) => Some(utf16(&t)),
+                Ok(None) => None,
+                Err(e) => Some(utf16(e)),
+            }
+        };
         let out = match name.as_str() {
             "PAGEREF" => {
                 self.found.used_page_ref = true;
@@ -187,9 +206,18 @@ impl Engine {
                     {
                         Some(super::field_refs::bookmark_error(&cx.opts.lang).encode_utf16().collect())
                     }
-                    Some(b) => cx.input.marks_guess.get(b.as_str()).cloned(),
+                    Some(b) => match (cx.input.marks_guess.get(b.as_str()), cx.input.marks_num_guess.get(b.as_str())) {
+                        // WordCraft study (fields, B22): `\*` over the bookmark's page number
+                        (Some(t), Some(&n)) => num_sw(n, t.clone()),
+                        (t, _) => t.cloned(),
+                    },
                     None => None,
                 }
+            }
+            "SEQ" if !cx.opts.ts_field_format_switches => {
+                // WordCraft study (fields, B22): the counter through Word's switches
+                let v = self.seq_number(instr.unwrap_or(&[]));
+                v.and_then(|(v, hidden)| if hidden { Some(Box::default()) } else { num_sw(v, utf16(&uo_jsnum::format::to_js_string(v))) })
             }
             "SEQ" => self.seq_value(instr.unwrap_or(&[]), &lang, &mut cap),
             // the endnote's own number (w:endnoteRef) in the endnote flow
@@ -197,9 +225,9 @@ impl Engine {
                 let id = self.cur_endnote.ok_or(LayoutError::Internal("ENDNOTEREF_MARK"))?;
                 Some(self.ctx.note_mark_of(crate::context::NoteKindFlow::Endnote, id).map(Into::into).unwrap_or_default())
             }
-            "REF" => self.ref_value(cx, instr.unwrap_or(&[]), block, at)?,
+            "REF" => self.ref_value(cx, instr.unwrap_or(&[]), block, at)?.map(|t| self.text_switches(&t, &sw, &lang)),
             "NOTEREF" => self.note_ref_value(cx, instr.unwrap_or(&[]), block, at)?,
-            "STYLEREF" => self.style_ref_value(cx, instr.unwrap_or(&[]), block)?,
+            "STYLEREF" => self.style_ref_at(cx, instr.unwrap_or(&[]), block, ps)?.map(|t| self.text_switches(&t, &sw, &lang)),
             "PAGE" => {
                 let p = self.ps(ps)?;
                 let (number, gi) = (p.page.number, p.geom);
@@ -207,6 +235,12 @@ impl Engine {
                 let fmt = g.pg_fmt.clone().unwrap_or_else(|| "decimal".into());
                 let chap_style = g.chap.clone();
                 let num = word::format_number(number, Some(&fmt), &lang, &mut cap);
+                // WordCraft study (fields, B22): the format of `\*` replaces the section's (`pgNumType`); a case switch
+                // alone applies to the section's text (`XXI` → `\* Lower` xxi, measured); the chapter prefix stays
+                let num = match num_sw(number, num.units().into()) {
+                    Some(t) => uo_docx::text::Utf16::from_units(t.into_vec()),
+                    None => num,
+                };
                 let chap = match &chap_style {
                     // (`pages.indexOf(ps)`: −1 for a scratch page)
                     Some(c) => self.chapter_of(cx, c.level, if ps == super::SCRATCH { -1.0 } else { f64::from(ps.0) }),
@@ -226,18 +260,19 @@ impl Engine {
             "NUMPAGES" => {
                 self.found.used_num_pages = true;
                 let n = word::num_pages_shown(cx.input.total_pages_guess, self.first_page_number, self.cover_page);
-                Some(utf16(&uo_jsnum::format::to_js_string(n)))
+                num_sw(n, utf16(&uo_jsnum::format::to_js_string(n)))
             }
             // the pages of the page's section (measured in Word: a cover in its own section + 3 → "3")
             "SECTIONPAGES" => {
                 self.found.used_section_pages = true;
                 let idx = self.geom(self.ps(ps)?.geom)?.index;
                 let n = cx.input.section_pages_guess.get(&idx).copied().unwrap_or(cx.input.total_pages_guess);
-                Some(utf16(&uo_jsnum::format::to_js_string(n)))
+                num_sw(n, utf16(&uo_jsnum::format::to_js_string(n)))
             }
             "SECTION" => {
                 let idx = self.geom(self.ps(ps)?.geom)?.index;
-                Some(utf16(&uo_jsnum::format::to_js_string(f64::from(idx) + 1.0)))
+                let n = f64::from(idx) + 1.0;
+                num_sw(n, utf16(&uo_jsnum::format::to_js_string(n)))
             }
             // DATE/TIME: Word recomputes them on export — the export instant
             "DATE" | "TIME" => {
@@ -279,6 +314,18 @@ impl Engine {
             self.ctx.warn("field text truncated");
         }
         Ok(out)
+    }
+
+    /// WordCraft study (fields, B22): the case switches of `\*` over a text result (REF, STYLEREF); an error text of
+    /// the reference itself stays as it is.
+    fn text_switches(&self, t: &[u16], sw: &uo_docx::word::field_switch::GeneralSwitches, lang: &str) -> Box<[u16]> {
+        // (Word's error results — "Erro!", "Error!", "¡Error!" — never take a case switch: STYLEREF "heading 1" \* Upper
+        // keeps its error text as it is, measured)
+        let err = |p: &str| p.encode_utf16().zip(t.iter()).all(|(a, &b)| a == b) && t.len() >= p.encode_utf16().count();
+        if sw.is_empty() || super::field_refs::is_ref_error_text(t) || err("Erro!") || err("Error!") || err("¡Error!") {
+            return t.into();
+        }
+        uo_docx::word::field_switch::apply_text(t, sw, lang).into()
     }
 }
 

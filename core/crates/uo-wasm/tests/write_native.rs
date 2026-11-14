@@ -308,7 +308,7 @@ fn the_hyphenation_patterns_a_document_needs() {
     let doc = open(&fixture("f8__7__0"));
     let (p, l) = put(b"pt-BR\nen\nes");
     // SAFETY: live handles, a consumed buffer.
-    let (s, ids) = take(unsafe { uo_write_hyphenation_patterns(doc, env, p, l) });
+    let (s, ids) = take(unsafe { uo_write_hyphenation_patterns(doc, env, p, l, 0) });
     assert_eq!(s, 0);
     println!("patterns to fetch: {:?}", String::from_utf8(ids).unwrap());
     // SAFETY: live handles, released once.

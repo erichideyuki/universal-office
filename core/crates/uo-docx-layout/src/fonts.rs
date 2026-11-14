@@ -203,6 +203,45 @@ pub struct FaceResolverCache {
     /// paragraph memo records one paragraph: a hit needs the same keys cached with the same
     /// faces, LA7 level 1)
     pub tap: Option<indexmap::IndexMap<Box<str>, FaceId, rustc_hash::FxBuildHasher>>,
+    /// WordCraft study (fields): Word's name rules of the call (the default: the frozen TS's)
+    pub rules: LookupRules,
+}
+
+/// WordCraft study (fields; record `uo-docx-layout.md` "WordCraft study — fields"): which of Word's font name rules the
+/// substitution chain follows (each on when its `LayoutOptions::ts_*` switch is off). The default (all off) is the frozen
+/// TS's chain (`fonts.ts`), what the resolver's parity tests replay.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LookupRules {
+    /// C5 (`!ts_postscript_names`): a PostScript or camel-case name is the family at the caller's weight; a full name
+    /// (name ID 4 in the UI language, else en-US) the face it names
+    pub postscript: bool,
+    /// C2 (`!ts_charset_suffix_names`): the Windows FontSubstitutes names and a trailing " (Hebrew)"-style script
+    pub charset_suffix: bool,
+    /// C6 (`!ts_symbol_charset_fallback`): a missing charset-02 font → Symbol or Wingdings
+    pub symbol_charset: bool,
+    /// C4 (`!ts_thai_fallback`): a missing charset-DE font → Angsana New / Browallia New / Leelawadee UI
+    pub thai: bool,
+    /// C5: the Windows LCID of the UI language (pt-BR 0x0416, es 0x0C0A, else en-US 0x0409)
+    pub ui_lcid: u16,
+}
+
+impl LookupRules {
+    /// The rules of a layout call.
+    #[must_use]
+    pub fn of(opts: &crate::options::LayoutOptions) -> LookupRules {
+        let l = opts.lang.as_bytes().get(..2).map(<[u8]>::to_ascii_lowercase);
+        LookupRules {
+            postscript: !opts.ts_postscript_names,
+            charset_suffix: !opts.ts_charset_suffix_names,
+            symbol_charset: !opts.ts_symbol_charset_fallback,
+            thai: !opts.ts_thai_fallback,
+            ui_lcid: match l.as_deref() {
+                Some(b"pt") => 0x0416,
+                Some(b"es") => 0x0c0a,
+                _ => 0x0409,
+            },
+        }
+    }
 }
 
 /// One provider request of a recorded layout call and its answer's identity (LA7).
@@ -229,6 +268,13 @@ impl FaceResolverCache {
         FaceResolverCache::default()
     }
 
+    /// The cache with Word's name rules (WordCraft study, fields).
+    #[must_use]
+    pub fn with_rules(mut self, rules: LookupRules) -> FaceResolverCache {
+        self.rules = rules;
+        self
+    }
+
     /// `FaceResolver.get(family, bold, italic)` (fonts.ts:235): the face of the family (absent or
     /// blank = Times New Roman) after Word's substitution chain, cached per lower-case key.
     /// `Err(NoFace)` where the TS throws (`nenhuma fonte disponível`).
@@ -244,7 +290,7 @@ impl FaceResolverCache {
             }
             return Ok(id);
         }
-        let answer = lookup(env.provider, env.font_table, fam, bold, italic, &mut self.misses, self.log.as_mut())?;
+        let answer = lookup(env.provider, env.font_table, fam, bold, italic, &mut self.misses, self.log.as_mut(), self.rules)?;
         let id = env.table.intern(&answer, env.res)?;
         let key = key.into_boxed_str();
         if let Some(t) = self.tap.as_mut() {
@@ -287,6 +333,7 @@ impl FaceResolverCache {
             misses: self.misses.iter().take(misses).cloned().collect(),
             log: None,
             tap: None,
+            rules: self.rules,
         }
     }
 
@@ -459,6 +506,22 @@ fn alias_of(lower: &str) -> Option<&'static str> {
     })
 }
 
+/// WordCraft study (fields, C1): the vertical metrics (ascent, descent; em) Word keeps on a line for a run or bullet
+/// in Symbol or Wingdings — the win/hhea values of `symbol.ttf` (2059/2048, 450/2048) and `wingding.ttf` (1841/2048,
+/// 432/2048), line gap 0 — when the face that draws it is a stand-in, not a symbol-encoded font (the font is missing:
+/// the open-font viewer and server). `None` when the requested family is neither, or the face is a symbol font.
+#[must_use]
+pub fn symbol_stand_in_metrics(requested: &str, face_is_symbol: bool) -> Option<(f64, f64)> {
+    let lower = uo_text::case::to_lowercase_str(uo_jsnum::text::trim(requested));
+    let fam = alias_of(&lower).map_or(lower.clone(), uo_text::case::to_lowercase_str);
+    let m = match fam.as_str() {
+        "symbol" => (2059.0 / 2048.0, 450.0 / 2048.0),
+        "wingdings" => (1841.0 / 2048.0, 432.0 / 2048.0),
+        _ => return None,
+    };
+    (!face_is_symbol).then_some(m)
+}
+
 /// `CJK_DEFAULT` (fonts.ts:215): what Word puts in place of an absent family with an East Asian
 /// charset in the font table, `[sans serif, serif]`.
 fn cjk_default(charset_upper: &str) -> Option<[&'static str; 2]> {
@@ -576,10 +639,149 @@ fn alt_names(alt: &str) -> impl Iterator<Item = &str> + '_ {
     alt.split([',', ';']).map(uo_jsnum::text::trim)
 }
 
+/// WordCraft study (fields, C2): the base family of a Windows `FontSubstitutes` name (this machine's list, Windows 11
+/// pt-BR: Arial/Courier New/Times New Roman × Baltic/CE/CYR/Greek/TUR, Arabic Transparent, Tahoma Armenian; Helv, MS Shell
+/// Dlg, Times and Tms Rmn are [`alias_of`]'s), or of a name ending in a parenthesized script (" (Hebrew)", " (Arabic)",
+/// " (Vietnamese)" measured; Greek, Cyrillic, Baltic, Turkish and Thai inferred). Other " CE"-style suffixes stay (Word
+/// gives them the missing-font chain, measured: "Calibri CE", "Tahoma Greek", "Verdana Cyr").
+fn charset_base(fam: &str, lower: &str) -> Option<String> {
+    for base in ["arial", "courier new", "times new roman"] {
+        if let Some(rest) = lower.strip_prefix(base).and_then(|r| r.strip_prefix(' '))
+            && matches!(rest, "baltic" | "ce" | "cyr" | "greek" | "tur")
+        {
+            return Some(
+                match base {
+                    "arial" => "Arial",
+                    "courier new" => "Courier New",
+                    _ => "Times New Roman",
+                }
+                .to_owned(),
+            );
+        }
+    }
+    match lower {
+        "arabic transparent" | "arabic transparent bold" => return Some("Arial".to_owned()),
+        "tahoma armenian" => return Some("Tahoma".to_owned()),
+        _ => {}
+    }
+    for script in ["hebrew", "arabic", "vietnamese", "greek", "cyrillic", "baltic", "turkish", "thai"] {
+        let suffix = format!(" ({script})");
+        if lower.ends_with(suffix.as_str()) {
+            // (the family as written: the suffix is ASCII, so its length is the same in both spellings)
+            let head = uo_jsnum::text::trim(fam.get(..fam.len().saturating_sub(suffix.len())).unwrap_or(""));
+            if !head.is_empty() {
+                return Some(head.to_owned());
+            }
+        }
+    }
+    None
+}
+
+/// WordCraft study (fields, C5): the style tokens a camel-case or PostScript name ends with.
+const CAMEL_TOKENS: [&str; 12] =
+    ["BoldItalic", "Semibold", "Oblique", "Regular", "Italic", "Narrow", "Roman", "Light", "PSMT", "Bold", "MT", "PS"];
+
+/// `CamelCase` → `Camel Case` at each lower → upper boundary ("SegoeUI" → "Segoe UI", "TimesNewRoman" → "Times New Roman").
+fn spaced(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    let mut prev_lower = false;
+    for c in s.chars() {
+        if prev_lower && c.is_ascii_uppercase() {
+            out.push(' ');
+        }
+        out.push(c);
+        prev_lower = c.is_ascii_lowercase();
+    }
+    out
+}
+
+/// WordCraft study (fields, C5): the families a camel-case or PostScript name may designate, the shortest first — Word
+/// takes the SHORTEST installed family whose name (spaces removed) the name starts with, followed only by style tokens
+/// (measured: "ArialNarrow", "ArialNarrowBold" and "ArialNarrow-Bold" → Arial, "TimesNewRoman" and "CourierNewPSMT" →
+/// their family, "SegoeUISemibold" → Segoe UI). Each candidate is asked in turn; the provider says which exists.
+/// (Not explained: "CalibriLight" stays unresolved in Word — kept open in the tests, not special-cased.)
+fn camel_candidates(name: &str) -> Vec<String> {
+    let head = name.split(['-', ',']).next().unwrap_or(name);
+    if head.is_empty()
+        || head.contains(' ')
+        || !head.chars().all(|c| c.is_ascii_alphanumeric())
+        || !head.starts_with(|c: char| c.is_ascii_alphabetic())
+    {
+        return Vec::new();
+    }
+    // every prefix reached by stripping tokens from the end
+    let mut forms = vec![head.to_owned()];
+    let mut cur = head.to_owned();
+    'strip: loop {
+        for t in CAMEL_TOKENS {
+            if let Some(rest) = cur.strip_suffix(t)
+                && !rest.is_empty()
+            {
+                cur = rest.to_owned();
+                forms.push(cur.clone());
+                continue 'strip;
+            }
+        }
+        break;
+    }
+    forms.iter().rev().map(|f| spaced(f)).filter(|f| uo_text::case::to_lowercase_str(f) != uo_text::case::to_lowercase_str(name)).collect()
+}
+
+/// WordCraft study (fields, C5): the style words a "Family Style" name may end with (Bold and Italic measured; the
+/// others inferred from the same mechanism). "Roman", "MT", "Narrow" stay: they end family names ("Times New Roman").
+const SPACED_STYLE_WORDS: [&str; 10] =
+    ["bold", "italic", "oblique", "regular", "light", "semibold", "semilight", "medium", "black", "thin"];
+
+/// WordCraft study (fields, C5): the families a "Family Style" name (with spaces) may designate when it is not a full
+/// name in the UI language — each trailing style word stripped in turn, the longest first ("Arial Bold Italic" →
+/// "Arial Bold", "Arial"). Word answers the family at the caller's weight (measured in Word 365 pt-BR: "Arial Bold",
+/// "Arial Italic", "Times New Roman Bold", "Georgia Bold", "Verdana Bold", "Tahoma Bold", "Segoe UI Bold" and "Courier
+/// New Bold" are their REGULAR faces).
+fn spaced_style_candidates(name: &str) -> Vec<String> {
+    let words: Vec<&str> = uo_jsnum::text::split_js_space(name).filter(|w| !w.is_empty()).collect();
+    let mut out = Vec::new();
+    let mut n = words.len();
+    while n > 1 {
+        let last = uo_text::case::to_lowercase_str(words.get(n - 1).copied().unwrap_or(""));
+        if !SPACED_STYLE_WORDS.contains(&last.as_str()) {
+            break;
+        }
+        n -= 1;
+        out.push(words.get(..n).unwrap_or(&[]).join(" "));
+    }
+    out
+}
+
+/// WordCraft study (fields, C6): the symbol font Word puts in place of a missing charset-02 font — Symbol when its
+/// `w:family` is roman (whatever the PANOSE) or when the PANOSE is Symbol's (`0505…`) with no family; Wingdings
+/// otherwise (measured: fh `c6-*`, `wcfonts2/c6x-*`, `wcfonts3/c6y-*`).
+#[must_use]
+pub fn symbol_charset_stand_in(info: &FontInfo) -> &'static str {
+    let family = info.family.as_deref().filter(|f| !f.is_empty() && *f != "auto");
+    let panose_symbol = info.panose1.as_deref().is_some_and(|p| p.len() >= 4 && p.get(..4).is_some_and(|h| h.eq_ignore_ascii_case("0505")));
+    if family == Some("roman") || (family.is_none() && panose_symbol) { "Symbol" } else { "Wingdings" }
+}
+
+/// WordCraft study (fields, C1/C6): the symbol font a run's requested family stands for — Symbol or Wingdings by name
+/// (after Word's aliases), or a missing charset-02 font of the font table (C6, when `charset_rule`).
+#[must_use]
+pub fn symbol_role(font_table: &FontTable, requested: &str, charset_rule: bool) -> Option<&'static str> {
+    let lower = uo_text::case::to_lowercase_str(uo_jsnum::text::trim(requested));
+    let fam = alias_of(&lower).map_or(lower.clone(), uo_text::case::to_lowercase_str);
+    match fam.as_str() {
+        "symbol" => return Some("Symbol"),
+        "wingdings" => return Some("Wingdings"),
+        _ => {}
+    }
+    let info = font_table.get(uo_jsnum::text::trim(requested))?;
+    (charset_rule && info.charset.as_deref() == Some("02")).then(|| symbol_charset_stand_in(info))
+}
+
 /// `FaceResolver.lookup(fam, bold, italic)` (fonts.ts:246): the requests in Word's order, the
 /// first the provider answers; a host stand-in for the asked family gives way to what Word maps
 /// that name to (East Asian script font, FontSubstitutes, PostScript name) when the provider has
 /// one that is not a stand-in. `Err(NoFace)` where the TS throws.
+#[allow(clippy::too_many_arguments)]
 fn lookup(
     provider: &dyn FontProvider,
     font_table: &FontTable,
@@ -588,6 +790,7 @@ fn lookup(
     italic: bool,
     misses: &mut indexmap::IndexSet<crate::output::FaceRequest>,
     mut log: Option<&mut Vec<ProviderAsk>>,
+    rules: LookupRules,
 ) -> LResult<Arc<FontAnswer>> {
     // every request the provider has nothing for is noted (F8)
     let mut ask = |family: &str, b: bool, i: bool| -> Option<Arc<FontAnswer>> {
@@ -622,7 +825,31 @@ fn lookup(
     if let Some(a) = alias {
         tries.push(Try { family: a.to_owned(), bold, italic });
     }
-    if let Some(ps) = parse_post_script_name(fam) {
+    // WordCraft study (fields, C2): FontSubstitutes names and script suffixes resolve to the base family
+    if rules.charset_suffix
+        && alias.is_none()
+        && let Some(base) = charset_base(fam, &lower)
+    {
+        tries.push(Try { family: base, bold, italic });
+    }
+    if rules.postscript {
+        // WordCraft study (fields, C5): Word reads a PostScript name ("Arial-BoldMT") and a camel-case one ("ArialMT",
+        // "SegoeUISemibold") as the FAMILY at the caller's weight (the style ignored); a full name ("Arial Negrito" in a
+        // pt-BR UI, "Calibri Bold") as the face it names
+        if let Some((f, b, i)) = provider.full_name_face(fam, rules.ui_lcid) {
+            tries.push(Try { family: f, bold: bold || b, italic: italic || i });
+        }
+        // … and a "Family Style" name that is not a full name in the UI language as the family at the caller's weight
+        // ("Arial Bold", "Times New Roman Bold", "Segoe UI Bold" in a pt-BR UI: regular, measured `c5-*`, `c5x-*`)
+        for c in spaced_style_candidates(fam) {
+            let a2 = alias_of(&uo_text::case::to_lowercase_str(&c)).map_or(c, str::to_owned);
+            tries.push(Try { family: a2, bold, italic });
+        }
+        for c in camel_candidates(fam) {
+            let a2 = alias_of(&uo_text::case::to_lowercase_str(&c)).map_or(c, str::to_owned);
+            tries.push(Try { family: a2, bold, italic });
+        }
+    } else if let Some(ps) = parse_post_script_name(fam) {
         let a2 = alias_of(&uo_text::case::to_lowercase_str(&ps.family)).map_or(ps.family.clone(), str::to_owned);
         tries.push(Try { family: a2, bold: bold || ps.bold, italic: italic || ps.italic });
     }
@@ -637,6 +864,24 @@ fn lookup(
         }
     }
     let symbolic = info.and_then(|i| i.charset.as_deref()) == Some("02") || info.and_then(|i| i.family.as_deref()) == Some("decorative");
+    // WordCraft study (fields, C6): a missing charset-02 font is drawn with Symbol or Wingdings
+    if rules.symbol_charset
+        && let Some(i) = info.filter(|i| i.charset.as_deref() == Some("02"))
+    {
+        tries.push(Try { family: symbol_charset_stand_in(i).to_owned(), bold, italic });
+    }
+    // WordCraft study (fields, C4): a missing charset-DE (Thai) font — one Thai face by w:family for the whole run:
+    // roman → Angsana New, swiss → Browallia New, else (or unavailable) Leelawadee UI
+    if rules.thai
+        && let Some(i) = info.filter(|i| i.charset.as_deref().is_some_and(|c| c.eq_ignore_ascii_case("DE")))
+    {
+        match i.family.as_deref() {
+            Some("roman") => tries.push(Try { family: "Angsana New".to_owned(), bold, italic }),
+            Some("swiss") => tries.push(Try { family: "Browallia New".to_owned(), bold, italic }),
+            _ => {}
+        }
+        tries.push(Try { family: "Leelawadee UI".to_owned(), bold, italic });
+    }
     // absent family without altName: serif (roman) or outside the font table → Cambria;
     // swiss/auto/modern → Calibri; an Arabic signature → Arial or Sakkal Majalla
     if !symbolic {
@@ -801,6 +1046,10 @@ impl EmbeddedFontProvider {
 impl FontProvider for EmbeddedFontProvider {
     fn budget_refusals(&self) -> u64 {
         self.inner.budget_refusals().max(self.ledger.as_ref().map_or(0, |l| l.refused()))
+    }
+
+    fn full_name_face(&self, name: &str, ui_lcid: u16) -> Option<(String, bool, bool)> {
+        self.inner.full_name_face(name, ui_lcid)
     }
 
     fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>> {

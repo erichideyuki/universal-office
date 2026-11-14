@@ -564,7 +564,8 @@ const DECLARED = {
   // wave 7 (B): ED-106 closed — the TS frame and handles of a box (after Esc, in edit) are front O's paint, which this
   // harness's Rust screen left out (it kept S's hooks only); with O's hooks kept (tagged front 'O') X1 ×3, X3, X4 and X2's screen
   // are equal. What stays: ED-108, a TS defect (Word opens the Rust-saved package; record "Wave 7 — B")
-  'X2 f8__7__5': { end: ['saved .docx part bytes'], id: 'ED-108', why: 'saving with the caret inside the text box, the TS writes a document.xml of 8,180 bytes against 82,578 (a TS defect of saving inside a box: most of the body is missing)' },
+  // (WordCraft tables fix round: ED-108 joined with the row keep of f8__7__5, below — one key per scenario)
+  'X2 f8__7__5': { from: 0, facets: '*', end: '*', pagesAfterLoad: true, id: 'Word manda sobre o TS (WordCraft tables B5, row keep; ED-108)', why: 'Word keeps a row with the next by the first paragraph of its first cell only (15 pages, the TS 16); saving with the caret inside the text box, the TS writes a document.xml of 8,180 bytes against 82,578 (a TS defect of saving inside a box: most of the body is missing)' },
   // wave 7c (W): Word's layout rules over the frozen TS, each document attributed natively to ONE rule (uo-docx-layout
   // word_w7c.rs attribute_documents_to_the_word_rules) and measured in Word 16 (record uo-bindings.md "Wave 7c — W").
   // Item 3: the first box of a chain of linked boxes keeps the chain's first lines (Word; the TS widow rule empties it) —
@@ -573,16 +574,47 @@ const DECLARED = {
   'T2 f7d__7__8': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (item 3, linked boxes)', why: 'Word keeps the chain\'s first lines in the first box; the TS widow rule empties it' },
   // Item 4: REF/NOTEREF to the unterminated bm3 = Word's bold error text (the TS: the start paragraph's text)
   'N2 f7c__7__13': { end: ['thumbnail pixels', 'screen pixels'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF/NOTEREF to the unterminated bm3: Word writes its bold error text, the TS the paragraph text' },
+  // WordCraft study — tables (record uo-docx-layout.md "WordCraft study — tables", "Harness documents"; editor_switch.mjs's
+  // entries of the same documents): Word's table rules move these documents' lines and pages (the table scripts' targets
+  // are resolved in the TS run, so the steps may differ too); `pagesAfterLoad` as in editor_switch.mjs: the rule is Word's,
+  // the page count changes (f7b__7__5 14, f8__7__5 15; the TS and Word 15/16)
+  ...Object.fromEntries(['f7b__7__6', 'f7b__7__5'].map((f) => [`T2 ${f}`, { from: 0, facets: '*', end: '*', pagesAfterLoad: f === 'f7b__7__5', id: 'Word manda sobre o TS (WordCraft tables B5, row keep)', why: 'Word keeps a row with the next by the first paragraph of its first cell only' }])),
+  ...Object.fromEntries(['f7b__7__4', 'f7b__7__7', 'f7b__7__9'].map((f) => [`T2 ${f}`, { from: 0, facets: '*', end: '*', id: 'Word manda sobre o TS (WordCraft tables B15 B, gap word)', why: 'mode 15: a word that does not fit the strip beside a float goes below it in a cell too (the TS splits it)' }])),
+  'X1 f8__7__3': { from: 0, facets: '*', end: '*', id: 'Word manda sobre o TS (WordCraft tables B12, floating-table edges)', why: 'Word\'s wrap edges of a floating table: the right border and max(fromText, 10 tw)' },
+  'X1 f8__7__5': { from: 0, facets: '*', end: '*', pagesAfterLoad: true, id: 'Word manda sobre o TS (WordCraft tables B5, row keep)', why: 'Word keeps a row with the next by the first paragraph of its first cell only: 15 pages (the TS 16)' },
 };
+// WordCraft study (record uo-docx-layout.md "WordCraft study — harness declarations"): Word's rules over the frozen TS,
+// attributed by this harness's runs with ONE area at Word's rules (local wasm builds with the other areas' ts_* switches on;
+// all four at the TS's: every scenario equal but the tables entries above, stale then) and, inside an area, by a build with
+// ONE switch at Word's rule (tables) or by uo-docx-layout's native attribution of the document (fields). C1b: a
+// multiple-spaced line over runs of several faces gets Word's text height (the lines move a few hundredths of a point);
+// L8 (lines): an alignment tab (w:ptab) whose left/centre target is left of the pen ends the line (Word), the TS sets the
+// text at the target; tables B6 (a conditional table-style part's borders by REGION: T4's Grid Table 4 Accent 1)
+// moves T4's rows from setTableProperties on (and so the distributed heights/widths it saves). A key that already holds a declaration gets an array.
+const WC_C1B_S = { id: 'Word manda sobre o TS (WordCraft fields C1b)', why: 'Word\'s text height of multiple-spaced lines over several faces moves the lines' };
+const WC_S = {
+  'N2 f7c__7__13': { from: 2, facets: ['caret rect'], ...WC_C1B_S, id: 'Word manda sobre o TS (WordCraft fields C1b and B22)' },
+  'T2 f7b__7__1': { end: ['thumbnail pixels', 'screen pixels'], ...WC_C1B_S },
+  'T2 f7d__7__8': { from: 0, facets: ['caret rect'], ...WC_C1B_S },
+  'X3 f7b__7__10': { from: 0, facets: ['caret rect'], end: ['thumbnail pixels', 'screen pixels'], ...WC_C1B_S },
+  'X4 f7b__7__10': { end: ['thumbnail pixels', 'screen pixels'], ...WC_C1B_S },
+  'H2 two sections': { steps: [7, 8], facets: ['caret rect'], id: 'Word manda sobre o TS (WordCraft lines L8, ptab)', why: 'the alignment tab inserted in the header (dlg:alignTab): its target left of the pen ends the line in Word, the caret goes to the next line' },
+  'T4': { from: 22, facets: ['caret rect', 'state table'], end: ['thumbnail pixels', 'screen pixels', 'saved .docx part bytes'], id: 'Word manda sobre o TS (WordCraft tables B6, conditional table-style borders)', why: 'Word gives a table-style part its borders by region (the TS: the four sides of a part to every cell of it), so the rows of the Grid Table 4 Accent 1 table move and distributeRows/Columns save other sizes' },
+};
+for (const [k, d] of Object.entries(WC_S)) DECLARED[k] = DECLARED[k] ? [DECLARED[k], d].flat() : d;
 const STEP_FACETS = ['selection', 'caret rect', 'uw-* events', 'state run', 'state para', 'state table', 'contexts', 'dirty', 'api answer', 'screen pixels (step)'];
 const END_FACETS = ['page count/sizes', 'thumbnail pixels', 'screen pixels', 'saved .docx part names', 'saved .docx part bytes'];
 const declaredFor = (name, facet, step) => {
-  const d = DECLARED[name];
-  if (!d) return null;
-  if (step === undefined) return END_FACETS.includes(facet) && (d.end === '*' || (d.end ?? []).includes(facet)) ? d : null;
-  // `steps`: exactly these steps; `from`: every step from there
-  const at = d.steps ? d.steps.includes(step) : d.from !== undefined && step >= d.from;
-  return at && (d.facets === '*' || (d.facets ?? []).includes(facet)) ? d : null;
+  // (WordCraft study: a key may hold several declarations, an array; the first that declares the facet answers)
+  for (const d of [DECLARED[name] ?? []].flat()) {
+    // (as editor_switch.mjs: 'pages after load' only for a Word-authority entry with `pagesAfterLoad`)
+    if (facet === 'pages after load') { if (d.pagesAfterLoad && /^Word manda sobre o TS/.test(d.id)) return d; continue; }
+    if (step === undefined) { if (END_FACETS.includes(facet) && (d.end === '*' || (d.end ?? []).includes(facet))) return d; continue; }
+    // `steps`: exactly these steps; `from`: every step from there
+    const at = d.steps ? d.steps.includes(step) : d.from !== undefined && step >= d.from;
+    if (at && (d.facets === '*' || (d.facets ?? []).includes(facet))) return d;
+  }
+  return null;
 };
 
 /** a target resolved in the TS run (page twips + the scroll), or a literal */
@@ -772,7 +804,7 @@ if (MODE === 'stories' || MODE === 'all') {
     const tag = t.declared ? ` (declared ${t.declared}, undeclared ${t.diff - t.declared})` : '';
     console.log(`  ${f.padEnd(26)} equal ${t.same}, different ${t.diff}${tag}${t.first.length ? `\n      e.g. ${t.first.join('\n      e.g. ')}` : ''}`);
   }
-  console.log(`  declared differences used: ${[...used].map((f) => `${f} (${DECLARED[f].id})`).join(', ') || 'none'}`);
+  console.log(`  declared differences used: ${[...used].map((f) => `${f} (${[DECLARED[f]].flat().map((d) => d.id).join(' + ')})`).join(', ') || 'none'}`);
   const stale = Object.keys(DECLARED).filter((f) => SCENARIOS.some((s) => s.name === f) && !used.has(f));
   if (stale.length) fail(`stories: declared but equal now (stale): ${stale.join(', ')}`);
   for (const u of undeclared) fail(`stories: undeclared difference: ${u}`);

@@ -123,6 +123,32 @@ export interface LayoutOptions {
   tsHyphenation?: boolean;
   /** Wave 7c (W): a keepLines paragraph taller than a page stays (the frozen TS; Word moves it). For parity tests. */
   tsKeepLines?: boolean;
+  /**
+   * WordCraft study (lines): the frozen TS's line rules where Word differs (line height of the SPACE_LIKE characters, the
+   * number's space suffix, the justification tolerances, kinsoku, the character grid, *Chars indents,
+   * doNotExpandShiftReturn, w:ptab, jc=distribute, default and bar tab stops, emphasis marks, superscript above 24 pt).
+   * For parity tests against TS captures.
+   */
+  tsWcLines?: boolean;
+  /**
+   * WordCraft study (page): the frozen TS's page rules where Word differs (space before after an opening page break,
+   * odd/even section parity, gutter and mirror margins, float anchoring and re-layout, mirrorIndents, print folds). For
+   * parity tests against TS captures.
+   */
+  tsWcPage?: boolean;
+  /**
+   * WordCraft study (tables): the frozen TS's table rules where Word differs (row keepNext from any paragraph,
+   * conditional table-style borders per cell, floating-table wrap edges, wrapping objects not clamped into their cell,
+   * the long word beside a float, `w:tblStyle` order). For parity tests against TS captures.
+   */
+  tsWcTables?: boolean;
+  /**
+   * WordCraft study (fields): the frozen TS's rules where Word differs in fields, lists and font names (Symbol/Wingdings
+   * line metrics, multiple spacing over mixed faces, PostScript/full/charset-suffix names, STYLEREF per page, `\*`
+   * switches and number words, list words and isLgl, SECTIONPAGES on shared pages, REF `\r`/`\p`, header/footer
+   * formulas, the East Asian default language, Thai fallbacks). For parity tests against TS captures.
+   */
+  tsWcFields?: boolean;
 }
 
 /** A result buffer of render.mjs (`take()` = status + a copy of the bytes, then free). */
@@ -241,7 +267,8 @@ export declare class WriteLayout {
 
 export declare class WriteDocument {
   free(): void;
-  hyphenationPatterns(env: WriteEnv, appLanguages?: string[]): string[];
+  /** `o.tsHyphenation`: the ids for a layout under the frozen TS's English data (parity tests only) */
+  hyphenationPatterns(env: WriteEnv, appLanguages?: string[], o?: { tsHyphenation?: boolean }): string[];
   layout(env: WriteEnv, o?: LayoutOptions): WriteLayout;
 }
 

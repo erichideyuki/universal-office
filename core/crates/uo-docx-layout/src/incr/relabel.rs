@@ -100,7 +100,7 @@ impl<A: Relabel, B> Relabel for (A, B) {
 
 impl Relabel for CellContent {
     fn relabel(&mut self, maps: &[LineMap]) {
-        let CellContent { items, lines: _, height: _, keep_next: _, paras: _, nest, align_h: _, shape: _ } = self;
+        let CellContent { items, lines: _, height: _, keep_next: _, first_keep_next: _, paras: _, nest, align_h: _, shape: _ } = self;
         items.relabel(maps);
         nest.relabel(maps);
     }
@@ -162,7 +162,7 @@ impl Relabel for RowSplit {
 
 impl Relabel for crate::table::TableLayout {
     fn relabel(&mut self, maps: &[LineMap]) {
-        let crate::table::TableLayout { x: _, width: _, rows, border_left: _, eff_r: _, tblp_pr: _ } = self;
+        let crate::table::TableLayout { x: _, width: _, rows, border_left: _, border_right: _, eff_r: _, tblp_pr: _ } = self;
         rows.relabel(maps);
     }
 }
@@ -199,6 +199,11 @@ impl Relabel for PageState {
             body_bottom_base: _,
             notes_full: _,
             cols: _,
+            blank: _,
+            doc_even: _,
+            sections: _,
+            cont_first: _,
+            num_sect_page: _,
         } = self;
         behind.relabel(maps);
         hf.relabel(maps);
@@ -289,6 +294,7 @@ impl Relabel for Engine {
             hf_frame_tbl,
             static_dx: _,
             cell_mar: _,
+            cell_interior: _,
             col_max_y: _,
             sect_gap_after: _,
             pending_join: _,
@@ -312,6 +318,10 @@ impl Relabel for Engine {
             field_page: _,
             en_blocks: _,
             kl_col_to_page: _,
+            mirror_static: _,
+            float_line_top: _,
+            body_early: _,
+            field_lang: _,
             sect_geoms: _,
             geoms: _,
             cover_page: _,

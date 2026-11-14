@@ -68,6 +68,7 @@ fn empty() -> CellContent {
         lines: Vec::new(),
         height: 0.0,
         keep_next: false,
+        first_keep_next: false,
         paras: None,
         nest: None,
         align_h: OptF64::NONE,
@@ -214,6 +215,7 @@ fn rows_copy(t: &Table, from: usize) -> Table {
         cleared: t.cleared,
         keys: t.keys.clone(),
         id: t.id,
+        word_tbl_pr: t.word_tbl_pr.clone(),
     }
 }
 

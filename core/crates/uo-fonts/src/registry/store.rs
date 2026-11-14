@@ -99,6 +99,8 @@ pub(crate) struct PushedFace {
 
 #[derive(Clone)]
 pub(crate) struct Family {
+    /// WordCraft study (fields, C5): the family as the host pushed it (the key is lower-cased)
+    pub(crate) name: String,
     pub(crate) source: FontSource,
     pub(crate) embeddable: bool,
     pub(crate) faces: [Option<Arc<Pushed>>; 4],
@@ -129,6 +131,19 @@ struct State {
     missing: Vec<MissingFamily>,
     attempted: HashSet<String>,
     generation: u64,
+    /// WordCraft study (fields, C5): the full-name index of the pushed families, built for this generation
+    full_names: Option<(u64, Arc<[FullNameEntry]>)>,
+}
+
+/// WordCraft study (fields, C5): one family the full-name index reads — its key, its spelling as pushed (`None` for a
+/// hosted asset: the face's own) and its faces.
+type IndexSource = (String, Option<String>, [Option<Arc<Pushed>>; 4]);
+
+/// WordCraft study (fields, C5): the full names (name ID 4, platform 3) of one pushed face, by language, lower-cased.
+struct FullNameEntry {
+    names: Vec<(u16, String)>,
+    family: String,
+    variant: Variant,
 }
 
 fn slot(v: Variant) -> usize {
@@ -216,7 +231,7 @@ impl FontRegistry {
     /// error nothing changes.
     pub fn push_family(&self, family: &str, source: FontSource, embeddable: bool, faces: Vec<HostFace>) -> Result<(), PushError> {
         let prepared = faces.into_iter().map(|f| self.prepare(f)).collect::<Result<Vec<_>, _>>()?;
-        let mut entry = Family { source, embeddable, faces: [None, None, None, None] };
+        let mut entry = Family { name: family.to_owned(), source, embeddable, faces: [None, None, None, None] };
         let mut state = self.lock();
         for p in prepared {
             let (variant, pushed) = self.charge(p)?;
@@ -279,6 +294,80 @@ impl FontRegistry {
 
     pub(crate) fn family(&self, family: &str) -> Option<Family> {
         self.lock().families.get(&to_lowercase(family)).cloned()
+    }
+
+    /// WordCraft study (fields, C5; measured in Word 365 pt-BR, see `FaceSource::full_name` of the system index): the
+    /// pushed face whose FULL name (name ID 4) is `name` in the UI language `ui_lcid` — or in en-US when the face has
+    /// no record in that language ("Arial Negrito" in pt-BR is Arial Bold, "Calibri Bold" is Calibri Bold) — as
+    /// `(family as pushed, bold, italic)`. Only faces that are the family they were pushed for count (name ID 1 or 16
+    /// equal to it, so a substitute or an asset under another family's name does not answer for its own names); the
+    /// `Substitute` and `Default` answers are skipped. The pushed families in key order, then the hosted assets (under
+    /// the face's own spelling of its family); faces in variant order. The index is built once per generation. Only
+    /// what was pushed is indexed: a full name whose family the document names nowhere else is found once the host
+    /// has pushed that family.
+    pub fn full_name_face(&self, name: &str, ui_lcid: u16) -> Option<(String, bool, bool)> {
+        let want = to_lowercase(uo_jsnum::text::trim(name));
+        if want.is_empty() {
+            return None;
+        }
+        for e in self.full_name_index().iter() {
+            let lang = if e.names.iter().any(|(l, _)| *l == ui_lcid) { ui_lcid } else { 0x0409 };
+            if e.names.iter().any(|(l, n)| *l == lang && *n == want) {
+                return Some((e.family.clone(), crate::variant::is_bold_variant(e.variant), crate::variant::is_italic_variant(e.variant)));
+            }
+        }
+        None
+    }
+
+    fn full_name_index(&self) -> Arc<[FullNameEntry]> {
+        let (generation, mut families) = {
+            let state = self.lock();
+            if let Some((g, idx)) = &state.full_names
+                && *g == state.generation
+            {
+                return Arc::clone(idx);
+            }
+            // (the pushed families, then the hosted assets: `None` = the asset's own spelling of its family)
+            let mut fams: Vec<IndexSource> = state
+                .families
+                .iter()
+                .filter(|(_, f)| !matches!(f.source, FontSource::Substitute | FontSource::Default))
+                .map(|(k, f)| (k.clone(), Some(f.name.clone()), f.faces.clone()))
+                .collect();
+            fams.sort_by(|a, b| a.0.cmp(&b.0));
+            let mut assets: Vec<IndexSource> = state.assets.iter().map(|(k, a)| (k.clone(), None, a.faces.clone())).collect();
+            assets.sort_by(|a, b| a.0.cmp(&b.0));
+            fams.extend(assets);
+            (state.generation, fams)
+        };
+        let names_of = |bytes: &[u8], id: u16| -> Vec<(u16, String)> {
+            crate::info::platform3_names(bytes, id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(l, u)| (l, uo_jsnum::text::trim(&String::from_utf16_lossy(&u)).to_owned()))
+                .collect()
+        };
+        let mut entries = Vec::new();
+        for (key, name, faces) in families.drain(..) {
+            for (i, pushed) in faces.iter().enumerate() {
+                let Some(p) = pushed else { continue };
+                let Some((_, own)) = names_of(&p.bytes, 1).into_iter().chain(names_of(&p.bytes, 16)).find(|(_, n)| to_lowercase(n) == key)
+                else {
+                    continue;
+                };
+                let names: Vec<(u16, String)> = names_of(&p.bytes, 4).into_iter().map(|(l, n)| (l, to_lowercase(&n))).collect();
+                if !names.is_empty() {
+                    let family = name.clone().unwrap_or(own);
+                    entries.push(FullNameEntry { names, family, variant: VARIANTS.get(i).copied().unwrap_or(Variant::Regular) });
+                }
+            }
+        }
+        let idx: Arc<[FullNameEntry]> = entries.into();
+        let mut state = self.lock();
+        if state.generation == generation {
+            state.full_names = Some((generation, Arc::clone(&idx)));
+        }
+        idx
     }
 
     pub(crate) fn assets(&self, family: &str) -> Option<Assets> {

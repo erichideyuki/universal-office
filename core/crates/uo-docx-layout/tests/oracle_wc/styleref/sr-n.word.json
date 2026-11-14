@@ -1,0 +1,781 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 1584.0,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 507.09,
+"size": 11.04,
+"text": "n0=Erro!Nenhumtextocomoestiloespecificadofoiencontradonodocumento."
+},
+{
+"y": 58.32,
+"x0": 85.1,
+"x1": 103.97,
+"size": 11.04,
+"text": "Hxg"
+},
+{
+"y": 71.04,
+"x0": 85.1,
+"x1": 477.88,
+"size": 11.04,
+"text": "n1=Erro!UseaguiaPáginaInicialparaaplicarTítulo3aotextoquedeverá"
+},
+{
+"y": 83.64,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 96.36,
+"x0": 85.1,
+"x1": 496.34,
+"size": 11.04,
+"text": "n2=Erro!UseaguiaPáginaInicialparaaplicarInexistenteaotextoquedeverá"
+},
+{
+"y": 108.96,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 121.56,
+"x0": 85.1,
+"x1": 179.57,
+"size": 11.04,
+"text": "n3=CapituloAHxg"
+},
+{
+"y": 134.28,
+"x0": 85.1,
+"x1": 477.88,
+"size": 11.04,
+"text": "n4=Erro!UseaguiaPáginaInicialparaaplicarTitulo1aotextoquedeverá"
+},
+{
+"y": 146.88,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 159.62,
+"x0": 85.1,
+"x1": 491.45,
+"size": 11.04,
+"text": "n5=Erro!UseaguiaPáginaInicialparaaplicarHeading1aotextoquedeverá"
+},
+{
+"y": 172.22,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 184.82,
+"x0": 85.1,
+"x1": 471.76,
+"size": 11.04,
+"text": "n6=Erro!UseaguiaPáginaInicialparaaplicarTtulo1aotextoquedeverá"
+},
+{
+"y": 197.54,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 210.14,
+"x0": 85.1,
+"x1": 201.68,
+"size": 11.04,
+"text": "n7=ParagrafoMeuHxg"
+},
+{
+"y": 222.86,
+"x0": 85.1,
+"x1": 507.07,
+"size": 11.04,
+"text": "n8=Erro!Nenhumtextocomoestiloespecificadofoiencontradonodocumento."
+},
+{
+"y": 235.46,
+"x0": 85.1,
+"x1": 103.97,
+"size": 11.04,
+"text": "Hxg"
+},
+{
+"y": 248.18,
+"x0": 85.1,
+"x1": 201.68,
+"size": 11.04,
+"text": "n9=ParagrafoMeuHxg"
+},
+{
+"y": 260.78,
+"x0": 85.1,
+"x1": 207.68,
+"size": 11.04,
+"text": "n10=ParagrafoMeuHxg"
+},
+{
+"y": 273.38,
+"x0": 85.1,
+"x1": 448.19,
+"size": 11.04,
+"text": "n11=Erro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 286.1,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 298.7,
+"x0": 85.1,
+"x1": 448.19,
+"size": 11.04,
+"text": "n12=Erro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 311.42,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 1533.72,
+"x0": 85.1,
+"x1": 457.57,
+"size": 11.04,
+"text": "rodapeErro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 1546.44,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 324.02,
+"x0": 85.1,
+"x1": 161.51,
+"size": 11.04,
+"text": "1.CapituloA"
+},
+{
+"y": 336.62,
+"x0": 85.1,
+"x1": 146.31,
+"size": 11.04,
+"text": "textoa1Hxg"
+},
+{
+"y": 349.34,
+"x0": 85.1,
+"x1": 161.3,
+"size": 11.04,
+"text": "2.CapituloB"
+},
+{
+"y": 361.94,
+"x0": 85.1,
+"x1": 146.31,
+"size": 11.04,
+"text": "textob1Hxg"
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 1584.0,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 507.07,
+"size": 11.04,
+"text": "n0=Erro!Nenhumtextocomoestiloespecificadofoiencontradonodocumento."
+},
+{
+"y": 58.32,
+"x0": 85.1,
+"x1": 103.97,
+"size": 11.04,
+"text": "Hxg"
+},
+{
+"y": 71.04,
+"x0": 85.1,
+"x1": 477.88,
+"size": 11.04,
+"text": "n1=Erro!UseaguiaPáginaInicialparaaplicarTítulo3aotextoquedeverá"
+},
+{
+"y": 83.64,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 96.36,
+"x0": 85.1,
+"x1": 496.36,
+"size": 11.04,
+"text": "n2=Erro!UseaguiaPáginaInicialparaaplicarInexistenteaotextoquedeverá"
+},
+{
+"y": 108.96,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 121.56,
+"x0": 85.1,
+"x1": 179.57,
+"size": 11.04,
+"text": "n3=CapituloBHxg"
+},
+{
+"y": 134.28,
+"x0": 85.1,
+"x1": 477.88,
+"size": 11.04,
+"text": "n4=Erro!UseaguiaPáginaInicialparaaplicarTitulo1aotextoquedeverá"
+},
+{
+"y": 146.88,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 159.62,
+"x0": 85.1,
+"x1": 491.45,
+"size": 11.04,
+"text": "n5=Erro!UseaguiaPáginaInicialparaaplicarHeading1aotextoquedeverá"
+},
+{
+"y": 172.22,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 184.82,
+"x0": 85.1,
+"x1": 471.75,
+"size": 11.04,
+"text": "n6=Erro!UseaguiaPáginaInicialparaaplicarTtulo1aotextoquedeverá"
+},
+{
+"y": 197.54,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 210.14,
+"x0": 85.1,
+"x1": 201.68,
+"size": 11.04,
+"text": "n7=ParagrafoMeuHxg"
+},
+{
+"y": 222.86,
+"x0": 85.1,
+"x1": 507.07,
+"size": 11.04,
+"text": "n8=Erro!Nenhumtextocomoestiloespecificadofoiencontradonodocumento."
+},
+{
+"y": 235.46,
+"x0": 85.1,
+"x1": 103.97,
+"size": 11.04,
+"text": "Hxg"
+},
+{
+"y": 248.18,
+"x0": 85.1,
+"x1": 201.68,
+"size": 11.04,
+"text": "n9=ParagrafoMeuHxg"
+},
+{
+"y": 260.78,
+"x0": 85.1,
+"x1": 207.68,
+"size": 11.04,
+"text": "n10=ParagrafoMeuHxg"
+},
+{
+"y": 273.38,
+"x0": 85.1,
+"x1": 448.2,
+"size": 11.04,
+"text": "n11=Erro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 286.1,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 298.7,
+"x0": 85.1,
+"x1": 448.19,
+"size": 11.04,
+"text": "n12=Erro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 311.42,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 1533.72,
+"x0": 85.1,
+"x1": 457.57,
+"size": 11.04,
+"text": "rodapeErro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 1546.44,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 324.02,
+"x0": 85.1,
+"x1": 146.31,
+"size": 11.04,
+"text": "textop2Hxg"
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 1584.0,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 507.07,
+"size": 11.04,
+"text": "n0=Erro!Nenhumtextocomoestiloespecificadofoiencontradonodocumento."
+},
+{
+"y": 58.32,
+"x0": 85.1,
+"x1": 103.97,
+"size": 11.04,
+"text": "Hxg"
+},
+{
+"y": 71.04,
+"x0": 85.1,
+"x1": 477.88,
+"size": 11.04,
+"text": "n1=Erro!UseaguiaPáginaInicialparaaplicarTítulo3aotextoquedeverá"
+},
+{
+"y": 83.64,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 96.36,
+"x0": 85.1,
+"x1": 496.34,
+"size": 11.04,
+"text": "n2=Erro!UseaguiaPáginaInicialparaaplicarInexistenteaotextoquedeverá"
+},
+{
+"y": 108.96,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 121.56,
+"x0": 85.1,
+"x1": 180.17,
+"size": 11.04,
+"text": "n3=CapituloCHxg"
+},
+{
+"y": 134.28,
+"x0": 85.1,
+"x1": 477.88,
+"size": 11.04,
+"text": "n4=Erro!UseaguiaPáginaInicialparaaplicarTitulo1aotextoquedeverá"
+},
+{
+"y": 146.88,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 159.62,
+"x0": 85.1,
+"x1": 491.47,
+"size": 11.04,
+"text": "n5=Erro!UseaguiaPáginaInicialparaaplicarHeading1aotextoquedeverá"
+},
+{
+"y": 172.22,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 184.82,
+"x0": 85.1,
+"x1": 471.75,
+"size": 11.04,
+"text": "n6=Erro!UseaguiaPáginaInicialparaaplicarTtulo1aotextoquedeverá"
+},
+{
+"y": 197.54,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 210.14,
+"x0": 85.1,
+"x1": 201.68,
+"size": 11.04,
+"text": "n7=ParagrafoMeuHxg"
+},
+{
+"y": 222.86,
+"x0": 85.1,
+"x1": 507.07,
+"size": 11.04,
+"text": "n8=Erro!Nenhumtextocomoestiloespecificadofoiencontradonodocumento."
+},
+{
+"y": 235.46,
+"x0": 85.1,
+"x1": 103.97,
+"size": 11.04,
+"text": "Hxg"
+},
+{
+"y": 248.18,
+"x0": 85.1,
+"x1": 201.68,
+"size": 11.04,
+"text": "n9=ParagrafoMeuHxg"
+},
+{
+"y": 260.78,
+"x0": 85.1,
+"x1": 207.68,
+"size": 11.04,
+"text": "n10=ParagrafoMeuHxg"
+},
+{
+"y": 273.38,
+"x0": 85.1,
+"x1": 448.19,
+"size": 11.04,
+"text": "n11=Erro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 286.1,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 298.7,
+"x0": 85.1,
+"x1": 448.19,
+"size": 11.04,
+"text": "n12=Erro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 311.42,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 1533.72,
+"x0": 85.1,
+"x1": 457.57,
+"size": 11.04,
+"text": "rodapeErro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 1546.44,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 324.02,
+"x0": 85.1,
+"x1": 146.31,
+"size": 11.04,
+"text": "textop3Hxg"
+},
+{
+"y": 336.62,
+"x0": 85.1,
+"x1": 157.23,
+"size": 11.04,
+"text": "ParagrafoMeu"
+},
+{
+"y": 349.34,
+"x0": 85.1,
+"x1": 161.5,
+"size": 11.04,
+"text": "3.CapituloC"
+},
+{
+"y": 361.94,
+"x0": 85.1,
+"x1": 145.74,
+"size": 11.04,
+"text": "textoc1Hxg"
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 1584.0,
+"lines": [
+{
+"y": 45.72,
+"x0": 85.1,
+"x1": 507.07,
+"size": 11.04,
+"text": "n0=Erro!Nenhumtextocomoestiloespecificadofoiencontradonodocumento."
+},
+{
+"y": 58.32,
+"x0": 85.1,
+"x1": 103.97,
+"size": 11.04,
+"text": "Hxg"
+},
+{
+"y": 71.04,
+"x0": 85.1,
+"x1": 477.9,
+"size": 11.04,
+"text": "n1=Erro!UseaguiaPáginaInicialparaaplicarTítulo3aotextoquedeverá"
+},
+{
+"y": 83.64,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 96.36,
+"x0": 85.1,
+"x1": 496.34,
+"size": 11.04,
+"text": "n2=Erro!UseaguiaPáginaInicialparaaplicarInexistenteaotextoquedeverá"
+},
+{
+"y": 108.96,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 121.56,
+"x0": 85.1,
+"x1": 180.17,
+"size": 11.04,
+"text": "n3=CapituloCHxg"
+},
+{
+"y": 134.28,
+"x0": 85.1,
+"x1": 477.88,
+"size": 11.04,
+"text": "n4=Erro!UseaguiaPáginaInicialparaaplicarTitulo1aotextoquedeverá"
+},
+{
+"y": 146.88,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 159.62,
+"x0": 85.1,
+"x1": 491.45,
+"size": 11.04,
+"text": "n5=Erro!UseaguiaPáginaInicialparaaplicarHeading1aotextoquedeverá"
+},
+{
+"y": 172.22,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 184.82,
+"x0": 85.1,
+"x1": 471.75,
+"size": 11.04,
+"text": "n6=Erro!UseaguiaPáginaInicialparaaplicarTtulo1aotextoquedeverá"
+},
+{
+"y": 197.54,
+"x0": 85.1,
+"x1": 181.73,
+"size": 11.04,
+"text": "apareceraqui.Hxg"
+},
+{
+"y": 210.14,
+"x0": 85.1,
+"x1": 201.68,
+"size": 11.04,
+"text": "n7=ParagrafoMeuHxg"
+},
+{
+"y": 222.86,
+"x0": 85.1,
+"x1": 507.09,
+"size": 11.04,
+"text": "n8=Erro!Nenhumtextocomoestiloespecificadofoiencontradonodocumento."
+},
+{
+"y": 235.46,
+"x0": 85.1,
+"x1": 103.97,
+"size": 11.04,
+"text": "Hxg"
+},
+{
+"y": 248.18,
+"x0": 85.1,
+"x1": 201.68,
+"size": 11.04,
+"text": "n9=ParagrafoMeuHxg"
+},
+{
+"y": 260.78,
+"x0": 85.1,
+"x1": 207.68,
+"size": 11.04,
+"text": "n10=ParagrafoMeuHxg"
+},
+{
+"y": 273.38,
+"x0": 85.1,
+"x1": 448.19,
+"size": 11.04,
+"text": "n11=Erro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 286.1,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 298.7,
+"x0": 85.1,
+"x1": 448.19,
+"size": 11.04,
+"text": "n12=Erro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 311.42,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 1533.72,
+"x0": 85.1,
+"x1": 457.57,
+"size": 11.04,
+"text": "rodapeErro!Nenhumtextocomoestiloespecificadofoiencontradono"
+},
+{
+"y": 1546.44,
+"x0": 85.1,
+"x1": 169.49,
+"size": 11.04,
+"text": "documento.Hxg"
+},
+{
+"y": 324.02,
+"x0": 85.1,
+"x1": 223.25,
+"size": 11.04,
+"text": "antesMarcaUmdepoisHxg"
+},
+{
+"y": 336.62,
+"x0": 85.1,
+"x1": 121.82,
+"size": 11.04,
+"text": "fimHxg"
+}
+],
+"objs": []
+}
+]
+}

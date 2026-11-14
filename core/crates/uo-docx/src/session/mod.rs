@@ -98,6 +98,11 @@ pub struct SessionOptions {
     pub markup: MarkupMode,
     /// "Show Markup" (`markup`: `MarkupOptions`, D2b-F6)
     pub markup_options: ops::revision_cmds::MarkupOptions,
+    /// WordCraft study (fields, B25): the frozen TS's table-formula error texts and ROUND (`OpenOptions::ts_formula_errors`)
+    pub ts_formula_errors: bool,
+    /// WordCraft study (fields, B26/B27): the frozen TS's list words and isLgl in the outline, the TOC sources and the
+    /// cross-reference items (`OpenOptions::ts_numbering`)
+    pub ts_numbering: bool,
 }
 
 impl Default for SessionOptions {
@@ -111,6 +116,8 @@ impl Default for SessionOptions {
             read_view: false,
             markup: MarkupMode::All,
             markup_options: ops::revision_cmds::MarkupOptions::default(),
+            ts_formula_errors: false,
+            ts_numbering: false,
         }
     }
 }
@@ -267,6 +274,13 @@ impl Session {
     #[must_use]
     pub fn options(&self) -> &SessionOptions {
         &self.opts
+    }
+
+    /// WordCraft study (fields, B26/B27): the list rules of the session's outline, TOC sources and cross-reference items
+    /// (Word's unless `OpenOptions::ts_numbering`).
+    #[must_use]
+    pub fn num_rules(&self) -> crate::word::NumRules {
+        crate::word::NumRules { word_lang: !self.opts.ts_numbering, word_lgl: !self.opts.ts_numbering }
     }
 
     #[must_use]

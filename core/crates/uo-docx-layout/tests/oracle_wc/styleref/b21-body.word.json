@@ -1,0 +1,53 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 139.92,
+"size": 11.04,
+"text": "CapituloA"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 130.95,
+"size": 11.04,
+"text": "textoHxg"
+}
+],
+"objs": []
+},
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 81.12,
+"x0": 85.1,
+"x1": 498.88,
+"size": 11.04,
+"text": "nomeErro!UseaguiaPáginaInicialparaaplicarheading1aotextoquedeverá"
+},
+{
+"y": 93.86,
+"x0": 85.1,
+"x1": 260.0,
+"size": 11.04,
+"text": "apareceraqui.numCapituloAHxg"
+},
+{
+"y": 106.46,
+"x0": 85.1,
+"x1": 139.71,
+"size": 11.04,
+"text": "CapituloB"
+}
+],
+"objs": []
+}
+]
+}

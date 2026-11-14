@@ -4070,3 +4070,642 @@ Open (not applied): the theme tint/shade rounding (`ts_theme_tint` reserved: no 
 and the hyphenation patterns (`ts_hyphenation_patterns` reserved; the `hyphword` measurement: line splits equal to Word in
 pt 877/900, en 809/900, es 898/900 paragraphs) — uo-bindings.md "Wave 7c — W". The .NET port
 (`UniversalOffice.Docx/DocxLayout`) has none of these rules: to be ported with the parity dumps regenerated.
+
+## WordCraft study — tables
+
+Implementer of the plan `core/target/wordcraft-study/PLAN-tables.md` (2026-11-13; items B5, B6, B12, B15 rules A and B,
+the TCond aside; the placement half of B10/B11 is the page area's, reviewed below). Word 365 pt-BR (16.0) decides where it
+differs from the frozen TS. Every rule was measured with Word (invisible COM through `tools/parallel/word-lock.mjs`, case
+generators `write/tools/layout-oracle/cases/wctab*.mjs` and the B study's `wcb*.mjs`, Liberation Sans only) and is checked by
+`tests/word_wc_tables.rs` against the fixtures in `tests/oracle_wc/<group>` (pages, line texts, the page of each line,
+baseline ±0.3 pt, x ±0.6 pt where the group measures it, and for the border groups a RULES comparer: Word's vertical and
+horizontal paths of the PDF against the layout's border lines, collinear pieces joined, centre ±0.3 pt, thickness
+±0.15 pt). Each rule's frozen-TS behaviour stays behind a `LayoutOptions` switch, set by `ts_strict()` (therefore by every
+strict replay: `layout_parity`, `f8_parity`, `f4_parity`, `f6_parity`, `g8`, uo-ffi `server_parity`) and, in wasm, by the
+ONE area bit 20 `LAYOUT_TS_WC_TABLES` (`write.rs`; JS `tsWcTables`, set by the harnesses' `wasmOptions`;
+`uo-wasm/tests/wc_tables_native.rs`). `word_wc_tables` asserts, per group, the cases where `ts_strict()` differs from Word.
+
+| Rule (switch) | Word (measured) | Frozen TS | Where | Group |
+|---|---|---|---|---|
+| B5 — a table row kept with the next (`ts_row_keep_any_paragraph`) | only the FIRST paragraph, in document order, of the row's first cell (smallest logical column) decides, its keepNext direct or from its style (an empty paragraph too); 2nd/3rd paragraphs and other cells do not; gridBefore: the first `w:tc`; a vMerge continuation by its own paragraph (the restart's keepNext does not carry); a nested table first in the cell: the first paragraph inside it; modes 15 and 14 alike | keepNext in any paragraph of any cell | `table/layout.rs` row loop (`row_keep_next`, `cell_first_keep_next` for a cell without content), `CellContent::first_keep_next` from `engine/static_layout.rs` | `rowkeep` 26 (12 TS-divergent) |
+| B6 — conditional table-style borders (`ts_table_style_cell_borders`) | a part's `w:tcBorders` are its REGION's: a cell takes left/right/top/bottom on the region's edges and insideV/insideH inside it (firstRow = row 0 + the contiguous `tblHeader` rows × all columns; lastRow; firstCol/lastCol × all rows; band1/2Horz = each band of `tblStyleRowBandSize` rows; band1/2Vert = each band of `tblStyleColBandSize` columns; corner parts = the cell); wholeTable `w:tcBorders` are ignored; the conflict rules are unchanged (heavier wins between cells, the conditional cell border beats the table's insideV). Found while implementing (`bb-*`, measured): the look's firstRow (firstColumn) bit shifts the row (column) bands only when the style has a NON-EMPTY firstRow (firstCol) part, and lastRow/lastColumn keep the last row/column out of the bands only with a lastRow/lastCol part | each part's four sides to every cell of the part, insideH/insideV never read, wholeTable's applied; bands shifted by the look bits alone | `table/layout.rs` (`region_tc`, `row_has`/`col_has`, `has_part`, `cond_for`'s band offsets) | `condbd` 37 (31) |
+| B12 — a floating table's wrap edges (`ts_float_table_wrap_edge`) | mode 15: right = grid right + the right border's width (15 tw without one) + max(rightFromText, 10 tw); left = the table's x − max(leftFromText, 10 tw); a table aligned `right`/`outside` is placed by that same right edge (grid + right border, or + 15 tw). Mode ≤ 14: from the painted outer left edge (half the left border before the grid, 15 tw without one) − max(lft, 10 tw) to the painted outer right edge (half the right border past the grid, 15 tw without one) + max(rft, 10 tw). Bottom unchanged; the 359.5-tw minimum strip counts from the new edges | the grid ± fromText (mode ≤ 14: ± half the left border) | `engine/tables.rs` `float_table_wrap_box`, `right_edge_w`, `emit_float_rows`, `static_table` (a floating table in a cell), `place_floating_table` (right alignment); `TableLayout::border_right` | `ftedge` 102 (48) |
+| B15 rule A — wrapping objects in a cell (`ts_cell_float_no_clamp`) | a wrapping anchored object (square, tight, through, topAndBottom; behindDoc with wrapping) laid out in a cell is clamped horizontally into the cell's INTERIOR — between the inner edges of its painted left and right borders (the painter's: the heavier border of a boundary, centred on it), left first (a wider object overflows on the right); wrapNone is not clamped; no vertical clamp | where the offset puts it | `engine/floats.rs` `place_float` (cell branch), `Engine::cell_interior` from `CellEnv::cell_interior` (`table/layout.rs`) | `cellclamp` 110 (73; 8 open) |
+| B15 rule B — a word that does not fit the strip beside a float (`ts_gap_word_any_mode`) | mode 15: the line goes below the float, in the body and in table cells; mode ≤ 14: the word is split by characters into the strip, in cells and in the body | body: below in every mode; cells: split in every mode | `engine/flow.rs` (`gapind` block, mode 15 only), `engine/static_layout.rs` (the same block for cell floats), `engine/floats.rs` `gap_word_cut` | `cellclamp` `fw-*` |
+| the TCond aside — `w:tblStyle` order (`ts_tbl_style_order`) | Word reads `w:tblPr` in order: a `w:tblStyle` naming an EXISTING table style after other children discards every direct property before it (tblW, jc, tblBorders, tblCellMar, tblpPr…); those after it are kept; a missing style discards nothing; modes 14 and 15 | every child read | uo-docx `read::props::read_tbl_pr_word` → the hidden `Table::word_tbl_pr` (outside the JS shape, never written, dropped by every table-property edit of the session: `table_ops::tbl_pr_of`; a split keeps it on both parts: `split_table`); uo-docx-layout `table::table_props` at every read of the direct table properties (`layout_table`, `measure_cell`, the floating-table reads of `engine/tables.rs`) | `tblorder` 21 (8); uo-docx `tests/tblpr_word_unit.rs` (3 tests, a module of the one test binary `tests/all.rs` since the fix round) |
+
+Also checked: `light_grid_keeps_its_borders_under_the_region_rule` (a built-in style with firstRow insideV: the region rule
+paints what the per-cell rule painted). Opt-in: `UO_WC_ORACLE=<frozen TS oracle dir>` runs
+`tables_rules_agreement_on_the_oracle` (installed fonts; `ts_strict()` against `ts_strict()` with the six tables switches
+at Word's rules — the area's own effect, whatever the other areas do); `UO_WC_ATTR=<dir>` runs
+`attribute_documents_to_the_tables_rules` (which switch changes which pages of a document); `UO_WC_ADHOC=<dir of .docx +
+.word.json>` runs `adhoc_documents_against_word_by_switch` (each document against Word's PDF with `ts_strict()` and with
+each switch that changes it at Word's rule; `UO_WC_ADHOC_PRODUCT=1` also the product and the product with that switch at
+the TS's; per switch the "Δlines": the line texts only one layout has, and how many of them Word's PDF has);
+`UO_WC_FACETS=<dir>` runs `predict_viewer_facets_of_the_tables_rules` (the viewer harness facets and pages a switch
+changes). Word agreement on the oracle, re-run on the fix round's tree (2026-11-14, `core/target/wc-tables/agree2.log`):
+2,741 cases with a Word PDF, 46 change under the tables rules, Word-equal among them 46 with the TS rules and 46 with
+Word's (none worse).
+
+#### Harness documents (fix round 1)
+
+Attribution over every committed capture (`captures/*/docs`), the uo-docx d3 fixtures and `tests/fidelity`, with the
+viewer's read and the editor's (`UO_WC_ATTR_SOURCES=1`) alike: 13 documents, each changed by ONE switch — row keep:
+`f7b__7__11` (page index 2), `f7b__7__5` (15 → 14 pages), `f7b__7__6` (6–8), `f8__7__1` (14–15), `f8__7__5`
+(16 → 15 pages); cell clamp: `f7b__7__2` (3); floating-table edges: `f7b__7__3` (3), `f8__7__3` (3); gap word:
+`f7b__7__4` (1–2), `f7b__7__7` (8–15), `f7b__7__9` (21–22), `f8__7__7` (33 → 34 pages), `f8__7__9` (22–23). Each was
+exported by Word as it is (`write/tools/layout-oracle/cases/wctab-attr.mjs`, `--fixdir core/target/wc-tables/adhoc`;
+five `.word.json` are the page area's exports of the same bytes) and compared with the installed fonts. These fuzz
+documents agree with Word on 52–75 % of their lines under either rule set, so whole-document counts move both ways;
+Word-matched lines / same-page lines, `ts_strict()` → the switch, and the Δlines (switch-only lines, of them Word's;
+TS-only lines, of them Word's):
+
+| Document (switch) | Pages (Word) | Lines matched of Word's | Same page | Δlines switch / TS |
+|---|---|---|---|---|
+| `f7b__7__11` (row keep) | 7 → 7 (6) | 254 → 264 of 345 | 250 → 260 | 12 (10) / 0 |
+| `f7b__7__5` (row keep) | 15 → 14 (15) | 785 → 898 of 1,307 | 529 → 842 | 25 (15) / 2 (2) |
+| `f7b__7__6` (row keep) | 13 → 13 (14) | 540 → 540 of 870 | 208 → 206 | 0 / 0 |
+| `f8__7__1` (row keep) | 16 → 16 (16) | 754 → 754 of 1,364 | 671 → 656 | 0 / 0 |
+| `f8__7__5` (row keep) | 16 → 15 (16) | 866 → 869 of 1,403 | 814 → 814 | 0 / 0 |
+| `f7b__7__2` (cell clamp) | 9 → 9 (11) | 587 → 587 of 803 | 404 → 404 | 0 / 0 |
+| `f7b__7__3` (table edges) | 4 → 4 (5) | 143 → 143 of 179 | 79 → 79 | 0 / 0 |
+| `f8__7__3` (table edges) | 4 → 4 (5) | 159 → 159 of 192 | 87 → 87 | 0 / 0 |
+| `f7b__7__4` (gap word) | 7 → 7 (8) | 355 → 356 of 534 | 308 → 309 | 1 (1) / 2 (0) |
+| `f7b__7__7` (gap word) | 32 → 32 (30) | 1,999 → 1,999 of 2,728 | 159 → 154 | 3 (1) / 5 (2) |
+| `f7b__7__9` (gap word) | 23 → 23 (26) | 930 → 934 of 2,194 | 285 → 285 | 4 (4) / 9 (4) |
+| `f8__7__7` (gap word) | 33 → 34 (33) | 2,062 → 2,030 of 2,936 | 790 → 675 | 81 (66) / 6 (2) |
+| `f8__7__9` (gap word) | 24 → 24 (27) | 848 → 863 of 2,319 | 277 → 277 | 7 (7) / 16 (9) |
+
+(The product — every area at Word's rules — gives the same numbers as the single switch on all 13, except `f7b__7__3`
+and `f8__7__3`, where the other areas' rules raise the lines; the product with the one switch back at the TS's equals
+`ts_strict()` there.) Where a document got worse, the rule was measured again IN THE DOCUMENT:
+- Row keep (`f7b__7__6`, `f8__7__1` same page; `f7b__7__5`, `f8__7__5` page count): Word exported copies with the keepNext
+  the rule ignores removed (`core/target/wc-tables/tools/b5_variant.py`, case module `wctab-b5.mjs`, `--fixdir
+  core/target/wc-tables/b5`). Removing every cell paragraph's keepNext except the first paragraph's of each row's first
+  cell: Word's PDF is IDENTICAL to the original's (every line, baseline and x) on `f7b__7__11`, `f7b__7__5`, `f7b__7__6`,
+  `f8__7__1`; on `f8__7__5` two lines move (pages 5–6) — a keepNext between two paragraphs of ONE cell keeps them
+  together when Word splits the row (follow-up T-2 in `QUEUE.md`, not B5): the copy that removes only each cell's LAST
+  paragraph's keepNext is identical to the original on all five. So in these documents Word ignores exactly the keepNext
+  the rule ignores; the losses are where the rows land after other divergences (the documents' line agreement).
+- Gap word (`f7b__7__7` same page, `f8__7__7` pages/lines): at the place the switch acts, the TS splits "jumps"/"objeto"
+  by characters into the strip beside the float (`jum`/`ps`/`obj`, x 282.4 pt); Word's PDF has no such lines and sets
+  the words at the cell's left edge below the float (`f7b__7__7` p8: `jumpsobjetoflutuante`, `nadebrown` at x 225.4;
+  `f8__7__7` p9: `jumpsobjeto`, `flutuantenadebrown`, `informacaojumps` at x 223.8) — the switch's lines (`jumpsobjeto`
+  at x 219.3). The extra page of `f8__7__7` follows from the rows below, which already differ from Word.
+
+Harness declarations (`id` "Word manda sobre o TS (WordCraft tables …)"): `viewer_switch.mjs` `WC.tables` (until
+wordcraft-adopt `WC_TABLES`) — the 13 documents, facets and pages as `predict_viewer_facets_of_the_tables_rules`
+predicts them (scoped `textLayer`/`pixels`;
+joined with an earlier declaration of the same document, if any); `editor_switch.mjs` DECLARED — the 13 (the scripted
+clicks land on any paragraph: every facet from step 0; `pagesAfterLoad` on `f7b__7__5`, `f8__7__5`, `f8__7__7`, whose
+page count the rule changes although Word's count is the TS's — see above; `f8__7__5` keeps ED-108 in the same entry);
+`editor_switch_stories.mjs` — `T2 f7b__7__4/5/6/7/9`, `X1 f8__7__3`, `X1 f8__7__5`, `X2 f8__7__5` (with ED-108), and the
+harness now accepts `pagesAfterLoad` like `editor_switch.mjs`; `editor_switch_objects.mjs` — `f8__7__5|objects` (`pages`
+at every step, `pages after load`, end pages/thumbnails/screen: the facets left in the page area's run with its own
+switches on, `core/target/wc-page/diffs-attr-objects.json`); `editor_switch_completion.mjs` — `f7b__7__3|objects` end
+thumbnails. The fix round did not run the browser harnesses; the wordcraft-adopt leva ran them and narrowed the viewer
+facets to the measured ones ("WordCraft study — harness declarations" below).
+
+Open (not applied, asserted to still differ in `word_wc_tables` `cellclamp.open`; a NEW divergence outside the plan,
+not a cell rule): the `lic-tight-*`/`lic-through-*` box has no fill and no outline, and Word's tight/through wrap of
+such an INVISIBLE shape blocks only the lines beside the box's own text (its first line), in the body as in a cell, with
+`wrapPolygon edited` 0 or 1 — lines lower down, fully inside the box's height, run past its left edge (measured
+2026-11-14: `write/tools/layout-oracle/cases/wctabtt.mjs`, box offset swept 6–20 pt, square × tight × through, cell ×
+body; `wctabtt2.mjs`: the same box filled, outlined, or filled without outline wraps like a square box). Both engines
+wrap around the whole polygon; the rule needs its own measurement (which outline Word derives from the visible content)
+and its own switch — queued as follow-up T-1 (`core/target/wordcraft-study/QUEUE.md`, "Follow-ups — tables": measure
+the outline Word derives from the visible content, `wctabtt*`; a `ts_*` switch; then `cellclamp.open` empties). The
+clamp of tight/through boxes is Word's: the box x is equal in `lic-*`, and the filled copies
+`licf-*` (`wctabtt3.mjs`, modes 15/14, left/right) and the `t2-cell-*` cases (filled / outlined / filled without
+outline) are equal by whole lines (`cellclamp` now 110 cases, 73 TS-divergent, 8 open). Unmeasured
+and kept as implemented: a hidden first paragraph or a vertical-text first cell (B5: like any paragraph); a nested table
+first in a vMerge continuation (B5: its first cell without the nested style's pPr); diagonal borders in parts and regions
+broken by gridSpan (B6: per logical grid); the band rule for `lastRow` (inferred from the measured `lastCol`); a
+`center`-aligned floating table (B12: by the grid, as before); mixed border widths per row (B12: the widest right
+border); rule B in text boxes and headers/footers (unchanged); `w:tblPrEx` order (unchanged).
+
+B10/B11 placement half (implemented by the page area: `ts_float_anchor_first_line`, `ts_float_no_reflow`), reviewed
+against the plan's item 3: a line-relative float measures from its anchor line's top in the body only (`float_line_top`);
+the cell branch of `place_float` keeps the paragraph top and ignores the pins (relativeFrom="line" in cells is not
+measured), so the B15 clamp and the B10/B11 pins never meet. The tables planner's own seven B10/B11 cases
+(`wctabfl.mjs`: `fl-b10-cols`, `fl-b11-push-38/44`, `fl-line-same-l1/l5/l5-20`, `fl-para-same-l5`) are the native
+group `fltanchor` of `word_wc_tables.rs` (fix round 1): all seven equal Word under Word's rules, five differ under
+`ts_strict()` (`fl-b10-cols`, `fl-b11-push-38`, `fl-b11-push-44`, `fl-line-same-l5`, `fl-line-same-l5-20`).
+
+.NET port need (`UniversalOffice.Docx/DocxLayout`, reader in `UniversalOffice.Docx`; NOT changed here): the six rules
+above — the row keep by the first cell, `region_tc` + the band offsets, the floating-table edges and right alignment, the
+cell clamp, the mode-dependent gap word, `read_tbl_pr_word` + the layout accessor — then the parity dumps regenerated
+(`tools/gen-parity-layout.mjs`).
+
+## WordCraft study — fields
+
+Fields, lists, font names and the English hyphenation data (plan `core/target/wordcraft-study/PLAN-fields.md`, verdicts
+`VERDICTS.json` B/CD, measurements under `wordcraft-study/B`, `fh`, `fields`). Word 365 for Windows (pt-BR UI) decides:
+every rule below follows Word; the frozen TS's behaviour stays behind one `LayoutOptions::ts_*` switch per item (default
+`false` = Word), which `ts_strict()` turns on for the strict replays (`layout_parity`, `f4/f6/f8_parity`, `g8`,
+`fidelity_w7`, `toc_pages_w7`, uo-ffi `server_parity`). WASM: bit 21 `LAYOUT_TS_WC_FIELDS` (`tsWcFields` in
+`js/write.mjs`, `paint-common.mjs` `wasmOptions`) turns every switch of this area on; D1 is bit 16's
+`ts_hyphenation_patterns`. Session switches: `OpenOptions::ts_formula_errors`, `OpenOptions::ts_numbering` (kept in
+`SessionOptions`). uo-wasm `tests/wc_fields_native.rs`: bit 21 changes the painted pages of one case per
+document-level switch (`styleref`, `fields22`, `sections23`, `refs24`, `formula25`, `lists26`, `lists27`, C1
+`c1-symbul-108`, C1b `c1y-courier-150`) and not those of `b27-deep-first`; its environment answers Courier New with
+Liberation Mono (source 5, the page resolver's open substitute), since C1b needs two faces of different
+ascent/descent proportions on one line (with Liberation Sans alone `c1y-courier-150` laid out the same).
+
+Tests: `tests/word_wc_fields.rs` (22 tests; `oracle_wc/<group>` `.docx` + Word's `.word.json`, open fonts only; the data
+fixtures `oracle_wc/numwords`, `fields`, `lists` are Word's `Fields.Update`/`ListString` results; `fonts_sys` — the
+installed-font cases — runs only with `UO_WC_INSTALLED=1`). Results with Word's rules: every case equal to Word (pages,
+line texts, the page of each line, baseline ±0.3 pt); `ts_strict()` differs in the cases listed per group. `fonts_sys`
+(113 cases, this machine's fonts, oracle policy): Word's rules 109 equal to Word, `ts_strict` 36; the other 4 are the
+open cases below, asserted to still differ (`c2x-segoe_ui_baltic`, `c2y-segoe_ui_baltic-notable`, `c2y-segoe_ui_ce`,
+`c5x-calibrilight`). `c4-angsana` was re-measured (2026-11-14): its first measurement predates Word's download of Angsana
+New into the Office cloud-font cache (Word then split the run by script); now Word draws it in Angsana New, as ours.
+
+| Group | Cases | `ts_strict` differs | Item |
+|---|---|---|---|
+| `c1` (+ `c1v`) | 11 + 1 | 7 + 1 | C1, C1b |
+| `c2` | 17 | 17 | C2 |
+| `c6` (baselines only) | 2 | 2 | C6 |
+| `styleref` | 12 | 12 | B21 |
+| `fields22` | 16 | 15 | B22 |
+| `sections23` | 5 | 2 | B23 |
+| `refs24` | 4 | 3 | B24 |
+| `formula25` | 2 | 2 | B25 |
+| `lists26` | 7 | 7 | B26 |
+| `lists27` | 10 | 3 | B27 |
+| `numwords` | 46,469 values | — | B22/B26 words: 0 differ |
+| `fields` | 336 results (268 formulas on the evaluator) | — | B22/B24/B25: 336 equal |
+| `lists` | 354 list strings | 203 | B26/B27: all equal |
+| `hyphen` | 6,000 paragraphs | — | D1: Word's rules 5,748 (95.80 %), `ts_strict` 5,296 (88.27 %) |
+
+### C1 — Symbol/Wingdings line metrics; C1b — multiple spacing over mixed faces
+
+- Word (fh `c1-*`, `wcfonts2/c1x-*`): a line holding a Symbol run or bullet takes Symbol's ascent 2059/2048 em (a run
+  also its descent 450/2048); Wingdings 1841/2048 and 432/2048 — when the face that draws it is a stand-in (Symbol is
+  missing: the open-font viewer and server). `fonts::symbol_stand_in_metrics`, applied in `para.rs` (`symbol_metrics`) to
+  the text glyphs and to the marker (the marker keeps "ascent only"). A face that is itself symbol-encoded keeps its own.
+  Switch `ts_symbol_font_metrics`.
+- C1b (`wcfonts2/c1x-*`, `wcfonts3/c1y-*`): "multiple" spacing adds (factor − 1) × the LARGEST OWN height (ascent +
+  descent) of the line's text runs, not (max ascent + max descent) (Calibri 11 + Tahoma 11 at 1.5: Word 20.67, the TS
+  rule 20.94). `lines.rs` `t_own` → `line_box(…, text_nat)`; the objects-only, empty and rule lines keep the single
+  face's height. `WordLineRules::multiple_own_height`, switch `ts_multiple_text_height`.
+
+### C5 — PostScript, camel-case and full names
+
+- Word: "Family-Style" (PostScript) and "FamilyStyle" (camel case) are the FAMILY at the caller's weight (the style
+  ignored) — the shortest installed family the name starts with, followed only by style tokens (MT, PS, PSMT, Bold,
+  Italic, BoldItalic, Oblique, Light, Semibold, Narrow, Regular, Roman): "ArialNarrow-Bold" → Arial,
+  "TimesNewRomanPS-BoldMT" → Times New Roman, "SegoeUISemibold" → Segoe UI. A FULL name (name ID 4) in the UI language
+  — or en-US when the font has no record in it — is the face it names ("Arial Negrito" → Arial Bold in pt-BR; "Arial
+  Bold" stays regular; "Calibri Bold" is bold: English names only). A "Family Style" name that is not such a full name
+  is the FAMILY at the caller's weight: the trailing style words (Bold, Italic measured; Oblique, Regular, Light,
+  Semibold, Semilight, Medium, Black, Thin inferred) are stripped, the longest remainder first ("Arial Bold", "Arial
+  Italic", "Times New Roman Bold", "Georgia/Verdana/Tahoma/Segoe UI/Courier New Bold" → the regular face; the TS gave the
+  missing-font chain, Cambria). A named instance of a variable font ("Bahnschrift Light") is the family.
+- `fonts.rs` `lookup` (`LookupRules::postscript`, `spaced_style_candidates`, `camel_candidates`, the provider's
+  `full_name_face`; all among the mapped tries, so a host stand-in gives way to them); uo-fonts
+  `FontProvider::full_name_face` / `FaceSource::full_name` (default `None`), implemented by `SystemFontIndex` (name ID 4
+  per language and the `fvar` instances indexed at the scan) and passed through by the oracle, server and substitute
+  policies and the embedded-font wrapper. The UI LCID comes from `LayoutOptions::lang` (pt 0x0416, es 0x0C0A, else
+  0x0409). Switch `ts_postscript_names`.
+- Browser and viewer (fix round 2): the `viewer` policy indexes the name ID 4 records (platform 3, every language) of the
+  faces the host pushed — what Local Font Access, the host fonts and the page's files hand over, the same bytes the
+  fullName comes from — through `FontRegistry::full_name_face` (`uo-fonts/src/info.rs` `platform3_names`; the index is
+  built once per registry generation; the pushed families in key order, then the hosted assets; `Substitute`/`Default`
+  answers and faces whose own name ID 1/16 is not the family they were pushed for do not answer, so a stand-in's names
+  never stand for another family). "Liberation Sans Bold" is Liberation Sans bold in the viewer as in the oracle and
+  server policies. Only pushed faces are known: a full name whose family the document names nowhere else resolves once
+  the host has pushed that family (the missing-family round trip). Tests: uo-fonts `registry_viewer`
+  `the_full_name_of_a_pushed_face_names_its_family_and_variant` (pt-BR/en-US records, substitute and foreign faces,
+  generation), `word_wc_fields::full_names_resolve_in_the_viewer_policy` (the lookup over the viewer provider, Word's
+  rules against the TS chain).
+- Name ID 6 (the PostScript name) is deliberately NOT indexed: Word maps a PostScript name to the FAMILY at the caller's
+  weight (the first rule above: "Arial-BoldMT" is Arial regular), never to the face whose ID 6 it is, so the token rule
+  is what matches Word.
+- Open (asserted to still differ by `installed_fonts_against_word`, not special-cased): Word leaves "CalibriLight"
+  unresolved (Cambria) while it resolves "SegoeUILight"; our shortest-family rule gives Calibri. Only pt-BR Word could be
+  measured.
+
+### C2 — charset-suffix names
+
+- Word: the Windows `FontSubstitutes` names (Arial/Courier New/Times New Roman × Baltic/CE/CYR/Greek/TUR, Arabic
+  Transparent, Tahoma Armenian) and a trailing parenthesized script (" (Hebrew)", " (Arabic)", " (Vietnamese)" measured;
+  Greek, Cyrillic, Baltic, Turkish, Thai inferred) resolve to the base family; other " CE"-style suffixes keep the
+  missing-font chain ("Calibri CE" → Calibri by swiss, "Georgia TUR" → Cambria). `fonts.rs` `charset_base` among the
+  mapped tries. Switch `ts_charset_suffix_names`. Open: "Segoe UI CE/Baltic" resolve to Segoe UI in Word (no rule found).
+
+### C6 — a missing symbol-charset font
+
+- Word: a missing font with charset 02 is Symbol when its `w:family` is roman (whatever the PANOSE) or its PANOSE is
+  Symbol's (`0505…`) with no family, Wingdings otherwise (`fonts::symbol_charset_stand_in`, before `generic_for`). Its
+  text is drawn and measured with that face. When Symbol itself is missing (open fonts), the run shows the Unicode
+  equivalents of the Symbol encoding (`symbol_map.rs`, written by hand from the public Adobe Symbol encoding) and takes
+  the C1 vertical constants. Switch `ts_symbol_charset_fallback`. The `c6` group checks the baselines only (the stand-in
+  draws other glyphs).
+
+### C4 — a missing Thai font; A2 aside — the East Asian document default language (the Segoe UI CJK line height)
+
+- C4 (fh `c4*`): a missing charset-DE font is one Thai face for the whole run: roman → Angsana New, swiss → Browallia New,
+  else or unavailable Leelawadee UI; Thai characters of other runs fall back to Leelawadee UI first. Switch
+  `ts_thai_fallback`.
+- A2 aside (`wcfonts2/a2x-*`, `wcfonts3/a2y-*`, `wcfonts4/a2z-*`): with a DOCUMENT DEFAULT `w:lang w:val` ja/zh/ko every
+  character takes the eastAsia slot (ASCII too, a run's en-US does not undo it); an eastAsia font without CJK (Segoe UI,
+  Calibri, Arial) gives way to MS Mincho — the measured Segoe UI paragraph with 日本語 has Word's pitch 15.60 pt at 12 pt
+  (the TS rule 16.42); Hangul falls back to Malgun Gothic; without the trigger a CJK character of a Latin-font run falls
+  back to MS Mincho (not MS Gothic). `para.rs` `face_for`/`fallback_order`. Switch `ts_east_asian_default_lang`.
+- Both need installed fonts (proprietary): `fonts_sys` (opt-in); the resolution rows are unit-tested
+  (`font_names_resolve_as_word`).
+
+### B21 — STYLEREF per page, by style name
+
+- Word (B `wcbfld/b21-*`, `fields/wcfld4/sr-*`): in a header/footer, per page — the first paragraph with the style on the
+  page (`\l`: the last), else the nearest before the page, else the nearest after it; a character style matches its runs
+  (the text: that run group). Names: the built-in style's UI name, a custom name, any `w:aliases`, case-insensitively —
+  not the English built-in name in a pt-BR UI, the styleId or an unaccented spelling (`uo_docx::word::style_names`). A
+  name no style answers to: "Erro! Use a guia Página Inicial para aplicar <name> ao texto que deverá aparecer aqui."
+  (bold, like Word's other reference errors); a style no text has: "Erro! Nenhum texto com o estilo especificado…". `\n
+  \r \w \s` give the number without its final period. Error results never take `\*` case switches.
+- `engine/field_refs.rs` `style_ref_at` (the TS `style_ref_value` under the switch), `PassInput::page_ranges_guess` (the
+  body blocks of each page's lines, built in `next_input`; `PassFindings::used_styleref_hf` joins the stability test),
+  `para.rs` lets STYLEREF be dynamic in headers/footers, the reader keeps `w:aliases` (`StyleDef::aliases`, a hidden
+  field outside the TS shape and equality). Switch `ts_styleref_per_page`.
+
+### B22 — `\*` switches, number words, the field's language
+
+- Word (B `wcbfld*`, `fields/wcfld3*`): PAGE, NUMPAGES, SECTIONPAGES, SECTION, PAGEREF, SEQ and formula results take the
+  format; the case switches apply to REF/STYLEREF text too. The last format wins; case switches after it apply in order,
+  those before it are dropped; MERGEFORMAT/CHARFORMAT ignored; an unknown keyword is "Erro! Argumento de opção
+  desconhecido."; roman/alphabetic in lower case give lower case; half away from zero; the limits and zero forms; the
+  number words of pt-BR, en-US and es-ES reproduced exactly (46,469 values; `uo_docx::word::numwords`,
+  `uo_docx::word::field_switch`); pt-BR DollarText keeps the cached result (Word 365 pt-BR crashes on it). The words
+  follow the language of the field's INSTRUCTION run (its rPr, character style, paragraph style, defaults); the error
+  texts the UI language.
+- The reader keeps the first `w:instrText` run's `w:rPr` (`RunExt::instr_rpr`, hidden); `para.rs` resolves the language
+  (`field_language`) and passes it through `PrepFlow::field_in` (the paragraph memo records it: `FlowOp::Field::lang`);
+  `engine/fields.rs` applies the switches; PAGEREF reads the bookmark's page NUMBER (`PassInput::marks_num_guess`).
+  Switch `ts_field_format_switches`.
+- Ordinal past the exact integers (fix round 3, not measured): |n| ≥ 9e15 is the Arabic text (as `\* Arabic` writes
+  it) with the suffix of its last two digits (`numwords::ordinal_text`: 1e16 → "10000000000000000th"/"º", not "0th");
+  a value JS writes with an exponent (|n| ≥ 1e21) is "not representable", as the other word formats past their range.
+
+### B23 — SECTIONPAGES on shared pages; a continuous restart
+
+- Word (B `wcbfld2/b23-*`): a page shared through a continuous break counts in SECTIONPAGES for every section with
+  content on it; a continuous section's `pgNumType start` numbers its first (shared) page, so the next page is start + 1.
+  `engine/page.rs` `PageState::{sections, cont_first, num_sect_page}` (the numbering counter apart from `sect_page`, which
+  the first-page header keeps), `section_page_counts(ts_shared)`. Switch `ts_section_pages_shared`.
+
+### B24 — REF `\r` relative; `\p` per language
+
+- Word (B `wcbfld2/b24-*`): `\r` is the full number less the leading levels the field's own list position shares with the
+  target (same list), final period stripped; an UNNUMBERED field paragraph takes the list position of the nearest
+  numbered paragraph of the target's list before it (the corpus oracle `refs/ref-num`: after "2." "b)", `\r` to "2.b)"
+  is "b)"; b24 `fim`, after "2.", the full "1.a)i"; before the list, the full number). `\p` writes above/below in the
+  language of the field paragraph's STYLE (acima/abaixo, above/below, más atrás/más adelante). `field_refs.rs`
+  `ref_value`, `position_word`, `para_style_lang`. Switch `ts_ref_relative`. Tests: `oracle_wc/refs24` (the three b24
+  cases and `ref-num`, copied from the frozen corpus: the first implementation regressed it in the Word-oracle replay).
+- Under `ts_ref_relative` (fix round 2) `\p` keeps the frozen TS's mapping exactly: a pt UI gives acima/abaixo, EVERY
+  other UI language above/below (engine.ts:450 knows no Spanish; the switch had written "más atrás" for an es UI).
+  `word_wc_fields::b24_ref_position_words_ts_strict_per_ui_language` (es, en-US, pt-BR under `ts_strict()`; Word's
+  rule on the es-ES style).
+
+### B25 — header/footer formulas (and the session's table formula texts)
+
+- Word (B `wcbfld2/b25-*`, the 104 `hf-*` rows): comparisons, `^`, postfix `%`, the 18 functions (case-insensitive, `;`
+  between arguments, a function short of its arguments is a syntax error at the token where the separator was due),
+  Word's error texts with the offending token ("!Erro de sintaxe, ,", "!Indicador não definido, NADA", "!Está faltando
+  operador", "!Fim imprevisto da fórmula", "!Divisão por zero"), the thousands of a grouped literal kept, numbers read in
+  the UI notation (pt-BR `,` decimal, `.` thousands). `uo_docx::word::field_formula::evaluate_field_formula_word` (and
+  `word_function`); `para.rs` calls it unless `ts_hf_formula`.
+- Bounds (fix round 1): a run of operators of one precedence is ONE flat node (`WNode::Chain`, evaluated left to right
+  as the nested `((a o b) o c)`, same order of evaluation and errors) and a run of `%` one node with its count, so the
+  tree's height grows only through the nesting `max_parse_depth` bounds (parentheses, unary signs, arguments). A
+  left-deep tree aborted the process on a 10,000-term `= 1+1+…` (stack overflow in the evaluation and the drop);
+  `nopanic_word::word_formula_operator_runs_on_a_small_stack` evaluates 100,000- and 400,000-term runs on a 1 MiB stack,
+  and `hostile_field_codes` runs the evaluator over the 20,000-code soup.
+- Session (`session/ops/tables/formula.rs`): under Word's rules (`FormulaEnv::word`, i.e. `!OpenOptions::
+  ts_formula_errors`) the table formula is parsed by the header/footer evaluator's grammar
+  (`word::field_formula::evaluate_word_expression`, fix round 3): the parser is shared, the table answers its names
+  through the `FormulaNames` hooks (`TableNames`: `A1`, `A1:B2`, `ABOVE`/`BELOW`/`LEFT`/`RIGHT` with the format their
+  numbers pass to the result — currency, suffix, decimals, thousands —, the bookmarks with a number; `DEFINED(name)` asks
+  the bookmarks). So the session gives Word's texts and results: `= FOO(1)` "!Erro de sintaxe, 1", `= MAX()` "!Erro de
+  sintaxe, )", `= 1.5` "!Erro de sintaxe, .", `= SUM(1,2)` "!Erro de sintaxe, 1,2", `= 1;2` "!Erro de sintaxe, ;", `= 2
+  3` "!Está faltando operador", `= nada` "!Indicador não definido, NADA", `= 1.000,5` "1.000,5" (a grouped literal's
+  thousands and a literal's decimals join the cells' format), ROUND half away at the decimal digits. Not measured in a
+  table (the `hf-*` rows have none), kept from the TS where Word's rows say nothing: a table list alone is its sum, a
+  list function takes every number of a list, another operand needs a list of one (else the syntax error at the list's
+  text), MAX/MIN of an empty list 0, a single empty cell 0. `ts_formula_errors` keeps the TS's parser and texts
+  byte-identical (the parity replays). Correction: `ROUND(2,345;2)` is 2,35 under BOTH rules (2,345 × 100 is 234,5 in
+  binary); the rules part where the binary product falls below the half (`ROUND(1,005;2)`: Word's rule 1,01, the TS 1 —
+  inferred from the decimal rule, not measured). Tests: uo-docx `word_wc_fields_session` (in `tests/all.rs`):
+  `b25_table_formula_texts_and_round_behind_the_ts_switch` (11 formulas and 51 of the 52 `hf-pt-BR` rows, both rules;
+  out: `= 5 \* CardText`, Word "Cinco" — the table formula's instruction takes a `\#` picture only and the session does
+  not know the field run's language the words follow, so it stays "!Erro de sintaxe" under both rules),
+  `b25_table_names_under_word_rules` (12 formulas over a 3 × 2 table: sums, ranges, currency, `DEFINED` of a cell, a
+  list as an operand).
+- Strict session replays (fix round 1): the uo-docx `parity_d2a_session` and `parity_d2b_f1…f10_session` open with
+  `ts_formula_errors: true, ts_numbering: true`; the wasm `session_replay.test.mjs` sets both on each handle through
+  the self-test export `uo_session_test_ts_wc_fields(h, 3)` (`Session::set_ts_wc_fields`; the production open has no
+  wire field for them).
+
+### B26 — list words per paragraph-mark language; B27 — isLgl
+
+- B26 (B `wcblst/b26-*`, `fields/wcflst2/lw-*`, 189/189): cardinalText, ordinalText and ordinal list numbers use the
+  language of the paragraph MARK's resolved run properties; the words are the field words with a capital first letter;
+  ordinal pt/es "º". `uo_docx::word::numbering::format_number_word`, `NumRules::word_lang`, `NumberingState::next_in`;
+  `para.rs` passes the mark's language (`PrepFlow::number_next_in`, recorded by the memo), `field_refs.rs` builds with the
+  same rules (`numbering_state_for`) and gives each paragraph's marker its mark's language too (`list_next`: the mark's
+  direct rPr, the paragraph style's, the defaults — REF/STYLEREF `\n \r \w` read those texts). Switch
+  `ts_list_number_language`.
+- B27 (B `wcblst/b27-*`, `fields/wcflst2/lgl-*`): `w:isLgl` turns EVERY placeholder Arabic, the level's own included;
+  decimalZero keeps its zero; a bullet placeholder is empty. `NumRules::word_lgl`. Switch `ts_is_lgl`.
+- The session's outline, TOC sources and cross-reference items use the same rules (`outline::*_with`,
+  `Session::num_rules`) unless `OpenOptions::ts_numbering`. Test (fix round 2): uo-docx
+  `word_wc_fields_session::b26_b27_session_items_follow_word_unless_ts_numbering` — the numbered cross-reference items
+  of `b26-en-US`, `b27-lgl-own` and `b27-lgl-letter` equal Word's list strings (the `.word.json` lines) under Word's
+  rules; `ts_numbering` gives the TS's back ("Um", "I)", "1.a.").
+
+### D1 — English hyphenation: CC0 patterns + Moby exceptions (option H)
+
+- Word's English points follow a dictionary: on `hyphword1k` (1,000 words × 6 widths) the paragraphs equal to Word go
+  from 88.27 % (hyph-utf8 `en-us`) to 95.80 % (5,748/6,000) with DesignCraft's CC0 patterns plus the Moby Hyphenator II
+  entries those patterns get wrong (19,548 patterns, 35,675 exceptions; minimums 2/3). pt and es are unchanged.
+- Data: `core/tools/hyphen/gen_en_word.mjs` (inputs by path, `git show 3110dcf0^:assets/hyphenation/en-us.pat|.dic` of the
+  WordCraft repository, sha256 checked) → `uo-fonts/data/hyphen/en-us-word.txt` (embedded under `hyphen-data`) and
+  `uo-wasm/js/hyphen/en-us-word.mjs` (fetched by `hyphen-patterns.mjs`; its header is a legal comment, so the npm
+  bundles keep it in `*.LEGAL.txt`). Notices: `uo-fonts/data/hyphen/THIRD-PARTY-NOTICES.md` (CC0-1.0 patterns,
+  public-domain Moby), regenerated into `core/licenses` (row "Hyphenation patterns (hyph-utf8, CC0, Moby) compiled into
+  uo-fonts").
+- Sizes: `en-us-word.txt` 593,877 B raw, 220,531 B gzip-9, 192,697 B brotli (`en-us.txt`: 32,476 B, 17,750 B gzip); the
+  JS module 593,679 B raw, 215,164 B gzip-9. The wasm binaries do not change (data is not compiled into wasm); native and
+  .NET embeds grow by ~594 KB. The exception map holds 35,675 words.
+- `HYPHENATION_PATTERN_IDS` gains `en-us-word` (8 ids); `HyphenSessions::session_with(…, word)` takes it for English when
+  `!ts_hyphenation_patterns` and it is loaded, else `en-us`. The bindings ask for ONE English id by the layout flags
+  (fix round 2, as the plan): `uo_write_hyphenation_patterns(doc, env, langs, flags)` and
+  `uo_shell_hyphenation_patterns(h, env, langs, flags)` take a trailing `flags` word (`pattern_ids_to_load_with(…,
+  flags & LAYOUT_TS_HYPHENATION == 0)`): `en-us-word` under Word's rules, `en-us` under bit 16 only; JS
+  `hyphenationPatterns(env, langs, { tsHyphenation })` in `write.mjs`/`session.mjs` (`.d.ts` too); a caller that passes
+  nothing passes 0 (wasm reads a missing argument as 0), so the product (`write/packages` viewer and editor engines,
+  the benches) fetches `en-us-word` only. The harnesses that set `tsHyphenation` (`paint_parity`, `paint_memory`)
+  register every pattern file through `openEnv` and do not ask. Tests: `registry` unit test
+  `word_data_loads_en_us_word_or_en_us`, uo-wasm `wc_fields_native::d1_english_pattern_ids_follow_the_ts_hyphenation_bit`
+  (an en-US document: `en-us-word` without bit 16, `en-us` with it). `TS_HYPHENATION_PATTERN_IDS` keeps the
+  TS's 7 ids: the TS wrapper `pattern_ids_to_load` (which `fonts_parity_small` replays) and the uo-fonts parity replays
+  (`fonts_parity_small`, `frontier_d_parity`) use it. Tests: uo-fonts `hyphen_data` (the file parses: 19,548 patterns,
+  35,675 exceptions; Moby's `shep-herd-ess`, `im-pon-der-a-ble`, `hy-phen-a-tion`), `registry` unit tests, and
+  `word_wc_fields::d1_english_hyphenation_agreement` (≥ 95.8 % asserted).
+
+### B8 — README
+
+`write/packages/docx-layout/README.md`: in compat ≤ 14 header/footer floats do not push the header/footer's own text;
+square and topAndBottom ones DO push the body (re-measured `hff14wrap`; the code was right).
+
+### Harness pins and documents (fix round 2)
+
+- wasm `write_api.test.mjs` pins (printed by `write_native`): `f8__7__0` (page 2: C1b and B22 — header2's
+  `PAGE \* upperLetter` is Word's unknown-switch error, `upperLetter` being no field keyword) and `f8__7__10` (pages 2–5:
+  C1b on page 2, the header's `PAGE \* upperLetter` from page 2 on) take the new checksums, the old ones in the comments;
+  the wasm layout with bit 21 gives the old page messages back (checked natively: `ea592122`, `06bed89e`), and bits
+  18–20 change neither document. `f8__7__3` is the page area's.
+- Which documents of the TS-capture harness corpora this area's rules move (native attribution,
+  `attribute_documents_to_the_fields_rules` over `captures/<g>/docs`, each switch alone at Word's rule over `ts_strict()`;
+  pages 0-based):
+  - C1b `multiple_text_height` moves almost every document (multiple spacing with a mixed-face line): f7a 0–5, 7–13, 15
+    (all but 14); f7b 0–11 (all); f7c 0–3, 5–8, 10–15; f7d 0, 2–8, 11; f8 0–2, 4–11 (all but 3).
+  - B22 `field_format_switches` (`\*` keywords Word refuses, e.g. `upperLetter` — a `w:numFmt` name, no field
+    keyword —, and the format/case order): f7a 0, 1, 2, 6, 9, 12, 15; f7c 0, 2–15 (all but 1); f8 0, 2, 4, 6, 8, 10.
+  - B23 `section_pages_shared`: f7a 10 (page 2). B24 `ref_relative`: f7c 3 (page 14), f7c 5 (page 2).
+  - None of C1, C2, C5, C6, C4, A2, B21, B26, B27 moves a harness document (wordcraft-adopt, over `captures/f2`, `f4`,
+    `f6` too: C1b moves `gen__1__4` 0–1 and `gen__1__7` 0, 2–3; B25 `f2-3-1` 0; D1 `f2-3-1` 0 and `f2-3-3` 0).
+- The editor/viewer switch harness declarations for these documents: "WordCraft study — harness declarations" below.
+
+### Not measurable here / open
+
+- pt-BR DollarText (Word crashes), every en/es UI text (only pt-BR Office is installed: the en/es strings are Word's UI
+  strings, unverified), "CalibriLight" and "Segoe UI CE/Baltic" (no rule explains Word), Symbol truly missing in Word
+  (always installed on Windows), Bahnschrift Light geometry (Word's PDF swaps the glyphs).
+- The navigation pane of a layout (`navigation.rs`) keeps the TS list words (no options reach it).
+
+### .NET port needs (not changed here)
+
+`DocxLayout`: the C1 constants and the C1b line box; `Core/Fonts`: the C5 name rules and the full-name/`fvar` index,
+the C2 aliases, the C6 Symbol/Wingdings choice and the Symbol map, the C4 Thai and A2 East Asian rules; `Docx/Fields`:
+the number words, the `\*` switches, the field language (the reader's instrText rPr), STYLEREF per page and by name, REF
+`\r`/`\p`, the Word formula evaluator; numbering: `NumRules` (B26, B27); the B23 page counters; `Core/Fonts/Hyphen`:
+`patterns/en-us-word.json` and the English id mapping. Then regenerate the parity dumps (`tools/gen-parity-layout.mjs`).
+
+## WordCraft study — page
+
+WordCraft study, area "page" (plan `core/target/wordcraft-study/PLAN-page.md`, 2026-11-13). Every rule was measured in
+Microsoft Word 16.0.20527.20150 (pt-BR, invisible COM through `tools/parallel/word-lock.mjs`; generators
+`write/tools/layout-oracle/cases/wcpage{,2,3,4,5}.mjs`, untracked like the other study generators, plus the study's A and
+B cases) and is checked natively by `tests/word_wc_page.rs` against Word's PDFs (`tests/oracle_wc/<group>`: 224 `.docx`
++ `.word.json`, Liberation Sans 11 on A4; the Arial/Calibri corpus bytes through `OpenFonts`; no embedded font —
+checked). The comparer is `word_w7c.rs`'s (pages, line texts, the page of each line, baseline ±0.3 pt, x ±0.6 pt) plus
+the page sizes, Word's empty pages (no line, no header/footer item) and each body float's box against a path rectangle
+of Word's page (±0.6 pt after the outline's 0/0.25/0.5 pt). Word decides every rule; the frozen TS's behaviour stays
+behind a `LayoutOptions` switch, all eight set by `ts_strict()` and, in wasm, by ONE flag bit (bit 19,
+`LAYOUT_TS_WC_PAGE`, JS `tsWcPage`, set by `tests/support/paint-common.mjs` `wasmOptions`).
+
+| Rule (switch) | Word (measured) | Frozen TS | Where |
+|---|---|---|---|
+| A15: a paragraph whose first content is a page break (`ts_page_break_keeps_space_before`) | mode 15: its text starts the new page with NO space before (before 6/12/24 pt, previous after 0/3/10 pt, numbered, bookmarked, the document's first paragraph: `p15-*` 81.12 pt, `p5-first-br-c15`); modes ≤ 14: `max(0, before − previous after)` (`p2-a15-c11/c12` 95.2), the document's first paragraph its whole before | `before − previous after` in every mode | `engine/flow.rs` (`place_paragraph_inner`, the page-break-at-start block; `first_in_doc` cleared) |
+| A16, section parity (`ts_section_parity`) | at a nextPage/oddPage/evenPage section start (not the first): (a) odd/even with the wrong parity — a restarted number goes up by one (no page), else ONE blank page and the number after it; (b) with `w:evenAndOddHeaders` or `w:mirrorMargins` the number's parity must equal the page's document parity D (the first section's start + the physical index), else one blank page (nextPage too; modes 15/14/12); the blank page is empty (no header, footer or page border), has the NEW section's paper, counts in NUMPAGES and in no SECTIONPAGES; the text page after it is the section's first page (titlePg's first header) | a blank page whenever the number has the wrong parity, restarted or not; none for eo/mm; the blank page is the section's first page with its header and counts in SECTIONPAGES | `engine/page.rs` `new_page`/`make_page` (`PageState::blank`), `engine/hf.rs` (no hf on a blank page), `page_borders`, `engine/mod.rs` `section_page_counts` |
+| gutter, rtlGutter, gutterAtTop, mirrorMargins (`ts_no_gutter_mirror`) | the gutter on the left (rtlGutter: right) of every page; mirrorMargins: odd-D pages left = left + G, even-D pages left = right (+G with rtlGutter), right = left + G; gutterAtTop: top + G, mirror and rtl ignored, the bottom and the header/footer y unchanged; equal columns recomputed, explicit `w:col` widths shifted; the header/footer, tables (pct), page borders offsetFrom text, margin-relative floats and the margin areas follow the page's margins; insideMargin = the left area on odd-D pages, the right one on even; modes 15/14/12 alike | ignores all four | `engine/page.rs` `word_margins`, `geom_of(…, even)`, `SectGeom::{base, even, hf_mar}` (the even-page geometry appended after the section geometries in `prologue`; the endnote copies get theirs in `notes.rs`), `geom_variant`, `make_page`/`continuous_section`/`next_column_section`; uo-docx `ReadFacts::gutter_at_top` |
+| inside/outside of floats (`ts_page_parity_by_number`) | by the page's document parity D (`f5-inside-r1`: page 2 shown as 1 puts `inside` on the right) | by the displayed number | `engine/floats.rs` (`place_float`: `PageState::doc_even`) |
+| B10: floats on their anchor line (`ts_float_anchor_first_line`) | a float belongs to the page and COLUMN of the line holding its anchor run: paragraph-relative = the paragraph's part top there (the column/body top on a later page), line-relative = that LINE's top (also on the same page: `b10x-line-same` 197.09), margin/page = that page; the text of that page/column (the paragraph's own earlier lines too) wraps around it; modes 14/12 alike | the page of the paragraph's first line; line-relative = the paragraph top | `engine/flow.rs` `place_floats_at_lines` (after the lines: the anchor line from the paragraph's `PassLine`s, the column from the part tops), `FloatPin` (a first detection is provisional — that pass had the float on the first line's page; the next pass measures the line again without it and settles the pin), placed at the page/column start in the following pass (`engine/page.rs` `place_late_float`, `place_late_col`), `Engine::float_line_top` read by `place_float` |
+| B11: re-layout around a pinned float (`ts_float_no_reflow`) | a paragraph/line-relative wrapping float placed before its paragraph's lines that covers text laid before it on the page: Word lays the page out again around it, the float KEEPS the position computed before that re-layout; floats are handled one after the other (`b11x-two`); if the re-layout pushes the anchor paragraph to the next page the float goes with it (clamped to the body top) and the earlier page is laid without it (`b11x-push2`) | only absolute floats are laid out again | `engine/floats.rs` (the late recording: the first such float per page per pass, `Engine::body_early`), `engine/flow.rs` `check_pinned_anchor` + the `anchor_pushed` break, `PassInput::{late_floats: LateFloat, anchor_pushed, late_dropped}`, `merge_late` (the first settled pin wins), the pass loop: 5 + one pass per late float (≤ 20), `WorkInput::extra_passes` in the budget |
+| mirrorIndents (`ts_no_mirror_indents`) | mode 15: mirrored on even-D pages, modes ≤ 14 on odd-D pages; `right' = left + firstLine` (signed), `left' = right − min(0, firstLine)`, the first-line indent unchanged (`left 400, right 2000, firstLine 720` breaks at right' 1120, mi-forms p2; `left 1440, hanging 720` at 720); per page within a paragraph; in the body, headers/footers and footnotes, never in cells or text boxes; independent of mirrorMargins; tab stops unchanged | ignored | `engine/flow.rs` `mirror_here`/`mirror_indents` (re-applied on every page change, `pfmt` rebuilt), `engine/static_layout.rs` (hf/footnote paragraphs, `Engine::mirror_static` set by `hf.rs` and `notes.rs`; the footnote cache key carries the page's side) |
+| bookFoldPrinting, bookFoldRevPrinting, printTwoOnOne (`ts_no_print_fold`) | Word's PDF: landscape fold — odd D: left = right + G, right = left; even: left = left, right = right + G; the header/footer by the normal gutter/mirror rules; reverse fold = mirror margins; portrait fold = plain margins; printTwoOnOne portrait — odd: top = bottom + G, bottom = top; even: top = top, bottom = bottom + G; the sides (header/footer too) plain; landscape — the sides as the fold, the header/footer with the body; `bookFoldPrintingSheets` no effect; precedence printTwoOnOne > bookFold > gutterAtTop > mirrorMargins (inferred) | ignored | `engine/page.rs` `word_margins` (`SectGeom::hf_mar` read by `hf.rs`), uo-docx `ReadFacts::{book_fold, print_two_on_one}` |
+
+The mirrorIndents formula differs from the plan's (`right' = left + min(0, firstLine)`): with a positive first-line indent
+Word's mirrored lines break at `left + firstLine` (mi-forms, mi2-forms-c11…c15, mi2-mirror-c14, mi2-restart-c14,
+mi2-sect-restart: 6–12 lines differed with the plan's formula, every case is equal with this one).
+
+**Word build drift (A15).** Word 16.0.20430 (2026-10-11) kept the space before after an opening page break; 16.0.20527
+drops it. The frozen corpus's `tocref/tocref-pbstart-c15`, `tocref/tocref-sectgap` and `tocref/tocref-sectgap-soma` were
+measured with the old build: `word_w7c` `word_rules_agreement_on_the_oracle` now reads their re-measures from
+`tests/oracle_wc/drift/tocref/*.word.json` before the corpus file (the frozen `.word.json` files are not edited; the
+frozen TS's own oracle test reads them). A later Word update may move the rule again (memory `word-update-oracle-drift`).
+
+**Tests** (`cargo test -j 3 --release -p uo-docx-layout --test word_wc_page -- --test-threads=3`): groups `pgbreak` 26,
+`sectparity` 88, `gutter` 35, `floatflow` 27, `mirrorind` 31, `printfold` 17 — every case equal to Word under Word's
+rules; `ts_diverges` lists where `ts_strict()` differs (14, 76, 32, 24, 29, 16). Also:
+`the_blank_page_is_empty_with_the_new_paper` (`p16-size` 16838 × 11906 tw, no hf item; the `p16-numpages`
+NUMPAGES/SECTIONPAGES texts), `each_switch_changes_its_own_cases` (each switch alone over `ts_strict()`: page_break_space
+14, section_parity 50, gutter_mirror 31, parity_by_number 1, anchor_first_line 15, float_reflow 9, mirror_indents 29,
+print_fold 14 cases), opt-in `attribute_documents_to_the_page_rules` (`UO_WC_ATTR`) and
+`groups_with_the_installed_fonts` (`UO_WC_INSTALLED=1`). The line comparer moved from `word_w7c.rs` to
+`tests/common/word_cmp.rs` (lines, Word's page sizes and path rectangles, `compare`, `compare_pages`), shared by
+`word_w7c.rs` and `word_wc_page.rs`; the other areas' `word_wc_*.rs` still hold their own copies (they can switch to it).
+
+**Not measured** (applied as written, listed so nobody reads them as measured): a continuous section that restarts its
+numbering followed by a nextPage section under eo/mm; mirrorIndents in headers/footers and notes in modes ≤ 14 (the body
+rule); mirrorIndents in a column section (the page's side); gutterAtTop combined with a fold or two-on-one;
+bookFoldRevPrinting with a gutter; floating tables for B10/B11 (they keep the TS's placement; `engine/tables.rs` still
+takes inside/outside by the displayed number — the tables area's call); the session commands that size things from the
+model's margins under a gutter (table insert width, the TOC's right tab, watermark, cover: a follow-up for the session
+owner); the editor's ruler shows the canonical margins on mirrored pages; the print options are the PDF's (the screen
+was not captured).
+
+**.NET port** (`UniversalOffice.Docx/DocxLayout`; nothing changed in `dotnet/`): the A15 top rule; the section parity and
+the blank page (no header/footer/border, SECTIONPAGES); the per-page margin variants (gutter, rtlGutter, gutterAtTop,
+mirrorMargins, bookFold*, printTwoOnOne, the header/footer margins) with document-parity floats; the late-float pins
+(B10 provisional/settled, B11 first-wins, the pushed anchor, the pass count); mirrorIndents (body, hf, footnotes). Then
+regenerate the parity dumps (`tools/gen-parity-layout.mjs`).
+
+## WordCraft study — lines
+
+Implementer of the plan `core/target/wordcraft-study/PLAN-L.md` (2026-11-13/14; items L1–L13). Word 365 pt-BR (16.0)
+decides where it differs from the frozen TS. Every rule was measured with Word (invisible COM through
+`tools/parallel/word-lock.mjs`; case generators `write/tools/layout-oracle/cases/wcl*.mjs`, 129 documents, data in
+`core/target/wordcraft-study/L/`) and is checked by `tests/word_wc_lines.rs` against the fixtures in
+`tests/oracle_wc/l-<group>` (open fonts only — Liberation, Carlito, or the family NAMES Arial/Calibri/Times New
+Roman/Cambria that Word draws with its own fonts and `OpenFonts` maps to the metric twins; generated by
+`write/tools/layout-oracle/cases/wcfix-lines.mjs` and `wcfix-l14.mjs`; pages, line texts, the page of each line, baselines
+±0.3 pt and, where a group measures positions, every glyph origin of Word's PDF (`.wordx.json`, `extract_xs.py`) ±0.6 pt).
+Each case is laid out with Word's rules (must equal Word, or match its recorded residual) and with `ts_strict()` (the
+group's `ts_diverges` list is asserted exactly). The frozen TS's behaviour stays behind one `LayoutOptions` switch per
+item, set by `ts_strict()` (so by every strict replay: `layout_parity`, `f8_parity`, `f4_parity`, `f6_parity`, `g8`,
+uo-ffi `server_parity`) and, in wasm, by the ONE area bit 18 `LAYOUT_TS_WC_LINES` (`uo-wasm/src/write.rs`; JS
+`tsWcLines` in `js/write.mjs`/`write.d.ts`, set by the harnesses' `wasmOptions` in `tests/support/paint-common.mjs`).
+Inside the breaker the switches arrive as `BreakSettings::word` (`lines::WordLineRules`, filled by `Cx::settings`; the
+facet replays and the breaker's unit tests build `BreakSettings::default()` = all TS).
+
+| Item (switch) | Word (measured) | Frozen TS | Where | Group (cases; TS-divergent) |
+|---|---|---|---|---|
+| L1 — space height (`ts_space_like_height`) | none of the SPACE_LIKE set (U+0020, U+2002, U+2003, U+2005, U+200B, U+3000) gives a line height, in the middle, at the end or alone; NBSP, U+2000/01/04/06–0A, U+202F, U+205F do (`wcl/l-spaces-*`, Calibri/Arial/Times, 17 code points) | only U+0020 and the tab | `lines.rs` vertical metrics and the tabs-only line (`space_like_cp`) | `l-spaceh` 3 (3) |
+| L2 — the SPACE suffix of a list number (`ts_number_suffix_font_space`) | Arial's space, 569/2048 em at the NUMBER's size (1/4096 pt floor), whatever the number's font, text or mark size (8 pt 2.18 … 100 pt 27.83); a level without sz takes the mark's size; lvlJc right/center align the number AND the suffix as one unit (`wcl/l-numsp`, `-c14`) | the number face's space; the number alone aligned | `lines.rs` marker block | `l-numsp` 2 (2) |
+| L3 — jc=both compression (`ts_justify_tolerance`) | the two-outcome rule with slacks +0.035 tw on the 25 % cap and +0.025 tw per space (the plan's MODEL: 1,006/1,008 `wcl/l-jboth-*` + 210/210 jsweep; the 2 residual Calibri cases sit at c−½e ∈ (0.0115, 0.025) tw. This ENGINE with the installed fonts, `UO_WC_INSTALLED` 2026-11-14: about 1,003/1,008 — `l-jboth-arial` misfits 1 paragraph (p24, 1,330/1,332 lines) and `l-jboth-calibri` 4 (p22, p24, p25 ×2, 1,332/1,340 lines), all compressed where Word does not; Arial is not among the model's 2 residuals — not analysed further) | 0.0175 / 0.0075 tw | `lines.rs` word fit, `hyphenate.rs` `choose_hyphenation` (the same test) | `l-jboth` 2 (2) |
+| L4 — kinsoku (`ts_kinsoku_lists`) | by the run's RESOLVED East Asian language (styles/defaults: `m-kinsoku-inherit-*`): ja, zh-CN (every zh but TW/HK/MO), zh-TW/HK/MO; ko none; every mode, whatever the document defaults. No-start lists (the character before goes down with it, over spaces), no-end lists (any next character), a break allowed between a non-East-Asian character and an East Asian one; hang lists per language for ja and zh-CN (mode 15, jc both, overflowPunct, East Asian document) and the hanging mark may end the line when an East Asian character that may start a line follows it — never between two non-East-Asian characters (review 2026-11-14: opening a break after EVERY hang character, the Latin `,` `.` between digits too, broke `R$12.|345,67` where Word keeps `R$12.345,67fim` whole and turned 8 frozen-corpus cases from equal to different — `kinsoku/ks-ja-jp-msmincho-c15`, `ks-zh-cn-msmincho-c11`, `-c11-noearules`, `hang15/h15-{ja-jp,zh-cn}-cjk-c11-left`, `-c15-both`, `h15-zh-cn-cjk-c15-left`; with the condition `word_rules_agreement_on_the_oracle` has none: 79 cases change, Word-equal 74 → 79); `w:kinsoku w:val="0"` turns the hang off in mode 15 (mode 14 still hangs). Found while implementing (`m-kinsoku-hang-*` against `l-kinsoku-sw-latdef`): in an East Asian document a justified jc=both line of East Asian text WITHOUT spaces (the nine ideographs a push leaves) spreads its slack equally over the gaps between its characters (`GlyphFlags::EA_JUSTIFY`); with Latin document defaults it does not | no-end only before a space, one hang list | `para.rs` `KINSOKU_NO_START`/`KINSOKU_NO_END`/`KINSOKU_HANG`, `kinsoku_lang`, the pass after the break flags, `word_kinsoku_off_15`; `lines.rs` justification (`cjk_spread`) | engine rule tests `l4_kinsoku_no_start_and_no_end` (181 characters; the TS differs on 122), `l4_kinsoku_hang_lists` (90 characters: the ja and zh-CN no-start lists in an East Asian document, mode 15 jc both: hang or push; overflowPunct 0 pushes; mode 14 hangs 、。」） with kinsoku 0 and jc left), `l4_kinsoku_inherits_the_language` (docDefaults ja-JP / en-US), `l4_kinsoku_may_start_ja` (36 characters); wasm bit 18: a generated ja document |
+| L5 — character grid (`ts_no_char_grid`) | linesAndChars: every character + charSpace/4096 pt (East Asian exact: 11.5/12.0/16.0 pt at 11 pt, `wcl2/l-cgrid-lc-*-11`; other characters 0.27 tw less per character for a positive pitch, fitted on `wcfix-lines` cgrid-lc-4096/20480); snapToChars: cell = W / ⌊W / (Normal's size + charSpace/4096 pt)⌋, each East Asian character on ⌈adv/cell⌉ cells centred in them, each run of other characters between them on the fewest cells that hold it, centred (not when it ends at an automatic break), the alignment ignored, the cells fill the line exactly (no internal-unit rounding of the fit edge, `wcl4/n-charsind-sc-4096`), and snapToChars is a LINE grid too (a hostile charSpace with Normal's size + charSpace/4096 pt ≤ 0 gives no grid); `w:snapToGrid w:val="0"` on a run takes it out | both grids ignored | `para.rs` `section_char_grid`, `CharGridSpec`, the advance pass; `lines.rs` `snap_to_chars`, `fit_right`; `engine/page.rs` line pitch | `l-cgrid` 9 (8) |
+| L6 — *Chars indents (`ts_no_chars_indent`) | the *Chars value (hundredths of a character) wins over the twips of the same side (0 = the twips); unit of firstLineChars/hangingChars = the paragraph's FIRST run size, of leftChars/rightChars = the paragraph style's size; linesAndChars adds charSpace/4096 pt to the unit, snapToChars rounds up to whole cells; hangingChars ignores w:left (first line at leftChars, the others at leftChars + hangingChars). Style inheritance (review, `l-charsind/charsind-style`, generator `write/tools/layout-oracle/cases/wcl6_charsind_style.py`, Word 365 2026-11-14, 24 paragraphs): the plan's note "a direct twips value cancels an inherited *Chars" is NOT Word's rule — a paragraph's direct w:left/w:firstLine/w:hanging/w:right leaves the style's leftChars/firstLineChars/hangingChars/rightChars in force (as the merge already did); a direct *Chars of 0 over an inherited nonzero *Chars on a side with no twips anywhere takes the inherited *Chars VALUE as twips, whatever the size (leftChars 300/150/777 → 300/150/777 tw, firstLineChars 200 → 200 tw, rightChars 1000 → 1000 tw; hangingChars 200 with leftChars 300 → the first line at leftChars, the others 200 tw further) — implemented (`para.rs`, the `fb_*` values) | ignored | `para.rs` `prepare_paragraph` indents | `l-charsind` 4 (4) |
+| L7 — doNotExpandShiftReturn (`ts_shift_return_expands`) | with the compat option a jc=both line ending in a `w:br` is not expanded (modes 14 and 15); jc=distribute still is | expanded | `lines.rs` `justified` | `l-shiftret` 4 (4) |
+| L8 — `w:ptab` (`ts_ptab_indent_frame`) | left = the left margin (relativeTo margin) or w:left (indent); center = centre of the margins, or of [left indent, right MARGIN]; right = the right indent (at most the margin); a left/centre target left of the pen ends the line; a right ptab whose segment overflows right-aligns the part that fits | targets in the line frame, no break | `lines.rs` ptab branch, `PtabSpec::relative_to_margin`, the break path (`close_pending`) | `l-ptab` 2 (2) |
+| L9 — jc=distribute (`ts_distribute_spaces_only`) | spread (last line too, after the last tab): up to ½ g per space the slack goes to the spaces; past it each space takes 0.46 g and every gap between the characters an equal share of the rest (the plan's model: 16/2,004 measured lines over 0.6 pt, 14 of them `l-jspread-calibri22`; its 2/2,004 needs the gap share floored to 0.025 pt with the remainder lost, which is NOT implemented — in this engine, against Word with the installed fonts at 0.6 pt, the floor gives 14 of 16 `l-jspread-*`/`m-jspread48-*` cases equal against 15 without, 5 of 12 `l-jdist-*`/`m-jdist-*` against 6, and `m-jdist-liberationsans` 0.63 pt against 0.48; open: `l-jspread-calibri22` 0.84 pt. Why model and engine pull opposite ways (review, `core/target/wc-lines/l9_floor_sets.py` + the `UO_WC_DUMP` of `l-jspread-calibri22`): the misfit is the same in both — Word's line ends short by a shortfall that grows with the glyph count on long spread lines (calibri22, 16–36 glyphs: the model without the floor has 14 lines over 0.6 pt, this engine 13 of 1,063, every one with the last glyph +0.57…+0.79 pt right of Word's; the model's end error is positive even in phase 1, e.g. +0.36…+0.56 pt on 35-glyph lines where only the spaces stretch, so the floor is a proxy for a per-glyph shortfall, not a quantum of the gap share). Per CASE the model without the floor fails 3 of 15 `jspread` sets (calibri22, m-jspread48-timesnewroman 0.65, -georgia 0.61) and with it still 1 (calibri22, 2 lines); the engine without it fails only calibri22 (timesnewroman 0.60, georgia 0.56 — its positions differ from the model's by a few hundredths), and the model never scored the `jdist` sets, where the floor's lost remainder (up to 0.025 pt × the gap count) is what pushes `m-jdist-liberationsans` to 0.63. Floor kept off; the per-glyph shortfall itself is not modelled (open); modes ≤ 14 (`wcfix-l14`, 80 lines per font, all within 0.6 pt): 1.17 g for both constants; compression: as "both" (cap +0.035 tw) with the expansion side × f = Σg / (Σg + 0.1271·ΣxAvg) and no per-space slack (9 misfits over 3,985 paragraphs, against 1,017) — the same test in the hyphenation choice | spaces only, as "both" | `lines.rs` word fit (`spaces_xavg`, `LineEnv::x_avg`) and justification (`gaps`); `hyphenate.rs` `choose_hyphenation` (`HyphenUnit::distribute`/`spaces_xavg`) | `l-jdist` 6 (6) |
+| L10 — default tab left of the margin (`ts_default_tab_after_negative`) | x < 0: the first default multiple AT or after the pen; x ≥ 0 strictly after; a hanging stop still wins | strictly after | `lines.rs` `next_tab` | `l-tabs` `tabs-neg` |
+| L11 — bar tabs and the default grid (`ts_bar_tab_counts`) | default stops count as if the bar tabs did not exist (modes 14 and 15) | a bar tab is the last custom stop | `lines.rs` `next_tab` | `l-tabs` `tabs-bar-c14`/`-c15` (group: 3 cases, 3) |
+| L12 — emphasis marks (`ts_no_emphasis_marks`) | a line with a `w:em` dot/comma/circle run gets E = ¼ of its natural height above (underDot: below); single and multiple < 1.25 add E to the height, multiple ≥ 1.25 keeps it and moves the baseline E down (marks above), at least: the value when it holds natural + E, exact unchanged; the marks: one per non-space character at the run's size and colour, dot U+FF0E and comma U+3001 "MS Mincho" at baseline − 1.0·size, circle U+02DA "Batang" at − 0.294·size, underDot U+FF0E "SimSun" at + 0.382·size, centred (width 0.337/0.316/0.40 of the size); the families resolve through the provider's fallback, nothing shipped; the marks are decoration — Word's selectable text has none: their glyph runs carry an EMPTY run text (the glyphs keep their code points, which Word's PDF text also holds; `l12_emphasis_marks` asserts both) | `w:em` ignored | `lines.rs` `emphasis_mark`/line box, `paint.rs` `paint_emphasis_marks` (`PaintEnv::emphasis_face`, `None` in the facet replays) | `l-emph` 2 (1) |
+| L13 — superscript/subscript above 24 pt (`ts_supsub_formula_above_24`) | per-font raise, drop and superscript SIZE in half points, every half point 24–200 pt, the measured points 250–1000 pt and a ratio per font beyond, for Arial, Calibri, Courier New, Segoe UI, Times New Roman, Tahoma, Verdana, Cambria, Georgia, Century Gothic (`L/suptable-word.json`); beyond 200 pt the superscript size is 0.6 × the size for Cambria (its measured row), 1331/2048 for the others; the table is read by the run's REQUESTED family (its rFonts slot) when the provider draws it or its open metric twin (Arial → Liberation Sans, Calibri → Carlito, Cambria → Caladea, Times New Roman → Liberation Serif, Courier New → Liberation Mono), else by the drawn family — so the viewer/editor with open fonts gets Word's values for a document that asks for Arial/Calibri/…; Calibri Light reads Calibri's row (an assumption, not measured); other fonts and ≤ 24 pt unchanged | the ≤ 24 pt formula extended | `supsub_word.rs`, `para.rs` `resolve_run_style` | `l-supbig` 4 (4) |
+
+Recorded residuals (asserted in `word_wc_lines`; a residual that closes must leave the list): `cgrid-lc-4096` (Latin
+glyphs ±0.82 pt: Word's Latin advances on a linesAndChars grid are not the font's plus the pitch — 0.27 tw is the best
+single fit), `charsind-grid` (±1.09 pt), `m-jdist-carlito` (2 lines of the 9 compression misfits), `supbig-cambria`
+(±0.4 pt: Cambria's measured jumps at even sizes ≥ 58 pt).
+
+Opt-ins: `UO_WC_INSTALLED=core/target/wordcraft-study/L` lays out the 127 measured cases with the INSTALLED fonts (oracle
+policy) under Word's rules and `ts_strict()` and fails when a case equal under the TS's rules is not under Word's —
+2026-11-14: Word-equal 81 of 127 with Word's rules against 4 with the TS's, none worse (the previous implementer's
+probe: 70). Kinsoku: every `l-kinsoku-*`
+and `m-kinsoku-*` case breaks its lines as Word (ja-JP, sw, sw-c14, sw-latdef, hang-ja, inherit-ja/-en equal; zh-CN,
+zh-TW, ko-KR and hang-zh-CN differ only by the line height or advance of a few punctuation marks the CJK fonts lack —
+‼ ⁇ ⁈ ⁉ 〗 ‐ … — i.e. Word's FONT FALLBACK for them, not a kinsoku rule; the page break of `l-kinsoku-zh-cn` follows
+from those heights). Every case that still differs under Word's rules (46 of 127, re-run 2026-11-14 after the review's
+fixes; same list before them), with its cause:
+- `l-cgrid-sc-*` (10): the snapToChars Latin advances (Word's are ~0.5 % wider than the font's on a character grid: one
+  word of the long Latin line wraps differently, or glyphs up to 1.09 pt off);
+- `l-cgrid-lc-2048-*`, `-4096-*` (4; glyphs up to 1.02 pt) and `l-cgrid-lc-20480-*` (2; 2 lines break differently):
+  Word's Latin advances on a linesAndChars grid (the 0.27 tw single fit of the residual `cgrid-lc-4096`); `l-charsind-grid`
+  (0.89 pt) the same;
+- `m-cgrid-lc-normal14-0` / `-4096` (gx 7.2 / 7.7 pt): a PRE-EXISTING autospace gap, outside this plan — 'あabcあ' gets no
+  East Asian–Latin space where 'あabc' does (already in the previous implementer's probe, also under the TS rules);
+- `l-emph` (gx 2.91), `m-emph-circle` (dy 0.30), `m-emph-underDot` (1 line): not analysed;
+- `l-jboth-arial`, `l-jboth-calibri`: the L3 misfits above; `l-jdist-arial`, `l-jdist-calibri`, `m-jdist-cambria`,
+  `-carlito`, `-verdana` (line breaks) and `m-jdist-georgia` (gx 0.71): the L9 compression misfits (κ, the plan's 9 over
+  3,985 — the engine's count with installed fonts not analysed); `l-jspread-calibri22` (0.84 pt): L9 above;
+- `l-kinsoku-zh-cn`, `m-kinsoku-zh-tw`, `-ko-kr`, `-hang-zh-cn`: the CJK font fallback above;
+- `l-spaces-arial` (U+202F/U+205F are missing from Arial: Word's fallback face is 0.25 pt taller);
+- `m-supfill-*` (11; sizes 250–1000 pt: lines taller than the page).
+`UO_WC_ATTR=<dir of .docx>` (`attribute_documents_to_the_lines_rules`) prints which of the 13 switches changes which pages
+of each document.
+
+Paragraph memo (review): the section's character grid (`para::prep_char_grid`, the `CharGridSpec` of the paragraph's
+section) is part of the memo's per-paragraph key (`incr/memo.rs` `prepare`): a section edit — margins, orientation,
+`w:docGrid`, a break that moves paragraphs to another section — replaces `doc.sections` but neither the formatting nor the
+styles, so without it the unchanged paragraphs kept the old cell/pitch. `la7::memo_keys_the_character_grid` (snapToChars:
+custom margins, landscape, then a typed character served by the memo again; linesAndChars: charSpace 4096 / −2048 / 2048)
+asserts every relayout equal to a fresh full layout and no memo hit after a grid change; without the key it fails at the
+margins step (canonical digest).
+
+**.NET port** (`UniversalOffice.Docx/DocxLayout`; nothing changed in `dotnet/`): none of the 13 rules is ported — the
+.NET engine follows the frozen TS, so the JS↔.NET parity dumps are unaffected. Port needs: `Lines.cs` (L1 the SPACE_LIKE
+set in the vertical metrics; L2 the marker suffix and the unit alignment; L3 the compression slacks, also in the
+hyphenation choice; L7; L8 the ptab targets and break; L9 the two-phase spread and the xAvgCharWidth factor; L10/L11
+`NextTab`; L12 the line box; L5 the snapToChars placement and fit edge; L4 the jc=both East Asian spread), `Para.cs` (L4
+the per-language kinsoku lists and the break pass; L5 the grid advances; L6 the *Chars indents; L13 the per-font size
+table), `Page.cs` (L5 the snapToChars line pitch), `Paint.cs` (L12 the marks), `Fonts.cs` (L9 xAvgCharWidth; L13 the
+table).
+
+## WordCraft study — harness declarations
+
+Leva "wordcraft-adopt" (2026-11-14). The browser switch harnesses compare the frozen TS editor/viewer with the Rust one
+running the product rules (Word's), so every WordCraft rule that moves a harness document shows there. Each difference
+is declared only where a run PROVES it comes from a WordCraft switch, in the harness's own shape, scoped as narrowly as
+the harness allows, with the id "Word manda sobre o TS (WordCraft <area> <item>, …)" (F-1: "WordCraft page F-1 …").
+
+**Proofs.** (1) Everything at the TS's rules: the viewer with `UO_SW_TS_WC=lines,page,tables,fields,d1` (a harness-only
+knob: an esbuild `onLoad` gives the BUNDLED `js/write.mjs` the `tsWc*` layout options and D1's `tsHyphenation`, nothing
+shipped changes; the WordCraft declarations are then left out) equals the TS on every document but for the
+non-WordCraft declarations (gate-O3, ED-713, wave 7c items 3/4/6); the editor harnesses with session wasm builds that
+lay the session out with every area's `ts_*` switches on (and the fields area's session switches, D1's pattern ids):
+`editor_switch` parity 0 undeclared with every WordCraft entry "declared but equal now", the other harnesses likewise
+(completion: only the wave 7c entries and the F-1 proxies below). Those builds used a compile-time env knob in
+`uo-wasm/src/session` (`option_env!`), removed afterwards: the product wasm rebuilt from the tree is byte-identical to
+the one every product run used. (2) One area at Word's rules, the other three (and D1) at the TS's — viewer: the dumps
+of `UO_SW_MISMATCHES` (every mismatch as JSON) per area less the all-TS dump; editor: per-area builds, every difference
+listed (`UO_EO_MEASURE`/`UO_EC_MEASURE` + `COVERED`) — gives what each declaration lists. (3) Inside an area: the native
+attribution (`attribute_documents_to_the_<area>_rules`, the pages each switch alone changes over `ts_strict()`; the
+fields test now takes `UO_WC_ATTR_SOURCES=1` for the editor's read, as the tables test) and, for the editor's own
+scenarios, builds with ONE switch at Word's rule: tables B6 for stories T4, completion `blank|tables`, `f2-3-0|tables`
+and the table-style previews; B15 A for fidelity `cell-nested`; B5 for `f8__7__11|objects`'s end pages; page A15 for the
+editor's `f7a__7__11/13/15/6`; fields C1b for `f7a__7__9`'s page count. (4) F-1 (page, UI): completion and objects run
+with the `ResizeObserver` of `write/packages/editor/src/rust-engine.ts` disabled (local, reverted): the IME proxies of
+completion `blank|objects` @41, `blank|inline` and `f2-3-0|inline` @5/@7, `f7b__7__3|objects` @41 and objects
+`f7b__7__3|objects`, `f8__7__11|objects` @2 are equal then. The lines area moves no capture document of any harness
+(its runs equal the all-TS ones); its one declaration is stories `H2` (L8).
+
+**What moves.** Fields C1b (a multiple-spaced line over runs of several faces gets Word's text height) moves almost
+every line of the f7–f8 fuzz documents by a few hundredths of a point — the viewer's text layer, pixels and PDF, and in
+the editors the caret of the first click, the end thumbnails and screens; B22 (`\*` switches: an unknown keyword is
+Word's error text, the case/format order — f7a__7__0's two `PAGE \* ROMAN` are Word's `VI`, the TS's `vi`), B23, B24
+and B25 change field results; D1 (Word's English hyphenation data) breaks English lines elsewhere. Page A15 (no space
+before after an opening page break; in the editor also after the scripts' Ctrl+Enter), A16 (section parity: f7c__7__6
+and f8__7__6 get a blank page, 7 pages — Word's own count, the TS 6) and B10/B11 (floats on their anchor line, the page
+laid out again). Tables: B5, B6, B12, B15 A/B as in "WordCraft study — tables".
+
+| Harness | Rule | Documents / keys (facets) |
+|---|---|---|
+| `viewer_switch.mjs` `WC` (per area, per switch; `textLayer`/`pixels` scoped to pages, one list or `{ textLayer, pixels }`) | fields C1b | 57 documents: `gen__1__4/7`, f7a 0–13 and 15, f7b 0–11, f7c 0–3, 6–8, 12–14, f7d 0, 2–5, 7, 8, 11, f8 0–2, 4–9, 11 (`f7d__7__5`: the PDF only — its moves are below a pixel; on the other f7c documents the C1b pages are already a wave 7c declaration's) |
+| | fields B22 / B23 / B24 / B25 / D1 | B22 27 documents (f7a 0, 1, 2, 6, 9, 12, 15; f7c 0, 2–10, 12–15; f8 0, 2, 4, 6, 8, 10); B23 `f7a__7__10` p2; B24 `f7c__7__3` p14; B25 and D1 `f2-3-1` text layer p0; D1 `f2-3-3` p0 |
+| | page A15 / A16 / B10 | A15 `f7a__7__13` p1, `f7a__7__15` p3, `f7a__7__6` p11; A16 `f7a__7__2` p10, `f7a__7__5` p8, `f7c__7__13` p3, `f7c__7__6`, `f8__7__6` (7 pages); B10 `f7b__7__10` p0, `f7b__7__3` p1, `f7b__7__5` p0, `f7b__7__6` p5, `f8__7__3` p1, `f8__7__5` p0 |
+| | tables | the 13 documents of "Harness documents", the facets measured: `f7b__7__2` pixels/pdf (no text layer), `f7b__7__6` no find, `f7b__7__11`, `f7b__7__9`, `f8__7__1` + find, `f7b__7__5` + linkBoxes |
+| `editor_switch.mjs` `WC_DECLARED` (merged with an existing key as an array; `declaredFor` takes arrays) | fields (+ page) | 50 documents: from the first differing step the caret (`selection`/`state` where the first click lands elsewhere) and the end thumbnails/screens; `f2-3-3` D1; `f7a__7__11/13/15/6` + A15, `f7a__7__2/5` + A16, `f7b__7__10` + B10; `pagesAfterLoad` on `f7c__7__6`/`f8__7__6` (A16, Word's 7 pages) and `f7a__7__9` (C1b: 11 pages, the TS 12, Word's count not measured — the viewer's read of the same bytes keeps 12; open) |
+| `editor_switch_stories.mjs` `WC_S` | fields C1b; lines L8; tables B6 | `N2 f7c__7__13`, `T2 f7b__7__1`, `T2 f7d__7__8`, `X3`/`X4 f7b__7__10`; `H2 two sections` steps 7–8 (the alignment tab of the header: its target left of the pen ends the line in Word); `T4` from step 22 (its Grid Table 4 Accent 1: rows, the distributed sizes it saves) |
+| `editor_switch_objects.mjs` | fields C1b (+ B23, B10, tables B5) | `f7a__7__5/10|page`, `f7c__7__1|page`, `f7b__7__8|objects`, `f7b__7__0|menu`, `f7a__7__1|views` end thumbnails/screens; `f7b__7__0|objects`, `f7b__7__1|objects`, `f8__7__11|objects` the frames of both drags (`at`, steps 2, 4, 6, 8) and the end (f8__7__11 also its saved body; tables B5 its end pages); `f7b__7__10|objects` (+ B10). The F-1 entries kept; the existing page/tables entries hold the fields run's thumbnails too |
+| `editor_switch_review.mjs` | fields C1b, B22 | `f7a__7__0|revisions` (the revision anchors from step 2, the end screens and mask), `f8__7__0|spell` (the screen under the squiggles, the mask) |
+| `editor_switch_format.mjs` | fields C1b, B22 | `f7a__7__0|font/para/ruler/view/bar`, `f8__7__0|file`, `f7b__7__0|file` (printed pages); the TOC extras: `wcRoman` (the TS's two `PAGE \* ROMAN` results upper-cased, the only text change allowed besides ED-712, and required) and ED-713's printed pages `WC_ED713_PRINTED` [0, 1, 2, 3, 5, 6] (exactly those) |
+| `editor_switch_completion.mjs` `WC_C` | fields D1, C1b, B22; tables B6; page B10/B11, F-1 | `f2-3-1|lists` D1; `f7c__7__2|lists` screen; `f7a__7__1|page`; `f7b__7__0|previews` answer 3 (C1b), answers 4–5 (B6); `blank|tables`, `f2-3-0|tables`, `f2-3-0|previews`, `blank|previews` B6; `f7b__7__3|objects` page counts and frames (B10/B11) and F-1 @41; F-1 `blank|objects` @41, `blank|inline`/`f2-3-0|inline` @5/@7 |
+| `editor_switch_fidelity.mjs` | tables B15 A | `cell-nested` (step 17's screen, the end) |
+
+The viewer's five text-layer-only pages (`f7a__7__3` p3, `f7b__7__4` p1/p4, `f7a__7__12` p4, `f7a__7__2` p6,
+`f7a__7__6` p5: the markup differs, the pixels do not) are the fields area's (its run with and without D1) on pages
+whose PAINT no fields switch changes natively — a line box height the paint does not show; declared under C1b.
+
+**Final runs** (the product wasm of the current tree, `UO_SW_STRIDE=1`, `UO_ES_STRIDE=1 UO_ES_STEPS=12`; every one 0
+undeclared, 0 "declared but equal now"): viewer 78 documents / 592 pages, 5 equal, 73 with declared differences (the
+all-areas-at-the-TS's run: 0 undeclared, only the non-WordCraft declarations met); `editor_switch` all 13 fixtures
+(264 facet differences: 246 declared, 18 informative), parity 74 fixtures (1,532: 1,410 declared, 122 informative);
+stories 21 scenarios (273: 266 declared, 7 informative); objects page 94, objects 239, menu 4, views 2 differences, all
+declared; review revisions 27, styles 36, fields 5 and the spell screen, declared; format font 7, para 28, ruler 59,
+text 7, view 438, bar 25 declared, every extra as declared; completion lists 4, tables 4, objects 141, inline 4, page
+2, previews 9 declared; fidelity 148 declared. The wasm API tests (`session_api`, `session_hostile` with
+`UO_WS_FUZZ_MS=10000`, `session_replay`, `shell_api`, `write_api`) pass; `write_api`'s pins `f8__7__0`/`f8__7__10` (the
+fields area's) hold in wasm.
+
+**Open.** `f7a__7__9` in the editor: under C1b the session's layout of the bytes has 11 pages, the write API's (the
+viewer's read) 12, both Rust (the TS's rules: 12 and 12; a single-switch build proves C1b) — the two models lay the
+document out differently; not analysed further (Word's page count not measured). Objects `f7b__7__1|objects` F-1 (@2)
+still differs with the observer disabled: the pre-existing declaration is kept as it was (its cause not re-measured
+here). Completion `paste`: an image-state difference after `pic:change:clip` (steps 14–15) showed twice in full runs
+(`f2-3-0|paste` in an all-TS run, `blank|paste` in a product run) and never in nine runs of the family alone —
+intermittent and not WordCraft's (the all-TS build shows it): not declared.

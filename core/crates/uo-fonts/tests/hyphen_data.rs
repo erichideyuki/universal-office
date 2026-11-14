@@ -33,6 +33,8 @@ fn the_seven_files_have_the_ts_minimums_and_counts() {
         ("de-1996", 2, 2, 36_709, 0),
         ("it", 2, 2, 355, 0),
         ("nl", 2, 2, 12_724, 40),
+        // WordCraft study (fields, D1): DesignCraft's CC0 patterns + the Moby Hyphenator II exceptions
+        ("en-us-word", 2, 3, 19_548, 35_675),
     ];
     for (id, left, right, patterns, exceptions) in expected {
         let text = file(id);
@@ -43,7 +45,7 @@ fn the_seven_files_have_the_ts_minimums_and_counts() {
         assert!(text.starts_with('#'), "the notice of the source heads the file");
         assert!(!text.contains('\r'));
     }
-    assert_eq!(HYPHENATION_PATTERN_IDS.len(), 7);
+    assert_eq!(HYPHENATION_PATTERN_IDS.len(), 8);
     assert!(Path::new(env!("CARGO_MANIFEST_DIR")).join("data/hyphen/THIRD-PARTY-NOTICES.md").exists());
 }
 
@@ -71,6 +73,17 @@ fn known_words_hyphenate_as_the_ts_does() {
             assert_eq!(h.hyphenate(word, h.left(), h.right()), *hyphenated, "{id} {word}");
         }
     }
+}
+
+/// WordCraft study (fields, D1): Word's English data hyphenates as Moby Hyphenator II (its exceptions), the patterns
+/// elsewhere.
+#[test]
+fn en_us_word_follows_moby() {
+    let h = hyphenator("en-us-word");
+    assert_eq!(h.hyphenate("shepherdess", 2, 3), [4, 8], "shep-herd-ess");
+    assert_eq!(h.hyphenate("imponderable", 2, 3), [2, 5, 8, 9], "im-pon-der-a-ble");
+    // (Moby's "hy-phen-a-tion", which the patterns already give: not an exception)
+    assert_eq!(h.hyphenate("hyphenation", 2, 3), [2, 6, 7], "hy-phen-a-tion");
 }
 
 #[test]

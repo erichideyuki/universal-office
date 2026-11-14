@@ -319,7 +319,7 @@ impl Session {
                 .collect(),
             CrossRefType::Numbered => {
                 let view = crate::view::DocView::new(&self.doc);
-                crate::word::outline::numbered_items(view, None)
+                crate::word::outline::numbered_items_with(view, None, self.num_rules())
                     .into_iter()
                     .filter_map(|n| {
                         let pi = super::fields::para_of_block(body, n.block as usize)?;

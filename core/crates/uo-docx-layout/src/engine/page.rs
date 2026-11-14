@@ -80,6 +80,67 @@ pub struct SectGeom {
     pub notes: SectNotes,
     /// `balKey` (default: the section index; the endnote area is balanced apart)
     pub bal_key: Option<i64>,
+    /// WordCraft study (page; not TS state): the index in `Engine::geoms` of the canonical geometry this one belongs to
+    /// (itself for a section's or an endnote flow's geometry; the canonical one for its even-page variant)
+    pub base: u32,
+    /// WordCraft study (page): the geometry of the pages whose document parity is EVEN when Word's margins differ there
+    /// (mirrorMargins, bookFold*, printTwoOnOne); `None` = every page uses this one
+    pub even: Option<u32>,
+    /// WordCraft study (page): the header/footer's left and right margins when they differ from the body's (bookFold*:
+    /// the body follows the fold, the header/footer the normal gutter/mirror rules)
+    pub hf_mar: Option<(f64, f64)>,
+}
+
+/// WordCraft study (page; Word 16.0.20527, record uo-docx-layout.md "WordCraft study — page"): the margins of a page by
+/// Word's rules for `w:gutter`, `w:rtlGutter`, `w:gutterAtTop`, `w:mirrorMargins`, `w:bookFold(Rev)Printing` and
+/// `w:printTwoOnOne` — `(left, right, top, bottom)` of the body and the header/footer's `(left, right)`. `m` = the model's
+/// margins; `even` = the page's document parity (the first section's start + the physical page index) is even.
+fn word_margins(
+    cx: &Cx<'_, '_>,
+    sect: Option<&uo_docx::model::section::SectionProps>,
+    page: (f64, f64),
+    m: (f64, f64, f64, f64),
+    even: bool,
+) -> ((f64, f64, f64, f64), (f64, f64)) {
+    let (l0, r0, t0, b0) = m;
+    let g = sect.and_then(|p| p.gutter).and_then(JsNumber::as_f64).filter(|v| v.is_finite()).unwrap_or(0.0);
+    let facts = cx.ldoc.view.document().read_facts;
+    let normal = if cx.opts.ts_no_gutter_mirror {
+        m
+    } else if facts.gutter_at_top {
+        // the gutter above the top margin; mirrorMargins and rtlGutter ignored (g-gut-top*, g2-top0-mirror, g2-gut-top-rtl)
+        (l0, r0, t0 + g, b0)
+    } else {
+        let (gl, gr) = if sect.and_then(|p| p.rtl_gutter) == Some(true) { (0.0, g) } else { (g, 0.0) };
+        if cx.ldoc.view.formatting().settings.mirror_margins && even { (r0 + gr, l0 + gl, t0, b0) } else { (l0 + gl, r0 + gr, t0, b0) }
+    };
+    if cx.opts.ts_no_print_fold {
+        return (normal, (normal.0, normal.1));
+    }
+    let land = page.0 > page.1;
+    if facts.print_two_on_one {
+        // portrait: the gutter at the fold, top/bottom swapping per page, the sides (header/footer too) plain; landscape:
+        // the sides swap, the header/footer follow the body (g2-two-*, g3-two-land-gut)
+        let body = match (land, even) {
+            (true, false) => (r0 + g, l0, t0, b0),
+            (true, true) => (l0, r0 + g, t0, b0),
+            (false, false) => (l0, r0, b0 + g, t0),
+            (false, true) => (l0, r0, t0, b0 + g),
+        };
+        return (body, if land { (body.0, body.1) } else { (l0, r0) });
+    }
+    if let Some(rev) = facts.book_fold {
+        // the body by the fold (portrait: plain margins), the header/footer by the normal rules (g-fold-*, g2-fold-*)
+        let body = match (land, rev, even) {
+            (false, _, _) => (l0, r0, t0, b0),
+            (true, false, false) => (r0 + g, l0, t0, b0),
+            (true, false, true) => (l0, r0 + g, t0, b0),
+            (true, true, false) => (l0 + g, r0, t0, b0),
+            (true, true, true) => (r0, l0 + g, t0, b0),
+        };
+        return (body, (normal.0, normal.1));
+    }
+    (normal, (normal.0, normal.1))
 }
 
 impl SectGeom {
@@ -175,6 +236,20 @@ pub struct PageState {
     pub body_bottom_base: f64,
     pub notes_full: bool,
     pub cols: Option<Vec<Col>>,
+    /// WordCraft study (page, A16; not TS state): a blank page Word inserts for a section's parity — no header, footer
+    /// or page border, not counted in SECTIONPAGES
+    pub blank: bool,
+    /// WordCraft study (page): the page's document parity (the first section's start + the physical page index) is
+    /// even — what Word's mirror margins, inside/outside floats and mirrorIndents follow
+    pub doc_even: bool,
+    /// WordCraft study (fields, B23; not TS state): every section geometry with content on the page — its own and each
+    /// one a continuous break starts on it (SECTIONPAGES counts the page in each)
+    pub sections: Vec<u32>,
+    /// WordCraft study (fields, B23): the base geometry of the section a continuous break starts on this page
+    pub cont_first: Option<u32>,
+    /// WordCraft study (fields, B23): the page's index among its section's pages FOR THE NUMBERING (Word counts a
+    /// continuous section from its first, shared page; `sect_page` keeps the TS count, which the first-page header uses)
+    pub num_sect_page: u32,
 }
 
 /// `CHAP_SEP` (engine.ts:197): `w:chapSep` → the character between chapter and page.
@@ -212,14 +287,21 @@ fn restart_of(s: Option<&str>) -> NoteRestart {
 impl Engine {
     /// `geomOf(s, i)` (engine.ts:784). `s` = `None` is the default section `run()` builds for a
     /// document without one (A4 portrait, 1701/1417 margins, every block).
-    pub(crate) fn geom_of(&self, cx: &Cx<'_, '_>, s: Option<&uo_docx::model::Section>, i: usize) -> LResult<SectGeom> {
+    /// (WordCraft study, page: `even` = the geometry of the pages whose document parity is even, Word's margins)
+    pub(crate) fn geom_of(&self, cx: &Cx<'_, '_>, s: Option<&uo_docx::model::Section>, i: usize, even: bool) -> LResult<SectGeom> {
         let sp = s.map(|s| &*s.sect_pr);
         let sect = s.and_then(|s| s.sect.as_deref());
         let num = |v: Option<JsNumber>, d: f64| v.map_or(d, JsNumber::to_number);
         let page_w = num(sp.map(|p| p.page_width_twips), 11906.0);
         let page_h = num(sp.map(|p| p.page_height_twips), 16838.0);
-        let mar_l = num(sp.map(|p| p.margin_left_twips), 1701.0);
-        let mar_r = num(sp.map(|p| p.margin_right_twips), 1701.0);
+        let m0 = (
+            num(sp.map(|p| p.margin_left_twips), 1701.0),
+            num(sp.map(|p| p.margin_right_twips), 1701.0),
+            num(sp.map(|p| p.margin_top_twips), 1417.0),
+            num(sp.map(|p| p.margin_bottom_twips), 1417.0),
+        );
+        let ((mar_l, mar_r, mar_t, mar_b), hf_mar) = word_margins(cx, sect, (page_w, page_h), m0, even);
+        let hf_mar = (!js_eq(hf_mar.0, mar_l) || !js_eq(hf_mar.1, mar_r)).then_some(hf_mar);
         let content_w = jm::max(720.0, page_w - mar_l - mar_r);
         let mut cols = Vec::new();
         let defs = sect.and_then(|s| s.col_defs.as_deref());
@@ -305,7 +387,12 @@ impl Engine {
             sep: chap_sep(sp.and_then(|p| p.pg_num_chap_sep.as_deref()).unwrap_or("hyphen")).unwrap_or("-").into(),
         });
         let line_pitch = match sect.and_then(|s| s.doc_grid.as_ref()) {
-            Some(dg) if matches!(dg.r#type.as_deref(), Some("lines" | "linesAndChars")) && or(dg.line_pitch, 0.0) > 0.0 => {
+            // (WordCraft study, lines L5: snapToChars is a line grid too in Word — `wcl2/l-cgrid-sc-*`)
+            Some(dg)
+                if (matches!(dg.r#type.as_deref(), Some("lines" | "linesAndChars"))
+                    || (!cx.opts.ts_no_char_grid && dg.r#type.as_deref() == Some("snapToChars")))
+                    && or(dg.line_pitch, 0.0) > 0.0 =>
+            {
                 OptF64::some(dg.line_pitch.map_or(f64::NAN, JsNumber::to_number))
             }
             _ => OptF64::NONE,
@@ -324,15 +411,19 @@ impl Engine {
                 360.0
             },
         });
+        let index = u32::try_from(i).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
         Ok(SectGeom {
             notes,
-            index: u32::try_from(i).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?,
+            index,
             page_w,
             page_h,
             mar_l,
             mar_r,
-            mar_t: num(sp.map(|p| p.margin_top_twips), 1417.0),
-            mar_b: num(sp.map(|p| p.margin_bottom_twips), 1417.0),
+            mar_t,
+            mar_b,
+            base: index,
+            even: None,
+            hf_mar,
             hdr: or(sp.and_then(|p| p.header_distance_twips), 720.0),
             ftr: or(sp.and_then(|p| p.footer_distance_twips), 720.0),
             col_sep: cols_pr.is_some_and(|c| c.sep),
@@ -370,26 +461,79 @@ impl Engine {
 
     /// `newPage(g, breakType)` (engine.ts:857): evenPage/oddPage add a blank page for parity.
     pub(crate) fn new_page(&mut self, cx: &mut Cx<'_, '_>, gi: u32, break_type: &str) -> LResult<()> {
+        // (WordCraft study, page: a page's geometry may be its section's even-page variant)
+        let gi = self.geom(gi)?.base;
         let sect_page = match self.cur {
-            Some(c) if self.ps(c)?.geom == gi => self.ps(c)?.sect_page.saturating_add(1),
+            Some(c) if self.geom(self.ps(c)?.geom)?.base == gi => self.ps(c)?.sect_page.saturating_add(1),
             _ => 0,
         };
         let g = self.geom(gi)?.clone();
-        let mut number = self.page_number(&g, sect_page);
-        if sect_page == 0 && !self.pages.is_empty() && (break_type == "evenPage" || break_type == "oddPage") {
-            let want_even = break_type == "evenPage";
-            if js_eq(jm::rem(number, 2.0), 0.0) != want_even {
-                self.make_page(cx, gi, sect_page, number)?;
-                number += 1.0;
-                return self.new_page_at(cx, gi, sect_page + 1, number);
+        // WordCraft study (fields, B23): Word numbers a continuous section from its first (shared) page — the page after
+        // it is the section's 2nd (`pgNumType start` + 1); the frozen TS from its first own page (`ts_section_pages_shared`)
+        let num_sect_page = match self.cur {
+            Some(c) if !cx.opts.ts_section_pages_shared && self.geom(self.ps(c)?.geom)?.base == gi => {
+                let ps = self.ps(c)?;
+                if ps.cont_first == Some(gi) { 1 } else { ps.num_sect_page.saturating_add(1) }
+            }
+            _ => sect_page,
+        };
+        let mut number = self.page_number(&g, num_sect_page);
+        let section_start = sect_page == 0 && !self.pages.is_empty();
+        if cx.opts.ts_section_parity {
+            if section_start && (break_type == "evenPage" || break_type == "oddPage") {
+                let want_even = break_type == "evenPage";
+                if js_eq(jm::rem(number, 2.0), 0.0) != want_even {
+                    self.make_page(cx, gi, sect_page, number, false)?;
+                    number += 1.0;
+                    return self.new_page_at(cx, gi, sect_page + 1, number);
+                }
+            }
+        } else if section_start && matches!(break_type, "nextPage" | "oddPage" | "evenPage") {
+            // WordCraft study (page, A16; measured in modes 15, 14 and 12): (a) an odd/even break whose number has the wrong
+            // parity bumps a restarted number, else takes a blank page and the number after it; (b) with
+            // evenAndOddHeaders or mirrorMargins the number's parity must also be the document parity of the page, else
+            // a blank page. The blank page is empty (no header/footer), has the new section's paper, counts in NUMPAGES
+            // and in no SECTIONPAGES; the text page after it is the section's first page.
+            let even_of = |v: f64| js_eq(jm::rem(v, 2.0), 0.0);
+            if (break_type == "evenPage" || break_type == "oddPage") && even_of(number) != (break_type == "evenPage") {
+                if g.pg_start.is_some() {
+                    number += 1.0;
+                } else {
+                    self.make_page(cx, gi, sect_page, number, true)?;
+                    number += 1.0;
+                }
+            }
+            let st = &cx.ldoc.view.formatting().settings;
+            if st.even_and_odd_headers || st.mirror_margins {
+                let d = self.first_page_number + f64::from(u32::try_from(self.pages.len()).unwrap_or(u32::MAX));
+                if even_of(number) != even_of(d) {
+                    let blank_number = self.pages.last().map_or(1.0, |p| p.page.number + 1.0);
+                    self.make_page(cx, gi, sect_page, blank_number, true)?;
+                }
             }
         }
-        self.new_page_at(cx, gi, sect_page, number)
+        self.new_page_at(cx, gi, sect_page, number)?;
+        self.cur_ps_mut()?.num_sect_page = num_sect_page; // WordCraft study (fields, B23)
+        Ok(())
+    }
+
+    /// WordCraft study (page): the geometry of section geometry `gi` (a canonical one) on a page of document parity
+    /// `even`.
+    pub(crate) fn geom_variant(&self, gi: u32, even: bool) -> LResult<u32> {
+        let g = self.geom(gi)?;
+        let base = g.base;
+        Ok(if even { self.geom(base)?.even.unwrap_or(base) } else { base })
+    }
+
+    /// WordCraft study (page): the document parity of the NEXT page (the first section's start + its physical index).
+    pub(crate) fn next_doc_even(&self) -> bool {
+        let d = self.first_page_number + f64::from(u32::try_from(self.pages.len()).unwrap_or(u32::MAX));
+        js_eq(jm::rem(d, 2.0), 0.0)
     }
 
     /// `newPageAt(g, sectPage, number)` (engine.ts:872).
     fn new_page_at(&mut self, cx: &mut Cx<'_, '_>, gi: u32, sect_page: u32, number: f64) -> LResult<()> {
-        self.make_page(cx, gi, sect_page, number)?;
+        self.make_page(cx, gi, sect_page, number, false)?;
         self.col = 0;
         let body_top = self.cur_ps()?.body_top;
         self.col_top = body_top;
@@ -422,20 +566,64 @@ impl Engine {
             let fr = self.col_frame()?;
             let cur = self.cur_ix()?;
             let body_top = self.ps(cur)?.body_top;
-            for &run in late {
-                self.place_float(cx, run, cur, fr.x, fr.w, body_top, None, 0.0, None, None)?;
-                self.pre_placed.insert(run);
+            // (WordCraft study, page, B10: a provisional pin is not placed at the page start)
+            for lf in late.iter().filter(|l| l.col == 0 && l.pin.is_none_or(|p| p.settled)) {
+                self.place_late_float(cx, lf, cur, fr, body_top)?;
             }
         }
         self.place_late_tables(cx)
     }
 
-    /// `makePage(g, sectPage, number)` (engine.ts:912).
-    fn make_page(&mut self, cx: &mut Cx<'_, '_>, gi: u32, sect_page: u32, number: f64) -> LResult<()> {
+    /// One late float at its page (or column) start: the TS's absolute one from the column frame and the body top;
+    /// a pinned one (WordCraft study, page, B10/B11) at the position Word keeps for it.
+    fn place_late_float(&mut self, cx: &mut Cx<'_, '_>, lf: &super::LateFloat, cur: PageIx, fr: Col, body_top: f64) -> LResult<()> {
+        match lf.pin {
+            None => {
+                self.place_float(cx, lf.run, cur, fr.x, fr.w, body_top, None, 0.0, None, None)?;
+            }
+            Some(pin) => {
+                self.float_line_top = pin.line_top;
+                let r = self.place_float(cx, lf.run, cur, pin.col_x, pin.col_w, pin.para_top, None, 0.0, None, Some(pin.para_ref));
+                self.float_line_top = None;
+                r?;
+            }
+        }
+        self.pre_placed.insert(lf.run);
+        Ok(())
+    }
+
+    /// WordCraft study (page, B10): the pinned late floats of the column the flow just entered on the current page.
+    fn place_late_col(&mut self, cx: &mut Cx<'_, '_>) -> LResult<()> {
+        let pix = u32::try_from(self.pages.len().saturating_sub(1)).map_err(|_| LayoutError::Limit(LimitKind::Capacity))?;
+        let col = self.col;
+        let Some(late) = cx.input.late_floats.get(&pix) else { return Ok(()) };
+        let todo: Vec<super::LateFloat> = late
+            .iter()
+            .filter(|l| l.col == col && l.col > 0 && l.pin.is_some_and(|p| p.settled) && !self.pre_placed.contains(&l.run))
+            .copied()
+            .collect();
+        if todo.is_empty() {
+            return Ok(());
+        }
+        self.note_read_all();
+        let fr = self.col_frame()?;
+        let cur = self.cur_ix()?;
+        let top = self.col_top;
+        for lf in &todo {
+            self.place_late_float(cx, lf, cur, fr, top)?;
+        }
+        Ok(())
+    }
+
+    /// `makePage(g, sectPage, number)` (engine.ts:912). (WordCraft study, page: the geometry is the variant of the page's
+    /// document parity; `blank` = a parity page Word leaves empty.)
+    fn make_page(&mut self, cx: &mut Cx<'_, '_>, gi: u32, sect_page: u32, number: f64, blank: bool) -> LResult<()> {
         if self.pages.len() >= cx.opts.limits.max_pages as usize {
             return Err(LayoutError::Limit(LimitKind::Pages));
         }
         cx.budget.charge(1)?;
+        let doc_even = self.next_doc_even();
+        let gi = self.geom_variant(gi, doc_even)?;
         let g = self.geom(gi)?.clone();
         let ps = PageState {
             page: PageOut { w: g.page_w, h: g.page_h, section: g.index, number, ..PageOut::default() },
@@ -444,6 +632,10 @@ impl Engine {
             body_bottom: g.page_h - g.mar_b,
             sect_page,
             body_bottom_base: g.page_h - g.mar_b,
+            blank,
+            doc_even,
+            sections: vec![gi], // WordCraft study (fields, B23)
+            num_sect_page: sect_page,
             ..PageState::default()
         };
         if self.cur.is_some() {
@@ -462,7 +654,7 @@ impl Engine {
         ps.body_bottom_base = ps.body_bottom;
         // the continuation of a note split on the previous page: first at this one's foot
         // (oracle fncont)
-        if !self.note_carry.is_empty() {
+        if !self.note_carry.is_empty() && !blank {
             self.place_note_carry(cx, gi)?;
         }
         Ok(())
@@ -508,9 +700,14 @@ impl Engine {
         // section (corpus t89)
         self.y = jm::max(self.y, self.col_max_y);
         self.col_max_y = 0.0;
+        let gv = self.geom_variant(gi, self.cur_ps()?.doc_even)?; // (WordCraft study, page)
+        let base = self.geom(gi)?.base;
         let ps = self.cur_ps_mut()?;
-        ps.geom = gi;
+        ps.geom = gv;
         ps.cols = None;
+        // WordCraft study (fields, B23): the section has content on this page too
+        ps.sections.push(gv);
+        ps.cont_first = Some(base);
         self.col = 0;
         self.col_top = self.y;
         self.apply_balance(cx)
@@ -568,9 +765,10 @@ impl Engine {
             self.cur_ps_mut()?.body_bottom = saved;
         }
         let cols = self.page_cols()?.to_vec();
+        let gv = self.geom_variant(gi, self.cur_ps()?.doc_even)?; // (WordCraft study, page)
         let ps = self.cur_ps_mut()?;
         ps.cols = Some(cols);
-        ps.geom = gi;
+        ps.geom = gv;
         self.col_used.push(self.y - self.col_top);
         self.col_max_y = jm::max(self.col_max_y, self.y);
         self.col += 1;
@@ -619,7 +817,9 @@ impl Engine {
             if self.en_flow.is_some_and(|e| e.sep_done) {
                 self.continuation_separator(cx, false)?;
             }
-            Ok(())
+            // WordCraft study (page, B10): the floats Word pins to this column (no late float has a column > 0 under
+            // the frozen TS's switches)
+            self.place_late_col(cx)
         } else {
             self.new_page(cx, gi, "nextPage")
         }
@@ -692,6 +892,10 @@ impl Engine {
         g: &SectGeom,
         pb: &crate::model::PageBorders,
     ) -> LResult<PassItems> {
+        // (WordCraft study, page, A16: Word's parity page is completely empty)
+        if ps.blank {
+            return Ok(PassItems::new());
+        }
         let first = ps.sect_page == 0;
         let display = pb.display.as_deref();
         if (display == Some("firstPage") && !first) || (display == Some("notFirstPage") && first) {

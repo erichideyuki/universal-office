@@ -617,7 +617,13 @@ fn d2b_f10_session_matches_the_element() {
         // wave 7c (S): the TS captures save after undone style edits — the frozen TS's stale parts (Word manda sobre o TS
         // by default, `save_parts.rs`). Fix round 1: only the flag this family needs; without it the `stylexml` facet of
         // step #16 differs on sep-times14, ln-objects and styleref-seq (an undone style edit saved: Word's sheet of now)
-        let o = OpenOptions { sig_mode: SigMode::Ts, ts_stale_parts: true, ..OpenOptions::default() };
+        let o = OpenOptions {
+            sig_mode: SigMode::Ts,
+            ts_stale_parts: true,
+            ts_formula_errors: true,
+            ts_numbering: true,
+            ..OpenOptions::default()
+        };
         let mut s = Session::open(bytes, o, Box::new(env)).unwrap();
         s.set_ui_lang(UiLang::Pt);
         s.set_ref_seed(cap.get(&rec.key, "i-seed").unwrap().parse().unwrap());

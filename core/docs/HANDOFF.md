@@ -1,4 +1,4 @@
-# Rust port — handoff (state of 2026-11-07)
+# Rust port — handoff (state of 2026-11-14; newest update: "WordCraft study adopted")
 
 Entry point for the next session that continues the Rust migration (0.10). Read this, then
 `.claude/skills/rust-port/SKILL.md` (the workflow: hybrid mode, models per role, memory gate) and the module records
@@ -162,6 +162,38 @@ milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects 
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
+
+## Update 2026-11-14 — WordCraft study adopted (leva `wordcraft-adopt`, after wave 7 + 7c)
+
+The maintainer asked to study `D:\Projects\wordcraft` (another Word-like engine, MIT/Apache): find divergences and adopt
+WordCraft's side where the MEASURED Word agrees with it, compare hyphenation and fonts, and list Word features we lack.
+Study data (outside git): `core/target/wordcraft-study/` (`QUEUE.md` the divergences, `VERDICTS.json` ~200 cases measured
+in Word 365 pt-BR, `PLAN-L/page/tables/fields.md` the 40 items to adopt, `FEATURES.md` the missing features — NOT to
+implement, only reported). Most divergences: Word sides with us.
+
+- Implemented (four areas, Opus implementers → Opus reviewers, up to 2 fix rounds; then a fields/lint cleanup and a
+  harness-declarations pass): records "WordCraft study — lines / page / tables / fields / harness declarations" at the
+  end of `docs/modules/uo-docx-layout.md`; CHANGELOG 0.10 "Write layout (Rust engine): rules measured in Word". Every
+  rule sits behind a `ts_*` switch (`ts_strict()`; wasm bits 18 LINES, 19 PAGE, 20 TABLES, 21 FIELDS; JS `tsWc*`);
+  session switches `OpenOptions::ts_formula_errors`/`ts_numbering`. Native Word tests `tests/word_wc_{lines,page,tables,
+  fields}.rs` over `tests/oracle_wc/<group>` (open fonts only; installed-font groups opt-in `UO_WC_INSTALLED`), uo-wasm
+  `wc_{lines,tables,fields}_native.rs`. English hyphenation: new pattern set `en-us-word` (CC0 patterns + Moby
+  exceptions, `core/tools/hyphen/gen_en_word.mjs`; the bindings' `hyphenationPatterns` takes the TS bit). F-1 (IME proxy
+  after the bar grows) closed in `rust-engine.ts` (ResizeObserver).
+- Verified on the final tree (`core/target/m2-verify-wc.sh` → `m2-verify-wc.log`, the wave-7 script plus uo-fonts,
+  uo-ffi, `wc_*_native`, Word agreement, licences): lint, fmt, tsc, vitest, uo-docx 821, every native suite; strict
+  replays ci 600, f7a 900, f7b 600, f7c 900, f7d 600 equal, f8 3,000 equal, oracle 2,742/2,742 documents (8,226 facets),
+  0 mismatches; Word agreement on the 2,742-document oracle: 79 cases change, Word-equal 74 → 79, none worse; wasm API
+  tests, `write_api` pins (f8__7__0/3/10 moved, commented); every browser harness 0 undeclared (declarations proved by
+  all-TS runs, record "harness declarations"); build-pkg + pkg_smoke.
+- Open (record sections list them): pt-BR DollarText (Word crashes), en/es UI texts unverified (only pt-BR Office),
+  "CalibriLight"/"Segoe UI CE/Baltic" (no rule found), the invisible tight/through box wrap (tables, measured, not
+  applied), L9's per-glyph shortfall, `= 5 \* CardText` in table formulas, `f7a__7__9` 11 pages in the editor vs 12 in
+  the viewer under C1b (two Rust models lay it out differently — investigate), an intermittent completion paste image
+  state (also at the TS rules), an intermittent `editor_switch_format` Web-view `present` left (TS 24 / Rust 48 px on
+  f7a__7__0 or sections @50, seen in 2 of 5 full runs with the same wasm, never in `--mode view` alone: 3/3 equal; not
+  declared; `front_review` once timed out opening a page, passed on rerun), `.NET` port of every rule (records list the needs). Machine note: the study's `snap`
+  sandbox in `target/wc-tables` had junctions to the repo (removed with `fs.unlinkSync` before deleting).
 
 ## Update 2026-11-12 (later) — milestone 2, wave 6 committed: the Write editor switch is done
 

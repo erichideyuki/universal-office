@@ -59,6 +59,12 @@ impl FontProvider for ViewerProvider {
         self.registry.ledger().refused()
     }
 
+    /// WordCraft study (fields, C5): the full names (name ID 4) of the faces the host pushed (Local Font Access, host
+    /// fonts, the page's files): [`FontRegistry::full_name_face`].
+    fn full_name_face(&self, name: &str, ui_lcid: u16) -> Option<(String, bool, bool)> {
+        self.registry.full_name_face(name, ui_lcid)
+    }
+
     fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontAnswer>> {
         let key: Key = (family.to_owned(), bold, italic);
         if let Some(hit) = self.cache.lock().unwrap_or_else(PoisonError::into_inner).get(&key) {

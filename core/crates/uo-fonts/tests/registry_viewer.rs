@@ -252,3 +252,58 @@ fn the_named_policies() {
     assert!(matches!(provider(&reg, PolicyName::Oracle), Err(PolicyError::NoSource)));
     assert!(matches!(provider(&reg, PolicyName::Editor), Err(PolicyError::NotBuilt)));
 }
+
+/// WordCraft study (fields, C5): the viewer answers a FULL name (name ID 4) of a face the host pushed — in the UI
+/// language, or en-US when the face has no record in it — with that face's family and variant; a substitute (its names
+/// are another family's), a face pushed under another family's name, and an unknown name answer nothing.
+#[test]
+fn the_full_name_of_a_pushed_face_names_its_family_and_variant() {
+    let face = |fam: &str, sub: &str, full: &[(u16, &str)], weight: u16, fs: u16, n: u16| -> HostFace {
+        let mut names: Vec<(u16, u16, &str)> = vec![(0x409, 1, fam), (0x409, 2, sub)];
+        names.extend(full.iter().map(|(l, s)| (*l, 4, *s)));
+        HostFace::new(Variant::Regular, Arc::from(named_font(&names, weight, fs, n).build()))
+    };
+    let at = |v: Variant, mut f: HostFace| {
+        f.variant = v;
+        f
+    };
+    let reg = registry(u64::MAX);
+    reg.push_family(
+        "Arial",
+        FontSource::LocalAccess,
+        true,
+        vec![
+            face("Arial", "Regular", &[(0x409, "Arial"), (0x416, "Arial")], 400, 0x40, 1),
+            at(B, face("Arial", "Bold", &[(0x409, "Arial Bold"), (0x416, "Arial Negrito")], 700, 0x20, 2)),
+        ],
+    )
+    .unwrap();
+    // English names only: the en-US record answers in every UI language
+    reg.push_family("Calibri", FontSource::Installed, true, vec![at(B, face("Calibri", "Bold", &[(0x409, "Calibri Bold")], 700, 0x20, 3))])
+        .unwrap();
+    // a substitute's names are another family's; a face pushed under a name it is not
+    reg.push_family(
+        "Times New Roman",
+        FontSource::Substitute,
+        true,
+        vec![face("Liberation Serif", "Regular", &[(0x409, "Liberation Serif")], 400, 0x40, 4)],
+    )
+    .unwrap();
+    reg.push_family("Georgia", FontSource::Host, true, vec![at(B, face("Other Fam", "Bold", &[(0x409, "Other Fam Bold")], 700, 0x20, 5))])
+        .unwrap();
+    let p = ViewerProvider::new(Arc::clone(&reg));
+    let pt = 0x0416;
+    assert_eq!(p.full_name_face("Arial Negrito", pt), Some(("Arial".to_owned(), true, false)));
+    assert_eq!(p.full_name_face("  arial negrito ", pt), Some(("Arial".to_owned(), true, false)), "case and spaces");
+    // Arial has pt-BR records: its English full name is not one in a pt-BR UI; in an en-US UI it is
+    assert_eq!(p.full_name_face("Arial Bold", pt), None);
+    assert_eq!(p.full_name_face("Arial Bold", 0x0409), Some(("Arial".to_owned(), true, false)));
+    assert_eq!(p.full_name_face("Calibri Bold", pt), Some(("Calibri".to_owned(), true, false)));
+    assert_eq!(p.full_name_face("Liberation Serif", pt), None, "a substitute answers for nothing");
+    assert_eq!(p.full_name_face("Other Fam Bold", pt), None, "a face pushed under another family's name");
+    assert_eq!(p.full_name_face("Nada", pt), None);
+    assert_eq!(p.full_name_face("", pt), None);
+    // a push changes the generation: the index follows
+    reg.remove_family("Arial");
+    assert_eq!(p.full_name_face("Arial Negrito", pt), None);
+}

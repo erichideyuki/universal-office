@@ -37,7 +37,9 @@ impl Engine {
     fn hf_static(&mut self, cx: &mut Cx<'_, '_>, story: u32, rf: &LineRef, ps: Option<PageIx>, y_origin: f64) -> LResult<CellContent> {
         let blocks = self.story_blocks(cx, story)?;
         let g = self.geom(self.cur_ps()?.geom)?;
-        let (x, width) = (g.mar_l, g.page_w - g.mar_l - g.mar_r);
+        // (WordCraft study, page: under a book fold the header/footer keep the normal gutter/mirror margins)
+        let (ml, mr) = g.hf_mar.unwrap_or((g.mar_l, g.mar_r));
+        let (x, width) = (ml, g.page_w - ml - mr);
         let env = ParaEnv { field: Some(FieldSource::HeaderFooter), hf: true, ..ParaEnv::default() };
         self.layout_static(cx, &blocks, x, width, &env, rf, ps, y_origin, None)
     }
@@ -60,6 +62,10 @@ impl Engine {
     pub(crate) fn layout_header_footer(&mut self, cx: &mut Cx<'_, '_>) -> LResult<()> {
         let pix = self.cur_ix()?;
         let ps = self.ps(pix)?;
+        // WordCraft study (page, A16): Word's parity page has no header or footer
+        if ps.blank {
+            return Ok(());
+        }
         let g = self.geom(ps.geom)?;
         let settings = &cx.ldoc.view.formatting().settings;
         let first = ps.sect_page == 0 && g.title_pg;
@@ -79,10 +85,13 @@ impl Engine {
         }
         // numbering in a header/footer: its own, it does not advance the body's list (oracle
         // numbering3, hdr-list)
-        let saved_num = std::mem::replace(&mut self.ctx.flow.numbering, word::numbering_state(&cx.opts.lang, &cx.opts.limits));
+        let saved_num = std::mem::replace(&mut self.ctx.flow.numbering, word::numbering_state_for(cx.opts));
         let saved_page = self.field_page.replace(pix);
         self.in_hf = true;
+        // WordCraft study (page): mirrorIndents in the header/footer follow the page (mi5-hdr)
+        self.mirror_static = self.ps(pix)?.doc_even == (cx.ldoc.compat_mode() >= 15.0);
         let r = self.layout_hf_in(cx, pix, hdr, ftr, slot);
+        self.mirror_static = false;
         self.in_hf = false;
         self.field_page = saved_page;
         self.ctx.flow.numbering = saved_num;

@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use uo_jsnum::text::to_lowercase;
+use uo_jsnum::text::{to_lowercase, trim};
 
 use crate::registry::{CachedFace, FaceCache, FaceSource, SourceFace, ttc_face_by_index};
 use info::{FaceInfo, infos};
@@ -43,6 +43,9 @@ pub struct SystemFontEntry {
     pub weight: u16,
 }
 
+/// Per face: its full names by language (name ID 4, `(language id, name)`) and its named instances.
+type FullNames = (Vec<(u16, String)>, Vec<String>);
+
 /// See the module documentation.
 pub struct SystemFontIndex {
     roots: Vec<PathBuf>,
@@ -53,6 +56,8 @@ pub struct SystemFontIndex {
     order: Vec<String>,
     /// lower-cased typographic family (name ID 16)
     typo: HashMap<String, Vec<SystemFontEntry>>,
+    /// WordCraft study (fields, C5): per entry (index of `entries`), its full names by language and its named instances
+    full: Vec<FullNames>,
     cache: Arc<FaceCache>,
 }
 
@@ -99,8 +104,15 @@ impl SystemFontIndex {
 
     /// Scans exactly these roots (the tests, a host that knows where its fonts are) into `cache`.
     pub fn with_roots(roots: Vec<PathBuf>, cache: Arc<FaceCache>) -> SystemFontIndex {
-        let mut index =
-            SystemFontIndex { roots, entries: Vec::new(), families: HashMap::new(), order: Vec::new(), typo: HashMap::new(), cache };
+        let mut index = SystemFontIndex {
+            roots,
+            entries: Vec::new(),
+            families: HashMap::new(),
+            order: Vec::new(),
+            typo: HashMap::new(),
+            full: Vec::new(),
+            cache,
+        };
         index.build();
         index
     }
@@ -178,6 +190,7 @@ impl SystemFontIndex {
             italic: face.italic,
             weight: face.weight,
         });
+        self.full.push((face.full_names.clone(), face.instances.clone()));
         // the RIBBI name (ID 1) first; the typographic one (ID 16) only as an alternative
         // ("Aptos Display" has ID 16 = "Aptos" and must not shadow Aptos)
         add_to(&mut self.families, Some(&face.family), face, path, index, Some(&mut self.order));
@@ -207,6 +220,30 @@ impl SystemFontIndex {
 static SHARED: Mutex<Option<Arc<SystemFontIndex>>> = Mutex::new(None);
 
 impl FaceSource for SystemFontIndex {
+    /// WordCraft study (fields, C5; measured in Word 365 pt-BR): the face whose full name is `name` in the UI language —
+    /// or in en-US when the font has no record in that language ("Arial Negrito" in pt-BR is Arial Bold; "Arial Bold"
+    /// is not, Arial has a pt-BR name; "Calibri Bold" is, Calibri has English names only) —, else a named instance of a
+    /// variable font ("Bahnschrift Light" → Bahnschrift).
+    fn full_name(&self, name: &str, ui_lcid: u16) -> Option<(String, bool, bool)> {
+        let want = to_lowercase(trim(name));
+        if want.is_empty() {
+            return None;
+        }
+        for (e, (names, _)) in self.entries.iter().zip(&self.full) {
+            let has_ui = names.iter().any(|(l, _)| *l == ui_lcid);
+            let lang = if has_ui { ui_lcid } else { 0x0409 };
+            if names.iter().any(|(l, n)| *l == lang && to_lowercase(n) == want) {
+                return Some((e.family.clone(), e.bold, e.italic));
+            }
+        }
+        for (e, (_, inst)) in self.entries.iter().zip(&self.full) {
+            if inst.iter().any(|n| to_lowercase(n) == want) {
+                return Some((e.typo.clone().unwrap_or_else(|| e.family.clone()), false, false));
+            }
+        }
+        None
+    }
+
     fn pick(&self, family: &str, bold: bool, italic: bool) -> Option<SourceFace> {
         let list = self.list_of(family)?;
         let target = if bold { 700 } else { 400 };

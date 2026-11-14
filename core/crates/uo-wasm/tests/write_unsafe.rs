@@ -65,7 +65,7 @@ fn consumed_buffers_null_handles_and_the_error_slot() {
         assert!(uo_write_layout(std::ptr::null(), env, 0.0, 0, 0, 0.0, lp, ll, hp, hl, 0, 0).is_null());
         assert_eq!(uo_last_error(std::ptr::null_mut()), code::ARGUMENT);
         let (lp, ll) = put(b"en");
-        let b = uo_write_hyphenation_patterns(std::ptr::null(), env, lp, ll);
+        let b = uo_write_hyphenation_patterns(std::ptr::null(), env, lp, ll, 0);
         assert_eq!(uo_buf_status(b), 11);
         uo_buf_free(b);
         // every layout query on a null handle

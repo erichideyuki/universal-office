@@ -361,7 +361,13 @@ fn d2b_f5_session_matches_the_element() {
         // `save_parts.rs`). Fix round 1: the TS also drops the note styles of an undone note insertion when no save came
         // in between (Word keeps them, measured). The steps the flag covers are listed in uo-bindings.md "Wave 7c — S, fix
         // round 1" (wasm, no flags: 10 `settings.xml` and 31 `styles.xml` items of the `parts` facet)
-        let o = OpenOptions { sig_mode: SigMode::Ts, ts_stale_parts: true, ..OpenOptions::default() };
+        let o = OpenOptions {
+            sig_mode: SigMode::Ts,
+            ts_stale_parts: true,
+            ts_formula_errors: true,
+            ts_numbering: true,
+            ..OpenOptions::default()
+        };
         let mut s = Session::open(bytes, o, Box::new(FixedEnv::default())).unwrap();
         s.exec(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }), &mut cx.cx()).unwrap();
         let mut pending: Option<&str> = None;

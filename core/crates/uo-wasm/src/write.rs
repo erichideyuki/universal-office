@@ -324,7 +324,9 @@ pub unsafe extern "C" fn uo_write_document_free(doc: *mut UoWriteDocument) {
 /// The hyphenation pattern ids this document needs and the environment does not have yet: the
 /// viewer's `hyphenationLangs(full)` — `documentHyphenationLanguages(full)` filtered by the app's
 /// languages (`'\n'`-separated UTF-8, consumed; a document language matches an app language equal
-/// to it or a prefix before `-`, case-insensitive) — mapped to pattern ids.
+/// to it or a prefix before `-`, case-insensitive) — mapped to pattern ids. `flags`: the layout flags the
+/// document will be laid out with (WordCraft study, fields D1: English is `en-us-word`, Word's data, unless
+/// [`LAYOUT_TS_HYPHENATION`] asks for the frozen TS's `en-us`; a caller that passes nothing passes 0).
 ///
 /// # Safety
 /// `doc`, `env` null or live; `(ptr, len)` a buffer of `uo_alloc_bytes(len)` filled by JS.
@@ -334,6 +336,7 @@ pub unsafe extern "C" fn uo_write_hyphenation_patterns(
     env: *const UoWriteEnv,
     ptr: *mut u8,
     len: usize,
+    flags: u32,
 ) -> *mut UoBuf {
     // SAFETY: the caller guarantees the buffer; it is consumed here.
     let langs = unsafe { take_bytes(ptr, len) };
@@ -346,7 +349,9 @@ pub unsafe extern "C" fn uo_write_hyphenation_patterns(
         let x = uo_jsnum::text::to_lowercase(l);
         app.iter().any(|z| x == *z || x.strip_prefix(z.as_str()).is_some_and(|r| r.starts_with('-')))
     });
-    let ids = uo_fonts::hyphen::pattern_ids_to_load(wanted.map(|l| Some(&**l)), &env.hyphenation);
+    // WordCraft study (fields, D1): English with Word's data (`en-us-word`), or `en-us` under the strict TS bit
+    let word = flags & LAYOUT_TS_HYPHENATION == 0;
+    let ids = uo_fonts::hyphen::pattern_ids_to_load_with(wanted.map(|l| Some(&**l)), &env.hyphenation, word);
     buf(OK, ids.join("\n").into_bytes())
 }
 
@@ -507,6 +512,28 @@ pub const LAYOUT_TS_LINKED_CELL: u32 = 1 << 14;
 pub const LAYOUT_TS_REF_BOOKMARKS: u32 = 1 << 15;
 pub const LAYOUT_TS_HYPHENATION: u32 = 1 << 16;
 pub const LAYOUT_TS_KEEP_LINES: u32 = 1 << 17;
+/// bit 18 (WordCraft study, lines): every `ts_*` switch of the lines area (`ts_space_like_height`,
+/// `ts_number_suffix_font_space`, `ts_justify_tolerance`, `ts_kinsoku_lists`, `ts_no_char_grid`, `ts_no_chars_indent`,
+/// `ts_shift_return_expands`, `ts_ptab_indent_frame`, `ts_distribute_spaces_only`, `ts_default_tab_after_negative`,
+/// `ts_bar_tab_counts`, `ts_no_emphasis_marks`, `ts_supsub_formula_above_24`): only the parity tests against the TS
+/// captures set it; the product follows Word.
+pub const LAYOUT_TS_WC_LINES: u32 = 1 << 18;
+/// bit 19 (WordCraft study, page): every `ts_*` switch of the page area (`ts_page_break_keeps_space_before`,
+/// `ts_section_parity`, `ts_no_gutter_mirror`, `ts_page_parity_by_number`, `ts_float_anchor_first_line`,
+/// `ts_float_no_reflow`, `ts_no_mirror_indents`, `ts_no_print_fold`): only the parity tests against the TS captures set
+/// it; the product follows Word.
+pub const LAYOUT_TS_WC_PAGE: u32 = 1 << 19;
+/// bit 20 (WordCraft study, tables): every `ts_*` switch of the tables area (`ts_row_keep_any_paragraph`,
+/// `ts_table_style_cell_borders`, `ts_float_table_wrap_edge`, `ts_cell_float_no_clamp`, `ts_gap_word_any_mode`,
+/// `ts_tbl_style_order`): only the parity tests against the TS captures set it; the product follows Word.
+pub const LAYOUT_TS_WC_TABLES: u32 = 1 << 20;
+/// bit 21 (WordCraft study, fields): every `ts_*` switch of the fields area (`ts_symbol_font_metrics`,
+/// `ts_multiple_text_height`, `ts_postscript_names`, `ts_styleref_per_page`, `ts_charset_suffix_names`,
+/// `ts_field_format_switches`, `ts_list_number_language`, `ts_is_lgl`, `ts_section_pages_shared`,
+/// `ts_symbol_charset_fallback`, `ts_ref_relative`, `ts_hf_formula`, `ts_east_asian_default_lang`, `ts_thai_fallback`; the
+/// English hyphenation data is bit 16's `ts_hyphenation_patterns`): only the parity tests against the TS captures set it;
+/// the product follows Word.
+pub const LAYOUT_TS_WC_FIELDS: u32 = 1 << 21;
 
 static GENERATION: AtomicU32 = AtomicU32::new(1);
 
@@ -561,6 +588,59 @@ fn layout_options(
     o.ts_ref_bookmarks = flags & LAYOUT_TS_REF_BOOKMARKS != 0;
     o.ts_hyphenation_patterns = flags & LAYOUT_TS_HYPHENATION != 0;
     o.ts_keep_lines_within_page = flags & LAYOUT_TS_KEEP_LINES != 0;
+    if flags & LAYOUT_TS_WC_LINES != 0 {
+        // WordCraft study (lines): the whole area's TS rules
+        o.ts_space_like_height = true;
+        o.ts_number_suffix_font_space = true;
+        o.ts_justify_tolerance = true;
+        o.ts_kinsoku_lists = true;
+        o.ts_no_char_grid = true;
+        o.ts_no_chars_indent = true;
+        o.ts_shift_return_expands = true;
+        o.ts_ptab_indent_frame = true;
+        o.ts_distribute_spaces_only = true;
+        o.ts_default_tab_after_negative = true;
+        o.ts_bar_tab_counts = true;
+        o.ts_no_emphasis_marks = true;
+        o.ts_supsub_formula_above_24 = true;
+    }
+    if flags & LAYOUT_TS_WC_PAGE != 0 {
+        // WordCraft study (page): the whole area's TS rules
+        o.ts_page_break_keeps_space_before = true;
+        o.ts_section_parity = true;
+        o.ts_no_gutter_mirror = true;
+        o.ts_page_parity_by_number = true;
+        o.ts_float_anchor_first_line = true;
+        o.ts_float_no_reflow = true;
+        o.ts_no_mirror_indents = true;
+        o.ts_no_print_fold = true;
+    }
+    if flags & LAYOUT_TS_WC_TABLES != 0 {
+        // WordCraft study (tables): the whole area's TS rules
+        o.ts_row_keep_any_paragraph = true;
+        o.ts_table_style_cell_borders = true;
+        o.ts_float_table_wrap_edge = true;
+        o.ts_cell_float_no_clamp = true;
+        o.ts_gap_word_any_mode = true;
+        o.ts_tbl_style_order = true;
+    }
+    if flags & LAYOUT_TS_WC_FIELDS != 0 {
+        // WordCraft study (fields): the whole area's TS rules
+        o.ts_symbol_font_metrics = true;
+        o.ts_multiple_text_height = true;
+        o.ts_postscript_names = true;
+        o.ts_styleref_per_page = true;
+        o.ts_charset_suffix_names = true;
+        o.ts_field_format_switches = true;
+        o.ts_list_number_language = true;
+        o.ts_is_lgl = true;
+        o.ts_section_pages_shared = true;
+        o.ts_symbol_charset_fallback = true;
+        o.ts_ref_relative = true;
+        o.ts_hf_formula = true;
+        o.ts_east_asian_default_lang = true;
+        o.ts_thai_fallback = true;
+    }
     if flags & LAYOUT_HYPHENATION_LANGUAGES != 0 {
         o.hyphenation_languages = Some(utf8(hyph)?.split('\n').filter(|l| !l.is_empty()).map(Box::<str>::from).collect());
     }

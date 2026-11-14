@@ -17,7 +17,10 @@ mod registry;
 
 pub use cache::HyphenSession;
 pub use liang::{HyphenationPatterns, Hyphenator};
-pub use registry::{HYPHENATION_PATTERN_IDS, HyphenationRegistry, hyphenation_pattern_id, pattern_ids_to_load};
+pub use registry::{
+    HYPHENATION_PATTERN_IDS, HyphenationRegistry, TS_HYPHENATION_PATTERN_IDS, hyphenation_pattern_id, hyphenation_pattern_id_with,
+    pattern_ids_to_load, pattern_ids_to_load_with,
+};
 
 /// The patterns of a pattern file (see the module documentation), borrowing the text. `None` when
 /// the header or the two section lines are missing or a number does not parse.
@@ -51,7 +54,7 @@ pub fn parse_patterns(text: &str) -> Option<HyphenationPatterns<'_>> {
 }
 
 #[cfg(feature = "hyphen-data")]
-const EMBEDDED: [(&str, &str); 7] = [
+const EMBEDDED: [(&str, &str); 8] = [
     ("pt", include_str!("../../data/hyphen/pt.txt")),
     ("en-us", include_str!("../../data/hyphen/en-us.txt")),
     ("es", include_str!("../../data/hyphen/es.txt")),
@@ -59,6 +62,9 @@ const EMBEDDED: [(&str, &str); 7] = [
     ("de-1996", include_str!("../../data/hyphen/de-1996.txt")),
     ("it", include_str!("../../data/hyphen/it.txt")),
     ("nl", include_str!("../../data/hyphen/nl.txt")),
+    // WordCraft study (fields, D1): English under Word's rules (CC0 patterns + Moby exceptions; the notices in
+    // data/hyphen/THIRD-PARTY-NOTICES.md)
+    ("en-us-word", include_str!("../../data/hyphen/en-us-word.txt")),
 ];
 
 /// The shipped patterns of an id (`pt`, `en-us`, `es`, `fr`, `de-1996`, `it`, `nl`), own keys only.

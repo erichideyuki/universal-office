@@ -498,7 +498,7 @@ fn glyph(r: &mut Rd<'_>, ls: &mut LocalStyles<'_>, extras: &mut Extras, math: &m
             _ => PtabAlign::Left,
         };
         let leader = r.opt_string()?.filter(|l| !l.is_empty() && l != "none").map(|l| leader_from_ts(&l));
-        extras.ptabs.push(PtabSpec { alignment, leader });
+        extras.ptabs.push(PtabSpec { alignment, leader, relative_to_margin: false });
         Some(u32::try_from(extras.ptabs.len() - 1).unwrap())
     } else {
         None
@@ -650,6 +650,7 @@ fn para(r: &mut Rd<'_>, env: &Env) -> R<Para> {
             empty: false,
             rev_bars: None,
             math,
+            char_grid: None,
         },
         extras,
     })

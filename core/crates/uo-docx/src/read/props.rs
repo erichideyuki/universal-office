@@ -689,8 +689,26 @@ fn cell_mar_of(el: Element<'_>) -> CellMargins {
 #[must_use]
 pub fn read_tbl_pr(tbl_pr: Option<Element<'_>>) -> Option<TblPr> {
     let tbl_pr = tbl_pr?;
+    Some(tbl_pr_of(tbl_pr.child_elements()))
+}
+
+/// WordCraft study (tables, the TCond aside; measured `oracle_wc/tblorder`): Word reads `w:tblPr` in order, and a
+/// `w:tblStyle` naming an existing table style discards every direct property read before it. The properties Word
+/// keeps when the (last) `w:tblStyle` is NOT the first child: that element and the ones after it; `None` when it is
+/// first or absent (Word's view = the read one). Whether the style exists is the layout's check.
+#[must_use]
+pub fn read_tbl_pr_word(tbl_pr: Option<Element<'_>>) -> Option<TblPr> {
+    let tbl_pr = tbl_pr?;
+    let k = tbl_pr.child_elements().collect::<Vec<_>>().iter().rposition(|e| e.name() == "w:tblStyle")?;
+    if k == 0 {
+        return None;
+    }
+    Some(tbl_pr_of(tbl_pr.child_elements().skip(k)))
+}
+
+fn tbl_pr_of<'d>(children: impl Iterator<Item = Element<'d>>) -> TblPr {
     let mut p = TblPr::default();
-    for el in tbl_pr.child_elements() {
+    for el in children {
         let val = el.attr("w:val");
         match el.name() {
             "w:tblStyle" => {
@@ -809,7 +827,7 @@ pub fn read_tbl_pr(tbl_pr: Option<Element<'_>>) -> Option<TblPr> {
             _ => {}
         }
     }
-    Some(p)
+    p
 }
 
 /// `readTrPr`: a `w:trPr`.

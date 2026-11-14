@@ -896,9 +896,12 @@ fn d2b_f4_session_matches_the_element() {
             continue;
         }
         let bytes = std::fs::read(root.join(rel)).unwrap();
-        let mut s =
-            Session::open(bytes, OpenOptions { sig_mode: SigMode::Ts, ..OpenOptions::default() }, Box::new(env_after_element_creation()))
-                .unwrap();
+        let mut s = Session::open(
+            bytes,
+            OpenOptions { sig_mode: SigMode::Ts, ts_formula_errors: true, ts_numbering: true, ..OpenOptions::default() },
+            Box::new(env_after_element_creation()),
+        )
+        .unwrap();
         s.exec(Command::Settings(SettingsCmd::SetAuthor { name: "A".into() }), &mut cx.cx()).unwrap();
         let mut pending: Option<&str> = None;
         let lang = lang_of(cap.get(&format!("{rel}#0"), "lang").unwrap_or("pt"));

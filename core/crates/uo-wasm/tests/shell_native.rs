@@ -326,7 +326,7 @@ fn shell_round(env: *mut UoWriteEnv, docx: &[u8]) {
         assert_eq!(take(uo_shell_para_text(h, 0)).0, 0);
         assert_eq!(take(uo_shell_selection_state(h)).0, 0);
         let (lp, ll) = put(b"pt-BR\nen\nes");
-        assert_eq!(take(uo_shell_hyphenation_patterns(h, env, lp, ll)).0, 0);
+        assert_eq!(take(uo_shell_hyphenation_patterns(h, env, lp, ll, 0)).0, 0);
         drop(take(uo_shell_copied(h)));
         uo_shell_engine_clear(e);
         uo_shell_engine_free(e);
@@ -390,10 +390,10 @@ fn d_hostile_arguments_answer_statuses() {
         assert_eq!(take(uo_shell_copied(std::ptr::null())).0, 11);
         assert_eq!(take(uo_shell_copied(h)).0, 1, "nothing copied");
         let (lp, ll) = put(&[0xc3, 0x28]);
-        assert_eq!(take(uo_shell_hyphenation_patterns(h, env, lp, ll)).0, 5);
+        assert_eq!(take(uo_shell_hyphenation_patterns(h, env, lp, ll, 0)).0, 5);
         let (lp, ll) = put(b"pt-BR");
-        assert_eq!(take(uo_shell_hyphenation_patterns(std::ptr::null(), env, lp, ll)).0, 11);
-        assert_eq!(take(uo_shell_hyphenation_patterns(h, std::ptr::null(), std::ptr::null_mut(), 0)).0, 11);
+        assert_eq!(take(uo_shell_hyphenation_patterns(std::ptr::null(), env, lp, ll, 0)).0, 11);
+        assert_eq!(take(uo_shell_hyphenation_patterns(h, std::ptr::null(), std::ptr::null_mut(), 0, 0)).0, 11);
         uo_shell_engine_clear(std::ptr::null_mut());
         uo_shell_engine_free(std::ptr::null_mut());
         // the story answers

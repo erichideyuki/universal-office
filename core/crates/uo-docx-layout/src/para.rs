@@ -134,6 +134,10 @@ impl GlyphFlags {
     pub const HANG: u16 = 16;
     pub const HYPH: u16 = 32;
     pub const AUTO_HYPHEN: u16 = 64;
+    /// WordCraft study (L4): an East Asian character of an East Asian document under Word's kinsoku rules — a jc=both
+    /// line of them without spaces spreads its slack over the character gaps (`m-kinsoku-hang-*`; not with Latin
+    /// document defaults, `l-kinsoku-sw-latdef`)
+    pub const EA_JUSTIFY: u16 = 128;
 
     #[must_use]
     pub fn has(self, f: u16) -> bool {
@@ -346,6 +350,17 @@ pub struct PreparedPara {
     pub rev_bars: Option<RevBars>,
     /// equation boxes (`math.ts`)
     pub math: Vec<MathBox>,
+    /// WordCraft study (L5): the section's character grid (`None`: none, or the frozen TS's `ts_no_char_grid`)
+    pub char_grid: Option<CharGrid>,
+}
+
+/// WordCraft study (L5): the character grid a paragraph is laid out on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CharGrid {
+    /// linesAndChars: the twips added to every character's advance (already in the glyphs' advances)
+    pub add: f64,
+    /// snapToChars: the cell (twips) — the breaker centres the characters in whole cells
+    pub cell: Option<f64>,
 }
 
 /// `revBars`: revisions that ask for a change bar in this view.
@@ -389,6 +404,9 @@ pub struct ParaEnv {
     pub hf: bool,
     pub default_color: Option<Box<str>>,
     pub continuation: bool,
+    /// WordCraft study (fields, B22): the paragraph style's run properties, set by the preparation for the language of
+    /// its fields (the cascade of the instruction run)
+    pub field_style_rpr: Option<Arc<RPr>>,
 }
 
 /// A field run reported to `onField` (`ctx.opts.onField?.(run, v)`): the run key, and the path of
@@ -412,6 +430,29 @@ pub trait PrepFlow {
     /// `ctx.numbering.next(numId, ilvl)`
     fn number_next(&mut self, fmt: &DocFormatting, num_id: JsNumber, ilvl: JsNumber) -> Option<NumberMarker> {
         self.ctx().flow.numbering.next(fmt, num_id, ilvl)
+    }
+
+    /// WordCraft study (fields, B26): [`PrepFlow::number_next`] for a paragraph whose mark is in `lang` (Word's list
+    /// words; `None` = the TS call)
+    fn number_next_in(&mut self, fmt: &DocFormatting, num_id: JsNumber, ilvl: JsNumber, lang: Option<&str>) -> Option<NumberMarker> {
+        match lang {
+            None => self.number_next(fmt, num_id, ilvl),
+            Some(l) => self.ctx().flow.numbering.next_in(fmt, num_id, ilvl, Some(l)),
+        }
+    }
+
+    /// WordCraft study (fields, B22): [`PrepFlow::field`] for a field whose instruction is in `lang` (the words of its
+    /// `\*` switches; `None` = the TS call)
+    fn field_in(
+        &mut self,
+        cx: &mut Cx<'_, '_>,
+        src: FieldSource,
+        name: &[u16],
+        instr: &[u16],
+        at: f64,
+        _lang: Option<&str>,
+    ) -> LResult<Option<Box<[u16]>>> {
+        self.field(cx, src, name, instr, at)
     }
 
     /// `ctx.noteMark(kind, id, custom)` (the mark formatted with `formatNumber` under the text cap)
@@ -447,7 +488,7 @@ pub(crate) fn field_model_ref<'l>(ldoc: &'l LDoc<'_>, collect: bool, at: &FieldR
 // ───────────────────────── character classes and constants ─────────────────────────
 
 /// `CJK(cp)` (para.ts:178).
-fn cjk(cp: u32) -> bool {
+pub(crate) fn cjk(cp: u32) -> bool {
     (0x2e80..=0x9fff).contains(&cp)
         || (0xac00..=0xd7af).contains(&cp)
         || (0xf900..=0xfaff).contains(&cp)
@@ -484,6 +525,25 @@ const FALLBACK_FAMILIES: [&str; 7] =
 
 /// `NO_LINE_END` (para.ts:616), kinsoku.
 const NO_LINE_END: &str = "$([{\u{a3}\u{a5}\u{2018}\u{201c}\u{3008}\u{300a}\u{300c}\u{300e}\u{3010}\u{3014}\u{3016}\u{301d}\u{fe59}\u{fe5b}\u{fe5d}\u{ff04}\u{ff08}\u{ff3b}\u{ff5b}\u{ff62}\u{ffe1}\u{ffe5}\u{ffe6}";
+/// WordCraft study (L4, `wcl2/l-kinsoku-*`, `wcl3/m-kinsoku-*`; record "WordCraft study — lines"): Word's kinsoku per
+/// East Asian language (ja, zh-CN, zh-TW) — the characters that may not START a line (the one before goes down with
+/// them; U+2010 and U+2013 may, and U+2026 may in ja: the plan's list held them through the PDF text's normalisation)…
+const KINSOKU_NO_START: [&str; 3] = [
+    "!%),.:;?]}\u{a2}\u{b0}\u{2019}\u{201d}\u{2030}\u{2032}\u{2033}\u{2103}\u{3001}\u{3002}\u{3005}\u{3009}\u{300b}\u{300d}\u{300f}\u{3011}\u{3015}\u{309b}\u{309c}\u{309d}\u{309e}\u{30fb}\u{30fd}\u{30fe}\u{ff01}\u{ff05}\u{ff09}\u{ff0c}\u{ff0e}\u{ff1a}\u{ff1b}\u{ff1f}\u{ff3d}\u{ff5d}\u{ff61}\u{ff63}\u{ff64}\u{ff65}\u{ff9e}\u{ff9f}\u{ffe0}",
+    "!%),.:;?]}\u{a2}\u{b0}\u{2019}\u{201d}\u{2030}\u{2032}\u{2033}\u{2103}\u{3001}\u{3002}\u{3009}\u{300b}\u{300d}\u{300f}\u{3011}\u{3015}\u{ff01}\u{ff05}\u{ff09}\u{ff0c}\u{ff0e}\u{ff1a}\u{ff1b}\u{ff1f}\u{ff3d}\u{ff5d}\u{ffe0}\u{2026}\u{3017}",
+    "!),.:;?]}\u{a2}\u{2019}\u{201d}\u{2032}\u{3001}\u{3002}\u{3009}\u{300b}\u{300d}\u{300f}\u{3011}\u{3015}\u{ff01}\u{ff09}\u{ff0c}\u{ff0e}\u{ff1a}\u{ff1b}\u{ff1f}\u{ff3d}\u{ff5d}\u{ff64}\u{2026}",
+];
+/// … the characters that may not END a line (they go down) …
+const KINSOKU_NO_END: [&str; 3] = [
+    "$([{\u{a3}\u{a5}\u{2018}\u{201c}\u{3008}\u{300a}\u{300c}\u{300e}\u{3010}\u{3014}\u{ff04}\u{ff08}\u{ff3b}\u{ff5b}\u{ff62}\u{ffe1}\u{ffe5}",
+    "$([{\u{a3}\u{a5}\u{2018}\u{201c}\u{3008}\u{300a}\u{300c}\u{300e}\u{3010}\u{3014}\u{ff04}\u{ff08}\u{ff3b}\u{ff5b}\u{ffe1}\u{ffe5}\u{301d}\u{3016}",
+    "([{\u{a3}\u{a5}\u{2018}\u{201c}\u{3008}\u{300a}\u{300c}\u{300e}\u{3010}\u{3014}\u{ff08}\u{ff5b}\u{301d}",
+];
+/// … and the punctuation that hangs past the margin instead of being pushed (ja, zh-CN; zh-TW keeps the TS list).
+const KINSOKU_HANG: [&str; 2] = [
+    ",.\u{2019}\u{201d}\u{3001}\u{3002}\u{300d}\u{300f}\u{3011}\u{ff09}\u{ff0c}\u{ff0e}\u{ff3d}\u{ff5d}\u{ff61}\u{ff64}",
+    "!%),.:;?]}\u{a2}\u{b0}\u{2019}\u{201d}\u{2030}\u{2032}\u{2033}\u{2103}\u{3001}\u{3002}\u{3009}\u{300b}\u{300d}\u{300f}\u{3011}\u{3015}\u{ff01}\u{ff05}\u{ff09}\u{ff0c}\u{ff1a}\u{ff1b}\u{ff1f}\u{ff3d}\u{ff5d}\u{ffe0}\u{3017}",
+];
 /// `HANG_BASE`, `HANG_CLOSE`, `HANG_QUOTES` (para.ts:661–663).
 const HANG_BASE: &str = ",.\u{3001}\u{3002}\u{ff0c}\u{ff0e}";
 const HANG_CLOSE: &str = ");:!?]}\u{ff1a}\u{ff1b}\u{ff1f}\u{ff01}\u{ff09}\u{ff3d}\u{ff5d}";
@@ -578,6 +638,25 @@ fn cjk_lang(s: &str) -> bool {
 /// `isCjkLang(rpr)` (para.ts:646).
 fn is_cjk_lang(rpr: &RPr) -> bool {
     cjk_lang(rpr.lang.as_deref().and_then(|l| l.east_asia.as_deref()).unwrap_or(""))
+}
+
+/// WordCraft study (L4): the kinsoku language of a run's resolved East Asian language — 0 ja, 1 zh-CN (and every zh
+/// but zh-TW/HK/MO), 2 zh-TW/HK/MO; `None`: no kinsoku (ko, every other language — measured `m-kinsoku-ko-kr`).
+fn kinsoku_lang(rpr: &RPr) -> Option<usize> {
+    let ea = rpr.lang.as_deref().and_then(|l| l.east_asia.as_deref()).unwrap_or("");
+    if starts_ci(ea, "ja") && word_boundary_after(ea, 2) {
+        return Some(0);
+    }
+    if starts_ci(ea, "zh") && word_boundary_after(ea, 2) {
+        return Some(if ["zh-tw", "zh-hk", "zh-mo"].iter().any(|p| starts_ci(ea, p)) { 2 } else { 1 });
+    }
+    None
+}
+
+/// WordCraft study (L4, `l-kinsoku-sw`): `w:kinsoku w:val="0"` turns the hanging punctuation off in mode 15 (Word; in
+/// mode 14 it still hangs). The frozen TS hangs regardless (`ts_kinsoku_lists`).
+fn word_kinsoku_off_15(o: &crate::options::LayoutOptions, kinsoku: Option<bool>, mode: f64) -> bool {
+    !o.ts_kinsoku_lists && kinsoku == Some(false) && mode >= 15.0
 }
 
 /// `hangPunct(rpr, alt)` (para.ts:664).
@@ -784,9 +863,10 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
         let theme = &self.fmt.theme;
         let rf = rpr.r_fonts.as_deref();
         let (mut bold, mut italic) = (bold0, italic0);
+        let ea_all = self.doc_default_east_asian();
         let family: Option<&str> = if str_truthy(sym_font) && ((0xf000..=0xf0ff).contains(&cp) || !cjk(cp)) {
             sym_font
-        } else if cjk(cp) {
+        } else if cjk(cp) || ea_all {
             word::font_of_slot(rf, FontSlot::EastAsia, theme).or_else(|| word::font_of_slot(rf, FontSlot::Ascii, theme))
         } else if cs(cp) || rpr.cs == Some(true) || rpr.rtl == Some(true) {
             bold = rpr.b_cs == Some(true);
@@ -799,7 +879,12 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
         } else {
             word::font_of_slot(rf, FontSlot::HAnsi, theme).or_else(|| word::font_of_slot(rf, FontSlot::Ascii, theme))
         };
-        let face = self.cx.face(family, bold, italic)?;
+        let mut face = self.cx.face(family, bold, italic)?;
+        // WordCraft study (fields, A2 aside): an eastAsia font without CJK (Segoe UI, Calibri, Arial) gives way to MS
+        // Mincho for every character (measured pitch 15.6 pt at 12 pt, Latin advances 6 pt)
+        if ea_all && self.glyph_id(face, 0x4e00)? == 0 {
+            face = self.cx.face(Some("MS Mincho"), bold, italic)?;
+        }
         if cp <= 32 || space_width_known(cp) || self.glyph_id(face, cp)? != 0 {
             return Ok(face);
         }
@@ -809,13 +894,75 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             }
             return self.cx.face(Some("Calibri"), false, false);
         }
-        for fb in fallback_order(cp, self.font(face)?) {
+        let word_fb = (!self.cx.opts.ts_east_asian_default_lang, !self.cx.opts.ts_thai_fallback);
+        for fb in fallback_order(cp, self.font(face)?, word_fb) {
             let f = self.cx.face(Some(fb), bold, italic)?;
             if self.glyph_id(f, cp)? != 0 {
                 return Ok(f);
             }
         }
         Ok(face)
+    }
+
+    /// WordCraft study (fields, C1): `m` with Symbol's or Wingdings' vertical metrics when the run asks for one of them
+    /// (`w:sym` font, else the ascii/hAnsi slot) and a stand-in face draws it (`ts_symbol_font_metrics` keeps `m`).
+    fn symbol_metrics(&self, m: FaceMetrics, face: FaceId, rpr: &RPr, sym_font: Option<&str>) -> FaceMetrics {
+        if self.cx.opts.ts_symbol_font_metrics {
+            return m;
+        }
+        let theme = &self.fmt.theme;
+        let rf = rpr.r_fonts.as_deref();
+        let req = if str_truthy(sym_font) {
+            sym_font
+        } else {
+            word::font_of_slot(rf, FontSlot::Ascii, theme).or_else(|| word::font_of_slot(rf, FontSlot::HAnsi, theme))
+        };
+        let Some(req) = req else { return m };
+        let is_symbol = self.font(face).is_ok_and(crate::fonts::is_symbol_font);
+        // (C6: a missing charset-02 font stands for Symbol or Wingdings)
+        let role = crate::fonts::symbol_role(&self.fmt.font_table, req, !self.cx.opts.ts_symbol_charset_fallback);
+        match role.and_then(|r| crate::fonts::symbol_stand_in_metrics(r, is_symbol)) {
+            Some((a, d)) => FaceMetrics { ascent: a, descent: d, bare_ascent: a, ..m },
+            None => m,
+        }
+    }
+
+    /// WordCraft study (fields, C6): the character a Symbol run shows when Symbol is missing — the Unicode equivalent of
+    /// its code (`crate::symbol_map`) — for a run whose requested family stands for Symbol (by name, or a missing
+    /// charset-02 font Word maps to Symbol) and is not drawn by a symbol-encoded face; `None` otherwise or under
+    /// `ts_symbol_charset_fallback`.
+    fn symbol_stand_in_char(&mut self, rpr: &RPr, sym_font: Option<&str>, cp: u32, bold: bool, italic: bool) -> LResult<Option<u32>> {
+        if self.cx.opts.ts_symbol_charset_fallback || !(cp < 0x100 || (0xf000..=0xf0ff).contains(&cp)) || cp <= 0x20 {
+            return Ok(None);
+        }
+        let theme = &self.fmt.theme;
+        let rf = rpr.r_fonts.as_deref();
+        let req = if str_truthy(sym_font) {
+            sym_font
+        } else {
+            word::font_of_slot(rf, FontSlot::Ascii, theme).or_else(|| word::font_of_slot(rf, FontSlot::HAnsi, theme))
+        };
+        let Some(req) = req else { return Ok(None) };
+        if crate::fonts::symbol_role(&self.fmt.font_table, req, true) != Some("Symbol") {
+            return Ok(None);
+        }
+        let face = self.cx.face(Some(req), bold, italic)?;
+        if crate::fonts::is_symbol_font(self.font(face)?) {
+            return Ok(None);
+        }
+        Ok(crate::symbol_map::symbol_unicode(cp))
+    }
+
+    /// WordCraft study (fields, A2 aside): the document default language (`w:docDefaults` `w:lang w:val`) is Japanese,
+    /// Chinese or Korean — Word then draws EVERY character with the eastAsia font (measured: `wcfonts2/a2x-*`,
+    /// `wcfonts3/a2y-*`, `wcfonts4/a2z-*`; a paragraph-mark, style or run language alone does not).
+    fn doc_default_east_asian(&self) -> bool {
+        if self.cx.opts.ts_east_asian_default_lang {
+            return false;
+        }
+        let v = self.fmt.styles.doc_defaults.r_pr.as_deref().and_then(|r| r.lang.as_deref()).and_then(|l| l.val.as_deref()).unwrap_or("");
+        let p = v.as_bytes().get(..2).map(<[u8]>::to_ascii_lowercase);
+        matches!(p.as_deref(), Some(b"ja" | b"zh" | b"ko"))
     }
 
     /// `notdefPua(face, cp)` (para.ts:263).
@@ -919,7 +1066,30 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             // measured in Word (oracle supraise): the raise/drop by the run's OWN font
             let face = self.face_for(&rpr, 0x41, style.bold, style.italic, None)?;
             let family = self.family(face)?.to_owned();
-            if va == Some("superscript") {
+            // WordCraft study (L13, `L/suptable-word.json`): above 24 pt Word's measured raise, drop and size per font
+            // keyed by the REQUESTED family when the provider draws it or its metric twin (Liberation Sans for Arial…)
+            let word = if self.cx.opts.ts_supsub_formula_above_24 {
+                None
+            } else {
+                let rf = rpr.r_fonts.as_deref();
+                let theme = &self.fmt.theme;
+                let requested = if self.doc_default_east_asian() {
+                    word::font_of_slot(rf, FontSlot::EastAsia, theme).or_else(|| word::font_of_slot(rf, FontSlot::Ascii, theme))
+                } else if rpr.cs == Some(true) || rpr.rtl == Some(true) {
+                    word::font_of_slot(rf, FontSlot::Cs, theme).or_else(|| word::font_of_slot(rf, FontSlot::Ascii, theme))
+                } else {
+                    word::font_of_slot(rf, FontSlot::Ascii, theme)
+                };
+                crate::supsub_word::word_sup_sub(crate::supsub_word::table_family(requested, &family), sz)
+            };
+            if let Some((raise, drop, sup_size)) = word {
+                if va == Some("superscript") {
+                    style.size_pt = sup_size;
+                    style.shift += raise * 20.0;
+                } else {
+                    style.shift -= drop * 20.0;
+                }
+            } else if va == Some("superscript") {
                 let m = self.metrics(face)?;
                 style.shift += crate::fonts::superscript_raise_for(&family, &m, sz, size_pt) * 20.0;
             } else {
@@ -1063,6 +1233,13 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             } else if small_caps && cp == 0x20 {
                 size = small_caps_size(sz_pt);
             }
+            // WordCraft study (fields, C6): a Symbol run without Symbol shows the characters its codes stand for
+            if kind == GlyphKind::Char
+                && let Some(u) = self.symbol_stand_in_char(rpr, sym_font, shown_cp, bold, italic)?
+            {
+                shown_cp = u;
+                shown_ch = Cow::Owned(from_code_point(u)?);
+            }
             let face = self.face_for(rpr, if kind == GlyphKind::Lb { 0x20 } else { shown_cp }, bold, italic, sym_font)?;
             let m = if self.notdef_pua(face, shown_cp)? {
                 let f2 = self.face_for(rpr, 0x41, bold, italic, None)?;
@@ -1070,6 +1247,7 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             } else {
                 self.metrics(face)?
             };
+            let m = self.symbol_metrics(m, face, rpr, sym_font); // WordCraft study (fields, C1)
             let mut adv = 0.0;
             let mut kern_adj = OptF64::NONE;
             if matches!(kind, GlyphKind::Char | GlyphKind::Space | GlyphKind::Nbsp) {
@@ -1145,6 +1323,24 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
         DRun { run: base, text: Cow::Owned(v.into_vec()), key: None, no_form: false, glued, bold, idx, offset }
     }
 
+    /// WordCraft study (fields, B22): the language of a field's `\*` words — the `w:lang` of its instruction run's
+    /// properties cascaded over the paragraph style and the document defaults (measured: a lang on the begin run, the
+    /// result run, the paragraph mark or the text before does not count). A field the reader did not see the instruction
+    /// of (a session-made field) takes its run's properties. `None` under the frozen TS (`ts_field_format_switches`).
+    fn field_language(&mut self, run: &Run) -> Option<Box<str>> {
+        if self.cx.opts.ts_field_format_switches {
+            return None;
+        }
+        let empty = RPr::default();
+        let direct: &RPr = match run.ext().and_then(|e| e.instr_rpr.0.as_deref()) {
+            Some(r) => r,
+            None => run.rpr.as_deref().unwrap_or(&empty),
+        };
+        let style = self.env.field_style_rpr.clone().unwrap_or_default();
+        let r = self.run_rpr(&style, direct);
+        Some(r.lang.as_ref().and_then(|l| l.val.clone()).filter(|v| !v.is_empty()).unwrap_or_else(|| self.cx.opts.lang.clone()))
+    }
+
     /// `fieldRuns(ctx, run, env, at)` (para.ts:557).
     fn field_runs<'r>(&mut self, run: &'r Run, at: FieldRun, idx: u32, offset: u32, depth: u32) -> LResult<Option<Vec<DRun<'r>>>> {
         if depth > self.cx.opts.limits.max_depth {
@@ -1171,11 +1367,16 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             "CREATEDATE",
             "PRINTDATE",
         ];
-        let dynamic = DYNAMIC.contains(&name_s.as_str()) || name_s.ends_with("_MARK") || (name_s == "STYLEREF" && !self.env.hf);
+        // WordCraft study (fields, B21): Word evaluates STYLEREF per page in a header/footer too (the frozen TS keeps the
+        // cached result there: `ts_styleref_per_page`)
+        let dynamic = DYNAMIC.contains(&name_s.as_str())
+            || name_s.ends_with("_MARK")
+            || (name_s == "STYLEREF" && (!self.env.hf || !self.cx.opts.ts_styleref_per_page));
         let at_num = f64::from(offset);
+        let field_lang = if dynamic || name.first() == Some(&u16::from(b'=')) { self.field_language(run) } else { None };
         if dynamic && let Some(src) = self.env.field {
             let cx = &mut *self.cx;
-            if let Some(v) = self.flow.field(cx, src, &name, &instr16, at_num)? {
+            if let Some(v) = self.flow.field_in(cx, src, &name, &instr16, at_num, field_lang.as_deref())? {
                 let glued = self.env.hf && name_s == "PAGE";
                 return Ok(Some(vec![self.field_value_run(run, &at, v, glued, idx, offset)]));
             }
@@ -1194,6 +1395,10 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
             let mut err: Option<LayoutError> = None;
             let lang = self.cx.opts.lang.clone();
             let max_depth = self.cx.opts.limits.max_parse_depth;
+            // WordCraft study (fields, B25): Word's formula (functions, comparisons, error texts), the `\*` words in the
+            // field's language (B22); the frozen TS's arithmetic under `ts_hf_formula`
+            let word_rules = !self.cx.opts.ts_hf_formula;
+            let words = uo_docx::word::numwords::WordsLang::of(field_lang.as_deref().unwrap_or(&lang));
             let v = {
                 let cx = &mut *self.cx;
                 let flow = &mut *self.flow;
@@ -1207,7 +1412,11 @@ impl<'c, 'a> Prep<'_, 'c, 'a> {
                         }
                     }
                 };
-                word::evaluate_field_formula(&code16, &mut value, Some(&lang), max_depth, &mut self.cap)
+                if word_rules {
+                    uo_docx::word::evaluate_field_formula_word(&code16, &mut value, words, &lang, max_depth, &mut self.cap)
+                } else {
+                    word::evaluate_field_formula(&code16, &mut value, Some(&lang), max_depth, &mut self.cap)
+                }
             };
             if let Some(e) = err {
                 return Err(e);
@@ -1390,8 +1599,17 @@ fn class_fallback(font: &uo_fonts::Face) -> &'static str {
 }
 
 /// `fallbackOrder(cp, font)` (para.ts:200).
-fn fallback_order(cp: u32, font: &uo_fonts::Face) -> Vec<&'static str> {
-    let mut out = Vec::with_capacity(9);
+fn fallback_order(cp: u32, font: &uo_fonts::Face, word: (bool, bool)) -> Vec<&'static str> {
+    let mut out = Vec::with_capacity(11);
+    // WordCraft study (fields): Word's fallbacks — Thai to Leelawadee UI (C4), a CJK character of a Latin-font run to MS
+    // Mincho, Hangul to Malgun Gothic (A2 aside; measured)
+    if word.1 && (0x0e00..=0x0e7f).contains(&cp) {
+        out.push("Leelawadee UI");
+    }
+    if word.0 && cjk(cp) {
+        let hangul = (0xac00..=0xd7af).contains(&cp) || (0x1100..=0x11ff).contains(&cp) || (0x3130..=0x318f).contains(&cp);
+        out.push(if hangul { "Malgun Gothic" } else { "MS Mincho" });
+    }
     if (0x2190..=0x21ff).contains(&cp) || (0x25a0..=0x25ff).contains(&cp) {
         out.push(class_fallback(font));
         out.push("Cambria Math");
@@ -1887,6 +2105,7 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
     // dark paragraph shading: automatic text turns white
     let para_fill = word::shading_fill(ppr.shd.as_deref(), theme);
     let mut env = env0.clone();
+    env.field_style_rpr = Some(Arc::clone(&style_rpr)); // WordCraft study (fields, B22)
     if para_fill.as_deref().is_some_and(|f| !f.is_empty()) && is_dark(para_fill.as_deref()) && !env0.dark_background {
         env.dark_background = true;
     }
@@ -2231,8 +2450,68 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
             }
         }
     }
+    // WordCraft study (L4, `wcl2/l-kinsoku-*`, `wcl3/m-kinsoku-*`): Word's kinsoku by the resolved East Asian language
+    // (ja, zh-CN, zh-TW; ko none), in every mode and whatever the document defaults: no break before a no-start
+    // character (the one before goes down with it, over the spaces between), none after a no-end one
+    let word_kinsoku = !p.cx.opts.ts_kinsoku_lists && ppr.kinsoku != Some(false);
+    if word_kinsoku {
+        for k in 1..glyphs.len() {
+            let Some(g) = glyphs.get(k) else { break };
+            if g.kind != GlyphKind::Char {
+                continue;
+            }
+            let lang = kinsoku_lang(&p.style(g.style)?.rpr);
+            if let Some(l) = lang
+                && KINSOKU_NO_START.get(l).is_some_and(|set| includes(set, g.ch.as_units()))
+            {
+                let mut j = k;
+                while j > 0 {
+                    j -= 1;
+                    let Some(q) = glyphs.get_mut(j) else { break };
+                    q.set_break_after(false);
+                    if q.kind != GlyphKind::Space {
+                        break;
+                    }
+                }
+            }
+        }
+        // (a break is allowed before an East Asian character after any other one — `l-kinsoku-*` «, `m-kinsoku-ko-kr`
+        // $ ( { £ ¥: the line ends after them — unless kinsoku forbids it)
+        for k in 0..glyphs.len().saturating_sub(1) {
+            let (Some(g), Some(nx)) = (glyphs.get(k), glyphs.get(k + 1)) else { break };
+            if g.kind != GlyphKind::Char || g.break_after() || nx.kind != GlyphKind::Char || !cjk(nx.cp) || cjk(g.cp) {
+                continue;
+            }
+            let nl = kinsoku_lang(&p.style(nx.style)?.rpr);
+            if nl.and_then(|l| KINSOKU_NO_START.get(l)).is_some_and(|set| includes(set, nx.ch.as_units())) {
+                continue;
+            }
+            if let Some(g) = glyphs.get_mut(k) {
+                g.set_break_after(true);
+            }
+        }
+        for g in &mut glyphs {
+            if g.kind != GlyphKind::Char || !g.break_after() {
+                continue;
+            }
+            if let Some(l) = kinsoku_lang(&p.style(g.style)?.rpr)
+                && KINSOKU_NO_END.get(l).is_some_and(|set| includes(set, g.ch.as_units()))
+            {
+                g.set_break_after(false);
+            }
+        }
+    }
     // the East Asian layout of modes ≤ 14 (oracle fecompress)
     if p.doc_east_asia_cjk()? {
+        // WordCraft study (L4, `wcl3/m-kinsoku-hang-*` against `wcl2/l-kinsoku-sw-latdef`): Word justifies the East
+        // Asian characters of an East Asian document (see `GlyphFlags::EA_JUSTIFY`)
+        if !p.cx.opts.ts_kinsoku_lists {
+            for g in &mut glyphs {
+                if g.kind == GlyphKind::Char && cjk(g.cp) {
+                    g.flags.set(GlyphFlags::EA_JUSTIFY, true);
+                }
+            }
+        }
         let mode = p.ldoc.compat_mode(); // wave 7c (W, item 2)
         let csc = settings.character_spacing_control.as_deref();
         let compress = mode < 15.0 && str_truthy(csc) && csc != Some("doNotCompress");
@@ -2284,18 +2563,60 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
                         g.fe_shrink = OptF64::some(s);
                     }
                 }
-            } else if g.kind == GlyphKind::Char && ppr.overflow_punct != Some(false) {
+            } else if g.kind == GlyphKind::Char && ppr.overflow_punct != Some(false) && !(word_kinsoku_off_15(p.cx.opts, ppr.kinsoku, mode))
+            {
                 let rpr = &p.style(g.style)?.rpr;
+                // WordCraft study (L4): Word's hang lists for ja and zh-CN (`m-kinsoku-hang-*`, `l-kinsoku-sw-c14`)
+                let word_hang = if p.cx.opts.ts_kinsoku_lists || alt_kinsoku {
+                    None
+                } else {
+                    kinsoku_lang(rpr).and_then(|l| KINSOKU_HANG.get(l)).map(|s| (*s).to_owned())
+                };
                 if is_cjk_lang(rpr)
-                    && includes(&hang_punct(rpr, alt_kinsoku), g.ch.as_units())
-                    && let Some(g) = glyphs.get_mut(k)
+                    && includes(&word_hang.as_deref().map_or_else(|| hang_punct(rpr, alt_kinsoku), str::to_owned), g.ch.as_units())
                 {
-                    g.flags.set(GlyphFlags::HANG, true);
+                    // (Word, L4 — `m-kinsoku-hang-*`: the line may end after a hanging punctuation mark, a Latin one too,
+                    // when an East Asian character that may start a line follows it; never between two non-East-Asian
+                    // characters — `kinsoku/ks-*` 'R$12.345,67' stays whole, `hang15/*`)
+                    let open = word_hang.is_some()
+                        && match glyphs.get(k + 1) {
+                            Some(nx) if nx.kind == GlyphKind::Char && cjk(nx.cp) => {
+                                let nl = kinsoku_lang(&p.style(nx.style)?.rpr);
+                                !nl.and_then(|l| KINSOKU_NO_START.get(l)).is_some_and(|set| includes(set, nx.ch.as_units()))
+                            }
+                            _ => false,
+                        };
+                    if let Some(g) = glyphs.get_mut(k) {
+                        g.flags.set(GlyphFlags::HANG, true);
+                        if open {
+                            g.set_break_after(true);
+                        }
+                    }
                 }
             }
         }
     }
 
+    // WordCraft study (L5, `wcl2/l-cgrid-*`, `wcl3/m-cgrid-*`): the character grid of the section — linesAndChars adds
+    // charSpace/4096 pt to every character; snapToChars gives each East Asian character whole cells (centred in them by
+    // the breaker); a run with `w:snapToGrid w:val="0"` stays out of both
+    let char_grid = if p.cx.opts.ts_no_char_grid { None } else { section_char_grid(p.ldoc, lp, fmt, &mut p.flow.ctx().resolver) };
+    if let Some(cg) = char_grid {
+        for g in &mut glyphs {
+            if !matches!(g.kind, GlyphKind::Char | GlyphKind::Space | GlyphKind::Nbsp) {
+                continue;
+            }
+            let st = p.styles.get(g.style.0 as usize).ok_or(LayoutError::Internal("para: glyph style"))?;
+            if st.rpr.snap_to_grid == Some(false) {
+                continue;
+            }
+            match cg.cell {
+                None => g.adv += if cjk(g.cp) { cg.add } else { cg.latin_add },
+                Some(cell) if cjk(g.cp) => g.adv = jm::max(1.0, jm::ceil(g.adv / cell - 1e-9)) * cell,
+                Some(_) => {}
+            }
+        }
+    }
     // automatic hyphenation (w:autoHyphenation): the break points in the words
     crate::hyphenate::mark_hyphenation(p.cx, fmt, &ppr, &p.styles, &mut glyphs, &math_runs, para_id)?;
 
@@ -2308,7 +2629,12 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
             Some(JsNumber::Num(x)) => JsNumber::Num(x),
             _ => JsNumber::Num(0.0),
         };
-        let nm = p.flow.number_next(fmt, num_id, ilvl);
+        // WordCraft study (fields, B26): Word writes the list words in the language of the paragraph MARK (its resolved
+        // run properties: direct, paragraph style, defaults); the frozen TS in the layout's (`ts_list_number_language`)
+        let mark_lang: Option<Box<str>> = (!p.cx.opts.ts_list_number_language).then(|| {
+            mark_rpr.lang.as_ref().and_then(|l| l.val.clone()).filter(|v| !v.is_empty()).unwrap_or_else(|| p.cx.opts.lang.clone())
+        });
+        let nm = p.flow.number_next_in(fmt, num_id, ilvl, mark_lang.as_deref());
         let synthetic = nm.is_none() && matches!(num_id, JsNumber::Num(x) if x == 1001.0 || x == 1002.0);
         // (text, level, the level's rPr, lvlPicBulletId, suff, lvlJc, chapter)
         type Mk<'f> =
@@ -2391,6 +2717,7 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
                     } else {
                         p.metrics(face)?
                     };
+                    let m = p.symbol_metrics(m, face, &mrpr, None); // WordCraft study (fields, C1)
                     // the level's scale (w:w) and spacing (w:spacing) apply to the number too
                     let hs = if num_truthy(mrpr.w) && num_or(mrpr.w, 100.0) != 100.0 {
                         mrpr.w.map_or(100.0, JsNumber::to_number)
@@ -2472,6 +2799,101 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
     };
     let empty_para = glyphs.iter().all(|g| g.kind == GlyphKind::Pb || (g.kind == GlyphKind::Obj && floating_obj(g)));
     let continuation = p.env.continuation;
+    let mut ind_left = num_or(ind.and_then(|i| i.left), 0.0);
+    let mut ind_right = num_or(ind.and_then(|i| i.right), 0.0);
+    // WordCraft study (L6, `wcl2/l-charsind-*`, `wcl3/m-charsind2`, `wcl4/n-charsind-sc-*`): the *Chars indents
+    // (hundredths of a character) win over the twips of the same side (0 = the twips). Unit of firstLineChars and
+    // hangingChars: the size of the paragraph's FIRST run; of leftChars and rightChars: the paragraph style's size;
+    // linesAndChars adds charSpace/4096 pt to the unit, snapToChars rounds the result up to whole cells.
+    // hangingChars ignores w:left: the first line at leftChars, the others at leftChars + hangingChars
+    // (review of L6, `core/target/wc-lines/charsind` p-charsind-style, Word 365 measured 2026-11-14: a DIRECT twips
+    // value does not cancel an inherited *Chars — the *Chars still wins; a *Chars of 0 over an inherited nonzero *Chars
+    // on a side without any twips takes the inherited *Chars VALUE as twips — style leftChars 300/150/777 + direct
+    // leftChars 0 → 300/150/777 tw whatever the size, firstLineChars 200 → firstLine 200 tw, rightChars 1000 → 1000 tw,
+    // hangingChars 200 with leftChars 300 → the first line at leftChars, the others 200 tw further)
+    if !p.cx.opts.ts_no_chars_indent
+        && let Some(i) = ind
+    {
+        let nz = |v: Option<JsNumber>| v.and_then(JsNumber::as_f64).filter(|v| *v != 0.0);
+        let (lc, rc, hc, fc) = (nz(i.left_chars), nz(i.right_chars), nz(i.hanging_chars), nz(i.first_line_chars));
+        let zero = |v: Option<JsNumber>| v.and_then(JsNumber::as_f64) == Some(0.0);
+        let (mut fb_left, mut fb_right, mut fb_hang, mut fb_first) = (None, None, None, None);
+        if zero(i.left_chars) || zero(i.right_chars) || zero(i.hanging_chars) || zero(i.first_line_chars) {
+            let st = p.flow.ctx().resolver.para_style(fmt, resolved.style_id.as_deref());
+            if let Some(si) = st.p_pr.ind.as_deref() {
+                let twips_none = |v: Option<JsNumber>| v.and_then(JsNumber::as_f64).is_none();
+                if zero(i.left_chars) && twips_none(i.left) {
+                    fb_left = nz(si.left_chars);
+                }
+                if zero(i.right_chars) && twips_none(i.right) {
+                    fb_right = nz(si.right_chars);
+                }
+                if zero(i.hanging_chars) && twips_none(i.hanging) && twips_none(i.first_line) {
+                    fb_hang = nz(si.hanging_chars);
+                }
+                if zero(i.first_line_chars) && twips_none(i.first_line) && twips_none(i.hanging) {
+                    fb_first = nz(si.first_line_chars);
+                }
+            }
+        }
+        if let Some(v) = fb_left {
+            ind_left = v;
+        }
+        if let Some(v) = fb_right {
+            ind_right = v;
+        }
+        if let Some(v) = fb_first
+            && !continuation
+        {
+            first_line = v;
+        }
+        // (with leftChars the hanging twips are added to it below, as a hangingChars would be)
+        if let Some(v) = fb_hang
+            && !continuation
+        {
+            first_line = -v;
+        }
+        if lc.is_some() || rc.is_some() || hc.is_some() || fc.is_some() {
+            let add = char_grid.map_or(0.0, |g| g.add);
+            let u_left = size_of(&style_rpr, fmt) * 20.0 + add;
+            let first_size = glyphs
+                .iter()
+                .find(|g| !(g.kind == GlyphKind::Obj && g.adv == 0.0) && g.kind != GlyphKind::Pb)
+                .and_then(|g| p.styles.get(g.style.0 as usize))
+                .or_else(|| p.styles.get(mark_style.0 as usize))
+                .map_or(11.0, |s| s.size_pt);
+            let u_first = first_size * 20.0 + add;
+            let cells = |v: f64| match char_grid.and_then(|g| g.cell) {
+                Some(c) => jm::ceil(v / c - 1e-9) * c,
+                None => v,
+            };
+            if let Some(h) = hc {
+                ind_left = cells(lc.unwrap_or(0.0) / 100.0 * u_left + h / 100.0 * u_first);
+                if !continuation {
+                    first_line = -(ind_left - cells(lc.unwrap_or(0.0) / 100.0 * u_left));
+                }
+            } else {
+                if let Some(l) = lc {
+                    ind_left = cells(l / 100.0 * u_left + fb_hang.unwrap_or(0.0));
+                }
+                if let Some(f) = fc
+                    && !continuation
+                {
+                    first_line = cells(f / 100.0 * u_first);
+                }
+            }
+            if let Some(r) = rc {
+                ind_right = cells(r / 100.0 * u_left);
+            }
+        }
+    }
+    // (snapToChars: every indent on whole cells — `n-charsind-sc-*`)
+    if let Some(c) = char_grid.and_then(|g| g.cell) {
+        let x0 = jm::ceil((ind_left + first_line) / c - 1e-9) * c;
+        ind_left = jm::ceil(ind_left / c - 1e-9) * c;
+        ind_right = jm::ceil(ind_right / c - 1e-9) * c;
+        first_line = x0 - ind_left;
+    }
     Ok(PreparedPara {
         para,
         style_id: resolved.style_id,
@@ -2479,8 +2901,8 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
         mark_style,
         mark_face,
         marker,
-        ind_left: num_or(ind.and_then(|i| i.left), 0.0),
-        ind_right: num_or(ind.and_then(|i| i.right), 0.0),
+        ind_left,
+        ind_right,
         first_line,
         jc,
         tabs: tab_stops(ppr.tabs.as_deref()),
@@ -2505,7 +2927,71 @@ pub fn prepare_paragraph(cx: &mut Cx<'_, '_>, flow: &mut dyn PrepFlow, para: LPa
         math: std::mem::take(&mut p.math),
         glyphs,
         ppr,
+        char_grid: char_grid.map(|g| CharGrid { add: if g.cell.is_some() { 0.0 } else { g.add }, cell: g.cell }),
     })
+}
+
+/// WordCraft study (L5): the character grid of a paragraph's section (`w:docGrid`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CharGridSpec {
+    /// charSpace / 4096 pt in twips: added to every East Asian character's advance and to the *Chars unit
+    /// (linesAndChars; snapToChars: in the cell)
+    pub add: f64,
+    /// the twips added to every other character's advance (linesAndChars)
+    pub latin_add: f64,
+    /// snapToChars: the cell, W / ⌊W / (Normal's size + charSpace/4096 pt)⌋ over the text width W between the margins
+    pub cell: Option<f64>,
+}
+
+/// The size (pt) of a resolved run property set or the document defaults' (`sz` in half points; 10 pt without one).
+fn size_of(r: &RPr, fmt: &DocFormatting) -> f64 {
+    let dd = fmt.styles.doc_defaults.r_pr.as_deref().and_then(|r| r.sz);
+    num_or(r.sz.or(dd), 20.0) / 2.0
+}
+
+/// WordCraft study (L5, `wcl2/l-cgrid-*`, `wcl3/m-cgrid-*`): the grid of the section that holds the paragraph (a body
+/// paragraph: by its top-level block; elsewhere the last section — unmeasured, plan "residual").
+fn section_char_grid(
+    ldoc: &LDoc<'_>,
+    lp: &crate::ldoc::LPara<'_>,
+    fmt: &DocFormatting,
+    resolver: &mut word::StyleResolver,
+) -> Option<CharGridSpec> {
+    let sections = ldoc.view.sections();
+    let sect = match lp.story {
+        uo_docx::view::StoryRef::Body => {
+            let top = f64::from(lp.path.top());
+            sections.iter().find(|s| s.block_start.to_number() <= top && top <= s.block_end.to_number()).or_else(|| sections.last())
+        }
+        _ => sections.last(),
+    }?;
+    let dg = sect.sect.as_deref()?.doc_grid.as_ref()?;
+    let add = num_or(dg.char_space, 0.0) / 4096.0 * 20.0;
+    match dg.r#type.as_deref() {
+        // (a positive pitch adds 0.27 tw less per NON-East-Asian character — fitted on `wcfix-lines` cgrid-lc-4096/20480:
+        // the Latin line ends drift 0.0135 pt per character from charSpace/4096 pt; the negative pitch is exact, and so
+        // is the East Asian step: `wcl2/l-cgrid-lc-2048-11` 11.5 pt, `-4096-11` 12.0 pt, `-20480-11` 16.0 pt)
+        Some("linesAndChars") => Some(CharGridSpec { add, latin_add: if add > 0.0 { add - 0.27 } else { add }, cell: None }),
+        Some("snapToChars") => {
+            let sp = &sect.sect_pr;
+            let w = sp.page_width_twips.to_number() - sp.margin_left_twips.to_number() - sp.margin_right_twips.to_number();
+            let base = size_of(&resolver.para_style(fmt, None).r_pr, fmt) * 20.0;
+            let n = jm::floor(w / (base + add));
+            // hostile charSpace (base + add ≤ 0, or a non-finite pitch): no character grid rather than a zero/NaN cell
+            (w > 0.0 && base + add > 0.0 && n.is_finite() && n >= 1.0).then(|| CharGridSpec { add, latin_add: add, cell: Some(w / n) })
+        }
+        _ => None,
+    }
+}
+
+/// WordCraft study (L5): the character grid the preparation of `lp` would use (`None` under `ts_no_char_grid`) — part
+/// of the paragraph memo's key: a section edit (margins, orientation, `w:docGrid`, a break that moves the paragraph to
+/// another section) changes it without touching the formatting or the styles.
+pub(crate) fn prep_char_grid(cx: &Cx<'_, '_>, ctx: &mut DocContext, lp: &crate::ldoc::LPara<'_>) -> Option<CharGridSpec> {
+    if cx.opts.ts_no_char_grid {
+        return None;
+    }
+    section_char_grid(cx.ldoc, lp, cx.ldoc.view.formatting(), &mut ctx.resolver)
 }
 
 /// `isHyperlinkStyle(ctx, id)` (para.ts:329).

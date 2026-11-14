@@ -1,0 +1,354 @@
+lgl-bullet-par	0	um Hxg	•
+lgl-bullet-par	1	um a Hxg	.1
+lgl-bullet-par	2	um b Hxg	.2
+lgl-bullet-par	3	dois Hxg	•
+lgl-bullet-par	4	dois a Hxg	.1
+lgl-bullet-par	5	dois 0 Hxg	.2
+lgl-bullet-par	6	dois 1 Hxg	.3
+lgl-bullet-par	7	dois 2 Hxg	.4
+lgl-bullet-par	8	dois 3 Hxg	.5
+lgl-bullet-par	9	dois 4 Hxg	.6
+lgl-bullet-par	10	dois 5 Hxg	.7
+lgl-bullet-par	11	dois 6 Hxg	.8
+lgl-bullet-par	12	dois 7 Hxg	.9
+lgl-bullet-par	13	dois 8 Hxg	.10
+lgl-bullet-par	14	dois 9 Hxg	.11
+lgl-l0	0	um Hxg	1.
+lgl-l0	1	um a Hxg	I.a
+lgl-l0	2	um b Hxg	I.b
+lgl-l0	3	dois Hxg	2.
+lgl-l0	4	dois a Hxg	II.a
+lgl-l0	5	dois 0 Hxg	II.b
+lgl-l0	6	dois 1 Hxg	II.c
+lgl-l0	7	dois 2 Hxg	II.d
+lgl-l0	8	dois 3 Hxg	II.e
+lgl-l0	9	dois 4 Hxg	II.f
+lgl-l0	10	dois 5 Hxg	II.g
+lgl-l0	11	dois 6 Hxg	II.h
+lgl-l0	12	dois 7 Hxg	II.i
+lgl-l0	13	dois 8 Hxg	II.j
+lgl-l0	14	dois 9 Hxg	II.k
+lgl-own-only	0	um Hxg	1.
+lgl-own-only	1	um a Hxg	1)
+lgl-own-only	2	um b Hxg	2)
+lgl-own-only	3	dois Hxg	2.
+lgl-own-only	4	dois a Hxg	1)
+lgl-own-only	5	dois 0 Hxg	2)
+lgl-own-only	6	dois 1 Hxg	3)
+lgl-own-only	7	dois 2 Hxg	4)
+lgl-own-only	8	dois 3 Hxg	5)
+lgl-own-only	9	dois 4 Hxg	6)
+lgl-own-only	10	dois 5 Hxg	7)
+lgl-own-only	11	dois 6 Hxg	8)
+lgl-own-only	12	dois 7 Hxg	9)
+lgl-own-only	13	dois 8 Hxg	10)
+lgl-own-only	14	dois 9 Hxg	11)
+lgl-own-ordtext	0	um Hxg	1.
+lgl-own-ordtext	1	um a Hxg	1.1
+lgl-own-ordtext	2	um b Hxg	1.2
+lgl-own-ordtext	3	dois Hxg	2.
+lgl-own-ordtext	4	dois a Hxg	2.1
+lgl-own-ordtext	5	dois 0 Hxg	2.2
+lgl-own-ordtext	6	dois 1 Hxg	2.3
+lgl-own-ordtext	7	dois 2 Hxg	2.4
+lgl-own-ordtext	8	dois 3 Hxg	2.5
+lgl-own-ordtext	9	dois 4 Hxg	2.6
+lgl-own-ordtext	10	dois 5 Hxg	2.7
+lgl-own-ordtext	11	dois 6 Hxg	2.8
+lgl-own-ordtext	12	dois 7 Hxg	2.9
+lgl-own-ordtext	13	dois 8 Hxg	2.10
+lgl-own-ordtext	14	dois 9 Hxg	2.11
+lgl-own-upper	0	um Hxg	1.
+lgl-own-upper	1	um a Hxg	1.1
+lgl-own-upper	2	um b Hxg	1.2
+lgl-own-upper	3	dois Hxg	2.
+lgl-own-upper	4	dois a Hxg	2.1
+lgl-own-upper	5	dois 0 Hxg	2.2
+lgl-own-upper	6	dois 1 Hxg	2.3
+lgl-own-upper	7	dois 2 Hxg	2.4
+lgl-own-upper	8	dois 3 Hxg	2.5
+lgl-own-upper	9	dois 4 Hxg	2.6
+lgl-own-upper	10	dois 5 Hxg	2.7
+lgl-own-upper	11	dois 6 Hxg	2.8
+lgl-own-upper	12	dois 7 Hxg	2.9
+lgl-own-upper	13	dois 8 Hxg	2.10
+lgl-own-upper	14	dois 9 Hxg	2.11
+lgl-own-zero	0	um Hxg	1.
+lgl-own-zero	1	um a Hxg	1.01
+lgl-own-zero	2	um b Hxg	1.02
+lgl-own-zero	3	dois Hxg	2.
+lgl-own-zero	4	dois a Hxg	2.01
+lgl-own-zero	5	dois 0 Hxg	2.02
+lgl-own-zero	6	dois 1 Hxg	2.03
+lgl-own-zero	7	dois 2 Hxg	2.04
+lgl-own-zero	8	dois 3 Hxg	2.05
+lgl-own-zero	9	dois 4 Hxg	2.06
+lgl-own-zero	10	dois 5 Hxg	2.07
+lgl-own-zero	11	dois 6 Hxg	2.08
+lgl-own-zero	12	dois 7 Hxg	2.09
+lgl-own-zero	13	dois 8 Hxg	2.10
+lgl-own-zero	14	dois 9 Hxg	2.11
+lgl-par-card	0	um Hxg	Um.
+lgl-par-card	1	um a Hxg	1.1
+lgl-par-card	2	um b Hxg	1.2
+lgl-par-card	3	dois Hxg	Dois.
+lgl-par-card	4	dois a Hxg	2.1
+lgl-par-card	5	dois 0 Hxg	2.2
+lgl-par-card	6	dois 1 Hxg	2.3
+lgl-par-card	7	dois 2 Hxg	2.4
+lgl-par-card	8	dois 3 Hxg	2.5
+lgl-par-card	9	dois 4 Hxg	2.6
+lgl-par-card	10	dois 5 Hxg	2.7
+lgl-par-card	11	dois 6 Hxg	2.8
+lgl-par-card	12	dois 7 Hxg	2.9
+lgl-par-card	13	dois 8 Hxg	2.10
+lgl-par-card	14	dois 9 Hxg	2.11
+lgl-par-circle	0	um Hxg	①.
+lgl-par-circle	1	um a Hxg	1.1
+lgl-par-circle	2	um b Hxg	1.2
+lgl-par-circle	3	dois Hxg	②.
+lgl-par-circle	4	dois a Hxg	2.1
+lgl-par-circle	5	dois 0 Hxg	2.2
+lgl-par-circle	6	dois 1 Hxg	2.3
+lgl-par-circle	7	dois 2 Hxg	2.4
+lgl-par-circle	8	dois 3 Hxg	2.5
+lgl-par-circle	9	dois 4 Hxg	2.6
+lgl-par-circle	10	dois 5 Hxg	2.7
+lgl-par-circle	11	dois 6 Hxg	2.8
+lgl-par-circle	12	dois 7 Hxg	2.9
+lgl-par-circle	13	dois 8 Hxg	2.10
+lgl-par-circle	14	dois 9 Hxg	2.11
+lgl-par-ordinal	0	um Hxg	1º.
+lgl-par-ordinal	1	um a Hxg	1.1
+lgl-par-ordinal	2	um b Hxg	1.2
+lgl-par-ordinal	3	dois Hxg	2º.
+lgl-par-ordinal	4	dois a Hxg	2.1
+lgl-par-ordinal	5	dois 0 Hxg	2.2
+lgl-par-ordinal	6	dois 1 Hxg	2.3
+lgl-par-ordinal	7	dois 2 Hxg	2.4
+lgl-par-ordinal	8	dois 3 Hxg	2.5
+lgl-par-ordinal	9	dois 4 Hxg	2.6
+lgl-par-ordinal	10	dois 5 Hxg	2.7
+lgl-par-ordinal	11	dois 6 Hxg	2.8
+lgl-par-ordinal	12	dois 7 Hxg	2.9
+lgl-par-ordinal	13	dois 8 Hxg	2.10
+lgl-par-ordinal	14	dois 9 Hxg	2.11
+lgl-par-upper	0	um Hxg	A.
+lgl-par-upper	1	um a Hxg	1.1
+lgl-par-upper	2	um b Hxg	1.2
+lgl-par-upper	3	dois Hxg	B.
+lgl-par-upper	4	dois a Hxg	2.1
+lgl-par-upper	5	dois 0 Hxg	2.2
+lgl-par-upper	6	dois 1 Hxg	2.3
+lgl-par-upper	7	dois 2 Hxg	2.4
+lgl-par-upper	8	dois 3 Hxg	2.5
+lgl-par-upper	9	dois 4 Hxg	2.6
+lgl-par-upper	10	dois 5 Hxg	2.7
+lgl-par-upper	11	dois 6 Hxg	2.8
+lgl-par-upper	12	dois 7 Hxg	2.9
+lgl-par-upper	13	dois 8 Hxg	2.10
+lgl-par-upper	14	dois 9 Hxg	2.11
+lgl-par-zero-own-zero	0	um Hxg	01.
+lgl-par-zero-own-zero	1	um a Hxg	01.01
+lgl-par-zero-own-zero	2	um b Hxg	01.02
+lgl-par-zero-own-zero	3	dois Hxg	02.
+lgl-par-zero-own-zero	4	dois a Hxg	02.01
+lgl-par-zero-own-zero	5	dois 0 Hxg	02.02
+lgl-par-zero-own-zero	6	dois 1 Hxg	02.03
+lgl-par-zero-own-zero	7	dois 2 Hxg	02.04
+lgl-par-zero-own-zero	8	dois 3 Hxg	02.05
+lgl-par-zero-own-zero	9	dois 4 Hxg	02.06
+lgl-par-zero-own-zero	10	dois 5 Hxg	02.07
+lgl-par-zero-own-zero	11	dois 6 Hxg	02.08
+lgl-par-zero-own-zero	12	dois 7 Hxg	02.09
+lgl-par-zero-own-zero	13	dois 8 Hxg	02.10
+lgl-par-zero-own-zero	14	dois 9 Hxg	02.11
+lw-en-US	0	cardinalText 11 Hxg	Eleven.
+lw-en-US	1	cardinalText 12 Hxg	Twelve.
+lw-en-US	2	cardinalText 13 Hxg	Thirteen.
+lw-en-US	3	cardinalText 14 Hxg	Fourteen.
+lw-en-US	4	cardinalText 15 Hxg	Fifteen.
+lw-en-US	5	cardinalText 16 Hxg	Sixteen.
+lw-en-US	6	cardinalText 17 Hxg	Seventeen.
+lw-en-US	7	cardinalText 18 Hxg	Eighteen.
+lw-en-US	8	cardinalText 19 Hxg	Nineteen.
+lw-en-US	9	cardinalText 20 Hxg	Twenty.
+lw-en-US	10	cardinalText 30 Hxg	Thirty.
+lw-en-US	11	cardinalText 99 Hxg	Ninety-nine.
+lw-en-US	12	cardinalText 100 Hxg	One hundred.
+lw-en-US	13	cardinalText 101 Hxg	One hundred one.
+lw-en-US	14	cardinalText 200 Hxg	Two hundred.
+lw-en-US	15	cardinalText 345 Hxg	Three hundred forty-five.
+lw-en-US	16	cardinalText 999 Hxg	Nine hundred ninety-nine.
+lw-en-US	17	cardinalText 1000 Hxg	One thousand.
+lw-en-US	18	cardinalText 1001 Hxg	One thousand one.
+lw-en-US	19	cardinalText 2000 Hxg	Two thousand.
+lw-en-US	20	cardinalText 21000 Hxg	Twenty-one thousand.
+lw-en-US	21	ordinalText 11 Hxg	Eleventh.
+lw-en-US	22	ordinalText 12 Hxg	Twelfth.
+lw-en-US	23	ordinalText 13 Hxg	Thirteenth.
+lw-en-US	24	ordinalText 14 Hxg	Fourteenth.
+lw-en-US	25	ordinalText 15 Hxg	Fifteenth.
+lw-en-US	26	ordinalText 16 Hxg	Sixteenth.
+lw-en-US	27	ordinalText 17 Hxg	Seventeenth.
+lw-en-US	28	ordinalText 18 Hxg	Eighteenth.
+lw-en-US	29	ordinalText 19 Hxg	Nineteenth.
+lw-en-US	30	ordinalText 20 Hxg	Twentieth.
+lw-en-US	31	ordinalText 30 Hxg	Thirtieth.
+lw-en-US	32	ordinalText 99 Hxg	Ninety-ninth.
+lw-en-US	33	ordinalText 100 Hxg	One hundredth.
+lw-en-US	34	ordinalText 101 Hxg	One hundred first.
+lw-en-US	35	ordinalText 200 Hxg	Two hundredth.
+lw-en-US	36	ordinalText 345 Hxg	Three hundred forty-fifth.
+lw-en-US	37	ordinalText 999 Hxg	Nine hundred ninety-ninth.
+lw-en-US	38	ordinalText 1000 Hxg	One thousandth.
+lw-en-US	39	ordinalText 1001 Hxg	One thousand first.
+lw-en-US	40	ordinalText 2000 Hxg	Two thousandth.
+lw-en-US	41	ordinalText 21000 Hxg	Twenty-one thousandth.
+lw-en-US	42	ordinal 11 Hxg	11th.
+lw-en-US	43	ordinal 12 Hxg	12th.
+lw-en-US	44	ordinal 13 Hxg	13th.
+lw-en-US	45	ordinal 14 Hxg	14th.
+lw-en-US	46	ordinal 15 Hxg	15th.
+lw-en-US	47	ordinal 16 Hxg	16th.
+lw-en-US	48	ordinal 17 Hxg	17th.
+lw-en-US	49	ordinal 18 Hxg	18th.
+lw-en-US	50	ordinal 19 Hxg	19th.
+lw-en-US	51	ordinal 20 Hxg	20th.
+lw-en-US	52	ordinal 30 Hxg	30th.
+lw-en-US	53	ordinal 99 Hxg	99th.
+lw-en-US	54	ordinal 100 Hxg	100th.
+lw-en-US	55	ordinal 101 Hxg	101st.
+lw-en-US	56	ordinal 200 Hxg	200th.
+lw-en-US	57	ordinal 345 Hxg	345th.
+lw-en-US	58	ordinal 999 Hxg	999th.
+lw-en-US	59	ordinal 1000 Hxg	1000th.
+lw-en-US	60	ordinal 1001 Hxg	1001st.
+lw-en-US	61	ordinal 2000 Hxg	2000th.
+lw-en-US	62	ordinal 21000 Hxg	21000th.
+lw-es-ES	0	cardinalText 11 Hxg	Once.
+lw-es-ES	1	cardinalText 12 Hxg	Doce.
+lw-es-ES	2	cardinalText 13 Hxg	Trece.
+lw-es-ES	3	cardinalText 14 Hxg	Catorce.
+lw-es-ES	4	cardinalText 15 Hxg	Quince.
+lw-es-ES	5	cardinalText 16 Hxg	Dieciséis.
+lw-es-ES	6	cardinalText 17 Hxg	Diecisiete.
+lw-es-ES	7	cardinalText 18 Hxg	Dieciocho.
+lw-es-ES	8	cardinalText 19 Hxg	Diecinueve.
+lw-es-ES	9	cardinalText 20 Hxg	Veinte.
+lw-es-ES	10	cardinalText 30 Hxg	Treinta.
+lw-es-ES	11	cardinalText 99 Hxg	Noventa y nueve.
+lw-es-ES	12	cardinalText 100 Hxg	Ciento.
+lw-es-ES	13	cardinalText 101 Hxg	Ciento uno.
+lw-es-ES	14	cardinalText 200 Hxg	Doscientos.
+lw-es-ES	15	cardinalText 345 Hxg	Trescientos cuarenta y cinco.
+lw-es-ES	16	cardinalText 999 Hxg	Novecientos noventa y nueve.
+lw-es-ES	17	cardinalText 1000 Hxg	Mil.
+lw-es-ES	18	cardinalText 1001 Hxg	Mil uno.
+lw-es-ES	19	cardinalText 2000 Hxg	Dos mil.
+lw-es-ES	20	cardinalText 21000 Hxg	Veintiuno mil.
+lw-es-ES	21	ordinalText 11 Hxg	Undécimo.
+lw-es-ES	22	ordinalText 12 Hxg	Duodécimo.
+lw-es-ES	23	ordinalText 13 Hxg	Decimotercero.
+lw-es-ES	24	ordinalText 14 Hxg	Decimocuarto.
+lw-es-ES	25	ordinalText 15 Hxg	Decimoquinto.
+lw-es-ES	26	ordinalText 16 Hxg	Decimosexto.
+lw-es-ES	27	ordinalText 17 Hxg	Decimoséptimo.
+lw-es-ES	28	ordinalText 18 Hxg	Decimoctavo.
+lw-es-ES	29	ordinalText 19 Hxg	Decimonoveno.
+lw-es-ES	30	ordinalText 20 Hxg	Vigésimo.
+lw-es-ES	31	ordinalText 30 Hxg	Trigésimo.
+lw-es-ES	32	ordinalText 99 Hxg	Nonagésimo noveno.
+lw-es-ES	33	ordinalText 100 Hxg	Centésimo.
+lw-es-ES	34	ordinalText 101 Hxg	Centésimo primero.
+lw-es-ES	35	ordinalText 200 Hxg	Ducentésimo.
+lw-es-ES	36	ordinalText 345 Hxg	 tricentésimo cuadragésimo quinto.
+lw-es-ES	37	ordinalText 999 Hxg	Noningentésimo nonagésimo noveno.
+lw-es-ES	38	ordinalText 1000 Hxg	Milésimo.
+lw-es-ES	39	ordinalText 1001 Hxg	Milésimo primero.
+lw-es-ES	40	ordinalText 2000 Hxg	Dosmilésimo.
+lw-es-ES	41	ordinalText 21000 Hxg	Veintimilésimo.
+lw-es-ES	42	ordinal 11 Hxg	11º.
+lw-es-ES	43	ordinal 12 Hxg	12º.
+lw-es-ES	44	ordinal 13 Hxg	13º.
+lw-es-ES	45	ordinal 14 Hxg	14º.
+lw-es-ES	46	ordinal 15 Hxg	15º.
+lw-es-ES	47	ordinal 16 Hxg	16º.
+lw-es-ES	48	ordinal 17 Hxg	17º.
+lw-es-ES	49	ordinal 18 Hxg	18º.
+lw-es-ES	50	ordinal 19 Hxg	19º.
+lw-es-ES	51	ordinal 20 Hxg	20º.
+lw-es-ES	52	ordinal 30 Hxg	30º.
+lw-es-ES	53	ordinal 99 Hxg	99º.
+lw-es-ES	54	ordinal 100 Hxg	100º.
+lw-es-ES	55	ordinal 101 Hxg	101º.
+lw-es-ES	56	ordinal 200 Hxg	200º.
+lw-es-ES	57	ordinal 345 Hxg	345º.
+lw-es-ES	58	ordinal 999 Hxg	999º.
+lw-es-ES	59	ordinal 1000 Hxg	1000º.
+lw-es-ES	60	ordinal 1001 Hxg	1001º.
+lw-es-ES	61	ordinal 2000 Hxg	2000º.
+lw-es-ES	62	ordinal 21000 Hxg	21000º.
+lw-pt-BR	0	cardinalText 11 Hxg	Onze.
+lw-pt-BR	1	cardinalText 12 Hxg	Doze.
+lw-pt-BR	2	cardinalText 13 Hxg	Treze.
+lw-pt-BR	3	cardinalText 14 Hxg	Quatorze.
+lw-pt-BR	4	cardinalText 15 Hxg	Quinze.
+lw-pt-BR	5	cardinalText 16 Hxg	Dezesseis.
+lw-pt-BR	6	cardinalText 17 Hxg	Dezessete.
+lw-pt-BR	7	cardinalText 18 Hxg	Dezoito.
+lw-pt-BR	8	cardinalText 19 Hxg	Dezenove.
+lw-pt-BR	9	cardinalText 20 Hxg	Vinte.
+lw-pt-BR	10	cardinalText 30 Hxg	Trinta.
+lw-pt-BR	11	cardinalText 99 Hxg	Noventa e nove.
+lw-pt-BR	12	cardinalText 100 Hxg	Cem.
+lw-pt-BR	13	cardinalText 101 Hxg	Cento e um.
+lw-pt-BR	14	cardinalText 200 Hxg	Duzentos.
+lw-pt-BR	15	cardinalText 345 Hxg	Trezentos e quarenta e cinco.
+lw-pt-BR	16	cardinalText 999 Hxg	Novecentos e noventa e nove.
+lw-pt-BR	17	cardinalText 1000 Hxg	Mil.
+lw-pt-BR	18	cardinalText 1001 Hxg	Mil e um.
+lw-pt-BR	19	cardinalText 2000 Hxg	Dois mil.
+lw-pt-BR	20	cardinalText 21000 Hxg	Vinte e um mil.
+lw-pt-BR	21	ordinalText 11 Hxg	Décimo primeiro.
+lw-pt-BR	22	ordinalText 12 Hxg	Décimo segundo.
+lw-pt-BR	23	ordinalText 13 Hxg	Décimo terceiro.
+lw-pt-BR	24	ordinalText 14 Hxg	Décimo quarto.
+lw-pt-BR	25	ordinalText 15 Hxg	Décimo quinto.
+lw-pt-BR	26	ordinalText 16 Hxg	Décimo sexto.
+lw-pt-BR	27	ordinalText 17 Hxg	Décimo sétimo.
+lw-pt-BR	28	ordinalText 18 Hxg	Décimo oitavo.
+lw-pt-BR	29	ordinalText 19 Hxg	Décimo nono.
+lw-pt-BR	30	ordinalText 20 Hxg	Vigésimo.
+lw-pt-BR	31	ordinalText 30 Hxg	Trigésimo.
+lw-pt-BR	32	ordinalText 99 Hxg	Nonagésimo nono.
+lw-pt-BR	33	ordinalText 100 Hxg	Centésimo.
+lw-pt-BR	34	ordinalText 101 Hxg	Centésimo primeiro.
+lw-pt-BR	35	ordinalText 200 Hxg	Ducentésimo.
+lw-pt-BR	36	ordinalText 345 Hxg	Trecentésimo quadragésimo quinto.
+lw-pt-BR	37	ordinalText 999 Hxg	Nongentésimo nonagésimo nono.
+lw-pt-BR	38	ordinalText 1000 Hxg	Milésimo.
+lw-pt-BR	39	ordinalText 1001 Hxg	Milésimo primeiro.
+lw-pt-BR	40	ordinalText 2000 Hxg	Dois milésimos.
+lw-pt-BR	41	ordinalText 21000 Hxg	Vinte e um milésimos.
+lw-pt-BR	42	ordinal 11 Hxg	11º.
+lw-pt-BR	43	ordinal 12 Hxg	12º.
+lw-pt-BR	44	ordinal 13 Hxg	13º.
+lw-pt-BR	45	ordinal 14 Hxg	14º.
+lw-pt-BR	46	ordinal 15 Hxg	15º.
+lw-pt-BR	47	ordinal 16 Hxg	16º.
+lw-pt-BR	48	ordinal 17 Hxg	17º.
+lw-pt-BR	49	ordinal 18 Hxg	18º.
+lw-pt-BR	50	ordinal 19 Hxg	19º.
+lw-pt-BR	51	ordinal 20 Hxg	20º.
+lw-pt-BR	52	ordinal 30 Hxg	30º.
+lw-pt-BR	53	ordinal 99 Hxg	99º.
+lw-pt-BR	54	ordinal 100 Hxg	100º.
+lw-pt-BR	55	ordinal 101 Hxg	101º.
+lw-pt-BR	56	ordinal 200 Hxg	200º.
+lw-pt-BR	57	ordinal 345 Hxg	345º.
+lw-pt-BR	58	ordinal 999 Hxg	999º.
+lw-pt-BR	59	ordinal 1000 Hxg	1000º.
+lw-pt-BR	60	ordinal 1001 Hxg	1001º.
+lw-pt-BR	61	ordinal 2000 Hxg	2000º.
+lw-pt-BR	62	ordinal 21000 Hxg	21000º.

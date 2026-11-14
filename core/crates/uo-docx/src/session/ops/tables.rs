@@ -2143,7 +2143,7 @@ impl Session {
         let instr = formula_instr(&f, pic.as_deref());
         let empty = Table::default();
         let (t, r, c) = self.formula_cell().unwrap_or((&empty, 0, 0));
-        formula_result_text(&instr, &FormulaEnv { table: t, r, c, bookmarks: None })
+        formula_result_text(&instr, &FormulaEnv { table: t, r, c, bookmarks: None, word: !self.options().ts_formula_errors })
     }
 
     fn insert_formula(&mut self, formula: Option<&str>, number_format: Option<&str>) -> Result<Outcome, CommandError> {

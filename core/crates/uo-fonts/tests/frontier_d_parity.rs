@@ -16,8 +16,7 @@ use std::path::Path;
 
 use uo_fonts::hyphen::parse_patterns;
 use uo_fonts::{
-    HYPHENATION_PATTERN_IDS, Hyphenator, VARIANTS, Variant, bundled, bundled_file_name, hyphenation_pattern_id, metric_substitute, odttf,
-    variant_of_style,
+    Hyphenator, VARIANTS, Variant, bundled, bundled_file_name, hyphenation_pattern_id, metric_substitute, odttf, variant_of_style,
 };
 use uo_testkit::{Capture, Replay, Stream};
 
@@ -73,9 +72,10 @@ fn frontier_d_matches_the_ts() {
         replay.check(&key, "id", hyphenation_pattern_id(lang.as_deref()).unwrap_or("undefined"));
     }
 
-    replay.check("hyphen", "ids", &HYPHENATION_PATTERN_IDS.join(","));
+    // (the TS's ids: `en-us-word` is the Rust layout's Word data, WordCraft study D1)
+    replay.check("hyphen", "ids", &uo_fonts::hyphen::TS_HYPHENATION_PATTERN_IDS.join(","));
     let mut words_total = 0;
-    for id in HYPHENATION_PATTERN_IDS {
+    for id in uo_fonts::hyphen::TS_HYPHENATION_PATTERN_IDS {
         let file = std::fs::read_to_string(Path::new(MANIFEST).join(format!("data/hyphen/{id}.txt"))).unwrap();
         let patterns = parse_patterns(&file).unwrap();
         assert_eq!(patterns.id, id);

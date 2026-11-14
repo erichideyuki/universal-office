@@ -476,6 +476,23 @@ js_object! {
         opt field_end: bool = "fieldEnd",
         opt field_open: bool = "fieldOpen",
     }
+    hidden {
+        /// WordCraft study (fields, B22): the direct `w:rPr` of the field's first `w:instrText` run — Word takes the
+        /// language of the `\*` words from it (measured), not from the begin or the result runs. Reader-only: outside
+        /// the TS shape, the JSON, the digest and the equality ([`InstrRPr`])
+        pub instr_rpr: InstrRPr
+    }
+}
+
+/// The run properties of a field's instruction (see [`RunExt::instr_rpr`]): a fact of the reader that the TS model does
+/// not hold, so it never makes two runs different (`PartialEq` is always true) and the undo round trip keeps it.
+#[derive(Debug, Clone, Default)]
+pub struct InstrRPr(pub Option<Arc<RPr>>);
+
+impl PartialEq for InstrRPr {
+    fn eq(&self, _: &InstrRPr) -> bool {
+        true
+    }
 }
 
 js_object! {

@@ -464,6 +464,14 @@ const DECLARED = {
   // (word_w7c.rs attribute_documents_to_the_word_rules with UO_W7C_ATTR_SOURCES: only ts_ref_bookmarks changes its pages):
   // updateFields('all') rewrites those two results too (11 against the TS's 9), and the screens and saved body follow
   'fields|fields': { from: 10, facets: ['answer'], end: ['screen (R overlays on)', 'screen (overlays off)', 'overlay mask', 'saved word/document.xml'], id: 'Word manda sobre o TS (item 4, REF error)', why: 'REF/NOTEREF to an undefined bookmark: the bold error text of Word' },
+  // WordCraft study — fields (record uo-docx-layout.md "WordCraft study — harness declarations"): f7a__7__0 and f8__7__0
+  // are moved by C1b (a multiple-spaced line over runs of several faces: Word's text height) and B22 (Word's \* format
+  // switches), attributed natively (uo-docx-layout attribute_documents_to_the_fields_rules, the editor's read too) and by
+  // this harness's run with only the fields area at Word's rules (local wasm build; all four areas at the TS's: equal). The
+  // revision anchors of f7a__7__0 (the balloons' y, steps 2–25) and its end screens follow its lines; f8__7__0's page
+  // base under the squiggles
+  'f7a__7__0|revisions': { from: 2, facets: ['anchors'], end: ['screen (R overlays on)', 'screen (overlays off)', 'overlay mask'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: 'Word\'s text height of multiple-spaced lines over several faces moves the lines the revision balloons anchor to' },
+  'f8__7__0|spell': { end: ['screen (R overlays on)', 'overlay mask'], id: 'Word manda sobre o TS (WordCraft fields C1b and B22)', why: 'Word\'s text height and \\* switch results move the lines under the squiggles' },
 };
 /** the style ids whose look is left out of the 'looks' facet (declared per id) */
 const looksOut = (key) => (DECLARED[key] ?? DECLARED[`${key.split('|')[0]}|*`])?.looks ?? [];

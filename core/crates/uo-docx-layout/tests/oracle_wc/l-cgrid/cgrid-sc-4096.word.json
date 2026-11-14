@@ -1,0 +1,109 @@
+{
+"pages": [
+{
+"w": 595.32,
+"h": 841.92,
+"lines": [
+{
+"y": 83.54,
+"x0": 85.1,
+"x1": 503.56,
+"size": 11.04,
+"text": "ThequickbrownfoxjumpsoverthelazydogandkeepsrunningfarawayThequickbrownfox"
+},
+{
+"y": 101.54,
+"x0": 90.62,
+"x1": 322.41,
+"size": 11.04,
+"text": "jumpsoverthelazydogandkeepsrunningfaraway"
+},
+{
+"y": 119.54,
+"x0": 88.34,
+"x1": 202.66,
+"size": 11.04,
+"text": "abcdef12Hxgmixedend"
+},
+{
+"y": 149.66,
+"x0": 85.1,
+"x1": 481.37,
+"size": 20.04,
+"text": "Thequickbrownfoxjumpsoverthelazydogand"
+},
+{
+"y": 185.66,
+"x0": 87.74,
+"x1": 276.8,
+"size": 20.04,
+"text": "keepsrunningfaraway"
+},
+{
+"y": 209.54,
+"x0": 85.1,
+"x1": 503.56,
+"size": 11.04,
+"text": "ThequickbrownfoxjumpsoverthelazydogandkeepsrunningfarawayThequickbrownfox"
+},
+{
+"y": 227.54,
+"x0": 90.62,
+"x1": 322.41,
+"size": 11.04,
+"text": "jumpsoverthelazydogandkeepsrunningfaraway"
+},
+{
+"y": 245.54,
+"x0": 89.42,
+"x1": 104.91,
+"size": 11.04,
+"text": "abc"
+},
+{
+"y": 263.57,
+"x0": 86.9,
+"x1": 119.68,
+"size": 11.04,
+"text": "abcdef"
+},
+{
+"y": 281.57,
+"x0": 110.78,
+"x1": 435.92,
+"size": 11.04,
+"text": "Thequickbrownfoxjumpsoverthelazydogandkeepsrunningfaraway"
+},
+{
+"y": 299.57,
+"x0": 122.9,
+"x1": 448.04,
+"size": 11.04,
+"text": "Thequickbrownfoxjumpsoverthelazydogandkeepsrunningfaraway"
+},
+{
+"y": 317.57,
+"x0": 90.98,
+"x1": 137.73,
+"size": 11.04,
+"text": "Hxgabc"
+},
+{
+"y": 335.57,
+"x0": 85.46,
+"x1": 169.47,
+"size": 11.04,
+"text": "abcdefghijklmno"
+},
+{
+"y": 351.29,
+"x0": 85.22,
+"x1": 169.38,
+"size": 11.04,
+"text": "semgradedelinha"
+}
+],
+"objs": []
+}
+]
+}
