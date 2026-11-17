@@ -1,4 +1,4 @@
-# Rust port — handoff (state of 2026-11-14; newest update: "WordCraft study adopted")
+# Rust port — handoff (state of 2026-11-17; newest update: "Slides port started")
 
 Entry point for the next session that continues the Rust migration (0.10). Read this, then
 `.claude/skills/rust-port/SKILL.md` (the workflow: hybrid mode, models per role, memory gate) and the module records
@@ -162,6 +162,37 @@ milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects 
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
+
+## Update 2026-11-17 — Slides port (track B of `slides-sheet-port-plan.md`) started: phase 0, B1, B2, B3, B5a
+
+The maintainer said "Vamos continuar a migração para rust, faça o slides". Track B of `core/docs/slides-sheet-port-plan.md`
+runs on autopilot (memory `rust-core-autopilot`), at most 3 agents at once.
+
+- **Preconditions (§0)**: frozen TS reference for Slides/Sheet = worktree `.claude/worktrees/ts-ref-092` (detached at
+  `b92b60fa` = 0.9.2, `dist` built for write/slides/sheet; its `slides/node_modules/@universal-office/slides-viewer`
+  junction was added by hand — the main checkout still has the stale `presentation-viewer` link). Bundle backup of
+  `rust-core` (before this wave) in `E:\Backups\rust-core-2026-11-17.bundle`. Old target caches cleared (63 GB free).
+- **§13 A decisions applied with the plan's recommended option** (the maintainer may revisit at the M4 gate): T1 text
+  parity = advance tables + `TextRun`; T2 font policy = keep the TS Slides rule (installed-by-name drawn by the
+  browser); P1 PDF = §9 M4 scope; corpus = generated decks + committed samples (no downloads). R1/C1 are calc (track A).
+- **Done** (records have the numbers): architecture pass (Opus) → `uo-pptx.md`, `uo-dml-render.md`, uo-render
+  "Slides extensions — design", plan §14 (11 corrections: B5 split into B5a/B5b, text layout per scale, warp stays in
+  the shell for the viewer…); capture harness + seeded deck generator (`core/crates/uo-pptx/js/`, groups `b1a`, `b3a`,
+  `b5a`; `uo-pptx-captures.md`); `uo-numfmt` (0 mismatches over 162,606 facets, Excel 1,709/1,709 — the Opus calc-consumer
+  verifier is still pending, track A); R-S1/R-S2 Slides display list + `slots` codec (Write bytes unchanged, pinned hash);
+  R-S3/R-S4 TS interpreter `paint-slides.ts` + moved effect code + draw-op recorder (captures of TS op streams over the
+  samples and 100 `b1a` decks; the Rust-vs-TS comparison waits for B4); B1 read path (model JSON 100%: b1a 1,500, samples
+  472 facets); B2 `.ppt` converter (1,082/1,082 parts byte-equal; `a:fld` counter per conversion; capture date frozen,
+  `@today`); B3 text layout (Opus; 12,396 layout calls equal; `uo_text::grapheme` from Node 24.15 ICU 78.2 / Unicode 17);
+  B5a SmartArt (150 generated decks, 970 facets equal). Percent of Slides by TS lines moved: ≈ 47%.
+- **Next, in order** (record `uo-pptx.md` "Frontiers"): B4 render → display list (Sonnet on the done architecture; the
+  text side needs box geometry first, batched `need_measures`, `PlacedRun` → `TextRun`; schema gaps `BevelEffect.dir`,
+  `WarpPaint`/`WarpTile` params; interpreter rules chosen by R-S3: `fallbackEnd` = end of the else block, `SlotBegin/End`
+  = save/restore), then the draw-op comparison and Chromium pixels; B5b metafiles/PICT/TIFF/EOT; `uo-charts`; B6
+  timing/playback; B7 viewer `engine="rust"`; R-S5 PDF; B8 editor; .NET facade. Memory follow-ups: retained `SlideModel`
+  0.95× the TS (target 0.5×), `size_of::<Shape>()` 408 B (budget 256) — compaction plan in the records.
+- **Toolchain moved to Rust 1.100** (2026-11-09 build): its std case tables are newer than V8's Unicode 17 (21 code
+  points); `text_v8.rs` now reports those instead of failing, and rustfmt 1.100 reformatted a few untouched test files.
 
 ## Update 2026-11-14 — WordCraft study adopted (leva `wordcraft-adopt`, after wave 7 + 7c)
 

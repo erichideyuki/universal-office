@@ -54,6 +54,13 @@ pub fn is_letter_or_mark(cp: u32) -> bool {
     mask(cp) & (LETTER | MARK) != 0
 }
 
+/// `\p{Ll}` (Lowercase_Letter): the small-caps split of the Slides text layout (`text-layout.ts:171`).
+#[must_use]
+pub fn is_lowercase_letter(cp: u32) -> bool {
+    let idx = t::LOWER_LETTER.partition_point(|&(first, _)| first <= cp);
+    matches!(idx.checked_sub(1).and_then(|i| t::LOWER_LETTER.get(i)), Some(&(_, last)) if cp <= last)
+}
+
 /// `/^[...]$/u.test(s)` for a class given as a mask: `s` is exactly one code point and it is in the class.
 #[must_use]
 pub fn is_single_code_point_in(units: &[u16], classes: u8) -> bool {

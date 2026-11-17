@@ -86,7 +86,9 @@ pub fn emit(schema: &Schema, source: &str, runtime_import: &str) -> String {
     ));
     o.line("// Erasable TypeScript only; plain objects with the camelCase names of the IDL.");
     o.blank();
-    o.line(&format!("import {{ DEFAULT_LIMITS, DecodeError, EncodeError, Reader, SymTable, Writer, bitAt, tagIndex, type Limits }} from \"{runtime_import}\";"));
+    // `tagIndex` writes the tag of a unit-only enum: a schema without one must not import it (noUnusedLocals)
+    let tag_index = if schema.defs.iter().any(|d| matches!(d, Def::Enum(e) if e.unit_only)) { "tagIndex, " } else { "" };
+    o.line(&format!("import {{ DEFAULT_LIMITS, DecodeError, EncodeError, Reader, SymTable, Writer, bitAt, {tag_index}type Limits }} from \"{runtime_import}\";"));
     o.line("export { DEFAULT_LIMITS, DecodeError, EncodeError, SymTable, type Limits };");
     o.blank();
     o.line(&format!("export const NAME = \"{}\";", schema.name));

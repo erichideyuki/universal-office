@@ -267,3 +267,39 @@ B. At the gates: **N1** NuGet API shape; the Slides effects in Rust and their me
 the size budgets if exceeded.
 Not maintainer decisions (done per the existing rules, listed in the records): the hyperlink scheme filter (Write's
 rule), replacing the vendor converter (SKILL), the per-product wasm split.
+
+## 14. Architecture pass results (Slides) — 2026-11-17
+
+Opus pass for §4.0 (Slides), the §4.2 design and the §4.5 boundary, with T1, T2, P1 and the corpus decision applied.
+Records: `core/docs/modules/uo-pptx.md` (presentation model P1–P7, frontiers B1–B8, parity, JS traps, M1–M5 with a cap
+per cache, fuzz targets, wasm split), `core/docs/modules/uo-dml-render.md` (shared shape renderer: boundary, what Sheet
+calls, dependency direction, charts/numfmt plug-in, **the measurement protocol**), `core/docs/modules/uo-render.md`
+"Slides extensions (plan §4.2) — design" (the canvas-IR list, CTM operands, layers, `TextRun`, `Effect`s, slots, the
+scale-dependent decisions, codec/painter/PDF). Type skeletons: `core/crates/uo-pptx`, `core/crates/uo-dml-render`.
+
+Corrections to this plan (evidence in `uo-pptx.md` "Plan corrections"):
+
+1. §4.3 advance tables: the TS keeps the **unrounded** em at 1000 px (rounding to 1/8 pt is per use), kerning is a
+   **whole-string** delta (`w1 − w0`), non-`PER_CHAR` strings (astral characters included) are measured whole at the run
+   size, WordArt layout uses a second plain measurer, unit animations and the run fit measure at device scale, and
+   metafiles, PICT, charts and image natural sizes are measurements too (12 sites, `uo-dml-render.md`).
+2. §6 B3 "laid out once per slide": not bit-exact — the layout box is `(cx × scale) / scale`; layout runs per
+   (slide, scale), like the list.
+3. §6 B3 text warp: in the viewer it stays shell code (`Effect::Warp`, TS `text-warp.ts`, which measures ink boxes and
+   rasterizes lines); its Rust port joins the PDF effects wave (§9 already lists warp missing). B3 is ≈ 840 lines.
+4. §6 B1 "own parser semantics": already in `uo-opc` (lenient slides preset).
+5. §1 "slides-core: all": `reveal.ts`, `transition.ts`, the pixel-reading effects of `render.ts` and the warp raster
+   (≈ 1,900 raw lines of canvas code) stay in the shell painter, driven by Rust values.
+6. §6 B5 is ≈ 6.8k raw lines (SmartArt 2.9k; metafiles/PICT/TIFF/EOT 3.8k): split B5a ∥ B5b, ≈ 2 days, not 1.5.
+7. §4.2 slots: a slot table is per (frame, scale, origin) — `AnimBase` normalizes px geometry; unit bases need
+   device-scale measurements (two-phase).
+8. §4.2 colours: colour (and font/size) animation re-emits the shape's sub-list (`ov.fill` changes the paint kind), so
+   slots carry only what `applyPart` applies.
+9. §4.2 `GeomEval::Drawingml` is not needed: the Slides emitter evaluates presets and emits paths.
+10. §4.4: the EOT reader + MTX goes into `uo-fonts` (only the writer exists); `uo-text` needs grapheme segmentation
+    (`Intl.Segmenter`) — new shared piece for B3.
+11. §4.3 capture harness: model JSON must be compared with **sorted keys** (creation order is not behaviour); the
+    record lists the `Record` iteration sites that get their own facets.
+
+Order unchanged in substance: §4.2 implementation (R-S1–R-S5 in `uo-render.md`) → B1a → B1b → (B2 ∥ B3) → B4 →
+(B5a ∥ B5b) → B6 → B7 → B8. Questions for the M4 gate: SP1–SP4 (`uo-pptx.md`), DR1–DR3 (`uo-dml-render.md`).

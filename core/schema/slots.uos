@@ -1,0 +1,62 @@
+/// The per-frame animation values of a Slides list (S6 of the Slides design in `uo-render.md`): one `SlotFrame` per
+/// frame, positional over the `slots` of the `SlidesList` it belongs to (`values[i]` is the value of `slots[i]`).
+/// The painter never evaluates SMIL: `uo_pptx::evaluate_slots` does, over the template's bases.
+///
+/// A separate schema from `slides.uos` because it carries no resources: the only table is the implicit symbol
+/// table (filter names), which stays empty in most frames. The re-emitted sub-lists of the re-emit rule are
+/// complete `SlidesList` messages (`app_section`-style inline bytes with their own magic and hash).
+schema slide_slots magic "UORF";
+
+/// The state of one animated part: exactly the fields `applyPart` reads (render.ts:116-140).
+struct PartState {
+  visible: bool,
+  opacity: f64,
+  x: f64,
+  y: f64,
+  w: f64,
+  h: f64,
+  rot: f64,
+  sx: f64,
+  sy: f64,
+  mx: f64,
+  my: f64,
+  filters: list<AnimFilter>,
+}
+
+/// A transition filter in progress: `transition === 'out'` flips the progress (`q = 1 - p`), the only thing the
+/// painter asks of the transition string.
+struct AnimFilter {
+  filter: sym,
+  out: bool,
+  p: f64,
+}
+
+/// A shape slot: the opacity (`shapeOpacity`, <= 0 skips, < 1 multiplies the alpha) and the `all` part state.
+struct ShapeState {
+  op: f64,
+  all: PartState?,
+}
+
+enum SlotValue tag "t" {
+  /// not animated this frame: paint as the template says
+  Static = "static",
+  /// skip the part
+  Hidden = "hidden",
+  State = "state" (PartState),
+  Shape = "shape" (ShapeState),
+}
+
+/// A shape whose sub-list is re-emitted for this frame (a slot value carried a field `applyPart` does not apply:
+/// colours, font weight/style, underline, family or a font scale): the replacement is a complete `SlidesList`
+/// message for that shape, whose items replace the shape's range in the base list.
+struct Replacement {
+  shape: u32,
+  list: bytes,
+}
+
+message SlotFrame {
+  /// the frame number (monotonic within a playback)
+  frame: u32,
+  values: list<SlotValue>,
+  replacements: list<Replacement>,
+}

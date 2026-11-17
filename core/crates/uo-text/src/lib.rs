@@ -10,6 +10,8 @@
 //! - [`space`]: the JS `\s` set over code units: `trim`, `split(/\s+/)`, `replace(/\s+/g, ...)`.
 //! - [`collation`] (feature `collation`): the Windows word-sort order that Excel uses and Write's table sort
 //!   borrows from Sheet, ported 1:1 from `sheet/packages/calc/src/collation.ts`.
+//! - [`grapheme`]: extended grapheme clusters as `Intl.Segmenter('grapheme')` splits them (tables probed from the
+//!   segmenter by `js/gen-grapheme.mjs`).
 //! - [`utf16`]: code points over `&[u16]` with the JS view of lone surrogates.
 //!
 //! Everything works on `&[u16]` because a JS string can hold lone surrogates and a Rust `&str` cannot
@@ -18,6 +20,9 @@
 #![forbid(unsafe_code)]
 
 pub mod case;
+pub mod grapheme;
+#[rustfmt::skip]
+mod grapheme_tables;
 #[cfg(feature = "collation")]
 pub mod collation;
 pub mod nfc;
@@ -54,6 +59,8 @@ pub fn table_sizes() -> Vec<(&'static str, usize)> {
         ("SIGMA", size_of_val(&tables::SIGMA)),
         ("UPPER", size_of_val(&tables::UPPER_RUNS) + size_of_val(&tables::UPPER_SPECIAL) + size_of_val(&tables::UPPER_SPECIAL_POOL)),
         ("LOWER", size_of_val(&tables::LOWER_RUNS) + size_of_val(&tables::LOWER_SPECIAL) + size_of_val(&tables::LOWER_SPECIAL_POOL)),
+        ("LOWER_LETTER", size_of_val(&tables::LOWER_LETTER)),
+        ("GRAPHEME", size_of_val(&grapheme_tables::GCB) + size_of_val(&grapheme_tables::EXT_PICT) + size_of_val(&grapheme_tables::INCB)),
     ];
     #[cfg(feature = "collation")]
     let sizes = {

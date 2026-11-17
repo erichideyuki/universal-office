@@ -245,6 +245,13 @@ fn main() {
         b"<x:worksheet xmlns:x=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><x:c r=\"A1\">\r\n</x:c></x:worksheet>",
     );
     jsnum_seeds(&mut c, &repo.join("core/crates/uo-jsnum/tests/captures"));
+    for s in uo_opc_fuzz::numfmt_seeds() {
+        c.add("numfmt_format", &s);
+    }
+    // uo-dml-render text layout: byte-driven bodies and hostile measure tables
+    for s in uo_opc_fuzz::text_layout_seeds() {
+        c.add("text_layout", &s);
+    }
     // uo-fonts: generated fonts, their tables and the open fonts of the repository, cut small
     for (target, data) in uo_opc_fuzz::fonts_seeds(&repo) {
         c.add(target, &data);
@@ -280,6 +287,18 @@ fn main() {
     }
     // the schema-driven codec: valid messages of every schema (raw and framed), and seeds of the structure-aware round trip
     for (target, data) in uo_opc_fuzz::codec_seeds() {
+        c.add(target, &data);
+    }
+    // uo-pptx / uo-dml-render: the smallest generated decks and shape snippets of every kind
+    for (target, data) in uo_opc_fuzz::pptx_seeds(&repo) {
+        c.add(target, &data);
+    }
+    // the Slides display list and its frame message: generated random messages (raw and framed) and round-trip seeds
+    for (target, data) in uo_opc_fuzz::slides_seeds() {
+        c.add(target, &data);
+    }
+    // the .ppt converter: the 25 tracked .ppt samples
+    for (target, data) in uo_opc_fuzz::ppt_seeds(&repo) {
         c.add(target, &data);
     }
     // uo-image: the small images of the generated pack, in the all-decoders mode

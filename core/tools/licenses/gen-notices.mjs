@@ -145,6 +145,7 @@ function build() {
   const workspaceTexts = {
     'uo-jsnum': { files: ['LICENSE-V8', 'LICENSE-optimized-routines'], dest: 'texts/uo-jsnum', component: 'V8 and ARM optimized-routines (math of uo-jsnum, translated to Rust)', licence: 'BSD-3-Clause AND MIT' },
     'uo-opc': { files: ['LICENSE-fflate'], dest: 'texts/uo-opc', component: 'fflate 0.8.3 (inflate of uo-opc, translated to Rust)', licence: 'MIT' },
+    'uo-dml-render': { files: ['LICENSE-dingbat-to-unicode'], dest: 'texts/uo-dml-render', component: 'dingbat-to-unicode (symbol-font tables of uo-dml-render)', licence: 'BSD-2-Clause' },
   };
   for (const [art, crates] of Object.entries(artifacts)) {
     const entries = out[art];

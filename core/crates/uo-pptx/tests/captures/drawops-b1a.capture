@@ -1,0 +1,106 @@
+# Slides draw-op streams of the frozen TS painter (R-S4); see js/capture-drawops.mjs and core/docs/modules/uo-render.md "R-S3/R-S4"
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+@ts-root-commit b92b60fae4c1c612de1de3174c199052d43b9230
+@stream record-ctx.mjs canonical op stream in the DRAW form (lib/opstream.mjs); per slide `lines:sha1[0..16]` of the draw-form text; views a/b per capture-drawops.mjs
+@caps layers=true,patternTransform=true,letterSpacing=true,fontKerning=true
+@measure record-ctx.mjs stubMeasure (deterministic advance table); measureText answers are in the .measures.tsv.gz file
+gen/b1a/0000	read=ok	slides=3	s0.a=372:d6c82a0ebf2e341f	s0.shapes=368:d74d94122638eff3	s1.a=789:89ee470f390bbdc6	s1.shapes=785:c66c3c1f93ce7ec1	s2.a=699:6a5e2e9a1df812c0	s2.shapes=695:fe9b49de48b6b0f7
+gen/b1a/0001	read=ok	slides=3	s0.a=2252:8ea99a6fdf2da79d	s0.shapes=2248:09321d4d609dc642	s1.a=2205:023220467be536b1	s1.shapes=2200:9ad2b1e10498477e	s2.a=347:d2ef63cae65d36dc	s2.shapes=343:9e1a31c1952e04e9
+gen/b1a/0002	read=ok	slides=3	s0.a=154:8c6996e60079c579	s0.shapes=150:e19c8565c36c86b8	s1.a=3805:08579d310633473c	s1.shapes=3801:6e648ed29d2f53cf	s2.a=1668:10f801e240c218f2	s2.shapes=1664:8d1c49c2ac900afb
+gen/b1a/0003	read=ok	slides=1	s0.a=4606:29fa0e7453043454	s0.shapes=4602:6f167a15d5500d3a
+gen/b1a/0004	read=ok	slides=2	s0.a=1540:2f426bdcebe6f7ef	s0.shapes=1536:f462fe51a9fea7b3	s1.a=217:3582809b4ffc151c	s1.shapes=213:b56c4d1c8b81b425
+gen/b1a/0005	read=ok	slides=1	s0.a=2162:c618a2c36562cda0	s0.shapes=2158:d6506be52905bf4b
+gen/b1a/0006	read=ok	slides=2	s0.a=250:af365ec0f3d4a778	s0.shapes=246:96e4f03bb678fdf9	s1.a=814:8fa53d911954f921	s1.shapes=810:801384876cdadac3
+gen/b1a/0007	read=ok	slides=2	s0.a=564:a8751b345a069028	s0.shapes=560:cabf89930a237112	s1.a=3753:e23f18092d79c3ce	s1.shapes=3749:91f7f50c7a53c294
+gen/b1a/0008	read=ok	slides=4	s0.a=3321:2ae13261def022ae	s0.shapes=3317:2fa29f2883a5c2cc	s1.a=2007:dbce04d9e69d2456	s1.shapes=2003:cccd0843a21afbfa	s2.a=735:c4d6d54efa7ee627	s2.shapes=727:2d0501e93e122a1d	s3.a=1307:3f72ee2b227b669f	s3.shapes=1303:fa3b7248b62d8034
+gen/b1a/0009	read=ok	slides=3	s0.a=338:a1b0985f0f0fa2b9	s0.shapes=334:0e5eb305e30c41ce	s1.a=10922:78d4cab9e3ec80a5	s1.shapes=10918:5475b04d03d85322	s2.a=3361:a7c8d51c996f4dfc	s2.shapes=3357:88a882de8d86ba0d
+gen/b1a/0010	read=ok	slides=1	s0.a=13440:de2c26ae9a68993e	s0.shapes=13436:41fc5f7733289282
+gen/b1a/0011	read=ok	slides=3	s0.a=1266:b3d98c00fef9f055	s0.shapes=1262:361484792be6d54a	s1.a=15472:393fa2040ecb499a	s1.shapes=15449:3302364c6650eb05	s2.a=1106:dbed336551a94d8d	s2.shapes=1102:d6a714c765b1efcb
+gen/b1a/0012	read=ok	slides=1	s0.a=4264:7543a716d75eb09d	s0.shapes=4260:570ff958ed89ed71
+gen/b1a/0013	read=ok	slides=4	s0.a=516:affa8e944ef2a530	s0.shapes=512:8286779767477550	s1.a=331:3cc1a86a2fc90ed2	s1.shapes=327:f4c88e9cacb59191	s2.a=563:2b53b78a1729099b	s2.shapes=559:8ecbc0c7d17c63c3	s3.a=19724:cf4ab23e2365f4c5	s3.shapes=19720:3801e76d011bdd5e
+gen/b1a/0014	read=ok	slides=2	s0.a=4281:01e24145bbd1c1f8	s0.shapes=4277:927de6423759ec43	s1.a=5213:7bfd996b70604656	s1.shapes=5209:a90532d1d80b0944
+gen/b1a/0015	read=ok	slides=4	s0.a=323:a78fa96d9d04ba7b	s0.shapes=319:25c484f804cf38a6	s1.a=999:69677994649c4666	s1.shapes=994:9ef185c9573d53b1	s2.a=2090:3d536d43d308f657	s2.shapes=2086:990c3b704a6337e7	s3.a=3171:7eab7fb7a1e9e87f	s3.shapes=3167:6aabfb56830bcf8c
+gen/b1a/0016	read=ok	slides=2	s0.a=919:167a7d2ac659334c	s0.shapes=915:591798e6acad5518	s1.a=443:ce79c76ca7c46aa8	s1.shapes=439:a66cf5ca3f57a437
+gen/b1a/0017	read=ok	slides=3	s0.a=4434:12263970970b206f	s0.shapes=4430:fe4abc1bbc40e614	s1.a=1092:3638487f568cce3d	s1.shapes=1087:547abf53912a0855	s2.a=476:834ce9fa217bca07	s2.shapes=472:a567573f0feeee14
+gen/b1a/0018	read=ok	slides=2	s0.a=1604:81ec431199a46bcd	s0.shapes=1600:2a79b5451e769235	s1.a=1589:524c5c07c89aab18	s1.shapes=1585:5525ec07c514fe1b
+gen/b1a/0019	read=ok	slides=1	s0.a=143:5b54690ff1c95413	s0.shapes=139:d28b047b51e81b85
+gen/b1a/0020	read=ok	slides=2	s0.a=2201:0324db9decb62fc0	s0.shapes=2197:8b80fc5fee1b21b6	s1.a=19236:e60dd4ed33ae720a	s1.shapes=19232:0ec571790b635822
+gen/b1a/0021	read=ok	slides=3	s0.a=474:0f39c867692c7abb	s0.shapes=470:01e3bfdc76c79cfa	s1.a=703:68676479f0cd64d8	s1.shapes=699:75b8b9d908096188	s2.a=2119:d671cf91fc1e010f	s2.shapes=2115:4e43dcb854b507b6
+gen/b1a/0022	read=ok	slides=3	s0.a=1438:9ed0c1256f598275	s0.shapes=1434:3ba3bffd67a356d6	s1.a=810:907b1da57a720cf2	s1.shapes=806:3848790a3fe0205c	s2.a=659:839184e023f1efc0	s2.shapes=655:01804f63eafb74a4
+gen/b1a/0023	read=ok	slides=3	s0.a=1382:2669ed5f231f991a	s0.shapes=1378:818b3459eb1e1768	s1.a=2116:258ecc4962c49cc7	s1.shapes=2112:6cb8f796ede60018	s2.a=7470:969e298f0aaf5886	s2.shapes=7466:bf99d7902a5a8254
+gen/b1a/0024	read=ok	slides=2	s0.a=3259:225ba5959fe3c58f	s0.shapes=3255:a53f8f90176a5797	s1.a=1877:e74de035503b5922	s1.shapes=1873:71e5543a282154ad
+gen/b1a/0025	read=ok	slides=4	s0.a=14733:9b5cc293766359e0	s0.shapes=14729:aa6c2cb97156ce0d	s1.a=524:58cb5657b65829f5	s1.shapes=520:8c1b1587123bf9ee	s2.a=3583:9f531fb68efb86d6	s2.shapes=3579:b67a8eb87e1c9004	s3.a=826:ed7bf6261b7c642b	s3.shapes=822:5e7a05f22d1b0fe5
+gen/b1a/0026	read=ok	slides=3	s0.a=2170:448f5042d2772293	s0.shapes=2166:5bac010be9e4ed02	s1.a=421:5c2a35485819b587	s1.shapes=417:e2f5ebfc8187f488	s2.a=1194:d3dac88d5cd14097	s2.shapes=1190:8460101c87b33d4f
+gen/b1a/0027	read=ok	slides=3	s0.a=506:191e24958eeac82b	s0.shapes=502:b54674b6ca5e845a	s1.a=634:8fd325e242d05643	s1.shapes=630:5974d8173e78fe3a	s2.a=1391:612f0ed7012f3657	s2.shapes=1387:06f720aa539b67c6
+gen/b1a/0028	read=ok	slides=3	s0.a=6046:a575b6808a3c6253	s0.shapes=6042:edca6e65e0585d2d	s1.a=984:36d6b25a8030dd21	s1.shapes=980:2e6b2c97bca33586	s2.a=892:363f039657f84af9	s2.shapes=888:d7a44b739ccafe67
+gen/b1a/0029	read=ok	slides=1	s0.a=1638:25b7220fdf2ae9ed	s0.shapes=1634:8149a58f26f672a0
+gen/b1a/0030	read=ok	slides=3	s0.a=1606:4949746d9474cefe	s0.shapes=1602:d0f803c9799e0d4f	s1.a=1520:f3e0bac0c64ec962	s1.shapes=1516:1478cbd126ea794b	s2.a=3086:44f9489c2bfe2744	s2.shapes=3082:bc1ef069fb5688b8
+gen/b1a/0031	read=ok	slides=2	s0.a=2056:9cb3193f715ee585	s0.shapes=2052:33d4f74da41c7e3c	s1.a=907:f6e69aee80d30ef7	s1.shapes=903:094133be67070c69
+gen/b1a/0032	read=ok	slides=3	s0.a=3252:0cbc19d09a07d5ad	s0.shapes=3248:6ae0f122337f25c6	s1.a=75:f272538e07c983f2	s1.shapes=71:19301e5383f4c7b5	s2.a=1793:e47d5365c97df1d7	s2.shapes=1789:ac2418f91e820dee
+gen/b1a/0033	read=ok	slides=1	s0.a=4232:23df87762e974ea1	s0.shapes=4228:a31fcab7fa347420
+gen/b1a/0034	read=ok	slides=2	s0.a=767:235a30dfb5cfa5cd	s0.shapes=762:365319a0d8cb79fd	s1.a=1507:b05e8de83a2d010a	s1.shapes=1502:2c71ac1370bde0c2
+gen/b1a/0035	read=ok	slides=2	s0.a=1884:be85820fc0b14b38	s0.shapes=1880:e9f35f751e85d181	s1.a=173:4bef739d73ace674	s1.shapes=169:69a7be311453f2dd
+gen/b1a/0036	read=ok	slides=2	s0.a=270:46fa122a5eaa8ca2	s0.shapes=266:e7bb153592d1c2f7	s1.a=1358:b98dc236b6417e21	s1.shapes=1354:c4965f0146ebca61
+gen/b1a/0037	read=ok	slides=1	s0.a=1018:8579740350dc5569	s0.shapes=1014:e8a38c3babda2813
+gen/b1a/0038	read=ok	slides=3	s0.a=907:8ee431604d2a8741	s0.shapes=903:395e0888b4fd59f6	s1.a=5821:938192d2172b006b	s1.shapes=5817:c7602c6c4d84f61f	s2.a=1209:d18024cc33142a98	s2.shapes=1204:9a29fb55c7851bc5
+gen/b1a/0039	read=ok	slides=3	s0.a=3667:ebcb7db705fb92c6	s0.shapes=3663:b8d44f898e326e7e	s1.a=962:167675b46c338758	s1.shapes=958:aa9566f9ae5eaea7	s2.a=632:da3c37c6fd71850b	s2.shapes=628:09d7d8957663b945
+gen/b1a/0040	read=ok	slides=1	s0.a=2790:e35cac3a428f207b	s0.shapes=2786:2ef19e5a35741b5c
+gen/b1a/0041	read=ok	slides=4	s0.a=12987:d7b8cff52f2b54a8	s0.shapes=12983:f5a89ebb99289657	s1.a=112:e94b97bc038c7dd9	s1.shapes=108:fd3996280d84b2b5	s2.a=1381:c7d9c8afdef7d96d	s2.shapes=1377:eda5e37c40fae274	s3.a=2453:f77f5abe96640734	s3.shapes=2449:27e0c9ba4c4dc2a4
+gen/b1a/0042	read=ok	slides=2	s0.a=219:135f765a8f83cec7	s0.shapes=215:e09411fc0ab9f236	s1.a=1148:1b56e3800e57d143	s1.shapes=1144:2e45a1f88eab0305
+gen/b1a/0043	read=ok	slides=1	s0.a=484:4f569d2e9bf02bc1	s0.shapes=480:bcde25115315a5ad
+gen/b1a/0044	read=ok	slides=4	s0.a=448:58d1328f0f9b8b5d	s0.shapes=444:a32acf3741c752a2	s1.a=339:2c227594f64bce89	s1.shapes=335:e4322ca1fa6a883c	s2.a=178:6eb75615349b1002	s2.shapes=174:18fbcd2d8b27370c	s3.a=1918:48d1ef44358dc9e2	s3.shapes=1914:de31bcf4f53dd063
+gen/b1a/0045	read=ok	slides=4	s0.a=2031:e9472af4d1a192c2	s0.shapes=2027:6d29850ac8c72c86	s1.a=1161:4256833921c6b497	s1.shapes=1157:c64a1fee2d0dc51a	s2.a=5270:bfd4464b7c5b1234	s2.shapes=5266:0ffc25a41a90a96c	s3.a=1754:2363e767badfe91e	s3.shapes=1750:7d3423733cd9439e
+gen/b1a/0046	read=ok	slides=4	s0.a=735:fdef6f20fe46c587	s0.shapes=731:00ea86503818fb60	s1.a=1415:c28eaea11a384cca	s1.shapes=1411:084843fcd7aaf1f6	s2.a=1452:b5f473469a34f7ab	s2.shapes=1448:2d7d7281b30084ea	s3.a=7840:18b4a7ae1237072d	s3.shapes=7836:c4a4ac29ffbb8d2f
+gen/b1a/0047	read=ok	slides=4	s0.a=217:da83dee43a015f41	s0.shapes=213:3defd7dc4c40eac8	s1.a=3025:49af98b852653bea	s1.shapes=3021:0ea61095dbef3e64	s2.a=211:67d8e8d280931d84	s2.shapes=207:174b3ddf19fad1f4	s3.a=551:fa65277f0f4e8299	s3.shapes=547:390dea472ddd4169
+gen/b1a/0048	read=ok	slides=3	s0.a=327:5acc65132193a276	s0.shapes=323:7be1e41482e4ae72	s1.a=1758:c1032e2ca24306eb	s1.shapes=1754:b72695eb24338c7d	s2.a=1028:56c73452655437bf	s2.shapes=1024:19f5c28c643c5bcf
+gen/b1a/0049	read=ok	slides=2	s0.a=4335:42a786a36e9851cf	s0.shapes=4331:d72d6ffa1c132b66	s1.a=791:c538c85568d47aa8	s1.shapes=787:2f4435e987ea5016
+gen/b1a/0050	read=ok	slides=2	s0.a=192:8bbf7989c0460b68	s0.shapes=188:953e8c000463d100	s1.a=910:f6b60c27452c5068	s1.shapes=906:74b331499afd5245
+gen/b1a/0051	read=ok	slides=4	s0.a=308:c31a1c41e3295f5f	s0.shapes=304:46f36c3744b9a06f	s1.a=330:35be8a73448c40bc	s1.shapes=319:50515d8d6c29f425	s2.a=1950:f2e74e6a2018bcae	s2.shapes=1945:2e3d503452a3c78a	s3.a=1226:65e4a85f34680d25	s3.shapes=1222:0ca496b3344f6477
+gen/b1a/0052	read=ok	slides=3	s0.a=1878:52b0dc9e3cea7c3a	s0.shapes=1874:bd6b1cd25022e1ce	s1.a=2910:b912591c7c4f4e50	s1.shapes=2906:3d93a54a765f0238	s2.a=479:81eb981af0a6bc68	s2.shapes=475:bcaf540f3e6e0a7d
+gen/b1a/0053	read=ok	slides=2	s0.a=690:e4d28f409a50e423	s0.shapes=682:f719d05ac71d01ee	s1.a=2264:e695e24a042f8a28	s1.shapes=2260:b6fb0d1c69747d8a
+gen/b1a/0054	read=ok	slides=3	s0.a=651:244a857c9d65e8cb	s0.shapes=647:8d040afdc820bfc9	s1.a=214:e91d2821237ca6a4	s1.shapes=210:3cc503f62a3822cc	s2.a=7713:0ff6f4ffe4e4626d	s2.shapes=7709:a066388ab1eb2800
+gen/b1a/0055	read=ok	slides=1	s0.a=508:3b2df07611140ffd	s0.shapes=504:0c0de7ee13568674
+gen/b1a/0056	read=ok	slides=2	s0.a=1348:7f3916cd2fd83d39	s0.shapes=1344:8d0ce9075d1a36c8	s1.a=766:0222bd8411b8687c	s1.shapes=762:cada027e9a6b64dd
+gen/b1a/0057	read=ok	slides=2	s0.a=1948:26b15958cbd87222	s0.shapes=1944:cdcb7aa05fb7cfe0	s1.a=699:6a9422e31c5ee060	s1.shapes=695:d57332f2e4ca030c
+gen/b1a/0058	read=ok	slides=3	s0.a=1071:d28654f4afd5c295	s0.shapes=1067:d70b3b6aaede5360	s1.a=2536:ecb8fd3547783a09	s1.shapes=2532:8eb1865eb76fa25f	s2.a=29290:62549f4a4021ba78	s2.shapes=29286:1d5cce0e2f5e535f
+gen/b1a/0059	read=ok	slides=2	s0.a=840:74d3fb8530292048	s0.shapes=836:34e1e2294626ca0d	s1.a=783:a73b4376a70df1b9	s1.shapes=779:ee97b04f2c6013e7
+gen/b1a/0060	read=ok	slides=4	s0.a=1614:4dd49358507f9a82	s0.shapes=1610:577343b9451a3086	s1.a=548:56be6b6f4bc44d10	s1.shapes=544:08f1d3726121d179	s2.a=382:dae34607dd5b23b5	s2.shapes=378:bb2ede17406f67a4	s3.a=182:8151d4ae2d10566e	s3.shapes=178:8ae094907e6b9163
+gen/b1a/0061	read=ok	slides=1	s0.a=1154:2b2a9e78c2cb70ef	s0.shapes=1150:80f985de7332510e
+gen/b1a/0062	read=ok	slides=3	s0.a=572:a32d4a440742c20e	s0.shapes=568:972e483361bec0da	s1.a=398:ea455dcaddd8a5de	s1.shapes=394:82ccfb0a6364d37b	s2.a=221:68058140e1c3137a	s2.shapes=217:c5007daa9c860ef9
+gen/b1a/0063	read=ok	slides=2	s0.a=426:0842b627e3b132c3	s0.shapes=422:0e2448016408c8ad	s1.a=4038:17eddafbf84b97b1	s1.shapes=4034:06cb6ea4ab717243
+gen/b1a/0064	read=ok	slides=2	s0.a=12434:6186cd9b146c5c7f	s0.shapes=12430:90e0b19ae385e34d	s1.a=488:c8abcfe3feb3a12d	s1.shapes=484:ae8aa3bc0fe95d34
+gen/b1a/0065	read=ok	slides=2	s0.a=794:450933e3c4ff92c6	s0.shapes=790:3228bdb72c5ce715	s1.a=1639:4e86c4147fee2180	s1.shapes=1635:8f8bb0c09de2b47d
+gen/b1a/0066	read=ok	slides=3	s0.a=8357:4152783052a4c3c0	s0.shapes=8349:8c0795eeabcb1831	s1.a=839:2a026f2e6c77ddf4	s1.shapes=835:89c1ef465e59caa9	s2.a=340:ea1c606ce85c4523	s2.shapes=335:4ae87f0d9c5d9c89
+gen/b1a/0067	read=ok	slides=3	s0.a=744:046f6bffae1dee54	s0.shapes=740:b4739a6b979c7d22	s1.a=328:1a35ea9e41325687	s1.shapes=324:c486a49ea8a4cebd	s2.a=14237:c537a2bc670f956c	s2.shapes=14233:1156e8a8bfc08349
+gen/b1a/0068	read=ok	slides=1	s0.a=1673:1f9c5ca7e2f750e6	s0.shapes=1668:482235d428db7a85
+gen/b1a/0069	read=ok	slides=1	s0.a=1221:294b40f0c2ab1581	s0.shapes=1217:6008a85407d72c50
+gen/b1a/0070	read=ok	slides=4	s0.a=4841:346dbc5bb52c0c68	s0.shapes=4837:ea1c6e6c042c6250	s1.a=11833:6f3426aa75b585d4	s1.shapes=11829:c6388b3d5655deeb	s2.a=609:016f8f0020e1233c	s2.shapes=604:f87983403f840dde	s3.a=272:e45923208f54121a	s3.shapes=268:b55cdaffa2a2a20b
+gen/b1a/0071	read=ok	slides=3	s0.a=863:da4bf6336b296592	s0.shapes=859:694351e7577fe3b3	s1.a=1633:6c66f06ba478f89b	s1.shapes=1629:d51564a3f77b79c1	s2.a=596:e9fc638f88e26c29	s2.shapes=592:d2c97fd4de3ad74e
+gen/b1a/0072	read=ok	slides=4	s0.a=1031:5be1e931a888d982	s0.shapes=1027:b9796598afcbf763	s1.a=1187:d17b88a7f0cb657e	s1.shapes=1182:6c6c57f982f07f12	s2.a=697:d1d614995b33a335	s2.shapes=693:327f5390fda619ad	s3.a=2063:a576dda6d17c861e	s3.shapes=2059:392a55ce86040734
+gen/b1a/0073	read=ok	slides=2	s0.a=663:4bed5fa5b3c1fc28	s0.shapes=659:6af33e7da6498428	s1.a=1841:cf4b0bf56c41e581	s1.shapes=1837:01c11739b259bfc2
+gen/b1a/0074	read=ok	slides=1	s0.a=1709:7af7047673c1e74c	s0.shapes=1689:c3eb7beb0c9fc3bc
+gen/b1a/0075	read=ok	slides=3	s0.a=1331:5430f574e10ed0f2	s0.shapes=1327:e0fa00674a1ee3a0	s1.a=490:2ae5a797a915d74b	s1.shapes=486:be0653e279f54550	s2.a=6514:153bce446b3b2383	s2.shapes=6510:858a4a9316312c3e
+gen/b1a/0076	read=ok	slides=3	s0.a=1951:a82da2764614e9ec	s0.shapes=1947:61117785829f4be2	s1.a=518:71de32ae24745d00	s1.shapes=514:5dae97d1bc5861be	s2.a=494:d0084ac77cb934f3	s2.shapes=490:e80344ae8dd6f20c
+gen/b1a/0077	read=ok	slides=1	s0.a=1541:b10ec15dc8d2c860	s0.shapes=1521:7b7656b6f830e1c1
+gen/b1a/0078	read=ok	slides=4	s0.a=1190:258da2b69336f3b5	s0.shapes=1186:b8373bb68c6318c7	s1.a=980:fac79c84eaf0010b	s1.shapes=976:0d6e81d3f32aa1d6	s2.a=4289:9058764e00f75d84	s2.shapes=4285:2b6c9aac0cf2b0a0	s3.a=4305:6ef808da4453174d	s3.shapes=4301:2b8a4f785ed5d582
+gen/b1a/0079	read=ok	slides=4	s0.a=449:84f2157bb3a75c3a	s0.shapes=445:4714fd0d9f743f88	s1.a=1948:d3f77fe4ce308356	s1.shapes=1944:3fc07075c0d6c006	s2.a=889:f5862977c0ce8ec3	s2.shapes=885:ca225f0ef6a1b570	s3.a=534:a13ff7f56a2da66c	s3.shapes=530:c2e883dc6c286cc2
+gen/b1a/0080	read=ok	slides=2	s0.a=2636:4ef0cb7289809dca	s0.shapes=2632:a17b6e5d1f67718f	s1.a=1810:6471992956bbbf19	s1.shapes=1806:a9f51c2e0e05ce7a
+gen/b1a/0081	read=ok	slides=1	s0.a=1737:57708eab282da610	s0.shapes=1733:50756a00ae5f28bf
+gen/b1a/0082	read=ok	slides=2	s0.a=9079:faa67d5625433cc2	s0.shapes=9075:0ab9dd6273ed0206	s1.a=7389:0473fe78b81185b6	s1.shapes=7385:959c94b2362fc2af
+gen/b1a/0083	read=ok	slides=2	s0.a=2836:e4cc25350b9afff7	s0.shapes=2832:03dc46b47e448e30	s1.a=2179:9d8c25adc8d05edb	s1.shapes=2175:5f2242816be208a3
+gen/b1a/0084	read=ok	slides=4	s0.a=1236:ea81ef8414654b52	s0.shapes=1232:89c075f5845a7656	s1.a=1071:b66a8d56ed538309	s1.shapes=1067:301a4f350370be50	s2.a=957:e991374a13b1c6ea	s2.shapes=953:5a9ddcfee6d1d1fe	s3.a=14756:ffd21fd3cf66c000	s3.shapes=14752:61e5a49aa3cef718
+gen/b1a/0085	read=ok	slides=1	s0.a=973:7fa9e000d8e4a594	s0.shapes=969:a2f2c6399d8501b5
+gen/b1a/0086	read=ok	slides=1	s0.a=941:36de15a2fd4461e1	s0.shapes=937:354155116c6af33c
+gen/b1a/0087	read=ok	slides=4	s0.a=2893:1afa263aa21e8e86	s0.shapes=2888:40b862b9d9165a5e	s1.a=14453:471bc517a039e2b4	s1.shapes=14449:f6c8a4d78c02e41a	s2.a=1718:169bcac17398cf49	s2.shapes=1714:20ab1fbd2834ee12	s3.a=5099:53531b0e86d2f141	s3.shapes=5095:8e5a8ce130f1021a
+gen/b1a/0088	read=ok	slides=1	s0.a=1021:fe58dba6fa6adc68	s0.shapes=1017:1c20a535fe6d25e9
+gen/b1a/0089	read=ok	slides=2	s0.a=1670:c9568711cc7cfe02	s0.shapes=1666:ebfd2afa147dae6a	s1.a=1345:dbd00051ff25052a	s1.shapes=1341:3860ec3da283bbef
+gen/b1a/0090	read=ok	slides=2	s0.a=793:fdb5a487545fb197	s0.shapes=789:dc74e1438fa55918	s1.a=406:44b492db382c6b46	s1.shapes=402:07a4185c1e55a358
+gen/b1a/0091	read=ok	slides=3	s0.a=2356:49f64daa453ba5fe	s0.shapes=2352:db9959b1258fcd0c	s1.a=1298:d44a4c3b63425267	s1.shapes=1293:900e3be08f189c0d	s2.a=1811:77f81e144e2d774f	s2.shapes=1807:c47220ec5e5a515c
+gen/b1a/0092	read=ok	slides=1	s0.a=286:6981449e48ce2eac	s0.shapes=282:6b9704cd87caaf35
+gen/b1a/0093	read=ok	slides=4	s0.a=1182:f0d29162beb7814e	s0.shapes=1178:f4607be0a50990cf	s1.a=166:46dab69136b94d25	s1.shapes=162:693e66275b3a0b79	s2.a=1003:6d948ba2bfd01e60	s2.shapes=999:5ed0dbcadbea8af8	s3.a=532:1e446bf1889edf74	s3.shapes=528:b3fadfed186bc1df
+gen/b1a/0094	read=ok	slides=3	s0.a=362:a17c57c19e16b4e3	s0.shapes=358:076cd7254a32a9b9	s1.a=1275:41ae29988b62d721	s1.shapes=1271:3e907d695917d7c1	s2.a=1492:c9825651aa958fa6	s2.shapes=1488:1b18d17a747d63d8
+gen/b1a/0095	read=ok	slides=2	s0.a=393:05b8c2b081363c35	s0.shapes=389:f51711cf32e0469f	s1.a=1288:7528588e4dc8e19f	s1.shapes=1284:9e6db9ff7bb43b05
+gen/b1a/0096	read=ok	slides=4	s0.a=4880:a9ca824c6ef7a3c1	s0.shapes=4876:18ad8269389abe5c	s1.a=656:8f8e8356f6c1f308	s1.shapes=652:fe1c92995beb1c3b	s2.a=1343:084241a043a6b82f	s2.shapes=1339:9206e443bd0fca14	s3.a=2055:f891473b43434537	s3.shapes=2051:e2225c98868977ec
+gen/b1a/0097	read=ok	slides=1	s0.a=1046:705a69c834ad1cb5	s0.shapes=1042:bec3077bf4c2062c
+gen/b1a/0098	read=ok	slides=3	s0.a=570:68c6a017d96dcfb4	s0.shapes=566:4e2f79b973b16de6	s1.a=886:4a06d11d67eb810a	s1.shapes=882:5b0f72ea6dbc28c7	s2.a=10112:4b73d728b7bd5601	s2.shapes=10108:cc171bcc5b35f877
+gen/b1a/0099	read=ok	slides=3	s0.a=427:93c5712e7ef7cfeb	s0.shapes=423:d5b53a87cb842174	s1.a=474:5ff3a8e349cef722	s1.shapes=470:c665214510b27b09	s2.a=573:184fd07e619e861a	s2.shapes=569:e588f0a8e31e9fc4

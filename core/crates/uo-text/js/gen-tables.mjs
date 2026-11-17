@@ -116,6 +116,16 @@ for (let cp = 0; cp <= MAX; cp++) {
   else propRuns.push({ start: cp, end: cp, mask });
 }
 
+// \p{Ll} (the small-caps split of the Slides text layout, text-layout.ts:171): a subset of \p{L}, so its own runs
+const LL_RE = /^\p{Ll}$/u;
+const llRuns = [];
+for (let cp = 0; cp <= MAX; cp++) {
+  if (!LL_RE.test(str(cp))) continue;
+  const last = llRuns[llRuns.length - 1];
+  if (last && last.end + 1 === cp) last.end = cp;
+  else llRuns.push({ start: cp, end: cp });
+}
+
 // Final_Sigma classes: probe 1 (`c` + capital sigma) gives final sigma only if c counts as a cased letter;
 // probe 2 (`A c` + sigma) also when c is skipped as case-ignorable. 1 = cased, 2 = skipped.
 const SIGMA_FINAL = '\u03c2';
@@ -221,7 +231,9 @@ const main =
   '\n' +
   caseText('UPPER', upper, 'toUpperCase') +
   '\n' +
-  caseText('LOWER', lower, 'toLowerCase');
+  caseText('LOWER', lower, 'toLowerCase') +
+  '\n' +
+  arrayText('LOWER_LETTER', '(u32, u32)', llRuns, (r) => `(${hex(r.start)}, ${hex(r.end)})`, 4, 'General category Ll (\\p{Ll}) as runs: (first, last).');
 
 const compatText =
   header('NFKD where it differs from NFD (feature `collation`).') + decompText('COMPAT', compat, 'Compatibility decomposition (NFKD) where it differs from NFD, Hangul syllables excluded');

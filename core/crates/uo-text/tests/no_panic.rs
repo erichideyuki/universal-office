@@ -8,7 +8,7 @@
 use std::time::Instant;
 
 use uo_testkit::generate::Rng;
-use uo_text::{case, nfc, props, space, utf16};
+use uo_text::{case, grapheme, nfc, props, space, utf16};
 
 const POOL: [u16; 40] = [
     0x41, 0x61, 0x20, 0xDF, 0x3A3, 0x3C3, 0x130, 0x301, 0x300, 0x323, 0x302, 0x345, 0x1100, 0x1161, 0x11A8, 0xAC00, 0xD800, 0xDBFF, 0xDC00,
@@ -47,8 +47,11 @@ fn random_units_satisfy_the_laws_and_never_panic() {
         let joined: usize = space::split_spaces(&s).map(<[u16]>::len).sum();
         assert!(joined <= s.len());
         assert_eq!(space::replace_runs(&s, &[]).len(), s.iter().filter(|&&u| !space::is_space(u)).count());
+        let b: Vec<usize> = grapheme::boundaries(&s).collect();
+        assert!(b.windows(2).all(|w| w[0] < w[1]) && b.iter().all(|&x| x > 0 && x < s.len()), "boundaries in order inside {s:04X?}");
         for cp in utf16::code_points(&s) {
             let _ = props::mask(cp);
+            let _ = props::is_lowercase_letter(cp);
             let _ = case::upper_mapping(cp);
             let _ = case::lower_mapping(cp);
             let _ = nfc::combining_class_rank(cp);

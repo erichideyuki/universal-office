@@ -12,7 +12,7 @@
 use std::hint::black_box;
 
 use uo_alloc::{assert_flat, assert_no_leak, measure, soak};
-use uo_text::{case, nfc, props, space, utf16};
+use uo_text::{case, grapheme, nfc, props, space, utf16};
 
 fn corpus() -> Vec<Vec<u16>> {
     [
@@ -66,6 +66,14 @@ fn every_operation(s: &[u16]) -> usize {
     sink += black_box(utf16::to_string_lossy(s)).len();
     sink += black_box(utf16::from_str("abc")).len();
     sink += black_box(uo_text::table_sizes()).len();
+    sink += usize::from(black_box(props::is_lowercase_letter(0x61)));
+    sink += usize::from(black_box(grapheme::gcb(0x301)) == grapheme::Gcb::Extend);
+    sink += usize::from(black_box(grapheme::is_extended_pictographic(0x1F600)));
+    sink += usize::from(black_box(grapheme::incb(0x94D)) == grapheme::InCb::Linker);
+    sink += black_box(grapheme::boundaries(s)).count();
+    sink += black_box(grapheme::graphemes("é🇧🇷x")).count();
+    let mut br = grapheme::Breaker::new();
+    sink += usize::from(black_box(grapheme::Breaker::step(&mut br, 0x61)));
     #[cfg(feature = "collation")]
     {
         use uo_text::collation::{CollationKey, collation_key, compare_text, text_collate_equal};
@@ -116,8 +124,8 @@ fn m1_covers_every_public_function() {
             let Some(rest) = uo_jsnum::text::trim_start(line).strip_prefix("pub fn ") else { continue };
             let fn_name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
             let called = me.contains(&format!("{module}::{fn_name}(")) || (module == "lib" && me.contains(&format!("uo_text::{fn_name}(")));
-            let method =
-                module == "collation" && (me.contains(&format!("{fn_name}(")) || (fn_name == "new" && me.contains("CollationKey::new(")));
+            let method = (module == "collation" || module == "grapheme")
+                && (me.contains(&format!("{fn_name}(")) || (fn_name == "new" && me.contains("CollationKey::new(")));
             if !called && !method {
                 missing.push(format!("{module}::{fn_name}"));
             }

@@ -1,0 +1,23 @@
+[package]
+name = "uo-numfmt"
+description = "Excel number/date format engine of the UniversalOffice Rust core (numFmt formatCode to text, parts and colour), the port of shared/charts/src/numfmt.ts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Number -> string (toPrecision, String(x)), Number(s), parseInt/parseFloat, Math.*: the JS numerics, not a re-implementation
+uo-jsnum = { path = "../uo-jsnum" }
+# toLowerCase over UTF-16 (bracket codes are lower-cased as JS does it: the Kelvin sign lower-cases to "k")
+uo-text = { path = "../uo-text" }
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# parity capture/replay: tests/parity.rs
+uo-testkit = { path = "../uo-testkit" }
+
+[lints]
+workspace = true

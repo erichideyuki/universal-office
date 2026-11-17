@@ -28,7 +28,7 @@ mod write;
 pub const CODEC_LIMITS: Limits = Limits { max_depth: 16, max_list_len: 1 << 14, max_total: 1 << 16, max_alloc: 1 << 24 };
 
 /// No decode or encode of a fuzz input may take longer than this.
-const CALL_BOUND: Duration = Duration::from_secs(1);
+pub(crate) const CALL_BOUND: Duration = Duration::from_secs(1);
 
 macro_rules! target {
     ($name:ident, $g:path, $s:path, $msg:ident, $enc:ident, $dec:ident, $dump:ident) => {
@@ -103,6 +103,8 @@ macro_rules! target {
         }
     };
 }
+
+pub(crate) use target;
 
 target!(frame, crate::codec::fixture::codec_test, crate::codec::fixture::codec_test_support, Frame, encode_frame, decode_frame, dump_frame);
 target!(

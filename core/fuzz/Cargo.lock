@@ -135,6 +135,18 @@ name = "uo-codec"
 version = "0.10.0-dev"
 
 [[package]]
+name = "uo-dml-render"
+version = "0.10.0-dev"
+dependencies = [
+ "rustc-hash",
+ "uo-drawingml",
+ "uo-jsnum",
+ "uo-opc",
+ "uo-testkit",
+ "uo-text",
+]
+
+[[package]]
 name = "uo-docx"
 version = "0.10.0-dev"
 dependencies = [
@@ -208,6 +220,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "uo-numfmt"
+version = "0.10.0-dev"
+dependencies = [
+ "uo-jsnum",
+ "uo-text",
+]
+
+[[package]]
 name = "uo-opc"
 version = "0.10.0-dev"
 dependencies = [
@@ -222,13 +242,17 @@ dependencies = [
  "libfuzzer-sys",
  "miniz_oxide",
  "uo-codec",
+ "uo-dml-render",
  "uo-docx",
  "uo-drawingml",
  "uo-ffi",
  "uo-fonts",
  "uo-image",
  "uo-jsnum",
+ "uo-numfmt",
  "uo-opc",
+ "uo-pptx",
+ "uo-render",
  "uo-testkit",
 ]
 
@@ -243,6 +267,18 @@ dependencies = [
  "uo-jsnum",
  "uo-opc",
  "uo-render",
+]
+
+[[package]]
+name = "uo-pptx"
+version = "0.10.0-dev"
+dependencies = [
+ "rustc-hash",
+ "uo-dml-render",
+ "uo-drawingml",
+ "uo-jsnum",
+ "uo-opc",
+ "uo-testkit",
 ]
 
 [[package]]

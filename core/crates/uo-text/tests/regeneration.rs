@@ -34,6 +34,11 @@ fn committed_tables_equal_a_fresh_generation() {
 }
 
 #[test]
+fn committed_grapheme_tables_and_oracle_equal_a_fresh_generation() {
+    run_check("gen-grapheme.mjs");
+}
+
+#[test]
 fn committed_captures_equal_a_fresh_generation() {
     run_check("capture-oracle.mjs");
 }

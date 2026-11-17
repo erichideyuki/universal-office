@@ -63,6 +63,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "uo-dml-render"
+version = "0.10.0-dev"
+dependencies = [
+ "rustc-hash",
+ "uo-alloc",
+ "uo-drawingml",
+ "uo-jsnum",
+ "uo-opc",
+ "uo-testkit",
+ "uo-text",
+]
+
+[[package]]
 name = "uo-docx"
 version = "0.10.0-dev"
 dependencies = [
@@ -153,6 +166,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "uo-numfmt"
+version = "0.10.0-dev"
+dependencies = [
+ "uo-alloc",
+ "uo-jsnum",
+ "uo-testkit",
+ "uo-text",
+]
+
+[[package]]
 name = "uo-opc"
 version = "0.10.0-dev"
 dependencies = [
@@ -174,6 +197,20 @@ dependencies = [
  "uo-jsnum",
  "uo-opc",
  "uo-render",
+ "uo-testkit",
+]
+
+[[package]]
+name = "uo-pptx"
+version = "0.10.0-dev"
+dependencies = [
+ "rustc-hash",
+ "uo-alloc",
+ "uo-dml-render",
+ "uo-drawingml",
+ "uo-jsnum",
+ "uo-opc",
+ "uo-pptx",
  "uo-testkit",
 ]
 

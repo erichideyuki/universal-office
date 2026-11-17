@@ -3,6 +3,9 @@
 > **Latest state (2026-11-07): `core/docs/HANDOFF.md`** — what is done since, the WIP commit, the queue and the
 > decisions waiting. The line counts below were last measured at `c3f95ae5` and have not been re-measured.
 
+> **Slides/Sheet track (2026-11-17):** `uo-numfmt` (plan `slides-sheet-port-plan.md` §4.1, the port of `shared/charts/src/numfmt.ts`)
+> is ported and verified: record `core/docs/modules/uo-numfmt.md`.
+
 Measured, not estimated, for the line counts; the "ported" fraction of a few split files (marked
 partial) is a judgement from the frontier records.
 

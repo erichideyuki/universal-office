@@ -10,3 +10,16 @@ pub use generated::*;
 #[cfg(test)]
 #[allow(dead_code)]
 mod generated_support;
+
+/// The Slides display list (`core/schema/slides.uos`, R-S2): its own schema, magic and hash; Write's codec above is
+/// untouched. Wrapped by `crate::slides`.
+pub mod slides_generated;
+/// The per-frame animation values of a Slides list (`core/schema/slots.uos`).
+pub mod slots_generated;
+
+#[cfg(test)]
+#[allow(dead_code)]
+mod slides_generated_support;
+#[cfg(test)]
+#[allow(dead_code)]
+mod slots_generated_support;

@@ -1198,3 +1198,453 @@ a representation here.
 | Stage | Agent (model) | Time | Tool calls |
 |---|---|---|---|
 | T | types + IDL, inside layout F0 (Opus) | (F0 session) | counted in the layout record's F0 row |
+
+## Slides extensions (plan §4.2) — design
+
+*(Opus architecture pass, 2026-11-17; design only — no uo-render code changes in this pass, the
+implementation is the next wave, sub-frontiers R-S1–R-S5 below.)* Producers: `uo-dml-render` (shapes, for
+Slides and Sheet drawings), `uo-pptx` (slide frame, slots), `uo-charts`. Decisions applied (T1, T2, P1, W0)
+and the Slides model are in `uo-pptx.md`; the shape boundary and the measurement protocol in
+`uo-dml-render.md`. TS line numbers are of `slides/packages/slides-core/src` in the frozen
+`ts-ref-092` (`b92b60fa`).
+
+### S1. Why a second list type (and not new `Item` variants)
+
+Write's `Page`/`Item` are *semantic* page items (glyph runs with absolute glyph x, rects, shapes as specs)
+because Write's painters were written against them. The Slides painter is not: `render.ts` is 2,662 lines of
+canvas calls whose results depend on canvas state (`getTransform` in 14 places, canvas shadows used through
+an off-screen offset, `ctx.filter = blur(…)`, composite modes, full-canvas layers, `getImageData`,
+`measureText` at device scale). Rebuilding that as semantic items would be a rewrite with its own parity
+risk. So:
+
+- **P-DL1 (the canvas IR rule).** The Slides list (`SlidesList`) is the TS's canvas call sequence. Every value
+  the TS computed from **model data** is precomputed by the producer with the TS arithmetic (bits); every
+  value it computed from **canvas state** (current transform, device `measureText`, pixels, canvas size,
+  capability tests) is a **symbolic operand** the painter resolves; only pixel-reading or device-measuring
+  code is an **`Effect`** executed by the shell with the TS code. Parity of the draw-op stream (plan §4.3,
+  the primary gate) then holds by construction: the painter issues the same calls with the same arguments.
+- **W0 kept**: `SlidesList` is its own schema (`core/schema/slides.uos`, magic `UORS`, its own
+  `SCHEMA_HASH`); `render.uos`, Write's bytes and hash do not change. Shared: the generator
+  (`core/tools/uo-schema`), the runtime (`uo-codec`), `SymbolTable`, the delta mechanism (§3.2), `ImageId`
+  semantics. Sheet's viewport list (C4) uses `SlidesList` too (grid items are a small subset: rects, lines,
+  text runs, clips).
+- `GeomEval::Drawingml` (plan §4.2 last bullet) is **not needed** by Slides or Sheet drawings: the emitter
+  evaluates presets through `uo-drawingml` and emits paths. The variant stays for a future Write use.
+
+### S2. Types (`uo_render::slides`, sketch for R-S1)
+
+```rust
+pub struct SlidesList {
+    pub view: ViewBox,                   // ox, oy, scale, sw, sh (the TS `SlidePx`): slot math and shell checks
+    pub items: Vec<SItem>,               // paint order
+    pub paths: Vec<PathOp>,              // path arena; items hold Span
+    pub stops: Vec<(f64, Sym)>,          // gradient stops (offset, CSS colour string as the TS built it)
+    pub texts: String,                   // run texts; items hold byte Span
+    pub slots: SlotTemplate,             // S6
+}
+pub enum PathOp { MoveTo(f64, f64), LineTo(f64, f64), BezierTo([f64; 6]), QuadTo([f64; 4]),
+                  Arc { cx: f64, cy: f64, r: f64, a0: f64, a1: f64, ccw: bool },
+                  ArcTo([f64; 5]), Ellipse([f64; 7], bool), Rect([f64; 4]), Close }
+pub enum SItem {
+    // state and transforms: the TS primitive sequence is kept (the recorder and Skia compose them in order)
+    Save, Restore, Translate(f64, f64), Rotate(f64), Scale(f64, f64), Transform([f64; 6]),
+    SetTransform([f64; 6]), ResetTransform,
+    CaptureCtm(CtmReg),                       // reg := current transform (`const baseM = ctx.getTransform()`)
+    TransformByInverseOf(CtmReg),             // `rl.transform(inv.a, …)` of a captured CTM (reflection)
+    TransformUnshape { base: CtmReg },        // `ctx.getTransform().inverse().multiply(baseM)` (useBgFill, 577)
+    // paint state
+    GlobalAlpha(f64), GlobalAlphaMul(f64),    // `ctx.globalAlpha = ctx.globalAlpha * a` keeps the TS operand order
+    Composite(CompositeOp),                   // source-over, destination-in/out, source-in, multiply, screen, darken, lighten
+    Filter(Option<Sym>),                      // `blur(1.23px)` exactly as the TS string (toFixed(2) in the producer)
+    FillStyle(Paint), StrokeStyle(Paint),
+    LineWidth(f64), LineJoin(Join), LineCap(Cap), MiterLimit(f64), LineDash(Span),
+    ShadowColor(Sym), ShadowBlur(f64), ShadowOffset(CtmOperand, CtmOperand),
+    Font(FontRef), TextAlign(Align), TextBaseline(Baseline), ImageSmoothing(bool),
+    // geometry
+    BeginPath, AppendPath(Span), Fill(FillRule), Stroke, Clip(FillRule),
+    FillRect([f64; 4]), StrokeRect([f64; 4]), ClearRect([f64; 4]),
+    DrawImage { src: ImageSrc, s: Option<[f64; 4]>, d: [f64; 4] },
+    // text
+    Text(Box<TextRun>),                       // S4
+    // offscreen layers (acquireLayer/compositeLayer): S3
+    LayerBegin { layer: LayerId, fallback_end: u32 },  // no layer available → jump to `fallback_end` (the TS else-branch)
+    LayerEnd { layer: LayerId, then: LayerThen },       // Composite { soft: Span<SoftReveal> } | Keep (drawn later)
+    DrawLayer(LayerId), ReleaseLayer(LayerId),
+    // shell-executed code
+    Effect(Box<Effect>),                      // S5
+    // animation
+    SlotBegin(SlotRef), SlotEnd,              // S6
+    MediaFrame { shape: u32, d: [f64; 4], s: Option<[f64; 4]> },  // `mediaFrame` over the cover (S6)
+}
+pub enum Paint { Css(Sym), Linear(GradId), Radial(GradId), Conic(GradId), Pattern(PatternId) }
+pub struct Gradient { pub geom: [f64; 6], pub stops: Span }        // createLinear/Radial/ConicGradient arguments
+pub struct PatternRes { pub src: PatternSrc /* Bitmap(BitmapId) | Image(ImageSrc) */, pub repeat: Repeat,
+                        pub transform: Option<[f64; 6]> /* setTransform when supported, else ignored (TS test) */ }
+pub struct BitmapRes { pub w: u32, pub h: u32, pub rgba: Arc<[u8]> }  // generated: pattern tiles, path gradients, TIFF
+pub enum ImageSrc { Media(ImageId), Derived(ImageId, FxId) /* Effect::ImageFx result */, Bitmap(BitmapId) }
+pub struct CtmOperand { pub add: f64, pub k: f64, pub axis: CtmAxis /* A | B */ }   // value = add + ctm.axis * k
+pub struct FontRef { pub face: FaceIdS /* (family, bold, italic) */, pub size_px: f64 }
+```
+
+- **CTM operands and registers.** The off-screen shadow idiom (`shadowOffsetX = sx + m.a * K` with
+  `m = ctx.getTransform()`, `K = 20000`, then `translate(-K, 0)`: glow 661, shape shadow 908–931, inner
+  shadow 1121, table shadow 2329) becomes `ShadowOffset(CtmOperand { add: sx, k: K, axis: A }, …)`; floating
+  addition is commutative, so `m.a * K - dx` is `add = -dx` exactly. Captured matrices (`baseM`, the
+  reflection's `T.inverse()`, the unshape product) use ≤ 4 registers per list. The painter resolves them from
+  its own context; uo-pdf from its CTM stack. No pixel is read for any of these — they are **not** Effects.
+- **Paint strings**: CSS colour strings are the TS's (`'#'+val`, `rgba(r,g,b,a)` with JS number→string, the
+  `rgb(…)` of `shadeRgb`), produced with `uo_jsnum::format`; the painter assigns them unparsed (§4.2's
+  per-painter parse rule; uo-pdf parses as the canvas would, a table like §4.2's is part of R-S5).
+- **Capability branches** stay in the list: no layer (`acquireLayer` → `null`: tests, old browsers) jumps to
+  the TS fallback items; `pat.setTransform` absent ignores the pattern transform; `'fontKerning'`/
+  `letterSpacing` absent skip their state changes (TextRun, S4). The recorder runs both ways.
+
+### S3. Layers (acquireLayer / compositeLayer / discardLayer)
+
+A layer is an offscreen canvas of the **current target's size** with the target's transform (render.ts:154).
+`LayerBegin` switches the target (stack); `LayerEnd { Composite }` applies the soft reveals (`applySoftReveal`,
+shell) and draws it onto the previous target under `setTransform(1,0,0,1,0,0)` (`compositeLayer`, 193);
+`LayerEnd { Keep }` + `DrawLayer` cover the soft-edge mask (`mk` drawn with `destination-in` and a blur
+filter into the shape layer, 681–707) and the reflection (709–757). Pool and eviction are the painter's
+(`layerPool`, M5). Uses: shape soft-reveal (`paintShapeList` 352–369), reflection/soft edge (`paintShape`
+589–604), WordArt shadow (inside `Effect::Warp`), animated chart parts (790).
+
+### S4. `TextRun` (decision T1)
+
+`Text(TextRun)` is one `drawText` call (render.ts:1636–1707) with its model-derived values precomputed:
+
+```rust
+pub struct TextRun {
+    pub text: Span, pub font: FontRef, pub x: f64, pub y: f64,          // y = baseline incl. `rise × scale`
+    pub laid_w: Option<f64>,       // `r.w × scale` when text === r.text (fit, decorations); None for unit pieces
+    pub fit_allowed: bool,         // `!ls && text === r.text && !st` (the painter adds its `prevLs !== undefined`)
+    pub letter_spacing_px: f64,    // `r.spc × scale` (0 = none)
+    pub kern: bool,                // `fontKerning = kern ? 'normal' : 'none'` when supported
+    pub fill: Paint, pub alpha_mul: Option<f64>,                         // `fillA < 1` → globalAlpha × fillA
+    pub shadow: Option<TextShadow>, // color `rgba(…)`, blur `blurRad × scale × 0.8`, offsets (save/restore around fillText)
+    pub fill_text: bool,           // false when fillA ≤ 0 (outline only)
+    pub outline: Option<(Sym, f64)>,                                     // strokeText, width `max(0.5, w × scale)`, join round
+    pub underline: Option<Decoration>, pub strike: Option<Decoration>,  // color, width `max(1, sizePx/16)`, y `round(…)+0.5`
+}
+```
+
+The painter replays `drawText` in the TS order, including the fit: `n = [...text].length; d = laid_w −
+measureText(text).width; |d| > 0.25 → fit = d / n`, `letterSpacing = ${ls || fit}px`, the restore of
+`letterSpacing`/`fontKerning` at the end, and decoration widths `laid_w ?? measureText(text).width`. The
+CSS font string is built by the painter from `FontRef` with the shell's `fontStack` (T2):
+`[italic ]{700|400} <size_px>px <stack>` with `size_px` printed by JS (the producer only passes the f64).
+PDF (R-S5): glyphs through `uo-fonts`, advances from the `MeasureTable` filled by `uo-fonts`, the fit as a
+character spacing (`Tc`) — measured against PowerPoint PDF in its own oracle gate (P1).
+
+### S5. `Effect` items (shell-executed; PDF lists them missing, P1)
+
+| Effect | TS code moved to the painter | Parameters precomputed |
+|---|---|---|
+| `Bevel` | `applyBevel` + `edt1d` + `SRGB_LIN`/`LIN_SRGB` (1295–1387; `getImageData` of the device rect) | silhouette path span + rule, box, `BevelSpec`, light table id (uo-drawingml `light3d`, as a wasm export or the TS table) |
+| `ImageFx` | `fxImage` (448–503; recolour of the decoded pixels) | image, `ImageFx` (duotone, alpha, gray, biLevel, lum, clrChange) → derived image id, cached by the shell |
+| `Warp` | `paintWarp` from the layout on (1868–1984) + `text-warp.ts` (594: ink metrics at 10 px/pt, line rasters at `k ≤ 4096`, strips/cells) | `WarpLine`s (runs with `FontRef`s, x, colours, strokes, pattern, spc, alpha, baseline, sizePt, lnPct, align, trailing), prst, adj, `fromWordArt`, box, `pxPerPt`, shadow parameters |
+| `MetafileRop` | the raster-op path of `metafile.ts` (312–330, `getImageData`) | ROP code, rect, operand bitmap |
+| *(slot-driven)* `Reveal` / `SoftReveal` | `reveal.ts` (`applyReveal`, `applySoftReveal`) | filter, transition, progress, box — from the slot value (S6) |
+| *(between slides)* transition | `transition.ts` `paintTransition` | type, attrs, progress, direction — from the `SlideShow` frame, not a list item |
+
+### S6. Animation slots
+
+The TS paint calls lazy hooks with geometry it computes while painting (`anim-engine.ts:83`
+`ShapeAnimHooks`). The list keeps that structure as **slot markers** around the items each hook governs, and
+a per-frame **slot table** supplies the hook results.
+
+| Slot kind | TS site | Base geometry (computed by the producer, in px, normalized by `boxBase`) | Value applied by the painter |
+|---|---|---|---|
+| `Shape` (one per animated or opacity-faded shape) | `paintShapeList` 336–371: `shapeOpacity`, `hooks.all(base)` | xfrm box × scale + origin; `rot` | `op` (≤ 0 skips, < 1 multiplies alpha), `all: PartState` → `applyPart` (alpha, translate/rotate/scale about the box centre, reveal filters; soft reveals → the shape goes through a layer, S3) |
+| `Background` | `paintShape` 571: `hooks.bg(base)` | the shape base | `applyPart` on the body only |
+| `Paragraph(i)` | `paintText` 1712–1734, 1759–1764: `hooks.para(i, base)` | union box of the paragraph's runs/bullet per line (`pbox`), line top/bottom from baseline ± 0.8/0.2 height | `applyPart` around the paragraph's lines; `!visible` skips them |
+| `Unit(k)` (letter/word) | 1767–1833: `unit.state(ref, base, word)` | pieces measured at **device px** (measurement A5, two-phase): union per unit, `size = max sizePx`, `y = by − size × 0.8` | `applyPart` around the pieces; the bullet follows the paragraph's first unit |
+| `ChartPart(j)` | 776–797: `chartParts[j].state(base)` | `chartPartBounds` (uo-charts, measurement A11) or the frame for the background part | layered chart part drawn with `applyPart` |
+| `Media` | `mediaFrame(shape)` 343–345 | the picture rect | the current video/GIF frame and its alpha over the cover (`MediaFrame` item) |
+
+- **Slot table** (one per frame): `SlotTable { values: Vec<SlotValue> }`, `SlotValue = Static | Hidden |
+  State(PartStateWire)`: `visible, opacity, x, y, w, h, rot, sx, sy, mx, my, filters: [(filter, transition,
+  p)]` — exactly the fields `applyPart` reads (render.ts:116–140). `op` for shape slots. Encoded per frame in
+  a tiny `SlotFrame` message (`UORF`), no resources.
+- **Slots are per viewport**: `AnimBase` divides px geometry by the slide's px size (`(x + w/2 − ox) / sw`),
+  so the template (bases) belongs to one (scale, origin) list and `evaluate_slots` reads it; a resize
+  re-emits the list and the template.
+- **Re-emit rule.** When a slot value carries a field `applyPart` does *not* apply — `fillColor`, `lineColor`,
+  `textColor`, `fontWeight`, `fontStyle`, `underline`, `fontFamily`, or `fontScale ≠ 1` (which re-runs the
+  layout with `sizeScale`, 1634) — the producer **re-emits that shape's sub-list** for the frame with the
+  values applied (only that shape crosses; the frame message carries `(shape range, replacement items)`).
+  Colours are re-emitted rather than patched because `ov.fill` changes the paint *kind* in `paintBody`
+  (a gradient fill becomes the animated solid colour).
+- **Who evaluates**: `uo_pptx::evaluate_slots` (B6) — the anim engine port runs over the template's bases;
+  playback/show state gives the time. The painter never evaluates SMIL.
+
+### S7. Scale-dependent decisions (why the list is per scale × origin)
+
+Found in `render.ts`, `raster.ts`, `patterns.ts` (a re-export of `uo-drawingml`'s tables), `text-warp.ts`:
+
+1. Every coordinate is `ox + X × scale` in JS doubles (541–544 and every paint function).
+2. The text layout box is `(cx × scale) / scale` and text rectangles/vertical swaps are derived in px
+   (1575–1634) → layout per scale (`uo-pptx.md` correction 2). Table cells lay out in EMU (2196) — scale-free.
+3. Minimum widths: outline `max(1, (lineWidth ?? 9525) × scale)` (876, 1144), text outline `max(0.5, w × scale)`
+   (1687), decorations `max(1, sizePx / 16)` with `round(by ± …) + 0.5` (1693–1701), table borders
+   `w × scale < 1.5 ? 1 : w × scale` (2370).
+4. Effect thresholds in px: glow `r > 0.3` (659), soft edge `r > 0.5` (684), bevel `bw > 0.5` *device* px
+   (1326, Effect), blur strings `toFixed(2)` of px (701, 724), shadow blurs `blurRad × scale × K` (32–33).
+5. Pattern fills: `setTransform([9525 × scale, 0, 0, 9525 × scale, ox, oy])` (2481); the 8×8 tiles are
+   scale-free (cache by colours/alphas).
+6. Path gradients: the raster grid is `k = 192 / max(w, h)` of the **px** box, `gw = max(2, round(w × k))`
+   (2506–2507) → a generated bitmap per scale (cache, M5).
+7. Image tiles: natural size × (914400/dpi or 9525) × scale, offsets × scale (526–528, the image natural size
+   from the shell, measurement A12).
+8. Extrusion depth `E = h × scale` (1232); camera matrices are scale-free.
+9. Device measurements: unit pieces (A5, two-phase) and the run fit (painter).
+10. Warp raster resolution and strip counts (text-warp.ts, Effect), layer sizes = canvas size (painter).
+11. Metafile/PICT layers are rasterized at the picture's display size at 96 dpi (raster.ts:16), not at the
+    zoom — scale-free, cached per picture.
+
+### S8. Codec, painter and PDF without touching Write
+
+- **Schema** `core/schema/slides.uos`: `SlidesList`, `SlotFrame`, the resource deltas (symbols, faces as
+  `(family, bold, italic)`, images by `MediaId` + natural size, generated bitmaps by bytes handle, gradients,
+  patterns), generated into `uo-render/src/codec/slides_generated.rs` and `uo-wasm/js/gen/slides.ts`. Same
+  wire rules as §3.1 (f64 bits, varints, UTF-16 strings, bounded lists, `SCHEMA_HASH` check).
+- **TS painter**: a new interpreter `uo-wasm/js/paint-slides.ts` over decoded items plus the moved shell code
+  (effects, `reveal.ts`, `transition.ts`, `text-warp.ts`, layer pool, `guarded`'s save-depth repair applied
+  per shape range) — Write's `paint.ts`/`picture.ts` untouched.
+- **PDF (R-S5, M4 scope P1)**: uo-pdf interprets the same list with a `PdfProfile` for Slides (plan §4.4):
+  state/transforms (`q`/`Q`/`cm`, registers from its CTM stack), paths, fills (solid; linear/radial as shadings;
+  conic and patterns per measurement), images, clips, `TextRun` as glyphs, composite `multiply`/`screen`/
+  `darken`/`lighten` as blend modes; canvas shadows, `Filter`, `destination-*` layers and every `Effect` are
+  **listed missing** until measured against PowerPoint PDF.
+- **Editor overlay** (selection outlines, handles): a separate small `SlidesList` per selection change, built
+  from the same shape paths (`uo-dml-render` exposes `shape_outline(shape, view)`); hit testing and link/find
+  boxes travel in the producer's app section, as Write's (§3.4).
+
+### S9. Advance-table input format
+
+Specified with the protocol in `uo-dml-render.md` "Measurement protocol": per `(family, bold, italic)` and
+code point the **raw** width at 1000 px (kerning off; the 1/8-pt rounding is per use in Rust), whole-string
+kerning pairs `(w0, w1)` at 1000 px, whole-string widths at a given size/kerning/letter spacing (non-
+`PER_CHAR` text, WordArt layout, unit pieces, PICT), full `TextMetrics` (metafile text, charts; warp for the
+PDF wave), font-availability probes, image natural sizes, and the capability bits. The table is an input of
+the emit (two-phase), never a cache of results.
+
+### S10. Sub-frontiers of the implementation wave
+
+| # | Content | Size | Model |
+|---|---|---|---|
+| R-S1 | `uo_render::slides` types, `slides.uos`, generator additions (none expected beyond new message types) | ≈ 600 new | Sonnet |
+| R-S2 | encoder/decoder, round trip (Rust → Rust, Rust → TS → identical bytes), fuzz `slides_decode`, `slides_roundtrip` | ≈ 800 new | Sonnet |
+| R-S3 | TS interpreter `paint-slides.ts` + the moved shell code (≈ 1,900 raw TS lines, mostly moved verbatim) | TS ≈ 1,000 new + moved | Sonnet |
+| R-S4 | recording context and canonical op stream (plan §4.3, shared with the capture agent) | new | Sonnet |
+| R-S5 | uo-pdf interpretation, `PdfProfile` | ≈ 800 | Sonnet, after B4 |
+
+M5 for the painter: layer pool, derived images, pattern objects, decoded lists (each capped, shell tests);
+the Rust side keeps no cache in uo-render (`clear_caches` stays a no-op).
+
+## Slides extensions — R-S1/R-S2 implementation
+
+Sonnet, 2026-11-17, one session, inside the design above (S1–S10). Built: the Slides list types, its two schemas,
+the generated Rust/TypeScript codecs, the resources/encoder/decoder/validator wrapper, tests, fuzz targets. Not touched: Write's
+schema, bytes and generated files (`render.uos`, `write.uos`, their generated Rust and TypeScript are byte-identical to
+HEAD: `git status` lists none of them), `uo-dml-render`, `uo-pptx`, the TS interpreter (R-S3), the recording context (R-S4), PDF (R-S5).
+
+### What was built
+
+| File | Content |
+|---|---|
+| `core/schema/slides.uos` (magic `UORS`, hash `5115aabc928a2e71`) | `SlidesList` and every type under it: 4 persistent tables (`faces`, `media`, `derived`, `bitmaps`; the symbol table is implicit), `SItem` (48 variants: the S2 sketch, one canvas call or state assignment each), `PathOp`, `Paint`, `ImageSrc`, `TextRun`, `Effect` (`Bevel`, `Warp`, `MetafileRop`), `SlotDef`, with the arenas `paths`, `stops`, `dashes`, `texts`, `gradients`, `patterns`, `runs`, `effects`, `slots` |
+| `core/schema/slots.uos` (magic `UORF`, hash `c2afa6fecfbddca4`) | `SlotFrame`: per-frame `SlotValue`s (`Static`, `Hidden`, `State`, `Shape`), `PartState` (the fields `applyPart` reads), `AnimFilter`, `Replacement` (the re-emit rule: a complete `SlidesList` message as bytes) |
+| `core/schema/manifest.txt` | two lines; generated `uo-render/src/codec/{slides,slots}_generated{,_support}.rs`, `uo-wasm/js/gen/{slides,slots}{,.support}.ts` |
+| `uo-render/src/slides.rs` | `uo_render::slides`: re-exports of the generated types, `SlidesResources` (interning, de-duplication, id checks, bitmap bytes by handle), `SlidesEncoder` (generation + delta mark), `SlidesDecoder` (tables, limits, rollback), `validate`, `check_frame`, `SlidesError`, constants (`SHADOW_OFFSET_K`, `CTM_REGISTERS` = 4, `MAX_LAYERS` = 16) |
+| `uo-render/src/codec/mod.rs`, `lib.rs` | `pub mod slides_generated`, `slots_generated` (+ cfg(test) support), `pub mod slides` |
+| `core/tools/uo-schema` | one generator fix: the TypeScript import of `tagIndex` only when the schema has a unit-only enum (`slots.uos` has none; `noUnusedLocals` failed). No other generator change: the grammar covered everything |
+| `tools/uo-schema/tests/{slides,slots}_codec`, `codec_real.rs` | the full R-P2 property suite (Rust round trip, TypeScript decode + re-encode identical bytes, every prefix, mutations) over both schemas |
+| `uo-render/tests/s_slides.rs`, `s_nopanic.rs`, `s_memory.rs`, `s_support/` | semantic tests, hostile bytes, M1–M3; `s_support` has the sample slide and the hostile-list generator |
+| `core/fuzz` (`src/slides.rs`, `src/slides_wire.rs`, `fuzz_targets/slides_{decode,roundtrip}.rs`, `Cargo.toml`, `lib.rs`, `bin/seed.rs`; `codec.rs` exports its `target!` macro) | the two targets, seeds in `seed` |
+
+### Decisions (the design was ambiguous or silent; each recorded)
+
+1. **The generated wire types ARE the types.** The S2 sketch had hand-written `SlidesList`/`SItem`; but a Slides item is the canvas call itself, there is
+   no side-column layout to protect (Write converts because of its 40-byte items and glyph columns), so a hand-written copy would only be a conversion
+   layer with its own bugs. `uo_render::slides` re-exports the generated types and adds the stateful parts. Consequence: ids are plain `u32` (symbol, face,
+   media, derived, bitmap) and the structs are `Clone`, not `Copy` (the generator derives `Clone` only; adding `Copy` would change Write's generated files,
+   so it was not done: producers write `.clone()` for a `Span` they reuse).
+2. **Big payloads live in arenas, not in items.** The generator never boxes (recursion only through `list<>`), so `SItem`'s size is its largest variant.
+   `Text(u32)` and `Effect(u32)` index `runs` and `effects`; `SItem` is **88 B** (`DrawImage`), `TextRun` 224 B stays out of it. `SlotBegin(u32)` indexes `slots` (the S2 `SlotRef` became the slot position).
+3. **`texts` is UTF-16** (`utf16`, spans count code units), not a `String` with byte spans: the TS strings can hold lone surrogates and the wire already carries UTF-16.
+4. **Gradients, patterns, stops, runs, effects are per list; faces, media, derived images, bitmaps are tables** (per-generation deltas). Everything scale-dependent is in the list, so a resize re-sends only the list.
+   `Derived` is a table of `(media, ImageFx)`, so the S5 `ImageFx` effect is not an `Effect` variant: `ImageSrc::Derived(id)` carries it and the shell caches by the id.
+5. **`Filter(Option<Sym>)` is two variants** (`FilterSet(sym)`, `FilterNone`): an enum payload cannot be optional. `LayerThen::Composite` has no soft-reveal span: the reveals come from the enclosing shape slot's value at paint time (they are animation state, not list data).
+6. **A separate schema for the frame** (`slots.uos`, magic `UORF`), as the design said: magic is per schema. It carries the implicit symbol table (filter names) and no resources; the re-emitted sub-lists are complete `UORS` messages as `bytes`.
+   `AnimFilter.out` replaces the transition string (the painter only tests `=== 'out'`).
+7. **Gradient geometry is six generic numbers** (`g0..g5`), the kind is the `Paint` variant (`Linear`/`Radial`/`Conic`); `Effect` payloads (`Bevel`, `Warp` with `WarpPaint`/`WarpTile`, `MetafileRop`) are a best reading of S5 and the TS signatures
+   (`applyBevel`, `paintWarp`, `WarpLine`); **R-S3 will refine them** (a schema change before the first release only changes the hash, no compatibility is owed).
+8. **`validate` is part of both ends** (encode refuses; decode validates after the codec): arena spans (checked in `u64`), arena indices, register < 4, layer id < 16, `fallback_end` in `(at, len]`, and, on the encode side, every table id (the decoder's `ref_in` already checks those on decode).
+   It checks neither save/restore balance nor layer pairing (the painter repairs per shape range: S8) nor any number.
+9. **Decode failure restores the tables** even when the codec committed (the list was invalid): the decoder takes the old tables aside on a generation change and puts them back.
+10. The `generated` support (`random_*`, `dump_*`) generates random lists with indices bounded by the *tables* only, not by the arenas, so they exercise the codec, not `validate`; `s_support::hostile_list` is the arena-aware generator.
+
+### Evidence (platform win32, Rust release unless noted)
+
+- **Write unchanged**: `render.uos`, `write.uos`, `codec/generated*.rs`, `uo-wasm/js/gen/{render,write}*.ts` have no diff (the generator's `check`: 28 generated files up to date). `uo-render` suite (the 41 existing tests across `e_*`, `g_*`, `types` and the lib) passes; `uo-schema` suite (codec_fixture 23, codec_real now 20 with the 10 new, codec_session 60, generator 12, bind 6, memory 4, ts_runtime 1, lib 1) passes; test `write_schema_identity_is_unchanged_and_slides_has_its_own` pins `UORP`/`0836c72ae39d3a59` and that each decoder refuses the other's bytes.
+- **R-P2 on the Slides schemas** (`codec_real`): Rust round trip, 400 random streams each: list 3,047,082 B, frame 368,547 B; Rust encode → **TypeScript decode → TypeScript encode** identical bytes, 360 messages each: list 851,945 B, frame 105,785 B (Node 24); mutations: list 34,234 refused / 61,766 canonical, frame 19,152 / 27,064; every prefix refused. Generated TypeScript passes the CI `tsc 5.9.3` flags (`--strict --noUncheckedIndexedAccess --exactOptionalPropertyTypes --erasableSyntaxOnly …`) over `gen/*.ts`.
+- **`s_slides.rs`** (9): the sample slide round trips with exact bytes, delta messages carry only new table entries (the second message of the same list is at least 150 B smaller, asserted), a new generation resends everything, 25 mutations each make the encoder refuse with `out` and mark untouched, the decoder rolls the tables back on a codec error and on a validation error, every prefix of the sample is refused and 4,164 single-byte flips give 524 refused / 3,640 canonical, 3,000 hostile lists (NaN payloads, infinities, wild indices): 379 encoded and decoded back to identical bytes, 2,621 refused by `validate`, resources checks, frame round trips.
+- **Size of the sample list** (a 1280 × 720 slide: background, gradient card with the off-screen shadow idiom and outline, pattern fill, two pictures (one derived), a layer, an animated two-run paragraph, a warp effect; **48 items**): **1,388 B** on the wire, of which 322 B are the header and the tables (faces, media, derived, bitmap pointer, 13 symbols) and 1,066 B the list = **22.2 B per item** (the arenas and the runs included). In memory `size_of::<SItem>()` = 88, `SlidesList` = 280 (+ heap). A `SlotFrame` with one animated part and a re-emitted 1,388 B list: 1,524 B (the frame itself is the 136 B left over).
+- **No panic** (`s_nopanic.rs`, 4 tests, 0.02 s): 20,000 random inputs raw and behind a valid header, 8,000 mutated valid messages (1,104 decode, 6,896 refused; byte set, bit flip, huge count, truncation, duplicated block), a lying 2^24 count allocates under 8 KB, 20,000 frame inputs; every call under 1 s, every error leaves the tables empty (`UO_SLIDES_NOPANIC_ITERS` for longer).
+- **Memory** (`s_memory.rs`): **M1** encode + decode and every error path (the encoder's refusal, every 11th prefix, every 13th flipped byte, a table-gap rejection) return the live bytes exactly; resources with a generated bitmap drop clean. **M2** soak of 2,000 encode + decode iterations, flat, tolerance 0. **M3** the sample: 1,388 B message, **12,056 B allocated** in encode + decode together, peak 9,112 B above start (the output doubles from empty: producers should reserve the previous message's size). M4/M5: no handles, no caches (the bitmap bytes belong to `SlidesResources`).
+- **Fuzz** (`slides_decode`, `slides_roundtrip`, the stable driver, 45 s each, 49 + 31 seeds): 39,323,956 and 641,312 executions (874 k/s and 14.3 k/s), no crash, slowest call 2.0 ms and 6.0 ms. `slides_decode` also runs the validating `SlidesDecoder` and asserts accepted ⇒ `validate` passes ⇒ re-encodes to the input; `slides_roundtrip` selector 2 builds random VALID lists through `SlidesResources`/`SlidesEncoder`/`SlidesDecoder`. libFuzzer itself runs in CI (the workflow's fuzz job lists targets from `TARGETS`; not edited here).
+- **Lints**: `cargo clippy -p uo-render --all-targets -- -D warnings` native, `--lib --target wasm32-unknown-unknown` clean; clippy `--all-targets --all-features` native and wasm32 (lib) clean on every dependent (`uo-docx-layout`, `uo-pdf`, `uo-wasm`, `uo-ffi` native) and `uo-schema`; `cargo fmt` clean on the changed files (the pre-existing unformatted `uo-render/tests/types.rs` was left alone); `grep-bans.sh` clean. `check-changed.mjs` was not used: the other agent's uncommitted `Cargo.lock` change selects the whole workspace; the dependents above were checked by hand (the list: `uo-render uo-docx-layout uo-ffi uo-pdf uo-wasm`).
+
+### What R-S3 and R-S4 need
+
+- **R-S3** (`paint-slides.ts`): decode with the generated `decodeSlidesList(buf, tables)` (the `Tables` object holds `sym` as resolved strings, `faces`, `media`, `derived`, `bitmaps` as arrays); item objects are `{ op: "fillRect", x, y, w, h }`-style (payload structs flattened, scalar payloads as `{ op, v }`); `Paint`/`ImageSrc`/`Effect`/`LayerThen` tag `kind`. Interpret `items` in order; `LayerBegin.fallbackEnd` is the item index to jump to when no layer is available; `SlotBegin(i)` reads the frame value at `slots[i]`; registers 0–3 hold captured matrices; `CtmOperand` = `add + ctm[axis] * k`. The bitmap bytes come from the wasm side by `Bitmap.data` handle (`SlidesResources::bitmap_bytes`; the wasm export is R-S3/wasm-view work, not built here). Lists are validated on the Rust side; the interpreter still bounds-checks indices it reads from a TS-built list. Refine `Effect` payloads against the TS code as it moves.
+- **R-S4** (recording context): the canonical op stream is one record per `SItem` plus the context calls the painter issues for `Text` (fit, decorations), `Effect` and layers, so the recorder runs behind the same interpreter; `SItem` names map 1:1 to canvas calls, which keeps the stream comparable with the TS capture. The sample list in `s_support::sample_list` is a fixture to start from.
+- Producers (`uo-dml-render`, `uo-pptx`) build `SlidesList` directly with `SlidesResources` ids, call `SlidesEncoder::encode` (it validates), and use one `SlidesEncoder` per (view, generation).
+
+### Process metrics
+
+About 90 tool calls (reading the record, the schema grammar and the generator, then write–check cycles). Rework: 5 small (a shell heredoc broken by an apostrophe → Write tool; `Span` is not `Copy`; a banned `core::f64::consts` use and then clippy's `approx_constant` on the literal replacing it; `tagIndex` unused import found only by the CI tsc flags; clippy `type_complexity` in a test). Wall times on this machine (4 jobs, shared with two other agents): schema generation 2.5 s, `uo-render` clippy native 3 s cold-incremental, full `uo-render` test suite (release) 39 s, `uo-schema` suite 47 s, fuzz crate release build 66 s, fuzz runs 45 s per target; the whole session about an hour of wall time. Parity rounds with a verifier: none (new code, no TS counterpart yet).
+
+## Slides extensions — R-S3/R-S4 implementation
+
+Sonnet, 2026-11-17, one session, TypeScript/JavaScript only (no Rust, schema or generator change; `uo-pptx/src` and
+`uo-dml-render` untouched). Built: the TS interpreter of the Slides list with the shell code moved from the frozen TS
+(`ts-ref-092` `b92b60fa`, `slides/packages/slides-core/src`), the recording context and canonical op stream, the draw-op
+captures of the frozen TS, a self-test, and the Rust-list-vs-TS comparison script (waits for the B4 producer).
+
+### Files
+
+| File | Content |
+|---|---|
+| `uo-wasm/js/paint-slides.ts` | `SlidesPainter` (`new SlidesPainter(env).paint(ctx, list, tables, frame?)`): the interpreter of all 48 `SItem`s, the layer pool, the guarded ranges, slot application (`applyPart`), text (`drawText`), paints/patterns/images, the three `Effect`s; caches (derived images ≤ 256, bitmap canvases ≤ 128, `clear()`) |
+| `uo-wasm/js/slides-effects.ts` | MOVED: `fxImage`, `applyBevel` + `edt1d` + sRGB tables, `xorRect`, `imgW/imgH/scratchCanvas` |
+| `uo-wasm/js/slides-warp.ts` | MOVED: `text-warp.ts` (594 lines) |
+| `uo-wasm/js/slides-reveal.ts` | MOVED: `reveal.ts` (`applyReveal`, `applySoftReveal`, `softRevealFilter`, `WIPE_SOFT`) |
+| `uo-pptx/js/lib/record-ctx.mjs` | the recording `CanvasRenderingContext2D` (+ `RecDOMMatrix`, recording `OffscreenCanvas`, `stubMeasure`) |
+| `uo-pptx/js/lib/opstream.mjs` | forms (`full`, `draw`, `loose`), `compare`, `digest`, `parseOps` |
+| `uo-pptx/js/lib/ts-paint.mjs` | the frozen `paintSlideTo` / `paintShapesTo` over the recorder (a FRESH `render.js` instance per run: its pattern and path-gradient canvases are process-wide caches, so a shared instance would make a stream depend on the slides painted before it) |
+| `uo-pptx/js/lib/rust-paint.mjs` | `paint-slides.ts` over the recorder |
+| `uo-pptx/js/lib/views.mjs` | the two views and the capability sets |
+| `uo-pptx/js/capture-drawops.mjs` | the capture CLI (see below) |
+| `uo-pptx/js/compare-drawops.mjs` | Rust-list-vs-TS comparison (the `.uolf` input format is in its header) |
+| `uo-pptx/js/selftest-drawops.mjs` | 12 tests: `node --test core/crates/uo-pptx/js/selftest-drawops.mjs` (0.3 s) |
+| `uo-pptx/tests/captures/drawops-{samples,b1a}.{capture,ops.gz,measures.tsv.gz}` | the captures |
+
+Type check: the new TS passes the CI `tsc 5.9.3` line (`--strict --noUncheckedIndexedAccess --noUnusedLocals --noUnusedParameters --noImplicitReturns
+--exactOptionalPropertyTypes --erasableSyntaxOnly --verbatimModuleSyntax`) together with `gen/{slides,slots}.ts` and the codec runtime. **The workflow's tsc
+line (`.github/workflows/rust-core.yml`, `lint` job) does not list the new files yet** (the file has another agent's uncommitted edit): add
+`crates/uo-wasm/js/paint-slides.ts crates/uo-wasm/js/slides-effects.ts crates/uo-wasm/js/slides-warp.ts crates/uo-wasm/js/slides-reveal.ts`
+(`gen/*.ts` is already globbed), and `node --test core/crates/uo-pptx/js/selftest-drawops.mjs` as a step.
+
+### The op stream (record-ctx.mjs)
+
+One text line per call or property set, LF-terminated, `@cvK ` prefix for a line issued on the K-th offscreen canvas (layers, scratch canvases; K counts
+creation order in the run). Numbers are JS's shortest round trip, `-0` prints as `0`; strings are JSON-quoted.
+
+- `set <name> <value>` (every property: `fillStyle`, `font`, `letterSpacing`, ...; a gradient/pattern value is `@gN`/`@pN`); `save`, `restore`; `ctm a b c d e f`
+  restated after every transform call and after a `restore`; `setLineDash`;
+- path geometry in **device space** (the transform at the call applied): `moveTo X Y`, `lineTo`, `bezierCurveTo`, `quadraticCurveTo`, `rect` (4 corners),
+  `arc`/`ellipse` as centre + the device image of the two axis vectors + angles + ccw (exact for any affine transform), `arcTo` with the device points,
+  `r` and the linear part; `beginPath`, `closePath`;
+- draw calls with the **resolved state** appended after ` | `: `fill RULE | fs=<paint> alpha= comp= [filter=] [shadow=color,blur,ox,oy] [clip=N]`; `stroke | ss= lw= cap=
+  join= miter= [dash=a,b@offset]` (width and dash scaled by the transform); `fillRect`/`strokeRect`/`clearRect` (4 corners); `fillText "t" X Y | m=a,b,c,d font= align=
+  base= ls= kern= fs= ...`; `strokeText`; `drawImage SRC [s=x,y,w,h] P0..P3 | smooth= ...`; `clip RULE`; paints: a colour string raw (never parsed), `lin(x0,y0,x1,y1|off:color;..)`,
+  `rad(...)`, `conic(angle,cx,cy|...)` in device space, `pat(SRC,repeat,a,b,c,d,e,f)` with the device matrix (CTM x pattern transform); image sources `img(<sha1/12 of
+  the bytes>)` or `canvas(WxH:<recipe hash>)` (the running hash of the lines recorded on that canvas, including `putImageData` data hashes);
+- definitions `gradient @gN kind args`, `stop @gN off "color"`, `pattern @pN SRC repeat`, `patternTransform`; reads `getImageData x y w h` (returns zeros),
+  `putImageData x y w h <sha>`; `measure "font" "text"` (the width is NOT in the stream).
+
+Forms (`opstream.mjs`): `full` = everything; **`draw`** (the comparison form, what the captures store) drops `set`, `setLineDash`, `gradient`, `stop`, `pattern`,
+`patternTransform`, `measure` (the draw lines already carry the resolved state; this removes 69 % of the lines of a full stream, mostly the layout's measureText probing); `loose` also
+drops `save`/`restore`/`ctm` (two painters that arrange the transform stack differently still compare equal). `compare(a, b, { which, eps })` is exact by default,
+`eps` compares numeric tokens relatively.
+
+Capability set pinned (`DEFAULT_CAPS`; `--caps nolayers,nopattern,nospacing,nokerning` turn one off): `OffscreenCanvas` exists (layers and scratch canvases are real recording
+canvases), `DOMMatrix` + `CanvasPattern.setTransform`, `letterSpacing`, `fontKerning`. The recorder mimics the canvas where the painters depend on it: `arc`/`ellipse`/`arcTo` with a
+negative radius throw (the TS `guarded` relies on it), non-finite transform arguments are ignored, `globalAlpha` outside 0..1 is ignored, `addColorStop` outside 0..1 throws.
+`getImageData` returns zeros: bevel, recolour and PATINVERT record their reads and writes but the pixel arithmetic is not exercised by the streams (it is pixel code, gated by
+Chromium pixels, plan 4.3 second gate).
+
+### Moved code (copy, adapt only inputs) — every adaptation
+
+- `slides-reveal.ts` = `reveal.ts` **verbatim** (no imports, no change).
+- `slides-warp.ts` = `text-warp.ts`: (1) `import { patternRows } from './patterns.js'` became the injected `PatternRowsOf` parameter of `rasterLine` (new 4th parameter) and
+  `paintWarpedText` (new last parameter). Nothing else.
+- `slides-effects.ts`: `imgW`/`imgH` (render.ts 406-420) verbatim, exported; `scratchCanvas` (440-446) verbatim, exported; `fxImage` (448-501): the canvas factory is a parameter
+  (`scratch`), the `ImageFx` is the TS model shape (`toTsFx` converts the wire `ImageFx`), cache unchanged (module WeakMap by image + key); `applyBevel` (1295-1382) with `edt1d`:
+  `sh.bevel` -> the effect payload (`w`, `h`, `prst`, `rig`, `dir`, `mat`), `x y w h` -> `e.bx`, `scale` -> `e.scale`, `shapePath(m2, geom ...)` ->
+  `beginPath` + the replay of the silhouette path ops (`replayPath`) + `fill(e.rule)` (the TS `rule ? fill(rule) : fill()`), the light tables (`lightTable`, `lightAt`, `lightFace`,
+  `bevelPhi`) injected as `LightTables`; `xorRect` (metafile.ts 311-330): the brush colour is an `[r, g, b]` triple (the operand bitmap's first pixel) instead of `#RRGGBB`.
+- `paint-slides.ts` copies `acquireLayer`/`discardLayer`/`compositeLayer` (render.ts 154-200; the canvas factory is the env's, default = the TS's `OffscreenCanvas` else `<canvas>`),
+  `applyPart` (116-140; wire `PartState`, the filter's `out` flag for the `transition === 'out'` test), `drawText` (1638-1707; the producer-side values arrive in `TextRun`), and the paintWarp
+  tail (1931-1956: layer, tiled picture `source-in`, shadow composite) and `patBlt` (metafile.ts 1372-1385).
+
+Not moved, with the reason: `pptMeasure`/`advCache` and `layoutTextBody` (producer side: the layout is measured from advance tables, S9); `transition.ts` `paintTransition` (between slides, driven by the
+`SlideShow` frame, not a list item: a later wave); the metafile/PICT/TIFF rasterisers (producer side: their result is a `Bitmap`); **the pattern and path-gradient bitmap generators
+(`presetPattern`, `pathGradient`, `gradMode`)**: the design makes them producer output (`bitmaps` table, sized by scale), so the interpreter only turns the RGBA bytes into a canvas
+(`env.bitmap(i)`, cached, `createImageData` + `putImageData`) and `createPattern`s it — the brief listed them as shell code, the schema (S2: `PatternSrc::Bitmap`) decides otherwise.
+
+### Interpretation rules the schema left open (each is a B4 contract)
+
+1. **Slots**: `SlotBegin` = `save()` + evaluation, `SlotEnd` = the matching `restore()`; the producer emits no `Save`/`Restore` of its own around a slotted part. Value `Hidden`, `Shape.op <= 0` or
+   `applyPart` false: restore and skip to after the matching `SlotEnd` (the TS skips without a save/restore pair; the stream has one extra pair). Shape value: `op < 1` multiplies the alpha, then `applyPart(all)`
+   with the soft-reveal collector. `Static`/no frame: paint as the template. Re-emit replacements (`SlotFrame.replacements`) are not applied by the painter (the caller swaps the list).
+2. **`LayerBegin.fallbackEnd` = the end of the else block that follows the matching `LayerEnd`.** With a layer the painter runs `[LayerBegin+1, LayerEnd]` and `LayerEnd` continues at `fallbackEnd` (the else block is skipped);
+   with no layer the painter continues just after the matching `LayerEnd` (the first item with the same layer id) and runs the else block up to `fallbackEnd`. An empty else block has `fallbackEnd = LayerEnd + 1`. The
+   `LayerBegin` right after the `SlotBegin` of a *shape* slot is the **soft-reveal layer**: taken only when the slot value has a pending soft reveal; otherwise (or without a layer) the else block runs, and with soft reveals
+   pending but no layer the painter applies `globalAlpha *= applyReveal(...)` for each, like the TS fallback. `LayerEnd(Composite)` = `compositeLayer(previous target, layer, soft of the enclosing shape slot, slot box)`;
+   `Keep` leaves the layer for `DrawLayer` (`target.drawImage(layer.canvas, 0, 0)` under whatever state the items set) and `ReleaseLayer`.
+3. **Guarded ranges** (the TS `guarded`, per shape): a `save`/`SlotBegin` at relative depth 1 (a shape under the slide clip, or under `paintShapesTo`'s save) opens a range; a throw inside restores the pending saves of the main
+   context, discards the layers acquired in it, and resumes after the range's closing `restore`/`SlotEnd`. A throw at depth <= 1 repairs the stack and propagates. Indices out of range (arenas, tables, registers) throw `RangeError`
+   (hostile lists are contained the same way).
+4. `MediaFrame`: the host's frame, alpha >= 1 drawn opaque (over the cover already painted: same pixels as the TS, which skips the poster; one extra `drawImage` in the stream), 0 < alpha < 1 under `save`/`globalAlpha *=`/`restore`.
+   A picture the host cannot give (still decoding, missing) skips its `drawImage`, and a pattern fill from it skips the `fillStyle` assignment.
+5. `TransformUnshape(reg)` applies `ctx.transform(inverse(current) x reg)` (the TS `ctx.transform(ov.unshape...)`; same CTM as `setTransform(reg)`); `ShadowOffset` = `add + ctm[axis] * k` evaluated on the current target.
+
+### Schema gaps found (for the orchestrator / B4; no schema change was made)
+
+- `BevelEffect` has no `dir` (the TS `lightAt(tab, b.dir, ...)`): the interpreter reads an optional `dir` from the payload (`BevelEffect & { dir?: string }`); add `dir: sym?` before B4 emits bevels.
+- `MetafileRopEffect.operand` is read as the brush: first RGBA pixel; `rop >>> 16 & 0xff` 0x5A = exact XOR (or `difference` when the transform/clip forbid it), 0x00/0xFF/0x55/0xF0 as the TS `patBlt`.
+  The clip state `xorRect` needs is tracked by the painter from `Clip` items per save level.
+- `WarpPaint`/`WarpTile` carry less than `letterFill`/`imageTile` read: no `scaled`, `fillTo`, stop alphas for path gradients (`kind: path` falls back to the TS's circular radial gradient, no raster), no image tile
+  parameters (`sx sy tx ty algn flip`, dpi). Tiled letter fills and the tiled warp picture need `env.tilePattern` (the charts engine's `tilePattern`) and are skipped without it; stretched picture fills work.
+- Host hooks the interpreter needs and `uo-wasm` does not export yet: `light` (uo-drawingml `light3d`) and `patternRows` (the tests import the TS tables of `shared/drawingml`), `tilePattern`.
+
+### Evidence (win32, Node v24.15.0, V8 13.6, `tsc 5.9.3`)
+
+- Self-test (`selftest-drawops.mjs`, 12/12): the recorder run twice over the frozen TS (a sample deck) and over a hand list gives identical streams; every item family under the generated codec (encode -> decode): transforms,
+  registers and the CTM operand (`shadowOffsetX = 3 + 2 * 20000`), gradients/conic/patterns with the device pattern matrix, layers (with, without — `nolayers` caps — soft-reveal rule, keep/draw/release), slots (hidden, wipe at q = 0.5
+  clips the lower half, shape opacity, the soft wipe takes the layer and skips the else block), text (the fit `d / n` from the stub's `measureText`, spacing, shadow, outline, decorations, alpha, restores), images (derived through the moved
+  `fxImage`, bitmap, media frame, a missing picture skipped), effects (bevel mask built on a scratch canvas and written back, XOR rectangle, WordArt `textArchUp` with a layer and shadow), guards (a negative-radius arc contained in its shape,
+  a hostile index repairs the saves), caches capped (bitmaps = 128 after 158 distinct) and the layer pool reused (60 paints, 1 layer canvas). **TS vs interpreter**: the frozen `paintSlideTo` on a small slide (background,
+  filled and stroked rectangle, underlined text) and the interpreter over the list the producer will emit give equal `draw` and `loose` streams (eps 1e-9: the producer-side `laidW` is re-derived from the text).
+- Captures (`capture-drawops.mjs`, run twice: byte-identical `ops.gz`, `measures.tsv.gz` and `capture` apart from `@platform`):
+
+  | Capture | Decks | Slide views | Draw-form lines (full) | Files |
+  |---|---|---|---|---|
+  | `drawops-samples` (53 tracked samples, views a and b, plus `paintShapesTo` digests per slide) | 53 | 1,202 | 112,074 (365,482) | `ops.gz` 189,220 B, `measures.tsv.gz` 51,919 B, `capture` 52,673 B |
+  | `drawops-b1a` (first 100 generated decks, view a) | 100 | 246 | 592,851 (1,340,804) | `ops.gz` 5,981,704 B, `measures.tsv.gz` 250,522 B, `capture` 18,026 B |
+
+  Total committed 6.5 MB (the 100-deck cut keeps the CI subset under 10 MB; 150 decks was 10.0 MB for `ops.gz` alone; all 200 decks, both views: 27.5 MB, regenerate with `--max`). 0 TS errors in the 1,448 recorded views;
+  the 54 `@cv` lines of the samples are the layer/scratch canvases of pattern fills and effects. Views: `a` = 1280 px wide at the origin, `b` = 640 px wide at (17.5, 9.25) (a non-zero origin and another scale).
+- **measureText log** (`*.measures.tsv.gz`: `"font"<TAB>"text"<TAB>width<TAB>count`, sorted, summed over the capture): samples 5,296 distinct (font, string) pairs over 158 CSS font strings (4,747 multi-character strings: the layout's
+  whole-string and kerning probes); b1a 29,403. The widths are the **stub's** (`stubMeasure`: a deterministic em table, 6 % wider bold, a few kerning pairs unless `fontKerning` is `none`), so the files give WHAT the TS asks the
+  canvas for, never real advances; the advance tables of B3 still need a real canvas (Chromium) or `uo-fonts`.
+
+### What B4 needs
+
+1. Emit one `SlidesList` stream per deck (generation per deck, view per (slide, view a/b): `ox, oy, scale` from `lib/views.mjs`), in the **`.uolf`** frame file `compare-drawops.mjs` documents (list message + the bitmaps added by each message,
+   RGBA in table order) and run `node core/crates/uo-pptx/js/compare-drawops.mjs --ts core/crates/uo-pptx/tests/captures/drawops-samples.ops.gz --rust <dir>`; the b1a capture needs `--ts ...drawops-b1a.ops.gz`.
+   The TS stream starts at the first call of `paintSlideTo` (the slide background) and has no wrapper; the list must reproduce the TS's own `save`/`restore` pairs (or compare with `--form loose`).
+2. The `draw` stream is exact by default: producers must use the TS arithmetic for every precomputed value (`Math.fround` is not involved; `eps` is only for diagnosing). The pictures are looked up in the package by `Media.part`,
+   so `ImageRef.part` and the table entry must agree.
+3. The TS records `paintShapesTo` digests per slide (`s<N>.shapes` in the capture) for Sheet drawings; its stream is not stored (the same code path with the slide clip and background removed).
+4. Resolve the schema gaps above (bevel `dir`; letter fill and warp tile parameters) before the producer emits those effects; decide rule 2 (`fallbackEnd`) and rule 1 (slot save) as written, or change the interpreter, not both ends.
+
+### Process metrics
+
+About 85 tool calls (reading the design, `render.ts` — 1,300 of its 2,662 lines — `reveal.ts`, `text-warp.ts` and the capture harness; then write–check cycles). Rework: 6 small (a Bash heredoc halved `\n` in a patch script, so the fix went through the
+Edit tool; the capture's measure-key parsing; a stale `fallbackEnd` in the slot test; unused-parameter errors found by the CI tsc flags; the draw form kept `setLineDash` until the first capture was regenerated; the compare script first imported the
+capture CLI, which runs it). Wall times: captures 13.0 s (samples, 1,202 views plus 1,202 `paintShapesTo` runs; the TS paint is a few ms per slide) and 11.0 s (b1a, 100 decks), self-test 0.3 s, `tsc` over the new files about 4 s. Parity rounds with a
+verifier: none (the frozen TS is the oracle; the first producer comparison is B4).

@@ -167,6 +167,32 @@ collation adds about 40 KB (the NFKD table is 29.8 KB of it). The wasm validates
 - CI wiring (`rust-core.yml`): the regeneration test needs Node 24.15 in the test job and `wasm-check.mjs` could join the
   wasm job after building the `size_probe_all` example.
 
+## Grapheme clusters and `\p{Ll}` (frontier B3 of the Slides port, 2026-11-17)
+
+The Slides text layout breaks a word longer than the line by `Intl.Segmenter(undefined, { granularity: 'grapheme' })`
+(`text-layout.ts:217`) and splits small caps by `\p{Ll}` (`text-layout.ts:171`); both are here (`uo-dml-render.md`
+"B3 — text layout").
+
+- `grapheme`: `gcb(cp)`, `is_extended_pictographic(cp)`, `incb(cp)`, the forward state machine `Breaker::step` (UAX #29
+  GB3–GB13 with GB9c, the Indic conjunct rule of Unicode 15.1+), `boundaries(&[u16])` (interior offsets, lone surrogates as
+  their own code points) and `graphemes(&str)` (clusters as sub-slices, no allocation).
+- `props::is_lowercase_letter(cp)`: `\p{Ll}` (a new `LOWER_LETTER` run table in `tables.rs`, 664 runs, from `gen-tables.mjs`;
+  the rest of `tables.rs` is byte-identical).
+- **Tables probed, not read** (`js/gen-grapheme.mjs`, writes `src/grapheme_tables.rs` and the oracle; `--check` in
+  `tests/regeneration.rs`): each code point's class is found by where the segmenter breaks around it — after/before `a`,
+  before U+0301 (Control), against Hangul jamo L/V/T/LVT (the five Hangul classes), `c c c` (regional indicators), `U+1F600
+  c ZWJ U+1F600` (Extend vs SpacingMark), `c ZWJ U+1F600` (Extended_Pictographic, cross-checked against
+  `\p{Extended_Pictographic}`), `c VIRAMA KA`, `KA c KA`, `KA c VIRAMA KA` (InCB Consonant/Linker/Extend). GCB 1,386 runs,
+  EP 156, InCB 473; 21 KB of tables in all (`table_sizes()`: `GRAPHEME`, `LOWER_LETTER`). Lone surrogates get no property
+  (Any). 20 s on Node 24.15 (ICU 78.2, Unicode 17.0).
+- **Self-check before writing**: the generator runs its own copy of the rules (the algorithm `grapheme.rs` ports) over every
+  pair of class representatives, the triples with the joiners and 6,000 seeded random strings (lone surrogates and random
+  code points included) against the segmenter, and stops on any difference — none on the first run.
+- **Oracle** `tests/captures/grapheme_v8.txt` (630 KB): those 22,000 strings and their boundaries, and the `\p{Ll}` runs;
+  `tests/grapheme_v8.rs` replays them (boundaries over `&[u16]`, the `&str` iterator on the valid ones, `\p{Ll}` of every code
+  point): 0 mismatches. M1 (`tests/memory.rs`) and the no-panic laws over random UTF-16 (`tests/no_panic.rs`: boundaries
+  strictly increasing and interior) cover the new functions.
+
 ## Commands
 
 ```
@@ -174,6 +200,7 @@ cargo test -p uo-text --all-features
 cargo clippy -p uo-text --all-targets --all-features -- -D warnings     # and with --target wasm32-unknown-unknown
 node core/crates/uo-text/js/gen-tables.mjs [--check]
 node core/crates/uo-text/js/capture-oracle.mjs [--check]
+node core/crates/uo-text/js/gen-grapheme.mjs [--check]      # grapheme tables + oracle (about 20 s)
 cargo build -p uo-text --features collation --example size_probe_all --target wasm32-unknown-unknown --profile wasm
 node core/crates/uo-text/js/wasm-check.mjs core/target/<dir>/wasm32-unknown-unknown/wasm/examples/size_probe_all.wasm
 ```

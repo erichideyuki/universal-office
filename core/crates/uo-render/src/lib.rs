@@ -14,7 +14,8 @@
 //! - [`view`]: the view the shell holds: pages, resources, the encoder's delta mark and the
 //!   item-addressed paint operations behind the wasm exports (frontier E).
 //! - [`codec`]: the schema-driven per-page encoding (G15, RQ4) — frontier C, generated from
-//!   `core/schema/render.uos`.
+//!   `core/schema/render.uos` (and, separately, `slides.uos`/`slots.uos` for Slides).
+//! - [`slides`]: the Slides display list (a canvas call sequence per scale), its resources and codec (R-S1/R-S2).
 //!
 //! Numbers are the TS values bit for bit: every coordinate is an `f64` in the producer's unit
 //! (twips from the page top-left for Write), optional numbers keep "absent" apart from every
@@ -32,6 +33,7 @@ mod nav;
 mod opt;
 pub mod paint;
 mod resources;
+pub mod slides;
 mod sym;
 pub mod types;
 pub mod view;

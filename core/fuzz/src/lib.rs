@@ -37,8 +37,24 @@ use uo_opc::zip::{self, WriteOptions, ZipWriter};
 mod jsnum;
 pub use jsnum::{jsnum_math, jsnum_parse};
 
+mod numfmt;
+pub use numfmt::{numfmt_format, numfmt_seeds};
+
 mod codec;
 pub use codec::{CODEC_LIMITS, codec_decode, codec_roundtrip, codec_seeds};
+
+mod pptx;
+pub use pptx::{dml_shapes, pptx_open, pptx_seeds};
+
+mod text_layout;
+pub use text_layout::{text_layout, text_layout_seeds};
+
+mod slides;
+mod slides_wire;
+pub use slides::{slides_decode, slides_roundtrip, slides_seeds};
+
+mod ppt;
+pub use ppt::{ppt_convert, ppt_seeds};
 
 mod drawingml;
 pub use drawingml::{
@@ -94,6 +110,7 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("resolver", resolver),
     ("jsnum_parse", jsnum_parse),
     ("jsnum_math", jsnum_math),
+    ("numfmt_format", numfmt_format),
     ("fonts_parse", fonts_parse),
     ("fonts_sfnt_dir", fonts_sfnt_dir),
     ("fonts_cmap", fonts_cmap),
@@ -135,6 +152,12 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("image_decode", image_decode),
     ("codec_decode", codec_decode),
     ("codec_roundtrip", codec_roundtrip),
+    ("pptx_open", pptx_open),
+    ("dml_shapes", dml_shapes),
+    ("text_layout", text_layout),
+    ("slides_decode", slides_decode),
+    ("slides_roundtrip", slides_roundtrip),
+    ("ppt_convert", ppt_convert),
 ];
 
 /// Small limits: every check of `Limits` is exercised without slow executions.

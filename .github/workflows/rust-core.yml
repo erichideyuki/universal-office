@@ -73,7 +73,11 @@ jobs:
             crates/uo-wasm/js/paint.ts crates/uo-wasm/js/picture.ts crates/uo-wasm/js/viewer.ts crates/uo-wasm/js/viewer.check.ts \
             crates/uo-wasm/js/editor.check.ts ../write/packages/viewer/src/write-engine.d.ts ../write/packages/editor/src/write-session.d.ts \
             crates/uo-wasm/js/session.d.ts crates/uo-wasm/js/session-stories.d.ts ../write/packages/editor/src/write-session-stories.d.ts \
-            ../write/packages/editor/src/write-session-objects.d.ts
+            ../write/packages/editor/src/write-session-objects.d.ts \
+            crates/uo-wasm/js/paint-slides.ts crates/uo-wasm/js/slides-effects.ts crates/uo-wasm/js/slides-warp.ts \
+            crates/uo-wasm/js/slides-reveal.ts
+      # the Slides painter and the draw-op recorder (R-S3/R-S4) against hand-built display lists
+      - run: node --test crates/uo-pptx/js/selftest-drawops.mjs
       # the runtime builds for the browser (the generated codec is compiled for wasm32 by the lint job's clippy)
       - run: cargo build -p uo-codec --target wasm32-unknown-unknown --profile wasm
 
@@ -736,7 +740,7 @@ jobs:
       - run: cargo run --release --no-default-features --features fallback --bin seed
       - run: cargo fuzz build
       # a short budget per target on every push (every file of fuzz_targets: the uo-opc targets,
-      # jsnum_parse, jsnum_math, the 17 fonts_* targets, the 12 dml_* targets and codec_decode, codec_roundtrip); long runs are
+      # jsnum_parse, jsnum_math, numfmt_format, the 17 fonts_* targets, the 12 dml_* targets and codec_decode, codec_roundtrip); long runs are
       # local (module records, "Security" and "Continuous verification")
       - run: |
           for t in $(ls fuzz_targets | sed 's/\.rs$//'); do

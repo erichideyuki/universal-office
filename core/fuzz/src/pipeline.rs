@@ -15,9 +15,9 @@
 //! status is one of the documented codes.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use uo_ffi::pipeline::{UoErrorInfo, code, uo_last_error, uo_last_error_message};
@@ -29,7 +29,11 @@ use uo_ffi::{
 /// The folders of the open fonts (the same the parity tests index), from the repository root.
 fn font_dirs() -> String {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    [repo.join("shared/fonts/files"), repo.join("site/assets/fonts")].iter().map(|d| d.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n")
+    [repo.join("shared/fonts/files"), repo.join("site/assets/fonts")]
+        .iter()
+        .map(|d| d.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// A converter (as an address: raw pointers are not `Sync`), once per trust level and process.
