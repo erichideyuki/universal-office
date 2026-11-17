@@ -9,9 +9,7 @@ use uo_alloc::{MemoryCheck, assert_no_leak_global, check_no_leak_global};
 #[test]
 fn the_global_check_sees_other_threads() {
     // balanced work on another thread passes
-    let allocated = assert_no_leak_global(|| {
-        std::thread::spawn(|| black_box(vec![0u8; 8192]).len()).join().unwrap_or(0)
-    });
+    let allocated = assert_no_leak_global(|| std::thread::spawn(|| black_box(vec![0u8; 8192]).len()).join().unwrap_or(0));
     assert!(allocated >= 8192, "the worker's vector was counted: {allocated}");
     // a 512-byte leak made on another thread is caught with its size
     let mut leaked = 0usize;

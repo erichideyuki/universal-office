@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 use uo_alloc::{assert_no_leak, assert_no_leak_global, measure};
 use uo_ffi::pipeline::Trust;
-use uo_ffi::server::{Converter, ConverterOptions, PdfJob};
 use uo_ffi::pipeline::{UoErrorInfo, code, uo_last_error, uo_last_error_clear};
+use uo_ffi::server::{Converter, ConverterOptions, PdfJob};
 use uo_ffi::{
     CONVERTER_TRUSTED, JOB_COMPRESS, UoBuf, UoConverter, UoConverterOptions, UoPdfJob, uo_buf_free, uo_buf_len, uo_buf_ptr, uo_cancel_free,
     uo_cancel_new, uo_cancel_raise, uo_converter_families, uo_converter_free, uo_converter_new, uo_docx_to_pdf,
@@ -141,7 +141,8 @@ fn m1_a_conversion_leaves_nothing_ok_refused_or_cancelled() {
     let tight = UoPdfJob { max_pages: 1, ..job(JOB_COMPRESS) };
     // warm-up of the faces this other document loads before its layout stops
     assert_eq!(convert(c, &fixture("f8", "f8__7__1"), &tight, std::ptr::null()), Err(code::LIMIT_EXCEEDED));
-    let limit = assert_no_leak_global(|| assert_eq!(convert(c, &fixture("f8", "f8__7__1"), &tight, std::ptr::null()), Err(code::LIMIT_EXCEEDED)));
+    let limit =
+        assert_no_leak_global(|| assert_eq!(convert(c, &fixture("f8", "f8__7__1"), &tight, std::ptr::null()), Err(code::LIMIT_EXCEEDED)));
     // SAFETY: live handles, released once.
     unsafe {
         uo_cancel_free(k);

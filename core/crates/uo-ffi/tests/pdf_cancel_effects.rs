@@ -84,7 +84,15 @@ fn render(bytes: Vec<u8>, o: &PdfOptions) -> (usize, Result<Vec<u8>, PdfError>) 
     let prov: Arc<dyn FontProvider> = Arc::from(provider(&registry, PolicyName::Oracle).unwrap());
     let laid = lay_out(
         &opened,
-        &LayoutJob { provider: prov, cache: &cache, ledger: Some(registry.ledger()), hyphenation: &hyphenation, options: &options, cancel: None, run_boxes: false },
+        &LayoutJob {
+            provider: prov,
+            cache: &cache,
+            ledger: Some(registry.ledger()),
+            hyphenation: &hyphenation,
+            options: &options,
+            cancel: None,
+            run_boxes: false,
+        },
     )
     .unwrap();
     let mut layout = laid.layout;

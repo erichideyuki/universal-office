@@ -74,7 +74,15 @@ mod native {
             let prov: Arc<dyn FontProvider> = Arc::from(provider(&registry, PolicyName::Oracle).unwrap());
             let laid = lay_out(
                 &opened,
-                &LayoutJob { provider: prov, cache: &cache, ledger: Some(registry.ledger()), hyphenation: &hyphenation, options: &options, cancel: None, run_boxes: false },
+                &LayoutJob {
+                    provider: prov,
+                    cache: &cache,
+                    ledger: Some(registry.ledger()),
+                    hyphenation: &hyphenation,
+                    options: &options,
+                    cancel: None,
+                    run_boxes: false,
+                },
             )
             .unwrap();
             let t2 = Instant::now();

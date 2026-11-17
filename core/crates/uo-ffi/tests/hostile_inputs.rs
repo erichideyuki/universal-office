@@ -15,8 +15,8 @@ use std::sync::Mutex;
 
 use uo_ffi::pipeline::{UoErrorInfo, code, stage, uo_last_error, uo_last_error_clear};
 use uo_ffi::{
-    JOB_COMPRESS, UoBuf, UoConverter, UoConverterOptions, UoPdfJob, uo_buf_free, uo_buf_len, uo_buf_ptr, uo_converter_free, uo_converter_new,
-    uo_docx_to_pdf,
+    JOB_COMPRESS, UoBuf, UoConverter, UoConverterOptions, UoPdfJob, uo_buf_free, uo_buf_len, uo_buf_ptr, uo_converter_free,
+    uo_converter_new, uo_docx_to_pdf,
 };
 use uo_opc::flate;
 use uo_testkit::generate::{RawZipEntry, RawZipOptions, build_zip};
@@ -56,7 +56,9 @@ fn document(body: &str) -> String {
 fn docx(body: &str) -> Vec<u8> {
     let rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>"#;
     let mut z = uo_opc::zip::ZipWriter::new(uo_opc::zip::WriteOptions::default());
-    for (name, data) in [("[Content_Types].xml", CT), ("_rels/.rels", RELS), ("word/document.xml", &document(body)), ("word/_rels/document.xml.rels", rels)] {
+    for (name, data) in
+        [("[Content_Types].xml", CT), ("_rels/.rels", RELS), ("word/document.xml", &document(body)), ("word/_rels/document.xml.rels", rels)]
+    {
         z.add(name, data.as_bytes()).unwrap();
     }
     z.finish()
