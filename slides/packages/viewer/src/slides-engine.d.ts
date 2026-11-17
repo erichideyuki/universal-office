@@ -33,7 +33,14 @@ declare module '@universal-office/slides-engine' {
   export interface SlidePaintOptions { skipCharts?: boolean }
   export const CHARTS_LEFT: 15;
 
-  export interface SlidePaintResult { status: number; charts: number; rounds: number }
+  export interface SlidePaintResult { status: number; charts: number; rounds: number; empty?: boolean; animMs?: number; replaced?: number }
+
+  /** B4b: options of a playback frame (`paintStage`). */
+  export interface StagePaintOptions {
+    media?: boolean;
+    clock?: { latencyMs?: number; scale?: number };
+    mediaFrame?(shape: number): { image: PaintImage; alpha: number } | null | undefined;
+  }
 
   export interface TransitionWire { type: string; ns: string; attrs: Record<string, string>; durMs: number; advTmMs?: number; advClick: boolean }
   export type ShowAction = 'none' | 'transition' | 'step' | 'slide' | 'end' | 'exit';
@@ -56,6 +63,11 @@ declare module '@universal-office/slides-engine' {
     free(): void;
   }
 
+  export class SlidesTimelineHandle {
+    stateAt(t: number): { pos: number; index: number; from: number; transitionProgress: number; animMs: number; ended: boolean; effects: number; transition: TransitionWire | null };
+    free(): void;
+  }
+
   export class SlidesDocument {
     readonly count: number;
     readonly slideW: number;
@@ -69,6 +81,9 @@ declare module '@universal-office/slides-engine' {
     paint(ctx: CanvasRenderingContext2D, index: number, scale: number, ox: number, oy: number, host: SlidesPaintHost, o?: SlidePaintOptions): SlidePaintResult;
     clearCaches(): void;
     newShow(o?: { from?: number; now?: number; useTimings?: number; loop?: number; animations?: number; range?: [number, number] | null }): SlidesShowHandle;
+    newTimeline(o?: { useTimings?: number; defaultSlideMs?: number; tickMs?: number; transitionFps?: number }): SlidesTimelineHandle;
+    paintStage(ctx: CanvasRenderingContext2D, src: SlidesShowHandle | SlidesTimelineHandle, at: number, which: 0 | 1, scale: number, ox: number, oy: number,
+      host: SlidesPaintHost, o?: StagePaintOptions): SlidePaintResult;
     cacheSizes(): { derived: number; bitmaps: number };
     free(): void;
   }

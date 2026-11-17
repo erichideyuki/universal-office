@@ -16,7 +16,13 @@
 //
 // Rules of the interpretation that the schema leaves to the painter (each recorded in the doc):
 //  - slots: `SlotBegin` is a `save()`, `SlotEnd` the matching `restore()`; the producer emits no Save/Restore of its own around a
-//    slotted part. A hidden value (or `applyPart` false) restores and skips to the item after the matching `SlotEnd`.
+//    slotted part. A hidden value (or `applyPart` false) restores and skips to the item after the matching `SlotEnd`. Where the TS
+//    tests the state before its `save()` (B4b: a hidden shape, an invisible paragraph or unit) the painter skips without saving; a
+//    `unitGate` slot never saves (it only gates the bullet). A shape slot whose frame carries a replacement paints the
+//    replacement's items (its own list and values) instead of its range. `globalAlpha` items inside a slot are relative to the
+//    alpha the slot's value multiplied in (the producer wrote them for the static paint). The soft-reveal layer of a shape (a
+//    chart part) is the `layerBegin` with id 15 (14) right after its slot's `slotBegin`.
+//  - `mediaFrame`: the host's frame replaces the poster when opaque and fades over it when 0 < alpha < 1.
 //  - layers: `LayerBegin.fallbackEnd` is the end of the else block that FOLLOWS the matching `LayerEnd`: with a layer, `LayerEnd`
 //    continues at `fallbackEnd`; without one (or, for the layer item right after a shape slot's `SlotBegin`, with no soft
 //    reveal pending) the painter continues just after the matching `LayerEnd`, i.e. runs the else block.
@@ -84,9 +90,12 @@ interface SlidePx { ox: number; oy: number; sw: number; sh: number }
 /** A paint target: the main context or a layer, with the saves the items made on it and the clips of its save levels. */
 interface Target { ctx: CanvasRenderingContext2D; saves: number; clips: number[]; layer: number }
 
-interface SlotRun { def: SlotDef; soft: SoftReveal[]; begin: number }
+interface SlotRun { def: SlotDef; soft: SoftReveal[]; begin: number; noSave?: boolean; target?: Target; k: number }
 
-interface LayerInfo { lc: LayerCtx; fallbackEnd: number; begin: number }
+/** A shape re-emitted for this frame (`SlotFrame.replacements`, decoded): its list and the values of its own slots. */
+export interface SlotReplacement { list: SlidesList; values: SlotValue[] }
+
+interface LayerInfo { lc: LayerCtx; fallbackEnd: number; begin: number; soft?: SlotRun }
 
 function at<T>(a: readonly T[], i: number, what: string): T {
   const v = a[i];
@@ -519,7 +528,8 @@ export class SlidesPainter {
    * Run the list. `frame` gives the slot values (positional over `list.slots`; missing = static). A throw inside a guarded
    * range is contained (that shape is skipped); a throw outside every range propagates after the saves are undone.
    */
-  paint(ctx: CanvasRenderingContext2D, list: SlidesList, tables: Tables, frame?: SlotFrame): void {
+  paint(ctx: CanvasRenderingContext2D, list: SlidesList, tables: Tables, frame?: SlotFrame | { values: SlotValue[] },
+    replacements?: ReadonlyMap<number, SlotReplacement>): void {
     const items = list.items;
     const n = items.length;
     const view = list.view;
@@ -556,9 +566,11 @@ export class SlidesPainter {
       }
       return n;
     };
-    const topShape = (): SlotRun | undefined => {
-      for (let i = slots.length - 1; i >= 0; i--) if (slots[i]!.def.kind === 'shape') return slots[i];
-      return undefined;
+    // the alpha factor the open slots of target `tt` multiplied in (1 when every value is static)
+    const alphaK = (tt: Target): number => {
+      let k = 1;
+      for (const s of slots) if (s.target === tt && s.k !== 1) k *= s.k;
+      return k;
     };
     const repair = (r: NonNullable<typeof range>): void => {
       // the TS `guarded`: undo the saves left pending on the main context, discard the layers of the range
@@ -624,7 +636,7 @@ export class SlidesPainter {
               c.setTransform(r);
               break;
             }
-            case 'globalAlpha': c.globalAlpha = it.v; break;
+            case 'globalAlpha': { const k = slots.length ? alphaK(t) : 1; c.globalAlpha = k === 1 ? it.v : it.v * k; break; }
             case 'globalAlphaMul': c.globalAlpha = c.globalAlpha * it.v; break;
             case 'composite': c.globalCompositeOperation = it.v; break;
             case 'filterSet': c.filter = it.v; break;
@@ -675,7 +687,9 @@ export class SlidesPainter {
               if (it.layer < 0 || it.layer >= 16) throw new RangeError(`layer ${it.layer}`);
               const prev = items[at0 - 1];
               const shapeSlot = prev && prev.op === 'slotBegin' ? slots[slots.length - 1] : undefined;
-              const softLayer = shapeSlot !== undefined && shapeSlot.def.kind === 'shape';
+              // the soft-reveal layers of a playback list have reserved ids (uo-dml-render SOFT_LAYER_SHAPE / SOFT_LAYER_CHART)
+              const softLayer = shapeSlot !== undefined
+                && ((shapeSlot.def.kind === 'shape' && it.layer === 15) || (shapeSlot.def.kind === 'chartPart' && it.layer === 14));
               const pending = softLayer ? shapeSlot.soft : undefined;
               let lc: LayerCtx | null = null;
               if (!softLayer || (pending && pending.length)) lc = this.acquireLayer(c);
@@ -689,7 +703,8 @@ export class SlidesPainter {
               }
               const old = layers[it.layer];
               if (old) { this.discardLayer(c, old.lc); }
-              const li: LayerInfo = { lc, fallbackEnd: it.fallbackEnd, begin: at0 };
+              // the soft-reveal layer of a slot composites with that slot's pending reveals; every other layer with none
+              const li: LayerInfo = { lc, fallbackEnd: it.fallbackEnd, begin: at0, ...(softLayer ? { soft: shapeSlot } : {}) };
               layers[it.layer] = li;
               acquired.push(li);
               stack.push(t);
@@ -701,7 +716,7 @@ export class SlidesPainter {
               if (!li || t.layer !== it.layer) break; // no layer was opened for it (the else block ran)
               t = stack.pop() ?? main;
               if (it.then === 'composite') {
-                const sh = topShape();
+                const sh = li.soft;
                 const bx = sh ? sh.def.bx : { x: 0, y: 0, w: 0, h: 0 };
                 this.compositeLayer(t.ctx, li.lc, sh ? sh.soft : [], bx.x, bx.y, bx.w, bx.h);
                 layers[it.layer] = undefined;
@@ -728,45 +743,83 @@ export class SlidesPainter {
             case 'slotBegin': {
               const def = at(list.slots, it.v, 'slot');
               const value: SlotValue = frame?.values[it.v] ?? { t: 'static' };
-              openRange(at0);
-              c.save(); t.saves++; t.clips.push(t.clips[t.clips.length - 1] ?? 0); itemDepth++;
-              const run: SlotRun = { def, soft: [], begin: at0 };
-              let ok = true;
-              if (value.t === 'hidden') ok = false;
-              else if (value.t === 'shape') {
-                if (value.op <= 0) ok = false;
-                else {
-                  if (value.op < 1) c.globalAlpha = c.globalAlpha * value.op;
-                  if (value.all) ok = applyPart(c, value.all, def.base, def.bx.x, def.bx.y, def.bx.w, def.bx.h, m, def.baseRotRad, run.soft);
-                }
-              } else if (value.t === 'state') {
-                ok = applyPart(c, value, def.base, def.bx.x, def.bx.y, def.bx.w, def.bx.h, m, def.baseRotRad, def.kind === 'shape' ? run.soft : undefined);
+              // the TS tests these before its `save()`: nothing is drawn, nothing is saved
+              if (value.t === 'hidden' || (value.t === 'state' && !value.visible && (def.kind === 'paragraph' || def.kind === 'unit'))) {
+                pc = skipTo(pc);
+                break;
               }
-              if (!ok) {
-                c.restore(); t.saves--; t.clips.pop(); itemDepth--;
+              if (def.kind === 'unitGate') {
+                // the bullet follows its paragraph's first unit: drawn unless that unit is invisible (render.ts 1768-1776)
+                if (value.t === 'state' && !(value.visible && value.opacity > 0)) { pc = skipTo(pc); break; }
+                slots.push({ def, soft: [], begin: at0, noSave: true, target: t, k: 1 });
+                break;
+              }
+              if (def.kind === 'boundsPass') {
+                // the `chartPartBounds` probe: the first frame of a stage only (the producer hides it afterwards)
+                slots.push({ def, soft: [], begin: at0, noSave: true, target: t, k: 1 });
+                break;
+              }
+              const rep = def.kind === 'shape' ? replacements?.get(def.shape) : undefined;
+              if (rep) {
+                // the shape again with this frame's colours, fonts or font scale: its own items, slots and values
+                openRange(at0);
+                this.paint(c, rep.list, tables, { values: rep.values });
                 closeRange();
                 pc = skipTo(pc);
                 break;
               }
+              // a chart part applies its value on the part's own save (the `save` item right before it)
+              const own = def.kind !== 'chartPart';
+              if (own) openRange(at0);
+              const before = c.globalAlpha;
+              if (own) { c.save(); t.saves++; t.clips.push(t.clips[t.clips.length - 1] ?? 0); itemDepth++; }
+              const run: SlotRun = { def, soft: [], begin: at0, target: t, k: 1, ...(own ? {} : { noSave: true }) };
+              const soft = def.kind === 'shape' || def.kind === 'chartPart' ? run.soft : undefined;
+              let ok = true;
+              if (value.t === 'shape') {
+                if (value.op <= 0) ok = false;
+                else {
+                  if (value.op < 1) c.globalAlpha = c.globalAlpha * value.op;
+                  if (value.all) ok = applyPart(c, value.all, def.base, def.bx.x, def.bx.y, def.bx.w, def.bx.h, m, def.baseRotRad, soft);
+                }
+              } else if (value.t === 'state') {
+                ok = applyPart(c, value, def.base, def.bx.x, def.bx.y, def.bx.w, def.bx.h, m, def.baseRotRad, soft);
+              }
+              if (!ok) {
+                if (own) { c.restore(); t.saves--; t.clips.pop(); itemDepth--; closeRange(); }
+                pc = skipTo(pc);
+                break;
+              }
+              const after = c.globalAlpha;
+              if (after !== before && before > 0) run.k = after / before;
               slots.push(run);
               break;
             }
             case 'slotEnd': {
               if (!slots.length) throw new RangeError('slotEnd without slotBegin');
-              slots.pop();
+              const run = slots.pop()!;
+              if (run.noSave) break;
               c.restore(); if (t.saves > 0) { t.saves--; t.clips.pop(); } itemDepth--;
               closeRange();
               break;
             }
             case 'mediaFrame': {
               const f = this.env.mediaFrame?.(it.shape);
-              if (!f || !(f.alpha > 0)) break;
-              const draw = (): void => {
-                if (it.s) c.drawImage(f.image as CanvasImageSource, it.s.x, it.s.y, it.s.w, it.s.h, it.d.x, it.d.y, it.d.w, it.d.h);
-                else c.drawImage(f.image as CanvasImageSource, it.d.x, it.d.y, it.d.w, it.d.h);
+              const drawCropped = (im: PaintImage): void => {
+                const cr = it.crop;
+                if (cr) {
+                  const iw = imgW(im), ih = imgH(im);
+                  c.drawImage(im as CanvasImageSource, cr.l * iw, cr.t * ih, iw - (cr.l + cr.r) * iw, ih - (cr.t + cr.b) * ih, it.d.x, it.d.y, it.d.w, it.d.h);
+                } else c.drawImage(im as CanvasImageSource, it.d.x, it.d.y, it.d.w, it.d.h);
               };
-              if (f.alpha >= 1) draw();
-              else { c.save(); c.globalAlpha = c.globalAlpha * f.alpha; draw(); c.restore(); }
+              if (f && f.alpha >= 1) { drawCropped(f.image); break; }
+              const p = it.poster;
+              const poster = p ? this.image(tables, p.src) : null;
+              if (!p || !poster) break;
+              if (p.s) c.drawImage(poster as CanvasImageSource, p.s.x, p.s.y, p.s.w, p.s.h, p.d.x, p.d.y, p.d.w, p.d.h);
+              else c.drawImage(poster as CanvasImageSource, p.d.x, p.d.y, p.d.w, p.d.h);
+              // a fading video: the frame over the poster
+              if (f && f.alpha > 0 && f.alpha < 1) { c.save(); c.globalAlpha = c.globalAlpha * f.alpha; drawCropped(f.image); c.restore(); }
               break;
             }
           }

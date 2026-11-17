@@ -14,7 +14,7 @@
 use std::rc::Rc;
 
 use uo_dml_render::PartSource;
-use uo_jsnum::math::{abs, max, min};
+use uo_jsnum::math::{max, min};
 use uo_pdf::PdfError;
 use uo_render::slides::{
     Align, Baseline, Cap, CompositeOp, DrawImageItem, Effect, FillRule, Join, LayerThen, MAX_LAYERS, Mat6, Rect4, SItem, SlidesList,
@@ -22,7 +22,9 @@ use uo_render::slides::{
 };
 
 use super::css::{Rgba, parse_css};
+use super::effects::{Kept, KeptRange};
 use super::geom::{CanvasPath, Mat, n, nm, rect_path};
+use super::raster::Img;
 use super::{ImgHandle, Writer};
 
 /// One page of content.
@@ -89,6 +91,7 @@ pub(super) const LINE_DEFAULT: LineKey = LineKey { width: 1.0, join: Join::Miter
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub(super) struct Shadow {
     pub alpha: f64,
+    pub rgb: [u8; 3],
     pub blur: f64,
     pub ox: f64,
     pub oy: f64,
@@ -158,6 +161,10 @@ pub(super) struct Target {
     /// the default space of the content for the matrix of a pattern: the flip of the page, or the identity
     /// inside a form (whose space is the canvas space)
     pub base: Mat,
+    /// a layer's first item, transform and registers (the items a raster pass replays)
+    pub begin: usize,
+    pub start_ctm: Mat,
+    pub start_regs: [Option<Mat>; 4],
 }
 
 impl Target {
@@ -171,6 +178,9 @@ impl Target {
             tainted: false,
             layer,
             base,
+            begin: 0,
+            start_ctm: ctm,
+            start_regs: [None; 4],
         }
     }
 }
@@ -186,8 +196,14 @@ pub(super) struct Interp<'a, 'w> {
     pub stack: Vec<Target>,
     /// `fallbackEnd` of the layers being built
     pub fallbacks: Vec<usize>,
-    /// the kept layers: the index of their form (`Fm<i>`)
-    pub layers: [Option<u32>; MAX_LAYERS as usize],
+    /// the kept layers: their form (`Fm<i>`) or their raster
+    pub kept: Vec<Option<Kept>>,
+    /// where the kept layers' items are (a raster pass that draws one replays them)
+    pub ranges: Vec<Option<KeptRange>>,
+    /// the pictures the raster passes decoded on this page
+    pub raster_images: rustc_hash::FxHashMap<String, Option<std::rc::Rc<Img>>>,
+    pub raster_depth: u32,
+    pub warp_serial: u32,
     pub regs: [Option<Mat>; 4],
     pub ops: u64,
     pub missing: u64,
@@ -216,7 +232,11 @@ pub(crate) fn run(w: &mut Writer<'_>, list: &SlidesList, res: &SlidesResources, 
         t: Target::new(Mat::IDENTITY, None, Mat([1.0, 0.0, 0.0, -1.0, 0.0, ph])),
         stack: Vec::new(),
         fallbacks: Vec::new(),
-        layers: [None; MAX_LAYERS as usize],
+        kept: vec![None; MAX_LAYERS as usize],
+        ranges: vec![None; MAX_LAYERS as usize],
+        raster_images: rustc_hash::FxHashMap::default(),
+        raster_depth: 0,
+        warp_serial: 0,
         regs: [None; 4],
         ops: 0,
         missing: 0,
@@ -343,8 +363,9 @@ impl<'w> Interp<'_, 'w> {
                 }
                 SItem::LineDash(s) => self.line_dash(s),
                 SItem::ShadowColor(s) => {
-                    let a = parse_css(&self.sym(*s)).map_or(0.0, |c| c.3);
-                    self.t.cur.shadow.alpha = a;
+                    let c = parse_css(&self.sym(*s)).unwrap_or(Rgba(0.0, 0.0, 0.0, 0.0));
+                    self.t.cur.shadow.alpha = c.3;
+                    self.t.cur.shadow.rgb = c.bytes();
                 }
                 SItem::ShadowBlur(b) => {
                     if b.is_finite() && *b >= 0.0 {
@@ -390,21 +411,25 @@ impl<'w> Interp<'_, 'w> {
                     }
                 }
                 SItem::LayerEnd(e) => {
-                    if let Some(next) = self.layer_end(e.layer, e.then) {
+                    if let Some(next) = self.layer_end(e.layer, e.then, pc - 1) {
                         pc = pc.max(next.min(n_items));
                     }
                 }
                 SItem::DrawLayer(i) => self.draw_layer(*i),
                 SItem::ReleaseLayer(i) => {
-                    if let Some(slot) = self.layers.get_mut(usize::try_from(*i).unwrap_or(usize::MAX)) {
+                    let i = usize::try_from(*i).unwrap_or(usize::MAX);
+                    if let Some(slot) = self.kept.get_mut(i) {
+                        *slot = None;
+                    }
+                    if let Some(slot) = self.ranges.get_mut(i) {
                         *slot = None;
                     }
                 }
                 SItem::Effect(i) => {
                     let e = usize::try_from(*i).ok().and_then(|i| list.effects.get(i));
                     match e {
-                        Some(Effect::Bevel(_)) => self.count("effect:bevel"),
-                        Some(Effect::Warp(_)) => self.count("effect:warp"),
+                        Some(Effect::Bevel(b)) => self.bevel_effect(b, pc),
+                        Some(Effect::Warp(w)) => self.paint_warp(w),
                         Some(Effect::MetafileRop(_)) => self.count("effect:metafile-rop"),
                         None => {}
                     }
@@ -423,12 +448,7 @@ impl<'w> Interp<'_, 'w> {
     }
 
     fn blur_of(&self, s: u32) -> f64 {
-        // `blur(1.23px)`
-        let t = self.sym(s);
-        t.strip_prefix("blur(").and_then(|r| r.strip_suffix("px)")).map_or(0.0, |v| {
-            let n = uo_jsnum::parse::parse_float(v);
-            if n.is_finite() && n > 0.0 { n } else { 0.0 }
-        })
+        super::raster::blur_of(&self.sym(s))
     }
 
     // ---------------------------------------------------------------------------------------- state
@@ -535,9 +555,9 @@ impl<'w> Interp<'_, 'w> {
     // ---------------------------------------------------------------------------------------- painting gates
 
     /// Whether a paint operation may draw now: not under a singular transform, not under a compositing
-    /// mode PDF cannot express (counted; a destination-in/out fill taints the layer), and counts the shadow and
-    /// the blur that cannot be drawn. `Ok(false)` also when the off-screen shadow idiom would draw the shape
-    /// only to be thrown away.
+    /// mode PDF cannot express (counted; a destination-in/out fill taints the layer), and counts the blur that
+    /// cannot be drawn (a blur inside a layer makes the layer a raster, so this is a list outside the emitter's
+    /// shapes). The shadow is the painter's: see [`Interp::draw_shadow`].
     pub(super) fn can_paint(&mut self, is_fill: bool) -> bool {
         if self.t.cur.dead {
             return false;
@@ -559,14 +579,6 @@ impl<'w> Interp<'_, 'w> {
                 return false;
             }
             _ => {}
-        }
-        let sh = self.t.cur.shadow;
-        if sh.alpha > 0.0 && (sh.blur > 0.0 || sh.ox != 0.0 || sh.oy != 0.0) {
-            self.count("shadow");
-            // the off-screen idiom (`K` = 20000 px) draws the shape out of the canvas so that only its shadow shows
-            if abs(sh.ox) > 5000.0 || abs(sh.oy) > 5000.0 {
-                return false;
-            }
         }
         if self.t.cur.blur > 0.0 {
             self.count("blur");
@@ -700,13 +712,24 @@ impl<'w> Interp<'_, 'w> {
 
     fn draw_image(&mut self, d: &DrawImageItem) {
         let Some(img) = self.image(&d.src) else { return };
-        self.draw_handle(&img, d.s.as_ref(), &d.d);
+        self.draw_handle_src(&img, d.s.as_ref(), &d.d, Some(&d.src));
     }
 
     /// `drawImage(img, s, d)`: the picture (or the whole of it) into the rectangle `d`.
     pub(super) fn draw_handle(&mut self, img: &ImgHandle, s: Option<&Rect4>, d: &Rect4) {
+        self.draw_handle_src(img, s, d, None);
+    }
+
+    /// [`Interp::draw_handle`] knowing the picture's source (its alpha weighs the shadow).
+    fn draw_handle_src(&mut self, img: &ImgHandle, s: Option<&Rect4>, d: &Rect4, src: Option<&uo_render::slides::ImageSrc>) {
         if !self.can_paint(false) {
             return;
+        }
+        if self.shadow_on() {
+            self.shadow_picture(src, s, d);
+            if self.offscreen() {
+                return;
+            }
         }
         let alpha = self.t.cur.alpha;
         if alpha <= 0.0 {
@@ -767,8 +790,16 @@ impl<'w> Interp<'_, 'w> {
             self.count("layer:depth");
             return Some(self.after_layer_end(pc, layer));
         }
+        // a layer that composites with raster-only modes (soft edge, reflection fade, blur, bevel) is rasterized
+        if let Some((end, then)) = self.needs_raster(pc, layer)
+            && let Some(next) = self.raster_layer(pc, layer, fallback_end, end, then)
+        {
+            return Some(next);
+        }
         let ctm = self.t.cur.ctm;
         let mut layer_t = Target::new(ctm, Some(layer), Mat::IDENTITY);
+        layer_t.begin = pc;
+        layer_t.start_regs = self.regs;
         // the layer's space is the canvas space: it starts with the transform the context had
         let [a, b, c, d, e, f] = ctm.0;
         layer_t.buf.extend_from_slice(format!("{} {} {} {} {} {} cm\n", nm(a), nm(b), nm(c), nm(d), nm(e), nm(f)).as_bytes());
@@ -791,8 +822,8 @@ impl<'w> Interp<'_, 'w> {
         items.len()
     }
 
-    /// Closes the layer being built; `Some(fallback_end)` is the minimum the walk continues at.
-    fn layer_end(&mut self, layer: u32, then: LayerThen) -> Option<usize> {
+    /// Closes the layer being built (its `LayerEnd` at `at`); `Some(fallback_end)` is the minimum the walk continues at.
+    fn layer_end(&mut self, layer: u32, then: LayerThen, at: usize) -> Option<usize> {
         if self.t.layer != Some(layer) {
             return None;
         }
@@ -815,25 +846,35 @@ impl<'w> Interp<'_, 'w> {
             self.w.note(r)
         };
         let Some(form) = form else { return fb };
+        let range = KeptRange { from: done.begin, to: at, ctm: done.start_ctm, regs: done.start_regs };
         match then {
             LayerThen::Keep => {
-                if let Some(s) = self.layers.get_mut(slot) {
-                    *s = Some(form);
+                if let Some(s) = self.kept.get_mut(slot) {
+                    *s = Some(Kept::Form(form));
+                }
+                if let Some(r) = self.ranges.get_mut(slot) {
+                    *r = Some(range);
                 }
             }
-            LayerThen::Composite => self.composite_form(form),
+            LayerThen::Composite => self.composite_form(form, range),
         }
         fb
     }
 
     /// Draws a form under the identity transform with the context's alpha and blend mode.
-    fn composite_form(&mut self, form: u32) {
+    fn composite_form(&mut self, form: u32, range: KeptRange) {
         if self.t.cur.dead {
             return;
         }
         let Some(inv) = self.t.cur.ctm.inverse() else { return };
         if !self.can_paint(false) {
             return;
+        }
+        if self.shadow_on() {
+            self.shadow_range(range, true);
+            if self.offscreen() {
+                return;
+            }
         }
         let alpha = self.t.cur.alpha;
         if alpha <= 0.0 {
@@ -848,9 +889,27 @@ impl<'w> Interp<'_, 'w> {
     }
 
     fn draw_layer(&mut self, id: u32) {
-        let Some(form) = self.layers.get(usize::try_from(id).unwrap_or(usize::MAX)).copied().flatten() else { return };
+        let slot = usize::try_from(id).unwrap_or(usize::MAX);
+        let form = match self.kept.get(slot).cloned().flatten() {
+            Some(Kept::Form(f)) => f,
+            Some(Kept::Raster(s)) => {
+                if self.can_paint(false) {
+                    self.place_surface(&s, false);
+                }
+                return;
+            }
+            None => return,
+        };
         if !self.can_paint(false) {
             return;
+        }
+        if self.shadow_on() {
+            if let Some(r) = self.ranges.get(slot).copied().flatten() {
+                self.shadow_range(r, false);
+            }
+            if self.offscreen() {
+                return;
+            }
         }
         let alpha = self.t.cur.alpha;
         if alpha <= 0.0 {

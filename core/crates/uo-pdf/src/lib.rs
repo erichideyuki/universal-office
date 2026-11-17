@@ -26,6 +26,7 @@ mod font;
 mod num;
 mod page;
 mod picture;
+pub mod raster;
 mod render;
 mod sink;
 mod types;

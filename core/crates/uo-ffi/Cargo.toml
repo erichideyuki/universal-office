@@ -28,6 +28,10 @@ uo-docx-layout = { path = "../uo-docx-layout" }
 uo-render = { path = "../uo-render" }
 uo-pdf = { path = "../uo-pdf" }
 uo-drawingml = { path = "../uo-drawingml" }
+# the Slides read path of the .NET facade (record uo-bindings.md "Slides .NET facade"): .pptx/.ppt -> deck -> PDF, save
+uo-pptx = { path = "../uo-pptx", features = ["ppt", "pdf"] }
+# `ReadError` of the deck errors (the code of a malformed or over-limit part)
+uo-dml-render = { path = "../uo-dml-render" }
 # the server font policy over the machine's fonts (`system`) and the hyphenation patterns compiled in (`hyphen-data`)
 uo-fonts = { path = "../uo-fonts", features = ["system", "hyphen-data"] }
 

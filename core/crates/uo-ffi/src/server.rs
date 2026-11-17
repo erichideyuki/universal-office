@@ -80,8 +80,8 @@ impl Default for PdfJob {
 
 /// See the module documentation.
 pub struct Converter {
-    source: Arc<SystemFontIndex>,
-    trust: Trust,
+    pub(crate) source: Arc<SystemFontIndex>,
+    pub(crate) trust: Trust,
 }
 
 /// The seven pattern sets compiled into the native library, parsed once per process at the first

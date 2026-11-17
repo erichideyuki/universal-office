@@ -126,7 +126,16 @@ pub fn slide_timing(data: &[u8]) {
                         has_xfrm: true,
                     });
                     let base = AnimBase { x: 0.5, y: 0.5, w: 0.2, h: 0.1, rot: None, fill: None, line: None, text: None };
-                    for kind in [SlotKind::Shape, SlotKind::Background, SlotKind::Paragraph(0), SlotKind::ChartPart(0), SlotKind::Media] {
+                    let unit = UnitRef { para: 0, k: 1, count: 3, k_para: 1, count_para: 3 };
+                    for kind in [
+                        SlotKind::Shape,
+                        SlotKind::Background,
+                        SlotKind::Paragraph(0),
+                        SlotKind::ChartPart(0),
+                        SlotKind::Media,
+                        SlotKind::UnitGate(unit),
+                        SlotKind::BoundsPass(0),
+                    ] {
                         tpl.slots.push(SlotSpec { kind, shape: 0, base: base.clone(), word: None });
                     }
                     let _ = evaluate_slots(&tpl, ps, ms, &MediaClock::default(), &mut caches);

@@ -750,7 +750,8 @@ through three caches): 2.84 M executions in 45 s and 0.94 M in 40 s on the stabl
 
 ### Slot schema and what B7 needs
 
-- **No `slots.uos` change is required.** The wire `SlotDef`/`PartState` carry what the painter reads. What the evaluation needs beyond
+- **No `slots.uos` change is required.** (B4b then added `Replacement.values` and the slot kinds `UnitGate`/`BoundsPass`: `uo-render.md`
+  "B4b schema changes".) The wire `SlotDef`/`PartState` carry what the painter reads. What the evaluation needs beyond
   it (`AnimBase.fill/line/text` for `animClr` without `from`, the shape's id + group ids, `dgmId`, `has_media`, `inherited`, the five
   integers of a `UnitRef` and the word's) stays in the Rust-side `SlotTemplate` (`slots.rs`) that the emitter fills next to the encoded
   list. If B4 wants them on the wire: `SlotDef.index: u32` cannot hold a `UnitRef`, and `base_rot_rad` is not `AnimBase.rot` (the TS
@@ -771,6 +772,107 @@ through three caches): 2.84 M executions in 45 s and 0.94 M in 40 s on the stabl
 | Harness: `b6.mjs` generator, `capture-timing.mjs` | one session | captures: samples 1.6 s, b6a 10.3 s, b1a 21.9 s, formulas 1.5 s; the 100 decks regenerate in under 2 s, byte-equal (`--check`) |
 | Verification | - | `timing_replay` 4.2 s, `timing_limits` 1.2 s, `replay` 5 s (debug); whole `uo-pptx` suite 74 s (debug, 4 threads); fuzz 45 + 40 s stable driver; clippy native + wasm32 clean |
 | Rework | - | M1: `clear()` kept map capacity (180 B); the formula parser's nest counter counted parentheses twice (64 levels instead of 128) and shared its bound with the tree depth (a 256-term sum was NaN): split into `MAX_DEPTH`/`MAX_TREE_DEPTH`; the fuzz invariant on `1e999` |
+
+## B4b — playback emission: slots, frames, re-emission (2026-11-17, Opus)
+
+The animated slide as a display list with slots, replacing the TS path of `paintPlaybackSlide` (`shapeAnim`, `shapeOpacity`,
+`mediaFrame` over `paintSlideTo`). New: `src/stage.rs` (this crate), `uo-dml-render/src/emit/anim.rs` (the emitter side, record
+`uo-dml-render.md` "B4b"), the wasm exports `uo_slides_stage_show` / `uo_slides_stage_timeline` / `uo_slides_stage_clear`
+(`uo-bindings.md` "Slides viewer (B7)", "B4b"), the painter rules in `paint-slides.ts`, and the viewer wiring.
+
+### Design
+
+- **The structure is static per slide, the values per frame.** Which TS hooks exist for a shape (`hooks.bg`, the paragraph ranges of
+  `hooks.para`, `hooks.unit` letters/words and its ranges, `hooks.chartParts`) depends only on the placed effects, not on the time, and
+  it changes what the TS draws (a paragraph with a state draws its runs without the fit spacing, a body entering by unit is drawn piece
+  by piece). `ShapeHooks::plan()` returns that structure (`uo_dml_render::emit::ShapeAnim`); `stage::anim_plan(ps, shapes)` builds it for
+  every shape of a `PlaybackSlide` as the viewer's `shapeAnim` does (none for an inherited shape, a shape without `xfrm`, a slide
+  without effects). `emit_stage` emits the slide once with it (`emit_slide_anim`) and keeps the `SlotTemplate` (`template_of`: every
+  emitted slot's base exactly as `boxBase`, the shape facts the hooks need) next to the list: a `Stage`.
+- **A frame** (`stage_frame`) is `evaluate_slots` over the stage's template. A state with a field `applyPart` does not apply
+  (`PartState::needs_reemit`) re-emits that shape alone (`emit_shape_anim`) with a `SlotStates` that evaluates each slot the emitter
+  writes as `evaluate_slots` would (`SlotEval`, the per-slot evaluator split out of `evaluate_slots`), so `fillOv`/`lineOv`, `fontOf`,
+  `colorOf`, `underOf` and the font scale of the layout are the TS ones; the replacement has its own slots and values (a font scale
+  moves the paragraph and unit boxes).
+- **Still lists are unchanged**: no slots, a plain `save`/`restore` per shape (the PDF and the thumbnails read them). Only a playback list
+  puts every shape in its shape slot.
+- The stage is reused while the slide, the viewport, the media flag and the hooks' structure are the same; a newer placement (steps
+  fired) only replaces the `PlaybackSlide` the values are evaluated over.
+- `media` is the viewer's `hasMedia`: without it (a frozen transition origin) no `MediaFrame` items and no `shapeOpacity`
+  (`template_of(.., media)` clears `has_media`; found by the Chromium harness: the show's origin hid a `showWhenStopped` picture).
+- The `chartPartBounds` probe of the TS (a recording proxy that forwards `save`/`restore`, `clip`, `roundRect`, `drawImage` and the
+  state sets to the real canvas on a bounds-cache miss) is a `BoundsPass` gate: emitted when the emitter's bounds cache misses (the
+  boxes computed in a pass are committed only by a complete pass, so the decision is the same in every measurement round), drawn only in
+  the first frame of the stage (`stage_frame(first)`), as the TS cache holds the boxes afterwards.
+
+### Parity (the gate)
+
+TS side: `js/capture-anim.mjs` paints the slides of the default playback timeline at sampled animation times with the frozen
+`paintSlideTo` and the viewer's hooks (`shapeAnim`, `shapeOpacity`, and a deterministic `mediaFrame` stub: nothing, an opaque frame
+or a half-faded one by `(shape + frame) % 3`) over the recording context. Rust side: `uo-wasm/tests/slides_anim.test.mjs` builds the same
+timeline in `uo-slides.wasm`, calls `deck.stage` at the same `t`, decodes the stage list, the `SlotFrame` and its replacement lists,
+paints with `paint-slides.ts` (same stub) and compares the draw form line by line, exact; then the same frames through ONE view (the
+stage reused) must give the same streams (except the first-frame chart probes).
+
+| Capture | Decks | Frames | Equal | Reused stage equal | Frames with re-emitted shapes | Slots |
+|---|---|---|---|---|---|---|
+| `anim-b6a` (committed, 3 times per slide) | 96 | 472 | **472** | 472 | 125 | 16,359 |
+| `anim-samples` (committed) | 16 | 551 | **551** | 527 + 24 without the first frame's chart probes | 27 | 5,197 |
+| `anim-b1a` (committed, 60 decks, 2 times per slide) | 60 | 150 | **150** | 150 | 8 | 1,604 |
+| `anim-b6a` full (local, 6 times per slide) | 96 | 1,015 | **1,015** | 1,015 | 328 | 36,471 |
+| `anim-b1a` full (local, 160 decks) | 160 | 1,462 | **1,462** | 1,462 | 133 | 15,667 |
+
+The static gates are unchanged: `drawops-samples` 1,202/1,202, `drawops-b1a` 246/246, `drawops-c1d` 182/182 (wasm), `drawops-b5b`
+162/162 (native `emit-uolf` + `compare-drawops`). No committed capture was regenerated; the three `anim-*` captures are new.
+Chromium (`slides_switch.mjs --mode anim`): 121 animated decks (the playback samples, 40 `b6a`, 40 `b1a`), `play({ media: 'seek' })` at 13
+instants and `present()` driven by `next()` with the clock stepping (0 / 180 / 420 / 900 ms) through 12 steps: **5,089 frames, 5,089
+pixel-equal** between `engine="ts"` and `engine="rust"` (5,254 stage paints by the Rust list), 0 errors; the TS-against-TS control of the
+same harness is 1,993/1,993 on the playback samples (the harness first had `play()`'s real-clock start in it: fixed, `t0` on the virtual clock).
+The CI form (`--mode all`, `UO_SS_DECKS=100`, final tree): phase 0 clean; still parity 213 decks / 959 slides pixel-equal (981 M pixels, main canvas
+617, thumbnails, notes, a11y: 0 different); anim **181 decks, 7,221 frames, 7,221 pixel-equal** (7,246 stage paints by the Rust list); memory and
+faults green.
+
+Rounds found by the harness and fixed in this session: the soft-reveal layer collided with a shape's own effect layer right after its
+slot (the painter now knows the soft layers by reserved ids 15/14 and composites the reveals only on them); a slot frame symbol was written
+as the 1-based id; the list of a stage that needed measurements was encoded and not delivered (now encoded only with a complete frame);
+the chart probes (above); a letter of an astral character is half a surrogate pair in the TS (pieces now carry UTF-16 units); the media
+flag of the transition origin (above).
+
+### Memory (M1-M3), `tests/stage.rs` (uo-alloc)
+
+- **M1**: stages and frames (with re-emission) of three `b6a` decks, then `AnimCaches::clear`, `EmitCaches::clear`, `Deck::clear_caches`:
+  live bytes back exactly.
+- **M2**: 400 frames over the stages of a deck (one evaluation per frame, stages reused): flat within 64 KiB after warm-up.
+- **M3**: the busiest frame WITHOUT re-emission over six `b6a` decks allocates **28,276 B** (peak 23,461 B above the start); budget
+  64 KiB. (B6's synthetic template measured 10,232 B; these are real slides with up to 300 slots.)
+- In the module (Chromium): 300 playback frames of a `b6a` deck, live bytes 251,720 at every sample (spread 0), 0 handles and 0 live bytes after
+  the element left.
+
+### Security and fuzz
+
+`tests/stage.rs` `hostile_frames_do_not_panic` (NaN / infinite / huge animation times, absurd viewports). Fuzz: `slides_emit` now also emits
+every input as a playback list with a hostile `AnimPlan` and re-emits each shape with hostile states (NaN, negative and 1e9 font scales,
+invalid colours, empty font style), invariants in `core/fuzz/src/slides_emit.rs`; `slide_timing` evaluates the new slot kinds
+(`UnitGate`, `BoundsPass`). Stable driver, 40 s each: `slides_emit` 16,886 executions (422/s: two playback emissions plus one
+re-emission per shape for each input), slowest 126 ms; `slide_timing` 864,150 executions; **0 crashes**. The wasm exports refuse a bad
+`which`, a NaN/negative scale and null handles (`slides_api.test.mjs`, the Rust unit test of `src/slides.rs`).
+
+### Decisions outside the source semantics (declared)
+
+1. A unit piece that is half of a surrogate pair is measured as U+FFFD (the measure key is UTF-8, as B3-3); its drawn text keeps the
+   UTF-16 unit. A browser draws and measures a lone surrogate as U+FFFD, so only the deterministic stub can tell.
+2. `MediaFrame` items carry the poster's draw; a media picture whose poster is not decodable draws nothing (the TS would draw an opaque
+   video frame there with the picture's shadow and clip). The poster is part of every `p:pic` with media.
+3. A soft-revealing shape (or chart part) is written twice (the soft layer and its else block), and so are its slots; the values are
+   the same.
+4. `globalAlpha` absolute restores inside a slot (`ctx.globalAlpha = prevAlpha` of the outline) are relative to the alpha the slot's value
+   multiplied in (`paint-slides.ts`): exact with one static factor, as every case in the captures.
+
+### Process metrics
+
+One session (Opus). 0 parity rounds after the first complete run except the six harness findings above (each a code fix, none a
+comparison change). Builds `-j 4`: wasm `count,slides` 20-40 s incremental; captures: anim-b6a full 25 s, b1a full 55 s; `slides_anim` 2 min;
+Chromium anim 190 s; `tests/stage.rs` 0.5 s.
 
 ## B8 — editor session (2026-11-17, Sonnet)
 

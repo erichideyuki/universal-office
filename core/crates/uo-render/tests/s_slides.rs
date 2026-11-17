@@ -339,7 +339,7 @@ fn slot_frames_round_trip_and_check_against_the_list() {
     let frame = SlotFrame {
         frame: 3,
         values: vec![SlotValue::State(state.clone())],
-        replacements: vec![Replacement { shape: 2, list: encode_one(&list, &res) }],
+        replacements: vec![Replacement { shape: 2, list: encode_one(&list, &res), values: vec![] }],
     };
     assert!(check_frame(&frame, &list).is_ok());
     let mut bytes = Vec::new();
@@ -353,7 +353,7 @@ fn slot_frames_round_trip_and_check_against_the_list() {
     // positional: the wrong number of values, a replacement for an unknown shape
     let short = SlotFrame { values: vec![], ..frame.clone() };
     assert!(check_frame(&short, &list).is_err());
-    let stray = SlotFrame { replacements: vec![Replacement { shape: 9, list: vec![] }], ..frame };
+    let stray = SlotFrame { replacements: vec![Replacement { shape: 9, list: vec![], values: vec![] }], ..frame };
     assert!(check_frame(&stray, &list).is_err());
     // other values
     for v in [

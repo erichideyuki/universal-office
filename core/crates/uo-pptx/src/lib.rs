@@ -43,6 +43,7 @@ pub mod ppt;
 pub mod read;
 pub mod show;
 pub mod slots;
+pub mod stage;
 pub mod timing;
 pub mod timing_eval;
 pub mod timing_parse;

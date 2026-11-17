@@ -1,7 +1,9 @@
 //! Text of a shape: the text rectangle, `bodyPr rot`, vertical text, the unflip, the layout (two-phase through the
 //! measurement table) and the runs, bullets and decorations as `TextRun` items; WordArt as the `Warp` effect
-//! (`render.ts` 1555-1957, `paintText`, `paintWarp`, `letterFill`). Animation units and per-paragraph slots are the
-//! playback wave (B6): this port emits the static text.
+//! (`render.ts` 1555-1957, `paintText`, `paintWarp`, `letterFill`). With the shape's hooks (B4b, [`super::anim`]): a
+//! paragraph with a state is a `Paragraph` slot per line, a text entering by unit is drawn piece by piece in `Unit` slots
+//! (`planUnits`, the pieces measured at device px) with the bullet behind a `UnitGate`; a re-emission draws with the
+//! states' style (`fontOf`, `colorOf`, `underOf`, the font scale of `hooks.all`).
 
 use std::f64::consts::PI;
 
@@ -13,8 +15,10 @@ use uo_render::slides::{
     WarpLine, WarpPaint, WarpPaintKind, WarpPattern, WarpRun, WarpStroke, WarpTile,
 };
 
+use super::anim::{EmitSlot, EmitSlotKind, PartStyle, UnitPlan};
 use super::cx::{Abort, Cx, E, rgb_of, rgba_of};
 use super::paint::{self, image_tile, inset_rect, is_gradient, make_linear_gradient, preset_pattern};
+use super::shape::box_base;
 use super::shape::{Fit, shape_filled};
 use crate::model::{EMU_PER_POINT, Fill, OuterShadow, Shape, TextBody};
 use crate::text::{LayoutError, LayoutFont, LayoutTextOptions, Measurer, PlacedRun, TextLayoutResult, layout_text_body};
@@ -47,12 +51,14 @@ struct Pass {
     in_rect: bool,
     rot_off: bool,
     vert_off: bool,
+    /// the shape's own body painted with `anim` (`paintShape` → `paintText(..., anim)`); cells and the xfrm-less box are not
+    anim: bool,
 }
 
 /// `paintText` of a shape's own body.
 pub fn paint_text_shape(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fit: &Fit) -> E {
     match sh.tx_body.as_deref() {
-        Some(tb) => paint_text(cx, sh, tb, x, y, w, h, fit.scale, false),
+        Some(tb) => paint_text_pass(cx, sh, tb, x, y, w, h, fit.scale, Pass { anim: true, ..Pass::default() }),
         None => Ok(()),
     }
 }
@@ -134,7 +140,7 @@ fn paint_text_pass(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w
         cx.scale(if flip_h { -1.0 } else { 1.0 }, if flip_v { -1.0 } else { 1.0 });
         cx.translate(-cxm, -cym);
     }
-    draw_body(cx, sh, tb, x, y, w, h, scale)?;
+    draw_body(cx, sh, tb, x, y, w, h, scale, pass.anim)?;
     if unflip {
         cx.restore();
     }
@@ -146,16 +152,56 @@ fn rgba_shadow_of(s: &OuterShadow) -> String {
 }
 
 /// The laid-out lines of a body drawn at `(x, y)` (the part of `paintText` after the geometry).
-fn draw_body(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64, h: f64, scale: f64) -> E {
+fn draw_body(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64, h: f64, scale: f64, with_anim: bool) -> E {
     let is_title = matches!(sh.ph_type.as_deref(), Some("title" | "ctrTitle"));
+    // the hooks of the shape (`anim` of `paintText`) and, in a re-emission, the style of `hooks.all`
+    let anim = if with_anim && cx.cur.slot.is_some() { cx.cur.anim } else { None };
+    let all: Option<PartStyle> = if anim.is_some() { cx.cur.all.clone() } else { None };
+    // `fontScale` of an emphasis: the layout again with the scaled font
+    let fsc = all.as_ref().and_then(|a| a.font_scale).filter(|k| *k != 1.0).unwrap_or(1.0);
     let opts = LayoutTextOptions {
         default_sz_pt: Some(if is_title { DEFAULT_TITLE_PT } else { DEFAULT_BODY_PT }),
         default_anchor: Some(if is_title { "ctr" } else { "t" }.into()),
-        size_scale: Some(1.0),
+        size_scale: Some(fsc),
         ..LayoutTextOptions::default()
     };
     let Some(lay) = layout(cx, tb, w / scale, h / scale, Measurer::Ppt, &opts)? else { return Ok(()) };
     let px_per_pt = EMU_PER_POINT * scale;
+    // paragraph boxes (px): the base of the per-paragraph hooks
+    let para_hook = anim.filter(|a| !a.paras.is_empty());
+    let unit_hook = anim.and_then(|a| a.unit.as_ref());
+    let mut pbox: Vec<(u32, [f64; 4])> = Vec::new();
+    let mut pcolor: Vec<(u32, crate::color::CssColor)> = Vec::new();
+    if para_hook.is_some() {
+        for line in &lay.lines {
+            if !pcolor.iter().any(|(p, _)| *p == line.para)
+                && let Some(r0) = line.runs.first()
+            {
+                pcolor.push((line.para, r0.color.clone()));
+            }
+            let mut x0 = f64::INFINITY;
+            let mut x1 = f64::NEG_INFINITY;
+            for r in &line.runs {
+                x0 = math::min(x0, x + r.x * scale);
+                x1 = math::max(x1, x + (r.x + r.w) * scale);
+            }
+            if let Some(b) = line.bullet.as_ref() {
+                x0 = math::min(x0, x + b.x * scale);
+            }
+            if !x0.is_finite() {
+                continue;
+            }
+            let top = y + (line.baseline - line.height * 0.8) * scale;
+            let bot = y + (line.baseline + line.height * 0.2) * scale;
+            match pbox.iter_mut().find(|(p, _)| *p == line.para) {
+                Some((_, b)) => *b = [math::min(b[0], x0), math::min(b[1], top), math::max(b[2], x1), math::max(b[3], bot)],
+                None => pbox.push((line.para, [x0, top, x1, bot])),
+            }
+        }
+    }
+    // the paragraph slots (`stOfPara`: one per paragraph with a state, made at its first line)
+    let mut para_slots: Vec<(u32, Option<(u32, PartStyle)>)> = Vec::new();
+    let plan = unit_hook.map(|u| UnitPlan::new(tb, &lay.lines, u.letters, u.words));
     cx.push(uo_render::slides::SItem::TextBaseline(uo_render::slides::Baseline::Alphabetic));
     let v_clip = cx.clip_overflow && tb.vert_overflow.as_deref() == Some("clip");
     let h_clip = cx.clip_overflow && tb.horz_overflow.as_deref() == Some("clip");
@@ -184,9 +230,64 @@ fn draw_body(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64,
         } else {
             None
         };
-        cx.save();
+        let pst: Option<(u32, PartStyle)> = match para_hook {
+            None => None,
+            Some(ph) => match para_slots.iter().find(|(p, _)| *p == line.para) {
+                Some((_, v)) => v.clone(),
+                None => {
+                    let b = pbox.iter().find(|(p, _)| *p == line.para).map(|(_, b)| *b);
+                    let v = match b {
+                        Some(b) if ph.para_covers(line.para) => {
+                            let slot = EmitSlot {
+                                kind: EmitSlotKind::Paragraph(line.para),
+                                shape: cx.shape_index,
+                                base: box_base(cx, b[0], b[1], b[2] - b[0], b[3] - b[1]),
+                                bx: [b[0], b[1], b[2] - b[0], b[3] - b[1]],
+                                base_rot_rad: 0.0,
+                                rot_deg: None,
+                                fill: None,
+                                line: None,
+                                text: pcolor.iter().find(|(p, _)| *p == line.para).map(|(_, c)| c.clone()),
+                                word: None,
+                            };
+                            let i = cx.add_slot(slot);
+                            Some((i, cx.slot_style(i)))
+                        }
+                        _ => None,
+                    };
+                    para_slots.push((line.para, v.clone()));
+                    v
+                }
+            },
+        };
+        // `if (pst && !pst.visible) continue; ctx.save(); applyPart(...)`: the painter skips an invisible paragraph
+        match &pst {
+            Some((i, _)) => cx.slot_begin(*i),
+            None => cx.save(),
+        }
         if let Some(b) = line.bullet.as_ref() {
             let size_px = b.font.size_pt * px_per_pt;
+            // the bullet follows the paragraph's first unit when the text enters by unit (its state only gates it)
+            let gate = match (unit_hook, plan.as_ref()) {
+                (Some(u), Some(p)) if u.covers(line.para) => {
+                    let slot = EmitSlot {
+                        kind: EmitSlotKind::UnitGate(p.first_ref(line.para)),
+                        shape: cx.shape_index,
+                        base: box_base(cx, x + b.x * scale, by - size_px * 0.8, size_px, size_px),
+                        bx: [x + b.x * scale, by - size_px * 0.8, size_px, size_px],
+                        base_rot_rad: 0.0,
+                        rot_deg: None,
+                        fill: None,
+                        line: None,
+                        text: Some(b.color.clone()),
+                        word: p.first_word_ref(line.para),
+                    };
+                    let i = cx.add_slot(slot);
+                    cx.gate_begin(i);
+                    true
+                }
+                _ => false,
+            };
             let img = b.image.as_ref().and_then(|i| cx.image_plain(i));
             if b.image.is_some() {
                 if let Some(im) = img {
@@ -217,11 +318,27 @@ fn draw_body(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64,
                     strike: None,
                 });
             }
+            if gate {
+                cx.gate_end();
+            }
         }
-        for r in &line.runs {
-            draw_run(cx, r, x + r.x * scale, by, scale, px_per_pt, line_box.as_ref(), shape_shadow);
+        let pst_style = pst.as_ref().map(|(_, s)| s);
+        match (unit_hook, plan.as_ref()) {
+            (Some(uh), Some(plan)) => {
+                draw_units(cx, sh, uh, plan, li, line, x, by, scale, px_per_pt, line_box.as_ref(), shape_shadow, pst_style, all.as_ref())?;
+            }
+            _ => {
+                for r in &line.runs {
+                    let st = Style { st: pst_style, all: all.as_ref() };
+                    draw_run(cx, r, None, Some(r.w * scale), x + r.x * scale, by, scale, px_per_pt, line_box.as_ref(), shape_shadow, st);
+                }
+            }
         }
-        cx.restore();
+        if pst.is_some() {
+            cx.slot_end();
+        } else {
+            cx.restore();
+        }
     }
     if v_clip || h_clip {
         cx.restore();
@@ -250,20 +367,189 @@ fn letter_fill(cx: &mut Cx<'_>, r: &PlacedRun, bx: [f64; 4], scale: f64) -> Opti
     Some(cx.pattern(PatternSrc::Image(img.src), Repeat::NoRepeat, tr))
 }
 
-/// `drawText` (render.ts:1638) for one placed run, without animation overrides.
+/// The animated style overrides of a draw (`st` = the paragraph's or unit's state, present even without a style field;
+/// `all` = the shape's): `fontOf`, `colorOf`, `underOf` of `paintText`.
+#[derive(Clone, Copy, Default)]
+struct Style<'s> {
+    st: Option<&'s PartStyle>,
+    all: Option<&'s PartStyle>,
+}
+
+impl Style<'_> {
+    /// `fontOf(f, st)`: family, bold and italic.
+    fn font(&self, f: &LayoutFont) -> (Box<str>, bool, bool) {
+        let wgt = self.st.and_then(|s| s.font_weight.as_deref()).or_else(|| self.all.and_then(|a| a.font_weight.as_deref()));
+        let sty = self.st.and_then(|s| s.font_style.as_deref()).or_else(|| self.all.and_then(|a| a.font_style.as_deref()));
+        let fam = self.st.and_then(|s| s.font_family.as_deref()).or_else(|| self.all.and_then(|a| a.font_family.as_deref()));
+        let (wgt, sty, fam) = (wgt.filter(|v| !v.is_empty()), sty.filter(|v| !v.is_empty()), fam.filter(|v| !v.is_empty()));
+        if wgt.is_none() && sty.is_none() && fam.is_none() {
+            return (f.family.clone(), f.bold, f.italic);
+        }
+        (fam.map_or_else(|| f.family.clone(), Into::into), wgt.map_or(f.bold, |w| w == "bold"), sty.map_or(f.italic, |s| s == "italic"))
+    }
+
+    /// `colorOf(c, st)`.
+    fn color<'c>(&'c self, c: &'c crate::color::CssColor) -> &'c str {
+        self.st.and_then(|s| s.text_color.as_ref()).or_else(|| self.all.and_then(|a| a.text_color.as_ref())).unwrap_or(c).as_str()
+    }
+
+    /// `underOf(u, st)`.
+    fn under(&self, u: bool) -> bool {
+        self.st.and_then(|s| s.underline).or_else(|| self.all.and_then(|a| a.underline)).unwrap_or(u)
+    }
+}
+
+/// The text of the unit path of one line (render.ts 1795-1831): the pieces of every run measured at device px (`measureText`
+/// of the run's text up to the piece and of the piece, under `fontOf(r.font, pst)`), the box of each unit (the union of its
+/// pieces), then each piece in its unit's slot (a plain `save` when the unit has no state).
+fn draw_units(
+    cx: &mut Cx<'_>,
+    sh: &Shape,
+    uh: &super::anim::UnitHook,
+    plan: &UnitPlan,
+    li: usize,
+    line: &crate::text::PlacedLine,
+    x: f64,
+    by: f64,
+    scale: f64,
+    px_per_pt: f64,
+    line_box: Option<&[f64; 4]>,
+    shape_shadow: Option<&OuterShadow>,
+    pst: Option<&PartStyle>,
+    all: Option<&PartStyle>,
+) -> E {
+    let _ = sh;
+    struct Piece<'p> {
+        p: &'p super::anim::UnitPiece,
+        r: &'p PlacedRun,
+        ux: f64,
+        uw: f64,
+        size_px: f64,
+    }
+    let pstyle = Style { st: pst, all };
+    let mut pieces: Vec<Piece<'_>> = Vec::new();
+    let line_pieces = plan.pieces.get(li);
+    for (ri, r) in line.runs.iter().enumerate() {
+        let Some(ps) = line_pieces.and_then(|l| l.get(ri)).filter(|p| !p.is_empty()) else { continue };
+        let (fam, bold, italic) = pstyle.font(&r.font);
+        let size_px = r.font.size_pt * px_per_pt;
+        let tx = x + r.x * scale;
+        let units: Vec<u16> = r.text.encode_utf16().collect();
+        for p in ps {
+            let prefix = String::from_utf16_lossy(units.get(..p.start).unwrap_or(&units));
+            let ux = tx + device_width(cx, &prefix, &fam, size_px, bold, italic);
+            let uw = device_width(cx, &String::from_utf16_lossy(&p.text), &fam, size_px, bold, italic);
+            pieces.push(Piece { p, r, ux, uw, size_px });
+        }
+    }
+    // the box of each unit (the pieces of a word across runs share it)
+    let mut boxes: Vec<(u32, f64, f64, f64, &crate::color::CssColor)> = Vec::new();
+    for q in &pieces {
+        match boxes.iter_mut().find(|b| b.0 == q.p.unit.k) {
+            Some(b) => {
+                b.1 = math::min(b.1, q.ux);
+                b.2 = math::max(b.2, q.ux + q.uw);
+                b.3 = math::max(b.3, q.size_px);
+            }
+            None => boxes.push((q.p.unit.k, q.ux, q.ux + q.uw, q.size_px, &q.r.color)),
+        }
+    }
+    // one slot per unit of the line (`states` per line), made at its first piece
+    let mut slots: Vec<(u32, Option<(u32, PartStyle)>)> = Vec::new();
+    for q in &pieces {
+        let Some(&(_, x0, x1, size, color)) = boxes.iter().find(|b| b.0 == q.p.unit.k) else { continue };
+        let uy = by - size * 0.8;
+        let ust = match slots.iter().find(|(k, _)| *k == q.p.unit.k) {
+            Some((_, v)) => v.clone(),
+            None => {
+                let v = if uh.covers(q.p.unit.para) {
+                    let slot = EmitSlot {
+                        kind: EmitSlotKind::Unit(q.p.unit),
+                        shape: cx.shape_index,
+                        base: box_base(cx, x0, uy, x1 - x0, size),
+                        bx: [x0, uy, x1 - x0, size],
+                        base_rot_rad: 0.0,
+                        rot_deg: None,
+                        fill: None,
+                        line: None,
+                        text: Some(color.clone()),
+                        word: q.p.word,
+                    };
+                    let i = cx.add_slot(slot);
+                    Some((i, cx.slot_style(i)))
+                } else {
+                    None
+                };
+                slots.push((q.p.unit.k, v.clone()));
+                v
+            }
+        };
+        match &ust {
+            Some((i, _)) => cx.slot_begin(*i),
+            None => cx.save(),
+        }
+        let st = Style { st: ust.as_ref().map(|(_, s)| s).or(pst), all };
+        let whole = q.r.text.encode_utf16().eq(q.p.text.iter().copied());
+        draw_run(
+            cx,
+            q.r,
+            Some(&q.p.text),
+            if whole { Some(q.r.w * scale) } else { None },
+            q.ux,
+            by,
+            scale,
+            px_per_pt,
+            line_box,
+            shape_shadow,
+            st,
+        );
+        if ust.is_some() {
+            cx.slot_end();
+        } else {
+            cx.restore();
+        }
+    }
+    Ok(())
+}
+
+/// `ctx.measureText(text).width` at device px under the context's current kerning and spacing (a piece of the unit path).
+fn device_width(cx: &mut Cx<'_>, text: &str, family: &str, size_px: f64, bold: bool, italic: bool) -> f64 {
+    use crate::text::{Bits, FaceKey, Kerning, MeasureReq, StringKey};
+    match cx.env.table.width((family, bold, italic), size_px, Kerning::Current, 0.0, text) {
+        Some(v) => v,
+        None => {
+            cx.need(MeasureReq::Width(StringKey {
+                face: FaceKey { family: family.into(), bold, italic },
+                size_px: Bits::of(size_px),
+                kerning: Kerning::Current,
+                letter_spacing_px: Bits::of(0.0),
+                text: text.into(),
+            }));
+            0.0
+        }
+    }
+}
+
+/// `drawText` (render.ts:1638) for a placed run: its whole text, or the UTF-16 units of a unit piece (`laid_w` = `r.w × scale`
+/// when it is the whole text), with the animated style `st`.
 fn draw_run(
     cx: &mut Cx<'_>,
     r: &PlacedRun,
+    piece: Option<&[u16]>,
+    laid_w: Option<f64>,
     tx: f64,
     by0: f64,
     scale: f64,
     px_per_pt: f64,
     line_box: Option<&[f64; 4]>,
     shape_shadow: Option<&OuterShadow>,
+    st: Style<'_>,
 ) {
     let f: &LayoutFont = &r.font;
     let size_px = f.size_pt * px_per_pt;
-    let font = cx.font_ref(&f.family, f.bold, f.italic, size_px);
+    let (family, bold, italic) = st.font(f);
+    let font = cx.font_ref(&family, bold, italic, size_px);
+    let has_st = st.st.is_some();
     let by = match r.rise.filter(|v| truthy(*v)) {
         Some(rise) => by0 - rise * scale,
         None => by0,
@@ -272,18 +558,21 @@ fn draw_run(
         Some(spc) => spc * scale,
         None => 0.0,
     };
-    let mut fill = cx.css(r.color.as_str());
-    if let Some(pf) = r.patt_fill.as_ref()
+    let color = st.color(&r.color).to_owned();
+    let mut fill = cx.css(&color);
+    if !has_st
+        && let Some(pf) = r.patt_fill.as_ref()
         && let Some(p) = preset_pattern(cx, pf, 0.0, 0.0, scale)
     {
         fill = p;
     }
-    if let (Some(b), true) = (line_box, r.grad_fill.is_some() || r.fill_image.is_some())
+    if !has_st
+        && let (Some(b), true) = (line_box, r.grad_fill.is_some() || r.fill_image.is_some())
         && let Some(lf) = letter_fill(cx, r, *b, scale)
     {
         fill = lf;
     }
-    let fill_a = r.alpha.unwrap_or(1.0);
+    let fill_a = if has_st { 1.0 } else { r.alpha.unwrap_or(1.0) };
     let alpha_mul = if fill_a < 1.0 { Some(fill_a) } else { None };
     let eff_shadow = if fill_a <= 0.0 { None } else { r.shadow.as_ref().or(shape_shadow) };
     let shadow = eff_shadow.map(|sc| TextShadow {
@@ -293,23 +582,26 @@ fn draw_run(
         dy: sc.dist * math::sin(sc.dir_deg * PI / 180.0) * scale,
     });
     let outline = r.outline.as_ref().map(|(c, wd)| TextOutline { color: cx.sym(c.as_str()), width: math::max(0.5, wd * scale) });
-    let color_sym = cx.sym(r.color.as_str());
+    let color_sym = cx.sym(&color);
     let deco = |cx_: &mut Cx<'_>, up: bool| -> Decoration {
         let _ = cx_;
         let width = math::max(1.0, size_px / 16.0);
         let y = if up { math::round(by + size_px * 0.12) + 0.5 } else { math::round(by - size_px * 0.3) + 0.5 };
         Decoration { color: color_sym, width, y }
     };
-    let underline = if r.underline { Some(deco(cx, true)) } else { None };
+    let underline = if st.under(r.underline) { Some(deco(cx, true)) } else { None };
     let strike = if r.strike { Some(deco(cx, false)) } else { None };
-    let span = cx.text_span(&r.text);
+    let span = match piece {
+        Some(u) => cx.text_span_units(u),
+        None => cx.text_span(&r.text),
+    };
     cx.text_run(TextRun {
         text: span,
         font,
         x: tx,
         y: by,
-        laid_w: Some(r.w * scale),
-        fit_allowed: true,
+        laid_w,
+        fit_allowed: !has_st,
         letter_spacing_px: ls,
         kern: f.kern,
         fill,

@@ -26,6 +26,7 @@ internal static unsafe partial class NativeMethods
     internal const uint JobCompress = 1;
     internal const uint JobNoHyphenation = 2;
     internal const uint JobHyphenationLanguages = 4;
+    internal const uint JobTsStrict = 8;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct ConverterOptions

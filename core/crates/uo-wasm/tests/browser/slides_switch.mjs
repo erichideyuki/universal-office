@@ -3,7 +3,8 @@
 //
 //   [UO_TS_ROOT=<frozen checkout: tools only, default the 0.9.2 reference>] [UO_CHROMIUM=<chrome-headless-shell.exe>]
 //   [UO_WASM_PATH=<uo-slides.wasm: the count,slides build>] [UO_PPT_WASM_PATH=<uo-slides-ppt.wasm>]
-//   [UO_SS_DECKS=<n of b1a decks, default 40>] [UO_SS_C1D=<n of c1d chart decks, default 20>] [UO_SS_SOAK=200] node crates/uo-wasm/tests/browser/slides_switch.mjs [--mode all|parity|memory|faults|phase0]
+//   [UO_SS_DECKS=<n of b1a decks, default 40>] [UO_SS_C1D=<n of c1d chart decks, default 20>] [UO_SS_B6A=<n of b6a animated decks, default 40>]
+//   [UO_SS_SOAK=200] node crates/uo-wasm/tests/browser/slides_switch.mjs [--mode all|parity|memory|faults|phase0|anim]
 //
 // The page is the real thing: the viewer's `src/index.ts` and the Rust engine's JS bundled by the frozen esbuild (splitting, the alias
 // table of tools/build-pkg.mjs, `@universal-office/slides-engine`), served by a node:http server together with `chunks/uo-slides.wasm`
@@ -14,6 +15,10 @@
 //   memory  200 slide changes with engine="rust" (count build): live bytes of the module and the wasm buffer flat, no handle left
 //   faults  a corrupt deck (both engines throw alike), a forced trap of the instance (the viewer drops the module, keeps painting with
 //           the TS engine, and the next load instantiates a fresh module), the hyperlink scheme filter
+//   anim    B4b: the animated decks (the playback samples, the b6a decks, the first b1a decks with effects) under a virtual clock:
+//           `play({ media: 'seek' })` sampled across the timeline and `present()` driven by `next()` with the clock stepping
+//           through the animations, the main canvas of the TS element against the Rust element (whose stage frames come from
+//           the wasm: slots evaluated in Rust), tolerance 0; then 300 frames of one deck with the module's live bytes sampled
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync, copyFileSync } from 'node:fs';
@@ -94,7 +99,11 @@ const b1a = existsSync(b1aDir) ? readdirSync(b1aDir).filter((f) => f.endsWith('.
 const NC1D = Number(process.env.UO_SS_C1D ?? 20);
 const c1dDir = join(core, 'crates/uo-pptx/tests/captures/decks/c1d');
 const c1d = existsSync(c1dDir) ? readdirSync(c1dDir).filter((f) => f.endsWith('.pptx')).sort().slice(0, NC1D).map((f) => join(c1dDir, f)) : [];
-const decks = [...tracked.map((p) => join(repo, p)), ...b1a, ...c1d];
+// B4b: the generated animated decks (b6a): every effect class, iterate by letter/word, charts by parts, media
+const NB6A = Number(process.env.UO_SS_B6A ?? 40);
+const b6aDir = join(core, 'crates/uo-pptx/tests/captures/decks/b6a');
+const b6a = existsSync(b6aDir) ? readdirSync(b6aDir).filter((f) => f.endsWith('.pptx')).sort().slice(0, NB6A).map((f) => join(b6aDir, f)) : [];
+const decks = [...tracked.map((p) => join(repo, p)), ...b1a, ...c1d, ...(MODE === 'all' || MODE === 'anim' ? b6a : [])];
 const deckByName = new Map(decks.map((p, i) => [`k${i}${extname(p)}`, p]));
 const FONT_DIRS = [join(repo, 'shared/fonts/files'), join(repo, 'site/assets/fonts')];
 const requests = [];
@@ -225,7 +234,64 @@ const driverFn = () => {
     }
     return r;
   };
-  return { compare, mk, load, settle, fnv, sleep, render, diff, pixels, El };
+  /** B4b: TS element against Rust element on the animated frames of one deck, under a virtual clock */
+  const animate = async (name, steps) => {
+    const ts = mk('ts'), rs = mk(window.__ssTsTs ? 'ts' : 'rust');
+    let clock = 0;
+    for (const el of [ts, rs]) el.now = () => clock;
+    const r = { name, engine: 'ts', frames: 0, diff: 0, rust: 0, firstDiff: null, errors: [] };
+    try {
+      const errs = [];
+      rs.addEventListener('us-engine-error', (e) => errs.push(String(e.detail?.error?.message ?? e.detail?.error)));
+      await load(ts, name);
+      await load(rs, name);
+      r.engine = rs.getEngine();
+      const eng = rs.rust;
+      if (eng) { const o = eng.paintStage.bind(eng); eng.paintStage = (...a) => { const x = o(...a); if (x.status === 0 && !x.empty) r.rust++; return x; }; }
+      const frame = (what) => {
+        ts.paint(); rs.paint();
+        const d = diff(pixels(ts.canvas), pixels(rs.canvas));
+        r.frames++;
+        if (d !== 0) {
+          r.diff++;
+          if (!r.firstDiff) {
+            const cvd = (a, b) => (a && b ? diff(pixels(a), pixels(b)) : 'none');
+            r.firstDiff = { what, d, to: cvd(ts.toCanvas, rs.toCanvas), from: cvd(ts.fromCanvas, rs.fromCanvas), keys: [ts.fromKey, rs.fromKey],
+              ...(window.__ssDebug ? { png: [ts.canvas.toDataURL(), rs.canvas.toDataURL(), ts.fromCanvas?.toDataURL(), rs.fromCanvas?.toDataURL()].filter(Boolean) } : {}) };
+          }
+        }
+      };
+      const halt = (el) => {
+        if (el.auto?.rafId) { cancelAnimationFrame(el.auto.rafId); el.auto.rafId = 0; }
+        if (el.show?.rafId) { cancelAnimationFrame(el.show.rafId); el.show.rafId = 0; }
+        if (el.show?.timer) { clearTimeout(el.show.timer); el.show.timer = 0; }
+      };
+      // automatic playback: the timeline sampled at `steps` instants (and its end)
+      ts.play({ media: 'seek' }); rs.play({ media: 'seek' });
+      halt(ts); halt(rs);
+      // `play()` takes its start from the real clock: put both on the virtual one (t = clock)
+      for (const el of [ts, rs]) el.auto.t0 = -(el.auto.tl.slides[0]?.startMs ?? 0);
+      const dur = ts.auto.tl.durationMs;
+      for (let k = 0; k <= steps; k++) { clock = Math.min(dur, (dur * k) / steps); frame(`play t=${clock}`); }
+      ts.stopPlayback(); rs.stopPlayback();
+      // presentation: clicks, the clock stepping through the transitions and the effects
+      clock = 1e6;
+      ts.present(0, { fullscreen: false }); rs.present(0, { fullscreen: false });
+      for (let k = 0; k < steps && ts.show; k++) {
+        halt(ts); halt(rs);
+        for (const dt of [0, 180, 420, 900]) { clock += dt; frame(`show step ${k} +${dt}`); halt(ts); halt(rs); }
+        ts.next(); rs.next();
+      }
+      ts.stopPresentation(); rs.stopPresentation();
+      r.errors = errs;
+    } catch (e) {
+      r.errors.push(`exception ${e?.message ?? e}`);
+    } finally {
+      ts.remove(); rs.remove();
+    }
+    return r;
+  };
+  return { compare, animate, mk, load, settle, fnv, sleep, render, diff, pixels, El };
 };
 const install = () => page.evaluate(`window.__d = (${driverFn.toString()})()`);
 await install();
@@ -273,6 +339,60 @@ if (MODE === 'all' || MODE === 'parity') {
   if (totals.diffSlides || totals.errors || totals.rust !== totals.decks) fail(`parity: ${totals.diffSlides} slides differ (${totals.chartDiffs} with charts), ${totals.errors} errors, ${totals.decks - totals.rust} decks stayed on the TS engine`);
 }
 function relative(f) { return fwd(f).replace(`${fwd(repo)}/`, ''); }
+
+// ── anim (B4b) ───────────────────────────────────────────────────────────────────────────────────────
+if (MODE === 'all' || MODE === 'anim') {
+  const isAnim = (n) => { const p = fwd(deckByName.get(n)); return /\/samples\/playback\//.test(p) || /\/b6a\//.test(p) || /\/b1a\//.test(p); };
+  const only = process.env.UO_SS_ONLY;
+  const animNames = names.filter(isAnim).filter((n) => !only || fwd(deckByName.get(n)).includes(only));
+  const flags = () => page.evaluate(({ dbg, tsts }) => { window.__ssDebug = dbg; window.__ssTsTs = tsts; }, { dbg: !!process.env.UO_SS_DEBUG, tsts: !!process.env.UO_SS_TSTS });
+  const t0 = Date.now();
+  const tot = { decks: 0, rust: 0, frames: 0, diff: 0, rustFrames: 0, errors: 0 };
+  const bad = [];
+  for (let k = 0; k < animNames.length; k++) {
+    if (k % 10 === 0) { await openPage(); await install(); await flags(); }
+    const r = await page.evaluate(({ n, steps }) => window.__d.animate(n, steps), { n: animNames[k], steps: 12 });
+    if (r.firstDiff?.png) {
+      r.firstDiff.png.forEach((u, i) => writeFileSync(join(outDir, `anim-diff-${k}-${['ts', 'rust', 'ts-from', 'rust-from'][i]}.png`), Buffer.from(u.split(',')[1], 'base64')));
+      delete r.firstDiff.png;
+    }
+    tot.decks++; if (r.engine === 'rust') tot.rust++;
+    tot.frames += r.frames; tot.diff += r.diff; tot.rustFrames += r.rust; tot.errors += r.errors.length;
+    if (r.diff || r.errors.length || r.engine !== 'rust') bad.push({ deck: relative(deckByName.get(r.name)), engine: r.engine, diff: r.diff, first: r.firstDiff, errors: r.errors });
+  }
+  console.log(`anim: ${tot.decks} animated decks (${tot.rust} in the Rust engine), ${tot.frames} frames (play + present), ${tot.frames - tot.diff} pixel-equal / ${tot.diff} different, ${tot.rustFrames} stage paints by the Rust list, errors ${tot.errors}; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  for (const b of bad.slice(0, 25)) console.log('  DIFF', JSON.stringify(b));
+  if (tot.diff || tot.errors || tot.rust !== tot.decks || tot.rustFrames === 0) fail(`anim: ${tot.diff} frames differ, ${tot.errors} errors, ${tot.decks - tot.rust} decks stayed on the TS engine`);
+  // memory of the playback: 300 frames of one animated deck, the module's live bytes flat
+  await openPage(); await install();
+  const m = await page.evaluate(async ({ n }) => {
+    const d = window.__d;
+    const st = await window.__e.engineModule();
+    const el = d.mk('rust');
+    let clock = 0;
+    el.now = () => clock;
+    await d.load(el, n);
+    el.play({ media: 'seek', loop: true });
+    if (el.auto?.rafId) { cancelAnimationFrame(el.auto.rafId); el.auto.rafId = 0; }
+    el.auto.t0 = 0;
+    const dur = Math.max(1, el.auto.tl.durationMs);
+    const samples = [];
+    for (let i = 0; i < 300; i++) {
+      clock = (i * 97) % dur;
+      el.paint();
+      if (i % 50 === 49) samples.push(st.slidesLiveBytes());
+    }
+    el.stopPlayback();
+    const engine = el.getEngine();
+    el.remove();
+    await d.sleep(100);
+    return { samples, engine, handles: st.slidesHandles(), live: st.slidesLiveBytes() };
+  }, { n: animNames.find((x) => /b6a/.test(fwd(deckByName.get(x)))) ?? animNames[0] });
+  const spread = Math.max(...m.samples) - Math.min(...m.samples);
+  console.log(`anim memory: engine ${m.engine}, 300 playback frames, module live bytes ${m.samples.join(', ')} (spread ${spread}); handles after the element left ${m.handles}, live bytes ${m.live}`);
+  if (spread > 256 * 1024) fail(`anim memory: live bytes spread ${spread}`);
+  if (m.handles !== 0) fail(`anim memory: ${m.handles} handles left`);
+}
 
 // ── memory ───────────────────────────────────────────────────────────────────────────────────────────
 if (MODE === 'all' || MODE === 'memory') {

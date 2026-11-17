@@ -385,3 +385,95 @@ pub fn rect_path(m: Mat, r: &Rect4) -> CanvasPath {
     p.rect(m, r.x, r.y, r.w, r.h);
     p
 }
+
+impl CanvasPath {
+    /// The path flattened into polylines: each group's points carried by `group transform` then `to` (so `to` = the
+    /// raster mapping gives raster pixels, `to` = the inverse of a paint transform gives that user space); curves are
+    /// split so no chord is farther than about `tol` (units of the result) from the curve. The flag is `closePath`.
+    #[must_use]
+    pub fn polylines(&self, to: Mat, tol: f64) -> Vec<(Vec<[f64; 2]>, bool)> {
+        let tol = if tol > 0.0 { tol } else { 0.25 };
+        let mut out: Vec<(Vec<[f64; 2]>, bool)> = Vec::new();
+        let mut cur: Vec<[f64; 2]> = Vec::new();
+        let mut start: Option<[f64; 2]> = None;
+        let mut budget: u64 = 1 << 22;
+        for (g, segs) in &self.groups {
+            let m = g.then(to);
+            for s in segs {
+                match *s {
+                    Seg::M(x, y) => {
+                        if !cur.is_empty() {
+                            out.push((std::mem::take(&mut cur), false));
+                        }
+                        let (px, py) = m.apply(x, y);
+                        cur.push([px, py]);
+                        start = Some([px, py]);
+                    }
+                    Seg::L(x, y) => {
+                        let (px, py) = m.apply(x, y);
+                        cur.push([px, py]);
+                    }
+                    Seg::C(x1, y1, x2, y2, x, y) => {
+                        let Some(&p0) = cur.last() else {
+                            let (px, py) = m.apply(x, y);
+                            cur.push([px, py]);
+                            continue;
+                        };
+                        let p1 = m.apply(x1, y1);
+                        let p2 = m.apply(x2, y2);
+                        let p3 = m.apply(x, y);
+                        let len = hypot(p1.0 - p0[0], p1.1 - p0[1]) + hypot(p2.0 - p1.0, p2.1 - p1.1) + hypot(p3.0 - p2.0, p3.1 - p2.1);
+                        let nf = max(1.0, min(256.0, uo_jsnum::math::ceil(sqrt(len / tol) * 0.75)));
+                        let n_seg = uo_jsnum::conv::to_uint32(nf).max(1);
+                        if u64::from(n_seg) > budget {
+                            return out;
+                        }
+                        budget -= u64::from(n_seg);
+                        for i in 1..=n_seg {
+                            let t = f64::from(i) / f64::from(n_seg);
+                            let u = 1.0 - t;
+                            let (a, b, c, d) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
+                            cur.push([a * p0[0] + b * p1.0 + c * p2.0 + d * p3.0, a * p0[1] + b * p1.1 + c * p2.1 + d * p3.1]);
+                        }
+                    }
+                    Seg::Z => {
+                        if !cur.is_empty() {
+                            out.push((std::mem::take(&mut cur), true));
+                        }
+                        if let Some(s0) = start {
+                            cur.push(s0);
+                        }
+                    }
+                }
+            }
+        }
+        if cur.len() > 1 {
+            out.push((cur, false));
+        }
+        out
+    }
+
+    /// The bounds of the points (control points included) in device space.
+    #[must_use]
+    pub fn device_bounds(&self) -> Option<[f64; 4]> {
+        let mut b = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+        let mut any = false;
+        for (g, segs) in &self.groups {
+            for s in segs {
+                let pts: &[(f64, f64)] = match *s {
+                    Seg::M(x, y) | Seg::L(x, y) => &[(x, y)],
+                    Seg::C(x1, y1, x2, y2, x, y) => &[(x1, y1), (x2, y2), (x, y)],
+                    Seg::Z => &[],
+                };
+                for &(x, y) in pts {
+                    let (px, py) = g.apply(x, y);
+                    if px.is_finite() && py.is_finite() {
+                        any = true;
+                        b = [min(b[0], px), min(b[1], py), max(b[2], px), max(b[3], py)];
+                    }
+                }
+            }
+        }
+        any.then_some(b)
+    }
+}

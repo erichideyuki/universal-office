@@ -11,7 +11,8 @@ use uo_render::slides::{
     BevelEffect, CompositeOp, CtmAxis, CtmOperand, Effect, FillRule, ImageSrc, LayerThen, Paint, PathOp, Rect4, SItem,
 };
 
-use super::cx::{Abort, Cx, E, Img, K, rgba_of, rgba_sliced};
+use super::anim::{EmitSlot, EmitSlotKind};
+use super::cx::{Abort, CurShape, Cx, E, Img, K, rgba_of, rgba_sliced};
 use super::paint::{self, dash_pattern, inset_rect, is_gradient, make_linear_gradient, preset_pattern, shade_rgb};
 use crate::model::{CamRot, Fill, FillKind, Inset, Shape, Xfrm};
 
@@ -722,6 +723,25 @@ fn fill_paint_solid_or_gradient(cx: &mut Cx<'_>, f: &Fill, x: f64, y: f64, w: f6
     }
 }
 
+/// B4b: the picture of `sh` draws through a `MediaFrame` item (`mediaFrame` wired: a media shape or a GIF, not inherited).
+fn media_frame_of(cx: &Cx<'_>, sh: &Shape) -> bool {
+    cx.anim_media
+        && !sh.inherited.unwrap_or(false)
+        && (sh.extras.as_ref().is_some_and(|e| e.media.is_some()) || sh.image.as_ref().is_some_and(|i| &*i.mime == "image/gif"))
+}
+
+/// `drawPic(poster)` as a draw item (the poster of a `MediaFrame`).
+fn poster_draw(sh: &Shape, im: &Img, x: f64, y: f64, w: f64, h: f64) -> uo_render::slides::DrawImageItem {
+    let s = sh.src_rect.map(|sr| {
+        let sx = sr.l * im.w;
+        let sy = sr.t * im.h;
+        let sw = im.w - (sr.l + sr.r) * im.w;
+        let sh2 = im.h - (sr.t + sr.b) * im.h;
+        Rect4 { x: sx, y: sy, w: sw, h: sh2 }
+    });
+    uo_render::slides::DrawImageItem { src: im.src.clone(), s, d: Rect4 { x, y, w, h } }
+}
+
 /// The picture of a `<p:pic>` with srcRect (`drawPic`).
 fn draw_pic(cx: &mut Cx<'_>, sh: &Shape, im: &Img, x: f64, y: f64, w: f64, h: f64) {
     if let Some(sr) = sh.src_rect {
@@ -780,7 +800,18 @@ fn paint_picture(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fi
             let rule = shape_path(cx, sh, x, y, w, h, Some(Mode::Fill), false);
             cx.clip(rule);
         }
-        draw_pic(cx, sh, &img, x, y, w, h);
+        if media_frame_of(cx, sh) {
+            // B4b: the host's video/GIF frame replaces the poster (opaque) or fades over it (`ov.frame`, render.ts 819/864)
+            let poster = poster_draw(sh, &img, x, y, w, h);
+            cx.push(SItem::MediaFrame(uo_render::slides::MediaFrameItem {
+                shape: cx.shape_index,
+                d: Rect4 { x, y, w, h },
+                crop: sh.src_rect.map(|sr| uo_render::slides::Edges { l: sr.l, t: sr.t, r: sr.r, b: sr.b }),
+                poster: Some(poster),
+            }));
+        } else {
+            draw_pic(cx, sh, &img, x, y, w, h);
+        }
         if clip_geom {
             cx.restore();
         }
@@ -827,15 +858,20 @@ fn paint_outer_shadow(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f6
     cx.save();
     cx.shadow_color(&rgba_sliced(sd.color.as_str(), sd.alpha));
     cx.shadow_blur(sd.blur_rad * fit.scale * SHADOW_BLUR_K);
-    match sh.fill.as_deref() {
-        Some(f) if f.kind == FillKind::Solid && has_color(&f.color) => cx.fill_css(f.color.as_ref().map_or("#ffffff", |c| c.as_str())),
-        Some(f) if is_gradient(f) => {
+    let ov_fill = cx.cur.fill_ov.clone();
+    match (ov_fill.as_ref(), sh.fill.as_deref()) {
+        (Some(c), _) => cx.fill_css(c.as_str()),
+        (None, Some(f)) if f.kind == FillKind::Solid && has_color(&f.color) => {
+            cx.fill_css(f.color.as_ref().map_or("#ffffff", |c| c.as_str()))
+        }
+        (None, Some(f)) if is_gradient(f) => {
             let p = make_linear_gradient(cx, f, x, y, w, h);
             cx.fill_style(p);
         }
         _ => cx.fill_css("#ffffff"),
     }
-    if let Some(fa) = sh.fill_alpha
+    if ov_fill.is_none()
+        && let Some(fa) = sh.fill_alpha
         && fa < 1.0
     {
         cx.global_alpha_mul(fa);
@@ -962,7 +998,8 @@ fn paint_fill_block(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
         cx.global_alpha_mul(fa);
     }
     let rule = shape_path(cx, sh, x, y, w, h, Some(Mode::Fill), false);
-    let ovl = sh.extras.as_ref().and_then(|e| e.fill_overlay.as_ref()).filter(|o| &*o.blend != "over");
+    let ov_fill = cx.cur.fill_ov.clone();
+    let ovl = sh.extras.as_ref().and_then(|e| e.fill_overlay.as_ref()).filter(|o| &*o.blend != "over" && ov_fill.is_none());
     if let Some(o) = ovl {
         if is_gradient(&o.fill) {
             let p = make_linear_gradient(cx, &o.fill, x, y, w, h);
@@ -992,7 +1029,7 @@ fn paint_fill_block(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
         fy = cym - fh / 2.0;
     }
     let fill = sh.fill.as_deref();
-    if sh.use_bg_fill.unwrap_or(false) && (sh.fill_image.is_some() || fill.is_some()) {
+    if ov_fill.is_none() && sh.use_bg_fill.unwrap_or(false) && (sh.fill_image.is_some() || fill.is_some()) {
         cx.clip(rule);
         if sh.use_bg_fill.unwrap_or(false) && xform_present(sh) {
             cx.push(SItem::TransformUnshape(0));
@@ -1028,6 +1065,10 @@ fn paint_fill_block(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
                 cx.fill_rect(fit.ox, fit.oy, sw, shh);
             }
         }
+    } else if let Some(c) = ov_fill.as_ref() {
+        // the animated fill colour (the app turns the fill solid)
+        cx.fill_css(c.as_str());
+        cx.fill(rule);
     } else if let Some(fi) = sh.fill_image.as_deref() {
         let img = cx.image(fi);
         if let (Some(_), Some(a)) = (img.as_ref(), fi.fx.as_deref().and_then(|f| f.alpha)) {
@@ -1105,12 +1146,13 @@ fn paint_plain_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
     }
     let line_geom = is_line_geom(sh.geom.as_deref());
     let wire = is_wireframe(extras.and_then(|e| e.extrusion.as_ref()).and_then(|e| e.mat.as_deref()));
-    let fill_present = sh.fill_image.is_some() || fill.is_some_and(|f| f.kind != FillKind::None);
+    let ov_fill = cx.cur.fill_ov.is_some();
+    let fill_present = ov_fill || sh.fill_image.is_some() || fill.is_some_and(|f| f.kind != FillKind::None);
     if !line_geom && !wire && fill_present {
         paint_fill_block(cx, sh, x, y, w, h, fit);
     }
     if let Some(o) = extras.and_then(|e| e.fill_overlay.as_ref())
-        && &*o.blend == "over"
+        && (&*o.blend == "over" || ov_fill)
         && !line_geom
         && (fill.is_none_or(|f| f.kind != FillKind::None) || sh.fill_image.is_some())
     {
@@ -1128,7 +1170,7 @@ fn paint_plain_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
     }
     if let Some(b) = extras.and_then(|e| e.bevel.as_ref())
         && !line_geom
-        && (fill.is_some_and(|f| f.kind != FillKind::None) || sh.fill_image.is_some())
+        && (fill.is_some_and(|f| f.kind != FillKind::None) || sh.fill_image.is_some() || ov_fill)
     {
         let (ops, rule) = shape_ops(sh, x, y, w, h, Some(Mode::Fill));
         let path = cx.path_span(&ops);
@@ -1176,8 +1218,9 @@ fn paint_plain_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
         cx.fill(Some(FillRule::EvenOdd));
         cx.restore();
     }
-    // outline
-    if let Some(lc) = sh.line_color.as_ref() {
+    // outline (`lineColor = ov.line ?? sh.lineColor`)
+    let line_ov = cx.cur.line_ov.clone();
+    if let Some(lc) = line_ov.as_ref().or(sh.line_color.as_ref()) {
         let lc = lc.as_str();
         let line_alpha = sh.line_alpha.filter(|a| *a < 1.0);
         // `prevAlpha = ctx.globalAlpha` ... `ctx.globalAlpha = prevAlpha`: the list tracks the canvas's alpha
@@ -1221,7 +1264,11 @@ fn paint_plain_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
 fn paint_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fit: &Fit) -> E<bool> {
     let extras = sh.extras.as_deref();
     if extras.is_some_and(|e| e.chart.is_some()) {
-        super::chart::paint_chart_slot(cx, sh, x, y, w, h, fit)?;
+        match cx.cur.anim.and_then(|a| a.chart.as_deref()) {
+            // `ov.chartParts` (`hooks.chartParts` of an animated shape): the chart by parts
+            Some(parts) => super::chart::paint_chart_parts(cx, sh, parts, x, y, w, h, fit)?,
+            None => super::chart::paint_chart_slot(cx, sh, x, y, w, h, fit, None)?,
+        }
         return Ok(false);
     }
     if let Some(t) = extras.and_then(|e| e.table.as_deref()) {
@@ -1245,12 +1292,33 @@ fn paint_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fit: 
 /// The body and text of one shape on the current target (`paintShape`'s inner part): `target.save()`, extrusion,
 /// body, `target.restore()`, text.
 fn shape_core(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fit: &Fit, suppress_text: bool, cam_r: Option<&CamRot>) -> E {
-    cx.save();
+    // `target.save(); bodyOn = !bgSt || applyPart(...)`: the background slot (`hooks.bg`) where the TS saves
+    let bg_slot = match (cx.cur.anim.is_some_and(|a| a.bg), cx.cur.slot.clone()) {
+        (true, Some(s)) => Some(cx.add_slot(EmitSlot { kind: EmitSlotKind::Background, bx: [x, y, w, h], base_rot_rad: 0.0, ..s })),
+        _ => None,
+    };
+    // `fillOv = bgSt?.fillColor ?? anim?.all.fillColor` (and the line), in a re-emission
+    if cx.anim_states.is_some() && cx.cur.slot.is_some() {
+        let bg = bg_slot.map(|i| cx.slot_style(i));
+        let all = cx.cur.all.as_ref();
+        let fill_ov = bg.as_ref().and_then(|b| b.fill_color.clone()).or_else(|| all.and_then(|a| a.fill_color.clone()));
+        let line_ov = bg.as_ref().and_then(|b| b.line_color.clone()).or_else(|| all.and_then(|a| a.line_color.clone()));
+        cx.cur.fill_ov = fill_ov;
+        cx.cur.line_ov = line_ov;
+    }
+    match bg_slot {
+        Some(i) => cx.slot_begin(i),
+        None => cx.save(),
+    }
     if sh.extras.as_ref().is_some_and(|e| e.extrusion.is_some()) && sh.image.is_none() {
         paint_extrusion(cx, sh, x, y, w, h, fit.scale, cam_r);
     }
     let hosts = paint_body(cx, sh, x, y, w, h, fit)?;
-    cx.restore();
+    if bg_slot.is_some() {
+        cx.slot_end();
+    } else {
+        cx.restore();
+    }
     if hosts && sh.tx_body.is_some() && !suppress_text {
         super::text::paint_text_shape(cx, sh, x, y, w, h, fit)?;
     }
@@ -1358,21 +1426,106 @@ pub fn paint_shape(cx: &mut Cx<'_>, sh: &Shape, fit: &Fit, suppress_text: bool) 
     Ok(())
 }
 
-/// `paintShapeList` without animation: every shape between a `save`/`restore`; a shape the TS would have thrown on
-/// (`Abort`) is closed (layers released, saves restored) and skipped.
-pub fn paint_shape_list(cx: &mut Cx<'_>, shapes: &[Shape], fit: &Fit, suppress_text: Option<u32>, clip_overflow: bool) {
+/// `firstRunColor` (render.ts:203): the first run colour of the body.
+fn first_run_color(sh: &Shape) -> Option<crate::color::CssColor> {
+    sh.tx_body.as_ref()?.paragraphs.iter().flat_map(|p| p.runs.iter()).find_map(|r| r.color.clone())
+}
+
+/// `boxBase(x, y, w, h, m)` (render.ts:106) over the list's view box.
+pub(super) fn box_base(cx: &Cx<'_>, x: f64, y: f64, w: f64, h: f64) -> [f64; 4] {
+    let m = &cx.list.view;
+    [(x + w / 2.0 - m.ox) / m.sw, (y + h / 2.0 - m.oy) / m.sh, w / m.sw, h / m.sh]
+}
+
+/// The shape slot of shape `i` (`shapeOpacity` + `hooks.all`): the base `paintShapeList` computes for `hooks.all`.
+fn shape_slot(cx: &Cx<'_>, sh: &Shape, i: u32, fit: &Fit) -> EmitSlot {
+    let Some(xf) = sh.xfrm else {
+        return EmitSlot {
+            kind: EmitSlotKind::Shape,
+            shape: i,
+            base: [0.0; 4],
+            bx: [0.0; 4],
+            base_rot_rad: 0.0,
+            rot_deg: None,
+            fill: None,
+            line: None,
+            text: None,
+            word: None,
+        };
+    };
+    let x = fit.ox + xf.x * fit.scale;
+    let y = fit.oy + xf.y * fit.scale;
+    let w = xf.cx * fit.scale;
+    let h = xf.cy * fit.scale;
+    let rot_deg = xf.rot.unwrap_or(0.0) / 60000.0;
+    EmitSlot {
+        kind: EmitSlotKind::Shape,
+        shape: i,
+        base: box_base(cx, x, y, w, h),
+        bx: [x, y, w, h],
+        base_rot_rad: (rot_deg * PI) / 180.0,
+        rot_deg: Some(rot_deg),
+        fill: sh.fill.as_ref().and_then(|f| f.color.clone()),
+        line: sh.line_color.clone(),
+        text: first_run_color(sh),
+        word: None,
+    }
+}
+
+/// `paintShapeList`: every shape between its shape slot's `SlotBegin`/`SlotEnd` (a `save`/`restore` when static); a shape
+/// whose effects may reveal with a soft edge is drawn twice, in the painter's soft layer and in its else block (the TS
+/// `acquireLayer` + `compositeLayer`, or `applyReveal` without a layer). A shape the TS would have thrown on (`Abort`) is
+/// closed (layers released, saves restored) and skipped. `only`: a re-emission of one shape.
+pub fn paint_shape_list(cx: &mut Cx<'_>, shapes: &[Shape], fit: &Fit, suppress_text: Option<u32>, clip_overflow: bool, only: Option<u32>) {
     cx.clip_overflow = clip_overflow;
     for (i, shp) in shapes.iter().enumerate() {
-        cx.shape_index = u32::try_from(i).unwrap_or(u32::MAX);
+        let si = u32::try_from(i).unwrap_or(u32::MAX);
+        if only.is_some_and(|o| o != si) {
+            continue;
+        }
+        cx.shape_index = si;
         let depth0 = cx.depth;
         let layers0 = cx.open_layers.len();
-        cx.save();
+        let shapes_plan = cx.anim_shapes;
+        let anim = shapes_plan.get(i).and_then(|a| a.as_ref()).filter(|_| shp.xfrm.is_some() && !shp.inherited.unwrap_or(false));
+        if cx.stage {
+            let slot = shape_slot(cx, shp, si, fit);
+            let s_idx = cx.add_slot(slot.clone());
+            cx.cur = CurShape { anim, slot: anim.map(|_| slot), ..CurShape::default() };
+            if anim.is_some() && cx.anim_states.is_some() {
+                cx.cur.all = Some(cx.slot_style(s_idx));
+            }
+            cx.slot_begin(s_idx);
+        } else {
+            cx.save();
+        }
         let sup = suppress_text.is_some_and(|s| usize::try_from(s).is_ok_and(|s| s == i));
-        if paint_shape(cx, shp, fit, sup).is_err() {
+        let soft = if anim.is_some_and(|a| a.soft) { cx.alloc_soft_layer(super::cx::SOFT_LAYER_SHAPE) } else { None };
+        let r = match soft {
+            None => paint_shape(cx, shp, fit, sup),
+            Some(lc) => {
+                let begin = cx.list.items.len();
+                cx.layer_begin(lc);
+                let r = paint_shape(cx, shp, fit, sup);
+                if r.is_ok() {
+                    cx.layer_end(lc, LayerThen::Composite);
+                    // no layer (or no soft reveal this frame): the shape straight on the context
+                    let r2 = paint_shape(cx, shp, fit, sup);
+                    cx.layer_fallback_end(begin);
+                    r2
+                } else {
+                    r
+                }
+            }
+        };
+        if r.is_err() {
             cx.abort_to(depth0, layers0);
+        } else if cx.stage {
+            cx.slot_end();
         } else {
             cx.restore();
         }
+        cx.cur = CurShape::default();
     }
 }
 

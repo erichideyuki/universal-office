@@ -112,6 +112,11 @@ export function bindSlides(w) {
       const b = take(w.uo_slides_view_bitmap(this.#ptr, handle));
       return b.status === 0 ? b.data : null;
     }
+    /** B4b: drops both stages and empties the slot-evaluation caches */
+    clearStage() {
+      const s = w.uo_slides_stage_clear(this.#ptr);
+      if (s !== 0) throw new SlidesError(s, 'stage_clear');
+    }
     free() {
       if (this.#ptr === 0) return;
       viewRegistry.unregister(this);
@@ -127,6 +132,7 @@ export function bindSlides(w) {
       this.#ptr = ptr;
       showRegistry.register(this, ptr, this);
     }
+    get ptr() { return this.#ptr; }
     #cmd(c, arg2, now, mouse) {
       const a = w.uo_slides_show_command(this.#ptr, c, arg2, now, mouse ? 1 : 0);
       if (a < 0) throw new SlidesError(-a, 'show command');
@@ -163,6 +169,7 @@ export function bindSlides(w) {
       this.#ptr = ptr;
       timelineRegistry.register(this, ptr, this);
     }
+    get ptr() { return this.#ptr; }
     info() {
       const rd = reader(ok(take(w.uo_slides_timeline_info(this.#ptr)), 'timeline info'));
       const durationMs = rd.f64(), tickMs = rd.f64(), mediaClock = rd.f64(), n = rd.u32();
@@ -247,6 +254,28 @@ export function bindSlides(w) {
       const [p, n] = arg(bytes.slice());
       const s = w.uo_slides_answer(this.#ptr, p, n);
       if (s !== 0) throw new SlidesError(s, 'answer');
+    }
+    /**
+     * B4b: one pass of a playback frame (`src` a SlidesShow at clock `at` = now, or a SlidesTimeline at `at` = t): `which` 0 =
+     * the slide on stage, 1 = the transition origin. `{ status: 0, flags, empty, animMs, list, frame }` (`list` = a new
+     * `SlidesList` message or null: decode it before the frame; `frame` = the `SlotFrame` message), `{ status: 12, requests }`
+     * or `{ status }`. `media` = wire the media frames; `clock` = `{ latencyMs, scale }` of the media clock.
+     */
+    stage(view, src, at, which, scale, ox, oy, media = false, clock = {}) {
+      const lat = clock.latencyMs ?? NaN, k = clock.scale ?? NaN;
+      const b = take(src instanceof SlidesTimeline
+        ? w.uo_slides_stage_timeline(this.#ptr, view.ptr, src.ptr, at, which, scale, ox, oy, media ? 1 : 0, lat, k)
+        : w.uo_slides_stage_show(this.#ptr, view.ptr, src.ptr, at, which, scale, ox, oy, media ? 1 : 0, lat, k));
+      if (b.status === 0) {
+        const rd = reader(b.data);
+        const flags = rd.u8(), animMs = rd.f64();
+        if (flags & 2) return { status: 0, flags, empty: true, animMs, list: null, frame: null };
+        let list = null;
+        if (flags & 4) { const n = rd.u32(); list = rd.bytes(n); }
+        return { status: 0, flags, empty: false, newGeneration: (flags & 1) !== 0, animMs, list, frame: rd.rest() };
+      }
+      if (b.status === 12) return { status: 12, requests: requests(b.data) };
+      return { status: b.status };
     }
     /** a click slide show; `from` -1 = the first visible slide, flags -1 default / 0 / 1, `range` = [lo, hi] or null */
     newShow({ from = -1, now = 0, useTimings = -1, loop = -1, animations = -1, range = null } = {}) {

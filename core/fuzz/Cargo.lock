@@ -203,12 +203,14 @@ name = "uo-ffi"
 version = "0.10.0-dev"
 dependencies = [
  "indexmap",
+ "uo-dml-render",
  "uo-docx",
  "uo-docx-layout",
  "uo-drawingml",
  "uo-fonts",
  "uo-opc",
  "uo-pdf",
+ "uo-pptx",
  "uo-render",
 ]
 
@@ -294,8 +296,10 @@ dependencies = [
  "uo-dml-render",
  "uo-drawingml",
  "uo-fonts",
+ "uo-image",
  "uo-jsnum",
  "uo-opc",
+ "uo-pdf",
  "uo-render",
  "uo-testkit",
  "uo-text",

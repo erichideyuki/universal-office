@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Tests of the Slides .NET facade (uo-bindings.md, "Slides .NET facade"): the PDF of the fixture decks equal byte for byte
+       to the Rust native output (uo-ffi tests/parity/slides-native.tsv), the deck API, .ppt to .pptx, errors by class,
+       cancellation, the memory gate M4 (Dispose() and the finalizer), a thread soak. Builds uo-ffi (release, feature count,
+       UoNative.targets) into CARGO_TARGET_DIR (or core/target) and copies the library next to the tests. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <CoreDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../..'))</CoreDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the tests read the fixtures of core/ wherever the build output goes (the artifacts path) -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>CoreDir</_Parameter1>
+      <_Parameter2>$(CoreDir)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UniversalOffice.Pptx\UniversalOffice.Pptx.csproj" />
+  </ItemGroup>
+  <Import Project="..\UoNative.targets" />
+</Project>

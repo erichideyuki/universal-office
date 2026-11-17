@@ -1152,4 +1152,83 @@ impl<'a> ShapeHooks<'a> {
         let (tracks, vis) = self.chart.get(j)?.tracks.as_ref()?;
         Some(eval_tracks(self.arena, tracks, self.anim_ms, base, *vis, c))
     }
+
+    /// The STRUCTURE of these hooks (B4b): which hooks exist, the paragraph ranges, the unit ranges and the chart parts,
+    /// none of which depends on the time. The emitter writes a slot where the TS painter calls each of them. `soft` is a
+    /// superset of the frames where `all` (or a chart part) yields a soft-edged reveal: an `animEffect` whose filter names a
+    /// wipe.
+    pub fn plan(&self) -> uo_dml_render::emit::ShapeAnim {
+        use uo_dml_render::emit::{ChartPart, ShapeAnim, UnitHook};
+        let soft = |tracks: &[Track<'_>]| tracks.iter().any(|t| has_wipe(self.arena, t.e.fx.node));
+        ShapeAnim {
+            bg: self.bg.is_some(),
+            paras: self.paras.iter().map(|(_, r)| *r).collect(),
+            unit: self.unit_info.map(|i| UnitHook {
+                letters: i.letters,
+                words: i.words,
+                ranges: self.units.iter().map(|u| u.range).collect(),
+            }),
+            chart: if self.chart.is_empty() {
+                None
+            } else {
+                Some(
+                    self.chart
+                        .iter()
+                        .map(|p| ChartPart {
+                            sel: uo_dml_render::emit::ChartSel { bg: p.sel.bg, data: data_sel(&p.sel.data) },
+                            key: p.sel.key.clone(),
+                            animated: p.tracks.is_some(),
+                            soft: p.tracks.as_ref().is_some_and(|(t, _)| soft(t)),
+                        })
+                        .collect(),
+                )
+            },
+            soft: soft(&self.all),
+        }
+    }
+}
+
+/// The effect subtree of `id` has an `animEffect` whose filter names a wipe (the only soft-edged reveal, `softRevealFilter`).
+fn has_wipe(a: &TimeArena, id: NodeId) -> bool {
+    let mut stack = vec![id];
+    let mut seen = 0usize;
+    while let Some(n) = stack.pop() {
+        seen += 1;
+        if seen > 100_000 {
+            return true;
+        }
+        let node = a.node(n);
+        if node.filter.as_deref().is_some_and(|f| f.to_ascii_lowercase().contains("wipe")) {
+            return true;
+        }
+        stack.extend_from_slice(a.kids(node));
+    }
+    false
+}
+
+/// A chart mark index of the selection (`s === series`, a negative index = any): an index no mark has (NaN, a fraction)
+/// is `i32::MAX`, a negative one `-1`.
+fn sel_index(v: f64) -> i32 {
+    if v.is_nan() {
+        i32::MAX
+    } else if v < 0.0 {
+        -1
+    } else if uo_jsnum::conv::is_integer(v) && v <= f64::from(i32::MAX) {
+        uo_jsnum::conv::to_int32(v)
+    } else {
+        i32::MAX
+    }
+}
+
+/// [`ChartData`] as the chart engine's `DataSel`.
+fn data_sel(d: &ChartData) -> uo_dml_render::emit::DataSel {
+    use uo_dml_render::emit::DataSel;
+    match d {
+        ChartData::None => DataSel::None,
+        ChartData::All => DataSel::All,
+        ChartData::Series(s) => DataSel::Series(sel_index(*s)),
+        ChartData::Category(c) => DataSel::Category(sel_index(*c)),
+        ChartData::Pt { series, category } => DataSel::Point { series: sel_index(*series), category: sel_index(*category) },
+        ChartData::Uncovered(v) => DataSel::NotCovered(v.iter().map(data_sel).collect()),
+    }
 }

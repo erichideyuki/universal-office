@@ -416,6 +416,7 @@ impl Checker<'_> {
             SItem::DrawLayer(i) | SItem::ReleaseLayer(i) => below(*i, MAX_LAYERS as usize, "layer id"),
             SItem::Effect(i) => below(*i, l.effects.len(), "effect index"),
             SItem::SlotBegin(i) => below(*i, l.slots.len(), "slot index"),
+            SItem::MediaFrame(m) => m.poster.as_ref().map_or(Ok(()), |p| self.image(&p.src)),
             _ => Ok(()),
         }
     }
@@ -546,3 +547,48 @@ pub fn check_frame(frame: &SlotFrame, list: &SlidesList) -> Result<(), SlidesErr
 
 /// The generated codec of the frame message (re-exported for tests and tools).
 pub use slots::{Delta as SlotDelta, Tables as SlotTables};
+
+/// The producer's side of a stream of `SlotFrame` messages (B4b): the filter-name symbols sent so far (the frame schema's
+/// only table). One per list stream generation; [`FrameEncoder::clear`] starts it over (a new generation).
+#[derive(Debug, Default)]
+pub struct FrameEncoder {
+    generation: u32,
+    syms: SymbolTable,
+    sent: usize,
+}
+
+impl FrameEncoder {
+    #[must_use]
+    pub fn new(generation: u32) -> FrameEncoder {
+        FrameEncoder { generation, syms: SymbolTable::new(), sent: 0 }
+    }
+
+    /// The symbol of a filter name (interned on first use).
+    pub fn sym(&mut self, s: &str) -> u32 {
+        self.syms.intern_str(s).and_then(|s| u32::try_from(s.index()).ok()).unwrap_or(0)
+    }
+
+    /// Symbols interned so far.
+    #[must_use]
+    pub fn symbols(&self) -> usize {
+        self.syms.len()
+    }
+
+    /// Appends the message of `frame` (with the symbols the decoder has not seen) to `out`.
+    ///
+    /// # Errors
+    /// [`SlidesError::Encode`] for a count past 32 bits.
+    pub fn encode(&mut self, frame: &SlotFrame, out: &mut Vec<u8>) -> Result<(), SlidesError> {
+        let items: Vec<Vec<u16>> = self.syms.since(self.sent).map(<[u16]>::to_vec).collect();
+        let delta =
+            slots::Delta { generation: self.generation, sym: uo_codec::TableDelta { from: u32::try_from(self.sent).unwrap_or(0), items } };
+        encode_slot_frame(out, &delta, frame)?;
+        self.sent = self.syms.len();
+        Ok(())
+    }
+
+    /// Forgets every symbol and moves to `generation` (the decoder replaces its table).
+    pub fn reset(&mut self, generation: u32) {
+        *self = FrameEncoder::new(generation);
+    }
+}

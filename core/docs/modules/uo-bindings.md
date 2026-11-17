@@ -395,6 +395,11 @@ provider, opts)` → `doc.layout(env, opts)` with fonts pushed to an environment
 | C# facade = Rust native, installed fonts (opt-in) | the 211 oracle documents | **211/211** |
 | wasm = native | 3 fixture documents: page messages, navigation, link boxes, PDF compressed and not (FNV-1a pinned by `write_native.rs`, checked by `write_api.test.mjs`) | equal in **Node 24.15 and WebKit 26.5** |
 
+Fix of 2026-11-17 (orchestrator): since 8f53340f (Word rules by default) the native `server_parity` replays with
+`LayoutOptions::ts_strict()`, but the facade had no way to ask for it, so the two C# parity tests failed (3/68). The job
+flag `JOB_TS_STRICT = 8` (no struct change) and the internal `LayoutOptions.TsStrict` (visible to the tests only) restore
+**43/43** in `UniversalOffice.Docx.Tests`; no product path sets it.
+
 This is the first **end-to-end** PDF parity (PP1 of uo-pdf §6): Rust read → layout → navigation → PDF against the TS
 pipeline, not the painter alone. Zero mismatches on the first run; no port bug found.
 
@@ -6233,13 +6238,14 @@ The packages ship both through `shipSlidesWasm` (content check: no test exports,
 
 ### Gaps (and what B4b must deliver)
 
-1. **Animations, slide show, automatic playback**: still the TS path. The handles `UoSlidesShow` (frame: the slide on stage, `anim_ms`, the transition and its origin, the number of effects of the
+1. **Animations, slide show, automatic playback**: DONE by B4b (below, "B4b — the stage"): the frames of `present()` and `play()` are painted from the Rust list with slots. The text that follows is the
+   brief B4b worked from. Before B4b: still the TS path. The handles `UoSlidesShow` (frame: the slide on stage, `anim_ms`, the transition and its origin, the number of effects of the
    slide) and `UoSlidesTimeline` are exported and tested, but painting an animated slide needs slots. **B4b must deliver**: `SlotBegin/End` around each shape (replacing the plain `Save/Restore`),
    `Background`, `Paragraph(i)` (`pbox`, `boxBase`), `Unit(k)` (`planUnits`, the pieces measured at device px: a second `Width` kind) and `MediaFrame` over the poster; the `SlotTemplate` filled
    at emission (`uo-pptx::slots`) and kept next to the list in the deck handle; the re-emission of shapes whose `PartState::needs_reemit()` (`fillColor`, `lineColor`, `textColor`, `fontScale`: `emit`
    with overrides); then here an `evaluate_slots(template, PlaybackSlide, anim_ms, media clock, AnimCaches)` export returning `SlotFrame` bytes (`AnimCaches` per deck view, cleared with `clear_caches`) and
    an `emit` for a staged slide at a transition's origin (frozen at `anim_ms`). After that the viewer's `paintPlaybackSlide` and `paintStage` take the Rust path and the TS model stays only for media and links.
-2. **Charts**: DONE by C-6 (`chart::paint_chart_slot` emits through `uo-charts`; the viewer no longer passes `skipCharts`). Left: the animated chart parts (`SlotBegin(ChartPart j)`, with B6), and chart pictures that are metafile, PICT or TIFF rasters (answered "unavailable").
+2. **Charts**: DONE by C-6 (`chart::paint_chart_slot` emits through `uo-charts`; the viewer no longer passes `skipCharts`); the animated chart parts are DONE by B4b (`ChartPart j` slots, the `chartPartBounds` probes as `BoundsPass` gates). Left: chart pictures that are metafile, PICT or TIFF rasters (answered "unavailable").
 3. **`.ppt`**: lazily loaded as its own module (done): 720 KB raw (the converter and the package writer), so a legacy deck costs two module loads.
    **`MetaDecode`** (B5b: decode a compressed EMF+ bitmap and report its size) is answered "cannot be decoded" by the engine: a browser decodes asynchronously, so it needs a prepare phase like the pictures (`createImageBitmap`, then `set_meta_decoded`, then a repaint). With the committed decks nothing asks for it yet (the op streams and the pixels are unchanged); EMF/WMF/TIFF pictures are still rasterized by the TS `rasterizeSpecialImage` and drawn as media.
 4. **The TS model is still loaded in `rust` mode**: the open cost of a deck is TS plus Rust. The accessible text, the links and the media table need Rust read-model queries (slide text with run boxes,
@@ -6256,3 +6262,190 @@ One session. Builds (`-j 4`, `--profile wasm`): `slides`, `count,slides` and `sl
 for the esbuild bundle; the memory phase first picked a one-slide deck; the finalizer part of M4 skipped where there is no `gc()`). 0 parity rounds: the op streams were equal on the first run through the module.
 
 C-6 additions to this part (2026-11-17, Sonnet): `slides-engine.ts` measures a chart's empty-family face as `10px sans-serif`; `rust-engine.ts` drops `skipCharts`; `src/slides.rs` has one lint fix (`as_chunks`, Rust 1.100); the stub (`tests/support/slides-stub.mjs`) answers `metrics` like the recorder and `slides_drawops.test.mjs` gained the `c1d` gate. Wall time: the Chromium harness 6 min (213 decks, up from 88 s for 153), `slides_drawops` 5 s, wasm build 22–42 s.
+
+### B4b — the stage: animations, `present()`, `play()` (2026-11-17, Opus)
+
+Record of the Rust side: `uo-pptx.md` "B4b — playback emission"; emitter: `uo-dml-render.md` "B4b"; schema: `uo-render.md` "B4b schema
+changes". Here the binding and the viewer.
+
+**Exports** (`src/slides.rs`; layouts in the module documentation). A `UoSlidesView` now also holds two STAGES (0 = the slide on stage, 1 =
+the transition origin), the `AnimCaches` of the slot evaluation and the frame stream (`FrameEncoder`, the `SlotFrame` messages):
+- `uo_slides_stage_show(deck, view, show, now, which, scale, ox, oy, media, latency, clock_scale)` and `uo_slides_stage_timeline(deck, view,
+  tl, t, which, ...)`: the frame of the show at `now` (or of the timeline at `t`) on stage `which` — the stage list (emitted again only
+  when the slide, the viewport, the media flag or the hooks' structure changed; status 0 then carries it, flag bit 2), then the
+  `SlotFrame` (values positional over the stage list's slots, plus the replacement lists of the shapes re-emitted this frame, each a
+  `SlidesList` message of the same stream with its own values). Status 12 = the measurement requests (the same answer protocol). The timeline
+  origin is painted in its final state (`anim_ms` infinity) and the show origin at its frozen `anim_ms`, as the viewer's `paintStage`. A
+  new stage is kept, and its list encoded, only when its first frame is complete (a pass that needs measurements delivers nothing).
+- `uo_slides_stage_clear(view)`: drops both stages and empties the `AnimCaches` (M1; the engine calls it when a font loads or a picture
+  size arrives, since the stage lists were laid out with the old answers).
+- JS: `deck.stage(view, src, at, which, ...)` (`js/slides.mjs`), `view.clearStage()`; `SlidesDocument.paintStage(ctx, src, at, which, scale,
+  ox, oy, host, { media, clock, mediaFrame })` (`js/slides-engine.ts`: the measure loop, decode, the painter with the frame and its
+  replacements; the `mediaFrame(shape)` hook reaches the painter's env only during that paint).
+
+**Viewer** (`slides/packages/viewer/src`). With `engine="rust"`, `present()` creates a Rust show (`RustSlides.newShow`, the same options
+and the same `now`) next to the TS `SlideShow`, and every presenter command and clock update is applied to both with the same `now`; `play()`
+creates a Rust timeline with the same options. `paintPlaybackSlide` paints through `paintStageRust` (the stage of the mirrored handle at the
+same instant) and falls back to the TS painter on any non-zero status or a trap (`us-engine-error`, as the still path). The TS state machines
+stay the source of the events (`us-slide`, `us-step`, `dueAt`/`wakeAt` timers) and of the media player, which needs the TS `PlaybackSlide`:
+each frame asks `media.frame(...)` once per media shape (its side effects drive the `<video>` elements, as the TS `mediaFrame` callback
+did) and hands the results to the painter's `MediaFrame` items. The two state machines are the B6 parity pair (`sh.*` facets equal on
+every script); the Chromium harness compares the frames they produce. `disposeRust` frees the mirrors.
+
+**Numbers.** Node (`tests/slides_anim.test.mjs`, the frozen TS frames of `uo-pptx/js/capture-anim.mjs`): `anim-b6a` 472/472, `anim-samples`
+551/551, `anim-b1a` 150/150 (and locally the full sets 1,015/1,015 and 1,462/1,462). Chromium (`slides_switch.mjs --mode anim`): 121 animated
+decks, **5,089 frames pixel-equal of 5,089** (`play` sampled, `present` stepped), 5,254 stage paints by the Rust list; the CI form (`--mode all`,
+100 `b1a` decks) 181 decks, 7,221/7,221, with the still parity 959/959 slides and phase 0, memory and faults green; memory: 300 playback
+frames, module live bytes 251,720 at every sample (spread 0), 0 handles after the element left. The static modes are unchanged (the still path
+emits no slots). Size of the shipped build (`--features slides`, `--profile wasm`): **3,453,481 B raw, 1,235,854 B gzip -9** (77 % of the
+1.6 MB budget; the row of "Sizes" above, 1,045,866 B gzip, was measured at C-6; the growth to this tree was not broken down by crate here);
+`wasm-tools validate` with the Safari 15 feature set passes.
+
+**What stays TS** (gaps 3-7 above still hold): links, the accessible text and the media player; the TS model stays loaded.
+
+## Slides .NET facade (2026-11-17, Sonnet)
+
+`UniversalOffice.Pptx` as a C# facade over the C ABI of `uo-ffi`, the way `UniversalOffice.Docx` is. Rust: `core/crates/uo-ffi/src/slides.rs`
+(over `uo_pptx`: `Deck`, `ppt::convert`, `pdf`); C#: `core/dotnet/UniversalOffice.Pptx` (+ `.Tests`, `.Smoke`); tests
+`core/crates/uo-ffi/tests/slides_abi.rs`, digests `core/crates/uo-ffi/tests/parity/slides-native.tsv`.
+
+### Exports (all follow section 3: status code, per-thread last error, `UoBuf` out, sized option structs, `UoCancel`)
+
+| Export | What |
+|---|---|
+| `uo_deck_open(data, len, const UoDeckOptions*, UoDeck**)` | `.pptx`, or a PowerPoint 97-2003 `.ppt` (Compound File signature) converted to the parts of a `.pptx`; `UoDeckOptions { size, flags }`, `DECK_TRUSTED = 1` |
+| `uo_deck_free(UoDeck*)`, `uo_deck_is_legacy(const UoDeck*)` | release (null is a no-op); 1/0, -1 for a null handle |
+| `uo_deck_info(deck, u32* count, f64* width_emu, f64* height_emu)` | slide count and `<p:sldSz>` in EMU |
+| `uo_deck_slide_notes(deck, index, UoBuf**)` | the notes text, UTF-8, paragraphs joined by `'\n'`; index past the end is code 9 |
+| `uo_deck_save(deck, UoBuf**)` | `.pptx` bytes (a legacy `.ppt` comes out converted) |
+| `uo_deck_to_pdf(deck, const UoConverter*, const UoSlidesJob*, const UoCancel*, UoBuf**)` | the PDF of an open deck; `UoSlidesJob { size, flags, reserved }`, `SLIDES_JOB_COMPRESS = 1` |
+| `uo_pptx_to_pdf(conv, data, len, job, cancel, UoBuf**)` | one call: open + PDF (the server path) |
+| `uo_ppt_to_pptx(data, len, const UoDeckOptions*, UoBuf**)` | `.ppt` -> `.pptx` bytes; anything without the CFB signature is `INVALID_DATA` |
+
+- The `UoConverter` is the Docx one (`uo_converter_new`: machine fonts + `font_dirs`, `CONVERTER_TRUSTED`): one font index per host for Word and
+  Slides. The PDF font policy is `server-substitute` over that index: the family the deck asks for, else its metric-compatible substitute
+  (Calibri to Carlito...), else Liberation Sans (`ServerFaces` in `slides.rs`, a `uo_pptx::pdf::FontSource` over `SubstituteFontProvider`; each
+  variant is parsed once per PDF).
+- **Trust** has two sides: the *deck's* flag picks the container limits of the read (untrusted: 256 MiB per inflated part and 512 MiB in all, the
+  Docx server path's caps); the *converter's* trust picks the PDF's picture cap (untrusted: 40 Mpx decoded, as the Docx server path).
+- **Threads**: every export that touches a deck runs on its own thread of `CONVERSION_STACK_BYTES` (group nesting and the text layout recurse; an
+  overflow aborts the process). `UoDeck` holds the `Deck` behind a `Mutex`: any thread may call, one at a time; a panic inside a call poisons the
+  handle (`INVALID_OPERATION` after it).
+- **Error codes**: not a package / no presentation / missing part / `.ppt` refused (encrypted, PowerPoint 95, damaged) = 3; over-limit deck read
+  (`PptxError::Limit`, `ReadError::Limit`) = 5; malformed XML in a part = 4; slide index out of range = 9; a PDF limit = 5; the sink = 13. A
+  container limit of `uo_opc` (an inflation bomb) is reported by `uo_pptx` as `NotAPackage` today, so it arrives as 3, not 5 (the test accepts both):
+  `package::load` maps every `uo_opc` error to `NotAPackage`; a typed variant there would give the exact class. The `.ppt` messages are the
+  converter's (Portuguese, as the TS: they were written for the end user).
+- **Cancellation: partial.** `uo_pptx::pdf::PdfOptions` carries no cancel hook (it is the PDF agent's file), so the flag is read **before the work and
+  again before the bytes are handed over** (a flag raised in between gives `CANCELLED` after the PDF is built, nothing is interrupted). What it
+  needs to be prompt: `PdfOptions.cancel: Option<Arc<AtomicBool>>`, checked per slide in `uo_pptx::pdf` and handed to `uo-pdf` as the Write PDF does
+  (`PdfOptions.cancel` of `uo-pdf`), plus the `EmitFail`/measure rounds of one slide; then `Converter::deck_to_pdf` passes its `Arc`.
+  The C# `ToPdf(..., CancellationToken)` is already wired to the native flag.
+
+### C# API (`namespace UniversalOffice.Pptx`, `UniversalOffice.Export`)
+
+```csharp
+public sealed class SlidesPdfConverter : IDisposable {            // one per host, thread-safe
+    public static SlidesPdfConverter Shared { get; }               // machine fonts + substitutes, untrusted
+    public SlidesPdfConverter(SlidesPdfConverterOptions o);        // SystemFonts, FontDirectories, TrustedInput
+    public IReadOnlyList<string> Families { get; }
+    public byte[] ToPdf(byte[] deck, SlidesPdfOptions? opts = null, CancellationToken ct = default);   // .pptx or .ppt
+    public byte[] ToPdf(PptxDeck deck, SlidesPdfOptions? opts = null, CancellationToken ct = default);
+}
+public sealed class SlidesPdfOptions { bool? Compress; }
+public sealed class PptxDeck : IDisposable {                       // an open deck held by the Rust core
+    public static PptxDeck Open(byte[] bytes, bool trusted = false);
+    public int SlideCount; public double SlideWidthEmu, SlideHeightEmu; public bool IsLegacyPpt;
+    public string GetSlideNotes(int index);  public byte[] Save();
+    public byte[] ToPdf(SlidesPdfConverter c, SlidesPdfOptions? opts = null, CancellationToken ct = default);
+}
+public static class PptConverter { public static byte[] ToPptx(byte[] ppt, bool trusted = false); }
+namespace UniversalOffice.Export; public static class PptxPdf { ToPdf(byte[], SlidesPdfOptions?); ToPdf(byte[], SlidesPdfConverter, SlidesPdfOptions?, CancellationToken) }
+```
+
+Exceptions are those of the Docx facade (`NativeMethods.ErrorOf`): 1 -> `ArgumentException`, 3/4 -> `InvalidDataException`, 5 ->
+`OfficeLimitExceededException`, 10 -> `OperationCanceledException`, the rest `UniversalOfficeException` (`Code`, `Stage`); a slide index outside the
+deck is `ArgumentOutOfRangeException` before the native call.
+
+**Packaging decision.** `UniversalOffice.Pptx` has a `ProjectReference` to `UniversalOffice.Docx` (so a NuGet dependency) and an
+`InternalsVisibleTo` from it: the `SafeHandle`s, `ErrorOf`, `NativeCore` and the exception types are the Docx assembly's, the one native library
+per RID travels in the Docx package, and a host using both gets ONE `UniversalOfficeException`, not two. The cost is that a Slides-only host pulls
+the Docx assembly (about 100 KB of managed code). The alternative, a `UniversalOffice.Native` package that both facades depend on (the empty
+`core/dotnet/UniversalOffice.Native` folders are the stale start of it), is the cleaner shape when a third facade (Xlsx) arrives; it moves files, not
+behaviour. `UniversalOffice.Xlsx` will follow this pattern.
+
+### Relation to the old C#-only port (`dotnet/src/UniversalOffice.Pptx`, namespace `UniversalOffice.Pptx` / `UniversalOffice.Export`)
+
+The plan says the facade replaces it; **nothing is deleted in this wave** (the old project stays the 0.9 reference and what `dotnet/UniversalOffice.sln`
+builds). The switch is a later step: the facade takes the NuGet id `UniversalOffice.Pptx` at 0.10, the old project leaves the solution. Mapping of the
+old public surface:
+
+| Old (0.9, pure .NET) | 0.10 facade | |
+|---|---|---|
+| `PptxPdf.ToPdf(byte[] bytes, SlidesPdfOptions? opts)` (`UniversalOffice.Export`) | `PptxPdf.ToPdf(byte[], SlidesPdfOptions?)` and `ToPdf(byte[], SlidesPdfConverter, SlidesPdfOptions?, CancellationToken)` | **kept** (source compatible when no fonts are set) |
+| `SlidesPdfOptions.Fonts` (`List<PdfFontSource>`, mandatory: the generator had no base-14) | `SlidesPdfOptions.Compress`; fonts come from the converter | **dropped**: fonts follow the `server-substitute` policy (`SlidesPdfConverterOptions.FontDirectories` for custom folders); `PdfFontSource` is gone with `UniversalOffice.Pdf` |
+| `SlidesModelOps.LoadDeck` -> `Deck { Pres, Slides, Pkg }`; `Presentation.SlideW/SlideH/Slides.Count` | `PptxDeck.Open`, `SlideWidthEmu`, `SlideHeightEmu`, `SlideCount` | **mapped** (size and count only) |
+| `SlidesModelOps.ReadNotes(pkg, slidePath)` | `PptxDeck.GetSlideNotes(index)` | **mapped** (by index, one string with `\n`, not `List<string>`) |
+| `PptxPackage.Load` / `PresentationXml()` / `OpcPackage` parts | - | **dropped** (no package access: the deck lives in the core); `PptxDeck.Save()` gives the `.pptx` bytes |
+| `PptxReader.ReadPresentation/ReadSlide`, `Model.cs` (`Slide`, `Shape`, `TextBody`, `Run`, `Paragraph`, `Fill`, `Xfrm`, `Shadow`, `ImageRef`...), `Theme.cs`, `TextStyle.cs`, `Geometry.cs` (`PresetPath`), `TextLayout.cs` (`LayoutTextBody`), `Emu` | - | **dropped**: the read model of the shapes does not cross the ABI (the Rust model is `uo_pptx::Deck`/`SlideModel`; a JSON/wire export of it is the way if a host needs it, as the Docx Editing wire) |
+| `PptxManipulate.SetRunText(pkg, slidePath, runIndex, text)` | - | **dropped**: the editing session (`uo_pptx::edit`, B8) has no C ABI yet; the facade for it is the next step of the Slides editing frontier |
+| `PptxMarkdown.ToMarkdown`, `PptxHtml.ToHtml` (`Options.Images`, `FullDocument`) | - | **dropped for now**: the `export` feature of `uo-pptx` (Markdown/HTML) is not ported (module record "Not done"); the exports follow when it is |
+| (none) | `PptxDeck.IsLegacyPpt`, `PptConverter.ToPptx`, `SlidesPdfConverter.Shared/Families`, `CancellationToken` | **new**: `.ppt` -> `.pptx` and `.ppt` as input of every entry point (the old C# had no `.ppt`) |
+
+Output: the PDFs are the Rust `uo_pptx::pdf` (display list interpreted through `uo-pdf`: real gradients, soft masks, blend modes, patterns, links, the
+charts' frames counted as missing), not the old C# strip approximation of gradients, and charts are not grey placeholders where the Rust PDF draws them.
+No parity with the 0.9 C# PDF is claimed or measured.
+
+### Parity and tests
+
+| Comparison | Corpus | Result |
+|---|---|---|
+| C# `ToPdf` (compressed) = Rust native bytes (`tests/parity/slides-native.tsv`, written by `UO_BLESS=1 cargo test -p uo-ffi --test slides_abi`) | 93 decks: the 8 samples + `showcase_animado.ppt`, 4 `legacy/*.ppt`, a third of `playback/` (`.pptx` and `.ppt`) and every 10th deck of `b1a`, `b3a`, `b5a`, `b5b`, `b6a`, `c1d` | 93 of 93 equal (blessed and checked on the same tree) |
+| Rust native debug build = release build (digests blessed in debug, checked in release) | the same 93 | equal |
+| deck route (`uo_deck_to_pdf`) = one-call route (`uo_pptx_to_pdf`) | the same 93 (Rust) and 2 decks (C#) | equal |
+
+**The digests follow the Slides PDF**: any change of `uo-pptx/src/pdf`, `uo-pdf` or `uo-dml-render` that changes a PDF byte makes
+`the_native_digests_of_the_fixture_decks_are_the_committed_ones` fail with the count of differing decks; re-bless with `UO_BLESS=1` once the change is
+meant. The C# test reads the same file, so one re-bless fixes both. Tests: `slides_abi.rs` has contract (nulls, short structs, garbage codes and
+stage), cancel, deck info/notes/save/re-open, `.ppt` -> `.pptx`, the 93-deck PDF check, hostile input (39 truncations x 2 formats, 30 bit-flip
+rounds x 2, CFB header with zeros/ones, a 200,000-deep XML part, and in release a 300 MiB inflation bomb), the thread soak (4 threads, shared deck
+handle) and M1, M3, M4.
+
+### Numbers
+
+Release build, one 2026 Windows machine, tree of 2026-11-17 (the Slides PDF is changing under the wave: the digests were re-blessed three times).
+
+- **Rust ABI tests** (`cargo test -p uo-ffi --release --features count --test slides_abi`, 14 tests, 12 s): all pass. Hostile input: 42 truncations/bit
+  flips converted and 98 refused with a documented code, 0 crashes; the 200,000-deep XML part is refused (not a stack overflow); the 300 MiB
+  inflation bomb is refused (code 3 today, see above).
+- **M4 (handles)**: 10,000 x (deck + cancel flag), every 50th deck also read and saved: 1,384,901,000 B allocated, **0 B left** (global counters: a
+  deck is built and dropped on worker threads). The C# side: 10,000 decks and 10,000 converters through `Dispose()` and 2,000 abandoned decks through
+  the finalizer: native live bytes back exactly.
+- **M1 (a PDF leaves nothing)**, global counters, bytes allocated per call, all **0 B left**: ok 3.0 MB (the PDF is 55,446 B), refused 373 B,
+  cancelled 256 B, a legacy `.ppt` 6.1 MB, a deck handle opened, converted twice, saved and freed 5.0 MB. C#: 100 conversions + 10 legacy + 10,000
+  refused with cancel handles + 100 cancelled calls on a deck: 0 B left.
+- **M3 (budgets, Rust API inline)**: `reference.pptx` (39 KB) 2.9 MB allocated, 0.96 MB peak; `stress-media.pptx` (137 KB) 11.4 MB, 2.9 MB peak;
+  `stress-table-chart.pptx` (141 KB) 7.3 MB, 1.5 MB peak.
+- **Threads**: 4 Rust threads x 4 x 2 conversions (one deck handle shared) give the single-thread bytes; C#: 8 threads x 3 rounds x 3 x 2, native live
+  bytes flat after each round.
+- **C# tests** (`dotnet test core/dotnet/UniversalOffice.Pptx.Tests`, 16 tests, 20 s): 16 pass, parity 93/93. Smoke: `reference.pptx` (3 slides) to a
+  67,743 B PDF in 20 ms after a 379 ms font scan (359 families); `.ppt` to `.pptx` in 7 ms.
+- **Existing Docx facade** (`dotnet test core/dotnet/UniversalOffice.Docx.Tests`): 41 of 43 pass; the two that fail are the PDF parity tests
+  (`The_uncompressed_pdf_equals_the_ts_render_pdf_byte_for_byte`: 3 of 68 equal; `The_compressed_pdf_equals_the_rust_native_output_byte_for_byte`).
+  Reproduced with a native library built WITHOUT this wave's change (Slides module and dependencies removed from `uo-ffi`), while the Rust-side
+  `server_parity` passes on the same sources: not caused by the Slides facade; the C# Docx call path differs from the Rust one somewhere that this
+  session did not chase (to be looked at by whoever owns the Docx facade; the C# output is a few hundred bytes longer per document).
+
+### Not covered (counted)
+
+1. ~~Cancellation inside the Slides PDF~~ — DONE (orchestrator, 2026-11-17): the flag is passed as `PdfOptions::cancel`,
+   read before every slide and every raster effect.
+2. No typed limit class for a container (inflation) limit of the deck read: `uo_pptx::package::load` maps every `uo_opc` error to `NotAPackage` (code 3).
+3. The editing session (`uo_pptx::edit`, B8: set text, undo/redo, font embedding on save) has no C ABI; old `PptxManipulate.SetRunText` is dropped.
+4. The read model (slides, shapes, text) does not cross the ABI; old `PptxReader`/`Model` are dropped.
+5. Markdown/HTML export (`PptxMarkdown`, `PptxHtml`): no Rust counterpart yet (`uo-pptx` feature `export` is empty).
+6. Slide titles, slide text, hidden-slide flag, and per-slide PDF/page ranges are not exported (only count, size, notes).
+7. `UniversalOffice.Xlsx` facade: not started (the same pattern; its Rust side does not exist).
+8. CI: the new steps in `.github/workflows/rust-core.yml` (`dotnet` job: the tests and the smoke; `leak-sanitizer-facade`: the Slides tests under LeakSanitizer) have never run;
+   `server-pdf` already runs `slides_abi` through `cargo test -p uo-ffi --release --all-features`.
+9. No `UniversalOffice.Pptx` NuGet pack was exercised (no native-pack gather yet either, as G14 for Docx).

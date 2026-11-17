@@ -4,23 +4,30 @@
 //!
 //! - [`pdf`]: a deck to PDF bytes (one page per slide, the page the slide's size) and a [`PdfReport`].
 //! - [`pdf_from_lists`]: the interpreter alone over lists someone else emitted (tests, hostile lists).
-//! - What the PDF cannot draw is not drawn and is counted in [`PdfReport::missing`] (the `Effect` items, canvas
-//!   shadows and blurs, the compositing modes that are not PDF blend modes, conic gradients...); nothing panics
-//!   on a hostile list: a limit stops the page, a malformed item is skipped.
+//! - What needs pixels (canvas shadows, soft edges and reflections, the bevel) is rasterized ([`raster`], the canvas over
+//!   pixels) and placed as images, the way Word writes its effects; WordArt warps are outlines ([`warp`]); a character the
+//!   run's face lacks is drawn with a fallback face ([`FontSource::fallback`]).
+//! - What the PDF still cannot draw is not drawn and is counted in [`PdfReport::missing`] (the metafile XOR, pictures
+//!   no decoder reads, characters no face has...); nothing panics on a hostile list: a limit stops the page, a
+//!   malformed item is skipped.
 //!
 //! Where the vendor converter (`slides-processing`) produced PDFs, the differences are listed in the record.
 
 mod css;
+mod effects;
 mod geom;
 mod images;
 mod interp;
 pub mod measure;
 mod paint;
+mod raster;
 mod recipe;
 mod text;
+mod warp;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustc_hash::FxHashMap;
 use uo_dml_render::PartSource;
@@ -32,7 +39,7 @@ use uo_render::slides::{SlidesList, SlidesResources, validate};
 use crate::deck::Deck;
 use crate::emit::{EmitFail, View, emit_slide};
 use crate::error::PptxError;
-pub use measure::{FaceSet, FontSource, fill_measures, text_width};
+pub use measure::{FaceSet, FontSource, fallback_chain, fallback_families, fill_measures, text_width, text_width_in};
 
 /// 1 px of the display list is 1 pt of the page: the slide is emitted at `1 / 12700` px per EMU.
 pub const PX_PER_EMU: f64 = 1.0 / 12700.0;
@@ -45,12 +52,16 @@ pub struct PdfOptions<'a> {
     pub compress: bool,
     pub limits: PdfLimits,
     pub image_limits: uo_image::ImageLimits,
+    /// Raised by the host to stop the export: checked before each slide and before each raster effect (shadow,
+    /// raster layer, bevel), the export then fails with [`PdfFail::Pdf`]`(`[`PdfError::Cancelled`]`)` (the Write PDF's
+    /// flag and error, `uo_pdf::PdfOptions::cancel`).
+    pub cancel: Option<Arc<AtomicBool>>,
 }
 
 impl<'a> PdfOptions<'a> {
     #[must_use]
     pub fn new(fonts: &'a dyn FontSource) -> PdfOptions<'a> {
-        PdfOptions { fonts, compress: true, limits: PdfLimits::DEFAULT, image_limits: uo_image::ImageLimits::default() }
+        PdfOptions { fonts, compress: true, limits: PdfLimits::DEFAULT, image_limits: uo_image::ImageLimits::default(), cancel: None }
     }
 }
 
@@ -86,12 +97,15 @@ pub struct PdfOutput {
 }
 
 /// The counters of one document. `missing` keys (each counts the items skipped or approximated):
-/// `effect:bevel`, `effect:warp`, `effect:metafile-rop`, `shadow`, `blur`, `composite:<mode>` (the canvas
-/// modes PDF has no blend mode for), `gradient:conic`, `gradient:stroke`, `pattern:stroke`, `clear-rect`,
-/// `layer:dropped` (a layer a skipped destination-in/out made wrong), `layer:depth`, `media-frame`,
-/// `image:recipe` (a metafile/PICT raster the shell replays), `image:unsupported`, `image:jpeg-effect`,
-/// `font:missing` (no face), `font:not-embeddable`, `glyph:missing`, `text:baseline`, `transform:singular`,
-/// `chart:frame` (a chart the shell paints with `uo-charts`), `hyperlink:unplaced`.
+/// `effect:bevel` (a bevel whose page could not be rasterized), `effect:metafile-rop`, `blur` and `composite:<mode>`
+/// (outside a layer: no raster pass takes them), `raster:fallback` (a layer that needed raster compositing but holds
+/// something the raster cannot read, a JPEG or a metafile: drawn as vector, its blurs and modes counted too),
+/// `bevel:underlay` (a bevel whose page holds such a picture: shaded over the rest), `warp:picture-fill`,
+/// `gradient:conic`, `gradient:stroke`, `pattern:stroke`, `clear-rect`, `layer:dropped` (a layer a skipped
+/// destination-in/out made wrong), `layer:depth`, `media-frame`, `image:recipe-truncated`, `image:unsupported`,
+/// `image:jpeg-effect`, `font:missing` (no face), `font:not-embeddable`, `glyph:missing` (no face has the
+/// character, not even the fallbacks), `meta:xor-rect`, `transform:singular`, `chart:frame` (a chart the shell
+/// paints with `uo-charts`), `hyperlink:unplaced`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PdfReport {
     pub pages: u32,
@@ -108,6 +122,16 @@ pub struct PdfReport {
     pub links: u64,
     /// metafile, PICT and TIFF pictures played as vector content
     pub recipes: u64,
+    /// canvas shadows drawn (an image each)
+    pub shadows: u64,
+    /// layers rasterized for their compositing (soft edges, reflections, blurs)
+    pub raster_layers: u64,
+    /// bevels shaded
+    pub bevels: u64,
+    /// WordArt warps drawn as outlines
+    pub warps: u64,
+    /// glyphs drawn with a fallback face (a character the run's face lacks)
+    pub fallback_glyphs: u64,
 }
 
 impl PdfReport {
@@ -181,6 +205,15 @@ impl<'a> Writer<'a> {
             images: FxHashMap::default(),
             fatal: None,
         }
+    }
+
+    /// Whether the host raised the cancellation flag (the error is kept for the end).
+    pub(crate) fn cancelled(&mut self) -> bool {
+        if self.opts.cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed)) {
+            self.fatal.get_or_insert(PdfError::Cancelled);
+            return true;
+        }
+        false
     }
 
     /// Keeps a limit or sink error for the end; a refused resource (`Invalid`) is just absent.
@@ -270,6 +303,9 @@ pub fn pdf(deck: &mut Deck, options: &PdfOptions<'_>) -> Result<PdfOutput, PdfFa
     let mut w = Writer::new(options);
     let mut table = MeasureTable::default();
     for index in 0..u32::try_from(count).unwrap_or(u32::MAX) {
+        if w.cancelled() {
+            return Err(PdfFail::Pdf(PdfError::Cancelled));
+        }
         let mut res = SlidesResources::new();
         let mut caches = EmitCaches::new();
         let list = emit_with_measures(deck, index, &mut table, &mut res, &mut caches, options);
@@ -342,6 +378,9 @@ pub fn pdf_from_lists(
 ) -> Result<PdfOutput, PdfFail> {
     let mut w = Writer::new(options);
     for (list, res) in slides {
+        if w.cancelled() {
+            return Err(PdfFail::Pdf(PdfError::Cancelled));
+        }
         w.page(list, res, src, &[])?;
     }
     w.finish()

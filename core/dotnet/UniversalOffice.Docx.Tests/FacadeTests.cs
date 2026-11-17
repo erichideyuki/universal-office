@@ -46,7 +46,7 @@ internal static class Fixtures
     internal static string Digest(byte[] pdf) => $"{pdf.Length}:{Convert.ToHexString(SHA256.HashData(pdf)).ToLowerInvariant()[..32]}";
 
     /// <summary>The options of the captures: 2026-01-15T12:00Z, UTC, every pattern set.</summary>
-    internal static LayoutOptions TsOptions() => new() { Now = new DateTime(2026, 1, 15, 12, 0, 0, DateTimeKind.Utc), UtcOffset = TimeSpan.Zero };
+    internal static LayoutOptions TsOptions() => new() { Now = new DateTime(2026, 1, 15, 12, 0, 0, DateTimeKind.Utc), UtcOffset = TimeSpan.Zero, TsStrict = true };
 
     internal static DocxPdfConverter OpenFonts(bool trusted) =>
         new(new DocxPdfConverterOptions { SystemFonts = false, FontDirectories = OpenFontDirs, TrustedInput = trusted });

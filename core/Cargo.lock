@@ -145,12 +145,14 @@ version = "0.10.0-dev"
 dependencies = [
  "indexmap",
  "uo-alloc",
+ "uo-dml-render",
  "uo-docx",
  "uo-docx-layout",
  "uo-drawingml",
  "uo-fonts",
  "uo-opc",
  "uo-pdf",
+ "uo-pptx",
  "uo-render",
  "uo-testkit",
 ]

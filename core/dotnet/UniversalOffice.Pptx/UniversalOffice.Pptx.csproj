@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The .NET facade of the Rust core for Slides (0.10, record core/docs/modules/uo-bindings.md, "Slides .NET facade"):
+       the NuGet UniversalOffice.Pptx over the C ABI of uo-ffi (core/crates/uo-ffi/src/slides.rs). It replaces the C#-only
+       port in dotnet/src/UniversalOffice.Pptx at the switch (not deleted yet). The native library, the SafeHandles, the
+       error mapping and the exception types are those of UniversalOffice.Docx (a dependency): the one native library per
+       runtime travels in that package, so this one packs no native files. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>UniversalOffice.Pptx</RootNamespace>
+    <AssemblyName>UniversalOffice.Pptx</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <PackageId>UniversalOffice.Pptx</PackageId>
+    <Version>0.10.0-dev</Version>
+    <Authors>Eric Kono</Authors>
+    <Copyright>Copyright (c) 2026 Eric Kono</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://universaloffice.org/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/erichideyuki/universal-office</RepositoryUrl>
+    <Description>PowerPoint presentations with the UniversalOffice Rust core: open .pptx and PowerPoint 97-2003 .ppt, slide count and size, notes, save (.ppt to .pptx) and presentations to PDF (one page per slide). Native library per runtime (through UniversalOffice.Docx).</Description>
+    <PackageTags>pptx;powerpoint;presentation;slides;ooxml;ppt;pdf;pptx-to-pdf</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UniversalOffice.Docx\UniversalOffice.Docx.csproj" />
+  </ItemGroup>
+</Project>

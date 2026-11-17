@@ -97,6 +97,7 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
     let (mut n_pdf, mut pages, mut bytes_total, mut glyphs, mut links, mut recipes) = (0usize, 0usize, 0usize, 0u64, 0u64, 0u64);
     let mut missing: BTreeMap<&'static str, u64> = BTreeMap::new();
     let mut failed_slides = 0usize;
+    let mut drawn = [0u64; 5];
     let mut slowest = (0.0f64, String::new());
     for (name, path) in &all {
         let t0 = Instant::now();
@@ -124,6 +125,15 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
         links += out.report.links;
         recipes += out.report.recipes;
         failed_slides += out.report.failed_slides.len();
+        for (d, v) in drawn.iter_mut().zip([
+            out.report.shadows,
+            out.report.raster_layers,
+            out.report.bevels,
+            out.report.warps,
+            out.report.fallback_glyphs,
+        ]) {
+            *d += v;
+        }
         for (k, c) in &out.report.missing {
             *missing.entry(k).or_insert(0) += c;
         }
@@ -137,6 +147,10 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
         "PDFs: {n_pdf} decks, {pages} pages, {bytes_total} bytes, {glyphs} glyphs, {links} links, {recipes} metafile recipes, {failed_slides} failed slides, {wall:.1} s"
     );
     eprintln!("slowest deck: {} {:.2} s; mean {:.1} ms per page", slowest.1, slowest.0, wall * 1000.0 / pages as f64);
+    eprintln!(
+        "drawn: {} shadows, {} raster layers, {} bevels, {} warps, {} fallback glyphs",
+        drawn[0], drawn[1], drawn[2], drawn[3], drawn[4]
+    );
     eprintln!("missing: {missing:?}");
     assert!(n_pdf >= 450, "decks found: {n_pdf}");
     assert_eq!(failed_slides, 0, "slides that became blank pages");
@@ -178,7 +192,12 @@ fn extracted_text_equals_the_runs_of_the_lists() {
                     let face = uo_pptx::pdf::FontSource::face(&fonts, &family, fk.bold, fk.italic).unwrap();
                     let text = String::from_utf16_lossy(&l.texts[r.text.start as usize..(r.text.start + r.text.len) as usize]);
                     let passes = usize::from(r.fill_text || r.bullet) + usize::from(r.outline.is_some() && !r.bullet);
-                    for c in text.chars().filter(|c| face.glyph_id(u32::from(*c)) != 0) {
+                    // a character the face lacks is drawn with the fallback face, when there is one
+                    let drawable = |c: &char| {
+                        let cp = u32::from(*c);
+                        face.glyph_id(cp) != 0 || uo_pptx::pdf::FontSource::fallback(&fonts, cp, fk.bold, fk.italic, &face).is_some()
+                    };
+                    for c in text.chars().filter(drawable) {
                         *expected.entry(c).or_insert(0) += passes;
                     }
                 }
@@ -337,7 +356,7 @@ fn colours_gradients_layers_and_blend_modes_reach_the_pdf() {
 }
 
 #[test]
-fn unsupported_composites_are_counted_and_taint_their_layer() {
+fn a_layer_with_raster_only_composites_becomes_an_image() {
     let mut res = SlidesResources::new();
     let black = res.sym_str("#000").unwrap();
     let mut list = empty_list(Vec::new());
@@ -354,10 +373,18 @@ fn unsupported_composites_are_counted_and_taint_their_layer() {
         SItem::FillRect(r),
     ];
     let (bytes, report) = render(&list, &res);
-    assert_eq!(report.missing.get("composite:destination-in"), Some(&1));
-    assert_eq!(report.missing.get("layer:dropped"), Some(&1));
+    assert!(report.missing.is_empty(), "{:?}", report.missing);
+    assert_eq!(report.raster_layers, 1);
     let content = all_content(&bytes);
-    assert!(!content.contains("Do"), "a layer a skipped destination-in made wrong is not composited");
+    assert!(content.contains("/Im0 Do"), "the layer is placed as an image: {content}");
+    // outside a layer (no raster pass takes it) a destination-in is still counted
+    let list = empty_list(vec![
+        SItem::FillStyle(Paint::Css(black)),
+        SItem::Composite(uo_render::slides::CompositeOp::DestinationIn),
+        SItem::FillRect(uo_render::slides::Rect4 { x: 0.0, y: 0.0, w: 5.0, h: 5.0 }),
+    ]);
+    let (_, report) = render(&list, &res);
+    assert_eq!(report.missing.get("composite:destination-in"), Some(&1));
 }
 
 #[test]
@@ -398,7 +425,8 @@ fn shadows_and_images_and_patterns() {
         SItem::Stroke,
     ];
     let (bytes, report) = render(&list, &res);
-    assert_eq!(report.missing.get("shadow"), Some(&1), "{:?}", report.missing);
+    assert_eq!(report.shadows, 1, "{:?}", report.missing);
+    assert_eq!(report.missing.get("shadow"), None);
     let s = String::from_utf8_lossy(&bytes).into_owned();
     assert!(s.contains("/PatternType 1"), "tiling pattern");
     assert!(s.contains("/Pattern << /Pt0"), "pattern resource");

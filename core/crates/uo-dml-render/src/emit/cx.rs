@@ -12,6 +12,7 @@ use uo_render::slides::{
     ViewBox,
 };
 
+use super::anim::{EmitSlot, EmitSlotKind, PartStyle, ShapeAnim, SlotStates};
 use crate::ids::MediaId;
 use crate::metafile::{self, Decoded, Measure, Metrics, Need, Outcome, Raster};
 use crate::model::{ImageFx as ModelFx, ImageRef};
@@ -28,6 +29,12 @@ pub type E<T = ()> = Result<T, Abort>;
 
 /// The `K` of the off-screen shadow idiom.
 pub const K: f64 = 20000.0;
+
+/// B4b: the layer id of a shape's soft-reveal layer (right after its shape slot's `SlotBegin`, playback lists only): the
+/// painter acquires it only when the frame's value has a soft-edged reveal, else it runs the else block.
+pub const SOFT_LAYER_SHAPE: u32 = 15;
+/// B4b: the layer id of a chart part's soft-reveal layer (right after its `ChartPart` slot's `SlotBegin`).
+pub const SOFT_LAYER_CHART: u32 = 14;
 
 /// What the emission reads from the host: the package (media) and the advance/size table.
 pub struct Env<'a> {
@@ -138,6 +145,37 @@ pub struct Cx<'a> {
     special_class: FxHashMap<MediaId, bool>,
     /// `picDisplaySize` of the picture shape being painted (the viewer rasterizes a metafile at the size it has on the slide)
     pub picture_display: Option<(f64, f64)>,
+    /// B4b: the hooks of each shape (`AnimPlan::shapes`; empty = a static emission)
+    pub anim_shapes: &'a [Option<ShapeAnim>],
+    /// B4b: the media frames are wired (`AnimPlan::media`)
+    pub anim_media: bool,
+    /// B4b: the states of a re-emission (`AnimPlan::states`)
+    pub anim_states: Option<&'a mut (dyn SlotStates + 'a)>,
+    /// B4b: the slots written so far, positional with `list.slots`
+    pub slots: Vec<EmitSlot>,
+    /// per open save level: whether a `SlotBegin` opened it (the abort path closes it with `SlotEnd`)
+    slot_stack: Vec<bool>,
+    /// B4b: the shape being emitted (its hooks, base and re-emission styles)
+    pub cur: CurShape<'a>,
+    /// B4b: a playback list (every shape in its shape slot); a still list has plain `save`/`restore` per shape
+    pub stage: bool,
+    /// chart part boxes computed in this pass (model key, bounds key, box): committed to the bounds cache only by a
+    /// complete pass, so whether the TS probe missed the cache is the same in every round of the two-phase protocol
+    pub(super) pending_bounds: Vec<(String, String, Option<uo_charts::emit::Rect>)>,
+}
+
+/// The shape being emitted: what its body and text need of the animation (`anim` of `paintShape`).
+#[derive(Default)]
+pub struct CurShape<'a> {
+    /// the shape's hooks (`None` = static)
+    pub anim: Option<&'a ShapeAnim>,
+    /// the shape slot's template (the background slot uses the same base)
+    pub slot: Option<EmitSlot>,
+    /// re-emission: the style of `hooks.all`
+    pub all: Option<PartStyle>,
+    /// re-emission: `ov.fill` / `ov.line` of the body (`bgSt?.fillColor ?? all.fillColor`, the line likewise)
+    pub fill_ov: Option<crate::color::CssColor>,
+    pub line_ov: Option<crate::color::CssColor>,
 }
 
 impl<'a> Cx<'a> {
@@ -175,6 +213,14 @@ impl<'a> Cx<'a> {
             derived: FxHashMap::default(),
             special_class: FxHashMap::default(),
             picture_display: None,
+            anim_shapes: &[],
+            anim_media: false,
+            anim_states: None,
+            slots: Vec::new(),
+            slot_stack: Vec::new(),
+            cur: CurShape::default(),
+            stage: false,
+            pending_bounds: Vec::new(),
         }
     }
 
@@ -227,6 +273,7 @@ impl<'a> Cx<'a> {
     pub fn save(&mut self) {
         self.depth += 1;
         self.alpha_stack.push(self.alpha);
+        self.slot_stack.push(false);
         self.push(SItem::Save);
     }
 
@@ -235,7 +282,61 @@ impl<'a> Cx<'a> {
         if let Some(a) = self.alpha_stack.pop() {
             self.alpha = a;
         }
+        self.slot_stack.pop();
         self.push(SItem::Restore);
+    }
+
+    /// Writes a slot (its [`EmitSlot`] and the wire `SlotDef`) and returns its index.
+    pub fn add_slot(&mut self, s: EmitSlot) -> u32 {
+        use uo_render::slides::{SlotDef, SlotKind};
+        let (kind, index, words) = match s.kind {
+            EmitSlotKind::Shape => (SlotKind::Shape, 0, false),
+            EmitSlotKind::Background => (SlotKind::Background, 0, false),
+            EmitSlotKind::Paragraph(i) => (SlotKind::Paragraph, i, false),
+            EmitSlotKind::Unit(u) => (SlotKind::Unit, u.k, s.word.is_some()),
+            EmitSlotKind::UnitGate(u) => (SlotKind::UnitGate, u.k, s.word.is_some()),
+            EmitSlotKind::ChartPart(j) => (SlotKind::ChartPart, j, false),
+            EmitSlotKind::BoundsPass(j) => (SlotKind::BoundsPass, j, false),
+        };
+        let r = |v: [f64; 4]| Rect4 { x: v[0], y: v[1], w: v[2], h: v[3] };
+        self.list.slots.push(SlotDef { kind, shape: s.shape, index, base: r(s.base), bx: r(s.bx), base_rot_rad: s.base_rot_rad, words });
+        self.slots.push(s);
+        u32::try_from(self.slots.len() - 1).unwrap_or(u32::MAX)
+    }
+
+    /// The style of slot `i`'s state in a re-emission (default: no override).
+    pub fn slot_style(&mut self, i: u32) -> PartStyle {
+        let (Some(st), Some(s)) = (self.anim_states.as_deref_mut(), usize::try_from(i).ok().and_then(|i| self.slots.get(i))) else {
+            return PartStyle::default();
+        };
+        st.style(s)
+    }
+
+    /// `SlotBegin(i)`: a `save()` in the painter (the TS saves where it calls the hook).
+    pub fn slot_begin(&mut self, i: u32) {
+        self.depth += 1;
+        self.alpha_stack.push(self.alpha);
+        self.slot_stack.push(true);
+        self.push(SItem::SlotBegin(i));
+    }
+
+    /// The `SlotEnd` of [`Cx::slot_begin`].
+    pub fn slot_end(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
+        if let Some(a) = self.alpha_stack.pop() {
+            self.alpha = a;
+        }
+        self.slot_stack.pop();
+        self.push(SItem::SlotEnd);
+    }
+
+    /// A gate slot (`UnitGate`): no save in the painter, so no depth.
+    pub fn gate_begin(&mut self, i: u32) {
+        self.push(SItem::SlotBegin(i));
+    }
+
+    pub fn gate_end(&mut self) {
+        self.push(SItem::SlotEnd);
     }
 
     /// The canvas's `globalAlpha` now.
@@ -261,7 +362,11 @@ impl<'a> Cx<'a> {
             }
         }
         while self.depth > depth0 {
-            self.restore();
+            if self.slot_stack.last().copied().unwrap_or(false) {
+                self.slot_end();
+            } else {
+                self.restore();
+            }
         }
     }
 
@@ -391,6 +496,14 @@ impl<'a> Cx<'a> {
     }
 
     /// The UTF-16 span of `text` in the list's text arena.
+    /// A span of UTF-16 code units as given (a unit piece may be half of a surrogate pair, as the TS cuts it).
+    pub fn text_span_units(&mut self, units: &[u16]) -> Span {
+        let start = u32::try_from(self.list.texts.len()).unwrap_or(u32::MAX);
+        self.list.texts.extend_from_slice(units);
+        let end = u32::try_from(self.list.texts.len()).unwrap_or(u32::MAX);
+        Span { start, len: end - start }
+    }
+
     pub fn text_span(&mut self, text: &str) -> Span {
         let start = u32::try_from(self.list.texts.len()).unwrap_or(u32::MAX);
         self.list.texts.extend(text.encode_utf16());
@@ -400,11 +513,22 @@ impl<'a> Cx<'a> {
 
     // ------------------------------------------------------------------ layers
 
-    /// `acquireLayer`: the id of a free layer (an id of a kept layer is busy until released). `None` past 16.
+    /// `acquireLayer`: the id of a free layer (an id of a kept layer is busy until released). `None` past 14: ids
+    /// [`SOFT_LAYER_SHAPE`] and [`SOFT_LAYER_CHART`] are the painter's soft-reveal layers of a playback list.
     pub fn alloc_layer(&mut self) -> Option<u32> {
-        let i = self.busy.iter().position(|b| !*b)?;
+        let i = self.busy.iter().take(14).position(|b| !*b)?;
         *self.busy.get_mut(i)? = true;
         u32::try_from(i).ok()
+    }
+
+    /// The soft-reveal layer `id` ([`SOFT_LAYER_SHAPE`] or [`SOFT_LAYER_CHART`]) when free.
+    pub fn alloc_soft_layer(&mut self, id: u32) -> Option<u32> {
+        let b = self.busy.get_mut(usize::try_from(id).ok()?)?;
+        if *b {
+            return None;
+        }
+        *b = true;
+        Some(id)
     }
 
     pub fn free_layer(&mut self, id: u32) {

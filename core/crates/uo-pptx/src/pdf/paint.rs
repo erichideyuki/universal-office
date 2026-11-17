@@ -61,46 +61,9 @@ impl Interp<'_, '_> {
                 if !(img.w > 0.0 && img.h > 0.0) {
                     return None;
                 }
-                if let Some(t) = &pr.tile {
-                    let (iw, ih) = (img.w, img.h);
-                    // `nat` (the chart engine): the producer already computed the natural size, `scale` is 1
-                    let (nat_w, nat_h) = match &t.nat {
-                        Some(p) => (p.x, p.y),
-                        None => (iw * t.params.unit_x * t.scale, ih * t.params.unit_y * t.scale),
-                    };
-                    let (mut tw, mut th) = (nat_w * t.params.sx, nat_h * t.params.sy);
-                    let (kx, ky) = self.t.cur.ctm.axis_scales();
-                    let (kx, ky) = (if kx == 0.0 { 1.0 } else { kx }, if ky == 0.0 { 1.0 } else { ky });
-                    if tw * kx < iw {
-                        tw = max(1.0, round(tw * kx)) / kx;
-                    }
-                    if th * ky < ih {
-                        th = max(1.0, round(th * ky)) / ky;
-                    }
-                    let (ah, av) = match t.params.algn.map(|s| self.sym(s)).as_deref() {
-                        Some("t") => (0.5, 0.0),
-                        Some("tr") => (1.0, 0.0),
-                        Some("l") => (0.0, 0.5),
-                        Some("ctr") => (0.5, 0.5),
-                        Some("r") => (1.0, 0.5),
-                        Some("bl") => (0.0, 1.0),
-                        Some("b") => (0.5, 1.0),
-                        Some("br") => (1.0, 1.0),
-                        _ => (0.0, 0.0),
-                    };
-                    let bx = &t.bx;
-                    let (tx, ty) = (t.params.tx * t.scale, t.params.ty * t.scale);
-                    let mat = Mat([tw / iw, 0.0, 0.0, th / ih, bx.x + (bx.w - tw) * ah + tx, bx.y + (bx.h - th) * av + ty]);
-                    let flip = match t.params.flip.map(|s| self.sym(s)).as_deref() {
-                        Some("x") => Some((true, false)),
-                        Some("y") => Some((false, true)),
-                        Some("xy") => Some((true, true)),
-                        _ => None,
-                    };
-                    return Some(PaintVal::Pattern(Rc::new(PatternVal { img, mat, flip, repeat: Repeat::Repeat })));
-                }
-                let mat = pr.transform.as_ref().map_or(Mat::IDENTITY, mat6);
-                Some(PaintVal::Pattern(Rc::new(PatternVal { img, mat, flip: None, repeat: pr.repeat })))
+                let ctm = self.t.cur.ctm;
+                let (mat, flip, repeat) = pattern_geometry(pr, img.w, img.h, ctm, |s| self.sym(s));
+                Some(PaintVal::Pattern(Rc::new(PatternVal { img, mat, flip, repeat })))
             }
         }
     }
@@ -110,6 +73,12 @@ impl Interp<'_, '_> {
     pub(super) fn fill_path(&mut self, path: &CanvasPath, rule: FillRule) {
         if !self.can_paint(true) {
             return;
+        }
+        if self.shadow_on() {
+            self.shadow_fill(path, rule);
+            if self.offscreen() {
+                return;
+            }
         }
         let ctm = self.t.cur.ctm;
         let Some((p, bounds)) = path.emit(ctm) else { return };
@@ -151,15 +120,7 @@ impl Interp<'_, '_> {
     }
 
     fn stops_of(&self, g: &Gradient) -> Vec<(f64, Rgba)> {
-        let Some(stops) = span_of(&self.list.stops, &g.stops) else { return Vec::new() };
-        let mut out: Vec<(f64, Rgba)> = Vec::with_capacity(stops.len());
-        for Stop { offset, color } in stops {
-            let Some(c) = parse_css(&self.sym(*color)) else { continue };
-            let o = if offset.is_nan() { 0.0 } else { max(0.0, min(1.0, *offset)) };
-            let o = out.last().map_or(o, |(prev, _)| max(*prev, o));
-            out.push((o, c));
-        }
-        out
+        stops_of(self.list, self.res, g)
     }
 
     fn gradient_average(&mut self, i: u32) -> Rgba {
@@ -383,6 +344,12 @@ impl Interp<'_, '_> {
         if !self.can_paint(false) {
             return;
         }
+        if self.shadow_on() {
+            self.shadow_stroke(path);
+            if self.offscreen() {
+                return;
+            }
+        }
         let ctm = self.t.cur.ctm;
         let Some((p, _)) = path.emit(ctm) else { return };
         let color = match self.t.cur.stroke.clone() {
@@ -427,4 +394,68 @@ impl Interp<'_, '_> {
             _ => None,
         }
     }
+}
+
+/// The placement of a picture pattern (`createPattern` with its transform, or `tilePattern` of `a:tile`): the matrix
+/// from the picture's pixels (`iw x ih`) to the user space of the paint, the mirrored copies (x, y) and the repeat.
+/// `ctm` is the transform in force (tiles smaller than a device pixel snap to whole pixels, as the TS does).
+pub(super) fn pattern_geometry(
+    pr: &uo_render::slides::PatternRes,
+    iw: f64,
+    ih: f64,
+    ctm: Mat,
+    sym: impl Fn(u32) -> String,
+) -> (Mat, Option<(bool, bool)>, Repeat) {
+    let Some(t) = &pr.tile else {
+        return (pr.transform.as_ref().map_or(Mat::IDENTITY, mat6), None, pr.repeat);
+    };
+    // `nat` (the chart engine): the producer already computed the natural size, `scale` is 1
+    let (nat_w, nat_h) = match &t.nat {
+        Some(p) => (p.x, p.y),
+        None => (iw * t.params.unit_x * t.scale, ih * t.params.unit_y * t.scale),
+    };
+    let (mut tw, mut th) = (nat_w * t.params.sx, nat_h * t.params.sy);
+    let (kx, ky) = ctm.axis_scales();
+    let (kx, ky) = (if kx == 0.0 { 1.0 } else { kx }, if ky == 0.0 { 1.0 } else { ky });
+    if tw * kx < iw {
+        tw = max(1.0, round(tw * kx)) / kx;
+    }
+    if th * ky < ih {
+        th = max(1.0, round(th * ky)) / ky;
+    }
+    let (ah, av) = match t.params.algn.map(&sym).as_deref() {
+        Some("t") => (0.5, 0.0),
+        Some("tr") => (1.0, 0.0),
+        Some("l") => (0.0, 0.5),
+        Some("ctr") => (0.5, 0.5),
+        Some("r") => (1.0, 0.5),
+        Some("bl") => (0.0, 1.0),
+        Some("b") => (0.5, 1.0),
+        Some("br") => (1.0, 1.0),
+        _ => (0.0, 0.0),
+    };
+    let bx = &t.bx;
+    let (tx, ty) = (t.params.tx * t.scale, t.params.ty * t.scale);
+    let mat = Mat([tw / iw, 0.0, 0.0, th / ih, bx.x + (bx.w - tw) * ah + tx, bx.y + (bx.h - th) * av + ty]);
+    let flip = match t.params.flip.map(&sym).as_deref() {
+        Some("x") => Some((true, false)),
+        Some("y") => Some((false, true)),
+        Some("xy") => Some((true, true)),
+        _ => None,
+    };
+    (mat, flip, Repeat::Repeat)
+}
+
+/// The stops of a gradient of the list as the canvas keeps them: readable colours only, offsets clamped to 0..1 and
+/// never decreasing.
+pub(super) fn stops_of(list: &uo_render::slides::SlidesList, res: &uo_render::slides::SlidesResources, g: &Gradient) -> Vec<(f64, Rgba)> {
+    let Some(stops) = span_of(&list.stops, &g.stops) else { return Vec::new() };
+    let mut out: Vec<(f64, Rgba)> = Vec::with_capacity(stops.len());
+    for Stop { offset, color } in stops {
+        let Some(c) = parse_css(&String::from_utf16_lossy(res.sym_units(*color))) else { continue };
+        let o = if offset.is_nan() { 0.0 } else { max(0.0, min(1.0, *offset)) };
+        let o = out.last().map_or(o, |(prev, _)| max(*prev, o));
+        out.push((o, c));
+    }
+    out
 }

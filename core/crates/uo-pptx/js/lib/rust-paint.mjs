@@ -11,12 +11,13 @@ import { patternRows as sharedPatternRows } from '../../../../../shared/drawingm
  * Paint a decoded list on a fresh recording context.
  *  - `media(index)`: the bytes of `tables.media[index]` (the part of the package), or null (the picture is missing);
  *  - `bitmap(index)`: the RGBA bytes of `tables.bitmaps[index]`;
- *  - `frame`: a decoded `SlotFrame` or undefined; `mediaFrame(shape)`: the host's video frame hook;
+ *  - `frame`: a decoded `SlotFrame` or undefined, `replacements`: its decoded replacement lists by shape (B4b);
+ *    `mediaFrame(shape)`: the host's video frame hook;
  *  - `light`, `patternRows`: the uo-drawingml tables for the bevel and patterned WordArt (default: the TS tables of
  *    `shared/drawingml`, the ones the frozen painter imports).
  * The canvas is `width` x `height` px (the producer's view box plus the origin on both sides).
  */
-export function recordList({ list, tables, frame, width, height, caps, measure, media, bitmap, recipe, mediaFrame, light, patternRows, env: extra = {} }) {
+export function recordList({ list, tables, frame, replacements, width, height, caps, measure, media, bitmap, recipe, mediaFrame, light, patternRows, env: extra = {} }) {
   const rec = createRecorder({ width, height, caps, measure });
   // B5b: the metafile pictures are replayed on a recorder of their own (the TS rasterizes them before the slide is painted, on
   // canvases that are not the slide's): their lines are not the slide's, their canvas is the image the slide draws
@@ -46,7 +47,7 @@ export function recordList({ list, tables, frame, width, height, caps, measure, 
   rec.install();
   let error;
   try {
-    painter.paint(rec.ctx, list, tables, frame);
+    painter.paint(rec.ctx, list, tables, frame, replacements);
   } catch (e) {
     error = String(e?.message ?? e);
   } finally {

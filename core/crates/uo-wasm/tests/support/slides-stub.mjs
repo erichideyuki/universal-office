@@ -66,6 +66,16 @@ export function stubAnswers(deck, reqs) {
   return Float64Array.from(out);
 }
 
+/** B4b: the full loop of one playback frame (`deck.stage`): answers until the frame arrives. */
+export function stageAll(uo, deck, view, src, at, which, scale, ox, oy, media = true, clock = {}) {
+  for (let round = 0; round <= uo.maxRounds; round++) {
+    const r = deck.stage(view, src, at, which, scale, ox, oy, media, clock);
+    if (r.status === 12) { deck.answer(stubAnswers(deck, r.requests)); continue; }
+    return { ...r, rounds: round + 1 };
+  }
+  throw new Error('too many rounds');
+}
+
 /** The full loop of one emission: answers until the list arrives (`rounds` counts the passes). */
 export function emitAll(uo, deck, view, i, scale, ox, oy) {
   for (let round = 0; round <= uo.maxRounds; round++) {

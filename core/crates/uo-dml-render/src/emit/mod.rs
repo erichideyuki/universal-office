@@ -9,11 +9,16 @@
 //!   repeated (at most [`crate::text::MAX_ROUNDS`] rounds);
 //! - a shape the TS would have skipped (`guarded`: the symbol-font recursion `RangeError`) is closed and skipped;
 //! - a chart frame is painted by `uo-charts` through [`chart`] (C-6): its canvas calls are list items and its measurement
-//!   questions join the slide's [`NeedMeasures`]; [`Emission::chart_frames`] stays empty.
+//!   questions join the slide's [`NeedMeasures`]; [`Emission::chart_frames`] stays empty;
+//! - a still list ([`emit_slide`], [`emit_shapes`]) has no slots: every shape between a `save`/`restore`. A playback list
+//!   ([`emit_slide_anim`], B4b, [`anim`]) puts every shape in its shape slot (`SlotBegin`/`SlotEnd`), the hooks of the
+//!   animated shapes become slots too and [`Emission::slots`] holds the bases the hooks receive; [`emit_shape_anim`]
+//!   re-emits one shape with the states of a frame.
 
 // the port keeps the TS's argument lists and its NaN-aware tests (`!(w > 0)` is true for NaN, `w <= 0` is not)
 #![allow(clippy::too_many_arguments, clippy::neg_cmp_op_on_partial_ord, clippy::type_complexity)]
 
+pub mod anim;
 mod chart;
 mod chart_canvas;
 mod chart_host;
@@ -24,10 +29,13 @@ mod shape;
 mod table;
 mod text;
 
+pub use anim::{AnimPlan, ChartPart, ChartSel, DataSel, EmitSlot, EmitSlotKind, PartStyle, ShapeAnim, SlotStates, UnitHook, UnitRef};
 pub use chart::{chart_part_bounds, emit_chart_with};
 pub use chart_canvas::{MAX_CHART_ITEMS, SlidesCanvas};
 pub use chart_host::{ChartCache, MAX_BOUNDS_KEYS, MAX_CHART_MODELS, SlidesHost, bounds_key, model_key, model_of};
-pub use cx::{Cx, EmitCaches, Env, MAX_PATH_GRADIENT_BYTES, MAX_PATH_GRADIENT_CACHE, MAX_PATTERN_CACHE};
+pub use cx::{
+    Cx, EmitCaches, Env, MAX_PATH_GRADIENT_BYTES, MAX_PATH_GRADIENT_CACHE, MAX_PATTERN_CACHE, SOFT_LAYER_CHART, SOFT_LAYER_SHAPE,
+};
 pub use dpi::image_dpi;
 pub use paint::{dash_pattern, gradient_stops};
 pub use shape::Fit;
@@ -67,6 +75,8 @@ pub struct ChartFrame {
 pub struct Emission {
     pub list: SlidesList,
     pub chart_frames: Vec<ChartFrame>,
+    /// the slots of the list (positional with `list.slots`): what each hook receives
+    pub slots: Vec<EmitSlot>,
 }
 
 /// The slide background of `paintSlide` (`slide.bg`, `slide.bgImage`, `slide.bgTile`).
@@ -85,8 +95,12 @@ fn finish(mut cx: Cx<'_>) -> Result<Emission, NeedMeasures> {
     if cx.has_needs() {
         return Err(NeedMeasures(cx.take_needs()));
     }
+    for (model, key, b) in std::mem::take(&mut cx.pending_bounds) {
+        cx.caches.charts.bounds_put(&model, &key, b);
+    }
     let chart_frames = std::mem::take(&mut cx.chart_frames).into_iter().map(|(shape, rect)| ChartFrame { shape, rect }).collect();
-    Ok(Emission { list: cx.list, chart_frames })
+    let slots = std::mem::take(&mut cx.slots);
+    Ok(Emission { list: cx.list, chart_frames, slots })
 }
 
 fn fit_of(p: &EmitParams) -> Fit {
@@ -116,7 +130,7 @@ pub fn emit_shapes(
     cx.composite(CompositeOp::SourceOver);
     cx.shadow_color("rgba(0,0,0,0)");
     cx.push(SItem::ImageSmoothing(true));
-    shape::paint_shape_list(&mut cx, shapes, &fit_of(p), p.suppress_text, p.clip_overflow);
+    shape::paint_shape_list(&mut cx, shapes, &fit_of(p), p.suppress_text, p.clip_overflow, None);
     cx.restore();
     finish(cx)
 }
@@ -133,7 +147,41 @@ pub fn emit_slide(
     res: &mut SlidesResources,
     caches: &mut EmitCaches,
 ) -> Result<Emission, NeedMeasures> {
+    emit_slide_with(bg, shapes, p, env, res, caches, AnimPlan::default(), false)
+}
+
+/// `paintSlideTo` with the hooks of a playback frame (`shapeAnim`, `mediaFrame`, `shapeOpacity` of the viewer's
+/// `paintPlaybackSlide`): the animated shapes' hooks are slots and the media pictures `MediaFrame` items.
+///
+/// # Errors
+/// [`NeedMeasures`] as [`emit_shapes`].
+pub fn emit_slide_anim<'a>(
+    bg: &SlideBg<'_>,
+    shapes: &[Shape],
+    p: &EmitParams,
+    env: &'a Env<'a>,
+    res: &'a mut SlidesResources,
+    caches: &'a mut EmitCaches,
+    plan: AnimPlan<'a>,
+) -> Result<Emission, NeedMeasures> {
+    emit_slide_with(bg, shapes, p, env, res, caches, plan, true)
+}
+
+fn emit_slide_with<'a>(
+    bg: &SlideBg<'_>,
+    shapes: &[Shape],
+    p: &EmitParams,
+    env: &'a Env<'a>,
+    res: &'a mut SlidesResources,
+    caches: &'a mut EmitCaches,
+    plan: AnimPlan<'a>,
+    stage: bool,
+) -> Result<Emission, NeedMeasures> {
     let mut cx = Cx::new(env, res, caches, view_of(p));
+    cx.anim_shapes = plan.shapes;
+    cx.anim_media = plan.media;
+    cx.anim_states = plan.states;
+    cx.stage = stage;
     let (ox, oy, scale) = (p.ox, p.oy, p.scale);
     let sw = p.slide_w * scale;
     let sh = p.slide_h * scale;
@@ -171,7 +219,31 @@ pub fn emit_slide(
         cx.restore();
     }
     // `paintSlideTo` leaves `clipOverflow` as the caller's default (off for the slide)
-    shape::paint_shape_list(&mut cx, shapes, &fit_of(p), p.suppress_text, p.clip_overflow);
+    shape::paint_shape_list(&mut cx, shapes, &fit_of(p), p.suppress_text, p.clip_overflow, None);
     cx.restore();
+    finish(cx)
+}
+
+/// One shape of a slide again (the re-emit rule): the items of its shape slot, from `SlotBegin` to `SlotEnd`, drawn with the
+/// states `plan.states` answers (`fillOv`/`lineOv`, `fontOf`/`colorOf`/`underOf`, the font scale). The list's slots are its
+/// own; the shape is painted as in [`emit_slide_anim`] (inside the slide clip, the canvas state of the slide).
+///
+/// # Errors
+/// [`NeedMeasures`] as [`emit_shapes`].
+pub fn emit_shape_anim<'a>(
+    shapes: &[Shape],
+    index: u32,
+    p: &EmitParams,
+    env: &'a Env<'a>,
+    res: &'a mut SlidesResources,
+    caches: &'a mut EmitCaches,
+    plan: AnimPlan<'a>,
+) -> Result<Emission, NeedMeasures> {
+    let mut cx = Cx::new(env, res, caches, view_of(p));
+    cx.anim_shapes = plan.shapes;
+    cx.anim_media = plan.media;
+    cx.anim_states = plan.states;
+    cx.stage = true;
+    shape::paint_shape_list(&mut cx, shapes, &fit_of(p), p.suppress_text, p.clip_overflow, Some(index));
     finish(cx)
 }

@@ -9,6 +9,10 @@
 //! | [`UoSlidesView`] | `uo_slides_view_new` | one generation of the list stream: `SlidesResources`, `EmitCaches`, `SlidesEncoder` |
 //! | [`UoSlidesShow`] | `uo_slides_show_new` | a click slide show (`uo_pptx::SlideShow`, state in Rust, every time is an argument) |
 //! | [`UoSlidesTimeline`] | `uo_slides_timeline_new` | the automatic-playback timeline (`PlaybackTimeline`) |
+//!
+//! A view also holds the two STAGES of a playback (B4b, `uo_pptx::stage`): the slide on stage and the origin of the running
+//! transition, each a list with slots, its slot template and the `AnimCaches` of the frames (`uo_slides_stage_show`,
+//! `uo_slides_stage_timeline`; `uo_slides_stage_clear` empties them).
 //! | `UoBuf` (`buf.rs`) | every query | status and bytes |
 //!
 //! Input bytes come from `uo_alloc_bytes` and are consumed by the call that takes them. Nothing here panics on its input.
@@ -43,6 +47,11 @@
 //!   `progress f64`, `n_effects u32`, `has_from u8` then `index i32, anim_ms f64, key u32, n_effects u32`, then the
 //!   transition (`present u8`, then `kind str, ns str, n u32, n x (str, str), dur_ms f64, adv_tm_ms f64` (NaN = none),
 //!   `adv_click u8`).
+//! - `uo_slides_stage_show` / `uo_slides_stage_timeline` ok: `flags u8` (bit 0: the caches overflowed; bit 1: nothing on
+//!   stage (the end screen, or no origin): nothing follows; bit 2: a new list follows), `anim_ms f64` (the frame's animation
+//!   time), then with bit 2 `len u32` and the `SlidesList` message (the stage's list, with slots), then the `SlotFrame` message
+//!   (`uo_render::slides`, schema `slots.uos`: one value per slot of the stage's list; each replacement list is a `SlidesList`
+//!   message of the same stream, to be decoded after the stage's list). Status 12: the measurement requests, as `uo_slides_emit`.
 //! - `uo_slides_timeline_info`: `duration f64, tick f64, media_clock f64, n u32`, per slide `index u32, start f64, end f64,
 //!   anim_start f64, transition_ms f64`; `uo_slides_timeline_state`: `pos i32, index i32, from_index i32, progress f64,
 //!   anim_ms f64, ended u8, n_effects u32`, then the transition of the slide.
@@ -53,11 +62,14 @@ use std::sync::Arc;
 use uo_dml_render::emit::EmitCaches;
 use uo_dml_render::text::{FaceKey, Kerning, MAX_ROUNDS, MeasureReq, MeasureTable, StringKey, TextMetrics};
 use uo_dml_render::{MediaId, PartSource};
-use uo_pptx::playback::{PlaybackOptions, PlaybackTimeline, playback_state_at};
+use uo_pptx::anim_engine::AnimCaches;
+use uo_pptx::media::MediaClock;
+use uo_pptx::playback::{PlaybackOptions, PlaybackSlide, PlaybackTimeline, playback_state_at};
 use uo_pptx::show::{SlideShow, SlideShowAction, SlideShowFrame, SlideShowOptions};
+use uo_pptx::stage::{Stage, anim_plan, emit_stage, has_media, stage_frame, wire_values};
 use uo_pptx::timing::{TimingModel, TransitionInfo};
 use uo_pptx::{Deck, EmitFail, Limits, PptxError, View, emit_slide};
-use uo_render::slides::{SlidesEncoder, SlidesResources};
+use uo_render::slides::{FrameEncoder, Replacement, SlidesEncoder, SlidesResources, SlotFrame};
 
 use crate::buf::{NULL_HANDLE, OK, Out, UoBuf, buf, take_bytes};
 
@@ -86,6 +98,13 @@ pub struct UoSlidesView {
     res: SlidesResources,
     caches: EmitCaches,
     enc: SlidesEncoder,
+    /// B4b: the slide on stage (0) and the transition origin (1)
+    stages: [Option<Stage>; 2],
+    /// B4b: the caches of the slot evaluation (formulas, motion paths), capped
+    anim: AnimCaches,
+    /// B4b: the frame stream (`SlotFrame` messages) and its frame counter
+    frames: FrameEncoder,
+    frame_no: u32,
 }
 
 /// The click slide show.
@@ -98,6 +117,8 @@ pub struct UoSlidesShow {
 /// The playback timeline.
 pub struct UoSlidesTimeline {
     tl: PlaybackTimeline,
+    /// the timeline's slides shared with the stages (B4b)
+    slides: Vec<Arc<PlaybackSlide>>,
 }
 
 thread_local! {
@@ -298,7 +319,15 @@ pub unsafe extern "C" fn uo_slides_clear_caches(deck: *mut UoSlidesDeck) -> i32 
 /// A new generation of the list stream (`generation` stamps the messages).
 #[unsafe(no_mangle)]
 pub extern "C" fn uo_slides_view_new(generation: u32) -> *mut UoSlidesView {
-    Box::into_raw(Box::new(UoSlidesView { res: SlidesResources::new(), caches: EmitCaches::new(), enc: SlidesEncoder::new(generation) }))
+    Box::into_raw(Box::new(UoSlidesView {
+        res: SlidesResources::new(),
+        caches: EmitCaches::new(),
+        enc: SlidesEncoder::new(generation),
+        stages: [None, None],
+        anim: AnimCaches::default(),
+        frames: FrameEncoder::new(generation),
+        frame_no: 0,
+    }))
 }
 
 /// # Safety
@@ -366,6 +395,189 @@ pub unsafe extern "C" fn uo_slides_emit(
         }
         Err(EmitFail::Deck(e)) => buf(error_code(&e), Vec::new()),
     }
+}
+
+// ───────────────────────────── the stage (B4b) ─────────────────────────────
+
+/// The stage `which` of `v` for playback slide `ps` at `anim_ms`: the list (emitted again when the slide, the viewport, the
+/// media flag or the hooks' structure changed) and the frame's values.
+#[allow(clippy::too_many_arguments)]
+fn stage_out(
+    d: &mut UoSlidesDeck,
+    v: &mut UoSlidesView,
+    ps: Option<Arc<PlaybackSlide>>,
+    anim_ms: f64,
+    which: usize,
+    view: View,
+    media: bool,
+    clock: &MediaClock,
+) -> *mut UoBuf {
+    let Some(ps) = ps else {
+        if let Some(s) = v.stages.get_mut(which) {
+            *s = None;
+        }
+        let mut o = Out::default();
+        o.u8(2).f64(anim_ms);
+        return buf(OK, o.0);
+    };
+    let Some(&pi) = d.map.get(usize::try_from(ps.index).unwrap_or(usize::MAX)) else { return buf(NO_ITEM, Vec::new()) };
+    let shapes = match d.deck.slide(pi) {
+        Ok(s) => s,
+        Err(e) => return buf(error_code(&e), Vec::new()),
+    };
+    let fresh = match v.stages.get(which).and_then(Option::as_ref) {
+        Some(s) => {
+            s.index != pi
+                || s.view != view
+                || s.media != (media && has_media(&shapes.shapes))
+                || s.slide.effects.len() != ps.effects.len()
+                || s.plan != anim_plan(&ps, &shapes.shapes)
+        }
+        None => true,
+    };
+    let mut o = Out::default();
+    // a new stage is kept (and its list encoded) only once its first frame is complete: a pass that needs measurements
+    // delivers nothing, so the stream's tables advance only with what the shell decodes
+    let new_stage = if fresh {
+        match emit_stage(&mut d.deck, pi, view, &d.table, &mut v.res, &mut v.caches, ps, media) {
+            Ok(st) => Some(st),
+            Err(EmitFail::Need(n)) => return need_out(d, n.0),
+            Err(EmitFail::Deck(e)) => return buf(error_code(&e), Vec::new()),
+        }
+    } else {
+        if let Some(Some(s)) = v.stages.get_mut(which) {
+            // the same structure: the newer placement (fired steps) drives the values
+            s.slide = ps;
+        }
+        None
+    };
+    let Some(stage) = new_stage.as_ref().or_else(|| v.stages.get(which).and_then(Option::as_ref)) else { return buf(NO_ITEM, Vec::new()) };
+    let frame = match stage_frame(&mut d.deck, stage, &d.table, &mut v.res, &mut v.caches, anim_ms, clock, &mut v.anim, new_stage.is_some())
+    {
+        Ok(f) => f,
+        Err(EmitFail::Need(n)) => return need_out(d, n.0),
+        Err(EmitFail::Deck(e)) => return buf(error_code(&e), Vec::new()),
+    };
+    let mut list_bytes: Option<Vec<u8>> = None;
+    if let Some(st) = &new_stage {
+        let mut b = Vec::new();
+        if v.enc.encode(&st.emission.list, &v.res, &mut b).is_err() {
+            return buf(ENCODE, Vec::new());
+        }
+        list_bytes = Some(b);
+    }
+    let mut replacements = Vec::with_capacity(frame.replacements.len());
+    for r in &frame.replacements {
+        let mut lb = Vec::new();
+        if v.enc.encode(&r.emission.list, &v.res, &mut lb).is_err() {
+            return buf(ENCODE, Vec::new());
+        }
+        replacements.push(Replacement { shape: r.shape, list: lb, values: wire_values(&r.template, &r.table, &mut v.frames) });
+    }
+    v.frame_no = v.frame_no.wrapping_add(1);
+    let msg = SlotFrame { frame: v.frame_no, values: wire_values(&stage.template, &frame.table, &mut v.frames), replacements };
+    if let Some(st) = new_stage
+        && let Some(s) = v.stages.get_mut(which)
+    {
+        *s = Some(st);
+    }
+    let flags = u8::from(v.caches.overflowed) | (u8::from(list_bytes.is_some()) << 2);
+    o.u8(flags).f64(anim_ms);
+    if let Some(b) = &list_bytes {
+        o.u32(b.len()).bytes(b);
+    }
+    if v.frames.encode(&msg, &mut o.0).is_err() {
+        return buf(ENCODE, Vec::new());
+    }
+    buf(OK, o.0)
+}
+
+fn need_out(d: &mut UoSlidesDeck, reqs: Vec<MeasureReq>) -> *mut UoBuf {
+    let mut o = Out::default();
+    put_requests(&mut o, d, &reqs);
+    d.pending = reqs;
+    buf(NEED, o.0)
+}
+
+fn view_of(scale: f64, ox: f64, oy: f64) -> Option<View> {
+    (scale.is_finite() && scale > 0.0 && ox.is_finite() && oy.is_finite()).then_some(View { scale, ox, oy })
+}
+
+/// The stage of a click slide show at `now`: `which` 0 = the slide on stage at its `anim_ms`, 1 = the origin of the running
+/// transition at its frozen `anim_ms`. `media` != 0 wires the media frames (`hasMedia`); `latency`/`clock_scale` are the
+/// media clock (NaN = default). Layout in the module documentation.
+///
+/// # Safety
+/// `deck`, `view` and `show` must be null or live handles.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_stage_show(
+    deck: *mut UoSlidesDeck,
+    view: *mut UoSlidesView,
+    show: *const UoSlidesShow,
+    now: f64,
+    which: u32,
+    scale: f64,
+    ox: f64,
+    oy: f64,
+    media: u32,
+    latency: f64,
+    clock_scale: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the handles are null or live, with no other reference in use.
+    let (Some(d), Some(v), Some(s)) = (unsafe { (deck_mut(deck), view.as_mut(), show.as_ref()) }) else {
+        return buf(NULL_HANDLE, Vec::new());
+    };
+    let (Some(vw), Ok(w @ 0..=1)) = (view_of(scale, ox, oy), usize::try_from(which)) else { return buf(BAD_ARG, Vec::new()) };
+    let f = s.show.frame(now);
+    let (ps, anim_ms) = if w == 0 { (f.slide, f.anim_ms) } else { f.from.map_or((None, 0.0), |o| (Some(o.slide), o.anim_ms)) };
+    let clock = MediaClock { latency_ms: opt_f(latency), scale: opt_f(clock_scale) };
+    stage_out(d, v, ps, anim_ms, w, vw, media != 0, &clock)
+}
+
+/// The stage of a playback timeline at `t`: `which` 0 = the slide on stage, 1 = the transition origin (in its final state,
+/// `anim_ms` infinity, as the viewer paints it). Otherwise as [`uo_slides_stage_show`].
+///
+/// # Safety
+/// `deck`, `view` and `tl` must be null or live handles.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_stage_timeline(
+    deck: *mut UoSlidesDeck,
+    view: *mut UoSlidesView,
+    tl: *const UoSlidesTimeline,
+    t: f64,
+    which: u32,
+    scale: f64,
+    ox: f64,
+    oy: f64,
+    media: u32,
+    latency: f64,
+    clock_scale: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the handles are null or live, with no other reference in use.
+    let (Some(d), Some(v), Some(tl)) = (unsafe { (deck_mut(deck), view.as_mut(), tl.as_ref()) }) else {
+        return buf(NULL_HANDLE, Vec::new());
+    };
+    let (Some(vw), Ok(w @ 0..=1)) = (view_of(scale, ox, oy), usize::try_from(which)) else { return buf(BAD_ARG, Vec::new()) };
+    let st = playback_state_at(&tl.tl, t);
+    let pos = if w == 0 { st.pos } else { st.from };
+    let ps = pos.and_then(|p| tl.slides.get(p)).cloned();
+    let anim_ms = if w == 0 { st.anim_ms } else { f64::INFINITY };
+    let clock = MediaClock { latency_ms: opt_f(latency), scale: opt_f(clock_scale) };
+    stage_out(d, v, ps, anim_ms, w, vw, media != 0, &clock)
+}
+
+/// Drops both stages of `view` and empties its slot-evaluation caches (memory gate M1; a new stage is emitted on the next
+/// frame).
+///
+/// # Safety
+/// `view` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_stage_clear(view: *mut UoSlidesView) -> i32 {
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view.as_mut() }) else { return NULL_HANDLE };
+    v.stages = [None, None];
+    v.anim.clear();
+    OK
 }
 
 fn str_out(o: &mut Out, s: &str) {
@@ -674,7 +886,9 @@ pub unsafe extern "C" fn uo_slides_timeline_new(
         tick_ms: opt_f(tick_ms),
         transition_fps: opt_f(transition_fps),
     };
-    Box::into_raw(Box::new(UoSlidesTimeline { tl: uo_pptx::playback::build_playback_timeline(&models, &opts) }))
+    let tl = uo_pptx::playback::build_playback_timeline(&models, &opts);
+    let slides = tl.slides.iter().cloned().map(Arc::new).collect();
+    Box::into_raw(Box::new(UoSlidesTimeline { tl, slides }))
 }
 
 /// # Safety
@@ -737,6 +951,26 @@ mod tests {
             uo_slides_timeline_free(std::ptr::null_mut());
             assert_eq!(uo_slides_set_caps(std::ptr::null_mut(), 15), NULL_HANDLE);
             assert_eq!(uo_slides_show_command(std::ptr::null_mut(), 0, 0.0, 0.0, 0), -NULL_HANDLE);
+            assert_eq!(uo_slides_stage_clear(std::ptr::null_mut()), NULL_HANDLE);
+            for b in [
+                uo_slides_stage_show(
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                    0.0,
+                    0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    1,
+                    f64::NAN,
+                    f64::NAN,
+                ),
+                uo_slides_stage_timeline(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null(), 0.0, 1, 1.0, 0.0, 0.0, 0, 0.0, 1.0),
+            ] {
+                assert!(!b.is_null());
+                crate::buf::uo_buf_free(b);
+            }
         }
     }
 }

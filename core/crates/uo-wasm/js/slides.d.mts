@@ -36,9 +36,16 @@ export type ShowAction = 'none' | 'transition' | 'step' | 'slide' | 'end' | 'exi
 export declare class SlidesView {
   readonly ptr: number;
   bitmap(handle: number): Uint8Array | null;
+  clearStage(): void;
   free(): void;
 }
+export type StageResult =
+  | { status: 0; flags: number; empty: true; animMs: number; list: null; frame: null }
+  | { status: 0; flags: number; empty: false; newGeneration: boolean; animMs: number; list: Uint8Array | null; frame: Uint8Array }
+  | { status: 12; requests: MeasureRequest[] }
+  | { status: number };
 export declare class SlidesShow {
+  readonly ptr: number;
   next(now: number, mouse?: boolean): ShowAction;
   prev(now: number): ShowAction;
   goTo(index: number, now: number): ShowAction;
@@ -51,6 +58,7 @@ export declare class SlidesShow {
   free(): void;
 }
 export declare class SlidesTimeline {
+  readonly ptr: number;
   info(): { durationMs: number; tickMs: number; mediaClock: number; slides: { index: number; startMs: number; endMs: number; animStartMs: number; transitionMs: number }[] };
   stateAt(t: number): { pos: number; index: number; from: number; transitionProgress: number; animMs: number; ended: boolean; effects: number; transition: TransitionWire | null };
   free(): void;
@@ -67,6 +75,8 @@ export declare class SlidesDeck {
   clearCaches(): void;
   emit(view: SlidesView, index: number, scale: number, ox: number, oy: number): EmitResult;
   answer(nums: Float64Array): void;
+  stage(view: SlidesView, src: SlidesShow | SlidesTimeline, at: number, which: 0 | 1, scale: number, ox: number, oy: number,
+    media?: boolean, clock?: { latencyMs?: number; scale?: number }): StageResult;
   newShow(o?: { from?: number; now?: number; useTimings?: number; loop?: number; animations?: number; range?: [number, number] | null }): SlidesShow;
   newTimeline(o?: { useTimings?: number; defaultSlideMs?: number; tickMs?: number; transitionFps?: number }): SlidesTimeline;
   free(): void;

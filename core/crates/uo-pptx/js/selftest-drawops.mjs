@@ -158,9 +158,10 @@ test('slots: hidden, state with the reveal mask, shape opacity and the soft-reve
   const items = [
     { op: 'slotBegin', v: 0 }, { op: 'fillRect', ...r4(0, 0, 1, 1) }, { op: 'slotEnd' },
     { op: 'slotBegin', v: 1 },
-    { op: 'layerBegin', layer: 0, fallbackEnd: 8 },
+    // B4b: the soft-reveal layer of a shape slot is the one with the reserved id 15 (SOFT_LAYER_SHAPE)
+    { op: 'layerBegin', layer: 15, fallbackEnd: 8 },
     { op: 'fillRect', ...r4(10, 10, 100, 100) },
-    { op: 'layerEnd', layer: 0, then: 'composite' },
+    { op: 'layerEnd', layer: 15, then: 'composite' },
     { op: 'fillRect', ...r4(10, 10, 100, 100) },
     { op: 'slotEnd' },
   ];
@@ -242,25 +243,32 @@ test('drawImage, derived images, bitmaps, media frames and a missing picture', (
       { op: 'drawImage', src: { kind: 'derived', v: 0 }, d: r4(1, 1, 2, 2) },
       { op: 'drawImage', src: { kind: 'bitmap', v: 0 }, d: r4(0, 0, 1, 1) },
       { op: 'drawImage', src: { kind: 'media', v: 1 }, d: r4(0, 0, 9, 9) },
-      { op: 'mediaFrame', shape: 3, d: r4(1, 2, 3, 4) },
+      // B4b: the picture of a media shape: the poster, and the host's frame over it at alpha 0.4 (cropped by the srcRect)
+      { op: 'mediaFrame', shape: 3, d: r4(1, 2, 3, 4), crop: { l: 0.5, t: 0, r: 0, b: 0 }, poster: { src: { kind: 'media', v: 0 }, d: r4(1, 2, 3, 4) } },
+      // an opaque frame replaces the poster; without a frame the poster draws alone
+      { op: 'mediaFrame', shape: 4, d: r4(1, 2, 3, 4), poster: { src: { kind: 'media', v: 0 }, d: r4(1, 2, 3, 4) } },
+      { op: 'mediaFrame', shape: 5, d: r4(1, 2, 3, 4), poster: { src: { kind: 'media', v: 0 }, d: r4(1, 2, 3, 4) } },
     ],
   });
   const { list, tables } = roundtrip(l, enc);
   const frameImg = { width: 2, height: 2, naturalWidth: 2, naturalHeight: 2, __h: 'abcabcabcabc' };
   const r = paint(list, tables, {
     media: (i) => (i === 0 ? new Uint8Array([9, 9, 9, 9]) : null), bitmap: () => new Uint8Array([1, 2, 3, 255]),
-    mediaFrame: (s) => (s === 3 ? { image: frameImg, alpha: 0.4 } : null),
+    mediaFrame: (s) => (s === 3 ? { image: frameImg, alpha: 0.4 } : s === 4 ? { image: frameImg, alpha: 1 } : null),
   });
   assert.equal(r.error, undefined);
   const d = draw(r);
   const imgs = d.filter((x) => x.startsWith('drawImage'));
-  assert.equal(imgs.length, 5, imgs.join('\n')); // the missing picture is skipped
+  assert.equal(imgs.length, 8, imgs.join('\n')); // the missing picture is skipped
   assert.ok(imgs[0].startsWith('drawImage img(') && imgs[0].includes(' 1 2 4 2 4 6 1 6 '));
   assert.ok(imgs[1].includes(' s=0,0,4,2 '));
   assert.ok(imgs[2].startsWith('drawImage canvas(8x4:'), 'the recoloured picture is a canvas');
   assert.ok(d.some((x) => x.includes('getImageData 0 0 8 4')), 'fxImage read the pixels');
   assert.ok(imgs[3].startsWith('drawImage canvas(1x1:'));
-  assert.ok(imgs[4].startsWith('drawImage img(abcabcabcabc)') && imgs[4].includes('alpha=0.4'));
+  assert.ok(imgs[4].startsWith('drawImage img(') && imgs[4].includes('alpha=1'), imgs[4]); // the poster
+  assert.ok(imgs[5].startsWith('drawImage img(abcabcabcabc) s=1,0,1,2 ') && imgs[5].includes('alpha=0.4'), imgs[5]);
+  assert.ok(imgs[6].startsWith('drawImage img(abcabcabcabc) 1 2 4 2 4 6 1 6 ') && imgs[6].includes('alpha=1'), imgs[6]);
+  assert.ok(imgs[7].startsWith('drawImage img(') && !imgs[7].includes('abcabcabcabc'), imgs[7]);
   // the caches are bounded and cleared
   assert.deepEqual(r.painter.cacheSizes(), { derived: 1, bitmaps: 1 });
   r.painter.clear();

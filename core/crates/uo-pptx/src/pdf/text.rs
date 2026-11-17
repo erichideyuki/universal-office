@@ -1,26 +1,40 @@
 //! `TextRun` as glyphs: the face the host answered for the run's family, embedded once per font file (subset at
-//! `build`), the glyph ids from its cmap, the kerning pairs as `TJ` adjustments, the letter spacing and the fit
-//! (the spread of the difference between the laid-out width and the natural one) as `Tc`. Fills are a colour, a
-//! gradient (the text as a clip, then the shading) or a pattern; the outline is a stroked second pass; underline
-//! and strike are lines.
+//! `build`), the glyph ids from its cmap, every glyph placed where the layout's measure puts it (advances, the pair
+//! kerning, the letter spacing and the fit: the spread of the difference between the laid-out width and the natural
+//! one) through `TJ` adjustments. A character the face lacks is drawn with the host's fallback face for it
+//! ([`super::measure::FontSource::fallback`], the chain of the Write PDF, then the open fonts available), switching
+//! fonts inside the text object; with no face at all it keeps the `.notdef` advance and is counted. Fills are a
+//! colour, a gradient (the text as a clip, then the shading) or a pattern; the outline is a stroked second pass;
+//! underline and strike are lines; a text shadow is the glyph outlines' shadow image ([`Interp::draw_shadow`]).
 
 use std::sync::Arc;
 
+use uo_fonts::Face;
 use uo_jsnum::math::abs;
 use uo_render::slides::{Align, TextRun};
 
 use super::FontEntry;
-use super::css::Rgba;
-use super::geom::n;
-use super::interp::{Interp, PaintVal, span_of};
-use super::measure::text_width;
+use super::css::{Rgba, parse_css};
+use super::effects::ShadowSrc;
+use super::geom::{Mat, n};
+use super::interp::{Interp, PaintVal, Shadow, span_of};
+use super::measure::{FaceChooser, place_glyphs, text_width_in};
+
+/// A font of the list as the PDF uses it: the embedded entry and the variant asked for.
+#[derive(Clone)]
+pub(super) struct RunFont {
+    pub entry: Arc<FontEntry>,
+    pub bold: bool,
+    pub italic: bool,
+}
 
 impl Interp<'_, '_> {
     /// The embedded font of a face of the list (the host's answer for the family, one embedding per file).
-    fn font_of(&mut self, face: u32) -> Option<Arc<FontEntry>> {
+    fn font_of(&mut self, face: u32) -> Option<RunFont> {
         let fk = self.res.face_entries().get(usize::try_from(face).ok()?)?.clone();
         let family = self.sym(fk.family);
-        self.font_named(&family, fk.bold, fk.italic)
+        let entry = self.font_named(&family, fk.bold, fk.italic)?;
+        Some(RunFont { entry, bold: fk.bold, italic: fk.italic })
     }
 
     /// The embedded font of a family and variant by name (the host's answer, one embedding per file).
@@ -29,33 +43,19 @@ impl Interp<'_, '_> {
         if let Some(e) = self.w.fonts.get(&key) {
             return e.clone();
         }
-        let entry = self.make_font(family, bold, italic);
+        let entry = match self.w.opts.fonts.face(family, bold, italic) {
+            Some(face) => self.embed_face(&face, family, bold, italic),
+            None => {
+                self.count("font:missing");
+                None
+            }
+        };
         self.w.fonts.insert(key, entry.clone());
         entry
     }
 
-    /// `fillText(text, x, y)` of a metafile recipe under the raw CSS font `font` (`40px "Name", monospace`): the
-    /// glyphs in the fill now, with the font's natural advances and kerning.
-    pub(super) fn recipe_text(&mut self, font: &str, text: &str, x: f64, y: f64) {
-        if self.t.cur.dead || text.is_empty() || !(x.is_finite() && y.is_finite()) || !self.can_paint(false) {
-            return;
-        }
-        let (family, bold, italic, size) = super::measure::raw_css_font(font);
-        if !(size.is_finite() && size > 0.0) {
-            return;
-        }
-        let Some(entry) = self.font_named(&family, bold, italic) else { return };
-        self.w.report.text_runs += 1;
-        let width = text_width(&entry.face, size, true, 0.0, text);
-        let fill = self.t.cur.fill.clone();
-        self.fill_glyphs(&entry, size, x, y, text, true, 0.0, &fill, 1.0, width);
-    }
-
-    fn make_font(&mut self, family: &str, bold: bool, italic: bool) -> Option<Arc<FontEntry>> {
-        let Some(face) = self.w.opts.fonts.face(family, bold, italic) else {
-            self.count("font:missing");
-            return None;
-        };
+    /// The embedded entry of a face (one per font file); `None` when its licence forbids embedding (counted).
+    fn embed_face(&mut self, face: &Arc<Face>, family: &str, bold: bool, italic: bool) -> Option<Arc<FontEntry>> {
         let file = Arc::clone(face.bytes());
         let id = Arc::as_ptr(&file).cast::<u8>() as usize;
         if let Some(e) = self.w.font_files.get(&id) {
@@ -72,73 +72,119 @@ impl Interp<'_, '_> {
             format!("{base}{}{}", if bold { "-Bold" } else { "" }, if italic { "-Italic" } else { "" })
         };
         let doc = self.w.doc.as_mut()?;
-        let fid = doc.embed_font(&name, file, (*face).clone());
-        let entry = Arc::new(FontEntry { id: fid, face });
+        let fid = doc.embed_font(&name, file, (**face).clone());
+        let entry = Arc::new(FontEntry { id: fid, face: Arc::clone(face) });
         self.w.font_files.insert(id, Arc::clone(&entry));
         self.w.report.fonts += 1;
         Some(entry)
     }
 
-    /// `BT ... ET` of the glyphs of `text` at `(x, y)` (user space, baseline) and the number of glyphs drawn.
+    /// The width of `text` in the run's font with the fallback faces (the layout's measure).
+    fn width_of(&self, f: &RunFont, size: f64, kern: bool, spacing: f64, text: &str) -> f64 {
+        text_width_in(self.w.opts.fonts, &f.entry.face, f.bold, f.italic, size, kern, spacing, text)
+    }
+
+    /// `fillText(text, x, y)` of a metafile recipe under the raw CSS font `font` (`40px "Name", monospace`): the
+    /// glyphs in the fill now, with the font's natural advances and kerning.
+    pub(super) fn recipe_text(&mut self, font: &str, text: &str, x: f64, y: f64) {
+        if self.t.cur.dead || text.is_empty() || !(x.is_finite() && y.is_finite()) || !self.can_paint(false) {
+            return;
+        }
+        let (family, bold, italic, size) = super::measure::raw_css_font(font);
+        if !(size.is_finite() && size > 0.0) {
+            return;
+        }
+        let Some(entry) = self.font_named(&family, bold, italic) else { return };
+        let f = RunFont { entry, bold, italic };
+        self.w.report.text_runs += 1;
+        let width = self.width_of(&f, size, true, 0.0, text);
+        let fill = self.t.cur.fill.clone();
+        self.fill_glyphs(&f, size, x, y, text, true, 0.0, &fill, 1.0, width);
+    }
+
+    /// `BT ... ET` of the glyphs of `text` at `(x, y)` (user space, baseline) and the number of glyphs drawn: each
+    /// glyph at the pen position of the layout, in its face's embedded font.
     #[allow(clippy::too_many_arguments)]
-    fn glyph_block(&mut self, e: &FontEntry, size: f64, x: f64, y: f64, text: &str, kern: bool, spacing: f64, mode: u8) -> (String, u64) {
-        let upem = f64::from(e.face.metrics().units_per_em);
+    fn glyph_block(&mut self, f: &RunFont, size: f64, x: f64, y: f64, text: &str, kern: bool, spacing: f64, mode: u8) -> (String, u64) {
+        let fonts = self.w.opts.fonts;
+        let mut ch = FaceChooser::new(fonts, Arc::clone(&f.entry.face), f.bold, f.italic);
+        let (placed, _) = place_glyphs(&mut ch, size, kern, spacing, text);
         let mut out = String::new();
         out.push_str("BT\n");
-        out.push_str(&format!("/{} {} Tf\n", e.id.resource_name(), n(size)));
         if spacing != 0.0 {
             out.push_str(&format!("{} Tc\n", n(spacing)));
         }
         if mode != 0 {
             out.push_str(&format!("{mode} Tr\n"));
         }
-        out.push_str(&format!("1 0 0 -1 {} {} Tm\n[", n(x), n(y)));
-        let mut glyphs = 0u64;
-        let mut missing = 0u64;
-        let mut open = false;
-        let mut prev: Option<u32> = None;
-        for ch in text.chars() {
-            let cp = u32::from(ch);
-            let gid = e.face.glyph_id(cp);
-            if gid == 0 || gid > 0xFFFF {
+        out.push_str(&format!("1 0 0 -1 {} {} Tm\n", n(x), n(y)));
+        let (mut glyphs, mut missing, mut fallback) = (0u64, 0u64, 0u64);
+        let mut cur_font: Option<uo_pdf::FontId> = None;
+        let (mut open_arr, mut open_hex) = (false, false);
+        // where the PDF pen is after the last glyph shown, px from the run's start
+        let mut pen = 0.0f64;
+        for g in &placed {
+            let Some(face) = &g.face else {
                 missing += 1;
-                // nothing to draw: advance by the width of .notdef
-                if open {
-                    out.push('>');
-                    open = false;
-                }
-                let adv = f64::from(e.face.advance_width(0));
-                out.push_str(&n(-adv * 1000.0 / upem));
-                prev = None;
+                continue;
+            };
+            let entry = if Arc::ptr_eq(face, &f.entry.face) {
+                Some(Arc::clone(&f.entry))
+            } else {
+                let fam = format!("Fallback{}", face.bytes().len());
+                self.embed_face(face, &fam, f.bold, f.italic)
+            };
+            let Some(entry) = entry else {
+                missing += 1;
+                continue;
+            };
+            if g.gid == 0 || g.gid > 0xFFFF {
+                missing += 1;
                 continue;
             }
-            if kern && let Some(p) = prev {
-                let k = e.face.kern_units(p, gid);
-                if k != 0 {
-                    if open {
-                        out.push('>');
-                        open = false;
-                    }
-                    out.push_str(&n(-f64::from(k) * 1000.0 / upem));
+            if cur_font != Some(entry.id) {
+                if open_hex {
+                    out.push('>');
+                    open_hex = false;
                 }
+                if open_arr {
+                    out.push_str("] TJ\n");
+                }
+                out.push_str(&format!("/{} {} Tf\n[", entry.id.resource_name(), n(size)));
+                open_arr = true;
+                cur_font = Some(entry.id);
+            }
+            let d = g.x - pen;
+            if abs(d) > 1e-6 {
+                if open_hex {
+                    out.push('>');
+                    open_hex = false;
+                }
+                out.push_str(&n(-d * 1000.0 / size));
             }
             if let Some(doc) = self.w.doc.as_mut()
-                && let Some(f) = doc.font_mut(e.id)
+                && let Some(ef) = doc.font_mut(entry.id)
             {
-                f.encode(cp);
+                ef.encode(g.cp);
             }
-            if !open {
+            if !open_hex {
                 out.push('<');
-                open = true;
+                open_hex = true;
             }
-            out.push_str(&format!("{gid:04x}"));
+            out.push_str(&format!("{:04x}", g.gid));
             glyphs += 1;
-            prev = Some(gid);
+            if !Arc::ptr_eq(&entry, &f.entry) {
+                fallback += 1;
+            }
+            let upem = f64::from(entry.face.metrics().units_per_em);
+            pen = g.x + f64::from(entry.face.advance_width(g.gid)) * size / upem + spacing;
         }
-        if open {
+        if open_hex {
             out.push('>');
         }
-        out.push_str("] TJ\n");
+        if open_arr {
+            out.push_str("] TJ\n");
+        }
         if mode != 0 {
             out.push_str("0 Tr\n");
         }
@@ -149,6 +195,7 @@ impl Interp<'_, '_> {
         for _ in 0..missing {
             self.count("glyph:missing");
         }
+        self.w.report.fallback_glyphs += fallback;
         (out, glyphs)
     }
 
@@ -162,10 +209,10 @@ impl Interp<'_, '_> {
         if !(size.is_finite() && size > 0.0) {
             return;
         }
-        let Some(entry) = self.font_of(face) else { return };
+        let Some(f) = self.font_of(face) else { return };
         self.w.report.text_runs += 1;
-        let width = text_width(&entry.face, size, true, 0.0, text);
-        let m = entry.face.metrics();
+        let width = self.width_of(&f, size, true, 0.0, text);
+        let m = f.entry.face.metrics();
         let upem = f64::from(m.units_per_em);
         let (asc, desc) = (f64::from(m.ascender) * size / upem, -f64::from(m.descender) * size / upem);
         let x = match self.t.cur.align {
@@ -181,7 +228,7 @@ impl Interp<'_, '_> {
             uo_render::slides::Baseline::Ideographic | uo_render::slides::Baseline::Bottom => y0 - desc,
         };
         let fill = self.t.cur.fill.clone();
-        self.fill_glyphs(&entry, size, x, y, text, true, 0.0, &fill, 1.0, width);
+        self.fill_glyphs(&f, size, x, y, text, true, 0.0, &fill, 1.0, width);
     }
 
     pub(super) fn text_run(&mut self, r: &TextRun) {
@@ -198,11 +245,11 @@ impl Interp<'_, '_> {
         if !(size.is_finite() && size > 0.0 && x0.is_finite() && y.is_finite()) {
             return;
         }
-        let Some(entry) = self.font_of(r.font.face) else { return };
+        let Some(f) = self.font_of(r.font.face) else { return };
         self.w.report.text_runs += 1;
         let kern = r.kern || r.bullet;
         let nchars = text.chars().count();
-        let natural = text_width(&entry.face, size, kern, 0.0, &text);
+        let natural = self.width_of(&f, size, kern, 0.0, &text);
         // the style the TS leaves on the context
         if let Some(v) = self.paint_val(&r.fill) {
             self.t.cur.fill = v;
@@ -210,7 +257,7 @@ impl Interp<'_, '_> {
         }
         let fill = self.t.cur.fill.clone();
         if r.bullet {
-            self.fill_glyphs(&entry, size, x0, y, &text, true, 0.0, &fill, 1.0, natural);
+            self.fill_glyphs(&f, size, x0, y, &text, true, 0.0, &fill, 1.0, natural);
             return;
         }
         let ls = r.letter_spacing_px;
@@ -231,24 +278,31 @@ impl Interp<'_, '_> {
             Align::Right | Align::End => x0 - width,
             _ => x0,
         };
-        if r.shadow.is_some() {
-            self.count("shadow");
-        }
         if self.placed.len() < 1_000_000 {
             self.placed.push(super::interp::Placed { text: text.clone(), x, y, size, w: r.laid_w.unwrap_or(width) });
         }
         let a_mul = r.alpha_mul.unwrap_or(1.0);
         if r.fill_text {
-            self.fill_glyphs(&entry, size, x, y, &text, kern, spacing, &fill, a_mul, width);
+            // the run's own shadow is the canvas shadow of the fill pass (save, shadow*, fillText, restore)
+            let saved = self.t.cur.shadow;
+            if let Some(sh) = &r.shadow {
+                let c = parse_css(&self.sym(sh.color)).unwrap_or(Rgba(0.0, 0.0, 0.0, 0.0));
+                self.t.cur.shadow = Shadow { alpha: c.3, rgb: c.bytes(), blur: sh.blur, ox: sh.dx, oy: sh.dy };
+            }
+            let saved_alpha = self.t.cur.alpha;
+            self.t.cur.alpha = saved_alpha * a_mul;
+            self.fill_glyphs(&f, size, x, y, &text, kern, spacing, &fill, 1.0, width);
+            self.t.cur.alpha = saved_alpha;
+            self.t.cur.shadow = saved;
         }
         if let Some(o) = &r.outline
-            && let Some(c) = super::css::parse_css(&self.sym(o.color))
+            && let Some(c) = parse_css(&self.sym(o.color))
             && self.t.cur.alpha * c.3 > 0.0
             && o.width.is_finite()
             && o.width > 0.0
         {
             let a = self.t.cur.alpha * c.3;
-            let (blk, g) = self.glyph_block(&entry, size, x, y, &text, kern, spacing, 1);
+            let (blk, g) = self.glyph_block(&f, size, x, y, &text, kern, spacing, 1);
             self.w.report.glyphs += g;
             let saved = (self.t.cur.pdf_gs, self.t.cur.pdf_fill, self.t.cur.pdf_stroke);
             self.put("q\n");
@@ -298,11 +352,23 @@ impl Interp<'_, '_> {
         (self.t.cur.pdf_gs, self.t.cur.pdf_fill, self.t.cur.pdf_stroke) = saved;
     }
 
-    /// The fill pass of a run in the paint now.
+    /// The shadow of a fill pass of text: the glyph outlines (device) weighed by the fill's alpha.
+    #[allow(clippy::too_many_arguments)]
+    fn text_shadow(&mut self, f: &RunFont, size: f64, x: f64, y: f64, text: &str, kern: bool, spacing: f64, fill: &PaintVal) {
+        let fonts = self.w.opts.fonts;
+        let mut ch = FaceChooser::new(fonts, Arc::clone(&f.entry.face), f.bold, f.italic);
+        let (placed, _) = place_glyphs(&mut ch, size, kern, spacing, text);
+        let ctm = self.t.cur.ctm;
+        let polys = super::raster::glyph_polys(&placed, size, x, y, ctm.then(Mat::IDENTITY), 0.1);
+        let paint = self.alpha_paint(fill);
+        self.draw_shadow(ShadowSrc::Polys(polys, false, paint));
+    }
+
+    /// The fill pass of a run in the paint now (and its shadow, when the context has one).
     #[allow(clippy::too_many_arguments)]
     fn fill_glyphs(
         &mut self,
-        e: &FontEntry,
+        f: &RunFont,
         size: f64,
         x: f64,
         y: f64,
@@ -313,18 +379,24 @@ impl Interp<'_, '_> {
         a_mul: f64,
         width: f64,
     ) {
+        if self.shadow_on() {
+            self.text_shadow(f, size, x, y, text, kern, spacing, fill);
+            if self.offscreen() {
+                return;
+            }
+        }
         let alpha = self.t.cur.alpha * a_mul;
         match fill {
             PaintVal::Linear(i) | PaintVal::Radial(i) => {
                 let radial = matches!(fill, PaintVal::Radial(_));
-                let (blk, g) = self.glyph_block(e, size, x, y, text, kern, spacing, 7);
+                let (blk, g) = self.glyph_block(f, size, x, y, text, kern, spacing, 7);
                 let bounds = [x, y - size, x + width, y + size * 0.3];
                 if self.fill_gradient(radial, *i, &blk, bounds, a_mul) {
                     self.w.report.glyphs += g;
                 }
             }
             PaintVal::Spec(g) => {
-                let (blk, gl) = self.glyph_block(e, size, x, y, text, kern, spacing, 7);
+                let (blk, gl) = self.glyph_block(f, size, x, y, text, kern, spacing, 7);
                 let bounds = [x, y - size, x + width, y + size * 0.3];
                 if self.fill_spec(g, &blk, bounds, a_mul) {
                     self.w.report.glyphs += gl;
@@ -335,7 +407,7 @@ impl Interp<'_, '_> {
                 if alpha <= 0.0 {
                     return;
                 }
-                let (blk, g) = self.glyph_block(e, size, x, y, text, kern, spacing, 0);
+                let (blk, g) = self.glyph_block(f, size, x, y, text, kern, spacing, 0);
                 self.w.report.glyphs += g;
                 let saved = (self.t.cur.pdf_gs, self.t.cur.pdf_fill, self.t.cur.pdf_stroke);
                 self.put("q\n");
@@ -352,7 +424,7 @@ impl Interp<'_, '_> {
                 if a <= 0.0 {
                     return;
                 }
-                let (blk, g) = self.glyph_block(e, size, x, y, text, kern, spacing, 0);
+                let (blk, g) = self.glyph_block(f, size, x, y, text, kern, spacing, 0);
                 self.w.report.glyphs += g;
                 self.sync_gs(a, None);
                 self.sync_fill_color(c);

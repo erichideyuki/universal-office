@@ -131,7 +131,7 @@ fn rgb_of(s: &str) -> Option<[f64; 3]> {
 
 /// `fxImage` over RGBA pixels (`slides-effects.ts`): the colour change, brightness and contrast, then the
 /// bi-level, duotone or gray mapping on the Rec. 709 luminance of the sRGB values.
-fn apply_fx(px: &mut [u8], fx: &ImageFx, sym: impl Fn(u32) -> String) {
+pub(super) fn apply_fx(px: &mut [u8], fx: &ImageFx, sym: impl Fn(u32) -> String) {
     use uo_jsnum::conv::to_uint8_clamp;
     let from = fx.clr_change.as_ref().and_then(|c| rgb_of(&sym(c.from)));
     let to = fx.clr_change.as_ref().and_then(|c| rgb_of(&sym(c.to)));

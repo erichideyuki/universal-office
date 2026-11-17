@@ -33,6 +33,12 @@
          core/tools/licenses/gen-notices.mjs); a pack with a native library and no notices fails -->
     <UoRustNotices Condition="'$(UoRustNotices)' == ''">$(MSBuildThisFileDirectory)../../licenses</UoRustNotices>
   </PropertyGroup>
+  <!-- the Slides facade (UniversalOffice.Pptx) reuses the native handles, the error mapping and the exceptions of this assembly -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="UniversalOffice.Pptx" />
+    <!-- LayoutOptions.TsStrict: the TS-capture parity tests -->
+    <InternalsVisibleTo Include="UniversalOffice.Docx.Tests" />
+  </ItemGroup>
   <ItemGroup Condition="Exists('$(UoNativeRoot)')">
     <None Include="$(UoNativeRoot)/**/uo_ffi.dll;$(UoNativeRoot)/**/libuo_ffi.so;$(UoNativeRoot)/**/libuo_ffi.dylib" Pack="true" PackagePath="runtimes/%(RecursiveDir)native/%(Filename)%(Extension)" Visible="false" />
     <None Include="$(UoRustNotices)/**/*" Pack="true" PackagePath="licenses/rust/" Visible="false" />

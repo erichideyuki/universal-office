@@ -1653,3 +1653,30 @@ verifier: none (the frozen TS is the oracle; the first producer comparison is B4
 ## Slides extensions — C-6 additions (charts, 2026-11-17)
 
 One schema change for the chart engine (`schema/slides.uos`, regenerated; Write's schemas and the pinned hash are unchanged): `SItem::ChartFont(FontRef)` (the chart's `[italic ][bold ]<size.toFixed(2)>px <stack>` font string), `SItem::FillText(FillTextItem { text: Span, x, y })` (a plain `fillText`), `PathOp::RoundRect(RoundRectOp { x, y, w, h, r })` and `TileDef.nat: Pair?` (CT-1: the chart's natural tile size in px; with it `scale` is 1 and `tx`/`ty` are px). `validate` checks the face of `ChartFont` and the text span of `FillText`; the painter (`paint-slides.ts`, `slides-effects.ts`) replays them. Record: `uo-charts.md` "C-6 — Slides host".
+
+## Slides extensions — B4b schema changes (animation slots, 2026-11-17)
+
+Additive changes to `schema/slides.uos` and `schema/slots.uos` (regenerated; Write's schemas and the pinned hash unchanged; no new `SItem`
+variant, so the Slides PDF interpreter compiles as is). Record of the producer: `uo-pptx.md` "B4b — playback emission".
+
+- `SlotKind::UnitGate` (the bullet of a paragraph entering by unit: no save, no transform; the items run unless the value is hidden or a
+  state that is not visible or has opacity <= 0) and `SlotKind::BoundsPass` (the TS `chartPartBounds` probe of a chart part on a
+  bounds-cache miss: no save; hidden by the producer after the first frame of a stage). `SlotKind::ChartPart` now applies its value on the
+  part's own `save` (the plain `Save` right before it) and saves nothing itself, as the TS saves once per part before `chartPartBounds`.
+- `MediaFrameItem { shape, d, crop: Edges?, poster: DrawImageItem? }` (was `{ shape, d, s }`, never produced): the picture draw of a media or
+  GIF shape in a playback list; the host's frame replaces the poster when opaque and is drawn over it with `globalAlpha * alpha` when
+  0 < alpha < 1; `crop` is the `srcRect` applied to the frame's own natural size. `validate` checks the poster's image id.
+- `Replacement.values: list<SlotValue>`: a re-emitted shape's list has its own slots (a font scale moves the paragraph and unit boxes).
+- `FrameEncoder` (`uo_render::slides`): the producer side of the `SlotFrame` stream (the filter-name symbol table, written as table
+  indices).
+- Painter rules added to S6 (`paint-slides.ts`): a hidden value skips without saving; a `paragraph`/`unit` state that is not visible skips
+  without saving (the TS tests it before its `save`); a shape slot whose frame carries a replacement paints the replacement's items with
+  its values in a guarded range; a `globalAlpha` item inside a slot is relative to the alpha the slot's value multiplied in; the soft-reveal
+  layer of a shape slot is the `layerBegin` with id 15 (14 for a chart part) right after the slot's `slotBegin` (`SOFT_LAYER_SHAPE`,
+  `SOFT_LAYER_CHART` of uo-dml-render; ordinary layers use ids 0-13), and only that layer composites with the slot's pending reveals.
+  Still lists have no slots at all (a plain `save`/`restore` per shape), so the PDF and every static gate are unchanged.
+
+For the Slides PDF interpreter (`uo-pptx/src/pdf`, not touched here): it already treats `SlotBegin`/`SlotEnd` as `save`/`restore` and counts
+`MediaFrame`; it only ever receives still lists. If it is ever given a playback list: a `UnitGate`/`BoundsPass`/`ChartPart` `SlotBegin` must
+not save (its `SlotEnd` must not restore), the soft-layer test should require layer id 15 (shape) or 14 (chart part), and a `MediaFrame`
+draws its `poster`.

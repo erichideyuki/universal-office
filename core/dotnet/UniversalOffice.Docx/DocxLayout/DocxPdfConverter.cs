@@ -29,6 +29,10 @@ public sealed class LayoutOptions
 
     /// <summary>Pages of one layout before the document is refused (default: the engine's limit).</summary>
     public int? MaxPages;
+
+    /// <summary>The frozen TS layout instead of Word's rules where they differ (the parity tests against the TS
+    /// captures only; native `JOB_TS_STRICT`).</summary>
+    internal bool TsStrict;
 }
 
 /// <summary>How tracked changes show: final, simple, all or original (the 0.9 author filters and
@@ -134,6 +138,7 @@ public sealed class DocxPdfConverter : IDisposable
         uint flags = (pdfOpts?.Compress ?? true) ? NativeMethods.JobCompress : 0;
         if (opts?.Hyphenation == false) flags |= NativeMethods.JobNoHyphenation;
         if (opts?.HyphenationLanguages is not null) flags |= NativeMethods.JobHyphenationLanguages;
+        if (opts?.TsStrict == true) flags |= NativeMethods.JobTsStrict;
         uint revisions = opts?.Revisions?.Mode switch
         {
             null => 0,

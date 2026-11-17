@@ -405,10 +405,16 @@ struct LayerEndItem {
   then: LayerThen,
 }
 
+/// The picture draw of a shape whose video or GIF frame may show (playback lists only, `paintPicture` with `ov.frame`,
+/// render.ts 815-868): the host's frame for `shape` replaces the poster when opaque (alpha >= 1) and is drawn over it
+/// with `globalAlpha * alpha` when 0 < alpha < 1; without a frame the poster is drawn. `crop` is the picture's `srcRect`
+/// (fractions of the natural size) applied to the frame's own natural size; `poster` is the poster's draw (absent: no
+/// decoded poster, then only an opaque frame draws).
 struct MediaFrameItem {
   shape: u32,
   d: Rect4,
-  s: Rect4?,
+  crop: Edges?,
+  poster: DrawImageItem?,
 }
 
 /// One item is one canvas call or one state assignment (the TS sequence, so the recorder composes them in order).
@@ -659,10 +665,18 @@ enum SlotKind {
   Paragraph = "paragraph",
   /// text unit `index` (letter or word)
   Unit = "unit",
-  /// chart part `index`
+  /// chart part `index`: applies its value on the part's own `save` (the plain `Save` right before it) without saving
+  /// again; when the part is not drawn the painter skips to after its `SlotEnd`, which restores nothing
   ChartPart = "chartPart",
   /// the picture's video/GIF frame
   Media = "media",
+  /// a gate of unit `index` (the bullet of a paragraph whose text enters by unit, render.ts 1768-1776): no save and no
+  /// transform; the items up to the matching `SlotEnd` run unless the value is hidden or a state that is not visible
+  /// or has opacity <= 0
+  UnitGate = "unitGate",
+  /// the TS `chartPartBounds` probe of chart part `index` on a bounds-cache miss (its `save`/`restore` and the calls its
+  /// recording proxy forwards to the canvas): no save; the items run only in the first frame of a stage (hidden after)
+  BoundsPass = "boundsPass",
 }
 
 /// The template of one slot: what `AnimBase` and `applyPart` need from the producer (px geometry, normalized by

@@ -9,9 +9,17 @@
 //! Invariants beyond "no panic": a list the emitter built always passes `validate` and encodes, an emission is a
 //! pure function of its inputs (two runs with fresh resources are equal), `save` and `restore` balance, the item
 //! count is bounded by the input, and the rounds converge or the call keeps asking.
+//!
+//! B4b: the same shapes are emitted again as a playback list with a hostile `AnimPlan` (every hook: background,
+//! paragraph ranges, letters/words with ranges, soft reveals, media frames) and each shape re-emitted with hostile states
+//! (colours, font weight/style/family, underline, NaN/huge font scales): the list validates and encodes, `SlotBegin` and
+//! `SlotEnd` balance, `Emission::slots` matches `list.slots`, and two runs are equal.
 use std::sync::Arc;
 
-use uo_dml_render::emit::{EmitCaches, EmitParams, Env, SlideBg, emit_slide};
+use uo_dml_render::emit::{
+    AnimPlan, EmitCaches, EmitParams, EmitSlot, Env, PartStyle, ShapeAnim, SlideBg, SlotStates, UnitHook, emit_shape_anim, emit_slide,
+    emit_slide_anim,
+};
 use uo_dml_render::ids::MediaId;
 use uo_dml_render::model::{
     ChartRef, Fill, FillKind, GradientStop, Paragraph, PatternFill, Reflection, Run, Shape, ShapeExtras, Table, TableCell, TableRow,
@@ -274,6 +282,85 @@ fn emit_once(shapes: &[Shape], p: &EmitParams, table: &MeasureTable) -> Option<V
     }
 }
 
+/// A hostile hook structure for one shape.
+fn anim_of(b: &mut Bytes<'_>) -> Option<ShapeAnim> {
+    let k = b.u8();
+    if k & 1 == 0 {
+        return None;
+    }
+    let range = |b: &mut Bytes<'_>| (b.num(3.0), b.num(3.0));
+    Some(ShapeAnim {
+        bg: k & 2 != 0,
+        paras: (0..b.below(3)).map(|_| range(b)).collect(),
+        unit: (k & 4 != 0).then(|| UnitHook {
+            letters: k & 8 != 0,
+            words: k & 16 != 0,
+            ranges: (0..1 + b.below(3)).map(|_| if b.u8() & 1 == 0 { None } else { Some(range(b)) }).collect(),
+        }),
+        chart: None,
+        soft: k & 32 != 0,
+    })
+}
+
+/// Hostile states: a style per slot, a pure function of the slot (the emission stays deterministic).
+struct States(u8);
+
+impl SlotStates for States {
+    fn style(&mut self, slot: &EmitSlot) -> PartStyle {
+        let h = (slot.shape.wrapping_mul(31) ^ u32::from(self.0))
+            .wrapping_add(u32::try_from(slot.base.iter().filter(|v| v.is_finite()).count()).unwrap_or(0));
+        let pick = |n: u32| h % n;
+        PartStyle {
+            fill_color: (pick(3) == 0).then(|| CssColor::new("#123456")),
+            line_color: (pick(5) == 1).then(|| CssColor::new("zz")),
+            text_color: (pick(2) == 0).then(|| CssColor::new("#FF0000")),
+            font_weight: (pick(7) < 3).then(|| "bold".into()),
+            font_style: (pick(11) < 4).then(|| "".into()),
+            underline: (pick(13) < 5).then_some(pick(2) == 0),
+            font_scale: match pick(6) {
+                0 => Some(f64::NAN),
+                1 => Some(1e9),
+                2 => Some(0.5),
+                3 => Some(-1.0),
+                _ => None,
+            },
+            font_family: (pick(17) < 3).then(|| "Some Family".into()),
+        }
+    }
+}
+
+fn stage_once(shapes: &[Shape], plan: &[Option<ShapeAnim>], p: &EmitParams, table: &MeasureTable, media: bool, seed: u8) -> Vec<Vec<u8>> {
+    let src = EmptySource;
+    let env = Env { src: &src, table };
+    let mut res = SlidesResources::new();
+    let mut caches = EmitCaches::new();
+    let mut out = Vec::new();
+    let mut enc = SlidesEncoder::new(1);
+    let mut check = |e: &uo_dml_render::emit::Emission, res: &SlidesResources, out: &mut Vec<Vec<u8>>| {
+        assert!(validate(&e.list, &res.lens()).is_ok(), "the emitter built an invalid playback list");
+        assert_eq!(e.slots.len(), e.list.slots.len(), "the slots and the wire slots differ");
+        let begins = e.list.items.iter().filter(|i| matches!(i, SItem::SlotBegin(_))).count();
+        let ends = e.list.items.iter().filter(|i| matches!(i, SItem::SlotEnd)).count();
+        assert!(begins == ends, "unbalanced slots: {begins} / {ends}");
+        let mut bytes = Vec::new();
+        assert!(enc.encode(&e.list, res, &mut bytes).is_ok(), "a valid list always encodes");
+        out.push(bytes);
+    };
+    if let Ok(e) =
+        emit_slide_anim(&SlideBg::default(), shapes, p, &env, &mut res, &mut caches, AnimPlan { shapes: plan, media, states: None })
+    {
+        check(&e, &res, &mut out);
+    }
+    for i in 0..shapes.len() {
+        let mut st = States(seed);
+        let plan = AnimPlan { shapes: plan, media, states: Some(&mut st) };
+        if let Ok(e) = emit_shape_anim(shapes, u32::try_from(i).unwrap_or(u32::MAX), p, &env, &mut res, &mut caches, plan) {
+            check(&e, &res, &mut out);
+        }
+    }
+    out
+}
+
 pub fn slides_emit(data: &[u8]) {
     let mut b = Bytes { d: data, at: 0 };
     let sel = b.u8();
@@ -306,6 +393,13 @@ pub fn slides_emit(data: &[u8]) {
     let first = emit_once(&shapes, &p, &table);
     let second = emit_once(&shapes, &p, &table);
     assert!(first == second, "two emissions of the same inputs differ");
+    // B4b: the playback list and the re-emissions of the same shapes
+    let plan: Vec<Option<ShapeAnim>> = shapes.iter().map(|_| anim_of(&mut b)).collect();
+    let media = sel & 128 != 0;
+    let seed = b.u8();
+    let a = stage_once(&shapes, &plan, &p, &table, media, seed);
+    let c = stage_once(&shapes, &plan, &p, &table, media, seed);
+    assert!(a == c, "two playback emissions of the same inputs differ");
 }
 
 /// Seeds: a few shape lists (the generator reads zeros past the end, so short inputs are lists too).

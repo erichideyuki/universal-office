@@ -1,6 +1,7 @@
 import {
   loadSlidesModule, slidesHandles,
   type LoadSlidesOptions, type PaintImage, type SlidePaintResult, type SlidesDocument, type SlidesPaintHost,
+  type SlidesShowHandle, type SlidesTimelineHandle, type StagePaintOptions,
 } from '@universal-office/slides-engine';
 import { lightTable, lightAt, lightFace, bevelPhi, patternRows } from '@universal-office/drawingml';
 
@@ -11,8 +12,10 @@ import { lightTable, lightAt, lightFace, bevelPhi, patternRows } from '@universa
  *
  * Um `RustSlides` por elemento: o deck aberto no módulo (uo-slides.wasm). O layout e a lista de desenho do slide são do Rust; as
  * medidas de texto (`measureText`), a decodificação de imagens, as fontes e o canvas continuam no navegador — o mesmo resolvedor
- * de fontes e o mesmo cache de imagens do motor TS. Quem NÃO é do Rust ainda (animações, apresentação e reprodução, hiperlinks,
- * texto acessível, gráficos) segue no motor TS: o viewer mantém o modelo TS carregado para isso (registro, "Gaps").
+ * de fontes e o mesmo cache de imagens do motor TS. Animações, apresentação e reprodução (B4b): a lista do slide em cena tem
+ * slots, o Rust avalia os ganchos de animação a cada quadro (`paintStage`) e o pintor aplica os valores; as máquinas de estado
+ * do Rust (`newShow`/`newTimeline`) andam espelhadas com as do TS, que continuam dando os eventos e a mídia. Quem NÃO é do Rust
+ * ainda (hiperlinks, texto acessível, o player de mídia) segue no modelo TS, que continua carregado (registro, "Gaps").
  */
 
 /** O .wasm do motor e o conversor de .ppt (carregado só ao abrir um .ppt): ao lado deste módulo no pacote publicado. */
@@ -86,6 +89,28 @@ export class RustSlides {
     if (!this.doc || this.doc.freed) return { status: 11, charts: 0, rounds: 0 };
     // gráficos: a lista do Rust os pinta (uo-charts, C-6): nenhum slide fica com o motor TS por causa deles
     return this.doc.paint(ctx, i, scale, ox, oy, this.paintHost);
+  }
+
+  /** A apresentação espelhada no Rust (mesmas opções e mesmos comandos da `SlideShow` do TS); null sem deck aberto. */
+  newShow(o: { from: number; now: number; useTimings: boolean; loop: boolean; animations: boolean; range: [number, number] | null }): SlidesShowHandle | null {
+    if (!this.doc || this.doc.freed) return null;
+    const b = (v: boolean): number => (v ? 1 : 0);
+    return this.doc.newShow({ from: o.from, now: o.now, useTimings: b(o.useTimings), loop: b(o.loop), animations: b(o.animations), range: o.range });
+  }
+
+  /** A linha do tempo da reprodução espelhada no Rust (as opções de `buildPlaybackTimeline`); null sem deck aberto. */
+  newTimeline(o: { useTimings?: boolean; defaultSlideMs?: number; tickMs?: number; transitionFps?: number }): SlidesTimelineHandle | null {
+    if (!this.doc || this.doc.freed) return null;
+    return this.doc.newTimeline({
+      useTimings: o.useTimings === undefined ? -1 : o.useTimings ? 1 : 0,
+      defaultSlideMs: o.defaultSlideMs ?? NaN, tickMs: o.tickMs ?? NaN, transitionFps: o.transitionFps ?? NaN,
+    });
+  }
+
+  /** Pinta um quadro do palco (`which` 0 = slide em cena, 1 = origem da transição); `status` 0 = pintou, outro = cair no TS. */
+  paintStage(ctx: CanvasRenderingContext2D, src: SlidesShowHandle | SlidesTimelineHandle, at: number, which: 0 | 1, scale: number, ox: number, oy: number, o: StagePaintOptions): SlidePaintResult {
+    if (!this.doc || this.doc.freed) return { status: 11, charts: 0, rounds: 0 };
+    return this.doc.paintStage(ctx, src, at, which, scale, ox, oy, this.paintHost, o);
   }
 
   /** Handles vivos do módulo (testes de memória: 0 depois de fechar tudo). */

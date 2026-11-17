@@ -586,6 +586,32 @@ valid header or raw, optional display), `pict_play`, `tiff_slides`, `eot_read` (
 is never asked, an MTX result is an sfnt whose directory fits): stable driver 40 s each, **0 crashes** (`emf_play` 32,531 executions at 811/s, slowest 150 ms after the caps above — the first run found a 1.4 s input: a 20-byte
 record claiming 2 M path points, now bounded by `PATH_WORK`; `pict_play` 5.9 M, `tiff_slides` 5.3 M, `eot_read` 13.0 M).
 
+## B4b — the playback emission (2026-11-17, Opus)
+
+`emit/anim.rs` (new) and changes in `emit/{cx,shape,text,chart,mod}.rs`; the caller and the parity are in `uo-pptx.md` "B4b".
+
+- **API**: `emit_slide_anim(bg, shapes, params, env, res, caches, AnimPlan { shapes: &[Option<ShapeAnim>], media, states })` (a playback
+  list) and `emit_shape_anim(shapes, index, ...)` (one shape again, its shape slot's bracket, for the re-emit rule); `Emission::slots`
+  (`EmitSlot`: kind, shape, the `boxBase` base, the `applyPart` box, `baseRotRad`, the `AnimBase` colours and rotation, the word of a letter)
+  positional with `list.slots`. `emit_slide`/`emit_shapes` (still lists) are unchanged and write no slots.
+- **Where the slots go** (the TS hook sites of render.ts): the shape slot in place of `paintShapeList`'s `save` for every shape of a playback
+  list (`shapeOpacity`, `hooks.all`), with the soft-reveal layer (id `SOFT_LAYER_SHAPE` 15) and its else block when the shape's effects
+  may wipe; `Background` in place of `paintShape`'s `target.save()` (`hooks.bg`); `ChartPart j` per animated part of a chart by parts
+  (`paint_chart_parts`: the static rest and background parts, `chart_part_bounds`, the probe of a cache miss as a `BoundsPass` gate through
+  `BoundsPassCanvas`, which forwards what the TS recording proxy forwards); `Paragraph i` in place of the line's `save` for a paragraph with a
+  state (one slot per paragraph, one bracket per line, `pbox`); `Unit` per (line, unit) with the pieces of `UnitPlan` (`planUnits` over UTF-16
+  code units) measured at device px through `Width` requests under the current kerning and spacing; `UnitGate` around the bullet.
+- **Re-emission**: `SlotStates::style(&EmitSlot)` answers each slot's state; the shape's `all` style (font scale of the layout,
+  `fontOf`/`colorOf`/`underOf` defaults), `fillOv`/`lineOv` (`CurShape::fill_ov`/`line_ov`: the outer shadow, the fill block, the overlay,
+  the bevel test and the outline read them as the TS reads `ov.fill`/`ov.line`), and per paragraph/unit styles. `TextRun.fit_allowed` and
+  the pattern/letter fill, the `alpha` of the run, follow "the draw has a state" (structural), as `drawText(..., st)`.
+- **Media**: with `AnimPlan::media`, a non-inherited picture with media or a GIF draws through a `MediaFrame` item carrying the poster's draw.
+- **Bounds cache**: chart part boxes computed in a pass are committed only by a complete pass (`Cx::pending_bounds`), so whether the TS probe
+  missed is the same in every round of the two-phase protocol.
+- **Layers**: `alloc_layer` hands out ids 0-13; 14 and 15 are the soft-reveal layers of chart parts and shapes (`alloc_soft_layer`).
+- Fuzz: `slides_emit` also emits the shapes as a playback list with a hostile `AnimPlan` and re-emits each with hostile states (invariants:
+  the list validates and encodes, `SlotBegin`/`SlotEnd` balance, `Emission::slots` matches `list.slots`, two runs are equal).
+
 ## Process metrics
 
 | Stage | Agent | Time | Notes |

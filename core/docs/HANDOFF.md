@@ -1,4 +1,4 @@
-# Rust port — handoff (state of 2026-11-17; newest update: "Slides port started")
+# Rust port — handoff (state of 2026-11-17; newest update: "Slides wave 3")
 
 Entry point for the next session that continues the Rust migration (0.10). Read this, then
 `.claude/skills/rust-port/SKILL.md` (the workflow: hybrid mode, models per role, memory gate) and the module records
@@ -162,6 +162,36 @@ milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects 
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
+
+## Update 2026-11-17 (wave 3) — Slides B4b (animations in the Rust viewer), PDF effects + font fallback, .NET facade
+
+- **B4b** (Opus): playback lists with `SlotBegin/End` (shape, background, paragraph, unit, unit gate, chart part,
+  bounds pass, media frame + poster), `emit_shape_anim` re-emission, `uo-pptx::stage` (template at emission, per-frame
+  `stage_frame`), wasm exports `uo_slides_stage_{show,timeline,clear}`; `<universal-slides-viewer engine="rust">` paints
+  `present()`/`play()` frames from the Rust stage (the TS show/timeline still drive events and the media player,
+  hybrid). Parity: still captures unchanged (samples 1,202, b1a 246, c1d 182, b5b 162); animated draw-ops anim-b6a
+  472/472, anim-samples 551/551, anim-b1a 150/150 (full local sets 1,015 and 1,462); Chromium animated frames
+  **7,221/7,221** pixel-equal, still slides 959/959. M3 busiest frame 28,276 B (budget 64 KiB). Wasm 1,235,854 B gzip
+  (77% of 1.6 MB). Disabled: 0; four declared deviations in `uo-pptx.md` "B4b — playback emission".
+- **Slides PDF wave 2** (Opus): raster interpreter at 144 dpi (`uo_pptx::pdf::raster`, generic parts in
+  `uo_pdf::raster`), shadows as soft-masked images under vector shapes, soft edges/reflections/blur/bevel/XOR layers
+  rasterized, WordArt warps as vector outlines, per-character font fallback (measure = draw; B3 logs still 456,505/0).
+  Counters over 538 decks: shadow 10,306→0, blur/dest-in/dest-out/dropped layers →0, warp 227→0, bevel 89→0,
+  missing glyphs 327,000→299,280 with open fonts (48,637 with system fonts). Write PDF bytes unchanged.
+  `PdfOptions::cancel` (per slide and per raster effect). Remaining: 690 unplaced links, 5 metafile XORs, 5 bevel
+  underlays without JPEG, 1 SVG, 1 singular transform (`uo-pdf.md`).
+- **.NET facade `UniversalOffice.Pptx`** (Sonnet): `uo-ffi/src/slides.rs` (`uo_deck_*`, `uo_pptx_to_pdf`,
+  `uo_ppt_to_pptx`), C# `core/dotnet/UniversalOffice.Pptx` (+ Tests, Smoke) reusing the Docx handles; C# PDF = native
+  93/93 decks; M4 10,000 handles 0 B left; 98 hostile inputs refused, 0 crashes. Old C#-only API mapping in
+  `uo-bindings.md` "Slides .NET facade" (the old project is untouched; the switch is a later step). Not covered: editor
+  session ABI, read-model ABI, Markdown/HTML export, typed container-limit code.
+- Orchestrator: the facade's PDF cancel wired to `PdfOptions::cancel`; **`UniversalOffice.Docx.Tests` had been failing
+  2/43 since 8f53340f** (the facade could not ask for `ts_strict`): `JOB_TS_STRICT = 8` + internal
+  `LayoutOptions.TsStrict` → 43/43; `slides-native.tsv` re-blessed after the PDF changes.
+- **Next**: editor routing (`engine="rust"` in `<universal-slides>`: `Editor` exports, `Op` codec, clips, fonts) +
+  editor harness; PDF hyperlinks (`Emission.links`); drop the TS model in rust mode (read-model queries for a11y,
+  links, media; then the media player off the TS `PlaybackSlide`); memory compaction (`SlideModel` 0.95× TS, target
+  0.5×); `MetaDecode` prepare phase; M4 gate (PowerPoint-PDF oracle; real Safari = maintainer).
 
 ## Update 2026-11-17 (later) — Slides wave 2: B4, B5b, B6, B7 (static), B8 core, uo-charts C-0…C-6, R-S5
 

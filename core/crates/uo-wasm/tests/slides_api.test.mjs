@@ -13,7 +13,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bindSlides, bindSlidesPpt, SlidesError } from '../js/slides.mjs';
 import { decodeSlidesList, newTables } from '../js/gen/slides.ts';
-import { emitAll as emitAllWith } from './support/slides-stub.mjs';
+import { emitAll as emitAllWith, stageAll } from './support/slides-stub.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/wasm32-unknown-unknown/wasm/uo_wasm.wasm');
@@ -147,6 +147,42 @@ test('M4: 10,000 decks, views, shows and timelines through free() and through th
   let after = await settle();
   for (let k = 0; k < 40 && after !== before; k++) { await new Promise((r) => setTimeout(r, 25)); after = await settle(); }
   assert.equal(after, before, 'finalizers: live bytes back exactly');
+});
+
+test('B4b: the stage of a show and of a timeline, the end screen, bad arguments, and a playback that returns its memory', async () => {
+  const d = uo.open(groupBytes('b6a', 3));
+  const scale = 1280 / d.size().w;
+  let before = 0;
+  for (let round = 0; round < 3; round++) {
+    const v = uo.newView(1);
+    const tl = d.newTimeline({});
+    const info = tl.info();
+    let lists = 0, frames = 0;
+    for (let k = 0; k <= 40; k++) {
+      const r = stageAll(uo, d, v, tl, (info.durationMs * k) / 40, 0, scale, 0, 0, true);
+      assert.equal(r.status, 0);
+      if (r.empty) continue;
+      frames++;
+      if (r.list) lists++;
+      assert.ok(r.frame.length > 0);
+    }
+    assert.ok(frames > 30 && lists >= 1 && lists < frames, `${lists} lists over ${frames} frames`);
+    // the origin of a transition: nothing at t = 0, the previous slide in its final state later
+    assert.equal(stageAll(uo, d, v, tl, 0, 1, scale, 0, 0, false).empty, true);
+    const show = d.newShow({ from: 0, now: 0 });
+    assert.equal(stageAll(uo, d, v, show, 10, 0, scale, 0, 0, true).status, 0);
+    let guard = 0;
+    while (!show.frame(1e7).ended && guard++ < 200) show.next(1e3 * guard, true);
+    assert.equal(stageAll(uo, d, v, show, 1e7, 0, scale, 0, 0, true).empty, true, 'the end screen has nothing on stage');
+    assert.equal(d.stage(v, show, 0, 2, scale, 0, 0).status, 5, 'which = 2 is a bad argument');
+    assert.equal(d.stage(v, show, 0, 0, NaN, 0, 0).status, 5, 'a NaN scale is a bad argument');
+    v.clearStage();
+    show.free(); tl.free(); v.free();
+    // round 0 warms the deck's slide cache and the engines' lazily built tables
+    if (round === 0) before = await settle();
+  }
+  assert.equal(await settle(), before, 'stages, frames and caches freed with the view: live bytes back exactly');
+  d.free();
 });
 
 test('M2: 300 paints of one deck at a rotating view keep memory flat', async () => {

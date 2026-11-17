@@ -48,10 +48,13 @@ enum SlotValue tag "t" {
 
 /// A shape whose sub-list is re-emitted for this frame (a slot value carried a field `applyPart` does not apply:
 /// colours, font weight/style, underline, family or a font scale): the replacement is a complete `SlidesList`
-/// message for that shape, whose items replace the shape's range in the base list.
+/// message for that shape (of the same stream: decoded with the same tables, after the base list), whose items replace
+/// the shape's range in the base list (from the shape slot's `SlotBegin` to its `SlotEnd`). Its slots are its own (a
+/// font scale moves the paragraph and unit boxes): `values` is positional over the replacement list's `slots`.
 struct Replacement {
   shape: u32,
   list: bytes,
+  values: list<SlotValue>,
 }
 
 message SlotFrame {

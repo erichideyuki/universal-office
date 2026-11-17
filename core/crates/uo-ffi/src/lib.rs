@@ -23,6 +23,7 @@
 pub mod editing;
 pub mod pipeline;
 pub mod server;
+pub mod slides;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
@@ -235,6 +236,9 @@ pub const JOB_COMPRESS: u32 = 1;
 pub const JOB_NO_HYPHENATION: u32 = 2;
 /// `UoPdfJob.flags`: `hyph_langs` is given (`HyphenationLanguages`; empty = hyphenate nothing).
 pub const JOB_HYPHENATION_LANGUAGES: u32 = 4;
+/// `UoPdfJob.flags`: every Word-over-TS switch off — the frozen TS's layout (`LayoutOptions::ts_strict`). For the
+/// facade's parity tests against the TS captures only; no product path sets it.
+pub const JOB_TS_STRICT: u32 = 8;
 
 /// Options of one conversion.
 #[repr(C)]
@@ -289,6 +293,9 @@ unsafe fn job_of(j: &UoPdfJob) -> Result<PdfJob, JobError> {
         // SAFETY: forwarded from the caller.
         let langs = unsafe { lines_in(j.hyph_langs, j.hyph_langs_len) }.ok_or(JobError::Argument("hyph_langs"))?;
         o.hyphenation_languages = Some(langs.into_iter().map(Box::<str>::from).collect());
+    }
+    if j.flags & JOB_TS_STRICT != 0 {
+        *o = std::mem::take(o).ts_strict();
     }
     let mode = match j.revisions {
         0 => None,

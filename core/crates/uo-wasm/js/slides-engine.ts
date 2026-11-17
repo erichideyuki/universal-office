@@ -16,8 +16,10 @@ import { bindSlides, bindSlidesPpt, SlidesError } from './slides.mjs';
 import type { MeasureRequest, SlidesBinding, SlidesDeck, SlidesShow, SlidesTimeline, SlidesView, ShowAction, ShowFrame } from './slides.mjs';
 import { decodeSlidesList, newTables } from './gen/slides.ts';
 import type { SlidesList, Tables } from './gen/slides.ts';
+import { decodeSlotFrame, newTables as newSlotTables } from './gen/slots.ts';
+import type { Tables as SlotTables } from './gen/slots.ts';
 import { SlidesPainter } from './paint-slides.ts';
-import type { PaintImage, SlidesEnv } from './paint-slides.ts';
+import type { PaintImage, SlidesEnv, SlotReplacement } from './paint-slides.ts';
 import { imgH, imgW } from './slides-effects.ts';
 
 export { SlidesError };
@@ -127,6 +129,16 @@ export interface SlidePaintOptions {
   skipCharts?: boolean;
 }
 
+/** B4b: options of a playback frame (`paintStage`). */
+export interface StagePaintOptions {
+  /** wire the media frames (`hasMedia` of `paintPlaybackSlide`: off for a frozen transition origin) */
+  media?: boolean;
+  /** the media clock of `showWhenStopped` (`MediaClock`: `{}` live; the video export's latency and scale) */
+  clock?: { latencyMs?: number; scale?: number };
+  /** the current video/GIF frame of shape `i` (the viewer's media player), or null for the poster */
+  mediaFrame?(shape: number): { image: PaintImage; alpha: number } | null | undefined;
+}
+
 /** The result of a paint. */
 export interface SlidePaintResult {
   /** 0 painted; else the wasm status (3: the slide could not be read, 6: no such slide ...) */
@@ -135,7 +147,15 @@ export interface SlidePaintResult {
   charts: number;
   /** measurement rounds the emission took (1 = the table had every answer) */
   rounds: number;
+  /** B4b (`paintStage`): nothing is on that stage (the end screen, no transition origin); nothing was painted */
+  empty?: boolean;
+  /** B4b (`paintStage`): the frame's animation time and the shapes it re-emitted (colours, fonts, font scale) */
+  animMs?: number;
+  replaced?: number;
 }
+
+/** The binding handle behind a show or timeline handle of this module (`deck.stage` takes it). */
+const RAW = new WeakMap<object, SlidesShow | SlidesTimeline>();
 
 export class SlidesModule {
   readonly #inst: Instance;
@@ -179,6 +199,10 @@ export class SlidesDocument {
   #fontGen = 0;
   #freed = false;
   #capsDone = false;
+  /** B4b: the decoded lists of the two stages of the view (the slide on stage, the transition origin) and the frame stream */
+  #stage: [SlidesList | null, SlidesList | null] = [null, null];
+  #slotTables: SlotTables = newSlotTables();
+  #mediaFrame: StagePaintOptions['mediaFrame'] | undefined = undefined;
   /** package part -> media ids whose size a request asked for (to answer them when the image finishes decoding) */
   readonly #sizeAsked = new Map<string, Set<number>>();
   readonly count: number;
@@ -211,6 +235,14 @@ export class SlidesDocument {
   fontsChanged(): void {
     if (this.freed) return;
     call(this.#inst, () => this.#live().setGeneration(++this.#fontGen));
+    this.#clearStage();
+  }
+
+  /** The stages are laid out with the old answers: the next frame emits them again. */
+  #clearStage(): void {
+    if (this.freed) return;
+    call(this.#inst, () => this.#view.clearStage());
+    this.#stage = [null, null];
   }
 
   /** The image of `part` finished decoding: the layout that was given 0 x 0 for it learns its size. */
@@ -221,6 +253,7 @@ export class SlidesDocument {
     const w = imgW(img), h = imgH(img);
     call(this.#inst, () => { for (const id of ids) this.#live().setImageSize(id, w, h); });
     this.#sizeAsked.delete(part);
+    this.#clearStage();
   }
 
   /** Starts a new generation of the list stream (the caches overflowed, or a decode failed and the stream is unusable). */
@@ -228,6 +261,8 @@ export class SlidesDocument {
     this.#view.free();
     this.#view = this.#inst.uo.newView(++this.#gen);
     this.#tables = newTables();
+    this.#stage = [null, null];
+    this.#slotTables = newSlotTables();
     this.#painter?.clear();
   }
 
@@ -309,6 +344,7 @@ export class SlidesDocument {
           const b = tables().bitmaps[index];
           return b ? this.#view.bitmap(b.data) : null;
         },
+        mediaFrame: (shape) => this.#mediaFrame?.(shape),
         ...host.extra,
       };
       this.#host = host;
@@ -323,17 +359,7 @@ export class SlidesDocument {
    */
   paint(ctx: CanvasRenderingContext2D, index: number, scale: number, ox: number, oy: number, host: SlidesPaintHost, o: SlidePaintOptions = {}): SlidePaintResult {
     const deck = this.#live();
-    if (!this.#capsDone) {
-      // the canvas capabilities change the layout (the TS tests each at every site): the table keeps them
-      const m = host.measureCtx;
-      call(this.#inst, () => deck.setCaps({
-        fontKerning: 'fontKerning' in m,
-        letterSpacing: 'letterSpacing' in m,
-        segmenter: typeof (Intl as { Segmenter?: unknown }).Segmenter === 'function',
-        fontBoundingBox: typeof TextMetrics !== 'undefined' && 'fontBoundingBoxAscent' in TextMetrics.prototype,
-      }));
-      this.#capsDone = true;
-    }
+    this.#caps(deck, host);
     const painter = this.#painterFor(host);
     const max = this.#inst.uo.maxRounds;
     for (let round = 1; round <= max + 1; round++) {
@@ -363,7 +389,73 @@ export class SlidesDocument {
     return { status: 12, charts: 0, rounds: max + 1 };
   }
 
+  /** The canvas capabilities change the layout (the TS tests each at every site): the table keeps them (set once). */
+  #caps(deck: SlidesDeck, host: SlidesPaintHost): void {
+    if (this.#capsDone) return;
+    const m = host.measureCtx;
+    call(this.#inst, () => deck.setCaps({
+      fontKerning: 'fontKerning' in m,
+      letterSpacing: 'letterSpacing' in m,
+      segmenter: typeof (Intl as { Segmenter?: unknown }).Segmenter === 'function',
+      fontBoundingBox: typeof TextMetrics !== 'undefined' && 'fontBoundingBoxAscent' in TextMetrics.prototype,
+    }));
+    this.#capsDone = true;
+  }
+
+  /**
+   * B4b: paints a playback frame — `src` a show handle at clock `at` (= now) or a timeline handle at `at` (= t); `which` 0 = the
+   * slide on stage, 1 = the origin of the running transition (frozen at its animation time). The stage's list (with slots) is
+   * emitted when the slide, the viewport or the hooks' structure changes; every frame evaluates the slots in Rust and the
+   * painter applies the values (and paints the shapes the frame re-emitted).
+   */
+  paintStage(ctx: CanvasRenderingContext2D, src: SlidesShowHandle | SlidesTimelineHandle, at: number, which: 0 | 1, scale: number, ox: number, oy: number,
+    host: SlidesPaintHost, o: StagePaintOptions = {}): SlidePaintResult {
+    const deck = this.#live();
+    const raw = RAW.get(src);
+    if (!raw) throw new Error('uo-wasm: not a handle of this document');
+    this.#caps(deck, host);
+    const painter = this.#painterFor(host);
+    const max = this.#inst.uo.maxRounds;
+    for (let round = 1; round <= max + 1; round++) {
+      const r = call(this.#inst, () => deck.stage(this.#view, raw, at, which, scale, ox, oy, o.media === true, o.clock ?? {}));
+      if (r.status === 12 && 'requests' in r) {
+        if (round > max) return { status: 12, charts: 0, rounds: round };
+        const nums = this.#answers(r.requests, host);
+        call(this.#inst, () => deck.answer(nums));
+        continue;
+      }
+      if (r.status !== 0 || !('animMs' in r)) return { status: r.status, charts: 0, rounds: round };
+      if (r.empty) {
+        this.#stage[which] = null;
+        return { status: 0, charts: 0, rounds: round, empty: true, animMs: r.animMs };
+      }
+      const replacements = new Map<number, SlotReplacement>();
+      let frame;
+      try {
+        if (r.list) this.#stage[which] = decodeSlidesList(r.list, this.#tables);
+        frame = decodeSlotFrame(r.frame, this.#slotTables);
+        for (const rep of frame.replacements) replacements.set(rep.shape, { list: decodeSlidesList(rep.list, this.#tables), values: rep.values });
+      } catch (e) {
+        // the encoder advanced its marks but the decoder did not: the stream is unusable, start a new generation
+        this.#rotate();
+        throw e;
+      }
+      const list = this.#stage[which];
+      if (!list) return { status: 10, charts: 0, rounds: round };
+      this.#mediaFrame = o.mediaFrame;
+      try {
+        painter.paint(ctx, list, this.#tables, frame, replacements);
+      } finally {
+        this.#mediaFrame = undefined;
+      }
+      if (r.newGeneration) this.#rotate();
+      return { status: 0, charts: 0, rounds: round, animMs: r.animMs, replaced: replacements.size };
+    }
+    return { status: 12, charts: 0, rounds: max + 1 };
+  }
+
   /** Drops what a long session accumulated (the deck's caches, the painter's canvases). */
+
   clearCaches(): void {
     if (this.freed) return;
     call(this.#inst, () => this.#live().clearCaches());
@@ -405,7 +497,7 @@ export class SlidesShowHandle {
   readonly #inst: Instance;
   readonly #s: SlidesShow;
   #freed = false;
-  constructor(inst: Instance, s: SlidesShow) { this.#inst = inst; this.#s = s; }
+  constructor(inst: Instance, s: SlidesShow) { this.#inst = inst; this.#s = s; RAW.set(this, s); }
   next(now: number, mouse = false): ShowAction { return call(this.#inst, () => this.#s.next(now, mouse)); }
   prev(now: number): ShowAction { return call(this.#inst, () => this.#s.prev(now)); }
   goTo(i: number, now: number): ShowAction { return call(this.#inst, () => this.#s.goTo(i, now)); }
@@ -426,7 +518,7 @@ export class SlidesTimelineHandle {
   readonly #inst: Instance;
   readonly #t: SlidesTimeline;
   #freed = false;
-  constructor(inst: Instance, t: SlidesTimeline) { this.#inst = inst; this.#t = t; }
+  constructor(inst: Instance, t: SlidesTimeline) { this.#inst = inst; this.#t = t; RAW.set(this, t); }
   info(): ReturnType<SlidesTimeline['info']> { return call(this.#inst, () => this.#t.info()); }
   stateAt(t: number): ReturnType<SlidesTimeline['stateAt']> { return call(this.#inst, () => this.#t.stateAt(t)); }
   free(): void {

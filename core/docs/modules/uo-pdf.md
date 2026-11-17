@@ -655,7 +655,8 @@ Parity rounds: 2 replays with mismatches (4 of 60 specs, then 1 of 300), both th
 
 ## Slides PDF (R-S5)
 
-Status: **implemented and measured against the Slides display list; not yet compared with PowerPoint's PDF** (the oracle is a
+Status: **implemented and measured against the Slides display list, effects and font fallback included (wave 2, below); not yet compared
+with PowerPoint's PDF** (the oracle is a
 later measured step, see "The PowerPoint comparison" below). Plan: `slides-sheet-port-plan.md` §9 (M4, scope P1) and the
 "Slides extensions" design of `uo-render.md` (R-S5). One Sonnet session, 2026-11-17, sub-frontier R-S5.
 
@@ -666,8 +667,9 @@ later measured step, see "The PowerPoint comparison" below). Plan: `slides-sheet
 | `MeasureTable` filler from `uo-fonts` (the server/PDF path of decision T1) | `uo-pptx/src/pdf/measure.rs` (`fill_measures`, `text_width`, `FontSource`, `FaceSet`) — a new file in `uo-pptx`, so it does not touch B5b's `uo-fonts` EOT/MTX files nor `uo-dml-render` |
 | Interpreter of the Slides list (state, paths, paints, layers, text, pictures, recipes) | `uo-pptx/src/pdf/{interp,paint,text,images,recipe,geom,css}.rs` |
 | Entry points | `uo_pptx::pdf(&mut Deck, &PdfOptions) -> Result<PdfOutput, PdfFail>` (feature `pdf`; `PdfOutput { bytes, report }`) and `uo_pptx::pdf::pdf_from_lists(&[(&SlidesList, &SlidesResources)], &dyn PartSource, &PdfOptions)` (the interpreter alone: tests, hostile lists, lists emitted elsewhere) |
-| Writer additions (additive, used only by this painter) | `uo-pdf/src/document.rs`, `page.rs`: `PdfDocument::{add_ext_gstate, add_form, form_object, add_pattern, add_user_shading}`, `PageWriter::raw` |
-| Tests | `uo-pptx/tests/{pdf_measure,pdf_slides}.rs`, `tests/support/{open_fonts,pdf_view}.rs` (they reuse `uo-pdf/tests/support/pdf_parse.rs`, the frame check of the Write PDF tests) |
+| Effects that need pixels (wave 2) | `uo-pptx/src/pdf/raster.rs` (the canvas interpreter over pixels: `Raster`, `Surface`, paints, the bevel), `effects.rs` (shadow images, raster layers, the bevel on the page, warps on the page, `Kept`/`KeptRange`), `warp.rs` (WordArt as outlines) |
+| Writer additions (additive, used only by this painter) | `uo-pdf/src/document.rs`, `page.rs`: `PdfDocument::{add_ext_gstate, add_form, form_object, add_pattern, add_user_shading, embed_color_mask}`, `PageWriter::raw`; `uo-pdf/src/raster.rs` (`uo_pdf::raster`: coverage fill, stroker, premultiplied `Pixmap` with the canvas compositing modes, blur, `edt1d`; re-exports the `uo-drawingml` masks, light tables and sRGB curves) |
+| Tests | `uo-pptx/tests/{pdf_measure,pdf_slides,pdf_effects}.rs`, `tests/support/{open_fonts,pdf_view}.rs` (they reuse `uo-pdf/tests/support/pdf_parse.rs`, the frame check of the Write PDF tests) |
 
 **No `PdfProfile`** (plan §4.4 finding S9 said `render_pdf` hard-wires Word rules): the Slides list is a canvas call sequence, not Word
 pages, so it does not go through `render_pdf` at all. The shared part is the app-neutral writer (`PdfDocument`/`PageWriter`, fonts with
@@ -728,23 +730,29 @@ Write's painter lives with Write's page. Nothing in `render_pdf`/`render.rs` cha
 
 ### What is not drawn (the missing-effects report, per document in `PdfReport::missing`)
 
-| Key | Meaning | Count in the last run (538 decks, 1,357 pages) |
-|---|---|---|
-| `effect:warp` | WordArt text warp (`Effect::Warp`): the text is **absent** from the PDF | 227 |
-| `effect:bevel` | 3D bevel (`Effect::Bevel`) | 89 |
-| `effect:metafile-rop` | `Effect::MetafileRop` (unused since B5b: the XOR is a recipe op) | 0 |
-| `shadow` | canvas shadow (outer shadows, text shadows, glow idiom): the shape draws without it; the off-screen shadow idiom (offset > 5,000 px, the `K` of the schema) is skipped entirely; counted per paint operation, so it overstates the number of shadows | 10,306 |
-| `blur` | `filter: blur(..)` ignored (reflection and soft-edge layers use it) | 154 |
-| `composite:destination-in` / `-out`, `composite:source-in` | no PDF blend mode; the paint is skipped (soft edge, reflection fade) | 275 / 121 / 0 |
-| `layer:dropped` | a layer made wrong by a skipped destination-in/out fill (reflections) | 154 |
-| `gradient:conic`, `gradient:stroke`, `pattern:stroke`, `pattern:repeat-axis` | approximations (average colour, first stop, skipped, both-axes repeat) | 0 |
-| `clear-rect`, `media-frame` | `clearRect` (no erase in PDF), video/GIF frames (no frame in a PDF) | 0 |
-| `image:unsupported`, `image:jpeg-effect`, `image:recipe-truncated` | an image no decoder reads (SVG...), a pixel effect on a JPEG, a recipe cut by its cap | 1 / 0 / 0 |
-| `font:missing`, `font:not-embeddable`, `glyph:missing` | no face for the family, a face that may not be embedded, a character the face lacks (the b3a groups are CJK/Unicode heavy) | 0 / 0 / 327,000 |
-| `meta:xor-rect` | exact XOR of a metafile | 5 |
-| `transform:singular` | a transform that cannot be inverted: painting under it is skipped | 1 |
-| `hyperlink:unplaced` | a link of the model no drawn run matched (wrapped link text) | 686 (265 links placed) |
-| `chart:frame` | a chart the emitter did not paint (charts are in the list since the chart engine, so 0) | 0 |
+"Complete = nothing disabled": every key below is a count of something the PDF did not draw as the list says. Before → after is wave 1 →
+wave 2 over the same 538 decks / 1,357 pages (open fonts only).
+
+| Key | Meaning | Before | After |
+|---|---|---|---|
+| `shadow` | canvas shadow not drawn (counted per paint) | 10,306 | **0** (drawn: 3,765 shadow images; the old count was per paint, and the rest cast nothing: text whose glyphs are all missing, shadows outside the page, or paints inside rasterized layers, whose shadows are in the layer's pixels) |
+| `blur`, `composite:destination-in` / `-out` / `source-in`, `layer:dropped` | soft edges and reflections | 154, 275 / 121 / 0, 154 | **0** (278 layers rasterized). Still counted outside a layer (no emitter path; hostile lists only) |
+| `effect:warp` | WordArt text absent | 227 | **0** (218 warps drawn as outlines on the page; the other 9 are inside rasterized layers, drawn there, or have no visible glyph) |
+| `effect:bevel` | bevel not shaded | 89 | **0** (81 shaded on the page; the other 8 are shaded inside rasterized layers or are below the TS's 0.5-px width, which it skips too) |
+| `bevel:underlay` | a bevel shaded over a page whose JPEG/metafile under the shape was left out of the raster (shading exact where the shape's own fill is opaque) | — | 5 |
+| `raster:fallback` | a layer needing raster compositing that holds a JPEG or a metafile (no decoder here): drawn as vector, its modes/blurs counted as before | — | 0 |
+| `warp:picture-fill` | WordArt letters with a picture fill (drawn with the run colour) | — | 0 |
+| `glyph:missing` | a character no face has, after the fallback chain | 327,000 | **299,280** (27,516 glyphs now drawn by a fallback face). With this machine's installed fonts added (`UO_PDF_SYSTEM_FONTS=1`, read in place): **48,637** |
+| `meta:xor-rect` | exact XOR of a metafile (recipes are vector forms; the XOR needs the recipe's pixels) | 5 | 5 |
+| `image:unsupported` | an image no decoder reads (an SVG) | 1 | 1 |
+| `transform:singular` | painting under a singular transform skipped (the canvas draws nothing either) | 1 | 1 |
+| `hyperlink:unplaced` | links not placed (needs `Emission.links`, another frontier this wave) | 686 (265 placed) | 690 (261 placed: 4 linked runs are now inside rasterized soft-edge layers) |
+| `gradient:conic`, `gradient:stroke`, `pattern:stroke`, `pattern:repeat-axis`, `clear-rect`, `media-frame`, `image:jpeg-effect`, `image:recipe-truncated`, `font:missing`, `font:not-embeddable`, `chart:frame`, `effect:metafile-rop` | approximations and rare cases | 0 | 0 |
+
+Still disabled, in order of count: 299,280 characters without any face among the open fonts (CJK, Arabic, emoji of the generated `b3a`
+decks; a host with system fonts drops it to 48,637), 690 links (not this wave), 5 metafile XORs, 5 approximate bevel underlays, 1 SVG picture,
+and the classes that have no case in the corpus but would count if met: JPEG/metafile content inside a soft edge or reflection
+(`raster:fallback`, no JPEG decoder in the core), picture-filled WordArt, conic gradients and gradient/pattern strokes.
 
 ### Numbers
 
@@ -754,12 +762,14 @@ Write's painter lives with Write's page. Nothing in `render_pdf`/`render.rs` cha
   (`FaceSet`) answers the same face as the capture's own rule for the 20 families in the logs (80 family/variant pairs). The `drawops-*` logs hold the
   deterministic stub's answers, not font widths, so they are not comparable (the stub is a different measurer by design).
 - **PDFs**: every committed sample (`slides/samples`, incl. `playback`) and the generated groups `b1a` (200), `b3a` (120), `b5a` (150), `b5b` (40):
-  **538 decks, 1,357 pages, 117,064,289 bytes, 1,521,573 glyphs, 0 failed slides**; each PDF passes the frame check of the Write tests (header,
+  **538 decks, 1,357 pages, 0 failed slides**; wave 1: 117,064,289 bytes, 1,521,573 glyphs; wave 2 (effects and fallback): **167,046,998 bytes,
+  1,543,684 glyphs**; each PDF passes the frame check of the Write tests (header,
   every xref offset hits `N 0 obj`, every object closed, trailer), `page count = slide count` (also the `/Count`), `page size = slide size`
   (EMU/12,700), and the text read back through each font's ToUnicode equals the glyphs drawn (`report.glyphs`); on 53 decks the characters read
   back are a subset (as a multiset) of the characters of the list's runs (36,368 of at most 37,209 reached the PDF; the difference is text
   skipped under the shadow idiom or at alpha 0). 243 metafile recipes were played.
-- **Speed**: 538 decks in 24.9 s (release, whole test), 18 ms per page on average, slowest deck 0.28 s.
+- **Speed**: wave 1: 538 decks in 24.9 s (release, whole test), 18 ms per page, slowest deck 0.28 s; wave 2: 67.7 s alone (76 s beside the
+  other PDF tests), 50 ms per page, slowest deck `b3a/0061` 2.7 s (text shadows and bevel underlays: each bevel re-rasterizes the page under its box).
 - **Hostile input**: 10,000 random lists (NaN, infinities, 1e308, unbalanced saves, layers, composites, paints, indices in range) in 1.6 s, 0
   panics, every PDF valid; 600 flipped/cut/extended recipes, 569 played, 0 panics.
 - **Memory**: M1 `assert_no_leak` over a deck export (`reference.pptx`) and over a metafile deck (`b5b/0000`): live bytes return exactly. M2: 24
@@ -776,8 +786,8 @@ Write's painter lives with Write's page. Nothing in `render_pdf`/`render.rs` cha
    writer keeps its page-oriented API for Write. Forms and patterns are written at once (their `/Resources` is one object, defined at `build`).
 2. Layers are forms drawn at the identity transform with the *context's* alpha, as the canvas composites them; a tainted layer is dropped, not
    approximated (a mirrored, unfaded reflection is worse than none).
-3. Shadows and blurs are not approximated (no PDF equivalent; Write rasterizes text effects at 200 dpi from `uo_render::paint::fx_layers`, which
-   works on Write's item model, not on a canvas call): they are counted until measured against PowerPoint's PDF.
+3. (wave 1) Shadows and blurs were counted, not approximated. Superseded in wave 2: they are rasterized as Word rasterizes its effects (see
+   "Effects and font fallback").
 4. `FaceSet`'s substitution is the catalog's (`metric_substitute`, a superset of the capture's); a host that wants the server policy
    (`SubstituteFontProvider`, `SystemFontIndex`) implements `FontSource` over it.
 5. The shared `SlidesResources` getters (`face_entries`, `media_entries`, `derived_entries`, `bitmap_entries`) were added to `uo-render/src/slides.rs`
@@ -818,12 +828,69 @@ PDF (a raster with an SMask), soft edge and reflection (rasters), WordArt warp (
 whether PowerPoint embeds fonts as TrueType subsets (OFL replacement fonts differ in name only). Facts recorded in the oracle memory
 (`playback-oracle-facts`, `pptx-render-rules-measured`) already cover the cascade, `spcBef`, linear-RGB gradients and charts.
 
+### Effects and font fallback (wave 2, 2026-11-17)
+
+One Opus session (frontier "PDF effects + font fallback"). The TS viewer gets these effects from the browser canvas (shadows, `filter`,
+compositing modes, `getImageData` for the bevel, raster strips for WordArt); a PDF has none of them, so the painter does what Word does in its PDF
+(memory fact: Word writes glow/shadow/reflection as images with alpha behind vector text): the pixel-only parts become images, everything else
+stays vector. PowerPoint's own PDF was not consulted (no TS × PowerPoint divergence was in question; the comparison stays the later step below).
+
+- **The raster interpreter** (`raster.rs`): the canvas of `paint-slides.ts` over premultiplied pixels (`uo_pdf::raster::Pixmap`) at 2 raster px per
+  pt (144 dpi; regions above 4 M px get a lower resolution). Same item rules as the vector interpreter (slots = save/restore, the soft-reveal layer
+  after a shape slot not acquired, `fallbackEnd`); fills, strokes (own stroker: joins, caps, miter limit, dashes), text (glyph outlines placed by the
+  same fallback-aware placement as the PDF text), pictures (bilinear), linear/radial (two-circle)/conic gradients, patterns with `a:tile`, layers,
+  clips (coverage masks), `clearRect`, every `CompositeOp` (unbounded modes act over the whole clip, as the canvas), `filter: blur` (Gaussian,
+  sigma = the CSS length), canvas shadows (sigma = blur / 2, offset in device px; the off-screen idiom works because the shadow is the coverage of
+  the polygons moved by the offset), the bevel and the warp. A first pass in measure mode gives the device bounds of a range, so a layer's
+  surface covers only what it paints. Coverage: `uo_pdf::raster::fill_coverage` (4 sub-scanlines, exact horizontal coverage, sorted edges with an
+  active list — the `uo-drawingml` fill rescans every edge per row, too slow for a slide).
+- **Shadows on the vector page** (`effects.rs`): every paint under an active shadow first draws the shadow as a 1 x 1 image of the shadow colour
+  whose `/SMask` is the blurred alpha (`PdfDocument::embed_color_mask`; a soft mask need not have the image's size, ISO 32000-1 11.6.5.3), at 2 px per
+  pt (fewer for wide blurs, `3 / sigma`), placed in device space under the clip in force; the shape is then drawn as vector (or not at all under the
+  off-screen idiom). The source alpha is the coverage times the paint's alpha (gradients per pixel; picture patterns count as opaque; a drawn picture
+  uses its decoded alpha when it is not a JPEG). Text shadows (`TextRun.shadow`) are the glyph outlines' shadow; the text stays text.
+- **Raster layers**: a layer whose items hold `destination-in/out`, `source-in`, a blur, a bevel or `clearRect` (soft edges, reflections) is run
+  through the raster interpreter and placed as one image (composited at the identity with the context's alpha; or kept, for `DrawLayer`). A kept
+  vector layer that a raster layer draws (the reflection draws the shape's layer) is rasterized from its recorded items (`KeptRange`).
+- **Bevel** on the page: the page up to the effect is rasterized over the shape's box (lenient: a JPEG or metafile under it is left out and counted
+  `bevel:underlay`), `applyBevel` (the distance transform `edt1d`, `bevel_phi`, `light_at`/`light_face` of `uo-drawingml`, linear-light `colour * D +
+  S`) gives the lit colour `nv` of each silhouette pixel, and the image of `nv` with the silhouette coverage as alpha is placed over the page: the
+  PDF's compositing then gives `px + (nv - px) a`, the TS's own mix.
+- **WordArt** (`warp.rs`): the geometry of `slides-warp.ts` (all presets with their defaults, arc-length parametrization, `pathAt`, parallel curves,
+  `arcLift`, the line groups, ink extents from the outlines) applied to the glyph outlines: envelope presets map every outline point through
+  `P(u, v)` (pieces of at most 2 output px, curves to 0.15 px), single-path presets place each glyph rigidly on its cell. Letter fills: colour with
+  the run alpha, gradients whose end points follow the warp (the gradient itself is not bent), preset patterns as the colour mixture of their
+  density, outlines (`width * pxPerPt`); the layer shadow is the outlines' shadow; the tiled picture is a tiling pattern clipped to the outlines.
+- **Font fallback** (`measure.rs`, `text.rs`): `FontSource::fallback(cp, bold, italic, primary)` (provided method, default `fallback_chain`: the
+  families of the Write layout's `fallbackOrder` — Leelawadee UI for Thai, MS Mincho / Malgun Gothic for CJK / Hangul, the class fallback and Cambria
+  Math for arrows and math, then Segoe UI Symbol, Segoe UI Emoji, Arial Unicode MS, MS Gothic, Cambria Math, Segoe UI, Arial — each through the
+  source's own substitution, so Arial is Liberation Sans in `FaceSet`); `FaceSet` then scans its own faces ("the open fonts available", same
+  variant first). The measure (`text_width_in`, used by `fill_measures`) and the drawing (`place_glyphs`) use the same per-character faces, so the
+  layout and the PDF agree; a run its face covers measures bit-for-bit as before (the B3 logs still replay with 0 mismatches). In the PDF every glyph
+  is positioned at its layout pen position through `TJ` adjustments, switching `Tf` to the fallback font's embedding inside the text object.
+- **Cancellation**: `PdfOptions::cancel: Option<Arc<AtomicBool>>` (default `None`), checked before every slide and every raster effect; a raised flag
+  fails the export with `PdfFail::Pdf(uo_pdf::PdfError::Cancelled)` (the Write PDF's error).
+- **Write's PDF unchanged**: the `uo-pdf` additions are a new module and a new method; `cargo test -p uo-pdf --release` green (`writer_parity` 3,
+  `painter_parity` 3, `writer_unit` 30, memory 9 + 5, no-panic 5 + 4). `uo-fonts` was not touched.
+- **Tests** (`tests/pdf_effects.rs`, uncompressed PDFs read back): shadow colour, peak alpha and order (under the shape); the off-screen idiom draws
+  only the shadow; a destination-in layer's pixels (half alpha kept, the rest cleared); a reflection faded downwards with the kept layer still vector;
+  a bevel lit differently at top and bottom; five warp presets as outlines inside the box; a character Caladea lacks drawn by Liberation Sans (two
+  fonts, ToUnicode round trip, the measure follows the fallback, off = missing); text shadow; hostile effect lists; cancellation. The 538-deck test
+  (all valid, page count/size, ToUnicode text = glyphs drawn, the text subset check now counting fallback-drawable characters) and 3,000 hostile
+  lists (`UO_PDF_HOSTILE_ROUNDS=3`) pass; memory M1/M2 unchanged in shape (`memory_is_flat_over_a_deck` green).
+- **Size**: 117 MB → 167 MB over the corpus. Measured contributions before the warp flattening was tuned: shadows 10 MB, raster layers 3.4 MB;
+  warps were 94 MB with 1-pt pieces and became small with tolerance-based flattening.
+- **Decisions declared**: (W1) pixels at 144 dpi (Word's effects are about 200 dpi; a region over 4 M px goes lower); (W2) warp letters as outlines,
+  not raster strips (exact mapping of the strips' piecewise-affine approximation; smaller and sharper), gradients not bent; (W3) a shadow's source
+  alpha for picture patterns is 1; (W4) the bevel underlay omits JPEG/metafile pictures (counted); (W5) the fallback face's advance is the measure
+  (the browser measures and draws with its own fallback; the old `.notdef` advance is kept only when no face has the character).
+
 ### Next steps
 
-1. Shadows and blur (the biggest count: 10,306 per-operation hits) and `effect:warp`/`effect:bevel`: measure in PowerPoint's PDF, then port the TS effect
-   code as raster layers into forms with an SMask (the Write text-effect path is the model).
-2. `destination-in/out` as luminosity soft masks painted retroactively into the layer buffer (the buffer is the interpreter's: the reflection fade
-   and the soft edge need only a mask form over what was drawn so far); that removes `layer:dropped`.
+1. A JPEG decoder (or the host's) for raster layers and bevel underlays that hold photos (`raster:fallback`, `bevel:underlay`), then the recipe
+   played onto pixels for the exact metafile XOR (`meta:xor-rect`).
+2. Speed: the bevel underlay re-rasterizes the page prefix per bevel and every text shadow is its own image; batching the shadows of a
+   paragraph and caching the underlay would bring the 50 ms per page back towards 20.
 3. Hyperlinks from the emitter (`Emission.links`, see above), an outline from the slide titles, `/PageLabels`, notes pages.
 4. Conic gradient (a type 4/7 mesh or a pre-rasterized image), gradient strokes (clip-stroke is not available: a stroked outline path would
    be needed), `repeat-x/y` patterns.
@@ -834,6 +901,7 @@ whether PowerPoint embeds fonts as TrueType subsets (OFL replacement fonts diffe
 
 | Stage | Agent (model) | Time | Tool calls |
 |---|---|---|---|
+| R-S5 wave 2 | raster interpreter, shadows, raster layers, bevel, warp outlines, font fallback, cancellation, tests, record (Opus) | one session; a first corpus run took 136 s (raster shadows painted over whole surfaces: fixed by bounding each shadow and blur to its region, 10 s → 0.9 s on `b1a/0075`) and 229 MB (warps flattened at 1 pt: fixed with tolerance-based flattening, 167 MB) | about 120 |
 | R-S5 | filler + equality test, writer additions, interpreter, recipes, hyperlinks, tests, record (Sonnet) | one session; the 538-deck export test runs in 25 s, the filler equality in 0.5 s, the hostile 10,000 lists in 1.6 s, `cargo test -p uo-pdf --release` in 86 s; time lost to the concurrent chart-engine edit of `uo-dml-render` (it broke the build for a while: the `TileDef.nat`, `PathOp::RoundRect`, `SItem::ChartFont/FillText` additions arrived mid-session and were handled) | about 170 (own tally) |
 
 Rework: the extraction test's expectation (outline passes and chart `FillText` draw glyphs the runs list once or not at all: fixed in the test, not in the

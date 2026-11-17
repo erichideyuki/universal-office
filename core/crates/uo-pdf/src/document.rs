@@ -214,6 +214,24 @@ impl<S: PdfSink> PdfDocument<S> {
         Ok(self.push_image(obj_num))
     }
 
+    /// A one-colour image with a soft mask: a 1 x 1 DeviceRGB pixel of `rgb` whose `/SMask` is the `width_px x
+    /// height_px` DeviceGray `alpha` (a soft mask need not have the image's size, ISO 32000-1 11.6.5.3), interpolated:
+    /// the shadows and glows of the Slides PDF. Used only by the Slides painter (the Write pages never call it).
+    pub fn embed_color_mask(&mut self, rgb: [u8; 3], alpha: &[u8], width_px: u32, height_px: u32) -> Result<PdfImage> {
+        let pixels = u64::from(width_px) * u64::from(height_px);
+        if pixels == 0 || pixels > alpha.len() as u64 {
+            return Err(PdfError::Invalid("mask dimensions exceed the pixel data"));
+        }
+        let n = usize::try_from(pixels).map_err(|_| PdfError::Invalid("mask dimensions exceed the pixel data"))?;
+        let dict = format!(
+            "/Type /XObject /Subtype /Image /Width {width_px} /Height {height_px} /ColorSpace /DeviceGray /BitsPerComponent 8 /Interpolate true"
+        );
+        let m = self.w.add_stream(&dict, alpha.get(..n).unwrap_or(&[]), true)?;
+        let dict = format!("/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask {m} 0 R");
+        let obj_num = self.w.add_stream(&dict, &rgb, true)?;
+        Ok(self.push_image(obj_num))
+    }
+
     fn push_image(&mut self, obj_num: u32) -> PdfImage {
         let index = u32::try_from(self.images.len()).unwrap_or(u32::MAX);
         self.images.push(obj_num);

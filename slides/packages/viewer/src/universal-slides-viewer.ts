@@ -6,14 +6,17 @@ import {
   specialImageNeedsPrepare, prepareSpecialImage, tableImages,
   type ChartModel, type PaintImage, type PaintSlideOptions,
   type Presentation, type Slide, type Shape, type ImageRef,
-  type PlaybackOptions, type PlaybackTimeline, type PlaybackSlide, type SlideShowAction, type SlideTimingModel,
+  type PlaybackOptions, type PlaybackTimeline, type PlaybackSlide, type SlideShowAction, type SlideTimingModel, type SlideMediaInfo,
 } from '@universal-office/slides-core';
 import { MediaPlayer } from './media-player.js';
 import { ViewerControls, CONTROL_ITEMS, type ControlsHost } from './controls.js';
 import { SlideA11y } from './a11y.js';
 import { onBrowserLangChange, pickLabels, uiLang } from '@universal-office/ui';
 import type { RustSlides } from './rust-engine.js';
-import type { LoadSlidesOptions } from '@universal-office/slides-engine';
+import type { LoadSlidesOptions, SlidesShowHandle, SlidesTimelineHandle } from '@universal-office/slides-engine';
+
+/** B4b: de onde o palco do motor Rust tira o quadro: a apresentação espelhada (`at` = agora) ou a linha do tempo (`at` = t). */
+interface RustStage { h: SlidesShowHandle | SlidesTimelineHandle; at: number }
 
 /**
  * Esquemas de hiperlink que o viewer abre (a regra do viewer do Write): `http`, `https` e `mailto`. Vale com `engine="rust"`;
@@ -144,17 +147,19 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * Reprodução automática em curso (`play()`): linha do tempo PURA
    * (slides-core/playback.ts) + relógio. `null` = sem reprodução.
    */
-  protected auto: { tl: PlaybackTimeline; t0: number; loop: boolean; rafId: number; pos: number; ended: boolean } | null = null;
+  protected auto: { tl: PlaybackTimeline; t0: number; loop: boolean; rafId: number; pos: number; ended: boolean; rtl: SlidesTimelineHandle | null } | null = null;
   /**
    * Apresentação em curso (`present()`): máquina de estados PURA
    * (slides-core/slideshow.ts) + agendamento do próximo quadro. `null` = sem
    * apresentação.
    */
-  protected show: { ss: SlideShow; rafId: number; timer: number; fullscreen: boolean; kiosk: boolean } | null = null;
+  protected show: { ss: SlideShow; rs: SlidesShowHandle | null; rafId: number; timer: number; fullscreen: boolean; kiosk: boolean } | null = null;
   // ───────────────────────── motor Rust (engine="rust") ─────────────────────────
   // O motor TS continua inteiro por trás do atributo (padrão `ts`). Com `engine="rust"` o layout e a lista de desenho dos slides
-  // PARADOS (navegação, miniaturas, `renderSlideToCanvas`) vêm do módulo wasm; o resto (animações, apresentação, reprodução,
-  // hiperlinks, texto acessível, gráficos) segue no modelo TS, que continua carregado. Registro: uo-bindings.md "Slides viewer (B7)".
+  // (navegação, miniaturas, `renderSlideToCanvas`, e desde B4b os quadros da apresentação e da reprodução, com as animações
+  // avaliadas no Rust) vêm do módulo wasm; as máquinas de estado do Rust andam espelhadas com as do TS (que dão os eventos e a
+  // mídia); hiperlinks, texto acessível e o player de mídia seguem no modelo TS, que continua carregado. Registro: uo-bindings.md
+  // "Slides viewer (B7)".
   /** a sessão do motor Rust (carregada sob demanda) e o módulo que a define */
   private rust: RustSlides | null = null;
   private rustMod: Promise<typeof import('./rust-engine.js')> | null = null;
@@ -213,6 +218,9 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   }
 
   private disposeRust(): void {
+    // os espelhos do palco são do deck que sai: apresentação e reprodução seguem pintando pelo TS
+    if (this.show) { this.show.rs?.free(); this.show.rs = null; }
+    if (this.auto) { this.auto.rtl?.free(); this.auto.rtl = null; }
     this.rust?.dispose();
     this.rust = null;
   }
@@ -772,15 +780,19 @@ export class UniversalSlidesViewerElement extends HTMLElement {
       ? { ...(s.timing ?? NO_TIMING), hidden: true } : s.timing));
     const kiosk = opts.kiosk ?? cfg.kiosk ?? false;
     const start = from === 'start' ? SlideShow.firstVisible(models) : from ?? this.index;
-    const ss = new SlideShow(models, start, this.now(), {
+    const now = this.now();
+    const showOpts = {
       useTimings: opts.useTimings ?? cfg.useTimings ?? true,
       loop: opts.loop ?? ((cfg.loop || kiosk) || false),
       animations: opts.animations ?? cfg.showAnimation ?? true,
-    });
+    };
+    const ss = new SlideShow(models, start, now, showOpts);
+    // engine="rust": a mesma apresentação no Rust (mesmas opções, mesmos comandos, mesmo relógio) dá os quadros do palco
+    const rs = this.rust?.newShow({ from: start, now, ...showOpts, range: range ? [range[0], range[1]] : null }) ?? null;
     this.media.mode = 'realtime';
     this.media.clock = {};
     for (const s of this.slides) this.media.warmGifs(s);
-    this.show = { ss, rafId: 0, timer: 0, fullscreen: full, kiosk };
+    this.show = { ss, rs, rafId: 0, timer: 0, fullscreen: full, kiosk };
     this.fromKey = '';
     this.badge.style.display = 'none';
     if (full) {
@@ -800,6 +812,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     if (!s) return;
     if (s.rafId) cancelAnimationFrame(s.rafId);
     if (s.timer) clearTimeout(s.timer);
+    s.rs?.free();
     this.show = null;
     document.removeEventListener('fullscreenchange', this.onFullscreenChange);
     if (!keepFullscreen && this.host.fullscreenElement === this.wrap) document.exitFullscreen().catch(() => {});
@@ -823,7 +836,11 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const s = this.show;
     if (!s) return;
     const index = s.ss.index, step = s.ss.step;
-    if (cmd(s.ss, this.now()) === 'exit') { this.stopPresentation(); return; }
+    const now = this.now();
+    const action = cmd(s.ss, now);
+    // o espelho do Rust recebe o mesmo comando no mesmo instante (os métodos têm os nomes e argumentos da `SlideShow`)
+    if (s.rs) cmd(s.rs as unknown as SlideShow, now);
+    if (action === 'exit') { this.stopPresentation(); return; }
     this.afterShowCommand(index, step);
   }
 
@@ -864,6 +881,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const now = this.now();
     const index = s.ss.index, step = s.ss.step;
     s.ss.update(now);
+    s.rs?.update(now);
     if (s.ss.index !== index || s.ss.step !== step) { this.afterShowCommand(index, step); return; }
     this.paint();
     const slide = this.slides[s.ss.index];
@@ -993,7 +1011,9 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const from = opts.from ?? 0;
     const first = tl.slides.find((s) => s.index >= from);
     const now = (window.performance ?? Date).now();
-    this.auto = { tl, t0: now - (first?.startMs ?? 0), loop: opts.loop ?? false, rafId: 0, pos: -1, ended: false };
+    // engine="rust": a mesma linha do tempo no Rust dá os quadros do palco (o instante é o mesmo `t`)
+    const rtl = this.rust?.newTimeline(opts) ?? null;
+    this.auto = { tl, t0: now - (first?.startMs ?? 0), loop: opts.loop ?? false, rafId: 0, pos: -1, ended: false, rtl };
     this.fromKey = '';
     this.badge.style.display = 'none';
     // acabou: fica no ÚLTIMO quadro (o palco), mas não está mais "reproduzindo" —
@@ -1024,6 +1044,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   stopPlayback(): void {
     if (!this.auto) return;
     if (this.auto.rafId) cancelAnimationFrame(this.auto.rafId);
+    this.auto.rtl?.free();
     this.auto = null;
     this.media.stop();
     if (!this.controls) this.badge.style.display = '';
@@ -1079,7 +1100,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * `animMs`. `media = false`: vídeo/GIF ficam na capa (imagem congelada).
    */
   private paintPlaybackSlide(ctx: CanvasRenderingContext2D, ps: PlaybackSlide, animMs: number,
-    fit: { ox: number; oy: number; scale: number }, media = true): void {
+    fit: { ox: number; oy: number; scale: number }, media = true, stage?: RustStage, which: 0 | 1 = 0): void {
     const slide = this.slides[ps.index];
     if (!slide || !this.pres) return;
     const bg = new Set(slide.timing?.animBg ?? []);
@@ -1087,6 +1108,8 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const mediaInfo = new Map((slide.timing?.media ?? []).map((m) => [m.spid, m]));
     const bytes = (part: string): Uint8Array | undefined => this.pkg?.getPart(part);
     const hasMedia = media && slide.shapes.some((sh) => sh.media || sh.image?.mime === 'image/gif');
+    this.readyImages(slide);
+    if (stage && this.rust && this.paintStageRust(ctx, slide, ps, animMs, fit, hasMedia, stage, which, mediaInfo, bytes)) return;
     paintSlideTo(ctx, slide, {
       slideW: this.pres.slideW, slideH: this.pres.slideH,
       images: this.readyImages(slide), charts: this.chartCache,
@@ -1108,10 +1131,46 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     });
   }
 
+  /**
+   * B4b: o quadro do palco pelo motor Rust — a lista do slide com slots, os ganchos avaliados no Rust no mesmo instante da
+   * máquina de estados espelhada, o pintor aplicando os valores. O player de mídia continua o do TS: cada quadro pergunta a ele
+   * o vídeo/GIF de cada forma com mídia (como o `mediaFrame` do `paintSlideTo`). false = o chamador pinta pelo TS.
+   */
+  private paintStageRust(ctx: CanvasRenderingContext2D, slide: Slide, ps: PlaybackSlide, animMs: number, fit: { ox: number; oy: number; scale: number },
+    hasMedia: boolean, stage: RustStage, which: 0 | 1, mediaInfo: Map<string, SlideMediaInfo>,
+    bytes: (part: string) => Uint8Array | undefined): boolean {
+    const rs = this.rust;
+    if (!rs) return false;
+    const frames = new Map<number, { image: PaintImage; alpha: number } | null>();
+    if (hasMedia) {
+      slide.shapes.forEach((sh, i) => {
+        if (sh.inherited || !(sh.media || sh.image?.mime === 'image/gif')) return;
+        const mf = this.media.frame(sh, ps, animMs, bytes, mediaInfo.get(sh.id));
+        frames.set(i, mf && 'image' in mf && 'alpha' in mf ? mf : mf ? { image: mf as PaintImage, alpha: 1 } : null);
+      });
+    }
+    try {
+      const r = rs.paintStage(ctx, stage.h, stage.at, which, fit.scale, fit.ox, fit.oy, {
+        media: hasMedia, clock: this.media.clock, mediaFrame: (i) => frames.get(i) ?? null,
+      });
+      if (r.status === 0 && !r.empty) return true;
+      if (r.status === 11) {
+        this.disposeRust();
+        this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error: new Error('uo-slides: the engine instance stopped') } }));
+      }
+    } catch (error) {
+      this.disposeRust();
+      this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error } }));
+    }
+    return false;
+  }
+
   /** Quadro da reprodução automática: o instante atual da linha do tempo, no palco. */
   protected paintPlayback(ctx: CanvasRenderingContext2D): void {
     const a = this.auto!;
-    const st = this.pres ? playbackStateAt(a.tl, this.now() - a.t0) : null;
+    const t = this.now() - a.t0;
+    const st = this.pres ? playbackStateAt(a.tl, t) : null;
+    const rstage: RustStage | undefined = a.rtl ? { h: a.rtl, at: t } : undefined;
     if (st?.slide && st.pos !== a.pos) {
       a.pos = st.pos;
       this.index = st.slide.index;
@@ -1121,16 +1180,18 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     }
     // origem da transição: o anterior no estado final (preto no 1º)
     this.paintStage(ctx, st?.slide ?? null, st?.animMs ?? 0, st?.transitionProgress ?? 1,
-      st?.from ? { slide: st.from, animMs: Infinity, key: `a${st.from.index}`, media: true } : null);
+      st?.from ? { slide: st.from, animMs: Infinity, key: `a${st.from.index}`, media: true } : null, rstage);
   }
 
   /** Quadro da apresentação, no palco; na tela de fim, o aviso sobre o preto. */
   protected paintShow(ctx: CanvasRenderingContext2D): void {
-    const f = this.show!.ss.frame(this.now());
+    const s = this.show!;
+    const now = this.now();
+    const f = s.ss.frame(now);
     const o = f.from;
     // origem congelada: vídeo/GIF na capa (não volta a tocar o som do slide que saiu)
     this.paintStage(ctx, f.slide, f.animMs, f.transitionProgress,
-      o ? { slide: o.slide, animMs: o.animMs, key: `p${o.key}`, media: false } : null);
+      o ? { slide: o.slide, animMs: o.animMs, key: `p${o.key}`, media: false } : null, s.rs ? { h: s.rs, at: now } : undefined);
     if (!f.ended) return;
     // medido: aviso de interface pequeno (texto de 11 px numa tela de 1080), no topo, centralizado
     const W = this.canvas.clientWidth;
@@ -1152,7 +1213,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * (pintada uma vez por passagem).
    */
   private paintStage(ctx: CanvasRenderingContext2D, slide: PlaybackSlide | null, animMs: number, progress: number,
-    from: { slide: PlaybackSlide; animMs: number; key: string; media: boolean } | null): void {
+    from: { slide: PlaybackSlide; animMs: number; key: string; media: boolean } | null, rstage?: RustStage): void {
     const dpr = window.devicePixelRatio || 1;
     const W = this.canvas.clientWidth, H = this.canvas.clientHeight;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1161,7 +1222,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     if (!slide || !fit || !this.pres) return;
     this.media.fullScreen = null;
     if (progress >= 1) {
-      this.paintPlaybackSlide(ctx, slide, animMs, fit);
+      this.paintPlaybackSlide(ctx, slide, animMs, fit, true, rstage, 0);
       this.paintFullScreenVideo(ctx, fit);
       if (this.media.mode === 'realtime') this.media.syncRealtime();
       return;
@@ -1172,14 +1233,14 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const tctx = to.getContext('2d')!;
     tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     tctx.fillStyle = '#000'; tctx.fillRect(0, 0, W, H);
-    this.paintPlaybackSlide(tctx, slide, animMs, fit);
+    this.paintPlaybackSlide(tctx, slide, animMs, fit, true, rstage, 0);
     const fromCv = this.fromCanvas = this.workCanvas(this.fromCanvas);
     const key = `${from?.key ?? 'preto'}:${fromCv.width}x${fromCv.height}`;
     if (key !== this.fromKey) {
       const fctx = fromCv.getContext('2d')!;
       fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       fctx.fillStyle = '#000'; fctx.fillRect(0, 0, W, H);
-      if (from) this.paintPlaybackSlide(fctx, from.slide, from.animMs, fit, from.media);
+      if (from) this.paintPlaybackSlide(fctx, from.slide, from.animMs, fit, from.media, rstage, 1);
       this.fromKey = key;
     }
     ctx.save();
