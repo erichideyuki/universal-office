@@ -135,6 +135,7 @@ fn valid_list(rng: &mut Rng, res: &mut SlidesResources) -> s::SlidesList {
             y: rng.f64_edge(),
             laid_w: if rng.bool() { Some(rng.f64_edge()) } else { None },
             fit_allowed: rng.bool(),
+            bullet: rng.bool(),
             letter_spacing_px: rng.f64_edge(),
             kern: rng.bool(),
             fill: s::Paint::Css(color(rng)),

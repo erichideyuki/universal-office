@@ -3,15 +3,16 @@
 //! tracked samples; the `.ppt` records wait for B2) and compares the canonical JSON digests exactly.
 //!
 //! Facets compared: `input`, `read`, `pres`, `slides`, and per slide `n<N>` (the slide without
-//! `timing`) with `nmodel`; `s<N>`/`model` include `timing` (frontier B6) and are listed as not
-//! replayed. Set `UO_PPTX_DUMP=<dir>` to write the Rust texts for diffing against the TS ones.
+//! `timing`) with `nmodel`, and, since B6 ported `parseSlideTiming`, `s<N>`/`model` (the slide WITH its
+//! timing model); only `dropped` (what the TS canon dropped: a property of the TS values) stays unreplayed.
+//! Set `UO_PPTX_DUMP=<dir>` to write the Rust texts for diffing against the TS ones.
 #![cfg(feature = "canon")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::path::{Path, PathBuf};
 
 use uo_dml_render::canon::Canon;
-use uo_pptx::canon::{bytes_digest, model_hash, presentation_json, slide_record, text_digest};
+use uo_pptx::canon::{bytes_digest, model_hash, presentation_json, slide_record, slide_record_with_timing, text_digest};
 use uo_pptx::{Deck, Limits};
 use uo_testkit::{Capture, Replay};
 
@@ -80,6 +81,7 @@ fn replay(file: &str) -> (usize, uo_testkit::Report) {
         rp.check(key, "pres", &text_digest(&pres_text));
         rp.check(key, "slides", &pres.slides.len().to_string());
         let mut texts: Vec<String> = Vec::new();
+        let mut full: Vec<String> = Vec::new();
         for i in 0..pres.slides.len() {
             let idx = u32::try_from(i).unwrap();
             let model = deck.slide(idx).unwrap_or_else(|e| panic!("{key} slide {i}: {e}"));
@@ -88,14 +90,33 @@ fn replay(file: &str) -> (usize, uo_testkit::Report) {
             let text = slide_record(&Canon { src: &src }, &notes, &model);
             dump(key, &format!("n{i}"), &text);
             rp.check(key, &format!("n{i}"), &text_digest(&text));
-            rp.skip(key, &format!("s{i}"));
+            let ftext = slide_record_with_timing(&Canon { src: &src }, &notes, &model);
+            dump(key, &format!("s{i}"), &ftext);
+            rp.check(key, &format!("s{i}"), &text_digest(&ftext));
+            full.push(ftext);
             texts.push(text);
         }
         rp.check(key, "nmodel", &model_hash(&pres_text, &texts));
-        rp.skip(key, "model");
+        rp.check(key, "model", &model_hash(&pres_text, &full));
         rp.skip(key, "dropped");
     }
     (decks, rp.finish())
+}
+
+/// B6: animation-heavy decks (every effect class, iterate, triggers, media, bookmarks, every transition kind):
+/// the whole slide model including `timing` (`parseSlideTiming`).
+#[test]
+fn b6a_timing_decks_match_the_ts() {
+    let (decks, report) = replay("model-b6a.capture");
+    eprintln!("model-b6a: {decks} decks, {}", report.summary());
+    assert!(
+        report.mismatches.is_empty(),
+        "{}
+{}",
+        report.summary(),
+        report.describe(30)
+    );
+    assert_eq!(decks, 100);
 }
 
 #[test]

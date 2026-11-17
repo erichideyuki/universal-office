@@ -3,6 +3,9 @@
 //! same bases (px, normalized as `boxBase`, render.ts:106) into a slot template, and
 //! `evaluate_slots` runs the hooks per frame (`uo-render.md` S6). Slots are per viewport: the bases
 //! divide px geometry by the slide's px size.
+//!
+//! The engine is `anim_engine` (`shape_anim_hooks`, `ShapeHooks`), the formula evaluator `anim_formula`,
+//! the slot evaluation over a template `slots` (`evaluate_slots`).
 
 use uo_dml_render::color::CssColor;
 
@@ -78,27 +81,4 @@ pub struct UnitRef {
     pub count: u32,
     pub k_para: u32,
     pub count_para: u32,
-}
-
-/// What a slot governs (`ShapeAnimHooks`: `all`, `bg`, `para`, `unit`, `chartParts`; plus the
-/// playback opacity and the media frame of `paintSlideTo`'s options).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SlotKind {
-    Shape,
-    Background,
-    Paragraph(u32),
-    Unit(UnitRef),
-    ChartPart(u32),
-    Media,
-}
-
-/// One slot's value in a frame.
-#[derive(Clone, PartialEq, Debug)]
-pub enum SlotValue {
-    /// No animation applies: the static items are drawn as they are.
-    Static,
-    /// `shapeOpacity ≤ 0`, or the state is invisible: the governed items are skipped.
-    Hidden,
-    /// The playback opacity (`op`, shape slots) and the hook's state.
-    State { op: f64, state: Option<Box<PartState>> },
 }

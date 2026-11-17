@@ -24,11 +24,17 @@ class PartCtx {
   feat(tag) { this.features.add(tag); }
   nextId() { return ++this.id; }
   #rid() { return `rId${this.rels.length + 2}`; } // rId1 is the layout / master / theme link
-  addImage(png) {
-    const name = `image${this.media.length + 1}.png`;
+  addImage(png, ext = 'png') {
+    const name = `image${this.media.length + 1}.${ext}`;
     this.media.push([`ppt/media/${name}`, png]);
     const id = this.#rid();
     this.rels.push([id, 'image', `../media/${name}`]);
+    return id;
+  }
+  /** A relationship of any type to a package-internal target (B6: media). */
+  addRel(type, target) {
+    const id = this.#rid();
+    this.rels.push([id, type, target]);
     return id;
   }
   addLink(url) {

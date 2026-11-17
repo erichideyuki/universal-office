@@ -20,6 +20,8 @@ the readers run in plain Node (a slide reads in 3–40 ms).
 | `js/lib/{zip,png,canon-json,common}.mjs` | deterministic zip writer, tiny PNGs, canonical JSON, plumbing |
 | `js/capture-model.mjs` | TS `Presentation` / `Slide` models → capture (+ optional detail sidecar) |
 | `js/capture-ppt.mjs` | TS `.ppt` → `.pptx` parts → capture |
+| `js/capture-timing.mjs`, `js/lib/gen/b6.mjs` | B6: `parseSlideTiming` per slide, four playback timelines, states, hook sweeps, four `SlideShow` scripts and the slot recording (every anim hook call of `paintSlideTo`: base in, `PartState` out); formula corpus and numeric helpers (`--formulas`). Replayed by `tests/timing_replay.rs`; record `uo-pptx.md` "B6 — timing and playback" |
+| `tests/captures/timing-{samples,b1a,b6a}.{capture,frames.gz}`, `timing-formula.{capture,formulas.gz}`, `model-b6a.capture`, `decks/b6a/` | the B6 captures: digests per deck (`t<N> tl.<v> st.<v> hk sh.<k> fr`), the hook-call sidecar (tab-separated lines, numbers as the 16 hex digits of the f64 bits, 1.4 MB) and the formula results (31 KB); 3.7 MB with the decks |
 | `tests/captures/decks/b1a/NNNN.pptx` | the 200 committed generated decks (CI) |
 | `tests/captures/model-samples.capture`, `model-samples.json.gz` | 53 samples: digests, and the canonical JSON text itself |
 | `tests/captures/model-b1a.capture` | the 200 generated decks: digests |
@@ -30,6 +32,7 @@ the readers run in plain Node (a slide reads in 3–40 ms).
 | `tests/captures/decks/b3a/NNNN.pptx`, `tests/captures/textlayout-{samples,b1a,b3a,b3a-nokerning-noseg}.{capture,measures.tsv.gz}` | the 120 text-heavy decks and the text-layout captures (5.1 MB with the logs) |
 | `js/compare-drawops.mjs`, `js/selftest-drawops.mjs` | the Rust-list-vs-TS comparison (B4) and the self-test (`node --test`) |
 | `tests/captures/drawops-samples.{capture,ops.gz,measures.tsv.gz}`, `drawops-b1a.*` | the draw-op streams (draw form) per slide and view, digests, the measureText log |
+| `core/crates/uo-charts/js/capture-charts.mjs`, `tests/captures/charts-{c1a,samples,diff}.*` | uo-charts C-0 (group `c1a`: 600 generated charts, seed base 700000; 26 sample charts; 2,760 differential cases): chart model, host log, ops, measure asks, bounds, layout facets; it reuses `lib/{record-ctx,opstream,canon-json,common}.mjs` and `gen/rand.mjs` of this folder; the recorder gained the opt-in capabilities `roundRect`, `strictFont` and the measurer's font box (record `uo-charts.md` "C-0 — harness") |
 
 ## Commands
 
@@ -41,6 +44,13 @@ node core/crates/uo-pptx/js/capture-model.mjs --gen b1a --decks core/crates/uo-p
 node core/crates/uo-pptx/js/capture-ppt.mjs
 # the committed decks still match the generator (exit 1 and `DIFFERS:` lines otherwise)
 node core/crates/uo-pptx/js/gen-decks.mjs --gen b1a --check
+# B6 timing and playback (about 40 s for everything)
+node core/crates/uo-pptx/js/gen-decks.mjs --gen b6a
+node core/crates/uo-pptx/js/capture-model.mjs --gen b6a --decks core/crates/uo-pptx/tests/captures/decks
+node core/crates/uo-pptx/js/capture-timing.mjs --samples
+node core/crates/uo-pptx/js/capture-timing.mjs --gen b6a --decks core/crates/uo-pptx/tests/captures/decks
+node core/crates/uo-pptx/js/capture-timing.mjs --gen b1a --decks core/crates/uo-pptx/tests/captures/decks
+node core/crates/uo-pptx/js/capture-timing.mjs --formulas --decks core/crates/uo-pptx/tests/captures/decks
 # B3 text layout (about 25 s for all four captures)
 node core/crates/uo-pptx/js/gen-decks.mjs --gen b3a
 node core/crates/uo-pptx/js/capture-textlayout.mjs --samples
@@ -93,6 +103,7 @@ Groups (disjoint seed ranges, so adding a group never changes another; each deck
 | `b1a` | 100000–100199 | 200 (4.6 MB) | CI: decks committed |
 | `b3a` | 300000–300119 | 120 (2.8 MB) | CI: decks committed; text-heavy slides (B3) |
 | `b5a` | 500000–500149 | 150 (3.7 MB) | CI: SmartArt decks (B5a), `js/lib/gen/b5a.mjs`; capture `model-b5a.capture` |
+| `b6a` | 600000–600099 | 100 (1.8 MB) | CI: timing and playback decks (B6), `js/lib/gen/b6.mjs`: every effect class, iterate, triggers, media, every transition kind; captures `model-b6a.capture`, `timing-b6a.*` |
 | `b1-big` | 200000–201999 | 2,000, larger decks | local only |
 
 B3–B6 add groups in `groups.mjs` (own seed range, own builder or profile in `lib/gen/`): text layout stress, render,
@@ -129,7 +140,7 @@ Records (`samples/<path>` and `gen/<group>/<NNNN>`), facets: `input` (`len:sha25
 `read` (`ok` or `err:<message>`), `pres`, `slides` (count), `s<N>` (slide N), `model` (one hash over everything),
 `dropped`. Digest = `len:sha256[0..32]` of the UTF-8 text.
 
-Added for the Rust read path (B1b), existing facets unchanged: `n<N>` = the slide record without `timing` (`parseSlideTiming` is B6), `nmodel` = `model` over `pres` + the `n<N>` texts. Rust compares `input read pres slides n<N> nmodel`; `s<N>`, `model` and `dropped` are listed as not replayed until B6; the 25 `.ppt` records until B2.
+Added for the Rust read path (B1b), existing facets unchanged: `n<N>` = the slide record without `timing` (`parseSlideTiming` is B6), `nmodel` = `model` over `pres` + the `n<N>` texts. Rust compares `input read pres slides n<N> nmodel`, and since B6 (`parseSlideTiming` ported) also `s<N>` and `model`; `dropped` (what the TS canon dropped) is not replayed; the 25 `.ppt` records wait for B2's replay.
 
 A slide that throws is `s<N>=err:<message>` and the deck still
 records the other slides (no sample or generated deck throws today: 0 errors in 253 decks).
@@ -222,7 +233,7 @@ replay.finish().assert_clean();
 - **Draw-op stream** over `paintSlideTo` (primary B4 gate): **DONE in R-S4** (2026-11-17): `js/lib/record-ctx.mjs` (the recording
   context, capability set pinned), `js/capture-drawops.mjs`, `tests/captures/drawops-{samples,b1a}.*` (53 samples at two views and
   the first 100 generated decks, 6.5 MB), `js/compare-drawops.mjs` (the Rust-list-vs-TS comparison, waits for the B4 producer) and
-  `js/selftest-drawops.mjs`; the format, forms, the measureText log and what B4 needs are in `uo-render.md` "R-S3/R-S4". Still
+  `js/selftest-drawops.mjs`; B4 (2026-11-17) regenerated the two drawops captures after one recorder change (the recipe hash of an offscreen canvas skips `measure` and `set` lines, `uo-dml-render.md` "B4 — render") and added the Rust side `js/emit-uolf.mjs` + `uo-pptx/examples/emit_uolf.rs` (1,166/1,202 and 246/246 equal; the 36 differing views are chart frames); the format, forms, the measureText log and what B4 needs are in `uo-render.md` "R-S3/R-S4". Still
   open: Chromium pixels as the second gate (opt-in, like Write's); the 100-deck cut of b1a (all 200 decks and both views regenerate
   with `--max`/`--views`, 27.5 MB, local only); the advance tables below need a REAL canvas or `uo-fonts` (the committed measureText
   log records what the TS asks for, answered by a deterministic stub).
@@ -231,3 +242,17 @@ replay.finish().assert_clean();
 - Generator groups for B4–B6: charts (the lost `gen-charts.cjs` redone), SmartArt `dsp:spTree`, media, metafiles, embedded
   fonts (never font files in the repo; names only), `.ppt` through PowerPoint COM on this machine (Windows-only, outside CI).
 - Mutated `.pptx`/`.ppt` inputs (byte-level, like `capture-doc.mjs`) for the reader's error paths and no-panic tests.
+
+## B5b captures (2026-11-17)
+
+- `tests/captures/meta-b5b.{capture,ops.gz,inputs}` (3.9 MB): the frozen TS rasterizers (`raster.ts` `rasterizeSpecialImage`: metafiles, PICT, TIFF) over the recording context for 873 synthetic files (`js/lib/gen/meta-*.mjs`, seeds
+  700000.., EMF/EMF+/WMF/PICT/TIFF/EOT and damaged copies), 1,267 rasterizations; `capture-meta.mjs` writes it (the metafile module is imported fresh per case: its font memo is module state), `compare-meta.mjs` compares the Rust
+  recipes replayed by `uo-wasm/js/meta-player.ts` line by line, `diff-meta.mjs` shows the first difference of one file, `coverage-meta.mjs` lists the TS lines the set misses. EOT cases store the sfnt digest, TIFF the RGBA digest.
+- `tests/captures/drawops-b5b.*` and `decks/b5b/` (40 decks, 0.9 MB): the draw-op stream of slides whose pictures are those files (`js/lib/gen/b5b.mjs`, group `b5b`), recorded with `capture-drawops.mjs --gen b5b --special`
+  (the special pictures are rasterized as the viewer does, at the display size of their first use: `lib/ts-special.mjs`), compared with `emit-uolf.mjs` + `compare-drawops.mjs` (the frame files flag recipe bitmaps in bit 31 of the length).
+  The two older drawops captures are unchanged (their decks have no such pictures).
+
+## C-6 additions (charts in slides, 2026-11-17)
+
+- Group `c1d` (`js/lib/gen/c1d.mjs`, seeds 800000.., 60 decks, 3.3 MB under `tests/captures/decks/c1d/`): slides with 1-2 charts each from the `uo-charts` generator (`crates/uo-charts/js/gen/charts.mjs`, the `c:chartSpace` families; the chartex ones are skipped, the TS reader does not read them), their pictures as chart-local relationships, `themeOverride` parts for the `alt` theme, a random shape now and then. Captured with `capture-drawops.mjs --gen c1d --decks core/crates/uo-pptx/tests/captures/decks` into `drawops-c1d.*` (182 slide views, 244,618 draw lines, 1.8 MB `.ops.gz`); compared with `emit-uolf.mjs` + `compare-drawops.mjs` (182/182) and by `slides_drawops.test.mjs` through the wasm module.
+- `record-ctx.mjs` `DEFAULT_CAPS` gained `roundRect: true` and `strictFont: true` (they were opt-in for the chart captures); `drawops-samples.*` was re-recorded (only its 36 chart views change; `drawops-b1a` is unchanged). The parity stub answers `Metrics` (`tests/support/stub_measure.rs`).

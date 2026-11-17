@@ -329,7 +329,7 @@ fn preset_color(name: &str) -> Option<&'static str> {
 }
 
 /// `colorFromDml` over a bare colour table: the only part of the theme the resolution reads.
-fn color_in(el: Option<Element<'_>>, colors: &JsRecord<CssColor>) -> Option<CssColor> {
+pub(crate) fn color_in(el: Option<Element<'_>>, colors: &JsRecord<CssColor>) -> Option<CssColor> {
     let el = el?;
     let name = el.name();
     let base: String = match name {

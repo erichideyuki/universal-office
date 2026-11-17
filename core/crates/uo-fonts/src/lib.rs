@@ -28,6 +28,7 @@ mod lig_trie;
 #[allow(dead_code)] // consumed by the hyphenation, variant, catalog, odttf and embedding ports
 pub mod limits;
 mod mem;
+mod mtx;
 pub mod odttf;
 pub mod outline;
 pub mod policy;
@@ -49,7 +50,7 @@ pub use embed::{
     EmbeddingPlan, EmbeddingPolicy, FaceRequest, FaceToEmbed, FontEmbeddingSettings, FontUsage, POWERPOINT_COMMON_FONTS,
     POWERPOINT_DEFAULT_EMBEDDING, SkipReason, WORD_COMMON_FONTS, WORD_DEFAULT_EMBEDDING, embedding_requests, plan_font_embedding,
 };
-pub use eot::sfnt_to_eot;
+pub use eot::{looks_like_eot, sfnt_to_eot};
 pub use error::{FontError, LimitKind};
 pub use face::{Face, FontMetrics};
 pub use gsub::LigGroup;

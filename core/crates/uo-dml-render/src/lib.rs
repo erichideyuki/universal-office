@@ -26,6 +26,7 @@ pub mod canon;
 pub mod color;
 pub mod emit;
 pub mod ids;
+pub mod metafile;
 pub mod model;
 pub mod read;
 pub mod read_dml;
@@ -45,6 +46,8 @@ pub use ids::{MediaId, Span, ThemeId};
 pub use model::Shape;
 pub use source::{Limits, PartSource, R, ReadError};
 pub use theme::Theme;
+/// `looksLikeEot` and `eotToSfnt` of `eot.ts`: the reader lives in `uo_fonts::eot`; the deck's font reader (`uo-pptx`) calls it here.
+pub use uo_fonts::eot::{looks_like_eot, read as eot_to_sfnt};
 
 /// Nothing caches yet; the generated-bitmap and chart-model caches of B4 will be emptied here
 /// (memory gate M1, `uo-pptx.md` M5 table).

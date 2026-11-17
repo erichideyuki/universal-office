@@ -1344,6 +1344,7 @@ character spacing (`Tc`) — measured against PowerPoint PDF in its own oracle g
 | `ImageFx` | `fxImage` (448–503; recolour of the decoded pixels) | image, `ImageFx` (duotone, alpha, gray, biLevel, lum, clrChange) → derived image id, cached by the shell |
 | `Warp` | `paintWarp` from the layout on (1868–1984) + `text-warp.ts` (594: ink metrics at 10 px/pt, line rasters at `k ≤ 4096`, strips/cells) | `WarpLine`s (runs with `FontRef`s, x, colours, strokes, pattern, spc, alpha, baseline, sizePt, lnPct, align, trailing), prst, adj, `fromWordArt`, box, `pxPerPt`, shadow parameters |
 | `MetafileRop` | the raster-op path of `metafile.ts` (312–330, `getImageData`) | ROP code, rect, operand bitmap |
+| *(B5b note)* | `MetafileRop` stays declared and unused: the metafile pictures are recipes (`SlidesResources::recipe_bitmap`); the exact PATINVERT is the recipe's `XorRect` op, run by `meta-player.ts` with `xorRect` of `slides-effects.ts` | `uo-dml-render.md` "B5b — metafiles" |
 | *(slot-driven)* `Reveal` / `SoftReveal` | `reveal.ts` (`applyReveal`, `applySoftReveal`) | filter, transition, progress, box — from the slot value (S6) |
 | *(between slides)* transition | `transition.ts` `paintTransition` | type, attrs, progress, direction — from the `SlideShow` frame, not a list item |
 
@@ -1648,3 +1649,7 @@ About 85 tool calls (reading the design, `render.ts` — 1,300 of its 2,662 line
 Edit tool; the capture's measure-key parsing; a stale `fallbackEnd` in the slot test; unused-parameter errors found by the CI tsc flags; the draw form kept `setLineDash` until the first capture was regenerated; the compare script first imported the
 capture CLI, which runs it). Wall times: captures 13.0 s (samples, 1,202 views plus 1,202 `paintShapesTo` runs; the TS paint is a few ms per slide) and 11.0 s (b1a, 100 decks), self-test 0.3 s, `tsc` over the new files about 4 s. Parity rounds with a
 verifier: none (the frozen TS is the oracle; the first producer comparison is B4).
+
+## Slides extensions — C-6 additions (charts, 2026-11-17)
+
+One schema change for the chart engine (`schema/slides.uos`, regenerated; Write's schemas and the pinned hash are unchanged): `SItem::ChartFont(FontRef)` (the chart's `[italic ][bold ]<size.toFixed(2)>px <stack>` font string), `SItem::FillText(FillTextItem { text: Span, x, y })` (a plain `fillText`), `PathOp::RoundRect(RoundRectOp { x, y, w, h, r })` and `TileDef.nat: Pair?` (CT-1: the chart's natural tile size in px; with it `scale` is 1 and `tx`/`ty` are px). `validate` checks the face of `ChartFont` and the text span of `FillText`; the painter (`paint-slides.ts`, `slides-effects.ts`) replays them. Record: `uo-charts.md` "C-6 — Slides host".

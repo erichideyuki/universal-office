@@ -46,8 +46,10 @@ uo-ffi = { path = "../crates/uo-ffi" }
 # the image_decode target (src/image.rs)
 uo-image = { path = "../crates/uo-image" }
 # the pptx_open and dml_shapes targets (src/pptx.rs): the Slides read path
-uo-pptx = { path = "../crates/uo-pptx", features = ["canon", "ppt"] }
+uo-pptx = { path = "../crates/uo-pptx", features = ["canon", "ppt", "edit"] }
 uo-dml-render = { path = "../crates/uo-dml-render", features = ["canon"] }
+# the chart_parse target (src/charts.rs): the chart model parser (the canon feature compares models with NaN fields)
+uo-charts = { path = "../crates/uo-charts", features = ["canon"] }
 # fonts built in code for the font targets and their seeds (no proprietary bytes)
 uo-testkit = { path = "../crates/uo-testkit" }
 # differential oracle of the inflate target (the same pinned version uo-opc uses to deflate)
@@ -190,6 +192,62 @@ bench = false
 [[bin]]
 name = "jsnum_parse"
 path = "fuzz_targets/jsnum_parse.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "slides_emit"
+path = "fuzz_targets/slides_emit.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "slides_edit"
+path = "fuzz_targets/slides_edit.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chart_parse"
+path = "fuzz_targets/chart_parse.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chart_scale"
+path = "fuzz_targets/chart_scale.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chart_emit"
+path = "fuzz_targets/chart_emit.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "slide_timing"
+path = "fuzz_targets/slide_timing.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "anim_formula"
+path = "fuzz_targets/anim_formula.rs"
 required-features = ["libfuzzer"]
 test = false
 doc = false
@@ -582,6 +640,38 @@ bench = false
 [[bin]]
 name = "ppt_convert"
 path = "fuzz_targets/ppt_convert.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "emf_play"
+path = "fuzz_targets/emf_play.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pict_play"
+path = "fuzz_targets/pict_play.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tiff_slides"
+path = "fuzz_targets/tiff_slides.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "eot_read"
+path = "fuzz_targets/eot_read.rs"
 required-features = ["libfuzzer"]
 test = false
 doc = false

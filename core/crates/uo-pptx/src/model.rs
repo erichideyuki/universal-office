@@ -90,8 +90,8 @@ pub struct SlideModel {
     pub bg_tile: Option<bool>,
     pub animations: Option<Vec<SlideAnimEntry>>,
     pub transition: Option<SlideTransition>,
-    /// `parseSlideTiming` (always set by `readSlide` in the TS): **frontier B6**, `None` until then.
-    pub timing: Option<TimingModel>,
+    /// `parseSlideTiming` (always set by `readSlide` in the TS; shared with the playback timeline and the show).
+    pub timing: Option<Arc<TimingModel>>,
     /// The slide's effective theme (slide → layout → master clrMap): not in the TS model, kept for
     /// the emission and the timing colours.
     pub theme: Option<Arc<Theme>>,

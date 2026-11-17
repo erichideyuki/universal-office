@@ -74,6 +74,14 @@ pub struct PdfDocument<S: PdfSink> {
     /// the opacity states in creation order (`GS<index>`): the rounded `ca` and `CA`
     alpha_states: Vec<(f64, f64)>,
     alpha_index: FxHashMap<(u64, u64), u32>,
+    /// the extra graphics states (`GX<index>`: blend mode, soft mask...), de-duplicated by their entries
+    ext_states: Vec<String>,
+    ext_index: FxHashMap<String, u32>,
+    /// the form XObjects (`Fm<index>`) and tiling patterns (`Pt<index>`): their object numbers
+    forms: Vec<u32>,
+    patterns: Vec<u32>,
+    /// the `/Resources` object forms and patterns point to, allocated at the first one and defined at `build`
+    res_obj: Option<u32>,
     pub(crate) pages: Vec<PageRec>,
     outline: Vec<PdfOutlineItem>,
     /// a limit or a sink failure that a page met: the document cannot be built
@@ -95,6 +103,11 @@ impl<S: PdfSink> PdfDocument<S> {
             shadings: Vec::new(),
             alpha_states: Vec::new(),
             alpha_index: FxHashMap::default(),
+            ext_states: Vec::new(),
+            ext_index: FxHashMap::default(),
+            forms: Vec::new(),
+            patterns: Vec::new(),
+            res_obj: None,
             pages: Vec::new(),
             outline: Vec::new(),
             failed: None,
@@ -236,6 +249,96 @@ impl<S: PdfSink> PdfDocument<S> {
         Ok(PdfShading { index, obj_num })
     }
 
+    /// An extra graphics state (`GX<index>`, an `/ExtGState` entry): `entries` are the dictionary
+    /// entries without `<<` `>>` (`/BM /Multiply /ca 0.5`, a `/SMask`). Equal entries share a state.
+    /// For the hosts that write their own content streams (the Slides painter): Write never calls it.
+    pub fn add_ext_gstate(&mut self, entries: &str) -> u32 {
+        if let Some(i) = self.ext_index.get(entries) {
+            return *i;
+        }
+        let index = u32::try_from(self.ext_states.len()).unwrap_or(u32::MAX);
+        self.ext_states.push(entries.to_owned());
+        self.ext_index.insert(entries.to_owned(), index);
+        index
+    }
+
+    /// The object number of the `/Resources` dictionary that forms and patterns use (the document
+    /// resources, defined at `build`): allocated at the first need.
+    fn resources_ref(&mut self) -> Result<u32> {
+        if let Some(n) = self.res_obj {
+            return Ok(n);
+        }
+        let n = self.w.alloc()?;
+        self.res_obj = Some(n);
+        Ok(n)
+    }
+
+    /// A form XObject (`Fm<index>`, drawn with `/Fm<index> Do`): `content` is its content stream in
+    /// its own space, `bbox` its clip. With `group` (the colour space name, `DeviceRGB` or
+    /// `DeviceGray`) it is a transparency group (`/S /Transparency`, isolated). Written at once;
+    /// its resources are the document's (a reference defined at `build`).
+    pub fn add_form(&mut self, bbox: [f64; 4], content: Vec<u8>, group: Option<&str>) -> Result<u32> {
+        let res = self.resources_ref()?;
+        let num = self.w.alloc()?;
+        let body = self.w.compress_body(content, true)?;
+        let group = match group {
+            Some(cs) => format!(" /Group << /S /Transparency /CS /{cs} /I true >>"),
+            None => String::new(),
+        };
+        let dict = format!(
+            "/Type /XObject /Subtype /Form /BBox [{} {} {} {}]{group} /Resources {res} 0 R",
+            F(bbox[0]),
+            F(bbox[1]),
+            F(bbox[2]),
+            F(bbox[3])
+        );
+        self.w.define_body(num, &dict, body)?;
+        let index = u32::try_from(self.forms.len()).unwrap_or(u32::MAX);
+        self.forms.push(num);
+        Ok(index)
+    }
+
+    /// The object number of form `index` (for a soft mask's `/G`).
+    pub fn form_object(&self, index: u32) -> Option<u32> {
+        self.forms.get(usize::try_from(index).ok()?).copied()
+    }
+
+    /// A coloured tiling pattern (`Pt<index>`, set with `/Pattern cs /Pt<index> scn`): `entries` are
+    /// the dictionary entries that describe it (`/BBox`, `/XStep`, `/YStep`, `/Matrix`), `content` the
+    /// cell. The matrix maps pattern space to the default space of the content stream that uses it.
+    pub fn add_pattern(&mut self, entries: &str, content: Vec<u8>) -> Result<u32> {
+        let res = self.resources_ref()?;
+        let num = self.w.alloc()?;
+        let body = self.w.compress_body(content, true)?;
+        let dict = format!("/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 {entries} /Resources {res} 0 R");
+        self.w.define_body(num, &dict, body)?;
+        let index = u32::try_from(self.patterns.len()).unwrap_or(u32::MAX);
+        self.patterns.push(num);
+        Ok(index)
+    }
+
+    /// A shading with sampled colours (a type 0 function of 8-bit samples) in the coordinates of the
+    /// content that paints it (no page flip, unlike [`PdfDocument::add_shading`]): axial from
+    /// (`coords[0]`, `coords[1]`) to (`coords[2]`, `coords[3]`), or radial with `coords` =
+    /// `x0 y0 r0 x1 y1 r1`. `gray` makes the samples 1 byte (DeviceGray, for soft masks), else 3
+    /// (DeviceRGB). The end colours extend.
+    pub fn add_user_shading(&mut self, radial: bool, coords: &[f64], gray: bool, samples: &[u8]) -> Result<PdfShading> {
+        let comps = if gray { 1 } else { 3 };
+        let n = (samples.len() / comps).max(2);
+        let range = if gray { "0 1" } else { "0 1 0 1 0 1" };
+        let fdict = format!("/FunctionType 0 /Domain [0 1] /Range [{range}] /Size [{n}] /BitsPerSample 8 /Order 1 /Encode [0 {}]", n - 1);
+        let data = samples.get(..n * comps).unwrap_or(samples);
+        let func = self.w.add_stream(&fdict, data, true)?;
+        let cs = if gray { "DeviceGray" } else { "DeviceRGB" };
+        let coords = crate::num::FList(coords);
+        let kind = if radial { 3 } else { 2 };
+        let dict = format!("<< /ColorSpace /{cs} /ShadingType {kind} /Coords [{coords}] /Extend [true true] /Function {func} 0 R >>");
+        let obj_num = self.w.add_dict(&dict)?;
+        let index = u32::try_from(self.shadings.len()).unwrap_or(u32::MAX);
+        self.shadings.push(obj_num);
+        Ok(PdfShading { index, obj_num })
+    }
+
     /// Starts a page of `width_pt` x `height_pt` points. Draw on it and call
     /// [`PageWriter::finish`]; resources the page needs are created through
     /// [`PageWriter::document`] while it is open.
@@ -272,6 +375,9 @@ impl<S: PdfSink> PdfDocument<S> {
             let _ = write!(font_refs, "/F{} {n} 0 R", font.index());
         }
         let resources = self.resources(&font_refs);
+        if let Some(n) = self.res_obj {
+            self.w.define_text(n, &resources)?;
+        }
 
         let catalog = self.w.alloc()?;
         let pages_node = self.w.alloc()?;
@@ -346,18 +452,24 @@ impl<S: PdfSink> PdfDocument<S> {
     fn resources(&self, font_refs: &str) -> String {
         let font_dict = if font_refs.is_empty() { String::new() } else { format!("/Font << {font_refs} >>") };
         let mut xobj = String::new();
-        if !self.images.is_empty() {
+        if !self.images.is_empty() || !self.forms.is_empty() {
             xobj.push_str("/XObject <<");
             for (i, n) in self.images.iter().enumerate() {
                 let _ = write!(xobj, " /Im{i} {n} 0 R");
             }
+            for (i, n) in self.forms.iter().enumerate() {
+                let _ = write!(xobj, " /Fm{i} {n} 0 R");
+            }
             xobj.push_str(" >>");
         }
         let mut gs = String::new();
-        if !self.alpha_states.is_empty() {
+        if !self.alpha_states.is_empty() || !self.ext_states.is_empty() {
             gs.push_str("/ExtGState <<");
             for (i, (ca, cs)) in self.alpha_states.iter().enumerate() {
                 let _ = write!(gs, " /GS{i} << /Type /ExtGState /ca {} /CA {} >>", J(*ca), J(*cs));
+            }
+            for (i, entries) in self.ext_states.iter().enumerate() {
+                let _ = write!(gs, " /GX{i} << /Type /ExtGState {entries} >>");
             }
             gs.push_str(" >>");
         }
@@ -369,7 +481,19 @@ impl<S: PdfSink> PdfDocument<S> {
             }
             sh.push_str(" >>");
         }
-        if !gs.is_empty() || !sh.is_empty() { format!("<< {font_dict} {xobj} {gs} {sh} >>") } else { format!("<< {font_dict} {xobj} >>") }
+        let mut pat = String::new();
+        if !self.patterns.is_empty() {
+            pat.push_str(" /Pattern <<");
+            for (i, n) in self.patterns.iter().enumerate() {
+                let _ = write!(pat, " /Pt{i} {n} 0 R");
+            }
+            pat.push_str(" >>");
+        }
+        if !gs.is_empty() || !sh.is_empty() || !pat.is_empty() {
+            format!("<< {font_dict} {xobj} {gs} {sh}{pat} >>")
+        } else {
+            format!("<< {font_dict} {xobj} >>")
+        }
     }
 
     /// The outline tree from the flat list with levels (the port of `PdfDocument.WriteOutline` of

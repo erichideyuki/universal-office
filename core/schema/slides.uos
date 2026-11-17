@@ -154,6 +154,8 @@ enum PathOp tag "op" {
   Ellipse = "ellipse" (EllipseOp),
   Rect = "rect" (Rect4),
   Close = "close",
+  /// `ctx.roundRect(x, y, w, h, r)` with one radius (the chart engine's rounded frame and its legend swatches)
+  RoundRect = "roundRect" (RoundRectOp),
 }
 
 struct Cubic {
@@ -188,6 +190,15 @@ struct ArcToOp {
   y1: f64,
   x2: f64,
   y2: f64,
+  r: f64,
+}
+
+/// `ctx.roundRect(x, y, w, h, r)`: the producer never emits a negative radius (the canvas throws)
+struct RoundRectOp {
+  x: f64,
+  y: f64,
+  w: f64,
+  h: f64,
   r: f64,
 }
 
@@ -234,11 +245,50 @@ enum PatternSrc tag "kind" {
 }
 
 /// `ctx.createPattern`: `transform` is applied with `pat.setTransform` when the canvas supports it, else ignored
-/// (the TS test).
+/// (the TS test). With `tile` the pattern is the TS `tilePattern` (`@universal-office/charts`, `image.ts`): the
+/// painter reads the live transform (`hypot(a, b)`, `hypot(c, d)`) and the decoded image size, so the list
+/// carries only the parameters; `repeat` is `repeat` and `transform` is ignored.
 struct PatternRes {
   src: PatternSrc,
   repeat: Repeat,
   transform: Mat6?,
+  tile: TileDef?,
+}
+
+/// The model-side parameters of an `<a:tile>` use (`imageTile`, render.ts:522-530): the natural size of the tile
+/// is `image px x unit x scale` (`unit` = 914400 / dpi, or 9525 without a resolution), `tx`/`ty` are EMU (the
+/// painter multiplies them by `scale`).
+struct TileParams {
+  unit_x: f64,
+  unit_y: f64,
+  sx: f64,
+  sy: f64,
+  tx: f64,
+  ty: f64,
+  /// `a:tile algn`
+  algn: sym?,
+  /// `x`, `y` or `xy`
+  flip: sym?,
+}
+
+/// `tilePattern(ctx, img, iw, ih, natW, natH, spec, box)` of one pattern: `scale` is px per EMU, `bx` the box.
+///
+/// `nat` (the chart engine, CT-1): the natural tile size in px the producer computed with the TS arithmetic
+/// (`(wPt ?? w * 0.75) * S`, render.ts:261); when present `scale` is 1, `unit_x`/`unit_y` are not read and `tx`/`ty`
+/// are already px, so the painter passes the numbers to `tilePattern` as they are.
+struct TileDef {
+  params: TileParams,
+  scale: f64,
+  bx: Rect4,
+  nat: Pair?,
+}
+
+/// The four fractions of a `fillToRect` / `fillRect`.
+struct Edges {
+  l: f64,
+  t: f64,
+  r: f64,
+  b: f64,
 }
 
 enum ImageSrc tag "kind" {
@@ -323,6 +373,12 @@ struct FontRef {
   size_px: f64,
 }
 
+struct FillTextItem {
+  text: Span,
+  x: f64,
+  y: f64,
+}
+
 struct DrawImageItem {
   src: ImageSrc,
   /// source rectangle (the 9-argument drawImage)
@@ -371,6 +427,8 @@ enum SItem tag "op" {
   TransformByInverseOf = "transformByInverseOf" (u32),
   /// `ctx.getTransform().inverse().multiply(baseM)` applied with setTransform (`useBgFill`)
   TransformUnshape = "transformUnshape" (u32),
+  /// `ctx.setTransform(baseM)` of a captured register (the 3D extrusion draws in the slide's frame)
+  SetTransformReg = "setTransformReg" (u32),
   GlobalAlpha = "globalAlpha" (f64),
   /// `ctx.globalAlpha = ctx.globalAlpha * a` (the operand order is the TS one)
   GlobalAlphaMul = "globalAlphaMul" (f64),
@@ -390,6 +448,11 @@ enum SItem tag "op" {
   ShadowBlur = "shadowBlur" (f64),
   ShadowOffset = "shadowOffset" (ShadowOff),
   Font = "font" (FontRef),
+  /// the chart engine's `ctx.font = [italic ][bold ]<size.toFixed(2)>px <stack>` (render.ts:177-180): not `Font`'s string
+  /// (`700 <JS number>px`), so the recorder's `font=` and the `toFixed(2)` rounding are the chart's own
+  ChartFont = "chartFont" (FontRef),
+  /// a plain `ctx.fillText(text, x, y)` under the current state (no fit, no kerning change): the chart's labels
+  FillText = "fillText" (FillTextItem),
   TextAlign = "textAlign" (Align),
   TextBaseline = "textBaseline" (Baseline),
   ImageSmoothing = "imageSmoothing" (bool),
@@ -403,6 +466,9 @@ enum SItem tag "op" {
   StrokeRect = "strokeRect" (Rect4),
   ClearRect = "clearRect" (Rect4),
   DrawImage = "drawImage" (DrawImageItem),
+  /// the TS computes `fxImage(raw, fx)` at this point (the derived image is built, and cached, here): the painter
+  /// realizes the source now, so the order of its scratch canvases is the TS's
+  Prepare = "prepare" (ImageSrc),
   /// one `drawText` call: an index of `runs`
   Text = "text" (u32),
   LayerBegin = "layerBegin" (LayerBeginItem),
@@ -452,6 +518,9 @@ struct TextRun {
   /// `fontKerning = kern ? 'normal' : 'none'` when supported
   kern: bool,
   fill: Paint,
+  /// a bullet or marker: the TS sets `ctx.font` and `fillStyle` and calls `fillText`, nothing else (no kerning
+  /// state, spacing, fit, alpha, shadow or decoration); only `text`, `font`, `x`, `y` and `fill` are read
+  bullet: bool,
   /// `fillA < 1`: `globalAlpha x fillA`
   alpha_mul: f64?,
   shadow: TextShadow?,
@@ -481,6 +550,8 @@ struct BevelEffect {
   prst: sym?,
   rig: sym?,
   mat: sym?,
+  /// the light direction of the rig (`Bevel.dir`: `t`, `tl`, ...; the TS `lightAt(tab, b.dir, ...)`)
+  dir: sym?,
 }
 
 /// `paintWarp` from the laid-out lines on (render.ts:1868-1984 and text-warp.ts).
@@ -493,14 +564,13 @@ struct WarpEffect {
   lines: list<WarpLine>,
   /// the canvas shadow parameters of the layer composite (already x scale and x the blur constant)
   shadow: TextShadow?,
-  /// a tiled picture over the warped silhouette (`source-in`): image, scale, offset in px
+  /// a tiled picture over the warped silhouette (`source-in`): the TS `imageTile(layer, ..., x, y, scale, w, h)`
   tile: WarpTile?,
 }
 
 struct WarpTile {
   image: ImageSrc,
-  scale: f64,
-  off: Pair,
+  tile: TileDef,
 }
 
 struct WarpLine {
@@ -536,13 +606,29 @@ enum WarpPaintKind {
   Image = "image",
 }
 
-/// The letter fill built on the raster box at warp time (`letterFill`), so it travels as a spec.
+/// The letter fill built on the raster box at warp time (`letterFill`), so it travels as a spec. `stops` are the
+/// final stops `makeLinearGradient` adds (the PowerPoint sub-stops already expanded); a path gradient (`kind` path:
+/// `path` is `circle`, `rect` or `shape`) is rasterized by the painter from `raw` (the model stops: position,
+/// `#RRGGBB`, alpha) and `fill_to`, and falls back to the circular radial gradient of `stops` when it cannot.
 struct WarpPaint {
   kind: WarpPaintKind,
   angle: f64?,
+  scaled: bool,
   stops: list<Stop>,
+  path: sym?,
+  fill_to: Edges?,
+  raw: list<RawStop>,
   image: ImageSrc?,
-  tile: bool,
+  /// `fillTile`: the tile parameters (scale and box come from the warp raster)
+  tile: TileParams?,
+  /// `a:fillRect` of a stretched picture
+  fill_rect: Edges?,
+}
+
+struct RawStop {
+  pos: f64,
+  color: sym,
+  alpha: f64,
 }
 
 struct WarpRun {

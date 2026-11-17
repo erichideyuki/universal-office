@@ -68,6 +68,7 @@ pub fn sample_list(res: &mut SlidesResources) -> SlidesList {
             src: PatternSrc::Bitmap(tile),
             repeat: Repeat::Repeat,
             transform: Some(Mat6 { a: 0.96, b: 0.0, c: 0.0, d: 0.96, e: 0.0, f: 0.0 }),
+            tile: None,
         }],
         runs: Vec::new(),
         effects: Vec::new(),
@@ -164,6 +165,7 @@ pub fn sample_list(res: &mut SlidesResources) -> SlidesList {
             y: 120.0,
             laid_w: Some(250.0),
             fit_allowed: true,
+            bullet: false,
             letter_spacing_px: 0.0,
             kern: true,
             fill: Paint::Css(navy),
@@ -293,7 +295,7 @@ pub fn hostile_list(r: &mut Rng, lens: [usize; 5]) -> SlidesList {
     }
     for _ in 0..r.below(3) {
         let src = if r.below(2) == 0 { PatternSrc::Bitmap(idx(r, lens[4])) } else { PatternSrc::Image(ImageSrc::Media(idx(r, lens[2]))) };
-        l.patterns.push(PatternRes { src, repeat: Repeat::NoRepeat, transform: None });
+        l.patterns.push(PatternRes { src, repeat: Repeat::NoRepeat, transform: None, tile: None });
     }
     for _ in 0..r.below(3) {
         let fill = match r.below(3) {
@@ -308,6 +310,7 @@ pub fn hostile_list(r: &mut Rng, lens: [usize; 5]) -> SlidesList {
             y: num(r),
             laid_w: if r.below(2) == 0 { Some(num(r)) } else { None },
             fit_allowed: r.below(2) == 0,
+            bullet: r.below(2) == 0,
             letter_spacing_px: num(r),
             kern: r.below(2) == 0,
             fill,

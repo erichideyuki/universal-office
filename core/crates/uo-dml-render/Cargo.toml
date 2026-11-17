@@ -19,15 +19,27 @@ uo-jsnum = { path = "../uo-jsnum" }
 uo-text = { path = "../uo-text" }
 # the parsed XML the reader walks and the theme keeps (fill/line/effect style lists are element ids into it)
 uo-opc = { path = "../uo-opc" }
+# the Slides display list the emitter fills (`uo_render::slides`: items, resources, the codec)
+uo-render = { path = "../uo-render" }
 # custom-geometry subpaths (`custGeom`), presets, colour modifiers and masks the emitter will call
 uo-drawingml = { path = "../uo-drawingml" }
+# the chart engine: `emit::chart` implements its host, canvas and measurement traits (frontier C-6)
+uo-charts = { path = "../uo-charts" }
+# `FormatLocale` of the chart emit (pt-BR, the TS host passes none)
+uo-numfmt = { path = "../uo-numfmt" }
 # the measurement table's maps (the same pinned version as uo-fonts and uo-render)
 rustc-hash = "=2.1.3"
+# the Slides TIFF decoder of the metafile module (B5b: `rasterizeSpecialImage` of a TIFF)
+uo-image = { path = "../uo-image" }
+# the EOT reader (MicroType Express) the deck's font reader calls through `uo_dml_render::eot_to_sfnt` (B5b: `eot.ts`)
+uo-fonts = { path = "../uo-fonts" }
 # SHA-256 of the canonical JSON digests (feature `canon`)
 uo-testkit = { path = "../uo-testkit", optional = true }
 
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# the capture reader of the metafile tests
+uo-testkit = { path = "../uo-testkit" }
 
 [lints]
 workspace = true

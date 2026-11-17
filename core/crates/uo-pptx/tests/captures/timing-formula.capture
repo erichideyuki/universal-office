@@ -1,0 +1,6 @@
+# Slides timing/playback/show (B6): digests of the TS timing model, timelines, states, hook sweeps and show scripts; see js/capture-timing.mjs and core/docs/modules/uo-pptx-captures.md
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+@ts-root-commit b92b60fae4c1c612de1de3174c199052d43b9230
+@variants playback {"a":{},"b":{"tickMs":33,"transitionFps":30},"c":{"useTimings":false,"defaultSlideMs":2500},"d":{"tickMs":16.666666666666668,"defaultSlideMs":4000}}; show {"a":{},"b":{"useTimings":false},"c":{"animations":false},"d":{"loop":true}}
+formula/ts	count=1740	results=169354:eb1391b65b780e52c0643d696919f6fe
+fn/media	acc=10879:e8c79345ac264e4b1e3418de59db86c7	gif=727:5b3e06b488f1a8b9b426aa569b1d85c8	fade=3399:cad4d1a6a10b1f98b416601fc9f7aec0

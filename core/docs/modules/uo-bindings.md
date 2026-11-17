@@ -6133,3 +6133,126 @@ uo-docx: `src/model/document.rs`, `src/session/io.rs`, `src/session/ops/{lists,t
 - TS: `editor_switch_tsc.mjs` editor and viewer exit 0, no output; vitest editor 34 files / 334 tests.
 - Packaging: `build-pkg font-files document-viewer write` (`UO_REQUIRE_ENGINE_WASM=1`) exit 0 (`uo-write.wasm` 4,049 KB, `uo-write-editor.wasm` 10,256 KB); `pkg_smoke` ok.
 - Lint: `check-changed --jobs 3` **all steps passed** (after factoring `word_w7c.rs`'s closure type: `clippy::type_complexity`, and a SAFETY comment per unsafe block in `w7c_item2_native.rs`); `rustfmt --edition 2024 --check` clean on every file this round touched. D: 42 GB free at the end.
+
+## Slides viewer (B7, first part: static rendering, 2026-11-17, Sonnet)
+
+`<universal-slides-viewer engine="rust">` over `uo-slides.wasm` (feature `slides` of `uo-wasm`). Scope of this part: the still slide
+(navigation, thumbnails, `renderSlideToCanvas`) is laid out and listed by Rust and painted by `paint-slides.ts`; the animation, show and
+playback state machines are exported as handles and tested but not yet wired to a painter (B4 emits no slots, so there is nothing for
+`evaluate_slots` to drive). Plan §9 roles: `uo-slides` viewer ≤ 1.6 MB gzip; `.ppt` is its own lazily loaded module.
+
+### Files
+
+- Rust (`core/crates/uo-wasm`): `src/slides.rs` (the module, feature `slides`), `src/slides_ppt.rs` (feature `slides-ppt`), `src/buf.rs` (the
+  `UoBuf` result type and the four `uo_buf_*` exports moved out of `render.rs`, feature `buf`, so the Slides module links none of the Write
+  paint exports; `render.rs` re-exports them, the Write build and its tests are unchanged), `Cargo.toml` (features `buf`, `slides`,
+  `slides-ppt`; deps `uo-pptx`, `uo-dml-render`), `src/lib.rs`.
+- JS: `js/slides.mjs` + `js/slides.d.mts` (binding: handles with `free()` and a `FinalizationRegistry`, result decoders), `js/slides-engine.ts`
+  (module loader, trap rule, `SlidesDocument.paint` = emit + measure loop + decode + `SlidesPainter`, show/timeline handles),
+  `js/slides-engine.check.ts` (drift check against the viewer's ambient declaration).
+- Viewer (`slides/packages/viewer/src`): `rust-engine.ts` (loaded only by `import()`), `slides-engine.d.ts` (ambient module
+  `@universal-office/slides-engine`), `universal-slides-viewer.ts` (attributes `engine` and `link-schemes`; `paintStill`, `configureEngine`,
+  `getEngine()`, `rustReady()`, events `us-engine`, `us-engine-error`), `package.json` (+ `@universal-office/drawingml`), `README.md`.
+- Tests: `tests/slides_api.test.mjs` (Node and WebKit), `tests/slides_drawops.test.mjs` (Node), `tests/support/slides-stub.mjs`,
+  `tests/browser/slides_switch.mjs` (Chromium). Tooling: `tools/build-pkg.mjs` (`shipSlidesWasm`, alias `@universal-office/slides-engine`,
+  `ENGINE_SOURCES.slides`), `core/tools/licenses/gen-notices.mjs` (artifacts `wasm-slides`, `wasm-slides-ppt`; `core/licenses/` regenerated: the
+  dingbat-to-unicode notice of `uo-dml-render` is now in `texts/uo-dml-render/`), `.github/workflows/rust-core.yml`, `tests/browser/run.mjs`
+  (forwards `UO_SLIDES_SOAK`, `UO_PPT_WASM_PATH`).
+
+### API (the module documentation of `src/slides.rs` has the byte layouts)
+
+| Handle | Created by | Exports |
+|---|---|---|
+| `UoSlidesDeck` | `uo_slides_open(bytes)` (null + `uo_slides_error()`; status 14 = a `.ppt`) | `count`, `size` (EMU), `notes(i)`, `part(name)` (media bytes), `set_caps`, `set_generation` (a font loaded: the measure table empties), `set_image_size`, `clear_caches`, `emit`, `answer` |
+| `UoSlidesView` | `uo_slides_view_new(generation)` | one generation of the list stream (`SlidesResources`, `EmitCaches`, `SlidesEncoder`); `bitmap(handle)` |
+| `UoSlidesShow` | `uo_slides_show_new(deck, from, now, flags, range)` | `command` (next, prev, go_to, first, last, update), `frame(now)`, `due_at`, `wake_at` |
+| `UoSlidesTimeline` | `uo_slides_timeline_new(deck, options)` | `info`, `state(t)` |
+
+`emit(view, i, scale, ox, oy)` returns status 0 (flags, chart frames, the `SlidesList` message), 12 (the measurement requests) or an error status
+(3 deck or slide unreadable, 4 limit, 5 bad argument, 6 no such slide, 10 did not encode). The shell answers a status 12 with one `f64` group per request
+(`CharAt1000`, `KernAt1000`, `Width`, `Metrics`, `FontAvailable`, `ImageSize` carrying the part name, and B5b's `MetaText` (a raw CSS font) and `MetaDecode` (compressed EMF+ bitmap bytes)) through `answer` and emits again: the two-phase
+protocol of B3, at most `MAX_ROUNDS` (8) passes; a fresh table takes 2 or more, one once the table has the slide's advances. `slides-engine.ts` answers with the
+browser canvas (`measureText`) using exactly the TS font strings (`layoutFontStr`: `[italic ]{700|400} {px}px {fontStack}`, `fontKerning` and
+`letterSpacing` set as the TS sites set them, the `Current` state being the default `auto` of a scratch context); an `ImageSize` for a picture still
+decoding is answered 0 x 0 and corrected by `imageReady(part, img)` (`set_image_size`) when it loads, then the viewer repaints. Canvas capabilities
+(`'fontKerning' in ctx`, `letterSpacing`, `Intl.Segmenter`, `fontBoundingBox*`) are passed once and are part of the table. A font that loads (`document.fonts`
+`loadingdone`, the resolver's `onChange`, an embedded face) bumps the generation (`fontsChanged`), which empties the table. One `SlidesView` serves
+the main canvas, the thumbnails and the exports of an element; `EmitCaches::overflowed` (flag bit 0) makes the engine start a new generation after that paint.
+`.ppt`: `uo_slides_ppt_convert` of `uo-slides-ppt.wasm` returns the `.pptx` bytes (`Deck::from_parts(...).save()`); the main module then opens
+them. The viewer fetches that second module only for a file with the Compound File signature. Faults: a `WebAssembly.RuntimeError` kills the instance (every
+handle refuses, the next load instantiates a fresh module, the viewer paints with the TS engine and tells `us-engine-error`).
+
+### What the viewer routes and what stays TS (the hybrid, decided because B4 has no slots)
+
+`engine="rust"` (an attribute of the viewer only; the editor ignores it: it edits the package, which the module would hold stale) paints the still slide through the
+list. The TS model (`PptxPackage`, `readSlide`) stays loaded because these still need it: animations, `present()` and `play()` (`shapeAnimHooks` + TS
+`paintSlideTo` for the staged slides; the `SlideShow` and timeline handles exist but only the tests drive them), hyperlinks (`hitTestHyperlink`), the
+accessible text (`SlideA11y`), the media player, image decoding (`warmImage`, shared: the Rust path asks it for the decoded `part`; WMF, EMF and TIFF are rasterized by the TS
+`rasterizeSpecialImage` until B5b). Charts are painted by the list since C-6 (`uo-charts`; `Emission::chart_frames` is empty, `paint` never returns `CHARTS_LEFT` (15) any more and the viewer
+calls it without `skipCharts`). Slide notes come from Rust (`getSlideNotes`, compared with the TS: 0 differences).
+The bevel light tables and the pattern rows of the painter env come from `@universal-office/drawingml` (TS), not from wasm exports. The hyperlink scheme rule
+is Write's (`/^(https?:|mailto:)/i`, `noopener,noreferrer`) with `engine="rust"`; the frozen TS rule (any address, `noopener`) stays for `ts` and for
+`link-schemes="any"`.
+
+### Sizes (the shipped build, `--profile wasm`, no `count`)
+
+| Module | Raw | gzip -9 | Budget |
+|---|---|---|---|
+| `uo-slides.wasm` (`--features slides`) | 2,914,742 B (2,846 KB) | **1,045,866 B** | 1.6 MB gzip (65%) |
+| `uo-slides-ppt.wasm` (`--features slides-ppt`) | 736,896 B | 279,872 B | lazy, only for a `.ppt` |
+
+`wasm-tools validate --features=-all,wasm1,mutable-global,saturating-float-to-int,sign-extension,reference-types,multi-value,bulk-memory` passes for both;
+neither imports anything. The first build of this part was 1,726,759 B raw / 622,357 B gzip; the metafile players that B5b added to `uo-dml-render` meanwhile are 316 KB (106 KB gzip), and C-6 (the chart engine `uo-charts` with `uo-numfmt`, the host and the canvas) adds 872 KB raw / 317 KB gzip (the 728,867 B row above was measured before it). The Write viewer module is 4.1 MB for comparison (the Slides module has no layout of the Write engine and none of its paint exports).
+The packages ship both through `shipSlidesWasm` (content check: no test exports, no counting allocator, the right export set; the notices of each artifact go to
+`licenses/uo-slides-wasm/`; negative cases checked: a `count` build and the swapped module are refused). wasm2js: not built for Slides (listed).
+
+### Harness numbers
+
+- **Op stream through the module** (`slides_drawops.test.mjs`, Node; the capture's deterministic stub answers `need_measures`; a fresh view per slide, as the TS
+  capture's fresh renderer): `drawops-b1a` 100 decks, 246 views, **246 equal**; `drawops-samples` 53 decks (the legacy ones through the ppt module), 1,166 views,
+  **1,166 equal**, 36 views with chart frames skipped (the declared B4-4 gap). The same numbers as the native comparison of B4, now through wasm.
+- **Pixels in Chromium** (`slides_switch.mjs --mode all`, headless 1248, open fonts: the Liberation substitutes, tolerance 0): 153 decks (the 53 committed samples and 100
+  `b1a`), **847 slides, 847 pixel-equal** (853,795,840 pixels) between `engine="ts"` and `engine="rust"`; 829 of them were painted by the Rust list, 18 slides with
+  charts by the TS fallback. Main canvas after `selectSlide` (505 compared) 0 different; thumbnails 0; notes 0; a11y text 0; all 153 decks opened in the Rust engine,
+  0 errors. Phase 0: a viewer without `engine="rust"` requests neither wasm nor the engine chunk (the static closure holds none of the engine; the dynamic part is 81 KB of JS).
+  The comparison takes 88 s for the 153 decks (a fresh page every 12 decks). Before the chart fallback the same run had 18 slides differing, all with a chart frame.
+- **C-6, charts through the module** (`slides_drawops.test.mjs`): `drawops-samples` **1,202 equal of 1,202** (the 36 chart views included, none skipped), `drawops-b1a` 246/246, and the new `drawops-c1d` (60 generated decks
+  with charts, pictures, tiles and `themeOverride`) 182/182. **Chromium** (`slides_switch.mjs --mode all`, now with 60 `c1d` decks, UO_SS_C1D): 213 decks, **938 slides, 938 pixel-equal** (968,355,840 pixels), **109 slides with
+  charts painted by the Rust list (1,925 paints, 0 left to the TS painter)**, main canvas 596 compared 0 different, thumbnails 0, notes 0, a11y 0, errors 0; memory phase: module live bytes 1,148,702 at every sample (spread 0),
+  0 handles after the element left. The harness counts the paint statuses and fails on any difference. Record: `uo-charts.md` "C-6 — Slides host".
+- **Memory**: M4 in `slides_api.test.mjs`: 10,000 decks, views, shows and timelines through `free()` return the live bytes exactly (6.1 s), and 1,000 dropped without `free()`
+  return them through the finalizer path (Node, `--expose-gc`); in WebKit (26.5, the Playwright build) the same file passes with the finalizer part left to Node. M2: 300 paints of one deck, flat
+  (spread under 256 KiB allowed, observed 0). In Chromium: 200 slide changes plus 200 exports of the largest committed sample (15 slides): module live bytes **1,148,626 B at every
+  sample (spread 0)**, wasm buffer 2,883,584 B flat, 0 handles and 0 live bytes after the element left (about 1 ms per change plus export).
+- **Faults**: three corrupt decks (truncated, empty, byte flips): both engines throw alike and keep the open deck; a forced trap: the viewer drops the instance, paints with
+  the TS engine, tells `us-engine-error`, and the next load instantiates a fresh module (`engine` back to `rust`); the hyperlink filter opens 3 of 6 test addresses with
+  `rust` (http, https in any case, mailto; refuses `javascript:`, `data:`, `file:`) and all 6 with `ts` (frozen behaviour).
+- API tests (`slides_api.test.mjs`, 7): errors (garbage, empty, a `.ppt` signature = status 14, NaN, negative and infinite scale, no such slide), the measure loop (2 or more passes on a fresh
+  table, 1 pass later, a generation change empties it), the ppt module (a legacy sample converts; garbage is status 3), show and timeline (a `b6a` deck to the end screen,
+  `go_to`, a range hides slides, the timeline state at the half and past the end, a NaN time).
+
+### Gaps (and what B4b must deliver)
+
+1. **Animations, slide show, automatic playback**: still the TS path. The handles `UoSlidesShow` (frame: the slide on stage, `anim_ms`, the transition and its origin, the number of effects of the
+   slide) and `UoSlidesTimeline` are exported and tested, but painting an animated slide needs slots. **B4b must deliver**: `SlotBegin/End` around each shape (replacing the plain `Save/Restore`),
+   `Background`, `Paragraph(i)` (`pbox`, `boxBase`), `Unit(k)` (`planUnits`, the pieces measured at device px: a second `Width` kind) and `MediaFrame` over the poster; the `SlotTemplate` filled
+   at emission (`uo-pptx::slots`) and kept next to the list in the deck handle; the re-emission of shapes whose `PartState::needs_reemit()` (`fillColor`, `lineColor`, `textColor`, `fontScale`: `emit`
+   with overrides); then here an `evaluate_slots(template, PlaybackSlide, anim_ms, media clock, AnimCaches)` export returning `SlotFrame` bytes (`AnimCaches` per deck view, cleared with `clear_caches`) and
+   an `emit` for a staged slide at a transition's origin (frozen at `anim_ms`). After that the viewer's `paintPlaybackSlide` and `paintStage` take the Rust path and the TS model stays only for media and links.
+2. **Charts**: DONE by C-6 (`chart::paint_chart_slot` emits through `uo-charts`; the viewer no longer passes `skipCharts`). Left: the animated chart parts (`SlotBegin(ChartPart j)`, with B6), and chart pictures that are metafile, PICT or TIFF rasters (answered "unavailable").
+3. **`.ppt`**: lazily loaded as its own module (done): 720 KB raw (the converter and the package writer), so a legacy deck costs two module loads.
+   **`MetaDecode`** (B5b: decode a compressed EMF+ bitmap and report its size) is answered "cannot be decoded" by the engine: a browser decodes asynchronously, so it needs a prepare phase like the pictures (`createImageBitmap`, then `set_meta_decoded`, then a repaint). With the committed decks nothing asks for it yet (the op streams and the pixels are unchanged); EMF/WMF/TIFF pictures are still rasterized by the TS `rasterizeSpecialImage` and drawn as media.
+4. **The TS model is still loaded in `rust` mode**: the open cost of a deck is TS plus Rust. The accessible text, the links and the media table need Rust read-model queries (slide text with run boxes,
+   link boxes) before the TS model can be dropped; `Deck` has the data, nothing is exported for it yet. Find: the Slides viewer has no find API.
+5. WebKit: `slides_api.test.mjs` passes in the Playwright WebKit build; real Safari 15 / iOS 15 (BrowserStack) was not run for the Slides module; the Safari 15 gate is `wasm-tools validate`.
+6. wasm2js fallback for hosts that forbid WebAssembly: not built. A real `build:pkg slides-viewer` / `slides` run could not be made here (the tools root lacks `pdfjs-dist`, the same limit as the Write package build),
+   so `shipSlidesWasm` is verified on its own; the viewer's vitest and its own `tsc -p` need `node_modules` (checked instead with a `paths` tsconfig under `core/target`: no errors in `viewer/src`).
+7. Real fonts: the pixel comparison ran with the open substitutes; installed-by-name fonts (the TS rule T2 is kept) are drawn by the browser in both engines, but a comparison with installed Aptos or Calibri was not made.
+
+### Process metrics
+
+One session. Builds (`-j 4`, `--profile wasm`): `slides`, `count,slides` and `slides-ppt` 17-19 s incremental. Tests: `slides_api` 7.1 s (default soak), `slides_drawops` 3.3 s, WebKit 3.6 s,
+`slides_switch --mode all` (100 `b1a` decks) 90 s. Rework: 5 (the `UoBuf` re-export for the existing native tests; the viewer's `PaintImage` ambient type; the harness converter alias and `pdfjs-dist` external
+for the esbuild bundle; the memory phase first picked a one-slide deck; the finalizer part of M4 skipped where there is no `gc()`). 0 parity rounds: the op streams were equal on the first run through the module.
+
+C-6 additions to this part (2026-11-17, Sonnet): `slides-engine.ts` measures a chart's empty-family face as `10px sans-serif`; `rust-engine.ts` drops `skipCharts`; `src/slides.rs` has one lint fix (`as_chunks`, Rust 1.100); the stub (`tests/support/slides-stub.mjs`) answers `metrics` like the recorder and `slides_drawops.test.mjs` gained the `c1d` gate. Wall time: the Chromium harness 6 min (213 decks, up from 88 s for 153), `slides_drawops` 5 s, wasm build 22–42 s.

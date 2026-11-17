@@ -270,6 +270,12 @@ impl Deck {
         &self.parts
     }
 
+    /// The part store, mutable (the editing session of feature `edit` replaces whole parts through it; the caches
+    /// compare part generations, so a changed part makes the slides that read it stale).
+    pub fn parts_mut(&mut self) -> &mut PartStore {
+        &mut self.parts
+    }
+
     /// The limits the deck was opened with.
     pub fn limits(&self) -> &Limits {
         &self.limits
@@ -335,7 +341,7 @@ impl Deck {
         };
         let model = {
             let src = self.source();
-            let mut m = read::read_slide(&src, &target, self.limits.dml())?;
+            let mut m = read::read_slide_with(&src, &target, self.limits.dml(), &self.limits)?;
             m.read_set = src.read_set();
             m
         };
@@ -371,6 +377,13 @@ impl Deck {
     /// `save`: the package as a ZIP (deflate level 6, store order).
     pub fn save(&self) -> Result<Vec<u8>, PptxError> {
         self.parts.save()
+    }
+
+    /// The timing model of every slide (`None` for a slide that does not read): the input of the playback
+    /// timeline and the slide show (B6). The models are shared, not copied.
+    pub fn timing_models(&mut self) -> Vec<Option<Arc<crate::timing::TimingModel>>> {
+        let n = self.presentation().map_or(0, |p| p.slides.len());
+        (0..n).map(|i| u32::try_from(i).ok().and_then(|i| self.slide(i).ok()).and_then(|m| m.timing.clone())).collect()
     }
 
     /// Empties every cache (memory gate M1: live bytes return to what the open deck holds).

@@ -144,6 +144,22 @@ intermediate rows in the worst PNG (RGB16: 1.5 × the RGBA), i.e. ≈ 400 MB pea
   (PNG peak 2.0 × → 1.1 ×), `tRNS` and palette fast paths.
 - The pack and the capture are 2.1 MB together (the pack is Node's zlib output: recapturing on another platform changes it).
 
+## The Slides TIFF variant (B5b, 2026-11-17)
+
+`decodeTiff` of `slides/packages/slides-core/src/tiff.ts` (frozen 0.9.2) is ported as `tiff_slides.rs`: [`is_tiff_slides`], [`decode_tiff_slides`] (`Result<Option<Rgba>>`: `Ok(None)` is the TS `undefined`,
+`Err(Malformed)` its `DataView` throw, `Err(Limit)` ours). It is a variant of its own (plan §2), not the Write decoder of `decode_tiff` with options: the two TS decoders differ in what they accept and in their numbers. The
+Slides one has no YCbCr, no predictor but 8-bit horizontal, no `RATIONAL` rejection (a fractional value computes with the fraction), reads only the first value of `BitsPerSample`, the palette (`ColorMap`) as `>> 8`, alpha from
+the `ExtraSamples` tag, any depth by the same expressions (`Math.round(v × 255 / (2^bps − 1))` below 8 bits, the high or low byte at 16 by the byte order), `PlanarConfiguration != 1` with more than one sample `undefined`, deflate as
+`unzlibSync` then `inflateSync`, an LZW whose dictionary grows without bound (storing stops at 4,096 here: a code is at most 12 bits, so nothing past it can be read). The decoded picture is what the Slides picture rasterizer puts on a
+canvas (`raster.ts`): `uo-dml-render::metafile` turns it into a recipe of one `putImageData` (`uo-dml-render.md` "B5b — metafiles"). Output RGBA 8-bit.
+
+**Parity**: the Node capture `uo-pptx/tests/captures/meta-b5b.*` has 130 generated TIFFs + 43 damaged copies (LE/BE, strips and tiles, none/PackBits/LZW/deflate/unknown compression, predictor, 1/2/3/4/8/16 bits, gray, RGB(A),
+palette, CMYK, YCbCr, extra samples, planar 2, truncated blocks): 173 / 173 equal (the digest of the RGBA through the replayed `putImageData`, and natively `sizes_eot_and_tiff_pixels_match_the_ts_capture` over the RGBA digest,
+`uo-dml-render/tests/metafile.rs`). V8 coverage of the TS: 179 / 184 code lines (the rest: a `return 257`, a `break`, a width bump). **Decisions outside the source semantics** (declared): pixels capped at 16 Mpx (the TS 50 M) and at
+16,384 pixels per byte of file (beyond what deflate does to a 1-bit image), tag values 4 M in total (the TS: 2^20 per tag), a block whose expected size is over 256 MiB is skipped as the TS skips a block whose `Uint8Array`
+allocation fails, the stored-block predictor of the TS writes into the file (a view): this port works on its own copy with a copy per block, so overlapping stored blocks (hostile) differ. Memory and no-panic are the shared
+tests of `uo-dml-render/tests/metafile.rs` (M1, M2, damaged files, the 60,000² declaration) and the fuzz target `tiff_slides` (5.3 M executions in 40 s, 0 crashes).
+
 ## Process metrics
 
 | Stage | Agent (model) | Time | Tool calls | Rounds / rework |

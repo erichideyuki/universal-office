@@ -168,6 +168,7 @@ fn encoder_refuses_inconsistent_lists_and_keeps_out_and_mark() {
                     prst: None,
                     rig: None,
                     mat: None,
+                    dir: None,
                 }));
             }),
         ),

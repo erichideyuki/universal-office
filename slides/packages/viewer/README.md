@@ -53,6 +53,7 @@ is letterbox.
 | `nocontrols` | Removes the whole control bar. |
 | `no<item>` | Removes one control: `nonav`, `nocounter`, `noplay`, `nomute`, `nothumbnails`, `nonotes`, `nodownload`, `nopresent`, `nofullscreen`, `noprogress`. Items that do not apply hide themselves (mute without media, notes without notes). |
 | `lang` | UI language (`en` · `pt` · `es`; any region: `es-MX`, `es-419`… → Spanish). Without it: the first of Spanish/Portuguese/English the browser prefers (`es-*` → Spanish, `pt-*` → Portuguese), otherwise English. |
+| `engine` | `ts` (default) or `rust`: the layout and painting engine of still slides (navigation, thumbnails, `renderSlideToCanvas`). `rust` is the Rust/WebAssembly engine (preview until 0.10: same pixels as `ts`, checked slide by slide); it loads `chunks/uo-slides.wasm` on first use (and `chunks/uo-slides-ppt.wasm` only for a legacy `.ppt`) and needs `'wasm-unsafe-eval'` in a strict CSP. Any other value is `ts`. Not yet in `rust`: animations, slide show and automatic playback, slides with charts (these stay on the `ts` engine). Links open only `http`, `https` and `mailto` with `engine="rust"`; `link-schemes="any"` restores the `ts` rule. A viewer without `engine="rust"` never fetches a `.wasm`. |
 
 ## Methods
 

@@ -1,7 +1,7 @@
 //! Embedded OpenType (EOT) 2.2 writing, uncompressed: the container PowerPoint uses in
 //! `ppt/fonts/*.fntdata`. PowerPoint writes MicroType Express; measured on the reference program,
 //! an EOT without compression opens without repair and is kept when saved again. The reader
-//! (with MTX) stays deferred (G3); `eot::read` will live here.
+//! (with MTX) is [`read`] (B5b: `eot.ts` of the Slides viewer, whose MicroType Express decoder is `mtx.rs`).
 //!
 //! Layout (all little-endian): a fixed header of 82 bytes (EOTSize, FontDataSize, Version
 //! 0x00020002, Flags, PANOSE, Charset, Italic, Weight, fsType, the magic 0x504C, the four Unicode
@@ -15,6 +15,50 @@ use uo_jsnum::conv::to_uint8;
 use uo_jsnum::parse::parse_int_utf16;
 
 const TTEMBED_SUBSET: u32 = 0x1;
+const TTEMBED_TTCOMPRESSED: u32 = 0x4;
+const TTEMBED_XORENCRYPTDATA: u32 = 0x1000_0000;
+const EOT_MAGIC: u16 = 0x504c;
+
+fn le_u32(d: &[u8], o: usize) -> u32 {
+    match d.get(o..o + 4) {
+        Some(s) => u32::from_le_bytes([s[0], s[1], s[2], s[3]]),
+        None => 0,
+    }
+}
+
+/// `looksLikeEot`: coherent sizes and the magic 0x504C (an EOT header).
+#[must_use]
+pub fn looks_like_eot(d: &[u8]) -> bool {
+    if d.len() < 82 {
+        return false;
+    }
+    let (eot_size, font_size) = (le_u32(d, 0) as usize, le_u32(d, 4) as usize);
+    let magic = d.get(34..36).map_or(0, |s| u16::from_le_bytes([s[0], s[1]]));
+    magic == EOT_MAGIC && eot_size <= d.len() && font_size > 0 && font_size <= eot_size
+}
+
+/// `eotToSfnt`: the sfnt (TTF) of an EOT, ready for a `FontFace`; `None` when the format is not recognized or its
+/// MicroType Express data is corrupt. The font data are the LAST `FontDataSize` bytes (true for every header version); the XOR with
+/// 0x50 and the MTX compression are the flags of the header.
+#[must_use]
+pub fn read(d: &[u8]) -> Option<Vec<u8>> {
+    if !looks_like_eot(d) {
+        return None;
+    }
+    let eot_size = le_u32(d, 0) as usize;
+    let font_size = le_u32(d, 4) as usize;
+    let flags = le_u32(d, 12);
+    let mut font: Vec<u8> = d.get(eot_size - font_size..eot_size)?.to_vec();
+    if flags & TTEMBED_XORENCRYPTDATA != 0 {
+        for b in &mut font {
+            *b ^= 0x50;
+        }
+    }
+    if flags & TTEMBED_TTCOMPRESSED != 0 {
+        return crate::mtx::mtx_to_sfnt(&font);
+    }
+    Some(font)
+}
 
 /// The sfnt wrapped as EOT 2.2, uncompressed. `subsetted` sets the `TTEMBED_SUBSET` flag. The
 /// OS/2, head and name values come from [`face_info`], whose `Err` (a malformed table) is the

@@ -67,7 +67,14 @@ function readFrames(buf) {
     const list = new Uint8Array(buf.subarray(p, p + n)); p += n;
     const nb = u32();
     const bitmaps = [];
-    for (let i = 0; i < nb; i++) { const l = u32(); bitmaps.push(new Uint8Array(buf.subarray(p, p + l))); p += l; }
+    for (let i = 0; i < nb; i++) {
+      const raw = u32();
+      const l = raw & 0x7fffffff;
+      const bm = new Uint8Array(buf.subarray(p, p + l));
+      bm.isRecipe = (raw & 0x80000000) !== 0; // B5b: a metafile recipe, not RGBA
+      bitmaps.push(bm);
+      p += l;
+    }
     frames.push({ list, bitmaps });
   }
   return frames;
@@ -95,7 +102,8 @@ for (const [key, slides] of byDeck) {
     if (s.error) { stats.tsErrors++; return; }
     const [w, h] = s.header.canvas.split('x').map(Number);
     const r = recordList({
-      list, tables, width: w, height: h, caps, bitmap: (idx) => bitmaps[idx],
+      list, tables, width: w, height: h, caps, bitmap: (idx) => (bitmaps[idx]?.isRecipe ? null : bitmaps[idx]),
+      recipe: (idx) => (bitmaps[idx]?.isRecipe ? bitmaps[idx] : null),
       media: (idx) => { const m = tables.media[idx]; return m ? pkg.getPart(m.part) ?? null : null; },
     });
     if (r.error) { stats.paintErrors++; console.log(`paint-error  ${label}: ${r.error}`); }

@@ -16,8 +16,11 @@ import { patternRows as sharedPatternRows } from '../../../../../shared/drawingm
  *    `shared/drawingml`, the ones the frozen painter imports).
  * The canvas is `width` x `height` px (the producer's view box plus the origin on both sides).
  */
-export function recordList({ list, tables, frame, width, height, caps, measure, media, bitmap, mediaFrame, light, patternRows, env: extra = {} }) {
+export function recordList({ list, tables, frame, width, height, caps, measure, media, bitmap, recipe, mediaFrame, light, patternRows, env: extra = {} }) {
   const rec = createRecorder({ width, height, caps, measure });
+  // B5b: the metafile pictures are replayed on a recorder of their own (the TS rasterizes them before the slide is painted, on
+  // canvases that are not the slide's): their lines are not the slide's, their canvas is the image the slide draws
+  const metaRec = createRecorder({ width: 8, height: 8, caps, measure });
   const images = new Map();
   const env = {
     media(index) {
@@ -33,6 +36,7 @@ export function recordList({ list, tables, frame, width, height, caps, measure, 
       return img;
     },
     bitmap: (index) => (bitmap ? bitmap(index) : null),
+    ...(recipe ? { recipe, metaCanvas: (w, h) => metaRec.createCanvas(w, h) } : {}),
     ...(mediaFrame ? { mediaFrame } : {}),
     light: light ?? light3d,
     patternRows: patternRows ?? sharedPatternRows,

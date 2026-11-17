@@ -97,6 +97,10 @@ export const DEFAULT_CAPS = {
   letterSpacing: true,
   /** `ctx.fontKerning` exists */
   fontKerning: true,
+  /** C-6: `ctx.roundRect` exists (the chart engine's rounded frame; Slides' own code never calls it) */
+  roundRect: true,
+  /** C-6: a canvas ignores a font string it cannot parse (a NaN, infinite or negative size token) */
+  strictFont: true,
 };
 
 class Root {
@@ -155,6 +159,12 @@ class RecCanvas {
   }
 }
 
+/** R4: size tokens a canvas rejects in `ctx.font` (`NaN`, `Infinity`, negative sizes). */
+const FONT_REJECTED = /(?:^|\s)(?:NaN|[+-]?Infinity|-[0-9][0-9.]*(?:e[+-]?[0-9]+)?)px(?:\s|$)/;
+
+/** Lines that do not enter a canvas's recipe hash (the `drop` set of the `draw` form in `opstream.mjs`). */
+const HASH_SKIP = new Set(['set', 'setLineDash', 'gradient', 'stop', 'pattern', 'patternTransform', 'measure']);
+
 const DEFAULT_STATE = () => ({
   fillStyle: '#000000', strokeStyle: '#000000', globalAlpha: 1, globalCompositeOperation: 'source-over', filter: 'none',
   lineWidth: 1, lineCap: 'butt', lineJoin: 'miter', miterLimit: 10, lineDash: [], lineDashOffset: 0,
@@ -175,6 +185,8 @@ export class RecContext {
     this._path = false;
     if (!root.caps.letterSpacing) Object.defineProperty(this, 'letterSpacing', { value: undefined, writable: true, enumerable: false, configurable: true });
     if (!root.caps.fontKerning) Object.defineProperty(this, 'fontKerning', { value: undefined, writable: true, enumerable: false, configurable: true });
+    // R4 (opt-in `caps.roundRect`): `roundRect` exists only when asked, so the Slides captures keep their old streams
+    if (root.caps.roundRect !== true) Object.defineProperty(this, 'roundRect', { value: undefined, writable: true, enumerable: false, configurable: true });
   }
 
   // ------------------------------------------------------------------ recording plumbing
@@ -182,7 +194,10 @@ export class RecContext {
     const r = this.root;
     const op = line.slice(0, line.indexOf(' ') < 0 ? undefined : line.indexOf(' '));
     r.counts.set(op, (r.counts.get(op) ?? 0) + 1);
-    this.canvas.hash.update(line + '\n');
+    // the recipe hash of a canvas covers what decides its pixels: the draw-form lines (every draw line carries the resolved
+    // state, `opstream.mjs`). The layout's `measure` probes and the `set` lines of text measuring (the TS lays out on the
+    // layer's context) are not content: the Rust list measures from advance tables and never touches the layer
+    if (!HASH_SKIP.has(op)) this.canvas.hash.update(line + '\n');
     r.lines.push(this._i ? `@cv${this._i} ${line}` : line);
   }
   _pt(x, y) {
@@ -259,7 +274,9 @@ export class RecContext {
   get shadowOffsetY() { return this._s.shadowOffsetY; }
   set shadowOffsetY(v) { if (Number.isFinite(v)) this._set('shadowOffsetY', +v); }
   get font() { return this._s.font; }
-  set font(v) { this._set('font', String(v)); }
+  // R4 (opt-in `caps.strictFont`): a canvas ignores a font string it cannot parse (a NaN, infinite or negative size token):
+  // the previous font stays. Off by default: the Slides captures predate it and must regenerate byte for byte.
+  set font(v) { v = String(v); if (!(this.root.caps.strictFont === true && FONT_REJECTED.test(v))) this._set('font', v); }
   get textAlign() { return this._s.textAlign; }
   set textAlign(v) { this._set('textAlign', String(v)); }
   get textBaseline() { return this._s.textBaseline; }
@@ -348,6 +365,12 @@ export class RecContext {
     const ux = co * rx, uy = si * rx, vx = -si * ry, vy = co * ry;
     this.emit(`ellipse ${this._P(cx, cy)} ${fmt(a * ux + c * uy)} ${fmt(b * ux + d * uy)} ${fmt(a * vx + c * vy)} ${fmt(b * vx + d * vy)} ${fmt(a0)} ${fmt(a1)} ${ccw ? 1 : 0}`);
   }
+  /** R4: `roundRect(x, y, w, h, r)` with one radius, in device space like `arcTo` (four corners, `r`, the linear part). */
+  roundRect(x, y, w, h, r = 0) {
+    if (+r < 0) throw new RangeError('RangeError: negative radius');
+    const [a, b, c, d] = this._m;
+    this.emit(`roundRect ${this._rect4(x, y, w, h)} ${fmt(r)} ${fmt(a)} ${fmt(b)} ${fmt(c)} ${fmt(d)}`);
+  }
   arcTo(x1, y1, x2, y2, r) {
     if (r < 0) throw new RangeError('IndexSizeError: negative radius');
     const [a, b, c, d] = this._m;
@@ -369,14 +392,14 @@ export class RecContext {
   strokeText(t, x, y) { this.emit(`strokeText ${q(t)} ${this._P(x, y)} | ${this._text()} ${this._stroke()} ${this._fx()}`); }
   measureText(text) {
     const s = this._s;
-    const { width, size } = this.root.measure(s.font, text, s.fontKerning);
+    const { width, size, ascent, descent } = this.root.measure(s.font, text, s.fontKerning);
     const key = `${q(s.font)}\t${q(text)}`;
     const e = this.root.measures.get(key);
     if (e) e.n++; else this.root.measures.set(key, { width, n: 1 });
     this.emit(`measure ${q(s.font)} ${q(text)}`);
     return {
       width, actualBoundingBoxLeft: 0, actualBoundingBoxRight: width, actualBoundingBoxAscent: 0.72 * size,
-      actualBoundingBoxDescent: 0.21 * size, fontBoundingBoxAscent: 0.9 * size, fontBoundingBoxDescent: 0.21 * size,
+      actualBoundingBoxDescent: 0.21 * size, fontBoundingBoxAscent: ascent ?? 0.9 * size, fontBoundingBoxDescent: descent ?? 0.21 * size,
     };
   }
   _src(img) {
@@ -452,6 +475,12 @@ export function createRecorder(opts = {}) {
     install() {
       saved.DOMMatrix = Object.getOwnPropertyDescriptor(globalThis, 'DOMMatrix');
       saved.OffscreenCanvas = Object.getOwnPropertyDescriptor(globalThis, 'OffscreenCanvas');
+      saved.ImageData = Object.getOwnPropertyDescriptor(globalThis, 'ImageData');
+      // B5b: the metafile players build `new ImageData(w, h)` (a DIB, an EMF+ bitmap): no draw, no line
+      Object.defineProperty(globalThis, 'ImageData', {
+        value: class { constructor(w, h) { this.width = w; this.height = h; this.data = new Uint8ClampedArray(w * h * 4); this.colorSpace = 'srgb'; } },
+        configurable: true, writable: true,
+      });
       if (root.caps.patternTransform) Object.defineProperty(globalThis, 'DOMMatrix', { value: RecDOMMatrix, configurable: true, writable: true });
       if (root.caps.layers) {
         Object.defineProperty(globalThis, 'OffscreenCanvas', {
@@ -461,7 +490,7 @@ export function createRecorder(opts = {}) {
       return api;
     },
     uninstall() {
-      for (const k of ['DOMMatrix', 'OffscreenCanvas']) {
+      for (const k of ['DOMMatrix', 'OffscreenCanvas', 'ImageData']) {
         if (saved[k]) Object.defineProperty(globalThis, k, saved[k]); else delete globalThis[k];
       }
     },

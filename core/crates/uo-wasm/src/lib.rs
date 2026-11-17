@@ -7,8 +7,17 @@
 //! wasm a panic aborts the module (the `wasm` profile uses `panic = "abort"`), so code
 //! reached from these exports must not panic on input.
 
+#[cfg(feature = "buf")]
+pub mod buf;
+
 #[cfg(feature = "render")]
 pub mod render;
+
+// the Slides viewer module (frontier B7): src/slides.rs, and the lazily loaded .ppt converter
+#[cfg(feature = "slides")]
+pub mod slides;
+#[cfg(feature = "slides-ppt")]
+pub mod slides_ppt;
 
 #[cfg(feature = "render-fixture")]
 pub mod render_fixture;

@@ -146,6 +146,8 @@ export function replayPath(ctx: CanvasRenderingContext2D, ops: readonly PathOp[]
       case 'ellipse': ctx.ellipse(p.x, p.y, p.rx, p.ry, p.rot, p.a0, p.a1, !!p.ccw); break;
       case 'rect': ctx.rect(p.x, p.y, p.w, p.h); break;
       case 'close': ctx.closePath(); break;
+      // the chart engine's rounded frame (C-6): one radius
+      case 'roundRect': ctx.roundRect(p.x, p.y, p.w, p.h, p.r); break;
     }
   }
 }
@@ -172,7 +174,7 @@ function edt1d(f: Float64Array, n: number, d: Float64Array, v: Int32Array, z: Fl
  * polar pela razão altura/largura) → luz medida: em luz linear cor·D + S. A face
  * plana também muda (D da face: threePt +17%, harsh −33%…).
  */
-export function applyBevel(ctx: CanvasRenderingContext2D, e: BevelEffect & { dir?: string }, ops: readonly PathOp[],
+export function applyBevel(ctx: CanvasRenderingContext2D, e: BevelEffect, ops: readonly PathOp[],
   scratch: ScratchFactory, light: LightTables): void {
   const b = { w: e.w, h: e.h, prst: e.prst, rig: e.rig, dir: e.dir, mat: e.mat };
   const { x, y, w, h } = e.bx;
@@ -263,4 +265,166 @@ export function xorRect(ctx: CanvasRenderingContext2D, rgb: readonly [number, nu
   for (let i = 0; i < d.length; i += 4) { d[i] = d[i]! ^ r; d[i + 1] = d[i + 1]! ^ g; d[i + 2] = d[i + 2]! ^ b; d[i + 3] = 255; }
   ctx.putImageData(img, X0, Y0);
   return true;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// MOVED (B4): `tilePattern` and `flippedTile` of `shared/charts/src/image.ts` (the TS reads the live transform, so the
+// list carries the parameters), and `pathGradient`/`gradMode`/`sigmaT` of render.ts 2488-2595 for the WordArt letter fill
+// (the raster box is only known when the warp runs; every other path gradient is a producer bitmap).
+
+/** `a:tile`: scale, offset (context units), alignment and flip. */
+export interface TileSpec { sx: number; sy: number; tx: number; ty: number; algn?: string; flip?: 'x' | 'y' | 'xy' }
+
+/** `a:tile algn` → fração (horizontal, vertical) da folga caixa − ladrilho onde fica o 1º ladrilho. */
+const TILE_ALIGN: Record<string, [number, number]> = {
+  tl: [0, 0], t: [0.5, 0], tr: [1, 0], l: [0, 0.5], ctr: [0.5, 0.5], r: [1, 0.5], bl: [0, 1], b: [0.5, 1], br: [1, 1],
+};
+
+const flipCache = new WeakMap<object, Map<string, CanvasImageSource>>();
+
+/**
+ * Ladrilho espelhado (`a:tile flip`): bloco com a imagem e as cópias
+ * espelhadas à direita (x) / embaixo (y) — repetir o bloco alterna os
+ * espelhos (medido, syn-a-blip #7, syn-a-blip2 #4/#5). Sem canvas fora da
+ * tela (OffscreenCanvas), sem espelho.
+ */
+function flippedTile(src: CanvasImageSource, w: number, h: number, flip: 'x' | 'y' | 'xy'): CanvasImageSource {
+  if (typeof OffscreenCanvas === 'undefined') return src;
+  let cache = flipCache.get(src as object);
+  if (!cache) flipCache.set(src as object, cache = new Map());
+  const key = `${flip}|${w}|${h}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const fx = flip !== 'y', fy = flip !== 'x';
+  const cv = new OffscreenCanvas(w * (fx ? 2 : 1), h * (fy ? 2 : 1));
+  const g = cv.getContext('2d');
+  if (!g) return src;
+  for (const [ix, iy] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+    if ((ix && !fx) || (iy && !fy)) continue;
+    g.save();
+    g.translate(ix ? 2 * w : 0, iy ? 2 * h : 0);
+    g.scale(ix ? -1 : 1, iy ? -1 : 1);
+    g.drawImage(src, 0, 0, w, h);
+    g.restore();
+  }
+  cache.set(key, cv as unknown as CanvasImageSource);
+  return cv as unknown as CanvasImageSource;
+}
+
+/**
+ * Padrão de ladrilho como o PowerPoint (gráficos, formas e fundo — medido,
+ * syn-a-blip/blip2/shtile): ladrilho do tamanho natural (`natW`×`natH`, nas
+ * unidades do contexto, pela resolução do arquivo) × sx/sy; o 1º ladrilho
+ * alinhado pelo `algn` na caixa e deslocado por tx/ty; REDUZIDA, a imagem vira
+ * um bitmap de tamanho inteiro em pixels do dispositivo (30,3→30, 33,6→34,
+ * 26,67→27), ampliada o período fica fracionário; flip alterna as cópias
+ * espelhadas. `iw`/`ih` = pixels da imagem.
+ */
+export function tilePattern(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw: number, ih: number, natW: number, natH: number, t: TileSpec, box: { x: number; y: number; w: number; h: number }): CanvasPattern | null {
+  if (!(iw > 0 && ih > 0)) return null;
+  const pat = ctx.createPattern(t.flip ? flippedTile(src, iw, ih, t.flip) : src, 'repeat');
+  if (!pat) return null;
+  let tw = natW * t.sx, th = natH * t.sy;
+  const d = typeof ctx.getTransform === 'function' ? ctx.getTransform() : undefined;
+  const kx = d ? Math.hypot(d.a, d.b) || 1 : 1, ky = d ? Math.hypot(d.c, d.d) || 1 : 1;
+  if (tw * kx < iw) tw = Math.max(1, Math.round(tw * kx)) / kx;
+  if (th * ky < ih) th = Math.max(1, Math.round(th * ky)) / ky;
+  const [ah, av] = TILE_ALIGN[t.algn ?? 'tl'] ?? [0, 0];
+  if (typeof (pat as { setTransform?: unknown }).setTransform === 'function' && typeof DOMMatrix !== 'undefined') {
+    pat.setTransform(new DOMMatrix([tw / iw, 0, 0, th / ih, box.x + (box.w - tw) * ah + t.tx, box.y + (box.h - th) * av + t.ty]));
+  }
+  return pat;
+}
+
+/** The model stop of a path gradient (`{ pos, color: '#RRGGBB', alpha? }`). */
+export interface RawGradStop { pos: number; color: string; alpha?: number }
+
+/** Φ (CDF normal) — aproximação de Abramowitz-Stegun via erf. */
+function normCdf(z: number): number {
+  const x = Math.abs(z) / Math.SQRT2, t = 1 / (1 + 0.3275911 * x);
+  const e = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return z >= 0 ? (1 + e) / 2 : (1 - e) / 2;
+}
+const SIGMA0 = normCdf(-2);
+/** Curva sigma do degradê de 2 cores (σ = 0,25, normalizada para 0..1). */
+function sigmaT(u: number): number {
+  return (normCdf((u - 0.5) / 0.25) - SIGMA0) / (1 - 2 * SIGMA0);
+}
+
+/** `gradMode`: 'sigma' | 'sym' | 'srgb' (render.ts 2577). */
+function gradMode(stops: readonly RawGradStop[]): 'sigma' | 'sym' | 'srgb' {
+  const n = stops.length;
+  if (n < 2 || stops[0]!.pos > 0 || stops[n - 1]!.pos < 1) return 'srgb';
+  if (n === 2) return 'sigma';
+  if (n === 3 && stops[0]!.color.toLowerCase() === stops[2]!.color.toLowerCase() && (stops[0]!.alpha ?? 1) === (stops[2]!.alpha ?? 1)) return 'sym';
+  return 'srgb';
+}
+
+/**
+ * Gradiente de CAMINHO (`<a:path path="circle|rect|shape">` + `fillToRect`), rasterizado numa grade pequena e
+ * esticado como padrão (render.ts `pathGradient`, 2501-2566). `cache` is the painter's (the TS `pathGradCache`).
+ */
+export function pathGradient(ctx: CanvasRenderingContext2D, scratch: ScratchFactory, cache: Map<string, PaintImage>,
+  path: string, fillTo: { l: number; t: number; r: number; b: number } | undefined, rawStops: readonly RawGradStop[],
+  x: number, y: number, w: number, h: number): CanvasPattern | null {
+  const stops = rawStops.map((s) => ({ pos: Math.max(0, Math.min(1, s.pos)), rgb: hexRgb(s.color), a: s.alpha ?? 1 }));
+  if (stops.length < 2 || !(w > 0) || !(h > 0)) return null;
+  const ft = fillTo ?? { l: 0.5, t: 0.5, r: 0.5, b: 0.5 };
+  // grade de amostragem: proporção do retângulo, lado maior 192
+  const k = 192 / Math.max(w, h);
+  const gw = Math.max(2, Math.round(w * k)), gh = Math.max(2, Math.round(h * k));
+  const key = JSON.stringify([path, ft, gw, gh, rawStops]);
+  let img = cache.get(key);
+  if (!img) {
+    const cv = scratch(gw, gh);
+    const c2 = cv?.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null | undefined;
+    if (!cv || !c2) return null;
+    const id = c2.createImageData(gw, gh);
+    const fl = ft.l * gw, fT = ft.t * gh;
+    const fr = Math.max(fl, gw - ft.r * gw), fb = Math.max(fT, gh - ft.b * gh);
+    const circle = path === 'circle';
+    const Fx = (fl + fr) / 2, Fy = (fT + fb) / 2, Ex = gw / 2 - Fx, Ey = gh / 2 - Fy;
+    const R = Math.hypot(gw, gh) / 2, qa = Ex * Ex + Ey * Ey - R * R;
+    const tCircle = (px: number, py: number): number => {
+      const dx = px - Fx, dy = py - Fy, bq = dx * Ex + dy * Ey, c = dx * dx + dy * dy;
+      if (Math.abs(qa) < 1e-9) return bq > 0 ? c / (2 * bq) : 1;
+      const disc = bq * bq - qa * c;
+      if (disc < 0) return 1;
+      return Math.max(0, (bq - Math.sqrt(disc)) / qa);
+    };
+    const lin = (v: number): number => Math.pow(v / 255, 2.2);
+    const srgb = (v: number): number => Math.pow(Math.max(0, Math.min(1, v)), 1 / 2.2) * 255;
+    const mode = gradMode(rawStops);
+    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+      const px = i + 0.5, py = j + 0.5;
+      let t: number;
+      if (circle) t = tCircle(px, py);
+      else {
+        const tx = px < fl ? (fl - px) / (fl || 1) : px > fr ? (px - fr) / ((gw - fr) || 1) : 0;
+        const ty = py < fT ? (fT - py) / (fT || 1) : py > fb ? (py - fb) / ((gh - fb) || 1) : 0;
+        t = Math.max(tx, ty);
+      }
+      t = Math.max(0, Math.min(1, t));
+      let a = stops[0]!, b = stops[stops.length - 1]!;
+      for (let s = 0; s + 1 < stops.length; s++) if (t >= stops[s]!.pos && t <= stops[s + 1]!.pos) { a = stops[s]!; b = stops[s + 1]!; break; }
+      let u = t <= a.pos ? 0 : t >= b.pos ? 1 : (t - a.pos) / ((b.pos - a.pos) || 1);
+      const o = (j * gw + i) * 4;
+      if (mode === 'srgb') for (let c = 0; c < 3; c++) id.data[o + c] = a.rgb[c]! * (1 - u) + b.rgb[c]! * u;
+      else {
+        if (mode === 'sigma') u = sigmaT(u);
+        for (let c = 0; c < 3; c++) id.data[o + c] = srgb(lin(a.rgb[c]!) * (1 - u) + lin(b.rgb[c]!) * u);
+      }
+      id.data[o + 3] = Math.round((a.a * (1 - u) + b.a * u) * 255);
+    }
+    c2.putImageData(id, 0, 0);
+    img = cv as unknown as PaintImage;
+    if (cache.size > 64) cache.clear();
+    cache.set(key, img);
+  }
+  const pat = ctx.createPattern(img as CanvasImageSource, 'no-repeat');
+  if (!pat) return null;
+  if (typeof (pat as { setTransform?: unknown }).setTransform === 'function' && typeof DOMMatrix !== 'undefined') {
+    pat.setTransform(new DOMMatrix([w / gw, 0, 0, h / gh, x, y]));
+  }
+  return pat;
 }

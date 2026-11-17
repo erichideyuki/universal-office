@@ -50,8 +50,23 @@ mod text_layout;
 pub use text_layout::{text_layout, text_layout_seeds};
 
 mod slides;
+mod slides_edit;
+mod slides_emit;
 mod slides_wire;
 pub use slides::{slides_decode, slides_roundtrip, slides_seeds};
+pub use slides_edit::{slides_edit, slides_edit_seeds};
+pub use slides_emit::{slides_emit, slides_emit_seeds};
+
+mod charts;
+pub use charts::{chart_parse, chart_parse_seeds};
+mod charts_render;
+pub use charts_render::{chart_emit, chart_emit_seeds, chart_scale, chart_scale_seeds};
+
+mod timing;
+pub use timing::{anim_formula, slide_timing, timing_seeds};
+
+mod metafile;
+pub use metafile::{emf_play, eot_read, metafile_seeds, pict_play, tiff_slides};
 
 mod ppt;
 pub use ppt::{ppt_convert, ppt_seeds};
@@ -157,7 +172,18 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("text_layout", text_layout),
     ("slides_decode", slides_decode),
     ("slides_roundtrip", slides_roundtrip),
+    ("slides_emit", slides_emit),
+    ("slides_edit", slides_edit),
     ("ppt_convert", ppt_convert),
+    ("chart_parse", chart_parse),
+    ("chart_scale", chart_scale),
+    ("chart_emit", chart_emit),
+    ("slide_timing", slide_timing),
+    ("emf_play", emf_play),
+    ("pict_play", pict_play),
+    ("tiff_slides", tiff_slides),
+    ("eot_read", eot_read),
+    ("anim_formula", anim_formula),
 ];
 
 /// Small limits: every check of `Limits` is exercised without slow executions.

@@ -10,6 +10,7 @@
 //            --caps nolayers  a capability set (`nolayers`, `nopattern`, `nospacing`, `nokerning`, comma separated)
 //            --only <s>       substring of the key        --max <n>   at most n decks
 //            --ts-root <dir>  the frozen checkout (default UO_TS_ROOT, else the 0.9.2 reference)
+//            --special        B5b: metafile, PICT and TIFF pictures are rasterized as the viewer does (default: opaque images)
 //
 // Stream file: `#deck <key>` then per slide `#slide <N> view=<v> scale=<s> ox=<ox> oy=<oy> canvas=<w>x<h> lines=<n> sha=<h>`
 // followed by the stream lines; a slide that throws has `#error <message>` after its header. The capture records per
@@ -31,10 +32,12 @@ const only = a.opt('--only');
 const max = Number(a.opt('--max', '1e9'));
 const views = a.opt('--views', 'a,b').split(',');
 const caps = parseCaps(a.opt('--caps'));
+const special = a.flag('--special');
 const writer = new CaptureWriter(['Slides draw-op streams of the frozen TS painter (R-S4); see js/capture-drawops.mjs and core/docs/modules/uo-render.md "R-S3/R-S4"']);
 writer.meta('ts-root-commit', tsCommit(root));
 writer.meta('stream', 'record-ctx.mjs canonical op stream in the DRAW form (lib/opstream.mjs); per slide `lines:sha1[0..16]` of the draw-form text; views a/b per capture-drawops.mjs');
 writer.meta('caps', Object.entries(caps).map(([k, v]) => `${k}=${v}`).join(','));
+writer.meta('special', String(special));
 writer.meta('measure', 'record-ctx.mjs stubMeasure (deterministic advance table); measureText answers are in the .measures.tsv.gz file');
 
 const streams = [];
@@ -58,7 +61,7 @@ async function record(key, bytes, extra = {}) {
     try { slide = core.readSlide(pkg, ref.target); } catch (e) { writer.set(key, `s${i}`, `err:${oneLine(e?.message ?? e)}`); continue; }
     for (const v of views) {
       const view = VIEWS[v](pres);
-      const r = await recordTsSlide({ tsRoot: root, slide, pres, caps, ...view });
+      const r = await recordTsSlide({ tsRoot: root, slide, pres, caps, special, ...view });
       const d = await digest(r.text);
       nSlides++; nLines += d.lines; nFull += r.lines;
       if (r.error) nErr++;
@@ -74,7 +77,7 @@ async function record(key, bytes, extra = {}) {
         if (e) e.n += +f[3]; else measures.set(k, { w: f[2], n: +f[3] });
       }
       if (v === views[0]) {
-        const s = await recordTsSlide({ tsRoot: root, slide, pres, caps, mode: 'shapes', ...view });
+        const s = await recordTsSlide({ tsRoot: root, slide, pres, caps, special, mode: 'shapes', ...view });
         writer.set(key, `s${i}.shapes`, s.error ? `err:${oneLine(s.error)}` : `${(await digest(s.text)).lines}:${(await digest(s.text)).sha}`);
       }
     }

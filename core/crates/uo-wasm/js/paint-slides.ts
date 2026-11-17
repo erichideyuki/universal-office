@@ -26,13 +26,15 @@
 
 import type {
   Effect, FaceKey, ImageSrc, Paint, PathOp, Rect4, SItem, SlidesList, SlotDef, Span, Stop, Tables, TextRun, WarpEffect, WarpLine as WireWarpLine,
-  WarpPaint, MetafileRopEffect,
+  WarpPaint, MetafileRopEffect, TileParams,
 } from './gen/slides.ts';
 import type { PartState, SlotFrame, SlotValue } from './gen/slots.ts';
 import { applyReveal, applySoftReveal, softRevealFilter } from './slides-reveal.ts';
+import { replayRecipe } from './meta-player.ts';
+import type { MetaCanvas } from './meta-player.ts';
 import { paintWarpedText } from './slides-warp.ts';
 import type { PatternRowsOf, WarpLine, WarpRun } from './slides-warp.ts';
-import { applyBevel, fxImage, imgH, imgW, replayPath, scratchCanvas, toTsFx, xorRect } from './slides-effects.ts';
+import { applyBevel, fxImage, imgH, imgW, pathGradient, replayPath, scratchCanvas, tilePattern, toTsFx, xorRect } from './slides-effects.ts';
 import type { LightTables, PaintImage, ScratchFactory } from './slides-effects.ts';
 
 export type { PaintImage, LightTables, ScratchFactory, PatternRowsOf };
@@ -45,6 +47,15 @@ export interface SlidesEnv {
   media(index: number): PaintImage | null | undefined;
   /** the RGBA bytes (`w * h * 4`) of `tables.bitmaps[index]` (the wasm side holds them by handle) */
   bitmap(index: number): Uint8Array | null | undefined;
+  /**
+   * B5b: the recipe of `tables.bitmaps[index]` when it is a metafile or PICT picture (`SlidesResources::is_recipe`): the canvas calls
+   * of the TS rasterizer, replayed by `meta-player.ts` on a canvas of the bitmap's size; null/undefined = not a recipe (RGBA bytes)
+   */
+  recipe?(index: number): Uint8Array | null | undefined;
+  /** the decoded image of a compressed EMF+ bitmap the recipe draws (prepared by the shell); null = not available */
+  decodeBlob?(data: Uint8Array): CanvasImageSource | null | undefined;
+  /** the canvas factory of the recipe replays (default: `createCanvas`; the parity harness gives them a recorder of their own) */
+  metaCanvas?: ScratchFactory;
   /** the current video/GIF frame of a shape (`MediaFrame` items) */
   mediaFrame?(shape: number): { image: PaintImage; alpha: number } | null | undefined;
   /** the host's canvas factory (default as the TS: `OffscreenCanvas`, else a `<canvas>`) */
@@ -53,8 +64,6 @@ export interface SlidesEnv {
   patternRows?: PatternRowsOf;
   /** the light tables of the bevel (uo-drawingml `light3d`); without them `Bevel` effects are skipped */
   light?: LightTables;
-  /** a tiled picture as a `CanvasPattern` (the charts engine's `tilePattern`); without it tiled warp fills are skipped */
-  tilePattern?(ctx: CanvasRenderingContext2D, img: PaintImage, box: Rect4, scale: number): CanvasPattern | null;
 }
 
 /** Caps of the painter's caches (M5): each entry is a canvas. */
@@ -94,6 +103,12 @@ function spanOf<T>(a: readonly T[], s: Span, what: string): T[] {
 function fontStr(env: SlidesEnv, face: FaceKey, sizePx: number): string {
   const bold = !!face.bold, italic = !!face.italic;
   return `${italic ? 'italic ' : ''}${bold ? '700 ' : '400 '}${sizePx}px ${(env.fontStack ?? DEFAULT_FONT_STACK)(face.family, bold, italic)}`;
+}
+
+/** `font()` of the chart engine (render.ts 177-180): `[italic ][bold ]<size.toFixed(2)>px <stack>` (not `fontStr`'s `700 <size>px`). */
+function chartFontStr(env: SlidesEnv, face: FaceKey, sizePx: number): string {
+  const bold = !!face.bold, italic = !!face.italic;
+  return `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${sizePx.toFixed(2)}px ${(env.fontStack ?? DEFAULT_FONT_STACK)(face.family, bold, italic)}`;
 }
 
 /**
@@ -205,9 +220,14 @@ export class SlidesPainter {
     const key = String(index);
     if (this.bitmaps.has(key)) return this.bitmaps.get(key) ?? null;
     const b = at(tables.bitmaps, index, 'bitmap');
-    const bytes = this.env.bitmap(index);
+    const recipe = this.env.recipe?.(index);
+    const bytes = recipe ? null : this.env.bitmap(index);
     let out: PaintImage | null = null;
-    if (bytes && b.w > 0 && b.h > 0 && bytes.length >= b.w * b.h * 4) {
+    if (recipe) {
+      // B5b: a metafile or PICT: the canvas the TS rasterizer drew on
+      const mk = (w: number, h: number): MetaCanvas | undefined => (this.env.metaCanvas ?? this.scratch)(w, h) as unknown as MetaCanvas | undefined;
+      out = replayRecipe(recipe, { createCanvas: mk, ...(this.env.decodeBlob ? { decode: this.env.decodeBlob } : {}) }) as unknown as PaintImage | null;
+    } else if (bytes && b.w > 0 && b.h > 0 && bytes.length >= b.w * b.h * 4) {
       const cv = this.scratch(b.w, b.h);
       const c2 = cv?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
       if (cv && c2) {
@@ -269,6 +289,7 @@ export class SlidesPainter {
         const pr = at(list.patterns, p.v, 'pattern');
         const img = pr.src.kind === 'bitmap' ? this.bitmapCanvas(tables, pr.src.v) : this.image(tables, pr.src.v);
         if (!img) return undefined;
+        if (pr.tile) return this.tilePatternOf(ctx, img, pr.tile.params, pr.tile.scale, pr.tile.bx, pr.tile.nat) ?? undefined;
         const pat = ctx.createPattern(img as CanvasImageSource, pr.repeat);
         if (!pat) return undefined;
         const t = pr.transform;
@@ -280,12 +301,30 @@ export class SlidesPainter {
     }
   }
 
+  /** `imageTile` (render.ts 522-530): the tile parameters of the list with the decoded size and the live transform. */
+  private tilePatternOf(ctx: CanvasRenderingContext2D, img: PaintImage, t: TileParams, scale: number, box: Rect4, nat?: { x: number; y: number }): CanvasPattern | null {
+    const iw = imgW(img), ih = imgH(img);
+    // a chart tile (C-6, CT-1): the natural size arrives computed by the engine (`(wPt ?? w * 0.75) * S`) and `scale` is 1
+    return tilePattern(ctx, img as CanvasImageSource, iw, ih, nat ? nat.x : iw * t.unitX * scale, nat ? nat.y : ih * t.unitY * scale,
+      { sx: t.sx, sy: t.sy, tx: t.tx * scale, ty: t.ty * scale, ...(t.algn ? { algn: t.algn } : {}), ...(t.flip ? { flip: t.flip as 'x' | 'y' | 'xy' } : {}) },
+      { x: box.x, y: box.y, w: box.w, h: box.h });
+  }
+
+  private pathGradCache = new Map<string, PaintImage>();
+
   // ------------------------------------------------------------------ text (drawText of render.ts 1638-1707)
   private drawText(ctx: CanvasRenderingContext2D, list: SlidesList, tables: Tables, r: TextRun): void {
     const text = list.texts.slice(r.text.start, r.text.start + r.text.len);
     if (r.text.start + r.text.len > list.texts.length) throw new RangeError('text span out of range');
     ctx.font = fontStr(this.env, at(tables.faces, r.font.face, 'face'), r.font.sizePx);
     const tx = r.x, by = r.y;
+    if (r.bullet) {
+      // a bullet: `ctx.font`, `fillStyle` and `fillText`, nothing else (render.ts 1785-1787)
+      const bfs = this.paintValue(ctx, list, tables, r.fill);
+      if (bfs !== undefined) ctx.fillStyle = bfs;
+      ctx.fillText(text, tx, by);
+      return;
+    }
     const ls = r.letterSpacingPx;
     const lsCtx = ctx as unknown as { letterSpacing?: string; fontKerning?: string };
     const prevLs = lsCtx.letterSpacing;
@@ -341,28 +380,47 @@ export class SlidesPainter {
   }
 
   // ------------------------------------------------------------------ effects
-  private letterPaint(c: CanvasRenderingContext2D, tables: Tables, wp: WarpPaint, box: [number, number, number, number]): CanvasGradient | CanvasPattern | null {
+  /**
+   * `letterFill` (render.ts 1840-1854) on the raster box of the warp: `k` is the raster's px per pt. Gradients are
+   * `makeLinearGradient` (the producer expanded the PowerPoint sub-stops), a path gradient is rasterized here from the
+   * model stops (`pathGradient`), pictures are tiles (`imageTile`) or a stretched no-repeat pattern.
+   */
+  private letterPaint(c: CanvasRenderingContext2D, tables: Tables, wp: WarpPaint, box: [number, number, number, number], k: number): CanvasGradient | CanvasPattern | null {
     const [bx, by, bw, bh] = box;
     if (!(bw > 0) || !(bh > 0)) return null;
-    const cx = bx + bw / 2, cy = by + bh / 2;
     if (wp.kind === 'linear' || wp.kind === 'radial' || wp.kind === 'path') {
-      if (wp.stops.length < 2) return null;
-      let g: CanvasGradient;
-      if (wp.kind === 'linear') {
-        const ang = (wp.angle ?? 0) * Math.PI / 180;
-        const dx = Math.cos(ang), dy = Math.sin(ang);
-        const half = (Math.abs(dx) * bw + Math.abs(dy) * bh) / 2;
-        g = c.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
-      } else g = c.createRadialGradient(cx, cy, 0, cx, cy, Math.max(bw, bh) / 2);
+      if (wp.kind === 'path' && wp.path) {
+        const raw = wp.raw.map((r) => (r.alpha === 1 ? { pos: r.pos, color: r.color } : { pos: r.pos, color: r.color, alpha: r.alpha }));
+        const pat = pathGradient(c, this.scratch, this.pathGradCache, wp.path, wp.fillTo, raw, bx, by, bw, bh);
+        if (pat) return pat as unknown as CanvasGradient;
+      }
+      if (wp.kind !== 'linear') {
+        const cx = bx + bw / 2, cy = by + bh / 2;
+        const g = c.createRadialGradient(cx, cy, 0, cx, cy, Math.max(bw, bh) / 2);
+        for (const s of wp.stops) g.addColorStop(s.offset, s.color);
+        return g;
+      }
+      const ang = (wp.angle ?? 0) * Math.PI / 180;
+      let dx = Math.cos(ang), dy = Math.sin(ang);
+      if (wp.scaled) {
+        dx = Math.cos(ang) * bh; dy = Math.sin(ang) * bw;
+        const len = Math.hypot(dx, dy) || 1;
+        dx /= len; dy /= len;
+      }
+      const cx = bx + bw / 2, cy = by + bh / 2;
+      const half = (Math.abs(dx) * bw + Math.abs(dy) * bh) / 2;
+      const g = c.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
       for (const s of wp.stops) g.addColorStop(s.offset, s.color);
       return g;
     }
     const img = wp.image ? this.image(tables, wp.image) : null;
     if (!img) return null;
-    if (wp.tile) return this.env.tilePattern ? this.env.tilePattern(c, img, { x: bx, y: by, w: bw, h: bh }, 1) : null;
+    if (wp.tile) return this.tilePatternOf(c, img, wp.tile, k / 12700, { x: bx, y: by, w: bw, h: bh });
+    const fr = wp.fillRect;
+    const rr = fr ? { x: bx + fr.l * bw, y: by + fr.t * bh, w: bw * (1 - fr.l - fr.r), h: bh * (1 - fr.t - fr.b) } : { x: bx, y: by, w: bw, h: bh };
     const pat = c.createPattern(img as CanvasImageSource, 'no-repeat');
     if (pat && typeof pat.setTransform === 'function' && typeof DOMMatrix !== 'undefined' && imgW(img) > 0 && imgH(img) > 0) {
-      pat.setTransform(new DOMMatrix([bw / imgW(img), 0, 0, bh / imgH(img), bx, by]));
+      pat.setTransform(new DOMMatrix([rr.w / imgW(img), 0, 0, rr.h / imgH(img), rr.x, rr.y]));
     }
     return pat;
   }
@@ -378,7 +436,7 @@ export class SlidesPainter {
         if (r.pattern) run.pattern = { prst: r.pattern.prst, fg: r.pattern.fg, bg: r.pattern.bg };
         if (r.spc !== undefined) run.spc = r.spc;
         const wp = r.paint;
-        if (wp) run.paint = (c, box) => this.letterPaint(c, tables, wp, box);
+        if (wp) run.paint = (c, box, k) => this.letterPaint(c, tables, wp, box, k);
         if (r.alpha !== undefined) run.alpha = r.alpha;
         return run;
       });
@@ -399,8 +457,8 @@ export class SlidesPainter {
     const target = layer ?? ctx;
     const rowsOf: PatternRowsOf = this.env.patternRows ?? (() => undefined);
     paintWarpedText(target, e.prst, e.adj, !!e.fromWordArt, lines, x, y, w, h, e.pxPerPt, (cw, ch) => this.scratch(cw, ch), rowsOf);
-    if (layer && tileImg && e.tile && this.env.tilePattern) {
-      const pat = this.env.tilePattern(layer, tileImg, { x, y, w, h }, e.tile.scale);
+    if (layer && tileImg && e.tile) {
+      const pat = this.tilePatternOf(layer, tileImg, e.tile.tile.params, e.tile.tile.scale, e.tile.tile.bx);
       if (pat) {
         layer.save();
         layer.globalCompositeOperation = 'source-in';
@@ -560,6 +618,12 @@ export class SlidesPainter {
               c.transform(u.a, u.b, u.c, u.d, u.e, u.f);
               break;
             }
+            case 'setTransformReg': {
+              const r = regs[it.v];
+              if (!r) throw new RangeError(`register ${it.v} not captured`);
+              c.setTransform(r);
+              break;
+            }
             case 'globalAlpha': c.globalAlpha = it.v; break;
             case 'globalAlphaMul': c.globalAlpha = c.globalAlpha * it.v; break;
             case 'composite': c.globalCompositeOperation = it.v; break;
@@ -581,6 +645,12 @@ export class SlidesPainter {
               break;
             }
             case 'font': c.font = fontStr(this.env, at(tables.faces, it.face, 'face'), it.sizePx); break;
+            case 'chartFont': c.font = chartFontStr(this.env, at(tables.faces, it.face, 'face'), it.sizePx); break;
+            case 'fillText': {
+              if (it.text.start + it.text.len > list.texts.length) throw new RangeError('text span out of range');
+              c.fillText(list.texts.slice(it.text.start, it.text.start + it.text.len), it.x, it.y);
+              break;
+            }
             case 'textAlign': c.textAlign = it.v; break;
             case 'textBaseline': c.textBaseline = it.v; break;
             case 'imageSmoothing': c.imageSmoothingEnabled = it.v; break;
@@ -599,6 +669,7 @@ export class SlidesPainter {
               else c.drawImage(img as CanvasImageSource, it.d.x, it.d.y, it.d.w, it.d.h);
               break;
             }
+            case 'prepare': this.image(tables, it.v); break;
             case 'text': this.drawText(c, list, tables, at(list.runs, it.v, 'run')); break;
             case 'layerBegin': {
               if (it.layer < 0 || it.layer >= 16) throw new RangeError(`layer ${it.layer}`);

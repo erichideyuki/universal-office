@@ -26,6 +26,7 @@ mod lzw;
 mod png;
 mod raster;
 mod tiff;
+mod tiff_slides;
 
 pub use bmp::decode_bmp;
 pub use gif::decode_gif;
@@ -34,6 +35,7 @@ pub use limits::{ImageError, ImageLimits, LimitKind, Result};
 pub use png::decode_png;
 pub use raster::decode_raster;
 pub use tiff::decode_tiff;
+pub use tiff_slides::{decode_tiff_slides, is_tiff_slides};
 
 /// A decoded image: 8-bit RGBA, row by row, `width * height * 4` bytes (the TS `Rgba`).
 #[derive(Debug, Clone, PartialEq, Eq)]

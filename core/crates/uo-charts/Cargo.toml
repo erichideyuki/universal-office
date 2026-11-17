@@ -1,0 +1,45 @@
+[package]
+name = "uo-charts"
+description = "Shared chart engine of the UniversalOffice Rust core (Slides and Sheet): the DrawingML chart model (c:chartSpace and the Office 2016 cx:chartSpace), its parser over the host's parsed XML and theme colour resolver, the automatic scale, trendlines, and the layout and painting of a chart as canvas calls the host emits into its display list (text measured through advance tables)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Architecture record: core/docs/modules/uo-charts.md. Skeleton only (types, no logic): the port
+# (frontiers C-1..C-5) adds uo-jsnum (JS numerics, Math.*, toFixed/toPrecision, sort), uo-text
+# (JS white space, \S) and uo-drawingml only where a frontier needs them.
+
+[features]
+# the canonical JSON printer of the parity captures (`canon.rs`: tests and tools only; `cargo test` enables it
+# through the dev-dependency below)
+canon = ["dep:uo-testkit"]
+
+[dependencies]
+# the host's parsed XML tree (`Element`): the engine never parses XML (shared/charts/src/xml.ts)
+uo-opc = { path = "../uo-opc" }
+# number formats of tick labels, data labels, legends and histogram bins (`FormatLocale`)
+uo-numfmt = { path = "../uo-numfmt" }
+# JS numerics (parseInt/parseFloat, Math.*, number → string, the JS sort) and JS text rules (`\s`, `\S`,
+# `toUpperCase`): the TS parser and colour code call them at every number and string
+uo-jsnum = { path = "../uo-jsnum" }
+uo-text = { path = "../uo-text" }
+# No uo-render: the chart paints through the `Canvas` trait (emit.rs); the host's emitter
+# (uo-dml-render `emit::chart`, the Sheet viewport later) turns the calls into display-list items.
+
+# SHA-256 of the long strings of the canonical JSON (feature `canon`)
+uo-testkit = { path = "../uo-testkit", optional = true }
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# the parity replay needs the canonical JSON printer: enabled for every `cargo test` (no flag to forget)
+uo-charts = { path = ".", features = ["canon"] }
+uo-testkit = { path = "../uo-testkit" }
+# C-6 (`tests/c6_tiles.rs`): the chart facets through the Slides list; a dev-dependency cycle (uo-dml-render depends on this crate)
+uo-dml-render = { path = "../uo-dml-render" }
+uo-render = { path = "../uo-render" }
+
+[lints]
+workspace = true

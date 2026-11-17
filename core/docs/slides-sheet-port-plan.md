@@ -303,3 +303,34 @@ Corrections to this plan (evidence in `uo-pptx.md` "Plan corrections"):
 
 Order unchanged in substance: §4.2 implementation (R-S1–R-S5 in `uo-render.md`) → B1a → B1b → (B2 ∥ B3) → B4 →
 (B5a ∥ B5b) → B6 → B7 → B8. Questions for the M4 gate: SP1–SP4 (`uo-pptx.md`), DR1–DR3 (`uo-dml-render.md`).
+
+## 15. Charts architecture results (`uo-charts`) — 2026-11-17
+
+Opus pass for §6 `uo-charts`. Record: `core/docs/modules/uo-charts.md` (scope, data model, host interface, the five
+measurement sites, emission map, schema additions, per-scale decisions, frontiers C-0…C-7, parity capture and the
+`c1a` generator, Office oracle plan, M1–M5, fuzz, JS traps). Type skeleton: `core/crates/uo-charts` (model, host,
+measure, emit, layout, error; clippy clean native and wasm32).
+
+Corrections to this plan:
+
+1. **Size**: ≈ 5,100 raw TS lines in the crate (render.ts alone 2,862) + ≈ 160 of the Slides host, ≈ 6,900 Rust with
+   the harness. Probable time ≈ **2 days** with two agents (C-0 ∥ C-1 → C-2 ∥ C-3 → C-4 ∥ C-5 → C-6 + verification),
+   not 1.5.
+2. **Order**: C-0…C-5 need nothing from B4 (the chart paints through a `Canvas` trait and compares natively through a
+   Rust port of the recorder's `draw` form); only C-6 (the Slides host inside `uo-dml-render`'s `emit::chart`) waits
+   for B4 and the schema additions. `uo-charts` can start now, in parallel with B4.
+3. **Dependency direction**: `uo-charts` depends on `uo-opc` and `uo-numfmt` only — no `uo-render` and no
+   `uo-dml-render` (`ChartMeasure` and `Canvas` traits defined in `uo-charts`, implemented by `uo-dml-render` for its
+   `MeasureTable` and emission context). `CssColor`/`FaceKey` are duplicated (`ChartColor`/`ChartFace`) until they move
+   down after B4.
+4. **Missing pieces**: schema additions A1 `ChartFont` (the chart's `[italic ][bold ]<toFixed(2)>px` font string), A2
+   plain `FillText`, A3 `PathOp::RoundRect`, A4 a denominator in `TileParams` (charts compute `w × 72 / dpi`); recorder
+   additions (`roundRect`, canvas font validity, `fontBoundingBox*` from the capture measurer) and painter support.
+   The Excel `Chart.Export` driver was lost with the corpus and is rebuilt for the agreement run; `tilePattern` moves
+   to the shell painter (B4 already did it for shapes).
+5. **Text**: the chart measures widths at the canvas's current kerning (`auto`) and the `'Hg'` font box at ≈ 100 px;
+   label wraps can need one round per line — a prefetch rule (CH-1) or more rounds, decided on the captures.
+6. **Animated chart parts**: `chartPartBounds` is a fold over the chart's own canvas calls (`BoundsCanvas`), and its
+   unbounded per-model cache becomes an LRU in the host's chart cache.
+
+Questions for the M4 gate: CH-1…CH-6 (`uo-charts.md`).

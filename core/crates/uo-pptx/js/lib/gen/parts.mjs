@@ -44,6 +44,9 @@ export function makeTemplate(c) {
 
 export function contentTypes(parts) {
   const defs = { rels: 'application/vnd.openxmlformats-package.relationships+xml', xml: 'application/xml', png: 'image/png' };
+  // B5b: the media the browser cannot decode
+  for (const p of parts) void p;
+  defs.emf = 'image/x-emf'; defs.wmf = 'image/x-wmf'; defs.pict = 'image/pict'; defs.tif = 'image/tiff';
   const over = {};
   for (const p of parts) {
     if (/^ppt\/slides\/slide\d+\.xml$/.test(p)) over[p] = 'application/vnd.openxmlformats-officedocument.presentationml.slide+xml';

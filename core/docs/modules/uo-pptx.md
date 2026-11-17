@@ -2,8 +2,8 @@
 
 Record of the rust-port workflow (hybrid mode, `SKILL.md` "Architecture pass (Opus), only for the big shapes").
 Status: architecture pass done 2026-11-17 (Opus); **B1b (read path) ported 2026-11-17** (Sonnet): package session, deck caches,
-`readPresentation`/`readSlide`/notes, embedded fonts, parity 100% (see "B1b result"). Timing, `.ppt`, the editor and the
-exporters are still skeleton types.
+`readPresentation`/`readSlide`/notes, embedded fonts, parity 100% (see "B1b result"). **B6 (timing, animation, playback, show,
+media, slot evaluation) ported 2026-11-17** (see "B6 — timing and playback"). The editor and the exporters are still skeleton types.
 The milestone-4 gate (plan §11) approves it together with `uo-dml-render.md` and the "Slides extensions"
 section of `uo-render.md`.
 
@@ -516,8 +516,8 @@ holding NaN and `Debug` of a parsed tree that lists a hash map; both comparisons
 7. `.ppt` through `Deck::open` returns `PptxError::PptFormat` (feature `ppt` routes to `ppt::convert`, a placeholder for B2).
 8. `chartXml` is not stored in the shape: `ChartRef.part` names it and the text is read through the part source (printed in full
    at every occurrence, as the TS).
-9. EOT-embedded fonts are skipped like an unknown format until B5b (`eot.ts` → `uo-fonts`); PowerPoint's own fntdata are EOT, so
-   `embedded_fonts()` is incomplete for them (the TS returns the converted sfnt).
+9. EOT-embedded fonts: read since B5b (`eot.ts` → `uo_fonts::eot::read`, with MicroType Express, called by `fonts.rs` through `uo_dml_render::eot_to_sfnt`); a part that is no EOT is skipped as the TS does.
+   B5b (2026-11-17, `uo-dml-render.md` "B5b — metafiles"): metafile / PICT / TIFF pictures are recipes the shell replays (not a display sub-list); `uo-image::decode_tiff_slides`; the draw-op comparison covers them (`drawops-b5b`, 162 / 162).
 
 ### Gaps left for later frontiers
 
@@ -637,3 +637,241 @@ same parts when run again; the reader and writer run apart from the container to
 | Architecture pass (plan §4.0 Slides, §4.2 design, §4.5 boundary) | Opus | one session | records `uo-pptx.md`, `uo-dml-render.md`, `uo-render.md` "Slides extensions"; skeletons `uo-pptx`, `uo-dml-render` |
 | B1b port (with B1a, one session) | Sonnet | one session; replay 0.4 s, memory 0.6 s, no-panic 1.6 s (release); long no-panic 23 s; capture re-run 2.5 s per file | the first replay of 253 decks was 100% equal (0 parity rounds); rework: 2 harness fixes (fuzz comparison on NaN / hash-map Debug, M1 tests that forgot to clear a cache), 3 lint fixes |
 | B2 port (the `.ppt` converter, see "B2 — .ppt converter") | Sonnet | ≈ 65 min wall; replay 0.2 s, memory 0.4 s (release), no-panic 5.6 s (debug), long no-panic 189 s, fuzz 60 s | 1,082/1,082 parts byte-equal on the first run (0 parity rounds); rework: 1 compile round (invariant lifetime), 6 lints, the capture's date/`b<N>` facets in the replay |
+
+## B6 — timing and playback (2026-11-17, Sonnet)
+
+Ported 1:1 into `core/crates/uo-pptx/src`: `timing_parse.rs` (`parseSlideTransition`, `parseTimeNode` over an explicit stack,
+`parseSlideTiming` with the main sequence steps, interactive and media-bookmark sequences, media nodes, `animBg`),
+`timing_eval.rs` (`beginOffset`, `simpleDur`/`blockDur`/`activeDur`, `collectEffects`/`collectGroup`/`stepFrom`),
+`anim_formula.rs` (`evalFormula` + the capped parse cache), `anim_engine.rs` (accel/decel, `tmFilter`, progress, colours in RGB and
+HSL, motion paths + cache, every behaviour, `shapeAnimHooks` as `ShapeHooks`: `all`/`bg`/`para`/`unit`/`chartParts`),
+`slots.rs` (`evaluate_slots` over a `SlotTemplate`), `playback.rs` (`placeSlideEffects`, `clickWait`,
+`buildPlaybackTimeline`, `playbackStateAt`, `shapeOpacityAt`), `show.rs` (`SlideShow`, `mirrorTransition`), `media.rs`
+(`mediaCommands`, `mediaStateAt`, `mediaFadeAlpha`, `gifFrameAt`, plus the viewer's `showWhenStopped` opacity). `transition.ts` has no
+state or timing code (only `paintTransition`, which stays in the shell, driven by `SlideShowFrame`/`PlaybackState`); the timing facts it
+needs (`instantTransition`, `mirrorTransition`) live in `playback`/`show` as in the TS. Touched outside the new files (additive):
+`lib.rs` (modules), `read.rs` (`read_slide_with` takes the presentation `Limits`; `readSlide`'s `parseSlideTiming` call and the bookmark
+fix-up `timeMs`/`trimStartMs`), `deck.rs` (the `read_slide_with` call, `Deck::timing_models`), `model.rs`
+(`SlideModel.timing: Option<Arc<TimingModel>>`, shared with the timeline and the show), `canon.rs` (`timing_json`,
+`slide_record_with_timing`), `anim.rs` (the skeleton `SlotKind`/`SlotValue` moved to `slots.rs`), `tests/replay.rs` (the `s<N>`/`model`
+facets enabled), the harness (`js/capture-timing.mjs`, `js/lib/gen/b6.mjs`, `groups.mjs`, `PartCtx.addRel` in `b1.mjs`), `core/fuzz`
+(`src/timing.rs`, two `[[bin]]`, one line each in `lib.rs`/`seed.rs`).
+
+### API
+
+```rust
+parse_slide_timing(root: Element, &TimingInputs { units, color, has_background }, &Limits) -> TimingModel   // read_slide calls it
+build_playback_timeline(&[Option<Arc<TimingModel>>], &PlaybackOptions) -> PlaybackTimeline; playback_state_at(&tl, t) -> PlaybackState
+SlideShow::new(models, from, now, opts); next(now, mouse) prev go_to first last update(now) -> SlideShowAction; frame(now) due_at wake_at
+shape_anim_hooks(&[PlacedEffect], &TimeArena, ids, anim_ms, &ShapeAnimContext) -> Option<ShapeHooks>
+evaluate_slots(&SlotTemplate, &PlaybackSlide, anim_ms, &MediaClock, &mut AnimCaches) -> SlotTable     // one SlotVal per template slot
+```
+
+No call reads a clock: every time is an argument (`now`, `t`, `anim_ms`). A `PlaybackSlide` carries `Arc<TimingModel>` (the node arena the
+placed effects point into), so a frame of the show is self-contained. The two caches (`pathCache` 256, formulas 1,024) are an
+`AnimCaches` the caller owns (the deck view in B7) and empties with `clear()`.
+
+### Parity (the gate)
+
+`tests/timing_replay.rs` over `js/capture-timing.mjs`; `tests/replay.rs` for the model facets (`s<N>`/`model` now include `timing`).
+Generated group `b6a` (100 decks, 202 slides; seeds 600000+, `js/lib/gen/b6.mjs`): every effect class (entrance 15 kinds, emphasis 16,
+exit 6, motion paths 7 forms, media commands), click/with/after, repeat, auto-reverse, accel/decel, `spd`, `tmFilter`, fill, "until next
+click", iterate by element/word/letter (forward, backwards, `tmPct`/`tmAbs`), build by paragraph, `animBg`, chart and SmartArt targets,
+trigger and media-bookmark sequences, video/audio with trim/fade/bookmarks, every transition kind (21 `p:`, 19 `p14:`,
+`p15:prstTrans`, `p159:morph`, a duration outside fast/med/slow, `sndAc`), hidden slides.
+
+| Capture | Decks | Facets compared | Equal | Mismatches |
+|---|---|---|---|---|
+| `model-b6a.capture` (model facets with `timing`) | 100 | `input read pres slides n<N> s<N> nmodel model` | 1,004 | **0** |
+| existing model captures, `s<N>`/`model` newly replayed | b1a 200, samples 28, b5a 150 | same | 2,200 / 807 / 1,340 (were 1,500 / 472 / 970) | **0** |
+| `timing-samples.capture` + `.frames.gz` (28 `.pptx` samples incl. `playback/`) | 28 | `t<N> tl.a-d st.a-d hk sh.a-d fr` | 783 (+ 8,060 hook calls) | **0** |
+| `timing-b1a.capture` | 200 | same | 3,900 (+ 9,758 calls) | **0** |
+| `timing-b6a.capture` | 100 | same | 1,902 (+ 76,609 calls) | **0** |
+| `timing-formula.capture` (1,740 formulas x 3 variable sets) | - | every result by bits | 5,211 of 5,220 | 9, declared (below) |
+| `fn/media` (`accelDecel`, `gifFrameAt`, `mediaFadeAlpha` grids) | - | digests | 3 of 3 | **0** |
+
+Facets: `t<N>` the model of slide N (`SlideTimingModel` canonical JSON); `tl.<v>` the timeline of four option sets (default; video export
+tick 33 ms + 30 fps transitions; no timings; 60 Hz tick) with every placed effect; `st.<v>` `playbackStateAt` at up to 80 sampled times
+with `shapeOpacityAt` of every target and `mediaStateAt` on two media clocks; `hk` every effect through `shapeAnimHooks` at six times
+over a fixed base (all/bg/para/unit/chart); `sh.<k>` four random `SlideShow` scripts of 40 commands (default, no timings, no animations,
+loop) with `index/step/ended/dueAt/wakeAt/frame` and the placed effects after each; `fr` the **slot recording**: `paintSlideTo` of the
+frozen painter over the recording canvas at sampled frames of timelines `a`/`b` and of show script `a` (6,400 frames), every hook call
+(`all`/`bg`/`para`/`unit`/`chartParts`: base in, `PartState` out, every field by bits) and the media `shapeOpacity`, as the viewer wires
+them; Rust re-runs each call from the recorded base and compares the output tokens (the `fr` digest is of the Rust-produced lines).
+**Mismatches left: 0 in every capture.** The 9 formula differences are the declared bound cases (three formulas x three variable sets): a
+150-level parenthesis nest, 200 unary minus signs and `sin(` nested 130 times: the TS evaluates them, Rust returns NaN (bounds below).
+Mutation check: changing `AFTER_LINK_MS` to 2 made 1,093 of 1,902 b6a facets fail, so the replay does discriminate.
+
+### Memory (M1-M5), measured by `uo-alloc` (`tests/timing_limits.rs`)
+
+- **M1**: the parse (document + model), timelines of two option sets, states, `shapeOpacityAt`, `mediaStateAt`, `evaluate_slots` (with
+  `AnimCaches::clear`) and 80 `SlideShow` commands return live bytes **exactly** to the start. (The first run found 180 B: `clear()` kept
+  the maps' capacity; it now replaces them.)
+- **M2**: a slideshow of 1,000 frames (`UO_PPTX_TIMING_SOAK` to lengthen) over a b6a deck with per-letter/word effects, motion paths and
+  media, a full slot evaluation (one shape slot + background + 3 paragraphs + 6 units + chart part per animated shape, 72,228 slots)
+  every frame, restarted every 400: live bytes sampled every 50 frames are flat (within 64 KiB; in practice constant after the 3rd
+  sample, the caches being capped); 41 ms in debug.
+- **M3**: a slot evaluation allocates at most **10,232 B** per frame (budget 64 KiB) over the busiest slides.
+- **M5**: the formula cache holds 1,024 entries and the path cache 256, tested past their caps (3,000 formulas, 600 paths) with other
+  caps (16 / 8 / 1) and always the same bits as the uncapped result; both hold nothing after `clear()`.
+
+### Security
+
+Bounded, no panic (`hostile_*` tests): a 60,000-deep `<p:par>` nest (dropped below depth 256), 100,000 siblings with a 20,000-node cap,
+48 combinations of `repeatCount` (`1e30`, `indefinite`, `NaN`, negative...) x `dur` (`indefinite`, `1e308`, `NaN`, `1e-320`...) with
+`autoRev`, `spd`, `accel=99999999` and `<p:iterate><p:tmAbs val="1e999">` driven through timelines, states, hooks with a `u32::MAX` unit
+and a slideshow on NaN/infinite clocks, a hand-built model with NaN durations/keyframes/ranges everywhere, 13 formula bombs (200,000
+`(`, 1 M `-`, a 10 MB number, 300,000 arguments...) and six motion-path bombs (100,000 `C` commands, 400,000 `Z`...), and random command
+sequences on 24 shows with `now` going backwards, `1e6` and NaN. Fuzz targets `slide_timing` (structure-aware: limits + wrapping byte,
+hostile `<p:sld>` content, then timelines, hooks, slot table and a driven show; invariants: caps hold, ids resolve, the same canonical
+text twice) and `anim_formula` (NaN or finite, an infinity only for a numeric literal like `1e999`, which the TS also returns; the same
+through three caches): 2.84 M executions in 45 s and 0.94 M in 40 s on the stable driver, 0 crashes (the first formula run flagged
+`1e999`: the invariant was too strong, not the evaluator).
+
+### Decisions outside the source semantics (declared)
+
+1. **Time-tree bounds** (`Limits::max_time_depth` 256, `max_time_nodes` 1,000,000): a container that would pass either bound, with its
+   subtree, is dropped as if it were not a time node (the TS recursion overflows its stack). `read_slide_with` passes the deck's limits;
+   `read_slide` uses the defaults.
+2. **Formula bounds**: text over 4,096 characters, more than 1,024 nodes, parenthesis/sign/argument nesting over 128 or a tree deeper
+   than 512 is "not a formula" (NaN). The TS has none; about 130 nested `sin(` overflows its stack. Names of `Object.prototype` used as
+   variables (`constructor`, `toString`...) are NaN here; in JS they are functions whose arithmetic is NaN except `^0` = 1.
+3. **Motion paths**: text over 65,536 characters is the empty path; at most 262,144 sampled points (the TS has no cap).
+4. **Transition speed** `spd` outside `fast/med/slow` is 500 ms (a `spd` named like an `Object.prototype` member gives a function in
+   the TS).
+5. **Caches are capped FIFO** (formulas 1,024, paths 256) and owned by the caller; the TS caches grow without bound. Neutral: a miss
+   re-parses.
+6. **Composition, not spread**: `PlacedEffect { fx: EffectTiming, t0, step, end_at }`; `EffectTiming.node` is a `NodeId` in the model's
+   arena (the timing capture prints `[tag, id]`; the model JSON prints the whole subtree, as the TS does).
+7. `evaluate_slots` has no `view` argument: the bases are already normalized in the template (per viewport, `uo-render.md` S6);
+   `shapeOpacity` (media `showWhenStopped`) is part of the shape slot's value (`SlotVal::State { op, .. }`, `Hidden` when `op <= 0`).
+8. `SlideShow::new(from: f64)` keeps `Math.trunc(from) || 0`; `go_to` takes an `i64`; a frame owns `Arc`s (clones are pointer copies).
+9. Hand-built models (not reachable from the parser) get guards where the TS would throw a `TypeError` (empty `tmFilter`/`tav` lists).
+
+### Slot schema and what B7 needs
+
+- **No `slots.uos` change is required.** The wire `SlotDef`/`PartState` carry what the painter reads. What the evaluation needs beyond
+  it (`AnimBase.fill/line/text` for `animClr` without `from`, the shape's id + group ids, `dgmId`, `has_media`, `inherited`, the five
+  integers of a `UnitRef` and the word's) stays in the Rust-side `SlotTemplate` (`slots.rs`) that the emitter fills next to the encoded
+  list. If B4 wants them on the wire: `SlotDef.index: u32` cannot hold a `UnitRef`, and `base_rot_rad` is not `AnimBase.rot` (the TS
+  passes degrees, `xfrm.rot / 60000`; keep the degree value).
+- B4 fills `SlotTemplate { shapes: [SlotShape { ids: [id, ..group ids], dgm_id, has_media, inherited, has_xfrm }], slots: [SlotSpec {
+  kind, shape, base, word }] }` at emission (bases exactly as `boxBase`, text bases at device scale) and re-emits the shapes whose
+  `PartState::needs_reemit()`.
+- B7: the wasm handles are `Deck::timing_models()` -> `build_playback_timeline`/`SlideShow` (state in Rust, `now` from the shell), the
+  frame's `PlaybackSlide` + `anim_ms` -> `evaluate_slots` -> `SlotTable` -> `SlotFrame`; the shell keeps `paintTransition` (reads
+  `PlaybackSlide.transition` and `transition_progress`), the media elements (`media_state_at`, `gif_frame_at`, `media_fade_alpha`) and
+  the decode of GIF delays; `AnimCaches` lives in the deck view (`clear()` with `Deck::clear_caches`).
+
+### Process metrics
+
+| Stage | Time | Notes |
+|---|---|---|
+| Port (about 2,700 TS lines into `timing_parse`, `timing_eval`, `anim_formula`, `anim_engine`, `slots`, `playback`, `show`, `media`) | one session | every capture equal on the first run (**0 parity rounds**) |
+| Harness: `b6.mjs` generator, `capture-timing.mjs` | one session | captures: samples 1.6 s, b6a 10.3 s, b1a 21.9 s, formulas 1.5 s; the 100 decks regenerate in under 2 s, byte-equal (`--check`) |
+| Verification | - | `timing_replay` 4.2 s, `timing_limits` 1.2 s, `replay` 5 s (debug); whole `uo-pptx` suite 74 s (debug, 4 threads); fuzz 45 + 40 s stable driver; clippy native + wasm32 clean |
+| Rework | - | M1: `clear()` kept map capacity (180 B); the formula parser's nest counter counted parentheses twice (64 levels instead of 128) and shared its bound with the tree depth (a 256-term sum was NaN): split into `MAX_DEPTH`/`MAX_TREE_DEPTH`; the fuzz invariant on `1e999` |
+
+## B8 — editor session (2026-11-17, Sonnet)
+
+Ported 1:1 into `core/crates/uo-pptx/src/edit.rs` and `src/edit/*.rs` (feature `edit`): `xml` (`xml-edit.ts`: string scans, byte offsets,
+`RegExp`s as hand matchers), `pkg` (`deck-edit.ts` parts, relations, content types, slide list, layouts, `addSlide`, `duplicateSlide`,
+`deleteSlide`, `moveSlide`, background, transition), `shapes` (insert, frame, fill, outline, order, delete with its animations, text, character
+and paragraph formatting, bullets, link, replace, and the C# `PptxManipulate.SetRunText`), `doc` (notes, properties, "Set up show", the shape
+clipboard), `blank` (`blank-deck.ts`, parts byte-equal), `fonts` (`deckFontUsage` and `readPptxEmbedding`/`writePptxEmbedding` of `shared/fonts`
+over the part store; the plan is `uo_fonts::plan_font_embedding`), `random` (`Math.random` of `freshCreationId`), `session` (`Editor`: the
+`edit()`/`undo()`/`redo()` of `universal-slides.ts` without the DOM) and, in `edit.rs`, `history.ts` with the byte cap. The 46 exported functions of
+`deck-edit.ts` are all here, plus `set_run_text`.
+Additive edits outside `edit*`: `Deck::parts_mut` (deck.rs); `Cargo.toml` (`edit = [dep:uo-fonts, dep:uo-text]`, and the self dev-dependency enables
+`edit`, so `cargo test` needs no flag); `package.rs` and `lib.rs` unchanged (`PartStore::snapshot`/`PartsSnapshot` and `pub mod edit` were there).
+
+### API
+
+`Editor::{new, open, blank, apply(Op) -> Outcome, undo, redo, select, set_index, copy_shape, find_text, default_new_layout, font_requests,
+save_with_fonts(faces) -> SavedPackage, save, is_dirty, mark_clean, set_random_seed, set_text_lang}`. `Op` has one variant per mutating method of the
+element (the arguments the element resolves from its UI state: slide index, shape id), with the guards of the wrappers (a missing slide is a no-op).
+The editor owns the UI state the history saves (current slide, selected shape id); the shell mirrors it after each call.
+
+### Parity (the gate)
+
+`js/capture-edit.mjs` runs seeded scripts on the FROZEN TS operations (`deck-edit.js`, `history.js`, `blank-deck.js`, `writePptxEmbedding` from the
+built `dist/` of the 0.9.2 checkout) under a `Session` that repeats the `edit()` sequence of `universal-slides.ts` (snapshot, operation, `changedSince`,
+re-read, `selectById`, `history.push`; undo/redo with `restore`) and the wrappers' guards and defaults (the DOM is out: this is not the real element in
+Chromium). `Math.random` is the xorshift32 of `Xorshift32` (seed 1 per script), `Date` is fixed. After EVERY step (operation, undo, redo, selection) the
+capture keeps the digest of all part bytes in order, the UI state with the history flags and labels, the presentation model, the model of the current
+slide, and what the operation returned. The scripts are generated in the harness and written to a sidecar (`.ops.gz`, one line per step), so the replay
+has no generator. A second sidecar (`.parts.gz`) lists the parts each step changed (`UO_EDIT_DUMP=<key>#<step>` prints Rust next to TS).
+
+| Capture | Scripts | Steps | Equal |
+|---|---|---|---|
+| `edit-samples` (the 28 tracked `.pptx`) | 28 | 1,680 | 100% |
+| `edit-b1a+b6a` (35 + 35 generated decks: animations, tables, groups, pictures) | 70 | 4,200 | 100% |
+| `edit-blank` (4 blank-deck variants byte-equal part by part, then 12 scripts of 120 steps from them) | 12 | 1,440 | 100% |
+| `edit-fonts` (save with the font option: plan, subsets, EOT, `embeddedFontLst`; saves compared by the parts of the reopened file) | 25 | 1,376 | 100% |
+
+Mismatches left: none. The captures total about 2 MB (limit 10). Every operation, undo, redo, copy/paste inside a deck and from another deck
+(`xpaste`), replace, notes (creating the notes master), properties, show settings, transitions and the slide-list operations occur many times.
+`tests/edit_units.rs` pins the primitives (`tag_end` with quotes, nested elements, the `$` replacement patterns, entities, part names) and the C# test of
+`SetRunText`.
+
+### Memory (M1, M2, M5), `uo-alloc` (`tests/edit_memory.rs`)
+
+- M1: each of 28 operations (two of them error paths), undo, redo and `save` return live bytes exactly to the start once the editor is dropped; so do the
+  blank deck and the save with fonts.
+- M2: soak of 24 sessions (open, 100 random steps with undo/redo, undo everything, redo everything, save, close): flat within 64 KiB.
+- M5: the history keeps the 100-step limit of the TS and a byte cap (`Limits::max_history_bytes`, 64 MiB): the bytes held BEYOND the live package
+  (distinct `Arc`s counted once; parts shared with the live package cost nothing) are bounded by the cap; past it the oldest steps go as when the limit is
+  exceeded; the newest step is always kept (one step larger than the cap stays undoable). Tested with 40 KiB and 100 KiB part versions.
+
+### Security
+
+`tests/edit_nopanic.rs`: random scripts (hostile arguments: NaN and huge frames, markup in texts and ids, unknown layouts) over decks whose XML parts are
+truncated, cut, duplicated, flipped and spliced with hostile tokens; a failed operation leaves the package as it was. Fuzz target `slides_edit`
+(`core/fuzz/src/slides_edit.rs`; invariants: a failed operation changes nothing, undo then redo restores the bytes, the saved package reopens)): 19,343 executions in 90 s with the stable driver, 0 crashes (the first run found a harness assumption: an insert on a deck without slides adds one first, as its own step).
+
+### Decisions outside the source semantics (declared)
+
+1. **A failed operation restores the snapshot** (the TS lets the exception escape with what it had written and no history step). Errors are `EditError`
+   (a `!` on a missing element is `EditError::Js`).
+2. **Byte offsets** where the TS has UTF-16 offsets; every offset is produced by a scan for ASCII tokens, so both select the same text. The UTF-16 sites:
+   `hex()` (`slice(0, 6)`/`padStart` by units), the 79-character cap of a name in `elementName`/`childRanges` (the 80-unit window), `nextPartName`
+   (the `i` flag compares canonical UTF-16 units: `uo_text::regexp_canonicalize`), `replaceInShape` (matching and case folding per unit), `copyPartDeep`
+   without a `/` (`slice(0, -1)` drops a character). Known divergence: a close tag written with a NON-ASCII white space, where `end - '</name>'.length`
+   lands differently (floored to a character boundary, never a panic).
+3. **`unescapeXml`**: a code point above U+10FFFF (the TS throws `RangeError`) or a lone surrogate becomes U+FFFD.
+4. **`Math.random`** is a seeded xorshift32 (`set_random_seed`); only `freshCreationId` consumes it, and only when the id is found.
+5. **Regexps built from user strings**: `nextPartName`'s `base` and `dropAnimationsOf`'s shape id are taken literally (the TS interpolates them
+   unescaped); `replaceInShape`'s query is escaped by the TS, so it is literal there too. The `$` patterns of `String.replace` ARE kept in `setAttrInTag`
+   (the TS bug is behaviour); they are not kept for the font entries of `writePptxEmbedding` (a family name containing `$&`).
+6. **`copyPartDeep` has a budget** (depth 64, 20,000 parts): the TS recurses without a bound (a cycle of non-shared relations overflows its stack).
+7. **The save with fonts runs over a clone of the part store**, not over `PptxPackage.load(this.pkg.save())`: the zip round trip is lossless except for the
+   decompression-bomb filter of `load`.
+8. **Selection is the shape id** (the TS keeps an index into `slides[index].shapes`): `select` accepts only a non-inherited shape of the current slide, the
+   rule of `selectById`. `Typing` finds the shape by id among the non-inherited ones.
+9. **Model-dependent wrappers**: the default frames of inserts, the image natural-size fit, `growFont`'s steps, `defaultNewLayout` and `findText` are in
+   `Editor` (pure over the model); `getTextFormat` (the base size of `growFont`) and the image decode stay in the shell, which passes `base` and `size_px`.
+10. The `.ppt` samples are not scripted (opening converts first; B2 has its own gate).
+
+### Routing behind `engine="rust"` (not done in this part): what the shell needs
+
+- **wasm exports** (`uo-wasm`, one `Editor` per element, in the SAME instance as the viewer's `Deck`: the emission reads `editor.deck_mut()`):
+  `editor_open(bytes)`, `editor_blank(opts)`, `editor_apply(op)` returning the `Outcome` (the `Op` needs a binary codec like the display list: a schema
+  `edit.uos` with the 28 variants, `Frame`, `RunFormat`, `TransitionSpec`, `DocProperties`, `ShowSettingsSpec`; images travel as bytes), `undo`/`redo`
+  returning the `EditState`, getters (`index`, `selected`, `can_undo/redo`, `undo_label/redo_label`, `is_dirty`), `set_index`, `select`, `slide_paths`,
+  `copy_shape` (a clip serialised to bytes: XML, relations, image bytes, `source_id`), `find_text`, `default_new_layout`, `font_requests` and
+  `save_with_fonts(faces)` (the two-phase protocol of Write: the host answers each `FaceRequest` with the font file; the `SavedPackage` report is the
+  `us-font-embedding` event), `set_font_embedding`, `save`, `mark_clean`, `set_random_seed` (from `crypto.getRandomValues`), `set_text_lang`.
+- **Inline text overlay**: the contenteditable stays in the shell. `commitEditShape` sends `Op::Typing { slide, shape, text }` with the text normalised as
+  now (`\r\n` to `\n`, one trailing `\n` removed); the comparison with the current text and the shape lookup are inside `apply`. The shell must commit before
+  every other operation, undo, redo and save (the TS `edit()` does it for every label but `typing`); a cancel sends nothing. After each call the shell reads
+  the state (`index`, `selected`); the changed slides are re-read lazily by the deck (a part generation changed).
+- Events (`us-change`, `us-slide`, `us-dirty`, `us-selection`) stay in the shell, derived from the `Outcome` and the state before and after.
+
+### Process metrics
+
+| Stage | Time | Notes |
+|---|---|---|
+| Port (about 1,800 TS lines + the C# `SetRunText`) | one session | the four captures were equal on the first complete run after one harness bug (the language token of the script header): 0 parity rounds on the operations |
+| Capture generation (TS side) | samples 157 s; see the session log for the others | 7,300 steps |
+| Verification (debug, 4 threads) | replay: samples 70 s, generated 47 s, blank 11 s, fonts 118 s; memory 8 s; no-panic 18 s; units 0.1 s | clippy native (all targets, all features) and wasm32 (lib) clean, `cargo fmt`, `grep-bans.sh` |
+| Rework | - | the history byte cap first counted the live package (it left one step); `Typing` found inherited shapes by id; 3 lints |

@@ -100,6 +100,16 @@ impl<'d, S: PdfSink> PageWriter<'d, S> {
         }
     }
 
+    /// Appends content a host built itself (operators in PDF coordinates: origin at the BOTTOM left),
+    /// counting `weight` operations against the page limit. For the Slides painter, which keeps its
+    /// own graphics state and writes whole content streams; Write's painter never calls it.
+    pub fn raw(&mut self, weight: u64, bytes: &[u8]) {
+        if self.begin(weight) {
+            self.content.extend_from_slice(bytes);
+            self.end();
+        }
+    }
+
     /// Draws with fill and stroke opacity 0..1 (`None` is 1): `q /GSn gs ... Q` around what `draw`
     /// paints; opaque drawing goes straight through.
     pub fn with_alpha(&mut self, fill_alpha: Option<f64>, stroke_alpha: Option<f64>, draw: impl FnOnce(&mut Self)) {

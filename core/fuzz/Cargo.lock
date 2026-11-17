@@ -131,6 +131,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "uo-charts"
+version = "0.10.0-dev"
+dependencies = [
+ "uo-jsnum",
+ "uo-numfmt",
+ "uo-opc",
+ "uo-testkit",
+ "uo-text",
+]
+
+[[package]]
 name = "uo-codec"
 version = "0.10.0-dev"
 
@@ -139,9 +150,14 @@ name = "uo-dml-render"
 version = "0.10.0-dev"
 dependencies = [
  "rustc-hash",
+ "uo-charts",
  "uo-drawingml",
+ "uo-fonts",
+ "uo-image",
  "uo-jsnum",
+ "uo-numfmt",
  "uo-opc",
+ "uo-render",
  "uo-testkit",
  "uo-text",
 ]
@@ -241,6 +257,7 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "miniz_oxide",
+ "uo-charts",
  "uo-codec",
  "uo-dml-render",
  "uo-docx",
@@ -276,9 +293,12 @@ dependencies = [
  "rustc-hash",
  "uo-dml-render",
  "uo-drawingml",
+ "uo-fonts",
  "uo-jsnum",
  "uo-opc",
+ "uo-render",
  "uo-testkit",
+ "uo-text",
 ]
 
 [[package]]

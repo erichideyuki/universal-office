@@ -7,8 +7,8 @@
 //! Slides as EOT with MTX (0x4); we (shared/fonts) write EOT without compression; some producers
 //! write a raw sfnt or the odttf obfuscation of ECMA-376 §17.8.1 (XOR of the first 32 bytes with the
 //! reversed GUID). Detected by the sfnt magic and, without a valid magic, the fontKey and then the EOT
-//! are tried. **The EOT reader belongs to frontier B5b** (`eot.ts` → `uo-fonts`): an EOT part is
-//! skipped here (what the TS does for an unknown format).
+//! are tried (B5b: the EOT reader is `uo_fonts::eot::read`, with MicroType Express); a part that is none
+//! of them is skipped (what the TS does for an unknown format).
 
 use std::sync::Arc;
 
@@ -114,7 +114,10 @@ pub fn read_embedded_fonts(src: &dyn PartSource) -> R<Vec<EmbeddedFont>> {
                 if let Some(key) = key.filter(|k| !k.is_empty()) {
                     data = deobfuscate_font(&raw, key);
                 }
-                // EOT (Google Slides/Slidesgo): MicroType Express and/or XOR → TrueType: frontier B5b
+                // EOT (Google Slides/Slidesgo): MicroType Express and/or XOR → TrueType (B5b: `eot.ts`, `uo_fonts::eot`)
+                if !looks_like_sfnt(&data) && uo_dml_render::looks_like_eot(&raw) {
+                    data = uo_dml_render::eot_to_sfnt(&raw).unwrap_or(data);
+                }
                 if !looks_like_sfnt(&data) {
                     continue; // unknown format: skipped
                 }

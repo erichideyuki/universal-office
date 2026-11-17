@@ -143,13 +143,38 @@ fn embedded_fonts_sfnt_odttf_and_unknown_formats() {
     ];
     let deck = Deck::from_parts(parts, Limits::default()).unwrap();
     let fonts = deck.embedded_fonts();
-    // the EOT part is skipped until the reader of frontier B5b; the missing part too
+    // a part that looks like an EOT but is not one is skipped (the TS: unknown format); the missing part too
     assert_eq!(
         fonts.iter().map(|f| (&*f.family, f.variant)).collect::<Vec<_>>(),
         [("Plain", FontVariant::Regular), ("Obf", FontVariant::Italic)]
     );
     assert_eq!((fonts[0].weight, fonts[0].italic), (Some(700), Some(true)));
     assert_eq!(&*fonts[1].data, plain.as_slice());
+}
+
+/// B5b: an EOT part (here the XOR form: the sfnt bytes XOR 0x50 after an 82-byte header) is read like the TS `eotToSfnt` does.
+#[test]
+fn embedded_eot_parts_are_read() {
+    let plain = sfnt_with_os2(400, false);
+    let mut eot = vec![0u8; 82];
+    eot[0..4].copy_from_slice(&u32::try_from(82 + plain.len()).unwrap().to_le_bytes());
+    eot[4..8].copy_from_slice(&u32::try_from(plain.len()).unwrap().to_le_bytes());
+    eot[12..16].copy_from_slice(&0x1000_0000u32.to_le_bytes());
+    eot[34] = 0x4c;
+    eot[35] = 0x50;
+    eot.extend(plain.iter().map(|b| b ^ 0x50));
+    let pres = "<p:presentation xmlns:p=\"p\" xmlns:r=\"r\"><p:sldSz cx=\"9\" cy=\"9\"/><p:embeddedFontLst><p:embeddedFont><p:font typeface=\"Eot\"/><p:regular r:id=\"rId1\"/></p:embeddedFont></p:embeddedFontLst></p:presentation>";
+    let rels = "<Relationships><Relationship Id=\"rId1\" Target=\"fonts/a.fntdata\"/></Relationships>";
+    let parts: Vec<(Box<str>, Arc<[u8]>)> = vec![
+        ("ppt/presentation.xml".into(), Arc::from(pres.as_bytes())),
+        ("ppt/_rels/presentation.xml.rels".into(), Arc::from(rels.as_bytes())),
+        ("ppt/fonts/a.fntdata".into(), Arc::from(eot.as_slice())),
+    ];
+    let deck = Deck::from_parts(parts, Limits::default()).unwrap();
+    let fonts = deck.embedded_fonts();
+    assert_eq!(fonts.len(), 1);
+    assert_eq!(&*fonts[0].data, plain.as_slice());
+    assert_eq!((fonts[0].weight, fonts[0].italic), (Some(400), Some(false)));
 }
 
 #[test]

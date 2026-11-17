@@ -111,6 +111,12 @@ pub enum MeasureReq {
     FontAvailable { family: Box<str> },
     /// A12: the decoded natural size (EXIF-oriented; SVG as the browser sizes it).
     ImageSize { media: MediaId },
+    /// A13 (B5b): `measureText(text).width` and the font bounding box under a RAW CSS font string, what the metafile players ask
+    /// (the metafile's own font, `40px "Name", monospace`, ...); the answer is [`MeasureTable::set_meta_text`].
+    MetaText { font: Box<str>, text: Box<str> },
+    /// A14 (B5b): decode a compressed EMF+ bitmap (PNG/JPEG...) and report its natural size; `key` is the TS `bitmapKey`, `data` the
+    /// compressed bytes ([`MeasureTable::set_meta_decoded`]: `None` = it cannot be decoded).
+    MetaDecode { key: Box<str>, data: Box<[u8]> },
 }
 
 /// A pass needs answers it does not have: the shell measures them all and the pass runs again (rounds capped by
@@ -154,6 +160,10 @@ pub struct MeasureTable {
     metrics: FxHashMap<WidthHead, FxHashMap<Box<str>, TextMetrics>>,
     font_available: FxHashMap<Box<str>, bool>,
     image_size: FxHashMap<MediaId, (f64, f64)>,
+    /// A13: `(font, text)` -> `[width, fontBoundingBoxAscent, fontBoundingBoxDescent]`
+    meta_text: FxHashMap<(Box<str>, Box<str>), [f64; 3]>,
+    /// A14: `bitmapKey` -> the decoded natural size (`None` = not decodable)
+    meta_decoded: FxHashMap<Box<str>, Option<(f64, f64)>>,
     entries: usize,
     bytes: usize,
     cap_entries: usize,
@@ -187,6 +197,8 @@ impl MeasureTable {
             metrics: FxHashMap::default(),
             font_available: FxHashMap::default(),
             image_size: FxHashMap::default(),
+            meta_text: FxHashMap::default(),
+            meta_decoded: FxHashMap::default(),
             entries: 0,
             bytes: 0,
             cap_entries: entries.max(1),
@@ -218,6 +230,8 @@ impl MeasureTable {
         self.metrics = FxHashMap::default();
         self.font_available = FxHashMap::default();
         self.image_size = FxHashMap::default();
+        self.meta_text = FxHashMap::default();
+        self.meta_decoded = FxHashMap::default();
         self.entries = 0;
         self.bytes = 0;
     }
@@ -309,6 +323,30 @@ impl MeasureTable {
     pub fn set_image_size(&mut self, media: MediaId, w: f64, h: f64) {
         self.reserve(0);
         self.image_size.insert(media, (w, h));
+    }
+
+    /// A13 answer: `measureText(text)` under the raw CSS font `font`.
+    pub fn set_meta_text(&mut self, font: &str, text: &str, width: f64, font_ascent: f64, font_descent: f64) {
+        self.reserve(font.len().saturating_add(text.len()));
+        self.meta_text.insert((font.into(), text.into()), [width, font_ascent, font_descent]);
+    }
+
+    /// A14 answer: the decoded natural size of the compressed bitmap with key `key` (`None`: not decodable).
+    pub fn set_meta_decoded(&mut self, key: &str, size: Option<(f64, f64)>) {
+        self.reserve(key.len());
+        self.meta_decoded.insert(key.into(), size);
+    }
+
+    /// A13 lookup: `[width, fontBoundingBoxAscent, fontBoundingBoxDescent]`.
+    #[must_use]
+    pub fn meta_text(&self, font: &str, text: &str) -> Option<[f64; 3]> {
+        self.meta_text.get(&(Box::<str>::from(font), Box::<str>::from(text))).copied()
+    }
+
+    /// A14 lookup: `Some(None)` = answered, not decodable.
+    #[must_use]
+    pub fn meta_decoded(&self, key: &str) -> Option<Option<(f64, f64)>> {
+        self.meta_decoded.get(key).copied()
     }
 
     /// A1 lookup.

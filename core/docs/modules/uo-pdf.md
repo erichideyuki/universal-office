@@ -652,3 +652,190 @@ prints the first differing byte).
 | P | painter port + capture script + loader + PP0 (generated, laid-out, .NET, oracle sample) + M1-M3 + no-panic + cancellation + record (Sonnet, hybrid mode) | about 3 h wall, one session (the 400-spec capture takes 3 min, its replay 55 s in release) | about 120 (own tally) |
 
 Parity rounds: 2 replays with mismatches (4 of 60 specs, then 1 of 300), both the NaN layer of the TS (a generator change, **no port bug**); every later run equal. Memory/no-panic: 3 test-design fixes (the `Usage` field types, a closure kept by the sink, the kernel limit of the loop), none in the library.
+
+## Slides PDF (R-S5)
+
+Status: **implemented and measured against the Slides display list; not yet compared with PowerPoint's PDF** (the oracle is a
+later measured step, see "The PowerPoint comparison" below). Plan: `slides-sheet-port-plan.md` §9 (M4, scope P1) and the
+"Slides extensions" design of `uo-render.md` (R-S5). One Sonnet session, 2026-11-17, sub-frontier R-S5.
+
+### Scope and where the code is
+
+| Part | Where |
+|---|---|
+| `MeasureTable` filler from `uo-fonts` (the server/PDF path of decision T1) | `uo-pptx/src/pdf/measure.rs` (`fill_measures`, `text_width`, `FontSource`, `FaceSet`) — a new file in `uo-pptx`, so it does not touch B5b's `uo-fonts` EOT/MTX files nor `uo-dml-render` |
+| Interpreter of the Slides list (state, paths, paints, layers, text, pictures, recipes) | `uo-pptx/src/pdf/{interp,paint,text,images,recipe,geom,css}.rs` |
+| Entry points | `uo_pptx::pdf(&mut Deck, &PdfOptions) -> Result<PdfOutput, PdfFail>` (feature `pdf`; `PdfOutput { bytes, report }`) and `uo_pptx::pdf::pdf_from_lists(&[(&SlidesList, &SlidesResources)], &dyn PartSource, &PdfOptions)` (the interpreter alone: tests, hostile lists, lists emitted elsewhere) |
+| Writer additions (additive, used only by this painter) | `uo-pdf/src/document.rs`, `page.rs`: `PdfDocument::{add_ext_gstate, add_form, form_object, add_pattern, add_user_shading}`, `PageWriter::raw` |
+| Tests | `uo-pptx/tests/{pdf_measure,pdf_slides}.rs`, `tests/support/{open_fonts,pdf_view}.rs` (they reuse `uo-pdf/tests/support/pdf_parse.rs`, the frame check of the Write PDF tests) |
+
+**No `PdfProfile`** (plan §4.4 finding S9 said `render_pdf` hard-wires Word rules): the Slides list is a canvas call sequence, not Word
+pages, so it does not go through `render_pdf` at all. The shared part is the app-neutral writer (`PdfDocument`/`PageWriter`, fonts with
+subsetting and ToUnicode, images, shadings), which stays as it was; the interpreter lives with the producer (`uo-pptx`), the way
+Write's painter lives with Write's page. Nothing in `render_pdf`/`render.rs` changed.
+
+### How a list becomes a page
+
+- **1 px = 1 pt.** The slide is emitted at `scale = 1/12700` px per EMU, origin 0; the page is `sw x sh` pt (= the slide size) and its content
+  starts with `q 1 0 0 -1 0 H cm` (the canvas is y down). The interpreter keeps the canvas state (CTM, alpha, composite, fill/stroke paints,
+  line style, dash, shadow, blur, text alignment and baseline, the font) and writes PDF operators in the canvas's own user space:
+  `save/restore` = `q/Q`, `transform/translate/rotate/scale` = `cm`, `setTransform` = the `cm` that takes the current matrix to it,
+  registers keep the CTM. A path is stored with the transform it was added under and written, at paint time, in the user space of the paint
+  (the canvas keeps device space; PDF forbids `cm` between construction and painting). Arcs, `arcTo`, ellipses and `roundRect` become cubics.
+  Matrix entries are written with 6 decimals, coordinates with 4 (3 decimals lose a rotation).
+- **Colours and alpha.** CSS colours (`#rgb[a]`, `#rrggbb[aa]`, `rgb()`, `rgba()`, `transparent`, names) are parsed in `css.rs`; an unreadable
+  one is ignored as the canvas does. `globalAlpha * colour alpha` is an ExtGState (`/ca /CA`, with `/BM`), written only when it changes.
+- **Blend modes**: `source-over` Normal, `multiply`, `screen`, `darken`, `lighten` (the recipes' `difference` too). **Not PDF**: `destination-in`,
+  `destination-out`, `source-in` (see the missing list).
+- **Layers** (`LayerBegin/End`, `DrawLayer`, `ReleaseLayer`) are transparency groups: a form XObject (`/Group /S /Transparency /I true`) in canvas
+  space, composited under the identity transform with the context's alpha/blend mode (`Composite`) or kept for `DrawLayer`
+  (drawn under the current transform). With a layer, `LayerEnd` continues at `fallbackEnd` (the else block is skipped); the layer right after
+  a shape slot's `SlotBegin` is the soft-reveal layer and, in the static state of a PDF, is not acquired (the TS interpreter's rule). A layer in
+  which a `destination-in/out` *fill* had to be skipped (the reflection's fade) is **dropped** instead of composited wrong (`layer:dropped`).
+- **Gradients**: linear and radial are sampled type-0 shadings (256 samples, canvas RGBA interpolation); stops that carry alpha add a
+  luminosity soft mask of the alpha ramp; one stop is a two-stop ramp; **conic** is its average colour (`gradient:conic`); a gradient
+  *stroke* is its first stop (`gradient:stroke`). Text with a gradient fill is the text as a clip (`7 Tr`) and the shading.
+- **Pictures**: JPEG is passed through (`DCTDecode`; brightness/contrast of a derived image ride on `/Decode`); the other raster formats are
+  decoded by `uo-image` and written as Flate with an `/SMask` for alpha; the colour effects of `fxImage` (duotone, gray, bi-level, clrChange,
+  brightness/contrast) are applied to the pixels (a JPEG with a pixel effect keeps the original and is counted: `image:jpeg-effect`). The 9-argument
+  `drawImage` is a clip and a placement. Generated bitmaps (pattern tiles, path-gradient rasters) are RGBA images.
+- **Patterns** are tiling patterns of the image cell; the matrix is `pattern transform * CTM * base` where `base` is the page flip on the
+  page and the identity inside a form (a pattern's default space is the space of the content stream that uses it); `a:tile` follows
+  `tilePattern` (alignment, the device-snapping of tiles smaller than a device pixel, flips as mirrored copies in the cell; `TileDef.nat` of the
+  chart engine); `no-repeat` is one clipped copy.
+- **Text** (`TextRun`, `FillText` of the chart engine): the face is the host's answer for the family (`FontSource`), embedded **once per font file**
+  (subset and ToUnicode by `uo-pdf`); a file whose OS/2 `fsType` forbids embedding is never put in the PDF (`font:not-embeddable`) — proprietary
+  fonts are only ever in the PDF if the host provides the files, and the Write rule holds: nothing proprietary is bundled. Glyphs come from the
+  cmap, pair kerning is `TJ` adjustments, letter spacing and the *fit* (the TS spreads `laidW - natural` over the characters when more than a
+  quarter px off) are `Tc`, a glyph the face lacks advances by `.notdef` and is counted (`glyph:missing`). Fill: colour, gradient (clip), pattern
+  (`scn`); outline = a second stroked pass (`1 Tr`, round joins); underline/strike = lines; bullets draw as the TS does (no fit/spacing).
+  Alignment and baseline of `FillText` follow the canvas (`middle`, `top`... from the face's hhea metrics).
+- **Metafile recipes** (B5b: EMF, EMF+, WMF, PICT, TIFF arrive as bitmaps whose bytes are canvas calls): played as **vector content**. Each canvas of
+  the recipe is a form in canvas space; the picture is the root canvas placed in the destination rectangle; paths, fills, strokes (dash with phase),
+  clips, transforms, gradients, patterns of a canvas, text under the raw CSS font, `drawImage` of a canvas or of a compressed bitmap (PNG/JPEG
+  embedded), `putImageData` (an image at device coordinates) all go through the same interpreter code; `globalCompositeOperation` `difference`,
+  `multiply`, `lighten` are blend modes. The **exact XOR** (`xorRect`, a pixel operation) has no PDF form: counted (`meta:xor-rect`) and the
+  approximation the TS draws when it cannot XOR is the content that follows, which is played. A cut or damaged recipe keeps what it drew.
+- **Hyperlinks**: the display list does not carry them (it is the canvas calls). The PDF places the links of the model (`Run.hyperlink` of every
+  shape's text, in reading order) over the next drawn run whose text is the link text (trimmed equality, looking ahead 4 links), as `/Link`
+  annotations (`safe_pdf_uri`: http, https, mailto). A link run that wraps across lines is `hyperlink:unplaced`. **The exact way** is a producer
+  change in B5b-owned `emit/text.rs` (not done here, the area was under edit): `Emission.links: Vec<LinkRect { x, y, w, h, url }>` written where a
+  `PlacedRun` with `hyperlink` becomes a `TextRun`, which replaces `slide_links` + the matching in `pdf/mod.rs`.
+- **Limits and failure policy**: `PdfLimits` apply (ops and content bytes per page, output bytes); a limit stops the document with the typed error;
+  a slide that cannot be read or emitted is a blank page of the slide's size and is listed in `PdfReport::failed_slides`; an inconsistent list
+  (`validate`) is refused; a picture the decoders refuse is left out (counted); save depth 512 per target, 12 nested layers, 1 M path segments,
+  256 canvases and 65 k objects per recipe. No `unwrap`, no panicking index.
+
+### What is not drawn (the missing-effects report, per document in `PdfReport::missing`)
+
+| Key | Meaning | Count in the last run (538 decks, 1,357 pages) |
+|---|---|---|
+| `effect:warp` | WordArt text warp (`Effect::Warp`): the text is **absent** from the PDF | 227 |
+| `effect:bevel` | 3D bevel (`Effect::Bevel`) | 89 |
+| `effect:metafile-rop` | `Effect::MetafileRop` (unused since B5b: the XOR is a recipe op) | 0 |
+| `shadow` | canvas shadow (outer shadows, text shadows, glow idiom): the shape draws without it; the off-screen shadow idiom (offset > 5,000 px, the `K` of the schema) is skipped entirely; counted per paint operation, so it overstates the number of shadows | 10,306 |
+| `blur` | `filter: blur(..)` ignored (reflection and soft-edge layers use it) | 154 |
+| `composite:destination-in` / `-out`, `composite:source-in` | no PDF blend mode; the paint is skipped (soft edge, reflection fade) | 275 / 121 / 0 |
+| `layer:dropped` | a layer made wrong by a skipped destination-in/out fill (reflections) | 154 |
+| `gradient:conic`, `gradient:stroke`, `pattern:stroke`, `pattern:repeat-axis` | approximations (average colour, first stop, skipped, both-axes repeat) | 0 |
+| `clear-rect`, `media-frame` | `clearRect` (no erase in PDF), video/GIF frames (no frame in a PDF) | 0 |
+| `image:unsupported`, `image:jpeg-effect`, `image:recipe-truncated` | an image no decoder reads (SVG...), a pixel effect on a JPEG, a recipe cut by its cap | 1 / 0 / 0 |
+| `font:missing`, `font:not-embeddable`, `glyph:missing` | no face for the family, a face that may not be embedded, a character the face lacks (the b3a groups are CJK/Unicode heavy) | 0 / 0 / 327,000 |
+| `meta:xor-rect` | exact XOR of a metafile | 5 |
+| `transform:singular` | a transform that cannot be inverted: painting under it is skipped | 1 |
+| `hyperlink:unplaced` | a link of the model no drawn run matched (wrapped link text) | 686 (265 links placed) |
+| `chart:frame` | a chart the emitter did not paint (charts are in the list since the chart engine, so 0) | 0 |
+
+### Numbers
+
+- **Measure filler against the B3 capture logs** (the capture's measurer is the same function: advances plus the Office kerning pairs,
+  `units * px / upem`, over the open fonts): **456,505 measurements, 0 mismatches, bit-equal** — `textlayout-samples` 6,280, `-b1a` 47,558,
+  `-b3a` 265,093, `-b3a-nokerning-noseg` 137,574 (248,022 of them kerned strings of two or more characters). The catalog substitution
+  (`FaceSet`) answers the same face as the capture's own rule for the 20 families in the logs (80 family/variant pairs). The `drawops-*` logs hold the
+  deterministic stub's answers, not font widths, so they are not comparable (the stub is a different measurer by design).
+- **PDFs**: every committed sample (`slides/samples`, incl. `playback`) and the generated groups `b1a` (200), `b3a` (120), `b5a` (150), `b5b` (40):
+  **538 decks, 1,357 pages, 117,064,289 bytes, 1,521,573 glyphs, 0 failed slides**; each PDF passes the frame check of the Write tests (header,
+  every xref offset hits `N 0 obj`, every object closed, trailer), `page count = slide count` (also the `/Count`), `page size = slide size`
+  (EMU/12,700), and the text read back through each font's ToUnicode equals the glyphs drawn (`report.glyphs`); on 53 decks the characters read
+  back are a subset (as a multiset) of the characters of the list's runs (36,368 of at most 37,209 reached the PDF; the difference is text
+  skipped under the shadow idiom or at alpha 0). 243 metafile recipes were played.
+- **Speed**: 538 decks in 24.9 s (release, whole test), 18 ms per page on average, slowest deck 0.28 s.
+- **Hostile input**: 10,000 random lists (NaN, infinities, 1e308, unbalanced saves, layers, composites, paints, indices in range) in 1.6 s, 0
+  panics, every PDF valid; 600 flipped/cut/extended recipes, 569 played, 0 panics.
+- **Memory**: M1 `assert_no_leak` over a deck export (`reference.pptx`) and over a metafile deck (`b5b/0000`): live bytes return exactly. M2: 24
+  exports, live bytes flat (7,511,646 B on every sample). M3 (`reference.pptx`): PDF 55,446 B, allocated 2,655,718 B, peak above start 840,909 B.
+- **Write's PDF is unchanged** (`cargo test -p uo-pdf --release`, all green after the additions): `writer_parity` 3 and `painter_parity` 3 (the
+  TS captures, byte/structural), `writer_unit` 30, `writer_memory` 9, `painter_memory` 5, `writer_nopanic` 5, `painter_nopanic` 4. The page
+  `/Resources` dictionary is written exactly as before unless a Slides-only resource (extra state, form, pattern) was registered.
+- Checks: `cargo clippy -p uo-pptx -p uo-pdf --all-targets --all-features -- -D warnings` and the `wasm32-unknown-unknown` lib clippy clean;
+  `rustfmt --check` clean; `core/tests/grep-bans.sh` 0; `float-casts.sh` shows hits only in B5b's `uo-fonts/src/mtx.rs`, none in `uo-pdf`/`uo-pptx`.
+
+### Decisions outside the plan (each declared)
+
+1. The Slides painter builds whole content streams itself (`Vec<u8>` per target) and hands each page over with `PageWriter::raw`; the
+   writer keeps its page-oriented API for Write. Forms and patterns are written at once (their `/Resources` is one object, defined at `build`).
+2. Layers are forms drawn at the identity transform with the *context's* alpha, as the canvas composites them; a tainted layer is dropped, not
+   approximated (a mirrored, unfaded reflection is worse than none).
+3. Shadows and blurs are not approximated (no PDF equivalent; Write rasterizes text effects at 200 dpi from `uo_render::paint::fx_layers`, which
+   works on Write's item model, not on a canvas call): they are counted until measured against PowerPoint's PDF.
+4. `FaceSet`'s substitution is the catalog's (`metric_substitute`, a superset of the capture's); a host that wants the server policy
+   (`SubstituteFontProvider`, `SystemFontIndex`) implements `FontSource` over it.
+5. The shared `SlidesResources` getters (`face_entries`, `media_entries`, `derived_entries`, `bitmap_entries`) were added to `uo-render/src/slides.rs`
+   (read-only accessors; the PDF reads the producer's tables directly, no codec round trip).
+6. A new `SlidesResources` per slide: media pictures are cached across slides by part name (a logo of the master is embedded once), generated
+   bitmaps and gradients per page, so a long deck does not keep every raster of every slide.
+
+### Differences from the vendor converter (`converter/packages/converter/src/pptx/pdf.ts`, 533 lines; `slides-processing` is its reader)
+
+Read from the source (the package that produced Slides PDFs before; nothing was run):
+
+| Vendor converter | This painter |
+|---|---|
+| Its own drawing code over the *model* (`drawShape`, `presetPath`, `drawTable`, `drawTextBody`), a second renderer | Interprets the same display list the viewer paints, so shapes, tables, SmartArt, charts and pictures match the viewer by construction |
+| `opts.fonts` mandatory TTFs, one `TtfProgram` per variant, widths without kerning | A `FontSource` policy (open fonts + substitutes), advances and Office kerning pairs identical to the layout's measurer, subsetting and ToUnicode per font file |
+| Gradients: 24 interpolated strips clipped by the path | Sampled axial/radial shadings with alpha soft masks |
+| Shadows (`outerShdw`), `fillAlpha`, `alphaModFix` ignored (opaque drawing) | Alpha, blend modes, layers honoured; shadows counted as missing |
+| Charts: a gray placeholder | Charts are in the list (chart engine) and are vector content |
+| Images: JPEG direct, PNG decoded; gif/svg/webp/bmp a gray placeholder, silently | JPEG direct; PNG/GIF/BMP/TIFF decoded; metafiles/PICT as vector content; undecodable pictures are left out and counted (never a silent placeholder) |
+| No effects pipeline, no 3D, no WordArt warp, no reflections or soft edges | Not drawn either, but **listed** per document (`effect:*`, `composite:*`, `layer:dropped`) |
+| Tables: simplified (1 run per line); rot/flip via a local `cm` | Whatever the emitter lays out (the viewer's tables, rotation, flips, groups, cameras) |
+| No hyperlinks, no outline | Link annotations over the linked runs (see above); no outline yet |
+| No failure report: unsupported things disappear | `PdfReport` (counters, failed slides, per-page missing counts) |
+
+### The PowerPoint comparison (a later measured step; nothing of it is done here)
+
+The committed scripts (`slides/tools/ppt-lab/`, read-only here) already do the COM part for PNG: `export-deck.ps1` opens the deck read-only
+**without a window** (`Presentations.Open(path, ReadOnly, Untitled, WithWindow=false)`), exports a warm-up slide and waits 3 s (embedded fonts load
+asynchronously), never touches the user's window and only closes what it opened (the `no-focus-steal` rule); `.ps1` files need a UTF-8 BOM and
+`-ExecutionPolicy Bypass`. A PDF comparison needs, in order: (1) a script like `export-deck.ps1` that calls `$pres.SaveAs($pdf, 32)`
+(`ppSaveAsPDF`) or `ExportAsFixedFormat($pdf, 2)` (`ppFixedFormatTypePDF`, with `ppPrintOutputSlides`, no hidden slides) over each
+`samples/*.pptx` and the generated decks, with the fonts synced by `npm run fonts:sync` so PowerPoint and the Rust PDF use the same files
+(and a second run with open fonts only, to separate font effects from layout); (2) page size and count; (3) a text comparison through
+pdf.js `getTextContent` (per-item x, y, size and font name: the exact measure, as the Write corpus does) and a per-slide raster comparison
+with the same renderer at the same dpi (pdf.js in headless Chromium, as `render-deck.mjs`/`viewer-check.mjs`); (4) the PowerPoint facts to
+measure first, in this order, because the missing list depends on them: shadow geometry (offset, blur, alpha) and how PowerPoint writes it in the
+PDF (a raster with an SMask), soft edge and reflection (rasters), WordArt warp (outlines), bevel (raster), the conic gradient (a mesh), and
+whether PowerPoint embeds fonts as TrueType subsets (OFL replacement fonts differ in name only). Facts recorded in the oracle memory
+(`playback-oracle-facts`, `pptx-render-rules-measured`) already cover the cascade, `spcBef`, linear-RGB gradients and charts.
+
+### Next steps
+
+1. Shadows and blur (the biggest count: 10,306 per-operation hits) and `effect:warp`/`effect:bevel`: measure in PowerPoint's PDF, then port the TS effect
+   code as raster layers into forms with an SMask (the Write text-effect path is the model).
+2. `destination-in/out` as luminosity soft masks painted retroactively into the layer buffer (the buffer is the interpreter's: the reflection fade
+   and the soft edge need only a mask form over what was drawn so far); that removes `layer:dropped`.
+3. Hyperlinks from the emitter (`Emission.links`, see above), an outline from the slide titles, `/PageLabels`, notes pages.
+4. Conic gradient (a type 4/7 mesh or a pre-rasterized image), gradient strokes (clip-stroke is not available: a stroked outline path would
+   be needed), `repeat-x/y` patterns.
+5. The PowerPoint PDF oracle above; then `FontSource` over `SubstituteFontProvider` for the server/.NET facade and the `uo-wasm` export
+   (`export_pdf` for the Slides viewer, chunked sink).
+
+### Process metrics
+
+| Stage | Agent (model) | Time | Tool calls |
+|---|---|---|---|
+| R-S5 | filler + equality test, writer additions, interpreter, recipes, hyperlinks, tests, record (Sonnet) | one session; the 538-deck export test runs in 25 s, the filler equality in 0.5 s, the hostile 10,000 lists in 1.6 s, `cargo test -p uo-pdf --release` in 86 s; time lost to the concurrent chart-engine edit of `uo-dml-render` (it broke the build for a while: the `TileDef.nat`, `PathOp::RoundRect`, `SItem::ChartFont/FillText` additions arrived mid-session and were handled) | about 170 (own tally) |
+
+Rework: the extraction test's expectation (outline passes and chart `FillText` draw glyphs the runs list once or not at all: fixed in the test, not in the
+painter), a pattern base matrix that was wrong inside forms (found by reasoning about the PDF default space before any test, fixed with `Target::base`),
+four `\n` literals the shell turned into newlines while patching (found by the compiler/grep, fixed with the editor).

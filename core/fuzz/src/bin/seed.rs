@@ -252,6 +252,33 @@ fn main() {
     for s in uo_opc_fuzz::text_layout_seeds() {
         c.add("text_layout", &s);
     }
+    // uo-dml-render emission: byte-driven shape lists and hostile measure tables
+    for s in uo_opc_fuzz::slides_emit_seeds() {
+        c.add("slides_emit", &s);
+    }
+    // uo-pptx editing session: scripts over the blank deck and over generated decks
+    for s in uo_opc_fuzz::slides_edit_seeds(&repo) {
+        c.add("slides_edit", &s);
+    }
+    // uo-charts parser: chart parts of every family, the chart drawing, the three host profiles
+    for s in uo_opc_fuzz::chart_parse_seeds() {
+        c.add("chart_parse", &s);
+    }
+    // uo-charts scale, trendlines, histogram bins, image resolution (C-2) and the render core (C-3)
+    for s in uo_opc_fuzz::chart_scale_seeds() {
+        c.add("chart_scale", &s);
+    }
+    for s in uo_opc_fuzz::chart_emit_seeds() {
+        c.add("chart_emit", &s);
+    }
+    // uo-pptx timing (B6): `<p:timing>` trees of every effect class and animation formulas
+    for (target, data) in uo_opc_fuzz::timing_seeds(&repo) {
+        c.add(target, &data);
+    }
+    // B5b pictures: committed synthetic EMF, EMF+, WMF, PICT, TIFF and EOT files (the capture inputs)
+    for (target, data) in uo_opc_fuzz::metafile_seeds(&repo) {
+        c.add(target, &data);
+    }
     // uo-fonts: generated fonts, their tables and the open fonts of the repository, cut small
     for (target, data) in uo_opc_fuzz::fonts_seeds(&repo) {
         c.add(target, &data);

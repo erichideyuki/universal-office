@@ -27,11 +27,11 @@ use crate::sym::SymbolTable;
 
 pub use crate::codec::slides_generated::{
     Align, ArcOp, ArcToOp, Baseline, BevelEffect, Bitmap, Cap, ClrChange, CompositeOp, CtmAxis, CtmOperand, Cubic, Decoration, Derived,
-    DrawImageItem, Duotone, Effect, EllipseOp, FaceKey, FillRule, FontRef, Gradient, ImageFx, ImageSrc, Join, LayerBeginItem, LayerEndItem,
-    LayerThen, MAGIC, Mat6, Media, MediaFrameItem, MetafileRopEffect, Paint, Pair, PathOp, PatternRes, PatternSrc, PxSize, Quad, Rect4,
-    Repeat, SCHEMA_HASH, SItem, ShadowOff, SlidesList, SlotDef, SlotKind, Span, Stop, TextOutline, TextRun, TextShadow, ViewBox,
-    WarpEffect, WarpFont, WarpLine, WarpPaint, WarpPaintKind, WarpPattern, WarpRun, WarpStroke, WarpTile, decode_slides_list,
-    encode_slides_list,
+    DrawImageItem, Duotone, Edges, Effect, EllipseOp, FaceKey, FillRule, FillTextItem, FontRef, Gradient, ImageFx, ImageSrc, Join,
+    LayerBeginItem, LayerEndItem, LayerThen, MAGIC, Mat6, Media, MediaFrameItem, MetafileRopEffect, Paint, Pair, PathOp, PatternRes,
+    PatternSrc, PxSize, Quad, RawStop, Rect4, Repeat, RoundRectOp, SCHEMA_HASH, SItem, ShadowOff, SlidesList, SlotDef, SlotKind, Span,
+    Stop, TextOutline, TextRun, TextShadow, TileDef, TileParams, ViewBox, WarpEffect, WarpFont, WarpLine, WarpPaint, WarpPaintKind,
+    WarpPattern, WarpRun, WarpStroke, WarpTile, decode_slides_list, encode_slides_list,
 };
 pub use crate::codec::slots_generated::{
     AnimFilter, PartState, Replacement, ShapeState, SlotFrame, SlotValue, decode_slot_frame, encode_slot_frame,
@@ -92,6 +92,8 @@ pub struct SlidesResources {
     derived: Vec<Derived>,
     bitmaps: Vec<Bitmap>,
     bitmap_data: Vec<Arc<[u8]>>,
+    /// per bitmap: the bytes are a metafile recipe (`uo_dml_render::metafile`), not RGBA
+    bitmap_recipe: Vec<bool>,
 }
 
 fn id32(n: usize) -> Option<u32> {
@@ -165,13 +167,54 @@ impl SlidesResources {
         let id = id32(self.bitmaps.len())?;
         self.bitmaps.push(Bitmap { w, h, data: id });
         self.bitmap_data.push(rgba);
+        self.bitmap_recipe.push(false);
         Some(id)
+    }
+
+    /// A picture the shell paints by replaying a recipe (a metafile or PICT, B5b): the bitmap `w` x `h` is the canvas the recipe
+    /// makes; the bytes are the recipe, not RGBA (see [`SlidesResources::is_recipe`]).
+    pub fn recipe_bitmap(&mut self, w: u32, h: u32, recipe: Arc<[u8]>) -> Option<u32> {
+        let id = id32(self.bitmaps.len())?;
+        self.bitmaps.push(Bitmap { w, h, data: id });
+        self.bitmap_data.push(recipe);
+        self.bitmap_recipe.push(true);
+        Some(id)
+    }
+
+    /// Whether the bytes of bitmap handle `handle` are a recipe.
+    #[must_use]
+    pub fn is_recipe(&self, handle: u32) -> bool {
+        usize::try_from(handle).ok().and_then(|i| self.bitmap_recipe.get(i)).copied().unwrap_or(false)
     }
 
     /// The bytes of a bitmap handle (`Bitmap.data`).
     #[must_use]
     pub fn bitmap_bytes(&self, handle: u32) -> Option<&Arc<[u8]>> {
         self.bitmap_data.get(usize::try_from(handle).ok()?)
+    }
+
+    /// The face table (read by the PDF interpreter, R-S5; the shell gets it by the delta).
+    #[must_use]
+    pub fn face_entries(&self) -> &[FaceKey] {
+        &self.faces
+    }
+
+    /// The media table (R-S5: the PDF interpreter loads the part bytes by `Media.part`).
+    #[must_use]
+    pub fn media_entries(&self) -> &[Media] {
+        &self.media
+    }
+
+    /// The derived-image table (R-S5).
+    #[must_use]
+    pub fn derived_entries(&self) -> &[Derived] {
+        &self.derived
+    }
+
+    /// The generated-bitmap table (R-S5; the bytes are [`SlidesResources::bitmap_bytes`]).
+    #[must_use]
+    pub fn bitmap_entries(&self) -> &[Bitmap] {
+        &self.bitmaps
     }
 
     /// The entries of every table: `sym, faces, media, derived, bitmaps` (the bounds of the ids of a list).
@@ -351,15 +394,17 @@ impl Checker<'_> {
     fn item(&self, at: usize, it: &SItem) -> Check {
         let l = self.list;
         match it {
-            SItem::CaptureCtm(r) | SItem::TransformByInverseOf(r) | SItem::TransformUnshape(r) => {
+            SItem::CaptureCtm(r) | SItem::TransformByInverseOf(r) | SItem::TransformUnshape(r) | SItem::SetTransformReg(r) => {
                 below(*r, CTM_REGISTERS as usize, "ctm register")
             }
             SItem::FilterSet(s) | SItem::ShadowColor(s) => self.sym(*s),
             SItem::FillStyle(p) | SItem::StrokeStyle(p) => self.paint(p),
             SItem::LineDash(s) => span_in(s, l.dashes.len(), "dash span"),
-            SItem::Font(f) => self.font(f),
+            SItem::Font(f) | SItem::ChartFont(f) => self.font(f),
+            SItem::FillText(t) => span_in(&t.text, l.texts.len(), "text span"),
             SItem::AppendPath(s) => span_in(s, l.paths.len(), "path span"),
             SItem::DrawImage(d) => self.image(&d.src),
+            SItem::Prepare(s) => self.image(s),
             SItem::Text(i) => below(*i, l.runs.len(), "run index"),
             SItem::LayerBegin(b) => {
                 below(b.layer, MAX_LAYERS as usize, "layer id")?;
@@ -391,13 +436,19 @@ impl Checker<'_> {
         Ok(())
     }
 
+    fn tile_params(&self, t: &TileParams) -> Check {
+        self.opt_sym(t.algn)?;
+        self.opt_sym(t.flip)
+    }
+
     fn effect(&self, e: &Effect) -> Check {
         match e {
             Effect::Bevel(b) => {
                 span_in(&b.path, self.list.paths.len(), "bevel path span")?;
                 self.opt_sym(b.prst)?;
                 self.opt_sym(b.rig)?;
-                self.opt_sym(b.mat)
+                self.opt_sym(b.mat)?;
+                self.opt_sym(b.dir)
             }
             Effect::MetafileRop(m) => below(m.operand, self.lens[4], "bitmap id"),
             Effect::Warp(w) => {
@@ -407,6 +458,7 @@ impl Checker<'_> {
                 }
                 if let Some(t) = &w.tile {
                     self.image(&t.image)?;
+                    self.tile_params(&t.tile.params)?;
                 }
                 for line in &w.lines {
                     self.sym(line.align)?;
@@ -423,8 +475,15 @@ impl Checker<'_> {
                         }
                         if let Some(p) = &r.paint {
                             self.stops(&p.stops)?;
+                            self.opt_sym(p.path)?;
+                            for s in &p.raw {
+                                self.sym(s.color)?;
+                            }
                             if let Some(i) = &p.image {
                                 self.image(i)?;
+                            }
+                            if let Some(t) = &p.tile {
+                                self.tile_params(t)?;
                             }
                         }
                     }
@@ -455,6 +514,9 @@ pub fn validate(list: &SlidesList, lens: &[usize; 5]) -> Result<(), SlidesError>
         match &p.src {
             PatternSrc::Bitmap(b) => below(*b, lens[4], "bitmap id")?,
             PatternSrc::Image(s) => c.image(s)?,
+        }
+        if let Some(t) = &p.tile {
+            c.tile_params(&t.params)?;
         }
     }
     for r in &list.runs {

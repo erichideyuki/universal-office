@@ -352,6 +352,11 @@ fn has_ph(s: &Shape) -> bool {
 
 /// `readSlide` (`read.ts:197`): reads a slide, inheriting placeholder geometry from the layout/master.
 pub fn read_slide(src: &dyn PartSource, slide_path: &str, limits: Limits) -> R<SlideModel> {
+    read_slide_with(src, slide_path, limits, &crate::limits::Limits::default())
+}
+
+/// [`read_slide`] with the presentation-layer limits (`max_time_depth`/`max_time_nodes` bound the time tree).
+pub fn read_slide_with(src: &dyn PartSource, slide_path: &str, limits: Limits, time_limits: &crate::limits::Limits) -> R<SlideModel> {
     let rd = Rd { src, limits };
     let doc = src.xml(slide_path)?.ok_or_else(|| ReadError::Missing(slide_path.into()))?;
     let root = doc.root();
@@ -732,7 +737,32 @@ pub fn read_slide(src: &dyn PartSource, slide_path: &str, limits: Limits) -> R<S
     if let Some(t) = root.first_child("p:transition") {
         slide.transition = Some(parse_transition(t));
     }
-    // full time model (automatic playback): frontier B6 — `slide.timing` stays None
+    // full time model (automatic playback): the entrance transition in `mc:AlternateContent` + the whole
+    // `<p:timing>` tree (B6)
+    {
+        let units = |t: Option<&AnimTarget>, k: &str| count_text_units(&shapes, t, k);
+        let color = |el: Element<'_>| uo_dml_render::theme::color_from_dml(Some(el), &theme);
+        let has_bg = |spid: &str| has_background(&shapes, spid);
+        let inp = crate::timing_parse::TimingInputs { units: &units, color: Some(&color), has_background: Some(&has_bg) };
+        let mut tm = crate::timing_parse::parse_slide_timing(root, &inp, time_limits);
+        // media bookmarks: the position in the file comes from the shape (p14:bmkLst)
+        for bt in tm.bookmark_triggers.iter_mut().flatten() {
+            let media = shapes
+                .iter()
+                .find(|s| s.inherited != Some(true) && *s.id == *bt.spid)
+                .and_then(|s| s.extras.as_deref())
+                .and_then(|x| x.media.as_ref());
+            if let Some(b) = media.and_then(|m| m.bookmarks.as_deref()).and_then(|bs| bs.iter().find(|x| *x.name == *bt.bookmark)) {
+                bt.time_ms = Some(b.time_ms);
+            }
+            if let Some((st, _)) = media.and_then(|m| m.trim)
+                && uo_jsnum::conv::truthy(st)
+            {
+                bt.trim_start_ms = Some(st);
+            }
+        }
+        slide.timing = Some(Arc::new(tm));
+    }
     slide.shapes = shapes;
     slide.theme = Some(Arc::new(theme));
     Ok(slide)

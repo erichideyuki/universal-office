@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@universal-office/slides-core": "*",
+    "@universal-office/drawingml": "file:../../../shared/drawingml",
     "@universal-office/fonts": "file:../../../shared/fonts",
     "@universal-office/ui": "file:../../../shared/ui"
   },

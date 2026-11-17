@@ -12,6 +12,14 @@ import { MediaPlayer } from './media-player.js';
 import { ViewerControls, CONTROL_ITEMS, type ControlsHost } from './controls.js';
 import { SlideA11y } from './a11y.js';
 import { onBrowserLangChange, pickLabels, uiLang } from '@universal-office/ui';
+import type { RustSlides } from './rust-engine.js';
+import type { LoadSlidesOptions } from '@universal-office/slides-engine';
+
+/**
+ * Esquemas de hiperlink que o viewer abre (a regra do viewer do Write): `http`, `https` e `mailto`. Vale com `engine="rust"`;
+ * `link-schemes="any"` volta à regra do motor TS (qualquer endereço do arquivo, `window.open` sem `noreferrer`).
+ */
+const SAFE_LINK = /^(https?:|mailto:)/i;
 
 /** Textos da interface desenhados no canvas (o fim da apresentação é o do PowerPoint em cada idioma). */
 const TEXT = {
@@ -143,6 +151,103 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * apresentação.
    */
   protected show: { ss: SlideShow; rafId: number; timer: number; fullscreen: boolean; kiosk: boolean } | null = null;
+  // ───────────────────────── motor Rust (engine="rust") ─────────────────────────
+  // O motor TS continua inteiro por trás do atributo (padrão `ts`). Com `engine="rust"` o layout e a lista de desenho dos slides
+  // PARADOS (navegação, miniaturas, `renderSlideToCanvas`) vêm do módulo wasm; o resto (animações, apresentação, reprodução,
+  // hiperlinks, texto acessível, gráficos) segue no modelo TS, que continua carregado. Registro: uo-bindings.md "Slides viewer (B7)".
+  /** a sessão do motor Rust (carregada sob demanda) e o módulo que a define */
+  private rust: RustSlides | null = null;
+  private rustMod: Promise<typeof import('./rust-engine.js')> | null = null;
+  /** a abertura do deck no motor Rust em andamento ou concluída (`rustReady`) */
+  private rustOpening: Promise<void> = Promise.resolve();
+  private rustSeq = 0;
+  private static engineSource: LoadSlidesOptions | undefined;
+
+  /**
+   * De onde vem o motor Rust (`engine="rust"`): o .wasm do viewer e o do conversor de .ppt (bytes, URL ou Response). Sem isto, os
+   * do pacote (`chunks/uo-slides.wasm`, `chunks/uo-slides-ppt.wasm`, ao lado do código do motor). Há UM módulo por página: vale o
+   * primeiro carregamento. O viewer sem `engine="rust"` nunca baixa o .wasm.
+   */
+  static configureEngine(source: LoadSlidesOptions): void {
+    UniversalSlidesViewerElement.engineSource = source;
+  }
+
+  /** `rust` só quando o atributo `engine` diz `rust`; qualquer outro valor é o motor TS. */
+  protected engineAttr(): 'ts' | 'rust' {
+    // o editor (subclasse sem a barra embutida) edita o pacote: o deck aberto no módulo ficaria velho. Só o viewer troca de motor.
+    if (!this.controlsBuiltIn()) return 'ts';
+    return (this.getAttribute('engine') ?? '').trim().toLowerCase() === 'rust' ? 'rust' : 'ts';
+  }
+
+  /** O motor que pinta agora: `rust` quando o deck está aberto no módulo wasm, senão `ts` (carregando, falha, atributo). */
+  getEngine(): 'ts' | 'rust' { return this.rust?.document && !this.rust.document.freed ? 'rust' : 'ts'; }
+
+  /** Resolve quando a abertura do deck no motor Rust terminou (com ou sem sucesso; `getEngine()` diz qual). */
+  rustReady(): Promise<void> { return this.rustOpening; }
+
+  private openRust(bytes: Uint8Array): void {
+    const seq = ++this.rustSeq;
+    const pkg = this.pkg;
+    this.disposeRust();
+    this.rustOpening = (async () => {
+      try {
+        const mod = await (this.rustMod ??= import('./rust-engine.js'));
+        const rs = new mod.RustSlides({
+          fontStack: this.fontStackFor,
+          image: (part) => { const e = this.imageCache.get(part); return e?.ready ? e.img : null; },
+          source: () => UniversalSlidesViewerElement.engineSource,
+        });
+        await rs.open(bytes);
+        if (seq !== this.rustSeq || this.pkg !== pkg) { rs.dispose(); return; }
+        this.rust = rs;
+        this.notesCache = [];
+        this.paint();
+        this.controls?.renderThumbs();
+        this.dispatchEvent(new CustomEvent('us-engine', { detail: { engine: 'rust' } }));
+      } catch (error) {
+        if (seq !== this.rustSeq) return;
+        // o deck segue no motor TS: nada para o usuário, só o evento
+        this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error } }));
+      }
+    })();
+  }
+
+  private disposeRust(): void {
+    this.rust?.dispose();
+    this.rust = null;
+  }
+
+  /** Uma fonte carregou ou a pilha de fontes mudou: o motor Rust pede as medidas de novo; repinta. */
+  protected fontsChanged(): void {
+    this.rust?.fontsChanged();
+    this.paint();
+  }
+
+  /**
+   * Pinta o slide PARADO `i` (navegação, miniatura, exportação): pelo motor Rust quando o deck está nele, senão `paintSlideTo`.
+   * A edição inline (`suppressTextShapeIdx`) e qualquer falha do módulo caem no motor TS.
+   */
+  private paintStill(ctx: CanvasRenderingContext2D, i: number, slide: Slide, scale: number, opts: PaintSlideOptions): void {
+    const rs = this.rust;
+    const images = this.readyImages(slide);
+    if (rs && opts.suppressTextShapeIdx === undefined) {
+      try {
+        const r = rs.paint(ctx, i, scale, opts.ox ?? 0, opts.oy ?? 0);
+        if (r.status === 0) return;
+        // 11: o módulo parou (um trap derrubou a instância): o deck segue no TS e o aviso sai uma vez
+        if (r.status === 11) {
+          this.disposeRust();
+          this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error: new Error('uo-slides: the engine instance stopped') } }));
+        }
+      } catch (error) {
+        // um trap do módulo o derruba; o deck segue no TS
+        this.disposeRust();
+        this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error } }));
+      }
+    }
+    paintSlideTo(ctx, slide, { slideW: this.pres!.slideW, slideH: this.pres!.slideH, images, charts: this.chartCache }, scale, opts);
+  }
+
   /** Texto da tela de fim da apresentação (o do PowerPoint, no idioma da interface). */
   protected get endOfShowText(): string { return pickLabels(this, TEXT).endOfShow; }
   /** Canvases de trabalho da transição (origem/destino) na reprodução automática. */
@@ -153,7 +258,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   protected media = new MediaPlayer(() => this.paint());
 
   static get observedAttributes(): string[] {
-    return ['src', 'nocontrols', ...CONTROL_ITEMS.map((it) => `no${it}`), 'lang'];
+    return ['src', 'nocontrols', ...CONTROL_ITEMS.map((it) => `no${it}`), 'lang', 'engine', 'link-schemes'];
   }
 
   /**
@@ -262,7 +367,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     let t = this.notesCache[i];
     if (t === undefined) {
       const path = this.slidePaths[i];
-      try { t = this.pkg && path ? readSlideNotes(this.pkg, path) : ''; } catch { t = ''; }
+      try { t = this.rust?.document ? this.rust.notes(i) : this.pkg && path ? readSlideNotes(this.pkg, path) : ''; } catch { t = ''; }
       this.notesCache[i] = t;
     }
     return t;
@@ -297,6 +402,8 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   }
 
   private onAnyFullscreenChange = (): void => { this.controls?.wake(); this.paint(); };
+  /** `document.fonts` terminou de carregar faces (as medidas do motor Rust dependem delas). */
+  private onFontsDone = (): void => { if (this.isConnected) this.fontsChanged(); };
 
   private resizeObs: ResizeObserver | null = null;
   /** Mudança de devicePixelRatio (janela levada a outro monitor): o tamanho CSS não muda, o backing store sim. */
@@ -311,12 +418,15 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     this.resizeObs.observe(this.canvas);
     this.watchDpr();
     this.restoreParkedFonts();
-    this.unsubscribeFonts ??= this.fontResolver.onChange(() => this.paint());
+    this.unsubscribeFonts ??= this.fontResolver.onChange(() => this.fontsChanged());
+    document.fonts?.addEventListener?.('loadingdone', this.onFontsDone);
     this.unsubscribeLang ??= onBrowserLangChange(() => { this.configureControls(); this.paint(); });
     this.configureControls();
     document.addEventListener('fullscreenchange', this.onAnyFullscreenChange);
     this.resize(); this.paint();
-    (document as unknown as { fonts?: { ready: Promise<unknown> } }).fonts?.ready.then(() => this.paint()).catch(() => {});
+    (document as unknown as { fonts?: { ready: Promise<unknown> } }).fonts?.ready.then(() => this.fontsChanged()).catch(() => {});
+    // engine="rust": a desconexão liberou os handles do módulo; reabre do arquivo guardado
+    if (this.engineAttr() === 'rust' && this.fileBytes && !this.rust) this.openRust(this.fileBytes);
     const src = this.getAttribute('src');
     if (src && src !== this.srcUrl) void this.loadSrc(src);
   }
@@ -335,6 +445,8 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     this.stopPlayback();
     this.media.dispose();
     this.parkFonts();
+    document.fonts?.removeEventListener?.('loadingdone', this.onFontsDone);
+    this.disposeRust();
     this.unsubscribeFonts?.();
     this.unsubscribeFonts = null;
     this.unsubscribeLang?.();
@@ -343,7 +455,12 @@ export class UniversalSlidesViewerElement extends HTMLElement {
 
   attributeChangedCallback(name: string, oldV: string | null, newV: string | null): void {
     if (name === 'src' && newV && newV !== oldV && this.isConnected && newV !== this.srcUrl) void this.loadSrc(newV);
-    else if (name !== 'src' && this.isConnected) {
+    else if (name === 'engine') {
+      if (this.pkg && this.fileBytes && newV !== oldV) {
+        if (this.engineAttr() === 'rust') this.openRust(this.fileBytes);
+        else { this.rustSeq++; this.disposeRust(); this.notesCache = []; this.paint(); this.controls?.renderThumbs(); }
+      }
+    } else if (name !== 'src' && name !== 'link-schemes' && this.isConnected) {
       this.configureControls();
       if (name === 'lang') this.paint();
     }
@@ -403,7 +520,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const faces = await this.fontResolver.bundledFaces();
     if (!Object.keys(faces).length) return;
     this.loadedFamilyNames.add('Liberation Sans');
-    this.paint();
+    this.fontsChanged();
   }
 
   /** Carregamentos das fontes embutidas do deck atual (ver `fontsReady`). */
@@ -437,7 +554,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
           this.ownFaces.add(face);
           this.embeddedFamilies.add(f.family);
           this.loadedFamilyNames.add(f.family);
-          this.paint();
+          this.fontsChanged();
         }).catch(() => {}));
       } catch { /* face inválida: ignora */ }
     }
@@ -496,7 +613,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const wanted = collectDeckTypefaces(pkg).filter((fam) => !this.embeddedFamilies.has(fam));
     if (!wanted.length) return;
     await this.fontResolver.resolve(wanted);
-    if (this.pkg === pkg) this.paint();
+    if (this.pkg === pkg) this.fontsChanged();
   }
 
   /** True quando uma subclasse está com edição inline aberta (viewer: nunca). */
@@ -535,6 +652,8 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     this.notesCache = [];
     this.anyNotes = null;
     this.fileBytes = bytes;
+    if (this.engineAttr() === 'rust') this.openRust(bytes);
+    else { this.rustSeq++; this.disposeRust(); }
     // fontes: default embarcada + embutidas no arquivo + SO sob demanda
     void this.installDefaultFonts();
     // fontes embutidas DEPOIS da 1ª pintura: decodificar EOT/MTX custa ~0,2 s
@@ -772,6 +891,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
         const c = rasterizeSpecialImage(ref.bytes, mk, display);
         if (c) pending.img = c;
         pending.ready = true;
+        this.rust?.imageReady(ref.part, pending.img);
         this.paint();
         this.dispatchEvent(new CustomEvent('us-image', { detail: { part: ref.part } }));
       });
@@ -790,7 +910,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const blob = new Blob([buf], { type: ref.mime });
     const url = URL.createObjectURL(blob);
     img.onload = () => {
-      entry.ready = true; this.paint(); URL.revokeObjectURL(url);
+      entry.ready = true; this.rust?.imageReady(ref.part, img); this.paint(); URL.revokeObjectURL(url);
       // notifica consumidores (ex.: sidebar de miniaturas) p/ repintar.
       this.dispatchEvent(new CustomEvent('us-image', { detail: { part: ref.part } }));
     };
@@ -1096,10 +1216,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const scale = Math.min(cssW / this.pres.slideW, cssH / this.pres.slideH);
     const sw = this.pres.slideW * scale, sh = this.pres.slideH * scale;
     const ox = (cssW - sw) / 2, oy = (cssH - sh) / 2;
-    paintSlideTo(ctx, slide, {
-      slideW: this.pres.slideW, slideH: this.pres.slideH,
-      images: this.readyImages(slide), charts: this.chartCache,
-    }, scale, { ox, oy, fontStack: this.fontStackFor });
+    this.paintStill(ctx, i, slide, scale, { ox, oy, fontStack: this.fontStackFor });
     return true;
   }
 
@@ -1119,10 +1236,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     if (target.height !== pxHeight) target.height = pxHeight;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, pxWidth, pxHeight);
-    paintSlideTo(ctx, slide, {
-      slideW: this.pres.slideW, slideH: this.pres.slideH,
-      images: this.readyImages(slide), charts: this.chartCache,
-    }, pxWidth / this.pres.slideW, { fontStack: this.fontStackFor });
+    this.paintStill(ctx, i, slide, pxWidth / this.pres.slideW, { fontStack: this.fontStackFor });
     return true;
   }
 
@@ -1158,7 +1272,9 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     if (this.isEditing()) return;
     const hit = this.hitTestHyperlink(e);
     if (hit) {
-      window.open(hit, '_blank', 'noopener');
+      // engine="rust": só http, https e mailto abrem (a regra do viewer do Write); `link-schemes="any"` = a do motor TS
+      if (this.engineAttr() !== 'rust' || this.getAttribute('link-schemes') === 'any') window.open(hit, '_blank', 'noopener');
+      else if (SAFE_LINK.test(hit.trim())) window.open(hit.trim(), '_blank', 'noopener,noreferrer');
       e.preventDefault();
       return;
     }
@@ -1257,10 +1373,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const paintOpts: PaintSlideOptions = { ox: fit.ox, oy: fit.oy, fontStack: this.fontStackFor };
     const suppress = this.suppressTextIdx();
     if (suppress !== undefined) paintOpts.suppressTextShapeIdx = suppress;
-    paintSlideTo(ctx, slide, {
-      slideW: this.pres!.slideW, slideH: this.pres!.slideH,
-      images: this.readyImages(slide), charts: this.chartCache,
-    }, fit.scale, paintOpts);
+    this.paintStill(ctx, this.index, slide, fit.scale, paintOpts);
 
     // sombra/borda do slide (só na moldura do editor)
     if (!this.controlsBuiltIn()) {

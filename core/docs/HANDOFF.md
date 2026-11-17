@@ -163,6 +163,42 @@ of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebui
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
 
+## Update 2026-11-17 (later) — Slides wave 2: B4, B5b, B6, B7 (static), B8 core, uo-charts C-0…C-6, R-S5
+
+Records have every number; summary (all parity against the frozen TS 0.9.2 in `ts-ref-092`):
+- **B4** render → Slides display list (`uo-dml-render/src/emit/`, `uo-pptx/src/emit.rs`): draw-op streams equal through
+  `paint-slides.ts` — samples **1,202/1,202** views (after C-6), b1a 246/246, b5a 440/440, b5b 162/162, c1d 182/182.
+- **B5b** metafiles EMF/WMF/EMF+, PICT, Slides TIFF, EOT/MTX: 1,267/1,267 rasterizations. DESIGN CHANGE vs the brief:
+  a metafile/PICT/TIFF is a *recipe* bitmap (recorded canvas ops replayed by `uo-wasm/js/meta-player.ts`), not a
+  display sub-list. Open: colour effects over a metafile picture are not applied (`Derived` needs a media base);
+  EMF+ compressed bitmaps (`MetaDecode`) answered "cannot decode" in the viewer (needs an async prepare phase).
+- **B6** timing/animation/playback/show/media: every facet equal (model incl. timing now replayed by B1's replay,
+  timelines, states, ~94k anim-hook calls); 9 of 5,220 anim formulas differ only by declared hostile-input bounds.
+- **uo-charts** (new crate, Opus architecture + C-0…C-6): 16,213/16,236 facets equal on 600 generated charts (23
+  accepted by name = the approved `Math.pow` G1 platform rule), samples 1,140/1,140, differential 2,757/2,760 (3 = G1);
+  charts paint inside slides through the Slides list (schema: `ChartFont`, `FillText`, `RoundRect`, `TileDef.nat`).
+  Decisions CH-1…CH-6 applied with the recommended option (CH-4: no prefix canonicalization for Slides = TS).
+- **B7** `<universal-slides-viewer engine="rust">` + `uo-slides.wasm` (1.05 MB gzip of the 1.6 MB budget; `.ppt` in a
+  lazily loaded `uo-slides-ppt.wasm`, 280 KB gzip): Chromium **938/938 slides pixel-equal** (213 decks, charts by Rust),
+  M4 handles exact, memory flat over 200 slide changes. Open: animations/`present()`/`play()` still on the TS path until
+  **B4b** (`SlotBegin/End` + paragraph/unit/media slots + re-emission; the B6 handles are exported); the TS model stays
+  loaded in rust mode (a11y, links, media); no wasm2js for Slides; real Safari not run.
+- **B8** editor session core (`uo-pptx/src/edit*`): 8,696/8,696 steps equal (ops, undo/redo, saves with fonts, blank
+  decks byte-equal); `SetRunText` (C#) ported. Not yet routed: the editor element → wasm (needs `Editor` exports in the
+  viewer's instance, an `Op` codec, clip serialization, the font protocol; `commitEditShape` = `Op::Typing`). Decision
+  to review: a failed op restores the snapshot (TS keeps partial changes).
+- **R-S5** Slides PDF (`uo_pptx::pdf`, feature `pdf`): 538 decks / 1,357 pages valid; the `uo-fonts` measure filler is
+  bit-equal to B3's logs (456,505 measures); Write PDF unchanged. Missing (counted in `PdfReport`): shadows, blur, warp
+  (WordArt text absent), bevel, destination-in/out (reflections), XOR; 686 hyperlinks unplaced (needs `Emission.links`);
+  no font fallback for glyphs missing in the face (≈ 327k chars over the generated decks: CJK/Arabic/emoji on Latin
+  fonts). PowerPoint-PDF oracle not built yet.
+- Verification fixes by the orchestrator: float casts in `uo-fonts/src/mtx.rs` and `uo-image/src/tiff_slides.rs`
+  through `uo_jsnum::conv`; the CI tsc line was failing on `editor.check.ts` since 8f53340f (missing
+  `write-session-{completion,format}.d.ts`) — fixed, plus `meta-player.ts`.
+- **Next**: B4b (slots) → viewer animations; editor routing (`engine="rust"` in `<universal-slides>`) + editor harness;
+  PDF effects + font fallback + links; memory compaction (`SlideModel` 0.95× TS, target 0.5×; `Shape` 408 B); .NET
+  facade `UniversalOffice.Pptx`; M4 gate (PowerPoint agreement, real Safari).
+
 ## Update 2026-11-17 — Slides port (track B of `slides-sheet-port-plan.md`) started: phase 0, B1, B2, B3, B5a
 
 The maintainer said "Vamos continuar a migração para rust, faça o slides". Track B of `core/docs/slides-sheet-port-plan.md`

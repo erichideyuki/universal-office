@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRecorder } from './record-ctx.mjs';
+import { rasterSpecial, warmOrder } from './ts-special.mjs';
 
 let runs = 0;
 const loaded = new Map();
@@ -62,12 +63,18 @@ export function canvasSize(pres, scale, ox, oy) {
  * Record one slide. `mode` is `slide` (paintSlideTo) or `shapes` (paintShapesTo over the slide's shapes).
  * Returns `{ text, lines, sha, measures, counts, error }`.
  */
-export async function recordTsSlide({ tsRoot, slide, pres, scale, ox = 0, oy = 0, mode = 'slide', caps, measure, opts = {}, render }) {
+export async function recordTsSlide({ tsRoot, slide, pres, scale, ox = 0, oy = 0, mode = 'slide', caps, measure, opts = {}, render, special = false }) {
   const { paintSlideTo, paintShapesTo } = render ?? (await freshRender(tsRoot));
   const size = canvasSize(pres, scale, ox, oy);
   const rec = createRecorder({ ...size, caps, measure });
   const images = new Map();
+  // B5b (`special`): the metafile, PICT and TIFF pictures are rasterized as the viewer does (at the display size of their first use)
+  const displays = special ? warmOrder(slide) : null;
   for (const [part, bytes] of collectImageRefs(slide)) {
+    if (special) {
+      const cv = await rasterSpecial(tsRoot, bytes, displays.get(part), caps);
+      if (cv) { images.set(part, cv); continue; }
+    }
     const d = imageSize(bytes) ?? { w: 96, h: 96 };
     images.set(part, rec.image(bytes, d.w, d.h));
   }

@@ -60,6 +60,18 @@ pub use raster::{
     Affine, DEFAULT_TOL, Mask, Polygons, distance_to, fill_polygons, flatten_path, gaussian_blur, morph, shift_mask, warp_mask,
 };
 
+/// `SRGB_LIN[v]` of `bevel.ts` (the f32 table, as the f64 the TS multiplies with): the sRGB to linear curve at 0..=255.
+#[must_use]
+pub fn srgb_lin_f32(v: u8) -> f64 {
+    tables::srgb::SRGB_LIN_BITS.get(usize::from(v)).map_or(f64::NAN, |&bits| f64::from(f32::from_bits(bits)))
+}
+
+/// `LIN_SRGB[i]` of `bevel.ts`: the linear to sRGB curve sampled at 4096 steps (`None` outside the table).
+#[must_use]
+pub fn lin_srgb_u8(i: usize) -> Option<u8> {
+    tables::srgb::LIN_SRGB.get(i).copied()
+}
+
 /// Nothing in this crate caches across calls (the TS caches are not ported, M5); kept for the
 /// memory-gate convention (M1).
 pub fn clear_caches() {}

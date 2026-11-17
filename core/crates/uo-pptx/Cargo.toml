@@ -14,13 +14,24 @@ canon = ["uo-dml-render/canon", "dep:uo-testkit"]
 # the .ppt (97-2003) converter, bytes -> parts (frontier B2; a lazily loaded wasm module)
 ppt = ["dep:uo-drawingml", "uo-drawingml/legacy"]
 # the editing session: deck-edit operations, snapshot undo, save with font embedding (frontier B8)
-edit = []
+edit = ["dep:uo-fonts", "dep:uo-text"]
 # the exporters (Markdown, HTML, PDF, images) that replace the vendor converter wrappers
 export = []
+# the Slides PDF (R-S5): the display list interpreted through uo-pdf, text from the advance tables of uo-fonts
+pdf = ["dep:uo-pdf", "dep:uo-fonts", "dep:uo-image"]
 
 [dependencies]
+# font embedding of the save and the case folding of the replace (feature `edit`)
+uo-fonts = { path = "../uo-fonts", optional = true }
+uo-text = { path = "../uo-text", optional = true }
+# the PDF writer the Slides PDF is interpreted into (feature `pdf`)
+uo-pdf = { path = "../uo-pdf", optional = true }
+# the raster decoders of the Slides PDF pictures (feature `pdf`)
+uo-image = { path = "../uo-image", optional = true }
 # the shape model, theme, text cascade, text layout and emission shared with Sheet's drawings
 uo-dml-render = { path = "../uo-dml-render" }
+# the Slides display list and its codec (the emission fills it)
+uo-render = { path = "../uo-render" }
 # zip, the lenient XML parser (slides preset), CFB for .ppt
 uo-opc = { path = "../uo-opc" }
 # JS numerics (parseInt, String(n), UTF-16 slices, sort)
@@ -35,7 +46,7 @@ rustc-hash = "=2.1.3"
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }
 # the parity replay needs the canonical JSON printer: enabled for every `cargo test` (no flag to forget)
-uo-pptx = { path = ".", features = ["canon"] }
+uo-pptx = { path = ".", features = ["canon", "edit", "pdf"] }
 # capture replay of the .ppt converter tests (tests/ppt_*.rs)
 uo-testkit = { path = "../uo-testkit" }
 

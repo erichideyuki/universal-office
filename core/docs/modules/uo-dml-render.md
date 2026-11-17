@@ -407,6 +407,185 @@ statics built from constants (the TS caches them per face): nothing grows with t
 connections, 5,000 nodes (tree capped at 3,000), NaN/INF/1e400 attributes, a `forEach ref` that recurses into itself, 5,000-level XML. Fuzz target `smartart` (`core/fuzz`, parts split at NUL).
 Replay of the 150 decks: 1.2 s (release).
 
+## B4 — render (2026-11-17, Sonnet)
+
+Ported 1:1 into `src/emit/` (`render.ts` 13–2662 minus the shell half, `raster.ts`'s role, the `chart-engine.ts` bridge as a gap) and the slide glue
+`uo_pptx::emit_slide`. Files: `mod.rs` (API: `emit_shapes` = `paintShapesTo`, `emit_slide` = `paintSlideTo`, `EmitParams`, `Emission`, `SlideBg`),
+`cx.rs` (the builder: one method per canvas call, resources, layer and save bookkeeping, `globalAlpha` tracker, picture/derived-image resolution,
+the bitmap caches), `shape.rs` (instance transform, glow, soft edge, reflection, fill/shadow/outline/picture body, extrusion, bevel effect, shape
+geometry and arrowheads, the shape list), `paint.rs` (gradients with the PowerPoint sub-stops, 8×8 patterns, path-gradient rasters, image tiles, dashes),
+`text.rs` (text rectangle, `bodyPr rot`, `vert`, unflip, bullets, runs, WordArt `Warp` effect), `table.rs`, `dpi.rs` (`imageDpi` of
+`shared/charts`: PNG/JPEG/BMP resolution), `chart.rs` (the chart gap). Glue: `uo-pptx/src/emit.rs` (`emit_slide(deck, index, View, table, res, caches)`),
+`js/emit-uolf.mjs` + `examples/emit_uolf.rs` (the parity driver), `tests/support/stub_measure.rs` (the capture's `stubMeasure` as a `MeasureTable` filler).
+
+**API as built.** `emit_slide(&SlideBg, &[Shape], &EmitParams, &Env, &mut SlidesResources, &mut EmitCaches) -> Result<Emission, NeedMeasures>`;
+`Env { src: &dyn PartSource, table: &MeasureTable }`. The call is **one pass**: a pass with measurements the table lacks returns `NeedMeasures` for the
+WHOLE slide (every body of every shape and every table cell is laid out in the pass and its missing answers collected: one shell batch per round,
+2–6 rounds on the corpora); the shell answers (`MeasureReq::{CharAt1000, KernAt1000, Width, ImageSize}`) and the call is repeated. `Emission { list, chart_frames }`.
+One `EmitCaches` per generation of the `SlidesResources` (it maps pattern and path-gradient keys to bitmap ids).
+
+**Parity** (draw form, exact: `emit-uolf.mjs` writes the `.uolf` files, `compare-drawops.mjs` paints them with `paint-slides.ts` over the recorder and compares line by
+line with the frozen TS streams; measureText answered by the capture's stub, so no font files):
+
+| Capture | Views | Equal | Different | Cause of the difference |
+|---|---|---|---|---|
+| `drawops-samples` (53 decks, views a and b) | 1,202 | **1,166** | 36 | all 36 contain a chart frame (`pb-graficos*`, `pb-midia`, `showcase_animado`, `stress-table-chart`): the TS stream has the chart engine's calls |
+| `drawops-b1a` (100 decks, view a) | 246 | **246** | 0 | |
+| `b5a` SmartArt (150 decks, views a and b; local capture, not committed) | 440 | 440 | 0 | |
+| `b3a` text (50 decks, view a; local, 4.7 M full-form lines, not committed) | 107 | 107 | 0 | |
+
+Coverage of what the 1,995 lists contain (`js/dbg-stats.mjs`): 216 k `save`, 207 k text runs (bullets 4,276; outline, shadow, underline, strike, linear/pattern fills), 130 effects (92
+WordArt `Warp`, 38 `Bevel`), 256 layers (reflection, soft edge), 12 extrusions (`setTransformReg`), 708 pattern bitmaps, 77 picture patterns (37 tiles), 69 derived
+images, shadows (990 off-screen idioms), path gradients, tables. Capability variants of the samples capture: `nokerning,nospacing,nopattern` 1,164 / 1,202 (the 36 charts and 2 views whose
+`pat.setTransform`-less fallback `clip + drawImage` is not expressible); `nolayers` 1,162 (the 36 charts and 4 path-gradient/pattern views: with no scratch canvas the TS falls back
+to a radial gradient / solid colour, the list's bitmap paint is skipped) — canvases without `OffscreenCanvas` and `<canvas>` do not exist in the targets, so this is a declared gap, not a gate.
+
+**Schema changes** (`core/schema/slides.uos`, regenerated with `core/tools/uo-schema`; **Write's schemas, bytes and the pinned hash test are unchanged**, `uo-schema check`):
+`BevelEffect.dir`; `TextRun.bullet` (a bullet is `font`, `fillStyle`, `fillText` only: the TS does not touch the kerning state for it); `PatternRes.tile: TileDef?` with
+`TileParams`/`TileDef`/`Edges` (the TS `tilePattern` reads the live transform and the decoded size: the list carries the parameters, the painter evaluates it, so animation
+scale reaches the tile); `WarpTile.tile`; `WarpPaint` gained `scaled`, `path`, `fill_to`, `raw` (`RawStop`), `tile: TileParams?`, `fill_rect` (letter fills need the raster box,
+known only at warp time: the painter rasterizes a path gradient from the model stops, and builds tiles and stretched pictures); two items: `SetTransformReg(r)`
+(`ctx.setTransform(baseM)` of the extrusion) and `Prepare(ImageSrc)` (the TS builds `fxImage` at a point of the sequence: the painter realizes the derived image there, so the order of its
+scratch canvases is the TS's). Interpreter (`paint-slides.ts`, `slides-effects.ts`): `tilePattern` + `flippedTile` and `pathGradient` + `gradMode` + `sigmaT` MOVED verbatim, `letterPaint`
+rewritten for the new fields (`makeLinearGradient` with `scaled`, path rasters, tiles at `k / 12700`), `bullet`, `prepare`, `setTransformReg`, the `env.tilePattern` hook removed;
+`BevelEffect & { dir? }` is plain `BevelEffect`. The CI `tsc` line passes (it already lists the four files); `node --test js/selftest-drawops.mjs` 12/12.
+**Recorder change** (`js/lib/record-ctx.mjs`): the recipe hash of an offscreen canvas now skips `set`/`setLineDash`/`gradient`/`stop`/`pattern`/`patternTransform`/`measure`
+lines (the `draw` form's drop set: every draw line carries the resolved state). The TS lays text out on the layer's context, so the old hash contained the layout's
+`measure` and `set font` probes, which a list that measures from advance tables cannot (and should not) reproduce. `drawops-samples` and `drawops-b1a` were regenerated (the committed
+`.ops.gz`/`.capture` changed; the 12 views of `fxImage` order and 104 of layers that differed before this change are the only effect).
+`uo-drawingml` gained two accessors (`srgb_lin_f32`, `lin_srgb_u8`) for the extrusion's light table lookups (the tables stayed `pub(crate)`).
+
+**Interpreter rules kept** (R-S3 contract): `fallbackEnd` = end of the else block after the matching `LayerEnd`; `SlotBegin/SlotEnd` = save/restore bracket. A shape with a soft edge
+(layer composited at its end) is `LayerBegin .. LayerEnd(Composite) <else block: the shape drawn straight> fallbackEnd`; a shape with a reflection ends its layer with `Keep`, the else
+block follows, then (after `fallbackEnd`) `CaptureCtm(0)`, the reflection layer (`TransformByInverseOf(0)`, `DrawLayer`) and the final composite `Save SetTransform(identity) DrawLayer
+ReleaseLayer`; the soft-edge mask is a nested layer on the shape's layer. Without layers (the `nolayers` capability) the reflection's last three items still run and add a save/restore pair to the
+stream (declared, not a gate). The static emission uses plain `Save`/`Restore` per shape (see B4-3).
+
+### Decisions outside the source semantics (declared)
+
+- **B4-1. Two-phase, one pass per call.** A layout with missing answers returns `Ok(None)` and the pass goes on (other bodies add their questions; the pass's list is discarded). Only the
+  TS's `RangeError` (the symbol-font recursion, `LayoutError::Throws`) is `Abort`: the shape is closed (`abort_to`: layers kept-and-released, saves restored) and skipped; the TS
+  leaves what it had drawn, the Rust list as well (the items already pushed stay). A media entry first seen in a discarded pass is not registered (a size answer is needed first), so a
+  `Media` row keeps the size of its first real use.
+- **B4-2. The canvas state is tracked only where the TS reads it back.** `ctx.globalAlpha` (the outline restores `prevAlpha`) by a small tracker in `Cx` with the canvas rule (a set outside
+  0..1 is ignored; a layer starts at 1); the transform is NOT tracked: `baseM`, the reflection's inverse and the use-bg-fill window are registers, `tilePattern`'s `hypot(a, b)` is the painter's.
+- **B4-3. Static emission.** No slots (`SlotBegin/End`), no paragraph/unit animation hooks, no `MediaFrame`, no `AnimInputs` in `EmitParams` (B6: it re-emits with the slot template; the plain
+  `Save`/`Restore` per shape becomes a `Shape` slot there). `fontScale` emphasis, `fillColor` animation overrides and the `suppress_text` overlay: only `suppress_text` is wired.
+- **B4-4. Charts** (a gap until C-6; now closed). `paint_chart_slot` paints the chart through `uo-charts`: `emit/chart.rs`, `chart_host.rs` (host, measurement, caches) and `chart_canvas.rs` (the `Canvas` of the
+  engine as list items); record `uo-charts.md` "C-6 — Slides host". `Emission::chart_frames` is kept and always empty. `Cx` is exported now.
+- **B4-5. Bitmap caches are per generation.** `EmitCaches` maps the TS key of `pattCache` (`prst + fg + bg + alphas`) and `pathGradCache` (path, fill rect, grid, stops) to ids in the resources' bitmap table.
+  Caps (M5): 256 patterns; 64 path gradients and 16 MiB of their bytes (the TS clears at `size > 64` before a set, reproduced). A cleared cache sets `overflowed`: the resources' table keeps the old bitmaps,
+  so the host starts a new generation (new `SlidesResources` and `EmitCaches`). The TS `pattCache` has no cap. The parity tool makes a fresh `EmitCaches` per slide because the recorded TS ran a fresh
+  `render.js` instance per slide (its caches are module state).
+- **B4-6. Image size and availability.** A picture is "available" when the package has the media; its decoded size is the table's `ImageSize` answer (A12; 0 × 0 is legal, as the TS's fake image). The parity
+  tool answers with the TS recorder's `imageSize` (PNG, GIF, JPEG headers, else 96 × 96). `imageDpi` is a port of `shared/charts` (`emit::image_dpi`, pub): `uo-charts` can reuse or replace it.
+- **B4-7. Letter fills with both a pattern and a gradient/picture** keep only the last paint: the TS builds the overridden pattern's canvas as a side effect, the list does not (no corpus case).
+- **B4-8. Capability fallbacks that change the paint kind** (no scratch canvas: pattern → solid, path gradient → radial; no `setTransform` on patterns: stretched picture by `clip + drawImage`)
+  are not in the list; targets have both. `nolayers`/`nopattern` captures differ only there.
+- **B4-9. Sorting** the extrusion quads uses `uo_jsnum::sort::js_sort_by` (V8's decisions); `Math.hypot`, `round`, `pow`, `sin` ... are `uo_jsnum::math`; the light tables are `uo-drawingml`'s.
+- **B4-10. A WordArt (`prstTxWarp`) body is an `Effect::Warp`** carrying the placed lines (runs with face ids, `x`/baseline/height in pt, the spc, outline, pattern, alpha, letter fill as a spec) and
+  the shadow/tile parameters; the layout runs with the plain measurer inside a `Save`/`Restore` pair (the TS measures on the context there), with the trailing-space widths measured through
+  the table (A4). The warp raster itself is the shell's (`slides-warp.ts`, DR1).
+
+**Memory** (`uo-pptx/tests/emit.rs`, `uo-dml-render/tests/emit.rs`): **M1** `emit_slide`/`emit_shapes` over generated decks (b1a, b3a text and tables, b5a SmartArt), the error paths (unknown slide, an
+unanswerable table, `NeedMeasures`) and a whole encode: live bytes back exactly after the outputs are dropped and `Deck::clear_caches` (the lazily built engine tables are warmed first and are
+not a leak). **M2** 60 emit-all-views-of-a-deck iterations, flat, tolerance 0. **M3** recorded by `m3_the_cost_of_a_slide_is_recorded` (see the process line). **M5**: pattern cache past 256 and path-gradient cache
+past 64 entries stay at the cap with `overflowed` set; `EmitCaches::clear` empties both; the measure table keeps its own caps (B3). `clear_caches()` of the crate is still the empty function: every cache lives in a value
+the caller owns (`EmitCaches`, `MeasureTable`, the deck's).
+**Robustness**: bounded no-panic over (a) 100 random shape lists with NaN/±∞/1e300 geometry, fills, dashes, layers, vertical/rotated text at hostile viewports (`UO_DML_LONG=1`: 2,000), (b) mutated XML parts of generated decks
+(slides, layouts, themes: truncation, deletion, byte flips, hostile tokens, numbers replaced by NaN/1e308/−1) emitted at hostile scales and origins, (c) hostile viewports over a real deck: no panic, every list
+validates and encodes, items bounded (`< 200 × shapes + 100`). Fuzz target `slides_emit` (`core/fuzz/src/slides_emit.rs`; invariants: a built list validates and encodes, `save`/`restore` balance, two emissions are equal,
+the item count is bounded). Stable driver: see the process line.
+
+**What B5b, B6 and B7 need.**
+- **B5b** (metafiles, PICT, TIFF, EOT): their result is a `Bitmap` (RGBA) the emitter draws as a picture: in `Cx::media_img` a media whose bytes are a metafile/PICT/TIFF/EOT must resolve to a generated bitmap (new `Cx` method
+  next to `image`, cache by `metafile_part + display size`, `EmitCaches`), raster-op effects are `Effect::MetafileRop`; `MeasureReq::{Metrics, FontAvailable}` answers (A8–A10) are already in the table API, the emitter does not
+  ask them yet; `Media.has_svg`/`natural` come from the shell for SVG.
+- **B6** (timing, playback): the slot template — `SlotBegin/End` around a shape (replaces the shape's `Save/Restore`), `Background`, `Paragraph(i)` (the `pbox` union of line boxes, `boxBase`), `Unit(k)` (`planUnits`, the pieces
+  measured at device px = a second measurement kind), `MediaFrame` over the poster; `EmitParams` gets the animation inputs (`AnimInputs`: which shapes animate); the re-emit rule for slot values the painter does not apply
+  (`fillColor`, `lineColor`, `textColor`, `fontScale`) calls `emit` for that shape with overrides (`BodyOverrides` of the TS: `fill`, `line`, `frame`, `unshape`, `chartParts`). The static emitter already keeps `base_rot`, the shape's box and
+  `Fit` as local values at the places a slot needs them. A tile pattern under an animated scale is already right (the painter evaluates it).
+- **B7** (viewer `engine="rust"`): per frame `emit_slide` with the shell's `MeasureTable` (kept per font generation: `set_generation`), the encoder with one `SlidesEncoder` per (view, generation) and one `EmitCaches` per generation,
+  `Emission::chart_frames` until `uo-charts` lands, decode in `paint-slides.ts` with `env.media/bitmap/light/patternRows`, `warp` in the shell. A resize re-emits (scale and origin are in the list).
+- **uo-charts**: emit at `chart::paint_chart_slot` (it already has the box in px and the shape index); charts need `Cx` pub items (`cx.rs` is crate-private; `Cx` and its helpers can be exported when the crate arrives).
+
+## B5b — metafiles (2026-11-17, Sonnet)
+
+`metafile.ts` (1,574), `emfplus.ts` (1,041), `pict.ts` (533) and the dispatch of `raster.ts` (`rasterizeSpecialImage`) are ported 1:1 into `src/metafile/` (≈ 5,000
+Rust lines: `mod.rs` API, detection and sizes; `rec.rs` the recording canvas and the wire form; `gdi.rs` pens, brushes, fonts, the clip stack, `paintPath`, DIB decode and
+blit, the text of a metafile; `emf.rs` `playEmf`; `wmf.rs` `playWmf`; `emfplus.rs` the EMF+ renderer; `pict.rs` QuickDraw). The TIFF of the Slides picture is `uo-image`'s
+`tiff_slides.rs` (`uo-image.md`); the EOT reader and MicroType Express are `uo-fonts`' `eot::read` + `mtx.rs` (`uo-fonts.md`). A metafile is NOT rasterized in Rust.
+
+**The recipe (what the list carries).** The TS plays a metafile on a canvas it creates at the display size (`raster.ts`: scale ×2, `maxSide` 2,400, `minSide` 600, the
+picture's size on the slide for a `<p:pic>`) and uses the canvas as an ordinary image. Rust has no canvas and Chromium's anti-aliasing cannot be matched by a rasterizer
+of ours, so the producer RECORDS the canvas calls (`rec::Rec`: one `Op` per call, the canvas it went to, the numbers the TS computed) and the shell replays them
+(`uo-wasm/js/meta-player.ts`, `replayRecipe`) on a canvas of the recipe's size: that canvas is the picture. The recipe is a **bitmap of the resources whose bytes are the ops**
+(`SlidesResources::recipe_bitmap`, `is_recipe`: no schema change, the `bitmaps` table and `Bitmap { w, h }` are the canvas size; `.uolf` frames flag them in bit 31 of the
+length), so `ImageSrc::Bitmap(id)` is the picture and the painter (`paint-slides.ts` `bitmapCanvas`) asks the env: `recipe(index)`, `decodeBlob(data)` (EMF+ PNG/JPEG,
+prepared by the shell), `metaCanvas` (the factory of the replays; the parity harness gives them a recorder of their own, as the TS rasterized them outside the slide's
+stream). A TIFF is a recipe of one `putImageData`. The wire form: `"UOMF"`, version 1, layer size, a truncated flag, the blobs (decoded DIBs, compressed bitmaps), the ops.
+Only the canvas state the TS reads back is tracked in Rust (`lineWidth` for the dash unit, `globalAlpha *=`, `ctx.font` for `measureText`), with the canvas rules (an
+invalid `lineWidth`/`globalAlpha` is ignored and not in the stream; a negative radius of `arc`/`ellipse` throws). `xorRect` (the exact PATINVERT on the pixels:
+`getTransform`, `canvas.width`, `getImageData`) is the op `XorRect { .. skip }`: the player runs the TS function (`slides-effects.ts`) and, when it answers `true`, skips
+the `skip` ops that follow, the approximation the TS draws when it answers `false` — so the `MetafileRop` effect of the schema stays declared and unused.
+
+**The emitter hook (`emit/cx.rs`, `emit/shape.rs`).** `Cx::special_img(media)`: a media whose bytes are a metafile, a PICT or a TIFF resolves to the raster of the picture
+(`image_quiet` and `image_plain` try it first; the natural size is the canvas size, as `imgW(canvas)`). A `<p:pic>` sets `Cx::picture_display` (`picDisplaySize`: `ext / 9525 /
+(1 − crop)`) around its `image` call; the raster is cached per media in `EmitCaches` (256 pictures / 64 MiB, `overflowed` past it): **the display of the first use decides**,
+as the viewer's `imageCache` keeps one canvas per part. The measure protocol is the emitter's: the player asks `measureText` under RAW CSS font strings and the decoded state of
+compressed EMF+ bitmaps; an unknown answer is a `Need` (collected for the whole pass, the pass's output discarded), mapped to two new requests of `text/measure.rs`: A13
+`MetaText { font, text }` (`MeasureTable::{set,meta}_text`: width and `fontBoundingBoxAscent/Descent`) and A14 `MetaDecode { key, data }` (`set_meta_decoded`: the natural size, or `None`).
+`font_avail` (the TS `fontAvail`, module state) is a memo per rasterization: the probe is a state-only sequence of canvas calls (`save`, `font`, `restore`) without a pixel,
+so re-emitting it changes nothing the shell draws.
+
+**Parity** (exact, line by line over the whole canvas text: state sets, offscreen canvases `@cvK`, device-space geometry, resolved paints; the `measure` probes are Rust's host
+calls and are compared as measure answers):
+
+| Capture | Cases | Equal | Different |
+|---|---|---|---|
+| `meta-b5b` (873 synthetic files, 1,267 rasterizations, 399 k lines of the TS; ops 3.0 MB gz, inputs 0.8 MB) | EMF 240 + mutated 80, EMF+ random 140 + 46, EMF+ focused 32 + 10, WMF 180 + 60, PICT 70 + 23, TIFF 130 + 43 (RGBA digest), EOT 160 + 53 (sfnt digest) | **1,267** | 0 |
+| `drawops-b5b` (40 generated decks, 162 slide views; `capture-drawops --gen b5b --special`) | the draw-op stream of a slide whose pictures are the rasterized canvases (identity: `canvas(WxH:recipe hash)`) | **162** | 0 |
+
+The inputs are generated in code (`js/lib/gen/meta-*.mjs`: EMF with every record the TS handles, EMF+ objects (brushes, pens with custom caps, paths, regions, raw and compressed
+bitmaps, nested metafiles, continued objects) and records, WMF, PICT v1/v2 with every bitmap packing, TIFF of every compression (the LZW and PackBits encoders are in the
+generator), EOT with MTX (an LZCOMP encoder with the adaptive Huffman, LZ77 copies, DUP symbols and RLE, and the CTF encoding of glyphs); no font, no proprietary byte) and damaged copies
+(cut, bit flips). V8 coverage of the TS over them (`js/coverage-meta.mjs`): `metafile.js` 1,453 / 1,592 code lines (the rest: `recolorMetafile`, 160 lines ported in B2, and the async
+`prepare`), `emfplus.js` 1,073 / 1,129, `pict.js` 678 / 715 (`fitPictFrame` is B2's), `tiff.js` 179 / 184, `eot.js` 519 / 526 (four `throw` guards).
+Tools: `capture-meta.mjs` (TS, 5.5 s), `compare-meta.mjs` (Rust recipes replayed over the recorder, 0.3 s; the Rust side is `examples/meta_recipe.rs`, 0.09 s for all of
+them), `diff-meta.mjs` (first difference of one file), `coverage-meta.mjs`. Not compared with the TS: an EMF+ compressed bitmap the shell decodes (Node has no
+`createImageBitmap`: the capture covers the not-decoded path, i.e. the GDI fallback of a dual metafile); `a_decoded_bitmap_is_drawn_from_its_blob` pins the Ready path.
+
+### Decisions outside the source semantics (declared)
+
+- **B5b-1. A recipe, not a bitmap or a display sub-list** (the plan's B5b row and the B4 section said a `Bitmap`): the pixels are the shell's (see above). The B4 `MetafileRop`
+  effect is unused. A metafile picture's colour effects (`a:duotone`, grayscale, `clrChange`, brightness): **not applied** — the list's `Derived` has a media base, and the picture is a bitmap
+  (gap B5b-G1; the TS applies `fxImage` to the canvas). `alpha` (`GlobalAlpha`) works.
+- **B5b-2. One raster per media**, the display of the first use (as the viewer's cache per part); a picture shape and a fill of the same part share it.
+- **B5b-3. Throws.** A `DataView` read past the end is `Throw`: the play stops, what was drawn stays, the `finally` restores run, as `rasterizeMetafile`'s `catch`. `push(...array)` of more
+  than `SPREAD_LIMIT` = 120,000 elements throws (V8's stack limit, whose exact value depends on the depth: the TS fails at about that size; EMF `path.push(...cmds)`, polypolygon
+  and EMF+ custom caps).
+- **B5b-4. Caps (M5)**, none in the TS (each makes a hostile file bounded, none changes a real one): ops of one recipe 600,000 (`truncated` flag), blob bytes 64 MiB, `MAX_ELEMS` 65,536 for
+  the arrays of gradients/dashes read by count, EMF+ path points 4 M per rasterization (`PATH_WORK`), pixels of a decoded DIB / EMF+ bitmap / PICT bitmap / TIFF 16 Mpx **and** at most 128
+  pixels per byte of data (an uncompressed row is ≥ 1/8 byte a pixel, PackBits/RLE ≤ 128; TIFF 16,384 pixels a byte), an EMF+ bitmap stride smaller than a row, needs 4,096, saved EMF+ states
+  4,096, PICT font ids 4,096, TIFF tag values 4 M, a loop whose bound is a count of the file stops at the length of the data. `rasterizeMetafile`'s canvas: ≤ 2,400 px a side (the TS's own rule); a
+  non-finite display is no picture.
+- **B5b-5. Strings are UTF-16** (`JsStr`) end to end, so a lone surrogate from an EMF text record survives to `fillText`/`ctx.font` as in the TS; the measure table's keys are lossy
+  (U+FFFD, decision B3-3), which the stub (and a canvas) measures like the surrogate.
+- **B5b-6. Sorting** uses `uo_jsnum::sort::js_sort_order` (V8's decisions, no Rust `sort_by` with an inconsistent comparator, which can panic); `Math.*` are `uo_jsnum::math`; `toFixed`/`String(n)` are `uo_jsnum::format`.
+- **B5b-7.** The module is `#![allow(cast_*, neg_cmp_op_on_partial_ord)]`: the offsets, counts and sizes are JS numbers whose float-to-integer `as` saturates, every use is bounded by the length of the data;
+  `!(a > b)` keeps the JS NaN comparison.
+
+### Memory and robustness
+
+**M1** `m1_rasterization_leaves_nothing_behind` (metafiles, PICT, TIFF over a sample of the set at a display size, and the EOT reads; live bytes exactly back after the outputs are dropped), **M2**
+`m2_a_soak_of_rasterizations_is_flat` (60 rasterizations, tolerance 0), **M5** the caps above: `m5_a_record_bomb_stops_at_the_op_cap` (300,000 records: truncated, bounded),
+`m5_the_canvas_size_is_capped` (huge/NaN/negative displays), `hostile_declared_sizes_are_refused_or_bounded` (a 60,000² TIFF, a 16,384² PICT bitmap, a 16 MiB MTX block from 40 bytes). The raster cache of
+the emitter has its own cap (256 pictures / 64 MiB, `EmitCaches::overflowed`); the TS caches have none (`fontAvail` is per rasterization here, `decoded` is the shell's, capped there at 256 as the TS). Bounded no-panic:
+`damaged_files_never_panic_and_stay_bounded` (1,500 cut / flipped / hostile-field files of the set, `UO_DML_LONG=1` 20,000; slowest < 10 s asserted, measured < 0.2 s). Fuzz targets `emf_play` (EMF, WMF, EMF+ with a
+valid header or raw, optional display), `pict_play`, `tiff_slides`, `eot_read` (`core/fuzz/src/metafile.rs`; seeds are the capture inputs; invariants: the recipe is `UOMF` with a canvas of 1..2,401 px, two passes are equal, an answering host
+is never asked, an MTX result is an sfnt whose directory fits): stable driver 40 s each, **0 crashes** (`emf_play` 32,531 executions at 811/s, slowest 150 ms after the caps above — the first run found a 1.4 s input: a 20-byte
+record claiming 2 M path points, now bounded by `PATH_WORK`; `pict_play` 5.9 M, `tiff_slides` 5.3 M, `eot_read` 13.0 M).
+
 ## Process metrics
 
 | Stage | Agent | Time | Notes |
@@ -415,3 +594,5 @@ Replay of the 150 decks: 1.2 s (release).
 | B1a port (with B1b, one session) | Sonnet | see `uo-pptx.md` | 0 parity rounds; decision A1 (owned trees) and its M3 cost recorded above |
 | B3 port + capture + generator group + tests | Opus | about 1 h 10 min wall (reading 15 min; grapheme generator and port 15 min; layout port 25 min; capture, b3a and replay 15 min; tests, fuzz, docs) | 0 port bugs found by the replay (100 % on the first run); 1 harness fix (A1 key without `fontKerning`); rework: the long-word loop rewritten without nested closures, a surrogate `char` literal, an M5 expectation; the concurrent B5a agent replaced the `diagram-metrics` port and broke the crate build for a while (clippy of this crate re-run after it) |
 | B5a port + generator group + capture + tests | Sonnet | two sessions; port and hooks about 3 h, generator/capture/replay/tests/fuzz/docs about 1 h after the resume | 0 parity mismatches on the first replay; rework was clippy only (22 findings: negated float comparisons, identical branches, a too-complex type) |
+| B4 port + schema fixes + interpreter edits + parity driver + tests + fuzz + docs | Sonnet | one long session (about 190 tool calls). Wall times on this machine (4 jobs): `uo-dml-render`+`uo-pptx` release build about 20 s; emit of the 53 samples (1,202 views) 1.5 s, of the 100 b1a decks 3.0 s (one process per deck); the compare of either capture 1.7 s; `capture-drawops --samples` 12.7 s; `uo-pptx/tests/emit.rs` 2.4 s, `uo-dml-render/tests/emit.rs` 0.2 s; fuzz `slides_emit` stable driver 166,352 executions in 40 s (4,159/s, slowest 16.6 ms, 0 crashes) | parity 1,166/1,202 + 246/246 on the first full run after the recorder-hash and `Prepare` fixes; rework: 4 (the recorder canvas hash, the lazily built derived image, discarded passes polluting the media table, one-request-per-round tables); the fuzz run found two hangs (an infinite column span in `needOf`, an unbounded arc subdivision) and a NaN false positive in its own determinism check |
+| B5b port (metafiles, EMF+, PICT) + TIFF variant + EOT/MTX reader + generators (EMF/EMF+/WMF/PICT/TIFF/EOT, the LZW and LZCOMP encoders) + recipe player + captures + tests + fuzz + docs | Sonnet | one long session (about 330 tool calls). Wall times on this machine (4 jobs): `capture-meta.mjs` over 873 files / 1,267 rasterizations 5.5 s (399 k lines), the Rust side of the whole set 0.09 s (process included 0.5 s), `compare-meta.mjs` replay and compare 0.3 s, `capture-drawops --gen b5b --special` 4.8 s (162 views), `emit-uolf` of the 40 decks 1.1 s, `tests/metafile.rs` 1.2 s; fuzz 40 s a target | parity 1,267 / 1,267 and 162 / 162 after the first complete run with the player fixed; rework: 7 (the replay's `skip` of the XOR fallback read `r.p += r.u32()` before the `u32`; the Mac Roman table lost U+F8FF; V8's spread limit (a 120 k array of subpaths throws in the TS) found by the focused EMF+ group; the TIFF as a recipe instead of RGBA so the page stream does not contain the canvas lines; the per-media raster key; five M5 caps from the fuzz run's slow inputs; clippy casts) |

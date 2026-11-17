@@ -2095,3 +2095,18 @@ The `editor` policy and its `fonts.version` cache (milestone 2); the JS side of 
 its fetch buffer, which the phone number of K15 needs) and the .NET facade (`HyphenationLanguages`, `Now`, `SubstituteFontProvider.Shared` over this registry; `IFontProvider` and `PdfFontSource`
 dropped or wrapped, for CHANGELOG); the `"font budget"` warning (layout); libFuzzer targets for the index scan (the mutation loops stand in); WebKit, Linux and macOS runs. A stray folder
 `D:\tmp_provider_corpus` (the output of a mistyped first run of the corpus example, a few KB) could not be removed by the session; it is outside the repository.
+
+## EOT reader and MicroType Express (B5b, 2026-11-17)
+
+`eot.ts` of the Slides core (frozen 0.9.2, 542 lines) is ported into `eot.rs` ([`eot::read`], [`eot::looks_like_eot`], next to the writer `sfnt_to_eot`) and `mtx.rs` (private: the MicroType Express container,
+the three LZCOMP blocks with the adaptive Huffman and the optional RLE, the CTF glyph decoder: triplets, composites, PUSH data in hop codes, `cvt ` deltas, and the sfnt writer). `read(bytes)` is `eotToSfnt`: `None` for what is
+no EOT (coherent sizes and the magic 0x504C) or whose MTX data the TS cannot decode (its `catch`); the font data are the LAST `FontDataSize` bytes (true for every header version); the XOR with 0x50 and the compression are the
+header flags. The deck's font reader calls it (`uo_pptx::fonts::read_embedded_fonts`, through the re-export `uo_dml_render::{looks_like_eot, eot_to_sfnt}`: a part with no sfnt magic and no fontKey result that looks like an EOT is
+read, as `fonts.ts` does); PowerPoint writes its `.fntdata` as MTX EOT, Google Slides too.
+
+**Parity**: the Node capture has 160 generated EOT files + 53 damaged copies (plain, XOR, MTX versions 1-3 with and without RLE; synthetic fonts built in code, with an LZCOMP encoder in the generator, no font file): the sfnt
+bytes (length and digest) are equal in 213 / 213 and natively in `uo-dml-render/tests/metafile.rs`; V8 coverage of the TS 519 / 526 code lines (the four `throw` guards are the rest: the declared-size plausibility, the
+distance, the output ceiling and the hop code). **Bounds** (the TS's own, kept): an LZCOMP output at most 32 MiB (`MAX_FONT_BYTES`), a declared block length at most `max(64 KiB, 64 × the block)`, the block header is 24 bits (16 MiB of
+history at most). No new decision outside the TS: the weights of the adaptive tree are `f64` as the TS `Float64Array`, the `Out` ceiling errors are `Err(())`, a read past the end of a block throws as `In.need`. The fuzz target
+`eot_read` (raw, with a header, XOR, MTX; the result of an MTX read is an sfnt whose directory fits) ran 13.0 M executions in 40 s, 0 crashes; the shared no-panic test damages EOT files too. Memory: `m1_rasterization_leaves_nothing_behind`
+reads every EOT of the set and returns to the start byte for byte.
