@@ -1,4 +1,4 @@
-# Rust port — handoff (state of 2026-11-17; newest update: "Slides wave 3")
+# Rust port — handoff (state of 2026-11-17; newest update: "Slides wave 4a")
 
 Entry point for the next session that continues the Rust migration (0.10). Read this, then
 `.claude/skills/rust-port/SKILL.md` (the workflow: hybrid mode, models per role, memory gate) and the module records
@@ -162,6 +162,44 @@ milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects 
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
+
+## Update 2026-11-17 (wave 4a) — Slides editor on Rust, viewer without the TS model, PDF links, PowerPoint oracle
+
+- **Editor routed** (Opus): `<universal-slides engine="rust">` runs every edit, undo/redo and `savePptx()` (fonts
+  included) in the Rust `Editor` (`uo-wasm/src/slides_edit.rs`, schema codec `core/schema/slides_edit.uos`), in
+  `uo-slides-editor.wasm` (1,429,008 B gzip, budget 3.5 MB) sharing ONE deck with the viewer's painter (stills,
+  thumbnails, inline-edit slide, present/play). Parity: ABI replay 8,696/8,696 steps (53,106 facets); Chromium TS vs Rust
+  element 60 decks × 2,400 steps: package, UI state, slide pixels, main canvas 2,460/2,460 each, `savePptx` 360/360.
+  M4 10,000 editors 0 B; M5 100 undo steps. B8-1 kept (failed op restores the snapshot = what a TS user sees). Still on
+  TS (5, nothing disabled): the TS model re-read from the mirrored package serves hit tests/selection/getters/findText/
+  a11y; `newPresentation()` blank deck (sync API); `insertImage` size in the browser; `.ppt` converted twice (equal
+  parts); image decode/font resolution/measure by design.
+- **Viewer without the TS model** (Opus): Rust read-model exports (`uo_slides_{outline,links,assets,media_show,
+  media_timeline,fonts,typefaces,show_settings}`); `engine="rust"` opens a .pptx with the TS model never built; the
+  Rust show/timeline drive `present()`/`play()` and the media player. Chromium CI form: 213/213 decks, 0 TS model
+  loads, 959/959 slides pixel-equal, a11y text equal, 920,640 link hit-test points equal, 7,221/7,221 animated frames,
+  media requests equal. Open cost (12 largest decks): JS heap 31.2 MB (TS) → 27.1 MB incl. the 14.35 MB module;
+  `loadPptx` 831 → 532 ms. TS model still built only for a `loadPptx` before the module is ready, any `.ppt`, after a
+  trap, or back on `ts`. `play()` in rust mode returns per-slide times only (CHANGELOG). Found + fixed a B5b gap: no
+  `recipe` hook in the browser engine (every EMF/WMF/PICT/TIFF dropped in rust mode); now b5b 659/682 slides
+  pixel-equal, **23 differ inside metafile rasters (open)**. MetaDecode prepare phase via `createImageBitmap` +
+  `uo_slides_answer` (a successful decode is not covered by the corpus). Viewer wasm 1,266,010 B gzip (79%).
+- **PDF links**: `uo_pptx::links` (run boxes bit-equal to the TS `hitTestHyperlink`, 945/945), `Emission.links`;
+  538 decks: 994 links placed, `hyperlink:unplaced` 690 → 0 (2,089 off-slide fragments counted as off-page).
+- **PowerPoint-PDF oracle** (M4 prep, `uo-pptx/tests/oracle_ppt`, `slides/tools/ppt-lab/pdf-oracle*`; cached PowerPoint
+  PDFs in `core/target/w4-oracle/ppt-oracle`, outside git): 139 decks / 736 pages (PowerPoint opens only 15% of the
+  generated decks). Samples (601 pages): pixel agreement mean 0.9947 (Rust, installed fonts) vs 0.9905 TS×PowerPoint.
+  Ranked differences: (1) gradient-filled text as `7 Tr` text clip + `sh` — pdfium/Chrome ignores the clip and floods
+  the page (40% of differing px; Rust-only bug); (2) `a:sysClr` uses lastClr, PowerPoint the system colour; (3)
+  first-line baseline per font (Aptos 0.037 em lower); (4) fallback fonts for CJK/Thai/Arabic (PowerPoint: Yu Gothic,
+  Malgun…); (5) WordArt warp geometry; (6) date fields in the system locale; (7) chart insets; (8) `.ppt` charts as
+  fallback pictures; hidden slides included (PowerPoint omits them). 2–8 are TS legacy (Office decides → measure,
+  then `ts_*` switches as in Write).
+- Orchestrator: three viewer hooks for the editor (`loadRustEngine`, `rustAdopted`, type export); digests re-blessed.
+- **Next**: wave 4b = model memory compaction (`SlideModel` 0.95× TS → 0.5×, `Shape` 408 B → ≤ 256) + PDF-only fixes
+  (gradient text as a shading pattern, SVG) + the 23 b5b metafile diffs; wave 5 = PowerPoint rules (sysClr, baseline,
+  fallback fonts, date locale, hidden slides in PDF, warp, chart insets) measured and switched like Write's `ts_*`;
+  then the M4 gate (real Safari = maintainer).
 
 ## Update 2026-11-17 (wave 3) — Slides B4b (animations in the Rust viewer), PDF effects + font fallback, .NET facade
 

@@ -18,6 +18,7 @@ mod effects;
 mod geom;
 mod images;
 mod interp;
+mod links;
 pub mod measure;
 mod paint;
 mod raster;
@@ -31,7 +32,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustc_hash::FxHashMap;
 use uo_dml_render::PartSource;
-use uo_dml_render::emit::EmitCaches;
+use uo_dml_render::emit::{EmitCaches, RunLink};
 use uo_dml_render::text::{MAX_ROUNDS, MeasureTable};
 use uo_pdf::{FontId, PdfDocument, PdfError, PdfImage, PdfLimits};
 use uo_render::slides::{SlidesList, SlidesResources, validate};
@@ -39,6 +40,7 @@ use uo_render::slides::{SlidesList, SlidesResources, validate};
 use crate::deck::Deck;
 use crate::emit::{EmitFail, View, emit_slide};
 use crate::error::PptxError;
+use crate::links::{LinkSource, LinkTarget, ShowJump};
 pub use measure::{FaceSet, FontSource, fallback_chain, fallback_families, fill_measures, text_width, text_width_in};
 
 /// 1 px of the display list is 1 pt of the page: the slide is emitted at `1 / 12700` px per EMU.
@@ -105,7 +107,8 @@ pub struct PdfOutput {
 /// destination-in/out made wrong), `layer:depth`, `media-frame`, `image:recipe-truncated`, `image:unsupported`,
 /// `image:jpeg-effect`, `font:missing` (no face), `font:not-embeddable`, `glyph:missing` (no face has the
 /// character, not even the fallbacks), `meta:xor-rect`, `transform:singular`, `chart:frame` (a chart the shell
-/// paints with `uo-charts`), `hyperlink:unplaced`.
+/// paints with `uo-charts`), `hyperlink:unplaced` (a model link run with no drawn piece), `hyperlink:scheme` (an address
+/// that is not http, https or mailto), `hyperlink:action` (a jump the PDF cannot express: last viewed, end of show).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PdfReport {
     pub pages: u32,
@@ -119,7 +122,14 @@ pub struct PdfReport {
     pub fonts: u32,
     pub images: u32,
     pub layers: u64,
+    /// link annotations placed (run pieces, shape clicks and jumps)
     pub links: u64,
+    /// of `links`, the ones that go to a page of the document (slide and show jumps)
+    pub internal_links: u64,
+    /// of `links`, the run links placed over their shape's box because its text drew no run (WordArt warps)
+    pub shape_wide_links: u64,
+    /// linked pieces drawn entirely outside the page (text overflowing the slide): no annotation, not a missing effect
+    pub links_off_page: u64,
     /// metafile, PICT and TIFF pictures played as vector content
     pub recipes: u64,
     /// canvas shadows drawn (an image each)
@@ -228,45 +238,138 @@ impl<'a> Writer<'a> {
         }
     }
 
-    /// One page: the list interpreted over the document's resources.
+    /// One page: the list interpreted over the document's resources, then its links.
     pub(crate) fn page(
         &mut self,
         list: &SlidesList,
         res: &SlidesResources,
         src: &dyn PartSource,
-        links: &[(String, String)],
+        links: &PageLinks<'_>,
     ) -> Result<(), PdfFail> {
         validate(list, &res.lens()).map_err(|_| PdfFail::Pdf(PdfError::Invalid("the Slides list is inconsistent")))?;
-        let page = interp::run(self, list, res, src);
+        let marks = links::LinkMarks::new(links.runs);
+        let page = interp::run(self, list, res, src, &marks);
         let (w, h) = (list.view.sw, list.view.sh);
         let (w, h) = (if w.is_finite() && w > 0.0 { w } else { 720.0 }, if h.is_finite() && h > 0.0 { h } else { 540.0 });
+        let page_index = i64::from(self.report.pages);
         let Some(doc) = self.doc.as_mut() else { return Err(PdfFail::Pdf(PdfError::Invalid("the document is closed"))) };
         let mut pw = doc.add_page(w, h);
         pw.raw(page.ops, &page.content);
-        // the hyperlinks of the model over the runs drawn: the next run with the link's text, in order
-        let (mut placed_links, mut unplaced) = (0u64, 0u64);
-        let mut j = 0usize;
-        for p in &page.placed {
-            let found =
-                links.iter().enumerate().skip(j).take(4).find(|(_, (t, _))| uo_jsnum::text::trim(t) == uo_jsnum::text::trim(&p.text));
-            if let Some((k, (_, url))) = found {
-                unplaced += (k - j) as u64;
-                j = k + 1;
-                pw.add_link(&uo_pdf::PdfLink {
-                    x_pt: p.x,
-                    y_top_pt: p.y - p.size * 0.9,
-                    w_pt: p.w,
-                    h_pt: p.size * 1.2,
-                    uri: Some(url.clone()),
-                    ..uo_pdf::PdfLink::default()
-                });
-                placed_links += 1;
+        // (a) the run marks: one annotation per drawn piece, at the box the run was drawn under
+        let raw = marks.take();
+        // what each drawn piece wrote (for the unplaced count below)
+        let covered: Vec<(u32, &str, String)> = raw
+            .iter()
+            .filter_map(|(li, _)| links.runs.get(*li))
+            .map(|l| {
+                let text = usize::try_from(l.run)
+                    .ok()
+                    .and_then(|r| list.runs.get(r))
+                    .and_then(|r| interp::span_of(&list.texts, &r.text))
+                    .map(String::from_utf16_lossy)
+                    .unwrap_or_default();
+                (l.shape, &*l.url, text)
+            })
+            .collect();
+        let drawn = merge_marks(raw, links.runs);
+        let (mut placed, mut refused, mut jumps, mut actions, mut off_page) = (0u64, 0u64, 0u64, 0u64, 0u64);
+        for (li, b) in &drawn {
+            let Some(l) = links.runs.get(*li) else { continue };
+            // cut to the page: a piece entirely off it (text overflowing the slide) gets no annotation
+            let b = [
+                uo_jsnum::math::max(b[0], 0.0),
+                uo_jsnum::math::max(b[1], 0.0),
+                uo_jsnum::math::min(b[2], w),
+                uo_jsnum::math::min(b[3], h),
+            ];
+            if !(b[2] > b[0] && b[3] > b[1]) {
+                off_page += 1;
+                continue;
+            }
+            if uo_pdf::safe_pdf_uri(Some(&l.url)).is_none() {
+                refused += 1;
+                continue;
+            }
+            pw.add_link(&uo_pdf::PdfLink {
+                x_pt: b[0],
+                y_top_pt: b[1],
+                w_pt: b[2] - b[0],
+                h_pt: b[3] - b[1],
+                uri: Some(l.url.to_string()),
+                ..uo_pdf::PdfLink::default()
+            });
+            placed += 1;
+        }
+        // (b) the shape-level clicks and jumps over the shape's box as the page shows it
+        let last = i64::from(links.page_count.max(1)) - 1;
+        for (b, target) in &links.shapes {
+            let mut link =
+                uo_pdf::PdfLink { x_pt: b[0], y_top_pt: b[1], w_pt: b[2] - b[0], h_pt: b[3] - b[1], ..uo_pdf::PdfLink::default() };
+            match target {
+                LinkTarget::Url(u) => {
+                    if uo_pdf::safe_pdf_uri(Some(u)).is_none() {
+                        refused += 1;
+                        continue;
+                    }
+                    link.uri = Some(u.to_string());
+                }
+                LinkTarget::Slide(i) => link.page_index = Some(i64::from(*i)),
+                LinkTarget::Show(ShowJump::Next) => link.page_index = Some((page_index + 1).min(last)),
+                LinkTarget::Show(ShowJump::Previous) => link.page_index = Some((page_index - 1).max(0)),
+                LinkTarget::Show(ShowJump::First) => link.page_index = Some(0),
+                LinkTarget::Show(ShowJump::Last) => link.page_index = Some(last),
+                LinkTarget::Show(ShowJump::LastViewed | ShowJump::End) => {
+                    actions += 1;
+                    continue;
+                }
+            }
+            if link.uri.is_none() {
+                jumps += 1;
+            }
+            pw.add_link(&link);
+            placed += 1;
+        }
+        // a link run of the model is placed when a piece of its shape with its address was drawn (by address, not by text: caps,
+        // symbol fonts and tabs change the drawn text); a shape whose text drew no linked piece at all (WordArt warps draw
+        // outlines, not runs) gets its link over the shape's box, the TS viewer's hit-test geometry
+        let mut unplaced = 0u64;
+        let mut shape_wide: Vec<u32> = Vec::new();
+        for (shape, url) in &links.model {
+            let hit = covered.iter().any(|(s, u, t)| s == shape && *u == url.as_str() && !uo_jsnum::text::trim(t).is_empty());
+            if hit {
+                continue;
+            }
+            let drew_none = !covered.iter().any(|(s, _, _)| s == shape);
+            match links.fallback.iter().find(|(s, _, _)| s == shape) {
+                Some((_, b, u)) if drew_none => {
+                    if !shape_wide.contains(shape) {
+                        shape_wide.push(*shape);
+                        if uo_pdf::safe_pdf_uri(Some(u)).is_some() {
+                            pw.add_link(&uo_pdf::PdfLink {
+                                x_pt: b[0],
+                                y_top_pt: b[1],
+                                w_pt: b[2] - b[0],
+                                h_pt: b[3] - b[1],
+                                uri: Some(u.clone()),
+                                ..uo_pdf::PdfLink::default()
+                            });
+                            placed += 1;
+                            self.report.shape_wide_links += 1;
+                        } else {
+                            refused += 1;
+                        }
+                    }
+                }
+                _ => unplaced += 1,
             }
         }
-        unplaced += links.len().saturating_sub(j) as u64;
-        self.report.links += placed_links;
-        for _ in 0..unplaced {
-            self.report.note("hyperlink:unplaced");
+        self.report.links += placed;
+        self.report.internal_links += jumps;
+        self.report.links_off_page += off_page;
+        for (key, n) in [("hyperlink:unplaced", unplaced), ("hyperlink:scheme", refused), ("hyperlink:action", actions)] {
+            for _ in 0..n {
+                self.report.note(key);
+            }
         }
         pw.finish()?;
         self.report.pages += 1;
@@ -312,7 +415,8 @@ pub fn pdf(deck: &mut Deck, options: &PdfOptions<'_>) -> Result<PdfOutput, PdfFa
         match list {
             Some(emission) => {
                 w.report.note_charts(emission.chart_frames.len());
-                let links = deck.slide(index).map(|s| slide_links(&s)).unwrap_or_default();
+                let page_count = u32::try_from(count).unwrap_or(u32::MAX);
+                let links = page_links(deck, index, &emission.links, page_count);
                 let src = deck.source();
                 if let Err(e) = w.page(&emission.list, &res, &src, &links) {
                     match e {
@@ -381,25 +485,103 @@ pub fn pdf_from_lists(
         if w.cancelled() {
             return Err(PdfFail::Pdf(PdfError::Cancelled));
         }
-        w.page(list, res, src, &[])?;
+        w.page(list, res, src, &PageLinks::none())?;
     }
     w.finish()
 }
 
-/// The hyperlinks of a slide's text, in reading order: the text of each linked run and its address. The list
-/// does not carry them (the display list is the canvas calls), so they are placed over the runs drawn by text.
-fn slide_links(slide: &crate::model::SlideModel) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for sh in &slide.shapes {
+/// [`pdf_from_lists`] with each list's hyperlinked runs (`Emission::links`): one annotation per drawn piece.
+///
+/// # Errors
+/// As [`pdf_from_lists`].
+pub fn pdf_from_lists_with_links(
+    slides: &[(&SlidesList, &SlidesResources, &[RunLink])],
+    src: &dyn PartSource,
+    options: &PdfOptions<'_>,
+) -> Result<PdfOutput, PdfFail> {
+    let mut w = Writer::new(options);
+    let page_count = u32::try_from(slides.len()).unwrap_or(u32::MAX);
+    for (list, res, runs) in slides {
+        if w.cancelled() {
+            return Err(PdfFail::Pdf(PdfError::Cancelled));
+        }
+        w.page(list, res, src, &PageLinks { runs, model: Vec::new(), shapes: Vec::new(), fallback: Vec::new(), page_count })?;
+    }
+    w.finish()
+}
+
+/// Joins the drawn pieces of one link that touch (the layout places a run word by word, a vertical or right-to-left line
+/// piece by piece): the same shape and address, the boxes overlapping by half their extent across the line and at most
+/// 0.6 of the line's thickness apart along it — in a row or in a column.
+fn merge_marks(marks: Vec<(usize, [f64; 4])>, runs: &[RunLink]) -> Vec<(usize, [f64; 4])> {
+    use uo_jsnum::math::{max, min};
+    let touches = |p: &[f64; 4], b: &[f64; 4]| {
+        let (hp, hb, wp, wb) = (p[3] - p[1], b[3] - b[1], p[2] - p[0], b[2] - b[0]);
+        let ov_y = min(p[3], b[3]) - max(p[1], b[1]);
+        let ov_x = min(p[2], b[2]) - max(p[0], b[0]);
+        let gap_x = max(b[0] - p[2], p[0] - b[2]);
+        let gap_y = max(b[1] - p[3], p[1] - b[3]);
+        (ov_y >= 0.5 * min(hp, hb) && gap_x <= 0.6 * max(hp, hb)) || (ov_x >= 0.5 * min(wp, wb) && gap_y <= 0.6 * max(wp, wb))
+    };
+    let mut out: Vec<(usize, [f64; 4])> = Vec::with_capacity(marks.len());
+    for (li, b) in marks {
+        if let Some((pl, pb)) = out.last_mut()
+            && let (Some(p), Some(l)) = (runs.get(*pl), runs.get(li))
+            && p.shape == l.shape
+            && p.url == l.url
+            && touches(pb, &b)
+        {
+            *pb = [min(pb[0], b[0]), min(pb[1], b[1]), max(pb[2], b[2]), max(pb[3], b[3])];
+            continue;
+        }
+        out.push((li, b));
+    }
+    out
+}
+
+/// The links of one page: the emission's run marks, the model's link runs (for the unplaced count) and the shape-level
+/// clicks and jumps in page pt (`x0, y0, x1, y1`).
+pub(crate) struct PageLinks<'a> {
+    pub runs: &'a [RunLink],
+    /// `(shape, address)` of every model run with a `hyperlink` and some text
+    pub model: Vec<(u32, String)>,
+    pub shapes: Vec<([f64; 4], LinkTarget)>,
+    /// the `RunUrl` boxes (turned with their shape): `(shape, box, address)`, placed for a shape that drew no linked piece
+    pub fallback: Vec<(u32, [f64; 4], String)>,
+    pub page_count: u32,
+}
+
+impl PageLinks<'_> {
+    fn none() -> PageLinks<'static> {
+        PageLinks { runs: &[], model: Vec::new(), shapes: Vec::new(), fallback: Vec::new(), page_count: 0 }
+    }
+}
+
+/// The links of presentation slide `index` for its page: the model's link runs and the `ShapeClick`/`RunJump` boxes of
+/// [`crate::links::slide_links`] at the PDF view, turned with their shape (the `RunUrl` boxes are not placed: the run
+/// marks are exact).
+fn page_links<'a>(deck: &mut Deck, index: u32, runs: &'a [RunLink], page_count: u32) -> PageLinks<'a> {
+    let mut out = PageLinks { runs, model: Vec::new(), shapes: Vec::new(), fallback: Vec::new(), page_count };
+    let Ok(slide) = deck.slide(index) else { return out };
+    for (si, sh) in slide.shapes.iter().enumerate() {
         let Some(tb) = sh.tx_body.as_deref() else { continue };
-        for p in &tb.paragraphs {
-            for r in &p.runs {
-                if let Some(url) = r.extras.as_deref().and_then(|e| e.hyperlink.as_deref())
-                    && !r.text.is_empty()
-                {
-                    out.push((r.text.to_string(), url.to_owned()));
-                }
+        let Ok(si) = u32::try_from(si) else { break };
+        for r in tb.paragraphs.iter().flat_map(|p| p.runs.iter()) {
+            if let Some(url) = r.extras.as_deref().and_then(|e| e.hyperlink.as_deref())
+                && !uo_jsnum::text::trim(&r.text).is_empty()
+            {
+                out.model.push((si, url.to_owned()));
             }
+        }
+    }
+    let view = View { scale: PX_PER_EMU, ox: 0.0, oy: 0.0 };
+    for b in crate::links::slide_links(deck, index, view).unwrap_or_default() {
+        let rot = usize::try_from(b.shape).ok().and_then(|i| slide.shapes.get(i)).and_then(|s| s.xfrm.as_ref()).and_then(|x| x.rot);
+        let Some(r) = links::rotated_box(b.rect, rot) else { continue };
+        match (b.source, b.target) {
+            (LinkSource::RunUrl, LinkTarget::Url(u)) => out.fallback.push((b.shape, r, u.to_string())),
+            (LinkSource::RunUrl, _) => {}
+            (_, t) => out.shapes.push((r, t)),
         }
     }
     out

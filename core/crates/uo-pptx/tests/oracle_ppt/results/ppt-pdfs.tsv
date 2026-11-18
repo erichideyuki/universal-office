@@ -1,0 +1,628 @@
+# id	group	deck sha256 (16)	PowerPoint PDF sha256 (16)	bytes	slides	hidden slides	seconds (or refusal)
+s_gaps-smoke.pptx	samples	331e752992c22ae8	2cbc1b6f3a099376	33339	1		1.43
+s_legacy_lo-footer-test.ppt	legacy	244596988434d2d3	bae399853335296c	66649	3		1.39
+s_legacy_lo-reference.ppt	legacy	67fd012a8bd54e93	77da9f2abf31e0ce	53096	3		1.2
+s_legacy_lo-stress-shapes.ppt	legacy	573ef3d130434e66	52dd705ec2c902b5	53176	4		1.05
+s_legacy_lo-wordart-test.ppt	legacy	0cbc9c5c43628546	c2bcb5cac9b72a2d	70971	3		1.1
+s_playback_pb-365.ppt	playback-ppt	27611eb3eb9c3ddf	4e5c4ee3d0edc982	33465	2		1.42
+s_playback_pb-365.pptx	playback	58f621e812527d80	92a4d3172921fe51	56642	2		2.68
+s_playback_pb-config.ppt	playback-ppt	14208c9c7d580c4f	e6a698a72ac31b8a	19843	2		2.97
+s_playback_pb-config.pptx	playback	79c07f694d2a5d0b	71cafc91d5d20709	19843	2		4.61
+s_playback_pb-enfase.ppt	playback-ppt	6b1161518ae0d5aa	44b853b6be2f09b5	29406	5		11.94
+s_playback_pb-enfase.pptx	playback	be7244c9848e56b5	e008d70e9c0c4bfd	29406	5		6.88
+s_playback_pb-entrada.ppt	playback-ppt	e0230b842182ddcf	e98d3b95db4a169d	39459	9		1.39
+s_playback_pb-entrada.pptx	playback	7ba618cd97dc7800	267eea319627393f	39459	9		1.2
+s_playback_pb-graficos-partes.ppt	playback-ppt	a0faa61c7e28ea57	d803181724bc68ce	33279	9		11.95
+s_playback_pb-graficos-partes.pptx	playback	b548ed6cc5a77589	02b9ca4cb81f42e4	33379	9		3.9
+s_playback_pb-graficos.ppt	playback-ppt	977740f60da295ad	41875a0e307f5c79	163772	8		1.57
+s_playback_pb-graficos.pptx	playback	91903bcd497a7899	54472afc3c9e8951	42583	8		3.88
+s_playback_pb-midia-2.ppt	playback-ppt	8a2d60f360e0372e	7c647bce89b459ef	53629	10		1.31
+s_playback_pb-midia-2.pptx	playback	21303ca8a6737258	68e6b814dae9d358	53629	10		2.67
+s_playback_pb-midia.ppt	playback-ppt	9f9992390bc2b824	f1dc6bc38a91ec43	88679	7		2.14
+s_playback_pb-midia.pptx	playback	d04a4eefbfcb0fc4	a0f4e780f940f341	88682	7		2.5
+s_playback_pb-saida-2.ppt	playback-ppt	60ad42d9df608f66	d854f0a0ba4c4114	26636	4		10.63
+s_playback_pb-saida-2.pptx	playback	778ac533073c9235	0eba6855040a14bc	26636	4		1
+s_playback_pb-saida.ppt	playback-ppt	c3c175a151579619	315a054f0f4f34cf	29221	5		0.97
+s_playback_pb-saida.pptx	playback	2825f5566bf3b251	850962a22ba2c0a5	29221	5		1.12
+s_playback_pb-tempo-2.ppt	playback-ppt	4f062c2a8cc910c7	dc47386e78cea85e	23130	4		1.99
+s_playback_pb-tempo-2.pptx	playback	4d03df7c01f856e2	99300009f8a13cd2	23130	4		2.12
+s_playback_pb-tempo.ppt	playback-ppt	9fbb76a04917cf63	290203da7df8bf93	59988	15	11	2.02
+s_playback_pb-tempo.pptx	playback	b76fd34295f6d276	6434037549089eb2	59988	15	11	5.27
+s_playback_pb-texto-2.ppt	playback-ppt	7c245805844435f7	2f9bdb1a7bceef72	46936	8		1.23
+s_playback_pb-texto-2.pptx	playback	2fe3a0ff355099f7	82101889384c1f78	46936	8		3.17
+s_playback_pb-texto.ppt	playback-ppt	065261f6b6e617db	83b26a83adcc0148	46412	9		1.35
+s_playback_pb-texto.pptx	playback	4519ee62b5ce3eca	2ecb555228495434	46412	9		1.34
+s_playback_pb-trajetorias-2.ppt	playback-ppt	f3d489b62d4fc019	c5dc3552ae8c7034	34510	7		2.37
+s_playback_pb-trajetorias-2.pptx	playback	f3f0d3d06e89daec	6720627e02027416	34510	7		2.57
+s_playback_pb-trajetorias.ppt	playback-ppt	8d75baad1e33f113	c6cac86cbf555070	28943	4		2.29
+s_playback_pb-trajetorias.pptx	playback	0f9fabfd7c894ddf	545bf13647d12f18	28943	4		2.04
+s_playback_pb-transicoes-classicas.ppt	playback-ppt	f4c0624db06ac0f8	ee37bd70e2349deb	99793	33		2.22
+s_playback_pb-transicoes-classicas.pptx	playback	a2629d9cf57571b9	0d55d3cddde4fa35	99793	33		6.54
+s_playback_pb-transicoes-dinamicas.ppt	playback-ppt	b4b254f20ea8bfa7	ebb6d8d39b084fa7	99270	32		17.6
+s_playback_pb-transicoes-dinamicas.pptx	playback	1b5ed9be4688d629	2e448cb2bde7b14a	99270	32		8.69
+s_playback_pb-transicoes-variantes-3d.ppt	playback-ppt	83d0d7b590f8d1ca	aaef6141159a540d	148148	56		1.67
+s_playback_pb-transicoes-variantes-3d.pptx	playback	bfc90cae6a8d0bf2	c856773ed7964cb6	148148	56		1.22
+s_playback_pb-transicoes-variantes.ppt	playback-ppt	e2b481d42a057220	7a89d776238914d5	122395	40		1.11
+s_playback_pb-transicoes-variantes.pptx	playback	caca2978bda0fe74	7bb5ade98d9b0e3c	122395	40		1
+s_playback_showcase_animado.ppt	playback-ppt	750e1d628f903024	d5defee03df9e640	642806	12		3.8
+s_reference.pptx	samples	064d40f5da9a3c78	509a43bf05aefc77	52189	3		0.86
+s_showcase_animado.pptx	samples	828037078d1a6fe8	0382c632231c4996	627709	12		1.29
+s_stress-advanced.pptx	samples	9bbaac8872a1e233	b9e3782000b89ce7	39400	4		0.82
+s_stress-media.pptx	samples	c1cd89aae658010c	354b10906f4c071a	67832	5		0.81
+s_stress-shapes.pptx	samples	2b856f9535b3912b	bb770d742f1dc934	52639	4		0.82
+s_stress-table-chart.pptx	samples	ce4909936f41d258	3351e59bcc16c5ba	43685	5		0.88
+s_stress-text.pptx	samples	35cc5f69fe7c4781	06493e955936a95f	164885	4		0.98
+b1a_0000	b1a	1aae9a49a6932108					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0001	b1a	758558fa256743a6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0002	b1a	340ecdb4b2f962e5					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0003	b1a	2b078edfe83b0c47	e3f4e8329af9054a	133982	1		0.98
+b1a_0004	b1a	68011f767fee5d76					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0005	b1a	4cf53bd778dc818e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0006	b1a	2d8cec48aee1d518					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0007	b1a	d11b8f9692cda2a7					refused: PowerPoint could not open the file.
+b1a_0008	b1a	02cc3ec73fd564b7					refused: PowerPoint could not open the file.
+b1a_0009	b1a	5755afea0302e26e					refused: PowerPoint could not open the file.
+b1a_0010	b1a	9fe2cf3e970881c8	41cd99b143138bab	275491	1		1.04
+b1a_0011	b1a	5a0c8509e2763410					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0012	b1a	71856bb07d3af747	1a52e45e29955b60	364992	1		1.24
+b1a_0013	b1a	df48d4348bafece7					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0014	b1a	c1d7e6201222b03b					refused: PowerPoint could not open the file.
+b1a_0015	b1a	65e5ee66542d5062					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0016	b1a	05f8c66a96298159					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0017	b1a	627dc262c4fc91de					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0018	b1a	844569bbf5a54ed7					refused: PowerPoint could not open the file.
+b1a_0019	b1a	1c8cb420801b23d2	73cc0c4acb16c739	98797	1		1.58
+b1a_0020	b1a	6508bbd99fdcaf92					refused: PowerPoint could not open the file.
+b1a_0021	b1a	6ab4476d77a1f5cd					refused: PowerPoint could not open the file.
+b1a_0022	b1a	e5b32cf01a82fc02					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0023	b1a	d05e60e9764ea74b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0024	b1a	6466184e3c4e8f7f					refused: PowerPoint could not open the file.
+b1a_0025	b1a	c7cfb29faac3353e					refused: PowerPoint could not open the file.
+b1a_0026	b1a	e127d40658837ec7					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0027	b1a	7ed820eeb5efc55b					refused: PowerPoint could not open the file.
+b1a_0028	b1a	92a72f2f49e3bf86	f6ddc81aa10309f9	376201	3		1.54
+b1a_0029	b1a	a709bc865b5b8513					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0030	b1a	a85c2e85d43c5af9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0031	b1a	7204d606f002b52d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0032	b1a	a1c6790cc2223e88					refused: PowerPoint could not open the file.
+b1a_0033	b1a	8feb8f235c75ec79					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0034	b1a	cd448e62c23d152f					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0035	b1a	2d2f7ae9bc011df2					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0036	b1a	23e78b50d4e769b6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0037	b1a	c03083fd76e72e4b	f6f6740e74475202	298764	1		1.14
+b1a_0038	b1a	3175e9a621bcf16c					refused: PowerPoint could not open the file.
+b1a_0039	b1a	53c586310d37a99c					refused: PowerPoint could not open the file.
+b1a_0040	b1a	79ed233748419227					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0041	b1a	c5cf090f23241874					refused: PowerPoint could not open the file.
+b1a_0042	b1a	9fa6bcfd90c9b8bf					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0043	b1a	3447cf04c0570ba9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0044	b1a	aaa3230fc93a3feb					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0045	b1a	bfabcfa99f10cc38					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0046	b1a	21800a79eed30d7f					refused: PowerPoint could not open the file.
+b1a_0047	b1a	ea4f0e0c1d62dd2b					refused: PowerPoint could not open the file.
+b1a_0048	b1a	9d06f0cdf72224da					refused: PowerPoint could not open the file.
+b1a_0049	b1a	93f6558aec2d3a5f					refused: PowerPoint could not open the file.
+b1a_0050	b1a	e2fd101af7ad7c8c	b48a8a23268fbe29	272768	2		1.71
+b1a_0051	b1a	4e8cd598b377f4ab					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0052	b1a	74d0a53edba8a5f8					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0053	b1a	575e41d5110d5474					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0054	b1a	221272028e43120b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0055	b1a	b041e6d8af77308d	378a58091a6441e0	302862	1		1.14
+b1a_0056	b1a	337c3f4c3286aeef					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0057	b1a	bf102c65b59407b4	e43d352ea1ed457a	525061	2	2	2.46
+b1a_0058	b1a	7ead75c309f3f5a4					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0059	b1a	5d61bff8f49d2bc9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0060	b1a	3ed325c9a4197131					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0061	b1a	72e9d32ce007e05d	2568c4c7850b54fa	254673	1		1.38
+b1a_0062	b1a	faa3f9d94772d118					refused: PowerPoint could not open the file.
+b1a_0063	b1a	8e5bef2f2837dfd6					refused: PowerPoint could not open the file.
+b1a_0064	b1a	0e34a49becacca22					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0065	b1a	333079d4e332ea6a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0066	b1a	f00b85941e72221b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0067	b1a	167a2a7a2a4d59b1	3e1b84bf495fa9f2	783725	3		1.73
+b1a_0068	b1a	bfe2afd24921b3c3	b691beb67642cd4c	149423	1		1.15
+b1a_0069	b1a	67856e2f5324f7d5	e2e60805fbafedd0	189951	1		1.18
+b1a_0070	b1a	696eba0fafc022be					refused: PowerPoint could not open the file.
+b1a_0071	b1a	713a0307897577df					refused: PowerPoint could not open the file.
+b1a_0072	b1a	ea8f0766aaa1e5eb					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0073	b1a	a5ace56204e79e2d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0074	b1a	20791ec5272786da					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0075	b1a	d3c4ae0943ea041a					refused: PowerPoint could not open the file.
+b1a_0076	b1a	121ed764f75ad0e6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0077	b1a	77d0683f42f9eebb					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0078	b1a	51f736aa7a52604d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0079	b1a	2373940d856425f1					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0080	b1a	233894f67ca4cee9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0081	b1a	66418e687509dc5e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0082	b1a	afd07596d461c8a6					refused: PowerPoint could not open the file.
+b1a_0083	b1a	8410615ec047e78d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0084	b1a	fb33fb3e49bc10ca					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0085	b1a	3662dc13b4680884	1f52675fa96791ee	157138	1		1.11
+b1a_0086	b1a	873c2373695a1db1	9d3e2645ebd51125	312100	1		1.58
+b1a_0087	b1a	c854b4de2a0f1a04					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0088	b1a	809a19a64631d87d	e8f940695afd7e8f	275360	1	1	1.15
+b1a_0089	b1a	ac11f4666a652363					refused: PowerPoint could not open the file.
+b1a_0090	b1a	a8ecdc50589a7c7e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0091	b1a	427a3416c5c92628					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0092	b1a	137ceece58d6b679	575cca7c78f82e72	143798	1		0.97
+b1a_0093	b1a	400d1b2546e1390c					refused: PowerPoint could not open the file.
+b1a_0094	b1a	04acf8e18d54c05a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0095	b1a	522ae20d7891a792					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0096	b1a	f9442ab05daed1fe					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0097	b1a	be4e6486974e38b2					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0098	b1a	edbb4c74bf0f7867					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0099	b1a	0e4e46b787ca4710					refused: PowerPoint could not open the file.
+b1a_0100	b1a	3e9266819f614d4c	6fff382c6ccfd608	146151	1		0.98
+b1a_0101	b1a	f26cf1c2948f6af6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0102	b1a	593b05ee0664491d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0103	b1a	0376450da45e953b					refused: PowerPoint could not open the file.
+b1a_0104	b1a	eb5e4602ea5367ef	aa3bbc6030e9e80b	100150	1		1.33
+b1a_0105	b1a	eee2ac813a33b073					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0106	b1a	3cf78025d8365e27					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0107	b1a	98c3f6ee400b3a12					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0108	b1a	77a3c619c887ed8e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0109	b1a	84abfdffce76db6e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0110	b1a	b4df572b4407c3ce					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0111	b1a	a81c27d2af712d76					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0112	b1a	3229219c5f6d3cd8					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0113	b1a	479fdb4b5c47a495					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0114	b1a	8c4c8bd758705561	6298b19cd0688963	294374	1		1.22
+b1a_0115	b1a	2e3804a84d4c3877	a37ccb16cb9d5261	312567	1		1.28
+b1a_0116	b1a	c18662662f3f2362					refused: PowerPoint could not open the file.
+b1a_0117	b1a	9b358f7b7b5329e3					refused: PowerPoint could not open the file.
+b1a_0118	b1a	60d9f71f0c910838					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0119	b1a	a1439862bc6a71e1					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0120	b1a	6cbbb4b857be1726					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0121	b1a	af77c702ec7b3d68					refused: PowerPoint could not open the file.
+b1a_0122	b1a	7e282519ce288c47					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0123	b1a	69f1b91ef72c78b3					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0124	b1a	2d588c46f9eacf13					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0125	b1a	f8e5b08862b6e9f6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0126	b1a	eab80f6d1c55227e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0127	b1a	05baccc36c47aa1d					refused: PowerPoint could not open the file.
+b1a_0128	b1a	32974eab845278e3					refused: PowerPoint could not open the file.
+b1a_0129	b1a	0d7f3c20ac4ff15c					refused: PowerPoint could not open the file.
+b1a_0130	b1a	5ac57464d3c7bc39					refused: PowerPoint could not open the file.
+b1a_0131	b1a	6e16c952b0097a77					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0132	b1a	f307ae21e492c788	e31e9ad5ebb78f8b	143787	1		1.16
+b1a_0133	b1a	1454f29a87228a9e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0134	b1a	7a03d1828f4782f1					refused: PowerPoint could not open the file.
+b1a_0135	b1a	eb7dec9e98b405ef					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0136	b1a	45c8458984ae3252					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0137	b1a	ae493cd24cc5d4c6					refused: PowerPoint could not open the file.
+b1a_0138	b1a	0a477a92242adf8d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0139	b1a	45be14553a0b3bc1	592c9b31fe62be86	331100	1		1.15
+b1a_0140	b1a	b2be4818e9e0ff69					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0141	b1a	410b4e0014cadbbb					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0142	b1a	31abc831242f7924					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0143	b1a	1847cf396165992e					refused: PowerPoint could not open the file.
+b1a_0144	b1a	6b5d883c2f0b0284					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0145	b1a	0840b159fd79e28a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0146	b1a	9379b23cd4e7fba6	c31e95989aecf672	864033	4		2.31
+b1a_0147	b1a	896c854be2c03555					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0148	b1a	3ca19f26be8d097e					refused: PowerPoint could not open the file.
+b1a_0149	b1a	4f8b1e0f868e450f					refused: PowerPoint could not open the file.
+b1a_0150	b1a	aba917ede1267ecd					refused: PowerPoint could not open the file.
+b1a_0151	b1a	b14404147cae83de	659d6d52450e2749	731476	3		1.83
+b1a_0152	b1a	257a6a885f72561f					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0153	b1a	6c713a1321edbe60					refused: PowerPoint could not open the file.
+b1a_0154	b1a	5607ade78869749b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0155	b1a	2f5e1dd7eac48b9f					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0156	b1a	d1ea07d72ef50385	2cda287118508965	400367	2		2.04
+b1a_0157	b1a	e22d41013a2a1bf6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0158	b1a	266bea923c380372					refused: PowerPoint could not open the file.
+b1a_0159	b1a	1ddaa75fb9a25e68					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0160	b1a	43d98e75497f60e4	2e0ed2d8f41bb646	605662	1		2.23
+b1a_0161	b1a	d082547247dbcab6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0162	b1a	a37233ce62ecdce5					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0163	b1a	4113504d74ed74d1					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0164	b1a	60a5c4eb92454c25					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0165	b1a	36bc3378ceba9b8c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0166	b1a	ce9e201c9e6312e2					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0167	b1a	240479dc991ee0c1					refused: PowerPoint could not open the file.
+b1a_0168	b1a	94e878af0cf1f24f	82f7232d0dbda427	492397	1		1.78
+b1a_0169	b1a	2018742b5a38da7a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0170	b1a	cc1dd3e59f050043					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0171	b1a	912096f703f9dcb5					refused: PowerPoint could not open the file.
+b1a_0172	b1a	fac5e9c1c065a5ee	da17209fe1d06d7c	502170	2		1.47
+b1a_0173	b1a	04e2c854420911a1					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0174	b1a	1103371a488e8c48					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0175	b1a	0767227919c34868	89a6fba220aa39ce	443670	1		1.63
+b1a_0176	b1a	def68b09da9a2c84					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0177	b1a	fe875524ce4a6bd1					refused: PowerPoint could not open the file.
+b1a_0178	b1a	79166140f14564cb					refused: PowerPoint could not open the file.
+b1a_0179	b1a	de30e9472a416b49					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0180	b1a	0d941dc8eb69e43a	c8710a3d1f11f37c	333720	1		2.27
+b1a_0181	b1a	afbd016844a83665	3029019489f680f5	348923	1		1.18
+b1a_0182	b1a	77a5746e8f73e599					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0183	b1a	151c5a1b0977b891					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0184	b1a	dff7f4064e1581c8					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0185	b1a	277ab1fce965a6c6					refused: PowerPoint could not open the file.
+b1a_0186	b1a	b8ab3b406e7c1bcb	b3c5de3594434664	134138	1		1.31
+b1a_0187	b1a	1bef4f71fb1a57c6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0188	b1a	0af6b0c7c2cc89d8					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0189	b1a	a986266c733276ed					refused: PowerPoint could not open the file.
+b1a_0190	b1a	1360fc4dfdcabe7e					refused: PowerPoint could not open the file.
+b1a_0191	b1a	e651f1c7d24fe42f					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0192	b1a	ae3984e16f48263e	723f659a76e1791d	209383	1		1.48
+b1a_0193	b1a	66fbfdeaf5aef97c	ce6a9d2c96657242	112739	1		1.04
+b1a_0194	b1a	5c7a49471cf120db					refused: PowerPoint could not open the file.
+b1a_0195	b1a	665c8964232b1815	33e8f0a709eb0e0c	328399	3		1.27
+b1a_0196	b1a	b251ee7e55b17ca4					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0197	b1a	90d1519bcdd21c0a	57fcaf665f9a0efe	402653	1		1.86
+b1a_0198	b1a	2068db01737399c5					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b1a_0199	b1a	70ac56e23d9012ea	3eacfe995d0204d0	736014	3		1.68
+b3a_0000	b3a	ec0207877072674a	0f9f746acaf3fe22	6287460	3		22.02
+b3a_0005	b3a	1bc5ae3138475360	5cf0ad3d4b3c2085	1477019	1		6.44
+b3a_0010	b3a	2a4c46a7f9ca51e4	8031e1c6b8261ea7	1112466	1		6.63
+b3a_0015	b3a	220dfbbfbe51dc4e	c8db0d133b8dbf6c	1699170	3		12.48
+b3a_0020	b3a	b04d919ca5ea00f4	08672d5febad8a86	5922479	3		9.18
+b3a_0025	b3a	9f13e84194087650	92b4f1b17f84fdd1	2057685	3		8.38
+b3a_0030	b3a	116b2f3864b90f31	387fdadc347cd23b	2149772	3		8.28
+b3a_0035	b3a	44a69e4a74580ced	349c6d1fe5e68302	1087976	1		37.88
+b3a_0040	b3a	61979f52d72664cc	b1524257ab7c8db9	1564600	2		7.54
+b3a_0045	b3a	2669685cd0bcc370	e1053f308f60f755	1826474	2		6.7
+b3a_0050	b3a	de831db66b85f8af	6d9752acbb3b0d35	1456458	2		5.92
+b3a_0055	b3a	d53dcdebaf07419f	2e0e67525f9f609a	894595	2		2.89
+b3a_0060	b3a	fdd3d5b5f7ccd2c1	9f43bbbb45832dd2	2153250	2		13.4
+b3a_0065	b3a	50a2cf7c09a600b8	7eb58edfc4ba67c8	1380965	1		5.24
+b3a_0070	b3a	b5b1204e086535ae	ea4a78ff3f68b860	1975968	3		9.92
+b3a_0075	b3a	81efa202e4023091	9626d302bc2e3043	1287159	1		4.95
+b3a_0080	b3a	6c97291a5de64757	14c62b7ef83989d6	1087401	1		3.61
+b3a_0085	b3a	b6cece2e62c06cab	bdb7f3c54e4ca212	5834144	3		9.27
+b3a_0090	b3a	1f586fdbc4d4fa45	a9dea4fe8afdf1d3	6003406	3		10.16
+b3a_0095	b3a	ea0156839acf16e8	6df6ab7e660c9ad5	6265740	2		10.57
+b3a_0100	b3a	0e70e70d49fb597d	e59d2bdd7ff17fd2	2142935	3		8.95
+b3a_0105	b3a	3fb0f91f089aceb9	dea2b13bc0b1f2ef	6395731	3		7.97
+b3a_0110	b3a	4b361fabad0cf773	e3bd91cbbd678823	1059785	1		2.94
+b3a_0115	b3a	6ab1c9d1e4fdde9b	3fb76784a2d3519d	4854419	1		3.35
+b5a_0000	b5a	cf696113624ee3ed					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0001	b5a	05b6827a447348f8					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0002	b5a	ea1754d4f1266549					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0003	b5a	1738c765d5c4142a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0004	b5a	7057a9287ec0c78d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0005	b5a	08d01e5356834064					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0006	b5a	3a879f6a8e4ee29b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0007	b5a	ebb130788570e015					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0008	b5a	9b90fc37bae63e03					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0009	b5a	e9d5570ccd4c5349					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0010	b5a	5f7144607eada383					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0011	b5a	2c2755d9a8816535					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0012	b5a	655275f5acb0496b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0013	b5a	16678371d87275ed					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0014	b5a	1c84f87ab6495dde					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0015	b5a	6ba817364d960fcb					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0016	b5a	ca7cc59de906790e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0017	b5a	2f32a6f307dbeaed					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0018	b5a	8dc3cc525ceffeec					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0019	b5a	1c2823e3adbe27c4					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0020	b5a	e9770121500843ff					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0021	b5a	fad628de27e82daf					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0022	b5a	95748248b29e39b2					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0023	b5a	472ada094e288231					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0024	b5a	fb057b96e500454a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0025	b5a	822deb87d23c6f1c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0026	b5a	892180d4b1b26e7f					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0027	b5a	03c5a8cb2e6c665c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0028	b5a	c7b618ffe1a3a8e0					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0029	b5a	14864d45043b29ec					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0030	b5a	d76fed6cd8f64cf6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0031	b5a	c25e22d97da20c1c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0032	b5a	4468ad052b8457af					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0033	b5a	0b82812435f38a52					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0034	b5a	e6972171221d1592					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0035	b5a	f487db469a3ce24e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0036	b5a	b27bf4ccafa41dd4					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0037	b5a	e7cd83313c137f70					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0038	b5a	9e79fa3c4d6c96bf					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0039	b5a	b2bcc56447b667d5					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0040	b5a	3628fec80a5d95e9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0041	b5a	19484abf82881a52					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0042	b5a	a51d7d3f5f9731f0					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0043	b5a	52baab33d2de1bb1					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0044	b5a	293415c4e2abf7fa					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0045	b5a	192222a57d422716					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0046	b5a	5a10b96a8953c84a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0047	b5a	7f06f861d9940fe4					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0048	b5a	1b5f2dcb3fae3d4f					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0049	b5a	19d68a5b50ae3b23					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0050	b5a	09321f1ce8748614					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0051	b5a	3b50ee4d1bfc2d58					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0052	b5a	96e312c10ec0b28c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0053	b5a	0ad2b8a103773a28					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0054	b5a	47057e01448bddb1					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0055	b5a	9b4c56b2dbdd60e7					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0056	b5a	cde271e1d7925fd2					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0057	b5a	466df769f9a0ede3					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0058	b5a	5123e256f5e6c303					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0059	b5a	61b837fd0c7e0e35					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0060	b5a	8ea4fa6036e2e34a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0061	b5a	06354f4c3affb87b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0062	b5a	03d46a59302e48c0					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0063	b5a	80dc4f99dbdeb260					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0064	b5a	e178d0d83051f4f3					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0065	b5a	e53f0559ca4feb61					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0066	b5a	0e11ccb210ed65cd					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0067	b5a	62d08f4074cd8e7a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0068	b5a	7ce22a9edb1cfbd9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0069	b5a	a8820f5bad6e41fa					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0070	b5a	f26a46bb8e262f28					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0071	b5a	315f2512a501e480					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0072	b5a	fe199f66cb7f90f8					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0073	b5a	5f20a8d2796d9226					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0074	b5a	e2701b2f5ea5a844					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0075	b5a	9135ab42ced8a226					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0076	b5a	996c3ce7df42635a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0077	b5a	0756fdff9ee584de					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0078	b5a	e5bdbda20d587dac					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0079	b5a	6e272856def22d1f					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0080	b5a	67479b14c10dd2cc					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0081	b5a	a6f40850b46e6062					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0082	b5a	7764004cc689ef4e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0083	b5a	93b790c879d51424					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0084	b5a	13cad5362f97a398					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0085	b5a	31fc2cc93daa7222					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0086	b5a	84106d2c47f33f26					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0087	b5a	4d36ec355b945241					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0088	b5a	84229e6e2666e196					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0089	b5a	349b2049fc767b6e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0090	b5a	2c2944a52530c9a1					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0091	b5a	1cff263a617ae108					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0092	b5a	00a33b0176ecabd9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0093	b5a	b3676f1590bbe402					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0094	b5a	94d53cd562240b61					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0095	b5a	363ae075c081e116					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0096	b5a	d9e7dfe33de400c2					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0097	b5a	c3ffff8d5f28787b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0098	b5a	4c9027dc5c0df123					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0099	b5a	fb0dc3cd52d208e3					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0100	b5a	928f824562b40b07					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0101	b5a	d83fa6b389fc859d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0102	b5a	794b50a35f080504					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0103	b5a	588d21511e79908f					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0104	b5a	8067a453030abce5					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0105	b5a	33fe56998da9a342					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0106	b5a	b324aeb03c01b91b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0107	b5a	5bbb58d5639cc4f6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0108	b5a	c2791b4e59b3f53a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0109	b5a	786c119e51ae606a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0110	b5a	c0146d9523ceb2d6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0111	b5a	9b15c7d0c1a35523					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0112	b5a	542394ea3bd69c82					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0113	b5a	53ff2f3fe35dc05b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0114	b5a	643cc55f31064995					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0115	b5a	92cfdad625a59609					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0116	b5a	a2389fe8ab981869					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0117	b5a	f9b590ced553b558					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0118	b5a	a04ce14bea8f8ca4					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0119	b5a	ec42ed79851e96a1					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0120	b5a	e06b52bd15076997					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0121	b5a	af8097ad73573ead					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0122	b5a	c16e9e32a897e928					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0123	b5a	e8c643f4c1f751e9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0124	b5a	4b225598c6c8e64a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0125	b5a	a8b824eefecb45b8					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0126	b5a	fb6b8b58cb415bc3					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0127	b5a	5247845c7e74fcc7					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0128	b5a	914d3e642b491dbb					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0129	b5a	5ab2baec57168066					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0130	b5a	2c2596f1ab6254ed					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0131	b5a	76b2012186fe0f4c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0132	b5a	61052b7a844765a9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0133	b5a	495d4252df691184					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0134	b5a	06b541c510a0aa85					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0135	b5a	aeb9a68bd5b10759					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0136	b5a	1e4a7662378403da					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0137	b5a	285c8d1605f1ec0a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0138	b5a	8562eaa57467f80b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0139	b5a	5e6061afa2616249					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0140	b5a	72d17c76dd994dcc					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0141	b5a	58a903228d80b7a5					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0142	b5a	d130fe747a3d407c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0143	b5a	da05bc02775407f8					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0144	b5a	a80ebbe893244a5e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0145	b5a	39f9b17d56a74588					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0146	b5a	2a9486eb6f817c2e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0147	b5a	e2af9218607185f6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0148	b5a	1134468c481c3c08					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5a_0149	b5a	b9e2ca9722f17b22					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5b_0000	b5b	5a02b0b827cdf720					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0001	b5b	c7d5c0c791bc9af9					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0002	b5b	6e32f08e3e90f7bb					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0003	b5b	83d4882a8f07a270					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0004	b5b	e03b9737c7964ba9					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0005	b5b	2c8f5703782dd683					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0006	b5b	4d8b82727c3e4efe					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0007	b5b	af6292f6656fb77c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5b_0008	b5b	3548d450ef595963					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0009	b5b	a55fc2b553c9bd21	fb475baf07a1cc3b	253800	1		1.24
+b5b_0010	b5b	0afb072940a0de6b					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0011	b5b	57710a0b37d8f9ea					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0012	b5b	65075b3f93390c6a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5b_0013	b5b	e1423e979eda4441					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5b_0014	b5b	2213ddd7a8e56691					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0015	b5b	e0dbb74e4a1a4e65					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5b_0016	b5b	8bcff9c725b772f3	8062c0f7d870d835	142840	2		1.06
+b5b_0017	b5b	ff7ff07ff746dbe8					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0018	b5b	edcc481a41ed5ca7					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0019	b5b	22527819333afbb2					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0020	b5b	75c1fe858c364f56					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0021	b5b	027330a180a8289b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5b_0022	b5b	fccdfa25223f9ea1					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0023	b5b	6880621d0dbe41fb					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0024	b5b	9e2419c153516857					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0025	b5b	bb1a7060ae4f5246					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5b_0026	b5b	18fdd44e2bd3a623					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5b_0027	b5b	a8d3f95b17cb313e					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0028	b5b	5275d382d3bedc53					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0029	b5b	6ae00160e599970d					refused: PowerPoint could not open the file.
+b5b_0030	b5b	cffdd7edb4662706					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b5b_0031	b5b	3880daad848ceb77					refused: PowerPoint could not open the file.
+b5b_0032	b5b	085c75ccedb1170c					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0033	b5b	9f44060776494795					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0034	b5b	f32cd44d3f2c129d					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0035	b5b	937dd963bfb40b54	8851f3db900e368b	62411	1		1.02
+b5b_0036	b5b	eaf14566f5757957	478554828249a217	96038	1		0.92
+b5b_0037	b5b	7e8f629a51b8adc5					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0038	b5b	f4cdf5fb8bcc1db2					refused: Presentation.SaveAs : Ocorreu um erro quando o PowerPoint salvava o arquivo.
+b5b_0039	b5b	93280f7c80787151					refused: PowerPoint could not open the file.
+b6a_0000	b6a	c5901dd902a3c033					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0001	b6a	71115622ed590939					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0002	b6a	0f06f91e69818404					refused: PowerPoint could not open the file.
+b6a_0003	b6a	2a0e345c91a73fef					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0004	b6a	cf8d41a854af0fa7	1734760e9b635a8b	140604	1		1.06
+b6a_0005	b6a	a2d583d959e6d96f					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0006	b6a	39933d7a81bdaaf7					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0007	b6a	12ae4f112204a7a7					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0008	b6a	89d1d024643f4144	50f336a6cd138700	368920	2		1.35
+b6a_0009	b6a	7785fa662e9db7c5					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0010	b6a	58de617f248280d7					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0011	b6a	972e9ebf365b3eb5					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0012	b6a	8ccf60d4b7f63f90					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0013	b6a	a6437f2fa340c33e					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0014	b6a	6fd1ad5992520a7a					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0015	b6a	ceb7ecd126f5ac97					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0016	b6a	1d73dad20e6484cf					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0017	b6a	bc4e07ac96c4450f					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0018	b6a	c09991c0a52fbdf0					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0019	b6a	fb57940d6906e5bd					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0020	b6a	aa89169903b390bb					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0021	b6a	aeb0c927f429954e	b2eaec633d8ed3d8	81594	1		1.15
+b6a_0022	b6a	995f89a6de93488e					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0023	b6a	58193c80247dc074					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0024	b6a	9ced6869bf4f2b77					refused: PowerPoint could not open the file.
+b6a_0025	b6a	868abf3cb5e63387					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0026	b6a	ed290e6b9313a50f	f9bf91c5e5eccb99	23200	1		0.77
+b6a_0027	b6a	3decfbca872cf583					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0028	b6a	7ee13dfbe45e2e82					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0029	b6a	02525ec04ec661c5					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0030	b6a	1299b9bac6fde1b3					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0031	b6a	3fd3fa6efdde5662	8d0e90bdb21f38d5	50086	1		0.86
+b6a_0032	b6a	89e1acf0ecae9c4c	b27eb8b6b250f3d2	106557	1		0.88
+b6a_0033	b6a	c34f85a392fd6afb					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0034	b6a	bbf9a92b9bf649ce					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0035	b6a	2ed1d138107318a8					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0036	b6a	c44084f3565175ed					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0037	b6a	5c12e1a8d78cb3c9					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0038	b6a	88eee754454bde8d					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0039	b6a	8562e409f7154440					refused: PowerPoint could not open the file.
+b6a_0040	b6a	d31f5d804e2bbfb4					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0041	b6a	ec1fbbd9a6bd4af7					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0042	b6a	f1fb624fa51d8087					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0043	b6a	1b365d91fdf5c92b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0044	b6a	d414caef9bc20e30					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0045	b6a	fb026c542086e46c					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0046	b6a	07c9532157e02446					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0047	b6a	ba3bbbcf1a2a7c5b					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0048	b6a	4260e96e0a61676c					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0049	b6a	ed884e0eb3f994e3					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0050	b6a	71a75465d7ed4ec6					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0051	b6a	f53702588be796d3					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0052	b6a	333be9a2c2847a8b					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0053	b6a	d10a30fa0f47eac9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0054	b6a	aca2e7375ef2a7e2					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0055	b6a	9b5731f122ed27df					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0056	b6a	e4441cb0fd4f4b8b					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0057	b6a	3dfe40cd4c0db59e					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0058	b6a	f0841c5b42ce953f					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0059	b6a	0c585632bb31059f					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0060	b6a	47449efdeadc79a0					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0061	b6a	7fd2a22795751b46					refused: PowerPoint could not open the file.
+b6a_0062	b6a	c42399ab6f61330a					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0063	b6a	8056c70e56ca627d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0064	b6a	f95a45631dfc9044					refused: PowerPoint could not open the file.
+b6a_0065	b6a	83d6cdc542aaafee					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0066	b6a	24bc3a2408a95005					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0067	b6a	252a904ef1bf140c					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0068	b6a	010562f923b662a8					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0069	b6a	89500ff1834410ca					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0070	b6a	899f591976467635					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0071	b6a	68c8884b04004aa3					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0072	b6a	abbff57b52d84e19					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0073	b6a	78333cf43573183c	82eb11b275f04756	762702	3		3.55
+b6a_0074	b6a	38cb830f8eab63bb					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0075	b6a	d8366d22eabcfd29					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0076	b6a	82f8ae9c86d13484					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0077	b6a	36cab149c711509b					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0078	b6a	558bb5112af32735					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0079	b6a	46b4b7c14f7eb719					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0080	b6a	ea0e42e39a866102					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0081	b6a	dc042d60d82906a4					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0082	b6a	d3ce561d3e9d21da					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0083	b6a	08bc24bc4c6e310d					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0084	b6a	38139c049ed6415f					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0085	b6a	35e2d572c6ec8884	f99f4933f64de1ae	88047	1		1.14
+b6a_0086	b6a	43401fceef4841e7					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0087	b6a	1ad839117baad471					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0088	b6a	14ef142d0dd8c10d					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0089	b6a	3343750bae262ed9					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0090	b6a	8582da68b68921da					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0091	b6a	8dc466805f68937c					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0092	b6a	e2c004baf4b3080b					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0093	b6a	0cd13b2d2fa2e6a9					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0094	b6a	7735dc1de447e0b1					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0095	b6a	1459420ac8c8dcb9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+b6a_0096	b6a	ccb9d040be5a9ba3					refused: Exceção de HRESULT: 0x80CB8002
+b6a_0097	b6a	7b2af224e06faed6					refused: PowerPoint could not open the file.
+b6a_0098	b6a	1c21f1662fcd718e	c376124b7b162bca	188474	1	1	0.94
+b6a_0099	b6a	f211de71f305d9a8					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0000	c1d	88e30f628e00eb71					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0001	c1d	8a8b4f3063798189					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0002	c1d	72c9892e6e8a4326	57a33cf112acab27	36016	1		1.06
+c1d_0003	c1d	d995df7bf099debd					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0004	c1d	618ceaeaae84fb97					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0005	c1d	6f9077ab816fe417					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0006	c1d	1880c929b0565cec					refused: PowerPoint could not open the file.
+c1d_0007	c1d	041ead89faca5920					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0008	c1d	0c36d0ead2890e87	18d18a85b218362b	27272	1		0.79
+c1d_0009	c1d	53c7a3c70450b044					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0010	c1d	efd7b27b160fd687					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0011	c1d	2bebcadb925c24e4					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0012	c1d	97ca7b0df5a6457c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0013	c1d	8bd86f4d64a0973f					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0014	c1d	c2922bb9d047524e					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0015	c1d	281d1a0236c4f09a	6d36a93387a70c3e	303512	1		1.84
+c1d_0016	c1d	059e45c857e75c30	3f237edcbd33d9d1	28262	1		0.78
+c1d_0017	c1d	d712a407e48ba41e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0018	c1d	ab352531d599116a					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0019	c1d	f8beae6abe99635a					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0020	c1d	6ae076c8be56d637					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0021	c1d	61ffb50df46934a4					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0022	c1d	a1323862af543655					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0023	c1d	5cc43646eb540416					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0024	c1d	32baacdb6fb10176					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0025	c1d	d8bbed8cffbc6869					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0026	c1d	03f47a1badea9a49					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0027	c1d	42311295daa3e1fa	f449933c0045c3ce	150144	2		15.84
+c1d_0028	c1d	6a6829500bc2c14e					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0029	c1d	f1886c99d3fb0f65					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0030	c1d	fb714681ef4b849a					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0031	c1d	a918e07c0924a364	18154ebd2f38c99d	53963	1		1.09
+c1d_0032	c1d	36d0c26d195f5458					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0033	c1d	701c2ba3ef83dbb3	9f678a7b02d807fe	24985	2		1.13
+c1d_0034	c1d	2786606b7964b161					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0035	c1d	a43525f6b7cf2f84	99801d9a3061fce0	14988	1		0.77
+c1d_0036	c1d	a7780c9c930aa1a3					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0037	c1d	65504661e1da2cc4					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0038	c1d	d9bd1845410310c0					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0039	c1d	7a6f5f5e24b4c5e0					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0040	c1d	c087f0d9a2cc7eac					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0041	c1d	54b34ccf4904f511	c1a8a3cc5f7dc4c3	6286	1		0.76
+c1d_0042	c1d	57be0806f4ef4e03					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0043	c1d	e38108a99466c510	eb695848984757c2	117900	1		1.29
+c1d_0044	c1d	15f68a2ee4403db3					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0045	c1d	6807000136bd8ab8					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0046	c1d	55f098b1eccc6a16					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0047	c1d	5d1215d29a7444dd	ab403108a3db26d3	210212	1		1.13
+c1d_0048	c1d	529e88a94048c103					refused: PowerPoint could not open the file.
+c1d_0049	c1d	cf5ff6a5300fee7d					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0050	c1d	705ef688d8447eab					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0051	c1d	578248a74c678b82					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0052	c1d	18ab7658c7e11d2c					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0053	c1d	8b149d98402c47d0					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0054	c1d	3e931255116eb1d2					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0055	c1d	62c65b431926836a					refused: Exceção de HRESULT: 0x80CB8002
+c1d_0056	c1d	ff8914a91e66e870					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0057	c1d	9cd1061f1f6e24b9					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0058	c1d	76295d232958024a					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)
+c1d_0059	c1d	e56819fb13eb0ed3					refused: O arquivo ou pasta está corrompido e ilegível. (Exceção de HRESULT: 0x80070570)

@@ -254,6 +254,26 @@ impl Editor {
         e
     }
 
+    /// A session over a deck that lives elsewhere (the wasm binding: the deck is the viewer handle's, which the emission
+    /// reads): like [`Editor::new`] (the font option is read from `deck`), but the session keeps an empty placeholder
+    /// and every call runs inside [`Editor::with_deck`].
+    pub fn detached(deck: &mut Deck) -> Editor {
+        let placeholder = Deck::from_store(PartStore::new(), *deck.limits());
+        let real = std::mem::replace(deck, placeholder);
+        let mut e = Editor::new(real);
+        std::mem::swap(&mut e.deck, deck);
+        e
+    }
+
+    /// Runs `f` with `deck` lent to the session (a [`Editor::detached`] session): the deck is swapped in, `f` runs, the
+    /// deck is swapped back (also when `f` returns an error: nothing here unwinds).
+    pub fn with_deck<R>(&mut self, deck: &mut Deck, f: impl FnOnce(&mut Editor) -> R) -> R {
+        std::mem::swap(&mut self.deck, deck);
+        let r = f(self);
+        std::mem::swap(&mut self.deck, deck);
+        r
+    }
+
     /// The deck (read side: models, emission).
     pub fn deck(&self) -> &Deck {
         &self.deck

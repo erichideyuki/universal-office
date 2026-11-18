@@ -33,9 +33,27 @@ export interface ShowFrame {
 }
 export type ShowAction = 'none' | 'transition' | 'step' | 'slide' | 'end' | 'exit';
 
+/** Wave 4, the read model: the accessible outline of a slide (the TS `SlideA11y` input). */
+export interface OutlineCell { hMerge: boolean; vMerge: boolean; paragraphs: string[] }
+export interface OutlineShape {
+  inherited: boolean; image: boolean; media: boolean; phType: string | undefined; descr: string | undefined;
+  hasText: boolean; paragraphs: string[]; table: OutlineCell[][] | null;
+}
+export type LinkTargetWire = { url: string } | { slide: number } | { show: 'next' | 'previous' | 'first' | 'last' | 'lastViewed' | 'end' };
+export interface LinkBoxWire { shape: number; source: 'run' | 'shape' | 'jump'; x: number; y: number; w: number; h: number; target: LinkTargetWire }
+export interface MediaRefWire { kind: 'video' | 'audio'; part?: string; url?: string; mime: string; trim?: { startMs: number; endMs: number }; fade?: { inMs: number; outMs: number } }
+export interface MediaInfoWire { spid: string; kind: 'video' | 'audio'; vol?: number; mute?: boolean; showWhenStopped?: boolean; rewind?: boolean; loop?: boolean; fullScreen?: boolean }
+export interface MediaShapeWire { shape: number; inherited: boolean; spid: string; gifPart: string | null; media: MediaRefWire | null; info: MediaInfoWire | null }
+export interface SlideAssets { images: { part: string; mime: string; gif: boolean; special: boolean }[]; media: MediaShapeWire[] }
+export interface MediaStateWire { started: boolean; playing: boolean; timeSec: number; durMs?: number; ended?: boolean }
+export interface MediaStates { index: number; animMs: number; gifMs: number; states: Map<number, MediaStateWire> }
+export interface EmbeddedFontWire { family: string; variant: 'regular' | 'bold' | 'italic' | 'boldItalic'; data: Uint8Array; weight?: number; italic?: boolean }
+export interface ShowSettingsWire { loop?: boolean; useTimings?: boolean; showAnimation?: boolean; kiosk?: boolean; range?: [number, number] }
+
 export declare class SlidesView {
   readonly ptr: number;
   bitmap(handle: number): Uint8Array | null;
+  isRecipe(handle: number): boolean;
   clearStage(): void;
   free(): void;
 }
@@ -74,7 +92,15 @@ export declare class SlidesDeck {
   setImageSize(media: number, w: number, h: number): void;
   clearCaches(): void;
   emit(view: SlidesView, index: number, scale: number, ox: number, oy: number): EmitResult;
+  emitSuppress(view: SlidesView, index: number, scale: number, ox: number, oy: number, shape: number): EmitResult;
   answer(nums: Float64Array): void;
+  outline(i: number): OutlineShape[];
+  links(i: number, scale: number, ox: number, oy: number): LinkBoxWire[];
+  assets(i: number): SlideAssets;
+  mediaStates(src: SlidesShow | SlidesTimeline, at: number, which: 0 | 1, clock?: { latencyMs?: number; scale?: number }): MediaStates | null;
+  fonts(): EmbeddedFontWire[];
+  typefaces(): string[];
+  showSettings(): ShowSettingsWire | null;
   stage(view: SlidesView, src: SlidesShow | SlidesTimeline, at: number, which: 0 | 1, scale: number, ox: number, oy: number,
     media?: boolean, clock?: { latencyMs?: number; scale?: number }): StageResult;
   newShow(o?: { from?: number; now?: number; useTimings?: number; loop?: number; animations?: number; range?: [number, number] | null }): SlidesShow;

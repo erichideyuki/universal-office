@@ -6247,8 +6247,13 @@ The packages ship both through `shipSlidesWasm` (content check: no test exports,
    an `emit` for a staged slide at a transition's origin (frozen at `anim_ms`). After that the viewer's `paintPlaybackSlide` and `paintStage` take the Rust path and the TS model stays only for media and links.
 2. **Charts**: DONE by C-6 (`chart::paint_chart_slot` emits through `uo-charts`; the viewer no longer passes `skipCharts`); the animated chart parts are DONE by B4b (`ChartPart j` slots, the `chartPartBounds` probes as `BoundsPass` gates). Left: chart pictures that are metafile, PICT or TIFF rasters (answered "unavailable").
 3. **`.ppt`**: lazily loaded as its own module (done): 720 KB raw (the converter and the package writer), so a legacy deck costs two module loads.
-   **`MetaDecode`** (B5b: decode a compressed EMF+ bitmap and report its size) is answered "cannot be decoded" by the engine: a browser decodes asynchronously, so it needs a prepare phase like the pictures (`createImageBitmap`, then `set_meta_decoded`, then a repaint). With the committed decks nothing asks for it yet (the op streams and the pixels are unchanged); EMF/WMF/TIFF pictures are still rasterized by the TS `rasterizeSpecialImage` and drawn as media.
-4. **The TS model is still loaded in `rust` mode**: the open cost of a deck is TS plus Rust. The accessible text, the links and the media table need Rust read-model queries (slide text with run boxes,
+   **`MetaDecode`: DONE in wave 4** (below, "Wave 4"): the engine decodes the bitmap with `createImageBitmap`, the paint waits
+   (`PENDING`, 13) and `SlidesPaintHost.prepared` repaints; the metafile/PICT/TIFF pictures are painted by the Rust recipes (the engine had
+   never wired `recipe`, so before wave 4 they were not drawn at all in the browser — see "Wave 4"). The text that follows is the gap as it was.
+   Before: **`MetaDecode`** (B5b: decode a compressed EMF+ bitmap and report its size) was answered "cannot be decoded" by the engine: a browser decodes asynchronously, so it needs a prepare phase like the pictures (`createImageBitmap`, then `set_meta_decoded`, then a repaint). With the committed decks nothing asks for it yet (the op streams and the pixels are unchanged); EMF/WMF/TIFF pictures are still rasterized by the TS `rasterizeSpecialImage` and drawn as media.
+4. **DONE in wave 4** (below): the deck opens without the TS model; the read-model queries answer the a11y text, the links, the pictures,
+   the media table, the fonts and the show settings, and the media player runs on the Rust media states. What was the gap:
+   **The TS model is still loaded in `rust` mode**: the open cost of a deck is TS plus Rust. The accessible text, the links and the media table need Rust read-model queries (slide text with run boxes,
    link boxes) before the TS model can be dropped; `Deck` has the data, nothing is exported for it yet. Find: the Slides viewer has no find API.
 5. WebKit: `slides_api.test.mjs` passes in the Playwright WebKit build; real Safari 15 / iOS 15 (BrowserStack) was not run for the Slides module; the Safari 15 gate is `wasm-tools validate`.
 6. wasm2js fallback for hosts that forbid WebAssembly: not built. A real `build:pkg slides-viewer` / `slides` run could not be made here (the tools root lacks `pdfjs-dist`, the same limit as the Write package build),
@@ -6301,7 +6306,85 @@ emits no slots). Size of the shipped build (`--features slides`, `--profile wasm
 1.6 MB budget; the row of "Sizes" above, 1,045,866 B gzip, was measured at C-6; the growth to this tree was not broken down by crate here);
 `wasm-tools validate` with the Safari 15 feature set passes.
 
-**What stays TS** (gaps 3-7 above still hold): links, the accessible text and the media player; the TS model stays loaded.
+**What stays TS** (gaps 3-7 above still held at B4b): links, the accessible text and the media player; the TS model stays loaded.
+All three moved to Rust in wave 4 (next section).
+
+### Wave 4 — links, the read model (the viewer without the TS model), `MetaDecode` (2026-11-17, Opus)
+
+Rust side of the links: `uo-dml-render.md` "Links (wave 4)" and `uo-pdf.md` "Slides PDF" (`Emission::links`, `uo_pptx::links::slide_links`,
+the PDF annotations). Here the binding and the viewer.
+
+**Exports** (`src/slides.rs`, layouts in its module documentation, "Read model"): `uo_slides_outline` (the accessible outline of a
+slide: per shape the flags, placeholder type, alternative text, paragraphs and table cells), `uo_slides_links` (the link boxes:
+`RunUrl` = the TS viewer's hit-test geometry, plus the shape's own `hlinkClick` and run-level slide/show jumps), `uo_slides_assets`
+(the pictures to decode, each part once in the TS `warmSlideImages` order, the metafile/PICT/TIFF ones flagged; the media and GIF shapes
+with the slide timing model's media entry), `uo_slides_media_show` / `uo_slides_media_timeline` (the `mediaStateAt` of every media shape
+of a stage at the instant of the show or the timeline), `uo_slides_fonts`, `uo_slides_typefaces`, `uo_slides_show_settings`;
+`uo_slides_view_is_recipe` (see `MetaDecode` below). For the editor routing (another frontier, requested through the orchestrator):
+`UoSlidesDeck::{deck_mut, refresh}`, `uo_slides_emit_suppress` (`uo_pptx::emit::emit_slide_suppressed`: the inline-edit text left
+out), and in the JS `SlidesModule.exports`, `SlidesDocument.{deckPtr, refresh()}`, `SlidePaintOptions.suppressText`,
+`RustSlides.adopt`, the viewer's `adoptRust`/`rustSession`.
+
+**JS** (`js/slides.mjs`, `js/slides-engine.ts`): `SlidesDocument.{outline, links, assets, mediaStates, fonts, typefaces, showSettings}`
+(outline/assets cached per slide, links for the last 64 views; `refresh` drops them), `currentSlidesModule` + `SlidesModule.openSync`
+(a `.pptx` opened synchronously once the module is instantiated), `PENDING`, `SlidesPaintHost.prepared`, `preparing`/`prepared`
+counters. `rust-engine.ts`: `preloadSlidesEngine`, `slidesEngineReady`, `RustSlides.openSync`.
+
+**Viewer** (`universal-slides-viewer.ts`). With `engine="rust"` the element instantiates the module when it connects (and `src` waits for
+it), so `loadPptx` opens the deck synchronously in Rust only: `this.pkg`, `this.pres` and `this.slides` stay empty and the viewer reads
+`slideCount()`, `slideSize()`, the read model and the Rust state machines instead. The accessible text (`a11y.ts` now takes an
+`A11yShape` outline, built from the TS model by `a11yShapesOf` in TS mode), the hit-tests (`hitTestLink`: run address first, as the TS,
+then the shape's click and the jumps, which navigate: `selectSlide` / the show's `goTo`), the pictures (`warmPart`; metafiles, PICT and
+TIFF are not decoded by the shell: the Rust recipes paint them), the GIFs and media elements (`MediaPlayer.mediaFrame`/`gifFrame`/
+`warmGif` over the Rust states), the embedded fonts and families, the show settings, `present()` (`RustShowMachine`: the Rust show is THE
+state machine, its actions and frames drive the events and the stage) and `play()` (the Rust timeline; the returned `PlaybackTimeline`
+holds the slides' times — index, start, end, animation start, transition — not the TS placed effects: an API difference of rust mode).
+The media player is asked when the painter reaches a shape's media frame (as the TS painter calls its hook): the B4b hybrid asked it
+for every media shape of every frame, which created elements and positions the TS never asked for (fixed in both paths).
+A `loadPptx` before the module is ready (or a `.ppt`, whose converter is asynchronous) opens in TS and in Rust behind it, and the TS model
+is dropped when Rust opens (`dropTsModel`, unless a show or playback is running). The TS model is built again only when the module
+fails (a trap: `healRust`/`ensureTsModel`, counted in `tsModelLoads`) or the attribute goes back to `ts`; a Rust-only show or playback
+cannot fall back mid-frame (it keeps the frame and tells `us-engine-error`).
+
+**`MetaDecode`.** A compressed EMF+ bitmap the layout needs is decoded by the engine (`createImageBitmap` of the bytes, keyed by
+`bitmapKey`, the same key in Rust and TS); while it decodes the paint returns `PENDING` (13) and paints nothing, and the decode's end calls
+`SlidesPaintHost.prepared` (the viewer repaints and redraws the thumbnails); the answer is then the bitmap's size (NaN for one the browser
+cannot decode, as the TS skips it) and the recipe's `decode` hook gets the bitmap. Declared: during the decode the Rust paint shows the
+slide without anything (the TS paints the rest of the slide and the picture appears later); the answer goes through `uo_slides_answer`,
+not a separate `set_meta_decoded` export. **Recipes**: `uo_slides_view_is_recipe` exposes `SlidesResources::is_recipe`, and the engine's
+painter env now has `recipe` — before this wave the engine had no `recipe` hook, so every metafile, PICT and TIFF picture was dropped in
+the browser (the op-stream gates replay recipes with their own env and the Chromium decks had no visible metafile).
+
+**Numbers.**
+- Read model against the frozen TS model (`tests/slides_readmodel.test.mjs`, Node, ts-ref-092 dist): 273 decks (samples incl. `.ppt` through
+  the ppt module, b1a/b5b/b6a/c1d 60 each), 1,043 slides, 6,716 shapes outlined, 187 link boxes, 1,529 pictures (243 rasterized by Rust),
+  72 media/GIF shapes, 1,171 typefaces, the show settings: **0 differences**; media states: 6,396 stage frames (real time and the 30 fps
+  export clock), **2,616 media-shape states equal**; no embedded fonts in that corpus (the font query is covered by the same code as the
+  TS `readEmbeddedFonts` port, B1).
+- Chromium (`slides_switch.mjs`, tolerance 0; 1248 headless): `--mode parity` over the samples + 10 b1a + 5 c1d: 68 decks **all opened
+  without the TS model (68/68, 0 TS model loads)**, 633/633 slides pixel-equal, main canvas 291/291, thumbnails and notes 0 different,
+  **a11y text 633/633 slides equal**, **link hit-tests 607,680 points (1,757 on a TS link) 0 different**, 0 Rust-only jump/click hits (no
+  shape-level links in the corpus). The CI form (`UO_SS_DECKS=100 --mode all`): **213 decks, 213/213 TS-free, 959/959 slides
+  pixel-equal, a11y 959/959, link hit-tests 920,640 points (19,698 on a TS link) 0 different, animated 7,221/7,221 frames over 181
+  decks**, memory, faults and phase 0 green, 198 s + 282 s. `--mode anim` (first run, 91 animated decks, all TS-free): **4,059/4,059
+  frames pixel-equal**, 4,291 stage paints by Rust, **media requests: 89 frames with requests, 0 different** (video position, play/pause, volume, mute, full screen, GIF frame);
+  playback memory flat (251,752 B every sample, 0 handles left). `faults`: corrupt decks throw alike in both engines (the Rust element
+  tries Rust, then TS), a trap under a TS-free deck: `us-engine-error`, the TS model is built and paints, the next load is TS-free again;
+  link scheme filter unchanged. `memory`: 200 changes + exports flat (1,149,406 B every sample). `phase0` unchanged.
+- **Open cost** (`--mode opencost`, the 12 largest decks of the set, a fresh page per deck and engine, heap after `gc()`): JS heap after open
+  TS **31.15 MB** vs Rust **12.78 MB + 14.35 MB module live bytes = 27.1 MB**; before wave 4 the Rust element held the TS model and the module:
+  31.15 + 14.35 = **45.5 MB** (−40%). `loadPptx` TS 860 ms vs Rust 568 ms (−34%), first frame 880 vs 590 ms.
+- b5b metafile decks in Chromium (`UO_SS_B5B=40`, off by default): 659/682 slides pixel-equal; 23 differ inside metafile rasters (mostly
+  tens to hundreds of pixels, a few whole-slide: open, not chased this wave); before the `recipe` hook those pictures were missing (80
+  slides differed). The prepare phase met 1 compressed bitmap (undecodable in both engines); a decodable one is not in the corpus.
+- Size: `uo-slides.wasm` (`--features slides`, `--profile wasm`) 3,537,657 B raw, **1,265,754 B gzip -9** (79% of 1.6 MB; +29,900 B over
+  B4b: links, the read model, the recipe flag, the suppressed emission).
+
+**What still needs TS** (counted): nothing in the open, still, a11y, link, media, show or playback paths of a `.pptx` once the module is
+instantiated. The TS model is still built (1) for a `loadPptx` that comes before the module is ready, or for a `.ppt` (the converter is
+asynchronous): until the Rust open finishes, then dropped; (2) after a module trap; (3) when the attribute goes back to `ts`. The TS code
+(not the model) that the rust path still uses: `paintTransition`, `mediaFadeAlpha`/`gifFrameAt` (pure functions), the light tables and
+pattern rows of `@universal-office/drawingml`.
 
 ## Slides .NET facade (2026-11-17, Sonnet)
 
@@ -6449,3 +6532,127 @@ Release build, one 2026 Windows machine, tree of 2026-11-17 (the Slides PDF is c
 8. CI: the new steps in `.github/workflows/rust-core.yml` (`dotnet` job: the tests and the smoke; `leak-sanitizer-facade`: the Slides tests under LeakSanitizer) have never run;
    `server-pdf` already runs `slides_abi` through `cargo test -p uo-ffi --release --all-features`.
 9. No `UniversalOffice.Pptx` NuGet pack was exercised (no native-pack gather yet either, as G14 for Docx).
+
+## Slides editor (B8 routing, 2026-11-17, Opus)
+
+`<universal-slides engine="rust">`: the package, every editing method, undo/redo and the save (with fonts) run in the Rust editing
+session (`uo_pptx::edit`, B8) inside the SAME wasm instance as the viewer's deck, so the stills, the thumbnails and the stage of
+`present()`/`play()` are emitted from the edited package by the viewer's existing Rust path (no second painter, no copy of the deck).
+
+### Design
+
+- **One deck, lent per call.** The deck is the viewer handle `UoSlidesDeck` (opened by `uo_slides_open`). `uo_slides_editor_new(deck)`
+  makes a `UoSlidesEditor` holding a *detached* `uo_pptx::edit::Editor` (`Editor::detached`: the font option is read from the deck, the
+  session keeps an empty placeholder); every editing export takes the editor AND its deck and runs inside `Editor::with_deck` (two
+  `mem::swap`s). A call that changed the package re-reads the deck's slide list (`UoSlidesDeck::refresh`, hook in `slides.rs`); another
+  deck answers status 11 (the editor keeps only the deck's address to check it, never dereferences it).
+- **The shell's copy of the package.** Every editing answer (`EditResult`) carries the outcome, the UI state the shell mirrors (slide,
+  selected shape id, undo/redo flags and labels, dirty, slide count, font option) and the parts that changed since the previous answer
+  (`edit::changes_since` against a snapshot the editor handle keeps; `bytes` absent = removed). The element applies them to its TS
+  `PptxPackage` and re-reads its TS model from it (only the changed slides when nothing deck-wide changed): the hit tests, the selection
+  and handles, the bars' state (`getTextFormat`, `getShapeInfo`), find and the a11y text still read that model (counted below).
+- **The Op codec** is schema-generated: `core/schema/slides_edit.uos` (messages `Apply`, `EditResult`, `Blank`, `Clip`, `Query`/`QueryResult`,
+  `FontRequests`, `FontFaces`, `SaveResult`; the 29 `Op` variants and their argument types) with the bind map `slides_edit.bind`: `Op`,
+  `Outcome`, `Target`, `Frame`, `RunFormat`, `BulletKind`, `ArrangeMode`, `DocProperties`, `ShapeClip`, `BlankDeckOptions` and the font types
+  are bound to the Rust types (a new variant or field fails to compile until the schema has it); `TransitionSpec`, `ShowSettingsSpec` and
+  `ClipRel` are `manual` binds (`slides_edit/wire.rs`: their Rust fields `type_`/`loop_` are not schema field names). Generated:
+  `crates/uo-wasm/src/slides_edit/codec/{generated,generated_support,bind}.rs`, `crates/uo-wasm/js/gen/slides-edit{,.support}.ts`.
+  Wire rules: `i64` as `i32` (checked), `u64` (the clip's session id) as `f64` (exact integers below 2^53, checked, no float cast),
+  `utf16` strings with lone surrogates as U+FFFD. Decode limits: nesting 32; lists, elements and values up to 1 GiB on both sides
+  (`codec::limits()`, `LIMITS` of `slides-editor.mjs`): a message carries whole files (an inserted picture, changed media parts, the saved
+  package, font files) and a list cannot claim more elements than its buffer has bytes for.
+- **Clipboard**: `copyShape` answers a `Clip` message (XML, relations with the bytes of portable parts, text, source session id, slide
+  path); the element exposes it as the public `ShapeClip` with the bytes attached (a symbol), so `pasteShape` sends it back unchanged —
+  into this editor (same session: shared parts, the 12 pt offset on the same slide) or any other Rust editor of the page; a clip from a
+  `ts` editor is converted (source id 0 = another presentation).
+- **Fonts on save**: two phases as in Write: `fontRequests()` (the plan's faces; none when the option is off), the element answers each
+  request with the font file by the rule of the TS `planFontEmbedding` (resolver `resolve`, only host / Local Font Access / bundled faces
+  have a file, the missing variant through `loadFace`), then `saveWithFonts(faces)` answers the bytes and the `us-font-embedding` report.
+- **Inline text overlay**: unchanged in the shell; `commitEditShape` sends `Op::Typing`. The slide under the open overlay is painted by
+  Rust with the shape's text suppressed (`uo_slides_emit_suppress`, hook in `slides.rs`/`slides-engine.ts`).
+- **Opening**: `loadPptx` keeps the TS read (the viewer's), then opens the Rust session from the same bytes (`openSession`, lazily imported
+  `rust-editor.ts`), adopts it into the viewer (`adoptRust`) and repaints. Edits made on the TS engine while the module downloads keep that
+  presentation on `ts` (no two histories). Switching the attribute with a document open moves the CURRENT package to the other engine (the
+  undo history starts again). A trap kills the instance: the element drops the session (`us-engine-error`) and keeps editing on `ts` from its
+  copy of the package, which is the Rust package byte for byte. A DOM move keeps the session and its history (TS behaviour; viewer hook
+  `rustAdopted`).
+- **One module per page**: the editor build `uo-slides-editor.wasm` contains everything of the viewer's `uo-slides.wasm`;
+  `UniversalSlidesElement.configureEngine()` sets the source of both elements. If a viewer of the page loaded `uo-slides.wasm` first, the
+  editor finds no editor exports and stays on `ts` (`us-engine-error`, message names the fix).
+
+### Files
+
+- Rust: `crates/uo-wasm/src/slides_edit.rs` (exports, feature `slides-edit` = `slides` + `uo-pptx/edit`), `src/slides_edit/wire.rs`,
+  `src/slides_edit/codec/` (mod + generated), `Cargo.toml` (feature; dev-deps `uo-pptx` canon+edit, `uo-dml-render`, `uo-fonts` for the
+  replay), `src/lib.rs` (module line); `crates/uo-pptx/src/edit.rs` (`changes_since`), `src/edit/session.rs` (`detached`, `with_deck`).
+  Hook in `src/slides.rs` (other frontier, by request): `UoSlidesDeck::{deck_mut, refresh}`, `uo_slides_emit_suppress`; the
+  `allow(dead_code)` of the impl became `cfg_attr(not(feature = "slides-edit"), …)`.
+- Schema: `core/schema/slides_edit.uos`, `slides_edit.bind`, one line in `manifest.txt`.
+- JS: `crates/uo-wasm/js/slides-editor.mjs` + `.d.mts` (binding), `js/slides-editor-engine.ts` (loader over the viewer's `loadSlidesModule`,
+  `SlidesEditSession` = the viewer's `SlidesDocument` + the editor, trap rule), `js/slides-editor-engine.check.ts` (drift check, CI tsc line).
+- Element (`slides/packages/slides/src`): `rust-editor.ts` (lazily imported; open, blank, changed parts, clip conversion, font answers),
+  `slides-editor-engine.d.ts` (ambient module `@universal-office/slides-editor-engine`), `universal-slides.ts` (the `rx*` members and a Rust
+  branch in every mutator, undo/redo, dirty, font option, save, typing; `configureEngine` override; `rustReady()`).
+- Tests: `crates/uo-pptx/tests/support/edit_capture.rs` (the B8 replay as a `Driver`; `edit_replay.rs` now drives `Editor` through it),
+  `crates/uo-wasm/tests/slides_edit_native.rs`, `tests/slides_edit_api.test.mjs`, `tests/browser/slides_edit_switch.mjs`; unit test in
+  `src/slides_edit.rs`; fuzz `core/fuzz/src/slides_edit_wire.rs` (+ `fuzz_targets/`, seeds, the codec compiled in through
+  `fuzz/src/slides_edit.rs`: uo-wasm cannot be linked next to uo-ffi, both export `uo_buf_*`).
+- Tooling: `tools/build-pkg.mjs` (alias `@universal-office/slides-editor-engine`, `ENGINE_SOURCES.slidesEditor`,
+  `shipSlidesWasm(id, dist, 'editor')` → `chunks/uo-slides-editor.wasm` with the `wasm-slides` notices: `cargo tree` gives the same
+  third-party crates as the viewer build), `.github/workflows/rust-core.yml` (tsc line, native replay in `soak`, Node API test, size/validate/ship
+  step, the Chromium harness in `viewer`).
+
+### Numbers
+
+- **ABI replay** (`slides_edit_native.rs`, `UO_EDIT_ALL=1`, release, 13 s): every step of the four B8 captures encoded with the schema codec,
+  applied through the exports on an editor over a viewer deck, the package compared AS THE SHELL MIRRORS IT (only from the changed parts):
+  edit-samples 28 scripts / 1,680 steps (10,248 facets), edit-b1a+b6a 70 / 4,200 (25,620), edit-blank 12 / 1,440 (8,832), edit-fonts 25 /
+  1,376 (8,406): **8,696/8,696 steps, 53,106 facets equal, 0 mismatches** (parts in order and bytes, UI state, the presentation and
+  current-slide models read fresh from the mirror, the result of each step; the deck's slide count equals the state after every step).
+- **Node, wasm module with `count`** (`slides_edit_api.test.mjs`, 6/6): an edit changes the list the viewer emits from the same deck; the
+  mirror after insert/add/undo/undo equals the saved package part for part; clip between two editors; queries; save with Carlito embedded;
+  refusals (another deck 11, null 11, junk 5, unknown history command 5, freed editor). **M4**: 10,000 editors through `free()` and 1,000
+  through the `FinalizationRegistry`: live bytes back exactly. **M2**: 600 cycles of insert/format/frame/undo/redo/emit after 120 warm-up
+  cycles: live bytes 211,680–211,684 (spread 1,600 B over 12 samples; the first sample 210,084 is still warm-up), wasm memory 8,126,464 B
+  constant. **M5**: after 150 edits exactly 100 undo steps (the TS limit; the byte cap is B8's, `Limits::max_history_bytes`).
+- **Fuzz** `slides_edit_wire` (stable fallback driver, 63 seeds: every `Op`, the queries, font answers, blank options): **1,458,566 executions
+  in 90 s, 0 crashes**; invariants: the canonical form is stable (decode → encode → decode → encode equal), a failed command changes
+  nothing, every `EditResult` encodes and decodes, undo+redo restores order and bytes, any accepted blank options save and reopen.
+- **Sizes** (`--profile wasm`, no `count`): `uo-slides-editor.wasm` **3,975,236 B raw, 1,429,008 B gzip -9** (41% of the 3.5 MB budget);
+  the viewer's `uo-slides.wasm` 3,454,622 B / 1,246,499 B gzip at the same tree (the editor adds 520 KB raw / 182 KB gzip).
+- **Chromium harness** (`slides_edit_switch.mjs --mode all`, headless 1248, open fonts, tolerance 0; the TS and the Rust element in one
+  page run the same seeded script through the public API — 38 kinds of step: every slide and shape method, the inline overlay commit,
+  copy/paste, duplicate, notes, properties, replace, undo/redo, markClean, goto, the font option; both random sources seeded 1 as in the B8
+  captures): **60 decks** (the 28 committed samples, 24 `b1a`, 8 `b6a`), all on the Rust engine, **2,400 steps**; after every step and after
+  the load (2,460 checks) **package 2,460/2,460 equal** (part names, order, bytes), **UI state 2,460/2,460** (slide, selection, undo/redo,
+  dirty, shape info, text format, notes, transition, hidden, background, properties, show settings, font option, editing), **slide pixels
+  2,460/2,460** (`renderSlideToCanvas`, 960 px), **main canvas 2,460/2,460**; **`savePptx()` 360/360 equal** (read back part by part); 0 steps
+  where only one engine threw (1 step where both did: a harness artefact, the overlay asked on a shape that opens none; guarded since).
+  1,579 s. Phase 0: an editor without the attribute requests no wasm and no engine chunk, and the entry's static closure holds none of the
+  engines' code. Memory: 300 insert/format/frame/undo/redo cycles: module live bytes 429,088–430,688 (spread 1,600 B), wasm buffer
+  2,686,976 B from the 2nd sample on; a detached element keeps its 1 session, after switching to `ts` 0 sessions and 0 handles. Faults: DOM
+  move then undo (session and history survive), the engine attribute ts→rust→ts with the document open (package kept), a forced trap (the
+  element goes on in `ts` from the same package, `us-engine-error` fired): all pass. Harness bugs found while bringing it up (not engine
+  bugs): two random draws inside the per-element callback (the elements got different arguments); the TS overlay commits twice when
+  `commitEditShape()` runs with the overlay focused (its blur handler commits first; a TS quirk, both engines alike); the creation ids of
+  copies (`freshCreationId`: the TS `Math.random` against the session's xorshift seeded from `crypto`; the harness seeds both with 1, the B8
+  rule).
+
+### Left on the TS path (counted; "complete = nothing disabled": nothing is disabled, these are TS reads or TS-only steps)
+
+1. The TS model re-read from the mirrored package serves the hit tests, selection and handles, `getShapeInfo`/`getTextFormat`/`getLink`,
+   `getLayouts`/`getSlideLayout`, `getSlideTransition`, `getSlideAnimations`, `getShowSettings`, `getProperties`, `findText` (the replace runs
+   in Rust), the thumbnails' count, notes guard and the a11y text. Next wave: the read-model queries (other frontier) replace it.
+2. `newPresentation()` builds the blank deck with the TS `blankDeck` (sync API; the Rust `uo_slides_editor_blank` is byte-equal part by part,
+   B8) and opens it in both.
+3. `insertImage` measures the picture's natural size with the browser (`imageSize`) and sends the frame (B8 decision 9).
+4. The `.ppt` open: the TS converter feeds the TS copy, the Rust module converts the same bytes for the session (B2: part-equal).
+5. Image decoding, font resolution and text measurement stay in the browser by design (T1/T2).
+
+### Process metrics
+
+| Stage | Notes |
+|---|---|
+| Design + port (one Opus session) | 3 hook requests to the viewer frontier (deck sharing, suppressed emission, JS adoption, lazy engine import, sessions surviving a DOM move), landed by the other agent and the orchestrator |
+| Verification | native ABI replay 13 s release; Node API 4 s; fuzz 90 s; Chromium parity 1,579 s (60 decks x 40 steps), memory and faults about 1 min each |
+| Rework | the codec's first decode limit (1 Mi list) refused a saved package with fonts (raised to the 1 GiB of the input); `type_`/`loop_` are not schema field names (manual binds); the fuzz crate cannot link uo-wasm next to uo-ffi (both export `uo_buf_*`: the codec is compiled in by path) |

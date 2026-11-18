@@ -57,6 +57,23 @@ pub fn emit_slide(
     res: &mut SlidesResources,
     caches: &mut EmitCaches,
 ) -> Result<Emission, EmitFail> {
+    emit_slide_suppressed(deck, index, view, None, table, res, caches)
+}
+
+/// [`emit_slide`] with the text of shape `suppress` (an index of the slide's shapes) left out: the editor's inline overlay
+/// covers it (`suppressTextShapeIdx` of the TS `paintSlideTo`).
+///
+/// # Errors
+/// As [`emit_slide`].
+pub fn emit_slide_suppressed(
+    deck: &mut Deck,
+    index: u32,
+    view: View,
+    suppress: Option<u32>,
+    table: &MeasureTable,
+    res: &mut SlidesResources,
+    caches: &mut EmitCaches,
+) -> Result<Emission, EmitFail> {
     let (slide_w, slide_h) = {
         let p = deck.presentation()?;
         (p.slide_w, p.slide_h)
@@ -64,7 +81,8 @@ pub fn emit_slide(
     let slide = deck.slide(index)?;
     let src = deck.source();
     let env = Env { src: &src, table };
-    let params = EmitParams { scale: view.scale, ox: view.ox, oy: view.oy, slide_w, slide_h, clip_overflow: false, suppress_text: None };
+    let params =
+        EmitParams { scale: view.scale, ox: view.ox, oy: view.oy, slide_w, slide_h, clip_overflow: false, suppress_text: suppress };
     let bg = SlideBg { bg: slide.bg.as_ref(), bg_image: slide.bg_image.as_ref(), bg_tile: slide.bg_tile.unwrap_or(false) };
     uo_dml_render::emit::emit_slide(&bg, &slide.shapes, &params, &env, res, caches).map_err(EmitFail::Need)
 }

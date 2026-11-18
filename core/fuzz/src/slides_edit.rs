@@ -17,6 +17,13 @@ use uo_pptx::edit::shapes::{ArrangeMode, BulletKind, Frame, RunFormat};
 use uo_pptx::edit::{Editor, Op, Target};
 use uo_pptx::{Deck, Limits};
 
+// the editor codec of the wasm binding (schema slides_edit.uos), compiled into the fuzz crate from the uo-wasm tree for the
+// slides_edit_wire target (uo-wasm itself cannot be linked next to uo-ffi: both export the uo_buf_* symbols)
+#[path = "../../crates/uo-wasm/src/slides_edit/codec/mod.rs"]
+pub mod codec;
+#[path = "../../crates/uo-wasm/src/slides_edit/wire.rs"]
+pub mod wire;
+
 struct Rng(u64);
 
 impl Rng {

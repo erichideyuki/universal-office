@@ -188,6 +188,34 @@ tests. The .NET port and the 0.9 TS engine keep the 0.9 rules.
   painted; a gallery preview can show a cross-reference's page from the previous layout right after an edit; whether
   `ts` also keeps the `Table Grid` style after a save between a table insert and its undo has not been compared.
 
+### Slides editor: engine switch (`engine="rust"`, preview)
+
+- New attribute `engine` on `<universal-slides>`: `ts` (default, unchanged, fetching nothing) or `rust`. With `rust` the
+  package, every editing method, undo/redo and `savePptx()` (font embedding included) run in the Rust editing session, in
+  the same WebAssembly instance as the viewer's Rust engine, which paints the slides, thumbnails, slide show and playback
+  from the edited package. The module is `chunks/uo-slides-editor.wasm` (it contains the viewer's engine too);
+  `UniversalSlidesElement.configureEngine({ wasm, ppt })` sets the source of both elements (one module per page).
+- Same results as `ts`, checked in Chromium step by step on scripted sessions (the package, the UI state, the slide and
+  main-canvas pixels, the saved file). A command that fails throws and leaves the presentation exactly as it was (the `ts`
+  editor could keep part of a multi-part change in the package without showing it). Not yet in `rust`: the selection, hit
+  tests, the bars' state, find and the accessible text read a TS copy of the package that the engine keeps in step.
+
+### Slides viewer: engine switch (`engine="rust"`)
+
+- `<universal-slides-viewer engine="rust">` opens the deck in the Rust engine only (no TS model): the element instantiates
+  `chunks/uo-slides.wasm` when it connects and `src` waits for it, so `loadPptx` opens synchronously in Rust. Slides,
+  thumbnails, exports, the accessible text, hyperlinks, pictures, media, embedded fonts, `present()` and `play()` all come
+  from the engine; pixels, accessible text, link hit-tests and media requests are equal to `ts` (Chromium). Opening costs
+  about 40% less memory and 34% less time than the 0.9 hybrid. A `loadPptx` before the module is ready (or a `.ppt`) opens
+  with the TS model first, which is dropped when the engine has the deck.
+- Behaviour differences with `rust`: shape-level hyperlinks (`hlinkClick` on the shape) and slide/show jumps
+  (`ppaction://hlinksldjump`, `hlinkshowjump`) are followed (the TS viewer only opened run addresses); `play()` returns a
+  timeline whose `slides` carry the times of each slide (index, start, end, animation start, transition), not the TS placed
+  effects; a picture whose embedded EMF+ bitmap is still decoding leaves the slide unpainted for that moment (the TS painted
+  the rest of the slide). Metafile, PICT and TIFF pictures are painted by the engine (before, `engine="rust"` left them out).
+- The Slides PDF (`uo_pptx::pdf`, .NET `UniversalOffice.Pptx`) writes hyperlinks as link annotations over the drawn text, and
+  shape clicks and slide jumps as links (internal jumps go to the page).
+
 ### Opening documents on slower machines
 
 - `<universal-write>` lays the document out far fewer times while it opens

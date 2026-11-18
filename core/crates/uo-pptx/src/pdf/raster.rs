@@ -406,6 +406,8 @@ pub(super) struct RasterCx<'a> {
     pub src: &'a dyn PartSource,
     pub fonts: &'a dyn FontSource,
     pub image_limits: &'a uo_image::ImageLimits,
+    /// the hyperlinked runs (a run drawn only inside a rasterized layer is marked here)
+    pub links: &'a super::links::LinkMarks,
 }
 
 /// One painted source: a coverage (raster pixels, its origin) and the colour of each pixel centre, plus the polygons
@@ -636,6 +638,9 @@ impl<'a, 'c> Raster<'a, 'c> {
                 SItem::DrawImage(d) => self.draw_image(d),
                 SItem::Text(i) => {
                     if let Some(r) = usize::try_from(*i).ok().and_then(|i| self.cx.list.runs.get(i)) {
+                        if !r.bullet {
+                            self.cx.links.mark(*i, self.t.cur.ctm, self.t.cur.align);
+                        }
                         self.text_run(r);
                     }
                 }

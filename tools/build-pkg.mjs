@@ -134,6 +134,8 @@ const ENGINE = {
   '@universal-office/write-session': 'core/crates/uo-wasm/js/session.mjs',
   // o viewer do Slides (`engine="rust"`, src/rust-engine.ts, frente B7): o lado JS do módulo uo-slides.wasm
   '@universal-office/slides-engine': 'core/crates/uo-wasm/js/slides-engine.ts',
+  // o editor do Slides (`engine="rust"`, src/rust-editor.ts, roteamento do B8): a sessão de edição sobre o deck do viewer
+  '@universal-office/slides-editor-engine': 'core/crates/uo-wasm/js/slides-editor-engine.ts',
 };
 /**
  * Os .wasm do motor (build `--profile wasm`, SEM `count` nem `selftest`): `--features write` → `chunks/uo-write.wasm` (viewer) e
@@ -143,7 +145,7 @@ const ENGINE = {
 const WRITE_WASM = () => process.env.UO_WRITE_WASM ?? 'core/target/pkg-wasm/uo-write.wasm';
 const EDITOR_WASM = () => process.env.UO_WRITE_EDITOR_WASM ?? 'core/target/pkg-wasm/uo-write-editor.wasm';
 /** Os fontes do lado JS do motor, por tipo de módulo (o que o bundle importa decide qual .wasm vai junto). */
-const ENGINE_SOURCES = { viewer: 'write/packages/viewer/src/rust-engine.ts', editor: 'write/packages/editor/src/rust-engine.ts', slides: 'slides/packages/viewer/src/rust-engine.ts' };
+const ENGINE_SOURCES = { viewer: 'write/packages/viewer/src/rust-engine.ts', editor: 'write/packages/editor/src/rust-engine.ts', slides: 'slides/packages/viewer/src/rust-engine.ts', slidesEditor: 'slides/packages/slides/src/rust-editor.ts' };
 
 /**
  * Ferramentas de build (esbuild, dts-bundle-generator, node_modules). Normalmente `<projeto>/node_modules` deste checkout;
@@ -389,9 +391,14 @@ export function shipEngineWasm(id, dist, kind = 'viewer') {
  * `core/target/pkg-wasm/` (UO_SLIDES_WASM, UO_SLIDES_PPT_WASM); com os avisos de licença das caixas Rust de terceiros de cada um
  * (`licenses/uo-slides-wasm/`). Sem o .wasm só avisa (como o Write); com ele e sem avisos atuais o build FALHA.
  */
-export function shipSlidesWasm(id, dist) {
+export function shipSlidesWasm(id, dist, kind = 'viewer') {
+  // o editor (`<universal-slides engine="rust">`): `--features slides,slides-edit` → `chunks/uo-slides-editor.wasm` (o do viewer + a
+  // edição; as caixas Rust de terceiros são as mesmas do viewer, então os avisos são os de `wasm-slides`)
+  const main = kind === 'editor'
+    ? { name: 'uo-slides-editor.wasm', env: 'UO_SLIDES_EDITOR_WASM', feature: 'slides,slides-edit', artifact: 'wasm-slides', needs: 'uo_slides_editor_new', never: 'uo_slides_ppt_convert' }
+    : { name: 'uo-slides.wasm', env: 'UO_SLIDES_WASM', feature: 'slides', artifact: 'wasm-slides', needs: 'uo_slides_open', never: 'uo_slides_ppt_convert' };
   const MODULES = [
-    { name: 'uo-slides.wasm', env: 'UO_SLIDES_WASM', feature: 'slides', artifact: 'wasm-slides', needs: 'uo_slides_open', never: 'uo_slides_ppt_convert' },
+    main,
     { name: 'uo-slides-ppt.wasm', env: 'UO_SLIDES_PPT_WASM', feature: 'slides-ppt', artifact: 'wasm-slides-ppt', needs: 'uo_slides_ppt_convert', never: 'uo_slides_open' },
   ];
   let shipped = false;
@@ -470,13 +477,14 @@ async function buildProduct(id) {
   //     CONTEÚDO do bundle (metafile), não o nome do chunk: o rust-engine do viewer e o do editor ficam em chunks diferentes.
   let withLicenses = false;
   const outDir = path.relative(pkgDir, dist).replace(/\\/g, '/');
-  for (const kind of ['viewer', 'editor', 'slides']) {
+  for (const kind of ['viewer', 'editor', 'slides', 'slidesEditor']) {
     const holders = Object.entries(built.metafile.outputs).filter(([, o]) => Object.keys(o.inputs).some((f) => path.resolve(pkgDir, f) === p(ENGINE_SOURCES[kind])));
     if (!holders.length) continue;
     for (const [o] of holders) {
       if (path.posix.dirname(o) !== `${outDir}/chunks`) throw new Error(`build-pkg: ${id}: o motor ${kind} (${o}) não está em chunks/: new URL(arquivo, import.meta.url) não acharia o .wasm ao lado`);
     }
-    if (kind === 'slides' ? shipSlidesWasm(id, dist) : shipEngineWasm(id, dist, kind)) withLicenses = true;
+    const shipped = kind === 'slides' ? shipSlidesWasm(id, dist) : kind === 'slidesEditor' ? shipSlidesWasm(id, dist, 'editor') : shipEngineWasm(id, dist, kind);
+    if (shipped) withLicenses = true;
   }
   // fase 0: o import estático da entrada principal não traz o lado JS do motor (nem o wasm: só com engine="rust")
   const phase0 = staticClosure(built.metafile, `${outDir}/index.js`).flatMap((o) => Object.keys(built.metafile.outputs[o].inputs))

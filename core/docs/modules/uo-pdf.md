@@ -718,11 +718,22 @@ Write's painter lives with Write's page. Nothing in `render_pdf`/`render.rs` cha
   embedded), `putImageData` (an image at device coordinates) all go through the same interpreter code; `globalCompositeOperation` `difference`,
   `multiply`, `lighten` are blend modes. The **exact XOR** (`xorRect`, a pixel operation) has no PDF form: counted (`meta:xor-rect`) and the
   approximation the TS draws when it cannot XOR is the content that follows, which is played. A cut or damaged recipe keeps what it drew.
-- **Hyperlinks**: the display list does not carry them (it is the canvas calls). The PDF places the links of the model (`Run.hyperlink` of every
-  shape's text, in reading order) over the next drawn run whose text is the link text (trimmed equality, looking ahead 4 links), as `/Link`
-  annotations (`safe_pdf_uri`: http, https, mailto). A link run that wraps across lines is `hyperlink:unplaced`. **The exact way** is a producer
-  change in B5b-owned `emit/text.rs` (not done here, the area was under edit): `Emission.links: Vec<LinkRect { x, y, w, h, url }>` written where a
-  `PlacedRun` with `hyperlink` becomes a `TextRun`, which replaces `slide_links` + the matching in `pdf/mod.rs`.
+- **Hyperlinks** (wave 4, `pdf/links.rs`, `pdf/mod.rs` `Writer::page`): the display list carries none (it is the canvas calls); the emission
+  hands them beside it. (a) **Run marks**: `Emission::links` (`uo-dml-render.md` "Links (wave 4)") names every `TextRun` written for a
+  linked placed run with its box in list user space; when the vector interpreter draws that `SItem::Text` — or a raster pass of a layer draws
+  it (soft edges, reflections: the run is marked once, by whichever draws it first) — the box goes through the current transform to its
+  device AABB (rotated and flipped shapes included). The pieces of one link that touch (the layout places runs word by word; vertical and
+  right-to-left lines too) are joined per line fragment, as PowerPoint writes its rectangles; each is cut to the page (a piece wholly off the
+  page — text overflowing the slide — gets none: `PdfReport::links_off_page`) and placed as a `/Link` with `safe_pdf_uri` (http, https,
+  mailto; others `hyperlink:scheme`). (b) **Shape clicks and jumps** from `uo_pptx::links::slide_links` (`ShapeClick`: `a:hlinkClick` on
+  `p:cNvPr`, a group's click for its children; `RunJump`: a run's slide/show jump, shape-wide) over the shape's box turned by its `rot`: an
+  address as a URI, a slide jump as an internal `/Dest` to its page, next/previous/first/last slide to the page computed from this one;
+  "last viewed" and "end show" have no PDF form (`hyperlink:action`). `PdfReport::internal_links` counts the page destinations. (c) A shape
+  whose text drew no linked piece at all (WordArt warps draw outlines, not runs) gets its run links over its turned box — the TS viewer's
+  hit-test geometry (`PdfReport::shape_wide_links`). `hyperlink:unplaced` = a model link run (with text) whose shape drew no piece with its
+  address and had no shape-wide fallback (matched by address, not text: caps, symbol fonts and tabs change the drawn text). A shape with both a
+  shape address and a run jump gets both rectangles (the same box). `pdf_from_lists_with_links` takes the marks for lists emitted elsewhere
+  (`pdf_from_lists` is unchanged: no links).
 - **Limits and failure policy**: `PdfLimits` apply (ops and content bytes per page, output bytes); a limit stops the document with the typed error;
   a slide that cannot be read or emitted is a blank page of the slide's size and is listed in `PdfReport::failed_slides`; an inconsistent list
   (`validate`) is refused; a picture the decoders refuse is left out (counted); save depth 512 per target, 12 nested layers, 1 M path segments,
@@ -746,11 +757,11 @@ wave 2 over the same 538 decks / 1,357 pages (open fonts only).
 | `meta:xor-rect` | exact XOR of a metafile (recipes are vector forms; the XOR needs the recipe's pixels) | 5 | 5 |
 | `image:unsupported` | an image no decoder reads (an SVG) | 1 | 1 |
 | `transform:singular` | painting under a singular transform skipped (the canvas draws nothing either) | 1 | 1 |
-| `hyperlink:unplaced` | links not placed (needs `Emission.links`, another frontier this wave) | 686 (265 placed) | 690 (261 placed: 4 linked runs are now inside rasterized soft-edge layers) |
+| `hyperlink:unplaced` | links not placed (wave 4: **0**, see the hyperlink paragraph) | 686 (265 placed) | 690 (261 placed: 4 linked runs are now inside rasterized soft-edge layers) |
 | `gradient:conic`, `gradient:stroke`, `pattern:stroke`, `pattern:repeat-axis`, `clear-rect`, `media-frame`, `image:jpeg-effect`, `image:recipe-truncated`, `font:missing`, `font:not-embeddable`, `chart:frame`, `effect:metafile-rop` | approximations and rare cases | 0 | 0 |
 
 Still disabled, in order of count: 299,280 characters without any face among the open fonts (CJK, Arabic, emoji of the generated `b3a`
-decks; a host with system fonts drops it to 48,637), 690 links (not this wave), 5 metafile XORs, 5 approximate bevel underlays, 1 SVG picture,
+decks; a host with system fonts drops it to 48,637), 5 metafile XORs, 5 approximate bevel underlays, 1 SVG picture,
 and the classes that have no case in the corpus but would count if met: JPEG/metafile content inside a soft edge or reflection
 (`raster:fallback`, no JPEG decoder in the core), picture-filled WordArt, conic gradients and gradient/pattern strokes.
 
@@ -885,13 +896,24 @@ stays vector. PowerPoint's own PDF was not consulted (no TS × PowerPoint diverg
   alpha for picture patterns is 1; (W4) the bevel underlay omits JPEG/metafile pictures (counted); (W5) the fallback face's advance is the measure
   (the browser measures and draws with its own fallback; the old `.notdef` advance is kept only when no face has the character).
 
+### Hyperlinks (wave 4, 2026-11-17)
+
+Over the same 538 decks (`tests/pdf_slides.rs`, open fonts): before, 261 links placed by text matching and 690 `hyperlink:unplaced`; now
+**994 link rectangles** — 941 run fragments placed through their marks (the 4 runs inside rasterized soft-edge layers included) and 53
+shape-wide (runs in WordArt warps) — **0 unplaced**, 2,089 linked fragments of text that overflows the slide left without a rectangle
+(`links_off_page`), 0 refused schemes. The corpus has no shape clicks or jumps (its decks write run addresses only); the constructed slide of
+`tests/links.rs` places a slide jump (on a shape turned 90 degrees), "next" and "last slide" as `/Dest` (3 internal), a shape address and a
+run address as URIs, refuses a `file:` address (`hyperlink:scheme`) and counts "end show" (`hyperlink:action`). Before the fragment join the
+same corpus gave 11,797 rectangles (one per placed word or letter). Write's PDF is unchanged (`cargo test -p uo-pdf`: uo-pdf untouched).
+The PDFs of the decks with links changed, so `uo-ffi/tests/parity/slides-native.tsv` (32 of 93 digests) needs `UO_BLESS=1`.
+
 ### Next steps
 
 1. A JPEG decoder (or the host's) for raster layers and bevel underlays that hold photos (`raster:fallback`, `bevel:underlay`), then the recipe
    played onto pixels for the exact metafile XOR (`meta:xor-rect`).
 2. Speed: the bevel underlay re-rasterizes the page prefix per bevel and every text shadow is its own image; batching the shadows of a
    paragraph and caching the underlay would bring the 50 ms per page back towards 20.
-3. Hyperlinks from the emitter (`Emission.links`, see above), an outline from the slide titles, `/PageLabels`, notes pages.
+3. An outline from the slide titles, `/PageLabels`, notes pages (hyperlinks are done: wave 4 below).
 4. Conic gradient (a type 4/7 mesh or a pre-rasterized image), gradient strokes (clip-stroke is not available: a stroked outline path would
    be needed), `repeat-x/y` patterns.
 5. The PowerPoint PDF oracle above; then `FontSource` over `SubstituteFontProvider` for the server/.NET facade and the `uo-wasm` export
@@ -907,3 +929,88 @@ stays vector. PowerPoint's own PDF was not consulted (no TS × PowerPoint diverg
 Rework: the extraction test's expectation (outline passes and chart `FillText` draw glyphs the runs list once or not at all: fixed in the test, not in the
 painter), a pattern base matrix that was wrong inside forms (found by reasoning about the PDF default space before any test, fixed with `Target::base`),
 four `\n` literals the shell turned into newlines while patching (found by the compiler/grep, fixed with the editor).
+
+## PowerPoint agreement (M4 prep)
+
+Status: **measured, nothing changed in the product.** The M4 gate's "PowerPoint agreement" item (`slides-sheet-port-plan.md` §9, §11): the
+Rust Slides PDF (`uo_pptx::pdf`) against PowerPoint 365 pt-BR's own PDF of the same deck, page by page, with the frozen TS viewer's canvas
+as the third witness so that each difference is either **TS legacy** (Rust = TS ≠ PowerPoint: a rule to measure, where Office decides) or
+**PDF only** (Rust ≠ TS = PowerPoint: the PDF interpreter). One Opus session, 2026-11-17. Harness, data and how to rerun:
+`core/crates/uo-pptx/tests/oracle_ppt/README.md`.
+
+### Method
+
+- **Decks** (`oracle_ppt/decks.tsv`, 627): every tracked `slides/samples` file (53: 28 `.pptx`, 25 `.ppt`) and the generated groups
+  (`b1a` 200, `b5a` 150, `b5b` 40, `b6a` 100, `c1d` 60 all; `b3a` every 5th, 24). **PowerPoint refused 488 of the 574 generated decks**
+  (318 "file corrupt", 62 "could not open", 83 `0x80CB8002`, 25 opened but failed `SaveAs` PDF; `results/ppt-pdfs.tsv`): b1a 38/200,
+  b3a 24/24, b5a 0/150, b5b 4/40, b6a 9/100, c1d 11/60 open. The generators target the TS reader (hostile values, lenient structure), not
+  schema validity. Compared: **139 decks, 736 pages** (601 from the committed samples, 135 generated). Page count and page size agree on
+  all 139 (0 differences); 0 Rust failures.
+- **PowerPoint** (`slides/tools/ppt-lab/export-pdf.ps1`, driver `pdf-oracle.mjs ppt`): COM, powershell with `windowsHide`, each deck opened
+  read-only `WithWindow = msoFalse`, hidden slides shown in memory, `SaveAs(ppSaveAsPDF)` (PowerShell's late binding cannot pass
+  `ExportAsFixedFormat`'s optional arguments). PDFs cached by deck sha256 under `core/target/w4-oracle/ppt-oracle/ppt` (88.5 MB, not
+  committed; digests in `results/ppt-pdfs.tsv`). 484 s of PowerPoint time for the 139 decks (`b3a` decks ≈ 20 s each: CJK font linking).
+- **Rust** (`oracle_ppt/main.rs`, `cargo test -p uo-pptx --release --features ppt --test oracle_ppt`, opt-in by `UO_PPT_ORACLE_OUT`): two
+  font policies: `system` = the installed fonts **read in place** (Windows fonts, user fonts, Office `CloudFonts` — the files PowerPoint
+  draws with, so text differences are layout, not substitution), `open` = Liberation/Carlito/Caladea only (the shipped server default).
+  Built from the working tree of 2026-11-17 evening, **including the in-progress hyperlink frontier** of another agent (links are placed).
+- **TS** (`pdf-oracle-ts.mjs`): the frozen 0.9.2 viewer (`.claude/worktrees/ts-ref-092`), `renderSlideToCanvas` at 96 dpi in headless
+  Chromium. Caveat: the browser cannot see the Office `CloudFonts` cache (memory fact), so the TS draws **Aptos** with a substitute while
+  PowerPoint and Rust `system` use Aptos — the samples are mostly Aptos (the playback decks), which lowers TS × PowerPoint there.
+- **Comparison** (`pdf-oracle-compare.py`, pypdfium2 for both PDFs): pixels at 96 dpi on white; a pixel **differs** when no pixel of the
+  other image within 1 px is within 40 on every channel, both ways (antialiasing/hinting do not count); agreement = 1 − differing/all. Each
+  differing Rust × PowerPoint pixel is split by the TS canvas (legacy / PDF only / all three differ) and attributed to the topmost page object
+  of each PDF. Text: characters in content order (similarity), each PowerPoint glyph against the nearest Rust glyph of the same character
+  (within 1 pt / 3 pt), signed offsets, font names. Links: count, URI, rectangle IoU. Then `pdf-oracle-classify.py` tags each page with known
+  causes (detectors in its header) and attributes each page's differing pixels to the first matching cause (priority order of the table
+  below); `pdf-oracle-baseline.py` gives the vertical glyph offset per font.
+
+### Numbers
+
+| Pages | Rust `system` × PowerPoint | Rust `open` × PowerPoint | TS × PowerPoint | Rust × TS | text similarity | glyphs within 1 pt / 3 pt |
+|---|---|---|---|---|---|---|
+| committed samples (601) | mean **0.9947**, median 0.9961, **98.2% of pages ≥ 0.99** | 0.9908, 0.9914, 67.6% | 0.9905, 0.9882, 44.8% | 0.9908 | 0.982 (93.5% of pages ≥ 0.99) | 21% / 93% |
+| generated (135) | 0.7207, 0.9071, 3.7% | 0.7207, 0.9028, 3.0% | 0.8057, 0.9288 | 0.8751 | 0.752 | 16% / 24% |
+| all (736) | 0.9445, 0.9951, 80.8% | 0.9413, 0.9904, 55.7% | 0.9566, 0.9870 | 0.9696 | 0.940 | 20% / 80% |
+
+Without the two whole-page causes (gradient text, `sysClr`) the 650 remaining pages agree at mean 0.9881, median 0.9955. On the samples
+the Rust PDF agrees with PowerPoint **better than the TS viewer does** (Aptos read in place); with the open fonts it is about the TS's level.
+Horizontal glyph placement agrees (median |dx| ≤ 0.08 pt for every font); the 21% "within 1 pt" is the vertical offset of item 3 below.
+Differing pixels over all pages: 30.86 M of 642 M (4.8%): **TS legacy 18.7 M (61%)**, **PDF only 9.8 M (32%)**, all three 2.4 M. By Rust
+object under the pixel: shading 13.5 M (the gradient text), path 9.2 M, text 5.2 M, form 1.6 M, image 0.7 M, shadow image 0.6 M.
+
+### Differences, ranked by impact (`results/classes.tsv`: exclusive differing pixels, first matching cause owns a page)
+
+| # | Difference | Pages / decks | Exclusive px | Split | Who decides |
+|---|---|---|---|---|---|
+| 1 | **Gradient-filled text** is written as a text clip (`7 Tr … ET`) followed by `sh`; pdfium (this harness, and the Chrome/Edge PDF viewers) ignores the text clip and paints the shading over the whole clip region — **the slide disappears under a gradient** (`b1a_0067` p2, `s_stress-text` p4 at 0.03, `b6a_0073`, `c1d_0027`). Acrobat not checked. | 29 / 22 (2,940 such fills over the 627 Rust PDFs, 206 decks) | 12.4 M (40%) | PDF only 8.4 M | **Rust PDF fix**: fill the glyphs with a shading *pattern* (`/Pattern cs /P scn`, `0 Tr`), or clip by the glyph outlines as a path |
+| 2 | **`a:sysClr`**: the TS (and Rust) take `lastClr`; PowerPoint takes the system colour (`windowText` black, `highlight` the Windows accent) — a whole background black instead of light (`b6a_0021` 0.07), gradients of another hue (`b3a_0090`) | 80 / 51 (all generated: random `lastClr`) | 12.6 M | legacy 11.7 M | **PowerPoint** (candidate: resolve `sysClr` to the system value; measure the table; real decks usually carry the system value in `lastClr`, so the real-world effect is small) |
+| 3 | **First-line baseline per font**: Rust (the TS layout rule) puts text lower than PowerPoint by **0.036–0.038 em for Aptos**, 0.017 em Calibri, 0.019 Calibri Bold, 0.014 Cambria Bold; ≈ 0 for Liberation Serif, Caladea, Times New Roman (`results/baseline.tsv`; ≈ 1.07 pt on 28-pt Aptos titles, ≈ 4 pt on the 100-pt numbers of the playback decks) | 665 pages carry an offset > 0.3 pt | 2.3 M | legacy 1.8 M (TS = Rust by construction: same layout, same measures) | **PowerPoint** (candidate: the ascent metric PowerPoint uses for the first line — hhea vs OS/2 typo/win; measure with the synthetic font groups) |
+| 4 | **Characters the run's face lacks** (CJK, Thai, Devanagari, Arabic, emoji): PowerPoint links Yu Gothic, MS Gothic, Malgun Gothic, Angsana New, Mangal; Rust uses the Word fallback chain (MS Mincho, Leelawadee UI, …) → other widths, other line breaks (`b3a`) | 88 / 53 | 2.1 M | legacy 1.8 M | **PowerPoint** (candidate: a per-script fallback table of PowerPoint — the theme's `a:font script=…` list and Office's defaults — instead of Word's) |
+| 5 | **WordArt warps**: arch/curve geometry differs (`s_legacy_lo-wordart-test` p3) | 33 / 28 | 0.75 M | legacy 0.62 M, PDF only 0.12 M (outline flattening vs the TS raster strips) | PowerPoint for the geometry; the PDF part is small |
+| 6 | **Date/time fields** in the system locale: PowerPoint writes `17/11/2026` (pt-BR), Rust/TS `11/17/2026` (`b1a_0186`) | 90 / 59 | 0.28 M | legacy | **PowerPoint** (candidate: the field's format follows the run language / PowerPoint's locale rule; measure) |
+| 7 | **Charts**: plot-area insets and doughnut radius/hole (`s_showcase_animado` p5 0.96, `pb-graficos*` 3 px plot-area shift) | 31 / 16 | 0.18 M | legacy (uo-charts = TS) | **PowerPoint** (chart layout facts) |
+| 8 | **`.ppt` charts drawn from the fallback picture** the converter keeps (PowerPoint draws the embedded chart natively: sharper text, lighter gridlines) | 12 / 3 | 73 k | legacy (B2 converter = TS) | PowerPoint (convert the OLE chart) |
+| 9 | **Hyperlinks** (in-progress frontier): on the 82 pages with links PowerPoint writes 4,043 link rectangles (per line fragment), Rust 2,296; 5 pages without Rust links (`b3a_0045`, `b3a_0090`, `b3a_0105`, `b1a_0151`); same URIs, rectangles match at IoU > 0.3 for only 331 | 82 | (no pixels) | — | Rust (geometry per line fragment, as PowerPoint) |
+| 10 | **SVG picture** not drawn (`image:unsupported`, `pb-365.pptx` p1: the check icon missing) | 1 / 1 | 40 k | PDF only (the browser draws the SVG) | Rust PDF (rasterize or convert the SVG; PowerPoint draws it) |
+
+Smaller, not in the pixel ranking: **hidden slides** (5 decks) are pages of the Rust PDF but PowerPoint's Save as PDF leaves them out by
+default (the harness shows them to keep page i = slide i) — a policy choice; **PDF font names**: Rust writes family names (`Arial`,
+`Caladea`) and `Fallback<N>` for fallback faces where PowerPoint writes PostScript names (`ArialMT`, `Calibri-Bold`) — cosmetic (preflight,
+accessibility); 43 pages with no detected cause hold 0.24 M px; the TS × PowerPoint gap on Aptos text is the browser's font visibility, not
+an engine rule. Gradients themselves agree (the linear-RGB interpolation of the TS matches PowerPoint within 3 levels on `gaps-smoke`).
+
+**Candidate fixes where PowerPoint should win (TS legacy, behind `ts_*` switches as the Write port did):** 2 (`sysClr`), 3 (first-line
+baseline metric), 4 (PowerPoint's per-script fallback), 6 (field date format), 7 (chart layout), 8 (`.ppt` charts), 5 (warp geometry) —
+each needs its rule measured first in PowerPoint with synthetic oracle decks. **Rust PDF fixes (no TS question):** 1 (gradient text: the
+biggest single item, 40% of all differing pixels), 9 (link rectangles), 10 (SVG). For the gate, a PowerPoint-valid generator mode (decks
+PowerPoint opens) would let the generated groups count; today only 15% of them do.
+
+### Files
+
+`core/crates/uo-pptx/tests/oracle_ppt/` (`main.rs`, `decks.tsv`, `README.md`, `results/{pages,decks,classes,features,baseline}.tsv`,
+`results/ppt-pdfs.tsv`, `results/summary.json`); `slides/tools/ppt-lab/` (`export-pdf.ps1`, `pdf-oracle.mjs`, `pdf-oracle-ts.mjs`,
+`pdf-oracle-compare.py`, `pdf-oracle-classify.py`, `pdf-oracle-baseline.py`). Work files (PDFs, PNGs, the side-by-side diff pictures
+`diff/<id>-<page>.png`: PowerPoint | Rust / TS | differing pixels, red = TS legacy, blue = PDF only, magenta = all three) stay in
+`core/target/w4-oracle/ppt-oracle`. Run time: PowerPoint ≈ 25 min for the 627 decks (most refusals are fast), Rust 108 s, TS ≈ 3 min,
+comparison ≈ 50 min (736 pages).

@@ -35,16 +35,52 @@ const SKIP_PH = new Set(['sldNum', 'dt', 'ftr', 'hdr']);
 const usefulAlt = (d: string | undefined): string | undefined =>
   d && !/^[\w .()-]+\.(png|jpe?g|gif|svg|emf|wmf|bmp|tiff?|webp)$/i.test(d.trim()) ? d.trim() : undefined;
 
-const paraText = (p: { runs: { text: string }[] }): string => p.runs.map((r) => r.text).join('').replace(/\s+/g, ' ').trim();
+/** O texto de um parágrafo como o leitor o recebe: os textos das corridas juntos, espaços normalizados. */
+const norm = (t: string): string => t.replace(/\s+/g, ' ').trim();
+const joinRuns = (p: { runs: { text: string }[] }): string => p.runs.map((r) => r.text).join('');
+
+/**
+ * O que o texto acessível lê de cada forma (a mesma coisa do modelo TS e do modelo de leitura do motor Rust,
+ * `SlidesDocument.outline`): os parágrafos são o texto das corridas juntas, sem normalizar.
+ */
+export interface A11yShape {
+  inherited: boolean;
+  phType: string | undefined;
+  descr: string | undefined;
+  image: boolean;
+  media: boolean;
+  /** a forma tem corpo de texto (`txBody`) */
+  hasText: boolean;
+  paragraphs: string[];
+  table: { hMerge: boolean; vMerge: boolean; paragraphs: string[] }[][] | null;
+}
+
+/** As formas de um slide do modelo TS como o texto acessível as lê. */
+export function a11yShapesOf(slide: Slide): A11yShape[] {
+  return slide.shapes.map((s: Shape) => ({
+    inherited: !!s.inherited,
+    phType: s.phType,
+    descr: s.descr,
+    image: !!s.image,
+    media: !!s.media,
+    hasText: !!s.txBody,
+    paragraphs: (s.txBody?.paragraphs ?? []).map(joinRuns),
+    table: s.table ? s.table.rows.map((row) => row.cells.map((cell) => ({
+      hMerge: !!(cell as { hMerge?: boolean }).hMerge,
+      vMerge: !!(cell as { vMerge?: boolean }).vMerge,
+      paragraphs: (cell.txBody?.paragraphs ?? []).map(joinRuns),
+    }))) : null,
+  }));
+}
 
 /** Título do slide: o placeholder de título; sem ele, a 1ª linha de texto. */
-export function slideTitle(slide: Slide | undefined): string {
-  if (!slide) return '';
-  const own = slide.shapes.filter((s) => !s.inherited);
-  const t = own.find((s) => s.phType && TITLE_PH.has(s.phType) && s.txBody);
-  const text = t?.txBody?.paragraphs.map(paraText).filter(Boolean).join(' ');
+export function slideTitle(shapes: readonly A11yShape[] | undefined): string {
+  if (!shapes) return '';
+  const own = shapes.filter((s) => !s.inherited);
+  const t = own.find((s) => s.phType && TITLE_PH.has(s.phType) && s.hasText);
+  const text = t?.paragraphs.map(norm).filter(Boolean).join(' ');
   if (text) return text;
-  for (const s of own) for (const p of s.txBody?.paragraphs ?? []) { const x = paraText(p); if (x) return x; }
+  for (const s of own) for (const p of s.paragraphs) { const x = norm(p); if (x) return x; }
   return '';
 }
 
@@ -77,21 +113,24 @@ export class SlideA11y {
     this.wrap.setAttribute('aria-label', fileName ? `${this.labels.presentation}: ${fileName}` : this.labels.presentation);
   }
 
-  /** Slide em cena mudou (ou o deck): refaz o texto e, se `announce`, anuncia. */
-  show(slides: readonly Slide[], index: number, announce: boolean): void {
-    if (index === this.shown && slides.length === this.count) return;
+  /**
+   * Slide em cena mudou (ou o deck): refaz o texto e, se `announce`, anuncia. `shapesOf(i)` dá as formas do slide `i` (do modelo
+   * TS ou do modelo de leitura do Rust); só é chamado quando o slide ou a contagem mudou.
+   */
+  show(count: number, index: number, shapesOf: (i: number) => A11yShape[] | undefined, announce: boolean): void {
+    if (index === this.shown && count === this.count) return;
     const first = this.shown < 0;
     this.shown = index;
-    this.count = slides.length;
+    this.count = count;
     const L = this.labels;
-    const slide = slides[index];
+    const slide = index >= 0 && index < count ? shapesOf(index) : undefined;
     if (!slide) {
       this.canvas.setAttribute('aria-label', L.presentation);
       this.content.textContent = '';
       return;
     }
     const title = slideTitle(slide);
-    const where = L.slide(index + 1, slides.length);
+    const where = L.slide(index + 1, count);
     const label = `${where}: ${title || L.untitled}`;
     this.canvas.setAttribute('aria-label', label);
     this.content.setAttribute('aria-label', `${L.content} — ${where}`);
@@ -100,22 +139,22 @@ export class SlideA11y {
     h.textContent = label;
     this.content.appendChild(h);
     // título tirado da 1ª linha (sem placeholder de título): não repete como parágrafo
-    this.skipText = slide.shapes.some((s) => !s.inherited && s.phType && TITLE_PH.has(s.phType) && s.txBody) ? null : title;
-    for (const s of slide.shapes) this.appendShape(s);
+    this.skipText = slide.some((s) => !s.inherited && s.phType && TITLE_PH.has(s.phType) && s.hasText) ? null : title;
+    for (const s of slide) this.appendShape(s);
     if (announce && !first) this.live.announce(label);
   }
 
-  private appendShape(s: Shape): void {
+  private appendShape(s: A11yShape): void {
     if (s.inherited || (s.phType && (SKIP_PH.has(s.phType) || TITLE_PH.has(s.phType)))) return;
     const alt = usefulAlt(s.descr);
-    if (alt && (s.image || s.media || !s.txBody?.paragraphs.some((p) => paraText(p)))) {
+    if (alt && (s.image || s.media || !s.paragraphs.some((p) => norm(p)))) {
       const img = document.createElement('div');
       img.setAttribute('role', 'img');
       img.setAttribute('aria-label', alt);
       this.content.appendChild(img);
     }
-    for (const p of s.txBody?.paragraphs ?? []) {
-      const t = paraText(p);
+    for (const p of s.paragraphs) {
+      const t = norm(p);
       if (!t) continue;
       if (t === this.skipText) { this.skipText = null; continue; }
       const el = document.createElement('p');
@@ -124,12 +163,12 @@ export class SlideA11y {
     }
     if (s.table) {
       const table = document.createElement('table');
-      for (const row of s.table.rows) {
+      for (const row of s.table) {
         const tr = document.createElement('tr');
-        for (const cell of row.cells) {
-          if ((cell as { hMerge?: boolean }).hMerge || (cell as { vMerge?: boolean }).vMerge) continue;
+        for (const cell of row) {
+          if (cell.hMerge || cell.vMerge) continue;
           const td = document.createElement('td');
-          td.textContent = (cell.txBody?.paragraphs ?? []).map(paraText).filter(Boolean).join(' ');
+          td.textContent = cell.paragraphs.map(norm).filter(Boolean).join(' ');
           tr.appendChild(td);
         }
         table.appendChild(tr);

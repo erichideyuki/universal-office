@@ -7,13 +7,16 @@ import {
   type ChartModel, type PaintImage, type PaintSlideOptions,
   type Presentation, type Slide, type Shape, type ImageRef,
   type PlaybackOptions, type PlaybackTimeline, type PlaybackSlide, type SlideShowAction, type SlideTimingModel, type SlideMediaInfo,
+  type SlideTransitionInfo, type EmbeddedFont,
 } from '@universal-office/slides-core';
-import { MediaPlayer } from './media-player.js';
+import { MediaPlayer, type MediaFrame } from './media-player.js';
 import { ViewerControls, CONTROL_ITEMS, type ControlsHost } from './controls.js';
-import { SlideA11y } from './a11y.js';
+import { SlideA11y, a11yShapesOf, type A11yShape } from './a11y.js';
 import { onBrowserLangChange, pickLabels, uiLang } from '@universal-office/ui';
-import type { RustSlides } from './rust-engine.js';
-import type { LoadSlidesOptions, SlidesShowHandle, SlidesTimelineHandle } from '@universal-office/slides-engine';
+import type { RustSlides, RustSlidesHost } from './rust-engine.js';
+import type {
+  LoadSlidesOptions, SlidesShowHandle, SlidesTimelineHandle, SlidesDocument, ShowFrame, ShowAction, LinkBoxWire, SlideAssets, PaintImage as EnginePaintImage,
+} from '@universal-office/slides-engine';
 
 /** B4b: de onde o palco do motor Rust tira o quadro: a apresentação espelhada (`at` = agora) ou a linha do tempo (`at` = t). */
 interface RustStage { h: SlidesShowHandle | SlidesTimelineHandle; at: number }
@@ -66,6 +69,61 @@ export interface PresentOptions {
 }
 
 const NO_TIMING: SlideTimingModel = { steps: [], interactive: [], hidden: false };
+
+/** A paint of the Rust engine waiting for a picture to decode (`PENDING` of the engine: painted again when it is ready). */
+const RUST_PENDING = 13;
+
+/** Todos os slides do modelo TS (um slide ilegível vira vazio, como sempre). */
+function readAllSlides(pkg: PptxPackage, pres: Presentation): { slides: Slide[]; paths: string[] } {
+  const slides: Slide[] = [];
+  const paths: string[] = [];
+  for (const ref of pres.slides) {
+    if (!ref.target) continue;
+    paths.push(ref.target);
+    try { slides.push(readSlide(pkg, ref.target)); } catch { slides.push({ shapes: [] }); }
+  }
+  return { slides, paths };
+}
+
+/** O slide no palco: o `PlaybackSlide` do TS, ou só o índice e a transição (o palco do Rust, sem o modelo TS). */
+type StageSlide = { index: number; transition?: SlideTransitionInfo | null | undefined };
+
+/** Um hiperlink sob o ponteiro: endereço, slide (índice do viewer) ou posição da apresentação. */
+type LinkHit = { url: string } | { slide: number } | { show: 'next' | 'previous' | 'first' | 'last' | 'end' };
+
+/** O que o viewer usa da máquina de estados da apresentação: a `SlideShow` do TS ou a do Rust (`RustShowMachine`). */
+interface ShowMachine {
+  readonly index: number;
+  readonly step: number;
+  readonly steps: number;
+  readonly ended: boolean;
+  next(now: number, mouse?: boolean): SlideShowAction;
+  prev(now: number): SlideShowAction;
+  goTo(index: number, now: number): SlideShowAction;
+  first(now: number): SlideShowAction;
+  last(now: number): SlideShowAction;
+  update(now: number): SlideShowAction;
+  wakeAt(now: number): number;
+}
+
+/** A apresentação do Rust como máquina de estados do viewer (deck aberto só no Rust): os eventos saem dela. */
+class RustShowMachine implements ShowMachine {
+  private f: ShowFrame;
+  constructor(readonly h: SlidesShowHandle, now: number) { this.f = h.frame(now); }
+  private after(now: number, a: ShowAction): SlideShowAction { this.f = this.h.frame(now); return a as SlideShowAction; }
+  get index(): number { return this.f.index; }
+  get step(): number { return this.f.step; }
+  get steps(): number { return this.f.steps; }
+  get ended(): boolean { return this.f.ended; }
+  next(now: number, mouse = false): SlideShowAction { return this.after(now, this.h.next(now, mouse)); }
+  prev(now: number): SlideShowAction { return this.after(now, this.h.prev(now)); }
+  goTo(index: number, now: number): SlideShowAction { return this.after(now, this.h.goTo(index, now)); }
+  first(now: number): SlideShowAction { return this.after(now, this.h.first(now)); }
+  last(now: number): SlideShowAction { return this.after(now, this.h.last(now)); }
+  update(now: number): SlideShowAction { return this.after(now, this.h.update(now)); }
+  wakeAt(now: number): number { return this.h.wakeAt(now); }
+  frame(now: number): ShowFrame { this.f = this.h.frame(now); return this.f; }
+}
 
 /** Tamanho (px a 96 dpi) da imagem INTEIRA de um p:pic na página — o recorte (srcRect) a amplia. */
 function picDisplaySize(sh: Shape): { w: number; h: number } | undefined {
@@ -153,20 +211,31 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * (slides-core/slideshow.ts) + agendamento do próximo quadro. `null` = sem
    * apresentação.
    */
-  protected show: { ss: SlideShow; rs: SlidesShowHandle | null; rafId: number; timer: number; fullscreen: boolean; kiosk: boolean } | null = null;
+  protected show: { ss: ShowMachine; rs: SlidesShowHandle | null; mirror: boolean; rafId: number; timer: number; fullscreen: boolean; kiosk: boolean } | null = null;
   // ───────────────────────── motor Rust (engine="rust") ─────────────────────────
-  // O motor TS continua inteiro por trás do atributo (padrão `ts`). Com `engine="rust"` o layout e a lista de desenho dos slides
-  // (navegação, miniaturas, `renderSlideToCanvas`, e desde B4b os quadros da apresentação e da reprodução, com as animações
-  // avaliadas no Rust) vêm do módulo wasm; as máquinas de estado do Rust andam espelhadas com as do TS (que dão os eventos e a
-  // mídia); hiperlinks, texto acessível e o player de mídia seguem no modelo TS, que continua carregado. Registro: uo-bindings.md
-  // "Slides viewer (B7)".
+  // O motor TS continua inteiro por trás do atributo (padrão `ts`). Com `engine="rust"` e o módulo já instanciado (o viewer o
+  // pré-carrega ao conectar; `src` espera por ele) o deck abre SÓ no Rust: sem `PptxPackage`/`readSlide`, `this.pkg` fica null e
+  // tudo vem do módulo — layout e lista de desenho (paradas, miniaturas, palco com animações), o modelo de leitura (texto
+  // acessível, hiperlinks, imagens a decodificar, mídia, fontes embutidas e famílias, configuração da apresentação), a
+  // apresentação e a reprodução (as máquinas de estado do Rust dão os eventos) e o estado da mídia de cada quadro. O modelo TS
+  // só é montado (`ensureTsModel`, contado em `tsModelLoads`) se o módulo falhar ou o atributo voltar a `ts`. Um `loadPptx` antes
+  // de o módulo carregar (ou um .ppt) abre no TS e o Rust por trás; quando o Rust abre, o modelo TS sai (`dropTsModel`).
+  // Registro: uo-bindings.md "Slides viewer (B7)", "Wave 4".
   /** a sessão do motor Rust (carregada sob demanda) e o módulo que a define */
   private rust: RustSlides | null = null;
   private rustMod: Promise<typeof import('./rust-engine.js')> | null = null;
+  /** a sessão veio do editor (`adoptRust`): sobrevive a `disconnectedCallback` (mover o elemento no DOM mantém o histórico, como no TS) */
+  private rustAdopted = false;
   /** a abertura do deck no motor Rust em andamento ou concluída (`rustReady`) */
   private rustOpening: Promise<void> = Promise.resolve();
   private rustSeq = 0;
   private static engineSource: LoadSlidesOptions | undefined;
+  /** o código do motor já carregado (`loadRustEngine` resolvido): a abertura síncrona de `loadPptx` precisa dele */
+  private rustModLoaded: typeof import('./rust-engine.js') | null = null;
+  /** vezes em que o modelo TS foi montado para um deck aberto só no Rust (falha do módulo, troca de motor): o harness conta */
+  protected tsModelLoads = 0;
+  /** identidade do deck carregado: o que termina depois (fontes embutidas, abertura no Rust) de um deck anterior não vale */
+  private deckToken: object = {};
 
   /**
    * De onde vem o motor Rust (`engine="rust"`): o .wasm do viewer e o do conversor de .ppt (bytes, URL ou Response). Sem isto, os
@@ -190,22 +259,113 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   /** Resolve quando a abertura do deck no motor Rust terminou (com ou sem sucesso; `getEngine()` diz qual). */
   rustReady(): Promise<void> { return this.rustOpening; }
 
+  /** O lado do motor de engine="rust" (importado sob demanda, compartilhado com o openRust do próprio viewer). */
+  protected loadRustEngine(): Promise<typeof import('./rust-engine.js')> {
+    return (this.rustMod ??= import('./rust-engine.js').then((m) => { this.rustModLoaded = m; return m; }));
+  }
+
+  /** engine="rust": carrega o código do motor e instancia o .wasm antes de o deck chegar (a abertura fica síncrona, sem o TS). */
+  private preloadRust(): Promise<void> {
+    if (this.engineAttr() !== 'rust') return Promise.resolve();
+    return this.loadRustEngine().then((m) => m.preloadSlidesEngine(UniversalSlidesViewerElement.engineSource)).catch(() => {});
+  }
+
+  /** O que a sessão do Rust pede ao elemento: pilha de fontes, imagens decodificadas, o .wasm e o aviso de imagem preparada. */
+  private rustHost(): RustSlidesHost {
+    return {
+      fontStack: this.fontStackFor,
+      image: (part) => { const e = this.imageCache.get(part); return e?.ready ? e.img as EnginePaintImage : null; },
+      source: () => UniversalSlidesViewerElement.engineSource,
+      prepared: () => { if (this.isConnected) { this.paint(); this.controls?.renderThumbs(); } },
+    };
+  }
+
+  /**
+   * engine="rust" com o módulo já instanciado: abre o deck SÓ no Rust. null = não dá para abrir assim (o código ou o .wasm ainda
+   * não carregou, um .ppt — o conversor é assíncrono); lança quando o Rust recusa o arquivo.
+   */
+  private openRustOnly(bytes: Uint8Array): RustSlides | null {
+    const mod = this.rustModLoaded;
+    if (this.engineAttr() !== 'rust' || !mod || !mod.slidesEngineReady()) return null;
+    const rs = new mod.RustSlides(this.rustHost());
+    try {
+      if (!rs.openSync(bytes)) { rs.dispose(); return null; }
+    } catch (e) { rs.dispose(); throw e; }
+    return rs;
+  }
+
+  /** O documento aberto no Rust (ou null). */
+  private rustDoc(): SlidesDocument | null { const d = this.rust?.document; return d && !d.freed ? d : null; }
+
+  /** O deck está aberto só no Rust (sem o modelo TS). */
+  protected rustOnly(): boolean { return !this.pkg && this.rustDoc() !== null; }
+
+  /** Número de slides do deck aberto (modelo TS ou Rust). */
+  protected slideCount(): number {
+    if (!this.pkg) this.healRust();
+    return this.pkg ? this.slides.length : (this.rustDoc()?.count ?? 0);
+  }
+
+  /** Tamanho do slide em EMU (modelo TS ou Rust), ou null sem deck. */
+  protected slideSize(): { w: number; h: number } | null {
+    if (!this.pkg) this.healRust();
+    if (this.pres) return { w: this.pres.slideW, h: this.pres.slideH };
+    const d = this.rustDoc();
+    return d ? { w: d.slideW, h: d.slideH } : null;
+  }
+
+  /** Monta o modelo TS do arquivo aberto (deck que estava só no Rust: o módulo falhou, ou o atributo voltou a `ts`). */
+  protected ensureTsModel(): boolean {
+    if (this.pkg) return true;
+    const bytes = this.fileBytes;
+    if (!bytes) return false;
+    try {
+      const pkg = PptxPackage.load(bytes);
+      const pres = readPresentation(pkg);
+      const { slides, paths } = readAllSlides(pkg, pres);
+      this.pkg = pkg; this.pres = pres; this.slides = slides; this.slidePaths = paths;
+    } catch { return false; }
+    this.tsModelLoads++;
+    for (const s of this.slides) this.warmSlideImages(s);
+    return true;
+  }
+
+  /** O Rust abriu o deck que o TS já tinha aberto (um `loadPptx` antes de o módulo carregar): o modelo TS sai. */
+  private dropTsModel(): void {
+    if (!this.pkg || this.show || this.auto || !this.controlsBuiltIn() || this.engineAttr() !== 'rust') return;
+    this.pkg = null; this.pres = null; this.slides = []; this.slidePaths = [];
+    this.chartCache.clear();
+  }
+
+  /**
+   * O módulo morreu (um trap) sob um deck aberto só no Rust: o modelo TS assume já (o aviso diz por quê) — antes de qualquer
+   * pergunta de contagem ou tamanho, que sem isso responderia "sem deck".
+   */
+  private healRust(): void {
+    if (!this.rust || this.rustAdopted || this.rustDoc() || !this.rust.document) return;
+    this.rustFailed(new Error('uo-slides: the engine instance stopped'));
+    this.ensureTsModel();
+  }
+
+  /** O módulo falhou (um trap): o deck segue no TS (montado se preciso) e o aviso sai uma vez. */
+  private rustFailed(error: unknown): void {
+    this.disposeRust();
+    this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error } }));
+  }
+
   private openRust(bytes: Uint8Array): void {
     const seq = ++this.rustSeq;
-    const pkg = this.pkg;
+    const tok = this.deckToken;
     this.disposeRust();
     this.rustOpening = (async () => {
       try {
-        const mod = await (this.rustMod ??= import('./rust-engine.js'));
-        const rs = new mod.RustSlides({
-          fontStack: this.fontStackFor,
-          image: (part) => { const e = this.imageCache.get(part); return e?.ready ? e.img : null; },
-          source: () => UniversalSlidesViewerElement.engineSource,
-        });
+        const mod = await this.loadRustEngine();
+        const rs = new mod.RustSlides(this.rustHost());
         await rs.open(bytes);
-        if (seq !== this.rustSeq || this.pkg !== pkg) { rs.dispose(); return; }
+        if (seq !== this.rustSeq || this.deckToken !== tok) { rs.dispose(); return; }
         this.rust = rs;
         this.notesCache = [];
+        this.dropTsModel();
         this.paint();
         this.controls?.renderThumbs();
         this.dispatchEvent(new CustomEvent('us-engine', { detail: { engine: 'rust' } }));
@@ -217,12 +377,31 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     })();
   }
 
+  /**
+   * O editor (subclasse) abre o deck no módulo e entrega a sessão: o viewer pinta por ela (paradas, miniaturas, anotações,
+   * apresentação e reprodução). null = volta ao motor TS.
+   */
+  protected adoptRust(rs: RustSlides | null): void {
+    this.rustSeq++;
+    this.disposeRust();
+    this.rust = rs;
+    this.rustAdopted = rs !== null;
+    this.notesCache = [];
+    this.paint();
+    this.controls?.renderThumbs();
+    if (rs) this.dispatchEvent(new CustomEvent('us-engine', { detail: { engine: 'rust' } }));
+  }
+
+  /** A sessão do motor Rust em uso (ou null). */
+  protected rustSession(): RustSlides | null { return this.rust; }
+
   private disposeRust(): void {
     // os espelhos do palco são do deck que sai: apresentação e reprodução seguem pintando pelo TS
     if (this.show) { this.show.rs?.free(); this.show.rs = null; }
     if (this.auto) { this.auto.rtl?.free(); this.auto.rtl = null; }
     this.rust?.dispose();
     this.rust = null;
+    this.rustAdopted = false;
   }
 
   /** Uma fonte carregou ou a pilha de fontes mudou: o motor Rust pede as medidas de novo; repinta. */
@@ -233,27 +412,27 @@ export class UniversalSlidesViewerElement extends HTMLElement {
 
   /**
    * Pinta o slide PARADO `i` (navegação, miniatura, exportação): pelo motor Rust quando o deck está nele, senão `paintSlideTo`.
-   * A edição inline (`suppressTextShapeIdx`) e qualquer falha do módulo caem no motor TS.
+   * A edição inline (`suppressTextShapeIdx`) vai ao Rust como `suppress`; qualquer falha do módulo cai no motor TS.
    */
-  private paintStill(ctx: CanvasRenderingContext2D, i: number, slide: Slide, scale: number, opts: PaintSlideOptions): void {
+  private paintStill(ctx: CanvasRenderingContext2D, i: number, scale: number, opts: PaintSlideOptions): void {
     const rs = this.rust;
-    const images = this.readyImages(slide);
-    if (rs && opts.suppressTextShapeIdx === undefined) {
+    if (rs) {
       try {
-        const r = rs.paint(ctx, i, scale, opts.ox ?? 0, opts.oy ?? 0);
-        if (r.status === 0) return;
+        const r = rs.paint(ctx, i, scale, opts.ox ?? 0, opts.oy ?? 0, opts.suppressTextShapeIdx);
+        // PENDING: uma imagem do slide ainda decodifica (a fase de preparo); `prepared` repinta
+        if (r.status === 0 || r.status === RUST_PENDING) return;
         // 11: o módulo parou (um trap derrubou a instância): o deck segue no TS e o aviso sai uma vez
-        if (r.status === 11) {
-          this.disposeRust();
-          this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error: new Error('uo-slides: the engine instance stopped') } }));
-        }
+        if (r.status === 11) this.rustFailed(new Error('uo-slides: the engine instance stopped'));
       } catch (error) {
         // um trap do módulo o derruba; o deck segue no TS
-        this.disposeRust();
-        this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error } }));
+        this.rustFailed(error);
       }
     }
-    paintSlideTo(ctx, slide, { slideW: this.pres!.slideW, slideH: this.pres!.slideH, images, charts: this.chartCache }, scale, opts);
+    // o motor TS: o deck aberto só no Rust monta o modelo TS agora (contado)
+    if (!this.ensureTsModel()) return;
+    const slide = this.slides[i];
+    if (!slide || !this.pres) return;
+    paintSlideTo(ctx, slide, { slideW: this.pres.slideW, slideH: this.pres.slideH, images: this.readyImages(slide), charts: this.chartCache }, scale, opts);
   }
 
   /** Texto da tela de fim da apresentação (o do PowerPoint, no idioma da interface). */
@@ -330,7 +509,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   /** Ponte da barra de controles com a API pública do viewer. */
   private controlsHost(): ControlsHost {
     return {
-      count: () => this.slides.length,
+      count: () => this.slideCount(),
       index: () => this.index,
       goTo: (i) => this.selectSlide(i),
       next: () => this.next(),
@@ -343,7 +522,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
       },
       togglePlay: () => {
         if (this.isPlaying()) { this.stopPlayback(); return; }
-        this.play({ from: this.index >= this.slides.length - 1 ? 0 : this.index });
+        this.play({ from: this.index >= this.slideCount() - 1 ? 0 : this.index });
       },
       playFrom: (f) => {
         const a = this.auto;
@@ -353,23 +532,34 @@ export class UniversalSlidesViewerElement extends HTMLElement {
         a.pos = -1;
         this.fromKey = '';
       },
-      hasMedia: () => this.slides.some((s) => s.shapes.some((sh) => sh.media)),
+      hasMedia: () => this.deckHasMedia(),
       isMuted: () => this.media.muted,
       setMuted: (m) => { this.media.setMuted(m); this.paint(); },
       notes: (i) => this.slideNotes(i),
-      hasNotes: () => (this.anyNotes ??= this.slides.some((_, i) => this.slideNotes(i) !== '')),
+      hasNotes: () => (this.anyNotes ??= Array.from({ length: this.slideCount() }, (_, i) => i).some((i) => this.slideNotes(i) !== '')),
       download: () => this.downloadFile(),
       isPresenting: () => this.isPresenting(),
       togglePresent: () => (this.show ? this.stopPresentation() : this.present(this.index)),
       isFullscreen: () => this.host.fullscreenElement === this.wrap,
       toggleFullscreen: () => this.toggleFullscreen(),
       renderThumbnail: (i, c) => this.renderThumbnail(i, c),
-      slideAspect: () => (this.pres ? this.pres.slideW / this.pres.slideH : 16 / 9),
+      slideAspect: () => { const z = this.slideSize(); return z ? z.w / z.h : 16 / 9; },
     };
   }
 
   /** Anotações do orador do slide `i` (texto puro; lidas sob demanda). */
   getSlideNotes(i: number): string { return this.slideNotes(i); }
+
+  /** Há vídeo/áudio em algum slide (o botão de som). */
+  private deckHasMedia(): boolean {
+    if (this.pkg) return this.slides.some((s) => s.shapes.some((sh) => sh.media));
+    const doc = this.rustDoc();
+    if (!doc) return false;
+    for (let i = 0; i < doc.count; i++) {
+      try { if (doc.assets(i).media.some((m) => m.media)) return true; } catch { /* slide ilegível */ }
+    }
+    return false;
+  }
 
   private slideNotes(i: number): string {
     let t = this.notesCache[i];
@@ -433,8 +623,17 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     document.addEventListener('fullscreenchange', this.onAnyFullscreenChange);
     this.resize(); this.paint();
     (document as unknown as { fonts?: { ready: Promise<unknown> } }).fonts?.ready.then(() => this.fontsChanged()).catch(() => {});
-    // engine="rust": a desconexão liberou os handles do módulo; reabre do arquivo guardado
-    if (this.engineAttr() === 'rust' && this.fileBytes && !this.rust) this.openRust(this.fileBytes);
+    // engine="rust": o módulo carrega já (a abertura do deck fica síncrona, só no Rust); a desconexão liberou os handles do
+    // módulo: reabre do arquivo guardado (na hora, se o módulo está pronto)
+    if (this.engineAttr() === 'rust') {
+      void this.preloadRust();
+      if (this.fileBytes && !this.rust) {
+        let rs: RustSlides | null = null;
+        try { rs = this.openRustOnly(this.fileBytes); } catch { rs = null; }
+        if (rs) { this.rust = rs; this.rustOpening = Promise.resolve(); this.notesCache = []; }
+        else { if (!this.pkg) this.ensureTsModel(); this.openRust(this.fileBytes); }
+      }
+    }
     const src = this.getAttribute('src');
     if (src && src !== this.srcUrl) void this.loadSrc(src);
   }
@@ -454,7 +653,8 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     this.media.dispose();
     this.parkFonts();
     document.fonts?.removeEventListener?.('loadingdone', this.onFontsDone);
-    this.disposeRust();
+    // a sessão do editor (adotada) fica: o histórico de desfazer vive no editor wasm sobre esse deck; sai com loadPptx/adoptRust(null)/troca de motor ou no FinalizationRegistry
+    if (!this.rustAdopted) this.disposeRust();
     this.unsubscribeFonts?.();
     this.unsubscribeFonts = null;
     this.unsubscribeLang?.();
@@ -464,9 +664,10 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   attributeChangedCallback(name: string, oldV: string | null, newV: string | null): void {
     if (name === 'src' && newV && newV !== oldV && this.isConnected && newV !== this.srcUrl) void this.loadSrc(newV);
     else if (name === 'engine') {
-      if (this.pkg && this.fileBytes && newV !== oldV) {
-        if (this.engineAttr() === 'rust') this.openRust(this.fileBytes);
-        else { this.rustSeq++; this.disposeRust(); this.notesCache = []; this.paint(); this.controls?.renderThumbs(); }
+      if (this.engineAttr() === 'rust') void this.preloadRust();
+      if (this.fileBytes && newV !== oldV) {
+        if (this.engineAttr() === 'rust') { if (!this.rustDoc()) this.openRust(this.fileBytes); }
+        else { this.ensureTsModel(); this.rustSeq++; this.disposeRust(); this.notesCache = []; this.paint(); this.controls?.renderThumbs(); }
       }
     } else if (name !== 'src' && name !== 'link-schemes' && this.isConnected) {
       this.configureControls();
@@ -483,7 +684,8 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const seq = ++this.loadSeq;
     this.srcUrl = url;
     try {
-      const res = await fetch(url);
+      // engine="rust": o módulo carrega junto com o arquivo, para o deck abrir só no Rust
+      const [res] = await Promise.all([fetch(url), this.preloadRust()]);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const bytes = new Uint8Array(await res.arrayBuffer());
       if (seq !== this.loadSeq) return;
@@ -547,8 +749,13 @@ export class UniversalSlidesViewerElement extends HTMLElement {
 
   /** Registra as fontes EMBUTIDAS no pacote (FontFace) e repinta ao carregar. */
   protected registerEmbeddedFonts(pkg: PptxPackage): void {
+    this.registerFontList(readEmbeddedFonts(pkg), this.deckToken);
+  }
+
+  /** Registra fontes embutidas (do modelo TS ou do Rust); `tok` = o deck delas (uma face que carrega depois da troca é velha). */
+  private registerFontList(fonts: readonly EmbeddedFont[], tok: object): void {
     this.embeddedFontLoads = [];
-    for (const f of readEmbeddedFonts(pkg)) {
+    for (const f of fonts) {
       // peso/itálico REAIS da fonte (não a vaga): a vaga "bold" que traz a
       // regular fica 400 e o negrito sai sintético, como no Windows
       const weight = f.weight !== undefined ? String(f.weight) : f.variant === 'bold' || f.variant === 'boldItalic' ? '700' : '400';
@@ -557,7 +764,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
         const buf = f.data.slice().buffer;
         const face = new FontFace(f.family, buf, { weight, style });
         this.embeddedFontLoads.push(face.load().then(() => {
-          if (this.pkg !== pkg) return; // outro deck já entrou: esta face é velha
+          if (this.deckToken !== tok) return; // outro deck já entrou: esta face é velha
           document.fonts.add(face);
           this.ownFaces.add(face);
           this.embeddedFamilies.add(f.family);
@@ -618,10 +825,14 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * fontStackFor). O aviso de onChange repinta quando chegarem.
    */
   protected async ensureDeckFonts(pkg: PptxPackage): Promise<void> {
-    const wanted = collectDeckTypefaces(pkg).filter((fam) => !this.embeddedFamilies.has(fam));
+    await this.ensureFamilies(collectDeckTypefaces(pkg), this.deckToken);
+  }
+
+  private async ensureFamilies(families: readonly string[], tok: object): Promise<void> {
+    const wanted = families.filter((fam) => !this.embeddedFamilies.has(fam));
     if (!wanted.length) return;
     await this.fontResolver.resolve(wanted);
-    if (this.pkg === pkg) this.fontsChanged();
+    if (this.deckToken === tok) this.fontsChanged();
   }
 
   /** True quando uma subclasse está com edição inline aberta (viewer: nunca). */
@@ -634,17 +845,18 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * o deck atual fica intacto (tudo é lido antes de trocar o estado).
    */
   loadPptx(bytes: Uint8Array): void {
+    // engine="rust" com o módulo pronto: o deck abre só no Rust (sem o modelo TS); um arquivo que o Rust recusa tenta o TS
+    let rs: RustSlides | null = null;
+    try { rs = this.openRustOnly(bytes); } catch { rs = null; }
+    if (rs) { this.installDeck(null, bytes, rs); return; }
     const pkg = PptxPackage.load(bytes);
     const pres = readPresentation(pkg);
-    const slides: Slide[] = [];
-    const paths: string[] = [];
-    for (const ref of pres.slides) {
-      if (!ref.target) continue;
-      paths.push(ref.target);
-      try { slides.push(readSlide(pkg, ref.target)); }
-      catch { slides.push({ shapes: [] }); }
-    }
-    // daqui em diante o deck novo é válido: troca o estado
+    const { slides, paths } = readAllSlides(pkg, pres);
+    this.installDeck({ pkg, pres, slides, paths }, bytes, null);
+  }
+
+  /** Troca o estado para o deck novo, já válido: o modelo TS (`ts`) ou a sessão do Rust (`rs`, deck aberto só no Rust). */
+  private installDeck(ts: { pkg: PptxPackage; pres: Presentation; slides: Slide[]; paths: string[] } | null, bytes: Uint8Array, rs: RustSlides | null): void {
     this.loadSeq++; // um `src` ainda baixando não sobrescreve este deck
     this.srcUrl = this.getAttribute('src');
     // apresentação/reprodução/mídia/fontes embutidas são do deck anterior
@@ -653,35 +865,79 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     this.media.dispose();
     this.releaseFonts();
     this.chartCache.clear();
-    this.pkg = pkg;
-    this.pres = pres;
-    this.slides = slides;
-    this.slidePaths = paths;
+    const tok = this.deckToken = {};
+    this.pkg = ts?.pkg ?? null;
+    this.pres = ts?.pres ?? null;
+    this.slides = ts?.slides ?? [];
+    this.slidePaths = ts?.paths ?? [];
     this.notesCache = [];
     this.anyNotes = null;
     this.fileBytes = bytes;
-    if (this.engineAttr() === 'rust') this.openRust(bytes);
+    if (rs) { this.rustSeq++; this.disposeRust(); this.rust = rs; this.rustOpening = Promise.resolve(); }
+    else if (this.engineAttr() === 'rust') this.openRust(bytes);
     else { this.rustSeq++; this.disposeRust(); }
     // fontes: default embarcada + embutidas no arquivo + SO sob demanda
     void this.installDefaultFonts();
     // fontes embutidas DEPOIS da 1ª pintura: decodificar EOT/MTX custa ~0,2 s
     // num deck grande, e as fontes carregam de forma assíncrona de todo jeito
     this.embeddedFontsTask = new Promise<void>((resolve) => setTimeout(() => {
-      try { if (this.pkg === pkg) this.registerEmbeddedFonts(pkg); }
+      try { if (this.deckToken === tok) this.registerFontList(this.embeddedFontList(), tok); }
       catch { /* fontes embutidas ilegíveis: o deck segue com as substitutas */ }
       finally { resolve(); }
     }, 0));
-    void this.ensureDeckFonts(pkg);
+    void this.ensureFamilies(this.deckFamilies(), tok);
     this.imageCache.clear();
     // pre-aquece o cache: todas as imagens deste deck (bg + pic) decodificam em
     // paralelo. Quando cada uma fica pronta, dispara repaint UMA vez.
-    for (const s of this.slides) this.warmSlideImages(s);
+    this.warmAllImages();
     this.index = 0;
     this.resize();
     this.paint();
     this.controls?.renderThumbs();
     this.a11y?.setName(this.fileName());
-    this.dispatchEvent(new CustomEvent('us-loaded', { detail: { count: this.slides.length } }));
+    this.dispatchEvent(new CustomEvent('us-loaded', { detail: { count: this.slideCount() } }));
+    if (rs) this.dispatchEvent(new CustomEvent('us-engine', { detail: { engine: 'rust' } }));
+  }
+
+  /** As fontes embutidas do deck aberto (modelo TS ou Rust). */
+  private embeddedFontList(): EmbeddedFont[] {
+    if (this.pkg) return readEmbeddedFonts(this.pkg);
+    return this.rustDoc()?.fonts() ?? [];
+  }
+
+  /** As famílias que o deck nomeia (modelo TS ou Rust). */
+  private deckFamilies(): string[] {
+    if (this.pkg) return collectDeckTypefaces(this.pkg);
+    try { return this.rustDoc()?.typefaces() ?? []; } catch { return []; }
+  }
+
+  /** As imagens de todos os slides no cache (modelo TS ou o modelo de leitura do Rust). */
+  private warmAllImages(): void {
+    if (this.pkg) { for (const s of this.slides) this.warmSlideImages(s); return; }
+    const n = this.slideCount();
+    for (let i = 0; i < n; i++) this.warmRustSlide(i);
+  }
+
+  /**
+   * As imagens do slide `i` do deck aberto só no Rust: as que o navegador decodifica. Metarquivos, PICT e TIFF o Rust rasteriza
+   * sozinho (receita), sem o `rasterizeSpecialImage` do TS.
+   */
+  private warmRustSlide(i: number): void {
+    const doc = this.rustDoc();
+    if (!doc) return;
+    let a: SlideAssets;
+    try { a = doc.assets(i); } catch { return; }
+    for (const im of a.images) if (!im.special) this.warmPart(im.part, im.mime, () => doc.part(im.part));
+  }
+
+  /** Os GIFs animados do slide `i` (modelo TS ou Rust) no player de mídia. */
+  private warmGifsOf(i: number): void {
+    if (this.pkg) { const s = this.slides[i]; if (s) this.media.warmGifs(s); return; }
+    const doc = this.rustDoc();
+    if (!doc) return;
+    let a: SlideAssets;
+    try { a = doc.assets(i); } catch { return; }
+    for (const m of a.media) { const gp = m.gifPart; if (gp) this.media.warmGif(gp, () => doc.part(gp)); }
   }
 
   /** Imagens de um slide (fundo, pic, preenchimentos, tabelas, gráficos, marcadores) no cache. */
@@ -713,13 +969,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const pkg = this.pkg;
     if (!pkg) return;
     const pres = readPresentation(pkg);
-    const slides: Slide[] = [];
-    const paths: string[] = [];
-    for (const ref of pres.slides) {
-      if (!ref.target) continue;
-      paths.push(ref.target);
-      try { slides.push(readSlide(pkg, ref.target)); } catch { slides.push({ shapes: [] }); }
-    }
+    const { slides, paths } = readAllSlides(pkg, pres);
     this.pres = pres;
     this.slides = slides;
     this.slidePaths = paths;
@@ -768,31 +1018,42 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * tela cheia exige).
    */
   present(from?: number | 'start', opts: PresentOptions = {}): void {
-    if (!this.slides.length) return;
+    if (!this.slideCount()) return;
     this.stopPlayback();
     const full = opts.fullscreen ?? true;
     const already = this.host.fullscreenElement === this.wrap;
     this.endShow(full && already); // recomeço já em tela cheia: continua nela
     // "Configurar apresentação" do arquivo: faixa de slides (fora dela = oculto), repetir, intervalos…
-    const cfg = this.pres?.show ?? {};
+    const doc = this.pkg ? null : this.rustDoc();
+    const cfg = (doc ? doc.showSettings() : this.pres?.show) ?? {};
     const range = cfg.range;
-    const models = this.slides.map((s, i) => (range && (i < range[0] || i > range[1])
-      ? { ...(s.timing ?? NO_TIMING), hidden: true } : s.timing));
     const kiosk = opts.kiosk ?? cfg.kiosk ?? false;
-    const start = from === 'start' ? SlideShow.firstVisible(models) : from ?? this.index;
     const now = this.now();
     const showOpts = {
       useTimings: opts.useTimings ?? cfg.useTimings ?? true,
       loop: opts.loop ?? ((cfg.loop || kiosk) || false),
       animations: opts.animations ?? cfg.showAnimation ?? true,
     };
-    const ss = new SlideShow(models, start, now, showOpts);
-    // engine="rust": a mesma apresentação no Rust (mesmas opções, mesmos comandos, mesmo relógio) dá os quadros do palco
-    const rs = this.rust?.newShow({ from: start, now, ...showOpts, range: range ? [range[0], range[1]] : null }) ?? null;
+    let ss: ShowMachine, rs: SlidesShowHandle | null, mirror: boolean;
+    if (doc) {
+      // deck só no Rust: a apresentação do Rust é A máquina de estados (eventos, agendamento e quadros do palco)
+      rs = this.rust?.newShow({ from: from === 'start' ? -1 : from ?? this.index, now, ...showOpts, range: range ? [range[0], range[1]] : null }) ?? null;
+      if (!rs) return;
+      ss = new RustShowMachine(rs, now);
+      mirror = false;
+    } else {
+      const models = this.slides.map((s, i) => (range && (i < range[0] || i > range[1])
+        ? { ...(s.timing ?? NO_TIMING), hidden: true } : s.timing));
+      const start = from === 'start' ? SlideShow.firstVisible(models) : from ?? this.index;
+      ss = new SlideShow(models, start, now, showOpts);
+      // engine="rust": a mesma apresentação no Rust (mesmas opções, mesmos comandos, mesmo relógio) dá os quadros do palco
+      rs = this.rust?.newShow({ from: start, now, ...showOpts, range: range ? [range[0], range[1]] : null }) ?? null;
+      mirror = rs !== null;
+    }
     this.media.mode = 'realtime';
     this.media.clock = {};
-    for (const s of this.slides) this.media.warmGifs(s);
-    this.show = { ss, rs, rafId: 0, timer: 0, fullscreen: full, kiosk };
+    for (let i = 0; i < this.slideCount(); i++) this.warmGifsOf(i);
+    this.show = { ss, rs, mirror, rafId: 0, timer: 0, fullscreen: full, kiosk };
     this.fromKey = '';
     this.badge.style.display = 'none';
     if (full) {
@@ -832,14 +1093,14 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   private now(): number { return (window.performance ?? Date).now(); }
 
   /** Aplica um comando do apresentador e emite os eventos do que mudou. */
-  protected showCommand(cmd: (ss: SlideShow, now: number) => SlideShowAction): void {
+  protected showCommand(cmd: (ss: ShowMachine, now: number) => SlideShowAction): void {
     const s = this.show;
     if (!s) return;
     const index = s.ss.index, step = s.ss.step;
     const now = this.now();
     const action = cmd(s.ss, now);
     // o espelho do Rust recebe o mesmo comando no mesmo instante (os métodos têm os nomes e argumentos da `SlideShow`)
-    if (s.rs) cmd(s.rs as unknown as SlideShow, now);
+    if (s.rs && s.mirror) cmd(s.rs as unknown as ShowMachine, now);
     if (action === 'exit') { this.stopPresentation(); return; }
     this.afterShowCommand(index, step);
   }
@@ -881,11 +1142,10 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const now = this.now();
     const index = s.ss.index, step = s.ss.step;
     s.ss.update(now);
-    s.rs?.update(now);
+    if (s.mirror) s.rs?.update(now);
     if (s.ss.index !== index || s.ss.step !== step) { this.afterShowCommand(index, step); return; }
     this.paint();
-    const slide = this.slides[s.ss.index];
-    const media = !!slide?.shapes.some((sh) => sh.media || sh.image?.mime === 'image/gif');
+    const media = this.slideHasMedia(s.ss.index);
     const at = media ? now : s.ss.wakeAt(now);
     if (at <= now) s.rafId = requestAnimationFrame(this.showTick);
     else if (Number.isFinite(at)) s.timer = window.setTimeout(() => { s.timer = 0; this.wakeShow(); }, at - now);
@@ -920,20 +1180,36 @@ export class UniversalSlidesViewerElement extends HTMLElement {
       this.imageCache.set(ref.part, { img: meta, ready: true });
       return;
     }
+    this.warmPart(ref.part, ref.mime, () => ref.bytes);
+  }
+
+  /** Decodifica uma imagem do pacote (bytes do modelo TS ou do Rust) e repinta quando carrega. */
+  protected warmPart(part: string, mime: string, bytes: () => Uint8Array | null | undefined): void {
+    if (this.imageCache.has(part)) return;
+    const b = bytes();
+    if (!b) return;
     const img = new Image();
     const entry = { img, ready: false };
-    this.imageCache.set(ref.part, entry);
+    this.imageCache.set(part, entry);
     // copiamos para um Uint8Array proprio para garantir buffer estavel + tipo de Blob
-    const buf = new Uint8Array(ref.bytes);
-    const blob = new Blob([buf], { type: ref.mime });
+    const buf = new Uint8Array(b);
+    const blob = new Blob([buf], { type: mime });
     const url = URL.createObjectURL(blob);
     img.onload = () => {
-      entry.ready = true; this.rust?.imageReady(ref.part, img); this.paint(); URL.revokeObjectURL(url);
+      entry.ready = true; this.rust?.imageReady(part, img); this.paint(); URL.revokeObjectURL(url);
       // notifica consumidores (ex.: sidebar de miniaturas) p/ repintar.
-      this.dispatchEvent(new CustomEvent('us-image', { detail: { part: ref.part } }));
+      this.dispatchEvent(new CustomEvent('us-image', { detail: { part } }));
     };
     img.onerror = () => { URL.revokeObjectURL(url); };
     img.src = url;
+  }
+
+  /** O slide `i` tem vídeo, áudio ou GIF (o palco anima a cada quadro). */
+  private slideHasMedia(i: number): boolean {
+    if (this.pkg) { const slide = this.slides[i]; return !!slide?.shapes.some((sh) => sh.media || sh.image?.mime === 'image/gif'); }
+    const doc = this.rustDoc();
+    if (!doc || i < 0 || i >= doc.count) return false;
+    try { return doc.assets(i).media.length > 0; } catch { return false; }
   }
 
   /**
@@ -958,7 +1234,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     return map;
   }
 
-  getSlideCount(): number { return this.slides.length; }
+  getSlideCount(): number { return this.slideCount(); }
   getSlideIndex(): number { return this.index; }
 
   /**
@@ -970,7 +1246,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     // reprodução (em curso ou terminada no palco) para ANTES — inclusive no
     // mesmo slide / no último (antes ficava presa no palco preto)
     if (this.auto) this.stopPlayback();
-    if (i < 0 || i >= this.slides.length || i === this.index) return;
+    if (i < 0 || i >= this.slideCount() || i === this.index) return;
     this.index = i;
     this.paint();
     this.dispatchEvent(new CustomEvent('us-slide', { detail: { index: i } }));
@@ -979,7 +1255,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   /** Próximo — na apresentação, o próximo passo "ao clicar" (ou slide). */
   next(): void {
     if (this.show) this.showCommand((ss, now) => ss.next(now));
-    else this.selectSlide(Math.min(this.slides.length - 1, this.index + 1));
+    else this.selectSlide(Math.min(this.slideCount() - 1, this.index + 1));
   }
 
   /** Anterior — na apresentação, desfaz o último passo (ou volta um slide). */
@@ -1003,16 +1279,25 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   play(opts: PlayOptions = {}): PlaybackTimeline {
     this.stopPresentation();
     this.stopPlayback();
-    const tl = buildPlaybackTimeline(this.slides.map((s) => s.timing), opts);
+    let tl: PlaybackTimeline, rtl: SlidesTimelineHandle | null;
+    if (this.rustOnly()) {
+      // deck só no Rust: a linha do tempo do Rust dá os quadros, o fim e os slides (o objeto devolvido tem os tempos de cada
+      // slide — índice, início, fim, início das animações, transição —, não os efeitos colocados do TS)
+      rtl = this.rust?.newTimeline(opts) ?? null;
+      const info = rtl?.info() ?? { durationMs: 0, tickMs: 0, mediaClock: 1, slides: [] };
+      tl = { slides: info.slides as unknown as PlaybackSlide[], durationMs: info.durationMs, tickMs: info.tickMs, mediaClock: info.mediaClock };
+    } else {
+      tl = buildPlaybackTimeline(this.slides.map((s) => s.timing), opts);
+      // engine="rust": a mesma linha do tempo no Rust dá os quadros do palco (o instante é o mesmo `t`)
+      rtl = this.rust?.newTimeline(opts) ?? null;
+    }
     this.media.mode = opts.media ?? 'realtime';
     // export emulado (tickMs): mídia parte 2 ticks após o comando e anda no relógio das transições
     this.media.clock = tl.tickMs > 0 ? { latencyMs: 2 * tl.tickMs, scale: tl.mediaClock } : {};
-    for (const s of this.slides) this.media.warmGifs(s);
+    for (let i = 0; i < this.slideCount(); i++) this.warmGifsOf(i);
     const from = opts.from ?? 0;
     const first = tl.slides.find((s) => s.index >= from);
     const now = (window.performance ?? Date).now();
-    // engine="rust": a mesma linha do tempo no Rust dá os quadros do palco (o instante é o mesmo `t`)
-    const rtl = this.rust?.newTimeline(opts) ?? null;
     this.auto = { tl, t0: now - (first?.startMs ?? 0), loop: opts.loop ?? false, rafId: 0, pos: -1, ended: false, rtl };
     this.fromKey = '';
     this.badge.style.display = 'none';
@@ -1078,8 +1363,9 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   /** Vídeo em tela cheia tocando: cobre o slide inteiro (barras pretas se a proporção diferir). */
   private paintFullScreenVideo(ctx: CanvasRenderingContext2D, fit: { ox: number; oy: number; scale: number }): void {
     const v = this.media.fullScreen;
-    if (!v || !this.pres) return;
-    const w = this.pres.slideW * fit.scale, h = this.pres.slideH * fit.scale;
+    const z = this.slideSize();
+    if (!v || !z) return;
+    const w = z.w * fit.scale, h = z.h * fit.scale;
     ctx.fillStyle = '#000';
     ctx.fillRect(fit.ox, fit.oy, w, h);
     const vw = v.videoWidth || w, vh = v.videoHeight || h;
@@ -1099,10 +1385,13 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * Pinta um slide da linha do tempo num contexto, no tempo de animação
    * `animMs`. `media = false`: vídeo/GIF ficam na capa (imagem congelada).
    */
-  private paintPlaybackSlide(ctx: CanvasRenderingContext2D, ps: PlaybackSlide, animMs: number,
+  private paintPlaybackSlide(ctx: CanvasRenderingContext2D, st: StageSlide, animMs: number,
     fit: { ox: number; oy: number; scale: number }, media = true, stage?: RustStage, which: 0 | 1 = 0): void {
+    // deck só no Rust: o palco do Rust, com a mídia do modelo de leitura e os estados do Rust
+    if (!this.pkg) { this.paintStageRustOnly(ctx, st.index, fit, media, stage, which); return; }
+    const ps = st as PlaybackSlide;
     const slide = this.slides[ps.index];
-    if (!slide || !this.pres) return;
+    if (!slide || !this.pres || !ps.effects) return;
     const bg = new Set(slide.timing?.animBg ?? []);
     const actx = { animBg: (spid: string) => bg.has(spid) };
     const mediaInfo = new Map((slide.timing?.media ?? []).map((m) => [m.spid, m]));
@@ -1141,17 +1430,17 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     bytes: (part: string) => Uint8Array | undefined): boolean {
     const rs = this.rust;
     if (!rs) return false;
-    const frames = new Map<number, { image: PaintImage; alpha: number } | null>();
-    if (hasMedia) {
-      slide.shapes.forEach((sh, i) => {
-        if (sh.inherited || !(sh.media || sh.image?.mime === 'image/gif')) return;
-        const mf = this.media.frame(sh, ps, animMs, bytes, mediaInfo.get(sh.id));
-        frames.set(i, mf && 'image' in mf && 'alpha' in mf ? mf : mf ? { image: mf as PaintImage, alpha: 1 } : null);
-      });
-    }
+    // the media player is asked when the painter reaches the shape's media frame (the TS painter calls its `mediaFrame` hook
+    // there): a shape the frame does not draw creates no element and asks for no position
+    const frameOf = (i: number): { image: PaintImage; alpha: number } | null => {
+      const sh = slide.shapes[i];
+      if (!sh || sh.inherited || !(sh.media || sh.image?.mime === 'image/gif')) return null;
+      const mf = this.media.frame(sh, ps, animMs, bytes, mediaInfo.get(sh.id));
+      return mf && 'image' in mf && 'alpha' in mf ? mf : mf ? { image: mf as PaintImage, alpha: 1 } : null;
+    };
     try {
       const r = rs.paintStage(ctx, stage.h, stage.at, which, fit.scale, fit.ox, fit.oy, {
-        media: hasMedia, clock: this.media.clock, mediaFrame: (i) => frames.get(i) ?? null,
+        media: hasMedia, clock: this.media.clock, mediaFrame: (i) => (hasMedia ? frameOf(i) : null),
       });
       if (r.status === 0 && !r.empty) return true;
       if (r.status === 11) {
@@ -1165,10 +1454,60 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     return false;
   }
 
+  /**
+   * O quadro do palco de um deck aberto só no Rust: a lista com slots e os ganchos avaliados no Rust, e o player de mídia
+   * alimentado pelo modelo de leitura (mídia da forma, entrada do modelo de tempo) e pelos estados que o Rust calcula no mesmo
+   * instante (`mediaStates`, o `mediaStateAt` do TS). Sem modelo TS não há como cair no pintor TS: uma falha deixa o quadro e avisa.
+   */
+  private paintStageRustOnly(ctx: CanvasRenderingContext2D, index: number, fit: { ox: number; oy: number; scale: number },
+    media: boolean, stage: RustStage | undefined, which: 0 | 1): void {
+    const rs = this.rust, doc = this.rustDoc();
+    if (!rs || !doc || !stage) return;
+    let assets: SlideAssets | null = null;
+    try { assets = doc.assets(index); } catch { assets = null; }
+    const hasMedia = media && !!assets && assets.media.length > 0;
+    try {
+      // the media states of the frame (asked once, before painting); the player is asked when the painter reaches a shape's
+      // media frame, as the TS painter calls its hook
+      const ms = hasMedia ? doc.mediaStates(stage.h, stage.at, which, this.media.clock) : null;
+      const byShape = new Map((assets?.media ?? []).map((m) => [m.shape, m]));
+      const bytes = (part: string): Uint8Array | null => doc.part(part);
+      const frameOf = (i: number): { image: EnginePaintImage; alpha: number } | null => {
+        const m = byShape.get(i);
+        if (!m || m.inherited) return null;
+        let mf: MediaFrame | null = null;
+        if (m.media) { const st = ms?.states.get(m.shape); if (st) mf = this.media.mediaFrame(m.media, st, bytes, m.info); }
+        else if (m.gifPart) mf = this.media.gifFrame(m.gifPart, ms?.gifMs ?? 0);
+        return mf && typeof mf === 'object' && 'image' in mf && 'alpha' in mf
+          ? { image: mf.image as EnginePaintImage, alpha: mf.alpha } : mf ? { image: mf as EnginePaintImage, alpha: 1 } : null;
+      };
+      const r = rs.paintStage(ctx, stage.h, stage.at, which, fit.scale, fit.ox, fit.oy, {
+        media: hasMedia, clock: this.media.clock, mediaFrame: (i) => (hasMedia ? frameOf(i) : null),
+      });
+      if (r.status === 11) this.rustFailed(new Error('uo-slides: the engine instance stopped'));
+    } catch (error) {
+      this.rustFailed(error);
+    }
+  }
+
   /** Quadro da reprodução automática: o instante atual da linha do tempo, no palco. */
   protected paintPlayback(ctx: CanvasRenderingContext2D): void {
     const a = this.auto!;
     const t = this.now() - a.t0;
+    if (!this.pkg) {
+      // deck só no Rust: o estado da linha do tempo do Rust (o mesmo `playbackStateAt`)
+      if (!a.rtl) { this.paintStage(ctx, null, 0, 1, null); return; }
+      const st = a.rtl.stateAt(t);
+      if (st.index >= 0 && st.pos !== a.pos) {
+        a.pos = st.pos;
+        this.index = st.index;
+        const detail = { index: st.index };
+        queueMicrotask(() => this.dispatchEvent(new CustomEvent('us-slide', { detail })));
+      }
+      this.paintStage(ctx, st.index >= 0 ? { index: st.index, transition: st.transition } : null, st.animMs, st.transitionProgress,
+        st.from >= 0 ? { slide: { index: st.from, transition: null }, animMs: Infinity, key: `a${st.from}`, media: true } : null, { h: a.rtl, at: t });
+      return;
+    }
     const st = this.pres ? playbackStateAt(a.tl, t) : null;
     const rstage: RustStage | undefined = a.rtl ? { h: a.rtl, at: t } : undefined;
     if (st?.slide && st.pos !== a.pos) {
@@ -1187,12 +1526,26 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   protected paintShow(ctx: CanvasRenderingContext2D): void {
     const s = this.show!;
     const now = this.now();
-    const f = s.ss.frame(now);
+    if (s.ss instanceof RustShowMachine) {
+      // deck só no Rust: o quadro da apresentação do Rust
+      const rf = s.ss.frame(now);
+      const ro = rf.from;
+      this.paintStage(ctx, rf.index >= 0 && !rf.ended ? { index: rf.index, transition: rf.transition } : null, rf.animMs, rf.transitionProgress,
+        ro ? { slide: { index: ro.index, transition: null }, animMs: ro.animMs, key: `p${ro.key}`, media: false } : null, { h: s.ss.h, at: now });
+      if (rf.ended) this.paintEndOfShow(ctx);
+      return;
+    }
+    const f = (s.ss as SlideShow).frame(now);
     const o = f.from;
     // origem congelada: vídeo/GIF na capa (não volta a tocar o som do slide que saiu)
     this.paintStage(ctx, f.slide, f.animMs, f.transitionProgress,
       o ? { slide: o.slide, animMs: o.animMs, key: `p${o.key}`, media: false } : null, s.rs ? { h: s.rs, at: now } : undefined);
     if (!f.ended) return;
+    this.paintEndOfShow(ctx);
+  }
+
+  /** O aviso da tela de fim da apresentação, sobre o preto. */
+  private paintEndOfShow(ctx: CanvasRenderingContext2D): void {
     // medido: aviso de interface pequeno (texto de 11 px numa tela de 1080), no topo, centralizado
     const W = this.canvas.clientWidth;
     ctx.save();
@@ -1212,14 +1565,15 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * é instantâneo (progresso 1). `from.key` identifica a imagem de origem
    * (pintada uma vez por passagem).
    */
-  private paintStage(ctx: CanvasRenderingContext2D, slide: PlaybackSlide | null, animMs: number, progress: number,
-    from: { slide: PlaybackSlide; animMs: number; key: string; media: boolean } | null, rstage?: RustStage): void {
+  private paintStage(ctx: CanvasRenderingContext2D, slide: StageSlide | null, animMs: number, progress: number,
+    from: { slide: StageSlide; animMs: number; key: string; media: boolean } | null, rstage?: RustStage): void {
     const dpr = window.devicePixelRatio || 1;
     const W = this.canvas.clientWidth, H = this.canvas.clientHeight;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
     const fit = this.fit();
-    if (!slide || !fit || !this.pres) return;
+    const z = this.slideSize();
+    if (!slide || !fit || !z) return;
     this.media.fullScreen = null;
     if (progress >= 1) {
       this.paintPlaybackSlide(ctx, slide, animMs, fit, true, rstage, 0);
@@ -1249,7 +1603,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     // retângulo do slide em px de canvas (o resto é letterbox preto)
     const rect = {
       x: fit.ox * dpr, y: fit.oy * dpr,
-      w: this.pres.slideW * fit.scale * dpr, h: this.pres.slideH * fit.scale * dpr,
+      w: z.w * fit.scale * dpr, h: z.h * fit.scale * dpr,
     };
     paintTransition(ctx, fromCv, to, tr, progress, rect, this.canvas.width, this.canvas.height);
     ctx.restore();
@@ -1263,21 +1617,21 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * o chamador pode escutar `us-loaded`/`us-image` para repintar.
    */
   renderThumbnail(i: number, target: HTMLCanvasElement): boolean {
-    const slide = this.slides[i];
-    if (!slide || !this.pres) return false;
+    const z = this.slideSize();
+    if (!z || i < 0 || i >= this.slideCount()) return false;
     const ctx = target.getContext('2d');
     if (!ctx) return false;
     const dpr = window.devicePixelRatio || 1;
     const cssW = target.clientWidth || 200;
-    const cssH = target.clientHeight || Math.round(cssW * this.pres.slideH / this.pres.slideW);
+    const cssH = target.clientHeight || Math.round(cssW * z.h / z.w);
     if (target.width !== Math.round(cssW * dpr)) target.width = Math.round(cssW * dpr);
     if (target.height !== Math.round(cssH * dpr)) target.height = Math.round(cssH * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
-    const scale = Math.min(cssW / this.pres.slideW, cssH / this.pres.slideH);
-    const sw = this.pres.slideW * scale, sh = this.pres.slideH * scale;
+    const scale = Math.min(cssW / z.w, cssH / z.h);
+    const sw = z.w * scale, sh = z.h * scale;
     const ox = (cssW - sw) / 2, oy = (cssH - sh) / 2;
-    this.paintStill(ctx, i, slide, scale, { ox, oy, fontStack: this.fontStackFor });
+    this.paintStill(ctx, i, scale, { ox, oy, fontStack: this.fontStackFor });
     return true;
   }
 
@@ -1288,16 +1642,16 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * app de referência, impressão.
    */
   renderSlideToCanvas(i: number, target: HTMLCanvasElement, pxWidth = 1280): boolean {
-    const slide = this.slides[i];
-    if (!slide || !this.pres) return false;
+    const z = this.slideSize();
+    if (!z || i < 0 || i >= this.slideCount()) return false;
     const ctx = target.getContext('2d');
     if (!ctx) return false;
-    const pxHeight = Math.round(pxWidth * this.pres.slideH / this.pres.slideW);
+    const pxHeight = Math.round(pxWidth * z.h / z.w);
     if (target.width !== pxWidth) target.width = pxWidth;
     if (target.height !== pxHeight) target.height = pxHeight;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, pxWidth, pxHeight);
-    this.paintStill(ctx, i, slide, pxWidth / this.pres.slideW, { fontStack: this.fontStackFor });
+    this.paintStill(ctx, i, pxWidth / z.w, { fontStack: this.fontStackFor });
     return true;
   }
 
@@ -1322,20 +1676,22 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { this.next(); e.preventDefault(); }
     else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { this.prev(); e.preventDefault(); }
     else if (e.key === 'Home') { this.selectSlide(0); e.preventDefault(); }
-    else if (e.key === 'End') { this.selectSlide(this.slides.length - 1); e.preventDefault(); }
+    else if (e.key === 'End') { this.selectSlide(this.slideCount() - 1); e.preventDefault(); }
   };
 
   /**
-   * Detecta hyperlink na posição (canvas-relativa) e abre URL se houver.
-   * v1: o link é "shape-wide" (a primeira run com hyperlink no txBody manda).
+   * Detecta hyperlink na posição (canvas-relativa): abre o endereço, ou (motor Rust) salta ao slide / à posição da apresentação.
+   * v1 do TS: o link é "shape-wide" (a primeira run com hyperlink no txBody manda).
    */
   protected onClick = (e: MouseEvent): void => {
     if (this.isEditing()) return;
-    const hit = this.hitTestHyperlink(e);
+    const hit = this.hitTestLink(e);
     if (hit) {
-      // engine="rust": só http, https e mailto abrem (a regra do viewer do Write); `link-schemes="any"` = a do motor TS
-      if (this.engineAttr() !== 'rust' || this.getAttribute('link-schemes') === 'any') window.open(hit, '_blank', 'noopener');
-      else if (SAFE_LINK.test(hit.trim())) window.open(hit.trim(), '_blank', 'noopener,noreferrer');
+      if ('url' in hit) {
+        // engine="rust": só http, https e mailto abrem (a regra do viewer do Write); `link-schemes="any"` = a do motor TS
+        if (this.engineAttr() !== 'rust' || this.getAttribute('link-schemes') === 'any') window.open(hit.url, '_blank', 'noopener');
+        else if (SAFE_LINK.test(hit.url.trim())) window.open(hit.url.trim(), '_blank', 'noopener,noreferrer');
+      } else this.followJump(hit);
       e.preventDefault();
       return;
     }
@@ -1345,18 +1701,58 @@ export class UniversalSlidesViewerElement extends HTMLElement {
 
   protected onMouseMove = (e: MouseEvent): void => {
     if (this.isEditing()) return;
-    this.canvas.style.cursor = this.hitTestHyperlink(e) ? 'pointer' : 'default';
+    this.canvas.style.cursor = this.hitTestLink(e) ? 'pointer' : 'default';
   };
+
+  /** Segue um salto (motor Rust: `ppaction://hlinksldjump` / `hlinkshowjump`): na apresentação pelo `goTo`, fora dela trocando o slide. */
+  private followJump(t: { slide: number } | { show: 'next' | 'previous' | 'first' | 'last' | 'end' }): void {
+    const n = this.slideCount();
+    const cur = this.show ? this.show.ss.index : this.index;
+    let to: number;
+    if ('slide' in t) to = t.slide;
+    else if (t.show === 'end') { if (this.show) this.stopPresentation(); return; }
+    else to = t.show === 'next' ? cur + 1 : t.show === 'previous' ? cur - 1 : t.show === 'first' ? 0 : n - 1;
+    if (to < 0 || to >= n) return;
+    this.selectSlide(to);
+  }
 
   /** Devolve a primeira URL de hyperlink sob (clientX, clientY) ou null. */
   protected hitTestHyperlink(e: MouseEvent): string | null {
+    const h = this.hitTestLink(e);
+    return h && 'url' in h ? h.url : null;
+  }
+
+  /**
+   * O hiperlink sob o ponteiro. Motor Rust: as caixas do modelo de leitura (`SlidesDocument.links`: a mesma geometria do TS para o
+   * endereço da run, mais o clique da forma e os saltos), da forma de cima para baixo, na forma o endereço da run primeiro. Motor
+   * TS: o laço do modelo TS.
+   */
+  protected hitTestLink(e: MouseEvent): LinkHit | null {
     if (this.show?.ss.ended) return null; // tela de fim: nada clicável
-    const slide = this.slides[this.index];
     const fit = this.fit();
-    if (!slide || !fit) return null;
+    if (!fit || this.index < 0 || this.index >= this.slideCount()) return null;
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    const doc = this.rustDoc();
+    if (doc) {
+      let boxes: LinkBoxWire[];
+      try { boxes = doc.links(this.index, fit.scale, fit.ox, fit.oy); } catch { boxes = []; }
+      let hit: LinkBoxWire | null = null;
+      for (let k = boxes.length - 1; k >= 0; k--) {
+        const b = boxes[k]!;
+        if (hit && b.shape !== hit.shape) break;
+        if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) continue;
+        const t = b.target;
+        if ('show' in t && (t.show === 'lastViewed' || (t.show === 'end' && !this.show))) continue;
+        hit = b; // a mais cedo da forma (run, depois clique, depois salto) fica
+      }
+      if (!hit) return null;
+      const t = hit.target;
+      return 'url' in t ? { url: t.url } : 'slide' in t ? { slide: t.slide } : { show: t.show as 'next' | 'previous' | 'first' | 'last' | 'end' };
+    }
+    const slide = this.slides[this.index];
+    if (!slide) return null;
     for (let i = slide.shapes.length - 1; i >= 0; i--) {
       const sh = slide.shapes[i]!;
       if (!sh.xfrm || !sh.txBody) continue;
@@ -1367,7 +1763,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
       if (x < sx || x > sx + sw || y < sy || y > sy + sh2) continue;
       for (const p of sh.txBody.paragraphs) {
         for (const r of p.runs) {
-          if (r.hyperlink) return r.hyperlink;
+          if (r.hyperlink) return { url: r.hyperlink };
         }
       }
     }
@@ -1386,20 +1782,27 @@ export class UniversalSlidesViewerElement extends HTMLElement {
    * palco (apresentação/reprodução) o slide encosta nas bordas.
    */
   protected fit(): { ox: number; oy: number; scale: number; sw: number; sh: number } | null {
-    if (!this.pres) return null;
+    const z = this.slideSize();
+    if (!z) return null;
     const W = this.canvas.clientWidth, H = this.canvas.clientHeight;
     const margin = this.auto || this.show || this.controlsBuiltIn() ? 0 : 16;
     const aw = W - margin * 2, ah = H - margin * 2;
     if (aw <= 0 || ah <= 0) return null; // sem área (oculto/desmontado): nada a pintar
-    const scale = Math.min(aw / this.pres.slideW, ah / this.pres.slideH);
-    const sw = this.pres.slideW * scale, sh = this.pres.slideH * scale;
+    const scale = Math.min(aw / z.w, ah / z.h);
+    const sw = z.w * scale, sh = z.h * scale;
     return { ox: (W - sw) / 2, oy: (H - sh) / 2, scale, sw, sh };
   }
 
   protected paint(): void {
     this.paintFrame();
     this.controls?.sync();
-    this.a11y?.show(this.slides, this.index, true);
+    this.a11y?.show(this.slideCount(), this.index, (i) => this.a11yShapes(i), true);
+  }
+
+  /** As formas do slide `i` para o texto acessível (modelo TS ou o modelo de leitura do Rust). */
+  private a11yShapes(i: number): A11yShape[] | undefined {
+    if (this.pkg) { const s = this.slides[i]; return s ? a11yShapesOf(s) : undefined; }
+    try { return this.rustDoc()?.outline(i); } catch { return undefined; }
   }
 
   /** Nome do arquivo (do `src`), para o leitor de tela e o download. */
@@ -1422,8 +1825,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     else { ctx.fillStyle = this.deskColor(); ctx.fillRect(0, 0, W, H); }
 
     const fit = this.fit();
-    const slide = this.slides[this.index];
-    if (!fit || !slide) {
+    if (!fit || this.index < 0 || this.index >= this.slideCount()) {
       ctx.fillStyle = '#bbb'; ctx.font = '14px Segoe UI, Arial';
       ctx.fillText(pickLabels(this, TEXT).empty, 20, 30);
       this.badge.textContent = '';
@@ -1434,7 +1836,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
     const paintOpts: PaintSlideOptions = { ox: fit.ox, oy: fit.oy, fontStack: this.fontStackFor };
     const suppress = this.suppressTextIdx();
     if (suppress !== undefined) paintOpts.suppressTextShapeIdx = suppress;
-    this.paintStill(ctx, this.index, slide, fit.scale, paintOpts);
+    this.paintStill(ctx, this.index, fit.scale, paintOpts);
 
     // sombra/borda do slide (só na moldura do editor)
     if (!this.controlsBuiltIn()) {
@@ -1442,7 +1844,7 @@ export class UniversalSlidesViewerElement extends HTMLElement {
       ctx.strokeRect(fit.ox + 0.5, fit.oy + 0.5, fit.sw - 1, fit.sh - 1);
     }
 
-    this.badge.textContent = `${this.index + 1} / ${this.slides.length}`;
+    this.badge.textContent = `${this.index + 1} / ${this.slideCount()}`;
   }
 }
 

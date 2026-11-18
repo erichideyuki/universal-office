@@ -260,6 +260,10 @@ fn main() {
     for s in uo_opc_fuzz::slides_edit_seeds(&repo) {
         c.add("slides_edit", &s);
     }
+    // the editor messages of the wasm binding (schema slides_edit.uos): one of every command, the queries, fonts, blank options
+    for s in uo_opc_fuzz::slides_edit_wire_seeds() {
+        c.add("slides_edit_wire", &s);
+    }
     // uo-charts parser: chart parts of every family, the chart drawing, the three host profiles
     for s in uo_opc_fuzz::chart_parse_seeds() {
         c.add("chart_parse", &s);

@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use crate::package::{PartStore, PartsSnapshot};
+use crate::package::{PartEntry, PartStore, PartsSnapshot};
 
 pub mod blank;
 pub mod doc;
@@ -53,6 +53,15 @@ pub fn changed_since(store: &PartStore, snap: &PartsSnapshot) -> bool {
     }
     let by_name: FxHashMap<&str, &Arc<[u8]>> = snap.0.iter().map(|e| (&*e.name, &e.bytes)).collect();
     store.entries().iter().any(|e| by_name.get(&*e.name).is_none_or(|b| !Arc::ptr_eq(b, &e.bytes)))
+}
+
+/// What changed since `snap` (the binding's sync of the shell's copy of the package): the parts that are new or were
+/// replaced, in store order, and the names of the parts the store no longer has, in snapshot order.
+pub fn changes_since<'a>(store: &'a PartStore, snap: &PartsSnapshot) -> (Vec<&'a PartEntry>, Vec<Box<str>>) {
+    let by_name: FxHashMap<&str, &Arc<[u8]>> = snap.0.iter().map(|e| (&*e.name, &e.bytes)).collect();
+    let changed = store.entries().iter().filter(|e| by_name.get(&*e.name).is_none_or(|b| !Arc::ptr_eq(b, &e.bytes))).collect();
+    let gone = snap.0.iter().filter(|e| store.bytes(&e.name).is_none()).map(|e| e.name.clone()).collect();
+    (changed, gone)
 }
 
 /// `restore`: gives the package back to the snapshot (only the parts that differ): the parts that are

@@ -162,6 +162,8 @@ pub struct Cx<'a> {
     /// chart part boxes computed in this pass (model key, bounds key, box): committed to the bounds cache only by a
     /// complete pass, so whether the TS probe missed the cache is the same in every round of the two-phase protocol
     pub(super) pending_bounds: Vec<(String, String, Option<uo_charts::emit::Rect>)>,
+    /// the hyperlinked text runs written so far ([`super::Emission::links`])
+    pub links: Vec<super::RunLink>,
 }
 
 /// The shape being emitted: what its body and text need of the animation (`anim` of `paintShape`).
@@ -221,6 +223,7 @@ impl<'a> Cx<'a> {
             cur: CurShape::default(),
             stage: false,
             pending_bounds: Vec::new(),
+            links: Vec::new(),
         }
     }
 

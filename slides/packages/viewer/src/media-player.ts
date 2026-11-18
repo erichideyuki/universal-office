@@ -1,6 +1,6 @@
 import {
   mediaStateAt, mediaFadeAlpha, gifFrameAt,
-  type Slide, type Shape, type PaintImage, type PlaybackSlide, type MediaClock, type SlideMediaInfo,
+  type Slide, type Shape, type PaintImage, type PlaybackSlide, type MediaClock, type SlideMediaInfo, type MediaRef, type MediaPlayState,
 } from '@universal-office/slides-core';
 
 /** Quadro de mídia com opacidade (esmaecer sobre a capa). */
@@ -54,26 +54,26 @@ export class MediaPlayer {
 
   constructor(private readonly repaint: () => void) {}
 
-  /** Chave do elemento de uma forma com mídia. */
-  private key(sh: Shape): string | undefined {
-    return sh.media ? (sh.media.part ?? sh.media.url) : undefined;
-  }
-
   /** Elemento (criado sob demanda) da mídia da forma. */
   element(sh: Shape, bytes: (part: string) => Uint8Array | undefined): HTMLMediaElement | null {
-    const k = this.key(sh);
-    if (!k || !sh.media) return null;
+    return sh.media ? this.elementOf(sh.media, bytes) : null;
+  }
+
+  /** Elemento (criado sob demanda) de uma mídia (a do modelo TS ou a do modelo de leitura do Rust). */
+  elementOf(media: MediaRef, bytes: (part: string) => Uint8Array | undefined | null): HTMLMediaElement | null {
+    const k = media.part ?? media.url;
+    if (!k) return null;
     let el = this.els.get(k);
     if (el) return el;
     let src: string | undefined;
-    if (sh.media.part) {
-      const b = bytes(sh.media.part);
+    if (media.part) {
+      const b = bytes(media.part);
       if (!b) return null;
-      src = URL.createObjectURL(new Blob([new Uint8Array(b)], { type: sh.media.mime }));
+      src = URL.createObjectURL(new Blob([new Uint8Array(b)], { type: media.mime }));
       this.urls.push(src);
-    } else src = sh.media.url;
+    } else src = media.url;
     if (!src) return null;
-    el = document.createElement(sh.media.kind === 'audio' ? 'audio' : 'video');
+    el = document.createElement(media.kind === 'audio' ? 'audio' : 'video');
     el.preload = 'auto';
     el.muted = this.mode === 'seek';
     (el as HTMLVideoElement).playsInline = true;
@@ -88,19 +88,26 @@ export class MediaPlayer {
 
   /** Decodifica (uma vez) os GIFs animados do slide; repinta quando prontos. */
   warmGifs(slide: Slide): void {
-    const gen = this.gen;
     for (const sh of slide.shapes) {
       const img = sh.image;
-      if (!img || img.mime !== 'image/gif' || this.gifs.has(img.part) || this.gifJobs.has(img.part)) continue;
-      this.gifJobs.set(img.part, this.decodeGif(img.part, img.bytes).then((g) => {
-        // deck trocado no meio: não entra no cache (o mesmo nome de parte do deck
-        // novo pintaria os quadros do antigo) e os quadros são liberados
-        if (gen !== this.gen) { g?.frames.forEach((f) => f.close()); return; }
-        this.gifs.set(img.part, g);
-        this.gifJobs.delete(img.part);
-        if (g) this.repaint();
-      }));
+      if (img && img.mime === 'image/gif') this.warmGif(img.part, () => img.bytes);
     }
+  }
+
+  /** Decodifica (uma vez) o GIF animado da parte `part` (os bytes do modelo TS ou do pacote no Rust). */
+  warmGif(part: string, bytes: () => Uint8Array | null | undefined): void {
+    if (this.gifs.has(part) || this.gifJobs.has(part)) return;
+    const b = bytes();
+    if (!b) return;
+    const gen = this.gen;
+    this.gifJobs.set(part, this.decodeGif(part, b).then((g) => {
+      // deck trocado no meio: não entra no cache (o mesmo nome de parte do deck
+      // novo pintaria os quadros do antigo) e os quadros são liberados
+      if (gen !== this.gen) { g?.frames.forEach((f) => f.close()); return; }
+      this.gifs.set(part, g);
+      this.gifJobs.delete(part);
+      if (g) this.repaint();
+    }));
   }
 
   private async decodeGif(part: string, bytes: Uint8Array): Promise<GifAnim | null> {
@@ -133,13 +140,23 @@ export class MediaPlayer {
    * `animMs` = tempo de animação do slide (Infinity = estado final).
    */
   frame(sh: Shape, ps: PlaybackSlide, animMs: number, bytes: (part: string) => Uint8Array | undefined, info?: SlideMediaInfo): MediaFrame | null {
-    if (sh.media) {
-      const st = mediaStateAt(ps.effects, sh.id, animMs, this.clock, !!info?.loop);
-      const el = this.element(sh, bytes);
+    if (sh.media) return this.mediaFrame(sh.media, mediaStateAt(ps.effects, sh.id, animMs, this.clock, !!info?.loop), bytes, info);
+    const img = sh.image;
+    if (img?.mime === 'image/gif') return this.gifFrame(img.part, Number.isFinite(animMs) ? animMs : ps.endMs - ps.animStartMs);
+    return null;
+  }
+
+  /**
+   * O quadro de um vídeo/áudio no estado `st` (o `mediaStateAt` do TS ou o do Rust, `SlidesDocument.mediaStates`): pede a
+   * posição ao elemento e devolve o vídeo (com o esmaecer) ou null (a capa).
+   */
+  mediaFrame(media: MediaRef, st: MediaPlayState, bytes: (part: string) => Uint8Array | undefined | null, info?: SlideMediaInfo | null): MediaFrame | null {
+    {
+      const el = this.elementOf(media, bytes);
       if (!el || el.error) return null; // inacessível (vinculado fora do pacote…): fica a capa
       // corte (p14:trim): toca de `st` até duração − `end` do arquivo
-      const trimSt = (sh.media.trim?.startMs ?? 0) / 1000;
-      const trimEnd = (sh.media.trim?.endMs ?? 0) / 1000;
+      const trimSt = (media.trim?.startMs ?? 0) / 1000;
+      const trimEnd = (media.trim?.endMs ?? 0) / 1000;
       const fileDur = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : undefined;
       const lenSec = fileDur !== undefined ? Math.max(0, fileDur - trimSt - trimEnd) : (st.durMs ?? Infinity) / 1000;
       let t = st.timeSec;
@@ -152,28 +169,27 @@ export class MediaPlayer {
           volume: info?.vol ?? 1, muted: info?.mute ?? false,
         });
       }
-      if (sh.media.kind !== 'video' || !st.started) return null;
+      if (media.kind !== 'video' || !st.started) return null;
       if (st.ended && info?.rewind) return null; // retroceder: volta à capa ao terminar
       if (el.readyState < 2) return null;
       const video = el as HTMLVideoElement;
       if (info?.fullScreen && st.playing) this.fullScreen = video;
       // esmaecer: o vídeo surge/some SOBRE a capa (depois do fim fica a capa)
-      const alpha = st.ended && sh.media.fade?.outMs ? 0 : mediaFadeAlpha(sh.media.fade, played * 1000, lenSec * 1000);
+      const alpha = st.ended && media.fade?.outMs ? 0 : mediaFadeAlpha(media.fade, played * 1000, lenSec * 1000);
       if (alpha <= 0) return null;
       return alpha >= 1 ? video : { image: video, alpha };
     }
-    const img = sh.image;
-    if (img?.mime === 'image/gif') {
-      const g = this.gifs.get(img.part);
-      if (!g) return null;
-      // o GIF anda desde o INÍCIO DAS ANIMAÇÕES do slide (medido; na transição, 1º quadro)
-      const t = Number.isFinite(animMs) ? animMs : ps.endMs - ps.animStartMs;
-      const elapsed = Math.max(0, t) * (this.clock.scale ?? 1);
-      const i = gifFrameAt(g.delays, elapsed, g.repeat);
-      this.gifShown.set(img.part, i);
-      return g.frames[i] ?? null;
-    }
-    return null;
+  }
+
+  /** O quadro do GIF animado `part` em `t` ms desde o início das animações do slide (no estado final, a duração do slide). */
+  gifFrame(part: string, t: number): MediaFrame | null {
+    const g = this.gifs.get(part);
+    if (!g) return null;
+    // o GIF anda desde o INÍCIO DAS ANIMAÇÕES do slide (medido; na transição, 1º quadro)
+    const elapsed = Math.max(0, t) * (this.clock.scale ?? 1);
+    const i = gifFrameAt(g.delays, elapsed, g.repeat);
+    this.gifShown.set(part, i);
+    return g.frames[i] ?? null;
   }
 
   /** `play()` em andamento (a promessa ainda não resolveu): não buscar de novo a cada quadro. */

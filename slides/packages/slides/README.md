@@ -69,6 +69,19 @@ deck.formatText({ bold: true, size: 32 });
 const pptx = await deck.savePptx();
 ```
 
+### The Rust engine (preview)
+
+`engine="rust"` runs the presentation in the Rust core compiled to WebAssembly: every editing method, undo/redo and
+`savePptx()` (with the font option) go to the Rust editing session, and the slides, thumbnails, slide show and playback are
+painted from the edited package by the viewer's Rust engine (same pixels and same saved package as the default `ts` engine,
+checked step by step). It loads `chunks/uo-slides-editor.wasm` on first use (`chunks/uo-slides-ppt.wasm` only for a legacy
+`.ppt`) and needs `'wasm-unsafe-eval'` in a strict CSP; an editor without the attribute never fetches a `.wasm`. There is one
+module per page: on a page that also has `<universal-slides-viewer engine="rust">`, call
+`UniversalSlidesElement.configureEngine({ wasm })` with the editor's file (it serves both elements). Changing the attribute
+with a presentation open moves the current presentation to the other engine (the undo history starts again). Events:
+`us-engine` when the Rust session is in use, `us-engine-error` when it could not open or stopped (the editor goes on with
+the `ts` engine and the same presentation); `rustReady()` resolves when the opening finished.
+
 ## Built-in interface
 
 | Attribute | Description |

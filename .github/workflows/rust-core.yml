@@ -78,7 +78,9 @@ jobs:
             crates/uo-wasm/js/slides-reveal.ts crates/uo-wasm/js/slides-engine.ts crates/uo-wasm/js/slides-engine.check.ts \
             ../slides/packages/viewer/src/slides-engine.d.ts crates/uo-wasm/js/meta-player.ts \
             ../write/packages/editor/src/write-session-completion.d.ts ../write/packages/editor/src/write-session-format.d.ts \
-            crates/uo-wasm/js/session-completion.d.ts crates/uo-wasm/js/session-format.d.ts
+            crates/uo-wasm/js/session-completion.d.ts crates/uo-wasm/js/session-format.d.ts \
+            crates/uo-wasm/js/slides-editor-engine.ts crates/uo-wasm/js/slides-editor-engine.check.ts \
+            ../slides/packages/slides/src/slides-editor-engine.d.ts
       # the Slides painter and the draw-op recorder (R-S3/R-S4) against hand-built display lists
       - run: node --test crates/uo-pptx/js/selftest-drawops.mjs
       # C-6: the chart facets of charts-c1a that paint a picture tile, emitted into a Slides list by the Rust engine and painted by the TS
@@ -255,6 +257,12 @@ jobs:
       # (bytes and time per key), the 1,000-session soak, the hostile bytes, the random Exec/Query messages of the generated support
       # (3,000 each, twice: leaks) and the stale layouts; the debug test job runs the same with the default bounds
       - run: cargo test -p uo-wasm --release --features session,count,session-selftest --test session_native -- --nocapture --test-threads=2
+      # the Slides editor exports (B8 routing, uo-bindings.md "Slides editor (B8 routing)"): the four B8 captures (8,696 steps) replayed
+      # through the wasm ABI with the schema codec, the package compared as the shell mirrors it from the changed parts; the refusals;
+      # the codec's random messages (unit test)
+      - run: cargo test -p uo-wasm --release --features slides-edit --lib --test slides_edit_native -- --nocapture --test-threads=2
+        env:
+          UO_EDIT_ALL: '1'
 
   jsnum:
     name: uo-jsnum parity (10^7 samples per distribution, release)
@@ -358,6 +366,10 @@ jobs:
           # B4b: animated frames (the stage list with slots + the SlotFrame of each frame, re-emitted shapes, chart parts, media frames)
           # painted over the recording context equal the frozen TS painter with the viewer's hooks (anim-b6a, anim-samples, anim-b1a)
           node --test crates/uo-wasm/tests/slides_anim.test.mjs
+          # the Slides editor module (B8 routing): edits over the viewer deck of the same instance, the changed-parts protocol, the
+          # clip between editors, the save with fonts, refusals, M4 (10,000 editors, free() and finalizers), M2 and M5
+          cargo build -p uo-wasm --features count,slides-edit --target wasm32-unknown-unknown --profile wasm
+          UO_WASM_PATH="$PWD/target/wasm32-unknown-unknown/wasm/uo_wasm.wasm" node --expose-gc --test crates/uo-wasm/tests/slides_edit_api.test.mjs
       # uo-render D and V (painter of decoded pages, milestone 1): the handle layer, the boundary, the TS codec of the render
       # messages, Part A of the painter parity (replay of tests/captures/v_paint.capture through the Rust painter: platform
       # independent since V-1; the "painter" job recaptures the frozen side on Linux and diffs it against this file) and the
@@ -430,6 +442,16 @@ jobs:
           UO_SLIDES_WASM="$RUNNER_TEMP/uo-slides.wasm" UO_SLIDES_PPT_WASM="$RUNNER_TEMP/uo-slides-ppt.wasm" node --input-type=module -e "const m = await import('../tools/build-pkg.mjs'); if (!m.shipSlidesWasm('slides-viewer', process.env.RUNNER_TEMP + '/pkg-slides')) process.exit(1)"
           test -f "$RUNNER_TEMP/pkg-slides/licenses/uo-slides-wasm/THIRD-PARTY-NOTICES.md"
           test -f "$RUNNER_TEMP/pkg-slides/chunks/uo-slides-ppt.wasm"
+          # the Slides editor module `uo-slides-editor.wasm` (B8 routing: `slides` + `slides-edit`; budget 3.5 MB gzip, plan §9), within
+          # Safari 15's feature set and shipped by `shipSlidesWasm(..., 'editor')` (the same third-party crates as the viewer's)
+          cargo build -p uo-wasm --features slides-edit --target wasm32-unknown-unknown --profile wasm
+          wasm-tools validate --features "$features" target/wasm32-unknown-unknown/wasm/uo_wasm.wasm
+          cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm "$RUNNER_TEMP/uo-slides-editor.wasm"
+          gz=$(gzip -9 -c "$RUNNER_TEMP/uo-slides-editor.wasm" | wc -c)
+          echo "slides editor module: $(stat -c %s "$RUNNER_TEMP/uo-slides-editor.wasm") bytes, $gz gzip"
+          test "$gz" -le 3500000
+          UO_SLIDES_EDITOR_WASM="$RUNNER_TEMP/uo-slides-editor.wasm" UO_SLIDES_PPT_WASM="$RUNNER_TEMP/uo-slides-ppt.wasm" node --input-type=module -e "const m = await import('../tools/build-pkg.mjs'); if (!m.shipSlidesWasm('slides', process.env.RUNNER_TEMP + '/pkg-slides-editor', 'editor')) process.exit(1)"
+          test -f "$RUNNER_TEMP/pkg-slides-editor/chunks/uo-slides-editor.wasm"
           echo '(module (func (drop (v128.const i32x4 0 0 0 0))))' | wasm-tools parse -o /tmp/simd.wasm
           ! wasm-tools validate --features "$features" /tmp/simd.wasm
       # the same tests inside WebKit, the engine of Safari
@@ -559,16 +581,31 @@ jobs:
       # samples and 100 generated decks (pixels at tolerance 0, notes, a11y text), phase 0 (no wasm without the attribute), the memory
       # phase (200 slide changes, flat, 0 handles) and the faults (corrupt deck, a forced trap, the hyperlink scheme filter); B4b `anim`:
       # play() and present() under a virtual clock on the playback samples and 40 b6a decks, the main canvas pixel-equal frame by frame
-      # (slots evaluated in Rust), and 300 playback frames with the module's live bytes flat
+      # (slots evaluated in Rust), and 300 playback frames with the module's live bytes flat. Wave 4: the Rust element opens WITHOUT the
+      # TS model (read model: a11y text of every slide, link hit-tests on a grid, media requests of every animated frame; `opencost`
+      # prints the open cost of both engines); slides_readmodel.test.mjs compares the read model with the TS model of this checkout
       - run: |
           cargo build -p uo-wasm --features slides-ppt --target wasm32-unknown-unknown --profile wasm
           cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm "$RUNNER_TEMP/uo-slides-ppt.wasm"
           cargo build -p uo-wasm --features count,slides --target wasm32-unknown-unknown --profile wasm
           cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm "$RUNNER_TEMP/uo-slides-count.wasm"
+          UO_WASM_PATH="$RUNNER_TEMP/uo-slides-count.wasm" node --test crates/uo-wasm/tests/slides_readmodel.test.mjs
           UO_SS_DECKS=100 node crates/uo-wasm/tests/browser/slides_switch.mjs --mode all
         env:
           UO_TS_ROOT: ${{ github.workspace }}
           UO_WASM_PATH: ${{ runner.temp }}/uo-slides-count.wasm
+          UO_PPT_WASM_PATH: ${{ runner.temp }}/uo-slides-ppt.wasm
+      # the Slides EDITOR switch (B8 routing): <universal-slides engine="rust"> against the TS engine in Chromium, the same seeded
+      # scripts through the element's public API on the samples and generated decks; after every step the package, the UI state, the
+      # slide and main-canvas pixels (tolerance 0) and every 8 steps the saved bytes; phase 0, memory (300 edit/undo cycles, flat,
+      # 0 handles) and faults (a trap mid-session, a DOM move then undo, the engine switched with the document open)
+      - run: |
+          cargo build -p uo-wasm --features count,slides-edit --target wasm32-unknown-unknown --profile wasm
+          cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm "$RUNNER_TEMP/uo-slides-editor-count.wasm"
+          node crates/uo-wasm/tests/browser/slides_edit_switch.mjs --mode all
+        env:
+          UO_TS_ROOT: ${{ github.workspace }}
+          UO_WASM_PATH: ${{ runner.temp }}/uo-slides-editor-count.wasm
           UO_PPT_WASM_PATH: ${{ runner.temp }}/uo-slides-ppt.wasm
       # faults: a forced trap (the viewer drops the instance, the element reloads, a new element opens) and a refused font push
       # (OverBudget on the page environment: the document still loads with the substitute)

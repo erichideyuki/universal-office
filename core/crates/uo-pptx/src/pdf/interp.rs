@@ -29,21 +29,10 @@ use super::{ImgHandle, Writer};
 
 /// One page of content.
 pub(crate) struct PageOut {
-    /// the text runs drawn, in paint order (the hyperlinks are placed over them)
-    pub placed: Vec<Placed>,
     pub content: Vec<u8>,
     pub ops: u64,
     pub missing: u64,
     pub fatal: Option<PdfError>,
-}
-
-/// A text run as it was drawn: its text and box (px = pt, `y` the baseline).
-pub(crate) struct Placed {
-    pub text: String,
-    pub x: f64,
-    pub y: f64,
-    pub size: f64,
-    pub w: f64,
 }
 
 /// Nesting of `save` per target and of layers: beyond it the item is dropped (the list is hostile).
@@ -215,11 +204,18 @@ pub(super) struct Interp<'a, 'w> {
     pub dash_table: Vec<Vec<f64>>,
     /// the forms of the recipes played on this page, by bitmap id
     pub recipe_serial: u32,
-    pub placed: Vec<Placed>,
+    /// the hyperlinked runs and the device boxes of those drawn
+    pub links: &'a super::links::LinkMarks,
 }
 
 /// Interprets one list into the content of a page.
-pub(crate) fn run(w: &mut Writer<'_>, list: &SlidesList, res: &SlidesResources, src: &dyn PartSource) -> PageOut {
+pub(crate) fn run(
+    w: &mut Writer<'_>,
+    list: &SlidesList,
+    res: &SlidesResources,
+    src: &dyn PartSource,
+    links: &super::links::LinkMarks,
+) -> PageOut {
     let (pw, ph) = (list.view.sw, list.view.sh);
     let (pw, ph) = (if pw.is_finite() && pw > 0.0 { pw } else { 720.0 }, if ph.is_finite() && ph > 0.0 { ph } else { 540.0 });
     let mut it = Interp {
@@ -245,7 +241,7 @@ pub(crate) fn run(w: &mut Writer<'_>, list: &SlidesList, res: &SlidesResources, 
         shadings: rustc_hash::FxHashMap::default(),
         dash_table: Vec::new(),
         recipe_serial: 0,
-        placed: Vec::new(),
+        links,
     };
     it.walk();
     it.finish_page()
@@ -285,7 +281,7 @@ impl<'w> Interp<'_, 'w> {
             content.extend_from_slice(b"Q\n");
         }
         content.extend_from_slice(b"Q\n");
-        PageOut { placed: self.placed, content, ops: self.ops, missing: self.missing, fatal: self.w.fatal }
+        PageOut { content, ops: self.ops, missing: self.missing, fatal: self.w.fatal }
     }
 
     // ---------------------------------------------------------------------------------------- the walk
@@ -402,7 +398,7 @@ impl<'w> Interp<'_, 'w> {
                 SItem::Text(i) => {
                     let run = usize::try_from(*i).ok().and_then(|i| list.runs.get(i));
                     if let Some(r) = run {
-                        self.text_run(r);
+                        self.text_run(*i, r);
                     }
                 }
                 SItem::LayerBegin(b) => {

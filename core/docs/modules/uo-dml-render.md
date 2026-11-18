@@ -612,6 +612,38 @@ record claiming 2 M path points, now bounded by `PATH_WORK`; `pict_play` 5.9 M, 
 - Fuzz: `slides_emit` also emits the shapes as a playback list with a hostile `AnimPlan` and re-emits each with hostile states (invariants:
   the list validates and encodes, `SlotBegin`/`SlotEnd` balance, `Emission::slots` matches `list.slots`, two runs are equal).
 
+## Links (wave 4, 2026-11-17)
+
+`Emission::links: Vec<RunLink>` (`emit/mod.rs`, filled by `draw_run` in `emit/text.rs`; `Cx::links`): one entry per `TextRun` written for a
+placed run with a `hyperlink` — whole runs and unit pieces, never bullets — with `run` (the index in `list.runs`, the `SItem::Text` operand),
+`shape` (`Cx::shape_index`), `url` and `rect` = the run box in the list's USER space at the run's transform: `x` = the run's `x`, top =
+baseline − 0.9 × size px, `w` = the laid width (`r.w × scale`, or the unit piece's measured width), `h` = 1.2 × size px. A painter that places
+links maps it through the transform it draws the run under (the PDF does: `uo-pdf.md` "Slides PDF", hyperlinks). Side data only: the list,
+its encoding and the op streams are unchanged (still and playback emissions; `emit`/`stage` tests and the uo-dml-render tests green). WordArt
+warps (`paint_warp_body`) draw outlines and write no marks. The shape-level boxes (the TS viewer's hit-test geometry, shape clicks, slide and
+show jumps) are not emission data: `uo_pptx::links::slide_links` (`uo-pptx/src/links.rs`) builds them from the model and the slide XML.
+
+`slide_links(deck, index, view) -> Vec<LinkBox { shape, rect, target: Url | Slide(presentation index) | Show(Next | Previous | First | Last |
+LastViewed | End), source: RunUrl | ShapeClick | RunJump }>`, ordered by shape then source, at most 10,000 per slide. `RunUrl` = the frozen
+TS `hitTestHyperlink` (every shape with `xfrm` and a text body holding a run `hyperlink`, its unrotated box `ox + x × scale`, … and the first
+run's address): **945 of 945 boxes bit-equal** to the TS over 548 decks (the tracked `.pptx` samples and the committed `b1a`, `b3a`, `b5b`,
+`b6a`, `c1d` decks; capture `uo-pptx/js/capture-links.mjs` → `tests/captures/links.tsv`, view 96/914400 px per EMU at (3, 5); test
+`tests/links.rs`). `ShapeClick` (an external relationship as written, `ppaction://hlinksldjump`, `ppaction://hlinkshowjump?jump=…`; macros,
+programs, OLE verbs, custom shows and "no action" give nothing; a group's click covers its children without one) and `RunJump` (a run's
+slide/show jump, shape-wide as the TS v1 rule) are new (the TS viewer has neither). Declared: inherited master/layout shapes give `RunUrl`
+boxes only (their own parts' clicks are not resolved); model shapes are matched to the slide XML by `p:cNvPr` id (a repeated id is taken in
+document order). M1 (`assert_no_leak` over `slide_links`) and a hostile slide (200 nested groups, actions without ids, unknown jumps, missing
+parts) in `tests/links.rs`.
+
+## The viewer read model and the metafile pictures (wave 4, 2026-11-17)
+
+- `metafile::is_special_image(bytes)` (= the class test of `Cx::special_img`: metafile, PICT or Slides TIFF): the viewer's read model
+  (`uo_slides_assets`) flags these pictures so the shell does not decode them — the emission rasterizes them itself (recipes). Together
+  with the `recipe` hook the engine now gives the painter (`uo_slides_view_is_recipe` + `SlidesEnv.recipe`), this removes the TS
+  `rasterizeSpecialImage` from the rust path of the viewer. In Chromium over 40 b5b decks: 659/682 slides pixel-equal with the TS viewer,
+  23 differ inside metafile rasters (open; before the hook those pictures were not drawn at all). Record: `uo-bindings.md` "Wave 4".
+- `MetaDecode` is answered by the browser shell now (the prepare phase, `uo-bindings.md` "Wave 4"); the protocol here is unchanged.
+
 ## Process metrics
 
 | Stage | Agent | Time | Notes |

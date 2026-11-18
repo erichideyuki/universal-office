@@ -55,6 +55,27 @@
 //! - `uo_slides_timeline_info`: `duration f64, tick f64, media_clock f64, n u32`, per slide `index u32, start f64, end f64,
 //!   anim_start f64, transition_ms f64`; `uo_slides_timeline_state`: `pos i32, index i32, from_index i32, progress f64,
 //!   anim_ms f64, ended u8, n_effects u32`, then the transition of the slide.
+//! - `uo_slides_emit_suppress`: as `uo_slides_emit`, with the text of one shape left out (the editor's inline overlay).
+//! - `uo_slides_view_is_recipe(view, handle)`: 1 when bitmap `handle` is a metafile/PICT/TIFF recipe (B5b), 0 for RGBA.
+//!
+//! # Read model (wave 4: `<universal-slides-viewer engine="rust">` without the TS model)
+//! `bool3` is a `u8`: 0 false, 1 true, 2 unset. Every slide index is a viewer index.
+//! - `uo_slides_outline(deck, i)`: `n u32` shapes, per shape `flags u8` (bit 0 inherited, 1 picture, 2 media, 3 text body, 4 table,
+//!   5 alternative text present), `ph_type str`, `descr str`, `n u32` paragraphs (`str` each: the runs' text joined), then with bit 4
+//!   `rows u32`, per row `cells u32`, per cell `flags u8` (bit 0 hMerge, 1 vMerge) and its paragraphs.
+//! - `uo_slides_links(deck, i, scale, ox, oy)`: `n u32`, per box `shape u32, source u8` (0 run address = the TS viewer's hit-test,
+//!   1 the shape's click, 2 a run's jump), `x, y, w, h f64` (the unrotated shape box at the view), `kind u8` and 0 `url str`, 1 `slide
+//!   i32` (-1: a slide the viewer does not show), 2 `jump u8` (next, previous, first, last, last viewed, end) — `uo_pptx::links`.
+//! - `uo_slides_assets(deck, i)`: `n u32` pictures to decode (each part once, in the order of the TS `warmSlideImages`): `part str,
+//!   mime str, flags u8` (bit 0 an animated-GIF candidate, bit 1 rasterized by the emission: a metafile, PICT or TIFF); then `n u32`
+//!   media/GIF shapes: `shape u32, inherited u8, spid str, gif u8` (+ `part str`), `kind u8` (0 none, 1 video, 2 audio; then `part
+//!   str, url str, mime str, trim_start f64, trim_end f64, fade_in f64, fade_out f64`, NaN = none), `info u8` (+ `vol f64, mute
+//!   bool3, show_when_stopped bool3, rewind bool3, loop bool3, full_screen bool3`: the slide timing model's media entry).
+//! - `uo_slides_media_show(deck, show, now, which, latency, scale)` / `uo_slides_media_timeline(deck, tl, t, which, ...)`: the
+//!   media states of the stage (`present u8`; then `index i32, anim_ms f64, gif_ms f64, n u32`, per media shape `shape u32,
+//!   started u8, playing u8, ended u8, time_sec f64, dur_ms f64` (NaN = unknown)): `uo_pptx::media::media_state_at`.
+//! - `uo_slides_fonts(deck)`: the embedded fonts (layout at the export); `uo_slides_typefaces(deck)`: `n u32` names;
+//!   `uo_slides_show_settings(deck)`: `present u8`, `loop, use_timings, show_animation, kiosk` (bool3), `lo f64, hi f64`.
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -63,12 +84,13 @@ use uo_dml_render::emit::EmitCaches;
 use uo_dml_render::text::{FaceKey, Kerning, MAX_ROUNDS, MeasureReq, MeasureTable, StringKey, TextMetrics};
 use uo_dml_render::{MediaId, PartSource};
 use uo_pptx::anim_engine::AnimCaches;
+use uo_pptx::emit::emit_slide_suppressed;
 use uo_pptx::media::MediaClock;
 use uo_pptx::playback::{PlaybackOptions, PlaybackSlide, PlaybackTimeline, playback_state_at};
 use uo_pptx::show::{SlideShow, SlideShowAction, SlideShowFrame, SlideShowOptions};
 use uo_pptx::stage::{Stage, anim_plan, emit_stage, has_media, stage_frame, wire_values};
 use uo_pptx::timing::{TimingModel, TransitionInfo};
-use uo_pptx::{Deck, EmitFail, Limits, PptxError, View, emit_slide};
+use uo_pptx::{Deck, EmitFail, Limits, PptxError, View};
 use uo_render::slides::{FrameEncoder, Replacement, SlidesEncoder, SlidesResources, SlotFrame};
 
 use crate::buf::{NULL_HANDLE, OK, Out, UoBuf, buf, take_bytes};
@@ -91,6 +113,27 @@ pub struct UoSlidesDeck {
     map: Vec<u32>,
     /// slide width and height in EMU
     size: (f64, f64),
+}
+
+// used by the editor routing (`slides_edit.rs`, feature `slides-edit`); unused in the viewer module
+#[cfg_attr(not(feature = "slides-edit"), allow(dead_code))]
+impl UoSlidesDeck {
+    /// The editor module (slides_edit.rs): the deck the editor operations run on — the same deck the emission reads.
+    pub(crate) fn deck_mut(&mut self) -> &mut Deck {
+        &mut self.deck
+    }
+
+    /// After an edit changed the package: the slide list and the size are read again, pending requests dropped.
+    ///
+    /// # Errors
+    /// The presentation can no longer be read.
+    pub(crate) fn refresh(&mut self) -> Result<(), PptxError> {
+        let p = self.deck.presentation()?;
+        self.map = p.slides.iter().enumerate().filter(|(_, r)| r.target.is_some()).filter_map(|(i, _)| u32::try_from(i).ok()).collect();
+        self.size = (p.slide_w, p.slide_h);
+        self.pending.clear();
+        Ok(())
+    }
 }
 
 /// One generation of the list stream of a view.
@@ -354,6 +397,21 @@ pub unsafe extern "C" fn uo_slides_view_bitmap(view: *const UoSlidesView, handle
     }
 }
 
+/// Whether the bytes of bitmap `handle` are a metafile/PICT/TIFF recipe (B5b: replayed by `meta-player.ts`), not RGBA: 1 yes, 0 no,
+/// -6 no such bitmap, -11 a null view.
+///
+/// # Safety
+/// `view` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_view_is_recipe(view: *const UoSlidesView, handle: u32) -> i32 {
+    // SAFETY: the caller guarantees `view` is null or a live handle.
+    let Some(v) = (unsafe { view.as_ref() }) else { return -NULL_HANDLE };
+    if v.res.bitmap_bytes(handle).is_none() {
+        return -NO_ITEM;
+    }
+    i32::from(v.res.is_recipe(handle))
+}
+
 /// `paintSlideTo` of viewer slide `index` at `scale` px per EMU and origin `(ox, oy)` px: the encoded list (status 0), the
 /// measurement requests (status 12), or an error status (module documentation).
 ///
@@ -370,11 +428,35 @@ pub unsafe extern "C" fn uo_slides_emit(
 ) -> *mut UoBuf {
     // SAFETY: the caller guarantees both handles are null or live, with no other reference in use.
     let (Some(d), Some(v)) = (unsafe { (deck_mut(deck), view.as_mut()) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    emit_out(d, v, index, scale, ox, oy, None)
+}
+
+/// `uo_slides_emit` with the text of shape `shape` (an index of the slide's shapes, inherited decorations included) left out:
+/// the editor's inline overlay covers it (`suppressTextShapeIdx`). `shape` < 0 = nothing suppressed.
+///
+/// # Safety
+/// `deck` and `view` must be null or live handles.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_emit_suppress(
+    deck: *mut UoSlidesDeck,
+    view: *mut UoSlidesView,
+    index: usize,
+    scale: f64,
+    ox: f64,
+    oy: f64,
+    shape: i32,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees both handles are null or live, with no other reference in use.
+    let (Some(d), Some(v)) = (unsafe { (deck_mut(deck), view.as_mut()) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    emit_out(d, v, index, scale, ox, oy, u32::try_from(shape).ok())
+}
+
+fn emit_out(d: &mut UoSlidesDeck, v: &mut UoSlidesView, index: usize, scale: f64, ox: f64, oy: f64, suppress: Option<u32>) -> *mut UoBuf {
     if !(scale.is_finite() && scale > 0.0 && ox.is_finite() && oy.is_finite()) {
         return buf(BAD_ARG, Vec::new());
     }
     let Some(&pi) = d.map.get(index) else { return buf(NO_ITEM, Vec::new()) };
-    match emit_slide(&mut d.deck, pi, View { scale, ox, oy }, &d.table, &mut v.res, &mut v.caches) {
+    match emit_slide_suppressed(&mut d.deck, pi, View { scale, ox, oy }, suppress, &d.table, &mut v.res, &mut v.caches) {
         Ok(em) => {
             let mut o = Out::default();
             let flags = u8::from(v.caches.overflowed) | (u8::from(!em.chart_frames.is_empty()) << 1);
@@ -936,6 +1018,427 @@ pub unsafe extern "C" fn uo_slides_timeline_state(tl: *const UoSlidesTimeline, t
     buf(OK, o.0)
 }
 
+// ───────────────────────────── the read model (wave 4: the viewer without the TS model) ─────────────────────────────
+//
+// What `<universal-slides-viewer engine="rust">` used to read from the TS model (`PptxPackage` + `readSlide` of every slide):
+// the accessible text, the link boxes, the pictures to decode, the media of the slides and their state in a playback frame,
+// the embedded fonts, the typefaces and the show settings. Layouts in the module documentation ("Read model").
+
+fn tri(v: Option<bool>) -> u8 {
+    match v {
+        None => 2,
+        Some(b) => u8::from(b),
+    }
+}
+
+fn opt_str(o: &mut Out, s: Option<&str>) {
+    str_out(o, s.unwrap_or(""));
+}
+
+/// The paragraphs of a text body as the accessible text reads them: the runs' text joined (the shell normalises the spaces).
+fn paras_out(o: &mut Out, tb: Option<&uo_dml_render::model::TextBody>) {
+    let Some(tb) = tb else {
+        o.u32(0);
+        return;
+    };
+    o.u32(tb.paragraphs.len());
+    let mut s = String::new();
+    for p in &tb.paragraphs {
+        s.clear();
+        for r in &p.runs {
+            s.push_str(&r.text);
+        }
+        str_out(o, &s);
+    }
+}
+
+fn slide_of(d: &mut UoSlidesDeck, index: usize) -> Result<Arc<uo_pptx::SlideModel>, i32> {
+    let &pi = d.map.get(index).ok_or(NO_ITEM)?;
+    d.deck.slide(pi).map_err(|e| error_code(&e))
+}
+
+/// The accessible outline of viewer slide `index` (the TS `SlideA11y` input): per shape its flags, placeholder type, alternative
+/// text, paragraphs and table cells.
+///
+/// # Safety
+/// `deck` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_outline(deck: *mut UoSlidesDeck, index: usize) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `deck` is null or a live handle.
+    let Some(d) = (unsafe { deck_mut(deck) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let slide = match slide_of(d, index) {
+        Ok(s) => s,
+        Err(code) => return buf(code, Vec::new()),
+    };
+    let mut o = Out::default();
+    o.u32(slide.shapes.len());
+    for sh in &slide.shapes {
+        let ex = sh.extras.as_deref();
+        let media = ex.is_some_and(|e| e.media.is_some());
+        let table = ex.and_then(|e| e.table.as_deref());
+        let flags = u8::from(sh.inherited.unwrap_or(false))
+            | (u8::from(sh.image.is_some()) << 1)
+            | (u8::from(media) << 2)
+            | (u8::from(sh.tx_body.is_some()) << 3)
+            | (u8::from(table.is_some()) << 4)
+            | (u8::from(ex.is_some_and(|e| e.descr.is_some())) << 5);
+        o.u8(flags);
+        opt_str(&mut o, sh.ph_type.as_deref());
+        opt_str(&mut o, ex.and_then(|e| e.descr.as_deref()));
+        paras_out(&mut o, sh.tx_body.as_deref());
+        if let Some(t) = table {
+            o.u32(t.rows.len());
+            for row in &t.rows {
+                o.u32(row.cells.len());
+                for c in &row.cells {
+                    o.u8(u8::from(c.h_merge.unwrap_or(false)) | (u8::from(c.v_merge.unwrap_or(false)) << 1));
+                    paras_out(&mut o, c.tx_body.as_deref());
+                }
+            }
+        }
+    }
+    buf(OK, o.0)
+}
+
+/// The link boxes of viewer slide `index` at `scale` px per EMU and origin `(ox, oy)` (`uo_pptx::links::slide_links`).
+///
+/// # Safety
+/// `deck` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_links(deck: *mut UoSlidesDeck, index: usize, scale: f64, ox: f64, oy: f64) -> *mut UoBuf {
+    use uo_pptx::links::{LinkSource, LinkTarget, ShowJump};
+    // SAFETY: the caller guarantees `deck` is null or a live handle.
+    let Some(d) = (unsafe { deck_mut(deck) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Some(view) = view_of(scale, ox, oy) else { return buf(BAD_ARG, Vec::new()) };
+    let Some(&pi) = d.map.get(index) else { return buf(NO_ITEM, Vec::new()) };
+    let links = match uo_pptx::links::slide_links(&mut d.deck, pi, view) {
+        Ok(l) => l,
+        Err(e) => return buf(error_code(&e), Vec::new()),
+    };
+    let mut o = Out::default();
+    o.u32(links.len());
+    for l in &links {
+        o.u32(usize::try_from(l.shape).unwrap_or(usize::MAX));
+        o.u8(match l.source {
+            LinkSource::RunUrl => 0,
+            LinkSource::ShapeClick => 1,
+            LinkSource::RunJump => 2,
+        });
+        for v in l.rect {
+            o.f64(v);
+        }
+        match &l.target {
+            LinkTarget::Url(u) => {
+                o.u8(0);
+                str_out(&mut o, u);
+            }
+            LinkTarget::Slide(s) => {
+                // the viewer index of the presentation slide (-1: a slide the viewer does not show)
+                let vi = d.map.iter().position(|&m| m == *s).and_then(|v| i32::try_from(v).ok()).unwrap_or(-1);
+                o.u8(1).bytes(&vi.to_le_bytes());
+            }
+            LinkTarget::Show(j) => {
+                o.u8(2).u8(match j {
+                    ShowJump::Next => 0,
+                    ShowJump::Previous => 1,
+                    ShowJump::First => 2,
+                    ShowJump::Last => 3,
+                    ShowJump::LastViewed => 4,
+                    ShowJump::End => 5,
+                });
+            }
+        }
+    }
+    buf(OK, o.0)
+}
+
+/// Every picture use of a slide, in the order of the TS `warmSlideImages` (background, then per shape: the picture, the fill,
+/// the table's, the chart's, the bullets' and the letters').
+fn slide_images(slide: &uo_pptx::SlideModel) -> Vec<(&uo_dml_render::model::ImageRef, bool)> {
+    use uo_dml_render::model::{ImageRef, TextBody};
+    fn body<'a>(tb: Option<&'a TextBody>, out: &mut Vec<(&'a ImageRef, bool)>) {
+        for p in tb.map_or(&[][..], |t| &t.paragraphs[..]) {
+            if let Some(b) = p.bullet_image.as_deref() {
+                out.push((b, false));
+            }
+            for r in &p.runs {
+                if let Some(f) = r.extras.as_deref().and_then(|e| e.fill_image.as_ref()) {
+                    out.push((f, false));
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(b) = slide.bg_image.as_ref() {
+        out.push((b, false));
+    }
+    for sh in &slide.shapes {
+        if let Some(i) = sh.image.as_deref() {
+            out.push((i, true));
+        }
+        if let Some(f) = sh.fill_image.as_deref() {
+            out.push((f, false));
+        }
+        let ex = sh.extras.as_deref();
+        if let Some(t) = ex.and_then(|e| e.table.as_deref()) {
+            if let Some(i) = t.bg_paint.as_deref().and_then(|b| b.image.as_deref()) {
+                out.push((i, false));
+            }
+            for row in &t.rows {
+                for c in &row.cells {
+                    if let Some(f) = c.fill_image.as_deref() {
+                        out.push((f, false));
+                    }
+                    body(c.tx_body.as_deref(), &mut out);
+                }
+            }
+        }
+        for ci in ex.and_then(|e| e.chart.as_ref()).and_then(|c| c.images.as_deref()).unwrap_or(&[]) {
+            out.push((&ci.image, false));
+        }
+        body(sh.tx_body.as_deref(), &mut out);
+    }
+    out
+}
+
+/// The media of viewer slide `index`: the pictures the shell decodes (each part once; metafiles, PICT and TIFF are
+/// rasterized by the emission and listed with flag 2), then the media shapes and the animated-GIF shapes with their entry of
+/// the timing model. Layout in the module documentation.
+///
+/// # Safety
+/// `deck` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_assets(deck: *mut UoSlidesDeck, index: usize) -> *mut UoBuf {
+    use uo_dml_render::model::MediaKind;
+    // SAFETY: the caller guarantees `deck` is null or a live handle.
+    let Some(d) = (unsafe { deck_mut(deck) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let slide = match slide_of(d, index) {
+        Ok(s) => s,
+        Err(code) => return buf(code, Vec::new()),
+    };
+    let src = d.deck.source();
+    let mut o = Out::default();
+    let mut seen: Vec<MediaId> = Vec::new();
+    let mut pics = Out::default();
+    let mut n = 0usize;
+    for (r, is_pic) in slide_images(&slide) {
+        if seen.contains(&r.media) {
+            continue;
+        }
+        seen.push(r.media);
+        let Some((part, bytes)) = src.media_entry(r.media) else { continue };
+        let special = uo_dml_render::metafile::is_special_image(&bytes);
+        let flags = u8::from(is_pic && &*r.mime == "image/gif") | (u8::from(special) << 1);
+        str_out(&mut pics, &part);
+        str_out(&mut pics, &r.mime);
+        pics.u8(flags);
+        n += 1;
+    }
+    o.u32(n).bytes(&pics.0);
+    let infos = slide.timing.as_deref().and_then(|t| t.media.as_deref()).unwrap_or(&[]);
+    let mut media = Out::default();
+    let mut nm = 0usize;
+    for (i, sh) in slide.shapes.iter().enumerate() {
+        let gif = sh.image.as_deref().filter(|im| &*im.mime == "image/gif");
+        let m = sh.extras.as_deref().and_then(|e| e.media.as_ref());
+        if m.is_none() && gif.is_none() {
+            continue;
+        }
+        nm += 1;
+        media.u32(i).u8(u8::from(sh.inherited.unwrap_or(false)));
+        str_out(&mut media, &sh.id);
+        match gif.and_then(|g| src.media_entry(g.media)) {
+            Some((part, _)) => {
+                media.u8(1);
+                str_out(&mut media, &part);
+            }
+            None => {
+                media.u8(0);
+            }
+        }
+        match m {
+            None => {
+                media.u8(0);
+            }
+            Some(m) => {
+                media.u8(match m.kind {
+                    MediaKind::Video => 1,
+                    MediaKind::Audio => 2,
+                });
+                opt_str(&mut media, m.part.as_deref());
+                opt_str(&mut media, m.url.as_deref());
+                str_out(&mut media, &m.mime);
+                let (ts, te) = m.trim.unwrap_or((f64::NAN, f64::NAN));
+                let (fi, fo) = m.fade.unwrap_or((f64::NAN, f64::NAN));
+                media.f64(ts).f64(te).f64(fi).f64(fo);
+            }
+        }
+        match infos.iter().find(|x| x.spid == sh.id) {
+            None => {
+                media.u8(0);
+            }
+            Some(mi) => {
+                media.u8(1).f64(mi.vol.unwrap_or(f64::NAN));
+                media.u8(tri(mi.mute)).u8(tri(mi.show_when_stopped)).u8(tri(mi.rewind)).u8(tri(mi.loop_)).u8(tri(mi.full_screen));
+            }
+        }
+    }
+    o.u32(nm).bytes(&media.0);
+    buf(OK, o.0)
+}
+
+/// The media states of a playback slide at `anim_ms` (the TS `mediaStateAt` per media shape of the slide, inherited ones left
+/// out as the viewer's media player does).
+fn media_states_out(d: &mut UoSlidesDeck, ps: Option<Arc<PlaybackSlide>>, anim_ms: f64, clock: &MediaClock) -> *mut UoBuf {
+    let mut o = Out::default();
+    let Some(ps) = ps else {
+        o.u8(0);
+        return buf(OK, o.0);
+    };
+    let slide = match slide_of(d, usize::try_from(ps.index).unwrap_or(usize::MAX)) {
+        Ok(s) => s,
+        Err(code) => return buf(code, Vec::new()),
+    };
+    // the GIF clock: from the start of the slide's animations; in the final state the length of the slide (`media.frame`)
+    let gif_ms = if anim_ms.is_finite() { anim_ms } else { ps.end_ms - ps.anim_start_ms };
+    o.u8(1).bytes(&i32::try_from(ps.index).unwrap_or(-1).to_le_bytes()).f64(anim_ms).f64(gif_ms);
+    let infos = ps.model.media.as_deref().unwrap_or(&[]);
+    let shapes: Vec<(usize, &str)> = slide
+        .shapes
+        .iter()
+        .enumerate()
+        .filter(|(_, sh)| !sh.inherited.unwrap_or(false) && sh.extras.as_deref().is_some_and(|e| e.media.is_some()))
+        .map(|(i, sh)| (i, &*sh.id))
+        .collect();
+    o.u32(shapes.len());
+    for (i, spid) in shapes {
+        let looping = infos.iter().find(|x| &*x.spid == spid).is_some_and(|x| x.loop_ == Some(true));
+        let st = uo_pptx::media::media_state_at(&ps.model.nodes, &ps.effects, spid, anim_ms, clock, looping);
+        o.u32(i).u8(u8::from(st.started)).u8(u8::from(st.playing)).u8(u8::from(st.ended == Some(true)));
+        o.f64(st.time_sec).f64(st.dur_ms.unwrap_or(f64::NAN));
+    }
+    buf(OK, o.0)
+}
+
+/// The media states of the show's stage `which` (0 the slide on stage, 1 the transition origin at its frozen time) at `now`.
+///
+/// # Safety
+/// `deck` and `show` must be null or live handles.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_media_show(
+    deck: *mut UoSlidesDeck,
+    show: *const UoSlidesShow,
+    now: f64,
+    which: u32,
+    latency: f64,
+    clock_scale: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the handles are null or live, with no other reference in use.
+    let (Some(d), Some(s)) = (unsafe { (deck_mut(deck), show.as_ref()) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let f = s.show.frame(now);
+    let (ps, anim_ms) = match which {
+        0 => (f.slide, f.anim_ms),
+        1 => f.from.map_or((None, 0.0), |o| (Some(o.slide), o.anim_ms)),
+        _ => return buf(BAD_ARG, Vec::new()),
+    };
+    media_states_out(d, ps, anim_ms, &MediaClock { latency_ms: opt_f(latency), scale: opt_f(clock_scale) })
+}
+
+/// The media states of the timeline's stage `which` at `t` (the origin in its final state, as [`uo_slides_stage_timeline`]).
+///
+/// # Safety
+/// `deck` and `tl` must be null or live handles.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_media_timeline(
+    deck: *mut UoSlidesDeck,
+    tl: *const UoSlidesTimeline,
+    t: f64,
+    which: u32,
+    latency: f64,
+    clock_scale: f64,
+) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the handles are null or live, with no other reference in use.
+    let (Some(d), Some(tl)) = (unsafe { (deck_mut(deck), tl.as_ref()) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let st = playback_state_at(&tl.tl, t);
+    let (pos, anim_ms) = match which {
+        0 => (st.pos, st.anim_ms),
+        1 => (st.from, f64::INFINITY),
+        _ => return buf(BAD_ARG, Vec::new()),
+    };
+    let ps = pos.and_then(|p| tl.slides.get(p)).cloned();
+    media_states_out(d, ps, anim_ms, &MediaClock { latency_ms: opt_f(latency), scale: opt_f(clock_scale) })
+}
+
+/// The fonts embedded in the package (`readEmbeddedFonts`): `n u32`, per font `family str, variant u8 (0 regular, 1 bold, 2
+/// italic, 3 bold italic), weight i32 (-1 unknown), italic u8 (0, 1, 2 unknown), len u32` and the sfnt bytes.
+///
+/// # Safety
+/// `deck` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_fonts(deck: *const UoSlidesDeck) -> *mut UoBuf {
+    use uo_pptx::fonts::FontVariant;
+    // SAFETY: the caller guarantees `deck` is null or a live handle.
+    let Some(d) = (unsafe { deck.as_ref() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let fonts = d.deck.embedded_fonts();
+    let mut o = Out::default();
+    o.u32(fonts.len());
+    for f in &fonts {
+        str_out(&mut o, &f.family);
+        o.u8(match f.variant {
+            FontVariant::Regular => 0,
+            FontVariant::Bold => 1,
+            FontVariant::Italic => 2,
+            FontVariant::BoldItalic => 3,
+        });
+        o.bytes(&f.weight.and_then(|w| i32::try_from(w).ok()).unwrap_or(-1).to_le_bytes()).u8(tri(f.italic));
+        o.u32(f.data.len()).bytes(&f.data);
+    }
+    buf(OK, o.0)
+}
+
+/// The typefaces the slides, layouts and masters name literally (`collectDeckTypefaces`): `n u32` and the names.
+///
+/// # Safety
+/// `deck` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_typefaces(deck: *const UoSlidesDeck) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `deck` is null or a live handle.
+    let Some(d) = (unsafe { deck.as_ref() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let names = d.deck.deck_typefaces();
+    let mut o = Out::default();
+    o.u32(names.len());
+    for n in &names {
+        str_out(&mut o, n);
+    }
+    buf(OK, o.0)
+}
+
+/// The show settings of `ppt/presProps.xml` (`<p:showPr>`): `present u8`, then `loop`, `use_timings`, `show_animation`, `kiosk`
+/// (u8 each: 0, 1, 2 unset) and the slide range `lo f64, hi f64` (NaN = none).
+///
+/// # Safety
+/// `deck` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_show_settings(deck: *mut UoSlidesDeck) -> *mut UoBuf {
+    // SAFETY: the caller guarantees `deck` is null or a live handle.
+    let Some(d) = (unsafe { deck_mut(deck) }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let p = match d.deck.presentation() {
+        Ok(p) => p,
+        Err(e) => return buf(error_code(&e), Vec::new()),
+    };
+    let mut o = Out::default();
+    match p.show.as_ref() {
+        None => {
+            o.u8(0);
+        }
+        Some(s) => {
+            let (lo, hi) = s.range.unwrap_or((f64::NAN, f64::NAN));
+            o.u8(1).u8(tri(s.loop_)).u8(tri(s.use_timings)).u8(tri(s.show_animation)).u8(tri(s.kiosk)).f64(lo).f64(hi);
+        }
+    }
+    buf(OK, o.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -952,6 +1455,21 @@ mod tests {
             assert_eq!(uo_slides_set_caps(std::ptr::null_mut(), 15), NULL_HANDLE);
             assert_eq!(uo_slides_show_command(std::ptr::null_mut(), 0, 0.0, 0.0, 0), -NULL_HANDLE);
             assert_eq!(uo_slides_stage_clear(std::ptr::null_mut()), NULL_HANDLE);
+            assert_eq!(uo_slides_view_is_recipe(std::ptr::null(), 0), -NULL_HANDLE);
+            for b in [
+                uo_slides_outline(std::ptr::null_mut(), 0),
+                uo_slides_links(std::ptr::null_mut(), 0, 1.0, 0.0, 0.0),
+                uo_slides_assets(std::ptr::null_mut(), 0),
+                uo_slides_media_show(std::ptr::null_mut(), std::ptr::null(), 0.0, 0, f64::NAN, f64::NAN),
+                uo_slides_media_timeline(std::ptr::null_mut(), std::ptr::null(), 0.0, 1, f64::NAN, f64::NAN),
+                uo_slides_fonts(std::ptr::null()),
+                uo_slides_typefaces(std::ptr::null()),
+                uo_slides_show_settings(std::ptr::null_mut()),
+                uo_slides_emit_suppress(std::ptr::null_mut(), std::ptr::null_mut(), 0, 1.0, 0.0, 0.0, 0),
+            ] {
+                assert!(!b.is_null());
+                crate::buf::uo_buf_free(b);
+            }
             for b in [
                 uo_slides_stage_show(
                     std::ptr::null_mut(),

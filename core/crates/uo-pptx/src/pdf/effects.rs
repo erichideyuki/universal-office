@@ -390,7 +390,14 @@ impl Interp<'_, '_> {
     ) -> Result<Option<(Surface, bool)>, ()> {
         let ext = self.ext_layers(from, to)?;
         let opts = self.w.opts;
-        let cx = RasterCx { list: self.list, res: self.res, src: self.src, fonts: opts.fonts, image_limits: &opts.image_limits };
+        let cx = RasterCx {
+            list: self.list,
+            res: self.res,
+            src: self.src,
+            fonts: opts.fonts,
+            image_limits: &opts.image_limits,
+            links: self.links,
+        };
         let b = match fixed {
             Some(b) => b,
             None => {
@@ -558,7 +565,14 @@ impl Interp<'_, '_> {
         }
         let opts = self.w.opts;
         let runs = {
-            let cx = RasterCx { list: self.list, res: self.res, src: self.src, fonts: opts.fonts, image_limits: &opts.image_limits };
+            let cx = RasterCx {
+                list: self.list,
+                res: self.res,
+                src: self.src,
+                fonts: opts.fonts,
+                image_limits: &opts.image_limits,
+                links: self.links,
+            };
             super::warp::warp_runs(&cx, e)
         };
         if runs.is_empty() {
@@ -669,7 +683,14 @@ impl Interp<'_, '_> {
         let polys: Vec<Poly> = p.polylines(Mat::IDENTITY, 0.1).into_iter().map(|(p, _)| p).collect();
         let paint = src.and_then(|src| {
             let opts = self.w.opts;
-            let cx = RasterCx { list: self.list, res: self.res, src: self.src, fonts: opts.fonts, image_limits: &opts.image_limits };
+            let cx = RasterCx {
+                list: self.list,
+                res: self.res,
+                src: self.src,
+                fonts: opts.fonts,
+                image_limits: &opts.image_limits,
+                links: self.links,
+            };
             let img = picture(&cx, &mut self.raster_images, src)?;
             let (iw, ih) = (f64::from(img.pix.w()), f64::from(img.pix.h()));
             let s = s.cloned().unwrap_or(uo_render::slides::Rect4 { x: 0.0, y: 0.0, w: iw, h: ih });

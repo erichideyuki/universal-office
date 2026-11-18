@@ -13,7 +13,10 @@
 // Erasable TypeScript only (the flags of paint.ts and the generated codecs).
 
 import { bindSlides, bindSlidesPpt, SlidesError } from './slides.mjs';
-import type { MeasureRequest, SlidesBinding, SlidesDeck, SlidesShow, SlidesTimeline, SlidesView, ShowAction, ShowFrame } from './slides.mjs';
+import type {
+  MeasureRequest, SlidesBinding, SlidesDeck, SlidesShow, SlidesTimeline, SlidesView, ShowAction, ShowFrame,
+  OutlineShape, LinkBoxWire, SlideAssets, MediaStates, EmbeddedFontWire, ShowSettingsWire,
+} from './slides.mjs';
 import { decodeSlidesList, newTables } from './gen/slides.ts';
 import type { SlidesList, Tables } from './gen/slides.ts';
 import { decodeSlotFrame, newTables as newSlotTables } from './gen/slots.ts';
@@ -24,6 +27,7 @@ import { imgH, imgW } from './slides-effects.ts';
 
 export { SlidesError };
 export type { MeasureRequest, ShowAction, ShowFrame };
+export type { OutlineShape, LinkBoxWire, SlideAssets, MediaStates, EmbeddedFontWire, ShowSettingsWire };
 export type { PaintImage };
 
 type Bytes = Uint8Array | ArrayBuffer | string | URL | Response | Promise<Uint8Array | ArrayBuffer | Response>;
@@ -87,6 +91,11 @@ export function loadSlidesModule(opts: LoadSlidesOptions): Promise<SlidesModule>
   return loading.then((inst) => new SlidesModule(inst, opts));
 }
 
+/** The module when it is already instantiated (a deck can then be opened synchronously, `SlidesModule.openSync`), else null. */
+export function currentSlidesModule(opts: LoadSlidesOptions): SlidesModule | null {
+  return current && !current.dead ? new SlidesModule(current, opts) : null;
+}
+
 /** Whether a module is instantiated (the tests of "a viewer without engine=rust never loads it"). */
 export function slidesModuleLoaded(): boolean { return current !== null && !current.dead; }
 
@@ -118,6 +127,23 @@ export interface SlidesPaintHost {
   measureCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
   /** the optional painter hooks (`SlidesEnv`: the light tables of the bevel, the pattern rows, the canvas factory) */
   extra?: Pick<SlidesEnv, 'light' | 'patternRows' | 'createCanvas'>;
+  /**
+   * A picture the layout waited for finished decoding (a compressed EMF+ bitmap: the `MetaDecode` prepare phase): paint again.
+   * A paint that met such a picture returned `PENDING` (13) and painted nothing.
+   */
+  prepared?(): void;
+}
+
+/** The status of a paint that waits for the browser to decode a picture of the slide (`SlidesPaintHost.prepared` tells when). */
+export const PENDING = 13;
+
+/** `bitmapKey` of the metafile players (`length:fnv in base 36`): the key of a compressed EMF+ bitmap, the same in Rust. */
+export function bitmapKey(d: Uint8Array): string {
+  let h = 0x811c9dc5;
+  const step = Math.max(1, Math.floor(d.length / 4096));
+  for (let i = 0; i < d.length; i += step) { h ^= d[i]!; h = Math.imul(h, 16777619); }
+  for (let i = Math.max(0, d.length - 64); i < d.length; i++) { h ^= d[i]!; h = Math.imul(h, 16777619); }
+  return `${d.length}:${(h >>> 0).toString(36)}`;
 }
 
 /** The status of a paint that left the slide to the TS painter because it has charts (the Rust list has no chart items yet). */
@@ -127,6 +153,8 @@ export const CHARTS_LEFT = 15;
 export interface SlidePaintOptions {
   /** do not paint a slide with chart frames: return `CHARTS_LEFT` and let the caller use the TS painter */
   skipCharts?: boolean;
+  /** the shape (an index of the slide's shapes) whose text the editor's inline overlay covers: left out of the list */
+  suppressText?: number;
 }
 
 /** B4b: options of a playback frame (`paintStage`). */
@@ -167,10 +195,20 @@ export class SlidesModule {
 
   get maxRounds(): number { return this.#inst.uo.maxRounds; }
 
+  /** The instance's exports (the editor routing calls its own exports over the same instance). */
+  get exports(): WebAssembly.Exports { return this.#inst.exports; }
+
   /**
    * Opens a deck (`.pptx`, or a `.ppt` through the lazily loaded converter module of `opts.ppt`). Throws `SlidesError`;
    * a corrupt file throws and nothing stays open.
    */
+  /** Opens a `.pptx` now (a `.ppt` needs the converter module: status 14). Throws `SlidesError`. */
+  openSync(bytes: Uint8Array): SlidesDocument {
+    if (isCfb(bytes)) throw new SlidesError(14, 'open', 'a .ppt needs the converter module (open)');
+    const deck = call(this.#inst, () => this.#inst.uo.open(bytes));
+    return new SlidesDocument(this.#inst, deck);
+  }
+
   async open(bytes: Uint8Array): Promise<SlidesDocument> {
     let src = bytes;
     if (isCfb(bytes)) {
@@ -205,22 +243,97 @@ export class SlidesDocument {
   #mediaFrame: StagePaintOptions['mediaFrame'] | undefined = undefined;
   /** package part -> media ids whose size a request asked for (to answer them when the image finishes decoding) */
   readonly #sizeAsked = new Map<string, Set<number>>();
-  readonly count: number;
-  readonly slideW: number;
-  readonly slideH: number;
+  /** `MetaDecode`: the decoded compressed EMF+ bitmaps by `bitmapKey` (null = the browser could not decode it) and the decodes running */
+  readonly #decoded = new Map<string, CanvasImageSource | null>();
+  readonly #decoding = new Map<string, Promise<void>>();
+  /** the read model, per slide (dropped by `refresh`) */
+  #outlines = new Map<number, OutlineShape[]>();
+  #assets = new Map<number, SlideAssets>();
+  #links = new Map<string, LinkBoxWire[]>();
+  #count: number;
+  #slideW: number;
+  #slideH: number;
 
   constructor(inst: Instance, deck: SlidesDeck) {
     this.#inst = inst;
     this.#deck = deck;
     const sz = deck.size();
-    this.count = sz.count;
-    this.slideW = sz.w;
-    this.slideH = sz.h;
+    this.#count = sz.count;
+    this.#slideW = sz.w;
+    this.#slideH = sz.h;
     this.#view = inst.uo.newView(this.#gen);
     inst.handles += 2;
   }
 
+  get count(): number { return this.#count; }
+  get slideW(): number { return this.#slideW; }
+  get slideH(): number { return this.#slideH; }
   get freed(): boolean { return this.#freed || this.#inst.dead; }
+  /** The wasm deck pointer (the editor routing passes it to its own exports of the same instance). */
+  get deckPtr(): number { return this.#live().ptr; }
+
+  /** After an edit changed the package: the slide count and size are read again and the stages laid out again. */
+  refresh(): void {
+    const sz = call(this.#inst, () => this.#live().size());
+    this.#count = sz.count;
+    this.#slideW = sz.w;
+    this.#slideH = sz.h;
+    this.#dropReadModel();
+    this.#clearStage();
+  }
+
+  #dropReadModel(): void {
+    this.#outlines = new Map();
+    this.#assets = new Map();
+    this.#links = new Map();
+  }
+
+  // ── the read model (wave 4): what the viewer used to read from the TS model ──
+
+  /** The accessible outline of slide `i` (cached per slide). */
+  outline(i: number): OutlineShape[] {
+    let o = this.#outlines.get(i);
+    if (!o) { o = call(this.#inst, () => this.#live().outline(i)); this.#outlines.set(i, o); }
+    return o;
+  }
+
+  /** The link boxes of slide `i` at `scale` px per EMU and origin `(ox, oy)` (cached for the last few views). */
+  links(i: number, scale: number, ox: number, oy: number): LinkBoxWire[] {
+    const k = `${i}:${scale}:${ox}:${oy}`;
+    let l = this.#links.get(k);
+    if (!l) {
+      l = call(this.#inst, () => this.#live().links(i, scale, ox, oy));
+      if (this.#links.size >= 64) this.#links = new Map();
+      this.#links.set(k, l);
+    }
+    return l;
+  }
+
+  /** The pictures to decode and the media/GIF shapes of slide `i` (cached per slide). */
+  assets(i: number): SlideAssets {
+    let a = this.#assets.get(i);
+    if (!a) { a = call(this.#inst, () => this.#live().assets(i)); this.#assets.set(i, a); }
+    return a;
+  }
+
+  /** The media states of a playback stage: `src` a show at `at` = now or a timeline at `at` = t; null = nothing on that stage. */
+  mediaStates(src: SlidesShowHandle | SlidesTimelineHandle, at: number, which: 0 | 1, clock: { latencyMs?: number; scale?: number } = {}): MediaStates | null {
+    const raw = RAW.get(src);
+    if (!raw) throw new Error('uo-wasm: not a handle of this document');
+    return call(this.#inst, () => this.#live().mediaStates(raw, at, which, clock));
+  }
+
+  /** Compressed EMF+ bitmaps still decoding (the `MetaDecode` prepare phase): a paint that met them returned `PENDING`. */
+  get preparing(): number { return this.#decoding.size; }
+  /** Compressed EMF+ bitmaps decoded so far (`[decoded, failed]`). */
+  get prepared(): [number, number] { let f = 0; for (const v of this.#decoded.values()) if (!v) f++; return [this.#decoded.size - f, f]; }
+
+  /** The fonts embedded in the package. */
+  fonts(): EmbeddedFontWire[] { return call(this.#inst, () => this.#live().fonts()); }
+  /** The typefaces the slides, layouts and masters name literally. */
+  typefaces(): string[] { return call(this.#inst, () => this.#live().typefaces()); }
+  /** `<p:showPr>` of the presentation, or null. */
+  showSettings(): ShowSettingsWire | null { return call(this.#inst, () => this.#live().showSettings()); }
 
   #live(): SlidesDeck {
     if (this.#freed) throw new Error('uo-wasm: the Slides document was freed');
@@ -266,7 +379,26 @@ export class SlidesDocument {
     this.#painter?.clear();
   }
 
-  #answers(reqs: MeasureRequest[], host: SlidesPaintHost): Float64Array {
+  /** Starts decoding a compressed EMF+ bitmap (once per key); `host.prepared` is told when it is done. */
+  #decode(key: string, data: Uint8Array, host: SlidesPaintHost): void {
+    if (this.#decoding.has(key)) return;
+    const g = globalThis as { createImageBitmap?: (b: Blob) => Promise<ImageBitmap> };
+    const job = (async () => {
+      let img: CanvasImageSource | null = null;
+      if (typeof g.createImageBitmap === 'function' && typeof Blob === 'function') {
+        try { img = await g.createImageBitmap(new Blob([data.slice()])); } catch { img = null; }
+      }
+      if (this.#freed) { (img as ImageBitmap | null)?.close?.(); return; }
+      this.#decoded.set(key, img);
+      this.#decoding.delete(key);
+      host.prepared?.();
+    })();
+    this.#decoding.set(key, job);
+  }
+
+  /** The answers to a request list, or null when a picture still decodes (the paint returns `PENDING`). */
+  #answers(reqs: MeasureRequest[], host: SlidesPaintHost): Float64Array | null {
+    let pending = false;
     const ctx = host.measureCtx as CanvasRenderingContext2D & { fontKerning?: string; letterSpacing?: string };
     const kern = ctx.fontKerning !== undefined;
     const stack = (f: { family: string; bold: boolean; italic: boolean }): string => host.fontStack(f.family, f.bold, f.italic);
@@ -309,8 +441,17 @@ export class SlidesDocument {
         const m = ctx.measureText(r.text);
         out.push(m.width, (m as { fontBoundingBoxAscent?: number }).fontBoundingBoxAscent ?? NaN, (m as { fontBoundingBoxDescent?: number }).fontBoundingBoxDescent ?? NaN);
       } else if (r.kind === 'metaDecode') {
-        // decoding a compressed EMF+ bitmap is asynchronous in a browser: answered "cannot be decoded" in this part (listed gap)
-        out.push(NaN, NaN);
+        // a compressed EMF+ bitmap: the browser decodes asynchronously (the prepare phase); the answer is its size, or NaN when it
+        // cannot be decoded; while it decodes the paint waits (the TS `prepareSpecialImage` before `rasterizeSpecialImage`)
+        if (this.#decoded.has(r.key)) {
+          const img = this.#decoded.get(r.key);
+          if (img) out.push(imgW(img as PaintImage), imgH(img as PaintImage));
+          else out.push(NaN, NaN);
+        } else {
+          this.#decode(r.key, r.data, host);
+          pending = true;
+          out.push(NaN, NaN);
+        }
       } else if (r.kind === 'fontAvailable') {
         ctx.font = `40px ${r.family}`;
         const a = ctx.measureText('mmmmmmmmmmlli').width;
@@ -328,7 +469,7 @@ export class SlidesDocument {
         }
       }
     }
-    return Float64Array.from(out);
+    return pending ? null : Float64Array.from(out);
   }
 
   #painterFor(host: SlidesPaintHost): SlidesPainter {
@@ -344,6 +485,12 @@ export class SlidesDocument {
           const b = tables().bitmaps[index];
           return b ? this.#view.bitmap(b.data) : null;
         },
+        // B5b: a metafile, PICT or TIFF picture is a recipe the painter replays (meta-player.ts), not RGBA
+        recipe: (index) => {
+          const b = tables().bitmaps[index];
+          return b && this.#view.isRecipe(b.data) ? this.#view.bitmap(b.data) : null;
+        },
+        decodeBlob: (data) => this.#decoded.get(bitmapKey(data)) ?? null,
         mediaFrame: (shape) => this.#mediaFrame?.(shape),
         ...host.extra,
       };
@@ -363,10 +510,14 @@ export class SlidesDocument {
     const painter = this.#painterFor(host);
     const max = this.#inst.uo.maxRounds;
     for (let round = 1; round <= max + 1; round++) {
-      const r = call(this.#inst, () => deck.emit(this.#view, index, scale, ox, oy));
+      const sup = o.suppressText;
+      const r = call(this.#inst, () => (sup !== undefined && sup >= 0
+        ? deck.emitSuppress(this.#view, index, scale, ox, oy, sup)
+        : deck.emit(this.#view, index, scale, ox, oy)));
       if (r.status === 12 && 'requests' in r) {
         if (round > max) return { status: 12, charts: 0, rounds: round };
         const nums = this.#answers(r.requests, host);
+        if (!nums) return { status: PENDING, charts: 0, rounds: round };
         call(this.#inst, () => deck.answer(nums));
         continue;
       }
@@ -421,6 +572,7 @@ export class SlidesDocument {
       if (r.status === 12 && 'requests' in r) {
         if (round > max) return { status: 12, charts: 0, rounds: round };
         const nums = this.#answers(r.requests, host);
+        if (!nums) return { status: PENDING, charts: 0, rounds: round };
         call(this.#inst, () => deck.answer(nums));
         continue;
       }
@@ -485,6 +637,9 @@ export class SlidesDocument {
     if (this.#freed) return;
     this.#freed = true;
     this.#painter?.clear();
+    for (const img of this.#decoded.values()) (img as ImageBitmap | null)?.close?.();
+    this.#decoded.clear();
+    this.#dropReadModel();
     if (!this.#inst.dead) {
       this.#view.free();
       this.#deck.free();

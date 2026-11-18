@@ -1,4 +1,5 @@
 import { UniversalSlidesViewerElement } from '@universal-office/slides-viewer';
+import type { RustSlides } from '@universal-office/slides-viewer';
 import { PptxPackage, collectDeckTypefaces, EMU_PER_PX, type Paragraph, type Run, type Shape } from '@universal-office/slides-core';
 import {
   DEFAULT_EMBEDDING, planFontEmbedding, readPptxEmbedding, writePptxEmbedding,
@@ -15,6 +16,7 @@ import {
 } from './edit-surface.js';
 import { blankDeck } from './blank-deck.js';
 import type { UniversalSlidesBarKit, UniversalSlidesHost, UniversalSlidesPlugin } from './plugins.js';
+import type { EditResult, LoadSlidesOptions, Op, SlidesEditSession } from './rust-editor.js';
 
 const XML_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 const unescXml = (s: string): string =>
@@ -124,6 +126,152 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   /** Integração opcional com o app hospedeiro (Electron/PWA) — ver UniversalSlidesHost. */
   appHost: UniversalSlidesHost | null = null;
 
+  // ───────────────────────── motor Rust (engine="rust") ─────────────────────────
+  // Com `engine="rust"` o PACOTE é do Rust: cada edição, o desfazer/refazer e o salvar (com as fontes) passam pela sessão de
+  // edição do módulo wasm (`uo-slides-editor.wasm`), sobre o MESMO deck que o viewer pinta (miniaturas, slide parado,
+  // apresentação). O `pkg` do TS vira uma cópia mantida pelas partes que cada resposta diz que mudaram, e o modelo TS relido
+  // dela segue servindo à seleção, às alças, aos testes de clique e à barra. Sem o atributo (padrão), nada disto carrega.
+  // Registro: core/docs/modules/uo-bindings.md "Slides editor (B8 routing)".
+  /** a sessão de edição do motor Rust (null no motor TS, enquanto abre ou depois de uma falha) */
+  private rx: SlidesEditSession | null = null;
+  private rxMod: Promise<typeof import('./rust-editor.js')> | null = null;
+  private rxLib: typeof import('./rust-editor.js') | null = null;
+  private rxSeq = 0;
+  private rxOpening: Promise<void> = Promise.resolve();
+  /** o estado que a última resposta do Rust deu (desfazer/refazer, sujo, opção de fontes) */
+  private rxState: EditResult['state'] | null = null;
+  private static editorSource: LoadSlidesOptions | undefined;
+
+  /**
+   * De onde vem o motor Rust: com o editor na página, o .wasm configurado deve ser o do EDITOR (`uo-slides-editor.wasm`,
+   * que também tem tudo do viewer — há UM módulo por página, vale o primeiro carregamento). Sem isto, os do pacote.
+   */
+  static override configureEngine(source: LoadSlidesOptions): void {
+    super.configureEngine(source);
+    UniversalSlidesElement.editorSource = source;
+  }
+
+  /** `engine="rust"` pedido no próprio elemento. */
+  private editorEngine(): boolean {
+    return (this.getAttribute('engine') ?? '').trim().toLowerCase() === 'rust';
+  }
+
+  /** Resolve quando a abertura da apresentação no motor Rust terminou (com ou sem sucesso; `getEngine()` diz qual). */
+  override rustReady(): Promise<void> { return this.rxOpening; }
+
+  /** A sessão Rust em uso, ou null (motor TS); uma sessão que parou (trap) cai no TS com o pacote como está. */
+  private rxLive(): SlidesEditSession | null {
+    const s = this.rx;
+    if (!s) return null;
+    if (!s.freed) return s;
+    this.disposeRx();
+    this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error: new Error('uo-slides: the editor instance stopped') } }));
+    return null;
+  }
+
+  private openRx(bytes: Uint8Array): void {
+    const seq = ++this.rxSeq;
+    const pkg = this.pkg;
+    this.rxOpening = (async () => {
+      try {
+        const lib = await (this.rxMod ??= import('./rust-editor.js'));
+        this.rxLib = lib;
+        const s = await lib.openSession(bytes, UniversalSlidesElement.editorSource);
+        // outro deck carregou, ou o usuário já editou no motor TS enquanto o módulo baixava: esta apresentação fica no TS
+        if (seq !== this.rxSeq || this.pkg !== pkg || this.history.canUndo() || this.fontEmbeddingTouched) { s.free(); return; }
+        s.setTextLang(this.textLang());
+        s.setRandomSeed(crypto.getRandomValues(new Uint32Array(1))[0]!);
+        const vm = await this.loadRustEngine();
+        if (seq !== this.rxSeq || this.pkg !== pkg) { s.free(); return; }
+        const rs = new vm.RustSlides({
+          fontStack: this.fontStackFor,
+          image: (part) => { const e = this.imageCache.get(part); return e?.ready ? e.img : null; },
+          source: () => undefined,
+        });
+        rs.adopt(s.doc as Parameters<RustSlides['adopt']>[0]);
+        this.rx = s;
+        this.rxState = s.state().state;
+        this.adoptRust(rs);
+      } catch (error) {
+        if (seq !== this.rxSeq) return;
+        // a apresentação segue no motor TS: nada para o usuário, só o evento
+        this.dispatchEvent(new CustomEvent('us-engine-error', { detail: { engine: 'rust', error } }));
+      }
+    })();
+  }
+
+  /** Solta a sessão Rust (o viewer solta o documento; a sessão solta o editor). */
+  private disposeRx(): void {
+    this.rxSeq++;
+    const s = this.rx;
+    this.rx = null;
+    this.rxState = null;
+    if (s) {
+      this.adoptRust(null);
+      s.free();
+    }
+  }
+
+  /**
+   * Uma resposta do Rust: aplica as partes mudadas à cópia do pacote, relê o modelo TS (só os slides mudados quando nada mais
+   * mudou), espelha o slide atual e a seleção; um comando que falhou LANÇA depois disso (o pacote ficou como estava).
+   */
+  private rxSync(r: EditResult, label: string | null): boolean {
+    const pkg = this.pkg;
+    const changed = r.changes.length > 0;
+    this.rxState = r.state;
+    if (pkg && changed) {
+      this.rxLib!.applyChanges(pkg, r);
+      // parte de mídia nova com um nome que já pode ter sido usado (desfazer): decodifica de novo
+      for (const c of r.changes) if (c.name.startsWith('ppt/media/')) this.imageCache.delete(c.name);
+      const slideOnly = /^ppt\/slides\/(_rels\/)?slide\d+\.xml(\.rels)?$|^ppt\/media\//;
+      const slides = new Set<number>();
+      let deckWide = false;
+      for (const c of r.changes) {
+        if (!slideOnly.test(c.name)) { deckWide = true; break; }
+        const m = /^ppt\/slides\/(?:_rels\/)?(slide\d+\.xml)/.exec(c.name);
+        if (m) {
+          const i = this.slidePathList().indexOf(`ppt/slides/${m[1]}`);
+          if (i < 0) { deckWide = true; break; }
+          slides.add(i);
+        }
+      }
+      if (deckWide) this.rereadDeck(r.state.index);
+      else {
+        for (const i of slides) this.rereadSlide(i);
+        this.index = Math.max(0, Math.min(r.state.index, this.slides.length - 1));
+      }
+    } else {
+      this.index = Math.max(0, Math.min(r.state.index, Math.max(0, this.slides.length - 1)));
+    }
+    this.selectById(r.state.selected ?? null);
+    if (r.outcome.t === 'err') { this.paint(); throw new Error(r.outcome.v); }
+    if (changed && label) this.afterEdit(label);
+    return changed;
+  }
+
+  /** Os caminhos das partes dos slides, na ordem do viewer. */
+  private slidePathList(): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < this.slides.length; i++) out.push(this.slidePartPath(i) ?? '');
+    return out;
+  }
+
+  /** O estado da interface antes de um comando (slide atual, forma selecionada): a sessão o guarda no passo de desfazer. */
+  private rxUi(s: SlidesEditSession): void {
+    const r = s.setUi(this.index, this.editState().shapeId);
+    this.rxState = r.state;
+  }
+
+  /** Um comando de edição pelo motor Rust (o `edit()` do TS): a resposta, já espelhada; lança se o comando falhou. */
+  private rxRun(s: SlidesEditSession, op: Op, label: string): EditResult {
+    if (this.editor && label !== 'typing') this.commitEditShape();
+    this.rxUi(s);
+    const r = s.apply(op);
+    this.rxSync(r, label);
+    return r;
+  }
+
   private readonly colorScheme: ColorSchemeWatcher;
 
   constructor() {
@@ -154,9 +302,25 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
 
   override attributeChangedCallback(name: string, oldV: string | null, newV: string | null): void {
     if (name === 'theme') { this.applyColorScheme(); return; }
+    // o mesmo valor de novo não troca o motor (o viewer soltaria a sessão Rust adotada)
+    if (name === 'engine' && oldV === newV) return;
     if (CHROME_ATTRS.has(name)) { if (this.isConnected) void this.updateChrome(); return; }
     super.attributeChangedCallback(name, oldV, newV);
     if (name === 'lang' && this.isConnected && this.chromeActive()) void this.updateChrome();
+    if (name === 'engine') {
+      // troca de motor com a apresentação aberta: o pacote ATUAL passa para o outro motor; o histórico de desfazer recomeça
+      if (this.editorEngine() && this.pkg && !this.rx) {
+        if (this.editor) this.commitEditShape();
+        this.history.clear();
+        this.fontEmbeddingTouched = false;
+        this.openRx(this.pkg.save());
+      } else if (!this.editorEngine() && this.rx) {
+        if (this.editor) this.commitEditShape();
+        this.history.clear();
+        this.disposeRx();
+        this.notifyDirty();
+      }
+    }
   }
 
   override connectedCallback(): void {
@@ -365,13 +529,17 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
 
   override loadPptx(bytes: Uint8Array): void {
     if (this.editor) this.cancelEditShape();
+    const prev = this.pkg;
     super.loadPptx(bytes);
+    // o deck novo foi lido (um arquivo inválido lança acima e deixa a sessão anterior como estava)
+    if (this.pkg !== prev) this.disposeRx();
     if (this.pkg) this.fontEmbedding = { ...DEFAULT_EMBEDDING.slides, ...readPptxEmbedding(this.pkg).settings };
     this.fontEmbeddingTouched = false;
     this.history.clear();
     this.selected = null;
     this.pan = { x: 0, y: 0 };
     this.notifyDirty();
+    if (this.editorEngine()) this.openRx(bytes);
   }
 
   /**
@@ -401,10 +569,15 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   }
 
   /** Há alterações não salvas (desde a abertura ou o último `markClean()`). */
-  isDirty(): boolean { return this.history.dirty || this.fontEmbeddingTouched; }
+  isDirty(): boolean {
+    if (this.rx && this.rxState) return !!this.rxState.dirty;
+    return this.history.dirty || this.fontEmbeddingTouched;
+  }
 
   /** O documento foi salvo pelo hospedeiro: o estado atual passa a ser o "limpo". */
   markClean(): void {
+    const s = this.rxLive();
+    if (s) this.rxState = s.markClean().state;
     this.history.markSaved();
     this.fontEmbeddingTouched = false;
     this.notifyDirty();
@@ -425,6 +598,7 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
 
   /** Opção "incorporar fontes no arquivo" desta apresentação. */
   getFontEmbedding(): FontEmbeddingSettings {
+    if (this.rx && this.rxState) return { ...this.fontEmbedding, embed: !!this.rxState.embed, subset: !!this.rxState.subset };
     return { ...this.fontEmbedding };
   }
 
@@ -432,6 +606,13 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   setFontEmbedding(settings: Partial<FontEmbeddingSettings>): void {
     this.fontEmbedding = { ...this.fontEmbedding, ...settings };
     this.fontEmbeddingTouched = true;
+    const s = this.rxLive();
+    if (s) {
+      const o: { embed?: boolean; subset?: boolean } = {};
+      if (settings.embed !== undefined) o.embed = settings.embed;
+      if (settings.subset !== undefined) o.subset = settings.subset;
+      this.rxState = s.setFontEmbedding(o).state;
+    }
     this.notifyDirty();
   }
 
@@ -445,6 +626,21 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   async savePptx(): Promise<Uint8Array> {
     if (!this.pkg) throw new Error('No presentation loaded');
     if (this.editor) this.commitEditShape();
+    const s = this.rxLive();
+    if (s) {
+      // motor Rust: o plano e a gravação das fontes são do Rust; o arquivo de cada face vem do resolvedor (a regra do TS)
+      const req = s.fontRequests();
+      const faces = await this.rxLib!.answerFontRequests(this.fontResolver, req.requests);
+      if (this.rx !== s || s.freed) throw new Error('uo-slides: the presentation changed during the save');
+      const out = s.saveWithFonts(faces);
+      this.dispatchEvent(new CustomEvent('us-font-embedding', {
+        detail: {
+          embedded: out.embedded,
+          skipped: out.skipped.map((k) => ({ family: k.family, reason: k.reason === 'alreadyEmbedded' ? 'already-embedded' : k.reason })),
+        },
+      }));
+      return out.bytes;
+    }
     const pkg = PptxPackage.load(this.pkg.save());
     const settings = this.fontEmbedding;
     let plan: EmbeddingPlan = { faces: [], skipped: [] };
@@ -523,11 +719,31 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
     this.notifyDirty();
   }
 
-  canUndo(): boolean { return this.history.canUndo(); }
-  canRedo(): boolean { return this.history.canRedo(); }
+  canUndo(): boolean { return this.rx && this.rxState ? !!this.rxState.canUndo : this.history.canUndo(); }
+  canRedo(): boolean { return this.rx && this.rxState ? !!this.rxState.canRedo : this.history.canRedo(); }
+
+  /** motor Rust: desfazer/refazer na sessão; a resposta traz as partes de volta e o slide/seleção do passo. */
+  private rxHistory(s: SlidesEditSession, redo: boolean): void {
+    if (this.editor) this.commitEditShape();
+    this.rxUi(s);
+    const r = redo ? s.redo() : s.undo();
+    if (r.outcome.t === 'ok' && r.outcome.v.t === 'bool' && !r.outcome.v.v) { this.rxSync(r, null); return; }
+    // o TS relê a apresentação inteira ao desfazer
+    if (this.pkg && r.changes.length) {
+      this.rxLib!.applyChanges(this.pkg, r);
+      for (const c of r.changes) if (c.name.startsWith('ppt/media/')) this.imageCache.delete(c.name);
+    }
+    this.rxState = r.state;
+    this.rereadDeck(r.state.index);
+    this.selectById(r.state.selected ?? null);
+    this.afterEdit(redo ? 'redo' : 'undo');
+    this.dispatchEvent(new CustomEvent('us-slide', { detail: { index: this.index } }));
+  }
 
   /** Desfaz a última edição. */
   undo(): void {
+    const s = this.rxLive();
+    if (s) { this.rxHistory(s, false); return; }
     if (this.editor) { this.commitEditShape(); }
     const u = this.history.undo();
     if (!u || !this.pkg) return;
@@ -540,6 +756,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
 
   /** Refaz a edição desfeita. */
   redo(): void {
+    const s = this.rxLive();
+    if (s) { this.rxHistory(s, true); return; }
     if (this.editor) this.commitEditShape();
     const r = this.history.redo();
     if (!r || !this.pkg) return;
@@ -578,6 +796,12 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
     const at = this.slides.length ? this.index + 1 : 0;
     const path = layout ?? this.defaultNewLayout();
     if (!path) return -1;
+    const rs = this.rxLive();
+    if (rs) {
+      this.rxRun(rs, { t: 'addSlide', layout: path }, 'newSlide');
+      this.dispatchEvent(new CustomEvent('us-slide', { detail: { index: this.index } }));
+      return at;
+    }
     this.edit('newSlide', (pkg) => deck.addSlide(pkg, at, path, this.textLang()), 'deck', { index: at, select: null });
     this.dispatchEvent(new CustomEvent('us-slide', { detail: { index: this.index } }));
     return at;
@@ -597,7 +821,9 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   /** Duplica o slide `i` (com as anotações) logo depois dele. Devolve o índice da cópia. */
   duplicateSlide(i = this.index): number {
     if (!this.slidePartPath(i)) return -1;
-    this.edit('duplicateSlide', (pkg) => deck.duplicateSlide(pkg, i), 'deck', { index: i + 1, select: null });
+    const rs = this.rxLive();
+    if (rs) this.rxRun(rs, { t: 'duplicateSlide', i }, 'duplicateSlide');
+    else this.edit('duplicateSlide', (pkg) => deck.duplicateSlide(pkg, i), 'deck', { index: i + 1, select: null });
     this.dispatchEvent(new CustomEvent('us-slide', { detail: { index: this.index } }));
     return i + 1;
   }
@@ -606,7 +832,9 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   deleteSlide(i = this.index): void {
     if (!this.slidePartPath(i)) return;
     const next = Math.max(0, Math.min(i, this.slides.length - 2));
-    this.edit('deleteSlide', (pkg) => deck.deleteSlide(pkg, i), 'deck', { index: next, select: null });
+    const rs = this.rxLive();
+    if (rs) this.rxRun(rs, { t: 'deleteSlide', i }, 'deleteSlide');
+    else this.edit('deleteSlide', (pkg) => deck.deleteSlide(pkg, i), 'deck', { index: next, select: null });
     this.dispatchEvent(new CustomEvent('us-slide', { detail: { index: this.index } }));
   }
 
@@ -614,7 +842,9 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   moveSlide(from: number, to: number): void {
     if (from === to || !this.slidePartPath(from) || to < 0 || to >= this.slides.length) return;
     const index = this.index === from ? to : this.index;
-    this.edit('moveSlide', (pkg) => deck.moveSlide(pkg, from, to), 'deck', { index });
+    const rs = this.rxLive();
+    if (rs) this.rxRun(rs, { t: 'moveSlide', from, to }, 'moveSlide');
+    else this.edit('moveSlide', (pkg) => deck.moveSlide(pkg, from, to), 'deck', { index });
     this.dispatchEvent(new CustomEvent('us-slide', { detail: { index: this.index } }));
   }
 
@@ -624,17 +854,26 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   /** Oculta/mostra o slide na apresentação. */
   setSlideHidden(hidden: boolean, i = this.index): void {
     if (!this.slidePartPath(i)) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setSlideHidden', i, hidden }, 'hideSlide'); return; }
     this.edit('hideSlide', (pkg) => deck.setSlideHidden(pkg, this.slidePath(i), hidden), i);
   }
 
   /** Troca o layout do slide. */
   setSlideLayout(layout: string, i = this.index): void {
     if (!this.slidePartPath(i)) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setSlideLayout', i, layout }, 'layout'); return; }
     this.edit('layout', (pkg) => deck.setSlideLayout(pkg, this.slidePath(i), layout), i);
   }
 
   /** Fundo sólido do slide (`null` volta a herdar). `'all'` aplica a todos. */
   setSlideBackground(color: string | null, i: number | 'all' = this.index): void {
+    const rs = this.rxLive();
+    if (rs) {
+      this.rxRun(rs, { t: 'setSlideBackground', target: i === 'all' ? { t: 'all' } : { t: 'slide', v: i }, ...(color !== null ? { color } : {}) }, 'background');
+      return;
+    }
     const targets = i === 'all' ? this.slides.map((_, k) => k) : [i];
     this.edit('background', (pkg) => { for (const k of targets) deck.setSlideBackground(pkg, this.slidePath(k), color); }, i === 'all' ? 'deck' : i);
   }
@@ -653,6 +892,11 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
 
   /** Grava a transição (`null` tira) no slide `i` ou em todos (`'all'`). */
   setSlideTransition(t: deck.TransitionSpec | null, i: number | 'all' = this.index): void {
+    const rs = this.rxLive();
+    if (rs) {
+      this.rxRun(rs, { t: 'setSlideTransition', target: i === 'all' ? { t: 'all' } : { t: 'slide', v: i }, ...(t ? { spec: t } : {}) }, 'transition');
+      return;
+    }
     const targets = i === 'all' ? this.slides.map((_, k) => k) : [i];
     this.edit('transition', (pkg) => { for (const k of targets) deck.setSlideTransition(pkg, this.slidePath(k), t); }, i === 'all' ? 'deck' : i);
   }
@@ -702,6 +946,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   }
 
   setShowSettings(s: deck.ShowSettingsSpec): void {
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setShowSettings', ...s }, 'showSettings'); return; }
     this.edit('showSettings', (pkg) => deck.writeShowSettings(pkg, s), 'deck');
   }
 
@@ -768,6 +1014,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   setShapeText(text: string, i?: number): void {
     const t = this.target(i);
     if (!t) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setShapeText', shape: t.shape.id, text }, 'text'); return; }
     this.edit('text', (pkg) => deck.setShapeText(pkg, this.slidePath(), t.shape.id, text, this.textLang()));
   }
 
@@ -775,6 +1023,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   formatText(f: deck.RunFormat, i?: number): void {
     const t = this.target(i);
     if (!t) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'formatText', shape: t.shape.id, f }, 'format'); return; }
     this.edit('format', (pkg) => deck.formatShapeText(pkg, this.slidePath(), t.shape.id, f, this.textLang()));
   }
 
@@ -798,6 +1048,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
       if (dir > 0) return steps.find((s) => s > v + 0.01) ?? Math.round(v + 10);
       return [...steps].reverse().find((s) => s < v - 0.01) ?? Math.max(1, v - 1);
     };
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'growFont', shape: t.shape.id, dir, base }, 'fontSize'); return; }
     this.edit('fontSize', (pkg) => deck.scaleShapeText(pkg, this.slidePath(), t.shape.id, step, this.textLang()));
   }
 
@@ -805,6 +1057,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   alignText(algn: 'l' | 'ctr' | 'r' | 'just', i?: number): void {
     const t = this.target(i);
     if (!t) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'alignText', shape: t.shape.id, algn }, 'align'); return; }
     this.edit('align', (pkg) => deck.alignShapeText(pkg, this.slidePath(), t.shape.id, algn));
   }
 
@@ -812,6 +1066,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   setBullets(kind: 'bullet' | 'number' | 'none', i?: number): void {
     const t = this.target(i);
     if (!t) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setBullets', shape: t.shape.id, kind }, 'bullets'); return; }
     this.edit('bullets', (pkg) => deck.setShapeBullets(pkg, this.slidePath(), t.shape.id, kind));
   }
 
@@ -819,6 +1075,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   clearFormatting(i?: number): void {
     const t = this.target(i);
     if (!t) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'clearFormatting', shape: t.shape.id }, 'clearFormat'); return; }
     this.edit('clearFormat', (pkg) => deck.clearShapeFormatting(pkg, this.slidePath(), t.shape.id, this.textLang()));
   }
 
@@ -826,6 +1084,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   setLink(url: string | null, i?: number): void {
     const t = this.target(i);
     if (!t) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setLink', shape: t.shape.id, ...(url !== null ? { url } : {}) }, 'link'); return; }
     this.edit('link', (pkg) => deck.setShapeLink(pkg, this.slidePath(), t.shape.id, url, this.textLang()));
   }
 
@@ -845,8 +1105,18 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
     return { x: (W - cx) / 2, y: (H - cy) / 2, cx, cy };
   }
 
-  private insertWith(label: string, fn: (pkg: PptxPackage, path: string) => string): number {
+  private insertWith(label: string, fn: (pkg: PptxPackage, path: string) => string, op?: Op): number {
     if (!this.slides.length) this.addSlide();
+    const rs = op ? this.rxLive() : null;
+    if (rs && op) {
+      const r = this.rxRun(rs, op, label);
+      const v = r.outcome.t === 'ok' ? r.outcome.v : null;
+      if (!v || v.t !== 'shape' || v.value === undefined) return -1;
+      this.selectById(v.value);
+      this.paint();
+      this.dispatchEvent(new CustomEvent('us-selection', { detail: { index: this.index, shape: this.selected } }));
+      return this.selected ?? -1;
+    }
     const id = this.edit(label, (pkg) => fn(pkg, this.slidePath()), 'slide', { select: null });
     if (id === undefined) return -1;
     this.selectById(id);
@@ -859,14 +1129,14 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   insertTextBox(text = '', frame?: deck.Frame): number {
     const W = this.pres?.slideW ?? 12192000;
     const f = frame ?? this.centered(W * 0.4, 12700 * 40);
-    return this.insertWith('textBox', (pkg, path) => deck.insertTextBox(pkg, path, f, text, this.textLang()));
+    return this.insertWith('textBox', (pkg, path) => deck.insertTextBox(pkg, path, f, text, this.textLang()), { t: 'insertTextBox', text, frame: f });
   }
 
   /** Forma predefinida nova (geometria do Office, ex. 'rect', 'ellipse', 'rightArrow'). */
   insertShape(prst: string, frame?: deck.Frame): number {
     const side = Math.round((this.pres?.slideH ?? 6858000) * 0.3);
     const f = frame ?? (prst === 'line' ? { ...this.centered(side * 1.5, 0), cy: 0 } : this.centered(prst === 'rect' || prst === 'roundRect' ? side * 1.5 : side, side));
-    return this.insertWith('shape', (pkg, path) => deck.insertShape(pkg, path, prst, f, this.textLang()));
+    return this.insertWith('shape', (pkg, path) => deck.insertShape(pkg, path, prst, f, this.textLang()), { t: 'insertShape', prst, frame: f });
   }
 
   /** Imagem nova (PNG/JPEG/GIF/BMP/WebP/SVG), no tamanho natural limitado ao slide. */
@@ -885,13 +1155,15 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
       const r = deck.insertImage(pkg, path, bytes, mime, target);
       this.imageCache.delete(r.part); // parte nova com um nome que já pode ter sido usado (desfazer)
       return r.id;
-    });
+    }, { t: 'insertImage', bytes, mime, frame: target });
   }
 
   /** Posição/tamanho da forma (EMU). */
   setShapeFrame(frame: deck.Frame, i?: number): void {
     const t = this.target(i);
     if (!t || t.shape.groupIds?.length) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setShapeFrame', shape: t.shape.id, frame }, 'frame'); return; }
     this.edit('frame', (pkg) => deck.setShapeFrame(pkg, this.slidePath(), t.shape.id, frame));
   }
 
@@ -899,6 +1171,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   setShapeFill(color: string | null, i?: number): void {
     const t = this.target(i);
     if (!t) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setShapeFill', shape: t.shape.id, ...(color !== null ? { color } : {}) }, 'fill'); return; }
     this.edit('fill', (pkg) => deck.setShapeFill(pkg, this.slidePath(), t.shape.id, color));
   }
 
@@ -906,6 +1180,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   setShapeOutline(color: string | null, i?: number): void {
     const t = this.target(i);
     if (!t) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setShapeOutline', shape: t.shape.id, ...(color !== null ? { color } : {}) }, 'outline'); return; }
     this.edit('outline', (pkg) => deck.setShapeOutline(pkg, this.slidePath(), t.shape.id, color));
   }
 
@@ -913,6 +1189,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   arrangeShape(mode: deck.ArrangeMode, i?: number): void {
     const t = this.target(i);
     if (!t) return;
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'arrangeShape', shape: t.shape.id, mode }, 'arrange'); return; }
     this.edit('arrange', (pkg) => deck.arrangeShape(pkg, this.slidePath(), t.shape.id, mode));
   }
 
@@ -921,7 +1199,9 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
     const t = this.target(i);
     if (!t) return;
     if (this.editor) this.cancelEditShape();
-    this.edit('deleteShape', (pkg) => deck.deleteShape(pkg, this.slidePath(), t.shape.id), 'slide', { select: null });
+    const rs = this.rxLive();
+    if (rs) this.rxRun(rs, { t: 'deleteShape', shape: t.shape.id }, 'deleteShape');
+    else this.edit('deleteShape', (pkg) => deck.deleteShape(pkg, this.slidePath(), t.shape.id), 'slide', { select: null });
     this.dispatchEvent(new CustomEvent('us-selection', { detail: { index: this.index, shape: null } }));
   }
 
@@ -933,6 +1213,12 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   copyShape(i?: number): deck.ShapeClip | null {
     const t = this.target(i);
     if (!t || !this.pkg || t.shape.groupIds?.length) return null;
+    const rs = this.rxLive();
+    if (rs) {
+      this.rxUi(rs);
+      const bytes = rs.copyShape(t.shape.id);
+      return bytes ? this.rxLib!.clipFromRust(bytes, rs, this.pkg) : null;
+    }
     return deck.extractShape(this.pkg, this.slidePath(), t.shape.id);
   }
 
@@ -943,6 +1229,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
    */
   pasteShape(clip: deck.ShapeClip): number {
     if (!this.slides.length) this.addSlide();
+    const rs = this.rxLive();
+    if (rs) return this.insertWith('paste', () => '', { t: 'pasteShape', clip: this.rxLib!.clipToWire(clip, rs) });
     const sameSlide = clip.source === this.pkg && clip.slidePath === this.slidePartPath(this.index);
     const d = sameSlide ? 12700 * 12 : 0;
     const id = this.edit('paste', (pkg) => deck.pasteShape(pkg, this.slidePath(), clip, d, d) ?? '', 'slide', { select: null });
@@ -969,6 +1257,11 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   /** Grava as anotações do orador do slide `i`. false = nada mudou (ou não há slide). */
   setSlideNotes(text: string, i = this.index): boolean {
     if (!this.canEditNotes(i) || this.getSlideNotes(i) === text) return false;
+    const rs = this.rxLive();
+    if (rs) {
+      const r = this.rxRun(rs, { t: 'setSlideNotes', i, text }, 'notes');
+      return r.outcome.t === 'ok' && r.outcome.v.t === 'bool' && r.outcome.v.v;
+    }
     return !!this.edit('notes', (pkg) => deck.setSlideNotes(pkg, this.slidePath(i), text, this.textLang()), i);
   }
 
@@ -977,6 +1270,8 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   getProperties(): deck.DocProperties { return this.pkg ? deck.readProperties(this.pkg) : {}; }
 
   setProperties(p: deck.DocProperties): void {
+    const rs = this.rxLive();
+    if (rs) { this.rxRun(rs, { t: 'setProperties', ...p }, 'properties'); return; }
     this.edit('properties', (pkg) => deck.writeProperties(pkg, p), 'deck');
   }
 
@@ -1002,6 +1297,17 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
   replaceText(query: string, replacement: string, opts: { matchCase?: boolean; hit?: FindHit } = {}): number {
     const hits = opts.hit ? [opts.hit] : this.findText(query, opts);
     if (!hits.length) return 0;
+    const rs = this.rxLive();
+    if (rs) {
+      // a forma do acerto vai pelo id (o índice é do modelo TS, o mesmo do Rust)
+      const id = opts.hit ? this.slides[opts.hit.slide]?.shapes[opts.hit.shape]?.id : undefined;
+      if (opts.hit && id === undefined) return 0;
+      const r = this.rxRun(rs, {
+        t: 'replaceText', query, replacement, matchCase: !!opts.matchCase,
+        ...(opts.hit && id !== undefined ? { hit: { f0: opts.hit.slide, f1: id } } : {}),
+      }, 'replace');
+      return r.outcome.t === 'ok' && r.outcome.v.t === 'count' ? r.outcome.v.v : 0;
+    }
     let count = 0;
     this.edit('replace', (pkg) => {
       for (const h of hits) {
@@ -1377,10 +1683,14 @@ export class UniversalSlidesElement extends UniversalSlidesViewerElement {
     const before = sh ? (sh.txBody?.paragraphs ?? []).map((p) => p.runs.map((r) => r.text).join('')).join('\n') : '';
     const path = this.slidePartPath(slideIdx);
     if (!sh || !path || !this.pkg || text === before) { this.paint(); return; }
-    const prevIndex = this.index;
-    this.index = slideIdx;
-    this.edit('typing', (pkg) => deck.setShapeText(pkg, path, sh.id, text, this.textLang()), slideIdx);
-    this.index = prevIndex;
+    const rs = this.rxLive();
+    if (rs) this.rxRun(rs, { t: 'typing', slide: slideIdx, shape: sh.id, text }, 'typing');
+    else {
+      const prevIndex = this.index;
+      this.index = slideIdx;
+      this.edit('typing', (pkg) => deck.setShapeText(pkg, path, sh.id, text, this.textLang()), slideIdx);
+      this.index = prevIndex;
+    }
     this.dispatchEvent(new CustomEvent('us-shape-edit', {
       detail: { slide: slideIdx, shapeIdx, text },
     }));

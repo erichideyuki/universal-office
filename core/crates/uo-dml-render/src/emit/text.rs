@@ -330,7 +330,20 @@ fn draw_body(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64,
             _ => {
                 for r in &line.runs {
                     let st = Style { st: pst_style, all: all.as_ref() };
-                    draw_run(cx, r, None, Some(r.w * scale), x + r.x * scale, by, scale, px_per_pt, line_box.as_ref(), shape_shadow, st);
+                    draw_run(
+                        cx,
+                        r,
+                        None,
+                        Some(r.w * scale),
+                        r.w * scale,
+                        x + r.x * scale,
+                        by,
+                        scale,
+                        px_per_pt,
+                        line_box.as_ref(),
+                        shape_shadow,
+                        st,
+                    );
                 }
             }
         }
@@ -495,6 +508,7 @@ fn draw_units(
             q.r,
             Some(&q.p.text),
             if whole { Some(q.r.w * scale) } else { None },
+            if whole { q.r.w * scale } else { q.uw },
             q.ux,
             by,
             scale,
@@ -537,6 +551,7 @@ fn draw_run(
     r: &PlacedRun,
     piece: Option<&[u16]>,
     laid_w: Option<f64>,
+    link_w: f64,
     tx: f64,
     by0: f64,
     scale: f64,
@@ -595,6 +610,15 @@ fn draw_run(
         Some(u) => cx.text_span_units(u),
         None => cx.text_span(&r.text),
     };
+    if let Some(url) = r.hyperlink.as_ref() {
+        // side data for the painters that place links (the PDF): the run box at the run's transform
+        cx.links.push(super::RunLink {
+            run: u32::try_from(cx.list.runs.len()).unwrap_or(u32::MAX),
+            shape: cx.shape_index,
+            url: url.clone(),
+            rect: [tx, by - size_px * 0.9, link_w, size_px * 1.2],
+        });
+    }
     cx.text_run(TextRun {
         text: span,
         font,

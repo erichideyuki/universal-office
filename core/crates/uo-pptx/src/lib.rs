@@ -32,6 +32,7 @@ pub mod emit;
 pub mod error;
 pub mod fonts;
 pub mod limits;
+pub mod links;
 pub mod media;
 pub mod model;
 pub mod package;

@@ -82,6 +82,11 @@ slides = ["buf", "dep:uo-pptx", "dep:uo-dml-render", "dep:uo-render"]
 # the bytes of the equivalent `.pptx` out
 slides-ppt = ["buf", "dep:uo-pptx", "uo-pptx/ppt"]
 
+# the Slides EDITOR (B8 routing, src/slides_edit.rs): the editing session of <universal-slides engine="rust"> over the viewer's
+# deck handle, its schema-generated codec (schema/slides_edit.uos) and the save with fonts. The editor module
+# `uo-slides-editor.wasm` is the build with `slides` + `slides-edit` (the viewer's `uo-slides.wasm` stays without it)
+slides-edit = ["slides", "uo-pptx/edit", "dep:uo-fonts", "dep:uo-codec", "dep:uo-jsnum"]
+
 # test-only exports of the Slides module (tests/slides_*.test.mjs): the memory counters and a trap; never shipped
 # (the `count` feature does both: this name is for the CI line)
 
@@ -115,3 +120,8 @@ uo-docx = { path = "../uo-docx", features = ["canon", "session"] }
 uo-opc = { path = "../uo-opc" }
 uo-jsnum = { path = "../uo-jsnum" }
 uo-drawingml = { path = "../uo-drawingml" }
+# the Slides editor replay (tests/slides_edit_native.rs): the B8 captures and their facets (uo-pptx's
+# tests/support/edit_capture.rs, included with #[path])
+uo-pptx = { path = "../uo-pptx", features = ["canon", "edit"] }
+uo-dml-render = { path = "../uo-dml-render" }
+uo-fonts = { path = "../uo-fonts" }

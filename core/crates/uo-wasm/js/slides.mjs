@@ -112,6 +112,8 @@ export function bindSlides(w) {
       const b = take(w.uo_slides_view_bitmap(this.#ptr, handle));
       return b.status === 0 ? b.data : null;
     }
+    /** whether the bytes of bitmap `handle` are a metafile/PICT/TIFF recipe (B5b), replayed by meta-player.ts, not RGBA */
+    isRecipe(handle) { return w.uo_slides_view_is_recipe(this.#ptr, handle) === 1; }
     /** B4b: drops both stages and empties the slot-evaluation caches */
     clearStage() {
       const s = w.uo_slides_stage_clear(this.#ptr);
@@ -190,6 +192,103 @@ export function bindSlides(w) {
     }
   }
 
+  /** The result of `uo_slides_emit` (and `uo_slides_emit_suppress`). */
+  const emitResult = (b) => {
+    if (b.status === 0) {
+      const rd = reader(b.data);
+      const flags = rd.u8(), n = rd.u32();
+      const charts = [];
+      for (let i = 0; i < n; i++) charts.push({ shape: rd.u32(), x: rd.f64(), y: rd.f64(), w: rd.f64(), h: rd.f64() });
+      return { status: 0, flags, newGeneration: (flags & 1) !== 0, charts, message: rd.rest() };
+    }
+    if (b.status === 12) return { status: 12, requests: requests(b.data) };
+    return { status: b.status };
+  };
+
+  // ── the read model (wave 4): decoders of uo_slides_outline / links / assets / media_* / fonts / typefaces / show_settings ──
+  const tri = (v) => (v === 2 ? undefined : v === 1);
+  const paras = (rd) => { const n = rd.u32(), out = []; for (let i = 0; i < n; i++) out.push(rd.str()); return out; };
+  const outline = (data) => {
+    const rd = reader(data);
+    const n = rd.u32(), shapes = [];
+    for (let i = 0; i < n; i++) {
+      const f = rd.u8();
+      const phType = rd.str(), descr = rd.str();
+      const sh = { inherited: (f & 1) !== 0, image: (f & 2) !== 0, media: (f & 4) !== 0, phType: phType || undefined,
+        descr: (f & 32) !== 0 ? descr : undefined, hasText: (f & 8) !== 0, paragraphs: paras(rd), table: null };
+      if (f & 16) {
+        const rows = [], nr = rd.u32();
+        for (let r = 0; r < nr; r++) {
+          const cells = [], nc = rd.u32();
+          for (let c = 0; c < nc; c++) { const cf = rd.u8(); cells.push({ hMerge: (cf & 1) !== 0, vMerge: (cf & 2) !== 0, paragraphs: paras(rd) }); }
+          rows.push(cells);
+        }
+        sh.table = rows;
+      }
+      shapes.push(sh);
+    }
+    return shapes;
+  };
+  const SOURCES = ['run', 'shape', 'jump'];
+  const JUMPS = ['next', 'previous', 'first', 'last', 'lastViewed', 'end'];
+  const links = (data) => {
+    const rd = reader(data);
+    const n = rd.u32(), out = [];
+    for (let i = 0; i < n; i++) {
+      const shape = rd.u32(), source = SOURCES[rd.u8()] ?? 'run';
+      const x = rd.f64(), y = rd.f64(), w = rd.f64(), h = rd.f64();
+      const k = rd.u8();
+      const target = k === 0 ? { url: rd.str() } : k === 1 ? { slide: rd.i32() } : { show: JUMPS[rd.u8()] ?? 'next' };
+      out.push({ shape, source, x, y, w, h, target });
+    }
+    return out;
+  };
+  const assets = (data) => {
+    const rd = reader(data);
+    const images = [];
+    for (let i = 0, n = rd.u32(); i < n; i++) { const part = rd.str(), mime = rd.str(), f = rd.u8(); images.push({ part, mime, gif: (f & 1) !== 0, special: (f & 2) !== 0 }); }
+    const media = [];
+    for (let i = 0, n = rd.u32(); i < n; i++) {
+      const shape = rd.u32(), inherited = rd.u8() !== 0, spid = rd.str();
+      const gifPart = rd.u8() === 1 ? rd.str() : null;
+      const kind = rd.u8();
+      let ref = null;
+      if (kind !== 0) {
+        const part = rd.str(), url = rd.str(), mime = rd.str();
+        const ts = rd.f64(), te = rd.f64(), fi = rd.f64(), fo = rd.f64();
+        ref = { kind: kind === 1 ? 'video' : 'audio', mime };
+        if (part) ref.part = part;
+        if (url) ref.url = url;
+        if (!Number.isNaN(ts)) ref.trim = { startMs: ts, endMs: te };
+        if (!Number.isNaN(fi)) ref.fade = { inMs: fi, outMs: fo };
+      }
+      let info = null;
+      if (rd.u8() === 1) {
+        const vol = rd.f64();
+        info = { spid, kind: ref?.kind ?? 'video' };
+        if (!Number.isNaN(vol)) info.vol = vol;
+        for (const k2 of ['mute', 'showWhenStopped', 'rewind', 'loop', 'fullScreen']) { const v = tri(rd.u8()); if (v !== undefined) info[k2] = v; }
+      }
+      media.push({ shape, inherited, spid, gifPart, media: ref, info });
+    }
+    return { images, media };
+  };
+  const mediaStates = (data) => {
+    const rd = reader(data);
+    if (rd.u8() === 0) return null;
+    const index = rd.i32(), animMs = rd.f64(), gifMs = rd.f64();
+    const states = new Map();
+    for (let i = 0, n = rd.u32(); i < n; i++) {
+      const shape = rd.u32(), started = rd.u8() !== 0, playing = rd.u8() !== 0, ended = rd.u8() !== 0, timeSec = rd.f64(), dur = rd.f64();
+      const st = { started, playing, timeSec };
+      if (!Number.isNaN(dur)) st.durMs = dur;
+      if (ended) st.ended = true;
+      states.set(shape, st);
+    }
+    return { index, animMs, gifMs, states };
+  };
+  const VARIANTS = ['regular', 'bold', 'italic', 'boldItalic'];
+
   class SlidesDeck {
     #ptr;
     constructor(ptr) {
@@ -237,16 +336,11 @@ export function bindSlides(w) {
      * js/gen/slides.ts), `{ status: 12, requests }` (answer them, emit again) or `{ status }` for an error status.
      */
     emit(view, index, scale, ox, oy) {
-      const b = take(w.uo_slides_emit(this.#ptr, view.ptr, index, scale, ox, oy));
-      if (b.status === 0) {
-        const rd = reader(b.data);
-        const flags = rd.u8(), n = rd.u32();
-        const charts = [];
-        for (let i = 0; i < n; i++) charts.push({ shape: rd.u32(), x: rd.f64(), y: rd.f64(), w: rd.f64(), h: rd.f64() });
-        return { status: 0, flags, newGeneration: (flags & 1) !== 0, charts, message: rd.rest() };
-      }
-      if (b.status === 12) return { status: 12, requests: requests(b.data) };
-      return { status: b.status };
+      return emitResult(take(w.uo_slides_emit(this.#ptr, view.ptr, index, scale, ox, oy)));
+    }
+    /** `emit` with the text of shape `shape` (an index of the slide's shapes) left out: the editor's inline overlay covers it */
+    emitSuppress(view, index, scale, ox, oy, shape) {
+      return emitResult(take(w.uo_slides_emit_suppress(this.#ptr, view.ptr, index, scale, ox, oy, shape)));
     }
     /** the answers to the requests of the last status-12 emit, in order (layout in src/slides.rs) */
     answer(nums) {
@@ -254,6 +348,50 @@ export function bindSlides(w) {
       const [p, n] = arg(bytes.slice());
       const s = w.uo_slides_answer(this.#ptr, p, n);
       if (s !== 0) throw new SlidesError(s, 'answer');
+    }
+    /** the accessible outline of slide `i` (per shape: flags, placeholder type, alternative text, paragraphs, table cells) */
+    outline(i) { return outline(ok(take(w.uo_slides_outline(this.#ptr, i)), 'outline')); }
+    /** the link boxes of slide `i` at `scale` px per EMU and origin `(ox, oy)` */
+    links(i, scale, ox, oy) { return links(ok(take(w.uo_slides_links(this.#ptr, i, scale, ox, oy)), 'links')); }
+    /** the pictures to decode and the media/GIF shapes of slide `i` */
+    assets(i) { return assets(ok(take(w.uo_slides_assets(this.#ptr, i)), 'assets')); }
+    /** the media states of a playback stage (`src` a SlidesShow at `at` = now or a SlidesTimeline at `at` = t), or null */
+    mediaStates(src, at, which, clock = {}) {
+      const lat = clock.latencyMs ?? NaN, k = clock.scale ?? NaN;
+      return mediaStates(ok(take(src instanceof SlidesTimeline
+        ? w.uo_slides_media_timeline(this.#ptr, src.ptr, at, which, lat, k)
+        : w.uo_slides_media_show(this.#ptr, src.ptr, at, which, lat, k)), 'media states'));
+    }
+    /** the fonts embedded in the package */
+    fonts() {
+      const rd = reader(ok(take(w.uo_slides_fonts(this.#ptr)), 'fonts'));
+      const out = [];
+      for (let i = 0, n = rd.u32(); i < n; i++) {
+        const family = rd.str(), variant = VARIANTS[rd.u8()] ?? 'regular', weight = rd.i32(), italic = tri(rd.u8());
+        const data = rd.bytes(rd.u32()).slice();
+        const f = { family, variant, data };
+        if (weight >= 0) f.weight = weight;
+        if (italic !== undefined) f.italic = italic;
+        out.push(f);
+      }
+      return out;
+    }
+    /** the typefaces the slides, layouts and masters name literally */
+    typefaces() {
+      const rd = reader(ok(take(w.uo_slides_typefaces(this.#ptr)), 'typefaces'));
+      const out = [];
+      for (let i = 0, n = rd.u32(); i < n; i++) out.push(rd.str());
+      return out;
+    }
+    /** `<p:showPr>`: `{ loop?, useTimings?, showAnimation?, kiosk?, range? }` or null */
+    showSettings() {
+      const rd = reader(ok(take(w.uo_slides_show_settings(this.#ptr)), 'show settings'));
+      if (rd.u8() === 0) return null;
+      const out = {};
+      for (const k of ['loop', 'useTimings', 'showAnimation', 'kiosk']) { const v = tri(rd.u8()); if (v !== undefined) out[k] = v; }
+      const lo = rd.f64(), hi = rd.f64();
+      if (!Number.isNaN(lo)) out.range = [lo, hi];
+      return out;
     }
     /**
      * B4b: one pass of a playback frame (`src` a SlidesShow at clock `at` = now, or a SlidesTimeline at `at` = t): `which` 0 =

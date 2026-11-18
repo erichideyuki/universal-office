@@ -70,6 +70,22 @@ pub struct ChartFrame {
     pub rect: [f64; 4],
 }
 
+/// A hyperlinked text run of the list (side data: the list itself carries no links, it is the canvas calls). One per
+/// `TextRun` written for a placed run with a `hyperlink` (a whole run or a unit piece; bullets never).
+#[derive(Clone, PartialEq, Debug)]
+pub struct RunLink {
+    /// the index of the run in `list.runs` (the `SItem::Text` operand)
+    pub run: u32,
+    /// the shape being emitted (an index of the emitted shapes)
+    pub shape: u32,
+    /// the address (`Run.hyperlink`: http or https, the reader's rule)
+    pub url: Box<str>,
+    /// the run box in the list's USER space at the run's transform (not the device: a rotated shape's runs are under its
+    /// transform): `x` = the run's `x`, top = baseline − 0.9 × size px, `w` = the laid width (`r.w × scale`, or the unit
+    /// piece's measured width), `h` = 1.2 × size px. A painter maps it through its current transform when it draws the run.
+    pub rect: [f64; 4],
+}
+
 /// The result of an emission: the list and what it left to the host.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Emission {
@@ -77,6 +93,8 @@ pub struct Emission {
     pub chart_frames: Vec<ChartFrame>,
     /// the slots of the list (positional with `list.slots`): what each hook receives
     pub slots: Vec<EmitSlot>,
+    /// the hyperlinked runs of the list, in paint order
+    pub links: Vec<RunLink>,
 }
 
 /// The slide background of `paintSlide` (`slide.bg`, `slide.bgImage`, `slide.bgTile`).
@@ -100,7 +118,8 @@ fn finish(mut cx: Cx<'_>) -> Result<Emission, NeedMeasures> {
     }
     let chart_frames = std::mem::take(&mut cx.chart_frames).into_iter().map(|(shape, rect)| ChartFrame { shape, rect }).collect();
     let slots = std::mem::take(&mut cx.slots);
-    Ok(Emission { list: cx.list, chart_frames, slots })
+    let links = std::mem::take(&mut cx.links);
+    Ok(Emission { list: cx.list, chart_frames, slots, links })
 }
 
 fn fit_of(p: &EmitParams) -> Fit {

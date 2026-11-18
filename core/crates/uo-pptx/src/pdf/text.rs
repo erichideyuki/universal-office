@@ -231,7 +231,7 @@ impl Interp<'_, '_> {
         self.fill_glyphs(&f, size, x, y, text, true, 0.0, &fill, 1.0, width);
     }
 
-    pub(super) fn text_run(&mut self, r: &TextRun) {
+    pub(super) fn text_run(&mut self, index: u32, r: &TextRun) {
         if self.t.cur.dead || !self.can_paint(false) {
             return;
         }
@@ -244,6 +244,9 @@ impl Interp<'_, '_> {
         let (x0, y) = (r.x, r.y);
         if !(size.is_finite() && size > 0.0 && x0.is_finite() && y.is_finite()) {
             return;
+        }
+        if !r.bullet {
+            self.links.mark(index, self.t.cur.ctm, self.t.cur.align);
         }
         let Some(f) = self.font_of(r.font.face) else { return };
         self.w.report.text_runs += 1;
@@ -278,9 +281,6 @@ impl Interp<'_, '_> {
             Align::Right | Align::End => x0 - width,
             _ => x0,
         };
-        if self.placed.len() < 1_000_000 {
-            self.placed.push(super::interp::Placed { text: text.clone(), x, y, size, w: r.laid_w.unwrap_or(width) });
-        }
         let a_mul = r.alpha_mul.unwrap_or(1.0);
         if r.fill_text {
             // the run's own shadow is the canvas shadow of the fill pass (save, shadow*, fillText, restore)

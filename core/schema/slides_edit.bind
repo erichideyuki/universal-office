@@ -1,0 +1,27 @@
+# The bind map of schema/slides_edit.uos (core/tools/uo-schema rust_bind): which Rust type each wire type is.
+# The result types (EditResult, UiState, PartChange, ApplyOutcome, the queries) are built by hand in
+# crates/uo-wasm/src/slides_edit.rs: they have no single Rust type. TransitionSpec, ShowSettingsSpec and ClipRel are
+# manual (slides_edit/wire.rs): their Rust fields `type_`/`loop_` are not schema field names.
+runtime crate::slides_edit::wire
+
+Op enum uo_pptx::edit::Op
+Outcome enum uo_pptx::edit::Outcome into_only
+OptUtf16 option
+OptBytes option
+TupF64F64 tuple
+TupI32Utf16 tuple
+Target enum uo_pptx::edit::Target
+Frame struct uo_pptx::edit::shapes::Frame
+RunFormat struct uo_pptx::edit::shapes::RunFormat
+BulletKind enum uo_pptx::edit::shapes::BulletKind
+ArrangeMode enum uo_pptx::edit::shapes::ArrangeMode
+TransitionSpec manual
+ShowSettingsSpec manual
+DocProperties struct uo_pptx::edit::doc::DocProperties
+ClipRel manual
+ShapeClip struct uo_pptx::edit::doc::ShapeClip
+BlankDeckOptions struct uo_pptx::edit::blank::BlankDeckOptions
+FaceRequest struct uo_fonts::FaceRequest into_only
+Variant enum uo_fonts::Variant into_only
+SkipReason enum uo_fonts::SkipReason into_only
+Skipped tuple into_only

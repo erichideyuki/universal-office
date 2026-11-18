@@ -1,0 +1,415 @@
+// The editing protocol of <universal-slides engine="rust"> over wasm (record core/docs/modules/uo-bindings.md
+// "Slides editor (B8 routing)"): the commands of `uo_slides_editor_apply` (uo_pptx::edit::Op, one variant per mutating
+// method of the element), what every editing export answers (the outcome, the UI state the history saves, the parts that
+// changed since the last answer: the shell keeps its own copy of the package in step), the shape clipboard, the blank
+// presentation and the save with fonts in two phases.
+//
+// schema/slides_edit.bind binds each type to its Rust type (core/tools/uo-schema rust_bind): a new variant or field of
+// `Op` fails to compile until it is added here. Wire rules (declared in the record): i64 travels as i32 (checked), u64 as
+// f64 (exact below 2^53, checked); `utf16` arguments are built from UTF-16 (a lone surrogate becomes U+FFFD); images and
+// the clipboard's part bytes travel as `bytes`.
+schema slides_edit magic "UOSE";
+
+// ───────────────────────────── messages ─────────────────────────────
+
+/// `uo_slides_editor_apply`: one editing command
+message Apply {
+  op: Op,
+}
+
+/// what `apply`, `undo`, `redo`, `set_ui` and `set_font_embedding` answer
+message EditResult {
+  outcome: ApplyOutcome,
+  state: UiState,
+  /// the parts that changed since the previous answer, in store order, then the removed ones (`bytes` absent)
+  changes: list<PartChange>,
+}
+
+/// `uo_slides_editor_blank`: the options of a blank presentation (its bytes come back)
+message Blank {
+  opts: BlankDeckOptions,
+}
+
+/// `uo_slides_editor_copy_shape` answers it; `Op.PasteShape` carries it back (also across editors of the page)
+message Clip {
+  clip: ShapeClip,
+}
+
+/// `uo_slides_editor_query`
+message Query {
+  q: QueryOp,
+}
+
+message QueryResult {
+  r: QueryAnswer,
+}
+
+/// `uo_slides_editor_font_requests`: the faces the save wants (phase 1; empty when the option is off)
+message FontRequests {
+  embed: bool,
+  subset: bool,
+  requests: list<FaceRequest>,
+}
+
+/// `uo_slides_editor_save_with_fonts`: one answer per request, in order (absent: the host has no file for it)
+message FontFaces {
+  faces: list<OptBytes>,
+}
+
+/// what `uo_slides_editor_save_with_fonts` answers: the file and the report of the `us-font-embedding` event
+message SaveResult {
+  bytes: bytes,
+  embedded: list<utf16>,
+  skipped: list<Skipped>,
+}
+
+// ───────────────────────────── results ─────────────────────────────
+
+enum ApplyOutcome {
+  Ok(Outcome),
+  /// the command failed: the package is as it was before it (decision B8-1)
+  Err(utf16),
+}
+
+/// uo_pptx::edit::Outcome
+enum Outcome {
+  Nothing,
+  Bool(bool),
+  Index(i32),
+  Shape(OptUtf16),
+  Count(f64),
+}
+
+struct OptUtf16 {
+  value: utf16?,
+}
+
+struct OptBytes {
+  value: bytes?,
+}
+
+/// the session's UI state after the call (the shell mirrors it)
+struct UiState {
+  index: u32,
+  selected: utf16?,
+  can_undo: bool,
+  can_redo: bool,
+  undo_label: utf16?,
+  redo_label: utf16?,
+  dirty: bool,
+  slides: u32,
+  embed: bool,
+  subset: bool,
+}
+
+struct PartChange {
+  name: utf16,
+  bytes: bytes?,
+}
+
+struct Skipped {
+  family: utf16,
+  reason: SkipReason,
+}
+
+enum SkipReason {
+  Common,
+  License,
+  Unavailable,
+  AlreadyEmbedded,
+}
+
+enum Variant {
+  Regular,
+  Bold,
+  Italic,
+  BoldItalic,
+}
+
+struct FaceRequest {
+  family: utf16,
+  variant: Variant,
+}
+
+// ───────────────────────────── queries ─────────────────────────────
+
+enum QueryOp {
+  /// `findText`: (slide, shape id) of the shapes whose text has the query
+  FindText(QueryFind),
+  /// `defaultNewLayout`
+  DefaultNewLayout,
+  /// `getFontEmbedding`
+  FontEmbedding,
+}
+
+struct QueryFind {
+  query: utf16,
+  match_case: bool,
+}
+
+enum QueryAnswer {
+  Hits(list<TupI32Utf16>),
+  Layout(OptUtf16),
+  Embedding(EmbeddingState),
+}
+
+struct TupI32Utf16 {
+  f0: i32,
+  f1: utf16,
+}
+
+struct EmbeddingState {
+  embed: bool,
+  subset: bool,
+}
+
+// ───────────────────────────── commands (uo_pptx::edit::Op) ─────────────────────────────
+
+enum Op {
+  AddSlide(OpAddSlide),
+  DuplicateSlide(OpSlide),
+  DeleteSlide(OpSlide),
+  MoveSlide(OpMoveSlide),
+  SetSlideHidden(OpSetSlideHidden),
+  SetSlideLayout(OpSetSlideLayout),
+  SetSlideBackground(OpSetSlideBackground),
+  SetSlideTransition(OpSetSlideTransition),
+  SetShowSettings(ShowSettingsSpec),
+  SetShapeText(OpShapeText),
+  Typing(OpTyping),
+  FormatText(OpFormatText),
+  GrowFont(OpGrowFont),
+  AlignText(OpAlignText),
+  SetBullets(OpSetBullets),
+  ClearFormatting(OpShape),
+  SetLink(OpSetLink),
+  InsertTextBox(OpInsertTextBox),
+  InsertShape(OpInsertShape),
+  InsertImage(OpInsertImage),
+  SetShapeFrame(OpSetShapeFrame),
+  SetShapeFill(OpShapeColor),
+  SetShapeOutline(OpShapeColor),
+  ArrangeShape(OpArrangeShape),
+  DeleteShape(OpShape),
+  PasteShape(OpPasteShape),
+  SetSlideNotes(OpSetSlideNotes),
+  SetProperties(DocProperties),
+  ReplaceText(OpReplaceText),
+}
+
+struct OpAddSlide {
+  layout: utf16?,
+}
+
+struct OpSlide {
+  i: i32,
+}
+
+struct OpMoveSlide {
+  from: i32,
+  to: i32,
+}
+
+struct OpSetSlideHidden {
+  i: i32,
+  hidden: bool,
+}
+
+struct OpSetSlideLayout {
+  i: i32,
+  layout: utf16,
+}
+
+struct OpSetSlideBackground {
+  target: Target,
+  color: utf16?,
+}
+
+struct OpSetSlideTransition {
+  target: Target,
+  spec: TransitionSpec?,
+}
+
+struct OpShapeText {
+  shape: utf16,
+  text: utf16,
+}
+
+struct OpTyping {
+  slide: i32,
+  shape: utf16,
+  text: utf16,
+}
+
+struct OpFormatText {
+  shape: utf16,
+  f: RunFormat,
+}
+
+struct OpGrowFont {
+  shape: utf16,
+  dir: i32,
+  base: f64,
+}
+
+struct OpAlignText {
+  shape: utf16,
+  algn: utf16,
+}
+
+struct OpSetBullets {
+  shape: utf16,
+  kind: BulletKind,
+}
+
+struct OpShape {
+  shape: utf16,
+}
+
+struct OpSetLink {
+  shape: utf16,
+  url: utf16?,
+}
+
+struct OpInsertTextBox {
+  text: utf16,
+  frame: Frame?,
+}
+
+struct OpInsertShape {
+  prst: utf16,
+  frame: Frame?,
+}
+
+struct OpInsertImage {
+  bytes: bytes,
+  mime: utf16,
+  frame: Frame?,
+  size_px: TupF64F64?,
+}
+
+struct OpSetShapeFrame {
+  shape: utf16,
+  frame: Frame,
+}
+
+struct OpShapeColor {
+  shape: utf16,
+  color: utf16?,
+}
+
+struct OpArrangeShape {
+  shape: utf16,
+  mode: ArrangeMode,
+}
+
+struct OpPasteShape {
+  clip: ShapeClip,
+}
+
+struct OpSetSlideNotes {
+  i: i32,
+  text: utf16,
+}
+
+struct OpReplaceText {
+  query: utf16,
+  replacement: utf16,
+  match_case: bool,
+  hit: TupI32Utf16?,
+}
+
+struct TupF64F64 {
+  f0: f64,
+  f1: f64,
+}
+
+enum Target {
+  Slide(i32),
+  All,
+}
+
+/// EMU
+struct Frame {
+  x: f64,
+  y: f64,
+  cx: f64,
+  cy: f64,
+}
+
+struct RunFormat {
+  bold: bool?,
+  italic: bool?,
+  underline: bool?,
+  strike: bool?,
+  /// points
+  size: f64?,
+  font: utf16?,
+  /// `#RRGGBB`
+  color: utf16?,
+}
+
+enum BulletKind {
+  Bullet,
+  Number,
+  None,
+}
+
+enum ArrangeMode {
+  Front,
+  Back,
+  Forward,
+  Backward,
+}
+
+struct TransitionSpec {
+  type: utf16,
+  dir: utf16?,
+  speed: utf16?,
+  advance_on_click: bool?,
+  advance_after_ms: f64?,
+}
+
+struct ShowSettingsSpec {
+  loop: bool?,
+  use_timings: bool?,
+  show_animation: bool?,
+  kiosk: bool?,
+}
+
+struct DocProperties {
+  title: utf16?,
+  subject: utf16?,
+  author: utf16?,
+  keywords: utf16?,
+  description: utf16?,
+  last_modified_by: utf16?,
+  created: utf16?,
+  modified: utf16?,
+}
+
+struct ClipRel {
+  id: utf16,
+  type: utf16,
+  target: utf16,
+  external: bool,
+  bytes: bytes?,
+  content_type: utf16?,
+}
+
+/// a copied shape: its XML, the relations it cites (with the bytes of the parts they point at), its text and the
+/// identity of the editor it came from (`source_id`: pasting in the same editor shares the parts)
+struct ShapeClip {
+  xml: utf16,
+  rels: list<ClipRel>,
+  text: utf16,
+  source_id: f64,
+  slide_path: utf16,
+}
+
+struct BlankDeckOptions {
+  wide: bool,
+  title: utf16?,
+  lang: utf16,
+  now: utf16,
+}

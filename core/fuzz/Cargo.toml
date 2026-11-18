@@ -214,6 +214,14 @@ doc = false
 bench = false
 
 [[bin]]
+name = "slides_edit_wire"
+path = "fuzz_targets/slides_edit_wire.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "chart_parse"
 path = "fuzz_targets/chart_parse.rs"
 required-features = ["libfuzzer"]

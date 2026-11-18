@@ -95,6 +95,7 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
     let started = Instant::now();
     let all = decks(&[("b1a", usize::MAX), ("b3a", usize::MAX), ("b5a", usize::MAX), ("b5b", usize::MAX)]);
     let (mut n_pdf, mut pages, mut bytes_total, mut glyphs, mut links, mut recipes) = (0usize, 0usize, 0usize, 0u64, 0u64, 0u64);
+    let (mut internal_links, mut shape_wide, mut off_page) = (0u64, 0u64, 0u64);
     let mut missing: BTreeMap<&'static str, u64> = BTreeMap::new();
     let mut failed_slides = 0usize;
     let mut drawn = [0u64; 5];
@@ -123,6 +124,9 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
         bytes_total += out.bytes.len();
         glyphs += out.report.glyphs;
         links += out.report.links;
+        internal_links += out.report.internal_links;
+        shape_wide += out.report.shape_wide_links;
+        off_page += out.report.links_off_page;
         recipes += out.report.recipes;
         failed_slides += out.report.failed_slides.len();
         for (d, v) in drawn.iter_mut().zip([
@@ -144,7 +148,7 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
     }
     let wall = started.elapsed().as_secs_f64();
     eprintln!(
-        "PDFs: {n_pdf} decks, {pages} pages, {bytes_total} bytes, {glyphs} glyphs, {links} links, {recipes} metafile recipes, {failed_slides} failed slides, {wall:.1} s"
+        "PDFs: {n_pdf} decks, {pages} pages, {bytes_total} bytes, {glyphs} glyphs, {links} links ({internal_links} internal, {shape_wide} shape-wide, {off_page} pieces off the page), {recipes} metafile recipes, {failed_slides} failed slides, {wall:.1} s"
     );
     eprintln!("slowest deck: {} {:.2} s; mean {:.1} ms per page", slowest.1, slowest.0, wall * 1000.0 / pages as f64);
     eprintln!(

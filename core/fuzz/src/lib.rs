@@ -51,10 +51,12 @@ pub use text_layout::{text_layout, text_layout_seeds};
 
 mod slides;
 mod slides_edit;
+mod slides_edit_wire;
 mod slides_emit;
 mod slides_wire;
 pub use slides::{slides_decode, slides_roundtrip, slides_seeds};
 pub use slides_edit::{slides_edit, slides_edit_seeds};
+pub use slides_edit_wire::{slides_edit_wire, slides_edit_wire_seeds};
 pub use slides_emit::{slides_emit, slides_emit_seeds};
 
 mod charts;
@@ -174,6 +176,7 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("slides_roundtrip", slides_roundtrip),
     ("slides_emit", slides_emit),
     ("slides_edit", slides_edit),
+    ("slides_edit_wire", slides_edit_wire),
     ("ppt_convert", ppt_convert),
     ("chart_parse", chart_parse),
     ("chart_scale", chart_scale),

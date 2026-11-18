@@ -954,7 +954,29 @@ truncated, cut, duplicated, flipped and spliced with hostile tokens; a failed op
    `Editor` (pure over the model); `getTextFormat` (the base size of `growFont`) and the image decode stay in the shell, which passes `base` and `size_px`.
 10. The `.ppt` samples are not scripted (opening converts first; B2 has its own gate).
 
-### Routing behind `engine="rust"` (not done in this part): what the shell needs
+### Routing behind `engine="rust"` — DONE (2026-11-17, B8 routing; record `uo-bindings.md` "Slides editor (B8 routing)")
+
+The design below was followed, with these differences: the deck stays the VIEWER handle's (`UoSlidesDeck`), and the editor
+handle lends it to a detached session per call (`Editor::detached`, `Editor::with_deck`: two `mem::swap`s), so the emission, the
+stills, the thumbnails and the stage of `present()`/`play()` read the edited package with no copy; each editing answer reports the
+parts that changed since the previous one (`edit::changes_since`) and the shell keeps its TS package in step with them (the TS model
+that hit tests, the selection, the bars and the a11y text still read). The Op codec is schema-generated (`schema/slides_edit.uos` +
+the bind map `slides_edit.bind`: `Op` and its argument types are bound to the Rust types, a new variant fails to compile until the
+schema has it). Additive here: `Editor::{detached, with_deck}`, `edit::changes_since`, and the replay moved to
+`tests/support/edit_capture.rs` (a `Driver` trait; `edit_replay.rs` drives `Editor`, uo-wasm's `slides_edit_native.rs` drives the
+exports).
+
+**Decision B8-1 reviewed ("a failed op restores the snapshot; the TS keeps partial changes") — KEPT.** What a user of the TS editor
+observes after an operation throws: the method throws, the canvas and the model show the state before it (`edit()` re-reads only
+after `fn` returns), and no undo step exists. The Rust path gives all three (the binding answers `Err`, the shell throws after
+mirroring the unchanged state). The only difference is the bytes the TS left in its package, which the user never saw but which a
+later save or the next step's snapshot would carry; restoring them is what the visible state says. Evidence that it changes no
+result on the corpus: the browser harness counts the steps where both engines threw and compares the packages after them (2,400 steps over
+60 decks: no editing command threw in either engine, the packages are equal after every step); in the B8 captures (8,696 steps, byte-equal natively and through the ABI) no TS operation threw (a thrown step
+records `err`, which the Rust side would print as `err:<message>` and fail the facet). On hostile packages (`edit_nopanic`,
+`slides_edit` fuzz) the restore is what keeps "a failed operation changes nothing" testable.
+
+### Routing behind `engine="rust"` (the plan as written before the routing)
 
 - **wasm exports** (`uo-wasm`, one `Editor` per element, in the SAME instance as the viewer's `Deck`: the emission reads `editor.deck_mut()`):
   `editor_open(bytes)`, `editor_blank(opts)`, `editor_apply(op)` returning the `Outcome` (the `Op` needs a binary codec like the display list: a schema

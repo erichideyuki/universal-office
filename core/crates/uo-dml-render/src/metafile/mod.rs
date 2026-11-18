@@ -163,6 +163,13 @@ pub fn is_metafile(b: &[u8]) -> bool {
     is_emf(b) || is_wmf(b)
 }
 
+/// A picture the emission rasterizes itself ([`crate::emit::Cx::special_img`]: a metafile, a PICT or a Slides TIFF): the shell
+/// never decodes it (the viewer's read model leaves it out of the pictures to warm).
+#[must_use]
+pub fn is_special_image(b: &[u8]) -> bool {
+    is_metafile(b) || pict::is_pict(b) || uo_image::is_tiff_slides(b)
+}
+
 fn i32le(b: &[u8], o: usize) -> i32 {
     i32::from_le_bytes([at(b, o), at(b, o + 1), at(b, o + 2), at(b, o + 3)])
 }

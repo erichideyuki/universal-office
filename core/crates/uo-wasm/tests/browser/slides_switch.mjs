@@ -4,21 +4,27 @@
 //   [UO_TS_ROOT=<frozen checkout: tools only, default the 0.9.2 reference>] [UO_CHROMIUM=<chrome-headless-shell.exe>]
 //   [UO_WASM_PATH=<uo-slides.wasm: the count,slides build>] [UO_PPT_WASM_PATH=<uo-slides-ppt.wasm>]
 //   [UO_SS_DECKS=<n of b1a decks, default 40>] [UO_SS_C1D=<n of c1d chart decks, default 20>] [UO_SS_B6A=<n of b6a animated decks, default 40>]
-//   [UO_SS_SOAK=200] node crates/uo-wasm/tests/browser/slides_switch.mjs [--mode all|parity|memory|faults|phase0|anim]
+//   [UO_SS_SOAK=200] node crates/uo-wasm/tests/browser/slides_switch.mjs [--mode all|parity|memory|faults|phase0|anim|opencost]
 //
 // The page is the real thing: the viewer's `src/index.ts` and the Rust engine's JS bundled by the frozen esbuild (splitting, the alias
 // table of tools/build-pkg.mjs, `@universal-office/slides-engine`), served by a node:http server together with `chunks/uo-slides.wasm`
 // and `chunks/uo-slides-ppt.wasm` (the DEFAULT wasm URLs, no `configureEngine`), the open fonts and the decks.
 //   phase0  a viewer without engine="rust" requests neither wasm nor the engine's chunk and its static closure holds none of the engine
 //   parity  per deck, TS element against Rust element: slide count and size, notes, the pixels of `renderSlideToCanvas` of every slide
-//           at 1280 px and of the main canvas (selectSlide), the thumbnails; the a11y text; the link boxes; tolerance 0
+//           at 1280 px and of the main canvas (selectSlide), the thumbnails; the a11y text of every slide; the link hit-tests over a
+//           grid of points on every slide; tolerance 0. Wave 4: the Rust element opens WITHOUT the TS model (`pkg` null, no
+//           `ensureTsModel`), so every answer above comes from the Rust read model
 //   memory  200 slide changes with engine="rust" (count build): live bytes of the module and the wasm buffer flat, no handle left
 //   faults  a corrupt deck (both engines throw alike), a forced trap of the instance (the viewer drops the module, keeps painting with
 //           the TS engine, and the next load instantiates a fresh module), the hyperlink scheme filter
 //   anim    B4b: the animated decks (the playback samples, the b6a decks, the first b1a decks with effects) under a virtual clock:
 //           `play({ media: 'seek' })` sampled across the timeline and `present()` driven by `next()` with the clock stepping
 //           through the animations, the main canvas of the TS element against the Rust element (whose stage frames come from
-//           the wasm: slots evaluated in Rust), tolerance 0; then 300 frames of one deck with the module's live bytes sampled
+//           the wasm: slots evaluated in Rust), tolerance 0, and the media player's requests of every frame (video positions,
+//           play/pause, volume, GIF frames: from the TS `mediaStateAt` against the Rust media states); then 300 frames of one deck
+//           with the module's live bytes sampled
+//   opencost wave 4: per deck in a fresh page, the open cost of the TS element (the TS model) against the Rust element without the
+//           TS model (JS heap after gc, the module's live bytes, the time of `loadPptx` and of the first paint)
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync, copyFileSync } from 'node:fs';
@@ -103,7 +109,12 @@ const c1d = existsSync(c1dDir) ? readdirSync(c1dDir).filter((f) => f.endsWith('.
 const NB6A = Number(process.env.UO_SS_B6A ?? 40);
 const b6aDir = join(core, 'crates/uo-pptx/tests/captures/decks/b6a');
 const b6a = existsSync(b6aDir) ? readdirSync(b6aDir).filter((f) => f.endsWith('.pptx')).sort().slice(0, NB6A).map((f) => join(b6aDir, f)) : [];
-const decks = [...tracked.map((p) => join(repo, p)), ...b1a, ...c1d, ...(MODE === 'all' || MODE === 'anim' ? b6a : [])];
+// wave 4: the generated metafile decks (b5b): EMF+ pictures with compressed bitmaps go through the `MetaDecode` prepare phase
+// (off by default: 23 of their 682 slides still differ inside the metafile rasters; record uo-bindings.md "Wave 4")
+const NB5B = Number(process.env.UO_SS_B5B ?? 0);
+const b5bDir = join(core, 'crates/uo-pptx/tests/captures/decks/b5b');
+const b5b = existsSync(b5bDir) ? readdirSync(b5bDir).filter((f) => f.endsWith('.pptx')).sort().slice(0, NB5B).map((f) => join(b5bDir, f)) : [];
+const decks = [...tracked.map((p) => join(repo, p)), ...b1a, ...c1d, ...b5b, ...(MODE === 'all' || MODE === 'anim' ? b6a : [])];
 const deckByName = new Map(decks.map((p, i) => [`k${i}${extname(p)}`, p]));
 const FONT_DIRS = [join(repo, 'shared/fonts/files'), join(repo, 'site/assets/fonts')];
 const requests = [];
@@ -133,7 +144,7 @@ const installed = (() => {
   const exe = dirs.length && join(base, dirs[dirs.length - 1], 'chrome-headless-shell-win64', 'chrome-headless-shell.exe');
   return exe && existsSync(exe) ? exe : undefined;
 })();
-const browser = await chromium.launch({ headless: true, executablePath: process.env.UO_CHROMIUM ?? installed });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.UO_CHROMIUM ?? installed, args: ['--js-flags=--expose-gc', '--enable-precise-memory-info'] });
 const context = await browser.newContext({ timezoneId: 'UTC', deviceScaleFactor: 1, viewport: { width: 1280, height: 900 } });
 let page = null;
 async function openPage() {
@@ -166,13 +177,15 @@ const driverFn = () => {
     if (el.getAttribute('engine') === 'rust') await el.rustReady();
     const t0 = performance.now();
     // the images decode asynchronously (both engines share the viewer's cache): wait until every one is ready
-    while (performance.now() - t0 < 4000 && [...el.imageCache.values()].some((e) => !e.ready)) await sleep(20);
+    while (performance.now() - t0 < 4000 && ([...el.imageCache.values()].some((e) => !e.ready) || (el.rust?.document?.preparing ?? 0) > 0)) await sleep(20);
     await sleep(60);
     await el.fontsReady();
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   };
   const load = async (el, name) => {
     const bytes = new Uint8Array(await (await fetch(`/decks/${name}`)).arrayBuffer());
+    // engine="rust": the module is instantiated before the bytes (as `src` does), so the deck opens only in Rust
+    if (el.getAttribute('engine') === 'rust') await el.preloadRust();
     el.loadPptx(bytes);
     await settle(el);
     return bytes.length;
@@ -191,7 +204,7 @@ const driverFn = () => {
   /** TS element against Rust element on one deck */
   const compare = async (name) => {
     const ts = mk('ts'), rs = mk('rust');
-    const r = { name, slides: 0, engine: 'ts', slideDiff: [], mainDiff: 0, mainChecked: 0, thumbDiff: 0, notesDiff: 0, a11yDiff: 0, linksDiff: 0, charts: 0, pixels: 0, errors: [], painted: [0, 0] };
+    const r = { name, slides: 0, engine: 'ts', slideDiff: [], mainDiff: 0, mainChecked: 0, thumbDiff: 0, notesDiff: 0, a11yDiff: 0, a11yChecked: 0, linksDiff: 0, linkProbes: 0, linkHits: 0, linkExtra: 0, tsFree: false, tsLoads: 0, charts: 0, pixels: 0, errors: [], painted: [0, 0] };
     try {
       const errs = [];
       rs.addEventListener('us-engine-error', (e) => errs.push(String(e.detail?.error?.message ?? e.detail?.error)));
@@ -214,6 +227,10 @@ const driverFn = () => {
         const d = diff(a, b);
         r.pixels += a.length / 4;
         if (d !== 0) r.slideDiff.push({ i, d, chart: hasChart });
+        if (d !== 0 && window.__ssDebug && !r.png) {
+          const url = (el) => { const cv = document.createElement('canvas'); el.renderSlideToCanvas(i, cv, 1280); return cv.toDataURL(); };
+          r.png = [url(ts), url(rs)];
+        }
         if (i < 6) {
           const ta = thumb(ts, i), tb = thumb(rs, i);
           if (diff(ta, tb) !== 0) r.thumbDiff++;
@@ -224,9 +241,24 @@ const driverFn = () => {
           if (diff(ma, mb) !== 0) r.mainDiff++;
         }
         if (ts.getSlideNotes(i) !== rs.getSlideNotes(i)) r.notesDiff++;
+        // the accessible text of the slide (heading, paragraphs, tables, alternative texts) and the link hit-tests on it
+        ts.selectSlide(i); rs.selectSlide(i);
+        const a11y = (el) => (el.shadowRoot?.textContent ?? '') + '|' + (el.canvas.getAttribute('aria-label') ?? '');
+        r.a11yChecked++;
+        if (a11y(ts) !== a11y(rs)) r.a11yDiff++;
+        const box = ts.canvas.getBoundingClientRect();
+        for (let gy = 0; gy < 24; gy++) for (let gx = 0; gx < 40; gx++) {
+          const ev = { clientX: box.left + (gx + 0.5) * box.width / 40, clientY: box.top + (gy + 0.5) * box.height / 24 };
+          const a = ts.hitTestLink(ev), b = rs.hitTestLink(ev);
+          r.linkProbes++;
+          if (a) r.linkHits++;
+          if (!a && b && !('url' in b)) { r.linkExtra++; continue; } // a slide jump or a shape click: Rust only (declared)
+          if (JSON.stringify(a) !== JSON.stringify(b)) r.linksDiff++;
+        }
       }
-      const a11y = (el) => (el.shadowRoot?.textContent ?? '');
-      if (a11y(ts) !== a11y(rs)) r.a11yDiff++;
+      r.tsFree = rs.pkg === null;
+      r.tsLoads = rs.tsModelLoads;
+      r.metaDecoded = rs.rust?.document?.prepared ?? [0, 0];
     } catch (e) {
       r.errors.push(`exception ${e?.message ?? e}`);
     } finally {
@@ -239,7 +271,7 @@ const driverFn = () => {
     const ts = mk('ts'), rs = mk(window.__ssTsTs ? 'ts' : 'rust');
     let clock = 0;
     for (const el of [ts, rs]) el.now = () => clock;
-    const r = { name, engine: 'ts', frames: 0, diff: 0, rust: 0, firstDiff: null, errors: [] };
+    const r = { name, engine: 'ts', frames: 0, diff: 0, rust: 0, firstDiff: null, errors: [], mediaFrames: 0, mediaReq: 0, mediaDiff: 0, firstMedia: null, tsFree: false };
     try {
       const errs = [];
       rs.addEventListener('us-engine-error', (e) => errs.push(String(e.detail?.error?.message ?? e.detail?.error)));
@@ -248,8 +280,21 @@ const driverFn = () => {
       r.engine = rs.getEngine();
       const eng = rs.rust;
       if (eng) { const o = eng.paintStage.bind(eng); eng.paintStage = (...a) => { const x = o(...a); if (x.status === 0 && !x.empty) r.rust++; return x; }; }
+      // the media player's requests of a frame: video positions, play/pause, volume, mute, full screen, GIF frames
+      // per media element (by its part or address); an element that failed to load (`error`: the generated decks hold fake media
+      // bytes) is skipped on both sides, since the player stops asking for it at a moment the browser decides
+      const mediaReq = (el, other) => JSON.stringify({
+        v: [...el.media.els.entries()].filter(([k, e]) => !e.error && !other.media.els.get(k)?.error).map(([k, e]) => [k, el.media.wanted.get(e) ?? null]),
+        g: [...el.media.gifShown.entries()], full: !!el.media.fullScreen });
       const frame = (what) => {
+        ts.media.resetWanted(); rs.media.resetWanted();
         ts.paint(); rs.paint();
+        const ma = mediaReq(ts, rs), mb = mediaReq(rs, ts);
+        if (ma !== mb || ts.media.wanted.size + ts.media.gifShown.size > 0) {
+          r.mediaFrames++;
+          r.mediaReq += ts.media.wanted.size + ts.media.gifShown.size;
+          if (ma !== mb) { r.mediaDiff++; r.firstMedia ??= { what, ts: ma, rust: mb }; }
+        }
         const d = diff(pixels(ts.canvas), pixels(rs.canvas));
         r.frames++;
         if (d !== 0) {
@@ -283,6 +328,7 @@ const driverFn = () => {
         ts.next(); rs.next();
       }
       ts.stopPresentation(); rs.stopPresentation();
+      r.tsFree = rs.pkg === null && rs.tsModelLoads === 0;
       r.errors = errs;
     } catch (e) {
       r.errors.push(`exception ${e?.message ?? e}`);
@@ -309,14 +355,16 @@ if (MODE === 'all' || MODE === 'phase0') {
 }
 
 // ── parity ──────────────────────────────────────────────────────────────────────────────────────────
-const totals = { rustPaints: 0, leftToTs: 0, decks: 0, rust: 0, slides: 0, equalSlides: 0, diffSlides: 0, chartSlides: 0, chartDiffs: 0, nonChartDiffs: 0, pixels: 0, mainDiff: 0, mainChecked: 0, thumbDiff: 0, notesDiff: 0, a11yDiff: 0, errors: 0 };
+const totals = { rustPaints: 0, leftToTs: 0, decks: 0, rust: 0, slides: 0, equalSlides: 0, diffSlides: 0, chartSlides: 0, chartDiffs: 0, nonChartDiffs: 0, pixels: 0, mainDiff: 0, mainChecked: 0, thumbDiff: 0, notesDiff: 0, a11yDiff: 0, a11yChecked: 0, linksDiff: 0, linkProbes: 0, linkHits: 0, linkExtra: 0, tsFree: 0, tsLoads: 0, metaDecoded: [0, 0], errors: 0 };
 if (MODE === 'all' || MODE === 'parity') {
   const BATCH = Number(process.env.UO_SS_BATCH ?? 12);
   const t0 = Date.now();
   const bad = [];
   for (let k = 0; k < names.length; k++) {
     if (k % BATCH === 0) { await openPage(); await install(); }
+    if (process.env.UO_SS_DEBUG) await page.evaluate(() => { window.__ssDebug = true; });
     const r = await page.evaluate((n) => window.__d.compare(n), names[k]);
+    if (r.png) { r.png.forEach((u, j) => writeFileSync(join(outDir, `parity-diff-${k}-${j ? 'rust' : 'ts'}.png`), Buffer.from(u.split(',')[1], 'base64'))); delete r.png; }
     totals.decks++;
     if (r.engine === 'rust') totals.rust++;
     totals.slides += r.slides;
@@ -329,13 +377,20 @@ if (MODE === 'all' || MODE === 'parity') {
     totals.chartDiffs += r.slideDiff.filter((s) => s.chart).length;
     totals.nonChartDiffs += r.slideDiff.filter((s) => !s.chart).length;
     totals.mainDiff += r.mainDiff; totals.mainChecked += r.mainChecked; totals.thumbDiff += r.thumbDiff;
-    totals.notesDiff += r.notesDiff; totals.a11yDiff += r.a11yDiff; totals.errors += r.errors.length;
+    totals.notesDiff += r.notesDiff; totals.a11yDiff += r.a11yDiff; totals.a11yChecked += r.a11yChecked; totals.errors += r.errors.length;
+    totals.metaDecoded[0] += r.metaDecoded?.[0] ?? 0; totals.metaDecoded[1] += r.metaDecoded?.[1] ?? 0;
+    totals.linksDiff += r.linksDiff; totals.linkProbes += r.linkProbes; totals.linkHits += r.linkHits; totals.linkExtra += r.linkExtra;
+    if (r.tsFree) totals.tsFree++;
+    totals.tsLoads += r.tsLoads;
     const nc = r.slideDiff.filter((s) => !s.chart);
-    if (r.slideDiff.length || r.errors.length || r.engine !== 'rust' || r.mainDiff || r.thumbDiff || r.notesDiff) bad.push({ deck: relative(deckByName.get(r.name)), engine: r.engine, errors: r.errors, diffs: r.slideDiff.slice(0, 4), main: r.mainDiff, thumb: r.thumbDiff, notes: r.notesDiff });
+    if (r.slideDiff.length || r.errors.length || r.engine !== 'rust' || r.mainDiff || r.thumbDiff || r.notesDiff || r.a11yDiff || r.linksDiff || !r.tsFree || r.tsLoads) bad.push({ deck: relative(deckByName.get(r.name)), engine: r.engine, errors: r.errors, diffs: r.slideDiff.slice(0, 4), main: r.mainDiff, thumb: r.thumbDiff, notes: r.notesDiff, a11y: r.a11yDiff, links: r.linksDiff, tsFree: r.tsFree, tsLoads: r.tsLoads });
   }
   console.log(`parity: ${totals.decks} decks (${totals.rust} opened in the Rust engine), ${totals.slides} slides, ${totals.equalSlides} equal / ${totals.diffSlides} different (${totals.chartDiffs} of them with a chart frame, ${totals.nonChartDiffs} without; ${totals.chartSlides} slides have charts; the Rust list painted ${totals.rustPaints} slide paints, ${totals.leftToTs} were left to the TS painter), ${totals.pixels} pixels compared, tolerance 0`);
-  console.log(`        main canvas: ${totals.mainChecked} compared, ${totals.mainDiff} different; thumbnails: ${totals.thumbDiff} different; notes: ${totals.notesDiff} different; a11y text: ${totals.a11yDiff} different; errors ${totals.errors}; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  console.log(`        main canvas: ${totals.mainChecked} compared, ${totals.mainDiff} different; thumbnails: ${totals.thumbDiff} different; notes: ${totals.notesDiff} different; a11y text: ${totals.a11yChecked} slides, ${totals.a11yDiff} different; errors ${totals.errors}; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  console.log(`        link hit-tests: ${totals.linkProbes} points, ${totals.linkHits} on a TS link, ${totals.linksDiff} different, ${totals.linkExtra} Rust-only jumps/shape clicks; decks opened without the TS model: ${totals.tsFree}/${totals.decks}, TS model loads ${totals.tsLoads}; EMF+ compressed bitmaps through the prepare phase: ${totals.metaDecoded[0]} decoded, ${totals.metaDecoded[1]} undecodable`);
   for (const b of bad.slice(0, 25)) console.log('  DIFF', JSON.stringify(b));
+  if (totals.a11yDiff || totals.linksDiff) fail(`parity: ${totals.a11yDiff} a11y texts and ${totals.linksDiff} link hit-tests differ`);
+  if (totals.tsFree !== totals.decks || totals.tsLoads) fail(`parity: ${totals.decks - totals.tsFree} decks kept the TS model, ${totals.tsLoads} TS model loads`);
   if (totals.diffSlides || totals.errors || totals.rust !== totals.decks) fail(`parity: ${totals.diffSlides} slides differ (${totals.chartDiffs} with charts), ${totals.errors} errors, ${totals.decks - totals.rust} decks stayed on the TS engine`);
 }
 function relative(f) { return fwd(f).replace(`${fwd(repo)}/`, ''); }
@@ -347,7 +402,7 @@ if (MODE === 'all' || MODE === 'anim') {
   const animNames = names.filter(isAnim).filter((n) => !only || fwd(deckByName.get(n)).includes(only));
   const flags = () => page.evaluate(({ dbg, tsts }) => { window.__ssDebug = dbg; window.__ssTsTs = tsts; }, { dbg: !!process.env.UO_SS_DEBUG, tsts: !!process.env.UO_SS_TSTS });
   const t0 = Date.now();
-  const tot = { decks: 0, rust: 0, frames: 0, diff: 0, rustFrames: 0, errors: 0 };
+  const tot = { decks: 0, rust: 0, frames: 0, diff: 0, rustFrames: 0, errors: 0, mediaFrames: 0, mediaReq: 0, mediaDiff: 0, tsFree: 0 };
   const bad = [];
   for (let k = 0; k < animNames.length; k++) {
     if (k % 10 === 0) { await openPage(); await install(); await flags(); }
@@ -358,10 +413,13 @@ if (MODE === 'all' || MODE === 'anim') {
     }
     tot.decks++; if (r.engine === 'rust') tot.rust++;
     tot.frames += r.frames; tot.diff += r.diff; tot.rustFrames += r.rust; tot.errors += r.errors.length;
-    if (r.diff || r.errors.length || r.engine !== 'rust') bad.push({ deck: relative(deckByName.get(r.name)), engine: r.engine, diff: r.diff, first: r.firstDiff, errors: r.errors });
+    tot.mediaFrames += r.mediaFrames; tot.mediaReq += r.mediaReq; tot.mediaDiff += r.mediaDiff; if (r.tsFree) tot.tsFree++;
+    if (r.diff || r.errors.length || r.engine !== 'rust' || r.mediaDiff || !r.tsFree) bad.push({ deck: relative(deckByName.get(r.name)), engine: r.engine, diff: r.diff, first: r.firstDiff, media: r.firstMedia, tsFree: r.tsFree, errors: r.errors });
   }
-  console.log(`anim: ${tot.decks} animated decks (${tot.rust} in the Rust engine), ${tot.frames} frames (play + present), ${tot.frames - tot.diff} pixel-equal / ${tot.diff} different, ${tot.rustFrames} stage paints by the Rust list, errors ${tot.errors}; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  console.log(`anim: ${tot.decks} animated decks (${tot.rust} in the Rust engine, ${tot.tsFree} without the TS model), ${tot.frames} frames (play + present), ${tot.frames - tot.diff} pixel-equal / ${tot.diff} different, ${tot.rustFrames} stage paints by the Rust list, errors ${tot.errors}; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  console.log(`      media: ${tot.mediaFrames} frames with media requests (${tot.mediaReq} requests), ${tot.mediaDiff} different`);
   for (const b of bad.slice(0, 25)) console.log('  DIFF', JSON.stringify(b));
+  if (tot.mediaDiff || tot.tsFree !== tot.decks) fail(`anim: ${tot.mediaDiff} frames with different media requests, ${tot.decks - tot.tsFree} decks with the TS model`);
   if (tot.diff || tot.errors || tot.rust !== tot.decks || tot.rustFrames === 0) fail(`anim: ${tot.diff} frames differ, ${tot.errors} errors, ${tot.decks - tot.rust} decks stayed on the TS engine`);
   // memory of the playback: 300 frames of one animated deck, the module's live bytes flat
   await openPage(); await install();
@@ -491,7 +549,7 @@ if (MODE === 'all' || MODE === 'faults') {
       const el = d.mk(engine);
       el.slides = [{ shapes: [] }];
       el.pres = { slideW: 9144000, slideH: 6858000, slides: [] };
-      el.hitTestHyperlink = () => window.__link;
+      el.hitTestLink = () => ({ url: window.__link });
       for (const u of ['https://example.com/a', 'mailto:a@b.c', 'javascript:alert(1)', 'data:text/html,x', 'file:///c:/x', ' HTTP://X.org']) {
         window.__link = u;
         el.onClick({ preventDefault() {}, button: 0, clientX: 0, clientY: 0 });
@@ -506,6 +564,45 @@ if (MODE === 'all' || MODE === 'faults') {
   const allowed = links.rust.map((o) => o[0]);
   if (!(allowed.length === 3 && !allowed.some((u) => /^(javascript|data|file):/i.test(u)) && links.rust.every((o) => /noreferrer/.test(o[1])))) fail('faults: the Rust viewer\'s link filter');
   if (links.ts.length !== 6) fail('faults: the TS viewer must keep opening every address (frozen behaviour)');
+}
+
+// ── open cost (wave 4) ───────────────────────────────────────────────────────────────────────────────
+if (MODE === 'all' || MODE === 'opencost') {
+  const pick = names.filter((k) => k.endsWith('.pptx')).map((k) => [k, readFileSync(deckByName.get(k)).length]).sort((a, b) => b[1] - a[1]).slice(0, Number(process.env.UO_SS_COST ?? 12)).map((x) => x[0]);
+  const rows = [];
+  for (const n of pick) {
+    const one = {};
+    for (const engine of ['ts', 'rust']) {
+      await openPage(); await install();
+      one[engine] = await page.evaluate(async ({ n, engine }) => {
+        const d = window.__d;
+        const st = await window.__e.engineModule();
+        const bytes = new Uint8Array(await (await fetch(`/decks/${n}`)).arrayBuffer());
+        const el = d.mk(engine);
+        if (engine === 'rust') await el.preloadRust();
+        const heap = async () => { for (let i = 0; i < 4; i++) { window.gc?.(); await d.sleep(20); } return performance.memory?.usedJSHeapSize ?? 0; };
+        const live0 = st.slidesLiveBytes();
+        const h0 = await heap();
+        const t0 = performance.now();
+        el.loadPptx(bytes);
+        const t1 = performance.now();
+        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+        const t2 = performance.now();
+        await d.settle(el);
+        const h1 = await heap();
+        const res = { heap: h1 - h0, live: engine === 'rust' ? st.slidesLiveBytes() - Math.max(0, live0) : 0, loadMs: t1 - t0, firstPaintMs: t2 - t0,
+          tsFree: el.pkg === null, slides: el.getSlideCount(), bytes: bytes.length };
+        el.remove();
+        return res;
+      }, { n, engine });
+    }
+    rows.push({ deck: relative(deckByName.get(n)), ...one });
+  }
+  const sum = (f) => rows.reduce((a, r) => a + f(r), 0);
+  for (const r of rows) console.log(`  opencost ${r.deck} (${r.ts.slides} slides, ${(r.ts.bytes / 1024).toFixed(0)} KB): TS heap ${(r.ts.heap / 1048576).toFixed(2)} MB, load ${r.ts.loadMs.toFixed(1)} ms | Rust heap ${(r.rust.heap / 1048576).toFixed(2)} MB + module ${(r.rust.live / 1048576).toFixed(2)} MB, load ${r.rust.loadMs.toFixed(1)} ms, TS-free ${r.rust.tsFree}`);
+  console.log(`opencost: ${rows.length} decks; JS heap after open: TS ${(sum((r) => r.ts.heap) / 1048576).toFixed(2)} MB, Rust ${(sum((r) => r.rust.heap) / 1048576).toFixed(2)} MB + module live ${(sum((r) => r.rust.live) / 1048576).toFixed(2)} MB` +
+    ` (before wave 4 the Rust element held both: ${((sum((r) => r.ts.heap) + sum((r) => r.rust.live)) / 1048576).toFixed(2)} MB); loadPptx: TS ${sum((r) => r.ts.loadMs).toFixed(0)} ms, Rust ${sum((r) => r.rust.loadMs).toFixed(0)} ms; first frame: TS ${sum((r) => r.ts.firstPaintMs).toFixed(0)} ms, Rust ${sum((r) => r.rust.firstPaintMs).toFixed(0)} ms`);
+  if (rows.some((r) => !r.rust.tsFree)) fail('opencost: a Rust element kept the TS model');
 }
 
 await browser.close();
