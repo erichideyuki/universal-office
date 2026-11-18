@@ -87,6 +87,7 @@ export declare class SlidesDeck {
   size(): { w: number; h: number; count: number };
   notes(i: number): string;
   part(name: string): Uint8Array | null;
+  metaBitmaps(name: string): Uint8Array[];
   setCaps(c: { fontKerning: boolean; letterSpacing: boolean; segmenter: boolean; fontBoundingBox: boolean }): void;
   setGeneration(g: number): void;
   setImageSize(media: number, w: number, h: number): void;

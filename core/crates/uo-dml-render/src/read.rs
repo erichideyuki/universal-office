@@ -7,8 +7,6 @@
 //! frontiers: SmartArt regeneration and the fallback layout (B5a) return what the TS returns when
 //! nothing is regenerated; `diagramStyler` goes with `diagram-fallback.ts` (B5a).
 
-use std::sync::Arc;
-
 use uo_jsnum::math;
 use uo_opc::xml::Element;
 
@@ -219,7 +217,7 @@ fn read_group(rd: &Rd<'_>, grp: Element<'_>, theme: &Theme, rels: &RelMap, depth
             }
             sh.fill = Some(Box::new(fill.clone()));
             if alpha.is_some() {
-                sh.fill_alpha = *alpha;
+                sh.paint_mut().fill_alpha = *alpha;
             }
             sh.grp_fill = None;
         }
@@ -403,12 +401,12 @@ fn read_graphic_frame(rd: &Rd<'_>, gf: Element<'_>, rels: &RelMap, theme: &Theme
             && let Some(xml) = src.text(target).filter(|x| !x.is_empty())
         {
             let images = chart_images_for(src, target, &xml)?;
-            shape.extras_mut().chart = Some(ChartRef {
+            shape.extras_mut().chart = Some(Box::new(ChartRef {
                 part: target.into(),
-                theme: Arc::new(chart_theme_for(src, target, theme)?),
+                theme: src.share_theme(chart_theme_for(src, target, theme)?),
                 images,
                 format: Some(chart_file_format(src)),
-            });
+            }));
         }
     }
     // SmartArt: the modern pptx embeds a pre-rendered DRAWING of the diagram (ppt/diagrams/drawingN.xml,
@@ -504,11 +502,11 @@ fn read_graphic_frame(rd: &Rd<'_>, gf: Element<'_>, rels: &RelMap, theme: &Theme
         // mc:Choice without preview (only <p:embed/>): the <p:pic> of mc:Fallback counts (lo-tdf143222)
         let pic = ole.descend("p:pic").or_else(|| data.descend("p:pic"));
         let img = match pic {
-            Some(pic) => read_pic(rd, pic, theme, rels).image.map(|b| *b),
+            Some(pic) => read_pic(rd, pic, theme, rels).paint_mut().image.take().map(|b| *b),
             None => ole_preview_from_vml(ole.attr("spid"), src, rels, theme, &mut shape)?,
         };
         if let Some(img) = img {
-            shape.image = Some(Box::new(img));
+            shape.paint_mut().image = Some(Box::new(img));
         }
     }
     // table
@@ -905,8 +903,10 @@ fn read_diagram_shapes_in(rd: &Rd<'_>, drawing_path: &str, theme: &Theme, frame:
                 fill: Some(Box::new(Fill::of_kind(FillKind::None))),
                 line_none: Some(true),
                 tx_body: sh.tx_body.take(),
-                style_font_color: sh.style_font_color.clone().filter(|c| !c.as_str().is_empty()),
-                style_font_idx: sh.style_font_idx.clone().filter(|c| !c.is_empty()),
+                style_font: StyleFont::boxed(
+                    sh.sf().color.clone().filter(|c| !c.as_str().is_empty()),
+                    sh.sf().idx.clone().filter(|c| !c.is_empty()),
+                ),
                 ..Shape::default()
             };
             let ex = t.extras_mut();
@@ -1191,7 +1191,7 @@ pub fn read_shape(rd: &Rd<'_>, sp: Element<'_>, theme: &Theme, rels: Option<&Rel
         {
             shape.fill = Some(Box::new(g));
             if grad.attr("rotWithShape") == Some("0") {
-                shape.fill_no_rot = Some(true);
+                shape.paint_mut().fill_no_rot = Some(true);
             }
         }
         // blipFill of a shape (stretch): image as the geometry's fill
@@ -1201,11 +1201,11 @@ pub fn read_shape(rd: &Rd<'_>, sp: Element<'_>, theme: &Theme, rels: Option<&Rel
                 && let Some(mut img) = resolve_blip(blip, src, rels, Some(theme))
             {
                 if apply_tile(&mut img, bf) {
-                    shape.fill_tile = Some(true);
+                    shape.paint_mut().fill_tile = Some(true);
                 }
-                shape.fill_image = Some(Box::new(img));
+                shape.paint_mut().fill_image = Some(Box::new(img));
                 if bf.and_then(|b| b.attr("rotWithShape")) == Some("0") {
-                    shape.fill_no_rot = Some(true);
+                    shape.paint_mut().fill_no_rot = Some(true);
                 }
             }
         }
@@ -1213,7 +1213,7 @@ pub fn read_shape(rd: &Rd<'_>, sp: Element<'_>, theme: &Theme, rels: Option<&Rel
         if let Some(sf) = sp_pr.first_child("a:solidFill")
             && let Some(a) = fill_alpha_val(sf).filter(|a| !a.is_empty())
         {
-            shape.fill_alpha = Some(pint(a) / 100000.0);
+            shape.paint_mut().fill_alpha = Some(pint(a) / 100000.0);
         }
         if let Some(ln) = sp_pr.first_child("a:ln") {
             if ln.first_child("a:noFill").is_some() {
@@ -1223,13 +1223,13 @@ pub fn read_shape(rd: &Rd<'_>, sp: Element<'_>, theme: &Theme, rels: Option<&Rel
                 shape.line_color = Some(lc);
             }
             if let Some(la) = ln.first_child("a:solidFill").and_then(fill_alpha_val) {
-                shape.line_alpha = Some(math::max(0.0, math::min(1.0, pint(la) / 100000.0)));
+                shape.x_mut().line_alpha = Some(math::max(0.0, math::min(1.0, pint(la) / 100000.0)));
             }
             if let Some(w) = ta(ln, "w") {
                 shape.line_width = Some(pint(w));
             }
             if let Some(d) = ln.first_child("a:prstDash").and_then(|d| ta(d, "val")) {
-                shape.line_dash = Some(d.into());
+                shape.x_mut().line_dash = Some(d.into());
             }
             // line arrows (headEnd/tailEnd; type=none omits)
             if let Some(h) = ln.first_child("a:headEnd").and_then(|e| ta(e, "type")).filter(|t| *t != "none") {
@@ -1242,7 +1242,7 @@ pub fn read_shape(rd: &Rd<'_>, sp: Element<'_>, theme: &Theme, rels: Option<&Rel
     }
     // <p:sp useBgFill="1">: the fill is the slide background (applied in readSlide)
     if matches!(sp.attr("useBgFill"), Some("1" | "true")) {
-        shape.use_bg_fill = Some(true);
+        shape.paint_mut().use_bg_fill = Some(true);
         shape.fill = None;
     }
     // effects (outer/inner shadow, glow, soft edges, reflection): the spPr's own or, without its
@@ -1258,7 +1258,7 @@ pub fn read_shape(rd: &Rd<'_>, sp: Element<'_>, theme: &Theme, rels: Option<&Rel
         && (ta(cr, "lat").is_some() || ta(cr, "lon").is_some() || ta(cr, "rev").is_some())
     {
         let deg = |k: &str| pint(cr.attr(k).unwrap_or("0")) / 60000.0;
-        shape.extras_mut().cam_rot = Some(CamRot { lat: deg("lat"), lon: deg("lon"), rev: deg("rev") });
+        shape.extras_mut().fx_mut().cam_rot = Some(CamRot { lat: deg("lat"), lon: deg("lon"), rev: deg("rev") });
     }
 
     // <p:style> (spec 03 B): thematic defaults when spPr/run does not specify.
@@ -1271,7 +1271,7 @@ pub fn read_shape(rd: &Rd<'_>, sp: Element<'_>, theme: &Theme, rels: Option<&Rel
             }
             color_from_dml(r.child_elements().next(), theme)
         };
-        if shape.fill.is_none() && shape.fill_image.is_none() && shape.grp_fill.is_none() && shape.use_bg_fill.is_none() {
+        if shape.fill.is_none() && shape.paint().fill_image.is_none() && shape.grp_fill.is_none() && shape.paint().use_bg_fill.is_none() {
             // fillStyleLst style of the theme (idx 1 solid, 2/3 gradients in 2007–2013 themes) with
             // phClr = the reference's colour; without a theme, the plain colour
             let r = style_el.first_child("a:fillRef");
@@ -1282,9 +1282,9 @@ pub fn read_shape(rd: &Rd<'_>, sp: Element<'_>, theme: &Theme, rels: Option<&Rel
             match st {
                 Some(StyleFill { fill: Some(f), .. }) => shape.fill = Some(Box::new(f)),
                 Some(StyleFill { image: Some(img), tile, .. }) => {
-                    shape.fill_image = Some(Box::new(img));
+                    shape.paint_mut().fill_image = Some(Box::new(img));
                     if tile {
-                        shape.fill_tile = Some(true);
+                        shape.paint_mut().fill_tile = Some(true);
                     }
                 }
                 _ => {
@@ -1334,10 +1334,10 @@ pub fn read_shape(rd: &Rd<'_>, sp: Element<'_>, theme: &Theme, rels: Option<&Rel
         }
         if let Some(font_ref) = style_el.first_child("a:fontRef") {
             if let Some(fc) = color_from_dml(font_ref.child_elements().next(), theme) {
-                shape.style_font_color = Some(fc);
+                shape.sf_mut().color = Some(fc);
             }
             if let Some(i) = ta(font_ref, "idx") {
-                shape.style_font_idx = Some(i.into());
+                shape.sf_mut().idx = Some(i.into());
             }
         }
     }
@@ -1367,8 +1367,8 @@ fn read_adj(av: Element<'_>, shape: &mut Shape) {
         }
     }
     if !adj.is_empty() {
-        shape.adj = Some(adj.into_boxed_slice());
-        shape.adj_names = Some(names.into_boxed_slice());
+        shape.x_mut().adj = Some(adj.into_boxed_slice());
+        shape.x_mut().adj_names = Some(names.into_boxed_slice());
     }
 }
 
@@ -1398,21 +1398,21 @@ pub fn read_pic(rd: &Rd<'_>, pic: Element<'_>, theme: &Theme, rels: &RelMap) -> 
         shape.ph_idx = ta(ph, "idx").map(Into::into);
     }
     if let Some(m) = nv_pic_pr.and_then(|n| read_pic_media(n, src, rels)) {
-        shape.extras_mut().media = Some(m);
+        shape.extras_mut().media = Some(Box::new(m));
     }
     if let Some(blip) = blip {
         if let Some(img) = resolve_blip(blip, src, rels, Some(theme)) {
-            shape.image = Some(Box::new(img));
+            shape.paint_mut().image = Some(Box::new(img));
         }
         // <a:alphaModFix amt="55000"/> → 55% opaque
         if let Some(a) = blip.first_child("a:alphaModFix").and_then(|e| ta(e, "amt")) {
-            shape.alpha = Some(math::max(0.0, math::min(1.0, pint(a) / 100000.0)));
+            shape.paint_mut().alpha = Some(math::max(0.0, math::min(1.0, pint(a) / 100000.0)));
         }
     }
     if let Some(sr) = src_rect {
         // values in thousandths of a percent; absence = 0. Normalized to 0..1.
         let num = |k: &str| ta(sr, k).map_or(0.0, pint) / 100000.0;
-        shape.src_rect = Some(Inset { l: num("l"), t: num("t"), r: num("r"), b: num("b") });
+        shape.paint_mut().src_rect = Some(Inset { l: num("l"), t: num("t"), r: num("r"), b: num("b") });
     }
     if let Some(sp_pr) = sp_pr {
         if let Some(x) = sp_pr.first_child("a:xfrm") {
@@ -1438,7 +1438,7 @@ pub fn read_pic(rd: &Rd<'_>, pic: Element<'_>, theme: &Theme, rels: &RelMap) -> 
         if let Some(sc) = sc {
             shape.fill = Some(Box::new(solid_fill(sc)));
             if let Some(a) = sf.and_then(fill_alpha_val).filter(|a| !a.is_empty()) {
-                shape.fill_alpha = Some(pint(a) / 100000.0);
+                shape.paint_mut().fill_alpha = Some(pint(a) / 100000.0);
             }
         } else if let Some(g) = sp_pr.first_child("a:gradFill").and_then(|g| parse_grad_fill(g, theme)) {
             shape.fill = Some(Box::new(g));

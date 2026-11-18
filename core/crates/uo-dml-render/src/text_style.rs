@@ -10,7 +10,7 @@ use uo_jsnum::sort::js_sort_by;
 use uo_opc::xml::Element;
 
 use crate::color::CssColor;
-use crate::model::{ImageRef, OuterShadow, Paragraph, Shape, TabStop, TextBody};
+use crate::model::{ImageRef, OuterShadow, Paragraph, Shape, StyleFont, TabStop, TextBody};
 use crate::source::{int_attr, pint, ta};
 use crate::theme::{Theme, color_from_dml, text_fill_color};
 use uo_opc::xml::Element as El;
@@ -19,41 +19,146 @@ use uo_opc::xml::Element as El;
 /// rels of the part the style lives in.
 pub type BlipResolver<'a> = &'a dyn for<'d> Fn(Element<'d>) -> Option<ImageRef>;
 
-/// One level (`lvlNpPr` + `defRPr`) of a text style (`TextStyleLevel`, `text-style.ts:40`).
+/// The paragraph half of a level (`lvlNpPr` attributes and spacing; `TextStyleLevel`, `text-style.ts:40`).
 #[derive(Clone, PartialEq, Debug, Default)]
-pub struct TextStyleLevel {
+pub struct LvlPara {
     pub tabs: Option<Box<[TabStop]>>,
     pub def_tab_sz: Option<f64>,
-    pub sz: Option<f64>,
-    pub bold: Option<bool>,
-    pub italic: Option<bool>,
-    pub color: Option<CssColor>,
-    /// May be a theme alias (`+mj-lt`, `+mn-lt`), resolved when applied.
-    pub font: Option<Box<str>>,
     pub align: Option<Box<str>>,
-    pub bu_char: Option<Box<str>>,
-    pub bu_auto_num: Option<Box<str>>,
-    pub bu_none: Option<bool>,
     pub mar_l: Option<f64>,
     pub indent: Option<f64>,
-    pub shadow: Option<OuterShadow>,
     pub line_spacing: Option<f64>,
     pub line_spacing_pt: Option<f64>,
     pub space_before_pt: Option<f64>,
     pub space_after_pt: Option<f64>,
     pub space_before_pct: Option<f64>,
     pub space_after_pct: Option<f64>,
+}
+
+impl LvlPara {
+    /// Every field absent.
+    pub const EMPTY: LvlPara = LvlPara {
+        tabs: None,
+        def_tab_sz: None,
+        align: None,
+        mar_l: None,
+        indent: None,
+        line_spacing: None,
+        line_spacing_pt: None,
+        space_before_pt: None,
+        space_after_pt: None,
+        space_before_pct: None,
+        space_after_pct: None,
+    };
+}
+
+/// The bullet of a level (`buChar`, `buAutoNum`, `buNone`, `buFont`, `buClr`, `buSz*`, `buBlip`).
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct LvlBullet {
+    pub bu_char: Option<Box<str>>,
+    pub bu_auto_num: Option<Box<str>>,
+    pub bu_none: Option<bool>,
     pub bu_font: Option<Box<str>>,
     pub bu_clr: Option<CssColor>,
     pub bu_sz_pct: Option<f64>,
     pub bu_sz_pt: Option<f64>,
     /// `<a:buBlip>`: the image (the master's pictures resolve through the master's rels).
     pub bu_blip: Option<Box<ImageRef>>,
+}
+
+impl LvlBullet {
+    /// Every field absent.
+    pub const EMPTY: LvlBullet = LvlBullet {
+        bu_char: None,
+        bu_auto_num: None,
+        bu_none: None,
+        bu_font: None,
+        bu_clr: None,
+        bu_sz_pct: None,
+        bu_sz_pt: None,
+        bu_blip: None,
+    };
+}
+
+/// The run half of a level (the `defRPr`).
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct LvlRun {
+    pub sz: Option<f64>,
+    pub bold: Option<bool>,
+    pub italic: Option<bool>,
+    pub color: Option<CssColor>,
+    /// May be a theme alias (`+mj-lt`, `+mn-lt`), resolved when applied.
+    pub font: Option<Box<str>>,
+    pub shadow: Option<OuterShadow>,
     pub baseline: Option<f64>,
     pub cap: Option<Box<str>>,
     pub strike: Option<bool>,
     pub spc: Option<f64>,
     pub kern: Option<f64>,
+}
+
+impl LvlRun {
+    /// Every field absent.
+    pub const EMPTY: LvlRun = LvlRun {
+        sz: None,
+        bold: None,
+        italic: None,
+        color: None,
+        font: None,
+        shadow: None,
+        baseline: None,
+        cap: None,
+        strike: None,
+        spc: None,
+        kern: None,
+    };
+}
+
+static EMPTY_LVL_PARA: LvlPara = LvlPara::EMPTY;
+static EMPTY_LVL_BULLET: LvlBullet = LvlBullet::EMPTY;
+static EMPTY_LVL_RUN: LvlRun = LvlRun::EMPTY;
+
+/// One level (`lvlNpPr` + `defRPr`) of a text style (`TextStyleLevel`, `text-style.ts:40`): three boxed
+/// groups, absent when the level defines nothing of the group (an `<a:lstStyle/>` is nine empty levels,
+/// 24 B each; memory compaction, `uo-pptx.md` "Model memory"). Read through [`TextStyleLevel::p`],
+/// [`TextStyleLevel::b`] and [`TextStyleLevel::r`].
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct TextStyleLevel {
+    pub para: Option<Box<LvlPara>>,
+    pub bullet: Option<Box<LvlBullet>>,
+    pub run: Option<Box<LvlRun>>,
+}
+
+impl TextStyleLevel {
+    /// The paragraph half (all absent when the box is).
+    pub fn p(&self) -> &LvlPara {
+        self.para.as_deref().unwrap_or(&EMPTY_LVL_PARA)
+    }
+
+    /// The paragraph half, created empty on first write.
+    pub fn p_mut(&mut self) -> &mut LvlPara {
+        self.para.get_or_insert_with(Default::default)
+    }
+
+    /// The bullet (all absent when the box is).
+    pub fn b(&self) -> &LvlBullet {
+        self.bullet.as_deref().unwrap_or(&EMPTY_LVL_BULLET)
+    }
+
+    /// The bullet, created empty on first write.
+    pub fn b_mut(&mut self) -> &mut LvlBullet {
+        self.bullet.get_or_insert_with(Default::default)
+    }
+
+    /// The run half (all absent when the box is).
+    pub fn r(&self) -> &LvlRun {
+        self.run.as_deref().unwrap_or(&EMPTY_LVL_RUN)
+    }
+
+    /// The run half, created empty on first write.
+    pub fn r_mut(&mut self) -> &mut LvlRun {
+        self.run.get_or_insert_with(Default::default)
+    }
 }
 
 /// Nine levels, index 0 = `lvl1pPr` (`TextStyleLevels`).
@@ -160,43 +265,46 @@ pub fn read_run_extras(rpr: El<'_>) -> RunExtraProps {
 const LEVEL_NAMES: [&str; 9] =
     ["a:lvl1pPr", "a:lvl2pPr", "a:lvl3pPr", "a:lvl4pPr", "a:lvl5pPr", "a:lvl6pPr", "a:lvl7pPr", "a:lvl8pPr", "a:lvl9pPr"];
 
-/// `{...base, ...over}`: the defined fields of `over` replace those of `base`.
+/// `{...base, ...over}`: the defined fields of `over` replace those of `base` (group by group: a group
+/// absent on one side is the other side's).
 fn spread(base: &TextStyleLevel, over: TextStyleLevel) -> TextStyleLevel {
     macro_rules! pick {
-        ($($f:ident),*) => { TextStyleLevel { $($f: over.$f.or_else(|| base.$f.clone())),* } };
+        ($b:expr, $o:expr, $ty:ident { $($f:ident),* }) => {
+            match ($b, $o) {
+                (None, o) => o,
+                (Some(b), None) => Some(Box::new(b.clone())),
+                (Some(b), Some(o)) => {
+                    let o = *o;
+                    Some(Box::new($ty { $($f: o.$f.or_else(|| b.$f.clone())),* }))
+                }
+            }
+        };
     }
-    pick!(
-        tabs,
-        def_tab_sz,
-        sz,
-        bold,
-        italic,
-        color,
-        font,
-        align,
-        bu_char,
-        bu_auto_num,
-        bu_none,
-        mar_l,
-        indent,
-        shadow,
-        line_spacing,
-        line_spacing_pt,
-        space_before_pt,
-        space_after_pt,
-        space_before_pct,
-        space_after_pct,
-        bu_font,
-        bu_clr,
-        bu_sz_pct,
-        bu_sz_pt,
-        bu_blip,
-        baseline,
-        cap,
-        strike,
-        spc,
-        kern
-    )
+    TextStyleLevel {
+        para: pick!(
+            base.para.as_deref(),
+            over.para,
+            LvlPara {
+                tabs,
+                def_tab_sz,
+                align,
+                mar_l,
+                indent,
+                line_spacing,
+                line_spacing_pt,
+                space_before_pt,
+                space_after_pt,
+                space_before_pct,
+                space_after_pct
+            }
+        ),
+        bullet: pick!(
+            base.bullet.as_deref(),
+            over.bullet,
+            LvlBullet { bu_char, bu_auto_num, bu_none, bu_font, bu_clr, bu_sz_pct, bu_sz_pt, bu_blip }
+        ),
+        run: pick!(base.run.as_deref(), over.run, LvlRun { sz, bold, italic, color, font, shadow, baseline, cap, strike, spc, kern }),
+    }
 }
 
 /// `parseTxStyleLevels` (`text-style.ts:102`): a levels container (`<a:lstStyle>`, `<p:titleStyle>`,
@@ -258,22 +366,29 @@ pub fn read_text_shadow(shd: El<'_>, theme: &Theme, default_alpha: f64) -> Outer
 pub fn parse_ppr_level(ppr: El<'_>, theme: &Theme, blip: Option<BlipResolver<'_>>) -> TextStyleLevel {
     let mut lvl = TextStyleLevel::default();
     if let Some(a) = ta(ppr, "algn") {
-        lvl.align = Some(a.into());
+        lvl.p_mut().align = Some(a.into());
     }
-    lvl.mar_l = int_attr(ppr, "marL");
-    lvl.indent = int_attr(ppr, "indent");
-    lvl.def_tab_sz = int_attr(ppr, "defTabSz");
+    // (a group is created only for a defined value)
+    if let Some(v) = int_attr(ppr, "marL") {
+        lvl.p_mut().mar_l = Some(v);
+    }
+    if let Some(v) = int_attr(ppr, "indent") {
+        lvl.p_mut().indent = Some(v);
+    }
+    if let Some(v) = int_attr(ppr, "defTabSz") {
+        lvl.p_mut().def_tab_sz = Some(v);
+    }
     if let Some(tl) = ppr.first_child("a:tabLst") {
-        lvl.tabs = Some(read_tabs(tl));
+        lvl.p_mut().tabs = Some(read_tabs(tl));
     }
     // inheritable line and paragraph spacing (a compact template title = 75%)
     if let Some(ln_spc) = ppr.first_child("a:lnSpc") {
         let pct = ln_spc.first_child("a:spcPct").and_then(|e| ta(e, "val"));
         let pts = ln_spc.first_child("a:spcPts").and_then(|e| ta(e, "val"));
         if let Some(v) = pct {
-            lvl.line_spacing = Some(pint(v) / 100000.0);
+            lvl.p_mut().line_spacing = Some(pint(v) / 100000.0);
         } else if let Some(v) = pts {
-            lvl.line_spacing_pt = Some(pint(v) / 100.0);
+            lvl.p_mut().line_spacing_pt = Some(pint(v) / 100.0);
         }
     }
     let spc = |name: &str, pts_name: &str, pct_name: &str| -> (Option<f64>, Option<f64>) {
@@ -283,58 +398,69 @@ pub fn parse_ppr_level(ppr: El<'_>, theme: &Theme, blip: Option<BlipResolver<'_>
         let pct = el.first_child("a:spcPct").and_then(|e| ta(e, "val")).map(|v| pint(v) / 100000.0);
         (pts, pct)
     };
-    (lvl.space_before_pt, lvl.space_before_pct) = spc("a:spcBef", "", "");
-    (lvl.space_after_pt, lvl.space_after_pct) = spc("a:spcAft", "", "");
+    let (bef, aft) = (spc("a:spcBef", "", ""), spc("a:spcAft", "", ""));
+    if bef.0.is_some() || bef.1.is_some() || aft.0.is_some() || aft.1.is_some() {
+        let p = lvl.p_mut();
+        (p.space_before_pt, p.space_before_pct) = bef;
+        (p.space_after_pt, p.space_after_pct) = aft;
+    }
     if let Some(c) = ppr.first_child("a:buChar").and_then(|e| ta(e, "char")) {
-        lvl.bu_char = Some(c.into());
+        lvl.b_mut().bu_char = Some(c.into());
     }
     if let Some(b) = ppr.first_child("a:buAutoNum") {
-        lvl.bu_auto_num = Some(b.attr("type").unwrap_or("arabicPeriod").into());
+        lvl.b_mut().bu_auto_num = Some(b.attr("type").unwrap_or("arabicPeriod").into());
     }
     if ppr.first_child("a:buNone").is_some() {
-        lvl.bu_none = Some(true);
+        lvl.b_mut().bu_none = Some(true);
     }
-    if let (Some(bb), Some(res)) = (ppr.first_child("a:buBlip").and_then(|e| e.first_child("a:blip")), blip) {
-        lvl.bu_blip = res(bb).map(Box::new);
+    if let (Some(bb), Some(res)) = (ppr.first_child("a:buBlip").and_then(|e| e.first_child("a:blip")), blip)
+        && let Some(img) = res(bb)
+    {
+        lvl.b_mut().bu_blip = Some(Box::new(img));
     }
     if let Some(f) = ppr.first_child("a:buFont").and_then(|e| ta(e, "typeface")) {
-        lvl.bu_font = Some(f.into());
+        lvl.b_mut().bu_font = Some(f.into());
     }
-    if let Some(bc) = ppr.first_child("a:buClr") {
-        lvl.bu_clr = color_from_dml(bc.child_elements().next(), theme);
+    if let Some(bc) = ppr.first_child("a:buClr")
+        && let Some(c) = color_from_dml(bc.child_elements().next(), theme)
+    {
+        lvl.b_mut().bu_clr = Some(c);
     }
     let pct = ppr.first_child("a:buSzPct").and_then(|e| ta(e, "val"));
     let pts = ppr.first_child("a:buSzPts").and_then(|e| ta(e, "val"));
     if let Some(v) = pct {
-        lvl.bu_sz_pct = Some(pint(v) / 100000.0);
+        lvl.b_mut().bu_sz_pct = Some(pint(v) / 100000.0);
     } else if let Some(v) = pts {
-        lvl.bu_sz_pt = Some(pint(v) / 100.0);
+        lvl.b_mut().bu_sz_pt = Some(pint(v) / 100.0);
     }
     if let Some(def) = ppr.first_child("a:defRPr") {
         let ex = read_run_extras(def);
-        lvl.baseline = ex.baseline;
-        lvl.cap = ex.cap;
-        lvl.strike = ex.strike;
-        lvl.spc = ex.spc;
-        lvl.kern = ex.kern;
+        if ex != RunExtraProps::default() {
+            let r = lvl.r_mut();
+            r.baseline = ex.baseline;
+            r.cap = ex.cap;
+            r.strike = ex.strike;
+            r.spc = ex.spc;
+            r.kern = ex.kern;
+        }
         if let Some(sz) = ta(def, "sz") {
-            lvl.sz = Some(pint(sz) / 100.0);
+            lvl.r_mut().sz = Some(pint(sz) / 100.0);
         }
         if let Some(b) = def.attr("b") {
-            lvl.bold = Some(b == "1");
+            lvl.r_mut().bold = Some(b == "1");
         }
         if let Some(i) = def.attr("i") {
-            lvl.italic = Some(i == "1");
+            lvl.r_mut().italic = Some(i == "1");
         }
         if let Some(tc) = text_fill_color(def, theme) {
-            lvl.color = Some(tc);
+            lvl.r_mut().color = Some(tc);
         }
         if let Some(f) = def.first_child("a:latin").and_then(|e| ta(e, "typeface")) {
-            lvl.font = Some(f.into());
+            lvl.r_mut().font = Some(f.into());
         }
         // default text shadow of the level (template titles over a photo)
         if let Some(shd) = def.first_child("a:effectLst").and_then(|e| e.first_child("a:outerShdw")) {
-            lvl.shadow = Some(read_text_shadow(shd, theme, 0.6));
+            lvl.r_mut().shadow = Some(read_text_shadow(shd, theme, 0.6));
         }
     }
     lvl
@@ -347,109 +473,109 @@ pub fn merge_style_levels(layers: &[&StyleLevels]) -> Box<StyleLevels> {
     for layer in layers {
         for (i, src) in layer.iter().enumerate() {
             let Some(dst) = out.get_mut(i) else { continue };
-            if src.sz.is_some() {
-                dst.sz = src.sz;
+            if src.r().sz.is_some() {
+                dst.r_mut().sz = src.r().sz;
             }
-            if src.bold.is_some() {
-                dst.bold = src.bold;
+            if src.r().bold.is_some() {
+                dst.r_mut().bold = src.r().bold;
             }
-            if src.italic.is_some() {
-                dst.italic = src.italic;
+            if src.r().italic.is_some() {
+                dst.r_mut().italic = src.r().italic;
             }
-            if src.color.is_some() {
-                dst.color = src.color.clone();
+            if src.r().color.is_some() {
+                dst.r_mut().color = src.r().color.clone();
             }
-            if src.font.is_some() {
-                dst.font = src.font.clone();
+            if src.r().font.is_some() {
+                dst.r_mut().font = src.r().font.clone();
             }
-            if src.align.is_some() {
-                dst.align = src.align.clone();
+            if src.p().align.is_some() {
+                dst.p_mut().align = src.p().align.clone();
             }
-            if src.shadow.is_some() {
-                dst.shadow = src.shadow.clone();
+            if src.r().shadow.is_some() {
+                dst.r_mut().shadow = src.r().shadow.clone();
             }
-            if src.line_spacing.is_some() {
-                dst.line_spacing = src.line_spacing;
-                dst.line_spacing_pt = None;
+            if src.p().line_spacing.is_some() {
+                dst.p_mut().line_spacing = src.p().line_spacing;
+                dst.p_mut().line_spacing_pt = None;
             }
-            if src.line_spacing_pt.is_some() {
-                dst.line_spacing_pt = src.line_spacing_pt;
-                dst.line_spacing = None;
+            if src.p().line_spacing_pt.is_some() {
+                dst.p_mut().line_spacing_pt = src.p().line_spacing_pt;
+                dst.p_mut().line_spacing = None;
             }
             // points × percent: the more specific level wins (one erases the other)
-            if src.space_before_pt.is_some() {
-                dst.space_before_pt = src.space_before_pt;
-                dst.space_before_pct = None;
+            if src.p().space_before_pt.is_some() {
+                dst.p_mut().space_before_pt = src.p().space_before_pt;
+                dst.p_mut().space_before_pct = None;
             }
-            if src.space_before_pct.is_some() {
-                dst.space_before_pct = src.space_before_pct;
-                dst.space_before_pt = None;
+            if src.p().space_before_pct.is_some() {
+                dst.p_mut().space_before_pct = src.p().space_before_pct;
+                dst.p_mut().space_before_pt = None;
             }
-            if src.space_after_pt.is_some() {
-                dst.space_after_pt = src.space_after_pt;
-                dst.space_after_pct = None;
+            if src.p().space_after_pt.is_some() {
+                dst.p_mut().space_after_pt = src.p().space_after_pt;
+                dst.p_mut().space_after_pct = None;
             }
-            if src.space_after_pct.is_some() {
-                dst.space_after_pct = src.space_after_pct;
-                dst.space_after_pt = None;
+            if src.p().space_after_pct.is_some() {
+                dst.p_mut().space_after_pct = src.p().space_after_pct;
+                dst.p_mut().space_after_pt = None;
             }
-            if src.mar_l.is_some() {
-                dst.mar_l = src.mar_l;
+            if src.p().mar_l.is_some() {
+                dst.p_mut().mar_l = src.p().mar_l;
             }
-            if src.tabs.is_some() {
-                dst.tabs = src.tabs.clone();
+            if src.p().tabs.is_some() {
+                dst.p_mut().tabs = src.p().tabs.clone();
             }
-            if src.def_tab_sz.is_some() {
-                dst.def_tab_sz = src.def_tab_sz;
+            if src.p().def_tab_sz.is_some() {
+                dst.p_mut().def_tab_sz = src.p().def_tab_sz;
             }
-            if src.indent.is_some() {
-                dst.indent = src.indent;
+            if src.p().indent.is_some() {
+                dst.p_mut().indent = src.p().indent;
             }
-            if src.bu_font.is_some() {
-                dst.bu_font = src.bu_font.clone();
+            if src.b().bu_font.is_some() {
+                dst.b_mut().bu_font = src.b().bu_font.clone();
             }
-            if src.bu_clr.is_some() {
-                dst.bu_clr = src.bu_clr.clone();
+            if src.b().bu_clr.is_some() {
+                dst.b_mut().bu_clr = src.b().bu_clr.clone();
             }
-            if src.bu_sz_pct.is_some() {
-                dst.bu_sz_pct = src.bu_sz_pct;
-                dst.bu_sz_pt = None;
+            if src.b().bu_sz_pct.is_some() {
+                dst.b_mut().bu_sz_pct = src.b().bu_sz_pct;
+                dst.b_mut().bu_sz_pt = None;
             }
-            if src.bu_sz_pt.is_some() {
-                dst.bu_sz_pt = src.bu_sz_pt;
-                dst.bu_sz_pct = None;
+            if src.b().bu_sz_pt.is_some() {
+                dst.b_mut().bu_sz_pt = src.b().bu_sz_pt;
+                dst.b_mut().bu_sz_pct = None;
             }
-            if src.baseline.is_some() {
-                dst.baseline = src.baseline;
+            if src.r().baseline.is_some() {
+                dst.r_mut().baseline = src.r().baseline;
             }
-            if src.cap.is_some() {
-                dst.cap = src.cap.clone();
+            if src.r().cap.is_some() {
+                dst.r_mut().cap = src.r().cap.clone();
             }
-            if src.strike.is_some() {
-                dst.strike = src.strike;
+            if src.r().strike.is_some() {
+                dst.r_mut().strike = src.r().strike;
             }
-            if src.spc.is_some() {
-                dst.spc = src.spc;
+            if src.r().spc.is_some() {
+                dst.r_mut().spc = src.r().spc;
             }
-            if src.kern.is_some() {
-                dst.kern = src.kern;
+            if src.r().kern.is_some() {
+                dst.r_mut().kern = src.r().kern;
             }
-            if src.bu_char.is_some() || src.bu_auto_num.is_some() || src.bu_none == Some(true) || src.bu_blip.is_some() {
-                dst.bu_char = None;
-                dst.bu_auto_num = None;
-                dst.bu_none = None;
-                dst.bu_blip = None;
-                if src.bu_blip.is_some() {
-                    dst.bu_blip = src.bu_blip.clone();
+            if src.b().bu_char.is_some() || src.b().bu_auto_num.is_some() || src.b().bu_none == Some(true) || src.b().bu_blip.is_some() {
+                dst.b_mut().bu_char = None;
+                dst.b_mut().bu_auto_num = None;
+                dst.b_mut().bu_none = None;
+                dst.b_mut().bu_blip = None;
+                if src.b().bu_blip.is_some() {
+                    dst.b_mut().bu_blip = src.b().bu_blip.clone();
                 }
-                if src.bu_char.is_some() {
-                    dst.bu_char = src.bu_char.clone();
+                if src.b().bu_char.is_some() {
+                    dst.b_mut().bu_char = src.b().bu_char.clone();
                 }
-                if src.bu_auto_num.is_some() {
-                    dst.bu_auto_num = src.bu_auto_num.clone();
+                if src.b().bu_auto_num.is_some() {
+                    dst.b_mut().bu_auto_num = src.b().bu_auto_num.clone();
                 }
-                if src.bu_none == Some(true) {
-                    dst.bu_none = Some(true);
+                if src.b().bu_none == Some(true) {
+                    dst.b_mut().bu_none = Some(true);
                 }
             }
         }
@@ -486,137 +612,135 @@ fn level_at(levels: &StyleLevels, level: Option<f64>) -> Option<&TextStyleLevel>
 }
 
 fn apply_paragraph(p: &mut Paragraph, lvl: &TextStyleLevel, theme: &Theme) {
-    if p.align.is_none() && lvl.align.is_some() {
-        p.align = lvl.align.clone();
+    if p.align.is_none() && lvl.p().align.is_some() {
+        p.align = lvl.p().align.clone();
     }
     if p.line_spacing.is_none() && p.line_spacing_pt.is_none() {
-        if lvl.line_spacing.is_some() {
-            p.line_spacing = lvl.line_spacing;
-        } else if lvl.line_spacing_pt.is_some() {
-            p.line_spacing_pt = lvl.line_spacing_pt;
+        if lvl.p().line_spacing.is_some() {
+            p.line_spacing = lvl.p().line_spacing;
+        } else if lvl.p().line_spacing_pt.is_some() {
+            p.line_spacing_pt = lvl.p().line_spacing_pt;
         }
     }
     if p.space_before_pt.is_none() && p.space_before_pct.is_none() {
-        if lvl.space_before_pt.is_some() {
-            p.space_before_pt = lvl.space_before_pt;
-        } else if lvl.space_before_pct.is_some() {
-            p.space_before_pct = lvl.space_before_pct;
+        if lvl.p().space_before_pt.is_some() {
+            p.space_before_pt = lvl.p().space_before_pt;
+        } else if lvl.p().space_before_pct.is_some() {
+            p.space_before_pct = lvl.p().space_before_pct;
         }
     }
     if p.space_after_pt.is_none() && p.space_after_pct.is_none() {
-        if lvl.space_after_pt.is_some() {
-            p.space_after_pt = lvl.space_after_pt;
-        } else if lvl.space_after_pct.is_some() {
-            p.space_after_pct = lvl.space_after_pct;
+        if lvl.p().space_after_pt.is_some() {
+            p.space_after_pt = lvl.p().space_after_pt;
+        } else if lvl.p().space_after_pct.is_some() {
+            p.space_after_pct = lvl.p().space_after_pct;
         }
     }
-    if p.mar_l.is_none() && lvl.mar_l.is_some() {
-        p.mar_l = lvl.mar_l;
+    if p.mar_l.is_none() && lvl.p().mar_l.is_some() {
+        p.mar_l = lvl.p().mar_l;
     }
-    if p.tabs.is_none() && lvl.tabs.is_some() {
-        p.tabs = lvl.tabs.clone();
+    if p.x().tabs.is_none() && lvl.p().tabs.is_some() {
+        p.x_mut().tabs = lvl.p().tabs.clone();
     }
-    if p.def_tab_sz.is_none() && lvl.def_tab_sz.is_some() {
-        p.def_tab_sz = lvl.def_tab_sz;
+    if p.def_tab_sz.is_none() && lvl.p().def_tab_sz.is_some() {
+        p.def_tab_sz = lvl.p().def_tab_sz;
     }
-    if p.indent.is_none() && lvl.indent.is_some() {
-        p.indent = lvl.indent;
+    if p.indent.is_none() && lvl.p().indent.is_some() {
+        p.indent = lvl.p().indent;
     }
-    if p.bullet_font.is_none() && lvl.bu_font.is_some() {
-        if let Some(f) = lvl.bu_font.as_deref() {
-            p.bullet_font = Some(resolve_font_alias(f, theme).unwrap_or_else(|| f.into()));
+    if p.bu().bullet_font.is_none() && lvl.b().bu_font.is_some() {
+        if let Some(f) = lvl.b().bu_font.as_deref() {
+            p.bu_mut().bullet_font = Some(resolve_font_alias(f, theme).unwrap_or_else(|| f.into()));
         }
-    } else if let Some(bf) = p.bullet_font.as_deref().filter(|b| b.starts_with('+')) {
-        p.bullet_font = Some(resolve_font_alias(bf, theme).unwrap_or_else(|| bf.into()));
+    } else if let Some(bf) = p.bu().bullet_font.as_deref().filter(|b| b.starts_with('+')) {
+        p.bu_mut().bullet_font = Some(resolve_font_alias(bf, theme).unwrap_or_else(|| bf.into()));
     }
-    if p.bullet_color.is_none() && lvl.bu_clr.is_some() {
-        p.bullet_color = lvl.bu_clr.clone();
+    if p.bu().bullet_color.is_none() && lvl.b().bu_clr.is_some() {
+        p.bu_mut().bullet_color = lvl.b().bu_clr.clone();
     }
-    if p.bullet_size_pct.is_none() && p.bullet_size_pt.is_none() {
-        if lvl.bu_sz_pct.is_some() {
-            p.bullet_size_pct = lvl.bu_sz_pct;
-        } else if lvl.bu_sz_pt.is_some() {
-            p.bullet_size_pt = lvl.bu_sz_pt;
+    if p.bu().bullet_size_pct.is_none() && p.bu().bullet_size_pt.is_none() {
+        if lvl.b().bu_sz_pct.is_some() {
+            p.bu_mut().bullet_size_pct = lvl.b().bu_sz_pct;
+        } else if lvl.b().bu_sz_pt.is_some() {
+            p.bu_mut().bullet_size_pt = lvl.b().bu_sz_pt;
         }
     }
-    if p.end_sz.is_none() && lvl.sz.is_some() {
-        p.end_sz = lvl.sz;
+    if p.end_sz.is_none() && lvl.r().sz.is_some() {
+        p.end_sz = lvl.r().sz;
     }
     // bullet: inherited only when the pPr declared nothing (bullet === undefined)
     match p.bullet {
         None => {
-            if lvl.bu_blip.is_some() {
+            if lvl.b().bu_blip.is_some() {
                 p.bullet = Some(true);
-                p.bullet_image = lvl.bu_blip.clone();
-                p.bullet_char = Some(lvl.bu_char.clone().unwrap_or_else(|| "\u{2022}".into()));
-            } else if lvl.bu_char.is_some() {
+                p.bu_mut().bullet_image = lvl.b().bu_blip.clone();
+                p.bu_mut().bullet_char = Some(lvl.b().bu_char.clone().unwrap_or_else(|| "\u{2022}".into()));
+            } else if lvl.b().bu_char.is_some() {
                 p.bullet = Some(true);
-                p.bullet_char = lvl.bu_char.clone();
-            } else if lvl.bu_auto_num.is_some() {
+                p.bu_mut().bullet_char = lvl.b().bu_char.clone();
+            } else if lvl.b().bu_auto_num.is_some() {
                 p.bullet = Some(true);
-                p.bullet_auto_num = lvl.bu_auto_num.clone();
-            } else if lvl.bu_none == Some(true) {
+                p.bu_mut().bullet_auto_num = lvl.b().bu_auto_num.clone();
+            } else if lvl.b().bu_none == Some(true) {
                 p.bullet = Some(false);
             }
         }
-        Some(true) if p.bullet_char.is_none() && p.bullet_auto_num.is_none() => {
+        Some(true) if p.bu().bullet_char.is_none() && p.bu().bullet_auto_num.is_none() => {
             // the pPr had buChar/buAutoNum without a usable char/type: complete from the cascade
-            if lvl.bu_char.is_some() {
-                p.bullet_char = lvl.bu_char.clone();
-            } else if lvl.bu_auto_num.is_some() {
-                p.bullet_auto_num = lvl.bu_auto_num.clone();
+            if lvl.b().bu_char.is_some() {
+                p.bu_mut().bullet_char = lvl.b().bu_char.clone();
+            } else if lvl.b().bu_auto_num.is_some() {
+                p.bu_mut().bullet_auto_num = lvl.b().bu_auto_num.clone();
             }
         }
         Some(_) => {}
     }
     for r in &mut p.runs {
-        if r.sz.is_none() && lvl.sz.is_some() {
-            r.sz = lvl.sz;
+        if r.sz.is_none() && lvl.r().sz.is_some() {
+            r.sz = lvl.r().sz;
         }
-        if r.bold.is_none() && lvl.bold.is_some() {
-            r.bold = lvl.bold;
+        if r.bold.is_none() && lvl.r().bold.is_some() {
+            r.bold = lvl.r().bold;
         }
-        if r.italic.is_none() && lvl.italic.is_some() {
-            r.italic = lvl.italic;
+        if r.italic.is_none() && lvl.r().italic.is_some() {
+            r.italic = lvl.r().italic;
         }
-        if r.color.is_none() && lvl.color.is_some() {
-            r.color = lvl.color.clone();
+        if r.color.is_none() && lvl.r().color.is_some() {
+            r.color = lvl.r().color.clone();
         }
-        let ex_shadow = r.extras.as_ref().is_some_and(|e| e.shadow.is_some());
+        let ex_shadow = r.extras.as_ref().is_some_and(|e| e.fx().shadow.is_some());
         let ex_baseline = r.extras.as_ref().is_some_and(|e| e.baseline.is_some());
         let ex_cap = r.extras.as_ref().is_some_and(|e| e.cap.is_some());
         let ex_strike = r.extras.as_ref().is_some_and(|e| e.strike.is_some());
         let ex_spc = r.extras.as_ref().is_some_and(|e| e.spc.is_some());
-        let ex_kern = r.extras.as_ref().is_some_and(|e| e.kern.is_some());
-        if (!ex_shadow && lvl.shadow.is_some())
-            || (!ex_baseline && lvl.baseline.is_some())
-            || (!ex_cap && lvl.cap.is_some())
-            || (!ex_strike && lvl.strike.is_some())
-            || (!ex_spc && lvl.spc.is_some())
-            || (!ex_kern && lvl.kern.is_some())
+        if r.kern.is_none() && lvl.r().kern.is_some() {
+            r.kern = lvl.r().kern;
+        }
+        if (!ex_shadow && lvl.r().shadow.is_some())
+            || (!ex_baseline && lvl.r().baseline.is_some())
+            || (!ex_cap && lvl.r().cap.is_some())
+            || (!ex_strike && lvl.r().strike.is_some())
+            || (!ex_spc && lvl.r().spc.is_some())
         {
             let ex = r.extras.get_or_insert_with(Default::default);
-            if !ex_shadow && lvl.shadow.is_some() {
-                ex.shadow = lvl.shadow.clone();
+            if !ex_shadow && lvl.r().shadow.is_some() {
+                ex.fx_mut().shadow = lvl.r().shadow.clone();
             }
-            if !ex_baseline && lvl.baseline.is_some() {
-                ex.baseline = lvl.baseline;
+            if !ex_baseline && lvl.r().baseline.is_some() {
+                ex.baseline = lvl.r().baseline;
             }
-            if !ex_cap && lvl.cap.is_some() {
-                ex.cap = lvl.cap.clone();
+            if !ex_cap && lvl.r().cap.is_some() {
+                ex.cap = lvl.r().cap.clone();
             }
-            if !ex_strike && lvl.strike.is_some() {
-                ex.strike = lvl.strike;
+            if !ex_strike && lvl.r().strike.is_some() {
+                ex.strike = lvl.r().strike;
             }
-            if !ex_spc && lvl.spc.is_some() {
-                ex.spc = lvl.spc;
-            }
-            if !ex_kern && lvl.kern.is_some() {
-                ex.kern = lvl.kern;
+            if !ex_spc && lvl.r().spc.is_some() {
+                ex.spc = lvl.r().spc;
             }
         }
-        if r.font.is_none() && lvl.font.is_some() {
-            if let Some(f) = lvl.font.as_deref().and_then(|f| resolve_font_alias(f, theme)) {
+        if r.font.is_none() && lvl.r().font.is_some() {
+            if let Some(f) = lvl.r().font.as_deref().and_then(|f| resolve_font_alias(f, theme)) {
                 r.font = Some(f);
             }
         } else if let Some(rf) = r.font.as_deref().filter(|f| f.starts_with('+')) {
@@ -642,6 +766,7 @@ pub fn master_style_for<'c>(ctx: &'c TextStyleContext, ph_type: Option<&str>) ->
 /// first present in the map wins); `master_keys` the same for the master (by type only).
 pub fn apply_shape_text_cascade(sh: &mut Shape, ctx: &TextStyleContext, theme: &Theme, ph_keys: &[String], master_keys: &[String]) {
     let Some(tb) = sh.tx_body.as_deref_mut() else { return };
+    let sf = sh.style_font.as_deref().unwrap_or(&StyleFont { color: None, idx: None });
     // EXCLUSIVE layers (measured): a non-placeholder shape uses only the presentation's
     // defaultTextStyle; a placeholder only the master's style
     let is_ph = sh.ph_type.is_some() || sh.ph_idx.is_some();
@@ -649,13 +774,16 @@ pub fn apply_shape_text_cascade(sh: &mut Shape, ctx: &TextStyleContext, theme: &
     // fontRef of `<p:style>`: colour/font default of the themed shape — above the master txStyles,
     // below the placeholder lstStyles
     let font_layer;
-    if sh.style_font_color.is_some() || sh.style_font_idx.is_some() {
-        let font = match sh.style_font_idx.as_deref() {
+    if sf.color.is_some() || sf.idx.is_some() {
+        let font = match sf.idx.as_deref() {
             Some("major") => theme.fonts.as_ref().and_then(|f| f.major.clone()),
             Some("minor") => theme.fonts.as_ref().and_then(|f| f.minor.clone()),
             _ => None,
         };
-        let lvl = TextStyleLevel { color: sh.style_font_color.clone(), font, ..TextStyleLevel::default() };
+        let lvl = TextStyleLevel {
+            run: Some(Box::new(LvlRun { color: sf.color.clone(), font, ..LvlRun::default() })),
+            ..TextStyleLevel::default()
+        };
         font_layer = Box::new(core::array::from_fn::<TextStyleLevel, 9, _>(|_| lvl.clone()));
         layers.push(&font_layer);
     }

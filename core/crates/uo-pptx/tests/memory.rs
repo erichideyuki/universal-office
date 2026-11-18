@@ -177,9 +177,9 @@ fn m3_budgets_are_recorded() {
     // the retained SlideModel alone: read once more over a warm parse cache (nothing else is kept)
     let target = deck.presentation().unwrap().slides[0].target.clone().unwrap();
     let limits = deck.limits().dml();
-    let src = deck.source();
-    let _warm = uo_pptx::read_slide(&src, &target, limits).unwrap();
-    let (model, model_usage) = measure(|| uo_pptx::read_slide(&src, &target, limits).unwrap());
+    let _warm = uo_pptx::read_slide(&deck.source(), &target, limits).unwrap();
+    // a fresh source inside the measured read (a source records every part access: its read set is not the model)
+    let (model, model_usage) = measure(|| uo_pptx::read_slide(&deck.source(), &target, limits).unwrap());
     eprintln!(
         "m3 retained SlideModel alone ({} shapes): {} B; one read allocates {} B, peak {} B",
         model.shapes.len(),
@@ -187,20 +187,143 @@ fn m3_budgets_are_recorded() {
         model_usage.allocated,
         model_usage.peak_above_start
     );
-    // DR3: the architecture pass budgeted 256 B for a Shape; the owned-tree model is 408 B (recorded in
-    // uo-dml-render.md). The guard below fails on a regression of that number.
-    let shape = std::mem::size_of::<uo_dml_render::Shape>();
-    eprintln!(
-        "m3 size_of::<TextStyleLevel>() = {}, TextBody = {}",
-        std::mem::size_of::<uo_dml_render::text_style::TextStyleLevel>(),
-        std::mem::size_of::<uo_dml_render::model::TextBody>()
-    );
-    eprintln!(
-        "m3 size_of::<Shape>() = {shape}, Run = {}, Paragraph = {}",
-        std::mem::size_of::<uo_dml_render::model::Run>(),
-        std::mem::size_of::<uo_dml_render::model::Paragraph>()
-    );
-    assert!(shape <= 416, "Shape is {shape} bytes");
+    // the plan's budget (`uo-pptx.md` "Memory plan"): the retained model at most half the TS `Slide` heap of
+    // the same slide (`js/measure-memory.mjs`: 143,563 B, 20 copies of slide 0 of b1a/0008, median of 5)
+    let half_ts = TS_SLIDE_0008_0 / 2;
+    assert!(model_usage.live_delta <= half_ts, "retained SlideModel {} B > 0.5 × TS ({half_ts} B)", model_usage.live_delta);
+}
+
+/// The TS `Slide` heap of slide 0 of b1a/0008 (`js/measure-memory.mjs`, frozen TS `readSlide`, Node 24.15).
+const TS_SLIDE_0008_0: i64 = 143_563;
+
+/// The inline sizes of the model types (`size_of`, 64-bit), with the budgets the compaction pinned
+/// (`uo-pptx.md` "Model memory"; DR3 of `uo-dml-render.md`: `Shape` <= 256 B). A field added inline that
+/// pushes a type over its budget fails here: rare fields go into the type's boxed group instead.
+#[test]
+fn m3_model_type_sizes_are_within_budget() {
+    use std::mem::size_of;
+    use uo_dml_render::model::{
+        BodyExtras, ParaBullet, ParaExtras, Paragraph, Run, RunExtras, RunFx, Shape, ShapeExtras, ShapeFx, ShapePaint, TextBody,
+    };
+    use uo_dml_render::text_style::TextStyleLevel;
+    use uo_pptx::timing::{BhvrExtras, CtnExtras, TimeBhvr, TimeNode};
+    let rows: [(&str, usize, usize); 17] = [
+        ("Shape", size_of::<Shape>(), 256),
+        ("ShapeExtras", size_of::<ShapeExtras>(), 200),
+        ("ShapePaint", size_of::<ShapePaint>(), 96),
+        ("ShapeFx", size_of::<ShapeFx>(), 648),
+        ("TextBody", size_of::<TextBody>(), 144),
+        ("BodyExtras", size_of::<BodyExtras>(), 144),
+        ("Paragraph", size_of::<Paragraph>(), 240),
+        ("ParaBullet", size_of::<ParaBullet>(), 112),
+        ("ParaExtras", size_of::<ParaExtras>(), 40),
+        ("Run", size_of::<Run>(), 120),
+        ("RunExtras", size_of::<RunExtras>(), 152),
+        ("RunFx", size_of::<RunFx>(), 304),
+        ("TextStyleLevel", size_of::<TextStyleLevel>(), 24),
+        ("TimeNode", size_of::<TimeNode>(), 192),
+        ("CtnExtras", size_of::<CtnExtras>(), 176),
+        ("TimeBhvr", size_of::<TimeBhvr>(), 352),
+        ("BhvrExtras", size_of::<BhvrExtras>(), 360),
+    ];
+    for (name, size, budget) in rows {
+        eprintln!("m3 size_of::<{name}>() = {size} (budget {budget})");
+    }
+    for (name, size, budget) in rows {
+        assert!(size <= budget, "size_of::<{name}>() = {size} B, budget {budget} B");
+    }
+}
+
+/// The TS reference of the retained slide model, per corpus group (`js/measure-memory.mjs`, frozen TS
+/// `readSlide`, `node --expose-gc`, Node 24.15; median of 3): (group, decks, slides, shapes, TS heap bytes).
+const TS_GROUP_HEAP: [(&str, usize, usize, usize, i64); 7] = [
+    ("b1a", 200, 500, 5360, 44_685_352),
+    ("b3a", 120, 249, 1959, 31_668_800),
+    ("b5a", 150, 220, 3890, 8_950_320),
+    ("b5b", 40, 81, 506, 1_121_552),
+    ("b6a", 100, 202, 1480, 13_160_528),
+    ("c1d", 60, 91, 234, 5_070_976),
+    ("samples", 28, 307, 1742, 7_506_768),
+];
+
+fn group_decks(group: &str) -> Vec<Vec<u8>> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files: Vec<PathBuf> = Vec::new();
+    if group == "samples" {
+        // the tracked samples (every .pptx under slides/samples, two levels)
+        let root = manifest.join("../../../slides/samples");
+        let mut dirs = vec![root];
+        while let Some(d) = dirs.pop() {
+            for e in std::fs::read_dir(&d).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    dirs.push(p);
+                } else if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("pptx")) {
+                    files.push(p);
+                }
+            }
+        }
+    } else {
+        for e in std::fs::read_dir(manifest.join("tests/captures/decks").join(group)).unwrap() {
+            let p = e.unwrap().path();
+            if p.extension().is_some_and(|x| x == "pptx") {
+                files.push(p);
+            }
+        }
+    }
+    files.sort();
+    files.iter().map(|p| std::fs::read(p).unwrap()).collect()
+}
+
+/// Every readable slide of every deck of a group, read once over a warm parse cache and kept alive: the
+/// retained bytes, with the slide and shape counts. Decks or slides the reader refuses are skipped (the TS
+/// script skips the same ones).
+fn retained_group(group: &str) -> (usize, usize, usize, i64) {
+    let mut decks: Vec<(Deck, Vec<Box<str>>)> = Vec::new();
+    for bytes in group_decks(group) {
+        let Ok(mut deck) = Deck::open(&bytes, Limits::default()) else { continue };
+        let Ok(pres) = deck.presentation() else { continue };
+        let targets: Vec<Box<str>> = pres.slides.iter().filter_map(|r| r.target.clone()).collect();
+        let limits = deck.limits().dml();
+        let src = deck.source();
+        let ok: Vec<Box<str>> = targets.into_iter().filter(|t| uo_pptx::read_slide(&src, t, limits).is_ok()).collect();
+        drop(src);
+        decks.push((deck, ok));
+    }
+    let slides: usize = decks.iter().map(|(_, t)| t.len()).sum();
+    let mut keep: Vec<uo_pptx::SlideModel> = Vec::with_capacity(slides);
+    let (shapes, usage) = measure(|| {
+        let mut shapes = 0;
+        for (deck, targets) in &decks {
+            let limits = deck.limits().dml();
+            for t in targets {
+                // a fresh source per read: a source records every part access (its read set), which is not
+                // the slide model
+                let m = uo_pptx::read_slide(&deck.source(), t, limits).unwrap();
+                shapes += m.shapes.len();
+                keep.push(m);
+            }
+        }
+        shapes
+    });
+    (decks.len(), slides, shapes, usage.live_delta)
+}
+
+#[test]
+fn m3_retained_slide_model_by_group() {
+    let mut total_rust = 0i64;
+    let mut total_ts = 0i64;
+    for (group, ts_decks, ts_slides, ts_shapes, ts_heap) in TS_GROUP_HEAP {
+        let (decks, slides, shapes, rust) = retained_group(group);
+        assert_eq!((decks, slides, shapes), (ts_decks, ts_slides, ts_shapes), "{group}: not the TS's slides");
+        let ratio = rust as f64 / ts_heap as f64;
+        eprintln!("m3 group {group}: {decks} decks, {slides} slides, {shapes} shapes: Rust {rust} B, TS {ts_heap} B, {ratio:.3}×");
+        total_rust += rust;
+        total_ts += ts_heap;
+        // the plan's budget, per group: at most half the TS heap of the same slides
+        assert!(rust <= ts_heap / 2, "{group}: retained {rust} B > 0.5 × TS ({} B)", ts_heap / 2);
+    }
+    eprintln!("m3 all groups: Rust {total_rust} B, TS {total_ts} B, {:.3}×", total_rust as f64 / total_ts as f64);
 }
 
 #[test]
@@ -242,6 +365,27 @@ fn m5_caches_are_capped() {
     let mut deck = Deck::open(&deck_bytes("0008"), limits).unwrap();
     read_everything(&mut deck);
     assert!(deck.xml_cache().is_empty());
+
+    // the shared themes: one per distinct theme value, capped (`MAX_SHARED_THEMES`); the slides of a deck
+    // with one master share one copy
+    let mut deck = Deck::open(&deck_bytes("0008"), Limits::default()).unwrap();
+    read_everything(&mut deck);
+    let shared = deck.theme_table().len();
+    assert!((1..=uo_pptx::deck::MAX_SHARED_THEMES).contains(&shared), "{shared} themes");
+    let a = deck.slide(0).unwrap().theme.clone().unwrap();
+    let b = deck.slide(1).unwrap().theme.clone().unwrap();
+    assert_eq!(Arc::ptr_eq(&a, &b), *a == *b, "equal themes are one copy");
+    // past the cap: a table filled by more distinct themes than it holds keeps at most the cap
+    let mut table = uo_pptx::deck::ThemeTable::default();
+    for i in 0..uo_pptx::deck::MAX_SHARED_THEMES + 8 {
+        let t = uo_dml_render::theme::Theme { part: Some(format!("ppt/theme/theme{i}.xml").into()), ..Default::default() };
+        let shared = table.share(t.clone());
+        assert!(Arc::ptr_eq(&shared, &table.share(t)), "an equal theme is the held copy");
+        assert!(table.len() <= uo_pptx::deck::MAX_SHARED_THEMES);
+    }
+    assert_eq!(table.len(), uo_pptx::deck::MAX_SHARED_THEMES);
+    deck.clear_caches();
+    assert!(deck.theme_table().is_empty());
 
     // the media table is bounded by the package's media parts
     let mut deck = Deck::open(&deck_bytes("0001"), Limits::default()).unwrap();

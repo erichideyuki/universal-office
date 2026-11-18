@@ -226,22 +226,23 @@ impl Canon<'_> {
         o.st("text", &r.text);
         o.num("sz", r.sz).boolean("bold", r.bold).boolean("italic", r.italic).boolean("underline", r.underline);
         o.color("color", r.color.as_ref()).string("font", r.font.as_deref()).string("lang", r.lang.as_deref());
+        o.num("kern", r.kern);
         if let Some(e) = &r.extras {
             o.string("field", e.field.as_deref());
-            if let Some((c, w)) = &e.outline {
+            if let Some((c, w)) = &e.fx().outline {
                 let mut oo = Json::obj();
                 oo.st("color", c.as_str()).n("width", *w);
                 o.put("outline", oo.done());
             }
-            if let Some(p) = &e.patt_fill {
+            if let Some(p) = &e.fx().patt_fill {
                 o.put("pattFill", pattern(p));
             }
-            o.json("gradFill", e.grad_fill.as_ref().map(|f| self.fill(f)));
-            self.opt_image(&mut o, "fillImage", e.fill_image.as_ref());
-            o.boolean("fillTile", e.fill_tile).num("alpha", e.alpha).string("symFont", e.sym_font.as_deref());
+            o.json("gradFill", e.fx().grad_fill.as_ref().map(|f| self.fill(f)));
+            self.opt_image(&mut o, "fillImage", e.fx().fill_image.as_ref());
+            o.boolean("fillTile", e.fx().fill_tile).num("alpha", e.alpha).string("symFont", e.sym_font.as_deref());
             o.string("hyperlink", e.hyperlink.as_deref());
-            o.json("shadow", e.shadow.as_ref().map(shadow));
-            o.num("baseline", e.baseline).string("cap", e.cap.as_deref()).boolean("strike", e.strike).num("spc", e.spc).num("kern", e.kern);
+            o.json("shadow", e.fx().shadow.as_ref().map(shadow));
+            o.num("baseline", e.baseline).string("cap", e.cap.as_deref()).boolean("strike", e.strike).num("spc", e.spc);
             o.color("linkColor", e.link_color.as_ref());
         }
         o.done()
@@ -251,18 +252,20 @@ impl Canon<'_> {
         let mut o = Json::obj();
         o.string("align", p.align.as_deref()).num("level", p.level);
         o.put("runs", Json::Arr(p.runs.iter().map(|r| self.run(r)).collect()));
-        o.boolean("bullet", p.bullet).string("bulletChar", p.bullet_char.as_deref()).string("bulletAutoNum", p.bullet_auto_num.as_deref());
+        o.boolean("bullet", p.bullet)
+            .string("bulletChar", p.bu().bullet_char.as_deref())
+            .string("bulletAutoNum", p.bu().bullet_auto_num.as_deref());
         o.num("marL", p.mar_l).num("indent", p.indent).num("lineSpacing", p.line_spacing).num("lineSpacingPt", p.line_spacing_pt);
-        o.json("tabs", p.tabs.as_deref().map(tabs)).num("defTabSz", p.def_tab_sz);
+        o.json("tabs", p.x().tabs.as_deref().map(tabs)).num("defTabSz", p.def_tab_sz);
         o.num("spaceBeforePt", p.space_before_pt).num("spaceAfterPt", p.space_after_pt);
         o.num("spaceBeforePct", p.space_before_pct).num("spaceAfterPct", p.space_after_pct);
-        o.string("bulletFont", p.bullet_font.as_deref()).color("bulletColor", p.bullet_color.as_ref());
-        o.num("bulletSizePct", p.bullet_size_pct).num("bulletSizePt", p.bullet_size_pt);
-        self.opt_image(&mut o, "bulletImage", p.bullet_image.as_deref());
+        o.string("bulletFont", p.bu().bullet_font.as_deref()).color("bulletColor", p.bu().bullet_color.as_ref());
+        o.num("bulletSizePct", p.bu().bullet_size_pct).num("bulletSizePt", p.bu().bullet_size_pt);
+        self.opt_image(&mut o, "bulletImage", p.bu().bullet_image.as_deref());
         o.num("endSz", p.end_sz)
-            .boolean("eaLnBrk", p.ea_ln_brk)
-            .boolean("hangingPunct", p.hanging_punct)
-            .string("fontAlgn", p.font_algn.as_deref());
+            .boolean("eaLnBrk", p.x().ea_ln_brk)
+            .boolean("hangingPunct", p.x().hanging_punct)
+            .string("fontAlgn", p.x().font_algn.as_deref());
         o.done()
     }
 
@@ -270,7 +273,7 @@ impl Canon<'_> {
         let mut o = Json::obj();
         o.string("anchor", t.anchor.as_deref());
         o.put("paragraphs", Json::Arr(t.paragraphs.iter().map(|p| self.paragraph(p)).collect()));
-        o.string("wrap", t.wrap.as_deref()).num("fontScale", t.font_scale);
+        o.string("wrap", t.wrap.as_deref()).num("fontScale", t.x().font_scale);
         o.string(
             "autofit",
             t.autofit.map(|a| match a {
@@ -279,35 +282,42 @@ impl Canon<'_> {
                 Autofit::Shape => "shape",
             }),
         );
-        o.num("lnSpcReduction", t.ln_spc_reduction).boolean("spcFirstLastPara", t.spc_first_last_para);
-        if let Some(w) = &t.warp {
+        o.num("lnSpcReduction", t.x().ln_spc_reduction).boolean("spcFirstLastPara", t.x().spc_first_last_para);
+        if let Some(w) = &t.x().warp {
             let mut wo = Json::obj();
             wo.st("prst", &w.prst).json("adj", w.adj.as_deref().map(nums)).boolean("fromWordArt", w.from_word_art);
             o.put("warp", wo.done());
         }
         o.num("insL", t.ins_l).num("insT", t.ins_t).num("insR", t.ins_r).num("insB", t.ins_b);
-        o.string("vert", t.vert.as_deref()).num("rot", t.rot).num("numCol", t.num_col).num("spcCol", t.spc_col);
-        o.string("vertOverflow", t.vert_overflow.as_deref()).string("horzOverflow", t.horz_overflow.as_deref());
+        o.string("vert", t.x().vert.as_deref()).num("rot", t.x().rot).num("numCol", t.x().num_col).num("spcCol", t.x().spc_col);
+        o.string("vertOverflow", t.x().vert_overflow.as_deref()).string("horzOverflow", t.x().horz_overflow.as_deref());
         o.json("lstStyle", t.lst_style.as_deref().map(|l| self.levels(l)));
         o.done()
     }
 
     pub fn level(&self, l: &TextStyleLevel) -> Json {
         let mut o = Json::obj();
-        o.json("tabs", l.tabs.as_deref().map(tabs))
-            .num("defTabSz", l.def_tab_sz)
-            .num("sz", l.sz)
-            .boolean("bold", l.bold)
-            .boolean("italic", l.italic);
-        o.color("color", l.color.as_ref()).string("font", l.font.as_deref()).string("align", l.align.as_deref());
-        o.string("buChar", l.bu_char.as_deref()).string("buAutoNum", l.bu_auto_num.as_deref()).boolean("buNone", l.bu_none);
-        o.num("marL", l.mar_l).num("indent", l.indent).json("shadow", l.shadow.as_ref().map(shadow));
-        o.num("lineSpacing", l.line_spacing).num("lineSpacingPt", l.line_spacing_pt);
-        o.num("spaceBeforePt", l.space_before_pt).num("spaceAfterPt", l.space_after_pt);
-        o.num("spaceBeforePct", l.space_before_pct).num("spaceAfterPct", l.space_after_pct);
-        o.string("buFont", l.bu_font.as_deref()).color("buClr", l.bu_clr.as_ref()).num("buSzPct", l.bu_sz_pct).num("buSzPt", l.bu_sz_pt);
-        self.opt_image(&mut o, "buBlip", l.bu_blip.as_deref());
-        o.num("baseline", l.baseline).string("cap", l.cap.as_deref()).boolean("strike", l.strike).num("spc", l.spc).num("kern", l.kern);
+        o.json("tabs", l.p().tabs.as_deref().map(tabs))
+            .num("defTabSz", l.p().def_tab_sz)
+            .num("sz", l.r().sz)
+            .boolean("bold", l.r().bold)
+            .boolean("italic", l.r().italic);
+        o.color("color", l.r().color.as_ref()).string("font", l.r().font.as_deref()).string("align", l.p().align.as_deref());
+        o.string("buChar", l.b().bu_char.as_deref()).string("buAutoNum", l.b().bu_auto_num.as_deref()).boolean("buNone", l.b().bu_none);
+        o.num("marL", l.p().mar_l).num("indent", l.p().indent).json("shadow", l.r().shadow.as_ref().map(shadow));
+        o.num("lineSpacing", l.p().line_spacing).num("lineSpacingPt", l.p().line_spacing_pt);
+        o.num("spaceBeforePt", l.p().space_before_pt).num("spaceAfterPt", l.p().space_after_pt);
+        o.num("spaceBeforePct", l.p().space_before_pct).num("spaceAfterPct", l.p().space_after_pct);
+        o.string("buFont", l.b().bu_font.as_deref())
+            .color("buClr", l.b().bu_clr.as_ref())
+            .num("buSzPct", l.b().bu_sz_pct)
+            .num("buSzPt", l.b().bu_sz_pt);
+        self.opt_image(&mut o, "buBlip", l.b().bu_blip.as_deref());
+        o.num("baseline", l.r().baseline)
+            .string("cap", l.r().cap.as_deref())
+            .boolean("strike", l.r().strike)
+            .num("spc", l.r().spc)
+            .num("kern", l.r().kern);
         o.done()
     }
 
@@ -472,23 +482,24 @@ impl Canon<'_> {
                 xo.done()
             }),
         );
-        o.string("geom", s.geom.as_deref()).boolean("grpFill", s.grp_fill).json("adj", s.adj.as_deref().map(nums));
-        o.json("adjNames", s.adj_names.as_deref().map(strs));
+        o.string("geom", s.geom.as_deref()).boolean("grpFill", s.grp_fill).json("adj", s.x().adj.as_deref().map(nums));
+        o.json("adjNames", s.x().adj_names.as_deref().map(strs));
         o.json("custGeom", s.cust_geom.as_deref().map(cust_geom));
         o.json("fill", s.fill.as_deref().map(|f| self.fill(f)));
         o.color("lineColor", s.line_color.as_ref())
-            .num("lineAlpha", s.line_alpha)
+            .num("lineAlpha", s.x().line_alpha)
             .num("lineWidth", s.line_width)
             .boolean("lineNone", s.line_none);
-        o.string("lineDash", s.line_dash.as_deref());
+        o.string("lineDash", s.x().line_dash.as_deref());
         o.json("txBody", s.tx_body.as_deref().map(|t| self.text_body(t)));
-        self.opt_image(&mut o, "image", s.image.as_deref());
-        o.json("srcRect", s.src_rect.map(inset)).num("alpha", s.alpha).boolean("useBgFill", s.use_bg_fill).num("fillAlpha", s.fill_alpha);
-        self.opt_image(&mut o, "fillImage", s.fill_image.as_deref());
-        o.boolean("fillTile", s.fill_tile).boolean("fillNoRot", s.fill_no_rot);
-        o.color("styleFontColor", s.style_font_color.as_ref())
-            .string("styleFontIdx", s.style_font_idx.as_deref())
-            .boolean("inherited", s.inherited);
+        self.opt_image(&mut o, "image", s.paint().image.as_deref());
+        o.json("srcRect", s.paint().src_rect.map(inset))
+            .num("alpha", s.paint().alpha)
+            .boolean("useBgFill", s.paint().use_bg_fill)
+            .num("fillAlpha", s.paint().fill_alpha);
+        self.opt_image(&mut o, "fillImage", s.paint().fill_image.as_deref());
+        o.boolean("fillTile", s.paint().fill_tile).boolean("fillNoRot", s.paint().fill_no_rot);
+        o.color("styleFontColor", s.sf().color.as_ref()).string("styleFontIdx", s.sf().idx.as_deref()).boolean("inherited", s.inherited);
         if let Some(e) = &s.extras {
             o.string("descr", e.descr.as_deref()).string("dgmId", e.dgm_id.as_deref()).string("dgmTextOf", e.dgm_text_of.as_deref());
             if let Some(m) = &e.media {
@@ -546,20 +557,20 @@ impl Canon<'_> {
                 );
             }
             o.json("table", e.table.as_deref().map(|t| self.table(t)));
-            o.json("shadow", e.shadow.as_ref().map(shadow));
-            if let Some(g) = &e.glow {
+            o.json("shadow", e.fx().shadow.as_ref().map(shadow));
+            if let Some(g) = &e.fx().glow {
                 let mut go = Json::obj();
                 go.n("rad", g.rad).st("color", g.color.as_str()).n("alpha", g.alpha);
                 o.put("glow", go.done());
             }
-            o.num("softEdge", e.soft_edge);
-            if let Some(r) = &e.reflection {
+            o.num("softEdge", e.fx().soft_edge);
+            if let Some(r) = &e.fx().reflection {
                 let mut ro = Json::obj();
                 ro.n("blurRad", r.blur_rad).n("stA", r.st_a).n("endA", r.end_a).n("stPos", r.st_pos).n("endPos", r.end_pos);
                 ro.n("dist", r.dist).n("dirDeg", r.dir_deg).n("sy", r.sy).n("fadeDirDeg", r.fade_dir_deg);
                 o.put("reflection", ro.done());
             }
-            if let Some(b) = &e.bevel {
+            if let Some(b) = &e.fx().bevel {
                 let mut bo = Json::obj();
                 bo.n("w", b.w)
                     .n("h", b.h)
@@ -569,24 +580,24 @@ impl Canon<'_> {
                 bo.string("mat", b.mat.as_deref());
                 o.put("bevel", bo.done());
             }
-            if let Some(x) = &e.extrusion {
+            if let Some(x) = &e.fx().extrusion {
                 let mut xo = Json::obj();
                 xo.n("h", x.h).color("color", x.color.as_ref()).string("rig", x.rig.as_deref()).string("dir", x.dir.as_deref());
                 xo.string("mat", x.mat.as_deref());
                 o.put("extrusion", xo.done());
             }
-            o.string("camPrst", e.cam_prst.as_deref());
-            if let Some(c) = &e.cam_rot {
+            o.string("camPrst", e.fx().cam_prst.as_deref());
+            if let Some(c) = &e.fx().cam_rot {
                 let mut co = Json::obj();
                 co.n("lat", c.lat).n("lon", c.lon).n("rev", c.rev);
                 o.put("camRot", co.done());
             }
-            if let Some(i) = &e.inner_shadow {
+            if let Some(i) = &e.fx().inner_shadow {
                 let mut io = Json::obj();
                 io.st("color", i.color.as_str()).n("blurRad", i.blur_rad).n("dist", i.dist).n("dirDeg", i.dir_deg).n("alpha", i.alpha);
                 o.put("innerShadow", io.done());
             }
-            if let Some(f) = &e.fill_overlay {
+            if let Some(f) = &e.fx().fill_overlay {
                 let mut fo = Json::obj();
                 fo.st("blend", &f.blend).put("fill", self.fill(&f.fill));
                 o.put("fillOverlay", fo.done());

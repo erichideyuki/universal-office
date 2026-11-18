@@ -69,7 +69,7 @@ pub fn paint_text(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w:
 }
 
 fn paint_text_pass(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64, h: f64, scale: f64, pass: Pass) -> E {
-    if tb.warp.is_some() {
+    if tb.x().warp.is_some() {
         return paint_warp(cx, sh, tb, x, y, w, h, scale);
     }
     let xf = sh.xfrm.unwrap_or_default();
@@ -80,8 +80,8 @@ fn paint_text_pass(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w
         let mut tr: Option<[f64; 4]> = match (cg, cg.and_then(|c| c.text_rect.as_ref())) {
             (Some(_), Some(r)) => Some([r.l * w, r.t * h, r.r * w, r.b * h]),
             (None, _) => {
-                let names: Option<Vec<&str>> = sh.adj_names.as_ref().map(|n| n.iter().map(|s| &**s).collect());
-                preset_text_rect(sh.geom.as_deref(), w, h, sh.adj.as_deref(), names.as_deref()).map(|r| [r.l, r.t, r.r, r.b])
+                let names: Option<Vec<&str>> = sh.x().adj_names.as_ref().map(|n| n.iter().map(|s| &**s).collect());
+                preset_text_rect(sh.geom.as_deref(), w, h, sh.x().adj.as_deref(), names.as_deref()).map(|r| [r.l, r.t, r.r, r.b])
             }
             _ => None,
         };
@@ -99,7 +99,7 @@ fn paint_text_pass(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w
         }
     }
     if !pass.rot_off
-        && let Some(rot) = tb.rot.filter(|r| truthy(*r))
+        && let Some(rot) = tb.x().rot.filter(|r| truthy(*r))
         && math::rem(rot, 21_600_000.0) != 0.0
     {
         let cxm = x + w / 2.0;
@@ -113,7 +113,7 @@ fn paint_text_pass(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w
         cx.restore();
         return Ok(());
     }
-    let vert = if pass.vert_off { None } else { tb.vert.as_deref() };
+    let vert = if pass.vert_off { None } else { tb.x().vert.as_deref() };
     let turn = match vert {
         Some("vert" | "eaVert") => 1.0,
         Some("vert270") => -1.0,
@@ -203,8 +203,8 @@ fn draw_body(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64,
     let mut para_slots: Vec<(u32, Option<(u32, PartStyle)>)> = Vec::new();
     let plan = unit_hook.map(|u| UnitPlan::new(tb, &lay.lines, u.letters, u.words));
     cx.push(uo_render::slides::SItem::TextBaseline(uo_render::slides::Baseline::Alphabetic));
-    let v_clip = cx.clip_overflow && tb.vert_overflow.as_deref() == Some("clip");
-    let h_clip = cx.clip_overflow && tb.horz_overflow.as_deref() == Some("clip");
+    let v_clip = cx.clip_overflow && tb.x().vert_overflow.as_deref() == Some("clip");
+    let h_clip = cx.clip_overflow && tb.x().horz_overflow.as_deref() == Some("clip");
     let clip_bottom = if v_clip { h / scale - tb.ins_b.unwrap_or(45720.0) } else { f64::INFINITY };
     if v_clip || h_clip {
         cx.save();
@@ -217,7 +217,7 @@ fn draw_body(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64,
         })]);
         cx.clip(None);
     }
-    let shape_shadow = if shape_filled(sh) { None } else { sh.extras.as_ref().and_then(|e| e.shadow.as_ref()) };
+    let shape_shadow = if shape_filled(sh) { None } else { sh.extras.as_ref().and_then(|e| e.fx().shadow.as_ref()) };
     for (li, line) in lay.lines.iter().enumerate() {
         if li > 0 && line.top + line.height > clip_bottom + 1.0 {
             continue;
@@ -703,10 +703,10 @@ fn tile_params(cx: &mut Cx<'_>, r: &crate::model::ImageRef) -> TileParams {
 
 /// `paintWarp` (render.ts:1868): the layout of the body and the lines as a `Warp` effect.
 fn paint_warp(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64, h: f64, scale: f64) -> E {
-    let Some(warp) = tb.warp.as_deref() else { return Ok(()) };
-    if matches!(tb.vert.as_deref(), Some("wordArtVert" | "wordArtVertRtl")) {
+    let Some(warp) = tb.x().warp.as_deref() else { return Ok(()) };
+    if matches!(tb.x().vert.as_deref(), Some("wordArtVert" | "wordArtVertRtl")) {
         let mut stacked = tb.clone();
-        stacked.vert = None;
+        stacked.x_mut().vert = None;
         stacked.wrap = Some("none".into());
         let mut paras = Vec::new();
         for p in &tb.paragraphs {
@@ -748,7 +748,7 @@ fn paint_warp_body(
     scale: f64,
 ) -> E {
     // a stacked body is laid out in the swapped box; the recursion of `paintWarp` re-checks `vert` on the stacked copy
-    if matches!(tb.vert.as_deref(), Some("wordArtVert" | "wordArtVertRtl")) {
+    if matches!(tb.x().vert.as_deref(), Some("wordArtVert" | "wordArtVertRtl")) {
         return paint_warp(cx, sh, tb, x, y, w, h, scale);
     }
     let single = matches!(&*warp.prst, "textArchUp" | "textArchDown" | "textCircle" | "textButton");
@@ -792,7 +792,7 @@ fn paint_warp_body(
         match (last, ws) {
             (Some(l), Some(m)) if !m.is_empty() && has_visible => {
                 let fam = l.font.as_deref().unwrap_or("Calibri");
-                let size = l.sz.unwrap_or(dflt) * tb.font_scale.unwrap_or(1.0);
+                let size = l.sz.unwrap_or(dflt) * tb.x().font_scale.unwrap_or(1.0);
                 let v = plain_width(cx, m, fam, size, l.bold.unwrap_or(false), l.italic.unwrap_or(false))?;
                 trailing.push(v);
             }
@@ -847,8 +847,8 @@ fn paint_warp_body(
         });
     }
     let run0 = tb.paragraphs.iter().flat_map(|p| p.runs.iter()).find(|r| r.text.chars().any(|c| !uo_jsnum::text::is_js_space(c)));
-    let shape_shadow = if shape_filled(sh) { None } else { sh.extras.as_ref().and_then(|e| e.shadow.as_ref()) };
-    let sd = run0.and_then(|r| r.extras.as_ref()).and_then(|e| e.shadow.as_ref()).or(shape_shadow);
+    let shape_shadow = if shape_filled(sh) { None } else { sh.extras.as_ref().and_then(|e| e.fx().shadow.as_ref()) };
+    let sd = run0.and_then(|r| r.extras.as_ref()).and_then(|e| e.fx().shadow.as_ref()).or(shape_shadow);
     // a tiled picture on the warped letters: the cells keep their natural size on the OUTPUT
     let vis: Vec<&PlacedRun> =
         lay.lines.iter().flat_map(|l| l.runs.iter()).filter(|r| r.text.chars().any(|c| !uo_jsnum::text::is_js_space(c))).collect();

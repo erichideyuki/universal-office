@@ -195,7 +195,7 @@ pub fn cell_body(cell: &TableCell) -> Option<TextBody> {
     let mut tb = src.clone();
     tb.anchor = Some(cell.anchor.clone().unwrap_or_else(|| "t".into()));
     if let Some(v) = cell.vert.as_ref().filter(|v| !v.is_empty()) {
-        tb.vert = Some(v.clone());
+        tb.x_mut().vert = Some(v.clone());
     }
     tb.ins_l = Some(cell.mar_l.unwrap_or(91440.0));
     tb.ins_r = Some(cell.mar_r.unwrap_or(91440.0));
@@ -537,7 +537,7 @@ struct Env<'o> {
 
 fn font_of(r: &DRun<'_>, env: &Env<'_>) -> LayoutFont {
     let size_pt = scaled_sz(r.sz.unwrap_or(env.default_sz), env.sc);
-    let kern_at = r.ex().and_then(|e| e.kern);
+    let kern_at = r.src.and_then(|s| s.kern);
     // kern="1200": kerning pairs only from 12 pt on; without kern (or 0), never
     let kern = kern_at.is_some_and(|k| k > 0.0 && size_pt >= k);
     LayoutFont { family: r.font.unwrap_or(env.default_font).into(), size_pt, bold: r.bold(), italic: r.italic(), kern }
@@ -575,7 +575,7 @@ impl TabCtx<'_> {
     fn tab_to(&self, x_rel: f64, seg: (f64, f64), first: bool) -> f64 {
         let mut next = (floor(x_rel / self.def_tab) + 1.0) * self.def_tab;
         let mut algn = "l";
-        for t in self.p.tabs.as_deref().unwrap_or(&[]) {
+        for t in self.p.x().tabs.as_deref().unwrap_or(&[]) {
             if t.pos > x_rel + 1.0 || (first && t.pos >= x_rel - 1.0) {
                 next = t.pos;
                 algn = &t.algn;
@@ -662,14 +662,14 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
     let default_sz = opts.default_sz_pt.unwrap_or(18.0);
     let default_font: &str = opts.default_font.as_deref().unwrap_or("Calibri");
     let default_color = opts.default_color.clone().unwrap_or_else(|| CssColor::new("#000000"));
-    let sc = SizeScale { auto: tb.font_scale.unwrap_or(1.0), extra: opts.size_scale.unwrap_or(1.0) };
+    let sc = SizeScale { auto: tb.x().font_scale.unwrap_or(1.0), extra: opts.size_scale.unwrap_or(1.0) };
     // the continuous factor (character spacing, superscript)
     let font_scale = sc.auto * sc.extra;
-    let line_factor = LINE_FACTOR * (1.0 - tb.ln_spc_reduction.unwrap_or(0.0));
+    let line_factor = LINE_FACTOR * (1.0 - tb.x().ln_spc_reduction.unwrap_or(0.0));
     let usable_w = max(0.0, box_w - ins_l - ins_r);
     // columns: break at the COLUMN width and flow to the next when the usable height runs out
-    let num_col = max(1.0, tb.num_col.unwrap_or(1.0));
-    let spc_col = tb.spc_col.unwrap_or(0.0);
+    let num_col = max(1.0, tb.x().num_col.unwrap_or(1.0));
+    let spc_col = tb.x().spc_col.unwrap_or(0.0);
     let col_w = if num_col > 1.0 { max(0.0, (usable_w - (num_col - 1.0) * spc_col) / num_col) } else { usable_w };
     let wrap = tb.wrap.as_deref() != Some("none");
     let env = Env { sc, default_sz, default_font };
@@ -720,28 +720,28 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
             // restart the counters of deeper levels (`for (l = level + 1; l < 9; l++) counters[l] = 0`)
             auto_num.reset_from(level + 1.0);
             let mut btext: String;
-            if let Some(scheme) = &p.bullet_auto_num {
+            if let Some(scheme) = &p.bu().bullet_auto_num {
                 let n = auto_num.get(level).saturating_add(1);
                 auto_num.set(level, n);
                 btext = format_auto_num(scheme, n);
             } else {
-                btext = p.bullet_char.as_deref().unwrap_or("•").to_string();
+                btext = p.bu().bullet_char.as_deref().unwrap_or("•").to_string();
             }
             // own font/colour/size (buFont/buClr/buSz) or those of the first run; symbol font → Unicode
             let first = runs.iter().position(|r| !r.text.is_empty() && r.text != "\n").unwrap_or(0);
             let first_run = runs.get(first).ok_or(LayoutError::Throws("TypeError"))?;
             let tf = font_of(first_run, &env);
             // numbering with a SYMBOL buFont (Wingdings): the digits come out in the text font (oracle, gd-183528 #11)
-            let num_in_text = p.bullet_auto_num.is_some() && is_symbol_font(p.bullet_font.as_deref());
+            let num_in_text = p.bu().bullet_auto_num.is_some() && is_symbol_font(p.bu().bullet_font.as_deref());
             let mut family: Box<str> =
-                if num_in_text { tf.family.clone() } else { p.bullet_font.clone().unwrap_or_else(|| tf.family.clone()) };
-            if p.bullet_auto_num.is_none() && is_symbol_font(p.bullet_font.as_deref()) {
-                btext = symbol_text(p.bullet_font.as_deref(), &btext);
+                if num_in_text { tf.family.clone() } else { p.bu().bullet_font.clone().unwrap_or_else(|| tf.family.clone()) };
+            if p.bu().bullet_auto_num.is_none() && is_symbol_font(p.bu().bullet_font.as_deref()) {
+                btext = symbol_text(p.bu().bullet_font.as_deref(), &btext);
                 family = SYMBOL_FAMILY.into();
             }
-            let size_pt = match p.bullet_size_pt {
+            let size_pt = match p.bu().bullet_size_pt {
                 Some(pt) => pt * font_scale,
-                None => tf.size_pt * p.bullet_size_pct.unwrap_or(1.0),
+                None => tf.size_pt * p.bu().bullet_size_pct.unwrap_or(1.0),
             };
             // the bullet at the SMALLER of marL and marL+indent, the text at the larger (indent > 0 swaps); left of
             // the box the whole first line slides in. The text never starts before the END of the bullet — the
@@ -749,16 +749,16 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
             let lo = min(mar_l, mar_l + indent);
             let hi = max(mar_l, mar_l + indent);
             let shift = if lo < 0.0 { -lo } else { 0.0 };
-            let raw_bullet: Cow<'_, str> = if p.bullet_auto_num.is_none() {
-                Cow::Borrowed(p.bullet_char.as_deref().unwrap_or("•"))
+            let raw_bullet: Cow<'_, str> = if p.bu().bullet_auto_num.is_none() {
+                Cow::Borrowed(p.bu().bullet_char.as_deref().unwrap_or("•"))
             } else {
                 Cow::Borrowed(btext.as_str())
             };
-            let bw = if p.bullet_image.is_some() {
+            let bw = if p.bu().bullet_image.is_some() {
                 0.0
             } else {
                 let bf = LayoutFont {
-                    family: if num_in_text { tf.family.clone() } else { p.bullet_font.clone().unwrap_or_else(|| tf.family.clone()) },
+                    family: if num_in_text { tf.family.clone() } else { p.bu().bullet_font.clone().unwrap_or_else(|| tf.family.clone()) },
                     size_pt,
                     bold: tf.bold,
                     italic: tf.italic,
@@ -767,14 +767,18 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
                 measure_emu(m, &raw_bullet, &bf)
             };
             bullet_text_x = Some(ins_l + max(hi + shift, lo + shift + bw));
-            let color =
-                p.bullet_color.clone().or_else(|| first_run.src.and_then(|r| r.color.clone())).unwrap_or_else(|| default_color.clone());
+            let color = p
+                .bu()
+                .bullet_color
+                .clone()
+                .or_else(|| first_run.src.and_then(|r| r.color.clone()))
+                .unwrap_or_else(|| default_color.clone());
             bullet = Some(PlacedBullet {
                 text: btext,
                 x: ins_l + lo + shift,
                 font: LayoutFont { family, size_pt, ..tf },
                 color,
-                image: p.bullet_image.as_deref().cloned(),
+                image: p.bu().bullet_image.as_deref().cloned(),
             });
         }
 
@@ -821,7 +825,7 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
             // measured, syn-a-tbl10) and the foot of the last line not scaled (see below)
             let exp = p.line_spacing_pt.is_some() || line_factor * para_factor > LINE_FACTOR + 1e-9;
             line_exp.push(if exp {
-                match p.font_algn.as_deref() {
+                match p.x().font_algn.as_deref() {
                     Some("t") => 0.84,
                     Some("ctr") => 0.86,
                     Some("b") => 0.68,
@@ -839,7 +843,7 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
             };
             // the application IGNORES the spcBef of the box's 1st paragraph (measured: 0, 40 pt and 100% → same
             // position) — unless `spcFirstLastPara="1"` in the bodyPr (Google Slides exports)
-            let first_para_bef = pi > 0 || tb.spc_first_last_para == Some(true);
+            let first_para_bef = pi > 0 || tb.x().spc_first_last_para == Some(true);
             spacers.push(if *first_line_of_para { *pending_spacer + if first_para_bef { bef } else { 0.0 } } else { 0.0 });
             *last_max_pt = max_pt;
             if *first_line_of_para {
@@ -916,9 +920,10 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
                 // kinsoku (East Asian language and eaLnBrk != 0 — measured, syn-a-tbl9)
                 let joined: String = u.iter().map(|pc| pc.text.as_str()).collect();
                 let chars: Vec<char> = trim_end(&joined).chars().collect();
-                let ea = p.ea_ln_brk != Some(false) && ea_lang(runs.get(wd.run).map_or("", |r| r.lang()));
+                let ea = p.x().ea_ln_brk != Some(false) && ea_lang(runs.get(wd.run).map_or("", |r| r.lang()));
                 // 、。 hang past the margin
-                if ea && p.hanging_punct != Some(false) && chars.len() == 1 && chars.first().is_some_and(|c| KINSOKU_HANG.contains(*c)) {
+                if ea && p.x().hanging_punct != Some(false) && chars.len() == 1 && chars.first().is_some_and(|c| KINSOKU_HANG.contains(*c))
+                {
                     u_starts.push(cur.runs.len());
                     cur.runs.extend(u.iter().cloned());
                     cur_w += kp + w_emu;
@@ -928,7 +933,8 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
                 let prev_u: Vec<Piece> = cur.runs.get(last_start..).unwrap_or(&[]).to_vec();
                 let prev_joined: String = prev_u.iter().map(|pc| pc.text.as_str()).collect();
                 let prev_ch = trim_end(&prev_joined).chars().next_back();
-                let prev_ea = p.ea_ln_brk != Some(false) && ea_lang(prev_u.last().and_then(|pc| runs.get(pc.run)).map_or("", |r| r.lang()));
+                let prev_ea =
+                    p.x().ea_ln_brk != Some(false) && ea_lang(prev_u.last().and_then(|pc| runs.get(pc.run)).map_or("", |r| r.lang()));
                 kp = 0.0;
                 let no_start = ea && chars.first().is_some_and(|c| KINSOKU_NO_START.contains(*c));
                 let no_end = prev_ea && prev_ch.is_some_and(|c| KINSOKU_NO_END.contains(c));
@@ -1012,7 +1018,7 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
     for s in &spacers {
         sp_sum += *s;
     }
-    let total_h = total_h + sp_sum + if tb.spc_first_last_para == Some(true) { pending_spacer } else { 0.0 } + last_adj;
+    let total_h = total_h + sp_sum + if tb.x().spc_first_last_para == Some(true) { pending_spacer } else { 0.0 } + last_adj;
     let usable_h = max(0.0, box_h - ins_t - ins_b);
     let anchor = tb.anchor.as_deref().or(opts.default_anchor.as_deref()).unwrap_or("t");
     let mut y = ins_t;
@@ -1079,15 +1085,15 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
                 color: link.or(src_color).unwrap_or_else(|| default_color.clone()),
                 underline,
                 hyperlink: ex.and_then(|e| e.hyperlink.clone()),
-                shadow: ex.and_then(|e| e.shadow.clone()),
+                shadow: ex.and_then(|e| e.fx().shadow.clone()),
                 rise: r.rise.filter(|v| *v != 0.0 && !v.is_nan()).map(|v| v * EMU_PER_POINT * font_scale),
                 strike: ex.and_then(|e| e.strike).unwrap_or(false),
                 spc: r.spc().filter(|v| *v != 0.0 && !v.is_nan()).map(|v| v * EMU_PER_POINT * sc.extra),
-                outline: ex.and_then(|e| e.outline.clone()),
-                patt_fill: ex.and_then(|e| e.patt_fill.clone()),
-                grad_fill: ex.and_then(|e| e.grad_fill.clone()),
-                fill_image: ex.and_then(|e| e.fill_image.clone()),
-                fill_tile: ex.and_then(|e| e.fill_image.as_ref().and(e.fill_tile)).unwrap_or(false),
+                outline: ex.and_then(|e| e.fx().outline.clone()),
+                patt_fill: ex.and_then(|e| e.fx().patt_fill.clone()),
+                grad_fill: ex.and_then(|e| e.fx().grad_fill.clone()),
+                fill_image: ex.and_then(|e| e.fx().fill_image.clone()),
+                fill_tile: ex.and_then(|e| e.fx().fill_image.as_ref().and(e.fx().fill_tile)).unwrap_or(false),
                 alpha: ex.and_then(|e| e.alpha),
             };
             placed.push(pr);

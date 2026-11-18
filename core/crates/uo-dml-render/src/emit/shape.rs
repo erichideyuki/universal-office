@@ -37,7 +37,7 @@ pub enum Mode {
 }
 
 fn names_of(sh: &Shape) -> Option<Vec<&str>> {
-    sh.adj_names.as_ref().map(|n| n.iter().map(|s| &**s).collect())
+    sh.x().adj_names.as_ref().map(|n| n.iter().map(|s| &**s).collect())
 }
 
 fn x_of(sh: &Shape) -> Xfrm {
@@ -107,7 +107,7 @@ pub fn shape_ops(sh: &Shape, x: f64, y: f64, w: f64, h: f64, mode: Option<Mode>)
         return (ops, None);
     }
     let names = names_of(sh);
-    let p = preset_path(sh.geom.as_deref(), w, h, sh.adj.as_deref(), names.as_deref());
+    let p = preset_path(sh.geom.as_deref(), w, h, sh.x().adj.as_deref(), names.as_deref());
     match p {
         PresetPath::Path(ps) => {
             let keep = |i: usize| -> bool {
@@ -208,7 +208,7 @@ fn has_color(c: &Option<crate::CssColor>) -> bool {
 
 /// `shapeFilled` (render.ts:1857).
 pub fn shape_filled(sh: &Shape) -> bool {
-    sh.fill.as_ref().is_some_and(|f| f.kind != FillKind::None) || sh.fill_image.is_some() || sh.use_bg_fill.unwrap_or(false)
+    sh.fill.as_ref().is_some_and(|f| f.kind != FillKind::None) || sh.paint().fill_image.is_some() || sh.paint().use_bg_fill.unwrap_or(false)
 }
 
 // ------------------------------------------------------------------------------------------------ camera and 3D
@@ -371,7 +371,7 @@ fn outline_polys(sh: &Shape, x: f64, y: f64, w: f64, h: f64) -> Vec<Poly> {
         return out;
     }
     let names = names_of(sh);
-    let p = preset_path(sh.geom.as_deref(), w, h, sh.adj.as_deref(), names.as_deref());
+    let p = preset_path(sh.geom.as_deref(), w, h, sh.x().adj.as_deref(), names.as_deref());
     match p {
         PresetPath::Path(ps) => {
             let all: Vec<&[PathSeg]> = ps.subs.iter().collect();
@@ -419,7 +419,7 @@ struct Quad {
 
 /// `paintExtrusion`: the lateral faces of the 3D extrusion, drawn in the slide's frame (register 0 = `baseM`).
 fn paint_extrusion(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, scale: f64, cam_r: Option<&CamRot>) {
-    let Some(ex) = sh.extras.as_ref().and_then(|e| e.extrusion.as_ref()) else { return };
+    let Some(ex) = sh.extras.as_ref().and_then(|e| e.fx().extrusion.as_ref()) else { return };
     let e = ex.h * scale;
     let color: Option<&str> = ex
         .color
@@ -439,7 +439,7 @@ fn paint_extrusion(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, 
     let fh = if xf.flip_h.unwrap_or(false) { -1.0 } else { 1.0 };
     let fv = if xf.flip_v.unwrap_or(false) { -1.0 } else { 1.0 };
     let m = cam_r.map_or([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], camera_matrix3);
-    let cam_prst = sh.extras.as_ref().and_then(|e| e.cam_prst.as_deref());
+    let cam_prst = sh.extras.as_ref().and_then(|e| e.fx().cam_prst.as_deref());
     let obl = if cam_r.is_some() { None } else { oblique_offset(cam_prst) };
     if cam_r.is_none() && obl.is_none_or(|o| o[0] == 0.0 && o[1] == 0.0) {
         return;
@@ -559,7 +559,7 @@ fn paint_extrusion(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, 
 
 fn paint_glow(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, scale: f64, k: f64) {
     let _ = k;
-    let Some(g) = sh.extras.as_ref().and_then(|e| e.glow.as_ref()) else { return };
+    let Some(g) = sh.extras.as_ref().and_then(|e| e.fx().glow.as_ref()) else { return };
     let r = g.rad * scale;
     if !(r > 0.3) {
         return;
@@ -580,7 +580,7 @@ fn paint_glow(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, scale
 }
 
 fn apply_soft_edge(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, scale: f64) {
-    let Some(se) = sh.extras.as_ref().and_then(|e| e.soft_edge) else { return };
+    let Some(se) = sh.extras.as_ref().and_then(|e| e.fx().soft_edge) else { return };
     let r = se * scale;
     if !(r > 0.5) {
         return;
@@ -608,7 +608,7 @@ fn apply_soft_edge(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, 
 }
 
 fn paint_reflection(cx: &mut Cx<'_>, lc: u32, sh: &Shape, x: f64, y: f64, w: f64, h: f64, scale: f64) {
-    let Some(rf) = sh.extras.as_ref().and_then(|e| e.reflection) else { return };
+    let Some(rf) = sh.extras.as_ref().and_then(|e| e.fx().reflection) else { return };
     let Some(rl) = cx.alloc_layer() else { return };
     cx.push(SItem::CaptureCtm(0));
     let begin = cx.list.items.len();
@@ -727,12 +727,12 @@ fn fill_paint_solid_or_gradient(cx: &mut Cx<'_>, f: &Fill, x: f64, y: f64, w: f6
 fn media_frame_of(cx: &Cx<'_>, sh: &Shape) -> bool {
     cx.anim_media
         && !sh.inherited.unwrap_or(false)
-        && (sh.extras.as_ref().is_some_and(|e| e.media.is_some()) || sh.image.as_ref().is_some_and(|i| &*i.mime == "image/gif"))
+        && (sh.extras.as_ref().is_some_and(|e| e.media.is_some()) || sh.paint().image.as_ref().is_some_and(|i| &*i.mime == "image/gif"))
 }
 
 /// `drawPic(poster)` as a draw item (the poster of a `MediaFrame`).
 fn poster_draw(sh: &Shape, im: &Img, x: f64, y: f64, w: f64, h: f64) -> uo_render::slides::DrawImageItem {
-    let s = sh.src_rect.map(|sr| {
+    let s = sh.paint().src_rect.map(|sr| {
         let sx = sr.l * im.w;
         let sy = sr.t * im.h;
         let sw = im.w - (sr.l + sr.r) * im.w;
@@ -744,7 +744,7 @@ fn poster_draw(sh: &Shape, im: &Img, x: f64, y: f64, w: f64, h: f64) -> uo_rende
 
 /// The picture of a `<p:pic>` with srcRect (`drawPic`).
 fn draw_pic(cx: &mut Cx<'_>, sh: &Shape, im: &Img, x: f64, y: f64, w: f64, h: f64) {
-    if let Some(sr) = sh.src_rect {
+    if let Some(sr) = sh.paint().src_rect {
         let sx = sr.l * im.w;
         let sy = sr.t * im.h;
         let sw = im.w - (sr.l + sr.r) * im.w;
@@ -756,10 +756,10 @@ fn draw_pic(cx: &mut Cx<'_>, sh: &Shape, im: &Img, x: f64, y: f64, w: f64, h: f6
 }
 
 fn paint_picture(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fit: &Fit) {
-    let Some(iref) = sh.image.as_deref() else { return };
+    let Some(iref) = sh.paint().image.as_deref() else { return };
     // `picDisplaySize` of the viewer: the size (px at 96 dpi) of the WHOLE picture on the page, so a metafile is rasterized at it
     cx.picture_display = sh.xfrm.as_ref().filter(|x| x.cx > 0.0 && x.cy > 0.0).map(|x| {
-        let (fw, fh) = match sh.src_rect {
+        let (fw, fh) = match sh.paint().src_rect {
             Some(c) => (math::max(0.05, 1.0 - c.l - c.r), math::max(0.05, 1.0 - c.t - c.b)),
             None => (1.0, 1.0),
         };
@@ -773,7 +773,7 @@ fn paint_picture(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fi
         && (has_color(&f.color) || f.stops.is_some())
     {
         cx.save();
-        if let Some(fa) = sh.fill_alpha
+        if let Some(fa) = sh.paint().fill_alpha
             && fa < 1.0
         {
             cx.global_alpha_mul(fa);
@@ -784,7 +784,7 @@ fn paint_picture(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fi
         cx.restore();
     }
     if let Some(img) = img {
-        let shadow = sh.extras.as_ref().and_then(|e| e.shadow.as_ref());
+        let shadow = sh.extras.as_ref().and_then(|e| e.fx().shadow.as_ref());
         if let Some(sc) = shadow {
             cx.save();
             cx.shadow_color(&rgba_of(sc.color.as_str(), sc.alpha));
@@ -806,7 +806,7 @@ fn paint_picture(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fi
             cx.push(SItem::MediaFrame(uo_render::slides::MediaFrameItem {
                 shape: cx.shape_index,
                 d: Rect4 { x, y, w, h },
-                crop: sh.src_rect.map(|sr| uo_render::slides::Edges { l: sr.l, t: sr.t, r: sr.r, b: sr.b }),
+                crop: sh.paint().src_rect.map(|sr| uo_render::slides::Edges { l: sr.l, t: sr.t, r: sr.r, b: sr.b }),
                 poster: Some(poster),
             }));
         } else {
@@ -852,7 +852,7 @@ fn off_screen(cx: &mut Cx<'_>, sx: f64, sy: f64) {
 }
 
 fn paint_outer_shadow(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fit: &Fit) {
-    let Some(sd) = sh.extras.as_ref().and_then(|e| e.shadow.as_ref()) else { return };
+    let Some(sd) = sh.extras.as_ref().and_then(|e| e.fx().shadow.as_ref()) else { return };
     let sx = sd.dist * math::cos(sd.dir_deg * PI / 180.0) * fit.scale;
     let sy = sd.dist * math::sin(sd.dir_deg * PI / 180.0) * fit.scale;
     cx.save();
@@ -871,12 +871,12 @@ fn paint_outer_shadow(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f6
         _ => cx.fill_css("#ffffff"),
     }
     if ov_fill.is_none()
-        && let Some(fa) = sh.fill_alpha
+        && let Some(fa) = sh.paint().fill_alpha
         && fa < 1.0
     {
         cx.global_alpha_mul(fa);
     }
-    if sh.fill_image.is_some() && sh.use_bg_fill.unwrap_or(false) && sd.sx.is_none() && sd.sy.is_none() {
+    if sh.paint().fill_image.is_some() && sh.paint().use_bg_fill.unwrap_or(false) && sd.sx.is_none() && sd.sy.is_none() {
         off_screen(cx, sx, sy);
         cx.fill_css("#000");
     } else if sd.sx.is_some() || sd.sy.is_some() {
@@ -916,7 +916,7 @@ fn overlay_op_over(blend: &str) -> CompositeOp {
 fn solid_fill(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, rule: Option<FillRule>, color: &str) {
     let cg = sh.cust_geom.as_deref();
     let names = names_of(sh);
-    let desc = if cg.is_some() { None } else { Some(preset_path(sh.geom.as_deref(), w, h, sh.adj.as_deref(), names.as_deref())) };
+    let desc = if cg.is_some() { None } else { Some(preset_path(sh.geom.as_deref(), w, h, sh.x().adj.as_deref(), names.as_deref())) };
     if let Some(cg) = cg.filter(|c| c.lum.is_some()) {
         let lum = cg.lum.as_deref().unwrap_or(&[]);
         for (i, sub) in cg.subs.iter().enumerate() {
@@ -960,7 +960,7 @@ fn solid_fill(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, rule:
 fn shaded_faces_over(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64) {
     let cg = sh.cust_geom.as_deref();
     let names = names_of(sh);
-    let d = if cg.is_some() { None } else { Some(preset_path(sh.geom.as_deref(), w, h, sh.adj.as_deref(), names.as_deref())) };
+    let d = if cg.is_some() { None } else { Some(preset_path(sh.geom.as_deref(), w, h, sh.x().adj.as_deref(), names.as_deref())) };
     // lums per sub (None = absent entry), subs
     let (lums, subs): (Option<Vec<Option<f64>>>, Option<Vec<&[PathSeg]>>) = match (cg, d.as_ref()) {
         (Some(cg), _) => (cg.lum.as_ref().map(|l| l.iter().map(|v| Some(*v)).collect()), Some(cg.subs.iter().collect())),
@@ -992,14 +992,14 @@ fn shaded_faces_over(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64
 
 fn paint_fill_block(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fit: &Fit) {
     cx.save();
-    if let Some(fa) = sh.fill_alpha
+    if let Some(fa) = sh.paint().fill_alpha
         && fa < 1.0
     {
         cx.global_alpha_mul(fa);
     }
     let rule = shape_path(cx, sh, x, y, w, h, Some(Mode::Fill), false);
     let ov_fill = cx.cur.fill_ov.clone();
-    let ovl = sh.extras.as_ref().and_then(|e| e.fill_overlay.as_ref()).filter(|o| &*o.blend != "over" && ov_fill.is_none());
+    let ovl = sh.extras.as_ref().and_then(|e| e.fx().fill_overlay.as_ref()).filter(|o| &*o.blend != "over" && ov_fill.is_none());
     if let Some(o) = ovl {
         if is_gradient(&o.fill) {
             let p = make_linear_gradient(cx, &o.fill, x, y, w, h);
@@ -1013,7 +1013,7 @@ fn paint_fill_block(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
     let mut faces_shaded = false;
     let (mut fx, mut fy, mut fw, mut fh) = (x, y, w, h);
     let xf = x_of(sh);
-    if sh.fill_no_rot.unwrap_or(false) && truthy(xf.rot.unwrap_or(0.0)) {
+    if sh.paint().fill_no_rot.unwrap_or(false) && truthy(xf.rot.unwrap_or(0.0)) {
         let flips = u8::from(xf.flip_h.unwrap_or(false)) + u8::from(xf.flip_v.unwrap_or(false));
         let cxm = x + w / 2.0;
         let cym = y + h / 2.0;
@@ -1029,20 +1029,20 @@ fn paint_fill_block(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
         fy = cym - fh / 2.0;
     }
     let fill = sh.fill.as_deref();
-    if ov_fill.is_none() && sh.use_bg_fill.unwrap_or(false) && (sh.fill_image.is_some() || fill.is_some()) {
+    if ov_fill.is_none() && sh.paint().use_bg_fill.unwrap_or(false) && (sh.paint().fill_image.is_some() || fill.is_some()) {
         cx.clip(rule);
-        if sh.use_bg_fill.unwrap_or(false) && xform_present(sh) {
+        if sh.paint().use_bg_fill.unwrap_or(false) && xform_present(sh) {
             cx.push(SItem::TransformUnshape(0));
         }
         let sw = fit.slide_w * fit.scale;
         let shh = fit.slide_h * fit.scale;
-        if let Some(fi) = sh.fill_image.as_deref() {
+        if let Some(fi) = sh.paint().fill_image.as_deref() {
             let img = cx.image(fi);
             if let (Some(_), Some(a)) = (img.as_ref(), fi.fx.as_deref().and_then(|f| f.alpha)) {
                 cx.global_alpha_mul(a);
             }
             let pat = match &img {
-                Some(im) if sh.fill_tile.unwrap_or(false) => paint::image_tile(cx, im, fi, fit.ox, fit.oy, fit.scale, sw, shh),
+                Some(im) if sh.paint().fill_tile.unwrap_or(false) => paint::image_tile(cx, im, fi, fit.ox, fit.oy, fit.scale, sw, shh),
                 _ => None,
             };
             if let Some(p) = pat {
@@ -1069,12 +1069,12 @@ fn paint_fill_block(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
         // the animated fill colour (the app turns the fill solid)
         cx.fill_css(c.as_str());
         cx.fill(rule);
-    } else if let Some(fi) = sh.fill_image.as_deref() {
+    } else if let Some(fi) = sh.paint().fill_image.as_deref() {
         let img = cx.image(fi);
         if let (Some(_), Some(a)) = (img.as_ref(), fi.fx.as_deref().and_then(|f| f.alpha)) {
             cx.global_alpha_mul(a);
         }
-        let shadow = sh.extras.as_ref().and_then(|e| e.shadow.as_ref());
+        let shadow = sh.extras.as_ref().and_then(|e| e.fx().shadow.as_ref());
         if let (Some(_), Some(sd)) = (img.as_ref(), shadow)
             && sd.sx.is_none()
             && sd.sy.is_none()
@@ -1085,7 +1085,7 @@ fn paint_fill_block(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
             cx.shadow_offset_plain(sd.dist * math::cos(a) * fit.scale, sd.dist * math::sin(a) * fit.scale);
         }
         if let Some(im) = img {
-            if sh.fill_tile.unwrap_or(false) {
+            if sh.paint().fill_tile.unwrap_or(false) {
                 if let Some(p) = paint::image_tile(cx, &im, fi, fx, fy, fit.scale, fw, fh) {
                     cx.fill_style(p);
                     cx.fill(rule);
@@ -1129,7 +1129,7 @@ fn xform_present(sh: &Shape) -> bool {
 
 fn cam_of(sh: &Shape) -> Option<CamRot> {
     let ex = sh.extras.as_ref()?;
-    ex.cam_rot.or_else(|| ex.cam_prst.as_deref().and_then(|p| CAM_ROT.iter().find(|(k, _)| *k == p).map(|(_, v)| *v)))
+    ex.fx().cam_rot.or_else(|| ex.fx().cam_prst.as_deref().and_then(|p| CAM_ROT.iter().find(|(k, _)| *k == p).map(|(_, v)| *v)))
 }
 
 /// `paintBody`'s shape part (the body of a plain shape): returns whether the body hosts text.
@@ -1139,22 +1139,22 @@ fn paint_plain_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
     let extras = sh.extras.as_deref();
     let fill = sh.fill.as_deref();
     let has_visible_fill = (fill.is_some_and(|f| f.kind != FillKind::None)
-        && !(sh.fill_image.is_some() && !sh.use_bg_fill.unwrap_or(false)))
-        || (sh.fill_image.is_some() && sh.use_bg_fill.unwrap_or(false));
-    if extras.is_some_and(|e| e.shadow.is_some()) && has_visible_fill {
+        && !(sh.paint().fill_image.is_some() && !sh.paint().use_bg_fill.unwrap_or(false)))
+        || (sh.paint().fill_image.is_some() && sh.paint().use_bg_fill.unwrap_or(false));
+    if extras.is_some_and(|e| e.fx().shadow.is_some()) && has_visible_fill {
         paint_outer_shadow(cx, sh, x, y, w, h, fit);
     }
     let line_geom = is_line_geom(sh.geom.as_deref());
-    let wire = is_wireframe(extras.and_then(|e| e.extrusion.as_ref()).and_then(|e| e.mat.as_deref()));
+    let wire = is_wireframe(extras.and_then(|e| e.fx().extrusion.as_ref()).and_then(|e| e.mat.as_deref()));
     let ov_fill = cx.cur.fill_ov.is_some();
-    let fill_present = ov_fill || sh.fill_image.is_some() || fill.is_some_and(|f| f.kind != FillKind::None);
+    let fill_present = ov_fill || sh.paint().fill_image.is_some() || fill.is_some_and(|f| f.kind != FillKind::None);
     if !line_geom && !wire && fill_present {
         paint_fill_block(cx, sh, x, y, w, h, fit);
     }
-    if let Some(o) = extras.and_then(|e| e.fill_overlay.as_ref())
+    if let Some(o) = extras.and_then(|e| e.fx().fill_overlay.as_ref())
         && (&*o.blend == "over" || ov_fill)
         && !line_geom
-        && (fill.is_none_or(|f| f.kind != FillKind::None) || sh.fill_image.is_some())
+        && (fill.is_none_or(|f| f.kind != FillKind::None) || sh.paint().fill_image.is_some())
     {
         cx.save();
         let rule = shape_path(cx, sh, x, y, w, h, Some(Mode::Fill), false);
@@ -1168,9 +1168,9 @@ fn paint_plain_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
         cx.fill(rule);
         cx.restore();
     }
-    if let Some(b) = extras.and_then(|e| e.bevel.as_ref())
+    if let Some(b) = extras.and_then(|e| e.fx().bevel.as_ref())
         && !line_geom
-        && (fill.is_some_and(|f| f.kind != FillKind::None) || sh.fill_image.is_some() || ov_fill)
+        && (fill.is_some_and(|f| f.kind != FillKind::None) || sh.paint().fill_image.is_some() || ov_fill)
     {
         let (ops, rule) = shape_ops(sh, x, y, w, h, Some(Mode::Fill));
         let path = cx.path_span(&ops);
@@ -1193,13 +1193,17 @@ fn paint_plain_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
         }));
         cx.push(SItem::Effect(i));
     }
-    if let Some(s) = extras.and_then(|e| e.inner_shadow.as_ref())
+    if let Some(s) = extras.and_then(|e| e.fx().inner_shadow.as_ref())
         && !line_geom
     {
         cx.save();
         let rule = shape_path(cx, sh, x, y, w, h, Some(Mode::Fill), false);
         cx.clip(rule);
-        let a = if fill.is_some_and(|f| f.kind != FillKind::None) && sh.fill_image.is_none() { sh.fill_alpha.unwrap_or(1.0) } else { 1.0 };
+        let a = if fill.is_some_and(|f| f.kind != FillKind::None) && sh.paint().fill_image.is_none() {
+            sh.paint().fill_alpha.unwrap_or(1.0)
+        } else {
+            1.0
+        };
         if a < 1.0 {
             cx.fill_css(&rgba_of(s.color.as_str(), s.alpha * a * (1.0 - a)));
             cx.fill(rule);
@@ -1222,7 +1226,7 @@ fn paint_plain_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
     let line_ov = cx.cur.line_ov.clone();
     if let Some(lc) = line_ov.as_ref().or(sh.line_color.as_ref()) {
         let lc = lc.as_str();
-        let line_alpha = sh.line_alpha.filter(|a| *a < 1.0);
+        let line_alpha = sh.x().line_alpha.filter(|a| *a < 1.0);
         // `prevAlpha = ctx.globalAlpha` ... `ctx.globalAlpha = prevAlpha`: the list tracks the canvas's alpha
         let prev_alpha = cx.alpha();
         if let Some(a) = line_alpha {
@@ -1231,7 +1235,7 @@ fn paint_plain_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64,
         cx.stroke_css(lc);
         let lw = math::max(1.0, sh.line_width.unwrap_or(9525.0) * fit.scale);
         cx.line_width(lw);
-        let dash = sh.line_dash.as_deref().filter(|d| !d.is_empty());
+        let dash = sh.x().line_dash.as_deref().filter(|d| !d.is_empty());
         if let Some(d) = dash {
             cx.line_dash(&dash_pattern(d, lw));
         }
@@ -1279,7 +1283,7 @@ fn paint_body(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fit: 
         super::table::paint_table(cx, t, x, y, tw, th, fit)?;
         return Ok(false);
     }
-    if sh.image.is_some() {
+    if sh.paint().image.is_some() {
         paint_picture(cx, sh, x, y, w, h, fit);
         return Ok(false);
     }
@@ -1310,7 +1314,7 @@ fn shape_core(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: f64, fit: 
         Some(i) => cx.slot_begin(i),
         None => cx.save(),
     }
-    if sh.extras.as_ref().is_some_and(|e| e.extrusion.is_some()) && sh.image.is_none() {
+    if sh.extras.as_ref().is_some_and(|e| e.fx().extrusion.is_some()) && sh.paint().image.is_none() {
         paint_extrusion(cx, sh, x, y, w, h, fit.scale, cam_r);
     }
     let hosts = paint_body(cx, sh, x, y, w, h, fit)?;
@@ -1343,16 +1347,17 @@ pub fn paint_shape(cx: &mut Cx<'_>, sh: &Shape, fit: &Fit, suppress_text: bool) 
     let cam_r = cam_of(sh);
     let cam = cam_r.as_ref().map(camera_matrix);
     let has_xform = truthy(xf.rot.unwrap_or(0.0)) || xf.flip_h.unwrap_or(false) || xf.flip_v.unwrap_or(false) || cam.is_some();
-    let has_alpha = sh.alpha.is_some_and(|a| a < 1.0);
+    let has_alpha = sh.paint().alpha.is_some_and(|a| a < 1.0);
     // baseM: the transform before the shape's own (the use-bg-fill window and the extrusion draw in that frame)
-    let needs_base = (sh.use_bg_fill.unwrap_or(false) && has_xform) || sh.extras.as_ref().is_some_and(|e| e.extrusion.is_some());
+    let needs_base =
+        (sh.paint().use_bg_fill.unwrap_or(false) && has_xform) || sh.extras.as_ref().is_some_and(|e| e.fx().extrusion.is_some());
     if needs_base {
         cx.push(SItem::CaptureCtm(0));
     }
     if has_xform || has_alpha {
         cx.save();
         if has_alpha {
-            cx.global_alpha_mul(sh.alpha.unwrap_or(1.0));
+            cx.global_alpha_mul(sh.paint().alpha.unwrap_or(1.0));
         }
         if has_xform {
             let cxm = x + w / 2.0;
@@ -1373,27 +1378,27 @@ pub fn paint_shape(cx: &mut Cx<'_>, sh: &Shape, fit: &Fit, suppress_text: bool) 
             cx.translate(-cxm, -cym);
         }
     }
-    let body_alpha = if sh.image.is_some() || sh.fill_image.is_some() || sh.line_color.is_some() {
+    let body_alpha = if sh.paint().image.is_some() || sh.paint().fill_image.is_some() || sh.line_color.is_some() {
         1.0
     } else if sh.fill.as_ref().is_some_and(|f| f.kind != FillKind::None) {
-        sh.fill_alpha.unwrap_or(1.0)
+        sh.paint().fill_alpha.unwrap_or(1.0)
     } else {
         0.0
     };
-    if sh.extras.as_ref().is_some_and(|e| e.glow.is_some()) && body_alpha > 0.0 {
+    if sh.extras.as_ref().is_some_and(|e| e.fx().glow.is_some()) && body_alpha > 0.0 {
         paint_glow(cx, sh, x, y, w, h, fit.scale, body_alpha);
     }
     let extras = sh.extras.as_deref();
-    let fx_layer = if extras.is_some_and(|e| e.reflection.is_some() || e.soft_edge.is_some()) { cx.alloc_layer() } else { None };
+    let fx_layer = if extras.is_some_and(|e| e.fx().reflection.is_some() || e.fx().soft_edge.is_some()) { cx.alloc_layer() } else { None };
     let result = match fx_layer {
         None => shape_core(cx, sh, x, y, w, h, fit, suppress_text, cam_r.as_ref()),
         Some(lc) => {
-            let reflection = extras.is_some_and(|e| e.reflection.is_some());
+            let reflection = extras.is_some_and(|e| e.fx().reflection.is_some());
             let begin = cx.list.items.len();
             cx.layer_begin(lc);
             let r = shape_core(cx, sh, x, y, w, h, fit, suppress_text, cam_r.as_ref());
             if r.is_ok() {
-                if extras.is_some_and(|e| e.soft_edge.is_some()) {
+                if extras.is_some_and(|e| e.fx().soft_edge.is_some()) {
                     apply_soft_edge(cx, sh, x, y, w, h, fit.scale);
                 }
                 cx.layer_end(lc, if reflection { LayerThen::Keep } else { LayerThen::Composite });

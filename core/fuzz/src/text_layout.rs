@@ -12,7 +12,7 @@
 //! is bounded by the characters plus the paragraphs, and the two-phase loop only ever asks questions the table does
 //! not have.
 use uo_dml_render::canon::Canon;
-use uo_dml_render::model::{Paragraph, Run, RunExtras, TabStop, TextBody};
+use uo_dml_render::model::{ParaBullet, ParaExtras, Paragraph, Run, RunExtras, TabStop, TextBody};
 use uo_dml_render::text::{
     LayoutError, LayoutTextOptions, MAX_ROUNDS, MeasureReq, MeasureTable, Measurer, format_auto_num, layout_text_body, need_measures,
 };
@@ -119,30 +119,41 @@ impl Bytes<'_> {
 }
 
 fn body(b: &mut Bytes<'_>) -> TextBody {
-    let mut tb = TextBody {
-        anchor: b.flag().then(|| b.pick(&["t", "ctr", "b", "just"]).into()),
-        wrap: b.flag().then(|| b.pick(&["none", "square"]).into()),
-        font_scale: b.opt(1.0),
-        ln_spc_reduction: b.opt(0.3),
-        spc_first_last_para: b.flag().then_some(true),
-        ins_l: b.opt(200_000.0),
-        ins_t: b.opt(100_000.0),
-        ins_r: b.opt(200_000.0),
-        ins_b: b.opt(100_000.0),
-        num_col: b.opt(4.0),
-        spc_col: b.opt(400_000.0),
-        ..TextBody::default()
-    };
+    // the input bytes are drawn in the order of the flat literal before the model compaction
+    let anchor = b.flag().then(|| b.pick(&["t", "ctr", "b", "just"]).into());
+    let wrap = b.flag().then(|| b.pick(&["none", "square"]).into());
+    let font_scale = b.opt(1.0);
+    let ln_spc_reduction = b.opt(0.3);
+    let spc_first_last_para = b.flag().then_some(true);
+    let (ins_l, ins_t, ins_r, ins_b) = (b.opt(200_000.0), b.opt(100_000.0), b.opt(200_000.0), b.opt(100_000.0));
+    let num_col = b.opt(4.0);
+    let spc_col = b.opt(400_000.0);
+    let mut tb = TextBody { anchor, wrap, ins_l, ins_t, ins_r, ins_b, ..TextBody::default() };
+    {
+        let x = tb.x_mut();
+        x.font_scale = font_scale;
+        x.ln_spc_reduction = ln_spc_reduction;
+        x.spc_first_last_para = spc_first_last_para;
+        x.num_col = num_col;
+        x.spc_col = spc_col;
+    }
     for _ in 0..b.below(6) {
-        let mut p = Paragraph {
-            align: b.flag().then(|| b.pick(&["l", "ctr", "r", "just", "dist"]).into()),
-            level: b.flag().then(|| f64::from(b.u8() % 16) - 3.0).map(|l| if l > 11.0 { f64::NAN } else { l }),
-            bullet: b.flag().then_some(true),
+        let align = b.flag().then(|| b.pick(&["l", "ctr", "r", "just", "dist"]).into());
+        let level = b.flag().then(|| f64::from(b.u8() % 16) - 3.0).map(|l| if l > 11.0 { f64::NAN } else { l });
+        let bullet = b.flag().then_some(true);
+        let bu = ParaBullet {
             bullet_char: b.flag().then(|| b.pick(&["•", "", "\u{F0B7}", "ab"]).into()),
             bullet_auto_num: b.flag().then(|| b.pick(&["arabicPeriod", "romanUcPeriod", "alphaLcParenR", "x"]).into()),
             bullet_font: b.flag().then(|| b.pick(&["Wingdings", "Symbol", "Monotype Sorts", "Liberation Sans"]).into()),
             bullet_size_pct: b.opt(2.0),
             bullet_size_pt: b.opt(40.0),
+            ..ParaBullet::default()
+        };
+        let mut p = Paragraph {
+            align,
+            level,
+            bullet,
+            bullet_props: Some(Box::new(bu)),
             mar_l: b.opt(1_000_000.0),
             indent: b.opt(-500_000.0),
             line_spacing: b.opt(2.0),
@@ -151,22 +162,30 @@ fn body(b: &mut Bytes<'_>) -> TextBody {
             space_before_pt: b.opt(20.0),
             space_after_pct: b.opt(1.0),
             end_sz: b.opt(40.0),
+            ..Paragraph::default()
+        };
+        p.extras = Some(Box::new(ParaExtras {
             ea_ln_brk: b.flag().then(|| b.flag()),
             hanging_punct: b.flag().then(|| b.flag()),
             font_algn: b.flag().then(|| b.pick(&["t", "ctr", "b"]).into()),
-            ..Paragraph::default()
-        };
+            tabs: None,
+        }));
         if b.flag() {
             let n = b.below(4);
-            p.tabs = Some((0..n).map(|_| TabStop { pos: b.num(600_000.0), algn: b.pick(&["l", "r", "ctr", "dec"]).into() }).collect());
+            p.x_mut().tabs =
+                Some((0..n).map(|_| TabStop { pos: b.num(600_000.0), algn: b.pick(&["l", "r", "ctr", "dec"]).into() }).collect());
         }
         for _ in 0..b.below(5) {
+            let mut kern = None;
             let extras = b.flag().then(|| {
+                let baseline = b.opt(0.5);
+                let cap = b.flag().then(|| b.pick(&["all", "small"]).into());
+                let spc = b.opt(10.0);
+                kern = b.opt(30.0);
                 Box::new(RunExtras {
-                    baseline: b.opt(0.5),
-                    cap: b.flag().then(|| b.pick(&["all", "small"]).into()),
-                    spc: b.opt(10.0),
-                    kern: b.opt(30.0),
+                    baseline,
+                    cap,
+                    spc,
                     sym_font: b.flag().then(|| b.pick(&["Wingdings", "Symbol", "Webdings"]).into()),
                     strike: b.flag().then_some(true),
                     ..RunExtras::default()
@@ -179,6 +198,7 @@ fn body(b: &mut Bytes<'_>) -> TextBody {
                 italic: b.flag().then(|| b.flag()),
                 font: b.flag().then(|| b.pick(&["Liberation Sans", "Wingdings", "Symbol", "", "constructor"]).into()),
                 lang: b.flag().then(|| b.pick(&["ja-JP", "zh", "ko_KR", "en-US", "JA"]).into()),
+                kern,
                 extras,
                 ..Run::default()
             });

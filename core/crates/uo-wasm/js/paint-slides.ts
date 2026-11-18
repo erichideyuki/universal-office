@@ -76,6 +76,18 @@ export interface SlidesEnv {
 export const MAX_DERIVED_CACHE = 256;
 export const MAX_BITMAP_CACHE = 128;
 
+/**
+ * The canvas of a metafile replay: a `<canvas>` element, as the TS viewer's `warmImage` (`document.createElement('canvas')`)
+ * gave `rasterizeSpecialImage`. Chromium anti-aliases an `OffscreenCanvas` differently from an element canvas (measured: the
+ * b5b decks differed on path edges inside the pictures), so the element is the parity choice; no document (a worker, Node):
+ * the scratch canvas.
+ */
+function elementCanvas(w: number, h: number): (HTMLCanvasElement | OffscreenCanvas) | undefined {
+  const doc = (globalThis as { document?: Document }).document;
+  if (!doc) return scratchCanvas(w, h);
+  const c = doc.createElement('canvas'); c.width = w; c.height = h; return c;
+}
+
 const DEFAULT_FONT_STACK = (family: string): string => `'${family}', 'Aptos', Calibri, 'Liberation Sans', Arial, sans-serif`;
 
 type LayerCtx = CanvasRenderingContext2D & { canvas: { width: number; height: number } };
@@ -234,7 +246,7 @@ export class SlidesPainter {
     let out: PaintImage | null = null;
     if (recipe) {
       // B5b: a metafile or PICT: the canvas the TS rasterizer drew on
-      const mk = (w: number, h: number): MetaCanvas | undefined => (this.env.metaCanvas ?? this.scratch)(w, h) as unknown as MetaCanvas | undefined;
+      const mk = (w: number, h: number): MetaCanvas | undefined => (this.env.metaCanvas ?? this.env.createCanvas ?? elementCanvas)(w, h) as unknown as MetaCanvas | undefined;
       out = replayRecipe(recipe, { createCanvas: mk, ...(this.env.decodeBlob ? { decode: this.env.decodeBlob } : {}) }) as unknown as PaintImage | null;
     } else if (bytes && b.w > 0 && b.h > 0 && bytes.length >= b.w * b.h * 4) {
       const cv = this.scratch(b.w, b.h);

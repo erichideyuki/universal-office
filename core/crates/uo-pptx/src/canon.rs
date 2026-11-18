@@ -113,24 +113,30 @@ pub fn node_json(a: &TimeArena, id: NodeId) -> Json {
                 .collect(),
         ),
     );
-    o.num("dur", n.dur).num("repeat", n.repeat).boolean("autoRev", n.auto_rev).num("accel", n.accel).num("decel", n.decel);
+    o.num("dur", n.dur)
+        .num("repeat", n.ctn_x().repeat)
+        .boolean("autoRev", n.ctn_x().auto_rev)
+        .num("accel", n.ctn_x().accel)
+        .num("decel", n.ctn_x().decel);
     o.string("fill", n.fill.as_deref()).string("nodeType", n.node_type.as_deref()).string("presetClass", n.preset_class.as_deref());
     o.num("presetId", n.preset_id).num("presetSubtype", n.preset_subtype).string("grpId", n.grp_id.as_deref());
-    if let Some(it) = &n.iterate {
+    if let Some(it) = &n.ctn_x().iterate {
         let mut io = Json::obj();
         io.st("type", &it.kind).put("backwards", Json::Bool(it.backwards)).num("pct", it.pct).num("absMs", it.abs_ms);
         o.put("iterate", io.done());
     }
-    o.json("target", n.target.as_ref().map(target_json));
-    o.json("attrNames", n.attr_names.as_deref().map(str_arr));
-    o.string("filter", n.filter.as_deref()).string("transition", n.transition.as_deref()).string("setTo", n.set_to.as_deref());
-    o.string("path", n.path.as_deref());
-    o.json("tmFilter", n.tm_filter.as_ref().map(|v| Json::Arr(v.iter().map(|p| num_pair(*p)).collect())));
-    o.num("spd", n.spd).string("additive", n.additive.as_deref()).string("calcmode", n.calcmode.as_deref());
-    o.string("valueType", n.value_type.as_deref());
+    o.json("target", n.bhvr().target.as_ref().map(target_json));
+    o.json("attrNames", n.bhvr().attr_names.as_deref().map(str_arr));
+    o.string("filter", n.bhvr().filter.as_deref())
+        .string("transition", n.bhvr().transition.as_deref())
+        .string("setTo", n.bhvr().set_to.as_deref());
+    o.string("path", n.bhvr_x().path.as_deref());
+    o.json("tmFilter", n.ctn_x().tm_filter.as_ref().map(|v| Json::Arr(v.iter().map(|p| num_pair(*p)).collect())));
+    o.num("spd", n.ctn_x().spd).string("additive", n.bhvr().additive.as_deref()).string("calcmode", n.bhvr().calcmode.as_deref());
+    o.string("valueType", n.bhvr().value_type.as_deref());
     o.json(
         "tav",
-        n.tav.as_ref().map(|v| {
+        n.bhvr().tav.as_ref().map(|v| {
             Json::Arr(
                 v.iter()
                     .map(|k| {
@@ -150,16 +156,22 @@ pub fn node_json(a: &TimeArena, id: NodeId) -> Json {
             )
         }),
     );
-    o.string("from", n.from.as_deref()).string("to", n.to.as_deref()).string("by", n.by.as_deref());
-    o.json("byXY", n.by_xy.map(num_pair)).json("fromXY", n.from_xy.map(num_pair)).json("toXY", n.to_xy.map(num_pair));
-    o.num("rotBy", n.rot_by).num("rotFrom", n.rot_from).num("rotTo", n.rot_to);
-    o.color("toColor", n.to_color.as_ref()).color("fromColor", n.from_color.as_ref());
-    o.json("byHsl", n.by_hsl.map(|(h, s, l)| Json::Arr(vec![Json::Num(h), Json::Num(s), Json::Num(l)])));
-    o.string("clrSpc", n.clr_spc.as_deref()).string("clrDir", n.clr_dir.as_deref()).string("prLst", n.pr_lst.as_deref());
-    o.num("rAng", n.r_ang).string("origin", n.origin.as_deref()).string("pathEditMode", n.path_edit_mode.as_deref());
-    o.json("endEvts", n.end_evts.as_deref().map(str_arr));
-    o.string("cmd", n.cmd.as_deref()).string("cmdType", n.cmd_type.as_deref());
-    if let Some(m) = &n.media {
+    o.string("from", n.bhvr().from.as_deref()).string("to", n.bhvr().to.as_deref()).string("by", n.bhvr().by.as_deref());
+    o.json("byXY", n.bhvr_x().by_xy.map(num_pair))
+        .json("fromXY", n.bhvr_x().from_xy.map(num_pair))
+        .json("toXY", n.bhvr_x().to_xy.map(num_pair));
+    o.num("rotBy", n.bhvr_x().rot_by).num("rotFrom", n.bhvr_x().rot_from).num("rotTo", n.bhvr_x().rot_to);
+    o.color("toColor", n.bhvr().to_color.as_ref()).color("fromColor", n.bhvr_x().from_color.as_ref());
+    o.json("byHsl", n.bhvr_x().by_hsl.map(|(h, s, l)| Json::Arr(vec![Json::Num(h), Json::Num(s), Json::Num(l)])));
+    o.string("clrSpc", n.bhvr_x().clr_spc.as_deref())
+        .string("clrDir", n.bhvr_x().clr_dir.as_deref())
+        .string("prLst", n.bhvr_x().pr_lst.as_deref());
+    o.num("rAng", n.bhvr_x().r_ang)
+        .string("origin", n.bhvr_x().origin.as_deref())
+        .string("pathEditMode", n.bhvr_x().path_edit_mode.as_deref());
+    o.json("endEvts", n.ctn_x().end_evts.as_deref().map(str_arr));
+    o.string("cmd", n.bhvr_x().cmd.as_deref()).string("cmdType", n.bhvr_x().cmd_type.as_deref());
+    if let Some(m) = &n.bhvr_x().media {
         let mut mo = Json::obj();
         mo.num("vol", m.vol).boolean("mute", m.mute).boolean("showWhenStopped", m.show_when_stopped);
         mo.num("numSld", m.num_sld).boolean("fullScrn", m.full_scrn);

@@ -71,6 +71,13 @@ pub trait PartSource {
     fn media(&self, part: &str) -> Option<MediaId>;
     /// The part name and bytes of a media entry (what `ImageRef.part` and `ImageRef.bytes` were).
     fn media_entry(&self, id: MediaId) -> Option<(Box<str>, Arc<[u8]>)>;
+    /// A resolved theme as the model keeps it (a slide's theme, a chart's theme). A host with a
+    /// deck-scope table returns the copy it already holds when an EQUAL theme was resolved before, so
+    /// the slides of a master share one theme (memory compaction, `uo-pptx.md` "Model memory"); the
+    /// default allocates. Values are the same either way.
+    fn share_theme(&self, theme: crate::theme::Theme) -> Arc<crate::theme::Theme> {
+        Arc::new(theme)
+    }
 }
 
 /// The element-name prefix of the shape tree: `p:` (slides) or `xdr:` (spreadsheet drawings). The

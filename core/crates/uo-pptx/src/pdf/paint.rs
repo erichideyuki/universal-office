@@ -36,11 +36,11 @@ pub(super) const RECIPE_GRAD_BASE: u32 = 0x8000_0000;
 const SAMPLES: usize = 256;
 
 /// The colour of a gradient at 256 positions, and its alpha.
-struct Ramp {
-    rgb: Vec<u8>,
-    alpha: Vec<u8>,
+pub(super) struct Ramp {
+    pub rgb: Vec<u8>,
+    pub alpha: Vec<u8>,
     /// every stop has this alpha
-    const_alpha: Option<f64>,
+    pub const_alpha: Option<f64>,
 }
 
 impl Interp<'_, '_> {
@@ -140,7 +140,7 @@ impl Interp<'_, '_> {
         Rgba(r / k, gg / k, b / k, a / k)
     }
 
-    fn ramp(stops: &[(f64, Rgba)]) -> Option<Ramp> {
+    pub(super) fn ramp(stops: &[(f64, Rgba)]) -> Option<Ramp> {
         let first = stops.first()?.1;
         let last = stops.last()?.1;
         let mut rgb = Vec::with_capacity(SAMPLES * 3);

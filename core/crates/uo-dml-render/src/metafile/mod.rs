@@ -170,6 +170,30 @@ pub fn is_special_image(b: &[u8]) -> bool {
     is_metafile(b) || pict::is_pict(b) || uo_image::is_tiff_slides(b)
 }
 
+/// The compressed bitmaps (PNG/JPEG… of EMF+ image objects, nested metafiles included) an EMF picture will ask the shell to
+/// decode: what the TS `prepareMetafile` (`prepareEmfPlus`: `scanEmfPlus(b).compressed`) decodes before the synchronous raster.
+/// The viewer starts their decode when it warms a slide's pictures (as the TS `warmImage`), so the paint does not wait for them
+/// later. Empty for a WMF, PICT, TIFF or anything else.
+#[must_use]
+pub fn compressed_bitmaps(b: &[u8]) -> Vec<Vec<u8>> {
+    struct NoHost;
+    impl Measure for NoHost {
+        fn metrics(&mut self, _: &[u16], _: &[u16]) -> Option<Metrics> {
+            None
+        }
+        fn decoded(&mut self, _: &str) -> Decoded {
+            Decoded::Failed
+        }
+    }
+    if !is_emf(b) {
+        return Vec::new();
+    }
+    emfplus::reset_work();
+    let mut host = NoHost;
+    let mut g = Gx { rec: Rec::new(1, 1), meas: &mut host, needs: Vec::new(), font_avail: FxHashMap::default() };
+    emfplus::scan_emf_plus(&mut g, b, 0).compressed
+}
+
 fn i32le(b: &[u8], o: usize) -> i32 {
     i32::from_le_bytes([at(b, o), at(b, o + 1), at(b, o + 2), at(b, o + 3)])
 }

@@ -114,27 +114,23 @@ fn theme_reading_and_clr_map() {
 #[test]
 fn level_merge_rules() {
     let mut a = empty_levels();
-    a[0] = TextStyleLevel {
-        sz: Some(10.0),
-        line_spacing: Some(1.5),
-        bu_char: Some("x".into()),
-        space_before_pt: Some(3.0),
-        ..TextStyleLevel::default()
-    };
+    a[0] = TextStyleLevel::default();
+    a[0].r_mut().sz = Some(10.0);
+    a[0].p_mut().line_spacing = Some(1.5);
+    a[0].b_mut().bu_char = Some("x".into());
+    a[0].p_mut().space_before_pt = Some(3.0);
     let mut b = empty_levels();
-    b[0] = TextStyleLevel {
-        line_spacing_pt: Some(20.0),
-        bu_none: Some(true),
-        space_before_pct: Some(0.2),
-        bold: Some(true),
-        ..TextStyleLevel::default()
-    };
+    b[0] = TextStyleLevel::default();
+    b[0].p_mut().line_spacing_pt = Some(20.0);
+    b[0].b_mut().bu_none = Some(true);
+    b[0].p_mut().space_before_pct = Some(0.2);
+    b[0].r_mut().bold = Some(true);
     let m = merge_style_levels(&[&a, &b]);
     // points × percent: the later erases the earlier; a bullet layer replaces the whole bullet
-    assert_eq!((m[0].line_spacing, m[0].line_spacing_pt), (None, Some(20.0)));
-    assert_eq!((m[0].space_before_pt, m[0].space_before_pct), (None, Some(0.2)));
-    assert_eq!((m[0].bu_char.as_deref(), m[0].bu_none), (None, Some(true)));
-    assert_eq!((m[0].sz, m[0].bold), (Some(10.0), Some(true)));
+    assert_eq!((m[0].p().line_spacing, m[0].p().line_spacing_pt), (None, Some(20.0)));
+    assert_eq!((m[0].p().space_before_pt, m[0].p().space_before_pct), (None, Some(0.2)));
+    assert_eq!((m[0].b().bu_char.as_deref(), m[0].b().bu_none), (None, Some(true)));
+    assert_eq!((m[0].r().sz, m[0].r().bold), (Some(10.0), Some(true)));
 }
 
 #[test]
@@ -199,7 +195,7 @@ fn ole_preview_from_the_vml_drawing() {
     let s = shapes_of(&mem, gf, &theme(), &rels);
     assert_eq!(s.len(), 1);
     let sh = &s[0];
-    assert_eq!(sh.image.as_ref().map(|i| &*i.mime), Some("image/x-emf"));
+    assert_eq!(sh.paint().image.as_ref().map(|i| &*i.mime), Some("image/x-emf"));
     assert_eq!(sh.fill.as_ref().and_then(|f| f.color.as_ref()).map(|c| c.as_str()), Some("#33CCFF"));
     assert_eq!(sh.line_color.as_ref().map(|c| c.as_str()), Some("#FF0000"));
     assert_eq!(sh.line_width, Some(25400.0));

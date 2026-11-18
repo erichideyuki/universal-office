@@ -105,6 +105,8 @@ declare module '@universal-office/slides-engine' {
     part(name: string): Uint8Array | null;
     fontsChanged(): void;
     imageReady(part: string, img: PaintImage): void;
+    /** start decoding the compressed EMF+ bitmaps of the metafile picture in `part` (the prepare phase ahead of the paint) */
+    prepareSpecial(part: string, host: SlidesPaintHost): void;
     paint(ctx: CanvasRenderingContext2D, index: number, scale: number, ox: number, oy: number, host: SlidesPaintHost, o?: SlidePaintOptions): SlidePaintResult;
     clearCaches(): void;
     newShow(o?: { from?: number; now?: number; useTimings?: number; loop?: number; animations?: number; range?: [number, number] | null }): SlidesShowHandle;

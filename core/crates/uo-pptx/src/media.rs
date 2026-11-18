@@ -51,8 +51,8 @@ pub fn media_commands(arena: &TimeArena, effects: &[PlacedEffect], spid: &str) -
     fn walk(a: &TimeArena, id: NodeId, t: f64, spid: &str, out: &mut Vec<MediaCommand>) {
         let n = a.node(id);
         if &*n.tag == "cmd" {
-            if let Some(cmd) = n.cmd.as_deref().filter(|c| !c.is_empty())
-                && n.target.as_ref().is_some_and(|t| &*t.spid == spid)
+            if let Some(cmd) = n.bhvr_x().cmd.as_deref().filter(|c| !c.is_empty())
+                && n.bhvr().target.as_ref().is_some_and(|t| &*t.spid == spid)
             {
                 out.push(MediaCommand { at_ms: t, cmd: cmd.into(), dur_ms: n.dur.filter(|d| d.is_finite()) });
             }

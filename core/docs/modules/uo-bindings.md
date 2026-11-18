@@ -6374,9 +6374,9 @@ the browser (the op-stream gates replay recipes with their own env and the Chrom
 - **Open cost** (`--mode opencost`, the 12 largest decks of the set, a fresh page per deck and engine, heap after `gc()`): JS heap after open
   TS **31.15 MB** vs Rust **12.78 MB + 14.35 MB module live bytes = 27.1 MB**; before wave 4 the Rust element held the TS model and the module:
   31.15 + 14.35 = **45.5 MB** (−40%). `loadPptx` TS 860 ms vs Rust 568 ms (−34%), first frame 880 vs 590 ms.
-- b5b metafile decks in Chromium (`UO_SS_B5B=40`, off by default): 659/682 slides pixel-equal; 23 differ inside metafile rasters (mostly
-  tens to hundreds of pixels, a few whole-slide: open, not chased this wave); before the `recipe` hook those pictures were missing (80
-  slides differed). The prepare phase met 1 compressed bitmap (undecodable in both engines); a decodable one is not in the corpus.
+- b5b metafile decks in Chromium (`UO_SS_B5B=40`): at the end of wave 4a 23 of their 81 slides differed inside metafile rasters
+  (659/682 over that run); before the `recipe` hook those pictures were missing (80 slides differed). **Closed in wave 4b, 81/81**: see
+  "Wave 4b — the b5b metafile pixels" below.
 - Size: `uo-slides.wasm` (`--features slides`, `--profile wasm`) 3,537,657 B raw, **1,265,754 B gzip -9** (79% of 1.6 MB; +29,900 B over
   B4b: links, the read model, the recipe flag, the suppressed emission).
 
@@ -6385,6 +6385,27 @@ instantiated. The TS model is still built (1) for a `loadPptx` that comes before
 asynchronous): until the Rust open finishes, then dropped; (2) after a module trap; (3) when the attribute goes back to `ts`. The TS code
 (not the model) that the rust path still uses: `paintTransition`, `mediaFadeAlpha`/`gifFrameAt` (pure functions), the light tables and
 pattern rows of `@universal-office/drawingml`.
+
+### Wave 4b — the b5b metafile pixels (2026-11-18, Opus)
+
+The 23 b5b slides that differed in Chromium (`slides_switch.mjs`, tolerance 0; the native op streams were already 1,267/1,267 and
+162/162 equal, so both causes were in the browser shell). Classified from the debug PNGs (`UO_SS_DEBUG=1` now writes every differing
+slide, `parity-diff-<deck>-s<slide>-{ts,rust}.png`) and the paint statuses (the harness prints the non-zero ones):
+
+| Cause | Slides | Fix |
+|---|---|---|
+| **Canvas kind.** The recipe was replayed on an `OffscreenCanvas` (`scratchCanvas`), the TS rasterized on a `<canvas>` element (`warmImage`'s `document.createElement('canvas')`): Chromium anti-aliases the two differently, so path and text edges inside the picture differed (1 to 1,738 px a slide, deltas up to 179) | 20 | `paint-slides.ts`: the replay's default canvas is an element canvas (`elementCanvas`; no document → the scratch canvas). `metaCanvas`/`createCanvas` of the env still win (the op-stream gates give their recorder) |
+| **Prepare phase too late.** An EMF+ picture with a compressed PNG/JPEG asked for its decode only when its slide was first painted (`MetaDecode` → `PENDING`, slide not painted); `renderSlideToCanvas` is synchronous, so a slide other than the first was blank (921,600 px; 2,184,960 on a portrait deck). The TS decodes every such picture when the deck opens (`warmImage` → `prepareSpecialImage`) | 3 | new export `uo_slides_meta_bitmaps(deck, part)` (`uo_dml_render::metafile::compressed_bitmaps`: the TS `scanEmfPlus(b).compressed`, nested metafiles included) → `SlidesDeck.metaBitmaps`, `SlidesDocument.prepareSpecial(part, host)`; `RustSlides` calls it for every special picture of every slide on `openSync`/`open`/`adopt`, so the decodes start at open and `settle`'s `preparing` wait covers them. Test: `the_prepare_list_is_what_the_rasterization_asks_for` (uo-dml-render `tests/metafile.rs`: the list equals the `Need::Decode` set of a rasterization for all 873 inputs) |
+| Colour effects over a metafile picture (B5b-G1) | 0 | not a cause: 0 of the 313 metafile/PICT/TIFF pictures in the 698 committed and generated decks carry a colour effect (`a:grayscl`, `a:duotone`, `a:clrChange`, `a:lum`, `a:biLevel`…). Still open as a declared gap, see `uo-dml-render.md` B5b-1 |
+
+Result: b5b **81/81 slides pixel-equal**, main canvas 81/81, thumbnails 0 different (focused run `UO_SS_B5B=40 UO_SS_ONLY=decks.b5b.
+--mode parity`, 16 s; the 4 compressed bitmaps of the set are undecodable in both engines, the GDI fallback is drawn). The b5b decks are now
+ON by default (`UO_SS_B5B` default 40), so the CI form (`UO_SS_DECKS=100 --mode all`, unchanged command) covers them: **253 decks, 1,040/1,040
+slides pixel-equal**, 253/253 TS-free, main canvas 698/698, a11y 1,040/1,040, link hit-tests 998,400 points (20,067 on a TS link) 0 different,
+animated 7,221/7,221, memory/faults/phase 0 green; parity 250 s, anim 375 s, 11 min wall in all (measured with two cargo builds running
+alongside; the b5b decks add ≈ 16–20 s to the parity phase). Native gates unchanged: `compare-meta` 1,267/1,267, `drawops-b5b` 162/162,
+static draw-ops samples 1,202 / b1a 246 / c1d 182, animated anim-b6a 472 / anim-samples 551 / anim-b1a 150, `slides_api` 8/8.
+`UO_SS_ONLY=<regex>` (a focused run over the deck paths; under Git Bash do not start it with `/`, MSYS rewrites it as a path) is new.
 
 ## Slides .NET facade (2026-11-17, Sonnet)
 

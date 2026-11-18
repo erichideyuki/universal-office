@@ -22,8 +22,8 @@ use uo_dml_render::emit::{
 };
 use uo_dml_render::ids::MediaId;
 use uo_dml_render::model::{
-    ChartRef, Fill, FillKind, GradientStop, Paragraph, PatternFill, Reflection, Run, Shape, ShapeExtras, Table, TableCell, TableRow,
-    TextBody, Xfrm,
+    ChartRef, Fill, FillKind, GradientStop, Paragraph, PatternFill, Reflection, Run, Shape, ShapeExtras, ShapeFx, ShapePaint, Table,
+    TableCell, TableRow, TextBody, Xfrm,
 };
 use uo_dml_render::source::{PartSource, R};
 use uo_dml_render::text::{MAX_ROUNDS, MeasureReq, MeasureTable, TextMetrics};
@@ -142,18 +142,23 @@ fn shape(b: &mut Bytes<'_>) -> Shape {
             flip_v: b.flag().then(|| b.flag()),
         }),
         geom: b.flag().then(|| geoms[b.below(geoms.len())].into()),
-        adj: b.flag().then(|| (0..b.below(4)).map(|_| b.num(100_000.0)).collect::<Vec<_>>().into()),
-        fill: b.flag().then(|| Box::new(fill(b))),
-        line_color: b.flag().then(|| b.color()),
-        line_width: b.opt(100_000.0),
-        line_alpha: b.opt(1.0),
-        line_dash: b.flag().then(|| b.pick(&["dash", "sysDot", "bogus", ""]).into()),
+        ..Shape::default()
+    };
+    // the input bytes are drawn in the order of the flat literal before the model compaction
+    let adj: Option<Box<[f64]>> = b.flag().then(|| (0..b.below(4)).map(|_| b.num(100_000.0)).collect::<Vec<_>>().into());
+    s.fill = b.flag().then(|| Box::new(fill(b)));
+    s.line_color = b.flag().then(|| b.color());
+    s.line_width = b.opt(100_000.0);
+    let line_alpha = b.opt(1.0);
+    let line_dash: Option<Box<str>> = b.flag().then(|| b.pick(&["dash", "sysDot", "bogus", ""]).into());
+    let paint = ShapePaint {
         alpha: b.opt(1.0),
         fill_alpha: b.opt(1.0),
         use_bg_fill: b.flag().then(|| b.flag()),
         fill_no_rot: b.flag().then(|| b.flag()),
-        ..Shape::default()
+        ..ShapePaint::default()
     };
+    s.extras = Some(Box::new(ShapeExtras { adj, line_alpha, line_dash, paint: Some(Box::new(paint)), ..ShapeExtras::default() }));
     if b.flag() {
         s.tx_body = Some(Box::new(TextBody {
             paragraphs: (0..1 + b.below(3))
@@ -170,30 +175,32 @@ fn shape(b: &mut Bytes<'_>) -> Shape {
                     ..Paragraph::default()
                 })
                 .collect(),
-            vert: b.flag().then(|| b.pick(&["vert", "vert270", "eaVert", "wordArtVert"]).into()),
-            rot: b.opt(21_600_000.0),
             ..TextBody::default()
         }));
+        let vert: Option<Box<str>> = b.flag().then(|| b.pick(&["vert", "vert270", "eaVert", "wordArtVert"]).into());
+        let rot = b.opt(21_600_000.0);
+        if let Some(tb) = s.tx_body.as_deref_mut() {
+            tb.x_mut().vert = vert;
+            tb.x_mut().rot = rot;
+        }
     }
     if b.flag() {
-        s.extras = Some(Box::new(ShapeExtras {
-            reflection: b.flag().then(|| Reflection {
-                blur_rad: b.num(100_000.0),
-                st_a: b.num(1.0),
-                end_a: b.num(1.0),
-                st_pos: b.num(1.0),
-                end_pos: b.num(1.0),
-                dist: b.num(100_000.0),
-                dir_deg: 90.0,
-                sy: b.num(1.0),
-                fade_dir_deg: 90.0,
-            }),
-            soft_edge: b.opt(100_000.0),
-            chart: b.flag().then(|| ChartRef {
-                part: "ppt/charts/chart1.xml".into(),
-                theme: Arc::new(Theme::default()),
-                images: None,
-                format: None,
+        let reflection = b.flag().then(|| Reflection {
+            blur_rad: b.num(100_000.0),
+            st_a: b.num(1.0),
+            end_a: b.num(1.0),
+            st_pos: b.num(1.0),
+            end_pos: b.num(1.0),
+            dist: b.num(100_000.0),
+            dir_deg: 90.0,
+            sy: b.num(1.0),
+            fade_dir_deg: 90.0,
+        });
+        let soft_edge = b.opt(100_000.0);
+        let ex = ShapeExtras {
+            fx: Some(Box::new(ShapeFx { reflection, soft_edge, ..ShapeFx::default() })),
+            chart: b.flag().then(|| {
+                Box::new(ChartRef { part: "ppt/charts/chart1.xml".into(), theme: Arc::new(Theme::default()), images: None, format: None })
             }),
             table: b.flag().then(|| {
                 let cols = 1 + b.below(4);
@@ -226,7 +233,12 @@ fn shape(b: &mut Bytes<'_>) -> Shape {
                 })
             }),
             ..ShapeExtras::default()
-        }));
+        };
+        // merged into the shape's extras (the adj/line/paint fields drawn above live there now)
+        let x = s.x_mut();
+        x.fx = ex.fx;
+        x.chart = ex.chart;
+        x.table = ex.table;
     }
     s
 }

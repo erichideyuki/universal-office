@@ -486,6 +486,178 @@ fn text_runs_are_glyphs_with_fonts_embedded_once() {
     assert!(s.contains("/BaseFont /Calibri") || s.contains("/BaseFont /"), "{s}");
 }
 
+/// Gradient-filled text is the glyphs as a clip and the shading. The clip mode stays set until `ET`: pdfium (the
+/// Chrome/Edge PDF viewer, and the PowerPoint oracle's renderer) adds the text clip at `ET` only when the mode in force
+/// there is a clip mode — with `0 Tr` before `ET` it painted the shading over the whole page (PowerPoint agreement,
+/// item 1). The text stays extractable.
+#[test]
+fn gradient_text_keeps_the_clip_mode_until_et() {
+    let mut res = SlidesResources::new();
+    let fam = res.sym_str("Calibri").unwrap();
+    let face = res.face(fam, false, false).unwrap();
+    let a = res.sym_str("#ff0000").unwrap();
+    let b = res.sym_str("#0000ff").unwrap();
+    let mut list = empty_list(Vec::new());
+    list.stops = vec![Stop { offset: 0.0, color: a }, Stop { offset: 1.0, color: b }];
+    list.gradients = vec![Gradient { g0: 10.0, g1: 0.0, g2: 200.0, g3: 0.0, g4: 0.0, g5: 0.0, stops: Span { start: 0, len: 2 } }];
+    let units: Vec<u16> = "Gradient text".encode_utf16().collect();
+    list.texts = units.clone();
+    list.runs = vec![TextRun {
+        text: Span { start: 0, len: u32::try_from(units.len()).unwrap() },
+        font: uo_render::slides::FontRef { face, size_px: 30.0 },
+        x: 10.0,
+        y: 60.0,
+        laid_w: None,
+        fit_allowed: false,
+        letter_spacing_px: 1.5,
+        kern: true,
+        fill: Paint::Linear(0),
+        bullet: false,
+        alpha_mul: None,
+        shadow: None,
+        fill_text: true,
+        outline: None,
+        underline: None,
+        strike: None,
+    }];
+    list.items = vec![SItem::Text(0)];
+    let (bytes, report) = render(&list, &res);
+    assert_eq!(report.missing_total(), 0, "{:?}", report.missing);
+    let content = all_content(&bytes);
+    let at = content.find("7 Tr\n").expect("the text as a clip");
+    let et = content[at..].find("ET\n").unwrap() + at;
+    assert!(!content[at..et].contains("0 Tr"), "the clip mode is reset before ET: {}", &content[at..et]);
+    let after = &content[et..];
+    assert!(after.starts_with("ET\n/Sh") && after.contains(" sh\nQ"), "the shading follows the clip: {after}");
+    let (text, unknown) = pdf_view::view(&bytes).unwrap().text();
+    assert_eq!(unknown, 0);
+    assert!(text.contains("Gradient text"), "{text}");
+    // a run whose characters no face has shows no glyph: no clip and no shading (an empty text clip is no clip in
+    // pdfium, the shading would cover the page)
+    let units: Vec<u16> = "\u{10fffd}\u{10fffd}".encode_utf16().collect();
+    list.texts = units.clone();
+    list.runs[0].text = Span { start: 0, len: u32::try_from(units.len()).unwrap() };
+    let (bytes, report) = render(&list, &res);
+    assert_eq!(report.missing.get("glyph:missing"), Some(&2), "{:?}", report.missing);
+    let content = all_content(&bytes);
+    assert!(!content.contains(" sh\n") && !content.contains("7 Tr"), "{content}");
+}
+
+// ---------------------------------------------------------------------------------------------- SVG pictures
+
+/// One part: the SVG of a picture.
+struct OnePart(&'static str, Arc<[u8]>);
+
+impl PartSource for OnePart {
+    fn part(&self, name: &str) -> Option<Arc<[u8]>> {
+        (name == self.0).then(|| Arc::clone(&self.1))
+    }
+    fn xml(&self, _: &str) -> R<Option<Arc<uo_opc::xml::Document>>> {
+        Ok(None)
+    }
+    fn media(&self, _: &str) -> Option<MediaId> {
+        None
+    }
+    fn media_entry(&self, _: MediaId) -> Option<(Box<str>, Arc<[u8]>)> {
+        None
+    }
+}
+
+fn svg_pdf(svg: &str) -> (Vec<u8>, uo_pptx::pdf::PdfReport) {
+    let mut res = SlidesResources::new();
+    let part = "/ppt/media/image1.svg";
+    let (p, e) = (res.sym_str(part).unwrap(), res.sym_str("svg").unwrap());
+    let media = res.media(uo_render::slides::Media { part: p, ext: e, byte_len: 0, has_svg: true, natural: None }).unwrap();
+    let mut list = empty_list(Vec::new());
+    list.items = vec![SItem::DrawImage(DrawImageItem {
+        src: ImageSrc::Media(media),
+        s: None,
+        d: uo_render::slides::Rect4 { x: 50.0, y: 40.0, w: 200.0, h: 200.0 },
+    })];
+    let fonts = open_fonts();
+    let src = OnePart(part, Arc::from(svg.as_bytes()));
+    let out = pdf_from_lists(&[(&list, &res)], &src, &options(&fonts)).unwrap();
+    (out.bytes, out.report)
+}
+
+/// An SVG picture with no raster beside it (`asvg:svgBlip` alone) is played as vector content: a form of its natural
+/// size placed in the destination, with the sheet's class colours, gradients (stop opacity as a soft mask), clips,
+/// `use`, group opacity and strokes; what is not drawn is counted (PowerPoint agreement, item 10).
+#[test]
+fn an_svg_picture_is_vector_content() {
+    let svg = r##"<?xml version="1.0" encoding="UTF-8"?>
+<!-- a comment --><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100">
+  <style><![CDATA[ .accent { fill: #FF0000; } #s { stroke: lime } ]]></style>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0000ff"/><stop offset="100%" style="stop-color:blue;stop-opacity:0"/></linearGradient>
+    <clipPath id="c"><rect width="50" height="100"/></clipPath>
+    <path id="tri" d="M10 90 L30 60 L50 90 Z"/>
+  </defs>
+  <circle class="accent" cx="50" cy="50" r="40"/>
+  <rect x="10" y="10" width="80" height="20" rx="4" fill="url(#g)"/>
+  <g clip-path="url(#c)" opacity="0.5"><use xlink:href="#tri" x="5" fill="cornflowerblue"/></g>
+  <path id="s" d="M28 52 44 68 74 34" fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="0" y="10">ignored</text>
+</svg>"##;
+    let (bytes, report) = svg_pdf(svg);
+    assert_eq!(report.svgs, 1, "{:?}", report.missing);
+    assert_eq!(report.missing.get("image:unsupported"), None);
+    assert_eq!(report.missing.get("svg:text"), Some(&1), "{:?}", report.missing);
+    assert_eq!(report.missing_total(), 1, "{:?}", report.missing);
+    let content = all_content(&bytes);
+    // the form is placed in the 200 x 200 destination (natural size 100 x 100: the viewBox)
+    assert!(content.contains("2 0 0 2 50 40 cm\n/Fm"), "{content}");
+    assert!(content.contains("1 0 0 rg\n"), "the class colour fills the circle: {content}");
+    assert!(content.contains("0 1 0 RG\n10 w\n1 J\n1 j\n"), "the id rule strokes the check: {content}");
+    assert!(content.contains(" sh\n"), "the gradient is a shading: {content}");
+    assert!(content.contains("W n\n"), "clips: {content}");
+    let s = String::from_utf8_lossy(&bytes).into_owned();
+    assert!(s.contains("/S /Luminosity"), "the fading stop is a soft mask");
+    assert!(s.contains("/ca 0.5"), "the group opacity");
+    assert!(content.contains("0.392157 0.584314 0.929412 rg\n"), "the named colour of the used path: {content}");
+    pdf_view::view(&bytes).unwrap();
+}
+
+/// What does not parse as an SVG stays `image:unsupported`; hostile SVGs never panic and keep the PDF valid.
+#[test]
+fn hostile_svgs_never_panic() {
+    let (_, report) = svg_pdf("<svg><g><unclosed></svg");
+    assert_eq!(report.svgs, 0);
+    assert_eq!(report.missing.get("image:unsupported"), Some(&1));
+    let mut deep = String::from("<svg viewBox='0 0 10 10'>");
+    for _ in 0..200 {
+        deep.push_str("<g transform='scale(1.01) rotate(3)'>");
+    }
+    deep.push_str("<rect width='5' height='5'/>");
+    for _ in 0..200 {
+        deep.push_str("</g>");
+    }
+    deep.push_str("</svg>");
+    let cases = [
+        deep,
+        "<svg viewBox='0 0 0 0' width='-5'><path d='M 1e308 1e308 A 1e308 1 0 1 1 NaN 5 Z'/></svg>".to_owned(),
+        "<svg><use id='a' href='#a'/><g id='b'><use href='#b'/></g><rect width='1' height='1' fill='url(#nope) none'/></svg>".to_owned(),
+        "<svg viewBox='0 0 10 10'><linearGradient id='x' href='#y'/><linearGradient id='y' href='#x'/><rect width='5' height='5' fill='url(#x)'/></svg>".to_owned(),
+        "<svg viewBox='0 0 10 10'><path d='M0 0 C 1 2 3' stroke='red' stroke-dasharray='-1 2'/><polygon points='1,1 2'/><circle r='-3'/></svg>".to_owned(),
+    ];
+    for c in cases {
+        let (bytes, _) = svg_pdf(&c);
+        pdf_view::view(&bytes).unwrap();
+    }
+}
+
+/// The committed deck with an SVG-only picture (`pb-365.pptx`, the check icon PowerPoint draws) draws it.
+#[test]
+fn the_svg_icon_of_the_playback_sample_is_drawn() {
+    let fonts = open_fonts();
+    let mut deck = open(&root().join("slides/samples/playback/pb-365.pptx"));
+    let out = uo_pptx::pdf::pdf(&mut deck, &options(&fonts)).unwrap();
+    assert_eq!(out.report.svgs, 1, "{:?}", out.report.missing);
+    assert_eq!(out.report.missing.get("image:unsupported"), None);
+    let content = all_content(&out.bytes);
+    assert!(content.contains("0.160784 0.501961 0.72549 rg\n"), "the circle of the icon (#2980B9)");
+}
+
 // ---------------------------------------------------------------------------------------------- hostile lists
 
 struct Rng(u64);

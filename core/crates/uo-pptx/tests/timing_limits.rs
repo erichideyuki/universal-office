@@ -43,7 +43,7 @@ fn busy_deck() -> (String, Models) {
         for m in models.iter().flatten() {
             media |= m.media.as_ref().is_some_and(|x| !x.is_empty());
             for e in m.steps.iter().flat_map(|s| &s.effects) {
-                iter |= m.nodes.node(e.node).iterate.is_some();
+                iter |= m.nodes.node(e.node).ctn_x().iterate.is_some();
                 path |= e.motion == Some(true);
             }
         }
@@ -251,14 +251,10 @@ fn m5_formula_cache_is_capped_and_neutral() {
 
 fn path_node(path: &str) -> (TimeArena, NodeId) {
     let mut a = TimeArena::default();
-    a.nodes.push(TimeNode {
-        tag: "animMotion".into(),
-        path: Some(path.into()),
-        dur: Some(1000.0),
-        fill: Some("hold".into()),
-        attr_names: Some(vec!["ppt_x".into(), "ppt_y".into()]),
-        ..TimeNode::default()
-    });
+    let mut n = TimeNode { tag: "animMotion".into(), dur: Some(1000.0), fill: Some("hold".into()), ..TimeNode::default() };
+    n.bhvr_x_mut().path = Some(path.into());
+    n.bhvr_mut().attr_names = Some(vec!["ppt_x".into(), "ppt_y".into()]);
+    a.nodes.push(n);
     (a, NodeId(0))
 }
 
@@ -418,35 +414,41 @@ fn hostile_hand_built_models_do_not_panic() {
     use uo_pptx::timing::{Keyframe, TavValue};
     let nan = f64::NAN;
     let mut a = TimeArena::default();
-    let behaviour = |tag: &str| TimeNode {
-        tag: tag.into(),
-        dur: Some(nan),
-        repeat: Some(nan),
-        accel: Some(nan),
-        decel: Some(1e308),
-        spd: Some(0.0),
-        tm_filter: Some(vec![]),
-        tav: Some(vec![]),
-        attr_names: Some(vec!["ppt_x".into(), "style.color".into(), "fillcolor".into()]),
-        from: Some("1e999".into()),
-        to: Some("-".into()),
-        by: Some("((".into()),
-        set_to: Some("#ppt_x/0".into()),
-        from_xy: Some((nan, f64::INFINITY)),
-        by_xy: Some((nan, nan)),
-        rot_by: Some(nan),
-        by_hsl: Some((nan, nan, nan)),
-        to_color: Some(CssColor::new("#zzzzzz")),
-        from_color: Some(CssColor::new("")),
-        st: vec![TimeCond { delay_ms: Some(nan), ..TimeCond::default() }],
-        ..TimeNode::default()
+    let behaviour = |tag: &str| {
+        let mut n = TimeNode {
+            tag: tag.into(),
+            dur: Some(nan),
+            st: vec![TimeCond { delay_ms: Some(nan), ..TimeCond::default() }],
+            ..TimeNode::default()
+        };
+        let c = n.ctn_x_mut();
+        c.repeat = Some(nan);
+        c.accel = Some(nan);
+        c.decel = Some(1e308);
+        c.spd = Some(0.0);
+        c.tm_filter = Some(vec![]);
+        let b = n.bhvr_mut();
+        b.tav = Some(vec![]);
+        b.attr_names = Some(vec!["ppt_x".into(), "style.color".into(), "fillcolor".into()]);
+        b.from = Some("1e999".into());
+        b.to = Some("-".into());
+        b.by = Some("((".into());
+        b.set_to = Some("#ppt_x/0".into());
+        b.to_color = Some(CssColor::new("#zzzzzz"));
+        let x = n.bhvr_x_mut();
+        x.from_xy = Some((nan, f64::INFINITY));
+        x.by_xy = Some((nan, nan));
+        x.rot_by = Some(nan);
+        x.by_hsl = Some((nan, nan, nan));
+        x.from_color = Some(CssColor::new(""));
+        n
     };
     for tag in ["set", "anim", "animEffect", "animScale", "animRot", "animMotion", "animClr", "cmd", "par", "seq", "excl"] {
         a.nodes.push(behaviour(tag));
     }
     // a keyframe list with NaN times and a single keyframe
     let mut kf = behaviour("anim");
-    kf.tav = Some(vec![Keyframe {
+    kf.bhvr_mut().tav = Some(vec![Keyframe {
         tm: nan,
         val: Some(TavValue::Str("#ppt_x".into())),
         fmla: Some("$*$".into()),

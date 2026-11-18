@@ -23,6 +23,7 @@ pub mod measure;
 mod paint;
 mod raster;
 mod recipe;
+mod svg;
 mod text;
 mod warp;
 
@@ -105,6 +106,8 @@ pub struct PdfOutput {
 /// `bevel:underlay` (a bevel whose page holds such a picture: shaded over the rest), `warp:picture-fill`,
 /// `gradient:conic`, `gradient:stroke`, `pattern:stroke`, `clear-rect`, `layer:dropped` (a layer a skipped
 /// destination-in/out made wrong), `layer:depth`, `media-frame`, `image:recipe-truncated`, `image:unsupported`,
+/// `svg:text`, `svg:image`, `svg:pattern`, `svg:marker`, `svg:filter`, `svg:mask`, `svg:spread`, `svg:effect`,
+/// `svg:limit`, `svg:shadow` (the parts of an SVG picture not drawn or drawn without the effect, `pdf/svg.rs`),
 /// `image:jpeg-effect`, `font:missing` (no face), `font:not-embeddable`, `glyph:missing` (no face has the
 /// character, not even the fallbacks), `meta:xor-rect`, `transform:singular`, `chart:frame` (a chart the shell
 /// paints with `uo-charts`), `hyperlink:unplaced` (a model link run with no drawn piece), `hyperlink:scheme` (an address
@@ -132,6 +135,8 @@ pub struct PdfReport {
     pub links_off_page: u64,
     /// metafile, PICT and TIFF pictures played as vector content
     pub recipes: u64,
+    /// SVG pictures (no raster beside them) played as vector content
+    pub svgs: u64,
     /// canvas shadows drawn (an image each)
     pub shadows: u64,
     /// layers rasterized for their compositing (soft edges, reflections, blurs)

@@ -234,8 +234,8 @@ fn slide_calls(shapes: &[Shape], slide_w: f64) -> Vec<Call> {
             ..Default::default()
         };
         if let Some(tb) = sh.tx_body.as_deref() {
-            if let Some(warp) = &tb.warp {
-                if !matches!(tb.vert.as_deref(), Some("wordArtVert" | "wordArtVertRtl")) {
+            if let Some(warp) = &tb.x().warp {
+                if !matches!(tb.x().vert.as_deref(), Some("wordArtVert" | "wordArtVertRtl")) {
                     let single = matches!(&*warp.prst, "textArchUp" | "textArchDown" | "textCircle" | "textButton");
                     let mut body = tb.clone();
                     if single {
@@ -244,10 +244,10 @@ fn slide_calls(shapes: &[Shape], slide_w: f64) -> Vec<Call> {
                     calls.push(Call { id: format!("{k}"), body, w, h, measurer: Measurer::Plain, opts: opts(None) });
                 }
             } else {
-                let turn = matches!(tb.vert.as_deref(), Some("vert" | "eaVert" | "vert270"));
+                let turn = matches!(tb.x().vert.as_deref(), Some("vert" | "eaVert" | "vert270"));
                 let mut body = tb.clone();
                 if turn {
-                    body.vert = None;
+                    body.x_mut().vert = None;
                 }
                 let (bw, bh) = if turn { ((cy * s) / s, (cx * s) / s) } else { (w, h) };
                 calls.push(Call { id: format!("{k}"), body: body.clone(), w: bw, h: bh, measurer: Measurer::Ppt, opts: opts(Some(1.0)) });

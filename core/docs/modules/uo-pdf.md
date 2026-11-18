@@ -665,7 +665,7 @@ later measured step, see "The PowerPoint comparison" below). Plan: `slides-sheet
 | Part | Where |
 |---|---|
 | `MeasureTable` filler from `uo-fonts` (the server/PDF path of decision T1) | `uo-pptx/src/pdf/measure.rs` (`fill_measures`, `text_width`, `FontSource`, `FaceSet`) — a new file in `uo-pptx`, so it does not touch B5b's `uo-fonts` EOT/MTX files nor `uo-dml-render` |
-| Interpreter of the Slides list (state, paths, paints, layers, text, pictures, recipes) | `uo-pptx/src/pdf/{interp,paint,text,images,recipe,geom,css}.rs` |
+| Interpreter of the Slides list (state, paths, paints, layers, text, pictures, recipes) | `uo-pptx/src/pdf/{interp,paint,text,images,recipe,geom,css}.rs`; SVG pictures `svg.rs` (PowerPoint PDF fixes, below) |
 | Entry points | `uo_pptx::pdf(&mut Deck, &PdfOptions) -> Result<PdfOutput, PdfFail>` (feature `pdf`; `PdfOutput { bytes, report }`) and `uo_pptx::pdf::pdf_from_lists(&[(&SlidesList, &SlidesResources)], &dyn PartSource, &PdfOptions)` (the interpreter alone: tests, hostile lists, lists emitted elsewhere) |
 | Effects that need pixels (wave 2) | `uo-pptx/src/pdf/raster.rs` (the canvas interpreter over pixels: `Raster`, `Surface`, paints, the bevel), `effects.rs` (shadow images, raster layers, the bevel on the page, warps on the page, `Kept`/`KeptRange`), `warp.rs` (WordArt as outlines) |
 | Writer additions (additive, used only by this painter) | `uo-pdf/src/document.rs`, `page.rs`: `PdfDocument::{add_ext_gstate, add_form, form_object, add_pattern, add_user_shading, embed_color_mask}`, `PageWriter::raw`; `uo-pdf/src/raster.rs` (`uo_pdf::raster`: coverage fill, stroker, premultiplied `Pixmap` with the canvas compositing modes, blur, `edt1d`; re-exports the `uo-drawingml` masks, light tables and sRGB curves) |
@@ -696,11 +696,12 @@ Write's painter lives with Write's page. Nothing in `render_pdf`/`render.rs` cha
   which a `destination-in/out` *fill* had to be skipped (the reflection's fade) is **dropped** instead of composited wrong (`layer:dropped`).
 - **Gradients**: linear and radial are sampled type-0 shadings (256 samples, canvas RGBA interpolation); stops that carry alpha add a
   luminosity soft mask of the alpha ramp; one stop is a two-stop ramp; **conic** is its average colour (`gradient:conic`); a gradient
-  *stroke* is its first stop (`gradient:stroke`). Text with a gradient fill is the text as a clip (`7 Tr`) and the shading.
+  *stroke* is its first stop (`gradient:stroke`). Text with a gradient fill is the text as a clip (`7 Tr`, kept until `ET`) and the shading; a run that shows no glyph paints nothing (see "PowerPoint PDF fixes").
 - **Pictures**: JPEG is passed through (`DCTDecode`; brightness/contrast of a derived image ride on `/Decode`); the other raster formats are
   decoded by `uo-image` and written as Flate with an `/SMask` for alpha; the colour effects of `fxImage` (duotone, gray, bi-level, clrChange,
   brightness/contrast) are applied to the pixels (a JPEG with a pixel effect keeps the original and is counted: `image:jpeg-effect`). The 9-argument
-  `drawImage` is a clip and a placement. Generated bitmaps (pattern tiles, path-gradient rasters) are RGBA images.
+  `drawImage` is a clip and a placement. Generated bitmaps (pattern tiles, path-gradient rasters) are RGBA images. An **SVG** picture (`asvg:svgBlip`
+  with no raster beside it) is vector content, a form like a metafile recipe (`svg.rs`, see "PowerPoint PDF fixes").
 - **Patterns** are tiling patterns of the image cell; the matrix is `pattern transform * CTM * base` where `base` is the page flip on the
   page and the identity inside a form (a pattern's default space is the space of the content stream that uses it); `a:tile` follows
   `tilePattern` (alignment, the device-snapping of tiles smaller than a device pixel, flips as mirrored copies in the cell; `TileDef.nat` of the
@@ -755,7 +756,7 @@ wave 2 over the same 538 decks / 1,357 pages (open fonts only).
 | `warp:picture-fill` | WordArt letters with a picture fill (drawn with the run colour) | — | 0 |
 | `glyph:missing` | a character no face has, after the fallback chain | 327,000 | **299,280** (27,516 glyphs now drawn by a fallback face). With this machine's installed fonts added (`UO_PDF_SYSTEM_FONTS=1`, read in place): **48,637** |
 | `meta:xor-rect` | exact XOR of a metafile (recipes are vector forms; the XOR needs the recipe's pixels) | 5 | 5 |
-| `image:unsupported` | an image no decoder reads (an SVG) | 1 | 1 |
+| `image:unsupported` | an image no decoder reads (an SVG, until the PowerPoint PDF fixes: now 0, the SVG is vector content; `svg:*` keys for its undrawn parts) | 1 | 1 |
 | `transform:singular` | painting under a singular transform skipped (the canvas draws nothing either) | 1 | 1 |
 | `hyperlink:unplaced` | links not placed (wave 4: **0**, see the hyperlink paragraph) | 686 (265 placed) | 690 (261 placed: 4 linked runs are now inside rasterized soft-edge layers) |
 | `gradient:conic`, `gradient:stroke`, `pattern:stroke`, `pattern:repeat-axis`, `clear-rect`, `media-frame`, `image:jpeg-effect`, `image:recipe-truncated`, `font:missing`, `font:not-embeddable`, `chart:frame`, `effect:metafile-rop` | approximations and rare cases | 0 | 0 |
@@ -932,7 +933,8 @@ four `\n` literals the shell turned into newlines while patching (found by the c
 
 ## PowerPoint agreement (M4 prep)
 
-Status: **measured, nothing changed in the product.** The M4 gate's "PowerPoint agreement" item (`slides-sheet-port-plan.md` §9, §11): the
+Status: **measured; the two PDF-only items fixed (1 gradient text, 10 SVG picture, 2026-11-18: "PDF fixes" below), the TS-legacy items
+still to measure.** The M4 gate's "PowerPoint agreement" item (`slides-sheet-port-plan.md` §9, §11): the
 Rust Slides PDF (`uo_pptx::pdf`) against PowerPoint 365 pt-BR's own PDF of the same deck, page by page, with the frozen TS viewer's canvas
 as the third witness so that each difference is either **TS legacy** (Rust = TS ≠ PowerPoint: a rule to measure, where Office decides) or
 **PDF only** (Rust ≠ TS = PowerPoint: the PDF interpreter). One Opus session, 2026-11-17. Harness, data and how to rerun:
@@ -953,7 +955,8 @@ as the third witness so that each difference is either **TS legacy** (Rust = TS 
 - **Rust** (`oracle_ppt/main.rs`, `cargo test -p uo-pptx --release --features ppt --test oracle_ppt`, opt-in by `UO_PPT_ORACLE_OUT`): two
   font policies: `system` = the installed fonts **read in place** (Windows fonts, user fonts, Office `CloudFonts` — the files PowerPoint
   draws with, so text differences are layout, not substitution), `open` = Liberation/Carlito/Caladea only (the shipped server default).
-  Built from the working tree of 2026-11-17 evening, **including the in-progress hyperlink frontier** of another agent (links are placed).
+  Built from the working tree of 2026-11-17 evening, **including the in-progress hyperlink frontier** of another agent (links are placed);
+  the "after" numbers from the tree of 2026-11-18 (the PDF fixes, the hyperlink wave as committed).
 - **TS** (`pdf-oracle-ts.mjs`): the frozen 0.9.2 viewer (`.claude/worktrees/ts-ref-092`), `renderSlideToCanvas` at 96 dpi in headless
   Chromium. Caveat: the browser cannot see the Office `CloudFonts` cache (memory fact), so the TS draws **Aptos** with a substitute while
   PowerPoint and Rust `system` use Aptos — the samples are mostly Aptos (the playback decks), which lowers TS × PowerPoint there.
@@ -972,18 +975,27 @@ as the third witness so that each difference is either **TS legacy** (Rust = TS 
 | committed samples (601) | mean **0.9947**, median 0.9961, **98.2% of pages ≥ 0.99** | 0.9908, 0.9914, 67.6% | 0.9905, 0.9882, 44.8% | 0.9908 | 0.982 (93.5% of pages ≥ 0.99) | 21% / 93% |
 | generated (135) | 0.7207, 0.9071, 3.7% | 0.7207, 0.9028, 3.0% | 0.8057, 0.9288 | 0.8751 | 0.752 | 16% / 24% |
 | all (736) | 0.9445, 0.9951, 80.8% | 0.9413, 0.9904, 55.7% | 0.9566, 0.9870 | 0.9696 | 0.940 | 20% / 80% |
+| **after the PDF fixes** (2026-11-18): samples | mean **0.9964**, median 0.9961, **98.5%** | 0.9925, 0.9914, 67.9% | (unchanged) | 0.9925 | (unchanged) | (unchanged) |
+| generated | **0.8070**, 0.9319, 5.2% | 0.8069, 0.9297, 4.4% | | 0.9843 | | |
+| all | **0.9616**, 0.9951, 81.4% | 0.9585, 0.9904, 56.2% | | **0.9910** | | |
 
-Without the two whole-page causes (gradient text, `sysClr`) the 650 remaining pages agree at mean 0.9881, median 0.9955. On the samples
+Without the two whole-page causes (gradient text, `sysClr`) the 650 remaining pages agree at mean 0.9881, median 0.9955 (after the
+fixes: without `sysClr`, 656 pages at 0.9877, 0.9955; on the generated pages Rust now agrees with PowerPoint as well as the TS does,
+0.8070 against 0.8057). On the samples
 the Rust PDF agrees with PowerPoint **better than the TS viewer does** (Aptos read in place); with the open fonts it is about the TS's level.
 Horizontal glyph placement agrees (median |dx| ≤ 0.08 pt for every font); the 21% "within 1 pt" is the vertical offset of item 3 below.
 Differing pixels over all pages: 30.86 M of 642 M (4.8%): **TS legacy 18.7 M (61%)**, **PDF only 9.8 M (32%)**, all three 2.4 M. By Rust
 object under the pixel: shading 13.5 M (the gradient text), path 9.2 M, text 5.2 M, form 1.6 M, image 0.7 M, shadow image 0.6 M.
+**After the PDF fixes**: 21.82 M (3.4%): TS legacy 20.7 M (95%; it grew by the legacy differences the gradient floods had hidden),
+**PDF only 0.86 M (4%)**, all three 0.23 M; by Rust object: path 11.0 M, text 5.3 M, shading 3.1 M (gradients that are really there),
+image 1.0 M, form 0.8 M, shadow 0.5 M. The largest PDF-only pages left are `b3a` text (glyphs of other fallback faces than the
+browser's) and `b6a_0073` p1 (0.28, a mostly legacy page).
 
 ### Differences, ranked by impact (`results/classes.tsv`: exclusive differing pixels, first matching cause owns a page)
 
 | # | Difference | Pages / decks | Exclusive px | Split | Who decides |
 |---|---|---|---|---|---|
-| 1 | **Gradient-filled text** is written as a text clip (`7 Tr … ET`) followed by `sh`; pdfium (this harness, and the Chrome/Edge PDF viewers) ignores the text clip and paints the shading over the whole clip region — **the slide disappears under a gradient** (`b1a_0067` p2, `s_stress-text` p4 at 0.03, `b6a_0073`, `c1d_0027`). Acrobat not checked. | 29 / 22 (2,940 such fills over the 627 Rust PDFs, 206 decks) | 12.4 M (40%) | PDF only 8.4 M | **Rust PDF fix**: fill the glyphs with a shading *pattern* (`/Pattern cs /P scn`, `0 Tr`), or clip by the glyph outlines as a path |
+| 1 | **Fixed 2026-11-18.** **Gradient-filled text** was written as a text clip (`7 Tr … ET`) followed by `sh`; pdfium (this harness, and the Chrome/Edge PDF viewers) ignored the text clip and painted the shading over the whole clip region — **the slide disappears under a gradient** (`b1a_0067` p2, `s_stress-text` p4 at 0.03, `b6a_0073`, `c1d_0027`). Acrobat not checked. | 29 / 22 (2,940 such fills over the 627 Rust PDFs, 206 decks) → **0** | 12.4 M (40%) → 0 | PDF only 8.4 M → 0 | **Rust PDF** (fixed: the cause was the `0 Tr` reset before `ET`, and empty clips; see "PDF fixes". `s_stress-text` p4 0.031 → 0.999, `b1a_0067` p2 0.002 → 0.965, `c1d_0027` p2 0.13 → 0.95) |
 | 2 | **`a:sysClr`**: the TS (and Rust) take `lastClr`; PowerPoint takes the system colour (`windowText` black, `highlight` the Windows accent) — a whole background black instead of light (`b6a_0021` 0.07), gradients of another hue (`b3a_0090`) | 80 / 51 (all generated: random `lastClr`) | 12.6 M | legacy 11.7 M | **PowerPoint** (candidate: resolve `sysClr` to the system value; measure the table; real decks usually carry the system value in `lastClr`, so the real-world effect is small) |
 | 3 | **First-line baseline per font**: Rust (the TS layout rule) puts text lower than PowerPoint by **0.036–0.038 em for Aptos**, 0.017 em Calibri, 0.019 Calibri Bold, 0.014 Cambria Bold; ≈ 0 for Liberation Serif, Caladea, Times New Roman (`results/baseline.tsv`; ≈ 1.07 pt on 28-pt Aptos titles, ≈ 4 pt on the 100-pt numbers of the playback decks) | 665 pages carry an offset > 0.3 pt | 2.3 M | legacy 1.8 M (TS = Rust by construction: same layout, same measures) | **PowerPoint** (candidate: the ascent metric PowerPoint uses for the first line — hhea vs OS/2 typo/win; measure with the synthetic font groups) |
 | 4 | **Characters the run's face lacks** (CJK, Thai, Devanagari, Arabic, emoji): PowerPoint links Yu Gothic, MS Gothic, Malgun Gothic, Angsana New, Mangal; Rust uses the Word fallback chain (MS Mincho, Leelawadee UI, …) → other widths, other line breaks (`b3a`) | 88 / 53 | 2.1 M | legacy 1.8 M | **PowerPoint** (candidate: a per-script fallback table of PowerPoint — the theme's `a:font script=…` list and Office's defaults — instead of Word's) |
@@ -991,8 +1003,8 @@ object under the pixel: shading 13.5 M (the gradient text), path 9.2 M, text 5.2
 | 6 | **Date/time fields** in the system locale: PowerPoint writes `17/11/2026` (pt-BR), Rust/TS `11/17/2026` (`b1a_0186`) | 90 / 59 | 0.28 M | legacy | **PowerPoint** (candidate: the field's format follows the run language / PowerPoint's locale rule; measure) |
 | 7 | **Charts**: plot-area insets and doughnut radius/hole (`s_showcase_animado` p5 0.96, `pb-graficos*` 3 px plot-area shift) | 31 / 16 | 0.18 M | legacy (uo-charts = TS) | **PowerPoint** (chart layout facts) |
 | 8 | **`.ppt` charts drawn from the fallback picture** the converter keeps (PowerPoint draws the embedded chart natively: sharper text, lighter gridlines) | 12 / 3 | 73 k | legacy (B2 converter = TS) | PowerPoint (convert the OLE chart) |
-| 9 | **Hyperlinks** (in-progress frontier): on the 82 pages with links PowerPoint writes 4,043 link rectangles (per line fragment), Rust 2,296; 5 pages without Rust links (`b3a_0045`, `b3a_0090`, `b3a_0105`, `b1a_0151`); same URIs, rectangles match at IoU > 0.3 for only 331 | 82 | (no pixels) | — | Rust (geometry per line fragment, as PowerPoint) |
-| 10 | **SVG picture** not drawn (`image:unsupported`, `pb-365.pptx` p1: the check icon missing) | 1 / 1 | 40 k | PDF only (the browser draws the SVG) | Rust PDF (rasterize or convert the SVG; PowerPoint draws it) |
+| 9 | **Hyperlinks**: on the 82 pages with links PowerPoint writes 4,043 link rectangles, **2,741 of them wholly outside the page** (text overflowing the slide: PowerPoint keeps the annotation beyond the media box) and 1,302 on it. First measured with the in-progress frontier: Rust 2,296, IoU > 0.3 for 331. **Now (wave 4 as committed, 2026-11-18): Rust 181, all on the page** (pieces joined per line fragment, off-page pieces dropped by design: `links_off_page`); 15 pages where PowerPoint has links and Rust none (`b1a_0003`, `b1a_0146` p3–4, `b3a_0045`, `b3a_0090`…: their linked text is off the page); same URIs (152); 35 of PowerPoint's rectangles matched at IoU > 0.3 (36 of its 1,302 on-page ones) | 82 | (no pixels) | — | Rust: PowerPoint writes about 7 on-page rectangles per Rust one (per run or word, not per joined fragment) and keeps off-page ones — measure its rule before changing the join |
+| 10 | **Fixed 2026-11-18.** **SVG picture** not drawn (`image:unsupported`, `pb-365.pptx` p1: the check icon missing; the deck has only the SVG, no PNG fallback) | 1 / 1 → 0 | 40 k → 0 | PDF only (the browser draws the SVG) | Rust PDF (fixed: the SVG is played as vector content, `pdf/svg.rs`; p1 0.957 → 0.9998) |
 
 Smaller, not in the pixel ranking: **hidden slides** (5 decks) are pages of the Rust PDF but PowerPoint's Save as PDF leaves them out by
 default (the harness shows them to keep page i = slide i) — a policy choice; **PDF font names**: Rust writes family names (`Arial`,
@@ -1003,8 +1015,46 @@ an engine rule. Gradients themselves agree (the linear-RGB interpolation of the 
 **Candidate fixes where PowerPoint should win (TS legacy, behind `ts_*` switches as the Write port did):** 2 (`sysClr`), 3 (first-line
 baseline metric), 4 (PowerPoint's per-script fallback), 6 (field date format), 7 (chart layout), 8 (`.ppt` charts), 5 (warp geometry) —
 each needs its rule measured first in PowerPoint with synthetic oracle decks. **Rust PDF fixes (no TS question):** 1 (gradient text: the
-biggest single item, 40% of all differing pixels), 9 (link rectangles), 10 (SVG). For the gate, a PowerPoint-valid generator mode (decks
+biggest single item, 40% of all differing pixels — done), 10 (SVG — done), 9 (link rectangles: PowerPoint's rule to measure first). For the gate, a PowerPoint-valid generator mode (decks
 PowerPoint opens) would let the generated groups count; today only 15% of them do.
+
+### PDF fixes (items 1 and 10, 2026-11-18)
+
+One Opus session. Rust side only: the PowerPoint PDFs and the TS canvases are the cached ones; the Rust PDFs of both font policies and the
+comparison were rerun over the same 627 decks / 736 pages (numbers above).
+
+- **Gradient text** (`pdf/text.rs` `glyph_block`, `fill_glyphs`). The cause was not the text clip itself: pdfium's content parser adds
+  the accumulated text clip at `ET` **only when the text render mode in force there is a clip mode** (`Handle_EndText`), and the painter
+  reset `0 Tr` just before `ET` (legal PDF: the mode that counts is the one at `TJ`; pdf.js and Acrobat apply the clip). A clip block now
+  keeps its mode until `ET` (the `Q` of `fill_spec` restores it). Second case, found by the rerun: a gradient run whose glyphs no face has
+  wrote an **empty** text clip (`BT 7 Tr … ET` without `TJ`), which pdfium also takes as no clip — the shading flooded the page (17 runs,
+  6 decks, `b6a_0073` p1); such a run now paints nothing (its characters are counted `glyph:missing` as before). The text stays real text
+  (extractable: pypdfium2's text page and the ToUnicode test). The shading-pattern form (`/Pattern cs` + `PatternType 2`) was not needed:
+  the clip form is honoured by pdfium, pdf.js and Acrobat, and keeps the stop-alpha soft mask and the shading cache as they were. Over the
+  627 oracle PDFs: 2,940 gradient fills with the reset → 0 (2,923 fills left, the 17 empty ones dropped). `pdf-oracle-classify.py`'s
+  `gradient-text` detector now tags only the broken form (none left).
+- **SVG pictures** (`pdf/svg.rs`, new; `images.rs` `embed_picture` sends SVG bytes there). The reader already takes the PNG of
+  `r:embed` when PowerPoint wrote one beside the `asvg:svgBlip` (2016+ files do); `pb-365.pptx` has **only** the SVG, so no raster fallback
+  existed and the SVG is now played as vector content: a form XObject (transparency group) of the picture's natural size, placed by
+  `drawImage` like a metafile recipe. Subset (the static SVG of Office icons and the usual producers): `svg`/`g`/`a`/`switch`/`use`/`symbol`,
+  nested viewports, the seven shapes and the whole path grammar (arcs as cubics), presentation attributes, `style` and `<style>` sheets
+  (type, class and id selectors by specificity), fill/stroke with opacity, rules, caps, joins, miter, dashes, `opacity` as a group,
+  transforms, `clip-path`, linear/radial gradients (`href` chains, both units, `gradientTransform`, stop opacity as a luminosity soft mask),
+  the CSS colour names. Counted, not drawn: `svg:text`, `svg:image`, `svg:pattern`, `svg:marker`; drawn without the effect: `svg:filter`,
+  `svg:mask`, `svg:spread`, `svg:effect` (an `fxImage` recolour); `svg:limit` (1 M segments, 64 MB of content, depth 64, 200,000
+  elements). The raster interpreter has no SVG player: a soft-edge/reflection layer holding an SVG is drawn as vector (`raster:fallback`) and
+  an SVG picture's canvas shadow is its box (`svg:shadow`). `PdfReport::svgs` counts the pictures played. Declared: the natural size is
+  `width`/`height`, else the viewBox, else 300 x 150, and `drawImage` stretches that box (a browser fits an SVG without intrinsic size into
+  the destination: the two differ only when the ratios differ). `pb-365` p1: 0.957 → 0.9998 (0 PDF-only pixels); `image:unsupported` 1 → 0.
+- **Write PDF**: unaffected. `uo-pdf` was not edited; Write's writer never emits a text clip (`2 Tr` is its faux bold; its shadings are path
+  clips, `W n /Sh sh`). `cargo test -p uo-pdf --release` green (parity, unit, memory, no-panic).
+- **Tests** (`tests/pdf_slides.rs`): gradient text keeps `7 Tr` until `ET`, is followed by the shading and extracts; a run without
+  glyphs writes no clip and no shading; a constructed SVG (sheet class and id rules, a gradient with a fading stop, a clip, `use`, group
+  opacity, a named colour, `text` counted) reaches the PDF as vector content; hostile SVGs (unparsable, 200 nested transforms, NaN/1e308
+  arcs, `use` and `href` cycles, bad dashes and points) never panic and stay valid; the `pb-365` icon is drawn; 5 unit tests in `svg.rs`
+  (sniffing, path grammar, transforms, aspect ratio, colours and sheets). The 538-deck test is unchanged (994 links, 0 failed slides). The
+  Slides digests of `uo-ffi/tests/parity/slides-native.tsv` change (19 of 93 differed on the tree of 2026-11-18, other frontiers' edits
+  included): `UO_BLESS=1`.
 
 ### Files
 

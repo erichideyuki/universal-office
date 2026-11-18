@@ -57,7 +57,7 @@ pub fn whole_shape(t: &AnimTarget) -> bool {
 /// `firstTarget` (`timing.ts:556`): the node's own target, else the first of its descendants (pre-order).
 pub fn first_target(a: &TimeArena, id: NodeId) -> Option<&AnimTarget> {
     let n = a.node(id);
-    if let Some(t) = &n.target {
+    if let Some(t) = &n.bhvr().target {
         return Some(t);
     }
     a.kids(n).iter().find_map(|c| first_target(a, *c))
@@ -82,7 +82,7 @@ pub fn simple_dur(a: &TimeArena, id: NodeId, ctx: &EvalCtx<'_>) -> f64 {
             base = math::max(base, b + active_dur(a, *c, ctx));
         }
     }
-    if let Some(it) = &n.iterate
+    if let Some(it) = &n.ctn_x().iterate
         && base.is_finite()
     {
         let tgt = first_target(a, id);
@@ -107,7 +107,7 @@ pub fn block_dur(a: &TimeArena, id: NodeId, ctx: &EvalCtx<'_>) -> f64 {
         return d;
     }
     let n = a.node(id);
-    if n.repeat == Some(f64::INFINITY) {
+    if n.ctn_x().repeat == Some(f64::INFINITY) {
         return 0.0;
     }
     let mut base = 0.0;
@@ -115,7 +115,7 @@ pub fn block_dur(a: &TimeArena, id: NodeId, ctx: &EvalCtx<'_>) -> f64 {
         let Some(b) = begin_offset(a.node(*c)) else { continue };
         base = math::max(base, b + block_dur(a, *c, ctx));
     }
-    if let Some(it) = &n.iterate {
+    if let Some(it) = &n.ctn_x().iterate {
         let tgt = first_target(a, id);
         let count = math::max(1.0, (ctx.units)(tgt, &it.kind));
         let gap = it.abs_ms.unwrap_or(0.0);
@@ -127,8 +127,8 @@ pub fn block_dur(a: &TimeArena, id: NodeId, ctx: &EvalCtx<'_>) -> f64 {
 /// Active duration: simple × (2 with `autoRev`) × repetitions. `spd` does NOT enter (measured in the oracle).
 pub fn active_dur(a: &TimeArena, id: NodeId, ctx: &EvalCtx<'_>) -> f64 {
     let n = a.node(id);
-    let mut d = simple_dur(a, id, ctx) * if n.auto_rev == Some(true) { 2.0 } else { 1.0 };
-    if let Some(r) = n.repeat {
+    let mut d = simple_dur(a, id, ctx) * if n.ctn_x().auto_rev == Some(true) { 2.0 } else { 1.0 };
+    if let Some(r) = n.ctn_x().repeat {
         d = if r == f64::INFINITY { f64::INFINITY } else { d * r };
     }
     d
@@ -167,14 +167,14 @@ fn collect_effects(a: &TimeArena, id: NodeId, t0: f64, ctx: &EvalCtx<'_>, out: &
         fx.fill = n.fill.clone().filter(|s| !s.is_empty());
         fx.target = first_target(a, id).cloned();
         if let Some(ae) = first_of(a, id, "animEffect")
-            && let Some(f) = ae.filter.as_ref().filter(|s| !s.is_empty())
+            && let Some(f) = ae.bhvr().filter.as_ref().filter(|s| !s.is_empty())
         {
             fx.filter = Some(f.clone());
         }
         if first_of(a, id, "animMotion").is_some() {
             fx.motion = Some(true);
         }
-        if n.end_evts.as_ref().is_some_and(|e| e.iter().any(|x| &**x == "onNext")) {
+        if n.ctn_x().end_evts.as_ref().is_some_and(|e| e.iter().any(|x| &**x == "onNext")) {
             fx.end_on_next = Some(true);
         }
         out.push(fx);

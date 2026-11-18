@@ -9,7 +9,7 @@ use std::sync::Arc;
 use uo_alloc::assert_no_leak;
 use uo_dml_render::emit::{EmitCaches, EmitParams, Env, MAX_PATH_GRADIENT_CACHE, MAX_PATTERN_CACHE, SlideBg, emit_shapes, emit_slide};
 use uo_dml_render::ids::MediaId;
-use uo_dml_render::model::{Fill, FillKind, GradientStop, Paragraph, PatternFill, Reflection, Run, Shape, ShapeExtras, TextBody, Xfrm};
+use uo_dml_render::model::{Fill, FillKind, GradientStop, Paragraph, PatternFill, Reflection, Run, Shape, ShapeFx, TextBody, Xfrm};
 use uo_dml_render::source::{PartSource, R};
 use uo_dml_render::text::{MeasureReq, MeasureTable};
 use uo_dml_render::{CssColor, ReadError};
@@ -118,20 +118,17 @@ fn each_shape_is_one_save_restore_pair() {
 fn a_reflection_is_a_layer_with_its_fallback_block() {
     let mut s = rect(0.0);
     s.fill = Some(Box::new(solid("#336699")));
-    s.extras = Some(Box::new(ShapeExtras {
-        reflection: Some(Reflection {
-            blur_rad: 1.0,
-            st_a: 0.5,
-            end_a: 0.0,
-            st_pos: 0.0,
-            end_pos: 0.5,
-            dist: 0.0,
-            dir_deg: 90.0,
-            sy: -1.0,
-            fade_dir_deg: 90.0,
-        }),
-        ..ShapeExtras::default()
-    }));
+    s.fx_mut().reflection = Some(Reflection {
+        blur_rad: 1.0,
+        st_a: 0.5,
+        end_a: 0.0,
+        st_pos: 0.0,
+        end_pos: 0.5,
+        dist: 0.0,
+        dir_deg: 90.0,
+        sy: -1.0,
+        fade_dir_deg: 90.0,
+    });
     let mut res = SlidesResources::new();
     let l = shapes_list(&[s], &mut res, &mut EmitCaches::new());
     let begin = l.items.iter().position(|i| matches!(i, SItem::LayerBegin(_))).expect("a layer");
@@ -253,13 +250,21 @@ fn random_shape(r: &mut Rng) -> Shape {
             })
         },
         geom: Some(geoms[r.below(geoms.len())].into()),
-        adj: if r.below(3) == 0 { Some(vec![r.num(), r.num()].into()) } else { None },
-        line_color: if r.below(2) == 0 { Some(CssColor::new("#112233")) } else { None },
-        line_width: if r.below(2) == 0 { Some(r.num()) } else { None },
-        line_dash: if r.below(4) == 0 { Some("sysDash".into()) } else { None },
-        alpha: if r.below(4) == 0 { Some(r.num()) } else { None },
         ..rect(0.0)
     };
+    // the same draws in the same order as the flat literal before the compaction
+    let adj: Option<Box<[f64]>> = if r.below(3) == 0 { Some(vec![r.num(), r.num()].into()) } else { None };
+    s.line_color = if r.below(2) == 0 { Some(CssColor::new("#112233")) } else { None };
+    s.line_width = if r.below(2) == 0 { Some(r.num()) } else { None };
+    let line_dash: Option<Box<str>> = if r.below(4) == 0 { Some("sysDash".into()) } else { None };
+    let alpha = if r.below(4) == 0 { Some(r.num()) } else { None };
+    if adj.is_some() || line_dash.is_some() {
+        s.x_mut().adj = adj;
+        s.x_mut().line_dash = line_dash;
+    }
+    if alpha.is_some() {
+        s.paint_mut().alpha = alpha;
+    }
     match r.below(5) {
         0 => s.fill = Some(Box::new(solid("#AABBCC"))),
         1 => s.fill = Some(pattern_shape(r.below(1000) as u32).fill.unwrap()),
@@ -286,27 +291,31 @@ fn random_shape(r: &mut Rng) -> Shape {
                 level: Some(r.num()),
                 ..Paragraph::default()
             }],
-            vert: if r.below(4) == 0 { Some("vert270".into()) } else { None },
-            rot: if r.below(4) == 0 { Some(r.num()) } else { None },
             ..TextBody::default()
         }));
+        let vert: Option<Box<str>> = if r.below(4) == 0 { Some("vert270".into()) } else { None };
+        let rot = if r.below(4) == 0 { Some(r.num()) } else { None };
+        if let Some(tb) = s.tx_body.as_deref_mut()
+            && (vert.is_some() || rot.is_some())
+        {
+            tb.x_mut().vert = vert;
+            tb.x_mut().rot = rot;
+        }
     }
     if r.below(4) == 0 {
-        s.extras = Some(Box::new(ShapeExtras {
-            reflection: Some(Reflection {
-                blur_rad: r.num(),
-                st_a: r.num(),
-                end_a: r.num(),
-                st_pos: r.num(),
-                end_pos: r.num(),
-                dist: r.num(),
-                dir_deg: 90.0,
-                sy: r.num(),
-                fade_dir_deg: 90.0,
-            }),
-            soft_edge: Some(r.num()),
-            ..ShapeExtras::default()
-        }));
+        let reflection = Some(Reflection {
+            blur_rad: r.num(),
+            st_a: r.num(),
+            end_a: r.num(),
+            st_pos: r.num(),
+            end_pos: r.num(),
+            dist: r.num(),
+            dir_deg: 90.0,
+            sy: r.num(),
+            fade_dir_deg: 90.0,
+        });
+        // merged into the shape's extras (the adj/line_dash/alpha drawn above live there now)
+        s.x_mut().fx = Some(Box::new(ShapeFx { reflection, soft_edge: Some(r.num()), ..ShapeFx::default() }));
     }
     s
 }

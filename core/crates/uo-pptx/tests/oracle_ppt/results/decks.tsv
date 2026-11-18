@@ -5,7 +5,7 @@ s_legacy_lo-reference.ppt	legacy	ok	3	3	0.9985	0.9964			0	0
 s_legacy_lo-stress-shapes.ppt	legacy	ok	4	4	0.9971	0.9958			0	0
 s_legacy_lo-wordart-test.ppt	legacy	ok	3	3	0.9942	0.9871			0	0
 s_playback_pb-365.ppt	playback-ppt	ok	2	2	0.9999	0.9999			0	0
-s_playback_pb-365.pptx	playback	ok	2	2	0.9783	0.9568		image:unsupported=1	0	0
+s_playback_pb-365.pptx	playback	ok	2	2	0.9998	0.9998			0	0
 s_playback_pb-config.ppt	playback-ppt	ok	2	2	0.9999	0.9998			0	0
 s_playback_pb-config.pptx	playback	ok	2	2	0.9999	0.9998			0	0
 s_playback_pb-enfase.ppt	playback-ppt	ok	5	5	0.9998	0.9998			0	0
@@ -51,18 +51,18 @@ s_stress-advanced.pptx	samples	ok	4	4	0.9988	0.9968			0	0
 s_stress-media.pptx	samples	ok	5	5	0.9985	0.9931			0	1
 s_stress-shapes.pptx	samples	ok	4	4	0.9979	0.9954			0	0
 s_stress-table-chart.pptx	samples	ok	5	5	0.9970	0.9904			0	0
-s_stress-text.pptx	samples	ok	4	4	0.7566	0.0311			4	0
+s_stress-text.pptx	samples	ok	4	4	0.9986	0.9977			4	0
 b1a_0000	b1a	ppt-refused								
 b1a_0001	b1a	ppt-refused								
 b1a_0002	b1a	ppt-refused								
-b1a_0003	b1a	ok	1	1	0.9362	0.9362		glyph:missing=6	1	13
+b1a_0003	b1a	ok	1	1	0.9362	0.9362		glyph:missing=6	1	0
 b1a_0004	b1a	ppt-refused								
 b1a_0005	b1a	ppt-refused								
 b1a_0006	b1a	ppt-refused								
 b1a_0007	b1a	ppt-refused								
 b1a_0008	b1a	ppt-refused								
 b1a_0009	b1a	ppt-refused								
-b1a_0010	b1a	ok	1	1	0.9693	0.9693		hyperlink:unplaced=1	9	5
+b1a_0010	b1a	ok	1	1	0.9693	0.9693			9	1
 b1a_0011	b1a	ppt-refused								
 b1a_0012	b1a	ok	1	1	0.8515	0.8515		glyph:missing=7	13	0
 b1a_0013	b1a	ppt-refused								
@@ -71,7 +71,7 @@ b1a_0015	b1a	ppt-refused
 b1a_0016	b1a	ppt-refused								
 b1a_0017	b1a	ppt-refused								
 b1a_0018	b1a	ppt-refused								
-b1a_0019	b1a	ok	1	1	0.9725	0.9725		glyph:missing=1	12	4
+b1a_0019	b1a	ok	1	1	0.9725	0.9725		glyph:missing=1	12	3
 b1a_0020	b1a	ppt-refused								
 b1a_0021	b1a	ppt-refused								
 b1a_0022	b1a	ppt-refused								
@@ -89,7 +89,7 @@ b1a_0033	b1a	ppt-refused
 b1a_0034	b1a	ppt-refused								
 b1a_0035	b1a	ppt-refused								
 b1a_0036	b1a	ppt-refused								
-b1a_0037	b1a	ok	1	1	0.0089	0.0089			29	5
+b1a_0037	b1a	ok	1	1	0.7504	0.7504			29	3
 b1a_0038	b1a	ppt-refused								
 b1a_0039	b1a	ppt-refused								
 b1a_0040	b1a	ppt-refused								
@@ -102,26 +102,26 @@ b1a_0046	b1a	ppt-refused
 b1a_0047	b1a	ppt-refused								
 b1a_0048	b1a	ppt-refused								
 b1a_0049	b1a	ppt-refused								
-b1a_0050	b1a	ok	2	2	0.9569	0.9474		glyph:missing=5	23	0
+b1a_0050	b1a	ok	2	2	0.9579	0.9493		glyph:missing=5	23	0
 b1a_0051	b1a	ppt-refused								
 b1a_0052	b1a	ppt-refused								
 b1a_0053	b1a	ppt-refused								
 b1a_0054	b1a	ppt-refused								
-b1a_0055	b1a	ok	1	1	0.0868	0.0868		glyph:missing=24	25	4
+b1a_0055	b1a	ok	1	1	0.0868	0.0868		glyph:missing=24	25	1
 b1a_0056	b1a	ppt-refused								
-b1a_0057	b1a	ok	2	2	0.5467	0.1530	2		97	12
+b1a_0057	b1a	ok	2	2	0.9385	0.9366	2		97	7
 b1a_0058	b1a	ppt-refused								
 b1a_0059	b1a	ppt-refused								
 b1a_0060	b1a	ppt-refused								
-b1a_0061	b1a	ok	1	1	0.9188	0.9188			7	18
+b1a_0061	b1a	ok	1	1	0.9188	0.9188			7	0
 b1a_0062	b1a	ppt-refused								
 b1a_0063	b1a	ppt-refused								
 b1a_0064	b1a	ppt-refused								
 b1a_0065	b1a	ppt-refused								
 b1a_0066	b1a	ppt-refused								
-b1a_0067	b1a	ok	3	3	0.5271	0.0017		glyph:missing=26	89	19
+b1a_0067	b1a	ok	3	3	0.8538	0.6126		glyph:missing=26	89	2
 b1a_0068	b1a	ok	1	1	0.5968	0.5968			8	0
-b1a_0069	b1a	ok	1	1	0.2277	0.2277		glyph:missing=7	33	1
+b1a_0069	b1a	ok	1	1	0.9769	0.9769		glyph:missing=7	33	1
 b1a_0070	b1a	ppt-refused								
 b1a_0071	b1a	ppt-refused								
 b1a_0072	b1a	ppt-refused								
@@ -137,10 +137,10 @@ b1a_0081	b1a	ppt-refused
 b1a_0082	b1a	ppt-refused								
 b1a_0083	b1a	ppt-refused								
 b1a_0084	b1a	ppt-refused								
-b1a_0085	b1a	ok	1	1	0.9043	0.9043			17	11
-b1a_0086	b1a	ok	1	1	0.2149	0.2149		glyph:missing=9	19	0
+b1a_0085	b1a	ok	1	1	0.9043	0.9043			17	1
+b1a_0086	b1a	ok	1	1	0.2834	0.2834		glyph:missing=9	19	0
 b1a_0087	b1a	ppt-refused								
-b1a_0088	b1a	ok	1	1	0.8502	0.8502	1	glyph:missing=6	19	17
+b1a_0088	b1a	ok	1	1	0.8502	0.8502	1	glyph:missing=6	19	2
 b1a_0089	b1a	ppt-refused								
 b1a_0090	b1a	ppt-refused								
 b1a_0091	b1a	ppt-refused								
@@ -152,7 +152,7 @@ b1a_0096	b1a	ppt-refused
 b1a_0097	b1a	ppt-refused								
 b1a_0098	b1a	ppt-refused								
 b1a_0099	b1a	ppt-refused								
-b1a_0100	b1a	ok	1	1	0.1078	0.1078			5	2
+b1a_0100	b1a	ok	1	1	0.1078	0.1078			5	1
 b1a_0101	b1a	ppt-refused								
 b1a_0102	b1a	ppt-refused								
 b1a_0103	b1a	ppt-refused								
@@ -167,7 +167,7 @@ b1a_0111	b1a	ppt-refused
 b1a_0112	b1a	ppt-refused								
 b1a_0113	b1a	ppt-refused								
 b1a_0114	b1a	ok	1	1	0.1459	0.1459		glyph:missing=2	51	1
-b1a_0115	b1a	ok	1	1	0.0864	0.0864		glyph:missing=7	18	15
+b1a_0115	b1a	ok	1	1	0.8422	0.8422		glyph:missing=7	18	3
 b1a_0116	b1a	ppt-refused								
 b1a_0117	b1a	ppt-refused								
 b1a_0118	b1a	ppt-refused								
@@ -191,28 +191,28 @@ b1a_0135	b1a	ppt-refused
 b1a_0136	b1a	ppt-refused								
 b1a_0137	b1a	ppt-refused								
 b1a_0138	b1a	ppt-refused								
-b1a_0139	b1a	ok	1	1	0.2752	0.2752		glyph:missing=6	16	3
+b1a_0139	b1a	ok	1	1	0.2749	0.2749		glyph:missing=6	16	1
 b1a_0140	b1a	ppt-refused								
 b1a_0141	b1a	ppt-refused								
 b1a_0142	b1a	ppt-refused								
 b1a_0143	b1a	ppt-refused								
 b1a_0144	b1a	ppt-refused								
 b1a_0145	b1a	ppt-refused								
-b1a_0146	b1a	ok	4	4	0.4956	0.0034		glyph:missing=7	136	11
+b1a_0146	b1a	ok	4	4	0.9377	0.8389		glyph:missing=7	136	0
 b1a_0147	b1a	ppt-refused								
 b1a_0148	b1a	ppt-refused								
 b1a_0149	b1a	ppt-refused								
 b1a_0150	b1a	ppt-refused								
-b1a_0151	b1a	ok	3	3	0.2948	0.0136		glyph:missing=23;hyperlink:unplaced=1	79	21
+b1a_0151	b1a	ok	3	3	0.9185	0.8106		glyph:missing=23	79	3
 b1a_0152	b1a	ppt-refused								
 b1a_0153	b1a	ppt-refused								
 b1a_0154	b1a	ppt-refused								
 b1a_0155	b1a	ppt-refused								
-b1a_0156	b1a	ok	2	2	0.5786	0.2078		glyph:missing=11	88	2
+b1a_0156	b1a	ok	2	2	0.9509	0.9494		glyph:missing=11	88	2
 b1a_0157	b1a	ppt-refused								
 b1a_0158	b1a	ppt-refused								
 b1a_0159	b1a	ppt-refused								
-b1a_0160	b1a	ok	1	1	0.4423	0.4423			11	29
+b1a_0160	b1a	ok	1	1	0.7795	0.7795			11	1
 b1a_0161	b1a	ppt-refused								
 b1a_0162	b1a	ppt-refused								
 b1a_0163	b1a	ppt-refused								
@@ -220,20 +220,20 @@ b1a_0164	b1a	ppt-refused
 b1a_0165	b1a	ppt-refused								
 b1a_0166	b1a	ppt-refused								
 b1a_0167	b1a	ppt-refused								
-b1a_0168	b1a	ok	1	1	0.8747	0.8747		glyph:missing=8	88	1
+b1a_0168	b1a	ok	1	1	0.8755	0.8755		glyph:missing=8	88	1
 b1a_0169	b1a	ppt-refused								
 b1a_0170	b1a	ppt-refused								
 b1a_0171	b1a	ppt-refused								
-b1a_0172	b1a	ok	2	2	0.9556	0.9206			5	15
+b1a_0172	b1a	ok	2	2	0.9556	0.9206			5	12
 b1a_0173	b1a	ppt-refused								
 b1a_0174	b1a	ppt-refused								
-b1a_0175	b1a	ok	1	1	0.9029	0.9029		glyph:missing=9	34	0
+b1a_0175	b1a	ok	1	1	0.9062	0.9062		glyph:missing=9	34	0
 b1a_0176	b1a	ppt-refused								
 b1a_0177	b1a	ppt-refused								
 b1a_0178	b1a	ppt-refused								
 b1a_0179	b1a	ppt-refused								
-b1a_0180	b1a	ok	1	1	0.9071	0.9071		glyph:missing=10	56	7
-b1a_0181	b1a	ok	1	1	0.5344	0.5344		glyph:missing=6	34	5
+b1a_0180	b1a	ok	1	1	0.9071	0.9071		glyph:missing=10	56	2
+b1a_0181	b1a	ok	1	1	0.5344	0.5344		glyph:missing=6	34	2
 b1a_0182	b1a	ppt-refused								
 b1a_0183	b1a	ppt-refused								
 b1a_0184	b1a	ppt-refused								
@@ -244,38 +244,38 @@ b1a_0188	b1a	ppt-refused
 b1a_0189	b1a	ppt-refused								
 b1a_0190	b1a	ppt-refused								
 b1a_0191	b1a	ppt-refused								
-b1a_0192	b1a	ok	1	1	0.9656	0.9656		glyph:missing=6;hyperlink:unplaced=1	57	1
-b1a_0193	b1a	ok	1	1	0.9840	0.9840			3	1
+b1a_0192	b1a	ok	1	1	0.9656	0.9656		glyph:missing=6	57	2
+b1a_0193	b1a	ok	1	1	0.9923	0.9923			3	1
 b1a_0194	b1a	ppt-refused								
-b1a_0195	b1a	ok	3	3	0.9143	0.8681		glyph:missing=8	21	0
+b1a_0195	b1a	ok	3	3	0.9177	0.8681		glyph:missing=8	21	0
 b1a_0196	b1a	ppt-refused								
-b1a_0197	b1a	ok	1	1	0.0989	0.0989		glyph:missing=8;hyperlink:unplaced=1	21	15
+b1a_0197	b1a	ok	1	1	0.8798	0.8798		glyph:missing=8	21	1
 b1a_0198	b1a	ppt-refused								
-b1a_0199	b1a	ok	3	3	0.6785	0.2873		glyph:missing=6	15	0
-b3a_0000	b3a	ok	3	3	0.9525	0.9298		glyph:missing=949	5870	173
+b1a_0199	b1a	ok	3	3	0.7355	0.2873		glyph:missing=6	15	0
+b3a_0000	b3a	ok	3	3	0.9525	0.9298		glyph:missing=949	5870	19
 b3a_0005	b3a	ok	1	1	0.9370	0.9370		glyph:missing=264	1768	0
-b3a_0010	b3a	ok	1	1	0.9618	0.9618		glyph:missing=225	1206	1
-b3a_0015	b3a	ok	3	3	0.8814	0.7439		glyph:missing=441;hyperlink:unplaced=2	2392	26
-b3a_0020	b3a	ok	3	3	0.9369	0.8931		glyph:missing=610	2785	49
-b3a_0025	b3a	ok	3	3	0.9576	0.9367		glyph:missing=810	3475	109
-b3a_0030	b3a	ok	3	3	0.9261	0.8634		glyph:missing=587;hyperlink:unplaced=1	3273	169
+b3a_0010	b3a	ok	1	1	0.9618	0.9618		glyph:missing=225	1206	0
+b3a_0015	b3a	ok	3	3	0.8814	0.7439		glyph:missing=441	2392	3
+b3a_0020	b3a	ok	3	3	0.9369	0.8931		glyph:missing=610	2785	4
+b3a_0025	b3a	ok	3	3	0.9563	0.9367		glyph:missing=810	3475	6
+b3a_0030	b3a	ok	3	3	0.9261	0.8634		glyph:missing=587	3273	2
 b3a_0035	b3a	ok	1	1	0.8101	0.8101		glyph:missing=153	807	2
-b3a_0040	b3a	ok	2	2	0.9271	0.8796		glyph:missing=403	2160	28
-b3a_0045	b3a	ok	2	2	0.9036	0.8691		glyph:missing=524;hyperlink:unplaced=1	2430	12
-b3a_0050	b3a	ok	2	2	0.9276	0.9090		glyph:missing=301;hyperlink:unplaced=1	1655	11
-b3a_0055	b3a	ok	2	2	0.9746	0.9672		glyph:missing=44	381	35
-b3a_0060	b3a	ok	2	2	0.9689	0.9665		glyph:missing=618	2803	687
-b3a_0065	b3a	ok	1	1	0.1363	0.1363		glyph:missing=333	1597	382
-b3a_0070	b3a	ok	3	3	0.5047	0.4636		glyph:missing=626;hyperlink:unplaced=1	2893	9
+b3a_0040	b3a	ok	2	2	0.9271	0.8796		glyph:missing=403	2160	0
+b3a_0045	b3a	ok	2	2	0.9036	0.8691		glyph:missing=524	2430	2
+b3a_0050	b3a	ok	2	2	0.9276	0.9090		glyph:missing=301	1655	1
+b3a_0055	b3a	ok	2	2	0.9746	0.9672		glyph:missing=44	381	16
+b3a_0060	b3a	ok	2	2	0.9689	0.9665		glyph:missing=618	2803	16
+b3a_0065	b3a	ok	1	1	0.9006	0.9006		glyph:missing=333	1597	0
+b3a_0070	b3a	ok	3	3	0.5047	0.4636		glyph:missing=626	2893	1
 b3a_0075	b3a	ok	1	1	0.9257	0.9257		glyph:missing=251	1701	0
-b3a_0080	b3a	ok	1	1	0.9330	0.9330		glyph:missing=166;hyperlink:unplaced=1	863	7
-b3a_0085	b3a	ok	3	3	0.9336	0.9251		glyph:missing=751;hyperlink:unplaced=2	3454	29
-b3a_0090	b3a	ok	3	3	0.3886	0.3589		glyph:missing=528;hyperlink:unplaced=2	2766	21
-b3a_0095	b3a	ok	2	2	0.9512	0.9395		glyph:missing=519;hyperlink:unplaced=2	1633	63
-b3a_0100	b3a	ok	3	3	0.9161	0.8745		glyph:missing=904;hyperlink:unplaced=1	3271	176
-b3a_0105	b3a	ok	3	3	0.9485	0.9442		glyph:missing=463	1739	12
-b3a_0110	b3a	ok	1	1	0.9114	0.9114		glyph:missing=148;hyperlink:unplaced=1	871	17
-b3a_0115	b3a	ok	1	1	0.3211	0.3211		glyph:missing=117	695	2
+b3a_0080	b3a	ok	1	1	0.9330	0.9330		glyph:missing=166	863	1
+b3a_0085	b3a	ok	3	3	0.9336	0.9251		glyph:missing=751	3454	3
+b3a_0090	b3a	ok	3	3	0.3886	0.3589		glyph:missing=528	2766	3
+b3a_0095	b3a	ok	2	2	0.9512	0.9395		glyph:missing=519	1633	7
+b3a_0100	b3a	ok	3	3	0.9161	0.8745		glyph:missing=904	3271	24
+b3a_0105	b3a	ok	3	3	0.9485	0.9442		glyph:missing=463	1739	4
+b3a_0110	b3a	ok	1	1	0.9114	0.9114		glyph:missing=148	871	2
+b3a_0115	b3a	ok	1	1	0.3211	0.3211		glyph:missing=117	695	1
 b5a_0000	b5a	ppt-refused								
 b5a_0001	b5a	ppt-refused								
 b5a_0002	b5a	ppt-refused								
@@ -442,7 +442,7 @@ b5b_0012	b5b	ppt-refused
 b5b_0013	b5b	ppt-refused								
 b5b_0014	b5b	ppt-refused								
 b5b_0015	b5b	ppt-refused								
-b5b_0016	b5b	ok	2	2	0.6390	0.5692		glyph:missing=9;meta:xor-rect=1	5	14
+b5b_0016	b5b	ok	2	2	0.6390	0.5692		glyph:missing=9;meta:xor-rect=1	5	1
 b5b_0017	b5b	ppt-refused								
 b5b_0018	b5b	ppt-refused								
 b5b_0019	b5b	ppt-refused								
@@ -470,11 +470,11 @@ b6a_0000	b6a	ppt-refused
 b6a_0001	b6a	ppt-refused								
 b6a_0002	b6a	ppt-refused								
 b6a_0003	b6a	ppt-refused								
-b6a_0004	b6a	ok	1	1	0.9579	0.9579			0	3
+b6a_0004	b6a	ok	1	1	0.9579	0.9579			0	0
 b6a_0005	b6a	ppt-refused								
 b6a_0006	b6a	ppt-refused								
 b6a_0007	b6a	ppt-refused								
-b6a_0008	b6a	ok	2	2	0.6076	0.5486		glyph:missing=13	57	3
+b6a_0008	b6a	ok	2	2	0.6076	0.5486		glyph:missing=13	57	2
 b6a_0009	b6a	ppt-refused								
 b6a_0010	b6a	ppt-refused								
 b6a_0011	b6a	ppt-refused								
@@ -539,7 +539,7 @@ b6a_0069	b6a	ppt-refused
 b6a_0070	b6a	ppt-refused								
 b6a_0071	b6a	ppt-refused								
 b6a_0072	b6a	ppt-refused								
-b6a_0073	b6a	ok	3	3	0.0441	0.0087		glyph:missing=12	61	13
+b6a_0073	b6a	ok	3	3	0.1386	0.0333		glyph:missing=12	61	2
 b6a_0074	b6a	ppt-refused								
 b6a_0075	b6a	ppt-refused								
 b6a_0076	b6a	ppt-refused								
@@ -551,7 +551,7 @@ b6a_0081	b6a	ppt-refused
 b6a_0082	b6a	ppt-refused								
 b6a_0083	b6a	ppt-refused								
 b6a_0084	b6a	ppt-refused								
-b6a_0085	b6a	ok	1	1	0.9713	0.9713			0	0
+b6a_0085	b6a	ok	1	1	0.9721	0.9721			0	0
 b6a_0086	b6a	ppt-refused								
 b6a_0087	b6a	ppt-refused								
 b6a_0088	b6a	ppt-refused								
@@ -593,7 +593,7 @@ c1d_0023	c1d	ppt-refused
 c1d_0024	c1d	ppt-refused								
 c1d_0025	c1d	ppt-refused								
 c1d_0026	c1d	ppt-refused								
-c1d_0027	c1d	ok	2	2	0.2687	0.1285			10	0
+c1d_0027	c1d	ok	2	2	0.6774	0.4088			10	0
 c1d_0028	c1d	ppt-refused								
 c1d_0029	c1d	ppt-refused								
 c1d_0030	c1d	ppt-refused								

@@ -222,6 +222,40 @@ fn a_decoded_bitmap_is_drawn_from_its_blob() {
     assert!(changed > 0, "no EMF+ of the set draws a compressed bitmap");
 }
 
+/// The prepare list the viewer decodes at open (`compressed_bitmaps`, the TS `prepareMetafile`) is exactly the set of bitmaps a
+/// rasterization asks for (`Need::Decode`), so no paint of a warmed deck waits on a decode (`PENDING`).
+#[test]
+fn the_prepare_list_is_what_the_rasterization_asks_for() {
+    use uo_dml_render::metafile::{compressed_bitmaps, emfplus::bitmap_key};
+    struct Ask;
+    impl Measure for Ask {
+        fn metrics(&mut self, f: &[u16], t: &[u16]) -> Option<Metrics> {
+            Some(stub::stub_metrics(f, t))
+        }
+        fn decoded(&mut self, _: &str) -> Decoded {
+            Decoded::Unknown
+        }
+    }
+    let (mut files, mut blobs) = (0, 0);
+    for (key, bytes) in inputs() {
+        let mut want: Vec<String> = compressed_bitmaps(&bytes).iter().map(|b| bitmap_key(b)).collect();
+        let mut asked: Vec<String> = match rasterize_special(&bytes, None, &mut Ask) {
+            Outcome::Need(n) => n.into_iter().filter_map(|n| if let Need::Decode { key, .. } = n { Some(key) } else { None }).collect(),
+            Outcome::Done(_) => Vec::new(),
+        };
+        want.sort();
+        want.dedup();
+        asked.sort();
+        asked.dedup();
+        assert_eq!(want, asked, "{key}");
+        if !want.is_empty() {
+            files += 1;
+            blobs += want.len();
+        }
+    }
+    assert!(files > 10 && blobs >= files, "only {files} files with {blobs} compressed bitmaps");
+}
+
 // ─────────────────────────── M1, M2 ───────────────────────────
 
 #[test]

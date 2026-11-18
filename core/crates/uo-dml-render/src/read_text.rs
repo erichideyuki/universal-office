@@ -19,11 +19,13 @@ pub fn read_tx_body(el: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip:
         tb.anchor = ta(body_pr, "anchor").map(Into::into);
         tb.wrap = ta(body_pr, "wrap").map(Into::into);
         if let Some(v) = body_pr.attr("spcFirstLastPara") {
-            tb.spc_first_last_para = Some(v == "1");
+            tb.x_mut().spc_first_last_para = Some(v == "1");
         }
-        tb.vert = ta(body_pr, "vert").map(Into::into); // 'horz' explicit too (beats the inherited vertical)
+        if let Some(v) = ta(body_pr, "vert") {
+            tb.x_mut().vert = Some(v.into()); // 'horz' explicit too (beats the inherited vertical)
+        }
         if let Some(r) = ta(body_pr, "rot").filter(|r| is_int_text(r)) {
-            tb.rot = Some(pint(r));
+            tb.x_mut().rot = Some(pint(r));
         }
         // insets in EMU (the application's defaults are the layout/render's business)
         tb.ins_l = int("lIns");
@@ -31,10 +33,19 @@ pub fn read_tx_body(el: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip:
         tb.ins_r = int("rIns");
         tb.ins_b = int("bIns");
         // text columns
-        tb.num_col = int("numCol");
-        tb.spc_col = int("spcCol");
-        tb.vert_overflow = ta(body_pr, "vertOverflow").map(Into::into);
-        tb.horz_overflow = ta(body_pr, "horzOverflow").map(Into::into);
+        // (the rare group is created only for a present attribute)
+        if let Some(v) = int("numCol") {
+            tb.x_mut().num_col = Some(v);
+        }
+        if let Some(v) = int("spcCol") {
+            tb.x_mut().spc_col = Some(v);
+        }
+        if let Some(v) = ta(body_pr, "vertOverflow") {
+            tb.x_mut().vert_overflow = Some(v.into());
+        }
+        if let Some(v) = ta(body_pr, "horzOverflow") {
+            tb.x_mut().horz_overflow = Some(v.into());
+        }
         // WordArt: <a:prstTxWarp prst="textArchUp"><a:avLst><a:gd fmla="val N"/>…
         if let Some(warp) = body_pr.first_child("a:prstTxWarp")
             && let Some(prst) = ta(warp, "prst").filter(|p| *p != "textNoShape")
@@ -45,7 +56,7 @@ pub fn read_tx_body(el: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip:
                     av.children_named("a:gd").map(|g| parse_int(val_after(g.attr("fmla").unwrap_or("")).unwrap_or("0"), 10)).collect()
                 })
                 .unwrap_or_default();
-            tb.warp = Some(Box::new(TextWarp {
+            tb.x_mut().warp = Some(Box::new(TextWarp {
                 prst: prst.into(),
                 adj: (!adj.is_empty()).then(|| adj.into_boxed_slice()),
                 from_word_art: (body_pr.attr("fromWordArt") == Some("1")).then_some(true),
@@ -62,10 +73,10 @@ pub fn read_tx_body(el: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip:
         }
         if let Some(na) = na {
             if let Some(v) = na.attr("fontScale") {
-                tb.font_scale = Some(pint(v) / 100000.0);
+                tb.x_mut().font_scale = Some(pint(v) / 100000.0);
             }
             if let Some(v) = na.attr("lnSpcReduction") {
-                tb.ln_spc_reduction = Some(pint(v) / 100000.0);
+                tb.x_mut().ln_spc_reduction = Some(pint(v) / 100000.0);
             }
         }
     }
@@ -90,17 +101,17 @@ pub fn read_paragraph(p: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip
         para.mar_l = ppr.attr("marL").map(pint);
         para.def_tab_sz = ppr.attr("defTabSz").map(pint);
         if let Some(tl) = ppr.first_child("a:tabLst") {
-            para.tabs = Some(read_tabs(tl));
+            para.x_mut().tabs = Some(read_tabs(tl));
         }
         para.indent = ppr.attr("indent").map(pint);
         if ppr.attr("eaLnBrk") == Some("0") {
-            para.ea_ln_brk = Some(false);
+            para.x_mut().ea_ln_brk = Some(false);
         }
         if ppr.attr("hangingPunct") == Some("0") {
-            para.hanging_punct = Some(false);
+            para.x_mut().hanging_punct = Some(false);
         }
         if let Some(fa @ ("t" | "ctr" | "b")) = ppr.attr("fontAlgn") {
-            para.font_algn = Some(fa.into());
+            para.x_mut().font_algn = Some(fa.into());
         }
         // line and paragraph spacing
         if let Some(ln_spc) = ppr.first_child("a:lnSpc") {
@@ -125,10 +136,10 @@ pub fn read_paragraph(p: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip
         let bu_auto = ppr.first_child("a:buAutoNum");
         if let Some(bc) = bu_char {
             para.bullet = Some(true);
-            para.bullet_char = ta(bc, "char").map(Into::into);
+            para.bu_mut().bullet_char = ta(bc, "char").map(Into::into);
         } else if let Some(ba) = bu_auto {
             para.bullet = Some(true);
-            para.bullet_auto_num = Some(ba.attr("type").unwrap_or("arabicPeriod").into());
+            para.bu_mut().bullet_auto_num = Some(ba.attr("type").unwrap_or("arabicPeriod").into());
         } else if ppr.first_child("a:buNone").is_some() {
             para.bullet = Some(false);
         }
@@ -138,9 +149,9 @@ pub fn read_paragraph(p: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip
             && let Some(img) = res(bb)
         {
             para.bullet = Some(true);
-            para.bullet_image = Some(Box::new(img));
-            if para.bullet_char.is_none() {
-                para.bullet_char = Some("\u{2022}".into());
+            para.bu_mut().bullet_image = Some(Box::new(img));
+            if para.bu().bullet_char.is_none() {
+                para.bu_mut().bullet_char = Some("\u{2022}".into());
             }
         }
         read_bullet_style(ppr, theme, &mut para);
@@ -170,21 +181,21 @@ pub fn read_paragraph(p: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip
 /// `readBulletStyle` (`read.ts:1955`): bullet font, colour and size (`buFont`/`buClr`/`buSzPct|Pts`).
 fn read_bullet_style(ppr: Element<'_>, theme: &Theme, para: &mut Paragraph) {
     if let Some(f) = ppr.first_child("a:buFont").and_then(|b| ta(b, "typeface")) {
-        para.bullet_font = Some(f.into());
+        para.bu_mut().bullet_font = Some(f.into());
     }
     if let Some(bc) = ppr.first_child("a:buClr")
         && let Some(c) = color_from_dml(bc.child_elements().next(), theme)
     {
-        para.bullet_color = Some(c);
+        para.bu_mut().bullet_color = Some(c);
     }
     let pct = ppr.first_child("a:buSzPct").and_then(|e| ta(e, "val"));
     let pts = ppr.first_child("a:buSzPts").and_then(|e| ta(e, "val"));
     if let Some(v) = pct {
-        para.bullet_size_pct = Some(pint(v) / 100000.0);
+        para.bu_mut().bullet_size_pct = Some(pint(v) / 100000.0);
     } else if let Some(v) = pts {
-        para.bullet_size_pt = Some(pint(v) / 100.0);
+        para.bu_mut().bullet_size_pt = Some(pint(v) / 100.0);
     } else if ppr.first_child("a:buSzTx").is_some() {
-        para.bullet_size_pct = Some(1.0);
+        para.bu_mut().bullet_size_pct = Some(1.0);
     }
 }
 
@@ -218,7 +229,7 @@ pub fn read_run(r: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip: Opti
         ex.cap = e.cap;
         ex.strike = e.strike;
         ex.spc = e.spc;
-        ex.kern = e.kern;
+        run.kern = e.kern;
         if let Some(c) = text_fill_color(rpr, theme) {
             run.color = Some(c);
         }
@@ -247,19 +258,19 @@ pub fn read_run(r: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip: Opti
                 } else {
                     oc
                 };
-                ex.outline = Some((color, rln.attr("w").filter(|w| !w.is_empty()).map_or(12700.0, pint)));
+                ex.fx_mut().outline = Some((color, rln.attr("w").filter(|w| !w.is_empty()).map_or(12700.0, pint)));
             }
         }
         if let Some(rpf) = rpr.first_child("a:pattFill") {
             let pf = parse_patt_fill(rpf, theme);
             if let Some(p) = pf.pattern {
-                ex.patt_fill = Some(*p);
+                ex.fx_mut().patt_fill = Some(*p);
                 run.color = pf.color;
             }
         }
         // gradient, image and opacity of the letters (the drawing uses the LINE's box — measured, syn-b-e11)
         if let Some(g) = rpr.first_child("a:gradFill").and_then(|g| parse_grad_fill(g, theme)) {
-            ex.grad_fill = Some(Box::new(g));
+            ex.fx_mut().grad_fill = Some(Box::new(g));
         }
         let rbf = rpr.first_child("a:blipFill");
         let rbb = rbf.and_then(|b| b.first_child("a:blip"));
@@ -267,9 +278,9 @@ pub fn read_run(r: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip: Opti
             && let Some(mut rimg) = res(rbb)
         {
             if apply_tile(&mut rimg, Some(rbf)) {
-                ex.fill_tile = Some(true);
+                ex.fx_mut().fill_tile = Some(true);
             }
-            ex.fill_image = Some(rimg);
+            ex.fx_mut().fill_image = Some(rimg);
         }
         let ra = rpr.first_child("a:solidFill").and_then(fill_alpha_val);
         if let Some(ra) = ra {
@@ -307,7 +318,7 @@ pub fn read_run(r: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip: Opti
         && let Some(shd) = rpr.first_child("a:effectLst").and_then(|e| e.first_child("a:outerShdw"))
     {
         // without <a:alpha> the shadow is OPAQUE (measured, syn-b-e7: FF8000 comes out FF8000)
-        ex.shadow = Some(read_text_shadow(shd, theme, 1.0));
+        ex.fx_mut().shadow = Some(read_text_shadow(shd, theme, 1.0));
     }
     if ex != RunExtras::default() {
         run.extras = Some(Box::new(ex));

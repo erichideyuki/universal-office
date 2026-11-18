@@ -30,6 +30,17 @@ impl Interp<'_, '_> {
         }
     }
 
+    /// Whether an image source is a media part holding an SVG (drawn as vector content, not decodable to pixels).
+    pub(super) fn svg_source(&self, s: &ImageSrc) -> bool {
+        let mi = match s {
+            ImageSrc::Media(i) => Some(*i),
+            ImageSrc::Derived(i) => self.res.derived_entries().get(usize::try_from(*i).unwrap_or(usize::MAX)).map(|d| d.image),
+            ImageSrc::Bitmap(_) => None,
+        };
+        let Some(m) = mi.and_then(|i| self.res.media_entries().get(usize::try_from(i).unwrap_or(usize::MAX))) else { return false };
+        self.src.part(&self.sym(m.part)).is_some_and(|b| super::svg::is_svg(&b))
+    }
+
     fn bitmap_image(&mut self, i: u32) -> Option<ImgHandle> {
         if let Some(h) = self.bitmaps.get(&i) {
             return h.clone();
@@ -109,6 +120,10 @@ impl Interp<'_, '_> {
             let pdf = self.w.note(r)?;
             self.w.report.images += 1;
             return Some(ImgHandle { src: PicSrc::Image(pdf), w: f64::from(j.width), h: f64::from(j.height) });
+        }
+        if super::svg::is_svg(data) {
+            // an SVG with no raster beside it: vector content (`pdf/svg.rs`)
+            return self.svg_picture(data, fx.is_some());
         }
         let Ok(mut r) = uo_image::decode_raster(data, &self.w.opts.image_limits) else {
             self.count("image:unsupported");

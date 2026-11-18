@@ -594,7 +594,7 @@ pub fn read_bevel(sp_pr: Option<Element<'_>>, style_el: Option<Element<'_>>, the
     let rig = scene.and_then(|s| s.first_child("a:lightRig"));
     let cam = scene.and_then(|s| s.first_child("a:camera"));
     if let Some(p) = cam.and_then(|c| ta(c, "prst")).filter(|p| *p != "orthographicFront") {
-        shape.extras_mut().cam_prst = Some(p.into());
+        shape.extras_mut().fx_mut().cam_prst = Some(p.into());
     }
     let rig_rig = rig.and_then(|r| ta(r, "rig")).map(Box::<str>::from);
     let rig_dir = rig.and_then(|r| ta(r, "dir")).map(Box::<str>::from);
@@ -605,7 +605,8 @@ pub fn read_bevel(sp_pr: Option<Element<'_>>, style_el: Option<Element<'_>>, the
         && let Some(sp3d) = sp3d
     {
         let color = sp3d.first_child("a:extrusionClr").and_then(|ec| color_from_dml(ec.child_elements().next(), theme));
-        shape.extras_mut().extrusion = Some(Extrusion { h: eh, color, rig: rig_rig.clone(), dir: rig_dir.clone(), mat: mat.clone() });
+        shape.extras_mut().fx_mut().extrusion =
+            Some(Extrusion { h: eh, color, rig: rig_rig.clone(), dir: rig_dir.clone(), mat: mat.clone() });
     }
     let Some(bt) = sp3d.and_then(|s| s.first_child("a:bevelT")) else { return };
     let w = int_attr(bt, "w").unwrap_or(76200.0);
@@ -613,7 +614,7 @@ pub fn read_bevel(sp_pr: Option<Element<'_>>, style_el: Option<Element<'_>>, the
     if w.is_nan() || h.is_nan() || w <= 0.0 || h <= 0.0 {
         return;
     }
-    shape.extras_mut().bevel = Some(Bevel { w, h, prst: ta(bt, "prst").map(Into::into), rig: rig_rig, dir: rig_dir, mat });
+    shape.extras_mut().fx_mut().bevel = Some(Bevel { w, h, prst: ta(bt, "prst").map(Into::into), rig: rig_rig, dir: rig_dir, mat });
 }
 
 impl Shape {
@@ -633,22 +634,22 @@ impl Shape {
         {
             let x = self.extras_mut();
             if e.shadow.is_some() {
-                x.shadow = e.shadow;
+                x.fx_mut().shadow = e.shadow;
             }
             if e.inner_shadow.is_some() {
-                x.inner_shadow = e.inner_shadow;
+                x.fx_mut().inner_shadow = e.inner_shadow;
             }
             if e.glow.is_some() {
-                x.glow = e.glow;
+                x.fx_mut().glow = e.glow;
             }
             if e.soft_edge.is_some() {
-                x.soft_edge = e.soft_edge;
+                x.fx_mut().soft_edge = e.soft_edge;
             }
             if e.fill_overlay.is_some() {
-                x.fill_overlay = e.fill_overlay;
+                x.fx_mut().fill_overlay = e.fill_overlay;
             }
             if e.reflection.is_some() {
-                x.reflection = e.reflection;
+                x.fx_mut().reflection = e.reflection;
             }
         }
     }

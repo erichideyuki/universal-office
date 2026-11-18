@@ -9,6 +9,7 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 use uo_dml_render::ids::MediaId;
 use uo_dml_render::source::{PartSource, R, ReadError, parse_xml};
+use uo_dml_render::theme::Theme;
 use uo_opc::xml::Document;
 
 use crate::error::PptxError;
@@ -149,12 +150,50 @@ impl MediaTable {
     }
 }
 
+/// The resolved themes the deck's slide models share (`PartSource::share_theme`): one copy per distinct
+/// theme value instead of one per slide (the TS model keeps no theme in a slide; memory compaction,
+/// `uo-pptx.md` "Model memory"). FIFO, capped at [`MAX_SHARED_THEMES`] (M5); an evicted theme stays
+/// alive in the models that hold it.
+#[derive(Debug, Default)]
+pub struct ThemeTable {
+    themes: Vec<Arc<Theme>>,
+}
+
+/// Distinct themes a deck keeps for sharing (a deck has a theme per master, times the clrMap overrides).
+pub const MAX_SHARED_THEMES: usize = 32;
+
+impl ThemeTable {
+    /// The held copy of an equal theme, else `theme` itself, held (the oldest dropped past the cap).
+    pub fn share(&mut self, theme: Theme) -> Arc<Theme> {
+        if let Some(t) = self.themes.iter().find(|t| ***t == theme) {
+            return Arc::clone(t);
+        }
+        if self.themes.len() >= MAX_SHARED_THEMES {
+            self.themes.remove(0);
+        }
+        let t = Arc::new(theme);
+        self.themes.push(Arc::clone(&t));
+        t
+    }
+
+    /// Themes held.
+    pub fn len(&self) -> usize {
+        self.themes.len()
+    }
+
+    /// Whether the table is empty.
+    pub fn is_empty(&self) -> bool {
+        self.themes.is_empty()
+    }
+}
+
 /// The package as the shape reader sees it: the part store with the deck's caches, recording every
 /// part a read touches (the [`ReadSet`] of a slide).
 pub struct DeckSource<'a> {
     parts: &'a PartStore,
     xml: &'a RefCell<XmlCache>,
     media: &'a RefCell<MediaTable>,
+    themes: &'a RefCell<ThemeTable>,
     touched: RefCell<Vec<Box<str>>>,
 }
 
@@ -172,6 +211,7 @@ impl<'a> DeckSource<'a> {
             };
             seen.push((n.clone(), g));
         }
+        seen.shrink_to_fit();
         ReadSet(seen)
     }
 
@@ -214,6 +254,10 @@ impl PartSource for DeckSource<'_> {
     fn media_entry(&self, id: MediaId) -> Option<(Box<str>, Arc<[u8]>)> {
         self.media.borrow().get(id).map(|m| (m.part.clone(), Arc::clone(&m.bytes)))
     }
+
+    fn share_theme(&self, theme: Theme) -> Arc<Theme> {
+        self.themes.borrow_mut().share(theme)
+    }
 }
 
 /// An open presentation.
@@ -223,6 +267,7 @@ pub struct Deck {
     limits: Limits,
     xml: RefCell<XmlCache>,
     media: RefCell<MediaTable>,
+    themes: RefCell<ThemeTable>,
     presentation: Option<(Presentation, ReadSet)>,
     /// Slide models by slide index, least recently used first.
     slides: Vec<(u32, Arc<SlideModel>)>,
@@ -235,6 +280,7 @@ impl Deck {
             limits,
             xml: RefCell::new(XmlCache::with_cap(limits.max_xml_cache_bytes)),
             media: RefCell::new(MediaTable::default()),
+            themes: RefCell::new(ThemeTable::default()),
             presentation: None,
             slides: Vec::new(),
         }
@@ -294,7 +340,7 @@ impl Deck {
     /// A reading view of the package with the deck's caches (for the printers of the parity tests and
     /// the later emission).
     pub fn source(&self) -> DeckSource<'_> {
-        DeckSource { parts: &self.parts, xml: &self.xml, media: &self.media, touched: RefCell::new(Vec::new()) }
+        DeckSource { parts: &self.parts, xml: &self.xml, media: &self.media, themes: &self.themes, touched: RefCell::new(Vec::new()) }
     }
 
     fn is_fresh(&self, rs: &ReadSet) -> bool {
@@ -390,6 +436,7 @@ impl Deck {
     pub fn clear_caches(&mut self) {
         self.xml.borrow_mut().clear();
         self.media.borrow_mut().clear();
+        self.themes.borrow_mut().themes = Vec::new();
         self.slides = Vec::new();
         self.presentation = None;
     }
@@ -402,5 +449,10 @@ impl Deck {
     /// The parse cache (for the M5 test).
     pub fn xml_cache(&self) -> std::cell::Ref<'_, XmlCache> {
         self.xml.borrow()
+    }
+
+    /// The shared themes (for the M5 test).
+    pub fn theme_table(&self) -> std::cell::Ref<'_, ThemeTable> {
+        self.themes.borrow()
     }
 }

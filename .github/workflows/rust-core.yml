@@ -584,6 +584,8 @@ jobs:
       # (slots evaluated in Rust), and 300 playback frames with the module's live bytes flat. Wave 4: the Rust element opens WITHOUT the
       # TS model (read model: a11y text of every slide, link hit-tests on a grid, media requests of every animated frame; `opencost`
       # prints the open cost of both engines); slides_readmodel.test.mjs compares the read model with the TS model of this checkout
+      # Wave 4b: the 40 generated metafile decks (b5b: EMF, EMF+, WMF, PICT, TIFF pictures replayed from the Rust recipes) are in the
+      # parity set by default (UO_SS_B5B=40), pixel-equal at tolerance 0
       - run: |
           cargo build -p uo-wasm --features slides-ppt --target wasm32-unknown-unknown --profile wasm
           cp target/wasm32-unknown-unknown/wasm/uo_wasm.wasm "$RUNNER_TEMP/uo-slides-ppt.wasm"

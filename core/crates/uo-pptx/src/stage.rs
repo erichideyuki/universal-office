@@ -63,9 +63,9 @@ fn ids_of(sh: &Shape) -> Vec<Box<str>> {
 /// `hasMedia` of `paintPlaybackSlide`: a shape with media or a GIF picture.
 #[must_use]
 pub fn has_media(shapes: &[Shape]) -> bool {
-    shapes
-        .iter()
-        .any(|sh| sh.extras.as_ref().is_some_and(|e| e.media.is_some()) || sh.image.as_ref().is_some_and(|i| &*i.mime == "image/gif"))
+    shapes.iter().any(|sh| {
+        sh.extras.as_ref().is_some_and(|e| e.media.is_some()) || sh.paint().image.as_ref().is_some_and(|i| &*i.mime == "image/gif")
+    })
 }
 
 fn unit_of(u: uo_dml_render::emit::UnitRef) -> UnitRef {

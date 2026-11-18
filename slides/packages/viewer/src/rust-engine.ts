@@ -87,6 +87,7 @@ export class RustSlides {
     const doc = mod.openSync(bytes);
     this.doc?.free();
     this.doc = doc;
+    this.prepareSpecials();
     return doc;
   }
 
@@ -97,6 +98,7 @@ export class RustSlides {
     if (this.disposed) { doc.free(); throw new Error('uo-slides: the viewer was disconnected'); }
     this.doc?.free();
     this.doc = doc;
+    this.prepareSpecials();
     return doc;
   }
 
@@ -105,6 +107,22 @@ export class RustSlides {
     if (this.doc === doc) return;
     this.doc?.free();
     this.doc = doc;
+    this.prepareSpecials();
+  }
+
+  /**
+   * As the TS viewer's `warmImage` at open (`prepareSpecialImage` of every EMF+ picture with a compressed PNG/JPEG): their
+   * decode starts now, for every slide, so a paint finds them ready instead of waiting (`PENDING`) for them.
+   */
+  private prepareSpecials(): void {
+    const doc = this.doc;
+    if (!doc || doc.freed) return;
+    const seen = new Set<string>();
+    try {
+      for (let i = 0; i < doc.count; i++) {
+        for (const im of doc.assets(i).images) if (im.special && !seen.has(im.part)) { seen.add(im.part); doc.prepareSpecial(im.part, this.paintHost); }
+      }
+    } catch { /* a slide that cannot be read: its paint reports it */ }
   }
 
   get document(): SlidesDocument | null { return this.doc; }

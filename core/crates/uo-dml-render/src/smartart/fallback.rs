@@ -13,7 +13,7 @@ use uo_jsnum::text::{split_js_space, trim, utf16_len};
 use super::styler::{DgmStyle, StyleThrow, Styler};
 use super::xt::X;
 use crate::color::CssColor;
-use crate::model::{Fill, FillKind, Paragraph, Run, Shape, TextBody, Xfrm};
+use crate::model::{Fill, FillKind, ParaBullet, Paragraph, Run, Shape, ShapeExtras, ShapePaint, TextBody, Xfrm};
 use crate::read_dml::solid_fill;
 use crate::source::parse_xml;
 use crate::theme::{Theme, color_from_dml};
@@ -862,7 +862,7 @@ pub fn diagram_fallback_shapes(
             id: id.into(),
             name: "seta".into(),
             geom: Some(g.geom.into()),
-            adj: Some(vec![60000.0, 50000.0].into()),
+            extras: Some(Box::new(ShapeExtras { adj: Some(vec![60000.0, 50000.0].into()), ..ShapeExtras::default() })),
             xfrm: Some(Xfrm {
                 x: math::round(g.r.x),
                 y: math::round(g.r.y),
@@ -939,7 +939,7 @@ pub fn diagram_fallback_shapes(
                     flip_v: None,
                 }),
                 fill: Some(Box::new(sfill)),
-                fill_alpha,
+                extras: ShapeExtras::of_paint(ShapePaint { fill_alpha, ..ShapePaint::default() }),
                 line_color: lc,
                 line_width: lw,
                 tx_body: Some(Box::new(TextBody {
@@ -955,7 +955,7 @@ pub fn diagram_fallback_shapes(
                         .map(|t| Paragraph {
                             align: Some("l".into()),
                             bullet: Some(true),
-                            bullet_char: Some("\u{2022}".into()),
+                            bullet_props: Some(Box::new(ParaBullet { bullet_char: Some("\u{2022}".into()), ..ParaBullet::default() })),
                             mar_l: Some(bullet_ind),
                             indent: Some(-bullet_ind),
                             line_spacing: Some(0.9),
@@ -1020,7 +1020,7 @@ pub fn diagram_fallback_shapes(
                 flip_v: None,
             }),
             fill: Some(Box::new(st.as_ref().and_then(|s| s.fill.clone()).unwrap_or_else(|| solid_fill(fill_c.clone())))),
-            fill_alpha: st.as_ref().and_then(|s| s.fill_alpha),
+            extras: ShapeExtras::of_paint(ShapePaint { fill_alpha: st.as_ref().and_then(|s| s.fill_alpha), ..ShapePaint::default() }),
             line_color: lc,
             line_width: lw,
             tx_body: Some(Box::new(TextBody {

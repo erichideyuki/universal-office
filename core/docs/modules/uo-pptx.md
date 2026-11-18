@@ -483,8 +483,7 @@ VML, `chartImages`, `fillOverlay`, embedded fonts, `firstSlideNum`, the `xdr:` d
   `slide(0)` allocates 0; `save` 446,896 B. **Retained `SlideModel` alone: 135,955 B against 142,524 B for the TS `Slide` heap
   (measured in Node with `--expose-gc`, 20 slides): 0.95×, the target of 0.5× is NOT met.** Cause: `TextStyleLevel` is 512 B inline
   and an `lstStyle` holds nine of them (4.6 KB per body, cloned into every inherited decoration), `Shape` is 408 B and `Paragraph`
-  368 B. Follow-up (does not change behaviour): compact levels (sparse or boxed bullet/spacing groups), `Arc` for the master's
-  `lstStyle` bodies, move the picture-only fields of `Shape` into the boxed extras.
+  368 B. **Done in wave 4b: 0.447× (every corpus group ≤ 0.5×), `Shape` 224 B — see "Model memory" at the end of this record.**
 - **M5 caps**: `XmlCache` 64 MiB wasm32 / 256 MiB native LRU by `Document::heap_bytes` (`Limits::max_xml_cache_bytes`), slide cache
   16 slides LRU (`max_cached_slides`), media table bounded by the package's media. Tested past the cap: caps of 1 KiB, a third, a
   half and the whole XML size of a deck hold (`bytes() <= cap`); a part bigger than the cap is read but not kept; one-slot and
@@ -999,3 +998,112 @@ records `err`, which the Rust side would print as `err:<message>` and fail the f
 | Capture generation (TS side) | samples 157 s; see the session log for the others | 7,300 steps |
 | Verification (debug, 4 threads) | replay: samples 70 s, generated 47 s, blank 11 s, fonts 118 s; memory 8 s; no-panic 18 s; units 0.1 s | clippy native (all targets, all features) and wasm32 (lib) clean, `cargo fmt`, `grep-bans.sh` |
 | Rework | - | the history byte cap first counted the live package (it left one step); `Typing` found inherited shapes by id; 3 lints |
+
+## Model memory — compaction of the read model (wave 4b, 2026-11-18, Opus)
+
+The M3 budget of the plan ("retained `SlideModel` ≤ 0.5× the TS `Slide` heap", DR3 `size_of::<Shape>() ≤ 256`) was open since
+B1b (0.95×, then 1.09× after the later waves added fields). This pass changes the **representation only**: no value, no order
+of floating-point operations, no `f64` narrowed (nothing became `f32`), no parse rule. Every capture replays equal and the uo-ffi
+Slides digests (`slides-native.tsv`) did not need re-blessing.
+
+### Measurement (kept from B1b, made reproducible)
+
+- **TS side**: `js/measure-memory.mjs` (new; `node --expose-gc`, Node 24.15, frozen TS `ts-ref-092`): `heapUsed` after two full
+  GCs. `0008/0` = 20 copies of `readSlide` of slide 0 of b1a/0008 alive, delta / 20, median of 5 (143,563 B; B1b measured
+  142,524 B by hand). Per corpus group = every readable slide of every deck read once and kept alive (packages loaded and each
+  slide read once before), median of 3.
+- **Rust side** (`tests/memory.rs`): `uo_pptx::read_slide` over a warm parse cache, live bytes kept (`uo-alloc`), **a fresh
+  `DeckSource` per read**: a source records every part access in its read set, which is not the model (the B1b number, 158,490
+  B today, counted those 2 KB). `m3_retained_slide_model_by_group` reads the same decks and slides (it asserts the counts equal
+  the TS script's) and asserts ≤ 0.5× per group; `m3_budgets_are_recorded` asserts ≤ 0.5× on `0008/0`;
+  `m3_model_type_sizes_are_within_budget` pins `size_of` of every model type and boxed group.
+
+### Results
+
+| Measurement | TS heap | Rust before | ratio | Rust after | ratio |
+|---|---|---|---|---|---|
+| `0008/0` (9 shapes, 3 tables) | 143,563 | 156,307 | 1.089× | **64,224** | **0.447×** |
+| b1a (200 decks, 500 slides, 5,360 shapes) | 44,685,352 | 38,008,906 | 0.851× | 15,530,629 | 0.348× |
+| b3a (120, 249, 1,959) | 31,668,800 | 21,924,282 | 0.692× | 10,398,757 | 0.328× |
+| b5a (150, 220, 3,890) | 8,950,320 | 11,288,846 | 1.261× | 4,169,644 | 0.466× |
+| b5b (40, 81, 506) | 1,121,552 | 826,077 | 0.737× | 474,564 | 0.423× |
+| b6a (100, 202, 1,480) | 13,160,528 | 16,672,947 | 1.267× | 5,965,579 | 0.453× |
+| c1d (60, 91, 234) | 5,070,976 | 890,171 | 0.176× | 201,640 | 0.040× |
+| samples (28 `.pptx`, 307, 1,742) | 7,506,768 | 10,554,352 | 1.406× | 3,533,075 | 0.471× |
+| all groups | 112,164,296 | 100,165,581 | 0.893× | 40,273,888 | 0.359× |
+
+One read of `0008/0`: allocated 655,142 → 525,134 B, peak 227,910 → 154,578 B.
+
+`size_of` (64-bit), before → after: `Shape` 408 → **224** (DR3 met), `ShapeExtras` 920 → 200, `TextBody` 272 → 144, `Paragraph`
+368 → 240, `Run` 104 → 120 (`kern` moved in), `RunExtras` 456 → 152, `TextStyleLevel` 512 → 24 (an `<a:lstStyle/>` was 4.6 KB,
+now 216 B), `TimeNode` 1,056 → 192. New boxed groups: `ShapePaint` 96, `ShapeFx` 648, `StyleFont`, `ParaBullet` 112,
+`ParaExtras` 40, `BodyExtras` 144, `RunFx` 304, `LvlPara`/`LvlBullet`/`LvlRun`, `CtnExtras` 176, `TimeBhvr` 352, `BhvrExtras` 360.
+
+Cumulative effect, step by step (`0008/0` / all groups): boxed groups of `Shape`, `Run`, `Paragraph`, `TextBody` 115,995 /
+75.2 MB; level groups 115,995 / 72.7 MB; `shrink_to_fit` 76,635 / 51.9 MB; `TimeNode` groups 66,163 / 43.8 MB; shared themes
+64,224 / 40.3 MB.
+
+### What changed (the levers)
+
+1. **Boxed groups by presence** (field counts over the 15,171 shapes of all groups decided the split): a field most values have
+   stays inline; a rare group is an `Option<Box<Group>>` read through an accessor that answers "absent" when the box is (a
+   `static` empty group, so reads never allocate) and created on first write (`*_mut()`):
+   - `Shape`: `paint()` (picture, `srcRect`, alpha, picture fill, `useBgFill`, `fillAlpha`, `fillNoRot`), `fx()` (shadows, glow,
+     soft edge, reflection, 3-D, fill overlay), `x()` = `ShapeExtras` (now also `adj`/`adjNames`, `lineAlpha`, `lineDash`; media,
+     chart and table boxed again inside), `sf()` = the `fontRef` colour/index. `xfrm`, `fill`, `line*`, `txBody`, the
+     placeholder keys and the flags stay inline (the PDF code reads `xfrm`, `tx_body` and the run hyperlink unchanged).
+   - `Run`: `kern` moved inline (the level cascade gives it to 92% of runs, so 95% of runs had a 456 B `RunExtras` only for it);
+     `RunExtras` keeps the field/link/baseline/cap/strike/spc/symbol/alpha, its text fills and shadow are `fx()`.
+   - `Paragraph`: `bu()` (bullet char/autonum/font/colour/size/image; `bullet` itself inline), `x()` (tabs, East Asian breaking).
+   - `TextBody`: `x()` (font scale, line reduction, warp, `vert`, `rot`, columns, overflow, `spcFirstLastPara`).
+   - `TextStyleLevel`: three groups `p()` / `b()` / `r()` (paragraph, bullet, run halves); `spread` and `mergeStyleLevels` work
+     group by group with the same field rules.
+   - `TimeNode`: `ctn_x()` (repeat, auto-reverse, accel/decel, speed, time filter, end events, iterate), `bhvr()` (target and the
+     common behaviour attributes: containers have none), `bhvr_x()` (the kind-specific values: motion/scale/rotation/colour,
+     commands, media options).
+   Readers only create a group for a present value (a `<a:bodyPr>` without `vert` creates no body group, an `animEffect` without
+   `prLst` no behaviour extras).
+2. **`shrink_to_fit` once the model is built** (`SlideModel::shrink_to_fit` at the end of `read_slide`, `TimingModel::shrink_to_fit`
+   before the timing is shared, the read set): a one-run paragraph kept a 4-run vector, a table cell body a 4-paragraph vector, the
+   time-node arena up to twice its nodes. This alone was about a third of the gain. Values are not touched.
+3. **One theme per distinct value** (`PartSource::share_theme`, default `Arc::new`; `Deck`'s `ThemeTable` returns the held copy of an
+   EQUAL theme, FIFO capped at `MAX_SHARED_THEMES` = 32, emptied by `clear_caches`): the slides of a master share one theme and so
+   do charts with the same chart theme (1.6 KB per slide before; the TS `Slide` holds no theme at all).
+
+Not done (not needed for the budget, listed for later): `TableCell` 288 B and `TableLine` 72 B (a table is still ~6 KB per 12
+cells), interning of repeated strings (font names, `lang`, part names of the read set), `Subpaths` of custom geometry
+(`uo-drawingml`, exact already).
+
+### Parity (unchanged results)
+
+Model replay b1a 2,200 / b5a 1,340 / b6a 1,004 / samples 807 facets equal, 0 mismatches; the rest of the suite (B2 `.ppt` parts,
+B3 text layout, static and animated draw-ops, B5b metafiles, B6 timing, B4b stage, B8 edit, links, PDF) and the uo-ffi Slides ABI
+digests: see "Verification" below.
+
+### Memory gate re-run
+
+M1 (`tests/memory.rs`, `edit_memory.rs`, `ppt_memory.rs`, `stage.rs`, `timing_limits.rs`): live bytes back to the start in every
+case, the theme table included (`clear_caches` empties it). M2: both soaks flat (tolerance 0). M3: the table above; budgets
+asserted. M5: the theme table is filled past its cap (40 distinct themes → 32 held; an equal theme returns the held copy) and the
+slides of one deck share one copy. M4 is the bindings' (no handle changed).
+
+### Call sites (mechanical)
+
+Field reads became accessor reads (`sh.src_rect` → `sh.paint().src_rect`, `p.bullet_char` → `p.bu().bullet_char`, `node.from` →
+`node.bhvr().from`, …) in `uo-dml-render` (canon, read, emit, text layout, cascade, SmartArt fallback), `uo-pptx` (read, stage,
+canon, timing parse/eval, anim engine, links), `uo-wasm/src/slides.rs` (6 reads) and the fuzz targets `slides_emit`/`text_layout`
+(random inputs drawn in the same order as before). No file of `uo-pptx/src/pdf/**`, `uo-pdf` or `uo-dml-render/src/metafile/**`
+changed.
+
+### Verification
+
+- `cargo test --release -p uo-pptx` (all 22 test binaries + doc-tests, 118 tests) and `--features ppt` (`ppt_parity`: 1,082/1,082
+  `.ppt` parts byte-equal, `ppt_memory`): green. This covers the model replay (4 captures), B3 text layout, static and animated
+  draw-ops (b1a, b5b, c1d, samples, anim-*), B5b metafiles, B6 timing (samples 783, b1a 3,900, b6a 1,902 records equal; the 9
+  formula bound cases are the declared ones), B4b stage, B8 edit replay (samples, generated, blank, fonts), links and the PDF tests.
+- `cargo test --release -p uo-dml-render --features canon`, `-p uo-ffi`, `-p uo-wasm --features slides-edit --lib --test
+  slides_edit_native`: green, except the uo-ffi digest test in the SHARED checkout, where 19 of 93 digests differed because of the
+  PDF frontier's work in progress (`uo-pptx/src/pdf/**` changed by another agent at the same time). On HEAD + only this pass's files
+  (an isolated `git archive` tree) **93/93 digests equal the committed `slides-native.tsv`: no re-bless**.
+- `node tools/check-changed.mjs` (clippy native and wasm32, all targets and features, ban scripts) clean; `cargo fmt --check`
+  clean; the fuzz crate builds (`--features fallback`).

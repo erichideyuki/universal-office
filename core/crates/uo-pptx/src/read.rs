@@ -234,24 +234,24 @@ impl PhShapeProps {
     fn of(s: &Shape) -> PhShapeProps {
         let e = s.extras.as_deref();
         PhShapeProps {
-            shadow: e.and_then(|e| e.shadow.clone()),
+            shadow: e.and_then(|e| e.fx().shadow.clone()),
             fill: s.fill.clone(),
-            fill_alpha: s.fill_alpha,
-            fill_image: s.fill_image.clone(),
-            fill_tile: s.fill_tile,
-            use_bg_fill: s.use_bg_fill,
+            fill_alpha: s.paint().fill_alpha,
+            fill_image: s.paint().fill_image.clone(),
+            fill_tile: s.paint().fill_tile,
+            use_bg_fill: s.paint().use_bg_fill,
             line_color: s.line_color.clone(),
             line_none: s.line_none,
             line_width: s.line_width,
-            line_dash: s.line_dash.clone(),
+            line_dash: s.x().line_dash.clone(),
             geom: s.geom.clone(),
-            adj: s.adj.clone(),
-            adj_names: s.adj_names.clone(),
+            adj: s.x().adj.clone(),
+            adj_names: s.x().adj_names.clone(),
             cust_geom: s.cust_geom.clone(),
-            glow: e.and_then(|e| e.glow.clone()),
-            soft_edge: e.and_then(|e| e.soft_edge),
-            reflection: e.and_then(|e| e.reflection),
-            inner_shadow: e.and_then(|e| e.inner_shadow.clone()),
+            glow: e.and_then(|e| e.fx().glow.clone()),
+            soft_edge: e.and_then(|e| e.fx().soft_edge),
+            reflection: e.and_then(|e| e.fx().reflection),
+            inner_shadow: e.and_then(|e| e.fx().inner_shadow.clone()),
         }
     }
 
@@ -474,24 +474,24 @@ pub fn read_slide_with(src: &dyn PartSource, slide_path: &str, limits: Limits, t
             .or_else(|| sp_map.get(&ph_key(sh.ph_type.as_deref(), None)))
             .or_else(|| sp_map.get(&format!("idx:{}", sh.ph_idx.as_deref().unwrap_or(""))));
         let Some(inh) = inh else { continue };
-        if sh.extras.as_ref().is_none_or(|e| e.shadow.is_none()) && inh.shadow.is_some() {
-            sh.extras_mut().shadow = inh.shadow.clone();
+        if sh.extras.as_ref().is_none_or(|e| e.fx().shadow.is_none()) && inh.shadow.is_some() {
+            sh.extras_mut().fx_mut().shadow = inh.shadow.clone();
         }
-        if sh.fill.is_none() && sh.fill_image.is_none() && sh.grp_fill.is_none() && sh.use_bg_fill.is_none() {
+        if sh.fill.is_none() && sh.paint().fill_image.is_none() && sh.grp_fill.is_none() && sh.paint().use_bg_fill.is_none() {
             if inh.fill.is_some() {
                 sh.fill = inh.fill.clone();
             }
-            if inh.fill_alpha.is_some() && sh.fill_alpha.is_none() {
-                sh.fill_alpha = inh.fill_alpha;
+            if inh.fill_alpha.is_some() && sh.paint().fill_alpha.is_none() {
+                sh.paint_mut().fill_alpha = inh.fill_alpha;
             }
             if inh.fill_image.is_some() {
-                sh.fill_image = inh.fill_image.clone();
+                sh.paint_mut().fill_image = inh.fill_image.clone();
                 if inh.fill_tile == Some(true) {
-                    sh.fill_tile = Some(true);
+                    sh.paint_mut().fill_tile = Some(true);
                 }
             }
             if inh.use_bg_fill == Some(true) {
-                sh.use_bg_fill = Some(true);
+                sh.paint_mut().use_bg_fill = Some(true);
             }
         }
         if sh.line_color.is_none() && sh.line_none != Some(true) {
@@ -504,32 +504,32 @@ pub fn read_slide_with(src: &dyn PartSource, slide_path: &str, limits: Limits, t
             if sh.line_width.is_none() && inh.line_width.is_some() {
                 sh.line_width = inh.line_width;
             }
-            if sh.line_dash.is_none() && inh.line_dash.is_some() {
-                sh.line_dash = inh.line_dash.clone();
+            if sh.x().line_dash.is_none() && inh.line_dash.is_some() {
+                sh.x_mut().line_dash = inh.line_dash.clone();
             }
         }
         if sh.geom.is_none() && sh.cust_geom.is_none() && inh.geom.as_deref().is_some_and(|g| !g.is_empty()) {
             sh.geom = inh.geom.clone();
             if inh.adj.is_some() {
-                sh.adj = inh.adj.clone();
+                sh.x_mut().adj = inh.adj.clone();
                 if inh.adj_names.is_some() {
-                    sh.adj_names = inh.adj_names.clone();
+                    sh.x_mut().adj_names = inh.adj_names.clone();
                 }
             }
         } else if sh.geom.is_none() && sh.cust_geom.is_none() && inh.cust_geom.is_some() {
             sh.cust_geom = inh.cust_geom.clone();
         }
-        if sh.extras.as_ref().is_none_or(|e| e.glow.is_none()) && inh.glow.is_some() {
-            sh.extras_mut().glow = inh.glow.clone();
+        if sh.extras.as_ref().is_none_or(|e| e.fx().glow.is_none()) && inh.glow.is_some() {
+            sh.extras_mut().fx_mut().glow = inh.glow.clone();
         }
-        if sh.extras.as_ref().is_none_or(|e| e.soft_edge.is_none()) && inh.soft_edge.is_some() {
-            sh.extras_mut().soft_edge = inh.soft_edge;
+        if sh.extras.as_ref().is_none_or(|e| e.fx().soft_edge.is_none()) && inh.soft_edge.is_some() {
+            sh.extras_mut().fx_mut().soft_edge = inh.soft_edge;
         }
-        if sh.extras.as_ref().is_none_or(|e| e.reflection.is_none()) && inh.reflection.is_some() {
-            sh.extras_mut().reflection = inh.reflection;
+        if sh.extras.as_ref().is_none_or(|e| e.fx().reflection.is_none()) && inh.reflection.is_some() {
+            sh.extras_mut().fx_mut().reflection = inh.reflection;
         }
-        if sh.extras.as_ref().is_none_or(|e| e.inner_shadow.is_none()) && inh.inner_shadow.is_some() {
-            sh.extras_mut().inner_shadow = inh.inner_shadow.clone();
+        if sh.extras.as_ref().is_none_or(|e| e.fx().inner_shadow.is_none()) && inh.inner_shadow.is_some() {
+            sh.extras_mut().fx_mut().inner_shadow = inh.inner_shadow.clone();
         }
     }
 
@@ -553,11 +553,11 @@ pub fn read_slide_with(src: &dyn PartSource, slide_path: &str, limits: Limits, t
         if tb.wrap.is_none() && inh.wrap.is_some() {
             tb.wrap = inh.wrap.clone();
         }
-        if tb.spc_first_last_para.is_none() && inh.spc_first_last_para.is_some() {
-            tb.spc_first_last_para = inh.spc_first_last_para;
+        if tb.x().spc_first_last_para.is_none() && inh.spc_first_last_para.is_some() {
+            tb.x_mut().spc_first_last_para = inh.spc_first_last_para;
         }
-        if tb.vert.is_none() && inh.vert.is_some() {
-            tb.vert = inh.vert.clone();
+        if tb.x().vert.is_none() && inh.vert.is_some() {
+            tb.x_mut().vert = inh.vert.clone();
         }
         if tb.ins_l.is_none() && inh.ins_l.is_some() {
             tb.ins_l = inh.ins_l;
@@ -571,20 +571,20 @@ pub fn read_slide_with(src: &dyn PartSource, slide_path: &str, limits: Limits, t
         if tb.ins_b.is_none() && inh.ins_b.is_some() {
             tb.ins_b = inh.ins_b;
         }
-        if tb.num_col.is_none() && inh.num_col.is_some() {
-            tb.num_col = inh.num_col;
+        if tb.x().num_col.is_none() && inh.num_col.is_some() {
+            tb.x_mut().num_col = inh.num_col;
         }
-        if tb.spc_col.is_none() && inh.spc_col.is_some() {
-            tb.spc_col = inh.spc_col;
+        if tb.x().spc_col.is_none() && inh.spc_col.is_some() {
+            tb.x_mut().spc_col = inh.spc_col;
         }
         if tb.autofit.is_none() && inh.autofit.is_some() {
             tb.autofit = inh.autofit;
         }
-        if tb.font_scale.is_none() && inh.font_scale.is_some() && tb.autofit == Some(Autofit::Norm) {
-            tb.font_scale = inh.font_scale;
+        if tb.x().font_scale.is_none() && inh.font_scale.is_some() && tb.autofit == Some(Autofit::Norm) {
+            tb.x_mut().font_scale = inh.font_scale;
         }
-        if tb.ln_spc_reduction.is_none() && inh.ln_spc_reduction.is_some() {
-            tb.ln_spc_reduction = inh.ln_spc_reduction;
+        if tb.x().ln_spc_reduction.is_none() && inh.ln_spc_reduction.is_some() {
+            tb.x_mut().ln_spc_reduction = inh.ln_spc_reduction;
         }
     }
 
@@ -634,12 +634,12 @@ pub fn read_slide_with(src: &dyn PartSource, slide_path: &str, limits: Limits, t
                 let Some(tb) = cell.tx_body.as_deref_mut() else { continue };
                 let mut overlay = TextStyleLevel::default();
                 if tx_color.is_some() {
-                    overlay.color = tx_color;
+                    overlay.r_mut().color = tx_color;
                 }
                 if tx_bold == Some(true) {
-                    overlay.bold = Some(true);
+                    overlay.r_mut().bold = Some(true);
                 }
-                if overlay.color.is_some() || overlay.bold.is_some() {
+                if overlay.r().color.is_some() || overlay.r().bold.is_some() {
                     let ov: Box<StyleLevels> = Box::new(core::array::from_fn(|_| overlay.clone()));
                     let levels = merge_style_levels(&[&base, &ov]);
                     apply_text_styles(tb, &levels, &theme);
@@ -712,15 +712,15 @@ pub fn read_slide_with(src: &dyn PartSource, slide_path: &str, limits: Limits, t
     }
     // shapes with useBgFill (also those inherited from master/layout) get the resolved background
     for sh in &mut shapes {
-        if sh.use_bg_fill != Some(true) {
+        if sh.paint().use_bg_fill != Some(true) {
             continue;
         }
         if let Some(b) = &slide.bg {
             sh.fill = Some(Box::new(b.clone()));
         } else if let Some(img) = &slide.bg_image {
-            sh.fill_image = Some(Box::new(img.clone()));
+            sh.paint_mut().fill_image = Some(Box::new(img.clone()));
             if slide.bg_tile == Some(true) {
-                sh.fill_tile = Some(true);
+                sh.paint_mut().fill_tile = Some(true);
             }
         } else {
             sh.fill = Some(Box::new(solid(CssColor::new("#FFFFFF"))));
@@ -761,10 +761,12 @@ pub fn read_slide_with(src: &dyn PartSource, slide_path: &str, limits: Limits, t
                 bt.trim_start_ms = Some(st);
             }
         }
+        tm.shrink_to_fit();
         slide.timing = Some(Arc::new(tm));
     }
     slide.shapes = shapes;
-    slide.theme = Some(Arc::new(theme));
+    slide.theme = Some(src.share_theme(theme));
+    slide.shrink_to_fit();
     Ok(slide)
 }
 
@@ -1090,7 +1092,7 @@ fn parse_timing(timing: Element<'_>) -> Vec<SlideAnimEntry> {
 /// the oracle). Input of `parseSlideTiming` (frontier B6).
 pub fn has_background(shapes: &[Shape], spid: &str) -> bool {
     let Some(sh) = shapes.iter().find(|s| s.inherited != Some(true) && &*s.id == spid) else { return false };
-    sh.fill_image.is_some()
+    sh.paint().fill_image.is_some()
         || sh.fill.as_ref().is_some_and(|f| f.kind != FillKind::None)
         || (sh.line_color.as_ref().is_some_and(|c| !c.as_str().is_empty()) && sh.line_none != Some(true))
 }

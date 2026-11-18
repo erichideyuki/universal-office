@@ -4,6 +4,7 @@
 //   [UO_TS_ROOT=<frozen checkout: tools only, default the 0.9.2 reference>] [UO_CHROMIUM=<chrome-headless-shell.exe>]
 //   [UO_WASM_PATH=<uo-slides.wasm: the count,slides build>] [UO_PPT_WASM_PATH=<uo-slides-ppt.wasm>]
 //   [UO_SS_DECKS=<n of b1a decks, default 40>] [UO_SS_C1D=<n of c1d chart decks, default 20>] [UO_SS_B6A=<n of b6a animated decks, default 40>]
+//   [UO_SS_B5B=<n of b5b metafile decks, default 40>] [UO_SS_ONLY=<regex over the deck paths: a focused run>] [UO_SS_DEBUG=1: PNGs of differing slides]
 //   [UO_SS_SOAK=200] node crates/uo-wasm/tests/browser/slides_switch.mjs [--mode all|parity|memory|faults|phase0|anim|opencost]
 //
 // The page is the real thing: the viewer's `src/index.ts` and the Rust engine's JS bundled by the frozen esbuild (splitting, the alias
@@ -109,12 +110,14 @@ const c1d = existsSync(c1dDir) ? readdirSync(c1dDir).filter((f) => f.endsWith('.
 const NB6A = Number(process.env.UO_SS_B6A ?? 40);
 const b6aDir = join(core, 'crates/uo-pptx/tests/captures/decks/b6a');
 const b6a = existsSync(b6aDir) ? readdirSync(b6aDir).filter((f) => f.endsWith('.pptx')).sort().slice(0, NB6A).map((f) => join(b6aDir, f)) : [];
-// wave 4: the generated metafile decks (b5b): EMF+ pictures with compressed bitmaps go through the `MetaDecode` prepare phase
-// (off by default: 23 of their 682 slides still differ inside the metafile rasters; record uo-bindings.md "Wave 4")
-const NB5B = Number(process.env.UO_SS_B5B ?? 0);
+// wave 4: the generated metafile decks (b5b: EMF, EMF+, WMF, PICT, TIFF pictures replayed from Rust recipes); EMF+ pictures with
+// compressed bitmaps go through the `MetaDecode` prepare phase, started when the deck opens (record uo-bindings.md "Wave 4b")
+const NB5B = Number(process.env.UO_SS_B5B ?? 40);
 const b5bDir = join(core, 'crates/uo-pptx/tests/captures/decks/b5b');
 const b5b = existsSync(b5bDir) ? readdirSync(b5bDir).filter((f) => f.endsWith('.pptx')).sort().slice(0, NB5B).map((f) => join(b5bDir, f)) : [];
-const decks = [...tracked.map((p) => join(repo, p)), ...b1a, ...c1d, ...b5b, ...(MODE === 'all' || MODE === 'anim' ? b6a : [])];
+// UO_SS_ONLY=<regex>: keep only the decks whose path matches (a focused run, e.g. `/b5b/`)
+const only = process.env.UO_SS_ONLY ? new RegExp(process.env.UO_SS_ONLY) : null;
+const decks = [...tracked.map((p) => join(repo, p)), ...b1a, ...c1d, ...b5b, ...(MODE === 'all' || MODE === 'anim' ? b6a : [])].filter((p) => !only || only.test(fwd(p)));
 const deckByName = new Map(decks.map((p, i) => [`k${i}${extname(p)}`, p]));
 const FONT_DIRS = [join(repo, 'shared/fonts/files'), join(repo, 'site/assets/fonts')];
 const requests = [];
@@ -215,7 +218,7 @@ const driverFn = () => {
       const eng = rs.rust;
       if (eng && typeof eng.paint === 'function') {
         const orig = eng.paint.bind(eng);
-        eng.paint = (ctx, i, ...rest) => { const x = orig(ctx, i, ...rest); r.painted[x.status === 0 ? 0 : 1]++; return x; };
+        eng.paint = (ctx, i, ...rest) => { const x = orig(ctx, i, ...rest); r.painted[x.status === 0 ? 0 : 1]++; if (x.status !== 0) (r.statuses ??= []).push([i, x.status]); return x; };
       }
       r.errors = errs;
       r.slides = ts.getSlideCount();
@@ -227,9 +230,9 @@ const driverFn = () => {
         const d = diff(a, b);
         r.pixels += a.length / 4;
         if (d !== 0) r.slideDiff.push({ i, d, chart: hasChart });
-        if (d !== 0 && window.__ssDebug && !r.png) {
+        if (d !== 0 && window.__ssDebug) {
           const url = (el) => { const cv = document.createElement('canvas'); el.renderSlideToCanvas(i, cv, 1280); return cv.toDataURL(); };
-          r.png = [url(ts), url(rs)];
+          (r.png ??= []).push([i, url(ts), url(rs)]);
         }
         if (i < 6) {
           const ta = thumb(ts, i), tb = thumb(rs, i);
@@ -364,7 +367,10 @@ if (MODE === 'all' || MODE === 'parity') {
     if (k % BATCH === 0) { await openPage(); await install(); }
     if (process.env.UO_SS_DEBUG) await page.evaluate(() => { window.__ssDebug = true; });
     const r = await page.evaluate((n) => window.__d.compare(n), names[k]);
-    if (r.png) { r.png.forEach((u, j) => writeFileSync(join(outDir, `parity-diff-${k}-${j ? 'rust' : 'ts'}.png`), Buffer.from(u.split(',')[1], 'base64'))); delete r.png; }
+    if (r.png) {
+      for (const [i, ...urls] of r.png) urls.forEach((u, j) => writeFileSync(join(outDir, `parity-diff-${k}-s${i}-${j ? 'rust' : 'ts'}.png`), Buffer.from(u.split(',')[1], 'base64')));
+      delete r.png;
+    }
     totals.decks++;
     if (r.engine === 'rust') totals.rust++;
     totals.slides += r.slides;
@@ -383,7 +389,7 @@ if (MODE === 'all' || MODE === 'parity') {
     if (r.tsFree) totals.tsFree++;
     totals.tsLoads += r.tsLoads;
     const nc = r.slideDiff.filter((s) => !s.chart);
-    if (r.slideDiff.length || r.errors.length || r.engine !== 'rust' || r.mainDiff || r.thumbDiff || r.notesDiff || r.a11yDiff || r.linksDiff || !r.tsFree || r.tsLoads) bad.push({ deck: relative(deckByName.get(r.name)), engine: r.engine, errors: r.errors, diffs: r.slideDiff.slice(0, 4), main: r.mainDiff, thumb: r.thumbDiff, notes: r.notesDiff, a11y: r.a11yDiff, links: r.linksDiff, tsFree: r.tsFree, tsLoads: r.tsLoads });
+    if (r.slideDiff.length || r.errors.length || r.engine !== 'rust' || r.mainDiff || r.thumbDiff || r.notesDiff || r.a11yDiff || r.linksDiff || !r.tsFree || r.tsLoads) bad.push({ deck: relative(deckByName.get(r.name)), engine: r.engine, errors: r.errors, diffs: process.env.UO_SS_ONLY ? r.slideDiff : r.slideDiff.slice(0, 4), statuses: r.statuses, main: r.mainDiff, thumb: r.thumbDiff, notes: r.notesDiff, a11y: r.a11yDiff, links: r.linksDiff, tsFree: r.tsFree, tsLoads: r.tsLoads });
   }
   console.log(`parity: ${totals.decks} decks (${totals.rust} opened in the Rust engine), ${totals.slides} slides, ${totals.equalSlides} equal / ${totals.diffSlides} different (${totals.chartDiffs} of them with a chart frame, ${totals.nonChartDiffs} without; ${totals.chartSlides} slides have charts; the Rust list painted ${totals.rustPaints} slide paints, ${totals.leftToTs} were left to the TS painter), ${totals.pixels} pixels compared, tolerance 0`);
   console.log(`        main canvas: ${totals.mainChecked} compared, ${totals.mainDiff} different; thumbnails: ${totals.thumbDiff} different; notes: ${totals.notesDiff} different; a11y text: ${totals.a11yChecked} slides, ${totals.a11yDiff} different; errors ${totals.errors}; ${((Date.now() - t0) / 1000).toFixed(0)} s`);

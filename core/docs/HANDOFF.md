@@ -1,4 +1,4 @@
-# Rust port — handoff (state of 2026-11-17; newest update: "Slides wave 4a")
+# Rust port — handoff (state of 2026-11-18; newest update: "Slides wave 4b")
 
 Entry point for the next session that continues the Rust migration (0.10). Read this, then
 `.claude/skills/rust-port/SKILL.md` (the workflow: hybrid mode, models per role, memory gate) and the module records
@@ -163,6 +163,37 @@ of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebui
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
 
+## Update 2026-11-18 (wave 4b) — model memory compaction, PDF gradient text + SVG, the 23 b5b metafile diffs closed
+
+- **Model memory** (Opus): rare fields boxed behind accessors (split by presence over the corpus's 15,171 shapes),
+  spare capacity released after each read (`SlideModel`/`TimingModel::shrink_to_fit`), equal themes shared through a
+  `ThemeTable` on `Deck` (FIFO, 32, emptied by `clear_caches`). Only storage changed — no value, no `f64`→`f32`, no
+  float reordering. Retained `SlideModel` b1a/0008 slide 0: 156,307 → **64,224 B = 0.447× TS** (target 0.5×); `Shape`
+  408 → 224 B (budget 256); every group ≤ 0.5× TS (all groups 100.2 MB → 40.3 MB vs 112.2 MB TS). TS side scripted as
+  `uo-pptx/js/measure-memory.mjs` (the B1b method also counted the ~2 KB `DeckSource` read set; now a fresh source per
+  read). Model/B2/B3/B6/draw-ops/B5b/B4b/B8/links/PDF parity unchanged; Slides PDF digests unchanged by it. New M3
+  asserts (`m3_retained_slide_model_by_group`, `m3_model_type_sizes_are_within_budget`). Record: `uo-pptx.md` "Model
+  memory". Next candidates (not needed): `TableCell` 288 B, string interning.
+- **b5b metafile diffs closed** (Opus): the 23 slides were browser-side, not recipe bugs — 20 from replaying into an
+  `OffscreenCanvas` (Chromium antialiases differently from the TS's `<canvas>`; `elementCanvas` is now the default),
+  3 from EMF+ compressed bitmaps decoded only on first paint (now `uo_slides_meta_bitmaps` + `prepareSpecial` at open,
+  as the TS). b5b **81/81** slides pixel-equal (40 decks), now in the default CI set: 253 decks, 1,040/1,040 slides,
+  998,400 link points, 7,221/7,221 animated frames, 0 TS-model loads. Open: B5b-G1 (colour effects over a metafile;
+  0 of 313 corpus metafiles) needs an `Fx` derived-recipe op + `uo-pptx/src/pdf/recipe.rs`.
+- **PDF fixes** (Opus), oracle items 1 and 10: (1) gradient text — pdfium applies a text clip at `ET` only if the
+  render mode is still a clip mode; the painter now keeps `7 Tr` until `ET` (inside `fill_spec`'s `q…Q`), and a
+  gradient run with no glyphs paints nothing (empty clip = page flood in pdfium); broken fills over 627 oracle PDFs
+  2,940 → 0. (10) SVG pictures with no PNG beside them drawn as vector forms (`uo-pptx/src/pdf/svg.rs`, the static
+  subset of Office icons; gaps counted `svg:*`, `PdfReport::svgs`). PowerPoint agreement, all 736 pages: mean 0.9445 →
+  **0.9616**; samples 0.9947 → 0.9964 (TS×PowerPoint 0.9905); generated 0.7207 → 0.8070 (TS 0.8057); PDF-only differing
+  px 9.78 M → 0.86 M. Write PDF bytes unchanged (`uo-pdf` untouched). Links (row 9) re-measured: PowerPoint writes 4,043
+  rects on 82 pages, 2,741 wholly off the page; Rust 181 on-page — PowerPoint's per-line rule needs measuring before
+  the join changes. Record: `uo-pdf.md` "PDF fixes (items 1 and 10, 2026-11-18)".
+- Orchestrator: `slides-native.tsv` re-blessed (the PDF fixes change Slides PDF bytes).
+- **Next**: wave 5 = PowerPoint rules measured in PowerPoint and switched like Write's `ts_*` (sysClr, first-line
+  baseline, fallback fonts, date locale, hidden slides in the PDF, warp geometry, chart insets, `.ppt` charts, link
+  rectangles) + B5b-G1; then the M4 gate (real Safari = maintainer).
+
 ## Update 2026-11-17 (wave 4a) — Slides editor on Rust, viewer without the TS model, PDF links, PowerPoint oracle
 
 - **Editor routed** (Opus): `<universal-slides engine="rust">` runs every edit, undo/redo and `savePptx()` (fonts
@@ -182,7 +213,7 @@ the gate itself.
   `loadPptx` 831 → 532 ms. TS model still built only for a `loadPptx` before the module is ready, any `.ppt`, after a
   trap, or back on `ts`. `play()` in rust mode returns per-slide times only (CHANGELOG). Found + fixed a B5b gap: no
   `recipe` hook in the browser engine (every EMF/WMF/PICT/TIFF dropped in rust mode); now b5b 659/682 slides
-  pixel-equal, **23 differ inside metafile rasters (open)**. MetaDecode prepare phase via `createImageBitmap` +
+  pixel-equal, **23 differ inside metafile rasters (closed in wave 4b)**. MetaDecode prepare phase via `createImageBitmap` +
   `uo_slides_answer` (a successful decode is not covered by the corpus). Viewer wasm 1,266,010 B gzip (79%).
 - **PDF links**: `uo_pptx::links` (run boxes bit-equal to the TS `hitTestHyperlink`, 945/945), `Emission.links`;
   538 decks: 994 links placed, `hyperlink:unplaced` 690 → 0 (2,089 off-slide fragments counted as off-page).

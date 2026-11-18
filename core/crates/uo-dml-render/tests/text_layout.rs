@@ -74,7 +74,7 @@ fn format_auto_num_schemes() {
 #[test]
 fn two_phase_protocol_asks_advances_first_then_the_rest() {
     let mut p = para(vec![run("Hello wonderful world of text layout")]);
-    p.runs[0].extras = Some(Box::new(RunExtras { kern: Some(10.0), ..RunExtras::default() }));
+    p.runs[0].kern = Some(10.0);
     let tb = body(vec![p, para(vec![run("مرحبا بالعالم")])]);
     let o = LayoutTextOptions::default();
     let mut t = MeasureTable::default();
@@ -111,15 +111,15 @@ fn bullets_numbering_tabs_and_columns() {
         let mut p = para(vec![run(&format!("item {i}\tvalue 1.25"))]);
         p.level = Some(lvl);
         p.bullet = Some(true);
-        p.bullet_auto_num = Some("arabicPeriod".into());
-        p.tabs = Some(vec![TabStop { pos: 1_000_000.0, algn: "dec".into() }].into());
+        p.bu_mut().bullet_auto_num = Some("arabicPeriod".into());
+        p.x_mut().tabs = Some(vec![TabStop { pos: 1_000_000.0, algn: "dec".into() }].into());
         p.mar_l = Some(342_900.0);
         p.indent = Some(-342_900.0);
         ps.push(p);
     }
     let mut tb = body(ps);
-    tb.num_col = Some(2.0);
-    tb.spc_col = Some(100_000.0);
+    tb.x_mut().num_col = Some(2.0);
+    tb.x_mut().spc_col = Some(100_000.0);
     let o = LayoutTextOptions::default();
     let mut t = MeasureTable::default();
     settle(&tb, 4_000_000.0, 600_000.0, Measurer::Ppt, &mut t, &o);
@@ -190,7 +190,7 @@ fn face() -> FaceKey {
 fn m1_layout_and_table_return_every_byte() {
     let mut p = para(vec![run("Hello wonderful\tworld 1.5"), run("これは日本語。"), run("\u{1F468}\u{200D}\u{1F469}")]);
     p.bullet = Some(true);
-    p.bullet_auto_num = Some("romanUcPeriod".into());
+    p.bu_mut().bullet_auto_num = Some("romanUcPeriod".into());
     let tb = body(vec![p, para(vec![]), para(vec![run("a\u{F07F}")])]);
     let tb_ok = body(vec![tb.paragraphs[0].clone(), tb.paragraphs[1].clone()]);
     let o = LayoutTextOptions::default();
@@ -312,24 +312,34 @@ const POOL: [&str; 16] = [
 ];
 
 fn random_body(r: &mut Rng) -> TextBody {
-    let mut tb = TextBody {
-        wrap: r.chance(20).then(|| "none".into()),
-        font_scale: r.opt(1.0),
-        ln_spc_reduction: r.opt(0.3),
-        num_col: r.opt(3.0),
-        spc_col: r.opt(1e5),
-        ins_l: r.opt(1e5),
-        anchor: r.chance(50).then(|| ["t", "ctr", "b"][r.below(3)].into()),
-        spc_first_last_para: r.chance(10).then_some(true),
-        ..TextBody::default()
-    };
+    // the same draws in the same order as the flat literal before the compaction
+    let wrap = r.chance(20).then(|| "none".into());
+    let font_scale = r.opt(1.0);
+    let ln_spc_reduction = r.opt(0.3);
+    let num_col = r.opt(3.0);
+    let spc_col = r.opt(1e5);
+    let ins_l = r.opt(1e5);
+    let anchor = r.chance(50).then(|| ["t", "ctr", "b"][r.below(3)].into());
+    let spc_first_last_para = r.chance(10).then_some(true);
+    let mut tb = TextBody { wrap, ins_l, anchor, ..TextBody::default() };
+    if font_scale.is_some() || ln_spc_reduction.is_some() || num_col.is_some() || spc_col.is_some() || spc_first_last_para.is_some() {
+        let x = tb.x_mut();
+        x.font_scale = font_scale;
+        x.ln_spc_reduction = ln_spc_reduction;
+        x.num_col = num_col;
+        x.spc_col = spc_col;
+        x.spc_first_last_para = spc_first_last_para;
+    }
     for _ in 0..r.below(5) {
+        // the same draws in the same order as the flat literal before the compaction
+        let level = r.chance(50).then(|| f64::from(r.next() % 14) - 3.0);
+        let bullet = r.chance(50).then_some(true);
+        let bullet_auto_num = r.chance(40).then(|| ["arabicPeriod", "alphaUcParenR", "romanLcPeriod"][r.below(3)].into());
+        let bullet_font = r.chance(20).then(|| "Wingdings".into());
+        let bullet_size_pct = r.opt(2.0);
         let mut p = Paragraph {
-            level: r.chance(50).then(|| f64::from(r.next() % 14) - 3.0),
-            bullet: r.chance(50).then_some(true),
-            bullet_auto_num: r.chance(40).then(|| ["arabicPeriod", "alphaUcParenR", "romanLcPeriod"][r.below(3)].into()),
-            bullet_font: r.chance(20).then(|| "Wingdings".into()),
-            bullet_size_pct: r.opt(2.0),
+            level,
+            bullet,
             align: r.chance(60).then(|| ["l", "ctr", "r", "just", "dist"][r.below(5)].into()),
             mar_l: r.opt(1e6),
             indent: r.opt(-4e5),
@@ -338,11 +348,20 @@ fn random_body(r: &mut Rng) -> TextBody {
             space_before_pct: r.opt(1.0),
             space_after_pt: r.opt(20.0),
             def_tab_sz: r.opt(9e5),
-            ea_ln_brk: r.chance(20).then(|| r.chance(50)),
             ..Paragraph::default()
         };
+        let ea_ln_brk = r.chance(20).then(|| r.chance(50));
+        if bullet_auto_num.is_some() || bullet_font.is_some() || bullet_size_pct.is_some() {
+            let b = p.bu_mut();
+            b.bullet_auto_num = bullet_auto_num;
+            b.bullet_font = bullet_font;
+            b.bullet_size_pct = bullet_size_pct;
+        }
+        if ea_ln_brk.is_some() {
+            p.x_mut().ea_ln_brk = ea_ln_brk;
+        }
         if r.chance(30) {
-            p.tabs =
+            p.x_mut().tabs =
                 Some((0..r.below(4)).map(|_| TabStop { pos: r.num(1e6), algn: ["l", "r", "ctr", "dec"][r.below(4)].into() }).collect());
         }
         for _ in 0..r.below(5) {
@@ -350,15 +369,13 @@ fn random_body(r: &mut Rng) -> TextBody {
             for _ in 0..1 + r.below(6) {
                 text.push_str(POOL[r.below(POOL.len())]);
             }
+            let mut kern = None;
             let extras = r.chance(40).then(|| {
-                Box::new(RunExtras {
-                    baseline: r.opt(0.5),
-                    cap: r.chance(30).then(|| ["all", "small"][r.below(2)].into()),
-                    spc: r.opt(10.0),
-                    kern: r.opt(20.0),
-                    link_color: None,
-                    ..RunExtras::default()
-                })
+                let baseline = r.opt(0.5);
+                let cap = r.chance(30).then(|| ["all", "small"][r.below(2)].into());
+                let spc = r.opt(10.0);
+                kern = r.opt(20.0);
+                Box::new(RunExtras { baseline, cap, spc, link_color: None, ..RunExtras::default() })
             });
             p.runs.push(Run {
                 text: text.into(),
@@ -366,6 +383,7 @@ fn random_body(r: &mut Rng) -> TextBody {
                 bold: r.chance(30).then(|| r.chance(50)),
                 lang: r.chance(30).then(|| ["ja-JP", "zh", "en-US"][r.below(3)].into()),
                 font: r.chance(30).then(|| ["Liberation Serif", "Symbol", "Wingdings"][r.below(3)].into()),
+                kern,
                 extras,
                 ..Run::default()
             });

@@ -161,25 +161,25 @@ fn parse_ctn(tag: &str, c_tn: Element<'_>) -> TimeNode {
     node.dur = num(g("dur"));
     if let Some(rc) = num(g("repeatCount")) {
         // absurd counts (FLT_MAX from binary files) are also "indefinite"
-        node.repeat = Some(if rc == f64::INFINITY || rc >= 1e12 { f64::INFINITY } else { rc / 1000.0 });
+        node.ctn_x_mut().repeat = Some(if rc == f64::INFINITY || rc >= 1e12 { f64::INFINITY } else { rc / 1000.0 });
     }
     let ends: Vec<Box<str>> =
         parse_conds(c_tn.first_child("p:endCondLst")).into_iter().filter_map(|c| c.evt).filter(|e| !e.is_empty()).collect();
     if !ends.is_empty() {
-        node.end_evts = Some(ends);
+        node.ctn_x_mut().end_evts = Some(ends);
     }
     if flag(g("autoRev")) {
-        node.auto_rev = Some(true);
+        node.ctn_x_mut().auto_rev = Some(true);
     }
     if let Some(a) = num(g("accel"))
         && uo_jsnum::conv::truthy(a)
     {
-        node.accel = Some(a / 100_000.0);
+        node.ctn_x_mut().accel = Some(a / 100_000.0);
     }
     if let Some(d) = num(g("decel"))
         && uo_jsnum::conv::truthy(d)
     {
-        node.decel = Some(d / 100_000.0);
+        node.ctn_x_mut().decel = Some(d / 100_000.0);
     }
     node.fill = nonempty("fill");
     node.node_type = nonempty("nodeType");
@@ -190,7 +190,7 @@ fn parse_ctn(tag: &str, c_tn: Element<'_>) -> TimeNode {
     if let Some(s) = num(g("spd"))
         && s > 0.0
     {
-        node.spd = Some(s / 100_000.0);
+        node.ctn_x_mut().spd = Some(s / 100_000.0);
     }
     if let Some(f) = nonempty("tmFilter") {
         let pts: Vec<(f64, f64)> = f
@@ -201,7 +201,7 @@ fn parse_ctn(tag: &str, c_tn: Element<'_>) -> TimeNode {
             })
             .collect();
         if pts.len() >= 2 {
-            node.tm_filter = Some(pts);
+            node.ctn_x_mut().tm_filter = Some(pts);
         }
     }
     if let Some(it) = c_tn.first_child("p:iterate") {
@@ -215,7 +215,7 @@ fn parse_ctn(tag: &str, c_tn: Element<'_>) -> TimeNode {
         if let Some(v) = abs.and_then(|p| p.attr("val")) {
             iter.abs_ms = Some(parse::parse_float(v));
         }
-        node.iterate = Some(iter);
+        node.ctn_x_mut().iterate = Some(iter);
     }
     node
 }
@@ -325,37 +325,39 @@ fn parse_leaf(el: Element<'_>, tag: &str, color: Option<ResolveColor<'_>>) -> Op
         let c_bhvr = el.first_child("p:cBhvr")?;
         let c_tn = c_bhvr.first_child("p:cTn")?;
         let mut node = parse_ctn(tag, c_tn);
-        node.target = parse_target(c_bhvr.first_child("p:tgtEl"));
+        node.bhvr_mut().target = parse_target(c_bhvr.first_child("p:tgtEl"));
         if let Some(names) = c_bhvr.first_child("p:attrNameLst") {
-            node.attr_names = Some(
+            node.bhvr_mut().attr_names = Some(
                 names.children_named("p:attrName").map(|n| n.children().filter_map(|c| c.as_text()).collect::<String>().into()).collect(),
             );
         }
-        node.additive = c_bhvr.attr("additive").filter(|s| !s.is_empty()).map(Into::into);
+        node.bhvr_mut().additive = c_bhvr.attr("additive").filter(|s| !s.is_empty()).map(Into::into);
         let nz = |k: &str| el.attr(k).filter(|s| !s.is_empty()).map(Box::<str>::from);
         match tag {
             "animEffect" => {
-                node.filter = nz("filter");
-                node.transition = nz("transition");
-                node.pr_lst = nz("prLst");
+                node.bhvr_mut().filter = nz("filter");
+                node.bhvr_mut().transition = nz("transition");
+                if let Some(p) = nz("prLst") {
+                    node.bhvr_x_mut().pr_lst = Some(p);
+                }
             }
             "set" => {
                 let (v, c) = read_val(el.first_child("p:to"), color);
                 match v {
-                    Some(ValKind::Str(s)) => node.set_to = Some(s),
-                    Some(ValKind::Num(n)) => node.set_to = Some(to_js_string(n).into()),
+                    Some(ValKind::Str(s)) => node.bhvr_mut().set_to = Some(s),
+                    Some(ValKind::Num(n)) => node.bhvr_mut().set_to = Some(to_js_string(n).into()),
                     None => {}
                 }
                 if c.is_some() {
-                    node.to_color = c;
+                    node.bhvr_mut().to_color = c;
                 }
             }
             "anim" => {
-                node.calcmode = nz("calcmode");
-                node.value_type = nz("valueType");
-                node.from = el.attr("from").map(Into::into);
-                node.to = el.attr("to").map(Into::into);
-                node.by = el.attr("by").map(Into::into);
+                node.bhvr_mut().calcmode = nz("calcmode");
+                node.bhvr_mut().value_type = nz("valueType");
+                node.bhvr_mut().from = el.attr("from").map(Into::into);
+                node.bhvr_mut().to = el.attr("to").map(Into::into);
+                node.bhvr_mut().by = el.attr("by").map(Into::into);
                 if let Some(lst) = el.first_child("p:tavLst") {
                     let mut tav: Vec<Keyframe> = lst
                         .children_named("p:tav")
@@ -379,49 +381,49 @@ fn parse_leaf(el: Element<'_>, tag: &str, color: Option<ResolveColor<'_>>) -> Op
                             k.tm = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
                         }
                     }
-                    node.tav = Some(tav);
+                    node.bhvr_mut().tav = Some(tav);
                 }
             }
             "animScale" => {
-                node.by_xy = read_xy(el.first_child("p:by"), 100_000.0);
-                node.from_xy = read_xy(el.first_child("p:from"), 100_000.0);
-                node.to_xy = read_xy(el.first_child("p:to"), 100_000.0);
+                node.bhvr_x_mut().by_xy = read_xy(el.first_child("p:by"), 100_000.0);
+                node.bhvr_x_mut().from_xy = read_xy(el.first_child("p:from"), 100_000.0);
+                node.bhvr_x_mut().to_xy = read_xy(el.first_child("p:to"), 100_000.0);
             }
             "animRot" => {
-                node.rot_by = num(el.attr("by")).map(|v| v / 60000.0);
-                node.rot_from = num(el.attr("from")).map(|v| v / 60000.0);
-                node.rot_to = num(el.attr("to")).map(|v| v / 60000.0);
+                node.bhvr_x_mut().rot_by = num(el.attr("by")).map(|v| v / 60000.0);
+                node.bhvr_x_mut().rot_from = num(el.attr("from")).map(|v| v / 60000.0);
+                node.bhvr_x_mut().rot_to = num(el.attr("to")).map(|v| v / 60000.0);
             }
             "animMotion" => {
-                node.path = nz("path");
-                node.origin = nz("origin");
-                node.path_edit_mode = nz("pathEditMode");
-                node.r_ang = num(el.attr("rAng")).map(|v| v / 60000.0);
-                node.by_xy = read_xy(el.first_child("p:by"), 100_000.0);
-                node.from_xy = read_xy(el.first_child("p:from"), 100_000.0);
-                node.to_xy = read_xy(el.first_child("p:to"), 100_000.0);
+                node.bhvr_x_mut().path = nz("path");
+                node.bhvr_x_mut().origin = nz("origin");
+                node.bhvr_x_mut().path_edit_mode = nz("pathEditMode");
+                node.bhvr_x_mut().r_ang = num(el.attr("rAng")).map(|v| v / 60000.0);
+                node.bhvr_x_mut().by_xy = read_xy(el.first_child("p:by"), 100_000.0);
+                node.bhvr_x_mut().from_xy = read_xy(el.first_child("p:from"), 100_000.0);
+                node.bhvr_x_mut().to_xy = read_xy(el.first_child("p:to"), 100_000.0);
             }
             "cmd" => {
-                node.cmd = el.attr("cmd").map(Into::into);
-                node.cmd_type = nz("type");
+                node.bhvr_x_mut().cmd = el.attr("cmd").map(Into::into);
+                node.bhvr_x_mut().cmd_type = nz("type");
             }
             "animClr" => {
-                node.clr_spc = nz("clrSpc");
-                node.clr_dir = nz("dir");
+                node.bhvr_x_mut().clr_spc = nz("clrSpc");
+                node.bhvr_x_mut().clr_dir = nz("dir");
                 let to_el = color_child(el.first_child("p:to"));
                 let from_el = color_child(el.first_child("p:from"));
                 if let (Some(t), Some(f)) = (to_el, color)
                     && let Some(c) = f(t).filter(|c| !c.as_str().is_empty())
                 {
-                    node.to_color = Some(c);
+                    node.bhvr_mut().to_color = Some(c);
                 }
                 if let (Some(t), Some(f)) = (from_el, color)
                     && let Some(c) = f(t).filter(|c| !c.as_str().is_empty())
                 {
-                    node.from_color = Some(c);
+                    node.bhvr_x_mut().from_color = Some(c);
                 }
                 if let Some(hsl) = el.first_child("p:by").and_then(|b| b.first_child("p:hsl")) {
-                    node.by_hsl = Some((
+                    node.bhvr_x_mut().by_hsl = Some((
                         num(hsl.attr("h")).unwrap_or(0.0) / 60000.0,
                         num(hsl.attr("s")).unwrap_or(0.0) / 100_000.0,
                         num(hsl.attr("l")).unwrap_or(0.0) / 100_000.0,
@@ -436,7 +438,7 @@ fn parse_leaf(el: Element<'_>, tag: &str, color: Option<ResolveColor<'_>>) -> Op
         let media = el.first_child("p:cMediaNode")?;
         let c_tn = media.first_child("p:cTn")?;
         let mut node = parse_ctn(tag, c_tn);
-        node.target = parse_target(media.first_child("p:tgtEl"));
+        node.bhvr_mut().target = parse_target(media.first_child("p:tgtEl"));
         let mut info = MediaNodeOpts::default();
         if let Some(v) = media.attr("vol") {
             info.vol = Some(parse::parse_int(v, 10) / 100_000.0);
@@ -455,7 +457,7 @@ fn parse_leaf(el: Element<'_>, tag: &str, color: Option<ResolveColor<'_>>) -> Op
         {
             info.full_scrn = Some(flag(Some(v)));
         }
-        node.media = Some(info);
+        node.bhvr_x_mut().media = Some(info);
         return Some(node);
     }
     None
@@ -601,7 +603,7 @@ pub fn parse_slide_timing(sld: Element<'_>, inp: &TimingInputs<'_>, limits: &Lim
         }
         for id in &order {
             let n = arena.node(*id);
-            if let Some(it) = &n.iterate
+            if let Some(it) = &n.ctn_x().iterate
                 && (&*it.kind == "wd" || &*it.kind == "lt")
                 && let Some(t) = first_target(&arena, *id)
                 && whole_shape(t)
@@ -614,17 +616,17 @@ pub fn parse_slide_timing(sld: Element<'_>, inp: &TimingInputs<'_>, limits: &Lim
         for id in &order {
             let n = arena.node(*id);
             if (&*n.tag == "video" || &*n.tag == "audio")
-                && let Some(t) = &n.target
+                && let Some(t) = &n.bhvr().target
             {
                 media.push(SlideMediaInfo {
                     spid: t.spid.clone(),
                     kind: if &*n.tag == "video" { MediaKind::Video } else { MediaKind::Audio },
-                    vol: n.media.as_ref().and_then(|m| m.vol),
-                    mute: n.media.as_ref().and_then(|m| m.mute),
-                    show_when_stopped: n.media.as_ref().and_then(|m| m.show_when_stopped),
+                    vol: n.bhvr_x().media.as_ref().and_then(|m| m.vol),
+                    mute: n.bhvr_x().media.as_ref().and_then(|m| m.mute),
+                    show_when_stopped: n.bhvr_x().media.as_ref().and_then(|m| m.show_when_stopped),
                     rewind: (n.fill.as_deref() == Some("remove")).then_some(true),
-                    loop_: (n.repeat == Some(f64::INFINITY)).then_some(true),
-                    full_screen: n.media.as_ref().is_some_and(|m| m.full_scrn == Some(true)).then_some(true),
+                    loop_: (n.ctn_x().repeat == Some(f64::INFINITY)).then_some(true),
+                    full_screen: n.bhvr_x().media.as_ref().is_some_and(|m| m.full_scrn == Some(true)).then_some(true),
                 });
             }
         }

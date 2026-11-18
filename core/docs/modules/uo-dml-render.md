@@ -242,8 +242,12 @@ effects, OLE preview from VML, chart theme/images/format, SmartArt drawing, `rea
   lists (inherited decorations are read from the master/layout and cloned into each slide, the placeholder `spPr` merge copies
   images and custom geometry, the style cascade copies picture bullets into paragraphs): with arenas every crossing remaps
   indices and the cascade functions need `&mut arena` threaded through; with owned trees each is a `clone()`. Measured cost:
-  `Shape` 408 B, `Run` 104 B, `Paragraph` 368 B, `TextStyleLevel` 512 B, retained slide 0.95× the TS heap (`uo-pptx.md`, M3): the
-  0.5× target is open, with the compaction list there. DR3 (`size_of::<Shape>() ≤ 256`) is therefore NOT met (408); a test pins 416.
+  `Shape` 408 B, `Run` 104 B, `Paragraph` 368 B, `TextStyleLevel` 512 B, retained slide 0.95× the TS heap (`uo-pptx.md`, M3).
+  **Compacted in wave 4b (2026-11-18, `uo-pptx.md` "Model memory")**: owned trees kept, rare fields moved into boxed groups read
+  through accessors (`Shape::paint/fx/x/sf`, `Paragraph::bu/x`, `TextBody::x`, `RunExtras::fx`, `TextStyleLevel::p/b/r`), `kern`
+  inline in `Run`, `shrink_to_fit` after the read, one theme per distinct value through `PartSource::share_theme`: `Shape` 224 B
+  (DR3 met), `Run` 120 B, `Paragraph` 240 B, `TextStyleLevel` 24 B, retained slide 0.447× the TS heap (every corpus group ≤ 0.5×);
+  `tests/memory.rs` of uo-pptx pins the sizes and the ratios.
 - A2. `Shape.fill` is `Option<Box<Fill>>` (a `Fill` is ~150 B); rare payloads stay in the boxed `ShapeExtras`; `ChartRef.theme` is
   `Arc<Theme>`; `ImageRef` keeps `MediaId` (the host's media table: part name and `Arc` bytes) and the mime string.
 - A3. `Theme.styles` holds element ids into the theme part's parsed document (shared `Arc<Document>` of the parse cache), each list
@@ -555,11 +559,21 @@ Tools: `capture-meta.mjs` (TS, 5.5 s), `compare-meta.mjs` (Rust recipes replayed
 them), `diff-meta.mjs` (first difference of one file), `coverage-meta.mjs`. Not compared with the TS: an EMF+ compressed bitmap the shell decodes (Node has no
 `createImageBitmap`: the capture covers the not-decoded path, i.e. the GDI fallback of a dual metafile); `a_decoded_bitmap_is_drawn_from_its_blob` pins the Ready path.
 
+**Browser pixels (wave 4b, 2026-11-18).** Replayed in Chromium the recipes give the TS pixels only on a `<canvas>` ELEMENT, the canvas the TS
+viewer rasterized on (an `OffscreenCanvas` anti-aliases edges differently: 20 b5b slides differed by 1–1,738 px), so `paint-slides.ts` replays on
+an element canvas by default; and the compressed EMF+ bitmaps are decoded when the deck opens (`compressed_bitmaps` + the viewer's
+`prepareSpecial`, as the TS `warmImage` → `prepareSpecialImage`), not at the first paint of their slide. Chromium b5b: 81/81 slides (record
+`uo-bindings.md` "Wave 4b — the b5b metafile pixels").
+
 ### Decisions outside the source semantics (declared)
 
 - **B5b-1. A recipe, not a bitmap or a display sub-list** (the plan's B5b row and the B4 section said a `Bitmap`): the pixels are the shell's (see above). The B4 `MetafileRop`
   effect is unused. A metafile picture's colour effects (`a:duotone`, grayscale, `clrChange`, brightness): **not applied** — the list's `Derived` has a media base, and the picture is a bitmap
-  (gap B5b-G1; the TS applies `fxImage` to the canvas). `alpha` (`GlobalAlpha`) works.
+  (gap B5b-G1; the TS applies `fxImage` to the canvas). `alpha` (`GlobalAlpha`) works. Measured 2026-11-18: 0 of the 313 metafile/PICT/TIFF pictures
+  of the 698 committed and generated decks carry a colour effect, so no parity case exercises it (the real corpora were deleted). The way to close
+  it without a schema change: a derived recipe (header + one op `Fx { base bitmap, the TS fx }`) that the player answers with `fxImage` over the
+  painter's cached raster of the base (one raster per media stays, as the TS `fxCache` per canvas); the PDF recipe interpreter
+  (`uo-pptx/src/pdf/recipe.rs`, which drops a recipe with an unknown op) must learn the op in the same change.
 - **B5b-2. One raster per media**, the display of the first use (as the viewer's cache per part); a picture shape and a fill of the same part share it.
 - **B5b-3. Throws.** A `DataView` read past the end is `Throw`: the play stops, what was drawn stays, the `finally` restores run, as `rasterizeMetafile`'s `catch`. `push(...array)` of more
   than `SPREAD_LIMIT` = 120,000 elements throws (V8's stack limit, whose exact value depends on the depth: the TS fails at about that size; EMF `path.push(...cmds)`, polypolygon

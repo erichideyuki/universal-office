@@ -396,6 +396,20 @@ export class SlidesDocument {
     this.#decoding.set(key, job);
   }
 
+  /**
+   * Starts decoding the compressed EMF+ bitmaps of the metafile picture in `part` (the TS `warmImage` → `prepareSpecialImage`,
+   * run when the viewer opens the deck): a later paint finds them decoded instead of returning `PENDING`. A part that is no
+   * EMF+ picture has none.
+   */
+  prepareSpecial(part: string, host: SlidesPaintHost): void {
+    if (this.freed) return;
+    const blobs = call(this.#inst, () => this.#live().metaBitmaps(part));
+    for (const b of blobs) {
+      const k = bitmapKey(b);
+      if (!this.#decoded.has(k)) this.#decode(k, b, host);
+    }
+  }
+
   /** The answers to a request list, or null when a picture still decodes (the paint returns `PENDING`). */
   #answers(reqs: MeasureRequest[], host: SlidesPaintHost): Float64Array | null {
     let pending = false;

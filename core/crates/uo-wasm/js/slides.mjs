@@ -313,6 +313,15 @@ export function bindSlides(w) {
       const b = take(w.uo_slides_part(this.#ptr, p, n));
       return b.status === 0 ? b.data : null;
     }
+    /** the compressed bitmaps of the EMF+ picture in part `name` (what the TS `prepareSpecialImage` decodes); [] for any other part */
+    metaBitmaps(name) {
+      const [p, n] = arg(enc.encode(name));
+      const b = take(w.uo_slides_meta_bitmaps(this.#ptr, p, n));
+      if (b.status !== 0 || b.data.length < 4) return [];
+      const d = b.data, dv = new DataView(d.buffer, d.byteOffset, d.byteLength), out = [];
+      for (let i = 0, q = 4, m = dv.getUint32(0, true); i < m && q + 4 <= d.length; i++) { const k = dv.getUint32(q, true); out.push(d.slice(q + 4, q + 4 + k)); q += 4 + k; }
+      return out;
+    }
     /** `{ fontKerning, letterSpacing, segmenter, fontBoundingBox }` of the canvas (changing them empties the answers) */
     setCaps(c) {
       const bits = (c.fontKerning ? 1 : 0) | (c.letterSpacing ? 2 : 0) | (c.segmenter ? 4 : 0) | (c.fontBoundingBox ? 8 : 0);

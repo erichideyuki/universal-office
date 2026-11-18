@@ -4,8 +4,9 @@ causes, then the differing pixels (Rust system x PowerPoint) of the tagged pages
 usage: python -I pdf-oracle-classify.py <work dir> <tests/oracle_ppt dir>   -> <oracle dir>/results/classes.tsv (+ stdout summary)
 
 Detectors (a page may carry several):
-  gradient-text   the Rust page fills text with a gradient as a text clip (7 Tr ... ET) + `sh`: pdfium ignores the text clip and
-                  paints the whole clip region (the page) with the gradient
+  gradient-text   the Rust page fills text with a gradient as a text clip (7 Tr ... 0 Tr ET) + `sh`: pdfium adds a text clip at
+                  ET only when a clip mode is in force there, so with the reset it paints the whole clip region (the page) with
+                  the gradient (fixed 2026-11-17: the mode stays 7 until ET; pages of the fixed form are not tagged)
   sysclr          the deck's theme/parts use <a:sysClr> whose lastClr is not the Windows value of the colour (PowerPoint takes the
                   system colour: windowText 000000, window FFFFFF, highlight 0078D7, ...; the TS takes lastClr)
   ppt-chart       a .ppt page whose .pptx twin has a chart on the same slide (the converter keeps the chart's fallback picture)
@@ -87,8 +88,12 @@ def gradient_text_pages(pdf):
             d = zlib.decompressobj().decompress(b[i + 7:e])
         except Exception:
             d = b[i + 7:e]
-        if re.search(rb'7 Tr[^Q]*?ET\s*/Sh\d+ sh', d, re.S):
-            flagged.add(k + 1)
+        # only the broken form: the mode reset to 0 before ET (pdfium then drops the clip); a clip mode still set at ET
+        # (the fix of 2026-11-17) is honoured by pdfium
+        for m in re.finditer(rb'7 Tr(.*?)ET\s*/Sh\d+ sh', d, re.S):
+            if b'0 Tr' in m.group(1):
+                flagged.add(k + 1)
+                break
     return flagged
 
 

@@ -297,6 +297,31 @@ pub unsafe extern "C" fn uo_slides_part(deck: *const UoSlidesDeck, ptr: *mut u8,
     }
 }
 
+/// The compressed bitmaps of the EMF+ picture in a package part (`uo_dml_render::metafile::compressed_bitmaps`: what the TS
+/// `prepareSpecialImage` decodes): `u32` count, then `u32` length + bytes each, little endian; empty for any other part. The
+/// viewer decodes them while it warms the slide's pictures (the `MetaDecode` prepare phase started ahead of the paint).
+///
+/// # Safety
+/// `deck` must be null or a live handle; `ptr`/`len` a consumed `uo_alloc_bytes` buffer with the UTF-8 part name.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_meta_bitmaps(deck: *const UoSlidesDeck, ptr: *mut u8, len: usize) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer came from uo_alloc_bytes(len) and holds len bytes.
+    let name = unsafe { take_bytes(ptr, len) };
+    // SAFETY: the caller guarantees `deck` is null or a live handle.
+    let Some(d) = (unsafe { deck.as_ref() }) else { return buf(NULL_HANDLE, Vec::new()) };
+    let Ok(name) = std::str::from_utf8(&name) else { return buf(BAD_ARG, Vec::new()) };
+    let Some(b) = d.deck.parts().bytes(name) else { return buf(NO_ITEM, Vec::new()) };
+    let blobs = uo_dml_render::metafile::compressed_bitmaps(b);
+    let mut out = Vec::with_capacity(4 + blobs.iter().map(|x| 4 + x.len()).sum::<usize>());
+    let le = |n: usize| u32::try_from(n).unwrap_or(u32::MAX).to_le_bytes();
+    out.extend_from_slice(&le(blobs.len()));
+    for x in &blobs {
+        out.extend_from_slice(&le(x.len()));
+        out.extend_from_slice(x);
+    }
+    buf(OK, out)
+}
+
 /// The canvas capabilities (bit 0 `fontKerning`, 1 `letterSpacing`, 2 `Intl.Segmenter`, 3 `fontBoundingBox*`): they
 /// change the layout, so they are part of the table; changing them empties it.
 ///
@@ -1077,7 +1102,7 @@ pub unsafe extern "C" fn uo_slides_outline(deck: *mut UoSlidesDeck, index: usize
         let media = ex.is_some_and(|e| e.media.is_some());
         let table = ex.and_then(|e| e.table.as_deref());
         let flags = u8::from(sh.inherited.unwrap_or(false))
-            | (u8::from(sh.image.is_some()) << 1)
+            | (u8::from(sh.paint().image.is_some()) << 1)
             | (u8::from(media) << 2)
             | (u8::from(sh.tx_body.is_some()) << 3)
             | (u8::from(table.is_some()) << 4)
@@ -1158,11 +1183,11 @@ fn slide_images(slide: &uo_pptx::SlideModel) -> Vec<(&uo_dml_render::model::Imag
     use uo_dml_render::model::{ImageRef, TextBody};
     fn body<'a>(tb: Option<&'a TextBody>, out: &mut Vec<(&'a ImageRef, bool)>) {
         for p in tb.map_or(&[][..], |t| &t.paragraphs[..]) {
-            if let Some(b) = p.bullet_image.as_deref() {
+            if let Some(b) = p.bu().bullet_image.as_deref() {
                 out.push((b, false));
             }
             for r in &p.runs {
-                if let Some(f) = r.extras.as_deref().and_then(|e| e.fill_image.as_ref()) {
+                if let Some(f) = r.extras.as_deref().and_then(|e| e.fx().fill_image.as_ref()) {
                     out.push((f, false));
                 }
             }
@@ -1173,10 +1198,10 @@ fn slide_images(slide: &uo_pptx::SlideModel) -> Vec<(&uo_dml_render::model::Imag
         out.push((b, false));
     }
     for sh in &slide.shapes {
-        if let Some(i) = sh.image.as_deref() {
+        if let Some(i) = sh.paint().image.as_deref() {
             out.push((i, true));
         }
-        if let Some(f) = sh.fill_image.as_deref() {
+        if let Some(f) = sh.paint().fill_image.as_deref() {
             out.push((f, false));
         }
         let ex = sh.extras.as_deref();
@@ -1239,7 +1264,7 @@ pub unsafe extern "C" fn uo_slides_assets(deck: *mut UoSlidesDeck, index: usize)
     let mut media = Out::default();
     let mut nm = 0usize;
     for (i, sh) in slide.shapes.iter().enumerate() {
-        let gif = sh.image.as_deref().filter(|im| &*im.mime == "image/gif");
+        let gif = sh.paint().image.as_deref().filter(|im| &*im.mime == "image/gif");
         let m = sh.extras.as_deref().and_then(|e| e.media.as_ref());
         if m.is_none() && gif.is_none() {
             continue;

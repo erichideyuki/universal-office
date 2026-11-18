@@ -94,11 +94,11 @@ pub fn simple_dur_of(a: &TimeArena, n: &TimeNode) -> f64 {
 
 /// Active duration of the engine: unlike `timing.ts` it divides by `spd` (the visual is accelerated).
 pub fn active_dur_of(a: &TimeArena, n: &TimeNode) -> f64 {
-    let mut d = simple_dur_of(a, n) * if n.auto_rev == Some(true) { 2.0 } else { 1.0 };
-    if let Some(r) = n.repeat {
+    let mut d = simple_dur_of(a, n) * if n.ctn_x().auto_rev == Some(true) { 2.0 } else { 1.0 };
+    if let Some(r) = n.ctn_x().repeat {
         d = if r == f64::INFINITY { f64::INFINITY } else { d * r };
     }
-    d / n.spd.unwrap_or(1.0)
+    d / n.ctn_x().spd.unwrap_or(1.0)
 }
 
 /// Local time (ms since the node began) → fraction 0..1 of the simple time, with repetition,
@@ -107,10 +107,10 @@ fn progress_of(n: &TimeNode, local: f64, simple: f64) -> Option<f64> {
     if !simple.is_finite() {
         return Some(0.0);
     }
-    let t = local * n.spd.unwrap_or(1.0);
-    let auto_rev = n.auto_rev == Some(true);
+    let t = local * n.ctn_x().spd.unwrap_or(1.0);
+    let auto_rev = n.ctn_x().auto_rev == Some(true);
     let period = simple * if auto_rev { 2.0 } else { 1.0 };
-    let reps = n.repeat.unwrap_or(1.0);
+    let reps = n.ctn_x().repeat.unwrap_or(1.0);
     let active = if reps == f64::INFINITY { f64::INFINITY } else { period * reps };
     let it = if t >= active {
         if n.fill.as_deref() != Some("hold") && n.fill.as_deref() != Some("freeze") {
@@ -125,8 +125,8 @@ fn progress_of(n: &TimeNode, local: f64, simple: f64) -> Option<f64> {
     };
     let s = if auto_rev && it > simple { 2.0 * simple - it } else { math::min(it, simple) };
     let mut f = if simple > 0.0 { s / simple } else { 1.0 };
-    f = accel_decel(f, n.accel.unwrap_or(0.0), n.decel.unwrap_or(0.0));
-    if let Some(pts) = &n.tm_filter {
+    f = accel_decel(f, n.ctn_x().accel.unwrap_or(0.0), n.ctn_x().decel.unwrap_or(0.0));
+    if let Some(pts) = &n.ctn_x().tm_filter {
         f = tm_filter_map(f, pts);
     }
     Some(f)
@@ -206,11 +206,11 @@ fn hsl_hex(h: f64, s: f64, l: f64) -> String {
 }
 
 fn mix_color(a: &str, b: &str, f: f64, n: &TimeNode) -> String {
-    if n.clr_spc.as_deref() == Some("hsl") {
+    if n.bhvr_x().clr_spc.as_deref() == Some("hsl") {
         let [h1, s1, l1] = rgb_hsl(hex_rgb(a));
         let [h2, s2, l2] = rgb_hsl(hex_rgb(b));
         let mut dh = h2 - h1;
-        if n.clr_dir.as_deref() == Some("ccw") {
+        if n.bhvr_x().clr_dir.as_deref() == Some("ccw") {
             if dh > 0.0 {
                 dh -= 360.0;
             }
@@ -590,14 +590,14 @@ fn image_opacity(s: &str) -> Option<&str> {
 
 /// Applies ONE behaviour at progress `p` to the state.
 fn apply_behavior(n: &TimeNode, p: f64, st: &mut PartState, base: &AnimBase, c: &mut AnimCaches) {
-    let attrs: &[Box<str>] = n.attr_names.as_deref().unwrap_or(&[]);
+    let attrs: &[Box<str>] = n.bhvr().attr_names.as_deref().unwrap_or(&[]);
     let vr = vars(base);
     match &*n.tag {
         "set" => {
             for a in attrs {
-                if let Some(tc) = truthy_color(&n.to_color) {
+                if let Some(tc) = truthy_color(&n.bhvr().to_color) {
                     assign(a, &V::Str(tc.to_owned()), st);
-                } else if let Some(set_to) = &n.set_to {
+                } else if let Some(set_to) = &n.bhvr().set_to {
                     let v = if is_numeric_attr(a) { num_val_str(set_to, &vr, c) } else { f64::NAN };
                     if v.is_finite() {
                         assign(a, &V::Num(v), st);
@@ -610,7 +610,7 @@ fn apply_behavior(n: &TimeNode, p: f64, st: &mut PartState, base: &AnimBase, c: 
         "anim" => {
             for a in attrs {
                 let mut v: Option<V> = None;
-                match n.tav.as_deref().filter(|t| !t.is_empty()) {
+                match n.bhvr().tav.as_deref().filter(|t| !t.is_empty()) {
                     Some(tav) => {
                         // at the end (p ≥ last tm) the LAST SEGMENT stays at f=1: the formula `fmla` lives on
                         // the START frame of the segment
@@ -631,7 +631,7 @@ fn apply_behavior(n: &TimeNode, p: f64, st: &mut PartState, base: &AnimBase, c: 
                             }
                         }
                         let kq = &tav[kd];
-                        let discrete = n.calcmode.as_deref() == Some("discrete") || n.value_type.as_deref() == Some("str");
+                        let discrete = n.bhvr().calcmode.as_deref() == Some("discrete") || n.bhvr().value_type.as_deref() == Some("str");
                         if truthy_color(&ka.color).is_some() || truthy_color(&kb.color).is_some() {
                             let ca = truthy_color(&ka.color)
                                 .map(str::to_owned)
@@ -675,14 +675,14 @@ fn apply_behavior(n: &TimeNode, p: f64, st: &mut PartState, base: &AnimBase, c: 
                     }
                     None => {
                         let cur = current_of(a, st);
-                        let from = match &n.from {
+                        let from = match &n.bhvr().from {
                             Some(f) => num_val_str(f, &vr, c),
                             None => match &cur {
                                 Some(V::Num(x)) => *x,
                                 _ => f64::NAN,
                             },
                         };
-                        if let Some(to_s) = &n.to {
+                        if let Some(to_s) = &n.bhvr().to {
                             let to = num_val_str(to_s, &vr, c);
                             v = if to.is_finite() && from.is_finite() {
                                 Some(V::Num(from + (to - from) * p))
@@ -691,7 +691,7 @@ fn apply_behavior(n: &TimeNode, p: f64, st: &mut PartState, base: &AnimBase, c: 
                             } else {
                                 Some(cur.unwrap_or_else(|| V::Str(to_s.to_string())))
                             };
-                        } else if let Some(by_s) = &n.by {
+                        } else if let Some(by_s) = &n.bhvr().by {
                             let by = num_val_str(by_s, &vr, c);
                             if by.is_finite() && from.is_finite() {
                                 v = Some(V::Num(from + by * p));
@@ -707,59 +707,65 @@ fn apply_behavior(n: &TimeNode, p: f64, st: &mut PartState, base: &AnimBase, c: 
             }
         }
         "animEffect" => {
-            let Some(filter) = n.filter.as_deref().filter(|f| !f.is_empty()) else { return };
+            let Some(filter) = n.bhvr().filter.as_deref().filter(|f| !f.is_empty()) else { return };
             if filter == "image" {
-                if let Some(m) = image_opacity(n.pr_lst.as_deref().unwrap_or("")) {
+                if let Some(m) = image_opacity(n.bhvr_x().pr_lst.as_deref().unwrap_or("")) {
                     st.opacity = math::min(st.opacity, parse::parse_float(m));
                 }
                 return;
             }
-            st.filters.push(AnimFilter { filter: filter.into(), transition: n.transition.clone().unwrap_or_else(|| "in".into()), p });
+            st.filters.push(AnimFilter {
+                filter: filter.into(),
+                transition: n.bhvr().transition.clone().unwrap_or_else(|| "in".into()),
+                p,
+            });
         }
         "animScale" => {
-            let from = n.from_xy.unwrap_or((st.sx, st.sy));
-            let to = n.to_xy.unwrap_or_else(|| n.by_xy.map_or(from, |b| (from.0 * b.0, from.1 * b.1)));
+            let from = n.bhvr_x().from_xy.unwrap_or((st.sx, st.sy));
+            let to = n.bhvr_x().to_xy.unwrap_or_else(|| n.bhvr_x().by_xy.map_or(from, |b| (from.0 * b.0, from.1 * b.1)));
             st.sx = from.0 + (to.0 - from.0) * p;
             st.sy = from.1 + (to.1 - from.1) * p;
         }
         "animRot" => {
-            if n.rot_from.is_some() || n.rot_to.is_some() {
-                let from = n.rot_from.unwrap_or(st.rot);
-                let to = n.rot_to.unwrap_or(from);
+            if n.bhvr_x().rot_from.is_some() || n.bhvr_x().rot_to.is_some() {
+                let from = n.bhvr_x().rot_from.unwrap_or(st.rot);
+                let to = n.bhvr_x().rot_to.unwrap_or(from);
                 st.rot = from + (to - from) * p;
-            } else if let Some(by) = n.rot_by {
+            } else if let Some(by) = n.bhvr_x().rot_by {
                 st.rot += by * p;
             }
         }
         "animMotion" => {
-            if let Some(path) = n.path.as_deref().filter(|p| !p.is_empty()) {
+            if let Some(path) = n.bhvr_x().path.as_deref().filter(|p| !p.is_empty()) {
                 // pathEditMode relative: the path IS ALREADY an offset from the original position
                 let mp = c.motion_path(path);
                 let [mut px, mut py] = point_on_path(&mp, p);
-                if n.r_ang.is_some_and(conv::truthy) {
-                    let a = (n.r_ang.unwrap_or(0.0) * core::f64::consts::PI) / 180.0;
+                if n.bhvr_x().r_ang.is_some_and(conv::truthy) {
+                    let a = (n.bhvr_x().r_ang.unwrap_or(0.0) * core::f64::consts::PI) / 180.0;
                     let (cs, sn) = (math::cos(a), math::sin(a));
                     (px, py) = (px * cs - py * sn, px * sn + py * cs);
                 }
                 st.mx += px;
                 st.my += py;
             } else {
-                let from = n.from_xy.unwrap_or((0.0, 0.0));
-                let to = n.to_xy.unwrap_or_else(|| n.by_xy.map_or(from, |b| (from.0 + b.0, from.1 + b.1)));
+                let from = n.bhvr_x().from_xy.unwrap_or((0.0, 0.0));
+                let to = n.bhvr_x().to_xy.unwrap_or_else(|| n.bhvr_x().by_xy.map_or(from, |b| (from.0 + b.0, from.1 + b.1)));
                 st.mx += from.0 + (to.0 - from.0) * p;
                 st.my += from.1 + (to.1 - from.1) * p;
             }
         }
         "animClr" => {
             for a in attrs {
-                let from_c =
-                    truthy_color(&n.from_color).map(str::to_owned).or_else(|| color_of(a, st, base)).unwrap_or_else(|| "#000000".into());
+                let from_c = truthy_color(&n.bhvr_x().from_color)
+                    .map(str::to_owned)
+                    .or_else(|| color_of(a, st, base))
+                    .unwrap_or_else(|| "#000000".into());
                 let mut v: Option<String> = None;
-                if let Some(to) = truthy_color(&n.to_color) {
+                if let Some(to) = truthy_color(&n.bhvr().to_color) {
                     v = Some(mix_color(&from_c, to, p, n));
-                } else if let Some((bh, bs, bl)) = n.by_hsl {
+                } else if let Some((bh, bs, bl)) = n.bhvr_x().by_hsl {
                     let [h, s, l] = rgb_hsl(hex_rgb(&from_c));
-                    let sign = if n.clr_dir.as_deref() == Some("ccw") { -1.0 } else { 1.0 };
+                    let sign = if n.bhvr_x().clr_dir.as_deref() == Some("ccw") { -1.0 } else { 1.0 };
                     v = Some(hsl_hex(h + sign * bh * p, clamp01(s + bs * p), clamp01(l + bl * p)));
                 }
                 if let Some(v) = v.filter(|s| !s.is_empty()) {
@@ -870,8 +876,8 @@ fn first_visibility(a: &TimeArena, id: NodeId) -> Option<&str> {
     fn walk<'a>(a: &'a TimeArena, id: NodeId, t0: f64, best: &mut Option<(f64, &'a str)>) {
         let x = a.node(id);
         if &*x.tag == "set"
-            && x.attr_names.as_ref().is_some_and(|n| n.iter().any(|s| &**s == "style.visibility"))
-            && let Some(to) = x.set_to.as_deref().filter(|s| !s.is_empty())
+            && x.bhvr().attr_names.as_ref().is_some_and(|n| n.iter().any(|s| &**s == "style.visibility"))
+            && let Some(to) = x.bhvr().set_to.as_deref().filter(|s| !s.is_empty())
         {
             if best.is_none_or(|(bt, _)| t0 < bt) {
                 *best = Some((t0, to));
@@ -1023,7 +1029,7 @@ pub fn shape_anim_hooks<'a>(
     let mut units: Vec<UnitEffect<'a>> = Vec::new();
     for e in mine {
         let Some(t) = e.fx.target.as_ref() else { continue };
-        let it = arena.node(e.fx.node).iterate.as_ref();
+        let it = arena.node(e.fx.node).ctn_x().iterate.as_ref();
         if let Some(ch) = &t.chart {
             let key: Box<str> = format!("{}|{}|{}", ch.step, to_js_string(ch.series), to_js_string(ch.category)).into();
             match chart.iter_mut().find(|(k, _, _)| *k == key) {
@@ -1069,7 +1075,7 @@ pub fn shape_anim_hooks<'a>(
         None
     } else {
         // per letter AND per word in the same shape: draws per letter; the per-word effect staggers by word
-        let kind_of = |u: &UnitEffect<'a>| arena.node(u.e.fx.node).iterate.as_ref().map(|i| i.kind.clone());
+        let kind_of = |u: &UnitEffect<'a>| arena.node(u.e.fx.node).ctn_x().iterate.as_ref().map(|i| i.kind.clone());
         let has_lt = units.iter().any(|u| kind_of(u).as_deref() == Some("lt"));
         let has_wd = units.iter().any(|u| kind_of(u).as_deref() == Some("wd"));
         Some(UnitInfo { letters: has_lt, words: has_lt && has_wd })
@@ -1119,7 +1125,7 @@ impl<'a> ShapeHooks<'a> {
         let info = self.unit_info?;
         let mut tr: Vec<Track<'a>> = Vec::new();
         for u in &self.units {
-            let Some(it) = self.arena.node(u.e.fx.node).iterate.as_ref() else { continue };
+            let Some(it) = self.arena.node(u.e.fx.node).ctn_x().iterate.as_ref() else { continue };
             let per_letter = &*it.kind == "lt";
             let r = if per_letter == info.letters { unit } else { word.unwrap_or(unit) };
             if let Some(rg) = u.range
@@ -1198,7 +1204,7 @@ fn has_wipe(a: &TimeArena, id: NodeId) -> bool {
             return true;
         }
         let node = a.node(n);
-        if node.filter.as_deref().is_some_and(|f| f.to_ascii_lowercase().contains("wipe")) {
+        if node.bhvr().filter.as_deref().is_some_and(|f| f.to_ascii_lowercase().contains("wipe")) {
             return true;
         }
         stack.extend_from_slice(a.kids(node));

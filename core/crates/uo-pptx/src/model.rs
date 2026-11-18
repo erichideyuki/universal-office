@@ -97,3 +97,19 @@ pub struct SlideModel {
     pub theme: Option<Arc<Theme>>,
     pub read_set: ReadSet,
 }
+
+impl SlideModel {
+    /// Releases the spare capacity of every vector of the model (shapes, text, tables, timing): a read
+    /// model is built once and kept in the slide cache (memory compaction, `uo-pptx.md` "Model memory").
+    /// Values are not touched. The timing is shrunk where it is built, before it is shared.
+    pub fn shrink_to_fit(&mut self) {
+        self.shapes.shrink_to_fit();
+        for s in &mut self.shapes {
+            s.shrink_to_fit();
+        }
+        for v in self.animations.iter_mut() {
+            v.shrink_to_fit();
+        }
+        self.read_set.0.shrink_to_fit();
+    }
+}

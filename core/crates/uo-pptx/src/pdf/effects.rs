@@ -700,6 +700,10 @@ impl Interp<'_, '_> {
             let m = Mat([s.w / d.w, 0.0, 0.0, s.h / d.h, s.x - d.x * s.w / d.w, s.y - d.y * s.h / d.h]);
             Some(RPaint::Pattern(Rc::new(RPattern { img, inv: m, flip: (false, false), repeat: Repeat::NoRepeat })))
         });
+        if paint.is_none() && src.is_some_and(|s| self.svg_source(s)) {
+            // the raster side has no SVG player: the shadow is the picture's box, not its shapes
+            self.count("svg:shadow");
+        }
         let paint = paint.or(Some(RPaint::Solid([0.0, 0.0, 0.0, 1.0])));
         self.draw_shadow(ShadowSrc::Polys(polys, false, paint));
     }

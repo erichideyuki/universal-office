@@ -185,7 +185,10 @@ impl Interp<'_, '_> {
         if open_arr {
             out.push_str("] TJ\n");
         }
-        if mode != 0 {
+        // A clip mode (4-7) stays set until `ET`: pdfium (Chrome/Edge) adds the text clip at `ET` only when the mode
+        // in force there is a clip mode, and otherwise paints what follows unclipped. Clip blocks are always inside a
+        // `q`/`Q` pair (`fill_spec`), so the `Q` restores the mode.
+        if mode != 0 && mode < 4 {
             out.push_str("0 Tr\n");
         }
         if spacing != 0.0 {
@@ -390,6 +393,10 @@ impl Interp<'_, '_> {
             PaintVal::Linear(i) | PaintVal::Radial(i) => {
                 let radial = matches!(fill, PaintVal::Radial(_));
                 let (blk, g) = self.glyph_block(f, size, x, y, text, kern, spacing, 7);
+                // no glyph shown: an empty text clip (pdfium ignores it at `ET` and paints the shading unclipped)
+                if g == 0 {
+                    return;
+                }
                 let bounds = [x, y - size, x + width, y + size * 0.3];
                 if self.fill_gradient(radial, *i, &blk, bounds, a_mul) {
                     self.w.report.glyphs += g;
@@ -397,6 +404,9 @@ impl Interp<'_, '_> {
             }
             PaintVal::Spec(g) => {
                 let (blk, gl) = self.glyph_block(f, size, x, y, text, kern, spacing, 7);
+                if gl == 0 {
+                    return;
+                }
                 let bounds = [x, y - size, x + width, y + size * 0.3];
                 if self.fill_spec(g, &blk, bounds, a_mul) {
                     self.w.report.glyphs += gl;
