@@ -26,7 +26,7 @@ use crate::color::CssColor;
 use crate::model::{ChartFormat, ChartImage, ChartRef};
 use crate::source::PartSource;
 use crate::text::{Bits, FaceKey, Kerning, MeasureReq, MeasureTable, StringKey};
-use crate::theme::{JsRecord, Theme, color_in};
+use crate::theme::{JsRecord, Theme, color_in_rules};
 
 /// Parsed charts kept (M5; the TS map is unbounded).
 pub const MAX_CHART_MODELS: usize = 32;
@@ -70,9 +70,10 @@ fn scheme_color(name: &str, colors: &JsRecord<CssColor>) -> CssColor {
     colors.get(name).or_else(|| colors.get(alias)).cloned().unwrap_or_else(|| CssColor::new("#000000"))
 }
 
-fn color_of(src: ColorSource<'_>, colors: &JsRecord<CssColor>) -> Option<ChartColor> {
+/// `ts_sys_clr`: `a:sysClr` from `lastClr` (the TS); else PowerPoint's system colour (`theme::system_color`).
+fn color_of(src: ColorSource<'_>, colors: &JsRecord<CssColor>, ts_sys_clr: bool) -> Option<ChartColor> {
     let c = match src {
-        ColorSource::Element(el) => color_in(Some(el), colors)?,
+        ColorSource::Element(el) => color_in_rules(Some(el), colors, ts_sys_clr)?,
         ColorSource::Scheme(name) => scheme_color(name, colors),
     };
     Some(ChartColor::new(c.as_str()))
@@ -106,7 +107,7 @@ impl<'a> SlidesHost<'a> {
 
 impl ChartHost for SlidesHost<'_> {
     fn color(&self, src: ColorSource<'_>) -> Option<ChartColor> {
-        color_of(src, &self.colors)
+        color_of(src, &self.colors, self.theme.rules.ts_sys_clr)
     }
 
     fn fonts(&self) -> HostFonts<'_> {
@@ -124,7 +125,8 @@ impl ChartHost for SlidesHost<'_> {
         let el = self.theme.styles.as_ref()?.fill_style(usize::try_from(idx.checked_sub(1)?).ok()?)?;
         let mut colors = self.colors.clone();
         colors.set("phClr", CssColor::new(ph_clr));
-        parse_paint_node(el, &|src| color_of(src, &colors))
+        let ts = self.theme.rules.ts_sys_clr;
+        parse_paint_node(el, &|src| color_of(src, &colors, ts))
     }
 
     fn blip(&self, blip: Element<'_>) -> Option<BlipKey> {

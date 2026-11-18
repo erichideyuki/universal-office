@@ -8,6 +8,11 @@ public sealed class SlidesPdfOptions
 {
     /// <summary>Compress the content streams (default true).</summary>
     public bool? Compress;
+
+    /// <summary>Every PowerPoint-over-TS switch off: the frozen TS Slides (hidden slides kept, the TS link rectangles,
+    /// the TS fallback fonts and the other `SlidesRules`). For the facade's parity tests against the TS only (native
+    /// `SLIDES_JOB_TS_STRICT`).</summary>
+    internal bool TsStrict;
 }
 
 /// <summary>How a converter finds fonts and how much it trusts its decks.</summary>
@@ -72,7 +77,7 @@ public sealed class SlidesPdfConverter : IDisposable
     {
         ArgumentNullException.ThrowIfNull(deck);
         ct.ThrowIfCancellationRequested();
-        var job = new SlidesNative.SlidesJob { Size = (uint)sizeof(SlidesNative.SlidesJob), Flags = (opts?.Compress ?? true) ? SlidesNative.JobCompress : 0 };
+        var job = new SlidesNative.SlidesJob { Size = (uint)sizeof(SlidesNative.SlidesJob), Flags = JobFlags(opts) };
         using var cancel = ct.CanBeCanceled ? NativeMethods.CancelNew() : null;
         // disposed before `cancel` (reverse order): waits for a running callback
         using var registration = cancel is null ? default : ct.Register(static c => NativeMethods.CancelRaise((CancelHandle)c!), cancel);
@@ -97,7 +102,7 @@ public sealed class SlidesPdfConverter : IDisposable
     internal unsafe byte[] DeckToPdf(DeckHandle deck, SlidesPdfOptions? opts, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var job = new SlidesNative.SlidesJob { Size = (uint)sizeof(SlidesNative.SlidesJob), Flags = (opts?.Compress ?? true) ? SlidesNative.JobCompress : 0 };
+        var job = new SlidesNative.SlidesJob { Size = (uint)sizeof(SlidesNative.SlidesJob), Flags = JobFlags(opts) };
         using var cancel = ct.CanBeCanceled ? NativeMethods.CancelNew() : null;
         using var registration = cancel is null ? default : ct.Register(static c => NativeMethods.CancelRaise((CancelHandle)c!), cancel);
         int status = SlidesNative.DeckToPdf(deck, _handle, &job, cancel ?? NoCancel, out var pdf);
@@ -107,6 +112,9 @@ public sealed class SlidesPdfConverter : IDisposable
             return pdf.ToArray();
         }
     }
+
+    private static uint JobFlags(SlidesPdfOptions? opts) =>
+        ((opts?.Compress ?? true) ? SlidesNative.JobCompress : 0) | (opts?.TsStrict == true ? SlidesNative.JobTsStrict : 0);
 
     public void Dispose() => _handle.Dispose();
 }

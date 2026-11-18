@@ -163,6 +163,7 @@ pub fn params<'a>(chart: &ChartData, view: &View, sel: &str, images: bool) -> Em
         locale: uo_numfmt::pt_br(),
         sel: sel_of(sel),
         images,
+        rules: uo_charts::rules::ChartRules::ts_strict(),
     }
 }
 

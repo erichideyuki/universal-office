@@ -36,7 +36,7 @@ import type {
 } from './gen/slides.ts';
 import type { PartState, SlotFrame, SlotValue } from './gen/slots.ts';
 import { applyReveal, applySoftReveal, softRevealFilter } from './slides-reveal.ts';
-import { replayRecipe } from './meta-player.ts';
+import { decodeFxRecipe, replayRecipe } from './meta-player.ts';
 import type { MetaCanvas } from './meta-player.ts';
 import { paintWarpedText } from './slides-warp.ts';
 import type { PatternRowsOf, WarpLine, WarpRun } from './slides-warp.ts';
@@ -244,7 +244,12 @@ export class SlidesPainter {
     const recipe = this.env.recipe?.(index);
     const bytes = recipe ? null : this.env.bitmap(index);
     let out: PaintImage | null = null;
-    if (recipe) {
+    const derived = recipe ? decodeFxRecipe(recipe) : null;
+    if (derived) {
+      // B5b-G1: a metafile picture with colour effects = fxImage over the base picture's raster (the TS's fxImage over its canvas)
+      const base = derived.base !== index ? this.bitmapCanvas(tables, derived.base) : null;
+      out = base ? fxImage(base, derived.fx, this.scratch) : null;
+    } else if (recipe) {
       // B5b: a metafile or PICT: the canvas the TS rasterizer drew on
       const mk = (w: number, h: number): MetaCanvas | undefined => (this.env.metaCanvas ?? this.env.createCanvas ?? elementCanvas)(w, h) as unknown as MetaCanvas | undefined;
       out = replayRecipe(recipe, { createCanvas: mk, ...(this.env.decodeBlob ? { decode: this.env.decodeBlob } : {}) }) as unknown as PaintImage | null;

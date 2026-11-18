@@ -118,7 +118,7 @@ fn ppt_samples_parts_are_byte_equal() {
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{key}: {e}"));
         rp.check(key, "input", &digest(&bytes, 16));
         decks += 1;
-        let opts = ConvertOptions { today: today(), ..ConvertOptions::default() };
+        let opts = ConvertOptions { today: today(), ..ConvertOptions::ts_strict() };
         let parts = match convert_ppt_to_pptx_parts(&bytes, &opts) {
             Ok(p) => p,
             Err(e) => {

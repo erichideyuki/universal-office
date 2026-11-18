@@ -24,6 +24,7 @@
 #[cfg(feature = "canon")]
 pub mod canon;
 pub mod color;
+pub mod datefield;
 pub mod emit;
 pub mod ids;
 pub mod metafile;

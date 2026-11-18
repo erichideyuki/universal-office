@@ -12,7 +12,9 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 use uo_dml_render::PartSource;
-use uo_dml_render::text::{FaceKey, Kerning, MeasureReq, MeasureTable, StringKey, TextMetrics};
+use uo_dml_render::model::FontFallback;
+use uo_dml_render::text::fallback::{FallbackCtx, complex_faces, fallback_families as powerpoint_families, panose_serif};
+use uo_dml_render::text::{FaceKey, Kerning, MeasureReq, MeasureTable, StringKey, TextMetrics, split_face};
 use uo_fonts::Face;
 use uo_jsnum::text::{split_js_space, trim};
 
@@ -30,6 +32,89 @@ pub trait FontSource {
     /// the character keeps the `.notdef` advance and is counted as `glyph:missing`.
     fn fallback(&self, cp: u32, bold: bool, italic: bool, primary: &Face) -> Option<Arc<Face>> {
         fallback_chain(self, cp, bold, italic, primary)
+    }
+
+    /// PowerPoint's face for `cp` when the run's face lacks it (Slides wave 5, the default of the PDF): by default
+    /// [`powerpoint_chain`] (the families of `uo_dml_render::text::fallback` for the run's context `ctx`, each through
+    /// this source's own substitution). [`Self::fallback`] stays the frozen TS chain (`SlidesRules::ts_fallback_fonts`).
+    fn fallback_ctx(&self, cp: u32, bold: bool, italic: bool, primary: &Face, ctx: &FallbackCtx<'_>) -> Option<Arc<Face>> {
+        powerpoint_chain(self, cp, bold, italic, primary, ctx)
+    }
+
+    /// Whether a complex-script character goes to PowerPoint's complex-script faces even when the run's face has it
+    /// (`uo_dml_render::text::fallback::complex_faces`): `false` for a plain source; the PDF's wrapper answers it from the
+    /// deck's `SlidesRules::ts_fallback_fonts`.
+    fn routes_complex(&self) -> bool {
+        false
+    }
+}
+
+/// PowerPoint's face for a complex-script character whatever the run's face covers (`complex_faces`, each through
+/// `src`'s own substitution); `None` for the other classes or when `src` has none of them.
+fn complex_face<S: FontSource + ?Sized>(
+    src: &S,
+    cp: u32,
+    bold: bool,
+    italic: bool,
+    primary: &Face,
+    ctx: &FallbackCtx<'_>,
+) -> Option<Arc<Face>> {
+    let serif = panose_serif(primary.metrics().panose.as_ref().map(|p| &p[..]));
+    complex_faces(cp, ctx, serif).into_iter().find_map(|fam| src.face(fam, bold, italic).filter(|f| f.glyph_id(cp) != 0))
+}
+
+/// The default [`FontSource::fallback_ctx`]: the first family of PowerPoint's list for `cp`
+/// (`uo_dml_render::text::fallback::fallback_families`, serif or sans by the run face's PANOSE) that `src` answers with a
+/// face holding the glyph.
+pub fn powerpoint_chain<S: FontSource + ?Sized>(
+    src: &S,
+    cp: u32,
+    bold: bool,
+    italic: bool,
+    primary: &Face,
+    ctx: &FallbackCtx<'_>,
+) -> Option<Arc<Face>> {
+    if cp <= 0x20 {
+        return None;
+    }
+    let serif = panose_serif(primary.metrics().panose.as_ref().map(|p| &p[..]));
+    for fam in powerpoint_families(cp, ctx, serif) {
+        if let Some(f) = src.face(fam, bold, italic)
+            && f.glyph_id(cp) != 0
+        {
+            return Some(f);
+        }
+    }
+    None
+}
+
+/// The host's [`FontSource`] under the deck's fallback rule (`SlidesRules::ts_fallback_fonts`): the family names of the
+/// list may carry the run's fallback context (`uo_dml_render::text::split_face`), split off here before the host sees
+/// them; a character the face lacks goes to the TS chain or to PowerPoint's.
+pub(crate) struct PdfFonts<'a> {
+    pub inner: &'a dyn FontSource,
+    pub ts: bool,
+}
+
+impl FontSource for PdfFonts<'_> {
+    fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<Face>> {
+        self.inner.face(split_face(family).0, bold, italic)
+    }
+
+    fn fallback(&self, cp: u32, bold: bool, italic: bool, primary: &Face) -> Option<Arc<Face>> {
+        if self.ts {
+            self.inner.fallback(cp, bold, italic, primary)
+        } else {
+            self.inner.fallback_ctx(cp, bold, italic, primary, &FallbackCtx::default())
+        }
+    }
+
+    fn fallback_ctx(&self, cp: u32, bold: bool, italic: bool, primary: &Face, ctx: &FallbackCtx<'_>) -> Option<Arc<Face>> {
+        if self.ts { self.inner.fallback(cp, bold, italic, primary) } else { self.inner.fallback_ctx(cp, bold, italic, primary, ctx) }
+    }
+
+    fn routes_complex(&self) -> bool {
+        !self.ts
     }
 }
 
@@ -173,9 +258,20 @@ impl FontSource for FaceSet {
         if self.no_glyph_fallback {
             return None;
         }
-        if let Some(f) = fallback_chain(self, cp, bold, italic, primary) {
-            return Some(f);
+        fallback_chain(self, cp, bold, italic, primary).or_else(|| self.scan(cp, bold, italic))
+    }
+
+    fn fallback_ctx(&self, cp: u32, bold: bool, italic: bool, primary: &Face, ctx: &FallbackCtx<'_>) -> Option<Arc<Face>> {
+        if self.no_glyph_fallback {
+            return None;
         }
+        powerpoint_chain(self, cp, bold, italic, primary, ctx).or_else(|| self.scan(cp, bold, italic))
+    }
+}
+
+impl FaceSet {
+    /// Any face of the set with a glyph for `cp`, the same variant first, in insertion order ("the open fonts available").
+    fn scan(&self, cp: u32, bold: bool, italic: bool) -> Option<Arc<Face>> {
         if cp <= 0x20 {
             return None;
         }
@@ -220,23 +316,43 @@ pub(crate) struct FaceChooser<'a> {
     fonts: &'a dyn FontSource,
     bold: bool,
     italic: bool,
+    /// the run's fallback context (`None`: the source's plain [`FontSource::fallback`])
+    ctx: Option<FontFallback>,
     memo: FxHashMap<u32, Option<Arc<Face>>>,
 }
 
 impl<'a> FaceChooser<'a> {
-    pub(crate) fn new(fonts: &'a dyn FontSource, primary: Arc<Face>, bold: bool, italic: bool) -> FaceChooser<'a> {
-        FaceChooser { primary, fonts, bold, italic, memo: FxHashMap::default() }
+    /// A chooser for a run whose family carried a fallback context (`uo_dml_render::text::split_face`).
+    pub(crate) fn with_ctx(
+        fonts: &'a dyn FontSource,
+        primary: Arc<Face>,
+        bold: bool,
+        italic: bool,
+        ctx: Option<FontFallback>,
+    ) -> FaceChooser<'a> {
+        FaceChooser { primary, fonts, bold, italic, ctx, memo: FxHashMap::default() }
     }
 
     /// The face that draws `cp`: `None` when no face has it (the primary's `.notdef` stands in).
     pub(crate) fn face_for(&mut self, cp: u32) -> Option<Arc<Face>> {
-        if self.primary.glyph_id(cp) != 0 {
-            return Some(Arc::clone(&self.primary));
-        }
         if let Some(f) = self.memo.get(&cp) {
             return f.clone();
         }
-        let f = self.fonts.fallback(cp, self.bold, self.italic, &self.primary);
+        // PowerPoint: a complex-script character takes the complex-script face even when the run's face has it
+        if self.fonts.routes_complex() {
+            let ctx = self.ctx.as_ref().map(FallbackCtx::from).unwrap_or_default();
+            if let Some(f) = complex_face(self.fonts, cp, self.bold, self.italic, &self.primary, &ctx) {
+                self.memo.insert(cp, Some(Arc::clone(&f)));
+                return Some(f);
+            }
+        }
+        if self.primary.glyph_id(cp) != 0 {
+            return Some(Arc::clone(&self.primary));
+        }
+        let f = match &self.ctx {
+            Some(c) => self.fonts.fallback_ctx(cp, self.bold, self.italic, &self.primary, &FallbackCtx::from(c)),
+            None => self.fonts.fallback(cp, self.bold, self.italic, &self.primary),
+        };
         self.memo.insert(cp, f.clone());
         f
     }
@@ -294,10 +410,31 @@ pub fn text_width_in(
     spacing_px: f64,
     text: &str,
 ) -> f64 {
-    if text.chars().all(|c| face.glyph_id(u32::from(c)) != 0) {
+    text_width_ctx(fonts, face, bold, italic, size_px, kerning, spacing_px, text, None)
+}
+
+/// [`text_width_in`] for a run with a fallback context.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn text_width_ctx(
+    fonts: &dyn FontSource,
+    face: &Arc<Face>,
+    bold: bool,
+    italic: bool,
+    size_px: f64,
+    kerning: bool,
+    spacing_px: f64,
+    text: &str,
+    ctx: Option<&FontFallback>,
+) -> f64 {
+    let complex = fonts.routes_complex()
+        && text.chars().any(|c| {
+            uo_dml_render::text::fallback::char_class(u32::from(c), &FallbackCtx::default())
+                == uo_dml_render::text::fallback::CharClass::Complex
+        });
+    if !complex && text.chars().all(|c| face.glyph_id(u32::from(c)) != 0) {
         return text_width(face, size_px, kerning, spacing_px, text);
     }
-    let mut ch = FaceChooser::new(fonts, Arc::clone(face), bold, italic);
+    let mut ch = FaceChooser::with_ctx(fonts, Arc::clone(face), bold, italic, ctx.cloned());
     if text.chars().all(|c| ch.face_for(u32::from(c)).is_none_or(|f| Arc::ptr_eq(&f, face))) {
         return text_width(face, size_px, kerning, spacing_px, text);
     }
@@ -307,18 +444,26 @@ pub fn text_width_in(
 /// The answers to `reqs`, written into `table`. Unknown faces answer 0-width text (nothing to measure with);
 /// metafile probes (A8, A13, A14) are answered from the same faces (A14: never decodable here).
 pub fn fill_measures(deck: &Deck, fonts: &dyn FontSource, table: &mut MeasureTable, reqs: &[MeasureReq]) {
+    // the deck's fallback rule and the context-carrying family names (a no-op over a source already wrapped)
+    let policy = PdfFonts { inner: fonts, ts: deck.rules().ts_fallback_fonts };
+    let fonts: &dyn FontSource = &policy;
+    // the font box of the first-line baseline: PowerPoint's OS/2 line box, or the hhea metrics the TS measured
+    let ppt_box = !deck.rules().ts_first_baseline;
     for r in reqs {
         match r {
             MeasureReq::CharAt1000 { face, ch } => {
-                let w = face_of(fonts, face)
-                    .map_or(0.0, |f| text_width_in(fonts, &f, face.bold, face.italic, 1000.0, false, 0.0, ch.encode_utf8(&mut [0; 4])));
+                let cx = split_face(&face.family).1;
+                let w = face_of(fonts, face).map_or(0.0, |f| {
+                    text_width_ctx(fonts, &f, face.bold, face.italic, 1000.0, false, 0.0, ch.encode_utf8(&mut [0; 4]), cx.as_ref())
+                });
                 table.set_char_at_1000(face, *ch, w);
             }
             MeasureReq::KernAt1000 { face, text } => {
+                let cx = split_face(&face.family).1;
                 let (w0, w1) = face_of(fonts, face).map_or((0.0, 0.0), |f| {
                     (
-                        text_width_in(fonts, &f, face.bold, face.italic, 1000.0, false, 0.0, text),
-                        text_width_in(fonts, &f, face.bold, face.italic, 1000.0, true, 0.0, text),
+                        text_width_ctx(fonts, &f, face.bold, face.italic, 1000.0, false, 0.0, text, cx.as_ref()),
+                        text_width_ctx(fonts, &f, face.bold, face.italic, 1000.0, true, 0.0, text, cx.as_ref()),
                     )
                 });
                 table.set_kern_at_1000(face, text, w0, w1);
@@ -328,7 +473,7 @@ pub fn fill_measures(deck: &Deck, fonts: &dyn FontSource, table: &mut MeasureTab
                 table.set_width(k, w);
             }
             MeasureReq::Metrics(k) => {
-                let m = face_of(fonts, &k.face).map_or_else(TextMetrics::default, |f| string_metrics(fonts, &f, k));
+                let m = face_of(fonts, &k.face).map_or_else(TextMetrics::default, |f| string_metrics(fonts, &f, k, ppt_box));
                 table.set_metrics(k, m);
             }
             MeasureReq::FontAvailable { family } => table.set_font_available(family, fonts.face(family, false, false).is_some()),
@@ -351,23 +496,42 @@ fn face_of(fonts: &dyn FontSource, key: &FaceKey) -> Option<Arc<Face>> {
 }
 
 fn string_width(fonts: &dyn FontSource, f: &Arc<Face>, k: &StringKey) -> f64 {
-    text_width_in(fonts, f, k.face.bold, k.face.italic, k.size_px.value(), k.kerning != Kerning::None, k.letter_spacing_px.value(), &k.text)
+    let cx = split_face(&k.face.family).1;
+    let (b, i) = (k.face.bold, k.face.italic);
+    text_width_ctx(fonts, f, b, i, k.size_px.value(), k.kerning != Kerning::None, k.letter_spacing_px.value(), &k.text, cx.as_ref())
 }
 
-fn string_metrics(fonts: &dyn FontSource, f: &Arc<Face>, k: &StringKey) -> TextMetrics {
+/// `measureText` of a string: the advances, the hhea ascent/descent as the ink box, and as the font box either the hhea
+/// metrics (the TS) or, `ppt_box`, PowerPoint's line box from the OS/2 table (`uo_dml_render::text::ppt_line_box`; a face
+/// without OS/2 win metrics keeps hhea).
+fn string_metrics(fonts: &dyn FontSource, f: &Arc<Face>, k: &StringKey, ppt_box: bool) -> TextMetrics {
     let px = k.size_px.value();
-    let upem = f64::from(f.metrics().units_per_em);
+    let m = f.metrics();
+    let upem = f64::from(m.units_per_em);
     let w = string_width(fonts, f, k);
-    let asc = f64::from(f.metrics().ascender) * px / upem;
-    let desc = -f64::from(f.metrics().descender) * px / upem;
+    let asc = f64::from(m.ascender) * px / upem;
+    let desc = -f64::from(m.descender) * px / upem;
+    let (fa, fd) = if ppt_box && (m.us_win_ascent > 0 || m.us_win_descent > 0 || m.fs_selection & 0x80 != 0) {
+        let (a, d) = uo_dml_render::text::ppt_line_box(
+            m.us_win_ascent,
+            m.us_win_descent,
+            m.s_typo_ascender,
+            m.s_typo_descender,
+            m.s_typo_line_gap,
+            m.fs_selection & 0x80 != 0,
+        );
+        (a * px / upem, d * px / upem)
+    } else {
+        (asc, desc)
+    };
     TextMetrics {
         width: w,
         actual_left: 0.0,
         actual_right: w,
         actual_ascent: asc,
         actual_descent: desc,
-        font_ascent: Some(asc),
-        font_descent: Some(desc),
+        font_ascent: Some(fa),
+        font_descent: Some(fd),
     }
 }
 

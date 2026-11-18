@@ -829,7 +829,7 @@ fn replay(stem: &str) -> (usize, usize, uo_testkit::Report) {
         let bytes = std::fs::read(deck_path(key)).unwrap_or_else(|e| panic!("{key}: {e}"));
         rp.check(key, "input", &bytes_digest(&bytes));
         decks += 1;
-        let mut deck = Deck::open(&bytes, Limits::default()).unwrap();
+        let mut deck = ts(Deck::open(&bytes, Limits::default()).unwrap());
         let models = match open_models(&mut deck) {
             Ok(m) => m,
             Err(e) => {
@@ -1000,4 +1000,10 @@ fn numeric_helpers_match_the_ts() {
 fn place_clock_defaults() {
     let c = PlaceClock::default();
     assert!(c.tick_ms.is_none() && c.media_clock.is_none());
+}
+
+/// Every TS switch on (`SlidesRules::ts_strict`): this file replays TS captures (Slides wave 5).
+fn ts(mut d: Deck) -> Deck {
+    d.set_rules(uo_dml_render::SlidesRules::ts_strict());
+    d
 }

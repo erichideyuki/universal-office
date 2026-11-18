@@ -1603,6 +1603,85 @@ fn diagram_frame_xml(sh: &OaShape<'_>, pc: &mut PartCtx<'_, '_>, xf: &Xf, c_nv_p
     ))
 }
 
+/// Most bytes an embedded chart's storage may inflate to.
+const MAX_OLE_STORAGE: usize = 64 << 20;
+
+/// The storage of an `ExOleObjStg` (compressed when its instance is 1: the size, then zlib). PowerPoint writes the zlib
+/// stream without its end (the last block unterminated, no Adler-32): the data inflated up to the declared size is kept.
+fn ole_storage(rec: &Rec<'_>) -> Option<Vec<u8>> {
+    let d = super::rd::sub(rec.data, rec.start, rec.end);
+    if rec.inst != 1 {
+        return Some(d.to_vec());
+    }
+    let declared = usize::try_from(u32::from_le_bytes([*d.first()?, *d.get(1)?, *d.get(2)?, *d.get(3)?])).ok()?;
+    if declared == 0 || declared > MAX_OLE_STORAGE {
+        return None;
+    }
+    let z = d.get(4..)?;
+    match miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(z, declared) {
+        Ok(v) => Some(v),
+        Err(e) if e.output.len() == declared => Some(e.output),
+        Err(_) => None,
+    }
+}
+
+/// An embedded `Excel.Chart` OLE object that PowerPoint converts back (ClientData `ExObjRefAtom` → `ExOleEmbedContainer` →
+/// `ExOleObjStg`) as a
+/// `p:graphicFrame` with a chart part converted from the BIFF8 chart of its `Workbook` stream (`uo_charts::biff`), in the
+/// shape's frame; `None` = not a chart (the picture stays).
+fn ole_chart_xml(sh: &OaShape<'_>, pc: &mut PartCtx<'_, '_>, xf: &Xf, c_nv_pr: &str) -> Option<String> {
+    // only a chart that PowerPoint 2007+ downgraded: the round-trip blob's `drs/downrev.xml` says `convChart="1"` (measured:
+    // pb-graficos-partes.ppt opens as msoChart; pb-graficos.ppt, the same OLE storages without that blob, stays an
+    // msoEmbeddedOLEObject drawn from its picture)
+    if !pc.conv.use_round_trip {
+        return None;
+    }
+    let blob = sh.props.get(0x3a9).and_then(|p| p.complex);
+    let downrev = pc.conv.rt.zip_part_text(blob, "drs/downrev.xml")?;
+    if !downrev.contains("convChart=\"1\"") {
+        return None;
+    }
+    let cd = sh.client_data.as_ref()?;
+    let r = children(cd).into_iter().find(|c| c.rec_type == rt::EX_OBJ_REF_ATOM)?;
+    let ole = pc.conv.doc.ole.get(&r.u32(r.start))?;
+    if !ole.prog_id.as_deref().is_some_and(|p| p.starts_with("Excel.Chart")) {
+        return None;
+    }
+    let storage = ole_storage(ole.storage.as_ref()?)?;
+    let cfb = uo_opc::cfb::CfbFile::open(&storage).ok()?;
+    let wb = cfb.stream("Workbook").ok().flatten()?;
+    let xml = uo_charts::biff::chart_space_from_workbook(&wb)?;
+    pc.conv.charts += 1;
+    let k = pc.conv.charts;
+    let dst = format!("ppt/charts/chart{k}.xml");
+    pc.conv.parts.set(dst.clone(), xml.into_bytes());
+    pc.conv.overrides.set(dst, "application/vnd.openxmlformats-officedocument.drawingml.chart+xml".to_owned());
+    let rid = pc.rels.add("chart", &format!("../charts/chart{k}.xml"), false);
+    Some(el(
+        "p:graphicFrame",
+        vec![],
+        &(el("p:nvGraphicFramePr", vec![], &format!("{c_nv_pr}<p:cNvGraphicFramePr/><p:nvPr/>"))
+            + &xfrm_xml(&Xf { rot: 0.0, flip_h: false, flip_v: false, ..*xf }, "p:xfrm", "")
+            + &el(
+                "a:graphic",
+                vec![],
+                &el(
+                    "a:graphicData",
+                    vec![("uri", s("http://schemas.openxmlformats.org/drawingml/2006/chart"))],
+                    &el(
+                        "c:chart",
+                        vec![
+                            ("xmlns:c", s("http://schemas.openxmlformats.org/drawingml/2006/chart")),
+                            ("xmlns:r", s("http://schemas.openxmlformats.org/officeDocument/2006/relationships")),
+                            ("r:id", s(rid)),
+                        ],
+                        "",
+                    ),
+                ),
+            )),
+    ))
+}
+
 /// Is it a hidden shape (fHidden in the set 0x3BF)?
 fn is_hidden(sh: &OaShape<'_>) -> bool {
     bool_prop(&sh.props, 0x3bf, 1, false)
@@ -1748,6 +1827,13 @@ pub fn shape_xml(sh: &OaShape<'_>, pc: &mut PartCtx<'_, '_>, opts: ShapeOpts) ->
         && let Some(dgm) = diagram_frame_xml(sh, pc, &xf, &c_nv_pr)
     {
         return Ok(dgm);
+    }
+
+    // an embedded Excel chart: PowerPoint opens it as a native chart (the picture is only its 97-2003 fallback)
+    if !pc.conv.ts_ppt_charts
+        && let Some(frame) = ole_chart_xml(sh, pc, &xf, &c_nv_pr)
+    {
+        return Ok(frame);
     }
 
     // picture (PictureFrame or any shape with a pib)

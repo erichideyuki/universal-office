@@ -12,7 +12,7 @@ use crate::model::{RichPara, RichRun, TextProps};
 impl<C: Canvas> Renderer<'_, C> {
     /// `titleText()`: the paragraphs of the title; `None` = nothing to show.
     fn title_text(&self) -> Option<Vec<RichPara>> {
-        let t = self.cs.title.as_ref()?;
+        let t = self.title_el()?;
         if let Some(paras) = &t.paras {
             return paras.iter().any(|p| p.runs.iter().any(|r| !trim(&r.text).is_empty())).then(|| paras.clone());
         }
@@ -43,7 +43,7 @@ impl<C: Canvas> Renderer<'_, C> {
 
     fn layout_title_inner(&mut self, inner: Rect) -> Option<TitleLayout> {
         let cs = self.cs;
-        let t = cs.title.as_ref()?;
+        let t = self.title_el()?;
         if cs.auto_title_deleted && t.paras.is_none() && t.text.as_deref().is_none_or(str::is_empty) {
             return None;
         }
@@ -62,7 +62,10 @@ impl<C: Canvas> Renderer<'_, C> {
                 let rt = if t.paras.is_some() && p.no_def_rpr {
                     self.text(&[&TextProps { sz: Some(18.62), b: Some(false), ..TextProps::default() }, &r.props])
                 } else {
-                    let sz = if t.paras.is_some() || has_text { self.base.sz } else { 18.0 };
+                    // the automatic text: 18 pt (TS); PowerPoint: 18 pt with c14:style or in an Office 2007 file, else the
+                    // base size (measured, lab c-r2 #1: 10 pt without c14)
+                    let auto_sz = if self.rules().ts_auto_title || cs.office2010 { 18.0 } else { self.base.sz };
+                    let sz = if t.paras.is_some() || has_text { self.base.sz } else { auto_sz };
                     self.text(&[&TextProps { sz: Some(sz), b: Some(true), ..TextProps::default() }, &t.tx_pr, &p.props, &r.props])
                 };
                 if &*r.text == "\n" {
@@ -82,15 +85,16 @@ impl<C: Canvas> Renderer<'_, C> {
             }
             lines.push(cur);
         }
-        let floor_line = self.line_h(&self.text(&[&TextProps { sz: Some(self.base.sz), ..TextProps::default() }, &t.tx_pr]));
-        let lh = |me: &Self, ln: &[TextPiece]| -> f64 {
-            let mut v: Vec<f64> = ln.iter().map(|r| me.line_h(&r.style)).collect();
-            v.push(floor_line);
-            max_n(&v)
-        };
+        let floor_style = self.text(&[&TextProps { sz: Some(self.base.sz), ..TextProps::default() }, &t.tx_pr]);
+        let floor_line = self.title_line_h(&floor_style);
         let mut h = 0.0;
         for ln in &lines {
-            h += lh(self, ln);
+            let mut v: Vec<f64> = Vec::with_capacity(ln.len() + 1);
+            for r in ln {
+                v.push(self.title_line_h(&r.style));
+            }
+            v.push(floor_line);
+            h += max_n(&v);
         }
         let mut widths = Vec::with_capacity(lines.len());
         for ln in &lines {
@@ -115,13 +119,25 @@ impl<C: Canvas> Renderer<'_, C> {
         Some(TitleLayout { lines, x, y, w, h, overlay: t.overlay })
     }
 
+    /// The height of a title line: 1.2 em (TS); PowerPoint (`ts_insets` off) the font's line (ascent + descent of the
+    /// font box: Aptos 1.2207 em — measured, title boxes of 24.97/25.73/20.09/32.295 pt for 18/18.62/14/24-pt text = line + 3).
+    fn title_line_h(&mut self, t: &crate::layout::ResolvedText) -> f64 {
+        if self.rules().ts_insets {
+            return self.line_h(t);
+        }
+        t.sz * self.s * self.font_k(t) * 1.22
+    }
+
     /// `paintTitle(T)`.
     pub(super) fn paint_title(&mut self, tl: &TitleLayout) -> R<()> {
-        let Some(t) = self.cs.title.as_ref() else { return Ok(()) };
+        let Some(t) = self.title_el() else { return Ok(()) };
         self.shape_rect(Rect { x: tl.x - 3.0, y: tl.y - 2.0, w: tl.w + 6.0, h: tl.h + 4.0 }, &t.sp, None, None, 0.0)?;
         let mut y = tl.y;
         for ln in &tl.lines {
-            let mut v: Vec<f64> = ln.iter().map(|r| self.line_h(&r.style)).collect();
+            let mut v: Vec<f64> = Vec::with_capacity(ln.len() + 1);
+            for r in ln {
+                v.push(self.title_line_h(&r.style));
+            }
             v.push(1.0);
             let lh = max_n(&v);
             let mut lw = 0.0;

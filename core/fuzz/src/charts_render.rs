@@ -6,7 +6,7 @@
 //! built from them (a bin count that is not an array length is the RangeError, never an allocation), 3 = `image_dpi` over the
 //! raw bytes (PNG / JPEG / EXIF / BMP readers on truncated and hostile input).
 //!
-//! `chart_emit`: byte 0 = flags (bits 0-1 file format, bit 2 canonical prefixes, bit 3 images on), bytes 1..9 = hostile
+//! `chart_emit`: byte 0 = flags (bits 0-1 file format, bit 2 canonical prefixes, bit 3 images on, bit 4 the TS chart rules), bytes 1..9 = hostile
 //! `px_per_pt` and bytes 9..41 the rectangle (4 × `f64`), byte 41 = measure mode (answers NaN / 0 / 1e308 / negative /
 //! missing by hash), then the chart XML and the chart drawing split on a 0 byte. The chart is parsed and emitted through
 //! `emit_chart`, `need_measures`, `part_bounds` and `trace_layout` (every family: axes, XY, pies, radar, chartex): no panic, the number of canvas calls is
@@ -326,7 +326,8 @@ pub fn chart_emit(data: &[u8]) {
         _ => ChartSel { bg: false, data: DataSel::NotCovered(Box::new([DataSel::Series(0)])) },
     };
     let profile = HostProfile { area_fill_bg1: flags & 16 != 0, area_line: None, excel_axis_density: flags & 32 != 0 };
-    let p = EmitParams { rect, px_per_pt: ppt, profile, locale: uo_numfmt::pt_br(), sel, images: flags & 8 != 0 };
+    let rules = if flags & 16 != 0 { uo_charts::rules::ChartRules::ts_strict() } else { uo_charts::rules::ChartRules::default() };
+    let p = EmitParams { rect, px_per_pt: ppt, profile, locale: uo_numfmt::pt_br(), sel, images: flags & 8 != 0, rules };
     let m = FuzzMeasure(mode / 4);
     let points: usize = cs
         .groups

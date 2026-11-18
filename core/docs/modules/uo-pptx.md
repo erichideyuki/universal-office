@@ -999,6 +999,40 @@ records `err`, which the Rust side would print as `err:<message>` and fail the f
 | Verification (debug, 4 threads) | replay: samples 70 s, generated 47 s, blank 11 s, fonts 118 s; memory 8 s; no-panic 18 s; units 0.1 s | clippy native (all targets, all features) and wasm32 (lib) clean, `cargo fmt`, `grep-bans.sh` |
 | Rework | - | the history byte cap first counted the live package (it left one step); `Typing` found inherited shapes by id; 3 lints |
 
+## `.ppt` charts (wave 5, 2026-11-18) — `ConvertOptions::ts_ppt_charts`
+
+**Measured (PowerPoint 365 object model, read-only, no window):** an embedded chart of a `.ppt` is an `ExOleEmbedContainer`
+(`Excel.Chart.8`, subType 0x0E) whose `ExOleObjStg` holds a compound file with a BIFF8 `Workbook` (the chart sheet with its
+cache and the Office 2007 XML records), and the shape keeps a PNG of the chart as its picture. PowerPoint opens it as a
+**native chart** (`Shape.Type` = 3 msoChart, `HasChart`) **only when the shape's round-trip blob (OfficeArt property 0x3A9)
+has `drs/downrev.xml` with `convChart="1"`** — what PowerPoint 2007+ writes when it saves a native chart into a `.ppt`:
+`pb-graficos-partes.ppt` → msoChart, in a frame 4 pt larger on each side than the `.pptx` twin's (808 × 448 for 800 ×
+440); `pb-graficos.ppt`, with byte-identical OLE storages but no such blob, → msoEmbeddedOLEObject (type 7), drawn from
+its picture. The TS converter keeps the picture always.
+
+**Converter** (`ppt/reader.rs`: `PptDocument::ole` by `exObjId`; `ppt/shapeconv.rs::ole_chart_xml`): with round-trip data
+on and `ts_ppt_charts` off (default), a shape whose ClientData `ExObjRefAtom` names an `Excel.Chart` object with the
+`convChart` mark becomes a `p:graphicFrame` in the shape's anchor with `ppt/charts/chartN.xml` (content type override,
+slide relationship `chart`), converted by `uo_charts::biff` (`uo-charts.md` "BIFF8 charts"). The storage's zlib stream
+is written WITHOUT its end by PowerPoint (last block unterminated, no Adler-32; `uo-opc`'s inflater rejects it):
+`miniz_oxide` (the pin of uo-opc) decodes it and the data is kept when it reaches the declared size. Anything that fails
+(no storage, no `Workbook`, no chart group) keeps the picture. `ConvertOptions::ts_strict()` (= `ts_ppt_charts: true`)
+is the TS converter: the B2 byte-parity replay (`tests/ppt_parity.rs`) uses it and stays equal; `convert_with(bytes,
+&ConvertOptions)` gives the TS-parity harnesses that open `.ppt` decks the same choice (`convert` = default).
+
+**Agreement with PowerPoint** (oracle pages, same tree, only this switch): `pb-graficos-partes.ppt` chart pages 1–4
+0.9611 → **0.9927**, p5 0.9883 → 0.9981, p6 0.9810 → 0.9982; `pb-midia.ppt` p4 0.9625 → **0.9922**; the 12 `ppt-chart`
+pages 234,569 → **65,787** differing px; `pb-graficos.ppt` unchanged (stays a picture, as in PowerPoint). Tests:
+`tests/ppt_charts.rs` (the six native charts of `pb-graficos-partes.ppt` with the measured content — column bars,
+overlap −27, the bottom legend, the light gridlines of the XML — the pie's title, `pb-graficos.ppt` without charts,
+`ts_strict` without charts). **Follow-up round:** OLE servers in the corpus — the 25 `.ppt` samples (the only `.ppt` files in the repository; the
+1,600 under `slides/tools/ppt-lab/.regress` are copies of them) hold 16 embedded objects, all `Excel.Chart.8`:
+**0 `MSGraph.Chart`**, 0 equations or worksheets, so nothing else to measure. PowerPoint 365 (this machine) does NOT write
+the `convChart` mark: decks with native charts and embedded workbooks saved with `SaveAs`/`SaveCopyAs` as `.ppt` reopen as
+msoEmbeddedOLEObject (measured on 4 lab decks) — the mark comes from older PowerPoint versions; the converter follows the
+mark, as PowerPoint does. Trendlines, error bars, GELFRAME fills and cell references are converted (`uo-charts.md` "BIFF8
+charts"); error bars are drawn by the chart engine since its follow-up 2 (`ChartRules::ts_err_bars`).
+
 ## Model memory — compaction of the read model (wave 4b, 2026-11-18, Opus)
 
 The M3 budget of the plan ("retained `SlideModel` ≤ 0.5× the TS `Slide` heap", DR3 `size_of::<Shape>() ≤ 256`) was open since
@@ -1107,3 +1141,24 @@ changed.
   (an isolated `git archive` tree) **93/93 digests equal the committed `slides-native.tsv`: no re-bless**.
 - `node tools/check-changed.mjs` (clippy native and wasm32, all targets and features, ban scripts) clean; `cargo fmt --check`
   clean; the fuzz crate builds (`--features fallback`).
+
+## PowerPoint rules (wave 5, 2026-11-18, Opus — agent A)
+
+The rules, their measurements and numbers are in `uo-dml-render.md` "PowerPoint rules (wave 5)"; what the deck adds:
+
+- `Deck::rules()/set_rules()` (the skeleton of `1526ea3f`) now reach the reads: `DeckSource` answers `PartSource::rules()` (and
+  `field_clock()`), so the theme, the colours, the text cascade and the model's date fields follow them; a change empties the caches.
+- `Deck::field_clock()/set_field_clock(Option<FieldClock>)`: the clock of the date/time fields (`!ts_date_locale`). `read_slide`
+  rewrites the text of every `datetime*` field of the slide's shapes and table cells (`read.rs` `datetime_fields`, beside the slide-number
+  pass). No clock (the default) = the cached text: native tests, servers and the oracle runs stay deterministic unless they set one
+  (the oracle harness should set the clock of the PowerPoint export it compares with — agent C's `oracle_ppt/main.rs`).
+- TS parity under `ts_strict`: `tests/replay.rs`, `text_layout.rs`, `timing_replay.rs`, `support/edit_capture.rs` (`edit_replay.rs`) set
+  `SlidesRules::ts_strict()` on every deck they replay (before: `edit_replay` 1,398 mismatching facets and `replay`/`text_layout` failing
+  under PowerPoint's rules — the generated decks' random `lastClr` and the baselines); the draw-op example `examples/emit_uolf.rs`
+  (`js/emit-uolf.mjs` + `compare-drawops.mjs`) runs `ts_strict` unless `UO_EMIT_RULES=ppt`. After: replay 4/4, text_layout 4/4,
+  edit_replay 4/4, timing_replay, stage, units, emit green.
+- `tests/wave5_rules.rs` + `tests/data/wave5/` (5 synthetic decks of `core/target/w5-a/gen.py`, no font inside: `sys-1`, `date-1`,
+  `fx-emf`, `links`): sysClr fills against PowerPoint (`#123456` under `ts_strict`), the date fields through the deck (PowerPoint's strings
+  of `date-1`), the colour effects over a metafile in the PDF (24 PowerPoint colours), the run marks of table-cell links and run jumps,
+  the fallback contexts of `b3a/0002` (ja/ko/ar/he/hi runs; none under `ts_strict`).
+- `src/pdf/recipe.rs`: the derived recipes (version 2) — the base played with the colours mapped (`FxMap` over `images::apply_fx`).

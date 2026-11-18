@@ -8,7 +8,15 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# JPEG to RGBA (`decode_jpeg`): only the PDF's colour effects on JPEG pictures need it (uo-pptx feature `pdf`); no wasm
+# build enables it (the browser decodes JPEG itself)
+jpeg = ["dep:zune-jpeg", "dep:zune-core"]
+
 [dependencies]
+# the JPEG decoder of feature `jpeg` (pinned; scalar path, single-threaded: docs/modules/uo-image.md "JPEG decoder")
+zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"], optional = true }
+zune-core = { version = "=0.5.3", default-features = false, features = ["std"], optional = true }
 # zlib inflate (PNG IDAT, TIFF deflate strips): the port of fflate's `unzlibSync` the TS uses
 uo-opc = { path = "../uo-opc" }
 # every Math.* call and typed-array store of the TS goes through it

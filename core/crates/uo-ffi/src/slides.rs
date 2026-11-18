@@ -32,8 +32,17 @@ use crate::{CONVERSION_STACK_BYTES, UoBuf, UoCancel, UoConverter, buf_out, bytes
 
 /// `UoDeckOptions.flags`: the deck comes from a trusted source (the default container limits).
 pub const DECK_TRUSTED: u32 = 1;
+/// `UoDeckOptions.flags`: a `.ppt` is converted as the frozen TS converter did (`ConvertOptions::ts_strict()`: charts as
+/// their fallback pictures); the default converts as PowerPoint opens the file (native charts). Parity tests only.
+pub const DECK_TS_STRICT: u32 = 2;
 /// `UoSlidesJob.flags`: compress the content streams (the default of the facade).
 pub const SLIDES_JOB_COMPRESS: u32 = 1;
+/// `UoSlidesJob.flags`: every PowerPoint-over-TS switch off for this PDF — the frozen TS's Slides (the deck's
+/// `SlidesRules::ts_strict()` for the job, restored after it, and the PDF's `ts_hidden_slides`/`ts_link_rects`; on the
+/// one-call route a `.ppt` is also converted with `ConvertOptions::ts_strict()`, on the deck route that is the deck's
+/// [`DECK_TS_STRICT`]). For the facade's parity tests against the TS only; no product path sets it (as `JOB_TS_STRICT` of
+/// the Write PDF).
+pub const SLIDES_JOB_TS_STRICT: u32 = 2;
 
 /// The family every request falls back to when neither the family nor its metric substitute exists.
 const FALLBACK_FAMILY: &str = "Liberation Sans";
@@ -69,11 +78,13 @@ pub struct UoDeck {
 #[derive(Debug, Clone, Copy)]
 pub struct SlidesJob {
     pub compress: bool,
+    /// [`SLIDES_JOB_TS_STRICT`]
+    pub ts_strict: bool,
 }
 
 impl Default for SlidesJob {
     fn default() -> Self {
-        SlidesJob { compress: true }
+        SlidesJob { compress: true, ts_strict: false }
     }
 }
 
@@ -96,6 +107,9 @@ fn pdf_error(e: PdfFail) -> JobError {
     match e {
         PdfFail::Deck(e) => pptx_error(&e, stage::PDF),
         PdfFail::Pdf(e) => JobError::from(e),
+        PdfFail::NoVisibleSlides => {
+            JobError::Other { code: code::INVALID_OPERATION, stage: stage::PDF, max: 0, message: "every slide is hidden".to_owned() }
+        }
     }
 }
 
@@ -124,8 +138,17 @@ fn package_limits(trust: Trust) -> uo_opc::Limits {
 /// # Errors
 /// [`JobError::Other`] with the code of the [`PptxError`].
 pub fn open_deck(bytes: &[u8], trust: Trust) -> Result<(Deck, bool), JobError> {
+    open_deck_with(bytes, trust, false)
+}
+
+/// [`open_deck`], a `.ppt` converted as the frozen TS did when `ts_strict` (`ConvertOptions::ts_strict()`).
+///
+/// # Errors
+/// As [`open_deck`].
+pub fn open_deck_with(bytes: &[u8], trust: Trust, ts_strict: bool) -> Result<(Deck, bool), JobError> {
     if uo_pptx::ppt::is_cfb(bytes) {
-        let parts = uo_pptx::ppt::convert(bytes).map_err(|e| pptx_error(&e, stage::READ))?;
+        let options = if ts_strict { uo_pptx::ppt::ConvertOptions::ts_strict() } else { uo_pptx::ppt::ConvertOptions::default() };
+        let parts = uo_pptx::ppt::convert_with(bytes, &options).map_err(|e| pptx_error(&e, stage::READ))?;
         let deck = Deck::from_parts(parts, Limits::default()).map_err(|e| pptx_error(&e, stage::READ))?;
         return Ok((deck, true));
     }
@@ -166,7 +189,7 @@ impl Converter {
         if cancelled(cancel.as_ref()) {
             return Err(JobError::Cancelled);
         }
-        let (mut deck, _) = open_deck(bytes, self.trust)?;
+        let (mut deck, _) = open_deck_with(bytes, self.trust, job.ts_strict)?;
         self.deck_to_pdf(&mut deck, job, cancel)
     }
 
@@ -192,7 +215,19 @@ impl Converter {
             o.image_limits.max_px = o.image_limits.max_px.min(UNTRUSTED_IMAGE_PIXELS);
         }
         o.cancel = cancel.clone();
-        let out = uo_pptx::pdf(deck, &o).map_err(pdf_error)?;
+        let out = if job.ts_strict {
+            // the TS rules for this job only: the handle keeps its own afterwards
+            let saved = deck.rules();
+            o.ts_hidden_slides = true;
+            o.ts_link_rects = true;
+            deck.set_rules(uo_dml_render::SlidesRules::ts_strict());
+            let r = uo_pptx::pdf(deck, &o);
+            deck.set_rules(saved);
+            r
+        } else {
+            uo_pptx::pdf(deck, &o)
+        }
+        .map_err(pdf_error)?;
         if cancelled(cancel.as_ref()) {
             return Err(JobError::Cancelled);
         }
@@ -236,13 +271,13 @@ fn locked(d: &UoDeck) -> Result<std::sync::MutexGuard<'_, Deck>, JobError> {
     }
 }
 
-fn deck_options(o: *const UoDeckOptions) -> Result<Trust, JobError> {
+fn deck_options(o: *const UoDeckOptions) -> Result<(Trust, bool), JobError> {
     // SAFETY: the caller guarantees `o` is null or a valid options struct.
     let Some(o) = (unsafe { o.as_ref() }) else { return Err(JobError::Argument("options")) };
     if (o.size as usize) < size_of::<UoDeckOptions>() {
         return Err(JobError::Argument("options size"));
     }
-    Ok(if o.flags & DECK_TRUSTED != 0 { Trust::Trusted } else { Trust::Untrusted })
+    Ok((if o.flags & DECK_TRUSTED != 0 { Trust::Trusted } else { Trust::Untrusted }, o.flags & DECK_TS_STRICT != 0))
 }
 
 fn slides_job(j: *const UoSlidesJob) -> Result<SlidesJob, JobError> {
@@ -251,7 +286,7 @@ fn slides_job(j: *const UoSlidesJob) -> Result<SlidesJob, JobError> {
     if (j.size as usize) < size_of::<UoSlidesJob>() {
         return Err(JobError::Argument("job size"));
     }
-    Ok(SlidesJob { compress: j.flags & SLIDES_JOB_COMPRESS != 0 })
+    Ok(SlidesJob { compress: j.flags & SLIDES_JOB_COMPRESS != 0, ts_strict: j.flags & SLIDES_JOB_TS_STRICT != 0 })
 }
 
 // ───────────────────────────── exports ─────────────────────────────
@@ -267,13 +302,13 @@ pub unsafe extern "C" fn uo_deck_open(data: *const u8, len: usize, o: *const UoD
         if out.is_null() {
             return fail(&JobError::Argument("output"));
         }
-        let trust = match deck_options(o) {
+        let (trust, ts_strict) = match deck_options(o) {
             Ok(t) => t,
             Err(e) => return fail(&e),
         };
         // SAFETY: the caller guarantees `data` has `len` readable bytes.
         let Some(bytes) = (unsafe { bytes_in(data, len) }) else { return fail(&JobError::Argument("data")) };
-        match on_big_stack(move || open_deck(bytes, trust)) {
+        match on_big_stack(move || open_deck_with(bytes, trust, ts_strict)) {
             Ok((deck, legacy)) => {
                 // SAFETY: `out` was checked for null; the caller guarantees it is writable.
                 unsafe { *out = Box::into_raw(Box::new(UoDeck { deck: Mutex::new(deck), legacy })) };
@@ -479,7 +514,7 @@ pub unsafe extern "C" fn uo_ppt_to_pptx(data: *const u8, len: usize, o: *const U
         if out.is_null() {
             return fail(&JobError::Argument("output"));
         }
-        let trust = match deck_options(o) {
+        let (trust, ts_strict) = match deck_options(o) {
             Ok(t) => t,
             Err(e) => return fail(&e),
         };
@@ -494,7 +529,7 @@ pub unsafe extern "C" fn uo_ppt_to_pptx(data: *const u8, len: usize, o: *const U
                     message: "not a PowerPoint 97-2003 file (no Compound File signature)".to_owned(),
                 });
             }
-            let (deck, _) = open_deck(bytes, trust)?;
+            let (deck, _) = open_deck_with(bytes, trust, ts_strict)?;
             deck.save().map_err(|e| pptx_error(&e, stage::READ))
         });
         match converted {

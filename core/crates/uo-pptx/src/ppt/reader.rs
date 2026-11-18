@@ -79,6 +79,15 @@ pub struct PptHyperlink {
     pub friendly_name: Option<String>,
 }
 
+/// An embedded OLE object (`ExOleEmbedContainer`): its ProgID, its kind and the storage record (`ExOleObjStg`, compressed
+/// when its instance is 1).
+#[derive(Debug, Clone)]
+pub struct PptOle<'a> {
+    pub prog_id: Option<String>,
+    pub sub_type: u32,
+    pub storage: Option<Rec<'a>>,
+}
+
 /// The master styles of a master by text type (the instance of the `TextMasterStyleAtom`).
 pub type MasterStyles = HashMap<u16, Vec<MasterStyleLevel>>;
 
@@ -210,6 +219,8 @@ pub struct PptDocument<'a> {
     pub binary_tags: HashMap<String, Rec<'a>>,
     /// hyperlinks by `exHyperlinkId`
     pub hyperlinks: HashMap<u32, PptHyperlink>,
+    /// embedded OLE objects by `exObjId`
+    pub ole: HashMap<u32, PptOle<'a>>,
     /// default language of the text (LCID of the `TextSpecialInfoDefaultAtom`)
     pub doc_lcid: Option<u16>,
     pub slide_headers_footers: Option<PptHeadersFooters>,
@@ -294,6 +305,7 @@ pub fn read_ppt_document<'a>(doc: &'a [u8], pics: Option<&'a [u8]>, current_user
         notes_master: None,
         binary_tags: HashMap::new(),
         hyperlinks: HashMap::new(),
+        ole: HashMap::new(),
         doc_lcid: None,
         slide_headers_footers: None,
         omit_title_place: false,
@@ -400,6 +412,25 @@ pub fn read_ppt_document<'a>(doc: &'a [u8], pics: Option<&'a [u8]>, current_user
             rt::LIST => read_prog_tags(&c, &mut out.binary_tags, 0)?,
             rt::EXTERNAL_OBJECT_LIST => {
                 for x in children(&c) {
+                    // ExOleEmbedContainer: ExOleObjAtom (drawAspect, type, exObjId, subType, persistIdRef) + the ProgID
+                    if x.rec_type == rt::EX_OLE_EMBED {
+                        let mut id: Option<u32> = None;
+                        let mut ole = PptOle { prog_id: None, sub_type: 0, storage: None };
+                        for k in children(&x) {
+                            if k.rec_type == rt::EX_OLE_OBJ_ATOM {
+                                id = Some(k.u32(k.start + 8));
+                                ole.sub_type = k.u32(k.start + 12);
+                                ole.storage =
+                                    rec_at_persist(doc, &persist, k.u32(k.start + 16)).filter(|r| r.rec_type == rt::EX_OLE_OBJ_STG);
+                            } else if k.rec_type == rt::CSTRING && k.inst == 2 {
+                                ole.prog_id = Some(utf16(k.data, k.start, k.end));
+                            }
+                        }
+                        if let Some(id) = id {
+                            out.ole.insert(id, ole);
+                        }
+                        continue;
+                    }
                     if x.rec_type != rt::EXTERNAL_HYPERLINK {
                         continue;
                     }

@@ -96,6 +96,9 @@ impl Interp<'_, '_> {
             if let Some(fx) = fx {
                 let pixel_fx = fx.gray || fx.duotone.is_some() || fx.bi_level.is_some() || fx.clr_change.is_some();
                 if pixel_fx || ((fx.bright.is_some() || fx.contrast.is_some()) && (j.components == 4)) {
+                    if let Some(h) = self.jpeg_fx_picture(data, fx) {
+                        return Some(h);
+                    }
                     self.count("image:jpeg-effect");
                 } else if fx.bright.is_some() || fx.contrast.is_some() {
                     let b = fx.bright.unwrap_or(0.0);

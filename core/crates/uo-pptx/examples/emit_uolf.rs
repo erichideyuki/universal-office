@@ -34,14 +34,28 @@ fn main() {
     let manifest = fs::read_to_string(&a[2]).unwrap_or_default();
     #[cfg(feature = "ppt")]
     let opened = if uo_pptx::ppt::is_cfb(&bytes) {
-        uo_pptx::ppt::convert(&bytes).and_then(|p| Deck::from_parts(p, Limits::default()))
+        {
+            // the TS converter's charts (fallback pictures) unless PowerPoint's rules are asked (`UO_EMIT_RULES=ppt`)
+            let o = if std::env::var("UO_EMIT_RULES").as_deref() == Ok("ppt") {
+                uo_pptx::ppt::ConvertOptions::default()
+            } else {
+                uo_pptx::ppt::ConvertOptions::ts_strict()
+            };
+            uo_pptx::ppt::convert_with(&bytes, &o).and_then(|p| Deck::from_parts(p, Limits::default()))
+        }
     } else {
         Deck::open(&bytes, Limits::default())
     };
     #[cfg(not(feature = "ppt"))]
     let opened = Deck::open(&bytes, Limits::default());
     let mut deck = match opened {
-        Ok(d) => d,
+        Ok(mut d) => {
+            // the draw-op parity against the frozen TS: every TS switch on (Slides wave 5); `UO_EMIT_RULES=ppt` = PowerPoint's
+            if std::env::var("UO_EMIT_RULES").as_deref() != Ok("ppt") {
+                d.set_rules(uo_dml_render::SlidesRules::ts_strict());
+            }
+            d
+        }
         Err(e) => {
             eprintln!("open: {e}");
             std::process::exit(3);

@@ -135,7 +135,12 @@ pub fn slide_links(deck: &mut Deck, index: u32, view: View) -> Result<Vec<LinkBo
 /// The address of the first run with a `hyperlink` of the shape's text body (`for p … for r … if (r.hyperlink) return`).
 fn first_run_url(sh: &Shape) -> Option<&str> {
     let tb = sh.tx_body.as_deref()?;
-    tb.paragraphs.iter().flat_map(|p| p.runs.iter()).find_map(|r| r.extras.as_deref().and_then(|e| e.hyperlink.as_deref()))
+    // the model also keeps run-level jumps as `ppaction://...` addresses (PowerPoint's rule, `!SlidesRules::ts_links`): not
+    // a `RunUrl` (the TS reader kept http/https only); they come as `RunJump` boxes
+    tb.paragraphs
+        .iter()
+        .flat_map(|p| p.runs.iter())
+        .find_map(|r| r.extras.as_deref().and_then(|e| e.hyperlink.as_deref()).filter(|u| is_http(u)))
 }
 
 /// The non-visual properties element of a shape element (`p:nvSpPr`, `p:nvPicPr`, ...).
@@ -231,4 +236,201 @@ fn action_target(h: Element<'_>, rels: &RelMap, slides: &[Option<Box<str>>], jum
         _ => return None,
     };
     Some(LinkTarget::Show(j))
+}
+
+/// One hyperlinked run (`a:r`, `a:fld`) of a slide shape's text as PowerPoint's PDF export treats it (wave 5, record
+/// `uo-pdf.md` "Link rectangles (wave 5)"). PowerPoint gives a paragraph mark without `a:endParaRPr` the link of the
+/// paragraph's last element (an empty paragraph without it, the previous mark's), joins the consecutive runs, breaks and
+/// marks of one `a:hlinkClick` (`r:id` and action) into a range, and writes NO annotation for a range that holds the
+/// text body's last paragraph mark (a link ending the text). Empty runs do not count.
+#[derive(Clone, PartialEq, Debug)]
+pub struct RunRange {
+    /// the shape (an index of `SlideModel::shapes`)
+    pub shape: u32,
+    /// the run's address as the model keeps it (`Run.hyperlink`): an external `http`/`https` one, or a jump as
+    /// `ppaction://hlinksldjump#<slide part>` / the show action as written
+    pub url: Option<Box<str>>,
+    /// the run's jump when it is a slide or show jump
+    pub jump: Option<LinkTarget>,
+    /// the run's characters that are not white space
+    pub chars: usize,
+    /// the range: equal for the runs PowerPoint treats as one link (unique within the slide)
+    pub range: u32,
+    /// the range holds the text body's last paragraph mark: PowerPoint writes no annotation for it
+    pub dropped: bool,
+    /// the paragraph is justified or distributed (`algn` `just`, `dist`, `thaiDist`, `justLow`): PowerPoint writes one
+    /// rectangle per word
+    pub justified: bool,
+}
+
+fn is_http(s: &str) -> bool {
+    s.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("http:")) || s.get(..6).is_some_and(|p| p.eq_ignore_ascii_case("https:"))
+}
+
+/// The hyperlinked runs of presentation slide `index` (its own shapes and table cells; inherited decorations have none),
+/// in shape order then text order (a table's cells row by row); at most `4 ×` [`MAX_LINKS`].
+///
+/// # Errors
+/// The slide (or the presentation) cannot be read.
+pub fn run_ranges(deck: &mut Deck, index: u32) -> Result<Vec<RunRange>, PptxError> {
+    let slide = deck.slide(index)?;
+    let (path, targets): (Option<Box<str>>, Vec<Option<Box<str>>>) = {
+        let p = deck.presentation()?;
+        (
+            p.slides.get(usize::try_from(index).unwrap_or(usize::MAX)).and_then(|r| r.target.clone()),
+            p.slides.iter().map(|r| r.target.clone()).collect(),
+        )
+    };
+    let Some(path) = path else { return Ok(Vec::new()) };
+    let src = deck.source();
+    let Ok(Some(doc)) = src.xml(&path) else { return Ok(Vec::new()) };
+    let rels = read_rels(&src, &rels_path_for(&path), &path).unwrap_or_default();
+    let Some(tree) = doc.root().first_child("p:cSld").and_then(|c| c.first_child("p:spTree")) else { return Ok(Vec::new()) };
+    // the text bodies by cNvPr id, in document order (an id can repeat: consumed in order)
+    let mut by_id: FxHashMap<Box<str>, Vec<Vec<RunRange>>> = FxHashMap::default();
+    let mut next_range = 0u32;
+    let mut stack: Vec<(Element<'_>, usize)> = tree.child_elements().rev().map(|e| (e, 0)).collect();
+    let mut seen = 0usize;
+    while let Some((el, depth)) = stack.pop() {
+        seen += 1;
+        if seen > 100_000 {
+            break;
+        }
+        match el.name() {
+            "p:sp" | "p:graphicFrame" => {}
+            "p:grpSp" | "mc:AlternateContent" | "mc:Choice" | "mc:Fallback" => {
+                if depth < 64 {
+                    for c in el.child_elements().rev() {
+                        stack.push((c, depth + 1));
+                    }
+                }
+                continue;
+            }
+            _ => continue,
+        }
+        let Some(nv) = c_nv_pr(el) else { continue };
+        let id: Box<str> = nv.attr("id").unwrap_or("").into();
+        let runs = if el.name() == "p:graphicFrame" {
+            // a table: every cell is a text body of its own, in reading order (the cells a merge covers are not drawn)
+            let mut runs = Vec::new();
+            let tbl = el.descendants().find(|e| e.name() == "a:tbl");
+            for tc in tbl.into_iter().flat_map(|t| t.children_named("a:tr")).flat_map(|tr| tr.children_named("a:tc")) {
+                if matches!(tc.attr("hMerge"), Some("1" | "true")) || matches!(tc.attr("vMerge"), Some("1" | "true")) {
+                    continue;
+                }
+                if let Some(tb) = tc.first_child("a:txBody") {
+                    runs.extend(body_ranges(tb, &rels, &targets, &mut next_range));
+                }
+            }
+            runs
+        } else {
+            el.first_child("p:txBody").map(|tb| body_ranges(tb, &rels, &targets, &mut next_range)).unwrap_or_default()
+        };
+        by_id.entry(id).or_default().push(runs);
+    }
+    let mut out = Vec::new();
+    let mut used: FxHashMap<Box<str>, usize> = FxHashMap::default();
+    for (i, sh) in slide.shapes.iter().enumerate() {
+        let Ok(shape) = u32::try_from(i) else { break };
+        if sh.inherited == Some(true) {
+            continue;
+        }
+        let Some(v) = by_id.get(&sh.id) else { continue };
+        let k = used.entry(sh.id.clone()).or_insert(0);
+        let Some(runs) = v.get(*k) else { continue };
+        *k += 1;
+        for r in runs {
+            if out.len() >= MAX_LINKS * 4 {
+                return Ok(out);
+            }
+            out.push(RunRange { shape, ..r.clone() });
+        }
+    }
+    Ok(out)
+}
+
+/// The range bookkeeping of [`body_ranges`]: a new range starts at an element whose link differs from the previous
+/// element's (or has none).
+struct RangeCursor<'n> {
+    next: &'n mut u32,
+    prev: Option<String>,
+    range: u32,
+}
+
+impl RangeCursor<'_> {
+    fn step(&mut self, key: Option<&String>) -> u32 {
+        if key.is_none() || key != self.prev.as_ref() {
+            *self.next = self.next.wrapping_add(1);
+            self.range = *self.next;
+        }
+        self.prev = key.cloned();
+        self.range
+    }
+}
+
+/// The linked runs of one `p:txBody` with their ranges (see [`RunRange`]).
+fn body_ranges(tb: Element<'_>, rels: &RelMap, slides: &[Option<Box<str>>], next_range: &mut u32) -> Vec<RunRange> {
+    fn key_of(rpr: Option<Element<'_>>) -> Option<(String, Element<'_>)> {
+        let h = rpr?.first_child("a:hlinkClick")?;
+        Some((format!("{}|{}", h.attr("r:id").or_else(|| h.attr("id")).unwrap_or(""), h.attr("action").unwrap_or("")), h))
+    }
+    let mut out: Vec<RunRange> = Vec::new();
+    let mut cur = RangeCursor { next: next_range, prev: None, range: 0 };
+    let mut last_mark: Option<String> = None;
+    let mut last_range = 0u32;
+    for p in tb.children_named("a:p") {
+        let algn = p.first_child("a:pPr").and_then(|pp| pp.attr("algn")).unwrap_or("");
+        let justified = matches!(algn, "just" | "dist" | "thaiDist" | "justLow");
+        let mut para_last: Option<Option<String>> = None;
+        for e in p.child_elements() {
+            match e.name() {
+                "a:r" | "a:fld" => {
+                    let text = e.first_child("a:t").map(|t| t.text_content()).unwrap_or_default();
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let k = key_of(e.first_child("a:rPr"));
+                    let key = k.as_ref().map(|(s, _)| s.clone());
+                    let range = cur.step(key.as_ref());
+                    para_last = Some(key);
+                    if let Some((_, h)) = k {
+                        let external = uo_jsnum::text::trim(h.attr("action").unwrap_or("")).is_empty();
+                        let action = uo_jsnum::text::trim(h.attr("action").unwrap_or(""));
+                        let (url, jump) = match action_target(h, rels, slides, false) {
+                            Some(LinkTarget::Url(u)) if external => (is_http(&u).then_some(u), None),
+                            Some(LinkTarget::Url(_)) | None => (None, None),
+                            Some(t @ LinkTarget::Slide(_)) => {
+                                let part = ta(h, "r:id").or_else(|| ta(h, "id")).and_then(|r| rels.get(r));
+                                (part.map(|p| format!("ppaction://hlinksldjump#{p}").into()), Some(t))
+                            }
+                            Some(t) => (Some(action.into()), Some(t)),
+                        };
+                        let chars = text.chars().filter(|c| !uo_jsnum::text::is_js_space(*c)).count();
+                        out.push(RunRange { shape: 0, url, jump, chars, range, dropped: false, justified });
+                    }
+                }
+                "a:br" => {
+                    let key = key_of(e.first_child("a:rPr")).map(|(s, _)| s);
+                    cur.step(key.as_ref());
+                    para_last = Some(key);
+                }
+                _ => {}
+            }
+        }
+        // the paragraph mark: its own properties, else the paragraph's last element's, else the previous mark's
+        let mark = match p.first_child("a:endParaRPr") {
+            Some(end) => key_of(Some(end)).map(|(s, _)| s),
+            None => para_last.unwrap_or_else(|| last_mark.clone()),
+        };
+        last_range = cur.step(mark.as_ref());
+        last_mark = mark;
+    }
+    if last_mark.is_some() {
+        for r in &mut out {
+            if r.range == last_range {
+                r.dropped = true;
+            }
+        }
+    }
+    out
 }

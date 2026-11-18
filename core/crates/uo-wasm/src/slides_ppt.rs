@@ -20,7 +20,24 @@ const FORMAT: i32 = 3;
 pub unsafe extern "C" fn uo_slides_ppt_convert(ptr: *mut u8, len: usize) -> *mut UoBuf {
     // SAFETY: the caller guarantees the buffer came from uo_alloc_bytes(len) and holds len bytes.
     let bytes = unsafe { take_bytes(ptr, len) };
-    let out = uo_pptx::ppt::convert(&bytes).and_then(|parts| Deck::from_parts(parts, Limits::default())).and_then(|d| d.save());
+    convert(&bytes, &uo_pptx::ppt::ConvertOptions::default())
+}
+
+/// [`uo_slides_ppt_convert`] with options (Slides wave 5): `flags` bit 0 = the TS converter's rules
+/// (`ConvertOptions::ts_strict`: the parity harnesses; the default is PowerPoint's, e.g. embedded charts converted natively).
+///
+/// # Safety
+/// As [`uo_slides_ppt_convert`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_ppt_convert_with(ptr: *mut u8, len: usize, flags: u32) -> *mut UoBuf {
+    // SAFETY: the caller guarantees the buffer came from uo_alloc_bytes(len) and holds len bytes.
+    let bytes = unsafe { take_bytes(ptr, len) };
+    let o = if flags & 1 != 0 { uo_pptx::ppt::ConvertOptions::ts_strict() } else { uo_pptx::ppt::ConvertOptions::default() };
+    convert(&bytes, &o)
+}
+
+fn convert(bytes: &[u8], o: &uo_pptx::ppt::ConvertOptions) -> *mut UoBuf {
+    let out = uo_pptx::ppt::convert_with(bytes, o).and_then(|parts| Deck::from_parts(parts, Limits::default())).and_then(|d| d.save());
     match out {
         Ok(zip) => buf(OK, zip),
         Err(e) => buf(FORMAT, e.to_string().into_bytes()),

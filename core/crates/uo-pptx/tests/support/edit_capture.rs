@@ -309,7 +309,7 @@ pub fn model_facets(e: &mut Editor) -> (String, String) {
 
 /// The `pres` and `cur` facets of a package read fresh at slide `index` (what a shell that mirrors the package reads).
 pub fn store_model_facets(store: &PartStore, index: u32) -> (String, String) {
-    let mut e = Editor::new(Deck::from_store(store.clone(), Limits::default()));
+    let mut e = Editor::new(ts(Deck::from_store(store.clone(), Limits::default())));
     e.set_index(index);
     model_facets(&mut e)
 }
@@ -425,6 +425,8 @@ impl Driver for EditorDriver {
             }
         };
         ed.set_random_seed(1);
+        // every TS switch on: the replay compares with TS captures (Slides wave 5)
+        ed.deck_mut().set_rules(uo_dml_render::SlidesRules::ts_strict());
         self.ed = Some(ed);
     }
     fn apply(&mut self, op: Op) -> String {
@@ -451,6 +453,7 @@ impl Driver for EditorDriver {
     }
     fn xpaste(&mut self, deck: &[u8], slide: u32, shape: &str) -> String {
         let mut src = Editor::open(deck, Limits::default()).unwrap();
+        src.deck_mut().set_rules(uo_dml_render::SlidesRules::ts_strict());
         src.set_index(slide);
         match src.copy_shape(shape).unwrap() {
             None => "none".into(),
@@ -627,7 +630,7 @@ pub fn replay(stem: &str, d: &mut dyn Driver, max_scripts: usize) -> (usize, usi
             }
             Cmd::SaveFonts => {
                 let bytes = d.save_fonts();
-                let saved = Deck::open(&bytes, Limits::default()).unwrap();
+                let saved = ts(Deck::open(&bytes, Limits::default()).unwrap());
                 format!("s{}", parts_digest(saved.parts()))
             }
         };
@@ -658,4 +661,10 @@ pub fn replay(stem: &str, d: &mut dyn Driver, max_scripts: usize) -> (usize, usi
         rp.check(&facet_key, "cur", &c);
     }
     (scripts, steps, rp.finish())
+}
+
+/// Every TS switch on (`SlidesRules::ts_strict`): this file replays TS captures (Slides wave 5).
+fn ts(mut d: Deck) -> Deck {
+    d.set_rules(uo_dml_render::SlidesRules::ts_strict());
+    d
 }

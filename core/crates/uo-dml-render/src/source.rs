@@ -78,6 +78,15 @@ pub trait PartSource {
     fn share_theme(&self, theme: crate::theme::Theme) -> Arc<crate::theme::Theme> {
         Arc::new(theme)
     }
+    /// The PowerPoint-over-TS switches the reads follow (the deck's; default = PowerPoint). The readers take them from
+    /// here into [`crate::theme::Theme::rules`], so every resolution below a theme sees them.
+    fn rules(&self) -> crate::rules::SlidesRules {
+        crate::rules::SlidesRules::default()
+    }
+    /// The clock of the date/time fields (`!ts_date_locale`): `None` = no clock, the fields keep their cached text.
+    fn field_clock(&self) -> Option<crate::datefield::FieldClock> {
+        None
+    }
 }
 
 /// The element-name prefix of the shape tree: `p:` (slides) or `xdr:` (spreadsheet drawings). The

@@ -346,6 +346,34 @@ impl ShapeMemo {
     }
 }
 
+/// The date/time fields of a shape (its text and its table cells; groups are flat in the model) with the clock's date in the run's
+/// language (`uo_dml_render::datefield`).
+fn datetime_fields(sh: &mut Shape, clock: &uo_dml_render::datefield::FieldClock) {
+    use uo_dml_render::datefield::{format_datetime_field, is_datetime_field};
+    let fix = |tb: &mut uo_dml_render::model::TextBody| {
+        for p in &mut tb.paragraphs {
+            for r in &mut p.runs {
+                let Some(kind) = r.extras.as_ref().and_then(|e| e.field.as_deref()).filter(|k| is_datetime_field(k)) else { continue };
+                if let Some(t) = format_datetime_field(kind, r.lang.as_deref(), clock) {
+                    r.text = t.into();
+                }
+            }
+        }
+    };
+    if let Some(tb) = sh.tx_body.as_deref_mut() {
+        fix(tb);
+    }
+    if let Some(t) = sh.extras.as_deref_mut().and_then(|e| e.table.as_deref_mut()) {
+        for row in &mut t.rows {
+            for cell in &mut row.cells {
+                if let Some(tb) = cell.tx_body.as_deref_mut() {
+                    fix(tb);
+                }
+            }
+        }
+    }
+}
+
 fn has_ph(s: &Shape) -> bool {
     s.ph_type.is_some() || s.ph_idx.is_some()
 }
@@ -416,6 +444,15 @@ pub fn read_slide_with(src: &dyn PartSource, slide_path: &str, limits: Limits, t
                     }
                 }
             }
+        }
+    }
+
+    // date/time fields: PowerPoint shows the CURRENT date in the field's format and language (Slides wave 5; the TS the cache)
+    if !src.rules().ts_date_locale
+        && let Some(clock) = src.field_clock()
+    {
+        for sh in &mut shapes {
+            datetime_fields(sh, &clock);
         }
     }
 

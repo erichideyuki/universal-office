@@ -68,7 +68,12 @@ pub fn paint_table(cx: &mut Cx<'_>, t: &Table, x: f64, y: f64, w: f64, h: f64, f
     let tot = sum(&t.col_widths_emu);
     let total_col_emu = if truthy(tot) { tot } else { 1.0 };
     let sx = w / total_col_emu;
-    let opts = LayoutTextOptions { default_sz_pt: Some(DEFAULT_BODY_PT), default_anchor: Some("t".into()), ..LayoutTextOptions::default() };
+    let opts = LayoutTextOptions {
+        default_sz_pt: Some(DEFAULT_BODY_PT),
+        default_anchor: Some("t".into()),
+        rules: cx.env.rules,
+        ..LayoutTextOptions::default()
+    };
     let need_of = |cx: &mut Cx<'_>, cell: &TableCell, ci: usize| -> E<f64> {
         let span = cell.grid_span.unwrap_or(1.0);
         let mut cw_emu = 0.0;

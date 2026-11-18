@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { bindSlides, bindSlidesPpt } from '../js/slides.mjs';
 import { loadSlidesCore, readSample, trackedSamples, tsRoot } from '../../uo-pptx/js/lib/common.mjs';
+// Slides wave 5: these replays compare with TS captures: every TS switch (`SlidesRules::ts_strict`)
+const TS = { tsStrict: true };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/wasm32-unknown-unknown/wasm/uo_wasm.wasm');
@@ -80,7 +82,7 @@ test('the read model equals the frozen TS model: outline, links, pictures, media
     const bytes = get();
     const ts = tsDeck(bytes);
     if (!ts) continue;
-    const d = uo.open(isCfb(bytes) ? ppt.convert(bytes) : bytes);
+    const d = uo.open(isCfb(bytes) ? ppt.convert(bytes, TS) : bytes, TS);
     try {
       tot.decks++;
       assert.equal(d.count, ts.slides.length, `${key}: count`);
@@ -160,7 +162,7 @@ test('the media states of the playback frames equal the TS `mediaStateAt` over t
     const bytes = get();
     const ts = tsDeck(bytes);
     if (!ts || !ts.slides.some((s) => s.shapes.some((sh) => sh.media && !sh.inherited))) continue;
-    const d = uo.open(isCfb(bytes) ? ppt.convert(bytes) : bytes);
+    const d = uo.open(isCfb(bytes) ? ppt.convert(bytes, TS) : bytes, TS);
     for (const opts of [{}, { tickMs: 1000 / 30 }]) {
       const tl = core.buildPlaybackTimeline(ts.slides.map((s) => s.timing), opts);
       const rtl = d.newTimeline({ tickMs: opts.tickMs ?? NaN });
@@ -201,7 +203,7 @@ test('the media states of the playback frames equal the TS `mediaStateAt` over t
 
 test('read-model queries on bad input: no such slide, NaN view, a freed deck', () => {
   const [, get] = decks.find(([k]) => k.startsWith('b1a/')) ?? decks[0];
-  const d = uo.open(get());
+  const d = uo.open(get(), TS);
   assert.throws(() => d.outline(10_000));
   assert.throws(() => d.assets(10_000));
   assert.throws(() => d.links(0, NaN, 0, 0));

@@ -59,8 +59,14 @@ impl<C: Canvas> Renderer<'_, C> {
         // diameter: 97% of the smaller side of the plot area (measured)
         let tilt = if g.three_d { max(0.25, sin((cs.view_3d.as_ref().and_then(|v| v.rot_x).unwrap_or(30.0) * PI) / 180.0)) } else { 1.0 };
         // 3D: the flattened ellipse (tilt) + the thickness (23% of the radius, measured) fit in the height
+        let ppt_size = !self.rules().ts_pie_size && !g.three_d && cs.plot_layout.as_ref().is_none_or(|pl| pl.w.is_none() || pl.h.is_none());
         let d = if g.three_d {
             max(4.0, min(r.w - 2.0 * margin, (r.h - 2.0 * margin) / (tilt + 0.23)) * 0.97)
+        } else if ppt_size {
+            // PowerPoint (measured, lab c-pie/c-r2): the whole plot square; with labels that may go outside, 0.875 × side −
+            // 2.75 pt whatever their size (pie: bestFit/outEnd/no position; a doughnut with any label)
+            let side = min(r.w, r.h);
+            if self.pie_labels_may_go_out(g) { max(4.0, 0.875 * side - 2.75 * s) } else { max(4.0, side) }
         } else {
             max(4.0, (min(r.w, r.h) - 2.0 * margin) * 0.97)
         };
@@ -262,6 +268,17 @@ impl<C: Canvas> Renderer<'_, C> {
     }
 
     /// `pieLabelsOutside(g)`.
+    /// PowerPoint's test for the pie inset: labels shown that may go outside (a doughnut's count too).
+    fn pie_labels_may_go_out(&self, g: &Group) -> bool {
+        let Some(dl) = merge_dlbls(g.d_lbls.as_deref(), g.series.first().and_then(|s| s.d_lbls.as_deref())) else { return false };
+        let c = &dl.common;
+        if c.delete == Some(true) {
+            return false;
+        }
+        let any = c.show_val == Some(true) || c.show_pct == Some(true) || c.show_cat == Some(true) || c.show_ser == Some(true);
+        any && (g.kind == GroupKind::Doughnut || matches!(c.pos.as_deref(), Some("outEnd" | "bestFit") | None))
+    }
+
     fn pie_labels_outside(&self, g: &Group) -> bool {
         let Some(dl) = merge_dlbls(g.d_lbls.as_deref(), g.series.first().and_then(|s| s.d_lbls.as_deref())) else { return false };
         let c = &dl.common;

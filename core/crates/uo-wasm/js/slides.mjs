@@ -298,6 +298,24 @@ export function bindSlides(w) {
     }
     get ptr() { return this.#ptr; }
     get count() { return w.uo_slides_count(this.#ptr); }
+    /**
+     * The PowerPoint-over-TS switches (Slides wave 5; default after `open` = PowerPoint's rules): bit 0 every TS switch (the
+     * parity harnesses), bit 1 sysClr, 2 first-line baseline, 3 fallback fonts, 4 date fields, 5 warp. Empties the deck's caches.
+     */
+    setRules(flags) {
+      const st = w.uo_slides_set_rules(this.#ptr, flags >>> 0);
+      if (st !== 0) throw new SlidesError(st, 'setRules', '');
+    }
+    /** The clock of the date/time fields: a `Date` (its LOCAL fields) and the language of fields without one; null = none. */
+    setFieldClock(date, lang) {
+      let st;
+      if (!date) st = w.uo_slides_set_field_clock(this.#ptr, 0, 0, 0, 0, 0, 0, 0, 0);
+      else {
+        const [p, n] = lang ? arg(enc.encode(lang)) : [0, 0];
+        st = w.uo_slides_set_field_clock(this.#ptr, date.getFullYear(), date.getMonth() + 1, date.getDate(), date.getHours(), date.getMinutes(), date.getSeconds(), p, n);
+      }
+      if (st !== 0) throw new SlidesError(st, 'setFieldClock', '');
+    }
     /** `{ w, h, count }`: the slide size in EMU */
     size() {
       const rd = reader(ok(take(w.uo_slides_size(this.#ptr)), 'size'));
@@ -446,12 +464,22 @@ export function bindSlides(w) {
   };
 
   return {
-    /** opens a `.pptx`; throws a SlidesError (status 14: a legacy `.ppt`, convert it with `bindSlidesPpt` first) */
-    open(bytes) {
+    /**
+     * opens a `.pptx`; throws a SlidesError (status 14: a legacy `.ppt`, convert it with `bindSlidesPpt` first). `opts.tsStrict`:
+     * every TS switch (the parity harnesses); otherwise PowerPoint's rules, with the date fields at `opts.clock` (default: now)
+     * in `opts.fieldLang` for fields without a language (default `navigator.language`); `opts.clock === null`: no clock.
+     */
+    open(bytes, opts) {
       const [p, n] = arg(bytes.slice());
       const ptr = w.uo_slides_open(p, n);
       if (!ptr) throw lastError('open');
-      return new SlidesDeck(ptr);
+      const deck = new SlidesDeck(ptr);
+      if (opts?.tsStrict) deck.setRules(1);
+      else if (opts?.clock !== null) {
+        const lang = opts?.fieldLang ?? ((typeof navigator !== 'undefined' && navigator.language) || 'en-US');
+        deck.setFieldClock(opts?.clock ?? new Date(), lang);
+      }
+      return deck;
     },
     newView(generation) { return new SlidesView(w.uo_slides_view_new(generation)); },
     maxRounds: w.uo_slides_max_rounds(),
@@ -467,9 +495,11 @@ export function bindSlidesPpt(w) {
   const r = bindRender(w);
   const { Buf, put } = r;
   return {
-    convert(bytes) {
+    /** `.ppt` → `.pptx` bytes; `opts.tsStrict`: the TS converter's rules (the parity harnesses; default PowerPoint's) */
+    convert(bytes, opts) {
       const p = bytes.length === 0 ? 0 : put(bytes);
-      const { status, data } = new Buf(w.uo_slides_ppt_convert(p, bytes.length)).take();
+      const ts = opts?.tsStrict && typeof w.uo_slides_ppt_convert_with === 'function';
+      const { status, data } = new Buf(ts ? w.uo_slides_ppt_convert_with(p, bytes.length, 1) : w.uo_slides_ppt_convert(p, bytes.length)).take();
       if (status !== 0) throw new SlidesError(status, 'ppt convert', dec.decode(data));
       return data;
     },

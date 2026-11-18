@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { bindSlides, bindSlidesPpt, SlidesError } from '../js/slides.mjs';
 import { decodeSlidesList, newTables } from '../js/gen/slides.ts';
 import { emitAll as emitAllWith, stageAll } from './support/slides-stub.mjs';
+// Slides wave 5: these replays compare with TS captures: every TS switch (`SlidesRules::ts_strict`)
+const TS = { tsStrict: true };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/wasm32-unknown-unknown/wasm/uo_wasm.wasm');
@@ -23,7 +25,7 @@ const uo = bindSlides(instance.exports);
 const pptPath = process.env.UO_PPT_WASM_PATH ?? join(here, '../../../target/b7/uo-slides-ppt.wasm');
 const ppt = existsSync(pptPath) ? bindSlidesPpt((await WebAssembly.instantiate(readFileSync(pptPath), {})).instance.exports) : null;
 const isCfb = (b) => b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0;
-const openAny = (bytes) => uo.open(isCfb(bytes) && ppt ? ppt.convert(bytes) : bytes);
+const openAny = (bytes) => uo.open(isCfb(bytes) && ppt ? ppt.convert(bytes, TS) : bytes, TS);
 const SOAK = Number(process.env.UO_SLIDES_SOAK ?? 10_000);
 const emitAll = (...a) => emitAllWith(uo, ...a);
 const DECKS_DIR = join(here, '../../uo-pptx/tests/captures/decks');
@@ -40,7 +42,7 @@ test('the .ppt module converts a legacy deck that the main module then opens', (
   if (!ppt) return t.skip('uo-slides-ppt.wasm not built');
   const bytes = new Uint8Array(readFileSync(join(SAMPLES, 'legacy', readdirSync(join(SAMPLES, 'legacy')).find((f) => /\.ppt$/i.test(f)))));
   assert.ok(isCfb(bytes));
-  assert.throws(() => uo.open(bytes), (e) => e.status === 14);
+  assert.throws(() => uo.open(bytes, TS), (e) => e.status === 14);
   const d = openAny(bytes);
   assert.ok(d.count > 0);
   d.free();
@@ -49,7 +51,7 @@ test('the .ppt module converts a legacy deck that the main module then opens', (
 
 test('the module counts memory and the API opens a deck', () => {
   assert.ok(live() >= 0, 'build uo-wasm with --features count,slides');
-  const d = uo.open(groupBytes('b1a', 0));
+  const d = uo.open(groupBytes('b1a', 0), TS);
   const s = d.size();
   assert.ok(s.w > 0 && s.h > 0 && s.count === d.count && s.count > 0);
   assert.equal(typeof d.notes(0), 'string');
@@ -61,10 +63,10 @@ test('the module counts memory and the API opens a deck', () => {
 
 test('errors: garbage, an empty file, a .ppt signature and bad arguments', () => {
   for (const bytes of [new Uint8Array(0), new Uint8Array([1, 2, 3]), Uint8Array.from({ length: 4096 }, (_, i) => (i * 31) & 255)]) {
-    assert.throws(() => uo.open(bytes), (e) => e instanceof SlidesError && e.status === 3);
+    assert.throws(() => uo.open(bytes, TS), (e) => e instanceof SlidesError && e.status === 3);
   }
-  assert.throws(() => uo.open(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0, 0, 0, 0])), (e) => e instanceof SlidesError && e.status === 14);
-  const d = uo.open(groupBytes('b1a', 1));
+  assert.throws(() => uo.open(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0, 0, 0, 0]), TS), (e) => e instanceof SlidesError && e.status === 14);
+  const d = uo.open(groupBytes('b1a', 1), TS);
   const v = uo.newView(1);
   assert.equal(d.emit(v, 9999, 1, 0, 0).status, 6);
   assert.equal(d.emit(v, 0, NaN, 0, 0).status, 5);
@@ -78,7 +80,7 @@ test('errors: garbage, an empty file, a .ppt signature and bad arguments', () =>
 });
 
 test('the measure loop: round 1 asks, later paints of the same deck need no round', () => {
-  const d = uo.open(groupBytes('b1a', 2));
+  const d = uo.open(groupBytes('b1a', 2), TS);
   const v = uo.newView(7);
   const scale = 1280 / d.size().w;
   const first = emitAll(d, v, 0, scale, 0, 0);
@@ -97,7 +99,7 @@ test('the measure loop: round 1 asks, later paints of the same deck need no roun
 });
 
 test('the click show and the playback timeline answer like the TS state machines', () => {
-  const d = uo.open(groupBytes('b6a', 3));
+  const d = uo.open(groupBytes('b6a', 3), TS);
   const show = d.newShow({ from: 0, now: 0 });
   const f0 = show.frame(10);
   assert.equal(f0.index, 0);
@@ -133,7 +135,7 @@ test('M4: 10,000 decks, views, shows and timelines through free() and through th
   const bytes = groupBytes('b6a', 4);
   const before = await settle();
   for (let i = 0; i < SOAK; i++) {
-    const d = uo.open(bytes);
+    const d = uo.open(bytes, TS);
     const v = uo.newView(i);
     const s = d.newShow({ from: 0, now: 0 });
     const t = d.newTimeline({});
@@ -143,14 +145,14 @@ test('M4: 10,000 decks, views, shows and timelines through free() and through th
   assert.equal(await settle(), before, 'free(): live bytes back exactly');
   // the finalizer path: handles dropped without free() (needs gc(): the browser runner has none, so the Node run covers it)
   if (typeof globalThis.gc !== 'function') return;
-  for (let i = 0; i < SOAK / 10; i++) { uo.open(bytes); uo.newView(i); }
+  for (let i = 0; i < SOAK / 10; i++) { uo.open(bytes, TS); uo.newView(i); }
   let after = await settle();
   for (let k = 0; k < 40 && after !== before; k++) { await new Promise((r) => setTimeout(r, 25)); after = await settle(); }
   assert.equal(after, before, 'finalizers: live bytes back exactly');
 });
 
 test('B4b: the stage of a show and of a timeline, the end screen, bad arguments, and a playback that returns its memory', async () => {
-  const d = uo.open(groupBytes('b6a', 3));
+  const d = uo.open(groupBytes('b6a', 3), TS);
   const scale = 1280 / d.size().w;
   let before = 0;
   for (let round = 0; round < 3; round++) {
@@ -186,7 +188,7 @@ test('B4b: the stage of a show and of a timeline, the end screen, bad arguments,
 });
 
 test('M2: 300 paints of one deck at a rotating view keep memory flat', async () => {
-  const d = uo.open(groupBytes('b1a', 5));
+  const d = uo.open(groupBytes('b1a', 5), TS);
   const v = uo.newView(1);
   const n = d.count;
   const scale = 1280 / d.size().w;

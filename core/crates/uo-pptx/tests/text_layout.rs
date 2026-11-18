@@ -231,6 +231,7 @@ fn slide_calls(shapes: &[Shape], slide_w: f64) -> Vec<Call> {
             default_sz_pt: Some(dsz),
             default_anchor: Some(anchor.clone()),
             size_scale: scale,
+            rules: uo_dml_render::SlidesRules::ts_strict(),
             ..Default::default()
         };
         if let Some(tb) = sh.tx_body.as_deref() {
@@ -270,7 +271,12 @@ fn slide_calls(shapes: &[Shape], slide_w: f64) -> Vec<Call> {
                         cw += t.col_widths_emu.get(q as usize).copied().unwrap_or(0.0);
                         q += 1.0;
                     }
-                    let o = LayoutTextOptions { default_sz_pt: Some(18.0), default_anchor: Some("t".into()), ..Default::default() };
+                    let o = LayoutTextOptions {
+                        default_sz_pt: Some(18.0),
+                        default_anchor: Some("t".into()),
+                        rules: uo_dml_render::SlidesRules::ts_strict(),
+                        ..Default::default()
+                    };
                     calls.push(Call { id: format!("{k}.c{ri}.{ci}"), body, w: cw, h: 1e12, measurer: Measurer::Ppt, opts: o });
                 }
             }
@@ -298,7 +304,7 @@ fn replay(capture: &str, log_file: &str, font_kerning: bool, segmenter: bool, tw
         let key = rec.key.as_str();
         let bytes = std::fs::read(deck_path(key)).unwrap_or_else(|e| panic!("{key}: {e}"));
         let _ = bytes_digest(&bytes);
-        let mut deck = Deck::open(&bytes, Limits::default()).unwrap_or_else(|e| panic!("{key}: {e}"));
+        let mut deck = ts(Deck::open(&bytes, Limits::default()).unwrap_or_else(|e| panic!("{key}: {e}")));
         let pres = deck.presentation().unwrap().clone();
         rp.check(key, "read", "ok");
         rp.check(key, "slides", &pres.slides.len().to_string());
@@ -401,4 +407,10 @@ fn b3a_text_heavy_decks_match_the_ts() {
 #[test]
 fn b3a_without_kerning_and_segmenter_match_the_ts() {
     run("textlayout-b3a-nokerning-noseg.capture", "textlayout-b3a-nokerning-noseg.measures.tsv.gz", false, false, 17, 2807);
+}
+
+/// Every TS switch on (`SlidesRules::ts_strict`): this file replays TS captures (Slides wave 5).
+fn ts(mut d: Deck) -> Deck {
+    d.set_rules(uo_dml_render::SlidesRules::ts_strict());
+    d
 }

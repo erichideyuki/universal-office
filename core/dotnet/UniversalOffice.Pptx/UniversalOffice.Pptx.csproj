@@ -29,4 +29,8 @@
   <ItemGroup>
     <ProjectReference Include="..\UniversalOffice.Docx\UniversalOffice.Docx.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- the parity tests reach SlidesPdfOptions.TsStrict (the frozen TS Slides, native SLIDES_JOB_TS_STRICT) -->
+    <InternalsVisibleTo Include="UniversalOffice.Pptx.Tests" />
+  </ItemGroup>
 </Project>

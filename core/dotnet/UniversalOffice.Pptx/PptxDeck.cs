@@ -22,10 +22,15 @@ public sealed class PptxDeck : IDisposable
     /// <param name="trusted">the bytes come from a trusted source (the default container limits; untrusted input is
     /// capped at 256 MiB per inflated part and 512 MiB in all)</param>
     /// <exception cref="InvalidDataException">not a presentation, a damaged or password-protected one</exception>
-    public static unsafe PptxDeck Open(byte[] bytes, bool trusted = false)
+    public static PptxDeck Open(byte[] bytes, bool trusted = false) => Open(bytes, trusted, tsStrict: false);
+
+    /// <summary><see cref="Open(byte[], bool)"/>; <paramref name="tsStrict"/> converts a .ppt as the frozen TS did (charts as
+    /// their fallback pictures; native `DECK_TS_STRICT`). Parity tests only.</summary>
+    internal static unsafe PptxDeck Open(byte[] bytes, bool trusted, bool tsStrict)
     {
         ArgumentNullException.ThrowIfNull(bytes);
-        var o = new SlidesNative.DeckOptions { Size = (uint)sizeof(SlidesNative.DeckOptions), Flags = trusted ? SlidesNative.DeckTrusted : 0 };
+        uint flags = (trusted ? SlidesNative.DeckTrusted : 0) | (tsStrict ? SlidesNative.DeckTsStrict : 0);
+        var o = new SlidesNative.DeckOptions { Size = (uint)sizeof(SlidesNative.DeckOptions), Flags = flags };
         int status;
         DeckHandle handle;
         fixed (byte* data = bytes) status = SlidesNative.DeckOpen(data, (nuint)bytes.Length, &o, out handle);

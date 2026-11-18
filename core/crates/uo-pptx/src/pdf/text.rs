@@ -18,7 +18,10 @@ use super::css::{Rgba, parse_css};
 use super::effects::ShadowSrc;
 use super::geom::{Mat, n};
 use super::interp::{Interp, PaintVal, Shadow, span_of};
-use super::measure::{FaceChooser, place_glyphs, text_width_in};
+use uo_dml_render::model::FontFallback;
+use uo_dml_render::text::split_face;
+
+use super::measure::{FaceChooser, place_glyphs, text_width_ctx};
 
 /// A font of the list as the PDF uses it: the embedded entry and the variant asked for.
 #[derive(Clone)]
@@ -26,6 +29,8 @@ pub(super) struct RunFont {
     pub entry: Arc<FontEntry>,
     pub bold: bool,
     pub italic: bool,
+    /// the run's fallback context, from the list's family name (`uo_dml_render::text::split_face`)
+    pub ctx: Option<FontFallback>,
 }
 
 impl Interp<'_, '_> {
@@ -34,7 +39,8 @@ impl Interp<'_, '_> {
         let fk = self.res.face_entries().get(usize::try_from(face).ok()?)?.clone();
         let family = self.sym(fk.family);
         let entry = self.font_named(&family, fk.bold, fk.italic)?;
-        Some(RunFont { entry, bold: fk.bold, italic: fk.italic })
+        let ctx = split_face(&family).1;
+        Some(RunFont { entry, bold: fk.bold, italic: fk.italic, ctx })
     }
 
     /// The embedded font of a family and variant by name (the host's answer, one embedding per file).
@@ -43,8 +49,9 @@ impl Interp<'_, '_> {
         if let Some(e) = self.w.fonts.get(&key) {
             return e.clone();
         }
-        let entry = match self.w.opts.fonts.face(family, bold, italic) {
-            Some(face) => self.embed_face(&face, family, bold, italic),
+        let plain = split_face(family).0;
+        let entry = match self.w.opts.fonts.face(plain, bold, italic) {
+            Some(face) => self.embed_face(&face, plain, bold, italic),
             None => {
                 self.count("font:missing");
                 None
@@ -81,7 +88,7 @@ impl Interp<'_, '_> {
 
     /// The width of `text` in the run's font with the fallback faces (the layout's measure).
     fn width_of(&self, f: &RunFont, size: f64, kern: bool, spacing: f64, text: &str) -> f64 {
-        text_width_in(self.w.opts.fonts, &f.entry.face, f.bold, f.italic, size, kern, spacing, text)
+        text_width_ctx(self.w.opts.fonts, &f.entry.face, f.bold, f.italic, size, kern, spacing, text, f.ctx.as_ref())
     }
 
     /// `fillText(text, x, y)` of a metafile recipe under the raw CSS font `font` (`40px "Name", monospace`): the
@@ -95,7 +102,7 @@ impl Interp<'_, '_> {
             return;
         }
         let Some(entry) = self.font_named(&family, bold, italic) else { return };
-        let f = RunFont { entry, bold, italic };
+        let f = RunFont { entry, bold, italic, ctx: None };
         self.w.report.text_runs += 1;
         let width = self.width_of(&f, size, true, 0.0, text);
         let fill = self.t.cur.fill.clone();
@@ -107,7 +114,7 @@ impl Interp<'_, '_> {
     #[allow(clippy::too_many_arguments)]
     fn glyph_block(&mut self, f: &RunFont, size: f64, x: f64, y: f64, text: &str, kern: bool, spacing: f64, mode: u8) -> (String, u64) {
         let fonts = self.w.opts.fonts;
-        let mut ch = FaceChooser::new(fonts, Arc::clone(&f.entry.face), f.bold, f.italic);
+        let mut ch = FaceChooser::with_ctx(fonts, Arc::clone(&f.entry.face), f.bold, f.italic, f.ctx.clone());
         let (placed, _) = place_glyphs(&mut ch, size, kern, spacing, text);
         let mut out = String::new();
         out.push_str("BT\n");
@@ -248,10 +255,17 @@ impl Interp<'_, '_> {
         if !(size.is_finite() && size > 0.0 && x0.is_finite() && y.is_finite()) {
             return;
         }
-        if !r.bullet {
+        // the run's link: the layout box at once (the TS rule), or, PowerPoint's rule, the ink of its glyphs once they are placed
+        let ink_mark = !r.bullet && !self.w.opts.ts_link_rects && self.links.is_linked(index);
+        if !r.bullet && !ink_mark {
             self.links.mark(index, self.t.cur.ctm, self.t.cur.align);
         }
-        let Some(f) = self.font_of(r.font.face) else { return };
+        let Some(f) = self.font_of(r.font.face) else {
+            if ink_mark {
+                self.links.mark(index, self.t.cur.ctm, self.t.cur.align);
+            }
+            return;
+        };
         self.w.report.text_runs += 1;
         let kern = r.kern || r.bullet;
         let nchars = text.chars().count();
@@ -284,6 +298,15 @@ impl Interp<'_, '_> {
             Align::Right | Align::End => x0 - width,
             _ => x0,
         };
+        if ink_mark {
+            let mut ch = FaceChooser::with_ctx(self.w.opts.fonts, Arc::clone(&f.entry.face), f.bold, f.italic, f.ctx.clone());
+            let (placed, _) = place_glyphs(&mut ch, size, kern, spacing, &text);
+            // the ink in the space the mark maps: the emitter's box starts at the run's `x` before the alignment
+            let shift = |[a, b, c, d]: [f64; 4]| [a - (x - x0), b, c - (x - x0), d];
+            let ink = super::links::ink_box(&placed, size, x, y).map(shift);
+            let words = super::links::word_boxes(&placed, size, x, y).into_iter().map(shift).collect();
+            self.links.mark_ink(index, self.t.cur.ctm, self.t.cur.align, ink, words);
+        }
         let a_mul = r.alpha_mul.unwrap_or(1.0);
         if r.fill_text {
             // the run's own shadow is the canvas shadow of the fill pass (save, shadow*, fillText, restore)
@@ -359,7 +382,7 @@ impl Interp<'_, '_> {
     #[allow(clippy::too_many_arguments)]
     fn text_shadow(&mut self, f: &RunFont, size: f64, x: f64, y: f64, text: &str, kern: bool, spacing: f64, fill: &PaintVal) {
         let fonts = self.w.opts.fonts;
-        let mut ch = FaceChooser::new(fonts, Arc::clone(&f.entry.face), f.bold, f.italic);
+        let mut ch = FaceChooser::with_ctx(fonts, Arc::clone(&f.entry.face), f.bold, f.italic, f.ctx.clone());
         let (placed, _) = place_glyphs(&mut ch, size, kern, spacing, text);
         let ctm = self.t.cur.ctm;
         let polys = super::raster::glyph_polys(&placed, size, x, y, ctm.then(Mat::IDENTITY), 0.1);

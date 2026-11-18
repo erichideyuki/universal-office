@@ -10,7 +10,7 @@ use uo_jsnum::sort::js_sort_by;
 use uo_opc::xml::Element;
 
 use crate::color::CssColor;
-use crate::model::{ImageRef, OuterShadow, Paragraph, Shape, StyleFont, TabStop, TextBody};
+use crate::model::{FontFallback, ImageRef, OuterShadow, Paragraph, Run, RunExtras, Shape, StyleFont, TabStop, TextBody};
 use crate::source::{int_attr, pint, ta};
 use crate::theme::{Theme, color_from_dml, text_fill_color};
 use uo_opc::xml::Element as El;
@@ -95,6 +95,11 @@ pub struct LvlRun {
     pub strike: Option<bool>,
     pub spc: Option<f64>,
     pub kern: Option<f64>,
+    /// `a:ea`/`a:cs` typefaces (may be `+mn-ea`-style aliases) and the `lang` of the `defRPr`: read only when the
+    /// deck's rules say `!ts_fallback_fonts` (the run fallback context, Slides wave 5).
+    pub ea: Option<Box<str>>,
+    pub cs: Option<Box<str>>,
+    pub lang: Option<Box<str>>,
 }
 
 impl LvlRun {
@@ -111,6 +116,9 @@ impl LvlRun {
         strike: None,
         spc: None,
         kern: None,
+        ea: None,
+        cs: None,
+        lang: None,
     };
 }
 
@@ -303,7 +311,11 @@ fn spread(base: &TextStyleLevel, over: TextStyleLevel) -> TextStyleLevel {
             over.bullet,
             LvlBullet { bu_char, bu_auto_num, bu_none, bu_font, bu_clr, bu_sz_pct, bu_sz_pt, bu_blip }
         ),
-        run: pick!(base.run.as_deref(), over.run, LvlRun { sz, bold, italic, color, font, shadow, baseline, cap, strike, spc, kern }),
+        run: pick!(
+            base.run.as_deref(),
+            over.run,
+            LvlRun { sz, bold, italic, color, font, shadow, baseline, cap, strike, spc, kern, ea, cs, lang }
+        ),
     }
 }
 
@@ -458,6 +470,17 @@ pub fn parse_ppr_level(ppr: El<'_>, theme: &Theme, blip: Option<BlipResolver<'_>
         if let Some(f) = def.first_child("a:latin").and_then(|e| ta(e, "typeface")) {
             lvl.r_mut().font = Some(f.into());
         }
+        if !theme.rules.ts_fallback_fonts {
+            if let Some(f) = def.first_child("a:ea").and_then(|e| e.attr("typeface")) {
+                lvl.r_mut().ea = Some(f.into());
+            }
+            if let Some(f) = def.first_child("a:cs").and_then(|e| e.attr("typeface")) {
+                lvl.r_mut().cs = Some(f.into());
+            }
+            if let Some(l) = ta(def, "lang") {
+                lvl.r_mut().lang = Some(l.into());
+            }
+        }
         // default text shadow of the level (template titles over a photo)
         if let Some(shd) = def.first_child("a:effectLst").and_then(|e| e.first_child("a:outerShdw")) {
             lvl.r_mut().shadow = Some(read_text_shadow(shd, theme, 0.6));
@@ -487,6 +510,15 @@ pub fn merge_style_levels(layers: &[&StyleLevels]) -> Box<StyleLevels> {
             }
             if src.r().font.is_some() {
                 dst.r_mut().font = src.r().font.clone();
+            }
+            if src.r().ea.is_some() {
+                dst.r_mut().ea = src.r().ea.clone();
+            }
+            if src.r().cs.is_some() {
+                dst.r_mut().cs = src.r().cs.clone();
+            }
+            if src.r().lang.is_some() {
+                dst.r_mut().lang = src.r().lang.clone();
             }
             if src.p().align.is_some() {
                 dst.p_mut().align = src.p().align.clone();
@@ -739,6 +771,11 @@ fn apply_paragraph(p: &mut Paragraph, lvl: &TextStyleLevel, theme: &Theme) {
                 ex.spc = lvl.r().spc;
             }
         }
+        if !theme.rules.ts_fallback_fonts {
+            // the raw latin face (alias or not) picks the theme collection of the fallback context
+            let raw_latin = r.font.as_deref().or(lvl.r().font.as_deref()).map(str::to_owned);
+            resolve_run_fallback(r, lvl.r(), raw_latin.as_deref(), theme);
+        }
         if r.font.is_none() && lvl.r().font.is_some() {
             if let Some(f) = lvl.r().font.as_deref().and_then(|f| resolve_font_alias(f, theme)) {
                 r.font = Some(f);
@@ -749,6 +786,52 @@ fn apply_paragraph(p: &mut Paragraph, lvl: &TextStyleLevel, theme: &Theme) {
                 r.font = Some(f);
             }
         }
+    }
+}
+
+/// `+mj-ea`/`+mn-cs`… → the theme collection's own `a:ea`/`a:cs` (`""` when it has none); a face stays.
+fn resolve_script_alias(face: &str, theme: &Theme) -> Box<str> {
+    let sf = theme.script_fonts.as_deref();
+    let pick = |major: bool, cs: bool| -> Box<str> {
+        let half = sf.map(|f| if major { &f.major } else { &f.minor });
+        half.and_then(|h| if cs { h.cs.as_deref() } else { h.ea.as_deref() }).unwrap_or("").into()
+    };
+    match face {
+        "+mj-ea" => pick(true, false),
+        "+mn-ea" => pick(false, false),
+        "+mj-cs" => pick(true, true),
+        "+mn-cs" => pick(false, true),
+        f if f.starts_with('+') => "".into(),
+        f => f.into(),
+    }
+}
+
+/// The fallback context of a run after the cascade (`!ts_fallback_fonts`): the run's own `a:ea`/`a:cs` (read by
+/// `read_run` into a provisional [`FontFallback`]) or the level's, aliases resolved through the theme, the language, the
+/// collection and the theme's script entries for that language. A run with nothing to say (no face and a language
+/// without such a script) keeps no context.
+fn resolve_run_fallback(r: &mut Run, lvl: &LvlRun, raw_latin: Option<&str>, theme: &Theme) {
+    let own = r.extras.as_mut().and_then(|e| e.font_fallback.take());
+    let own_ea = own.as_ref().map(|f| f.ea.clone()).filter(|s| !s.is_empty());
+    let own_cs = own.as_ref().map(|f| f.cs.clone()).filter(|s| !s.is_empty());
+    let raw_ea = own_ea.or_else(|| lvl.ea.clone());
+    let raw_cs = own_cs.or_else(|| lvl.cs.clone());
+    let ea_explicit = raw_ea.as_deref().is_some_and(|f| !f.is_empty() && !f.starts_with('+'));
+    let ea = raw_ea.as_deref().map_or_else(|| "".into(), |f| resolve_script_alias(f, theme));
+    let cs = raw_cs.as_deref().map_or_else(|| "".into(), |f| resolve_script_alias(f, theme));
+    let lang: Option<Box<str>> = r.lang.clone().or_else(|| lvl.lang.clone()).filter(|l| !l.is_empty());
+    let major = raw_latin.is_some_and(|f| f.starts_with("+mj"));
+    let wanted = crate::text::fallback::scripts_for_lang(lang.as_deref());
+    let half = theme.script_fonts.as_deref().map(|f| if major { &f.major } else { &f.minor });
+    let scripts: Vec<(Box<str>, Box<str>)> =
+        wanted.iter().filter_map(|w| half.and_then(|h| h.script(w)).map(|t| ((*w).into(), t.into()))).collect();
+    let fb = FontFallback { lang, ea, ea_explicit, cs, major, scripts };
+    let needed = !fb.ea.is_empty() || !fb.cs.is_empty() || !wanted.is_empty();
+    if needed {
+        r.x_mut().font_fallback = Some(Box::new(fb));
+    } else if r.extras.as_deref().is_some_and(|e| *e == RunExtras::EMPTY) {
+        // the provisional context was the only extra: drop the box again
+        r.extras = None;
     }
 }
 
@@ -781,7 +864,21 @@ pub fn apply_shape_text_cascade(sh: &mut Shape, ctx: &TextStyleContext, theme: &
             _ => None,
         };
         let lvl = TextStyleLevel {
-            run: Some(Box::new(LvlRun { color: sf.color.clone(), font, ..LvlRun::default() })),
+            run: Some(Box::new(LvlRun {
+                color: sf.color.clone(),
+                font,
+                ea: match sf.idx.as_deref() {
+                    Some("major") if !theme.rules.ts_fallback_fonts => Some("+mj-ea".into()),
+                    Some("minor") if !theme.rules.ts_fallback_fonts => Some("+mn-ea".into()),
+                    _ => None,
+                },
+                cs: match sf.idx.as_deref() {
+                    Some("major") if !theme.rules.ts_fallback_fonts => Some("+mj-cs".into()),
+                    Some("minor") if !theme.rules.ts_fallback_fonts => Some("+mn-cs".into()),
+                    _ => None,
+                },
+                ..LvlRun::default()
+            })),
             ..TextStyleLevel::default()
         };
         font_layer = Box::new(core::array::from_fn::<TextStyleLevel, 9, _>(|_| lvl.clone()));

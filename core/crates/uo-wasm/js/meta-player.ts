@@ -61,6 +61,37 @@ export function recipeInfo(bytes: Uint8Array): { w: number; h: number; truncated
   return { w: dv.getUint32(5, true), h: dv.getUint32(9, true), truncated: bytes[13] !== 0 };
 }
 
+/** The colour effects of a derived recipe, in the form `fxImage` (`slides-effects.ts`) takes. */
+export interface RecipeFx {
+  duotone?: [string, string];
+  gray?: boolean;
+  biLevel?: number;
+  bright?: number;
+  contrast?: number;
+  clrChange?: { from: string; to: string; toAlpha: number };
+}
+
+/**
+ * A derived recipe ("UOMF" version 2, `uo_dml_render::metafile::rec::encode_fx_recipe`, gap B5b-G1): a metafile picture with
+ * the blip's colour effects = `fxImage` over the raster of bitmap `base` (the TS applied `fxImage` to the rasterized canvas).
+ * Null for any other bytes.
+ */
+export function decodeFxRecipe(bytes: Uint8Array): { base: number; fx: RecipeFx } | null {
+  if (bytes.length < 19 || bytes[0] !== 0x55 || bytes[1] !== 0x4f || bytes[2] !== 0x4d || bytes[3] !== 0x46 || bytes[4] !== 2) return null;
+  const r = new Reader(bytes);
+  r.p = 14;
+  const base = r.u32();
+  const mask = r.u8();
+  const fx: RecipeFx = {};
+  if (mask & 1) fx.duotone = [r.str(), r.str()];
+  if (mask & 2) fx.gray = true;
+  if (mask & 4) fx.biLevel = r.f64();
+  if (mask & 8) fx.bright = r.f64();
+  if (mask & 16) fx.contrast = r.f64();
+  if (mask & 32) { const from = r.str(), to = r.str(); fx.clrChange = { from, to, toAlpha: r.f64() }; }
+  return { base, fx };
+}
+
 /**
  * Plays a recipe: returns the layer canvas (index 0), or null for bytes that are no recipe or a canvas the host refuses.
  * A throw inside (a canvas refusing a call, as the TS caught at its `try`) ends the replay and keeps what was drawn.

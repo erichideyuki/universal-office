@@ -95,7 +95,9 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
     let started = Instant::now();
     let all = decks(&[("b1a", usize::MAX), ("b3a", usize::MAX), ("b5a", usize::MAX), ("b5b", usize::MAX)]);
     let (mut n_pdf, mut pages, mut bytes_total, mut glyphs, mut links, mut recipes) = (0usize, 0usize, 0usize, 0u64, 0u64, 0u64);
-    let (mut internal_links, mut shape_wide, mut off_page) = (0u64, 0u64, 0u64);
+    let (mut internal_links, mut shape_wide, mut off_page, mut not_written, mut hidden) = (0u64, 0u64, 0u64, 0u64, 0usize);
+    let mut with_links: Vec<&Path> = Vec::new();
+    let mut all_hidden = 0usize;
     let mut missing: BTreeMap<&'static str, u64> = BTreeMap::new();
     let mut failed_slides = 0usize;
     let mut drawn = [0u64; 5];
@@ -107,8 +109,19 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
             let p = deck.presentation().unwrap();
             (p.slide_w, p.slide_h, p.slides.len())
         };
-        let out = uo_pptx::pdf(&mut deck, &options(&fonts)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let out = match uo_pptx::pdf(&mut deck, &options(&fonts)) {
+            Ok(o) => o,
+            // every slide hidden: PowerPoint refuses the deck; the pages are checked with the hidden slides kept
+            Err(uo_pptx::pdf::PdfFail::NoVisibleSlides) => {
+                all_hidden += 1;
+                uo_pptx::pdf(&mut deck, &PdfOptions { ts_hidden_slides: true, ..options(&fonts) }).unwrap()
+            }
+            Err(e) => panic!("{name}: {e}"),
+        };
         let v = pdf_view::view(&out.bytes).unwrap_or_else(|e| panic!("{name}: invalid PDF: {e}"));
+        // PowerPoint's Save as PDF leaves the hidden slides out
+        let count = count - out.report.hidden_slides as usize;
+        hidden += out.report.hidden_slides as usize;
         let sizes = v.pages();
         assert_eq!(sizes.len(), count, "{name}: page count");
         assert_eq!(v.page_count(), count, "{name}: /Count");
@@ -127,6 +140,14 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
         internal_links += out.report.internal_links;
         shape_wide += out.report.shape_wide_links;
         off_page += out.report.links_off_page;
+        not_written += out.report.links_not_written;
+        let has_links = deck
+            .parts()
+            .names()
+            .any(|n| n.starts_with("ppt/slides/") && deck.parts().bytes(n).is_some_and(|b| b.windows(10).any(|w| w == b"hlinkClick")));
+        if has_links {
+            with_links.push(path);
+        }
         recipes += out.report.recipes;
         failed_slides += out.report.failed_slides.len();
         for (d, v) in drawn.iter_mut().zip([
@@ -148,7 +169,7 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
     }
     let wall = started.elapsed().as_secs_f64();
     eprintln!(
-        "PDFs: {n_pdf} decks, {pages} pages, {bytes_total} bytes, {glyphs} glyphs, {links} links ({internal_links} internal, {shape_wide} shape-wide, {off_page} pieces off the page), {recipes} metafile recipes, {failed_slides} failed slides, {wall:.1} s"
+        "PDFs: {n_pdf} decks, {pages} pages ({hidden} hidden slides left out), {bytes_total} bytes, {glyphs} glyphs, {links} links ({internal_links} internal, {shape_wide} shape-wide, {off_page} off the page, {not_written} not written: the link ends its text), {recipes} metafile recipes, {failed_slides} failed slides, {all_hidden} decks with every slide hidden, {wall:.1} s"
     );
     eprintln!("slowest deck: {} {:.2} s; mean {:.1} ms per page", slowest.1, slowest.0, wall * 1000.0 / pages as f64);
     eprintln!(
@@ -158,7 +179,22 @@ fn every_sample_and_generated_deck_gives_a_valid_pdf() {
     eprintln!("missing: {missing:?}");
     assert!(n_pdf >= 450, "decks found: {n_pdf}");
     assert_eq!(failed_slides, 0, "slides that became blank pages");
+    // PowerPoint's link rule (wave 5): one rectangle per line and formatting run, ink bounds, kept off the page, none for a
+    // link ending its text
+    assert_eq!((links, off_page, not_written, hidden), PP_LINKS, "links, off the page, not written, hidden slides");
+    // the TS-era rule over the same decks (hidden slides kept): the wave-4 numbers
+    let (mut ts_links, mut ts_off) = (0u64, 0u64);
+    for path in with_links {
+        let out = uo_pptx::pdf::pdf_ts_strict(&mut open(path), &PdfOptions::new(&fonts)).unwrap();
+        ts_links += out.report.links;
+        ts_off += out.report.links_off_page;
+    }
+    eprintln!("ts_link_rects: {ts_links} links, {ts_off} pieces off the page");
+    assert_eq!((ts_links, ts_off), (994, 2089), "the TS-era link rectangles");
 }
+
+/// `(links, off the page, not written, hidden slides)` of the 538 decks under PowerPoint's rules.
+const PP_LINKS: (u64, u64, u64, usize) = (11713, 9102, 1494, 14);
 
 /// The text of the PDF is the text of the lists: the multiset of characters the runs draw (those the face has a glyph
 /// for) equals the multiset read back through the ToUnicode maps, over the samples and some generated decks.

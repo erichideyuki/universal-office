@@ -62,7 +62,8 @@ fn replay(file: &str) -> (usize, uo_testkit::Report) {
         decks += 1;
         rp.skip(key, "seed");
         let mut deck = match Deck::open(&bytes, Limits::default()) {
-            Ok(d) => d,
+            // every TS switch on: this file replays TS captures (Slides wave 5)
+            Ok(d) => ts(d),
             Err(e) => {
                 rp.check(key, "read", &format!("err:{e}"));
                 continue;
@@ -143,4 +144,10 @@ fn b5a_smartart_decks_match_the_ts() {
     eprintln!("model-b5a: {decks} decks, {}", report.summary());
     assert!(report.mismatches.is_empty(), "{}\n{}", report.summary(), report.describe(30));
     assert_eq!(decks, 150);
+}
+
+/// Every TS switch on (`SlidesRules::ts_strict`).
+fn ts(mut d: Deck) -> Deck {
+    d.set_rules(uo_dml_render::SlidesRules::ts_strict());
+    d
 }

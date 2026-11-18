@@ -1064,3 +1064,168 @@ comparison were rerun over the same 627 decks / 736 pages (numbers above).
 `diff/<id>-<page>.png`: PowerPoint | Rust / TS | differing pixels, red = TS legacy, blue = PDF only, magenta = all three) stay in
 `core/target/w4-oracle/ppt-oracle`. Run time: PowerPoint ≈ 25 min for the 627 decks (most refusals are fast), Rust 108 s, TS ≈ 3 min,
 comparison ≈ 50 min (736 pages).
+
+## PowerPoint rules of the PDF (wave 5, 2026-11-18)
+
+One Opus session (agent C of wave 5). Where the TS-era PDF and PowerPoint disagree, PowerPoint 365 pt-BR (Windows 11) was measured
+on synthetic decks through COM (no window: `Presentations.Open(..., WithWindow = msoFalse)`, `SaveAs(ppSaveAsPDF)`, the global
+Office lock; the decks are built from a blank deck PowerPoint saved; work files under `core/target/w5-c`, not committed) and the
+painter follows it; the TS behaviour stays behind a switch. Two synthetic decks with PowerPoint's values are versioned as native
+test cases: `uo-pptx/tests/oracle_ppt/synthetic/pp-rules.pptx` (+ `pp-rules.links.tsv`) and `pp-fallback.pptx`
+(+ `pp-fallback.faces.tsv`), tested by `tests/pdf_ppt_rules.rs`. They use Liberation Sans (installed on the measuring machine and one
+of the open fonts), so the glyph geometry is the same on both sides.
+
+| Switch | Where | `false` (default) = PowerPoint | `true` = the frozen TS |
+|---|---|---|---|
+| `ts_hidden_slides` | `PdfOptions` | hidden slides left out | every slide a page |
+| `ts_link_rects` | `PdfOptions` | the link rule below | the wave-4 join (run boxes per line fragment, cut to the page) |
+| `ts_fallback_fonts` | `SlidesRules` (deck) | PowerPoint's per-script faces | the Word chain of the Write PDF |
+
+`PdfOptions::ts_strict(fonts)` sets both PDF switches; `pdf::pdf_ts_strict(deck, options)` also sets `SlidesRules::ts_strict()` on the
+deck (the parity replays and the facade's `SLIDES_JOB_TS_STRICT`).
+
+### Hidden slides (item 1)
+
+Measured (`h1`, `h2`, `pp-rules`): **Save as PDF leaves the `show="0"` slides out** (5 slides, 2 hidden: 3 pages). A slide-number
+field keeps the slide's own number (page 2 shows "Slide 3"). A link to a hidden slide writes **no annotation** (shape click or run);
+show jumps are resolved **by slide, not by page**, without skipping hidden slides: next = slide + 1, previous = slide - 1 (clamped:
+"previous" on slide 1 and "next" on the last slide jump to the slide itself), first = slide 1, last = the last slide; when that slide
+is hidden, no annotation (`h2`: "next" from slide 1 with slide 2 hidden, "last" with the last slide hidden: nothing). "Last viewed" and
+"end show" write nothing (as before: `hyperlink:action`). A deck whose slides are **all hidden** cannot be saved as PDF (PowerPoint:
+"an error occurred while saving"): `PdfFail::NoVisibleSlides` (the FFI maps it to `INVALID_OPERATION`). The "include hidden slides"
+option of the export dialog could not be driven from COM (`ExportAsFixedFormat` refuses late-bound calls with `DISP_E_TYPEMISMATCH`,
+from PowerShell and VBScript alike); with every slide shown (the oracle harness's way) the pages are those of `ts_hidden_slides =
+true`, which is therefore also PowerPoint's "print hidden slides". `PdfReport::hidden_slides` counts the slides left out. 538 decks:
+14 hidden slides left out, 2 decks with every slide hidden (`b1a/0029`, ...).
+
+### Link rectangles (item 2, oracle row 9)
+
+Measured on 5 synthetic decks (`l1`-`l4`, `pp-rules`; 60 link cases) and checked against the corpus PDFs:
+
+- **One rectangle per line and per formatting run**: consecutive runs with the same address *and* the same formatting are one
+  rectangle (`green` + ` blue`); a bold run, another size or another face starts a new one; two runs with the same address but two
+  relationship ids are two rectangles. A tab splits the line. In a **justified or distributed** paragraph every word is its own
+  rectangle, on the last line too.
+- **The rectangle is the ink**: the union of the glyph outlines' bounds (leading spaces and the space after the link add nothing).
+  On a turned shape it is the axis-aligned bounds of the turned ink.
+- **Kept off the page**: lines overflowing the slide keep their rectangles beyond the media box (negative or larger than the page):
+  the 2,741 "wholly off the page" rectangles of the corpus.
+- **A link that ends its text writes nothing**: a paragraph mark without `a:endParaRPr` takes the link of the paragraph's last run
+  (an empty paragraph without it, the previous mark's); consecutive runs, breaks and marks with one `a:hlinkClick` (relationship id
+  and action) are one range, and **a range that holds the text body's last paragraph mark has no annotation at all** (a one-run text
+  box whose run is a link, two paragraphs of one link, a link followed by an empty paragraph). An `a:endParaRPr`, a following run
+  (even a space; an empty run does not count), a break with its own properties or a following paragraph with text end the range.
+  Jumps follow the same rule.
+- **Shape clicks** (`sc` deck, versioned as `pp-clicks.pptx`: 10, 20, 40 and 60 pt text, Liberation Sans, Times New Roman and
+  Aptos, zero, default and large insets, top and centred anchors, no text, turned): PowerPoint writes an invisible text object
+  with the link, 0.6 em left of the text's left edge, its top about 1.24 em above the first baseline (the line top minus 0.34 em;
+  0.30 em for Aptos), 2.1 em tall, and the rectangle is the union of the shape's box and that object: the box grows by
+  `max(0, 0.6 em − left inset)` to the left and, top-anchored, by `max(0, 0.34 em − top inset)` upwards and down to the object's
+  bottom (60 pt text in an 80 pt box: 26 pt below it). The em is the shape's first run size. A shape without text keeps its box;
+  a turned shape keeps its turned box (PowerPoint places the object in the turned frame: not followed). `pp-clicks`: 10 of 10
+  matched within 0.78 pt (`click_reach`, `pdf/mod.rs`).
+
+Implementation: `uo_pptx::links::run_ranges` reads the ranges from the slide XML, table cells included (each cell its own text;
+`RunRange`: address or jump key, characters, range, `dropped`, `justified`); the emission marks http runs, table-cell runs and
+run-level jumps (agent A, `!SlidesRules::ts_links`: a jump is the model address `ppaction://hlinksldjump#<slide part>` or the show
+action, resolved by `page_links` to a page or to nothing; the shape-wide `RunJump` box is then not placed); the painter measures each linked run's ink and per-word ink (`pdf/links.rs` `ink_box`, `word_boxes`, from the
+glyph outlines placed by the same fallback-aware placement as the text) and `pdf/mod.rs` `link_rects` joins the pieces (same range and
+formatting, touching on the line; a column for vertical text), matching pieces to ranges by shape, address and character count.
+`PdfReport::links_not_written` counts the rectangles left out (links ending their text, jumps to hidden slides).
+
+Numbers. `pp-rules`: PowerPoint 35 annotations, Rust 35, **every one matched** (same page and target, edges within 0.85 pt; shape
+clicks on their right and bottom edges); `pp-jumps` (run-level and shape jumps, hidden slides): PowerPoint 8, Rust 8, same pages,
+targets and order. 538-deck test (open fonts): **11,713 rectangles** (9,102 off the page; 1,494 not written; 53 shape-wide), against
+994 with `ts_link_rects` (unchanged, pinned). Corpus pages with links (the 54 oracle decks, installed fonts): PowerPoint 4,043
+rectangles (2,741 off the page); Rust 177 before, **2,601 now (2,086 off the page)**; IoU > 0.3 for 295 of PowerPoint's (35
+before), 100 above 0.8; same URI for 290 of the matched. What is left is layout, not the rule: the per-glyph rectangles of
+one-glyph-per-line and East Asian vertical text (`vert="eaVert"`: PowerPoint one rectangle per glyph, `b3a_0105` p1 433 in one
+table cell, where the TS-era layout lays the cell out otherwise) and text placed a few points apart (`b3a_0065` p1: the same
+rectangles 13 pt lower).
+
+### Fallback fonts (item 3, oracle item 4)
+
+Measured on synthetic decks: 41 scripts x 11 run languages (none, en-US, pt-BR, ja-JP, zh-CN, zh-TW, ko-KR, th-TH, hi-IN, ar-SA,
+he-IL) with the default Office theme (`f1`) and with its `a:font script` list removed (`f2`, as the b3a themes), explicit `a:ea`/`a:cs`
+(installed MS Mincho/Tahoma and an unknown family), 14 latin faces (`f3`, `f4`); the face of every character read back from
+PowerPoint's PDF (font name, checked against each face's cmap: Calibri does have Arabic, Hebrew, Georgian and Armenian, Arial has no
+Thai). The rule (table and unit tests in `uo-dml-render/src/text/fallback.rs`):
+
+- Each character has a class: **East Asian** (Han, kana, Hangul, Bopomofo, full-width forms, CJK punctuation; the symbol blocks too
+  when the run is East Asian or carries an explicit `a:ea`), **complex script** (Thai, Arabic, Hebrew, Indic) or **latin**.
+- East Asian: the run's `a:ea` (an unknown family falls through); `+mn-ea` resolves to the theme's `a:ea`; `""` to the theme's
+  `a:font script` of the run language (`ja` Yu Gothic, `zh-CN` DengXian, `zh-TW` PMingLiU, `ko` Malgun Gothic; a Hindi run takes Jpan
+  for Han and Hant for Bopomofo); otherwise the Windows default: **MS Gothic** (MS Mincho under a serif latin face), Malgun Gothic for
+  Hangul, Microsoft JhengHei (PMingLiU under a serif) for Bopomofo. Without the theme list every language gives MS Gothic (`f2`).
+- Complex script: the run's `a:cs`, else the theme script of the run language (`th` Cordia New, `ar`/`he` Arial, `hi` Mangal), else
+  the default: **Angsana New** for Thai, **Arial** for Arabic and Hebrew (Times New Roman when a named slot face lacks them),
+  **Nirmala UI** for the Indic scripts.
+- Latin characters the face lacks: Sylfaen (Georgian, Armenian), Leelawadee UI (Khmer, Lao), Myanmar Text, Microsoft Himalaya
+  (Tibetan), Ebrima (Ethiopic, N'Ko, Tifinagh), Mongolian Baiti, Microsoft Yi Baiti, Gadugi (Cherokee, Canadian syllabics), Segoe UI
+  Historic (Syriac), MV Boli (Thaana), Segoe UI Symbol (symbols, dingbats), Cambria Math (arrows, operators), Segoe UI Emoji (emoji:
+  PowerPoint draws them as pictures, no text).
+- Office's **cloud fonts** load when a face asks for them by name and then stay loaded in the session: in a fresh PowerPoint
+  Devanagari falls to Nirmala UI; after a Hindi run requested Mangal it falls to Mangal (`f1` changed mid-deck). The table is the
+  fresh-session answer (`pp-fallback`: Thai Angsana New, Han MS Gothic, Hangul Malgun Gothic, Devanagari Nirmala UI, Arabic Arial,
+  Georgian Sylfaen, `ja-JP` Han Yu Gothic, `th-TH` Thai Cordia New).
+- Complex-script characters take the complex-script faces **even when the latin face has them** (Arabic and Hebrew in Calibri,
+  Segoe UI, Times New Roman, Arial and Liberation Sans are drawn in Arial; `complex_faces`, `FontSource::routes_complex`, the PDF's
+  wrapper under `!ts_fallback_fonts`; test `complex_script_characters_take_the_complex_script_face`). East Asian and latin
+  characters keep the latin face whenever it has the glyph (no case measured otherwise).
+- **Known difference** (the maintainer's rule): an unknown latin family is drawn in **Calibri** by PowerPoint; the repository's
+  rule (`shared/fonts`: the family, else its metric substitute, else Liberation Sans) stays. A Thai character in a slot face without Thai (an Arabic run's Arial) is drawn by PowerPoint from a face
+  it links under the slot face's name (not identified): the table gives Angsana New.
+
+Implementation: `FontSource::fallback_ctx(cp, bold, italic, primary, ctx)` (default `powerpoint_chain`: the table's families through
+the host's own substitution; a family it lacks is skipped, so the answer is deterministic for a given font set; with the open fonts
+only nothing changes, no proprietary file is involved); `FontSource::fallback` stays the TS chain. The PDF wraps the host's source
+(`PdfFonts`): the family names of the list may carry the run's context (`uo_dml_render::text::split_face`, agent A's plumbing of
+`lang`, the resolved `a:ea`/`a:cs` and the theme scripts), split off before the host sees them, and `FaceChooser::with_ctx` (text,
+raster, measure) passes the context to the table; the switch is `deck.rules().ts_fallback_fonts`. `pdf_from_lists` (no deck) uses
+PowerPoint's rule.
+
+### PowerPoint agreement after wave 5 (all 736 pages, 2026-11-18)
+
+One rerun of the oracle (`pdf-oracle.mjs rust` + `compare`; the PowerPoint PDFs and TS canvases are the cached ones; the Rust side
+keeps hidden slides, as the PowerPoint side shows them) over the tree with all three wave-5 agents' work (A: sysClr, first-line
+baseline, date fields, fallback context, table-cell and jump links; B: warp, chart insets, `.ppt` charts; C: this section).
+`results/` refreshed.
+
+| Pages | Rust `system` × PowerPoint (mean, median, ≥ 0.99) | Rust `open` × PowerPoint | Rust × TS | differing px (TS legacy / PDF only) | link rectangles PowerPoint / Rust / IoU > 0.3 |
+|---|---|---|---|---|---|
+| samples (601), before | 0.9964, 0.9961, 98.5% | 0.9925, 0.9914, 67.9% | 0.9925 | 1.97 M (1.56 / 0.41) | 3 / 3 / 3 |
+| samples, **after** | **0.9996, 0.9998, 99.8%** | 0.9921, 0.9902, 52.7% | 0.9905 | **0.18 M** (0.17 / 0.01) | 3 / 3 / 3 |
+| generated (135), before | 0.8070, 0.9319, 5.2% | 0.8069, 0.9297, 4.4% | 0.9843 | 19.85 M (19.17 / 0.46) | 4,040 / 178 / 32 |
+| generated, **after** | **0.8565**, 0.9362, 6.7% | 0.8562, 0.9362, 5.9% | 0.9320 | **14.67 M** (13.58 / 0.53) | 4,040 / **2,599** / **296** |
+| all (736), before | 0.9616, 0.9951, 81.4% | 0.9585, 0.9904, 56.2% | 0.9910 | 21.82 M (20.73 / 0.86) | 4,043 / 181 / 35 |
+| all, **after** | **0.9734, 0.9998, 82.7%** | 0.9672, 0.9894, 44.2% | 0.9798 | **14.86 M** (13.75 / 0.54) | 4,043 / **2,602** / **299** |
+
+Rust × TS falls by design (the TS is no longer the target where PowerPoint was measured). The `open` policy (Liberation, Carlito,
+Caladea instead of the installed faces) loses pages ≥ 0.99 on the samples (67.9% → 52.7%, mean 0.9925 → 0.9921). The run included
+agent A's `known_line_box` (the requested family's PowerPoint line box, so a Calibri run drawn with Carlito sits on Calibri's
+baseline). The 100 pages that crossed below 0.99 are all Aptos text of the playback decks (`pb-transicoes-*`, `pb-tempo`, `.pptx`
+and `.ppt`): Aptos has no open substitute, Liberation Sans draws it, and those pages moved from 0.990x to 0.989x (mean change
+0.0013) while the same pages under the installed fonts went to 0.9996–1.0000. The baseline is now PowerPoint's; the open policy
+draws a different face at the right place, and its glyphs overlap PowerPoint's Aptos glyphs a little less than they did at the old,
+lower baseline. No measurer change follows from it (the requested-family box is already what the layout uses). Cause classes (exclusive px, `results/classes.tsv`): sysClr 15.69 M →
+10.52 M, first-line baseline 2.41 M → 0.57 M (665 → 97 pages), characters the face lacks 2.08 M → 1.56 M (88 → 71 pages),
+WordArt 0.86 → 0.87 M, charts 0.18 → 0.06 M, `.ppt` charts 73 k → 6 k; date fields 90 pages (0.86 M exclusive, now first in
+line on pages the baseline class owned before).
+
+### Measure filler: PowerPoint's font box, the oracle's clock
+
+- `pdf/measure.rs` answers the font box of a `MeasureReq::Metrics` (`font_ascent`/`font_descent`, what the first-line baseline
+  reads) with PowerPoint's line box from the OS/2 table (`uo_dml_render::text::ppt_line_box`: win ascent/descent, or the typo
+  metrics with their gap above under `USE_TYPO_METRICS`; agent A's measurement, `uo-dml-render.md` "First-line baseline"); the hhea
+  metrics stay under `SlidesRules::ts_first_baseline` and for a face without OS/2 win metrics. Without it the PDF path put Calibri
+  0.040 em and Carlito 0.016 em off PowerPoint's baseline (A's check).
+- `tests/oracle_ppt/main.rs` gives each deck the date-field clock of PowerPoint's export (`/CreationDate` of the cached PowerPoint
+  PDF, pt-BR: `Deck::set_field_clock`) and converts `.ppt` decks with PowerPoint's converter (`ConvertOptions` default, native
+  charts, the export day as the automatic date).
+
+### Files
+
+`uo-pptx/src/pdf/{mod,links,measure,text,raster}.rs`, `uo-pptx/src/links.rs` (`run_ranges`), `uo-dml-render/src/text/fallback.rs`
+(new; `text/mod.rs` one line), `uo-pptx/tests/{pdf_ppt_rules,pdf_slides,links}.rs`, `tests/oracle_ppt/{main.rs,synthetic/}` (`main.rs`:
+`UO_PPT_ORACLE_DECKS` for another deck list, `UO_PPT_ORACLE_HIDDEN=omit`; the oracle keeps hidden slides because its PowerPoint side
+shows them). Write PDF bytes: `uo-pdf` untouched.

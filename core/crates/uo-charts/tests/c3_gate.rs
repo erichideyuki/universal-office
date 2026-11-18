@@ -60,6 +60,7 @@ fn params(rect: Rect, ppt: f64, sel: ChartSel, images: bool) -> EmitParams<'stat
         locale: uo_numfmt::pt_br(),
         sel,
         images,
+        rules: uo_charts::rules::ChartRules::ts_strict(),
     }
 }
 

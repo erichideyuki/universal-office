@@ -163,6 +163,7 @@ fn draw_body(cx: &mut Cx<'_>, sh: &Shape, tb: &TextBody, x: f64, y: f64, w: f64,
         default_sz_pt: Some(if is_title { DEFAULT_TITLE_PT } else { DEFAULT_BODY_PT }),
         default_anchor: Some(if is_title { "ctr" } else { "t" }.into()),
         size_scale: Some(fsc),
+        rules: cx.env.rules,
         ..LayoutTextOptions::default()
     };
     let Some(lay) = layout(cx, tb, w / scale, h / scale, Measurer::Ppt, &opts)? else { return Ok(()) };
@@ -766,6 +767,7 @@ fn paint_warp_body(
     let opts = LayoutTextOptions {
         default_sz_pt: Some(dflt),
         default_anchor: Some(if is_title { "ctr" } else { "t" }.into()),
+        rules: cx.env.rules,
         ..LayoutTextOptions::default()
     };
     cx.save();

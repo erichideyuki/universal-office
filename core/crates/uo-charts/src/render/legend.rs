@@ -43,6 +43,12 @@ pub struct LayoutTrace {
     pub calls: Vec<LayoutCall>,
 }
 
+/// PowerPoint's legend key (em) and the gap from the key to its text (em).
+const PPT_KEY: f64 = 0.549;
+const PPT_KEY_GAP: f64 = 0.248;
+/// A legend box from its edge of the frame.
+const PPT_LEGEND_EDGE: f64 = 6.0;
+
 impl<C: Canvas> Renderer<'_, C> {
     /// `catNumLabel(s, i)`: the label of a numeric category.
     pub(super) fn cat_num_label(&self, r: SeriesRef, i: usize) -> String {
@@ -234,6 +240,48 @@ impl<C: Canvas> Renderer<'_, C> {
             (hbx, rest)
         };
         let l = lg.layout.as_ref();
+        if !self.rules().ts_insets && l.is_none() && entries.iter().all(|e| e.kind != KeyKind::Line) {
+            // PowerPoint's legend (measured, lab c-leg: 18 legends, entries of 1–18 characters, 9–24 pt): keys of 0.549 em,
+            // the text 0.248 em after the key
+            let mut adv: Vec<f64> = Vec::with_capacity(n);
+            for e in &entries {
+                adv.push(self.measure(&e.label, &t));
+            }
+            let content: Vec<f64> = adv.iter().map(|a| a + em * (PPT_KEY + PPT_KEY_GAP)).collect();
+            let a = self.area;
+            if vertical {
+                // a side legend: width = widest text + 1.1 em + 6 pt, 6 pt from its side, the keys 2.265 pt + 0.274 em in;
+                // `tr` at the top (6 pt), the others centred on the plot box (the TS rows' pitch)
+                let w = max_n(&adv) + em * 1.1 + 6.0 * s;
+                let bxx = if lg.pos == LegendPos::L { a.x + PPT_LEGEND_EDGE * s } else { a.x + a.w - PPT_LEGEND_EDGE * s - w };
+                // `tr`: at the top, 6 pt down — 12 pt when the box is taller than a third of the chart (measured, lab c-tr: the
+                // plot then sits beside it, not below)
+                let tall = bx.h > a.h / 3.0;
+                let by = if lg.pos == LegendPos::Tr { a.y + if tall { 2.0 } else { 1.0 } * PPT_LEGEND_EDGE * s } else { bx.y };
+                let kx = bxx + 2.265 * s + em * 0.274;
+                for r in &mut rows {
+                    r.x = kx;
+                    r.y += by - bx.y;
+                }
+                bx = Rect { x: bxx, y: by, w, h: bx.h };
+            } else {
+                // a bottom/top legend in one row: box = Σ(1.2 × text + 1.318 em), centred on the frame; the entries spread
+                // with s = (box − Σ(key + gap + text) + 0.305 em) ÷ (n + 1), the first key s + 0.4 pt in
+                let w = adv.iter().fold(0.0, |acc, x| acc + 1.2 * x + em * 1.318);
+                let sum_c = content.iter().fold(0.0, |acc, x| acc + x);
+                if w <= a.w - 2.0 * PPT_LEGEND_EDGE * s && rows.iter().all(|r| r.y == rows.first().map_or(r.y, |f| f.y)) {
+                    let sp = (w - sum_c + em * 0.305) / (n as f64 + 1.0);
+                    let bxx = a.x + (a.w - w) / 2.0;
+                    let mut x = bxx + sp + 0.4 * s;
+                    for (r, c) in rows.iter_mut().zip(&content) {
+                        r.x = x;
+                        x += c + sp;
+                    }
+                    bx = Rect { x: bxx, w, ..bx };
+                }
+            }
+            return Some(LegendLayout { entries, style: t, rows, bx, rest, overlay: lg.overlay });
+        }
         if let Some(l) = l
             && let (Some(lw), Some(lh_)) = (l.w, l.h)
             && lw > 0.0
@@ -351,7 +399,7 @@ impl<C: Canvas> Renderer<'_, C> {
                 }
                 x += kw;
             } else {
-                let k = em * 0.52;
+                let k = em * if self.rules().ts_insets { 0.52 } else { PPT_KEY };
                 let fill = match e.pt {
                     Some(pt) => self.point_fill(g, e.series, i64::from(pt), ser.values.len())?,
                     None => self.point_fill(g, e.series, -1, 1)?,
@@ -374,7 +422,8 @@ impl<C: Canvas> Renderer<'_, C> {
             let owned: Vec<String> = r.lines.as_ref().map_or_else(|| single.to_vec(), |l| l.iter().map(ToString::to_string).collect());
             let ls: Vec<&str> = owned.iter().map(String::as_str).collect();
             let cy = r.y + (ls.len() as f64 - 1.0) * self.line_h(&l.style) / 2.0;
-            self.draw_lines(&ls, &l.style, x + em * 0.25, cy, TextAlign::Left, 0.0);
+            let gap = if self.rules().ts_insets || e.kind == KeyKind::Line { 0.25 } else { PPT_KEY_GAP };
+            self.draw_lines(&ls, &l.style, x + em * gap, cy, TextAlign::Left, 0.0);
         }
         Ok(())
     }

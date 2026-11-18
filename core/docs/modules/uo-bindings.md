@@ -6417,12 +6417,12 @@ static draw-ops samples 1,202 / b1a 246 / c1d 182, animated anim-b6a 472 / anim-
 
 | Export | What |
 |---|---|
-| `uo_deck_open(data, len, const UoDeckOptions*, UoDeck**)` | `.pptx`, or a PowerPoint 97-2003 `.ppt` (Compound File signature) converted to the parts of a `.pptx`; `UoDeckOptions { size, flags }`, `DECK_TRUSTED = 1` |
+| `uo_deck_open(data, len, const UoDeckOptions*, UoDeck**)` | `.pptx`, or a PowerPoint 97-2003 `.ppt` (Compound File signature) converted to the parts of a `.pptx`; `UoDeckOptions { size, flags }`, `DECK_TRUSTED = 1`, `DECK_TS_STRICT = 2` (wave 5) |
 | `uo_deck_free(UoDeck*)`, `uo_deck_is_legacy(const UoDeck*)` | release (null is a no-op); 1/0, -1 for a null handle |
 | `uo_deck_info(deck, u32* count, f64* width_emu, f64* height_emu)` | slide count and `<p:sldSz>` in EMU |
 | `uo_deck_slide_notes(deck, index, UoBuf**)` | the notes text, UTF-8, paragraphs joined by `'\n'`; index past the end is code 9 |
 | `uo_deck_save(deck, UoBuf**)` | `.pptx` bytes (a legacy `.ppt` comes out converted) |
-| `uo_deck_to_pdf(deck, const UoConverter*, const UoSlidesJob*, const UoCancel*, UoBuf**)` | the PDF of an open deck; `UoSlidesJob { size, flags, reserved }`, `SLIDES_JOB_COMPRESS = 1` |
+| `uo_deck_to_pdf(deck, const UoConverter*, const UoSlidesJob*, const UoCancel*, UoBuf**)` | the PDF of an open deck; `UoSlidesJob { size, flags, reserved }`, `SLIDES_JOB_COMPRESS = 1`, `SLIDES_JOB_TS_STRICT = 2` (wave 5) |
 | `uo_pptx_to_pdf(conv, data, len, job, cancel, UoBuf**)` | one call: open + PDF (the server path) |
 | `uo_ppt_to_pptx(data, len, const UoDeckOptions*, UoBuf**)` | `.ppt` -> `.pptx` bytes; anything without the CFB signature is `INVALID_DATA` |
 
@@ -6554,6 +6554,30 @@ Release build, one 2026 Windows machine, tree of 2026-11-17 (the Slides PDF is c
    `server-pdf` already runs `slides_abi` through `cargo test -p uo-ffi --release --all-features`.
 9. No `UniversalOffice.Pptx` NuGet pack was exercised (no native-pack gather yet either, as G14 for Docx).
 
+### PowerPoint rules and the TS switch (wave 5, 2026-11-18)
+
+The Slides PDF now follows PowerPoint where the two were measured to differ (record `uo-pdf.md` "PowerPoint rules of the PDF (wave
+5)"): hidden slides are left out, link rectangles follow PowerPoint's rule, characters the face lacks take PowerPoint's per-script
+fallback faces, and `.ppt` charts convert natively (agent B, `ConvertOptions`). The facade gets them by default. For the parity tests
+against the frozen TS, as `JOB_TS_STRICT` of the Write PDF:
+
+| Native | C# (internal, visible to `UniversalOffice.Pptx.Tests`) | What |
+|---|---|---|
+| `SLIDES_JOB_TS_STRICT = 2` (`UoSlidesJob.flags`) | `SlidesPdfOptions.TsStrict` | for that PDF only: `deck.set_rules(SlidesRules::ts_strict())` (restored afterwards: the handle keeps PowerPoint's rules), `PdfOptions::ts_hidden_slides`/`ts_link_rects`; on the one-call route a `.ppt` is converted with `ConvertOptions::ts_strict()` too |
+| `DECK_TS_STRICT = 2` (`UoDeckOptions.flags`, `uo_deck_open`, `uo_ppt_to_pptx`) | `PptxDeck.Open(bytes, trusted, tsStrict)` | a `.ppt` converted as the TS did (charts as their fallback pictures); `uo_ppt_to_pptx` stays PowerPoint by default |
+
+A deck whose slides are all hidden has no PDF (PowerPoint refuses to save it): `PdfFail::NoVisibleSlides` → `INVALID_OPERATION` (2,
+message "every slide is hidden"), a `UniversalOfficeException` in C#; the TS job keeps the slides. `slides-native.tsv` writes
+`refused` for such a fixture (`core/crates/uo-pptx/tests/captures/decks/b6a/0000.pptx`; the C# parity test expects the refusal).
+Tests: `slides_abi.rs` `the_ts_strict_job_keeps_hidden_slides_for_that_job_only` (the synthetic `pp-rules.pptx`: 3 pages by default,
+5 with the TS job, the deck handle back on PowerPoint's rules after it); the fixture test accepts the refusals and checks their TS
+PDF; C# `TsStrictTests`.
+
+Digests: the Slides PDF bytes change for every fixture deck with links (rectangles), hidden slides (pages left out), characters the
+face lacks under fallback (other faces asked first; with the open fonts of the digest run the faces are the same, so these move only
+where the order matters), the `.ppt` decks with charts (agent B), and the all-hidden deck (`refused`): re-bless with `UO_BLESS=1`
+after all of wave 5 has landed.
+
 ## Slides editor (B8 routing, 2026-11-17, Opus)
 
 `<universal-slides engine="rust">`: the package, every editing method, undo/redo and the save (with fonts) run in the Rust editing
@@ -6677,3 +6701,23 @@ session (`uo_pptx::edit`, B8) inside the SAME wasm instance as the viewer's deck
 | Design + port (one Opus session) | 3 hook requests to the viewer frontier (deck sharing, suppressed emission, JS adoption, lazy engine import, sessions surviving a DOM move), landed by the other agent and the orchestrator |
 | Verification | native ABI replay 13 s release; Node API 4 s; fuzz 90 s; Chromium parity 1,579 s (60 decks x 40 steps), memory and faults about 1 min each |
 | Rework | the codec's first decode limit (1 Mi list) refused a saved package with fonts (raised to the 1 GiB of the input); `type_`/`loop_` are not schema field names (manual binds); the fuzz crate cannot link uo-wasm next to uo-ffi (both export `uo_buf_*`: the codec is compiled in by path) |
+
+## Slides wave 5 — PowerPoint rules at the wasm boundary (2026-11-18, Opus — agent A)
+
+- **Exports** (`uo-wasm/src/slides.rs`): `uo_slides_set_rules(deck, flags) -> i32` (bit 0 = `SlidesRules::ts_strict()`; bits 1–5 =
+  `ts_sys_clr`, `ts_first_baseline`, `ts_fallback_fonts`, `ts_date_locale`, `ts_warp` alone; a change empties the deck's caches, its
+  measure table and the pending requests) and `uo_slides_set_field_clock(deck, year, month, day, hour, minute, second, lang_ptr,
+  lang_len) -> i32` (the host's LOCAL time and the language of fields without one; `year` 0 = no clock). After `uo_slides_open` a deck
+  follows PowerPoint's rules with no clock.
+- **JS** (`js/slides.mjs`, `.d.mts`): `open(bytes, { tsStrict?, clock?, fieldLang? })` — `tsStrict` sets bit 0; otherwise the field
+  clock is `clock ?? new Date()` in `fieldLang ?? navigator.language` (`clock: null` = none); `SlidesDeck.setRules(flags)`,
+  `setFieldClock(date, lang)`. `slides-engine.ts` `LoadSlidesOptions` gains `tsStrict`, `fieldLang`, `now` (the viewer's and the editor's
+  `configureEngine` pass them through); the default (no option) = PowerPoint's rules with the browser's clock.
+- **Face names with a fallback context** (`!ts_fallback_fonts`): `fontStackWithFallback` (exported from `slides-engine.ts`) splits the
+  U+001F name the Rust layout writes (`uo_dml_render::text::encode_face`) and inserts the run's ea, script and cs faces before the
+  generic family of the host's stack; the measure answers and the painter's `fontStack` both use it.
+- **Derived recipes** (B5b-G1): `meta-player.ts` `decodeFxRecipe` + `paint-slides.ts` `bitmapCanvas`: a version-2 recipe is `fxImage`
+  over the base bitmap's canvas (the TS's `fxImage` over its rasterized canvas).
+- **Parity under `ts_strict`**: the Node replays `tests/slides_{anim,api,drawops,edit_api,readmodel}.test.mjs` open with `{ tsStrict:
+  true }`; the Chromium harnesses `tests/browser/slides_switch.mjs` and `slides_edit_switch.mjs` call `configureEngine({ tsStrict: true })`
+  on the element class of the page bundle.

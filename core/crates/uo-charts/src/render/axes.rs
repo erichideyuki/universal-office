@@ -38,6 +38,9 @@ const H_LBL_GAP: f64 = 0.4;
 const PLOT_MIN_T: f64 = 5.5;
 /// Gap at the right of the plot when nothing sits there (pt).
 const PLOT_PAD_R: f64 = 3.75;
+/// PowerPoint: an edge category label 11 pt from the frame = 5 pt past the TS inner box on the left, 3.5 on the right.
+const PPT_EDGE_L: f64 = 5.0;
+const PPT_EDGE_R: f64 = 3.5;
 /// Minor tick (pt).
 const MINOR_TICK: f64 = 2.6;
 /// Light of the 3D faces.
@@ -320,6 +323,11 @@ impl<'a, C: Canvas> Renderer<'a, C> {
         }
         for &g in &order {
             let Some((ci, vi)) = pair(self, &infos, g) else { continue };
+            let gi = u32::try_from(g).unwrap_or(u32::MAX);
+            self.paint_err_bars(gi, &infos[ci], &infos[vi], plot)?;
+        }
+        for &g in &order {
+            let Some((ci, vi)) = pair(self, &infos, g) else { continue };
             if cs.groups[g].series.iter().any(|s| !s.trendlines.is_empty()) {
                 let gi = u32::try_from(g).unwrap_or(u32::MAX);
                 self.paint_trendlines(gi, &infos[ci], &infos[vi], plot)?;
@@ -388,6 +396,16 @@ impl<'a, C: Canvas> Renderer<'a, C> {
                         Some(x) if !x.is_empty() => x.clone(),
                         _ => (0..s.values.len()).map(|i| Some((i + 1) as f64)).collect(),
                     };
+                    if !self.rules().ts_err_bars {
+                        for e in super::errbars::bars_along(s, true) {
+                            for (i, v) in xs.iter().enumerate() {
+                                if let Some((a, b, _)) = v.and_then(|v| super::errbars::err_ends(e, &xs, i, v)) {
+                                    lo = min(lo, a);
+                                    hi = max(hi, b);
+                                }
+                            }
+                        }
+                    }
                     for v in xs.into_iter().flatten() {
                         lo = min(lo, v);
                         hi = max(hi, v);
@@ -419,6 +437,17 @@ impl<'a, C: Canvas> Renderer<'a, C> {
                 for v in s.values.iter().flatten() {
                     lo = min(lo, *v);
                     hi = max(hi, *v);
+                }
+                // PowerPoint's scale reaches the error bar ends (measured, lab c-err: ±1 on a maximum of 9 → 0…12)
+                if !self.rules().ts_err_bars {
+                    for e in super::errbars::bars_along(s, false) {
+                        for (i, v) in s.values.iter().enumerate() {
+                            if let Some((a, b, _)) = v.and_then(|v| super::errbars::err_ends(e, &s.values, i, v)) {
+                                lo = min(lo, a);
+                                hi = max(hi, b);
+                            }
+                        }
+                    }
                 }
             }
             // the trend curve (with the extrapolation) counts too (measured, syn trend1: exponential up to 40)
@@ -830,7 +859,30 @@ impl<'a, C: Canvas> Renderer<'a, C> {
                 }
                 None => 0.0,
             };
-            plot = Rect { x: r.x + ext[0], y: r.y + t, w: r.w - ext[0] - max_n(&[ext[1], half_r, half_c, pad_r]), h: r.h - t - b };
+            // PowerPoint (measured, s_stress-table-chart p5, date axis): the first and the last category label centred on
+            // the marks stay 11 pt inside the frame (r is the TS inner box: 6 pt from the left, 7.5 from the right)
+            let (left, right_c) = if !self.rules().ts_insets && c_ax.is_some() {
+                let half_l = match c_ax {
+                    Some(k) => {
+                        let inf = &infos[k];
+                        let lines: Vec<String> = match inf.label_lines.first() {
+                            Some(l) => l.iter().map(ToString::to_string).collect(),
+                            None => vec![inf.cats.as_ref().and_then(|c| c.first()).map_or(String::new(), ToString::to_string)],
+                        };
+                        let t = self.text(&[&self.ax(inf).tx_pr]);
+                        let mut ws = vec![0.0];
+                        for l in &lines {
+                            ws.push(self.measure(l, &t));
+                        }
+                        max_n(&ws) / 2.0
+                    }
+                    None => 0.0,
+                };
+                (max(ext[0], half_l + PPT_EDGE_L * s), half_c + PPT_EDGE_R * s)
+            } else {
+                (ext[0], half_c)
+            };
+            plot = Rect { x: r.x + left, y: r.y + t, w: r.w - left - max_n(&[ext[1], half_r, right_c, pad_r]), h: r.h - t - b };
             if plot.w < 10.0 || plot.h < 10.0 {
                 plot = Rect { x: r.x + r.w * 0.1, y: r.y + r.h * 0.1, w: r.w * 0.8, h: r.h * 0.8 };
                 break;

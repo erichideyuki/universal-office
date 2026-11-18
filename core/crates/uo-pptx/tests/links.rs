@@ -194,11 +194,21 @@ fn shape_clicks_slide_and_show_jumps() {
 
     // the PDF: slide jump + next + last are internal, the shape address and the run piece are URIs, the file link is
     // refused by the scheme rule and "end show" has no PDF form
+    // (the TS-era link rules and the hidden slide kept: `ts_link_rects`, `ts_hidden_slides`; PowerPoint's rules below)
     let fonts = open_fonts();
-    let out = uo_pptx::pdf(&mut deck, &PdfOptions::new(&fonts)).unwrap();
+    let pp = uo_pptx::pdf(&mut deck, &PdfOptions::new(&fonts)).unwrap();
+    // PowerPoint: the deck's hidden slide is left out; the run jump and the run address end their text (no
+    // `a:endParaRPr`), so PowerPoint writes no annotation for them
+    assert_eq!(pp.report.pages + pp.report.hidden_slides, n);
+    assert_eq!(pp.report.hidden_slides, 1);
+    assert!(pp.report.links_not_written >= 2, "not written {}", pp.report.links_not_written);
+    let out = uo_pptx::pdf(&mut deck, &PdfOptions::ts_strict(&fonts)).unwrap();
     let r = &out.report;
     assert_eq!(r.pages, n);
-    eprintln!("action deck: {} links, {} internal, missing {:?}", r.links, r.internal_links, r.missing);
+    eprintln!(
+        "action deck: {} links, {} internal, {} not written, {} hidden slides, missing {:?}",
+        r.links, r.internal_links, r.links_not_written, r.hidden_slides, r.missing
+    );
     assert!(r.internal_links >= 3, "internal links {}", r.internal_links);
     assert_eq!(r.missing.get("hyperlink:action").copied().unwrap_or(0), 1);
     assert!(r.missing.get("hyperlink:scheme").copied().unwrap_or(0) >= 1);

@@ -888,6 +888,100 @@ and `BoundsCanvas`: no panic, item count ≤ f(points, ticks ≤ 1000, legend en
   issues them.
 - Spreads `{...a, ...stripUndef(b)}` are field-wise overrides; object key order never reaches output.
 
+## PowerPoint rules (wave 5, 2026-11-18) — `uo_charts::rules::ChartRules`
+
+Where the frozen TS and PowerPoint 365 disagree, PowerPoint decides; each rule below is behind a `ts_*` switch of
+`ChartRules` (`Default` = PowerPoint, `ts_strict()` = TS, carried by `EmitParams::rules`; the Slides emission passes
+`Env.rules.charts`). The uo-charts parity replays (`c1_replay`, `parity`, `c3_gate`, `c6_tiles`, the `stages` support)
+run under `ts_strict()` and stay equal (0 mismatches).
+
+**Measurement.** A lab deck built on the PowerPoint-made `pb-graficos.pptx` (52 synthetic charts in the form PowerPoint
+writes: c14:style 102, the default grey text, an 800 × 420 pt frame unless noted; generator and COM probe outside git
+under `core/target/w5-b/`), read back through PowerPoint's object model (`PlotArea.Inside{Left,Top,Width,Height}`,
+`PlotArea.{Left,Top,Width,Height}`, `Legend.*`, `ChartTitle.*`, read-only, no window, through `word-lock.mjs`) and its
+own PDF. COM chart coordinates are the frame's minus 4 pt (a pie centred in an 800-pt frame reports its centre at 396).
+
+| Rule (switch) | PowerPoint (measured) | TS |
+|---|---|---|
+| Plot box (`ts_insets`) | 11 pt from every side of the frame (pie with no title/legend: inside 197;7;398;398 → the square 201..599 × 11..409; 400 × 300: 278) | pads 6 / 5 / 7.5 / 7.2 (5.7 with axes) inside, then each family's own margins |
+| Title (`ts_insets`) | box from 6 pt below the top, centred on the frame, height = line + 3 pt (24.97 for 18 pt, 25.73 for 18.62, 20.09 for 14, 32.295 for 24 — line 1.2207 em); its text 1.5 pt lower; the plot 11 pt below the box | text at 3.75 pt inside the pads, centred on the inner box; 6.25 pt gap |
+| Bottom/top legend (`ts_insets`) | box 6 pt from its edge (a top legend 6 pt below the title box), the plot 11 pt away | 5.7/7.2 pt from the bottom, 5 pt from the top, 4 pt gap |
+| Side legend (`ts_insets`) | box 6 pt from its side, centred on the plot box below the title; about 6.8 pt wider than the TS's entries box; the plot 11 pt away | box at the pads, centred on the inner box |
+| Pie/doughnut size (`ts_pie_size`) | the whole plot square; with labels that may go outside (pie: `bestFit`, `outEnd`, no position; a doughnut with any label) **0.875 × side − 2.75 pt, whatever the label size** (398 → 345.5 for 8, 12, 18 and 24-pt labels; 378 → 328; 302 → 261.5; 178 → 153); `inEnd`/`ctr` labels: no inset | 97 % of the square, minus 1.6 label lines a side for outside labels (doughnuts never) |
+| Automatic title (`ts_auto_title`) | `<c:autoTitleDeleted val="0"/>` written and no `c:title`: a chart with one series (or a pie-like first group with any series) shows the series name, **bold, 18 pt with c14:style (or an Office 2007 file), else the chart's base size** (10 pt without c14); the element absent = no title | only in Office 2007 files (created at parse time) |
+
+For the families with axes the TS's own plot margins already land on PowerPoint's within 0.3 pt when there is no title
+or legend (lab #29: gridlines 103.20 × 71.55 PowerPoint, 102.92 × 71.50 Rust); the PowerPoint branch
+(`Renderer::layout_ppt`) therefore hands them the TS-inner rectangle shifted to PowerPoint's legend and title positions
+(constants `PPT_AXES_GAP_B` 6.4, `PPT_AXES_GAP_T` 5.25; plot top under a title unchanged), and pies the plot box itself.
+Tests: `tests/w5_rules.rs` (the PowerPoint numbers above through `part_bounds` and `trace_layout`; `ts_strict()` keeps
+the TS diameter).
+
+**Agreement with PowerPoint** (oracle pages with charts, pixels as `pdf-oracle-compare.py`, the same working tree with
+only these switches flipped): chart pages (31) 2,305,868 → **2,131,317** differing px; `s_playback_pb-graficos.pptx` p4
+(pie, automatic title) 0.9526 → 0.9978, `pb-graficos-partes.pptx` p5 0.9507 → 0.9979, `s_showcase_animado` p5
+(doughnut with labels) 0.9477 → 0.9917, `s_stress-table-chart` p3 (pie, doughnut) 0.9866 → 0.9968, bar pages +0.0005
+each; `c1d` generated pages mostly unchanged (their differences are colour/`sysClr` and hostile XML). Small losses
+(≤ 400 px) on line/radar pages from 0.5-pt gridline snapping.
+
+**Follow-up round (same day): the four open chart items, closed under `ts_insets`** (lab `c-leg`: 18 legends — entries of
+1–18 characters, 2/4/6 entries, 9–24 pt, bottom/right/corner, 800 × 420 and 400 × 300 frames — key positions read from
+PowerPoint's PDF, box sizes from `Legend.*`; text advances from the Aptos file):
+
+| Rule | PowerPoint (measured) | Rust now / before |
+|---|---|---|
+| Bottom/top legend in one row | box width = Σ (1.2 × text advance + 1.318 em) — 4 × "IIII" 122.924, 4 × "WWWW" 268.171, "Cat A–D" 200.617, 2 entries 98.98, 6 entries 297.971, 9/18/24 pt fitted to 0.03 pt — centred on the frame; keys 0.549 em, the text 0.248 em after the key; the entries spread with s = (box − Σ(0.797 em + text) + 0.305 em) ÷ (n + 1) and the first key s + ~0.4 pt in (0.49 at 9 pt … 0.11 at 24 pt) | keys within 0.3 pt of PowerPoint's on every lab legend (before: 3.6 pt per entry too far apart, keys 0.52 em) |
+| Side legend | width = widest text + 1.1 em + 6 pt (48.389 / 112.584 / 69.743), 6 pt from its side, keys 2.265 pt + 0.274 em in, rows 1.208 em + 6 apart (the TS's 1.2 em + 6 kept) | pies to 0.4 pt (before: the box 6.8 pt narrower) |
+| Corner (`tr`) legend | two regimes (lab `c-tr`, 10 cases): a box no taller than a third of the chart sits 6 pt from the top and the pie's plot box is below it (+11) and left of it (−11), the square **6 pt above** that box's top (92.855 for 98.855 at 11.97 pt, 122.0 for 128.0 at 18 pt, also 400 × 400 and 300 × 420); a taller box sits 12 pt from the top and the plot box is beside it, from 17 pt down to 11 pt above the bottom (8–14 entries in 800 × 420, 400 × 300, 770 × 307, 4 entries in 800 × 200) | pies to 0.5 pt (before: centred like `r`, up to 85 pt off; generated `c1d_0002` 0.9849 → 0.9953) |
+| Category labels on the marks (`midCat` area/line, date axes) | the first and the last label stay 11 pt inside the frame: the plot starts half the first label + 11 pt from the frame (s_stress-table-chart p5: 40.75 pt for "05/01/2002") and ends half the last label + 11 pt before it | TS: no left inset, 7.5 pt on the right |
+| Title line | the font's line (ascent + descent of the font box: Aptos 1.2207 em; title box = line + 3) | TS 1.2 em; the plot of the axes families keeps the TS-calibrated top (unchanged) |
+| `a:sysClr` in charts (with `SlidesRules::ts_sys_clr`) | the stock Windows `GetSysColor` table (measured by the theme frontier) | `SlidesHost` → `theme::color_in_rules`; `uo_charts::dml_color_with` / `dml_color_source_with` (+ `color::SYSTEM_COLORS`, checked equal to `uo_dml_render::theme::system_color`); `dml_color` keeps the TS |
+
+Lab totals: `c-leg` 4,445 differing px over 18 slides, `c-pie` 86,079 over 32 (most of it the bar charts' 0.5-pt
+gridline snapping and glyph antialiasing). Tests: `tests/w5_rules.rs` (8: the PowerPoint numbers above, `ts_strict()` the TS).
+
+**Error bars (`ChartRules::ts_err_bars`, follow-up 2):** drawn now (`render/errbars.rs`; the TS never drew them, and the
+`c1a` captures hold charts with `c:errBars`, hence the switch). Measured in PowerPoint (labs `c-err`, `c-err2`, `c-err3`:
+the error bars' paths of its PDF): one stroked path per point — minus line, plus line, then the end caps — with the
+`c:spPr` line (default: the chart's default line); caps **4.5 pt** whatever the width (0.75 and 3 pt), across the
+direction; from the point (a bar: its centre at the value end, the stacked end for stacked groups; a line point; a scatter
+point, `errDir` x along the x axis); fixed `val` (default 1), percentage of |value| (default 5), std error = sample σ ÷ √n
+on each point (0.8819 for 3, 5, 4, 7, 6, 9), std dev = `val` × sample σ around the series MEAN on every point ([10, 20, 30]
+→ 10…30; [1, 1, 1, 5] → 0…4), custom `c:plus`/`c:minus` (absent point = 0); `errBarType` plus/minus, `noEndCap`. The auto
+scale includes the ends (±1 on a maximum of 9 → 0…12 where 0…10 without). Lab agreement: 10 bar/line cases 0.990–0.999
+(geometry within 0.5 pt), scatter x + y 3,545 px; oracle: only `c1d_0047` p1 changes, 64,034 → 53,803 px. Tests:
+unit tests of the amounts in `errbars.rs`; the uo-charts parity replays stay equal under `ts_strict()`.
+
+**Still open in charts (1):** the first-key inset of horizontal legends varies with the size (0.11–0.49 pt, a constant
+0.4 used).
+
+## BIFF8 charts (`uo_charts::biff`, wave 5)
+
+`chart_space_from_workbook(workbook) -> Option<String>`: the chart sheet of an `Excel.Chart.8` OLE `Workbook` stream
+(BIFF8, chart substream `BOF dt=0x20`) as a `c:chartSpace` part. Port of `sheet-core/src/xls/chart.ts` (ts-ref-092; the
+Sheet's `.xls` charts, Excel 97 defaults) plus the Office 2007+ records the TS does not read, which PowerPoint/Excel 2007+
+write into every chart substream and which carry the real formatting: `ShapePropsStream` (0x08A4, the element's
+`a:spPr`; `wObjContext` 0 = the element, 1/2 = major/minor gridlines of an axis), `TextPropsStream` (0x08A5, `a:txPr`),
+`CrtLayout12A` (0x08A7, plot layout: modes at +26, 0 = automatic) and `CrtLayout12` (0x089D: legend layout, modes at
++18; its `autolayouttype` (flags bits 1–4) is the docked position — the LEGEND record then says "not docked" (7)). The
+XML wins over the BIFF formats (PowerPoint draws the 2007 formatting). Values come from the chart's own cache
+(`SIINDEX` 1/2/3 + `NUMBER`/`LABEL`, rows = points, columns = series); `ChartCells` is the hook for the Sheet's cell
+reader. Measured differences from the TS converter: the BAR record's `pcOverlap` is the NEGATIVE of `c:overlap` (the
+.pptx twin writes −27 where the record holds 27; the TS writes it unchanged). Follow-up round: also converted —
+**trendlines** (a SERIES with SERPARENT + SERAUXTREND: type/order/period, intercept, forward/backward, R²/equation flags, the
+line of its own DATAFORMAT or its XML), **error bars** (SERAUXERRBAR: the plus/minus halves of one direction joined into
+`both`, percentage/fixed/std dev/std error/custom, end caps, the line from the half that carries the XML), **GELFRAME
+fills** without XML (the OfficeArt FOPT: solid `fillColor` as RGB, a shade as a two-stop linear gradient at 270° − the
+fill angle; scheme/palette colour references keep the palette colour) and the **cell references** (`c:f` from the AI
+formulas: PtgRef3d/PtgArea3d through EXTERNSHEET and BOUNDSHEET, quoted sheet names, unions in parentheses). Measured
+end to end: PowerPoint-made decks with a linear and a polynomial trendline, ±10 % error bars and a gradient series
+(`ext-*.pptx` of the lab, built on pb-graficos.pptx with its embedded workbooks), saved by PowerPoint as `.ppt`: the
+converted chart parts carry the source XML of the trendlines, error bars and references, and draw pixel-equal to the Rust
+rendering of the `.pptx` source (6,787 px against PowerPoint on the trendline slide, the same as the `.pptx`). Not
+converted: BIFF5.
+Used by the `.ppt` converter (`uo-pptx.md` "`.ppt` charts"). Unit tests in the module; the conversion is checked
+end to end by `uo-pptx/tests/ppt_charts.rs`.
+
 ## Decisions (applied by the orchestrator on 2026-11-17 with the recommended option; the maintainer may revisit at M4)
 
 - CH-1: APPLIED — the wrap prefetch rule (contiguous token spans ≤ 32 tokens); it only adds questions, never changes

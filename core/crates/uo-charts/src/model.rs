@@ -488,6 +488,35 @@ pub struct Series {
     pub d_lbls: Option<Box<DLbls>>,
     pub trendlines: Vec<Trendline>,
     pub box_opts: Option<BoxOpts>,
+    /// `c:errBars` (Slides wave 5: drawn as PowerPoint draws them unless `ChartRules::ts_err_bars`; the TS ignores them)
+    pub err_bars: Vec<ErrBars>,
+}
+
+/// `c:errBars`: direction (`c:errDir`, `None` = the value direction), which halves, the amount and the line.
+#[derive(Clone, PartialEq, Debug)]
+pub struct ErrBars {
+    /// `Some(true)` = along x (scatter), `Some(false)` = along y
+    pub x_dir: Option<bool>,
+    pub plus: bool,
+    pub minus: bool,
+    pub kind: ErrValType,
+    /// `c:val` (default 1 for std dev, 5 for percentage, 1 for fixed — the Office defaults of the dialog)
+    pub val: Option<f64>,
+    pub no_end_cap: bool,
+    /// `c:plus` / `c:minus` (custom)
+    pub plus_vals: Option<Vec<Option<f64>>>,
+    pub minus_vals: Option<Vec<Option<f64>>>,
+    pub sp: ShapeProps,
+}
+
+/// `c:errValType`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ErrValType {
+    Fixed,
+    Percentage,
+    StdDev,
+    StdErr,
+    Custom,
 }
 
 /// model.ts:176: the chart families the parser maps (`c:*Chart` elements, parse.ts:479–485) and the
@@ -786,6 +815,8 @@ pub struct ChartSpace {
     pub rounded_corners: bool,
     pub title: Option<ChartTitle>,
     pub auto_title_deleted: bool,
+    /// `c:autoTitleDeleted` is written (PowerPoint shows an automatic title only then; absent = no title, measured).
+    pub auto_title_written: bool,
     pub groups: Vec<Group>,
     pub axes: Vec<Axis>,
     pub plot_layout: Option<ManualLayout>,

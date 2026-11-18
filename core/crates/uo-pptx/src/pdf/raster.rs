@@ -28,7 +28,7 @@ use uo_render::slides::{
 use super::css::{Rgba, parse_css};
 use super::geom::{CanvasPath, Mat};
 use super::interp::{mat6, span_of};
-use super::measure::{FaceChooser, FontSource, Placed, place_glyphs, text_width_in};
+use super::measure::{FaceChooser, FontSource, Placed, place_glyphs, text_width_ctx};
 use super::paint::{GradSpec, pattern_geometry, stops_of};
 
 /// Raster pixels per device pixel (pt) of an effect region: 144 dpi.
@@ -716,6 +716,12 @@ impl<'a, 'c> Raster<'a, 'c> {
         self.t.cur.dead = !m.finite() || m.inverse().is_none();
     }
 
+    /// The fallback context a face of the list carries in its family name (`uo_dml_render::text::split_face`).
+    fn face_ctx(&self, face: u32) -> Option<uo_dml_render::model::FontFallback> {
+        let fk = self.cx.res.face_entries().get(usize::try_from(face).ok()?)?;
+        uo_dml_render::text::split_face(&self.sym(fk.family)).1
+    }
+
     fn face(&mut self, face: u32) -> Option<(Arc<Face>, bool, bool)> {
         if let Some(f) = self.faces.get(&face) {
             return f.clone();
@@ -1188,7 +1194,7 @@ impl<'a, 'c> Raster<'a, 'c> {
             return;
         }
         let Some((face, bold, italic)) = self.face(face_i) else { return };
-        let mut ch = FaceChooser::new(self.cx.fonts, Arc::clone(&face), bold, italic);
+        let mut ch = FaceChooser::with_ctx(self.cx.fonts, Arc::clone(&face), bold, italic, self.face_ctx(face_i));
         let (placed, width) = place_glyphs(&mut ch, size, true, 0.0, text);
         let mt = face.metrics();
         let upem = f64::from(mt.units_per_em);
@@ -1227,10 +1233,11 @@ impl<'a, 'c> Raster<'a, 'c> {
             self.t.cur.fill = Some(v);
         }
         let fonts = self.cx.fonts;
-        let natural = text_width_in(fonts, &face, bold, italic, size, kern, 0.0, &text);
+        let ctx = self.face_ctx(r.font.face);
+        let natural = text_width_ctx(fonts, &face, bold, italic, size, kern, 0.0, &text, ctx.as_ref());
         let ctm = self.t.cur.ctm;
         let m = ctm.then(self.rmat());
-        let mut ch = FaceChooser::new(fonts, Arc::clone(&face), bold, italic);
+        let mut ch = FaceChooser::with_ctx(fonts, Arc::clone(&face), bold, italic, ctx);
         if r.bullet {
             let (placed, _) = place_glyphs(&mut ch, size, true, 0.0, &text);
             let polys = Self::glyph_polys(&placed, size, r.x, r.y, m);

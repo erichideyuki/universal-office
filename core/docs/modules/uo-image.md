@@ -165,3 +165,27 @@ tests of `uo-dml-render/tests/metafile.rs` (M1, M2, damaged files, the 60,000² 
 | Stage | Agent (model) | Time | Tool calls | Rounds / rework |
 |---|---|---|---|---|
 | 3 + 4 (port, differential, memory, no-panic, fuzz target, record) | porter (Sonnet, hybrid mode) | ≈ 65 min wall (08:50–09:55), of which ≈ 20 min reading the TS, the plans and the foundation crates | ≈ 125 (estimate) | 0 rounds from a verifier. The differential I built alongside found **4 defects of my own port** in three runs (54 → 6 → 0 mismatches; all "plan gaps" of the kind the hybrid mode expects): (1) the inflate with a declared size refuses a stored block that overruns it, which the TS accepts (45 mutated PNGs; D6); (2) the PNG size limit was checked before the inflate, so a damaged stream became `E` instead of `N` (D5); (3) the PNG IHDR-cut-off error was raised at parse time instead of after the inflate (D11); (4) the TIFF deflate output was capped at `expected` where the TS uses the whole stream (1 mutated YCbCr strip). Also: the TS corpus run hung in my own generator (a BMP with a negative width allocated 4·10⁹ bytes of content: fixed in the script), and the mutated oracle screenshots needed a 4 MiB allocation limit in the TS replay because fflate's doubling buffer falls on either side of any limit (the mutations skip images above 128 Kpx). 13 decisions declared (D1–D13 above). The shared workspace did not build for ≈ 50 min (another agent's half-written `uo-docx` manifest): the work ran in a private copy of the five crates it needs, and the final fmt/clippy/tests/wasm checks ran in the real workspace. 3 wrong expectations of mine in the hand-made tests (a GIF code width after the dictionary reaches 8 entries, the `jpeg_info` truncation length, the Adam7 expected pixel order) fixed against the TS, not the code; 2 clippy findings in the tests |
+
+## JPEG decoder (Slides wave 5, 2026-11-18, Opus — agent A)
+
+Decision of the orchestrator (wave 5, item 5): the PDF applies grayscale, duotone, bi-level and colour change to JPEG pictures (plain
+ones in `uo-pptx/src/pdf/images.rs` and the bitmaps of metafile recipes) instead of counting `image:jpeg-effect`; this needs the pixels.
+
+- **`decode_jpeg(bytes, &ImageLimits) -> Result<Rgba>`**, feature **`jpeg`** (off by default; enabled only by uo-pptx's `pdf` feature).
+  The declared size is checked against `ImageLimits` (pixels, side, and `4 × px ≤ max_inflated`) before any decoding and given to the
+  decoder as its maximum; a decoder error is `Malformed`. RGB out, made opaque RGBA here (the decoder's own RGBA of a CMYK file leaves
+  alpha 0).
+- **Crate: `zune-jpeg =0.5.15` + `zune-core =0.5.3`** (MIT OR Apache-2.0 OR Zlib), `default-features = false, features = ["std"]`:
+  scalar path (no SIMD dispatch: the same bits on every target), single-threaded, `set_use_unsafe(false)`. Compared with
+  `jpeg-decoder =0.3.2` on 13 JPEGs (4:4:4, 4:2:2, 4:2:0, progressive, restart markers, grayscale, Adobe CMYK, 6 corpus JPEGs of the
+  samples) against libjpeg-turbo 8 (Pillow 12): zune at most 4 levels (mean ≤ 0.36), jpeg-decoder at most 3 (mean ≤ 0.21; closer on
+  4:2:0 chroma). zune chosen anyway: jpeg-decoder starts worker threads for every image over 128 × 128 px (`select_worker`, no switch),
+  which a library inside the PDF writer (and the per-thread memory gate) should not do. Both handled every hostile input.
+- **PowerPoint**: deck `fx-jpg` (the colour stripes as a JPEG under the effects) draws exactly as the PNG with the same effects, within
+  the JPEG's own ±1 level; the uo-pptx test `colour_effects_on_a_jpeg_match_powerpoint` checks the PDF's decoded pictures against
+  PowerPoint's pixels (±2).
+- **Tests** (`tests/jpeg.rs`, run with `--features jpeg`; fixtures `tests/data/jpeg/`, 64 × 48 synthetic, with the libjpeg-turbo `.rgb`):
+  fidelity (≤ 4 levels, mean ≤ 0.5), the limits (pixels, side, buffer, a 65,500² header), no panic over every prefix and 320 mutations
+  of each fixture (`UO_IMAGE_NOPANIC_ROUNDS=100`: 24,000 mutations, 0.7 s, no panic), M1 (decoded and failed decodes).
+- **Bundles**: no wasm artifact links it (`cargo tree` of uo-wasm `slides-edit,slides-ppt` and `write,session`: no zune); only the
+  native `uo_ffi` does — listed in `core/licenses` (`node tools/licenses/gen-notices.mjs`).

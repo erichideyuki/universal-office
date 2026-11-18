@@ -4,13 +4,19 @@
 //! y down), the picture is the root canvas, and paths, fills, strokes, clips, transforms, gradients, patterns, text and
 //! images go through the same interpreter as the slide itself. `putImageData` is an image at device coordinates; the
 //! exact XOR (`xorRect`) has no PDF form and is counted (`meta:xor-rect`; the approximation that follows it is drawn).
+//!
+//! A derived recipe (version 2, `uo_dml_render::metafile::rec::encode_fx_recipe`: a metafile picture with the blip's colour
+//! effects, gap B5b-G1) plays its base recipe with every colour mapped through `fxImage` (`images::apply_fx`): the CSS
+//! colours of fills, strokes and gradient stops, and the pixels of its bitmaps. The effects are per-pixel maps, so mapping
+//! the inputs equals mapping the raster except at anti-aliased edges and under transparency for the maps that are not
+//! affine (bi-level, colour change).
 
 use std::rc::Rc;
 
 use uo_jsnum::math::{max, min};
 use uo_render::slides::{Cap, CompositeOp, FillRule, Join, Rect4, Repeat};
 
-use super::css::parse_css;
+use super::css::{Rgba, parse_css};
 use super::geom::{Mat, nm};
 use super::interp::{Interp, PaintVal, Target};
 use super::paint::{GradSpec, PatternVal, RECIPE_GRAD_BASE};
@@ -75,8 +81,23 @@ impl Interp<'_, '_> {
     /// Plays recipe bitmap `i` into a form: the picture as vector content (`None` when the bytes are no recipe).
     pub(super) fn play_recipe(&mut self, i: u32) -> Option<ImgHandle> {
         let b = self.res.bitmap_entries().get(usize::try_from(i).ok()?)?;
-        let bytes = Rc::new(self.res.bitmap_bytes(b.data)?.to_vec());
-        let mut r = Rd { b: &bytes, p: 0 };
+        let bytes = self.res.bitmap_bytes(b.data)?;
+        if let Some((base, fx)) = uo_dml_render::metafile::rec::decode_fx_recipe(bytes) {
+            // a derived recipe: its base (a plain recipe, never another derived one) with the colours mapped
+            let bb = self.res.bitmap_entries().get(usize::try_from(base).ok()?)?;
+            let base_bytes = self.res.bitmap_bytes(bb.data)?;
+            if base_bytes.get(4) != Some(&1) {
+                return None;
+            }
+            let base_bytes = Rc::new(base_bytes.to_vec());
+            return self.play_recipe_bytes(&base_bytes, Some(Rc::new(FxMap::new(&fx))));
+        }
+        let bytes = Rc::new(bytes.to_vec());
+        self.play_recipe_bytes(&bytes, None)
+    }
+
+    fn play_recipe_bytes(&mut self, bytes: &Rc<Vec<u8>>, fx: Option<Rc<FxMap>>) -> Option<ImgHandle> {
+        let mut r = Rd { b: bytes, p: 0 };
         if r.take(5)? != [0x55, 0x4f, 0x4d, 0x46, 1] {
             return None;
         }
@@ -99,9 +120,10 @@ impl Interp<'_, '_> {
         }
         let n_ops = usize::try_from(r.u32()?).ok()?;
         let mut run = Recipe::new(w, h);
+        run.fx = fx;
         self.w.report.recipes += 1;
         for _ in 0..n_ops.min(bytes.len()) {
-            if self.halt || self.recipe_op(&mut r, &mut run, &blobs, &bytes).is_none() {
+            if self.halt || self.recipe_op(&mut r, &mut run, &blobs, bytes).is_none() {
                 break;
             }
         }
@@ -171,7 +193,8 @@ impl Interp<'_, '_> {
                 let g = usize::try_from(r.u32()?).ok()?;
                 let off = r.f64()?;
                 let color = r.str()?;
-                if let (Some(gb), Some(c)) = (run.grads.get_mut(g), parse_css(&color))
+                let c = parse_css(&color).map(|c| run.map(c));
+                if let (Some(gb), Some(c)) = (run.grads.get_mut(g), c)
                     && gb.stops.len() < MAX_OBJECTS
                 {
                     let o = if off.is_nan() { 0.0 } else { max(0.0, min(1.0, off)) };
@@ -246,7 +269,7 @@ impl Interp<'_, '_> {
             8 | 9 => {
                 let t = r.u8()?;
                 let v = match t {
-                    0 => parse_css(&r.str()?).map(PaintVal::Css),
+                    0 => parse_css(&r.str()?).map(|c| PaintVal::Css(run.map(c))),
                     1 => {
                         let i = usize::try_from(r.u32()?).ok()?;
                         run.grads.get(i).map(|g| {
@@ -380,7 +403,10 @@ impl Interp<'_, '_> {
                 } else {
                     let &(start, len) = blobs.get(k)?;
                     let data = all.get(start..start.checked_add(len)?)?;
-                    self.embed_picture(data, None)
+                    match run.fx.clone() {
+                        None => self.embed_picture(data, None),
+                        Some(fx) => self.fx_picture(data, &fx),
+                    }
                 };
                 if let Some(img) = img {
                     match n {
@@ -403,7 +429,14 @@ impl Interp<'_, '_> {
                 let want = usize::try_from(w).ok()?.checked_mul(usize::try_from(h).ok()?)?.checked_mul(4)?;
                 let data = all.get(start..start.checked_add(len)?)?;
                 if w > 0 && h > 0 && data.len() >= want {
-                    self.put_pixels(data.get(..want)?, w, h, m[0], m[1]);
+                    match run.fx.clone() {
+                        None => self.put_pixels(data.get(..want)?, w, h, m[0], m[1]),
+                        Some(fx) => {
+                            let mut px = data.get(..want)?.to_vec();
+                            fx.map_px(&mut px);
+                            self.put_pixels(&px, w, h, m[0], m[1]);
+                        }
+                    }
                 }
             }
             _ => return None,
@@ -422,6 +455,55 @@ impl Interp<'_, '_> {
             std::mem::swap(&mut self.t, c);
         }
         out
+    }
+
+    /// A bitmap of a derived recipe: decoded and mapped (a JPEG through uo-image's `jpeg` decoder; one that does not decode is
+    /// drawn as it is and counted `image:jpeg-effect`).
+    fn fx_picture(&mut self, data: &[u8], fx: &FxMap) -> Option<ImgHandle> {
+        if uo_image::jpeg_info(data).is_some() {
+            return match uo_image::decode_jpeg(data, &self.w.opts.image_limits) {
+                Ok(mut r) => {
+                    fx.map_px(&mut r.data);
+                    self.embed_rgba_picture(&r)
+                }
+                Err(_) => {
+                    self.count("image:jpeg-effect");
+                    self.embed_picture(data, None)
+                }
+            };
+        }
+        let Ok(mut r) = uo_image::decode_raster(data, &self.w.opts.image_limits) else { return self.embed_picture(data, None) };
+        fx.map_px(&mut r.data);
+        let doc = self.w.doc.as_mut()?;
+        let e = doc.embed_rgba(&r.data, r.width, r.height);
+        let pdf = self.w.note(e)?;
+        self.w.report.images += 1;
+        Some(ImgHandle { src: PicSrc::Image(pdf), w: f64::from(r.width), h: f64::from(r.height) })
+    }
+
+    /// A JPEG picture whose colour effects need its pixels (grayscale, duotone, bi-level, colour change, or brightness/contrast
+    /// of a CMYK JPEG): decoded (uo-image `jpeg`), `fxImage` applied, embedded as RGBA. `None` when it does not decode (the
+    /// caller embeds it as it is and counts `image:jpeg-effect`). Called by `images::embed_picture`.
+    pub(super) fn jpeg_fx_picture(&mut self, data: &[u8], fx: &uo_render::slides::ImageFx) -> Option<ImgHandle> {
+        let mut r = uo_image::decode_jpeg(data, &self.w.opts.image_limits).ok()?;
+        // the colour strings first (the symbol table is read before the pixels are mapped)
+        let ids = [
+            fx.duotone.as_ref().map(|d| d.first),
+            fx.duotone.as_ref().map(|d| d.second),
+            fx.clr_change.as_ref().map(|c| c.from),
+            fx.clr_change.as_ref().map(|c| c.to),
+        ];
+        let names: Vec<(u32, String)> = ids.into_iter().flatten().map(|i| (i, String::from_utf16_lossy(self.res.sym_units(i)))).collect();
+        super::images::apply_fx(&mut r.data, fx, |s| names.iter().find(|(i, _)| *i == s).map(|(_, n)| n.clone()).unwrap_or_default());
+        self.embed_rgba_picture(&r)
+    }
+
+    fn embed_rgba_picture(&mut self, r: &uo_image::Rgba) -> Option<ImgHandle> {
+        let doc = self.w.doc.as_mut()?;
+        let e = doc.embed_rgba(&r.data, r.width, r.height);
+        let pdf = self.w.note(e)?;
+        self.w.report.images += 1;
+        Some(ImgHandle { src: PicSrc::Image(pdf), w: f64::from(r.width), h: f64::from(r.height) })
     }
 
     /// `putImageData`: the pixels at device position `(x, y)`, ignoring the transform, alpha and clip of the context.
@@ -471,9 +553,16 @@ struct Recipe {
     font: String,
     grads: Vec<GradBuild>,
     pats: Vec<Option<Rc<PatternVal>>>,
+    /// the colour effects of a derived recipe
+    fx: Option<Rc<FxMap>>,
 }
 
 impl Recipe {
+    /// A CSS colour of the recipe through the derived recipe's effects.
+    fn map(&self, c: Rgba) -> Rgba {
+        self.fx.as_ref().map_or(c, |f| f.map(c))
+    }
+
     fn new(w: f64, h: f64) -> Recipe {
         Recipe {
             canvases: vec![Target::new(Mat::IDENTITY, None, Mat::IDENTITY)],
@@ -483,6 +572,49 @@ impl Recipe {
             font: "10px sans-serif".to_owned(),
             grads: Vec::new(),
             pats: Vec::new(),
+            fx: None,
         }
+    }
+}
+
+/// The effects of a derived recipe as `fxImage` takes them (`images::apply_fx`; symbols 0-3 are the colour strings).
+struct FxMap {
+    fx: uo_render::slides::ImageFx,
+    names: [String; 4],
+}
+
+impl FxMap {
+    fn new(f: &uo_dml_render::metafile::rec::RecipeFx) -> FxMap {
+        let mut names: [String; 4] = Default::default();
+        if let Some([a, b]) = &f.duotone {
+            names[0].clone_from(a);
+            names[1].clone_from(b);
+        }
+        if let Some((from, to, _)) = &f.clr_change {
+            names[2].clone_from(from);
+            names[3].clone_from(to);
+        }
+        let fx = uo_render::slides::ImageFx {
+            duotone: f.duotone.as_ref().map(|_| uo_render::slides::Duotone { first: 0, second: 1 }),
+            gray: f.gray,
+            bi_level: f.bi_level,
+            bright: f.bright,
+            contrast: f.contrast,
+            clr_change: f.clr_change.as_ref().map(|c| uo_render::slides::ClrChange { from: 2, to: 3, to_alpha: c.2 }),
+        };
+        FxMap { fx, names }
+    }
+
+    fn map_px(&self, px: &mut [u8]) {
+        super::images::apply_fx(px, &self.fx, |s| self.names.get(usize::try_from(s).unwrap_or(usize::MAX)).cloned().unwrap_or_default());
+    }
+
+    fn map(&self, c: Rgba) -> Rgba {
+        let [r, g, b] = c.bytes();
+        let a8 = uo_jsnum::conv::to_uint8_clamp(c.3 * 255.0);
+        let mut px = [r, g, b, a8];
+        self.map_px(&mut px);
+        let alpha = if px[3] == a8 { c.3 } else { f64::from(px[3]) / 255.0 };
+        Rgba(f64::from(px[0]), f64::from(px[1]), f64::from(px[2]), alpha)
     }
 }

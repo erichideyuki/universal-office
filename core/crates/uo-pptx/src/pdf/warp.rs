@@ -558,10 +558,12 @@ fn ink(face: &Face, gid: u32) -> Option<[f64; 4]> {
 fn measure_run(cx: &RasterCx<'_>, r: &WarpRun, idx: usize, text: &str) -> Option<RunM> {
     let fk = cx.res.face_entries().get(usize::try_from(r.font.face).ok()?)?.clone();
     let family = String::from_utf16_lossy(cx.res.sym_units(fk.family));
-    let face = cx.fonts.face(&family, fk.bold, fk.italic)?;
+    // the list's family name carries the run's fallback context (language, theme script faces): the same faces as plain text
+    let (plain, ctx) = uo_dml_render::text::split_face(&family);
+    let face = cx.fonts.face(plain, fk.bold, fk.italic)?;
     let size = r.font.size_pt;
     let spc = r.spc.unwrap_or(0.0);
-    let mut ch = FaceChooser::new(cx.fonts, Arc::clone(&face), fk.bold, fk.italic);
+    let mut ch = FaceChooser::with_ctx(cx.fonts, Arc::clone(&face), fk.bold, fk.italic, ctx);
     let (placed, w) = place_glyphs(&mut ch, size, true, spc, text);
     let (mut l, mut rr, mut a, mut d) = (f64::INFINITY, f64::NEG_INFINITY, 0.0f64, 0.0f64);
     let mut adv = Vec::with_capacity(placed.len());

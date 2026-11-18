@@ -4,6 +4,7 @@
 //! - [`layout`]: [`layout_text_body`], [`need_measures`], [`format_auto_num`], [`cell_body`] and the result types.
 //! - [`measure`]: [`MeasureTable`] (the advance-table input) and the requests of the two-phase protocol.
 
+pub mod fallback;
 pub mod layout;
 pub mod measure;
 
@@ -12,5 +13,6 @@ pub use layout::{
     format_auto_num, layout_text_body, layout_text_body_traced, need_measures,
 };
 pub use measure::{
-    Bits, Capabilities, FaceKey, Kerning, MAX_ROUNDS, MeasureReq, MeasureTable, Measurer, NeedMeasures, StringKey, TextMetrics,
+    Bits, Capabilities, FACE_CTX_SEP, FaceKey, Kerning, MAX_ROUNDS, MeasureReq, MeasureTable, Measurer, NeedMeasures, StringKey,
+    TextMetrics, encode_face, known_line_box, ppt_line_box, split_face,
 };

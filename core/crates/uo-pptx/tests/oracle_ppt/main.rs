@@ -18,8 +18,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use uo_dml_render::datefield::FieldClock;
+use uo_dml_render::text::fallback::FallbackCtx;
 use uo_fonts::{Face, FontLimits};
-use uo_pptx::pdf::{FaceSet, FontSource, PdfOptions, fallback_chain};
+use uo_pptx::pdf::{FaceSet, FontSource, PdfOptions, fallback_chain, powerpoint_chain};
 use uo_pptx::{Deck, Limits};
 
 #[path = "../support/open_fonts.rs"]
@@ -151,20 +153,48 @@ impl FontSource for SystemFonts {
     fn fallback(&self, cp: u32, bold: bool, italic: bool, primary: &Face) -> Option<Arc<Face>> {
         fallback_chain(self, cp, bold, italic, primary).or_else(|| self.open.fallback(cp, bold, italic, primary))
     }
+
+    fn fallback_ctx(&self, cp: u32, bold: bool, italic: bool, primary: &Face, ctx: &FallbackCtx<'_>) -> Option<Arc<Face>> {
+        powerpoint_chain(self, cp, bold, italic, primary, ctx).or_else(|| self.open.fallback_ctx(cp, bold, italic, primary, ctx))
+    }
 }
 
-fn open_deck(path: &Path) -> Result<Deck, String> {
+/// The local time PowerPoint saved its PDF of deck `id` (`/CreationDate` of `<out>/ppt/<id>.pdf`), as the date fields'
+/// clock (PowerPoint updates them at export, in the pt-BR system locale).
+fn ppt_clock(out: &Path, id: &str) -> Option<FieldClock> {
+    let bytes = std::fs::read(out.join("ppt").join(format!("{id}.pdf"))).ok()?;
+    let at = bytes.windows(17).position(|w| w == b"/CreationDate(D:")? + 17;
+    let d: String = bytes.get(at..at + 14)?.iter().map(|&c| char::from(c)).collect();
+    let n = |a: usize, b: usize| d.get(a..b).and_then(|t| t.parse::<u32>().ok());
+    Some(FieldClock {
+        year: i32::try_from(n(0, 4)?).ok()?,
+        month: n(4, 6)?,
+        day: n(6, 8)?,
+        hour: n(8, 10)?,
+        minute: n(10, 12)?,
+        second: n(12, 14)?,
+        default_lang: "pt-BR".into(),
+    })
+}
+
+fn open_deck(path: &Path, clock: Option<&FieldClock>) -> Result<Deck, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     if path.extension().is_some_and(|x| x.eq_ignore_ascii_case("ppt")) {
         #[cfg(feature = "ppt")]
         {
-            let parts = uo_pptx::ppt::convert(&bytes).map_err(|e| format!("ppt: {e}"))?;
-            return Deck::from_parts(parts, Limits::default()).map_err(|e| e.to_string());
+            // PowerPoint's own conversion (native charts), the automatic date of the export day
+            let options = uo_pptx::ppt::ConvertOptions { today: clock.map(|c| (c.year, c.month, c.day)), ..Default::default() };
+            let parts = uo_pptx::ppt::convert_with(&bytes, &options).map_err(|e| format!("ppt: {e}"))?;
+            let mut deck = Deck::from_parts(parts, Limits::default()).map_err(|e| e.to_string())?;
+            deck.set_field_clock(clock.cloned());
+            return Ok(deck);
         }
         #[cfg(not(feature = "ppt"))]
         return Err("skipped: .ppt needs --features ppt".into());
     }
-    Deck::open(&bytes, Limits::default()).map_err(|e| e.to_string())
+    let mut deck = Deck::open(&bytes, Limits::default()).map_err(|e| e.to_string())?;
+    deck.set_field_clock(clock.cloned());
+    Ok(deck)
 }
 
 #[test]
@@ -173,7 +203,10 @@ fn export_rust_pdfs_for_the_powerpoint_oracle() {
         return;
     };
     let out = PathBuf::from(out);
-    let list = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle_ppt/decks.tsv")).unwrap();
+    // `UO_PPT_ORACLE_DECKS=<tsv: id, path>`: another deck list (synthetic measurement decks; absolute paths allowed)
+    let list_path = std::env::var_os("UO_PPT_ORACLE_DECKS")
+        .map_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle_ppt/decks.tsv"), PathBuf::from);
+    let list = std::fs::read_to_string(list_path).unwrap();
     let decks: Vec<(String, PathBuf)> = list
         .lines()
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
@@ -184,6 +217,9 @@ fn export_rust_pdfs_for_the_powerpoint_oracle() {
         .collect();
     let only: Option<Vec<String>> = std::env::var("UO_PPT_ORACLE_ONLY").ok().map(|s| s.split(',').map(str::to_owned).collect());
     let policies = std::env::var("UO_PPT_ORACLE_FONTS").unwrap_or_else(|_| "system,open".into());
+    // the PowerPoint side shows the hidden slides before saving (page i = slide i): the Rust PDF keeps them too, unless
+    // `UO_PPT_ORACLE_HIDDEN=omit` (PowerPoint's own Save as PDF rule, for the synthetic decks)
+    let hidden_kept = !std::env::var("UO_PPT_ORACLE_HIDDEN").is_ok_and(|v| v == "omit");
     for policy in policies.split(',') {
         let t0 = Instant::now();
         let system;
@@ -208,7 +244,10 @@ fn export_rust_pdfs_for_the_powerpoint_oracle() {
             }
             done += 1;
             let t = Instant::now();
-            let result = open_deck(path).and_then(|mut deck| uo_pptx::pdf(&mut deck, &PdfOptions::new(fonts)).map_err(|e| e.to_string()));
+            let clock = ppt_clock(&out, id);
+            let result = open_deck(path, clock.as_ref()).and_then(|mut deck| {
+                uo_pptx::pdf(&mut deck, &PdfOptions { ts_hidden_slides: hidden_kept, ..PdfOptions::new(fonts) }).map_err(|e| e.to_string())
+            });
             let ms = t.elapsed().as_millis();
             match result {
                 Ok(o) => {

@@ -512,7 +512,7 @@ fn read_graphic_frame(rd: &Rd<'_>, gf: Element<'_>, rels: &RelMap, theme: &Theme
     // table
     if let Some(tbl_el) = data.first_child("a:tbl") {
         let paint = |el: Element<'_>| cell_paint_of(el, theme, src, rels);
-        let mut table = read_table(rd, tbl_el, theme, &paint)?;
+        let mut table = read_table(rd, tbl_el, theme, &paint, rels)?;
         // `<a:tblPr>` style (only the application's predefined ones; none = plain grid) + the TABLE's
         // fill and shadow (tblPr, or the style's tblBg)
         let (pr, style_id) = read_tbl_pr(tbl_el);
@@ -976,7 +976,9 @@ fn nz1(x: f64) -> f64 {
 }
 
 /// `readTable` (`read.ts:1230`): `<a:tbl>` → [`Table`] model (grid, rows, cells; styles come after).
-fn read_table(rd: &Rd<'_>, tbl: Element<'_>, theme: &Theme, paint: PaintResolver<'_>) -> R<Table> {
+fn read_table(rd: &Rd<'_>, tbl: Element<'_>, theme: &Theme, paint: PaintResolver<'_>, rels: &RelMap) -> R<Table> {
+    // PowerPoint links the runs of a cell too (`!ts_links`); the TS reads cells without the slide's relationships
+    let cell_rels = if theme.rules.ts_links { None } else { Some(rels) };
     let grid_el = tbl.first_child("a:tblGrid");
     let mut col_widths: Vec<f64> = Vec::new();
     if let Some(g) = grid_el {
@@ -1007,7 +1009,7 @@ fn read_table(rd: &Rd<'_>, tbl: Element<'_>, theme: &Theme, paint: PaintResolver
                 cell.v_merge = Some(true);
             }
             if let Some(tx) = tc.first_child("a:txBody") {
-                cell.tx_body = Some(Box::new(read_tx_body(tx, theme, None, None)));
+                cell.tx_body = Some(Box::new(read_tx_body(tx, theme, cell_rels, None)));
             }
             if let Some(tc_pr) = tc.first_child("a:tcPr") {
                 cell.anchor = ta(tc_pr, "anchor").map(Into::into);

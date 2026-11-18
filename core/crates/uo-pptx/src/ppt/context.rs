@@ -24,11 +24,23 @@ pub struct ConvertOptions {
     /// clock (`new Date()`, local time); a wasm module has none, so the host passes it. `None`
     /// takes the UTC date of the system clock where there is one.
     pub today: Option<(i32, u32, u32)>,
+    /// Charts (embedded `Excel.Chart` OLE objects) as the TS converts them: the fallback picture the `.ppt` keeps.
+    /// PowerPoint (measured, Slides wave 5: `Shape.Type` = msoChart, `HasChart`) opens them as native charts from the
+    /// BIFF8 chart substream of the embedded workbook (`uo_charts::biff`). Default: false (PowerPoint).
+    pub ts_ppt_charts: bool,
 }
 
 impl Default for ConvertOptions {
     fn default() -> Self {
-        ConvertOptions { use_round_trip: true, today: None }
+        ConvertOptions { use_round_trip: true, today: None, ts_ppt_charts: false }
+    }
+}
+
+impl ConvertOptions {
+    /// The frozen TS converter (the B2 byte-parity replays and every TS-parity harness that converts a `.ppt`).
+    #[must_use]
+    pub fn ts_strict() -> ConvertOptions {
+        ConvertOptions { ts_ppt_charts: true, ..ConvertOptions::default() }
     }
 }
 
@@ -164,6 +176,10 @@ pub struct ConvCtx<'a> {
     pub overrides: OMap<String, String>,
     /// number of diagrams (SmartArt) already emitted — numbering of the parts
     pub diagrams: u32,
+    /// number of native charts already emitted (`ppt/charts/chartN.xml`)
+    pub charts: u32,
+    /// `ConvertOptions::ts_ppt_charts`
+    pub ts_ppt_charts: bool,
     /// Budget of converted TEXT characters (all the shapes, repeated ones included): a large
     /// block referenced by thousands of shapes (OutlineTextRefAtom) multiplied the output without limit.
     pub text_budget: f64,

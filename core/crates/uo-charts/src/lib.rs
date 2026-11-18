@@ -24,6 +24,7 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 
+pub mod biff;
 #[cfg(feature = "canon")]
 pub mod canon;
 pub mod chartex;
@@ -42,7 +43,7 @@ pub mod scale;
 pub mod summary;
 pub mod trend;
 
-pub use color::{Scheme, dml_color, dml_color_source};
+pub use color::{Scheme, dml_color, dml_color_source, dml_color_source_with, dml_color_with};
 pub use emit::{Canvas, ChartSel, DataSel, EmitParams, HostProfile};
 pub use error::{ChartError, JsErrorKind};
 pub use host::{BlipKey, ChartHost, ColorSource, FileFormat, HostFonts};

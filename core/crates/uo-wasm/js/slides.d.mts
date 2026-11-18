@@ -84,6 +84,10 @@ export declare class SlidesTimeline {
 export declare class SlidesDeck {
   readonly ptr: number;
   readonly count: number;
+  /** Slides wave 5: bit 0 every TS switch; bit 1 sysClr, 2 first-line baseline, 3 fallback fonts, 4 date fields, 5 warp */
+  setRules(flags: number): void;
+  /** the clock of the date/time fields (local fields of `date`) and the language of fields without one; null = none */
+  setFieldClock(date: Date | null, lang?: string): void;
   size(): { w: number; h: number; count: number };
   notes(i: number): string;
   part(name: string): Uint8Array | null;
@@ -108,8 +112,16 @@ export declare class SlidesDeck {
   newTimeline(o?: { useTimings?: number; defaultSlideMs?: number; tickMs?: number; transitionFps?: number }): SlidesTimeline;
   free(): void;
 }
+/** How a deck opens (Slides wave 5): PowerPoint's rules by default, every TS switch with `tsStrict` (parity harnesses). */
+export interface SlidesOpenOptions {
+  tsStrict?: boolean;
+  /** the date/time fields' clock (default: now); null = no clock (the cached text stays) */
+  clock?: Date | null;
+  /** the language of fields without one (default `navigator.language`) */
+  fieldLang?: string;
+}
 export interface SlidesBinding {
-  open(bytes: Uint8Array): SlidesDeck;
+  open(bytes: Uint8Array, opts?: SlidesOpenOptions): SlidesDeck;
   newView(generation: number): SlidesView;
   readonly maxRounds: number;
   liveBytes(): number;
@@ -117,4 +129,4 @@ export interface SlidesBinding {
   SlidesView: typeof SlidesView;
 }
 export declare function bindSlides(exports: WebAssembly.Exports): SlidesBinding;
-export declare function bindSlidesPpt(exports: WebAssembly.Exports): { convert(bytes: Uint8Array): Uint8Array };
+export declare function bindSlidesPpt(exports: WebAssembly.Exports): { convert(bytes: Uint8Array, opts?: { tsStrict?: boolean }): Uint8Array };

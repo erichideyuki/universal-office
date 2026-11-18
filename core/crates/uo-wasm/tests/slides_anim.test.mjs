@@ -22,6 +22,8 @@ import { GROUPS, buildGroupDeck, deckFile } from '../../uo-pptx/js/lib/gen/group
 import { compare, form } from '../../uo-pptx/js/lib/opstream.mjs';
 import { recordList } from '../../uo-pptx/js/lib/rust-paint.mjs';
 import { stageAll } from './support/slides-stub.mjs';
+// Slides wave 5: these replays compare with TS captures: every TS switch (`SlidesRules::ts_strict`)
+const TS = { tsStrict: true };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/wasm32-unknown-unknown/wasm/uo_wasm.wasm');
@@ -94,8 +96,8 @@ function animGate(capture) {
       if (nDecks >= DECKS) break;
       nDecks++;
       let bytes = deckBytes(key);
-      if (isCfb(bytes)) { if (!ppt) continue; bytes = ppt.convert(bytes); }
-      const deck = uo.open(bytes);
+      if (isCfb(bytes)) { if (!ppt) continue; bytes = ppt.convert(bytes, TS); }
+      const deck = uo.open(bytes, TS);
       const tl = deck.newTimeline({});
       const shared = uo.newView(1);
       const sst = { tables: newTables(), slotTables: newSlotTables(), list: null };

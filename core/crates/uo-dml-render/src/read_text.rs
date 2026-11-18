@@ -235,6 +235,18 @@ pub fn read_run(r: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip: Opti
         }
         run.font = rpr.first_child("a:latin").and_then(|l| ta(l, "typeface")).map(Into::into);
         ex.sym_font = rpr.first_child("a:sym").and_then(|l| ta(l, "typeface")).map(Into::into);
+        if !theme.rules.ts_fallback_fonts {
+            // the run's own a:ea / a:cs, raw (aliases kept): the cascade resolves the context (`resolve_run_fallback`)
+            let ea = rpr.first_child("a:ea").and_then(|l| ta(l, "typeface"));
+            let cs = rpr.first_child("a:cs").and_then(|l| ta(l, "typeface"));
+            if ea.is_some() || cs.is_some() {
+                ex.font_fallback = Some(Box::new(crate::model::FontFallback {
+                    ea: ea.unwrap_or("").into(),
+                    cs: cs.unwrap_or("").into(),
+                    ..Default::default()
+                }));
+            }
+        }
         // letter outline and pattern fill (WordArt)
         if let Some(rln) = rpr.first_child("a:ln")
             && rln.first_child("a:noFill").is_none()
@@ -309,6 +321,17 @@ pub fn read_run(r: Element<'_>, theme: &Theme, rels: Option<&RelMap>, blip: Opti
                     && let Some(direct) = rels.get(rid).filter(|d| !d.is_empty() && is_http(d))
                 {
                     ex.hyperlink = Some(direct.into());
+                } else if !theme.rules.ts_links {
+                    // run-level slide and show jumps (PowerPoint marks them like an address; the TS keeps none):
+                    // `ppaction://hlinksldjump#<the slide part>` or the show action as written
+                    let action = uo_jsnum::text::trim(action);
+                    if action.starts_with("ppaction://hlinksldjump") {
+                        if let Some(part) = rid.filter(|r| !r.is_empty()).and_then(|r| rels.get(r)).filter(|p| !p.is_empty()) {
+                            ex.hyperlink = Some(format!("ppaction://hlinksldjump#{part}").into());
+                        }
+                    } else if action.starts_with("ppaction://hlinkshowjump?") {
+                        ex.hyperlink = Some(action.into());
+                    }
                 }
             }
         }

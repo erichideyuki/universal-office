@@ -51,6 +51,8 @@ public class PdfParityTests(ITestOutputHelper log)
         var bad = new List<string>();
         foreach (var (key, digest) in all)
         {
+            // every slide hidden: no PDF (PowerPoint refuses to save such a deck)
+            if (digest == "refused") { Assert.ThrowsAny<Exception>(() => conv.ToPdf(Fixtures.Read(key))); continue; }
             var pdf = conv.ToPdf(Fixtures.Read(key));
             if (Fixtures.Digest(pdf) != digest) bad.Add($"{key}: {Fixtures.Digest(pdf)} vs native {digest}");
         }
@@ -311,5 +313,25 @@ public class ThreadSoakTests(ITestOutputHelper log)
         }
         log.WriteLine($"3 rounds x {Threads} threads x {PerThread} x 2 conversions; native live after each round: {string.Join(", ", lives)} B");
         Assert.True(lives.Skip(1).All(v => v == lives[1]), $"native live bytes grow: {string.Join(", ", lives)}");
+    }
+}
+
+public class TsStrictTests
+{
+    private static int Pages(byte[] pdf) =>
+        System.Text.RegularExpressions.Regex.Matches(System.Text.Encoding.Latin1.GetString(pdf), @"/Type /Page[^s]").Count;
+
+    /// <summary>PowerPoint's Save as PDF leaves hidden slides out; the internal TS option (native
+    /// `SLIDES_JOB_TS_STRICT`) keeps them, for one conversion only.</summary>
+    [Fact]
+    public void The_ts_strict_option_keeps_the_hidden_slides()
+    {
+        using var conv = Fixtures.OpenFonts();
+        var bytes = Fixtures.Read("core/crates/uo-pptx/tests/oracle_ppt/synthetic/pp-rules.pptx");
+        Assert.Equal(3, Pages(conv.ToPdf(bytes)));
+        Assert.Equal(5, Pages(conv.ToPdf(bytes, new SlidesPdfOptions { TsStrict = true })));
+        using var deck = PptxDeck.Open(bytes);
+        Assert.Equal(5, Pages(deck.ToPdf(conv, new SlidesPdfOptions { TsStrict = true })));
+        Assert.Equal(3, Pages(deck.ToPdf(conv)));
     }
 }

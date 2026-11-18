@@ -195,6 +195,8 @@ pub struct DeckSource<'a> {
     media: &'a RefCell<MediaTable>,
     themes: &'a RefCell<ThemeTable>,
     touched: RefCell<Vec<Box<str>>>,
+    rules: uo_dml_render::SlidesRules,
+    clock: Option<&'a uo_dml_render::datefield::FieldClock>,
 }
 
 impl<'a> DeckSource<'a> {
@@ -258,6 +260,14 @@ impl PartSource for DeckSource<'_> {
     fn share_theme(&self, theme: Theme) -> Arc<Theme> {
         self.themes.borrow_mut().share(theme)
     }
+
+    fn rules(&self) -> uo_dml_render::SlidesRules {
+        self.rules
+    }
+
+    fn field_clock(&self) -> Option<uo_dml_render::datefield::FieldClock> {
+        self.clock.cloned()
+    }
 }
 
 /// An open presentation.
@@ -273,6 +283,8 @@ pub struct Deck {
     slides: Vec<(u32, Arc<SlideModel>)>,
     /// The PowerPoint-over-TS switches (default = PowerPoint; `SlidesRules::ts_strict()` for TS parity replays).
     rules: uo_dml_render::SlidesRules,
+    /// The clock of the date/time fields (`None`: they keep their cached text).
+    clock: Option<uo_dml_render::datefield::FieldClock>,
 }
 
 impl Deck {
@@ -286,6 +298,7 @@ impl Deck {
             presentation: None,
             slides: Vec::new(),
             rules: uo_dml_render::SlidesRules::default(),
+            clock: None,
         }
     }
 
@@ -343,6 +356,21 @@ impl Deck {
         }
     }
 
+    /// The clock the date/time fields show (Slides wave 5, `!SlidesRules::ts_date_locale`: PowerPoint shows the current
+    /// date and time in each field's language).
+    pub fn field_clock(&self) -> Option<&uo_dml_render::datefield::FieldClock> {
+        self.clock.as_ref()
+    }
+
+    /// Sets the clock of the date/time fields (the host's local time and its language for fields without one); `None` =
+    /// the fields keep their cached text (the default: tests and servers stay deterministic). A change empties the caches.
+    pub fn set_field_clock(&mut self, clock: Option<uo_dml_render::datefield::FieldClock>) {
+        if self.clock != clock {
+            self.clock = clock;
+            self.clear_caches();
+        }
+    }
+
     /// `setPart`: replaces or appends a part. Slides that read it become stale.
     pub fn set_part(&mut self, name: &str, bytes: Arc<[u8]>) -> PartGen {
         self.parts.set(name, bytes)
@@ -356,7 +384,15 @@ impl Deck {
     /// A reading view of the package with the deck's caches (for the printers of the parity tests and
     /// the later emission).
     pub fn source(&self) -> DeckSource<'_> {
-        DeckSource { parts: &self.parts, xml: &self.xml, media: &self.media, themes: &self.themes, touched: RefCell::new(Vec::new()) }
+        DeckSource {
+            parts: &self.parts,
+            xml: &self.xml,
+            media: &self.media,
+            themes: &self.themes,
+            touched: RefCell::new(Vec::new()),
+            rules: self.rules,
+            clock: self.clock.as_ref(),
+        }
     }
 
     fn is_fresh(&self, rs: &ReadSet) -> bool {

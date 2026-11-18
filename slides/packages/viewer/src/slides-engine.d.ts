@@ -11,7 +11,16 @@ declare module '@universal-office/slides-engine' {
     readonly detail: string;
   }
 
-  export interface LoadSlidesOptions { wasm?: Bytes; ppt?: Bytes }
+  export interface LoadSlidesOptions {
+    wasm?: Bytes;
+    ppt?: Bytes;
+    /** every TS switch on the decks opened (SlidesRules::ts_strict): the TS-parity harnesses; default = PowerPoint's rules */
+    tsStrict?: boolean;
+    /** the language of date/time fields without one (default navigator.language) */
+    fieldLang?: string;
+    /** the clock of the date/time fields (default new Date() at open) */
+    now?: () => Date;
+  }
 
   /** A decoded picture the painter draws (an `HTMLImageElement`, `ImageBitmap`, canvas, video ...). */
   export type PaintImage = CanvasImageSource & { naturalWidth?: number; naturalHeight?: number; width?: unknown; height?: unknown };

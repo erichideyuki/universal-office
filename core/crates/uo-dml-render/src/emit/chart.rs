@@ -98,6 +98,7 @@ pub fn paint_chart_slot(cx: &mut Cx<'_>, sh: &Shape, x: f64, y: f64, w: f64, h: 
         locale: uo_numfmt::pt_br(),
         sel: sel.cloned().unwrap_or(ChartSel { bg: true, data: DataSel::All }),
         images: true,
+        rules: env.rules.charts,
     };
     let images: &[ChartImage] = chart.images.as_deref().unwrap_or(&[]);
     let mut answers = vec![ImgAnswer::Pending; images.len()];
@@ -329,6 +330,7 @@ fn bounds_pass(cx: &mut Cx<'_>, sh: &Shape, rect: Rect, fit: &Fit, sel: &ChartSe
         locale: uo_numfmt::pt_br(),
         sel: sel.clone(),
         images: false,
+        rules: env.rules.charts,
     };
     let m = TableMeasure { table: env.table, images: &[] };
     let reqs = need_measures(&space, &host, &params, &m);
@@ -388,7 +390,15 @@ pub fn chart_part_bounds(
     }
     let Some(space) = model_of(env.src, &mut cx.caches.charts, chart) else { return Err(Abort) };
     let host = SlidesHost::new(chart);
-    let params = EmitParams { rect, px_per_pt, profile: PROFILE, locale: uo_numfmt::pt_br(), sel: sel.clone(), images: false };
+    let params = EmitParams {
+        rect,
+        px_per_pt,
+        profile: PROFILE,
+        locale: uo_numfmt::pt_br(),
+        sel: sel.clone(),
+        images: false,
+        rules: env.rules.charts,
+    };
     let m = TableMeasure { table: env.table, images: &[] };
     match part_bounds(&space, &host, &params, &m) {
         Ok(b) => {

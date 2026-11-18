@@ -165,6 +165,10 @@ pub mod rt {
     pub const FONT_ENTITY_ATOM: u16 = 0x0fb7;
     pub const CSTRING: u16 = 0x0fba;
     pub const EXTERNAL_HYPERLINK_ATOM: u16 = 0x0fd3;
+    pub const EX_OLE_OBJ_ATOM: u16 = 0x0fc3;
+    pub const EX_OLE_EMBED: u16 = 0x0fcc;
+    pub const EX_OBJ_REF_ATOM: u16 = 0x0bc1;
+    pub const EX_OLE_OBJ_STG: u16 = 0x1011;
     pub const EXTERNAL_HYPERLINK: u16 = 0x0fd7;
     pub const SLIDE_NUMBER_META_CHAR_ATOM: u16 = 0x0fd8;
     pub const HEADERS_FOOTERS: u16 = 0x0fd9;

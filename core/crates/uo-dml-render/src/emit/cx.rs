@@ -64,6 +64,8 @@ pub struct EmitCaches {
     /// display size of the FIRST use decides; the bitmap and its size, `None` = no picture
     special: FxHashMap<MediaId, Option<(u32, f64, f64)>>,
     special_bytes: usize,
+    /// the derived recipes (a special picture with colour effects, gap B5b-G1): `(base bitmap, effects key)` → bitmap
+    special_fx: FxHashMap<(u32, Vec<u8>), u32>,
     /// the parsed charts and their bounds caches (C-6: M5, 32 models and 64 bounds keys each)
     pub(super) charts: super::chart_host::ChartCache,
     /// a cache was emptied: the resources' bitmap table keeps the old entries, so a long session starts a new
@@ -84,6 +86,7 @@ impl EmitCaches {
         self.path_grad_bytes = 0;
         self.special = FxHashMap::default();
         self.special_bytes = 0;
+        self.special_fx = FxHashMap::default();
         self.charts.clear();
         self.overflowed = false;
     }
@@ -695,7 +698,7 @@ impl<'a> Cx<'a> {
     /// The picture of a metafile, a PICT or a TIFF media (`rasterizeSpecialImage`, B5b): `Some(None)` when the media is one of them
     /// and has no picture yet (a pass that needs measurements, or a TIFF that does not decode); `None` for any other media. The
     /// raster is a bitmap of the resources (a recipe the shell replays, or RGBA pixels); its size is the natural size of the picture,
-    /// as the canvas the TS makes. Colour effects over such a picture are not applied (declared gap).
+    /// as the canvas the TS makes. Colour effects over such a picture: [`Cx::image_quiet`] makes a derived recipe (B5b-G1).
     pub fn special_img(&mut self, id: MediaId) -> Option<Option<Img>> {
         let display = self.picture_display;
         let class = match self.special_class.get(&id) {
@@ -759,7 +762,10 @@ impl<'a> Cx<'a> {
     /// [`Cx::image`] without the item (the shell builds it later: the WordArt letter fills and tiles).
     pub fn image_quiet(&mut self, r: &ImageRef) -> Option<Img> {
         if let Some(special) = self.special_img(r.media) {
-            return special;
+            return match (special, r.fx.as_deref().filter(|fx| has_effect(fx))) {
+                (Some(img), Some(fx)) => self.special_fx(img, fx),
+                (s, _) => s,
+            };
         }
         let (mid, w, h) = self.media_img(r.media)?;
         let base = ImageSrc::Media(mid);
@@ -777,6 +783,38 @@ impl<'a> Cx<'a> {
             }
         };
         Some(Img { src: ImageSrc::Derived(id), w, h })
+    }
+
+    /// A metafile, PICT or TIFF picture with the blip's colour effects (gap B5b-G1): a derived recipe over the picture's
+    /// bitmap, which the shell answers with `fxImage` over the base raster (the TS's `fxImage` over the rasterized canvas;
+    /// PowerPoint draws it as it draws a raster with the effects, measured: deck `fx-emf`). Cached per base and effects.
+    fn special_fx(&mut self, img: Img, fx: &ModelFx) -> Option<Img> {
+        let ImageSrc::Bitmap(base) = img.src else { return Some(img) };
+        let rfx = metafile::rec::RecipeFx {
+            duotone: fx.duotone.as_ref().map(|d| [d[0].as_str().to_owned(), d[1].as_str().to_owned()]),
+            gray: fx.gray.unwrap_or(false),
+            bi_level: fx.bi_level,
+            bright: fx.bright,
+            contrast: fx.contrast,
+            clr_change: fx.clr_change.as_ref().map(|c| (c.from.as_str().to_owned(), c.to.as_str().to_owned(), c.to_alpha)),
+        };
+        let (w, h) = (to_u32(img.w).unwrap_or(0), to_u32(img.h).unwrap_or(0));
+        let bytes = metafile::rec::encode_fx_recipe(base, w, h, &rfx);
+        // the key: the effects part of the recipe (everything after the header and the base)
+        let key = (base, bytes.get(18..).unwrap_or(&[]).to_vec());
+        let id = match self.caches.special_fx.get(&key) {
+            Some(&id) => id,
+            None => {
+                if self.caches.special_fx.len() >= MAX_SPECIAL_CACHE {
+                    self.caches.special_fx = FxHashMap::default();
+                    self.caches.overflowed = true;
+                }
+                let id = self.res.recipe_bitmap(w, h, bytes.into())?;
+                self.caches.special_fx.insert(key, id);
+                id
+            }
+        };
+        Some(Img { src: ImageSrc::Bitmap(id), ..img })
     }
 
     /// The image of a `part` without effects: `paintImages?.get(part)` (bullets).

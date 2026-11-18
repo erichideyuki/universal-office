@@ -117,6 +117,11 @@ pub fn convert_ppt_to_pptx_parts(bytes: &[u8], options: &ConvertOptions) -> Resu
 /// archive order (the TS zips them and `PptxPackage.load` unzips them again; skipping that round
 /// trip gives the same entries in the same order).
 pub fn convert(bytes: &[u8]) -> Result<RawParts, PptxError> {
-    let parts = convert_ppt_to_pptx_parts(bytes, &ConvertOptions::default()).map_err(|e| PptxError::PptFormat(e.message().into()))?;
+    convert_with(bytes, &ConvertOptions::default())
+}
+
+/// [`convert`] with options (`ConvertOptions::ts_strict()` for the TS-parity harnesses).
+pub fn convert_with(bytes: &[u8], options: &ConvertOptions) -> Result<RawParts, PptxError> {
+    let parts = convert_ppt_to_pptx_parts(bytes, options).map_err(|e| PptxError::PptFormat(e.message().into()))?;
     Ok(parts.into_iter().map(|(n, d)| (n.into_boxed_str(), Arc::<[u8]>::from(d))).collect())
 }

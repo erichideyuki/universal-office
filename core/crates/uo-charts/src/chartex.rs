@@ -344,6 +344,7 @@ fn blank_series(idx: f64, name: &str, values: Vec<Option<f64>>, cats: Vec<Box<st
         d_lbls: None,
         trendlines: Vec::new(),
         box_opts: None,
+        err_bars: Vec::new(),
     }
 }
 

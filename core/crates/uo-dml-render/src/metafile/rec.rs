@@ -722,3 +722,104 @@ fn encode_op(o: &mut Vec<u8>, op: &Op) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------- derived recipes
+
+/// The colour effects of a derived recipe (gap B5b-G1, closed in Slides wave 5): the blip's `fxImage` effects with the
+/// colours as CSS strings (`#RRGGBB`), the form `slides-effects.ts` `fxImage` reads.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RecipeFx {
+    pub duotone: Option<[String; 2]>,
+    pub gray: bool,
+    pub bi_level: Option<f64>,
+    pub bright: Option<f64>,
+    pub contrast: Option<f64>,
+    /// `(from, to, toAlpha)`
+    pub clr_change: Option<(String, String, f64)>,
+}
+
+/// The version byte of a derived recipe: `"UOMF"`, 2, the size, a 0 byte, the base recipe's bitmap index (u32), then
+/// the effects ([`RecipeFx`]: a mask byte, then the present values in field order; strings as `put_s`).
+pub const FX_RECIPE_VERSION: u8 = 2;
+
+/// A derived recipe: the picture of bitmap `base` (a recipe of the same resources) with the colour effects `fx`, which
+/// the shell applies with `fxImage` over the base's raster (the TS applies `fxImage` to the canvas of the rasterized
+/// metafile; PowerPoint draws a metafile with colour effects exactly as the raster with them, measured: deck `fx-emf`).
+#[must_use]
+pub fn encode_fx_recipe(base: u32, w: u32, h: u32, fx: &RecipeFx) -> Vec<u8> {
+    let mut o = Vec::with_capacity(64);
+    o.extend_from_slice(b"UOMF");
+    o.push(FX_RECIPE_VERSION);
+    o.extend_from_slice(&w.to_le_bytes());
+    o.extend_from_slice(&h.to_le_bytes());
+    o.push(0);
+    o.extend_from_slice(&base.to_le_bytes());
+    let mask = u8::from(fx.duotone.is_some())
+        | (u8::from(fx.gray) << 1)
+        | (u8::from(fx.bi_level.is_some()) << 2)
+        | (u8::from(fx.bright.is_some()) << 3)
+        | (u8::from(fx.contrast.is_some()) << 4)
+        | (u8::from(fx.clr_change.is_some()) << 5);
+    o.push(mask);
+    let s = |o: &mut Vec<u8>, v: &str| put_s(o, &js(v));
+    if let Some([a, b]) = &fx.duotone {
+        s(&mut o, a);
+        s(&mut o, b);
+    }
+    for v in [fx.bi_level, fx.bright, fx.contrast].into_iter().flatten() {
+        put_f(&mut o, v);
+    }
+    if let Some((from, to, a)) = &fx.clr_change {
+        s(&mut o, from);
+        s(&mut o, to);
+        put_f(&mut o, *a);
+    }
+    o
+}
+
+/// Reads a derived recipe: the base bitmap index and the effects (`None` for any other bytes).
+#[must_use]
+pub fn decode_fx_recipe(b: &[u8]) -> Option<(u32, RecipeFx)> {
+    if b.get(..5)? != [0x55, 0x4f, 0x4d, 0x46, FX_RECIPE_VERSION] {
+        return None;
+    }
+    let mut p = 14usize;
+    let u32_at = |p: &mut usize| -> Option<u32> {
+        let s: [u8; 4] = b.get(*p..p.checked_add(4)?)?.try_into().ok()?;
+        *p += 4;
+        Some(u32::from_le_bytes(s))
+    };
+    let f64_at = |p: &mut usize| -> Option<f64> {
+        let s: [u8; 8] = b.get(*p..p.checked_add(8)?)?.try_into().ok()?;
+        *p += 8;
+        Some(f64::from_le_bytes(s))
+    };
+    let str_at = |p: &mut usize| -> Option<String> {
+        let n = usize::try_from(u32_at(p)?).ok()?;
+        let end = p.checked_add(n.checked_mul(2)?)?;
+        let raw = b.get(*p..end)?;
+        *p = end;
+        let units: Vec<u16> = raw.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
+        Some(String::from_utf16_lossy(&units))
+    };
+    let base = u32_at(&mut p)?;
+    let mask = *b.get(p)?;
+    p += 1;
+    let mut fx = RecipeFx { gray: mask & 2 != 0, ..RecipeFx::default() };
+    if mask & 1 != 0 {
+        fx.duotone = Some([str_at(&mut p)?, str_at(&mut p)?]);
+    }
+    if mask & 4 != 0 {
+        fx.bi_level = Some(f64_at(&mut p)?);
+    }
+    if mask & 8 != 0 {
+        fx.bright = Some(f64_at(&mut p)?);
+    }
+    if mask & 16 != 0 {
+        fx.contrast = Some(f64_at(&mut p)?);
+    }
+    if mask & 32 != 0 {
+        fx.clr_change = Some((str_at(&mut p)?, str_at(&mut p)?, f64_at(&mut p)?));
+    }
+    Some((base, fx))
+}

@@ -33,7 +33,16 @@ export type { PaintImage };
 type Bytes = Uint8Array | ArrayBuffer | string | URL | Response | Promise<Uint8Array | ArrayBuffer | Response>;
 
 /** Where the module comes from: `wasm` the main module, `ppt` the lazily loaded `.ppt` converter. */
-export interface LoadSlidesOptions { wasm?: Bytes; ppt?: Bytes }
+export interface LoadSlidesOptions {
+  wasm?: Bytes;
+  ppt?: Bytes;
+  /** every TS switch on the decks opened (`SlidesRules::ts_strict`): the TS-parity harnesses; product default = PowerPoint's rules */
+  tsStrict?: boolean;
+  /** the language of date/time fields without one (default `navigator.language`) */
+  fieldLang?: string;
+  /** the clock of the date/time fields (default `new Date()` at open) */
+  now?: () => Date;
+}
 
 const STOPPED = 'uo-wasm: the Slides engine instance stopped after a trap; open the deck again';
 
@@ -51,7 +60,7 @@ class Instance {
 
 let current: Instance | null = null;
 let loading: Promise<Instance> | null = null;
-let pptModule: Promise<{ convert(bytes: Uint8Array): Uint8Array }> | null = null;
+let pptModule: Promise<{ convert(bytes: Uint8Array, opts?: { tsStrict?: boolean }): Uint8Array }> | null = null;
 
 const fetchBytes = async (src: Bytes): Promise<Uint8Array> => {
   const r = await src;
@@ -134,6 +143,35 @@ export interface SlidesPaintHost {
   prepared?(): void;
 }
 
+const GENERIC_FAMILIES = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace', 'math', 'emoji']);
+
+/**
+ * The CSS stack of a face name of the Rust layout. Under the PowerPoint fallback rule (`!ts_fallback_fonts`) a run's face
+ * name carries its fallback context after U+001F (`uo_dml_render::text::encode_face`: family, lang, ea, ea-explicit, cs,
+ * major, then script/typeface pairs): the host's stack of the latin family with the run's East Asian face, its
+ * complex-script face and the theme's script faces of its language inserted before the generic family, so that the
+ * browser falls back to them per character as PowerPoint does per character class. Measure and draw both build the font
+ * here, so the measured face is the drawn one. A plain family is the host's stack unchanged.
+ */
+export function fontStackWithFallback(host: (family: string, bold: boolean, italic: boolean) => string, family: string, bold: boolean, italic: boolean): string {
+  const cut = family.indexOf('\u001f');
+  if (cut < 0) return host(family, bold, italic);
+  const parts = family.slice(cut + 1).split('\u001f');
+  const extra: string[] = [];
+  const add = (f: string | undefined): void => { if (f && !extra.includes(f)) extra.push(f); };
+  add(parts[1]); // ea
+  for (let i = 5; i + 1 < parts.length; i += 2) add(parts[i + 1]); // the script faces of the language
+  add(parts[3]); // cs
+  const base = host(family.slice(0, cut), bold, italic);
+  if (!extra.length) return base;
+  const items = base.split(',').map((s) => s.trim());
+  let at = items.findIndex((s) => GENERIC_FAMILIES.has(s.toLowerCase()));
+  if (at < 0) at = items.length;
+  const quoted = extra.map((f) => `"${f.replace(/["\\]/g, '')}"`).filter((q) => !items.includes(q));
+  items.splice(at, 0, ...quoted);
+  return items.join(', ');
+}
+
 /** The status of a paint that waits for the browser to decode a picture of the slide (`SlidesPaintHost.prepared` tells when). */
 export const PENDING = 13;
 
@@ -195,6 +233,13 @@ export class SlidesModule {
 
   get maxRounds(): number { return this.#inst.uo.maxRounds; }
 
+  /** The open options of the binding: PowerPoint's rules with a field clock, or every TS switch (`tsStrict`). */
+  #openOptions(): { tsStrict?: boolean; clock?: Date; fieldLang?: string } {
+    const o = this.#opts;
+    if (o.tsStrict) return { tsStrict: true };
+    return { clock: o.now ? o.now() : new Date(), ...(o.fieldLang !== undefined ? { fieldLang: o.fieldLang } : {}) };
+  }
+
   /** The instance's exports (the editor routing calls its own exports over the same instance). */
   get exports(): WebAssembly.Exports { return this.#inst.exports; }
 
@@ -205,7 +250,7 @@ export class SlidesModule {
   /** Opens a `.pptx` now (a `.ppt` needs the converter module: status 14). Throws `SlidesError`. */
   openSync(bytes: Uint8Array): SlidesDocument {
     if (isCfb(bytes)) throw new SlidesError(14, 'open', 'a .ppt needs the converter module (open)');
-    const deck = call(this.#inst, () => this.#inst.uo.open(bytes));
+    const deck = call(this.#inst, () => this.#inst.uo.open(bytes, this.#openOptions()));
     return new SlidesDocument(this.#inst, deck);
   }
 
@@ -216,9 +261,9 @@ export class SlidesModule {
       const src2 = this.#opts.ppt;
       pptModule ??= fetchBytes(src2).then(async (b) => bindSlidesPpt((await WebAssembly.instantiate(b as BufferSource, {})).instance.exports));
       const conv = await pptModule.catch((e) => { pptModule = null; throw e; });
-      src = conv.convert(bytes);
+      src = conv.convert(bytes, { tsStrict: this.#opts.tsStrict === true });
     }
-    const deck = call(this.#inst, () => this.#inst.uo.open(src));
+    const deck = call(this.#inst, () => this.#inst.uo.open(src, this.#openOptions()));
     return new SlidesDocument(this.#inst, deck);
   }
 }
@@ -415,7 +460,7 @@ export class SlidesDocument {
     let pending = false;
     const ctx = host.measureCtx as CanvasRenderingContext2D & { fontKerning?: string; letterSpacing?: string };
     const kern = ctx.fontKerning !== undefined;
-    const stack = (f: { family: string; bold: boolean; italic: boolean }): string => host.fontStack(f.family, f.bold, f.italic);
+    const stack = (f: { family: string; bold: boolean; italic: boolean }): string => fontStackWithFallback((x, y, z) => host.fontStack(x, y, z), f.family, f.bold, f.italic);
     const font = (f: { family: string; bold: boolean; italic: boolean }, px: number): string => `${f.italic ? 'italic ' : ''}${f.bold ? '700 ' : '400 '}${px}px ${stack(f)}`;
     const out: number[] = [];
     for (const r of reqs) {
@@ -490,7 +535,7 @@ export class SlidesDocument {
     if (!this.#painter || this.#host !== host) {
       const tables = (): Tables => this.#tables;
       const env: SlidesEnv = {
-        fontStack: (f, b, i) => host.fontStack(f, b, i),
+        fontStack: (f, b, i) => fontStackWithFallback((x, y, z) => host.fontStack(x, y, z), f, b, i),
         media: (index) => {
           const m = tables().media[index];
           return m ? host.image(m.part) : null;

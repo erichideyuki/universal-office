@@ -613,6 +613,7 @@ impl<'h> Parser<'h> {
             d_lbls: None,
             trendlines: Vec::new(),
             box_opts: None,
+            err_bars: Vec::new(),
         };
         let xy = kind == GroupKind::Scatter || kind == GroupKind::Bubble;
         let val = self.nums(first(Some(ser), if xy { "c:yVal" } else { "c:val" }));
@@ -707,6 +708,27 @@ impl<'h> Parser<'h> {
                 t.label = Some(TrendLabel { layout, num_fmt, tx_pr, sp });
             }
             s.trendlines.push(t);
+        }
+        for eb in ser.children_named("c:errBars") {
+            let kind = match val_str(Some(eb), "c:errValType") {
+                Some("percentage") => crate::model::ErrValType::Percentage,
+                Some("stdDev") => crate::model::ErrValType::StdDev,
+                Some("stdErr") => crate::model::ErrValType::StdErr,
+                Some("cust") => crate::model::ErrValType::Custom,
+                _ => crate::model::ErrValType::Fixed,
+            };
+            let ty = val_str(Some(eb), "c:errBarType").unwrap_or("both");
+            s.err_bars.push(crate::model::ErrBars {
+                x_dir: val_str(Some(eb), "c:errDir").map(|d| d == "x"),
+                plus: ty != "minus",
+                minus: ty != "plus",
+                kind,
+                val: val_num(Some(eb), "c:val"),
+                no_end_cap: self.bool_of(Some(eb), "c:noEndCap").unwrap_or(false),
+                plus_vals: self.nums(first(Some(eb), "c:plus")).map(|n| n.vals),
+                minus_vals: self.nums(first(Some(eb), "c:minus")).map(|n| n.vals),
+                sp: self.shape(first(Some(eb), "c:spPr")),
+            });
         }
         s
     }
@@ -1235,6 +1257,7 @@ pub fn parse_chart_space(root: Element<'_>, host: &dyn ChartHost) -> ChartSpace 
         rounded_corners,
         title: None,
         auto_title_deleted: false,
+        auto_title_written: false,
         groups: Vec::new(),
         axes: Vec::new(),
         plot_layout: None,
@@ -1264,6 +1287,7 @@ pub fn parse_chart_space(root: Element<'_>, host: &dyn ChartHost) -> ChartSpace 
     let Some(chart) = first(Some(root), "c:chart") else { return cs };
     cs.title = p.title(first(Some(chart), "c:title"));
     cs.auto_title_deleted = p.bool_of(Some(chart), "c:autoTitleDeleted").unwrap_or(false);
+    cs.auto_title_written = first(Some(chart), "c:autoTitleDeleted").is_some();
     if let Some(v3) = first(Some(chart), "c:view3D") {
         cs.view_3d = Some(View3D {
             rot_x: val_num(Some(v3), "c:rotX"),

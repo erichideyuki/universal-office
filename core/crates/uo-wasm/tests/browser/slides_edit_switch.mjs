@@ -49,6 +49,8 @@ const W = (p) => fwd(join(repo, p));
 writeFileSync(join(outDir, 'entry.mjs'), `
 import { UniversalSlidesElement } from '${W('slides/packages/slides/src/index.ts')}';
 export { UniversalSlidesElement };
+// Slides wave 5: TS against Rust runs every TS switch (SlidesRules::ts_strict); the product default is PowerPoint's rules
+UniversalSlidesElement.configureEngine({ tsStrict: true });
 export { PptxPackage } from '${W('slides/packages/slides-core/src/index.ts')}';
 const statsUrl = new URL('./stats.js', import.meta.url).href;
 export const engineModule = () => import(statsUrl);

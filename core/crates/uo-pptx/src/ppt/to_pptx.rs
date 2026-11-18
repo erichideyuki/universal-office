@@ -263,6 +263,8 @@ pub fn ppt_to_pptx_parts<'a>(
         use_round_trip: opts.use_round_trip,
         overrides: OMap::new(),
         diagrams: 0,
+        charts: 0,
+        ts_ppt_charts: opts.ts_ppt_charts,
         text_budget: TEXT_BUDGET,
         complex_media: OMap::new(),
         recolor_media: OMap::new(),

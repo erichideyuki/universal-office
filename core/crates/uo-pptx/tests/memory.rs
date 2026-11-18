@@ -218,7 +218,8 @@ fn m3_model_type_sizes_are_within_budget() {
         ("ParaBullet", size_of::<ParaBullet>(), 112),
         ("ParaExtras", size_of::<ParaExtras>(), 40),
         ("Run", size_of::<Run>(), 120),
-        ("RunExtras", size_of::<RunExtras>(), 152),
+        // wave 5: + `font_fallback` (8 B, a box: the fallback context of East Asian / complex-script runs)
+        ("RunExtras", size_of::<RunExtras>(), 160),
         ("RunFx", size_of::<RunFx>(), 304),
         ("TextStyleLevel", size_of::<TextStyleLevel>(), 24),
         ("TimeNode", size_of::<TimeNode>(), 192),

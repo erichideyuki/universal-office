@@ -219,6 +219,30 @@ pub struct RunExtras {
     pub link_color: Option<CssColor>,
     /// Text fills and effects (rare).
     pub fx: Option<Box<RunFx>>,
+    /// The East Asian / complex-script context of the run for the font fallback (Slides wave 5): set only when the
+    /// deck's rules say `!ts_fallback_fonts` and the run has one (an `a:ea`/`a:cs` face or a language with an East Asian
+    /// or complex script); the layout carries it to the measurers inside the face name ([`crate::text::encode_face`]).
+    pub font_fallback: Option<Box<FontFallback>>,
+}
+
+/// The fallback context of a run (Slides wave 5, `!SlidesRules::ts_fallback_fonts`): what PowerPoint uses for the
+/// characters the latin face lacks. EA characters use `ea` (the run's `a:ea`, theme aliases resolved; empty: the theme's
+/// `a:font script=` face of the run language), CS characters `cs`; the per-class table itself is
+/// `crate::text::fallback` (agent C).
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Default)]
+pub struct FontFallback {
+    /// The run language (`a:rPr lang`, else the style's).
+    pub lang: Option<Box<str>>,
+    /// `a:ea` with `+mn-ea`/`+mj-ea` resolved to the theme's own `a:ea` (`""` when none).
+    pub ea: Box<str>,
+    /// `a:ea` is written on the run or its style as a face (not a theme reference).
+    pub ea_explicit: bool,
+    /// `a:cs`, resolved like `ea`.
+    pub cs: Box<str>,
+    /// The theme collection the run's faces come from (`+mj-*`: major, else minor).
+    pub major: bool,
+    /// The `a:font script=` entries of that collection for the scripts of the run language (`Jpan`, `Arab`…).
+    pub scripts: Vec<(Box<str>, Box<str>)>,
 }
 
 impl RunExtras {
@@ -234,6 +258,7 @@ impl RunExtras {
         spc: None,
         link_color: None,
         fx: None,
+        font_fallback: None,
     };
 
     /// The text fills and effects (all absent when the box is).

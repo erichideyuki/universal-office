@@ -22,6 +22,9 @@ pub struct SlidesRules {
     pub ts_date_locale: bool,
     /// WordArt warp geometry as the TS computes it.
     pub ts_warp: bool,
+    /// Run links as the TS reads them: http(s) runs of shapes only (PowerPoint also links table-cell runs and run-level slide
+    /// and show jumps; the emission marks them, `RunLink`).
+    pub ts_links: bool,
     /// The chart engine's switches.
     pub charts: ChartRules,
 }
@@ -36,6 +39,7 @@ impl SlidesRules {
             ts_fallback_fonts: true,
             ts_date_locale: true,
             ts_warp: true,
+            ts_links: true,
             charts: ChartRules::ts_strict(),
         }
     }

@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { bindSlides } from '../js/slides.mjs';
 import { bindSlidesEditor, hasEditorExports, SlidesEditError } from '../js/slides-editor.mjs';
 import { emitAll as emitAllWith } from './support/slides-stub.mjs';
+// Slides wave 5: these replays compare with TS captures: every TS switch (`SlidesRules::ts_strict`)
+const TS = { tsStrict: true };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/w4-editor/uo-slides-editor-count.wasm');
@@ -36,7 +38,7 @@ const memory = () => w.memory.buffer.byteLength;
 
 /** The shell side: a mirror of the package kept from the answers. */
 function mirrorOf(bytes) {
-  const d = uo.open(bytes);
+  const d = uo.open(bytes, TS);
   const names = [];
   // the part list of the opened deck, read through the saved package of a fresh editor (the mirror starts as the file)
   const ed = ue.newEditor(d.ptr);
@@ -73,7 +75,7 @@ test('the editor module has the editor exports and counts memory', () => {
 test('edits reach the viewer deck of the same instance; the mirror kept from the answers equals the package', () => {
   const bytes = deckBytes('b1a', 2);
   const mirror = mirrorOf(bytes);
-  const d = uo.open(bytes);
+  const d = uo.open(bytes, TS);
   const ed = ue.newEditor(d.ptr);
   ed.setRandomSeed(1);
   ed.setTextLang('en-US');
@@ -123,8 +125,8 @@ test('edits reach the viewer deck of the same instance; the mirror kept from the
 });
 
 test('a clip copied in one editor pastes in another; queries; the save with fonts in two phases', () => {
-  const a = uo.open(deckBytes('b1a', 3));
-  const b = uo.open(deckBytes('b1a', 4));
+  const a = uo.open(deckBytes('b1a', 3), TS);
+  const b = uo.open(deckBytes('b1a', 4), TS);
   const ea = ue.newEditor(a.ptr);
   const eb = ue.newEditor(b.ptr);
   const ins = ea.apply({ t: 'insertShape', prst: 'ellipse' });
@@ -160,8 +162,8 @@ test('a clip copied in one editor pastes in another; queries; the save with font
 });
 
 test('refusals: another deck, a null editor, junk messages, a freed editor', () => {
-  const a = uo.open(deckBytes('b1a', 0));
-  const b = uo.open(deckBytes('b1a', 0));
+  const a = uo.open(deckBytes('b1a', 0), TS);
+  const b = uo.open(deckBytes('b1a', 0), TS);
   const status = (res) => { const s = w.uo_buf_status(res); w.uo_buf_free(res); return s; };
   const raw = w.uo_slides_editor_new(a.ptr);
   assert.ok(raw !== 0);
@@ -183,7 +185,7 @@ test('refusals: another deck, a null editor, junk messages, a freed editor', () 
 
 test('M4: 10,000 editors through free() and through the FinalizationRegistry leave no live bytes', async () => {
   const bytes = deckBytes('b1a', 1);
-  const d = uo.open(bytes);
+  const d = uo.open(bytes, TS);
   // warm: the deck's caches the first editor fills (presentation, font option)
   { const e = ue.newEditor(d.ptr); e.state(); e.free(); }
   const before = await settle();
@@ -202,7 +204,7 @@ test('M4: 10,000 editors through free() and through the FinalizationRegistry lea
 });
 
 test('M2: 600 edit/undo/redo cycles keep live bytes and the wasm memory flat; M5: the history keeps 100 steps', async () => {
-  const d = uo.open(deckBytes('b1a', 6));
+  const d = uo.open(deckBytes('b1a', 6), TS);
   const ed = ue.newEditor(d.ptr);
   ed.setRandomSeed(7);
   const v = uo.newView(1);

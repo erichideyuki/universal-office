@@ -29,9 +29,28 @@ fn answer_all(t: &mut MeasureTable, need: &[MeasureReq]) {
             MeasureReq::CharAt1000 { face, ch } => t.set_char_at_1000(face, *ch, if *ch == ' ' { 250.0 } else { 500.0 }),
             MeasureReq::KernAt1000 { face, text } => t.set_kern_at_1000(face, text, 1000.0, 990.0),
             MeasureReq::Width(k) => t.set_width(k, k.size_px.value() * 0.5 * k.text.chars().count() as f64),
+            MeasureReq::Metrics(k) => {
+                let px = k.size_px.value();
+                let w = px * 0.5 * k.text.chars().count() as f64;
+                t.set_metrics(
+                    k,
+                    uo_dml_render::text::TextMetrics {
+                        width: w,
+                        actual_right: w,
+                        font_ascent: Some(0.9 * px),
+                        font_descent: Some(0.21 * px),
+                        ..Default::default()
+                    },
+                );
+            }
             _ => {}
         }
     }
+}
+
+/// The layout options of the TS-port tests: every TS switch on (`SlidesRules::ts_strict`).
+fn ts_opts() -> LayoutTextOptions {
+    LayoutTextOptions { rules: uo_dml_render::SlidesRules::ts_strict(), ..Default::default() }
 }
 
 fn settle(tb: &TextBody, w: f64, h: f64, m: Measurer, t: &mut MeasureTable, o: &LayoutTextOptions) -> u32 {
@@ -76,7 +95,7 @@ fn two_phase_protocol_asks_advances_first_then_the_rest() {
     let mut p = para(vec![run("Hello wonderful world of text layout")]);
     p.runs[0].kern = Some(10.0);
     let tb = body(vec![p, para(vec![run("مرحبا بالعالم")])]);
-    let o = LayoutTextOptions::default();
+    let o = ts_opts();
     let mut t = MeasureTable::default();
     let first = need_measures(&tb, 914_400.0, 914_400.0, Measurer::Ppt, &t, &o);
     assert!(!first.is_empty() && first.iter().all(|r| matches!(r, MeasureReq::CharAt1000 { .. })), "round 1 asks only advances");
@@ -120,7 +139,7 @@ fn bullets_numbering_tabs_and_columns() {
     let mut tb = body(ps);
     tb.x_mut().num_col = Some(2.0);
     tb.x_mut().spc_col = Some(100_000.0);
-    let o = LayoutTextOptions::default();
+    let o = ts_opts();
     let mut t = MeasureTable::default();
     settle(&tb, 4_000_000.0, 600_000.0, Measurer::Ppt, &mut t, &o);
     let r = layout_text_body(&tb, 4_000_000.0, 600_000.0, Measurer::Ppt, &t, &o).unwrap();
@@ -135,14 +154,14 @@ fn symbol_area_recursion_throws_like_the_ts() {
     // U+F07F: the Symbol table leaves it unmapped, the TS recursion never ends (RangeError, the shape is skipped)
     let tb = body(vec![para(vec![run("a\u{F07F}b")])]);
     let t = MeasureTable::default();
-    let r = layout_text_body(&tb, 1e6, 1e6, Measurer::Ppt, &t, &LayoutTextOptions::default());
+    let r = layout_text_body(&tb, 1e6, 1e6, Measurer::Ppt, &t, &ts_opts());
     assert_eq!(r, Err(LayoutError::Throws("RangeError")));
-    assert!(need_measures(&tb, 1e6, 1e6, Measurer::Ppt, &t, &LayoutTextOptions::default()).is_empty());
+    assert!(need_measures(&tb, 1e6, 1e6, Measurer::Ppt, &t, &ts_opts()).is_empty());
     // mapped symbol-area characters convert and lay out
     let tb = body(vec![para(vec![run("\u{F067}x")])]);
     let mut t = MeasureTable::default();
-    settle(&tb, 1e6, 1e6, Measurer::Ppt, &mut t, &LayoutTextOptions::default());
-    let r = layout_text_body(&tb, 1e6, 1e6, Measurer::Ppt, &t, &LayoutTextOptions::default()).unwrap();
+    settle(&tb, 1e6, 1e6, Measurer::Ppt, &mut t, &ts_opts());
+    let r = layout_text_body(&tb, 1e6, 1e6, Measurer::Ppt, &t, &ts_opts()).unwrap();
     assert_eq!(r.lines[0].runs[0].text, "γ");
     assert_eq!(&*r.lines[0].runs[0].font.family, "Segoe UI Symbol");
 }
@@ -151,7 +170,7 @@ fn symbol_area_recursion_throws_like_the_ts() {
 fn long_word_breaks_by_grapheme_or_code_point() {
     let word = "e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}";
     let tb = body(vec![para(vec![run(word)])]);
-    let o = LayoutTextOptions { ins_l: Some(0.0), ins_r: Some(0.0), ..LayoutTextOptions::default() };
+    let o = LayoutTextOptions { ins_l: Some(0.0), ins_r: Some(0.0), ..ts_opts() };
     for seg in [true, false] {
         let mut t = MeasureTable::default();
         t.caps.segmenter = seg;
@@ -193,7 +212,7 @@ fn m1_layout_and_table_return_every_byte() {
     p.bu_mut().bullet_auto_num = Some("romanUcPeriod".into());
     let tb = body(vec![p, para(vec![]), para(vec![run("a\u{F07F}")])]);
     let tb_ok = body(vec![tb.paragraphs[0].clone(), tb.paragraphs[1].clone()]);
-    let o = LayoutTextOptions::default();
+    let o = ts_opts();
     let mut t = MeasureTable::default();
     settle(&tb_ok, 2e6, 1e6, Measurer::Ppt, &mut t, &o);
     let empty = MeasureTable::default();
@@ -427,7 +446,7 @@ fn no_panic_over_random_bodies_and_hostile_tables() {
         t.caps.font_kerning = r.chance(70);
         t.caps.segmenter = r.chance(70);
         let m = if r.chance(20) { Measurer::Plain } else { Measurer::Ppt };
-        let o = LayoutTextOptions { default_sz_pt: r.opt(40.0), size_scale: r.opt(2.0), ..LayoutTextOptions::default() };
+        let o = LayoutTextOptions { default_sz_pt: r.opt(40.0), size_scale: r.opt(2.0), ..ts_opts() };
         let (w, h) = (r.num(5e6), r.num(5e6));
         for _ in 0..MAX_ROUNDS {
             let need = need_measures(&tb, w, h, m, &t, &o);

@@ -1,0 +1,37 @@
+# PowerPoint 365 pt-BR (Windows 11, 2026-11-18): the link annotations of pp-rules.pptx saved as PDF (SaveAs ppSaveAsPDF)
+# page (0-based)	target (uri:<address> or page:<index>)	x0	y0	x1	y1 (pt, y down from the page top)
+0	uri:https://example.com/p2	19.92	64.10	71.28	82.94
+0	uri:https://example.com/p3	20.76	106.46	89.28	119.66
+0	uri:https://example.com/p4	20.76	144.38	239.30	161.33
+0	uri:https://example.com/p4	20.64	166.01	243.86	179.45
+0	uri:https://example.com/p4	21.24	187.61	55.20	201.05
+0	uri:https://example.com/p5	21.24	254.93	49.92	269.71
+0	uri:https://example.com/p5	51.96	254.93	144.86	273.67
+0	uri:https://example.com/p7	21.24	368.74	98.18	383.74
+0	uri:https://example.com/p7	21.24	389.86	95.90	407.02
+0	uri:https://example.com/p8	349.61	24.36	409.85	41.28
+0	uri:https://example.com/p8	421.85	24.36	447.77	37.56
+0	uri:https://example.com/p8	457.49	24.36	505.03	37.80
+0	uri:https://example.com/p8	515.83	24.36	569.35	41.28
+0	uri:https://example.com/p8	580.87	27.72	615.07	37.80
+0	uri:https://example.com/p8	625.27	24.36	649.39	37.80
+0	uri:https://example.com/p8	350.21	45.96	371.81	59.42
+0	uri:https://example.com/p8	377.93	45.96	418.85	59.42
+0	uri:https://example.com/p8	425.69	46.08	440.09	59.42
+0	uri:https://example.com/p8	445.25	45.96	469.37	59.42
+0	uri:https://example.com/p8	476.21	45.96	503.95	59.42
+0	uri:https://example.com/p9	350.33	114.86	377.09	129.74
+0	uri:https://example.com/p9	423.41	114.86	461.45	129.74
+0	uri:https://example.com/p10	351.29	154.82	388.97	169.73
+0	uri:https://example.com/p11	395.69	154.82	432.53	169.73
+0	uri:https://example.com/p12	368.09	121.34	423.41	161.93
+0	uri:https://example.com/p13	350.33	-15.12	427.13	3.60
+0	uri:https://example.com/p14	60.60	464.50	315.17	477.84
+0	uri:https://example.com/p14	20.64	486.12	275.30	499.44
+0	uri:https://example.com/p14	20.64	507.72	275.30	521.04
+0	uri:https://example.com/p14	20.64	529.32	293.81	542.64
+0	uri:https://example.com/p15	688.06	293.35	900.12	360.07
+0	uri:https://example.com/p17	700.06	454.90	751.42	473.76
+1	page:2	7.92	93.26	220.10	160.13
+1	page:2	7.92	173.33	220.10	240.05
+1	page:0	7.92	333.31	220.10	400.18

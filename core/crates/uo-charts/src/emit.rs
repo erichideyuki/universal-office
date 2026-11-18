@@ -87,6 +87,8 @@ pub struct EmitParams<'a> {
     pub locale: &'a FormatLocale,
     pub sel: ChartSel,
     pub images: bool,
+    /// The PowerPoint-over-TS switches (`ChartRules::ts_strict()` for the TS parity replays).
+    pub rules: crate::rules::ChartRules,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

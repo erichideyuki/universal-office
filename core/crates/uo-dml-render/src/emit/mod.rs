@@ -78,7 +78,9 @@ pub struct RunLink {
     pub run: u32,
     /// the shape being emitted (an index of the emitted shapes)
     pub shape: u32,
-    /// the address (`Run.hyperlink`: http or https, the reader's rule)
+    /// the address (`Run.hyperlink`: http or https, the reader's rule; under `!SlidesRules::ts_links` also a run-level jump:
+    /// `ppaction://hlinksldjump#<slide part>` or the `ppaction://hlinkshowjump?jump=…` action as written, and the runs of
+    /// table cells)
     pub url: Box<str>,
     /// the run box in the list's USER space at the run's transform (not the device: a rotated shape's runs are under its
     /// transform): `x` = the run's `x`, top = baseline − 0.9 × size px, `w` = the laid width (`r.w × scale`, or the unit

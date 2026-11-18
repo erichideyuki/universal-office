@@ -4,8 +4,8 @@
 //! [`jpeg_info`] and [`image_pixel_size`], and the decoders [`decode_png`] (every depth and colour
 //! type, Adam7), [`decode_gif`] (first frame), [`decode_bmp`], [`decode_tiff`] (baseline: strips
 //! and tiles, none/LZW/PackBits/deflate, predictor, palette, CMYK, YCbCr with subsampling) and
-//! [`decode_raster`], which tries them in that order. JPEG is never decoded: the PDF embeds it as
-//! it is (DCTDecode), so only its header is read. Plan and decisions: `core/docs/modules/uo-image.md`.
+//! [`decode_raster`], which tries them in that order. JPEG is embedded as it is (DCTDecode), so only its header is
+//! read — except `decode_jpeg` (feature `jpeg`, the PDF's colour effects on a JPEG). Plan and decisions: `core/docs/modules/uo-image.md`.
 //!
 //! The decoders keep the TS behaviour on damaged files (a short file decodes to a partly zero
 //! image, an unsupported variant is [`ImageError::Unsupported`], what makes the TS throw is
@@ -21,6 +21,8 @@
 mod bmp;
 mod gif;
 mod header;
+#[cfg(feature = "jpeg")]
+mod jpeg;
 mod limits;
 mod lzw;
 mod png;
@@ -31,6 +33,8 @@ mod tiff_slides;
 pub use bmp::decode_bmp;
 pub use gif::decode_gif;
 pub use header::{JpegInfo, PixelSize, image_pixel_size, jpeg_info};
+#[cfg(feature = "jpeg")]
+pub use jpeg::decode_jpeg;
 pub use limits::{ImageError, ImageLimits, LimitKind, Result};
 pub use png::decode_png;
 pub use raster::decode_raster;

@@ -568,7 +568,7 @@ an element canvas by default; and the compressed EMF+ bitmaps are decoded when t
 ### Decisions outside the source semantics (declared)
 
 - **B5b-1. A recipe, not a bitmap or a display sub-list** (the plan's B5b row and the B4 section said a `Bitmap`): the pixels are the shell's (see above). The B4 `MetafileRop`
-  effect is unused. A metafile picture's colour effects (`a:duotone`, grayscale, `clrChange`, brightness): **not applied** — the list's `Derived` has a media base, and the picture is a bitmap
+  effect is unused. A metafile picture's colour effects (`a:duotone`, grayscale, `clrChange`, brightness): **closed in wave 5** by a derived recipe (see "PowerPoint rules (wave 5)"); before, not applied — the list's `Derived` has a media base, and the picture is a bitmap
   (gap B5b-G1; the TS applies `fxImage` to the canvas). `alpha` (`GlobalAlpha`) works. Measured 2026-11-18: 0 of the 313 metafile/PICT/TIFF pictures
   of the 698 committed and generated decks carry a colour effect, so no parity case exercises it (the real corpora were deleted). The way to close
   it without a schema change: a derived recipe (header + one op `Fx { base bitmap, the TS fx }`) that the player answers with `fxImage` over the
@@ -658,6 +658,171 @@ parts) in `tests/links.rs`.
   23 differ inside metafile rasters (open; before the hook those pictures were not drawn at all). Record: `uo-bindings.md` "Wave 4".
 - `MetaDecode` is answered by the browser shell now (the prepare phase, `uo-bindings.md` "Wave 4"); the protocol here is unchanged.
 
+## PowerPoint rules (wave 5, 2026-11-18, Opus — agent A)
+
+Where the frozen TS and PowerPoint 365 disagree, PowerPoint was **measured** with synthetic decks and the rule follows it; the TS
+behaviour stays behind a switch of `rules::SlidesRules` (`ts_* = true` keeps the TS; `Default` = PowerPoint; `ts_strict()` = every TS
+switch, what the parity replays use). The switches reach the readers through `PartSource::rules()` → `Theme::rules` (every colour
+and text resolution below a theme sees them) and the emission through `Env::rules` → `LayoutTextOptions::rules`. Measurement decks,
+scripts and PowerPoint PDFs: `core/target/w5-a/` (outside git: `gen.py`, `gen2.py`, `gen_links.py`, `an_sys.py`, `an_bl.py`, `an_fx.py`,
+`metrics.py`, `names.ps1`), exported through `slides/tools/ppt-lab/export-pdf.ps1` under the global lock (no window, read-only). Tests
+against the measured values: `tests/wave5_rules.rs` (here) and `uo-pptx/tests/wave5_rules.rs` (through the deck; its decks in
+`uo-pptx/tests/data/wave5/`).
+
+### `a:sysClr` (`ts_sys_clr`)
+
+- **Measured** (deck `sys-1`: the 30 `ST_SystemColorVal` values × {`lastClr="123456"`, no `lastClr`, `lastClr` + `lumMod 50 %`};
+  deck `sys-theme`: `dk1`/`lt1`/`accent1` of the theme as `sysClr` with a bogus `lastClr`): PowerPoint draws **`GetSysColor` of the
+  machine** and ignores `lastClr` entirely; modifiers apply on top; a theme colour that is a `sysClr` resolves the same way. The 30
+  answers of the measuring machine's `GetSysColor` equal the pixels exactly — and they are the stock Windows 10/11 values
+  (`highlight` 0078D7, `hotLight` 0066CC, `infoBk` FFFFE1, …).
+- **Rule**: `theme::SYSTEM_COLORS` (the stock values, deterministic: a machine with another Windows colour scheme or accent would
+  change `highlight`/`hotLight`/`menuHighlight` in PowerPoint) via `system_color`/`sys_clr_base`; a value outside the list falls back to
+  `lastClr`, then black. The TS (and the chart host's `color_in`, agent B's `chart_host.rs`, and `uo-charts`' own `dmlColor`) take
+  `lastClr`.
+- Seen on the way, not changed (a modifier question): PowerPoint's `lumMod` rounds an exact .5 down (`window` 127.5 → `7F`,
+  `grayText` 54.5 → `36`) where `color_from_dml` rounds it up; every other of the 30 × `lumMod` pixels is equal.
+
+### First-line baseline (`ts_first_baseline`)
+
+The TS puts every baseline at 0.8 of a single line (0.96 em). **Measured** (decks `bl-a0..3` 38 faces at 36 pt two paragraphs,
+`bl-sizes` 12/20/54 pt, `bl-mixfont`, `b2-mix` mixed faces and sizes, `b2-p90/p80/p110/p100/red20/x30`, `bl-s0` 150 %, `bl-x0`
+exactly 50 pt, `b2-gap` typo-gap faces; glyph origins from PowerPoint's PDF with pdfium, `an_bl.py`):
+
+- single spacing: the line is still 1.2 × size (pitch 1.2000 em for every face), but the baseline sits at `1.2 · A/(A+D)` of the size,
+  `A`/`D` = **`usWinAscent`/`usWinDescent`**, or with **`USE_TYPO_METRICS`** `sTypoAscender + sTypoLineGap` / `−sTypoDescender`
+  (`text::ppt_line_box`). Fits 36 faces within the PDF's drift (PowerPoint's glyph y drifts down the page by up to 0.0035 em):
+  Liberation Sans 0.9739 (rule 0.9724), Liberation Serif 0.9672 (0.9656), Liberation Mono 0.8839 (0.8819), Carlito 0.9372 (0.9360),
+  Caladea 0.9744 (0.9727), Aptos 0.9258 (0.9230), Calibri 0.9372, Cambria 0.9739, Verdana 0.9958 (0.9927), Garamond 0.9206 (0.9193);
+  the typo-gap faces decide the gap: Liberation Sans Narrow 0.9639 (0.9640 with the gap, 0.9309 without), Gabriola 0.9772 (0.9767),
+  Poppins 0.9206 (0.92), DejaVu Math 0.9939 (0.992). Bahnschrift (variable) is drawn with another face by PowerPoint: excluded.
+- mixed faces and sizes on one line: each face's single line splits at its own share, the line takes the largest scaled ascent and
+  the largest scaled descent and normalizes them to 1.2 × the largest size (`b2-mix`, 6 cases within 0.13 pt);
+- reduced spacing (`spcPct` < 100 %, `lnSpcReduction`): `max(0.75·h − x, A' − (1.2·M − h))` (90 %: Aptos 0.8106 = 0.75 h, Liberation
+  Sans 0.8539 = the ascent cut by the reduction);
+- expanded (> 100 %) and exact spacing: the TS's 0.75 × the line stays (110 %, 150 %, exactly 30/50 pt: every face 0.75 h), minus the
+  descent overshoot `x = max(0, D' − 0.3·M)` — only the monospaced faces overshoot (Liberation Mono/Courier New sit 0.016–0.02 em higher,
+  measured in every expanded and exact case).
+- **Data path**: the layout asks the shell for the font box of each face of a line (`MeasureReq::Metrics` of `"H"` at 1000 px, kerning
+  current — the existing request; `Meter::font_box`) and uses `ascent/(ascent+descent)`; an unanswered box (an absent face) uses Calibri's
+  metrics (PowerPoint draws an absent family with them). The browser's `fontBoundingBoxAscent/Descent` under DirectWrite are exactly the
+  win metrics (and the typo ones with `USE_TYPO_METRICS`, without the typo gap: Liberation Sans Narrow, Poppins, Gabriola differ there);
+  measured in Chromium 1248 on Windows. The PDF measurer (`uo-pptx/src/pdf/measure.rs`, agent C) must answer the font box with
+  `ppt_line_box` over the face's OS/2 (it answers `hhea` today: right for Aptos, Liberation, Times, Arial, Cambria; 0.75/0.25 instead of
+  0.78/0.22 for Calibri, Carlito, Candara, Corbel, Constantia, Consolas).
+- The last line's foot, `fontAlgn` and mixed faces under reduced/expanded spacing: see "Follow-up round" below.
+
+### Date and time fields (`ts_date_locale`, module `datefield`)
+
+- **Measured** (decks `date-1`, `date-2`, `d2-*`: 14 types × 17 languages incl. none, exported at 06:03–06:04 on 2026-11-18):
+  PowerPoint replaces the cached text of `datetime`, `datetime1`…`datetime13` (and `datetimeFigureOut`) with the **current date and
+  time in the format of that number in the field's `lang`** (its Date and Time dialog list); a field without `lang` formats in the system
+  language (pt-BR here); `datetime` = `datetimeFigureOut` = `datetime1`. Some East Asian entries are the system's short/long date
+  (`ja-JP` 1–2, `zh-CN` 1 and 9, `ko-KR` 1, 8, 9) and their `d-MMM-yy` use the system's month abbreviation; Japanese uses the era
+  (`令和8年`, kanji numerals in `datetime7`), Korean the Dangi year (`단기 4359년`); Russian writes the stand-alone month in lower case
+  (`ноябрь 26`; Windows NLS capitalizes it), Polish and Russian the genitive inside dates.
+- **Rule**: the 15 tables of `datefield.rs` (patterns written from PowerPoint's output; names from Windows NLS checked against it); the
+  language matches by tag, then by primary subtag (`de-AT` → `de-DE`); a language outside the tables formats in the clock's default
+  language. All 238 measured cells are reproduced exactly (`datetime_fields_match_powerpoint_in_16_languages`).
+- **Clock**: an input, `datefield::FieldClock` (local date and time + the language of fields without one), reaching the reader through
+  `PartSource::field_clock()` (the deck's `Deck::set_field_clock`). Without a clock the fields keep the cached text (tests and servers stay
+  deterministic); the wasm binding sets it from the browser's `Date` and `navigator.language` at open. The `.ppt` converter's own
+  `datetime1` (agent B's `ppt/textconv.rs`) is re-formatted by the same pass.
+
+### Colour effects over a metafile (B5b-G1, closed)
+
+- **Measured** (decks `fx-emf` / `fx-png`: an EMF of 8 colour stripes and the PNG of the same stripes, under 12 effects: grayscale,
+  bi-level, two duotones, brightness, contrast, both, alpha, two colour changes, grayscale + alpha): PowerPoint draws the metafile with
+  an effect **exactly as the raster with that effect** (96 pixels equal; 1 differs by one level under grayscale + alpha). The TS applies
+  `fxImage` to the canvas it rasterized the metafile on — the same rule, so no switch.
+- **Built**: a *derived recipe* (`metafile::rec::encode_fx_recipe`, `"UOMF"` version 2: the size, the base recipe's bitmap index and the
+  effects as `fxImage` reads them, colours as CSS strings) made by `Cx::image_quiet` for a metafile/PICT/TIFF picture whose blip has an
+  effect (cached per base and effects in `EmitCaches::special_fx`, capped with the special cache). The browser (`paint-slides.ts`
+  `bitmapCanvas` + `meta-player.ts` `decodeFxRecipe`) answers it with `fxImage` over the base bitmap's canvas; the PDF
+  (`uo-pptx/src/pdf/recipe.rs`) plays the base recipe as vector content with every colour mapped through `images::apply_fx` (fills,
+  strokes, gradient stops, and the pixels of its bitmaps and `putImageData`); per-pixel maps commute with the vector drawing except at
+  anti-aliased edges and under transparency for bi-level and colour change. Test: `colour_effects_over_a_metafile_match_powerpoint`
+  (24 PowerPoint colours found in the PDF).
+
+### Run fallback context (plumbing for agent C's fallback table, `ts_fallback_fonts`)
+
+- Read only under `!ts_fallback_fonts` (the TS model, its memory and its parity unchanged): the theme's `a:ea`/`a:cs` and `a:font script=`
+  lists (`Theme::script_fonts`, `ThemeScriptFonts`/`ScriptFaces`); the levels' `a:ea`/`a:cs`/`lang` (`LvlRun`, merged like the latin face;
+  the `fontRef` layer gives `+mj-ea`/`+mn-cs`…); the run's own `a:ea`/`a:cs` (`read_run`, provisional). After the cascade
+  (`text_style::resolve_run_fallback`) a run that needs one keeps `RunExtras::font_fallback: Option<Box<FontFallback>>` =
+  `{ lang, ea (alias → the theme's a:ea, "" when none), ea_explicit, cs, major, scripts }` where `scripts` = the theme entries of the
+  run's collection whose script is in `text::fallback::scripts_for_lang(lang)` (C's list); a run with no ea/cs face and a language
+  without such a script keeps none (no extras box: Western decks unchanged).
+- Transport: the layout writes the run's face as `text::encode_face(family, &fb)` (the family, then `lang`, `ea`, `0|1`, `cs`, `0|1`
+  and script/face pairs after U+001F) — so every measure request and the display list's face table carry it with no schema change;
+  `text::split_face` reads it back (C's PDF `FontSource`; the browser's `fontStackWithFallback` in `slides-engine.ts` inserts the ea,
+  script and cs faces before the generic family of the host's stack, and measure and draw both go through it).
+
+### Run links (`ts_links`, for agent C's link rectangles)
+
+- Under `!ts_links` the runs of table cells are read with the slide's relationships (their http links become `RunLink`s), and a
+  run-level `a:hlinkClick` that jumps keeps `hyperlink = "ppaction://hlinksldjump#<slide part>"` or the `ppaction://hlinkshowjump?jump=…`
+  action as written, so the emission marks those runs too (`RunLink.url`). The TS reads cells without relationships and keeps only
+  http(s) runs; `ts_strict` keeps that (the 945/945 hit-test parity). Test: `table_cell_links_and_run_jumps_have_run_marks`.
+
+### Follow-up round (2026-11-18)
+
+- **Colour rounding of the modifiers — measured, no rule found (open).** Decks `c-*`: 256 greys under `lumMod` 50 % and 25 %,
+  `lumMod`+`lumOff`, `shade`/`tint` 50 % between `gamma`/`invGamma`, `satMod` on greys and on colours; PowerPoint's own bytes read
+  from its PDF operators (`0.00392 g` = 1/255). Every difference with `color_from_dml` is an EXACT half (never > 1 level, 0 elsewhere:
+  `lumOff` 0/256, `satMod` 0/256): PowerPoint rounds 63 of the 128 halves of `lumMod` 50 % down (and the same 63 for the sRGB
+  `shade`, so it is the shared final rounding), 33 of 64 for `lumMod` 25 %, 71 of 128 for the sRGB `tint` — with no pattern a
+  fixed-point (scales 100…2^24, every rounding mode) or float32 model reproduces. Kept: round half up (a 1-level difference on exact
+  halves only); no switch added.
+- **Built-in line boxes** (`text::known_line_box`, 30 families: the Office faces, Aptos, Liberation, Carlito, Caladea, and the typo-gap
+  faces Liberation Sans Narrow, Poppins, Gabriola, DejaVu Math): the layout takes the box from the table before asking the shell, so
+  the viewer, the PDF and the server place these faces alike — the browser's missing typo gap and a measurer reading `hhea` (Calibri
+  0.75/0.25) no longer matter for them. Unknown faces still ask the shell (`Metrics` of "H").
+- **The block's foot — measured and implemented**: with anchor `b` and `ctr` (decks `b3-foot-b/ctr`, 3 faces × 100/80/150 %/exactly
+  50 pt) the block ends **one descent `D'` below the last baseline at every spacing** (Aptos 0.276–0.277 em, Liberation Mono 0.315,
+  Liberation Serif 0.230–0.232); the TS ended it 0.2 × the line (single) or 0.24 em (expanded) below. The layout now computes
+  PowerPoint's baseline of every line before the anchor (`ppt_lines`) and sets `last_adj = off + D' − h` of the last line; 16 measured
+  baselines within 0.005 em (`the_block_ends_one_descent_below_the_last_baseline`).
+- **Mixed faces under reduced, expanded and exact spacing — measured, the normalized `A'`/`D'` confirmed** (decks `b3-mix-80/150/x50`,
+  12 cases within the drift; `mixed_faces_under_reduced_and_expanded_spacing`).
+- **`fontAlgn` with expanded/exact spacing — measured, rule not found (open, TS factors kept)** (decks `b3-falgn`, `b3-falgn-x`: 150 % and
+  exactly 50 pt): `base` = `0.75·h − x` (the rule above); `t` and `ctr` sit at `h − c`, `b` at `0.75·h − c`, with `c` per face (em):
+  Aptos t 0.259 / ctr 0.272 / b 0.139, Liberation Mono 0.365 / 0.331 / 0.148, Liberation Serif 0.307 / 0.260 / 0.103 (the same `c`
+  at both spacings). `b` fits half the unscaled descent (0.141 / 0.150 / 0.108); `t` and `ctr` match no OS/2 metric tried (win, typo,
+  hhea, cap and x height, bounding box). The TS factors (0.84 / 0.86 / 0.68 of `h`) are within 0.03 em of PowerPoint for Aptos.
+- **JPEG under colour effects — closed**: `uo-image::decode_jpeg` (feature `jpeg`, zune-jpeg; record `uo-image.md` "JPEG decoder")
+  decodes a JPEG whose effects need its pixels, inside a derived recipe (`recipe.rs` `fx_picture`) and as a plain picture
+  (`images.rs` → `recipe.rs` `jpeg_fx_picture`); `image:jpeg-effect` only counts a JPEG that does not decode. PowerPoint draws the
+  effects on a JPEG exactly as on a PNG (deck `fx-jpg`). The anti-aliased edges of bi-level/colour change under per-input mapping: not changed (sub-pixel, rare).
+
+### PowerPoint agreement, before → after (once, 2026-11-18)
+
+The oracle of `uo-pdf.md` "PowerPoint agreement" over 121 decks / 489 pages (every generated deck PowerPoint opens, the playback
+`.pptx`/`.ppt` decks, 8 samples), Rust `system` fonts × PowerPoint, "before" = the committed `results/pages.tsv` (wave 4b), "after" =
+this tree (also holding agents B's and C's work in progress; results in `core/target/w5-a/a/oracle-dir/results`, not committed):
+
+| Pages | mean agreement | pages ≥ 0.99 | glyphs within 1 pt |
+|---|---|---|---|
+| all 489 | 0.9442 → **0.9600** | 72.2 % → 74.2 % | 23.5 % → **75.0 %** |
+| playback-ppt (281) | 0.9964 → 0.9997 | 98.2 % → 100 % | 18.5 % → 97.7 % |
+| playback (35) | 0.9969 → 0.9998 | 94.3 % → 100 % | 48.0 % → 93.4 % |
+| b6a (12; `sysClr`) | 0.6201 → 0.9073 | | |
+| b1a (55) / b3a (50) / c1d (13) | 0.811 → 0.846 / 0.861 → 0.879 / 0.791 → 0.808 | | |
+
+Vertical glyph offset (Rust − PowerPoint, median, em): Aptos Bold −0.0383 → **−0.0013** (within 1 pt 25 % → 99 %), Aptos −0.0360 →
++0.0024, Courier New −0.0609 → +0.0001, Liberation Sans +0.0145 → +0.0049, Times/Liberation Serif ≈ 0 → ≈ 0; **Calibri −0.0165 →
++0.0401 and Carlito −0.0231 → +0.0164**: the PDF measurer still answers the font box from `hhea` (0.75/0.25 for those faces, PowerPoint
+uses win 0.78/0.22) — fixed when `pdf/measure.rs` answers `ppt_line_box` (agent C). Class `sysclr` 15.7 M → 10.5 M differing px (the
+rest: chart `sysClr` through `uo-charts`' own `lastClr` resolution, agent B, and other causes on those pages). Class `field` unchanged: the
+harness sets no field clock (`oracle_ppt/main.rs`, agent C, should set the export time of the PowerPoint PDFs).
+
+### Parity under `ts_strict`
+
+Every TS-parity replay runs `SlidesRules::ts_strict()`: here `tests/text_layout.rs` (`ts_opts`); in uo-pptx `replay.rs`,
+`text_layout.rs`, `timing_replay.rs`, `edit_replay.rs` (`support/edit_capture.rs`) and the draw-op example `emit_uolf.rs`
+(`UO_EMIT_RULES=ppt` for PowerPoint's); in uo-wasm the Node replays (`slides_{anim,api,drawops,edit_api,readmodel}.test.mjs`, open option
+`{ tsStrict: true }`) and the Chromium harnesses (`slides_switch.mjs`, `slides_edit_switch.mjs`: `configureEngine({ tsStrict: true })`).
+
 ## Process metrics
 
 | Stage | Agent | Time | Notes |
@@ -668,3 +833,38 @@ parts) in `tests/links.rs`.
 | B5a port + generator group + capture + tests | Sonnet | two sessions; port and hooks about 3 h, generator/capture/replay/tests/fuzz/docs about 1 h after the resume | 0 parity mismatches on the first replay; rework was clippy only (22 findings: negated float comparisons, identical branches, a too-complex type) |
 | B4 port + schema fixes + interpreter edits + parity driver + tests + fuzz + docs | Sonnet | one long session (about 190 tool calls). Wall times on this machine (4 jobs): `uo-dml-render`+`uo-pptx` release build about 20 s; emit of the 53 samples (1,202 views) 1.5 s, of the 100 b1a decks 3.0 s (one process per deck); the compare of either capture 1.7 s; `capture-drawops --samples` 12.7 s; `uo-pptx/tests/emit.rs` 2.4 s, `uo-dml-render/tests/emit.rs` 0.2 s; fuzz `slides_emit` stable driver 166,352 executions in 40 s (4,159/s, slowest 16.6 ms, 0 crashes) | parity 1,166/1,202 + 246/246 on the first full run after the recorder-hash and `Prepare` fixes; rework: 4 (the recorder canvas hash, the lazily built derived image, discarded passes polluting the media table, one-request-per-round tables); the fuzz run found two hangs (an infinite column span in `needOf`, an unbounded arc subdivision) and a NaN false positive in its own determinism check |
 | B5b port (metafiles, EMF+, PICT) + TIFF variant + EOT/MTX reader + generators (EMF/EMF+/WMF/PICT/TIFF/EOT, the LZW and LZCOMP encoders) + recipe player + captures + tests + fuzz + docs | Sonnet | one long session (about 330 tool calls). Wall times on this machine (4 jobs): `capture-meta.mjs` over 873 files / 1,267 rasterizations 5.5 s (399 k lines), the Rust side of the whole set 0.09 s (process included 0.5 s), `compare-meta.mjs` replay and compare 0.3 s, `capture-drawops --gen b5b --special` 4.8 s (162 views), `emit-uolf` of the 40 decks 1.1 s, `tests/metafile.rs` 1.2 s; fuzz 40 s a target | parity 1,267 / 1,267 and 162 / 162 after the first complete run with the player fixed; rework: 7 (the replay's `skip` of the XOR fallback read `r.p += r.u32()` before the `u32`; the Mac Roman table lost U+F8FF; V8's spread limit (a 120 k array of subpaths throws in the TS) found by the focused EMF+ group; the TIFF as a recipe instead of RGBA so the page stream does not contain the canvas lines; the per-media raster key; five M5 caps from the fuzz run's slow inputs; clippy casts) |
+
+
+## WordArt warp geometry against PowerPoint (wave 5, 2026-11-18) — `SlidesRules::ts_warp` (measured, not switched)
+
+The geometry is computed twice from the emitted `Effect::Warp` (prst/adj/box): by the viewer painter
+(`uo-wasm/js/slides-warp.ts`, the TS `text-warp.ts` verbatim) and by the PDF (`uo-pptx/src/pdf/warp.rs`, its port). Both
+were measured against PowerPoint 365 in this wave with a lab deck of the 40 `prstTxWarp` presets (one text box per slide,
+600 × 300 pt, "WordArt Teste" Arial 48 pt bold centred, plus 2-line and small variants: 50 slides) and an arc deck
+(24/48/72 pt, left/right alignment, square and flat boxes, `adj`, Calibri), PowerPoint's PDF against the Rust PDF with the
+oracle metric (installed fonts read in place):
+
+- **Envelope presets** (plain, stop, triangles, chevrons, waves, inflate/deflate family, fades, slants, cascades, can):
+  agreement 0.990–0.998 per slide; the differences are 1-px edges (antialiasing, outline flattening). The TS geometry
+  (measured in 2026-10, syn-b-e1…e7) is PowerPoint's.
+- **Single-path presets** (archUp/Down, circle, button and the pour family): 0.963–0.997. On a CIRCULAR path (square box)
+  the glyphs agree (text centre 474.12 PowerPoint, 474.19 Rust); on a 2:1 ellipse PowerPoint places the run about 7 pt
+  earlier along the path and ~2.4 % shorter (per glyph, archUp 48 pt: Rust − PowerPoint along the path grows linearly
+  from 3.8 to 10.7 pt; 24 pt → centre −7.4, 72 pt → −7.0; flat 6:1 box: 0.4 pt). Consistent with PowerPoint spacing the
+  glyphs by arc length on the BASELINE curve (the path offset by the lift) instead of on the path, but that alone gives
+  no shift; the shift is not explained yet.
+- The `.ppt` legacy WordArt of `s_legacy_lo-wordart-test` p3 (converted to `textArchUp` with `fromWordArt`): 6.7 k px,
+  the same arc pattern.
+- The oracle's "wordart" class (33 pages, 0.86 M exclusive px) is almost entirely generated `b1a`/`b3a` pages whose other
+  differences (CJK fallback faces, `sysClr`, layout) own the pixels; the warp itself is a small part.
+
+**Follow-up round (aspect ratios):** archUp, 16 × "I" (Arial 48 pt bold, centred), per glyph Rust − PowerPoint along the
+path: 600 × 540 (near circle) −0.1…+0.3 pt (dy −0.9 everywhere); 600 × 400 +5.7…+10.2; 600 × 300 +5.0…+9.5; 600 × 200 (3:1)
+−0.8…+0.3; 300 × 600 (tall) +5.8…+7.9; 600 × 300 left-aligned −1.8…+3.0. The offset is neither monotonic in the aspect
+(0 at 1.1:1 and 3:1, ~7 pt at 1.5:1 and 2:1) nor tied to the alignment, so no arc-length/parametric/polyline or
+aspect-scaling hypothesis fits (each predicts a monotonic or symmetric change).
+
+**Open:** the single-path placement rule on non-circular paths (not switched: no rule found that reproduces both the
+shift and the compression; `ts_warp` stays unread). When it is found, the geometry moves to one Rust module read by the
+PDF and fed to the viewer (decided with the orchestrator: a new `uo-dml-render/src/warp.rs`, `pdf/warp.rs` and
+`slides-warp.ts` handed to this frontier).

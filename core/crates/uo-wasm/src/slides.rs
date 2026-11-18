@@ -242,6 +242,77 @@ unsafe fn deck_mut<'a>(deck: *mut UoSlidesDeck) -> Option<&'a mut UoSlidesDeck> 
     unsafe { deck.as_mut() }
 }
 
+/// The PowerPoint-over-TS switches of the deck (Slides wave 5; the default after `uo_slides_open` = PowerPoint's rules):
+/// `flags` bit 0 = every TS switch (`SlidesRules::ts_strict`, the parity harnesses), bit 1 `ts_sys_clr`, bit 2
+/// `ts_first_baseline`, bit 3 `ts_fallback_fonts`, bit 4 `ts_date_locale`, bit 5 `ts_warp`. A change empties the deck's
+/// caches and the measure table; views made before keep their lists (start a new generation). 0 ok, 11 null handle.
+///
+/// # Safety
+/// `deck` must be null or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uo_slides_set_rules(deck: *mut UoSlidesDeck, flags: u32) -> i32 {
+    // SAFETY: the caller guarantees `deck` is null or a live handle.
+    let Some(d) = (unsafe { deck_mut(deck) }) else { return 11 };
+    let rules = if flags & 1 != 0 {
+        uo_dml_render::SlidesRules::ts_strict()
+    } else {
+        uo_dml_render::SlidesRules {
+            ts_sys_clr: flags & 2 != 0,
+            ts_first_baseline: flags & 4 != 0,
+            ts_fallback_fonts: flags & 8 != 0,
+            ts_date_locale: flags & 16 != 0,
+            ts_warp: flags & 32 != 0,
+            ..uo_dml_render::SlidesRules::default()
+        }
+    };
+    if d.deck.rules() != rules {
+        d.deck.set_rules(rules);
+        d.table = MeasureTable::default();
+        d.pending.clear();
+    }
+    0
+}
+
+/// The clock of the date/time fields (Slides wave 5: PowerPoint shows the current date in each field's language): the
+/// host's LOCAL date and time and the language of fields without one (`lang` UTF-8, from `uo_alloc_bytes`, consumed);
+/// `year` 0 removes the clock (the fields keep their cached text, the state after `uo_slides_open`). 0 ok, 5 invalid
+/// argument, 11 null handle.
+///
+/// # Safety
+/// `deck` must be null or a live handle; `lang`/`lang_len` as for `uo_slides_open` (or null and 0).
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn uo_slides_set_field_clock(
+    deck: *mut UoSlidesDeck,
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+    lang: *mut u8,
+    lang_len: usize,
+) -> i32 {
+    // SAFETY: the caller guarantees the buffer came from uo_alloc_bytes(lang_len) (or is null with 0).
+    let lang_bytes = if lang.is_null() { Vec::new() } else { unsafe { take_bytes(lang, lang_len) } };
+    // SAFETY: the caller guarantees `deck` is null or a live handle.
+    let Some(d) = (unsafe { deck_mut(deck) }) else { return 11 };
+    let clock = if year == 0 {
+        None
+    } else {
+        if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
+            return 5;
+        }
+        let lang = String::from_utf8_lossy(&lang_bytes);
+        let lang = if lang.is_empty() || lang.len() > 64 { "en-US".into() } else { lang.into_owned().into_boxed_str() };
+        Some(uo_dml_render::datefield::FieldClock { year, month, day, hour, minute, second, default_lang: lang })
+    };
+    if d.deck.field_clock() != clock.as_ref() {
+        d.deck.set_field_clock(clock);
+    }
+    0
+}
+
 /// Number of slides the viewer shows.
 ///
 /// # Safety

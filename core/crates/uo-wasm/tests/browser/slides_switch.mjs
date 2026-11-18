@@ -54,6 +54,8 @@ const W = (p) => fwd(join(repo, p));
 const driver = `
 import { UniversalSlidesViewerElement } from '${W('slides/packages/viewer/src/index.ts')}';
 export { UniversalSlidesViewerElement };
+// Slides wave 5: TS against Rust runs every TS switch (SlidesRules::ts_strict); the product default is PowerPoint's rules
+UniversalSlidesViewerElement.configureEngine({ tsStrict: true });
 const statsUrl = new URL('./stats.js', import.meta.url).href;
 export const engineModule = () => import(statsUrl);
 `;

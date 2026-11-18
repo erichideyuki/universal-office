@@ -24,6 +24,133 @@ pub struct FaceKey {
     pub italic: bool,
 }
 
+/// The separator of a face name with a fallback context ([`encode_face`]): U+001F never occurs in a typeface name.
+pub const FACE_CTX_SEP: char = '\u{1f}';
+
+/// A face name carrying the run's fallback context (Slides wave 5, `!SlidesRules::ts_fallback_fonts`): the latin family,
+/// then `lang`, `ea`, `ea_explicit` (`0`/`1`), `cs`, `major` (`0`/`1`) and the `(script, typeface)` pairs, each after a
+/// [`FACE_CTX_SEP`]. The layout writes it as the family of the run's [`crate::text::LayoutFont`], so every measure request
+/// ([`FaceKey::family`], [`StringKey`]) and the display list's face table carry the context to the shell, which splits
+/// it with [`split_face`] (the browser builds its CSS stack from it, the PDF measurer its `FallbackCtx`). A family
+/// without the separator is a plain family (always, under `ts_fallback_fonts`).
+#[must_use]
+pub fn encode_face(family: &str, fb: &crate::model::FontFallback) -> String {
+    let mut s = String::with_capacity(family.len() + 32);
+    s.push_str(family);
+    let mut put = |v: &str| {
+        s.push(FACE_CTX_SEP);
+        s.push_str(v);
+    };
+    // a theme reference left unresolved (a run the cascade never reached) is no face
+    fn face(f: &str) -> &str {
+        if f.starts_with('+') { "" } else { f }
+    }
+    put(fb.lang.as_deref().unwrap_or(""));
+    put(face(&fb.ea));
+    put(if fb.ea_explicit { "1" } else { "0" });
+    put(face(&fb.cs));
+    put(if fb.major { "1" } else { "0" });
+    for (script, face) in &fb.scripts {
+        put(script);
+        put(face);
+    }
+    s
+}
+
+/// Splits a face name written by [`encode_face`]: the latin family and the fallback context (`None` for a plain family).
+#[must_use]
+pub fn split_face(name: &str) -> (&str, Option<crate::model::FontFallback>) {
+    let Some((family, rest)) = name.split_once(FACE_CTX_SEP) else { return (name, None) };
+    let mut it = rest.split(FACE_CTX_SEP);
+    let lang = it.next().unwrap_or("");
+    let ea = it.next().unwrap_or("");
+    let ea_explicit = it.next() == Some("1");
+    let cs = it.next().unwrap_or("");
+    let major = it.next() == Some("1");
+    let mut scripts = Vec::new();
+    while let (Some(sc), Some(face)) = (it.next(), it.next()) {
+        scripts.push((sc.into(), face.into()));
+    }
+    let fb = crate::model::FontFallback {
+        lang: if lang.is_empty() { None } else { Some(lang.into()) },
+        ea: ea.into(),
+        ea_explicit,
+        cs: cs.into(),
+        major,
+        scripts,
+    };
+    (family, Some(fb))
+}
+
+/// The vertical metrics PowerPoint places a single-spaced line with, in font units of `upem`, as `(ascent, descent)`
+/// (Slides wave 5, measured over 38 faces, `uo-dml-render.md` "First-line baseline"): `usWinAscent`/`usWinDescent`, or
+/// with `USE_TYPO_METRICS` (`fsSelection` bit 7) `sTypoAscender + sTypoLineGap` / `-sTypoDescender` (the gap goes above:
+/// Gabriola, Poppins, DejaVu Math TeX Gyre, Liberation Sans Narrow). The layout uses the ratio `ascent / (ascent +
+/// descent)`; a shell holding the font file answers a [`MeasureReq::Metrics`] font box with these values scaled to the
+/// size (the browser's `fontBoundingBox*` under DirectWrite gives the same except the typo gap).
+#[must_use]
+pub fn ppt_line_box(
+    win_ascent: u16,
+    win_descent: u16,
+    typo_ascender: i16,
+    typo_descender: i16,
+    typo_line_gap: i16,
+    use_typo: bool,
+) -> (f64, f64) {
+    if use_typo {
+        (f64::from(typo_ascender) + f64::from(typo_line_gap.max(0)), -f64::from(typo_descender))
+    } else {
+        (f64::from(win_ascent), f64::from(win_descent))
+    }
+}
+
+/// [`ppt_line_box`] of the regular face of common families, in font units (only the ratio is used), read from the font
+/// files PowerPoint drew the wave 5 measurement decks with (Windows 11 fonts, the Office cloud fonts, the open substitutes; no
+/// font file is shipped, these are numbers). The layout uses it before asking the shell, so the viewer, the PDF and the
+/// server place these faces alike even where the shell's font box differs from PowerPoint's (the browser's
+/// `fontBoundingBox*` lacks the typo line gap of Liberation Sans Narrow, Poppins and Gabriola; a measurer reading `hhea`
+/// gives 0.75/0.25 for Calibri where PowerPoint uses 0.78/0.22).
+const KNOWN_LINE_BOX: [(&str, u16, u16); 30] = [
+    ("aptos", 1923, 577),
+    ("aptos display", 1923, 577),
+    ("aptos narrow", 1923, 577),
+    ("arial", 1854, 434),
+    ("arial narrow", 1888, 431),
+    ("caladea", 950, 222),
+    ("calibri", 1950, 550),
+    ("calibri light", 1950, 550),
+    ("cambria", 1946, 455),
+    ("candara", 1950, 550),
+    ("carlito", 1950, 550),
+    ("century gothic", 1989, 451),
+    ("consolas", 1884, 514),
+    ("constantia", 1950, 550),
+    ("corbel", 1950, 550),
+    ("courier new", 1705, 615),
+    ("dejavu math tex gyre", 992, 208),
+    ("gabriola", 5667, 1296),
+    ("garamond", 1765, 539),
+    ("georgia", 1878, 449),
+    ("liberation mono", 1705, 615),
+    ("liberation sans", 1854, 434),
+    ("liberation sans narrow", 1760, 431),
+    ("liberation serif", 1825, 443),
+    ("poppins", 1150, 350),
+    ("segoe ui", 2210, 514),
+    ("tahoma", 2049, 423),
+    ("times new roman", 1825, 443),
+    ("trebuchet ms", 1923, 455),
+    ("verdana", 2059, 430),
+];
+
+/// The PowerPoint line box (ascent, descent in font units) of a family of [`KNOWN_LINE_BOX`] (case-insensitive; a face name with
+/// a fallback context is matched by its family).
+#[must_use]
+pub fn known_line_box(family: &str) -> Option<(f64, f64)> {
+    let fam = split_face(family).0.trim_matches(|c: char| c == '"' || c == '\'' || uo_jsnum::text::is_js_space(c));
+    KNOWN_LINE_BOX.iter().find(|(k, _, _)| k.eq_ignore_ascii_case(fam)).map(|&(_, a, d)| (f64::from(a), f64::from(d)))
+}
+
 /// The f64 bits of a size in px or a letter spacing in px (the request carries exactly the value the Rust side
 /// computed, so the shell measures with the same number).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -538,6 +665,27 @@ impl<'t> Meter<'t> {
             sum += ((w1 - w0) / ADV_REF) * f.size_pt;
         }
         sum
+    }
+
+    /// The font box (`fontBoundingBoxAscent`, `fontBoundingBoxDescent`) of a face at 1000 px: PowerPoint's line metrics
+    /// of the first-line baseline rule (Slides wave 5, `!ts_first_baseline`; [`ppt_line_box`] is what a shell holding the
+    /// font file answers). `None` while unanswered or when the shell gives no box (an absent face).
+    pub(crate) fn font_box(&mut self, f: &MFont<'_>) -> Option<(f64, f64)> {
+        let got = self.table.metrics((f.family, f.bold, f.italic), ADV_REF, Kerning::Current, 0.0, "H");
+        self.ask(
+            || {
+                MeasureReq::Metrics(StringKey {
+                    face: Self::face(f),
+                    size_px: Bits::of(ADV_REF),
+                    kerning: Kerning::Current,
+                    letter_spacing_px: Bits::of(0.0),
+                    text: "H".into(),
+                })
+            },
+            got.is_some(),
+        );
+        let m = got?;
+        Some((m.font_ascent?, m.font_descent?))
     }
 
     /// The questions left unanswered: only the advances while any is missing (they decide the line breaks that

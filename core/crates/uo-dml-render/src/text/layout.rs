@@ -125,6 +125,8 @@ pub struct LayoutTextOptions {
     pub default_anchor: Option<Box<str>>,
     /// The emphasis "font size" scale (animation), continuous, over the autofit's.
     pub size_scale: Option<f64>,
+    /// The PowerPoint-over-TS switches (the layout reads `ts_first_baseline`); the emission passes the deck's.
+    pub rules: crate::rules::SlidesRules,
 }
 
 /// Why a layout pass gives no result.
@@ -540,7 +542,16 @@ fn font_of(r: &DRun<'_>, env: &Env<'_>) -> LayoutFont {
     let kern_at = r.src.and_then(|s| s.kern);
     // kern="1200": kerning pairs only from 12 pt on; without kern (or 0), never
     let kern = kern_at.is_some_and(|k| k > 0.0 && size_pt >= k);
-    LayoutFont { family: r.font.unwrap_or(env.default_font).into(), size_pt, bold: r.bold(), italic: r.italic(), kern }
+    let family = r.font.unwrap_or(env.default_font);
+    // the run's fallback context (only present under `!ts_fallback_fonts`) rides in the face name; a display run whose
+    // face was converted (symbol fonts) keeps the plain family
+    let own = r.src.is_some_and(|s| s.font.as_deref().is_none_or(|f| f == family));
+    let fb = r.ex().and_then(|e| e.font_fallback.as_deref()).filter(|_| own);
+    let family: Box<str> = match fb {
+        Some(fb) => super::measure::encode_face(family, fb).into(),
+        None => family.into(),
+    };
+    LayoutFont { family, size_pt, bold: r.bold(), italic: r.italic(), kern }
 }
 
 fn mfont(f: &LayoutFont) -> MFont<'_> {
@@ -1002,7 +1013,34 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
     // at 0.75 of the spacing from the line top (not 0.8) and the LAST line ends 0.2 × (1.2 × size) below the base,
     // not scaled
     let n_l = heights.len();
+    // PowerPoint's baseline in each line and the line's descent (Slides wave 5, `!ts_first_baseline`): known before the
+    // anchor, because PowerPoint's block ends one descent below the LAST baseline, whatever the spacing (measured,
+    // b3-foot-b/ctr)
+    let mut ppt_lines: Vec<Option<(f64, f64)>> = Vec::new();
+    if !opts.rules.ts_first_baseline {
+        for (i, pl) in proto.iter().enumerate() {
+            let runs = proto_runs.get(i).and_then(|&p| para_runs.get(p));
+            let mut faces: Vec<(f64, f64)> = Vec::with_capacity(pl.runs.len());
+            for pc in &pl.runs {
+                if let Some(r) = runs.and_then(|rs| rs.get(pc.run)) {
+                    let f = font_of(r, &env);
+                    let known = super::measure::known_line_box(&f.family);
+                    let asked = if known.is_some() { None } else { m.font_box(&mfont(&f)) };
+                    let ratio = match known.or(asked) {
+                        Some((a, d)) if a.is_finite() && d.is_finite() && a > 0.0 && d >= 0.0 => a / (a + d),
+                        _ => ABSENT_FACE_RATIO,
+                    };
+                    faces.push((f.size_pt, ratio));
+                }
+            }
+            let (h, sz, le) =
+                (heights.get(i).copied().unwrap_or(0.0), line_sz.get(i).copied().unwrap_or(0.0), line_exp.get(i).copied().unwrap_or(0.0));
+            ppt_lines.push(if faces.is_empty() { None } else { ppt_baseline(h, sz, le, &faces) });
+        }
+    }
+    let ppt_last = n_l.checked_sub(1).and_then(|i| ppt_lines.get(i).copied().flatten().map(|v| (i, v)));
     let last_adj = match (n_l.checked_sub(1).and_then(|i| line_exp.get(i)), n_l.checked_sub(1)) {
+        _ if ppt_last.is_some() => ppt_last.map_or(0.0, |(i, (off, d))| off + d - heights.get(i).copied().unwrap_or(0.0)),
         (Some(&e), Some(i)) if e != 0.0 => {
             (1.0 - BASELINE_FACTOR) * line_sz.get(i).copied().unwrap_or(0.0) * line_factor
                 - (1.0 - e) * heights.get(i).copied().unwrap_or(0.0)
@@ -1179,10 +1217,12 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
             }
         }
         let le = line_exp.get(i).copied().unwrap_or(0.0);
+        let ts_base = h * if le != 0.0 { le } else { BASELINE_FACTOR };
+        let base = ppt_lines.get(i).copied().flatten().map_or(ts_base, |(off, _)| off);
         lines.push(PlacedLine {
             runs: placed,
             top: y,
-            baseline: y + h * if le != 0.0 { le } else { BASELINE_FACTOR },
+            baseline: y + base,
             height: h,
             bullet: pl.bullet.take(),
             para: u32::try_from(pl.para).unwrap_or(u32::MAX),
@@ -1190,6 +1230,41 @@ fn layout(tb: &TextBody, box_w: f64, box_h: f64, m: &mut Meter<'_>, opts: &Layou
         y += h;
     }
     Ok(TextLayoutResult { lines, total_h })
+}
+
+/// The ascent share of a face PowerPoint has no metrics for: it draws an absent family with Calibri's metrics
+/// (`usWinAscent` 1950 / `usWinDescent` 550; measured, `browser-font-facts`).
+const ABSENT_FACE_RATIO: f64 = 1950.0 / 2500.0;
+
+/// PowerPoint's baseline in a line (Slides wave 5, measured: `uo-dml-render.md` "First-line baseline"), from the line
+/// top, EMU. `h` = the line height, `line_sz` = the largest size of the line (EMU), `le` = the TS factor of expanded or
+/// exact spacing (0 = single or reduced), `faces` = `(size pt, ascent share)` of each run of the line. Each face's
+/// single line (1.2 × size) splits at its ascent share `r` = ascent / (ascent + descent) (win metrics, or typo + gap
+/// with `USE_TYPO_METRICS`); the line takes the largest ascent `A` and the largest descent `D` of its faces, normalized
+/// to 1.2 × the largest size: `A' = 1.2·M·A/(A+D)`, `D' = 1.2·M − A'`. Then, with the descent overshoot
+/// `x = max(0, D' − 0.3·M)` (0.3·M = the TS descent: 0.25 of a single line):
+/// - single or reduced spacing (`h ≤ 1.2·M`): `max(0.75·h − x, A' − (1.2·M − h))` (= `A'` at 100 %);
+/// - expanded or exact: `le·h − x` (`le` = 0.75, the TS factor; a face whose descent overshoots sits higher).
+///
+/// Returns the baseline offset and `D'`, the descent the block keeps below the last baseline (every spacing, measured).
+/// Mixed faces under reduced and expanded spacing measured too (b3-mix-80/150/x50, 12 cases within the drift).
+fn ppt_baseline(h: f64, line_sz: f64, le: f64, faces: &[(f64, f64)]) -> Option<(f64, f64)> {
+    let (mut a, mut d) = (0.0_f64, 0.0_f64);
+    for &(sz, r) in faces {
+        if !(sz.is_finite() && sz > 0.0 && r.is_finite()) {
+            continue;
+        }
+        a = max(a, 1.2 * sz * r);
+        d = max(d, 1.2 * sz * (1.0 - r));
+    }
+    if a + d <= 0.0 || line_sz.is_nan() || line_sz <= 0.0 {
+        return None;
+    }
+    let single = 1.2 * line_sz;
+    let a1 = single * a / (a + d);
+    let x = max(0.0, (single - a1) - 0.3 * line_sz);
+    let off = if le != 0.0 { le * h - x } else { max(0.75 * h - x, a1 - (single - h)) };
+    Some((off, single - a1))
 }
 
 /// `text.match(/\s+|\S+/g) ?? [text]`: alternating runs of JS white space and of the rest.

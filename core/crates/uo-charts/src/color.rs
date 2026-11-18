@@ -325,21 +325,77 @@ fn scheme_color(v: &str, scheme: &Scheme) -> String {
 /// linear RGB (the exact sRGB curve; `val` = fraction that stays), `lumMod`/`lumOff` in HSL luminance,
 /// `sat`/`hue` in HSL without ceiling. `None` for any other element.
 pub fn dml_color(el: Element<'_>, scheme: &Scheme) -> Option<ChartColor> {
-    dml_color_string(el, scheme).map(|s| ChartColor::new(&s))
+    dml_color_with(el, scheme, true)
+}
+
+/// [`dml_color`] with the `a:sysClr` rule chosen: `ts_sys_clr` = `lastClr` (the TS, what [`dml_color`] does); else the
+/// system colour PowerPoint and Excel draw ([`system_color`]; `lastClr` only outside the list).
+pub fn dml_color_with(el: Element<'_>, scheme: &Scheme, ts_sys_clr: bool) -> Option<ChartColor> {
+    dml_color_string(el, scheme, ts_sys_clr).map(|s| ChartColor::new(&s))
+}
+
+/// The stock Windows `GetSysColor` answers PowerPoint draws for `a:sysClr` (measured in wave 5 by the Slides theme frontier:
+/// `uo_dml_render::theme::system_color`, the same table — `tests/w5_rules.rs` checks they stay equal; this crate cannot
+/// depend on uo-dml-render).
+pub const SYSTEM_COLORS: [(&str, &str); 30] = [
+    ("scrollBar", "C8C8C8"),
+    ("background", "000000"),
+    ("activeCaption", "99B4D1"),
+    ("inactiveCaption", "BFCDDB"),
+    ("menu", "F0F0F0"),
+    ("window", "FFFFFF"),
+    ("windowFrame", "646464"),
+    ("menuText", "000000"),
+    ("windowText", "000000"),
+    ("captionText", "000000"),
+    ("activeBorder", "B4B4B4"),
+    ("inactiveBorder", "F4F7FC"),
+    ("appWorkspace", "ABABAB"),
+    ("highlight", "0078D7"),
+    ("highlightText", "FFFFFF"),
+    ("btnFace", "F0F0F0"),
+    ("btnShadow", "A0A0A0"),
+    ("grayText", "6D6D6D"),
+    ("btnText", "000000"),
+    ("inactiveCaptionText", "000000"),
+    ("btnHighlight", "FFFFFF"),
+    ("3dDkShadow", "696969"),
+    ("3dLight", "E3E3E3"),
+    ("infoText", "000000"),
+    ("infoBk", "FFFFE1"),
+    ("hotLight", "0066CC"),
+    ("gradientActiveCaption", "B9D1EA"),
+    ("gradientInactiveCaption", "D7E4F2"),
+    ("menuHighlight", "3399FF"),
+    ("menuBar", "F0F0F0"),
+];
+
+/// The system colour (`RRGGBB`) of an `a:sysClr val` (`None` outside `ST_SystemColorVal`).
+#[must_use]
+pub fn system_color(val: &str) -> Option<&'static str> {
+    SYSTEM_COLORS.iter().find(|(k, _)| *k == val).map(|(_, v)| *v)
 }
 
 /// [`dml_color`] over what the parser asks the resolver for ([`ColorSource`]): the synthetic scheme
 /// colour included.
 pub fn dml_color_source(src: ColorSource<'_>, scheme: &Scheme) -> Option<ChartColor> {
+    dml_color_source_with(src, scheme, true)
+}
+
+/// [`dml_color_source`] with the `a:sysClr` rule chosen (see [`dml_color_with`]).
+pub fn dml_color_source_with(src: ColorSource<'_>, scheme: &Scheme, ts_sys_clr: bool) -> Option<ChartColor> {
     match src {
-        ColorSource::Element(el) => dml_color(el, scheme),
+        ColorSource::Element(el) => dml_color_with(el, scheme, ts_sys_clr),
         ColorSource::Scheme(v) => Some(ChartColor::new(&scheme_color(v, scheme))),
     }
 }
 
-fn dml_color_string(el: Element<'_>, scheme: &Scheme) -> Option<String> {
+fn dml_color_string(el: Element<'_>, scheme: &Scheme, ts_sys_clr: bool) -> Option<String> {
     let base: String = match el.name() {
         "a:srgbClr" => format!("#{}", utf16_slice(el.attr("val").unwrap_or("000000"), -6, i64::MAX)),
+        "a:sysClr" if !ts_sys_clr && el.attr("val").and_then(system_color).is_some() => {
+            format!("#{}", el.attr("val").and_then(system_color).unwrap_or("000000"))
+        }
         "a:sysClr" => {
             let last = el.attr("lastClr").unwrap_or(if el.attr("val") == Some("window") { "FFFFFF" } else { "000000" });
             format!("#{last}")

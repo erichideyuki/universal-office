@@ -12,13 +12,13 @@ publish.workspace = true
 # the canonical JSON printer of the parity captures (tests: `cargo test -p uo-pptx --features canon`)
 canon = ["uo-dml-render/canon", "dep:uo-testkit"]
 # the .ppt (97-2003) converter, bytes -> parts (frontier B2; a lazily loaded wasm module)
-ppt = ["dep:uo-drawingml", "uo-drawingml/legacy"]
+ppt = ["dep:uo-drawingml", "uo-drawingml/legacy", "dep:uo-charts", "dep:miniz_oxide"]
 # the editing session: deck-edit operations, snapshot undo, save with font embedding (frontier B8)
 edit = ["dep:uo-fonts", "dep:uo-text"]
 # the exporters (Markdown, HTML, PDF, images) that replace the vendor converter wrappers
 export = []
 # the Slides PDF (R-S5): the display list interpreted through uo-pdf, text from the advance tables of uo-fonts
-pdf = ["dep:uo-pdf", "dep:uo-fonts", "dep:uo-image"]
+pdf = ["dep:uo-pdf", "dep:uo-fonts", "dep:uo-image", "uo-image/jpeg"]
 
 [dependencies]
 # font embedding of the save and the case folding of the replace (feature `edit`)
@@ -38,6 +38,11 @@ uo-opc = { path = "../uo-opc" }
 uo-jsnum = { path = "../uo-jsnum" }
 # OfficeArt of the .ppt converter (feature `ppt`: odraw, the msospt preset map)
 uo-drawingml = { path = "../uo-drawingml", optional = true }
+# the BIFF8 chart of an embedded `Excel.Chart` OLE object → c:chartSpace (feature `ppt`: PowerPoint opens .ppt charts as
+# native charts) and the lenient inflate of the ExOleObjStg (PowerPoint writes its zlib stream without the end; the same
+# pinned version as uo-opc)
+uo-charts = { path = "../uo-charts", optional = true }
+miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"], optional = true }
 # SHA-256 of the canonical JSON digests and the capture replay (feature `canon`)
 uo-testkit = { path = "../uo-testkit", optional = true }
 # the part store's name index (the same pinned version as the other crates)

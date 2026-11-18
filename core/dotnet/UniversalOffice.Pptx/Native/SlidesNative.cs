@@ -9,7 +9,11 @@ internal static unsafe partial class SlidesNative
     internal const string Library = NativeMethods.Library;
 
     internal const uint DeckTrusted = 1;
+    /// <summary>`DECK_TS_STRICT`: a .ppt converted as the frozen TS did (parity tests only).</summary>
+    internal const uint DeckTsStrict = 2;
     internal const uint JobCompress = 1;
+    /// <summary>`SLIDES_JOB_TS_STRICT`: the frozen TS Slides for this PDF (parity tests only).</summary>
+    internal const uint JobTsStrict = 2;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct DeckOptions

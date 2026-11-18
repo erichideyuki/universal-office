@@ -16,8 +16,8 @@ use uo_alloc::assert_no_leak_global;
 use uo_ffi::pipeline::{UoErrorInfo, code, stage, uo_last_error, uo_last_error_clear};
 use uo_ffi::server::{Converter, ConverterOptions};
 use uo_ffi::slides::{
-    DECK_TRUSTED, SLIDES_JOB_COMPRESS, SlidesJob, UoDeck, UoDeckOptions, UoSlidesJob, uo_deck_free, uo_deck_info, uo_deck_is_legacy,
-    uo_deck_open, uo_deck_save, uo_deck_slide_notes, uo_deck_to_pdf, uo_ppt_to_pptx, uo_pptx_to_pdf,
+    DECK_TRUSTED, SLIDES_JOB_COMPRESS, SLIDES_JOB_TS_STRICT, SlidesJob, UoDeck, UoDeckOptions, UoSlidesJob, uo_deck_free, uo_deck_info,
+    uo_deck_is_legacy, uo_deck_open, uo_deck_save, uo_deck_slide_notes, uo_deck_to_pdf, uo_ppt_to_pptx, uo_pptx_to_pdf,
 };
 use uo_ffi::{
     UoBuf, UoCancel, UoConverter, UoConverterOptions, uo_buf_free, uo_buf_len, uo_buf_ptr, uo_cancel_free, uo_cancel_new, uo_cancel_raise,
@@ -337,9 +337,20 @@ fn the_fixture_decks_give_valid_deterministic_pdfs_and_the_deck_route_equals_the
     let j = job(SLIDES_JOB_COMPRESS);
     let fx = fixtures();
     assert!(fx.len() > 60, "{} fixture decks", fx.len());
+    let mut refused = 0usize;
     for (key, path) in &fx {
         let data = std::fs::read(path).unwrap();
-        let one = pptx_to_pdf(c, &data, &j, std::ptr::null()).unwrap_or_else(|s| panic!("{key}: status {s}"));
+        let one = match pptx_to_pdf(c, &data, &j, std::ptr::null()) {
+            Ok(b) => b,
+            // every slide hidden: PowerPoint's Save as PDF refuses the deck, so does the core (the TS job keeps them)
+            Err(code::INVALID_OPERATION) => {
+                refused += 1;
+                let ts = pptx_to_pdf(c, &data, &job(SLIDES_JOB_COMPRESS | SLIDES_JOB_TS_STRICT), std::ptr::null()).unwrap();
+                assert_eq!(&ts[..5], b"%PDF-", "{key}");
+                continue;
+            }
+            Err(s) => panic!("{key}: status {s}"),
+        };
         assert_eq!(&one[..5], b"%PDF-", "{key}");
         assert!(one.ends_with(b"%%EOF\n") || one.ends_with(b"%%EOF"), "{key}: trailer");
         let d = open_deck(&data, 0).unwrap();
@@ -349,12 +360,42 @@ fn the_fixture_decks_give_valid_deterministic_pdfs_and_the_deck_route_equals_the
         let s = unsafe { uo_deck_to_pdf(d, c, &raw const j, std::ptr::null(), &raw mut out) };
         let two = take(s, out).unwrap();
         assert!(one == two, "{key}: the deck route and the one-call route differ");
-        assert!(pdf_page_count(&one) >= n as usize, "{key}: {} pages for {n} slides", pdf_page_count(&one));
+        // hidden slides are left out (PowerPoint's Save as PDF)
+        let pages = pdf_page_count(&one);
+        assert!(pages >= 1 && pages <= n as usize, "{key}: {pages} pages for {n} slides");
         // SAFETY: released once.
         unsafe { uo_deck_free(d) };
     }
+    assert!(refused <= 2, "{refused} fixture decks refused (every slide hidden)");
     // SAFETY: released once.
     unsafe { uo_converter_free(c) };
+}
+
+/// `SLIDES_JOB_TS_STRICT`: the frozen TS Slides for one job (hidden slides kept, the TS link rectangles), the deck handle
+/// keeping PowerPoint's rules for the next job.
+#[test]
+fn the_ts_strict_job_keeps_hidden_slides_for_that_job_only() {
+    let _s = serial();
+    let c = converter(0, &open_dirs());
+    let data = std::fs::read(repo().join("core/crates/uo-pptx/tests/oracle_ppt/synthetic/pp-rules.pptx")).unwrap();
+    let pp = pptx_to_pdf(c, &data, &job(SLIDES_JOB_COMPRESS), std::ptr::null()).unwrap();
+    let ts = pptx_to_pdf(c, &data, &job(SLIDES_JOB_COMPRESS | SLIDES_JOB_TS_STRICT), std::ptr::null()).unwrap();
+    assert_eq!((pdf_page_count(&pp), pdf_page_count(&ts)), (3, 5), "PowerPoint leaves the 2 hidden slides out, the TS keeps them");
+    let d = open_deck(&data, 0).unwrap();
+    let run = |flags: u32| {
+        let j = job(flags);
+        let mut out: *mut UoBuf = std::ptr::null_mut();
+        // SAFETY: live handles, valid job, writable output.
+        let s = unsafe { uo_deck_to_pdf(d, c, &raw const j, std::ptr::null(), &raw mut out) };
+        take(s, out).unwrap()
+    };
+    assert_eq!(run(SLIDES_JOB_COMPRESS | SLIDES_JOB_TS_STRICT), ts);
+    assert_eq!(run(SLIDES_JOB_COMPRESS), pp, "the handle is back on PowerPoint's rules");
+    // SAFETY: released once.
+    unsafe {
+        uo_deck_free(d);
+        uo_converter_free(c);
+    }
 }
 
 fn digest_path() -> PathBuf {
@@ -370,8 +411,12 @@ fn the_native_digests_of_the_fixture_decks_are_the_committed_ones() {
     let mut text = String::new();
     for (key, path) in fixtures() {
         let data = std::fs::read(path).unwrap();
-        let pdf = conv.pptx_to_pdf(&data, &SlidesJob::default(), None).unwrap_or_else(|e| panic!("{key}: {}", e.message()));
-        text.push_str(&format!("{key}\t{}\n", digest(&pdf)));
+        match conv.pptx_to_pdf(&data, &SlidesJob::default(), None) {
+            Ok(pdf) => text.push_str(&format!("{key}\t{}\n", digest(&pdf))),
+            // every slide hidden: no PDF (PowerPoint refuses to save it); the C# test expects the refusal
+            Err(e) if e.code() == code::INVALID_OPERATION => text.push_str(&format!("{key}\trefused\n")),
+            Err(e) => panic!("{key}: {}", e.message()),
+        }
     }
     if std::env::var_os("UO_BLESS").is_some() {
         std::fs::write(digest_path(), &text).unwrap();

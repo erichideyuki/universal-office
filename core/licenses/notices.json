@@ -7,7 +7,9 @@
     "indexmap": "2.14.2",
     "miniz_oxide": "0.9.1",
     "rustc-hash": "2.1.3",
-    "ryu-js": "1.0.3"
+    "ryu-js": "1.0.3",
+    "zune-core": "0.5.3",
+    "zune-jpeg": "0.5.15"
   },
   "artifacts": {
     "wasm": [
@@ -181,6 +183,26 @@
         ]
       },
       {
+        "component": "zune-core",
+        "version": "0.5.3",
+        "licence": "MIT OR Apache-2.0 OR Zlib",
+        "files": [
+          "texts/zune-core-0.5.3/LICENSE-APACHE",
+          "texts/zune-core-0.5.3/LICENSE-MIT",
+          "texts/zune-core-0.5.3/LICENSE-ZLIB"
+        ]
+      },
+      {
+        "component": "zune-jpeg",
+        "version": "0.5.15",
+        "licence": "MIT OR Apache-2.0 OR Zlib",
+        "files": [
+          "texts/zune-jpeg-0.5.15/LICENSE-APACHE",
+          "texts/zune-jpeg-0.5.15/LICENSE-MIT",
+          "texts/zune-jpeg-0.5.15/LICENSE-ZLIB"
+        ]
+      },
+      {
         "component": "V8 and ARM optimized-routines (math of uo-jsnum, translated to Rust)",
         "version": "",
         "licence": "BSD-3-Clause AND MIT",
@@ -195,6 +217,14 @@
         "licence": "MIT",
         "files": [
           "texts/uo-opc/LICENSE-fflate"
+        ]
+      },
+      {
+        "component": "dingbat-to-unicode (symbol-font tables of uo-dml-render)",
+        "version": "",
+        "licence": "BSD-2-Clause",
+        "files": [
+          "texts/uo-dml-render/LICENSE-dingbat-to-unicode"
         ]
       },
       {

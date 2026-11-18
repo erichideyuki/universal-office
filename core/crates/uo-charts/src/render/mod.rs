@@ -17,6 +17,7 @@ mod axes;
 mod canvases;
 mod cv;
 mod cx;
+mod errbars;
 mod labels;
 mod legend;
 mod pie;
@@ -46,9 +47,9 @@ use crate::emit::{
 };
 use crate::error::{ChartError, JsErrorKind};
 use crate::host::{ChartHost, ChartImageInfo};
-use crate::layout::{DataTableLayout, Depth3D, ResolvedText};
+use crate::layout::{DataTableLayout, Depth3D, LegendLayout, ResolvedText, TitleLayout};
 use crate::measure::{ChartFace, ChartMeasure, ChartMeasureReq};
-use crate::model::{BlipKey, ChartColor, ChartSpace, Group, GroupKind, LineProps, Paint, SeriesRef, ShapeProps, TextProps};
+use crate::model::{BlipKey, ChartColor, ChartSpace, Group, GroupKind, LegendPos, LineProps, Paint, SeriesRef, ShapeProps, TextProps};
 
 // ───────────── constants measured in the oracle (pt) ─────────────
 /// Inner margin of the chart area.
@@ -266,6 +267,8 @@ pub(crate) struct Renderer<'a, C: Canvas> {
     pub dtab: Option<DataTableLayout>,
     /// `fontKCache`: the font factor per `font(...)` string
     pub font_k_cache: HashMap<(Box<str>, bool, bool, String), f64>,
+    /// PowerPoint's automatic title when the chart has no `c:title` (`ChartRules::ts_auto_title` off)
+    auto_title: bool,
 }
 
 impl<'a, C: Canvas> Renderer<'a, C> {
@@ -314,7 +317,19 @@ impl<'a, C: Canvas> Renderer<'a, C> {
             depth: None,
             dtab: None,
             font_k_cache: HashMap::new(),
+            auto_title: auto_title_of(cs, p.rules),
         }
+    }
+
+    /// The title element: `c:title`, else PowerPoint's automatic title.
+    pub(crate) fn title_el(&self) -> Option<&'a crate::model::ChartTitle> {
+        let cs: &'a ChartSpace = self.cs;
+        cs.title.as_ref().or_else(|| self.auto_title.then(auto_title_el))
+    }
+
+    /// The switches of this emit.
+    pub(crate) fn rules(&self) -> crate::rules::ChartRules {
+        self.p.rules
     }
 
     /// The questions that got no answer, in the order asked (without repeats).
@@ -1057,21 +1072,28 @@ impl<'a, C: Canvas> Renderer<'a, C> {
         // 1.5–2.75 pt closer to the edge than the 7.2 pt of a pie/radar)
         let pad_b = if axes { PAD_B_AXES } else { PAD_B };
         let mut inner = Rect { x: a.x + PAD_L * s, y: a.y + PAD_T * s, w: a.w - (PAD_L + PAD_R) * s, h: a.h - (PAD_T + pad_b) * s };
-        // title
-        let title = self.layout_title(inner);
-        if let Some(t) = &title
-            && !t.overlay
-        {
-            let d = TITLE_TOP * s + t.h + TITLE_GAP * s;
-            inner = Rect { y: inner.y + d, h: inner.h - d, ..inner };
-        }
-        // legend
-        let legend = self.layout_legend(inner, if axes { (PAD_B - PAD_B_AXES) * s } else { 0.0 });
-        if let Some(l) = &legend
-            && !l.overlay
-        {
-            inner = l.rest;
-        }
+        let (title, legend) = if self.p.rules.ts_insets {
+            // title
+            let title = self.layout_title(inner);
+            if let Some(t) = &title
+                && !t.overlay
+            {
+                let d = TITLE_TOP * s + t.h + TITLE_GAP * s;
+                inner = Rect { y: inner.y + d, h: inner.h - d, ..inner };
+            }
+            // legend
+            let legend = self.layout_legend(inner, if axes { (PAD_B - PAD_B_AXES) * s } else { 0.0 });
+            if let Some(l) = &legend
+                && !l.overlay
+            {
+                inner = l.rest;
+            }
+            (title, legend)
+        } else {
+            let (title, legend, ppt_inner) = self.layout_ppt(inner, pie);
+            inner = ppt_inner;
+            (title, legend)
+        };
         // plot area + axes
         if pie {
             self.paint_pies(inner)?;
@@ -1101,6 +1123,104 @@ impl<'a, C: Canvas> Renderer<'a, C> {
         }
         Ok(())
     }
+}
+
+/// PowerPoint's chart-space layout (`ChartRules::ts_insets` off; measured through `PlotArea`/`Legend`/`ChartTitle` of
+/// PowerPoint 365's object model and its PDF, lab `c-pie`/`c-r2`, record `uo-charts.md` "PowerPoint rules (wave 5)").
+const PPT_TITLE_TOP: f64 = 7.5;
+/// The plot box from the frame, and from the title box and the legend box.
+const PPT_PLOT_GAP: f64 = 11.0;
+/// A legend box from its edge of the frame (and a top legend from the title box).
+const PPT_LEGEND_EDGE: f64 = 6.0;
+/// Below a bottom legend / above the plot of a chart with axes: the TS-inner offsets that put the axes where PowerPoint
+/// puts them (the axes code keeps its own calibrated margins inside).
+const PPT_AXES_GAP_B: f64 = 6.4;
+const PPT_AXES_GAP_T: f64 = 5.25;
+/// The pie square under a corner (`tr`) legend sits this much above its plot box.
+const PPT_TR_LIFT: f64 = 6.0;
+
+impl<C: Canvas> Renderer<'_, C> {
+    /// Title, legend and the rectangle handed to the plot under PowerPoint's insets: for pies the plot box itself, for
+    /// the other families the TS-inner rectangle whose calibrated axis margins land on PowerPoint's plot.
+    fn layout_ppt(&mut self, inner: Rect, pie: bool) -> (Option<TitleLayout>, Option<LegendLayout>, Rect) {
+        let a = self.area;
+        let s = self.s;
+        let (mut top, mut bottom) = if pie { (a.y + PPT_PLOT_GAP * s, a.y + a.h - PPT_PLOT_GAP * s) } else { (inner.y, inner.y + inner.h) };
+        let (mut left, mut right) = if pie { (a.x + PPT_PLOT_GAP * s, a.x + a.w - PPT_PLOT_GAP * s) } else { (inner.x, inner.x + inner.w) };
+        // the title box from 6 pt (its text 1.5 pt lower), centred on the frame, 80 % of its width
+        let title = self.layout_title(Rect { x: a.x, y: a.y + (PPT_TITLE_TOP - TITLE_TOP) * s, w: a.w, h: inner.h });
+        let mut below_title = a.y + PPT_LEGEND_EDGE * s;
+        if let Some(t) = &title
+            && !t.overlay
+        {
+            below_title = t.y + t.h + (1.5 + PPT_LEGEND_EDGE) * s;
+            // (axes: the TS's plot top, which already lands on PowerPoint's within 0.3 pt)
+            // (axes: with the TS's 1.2-em title lines, whose calibrated margins land on PowerPoint's plot)
+            let h_ts: f64 = t.lines.iter().map(|ln| ln.iter().map(|r| self.line_h(&r.style)).fold(self.line_h(&self.base), max)).sum();
+            top = if pie { t.y + t.h + (1.5 + PPT_PLOT_GAP) * s } else { t.y + h_ts + (PAD_T + TITLE_TOP + TITLE_GAP - PPT_TITLE_TOP) * s };
+        }
+        let pos = self.cs.legend.as_ref().map(|l| (l.pos.clone(), l.overlay));
+        let mut tr_lift = 0.0;
+        let legend = match pos {
+            Some((LegendPos::B, _)) => {
+                let edge = a.y + a.h - PPT_LEGEND_EDGE * s;
+                self.layout_legend(Rect { y: top, h: edge - top, ..inner }, 0.0)
+            }
+            Some((LegendPos::T, _)) => self.layout_legend(Rect { y: below_title, h: bottom - below_title, ..inner }, 0.0),
+            Some(_) => self.layout_legend(Rect { y: top, h: bottom - top, ..inner }, 0.0),
+            None => None,
+        };
+        if let (Some(l), Some((p, false))) = (&legend, &pos) {
+            match p {
+                LegendPos::B => bottom = l.bx.y - if pie { PPT_PLOT_GAP } else { PPT_AXES_GAP_B } * s,
+                LegendPos::T => top = l.bx.y + l.bx.h + if pie { PPT_PLOT_GAP } else { PPT_AXES_GAP_T } * s,
+                LegendPos::L if pie => left = l.bx.x + l.bx.w + PPT_PLOT_GAP * s,
+                LegendPos::R if pie => right = l.bx.x - PPT_PLOT_GAP * s,
+                // the corner legend: the plot box below it and left of it; the square sits 6 pt above that box's top
+                // (measured, lab c-leg #15–#17: 92.855 for a box from 98.855)
+                // a corner legend taller than a third of the chart: the plot beside it, from 17 pt (lab c-tr #3–#9)
+                LegendPos::Tr if pie && l.bx.h > a.h / 3.0 => {
+                    right = l.bx.x - PPT_PLOT_GAP * s;
+                    top = a.y + (PPT_PLOT_GAP + PPT_TR_LIFT) * s;
+                }
+                LegendPos::Tr if pie => {
+                    right = l.bx.x - PPT_PLOT_GAP * s;
+                    top = l.bx.y + l.bx.h + PPT_PLOT_GAP * s;
+                    tr_lift = PPT_TR_LIFT * s;
+                }
+                _ => {
+                    left = l.rest.x;
+                    right = l.rest.x + l.rest.w;
+                }
+            }
+        }
+        (title, legend, Rect { x: left, y: top - tr_lift, w: right - left, h: bottom - top })
+    }
+}
+
+/// PowerPoint's automatic title (measured, lab `c-pie`/`c-r2`): with `<c:autoTitleDeleted val="0"/>` WRITTEN (absent =
+/// no title) and no `<c:title>`, a chart with one series, or a pie-like first group with any series, shows the series
+/// name. The TS creates it only in Office 2007 files, at parse time (then `cs.title` is already set).
+fn auto_title_of(cs: &ChartSpace, rules: crate::rules::ChartRules) -> bool {
+    if rules.ts_auto_title || cs.title.is_some() || cs.auto_title_deleted || !cs.auto_title_written {
+        return false;
+    }
+    let n: usize = cs.groups.iter().map(|g| g.series.len()).sum();
+    let pie = cs.groups.first().is_some_and(is_pie_like);
+    n == 1 || pie && n > 0
+}
+
+/// The automatic title element: no text, no layout, default properties (the text comes from `title_text`).
+fn auto_title_el() -> &'static crate::model::ChartTitle {
+    static AUTO: std::sync::OnceLock<crate::model::ChartTitle> = std::sync::OnceLock::new();
+    AUTO.get_or_init(|| crate::model::ChartTitle {
+        paras: None,
+        text: None,
+        overlay: false,
+        layout: None,
+        sp: ShapeProps::default(),
+        tx_pr: TextProps::default(),
+    })
 }
 
 /// A marker as `markerOf` resolves it.

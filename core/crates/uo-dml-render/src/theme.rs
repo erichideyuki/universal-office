@@ -116,6 +116,37 @@ pub struct Theme {
     pub styles: Option<ThemeStyles>,
     /// The theme part (the `r:embed`s of its image styles resolve through its rels).
     pub part: Option<Box<str>>,
+    /// The PowerPoint-over-TS switches of the deck the theme was read for (`PartSource::rules`): the colour
+    /// resolution (`ts_sys_clr`) and the run font fallback context (`ts_fallback_fonts`) read them from here.
+    pub rules: crate::rules::SlidesRules,
+    /// The East Asian / complex-script faces of the font scheme (`a:ea`, `a:cs`, `a:font script=`), read only when
+    /// `!rules.ts_fallback_fonts` (the TS keeps none of them).
+    pub script_fonts: Option<Box<ThemeScriptFonts>>,
+}
+
+/// The East Asian and complex-script faces of a font scheme (`<a:majorFont>`/`<a:minorFont>`): `a:ea`, `a:cs` and the
+/// per-script list `<a:font script="Jpan" typeface="…"/>` (Slides wave 5: the fallback context of the runs).
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct ThemeScriptFonts {
+    pub major: ScriptFaces,
+    pub minor: ScriptFaces,
+}
+
+/// One half (major or minor) of [`ThemeScriptFonts`]. Empty typefaces are `None`.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct ScriptFaces {
+    pub ea: Option<Box<str>>,
+    pub cs: Option<Box<str>>,
+    /// `(script, typeface)` in file order (`Jpan`, `Hang`, `Hans`, `Hant`, `Arab`, `Hebr`, `Thai`, …).
+    pub scripts: Vec<(Box<str>, Box<str>)>,
+}
+
+impl ScriptFaces {
+    /// The typeface of `<a:font script="{script}">`.
+    #[must_use]
+    pub fn script(&self, script: &str) -> Option<&str> {
+        self.scripts.iter().find(|(s, _)| &**s == script).map(|(_, t)| &**t)
+    }
 }
 
 /// clrMap default (master): aliases tx/bg → dk/lt (`STD_MAP`).
@@ -128,7 +159,8 @@ fn std_map(v: &str) -> Option<&'static str> {
 /// `readTheme` (`theme.ts:9`): `ppt/theme/themeN.xml` → colours, line widths, style lists, fonts.
 pub fn read_theme(src: &dyn PartSource, theme_path: &str) -> R<Theme> {
     let mut colors: JsRecord<CssColor> = JsRecord::default();
-    let Some(doc) = src.xml(theme_path)? else { return Ok(Theme { colors, ..Theme::default() }) };
+    let rules = src.rules();
+    let Some(doc) = src.xml(theme_path)? else { return Ok(Theme { colors, rules, ..Theme::default() }) };
     let root = doc.root();
     // normal theme or a chart's `<a:themeOverride>` (clrScheme/fontScheme straight under the root)
     let theme_els = root.first_child("a:themeElements").or(if root.name() == "a:themeOverride" { Some(root) } else { None });
@@ -137,7 +169,7 @@ pub fn read_theme(src: &dyn PartSource, theme_path: &str) -> R<Theme> {
         for el in scheme.child_elements() {
             let name = el.name();
             let key = name.strip_prefix("a:").unwrap_or(name);
-            let c = color_in(el.child_elements().next(), &colors);
+            let c = color_in_rules(el.child_elements().next(), &colors, rules.ts_sys_clr);
             if let Some(c) = c {
                 colors.set(key, c);
             }
@@ -151,7 +183,7 @@ pub fn read_theme(src: &dyn PartSource, theme_path: &str) -> R<Theme> {
             colors.set(alias, c);
         }
     }
-    let mut theme = Theme { colors, scheme: Some(raw), part: Some(theme_path.into()), ..Theme::default() };
+    let mut theme = Theme { colors, scheme: Some(raw), part: Some(theme_path.into()), rules, ..Theme::default() };
     // fmtScheme > lnStyleLst: the widths `<a:lnRef idx>` points at
     let fmt = theme_els.and_then(|t| t.first_child("a:fmtScheme"));
     if let Some(ln_list) = fmt.and_then(|f| f.first_child("a:lnStyleLst")) {
@@ -183,6 +215,21 @@ pub fn read_theme(src: &dyn PartSource, theme_path: &str) -> R<Theme> {
         let truthy = |o: &Option<Box<str>>| o.as_ref().is_some_and(|s| !s.is_empty());
         if truthy(&major) || truthy(&minor) {
             theme.fonts = Some(ThemeFonts { major: major.filter(|s| !s.is_empty()), minor: minor.filter(|s| !s.is_empty()) });
+        }
+        if !rules.ts_fallback_fonts {
+            let half = |n: &str| -> ScriptFaces {
+                let Some(f) = font_scheme.first_child(n) else { return ScriptFaces::default() };
+                let face = |tag: &str| f.first_child(tag).and_then(|e| e.attr("typeface")).filter(|t| !t.is_empty()).map(Into::into);
+                let scripts = f
+                    .children_named("a:font")
+                    .filter_map(|e| Some((e.attr("script")?.into(), e.attr("typeface").filter(|t| !t.is_empty())?.into())))
+                    .collect();
+                ScriptFaces { ea: face("a:ea"), cs: face("a:cs"), scripts }
+            };
+            let sf = ThemeScriptFonts { major: half("a:majorFont"), minor: half("a:minorFont") };
+            if sf != ThemeScriptFonts::default() {
+                theme.script_fonts = Some(Box::new(sf));
+            }
         }
     }
     Ok(theme)
@@ -328,13 +375,66 @@ fn preset_color(name: &str) -> Option<&'static str> {
     })
 }
 
-/// `colorFromDml` over a bare colour table: the only part of the theme the resolution reads.
-pub(crate) fn color_in(el: Option<Element<'_>>, colors: &JsRecord<CssColor>) -> Option<CssColor> {
+/// The Windows default system colours by `ST_SystemColorVal` (= the `GetSysColor` index order; index 25 is unused).
+/// Measured (Slides wave 5, deck `sys-1`): PowerPoint 365 resolves `a:sysClr` with `GetSysColor` of the machine and
+/// ignores `lastClr` (`lastClr="123456"` and no `lastClr` draw the same; modifiers apply on top: `window` + `lumMod 50%`
+/// = `7F7F7F`; a theme colour that is a `sysClr` too). These are the stock Windows 10/11 values, equal to the 30
+/// `GetSysColor` answers of the measuring machine; another Windows colour scheme or accent changes `highlight`,
+/// `hotLight` and `menuHighlight` in PowerPoint, the table keeps the result deterministic.
+const SYSTEM_COLORS: [(&str, &str); 30] = [
+    ("scrollBar", "C8C8C8"),
+    ("background", "000000"),
+    ("activeCaption", "99B4D1"),
+    ("inactiveCaption", "BFCDDB"),
+    ("menu", "F0F0F0"),
+    ("window", "FFFFFF"),
+    ("windowFrame", "646464"),
+    ("menuText", "000000"),
+    ("windowText", "000000"),
+    ("captionText", "000000"),
+    ("activeBorder", "B4B4B4"),
+    ("inactiveBorder", "F4F7FC"),
+    ("appWorkspace", "ABABAB"),
+    ("highlight", "0078D7"),
+    ("highlightText", "FFFFFF"),
+    ("btnFace", "F0F0F0"),
+    ("btnShadow", "A0A0A0"),
+    ("grayText", "6D6D6D"),
+    ("btnText", "000000"),
+    ("inactiveCaptionText", "000000"),
+    ("btnHighlight", "FFFFFF"),
+    ("3dDkShadow", "696969"),
+    ("3dLight", "E3E3E3"),
+    ("infoText", "000000"),
+    ("infoBk", "FFFFE1"),
+    ("hotLight", "0066CC"),
+    ("gradientActiveCaption", "B9D1EA"),
+    ("gradientInactiveCaption", "D7E4F2"),
+    ("menuHighlight", "3399FF"),
+    ("menuBar", "F0F0F0"),
+];
+
+/// The system colour (`RRGGBB`) PowerPoint draws for `a:sysClr val` (`None` outside `ST_SystemColorVal`).
+#[must_use]
+pub fn system_color(val: &str) -> Option<&'static str> {
+    SYSTEM_COLORS.iter().find(|(k, _)| *k == val).map(|(_, v)| *v)
+}
+
+/// The `#RRGGBB` base of an `a:sysClr`: the system colour (PowerPoint), or `lastClr` with `ts_sys_clr` (the TS). A
+/// value outside the list falls back to `lastClr`, then black.
+#[must_use]
+pub fn sys_clr_base(el: Element<'_>, ts_sys_clr: bool) -> String {
+    let sys = if ts_sys_clr { None } else { el.attr("val").and_then(system_color) };
+    format!("#{}", sys.or_else(|| el.attr("lastClr")).unwrap_or("000000"))
+}
+
+/// `colorFromDml` over a bare colour table with the `a:sysClr` rule chosen (`ts_sys_clr`: from `lastClr`, the TS).
+pub(crate) fn color_in_rules(el: Option<Element<'_>>, colors: &JsRecord<CssColor>, ts_sys_clr: bool) -> Option<CssColor> {
     let el = el?;
     let name = el.name();
     let base: String = match name {
         "a:srgbClr" => format!("#{}", el.attr("val").unwrap_or("000000")),
-        "a:sysClr" => format!("#{}", el.attr("lastClr").unwrap_or("000000")),
+        "a:sysClr" => sys_clr_base(el, ts_sys_clr),
         "a:prstClr" => preset_color(el.attr("val").unwrap_or("black")).unwrap_or("#000000").to_string(),
         "a:schemeClr" => {
             let v = el.attr("val").unwrap_or("");
@@ -402,7 +502,7 @@ pub(crate) fn color_in(el: Option<Element<'_>>, colors: &JsRecord<CssColor>) -> 
 /// `colorFromDml` (`theme.ts:85`): a DrawingML colour element (srgbClr/schemeClr/sysClr/prstClr) →
 /// `#RRGGBB` with its modifiers applied; `None` for anything else.
 pub fn color_from_dml(el: Option<Element<'_>>, theme: &Theme) -> Option<CssColor> {
-    color_in(el, &theme.colors)
+    color_in_rules(el, &theme.colors, theme.rules.ts_sys_clr)
 }
 
 /// Text colour of an `rPr`/`defRPr`: `<a:solidFill>`; with `<a:gradFill>` (2007–2013 theme titles)

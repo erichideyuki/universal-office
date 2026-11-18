@@ -1,4 +1,4 @@
-# Rust port — handoff (state of 2026-11-18; newest update: "Slides wave 4b")
+# Rust port — handoff (state of 2026-11-18; newest update: "Slides wave 5")
 
 Entry point for the next session that continues the Rust migration (0.10). Read this, then
 `.claude/skills/rust-port/SKILL.md` (the workflow: hybrid mode, models per role, memory gate) and the module records
@@ -162,6 +162,44 @@ milestone-1 gate" (G23 layout stack per level, G24 work budget for text effects 
 of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebuild/shrink, G29 M3 baseline, G30
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
+
+## Update 2026-11-18 (wave 5) — PowerPoint rules measured and switched (`SlidesRules` / `ChartRules` / `PdfOptions`)
+
+- **Switches** (skeleton `1526ea3f`): `uo_dml_render::rules::SlidesRules` (`ts_sys_clr`, `ts_first_baseline`,
+  `ts_fallback_fonts`, `ts_date_locale`, `ts_warp` (unread — no rule found), `ts_links`, `charts`),
+  `uo_charts::rules::ChartRules` (`ts_insets`, `ts_auto_title`, `ts_pie_size`, `ts_err_bars`), `PdfOptions::{
+  ts_hidden_slides, ts_link_rects}`, `ConvertOptions::ts_ppt_charts`. Default = PowerPoint everywhere (viewer, editor,
+  PDF, server); `ts_strict()` = the frozen TS, used by every TS-parity replay (native, Node, Chromium: viewer 653/653
+  slides, 626,880 link points, editor 756/756 + saves 108/108, draw-ops 262/262, B2 `.ppt` replay, uo-charts parity all
+  equal under ts_strict). Bindings: wasm `uo_slides_set_rules`/`set_field_clock`/`ppt_convert_with`, JS `open(bytes,
+  { tsStrict, clock, fieldLang })`; uo-ffi `SLIDES_JOB_TS_STRICT = 2`, `DECK_TS_STRICT = 2`; C# internal `TsStrict`.
+- **Rules (measured in PowerPoint 365 pt-BR via COM + PDF export; records in `uo-dml-render.md`, `uo-charts.md`,
+  `uo-pptx.md`, `uo-pdf.md` "wave 5")**: sysClr = stock Windows `GetSysColor` table (charts too); first-line baseline
+  `1.2·A/(A+D)` em from OS/2 win/typo metrics (`ppt_line_box`, `known_line_box` for 30 families), mixed faces, reduced/
+  expanded/exact spacing, block foot = one scaled descent; date fields per language (15 locale tables, era/Dangi;
+  injectable `FieldClock`, none = cached text); colour effects over metafiles (derived recipe `UOMF` v2; browser + PDF);
+  JPEG under picture effects (new `zune-jpeg =0.5.15`, PDF only, licences regenerated); PDF hidden slides left out
+  (all-hidden → refused, as PowerPoint); link rectangles per line × formatting run, ink bounds, kept off-page, shape-click
+  reach; fallback fonts per character class / script / language (`text/fallback.rs`, ea/cs + theme script table in
+  the model, context carried in the face name); charts: insets, auto title, pie size, legends (spacing, corner), date-
+  axis label insets, title line height, error bars (new; the TS never drew them); `.ppt` charts native when the
+  round-trip blob says `convChart="1"` (new `uo_charts::biff`, BIFF8 chart → chartSpace, reusable by the Sheet port).
+- **PowerPoint agreement, 736 pages** (full comparison once, before A's JPEG decoder and the last follow-ups): samples
+  0.9964 → **0.9996** (99.8% ≥ 0.99), generated 0.8070 → 0.8565, all 0.9616 → **0.9734**; differing px 21.82 M →
+  14.86 M (sysClr 15.69 → 10.52 M, baseline 2.41 → 0.57 M, missing glyphs 2.08 → 1.56 M, charts 0.18 → 0.06 M, `.ppt`
+  charts 73 k → 6 k); B's follow-up later: chart pages 2.30 M → 2.10 M px, `.ppt` chart pages 235 k → 62 k. Rust × TS
+  0.9910 → 0.9798 (by design). Open-font policy on samples 67.9% → 52.7% of pages ≥ 0.99: all Aptos text drawn by
+  Liberation Sans at PowerPoint's (correct) baseline — not a bug.
+- **Open, measured with no rule (5)**: colour-modifier rounding of exact halves (PowerPoint rounds some down — no fixed-
+  point model fits); `fontAlgn` t/ctr offsets; warp placement on non-circular paths (offset ~0 at 1:1 and 3:1, ~7 pt at
+  1.5:1–2:1); first-key inset of horizontal legends (0.11–0.49 pt; constant 0.4 used); Thai glyph source in a slot face
+  without Thai. **Documented differences (by decision)**: unknown latin family → PowerPoint uses Calibri, we keep the
+  repo `shared/fonts` rule; dates beyond the 15 measured locales; sysClr = stock table, not the machine's accent; turned
+  shape-click rects; mapped-colour edges of bi-level/colour-change recipes.
+- Orchestrator: skeleton, relays between agents (fallback API, `.ppt` converter switch, warp ownership), disk cleanup
+  (stale `m2-wsession` build dirs + default `target/debug`, ~40 GB), digests re-blessed (93/93 moved; `b6a/0000` now
+  `refused`: every slide hidden).
+- **Next**: M4 gate prep for Slides (real Safari = maintainer); then track C (Sheet) per `slides-sheet-port-plan.md`.
 
 ## Update 2026-11-18 (wave 4b) — model memory compaction, PDF gradient text + SVG, the 23 b5b metafile diffs closed
 

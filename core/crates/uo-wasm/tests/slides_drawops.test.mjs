@@ -18,6 +18,8 @@ import { GROUPS, buildGroupDeck, deckFile } from '../../uo-pptx/js/lib/gen/group
 import { compare, form, parseOps } from '../../uo-pptx/js/lib/opstream.mjs';
 import { recordList } from '../../uo-pptx/js/lib/rust-paint.mjs';
 import { emitAll } from './support/slides-stub.mjs';
+// Slides wave 5: these replays compare with TS captures: every TS switch (`SlidesRules::ts_strict`)
+const TS = { tsStrict: true };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.env.UO_WASM_PATH ?? join(here, '../../../target/wasm32-unknown-unknown/wasm/uo_wasm.wasm');
@@ -26,7 +28,7 @@ const uo = bindSlides((await WebAssembly.instantiate(readFileSync(wasmPath), {})
 const pptPath = process.env.UO_PPT_WASM_PATH ?? join(here, '../../../target/b7/uo-slides-ppt.wasm');
 const ppt = existsSync(pptPath) ? bindSlidesPpt((await WebAssembly.instantiate(readFileSync(pptPath), {})).instance.exports) : null;
 const isCfb = (b) => b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0;
-const openAny = (bytes) => uo.open(isCfb(bytes) && ppt ? ppt.convert(bytes) : bytes);
+const openAny = (bytes) => uo.open(isCfb(bytes) && ppt ? ppt.convert(bytes, TS) : bytes, TS);
 const DECKS = Number(process.env.UO_SLIDES_DECKS ?? 24);
 
 function groupBytes(group, i) {
