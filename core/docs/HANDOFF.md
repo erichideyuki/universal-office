@@ -200,6 +200,13 @@ Real Safari runs (2026-11-18; record `uo-bindings.md` "First real-Safari run (Br
   everywhere; left over 1–2 px pictures (and one 22 px slide) where both TS elements agree and both Rust elements agree, classed
   variance in other runs of the same device. The iOS 15.4 `.ppt` trap: fixed by the other agent (heap reserve, WebKit 238302).
   Results: `core/target/ss-pixel/slides-viewer/serve-results.jsonl`, BrowserStack build `slides-m4-pixels`.
+- Final consolidated run (orchestrator, commit `9ed4275f`, 4 devices at once, build `slides-m4-final`; harness verdict FAIL on
+  all four only by small unclassified leftovers): Safari 26.4 — 1 slide 26 px (b1a/0032), anim 178/178; Safari 15.6 — b6a/0022
+  56 + 6 px and one main canvas (b1a/0012), anim 178/178, 9 known b5b; iOS 26.2 (iPhone 17) — every slide diff same-engine
+  variance, 5 animated frames unclassified; iOS 15.5 (iPhone 13, `elw=640`) — b6a/0037 12 px and one main canvas, 0 traps,
+  4 frames variance, 9 known b5b. Links (138,240 points), a11y, notes, soak equal everywhere. The leftovers move between decks
+  from run to run and the same slides are classed same-engine variance in other runs — maintainer decision whether they pass
+  the gate as Safari variance.
 
 Questions for the maintainer at the gate (each with the record's recommendation):
 - `uo-pptx.md` "Questions": **SP1** the edit-history byte cap; **SP2** canonical model JSON with sorted keys; **SP3** the
