@@ -48,10 +48,16 @@ export async function preloadSlidesEngine(source: LoadSlidesOptions | undefined)
 /** O módulo já está instanciado (`openSync` abre sem esperar). */
 export function slidesEngineReady(): boolean { return currentSlidesModule(withDefaults(undefined)) !== null; }
 
+/** Janela depois de uma troca de fontes em que o motor Rust mede a cada pintura (ver `RustSlides.fontSettleUntil`). */
+const FONT_SETTLE_MS = 1000;
+const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
 let measureCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
 function scratchContext(): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
   if (measureCtx) return measureCtx;
-  const c = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(1, 1) : document.createElement('canvas');
+  // a DOM canvas, as the TS engine measures on the canvases it paints (the page's font set, applied as on those); OffscreenCanvas only
+  // where there is no document
+  const c = typeof document !== 'undefined' ? document.createElement('canvas') : new OffscreenCanvas(1, 1);
   const ctx = c.getContext('2d');
   if (!ctx) throw new Error('uo-slides: no 2d context to measure text');
   measureCtx = ctx as CanvasRenderingContext2D;
@@ -129,7 +135,22 @@ export class RustSlides {
   get count(): number { return this.doc?.count ?? 0; }
 
   /** Uma fonte carregou (ou a pilha de uma família mudou): as medidas são pedidas de novo. */
-  fontsChanged(): void { this.doc?.fontsChanged(); }
+  fontsChanged(): void {
+    // a fresh measuring context: one that measured a font string before the face arrived must not answer from its cached face
+    measureCtx = null;
+    this.doc?.fontsChanged();
+    this.fontSettleUntil = now() + FONT_SETTLE_MS;
+  }
+
+  /**
+   * Até quando as medidas são pedidas de novo a CADA pintura (como o TS, que mede ao pintar). Uma face posta no `document.fonts`
+   * pode chegar ao texto do canvas só depois (o Safari a aplica numa atualização de renderização posterior, sem evento): medidas
+   * guardadas nesse intervalo seriam as da substituta, e o texto sairia disposto com as larguras dela e desenhado com a certa.
+   */
+  private fontSettleUntil = 0;
+  private settleFonts(): void {
+    if (this.fontSettleUntil && now() < this.fontSettleUntil) this.doc?.fontsChanged();
+  }
 
   /** A imagem de `part` terminou de decodificar: o layout que a viu 0 x 0 aprende o tamanho. */
   imageReady(part: string, img: PaintImage): void { this.doc?.imageReady(part, img); }
@@ -141,6 +162,7 @@ export class RustSlides {
     if (!this.doc || this.doc.freed) return { status: 11, charts: 0, rounds: 0 };
     // gráficos: a lista do Rust os pinta (uo-charts, C-6): nenhum slide fica com o motor TS por causa deles;
     // `suppress` = a forma cujo texto a edição inline cobre (fica fora da lista)
+    this.settleFonts();
     return this.doc.paint(ctx, i, scale, ox, oy, this.paintHost, suppress !== undefined ? { suppressText: suppress } : {});
   }
 
@@ -163,6 +185,7 @@ export class RustSlides {
   /** Pinta um quadro do palco (`which` 0 = slide em cena, 1 = origem da transição); `status` 0 = pintou, outro = cair no TS. */
   paintStage(ctx: CanvasRenderingContext2D, src: SlidesShowHandle | SlidesTimelineHandle, at: number, which: 0 | 1, scale: number, ox: number, oy: number, o: StagePaintOptions): SlidePaintResult {
     if (!this.doc || this.doc.freed) return { status: 11, charts: 0, rounds: 0 };
+    if (which === 0) this.settleFonts();
     return this.doc.paintStage(ctx, src, at, which, scale, ox, oy, this.paintHost, o);
   }
 

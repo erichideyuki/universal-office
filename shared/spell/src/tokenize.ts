@@ -43,7 +43,9 @@ const INTERNET_RE = new RegExp(
     String.raw`[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+`, // e-mail
     String.raw`\b[a-z]:\\[^\s<>"]*`, // C:\pasta\arquivo
     String.raw`\\\\[^\s<>"]+`, // \\servidor\pasta
-    String.raw`(?:^|(?<=\s))(?:~|\.{1,2})?\/[^\s<>"]*\/[^\s<>"]*`, // /usr/bin, ./a/b
+    // /usr/bin, ./a/b: at the start or after a space. The space is CONSUMED here (internetRanges skips it) instead of a
+    // lookbehind `(?<=\s)`: Safari < 16.4 throws a SyntaxError on one, and this RegExp is built when the module loads
+    String.raw`(?:^|\s)(?:~|\.{1,2})?\/[^\s<>"]*\/[^\s<>"]*`,
     String.raw`\b[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:${TLD})\b(?:\/[^\s<>"]*)?`, // exemplo.com.br/x
   ].join('|'),
   'giu',
@@ -53,10 +55,12 @@ const INTERNET_RE = new RegExp(
 export function internetRanges(text: string): [number, number][] {
   const out: [number, number][] = [];
   for (const m of text.matchAll(INTERNET_RE)) {
+    // only the path alternative can start with a space (the one it consumes in place of a lookbehind): it is not part of the address
+    const start = /\s/u.test(m[0][0]!) ? m.index + 1 : m.index;
     let end = m.index + m[0].length;
     // pontuação final não faz parte do endereço ("veja www.x.com.")
-    while (end > m.index && /[.,;:!?)\]}'"”’]/.test(text[end - 1]!)) end--;
-    if (end > m.index) out.push([m.index, end]);
+    while (end > start && /[.,;:!?)\]}'"”’]/.test(text[end - 1]!)) end--;
+    if (end > start) out.push([start, end]);
   }
   return out;
 }

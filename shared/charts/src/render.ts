@@ -190,7 +190,9 @@ class Renderer {
   private wrap(s: string, t: ResolvedText, maxW: number): string[] {
     const out: string[] = [];
     for (const para of s.split('\n')) {
-      const words = para.split(/(\s+|(?<=-))/).filter((x) => x && x.length);
+      // words: whitespace runs kept as tokens, and a break after every '-' inside a word (not at its end). This equals the former
+      // `para.split(/(\s+|(?<=-))/)`, but without a lookbehind: Safari < 16.4 rejects one at PARSE time, which killed the whole bundle
+      const words = para.split(/(\s+)/).flatMap((p, i) => (i % 2 ? [p] : p.match(/[^-]*-|[^-]+$/g) ?? [])).filter((x) => x && x.length);
       let cur = '';
       for (const wd of words) {
         const cand = cur + wd;

@@ -175,9 +175,24 @@ facade are done too but belong to milestone M6 (with decision N1, the NuGet API 
 | Op-stream parity with the frozen TS | met | draw-ops samples 262/262 + b1a/c1d sets, animated 472 + 551 + 150, B2 `.ppt` 1,082 parts, all under `ts_strict()` |
 | Pixel parity in Chromium (tolerance 0) | met | `slides_switch.mjs --mode all`: 253 decks, 1,040/1,040 slides, 7,221/7,221 animated frames, 0 TS-model loads |
 | PowerPoint agreement | met (numbers) | 736 pages: all 0.9734, samples 0.9996 (99.8% ≥ 0.99); 5 items measured with no rule (wave 5 "Open") |
-| Sizes | met at last measure | viewer wasm 1,266,010 B gzip = 79% of 1.6 MB (wave 4a); re-measure after wave 5 for the report |
+| Sizes | met | after wave 5: viewer `uo-slides.wasm` 1,307,808 B gzip = 82% of 1.6 MB; editor 1,482,490 B gzip = 42% of 3.5 MB |
 | Memory gate M1–M5 | met | M4 handles 0 B, M2 soaks flat, M3 retained model 0.447× TS, M5 caches capped |
-| Safari | **open — maintainer** | needs a real Mac/iPhone; the local WebKit (Playwright) runs are not the gate |
+| Safari | **not met yet** | real Safari on BrowserStack (Device Control, driven by the agent) through `slides_switch.mjs --mode serve` + a temporary devtunnel, 39 decks / 144 slides; see below |
+
+Real Safari runs (2026-11-18; record `uo-bindings.md` "First real-Safari run (BrowserStack, 2026-11-18) and its fixes"):
+- Run 1 found and fixed (committed): a regex lookbehind in `shared/charts/src/render.ts` (and `shared/spell/src/tokenize.ts`)
+  that Safari < 16.4 cannot parse — the whole Slides viewer failed to load on Safari 15 / iOS 15 (also in the published
+  0.9.2, TS engine too); and a font-load race in the Rust engine (measure cache filled with the fallback face before Safari
+  applies a new face).
+- Run 2 (after the fixes), TS vs Rust under `ts_strict`, links/a11y/soak equal everywhere:
+  Safari 26.4 macOS 5 slides differ (1–238 px), anim 178/178; iOS 26.5 iPhone 17 5 slides (2–38,875 px), anim 178/178;
+  Safari 15.6 macOS 10 slides + 23 anim frames differ (plus 10 known: the TS metafile player needs `OffscreenCanvas`);
+  iOS 15.4 iPhone 13: the `.ppt` converter wasm traps from the 2nd `.ppt` (OOB / unreachable in
+  `uo_slides_ppt_convert_with`), canvases return null at dpr 3 (canvas memory, as in the Write iOS 15 run), pixel diffs.
+  CSP as measured for Write (Safari 15 needs `'unsafe-eval'`; 26 accepts `'wasm-unsafe-eval'`).
+- Open: the remaining race/pixel differences on every Safari; the iOS 15.4 `.ppt` trap; the iOS 15 canvas budget of the
+  two-viewer harness. Results: `core/target/ss-serve/slides-viewer/serve-results.jsonl`, BrowserStack builds
+  `slides-m4-2026-11-18` and `-r2`.
 
 Questions for the maintainer at the gate (each with the record's recommendation):
 - `uo-pptx.md` "Questions": **SP1** the edit-history byte cap; **SP2** canonical model JSON with sorted keys; **SP3** the

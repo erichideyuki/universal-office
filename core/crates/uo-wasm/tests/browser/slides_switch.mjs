@@ -5,7 +5,8 @@
 //   [UO_WASM_PATH=<uo-slides.wasm: the count,slides build>] [UO_PPT_WASM_PATH=<uo-slides-ppt.wasm>]
 //   [UO_SS_DECKS=<n of b1a decks, default 40>] [UO_SS_C1D=<n of c1d chart decks, default 20>] [UO_SS_B6A=<n of b6a animated decks, default 40>]
 //   [UO_SS_B5B=<n of b5b metafile decks, default 40>] [UO_SS_ONLY=<regex over the deck paths: a focused run>] [UO_SS_DEBUG=1: PNGs of differing slides]
-//   [UO_SS_SOAK=200] node crates/uo-wasm/tests/browser/slides_switch.mjs [--mode all|parity|memory|faults|phase0|anim|opencost]
+//   [UO_SS_SOAK=200] node crates/uo-wasm/tests/browser/slides_switch.mjs [--mode all|parity|memory|faults|phase0|anim|opencost|serve]
+//   serve only: [UO_SS_PORT=8767] [UO_SS_STRIDE=<every n-th tracked deck, default 5>] [UO_SS_ANIM=<n of animated decks, default 6>] (UO_SS_SOAK as above)
 //
 // The page is the real thing: the viewer's `src/index.ts` and the Rust engine's JS bundled by the frozen esbuild (splitting, the alias
 // table of tools/build-pkg.mjs, `@universal-office/slides-engine`), served by a node:http server together with `chunks/uo-slides.wasm`
@@ -26,12 +27,34 @@
 //           with the module's live bytes sampled
 //   opencost wave 4: per deck in a fresh page, the open cost of the TS element (the TS model) against the Rust element without the
 //           TS model (JS heap after gc, the module's live bytes, the time of `loadPptx` and of the first paint)
+//   serve    real Safari (macOS, iOS) on BrowserStack, which cannot reach localhost: expose UO_SS_PORT (8767, 127.0.0.1) with a
+//           temporary tunnel and delete it after. No browser is launched: `/` is a page that runs by itself (no Playwright on the
+//           page side) the same `compare` (pixels, main canvas, thumbnails, notes, a11y text, link hit-tests; tolerance 0, the
+//           device's dpr) on every UO_SS_STRIDE-th git-tracked deck of the parity set (samples, b1a, c1d, b5b, b6a), the same
+//           `animate` (play/present under the element's own virtual clock `el.now`) on UO_SS_ANIM animated decks of the stride
+//           (8 steps), a soak of UO_SS_SOAK slide changes (count build: module live bytes flat, 0 handles), and POSTs every result to
+//           `/result` (appended to <outDir>/serve-results.jsonl, one line printed per deck); it then walks `/csp?v=strict|wasm|eval`
+//           (does wasm compile without 'wasm-unsafe-eval') to `/done`. Every page has `#status` (progress; `done …` with the totals
+//           on `/done`) for WebDriver. The page fixes `Date` to NOW, releases each comparison canvas after reading it, and resumes
+//           after a tab crash (recorded with the deck and step that was running). `/?solo=ts|rust&decks=k3.pptx,k9.ppt`: one viewer
+//           of one engine per deck, no comparison (crash triage); `/?decks=k3.pptx,…` compares only those; `/?debug=1` sends the
+//           PNGs of differing slides (written next to the results); `/?nooffscreen=1` hides OffscreenCanvas (a Safari < 16.4 in a
+//           newer browser); `/?nocsp=1` stays on the page at the end; `/?fresh=1` starts a new run in the same tab (without it a
+//           second navigation mid-run resumes, as after a crash); `/?fontdelay=<ms>` delays every font file (served from
+//           /fonts/d<ms>/), `/?fontlag=<ms>` defers `FontFaceSet.add` (Safari applies a new face to canvas text late), the two
+//           reproduce the font race of real Safari 26; `/?tsts=1` compares TS against TS (a control); the `start` record carries a
+//           canvas readback-noise probe (`readback`). The verdict is PASS, FAIL, or PASS-EXCEPT-KNOWN: without
+//           OffscreenCanvas the TS metafile/EMF+/PICT players skip embedded bitmaps and pattern brushes (the b5b decks) while the
+//           Rust path draws them; such pixel-only rows are flagged `known` (nothing else may differ). The a11y read waits 80 ms
+//           after `selectSlide` here (the live region's 60 ms announcement timer races on slow devices). Only git-tracked (open)
+//           fonts and decks are served. The Rust engine runs with `tsStrict: true` like every other mode.
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync, copyFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync, copyFileSync, appendFileSync } from 'node:fs';
 import { join, dirname, resolve, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { NOW } from '../support/paint-common.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const core = resolve(here, '../../../..');
@@ -39,6 +62,7 @@ const repo = resolve(core, '..');
 const root = resolve(process.env.UO_TS_ROOT ?? 'D:/Projects/OfficeNext/.claude/worktrees/ts-ref-092');
 const arg = (name, dflt) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : dflt; };
 const MODE = arg('--mode', 'all');
+const SERVE = MODE === 'serve';
 const NB1A = Number(process.env.UO_SS_DECKS ?? 40);
 const SOAK = Number(process.env.UO_SS_SOAK ?? 200);
 const wasmPath = process.env.UO_WASM_PATH ?? join(core, 'target/b7/uo-slides-count.wasm');
@@ -119,26 +143,87 @@ const b5bDir = join(core, 'crates/uo-pptx/tests/captures/decks/b5b');
 const b5b = existsSync(b5bDir) ? readdirSync(b5bDir).filter((f) => f.endsWith('.pptx')).sort().slice(0, NB5B).map((f) => join(b5bDir, f)) : [];
 // UO_SS_ONLY=<regex>: keep only the decks whose path matches (a focused run, e.g. `/b5b/`)
 const only = process.env.UO_SS_ONLY ? new RegExp(process.env.UO_SS_ONLY) : null;
-const decks = [...tracked.map((p) => join(repo, p)), ...b1a, ...c1d, ...b5b, ...(MODE === 'all' || MODE === 'anim' ? b6a : [])].filter((p) => !only || only.test(fwd(p)));
-const deckByName = new Map(decks.map((p, i) => [`k${i}${extname(p)}`, p]));
 const FONT_DIRS = [join(repo, 'shared/fonts/files'), join(repo, 'site/assets/fonts')];
+// serve: only git-tracked decks and fonts (the open ones: nothing local or proprietary leaves the machine through the tunnel)
+const gitTracked = SERVE ? new Set(execFileSync('git', ['-C', repo, 'ls-files', '--', 'slides/samples', 'core/crates/uo-pptx/tests/captures/decks', ...FONT_DIRS.map((d) => fwd(d).replace(`${fwd(repo)}/`, ''))], { encoding: 'utf8' })
+  .split('\n').map((s) => s.trim()).filter(Boolean).map((p) => fwd(join(repo, p)))) : null;
+const STRIDE = Number(process.env.UO_SS_STRIDE ?? 5);
+const decks = [...tracked.map((p) => join(repo, p)), ...b1a, ...c1d, ...b5b, ...(MODE === 'all' || MODE === 'anim' || SERVE ? b6a : [])].filter((p) => !only || only.test(fwd(p)))
+  .filter((p) => !SERVE || gitTracked.has(fwd(p))).filter((p, i) => !SERVE || i % STRIDE === 0);
+const deckByName = new Map(decks.map((p, i) => [`k${i}${extname(p)}`, p]));
+const TRACKED_FONTS = SERVE ? new Set([...gitTracked].filter((p) => FONT_DIRS.some((d) => p.startsWith(`${fwd(d)}/`))).map((p) => basename(p))) : null;
 const requests = [];
-const MIME = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.ttf': 'font/ttf', '.json': 'application/json' };
+const MIME = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.ttf': 'font/ttf', '.json': 'application/json', '.pptx': 'application/octet-stream', '.ppt': 'application/octet-stream' };
+const resultsFile = join(outDir, 'serve-results.jsonl');
+const CSP = { strict: "default-src 'self'; script-src 'self'", wasm: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'", eval: "default-src 'self'; script-src 'self' 'unsafe-eval'" };
+const CSP_NEXT = { strict: '/csp?v=wasm', wasm: '/csp?v=eval', eval: '/done' };
+const serveState = new Map(); // per user agent: the last `end` record and the CSP answers, shown by /done
 const server = createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
-  requests.push(url);
-  const send = (file) => res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' }).end(readFileSync(file));
+  if (!SERVE) requests.push(url);
+  const send = (file) => res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', ...(SERVE ? { 'cache-control': 'no-store' } : {}) }).end(readFileSync(file));
+  if (SERVE) {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const ua = req.headers['user-agent'] ?? '';
+    if (!/^\/(out|fonts|decks)\//.test(url)) console.log(new Date().toISOString(), req.method, req.url, ua.slice(0, 120));
+    const st = serveState.get(ua) ?? serveState.set(ua, { end: null, csp: {} }).get(ua);
+    if (req.method === 'POST' && url === '/result') {
+      let body = '';
+      req.on('data', (c) => { body += c; if (body.length > 64e6) req.destroy(); });
+      req.on('end', () => {
+        let o = null;
+        try { o = JSON.parse(body); } catch { /* printed raw below */ }
+        // ?debug=1: the PNGs of the differing slides (TS, Rust) are written next to the results, not into the JSONL
+        const pngs = o?.row?.png ?? o?.row?.firstDiff?.png;
+        if (pngs) {
+          if (o.row.png) { for (const [i, ...urls] of o.row.png) urls.forEach((u, j) => writeFileSync(join(outDir, `serve-diff-${o.row.name}-s${i}-${j ? 'rust' : 'ts'}.png`), Buffer.from(u.split(',')[1], 'base64'))); delete o.row.png; }
+          else { pngs.forEach((u, j) => writeFileSync(join(outDir, `serve-anim-diff-${o.row.name}-${['ts', 'rust', 'ts-from', 'rust-from'][j]}.png`), Buffer.from(u.split(',')[1], 'base64'))); delete o.row.firstDiff.png; }
+          body = JSON.stringify(o);
+        }
+        const line = body.replace(/\n/g, ' ');
+        appendFileSync(resultsFile, line + '\n');
+        if (o?.kind === 'row') {
+          const r = o.row;
+          console.log(`deck ${o.i + 1}/${o.of} ${o.deck}: ${r.slides} slides, ${r.slideDiff.length} differ, main ${r.mainDiff}/${r.mainChecked}, thumbs ${r.thumbDiff}, notes ${r.notesDiff}, a11y ${r.a11yDiff}/${r.a11yChecked}, links ${r.linksDiff}/${r.linkProbes}, engine ${r.engine}, tsFree ${r.tsFree}, errors ${r.errors.length}${o.ok ? '' : (o.known ? ` KNOWN (${o.known})` : '') + ' MISMATCH ' + JSON.stringify({ diffs: r.slideDiff.slice(0, 4), errors: r.errors.slice(0, 3), statuses: r.statuses, a11y: r.a11yFirst })} (${Math.round(o.ms)} ms, dpr ${o.dpr})`);
+        } else if (o?.kind === 'anim') {
+          const r = o.row;
+          console.log(`anim ${o.i + 1}/${o.of} ${o.deck}: ${r.frames} frames, ${r.diff} differ, ${r.rust} Rust stage paints, media ${r.mediaDiff}/${r.mediaFrames}, engine ${r.engine}, tsFree ${r.tsFree}, errors ${r.errors.length}${o.ok ? '' : ' MISMATCH ' + JSON.stringify({ first: r.firstDiff, media: r.firstMedia, errors: r.errors.slice(0, 3) })}`);
+        } else {
+          if (o?.kind === 'end') st.end = o;
+          if (o?.kind === 'csp') st.csp[o.v] = o.compile;
+          console.log('RESULT', line.slice(0, 800));
+        }
+        res.writeHead(204).end();
+      });
+      return;
+    }
+    if (url === '/') return res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(servePage());
+    if (url === '/csp' && CSP[q.get('v')]) return res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': CSP[q.get('v')] }).end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><body><div id="status">csp ${q.get('v')}…</div><script src="/csp.js?v=${q.get('v')}&next=${encodeURIComponent(CSP_NEXT[q.get('v')])}"></script></body>`);
+    if (url === '/csp.js') return res.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-store' }).end(cspProbe);
+    if (url === '/done') {
+      const e = st.end;
+      const csp = ['strict', 'wasm', 'eval'].map((v) => `${v}=${String(st.csp[v] ?? 'not run').split(' ')[0]}`).join(' ');
+      const text = e ? `done ${e.verdict ?? (e.ok ? 'PASS' : 'FAIL')}: ${e.summary}; csp ${csp}` : `done (no end record from this browser); csp ${csp}`;
+      return res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><body style="font:24px -apple-system,sans-serif"><div id="status">${text.replace(/[<&]/g, (c) => (c === '<' ? '&lt;' : '&amp;'))}</div></body>`);
+    }
+  }
   if (url === '/') return res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><meta charset="utf-8"><body style="margin:0"><script type="module">import * as e from "/out/entry.js"; window.__e = e; window.__ready = true;</script></body>');
   if (url.startsWith('/out/')) { const f = join(out, url.slice(5)); return f.startsWith(out) && existsSync(f) ? send(f) : res.writeHead(404).end(); }
   if (url.startsWith('/fonts/')) {
     const name = basename(url);
-    if (/^[\w.-]+\.(ttf|json)$/.test(name)) for (const d of FONT_DIRS) if (existsSync(join(d, name))) return send(join(d, name));
+    // serve ?fontdelay=<ms>: the page's viewers use the base /fonts/d<ms>/ and every font file answers that much later (a slow
+    // network: the faces are still loading when the first measurements are asked)
+    const delay = SERVE ? Number(/^\/fonts\/d(\d+)\//.exec(url)?.[1] ?? 0) : 0;
+    if (/^[\w.-]+\.(ttf|json)$/.test(name) && (!TRACKED_FONTS || TRACKED_FONTS.has(name))) for (const d of FONT_DIRS) if (existsSync(join(d, name))) {
+      if (delay && name.endsWith('.ttf')) { setTimeout(() => send(join(d, name)), delay); return; }
+      return send(join(d, name));
+    }
     return res.writeHead(404).end();
   }
   if (url.startsWith('/decks/')) { const f = deckByName.get(basename(url)); return f ? send(f) : res.writeHead(404).end(); }
   res.writeHead(404).end();
 });
-await new Promise((r) => server.listen(0, '127.0.0.1', r));
+await new Promise((r) => server.listen(SERVE ? Number(process.env.UO_SS_PORT ?? 8767) : 0, '127.0.0.1', r));
 
 // ── Chromium ────────────────────────────────────────────────────────────────────────────────────────
 const { chromium } = createRequire(join(root, 'slides/package.json'))('playwright');
@@ -149,8 +234,8 @@ const installed = (() => {
   const exe = dirs.length && join(base, dirs[dirs.length - 1], 'chrome-headless-shell-win64', 'chrome-headless-shell.exe');
   return exe && existsSync(exe) ? exe : undefined;
 })();
-const browser = await chromium.launch({ headless: true, executablePath: process.env.UO_CHROMIUM ?? installed, args: ['--js-flags=--expose-gc', '--enable-precise-memory-info'] });
-const context = await browser.newContext({ timezoneId: 'UTC', deviceScaleFactor: 1, viewport: { width: 1280, height: 900 } });
+const browser = SERVE ? null : await chromium.launch({ headless: true, executablePath: process.env.UO_CHROMIUM ?? installed, args: ['--js-flags=--expose-gc', '--enable-precise-memory-info'] });
+const context = SERVE ? null : await browser.newContext({ timezoneId: 'UTC', deviceScaleFactor: 1, viewport: { width: 1280, height: 900 } });
 let page = null;
 async function openPage() {
   if (page) await page.close();
@@ -161,7 +246,7 @@ async function openPage() {
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 60000 });
 }
-await openPage();
+if (!SERVE) await openPage();
 const names = [...deckByName.keys()];
 
 // the page-side driver (a function evaluated in the page; everything it needs is passed by argument)
@@ -171,7 +256,7 @@ const driverFn = () => {
   const fnv = (u8) => { let h = 0x811c9dc5; for (let i = 0; i < u8.length; i++) h = Math.imul(h ^ u8[i], 0x01000193); return (h >>> 0).toString(16); };
   const mk = (engine) => {
     const el = new El();
-    el.setAttribute('fonts', '/fonts');
+    el.setAttribute('fonts', window.__ssFontBase ?? '/fonts');
     if (engine === 'rust') el.setAttribute('engine', 'rust');
     el.style.cssText = 'display:block;width:1280px;height:720px;position:absolute;left:0;top:0';
     document.body.appendChild(el);
@@ -202,18 +287,22 @@ const driverFn = () => {
     for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2] || a[i + 3] !== b[i + 3]) n++;
     return n;
   };
-  const render = (el, i, w) => { const cv = document.createElement('canvas'); el.renderSlideToCanvas(i, cv, w); return pixels(cv); };
-  const thumb = (el, i) => { const cv = document.createElement('canvas'); cv.style.cssText = 'width:200px;height:112px'; document.body.appendChild(cv); el.renderThumbnail(i, cv); const d = pixels(cv); cv.remove(); return d; };
+  // each comparison canvas is released after its pixels are read (getImageData copies): Safari's canvas memory budget (iOS) is small
+  const release = (cv) => { cv.width = 0; cv.height = 0; };
+  const render = (el, i, w) => { const cv = document.createElement('canvas'); el.renderSlideToCanvas(i, cv, w); const d = pixels(cv); release(cv); return d; };
+  const thumb = (el, i) => { const cv = document.createElement('canvas'); cv.style.cssText = 'width:200px;height:112px'; document.body.appendChild(cv); el.renderThumbnail(i, cv); const d = pixels(cv); cv.remove(); release(cv); return d; };
   const mainCanvas = (el) => el.canvas;
 
   /** TS element against Rust element on one deck */
   const compare = async (name) => {
-    const ts = mk('ts'), rs = mk('rust');
+    const ts = mk('ts'), rs = mk(window.__ssTsTs ? 'ts' : 'rust'); // serve ?tsts=1: a control, TS against TS
     const r = { name, slides: 0, engine: 'ts', slideDiff: [], mainDiff: 0, mainChecked: 0, thumbDiff: 0, notesDiff: 0, a11yDiff: 0, a11yChecked: 0, linksDiff: 0, linkProbes: 0, linkHits: 0, linkExtra: 0, tsFree: false, tsLoads: 0, charts: 0, pixels: 0, errors: [], painted: [0, 0] };
     try {
       const errs = [];
       rs.addEventListener('us-engine-error', (e) => errs.push(String(e.detail?.error?.message ?? e.detail?.error)));
+      window.__step = `${name} load ts`;
       await load(ts, name);
+      window.__step = `${name} load rust`;
       await load(rs, name);
       r.engine = rs.getEngine();
       // C-6: count what the Rust engine painted and what it left to the TS painter (a status other than 0), chart slides apart
@@ -226,6 +315,7 @@ const driverFn = () => {
       r.slides = ts.getSlideCount();
       if (rs.getSlideCount() !== r.slides) r.errors.push(`count ${rs.getSlideCount()} != ${r.slides}`);
       for (let i = 0; i < r.slides; i++) {
+        window.__step = `${name} slide ${i}`;
         const hasChart = ts.slides[i].shapes.some((s) => s.chartXml);
         if (hasChart) r.charts++;
         const a = render(ts, i, 1280), b = render(rs, i, 1280);
@@ -241,16 +331,37 @@ const driverFn = () => {
           if (diff(ta, tb) !== 0) r.thumbDiff++;
           ts.selectSlide(i); rs.selectSlide(i);
           await new Promise((rr) => requestAnimationFrame(rr));
+          // serve: after a font change each viewer measures again and repaints its main canvas later (`remeasureLater`: two frames,
+          // then 1.1 s); read both after those repaints, not one element before and the other after
+          if (window.__ssLiveSettle) {
+            const t0 = performance.now();
+            const pending = (el) => el.remeasureFrame || el.remeasureTimer;
+            while ((pending(ts) || pending(rs)) && performance.now() - t0 < 1500) await sleep(20);
+          }
           const ma = pixels(mainCanvas(ts)), mb = pixels(mainCanvas(rs));
           r.mainChecked++;
-          if (diff(ma, mb) !== 0) r.mainDiff++;
+          if (diff(ma, mb) !== 0) {
+            r.mainDiff++;
+            if (window.__ssDebug) (r.png ??= []).push([`main${i}`, mainCanvas(ts).toDataURL(), mainCanvas(rs).toDataURL()]);
+          }
         }
         if (ts.getSlideNotes(i) !== rs.getSlideNotes(i)) r.notesDiff++;
         // the accessible text of the slide (heading, paragraphs, tables, alternative texts) and the link hit-tests on it
         ts.selectSlide(i); rs.selectSlide(i);
+        // serve: the live region's announcement lands 60 ms after each selectSlide (LiveRegion.announce, a timer); on a slow device
+        // one element's timer has fired and the other's not when the text is read. 80 ms after both, both have (timers in deadline order)
+        if (window.__ssLiveSettle) await sleep(80);
         const a11y = (el) => (el.shadowRoot?.textContent ?? '') + '|' + (el.canvas.getAttribute('aria-label') ?? '');
         r.a11yChecked++;
-        if (a11y(ts) !== a11y(rs)) r.a11yDiff++;
+        if (a11y(ts) !== a11y(rs)) {
+          r.a11yDiff++;
+          if (!r.a11yFirst) { // the first difference, around the first differing character
+            const x = a11y(ts), y = a11y(rs);
+            let k = 0;
+            while (k < x.length && x[k] === y[k]) k++;
+            r.a11yFirst = { i, at: k, ts: x.slice(Math.max(0, k - 80), k + 120), rust: y.slice(Math.max(0, k - 80), k + 120) };
+          }
+        }
         const box = ts.canvas.getBoundingClientRect();
         for (let gy = 0; gy < 24; gy++) for (let gx = 0; gx < 40; gx++) {
           const ev = { clientX: box.left + (gx + 0.5) * box.width / 40, clientY: box.top + (gy + 0.5) * box.height / 24 };
@@ -280,8 +391,10 @@ const driverFn = () => {
     try {
       const errs = [];
       rs.addEventListener('us-engine-error', (e) => errs.push(String(e.detail?.error?.message ?? e.detail?.error)));
+      window.__step = `${name} anim load`;
       await load(ts, name);
       await load(rs, name);
+      window.__step = `${name} anim frames`;
       r.engine = rs.getEngine();
       const eng = rs.rust;
       if (eng) { const o = eng.paintStage.bind(eng); eng.paintStage = (...a) => { const x = o(...a); if (x.status === 0 && !x.empty) r.rust++; return x; }; }
@@ -344,6 +457,236 @@ const driverFn = () => {
   };
   return { compare, animate, mk, load, settle, fnv, sleep, render, diff, pixels, El };
 };
+// ── serve: the page runs the driver itself (real Safari) ─────────────────────────────────────────────
+function servePage() {
+  const labels = Object.fromEntries(names.map((n) => [n, relative(deckByName.get(n))]));
+  // the animated decks: round-robin over the playback samples, the b6a decks and the b1a decks of the stride
+  const groups = [/\/samples\/playback\//, /\/b6a\//, /\/b1a\//].map((re) => names.filter((n) => re.test(fwd(deckByName.get(n)))));
+  const animNames = [];
+  for (let k = 0; animNames.length < Number(process.env.UO_SS_ANIM ?? 6) && groups.some((g) => g.length > k); k++) for (const g of groups) if (g[k] && animNames.length < Number(process.env.UO_SS_ANIM ?? 6)) animNames.push(g[k]);
+  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=1280">
+<title>Slides viewer TS/Rust switch</title>
+<body style="margin:0"><div id="status" style="position:fixed;right:0;bottom:0;z-index:10;background:#fff;color:#000;font:24px -apple-system,sans-serif;padding:8px;border:1px solid #888">running…</div>
+<pre id="log" style="margin:740px 0 0;font-size:11px;white-space:pre-wrap;padding:8px"></pre>
+<script>
+// ?nooffscreen=1: hide OffscreenCanvas before the bundle loads (a Safari < 16.4 in a browser that has it: the TS metafile, EMF+ and
+// PICT players draw embedded bitmaps and pattern brushes only through OffscreenCanvas, the Rust path falls back to a DOM canvas)
+if (/[?&]nooffscreen=1/.test(location.search)) window.OffscreenCanvas = undefined;
+// ?fontlag=<ms>: a face added to document.fonts reaches canvas text only that much later, as real Safari does it (at a later rendering
+// update): a measurement asked in the same task as the add still gets the fallback face
+(function () { var m = /[?&]fontlag=(\\d+)/.exec(location.search); if (!m || typeof FontFaceSet === 'undefined') return; var add = FontFaceSet.prototype.add, ms = Number(m[1]);
+  FontFaceSet.prototype.add = function (f) { var set = this; setTimeout(function () { add.call(set, f); }, ms); return this; }; })();
+// the fixed clock (date/time fields must not differ between the two loads); the viewers' own timing uses performance.now()
+(function () { var N = ${NOW}, RD = Date; var FD = function (y, m, d, h, mi, s, ms) { if (!(this instanceof FD)) return new RD(N).toString(); var a = arguments.length === 0 ? [N] : Array.prototype.slice.call(arguments); return new (Function.prototype.bind.apply(RD, [null].concat(a)))(); }; FD.prototype = RD.prototype; FD.now = function () { return N; }; FD.UTC = RD.UTC; FD.parse = RD.parse; window.Date = FD; })();
+var post = function (o) { o.ua = navigator.userAgent; return fetch('/result', { method: 'POST', body: JSON.stringify(o) }).catch(function () {}); };
+window.onerror = function (m, src, l, c) { post({ kind: 'fatal', error: String(m) + ' ' + src + ':' + l + ':' + c }); };
+window.addEventListener('unhandledrejection', function (e) { post({ kind: 'fatal', error: 'unhandled ' + String(e.reason && e.reason.stack || e.reason) }); });
+</script>
+<script type="module">
+import * as e from '/out/entry.js';
+window.__e = e;
+const api = (${driverFn.toString()})();
+const qs = new URLSearchParams(location.search);
+// ?decks=k3.pptx,k9.ppt: compare (and animate) only those decks; ?debug=1: the PNGs of the differing slides go to the server
+const allNames = ${JSON.stringify(names)}, labels = ${JSON.stringify(labels)}, SOAK = ${SOAK};
+const subset = qs.get('decks') && !qs.get('solo') ? qs.get('decks').split(',') : null;
+const names = subset ? allNames.filter((n) => subset.includes(n)) : allNames;
+const animNames = ${JSON.stringify(animNames)}.filter((n) => !subset || subset.includes(n));
+if (qs.has('debug')) window.__ssDebug = true;
+window.__ssLiveSettle = true;
+if (qs.get('tsts') === '1') window.__ssTsTs = true;
+// ?fontdelay=<ms>: every font file answers that much later (the server reads it from the base /fonts/d<ms>/)
+if (Number(qs.get('fontdelay')) > 0) window.__ssFontBase = '/fonts/d' + Number(qs.get('fontdelay'));
+// ?fresh=1 (or another run URL than the stored one): a NEW run, the saved state of a previous run is dropped; \`fresh\` then leaves the
+// address, so a reload after a tab crash resumes this run instead of starting over
+{
+  const fresh = qs.get('fresh') === '1';
+  if (qs.has('fresh')) { qs.delete('fresh'); history.replaceState(null, '', location.pathname + (qs.toString() ? '?' + qs.toString() : '')); }
+  const stored = sessionStorage.getItem('uo-ss-url');
+  if (fresh || (stored !== null && stored !== location.href)) for (const k of Object.keys(sessionStorage)) if (k.startsWith('uo-ss-')) sessionStorage.removeItem(k);
+  sessionStorage.setItem('uo-ss-url', location.href);
+}
+const show = (t) => { document.getElementById('status').textContent = t; };
+const log = (t) => { document.getElementById('log').textContent += t + String.fromCharCode(10); };
+const dpr = devicePixelRatio;
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+// /?solo=ts|rust&decks=k3.pptx,k9.ppt: ONE viewer of one engine per deck (no comparison), to tell an engine's memory from the
+// harness's two viewers side by side; each deck opens, settles, shows and renders every slide, and closes
+if (qs.get('solo')) {
+  const engine = qs.get('solo');
+  for (const n of (qs.get('decks') ?? qs.get('docs') ?? '').split(',').filter(Boolean)) {
+    const key = 'uo-ss-solo-' + engine + '-' + n;
+    if (sessionStorage.getItem(key)) { await post({ kind: 'solo', engine, n, deck: labels[n], crashed: true }); continue; }
+    sessionStorage.setItem(key, '1');
+    show('solo ' + engine + ' ' + n);
+    const t0 = performance.now();
+    let err = null, slides = 0, got = null;
+    const el = api.mk(engine);
+    try {
+      await api.load(el, n);
+      got = el.getEngine();
+      slides = el.getSlideCount();
+      for (let i = 0; i < slides; i++) { el.selectSlide(i); await nextFrame(); api.render(el, i, 1280); }
+    } catch (e2) { err = String(e2 && e2.stack || e2); }
+    el.remove();
+    await post({ kind: 'solo', engine, n, deck: labels[n], slides, ms: performance.now() - t0, err, opened: got, dpr });
+    await api.sleep(500);
+  }
+  await post({ kind: 'solo-end', engine });
+  show('done solo ' + engine);
+  await new Promise(() => {}); // stop here: the comparison below does not run
+}
+// feature detection
+const sim = new Uint8Array([0,97,115,109,1,0,0,0,1,4,1,96,0,0,3,2,1,0,10,23,1,21,0,253,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,26,11]);
+const c2d = CanvasRenderingContext2D.prototype;
+const features = { simd: WebAssembly.validate(sim), offscreenCanvas: typeof OffscreenCanvas, createImageBitmap: typeof createImageBitmap, dpr,
+  filter: 'filter' in c2d, roundRect: 'roundRect' in c2d, letterSpacing: 'letterSpacing' in c2d, fontKerning: 'fontKerning' in c2d, reset: 'reset' in c2d,
+  finalizationRegistry: typeof FinalizationRegistry, viewport: [innerWidth, innerHeight], tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  readback: (() => {
+    // does the browser alter canvas readbacks (Safari's fingerprinting protection adds noise)? The same drawing read twice, read on a
+    // twin canvas drawn by the same code, and copied with drawImage: any difference is the browser's, not an engine's
+    try {
+      const draw = () => { const cv = document.createElement('canvas'); cv.width = 96; cv.height = 32; const c = cv.getContext('2d'); c.fillStyle = '#f60'; c.fillRect(0, 0, 96, 32);
+        c.fillStyle = '#069'; c.font = '14px sans-serif'; c.fillText('Wq0 ação', 2, 20); c.strokeStyle = '#0a0'; c.beginPath(); c.arc(80, 16, 10, 0, 6.28); c.stroke(); return cv; };
+      const a = draw(), b = draw(), k = document.createElement('canvas'); k.width = 96; k.height = 32; k.getContext('2d').drawImage(a, 0, 0);
+      const px = (cv) => cv.getContext('2d').getImageData(0, 0, 96, 32).data;
+      const d = (x, y) => { let n = 0; for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) n++; return n; };
+      const pa = px(a), r = { repeat: d(pa, px(a)), twin: d(pa, px(b)), copy: d(pa, px(k)) };
+      for (const cv of [a, b, k]) { cv.width = 0; cv.height = 0; }
+      return r;
+    } catch (err) { return String(err); }
+  })() };
+// a tab that the OS kills (iOS memory) reloads the page: resume after the deck that was running, recorded as a crash with its last
+// step (window.__step of the driver, mirrored to sessionStorage and to the server as it changes); the totals live in sessionStorage
+const zero = { decks: 0, rust: 0, slides: 0, diffSlides: 0, pixels: 0, mainChecked: 0, mainDiff: 0, thumbDiff: 0, notesDiff: 0, a11yChecked: 0, a11yDiff: 0,
+  linkProbes: 0, linkHits: 0, linksDiff: 0, linkExtra: 0, tsFree: 0, tsLoads: 0, errors: 0, badDecks: 0, animDecks: 0, animFrames: 0, animDiff: 0, animRust: 0,
+  mediaDiff: 0, animBad: 0, crashes: 0, best: null, soak: null, knownDecks: 0, knownSlides: 0 };
+let tot = JSON.parse(sessionStorage.getItem('uo-ss-tot') ?? 'null') ?? zero;
+const save = () => sessionStorage.setItem('uo-ss-tot', JSON.stringify(tot));
+let phase = 'compare', from = 0;
+const at = sessionStorage.getItem('uo-ss-at');
+if (at === null) { tot = { ...zero }; save(); await post({ kind: 'start', ...features, nooffscreen: qs.get('nooffscreen') === '1', tsts: qs.get('tsts') === '1', fontdelay: Number(qs.get('fontdelay')) || 0, fontlag: Number(qs.get('fontlag')) || 0, decks: names.length, anim: animNames.length, soak: SOAK, tsStrict: true }); }
+else {
+  const step = sessionStorage.getItem('uo-ss-step');
+  const [ph, k] = at.split(':');
+  await post({ kind: 'crash', at, deck: k !== undefined ? labels[(ph === 'a' ? animNames : names)[Number(k)]] : null, step, ...features });
+  tot.crashes++; save();
+  if (ph === 'c') { phase = 'compare'; from = Number(k) + 1; } else if (ph === 'a') { phase = 'anim'; from = Number(k) + 1; } else phase = 'end';
+}
+let lastStep = null;
+setInterval(() => { if (window.__step !== lastStep) { lastStep = window.__step; sessionStorage.setItem('uo-ss-step', String(lastStep)); post({ kind: 'step', step: lastStep }); } }, 250);
+const progress = () => tot.decks + '/' + names.length + ' decks, ' + tot.slides + ' slides, ' + tot.badDecks + ' differ' + (tot.crashes ? ', ' + tot.crashes + ' crashes' : '');
+if (phase === 'compare') {
+  for (let i = from; i < names.length; i++) {
+    sessionStorage.setItem('uo-ss-at', 'c:' + i);
+    show('compare ' + (i + 1) + '/' + names.length + ' · ' + progress());
+    const t0 = performance.now();
+    let r;
+    try { r = await api.compare(names[i]); } catch (err) { r = { name: names[i], slides: 0, engine: '?', slideDiff: [], errors: ['exception ' + String(err && err.stack || err)], painted: [0, 0] }; }
+    const ok = !(r.slideDiff.length || r.errors.length || r.engine !== 'rust' || r.mainDiff || r.thumbDiff || r.notesDiff || r.a11yDiff || r.linksDiff || !r.tsFree || r.tsLoads);
+    tot.decks++; if (r.engine === 'rust') tot.rust++;
+    for (const f of ['slides', 'pixels', 'mainChecked', 'mainDiff', 'thumbDiff', 'notesDiff', 'a11yChecked', 'a11yDiff', 'linkProbes', 'linkHits', 'linksDiff', 'linkExtra', 'tsLoads']) tot[f] += r[f] ?? 0;
+    // a known difference, not an engine finding: without OffscreenCanvas the TS metafile/EMF+/PICT players skip embedded bitmaps
+    // and pattern brushes (b5b decks), the Rust path draws them; only pixels may differ (main canvas and thumbnails follow them)
+    const known = !ok && typeof OffscreenCanvas === 'undefined' && /[/]b5b[/]/.test(labels[names[i]]) && !r.errors.length && r.engine === 'rust'
+      && !r.notesDiff && !r.a11yDiff && !r.linksDiff && r.tsFree && !r.tsLoads ? 'ts-metafile-needs-offscreencanvas' : null;
+    tot.diffSlides += r.slideDiff.length; tot.errors += r.errors.length; if (r.tsFree) tot.tsFree++; if (!ok) tot.badDecks++;
+    if (known) { tot.knownDecks++; tot.knownSlides += r.slideDiff.length; }
+    if (/[.]pptx$/.test(names[i]) && r.engine === 'rust' && (!tot.best || r.slides > tot.best[1])) tot.best = [names[i], r.slides];
+    save();
+    log(labels[names[i]] + ' ' + r.slides + ' slides ' + (ok ? 'ok' : 'MISMATCH ' + JSON.stringify({ d: r.slideDiff.slice(0, 3), e: r.errors.slice(0, 2) })));
+    await post({ kind: 'row', i, of: names.length, deck: labels[names[i]], ok, known, ms: performance.now() - t0, dpr, row: r });
+  }
+  phase = 'anim'; from = 0;
+}
+if (phase === 'anim') {
+  for (let i = from; i < animNames.length; i++) {
+    sessionStorage.setItem('uo-ss-at', 'a:' + i);
+    show('anim ' + (i + 1) + '/' + animNames.length + ' · ' + progress());
+    let r;
+    try { r = await api.animate(animNames[i], 8); } catch (err) { r = { name: animNames[i], engine: '?', frames: 0, diff: 0, rust: 0, mediaDiff: 0, errors: ['exception ' + String(err && err.stack || err)] }; }
+    const ok = !(r.diff || r.errors.length || r.engine !== 'rust' || r.mediaDiff || !r.tsFree);
+    tot.animDecks++; tot.animFrames += r.frames; tot.animDiff += r.diff; tot.animRust += r.rust; tot.mediaDiff += r.mediaDiff ?? 0; if (!ok) tot.animBad++;
+    save();
+    log('anim ' + labels[animNames[i]] + ' ' + r.frames + ' frames ' + (ok ? 'ok' : 'MISMATCH ' + JSON.stringify({ first: r.firstDiff, e: r.errors.slice(0, 2) })));
+    await post({ kind: 'anim', i, of: animNames.length, deck: labels[animNames[i]], ok, dpr, row: r });
+  }
+  phase = 'soak';
+}
+if (phase === 'soak') {
+  // the soak: slide changes and exports of the largest deck of the stride with engine="rust" (count build), module live bytes and
+  // handles sampled; the element is removed at the end (handles back to 0)
+  sessionStorage.setItem('uo-ss-at', 'soak');
+  window.__step = 'soak';
+  show('soak · ' + progress());
+  let soak;
+  try {
+    const st = await e.engineModule();
+    const n = tot.best ? tot.best[0] : names.find((x) => /[.]pptx$/.test(x));
+    const el = api.mk('rust');
+    await api.load(el, n);
+    const count = el.getSlideCount();
+    const cv = document.createElement('canvas');
+    const mem = () => ({ live: st.slidesLiveBytes(), buffer: st.slidesMemoryBytes(), handles: st.slidesHandles() });
+    for (let i = 0; i < 10; i++) { el.selectSlide(i % count); el.renderSlideToCanvas(i % count, cv, 640); }
+    const samples = [mem()];
+    const t0 = performance.now();
+    for (let i = 0; i < SOAK; i++) {
+      el.selectSlide((i * 7) % count);
+      el.renderSlideToCanvas(i % count, cv, 640 + (i % 5));
+      if (i % 20 === 19) { await api.sleep(30); samples.push(mem()); }
+    }
+    const ms = performance.now() - t0;
+    cv.width = 0; cv.height = 0;
+    const engine = el.getEngine();
+    el.remove();
+    await api.sleep(200);
+    const lives = samples.map((s) => s.live);
+    const spread = Math.max(...lives) - Math.min(...lives);
+    const after = mem();
+    soak = { deck: labels[n], slides: count, changes: SOAK, ms, engine, samples, spread, handlesAfter: after.handles, liveAfter: after.live,
+      ok: engine === 'rust' && spread <= 4 * 1024 * 1024 && after.handles === 0 };
+  } catch (err) { soak = { ok: false, error: String(err && err.stack || err) }; }
+  tot.soak = soak; save();
+  await post({ kind: 'soak', ...soak });
+  phase = 'end';
+}
+sessionStorage.removeItem('uo-ss-at');
+window.__step = 'end';
+const ok = tot.badDecks === 0 && tot.animBad === 0 && tot.crashes === 0 && !!tot.soak?.ok && tot.decks === names.length;
+const okExceptKnown = !ok && tot.badDecks === tot.knownDecks && tot.animBad === 0 && tot.crashes === 0 && !!tot.soak?.ok && tot.decks === names.length;
+const verdict = ok ? 'PASS' : okExceptKnown ? 'PASS-EXCEPT-KNOWN' : 'FAIL';
+const summary = tot.decks + '/' + names.length + ' decks (' + tot.rust + ' in Rust), ' + tot.slides + ' slides, ' + tot.diffSlides + ' slides differ, '
+  + tot.badDecks + ' decks with a difference' + (tot.knownDecks ? ' (' + tot.knownDecks + ' decks / ' + tot.knownSlides + ' slides known: TS metafile player without OffscreenCanvas)' : '') + '; main ' + tot.mainDiff + '/' + tot.mainChecked + ', thumbs ' + tot.thumbDiff + ', notes ' + tot.notesDiff
+  + ', a11y ' + tot.a11yDiff + '/' + tot.a11yChecked + ', links ' + tot.linksDiff + '/' + tot.linkProbes + '; anim ' + tot.animDecks + ' decks '
+  + tot.animFrames + ' frames ' + tot.animDiff + ' differ, media ' + tot.mediaDiff + '; soak ' + (tot.soak?.ok ? 'ok' : 'FAIL') + ' (spread '
+  + tot.soak?.spread + ' B, handles ' + tot.soak?.handlesAfter + '); crashes ' + tot.crashes + '; dpr ' + dpr;
+await post({ kind: 'end', ok, verdict, summary, totals: tot, dpr, features });
+sessionStorage.removeItem('uo-ss-tot');
+show('finished ' + verdict + ': ' + summary + (qs.has('nocsp') ? '' : ' (CSP probe next)'));
+if (!qs.has('nocsp')) setTimeout(() => { location.href = '/csp?v=strict'; }, 1500);
+</script></body>`;
+}
+const cspProbe = `(function () {
+  var p = new URLSearchParams(document.currentScript.src.split('?')[1]);
+  var v = p.get('v'), next = p.get('next');
+  var bytes = new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,127,3,2,1,0,7,5,1,1,102,0,0,10,6,1,4,0,65,42,11]);
+  var done = function (o) { o.kind = 'csp'; o.v = v; o.ua = navigator.userAgent; document.getElementById('status').textContent = 'csp ' + v + ': ' + JSON.stringify(o);
+    fetch('/result', { method: 'POST', body: JSON.stringify(o) }).catch(function () {}).then(function () { setTimeout(function () { location.href = next; }, 800); }); };
+  var violations = [];
+  document.addEventListener('securitypolicyviolation', function (e) { violations.push(e.violatedDirective + ' ' + e.blockedURI); });
+  var r = {};
+  try { r.validate = WebAssembly.validate(bytes); } catch (e) { r.validate = 'threw ' + e; }
+  WebAssembly.compile(bytes).then(function (m) { return WebAssembly.instantiate(m); })
+    .then(function (i) { r.compile = 'ok ' + i.exports.f(); }, function (e) { r.compile = 'refused ' + e; })
+    .then(function () { return WebAssembly.instantiate(bytes).then(function (x) { r.instantiateBytes = 'ok ' + x.instance.exports.f(); }, function (e) { r.instantiateBytes = 'refused ' + e; }); })
+    .then(function () { r.violations = violations; done(r); });
+})();
+`;
+if (SERVE) {
+  console.log(`serve: http://127.0.0.1:${server.address().port}/ (${names.length} decks, stride ${STRIDE}; results in ${resultsFile}); Ctrl+C to stop`);
+  await new Promise(() => {});
+}
 const install = () => page.evaluate(`window.__d = (${driverFn.toString()})()`);
 await install();
 

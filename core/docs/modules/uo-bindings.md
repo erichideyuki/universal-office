@@ -6407,6 +6407,148 @@ alongside; the b5b decks add ≈ 16–20 s to the parity phase). Native gates un
 static draw-ops samples 1,202 / b1a 246 / c1d 182, animated anim-b6a 472 / anim-samples 551 / anim-b1a 150, `slides_api` 8/8.
 `UO_SS_ONLY=<regex>` (a focused run over the deck paths; under Git Bash do not start it with `/`, MSYS rewrites it as a path) is new.
 
+### Serve mode (real Safari) (2026-11-18)
+
+`slides_switch.mjs --mode serve` is the M4 gate's harness for real Safari (macOS and iOS on BrowserStack). It is modelled on the Write
+viewer's serve mode ("Real Safari 15 / iOS (BrowserStack, 2026-11-10)"). No browser is launched. The server listens on `127.0.0.1:UO_SS_PORT`
+(8767), serves the same bundle (the Rust engine with `tsStrict: true`), and sets `application/wasm`, `no-store` and no COOP/COEP (cross-origin
+isolation is not needed). Only git-tracked decks and open fonts are served. BrowserStack cannot reach localhost, so expose the port with a
+temporary tunnel and delete it after. `/` runs the following by itself, with no Playwright on the page side:
+
+- the parity `compare` on every `UO_SS_STRIDE`-th (5) git-tracked deck of the parity set: 39 decks and 144 slides by default (11 samples, 8 b1a,
+  4 c1d, 8 b5b, 8 b6a). Per slide it compares `renderSlideToCanvas` at 1280 px, and for the first 6 slides the main canvas and the
+  thumbnail. It also compares the notes, the a11y text and the link hit-tests on a 40 × 24 grid. Tolerance is 0, at the device's own dpr,
+  which is recorded in every row.
+- `animate` on `UO_SS_ANIM` (6) animated decks of the stride (playback samples, b6a and b1a in turn), 8 steps each. This needs no Playwright
+  clock, because the anim mode's virtual clock is the element's own `el.now`. Each deck gives `play({ media: 'seek' })` sampled over the
+  timeline, then `present()` + `next()` at +0/180/420/900 ms, plus the media requests of every frame.
+- a soak of `UO_SS_SOAK` (200) slide changes and exports of the largest .pptx of the stride. It uses the count build and samples the
+  module's live bytes, the wasm buffer and the handles every 20 changes. Pass = spread ≤ 4 MiB and 0 handles after the element left.
+- the CSP probe: `/csp?v=strict|wasm|eval`, then `/done`.
+
+Every result is POSTed to `/result`, appended to `<CARGO_TARGET_DIR>/slides-viewer/serve-results.jsonl`, and the server prints one line per
+deck. Record kinds:
+
+- `start`: the features (wasm SIMD, `OffscreenCanvas`, `createImageBitmap`, the canvas `filter`/`roundRect`/`letterSpacing`/`fontKerning`/
+  `reset`, `FinalizationRegistry`, dpr, viewport, time zone, UA).
+- `row` (one per deck): the full `compare` result plus `ok`, `known`, `ms` and `dpr`. The first a11y difference is in `a11yFirst`.
+- `anim`, `soak`, `step` (the driver's `window.__step`) and `crash`.
+- `end`: `ok`, `verdict`, `summary` and the totals.
+- `csp`.
+
+Every page has a `#status` element that WebDriver can read. It shows the progress, then `finished <verdict>: …` on `/`, and
+`done <verdict>: <totals>; csp strict=… wasm=… eval=…` on `/done`. The `/done` totals are the server's last `end` record for that user agent.
+
+Like the Write page, this page does three things to stay stable on Safari:
+
+- It fixes `Date` to `NOW`.
+- It releases each comparison canvas after reading it.
+- It resumes after a tab crash (OS memory on iOS). The deck and the step that were running are recorded, and the totals are kept in
+  `sessionStorage`.
+
+`/?solo=ts|rust&decks=k3.pptx,…` opens one viewer of one engine per deck, shows and renders every slide, and closes. It does not compare;
+use it to triage a crash. The query switches for triage are:
+
+- `?decks=` compares only the listed decks.
+- `?debug=1` POSTs the PNGs of the differing slides; the server writes them next to the results.
+- `?nooffscreen=1` hides `OffscreenCanvas` before the bundle loads.
+- `?nocsp=1` stays on `/`.
+- `?fresh=1` starts a new run: it drops the saved state of a previous run, then leaves the address, so a reload after a tab crash
+  still resumes this run. The saved state also resets when the run's URL changes. Use it for every new navigation of the same tab:
+  without it, a second navigation mid-run is taken for a crash.
+- `?fontdelay=<ms>`: every font file answers that much later. The viewers use the font base `/fonts/d<ms>/`, which the server reads.
+- `?fontlag=<ms>`: a face added to `document.fonts` reaches canvas text only that much later (`FontFaceSet.prototype.add` is
+  deferred). This emulates what real Safari does.
+- `?tsts=1` is a control: both elements use the TS engine.
+- Every `start` record carries `readback`, a probe of whether the browser alters canvas readbacks. It reads the same drawing twice,
+  reads a twin canvas drawn by the same code, and reads a `drawImage` copy. Safari's fingerprinting protection adds such noise.
+
+Two things found while building it locally:
+
+- **TS metafile player without `OffscreenCanvas` (an expected difference, not an engine finding).** `metafile.ts`, `emfplus.ts` and `pict.ts`
+  draw embedded bitmaps and pattern brushes only through `OffscreenCanvas`, and skip them when it is missing. The Rust path falls back to a
+  DOM canvas and draws them. Playwright WebKit (Windows) has no `OffscreenCanvas`, and neither does Safari before 16.4. There, 8 slides of 7
+  of the 8 b5b decks differ, in pixels only. The same 8 slides differ in Chromium with `?nooffscreen=1`, so the cause is confirmed. The page
+  flags such rows `known: 'ts-metafile-needs-offscreencanvas'`. A row qualifies only if it is a b5b deck, `OffscreenCanvas` is missing, and
+  nothing but pixels differs. The verdict is then `PASS-EXCEPT-KNOWN` rather than `PASS`.
+- **The live region races on slow devices.** `LiveRegion.announce` sets its text 60 ms after each `selectSlide`. Under WebKit at dpr 3 the
+  a11y text was read when one element's timer had fired and the other's had not (5 of 144 slides). The serve page waits 80 ms before
+  reading; timers fire in deadline order, so both announcements are in place. The default modes are unchanged.
+
+Local results: Playwright 1.61, the count build `count,slides` (3,651,423 B) + `slides-ppt` (889,120 B), stride 5. Each run took 50–105 s.
+
+| Browser (local stand-in) | dpr | Decks / slides | Differences | Anim (6 decks) | Soak | CSP `'self'` / `+wasm-unsafe-eval` / `+unsafe-eval` |
+|---|---|---|---|---|---|---|
+| Chromium headless shell 159 | 1 | 39 / 144 | **0** (main 0/107, thumbs 0, a11y 0/144, links 0/138,240) | 178 frames, 0 | spread 10,746 B, 0 handles | refused / compiles / compiles |
+| Chromium, `?nooffscreen=1` | 1 | 39 / 144 | 8 slides, all `known` (b5b) | 178 frames, 0 | ok | — |
+| WebKit 26.5 (Windows) | 1 | 39 / 144 | 8 slides, all `known` (b5b); a11y 0, links 0 | 178 frames, 0 | spread 4,928 B, 0 handles | refused / compiles / compiles |
+| WebKit 26.5 (Windows) | 3 | 39 / 144 | 8 slides, all `known` (b5b); a11y 0, links 0 | 178 frames, 0 | spread 4,928 B, 0 handles | refused / compiles / compiles |
+
+A forced reload in the middle of the run (standing in for iOS killing the tab) was recorded as a `crash` with
+`at: "c:11"`, `step: "k11.pptx load rust"`. The page then resumed at deck 12 with the totals carried over and gave the verdict FAIL with
+`crashes 1`.
+
+#### First real-Safari run (BrowserStack, 2026-11-18) and its fixes
+
+Two engine bugs, both fixed:
+
+1. **Safari 15.6 (macOS) and iOS 15.5 never started.** The bundle held a regex lookbehind, which Safari before 16.4 rejects when it
+   parses the script, so the whole viewer entry failed for TS and Rust alike. The published 0.9.2 has it too. The source was the
+   chart word wrap, `shared/charts/src/render.ts` (`para.split(/(\s+|(?<=-))/)`). It now reads
+   `para.split(/(\s+)/).flatMap((p, i) => (i % 2 ? [p] : p.match(/[^-]*-|[^-]+$/g) ?? []))`.
+   - A property test compares old and new over 300,019 strings: lengths 0–13, hyphens, every `\s` kind (NBSP, em/ideographic
+     space, U+2028, BOM), NUL and lone surrogates. 0 differ.
+   - The charts vitest passes, 1,786/1,786.
+   - The spell checker's address filter (`shared/spell/src/tokenize.ts`, `(?:^|(?<=\s))…` for `/usr/bin`, `./a/b`) had a lookbehind
+     too, inside a `RegExp` built when the module loads. It now consumes the space, which `internetRanges` skips. A property test
+     over 300,012 strings (117,767 with an address) finds 0 different ranges, and the spell vitest passes, 47/47.
+   - The served bundle (entry and chunks) was scanned with the TypeScript parser for syntax Safari 15.0–16.3 cannot parse:
+     lookbehind, the `v` flag, modifiers and duplicate group names in regex literals and `RegExp` strings, class static blocks,
+     hashbang, `using`, import attributes. After the fix: 0. The 7 `RegExp` calls with built sources were checked by hand.
+   - Elsewhere in the repository, not in the Slides bundle:
+     - Lookbehinds in `RegExp` strings built at run time: `write/packages/editor/src/find-engine.ts` (find with whole words or
+       the `<`/`>` wildcards) and `sheet/packages/calc/src/functions/regex.ts` (`\A`, `\b`, `\B` of the REGEX functions). Those
+       features would throw on Safari < 16.4, but the products still load.
+     - Class static blocks in `@universal-material/web` (ripple), seen in the Write editor's demo bundle, and in `pdfjs-dist`
+       (lazy PDF chunk). esbuild lowers these with a `safari15` target; it cannot lower a lookbehind.
+2. **Safari 26.4 (macOS) and iOS 26.5: a few slides differed, different ones on each run.**
+   - What went wrong: text was laid out with the widths of the fallback face and drawn with the real one. On b1a/0002 slide 1
+     this was Courier New → Liberation Mono.
+   - Why: the Rust engine keeps its measurements, while the TS measures at every paint. A face the resolver adds after a slow
+     fetch, or a bold/italic face fetched on first use, gets `addFace` → `emit` → `fontsChanged`, and the engine re-measures in
+     that same task. Safari applies a face added to `document.fonts` to canvas text only at a later rendering update, and fires
+     no event then (`loadingdone` does not fire for a face loaded before it was added). So the engine kept the fallback
+     widths. `fontsReady()` does not wait for the resolver's fetch either.
+   - Reproduced locally by emulating both conditions: `?fontdelay=300&fontlag=20` on the b1a decks k11–k18. Before the fix:
+     Chromium 3 slides and WebKit 4 slides differ in `renderSlideToCanvas`, with thumbnails following; other delays give 0–2.
+     The result changes with the delay, as it does on real Safari.
+   - The fix:
+     - `RustSlides` (`slides/packages/viewer/src/rust-engine.ts`) measures again at every still paint, and at every stage paint
+       with `which` 0, for 1 s after a font change (`fontSettleUntil`). It drops its measuring context on a font change, and
+       measures on a DOM canvas as the TS does (before: an `OffscreenCanvas` when one exists).
+     - The viewer (`universal-slides-viewer.ts` `remeasureLater`) asks again and repaints two frames later and at 1.1 s, for
+       both engines: the TS main canvas painted before the face took effect was stale too.
+   - After the fix, 0 differences in 10 of 10 runs: 5 delay/lag combinations (300/20, 800/20 twice, 500/50, 1500/20) in
+     Chromium and WebKit.
+   - The serve compare now reads the main canvases only after both elements' pending font repaints have run (bounded at 1.5 s;
+     nothing is waited when none is pending).
+
+The tiny differences of that run (1–6 pixels, 31 on one slide, on different slides each run) may be Safari's canvas readback noise
+(fingerprinting protection) rather than an engine difference. The page now records the `readback` probe; locally it gives
+repeat/twin/copy 0/0/0 in Chromium and WebKit. `?tsts=1` (TS against TS) tells the two apart on the device.
+
+Local results after the fixes (full set, stride 5):
+
+| Browser | Query | Result |
+|---|---|---|
+| Chromium | (none) | **PASS**: 39 decks, 144 slides, 0 differ; anim 178 frames 0; soak 0 handles |
+| Chromium | `fontdelay=300&fontlag=20` | **PASS**: 0 differ |
+| WebKit (Windows) | (none) | PASS-EXCEPT-KNOWN: only the 8 b5b slides (TS metafile player without `OffscreenCanvas`) |
+| WebKit (Windows) | `fontdelay=300&fontlag=20` | PASS-EXCEPT-KNOWN: same |
+| Both | `tsts=1` | 0 pixel differences; the verdict is FAIL by construction, since nothing runs in Rust |
+
+The same-tab test: a second navigation with `?fresh=1` started over with no crash, and a reload resumed with one `crash` record.
+
 ## Slides .NET facade (2026-11-17, Sonnet)
 
 `UniversalOffice.Pptx` as a C# facade over the C ABI of `uo-ffi`, the way `UniversalOffice.Docx` is. Rust: `core/crates/uo-ffi/src/slides.rs`

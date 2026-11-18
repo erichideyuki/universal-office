@@ -215,6 +215,18 @@ tests. The .NET port and the 0.9 TS engine keep the 0.9 rules.
   the rest of the slide). Metafile, PICT and TIFF pictures are painted by the engine (before, `engine="rust"` left them out).
 - The Slides PDF (`uo_pptx::pdf`, .NET `UniversalOffice.Pptx`) writes hyperlinks as link annotations over the drawn text, and
   shape clicks and slide jumps as links (internal jumps go to the page).
+- A font that arrives while a deck is open (from the network, or a bold/italic face fetched on first use) no longer leaves
+  `engine="rust"` text laid out with the fallback face's widths and drawn with the real one (seen in real Safari 26 and iOS 26).
+  Safari applies a face added to `document.fonts` to canvas text only at a later rendering update, with no event. For 1 s after a
+  font change the engine now measures at every paint, as the TS engine does, and both engines measure again and repaint two
+  frames later and when that window ends. The engine measures on a DOM canvas (before: an `OffscreenCanvas` when available).
+
+### Safari 15.0–16.3
+
+- Every product failed to load in Safari before 16.4 (macOS Safari 15.6, iOS 15.5; also in 0.9.2): the chart engine's word
+  wrap used a regex lookbehind, which those versions reject when they parse the script, so the whole bundle failed. The split
+  is now written without it (same words, proven over 300,000 random strings). The spell checker's address filter (`/usr/bin`,
+  `./a/b`) had a lookbehind too, built when its module loads: on those versions spell checking would not start.
 
 ### Opening documents on slower machines
 

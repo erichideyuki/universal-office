@@ -408,6 +408,27 @@ export class UniversalSlidesViewerElement extends HTMLElement {
   protected fontsChanged(): void {
     this.rust?.fontsChanged();
     this.paint();
+    this.remeasureLater();
+  }
+
+  /**
+   * Uma face posta no `document.fonts` pode chegar ao texto do canvas só numa atualização de renderização posterior (o Safari): o
+   * que se mede e pinta agora (na mesma tarefa do `add`, pelo `onChange` do resolvedor) ainda pode sair com a substituta, e nenhum
+   * evento vem depois (`loadingdone` não dispara para uma face carregada antes de entrar no conjunto). O motor Rust GUARDA as
+   * medidas (o TS mede de novo a cada pintura, mas a tela já pintada fica velha): por 1 s ele mede a cada pintura
+   * (`RustSlides.fontSettleUntil`), e depois de dois quadros e outra vez ao fim dessa janela as medidas são pedidas de novo e a
+   * tela repintada, nos dois motores (visto no Safari 26.4/iOS 26.5 real: texto disposto com as larguras de outra face e desenhado
+   * com a certa).
+   */
+  private remeasureFrame = 0;
+  private remeasureTimer = 0;
+  private remeasureLater(): void {
+    const again = (): void => { if (this.isConnected) { this.rust?.fontsChanged(); this.paint(); } };
+    if (!this.remeasureFrame && typeof requestAnimationFrame === 'function') {
+      this.remeasureFrame = requestAnimationFrame(() => { this.remeasureFrame = requestAnimationFrame(() => { this.remeasureFrame = 0; again(); }); });
+    }
+    clearTimeout(this.remeasureTimer);
+    this.remeasureTimer = window.setTimeout(() => { this.remeasureTimer = 0; again(); }, 1100);
   }
 
   /**
