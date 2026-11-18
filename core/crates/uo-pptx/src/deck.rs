@@ -271,6 +271,8 @@ pub struct Deck {
     presentation: Option<(Presentation, ReadSet)>,
     /// Slide models by slide index, least recently used first.
     slides: Vec<(u32, Arc<SlideModel>)>,
+    /// The PowerPoint-over-TS switches (default = PowerPoint; `SlidesRules::ts_strict()` for TS parity replays).
+    rules: uo_dml_render::SlidesRules,
 }
 
 impl Deck {
@@ -283,6 +285,7 @@ impl Deck {
             themes: RefCell::new(ThemeTable::default()),
             presentation: None,
             slides: Vec::new(),
+            rules: uo_dml_render::SlidesRules::default(),
         }
     }
 
@@ -325,6 +328,19 @@ impl Deck {
     /// The limits the deck was opened with.
     pub fn limits(&self) -> &Limits {
         &self.limits
+    }
+
+    /// The PowerPoint-over-TS switches the reads and emissions of this deck follow.
+    pub fn rules(&self) -> uo_dml_render::SlidesRules {
+        self.rules
+    }
+
+    /// Sets the PowerPoint-over-TS switches; a change empties the caches (models may depend on them).
+    pub fn set_rules(&mut self, rules: uo_dml_render::SlidesRules) {
+        if self.rules != rules {
+            self.rules = rules;
+            self.clear_caches();
+        }
     }
 
     /// `setPart`: replaces or appends a part. Slides that read it become stale.

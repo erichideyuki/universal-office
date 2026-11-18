@@ -31,6 +31,7 @@ pub mod model;
 pub mod read;
 pub mod read_dml;
 pub mod read_text;
+pub mod rules;
 pub mod smartart;
 pub mod source;
 pub mod symbol;
@@ -44,6 +45,7 @@ pub mod theme;
 pub use color::CssColor;
 pub use ids::{MediaId, Span, ThemeId};
 pub use model::Shape;
+pub use rules::SlidesRules;
 pub use source::{Limits, PartSource, R, ReadError};
 pub use theme::Theme;
 /// `looksLikeEot` and `eotToSfnt` of `eot.ts`: the reader lives in `uo_fonts::eot`; the deck's font reader (`uo-pptx`) calls it here.

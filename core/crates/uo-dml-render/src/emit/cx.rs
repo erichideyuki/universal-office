@@ -40,6 +40,8 @@ pub const SOFT_LAYER_CHART: u32 = 14;
 pub struct Env<'a> {
     pub src: &'a dyn PartSource,
     pub table: &'a MeasureTable,
+    /// The PowerPoint-over-TS switches (`SlidesRules::default()` = PowerPoint; `ts_strict()` for TS parity replays).
+    pub rules: crate::rules::SlidesRules,
 }
 
 /// Caps of the generated-bitmap caches (memory gate M5): 256 patterns, 64 path gradients and 16 MiB of path-gradient

@@ -37,6 +37,7 @@ pub mod measure;
 pub mod model;
 pub mod parse;
 pub mod render;
+pub mod rules;
 pub mod scale;
 pub mod summary;
 pub mod trend;

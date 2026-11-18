@@ -72,7 +72,7 @@ fn tile_facets_through_the_slides_list() {
             let m = mm(chart, &table);
             let p = params(chart, &view, s, true);
             let mt = MeasureTable::default();
-            let env = Env { src: &NoSource, table: &mt };
+            let env = Env { src: &NoSource, table: &mt, rules: uo_dml_render::SlidesRules::ts_strict() };
             let mut res = SlidesResources::new();
             let mut caches = EmitCaches::new();
             let (cw, ch) = if v == "a" { (480.0, 300.0) } else { (400.0, 270.0) };

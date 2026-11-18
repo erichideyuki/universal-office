@@ -93,7 +93,7 @@ fn shapes_list(shapes: &[Shape], res: &mut SlidesResources, caches: &mut EmitCac
     let mut table = MeasureTable::default();
     let src = NoParts;
     loop {
-        let env = Env { src: &src, table: &table };
+        let env = Env { src: &src, table: &table, rules: uo_dml_render::SlidesRules::ts_strict() };
         match emit_shapes(shapes, &params(), &env, res, caches) {
             Ok(e) => return e.list,
             Err(n) => answer(&mut table, &n.0),
@@ -190,7 +190,7 @@ fn m1_emission_returns_live_bytes() {
         // the need-measures path
         let table = MeasureTable::default();
         let src = NoParts;
-        let env = Env { src: &src, table: &table };
+        let env = Env { src: &src, table: &table, rules: uo_dml_render::SlidesRules::ts_strict() };
         assert!(emit_shapes(&shapes, &params(), &env, &mut res, &mut caches).is_err());
         assert!(emit_slide(&SlideBg::default(), &shapes, &params(), &env, &mut res, &mut caches).is_err());
         caches.clear();
@@ -336,7 +336,7 @@ fn random_shape_lists_emit_without_panic() {
             EmitParams { scale: r.num(), ox: r.num(), oy: r.num(), slide_w: 9_144_000.0, slide_h: 6_858_000.0, ..EmitParams::default() };
         let mut done = false;
         for _ in 0..=uo_dml_render::text::MAX_ROUNDS {
-            let env = Env { src: &src, table: &table };
+            let env = Env { src: &src, table: &table, rules: uo_dml_render::SlidesRules::ts_strict() };
             match emit_slide(&SlideBg::default(), &shapes, &p, &env, &mut res, &mut caches) {
                 Ok(e) => {
                     // bounded by the input: a shape makes a bounded number of items (the text of one shape one run per word)

@@ -120,7 +120,7 @@ fn the_host_resolves_colours_over_the_palette_under_the_theme() {
 #[test]
 fn a_hostile_chart_is_capped_and_the_list_stays_balanced() {
     let table = MeasureTable::default();
-    let env = Env { src: &Charts, table: &table };
+    let env = Env { src: &Charts, table: &table, rules: uo_dml_render::SlidesRules::ts_strict() };
     let mut res = SlidesResources::new();
     let mut caches = EmitCaches::new();
     let mut cx = Cx::new(&env, &mut res, &mut caches, ViewBox { ox: 0.0, oy: 0.0, scale: 1.0, sw: 100.0, sh: 100.0 });

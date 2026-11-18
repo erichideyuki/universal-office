@@ -275,7 +275,7 @@ fn answer(t: &mut MeasureTable, r: &MeasureReq, b: &mut Bytes<'_>) {
 
 fn emit_once(shapes: &[Shape], p: &EmitParams, table: &MeasureTable) -> Option<Vec<u8>> {
     let src = EmptySource;
-    let env = Env { src: &src, table };
+    let env = Env { src: &src, table, rules: uo_dml_render::SlidesRules::default() };
     let mut res = SlidesResources::new();
     let mut caches = EmitCaches::new();
     match emit_slide(&SlideBg::default(), shapes, p, &env, &mut res, &mut caches) {
@@ -343,7 +343,7 @@ impl SlotStates for States {
 
 fn stage_once(shapes: &[Shape], plan: &[Option<ShapeAnim>], p: &EmitParams, table: &MeasureTable, media: bool, seed: u8) -> Vec<Vec<u8>> {
     let src = EmptySource;
-    let env = Env { src: &src, table };
+    let env = Env { src: &src, table, rules: uo_dml_render::SlidesRules::default() };
     let mut res = SlidesResources::new();
     let mut caches = EmitCaches::new();
     let mut out = Vec::new();
@@ -391,7 +391,7 @@ pub fn slides_emit(data: &[u8]) {
     };
     let src = EmptySource;
     for _ in 0..=MAX_ROUNDS {
-        let env = Env { src: &src, table: &table };
+        let env = Env { src: &src, table: &table, rules: uo_dml_render::SlidesRules::default() };
         let mut res = SlidesResources::new();
         match emit_slide(&SlideBg::default(), &shapes, &p, &env, &mut res, &mut EmitCaches::new()) {
             Ok(_) => break,

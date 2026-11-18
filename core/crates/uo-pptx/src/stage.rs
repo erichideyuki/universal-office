@@ -161,7 +161,7 @@ pub fn emit_stage(
     let params = params_of(deck, view)?;
     let slide: Arc<SlideModel> = deck.slide(index)?;
     let src = deck.source();
-    let env = Env { src: &src, table };
+    let env = Env { src: &src, table, rules: deck.rules() };
     let plan = anim_plan(&ps, &slide.shapes);
     let media = media && has_media(&slide.shapes);
     let bg = SlideBg { bg: slide.bg.as_ref(), bg_image: slide.bg_image.as_ref(), bg_tile: slide.bg_tile.unwrap_or(false) };
@@ -254,7 +254,7 @@ pub fn stage_frame(
         let params = params_of(deck, stage.view)?;
         let slide = deck.slide(stage.index)?;
         let src = deck.source();
-        let env = Env { src: &src, table };
+        let env = Env { src: &src, table, rules: deck.rules() };
         for shape in redo {
             let mut st = Eval { ev: SlotEval::new(ps, anim_ms, clock), shapes: &slide.shapes, media: stage.media, caches: anim_caches };
             let plan = AnimPlan { shapes: &stage.plan, media: stage.media, states: Some(&mut st) };

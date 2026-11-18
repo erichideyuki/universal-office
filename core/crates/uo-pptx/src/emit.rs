@@ -80,7 +80,7 @@ pub fn emit_slide_suppressed(
     };
     let slide = deck.slide(index)?;
     let src = deck.source();
-    let env = Env { src: &src, table };
+    let env = Env { src: &src, table, rules: deck.rules() };
     let params =
         EmitParams { scale: view.scale, ox: view.ox, oy: view.oy, slide_w, slide_h, clip_overflow: false, suppress_text: suppress };
     let bg = SlideBg { bg: slide.bg.as_ref(), bg_image: slide.bg_image.as_ref(), bg_tile: slide.bg_tile.unwrap_or(false) };
