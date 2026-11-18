@@ -53,13 +53,18 @@ const FONT_SETTLE_MS = 1000;
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 let measureCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
-function scratchContext(): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
+/**
+ * O contexto de medir, ou null quando o navegador não dá um agora (o orçamento de memória de canvas do iOS 15 esgotado:
+ * `getContext` devolve null): então mede no contexto que pinta, como o motor TS sempre faz (ver `RustSlides.paintCtx`).
+ */
+function scratchContext(): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null {
   if (measureCtx) return measureCtx;
   // a DOM canvas, as the TS engine measures on the canvases it paints (the page's font set, applied as on those); OffscreenCanvas only
-  // where there is no document
+  // where there is no document. 1 x 1: measuring needs no pixels (the canvas memory budget of iOS counts them)
   const c = typeof document !== 'undefined' ? document.createElement('canvas') : new OffscreenCanvas(1, 1);
+  c.width = 1; c.height = 1;
   const ctx = c.getContext('2d');
-  if (!ctx) throw new Error('uo-slides: no 2d context to measure text');
+  if (!ctx) return null; // not cached: a later paint asks again
   measureCtx = ctx as CanvasRenderingContext2D;
   return measureCtx;
 }
@@ -70,14 +75,25 @@ export class RustSlides {
   private disposed = false;
   private readonly paintHost: SlidesPaintHost;
 
+  /** o contexto da pintura em curso: mede-se nele quando não há contexto de medir (`scratchContext` null) */
+  private paintCtx: CanvasRenderingContext2D | null = null;
+
   constructor(host: RustSlidesHost) {
     this.hostApi = host;
+    const self = this;
     this.paintHost = {
       fontStack: (f, b, i) => host.fontStack(f, b, i),
       image: (part) => host.image(part),
-      get measureCtx() { return scratchContext(); },
+      get measureCtx() {
+        const m = scratchContext() ?? self.paintCtx;
+        if (!m) throw new Error('uo-slides: no 2d context to measure text');
+        return m;
+      },
       extra: { light: { lightTable, lightAt, lightFace, bevelPhi }, patternRows },
       prepared: () => host.prepared?.(),
+      // the engine saw a font of the layout measure differently on the painted context (Safari applied a face late): a fresh
+      // measuring context, as `fontsChanged` below
+      fontsChanged: () => { measureCtx = null; },
     };
   }
 
@@ -163,7 +179,10 @@ export class RustSlides {
     // gráficos: a lista do Rust os pinta (uo-charts, C-6): nenhum slide fica com o motor TS por causa deles;
     // `suppress` = a forma cujo texto a edição inline cobre (fica fora da lista)
     this.settleFonts();
-    return this.doc.paint(ctx, i, scale, ox, oy, this.paintHost, suppress !== undefined ? { suppressText: suppress } : {});
+    this.paintCtx = ctx;
+    try {
+      return this.doc.paint(ctx, i, scale, ox, oy, this.paintHost, suppress !== undefined ? { suppressText: suppress } : {});
+    } finally { this.paintCtx = null; }
   }
 
   /** A apresentação espelhada no Rust (mesmas opções e mesmos comandos da `SlideShow` do TS); null sem deck aberto. */
@@ -186,7 +205,10 @@ export class RustSlides {
   paintStage(ctx: CanvasRenderingContext2D, src: SlidesShowHandle | SlidesTimelineHandle, at: number, which: 0 | 1, scale: number, ox: number, oy: number, o: StagePaintOptions): SlidePaintResult {
     if (!this.doc || this.doc.freed) return { status: 11, charts: 0, rounds: 0 };
     if (which === 0) this.settleFonts();
-    return this.doc.paintStage(ctx, src, at, which, scale, ox, oy, this.paintHost, o);
+    this.paintCtx = ctx;
+    try {
+      return this.doc.paintStage(ctx, src, at, which, scale, ox, oy, this.paintHost, o);
+    } finally { this.paintCtx = null; }
   }
 
   /** Handles vivos do módulo (testes de memória: 0 depois de fechar tudo). */

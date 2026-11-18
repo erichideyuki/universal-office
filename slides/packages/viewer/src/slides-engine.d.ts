@@ -39,6 +39,8 @@ declare module '@universal-office/slides-engine' {
     extra?: { light?: LightTables; patternRows?: (prst: string) => readonly number[] | undefined | null };
     /** a picture the layout waited for (a compressed EMF+ bitmap) finished decoding: paint again (the paint returned PENDING) */
     prepared?(): void;
+    /** a font of the layout measures differently on the painted context: drop the measuring context (the layout is asked again) */
+    fontsChanged?(): void;
   }
 
   /** The status of a paint that waits for a picture to decode (`SlidesPaintHost.prepared` tells when to paint again). */

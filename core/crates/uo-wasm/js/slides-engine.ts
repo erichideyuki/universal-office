@@ -12,7 +12,7 @@
 //
 // Erasable TypeScript only (the flags of paint.ts and the generated codecs).
 
-import { bindSlides, bindSlidesPpt, SlidesError } from './slides.mjs';
+import { bindSlides, bindSlidesPpt, pptReserveBytes, SlidesError } from './slides.mjs';
 import type {
   MeasureRequest, SlidesBinding, SlidesDeck, SlidesShow, SlidesTimeline, SlidesView, ShowAction, ShowFrame,
   OutlineShape, LinkBoxWire, SlideAssets, MediaStates, EmbeddedFontWire, ShowSettingsWire,
@@ -60,7 +60,33 @@ class Instance {
 
 let current: Instance | null = null;
 let loading: Promise<Instance> | null = null;
-let pptModule: Promise<{ convert(bytes: Uint8Array, opts?: { tsStrict?: boolean }): Uint8Array }> | null = null;
+type PptConverter = ReturnType<typeof bindSlidesPpt>;
+/** the `.ppt` converter: its compiled module (a trap gets a fresh instance of it) and the current instance */
+let pptModule: Promise<{ module: WebAssembly.Module; conv: PptConverter }> | null = null;
+
+/**
+ * Converts a `.ppt` with the converter module. A trap (`WebAssembly.RuntimeError`) drops the instance and retries on a fresh one
+ * with a larger heap reserve, twice: iOS 15.4 traps only in a conversion that grows memory during the call (WebKit bug 238302;
+ * `bindSlidesPpt`), and the reserve keeps the retry from growing. Elsewhere nothing traps and the first attempt is the result.
+ */
+async function convertPpt(src: Bytes, bytes: Uint8Array, tsStrict: boolean): Promise<Uint8Array> {
+  pptModule ??= fetchBytes(src).then(async (b) => {
+    const module = await WebAssembly.compile(b as BufferSource);
+    return { module, conv: bindSlidesPpt((await WebAssembly.instantiate(module, {})).exports) };
+  });
+  const m = await pptModule.catch((e) => { pptModule = null; throw e; });
+  let scale = 1;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return m.conv.convert(bytes, { tsStrict, reserveScale: scale });
+    } catch (e) {
+      if (!(e instanceof WebAssembly.RuntimeError) || attempt >= 2) throw e;
+      // the trapped instance may hold a broken heap: a fresh one, reserving more than the trapped attempt reached
+      scale = Math.max(scale * 4, (2 * m.conv.memoryBytes()) / pptReserveBytes(bytes.length));
+      m.conv = bindSlidesPpt((await WebAssembly.instantiate(m.module, {})).exports);
+    }
+  }
+}
 
 const fetchBytes = async (src: Bytes): Promise<Uint8Array> => {
   const r = await src;
@@ -141,6 +167,12 @@ export interface SlidesPaintHost {
    * A paint that met such a picture returned `PENDING` (13) and painted nothing.
    */
   prepared?(): void;
+  /**
+   * A font the layout was measured with measures differently on the context being painted (its face reached canvas text after the
+   * answers were taken): the host drops its measuring context (one that resolved a font string before the face arrived may keep
+   * answering with the fallback), then the layout is measured again.
+   */
+  fontsChanged?(): void;
 }
 
 const GENERIC_FAMILIES = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace', 'math', 'emoji']);
@@ -171,6 +203,9 @@ export function fontStackWithFallback(host: (family: string, bold: boolean, ital
   items.splice(at, 0, ...quoted);
   return items.join(', ');
 }
+
+/** The text measured again in every font of the layout before a paint (`SlidesDocument.#probes`): wide and narrow letters, digits. */
+const FONT_PROBE = 'mmmmmmmmmmlli0WQ@';
 
 /** The status of a paint that waits for the browser to decode a picture of the slide (`SlidesPaintHost.prepared` tells when). */
 export const PENDING = 13;
@@ -258,10 +293,7 @@ export class SlidesModule {
     let src = bytes;
     if (isCfb(bytes)) {
       if (this.#opts.ppt === undefined) throw new SlidesError(14, 'open', 'no .ppt converter module configured');
-      const src2 = this.#opts.ppt;
-      pptModule ??= fetchBytes(src2).then(async (b) => bindSlidesPpt((await WebAssembly.instantiate(b as BufferSource, {})).instance.exports));
-      const conv = await pptModule.catch((e) => { pptModule = null; throw e; });
-      src = conv.convert(bytes, { tsStrict: this.#opts.tsStrict === true });
+      src = await convertPpt(this.#opts.ppt, bytes, this.#opts.tsStrict === true);
     }
     const deck = call(this.#inst, () => this.#inst.uo.open(src, this.#openOptions()));
     return new SlidesDocument(this.#inst, deck);
@@ -288,6 +320,15 @@ export class SlidesDocument {
   #mediaFrame: StagePaintOptions['mediaFrame'] | undefined = undefined;
   /** package part -> media ids whose size a request asked for (to answer them when the image finishes decoding) */
   readonly #sizeAsked = new Map<string, Set<number>>();
+  /**
+   * The CSS fonts the layout was measured with, each with the metrics of `FONT_PROBE` in it at that time (the advance and the ink
+   * box: a metric-compatible fallback has the same advances, Courier New and Liberation Mono, but not the same ink, which the warp
+   * places by). Every paint measures the
+   * probe again first and asks the whole layout again when one changed: Safari applies a face added to `document.fonts` to canvas
+   * text only at a later rendering update, with no event, so answers kept from before that update would lay out the text with the
+   * fallback face's widths (the TS engine measures at every paint and never keeps them)
+   */
+  readonly #probes = new Map<string, string>();
   /** `MetaDecode`: the decoded compressed EMF+ bitmaps by `bitmapKey` (null = the browser could not decode it) and the decodes running */
   readonly #decoded = new Map<string, CanvasImageSource | null>();
   readonly #decoding = new Map<string, Promise<void>>();
@@ -389,8 +430,32 @@ export class SlidesDocument {
   notes(i: number): string { return call(this.#inst, () => this.#live().notes(i)); }
   part(name: string): Uint8Array | null { return call(this.#inst, () => this.#live().part(name)); }
 
+  /** The metrics of `FONT_PROBE` in `font` (1000 px, no kerning) on `ctx`: advance and ink box. */
+  static #probeWidth(ctx: CanvasRenderingContext2D & { fontKerning?: string }, font: string): string {
+    ctx.font = font;
+    const prev = ctx.fontKerning;
+    if (prev !== undefined) ctx.fontKerning = 'none';
+    const m = ctx.measureText(FONT_PROBE);
+    if (prev !== undefined) ctx.fontKerning = prev;
+    return `${m.width} ${m.actualBoundingBoxLeft} ${m.actualBoundingBoxRight} ${m.actualBoundingBoxAscent} ${m.actualBoundingBoxDescent}`;
+  }
+
+  /**
+   * Before a paint, on the context being painted (where the TS engine measures): a font the layout was measured with now measures
+   * differently (its face reached canvas text), so the host's measuring context is dropped and the layout asked again.
+   */
+  #checkFonts(ctx: CanvasRenderingContext2D, host: SlidesPaintHost): void {
+    if (!this.#probes.size || this.freed) return;
+    const prevFont = ctx.font;
+    let changed = false;
+    for (const [font, w] of this.#probes) if (SlidesDocument.#probeWidth(ctx, font) !== w) { changed = true; break; }
+    ctx.font = prevFont;
+    if (changed) { host.fontsChanged?.(); this.fontsChanged(); }
+  }
+
   /** A font loaded (or the font stack answers changed): every advance may change, the layout is asked again. */
   fontsChanged(): void {
+    this.#probes.clear();
     if (this.freed) return;
     call(this.#inst, () => this.#live().setGeneration(++this.#fontGen));
     this.#clearStage();
@@ -528,6 +593,13 @@ export class SlidesDocument {
         }
       }
     }
+    // the fonts these answers came from, with their probe width now (see `#probes`)
+    for (const r of reqs) {
+      if ((r.kind === 'charAt1000' || r.kind === 'kernAt1000' || r.kind === 'width' || r.kind === 'metrics') && r.face.family !== '') {
+        const f = font(r.face, 1000);
+        if (!this.#probes.has(f)) this.#probes.set(f, SlidesDocument.#probeWidth(ctx, f));
+      }
+    }
     return pending ? null : Float64Array.from(out);
   }
 
@@ -566,6 +638,7 @@ export class SlidesDocument {
   paint(ctx: CanvasRenderingContext2D, index: number, scale: number, ox: number, oy: number, host: SlidesPaintHost, o: SlidePaintOptions = {}): SlidePaintResult {
     const deck = this.#live();
     this.#caps(deck, host);
+    this.#checkFonts(ctx, host);
     const painter = this.#painterFor(host);
     const max = this.#inst.uo.maxRounds;
     for (let round = 1; round <= max + 1; round++) {
@@ -624,6 +697,7 @@ export class SlidesDocument {
     const raw = RAW.get(src);
     if (!raw) throw new Error('uo-wasm: not a handle of this document');
     this.#caps(deck, host);
+    if (which === 0) this.#checkFonts(ctx, host);
     const painter = this.#painterFor(host);
     const max = this.#inst.uo.maxRounds;
     for (let round = 1; round <= max + 1; round++) {

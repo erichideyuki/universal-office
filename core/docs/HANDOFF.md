@@ -177,7 +177,7 @@ facade are done too but belong to milestone M6 (with decision N1, the NuGet API 
 | PowerPoint agreement | met (numbers) | 736 pages: all 0.9734, samples 0.9996 (99.8% ≥ 0.99); 5 items measured with no rule (wave 5 "Open") |
 | Sizes | met | after wave 5: viewer `uo-slides.wasm` 1,307,808 B gzip = 82% of 1.6 MB; editor 1,482,490 B gzip = 42% of 3.5 MB |
 | Memory gate M1–M5 | met | M4 handles 0 B, M2 soaks flat, M3 retained model 0.447× TS, M5 caches capped |
-| Safari | **not met yet** | real Safari on BrowserStack (Device Control, driven by the agent) through `slides_switch.mjs --mode serve` + a temporary devtunnel, 39 decks / 144 slides; see below |
+| Safari | met except 1–22 px of browser variance (pass 2) | real Safari on BrowserStack (Device Control, driven by the agent) through `slides_switch.mjs --mode serve` + a temporary devtunnel, 39 decks / 144 slides; iOS 26.5 PASS-EXCEPT-KNOWN; Safari 26.4, 15.6, iOS 15.5 FAIL only by 1–2 px pictures (one 22 px) where TS = TS and Rust = Rust; see below |
 
 Real Safari runs (2026-11-18; record `uo-bindings.md` "First real-Safari run (BrowserStack, 2026-11-18) and its fixes"):
 - Run 1 found and fixed (committed): a regex lookbehind in `shared/charts/src/render.ts` (and `shared/spell/src/tokenize.ts`)
@@ -190,9 +190,16 @@ Real Safari runs (2026-11-18; record `uo-bindings.md` "First real-Safari run (Br
   iOS 15.4 iPhone 13: the `.ppt` converter wasm traps from the 2nd `.ppt` (OOB / unreachable in
   `uo_slides_ppt_convert_with`), canvases return null at dpr 3 (canvas memory, as in the Write iOS 15 run), pixel diffs.
   CSP as measured for Write (Safari 15 needs `'unsafe-eval'`; 26 accepts `'wasm-unsafe-eval'`).
-- Open: the remaining race/pixel differences on every Safari; the iOS 15.4 `.ppt` trap; the iOS 15 canvas budget of the
-  two-viewer harness. Results: `core/target/ss-serve/slides-viewer/serve-results.jsonl`, BrowserStack builds
-  `slides-m4-2026-11-18` and `-r2`.
+- Pass 2 (record "Second real-Safari pass"): Safari 15's optimizing JIT truncates doubles stored into a `Uint8ClampedArray`, so
+  path gradients and picture colour effects came out a level darker once the page warmed up (both engines' JS rasters now store
+  `u8(v)`; Safari 15.6 b1a 562–15,898 px → 0). A WordArt's ink box kept the fallback face's metrics when a face took effect late
+  on iOS 26 (the Rust engine now re-measures a probe per font on the painted context before each paint). `engine="rust"` measures
+  on the painted canvas when the browser refuses its measuring canvas (iOS 15). The harness waits for the font state before the
+  compared renders, and classifies Safari's own variance between elements with a TS and a Rust twin. JavaScriptCore's libm (TS
+  coordinates one or two ulps from V8's) is shown by `?v8math=1`. After it: iOS 26.5 PASS-EXCEPT-KNOWN; anim 0 unexplained frames
+  everywhere; left over 1–2 px pictures (and one 22 px slide) where both TS elements agree and both Rust elements agree, classed
+  variance in other runs of the same device. The iOS 15.4 `.ppt` trap: fixed by the other agent (heap reserve, WebKit 238302).
+  Results: `core/target/ss-pixel/slides-viewer/serve-results.jsonl`, BrowserStack build `slides-m4-pixels`.
 
 Questions for the maintainer at the gate (each with the record's recommendation):
 - `uo-pptx.md` "Questions": **SP1** the edit-history byte cap; **SP2** canonical model JSON with sorted keys; **SP3** the

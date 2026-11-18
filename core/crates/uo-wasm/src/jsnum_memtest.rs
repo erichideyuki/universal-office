@@ -175,6 +175,8 @@ pub unsafe extern "C" fn uo_jsnum_memtest_call(kind: u32, x: f64, y: f64, ptr: *
         26 => text::utf16_slice(input(), 1, -1).len() as f64,
         27 => text::trim(input()).len() as f64,
         28 => f64::from(conv::to_int32(x)),
+        // the two-argument Math.hypot (the serve page of slides_switch.mjs `?v8math=1` replaces the page's Math with these)
+        29 => math::hypot(x, y),
         _ => -1.0,
     })
 }

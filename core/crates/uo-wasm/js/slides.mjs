@@ -490,18 +490,56 @@ export function bindSlides(w) {
   };
 }
 
-/** The `.ppt` converter module (`uo-slides-ppt.wasm`, feature `slides-ppt`): `convert(pptBytes)` -> the `.pptx` bytes. */
+/**
+ * The heap reserved before a `.ppt` conversion (bytes): `PPT_RESERVE_MIN + PPT_RESERVE_PER_BYTE * input`, times `scale`. Measured
+ * over the 25 committed `.ppt` (fresh instance): the heap a conversion grows is 1.2–6.5 times the input, 4.0 MB at most
+ * (pb-transicoes-variantes-3d.ppt, 0.62 MB in). Record uo-bindings.md "The iOS 15.4 `.ppt` trap".
+ */
+export const PPT_RESERVE_MIN = 8 << 20;
+export const PPT_RESERVE_PER_BYTE = 4;
+/** the cap of one reservation (a larger deck grows the rest during the call, as before) */
+export const PPT_RESERVE_MAX = 512 << 20;
+export const pptReserveBytes = (len, scale = 1) => Math.min(PPT_RESERVE_MAX, Math.ceil(scale * (PPT_RESERVE_MIN + PPT_RESERVE_PER_BYTE * len)));
+
+/**
+ * The `.ppt` converter module (`uo-slides-ppt.wasm`, feature `slides-ppt`): `convert(pptBytes)` -> the `.pptx` bytes.
+ *
+ * Before each conversion the module's heap is grown in a call of its own (`uo_alloc_bytes` + `uo_free_bytes` of
+ * `pptReserveBytes`), so the conversion itself normally runs without `memory.grow`. iOS 15.4's JavaScriptCore (WebKit bug 238302,
+ * fixed in Safari 15.5) can reuse a stale memory address in optimized (OMG) code after `memory.grow` inside a call, which traps
+ * ('Out of bounds memory access', 'Unreachable code should not be executed'); a conversion that does not grow memory was never
+ * affected on the device. The output is the same bytes either way. `lastGrew()`: whether the last conversion still grew memory
+ * (its reserve was short; the caller retries a trap on a fresh instance with a larger `opts.reserveScale`).
+ */
 export function bindSlidesPpt(w) {
   const r = bindRender(w);
   const { Buf, put } = r;
+  let grew = false;
+  const reserve = (n) => {
+    // a free block of n bytes at the top of the heap; failing to grow (out of memory) traps in Rust's alloc error handler with
+    // the allocator's state intact, and the conversion then grows on its own as before
+    try { w.uo_free_bytes(w.uo_alloc_bytes(n), n); } catch { /* no reserve */ }
+  };
   return {
-    /** `.ppt` → `.pptx` bytes; `opts.tsStrict`: the TS converter's rules (the parity harnesses; default PowerPoint's) */
+    /**
+     * `.ppt` → `.pptx` bytes; `opts.tsStrict`: the TS converter's rules (the parity harnesses; default PowerPoint's);
+     * `opts.reserveScale`: the multiple of `pptReserveBytes` reserved first (default 1)
+     */
     convert(bytes, opts) {
+      reserve(pptReserveBytes(bytes.length, opts?.reserveScale ?? 1));
       const p = bytes.length === 0 ? 0 : put(bytes);
+      const before = w.memory.buffer.byteLength;
+      grew = false;
       const ts = opts?.tsStrict && typeof w.uo_slides_ppt_convert_with === 'function';
-      const { status, data } = new Buf(ts ? w.uo_slides_ppt_convert_with(p, bytes.length, 1) : w.uo_slides_ppt_convert(p, bytes.length)).take();
+      const ptr = ts ? w.uo_slides_ppt_convert_with(p, bytes.length, 1) : w.uo_slides_ppt_convert(p, bytes.length);
+      grew = w.memory.buffer.byteLength !== before;
+      const { status, data } = new Buf(ptr).take();
       if (status !== 0) throw new SlidesError(status, 'ppt convert', dec.decode(data));
       return data;
     },
+    /** whether the last conversion grew the module's memory during the call (the reserve was short) */
+    lastGrew: () => grew,
+    /** the bytes of the module's memory */
+    memoryBytes: () => w.memory.buffer.byteLength,
   };
 }

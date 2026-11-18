@@ -447,6 +447,17 @@ function scratchCanvas(w: number, h: number): (HTMLCanvasElement | OffscreenCanv
 
 const fxCache = new WeakMap<object, Map<string, PaintImage>>();
 const hexRgb = (h: string): [number, number, number] => { const n = parseInt(h.replace('#', ''), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+/**
+ * ToUint8Clamp em JS (meio para o par, como a gravação num `Uint8ClampedArray` é especificada): o JIT otimizador do Safari 15
+ * TRUNCA o double gravado num desses quando o laço esquenta (medido no Safari 15.6.1 macOS, 2026-11-18: 91,7 → 91), e o
+ * raster mudava conforme o código já estava quente. Os rasters gravam só inteiros.
+ */
+const u8 = (v: number): number => {
+  if (!(v > 0)) return 0;
+  if (v >= 255) return 255;
+  const f = Math.floor(v), d = v - f;
+  return d < 0.5 ? f : d > 0.5 ? f + 1 : f % 2 === 0 ? f : f + 1;
+};
 
 /**
  * Imagem com os efeitos de cor do `<a:blip>` (duotone, escala de cinza,
@@ -491,7 +502,7 @@ function fxImage(img: PaintImage, fx: ImageFx | undefined): PaintImage {
       if (fx.biLevel !== undefined) { r = g = bl = y >= fx.biLevel ? 255 : 0; }
       else if (d0 && d1) { r = d0[0] + (d1[0] - d0[0]) * y; g = d0[1] + (d1[1] - d0[1]) * y; bl = d0[2] + (d1[2] - d0[2]) * y; }
       else if (fx.gray) { r = g = bl = y * 255; }
-      d[i] = r; d[i + 1] = g; d[i + 2] = bl;
+      d[i] = u8(r); d[i + 1] = u8(g); d[i + 2] = u8(bl);
     }
     c2.putImageData(id, 0, 0);
   } catch { return img; } // origem cruzada / canvas sem getImageData
@@ -2545,10 +2556,10 @@ function pathGradient(ctx: CanvasRenderingContext2D, fill: Fill, x: number, y: n
       let u = t <= a.pos ? 0 : t >= b.pos ? 1 : (t - a.pos) / ((b.pos - a.pos) || 1);
       const o = (j * gw + i) * 4;
       // caminho: 2 stops = sigma em luz linear; 3 simétricos = luz linear SEM sigma; resto = sRGB
-      if (mode === 'srgb') for (let c = 0; c < 3; c++) id.data[o + c] = a.rgb[c]! * (1 - u) + b.rgb[c]! * u;
+      if (mode === 'srgb') for (let c = 0; c < 3; c++) id.data[o + c] = u8(a.rgb[c]! * (1 - u) + b.rgb[c]! * u);
       else {
         if (mode === 'sigma') u = sigmaT(u);
-        for (let c = 0; c < 3; c++) id.data[o + c] = srgb(lin(a.rgb[c]!) * (1 - u) + lin(b.rgb[c]!) * u);
+        for (let c = 0; c < 3; c++) id.data[o + c] = u8(srgb(lin(a.rgb[c]!) * (1 - u) + lin(b.rgb[c]!) * u));
       }
       id.data[o + 3] = Math.round((a.a * (1 - u) + b.a * u) * 255);
     }

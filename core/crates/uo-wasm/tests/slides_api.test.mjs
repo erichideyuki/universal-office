@@ -49,6 +49,32 @@ test('the .ppt module converts a legacy deck that the main module then opens', (
   assert.throws(() => ppt.convert(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 1, 2, 3])), (e) => e instanceof SlidesError && e.status === 3);
 });
 
+// the iOS 15.4 trap (record uo-bindings.md "The iOS 15.4 `.ppt` trap"): that JavaScriptCore traps only in a conversion that grows memory
+// during the call, so `convert` reserves the heap first. Every committed `.ppt`, on a fresh instance and on one instance in turn,
+// converts without growing memory in the call, and to the same bytes as the export called directly (no reserve)
+test('the .ppt module reserves its heap first: no memory.grow during any committed conversion, same bytes', async (t) => {
+  if (!ppt) return t.skip('uo-slides-ppt.wasm not built');
+  const files = [...readdirSync(join(SAMPLES, 'legacy')).map((f) => join(SAMPLES, 'legacy', f)), ...readdirSync(join(SAMPLES, 'playback')).map((f) => join(SAMPLES, 'playback', f))].filter((f) => /\.ppt$/i.test(f));
+  assert.ok(files.length >= 20, `${files.length} .ppt samples`);
+  const module = await WebAssembly.compile(readFileSync(pptPath));
+  const shared = bindSlidesPpt((await WebAssembly.instantiate(module, {})).exports);
+  for (const f of files) {
+    const bytes = new Uint8Array(readFileSync(f));
+    const raw = (await WebAssembly.instantiate(module, {})).exports;
+    const p = raw.uo_alloc_bytes(bytes.length);
+    new Uint8Array(raw.memory.buffer, p, bytes.length).set(bytes);
+    const b = raw.uo_slides_ppt_convert_with(p, bytes.length, 1);
+    const want = new Uint8Array(raw.memory.buffer, raw.uo_buf_ptr(b), raw.uo_buf_len(b)).slice();
+    assert.equal(raw.uo_buf_status(b), 0, f);
+    const fresh = bindSlidesPpt((await WebAssembly.instantiate(module, {})).exports);
+    for (const [name, c] of [['fresh', fresh], ['shared', shared]]) {
+      const got = c.convert(bytes, TS);
+      assert.equal(c.lastGrew(), false, `${name}: ${f} grew memory during the conversion`);
+      assert.deepEqual(got, want, `${name}: ${f}`);
+    }
+  }
+});
+
 test('the module counts memory and the API opens a deck', () => {
   assert.ok(live() >= 0, 'build uo-wasm with --features count,slides');
   const d = uo.open(groupBytes('b1a', 0), TS);

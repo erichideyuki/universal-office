@@ -220,6 +220,9 @@ tests. The .NET port and the 0.9 TS engine keep the 0.9 rules.
   Safari applies a face added to `document.fonts` to canvas text only at a later rendering update, with no event. For 1 s after a
   font change the engine now measures at every paint, as the TS engine does, and both engines measure again and repaint two
   frames later and when that window ends. The engine measures on a DOM canvas (before: an `OffscreenCanvas` when available).
+  A face that takes effect later than that window is also caught now (seen on iOS 26: a WordArt kept the fallback's ink box,
+  since Courier New and Liberation Mono share their advances). Before every paint the engine measures a probe text in each
+  font of the layout on the canvas it paints. When the probe's width or ink box changed, the engine measures again.
 
 ### Safari 15.0–16.3
 
@@ -227,6 +230,14 @@ tests. The .NET port and the 0.9 TS engine keep the 0.9 rules.
   wrap used a regex lookbehind, which those versions reject when they parse the script, so the whole bundle failed. The split
   is now written without it (same words, proven over 300,000 random strings). The spell checker's address filter (`/usr/bin`,
   `./a/b`) had a lookbehind too, built when its module loads: on those versions spell checking would not start.
+- Slides (both engines): path gradients and picture colour effects (duotone, grayscale, brightness/contrast) could come out
+  one shade darker in Safari 15, depending on how long the page had been running. Once a loop is optimized, Safari 15's JIT
+  truncates a fractional value stored into canvas pixel data instead of rounding it (91.7 became 91). The rasters now round
+  in code (round half to even, the rule the store follows everywhere else) and store whole numbers. Other browsers paint
+  exactly as before.
+- Slides viewer `engine="rust"`: when the browser refuses a canvas to measure text (on iOS 15 that happens once the page's
+  canvas memory is used up), the engine now measures on the canvas it paints, as the TS engine does, instead of failing
+  the paint. Its measuring canvas is now 1 x 1 px.
 
 ### Opening documents on slower machines
 

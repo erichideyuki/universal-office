@@ -129,4 +129,16 @@ export interface SlidesBinding {
   SlidesView: typeof SlidesView;
 }
 export declare function bindSlides(exports: WebAssembly.Exports): SlidesBinding;
-export declare function bindSlidesPpt(exports: WebAssembly.Exports): { convert(bytes: Uint8Array, opts?: { tsStrict?: boolean }): Uint8Array };
+export declare const PPT_RESERVE_MIN: number;
+export declare const PPT_RESERVE_PER_BYTE: number;
+export declare const PPT_RESERVE_MAX: number;
+/** the heap reserved before converting a `.ppt` of `len` bytes (times `scale`) */
+export declare function pptReserveBytes(len: number, scale?: number): number;
+export interface SlidesPptConverter {
+  /** `.ppt` → `.pptx` bytes; `reserveScale`: the multiple of `pptReserveBytes` reserved first (default 1) */
+  convert(bytes: Uint8Array, opts?: { tsStrict?: boolean; reserveScale?: number }): Uint8Array;
+  /** whether the last conversion grew the module's memory during the call */
+  lastGrew(): boolean;
+  memoryBytes(): number;
+}
+export declare function bindSlidesPpt(exports: WebAssembly.Exports): SlidesPptConverter;

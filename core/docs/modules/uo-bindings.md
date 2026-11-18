@@ -6549,6 +6549,280 @@ Local results after the fixes (full set, stride 5):
 
 The same-tab test: a second navigation with `?fresh=1` started over with no crash, and a reload resumed with one `crash` record.
 
+#### Second real-Safari pass (BrowserStack, 2026-11-18): Safari 15's JIT, font state, and the browser's own variance
+
+Run 2 (above) is where this pass started:
+
+| Target | Slide differences in run 2 |
+|---|---|
+| Safari 26.4 macOS | 5 slides, 1–238 px |
+| iOS 26.5 | 5 slides, 2–38,875 px |
+| Safari 15.6 | 10 slides, 562–15,898 px on the b1a decks, plus 23 animated frames |
+| iOS 15.4 | b1a differences of 467–80,248 px, plus `getImageData` failing on a null context |
+
+Every figure in this section comes from the serve harness at stride 5:
+
+- 39 decks: 144 slides, plus 6 animated decks (178 frames).
+- TS against Rust under `ts_strict`, at tolerance 0.
+
+**How the causes were found.** The serve page has two new tools:
+
+- `?trace=<deck>:<slide>,…` logs every 2D-context call that `renderSlideToCanvas` makes, on every context, first for TS and then
+  for Rust. It POSTs the logs as `trace-<browser>-<deck>-s<i>.json`.
+  - The default log keeps only the drawing calls. Each one carries the context state it draws under.
+  - `putImageData` carries the FNV-1a hash of its pixels. A canvas source carries the hash of its pixels.
+- The `start` record gained probes of the JS engine:
+  - `clamp`: stores into a `Uint8ClampedArray`, made from a cold function.
+  - `clampHot`: the same stores, made from a hot function.
+  - `fma`: whether `a*b+c` is fused into one rounding.
+  - `pow`: a fingerprint of `Math.pow`.
+  - `spell`: whether call spellings that are equal by the spec paint the same pixels. It compares `ellipse(…)` with
+    `ellipse(…, false)`, and `fill()` with `fill('nonzero')`.
+
+There were five causes.
+
+1. **Safari 15's optimizing JIT truncates a double stored into a `Uint8ClampedArray`.** This was a product bug and it is fixed.
+   - `clampHot` on Safari 15.6.1 macOS: once the storing function is hot, 91.5, 91.7 and 254.6 become 91, 91 and 254. Stored from
+     a cold function, and on Safari 26.4 and Chromium, they become 92, 92 and 255. The spec rounds half to even.
+   - The TS engine writes doubles into `ImageData.data` in two places in `render.ts`: `pathGradient` (path gradients) and
+     `fxImage` (picture colour effects). The Rust painter's copies in `slides-effects.ts` do the same.
+   - A raster made after the page warmed up came out up to one level darker. b1a/0027 slide 0 had 16,093 differing pixels at
+     delta ≤ 2. b1a/0012, 0017, 0032 and 0037 were hit the same way.
+   - The result depended on how long the page had been running, so two TS elements could differ as well.
+   - The fix: both painters now store `u8(v)`, which does ToUint8Clamp in JS. Over 3.2 million values it equals the typed-array
+     store: NaN, ±0, halves, the ends of the range, and 2 million random values.
+   - The Rust engine's own rasters are made in wasm and were never affected.
+   - After the fix, Safari 15.6 shows none of these differences.
+2. **JavaScriptCore's libm.** This is an expected difference, and it was measured.
+   - The traces from Safari 26.4 make the same calls with coordinates one or two ulps apart. The end angle of one `ellipse`, for
+     example, is `0.13122929446270606` in TS and `…573` in Rust and in Chromium.
+   - The TS engine computes with JavaScriptCore's `Math`, which calls the system's libm. The Rust engine uses `uo_jsnum::math`, which
+     is V8's fdlibm and gives the same results in every browser.
+   - The `pow` fingerprint is the same on Safari 15.6 and 26.4. It differs from Chromium's and from WebKit-on-Windows'.
+   - `?v8math=1` makes the two sides compute alike:
+     - The page's `Math` is replaced by V8's: `uo_jsnum_memtest_call` of the jsnum-memtest build, kinds 0–18, plus the new kind
+       29 for `hypot`.
+     - The bundle is served with `**` lowered to `Math.pow`.
+     - The traced coordinates are then identical.
+   - On the pixels this costs at most a few antialiased pixels at delta 1. b1a/0012 had 1 px; b6a/0022 had up to 238 px.
+   - The runs below are without `v8math` unless the table says otherwise.
+3. **The two renders saw different font states.** This was a harness race, fixed in the harness.
+   - A slide's first paint can ask for a face, such as a bold or italic variant fetched on first use. On Safari the face reaches
+     canvas text a rendering update later. So the second element's render could see a different font state from the first's.
+     b1a/0002 slide 1 had 268 px against Rust, and 22,963 px between two TS elements.
+   - In serve mode, both elements now paint the slide once. The compare then waits, at most 3 s, until both hold:
+     - no face is loading, by `document.fonts.status` and the resolver's pending fetches;
+     - no viewer has a font repaint pending.
+   - Only then are the compared renders made.
+   - The work on the `.ppt` trap reported that on iOS 15 the TS engine drew the chart text heavier: pb-graficos.ppt slide 1,
+     35,474 px. That is this case. The TS element that rendered first differs from a second TS element by the same count, and
+     Rust equals that second element.
+4. **Measurements were kept after a face took effect late.** This was a product race and it is fixed.
+   - The Rust engine keeps its text measurements; the TS engine measures again at every paint. Since 35d179bd the Rust engine
+     measures again for 1 s after a font change.
+   - On iOS 26 a face could take effect later than that, with no event. The ink box of a WordArt kept the fallback face's
+     metrics: b1a/0032 slide 0 (`textFadeUp`) differed by 39 px in every run from 4 to 8.
+   - Courier New and Liberation Mono have the same advances, so only the ink differed.
+   - The fix, in `SlidesDocument`:
+     - For each CSS font it has measurements for, it remembers the advance and the ink box of a probe text (`FONT_PROBE`).
+     - Before every paint, and before every stage paint of the slide on show, it measures the probe again. It does so on the
+       context it paints, which is where the TS engine measures.
+     - When the probe changed, the host drops its measuring context, through the new optional hook `SlidesPaintHost.fontsChanged`,
+       and the layout is measured again.
+   - In Chromium the probe never fires once the fonts have loaded. After the change, parity is 808/808 slides and anim is
+     5,089/5,089 frames.
+   - After the fix, b1a/0032 is equal on iOS 26.5.
+5. **The browser's own variance between elements.** This is Safari noise: it is classified, not hidden.
+   - The same canvas calls paint different pixels in different elements of the same engine. The traces show identical call logs
+     with identical source hashes.
+   - The differences are 1–238 px at delta 1. Most are whole rows or columns at the edge of a small picture that is scaled up:
+     `drawImage` of a 6×18, 12×22 or 9×14 `<img>`. On iOS 26 they reach 38,875 px, for a 12×22 picture stretched over 1152×170.
+   - Which element differs depends on its place in the page and on its timing. On Safari 26.4 the 2nd element differed from both
+     the 1st and the 3rd.
+   - `?tsts=1` compares TS against TS. With the earlier harness it gave:
+
+     | Target | TS against TS |
+     |---|---|
+     | Safari 26.4 | 4 slides (1, 4, 238 and 97 px), 1 main canvas, 2 thumbnails: the same slides and counts as TS against Rust |
+     | Safari 15.6 | 2 slides, 5 main canvases, 3 thumbnails, and 23 animated frames of b6a/0007 |
+
+     So the animated-frame difference of run 2 comes from the browser, not from the engine.
+   - The serve compare now classifies this noise. Once a picture (a slide, a main canvas or a thumbnail) differs, a Rust twin (3rd
+     element) and a TS twin (4th element) paint it too. In the rule below:
+     - `a` is the TS element's picture and `b` the Rust element's;
+     - `t` is the TS twin's picture and `q` the Rust twin's.
+
+     The picture is classed `same-engine-variance` when both hold:
+     - TS and Rust disagree only where an engine also disagrees with itself: `a ≠ b` only at pixels where `a ≠ t` or `b ≠ q`;
+     - at least one engine does disagree with itself.
+   - The twins take one odd and one even place, so an artefact tied to place cannot line up with the split between engines.
+   - An animated deck that differs runs a second pass with both twins, and the same rule applies per frame.
+   - Each row records which pairs agree, in `twin`, `tsts`, `rr`, `rust2` and `unexplained`. The verdict for such rows is
+     PASS-EXCEPT-KNOWN, not PASS.
+
+Also in this pass:
+
+- **`engine="rust"` when the browser refuses a 2D context.** This is a product fix.
+  - `getContext` returns null on iOS 15 once two or more viewers run at dpr 3. The Rust engine then threw
+    `uo-slides: no 2d context to measure text`.
+  - The TS engine measures on the canvas it paints. When the browser refuses the measuring canvas, the Rust engine now does the
+    same: it measures on `RustSlides.paintCtx`, and `scratchContext` returns null without caching it.
+  - The measuring canvas is now 1 × 1.
+- The harness's own `getImageData`-on-null failures on iOS 15 come from canvas memory: four viewers at 3840 × 2160. `?elw=640` makes
+  the elements 640 × 360 CSS px.
+- A deck that arrives broken through the tunnel is now fetched again, up to 3 times. It counts as broken when it is neither a ZIP
+  nor a Compound File, or is shorter than its `content-length`. This happened once: TS reported
+  `Arquivo nao e um pacote OOXML valido` after 32 s.
+- Ruled out along the way:
+  - Safari 15's canvas feature set. `?nofeat=…` (or `?safari15=1`) removes `letterSpacing`, `fontKerning`, `roundRect`, `reset`,
+    `filter` and `OffscreenCanvas`. With them removed, Chromium passes apart from the 8 known b5b slides.
+  - Safari 26 lacks `fontKerning`. With `?nofeat=fontKerning,filter`, Chromium passes.
+  - Fused multiply-add: `fma` reports 0 cold, 0 hot and 0 fused.
+  - Spelling variants: `spell` is 0 px.
+  - Readback noise: `readback` was 0/0/0 on every device in this pass.
+
+**Results after the fixes.** These come from the final harness. The Chromium serve run passes with 39/39 decks and 0 differences.
+
+| Target | Device | Verdict | TS against Rust |
+|---|---|---|---|
+| Safari 26.4 macOS | dpr 1 | FAIL by 2 pictures, 1 px each | see below |
+| iOS 26.5, iPhone 17 | dpr 3 | **PASS-EXCEPT-KNOWN** | 3 slides, 5 main canvases and 2 thumbnails, all same-engine variance; anim 0/178 |
+| Safari 15.6.1 macOS | dpr 1 | FAIL by 2 pictures | see below |
+| iOS 15.5, iPhone 13 | dpr 3, `elw=640` | FAIL by 3 pictures | see below |
+| Safari 15.6.1, `v8math=1` | dpr 1 | FAIL by 2 pictures | as without `v8math`: b1a/0012 main canvas 2 px, 1 thumbnail |
+| Safari 26.4, `v8math=1` | dpr 1 | FAIL by 1 picture | see below |
+
+- **Safari 26.4:**
+  - 5 slides differ; 3 of them are same-engine variance.
+  - b1a/0012 slide 0 and b5b/0002 slide 0 differ by 1 px each. In each, the two TS elements agree with each other, the two Rust
+    elements agree with each other, and the engines differ by 1 px: the pattern of cause 2. Other runs class the same slides as
+    variance.
+  - Main canvases 2/107 (1 variance), thumbnails 3 (3 variance). Anim 0/178.
+- **Safari 15.6.1:**
+  - 13 slides differ: 9 known b5b slides (the TS metafile player without `OffscreenCanvas`), 3 variance, and b6a/0037 slide 0
+    with 1 px unexplained.
+  - Main canvases 15: 9 from b5b, 6 variance. b1a/0012's main canvas differs by 2 px at delta 1.
+  - Anim: b6a/0007 has 23 differing frames in the first pass and 0 in the twin pass.
+- **iOS 15.5:**
+  - 14 slides differ: 9 known b5b slides, 4 variance, and b6a/0037 slide 0 with 2 px unexplained. One of the variance slides is
+    pb-graficos.ppt with 36,335 px, which is TS against TS.
+  - Main canvases 11. b1a/0017's main canvas and thumbnail are unexplained, at 1–2 px.
+  - Anim: b1a/0002 has 4 differing frames, all variance.
+- **Safari 26.4 with `v8math=1`:** b1a/0032 slide 0 differs by 22 px; the two TS elements agree, and so do the two Rust elements.
+  The same slide shows the same 22 px between two TS elements in runs 6, 8 and 9 (`tsts` 22).
+- Everywhere: notes, a11y text (144 slides), link hit-tests (138,240 points), media requests and the soak (0 handles) are equal.
+- Before → after, on the slides that differed in run 2:
+
+  | Target | Deck and slide | Run 2 | Now |
+  |---|---|---|---|
+  | Safari 15.6 | b1a/0002 | 907 | variance |
+  | Safari 15.6 | b1a/0012 | 562 | 0 |
+  | Safari 15.6 | b1a/0017 | 1,100 | variance |
+  | Safari 15.6 | b1a/0027 | 15,898 + 27 | 0 |
+  | Safari 15.6 | b1a/0032 | 4,441 | 0 (variance in some runs) |
+  | Safari 15.6 | b1a/0037 | 627 | 0 (b6a/0037: 1 px) |
+  | Safari 15.6 | showcase_animado | 1,066 | variance |
+  | Safari 15.6 | b6a/0022 | 1,749 | variance |
+  | iOS 26.5 | b1a/0002 | 271 | variance |
+  | iOS 26.5 | b1a/0012 | 2 | variance |
+  | iOS 26.5 | b1a/0017 | 6 | variance |
+  | iOS 26.5 | b5b/0017 | 38,875 | variance (Rust ≠ Rust by the same count) |
+  | iOS 26.5 | b6a/0022 | 97 | variance |
+  | Safari 26.4 | showcase_animado slide 7 | 31 | 0 |
+  | Safari 26.4 | b5b/0017 | 4 | variance |
+  | Safari 26.4 | b6a/0022 | 238 / 97 | variance |
+- **What the rule leaves unexplained:** pictures of 1–2 px at delta 1, and one slide of 22 px. In each, the two TS elements agree
+  and the two Rust elements agree. Other runs on the same device class the same slides as variance, or, for b1a/0032 on Safari
+  26.4, show the same count TS against TS. The rule cannot class them automatically because the four elements happened to split
+  exactly along the engines.
+- Device pool: `os_version` "15" gave an iPhone 13 with iOS 15.2, 15.4.1 or 15.5; "26" gave iOS 26.5 or 26.6. The runs are in the
+  BrowserStack build `slides-m4-pixels`.
+
+Local checks after the changes (Chromium unless noted):
+
+- `slides_switch.mjs --mode parity`: 153 decks, 808/808 slides, main canvases 466/466, a11y 808, link points 775,680.
+- `--mode anim`: 121 decks, 5,089/5,089 frames, media 89/89, memory flat.
+- `--mode faults` and `--mode memory`: green.
+- The editor switch, `slides_edit_switch.mjs --mode parity`: 60 decks, 2,400 steps, package, state, slide and main-canvas pixels 2,460/2,460, saves 360/360. The Node tests `slides_api`, `slides_drawops`, `slides_anim`, `slides_readmodel` and `slides_edit_api` pass.
+- Serve mode: PASS, and also PASS with `fontdelay=300&fontlag=20` and with `fontdelay=800&fontlag=50`.
+- Serve mode in WebKit (Windows): PASS-EXCEPT-KNOWN, with only the 8 b5b slides.
+
+#### The iOS 15.4 `.ppt` trap (2026-11-18): a JavaScriptCore bug, worked around
+
+**Symptom.** On the iPhone 13 with iOS 15.4, `uo_slides_ppt_convert_with` (the lazily loaded `uo-slides-ppt.wasm`) trapped from the
+second `.ppt` of a run: `Out of bounds memory access` or `Unreachable code should not be executed`.
+
+**Root cause.** The bug is in Safari 15.4's JavaScriptCore, not in the module. It is
+[WebKit bug 238302](https://bugs.webkit.org/show_bug.cgi?id=238302), "CSE should be more careful with values that have WritesPinned…",
+the regression of [bug 237180](https://bugs.webkit.org/show_bug.cgi?id=237180) (Unity and Ruffle wasm broken on iOS 15.4). The fix is
+r292475 (249326@main), shipped in Safari 15.5.
+
+- The optimizing tier (OMG/B3) keeps the memory base in a pinned register.
+- Its common-subexpression elimination could reuse a memory address computed before an operation that changes that register, such
+  as `memory.grow`.
+- The trigger is therefore hot (tiered-up) code that grows the memory during the call. The stale address traps (out of bounds), or a
+  misread value reaches an `unreachable` (the Rust abort).
+
+**How it was measured.** BrowserStack, iPhone 13. A standalone page converted the committed `.ppt` with the raw exports and checked
+the FNV-1a of every `.pptx` against Node. It was a diagnostic server in `target/`, not committed. Results on iOS 15.4.1:
+
+| Experiment | Result |
+|---|---|
+| One instance, the decks in order | Decks 0–3 converted. Deck 4 trapped (`Unreachable`) while memory grew 43 → 52 pages, then every later deck trapped |
+| Deck 0 six times (it grows only on its first call), then the decks | Default build, compiled again later in the page: every conversion trapped, deck 0's first call included. MVP build: the warm-ups and decks 1–3 succeeded, and the traps began at deck 4, the first to grow past 43 pages. Each trapped call had grown memory |
+| Same, then the heap grown from JS first (`uo_alloc_bytes` + `uo_free_bytes` of 16 MB, in a call of its own), then 25 decks | The reserve call itself succeeded. **All 25 conversions succeeded with no growth inside the call, right after six traps on the same instance** |
+| An MVP build (nightly `-Zbuild-std`, `-C target-cpu=mvp`: no bulk-memory, sign-ext, multivalue or reference-types) | It traps exactly as the default build, so the wasm features are not the cause. With the reserve: 0 traps |
+
+- Over about 70 conversions that did not grow memory: 0 traps and 0 wrong bytes. Every trapped conversion had grown memory.
+- The same page on iOS 15.2 and on iOS 15.5 (several devices): 0 traps in every experiment.
+- The BrowserStack pool mixes iOS 15.2, 15.4.1 and 15.5 under `os_version` 15. Asking for "15.4" does not pin it. The session record
+  shows the version.
+
+**The fix** (JS only; the Rust converter and its output are unchanged):
+
+1. **Reserve before converting.** `bindSlidesPpt(w).convert` (`core/crates/uo-wasm/js/slides.mjs`) first grows the heap in a call of
+   its own, `uo_free_bytes(uo_alloc_bytes(n), n)`.
+   - The size is `n = pptReserveBytes(len) = 8 MB + 4 × input` (cap 512 MB). dlmalloc never returns memory on wasm, so the freed
+     block stays at the top of the heap and the conversion allocates from it without `memory.grow`.
+   - Measured over the 25 committed `.ppt` (fresh instance): a conversion grows the heap 1.2–6.5 times its input, 4.0 MB at most
+     (`pb-transicoes-variantes-3d.ppt`, 0.62 MB in).
+   - A failed reserve (out of memory) is caught. The conversion then grows on its own, as before.
+   - `lastGrew()` says whether the last conversion still grew memory, and `memoryBytes()` gives the memory size.
+2. **Retry a trap on a fresh instance.** `convertPpt` in `slides-engine.ts` keeps the compiled `WebAssembly.Module`. On a
+   `WebAssembly.RuntimeError` it drops the instance and retries on a fresh one, twice at most. Each retry reserves at least 4 times
+   the previous amount and at least twice the memory the trapped instance had reached. On iOS 15.4 a deck larger than the reserve
+   ratio can still trap once; the retry does not grow. Elsewhere nothing traps, so the first attempt is the result.
+3. **A test.** `slides_api.test.mjs` "the .ppt module reserves its heap first" converts the 25 committed `.ppt` twice: on a fresh
+   instance, and on one shared instance in turn.
+   - It requires `lastGrew() === false` for every conversion.
+   - It requires the bytes to equal those of the raw export, called without a reserve.
+
+**Cost.** The converter's memory is at least `8 MB + 4 × input` after the first `.ppt`, where the samples needed 2–6 MB before. The
+memory stays until the page ends, as before. The lazily loaded engine chunk grows by 636 bytes minified (101,311 against
+100,675 B). The entry's static closure is unchanged (865 KB).
+
+**Results after the fix** (`slides_switch.mjs --mode serve`, `UO_SS_ONLY='[.]ppt$|gaps-smoke[.]pptx$'`, `UO_SS_STRIDE=1`: the 25
+committed `.ppt` and one `.pptx` for the soak; 4 animated decks):
+
+| Browser | Result |
+|---|---|
+| Chromium (Playwright) | 25 `.ppt` decks, 294 slides, 0 differ. The soak was not run: the first run had no `.pptx` |
+| WebKit (Playwright, Windows) | **PASS**: 26/26 decks in Rust, 295 slides, 0 differ, anim 116 frames 0, soak 0 handles |
+| iOS 15.4.1 (iPhone 13, BrowserStack) | 26/26 decks in Rust, 295 slides, **0 traps, 0 errors**, main 0/124, a11y 0/295, links 0/283,200, anim 116 frames 0, soak ok, crashes 0. 2 slides differ (below) |
+| iOS 15.5 (iPhone 13, BrowserStack) | The same as iOS 15.4.1, to the pixel: the same 2 slides |
+
+- The 2 slides are slide 1 of `pb-graficos.ppt` (35,474 px) and slide 1 of `pb-graficos-partes.ppt` (36,765 px), with their
+  thumbnails.
+- They are a separate iOS 15 rendering difference, not the converter:
+  - The Rust `.pptx` bytes match Node's on the device (FNV-1a).
+  - The counts are identical on 15.4.1 and 15.5, which never trapped.
+  - The decks pass on Safari 15.6.1 (macOS), 26.x, Chromium and WebKit.
+  - The debug PNGs show the chart's axis and legend text anti-aliased differently: the TS chart text looks heavier.
+- The first M4 run had the same 35,474 px on `pb-graficos` slide 1.
+
+**Open.** The main module `uo-slides.wasm` (and the Write modules) can hit the same JavaScriptCore bug on iOS 15.4 when hot code
+grows memory. The M4 run showed no trap there, but nothing prevents one. The same reserve-before-call pattern would apply.
+
 ## Slides .NET facade (2026-11-17, Sonnet)
 
 `UniversalOffice.Pptx` as a C# facade over the C ABI of `uo-ffi`, the way `UniversalOffice.Docx` is. Rust: `core/crates/uo-ffi/src/slides.rs`
