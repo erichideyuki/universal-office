@@ -146,6 +146,20 @@ and benchmarks, then a fix chain; every reviewer accepted). Items above, now:
 6. Residuals on the straight edge: our glow sigma 1–4 % wider, half alpha up to 10 % farther (the Word's dilation
    may be `0.46·rad`); the PDF's `k` off by one at 72 pt / 150 pt (26 vs 27).
 
+**Status of everything (2026-11-18):**
+
+| Product / milestone | State | What is left | Gate |
+|---|---|---|---|
+| Write M1 — viewer + PDF + server | code complete (layout = Word oracle 2,742/2,742; Rust PDF byte-equal to TS) | — | **open, maintainer**: push + first green `rust-core.yml`, decisions G23–G31 |
+| Write M2 — editor | code complete (every D2b family routed behind `engine="rust"`, editor switch done) | — | **open, maintainer**: M2 gate, then 0.10 |
+| Slides M4 — viewer + PDF | code complete: B1–B7, `uo-charts`, `uo-dml-render`, PDF with the PowerPoint rules (wave 5, agreement 0.9734) | 6 Safari pending items, 5 PowerPoint rules measured with no rule found | **Safari accepted with pending items**; questions SP1–SP4, DR1–DR3 open |
+| Slides (M6 part) — editor + .NET | editor on Rust (2,460/2,460 steps, saves 360/360), .NET facade (C# = native 93/93) | 5 paths still on the TS model by design (hit tests/getters via the mirrored TS model, `newPresentation`, `insertImage` size, `.ppt` converted twice, image decode) | M6 (with N1, the NuGet API shape) |
+| Sheet M3 — calc (track A) | not started (`uo-numfmt` and the BIFF8 chart converter `uo_charts::biff` already reusable) | everything | — |
+| Sheet M5 / M6 — viewer, editor | not started | everything | — |
+
+Cross-cutting: the `rust-core` branch has **never been pushed** (only this disk; backup bundle of 2026-11-17 before the
+Slides waves), so no CI run exists for any of the above.
+
 **How much is left (2026-11-10; TS lines = non-blank non-comment source of the frozen checkout, an indication of
 size, not of effort):**
 
