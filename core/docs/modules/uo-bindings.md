@@ -6823,6 +6823,33 @@ committed `.ppt` and one `.pptx` for the soak; 4 animated decks):
 **Open.** The main module `uo-slides.wasm` (and the Write modules) can hit the same JavaScriptCore bug on iOS 15.4 when hot code
 grows memory. The M4 run showed no trap there, but nothing prevents one. The same reserve-before-call pattern would apply.
 
+### M4 Safari criterion: accepted with pending items (maintainer, 2026-11-18)
+
+The maintainer accepted the Safari criterion of the M4 gate **for this version** with the final consolidated run's leftovers
+(HANDOFF "M4 gate" — final run, BrowserStack build `slides-m4-final`, commit `9ed4275f`), and asked that the following stay
+recorded as **pending, to continue later** (not closed, not declared differences):
+
+1. **Unclassified TS × Rust leftovers on real Safari.** 1–56 px on a slide or a main canvas per device (Safari 26.4 b1a/0032
+   26 px; Safari 15.6 b6a/0022 56 + 6 px and a b1a/0012 main canvas; iOS 15.5 b6a/0037 12 px and a b1a/0017 main canvas) and
+   5 animated frames on iOS 26.2. They move between decks from run to run and the same slides are classed same-engine
+   variance in other runs, but the twin classifier cannot prove them noise in that run. Next: repeat each differing picture
+   N times per engine (variance envelope instead of one twin), trace the draw calls of a leftover pair (`?trace=1`), and decide
+   per cause (fix, or a measured Safari noise floor documented as a declared difference).
+2. **iOS 15.4 JavaScriptCore `memory.grow` bug in the other modules.** The `.ppt` converter reserves its heap before each call;
+   `uo-slides.wasm`, the editor module and the Write modules do not. Apply the same reserve-before-call pattern (and a
+   retry on a fresh instance where a call can be replayed), then re-run on a real iOS 15.4.1 device (the BrowserStack pool
+   gives 15.2 / 15.4.1 / 15.5 at random for "15").
+3. **TS metafile player without `OffscreenCanvas`** (Safari < 16.4): the TS skips embedded bitmaps and pattern brushes, Rust
+   draws them — rows flagged `ts-metafile-needs-offscreencanvas`. A TS-side gap; decide whether the TS gets the DOM-canvas
+   fallback or the flag stays.
+4. **JavaScriptCore libm vs V8** (one or two ulps in TS coordinates, a few anti-aliased pixels; shown by `?v8math=1`): to be
+   declared formally once item 1 separates it from the rest.
+5. **iOS 15 canvas memory of the two-viewer harness** at dpr 3 (`getImageData` on null without `?elw=640`): harness-only;
+   keep `elw` for iOS 15 or lower the harness's live canvases.
+6. **Safari < 16.4 in the other products**: runtime lookbehinds in `write/packages/editor/src/find-engine.ts` (whole word,
+   `<`/`>` wildcards) and `sheet/packages/calc/src/functions/regex.ts` (`\A`, `\b`, `\B`); third-party class static blocks
+   (`@universal-material/web` ripple, pdfjs-dist legacy) that an esbuild `safari15` target in `tools/build-pkg.mjs` would lower.
+
 ## Slides .NET facade (2026-11-17, Sonnet)
 
 `UniversalOffice.Pptx` as a C# facade over the C ABI of `uo-ffi`, the way `UniversalOffice.Docx` is. Rust: `core/crates/uo-ffi/src/slides.rs`

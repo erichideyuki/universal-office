@@ -236,6 +236,11 @@ M4 and M5. Benchmarks `main × rust-core` (open, frame, scroll, recalc). Module 
 | M5 — Sheet viewer | C3–C4 | viewport parity, Excel agreement, 1M-row soak, Safari |
 | M6 — editors + .NET | B8, C5, §9 .NET | editor harness parity, latency, N1 |
 
+M4 state (2026-11-18): op-stream/pixel parity, PowerPoint agreement, sizes and the memory gate met; the **Safari** criterion
+was run on real Safari (BrowserStack: macOS 26.4 and 15.6, iOS 26 and 15) and **accepted by the maintainer for this version
+with pending items** to continue later — list in `docs/modules/uo-bindings.md` "M4 Safari criterion: accepted with pending
+items", checklist in `docs/HANDOFF.md` "M4 gate". The M4 questions (SP1–SP4, DR1–DR3) are still open.
+
 ## 12. Schedule (≤ 3 agents in total; probable case from the Write port's real pace)
 
 | Days | Track A (calc) | Track B (Slides) | Track C (Sheet) |

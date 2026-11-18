@@ -177,7 +177,7 @@ facade are done too but belong to milestone M6 (with decision N1, the NuGet API 
 | PowerPoint agreement | met (numbers) | 736 pages: all 0.9734, samples 0.9996 (99.8% ≥ 0.99); 5 items measured with no rule (wave 5 "Open") |
 | Sizes | met | after wave 5: viewer `uo-slides.wasm` 1,307,808 B gzip = 82% of 1.6 MB; editor 1,482,490 B gzip = 42% of 3.5 MB |
 | Memory gate M1–M5 | met | M4 handles 0 B, M2 soaks flat, M3 retained model 0.447× TS, M5 caches capped |
-| Safari | met except 1–22 px of browser variance (pass 2) | real Safari on BrowserStack (Device Control, driven by the agent) through `slides_switch.mjs --mode serve` + a temporary devtunnel, 39 decks / 144 slides; iOS 26.5 PASS-EXCEPT-KNOWN; Safari 26.4, 15.6, iOS 15.5 FAIL only by 1–2 px pictures (one 22 px) where TS = TS and Rust = Rust; see below |
+| Safari | **accepted for this version with pending items** (maintainer, 2026-11-18) — see `uo-bindings.md` "M4 Safari criterion: accepted with pending items" | real Safari on BrowserStack (Device Control, driven by the agent) through `slides_switch.mjs --mode serve` + a temporary devtunnel, 39 decks / 144 slides; iOS 26.5 PASS-EXCEPT-KNOWN; Safari 26.4, 15.6, iOS 15.5 FAIL only by 1–2 px pictures (one 22 px) where TS = TS and Rust = Rust; see below |
 
 Real Safari runs (2026-11-18; record `uo-bindings.md` "First real-Safari run (BrowserStack, 2026-11-18) and its fixes"):
 - Run 1 found and fixed (committed): a regex lookbehind in `shared/charts/src/render.ts` (and `shared/spell/src/tokenize.ts`)
@@ -205,8 +205,11 @@ Real Safari runs (2026-11-18; record `uo-bindings.md` "First real-Safari run (Br
   56 + 6 px and one main canvas (b1a/0012), anim 178/178, 9 known b5b; iOS 26.2 (iPhone 17) — every slide diff same-engine
   variance, 5 animated frames unclassified; iOS 15.5 (iPhone 13, `elw=640`) — b6a/0037 12 px and one main canvas, 0 traps,
   4 frames variance, 9 known b5b. Links (138,240 points), a11y, notes, soak equal everywhere. The leftovers move between decks
-  from run to run and the same slides are classed same-engine variance in other runs — maintainer decision whether they pass
-  the gate as Safari variance.
+  from run to run and the same slides are classed same-engine variance in other runs.
+- **Maintainer decision (2026-11-18): accepted for this version; the leftovers stay PENDING, to continue later** — not closed
+  and not declared differences. The pending list (6 items: the unclassified leftovers, the iOS 15.4 `memory.grow` bug in the
+  other wasm modules, the TS metafile player without `OffscreenCanvas`, JSC libm vs V8, the iOS 15 harness canvas memory,
+  Safari < 16.4 in Write/Sheet and third-party code) is in `uo-bindings.md` "M4 Safari criterion: accepted with pending items".
 
 Questions for the maintainer at the gate (each with the record's recommendation):
 - `uo-pptx.md` "Questions": **SP1** the edit-history byte cap; **SP2** canonical model JSON with sorted keys; **SP3** the
