@@ -163,6 +163,38 @@ of both trust levels, G26 wasm2js trap detection, G27/G28 page environment rebui
 Chromium/500-page wasm layout and server PDF vs C# untimed, G31 G5 caps on the corpus and the deferred bounds); then
 the gate itself.
 
+## M4 gate (Slides viewer) — checklist (state after wave 5, `b457f372`)
+
+"M4" here is the **milestone** of `slides-sheet-port-plan.md` §11 (Slides viewer: B1–B7, `uo-charts`, `uo-dml-render`,
+Slides PDF in the §9 M4 scope). Do not confuse it with the **memory-gate step M4** of SKILL.md (10,000 create/drop per
+handle, 0 bytes left), which every wave already checks and which is one input of this gate. The editor (B8) and the .NET
+facade are done too but belong to milestone M6 (with decision N1, the NuGet API shape).
+
+| Criterion (§11) | State | Evidence |
+|---|---|---|
+| Op-stream parity with the frozen TS | met | draw-ops samples 262/262 + b1a/c1d sets, animated 472 + 551 + 150, B2 `.ppt` 1,082 parts, all under `ts_strict()` |
+| Pixel parity in Chromium (tolerance 0) | met | `slides_switch.mjs --mode all`: 253 decks, 1,040/1,040 slides, 7,221/7,221 animated frames, 0 TS-model loads |
+| PowerPoint agreement | met (numbers) | 736 pages: all 0.9734, samples 0.9996 (99.8% ≥ 0.99); 5 items measured with no rule (wave 5 "Open") |
+| Sizes | met at last measure | viewer wasm 1,266,010 B gzip = 79% of 1.6 MB (wave 4a); re-measure after wave 5 for the report |
+| Memory gate M1–M5 | met | M4 handles 0 B, M2 soaks flat, M3 retained model 0.447× TS, M5 caches capped |
+| Safari | **open — maintainer** | needs a real Mac/iPhone; the local WebKit (Playwright) runs are not the gate |
+
+Questions for the maintainer at the gate (each with the record's recommendation):
+- `uo-pptx.md` "Questions": **SP1** the edit-history byte cap; **SP2** canonical model JSON with sorted keys; **SP3** the
+  TS `Math.min(...hugeArray)` `RangeError` on hostile input (Rust paints the shape); **SP4** `uo-ppt.wasm` as a separate
+  lazily loaded instance vs `.ppt` inside the editor module.
+- `uo-dml-render.md`: **DR1** warp — the viewer still bends text in the shell (`slides-warp.ts`), the PDF in
+  `uo-pptx/src/pdf/warp.rs` (wave 5 found no PowerPoint rule for non-circular paths, `ts_warp` unread); **DR2** `FaceKey`
+  as the measure-table key; **DR3** `size_of::<Shape>() ≤ 256` — met (224 B).
+- `uo-charts.md`: CH-1…CH-6 were applied with the recommended option (CH-4: no prefix canonicalization for Slides).
+- Plan §13 A decisions applied with the recommended option, revisitable here: T1 advance tables + `TextRun`, T2 font
+  policy, P1 PDF scope = §9 M4, corpus = generated decks + committed samples (no downloads).
+- Wave 5 decisions to confirm: product default = PowerPoint rules (TS only via `ts_strict()`); unknown latin family keeps
+  the repo `shared/fonts` rule (PowerPoint uses Calibri); new dependency `zune-jpeg =0.5.15` (PDF only).
+
+Gate prep (orchestrator, before handing over): one consolidated verification run (the wave-5 gate set + sizes), a gate
+report with the numbers above, and a Safari script for the maintainer (commands, pages, what to look at).
+
 ## Update 2026-11-18 (wave 5) — PowerPoint rules measured and switched (`SlidesRules` / `ChartRules` / `PdfOptions`)
 
 - **Switches** (skeleton `1526ea3f`): `uo_dml_render::rules::SlidesRules` (`ts_sys_clr`, `ts_first_baseline`,
