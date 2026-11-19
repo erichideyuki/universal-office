@@ -146,6 +146,33 @@ round where the parity verifier sends a port bug back is recorded in the module 
 compared across modules. The orchestrator may move a module (or one of its parts) to Opus when
 the Sonnet port needs repeated rounds on the same issue; it says so in the record.
 
+## Capture sources and what replay cannot catch
+
+Every module plan names its capture groups from these sources (the last two taken from
+`rust-anything`, 2026-11-19 — the tool itself is not used: our harness already covers its
+record/diff/gate/shadow, and its only target is the original, not Office):
+
+1. committed samples and oracle groups (Office is the authority; `ts_strict()` for TS replays);
+2. seeded differential generators (`uo-testkit` `generate`, CI subset + large local run);
+3. **per-parameter traps** for function-like APIs: the values where JS and Rust part
+   (`NaN`, `-0`, `±Infinity`, `1e21`/`1e-7`, 2^53±1, 17-digit numbers, denormals, empty string,
+   lone surrogates, astral/combining characters, non-ASCII text), captured from the frozen TS;
+4. **calls of the TS test suite**: run the frozen package's own tests with the public entry
+   points wrapped by a recorder, and keep the calls + results as a capture group.
+
+Passing means equal on what was captured, nothing more. The parity verifier and the skeptics
+check these on purpose, because replays usually miss them:
+- **regex**: the `regex` crate has no lookaround/backreferences, and `\w`, `\b` and
+  case-folding differ from JS on non-ASCII text — use `regress` (ECMAScript) where the TS uses
+  `RegExp`, and capture non-ASCII inputs;
+- **number → text**: `1e21`, `-0`, shortest round-trip digits, `toFixed`/`toPrecision`
+  rounding — exact, no tolerance;
+- **Unicode tables**: Rust std vs V8 versions (toolchain 1.100 is newer than the V8 of Node);
+- **nondeterminism**: time, random, map iteration order, sort stability — injected or ordered;
+- **platform**: a capture proves one machine; wasm vs native and Windows vs Linux CI both
+  replay;
+- **what is not compared**: timing, memory (the memory gate covers it), concurrency.
+
 ## Memory gate (measured — a module cannot pass gate 2 without it)
 
 All numbers come from tests that run in CI; "looks fine" is not a result.

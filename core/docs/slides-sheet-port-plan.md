@@ -131,6 +131,18 @@ Write unchanged (twips stay its unit). 2 days.
 - **Calc**: bit-exact TS outputs of the 35,299 cases (777 known divergences, 47 Excel errors) — committed; per-cell
   values and the incremental check over GENERATED workbooks (seeded: formulas from the bank's functions, cross-sheet
   references, names, tables, spills, volatiles, cycles), each also recalculated by Excel through `xl-calc.ps1` (§0.2).
+  Two extra capture sources (taken from `rust-anything`'s `record`, 2026-11-19; the tool itself is not adopted — our
+  harness already does its record/diff/gate/shadow and its equivalence target is the TS only, not Office):
+  - **Per-parameter traps** (`uo-testkit` generator `calc-traps`, seeded): for every function of the catalogue and
+    every parameter, the values where JS and Rust semantics part — `NaN`, `-0`, `±Infinity`, `1e21`/`1e-7` (the
+    `Number→String` switch points), 2^53±1, 15/16/17-digit numbers, denormals, empty string, lone surrogates, astral
+    and combining characters, non-ASCII `\w`/`\b`/case-folding text, each error value as an argument, empty/1×1/
+    ragged/whole-column ranges, booleans and text-numbers in pt-BR and en-US. Captured from the frozen TS, replayed
+    strict; a CI subset and a large local run. The interesting cases (TS ≠ Excel) go to `xl-calc.ps1` in one batch.
+  - **Calls of the TS test suite**: run `sheet/packages/calc/test/*.test.ts` (19 files) against the frozen TS with
+    the engine's public entry points (`evaluate`, recalc, parse/print, function `apply`) wrapped by a recorder, and
+    keep every call + result as a capture group (`calc-tests`). Cheap coverage of the cases someone already thought
+    about; re-run when the frozen reference changes (the usual stale stamp).
 - **Generators (new, day 1–3)**: a seeded deck generator (shapes × presets × fills × effects × text bodies × tables ×
   charts × SmartArt × animations; `.ppt` through PowerPoint COM `SaveAs` from generated `.pptx`, reusing `gen-stress*.ps1`)
   and a seeded workbook generator (styles, number formats, CF, merges, frozen panes, drawings, charts, `.xls` through
@@ -164,7 +176,8 @@ subset, lookup/reference/dynamic with `uo-jsnum` stable sorts, datetime, the res
 measured functions), i18n (pt-BR/en-US tables; `Intl.NumberFormat/DateTimeFormat/Locale` derivation and the
 `Intl.Collator` list order at `i18n/translate.ts:686` per decision C1), open-recalc/save/file-form/addin, adapters,
 the function catalogue for the shell's autocomplete.
-Done: 35,299 cases bit-equal to the TS; the generated workbooks equal to the TS per cell (and their Excel agreement not
+Done: 35,299 cases bit-equal to the TS; the `calc-traps` and `calc-tests` groups (§4.3) bit-equal to the TS; the
+generated workbooks equal to the TS per cell (and their Excel agreement not
 lower than the TS's); incremental = full; M1–M5; fuzz (formula text,
 hostile workbooks); clippy/bans. 4–5 days (numeric tails RATE/IRR/XIRR/YIELD, FORECAST.ETS, distribution inverses stay
 equal to the TS; Excel differences stay "known").
