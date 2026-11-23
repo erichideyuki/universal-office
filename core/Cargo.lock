@@ -301,6 +301,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "uo-xlsx"
+version = "0.10.0-dev"
+dependencies = [
+ "uo-alloc",
+ "uo-jsnum",
+ "uo-numfmt",
+ "uo-opc",
+]
+
+[[package]]
 name = "zune-core"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

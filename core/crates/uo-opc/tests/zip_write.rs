@@ -123,3 +123,70 @@ fn zip64_extra_for_sizes_of_4_gib() {
     assert_eq!(e[1].compressed(&out), comp.as_slice());
     assert_eq!(e[0].size, 1);
 }
+
+/// A streamed entry (`stream_begin` / `stream_write` / `stream_end`) holds the same bytes as `add`,
+/// deflated in pieces of any size, stored at level 0 or for a `stored` name, next to whole entries.
+#[test]
+fn streamed_entries_read_back() {
+    let data: Vec<u8> = (0..300_000u32).flat_map(|i| format!("<c r=\"A{i}\"><v>{}</v></c>", i % 977).into_bytes()).collect();
+    for level in [0u8, 1, 4, 9] {
+        for piece in [1usize, 7, 4096, 65_536, data.len()] {
+            let mut w = ZipWriter::new(WriteOptions { level, stored: vec!["m".into()], ..WriteOptions::default() });
+            w.add("a.xml", b"<a/>").unwrap();
+            w.stream_begin("s.xml").unwrap();
+            assert!(w.stream_open());
+            assert!(w.add("x", b"").is_err(), "add while a stream is open");
+            assert!(w.stream_begin("y").is_err(), "one stream at a time");
+            for c in data[..if piece == 1 { 5000 } else { data.len() }].chunks(piece) {
+                w.stream_write(c).unwrap();
+            }
+            w.stream_end().unwrap();
+            w.stream_begin("m").unwrap();
+            w.stream_write(b"stored").unwrap();
+            w.stream_end().unwrap();
+            w.stream_begin("é.xml").unwrap();
+            w.stream_end().unwrap();
+            let out = w.finish();
+            let entries = zip::read(&out, 10).unwrap();
+            let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+            assert_eq!(names, ["a.xml", "s.xml", "m", "é.xml"]);
+            let expect: [&[u8]; 4] = [b"<a/>", &data[..if piece == 1 { 5000 } else { data.len() }], b"stored", b""];
+            for (e, want) in entries.iter().zip(expect) {
+                let raw = e.compressed(&out);
+                let got = if e.method == 0 { raw.to_vec() } else { flate::inflate_raw(raw, Some(e.size), 1 << 26).unwrap() };
+                assert_eq!(got, want, "{} level {level} piece {piece}", e.name);
+                assert_eq!(e.crc32, flate::crc32(want));
+                assert_eq!(e.method, if level == 0 || e.name == "m" { 0 } else { 8 });
+            }
+        }
+    }
+}
+
+/// The streamed deflate output is the one-shot deflate output (no flush points are added).
+#[test]
+fn streamed_deflate_equals_one_shot() {
+    let data: Vec<u8> = (0..50_000u32).flat_map(|i| (i.wrapping_mul(2_654_435_761) >> 21).to_le_bytes()).collect();
+    let mut d = flate::Deflater::new(4);
+    d.stream_begin();
+    let mut out = Vec::new();
+    for c in data.chunks(1000) {
+        d.stream_feed(c, &mut out).unwrap();
+    }
+    d.stream_finish(&mut out).unwrap();
+    assert_eq!(out, flate::deflate_raw(&data, 4));
+}
+
+/// Stream misuse is an error, never a panic; an entry left open is dropped by `finish`.
+#[test]
+fn stream_misuse() {
+    let mut w = ZipWriter::new(WriteOptions::default());
+    assert!(w.stream_write(b"x").is_err());
+    assert!(w.stream_end().is_err());
+    w.add("a", b"a").unwrap();
+    w.stream_begin("open").unwrap();
+    w.stream_write(b"lost").unwrap();
+    let out = w.finish();
+    let entries = zip::read(&out, 10).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "a");
+}

@@ -1,0 +1,27 @@
+# The minimal consumer of uo-xlsx for the size measurement (record core/docs/modules/uo-xlsx.md,
+# "wasm size"): a cdylib with the C-ABI shape of the grid's `grid-xlsx` (a thread-local writer,
+# `alloc`, calls with byte buffers). Its own workspace (not a member of core/):
+#
+#   cargo build --release --target wasm32-unknown-unknown --manifest-path core/crates/uo-xlsx/wasm-consumer/Cargo.toml
+[package]
+name = "uo-xlsx-wasm-consumer"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+uo-xlsx = { path = ".." }
+
+# the grid's wasm profile (grid-pdf's): the size a consumer gets without extra tuning
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+panic = "abort"
+strip = true

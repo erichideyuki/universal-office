@@ -786,6 +786,48 @@ impl Deflater {
             _ => Err(Error::Corrupt("deflate failed")),
         }
     }
+
+    /// Starts a stream fed in pieces ([`Deflater::stream_feed`]) and ended by
+    /// [`Deflater::stream_finish`]: the streaming zip entry of [`crate::zip::ZipWriter`]. A
+    /// stream left unfinished is discarded by the next start.
+    pub fn stream_begin(&mut self) {
+        match &mut self.state {
+            Some(s) => s.reset(),
+            None => {
+                self.state = Some(Box::new(CompressorOxide::new(create_comp_flags_from_zip_params(self.level.into(), 0, 0))));
+            }
+        }
+    }
+
+    /// Feeds `data` to the stream started by [`Deflater::stream_begin`], appending what the
+    /// compressor emits to `out` (miniz_oxide keeps at most its 32 KB window and one block of
+    /// pending output, so the memory does not grow with the stream).
+    pub fn stream_feed(&mut self, data: &[u8], out: &mut Vec<u8>) -> Result<()> {
+        let Some(state) = &mut self.state else { return Err(Error::Corrupt("deflate stream not started")) };
+        // `None` flush with a callback that takes every chunk: the whole input is consumed (the
+        // block loop runs until the input is read), so `Okay` with less read is an error
+        let (status, read) = compress_to_output(state, data, TDEFLFlush::None, |chunk| {
+            out.extend_from_slice(chunk);
+            true
+        });
+        match status {
+            TDEFLStatus::Okay if read == data.len() => Ok(()),
+            _ => Err(Error::Corrupt("deflate failed")),
+        }
+    }
+
+    /// Ends the stream: the final block is appended to `out`.
+    pub fn stream_finish(&mut self, out: &mut Vec<u8>) -> Result<()> {
+        let Some(state) = &mut self.state else { return Err(Error::Corrupt("deflate stream not started")) };
+        let (status, _) = compress_to_output(state, &[], TDEFLFlush::Finish, |chunk| {
+            out.extend_from_slice(chunk);
+            true
+        });
+        match status {
+            TDEFLStatus::Done => Ok(()),
+            _ => Err(Error::Corrupt("deflate failed")),
+        }
+    }
 }
 
 /// zlib data like fflate's `zlibSync` (browser.js:1463, header `zlh` at 999): the header byte

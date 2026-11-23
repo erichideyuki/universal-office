@@ -40,6 +40,9 @@ pub use jsnum::{jsnum_math, jsnum_parse};
 mod numfmt;
 pub use numfmt::{numfmt_format, numfmt_seeds};
 
+mod xlsx;
+pub use xlsx::{xlsx_seeds, xlsx_write};
+
 mod codec;
 pub use codec::{CODEC_LIMITS, codec_decode, codec_roundtrip, codec_seeds};
 
@@ -128,6 +131,7 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("jsnum_parse", jsnum_parse),
     ("jsnum_math", jsnum_math),
     ("numfmt_format", numfmt_format),
+    ("xlsx_write", xlsx_write),
     ("fonts_parse", fonts_parse),
     ("fonts_sfnt_dir", fonts_sfnt_dir),
     ("fonts_cmap", fonts_cmap),

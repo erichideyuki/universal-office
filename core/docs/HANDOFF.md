@@ -1,4 +1,4 @@
-# Rust port — handoff (state of 2026-11-18; newest update: "Slides wave 5")
+# Rust port — handoff (state of 2026-11-23; newest update: "uo-xlsx, the xlsx writer")
 
 Entry point for the next session that continues the Rust migration (0.10). Read this, then
 `.claude/skills/rust-port/SKILL.md` (the workflow: hybrid mode, models per role, memory gate) and the module records
@@ -8,9 +8,9 @@ in `core/docs/modules/`.
 
 - **Worktree** `D:\Projects\OfficeNext\.claude\worktrees\rust-core`, **branch `rust-core`**, HEAD `da31758d`
   (2026-11-07). Workspace `core/`.
-- **The branch has never been pushed** (there is no `origin/rust-core`): every commit since the start of the port
-  exists only on this disk. Pushing (or at least a bundle backup) is the maintainer's call — do it before anything
-  risky.
+- **Pushed once**: `origin/rust-core` is at `62b381d7` (2026-11-18; `<u-grid>`'s `grid-pdf` pins `uo-fonts` by that git
+  `rev`). Later commits exist only on this disk until the maintainer pushes again — a consumer pinning a newer `rev`
+  (the grid's `grid-xlsx` on `uo-xlsx`) needs that push.
 - **Frozen TS reference** (behaviour source, never edit): `UO_TS_ROOT=D:/Projects/OfficeNext/.claude/worktrees/clickcompliance-docx`
   (commit `d0f45bc5`, `dist` built). Do **not** use the main checkout as TS root (its `dist` is stale, F2-20).
   Layout captures need `--accept-stale typography/font/sfnt.ts` (F7a-14) and `node --max-old-space-size=8192` past
@@ -35,6 +35,25 @@ in `core/docs/modules/`.
 | Memory benchmark `main × rust-core` | `01c72ab5` | `uo-docx-layout.md` "Benchmarks … memory" | Rust layout = **0.23–0.41×** the TS memory |
 | wasm2js fallback + wasm-opt, measured | `ba3e15b9` | `uo-bindings.md` "No-WebAssembly fallback" | works under strict CSP; 4–8× slower, 1.57 MB gzip |
 | wasm size items 1–3a (planner → Sonnet → reviewer) | `da31758d` | `size-optimization.md` §8 | raw −33.5%, gzip −4.1%, same output, same speed |
+
+## Update 2026-11-23 — `uo-xlsx`, the xlsx writer (track C, writing side)
+
+New crate `core/crates/uo-xlsx` (record `core/docs/modules/uo-xlsx.md`), asked by `<u-grid>` (spec 29 of
+`D:\Projects\data-grid`, approved 2026-11-23): the grid adds a thin `grid-xlsx` cdylib that depends on it by git `rev`.
+
+- From scratch (the TS writer is surgical: nothing to port, no parity target): one state machine
+  (`add_style` → `begin_sheet` → `append_row`… → `end_sheet` → `finish`), shared or inline strings, numbers, booleans,
+  wall-clock dates (ISO text outside Excel's range), links with a scheme filter, a deduplicated xf pool resolved per
+  sheet direction (Start/End), outline, frozen panes, merges, print titles, `ColumnTitle` names, core properties.
+- **uo-opc**: streamed zip entries (`ZipWriter::stream_begin/stream_write/stream_end`, `Deflater::stream_*`,
+  `buffer_capacity`); the existing API is unchanged and the suite is green.
+- Verified: 27 unit/package tests + golden parts + memory (M2: 0 B growth over 20,000 rows) + no-panic (200,000
+  sequences locally) + fuzz `xlsx_write` (515,698 execs, 0 crashes); **Excel 365 opens every sample without repair**
+  (negative controls fail as they must), values/formats/styles/panes/names read back through COM; the TS reader reads
+  them. **LibreOffice and Google Sheets not checked** (not installed / needs an upload).
+- 10,000 × 40 heat map: 1.95 MB, 133 ms native, 475 ms wasm, peak 4.5 MB. Minimal consumer `.wasm`: 231 KB raw /
+  94 KB gzip (opt 3), 75 KB gzip with `opt-level = "z"`.
+- Fixed on the way: the fuzz crate did not compile (`fuzz/src/ppt.rs` missed `ConvertOptions::ts_ppt_charts`).
 
 ## Update 2026-11-07 (later the same day) — WIP finished, workspace green
 
@@ -154,11 +173,11 @@ and benchmarks, then a fix chain; every reviewer accepted). Items above, now:
 | Write M2 — editor | code complete (every D2b family routed behind `engine="rust"`, editor switch done) | — | **open, maintainer**: M2 gate, then 0.10 |
 | Slides M4 — viewer + PDF | code complete: B1–B7, `uo-charts`, `uo-dml-render`, PDF with the PowerPoint rules (wave 5, agreement 0.9734) | 6 Safari pending items, 5 PowerPoint rules measured with no rule found | **Safari accepted with pending items**; questions SP1–SP4, DR1–DR3 open |
 | Slides (M6 part) — editor + .NET | editor on Rust (2,460/2,460 steps, saves 360/360), .NET facade (C# = native 93/93) | 5 paths still on the TS model by design (hit tests/getters via the mirrored TS model, `newPresentation`, `insertImage` size, `.ppt` converted twice, image decode) | M6 (with N1, the NuGet API shape) |
+| Sheet track C — xlsx writer (`uo-xlsx`) | done 2026-11-23: from-scratch writer for `<u-grid>` (spec 29): streamed rows, styles, outline, panes, names, properties; opens in Excel without repair | reader, surgical save, LibreOffice/Google Sheets checks | — (record `uo-xlsx.md`) |
 | Sheet M3 — calc (track A) | not started (`uo-numfmt` and the BIFF8 chart converter `uo_charts::biff` already reusable) | everything | — |
 | Sheet M5 / M6 — viewer, editor | not started | everything | — |
 
-Cross-cutting: the `rust-core` branch has **never been pushed** (only this disk; backup bundle of 2026-11-17 before the
-Slides waves), so no CI run exists for any of the above.
+Cross-cutting: the `rust-core` branch was pushed once (`62b381d7`, for the grid); no CI run exists for any of the above.
 
 **How much is left (2026-11-10; TS lines = non-blank non-comment source of the frozen checkout, an indication of
 size, not of effort):**

@@ -1,0 +1,2 @@
+# golden parts are compared byte for byte
+tests/golden/** -text

@@ -296,6 +296,20 @@ pub struct ZipWriter {
     central: Vec<Central>,
     opts: WriteOptions,
     deflater: flate::Deflater,
+    stream: Option<OpenStream>,
+}
+
+/// The entry being written by [`ZipWriter::stream_write`].
+struct OpenStream {
+    /// offset of the local header
+    start: usize,
+    /// offset of the entry data
+    data_start: usize,
+    name_start: usize,
+    name_len: usize,
+    method: u16,
+    crc: u32,
+    size: u64,
 }
 
 impl ZipWriter {
@@ -311,11 +325,99 @@ impl ZipWriter {
             let _ = out.try_reserve_exact(n);
         }
         let deflater = flate::Deflater::new(opts.level);
-        ZipWriter { out, names: Vec::new(), central: Vec::new(), opts, deflater }
+        ZipWriter { out, names: Vec::new(), central: Vec::new(), opts, deflater, stream: None }
+    }
+
+    /// Starts an entry whose bytes arrive in pieces ([`ZipWriter::stream_write`], closed by
+    /// [`ZipWriter::stream_end`]): deflated as they arrive (or stored: level 0 or a `stored`
+    /// name), so the uncompressed part never exists whole in memory. The local header is patched
+    /// with the CRC and sizes at the end. A streamed entry has no zip64 local fields: it must stay
+    /// below 4 GiB, compressed and uncompressed (an error at [`ZipWriter::stream_end`] otherwise).
+    /// One stream at a time; [`ZipWriter::add`] and [`ZipWriter::add_raw`] fail while one is open.
+    pub fn stream_begin(&mut self, name: &str) -> Result<()> {
+        if self.stream.is_some() {
+            return Err(Error::Corrupt("a zip stream is already open"));
+        }
+        let n = check_name(name)?;
+        let method = if self.opts.level == 0 || self.opts.stored.iter().any(|s| s == name) { 0 } else { 8 };
+        let start = self.out.len();
+        self.local_header(n, method, 0, 0, 0, false);
+        let data_start = self.out.len();
+        let name_start = self.names.len();
+        self.names.extend_from_slice(n);
+        if method == 8 {
+            self.deflater.stream_begin();
+        }
+        self.stream = Some(OpenStream { start, data_start, name_start, name_len: n.len(), method, crc: 0, size: 0 });
+        Ok(())
+    }
+
+    /// Appends bytes to the entry opened by [`ZipWriter::stream_begin`].
+    pub fn stream_write(&mut self, data: &[u8]) -> Result<()> {
+        let Some(s) = &mut self.stream else { return Err(Error::Corrupt("no zip stream is open")) };
+        s.crc = flate::crc32_update(s.crc, data);
+        s.size += data.len() as u64;
+        if s.method == 0 {
+            self.out.extend_from_slice(data);
+            Ok(())
+        } else {
+            self.deflater.stream_feed(data, &mut self.out)
+        }
+    }
+
+    /// Ends the entry opened by [`ZipWriter::stream_begin`].
+    pub fn stream_end(&mut self) -> Result<()> {
+        let Some(s) = self.stream.take() else { return Err(Error::Corrupt("no zip stream is open")) };
+        if s.method == 8 {
+            self.deflater.stream_finish(&mut self.out)?;
+        }
+        let csize = (self.out.len() - s.data_start) as u64;
+        if csize >= MAX32 || s.size >= MAX32 {
+            return Err(Error::Limit { kind: LimitKind::PartBytes, max: MAX32 - 1, part: None });
+        }
+        // CRC-32, compressed size, uncompressed size: bytes 14..26 of the local header
+        let mut fields = [0u8; 12];
+        fields[..4].copy_from_slice(&s.crc.to_le_bytes());
+        fields[4..8].copy_from_slice(&(csize as u32).to_le_bytes());
+        fields[8..].copy_from_slice(&(s.size as u32).to_le_bytes());
+        if let Some(slot) = self.out.get_mut(s.start + 14..s.start + 26) {
+            slot.copy_from_slice(&fields);
+        }
+        let utf8 = self.names.get(s.name_start..s.name_start + s.name_len).is_some_and(|n| !n.is_ascii());
+        self.central.push(Central {
+            name_len: s.name_len,
+            name_start: s.name_start,
+            utf8,
+            method: s.method,
+            crc: s.crc,
+            csize,
+            usize_: s.size,
+            offset: s.start as u64,
+        });
+        Ok(())
+    }
+
+    /// Whether an entry opened by [`ZipWriter::stream_begin`] is still open.
+    pub fn stream_open(&self) -> bool {
+        self.stream.is_some()
+    }
+
+    /// Bytes of the archive written so far (local headers and entry data).
+    pub fn written_len(&self) -> usize {
+        self.out.len()
+    }
+
+    /// Bytes reserved by the archive buffer (memory accounting: [`ZipWriter::written_len`] plus
+    /// the spare capacity of its growth).
+    pub fn buffer_capacity(&self) -> usize {
+        self.out.capacity()
     }
 
     /// Adds an entry, deflated at the writer's level (or stored: level 0 or a `stored` name).
     pub fn add(&mut self, name: &str, data: &[u8]) -> Result<()> {
+        if self.stream.is_some() {
+            return Err(Error::Corrupt("a zip stream is open"));
+        }
         let level = if self.opts.stored.iter().any(|s| s == name) { 0 } else { self.opts.level };
         let crc32 = flate::crc32(data);
         let size = data.len() as u64;
@@ -348,6 +450,9 @@ impl ZipWriter {
 
     /// Adds an entry whose compressed bytes are given (copied raw).
     pub fn add_raw(&mut self, name: &str, raw: RawEntry<'_>) -> Result<()> {
+        if self.stream.is_some() {
+            return Err(Error::Corrupt("a zip stream is open"));
+        }
         let n = check_name(name)?;
         let offset = self.out.len() as u64;
         let csize = raw.data.len() as u64;
@@ -386,9 +491,13 @@ impl ZipWriter {
         self.central.push(Central { name_len: n.len(), name_start, utf8: !n.is_ascii(), method, crc, csize, usize_, offset });
     }
 
-    /// Writes the central directory and the end records, and returns the archive.
+    /// Writes the central directory and the end records, and returns the archive. An entry
+    /// still open by [`ZipWriter::stream_begin`] is dropped from the directory (end it first).
     pub fn finish(self) -> Vec<u8> {
-        let ZipWriter { mut out, names, central, opts, .. } = self;
+        let ZipWriter { mut out, names, central, opts, stream, .. } = self;
+        if let Some(s) = stream {
+            out.truncate(s.start);
+        }
         let cd_offset = out.len() as u64;
         let mut any64 = false;
         for c in &central {

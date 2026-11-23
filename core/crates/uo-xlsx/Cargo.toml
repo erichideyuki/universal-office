@@ -1,0 +1,23 @@
+[package]
+name = "uo-xlsx"
+description = "xlsx writer of the UniversalOffice Rust core (Sheet track C, writing side): streamed rows, shared strings, deduplicated styles, outline, frozen panes, defined names, core properties"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# zip (streamed entries), raw deflate, the XML escapes
+uo-opc = { path = "../uo-opc" }
+# the built-in number formats (a custom code equal to an invariant built-in is written as its id)
+uo-numfmt = { path = "../uo-numfmt" }
+# Number -> string as JS prints it (the <v> of numeric cells)
+uo-jsnum = { path = "../uo-jsnum" }
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+
+[lints]
+workspace = true

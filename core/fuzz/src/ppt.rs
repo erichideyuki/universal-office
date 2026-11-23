@@ -21,7 +21,7 @@ pub fn ppt_convert(data: &[u8]) {
         Some((&s, rest)) => (s, rest),
         None => (0, &[][..]),
     };
-    let opts = ConvertOptions { use_round_trip: sel & 1 == 0, today: Some((2026, 11, 17)) };
+    let opts = ConvertOptions { use_round_trip: sel & 1 == 0, today: Some((2026, 11, 17)), ..ConvertOptions::default() };
     match convert_ppt_to_pptx_parts(file, &opts) {
         Ok(parts) => {
             assert_eq!(parts.first().map(|(n, _)| n.as_str()), Some("[Content_Types].xml"));

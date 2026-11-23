@@ -6,6 +6,12 @@
 > **Slides/Sheet track (2026-11-17):** `uo-numfmt` (plan `slides-sheet-port-plan.md` §4.1, the port of `shared/charts/src/numfmt.ts`)
 > is ported and verified: record `core/docs/modules/uo-numfmt.md`.
 
+> **Sheet track C, writing side (2026-11-23):** `uo-xlsx`, a from-scratch xlsx WRITER (the TS `sheet-core` writer is
+> surgical, so no TS lines are ported and none are counted): streamed rows, shared strings, styles, outline, frozen
+> panes, merges, print titles and defined names, core properties; Excel opens its files without repair. Record
+> `core/docs/modules/uo-xlsx.md`; Rust 1.8k src (unit tests included) / 1.0k test lines (non-blank, non-`//`). The reader and the surgical
+> save of `sheet-core` (`read.ts`, `serialize.ts`, 9,048 TS lines of `sheet-core` in all) are still 0%.
+
 Measured, not estimated, for the line counts; the "ported" fraction of a few split files (marked
 partial) is a judgement from the frontier records.
 
