@@ -732,6 +732,124 @@ link on Windows (the `uo-ffi` cdylib with coverage; `-s none` also misses `__sta
 ran from a scratch crate with ASan (`-s address`) over the same `core/fuzz/src/calc.rs`. (5) `calc-tests` Engine calls
 (A3 open item 2) still wait for the families they use.
 
+## A4b — as built (2026-11-24, Opus)
+
+The statistics family: every body of `statistical.ts` (56 names: AVERAGE … AGGREGATE), `distributions.ts` (70 names,
+the legacy ones included), `regression.ts` (15: the pair functions, FORECAST/FORECAST.LINEAR, LINEST/LOGEST/TREND/
+GROWTH with their array results) and `ets.ts` (FORECAST.ETS, .CONFINT, .SEASONALITY, .STAT) — 145 bodies, all in the
+family module; nothing in `shared/`, `functions/mod.rs` or another family changed. The `*IF`/`*IFS` functions are
+`conditional.ts` (A4e).
+
+**Code** (`core/crates/uo-calc/src/functions/stats/`):
+
+| File | Content |
+|---|---|
+| `mod.rs` | `statistical.ts` bodies; the family's support: `sn` (`num` of `stats.ts` as a value), `an`/`ai` (`argNumber`/`argInt` of `v ?? null`), `absent`, `PLAIN`/`A_OPTS`, `walk` (`collectInto` as a stream, with the lane fast path for plain references), `collect`, `pairs` (`numericPairs` with the lane fast path, A4b-3), `xadd` (`xlAdd` with the exponent read from the bits, A4b-7), the typed order (`typed_cmp`, `select`, `typed_min/max`), `median_of`, `kth`, the percentiles, `modes`, SUBTOTAL/AGGREGATE dispatch |
+| `dist.rs` | `distributions.ts`: `nums` (stack array), `logical`, `opt_num`, `solve` (Brent, ≤ 500 steps), `quantile_pos` (≤ 3,000 doublings), the normal/lognormal, exponential/Weibull, gamma/χ², beta, t, F, binomial/negative binomial/hypergeometric/Poisson, CONFIDENCE, Z/T/F/CHISQ tests |
+| `regress.rs` | `regression.ts`: `moments`, the pair functions, `numeric_grid`, `least_squares` (Householder with pivoting, as the TS), `design`, LINEST/LOGEST (1 × (k+1) or 5 × (k+1)), TREND/GROWTH |
+| `ets.rs` | `ets.ts`: `build_series`, `detect_season`, `run`, `fit` (grid search), `prepare`, `forecast_at`/`value_at`, the four bodies |
+
+Tests: `src/functions/stats/*` unit tests (selection = full typed sort, also with `-0`/`+0`/NaN; `floor_log2` =
+`⌊Math.log2⌋` over every binade edge and 200,000 seeded doubles, `xadd` = A1's `xl_add`; the ETS and regression
+budgets); `tests/a4b.rs` (zero allocation per evaluation on the scalar paths, the hostile ETS shapes); the family is
+also in `tests/a4.rs` (parity) and `tests/a4_robust.rs` (random calls, M1) through `functions::ported()`. Benchmark
+class `stats-10k` in `benches/a3.rs` and `js/bench-a3.mjs` (`UO_STATS_ONLY=<j>` times one function of the class).
+
+### Decisions taken in A4b (declared; observable output equal unless said)
+
+| Id | Decision |
+|---|---|
+| A4b-1 | **Streamed aggregations**: AVERAGE/AVERAGEA (the `xlSum` = plain sum of all but the last, then `snapAdd`), MAX/MAXA/MIN/MINA, COUNT and RANK.EQ/RANK.AVG/RANK count while the arguments are walked, without the number list the TS builds; the order of reads and the first error are the TS's (RANK reads its order argument before the walk — a pure conversion — and answers its error after the walk's, as the TS). |
+| A4b-2 | **Order statistics by selection** (`select_nth_unstable` with the `Float64Array.sort` order: numeric, `-0` before `+0`, NaN last): MEDIAN, LARGE/SMALL, PERCENTILE*/QUARTILE* (the element at `i − 1` and the minimum of the rest), AGGREGATE 12/14–19 and the SUBTOTAL median; PERCENTRANK finds `lo`, `s[lo]` and `s[lo − 1]` in one pass. The same element of the same total order as `sorted(xs)[i]` (unit test over `-0`/`+0`/NaN mixes), O(n) instead of O(n log n). **The per-recalc cache** (plan §16 item 12) was measured not to be needed: with selection MEDIAN/PERCENTILE cost 0.03× the TS on stats-10k, and the `FnContext` has no pass cache to put a sorted range in (adding one is an engine (A3) change, not a family one). TRIMMEAN and FREQUENCY keep a full sort (they need the order of every element). |
+| A4b-3 | **`numericPairs` fast path** (`pairs`, every pair function, FORECAST, PROB, T.TEST type 1): two one-area references of the same size (≤ `BIG_AREA`) are read through `each_number` (the store's lanes); when both deliver one number per cell and no error, the pairs are the two sequences; otherwise `zipCells` as the TS (same pairs, same first error; the reads are x then y in both paths, so a `NeedCell` comes from the same walk). CORREL on stats-10k: 2.2 s → 0.57 s. |
+| A4b-4 | **ETS grid search**: the 5,325 (seasonal) or 485 runs of the search keep only (α, β, γ, sse); the winner is run once more with its trace (errors, fitted values, final states) — `run` is deterministic, so the model is the TS's. The TS allocates the arrays of every run. |
+| A4b-5 | **ETS bounds** (TS hangs or exhausts memory): a series whose length passes the JS array limit (`2^32 − 1`, the TS `new Array(n)` `RangeError`) throws `Throw::Range` before any allocation; a series with more than 30 % gaps answers `#NUM!` from the count of filled indices before the series is built (the TS allocates `n` slots first: 10^9 for a timeline `{1;2;3;1E9}`); gap filling reads the next known index from one backward pass (the TS rescans each gap run: quadratic); `detect_season` (`Σ (n − m)` multiply-adds), the grid search (`runs × n`) and CONFINT's horizon loop (`⌈h⌉ − 1` steps; a target date of 1e21 never returns in the TS — 2 calls of the CI traps, 26 of the big run) throw `Throw::Range` (`#NUM!` in the engine) past 2^31 steps, checked before each loop. Results below the budget are the TS's. |
+| A4b-6 | **Least-squares bound**: a fit with `k² > 2^24` or `k·p·n + p³ > 2^32` multiply-adds (k columns, n rows, p = min(k, n)) throws `Throw::Range` before its `k × k` matrix exists (the TS allocates it and runs for minutes); the pattern of A4a-4. |
+| A4b-7 | **`xadd`** = `xlAdd` of `stats.ts` with `⌊log2|x|⌋` from the exponent bits when the mantissa is below `2 − 2^−20` (fdlibm's log2 is then at least 6.8·10^−7 below the next integer, and exact at a power of two), `Math.log2` otherwise — equal to A1's `xl_add` for every input (argued in `floor_log2`, tested over every binade edge and 200,000 seeded doubles). Used by the family's own sums (moments, AVEDEV, HARMEAN, PROB); A1's `variance`/`devsq`/moments keep `xl_add`. |
+| A4b-8 | **JS-object edges**: a LAMBDA as FREQUENCY's data or bins counts nothing (the TS puts the object in a 1 × 1 array and the collection ignores it); a LAMBDA as AGGREGATE's k reads `#VALUE!`; ETS `Map` keys read `-0` as `+0` (the TS `Map`), timeline keys sorted with the V8 sort replay (`js_sort_by`), duplicates aggregated in walk order; `Math.max(...xs)`/`Math.min(...xs)` of an ETS duplicate group never throw (the TS spread throws past ~120k duplicates of one date — accepted divergence, as `uo_jsnum::max_n`). |
+
+### Parity
+
+Replay of `tests/a4.rs`, unchanged harness (the family's cases turned from deferred into compared):
+
+| Group | Compared (all families) | Equal | Of which A4b (145 functions, `UO_A4_FN`) | Deferred | Notes |
+|---|---|---|---|---|---|
+| bank CI (35,299 cases) | 15,870 (A4a: 10,014) | **15,870** | 5,965 compared, 5,965 equal, 1 deferred (a formula case that reaches another family) | 19,368 (A4a: 25,224) + 57 legacy `@` (A5) | |
+| bank big (pt-BR + en-US) | 31,740 (20,028) | **31,740** | — | 38,736 (50,448) + 114 A5 | |
+| calc-traps CI (54,120 calls) | 26,925 (8,969) | **26,925** | 17,956 compared, 17,956 equal, 0 deferred | 27,183 (45,141) | 2 TS timeouts of the family (FORECAST.ETS.CONFINT, target 1e21 / 2^53+2) answered in 0.3 ms (A4b-5) |
+| calc-traps big (308,120 calls) | 152,659 (46,489) | 152,657 | — | 155,342 (261,538) | 121 TS timeouts answered (slowest 1.9 ms); **2 platform differences**, below |
+| calc-order CI x1 (A3 replay) | values 72,038 (A4a: 69,396) | **72,038** | — | 27,578 (30,220) | order equal 384 runs (244), random equal 274; ops group unchanged (560 runs, 129,106 values) |
+| calc-order big | values 8,595,287 (8,290,438) | **8,595,287** | — | 2,440,556 (2,745,405) | order equal 10,719 (8,205), random equal 8,484, `circular` 800/800, incremental = full 577 |
+
+**The 2 differences of the big trap run are the platform of the capture, not the port**: `WEIBULL.DIST(0.5; 2.5;
+2^53 − 1; TRUE)` (pt-BR and en-US) = `(0.5/(2^53 − 1))^2.5`, and `Math.pow` there is 1 ulp apart between the Windows
+UCRT `pow` of the capturing Node (`…02`) and the reference the port follows (decision G1 (a) of `uo-jsnum.md`: glibc's
+non-FMA `pow`, `…03`; checked in WSL with `GLIBC_TUNABLES=glibc.cpu.hwcaps=-FMA,-AVX2`: `…03`). The exact value is
+`2^−135·(1 + 2^−52)^2.5 = 2^−135·(1 + 2.5ε + 1.875ε² + …)`, so `…03` is the correctly rounded one. `a4_big` asserts
+no mismatch and therefore fails on these 2 records until the harness (A4a's) learns platform records (open item 1).
+
+### Robustness, memory, fuzz
+
+`a4_robust.rs` runs the 145 new bodies through its random calls (600 per function release, 60 debug) and M1 (every
+function over a fresh mock leaves the live bytes exactly where they were): no panic, slowest call 396 ms (LOGNORM.DIST lifted over a whole column, the lift's 1M-cell fill, as A4a's FLOOR.MATH), M1 green. **Zero allocation per evaluation**
+(`tests/a4b.rs`): a second full recalc of 2,000 statistics formulas (NORM.DIST, T.DIST, GAMMA.DIST, BINOM.DIST,
+CHISQ.DIST.RT, F.DIST, POISSON.DIST, the Brent inverses NORM.S.INV/T.INV/GAMMA.INV/F.INV.RT, BETA.DIST, a 10-row
+AVERAGE/MAX/RANK.EQ window, STANDARDIZE+FISHER, PERMUT+HYPGEOM.DIST, CONFIDENCE.T+WEIBULL.DIST) allocates exactly what
+2,000 operator formulas do. The bodies that build a list (STDEV/VAR/MEDIAN/PERCENTILE…, the pairs) allocate it per
+call, as the TS; no cache was added (nothing to cap). Hostile ETS shapes (`tests/a4b.rs`, A4b-5) answer `#NUM!` in
+under a millisecond.
+
+Fuzz: six `formula_parse` seeds over the family (order statistics and percentile ranks, AGGREGATE/SUBTOTAL/MODE.MULT/
+FREQUENCY, the iterative inverses at their extremes, the discrete loops at their caps, the ETS hostile shapes, LINEST/
+TREND/LOGEST/GROWTH and the tests over whole columns). Seeds in `core/fuzz/src/calc.rs` `formula_seeds`. Runs of 2026-11-24:
+libFuzzer with ASan from the scratch crate (A4a open item 4; `-timeout=5 -rss_limit_mb=4096`): 261,002 executions in
+≈ 6 min, **0 crashes, 0 timeouts, 0 OOM** (stopped early: disk D: near full, the scratch target dir was removed);
+the stable fallback driver (`core/fuzz`, `--slow 1`) 2 × 300 s: 11,494,550 + 10,939,469 executions, **0 crashes**,
+slowest 1.50 / 1.57 s. Every input over 1 s holds `BETA.INV(0.5;1E-300;1E300)` (1.05 s alone): the TS's own bound —
+Brent's 500 steps × the incomplete beta's 100,000 continued-fraction steps (A1 `betacf`) — not a hang, and the answer
+is the TS's (R1: bounded loops return what the TS returns); kept, open item 5.
+
+### Performance (PERF)
+
+`benches/a3.rs` vs `js/bench-a3.mjs` (frozen TS engine, Node 24.15, same cells; medians of 5 after a warm-up;
+i5-14600KF). New class **stats-10k**: 10,000 data rows (A, B) and 10,000 formulas each of AVERAGE, STDEV.S, MEDIAN,
+PERCENTILE(·;0.9), RANK.EQ, CORREL and SLOPE over windows `$A$1:$A$w`, w = 1,000–10,000 (70,000 formulas, ≈ 5.5·10^8
+cells read).
+
+| Class / function (10,000 formulas each) | TS recalc ms | **Rust recalc ms** | Rust / TS |
+|---|---|---|---|
+| **stats-10k** (all 70,000; build TS 295 / Rust 83 ms; engine heap TS 86.6 MB retained / Rust 31.4 MB) | 38,155 | **1,960** | **0.051** |
+| AVERAGE (streamed, lanes) | 1,902 | 87.9 | 0.046 |
+| STDEV.S | 2,031 | 208.4 | 0.103 |
+| MEDIAN (selection) | 6,017 | 203.8 | 0.034 |
+| PERCENTILE (selection) | 5,830 | 189.7 | 0.033 |
+| RANK.EQ (streamed) | 1,867 | 124.5 | 0.067 |
+| CORREL (`pairs` + `xadd`) | 5,105 | 568.7 | 0.111 |
+| SLOPE | 4,964 | 566.7 | 0.114 |
+
+Per function: `UO_STATS_ONLY=<j>` in both runners (one Node process per function). Before A4b-3/A4b-7 the class took
+4,949 ms (CORREL 2,204, SLOPE 2,367: `zipCells` through `values()` and two `Math.log2` per mixed-sign term) — already
+0.13× the TS. The other classes are unchanged against the A4a record (sum-ranges-100k 34.2, math-100k 45.3,
+chain-100k 16.9, sum3-100k 39.8, text-50k 36.9, dynamic-1k 4.0, volatile-10k 3.5, cycles 1.3, shared-1m 163–173 ms;
+edit head of a 20k chain p50 4.7 ms) — no regression. **Verdict**: inside the ≤ 0.5× budget by an order of magnitude;
+no per-recalc cache (A4b-2).
+
+### Open items
+
+(1) `a4_big` fails on the 2 platform records above (Windows UCRT `pow` in the capture vs the glibc reference): the
+harness (A4a) needs a rule for them — either the captures are retaken under the reference (Node in WSL with the
+tunable, as `uo-jsnum.md` prescribes for G1 (a)) or `tests/a4.rs` accepts a listed platform difference; decision for
+the orchestrator. (2) Shared-helper candidates for `shared/` (none needed by another family yet): `walk` (the
+`collectInto` stream with the `each_number` fast path for plain references — `database.ts` (A4e) would gain the same
+speed), `pairs` (A4b-3), `xadd`/`floor_log2` (A4b-7: A1's `xl_add` could take it, every SUM-like sum with mixed signs
+calls `Math.log2` twice per term), `select`/`typed_min`/`typed_max` (any `sorted(xs)[i]`). (3) A per-recalc cache of
+sorted ranges would need a pass cache in `FnContext` (engine, A3 owner) — not needed at the measured speeds (A4b-2).
+(4) COUNT and the `*A` versions walk references through `for_each_cell` (the engine's `Store::each`): the lane path
+only knows "numbers until the first error"; a lane walk with the other value kinds would be an engine change. (5) BETA.INV/BETAINV
+(and the other Brent inverses over the incomplete beta: T.INV, F.INV) cost up to 500 × 100,000 continued-fraction steps
+on extreme shapes (≈ 1 s per call, `BETA.INV(0.5;1E-300;1E300)`), as the TS; a faster inverse would change results in
+the last bits — a simplification-stage question with oracle evidence, not a port one.
+
 ## Frontiers (closed scope per frontier; all Opus)
 
 | # | Scope | Delivers | Captures | Lines | Needs |
@@ -741,7 +859,7 @@ ran from a scratch crate with ASan (`-s address`) over the same `core/fuzz/src/c
 | A2 (**done** 2026-11-24, section "A2 — as built") | ast/parse/print/a1/evaluate/apply/ops/fn | `parse`/`print` with a depth limit and an explicit stack, `trait EvalHost` (the TS interface, `evaluate.ts:34-61`); as built: no recursion through operators anywhere (A2-2), the registry table generated from the TS, bodies hooked for A4 | the new `a2` group (parse/print/round trip, evaluation over a mock workbook, ops, a1, applyFn) and the A2 calls of `calc-tests` | ≈ 1,460 | A1 |
 | A3 (**done** 2026-11-24, section "A3 — as built") | engine (graph, full/incremental recalc, `NeedCell` as `Result`, spills, CSE, data tables skip, cycles/iteration, volatiles) on S0 | `Engine` over `&mut Store` | per-cell values + evaluation-order facet over generated workbooks, incremental = full, `calc-tests` | ≈ 900 | S0, A2 |
 | A4a (**done** 2026-11-24, section "A4a — as built") | the shared function layer (factories, walkers of math-util/stats/tdl-util, basic aggs, dispatch per family) + math, math-util, libm, complex, engineering | functions | bank + traps (replay `tests/a4.rs`, every family) | 2,000 | A3 |
-| A4b | statistical, distributions, regression, ets | functions | bank + traps | 1,628 | A3 |
+| A4b (**done** 2026-11-24, section "A4b — as built") | statistical, distributions, regression, ets | functions (145 bodies) | bank + traps | 1,628 | A3 |
 | A4c | financial, daycount, datetime | functions | bank + traps | 1,390 | A3 |
 | A4d | text, text-format (via `uo-numfmt`), regex (`regress`, R1), filterxml (XPath subset), regional, tdl-util | functions | bank + traps (non-ASCII, surrogates) | 1,701 | A3 |
 | A4e | lookup, reference, dynamic, database, conditional | functions (stable sorts: `uo_jsnum::sort`) | bank + traps | 1,632 | A3 |
@@ -950,3 +1068,4 @@ Listed in the plan's §16 with the evidence.
 | A2 (port of a1/ast/parse/print/fn/ops/apply/evaluate + function table generator + `a2` capture + parity + robustness + stack probes native/wasm32 + fuzz target + memory + benchmarks vs the TS) | Opus | ≈ 1 h 26 min wall (04:28-05:54) | 0 parity rounds: the first replay of the CI capture (158,153 facets), the big run (612,438) and the calc-tests calls (1,442 + 30,186) were clean, and stayed clean after the evaluator rewrite; rework found by the tests and probes of the same session, all fixed by the same agent: (1) a recursive evaluator and printer used 464 B (paren) to 1.26 KB (chained operator) of native stack per level — a 1,000-term chain overflowed a 1 MiB thread → operator work stack + iterative printer (A2-2), parser depth counted on function nesting only; (2) the union `,` was quadratic (50k areas 44 s debug) → in-place append + one-sheet flag (A2-11); (3) clippy (collapsible ifs, `f64::min/max` → `uo_jsnum::math`, 6 float casts → `cast.rs`); (4) the bench's JSON reader rejected a cases file with a trailing byte; (5) the first fuzz run stalled once, not reproduced (see A2 robustness) |
 | A3 (engine: graph, templates, reverse index, scheduler, spills/CSE, cycles/iteration, edits, the one write path + `ops` capture group + parity replay + robustness/fuzz target + memory + benchmarks vs the TS) | Opus | ≈ 1 h 5 min wall (05:56-07:01) | 0 parity rounds (no port bug sent back by a verifier); rework found by the replay and tests of the same session, all fixed by the same agent: (1) shadowed duplicates read the store's `(col, FileCell)` as `(row, …)` — orphaned formulas were lost (ops order facet); (2) `circular` compared as numbers, the capture sorts strings (harness); (3) the taint closure only grew from new seeds, so new formulas reading old deferred cells were compared (harness); (4) under `ignoreCache` a cycle restored the store value, which an orphan had overwritten — the cached file value is now kept per formula; (5) a run whose order differs only in deferred cells was counted as a mismatch (harness); (6) the `Work::Operand` fast path converted the operand of a unary `+`, breaking `+(A1)#` (a2 replay, 2 records); (7) the load materialized one record per cell (213 MB peak on shared-1m → 42 MB, streamed batches); (8) `-0` lost by the robustness test's loader (test); (9) clippy (`f64::min`, an `x + 1 <= y`, a complex type) |
 | A4a (shared function layer + math family: math/complex/engineering bodies, dispatch per family, bank + calc-traps replay harness for every family, robustness/memory/zero-alloc tests, the `each_number` lane fast path, benchmarks vs the TS, `SheetLoader::strings`, fuzz) | Opus | ≈ 1 h 30 min wall (07:10-08:40) | 0 parity rounds on the bodies (the first bank and trap replays of the math family were equal except what the harness or another frontier explained); rework found by the replays, tests and benchmarks of the same session, all fixed by the same agent: (1) the A2 replay compared against bodies now present → `EvalState::set_bodies(false)`; (2) the A3 replay compared RAND cells whose stream a non-ported body had shifted (784 values) → random cells deferred with the stream (A4a-10); (3) the dispatch table counted as a leak in A2's M1 test (4,280 B) → warmed first; (4) the bank exposed an A3 bug: the engine's arena lacked the empty string at `StrIx(0)`, breaking LAMBDA optional parameters (A4a-11); (5) legacy `@` bank cases (A5) deferred; (6) `sum-ranges-100k` at 1.0× the TS (145 ms) until `each_number` read the store lanes (34 ms, A4a-8); (7) a 1.7·10^10-cell broadcast aborted the A2 evaluator → array caps (A4a-4); (8) the CI trap replay took 23 s release (whole-column fills and 18 MB value texts) → texts built in one buffer, non-ported functions not run, whole-column traps release-only; (9) Bessel budget lowered from 2^26 to 2^22 steps (170 ms → 10 ms per hostile call); (10) clippy (excessive precision of the TS literals, approximate constants, a negated float comparison, a complex type); (11) the fuzz run found formulas of hundreds of hostile Bessel calls taking 5 s → the budget is checked before the loop |
+| A4b (statistics family: statistical/distributions/regression/ets, 145 bodies, the `pairs`/`walk`/`xadd` fast paths, selection for order statistics, ETS and least-squares bounds, `tests/a4b.rs`, the stats-10k benchmark in both runners, fuzz seeds) | Opus | ≈ 1 h wall (08:40-09:40) | **0 parity rounds**: the first bank and trap replays of the 145 bodies were equal (CI bank 5,965, traps 17,956); the big trap run showed 2 records that are the capture's platform (Windows UCRT `pow`, checked in WSL against the glibc reference: open item 1). Rework found by the tests, benchmarks and fuzz of the same session, all fixed by the same agent: (1) clippy (4 negated float comparisons, a range loop in a test, an ambiguous float literal); (2) stats-10k at 4,949 ms (0.13× the TS) with CORREL/SLOPE 2.2 s each → `pairs` on the store lanes (A4b-3) and `xadd` (A4b-7): 1,960 ms (0.051×); (3) the ETS gap filling rescanned each gap run (quadratic) → next-known index from one pass; (4) the fuzz run found `BETA.INV` at 1 s per call — the TS bound, kept (open item 5); (5) the first libFuzzer attempt built through `core/fuzz`'s workspace (the `uo-ffi` cdylib does not link) and then lacked the ASan DLL on `PATH` — both setup, no code |

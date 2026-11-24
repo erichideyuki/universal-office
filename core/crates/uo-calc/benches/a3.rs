@@ -6,7 +6,8 @@
 //! The operator-only variants of the TS baseline classes (function bodies are A4): chain-100k, sum3-100k (three
 //! references per formula), text-50k (`&`), dynamic-1k (20 spills of 1,000 rows), volatile-10k (`ca` + dependents),
 //! cycles-iterate, shared-1m; with the A4a bodies: sum-ranges-100k (the baseline's window `SUM`) and math-100k
-//! (ROUND/MOD/POWER/SQRT/INT/ABS/SIN); per class the engine build, the full recalc (median of 5 after one warm-up), the engine's
+//! (ROUND/MOD/POWER/SQRT/INT/ABS/SIN); with the A4b bodies: stats-10k (AVERAGE, STDEV.S, MEDIAN, PERCENTILE, RANK.EQ,
+//! CORREL, SLOPE over 1,000–10,000-row windows); per class the engine build, the full recalc (median of 5 after one warm-up), the engine's
 //! heap and the live bytes the build added (store excluded); the edit latency on a 20k chain and on an isolated cell
 //! (p50 / p95 of 20).
 #![allow(clippy::unwrap_used)]
@@ -69,6 +70,35 @@ fn class(name: &str) -> (Vec<(u32, u32, In)>, CalcOptions) {
                     _ => format!("ABS(SIN(A{i}))"),
                 };
                 v.push((i - 1, 1, f(t)));
+            }
+        }
+        "stats-10k" => {
+            // A4b: 10,000 data rows (A, B) and 10,000 formulas each of AVERAGE, STDEV.S, MEDIAN, PERCENTILE, RANK.EQ,
+            // CORREL and SLOPE over windows of 1,000–10,000 rows
+            let fs = [
+                "AVERAGE($A$1:$A$W)",
+                "STDEV.S($A$1:$A$W)",
+                "MEDIAN($A$1:$A$W)",
+                "PERCENTILE($A$1:$A$W,0.9)",
+                "RANK.EQ($A$R,$A$1:$A$W)",
+                "CORREL($A$1:$A$W,$B$1:$B$W)",
+                "SLOPE($B$1:$B$W,$A$1:$A$W)",
+            ];
+            for k in 0..10_000u32 {
+                let i = k + 1;
+                let w = 1000 + (i * 7919) % 9001;
+                let r = 1 + (i * 31) % 1000;
+                v.push((k, 0, In::Num(f64::from((i * 7919) % 1000) + 0.5)));
+                v.push((k, 1, In::Num(f64::from((i * 104_729) % 997) * 1.25)));
+                // UO_STATS_ONLY=<j>: one function of the list (per-function timing)
+                let only: Option<usize> = std::env::var("UO_STATS_ONLY").ok().and_then(|x| x.parse().ok());
+                for (j, t) in fs.iter().enumerate() {
+                    if only.is_some_and(|o| o != j) {
+                        continue;
+                    }
+                    let t = t.replace('W', &w.to_string()).replace("$R", &format!("${r}"));
+                    v.push((k, 2 + j as u32, f(t)));
+                }
             }
         }
         "text-50k" => {
@@ -215,9 +245,18 @@ fn main() {
     let opts = EngineOptions::new(ValueLocale::pt_br());
     let mut rnd = RandomSource::seeded(1);
     println!("class | formulas | build ms | recalc ms | calculate ms | engine heap MB | build live MB");
-    for name in
-        ["chain-100k", "sum3-100k", "sum-ranges-100k", "math-100k", "text-50k", "dynamic-1k", "volatile-10k", "cycles-iterate", "shared-1m"]
-    {
+    for name in [
+        "chain-100k",
+        "sum3-100k",
+        "sum-ranges-100k",
+        "math-100k",
+        "stats-10k",
+        "text-50k",
+        "dynamic-1k",
+        "volatile-10k",
+        "cycles-iterate",
+        "shared-1m",
+    ] {
         if !want(name) {
             continue;
         }

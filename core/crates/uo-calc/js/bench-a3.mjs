@@ -28,6 +28,23 @@ export const CLASSES = {
       return [[k, 0, { v: ((i * 7919) % 1000) + 0.37 }], [k, 1, f(t[(i % 5 + 1) % 5])]];
     }).flat(),
   }),
+  // A4b: 10,000 data rows (A, B) and 10,000 formulas each of AVERAGE, STDEV.S, MEDIAN, PERCENTILE, RANK.EQ, CORREL and
+  // SLOPE over windows of 1,000–10,000 rows (70,000 formulas)
+  'stats-10k': () => {
+    const cells = [];
+    const fs = ['AVERAGE($A$1:$A$W)', 'STDEV.S($A$1:$A$W)', 'MEDIAN($A$1:$A$W)', 'PERCENTILE($A$1:$A$W,0.9)', 'RANK.EQ($A$R,$A$1:$A$W)',
+      'CORREL($A$1:$A$W,$B$1:$B$W)', 'SLOPE($B$1:$B$W,$A$1:$A$W)'];
+    for (let k = 0; k < 10000; k++) {
+      const i = k + 1, w = 1000 + ((i * 7919) % 9001), r = 1 + ((i * 31) % 1000);
+      cells.push([k, 0, { v: ((i * 7919) % 1000) + 0.5 }], [k, 1, { v: ((i * 104729) % 997) * 1.25 }]);
+      // UO_STATS_ONLY=<j>: one function of the list (per-function timing)
+      fs.forEach((t, j) => {
+        if (process.env.UO_STATS_ONLY !== undefined && Number(process.env.UO_STATS_ONLY) !== j) return;
+        cells.push([k, 2 + j, f(t.replaceAll('W', String(w)).replaceAll('$R', '$' + r))]);
+      });
+    }
+    return { cells };
+  },
   'text-50k': () => ({ cells: Array.from({ length: 50000 }, (_, i) => [[i, 0, { v: `texto ${i + 1} ção` }], [i, 1, f(`A${i + 1}&"x"&${i + 1}`)]]).flat() }),
   'dynamic-1k': () => ({
     cells: [
