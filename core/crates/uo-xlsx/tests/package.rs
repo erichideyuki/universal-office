@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 use support::samples;
 use uo_opc::xml::{self, Document, ParseOptions};
 use uo_xlsx::{
-    BorderEdge, BorderStyle, Borders, Cell, CellRange, CellValue, Column, DateTime, DefinedName, Error, HAlign, Link, Rgb, RowOptions, SheetOptions,
-    Style, StyleId, WorkbookOptions, XlsxWriter, column_name, date_serial,
+    AutoFilter, BorderEdge, BorderStyle, Borders, Cell, CellRange, CellValue, Column, DateTime, DefinedName, Error, HAlign, Link,
+    MAX_SORT_KEYS, Rgb, RowOptions, SheetOptions, SortKey, Style, StyleId, WorkbookOptions, XlsxWriter, column_name, date_serial,
 };
 
 /// Every part of the archive, inflated (the zip reader checks sizes; the CRC is checked here).
@@ -406,6 +406,67 @@ fn sheet_layout() {
     ));
     let order: Vec<String> = strict(wb).root().child_elements().map(|e| e.local_name().to_owned()).collect();
     assert_eq!(order, ["bookViews", "sheets", "definedNames", "calcPr"]);
+}
+
+#[test]
+fn auto_filter() {
+    let opts = SheetOptions {
+        name: "Aba".into(),
+        freeze_rows: 3,
+        outline_levels: 1,
+        print_title_rows: Some((3, 3)),
+        names: vec![DefinedName { name: "ColumnTitle".into(), range: CellRange::cell(3, 1), sheet_scope: true }],
+        ..SheetOptions::default()
+    };
+    let mut w = XlsxWriter::new(WorkbookOptions::default()).unwrap();
+    let f = AutoFilter { range: CellRange::new(3, 1, 300, 6), sort: vec![] };
+    assert_eq!(w.set_auto_filter(f.clone()), Err(Error::NoSheetOpen), "no sheet open");
+    w.begin_sheet(opts).unwrap();
+    w.merge(CellRange::new(1, 1, 1, 6)).unwrap();
+    w.append_row(&RowOptions::default(), &[Cell::text("title")]).unwrap();
+    w.append_row(&RowOptions { outline_level: 1, ..RowOptions::default() }, &[Cell::text("x")]).unwrap();
+    w.append_row(&RowOptions::default(), &[Cell::text("a"), Cell::text("b")]).unwrap();
+    // validation
+    let bad = |range, sort| AutoFilter { range, sort };
+    assert_eq!(w.set_auto_filter(bad(CellRange::new(3, 1, 2, 6), vec![])), Err(Error::InvalidRange), "last row before first");
+    assert_eq!(w.set_auto_filter(bad(CellRange::new(3, 1, 300, 16_385), vec![])), Err(Error::InvalidRange), "past XFD");
+    let off = vec![SortKey { col: 7, descending: false }];
+    assert_eq!(w.set_auto_filter(bad(CellRange::new(3, 1, 300, 6), off)), Err(Error::InvalidRange), "sort column outside");
+    let many = vec![SortKey { col: 1, descending: false }; MAX_SORT_KEYS + 1];
+    assert_eq!(w.set_auto_filter(bad(CellRange::new(3, 1, 300, 6), many)), Err(Error::InvalidRange), "more than 64 keys");
+    // a first call is replaced by the second
+    w.set_auto_filter(f).unwrap();
+    let sort = vec![SortKey { col: 6, descending: true }, SortKey { col: 2, descending: false }];
+    w.set_auto_filter(AutoFilter { range: CellRange::new(3, 1, 300, 6), sort }).unwrap();
+    // the second sheet: header row only (no data) → buttons, no sortState
+    assert_eq!(w.begin_sheet(sheet_opts("Vazia")), Err(Error::SheetOpen), "the filtered sheet is still open");
+    w.end_sheet().unwrap();
+    w.begin_sheet(sheet_opts("Vazia")).unwrap();
+    w.append_row(&RowOptions::default(), &[Cell::text("h")]).unwrap();
+    w.set_auto_filter(AutoFilter { range: CellRange::new(1, 1, 1, 2), sort: vec![SortKey { col: 1, descending: false }] })
+        .unwrap();
+    let p = parts(&w.finish().unwrap());
+    let s = &p["xl/worksheets/sheet1.xml"];
+    assert!(
+        s.contains(
+            "</sheetData><autoFilter ref=\"A3:F300\"><sortState ref=\"A4:F300\"><sortCondition descending=\"1\" \
+             ref=\"F4:F300\"/><sortCondition ref=\"B4:B300\"/></sortState></autoFilter><mergeCells"
+        ),
+        "{s}"
+    );
+    let order: Vec<String> = strict(s).root().child_elements().map(|e| e.local_name().to_owned()).collect();
+    assert_eq!(order, ["sheetPr", "sheetViews", "sheetFormatPr", "sheetData", "autoFilter", "mergeCells", "pageMargins"]);
+    assert!(p["xl/worksheets/sheet2.xml"].contains("</sheetData><autoFilter ref=\"A1:B1\"/><pageMargins"));
+    let wb = &p["xl/workbook.xml"];
+    assert!(
+        wb.contains(
+            "<definedNames><definedName name=\"_xlnm._FilterDatabase\" localSheetId=\"0\" hidden=\"1\">'Aba'!$A$3:$F$300</definedName>\
+             <definedName name=\"_xlnm._FilterDatabase\" localSheetId=\"1\" hidden=\"1\">'Vazia'!$A$1:$B$1</definedName>\
+             <definedName name=\"_xlnm.Print_Titles\" localSheetId=\"0\">'Aba'!$3:$3</definedName>\
+             <definedName name=\"ColumnTitle\" localSheetId=\"0\">'Aba'!$A$3</definedName></definedNames>"
+        ),
+        "{wb}"
+    );
 }
 
 #[test]

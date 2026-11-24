@@ -152,6 +152,59 @@ pub struct DefinedName {
     pub sheet_scope: bool,
 }
 
+/// The most sort keys an [`AutoFilter`] may carry (Excel's sort dialog allows 64 levels).
+pub const MAX_SORT_KEYS: usize = 64;
+
+/// A sort key of an [`AutoFilter`]: a column of the filter range, 1-based and absolute like [`CellRange`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SortKey {
+    pub col: u32,
+    pub descending: bool,
+}
+
+/// The filter (and sort) buttons of a sheet: `range` is the header row plus the data rows; `sort` records the
+/// order the data is already in (Excel shows it on the buttons; it does not re-sort on open).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoFilter {
+    pub range: CellRange,
+    pub sort: Vec<SortKey>,
+}
+
+impl AutoFilter {
+    pub(crate) fn validate(&self) -> Result<()> {
+        self.range.validate()?;
+        let cols = self.range.first_col..=self.range.last_col;
+        if self.sort.len() > MAX_SORT_KEYS || self.sort.iter().any(|k| !cols.contains(&k.col)) {
+            return Err(Error::InvalidRange);
+        }
+        Ok(())
+    }
+
+    /// `<autoFilter ref="…">` with its `<sortState>` (none when there is no sort key or no data row).
+    pub(crate) fn push_xml(&self, o: &mut String) {
+        let r = &self.range;
+        o.push_str("<autoFilter ref=\"");
+        r.push_a1(o);
+        if self.sort.is_empty() || r.last_row == r.first_row {
+            o.push_str("\"/>");
+            return;
+        }
+        o.push_str("\"><sortState ref=\"");
+        CellRange::new(r.first_row + 1, r.first_col, r.last_row, r.last_col).push_a1(o);
+        o.push_str("\">");
+        for k in &self.sort {
+            o.push_str("<sortCondition");
+            if k.descending {
+                o.push_str(" descending=\"1\"");
+            }
+            o.push_str(" ref=\"");
+            CellRange::new(r.first_row + 1, k.col, r.last_row, k.col).push_a1(o);
+            o.push_str("\"/>");
+        }
+        o.push_str("</sortState></autoFilter>");
+    }
+}
+
 /// Options of a sheet, given when it starts (the worksheet XML puts them before the rows).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SheetOptions {

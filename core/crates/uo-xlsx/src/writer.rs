@@ -8,7 +8,7 @@ use uo_opc::zip::{RawEntry, WriteOptions, ZipWriter};
 use crate::cell::{cut_text, date_serial, date_text, needs_preserve, push_number, push_ref, push_u32, push_xstring};
 use crate::error::{Error, Result};
 use crate::parts::{self, SheetMeta};
-use crate::sheet::{self, Cell, CellRange, CellValue, Link, RowOptions, SheetOptions};
+use crate::sheet::{self, AutoFilter, Cell, CellRange, CellValue, Link, RowOptions, SheetOptions};
 use crate::style::{BUILTIN_DATE_TIME, BUILTIN_SHORT_DATE, Style, StyleId, StylePool};
 use crate::{MAX_CELL_TEXT, MAX_COLS, MAX_LINK_LEN, MAX_LINKS_PER_SHEET, MAX_ROWS};
 
@@ -154,6 +154,7 @@ struct OpenSheet {
     next_row: u32,
     merges: Vec<CellRange>,
     links: Vec<(u32, u32, LinkTarget)>,
+    auto_filter: Option<AutoFilter>,
 }
 
 /// The xlsx writer. Calls: [`XlsxWriter::add_style`] (any time), then per sheet
@@ -237,8 +238,9 @@ impl XlsxWriter {
             next_row: 1,
             merges: Vec::new(),
             links: Vec::new(),
+            auto_filter: None,
         });
-        self.sheets.push(SheetMeta { name: opts.name, print_titles: opts.print_title_rows, names: opts.names });
+        self.sheets.push(SheetMeta { name: opts.name, print_titles: opts.print_title_rows, names: opts.names, filter: None });
         Ok(())
     }
 
@@ -393,6 +395,20 @@ impl XlsxWriter {
         Ok(())
     }
 
+    /// Puts filter (and sort) buttons on a range of the open sheet. Call it any time before
+    /// [`XlsxWriter::end_sheet`] (the last row is usually known only at the end); calling it again replaces the filter. The sheet also gets the
+    /// hidden `_xlnm._FilterDatabase` name Excel and LibreOffice expect. A range outside the sheet, a sort column
+    /// outside the range or more than [`crate::MAX_SORT_KEYS`] keys is [`Error::InvalidRange`].
+    pub fn set_auto_filter(&mut self, filter: AutoFilter) -> Result<()> {
+        let Some(sheet) = &mut self.open else { return Err(Error::NoSheetOpen) };
+        filter.validate()?;
+        if let Some(meta) = self.sheets.last_mut() {
+            meta.filter = Some(filter.range);
+        }
+        sheet.auto_filter = Some(filter);
+        Ok(())
+    }
+
     /// The next row number of the open sheet (1 before the first row).
     pub fn next_row(&self) -> Option<u32> {
         self.open.as_ref().map(|s| s.next_row)
@@ -429,6 +445,10 @@ impl XlsxWriter {
         let Some(sheet) = self.open.take() else { return Err(Error::NoSheetOpen) };
         let o = &mut self.buf;
         o.push_str("</sheetData>");
+        // CT_Worksheet order: autoFilter comes before mergeCells
+        if let Some(f) = &sheet.auto_filter {
+            f.push_xml(o);
+        }
         if !sheet.merges.is_empty() {
             o.push_str("<mergeCells count=\"");
             push_u32(o, sheet.merges.len() as u32);

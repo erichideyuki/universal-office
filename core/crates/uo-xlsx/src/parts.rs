@@ -13,6 +13,8 @@ pub(crate) struct SheetMeta {
     pub name: String,
     pub print_titles: Option<(u32, u32)>,
     pub names: Vec<crate::sheet::DefinedName>,
+    /// the auto-filter range (the hidden `_xlnm._FilterDatabase` name)
+    pub filter: Option<CellRange>,
 }
 
 pub(crate) fn workbook_xml(sheets: &[SheetMeta]) -> String {
@@ -32,7 +34,8 @@ pub(crate) fn workbook_xml(sheets: &[SheetMeta]) -> String {
     }
     o.push_str("</sheets>");
     // Excel keeps defined names sorted by name, then scope; any order opens, sorted is what it writes
-    let mut names: Vec<(String, Option<u32>, String)> = Vec::new();
+    // (name, scope, value, hidden)
+    let mut names: Vec<(String, Option<u32>, String, bool)> = Vec::new();
     for (i, s) in sheets.iter().enumerate() {
         if let Some((a, b)) = s.print_titles {
             let mut v = String::new();
@@ -41,20 +44,27 @@ pub(crate) fn workbook_xml(sheets: &[SheetMeta]) -> String {
             push_u32(&mut v, a);
             v.push_str(":$");
             push_u32(&mut v, b);
-            names.push(("_xlnm.Print_Titles".to_owned(), Some(i as u32), v));
+            names.push(("_xlnm.Print_Titles".to_owned(), Some(i as u32), v, false));
+        }
+        if let Some(r) = &s.filter {
+            let mut v = String::new();
+            push_quoted_sheet(&mut v, &s.name);
+            v.push('!');
+            r.push_absolute(&mut v);
+            names.push(("_xlnm._FilterDatabase".to_owned(), Some(i as u32), v, true));
         }
         for n in &s.names {
             let mut v = String::new();
             push_quoted_sheet(&mut v, &s.name);
             v.push('!');
             CellRange::push_absolute(&n.range, &mut v);
-            names.push((n.name.clone(), n.sheet_scope.then_some(i as u32), v));
+            names.push((n.name.clone(), n.sheet_scope.then_some(i as u32), v, false));
         }
     }
     if !names.is_empty() {
         names.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()).then(a.1.cmp(&b.1)));
         o.push_str("<definedNames>");
-        for (name, scope, value) in &names {
+        for (name, scope, value, hidden) in &names {
             o.push_str("<definedName name=\"");
             escape_into(&mut o, name, Escape::ATTR);
             o.push('"');
@@ -62,6 +72,9 @@ pub(crate) fn workbook_xml(sheets: &[SheetMeta]) -> String {
                 o.push_str(" localSheetId=\"");
                 push_u32(&mut o, *id);
                 o.push('"');
+            }
+            if *hidden {
+                o.push_str(" hidden=\"1\"");
             }
             o.push('>');
             o.push_str(value);

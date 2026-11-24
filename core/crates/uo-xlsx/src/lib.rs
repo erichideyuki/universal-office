@@ -43,8 +43,8 @@ pub mod session;
 pub use cell::{DateTime, column_name, date_serial};
 pub use error::{Error, Result};
 pub use sheet::{
-    Cell, CellRange, CellValue, Column, DefinedName, Link, RowOptions, SheetOptions, column_width_from_px, sanitize_sheet_name,
-    validate_sheet_name,
+    AutoFilter, Cell, CellRange, CellValue, Column, DefinedName, Link, MAX_SORT_KEYS, RowOptions, SheetOptions, SortKey,
+    column_width_from_px, sanitize_sheet_name, validate_sheet_name,
 };
 pub use style::{BorderEdge, BorderStyle, Borders, HAlign, Rgb, Style, StyleId};
 pub use writer::{FontSpec, SST_DEDUP_CAP, WorkbookOptions, XlsxWriter};

@@ -50,6 +50,14 @@ bounded memory (10k × 40 and beyond); no threads, no file system, usable from a
   (2026-11-24, asked by the data-grid's `grid-xlsx`) writes a built-in id explicitly, as is (14 short date, 22 date
   and time in the reader's regional settings): no `<numFmts>` entry, it wins over `num_fmt`, a date cell keeps it
   (no implied 14/22), and an id `uo_numfmt::builtin_format` does not know is `Error::NumFmt`.
+- **AutoFilter** (2026-11-24, asked by `grid-xlsx`): `XlsxWriter::set_auto_filter(AutoFilter { range, sort:
+  Vec<SortKey { col, descending }> })` while the sheet is open (the last row is known only at the end; a second call
+  replaces the first). `end_sheet` writes `<autoFilter ref>` right after `</sheetData>` (before `<mergeCells>`,
+  CT_Worksheet order) with a `<sortState ref="range minus the header row">` of one `<sortCondition>` per key, in order
+  (omitted without keys or without a data row); `finish` adds the hidden `_xlnm._FilterDatabase` name
+  (`localSheetId`, absolute range), sorted with the other names. `SortKey::col` is 1-based and absolute like
+  `CellRange`. A range outside the sheet, a key outside the range or more than `MAX_SORT_KEYS` (64) keys is
+  `Error::InvalidRange` (no new error variant, so exhaustive matches downstream keep compiling).
 - **Part order** in the archive: worksheets (streamed), their hyperlink relationships, shared strings, styles,
   workbook, workbook relationships, core and app properties, root relationships, `[Content_Types].xml` last (the
   sheets are not known before `finish`; Excel, LibreOffice and the TS reader do not depend on the order).
