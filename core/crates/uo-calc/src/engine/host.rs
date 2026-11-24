@@ -263,24 +263,7 @@ impl EvalHost for Host<'_> {
         Ok(e)
     }
     fn formula_text(&mut self, ast: &Ast, sheet: SheetIx, row: u32, col: u32) -> Option<JsString> {
-        let f = self.g.current(sheet.0, row, col).or_else(|| {
-            let o = *self.g.sheets.get(sheet.0 as usize)?.owners.get(&crate::store::ts_key(row, col))? & !NULL_VIEW;
-            (!self.g.recs[o as usize].has(fl::DYNAMIC)).then_some(o)
-        })?;
-        let r = self.g.recs[f as usize];
-        let text =
-            self.store.sheet(SheetIx(r.sheet)).and_then(|s| s.formulas.get(r.row, u32::from(r.col))).and_then(|(_, x)| x.text.clone());
-        // the original text; a shared child (empty text) prints its tree (A5 adds the legacy `@` positions)
-        match text {
-            Some(t) if !t.as_js().is_empty() => Some(t),
-            _ => {
-                if r.node == super::NONE {
-                    return None;
-                }
-                let o = PrintOptions { row: r.row, col: u32::from(r.col), r1c1: false, ui: true };
-                Some(print_formula(ast, NodeId(r.node), &o))
-            }
-        }
+        formula_text_of(self.g, ast, self.store, sheet, row, col)
     }
     fn is_subtotal_cell(&mut self, sheet: SheetIx, row: u32, col: u32) -> bool {
         let f = self
@@ -333,4 +316,46 @@ impl EvalHost for Host<'_> {
     fn pooled(&self, id: StrId) -> JsStr<'_> {
         self.store.strings.get(id)
     }
+    fn pass_cache(&mut self) -> Option<&mut crate::functions::lookup::PassCache> {
+        Some(&mut self.g.pass_cache)
+    }
+    fn formula_node(&mut self, sheet: SheetIx, row: u32, col: u32) -> Option<NodeId> {
+        // `getFormula(sheet, row, col)?.node` (A5 adds the legacy `exec` tree)
+        let f = self.g.current(sheet.0, row, col)?;
+        let n = self.g.recs[f as usize].node;
+        // `f.exec ?? f.node` (`criterionAt`, `engine.ts:584-588`): the legacy `@` tree when the A5 rewrite made one
+        (n != super::NONE).then(|| self.g.exec_node(f))
+    }
+}
+
+/// `formulaText(sheet, row, col)` (`engine.ts:475-480`) + `sourceText` (`engine.ts:486-495`): the anchor's (or a CSE
+/// owner's) original text with the legacy `@` inserted at their positions; when a position is unknown or the formula
+/// has no own text (a shared child), the dynamic tree printed in the screen form; a resolved `_xll.` formula shows
+/// the printed native call.
+pub(crate) fn formula_text_of(g: &super::Graph, ast: &Ast, store: &Store, sheet: SheetIx, row: u32, col: u32) -> Option<JsString> {
+    let f = g.current(sheet.0, row, col).or_else(|| {
+        let o = *g.sheets.get(sheet.0 as usize)?.owners.get(&crate::store::ts_key(row, col))? & !NULL_VIEW;
+        (!g.recs[o as usize].has(fl::DYNAMIC)).then_some(o)
+    })?;
+    let r = g.recs[f as usize];
+    let text = match g.alt_text.get(&f) {
+        Some(t) => Some(t.clone()),
+        None => store.sheet(SheetIx(r.sheet)).and_then(|s| s.formulas.get(r.row, u32::from(r.col))).and_then(|(_, x)| x.text.clone()),
+    };
+    if r.node == super::NONE {
+        return text.filter(|t| !t.as_js().is_empty());
+    }
+    // `sourceText`: no own text -> undefined; no rewrite -> the text; else the positions
+    if let Some(t) = text.as_ref().filter(|t| !t.as_js().is_empty()) {
+        if !r.has(fl::EXEC) {
+            return Some(t.clone());
+        }
+        if let Some(Some(e)) = g.exec.get(&(r.node, r.sheet))
+            && let Some(s) = crate::implicit::source_text(t.as_js(), &e.positions)
+        {
+            return Some(s);
+        }
+    }
+    let o = PrintOptions { row: r.row, col: u32::from(r.col), r1c1: false, ui: true };
+    Some(print_formula(ast, g.exec_node(f), &o))
 }

@@ -850,6 +850,570 @@ only knows "numbers until the first error"; a lane walk with the other value kin
 on extreme shapes (≈ 1 s per call, `BETA.INV(0.5;1E-300;1E300)`), as the TS; a faster inverse would change results in
 the last bits — a simplification-stage question with oracle evidence, not a port one.
 
+## A4c — as built (2026-11-24, Opus)
+
+The finance/date family: every body of `financial.ts` (55 names: PV … ODDFYIELD) and `datetime.ts` (25 names: DATE …
+YEARFRAC, NOW/TODAY through the host clock), and `daycount.ts` (the ATP day counts and coupon dates, no bodies of its
+own) — 80 bodies, all in the family module; nothing in `functions/mod.rs`, `shared/` or another family changed.
+
+**Code** (`core/crates/uo-calc/src/functions/finance/`):
+
+| File | Content |
+|---|---|
+| `mod.rs` | `BODIES` (`financial`, `datetime`); the family's support: `Steps` (a step counter with a cap), `LOOP_BUDGET` (2^22) and `PRICE_BUDGET` (2^23, A4c-2), `F64Buf` (cash flows on the stack up to 64), `type_error()` (the TS `TypeError` of a JS object reaching `toNumber`), `lift_atp` (`liftAtp` of `tdl-util.ts` with the arguments on the stack, A4c-1) |
+| `daycount.rs` (`pub`) | `daycount.ts`: `CDate` (LibreOffice's `ScaDate`: `of`, `set_day`, `add_months`, `serial`, `lt`/`gt`, `diff`), `couppcd_date`/`coupncd_date` (bounded, A4c-2), `Bond`, `coup_*`, `edate`, `days360eu`, `diff_date`, `year_frac_parts`, `days_in_year`, `year_frac` — every field an `f64` as in the TS (a NaN basis takes the `default` branches; a date outside the JS `Date` range has NaN fields) |
+| `financial.rs` | `financial.ts`: time value of money (`fv_of`, `pv_of`, `pmt_of`, `ipmt_of`, `rate_of`), cash flows (NPV streamed, `array_flows`, `irr_of`, `atp_array`, `x_args`, `xirr_of`, FVSCHEDULE), depreciation (DB, `ddb_of`, `inter_vdb`, AMORDEGRC/AMORLINC), bonds (`bond_of`, `Coupons`, `price_of`, `yield_of`, `duration_of`, the discount family, `accr_args`/`accr_nums`, `quasi_at`, `day_count`, `oddl_sums`, `OddF`/`oddf_setup`/`oddf_price`) |
+| `datetime.rs` | `datetime.ts`: `split`, `date_arg`, `atp_date`, weekend masks (`[bool; 7]`), `Holidays` (the TS `Set` as a sorted, deduplicated vector + a NaN flag), `network_days`, `workday` (bounded), `iso_week`, `datedif` (+ `Unit`), `days360`, `add_months`, the 25 bodies |
+
+Tests: `src/functions/finance/datetime.rs` unit test (DATEDIF units); `tests/a4c.rs` — zero allocation per evaluation
+on 50 single-call finance/date formulas (every value checked to be a number but non-converging IRR windows),
+the hostile loops (A4c-2/-3) answered at once, NOW/TODAY over the frozen clock; the family is also in `tests/a4.rs`
+(parity) and `tests/a4_robust.rs` (random calls, M1) through `functions::ported()`. Benchmarks `benches/a4c.rs` +
+`js/bench-a4c.mjs` (own files: `[[bench]] a4c` is the only `Cargo.toml` change).
+
+### Decisions taken in A4c (declared; observable output equal unless said)
+
+| Id | Decision |
+|---|---|
+| A4c-1 | **No per-call allocation on the scalar paths**: the date ATP bodies (EDATE, EOMONTH, NETWORKDAYS(.INTL), WORKDAY(.INTL), WEEKNUM, YEARFRAC) go through the family's `lift_atp`, the shared `tdl::lift_atp` with its `Vec` of arguments replaced by a 4-slot stack array (same rules: a several-cell reference → `#VALUE!`, LAMBDA → `#CALC!`, the passed position unlifted, broadcast with `#N/A` leftovers); NPV sums the flows as they are visited (the TS collects them first: same terms, same order); IRR/MIRR collect into `F64Buf` (stack up to 64 flows); FVSCHEDULE validates the rates in order and then multiplies (no list); holidays allocate only when given. Values unchanged: YIELD computes E/N/A (`coupDays`/`coupNum`/`coupDayBs`) once per call and ODDFYIELD the yield-independent part of `oddfPrice` (the quasi-coupon sums, the exponent Nq + DSC/NL, the coupon count) once — the TS recomputes the same values at each price. |
+| A4c-2 | **Bounded loops** (decision R1; the TS hangs or takes seconds): (a) the coupon walks (`couppcdDate`/`coupncdDate`) stop after `COUP_CAP` = 1,000 steps with `#NUM!` — a walk over finite fields takes ≤ 9 steps; the TS `coupncdDate` never ends once a field is NaN (a NaN settlement, a maturity past the JS `Date` range): COUPNCD/COUPDAYSNC, 10 TS timeouts in the CI traps; (b) ODDFPRICE/ODDFYIELD answer `#NUM!` at once for an issue before every finite serial (< −101,000,000: the JS `Date` range starts at serial ≈ −99,974,431) and when a quasi-coupon of the irregular first period leaves the `Date` range (NaN) before reaching the issue — in both cases the TS walks back forever (1 CI timeout: issue −∞); the quasi-coupon walks of ACCRINT, ODDF* and ODDL* carry a cap of 2^23 steps that the `Date` range keeps them under (≤ ≈ 2.4M periods), and each quasi-coupon date is computed once (the TS computes it up to three times: a pure function of the period); (c) `LOOP_BUDGET` = 2^22 periods per body for CUMIPMT/CUMPRINC and VDB (both branches; a period count known to pass it fails before the loop), DB and AMORDEGRC — past it `#NUM!` (the TS takes seconds past a few million periods and never returns for a life/period of 1e21); (d) `PRICE_BUDGET` = 2^23 powers computed by YIELD's secant and ODDFYIELD's Newton — never reached by dates up to 31/12/9999 (≤ 32,400 coupons × 202 prices); a maturity near the `Date` limit answers `#NUM!` after ≈ 330 ms release (the TS returns `#NUM!` too on the captured cases, after its 100 iterations); (e) WORKDAY's day-by-day walk stops after 2^23 steps with `#NUM!`: a finite start leaves the date range within ≈ 3M steps (the TS answers `#NUM!` there too); only a NaN start (a trap value) runs past it, where the TS counts `days` down (1e300: forever). |
+| A4c-3 | **Fixed points instead of iterations** (the TS result exactly, where the TS loop would run 1e15+ steps): DB stops when the book value repeats bit for bit (0 rate, a subnormal, ±∞, NaN — reached within ≈ 1.5M steps from any start); AMORDEGRC stops past the life (every later period is 0 and changes nothing; `rest` was already checked) and, when a period changes neither the book value nor the rest, jumps to the second-to-last period of the life (or ends: a NaN/infinite life, or past the last period). |
+| A4c-4 | **JS-object edges**: an array or a LAMBDA reaching `toNumber` throws the TS `TypeError` (`Throw::Internal`: `#VALUE!` + `internalErrors` at the engine) — XNPV/XIRR/FVSCHEDULE given an array as rate, guess or principal (measured in the traps: `XIRR#p2/a22` = `throw:TypeError`), a LAMBDA as XNPV/XIRR values/dates or as holidays. The holidays' `xs.push(...data)` throws `RangeError` (`Throw::Range`) for an area of more than 120,000 values (the bound of `uo_dml_render::metafile::SPREAD_LIMIT`; V8's limit is stack-dependent — declared divergence between 120,000 and V8's exact value), measured: whole-column holidays = `throw:RangeError` in the big trap run (17 records). |
+| A4c-5 | **NOW/TODAY** = `ctx.now()` / its floor (the host clock, decision C1; volatility is the registry's, A3). No bank case or trap call has them (zero arguments): `tests/a4c.rs` `clock` checks them over the frozen capture clock (45658.5). |
+| A4c-6 | DATEDIF's `unit.toUpperCase()` is compared ASCII-case-insensitively: no non-ASCII code unit upper-cases to `D`, `M` or `Y`, and the full-case expansions that start with one (`ẙ` → `Y` + U+030A) are two units long, so no unit text other than the ASCII ones matches. |
+| A4c-7 | **Harness**: `tests/a4_robust.rs` `random_calls` bounds a call at 4 s in a debug build (1.5 s release, unchanged): with the 80 new bodies the seeded sequence draws PMT/RATE lifted over a whole column × a 1 × 3 array (3M elements: 2.0 s debug, the lift's own cost — ABS over one column costs 0.26 s debug; release 0.39 s for the slowest call of the run, LOGNORM.DIST). |
+
+### Parity
+
+Replay of `tests/a4.rs`, unchanged harness (the family's cases turned from deferred into compared). All families
+(debug CI) and the family alone (`UO_A4_FN=<the 80 names>`, release, so the whole-column traps are compared):
+
+| Group | Compared (all families) | Equal | Of which A4c (80 functions) | Deferred | Notes |
+|---|---|---|---|---|---|
+| bank CI (35,299 cases) | 24,246 (A4b: 15,870) | **24,246** | 8,403 compared, 8,403 equal, 0 deferred | 10,992 (19,368) + 57 legacy `@` (A5) | NOW/TODAY have no case (A4c-5) |
+| bank big (pt-BR + en-US) | — | — | 16,806 compared, **16,806 equal** | 0 | |
+| calc-traps CI (54,120 calls) | 36,137 (26,925) | **36,137** | 10,116 compared (release), 10,116 equal, 0 deferred | 17,056 (27,183) | 11 TS timeouts of the family (10 COUPNCD/COUPDAYSNC, 1 ODDFPRICE) answered in < 0.1 ms (A4c-2) |
+| calc-traps big (308,120 calls) | — | — | 61,849 compared, **61,848 equal + 1 NaN payload** (A1-2) | 0 | 67 TS timeouts answered (< 0.1 ms each); the slowest compared calls: ODDFYIELD with a maturity past the `Date` range (1.1M coupons: 360–400 ms, as many prices as the TS computes before its `#NUM!`) |
+| calc-order CI x1 (A3 replay) | values 73,775 (A4b: 72,038) | **73,775** | — | 25,841 (27,578) | order equal 384 runs (384), random equal 274 (274), incremental = full 19 (11 deferred); ops group unchanged (560 runs, 129,106 values) |
+| calc-order big | values 8,741,784 (8,595,287) | **8,741,784** | — | 2,294,059 (2,440,556) | order equal 10,719, random equal 8,484, `circular` 800/800, incremental = full 577 — all unchanged |
+
+0 parity rounds: the first replay had 4 mismatches, all one harness-visible defect of the port (an Excel error from
+the holidays propagated out of the whole lift instead of becoming the element's value, `NETWORKDAYS` over an array),
+and the first release run 17 more (the holidays' spread `RangeError`, A4c-4) — both fixed by the same agent before
+any verifier; the CI bank was equal from the first run. The full `a4_big` (every family) still fails on A4b's 2
+platform records (A4b open item 1), not on this family.
+
+### Robustness, memory, fuzz
+
+`a4_robust.rs` runs the 80 bodies through its random calls (600 per function release, 60 debug) and M1: no panic, M1
+green; release slowest call of the run 390 ms (LOGNORM.DIST, A4b's), debug A4c-7. **Zero allocation per evaluation**
+(`tests/a4c.rs`): a second full recalc of 2,000 formulas cycling 50 single calls (PMT, FV, PV, RATE, NPV/IRR/MIRR over
+20-value windows, IPMT, PPMT, NPER, DB, DDB, SLN, VDB, DATE, EDATE, EOMONTH, NETWORKDAYS(.INTL), YEARFRAC 1/0, WEEKDAY,
+WEEKNUM, ISOWEEKNUM, YEAR, DAY, MINUTE, DATEDIF, DAYS360, DAYS, WORKDAY(.INTL), COUPDAYS, COUPNCD, COUPNUM, COUPDAYSNC,
+PRICE, YIELD, DURATION, DISC, ACCRINT, TBILLEQ, TIME, TODAY, NOW, EFFECT, CUMIPMT, AMORDEGRC, ODDLPRICE, ODDFYIELD)
+allocates exactly what 2,000 operator formulas do (112 B). (A long operator chain alone makes the evaluator's stacks
+grow once per recalc — 160 B for `A1+A1*2+…+A1*6`, any family — so the test keeps one call per formula.) Hostile loops
+(debug): COUPNCD(·;1E21) and COUPDAYSNC(·;1E300) `#NUM!` in ≤ 1.3 ms, ODDFPRICE with issue −1E300 0.2 ms (270 ms before
+the serial bound of A4c-2 (b)), CUMIPMT(·;1E21 periods) 0.1 ms, VDB life 1E21 0.3 ms (388 ms before the count check), DB life 1E300 and AMORDEGRC 1E15
+periods 0 (the TS result) in 0.2 ms, WORKDAY 1E300 days over holidays 106 ms. Caches: none (the family keeps nothing
+between calls).
+
+Fuzz: five `formula_parse` seeds over the family (solvers at their extremes, the unbounded TS loops at their budgets,
+coupon walks over NaN fields, the ATP lifts with holidays and whole columns, the date edges). Seeds in `core/fuzz/src/calc.rs` `formula_seeds`. Stable fallback driver
+(`core/fuzz`, `--slow 1`, `--seed 4242`), 2026-11-24: run 1 — 441,158 executions in 300 s, **0 crashes**, 116
+inputs over 1 s (slowest 3.17 s): ODDF* walking back to the `Date` limit for an issue of −1E300 (270 ms per call) and
+VDB running its whole budget (390 ms) → the serial bound and the count check of A4c-2 (b)/(c), and the quasi-coupon
+dates computed once; run 2 — 643,011 executions in 300 s, **0 crashes**, 130 inputs over 1 s (slowest 3.38 s; the
+driver exits 1 on slow inputs): every one a mutation of the A4c seed that holds several quasi-coupon walks to the
+`Date` limit (ODDLPRICE/ACCRINT with a date of 1E8: 125–150 ms per call and context, ≈ 1.1M periods; **the TS takes
+1.0–1.7 s for each and the values are equal**, pinned in `tests/a4c.rs`) or of A4b's BETA.INV seed (A4b open item
+5). The executions per second are low (2,137/s) because the family's seeds are heavy, not because of a stall. The
+fuzz crate was built in its own existing target directory (`core/fuzz/target`, incremental) rather than in
+`target/sheet-arch`, which would have rebuilt every crate of the fuzz workspace in release (disk).
+
+### Performance (PERF)
+
+`benches/a4c.rs` vs `js/bench-a4c.mjs` (frozen TS engine, Node 24.15, same cells; medians of 5 after a warm-up;
+i5-14600KF; both runners print the count of numbers/errors and the bits of their sum in row order — equal:
+`c16d134e5f16dff8` / `41cb51b34158ce3e`). **finance-50k**: 50,000 formulas over a column of flows (one in 7 negative)
+and of rates — PMT, FV, PV, RATE, NPV and IRR over 20-value windows, MIRR, IPMT+PPMT, DB+DDB, a 2-coupons-a-year PRICE;
+**dates-50k**: 50,000 formulas over dates 2020–2026 — DATE, EDATE, EOMONTH, NETWORKDAYS (≤ 400 days), YEARFRAC basis 1
+and 0, WEEKDAY+WEEKNUM, DATEDIF "YD", WORKDAY, DAYS360+YEAR+MONTH+DAY.
+
+| Class | TS build ms | Rust build ms | TS recalc ms | **Rust recalc ms** | Rust / TS | engine heap (TS retained / Rust) |
+|---|---|---|---|---|---|---|
+| **finance-50k** | 281–295 | 94 | 216 | **82** | **0.38** | 94.8 MB / 12.8 MB |
+| **dates-50k** | 275–286 | 105 | 74 | **29.6** | **0.39** | (GC noise) / 33.9 MB |
+
+Per kind (`UO_A4C_ONLY=<j>`: 50,000 formulas of one kind; ms TS → Rust): PMT 31.4 → 23.8 (0.76), FV 32.6 → 17.8,
+PV 33.0 → 15.0, RATE 78.8 → 39.9 (0.51), NPV 53.9 → 20.6 (0.38), IRR 113.1 → 58.8 (0.52), MIRR 49.6 → 23.7,
+IPMT+PPMT 57.5 → 36.8 (0.64), DB+DDB 136.3 → 68.7, PRICE 1,268 → 496 (0.39: ≈ 30 `excelPower` per call, A1's
+double-double `log`/x87 `exp`); DATE 57.0 → 33.1 (0.58), EDATE 48.0 → 22.9, EOMONTH 47.3 → 22.8, NETWORKDAYS 44.5 →
+24.9, YEARFRAC/1 52.5 → 26.4, YEARFRAC/0 53.4 → 24.7, WEEKDAY+WEEKNUM 45.3 → 26.0, DATEDIF 79.0 → 30.2 (0.38), WORKDAY
+40.9 → 21.8, DAYS360+YEAR/MONTH/DAY 110.2 → 56.6. The cheapest kinds are dominated by the engine's per-formula cost
+(≈ 300 ns Rust for a one-call formula: FV, PV); PMT's three fdlibm calls (`log1p`, `exp`, `expm1`) are the dearest of
+the scalar bodies. **Verdict**: both classes inside the ≤ 0.5× budget; these are the first A4c records (the 10% rule
+starts from them). The A3/A4a/A4b classes are unchanged (no shared code changed).
+
+### Open items
+
+(1) Shared-helper candidates (none needed by another family yet): `lift_atp` (stack arguments — `tdl::lift_atp`
+allocates a `Vec` per call; the text, lookup and information ATP bodies of A4d–A4f would get the same zero-allocation
+path), `Steps` (a step budget), `F64Buf` (a small vector of numbers), `type_error()`. (2) `a4_robust`'s debug bound
+(A4c-7) is a harness choice for the orchestrator: the alternative is skipping whole-column lifts in debug, as `a4.rs`
+does. (3) YIELD/ODDFYIELD at their budgets cost up to ≈ 0.3 s per cell (release) for dates near the `Date` limit
+(beyond Excel's 9999); a cheaper rule (a budget in coupons, checked first) would answer `#NUM!` earlier for inputs the
+TS answers after its 100 iterations — a simplification-stage question. (4) The `daycount` module is `pub`: the grid
+or the server may want `year_frac`/`CDate` (none does today).
+
+## A4d — as built (2026-11-24, Opus)
+
+The text family: every body of `text.ts` (48 names: CONCATENATE … DETECTLANGUAGE), `regex.ts` (REGEXTEST,
+REGEXEXTRACT, REGEXREPLACE), `filterxml.ts` (FILTERXML) and `regional.ts` (10 names: THAI*, NUMBERSTRING, DATESTRING),
+with `text-format.ts` (TEXT's code translation, FIXED/DOLLAR digits; no bodies of its own) mapped onto `uo-numfmt` —
+62 bodies in the family module. Outside it: `criteria::pt_error_name` became `pub(crate)` (VALUETOTEXT/ARRAYTOTEXT's
+`errorText`), `tests/a4_robust.rs`'s M1 calls `functions::text::clear_caches()` after each call (the family keeps
+caches), `uo-calc`'s `Cargo.toml` gained `uo-numfmt`, the vendored `regress` (A4d-1) and `[[bench]] a4d`; the fuzz crate
+gained six seeds. Nothing in `functions/mod.rs`, `shared/` or another family changed.
+
+**Code** (`core/crates/uo-calc/src/functions/text/`):
+
+| File | Content |
+|---|---|
+| `mod.rs` | `text.ts`: `BODIES`, `clear_caches()`, the units (code points, UTF-16 units of the …B functions in pt-BR/en-US, DBCS bytes in ja/zh/ko: `Unit`, `len_in`, `slice_in`, `byte_range`), case (`upper_into` without expansion, `lower_of` with `İ` → `I`, `proper_into`), the SEARCH wildcards (`wild_segment`/`wild_at`/`wild_search`, A4d-9), the language tables (`errorText`, list and array separators of `getLanguage`), `value_text`, TEXTBEFORE/AFTER (`scan_forward`, `nth_index`, `not_found`), TEXTSPLIT, NUMBERVALUE, FIXED/DOLLAR, BAHTTEXT, the rest; `SPREAD_MAX` (A4d-6) and `scalars_js` |
+| `js.rs` | the `String.prototype` primitives over UTF-16 with the JS argument rules (`rel`/`clamp`/`slice`/`index_of`/`last_index_of`, `chars` = `Array.from`, `cp_count`) and `Buf`, an output text on the stack up to 160 units |
+| `format.rs` | `text-format.ts`: `format_locale_of` (cache per locale id, cap 8), `split_local`, `translate_format_code`/`translate_section`/`translate_bracket` (the TS regexes as unit matchers with non-`u` semantics), `format_for_text` (`uo_numfmt::format_value_parts` + `format_general`), `fixed_digits` (`uo_numfmt::decimal_digits`), `MAX_TEXT` |
+| `regex.rs` | `regex.ts`: `translate` (PCRE2 → the JS source, unit for unit the TS output), `compile_pcre` (`pub(crate)`: XLOOKUP/XMATCH mode 3 of A4e call it, with `start_budget`/`check_budget`), the cache (A4d-2), `Pcre::{exec, is_match, all}`, `parse_replacement`, the three bodies; `unicode_version` test (R1) |
+| `xml.rs` | `filterxml.ts`: `parse_xml` into an arena in document order (each element knows its descendant range), `decode`, `tokenize`, the XPath `Parser` into an expression tree (`Ev`), `Doc::{eval, eval_path, compare}` with the work budget (A4d-5) |
+| `regional.rs` | `regional.ts`: `lang_is` (`/^xx\b/i`), `million_groups` (bounded, A4d-3), `thai_below`, `thai_words`, `cjk_number`, the ten bodies |
+
+Vendored: `core/vendor/regress` — `regress` 0.12.0 (MIT OR Apache-2.0, licence texts beside it, `src/` only) with
+the step budget of A4d-1 (`src/budget.rs` + two marked hunks in `src/classicalbacktrack.rs`, "uo-calc budget"), built
+with `prohibit-unsafe`. Tests: unit tests in every file (translation of the measured format codes and PCRE patterns,
+the wildcard search, JS slices, Thai/CJK numbers, XPath paths and predicates, the catastrophic-regex budget, the
+Unicode-version check); `tests/a4d.rs` — zero allocation per evaluation on the number/substring paths, the hostile
+inputs, the regex cache cap (M5); the family is also in `tests/a4.rs` and `tests/a4_robust.rs` through
+`functions::ported()`. Benchmarks `benches/a4d.rs` + `js/bench-a4d.mjs`.
+
+### Decisions taken in A4d (declared; observable output equal unless said)
+
+| Id | Decision |
+|---|---|
+| A4d-1 | **Regex step budget through a vendored `regress`** (decision R1). Upstream `regress` 0.12 has no way to bound backtracking (measured: `(a+)+b` over 24 a's 0.5 s, `(a\|a)*b` 1.2 s, each further a doubles it; `.*.*.*=` over 2,000 units did not end in minutes) and keeps its executor private, so the budget cannot be added from outside. `core/vendor/regress` adds a per-thread budget: every instruction dispatched (backtracks re-enter the dispatch) costs one step; a search takes the remaining budget and gives back what it did not use, so a budget spans every search of one call; past it the search reports no more matches and `budget_exhausted()` turns true. The bodies give each call `STEP_BUDGET` = 2^24 steps; exhausted → the `RangeError` path (`Throw::Range`, `#NUM!` in the engine) — **divergence by design**: the TS never returns there (no capture has such a call). Release: `(a+)+b` over 40 a's 46 ms, `.*.*.*=` over 30,000 a's 47 ms. The path dependency is a **workspace member by Cargo's rule** (path dependencies inside the workspace directory); its `Cargo.toml` turns clippy's lints off (third-party style). **For the maintainer** (with the M3 gate): accept a vendored third-party crate in `core/vendor/` (alternatives: upstream a budget API to `regress` and return to crates.io; or move the copy outside the workspace directory), and `tools/licenses/gen-notices.mjs` must list it (a `publish = false` path crate may be skipped as private — not run here). |
+| A4d-2 | **Compiled-pattern cache**: per thread, 256 patterns (the TS keeps 500 and clears all past it; here the same clear-all at 256), patterns longer than 1,024 units compiled per call and never cached; the lookup copies the key on the stack (no allocation on a hit). `clear_caches()` empties it with the TEXT locale cache (8 locales) and `uo_numfmt`'s parse cache. REGEXEXTRACT mode 1 and REGEXREPLACE scan with one executor (after an empty match it moves one code point, after a non-empty one it starts at its end: the TS `lastIndex` loop; equal on every capture). |
+| A4d-3 | **Bounded TS hangs**: (a) the TS translator loops for ever on `\p{` without `}` (`i = end + 1` with `end = -1`) until the growing source throws and its `catch` gives `#VALUE!`: answered `#VALUE!` at once; (b) BAHTTEXT of a value whose integer part rounds to ∞ in `toPrecision(15)` (≈ 1.79769313486232e308, the 2 BAHTTEXT timeouts of the big trap run) and THAINUMSOUND/THAINUMSTRING of ∞ (`while (x > 0)` with `∞ % 1e6` = NaN): `Throw::Range`; (c) TEXT with an empty `generalName` (a C1 host locale: `i += -1` for ever): the name never matches. |
+| A4d-4 | **Exotic C1 host locales** (not pt-BR/en-US; declared): format letters of more than one unit are matched as literals in `[hh]`-style brackets (the TS interpolates them into a `RegExp` unescaped); a group separator holding `$` is inserted literally by FIXED/DOLLAR (the TS `String.replace` would read `$&`, `$1`…); a locale string with a lone surrogate reaches `uo_numfmt`'s `FormatLocale` (`String`) as U+FFFD. |
+| A4d-5 | **FILTERXML**: the elements in one arena in document order (descendants = a contiguous range; no recursion); node sets deduplicated as they are built (the TS pushes every candidate — up to n² for `//*//*` — then makes a `Set`: same items, same order); attribute items carry a serial (the TS makes a new object per read, so a union never merges two attribute items, measured equal); the descendant walks and predicate evaluations of a call share a budget of 2^25 steps → `Throw::Range` (5,000 nested elements with 40 `//*` steps: 88 ms release; the TS is quadratic per step and takes minutes); a `&#…;` past U+10FFFF throws the TS `RangeError` (`String.fromCodePoint`, outside its `try`). |
+| A4d-6 | **JS call spreads**: `scalarsOf`'s `out.push(...ctx.values(v, k).data)` (TEXTJOIN/TEXTBEFORE/TEXTAFTER/TEXTSPLIT delimiters, TEXTJOIN items), `Math.min(...)` of the delimiter lengths and `Math.max(...)` of TEXTSPLIT's rows throw V8's `RangeError` past `SPREAD_MAX` = 120,000 elements (A4c-4's bound; V8's limit is stack-dependent: declared divergence between 120,000 and V8's exact value); measured equal on the whole-column traps. |
+| A4d-7 | **JS-object edges**: a LAMBDA as TEXTBEFORE/AFTER's `if_not_found` or TEXTSPLIT's pad reads `#VALUE!` (the TS converts the object); reproduced as the TS: `[$-constructor]`/`[$-__proto__]` in a TEXT code (the `LCID` object literal: `[$-function Object() { [native code] }]` reaches the number format), `[constructor]`/`[__proto__]` as colours, `[[:constructor:]]` and every other `Object.prototype` POSIX name an invalid pattern (the TS class text breaks the `u` syntax); NaN positions as JS reads them (`FIND("";s;NaN)` = NaN, `SUBSTITUTE(s;o;r;NaN)` = `s.slice(0,-1) + r + s.slice(o.length - 1)`, `CHAR(NaN)` = "\0", `UNICHAR(NaN)` and `REPT("";∞)` the `RangeError`). |
+| A4d-8 | **Bounded memory where the TS builds the text first**: CONCAT, TEXTJOIN, ARRAYTOTEXT, SUBSTITUTE, REGEXREPLACE and ENCODEURL stop keeping the text once it passes 32,767 units (the errors of the arguments are still read in order; the length check answers `#VALUE!` as the TS); TEXTSPLIT past 2^24 cells throws `Throw::Range` (A4a-4). |
+| A4d-9 | **Performance without changing results**: outputs on the stack (`Buf`) and copied once into the pass arena; LEN/LEFT/RIGHT/MID/FIND/SEARCH/EXACT/CODE/UNICODE read their texts in place (no allocation per evaluation for short Latin-1 or UTF-16 texts); SEARCH's wildcard `RegExp` (`[\s\S]*`, `/i` without `u`) is a segment matcher — the first segment at its leftmost place, each later one leftmost after it (feasibility only shrinks as the start moves right, so the first start that fits is the regex's `index`), O(n·m) instead of backtracking; TEXTBEFORE/AFTER/TEXTSPLIT remember each delimiter's next occurrence while it stays ahead (the TS re-runs `indexOf` per step) and `countHits` is one forward scan (the TS re-runs `nthIndex` per count: quadratic). |
+
+### Parity
+
+Replay of `tests/a4.rs`, unchanged harness. All families (release, so the whole-column traps are compared) and the
+family alone (`UO_A4_FN=<the 62 names>`). The all-family counts were taken while A4f's bodies were landing in the same
+tree (438–456 functions with a body in the big runs), so they mix both frontiers; the A4d column is the family alone:
+
+| Group | Compared (all families) | Equal | Of which A4d (62 functions) | Deferred | Notes |
+|---|---|---|---|---|---|
+| bank CI (35,299 cases) | 28,352 (A4c: 24,246) | **28,352** | 4,224 compared, **4,224 equal**, 0 deferred | 6,886 + 57 legacy `@` (A5) | |
+| bank big (pt-BR + en-US) | 57,904 | 57,895 (the 9 clock records below) | 8,448 compared, **8,439 equal + 9 clock records** (below) | 0 | |
+| calc-traps CI (54,120 calls) | 42,248 (36,137) | **42,248** | 5,207 compared (release; 5,080 debug), **5,207 equal**, 0 deferred | 11,849 | the 27 TS throws of the family (stack overflows of whole-column spreads, `UNICHAR(NaN)`) equal |
+| calc-traps big (308,120 calls) | 260,998 | 260,995 + 1 NaN payload (the other 2: A4b's `pow` platform records) | 28,874 compared, **28,874 equal** | 0 | the 2 TS timeouts of the family (BAHTTEXT of ≈ 1.8e308, A4d-3 (b)) answered `throw:RangeError` in < 0.1 ms |
+| calc-order CI x1 (A3 replay) | values 82,915 (A4c: 73,775) | **82,915** | — | 16,701 (25,841) | order equal 384, random equal 274, incremental = full 19; ops group unchanged (560 runs, 129,106 values). Counted while A4f's bodies were landing in the same tree (IF and the information functions also turned some cells from deferred into compared) |
+| calc-order big | values 9,751,663 (A4c: 8,741,784) | **9,751,663** | — | 1,284,180 (2,294,059) | order equal 10,719, random equal 8,484, `circular` 800/800, incremental = full 591 (577) |
+
+**The 9 records of the big bank are the capture's clock, not the port**: VALUE of a year-less date text in en-US
+(`VALUE("jan-1")`, `text-value-1441@en-US` and 8 more): the TS reads the year from `new Date().getFullYear()`
+(`coerce.ts:197`), which `capture-bank.mjs` does not freeze, so the big capture (taken 2026-11-24) holds 1/1/2026
+(46023) where the Rust mock's frozen clock (45658.5, decision C1) gives 1/1/2025 (45658) — every difference is exactly
+365 days, the pt-BR records of the same cases (`jan-1` read as January 2001) are equal, and the CI capture has no
+en-US record. The fix belongs to the capture (freeze `Date` in `capture-bank.mjs`, or record the year), open item (7);
+`a4_big` asserts no mismatch and fails on them, as on A4b's 2 platform records.
+
+**0 parity rounds**: the first CI replay of the family (bank and traps) was equal; the only defect found by the
+first run was a panic of the output buffer (`Buf` past its stack capacity with an empty stack part), fixed before
+any comparison counted. Unicode-version check (R1): `regress`'s `\p{L}`, `\p{N}` and `\p{Ll}` tables equal V8 13.6's
+(`uo_text`, Unicode 17) on all 1,112,064 scalar values — 0 differences.
+
+### Robustness, memory, fuzz
+
+`a4_robust.rs` runs the 62 bodies through its random calls and M1 (with the family's `clear_caches()` after each
+call): no panic, M1 green. **Zero allocation per evaluation** (`tests/a4d.rs`): a recalc of 2,000 formulas of each of
+LEN, LEFT, RIGHT, MID, FIND, SEARCH (wildcards), EXACT, CODE+UNICODE, VALUE, LENB+FINDB over text cells allocates no
+more than 2,000 `A1&""` formulas (112 B, the scheduler's lists). Hostile inputs (release): the catastrophic regexes
+above at the budget (≤ 47 ms), FILTERXML 88 ms, REPT at 16,383/16,384 × "ab" (the limit), SUBSTITUTE growing past the
+limit stopped early, TEXTSPLIT of 16,000 cells, SEARCH with 500 wildcard segments over 32,000 units — all bounded.
+**M5**: the pattern cache stays ≤ 256 past 300 patterns and `clear_caches()` empties it. Caches: the pattern cache
+(A4d-2), the `FormatLocale` per locale id (cap 8; the TS's is never cleared) and `uo_numfmt`'s code cache (its own
+cap, D8 of `uo-numfmt.md`).
+
+Fuzz: six `formula_parse` seeds over the family (UTF-16 positions and NaN starts, wildcards, the format-code
+translation with `[$-constructor]`, splits over long texts and whole columns, the catastrophic regexes and the
+untranslatable `\p{L`, hostile XML/XPath and the `&#1114112;` reference, BAHTTEXT of the largest double, the regional
+functions). Seeds in `core/fuzz/src/calc.rs` `formula_seeds`. **The fuzz run was not executed in this session**: the
+fuzz workspace builds every engine crate in release, and with 7.7 GB free on D: (shared with two other frontiers
+building) the run into its own `core/fuzz/target` was refused by the session's permission check and a build into
+`target/sheet-s0` was not attempted (disk). Instead `tests/a4d.rs` `fuzz_seeds_recalc_bounded` recalculates the six
+seed formulas through the engine (no panic; 83 ms release, 2.3 s debug). Open item (6).
+
+### Performance (PERF)
+
+`benches/a4d.rs` vs `js/bench-a4d.mjs` (frozen TS engine, Node 24.15, same cells; medians of 5 after a warm-up;
+i5-14600KF). **text-ts-50k**: the TS baseline's text class (`gen-workbook.mjs`: UPPER, LEN&"x", SUBSTITUTE, TEXT,
+LEFT&RIGHT over 50,000 rows); **text-fn-50k**: LEFT, MID, FIND, SUBSTITUTE, UPPER, TEXT(·;"#.##0,00"), CONCAT, TEXTJOIN,
+LOWER, TRIM over 50,000 rows; **regex-5k**: REGEXTEST/REGEXEXTRACT (modes 0 and 2)/REGEXREPLACE (with a group) over
+5,000 rows, six patterns (the cache).
+
+| Class | TS build ms | Rust build ms | TS recalc ms | **Rust recalc ms** | Rust / TS | engine heap (TS retained / Rust) |
+|---|---|---|---|---|---|---|
+| **text-ts-50k** | 182 | 53 | 72.8 | **39.3** | **0.54** | 64.1 MB / 6.6 MB |
+| **text-fn-50k** | 161 | 45 | 66.7 | **37.4** | **0.56** | (GC noise) / 3.0 MB |
+| **regex-5k** | 23 | 5.7 | 6.93 | **6.91** | **1.00** | (GC noise) / 0.4 MB |
+| text-50k of `benches/a3.rs` (`A{i}&"x"&i`, operators only) | 129 | 51 | 61.6 | **38.8–40.1** | **0.63–0.65** | 58.9 MB / 21.7 MB |
+
+**Verdict: over the ≤ 0.5× recalc budget (0.54/0.56) and at 1.00× on regex-5k (rule: ≤ 1.0× per function micro) —
+for the maintainer.** Where the time goes, measured: the bodies are not it — 50,000 `LEN(A{i})` (a number result over
+the same text cells) recalc in 7.9 ms, while every class whose formulas produce a TEXT costs ≈ 0.75 µs per formula
+whatever the function (`A&"x"&i`, operators only, already 38.8 ms = 0.63×, the A3 record's 0.65×). The cost is the
+engine's string-result path (A3: the pass arena → `store_write` → `write_value` interning into the pool and releasing
+the old text, per formula and per recalc); a skip of re-interning an identical text in `write_value` was tried and
+changed nothing (reverted), so the cost is elsewhere on that path — an A3 profiling item, not a body one. regex-5k:
+`regress` is an interpreter against V8's compiled irregexp; 1.10× before A4d-2's single-executor scan, 1.00× after; the
+dearest pattern (`[\w.]+@[\w.]+`, quadratic over the start positions in both engines) costs 1.4 µs per call: an ASCII
+bitmap for bracket classes and the start-position prefilter that the `utf16` feature disables in `regress` are the
+next levers (both vendored-code changes). These are the first A4d records (the 10% rule starts from them).
+
+### Open items
+
+(1) **Maintainer**: the vendored `regress` (A4d-1: placement, licence notices) and the two budget misses above
+(text classes 0.54–0.56×, regex-5k 1.00×). (2) The engine's string-result path (A3 owner): ≈ 0.6 µs per text formula
+beyond a number formula; it decides the text classes and `a3`'s text-50k. (3) Shared-helper candidates (none needed
+by a second family yet): `js.rs` (JS string primitives over UTF-16 + the stack `Buf`), `scalars_js` (the
+`scalarsOf` spread bound; `tdl::scalars_of` itself does not throw — A4e's `scalarsOf` callers will need the same
+rule). (4) `tests/a3_robust.rs` `incremental_equals_full` failed in this tree on a `-0`/`0` cell (seed 2) after A4f's
+`IF` got a body mid-run — not this family (its generator has no text function); left to A4f. (5) The TS sorts its
+`FILTERXML` items with `Array.prototype.sort` on `order` numbers; Rust sorts by an integer key (stable) — equal
+because node keys are unique and attribute items of one owner keep insertion order in both. (6) The fuzz run of the
+six new seeds (stable driver, `--slow 1`) is still to do, when D: has room for the fuzz workspace's release build.
+(7) The bank capture's year (`new Date()` in `coerce.ts:197`, not frozen by `capture-bank.mjs`): the 9 en-US clock
+records of the big bank — the harness (A4a's) needs the year frozen or recorded.
+
+## A4e — as built (2026-11-24, Opus)
+
+The lookup family, the last function family: every body of `lookup.ts` (15 names: VLOOKUP … FIELDVALUE, with
+TRANSPOSE, HYPERLINK, IMAGE and the connection stubs), `reference.ts` (16: INDEX, OFFSET, INDIRECT, ROW, COLUMN, ROWS,
+COLUMNS, AREAS, SHEET, SHEETS, FORMULATEXT, ISREF, ISFORMULA, CELL, INFO, SINGLE), `dynamic.ts` (21: FILTER, SORT,
+SORTBY, UNIQUE, SEQUENCE, RANDARRAY, TAKE, DROP, EXPAND, VSTACK, HSTACK, TOCOL, TOROW, WRAPROWS, WRAPCOLS,
+CHOOSEROWS, CHOOSECOLS, TRIMRANGE, PERCENTOF, GROUPBY, PIVOTBY), `database.ts` (12 D-functions) and `conditional.ts`
+(8: COUNTIF … MINIFS) — 72 bodies. Two engine hooks (A4e-1, A4e-5), additive.
+
+**Code** (`core/crates/uo-calc/src/functions/lookup/`, ≈ 4,000 lines with tests):
+
+| File | Content |
+|---|---|
+| `mod.rs` | `BODIES`; the family's comparisons (`kind`, `cmp_same`, `xrank`, `cmp_total` = `cmpTotal`/`sortCmp`), `area_ref`, `fail` |
+| `line.rs` | the TS `Vec` (`LineVec`: a dense array line, or the existing cells `idx`/`val` of a reference line; `get`, `scan`, `blank`, `exact_first` with the TS hash index, `collate_find`, A4e-2), `of_area_cached`, and **`PassCache`** (the engine's per-pass memory, `pub`) |
+| `search.rs` | `lookup.ts`: `shape_of`, `line_of`, `cell_of`, `Pred` (`exactPred`), `lookup_wildcard` (`lookupRegExp` on the criteria `Wildcard`), `find_exact`/`find_approx` (Excel's binary search over unsorted mixed data, step for step)/`find_desc`, `xfind`/`xbin`, the bodies, `sheet_prefix`, `letter_name` |
+| `reference.rs` | `reference.ts`: `scalar_arg`, `array_of_refs`, `index_area`/`index_array`, OFFSET/INDIRECT, `per_cell`, FORMULATEXT through A5's `i18n::Translator` (`toLocal`), CELL/INFO through `FnContext::cell_info` |
+| `dynamic.rs` | `dynamic.ts`: `mat` (`A`), `int_or`/`bool_or`/`scalar_of`, `fill_js` (A4e-7), the sorts on `uo_jsnum::sort::js_sort_order` (V8's replay), `push_cell_key` (`cellKey`), GROUPBY/PIVOTBY (`aggregate` with `lambda_arity`) |
+| `database.rs` | `database.ts`: `field_index`, `parse_criteria` (field conditions and computed criteria), `matched`, `db_numeric` over `shared::agg` |
+| `conditional.rs` | `conditional.ts`: `Gathered`/`Areas` (one walk per distinct area), `Src` (gathered cells, `ctx.cell` past a stopped walk), `all_match`, `count_matches`, `matched_reduce` (streamed `rSum`/`rAvg`/`rMax`/`rMin`), the bodies (A4e-3) |
+
+Outside the family (hooks, all additive): `fnreg.rs` — `FnContext::pass_cache()` and `FnContext::computed_criterion()`
+(default methods: `None`); `eval.rs` — `EvalHost::pass_cache()` and `EvalHost::formula_node()` (defaults `None`),
+`CellCtx` forwards the cache and implements `criterionAt` (`engine.ts:583-589`: the criterion cell's tree evaluated
+at `row + offset`, dynamic, then `topScalar`); `engine/mod.rs` — `Graph::pass_cache` (also reset by `clear_caches`);
+`engine/host.rs` — `Host::pass_cache`, `Host::formula_node` (the cell's current formula tree); `engine/recalc.rs` —
+the four clears of `cache` (`run` start and end, `computeDirty`, each sweep of `iterateCycles`). Harness (A4e-10):
+`tests/support/fnmock.rs` (`lambda_arity`, no file name), `tests/a3.rs` (the full recalc's random stream). New:
+`tests/a4e.rs`, `benches/a4e.rs` + `[[bench]] a4e`, `js/bench-a4e.mjs`.
+
+### Decisions taken in A4e (declared; observable output equal unless said)
+
+| Id | Decision |
+|---|---|
+| A4e-1 | **The pass cache is the TS `ctx.cache`** (`engine.ts:220`; only `lookup.ts` uses it, key `tdl:vec:<area>`): the lookup vector of a reference line is built once per pass (`Vec.ofAreaCached`) and shared (`Arc`), with the same clear points as the TS; a vector whose walk throws `NeedCell` is not kept. Cap (M5, record "Memory plan"): 64 MiB wasm32 / 256 MiB native, a vector and its estimated indexes accounted (`k · 116 B`); past it the vector is not kept (rebuilt by the next search). Without an engine (the mocks) every call builds its own. Declared: a cached vector holds pool ids; a cycle member's text rewritten later in the same pass could release its pool entry where the TS keeps its JS string (only the stale reads of a non-iterative cycle, whose values the TS itself leaves stale). |
+| A4e-2 | **Exact indexes.** MATCH 0/VLOOKUP/HLOOKUP exact use the TS's own hash index (`exactFirst`: lower-case texts, `-0` = `0`, booleans), built at the first exact search of a cached vector; a dense array line of one call is scanned (same first hit, no map). XLOOKUP/XMATCH mode 0 (and 2 without wildcards), search ±1, are **linear in the TS** (`compareText` per cell); here a cached vector gets a collation index (collation key → first and last index; numbers `===`, NaN never equal): the same hit because equal keys ⇔ `compareText` = 0 (`collationKey`'s invariant, also the TS's UNIQUE). 1,000 text XLOOKUPs over 100,000 rows: TS 28.9 s, Rust 156 ms. Binary modes (±2), approximate (±1) and regex (3) keep the TS's scans. |
+| A4e-3 | **Conditional reads.** The TS walks one area (`forEachCell`) and reads the other conditions at each position (`ctx.cell`), so a `NeedCell` names the first dirty cell in that interleaved order. Here every distinct area is gathered with one walk; when every walk completed nothing can throw (the reads are lookups with a forward cursor, O(cells)); when a walk stopped at a dirty cell, the TS algorithm runs over the gathered prefix, positions past it are read for real at the TS's moment, and the walk of an area whose gather stopped throws that gather's `NeedCell` where the TS walk would reach it — the first throw is the TS's. Verified by the A3 order facet (11,200 big runs equal) and `tests/a4e.rs` (INDIRECT ranges over dirty formulas, incremental = full). |
+| A4e-4 | **Locale borrow.** A `Criterion` borrows the locale; matching between `&mut` cell reads needs a copy: the D-functions copy the `ValueLocale` once per call (their reads interleave by nature); the conditional functions copy it only when a walk stopped (A4e-3), otherwise they match through `&ctx`. |
+| A4e-5 | **Computed criterion** (`computedCriterion` = the engine's `criterionAt`): `FnContext::computed_criterion(sheet, row, col, offset)`; the engine evaluates the criterion cell's current tree (`formula_node`; A5's legacy `exec` tree is to be returned there when it differs) at `row + offset`; no formula or no engine → the constant rule (only TRUE matches). Evaluated in the TS order (`alts.some(conds.every)`, short-circuit), so its `NeedCell`s and random draws are the TS's. |
+| A4e-6 | **OFFSET with a NaN offset or size** (trap values only: no formula yields NaN) returns `Throw::Range`: the TS returns an area with NaN coordinates whose read is `new Array(NaN)` (the capture records `throw:RangeError`, `OFFSET#x22@en-US`). |
+| A4e-7 | **Bounds** (R1 / A4a-4): `fill_js` gives `ArrayValue.fill` the JS `new Array(n)` rule (NaN, negative or fractional → `Throw::Range`) and A4a-4's 2^24-cell cap (SEQUENCE, RANDARRAY — checked before any random number is drawn —, EXPAND, TAKE/DROP, WRAPROWS/WRAPCOLS, CHOOSEROWS/CHOOSECOLS, TRIMRANGE, VSTACK/HSTACK, OFFSET/INDIRECT arrays of `#VALUE!`, ROW/ISFORMULA/FORMULATEXT per cell); XLOOKUP/XMATCH regex mode gets A4d's step budget **per test** (a whole column of legitimate tests does not add up to the budget) → `Throw::Range` past it (the TS never returns on a catastrophic pattern). Measured (`tests/a4e.rs`, release): `XMATCH("(a+)+b";…;3)` over 300 texts, SEQUENCE(1048576;16384), RANDARRAY(1048576;1000), EXPAND to the sheet, MATCH/XLOOKUP/COUNTIF/SUMIFS/UNIQUE over whole columns: 79 ms together. |
+| A4e-8 | **Sorts and grouping**: SORT/SORTBY/GROUPBY/PIVOTBY replay V8's `Array.prototype.sort` (`js_sort_order`: the comparators are not total with NaN); UNIQUE and GROUPBY group by the TS strings (`cellKey` joined by U+0001, texts by their collation key); PIVOTBY's `rr.filter((r) => cc.includes(r))` is a row mark (O(n), same order; the TS is O(n·m) per cell). |
+| A4e-9 | **Streamed reductions**: the *IF/*IFS sums, averages, maxima and minima fold the matching numbers in walk order (the same additions as over the TS list, no list); AVERAGEIF(S) of a non-finite sum is NaN, as the TS (`rSum(xs) as number / n` divides the `#NUM!` object). |
+| A4e-10 | **Harness** (three fixes, each to the TS's own harness): `fnmock`'s LAMBDA of a function name has the function's `minArgs` parameters (`testing.ts`: GROUPBY passes the total to PERCENTOF — 4 bank cases); `fnmock`'s formula cases build the engine without a file name (`runFormulaCase` passes none: `CELL("address")` of another sheet has no workbook — 2 bank cases; the A4a mock had `Pasta1.xlsx`); `tests/a3.rs` reproduces the full recalc's random stream when the capture has no `full.rnd` (`capture-order.mjs`: `RecordedRandom(hash32(key + "|full") || 1)`, xorshift32 / 2^32 — before A4e every run with a RAND* cell was deferred by RANDARRAY's missing body). |
+
+### Parity
+
+`tests/a4.rs` (unchanged replay but A4e-10) and `tests/a3.rs`. The family alone (`UO_A4_FN=<the 72 names>`) and all
+families after A4e:
+
+| Group | Compared (all families) | Equal | Of which A4e (72 functions) | Deferred | Notes |
+|---|---|---|---|---|---|
+| bank CI (35,299 cases) | 35,295 | **35,295** | 6,078 compared (55 functions have cases), **6,078 equal** | **0** | the 57 legacy `@` cases compared (A5) |
+| bank big (pt-BR + en-US) | 70,590 | 70,581 + the 9 clock records (A4d open item 7) | 12,156, **12,156 equal** | **0** | |
+| calc-traps CI (54,120 calls, release) | 54,097 | **54,097** | 8,405 compared, **8,405 equal** (debug 8,200 + 205 whole-column) | **0** | 8 random records (RANDARRAY) equal value and consumption |
+| calc-traps big (308,120) | 307,930 | 307,927 + 1 NaN payload + A4b's 2 `pow` platform records | 46,932, **46,932 equal** | **0** | 54 random records; the 1 first mismatch was OFFSET NaN (A4e-6) |
+| calc-order CI x1 (A3 replay) | values 99,616 (A4d: 82,915) | **99,616** | — | **0** (A4d: 16,701) | order equal 420/420 runs, random equal 420, `circular` 30/30, incremental = full 30/30 |
+| calc-order CI ops | values 132,021 | **132,021** | — | 0 | 560/560 runs |
+| calc-order big | values 11,035,843 (A4d: 9,751,663) | **11,035,843** | — | **0** (A4d: 1,284,180) | order equal 11,200/11,200, random 11,200, `circular` 800/800, incremental = full 800/800 |
+
+**What stays deferred after A4e: nothing** in the bank, trap and calc-order replays. Outside them: the `cellInfo` host
+callback (C5) — no capture has a host `cellInfo` (CELL "format"/"color"/… answer the TS defaults when the host has
+none, which is what every capture records); the `calc-tests` Engine calls (A3 open item 2, now replayable: every body
+exists); the known capture issues (A4b's 2 `pow` records, A4d's 9 clock records). 0 parity rounds: the first CI bank
+replay had 6 mismatches, all harness (A4e-10); the first big trap run 1 (A4e-6); the first A3 replay 128 values +
+2 verdicts, all the full recalc's missing stream (A4e-10).
+
+### Robustness, memory, fuzz
+
+`a4_robust.rs` runs the 72 bodies through its random calls (600 per function release; slowest call of the run 892 ms,
+A4c's DB over a whole column) and M1 (each call over a fresh mock leaves no live bytes: the family keeps no cache
+outside the engine's pass memory). `tests/a4e.rs`: **allocation per pass, not per formula** — a second recalc of
+2,000 and of 4,000 exact VLOOKUP/MATCH/XLOOKUP/XMATCH over one 1,000-row range allocates the same 111,036 B beyond the
+operator formulas (one vector + one index per pass), INDEX over a range 0 B, INDEX(MATCH approximate) 41,312 B; text
+keys allocate their lower-cased or collation key per search. The computed criterion through the engine (DSUM/DCOUNT/
+DGET with `=B2>10` under a non-field label, and after an edit); conditional functions over INDIRECT ranges of dirty
+formulas equal a fresh full recalc after 30 edits; the hostile shapes of A4e-7. **M5**: `PassCache` past its cap keeps
+nothing more (`line.rs` unit test); the engine clears it at the end of every `run` (a recalc leaves no vectors).
+
+Fuzz: **not run** (disk: 8 GB free on D:, the fuzz workspace builds every engine crate in release). Seeds for
+`core/fuzz/src/calc.rs` `formula_seeds` (to add with the run): `=XMATCH("(a+)+b";A1:A300;3)`,
+`=SUMIFS(INDIRECT("B1:B200");INDIRECT("C1:C200");"y")` over dirty formulas, `=GROUPBY(A1:A20;B1:B20;PERCENTOF;3;-2;{-2;1})`,
+`=PIVOTBY(A1:A9;B1:B9;C1:C9;SUM;3;-1;;-1)`, `=OFFSET(A1;1E21;0;-1E300;0)`, `=SEQUENCE(1048576;16384)`,
+`=TAKE(A:A;-1E21)`, `=WRAPROWS(A1:A5;0/0)`, `=DSUM(A1:B5;"Qty";F1:F2)` with `F2 = B2>10`, `=MATCH("zz";A:A;1)`,
+`=XLOOKUP(1;A:A;B:B;;1;-2)`, `=UNIQUE(A:A;;TRUE)`.
+
+### Performance (PERF)
+
+`benches/a4e.rs` vs `js/bench-a4e.mjs` (frozen TS engine, Node 24.15, same cells; medians of 5 after a warm-up;
+i5-14600KF). Both runners print the count of numbers/errors and the bits of their sum in row order: **equal in every
+class**.
+
+| Class | formulas | TS build ms | Rust build ms | TS recalc ms | **Rust recalc ms** | Rust / TS | engine heap (TS retained / Rust) |
+|---|---|---|---|---|---|---|---|
+| **lookup-10kx10k** (the TS baseline class: VLOOKUP/MATCH exact, XLOOKUP over 10k rows; record 93.7 ms) | 10,000 | 62.8 | 19.8 | 88.5 | **3.75** | **0.042** | 15.2 MB / 5.4 MB |
+| **dynamic-1k** (the TS baseline class: 20 spills of SORT/UNIQUE/FILTER/SEQUENCE over 1k rows; record 9.8 ms; A3's operator variant 0.81×) | 20 | 1.2 | 0.1 | 6.3 | **2.88** | **0.46** | — / 0.36 MB |
+| vlookup-exact-100k (10k exact VLOOKUP over 100k number keys) | 10,000 | 88.3 | 24.6 | 37.8 | **7.77** | **0.21** | 24.3 MB / 5.6 MB |
+| xlookup-text-100k (1k exact XLOOKUP over 100k text keys) | 1,000 | 51.9 | 6.2 | 28,867 | **156** | **0.005** | — / 0.05 MB |
+| match-approx-100k (10k MATCH 1 / VLOOKUP TRUE, binary search, 100k sorted rows) | 10,000 | 171 | 23.9 | 45.7 | **9.64** | **0.21** | 8.0 MB / 5.6 MB |
+| ifs-100k (200 COUNTIFS/SUMIFS/COUNTIF/AVERAGEIF over 100k rows) | 200 | 73.8 | 5.8 | 3,516 | **1,657** | **0.47** | — / 0.1 MB |
+
+**Verdict: every class inside the ≤ 0.5× native budget**; these are the first A4e records (the 10% rule starts from
+them). The tight ones are dynamic-1k (0.46×: SORT/UNIQUE/FILTER of 1,000 rows are a few µs each, the rest is the
+engine's spill write-back of 17,480 cells) and ifs-100k (0.47×: ≈ 8.3 ms per formula, ≈ 30 ns per cell for the walk
+of 1.75 areas of 100,000 cells through `for_each_cell` — the engine's `Store::each` + view per cell; a lane walk for
+all kinds would be an engine change, open item 2). The xlookup-text class is 156 ms of collation keys per pass (the
+index is rebuilt each recalc, A4e-1).
+
+### Open items
+
+(1) **Fixed at the orchestrator's request** (last frontier in the crate): `_xlfn.`-prefixed calls — and with A5 the legacy `@` → `_xlfn.SINGLE(…)` — copied their prefix in `eval.rs` `func_call` (`to_utf16()` for the `_xludf.`/`_xll.` test, ≈ 17 B per call); the test now reads the prefix in place and `tests/a4f.rs` `zero_alloc_scalar_paths` is green again (112 B = the operator baseline). (2) The conditional functions' cost is the
+engine's cell walk (≈ 30 ns per cell): a column-run walk that hands every value kind (A4b open item 4's extension) would
+roughly halve ifs-100k. (3) The lookup indexes are per pass (the TS semantics of `cache`); keeping them across passes
+needs invalidation on writes (an engine design question). (4) `formula_node` returns the parsed tree; A5's legacy
+`exec` tree belongs there when it differs (`f.exec ?? f.node`). (5) The fuzz run of the seeds above. (6) Clippy `--all-targets --all-features -D warnings` (native and wasm32) is clean on every target of the crate but `tests/a5_robust.rs:128` (`f64::max` → `uo_jsnum::math::max`; A5's file, the edit was refused by this session's permission check); `tests/a4d.rs:179`'s `str::trim` was moved to `uo_jsnum::text::trim`.
+
+## A4f — as built (2026-11-24, Opus)
+
+The logical/information/cube family: every body of `logical.ts` (21 names: IF, IFS, IFERROR, IFNA, SWITCH, CHOOSE,
+AND, OR, XOR, NOT, TRUE, FALSE, the catalogue bodies of LET/LAMBDA/ISOMITTED, MAP, REDUCE, SCAN, BYROW, BYCOL,
+MAKEARRAY), `info.ts` (15: ISBLANK … ISLOGICAL, ISEVEN, ISODD, N, T, NA, TYPE, ERROR.TYPE) and `cube.ts` (8: the seven
+CUBE* and STOCKHISTORY) — 44 bodies. ISREF, ISFORMULA, CELL, INFO, SHEET, SHEETS and FORMULATEXT are `reference.ts`
+in the frozen TS (family `lookup`, A4e), so CELL's `cellInfo` host callback (C5) is A4e's, not here. LET, LAMBDA and
+ISOMITTED stay special forms of the A2 evaluator (`Intrinsic`); their registered bodies (`#CALC!`, `#CALC!`, FALSE)
+answer only when the function is used as a value (`_xleta.LET`). The evaluator has no special case for IF/IFS/SWITCH/
+IFERROR: they are `lazy` functions (A2 `Arg::Thunk`), and the bodies force the thunks.
+
+**Code** (`core/crates/uo-calc/src/functions/logical/`):
+
+| File | Content |
+|---|---|
+| `mod.rs` | `BODIES` (`logical`, `info`, `cube`); `logical.ts`: `Sa` + `sa` (`scalarOrArray`), `dims`, `fill` (capped), `Memo` (the TS `x ??= f()`), `force`/`of_thunk` (`ofThunk`), `text_to_bool`/`bool_of`, `pick_array`, IFS's array path, `replace_errors`, SWITCH (`switch_one`, `same_value`), CHOOSE + `number_text` (`toNumberText`), `Fold` (`logicalFold`), `Input` (`lambdaInput`), `lambda_of` (the parameter check), `fill_lambda`, `lambda_scalar`, MAP/REDUCE/SCAN/BYROW/BYCOL/MAKEARRAY, `to_int` |
+| `info.rs` | `info.ts`: the `is` bodies, `parity`, `lift1` (`liftAtp` of one argument, A4f-4), `first_or_each`/`first_cell`, N, T, NA, TYPE, ERROR.TYPE |
+| `cube.rs` | `cube.ts`: `first_error`, `cube` (`cubeFn`'s body; the `members` positions are the registry's argument modes), STOCKHISTORY |
+
+Outside the family: `FnContext::lambda_arity` (`fnreg.rs`, a new default method) and its evaluator implementation
+(`eval.rs`, `CellCtx`), A4f-2. Tests: the unit test of `Memo`; `tests/a4f.rs` — zero allocation per evaluation over 36
+single-call formulas, the LAMBDA parameter checks through formula LAMBDAs, the hostile shapes (A4f-3); the family is
+in `tests/a4.rs` (parity) and `tests/a4_robust.rs` (random calls, M1) through `functions::ported()`. Harness changes
+(A4f-8): `tests/a3_robust.rs` `incremental_equals_full`, `tests/a4_robust.rs` `random_calls`. Benchmarks
+`benches/a4f.rs` + `js/bench-a4f.mjs` (`[[bench]] a4f` appended to `Cargo.toml`).
+
+### Decisions taken in A4f (declared; observable output equal unless said)
+
+| Id | Decision |
+|---|---|
+| A4f-1 | **Lazy evaluation as the TS forces it**: IF/IFS with an array condition evaluate each branch once, in the order the condition first uses them (`[...used]` of a `Set`); SWITCH caches its keys but evaluates the chosen result per element; the caches the TS keeps with `??=` (IF's branches, IFS's values, SWITCH's keys) **re-evaluate a value that was `null`** at its next use (`Memo`: an empty-cell branch is forced again per element — the number of evaluations, random draws and `NeedCell`s is the TS's). The scalar paths keep no cache (each thunk is forced at most once there). |
+| A4f-2 | **`FnContext::lambda_arity(f) -> (params, body is a function)`** (`fn.params.length`, `typeof fn.body === 'function'`): MAP/REDUCE/SCAN/BYROW/BYCOL check a formula LAMBDA's parameter count before any call, as the TS (`#VALUE!` once, not an array of `#VALUE!`); a function used as a value (`_xleta.SUM`: one parameter) is not checked. New default method of the A2 trait (no implementor has to change): the default is the test mocks' JS LAMBDA (1 parameter, a function body); the evaluator answers from its closure records. The parity mocks only have JS LAMBDAs, so the check is tested through the engine (`tests/a4f.rs` `lambda_arity`). For A4e: `dynamic.ts` reads `fn.params.length >= 2` (GROUPBY/PIVOTBY) — the same method; `testing.ts` gives a JS LAMBDA `minArgs` parameters, which `fnmock`'s default (1) does not — A4e overrides it in the mock if its cases need it. |
+| A4f-3 | **Bounds** (decision R1 / A4a-4): the broadcasts of IF/IFS/IFERROR/SWITCH and the LAMBDA fills (MAP, SCAN, BYROW, BYCOL, MAKEARRAY) past 2^24 cells throw `Throw::Range` (`#NUM!` in the engine; the TS allocates up to 2^32 − 1 cells); REDUCE over more than 2^24 cells throws the same before its first call (the TS calls the LAMBDA 1.7·10^10 times for `A:XFD` — hours); MAKEARRAY keeps the TS `#NUM!` past the sheet size (`n·m > 1048576·16384`) and throws `Range` between 2^24 and it (the TS `new Array(n·m)` throws past 2^32 − 1 and computes for minutes below). `fill_lambda` reserves at most 65,536 cells up front (the TS `new Array(n)` is holey: a first nested array answers `#CALC!` without the memory). Measured (`tests/a4f.rs`, debug): `REDUCE(0;A:XFD;…)`, `SCAN`/`MAP` over `A:XFD`, `MAKEARRAY(1048576;16384;…)`, `MAKEARRAY(1E10;1;…)` `#NUM!` in ≤ 1.4 ms; `IF(A:A>0;1:1;0)` and `IFERROR(A:A/0;1:1)` (1M × 16K broadcasts) `#NUM!` in 60–70 ms. |
+| A4f-4 | **ISEVEN/ISODD** go through `lift1`, `liftAtp` of one argument without its argument list (no allocation on the scalar path; a one-cell reference read, a larger one or a union `#VALUE!`, a LAMBDA `#CALC!`, an array element by element at least 1 × 1 with `#N/A` leftovers). An omitted argument (`OMITTED`, a JS `Symbol`) reaching `toNumber` throws the TS `TypeError` (`Throw::Internal`: `#VALUE!` + `internalErrors` at the engine; an argument that evaluates to `null`, e.g. an omitted optional LAMBDA parameter); an Excel error of an element is the element's value (A4c's lesson: not a `?` out of the lift). |
+| A4f-5 | **AND/OR/XOR over a one-cell area** read the cell (`ctx.cell`) instead of `for_each_cell`: the same value (an absent cell reads empty, which the fold ignores) and the same `NeedCell`, without the engine's area cursor; larger areas keep `for_each_cell` (open item 1). Text given directly counts only when it is the locale's boolean name (`textToBool`: full Unicode upper case, no trim — `uo_text::case`). |
+| A4f-6 | **T** makes the empty text (`''`, the pass arena) only when a result needs it; SWITCH's equality (`sameValue`) compares the JS types first (empty = 0) and then `compareScalars` (texts by the collation); CHOOSE's and MAKEARRAY's text numbers (`toNumberText`) remove the locale's group separators, turn the first decimal into a point and read `Number` (`cell::js_number`: JS white space, hex/octal/binary, `Infinity` not finite → `#VALUE!`). |
+| A4f-7 | **CUBE\*/STOCKHISTORY**: the first scalar error of any argument (arrays and references at the `any` positions do not count), then CUBERANKEDMEMBER's rank / CUBEKPIMEMBER's property must be numbers (text that is not → `#VALUE!`), then `#N/A`; STOCKHISTORY validates the code (a text not all JS white space) and the two dates, then `#BUSY!` (no quote service). |
+| A4f-8 | **Harness** (two tests that changed once IF had a body): `tests/a3_robust.rs` `incremental_equals_full` compares `-0` and `0` as one value — a fresh engine's formula cell starts at 0 and a computed `-0` is not written (`rec.v !== v`, A3-1), while the incremental engine keeps a `-0` it wrote earlier: both are the TS's behaviour (seed 2, `IF(F$3>1;F$3;B4)` with B4 = −0); `tests/a4_robust.rs` `random_calls` skips the calls with a whole-column argument in a debug build (as `a4.rs` skips the whole-column traps; a lift over 1M cells costs seconds in debug — RATE 6.2 s under load) and the bound is 1,500 ms in both builds again (A4c-7's 4 s debug bound removed); the random sequence is the same in both builds (the legacy flag is drawn before the skip); the release run keeps every call. |
+
+### Parity
+
+Replay of `tests/a4.rs`, unchanged harness (the family's cases turned from deferred into compared). The family alone
+(`UO_A4_FN=<the 44 names>`):
+
+| Group | Compared | Equal | Deferred | Notes |
+|---|---|---|---|---|
+| bank CI (pt-BR) | 517 (24 functions have cases) | **517** | 7 | the 7: `core-lambda-374/387/388/389/410/411/414`, formula cases whose LAMBDA calls ROWS/COLUMNS/ISREF (`reference.ts`, A4e) |
+| bank big (pt-BR + en-US) | 1,034 | **1,034** | 14 | the same cases in both locales |
+| calc-traps CI | debug 3,360 (84 whole-column calls skipped); release **3,444** | **3,444** | 0 | 41 functions (TRUE, FALSE, NA take no argument: no trap); lazy arguments as the TS `callFn` thunks; MAP/REDUCE/SCAN/BYROW/BYCOL/MAKEARRAY with the JS test LAMBDAs |
+| calc-traps big | 17,616 | **17,616** | 0 | no TS timeout among the family |
+
+Every family together (debug CI, this tree with A4d's text family in): bank 28,952 compared, all equal, 6,286
+deferred + 57 legacy `@` (A5); traps 44,577 compared, all equal, 8,405 deferred (1,115 whole-column calls skipped).
+
+**A3 replay (calc-order)**, release, the same tree with and without the family's bodies (`BODIES = &[]`), so the
+difference is A4f's alone:
+
+| Run | values compared (without → with A4f) | deferred | other facets |
+|---|---|---|---|
+| CI x1 | 80,484 → **82,915** (+2,431), 0 mismatches | 19,132 → 16,701 | order equal 384, random equal 274, incremental = full 19 (11 deferred), `circular` 30/30 — unchanged; ops group unchanged (560 runs, 129,106 values) |
+| big (`UO_A3_BIG=1`) | 9,492,809 → **9,751,663** (+258,854), 0 mismatches | 1,543,034 → 1,284,180 | incremental = full 590 → 591 (210 → 209 deferred); order equal 10,719, random equal 8,484, `circular` 800/800 — unchanged |
+
+The deferred cells that remain need A4e (lookups, ROWS/COLUMNS, INDEX…) or A5 (the legacy `@`). 0 parity rounds.
+
+### Robustness, memory, fuzz
+
+`a4_robust.rs` runs the 44 bodies through its random calls (600 per function in release, 60 in debug) and M1 (each
+function over a fresh mock leaves the live bytes exactly where they were): no panic, M1 green; the family's slowest
+call in release is 301 ms (CUBERANKEDMEMBER lifted over a whole column: `apply_fn`'s 1M-cell lift, as A4a's
+FLOOR.MATH); every family together, release: slowest 749–785 ms (LOGNORM.DIST over a whole column, A4b's — 390 ms in
+its record; this machine ran other agents' builds). **Zero allocation per evaluation** (`tests/a4f.rs`): a second full
+recalc of 2,000 formulas cycling 36 single calls (IF scalar and with a text literal, IFS, IFERROR, IFNA, two SWITCH,
+CHOOSE, AND/OR/XOR/NOT of comparisons and of a one-cell reference, TRUE, FALSE, the eight IS*, ISEVEN, ISODD, N, T,
+TYPE, ERROR.TYPE, NA, CUBEMEMBER, CUBERANKEDMEMBER, CUBEVALUE, STOCKHISTORY, nested IF/IFERROR) allocates exactly what
+2,000 operator formulas do (112 B). Not in it: AND/OR/XOR over a multi-cell reference (≈ 96 B per call inside the
+engine's `for_each_cell`, open item 1); the array paths allocate their result as the TS. Caches: none (the family
+keeps nothing between calls).
+
+Fuzz: seven `formula_parse` seeds over the family (listed in the frontier report for the orchestrator to add to
+`core/fuzz/src/calc.rs` `formula_seeds`; A4d owned that file during this frontier — run from local corpus files):
+array conditions of IF/IFS/SWITCH, IFERROR/IFNA/CHOOSE/AND/XOR/NOT with locale texts, MAP/REDUCE/SCAN over ranges and
+whole sheets, BYROW/BYCOL/MAKEARRAY at their bounds and with nested arrays, the IS*/N/T/TYPE/ERROR.TYPE edges, the
+CUBE*/STOCKHISTORY checks, whole-column broadcasts and the eta forms of LET/ISOMITTED. Stable fallback driver
+(`core/fuzz`, its own target directory, `--slow 1 --seed 4242`), 2026-11-24, 300 s: 345,478 executions, **0
+crashes**; 14 inputs over 1 s, none in this family: 13 are A4b's BETA.INV seed (≈ 1–2.2 s, A4b open item 5) and one
+(86.8 s) a 12.6 KB mutation repeating ODDFYIELD(…;−1E300;…)/ODDLPRICE/ACCRINT 148 times each — A4c's coupon walks to
+the `Date` limit (A4c open item 3) multiplied, reported to the orchestrator. The family's slowest input of the run
+(0.8 s, under the 1 s mark at replay) is `BYROW(A:XFD;LAMBDA(r;…))`: 1,048,576 LAMBDA calls, the TS's own work.
+
+### Performance (PERF)
+
+`benches/a4f.rs` vs `js/bench-a4f.mjs` (frozen TS engine, Node 24.15, same cells; medians of 5 after a warm-up;
+i5-14600KF, other agents' builds running on the machine; both runners print the count of numbers + booleans, the rest,
+and the bits of their sum in row order — equal: `84344` / `15656` / `41643f2d06bc8a4f`). **logical-100k**: 100,000
+formulas over a column of numbers A (one in 9 empty, one in 11 `#DIV/0!`) and booleans B — IF, AND, IFERROR,
+ISNUMBER, SWITCH (text results), IFS, OR/NOT/XOR, CHOOSE, ISBLANK/ISEVEN, IFNA/TYPE.
+
+| Class | TS build ms | Rust build ms | TS recalc ms | **Rust recalc ms** | Rust / TS | engine heap (TS retained / Rust) |
+|---|---|---|---|---|---|---|
+| **logical-100k** | 543–592 | 187–199 | 164–184 | **44.1–45.3** | **0.25–0.27** | 205 MB / 6.0 MB |
+
+Per kind (`UO_A4F_ONLY=<j>`: 100,000 formulas of one kind; ms TS → Rust): IF 118 → 42.4 (0.36), AND(A>100;A<900;B)
+81–100 → 49.4–50.2 (0.50–0.61), IFERROR 101 → 32.6 (0.32), ISNUMBER 36–40 → 17.3–17.5 (0.45–0.48), SWITCH 223 → 43.6
+(0.20), IFS 217 → 54.4 (0.25), OR(…;NOT(B);XOR(…)) 121–179 → 67.8–69.6 (0.39–0.56), CHOOSE 261 → 52.0 (0.20),
+IF(ISBLANK;0;ISEVEN) 141 → 35.6 (0.25), IFNA(IF(…;NA();…);TYPE) 177 → 45.7 (0.26). The bodies themselves cost a few
+ns; the AND/OR kinds are the evaluator's per-node cost (three or four nodes and one or three calls: ≈ 100 ns per
+comparison, the A3 record's limit), where V8 is at its best. **Verdict**: the class inside the ≤ 0.5× budget (0.25×);
+these are the first A4f records (the 10% rule starts from them). The A3/A4a–A4c classes are unchanged (no shared code
+on their paths changed; `lambda_arity` is a new trait method called only by the LAMBDA helpers).
+
+### Open items
+
+(1) AND/OR/XOR over a multi-cell reference walk it with `for_each_cell`, which allocates the engine's area cursor
+(`Store::each`, ≈ 96 B per call) — the same as A4b open item 4 (COUNT, the `*A` functions); a lane walk with every
+value kind is an engine (A3) change. (2) A4e: `fnmock`'s JS LAMBDAs answer `lambda_arity`'s default (1 parameter);
+the TS mock gives them `minArgs` parameters — override in the mock if `dynamic.ts`'s `fn.params.length >= 2` cases
+need it (A4f-2). (3) The 7 (CI) / 14 (big) deferred bank cases wait for ROWS/COLUMNS/ISREF (A4e). (4) Per kind, AND
+and OR of comparisons run at 0.5–0.6× the TS: the evaluator's per-node cost, not the bodies — the A3 stage-5 proposal
+(compiled trees) is the lever. (5) No helper of this family is needed by another one (`scalarOrArray`, `textToBool`,
+`boolOf` are not imported elsewhere in the TS).
+
+## A5 — as built (2026-11-24, Opus)
+
+The formula-language layer and the workbook-level rules of the calc: the legacy `@` rewrite with the 508 measured
+classes (`implicit.ts` + `implicit-classes.ts`) wired into the engine (`execCache`, `sourceText`, FORMULATEXT, the
+formula bar), the Excel catalogue (`i18n/catalog.ts`), the language tables and the translator canonical ↔ local
+(`i18n/*`), the `_xll.` add-in resolution (`addin.ts`), the open-recalc rule (`open-recalc.ts`), the save rules
+(`save.ts` + `file-form.ts`) over the store, and the parity harness of these TS surfaces.
+
+**Code** (`core/crates/uo-calc/src`):
+
+| File | Content |
+|---|---|
+| `catalogue.rs` | `catalog()`, `catalog_entry`, `entry_exact`, `function_kind` (`Sheet`/`Reserved`/`Unknown`), `is_unavailable_function`, `accepts_arg_count`, `with_file_prefix`, `strip_file_prefix_into`/`strip_upper_prefix`, `upper_utf8_into` (root `toUpperCase` into a reused buffer), `operator_of`, `function_names(lang)` (catalogue order, unsorted: the shell sorts with `Intl.Collator`, plan §16 item 11) |
+| `i18n/mod.rs` | the types (`CatalogEntry`, `FormulaLanguage`, `Kw`, `ExcelLanguageInfo`…), `EN_US`/`PT_BR`, `languages`, `excel_languages`, `get_language` (exact → main variant of the language → none; no allocation for ASCII ids), `resolve_language`, `value_locale_for` (the measured ids only; the rest is the shell's `deriveValueLocale`, C1), `local_function_name`, `canonical_function_name`, `localize_error`, `canonical_error`, `localize_bool` |
+| `i18n/tables.rs` | GENERATED by `js/gen-i18n-tables.mjs` (`--check`): the 535 catalogue rows (id, prefix, min/max, argStep, smallCounts, operator), reserved and unavailable names, the operator functions, the 47 Office languages, en-US and pt-BR with the lookup maps `langData` builds at run time (folded local name → canonical incl. the diacritic-free keys, errors longest first, keywords), the 508 implicit classes |
+| `i18n/translate.rs` + `translate/tokenize.rs` | `Translator` (`to_local[_into]`, `from_local[_into]`), `SyntaxOptions` (+ `LangSpec`, `NameSet`), `resolve_syntax`: the TS tokenizer, `rewriteOperators`, `scopeParams`, `parseStructured`, `render`, `renderStructured` |
+| `implicit.rs` | `ParamClass`, `FnClassInfo`, `fn_class`, `param_class`, `trait LegacyHost` (`name_is_multi`, `is_name`), `NoNames`, `legacy_to_dynamic[_in]` → `Legacy { root, inserted: (node, implicitAt) }`, `implicit_positions`, `source_text` |
+| `addin.rs` | `ATP_FUNCTIONS`, `has_addin_call`, `resolve_addin_calls` |
+| `open_recalc.rs` | `TRUSTED_CALC_ID`, `EXCEL_CALC_ID`, `OPEN_VOLATILE`, `OpenRecalcWorkbook`/`CalcPrFlags`, `OpenRecalcPlan`/`Mode`/`Reason`, `has_volatile_function`, `should_recalc_on_open(book, &Store)`, `apply_open_recalc` |
+| `file_form.rs` | `FileForm`, `to_file_formula`, `strip_singles`, `has_call`, `array_in_value` |
+| `save.rs` | `ENVIRONMENT_FUNCTIONS`, `SaveFlags`, `save_flags`, `unsure_reasons`, `SaveOptions`, `SavePrep`, `prepare_for_save(engine, &mut Store, opts)`; `EngineNames` (the engine's `nameIsMulti`/`isName`) |
+| engine (`engine/mod.rs`, `host.rs`, `recalc.rs`, `graph.rs`) | `fl::EXEC`, `Graph::exec` (per (tree, sheet): the dynamic tree + implicit positions) and `alt_text` (resolved `_xll.` texts), `Engine::exec_of` at load and `set_cell` (kind normal only, as `analyze`), `Graph::exec_node` (`f.exec ?? f.node`) for the evaluation, `formula_node` (the database criteria) and the formula texts; `parse_at` resolves `_xll.` before hash-consing; `Engine::formula_text` (+ `FORMULATEXT`) and `Engine::formula_display` |
+| re-pointed | `criteria::locale_error_code` → `i18n::canonical_error` (A1-6); INDIRECT's R1C1 letters → `i18n::get_language(id).r1c1` (A2-7) |
+
+**Public API for the other frontiers:**
+
+- **C3a-8 (grid entry, uo-xlsx `FormulaSyntax`)**: `Translator::from_local_into(text, &SyntaxOptions { lang: LangSpec::Id(ui id), r1c1, file_prefixes: true, in_table, names: Some(&NameSet::new(workbook names)), regional_decimal: host hook, .. }, &mut out)` gives the OOXML text the TS `fromLocal` gives (`_xlfn.`, `_xlfn._xlws.`, `_xleta.`, `_xlpm.`/`_xlop.` LET/LAMBDA parameters, `Tabela[[#This Row],…]`, R1C1 in the language's letters, `_xludf.` on an English name typed in pt-BR); `to_local_into` the formula bar text; `catalogue::catalog_entry`/`function_kind`/`accepts_arg_count` the reserved-function and argument-count checks (`argStep`, `smallCounts`); `resolve_syntax` the separators the UI shows. A translation allocates nothing but its output once the `Translator` is warm (measured below).
+- **C1b (surgical save)**: `save::prepare_for_save(&mut engine, &mut store, &mut SaveOptions { dynamic_cms, dynamic_cm: Some(&mut || next_cm), sheets })` after the values are written (the engine's one write path already did): edits the store's formula table (`ca`/`aca`, `t`/`ref` of dynamic anchors, the file form of formulas typed in the session — legacy when it computes the same, else `t="array"` + `cm` —, orphaned shared children made own formulas) and cell extras (`cm`, error `vm` dropped); returns `touched` sheets (rewrite their `<sheetData>`) and `sure` (`false` → `fullCalcOnLoad="1"`, `unsure` lists why). `save_flags` and `unsure_reasons` are public for diagnostics.
+- **C1a/C4 (open)**: `open_recalc::should_recalc_on_open(&OpenRecalcWorkbook { app_name_xl, calc_pr }, &store)` → the plan; `apply_open_recalc(&mut engine, &mut store, &plan, clock, &mut random)` (engine built WITHOUT `ignore_cache`). The decision reads the workbook flags first and then only the formula tables (never every cell; file order for `FileOrder` sheets, row-major otherwise — the plan's cells come in file order as the TS).
+- **C5 (editing)**: `Engine::formula_text`/`formula_display` (the legacy `@` shown at its text position, resolved add-ins), `catalogue::function_names(lang)` for the autocomplete (to be sorted by the shell), `i18n::localize_error`/`localize_bool`, `file_form::to_file_formula`.
+
+**Decisions taken in A5 (declared; observable output equal unless said):**
+
+| Id | Decision |
+|---|---|
+| A5-1 | **Rewrite once per tree**: the legacy rewrite runs at load/`set_cell` once per (hash-consed tree, sheet) — the TS `execCache` keyed by node object; trees are per sheet in both — and a record carries `fl::EXEC` only when the rewrite inserted `@`; evaluation looks the exec tree up only for those (one hash lookup). The rewrite builds nodes only along changed paths (the TS copies every visited node and returns the original when nothing was inserted: the same trees) on an explicit task stack; `multi`/`hasRange`/`hasAnchor` are iterative through operators and parentheses and recurse only through function arguments (≤ `MAX_AST_DEPTH`). The implicit positions live beside the exec tree (`Graph::exec`), not in the node (`implicitAt`): `sourceText` and the calc-tests replay read them from there. |
+| A5-2 | **Static data generated** (`gen-i18n-tables.mjs`): the run-time maps of `langData` (folded name → canonical with the diacritic-free keys inserted in the TS Map order, `errIn` sorted longest first, `kwIn` last-wins) are built in Node with the TS semantics and searched by binary search here; a typed word is folded (root upper case = `toLocaleUpperCase('pt-BR'/'en-US')`, C1) into a reused UTF-8 buffer; `stripMarks` (NFD, drop `\p{M}`, NFC) only on a miss of a non-ASCII word. `IMPLICIT_CLASSES` keeps its non-catalogue names (EUROCONVERT: reached when a defined name is called with that name). |
+| A5-3 | **Translator shapes (PERF)**: tokens are spans into the input (a quoted name keeps a span + an unescape flag; an R1C1 typed in A1 mode keeps the column number and the row digits), structured-reference items live in one reused vector, `rewriteOperators` runs on an explicit stack with the matching parentheses precomputed (`@` pushed when its frame opens: no insertion), `scopeParams` keeps the parameter names of the open LET/LAMBDA frames in one buffer. `matchBracket` is memoized after the first failed scan of a text (one stack pass matches every `[` it visits), so a run of unbalanced `[` is linear (the TS is quadratic). Hostile inputs only: an EMPTY list/array separator never matches (the TS loops for ever on `startsWith('')`); the case-insensitive R1C1 letters compare by simple case folding through the root lower-case mapping (+ `ſ` → `s`) — the `iu` rule for every letter the tables hold (R, C, L). |
+| A5-4 | **Host hook C1**: an id without a table resolves to English with the decimal the shell's `Intl` gives (`SyntaxOptions::regional_decimal` = `HostHooks::regional_decimal`); `value_locale_for` answers only the measured ids. The captures record the capture machine's `Intl` (Node 24.15, default locale pt-BR: an unknown id such as `xx-YY` gets `,`). |
+| A5-5 | **Open-recalc over the store**: the TS walks `ws.rows`/`row.cells` of the sheet-core model; here the formula tables (file order through `FileOrder`, shadowed duplicates included; row-major for canonical sheets, whose file order it is). "Cached value" = the `<v>` bit or an `<is>` (the extra's inline shape). The volatile test is a hand scan of `\b(?:RAND|…|INFO)\s*\(` (ASCII `\b`/`i`, JS `\s`) and parses only texts that pass it, cached per text. A text whose parse ends in the TS `TypeError` (an unclosed `(` at the end, A2-4) — which the TS lets escape and abort the whole open — counts as not parsable (full recalc). |
+| A5-6 | **Save over the store** (decision S5): the rules edit the store's `FileFormula` (text, attributes) and the cell extra (`cm`, `vm`) where the TS edits the model's `SyncCell`; `allFormulas`/`flags.get(f)` by record in sheet order; `dependentsOf` through `Engine::dependents_of` (positions); the shared anchors of a sheet are collected once per sheet (the TS rebuilds its cell index per call). `to_file_formula`'s probe trees are rolled back from the engine arena (no growth per save). |
+| A5-7 | `_xll.` resolution happens in `parse_at` before hash-consing (resolved node: no prefix, no position, as the TS object literal); the printed text (`engine.ts:301`) is a per-record side text (`alt_text`) — the store keeps the file's text (the save writes what was read; the TS rec.text is engine-only too). |
+| A5-8 | `writeValues` (`to-sheet-core.ts`) is not ported: S5 made the engine's write path the store write (the TS bridge copy does not exist); its only TS callers are the calc tests and the old I/O lab. `testing.ts` is the A4a harness (`tests/support/fnmock.rs`). `deriveValueLocale` and the `functionNames` collator stay in the shell (C1). |
+| A5-9 | **Harness**: the A4a bank deferral of legacy `@` cases and the A3 replay's `legacy` facet/edit-text deferral are gone (`fnmock::legacy_deferred` → false, `a3.rs` `maybe_legacy` → false); a cell whose rewrite reaches `SINGLE` was deferred as a body not ported until A4e. `calc_order_ops` allows one `circular` deferral while `SINGLE` is missing (ops/0027: `=Local&$D1` in D1, a cycle the TS closes inside SINGLE's cell read). |
+
+**Parity:**
+
+| Group | Input | Result |
+|---|---|---|
+| **calc-tests** A5 calls (`a5_calc_tests`) | toLocal/fromLocal (lang as id or table, decimal/list, r1c1, filePrefixes, inTable, names; ids without a table), localizeBool/Error, canonicalError, local/canonicalFunctionName, resolveSyntax, getLanguage, languages, catalog, catalogEntry, functionKind, acceptsArgCount, withFilePrefix, functionNames (as a set: the order is the shell's), valueLocaleFor (measured ids), legacyToDynamic (tree + `implicitAt` positions), toFileFormula, hasVolatileFunction, shouldRecalcOnOpen (store built from the sheet-core model) | CI **3,928 equal, 0 mismatches**; big (`UO_A5_BIG=1`) **14,333 equal, 0 mismatches**. Not replayable: 5 `toFileFormula` calls with JS callbacks (the `a5` group covers them with a deterministic host), `deriveValueLocale` (shell), the engine-object calls (`prepareForSave`/`saveFlags`/`writeValues`/`applyOpenRecalc`/`unsureReasons` take the TS engine and the sheet-core model: ported as assertions below) |
+| **a5** (new, `js/capture-a5.mjs`, committed `tests/captures/a5.capture.gz` 644 KiB, 1.6 s capture, deterministic) | every catalogue name both ways (+ file prefixes, lower case, without diacritics), every error/boolean, 14 option sets × the grammar (R1C1 both letter sets, structured references, LET/LAMBDA/`_xlpm`/`_xlop`, `_xleta`, SINGLE/ANCHORARRAY/`_TRO_*`, quoted/3D/external sheets, names, `_xludf`, line breaks), pt-BR typed texts, seeded mutations; the legacy rewrite + file form + volatile test of the bank's and the generated workbooks' formulas and of every catalogue function over 11 argument shapes (deterministic host rule in the meta line); `_xll.` resolution in 3 languages | CI **142,102 records equal, 0 mismatches** (tl 21,051, fl 99,812, cf 6,420, ln 3,210, ce 144, lg 3,807, ff 3,807, vo 3,824, ad 27); big (`--big`, 1.1 MiB, local) **184,640 equal, 0 mismatches** |
+| **Excel oracle** (`implicit_classes_match_excel`) | `sheet/packages/calc/test/oracle/implicit.f2.json`: 4,6 thousand legacy → `Formula2` pairs measured in Excel 365 pt-BR for every catalogue function + the 13 hand pairs of `implicit.test.ts` | **all equal** (the 508 classes, OVERRIDES, ARRAY_RESULT, NO_ARRAY_PROPAGATION, needsAt) |
+| **open-recalc plans of uo-xlsx** (`open_recalc_plans_of_xlsx_captures`) | the `plan=` facet of `sheet-x1` (30) + `sheet-samples` (5 with a `wb` sidecar), the decision rebuilt from the `wb` sidecar and the store group's file-order cells (`in<i>`; `st<i>` otherwise) | **35/35 equal** (20 full, 6 none, 9 partial with the exact cell count). C1b's end-to-end replay through the real reader checks the same facet |
+| **bank legacy `@`** (A4a's 57 CI / 114 big deferred cases) | `tests/a4.rs` (formula cases through the engine) | final run (A4e's SINGLE now in the crate): **57/57 compared and equal**; the whole CI bank **35,295/35,295 equal, 0 deferred** |
+| **calc-order ops** (A3's 2,915 deferred values: legacy `@` of sheet-scoped names) | `tests/a3.rs` | final run: **132,021/132,021 values equal (A3: 129,106 + 2,915 deferred), 0 deferred, `circular` 40/40, order/random 560/560** |
+| calc-order x1 | `tests/a3.rs` | final run: **99,616 values equal, 0 deferred, order/random 420/420, `circular` 30/30, incremental-vs-full 30/30**. With A5 switched off (scratch copy) the same group had 1,663 mismatches (the legacy formulas evaluated without `@`). During the session 128 mismatches on random values of the full recalc came and went with A4e's in-progress code (identical with A5 off and with the pre-A5 harness) |
+| engine-level TS tests (ported assertions, `engine_tests`) | `engine.test.ts` legacy, `addin.test.ts`, `open-recalc.test.ts` (partial/full apply), `save.test.ts` (ca/aca/cm; unsure; orphaned shared child; typed formula's file form) | equal; the values that need SINGLE (A4e) or ISEVEN (A4f) are asserted when their body is present |
+
+**Robustness and memory** (`tests/a5_robust.rs`): hostile texts both ways and in R1C1/file-prefix mode — 100,000 nested parentheses, 100,000 unary minus, a 100,000-term chain, 20,000 nested `_xlfn.SINGLE(`, 2,000 nested `_TRO_ALL(`, a 20,000-parameter LET, a 100,000-argument SUM, 100,000 unbalanced `[`, unterminated quotes, a 100,000-element array, 25,000 errors — and 20,000 random UTF-16 texts of formula tokens and lone surrogates: no panic, worst random text < 50 ms debug, every hostile text within the bound (the `[` run took 79 s before A5-3's memo); the rewrite and the file form over 100,000-level parentheses, a 100,000-term range chain, 500 nested functions: bounded, no recursion. **M1** (after a warm-up of the lazily built static tables): translate both ways, rewrite + file form, the open-recalc decision, engine build + apply + formula texts, a second `prepare_for_save` (idempotent: touches nothing): live bytes back exactly. **Zero allocation**: 2,000 warm translations allocate 0 bytes beyond the reused output (`benches/a5.rs`). Caches: none new (the TS `LANG_CACHE` is static data; `Graph::exec`/`alt_text` are per-tree/per-record data dropped with the engine; the open-recalc text cache lives for one call).
+
+**Performance** (`benches/a5.rs` vs `js/bench-a5.mjs`, the frozen TS in Node 24.15 on the same inputs, i5-14600KF, medians of 7; Rust native release):
+
+| Operation | Rust | TS | Rust / TS |
+|---|---|---|---|
+| toLocal pt-BR, 100,000 formulas (15 templates), ns/formula | **700** | 3,083 | **0.23** |
+| fromLocal pt-BR, 100,000 formulas, ns/formula | **577** | 6,090 | **0.095** |
+| legacy rewrite + screen print, per tree (ns) | **643** | 1,162 | **0.55** |
+| open-recalc decision, giant-1m (no formula), ms | **0.00** | 10.8 | — |
+| open-recalc decision, 100,000 formulas → none, ms | **6.2** | 17.5 | **0.35** |
+| open-recalc decision, 100,000 formulas + `NOW()` → full, ms | **6.4** | 16.6 | **0.38** |
+
+Rework found by the benchmark: the first translator allocated per name token (upper case of LET/LAMBDA names) and per call (`getLanguage` lower-casing the id, the boolean folds) — 270 B per translation, toLocal 0.54× — now 0 B and 0.23×; the first rewrite allocated its stacks and an argument vector per function node (1.40× the TS, a failure) → reusable `LegacyBufs` and in-place argument reads (0.55×). These are the first A5 records (the 10% rule starts from them).
+
+**Fuzz**: no fuzz file edited (`fuzz/src/calc.rs` is not this frontier's); seeds proposed for the orchestrator, for `formula_parse` (they also exercise the engine's rewrite through its evaluation in both contexts) and for a new target `formula_i18n` (bytes → option byte + UTF-16 text → `to_local`/`from_local` in pt-BR/en-US × A1/R1C1 × file prefixes, then `legacy_to_dynamic` + `to_file_formula` of the parsed text): `=SOMA(A1:A3;1,5)`, `={1\2;3\4}`, `=LAMBDA(taxa;taxa*2)(3)`, `=_xlfn.LET(_xlpm.x,A1:A3,_xlpm.x)`, `=Tabela1[[#Esta Linha];[Qtd]]`, `=_xlfn.SINGLE(_xlfn._TRO_ALL(A1:B5))`, `=L[1]C[-1]+R1C1`, `=_xll.ÉPAR(A1:A3)`, `=IF(A1#>1,A1:A3,INDEX(B1:B3,0))`, `=XLOOKUP(1,A1:A3,B1:C3)`, `=T[[[[`, `='a''b'!A1:B2 C1:C3`.
+
+**Open items**: (1) SINGLE's body (A4e, `reference.ts`) landed in the crate during this session: the legacy cells are compared now (above); `calc_order_ops` still tolerates one `circular` deferral (A5-9) for the window where SINGLE was missing — it can be tightened back to 0. (2) `tests/a4f.rs` `zero_alloc_scalar_paths` (A4f's) now fails: its legacy formulas `SWITCH(…)`, `IFS(…)`, `STOCKHISTORY(…)` become `@SWITCH(…)` etc. exactly as the TS rewrites them (classes `top`), and evaluating the `SINGLE` call adds a constant ≈ 3.5 KB per recalc (not per formula; measured: 112 B → 3,512 B for 200 formulas, 3,903 B for 2,000) — the A4f/A4e owners should either type those formulas as dynamic in the test or find the per-pass allocation of the nested call. (3) `tests/a4e.rs` `lookups_allocate_per_pass_not_per_formula` failed during the session on A4e's in-progress code (XLOOKUP gets no `@`: not an A5 effect). (4) The crate's clippy currently fails only on A4e's in-progress `functions/lookup/{conditional,dynamic}.rs` and A4d's `tests/a4d.rs` (`str::trim`); every A5 file is clean native and wasm32 (checked in a scratch copy with the lookup family stubbed). (5) `writeValues` replay (A5-8) and the engine-object calc-tests calls (24 engines) remain the A3 open item 2 — the A5 ones are covered by the ported assertions. (6) The translator's `_TRO_` colon search is quadratic in the nesting depth of `_TRO_` calls (as the TS); bounded in the hostile test (2,000 levels).
+
 ## Frontiers (closed scope per frontier; all Opus)
 
 | # | Scope | Delivers | Captures | Lines | Needs |
@@ -860,11 +1424,11 @@ the last bits — a simplification-stage question with oracle evidence, not a po
 | A3 (**done** 2026-11-24, section "A3 — as built") | engine (graph, full/incremental recalc, `NeedCell` as `Result`, spills, CSE, data tables skip, cycles/iteration, volatiles) on S0 | `Engine` over `&mut Store` | per-cell values + evaluation-order facet over generated workbooks, incremental = full, `calc-tests` | ≈ 900 | S0, A2 |
 | A4a (**done** 2026-11-24, section "A4a — as built") | the shared function layer (factories, walkers of math-util/stats/tdl-util, basic aggs, dispatch per family) + math, math-util, libm, complex, engineering | functions | bank + traps (replay `tests/a4.rs`, every family) | 2,000 | A3 |
 | A4b (**done** 2026-11-24, section "A4b — as built") | statistical, distributions, regression, ets | functions (145 bodies) | bank + traps | 1,628 | A3 |
-| A4c | financial, daycount, datetime | functions | bank + traps | 1,390 | A3 |
-| A4d | text, text-format (via `uo-numfmt`), regex (`regress`, R1), filterxml (XPath subset), regional, tdl-util | functions | bank + traps (non-ASCII, surrogates) | 1,701 | A3 |
-| A4e | lookup, reference, dynamic, database, conditional | functions (stable sorts: `uo_jsnum::sort`) | bank + traps | 1,632 | A3 |
-| A4f | logical, info, cube | functions | bank + traps | 467 | A3 |
-| A5 | implicit (+ 508 measured classes), i18n (pt-BR/en-US tables, C1 hook), open-recalc, save/file-form, addin, `harness` (`writeValues`, `testing.ts`), the catalogue | as plan §5 A5 | i18n round trips, open-recalc plans, save attrs, `calc-tests` | ≈ 2,800 | A3 |
+| A4c (**done** 2026-11-24, section "A4c — as built") | financial, daycount, datetime | functions (80 bodies) | bank + traps | 1,390 | A3 |
+| A4d (**done** 2026-11-24, section "A4d — as built") | text, text-format (via `uo-numfmt`), regex (`regress`, R1), filterxml (XPath subset), regional, tdl-util | functions (62 bodies) | bank + traps (non-ASCII, surrogates) | 1,701 | A3 |
+| A4e (**done** 2026-11-24, section "A4e — as built") | lookup, reference, dynamic, database, conditional | functions (72 bodies; stable sorts: `uo_jsnum::sort`), the pass cache and `criterionAt` hooks | bank + traps + calc-order | 1,925 | A3 |
+| A4f (**done** 2026-11-24, section "A4f — as built") | logical, info, cube (ISREF/ISFORMULA/CELL/INFO/SHEET(S)/FORMULATEXT are `reference.ts`: A4e) | functions (44 bodies) | bank + traps | 467 | A3 |
+| A5 (**done** 2026-11-24, section "A5 — as built") | implicit (+ 508 measured classes), i18n (pt-BR/en-US tables, C1 hook), open-recalc, save/file-form, addin, the catalogue; `writeValues` not ported (A5-8), `testing.ts` = A4a's harness | the legacy `@` in the engine (`execCache`, `sourceText`, FORMULATEXT), `Translator`, `catalogue`, `should_recalc_on_open`, `prepare_for_save` over the store | calc-tests (3,928 / big 14,333), the new `a5` group (142,102 / big 184,640), the Excel `implicit.f2.json` pairs, the uo-xlsx open-recalc plans (35) | ≈ 2,800 | A3 |
 
 Order: (S0 ∥ A1) → A2 → A3 → (A4a…A4f, two at a time) → A5. A4 families are independent after A3; the track A
 agent runs them serially or in pairs inside the ≤ 3-agent cap. C1a (`uo-xlsx`) needs only S0.
@@ -1069,3 +1633,8 @@ Listed in the plan's §16 with the evidence.
 | A3 (engine: graph, templates, reverse index, scheduler, spills/CSE, cycles/iteration, edits, the one write path + `ops` capture group + parity replay + robustness/fuzz target + memory + benchmarks vs the TS) | Opus | ≈ 1 h 5 min wall (05:56-07:01) | 0 parity rounds (no port bug sent back by a verifier); rework found by the replay and tests of the same session, all fixed by the same agent: (1) shadowed duplicates read the store's `(col, FileCell)` as `(row, …)` — orphaned formulas were lost (ops order facet); (2) `circular` compared as numbers, the capture sorts strings (harness); (3) the taint closure only grew from new seeds, so new formulas reading old deferred cells were compared (harness); (4) under `ignoreCache` a cycle restored the store value, which an orphan had overwritten — the cached file value is now kept per formula; (5) a run whose order differs only in deferred cells was counted as a mismatch (harness); (6) the `Work::Operand` fast path converted the operand of a unary `+`, breaking `+(A1)#` (a2 replay, 2 records); (7) the load materialized one record per cell (213 MB peak on shared-1m → 42 MB, streamed batches); (8) `-0` lost by the robustness test's loader (test); (9) clippy (`f64::min`, an `x + 1 <= y`, a complex type) |
 | A4a (shared function layer + math family: math/complex/engineering bodies, dispatch per family, bank + calc-traps replay harness for every family, robustness/memory/zero-alloc tests, the `each_number` lane fast path, benchmarks vs the TS, `SheetLoader::strings`, fuzz) | Opus | ≈ 1 h 30 min wall (07:10-08:40) | 0 parity rounds on the bodies (the first bank and trap replays of the math family were equal except what the harness or another frontier explained); rework found by the replays, tests and benchmarks of the same session, all fixed by the same agent: (1) the A2 replay compared against bodies now present → `EvalState::set_bodies(false)`; (2) the A3 replay compared RAND cells whose stream a non-ported body had shifted (784 values) → random cells deferred with the stream (A4a-10); (3) the dispatch table counted as a leak in A2's M1 test (4,280 B) → warmed first; (4) the bank exposed an A3 bug: the engine's arena lacked the empty string at `StrIx(0)`, breaking LAMBDA optional parameters (A4a-11); (5) legacy `@` bank cases (A5) deferred; (6) `sum-ranges-100k` at 1.0× the TS (145 ms) until `each_number` read the store lanes (34 ms, A4a-8); (7) a 1.7·10^10-cell broadcast aborted the A2 evaluator → array caps (A4a-4); (8) the CI trap replay took 23 s release (whole-column fills and 18 MB value texts) → texts built in one buffer, non-ported functions not run, whole-column traps release-only; (9) Bessel budget lowered from 2^26 to 2^22 steps (170 ms → 10 ms per hostile call); (10) clippy (excessive precision of the TS literals, approximate constants, a negated float comparison, a complex type); (11) the fuzz run found formulas of hundreds of hostile Bessel calls taking 5 s → the budget is checked before the loop |
 | A4b (statistics family: statistical/distributions/regression/ets, 145 bodies, the `pairs`/`walk`/`xadd` fast paths, selection for order statistics, ETS and least-squares bounds, `tests/a4b.rs`, the stats-10k benchmark in both runners, fuzz seeds) | Opus | ≈ 1 h wall (08:40-09:40) | **0 parity rounds**: the first bank and trap replays of the 145 bodies were equal (CI bank 5,965, traps 17,956); the big trap run showed 2 records that are the capture's platform (Windows UCRT `pow`, checked in WSL against the glibc reference: open item 1). Rework found by the tests, benchmarks and fuzz of the same session, all fixed by the same agent: (1) clippy (4 negated float comparisons, a range loop in a test, an ambiguous float literal); (2) stats-10k at 4,949 ms (0.13× the TS) with CORREL/SLOPE 2.2 s each → `pairs` on the store lanes (A4b-3) and `xadd` (A4b-7): 1,960 ms (0.051×); (3) the ETS gap filling rescanned each gap run (quadratic) → next-known index from one pass; (4) the fuzz run found `BETA.INV` at 1 s per call — the TS bound, kept (open item 5); (5) the first libFuzzer attempt built through `core/fuzz`'s workspace (the `uo-ffi` cdylib does not link) and then lacked the ASan DLL on `PATH` — both setup, no code |
+| A4c (finance/date family: financial/daycount/datetime, 80 bodies, the bounded loops and fixed points, the stack `lift_atp`, `tests/a4c.rs`, the finance-50k/dates-50k benchmarks in both runners, fuzz seeds) | Opus | ≈ 55 min wall (09:25-10:20) | **0 parity rounds** (no port bug sent back by a verifier); rework found by the replays, tests, benchmarks and fuzz of the same session, all fixed by the same agent: (1) an Excel error of the holidays left the whole lift through `?` instead of becoming the element's value (4 CI trap records, NETWORKDAYS over arrays); (2) the holidays' spread `RangeError` of a whole column (17 big-run records, A4c-4); (3) clippy (identical `if` blocks, negated float comparisons); (4) the zero-allocation test first compared long formulas: a 6-term operator chain alone grows the evaluator's stacks (160 B per recalc) → one call per formula, values checked to be numbers; (5) `a4_robust`'s debug bound hit by a 3M-element lift of PMT/RATE (the lift's cost) → debug bound 4 s (A4c-7); (6) fuzz: ODDF* walking to the `Date` limit for an issue of −1E300 and VDB running its whole budget → serial bound, count check, quasi-coupon dates computed once |
+| A4d (text family: text/text-format/regex/filterxml/regional, 62 bodies, the vendored `regress` with a step budget, the FILTERXML arena and work budget, the stack `Buf` and in-place reads, `tests/a4d.rs`, the text-ts-50k/text-fn-50k/regex-5k benchmarks in both runners, fuzz seeds) | Opus | ≈ 1 h 10 min wall (09:39-10:50) | **0 parity rounds**: the first CI replays of the family (bank 4,224, traps 5,080) were equal. Rework found by the tests, benchmarks and probes of the same session, all fixed by the same agent: (1) upstream `regress` has no step budget (probe: `(a+)+b` over 24 a's 0.5 s) → vendored copy with the budget (A4d-1); (2) `Buf` panicked when its first write passed the stack part (the first bank run, before any comparison); (3) two wrong expectations in new unit tests (`cjk_number`: the TS type 3 drops the sign; the "零" rule); (4) SEARCH's wildcard segments allocated per call (zero-allocation test) → matcher over the pattern units; (5) regex-5k 1.10× the TS → cache lookup without allocation and one executor per scan (1.00×); (6) a skip of re-interning identical texts in `Store::write_value` measured no gain → reverted (the text-result cost is elsewhere in A3's path, open item 2); (7) clippy (`f64::min/max` → `uo_jsnum::math`, an `x + 1 <=`, negated float comparisons, an enum variant name, an assign op); (8) the fuzz run was refused by the session's permission check (disk) → seeds recalculated by `tests/a4d.rs` instead, the run left open |
+| A4e (lookup family: lookup/reference/dynamic/database/conditional, 72 bodies, the pass cache and computed-criterion hooks, the exact and collation indexes, the gather-then-match conditional reads, `tests/a4e.rs`, the six benchmark classes in both runners, three harness fixes; at the end the crate's final checks: the evaluator's prefix copy, clippy of `tests/a4d.rs`, fmt of `fnmock.rs`) | Opus | ≈ 1 h 5 min wall (10:48-11:53) | **0 parity rounds** (no port bug sent back by a verifier): the first CI replays had 6 bank mismatches, all harness (`fnmock` LAMBDA arity and file name, A4e-10), the first big trap run 1 (OFFSET with a NaN size: `Throw::Range`, A4e-6), the first A3 replay 128 values of the full recalc (its random stream was not captured: reproduced, A4e-10). Rework found by the tests and benchmarks of the same session, all fixed by the same agent: (1) SORT validated every index before the orders (the TS converts and checks element by element) — caught in review; (2) a read-only `FnContext` adapter for the conditional walk replaced by a two-state source (`Ctx::Ro`/`Rw`); (3) the TS bench's 10,000 text XLOOKUPs (10^9 collation compares, linear) would have run for an hour → 1,000; the Rust side got the collation index (A4e-2); (4) the zero-allocation test found `_xlfn.` names allocating in the evaluator (open item 1) → prefixed lookups measured against a prefixed baseline; (5) clippy (`is_multiple_of`, `f64::min/max` → `uo_jsnum::math`). The crate was mid-edit by A4f/A5 at times (A4f's record notes 10 min without compiling caused by this frontier's half-written modules). |
+| A4f (logical/info/cube family: 44 bodies, `FnContext::lambda_arity`, the `Memo` of the TS `??=` caches, the LAMBDA fills and bounds, `tests/a4f.rs`, the logical-100k benchmark in both runners, two harness fixes, fuzz seeds) | Opus | ≈ 55 min wall (10:16-11:10) | **0 parity rounds**: the first bank and trap replays of the family were equal (CI bank 517, traps 3,360; release 3,444; big 1,034 + 17,616). Rework found by the tests, benchmarks and fuzz of the same session, all fixed by the same agent: (1) ISEVEN/ISODD's array lift turned an element's Excel error into the whole result through `?` — caught in review before any run (A4c's lesson); (2) T built its empty text on every call → only when a result needs it; (3) the zero-allocation test showed AND/OR over a multi-cell area allocating in the engine (≈ 96 B per call, open item 1) — the one-cell area reads the cell (A4f-5); (4) two tests of other frontiers changed once IF had a body (A4f-8): `a3_robust` incremental = full on a `-0` the TS write-back keeps (traced: a fresh formula cell starts at 0 and `-0 !== 0` is false), and `a4_robust`'s debug bound hit by A4c's RATE over a whole column (6.2 s under load) → whole-column calls skipped in debug, bound 1,500 ms again; (5) the bench's first expectations of array texts (format `a3x1[…;…]`) in `tests/a4f.rs`; (6) a Python patch of a test lost its backslashes (Bash halving) — redone from a file. At the end the crate did not compile for 10 min (A4e mid-edit: `PassCache`, the `conditional`/`database`/`dynamic` modules), so the two last cases of `tests/a4f.rs` `lambda_arity` (ISEVEN/ISODD of an omitted optional parameter, checked against the frozen TS: `#VALUE!` + an internal error) were not run in Rust; everything else above ran green |
+| A5 (legacy `@` rewrite + engine wiring, catalogue, i18n tables generator, translator, add-ins, open-recalc, save/file-form over the store, `a5` capture, calc-tests/Excel-oracle/uo-xlsx-plan replays, robustness/M1/zero-alloc tests, benchmarks in both runners, harness un-deferral in `a3.rs`/`a4.rs`) | Opus | ≈ 1 h 15 min wall (10:33-11:48) | **0 parity rounds on the ported code** (the first replays of the translator and the rewrite were clean except harness slips); rework found by the replays, tests and benchmarks of the same session, all fixed by the same agent: (1) the capture script computed the expected value of half its mutated records with the wrong direction (460 records) and hard-coded the `Intl` decimal of an unknown id (`xx-YY` is `,` on the pt-BR capture machine) — both harness; (2) `implicit.f2.json` ends with a newline the test reader rejected (harness); (3) the add-in test expected `#NAME?` where SINGLE is not ported yet (A4e); (4) translator allocations per name token and per call (270 B/translation) and a rewrite 1.40× the TS (stacks and argument vectors per node) — fixed (0 B, 0.55×); (5) a 100,000-unit run of unbalanced `[` took 79 s (quadratic `matchBracket`, as the TS) → memo (A5-3); (6) clippy (a negated float comparison, a collapsible `if`, a counter loop, a redundant closure); (7) the shared crate did not build for ≈ 35 min while A4e wrote `functions/lookup` — the A5 code was compiled and tested in a scratch copy with the family stubbed (same target dir), then in the crate once it built |

@@ -207,8 +207,9 @@ pub fn has_wildcard(pattern: &[u16]) -> bool {
     false
 }
 
-/// The pt-BR error names (`i18n/langs/pt-BR.ts` `errors`; the others are the canonical codes).
-fn pt_error_name(e: ErrorCode) -> &'static str {
+/// The pt-BR error names (`i18n/langs/pt-BR.ts` `errors`; the others are the canonical codes). Also VALUETOTEXT/
+/// ARRAYTOTEXT's `errorText` (A4d).
+pub(crate) fn pt_error_name(e: ErrorCode) -> &'static str {
     match e {
         ErrorCode::Null => "#NULO!",
         ErrorCode::Value => "#VALOR!",
@@ -225,18 +226,12 @@ fn pt_error_name(e: ErrorCode) -> &'static str {
 }
 
 /// `localeErrorCode(text, locale)` = `canonicalError(text, locale.id)` (`i18n/translate.ts:663`): the error named in
-/// the calculating language (`#N/D` in pt-BR, where `#N/A` is text). The formula languages registered in the TS
-/// are en-US and pt-BR, and `getLanguage` resolves only `pt-BR` (any case) to the pt-BR table — every other id falls
-/// back to English (`pt` alone goes to `pt-PT`, which has no table). Names compare after `trim()` and upper case.
+/// the calculating language (`#N/D` in pt-BR, where `#N/A` is text), through the A5 language tables
+/// ([`crate::i18n::canonical_error`] of [`crate::i18n::resolve_language`]: only `pt-BR`, any case, resolves to the
+/// pt-BR table; every other id falls back to English — `pt` alone goes to `pt-PT`, which has no table).
 #[must_use]
 pub fn locale_error_code(text: &[u16], locale: &ValueLocale) -> Option<ErrorCode> {
-    let pt = locale.id.eq_ignore_ascii_case("pt-br");
-    let f = upper(crate::jstext::js_trim(text));
-    crate::cell::ERROR_CODES.into_iter().find(|&e| {
-        let name = if pt { pt_error_name(e) } else { crate::cell::error_text(e) };
-        // the names are already upper case
-        f.iter().copied().eq(name.encode_utf16())
-    })
+    crate::i18n::canonical_error(text, crate::i18n::resolve_language(Some(&locale.id)))
 }
 
 /// What a criterion tests (the TS closures, as data).

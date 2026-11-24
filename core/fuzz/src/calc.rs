@@ -63,6 +63,21 @@ pub fn formula_seeds() -> Vec<Vec<u8>> {
         "HYPGEOM.DIST(1E6,2E6,2E6,2^31-2,TRUE)+BINOM.DIST.RANGE(2^30,0.5,0,2^30)+NEGBINOM.DIST(1E9,1,0.5,TRUE)+PERMUT(1E300,5)+POISSON.DIST(1E9,1E9,TRUE)+PERMUTATIONA(2^53,2^53)",
         "FORECAST.ETS.CONFINT(1E21,{1;2;3;4;5;6},{1;2;3;4;5;6})+FORECAST.ETS(10,A1:A100,B1:B100,8760,0,7)+FORECAST.ETS.STAT({1;2;3},{1;2;1E9},4)+FORECAST.ETS.SEASONALITY(A:A,B:B)",
         "SUM(LINEST(A1:A20,B1:E20,FALSE,TRUE))+SUM(TREND({1;2;3},{1;2;3},{4,5;6,7}))+SUM(LOGEST({1,2,4},{1,2,3},TRUE,TRUE))+SUM(GROWTH(A:A,B:B))+CORREL(A:A,B:B)+T.TEST(A1:A5,B1:B5,2,3)+CHISQ.TEST(A1:B3,C1:D3)",
+        // A4c: the finance/date family (solvers, unbounded TS loops at their budgets, coupon walks over NaN fields,
+        // the ATP lifts and holidays)
+        "RATE(1E300,-1,1E-300)+IRR({-1,1E300,-1E300})+XIRR({-1,1},{1,2E9},{1})+MIRR(A:A,0.1,0.1)+NPV(-1,A1:A3,,{1,2})+FVSCHEDULE(1,A1:B2)",
+        "CUMIPMT(0.01,1E21,1,1,1E21,0)+VDB(1,0,1E21,0,1E21,2,TRUE)+DB(1,2,1E300,1E300)+AMORDEGRC(1,1,2,0,1E15,1E-300,1)+DDB(1,0,1E300,1E300)",
+        "COUPNCD(1,1E21,2)+COUPDAYSNC(1E300,2E300,4,1)+YIELD(1,2958465,1,1,1E300,4)+ODDFYIELD(1,1E8,-1E300,2,0,1,1,4)+ODDLPRICE(2,1E8,1,1,1,1,4)+ACCRINT(1,1E8,1E8+1,1,1,4)",
+        "WORKDAY(1,1E300,A1:A3)+WORKDAY.INTL(1,-1E300,\"0101010\",{1;2})+NETWORKDAYS.INTL({1,2},A1:A3,17,B:B)+EDATE({1;60},{1,2})+EOMONTH(2958465,1)+YEARFRAC(1,2958465,1)",
+        "DATEDIF(1,2958465,\"yd\")+DATEVALUE(\"29/02/1900 25:00\")+TIME(-40000,1E9,-1)+WEEKNUM(60,21)+DAYS360(59,60)+TODAY()-NOW()+DATE(1E300,1,1)",
+        // A4d: the text family (UTF-16 positions, wildcards, the format-code translation, splits over long texts,
+        // catastrophic regexes at their budget, hostile XML/XPath, the bounded TS hangs)
+        "LEFT(\"a\u{1F600}b\",2)&MID(\"\u{e9}\u{1F600}z\",2,1)&RIGHTB(\"\u{4e2d}a\",1)&MIDB(\"\u{e9}\u{1F600}z\",1,2)&LEN(REPT(\"ab\",16383))&FIND(\"b\",\"ab\",0/0)&SEARCH(\"b*~?\",\"ab*?c\")&SUBSTITUTE(\"aaaa\",\"aa\",\"b\",2)&REPLACE(\"abc\",2,1E21,\"x\")&REPT(\"\",1E300)",
+        "TEXT(45000.5,\"dd/mm/aaaa hh:mm:ss,00\")&TEXT(-1,\"[Vermelho]#.##0,00;[Cor10](0)\")&TEXT(1E21,\"0,00E+00\")&TEXT(1,\"[$-constructor]0\")&FIXED(1E300,-300)&DOLLAR(-0.001,127)&NUMBERVALUE(\" 1.234,5 %%\",\",\",\".\")&VALUE(\"1 1/2\")",
+        "TEXTSPLIT(REPT(\"a,b;\",8000),\",\",\";\",TRUE)&TEXTBEFORE(\"a-b-c\",\"-\",-1)&TEXTAFTER(\"aXbxc\",\"x\",2,1)&TEXTJOIN(\",\",FALSE,A:A,{1,2})&CONCAT(A1:C3)&ARRAYTOTEXT({1,\"a\";TRUE,#N/A},1)&VALUETOTEXT(\"q\"\"\",1)",
+        "REGEXTEST(REPT(\"a\",40),\"(a+)+b\")&REGEXREPLACE(\"abc\",\"(?<n>b)\",\"[${n}$0\\1]\")&REGEXEXTRACT(\"x1y22\",\"\\d+\",1)&REGEXEXTRACT(\"ab\",\"(a)|(x)\",2)&REGEXTEST(\"a\",\"\\p{L\")&REGEXTEST(REPT(\"a\",30000),\"(.*a){20}\")&REGEXTEST(\"aB\",\"a(?i)b\")",
+        "FILTERXML(\"<r><a k='1'>x<c>y</c>z</a><a>2</a></r>\",\"//a[@k='1']|//a[last()]/@k|/r/*[position()>=1 and . != '']\")&FILTERXML(REPT(\"<a>\",3000)&REPT(\"</a>\",3000),\"//*//*//*//*\")&FILTERXML(\"<a>&#1114112;</a>\",\"/a\")",
+        "BAHTTEXT(1.7976931348623157E308)&BAHTTEXT(-1234.56)&UNICHAR(65535)&UNICODE(\"\u{1F600}\")&CHAR(128)&CODE(\"\u{20ac}\")&ENCODEURL(\"\u{e7}\u{e3}o ~\")&PROPER(\"o'neil 2nd\")&UPPER(\"stra\u{df}e\")&LOWER(\"\u{130}\u{3a3}\u{391}\u{3a3}\")&TRIM(\"  a  b  \")&THAIDIGIT(123)&NUMBERSTRING(1E21,1)&DATESTRING(45000)",
     ];
     let mut out: Vec<Vec<u8>> = Vec::new();
     for (i, t) in texts.iter().enumerate() {

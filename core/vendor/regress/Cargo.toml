@@ -1,0 +1,36 @@
+# Vendored copy of regress 0.12.0 (https://github.com/ridiculousfish/regress, MIT OR Apache-2.0, licence texts
+# beside this file) with ONE change for uo-calc (decision R1, record core/docs/modules/uo-calc.md "A4d — as built",
+# A4d-1): a per-thread step budget in the backtracking executor (`set_step_budget`/`budget_exhausted` in
+# src/budget.rs; the counter in src/classicalbacktrack.rs). Upstream has no way to bound catastrophic backtracking
+# (`(a+)+b` over 24 a's takes 0.5 s, each further a doubles it). Only `src/` and the licences are kept (no tests,
+# benches or tools). Updating: copy the new release's src/, re-apply the two marked hunks ("uo-calc budget").
+# Second change: the optional `hashbrown` dependency (no_std + alloc builds only) is removed, so the lockfile carries
+# no foldhash (Zlib, outside core/deny.toml); `alloc` without `std` no longer builds — uo-calc uses `std`.
+[package]
+name = "regress"
+version = "0.12.0"
+edition = "2024"
+description = "A regular expression engine targeting EcmaScript syntax (vendored with a step budget for uo-calc)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ridiculousfish/regress"
+publish = false
+
+[dependencies]
+memchr = { version = "2.4.0", default-features = false }
+
+[features]
+alloc = ["memchr/alloc"]
+backend-pikevm = []
+default = ["backend-pikevm", "std"]
+index-positions = []
+pattern = []
+prohibit-unsafe = []
+std = ["memchr/std"]
+utf16 = []
+
+# third-party code: its own style, not the workspace lints
+[lints.rust]
+unexpected_cfgs = "allow"
+
+[lints.clippy]
+all = { level = "allow", priority = -1 }

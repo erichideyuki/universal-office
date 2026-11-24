@@ -316,6 +316,26 @@ pub trait FnContext {
     fn random(&mut self) -> f64;
     /// Calls a LAMBDA (`MAP`, `REDUCE`…).
     fn call_lambda(&mut self, f: u32, args: &[Value]) -> EvalResult;
+    /// The shape of a LAMBDA value (frontier A4f, `fn.params.length` and `typeof fn.body === 'function'` of
+    /// MAP/REDUCE/SCAN/BYROW/BYCOL): its number of parameters and whether its body is a function (a function used as
+    /// a value, `_xleta.SUM`: one parameter `X`; a JS test LAMBDA). The default is the test mocks' JS LAMBDA (one
+    /// parameter, a function body); the evaluator answers for its own.
+    fn lambda_arity(&self, f: u32) -> (u32, bool) {
+        let _ = f;
+        (1, true)
+    }
+    /// The engine's per-pass memory (`ctx.cache`, `engine.ts:220`, cleared at each pass of a recalc): the lookup
+    /// vectors of `lookup.ts` (frontier A4e). `None` = no cache (the test mocks, hosts other than the engine).
+    fn pass_cache(&mut self) -> Option<&mut crate::functions::lookup::PassCache> {
+        None
+    }
+    /// The computed criterion of the D-functions (`computedCriterion` of `database.ts`, wired by the engine to its
+    /// `criterionAt`, `engine.ts:583`, frontier A4e): the formula of the criterion cell evaluated `offset` rows below.
+    /// `None` = no formula there, or no engine (the condition then matches only `TRUE`).
+    fn computed_criterion(&mut self, sheet: SheetIx, row: u32, col: u32, offset: u32) -> Result<Option<bool>, Throw> {
+        let _ = (sheet, row, col, offset);
+        Ok(None)
+    }
     /// Text → reference (`INDIRECT`; `a1 = false` → R1C1).
     fn parse_ref(&mut self, text: JsStr<'_>, a1: bool) -> Result<Result<RefValue, ErrorCode>, Throw>;
     /// Value of a defined name (`resolveName`, optional in the TS: `None` = not offered).

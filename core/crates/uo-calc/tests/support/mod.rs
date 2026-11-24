@@ -253,6 +253,11 @@ impl Props {
     }
 }
 
+/// The canonical JSON text of a parsed value (keys in reader order, numbers as `String(n)`).
+pub fn canon_json(j: &J) -> String {
+    canon(j)
+}
+
 fn canon(j: &J) -> String {
     let mut s = String::new();
     canon_into(&mut s, j);

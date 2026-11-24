@@ -112,6 +112,16 @@ pub trait EvalHost {
     fn cell_info(&mut self, sheet: SheetIx, row: u32, col: u32, what: JsStr<'_>) -> Option<Scalar>;
     /// A pooled string's text.
     fn pooled(&self, id: StrId) -> JsStr<'_>;
+    /// The per-pass memory (`host.cache`, [`FnContext::pass_cache`]); `None` = the host keeps none.
+    fn pass_cache(&mut self) -> Option<&mut crate::functions::lookup::PassCache> {
+        None
+    }
+    /// The parsed tree of a cell's formula (`getFormula(sheet, row, col).node`, for `criterionAt`); `None` = no
+    /// formula (or a host that is not the engine).
+    fn formula_node(&mut self, sheet: SheetIx, row: u32, col: u32) -> Option<NodeId> {
+        let _ = (sheet, row, col);
+        None
+    }
 }
 
 /// The scope of an evaluation (`Scope`): the cell, the array mode (= the context's `arrayContext`) and the LET/
@@ -1046,8 +1056,12 @@ impl Evaluator<'_> {
             }
         }
         let udf = prefix != 0 && {
-            let p = self.ast.str(StrIx(prefix - 1)).to_utf16();
-            let ci = |w: &[u8]| p.len() >= w.len() && crate::a1::ascii_ci_eq(&p[..w.len()], &w.to_ascii_uppercase());
+            // read in place (no copy per call: `_xlfn.` names, the legacy `@` → `_xlfn.SINGLE`, are on every path)
+            let p = self.ast.str(StrIx(prefix - 1));
+            let ci = |w: &[u8]| {
+                p.len() >= w.len()
+                    && p.units().zip(w).all(|(u, &c)| u == u16::from(c.to_ascii_uppercase()) || u == u16::from(c.to_ascii_lowercase()))
+            };
             ci(b"_xludf.") || ci(b"_xll.")
         };
         let def = if udf {
@@ -1251,11 +1265,14 @@ impl Evaluator<'_> {
     /// `parseRef(text, a1, ctx)` (INDIRECT): text → reference, relative to the cell.
     pub fn parse_ref(&mut self, text: JsStr<'_>, a1: bool, s: Scope) -> Result<Result<RefValue, ErrorCode>, Throw> {
         let loc = self.host.locale();
-        // the language's letters: ValueLocale.r1c1, the language table (only pt-BR differs from R/C), the internal one
+        // the language's letters: ValueLocale.r1c1, the language table (`getLanguage(id)?.r1c1`, A5's i18n tables), the
+        // internal one (`R1C1_LETTERS[id]`: only pt-BR, which always has a table)
         let letters: Option<(JsString, JsString)> = match &loc.r1c1 {
             Some(l) => Some((l.row.clone(), l.col.clone())),
-            // `toLowerCase() === 'pt-br'`: no non-ASCII letter lowers to these ASCII ones
-            None => loc.id.eq_ignore_ascii_case("pt-br").then(|| (JsString::from_str_js("L"), JsString::from_str_js("C"))),
+            None => crate::i18n::get_language(&loc.id)
+                .and_then(|l| l.r1c1)
+                .map(|r| (JsString::from_str_js(r.row), JsString::from_str_js(r.col)))
+                .or_else(|| (&*loc.id == "pt-BR").then(|| (JsString::from_str_js("L"), JsString::from_str_js("C")))),
         };
         let o = ParseOptions { r1c1: !a1, letters: letters.as_ref().map(|(r, c)| (r.as_js(), c.as_js())), row: s.row, col: s.col };
         let mark = self.ast.mark();
@@ -1434,6 +1451,9 @@ impl FnContext for CellCtx<'_, '_> {
     fn call_lambda(&mut self, f: u32, args: &[Value]) -> EvalResult {
         self.ev.call_lambda(f, args, self.s)
     }
+    fn lambda_arity(&self, f: u32) -> (u32, bool) {
+        self.ev.st.lambdas.get(f as usize).map_or((0, false), |l| (l.params.len, matches!(l.body, LambdaBody::Eta { .. })))
+    }
     fn parse_ref(&mut self, text: JsStr<'_>, a1: bool) -> Result<Result<RefValue, ErrorCode>, Throw> {
         self.ev.parse_ref(text, a1, self.s)
     }
@@ -1445,6 +1465,34 @@ impl FnContext for CellCtx<'_, '_> {
     }
     fn spill_range(&mut self, sheet: SheetIx, row: u32, col: u32) -> Result<Option<Area>, Throw> {
         self.ev.host.spill_area(sheet, row, col)
+    }
+    fn pass_cache(&mut self) -> Option<&mut crate::functions::lookup::PassCache> {
+        self.ev.host.pass_cache()
+    }
+    fn computed_criterion(&mut self, sheet: SheetIx, row: u32, col: u32, offset: u32) -> Result<Option<bool>, Throw> {
+        // `criterionAt` (`engine.ts:583-589`): the criterion cell's formula at (row + offset), dynamic, `topScalar`
+        let Some(n) = self.ev.host.formula_node(sheet, row, col) else { return Ok(None) };
+        let row = row.saturating_add(offset);
+        let v = self.ev.eval_formula(n, sheet, row, col, true)?;
+        let s = Scope { sheet, row, col, arr: true, env: None };
+        let x = match v {
+            Value::Ref(r) if r.one_sheet().is_none() && r.areas().len() > 1 => Scalar::Err(ErrorCode::Ref),
+            Value::Ref(r) => self.ev.intersect(&r, s)?,
+            Value::Array(a) => {
+                if a.rows > 0 && a.cols > 0 {
+                    a.get(0, 0)
+                } else {
+                    Scalar::Err(ErrorCode::Value)
+                }
+            }
+            Value::Lambda(_) => Scalar::Err(ErrorCode::Calc),
+            Value::Scalar(x) => x,
+        };
+        Ok(Some(match x {
+            Scalar::Bool(b) => b,
+            Scalar::Num(n) => n != 0.0,
+            _ => false,
+        }))
     }
     fn cell_info(&mut self, sheet: SheetIx, row: u32, col: u32, what: JsStr<'_>) -> Option<Scalar> {
         self.ev.host.cell_info(sheet, row, col, what)

@@ -15,6 +15,11 @@ publish.workspace = true
 uo-jsnum = { path = "../uo-jsnum" }
 # S0: errorOf's toUpperCase (full Unicode case mapping, as V8); A1: the Excel text order (feature `collation`)
 uo-text = { path = "../uo-text", features = ["collation"] }
+# A4d: TEXT/FIXED/DOLLAR through the shared number-format engine (text-format.ts)
+uo-numfmt = { path = "../uo-numfmt" }
+# A4d (decision R1): the REGEX* functions run the translated pattern as an ECMAScript RegExp (`u` flag) over UTF-16;
+# the vendored copy adds a step budget (A4d-1, core/vendor/regress/Cargo.toml)
+regress = { path = "../../vendor/regress", default-features = false, features = ["std", "utf16", "prohibit-unsafe"] }
 # feature `facet`: the store facet's long-string digest
 uo-testkit = { path = "../uo-testkit", optional = true }
 
@@ -47,4 +52,24 @@ workspace = true
 
 [[bench]]
 name = "a3"
+harness = false
+
+[[bench]]
+name = "a4c"
+harness = false
+
+[[bench]]
+name = "a4d"
+harness = false
+
+[[bench]]
+name = "a4e"
+harness = false
+
+[[bench]]
+name = "a4f"
+harness = false
+
+[[bench]]
+name = "a5"
 harness = false

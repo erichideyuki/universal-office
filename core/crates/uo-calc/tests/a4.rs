@@ -56,8 +56,10 @@ struct Tally {
     equal: usize,
     nan: usize,
     deferred: usize,
-    /// Legacy formulas the TS rewrites with `@` (frontier A5).
+    /// Legacy formulas the TS rewrites with `@` (frontier A5): compared now / deferred because the rewrite reaches
+    /// `SINGLE` (A4e).
     deferred_a5: usize,
+    legacy_compared: usize,
     /// Whole-column trap calls skipped in a debug build.
     skipped_debug: usize,
     timeouts: usize,
@@ -71,11 +73,12 @@ struct Tally {
 impl Tally {
     fn report(&self, what: &str) -> String {
         format!(
-            "{what}: compared {} equal {} (NaN payload accepted {}) deferred {} (+ {} legacy @, A5; {} whole-column calls skipped in debug) | TS timeouts answered {} (slowest {:.1} ms) | random records {} | mismatch {}",
+            "{what}: compared {} equal {} (NaN payload accepted {}) deferred {} (legacy @ cases, A5: {} compared, {} deferred by SINGLE (A4e); {} whole-column calls skipped in debug) | TS timeouts answered {} (slowest {:.1} ms) | random records {} | mismatch {}",
             self.compared,
             self.equal,
             self.nan,
             self.deferred,
+            self.legacy_compared,
             self.deferred_a5,
             self.skipped_debug,
             self.timeouts,
@@ -139,6 +142,13 @@ fn replay_bank(path: &Path) -> Tally {
             continue;
         }
         let ours = if fnmock::is_formula_case(c) { fnmock::run_formula(c, locale) } else { fnmock::run_plain(c, locale) };
+        if fnmock::legacy_case(c) {
+            if ours.is_some() {
+                t.legacy_compared += 1;
+            } else {
+                t.deferred_a5 += 1;
+            }
+        }
         t.check(&f, &r.key, ours, &ts);
     }
     t

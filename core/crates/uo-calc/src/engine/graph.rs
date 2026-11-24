@@ -242,6 +242,7 @@ impl Graph {
         }
         self.areas.remove(&fid);
         self.cached.remove(&fid);
+        self.alt_text.remove(&fid);
         self.recs[fid as usize].flags = 0;
         self.free.push(fid);
         self.live -= 1;

@@ -31,6 +31,7 @@ use crate::formula::{FormulaAttrs, FormulaType};
 use crate::key::{Area, EXT_STRIDE, EXTERNAL_BASE, SheetIx};
 use crate::locale::{Clock, HostHooks, RandomSource, ValueLocale};
 use crate::parse::{FormulaParser, ParseOptions};
+use crate::print::{PrintOptions, print_formula};
 use crate::store::{CellKind, SstSource, Store, ValueTag};
 use crate::strings::{JsStr, JsString};
 use crate::value::{ErrorCode, Scalar, StrRef};
@@ -70,6 +71,8 @@ pub(crate) mod fl {
     pub const LIVE: u16 = 4096;
     /// In `rangeMasters`.
     pub const MASTER: u16 = 8192;
+    /// A legacy formula the A5 rewrite gave `@` (`exec` ≠ `node`): evaluate [`super::Graph::exec`] of its tree.
+    pub const EXEC: u16 = 16384;
     /// The `<f>` had `ca` (`input.ca`).
     pub const INPUT_CA: u16 = 32768;
 }
@@ -338,6 +341,10 @@ pub(crate) struct Graph {
     pub tpls: Vec<(u32, u32)>,
     pub tpl_refs: Vec<TplRef>,
     pub analysis: HashMap<(u32, u32), u16>,
+    /// The legacy `@` rewrite per (tree, sheet) (`execCache`, A5): `None` = the tree itself.
+    pub exec: HashMap<(u32, u32), Option<ExecTree>>,
+    /// The text of a formula whose `_xll.` add-in calls were resolved (`engine.ts:301`: the printed tree), by record.
+    pub alt_text: HashMap<u32, JsString>,
     pub volatile_names: HashMap<(i64, Vec<u16>), bool>,
     pub consed: HashMap<u64, Vec<(u32, NodeId)>>,
     pub cons_hasher: std::hash::RandomState,
@@ -351,6 +358,16 @@ pub(crate) struct Graph {
     pub spill_changed: Vec<Area>,
     pub grew: bool,
     pub trace: Option<Vec<(u32, u32, u32)>>,
+    /// The per-pass memory (`cache`, `engine.ts:220`: the lookup vectors of A4e), cleared at each pass.
+    pub pass_cache: crate::functions::lookup::PassCache,
+}
+
+/// The dynamic tree of a legacy formula (A5): its root and the text positions of the inserted `@` (`implicitAt`,
+/// -1 = unknown).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ExecTree {
+    pub root: NodeId,
+    pub positions: Box<[i64]>,
 }
 
 /// The engine of one workbook.
@@ -613,7 +630,12 @@ impl Engine {
     pub(crate) fn parse_at(&mut self, text: JsStr<'_>, row: u32, col: u32, sheet: u32) -> Option<NodeId> {
         let mark = self.ast.mark();
         let o = ParseOptions { r1c1: false, letters: None, row, col };
-        let root = self.parser.parse(&mut self.ast, text, &o).ok()?;
+        let mut root = self.parser.parse(&mut self.ast, text, &o).ok()?;
+        // an ATP function called as an add-in (.xls): resolved by the name in the language (addin.rs)
+        if crate::addin::has_addin_call(text) {
+            let lang = crate::i18n::resolve_language(Some(&self.g.locale().id));
+            root = crate::addin::resolve_addin_calls(&mut self.ast, root, lang);
+        }
         self.cons(root, sheet, mark)
     }
 
@@ -718,7 +740,17 @@ impl Engine {
         }
         if let Some(n) = node {
             flags |= self.analyze(n, s);
+            if kind == 0 && self.exec_of(n, s) {
+                flags |= fl::EXEC;
+            }
         }
+        // the resolved add-in text (`engine.ts:301`): the formula bar and FORMULATEXT show the native function
+        let alt = match (node, self.formula_of(store, SheetIx(s), r, item)) {
+            (Some(n), Some(f)) if !f.text.is_empty() && crate::addin::has_addin_call(f.text) => {
+                Some(print_formula(&self.ast, n, &PrintOptions { row: r, col, r1c1: false, ui: false }))
+            }
+            _ => None,
+        };
         // `st.set(r, c, { v, f })` replaces any owner
         self.g.sheets[s as usize].owners.remove(&k);
         if live && store.get(SheetIx(s), r, col).is_some_and(|x| x.kind.has(CellKind::OWNED)) {
@@ -727,6 +759,9 @@ impl Engine {
         let fid = self.g.add_formula(s, r, col, node.map_or(NONE, |n| n.0), flags);
         if let Some(v) = cached {
             self.g.cached.insert(fid, v);
+        }
+        if let Some(t) = alt {
+            self.g.alt_text.insert(fid, t);
         }
         // `(array || dataTable) && f.ref`: an absent `ref` does nothing, an unreadable one is "one cell"
         if (kind == fl::ARRAY || kind == fl::DATATABLE)
@@ -791,6 +826,46 @@ impl Engine {
         flags
     }
 
+    /// The legacy `@` rewrite of a tree on a sheet (`analyze`'s `execCache`, `engine.ts:339-346`), computed once per
+    /// (tree, sheet): `true` when it inserted `@` (the record evaluates [`Graph::exec`]).
+    pub(crate) fn exec_of(&mut self, node: NodeId, sheet: u32) -> bool {
+        if let Some(e) = self.g.exec.get(&(node.0, sheet)) {
+            return e.is_some();
+        }
+        let host = crate::save::EngineNames { g: &self.g, sheet, exclude_tables: false };
+        let l = crate::implicit::legacy_to_dynamic(&mut self.ast, node, &host);
+        let e = (!l.inserted.is_empty()).then(|| ExecTree { root: l.root, positions: l.inserted.iter().map(|&(_, p)| p).collect() });
+        let some = e.is_some();
+        self.g.exec.insert((node.0, sheet), e);
+        some
+    }
+
+    /// The text the formula bar shows (`formulaText`, `engine.ts:475-480`; also `FORMULATEXT`): the original text with
+    /// the legacy `@` inserted, or the printed dynamic tree; an owned cell of a CSE area answers its anchor's.
+    #[must_use]
+    pub fn formula_text(&self, store: &Store, sheet: SheetIx, row: u32, col: u32) -> Option<JsString> {
+        host::formula_text_of(&self.g, &self.ast, store, sheet, row, col)
+    }
+
+    /// `formulaDisplay` (`engine.ts:565-570`): `=` + the dynamic tree printed in the screen form (`=@A1:A3`, `=B1#`).
+    #[must_use]
+    pub fn formula_display(&self, store: &Store, sheet: SheetIx, row: u32, col: u32) -> Option<JsString> {
+        let f = self.g.current(sheet.0, row, col)?;
+        let r = self.g.recs[f as usize];
+        let mut u = vec![u16::from(b'=')];
+        if r.node == NONE {
+            let t = store.sheet(sheet).and_then(|s| s.formulas.get(row, col)).and_then(|(_, x)| x.text.clone())?;
+            if t.as_js().is_empty() {
+                return None;
+            }
+            u.extend(t.as_js().units());
+            return Some(JsString::from_utf16(&u));
+        }
+        let p = print_formula(&self.ast, self.g.exec_node(f), &PrintOptions { row, col, r1c1: false, ui: true });
+        u.extend(p.as_js().units());
+        Some(JsString::from_utf16(&u))
+    }
+
     /// `nameVolatile` (`engine.ts:356-373`).
     fn name_volatile(&mut self, name: JsStr<'_>, sheet: u32, depth: u32) -> bool {
         let k = (i64::from(sheet), upper(name));
@@ -822,6 +897,17 @@ impl Engine {
 }
 
 impl Graph {
+    /// The tree a record evaluates (`f.exec ?? f.node`).
+    pub(crate) fn exec_node(&self, fid: u32) -> NodeId {
+        let r = &self.recs[fid as usize];
+        if r.has(fl::EXEC)
+            && let Some(Some(e)) = self.exec.get(&(r.node, r.sheet))
+        {
+            return e.root;
+        }
+        NodeId(r.node)
+    }
+
     pub(crate) fn locale(&self) -> &ValueLocale {
         // set by `Engine::new`; a default engine has none and never evaluates
         self.locale.as_ref().unwrap_or_else(|| default_locale())
@@ -1025,6 +1111,9 @@ impl Engine {
                 }
                 if let Some(n) = node {
                     fl_ |= self.analyze(n, sheet.0);
+                    if !f.array && self.exec_of(n, sheet.0) {
+                        fl_ |= fl::EXEC;
+                    }
                 }
                 fl_
             }
@@ -1245,5 +1334,6 @@ impl Engine {
         self.st.release();
         self.g.spill_changed = Vec::new();
         self.g.stale = Vec::new();
+        self.g.pass_cache = crate::functions::lookup::PassCache::default();
     }
 }

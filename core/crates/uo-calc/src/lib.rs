@@ -26,9 +26,11 @@
 #![forbid(unsafe_code)]
 
 pub mod a1;
+pub mod addin;
 pub mod apply;
 pub mod ast;
 mod cast;
+pub mod catalogue;
 pub mod cell;
 pub mod coerce;
 pub mod collate;
@@ -39,10 +41,13 @@ pub mod error;
 pub mod eval;
 #[cfg(feature = "facet")]
 pub mod facet;
+pub mod file_form;
 mod fn_table;
 pub mod fnreg;
 pub mod formula;
 pub mod functions;
+pub mod i18n;
+pub mod implicit;
 mod jstext;
 pub mod key;
 pub mod libm;
@@ -50,8 +55,10 @@ pub mod load;
 pub mod locale;
 pub mod math_util;
 pub mod ops;
+pub mod open_recalc;
 pub mod parse;
 pub mod print;
+pub mod save;
 pub mod special;
 pub mod stats;
 pub mod store;

@@ -258,6 +258,17 @@ impl FnContext for Mock {
         let ac = self.array_context.unwrap_or(true);
         call_fn(&name, &xs, self, ac)
     }
+    fn lambda_arity(&self, f: u32) -> (u32, bool) {
+        // `testing.ts`: a function name as LAMBDA has the function's required arguments as parameters (GROUPBY passes
+        // the total to PERCENTOF)
+        let n = self
+            .lambdas
+            .get(f as usize)
+            .and_then(|n| lookup_fn(JsStr::Latin1(n.as_bytes())))
+            .and_then(|ix| ix.entry().def)
+            .map_or(1, |d| u32::from(d.min_args));
+        (n, true)
+    }
     fn parse_ref(&mut self, text: JsStr<'_>, a1: bool) -> Result<Result<RefValue, ErrorCode>, Throw> {
         if !a1 {
             return Ok(Err(ErrorCode::Ref));
@@ -586,9 +597,17 @@ fn case_formula(c: &J) -> String {
     panic!("formula case without f: plain cases with formula cells are not in the bank")
 }
 
-/// A legacy formula case the TS rewrites with the implicit-intersection `@` (frontier A5): deferred. Conservative, as
-/// the A3 replay's edit rule: a range, a table, a defined name or a spill reference in a legacy formula.
+/// A legacy formula case the TS rewrites with the implicit-intersection `@`: deferred until frontier A5. A5 landed (the
+/// engine evaluates the rewritten tree, `uo-calc.md` "A5 — as built"): nothing is deferred here any more; a case whose
+/// rewrite reaches `SINGLE` (A4e, `reference.ts`) is deferred by `run_formula` like any body not ported.
 pub fn legacy_deferred(c: &J) -> bool {
+    let _ = c;
+    false
+}
+
+/// The legacy formula cases A4a deferred to A5 (a range, a table, a defined name or a spill reference in a legacy
+/// formula): counted apart by the bank replay.
+pub fn legacy_case(c: &J) -> bool {
     if !c.get("legacy").is_some_and(J::bool) || !is_formula_case(c) {
         return false;
     }
@@ -654,8 +673,8 @@ pub fn run_formula(c: &J, locale: ValueLocale) -> Option<String> {
     }
     let wb = J::Obj(wb);
     let (mut store, input) = calcwb::build(&wb, None);
-    let mut o = EngineOptions::new(locale);
-    o.file_name = Some(JsString::from_str_js("Pasta1.xlsx"));
+    // `runFormulaCase` builds its engine without a file name (CELL("filename") = "", no workbook in CELL("address"))
+    let o = EngineOptions::new(locale);
     let Ok(mut e) = Engine::new(&mut store, &input, &o, None) else { return Some("throw:Engine".into()) };
     let mut rnd = RandomSource::sequence(vec![0.5; 4096]);
     e.recalc(&mut store, Clock { now_serial: NOW }, &mut rnd).unwrap();

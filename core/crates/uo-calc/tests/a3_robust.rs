@@ -243,7 +243,11 @@ fn incremental_equals_full() {
             let mut st2 = store_of(&[inp.sorted()]);
             let mut e2 = Engine::new(&mut st2, &input(1, CalcOptions::default()), &opts(), None).unwrap();
             e2.recalc(&mut st2, CLOCK, &mut rnd).unwrap();
-            let (a, b) = (values(&e, &st), values(&e2, &st2));
+            // `-0` and `0` are one value for the write-back (`rec.v !== v`, A3-1): a fresh engine's formula cell starts
+            // at 0 and a computed `-0` is not written, while the incremental engine keeps the `-0` it wrote when the
+            // cell held something else — both as the TS (reached since IF has a body: `IF(…,…,B4)` with B4 = -0, A4f)
+            let zero = |v: Vec<String>| -> Vec<String> { v.into_iter().map(|x| x.replace("=Num(-0.0)", "=Num(0.0)")).collect() };
+            let (a, b) = (zero(values(&e, &st)), zero(values(&e2, &st2)));
             assert_eq!(a, b, "seed {seed}");
             compared += a.len();
         }

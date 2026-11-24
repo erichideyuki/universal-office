@@ -533,7 +533,8 @@ impl Run<'_> {
         let v = if rec.node == super::NONE {
             Value::Scalar(Scalar::Err(ErrorCode::Name))
         } else {
-            match eval!(self, |ev| ev.eval_formula(NodeId(rec.node), sheet, row, col, true)) {
+            let exec = self.g.exec_node(f);
+            match eval!(self, |ev| ev.eval_formula(exec, sheet, row, col, true)) {
                 Ok(v) => v,
                 Err(Throw::NeedCell(p)) => return Err(p as u32),
                 Err(Throw::Range) => Value::Scalar(Scalar::Err(ErrorCode::Num)),
@@ -846,6 +847,7 @@ impl Run<'_> {
     /// `computeDirty()`: every dirty formula in sheet order — through the dirty list when it is small (only dirty
     /// formulas are touched), else through `allFormulas`.
     fn compute_dirty(&mut self) {
+        self.g.pass_cache.clear();
         self.g.computing = true;
         self.g.pass = self.g.pass.wrapping_add(1);
         if self.g.pass == u32::MAX {
@@ -882,6 +884,7 @@ impl Run<'_> {
 
     /// `run()` (`engine.ts:713-728`).
     pub(crate) fn run(&mut self) {
+        self.g.pass_cache.clear();
         for f in core::mem::take(&mut self.g.circular) {
             self.g.recs[f as usize].set(fl::CIRC, false);
         }
@@ -900,6 +903,7 @@ impl Run<'_> {
         if self.g.iterate.is_some() && !self.g.circular.is_empty() {
             self.iterate_cycles();
         }
+        self.g.pass_cache.clear();
         self.st.clear_pass();
     }
 
@@ -924,6 +928,7 @@ impl Run<'_> {
         let mut scratch = Scratch::default();
         for sweep in 0..count {
             let mut max_delta = 0.0f64;
+            self.g.pass_cache.clear();
             self.st.clear_pass();
             for &m in &members {
                 let v0 = self.cell_value(m);
