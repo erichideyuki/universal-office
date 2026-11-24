@@ -1794,6 +1794,18 @@ impl CfEngine {
         }
     }
 
+    /// The colour texts of the stops of colour-scale rule `rule` (`cols[i]`), without allocating (C3c: the paint layer
+    /// interns them once; [`CfFill::Stop`] names a stop by its index here).
+    pub fn stop_colors(&self, rule: u16) -> impl Iterator<Item = &str> + '_ {
+        self.rules.get(usize::from(rule)).into_iter().flat_map(|r| r.stops.iter().map(|s| s.1.as_str()))
+    }
+
+    /// Number of compiled rules (indices of [`CfFill::Stop::rule`] and [`CfEngine::rule`]).
+    #[must_use]
+    pub fn rule_count(&self) -> usize {
+        self.rules.len()
+    }
+
     /// The data bar of a result with its colours (`BarPaint`): `None` without a bar, or when the engine was
     /// invalidated since the result was computed.
     #[must_use]

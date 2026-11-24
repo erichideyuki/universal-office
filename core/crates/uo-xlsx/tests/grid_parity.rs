@@ -803,7 +803,7 @@ struct Totals {
     cells: u64,
     cells_equal: u64,
     cells_skipped_other: u64,
-    sheets_skipped_cf: u64,
+    sheets_cf_tables: u64,
     sheets_cf: u64,
     cells_cf: u64,
     rows_fit: u64,
@@ -875,12 +875,17 @@ fn replay_workbooks(mut r: Run, bytes_of: &dyn Fn(&str) -> Option<Vec<u8>>, big:
             }
             // displayed text of every cell, against the display facet of capture-sheet (the open's values)
             let Some(lines) = r.side.get(&key).and_then(|m| m.get(&format!("d{vi}"))).cloned() else { continue };
-            // a sheet with conditional formats is compared through the CF layer (C3b) unless a table/pivot style
-            // layer is involved too (C3c)
-            if has_cf && has_tables {
-                t.sheets_skipped_cf += 1;
-                continue;
-            }
+            // a sheet with conditional formats is compared through the CF layer (C3b); with table/pivot styles too, through
+            // the table layer as well (C3c). The TS `debugCellDisplays` applies the table layer only when the sheet has
+            // conditional formats (it reads `styleAt` then, `resolveStyle` otherwise), so a sheet with tables and no CF
+            // is compared without it.
+            let tables = if has_cf && has_tables {
+                t.sheets_cf_tables += 1;
+                let mut pb = PaintBook::build(&book.styles);
+                Some(SheetPaint::build(&mut pb, ws, &book.styles, &book.cx))
+            } else {
+                None
+            };
             let mut eng = None;
             if has_cf {
                 let e = cf::CfEngine::for_book(&book, si, CF_CLOCK, cf::CfLimits::default()).expect("cf engine");
@@ -888,7 +893,7 @@ fn replay_workbooks(mut r: Run, bytes_of: &dyn Fn(&str) -> Option<Vec<u8>>, big:
                 t.sheets_cf += 1;
                 eng = Some(e);
             }
-            compare_displays(&book, si, &grid, &styles, &mut table, &lines, &key, vi, t, eng.as_mut());
+            compare_displays(&book, si, &grid, &styles, &mut table, &lines, &key, vi, t, eng.as_mut(), tables.as_ref());
         }
     }
     let rep = r.rep.finish();
@@ -901,8 +906,8 @@ fn replay_workbooks(mut r: Run, bytes_of: &dyn Fn(&str) -> Option<Vec<u8>>, big:
         rep.summary()
     );
     eprintln!(
-        "displays: {} cells compared, {} equal ({} cells of {} sheets under conditional formats, C3b); not compared: {} cells at a position named by another ref (duplicates, odd refs); {} sheets with conditional formats AND table/pivot styles (C3c)",
-        t.cells, t.cells_equal, t.cells_cf, t.sheets_cf, t.cells_skipped_other, t.sheets_skipped_cf
+        "displays: {} cells compared, {} equal ({} cells of {} sheets under conditional formats, C3b; {} of those sheets also have table/pivot styles, C3c); not compared: {} cells at a position named by another ref (duplicates, odd refs)",
+        t.cells, t.cells_equal, t.cells_cf, t.sheets_cf, t.sheets_cf_tables, t.cells_skipped_other
     );
     assert!(rep.mismatches.is_empty(), "{}", rep.describe(10));
     assert_eq!(t.cells, t.cells_equal, "displays differ");
@@ -920,6 +925,7 @@ fn compare_displays(
     vi: usize,
     t: &mut Totals,
     mut eng: Option<&mut cf::CfEngine>,
+    tables: Option<&SheetPaint>,
 ) {
     use uo_calc::key::SheetIx;
     use uo_calc::store::CellKind as LaneKind;
@@ -973,12 +979,28 @@ fn compare_displays(
         if eng.is_some() {
             t.cells_cf += 1;
         }
+        let tf = tables.and_then(|sp| sp.format_at(col + 1, row + 1));
         let got = loop {
-            let laid = match eng.as_deref() {
-                Some(e) => {
+            let laid = match (tables, eng.as_deref()) {
+                (Some(_), e) => layout_cell_layers(
+                    &view,
+                    table,
+                    &IdentityEnv,
+                    ix,
+                    row,
+                    col,
+                    cell,
+                    w,
+                    1.0,
+                    &mut scratch,
+                    &mut out,
+                    tf.as_ref(),
+                    e.zip(layer.as_ref()),
+                ),
+                (None, Some(e)) => {
                     cf::layout_cell_cf(&view, table, &IdentityEnv, ix, row, col, cell, w, 1.0, &mut scratch, &mut out, e, layer.as_ref())
                 }
-                None => layout_cell(&view, table, &IdentityEnv, ix, row, col, cell, w, 1.0, &mut scratch, &mut out),
+                (None, None) => layout_cell(&view, table, &IdentityEnv, ix, row, col, cell, w, 1.0, &mut scratch, &mut out),
             };
             match laid {
                 Laid::Empty => break String::new(),

@@ -72,3 +72,8 @@ required-features = ["grid"]
 [[example]]
 name = "cf_bench"
 required-features = ["grid"]
+
+# the C3c paint benchmark needs the grid model
+[[example]]
+name = "paint_bench"
+required-features = ["grid"]

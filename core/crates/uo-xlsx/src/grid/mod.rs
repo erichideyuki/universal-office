@@ -15,6 +15,9 @@
 //! | [`geometry`] | `recalcGrid`, `colWidth`/`rowHeight`, `mergeAt`, `bisectLE` | widths, heights, checkpointed edges |
 //! | [`fit`] | `fitRowHeights` | the row heights Excel computes at open |
 //! | [`layout`] | `cellLayout` | a store cell laid out for a width: xf → font → indent → text layout |
+//! | [`paint_rules`] | `borders.ts`, `fills.ts`, `spill-border.ts`, `grid-layout.ts` (rest) | border conflicts and 1-px runs, fills as paint data, spill/handle rectangles, hit tests, rich lines |
+//! | [`table_style`] | `table-styles.ts` (+ data), `pivot-styles.ts` | table/pivot styles by element, the format of a cell on demand |
+//! | [`paint`] | `styleAt`, `paintGridBorders`, `buildTableLayer` | the layers of a cell (xf → table/pivot → CF), the viewport frame, the border pass |
 
 pub mod cellval;
 pub mod cf;
@@ -27,7 +30,10 @@ pub mod layout;
 pub mod measure;
 pub mod metrics;
 pub mod numbar;
+pub mod paint;
+pub mod paint_rules;
 pub mod style;
+pub mod table_style;
 pub mod text;
 
 pub use cellval::{CellCtx, CellRead, display_text, file_text_input, text_input};
@@ -48,6 +54,10 @@ pub use metrics::{
     normalize_family, ppem_of, row_descent_px, row_pt_to_px,
 };
 pub use numbar::{NumberFormatKind, NumberFormatSpec, adjust_decimals, number_format_for};
+pub use paint::{
+    BorderRect, BorderSegment, BorderSet, CellPaint, CfPaint, FontPaint, MAX_FRAME_CELLS, MAX_REGIONS, PaintBook, PaintFrame, PaintInputs,
+    PxEdges, SheetPaint, layout_cell_layers,
+};
 pub use style::{FitFacts, HAlign, NormalFont, ResolvedXf, StyleTable, VAlign};
 pub use text::{
     CellKind, CellText, CellTextInput, FontMetrics, MAX_CELL_CHARS, TextPiece, autofit_wrap_width_px, cell_margin_px, iso_to_serial,

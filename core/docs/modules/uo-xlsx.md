@@ -253,8 +253,8 @@ Sonnet, closed scope (plan §7 C2). `uo-xls.wasm` is a separate, lazily loaded i
 | `cell-text.ts` 190, `number-formats.ts` 81 (+ `uo-numfmt`) | `text` | `layoutCellText`: `####`, General fit, fill/skip, widths from the measurement table |
 | `entry.ts` 244, `entry-format.ts` 125, `edit-text.ts` 51, `formula-locale.ts` 35 | `entry` | typed text → value/format/formula (C1 hook for the locale) |
 | `cond-format.ts` 438, `cf-formula.ts` 443 (**ported 1:1**, its own evaluator), `cf-icons.ts` 173 | `cf` | per viewport; results memoized per cell with a cap |
-| `table-styles.ts` 242 + `table-styles-data.ts` 146, `pivot-styles.ts` 102 | `table_style` | |
-| `borders.ts` 127, `fills.ts` 96, `spill-border.ts` 11, `grid-layout.ts` 173 | `paint_rules` | border conflict per edge, pattern masks, merge index, rich lines |
+| `table-styles.ts` 242 + `table-styles-data.ts` 146, `pivot-styles.ts` 102 | `table_style` (+ `data.rs` generated, `pivot.rs`) | specs per style name once per sheet; the format of a cell on demand (no per-cell maps) |
+| `borders.ts` 127, `fills.ts` 96, `spill-border.ts` 11, `grid-layout.ts` 173 | `paint_rules` (+ `paint` for the layers and the border pass) | border conflict per edge, pattern masks, rich lines (the merge index and `bisectLE` were C3a's) |
 | `text-metrics.ts` 115 | `measure` | `CellFonts` → a measurement table (two-phase, below) |
 | `universal-sheet.ts`: `resolveStyle`, `fitRowHeights` (747-…), `recalcGrid` (1172-1184), `colWidth`/`rowHeight` (1142-1149), geometry helpers, `mergeAt`; `cell-format.ts` `xfIndexAt` | `geometry`, `style` | ≈ 900 lines of private methods |
 
@@ -323,7 +323,7 @@ Sonnet, closed scope (plan §7 C2). `uo-xls.wasm` is a separate, lazily loaded i
 | C2 (**done** 2026-11-24, section "C2 — as built") | `xls`: BIFF → OOXML parts | Sonnet | **yes** | C1a |
 | C3a (**done** 2026-11-24, section "C3a — as built") | `grid`: metrics, cell text, entry/entry-format/edit-text, geometry, resolved styles, row auto-fit | Sonnet | **yes** | C1a |
 | C3b (**done** 2026-11-24, section "C3b — as built") | CF: `cond-format.ts` + `cf-formula.ts` (1:1) + `cf-icons.ts` | **Opus** (formula evaluation) | yes | C1a, A2 |
-| C3c | table/pivot styles, borders, fills, spill border, grid-layout helpers | Sonnet | **yes** | C3a |
+| C3c (**done** 2026-11-24, section "C3c — as built") | table/pivot styles, borders, fills, spill border, grid-layout helpers | Sonnet | **yes** | C3a |
 | C4 | viewport emission + `SheetFont`/`GlyphRun` (uo-render) + drawings/charts hookup + `<universal-sheet engine="rust">` read path + `uo-sheet.wasm` + viewer harness | Sonnet (Opus review of the emission order) | yes | C3*, A5, B4 (done) |
 | C5a | extraction of the edit operations into capture scripts | Sonnet | yes | C4 |
 | C5b | session, change-set undo, routing, editor harness, `uo-sheet-editor.wasm` | Sonnet; session core reviewed by Opus | yes | C5a, C1b |
@@ -362,6 +362,7 @@ calc-order) are in `uo-calc.md` "Captures".
 | `sheet-x1` | `node core/crates/uo-xlsx/js/capture-sheet.mjs --gen x1 --workbooks core/crates/uo-xlsx/tests/captures/workbooks/x1` | `sheet-x1.capture` 99 KiB + `.side.gz` 550 KiB (30 workbooks, 8 edit steps each) | `--gen x1-big --out core/target/sheet-cap/sheet-x1-big.capture`: 400 workbooks in 91 s, 1.4 MiB + 25 MiB sidecar (2026-11-24; no part XML unless `--parts`) | model JSON with sorted keys (`readWorkbook`, `readStyles`, theme, `readSharedStrings`, each `readWorksheet` minus rows), the store facet per sheet (component index rule: `<row r>` row, last duplicate wins) + file order + row metadata, the open-recalc plan (17 full / 4 none / 9 partial in x1), evaluation order + RAND values + `circular` + `internalErrors` of the open, engine values, the model after the open's write-back, display text per sheet (`debugCellDisplays`, the Range.Text equivalent), surgical save after a no-op (decompressed part digests + the changed parts' XML in the sidecar), and 8 seeded edit steps through the element's public API (text and formula entry in pt-BR, font, number format, borders, fill, merge, fill down/right, clear, freeze, width, hide, replaceAll, autoSum, copy/paste, undo, redo, recalculate) with the order/RAND/save/display after each |
 | `sheet-samples` | `node --max-old-space-size=8192 core/crates/uo-xlsx/js/capture-sheet.mjs --samples` | `sheet-samples.capture` 18 KiB + `.side.gz` 232 KiB (7 samples; giant-1m 7.8 s, giant-200k 1.9 s) | — | the same facets; for giant-1m/giant-200k the digests cover every cell but the sidecars keep the first 200 rows (store, display of A1:AN200) and no edit steps |
 | `sheet-cf` (C3b) | `node core/crates/uo-xlsx/js/capture-cf.mjs` (`--write-workbooks` rewrites `workbooks/cf1`) | `sheet-cf.capture` 6.5 KiB + `.side.gz` 42 KiB; `workbooks/cf1/` 40 `.xlsx`, 200 KiB | `--big`: 300 `cf-big` + 400 `x1-big` → `core/target/sheet-cap/cf-big.capture` (5 s) | per CF sheet the `CfResult` of every cell of its ranges, `evalFormula` traps + 3,000 seeded formulas, icon/bar canvas calls ("C3b — as built") |
+| `sheet-paint` (C3c) | `node core/crates/uo-xlsx/js/capture-paint.mjs` (`--write-workbooks` rewrites `workbooks/paint1`; `--lines` keeps the border/display lines) | `sheet-paint.capture` 35 KiB + `.side.gz` 188 KiB; `workbooks/paint1/` 14 `.xlsx`, 218 KiB | `--big`: 160 `paint-big` + 400 `x1-big` → `core/target/sheet-cap/paint-big.capture` (15 s) | per sheet the table layer, filters, resolved specs, final `styleAt`, `paintCellFill`/`paintDiagonals` calls, the `fillRect`s of the real `paintGridBorders`, displays through `styleAt`; the pure helpers ("C3c — as built") |
 | `--dir <folder>` | `capture-sheet.mjs --dir <folder>` | — | any folder (the `.xls` hook) | the same facets over arbitrary files |
 
 Not captured here, and why: `.xls` (captured by frontier C2 with `js/capture-xls.mjs`, section "C2 — as built"; the generator writes `.xlsx` only and Excel refuses its hostile workbooks, hence the `xls1` group); the
@@ -738,7 +739,7 @@ all-features run fails only inside `src/xls/` of frontier C2, mid-edit); `tests/
 1. **pt-BR formula entry** (and the rest of C3a-8) wait for the calc's i18n (A5): `from_local`, `functionKind` (reserved),
    the catalogue's `argStep`/`smallCounts`, `scopeParams` (`_xlpm.`/`_xlop.`), structured references, R1C1. Implement
    `FormulaSyntax` over it; the 232 skipped capture lines then compare.
-2. **Conditional formats, table/pivot styles, borders, fills** (C3b/C3c) layer over `layout_cell`: the displays of 22 of 84 CI
+2. (**closed by C3b and C3c**) **Conditional formats, table/pivot styles, borders, fills** (C3b/C3c) layer over `layout_cell`: the displays of 22 of 84 CI
    sheets and 555 of 1,204 `x1-big` sheets are not compared until the CF number-format override and the table-layer fonts
    exist.
 3. **Allocations of formatted numbers**: `uo_numfmt::format_value_parts` returns a vector of parts per call (and `format_general`
@@ -922,7 +923,7 @@ reuses its cursor buffer (one `Vec` per call today; the CF statistics and the fo
    colour scales, top-N and percentiles could use selection (O(n)).
 3. C4: paint the fills/fonts/borders of the dxfs, the bars and icons (`CanvasOp`/`BarRect` → display-list items), the
    hidden values. C5: `invalidate` on edits (the TS drops only the edited sheet's engine), rebuild on format/name changes.
-4. CF sheets that also have tables/pivots: their displays are compared with C3c's table layer.
+4. (**closed by C3c**) CF sheets that also have tables/pivots: their displays are compared with C3c's table layer.
 5. Run the real fallback driver on `cf_eval` when `core/fuzz/target/release/fallback.exe` is free (`cargo run --release
    --no-default-features --features fallback --bin fallback -- --secs 170 cf_eval`).
 6. Merging `cf-formula` into the calc (one formula language) is evolution after M5 (as decided).
@@ -935,6 +936,191 @@ than the TS with the first memo (9.8 vs 6.4 µs) — compact `CfCell` + open-add
 duplicate tables built without a string per cell (20 → 12.4 ms); (3) clippy (disallowed `f64::min`/`max` in tests, redundant
 guards). Environment: the fuzz crate's `fallback.exe` was locked by another session (C3b-security above); disk D: at
 ≈ 10 GB free, so everything was built in `core/target/sheet-c1` only.
+
+## C3c — as built (2026-11-24, Sonnet 5.5)
+
+Frontier C3c of T9: table and pivot styles, the cell's paint layers, borders, fills, the spill border and the rest of
+`grid-layout.ts` (feature `grid`, `src/grid/`). The default build is the writer as before. Verified against the frozen TS
+(`ts-ref-092` at `b92b60fa`) through the captures below. Closes C3a open item 2 (the table layer of the displays) and C3b
+open item 4 (CF sheets with tables/pivots).
+
+### Code
+
+| Module | Where | TS source |
+|---|---|---|
+| Colours (`Color`: packed `#rrggbb`, else a palette text), `Palette` | `paint_rules/mod.rs` | the CSS strings of every `Fill`/`BorderEdge`/`Font`/`Dxf` |
+| Border styles and ranks, `winning_edge`, `edge_extent`, corners, the 1-px runs of a segment (`emit_edge`), diagonals | `paint_rules/border.rs` | `borders.ts` |
+| Fills as paint data (`FillRef`, `PaintFill`, `fill_paint`, `path_gradient_rgba`), the 17 pattern masks | `paint_rules/fill.rs` | `fills.ts`, `PATTERN_MASKS` |
+| Spill rectangle, table-handle rectangles, `frozen_extent`/`px_to_index`/`index_screen_pos`/`boundary_at`/`px_to_col_width_chars`/`px_to_row_height_pt` | `paint_rules/misc.rs` | `spill-border.ts`, `paintTableHandle`, `grid-layout.ts` |
+| `layout_rich_lines` | `paint_rules/rich.rs` | `layoutRichLines` |
+| Elements, specs (built-in + custom), `apply_element`, `table_cell_format`, `apply_outline`, `parse_range` | `table_style/mod.rs` | `table-styles.ts` |
+| The 144 built-in definitions (generated by `js/gen-paint-data.mjs`, `--check`; `&'static`, binary search) | `table_style/data.rs` | `table-styles-data.ts` |
+| Pivot regions: the page fields, the main loop, the filter buttons | `table_style/pivot.rs` | `pivot-styles.ts` |
+| `PaintBook` (fills/fonts/borders of `styles.*`), `CfPaint`, `SheetPaint`, `PaintFrame` (+ the border pass), `PxEdges`, `layout_cell_layers` | `paint.rs` | `styleAt`, `applyTableLayer`, `applyCfLayer`, `buildTableLayer`, `paintGridBorders` |
+
+`merge index` and `bisectLE` of `grid-layout.ts` were C3a's (`MergeIndex`, `Geometry::bisect_le`): not repeated.
+
+### API for C4
+
+- **Per workbook**: `PaintBook::build(&book.styles)` (`sync` when the XfPool adds fills/fonts/borders); `palette().text(color)`;
+  `arena()`; `fill_paint(fill_ref, x, y, w, h, ox, oy) -> FillPaint` (= the canvas calls of `paintCellFill`: `Solid(c)`,
+  `Pattern{rows, fg, bg, phase}`, `Linear{p0, p1, stops}`, `Path{inner, stops, w, h}` + `path_gradient_rgba` for the raster,
+  `Nothing`); `border(i).diagonal_strokes(x, y, w, h)` (`paintDiagonals`: colour, width, dash, clip, 1–4 lines).
+- **Per CF engine**: `pbook.attach_cf(&eng) -> CfPaint` (dxfs and stop colours as paint data; rebuild with the engine).
+- **Per sheet**: `SheetPaint::build(&mut pbook, &worksheet, &styles, &cx)`: O(tables) (the regions, their specs resolved once
+  per distinct style name; **no per-cell map**). `filter_at(col, row)`, `table_end_at`, `format_at` (1-based; scan everything:
+  tests) and `xf_index(store, ix, row0, col0, cell)` (the TS `xfIndexAt`, with the column styles).
+- **Per frame**: `PaintFrame::resolve(&PaintInputs{book, sheet, styles, store, ix}, cf: Option<(&mut CfEngine, &CfPaint)>,
+  first_col, last_col, first_row, last_row)` (1-based, inclusive; resolves the region + 1 cell around it, the border pass
+  needs the neighbours). `frame.cell(col, row) -> &CellPaint { fill: FillRef, filled, font: FontPaint{color, bold, italic,
+  underline, strike}, border: [Edge; 4], table_border: [Edge; 4], border_ix, has_cf, … }` (`Copy`, 104 bytes; the final result
+  of xf → table/pivot → CF), `frame.filter_at(&inp, col, row)`.
+- **Border pass**: `frame.border_segments(&merges, show_grid, first_col, last_col, first_row, last_row, &px, &py, ax, ay,
+  &mut |seg: BorderSegment|)` in the TS drawing order (all vertical segments row by row, then all horizontal ones);
+  `seg.rects(clip, &mut |r: BorderRect{rect: PaintRect{x, y, w, h, erase}, color}|)` = the `fillRect`s of `paintHEdge`/
+  `paintVEdge` (an erasing rectangle is `#ffffff`). `PxEdges::fill(&geometry, first, last, scroll)` / `.at(c)` give `px`/`py`
+  (`Math.round(xs[c-1] - scroll)`) from one sequential pass (`Geometry::edge` costs up to 256 additions: do not call it per
+  boundary). **Pass `clip = Some((0, viewport_px))`**: the TS has none and a hostile column width of 10^9 px would loop that long.
+- **Text under the layers**: `layout_cell_layers(&CellView, table, env, ix, row, col, cell, col_px, zoom, scratch, out,
+  tf: Option<&TableCellFormat>, cf: Option<(&CfEngine, &CfCell)>)` (the table layer's bold/italic and the CF's; `showValue="0"`
+  hides). `SheetPaint::format_at` gives the `tf` of a cell (a frame-less call; C4 can keep the frame's `font` and ask only for
+  the flags).
+- Data bars, icons: C3b's `bar_rects`/`icon_ops` (unchanged).
+
+### Decisions (declared; the observable output equals the TS on every capture)
+
+| Id | Decision |
+|---|---|
+| C3c-1 | **Colours are `Copy`**: `Color(u32)` = `0x00RRGGBB` for the exact `#rrggbb` text (any case: the case is not observable on a canvas and the TS `sameColor` lower-cases), else a slot of the book's `Palette` holding the lower-cased text (`#abc`, `#NaNNaNNaN` of a NaN colour-scale factor, `#red`…). The palette only grows at build (book, dxfs, specs, CF stops); a frame never adds to it. |
+| C3c-2 | **JS object-property names are not styles**: a table style named `constructor`/`__proto__`/`toString` makes `parseBuiltin` throw in the TS (the definition is a function), a border style or pattern name of that kind reads `BORDER_RANK`/`PATTERN_MASKS` garbage. Here they are unknown names (no table style; border rank 6 like any unknown style, solid dashes; the pattern paints `bg`). Not captured (the TS throws). |
+| C3c-3 | **The dash quirk is kept**: `run()` marks "no dash open" with `start = -1` and tests `start < 0`, so at a NEGATIVE coordinate every lit pixel restarts the dash and none is emitted (a dash crossing 0 begins at 0). Found by the parity run (scrolled sheets: the first column). `emit_edge`'s `clip` only intersects the run with the viewport: with `lo >= 0` the rectangles are the TS's. |
+| C3c-4 | **Layers on demand, in the TS order**: a table replaces what an earlier table gave a cell when its own format is non-empty, its `tableBorderDxfId` outline lays over it side by side; then the pivots (page-field cells merge onto what is there; the main loop replaces). Filter buttons: last writer wins (table filters, sheet autofilter, pivot buttons). A table whose `ref` is not a range gives nothing, not even its filter buttons. A frame lists the regions that touch it once (`collect`), so a cell pays only for those. |
+| C3c-5 | **Fills**: `FillRef::{None, Solid, Id}`; a fill that paints nothing is `None` (`hasFill` false); a table element keeps `Option<FillRef>` because the TS object can exist and paint nothing (a gradient without stops overrides the earlier element's fill with nothing). A one-stop gradient is its colour; a name without a mask paints `bg`; the path gradient's stops are sorted stably (a NaN position keeps its place: V8's sort of an inconsistent comparator is unspecified); past 4,000,000 pixels the TS paints the first stop (the same here). |
+| C3c-6 | **Final font facets** follow `applyTableLayer` then `applyCfLayer`: the table's colour only when the cell's own is missing or equals the Normal font's (`sameColor`, a missing one is `#000000`), `bold`/`italic`/`underline`/`strike` only turn ON; the CF sets them either way. Colours, sizes and names of the font stay in `fonts[xf.font]`. |
+| C3c-7 | **Absent cells take the row/column style here, not from the store**: the reader (C1a) never calls `Store::set_col_styles` and `Store::default_style` reads a style as `u32` (NaN/negative → 0); `SheetPaint::xf_index` keeps its own `colXf` (`defaultXfMaps`: later `<col>` wins, style 0 skipped, columns up to 16,384, built newest-first with a next-free pointer: O(columns + definitions)) and answers the TS double (a NaN or out-of-range index is the empty style). **Open item for C1a**: load `<col style>` into the store and make `default_style` return the double. |
+| C3c-8 | **Hostile caps**: at most `MAX_REGIONS` = 16,384 tables, pivots and filters per sheet (the first ones); pages of a pivot at most 10^6. The TS has none (a table over `A1:XFD1048576` builds 17 billion map entries and never returns; here it is a rectangle). |
+| C3c-9 | **Frame cap**: past `MAX_FRAME_CELLS` = 262,144 cells (a 1080p window holds ≈ 1,500) the frame holds nothing and the pass draws no border; the TS stops at 4,000,000 (400 MB of cell data here). |
+| C3c-10 | The edge style `none` and `""` are never edges (the reader drops them); `BStyle::Other` (an unknown non-empty text) ranks 6 like `thin`, has no extent and paints solid dashes (`dashOn` default). |
+| C3c-11 | Pixel positions are `i32` (wrapping arithmetic, `Math.round` through `uo_jsnum`); region coordinates of tables and pivots are `f64` like the TS (`parseInt` of the reference digits: any double), so stripes of a weird size (`size="2.5"`) and hostile references behave as the TS. |
+| C3c-12 | **The TS `debugCellDisplays` applies the table layer only when the sheet has conditional formats** (it reads `styleAt` then, `resolveStyle` otherwise), but the painter always uses `styleAt`. `grid_parity` compares the displays accordingly (CF + tables through `layout_cell_layers`, tables alone without the layer); the paint capture's own display facet always goes through `styleAt` (what is painted). |
+| C3c-13 | `CellPaint` carries no `CfCell`: C4 asks the engine again for bars/icons (a memo hit) when `has_cf`. A pivot's `bbox` includes its page-field rows and filter buttons above the range. |
+
+### Parity (`cargo test -p uo-xlsx --features grid,facet --test paint_parity`; capture `tests/captures/sheet-paint.{capture,side.gz}`, 35 KiB + 188 KiB, made by `js/capture-paint.mjs`; 14 generated workbooks `tests/captures/workbooks/paint1/`, 218 KiB, by `js/lib/gen-paint.mjs`; total committed 441 KiB)
+
+The capture runs the real element headless (the harness of T10a, `shouldRecalcOnOpen = () => false`, `Date` frozen, fake DOM with
+recording canvases for the pattern tiles and the path-gradient raster) over, per workbook and sheet, the region A1 to (used area
++ 2, at most 60 x 120): the table layer of every cell (`tableFmt`), the filter buttons and handles, the resolved spec of each
+style name, the final `styleAt` (fill as paint, font facets, own and table borders, diagonal, layer flags), the canvas calls of
+`paintCellFill` (zoom 1.1, scroll 29.25 x 13.5) and `paintDiagonals`, the `fillRect`s of the REAL `paintGridBorders` at two
+zoom/scroll settings (digests; `--lines` keeps the lines), and the displayed text through `styleAt`. `misc/*`: the pattern
+masks, `winningEdge`/`edgeExtent` over every style pair, `paintHEdge`/`paintVEdge` over 14 styles x 4 corner pairs x 4 anchors x
+erase x direction, the 144 built-in styles under 3 themes (+ unknown and JS-property names), the grid-layout helpers over
+zoomed edges with frozen panes, spill/handle rectangles, `layoutRichLines`. The `paint1` group: every built-in family (21
+light, 28 medium, 11 dark), 84 pivot styles over compact/tabular layouts with subtotals, sub-headings, blank rows and page
+fields, the 64 banding/header/total/first/last combinations, custom styles (stripe sizes 1.5/2/3, dxf borders and outlines,
+gradient and pattern dxf fills, unknown elements and dxf ids, a style with no elements), overlapping tables, direct formatting
+and conditional formats over tables and pivots, filters (hidden/active buttons, header-less tables, the sheet autofilter),
+every border-style pair (13 x 13) and dense random borders with merges, hidden columns, row/column default styles, all 17
+patterns and 14 gradients, diagonals, and hostile references. Pivots are minimal definitions (no cache: the TS reader reads
+`location`, the items and the flags only).
+
+| Run | Input | Result |
+|---|---|---|
+| CI (`ci_paint`) | 14 `paint1` + 30 `x1` + 5 samples: 101 sheets (46 with a table/pivot/CF layer), 68,047 cells resolved, 9,346 displays | **151,600 lines + 832 facets equal, 0 mismatches**; + 20,123 lines of 27 sheets with a cell at a position named by another `r` (accepted if different; all equal) |
+| CI (`grid_parity`) | the displays of the 3 sheets with CF AND tables (skipped in C3b) through `layout_cell_layers` | 6,723 cells equal in total (+319 cells), 0 mismatches |
+| local (`UO_PAINT_BIG=1`, release, 4 s; capture 15 s by `capture-paint.mjs --big`) | 160 `paint-big` (random mixes) + 400 `x1-big`: 1,525 sheets (967 with a layer), 2,587,909 cells resolved, 93,789 displays | **2,659,579 strict lines + 12,519 facets equal, 0 mismatches**; 580 odd-ref sheets: 1,876,328 of 1,893,349 lines equal, the rest are 9 facets of 2 workbooks (`x1-big/0007`, `/0257`: cells whose `r` names another position, C3a-9), accepted |
+| local (`UO_GRID_BIG=1`) | `grid_parity` over the 400 `x1-big` | 627,929 display cells equal, of which 286,239 under CF and **84 CF+table sheets (38,292 cells now compared)**, 0 mismatches |
+
+Round history: the first complete run found two classes — the dash quirk of negative coordinates (C3c-3) and the column default
+styles the reader does not load (C3c-7) — then NaN geometry beyond `maxCol`/`maxRow` in my own capture lines (the TS reads
+`undefined` past a `Float64Array`: the test now reads `edge()` as `NaN` there) and the 9 odd-ref facets. Not compared and why:
+Chromium pixels (C4's harness); the pixels of the pattern tiles (compared as mask, colours and phase) and gradients (as
+endpoints/stops; the path gradient raster by SHA-256 of its RGBA); the `save`/`clip`/`restore` calls of `paintDiagonals`
+(strokes are compared); displays of x1/sample sheets with tables and no CF (the TS helper skips the layer, C3c-12: the `paint1`
+displays cover it); a table style named like a JS property (the TS throws, C3c-2); real Excel pivot tables (none in the
+corpus: the generated ones carry the same attributes the reader reads).
+
+### Memory (`tests/paint_memory.rs`, `uo-alloc`)
+
+| Gate | Result |
+|---|---|
+| M1 | the whole pipeline (paint book, sheet layer, CF engine, a frame 30 x 60, the border pass) over the 14 `paint1` + 40 `cf1` + 30 `x1` workbooks, dropped and the `uo-numfmt`/`uo-text` caches cleared: live bytes back to exact zero |
+| M2 | 800 scrolling frames (resolve 45 x 34 + the border pass + every rectangle) over a 20,000-row sheet with two tables: flat at tolerance 0 B after warm-up; **a warm frame allocates 0 B** |
+| M3 | table A1:H20000 → the sheet layer is **544 B** (its definition, not its cells); 600 tables 131,104 B (218 B per table); the paint book 548–1,076 B; a frame 172,741 B for 46 x 36 cells (104 B per cell, reused) |
+| M5 | past `MAX_FRAME_CELLS` the frame is empty and the pass emits nothing; at the cap it resolves; 16,484 tables keep `MAX_REGIONS` |
+
+### Security (`tests/paint_hostile.rs`)
+
+Absurd style indices (cells `s=9999`/`4294967295`/`-5`, rows and columns with NaN/negative/1e30 styles, xfs with `fillId`/`borderId`
+9999/-1/NaN/4294967295, custom elements with dxf ids -1/99999999999 and sizes 0/NaN); 12 tables that overlap, cover
+`A1:XFD1048576`, have impossible references (`A0`, `:`, `nope`, a third part, `$B$2`, rows past the sheet) + a pivot with
+page counts of 2,000,000 and negative header offsets, frames at the far corners of the sheet (rows 1,048,570, `u32::MAX - 3`);
+2,000 tables over one viewport (< 30 s in debug; 1.7 s in total here); 400 seeded attribute mutations of a workbook with
+tables, a pivot, custom styles, dxfs with gradients and borders, a merge and filters (tokens such as `NaN`, `1e308`,
+`4294967295`, `A1:ZZZ9`, `""`: > 150 of them open and run end to end); `emit_edge` at the edges of `i32` with and without a clip,
+fills over NaN/∞/negative geometry and a path gradient past the pixel cap, `px_to_index`/`boundary_at` with NaN/∞,
+`layout_rich_lines` over a 2,000-character word, lone surrogates and NaN widths. No panics, bounded time. No `unsafe`. No fuzz
+target was added (open item 4).
+
+### Performance (native, i5-14600KF, release, medians; `examples/paint_bench.rs`; TS: `js/bench-paint.mjs`, Node 24, same machine and day; other agents shared the CPU)
+
+The work of one 1080p frame (45 rows x 34 columns + 1 around): resolve every cell (xf, table/pivot layer, fill, font facets,
+borders), the border pass with every rectangle, the fill paint data. TS = `styleAt` per cell + the real `paintGridBorders` +
+`paintCellFill` on counting canvases. `layer build` = the sheet layer (TS: `buildTableLayer`, which maps EVERY cell of every table).
+
+| Scenario | Rust warm | TS warm | Ratio | Rust scroll | TS scroll | layer build (Rust / TS) | cold frame (Rust / TS) |
+|---|---|---|---|---|---|---|---|
+| `table`: 50,000 x 12, one table A1:H50000 + fills/borders | **0.086 ms**, 0 B | 0.721 ms | 0.12× | 0.087 ms | 0.861 ms | **0.003 ms** / 189 ms | 0.20 / 3.8 ms |
+| `many`: 600 tables stacked | **0.075 ms**, 0 B | 0.529 ms | 0.14× | 0.078 ms | 0.545 ms | **0.079 ms** / 7.6 ms | 0.12 / 1.5 ms |
+| `borders`: 300 x 40, 52 xfs (every style x 4 fills), 19,917 rectangles | **0.370 ms**, 0 B | 2.161 ms | 0.17× | 0.364 ms | 2.203 ms | 0.001 ms / — | 0.61 / 6.7 ms |
+| `giant`: giant-1m.xlsx, no layers | **0.030 ms**, 0 B | 0.439 ms | 0.07× | 0.030 ms | 0.263 ms | — | 0.06 / 0.37 ms |
+
+History (the 10% rule starts here): no earlier record. `PxEdges` exists because `Geometry::edge` replays up to 256 additions per
+call and the pass asks for every boundary of every row. The first allocation measure of a warm frame found 640 B: the test's own
+per-frame `col_geometry`/`row_geometry` (geometry is cached per zoom, as C3a says). wasm is not measured here (the build is
+clippy-clean for `wasm32-unknown-unknown`).
+
+### Lint and files
+
+`clippy -D warnings` clean native (`--all-targets --all-features --no-deps`) and `wasm32-unknown-unknown` (`--lib --features
+grid,facet`) on `uo-xlsx` (the dependency `uo-calc` is mid-edit by another agent and does not pass clippy now); `tests/grep-bans.sh`
+clean; `float-casts.sh` clean for `uo-xlsx` and no float→int cast in `grid/` with `grid` either; `rustfmt` on the new files
+only (`table_style/data.rs` is generated and `#[rustfmt::skip]`; the pre-existing drift of other files is left). `cargo test -p
+uo-xlsx --features grid,facet --lib --tests` green. Files: `src/grid/{paint.rs, paint_rules/{mod,border,fill,misc,rich}.rs,
+table_style/{mod,pivot,data}.rs}`, `tests/paint_{parity,memory,hostile}.rs`, `tests/support/paint_{pkg,pkg_dense,run}.rs`,
+`examples/paint_bench.rs`, `js/{capture-paint,gen-paint-data,bench-paint}.mjs`, `js/lib/{gen-paint,masks}.mjs`, the capture pair
+and `tests/captures/workbooks/paint1/` (14 files). **Outside the module (additive)**: `src/grid/mod.rs` (the three module lines,
+the doc rows, the re-exports), `src/grid/cf/engine.rs` (two methods: `CfEngine::stop_colors(rule)` — the stop colours without the
+allocation `fill_color` makes — and `rule_count()`), `tests/grid_parity.rs` (the CF + table sheets compared through
+`layout_cell_layers`, totals text), `Cargo.toml` (the `paint_bench` example). Nothing in `uo-calc`, `src/xls*`,
+`capture-grid.mjs`/`capture-cf.mjs`/`capture-sheet.mjs`, `js/harness`.
+
+### Open items
+
+1. **C1a**: load `<col style>` into the store (`Store::set_col_styles`) and make `Store::default_style` return the double (NaN/
+   negative = the empty style); then `SheetPaint::xf_index` shrinks to a store call (C3c-7).
+2. C4: the emission order of the three passes (fills with the grid lines, text, borders, then markers) and the clip of every run
+   to the canvas; `Pattern` tiles and `Path` rasters become display-list resources (`fill_paint` already says which); the
+   overlay of the active selection and the spill border (`spill_border_rect`) are C4's.
+3. `layout_cell_layers` repeats `layout_cell_cf`'s composition (C3a/C3b files untouched): once C4 settles the flow, fold the CF
+   and table layers into one function and drop the other.
+4. No fuzz target (the seeded mutation test of `paint_hostile.rs` stands in); add `paint_layers` to `core/fuzz` with the stable
+   fallback driver when the fuzz crate is free.
+5. `PaintFrame::resolve` asks the store per cell (`gather` + `row_meta` per absent cell); a run API over the lanes would halve the
+   warm frame on sheets that are mostly absent cells (0.03 ms on giant-1m: not needed now).
+6. Real Excel pivot workbooks (none in the corpus): the generated ones exercise the reader's attributes, not Excel's layouts.
+7. wasm timings.
+
+**Process metrics.** C3c (Sonnet 5.5, closed scope): one session, **53 minutes** of wall time measured (09:38:40 →
+10:32:08 local, `date`), about 170 tool calls, no round with a verifier. Rework inside the session: (1) the parity run's first
+real mismatches: the dash quirk of negative coordinates (C3c-3) and the column styles absent from the store (C3c-7); (2) my own
+capture lines past `maxCol` (NaN edges) and the odd-ref sheets (accepted, as C3a-9); (3) the capture's tile cache is module-global
+in the TS, so the pattern-tile stub had to be live for the whole element, not only around the recorded calls; (4) `uo-calc` did
+not compile for ~4 minutes while another agent restructured it (waited); (5) clippy (`then`/`map_or`, an 8-argument test helper).
+Environment: everything built in `core/target/sheet-c1` only; disk D: at ≈ 11 GB free.
+
+
+---
 
 ## C2 — as built (2026-11-24, Sonnet 5.5)
 
