@@ -298,6 +298,7 @@ fn empty_list(items: Vec<SItem>) -> SlidesList {
         runs: Vec::new(),
         effects: Vec::new(),
         slots: Vec::new(),
+        advances: Vec::new(),
     }
 }
 

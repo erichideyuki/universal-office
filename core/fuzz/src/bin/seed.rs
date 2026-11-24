@@ -255,6 +255,7 @@ fn main() {
     // uo-xlsx reader: packages and single parts (src/xlsx_read.rs)
     for s in uo_opc_fuzz::xlsx_read_seeds(&repo.join("core/crates/uo-xlsx/tests/captures/workbooks/x1")) {
         c.add("xlsx_read", &s);
+        c.add("xlsx_roundtrip", &s);
     }
     // uo-xlsx .xls converter: files, their Workbook streams, a minimal sheet (src/xls_read.rs)
     for s in uo_opc_fuzz::xls_read_seeds(&repo.join("core/crates/uo-xlsx/tests/captures/workbooks/xls")) {

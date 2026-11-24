@@ -142,6 +142,8 @@ message SlidesList {
   effects: list<Effect>,
   /// the animation slots the items open with `SlotBegin(i)`: the template of the per-frame values
   slots: list<SlotDef>,
+  /// `GlyphRun` advances: the integer px advance of each non-space glyph step (Sheet lists; empty in Slides)
+  advances: list<i32>,
 }
 
 enum PathOp tag "op" {
@@ -487,8 +489,38 @@ enum SItem tag "op" {
   SlotBegin = "slotBegin" (u32),
   SlotEnd = "slotEnd",
   MediaFrame = "mediaFrame" (MediaFrameItem),
+  /// Sheet: `ctx.font` of a cell font (`SheetFontItem`)
+  SheetFont = "sheetFont" (SheetFontItem),
+  /// Sheet: one `drawCellText` of a text piece (`GlyphRunItem`)
+  GlyphRun = "glyphRun" (GlyphRunItem),
 }
 
+/// The Sheet font (record `uo-xlsx.md` T7): with `font` the CellFont string `${italic ? 'italic ' : ''}${bold ? '700 ' : '400 '}${ppem}px ${stack}`
+/// (`text-metrics.ts:58`: the face carries the bold flag, `size_px` the integer ppem, the stack is the shell's), with `css` a
+/// literal font string (the headers, `universal-sheet.ts:4076`).
+struct SheetFontItem {
+  font: FontRef?,
+  italic: bool,
+  css: sym?,
+}
+
+/// `drawCellText(ctx, f, s, x, y, minX, maxX)` (`text-metrics.ts:104-130`) of one text piece: `text` is a span of `texts`, `advances`
+/// a span of the `advances` arena with one integer advance per code point of the text. The painter sets `textAlign = 'left'` and then:
+/// `complex` = one whole-string `fillText(text, x, y)`; otherwise one `fillText(ch, cx, y)` per non-space code point from `x` at the
+/// advances, stopping when `cx > max_x` and skipping glyphs with `cx + w < min_x`; with `mirrored` (the CTM is mirrored: RTL sheets) the
+/// piece is drawn inside `save`/`translate(x + W, 0)`/`scale(-1, 1)` at x 0 (`W` = the sum of the advances, or `width`) and `restore`.
+struct GlyphRunItem {
+  text: Span,
+  x: f64,
+  y: f64,
+  advances: Span,
+  min_x: f64,
+  max_x: f64,
+  /// the width of the whole string (the sum of the advances, or the measured width of a complex piece)
+  width: f64,
+  complex: bool,
+  mirrored: bool,
+}
 struct TextShadow {
   color: sym,
   blur: f64,

@@ -28,8 +28,13 @@ mod writer;
 pub mod book;
 #[cfg(feature = "grid")]
 pub mod grid;
+/// The viewport display list of the Sheet viewer (frontier C4).
+#[cfg(feature = "view")]
+pub mod view;
 #[cfg(feature = "read")]
 pub mod read;
+#[cfg(feature = "save")]
+pub mod save;
 #[cfg(feature = "xls")]
 pub mod xls;
 #[cfg(feature = "edit")]

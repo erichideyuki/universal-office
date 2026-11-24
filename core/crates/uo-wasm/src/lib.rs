@@ -16,6 +16,9 @@ pub mod render;
 // the Slides viewer module (frontier B7): src/slides.rs, and the lazily loaded .ppt converter
 #[cfg(feature = "slides")]
 pub mod slides;
+// the Sheet viewer module (frontier C4): src/sheet.rs
+#[cfg(feature = "sheet")]
+pub mod sheet;
 // the Slides editor (B8 routing): src/slides_edit.rs, the editing session over the viewer's deck
 #[cfg(feature = "slides-edit")]
 pub mod slides_edit;

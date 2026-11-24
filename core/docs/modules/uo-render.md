@@ -1698,3 +1698,5 @@ the Sheet paint (`universal-sheet.ts` `paint`/`paintRegion` and helpers; canvas 
 Write is unchanged; the Slides list gains only these two tags (schema hash bump, codec and painter tests extended in
 C4). The two-phase measurement (`NeedMeasures`) reuses the Slides protocol with the Sheet measurement keys
 (`uo-xlsx.md` T6).
+
+**Status (C4, 2026-11-24, built).** `SheetFont` is `SheetFontItem { font: FontRef?, italic, css: sym? }` and `GlyphRun` is `GlyphRunItem { text, x, y, advances, min_x, max_x, width, complex, mirrored }` with a new `advances: list<i32>` arena in `SlidesList` (schema hash changed; the Slides producers gained `advances: Vec::new()`). Codec (Rust + TS), `validate` (text and advance spans), the TS painter replay (`paint-slides.ts`: `paintGlyphRun` = `drawCellText`, `sheetFont`) and the PDF interpreters (arms that count/skip) are in; the op stream after `GlyphRun` expansion equals the TS `fillText` sequence on 600 CI streams / 7,520 local streams (`uo-xlsx.md` "C4 — as built"). Slides lists never contain the two items.

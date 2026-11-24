@@ -37,6 +37,7 @@ import { SheetCalc, type BarText, type EditResult, type StyleChange, type FontCh
 import { formulaLocale } from './formula-locale.js';
 import { FormulaAutocomplete } from './formula-autocomplete.js';
 import { paintSpillBorder } from './spill-border.js';
+import type { SheetBook, SheetHost, LoadSheetOptions } from '@universal-office/sheet-engine';
 import { functionNames, localFunctionName } from '@universal-office/sheet-calc';
 
 /**
@@ -551,7 +552,72 @@ export class UniversalSheetElement extends HTMLElement {
    * Compound File e convertido em memória para o pacote OOXML equivalente) —
    * e monta as views de planilha.
    */
+  // ───────────────────────── motor Rust (engine="rust") ─────────────────────────
+  // O motor TS continua inteiro por trás do atributo (padrão `ts`). Com `engine="rust"` e o módulo já instanciado, a PINTURA da
+  // viewport (leitura: abrir, rolar, zoom, abas, seleção, painéis congelados) vem da lista de desenho do Rust; barras de rolagem,
+  // texto de estado vazio, edição e o modelo continuam no TS (frente C5).
+  private rustBook: SheetBook | null = null;
+  private rustActive = -1;
+  private rustBytes: Uint8Array | null = null;
+  private rustMod: Promise<typeof import('./rust-engine.js')> | null = null;
+  private static engineSource: LoadSheetOptions | undefined;
+  private rustMeasure: CanvasRenderingContext2D | null = null;
+
+  /** De onde vem o .wasm do motor Rust (`engine="rust"`); sem isto, o do pacote (`uo-sheet.wasm`, ao lado do módulo). */
+  static configureEngine(source: LoadSheetOptions): void { UniversalSheetElement.engineSource = source; }
+
+  /** `rust` só quando o atributo `engine` diz `rust`; qualquer outro valor é o motor TS. */
+  protected engineAttr(): 'ts' | 'rust' { return (this.getAttribute('engine') ?? '').trim().toLowerCase() === 'rust' ? 'rust' : 'ts'; }
+
+  /** O motor que pinta agora: `rust` quando a pasta está aberta no módulo wasm, senão `ts` (carregando, falha, atributo). */
+  getEngine(): 'ts' | 'rust' { return this.rustBook && !this.rustBook.freed ? 'rust' : 'ts'; }
+
+  /** engine="rust": carrega o código do motor, instancia o .wasm e abre a pasta já carregada; repinta com a lista do Rust. */
+  private startRust(): void {
+    if (this.engineAttr() !== 'rust') return;
+    this.rustMod ??= import('./rust-engine.js');
+    void this.rustMod.then((m) => m.preloadSheetEngine(UniversalSheetElement.engineSource)).then(() => { this.openRust(); this.paint(); }).catch(() => {});
+  }
+
+  private openRust(): void {
+    if (this.engineAttr() !== 'rust' || !this.rustBytes || (this.rustBook && !this.rustBook.freed)) return;
+    void this.rustMod?.then((m) => { try { this.rustBook = m.openSheetBook(this.rustBytes!); this.rustActive = -1; this.paint(); } catch { this.rustBook = null; } });
+  }
+
+  private rustHost(): SheetHost {
+    return {
+      fontStack: (family, bold, italic) => {
+        const [name, alt] = family.split('|');
+        return this.fontResolver.cssStack(name!, alt ? [alt, ...SHEET_FALLBACKS] : SHEET_FALLBACKS, variantOf(bold, italic));
+      },
+      measureContext: () => (this.rustMeasure ??= document.createElement('canvas').getContext('2d')!),
+    };
+  }
+
+  /** A viewport pelo Rust; false = o TS pinta (módulo não pronto, aba de gráfico, erro do módulo). */
+  private paintRust(ctx: CanvasRenderingContext2D, v: SheetView, W: number, H: number): boolean {
+    const b = this.rustBook;
+    if (!b || b.freed || v.worksheet.chartsheet || this.engineAttr() !== 'rust') return false;
+    try {
+      const host = this.rustHost();
+      if (this.rustActive !== this.sheetIndex) { b.activate(this.sheetIndex, host); this.rustActive = this.sheetIndex; }
+      b.setAccent(this.accent());
+      this.status.textContent = rowColToRef(this.sel.col, this.sel.row);
+      b.paint(ctx, {
+        sheet: this.sheetIndex, width: W, height: H, dpr: window.devicePixelRatio || 1, scrollX: this.scrollX, scrollY: this.scrollY, zoom: this.zoom,
+        selection: [this.sel.col, this.sel.row, this.range.c1, this.range.r1, this.range.c2, this.range.r2],
+        capture: this.capture, ...(this.editing ? { editing: [this.editing.col, this.editing.row] as [number, number] } : {}),
+      }, host);
+      return true;
+    } catch { this.rustActive = -1; return false; }
+  }
+
   loadXlsx(bytes: Uint8Array): void {
+    this.rustBytes = bytes;
+    this.rustBook?.free();
+    this.rustBook = null;
+    this.rustActive = -1;
+    this.startRust();
     const pkg = openSpreadsheet(bytes);
     this.pkg = pkg;
     this.workbook = readWorkbook(pkg);
@@ -1494,6 +1560,8 @@ export class UniversalSheetElement extends HTMLElement {
   private mirrorW = 0;
 
   disconnectedCallback(): void {
+    this.rustBook?.free();
+    this.rustBook = null;
     UniversalSheetElement.registry.disconnect(this);
     this.colorScheme.disconnect();
     this.unsubscribeFonts?.();
@@ -3236,6 +3304,7 @@ export class UniversalSheetElement extends HTMLElement {
       return;
     }
 
+    if (this.paintRust(ctx, v, W, H)) { this.paintScrollbars(ctx, W, H); return; }
     if (v.worksheet.chartsheet) { this.paintChartsheet(ctx, v, W, H); return; }
     this.status.textContent = rowColToRef(this.sel.col, this.sel.row);
 

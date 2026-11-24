@@ -203,6 +203,7 @@ impl<'a> Cx<'a> {
                 runs: Vec::new(),
                 effects: Vec::new(),
                 slots: Vec::new(),
+                advances: Vec::new(),
             },
             depth: 0,
             open_layers: Vec::new(),

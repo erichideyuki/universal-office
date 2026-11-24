@@ -322,13 +322,13 @@ Sonnet, closed scope (plan §7 C2). `uo-xls.wasm` is a separate, lazily loaded i
 | # | Scope | Model | Closed scope | Needs |
 |---|---|---|---|---|
 | C1a (**done** 2026-11-24, section "C1a — as built") | `read`: model types, package, workbook/styles/theme/SST index, streaming worksheet → store, frame, CF/pivot/table/comments/hyperlinks/drawing-anchor/chart-data readers; `uo-opc` streaming inflate + pull reader | Sonnet | **yes** (this section + `uo-calc.md` S) | S0 |
-| C1b | `save`: frame surgery, streamed `<sheetData>`, save-calc, `prepareForSave` glue, XfPool + patch | Sonnet | **yes** | C1a, A5 (save rules) |
+| C1b (**done** 2026-11-24, section "C1b — as built") | `save`: frame surgery, streamed `<sheetData>`, save-calc, `prepareForSave` glue, XfPool + patch | Sonnet | **yes** | C1a, A5 (save rules) |
 | C2 (**done** 2026-11-24, section "C2 — as built") | `xls`: BIFF → OOXML parts | Sonnet | **yes** | C1a |
 | C3a (**done** 2026-11-24, section "C3a — as built") | `grid`: metrics, cell text, entry/entry-format/edit-text, geometry, resolved styles, row auto-fit | Sonnet | **yes** | C1a |
 | C3b (**done** 2026-11-24, section "C3b — as built") | CF: `cond-format.ts` + `cf-formula.ts` (1:1) + `cf-icons.ts` | **Opus** (formula evaluation) | yes | C1a, A2 |
 | C3c (**done** 2026-11-24, section "C3c — as built") | table/pivot styles, borders, fills, spill border, grid-layout helpers | Sonnet | **yes** | C3a |
-| C4 | viewport emission + `SheetFont`/`GlyphRun` (uo-render) + drawings/charts hookup + `<universal-sheet engine="rust">` read path + `uo-sheet.wasm` + viewer harness | Sonnet (Opus review of the emission order) | yes | C3*, A5, B4 (done) |
-| C5a | extraction of the edit operations into capture scripts | Sonnet | yes | C4 |
+| C4 (**done** 2026-11-24, section "C4 — as built"; drawings/charts and the wasm engine glue are open items) | viewport emission + `SheetFont`/`GlyphRun` (uo-render) + drawings/charts hookup + `<universal-sheet engine="rust">` read path + `uo-sheet.wasm` + viewer harness | Sonnet (Opus review of the emission order) | yes | C3*, A5, B4 (done) |
+| C5a (**done** 2026-11-24, section "C5a — as built") | extraction of the edit operations into capture scripts | Sonnet | yes | C4 |
 | C5b | session, change-set undo, routing, editor harness, `uo-sheet-editor.wasm` | Sonnet; session core reviewed by Opus | yes | C5a, C1b |
 
 Order: S0 → C1a → (C1b ∥ C2 ∥ C3a) → (C3b ∥ C3c) → C4 → C5a → C5b, inside the ≤ 3-agent cap shared with track A.
@@ -610,6 +610,116 @@ the first draft (caught by reading it back, before M1 ran: the builder takes the
 `rustfmt` of `lib.rs` also reformatted the writer's four files (`mod` declarations are followed): reverted with
 `git checkout`, the writer is untouched. Environment note: `uo-calc` was mid-edit by frontier A3 (a module missing), so the
 build ran in a snapshot of `HEAD` (`git archive`) with the files of `uo-opc`/`uo-xlsx`/`fuzz` copied in; nothing in `uo-calc` was touched.
+
+## C1b — as built (2026-11-24, Sonnet 5.5)
+
+Frontier C1b of T9: the surgical save of an opened workbook (feature `save`, module `src/save/`). Behaviour source: the frozen TS `saveXlsx`
+(`universal-sheet.ts:909-928`), `serialize.ts`, `save-calc.ts`, `calc-io.ts` and the XfPool of `sheet-calc.ts`; the calc rules are `uo-calc`'s
+`save::prepare_for_save` (A5). Verified against the `sheet-x1` and `sheet-samples` captures (save facets) — below.
+
+### Code
+
+| Piece | Where | TS source |
+|---|---|---|
+| API, orchestration (`save`, `SaveRequest`, `Saved`, `SaveError`, `sheet_xml`) | `save/mod.rs` | `saveXlsx` |
+| `<sheetData>` streamed from the store (row/cell/formula XML, `FileOrder` replay, created cells placed like `createCell`) | `save/sheet_data.rs` | `serialize.ts:30-109`, `sheet-calc.ts:202-222` |
+| Frame surgery: `<cols>`, `<mergeCells>`, first `<sheetView>` (pane, gridlines) | `save/frame.rs` | `serialize.ts:138-254` |
+| Calc parts: calc chain, `<calcPr>`, `metadata.xml` (XLDAPR), defined names | `save/calc.rs` | `save-calc.ts` |
+| XfPool (`apply`, `derive`, `format_id`, `quote_prefix`, `patch`) and its change types | `save/xfpool.rs` | `sheet-calc.ts:511-853` |
+| The engine of an opened book (`build_engine`, `engine_input`, `open_recalc_plan`, `open_recalc`) | `save/engine.rs` | `fromSheetCore`, `SheetCalc.ensure/reset` |
+| JS text helpers (UTF-16 to UTF-8, `escXml`/`escAttr`/`encodeXstring`, JS number print) and the regex wrapper | `save/text.rs`, `save/rx.rs` | — |
+| `Package::save_with` + `HostEntries` (the host writes some entries through the `ZipWriter`; the rest as `save`: verified compressed entries raw) | `uo-opc/src/package.rs` | `XlsxPackage.save` |
+
+### API for C5 (and C4)
+
+- `uo_xlsx::save::save(&mut Book, &SaveRequest { dirty_sheets, merge_dirty, view_dirty, pool, level }) -> Result<Saved, SaveError>`. Sheet numbers are
+  workbook sheet indexes. `dirty_sheets` = the TS `dirtySheets` **plus the sheets the calc wrote** (the TS `touched` hook marks them: use
+  `Changes.sheets` of every `calculate`/`recalc`/open-recalc); `merge_dirty`/`view_dirty` as the TS sets. With `book.engine` present `prepare_for_save` runs
+  for the dirty sheets (`ca`/`aca`, `cm`, shared orphans, `fullCalcOnLoad` when `!sure`), its `touched` sheets are rewritten too; the calc chain goes
+  whenever a sheet is rewritten (also without an engine, as the TS). `Saved { bytes, rewritten, sure }`.
+- `XfPool::new(&book.styles)` once per open; `apply(&mut styles, from_xf, &StyleChange)`, `derive`, `format_id`, `quote_prefix`; the pool appends to
+  `book.styles` as the TS does and `SaveRequest.pool` patches `styles.xml` at save (idempotent: a second save does not duplicate).
+- `save::engine::build_engine(&mut book, &EngineOptions)` (loads every sheet, fills merges and filtered rows, hands names/tables/externals/calc options to
+  the engine) and `open_recalc(&mut book, &opts, clock, &mut random) -> (OpenRecalcPlan, Changes)`.
+- `calc::{ensure_dynamic_array_cm, remove_calc_chain, update_calc_pr, update_defined_names}` are public for the session (defined names).
+- A `FileOrder` sheet (rows/cells out of order or duplicated in the file) is written in the TS order; a live cell the file order does not list (created
+  after the open) goes into the first element of its row at the place `createCell`'s binary search finds, or into a row element of its own. C5 must keep
+  `RowMeta` edits of such a sheet in `FileRow::meta` too (the save writes an element's own meta there, `sh.rows` for canonical sheets).
+
+### Decisions (declared; the observable output equals the TS on every capture)
+
+| Id | Decision |
+|---|---|
+| C1b-1 | **Prefixed `<x:sheetData>` is a typed error on save** (`SaveError::Frame`), as the TS (`<sheetData[\s/>]` does not match, it throws); an untouched sheet is copied. C1a-10's re-emit of the qualified name is not used: the rows are unprefixed in both. |
+| C1b-2 | **The text surgery runs on the same ECMAScript regex engine as uo-calc** (the vendored `regress`, new optional dependency of feature `save`), with the TS patterns: `save-calc.ts`, the XfPool patch and `updateWorksheetXml` match exactly what the TS matches (first occurrence, `\b`, lazy `[^>]*?`, JS `\s`) by construction. A part with an unclosed block the TS would garble (`indexOf` = -1) is `SaveError::Frame`. |
+| C1b-3 | The frame surgery runs on `prefix + <sheetData/> + suffix` (the frame, a few KB), then the streamed `<sheetData>` replaces the sentinel: no search ever sees the data. After a save the frame holds the patched text (a second save starts from it, as the TS package does). |
+| C1b-4 | **Canonical cells never allocate**: a cell without extra or formula (the 99% case) is written straight from the lanes (`cell_fast`); anything else goes through `Store::file_cell` and the general `cellXml` port (`cell_file`). Rows come from `Store::each` merged with the row metas; a row is kept when it has cells, `ht`, `hidden` or `s` (`serializeSheetData`). |
+| C1b-5 | `t="${c.type}"` is written unescaped, as the TS (a hostile `t` with a quote gives a part that does not parse); the fuzz target accepts it (read back is best effort). |
+| C1b-6 | The reader writes `RowMeta.spans` through `SheetLoader::strings()` (A4a's one-line change): `patch_spans`, the placeholder and `uniq` are gone, a one-entry cache (own reference) avoids re-interning per row. The save recomputes `spans` (as the TS), so the stored text only feeds the `rw<i>` facet. `<col style>` now goes into the store (`Store::set_col_styles`, C3c open item 1): `default_style` answers the file's value. |
+| C1b-7 | `Package::save_with` is the only change in `uo-opc`: the planner skips the host's names (their parts are never read or compressed), reserves the host's estimate (the replaced entry's compressed size + 25%) and calls the host in archive order. |
+| C1b-8 | `build_engine` loads every sheet (the TS loads all at open) and sets merges (`a1ToArea`) and filtered rows (hidden rows inside an active filter, or every hidden row of a `filterMode` sheet) in the store, which the reader does not fill. |
+
+### Parity (`cargo test -p uo-xlsx --features save,facet --test save_parity`; compares every part decompressed — name, length, SHA-256 prefix, archive order — and the set of parts that differ from the input)
+
+| Run | Result |
+|---|---|
+| `sheet-x1`, save after the open (open-recalc applied, its sheets dirty: the TS `touched` hook), 30 workbooks | **27 equal, 0 mismatches**; 3 deferred to SH1 (`gen/x1/0002`, `0007`, `0008`: a `<c r>` on another `<row r>`; the TS engine places the cell by its ref, the store by its element, so the open-recalc itself differs — the store after the open (`pv<i>`) differs in exactly those 4 sheets, 61 of 65 equal; the SH1 decision of `uo-calc.md` T16) |
+| `sheet-samples`, 7 workbooks including `giant-1m` and `giant-200k` (`UO_XLSX_BIG=1`, release) | **7 equal, 0 mismatches** (5 in CI) |
+| store after the open (`pv<i>`), through the real reader + `build_engine` + `open_recalc` | 65 + 21 sheets compared, 4 differ (SH1, above); the plan facet equal on all 35 |
+| edit steps (`e<k>.save`, `e<k>.chg`): the steps this crate replays with the APIs that exist (`font`, `fill`, `numfmt` over a range through the XfPool + undo/redo that did nothing; the XfPool patch of `styles.xml` is verified here) | **5 compared, 5 equal, 0 mismatches** |
+| edit steps deferred to C5 | **211** of the 240 (27 workbooks that match × 8 steps = 216, 5 replayed): from the first step that needs the session — merge, fill down/right, paste, find/replace, clear, text and formula entry (grid entry + engine write + dirty tracking), borders, width, hide, freeze, autosum, undo/redo of a real edit, recalculate — on, because the scripts are cumulative. Not captured by the committed scripts at all: merge/pane XML (`frame.rs` `<mergeCells>`/`<sheetView>`, covered by unit tests of shapes only) and defined names (`update_defined_names`); both run the TS regular expressions, see C1b-2 |
+
+### Hostile and memory (`tests/save_hostile.rs`, `tests/save_memory.rs`)
+
+Odd frames (comment holding `<sheetData>`, self-closing `<cols/>`, `<sheetView/>`, panes with `1e400`/negative splits, `s="4294967295"`/`-1`/`1e999`,
+`cm` past 2^64, `t` with a quote, a cell at XFD1048576 with control characters and `_x0001_`), the prefixed element (error, untouched copy), the TS rules on a
+hand-made sheet (order kept, `spans`, `s` + `customFormat`, `ht`, a customHeight-only row dropped, `xml:space`, 365 error as `#VALUE!`), the XfPool on an
+xf that does not exist with a styles part lacking fonts/fills/borders (created in schema order, escaped `formatCode`, the result opens), 300 seeded
+mutations of `<sheetData>` (save, reopen, save: the same part, the same cell count), and the corpus (30 workbooks saved with every sheet edited reads back
+with the same cell count; a worksheet part damaged at 3 random bytes, 4 times each: no panic, a typed error or a file that opens). **M1**: open, build the
+engine, edit, save twice, drop: live bytes back to zero for the 30 workbooks and the samples after one warm-up run of each (the lazily built static tables
+of the catalogue/languages show once: 4-8 KB on the first run of a workbook), and the failing save leaves nothing. **Peak** (release, `UO_XLSX_BIG=1`):
+giant-200k output 760,847 B, peak above the start 1.31 MiB; giant-1m output 2,867,274 B, peak 3.78 MiB (output + 1.05 MiB; budget output + 16 MiB).
+The fuzz target `xlsx_roundtrip` (`core/fuzz/src/xlsx_roundtrip.rs`, same inputs and seeds as `xlsx_read`; the crate did not build here because `uo-pptx`
+was mid-edit by another agent, so the target itself was not run; the corpus + mutation tests above do what it does) is registered.
+
+### Performance (native, i5-14600KF, release; `examples/save_bench.rs`, TS `tools/bench/speed/sheet.mjs --only save`, Node 24, same machine and day; medians of 5)
+
+| Benchmark (T13 row) | Budget | TS | Rust | Verdict |
+|---|---|---|---|---|
+| giant-1m (1M cells): one edit, then the surgical save of the edited sheet | ≤ 400 ms native; peak ≤ output + 16 MiB | **1,081 ms** (968 min; the 2026-11-24 baseline: 997) | **163.7 ms** (158.9-170.0); peak 3.78 MiB above the start | within; 0.15x of the TS (6.6x faster); wasm not measured |
+| giant-200k | — | **216 ms** (213 min) | **43.5 ms** (42.4-44.3); peak 1.31 MiB | 0.20x of the TS |
+
+What the time is: the sheet part is 31.7 MB of XML written and deflated (about 95% of it); untouched parts are copied raw (verified by a CRC pass). The
+engine build (26 ms on giant-1m) and the edit are outside the timing, as in the TS scenario. First measured numbers (the 10% rule starts here).
+
+### Lint and files
+
+`clippy -D warnings` clean native (`--all-targets --features save,facet`) and wasm32 (`--lib --features save`); with `--all-features` it stops in
+`src/view/` (frontier C4, mid-edit). `grep-bans.sh` flags only `src/view/chrome.rs:372` (C4); `float-casts.sh` clean; `rustfmt` on the new files only.
+The default build and the C1a/C2/C3a-c suites are unchanged and green (`cargo test -p uo-xlsx --features save,grid,facet --lib --tests`).
+Changes outside `src/save/`: `uo-opc/src/package.rs` (`save_with`, `HostEntries`), `uo-xlsx/Cargo.toml` (feature `save` = `read` + `uo-text` + `regress`, the
+`save_bench` example), `uo-xlsx/src/lib.rs` (the one `cfg`ed module line), `uo-xlsx/src/read/stream.rs` (spans through the loader's pool; `<col style>` into
+the store), `core/fuzz` (`xlsx_roundtrip` target: `Cargo.toml`, `src/lib.rs`, `src/bin/seed.rs`, `src/xlsx_roundtrip.rs`, `fuzz_targets/xlsx_roundtrip.rs`;
+`src/xlsx_read.rs` made `package`/`limits` crate-visible), `Cargo.lock`.
+
+### Open items
+
+1. SH1 (T16): the engine places `<c r>` by ref in the TS and by element here; until decided, the three x1 workbooks above cannot match after the open.
+2. The edit steps listed as deferred to C5, and a replay of the merge/pane/defined-name XML against the TS (no committed capture reaches them): C5a should add the
+   scripts, since every step after the first unsupported one is lost to the parity today.
+3. The engine is built lazily by the TS (displays, formula bar) and only by the open-recalc here (`build_engine`): the save writes the same bytes with or
+   without it until a sheet is dirty; C5 builds it at the first edit.
+4. `FileOrder` sheets edited in the session (C5 must update `FileRow::meta`; duplicates and out-of-order rows are otherwise preserved).
+5. `xlsx_roundtrip` not run under libFuzzer/the fallback driver (the fuzz crate did not build: `uo-pptx` mid-edit).
+6. wasm timing of the save not measured (T13: 800 ms budget).
+
+**Process metrics.** C1b (Sonnet 5.5, closed scope): about 70 minutes of wall time (11:49 to about 12:57, with a pause for a disk-full stop and a reboot),
+about 150 tool calls, no round with a verifier. Rework inside the session: (1) the `FileOrder` replay needed the `createCell` placement of cells created after
+the open (3 of 30 workbooks differed until then); (2) the first design of the frame surgery was hand-written scanners, replaced by the TS regular expressions on
+`regress` (C1b-2) because the committed captures never reach the merge/pane paths; (3) the leak found by M1 was the lazily built static tables (warm-up per
+file); (4) the python edits turned LF into CRLF twice and a cp1252 write corrupted one file (fixed; keep edits to the file tools or `newline=''`/`utf-8`).
+Environment: the C: volume was full once (the tool temp directory), a machine reboot interrupted the run, and `uo-pptx`/`src/view` were mid-edit by other agents.
 
 ## C3a — as built (2026-11-24, Sonnet 5.5)
 
@@ -1125,6 +1235,151 @@ Environment: everything built in `core/target/sheet-c1` only; disk D: at ≈ 11 
 
 ---
 
+## C5a — as built (2026-11-24, Sonnet 5.5)
+
+Scope: JS and docs only. The edit operations of the frozen TS `<universal-sheet>` (`ts-ref-092`, `sheet/packages/sheet/src/universal-sheet.ts`, 4,593 lines;
+line numbers below are that file unless a file is named) were inventoried and captured by `js/capture-edit.mjs`, so C5b can port the editor session against
+them. No Rust, no TS source touched.
+
+### Code
+
+| File | Role |
+|---|---|
+| `crates/uo-xlsx/js/capture-edit.mjs` | the capture script (same harness, host injection and `CaptureWriter` as `capture-sheet.mjs`; imports its helpers, does not edit them) |
+| `crates/uo-xlsx/tests/captures/sheet-edit.capture` (415 KiB) + `sheet-edit.side.gz` (363 KiB) | 80 scripts, 800 steps, 778 KiB in total, byte-identical across runs |
+
+Run: `node core/crates/uo-xlsx/js/capture-edit.mjs` (3.2 s; `--only <substring of the script key>`, `--out`, `--no-xml`, `--ts-root`).
+
+### What the element does NOT have (so C5b does not port it)
+
+The TS element has no: insert/delete rows, columns or cells; sort; filter UI (the autofilter/table layer is read and painted only); series fill and the fill handle
+(Fill Down/Right only); delete, rename, move or copy of a sheet (only `addSheet` at the end); defined-name editing (`updateDefinedNames` is a `sheet-core` library
+function the host calls, `save-calc.ts:190`; the element never does); conditional-format, table, validation, comment, hyperlink or chart editing; page setup; outline
+groups; paste-special other than values. They are absent from the inventory and from the capture; a backlog item, not part of the port.
+
+### Operation inventory (47 operation ids; the id is the tag in the capture)
+
+Common machinery (every row uses it): `record(label, cells, op, struct)` 2051-2062 snapshots `CellSnap`s before/after (`snapCells` 1953: `{col,row,edit,style,exists}`,
+`edit` = the bar text), plus a `StructSnap` (`structSnap` 1968) when `struct`; it pushes an `UndoEntry {label, before[], after[], sel}` (`pushUndo` 1912; `UNDO_LIMIT`
+100, 4431; clears redo) unless the call is non-struct and every cell's text and style are unchanged. `afterCells` 2198 re-derives the row/col xf maps, drops the CF
+engine, regrids, repaints and fires `changed` (2078). `calc.edit` (`sheet-calc.ts:144`) marks `dirtySheets` through `host.touched` (`universal-sheet.ts:448`) for every
+view whose values moved. XfPool = `sheet-calc.ts:556-853` (`apply` 600, `patch` 689 at save). "Dirty" columns: **D** = `dirtySheets`, **M** = `mergeDirty`, **V** = `viewDirty`
+(the three sets `saveXlsx`, 909-930, reads: D picks the sheets whose `<sheetData>`/`<cols>` are regenerated, M adds `<mergeCells>`, V adds `<sheetView>`).
+Row/col style, width, hidden and height changes are in the sheet part only (`<cols>`, `<row>` attributes); styles.xml grows only through the XfPool (`patchStyles` at save).
+
+| Op id | Public API / UI command (`chrome-commands.ts` ids) | Private methods (lines) | Mutates | Undo record | Dirty | Proposed `Session` method |
+|---|---|---|---|---|---|---|
+| `entry.text` / `entry.clear` / `entry.formula` / `entry.refused` | `setActiveCellText` 3145; formula bar, `commitEdit` 3082 | `setCellValue` 3123 → `SheetCalc.edit` (`sheet-calc.ts:144-195`: `parseEntry`, `XfPool.derive`, `Engine.setCell`, `calculate`, `inferFormulaFormat`, `writeBack`); `recordCells` 2064 | cells (value/formula/type), cell xf (format hint, quote prefix), dependents on all sheets, maxCol/maxRow, spill ranges | label `typing`, 1 cell, edit text + style; not pushed when text and style are unchanged; refused entry (`ok:false`, localised message) pushes nothing | D (all touched views) | `enter(text) -> EditResult` on the active cell; core `edit(sheet, col, row, text)` |
+| `entry.set` | `setCellValue` 3123 (host API, also used by every writer below) | as above | as above | none by itself | D | `set_cell_text(sheet, col, row, text) -> EditResult` (no undo) |
+| `entry.editor` | `beginEdit` 2987, `commitEdit`, `cancelEdit` 3104, keys F2 / Enter / printable char (`onKeyDown` 1588-1700); `insertFunction` 2154 | editor `<input>` overlay (DOM), `barText` 1056 | nothing until commit; commit = `entry.text` (`typing`) | as `entry.text` | D | shell owns the input; Session offers `edit_text(col, row) -> String` (the `barText().edit`) and `enter` |
+| `key.delete` | Delete/Backspace (`onKeyDown` 1633) | single cell: `recordCells('clearContents')` + `setCellValue('')`; range: `clear('contents')` | cell content | `clearContents` | D | `clear(Contents)` / `enter("")` |
+| `fmt.font` / `fmt.fill` / `fmt.border` / `fmt.numfmt` / `fmt.decimals` / `fmt.align` / `fmt.format` | `setFont` 2454, `setFormat` 2414, `setBorders` 2484, `setNumberFormat` 2460, `adjustDecimals` 2465, `setAlignment` 2457; `bold`..`strike`, `fontColor`, `fillColor`, `grow`/`shrink`, `align:*`, `indent`/`outdent`, `wrap`, `borders:*`, `numfmt:*`, `decimal:inc/dec`, `dlg:formatCells` | `applyStyle` 2509 → `SheetCalc.styleFor` → `XfPool.apply`; `resolveNumFmt` 2425; `fitRowHeights` 747 when size/name/wrap/bold changes | cell xf of every cell in the range (empty cells are created, up to 100,000 cells, `MAX_FORMAT_CELLS`; beyond that only existing ones); cellXfs/fonts/fills/borders/numFmts growth; row heights (auto-fit, view only) | label `format` or `borders`, one `CellSnap` per cell of the range (style) | D | `format(range, StyleChange)`, `set_borders(range, kind, color)`, `set_number_format(range, NumFmtSpec)`, `adjust_decimals(range, i8)` |
+| `fmt.lines` | same calls with a whole-column or whole-row or select-all range | `applyStyle` with `whole` → `setLineStyles` 2544 | `<col style>` runs (split/merged), `<row s customFormat>`, plus the xf of existing cells | one `StructSnap` + the cells that exist | D | same `format`/`set_borders` (the range type decides) |
+| `merge` / `unmerge` | `merge` 2626 (`center` / `across` / `cells`), `unmerge` 2658, `mergeLosesData` 2616; `merge:*`, `merge:off` | `setMerges` 2602 (`ws.merges`, `mergedAreas`, view index), clears the covered cells (`setCellValue('')`), centre style on the origin | merge list (overlaps replaced), covered cells, origin xf | label `merge`/`unmerge`, cells of the range + `StructSnap` | D, **M** | `merge(range, MergeKind)`, `unmerge(range)`, `merge_loses_data(range) -> bool` (the confirm dialog is the shell's) |
+| `fill.down` / `fill.right` | `fill` 2239; `fill:down` Ctrl+D, `fill:right` Ctrl+R | `writeCopy` 2264 (`SheetCalc.copyText` shifts relative references; xf copied) | target cells | `fillDown`/`fillRight`, the target cells | D | `fill(range, Dir)` |
+| `clip.copy` / `clip.cut` | `copy` 2284, `cut` 2312; the DOM `copy`/`cut` events 2379; `copy`, `cut` | builds `InternalClip {sheet, rect, cells, text, cut}` + the TSV text (formatted values) | nothing (the clip) | none | none | `copy(range, cut) -> ClipText` (Session keeps the internal clip, `has_clipboard`) |
+| `clip.pasteValues` / `clip.pasteText` / paste of the internal clip | `paste` 2314 (internal clip when text is absent or equals the last copy; else TSV text; `valuesOnly`); `paste`, `paste:values` | `copyText` (shifted unless cut), `valueText`; cut clears the origin; `writeCopy`; selection moves to the pasted block | destination cells and xf; origin cells on cut | label `paste` / `cutPaste`, destination + (same-sheet cut) origin cells; foreign TSV: one entry | D | `paste(at, Option<&str>, PasteMode)` |
+| `clear.contents` / `clear.formats` / `clear.all` | `clear` 2211; `clear:*`, Delete | `setCellValue('')`, `delete cell.style` + `dropIfEmpty`; whole row/col: `setLineStyles(() => 0)` | content, xf, empty cells dropped, line styles when whole | `clearContents`/`clearFormats`/`clearAll`; `StructSnap` too when formats are cleared on whole lines | D | `clear(range, ClearKind)` |
+| `find` | `find` 2877 (`allSheets`, `backwards`, `lookIn`, `wholeCell`, `matchCase`); `find`, `goto` | `matcher`, `searchText` 2857 | selection (and the active sheet) only | none | none | `find(opts) -> Option<(sheet, ref)>` (pure query; Session owns the selection) |
+| `replace` / `replaceAll` | `replace` 2942, `replaceAll` 2954; `replace` | `replaceIn` 2923 → `setCellValue` per cell (edit text, case-insensitive RegExp-escaped) | cells (formula text too) | `replace` (1 cell); `replaceAll`: ONE entry with the before/after of every hit on every touched sheet | D (each sheet) | `replace(opts, text)`, `replace_all(opts, text) -> usize` |
+| `view.freeze` | `freezePanes` 2683; `freeze:panes` / `topRow` / `firstCol` / `off` | `ws.pane = {xSplit, ySplit, topLeftCell, state:'frozen'}` or deleted; `v.frozenCols/Rows` | pane, scroll reset | `freeze`, `StructSnap`; no entry when unchanged | D, **V** | `freeze_panes(sheet, cols, rows)` |
+| `view.gridlines` | setter `showGridlines` 2698; `view:gridlines` | `ws.showGridLines` | grid flag | `gridlines`, `StructSnap` | D, **V** | `set_gridlines(sheet, bool)` |
+| `size.colwidth` / `size.rowheight` | `setColumnWidth` 2754, `setRowHeight` 2767; `col:width`, `row:height` | `applyResizePreview` 1255 + `commitResize` 1273 (the `<col>` run split, `customWidth`; `<row ht customHeight>`; 0 = hidden) | `ws.cols`, `Row.height`, view metrics | `columnWidth`/`rowHeight`, `StructSnap` (always pushed) | D | `set_col_width(cols, chars)`, `set_row_height(rows, pt)` |
+| `size.drag` | mouse drag on a header edge (`onMouseDown` 1440-1470 → `onResizeDragMove/End` 1334-1358) | `resizeBefore = structSnap()`, preview, `commitResize`, `pushUndo` | same | `columnWidth`/`rowHeight`, `StructSnap` | D | `resize_commit(kind, index, px)` (the drag preview is shell) |
+| `size.autofit` | `autofitColumns` 2779 (`autofitCol` 1308: widest formatted text, 2,000 rows scanned, canvas font measure), `autofitRows` 2786 (the row returns to automatic height); `col:autofit`, `row:autofit` | as above, `fitRowHeights` | widths / heights | `columnWidth`/`rowHeight`, `StructSnap` (pushed even when nothing changes) | D | `autofit_cols(cols)` (needs the `NeedMeasures` round trip, T7), `autofit_rows(rows)` |
+| `size.hide` / `size.unhide` | `setHidden` 2804; `col:hide` Ctrl+0, `row:hide` Ctrl+9, unhide (also the hidden neighbours of the selection) | `ws.cols` run split with `hidden`, `<row hidden>`, view sets | hidden flags | `hide`/`unhide`, `StructSnap`; unhide with nothing hidden returns early | D | `set_hidden(kind, lines, bool)` |
+| `fn.autosum` / `fn.insert` | `autoSum` 2164, `insertFunction` 2154, `getFunctionNames` 2149; `autosum:*` Alt+=, `function` | range: `record('autoSum')` + `setCellValue` per column below the range; single cell: only `beginEdit` with the guessed formula (nothing written until commit) | cells below the range | `autoSum`, one cell per column; single cell: the later `typing` | D | `auto_sum(range, Fn) -> AutoSum::{Written, EditText(String)}`, `function_names(lang)` |
+| `sheet.add` | `addSheet` 2119; `sheet:insert` Shift+F11 | `saveXlsx` → `XlsxPackage.load` → `addSheetPart` → `loadXlsx` (the whole workbook is rebuilt; `dirty` carried; zoom kept; new sheet selected) | a blank worksheet part, workbook.xml, workbook rels, content types | the undo and redo stacks are EMPTY afterwards (observed) | all dirty sets cleared, the sheet is in the package | `add_sheet(name) -> String` (re-save + reopen, T8) |
+| `sheet.select` | `selectSheet` 1002; `sheet:prev/next` Ctrl+PgUp/PgDn | selection reset to A1, scroll reset | selection only | none | none | `select_sheet(i)` |
+| `book.new` | `newWorkbook` 2093; `new` | `loadXlsx(blankXlsx)` | everything | stacks reset | cleared | `Session::new_blank(lang)` |
+| `undo` / `redo` | `undo` 1919, `redo` 1931 (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z in `onKeyDown`); an open editor: Ctrl+Z cancels it and returns true | `restoreSnaps` 1985: struct via `restoreStruct` 2014, then per cell `calc.edit(edit text)` only when the bar text differs, style restored, `dropIfEmpty` when the cell did not exist; rows/cols xf maps rebuilt; `fitRowHeights`; selection restored (`restoreSelection` 1942) | the same facets as the op | moves the entry between stacks | D, plus **M** and **V** for every struct restore | `undo() -> bool`, `redo() -> bool` |
+| `calc.recalc` | `recalculate` 2140; `calc:now` F9 | `SheetCalc.recalcAll` (`engine.recalc`, `writeBack`) | calculated values (volatile functions) | none | D only for sheets whose values moved (`writeBack` → `touched`); the capture's `entry-formula` scripts show no save change when nothing volatile exists | `recalculate()` |
+| `host.defineName` (not an element op) | host calls `updateDefinedNames(pkg, upserts, removals)` (`sheet-core/src/save-calc.ts:190`) before `saveXlsx` | `<definedNames>` block rewritten in workbook.xml, unknown attributes kept | workbook.xml only | none | none (the host's package edit) | not a Session method: `save_calc::update_defined_names` of C1b (already ported) |
+
+Also element state the shell keeps (no capture): `setZoom` 1017 (zoom is not saved), `goToRef`, `selectRange` 1791, `selectAll`, selection by mouse/keys, `ensureVisible`,
+scroll, `getSelection`, `selectionStats` 1879, `isDirty`/`setDirty` 902-2090 (`changed` sets `dirty`; the host clears it after saving).
+
+### Proposed `Session` API (C5b)
+
+```
+Session::open(bytes, SessionOpts { lang }) / Session::new_blank(lang)
+// selection travels with undo (UndoEntry.sel): Session keeps { sheet, active, range } as data; the shell paints it
+select(sheet, range) ; select_sheet(i) ; selection() -> Selection
+// pure store/engine operations (everything below pushes one undo entry unless said otherwise)
+enter(text) -> EditResult            set_cell_text(sheet, col, row, text) -> EditResult (no undo)
+format(range, StyleChange) ; set_borders(range, kind, color) ; set_number_format(range, spec) ; adjust_decimals(range, delta)
+merge(range, kind) ; unmerge(range) ; merge_loses_data(range) -> bool
+fill(range, dir) ; clear(range, kind) ; copy(range, cut) -> ClipText ; paste(at, Option<&str>, mode) ; has_clipboard()
+find(opts) -> Option<(sheet, ref)> (no undo) ; replace(opts, text) ; replace_all(opts, text) -> usize
+freeze_panes(sheet, cols, rows) ; set_gridlines(sheet, bool)
+set_col_width(cols, chars) ; set_row_height(rows, pt) ; autofit_cols(cols, &Measures) ; autofit_rows(rows) ; set_hidden(kind, lines, bool) ; resize_commit(kind, index, px)
+auto_sum(range, fn) -> AutoSum ; function_names() -> Vec<String> ; edit_text(col, row) -> String (the bar text, pt-BR/en-US via the Translator)
+add_sheet(name) -> String ; recalculate() ; undo() -> bool ; redo() -> bool ; undo_label()/redo_label() ; can_undo()/can_redo()
+save() -> Vec<u8> (C1b `save::save` with dirty_sheets / merge_dirty / view_dirty accumulated by the ops above) ; is_dirty() ; set_dirty(bool)
+```
+
+Pure store/engine: everything above. Needs the shell (listed, not captured): the cell editor `<input>` and its keys (Enter moves down, Tab right, Escape cancels, blur commits;
+autocomplete of function names), OS clipboard events (`onCopyEvent`/`onPasteEvent` 2379; the Session takes and returns text), every dialog and prompt (`chrome-dialogs.ts`:
+column width / row height / go to / find / custom number format / format cells / merge data-loss confirm / sheet name for Insert Sheet), entry-error display (`us-entry-error`, the
+`us-edit` and `us-change` events), mouse selection and the header-edge drag preview, zoom/scroll/`ensureVisible`, repaint, hyperlink following and comment tips, font loading
+(`ensureSheetFonts`), the canvas measurement of autofit (a `NeedMeasures` round trip) and `recalcGrid` metrics.
+
+### Capture format (`sheet-edit.capture` + `.side.gz`; the header comment of the script has the full list)
+
+A record per script, key `edit/<scenario>/<workbook>/<lang>` (workbook = `x1/<NNNN>` from `tests/captures/workbooks/x1` or `samples/<file>`; lang = `formula-locale` pt-BR or
+en-US, which also picks the entry texts and the localised refusal messages). A script opens the workbook FRESH in a new element, then runs 5-12 steps (one operation each; every
+scenario ends with undo/redo pairs); scripts do not depend on each other. Literal arguments, no random choice; the coverage is the scenario table in the script (16 scenarios, each on
+4 x1 workbooks chosen by feature hint (merge, frozen, hidden, names) with alternating languages, plus 1 sample). After the open (`o.*`) and after every step (`e<k>.*`):
+
+| Facet | Content |
+|---|---|
+| `e<k>` / `e<k>.r` | `<op id> \| <description>`; the call's result (JSON; `EditResult`, find hit, widths, `throw:` text) |
+| `.sel` `.sheets` `.dirty` `.xf` `.st<i>` `.ws<i>` `.rw<i>` `.d<i>` | carried forward: written only when the text differs from the previous step's (`o` always). Selection (sheet, active, range); sheet names + zoom + panes + gridlines + clipboard + canUndo/canRedo; `dirty` and the three private sets; cellXfs:numFmts counts; **store facet** per sheet (`count:digest` of the canonical cell lines of `sheet-x1`); worksheet model without rows (`cols`, `merges`, `pane`, `showGridLines`…); row metadata; display text of the ACTIVE sheet |
+| `.undo` `.redo` `.utop` | stack shape `n:label[sheet:cells:S>sheet:cells:S] …` oldest first (S = has a `StructSnap`); digest of the top entry's before/after (cells `{col,row,edit,style,exists}`, struct canonical JSON) |
+| `.save` `.chg` `.chgp` `.xmlfeat` | digest of the package after `saveXlsx` (name/len/sha lines); the parts that differ from the INPUT and from the PREVIOUS step (`-name` = removed); counts of the structural XML in the saved package (merge, pane, `<col>`, hidden cols/rows, row `ht`, `customFormat`, gridlines off, defined names, calcPr, sheets) |
+| sidecar | the changed store lines (`+line`, `-r,c`), changed display lines, the model JSON when it changed, the top undo entry (≤ 4,000 chars), and for every part in `.chgp` the XML as a diff against the part's previous version (the input's on first change): `<prefix length>,<suffix length>,<JSON of the middle>` — the full text is `prev[..prefix] + middle + prev[len-suffix..]`. Drawings, charts, media and parts over 60 KB are digests only. The store/ws/rw/display lines of the open (`o`) are not repeated: `sheet-x1` has them |
+
+The sidecar of step `o` holds the part digests of the opened package; the capture metadata has `@ops <op>=<steps>/<workbooks>/<languages>`.
+
+Counts (steps / distinct workbooks; every operation has both languages and at least one sample): `entry.text` 70/13, `entry.formula` 35/11, `entry.editor` 25/5, `entry.clear` 5/5, `entry.refused` 5/5,
+`entry.set` 5/5, `key.delete` 10/5, `fmt.font` 20/9, `fmt.fill` 10/5, `fmt.border` 20/5, `fmt.numfmt` 20/5, `fmt.decimals` 10/5, `fmt.align` 15/5, `fmt.format` 5/5, `fmt.lines` 20/5, `merge` 20/5, `unmerge` 10/5,
+`fill.down` 10/5, `fill.right` 5/5, `clip.copy` 5/5, `clip.cut` 5/5, `clip.pasteValues` 5/5, `clip.pasteText` 5/5, `clear.contents` 10/5, `clear.formats` 10/10, `clear.all` 10/5, `find` 15/5, `replace` 5/5,
+`replaceAll` 15/5, `view.freeze` 25/5, `view.gridlines` 10/5, `size.colwidth` 10/5, `size.rowheight` 5/5, `size.drag` 20/5, `size.autofit` 10/5, `size.hide` 10/5, `size.unhide` 15/5, `fn.autosum` 20/5,
+`fn.insert` 10/5, `sheet.add` 10/5, `sheet.select` 5/5, `book.new` 5/5, `calc.recalc` 10/6, `host.defineName` 15/5, `undo` 145/21, `redo` 70/21. Total 800 steps in 80 scripts.
+
+Reachability of the structural XML (scripts in which an edit CHANGED the saved package's count; the C1b open item "no committed capture reaches merge, pane or defined-name XML"): `<mergeCell>` 6 scripts,
+`<pane>` 5, `<col>` definitions 18 (hidden cols 13), row `ht` 12, row `hidden` 13, row `customFormat` 6, `showGridLines="0"` 5, new sheets 5, `<calcPr>` 3, `<definedName>` 7 (the 5 `host.defineName` scripts, plus 2 `sheets` scripts where `newWorkbook` replaced a workbook that had names;
+none through an element edit). Zero steps threw; `entry.refused` returns `ok:false` with the localised message (en-US and pt-BR texts differ).
+
+### Observed behaviours C5b must reproduce (all in the capture)
+
+- Undo never snapshots the store: the entry holds edit texts + xf indexes; undo RE-ENTERS the text (`calc.edit`) only when the bar text differs, so undoing an overwrite of a spill anchor restores the spill through the engine, and the xf indexes come back as numbers (the XfPool does not shrink; `.xf` shows it).
+- Non-struct ops that change nothing push no entry; struct ops (`size.*`, `merge`, `freeze`, `gridlines`, autofit) push even when nothing visibly changed (the `.undo` shapes show it).
+- `addSheet` empties both stacks (the package is reloaded) and keeps `dirty`; `newWorkbook` resets `dirty`.
+- `replaceAll` is one entry across all touched sheets (`before`/`after` lists with a sheet index each); `paste` of a same-sheet cut records the origin cells too.
+- Redo after a new edit is gone (`pushUndo` clears the redo stack); an undo restores the selection (sheet, active cell, range).
+- The save marks: cell ops set D only; `merge`/`unmerge` D+M; `freeze`/`gridlines` D+V; undo of a struct entry sets D+M+V (observed in `.dirty` after `undo`). `host.defineName` is a package edit outside the three sets.
+
+### Not captured, and why
+
+The OS clipboard (the script calls `copy()`/`paste(text)` and the internal clip), dialogs, prompts, focus, the editor overlay beyond its value (the captured paths drive `beginEdit`/`commitEdit`/`cancelEdit` and the key handler with fake events),
+mouse selection (the resize drag drives `onResizeDragMove/End` with synthetic events), zoom/scroll/paint (the display text is captured, the pixels are C4's), the font measurement of `autofitColumns` (the fake canvas measures 0, so the widths come
+from the GDI tables fallback like the other captures; the result is in `e<k>.r`), the async font loading, and Excel's own opening of the saved files (the sheet-x1 caveat; `word-open`-style COM checks are C5b's gate).
+
+### Lint and files
+
+`node --check` clean; only `js/capture-edit.mjs` and the two capture files are new (`capture-sheet.mjs`, the other scripts, every Rust crate and the Sheet TS were not touched). No proprietary font anywhere (the workbooks are the committed x1 and samples).
+Two runs (separate processes) give byte-identical `.capture` and `.side.gz` (checked with `cmp`).
+
+### Open items
+
+1. The capture saves after EVERY step (as `sheet-x1` does); the TS save has side effects on the package (`patchStyles`, `saveCalc` attribute rewrites), so a Rust session that saves only at the end can differ in the intermediate package digests — C5b compares the Session's step-wise save, or the final step only.
+2. Defined-name XML is reachable only through the host function; a C5b `Session` need not expose it.
+3. `size.autofit` widths depend on the measurement tables (no canvas text here): the Rust autofit uses the same `NeedMeasures` path; parity of the widths is only as good as the measured tables (C3a).
+4. Sheets with more than 4 sheets, giant workbooks, tables/pivots edit and CF edit are not covered (the element has no such operations, or the sample is out of the budget); a 400-workbook `x1-big` run is possible by pointing `combos()` at `workbooks/x1-big` if C5b needs more breadth.
+
+**Process metrics.** C5a (Sonnet 5.5, closed scope): one session, about 10 minutes (12:50-13:00) of wall time, about 50 tool calls, no verifier round. Rework: (1) the first run was 1.9 MiB (a sheet part per step plus whole display tables), cut to 778 KiB by carry-forward facets, a prefix/suffix XML diff and 4+1 combos per scenario; (2) a bash heredoc ate the backslashes of the first reachability regexes (they became backspace characters and counted nothing), so the audit patterns use character classes instead of `\b`; (3) the TS element has no insert/delete rows, sort, filter, series or sheet delete/rename/move, which the scope list assumed, so the inventory records the absence instead of capturing them.
+
 ## C2 — as built (2026-11-24, Sonnet 5.5)
 
 Frontier C2 of T9: the `.xls` converter (feature `xls` = `read` + `uo-drawingml` with its `legacy` feature). A `.xls` (BIFF8, and BIFF5/7
@@ -1265,3 +1520,149 @@ workbooks of C1a are hostile on purpose and Excel refuses them, so the `xls1` gr
 (2) a relative destination path made every `SaveAs` fail (Excel resolves it against its own directory); (3) the record-level mutants found the nested-chart rule (C2-11) after the
 first 100% on every Excel-made file; (4) performance, 219 → 103 ms (formula text built token by token as `String`s; `head()` allocated per cell). Environment notes: `uo-calc` and `grid/cf` were
 mid-edit by other agents (see Lint and files); a bash heredoc eats double backslashes (the PowerShell and JS files with regexes were written with the file tool).
+
+
+---
+
+## C4 — as built (2026-11-24, Sonnet 5.5)
+
+Frontier C4 of T9: the viewport display list of the Sheet viewer (feature `view`, `src/view/`), the two Sheet items of the
+Slides list (`SheetFont`, `GlyphRun`), `uo-sheet.wasm` (`uo-wasm` feature `sheet`) and the read path of
+`<universal-sheet engine="rust">`. Verified against the frozen TS (`ts-ref-092` at `b92b60fa`) with a recording 2D context over
+the real element's `paint()` on the fake DOM (T10a).
+
+### Code map
+
+| Piece | Where | TS source |
+|---|---|---|
+| The list builder (arenas, symbol/face caches, canvas-state elision with the save/restore stack) | `src/view/out.rs` | the canvas calls |
+| `paint()`, `paintRegion` (clip, white fill, grid lines, three phases, merges crossing the split, border pass), `paintCell`, overflow, `paintSelection`, `paintHeaders`, pane separators | `src/view/region.rs` | `universal-sheet.ts:3222-3500, 3861-3935, 4003, 4050` |
+| `paintCellText` (plain, wrapped, justified, rotated, stacked, fill, centre-across, underline/strike, shrink to fit), the error mark | `src/view/text.rs`, shrink in `region.rs` | `cell-paint.ts` |
+| Rich text (`paintRichText`, `richRunStyle`) | `src/view/rich.rs` | `cell-paint.ts`, `universal-sheet.ts:3935-3980` |
+| Fills (solid, pattern tiles, linear, path rasters), data bars, icons, diagonals, comment indicator, filter arrow, table handle, spill border, `mix`/`rgba` | `src/view/chrome.rs` | `fills.ts`, `borders.ts`, `cf-icons.ts`, `universal-sheet.ts` |
+| `Viewer` (activate: load, fit rows, CF engine, table layer; `emit`) | `src/view/mod.rs` | `loadXlsx`, `selectSheet`, `paint` |
+| The two items | `schema/slides.uos` (`SheetFontItem`, `GlyphRunItem`, `advances: list<i32>`), generated codec Rust + TS | `text-metrics.ts:58, 104-130` |
+| The TS painter replay (`paintGlyphRun`, `sheetFont`) | `uo-wasm/js/paint-slides.ts` | `drawCellText` |
+| Module | `uo-wasm/src/sheet.rs`, `js/sheet.mjs`, `js/sheet-engine.ts` | |
+| Component | `sheet/packages/sheet/src/{rust-engine.ts, sheet-engine.d.ts}`, hooks in `universal-sheet.ts` (`engine` attribute, `paintRust`) | |
+| Harness | `js/capture-viewport.mjs`, `tests/viewport_parity.rs`, `tests/support/vp_canon.rs`, `tests/captures/sheet-viewport.capture` | |
+
+### Wasm API (`uo-sheet.wasm`, handle `UoSheet`; layouts in `sheet.rs`)
+
+`uo_sheet_open(bytes, clock)` → handle (`uo_sheet_error`), `uo_sheet_free`, `uo_sheet_sheets`, `uo_sheet_activate(i)` (0 or 12 =
+measurements), `uo_sheet_viewport(h, sheet, w, h, dpr, sx, sy, zoom, sel*, flags, edit_col, edit_row)` → one message of the list stream
+(status 0) or 12, `uo_sheet_needs` / `uo_sheet_font(id)` / `uo_sheet_provide` (the two-phase protocol of the Slides module: the table
+asks for advances, whole strings of complex scripts and `'Hg'` boxes; the shell answers with `measureText`), `uo_sheet_bitmap(handle)`,
+`uo_sheet_extent`, `uo_sheet_set_accent`, `uo_sheet_set_spill`, `uo_sheet_link_at` (Write's scheme filter: http, https, mailto, tel;
+`#ref` for a location), `uo_sheet_recalc_plan` (open-recalc decision). JS: `sheet.mjs` `bindSheet` (explicit `free()` + a
+`FinalizationRegistry`), `sheet-engine.ts` (loader, `SheetBook.paint`).
+
+### Emission order (the TS line numbers are `universal-sheet.ts` of `b92b60fa`)
+
+| Step | TS | Rust |
+|---|---|---|
+| `setTransform(dpr)`, `clearRect` | 3226-3229 | `region::paint` |
+| `save`, `translate(46, 22)` | 3250-3252 | same |
+| the four regions (main, top, left, corner) | 3254-3260 | `paint_region` x 4, same order |
+| per region: `save`, clip, white fill, grid lines (one stroke), 3 phases | 3395-3422 | same |
+| phase 0: merge white, `paintCellFill`, data bar, icon | 3470-3480 | `phase_fill` |
+| phase 1: text (or the white patch of the cell in edition), error mark | 3482-3492, 3861-3935 | `phase_text`, `text.rs`, `rich.rs` |
+| phase 2: border pass first, then diagonals, comment triangle, filter arrow, table handle | 3436, 3494-3516 | `border_pass`, `phase_marks` |
+| quadrant clips of the drawings | 3263-3272 | clip + restore (drawings: C4-8) |
+| selection, spill border | 4003 | `paint_selection` |
+| headers, pane separators | 4050, 3300-3310 | `paint_headers`, `paint` |
+| scrollbars, empty-state text | 3311, 3244 | shell |
+
+### Decisions (declared)
+
+| Id | Decision |
+|---|---|
+| C4-1 | **The list is the Slides list** with two items: `SheetFont { font: FontRef?, italic, css: sym? }` (the CellFont string `${italic}${400|700} ${ppem}px ${stack}`; a literal `css` for the headers; the face family is `name` or `name\|altName`, the shell's `fontStack` splits it) and `GlyphRun { text, x, y, advances, min_x, max_x, width, complex, mirrored }` with a new `advances: list<i32>` arena (one advance per code point). The schema gains the `advances` field: every producer of `SlidesList` literal gained `advances: Vec::new()` (list below); the Slides painter, PDF interpreters and tests are unchanged otherwise. |
+| C4-2 | **Canvas-state elision** (`OutState`, with the save/restore stack): a repeated `fillStyle`/`strokeStyle`/`font`/`lineWidth`/`textBaseline`/`textAlign` is not emitted. The parity harness canonicalises both sides the same way (the state at the start of a frame is unknown), so the compared stream is "every canvas call that changes state". |
+| C4-3 | **Canonical op stream**: floats as IEEE bits with the sign of zero normalised (`Math.round(-0.3)` is -0 in the TS and an `i32` here: not observable on a canvas), colours lower case, cell fonts reduced to `weight ppem family`, paths flushed at `fill`/`stroke`/`clip` (a `Path2D` call is the same path), gradients and pattern tiles by value (the RGBA of a tile by SHA-256), `GlyphRun` expanded as `drawCellText`. |
+| C4-4 | **Icons**: C3b's op list folds `strokeStyle = c` into `Stroke(c)`; the TS sets it before the `lineWidth`/`lineCap` of the stroke (and, in the `!` symbol, sets it and never strokes). `emit_icon` re-places the assignment so the stream is the TS's. |
+| C4-5 | **Borders**: the colour of an edge is set once per segment (`paintHEdge`/`paintVEdge`), the erasing gaps in white and back, as `run()`; the clip of the pass is `(-65536, 65536 + size)` (never the hostile width of a column) so scrolled sheets keep the rectangles the TS emits off the clip. |
+| C4-6 | **Open-recalc**: `uo-sheet.wasm` reports the plan (`uo_sheet_recalc_plan`) and shows the file's values; applying it needs the engine that C1b's `save/engine.rs` is building (`Book::engine` glue). The module therefore does not contain the calc yet (wasm size below). |
+| C4-7 | **Measurement**: the font table answers `NeedMeasures` after one frame (nothing is appended); `Viewer::activate` also loops (the row fit measures wrapped text). A face is cached by font id and checked against the font's identity (the table drops its fonts past its caps and reuses ids: found by the big run). |
+| C4-8 | **Drawings and charts are not emitted** (open item 1): `paintDrawings` needs the `xdr` shape reader (uo-pptx) and `uo_charts` with the sheet-data host. The quadrant clips around them are in the stream; the capture stubs `paintDrawings`. Chart sheets paint the white page only. |
+| C4-9 | Not in v1 (open items): list-validation dropdown of the selected cell, RTL camera render (`renderRegionToCanvas`: `GlyphRun.mirrored` and the painter replay exist, the region entry point does not), `SheetFont` face alt-name in the parity canon. |
+
+### Parity (`cargo test -p uo-xlsx --features view,facet --test viewport_parity`; capture `tests/captures/sheet-viewport.capture` made by `js/capture-viewport.mjs`)
+
+Per workbook, sheet and state (4 states: zoom 1/1.75/0.75/1.25, scrolls (0,0), (41.5,17.25), (123,57), (700.5,333), DPR 1/2/1/1.5, selections
+A1, a range with a non-origin active cell, a cell, a range; the frozen panes of the model; the capture sets the 640 x 360 canvas) the canonical op stream after
+`GlyphRun` expansion.
+
+| Run | Input | Result |
+|---|---|---|
+| CI (`ci_viewport`) | 30 `x1` + 14 `paint1` + 40 `cf1` + 5 samples = 89 workbooks | **600 streams, 269,243 ops compared, 269,243 equal, 0 mismatches** |
+| local (`UO_VP_CAPTURE=core/target/sheet-cap/viewport-big.capture`, release, `capture-viewport.mjs --big` 36 s) | 400 `x1-big` + `paint-big` + `cf-big`: 860 workbooks | **7,524 streams, 4,941,345 ops compared, 4,941,345 equal; 4 streams accepted**: sheets with a cell at a position named by another `r` (C3a-9: `x1-big/0257`, `/0267`) |
+
+Round history: the first run was 241/303 equal. Classes found and fixed: rich text (not yet ported), the erase/colour order of the border
+segments (C4-5), the line spans of wrapped text (`wrap_lines` returns `(start, end)`), the icon assignment order (C4-4, three variants), shrink to fit,
+the face cache reused across font-table clears (C4-7), the sign of zero (C4-3).
+
+### Memory, performance, size (native i5-14600KF, release, 1920 x 1080, zoom 1, `examples/view_bench.rs`; TS: `js/bench-viewport.mjs`)
+
+| Scenario (1080p, zoom 1, scroll steps of the bench) | Rust emit (median) | TS `paint()` (median) | Ratio | Rust allocated / warm frame | Message crossing |
+|---|---|---|---|---|---|
+| showcase.xlsx | 0.006 ms | 0.013 ms | 0.46x | 5.0 KiB | 2.4 KiB (max 10.2 KiB) |
+| giant-200k | 1.45 ms | 9.41 ms (24,938 canvas calls) | 0.15x | 236 KiB | 199 KiB |
+| giant-1m | 1.12 ms | 14.71 ms (24,065 canvas calls) | 0.08x | 146 KiB | 194 KiB |
+| giant-1m, zoom 0.5 (3,000+ cells, not a budget row) | 11.2 ms | - | - | 1.76 MiB | 717 KiB |
+
+| Open | Rust (native) | TS (`loadXlsx`, Node) | Budget |
+|---|---|---|---|
+| giant-1m open -> first list | **171 ms** (open 166 ms) | 2,023 ms | <= 250 ms native: **met** (wasm 500 ms: not measured, see open items) |
+| giant-200k open -> first list | **54 ms** | 337 ms | <= 60 ms native: **met** |
+
+**Budgets missed**: the 1080p emission on the two dense giants (1.1-1.5 ms against 1 ms; 146-236 KiB allocated against 64 KiB; a 194-199 KiB message
+against 48 KiB). The sample 1,500-cell viewport carries 25,000 glyphs (four-byte advances + two-byte units per glyph: 150 KB of the message). The rule
+"slower than the TS or > 10% over the previous record fails" holds (8x to 13x faster than the TS); the absolute budgets are open item 2. Memory
+gates (`tests/view_memory.rs`): M1 open + emit + drop leaves no live byte over the 84 committed workbooks, M2 600 scrolling frames flat at tolerance 0.
+Slides regression: `uo-render`, `uo-dml-render` and `uo-pptx` suites green (the two PDF interpreters got arms for the Sheet items).
+
+### Open items
+
+1. **Drawings and charts** (C4-8): `emit_shapes` hookup (xdr reader, theme colours, media), `uo_charts` host over the sheet's cells, form controls, chart sheets.
+2. **Budgets missed on dense sheets** (table above): the message is dominated by the glyph advances (4 B per code point) and the `texts` arena; options: advances as `u8` varints (a column of digits has 3-4 distinct values), a per-font advance table in the list (the painter already knows the faces), tile caching across scroll steps (evolution after M5), and a pooled `PathOp` buffer.
+3. **Engine in the module** (C4-6) and the wasm size with the calc (SH3): load the calc lazily when the plan is not `none`.
+4. RTL camera render, list-validation dropdown, alt-name in the canon (C4-9).
+5. Browser: the component hooks are typechecked, not run in Chromium here (no node_modules in the worktree; the Write `node_modules` are needed for the existing bar tests); Chromium pixels second check not made.
+6. The viewer's first frame measures after one round trip per new font/zoom: the shell answers with `measureText` (`sheet-engine.ts`).
+
+### Wasm and size
+
+`uo-sheet.wasm` = `cargo build -p uo-wasm --features sheet --target wasm32-unknown-unknown --profile wasm`: **1,505,770 B raw, 579,305 B gzip** (budget 1.6 MB gzip:
+**met with a wide margin**), WITHOUT the calc engine (C4-6): `uo-calc` is linked only for the open-recalc decision. SH3 (calc inside or lazy) stays open
+until C1b's engine glue exists; the margin (1.0 MB gzip) is the room for it. Tests: `tests/sheet_api.test.mjs` (open, sheets, measure loop, the viewport message
+decoded with the generated TS codec and replayed by `paint-slides.ts` on a recording context, errors, M4 10,000 create/drop) passes in Node against the built module;
+the WebKit run (`browser/run.mjs`) and Safari items were not run. Wasm timings of the emission were not measured (open item 7).
+
+### Lint and files
+
+`clippy -D warnings` clean native (`uo-xlsx --features view,facet --all-targets`, `uo-render --all-targets`) and `wasm32-unknown-unknown` (`uo-xlsx --features view --lib`,
+`uo-wasm --features sheet`); `tests/grep-bans.sh` and `float-casts.sh` (`uo-xlsx uo-render uo-wasm`) clean; rustfmt on the new files. Slides regression: `uo-render`,
+`uo-dml-render`, `uo-pptx` suites green; the Slides wasm tests are listed in the process metrics. TS: the component hooks typecheck (no new `tsc` error in
+`rust-engine.ts`, `sheet-engine.d.ts` or the edited regions of `universal-sheet.ts`; the worktree has no `node_modules`, so the package's baseline `tsc` errors
+and its vitest suites could not be compared or run).
+
+Files (new): `src/view/{mod,out,text,rich,region,chrome}.rs`, `tests/{viewport_parity,view_memory}.rs`, `tests/support/vp_canon.rs`, `tests/captures/sheet-viewport.capture`
+(89 workbooks, digests only: the lines are local, `--lines <dir>`), `examples/view_bench.rs`, `js/{capture-viewport,bench-viewport}.mjs`, `uo-wasm/src/sheet.rs`,
+`uo-wasm/js/{sheet.mjs,sheet-engine.ts}`, `uo-wasm/tests/sheet_api.test.mjs`, `sheet/packages/sheet/src/{rust-engine.ts,sheet-engine.d.ts}`.
+**Outside the module**: `schema/slides.uos` + the generated codec and `js/gen/slides*.ts`, `uo-render/src/slides.rs` (re-exports, validation), `uo-wasm/js/paint-slides.ts` (the two cases +
+`paintGlyphRun`), `advances: Vec::new()` in the `SlidesList` literals of `uo-dml-render/src/emit/cx.rs`, `uo-pptx/tests/{pdf_slides,pdf_effects}.rs`,
+`uo-render/tests/s_support/mod.rs`, `fuzz/src/slides.rs`; arms for the two Sheet items in `uo-pptx/src/pdf/{interp,raster}.rs`; `uo-wasm/{Cargo.toml,src/lib.rs}`;
+`uo-xlsx/{Cargo.toml (feature view), src/lib.rs (one module line), src/grid/mod.rs (re-export), src/grid/paint.rs (layout_cell_layers split: `layout_cell_final` with
+the final font flags, the kind of the value and a size override; same behaviour)}`, `tests/support/mod.rs`; `tools/build-pkg.mjs` (alias `@universal-office/sheet-engine`);
+`sheet/packages/sheet/src/universal-sheet.ts` (the `engine` hooks: `startRust`, `openRust`, `paintRust`, `configureEngine`, `getEngine`; the TS path is unchanged
+and default).
+
+7. wasm timings of the emission; the WebKit/Safari run; `uo-sheet-editor.wasm` (C5).
+
+**Process metrics.** C4 (Sonnet 5.5, closed scope): one session interrupted by a machine reboot; start 11:49:40, last gate about 13:10 local (`date`; about 1 h 20 min of
+wall time including the reboot), about 330 tool calls, no round with a verifier. Rework inside the session: (1) the first parity run was
+241/303 streams (rich text, border erase order, the `wrap_lines` span bug, three icon assignment orders, shrink to fit, the face cache across font-table clears, the
+sign of zero); (2) the 4-state big run found the cf-big icon order and the stale face cache; (3) lint (disallowed `trim_start`/`is_whitespace`, float parse,
+argument counts); (4) bash heredocs eat quotes and backslashes: scripts with quotes went through the Write tool; (5) the C: disk full: `TMP` on D:. Environment:
+`core/target/sheet-c4` only.

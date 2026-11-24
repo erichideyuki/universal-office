@@ -27,9 +27,9 @@ use crate::sym::SymbolTable;
 
 pub use crate::codec::slides_generated::{
     Align, ArcOp, ArcToOp, Baseline, BevelEffect, Bitmap, Cap, ClrChange, CompositeOp, CtmAxis, CtmOperand, Cubic, Decoration, Derived,
-    DrawImageItem, Duotone, Edges, Effect, EllipseOp, FaceKey, FillRule, FillTextItem, FontRef, Gradient, ImageFx, ImageSrc, Join,
+    DrawImageItem, Duotone, Edges, Effect, EllipseOp, FaceKey, FillRule, FillTextItem, FontRef, GlyphRunItem, Gradient, ImageFx, ImageSrc, Join,
     LayerBeginItem, LayerEndItem, LayerThen, MAGIC, Mat6, Media, MediaFrameItem, MetafileRopEffect, Paint, Pair, PathOp, PatternRes,
-    PatternSrc, PxSize, Quad, RawStop, Rect4, Repeat, RoundRectOp, SCHEMA_HASH, SItem, ShadowOff, SlidesList, SlotDef, SlotKind, Span,
+    PatternSrc, PxSize, Quad, RawStop, Rect4, Repeat, RoundRectOp, SCHEMA_HASH, SItem, SheetFontItem, ShadowOff, SlidesList, SlotDef, SlotKind, Span,
     Stop, TextOutline, TextRun, TextShadow, TileDef, TileParams, ViewBox, WarpEffect, WarpFont, WarpLine, WarpPaint, WarpPaintKind,
     WarpPattern, WarpRun, WarpStroke, WarpTile, decode_slides_list, encode_slides_list,
 };
@@ -417,6 +417,16 @@ impl Checker<'_> {
             SItem::Effect(i) => below(*i, l.effects.len(), "effect index"),
             SItem::SlotBegin(i) => below(*i, l.slots.len(), "slot index"),
             SItem::MediaFrame(m) => m.poster.as_ref().map_or(Ok(()), |p| self.image(&p.src)),
+            SItem::SheetFont(f) => {
+                if let Some(font) = &f.font {
+                    self.font(font)?;
+                }
+                f.css.map_or(Ok(()), |c| self.sym(c))
+            }
+            SItem::GlyphRun(g) => {
+                span_in(&g.text, l.texts.len(), "text span")?;
+                span_in(&g.advances, l.advances.len(), "advance span")
+            }
             _ => Ok(()),
         }
     }

@@ -73,6 +73,7 @@ pub fn sample_list(res: &mut SlidesResources) -> SlidesList {
         runs: Vec::new(),
         effects: Vec::new(),
         slots: Vec::new(),
+        advances: Vec::new(),
     };
     l.paths.extend([
         PathOp::MoveTo(p(120.0, 100.0)),
@@ -289,6 +290,7 @@ pub fn hostile_list(r: &mut Rng, lens: [usize; 5]) -> SlidesList {
                 words: r.below(2) == 0,
             })
             .collect(),
+        advances: Vec::new(),
     };
     for _ in 0..r.below(3) {
         l.gradients.push(Gradient { g0: num(r), g1: num(r), g2: num(r), g3: num(r), g4: num(r), g5: num(r), stops: span(r, n_stops) });

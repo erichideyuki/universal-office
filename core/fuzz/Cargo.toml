@@ -31,7 +31,7 @@ uo-jsnum = { path = "../crates/uo-jsnum" }
 # the numfmt_format target (src/numfmt.rs)
 uo-numfmt = { path = "../crates/uo-numfmt" }
 # the xlsx_write target (src/xlsx.rs)
-uo-xlsx = { path = "../crates/uo-xlsx", features = ["read", "xls", "grid"] }
+uo-xlsx = { path = "../crates/uo-xlsx", features = ["read", "xls", "grid", "save"] }
 # the store_ops target (src/calc.rs): the Sheet cell store
 uo-calc = { path = "../crates/uo-calc" }
 # the dml_* targets (src/drawingml.rs)
@@ -746,6 +746,14 @@ debug-assertions = true
 [[bin]]
 name = "cf_eval"
 path = "fuzz_targets/cf_eval.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xlsx_roundtrip"
+path = "fuzz_targets/xlsx_roundtrip.rs"
 required-features = ["libfuzzer"]
 test = false
 doc = false

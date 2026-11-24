@@ -56,7 +56,7 @@ pub use metrics::{
 pub use numbar::{NumberFormatKind, NumberFormatSpec, adjust_decimals, number_format_for};
 pub use paint::{
     BorderRect, BorderSegment, BorderSet, CellPaint, CfPaint, FontPaint, MAX_FRAME_CELLS, MAX_REGIONS, PaintBook, PaintFrame, PaintInputs,
-    PxEdges, SheetPaint, layout_cell_layers,
+    PxEdges, SheetPaint, layout_cell_final, layout_cell_layers,
 };
 pub use style::{FitFacts, HAlign, NormalFont, ResolvedXf, StyleTable, VAlign};
 pub use text::{

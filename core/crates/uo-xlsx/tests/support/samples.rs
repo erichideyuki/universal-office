@@ -3,8 +3,8 @@
 #![allow(dead_code, clippy::unwrap_used)]
 
 use uo_xlsx::{
-    BorderEdge, BorderStyle, Borders, Cell, CellRange, CellValue, Column, DateTime, DefinedName, HAlign, Link, Rgb, RowOptions, SheetOptions, Style,
-    StyleId, WorkbookOptions, XlsxWriter,
+    BorderEdge, BorderStyle, Borders, Cell, CellRange, CellValue, Column, DateTime, DefinedName, HAlign, Link, Rgb, RowOptions,
+    SheetOptions, Style, StyleId, WorkbookOptions, XlsxWriter,
 };
 
 pub fn workbook_options() -> WorkbookOptions {
@@ -40,7 +40,8 @@ pub fn features(shared_strings: bool) -> Vec<u8> {
             ..Style::default()
         })
         .unwrap();
-    let band = w.add_style(&Style { bold: true, align: Some(HAlign::CenterContinuous), fill: Some(Rgb(0xDDEBF7)), ..Style::default() }).unwrap();
+    let band =
+        w.add_style(&Style { bold: true, align: Some(HAlign::CenterContinuous), fill: Some(Rgb(0xDDEBF7)), ..Style::default() }).unwrap();
     let money = w.add_style(&Style { num_fmt: Some("\"R$\" #,##0.00;[Red]-\"R$\" #,##0.00".into()), ..Style::default() }).unwrap();
     let pct = w.add_style(&Style { num_fmt: Some("0.0%".into()), align: Some(HAlign::End), ..Style::default() }).unwrap();
     let date = w.add_style(&Style { num_fmt: Some("dd/mm/yyyy".into()), ..Style::default() }).unwrap();
@@ -130,7 +131,11 @@ pub fn features(shared_strings: bool) -> Vec<u8> {
     )
     .unwrap();
     w.append_row(&ro, &[Cell::text("Total").with_style(total), Cell::number(1184.25).with_style(total)]).unwrap();
-    w.append_row(&RowOptions { hidden: true, ..ro }, &[Cell::text("linha oculta"), Cell::text("tab\tand\nnewline"), Cell::text("ctl\u{1}_x0041_")]).unwrap();
+    w.append_row(
+        &RowOptions { hidden: true, ..ro },
+        &[Cell::text("linha oculta"), Cell::text("tab\tand\nnewline"), Cell::text("ctl\u{1}_x0041_")],
+    )
+    .unwrap();
     w.merge(CellRange::new(20, 1, 21, 2)).unwrap();
     w.append_row(&ro, &[]).unwrap();
     w.end_sheet().unwrap();
@@ -144,7 +149,11 @@ pub fn features(shared_strings: bool) -> Vec<u8> {
         ..SheetOptions::default()
     })
     .unwrap();
-    w.append_row(&ro, &[Cell::text("שם").with_style(header), Cell::text("hidden col").with_style(header), Cell::text("ערך").with_style(header)]).unwrap();
+    w.append_row(
+        &ro,
+        &[Cell::text("שם").with_style(header), Cell::text("hidden col").with_style(header), Cell::text("ערך").with_style(header)],
+    )
+    .unwrap();
     w.append_row(&ro, &[Cell::text("start").with_style(italic), Cell::number(1.0), Cell::number(2.5).with_style(pct)]).unwrap();
     w.end_sheet().unwrap();
     w.finish().unwrap()
@@ -154,14 +163,28 @@ pub fn features(shared_strings: bool) -> Vec<u8> {
 /// row, groups of 50 users with a summary row, every data cell styled from a 10-step scale.
 pub fn heatmap(rows: u32, cols: u32, shared_strings: bool) -> Vec<u8> {
     let mut w = XlsxWriter::new(WorkbookOptions { shared_strings, ..workbook_options() }).unwrap();
-    let header = w.add_style(&Style { bold: true, wrap: true, align: Some(HAlign::Center), border: Borders::all(BorderEdge { style: BorderStyle::Thin, color: None }), ..Style::default() }).unwrap();
+    let header = w
+        .add_style(&Style {
+            bold: true,
+            wrap: true,
+            align: Some(HAlign::Center),
+            border: Borders::all(BorderEdge { style: BorderStyle::Thin, color: None }),
+            ..Style::default()
+        })
+        .unwrap();
     let band = w.add_style(&Style { bold: true, align: Some(HAlign::CenterContinuous), ..Style::default() }).unwrap();
     let group = w.add_style(&Style { bold: true, fill: Some(Rgb(0xEEEEEE)), ..Style::default() }).unwrap();
     let scale: Vec<StyleId> = (0..10u32)
         .map(|k| {
             let g = 255 - k * 20;
-            w.add_style(&Style { fill: Some(Rgb((255 << 16) | (g << 8) | g)), num_fmt: Some("0%".into()), color: (k > 6).then_some(Rgb(0xFFFFFF)), align: Some(HAlign::Center), ..Style::default() })
-                .unwrap()
+            w.add_style(&Style {
+                fill: Some(Rgb((255 << 16) | (g << 8) | g)),
+                num_fmt: Some("0%".into()),
+                color: (k > 6).then_some(Rgb(0xFFFFFF)),
+                align: Some(HAlign::Center),
+                ..Style::default()
+            })
+            .unwrap()
         })
         .collect();
     let mut columns = vec![Column { width: Some(28.0), hidden: false }];
@@ -180,7 +203,14 @@ pub fn heatmap(rows: u32, cols: u32, shared_strings: bool) -> Vec<u8> {
     let ro = RowOptions::default();
     let mut band_cells = vec![Cell::empty()];
     for c in 0..cols {
-        band_cells.push(if c % 10 == 0 { Cell::text(["Políticas", "Treinamentos", "Contratos", "Normas"][(c / 10 % 4) as usize]) } else { Cell::empty() }.with_style(band));
+        band_cells.push(
+            if c % 10 == 0 {
+                Cell::text(["Políticas", "Treinamentos", "Contratos", "Normas"][(c / 10 % 4) as usize])
+            } else {
+                Cell::empty()
+            }
+            .with_style(band),
+        );
     }
     w.append_row(&ro, &band_cells).unwrap();
     let names: Vec<String> = (0..cols).map(|c| format!("Documento {:02}", c + 1)).collect();

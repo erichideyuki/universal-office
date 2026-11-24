@@ -597,7 +597,7 @@ impl<'a, 'c> Raster<'a, 'c> {
                 SItem::Font(f) | SItem::ChartFont(f) => self.t.cur.font = Some((f.face, f.size_px)),
                 SItem::TextBaseline(b) => self.t.cur.baseline = *b,
                 SItem::TextAlign(a) => self.t.cur.align = *a,
-                SItem::ImageSmoothing(_) | SItem::Prepare(_) | SItem::MediaFrame(_) => {}
+                SItem::ImageSmoothing(_) | SItem::Prepare(_) | SItem::MediaFrame(_) | SItem::SheetFont(_) | SItem::GlyphRun(_) => {}
                 SItem::FillText(t) => {
                     if let Some(units) = span_of(&self.cx.list.texts, &t.text) {
                         let text = String::from_utf16_lossy(units);

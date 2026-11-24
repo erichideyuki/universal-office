@@ -16,7 +16,7 @@ const SHEET: &str = r#"<worksheet xmlns="http://schemas.openxmlformats.org/sprea
 const SST: &str = r#"<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>a</t></si><si><r><rPr><b/></rPr><t>b</t></r></si></sst>"#;
 const STYLES: &str = r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="14" fontId="0"/></cellXfs></styleSheet>"#;
 
-fn package(mode: u8, xml: &[u8]) -> Vec<u8> {
+pub(crate) fn package(mode: u8, xml: &[u8]) -> Vec<u8> {
     let mut sheet: &[u8] = SHEET.as_bytes();
     let mut sst: &[u8] = SST.as_bytes();
     let mut styles: &[u8] = STYLES.as_bytes();
@@ -37,7 +37,7 @@ fn package(mode: u8, xml: &[u8]) -> Vec<u8> {
 }
 
 /// Bounds of the target: small parts, few strings, short cell text.
-fn limits() -> (Limits, ReadLimits) {
+pub(crate) fn limits() -> (Limits, ReadLimits) {
     (
         Limits {
             max_xml_part_bytes: 8 << 20,

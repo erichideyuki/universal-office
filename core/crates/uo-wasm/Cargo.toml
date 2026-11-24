@@ -78,6 +78,10 @@ buf = []
 # painter, no layout of the Write engine
 slides = ["buf", "dep:uo-pptx", "dep:uo-dml-render", "dep:uo-render"]
 
+# the Sheet viewer module `uo-sheet.wasm` (frontier C4, src/sheet.rs): the workbook, the viewport display list (the Slides list
+# stream with the Sheet items), the two-phase measurement loop, hyperlink hit info and the open-recalc plan
+sheet = ["buf", "dep:uo-xlsx", "dep:uo-render", "dep:uo-calc"]
+
 # the `.ppt` converter as its own lazily loaded module `uo-slides-ppt.wasm` (src/slides_ppt.rs): bytes of a `.ppt` in,
 # the bytes of the equivalent `.pptx` out
 slides-ppt = ["buf", "dep:uo-pptx", "uo-pptx/ppt"]
@@ -105,6 +109,8 @@ uo-docx-layout = { path = "../uo-docx-layout", optional = true, default-features
 uo-pdf = { path = "../uo-pdf", optional = true }
 uo-image = { path = "../uo-image", optional = true }
 uo-pptx = { path = "../uo-pptx", optional = true }
+uo-xlsx = { path = "../uo-xlsx", optional = true, features = ["view"] }
+uo-calc = { path = "../uo-calc", optional = true }
 uo-dml-render = { path = "../uo-dml-render", optional = true }
 # the maps of the session's wire conversions (uo-docx's JsMap is an IndexMap; same version)
 indexmap = { version = "2", optional = true }

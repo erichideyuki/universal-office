@@ -126,6 +126,34 @@ function fontStr(env: SlidesEnv, face: FaceKey, sizePx: number): string {
   return `${italic ? 'italic ' : ''}${bold ? '700 ' : '400 '}${sizePx}px ${(env.fontStack ?? DEFAULT_FONT_STACK)(face.family, bold, italic)}`;
 }
 
+/**
+ * `drawCellText` (text-metrics.ts:104-130) over a `GlyphRun`: complex scripts are one whole-string `fillText`; otherwise one
+ * `fillText(ch, cx, y)` per non-space code point at the integer advances (stop when `cx > maxX`, skip `cx + w < minX`); a
+ * mirrored (RTL) sheet draws the piece unmirrored in the mirrored box: `save`, `translate(x + W, 0)`, `scale(-1, 1)`, `restore`.
+ */
+function paintGlyphRun(c: CanvasRenderingContext2D, list: SlidesList, g: { text: Span; x: number; y: number; advances: Span; minX: number; maxX: number; width: number; complex?: boolean; mirrored?: boolean }): void {
+  if (g.text.start + g.text.len > list.texts.length || g.advances.start + g.advances.len > list.advances.length) throw new RangeError('glyph run span out of range');
+  const s = list.texts.slice(g.text.start, g.text.start + g.text.len);
+  c.textAlign = 'left';
+  if (g.mirrored) {
+    c.save();
+    c.translate(g.x + g.width, 0);
+    c.scale(-1, 1);
+    if (g.complex) c.fillText(s, 0, g.y);
+    else { let cx = 0, k = g.advances.start; for (const ch of s) { if (ch !== ' ') c.fillText(ch, cx, g.y); cx += list.advances[k++] ?? 0; } }
+    c.restore();
+    return;
+  }
+  if (g.complex) { c.fillText(s, g.x, g.y); return; }
+  let cx = g.x, k = g.advances.start;
+  for (const ch of s) {
+    const w = list.advances[k++] ?? 0;
+    if (cx > g.maxX) break;
+    if (cx + w >= g.minX && ch !== ' ') c.fillText(ch, cx, g.y);
+    cx += w;
+  }
+}
+
 /** `font()` of the chart engine (render.ts 177-180): `[italic ][bold ]<size.toFixed(2)>px <stack>` (not `fontStr`'s `700 <size>px`). */
 function chartFontStr(env: SlidesEnv, face: FaceKey, sizePx: number): string {
   const bold = !!face.bold, italic = !!face.italic;
@@ -675,6 +703,14 @@ export class SlidesPainter {
             }
             case 'font': c.font = fontStr(this.env, at(tables.faces, it.face, 'face'), it.sizePx); break;
             case 'chartFont': c.font = chartFontStr(this.env, at(tables.faces, it.face, 'face'), it.sizePx); break;
+            // Sheet lists (frontier C4): `text-metrics.ts` CellFont string, or a literal font string (the headers)
+            case 'sheetFont': {
+              if (it.css !== undefined) c.font = it.css;
+              else if (it.font) c.font = fontStr(this.env, at(tables.faces, it.font.face, 'face'), it.font.sizePx).replace(/^(italic )?/, it.italic ? 'italic ' : '');
+              break;
+            }
+            // `drawCellText` (text-metrics.ts:104-130) of one piece; the font and `textAlign` were set by the items before it
+            case 'glyphRun': { paintGlyphRun(c, list, it); break; }
             case 'fillText': {
               if (it.text.start + it.text.len > list.texts.length) throw new RangeError('text span out of range');
               c.fillText(list.texts.slice(it.text.start, it.text.start + it.text.len), it.x, it.y);

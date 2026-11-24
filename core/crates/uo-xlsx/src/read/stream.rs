@@ -21,7 +21,7 @@ use uo_calc::formula::{FormulaAttrs, FormulaType};
 use uo_calc::key::{MAX_COL, MAX_ROW, SheetIx};
 use uo_calc::load::SheetLoader;
 use uo_calc::store::{CellKind, RawCell, RowMeta, Store, ValueTag};
-use uo_calc::strings::{JsStr, JsString, StrId, StrPool};
+use uo_calc::strings::{JsStr, JsString, StrId};
 use uo_opc::Package;
 use uo_opc::xml::pull::{self, FeedEnd, Flow, Pull, StartTag, Token};
 
@@ -192,8 +192,8 @@ struct Sink<'a, 's> {
     mini_bytes: usize,
     max_cell_text: usize,
     rows: u32,
-    spans: Vec<(u32, u32, u32)>,
-    uniq: Vec<(Vec<u8>, JsString)>,
+    /// The last `spans` text and its pool id (the cache holds one reference; every row holding it another).
+    span_cache: Option<(Vec<u8>, StrId)>,
     sheetdata_start: Option<u64>,
     sheetdata_end: u64,
     data_name: Vec<u8>,
@@ -360,22 +360,23 @@ impl Sink<'_, '_> {
         }
         let row0 = uo_jsnum::conv::to_uint32(row_r - 1.0);
         if let Some(raw) = spans_raw {
-            let known = if self.uniq.last().is_some_and(|(r, _)| r == raw) {
-                Some(self.uniq.len() - 1)
-            } else if self.uniq.len() <= 32 {
-                self.uniq.iter().position(|(r, _)| r == raw)
-            } else {
-                None
-            };
-            let id = match known {
-                Some(i) => i,
-                None => {
-                    self.uniq.push((raw.to_vec(), js_of(raw, true)?));
-                    self.uniq.len() - 1
+            let id = match &self.span_cache {
+                Some((r, id)) if r == raw => {
+                    let id = *id;
+                    self.loader.strings().retain(id);
+                    id
+                }
+                _ => {
+                    let id = self.loader.strings().intern(js_of(raw, true)?.as_js()).map_err(|e| calc_err(&e))?;
+                    // one reference for the row, one for the cache
+                    self.loader.strings().retain(id);
+                    if let Some((_, old)) = self.span_cache.replace((raw.to_vec(), id)) {
+                        self.loader.strings().release(old);
+                    }
+                    id
                 }
             };
-            self.spans.push((self.rows, row0, u32::try_from(id).unwrap_or(u32::MAX)));
-            meta.spans = Some(StrPool::EMPTY);
+            meta.spans = Some(id);
         }
         self.row0 = Some(row0);
         self.rows += 1;
@@ -806,7 +807,7 @@ pub fn read_sheet(
     let mut abs: u64 = 0;
     let mut stopped: Option<u64> = None;
     let mut first = true;
-    let (mut cells, mut dropped, spans, uniq, sd_start, sd_name, sd_attrs, sd_self);
+    let (mut cells, mut dropped, sd_start, sd_name, sd_attrs, sd_self);
     {
         let loader = store.load_sheet(sheet).map_err(|e| calc_err(&e))?;
         let mut sink = Sink {
@@ -830,8 +831,7 @@ pub fn read_sheet(
             mini_bytes: 0,
             max_cell_text: limits.max_cell_text as usize,
             rows: 0,
-            spans: Vec::new(),
-            uniq: Vec::new(),
+            span_cache: None,
             sheetdata_start: None,
             sheetdata_end: 0,
             data_name: Vec::new(),
@@ -895,15 +895,15 @@ pub fn read_sheet(
         }
         cells = sink.cells;
         dropped = sink.dropped;
-        spans = std::mem::take(&mut sink.spans);
-        uniq = std::mem::take(&mut sink.uniq);
         sd_start = sink.sheetdata_start;
         sd_name = std::mem::take(&mut sink.data_name);
         sd_attrs = std::mem::take(&mut sink.data_attrs);
         sd_self = sink.data_self_closing;
+        if let Some((_, id)) = sink.span_cache.take() {
+            sink.loader.strings().release(id);
+        }
         sink.loader.finish().map_err(|e| calc_err(&e))?;
     }
-    patch_spans(store, sheet, &spans, &uniq).map_err(|e| calc_err(&e))?;
     let _ = (&mut cells, &mut dropped);
 
     // the frame and the sheet model
@@ -920,6 +920,20 @@ pub fn read_sheet(
         e => ReadError::Opc(e),
     })?;
     let worksheet = read_worksheet_frame(pkg, part, dom.root(), cx)?;
+    // `<col style>` into the store: the default xf of an absent cell (`defaultXfMaps`, `cell-format.ts:11-21`)
+    let defs: Vec<(u32, u32, u32)> = worksheet
+        .cols
+        .iter()
+        .filter_map(|c| {
+            let st = c.style?;
+            if !(1.0..4_294_967_295.0).contains(&st) || st.fract() != 0.0 || c.min.is_nan() || c.max.is_nan() {
+                return None;
+            }
+            let (lo, hi) = (uo_jsnum::math::max(c.min, 1.0).ceil(), uo_jsnum::math::min(c.max, 16_384.0).floor());
+            (lo <= hi).then(|| (uo_jsnum::conv::to_uint32(lo), uo_jsnum::conv::to_uint32(hi), uo_jsnum::conv::to_uint32(st)))
+        })
+        .collect();
+    store.set_col_styles(sheet, &defs).map_err(|e| calc_err(&e))?;
     let frame = SheetFrame {
         part: part.into(),
         prefix: prefix_text.into_boxed_str(),
@@ -930,44 +944,6 @@ pub fn read_sheet(
         data_self_closing: sd_self,
     };
     Ok(SheetOutcome { frame, worksheet, cells, dropped })
-}
-
-/// Gives the rows their real `spans` strings (the loader got the empty-string placeholder: it keeps a row
-/// meta only when it has attributes, and the loader borrows the store, so the pool was out of reach while
-/// streaming).
-fn patch_spans(store: &mut Store, sheet: SheetIx, spans: &[(u32, u32, u32)], uniq: &[(Vec<u8>, JsString)]) -> uo_calc::Result<()> {
-    if spans.is_empty() {
-        return Ok(());
-    }
-    let mut ids: Vec<StrId> = Vec::with_capacity(uniq.len());
-    for (_, js) in uniq {
-        ids.push(store.strings.intern(js.as_js())?);
-    }
-    let Store { sheets, strings, .. } = store;
-    if let Some(sh) = sheets.get_mut(sheet.0 as usize) {
-        for &(k, row0, u) in spans {
-            let Some(&id) = ids.get(u as usize) else { continue };
-            if let Some(fo) = sh.file_order.as_deref_mut()
-                && let Some(fr) = fo.rows.get_mut(k as usize)
-                && fr.row == row0
-                && let Some(m) = fr.meta.as_mut()
-            {
-                m.spans = Some(id);
-                strings.retain(id);
-            }
-            if let Ok(i) = sh.rows.binary_search_by_key(&row0, |&(r, _)| r) {
-                let m = &mut sh.rows[i].1;
-                if let Some(old) = m.spans.replace(id) {
-                    strings.release(old);
-                }
-                strings.retain(id);
-            }
-        }
-    }
-    for id in ids {
-        strings.release(id);
-    }
-    Ok(())
 }
 
 /// A mini element of the model, re-exported for tests.

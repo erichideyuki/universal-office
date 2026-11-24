@@ -5,8 +5,8 @@
 #![allow(dead_code)]
 
 use uo_xlsx::{
-    BorderEdge, BorderStyle, Borders, Cell, CellRange, CellValue, Column, DateTime, DefinedName, HAlign, Link, Rgb, RowOptions, SheetOptions, Style,
-    StyleId, WorkbookOptions, XlsxWriter,
+    BorderEdge, BorderStyle, Borders, Cell, CellRange, CellValue, Column, DateTime, DefinedName, HAlign, Link, Rgb, RowOptions,
+    SheetOptions, Style, StyleId, WorkbookOptions, XlsxWriter,
 };
 
 /// Reads bytes as small integers (zeros past the end).
@@ -44,7 +44,8 @@ impl<'a> Input<'a> {
     /// A short string: ASCII, the characters that need escapes, controls, astral, `_xHHHH_`.
     pub fn text(&mut self) -> String {
         const PIECES: [&str; 24] = [
-            "a", "Z", "0", " ", "&", "<", ">", "\"", "'", "\u{1}", "\t", "\n", "_x0041_", "ç", "😀", "\u{FFFE}", "[", "]", "/", "?", "!", ":", "=SUM(A1)", "History",
+            "a", "Z", "0", " ", "&", "<", ">", "\"", "'", "\u{1}", "\t", "\n", "_x0041_", "ç", "😀", "\u{FFFE}", "[", "]", "/", "?", "!",
+            ":", "=SUM(A1)", "History",
         ];
         let n = self.u8() % 12;
         (0..n).map(|_| PIECES[usize::from(self.u8()) % PIECES.len()]).collect()
@@ -72,7 +73,11 @@ fn style(inp: &mut Input<'_>) -> Style {
         italic: flags & 4 != 0,
         color: (flags & 8 != 0).then(|| Rgb(inp.u32() & 0xFF_FFFF)),
         fill: (flags & 16 != 0).then(|| Rgb(u32::from(inp.u8()))),
-        border: if flags & 32 != 0 { Borders { left: edge(inp), right: edge(inp), top: edge(inp), bottom: edge(inp) } } else { Borders::default() },
+        border: if flags & 32 != 0 {
+            Borders { left: edge(inp), right: edge(inp), top: edge(inp), bottom: edge(inp) }
+        } else {
+            Borders::default()
+        },
         align: match inp.u8() % 8 {
             0 => Some(HAlign::Left),
             1 => Some(HAlign::Center),
@@ -118,9 +123,15 @@ pub fn run(data: &[u8]) -> Option<Vec<u8>> {
             }
             1 => {
                 let name = if inp.bool() { inp.text() } else { format!("S{}", inp.u8() % 4) };
-                let cols = (0..inp.u8() % 5).map(|_| Column { width: inp.bool().then(|| f64::from(inp.u16()) / 100.0), hidden: inp.bool() }).collect();
+                let cols = (0..inp.u8() % 5)
+                    .map(|_| Column { width: inp.bool().then(|| f64::from(inp.u16()) / 100.0), hidden: inp.bool() })
+                    .collect();
                 let names = (0..inp.u8() % 3)
-                    .map(|_| DefinedName { name: if inp.bool() { "ColumnTitle".into() } else { inp.text() }, range: range(&mut inp), sheet_scope: inp.bool() })
+                    .map(|_| DefinedName {
+                        name: if inp.bool() { "ColumnTitle".into() } else { inp.text() },
+                        range: range(&mut inp),
+                        sheet_scope: inp.bool(),
+                    })
                     .collect();
                 let _ = w.begin_sheet(SheetOptions {
                     name,
@@ -197,7 +208,11 @@ pub fn check_package(bytes: &[u8]) {
     let mut content_types = String::new();
     for e in &entries {
         let raw = e.compressed(bytes);
-        let data = if e.method == 0 { raw.to_vec() } else { uo_opc::flate::inflate_raw(raw, Some(e.size), 1 << 30).unwrap_or_else(|x| panic!("inflate {}: {x:?}", e.name)) };
+        let data = if e.method == 0 {
+            raw.to_vec()
+        } else {
+            uo_opc::flate::inflate_raw(raw, Some(e.size), 1 << 30).unwrap_or_else(|x| panic!("inflate {}: {x:?}", e.name))
+        };
         assert_eq!(uo_opc::flate::crc32(&data), e.crc32, "{}", e.name);
         let text = String::from_utf8(data).unwrap_or_else(|_| panic!("{} is not UTF-8", e.name));
         if let Err(x) = uo_opc::xml::parse(text.clone(), &uo_opc::xml::ParseOptions::STRICT) {

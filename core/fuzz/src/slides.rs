@@ -121,6 +121,7 @@ fn valid_list(rng: &mut Rng, res: &mut SlidesResources) -> s::SlidesList {
                 words: rng.bool(),
             })
             .collect(),
+        advances: Vec::new(),
     };
     for _ in 0..rng.below(3) {
         let stops = span(rng, l.stops.len());

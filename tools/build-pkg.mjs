@@ -136,6 +136,8 @@ const ENGINE = {
   '@universal-office/slides-engine': 'core/crates/uo-wasm/js/slides-engine.ts',
   // o editor do Slides (`engine="rust"`, src/rust-editor.ts, roteamento do B8): a sessão de edição sobre o deck do viewer
   '@universal-office/slides-editor-engine': 'core/crates/uo-wasm/js/slides-editor-engine.ts',
+  // o Sheet (`engine="rust"`, src/rust-engine.ts, frente C4): o lado JS do módulo uo-sheet.wasm
+  '@universal-office/sheet-engine': 'core/crates/uo-wasm/js/sheet-engine.ts',
 };
 /**
  * Os .wasm do motor (build `--profile wasm`, SEM `count` nem `selftest`): `--features write` → `chunks/uo-write.wasm` (viewer) e

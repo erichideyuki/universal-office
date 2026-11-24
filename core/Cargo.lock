@@ -312,6 +312,7 @@ version = "0.10.0-dev"
 dependencies = [
  "indexmap",
  "uo-alloc",
+ "uo-calc",
  "uo-codec",
  "uo-dml-render",
  "uo-docx",
@@ -325,12 +326,14 @@ dependencies = [
  "uo-pptx",
  "uo-render",
  "uo-testkit",
+ "uo-xlsx",
 ]
 
 [[package]]
 name = "uo-xlsx"
 version = "0.10.0-dev"
 dependencies = [
+ "regress",
  "rustc-hash",
  "uo-alloc",
  "uo-calc",

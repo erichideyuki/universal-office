@@ -146,6 +146,7 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("xlsx_write", xlsx_write),
     ("xlsx_read", xlsx_read),
     ("xls_read", xls_read),
+    ("xlsx_roundtrip", xlsx_roundtrip),
     ("cf_eval", cf_eval),
     ("store_ops", store_ops),
     ("formula_parse", formula_parse),

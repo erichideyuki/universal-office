@@ -678,6 +678,14 @@ impl Package {
     /// deflated are inflated and stored. An entry that cannot be read fails the save with the
     /// read's error.
     pub fn save(&self, options: &SaveOptions) -> Result<Vec<u8>> {
+        self.save_with(options, None)
+    }
+
+    /// [`Package::save`] where the host writes some entries itself (a worksheet streamed from a store, never
+    /// held whole): the names `host.replaces` accepts keep their place in the archive order and are written by
+    /// `host.write` through the [`ZipWriter`] (`stream_begin` / `stream_write` / `stream_end`, or `add`); the
+    /// parts of the package under those names are not read. Everything else is as [`Package::save`].
+    pub fn save_with(&self, options: &SaveOptions, mut host: Option<&mut HostEntries<'_>>) -> Result<Vec<u8>> {
         let order = zip::js_object_order(self.parts.iter().map(|p| (p.name.clone(), p)).collect());
         // what each entry writes, decided (and compressed) first so that the archive is reserved
         // at its exact length: no growth by doubling, no unused capacity in the result
@@ -688,6 +696,10 @@ impl Package {
             // before anything is compressed: such a name fails the save whatever its bytes
             if name.len() > 65_535 {
                 return Err(Error::NameTooLong { len: name.len() });
+            }
+            if host.as_ref().is_some_and(|h| (h.replaces)(&name)) {
+                plan.push((name, Planned::Host));
+                continue;
             }
             let planned = match &part.content {
                 Content::Owned(data) => self.plan_bytes(&name, data, options, &mut deflater, &mut deflated)?,
@@ -711,20 +723,28 @@ impl Package {
         let compressed = |p: &Planned<'_>| match p {
             Planned::Raw(r) => r.data.len() as u64,
             Planned::Deflated { range, .. } => range.len() as u64,
+            Planned::Host => 0,
         };
         let len = zip::archive_len(plan.iter().map(|(n, p)| {
             let (method, size) = match p {
                 Planned::Raw(r) => (r.method, r.size),
                 Planned::Deflated { size, .. } => (8, *size),
+                Planned::Host => (8, 0),
             };
             (n.len(), method, compressed(p), size)
-        }));
+        })) + host.as_ref().map_or(0, |h| h.reserve);
         let mut w = ZipWriter::with_capacity(options.clone(), len);
         for (name, p) in &plan {
             let raw = match p {
                 Planned::Raw(r) => *r,
                 Planned::Deflated { range, crc32, size } => {
                     RawEntry { method: 8, crc32: *crc32, size: *size, data: deflated.get(range.clone()).unwrap_or(&[]) }
+                }
+                Planned::Host => {
+                    if let Some(h) = host.as_mut() {
+                        (h.write)(name, &mut w)?;
+                    }
+                    continue;
                 }
             };
             w.add_raw(name, raw)?;
@@ -753,9 +773,21 @@ impl Package {
     }
 }
 
+/// The entries a host writes itself during [`Package::save_with`].
+pub struct HostEntries<'h> {
+    /// The names the host writes (the package's parts under them are not read).
+    pub replaces: &'h dyn Fn(&str) -> bool,
+    /// Writes one such entry, in archive order, through the writer.
+    pub write: &'h mut dyn FnMut(&str, &mut ZipWriter) -> Result<()>,
+    /// Bytes to reserve in the archive buffer on top of the planned entries (an estimate of the host's entries).
+    pub reserve: u64,
+}
+
 /// What [`Package::save`] writes for an entry: compressed bytes held elsewhere (copied raw, or
 /// stored), or a range of the save's deflate output.
 enum Planned<'a> {
+    /// written by the host ([`HostEntries`])
+    Host,
     Raw(RawEntry<'a>),
     Deflated { range: std::ops::Range<usize>, crc32: u32, size: u64 },
 }

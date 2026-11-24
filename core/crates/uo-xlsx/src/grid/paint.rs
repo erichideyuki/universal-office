@@ -962,21 +962,53 @@ pub fn layout_cell_layers(
     tf: Option<&TableCellFormat>,
     cf: Option<(&CfEngine, &CfCell)>,
 ) -> Laid {
-    use super::style::HAlign;
     if cf.is_some_and(|(_, c)| c.hide_value()) {
         out.clear();
         return Laid::Empty;
     }
     let xf = v.styles.xf(cell_xf_index(v.store, ix, row, col, cell));
+    let font = xf.font.and_then(|f| v.fonts.get(f as usize));
+    let t_bold = tf.is_some_and(|t| t.bold == Some(true));
+    let t_italic = tf.is_some_and(|t| t.italic == Some(true));
+    let bold = cf.and_then(|(_, c)| c.bold()).unwrap_or(font.is_some_and(|f| f.bold) || t_bold);
+    let italic = cf.and_then(|(_, c)| c.italic()).unwrap_or(font.is_some_and(|f| f.italic) || t_italic);
     let num_code = cf.and_then(|(e, c)| c.num_fmt().and_then(|d| e.dxf(d)).and_then(|d| d.code.as_deref()));
+    layout_cell_final(v, table, env, ix, row, col, cell, col_px, zoom, scratch, out, bold, italic, num_code, None).0
+}
+
+/// The layout of a cell whose FINAL font flags are known (C4: the viewport emission reads them from the frame's
+/// [`CellPaint`]): `bold`/`italic` after the xf, table and CF layers, `num_code` the CF's number format for numbers.
+/// `size_pt` replaces the font size (the shrink-to-fit font; not reduced again for super/subscripts). Also answers the kind
+/// of the value (the painter's default alignment). Everything else is [`layout_cell_layers`].
+#[allow(clippy::too_many_arguments)]
+pub fn layout_cell_final(
+    v: &CellView<'_>,
+    table: &mut MeasureTable,
+    env: &dyn FontEnv,
+    ix: SheetIx,
+    row: u32,
+    col: u32,
+    cell: RawCell,
+    col_px: f64,
+    zoom: f64,
+    scratch: &mut Vec<u16>,
+    out: &mut CellText,
+    bold: bool,
+    italic: bool,
+    num_code: Option<&[u16]>,
+    size_pt: Option<f64>,
+) -> (Laid, CellKind) {
+    use super::style::HAlign;
+    let xf = v.styles.xf(cell_xf_index(v.store, ix, row, col, cell));
     let mut inp = match text_input(v.store, ix, row, col, cell, &xf.code16, &v.ctx, scratch) {
         CellRead::Empty => {
             out.clear();
-            return Laid::Empty;
+            return (Laid::Empty, CellKind::Text);
         }
-        CellRead::NeedSst(i) => return Laid::NeedSst(i),
+        CellRead::NeedSst(i) => return (Laid::NeedSst(i), CellKind::Text),
         CellRead::Input(i) => i,
     };
+    let kind = inp.kind;
     if inp.kind == CellKind::Number
         && let Some(c) = num_code
     {
@@ -991,20 +1023,18 @@ pub fn layout_cell_layers(
     let font = xf.font.and_then(|f| v.fonts.get(f as usize));
     let script = font.is_some_and(|f| f.vert_align.is_some());
     let size = font.and_then(|f| f.size).unwrap_or(11.0);
-    let size_pt = if script { uo_jsnum::math::max(1.0, uo_jsnum::math::round(size * 2.0 / 3.0 * 2.0) / 2.0) } else { size };
-    let t_bold = tf.is_some_and(|t| t.bold == Some(true));
-    let t_italic = tf.is_some_and(|t| t.italic == Some(true));
+    let size_script = if script { uo_jsnum::math::max(1.0, uo_jsnum::math::round(size * 2.0 / 3.0 * 2.0) / 2.0) } else { size };
     let id = table.font(
         &FontRequest {
             name: font.and_then(|f| f.name.as_deref()).unwrap_or(&nf.name),
             alt_name: font.and_then(|f| f.alt_name.as_deref()),
-            size_pt,
-            bold: cf.and_then(|(_, c)| c.bold()).unwrap_or(font.is_some_and(|f| f.bold) || t_bold),
-            italic: cf.and_then(|(_, c)| c.italic()).unwrap_or(font.is_some_and(|f| f.italic) || t_italic),
+            size_pt: size_pt.unwrap_or(size_script),
+            bold,
+            italic,
             zoom,
         },
         env,
     );
     layout_cell_text(&inp, &table.metrics(id), col_px, out);
-    Laid::Done(id)
+    (Laid::Done(id), kind)
 }
