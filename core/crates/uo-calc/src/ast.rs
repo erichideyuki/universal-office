@@ -716,6 +716,104 @@ impl Ast {
         }
     }
 
+    /// The canonical token stream of a tree (pre-order; every field, positions included, parts resolved, strings by
+    /// their interned index, array constants by content): two trees with the same stream evaluate, print and
+    /// report positions identically. The engine hash-conses formulas by it (relative references are offsets, so
+    /// `A1+1` in B1 and `A2+1` in B2 are one tree).
+    pub fn tree_key(&self, root: NodeId, out: &mut Vec<u64>) {
+        let part = |out: &mut Vec<u64>, p: Part| match self.part(p) {
+            None => out.push(u64::MAX),
+            Some(r) => {
+                out.push(r.n.to_bits());
+                out.push(u64::from(r.abs));
+            }
+        };
+        let spec = |out: &mut Vec<u64>, s: u32| match self.spec(s) {
+            None => out.push(u64::MAX),
+            Some(sp) => {
+                out.push(u64::from(sp.sheet.0));
+                out.push(sp.sheet2.map_or(u64::MAX, |x| u64::from(x.0)));
+                out.push(sp.ext.map_or(u64::MAX - 1, f64::to_bits));
+            }
+        };
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            out.push(u64::from(self.pos.get(id.0 as usize).copied().unwrap_or(u32::MAX)));
+            match *self.node(id) {
+                Node::Num { v, raw } => out.extend([1, v.to_bits(), u64::from(raw)]),
+                Node::Str(s) => out.extend([2, u64::from(s.0)]),
+                Node::Bool(b) => out.extend([3, u64::from(b)]),
+                Node::Err(e) => out.extend([4, e as u64]),
+                Node::Arr { start, rows, cols } => {
+                    out.extend([5, u64::from(rows), u64::from(cols)]);
+                    for s in self.array_data(start) {
+                        match *s {
+                            Scalar::Empty => out.push(0),
+                            Scalar::Num(x) => out.extend([1, x.to_bits()]),
+                            Scalar::Bool(b) => out.extend([2, u64::from(b)]),
+                            Scalar::Err(e) => out.extend([3, e as u64]),
+                            Scalar::Str(StrRef::Lit(i)) => out.extend([4, u64::from(i)]),
+                            Scalar::Str(StrRef::Pooled(i)) => out.extend([5, u64::from(i.raw())]),
+                            Scalar::Str(StrRef::Temp(i)) => out.extend([6, u64::from(i)]),
+                        }
+                    }
+                }
+                Node::Cell { sheet, row, col } => {
+                    out.push(6);
+                    spec(out, sheet);
+                    part(out, row);
+                    part(out, col);
+                }
+                Node::Area { sheet, r1, c1, r2, c2 } => {
+                    out.push(7);
+                    spec(out, sheet);
+                    for p in [r1, c1, r2, c2] {
+                        part(out, p);
+                    }
+                }
+                Node::RefErr { sheet } => {
+                    out.push(8);
+                    spec(out, sheet);
+                }
+                Node::Name { name, sym, sheet, flags } => {
+                    out.extend([9, u64::from(name.0), u64::from(sym.0), u64::from(flags)]);
+                    spec(out, sheet);
+                }
+                Node::Table { table, items, n_items, col1, col2 } => {
+                    out.extend([10, u64::from(table.0), u64::from(col1), u64::from(col2), u64::from(n_items)]);
+                    out.extend(self.items(items, n_items).iter().map(|&i| i as u64));
+                }
+                Node::Fn { name, prefix, args, sym } => {
+                    let n = match name {
+                        FnName::Known(ix) => u64::from(ix.0),
+                        FnName::Other(s) => (1 << 32) | u64::from(s.0),
+                    };
+                    out.extend([11, n, u64::from(prefix), u64::from(sym.0), u64::from(args.len)]);
+                    stack.extend(self.kids(args).iter().rev());
+                }
+                Node::Call { f, args } => {
+                    out.extend([12, u64::from(args.len)]);
+                    stack.extend(self.kids(args).iter().rev());
+                    stack.push(f);
+                }
+                Node::Missing => out.push(13),
+                Node::Unary { op, e } => {
+                    out.extend([14, op as u64]);
+                    stack.push(e);
+                }
+                Node::Bin { op, a, b } => {
+                    out.extend([15, op as u64]);
+                    stack.push(b);
+                    stack.push(a);
+                }
+                Node::Paren(e) => {
+                    out.push(16);
+                    stack.push(e);
+                }
+            }
+        }
+    }
+
     /// Owned copy of a string.
     #[must_use]
     pub fn string(&self, i: StrIx) -> JsString {

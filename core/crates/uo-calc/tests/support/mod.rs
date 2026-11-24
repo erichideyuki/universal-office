@@ -3,6 +3,8 @@
 //! lines of `js/capture-store.mjs`, and the digests of the capture facets.
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+pub mod calcwb;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

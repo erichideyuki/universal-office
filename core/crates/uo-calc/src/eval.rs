@@ -74,7 +74,7 @@ pub trait EvalHost {
     /// The existing cells of an area, row by row.
     fn for_each_cell(&mut self, area: Area, f: &mut dyn FnMut(Scalar, u32, u32)) -> Result<(), Throw>;
     /// Formula text of a cell (screen form for the UI).
-    fn formula_text(&mut self, sheet: SheetIx, row: u32, col: u32) -> Option<JsString>;
+    fn formula_text(&mut self, ast: &Ast, sheet: SheetIx, row: u32, col: u32) -> Option<JsString>;
     /// The cell's formula contains SUBTOTAL/AGGREGATE.
     fn is_subtotal_cell(&mut self, sheet: SheetIx, row: u32, col: u32) -> bool;
     /// Row hidden.
@@ -295,6 +295,8 @@ fn err(e: ErrorCode) -> EvalResult {
 enum Work {
     /// Evaluate a node (`top`: the formula's root `+`/`-`).
     Eval(NodeId, bool),
+    /// Evaluate a node whose value the parent operator converts (`operand`) at once.
+    Operand(NodeId),
     /// The left operand is on the value stack: convert it, then evaluate the right one.
     Left { op: BinOp, b: NodeId, top: bool },
     /// Both operands are on the value stack: apply the operator.
@@ -372,6 +374,12 @@ impl Evaluator<'_> {
         r
     }
 
+    /// `implicitIntersection(v, ctx)` at a cell (the engine's `topScalar` of a legacy result).
+    pub fn intersect(&mut self, r: &RefValue, s: Scope) -> Result<Scalar, Throw> {
+        let mut ctx = CellCtx { ev: self, s };
+        implicit_intersection(r, &mut ctx)
+    }
+
     fn enter(&mut self, f: impl FnOnce(&mut Self) -> EvalResult) -> EvalResult {
         if self.st.stack >= MAX_EVAL_DEPTH {
             return Err(Throw::Range);
@@ -433,13 +441,19 @@ impl Evaluator<'_> {
                     Node::Paren(e) => self.st.work.push(Work::Eval(e, false)),
                     Node::Bin { op, a, b } => {
                         self.st.work.push(Work::Left { op, b, top });
-                        self.st.work.push(Work::Eval(a, false));
+                        self.st.work.push(if is_ref_op(op) { Work::Eval(a, false) } else { Work::Operand(a) });
                     }
                     Node::Unary { op, e } => {
                         self.st.work.push(Work::Unary(op));
-                        self.st.work.push(Work::Eval(e, false));
+                        // unary plus passes its operand through untouched (`+A1#`, `+(A1:B2)` stay references)
+                        self.st.work.push(if op == UnaryOp::Plus { Work::Eval(e, false) } else { Work::Operand(e) });
                     }
                     _ => self.work_operand(n, s)?,
+                },
+                Work::Operand(n) => match *self.ast.node(n) {
+                    // a cell of the own sheet whose value the parent converts right away (`operand`): read it now
+                    Node::Cell { sheet: 0, row, col } => self.work_cell(row, col, s)?,
+                    _ => self.st.work.push(Work::Eval(n, false)),
                 },
                 Work::Left { op, b, top } => self.work_left(op, b, top, s)?,
                 Work::Apply { op, top } => self.work_apply(op, top, s)?,
@@ -450,6 +464,19 @@ impl Evaluator<'_> {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// The value of an own-sheet cell operand (`Work::Operand`).
+    #[inline(never)]
+    fn work_cell(&mut self, row: Part, col: Part, s: Scope) -> Result<(), Throw> {
+        let (r, c) = (self.part(row, s.row, true), self.part(col, s.col, false));
+        let v = if r.is_nan() || c.is_nan() {
+            Scalar::Err(ErrorCode::Ref)
+        } else {
+            self.host.cell(s.sheet, crate::cast::to_u32(r), crate::cast::to_u32(c))?
+        };
+        self.st.vals.push(Value::Scalar(v));
         Ok(())
     }
 
@@ -469,7 +496,7 @@ impl Evaluator<'_> {
             self.st.vals.push(opd_value(x));
         }
         self.st.work.push(Work::Apply { op, top });
-        self.st.work.push(Work::Eval(b, false));
+        self.st.work.push(if is_ref_op(op) { Work::Eval(b, false) } else { Work::Operand(b) });
         Ok(())
     }
 
@@ -515,6 +542,15 @@ impl Evaluator<'_> {
             Node::Bool(b) => Value::Scalar(Scalar::Bool(b)),
             Node::Err(e) => Value::Scalar(Scalar::Err(e)),
             Node::Arr { start, rows, cols } => Value::Array(self.ast.array(start, rows, cols)),
+            Node::Cell { sheet: 0, row, col } => {
+                // a cell of the formula's own sheet (the common operand): `refOf` without the prefix lookups
+                let (r, c) = (self.part(row, s.row, true), self.part(col, s.col, false));
+                if r.is_nan() || c.is_nan() {
+                    return Value::Scalar(Scalar::Err(ErrorCode::Ref));
+                }
+                let (r, c) = (crate::cast::to_u32(r), crate::cast::to_u32(c));
+                Value::Ref(RefValue::One(Area { sheet: s.sheet, r1: r, c1: c, r2: r, c2: c }))
+            }
             Node::Cell { sheet, row, col } => self.ref_of(sheet, s, row, col, row, col),
             Node::Area { sheet, r1, c1, r2, c2 } => self.ref_of(sheet, s, r1, c1, r2, c2),
             Node::RefErr { .. } => Value::Scalar(Scalar::Err(ErrorCode::Ref)),
@@ -582,6 +618,16 @@ impl Evaluator<'_> {
 
     #[inline(never)]
     fn scalar_op(&mut self, op: BinOp, x: Scalar, y: Scalar, top: bool) -> Result<Scalar, Throw> {
+        if let (Scalar::Num(a), Scalar::Num(b)) = (x, y) {
+            // two numbers: `arith` without the coercion context
+            match op {
+                BinOp::Add => return Ok(if top { crate::ops::add_sub_top(a, b, false) } else { crate::ops::add_sub(a, b, false) }),
+                BinOp::Sub => return Ok(if top { crate::ops::add_sub_top(a, b, true) } else { crate::ops::add_sub(a, b, true) }),
+                BinOp::Mul => return Ok(crate::ops::num_result(a * b)),
+                BinOp::Div => return Ok(if b == 0.0 { Scalar::Err(ErrorCode::Div0) } else { crate::ops::num_result(a / b) }),
+                _ => {}
+            }
+        }
         let (d1904, year) = self.num_ctx_parts();
         let c = NumCtx { locale: self.host.locale(), date1904: d1904, year };
         let arith_op = match op {
@@ -1322,7 +1368,7 @@ impl FnContext for CellCtx<'_, '_> {
         self.ev.host.for_each_cell(area, f)
     }
     fn formula_at(&mut self, sheet: SheetIx, row: u32, col: u32) -> Option<JsString> {
-        self.ev.host.formula_text(sheet, row, col)
+        self.ev.host.formula_text(self.ev.ast, sheet, row, col)
     }
     fn is_subtotal_cell(&mut self, sheet: SheetIx, row: u32, col: u32) -> bool {
         self.ev.host.is_subtotal_cell(sheet, row, col)

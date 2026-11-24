@@ -291,7 +291,7 @@ impl EvalHost for Mock {
         }
         Ok(())
     }
-    fn formula_text(&mut self, _: SheetIx, _: u32, _: u32) -> Option<JsString> {
+    fn formula_text(&mut self, _: &Ast, _: SheetIx, _: u32, _: u32) -> Option<JsString> {
         None
     }
     fn is_subtotal_cell(&mut self, _: SheetIx, _: u32, _: u32) -> bool {

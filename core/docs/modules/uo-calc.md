@@ -6,7 +6,8 @@ Status: **architecture pass done 2026-11-24 (Opus)**: data model, frontiers, cap
 "S0 — the store, as built". **Frontier A1 (values, coercion, collation entry points, criteria, dates, stats base,
 special functions, libm, math support) done 2026-11-24 (Opus)**: section "A1 — as built". **Frontier A2 (addresses,
 the tree arena, parser, printer, registry contract, operators, apply, evaluator) done 2026-11-24 (Opus)**: section "A2 —
-as built"; A3–A5 are not ported yet.
+as built". **Frontier A3 (the engine: graph, full/incremental recalc, spills, CSE, cycles, iteration, volatiles) done
+2026-11-24 (Opus)**: section "A3 — as built"; A4 (function bodies) and A5 are not ported yet.
 The M3 gate (plan §11)
 approves it together with the track C section of `uo-xlsx.md` ("Track C architecture").
 
@@ -469,6 +470,132 @@ medians of 7, ns per formula):
 These are the first A2 records (the 10% regression rule starts from them). Wasm numbers come with the `sheet` suite of
 `tools/bench/speed` when the engine is wired into `uo-sheet.wasm`.
 
+## A3 — as built (2026-11-24, Opus)
+
+Code (`core/crates/uo-calc/src/engine/`): `mod.rs` (types, `Engine::new` = the TS constructor + `load` in FILE order,
+`analyze`, `nameVolatile`, the public API), `graph.rs` (the formula column index `formulaCols`, the record slab,
+`allFormulas`, the reverse index), `host.rs` (the engine's view of a TS `CellRec` derived from the store's lanes, the
+`EvalHost` implementation), `recalc.rs` (`setCell`, `markDependents`, `pendingPrecedents`, `computeRoot`,
+`evaluateRec`, `spill`, the CSE fill, `run`, `iterateCycles`, the one write path). Store additions (S0 files):
+`Store::{claim_owned, clear_content, set_formula, formula_attrs_mut}`, `CellWrite::Pooled` (a pooled text written
+without a copy) and a number fast path in `write_value`; `FormulaTable::get_mut`; `RandomSource::{seeded, sequence,
+next_f64, consumed}`; `Ast::tree_key` (hash-consing). No `unsafe`.
+
+**API**: `Engine::new(&mut Store, &EngineInput, &EngineOptions, Option<&mut dyn SstSource>)`; `recalc`, `calculate`,
+`calculate_cells` (the partial open recalc) and `set_cell(.., Option<CellInput>)` take `&mut Store`, the `Clock` and the
+`RandomSource` of the call and return `Changes`; reads `value`, `for_each_value`, `has_formula`, `owner`, `spill_of`,
+`circular`, `internal_errors`, `not_ported`, `precedents_of`, `dependents_of`, `orphans`; `take_trace` (evaluation
+order, `EngineOptions::trace`); `check_invariants`, `heap_bytes`, `clear_caches`. `EngineInput` carries what is not in
+the store: sheet names, defined names, tables, external caches, `calcPr`, the dynamic-array `cm` values (the reader,
+C1a, fills it). Edits: `CellInput::{Value, Text, Formula(FormulaInput { text, array, dynamic, ref, ca })}`.
+
+**Shapes (PERF).** A formula is a 32-byte `Rec` in a slab (sheet, row, col, flags, tree, scan pass, walk epoch, load
+order, template): no per-cell heap object anywhere in the graph. Formula trees are **hash-consed per sheet** at parse
+(`Ast::tree_key`: every field, text positions included — relative references are offsets, so `A1+1` in B1 and `A2+1` in
+B2 are one tree; a shared formula's children use the anchor's tree as the TS). **Static precedents are a template per
+(tree, sheet)**: the reference nodes of the tree with names expanded in the TS `depsOf` order; a reference without a
+sheet prefix is instantiated by arithmetic at the formula's cell (the evaluator's `refOf`: absent part → sheet edge,
+absolute → itself, relative → wrapped offset), any other (prefix, 3D, external, table) through the evaluator; nothing is
+stored per formula. The **reverse index** (built at the first `markDependents`, as the TS) keeps per column the row
+intervals bucketed by `⌈log2 length⌉` and sorted by first row: a stabbing query is `O(log n + hits)` per class where the
+TS scans the column (the reason a 20k-chain edit costs the TS 0.6–1.2 s); once built it is **maintained incrementally**
+on formula edits (the TS drops and rebuilds it). The **dirty set** is a list: a pass sorts the dirty formulas by
+(sheet, row, col, load order) and touches nothing else; past 1/8 of the formulas it walks the sorted `allFormulas`
+(rebuilt lazily). `formulaCols` keeps the TS first-insertion order of columns (the `fc.keys()` order site of S7), each
+column's current formula per row (probe at `row − first row`, binary search otherwise) and its dirty count (orphans
+included, as `dirtyCount`); `rangeMasters` is an insertion-ordered `Vec`. Owners of spilled/CSE cells are one map by
+cell key (+ a bit for `ignoreCache` claims), mirrored by the store's `OWNED` bit.
+
+**Decisions taken in A3 (declared; observable output equal unless said):**
+
+| Id | Decision |
+|---|---|
+| A3-1 | The TS `CellRec` is derived from the store: a cell exists for the engine when it has a current formula, an owner, or a non-null `cellValue`; a formula cell without a value reads 0 (`inp.v ?? 0`; a data table `null`); a styled cell without a value is invisible (the TS never loads it). `ignoreCache`: a formula reads 0 until written (flag on the record), an owned cell `null`; the file value a cycle restores (`cached`) is kept per formula (texts as arena literals). `-0` is kept (S0-4); a cell is written only when the JS `!==` says it changed (`0`/`-0` equal, texts by content). |
+| A3-2 | One write path (S5): the engine writes the store with the bridge's kinds (`formula` / `spill` / `constant` by the cell's state), `claim_owned` creates a spilled cell with the row/column default style, a released cell is stripped and deleted unless styled; `setDynamicAttrs` updates the anchor's `<f>` attributes (`t="array"`, `ref`, `ca`, `cm` = the first dynamic `cm` when it spills) whenever its value or area changes. `Changes` = per sheet the bounding area and the number of writes (not distinct cells) + `grew`; the TS restore of a cycle's cached value (`rec.v = m.cached`, untouched) is a store write here and counts as a change. |
+| A3-3 | **Not here — A4**: function bodies. An evaluation that reaches one gets `#VALUE!` and is listed in `not_ported` (sheet, row, col, function). **A5**: the legacy `@` rewrite (`exec` = the tree: legacy formulas with ranges/tables/multi-cell names evaluate as dynamic ones until A5), `_xll.` add-in resolution, `sourceText` with implicit positions (`FORMULATEXT` returns the original text or the printed tree), `setComputedCriterion`/`criterionAt` (wired when the database functions land), the `cellInfo` host callback (C5; `fileName` is done). |
+| A3-4 | Duplicate `<c>` elements: the store keeps the last; the shadowed earlier formulas are loaded from `FileOrder` as **orphaned records** (the TS keeps them in `formulas`: they are evaluated in sheet order and write the cell); their own cached value under `ignoreCache` is not kept (the live duplicate's value is in the store). |
+| A3-5 | A formula the TS parser throws a `TypeError` on (an unclosed `(` at the end, A2-4) makes the TS constructor throw; Rust treats it as a syntax error (`#NAME?`). A syntax error in a defined name: `#NAME?` as the TS. |
+| A3-6 | A non-finite number written by the engine reads back as empty (the S0-2 NaN convention); no operator produces one (`num_result`), only a future hostile body could. |
+| A3-7 | `values()` of an area still above 2^24 cells after the used-row cap: `Throw::Range` (`#NUM!`) instead of allocating; `iterateCount` capped at 32,767 (NaN or ≤ 0 → no sweep, as the TS loop). |
+| A3-8 | A table name used alone resolves to a node carrying the table's own name (the TS keeps the case as written: same evaluation, a printed `FORMULATEXT` could differ in case). |
+| A3-9 | Shared strings: `Engine::new(.., Some(src))` decodes every entry the sheets use; a read of an undecoded entry gives `""` (the reader must pass its source). |
+| A3-10 | Evaluator fast paths (A2 code, A2 parity re-run clean): an own-sheet cell operand that the parent operator converts at once is read directly (`Work::Operand`; unary `+` keeps references, `+A1#`), `Num × Num` arithmetic skips the coercion context, the clock's year is computed once per call. |
+| A3-11 | `RandomSource::Seeded` is xorshift128+ (53-bit doubles), `Sequence` replays captures; the product seeds it from the host. |
+
+**Parity** (`tests/a3.rs`, group **calc-order**, re-captured with the `ops` group, the `legacy`/`opts` facets and the
+`full.vals` sidecar lines; replayed from the captured `CalcWorkbook` streamed into a store through the S0 loader —
+out-of-order rows and duplicates included; `UO_A3_KEY=… debug_key` prints a run's order against the TS):
+
+| Run | Input | Result |
+|---|---|---|
+| CI `calc_order_ops` | 40 operator-only workbooks × 14 runs (`recalc`, `calculate`, 12 edits: values, texts, operator formulas, dynamic and CSE arrays, `ca`, deletes) + the full recalc of the final inputs | **560/560 runs: evaluation order equal, random values equal, `circular` 40/40 equal, 129,106 cell values equal, incremental-vs-full verdict 40/40 equal, 0 mismatches**; 2,915 values deferred (the legacy `@` of a sheet-scoped name used on another sheet: A5) |
+| CI `calc_order_x1` | the 30 generated x1 workbooks (functions everywhere) | order equal in 199/420 runs, 221 deferred (a body ran); `circular` 30/30 equal; **62,928 values equal, 0 mismatches**, 36,688 deferred; incremental-vs-full 8 equal, 22 deferred |
+| local `calc_order_big` (`UO_A3_BIG=1`, release, 14 s) | x1-big (400) + ops (400): 11,200 runs, 1,012,819 evaluations | order equal 6,990, deferred 4,210, **0 mismatches**; `circular` 756 equal, 44 deferred; **7,601,138 values equal, 0 mismatches**, 3,434,705 deferred; incremental-vs-full 495 equal, 305 deferred |
+
+**Deferred = what waits for A4/A5, precisely**: a cell is deferred when its evaluation reached a function body
+(`not_ported`), when it is a legacy formula the TS rewrote with `@` (capture facet `legacy`; edit formulas by a
+conservative text test), when a step's order differs because a body ran and two formulas (orphaned duplicates) write the
+same cell, or when it depends — through the static graph, a spill footprint that differs or an owner — on such a cell.
+A run's order is deferred when a body ran in it or when the order without the deferred cells is equal (a body-less
+anchor reads `#VALUE!` where the TS has `#SPILL!`, so an edit dirties it there and not here). The `RAND` sequence is
+deferred with its body (`RAND`/`RANDBETWEEN`/`RANDARRAY` are A4): in the CI x1 group 208 runs consumed random values
+in the TS; the order sites that decide it (`rangeMasters`, `fc.keys()`, the static precedent order) are compared by the
+order facet. When A4 lands, the same replay turns the deferred cells into compared ones with no harness change.
+
+**Robustness** (`tests/a3_robust.rs`, debug ≈ 7 s): a 200,000-formula chain (1,000,000 in release) whose first formula
+needs the whole chain, on a **256 KiB thread** (no recursion in the scheduler) + an edit at its bottom; a 50,000-formula
+ring with and without iteration (all circular; previous values kept / converges); **incremental = full** on 60 seeded
+acyclic operator workbooks × 30 edits (400 in release), every value compared with a fresh engine's full recalc
+(138,477 values in debug); 150 seeded **hostile workbooks** (1,500 in release: cycles, CSE areas, spills into each
+other, merges, duplicates, iteration, `ignoreCache`, every kind of edit) with the engine's and the store's invariants
+checked after every call (worst workbook 18 ms debug). Fuzz target **`calc_workbook`** (`core/fuzz/src/calc.rs`: bytes
+→ workbook + edit script, invariants after every call; 10 seeds): bounded local run with the stable fallback driver (`--secs 180 calc_workbook`, 11 seeds): 1,216,203 executions, **0 crashes**, slowest input 15.7 ms.
+
+**Memory**: M1 — `recalc` + `calculate` + `dependents_of` + `clear_caches`, an edit and its inverse, and building and
+dropping an engine leave the live bytes exactly where they were. M2 — 1,000 × (edit → calculate) on a 6,000-cell
+workbook (numbers, texts, a formula replaced back and forth, a spill anchor re-typed), sampled every 50: after warm-up
+the series stays within 0.4 KB (tolerance 64 KiB). M3 — engine heap on shared-1m: **50.3 B/formula** (50.3 MB for 1,000,000 shared formulas; 62.9 B with the reverse index built) — budget ≤ 200 B/formula; the build's peak equals what it keeps (42 MB: the load streams the file order in bounded batches — a first version materialized one record per cell and peaked at 213 MB); a recalc peaks at 9.4 MB above its start (the sorted formula list). TS: 636 MB retained (the same cells); M5 — the only per-pass
+buffers are the evaluator's arenas, cleared after every formula (A2-10 caps them), and the scheduler's scratch vectors.
+
+**Benchmarks** (`benches/a3.rs` vs `js/bench-a3.mjs`: the frozen TS engine on the SAME cells, built as its
+`CalcWorkbook`; one process each, i5-14600KF, medians of 5 after a warm-up; Rust native release; operator-only
+variants where the baseline class needs a function body):
+
+| Class | formulas | TS build ms | Rust build ms | TS recalc ms | **Rust recalc ms** | Rust / TS | TS retained MB | Rust engine heap MB |
+|---|---|---|---|---|---|---|---|---|
+| chain-100k (`A{i}+1`) | 99,999 | 147 | 62 | 30.4 | **17.5** | 0.57 | 88.7 | 6.0 |
+| sum3-100k (`A{i}+A{i+1}+A{i+2}*2`; the window `SUM` is A4) | 100,000 | 293 | 85 | 47.2 | **39.7** | 0.84 | 54.2 | 6.0 |
+| text-50k (`A{i}&"x"&i`; the text functions are A4) | 50,000 | 106 | 48 | 58.0 | **37.5** | 0.65 | 58.9 | 21.7 |
+| dynamic-1k (20 spills of `$A$1:$A$1000` with operators; SORT/UNIQUE/FILTER are A4) | 20 | 1.0 | 0.1 | 5.2 | **4.2** | 0.81 | — | 0.4 |
+| volatile-10k (`ca` formulas + dependents; RAND is A4): recalc / **calculate** | 20,000 | 38.5 | 18.6 | 5.2 / 318 | **3.5 / 4.1** | 0.68 / **0.013** | 14.3 | 9.3 |
+| cycles-iterate (1,000 two-cell cycles, iterate 100/0.001) | 2,000 | 7.8 | 1.4 | 22.1 | **1.3** | **0.06** | — | 0.1 |
+| shared-1m (one shared formula over 1M cells) | 1,000,000 | 1,097 | 198 (**0.18×**) | 706 | **167** | **0.24** | 636 | 48 |
+| edit: head of a 20k chain (setCell + calculate), p50 / p95 | — | — | — | 1,262 / 1,340 | **4.8 / 5.7** | **0.004** | — | — |
+| edit: an isolated cell, p50 / p95 | — | — | — | 0.14 / 0.29 | **0.00 / 0.01** | — | — | — |
+
+TS retained MB is the heap after GC per class run in its own process (`--only`); negative or missing values of the
+all-classes run are GC noise. The record's TS baseline (`sheet.mjs`, through the .xlsx reader) has chain-100k at 72.7 ms
+and shared-1m at 1,390 ms; against those, chain-100k is 0.24× and shared-1m 0.12×.
+
+**Verdict (PERF rows of A3)**: shared-1m (recalc 0.24×, build 0.18×, memory 13× smaller), the cycles, `calculate` with
+volatiles and the edit latency (5.7 ms p95 native for 20,000 dirtied formulas; TS 1.3 s — the reverse-index scan) are far
+inside the budgets. **The small-formula classes miss the ≤ 0.5× native budget** against the same-cells TS: chain 0.57×,
+text 0.65×, volatile recalc 0.68×, dynamic 0.81×, sum3 0.84× (all < 1.0×, so no hard failure). Measured by phase
+(Instant probes, since removed): the scheduler costs ≈ 25 ns/formula (precedent scan) and the write-back ≈ 40 ns; the
+rest is the A2 evaluator's operator machine (≈ 100 ns for `A1+1`, ≈ 300 ns for three references and three operators) —
+it is the limit, not the graph. Already done here (A3-10): direct cell operands, `Num × Num` without the coercion
+context, the cached year, a canonical-lane `cellValue` fast path, the dense probe in the column index. Proposed for the
+stage-5 pass (maintainer decision, not done): compile each hash-consed tree once into a flat instruction list
+(templates make that one compile per filled-down column) instead of re-walking the node arena per evaluation. Wasm
+numbers (edit ≤ 16 ms p95) come with the `sheet` suite when the engine is wired into `uo-sheet.wasm` (C4); the wasm32
+stack probe after the evaluator change: worst 147 KB of the 1 MiB shadow stack (A2: 219 KB), native worst 511 KB (A2:
+515 KB).
+
+**Open items**: (1) the tree arena only grows: a long editing session typing distinct formulas keeps their trees (≈ 100
+B each; filled-down and retyped formulas are deduplicated) — an arena compaction belongs with A5/C5's edit session; (2)
+`calc-tests` Engine calls (24 engines, 159 calls) are not replayed yet: almost all of them go through function bodies —
+A4 adds the replay together with the bodies; (3) the wasm edit-latency number (C4).
+
 ## Frontiers (closed scope per frontier; all Opus)
 
 | # | Scope | Delivers | Captures | Lines | Needs |
@@ -476,7 +603,7 @@ These are the first A2 records (the 10% regression rule starts from them). Wasm 
 | **S0** (**done** 2026-11-24, section "S0 — the store, as built") | `key`, `strings`, `store`, `formula` (file side), `cellValue`/`fileCellValue`/`numberLiteral` | the store API: get/set/delete, kind/payload/style lanes with widening, area iteration row-major and column runs, viewport gather, string pool with refcounts and compaction, SST lazy decode hooks, extras, `FileOrder`, row meta, default style, the **store facet** (canonical JSON of every cell, below) | store facet of the TS model for every committed sample + generated workbooks (via a TS adapter that turns the sheet-core model into the facet) | ≈ 600 TS-equivalent + new | — |
 | A1 (**done** 2026-11-24, section "A1 — as built") | values/coerce/collate (already in `uo-text`)/criteria/dates/stats/special/libm/math-util | as plan §5 A1; the context walkers and `FnDef` factories go to A2/A4 (A1-7) | the new `a1` group (every A1 entry point, traps + seeded) and the A1 calls of `calc-tests`; `calc-traps`/bank enter through the evaluator (A2+) | ≈ 1,900 | — |
 | A2 (**done** 2026-11-24, section "A2 — as built") | ast/parse/print/a1/evaluate/apply/ops/fn | `parse`/`print` with a depth limit and an explicit stack, `trait EvalHost` (the TS interface, `evaluate.ts:34-61`); as built: no recursion through operators anywhere (A2-2), the registry table generated from the TS, bodies hooked for A4 | the new `a2` group (parse/print/round trip, evaluation over a mock workbook, ops, a1, applyFn) and the A2 calls of `calc-tests` | ≈ 1,460 | A1 |
-| A3 | engine (graph, full/incremental recalc, `NeedCell` as `Result`, spills, CSE, data tables skip, cycles/iteration, volatiles) on S0 | `Engine` over `&mut Store` | per-cell values + evaluation-order facet over generated workbooks, incremental = full, `calc-tests` | ≈ 900 | S0, A2 |
+| A3 (**done** 2026-11-24, section "A3 — as built") | engine (graph, full/incremental recalc, `NeedCell` as `Result`, spills, CSE, data tables skip, cycles/iteration, volatiles) on S0 | `Engine` over `&mut Store` | per-cell values + evaluation-order facet over generated workbooks, incremental = full, `calc-tests` | ≈ 900 | S0, A2 |
 | A4a | math, math-util, libm, complex, engineering | functions | bank + traps | 2,000 | A3 |
 | A4b | statistical, distributions, regression, ets | functions | bank + traps | 1,628 | A3 |
 | A4c | financial, daycount, datetime | functions | bank + traps | 1,390 | A3 |
@@ -518,7 +645,7 @@ text (`lib/common.mjs` `makeValueText`: `n<f64 bits>`, `s<JSON>`, `b1/b0`, `e<co
 | **bank** | `node core/crates/uo-calc/js/capture-bank.mjs`; local `--locales pt-BR,en-US --out core/target/sheet-cap/bank-big.capture` | `bank.capture` 2.9 MiB + `bank.values.gz` (values over 512 units), 35,299 records, 0.9 s | `runCase(case, PT_BR)` of `testing.ts` (the TS oracle test's entry: `callFn` over `mockContext`, or parse + `Engine.recalc` for whole-formula cases) over the 27 `*.cases.json` of `sheet/packages/calc/test/oracle` (read from this worktree; `@oracle-digest` stamps them, `in` per case). Status per case: 34,477 match, **775 known** (`*.known.json`, reason digest in `why`; + 2 in `locale-pt-BR.known.json` = the 777, i18n tables replayed by calc-tests), **47 xlerr** (Excel could not answer), 0 diverge, 0 throw; the Excel answer is kept for every non-match. The local run adds every case in en-US (TS results only) |
 | **calc-tests** | `node core/crates/uo-calc/js/capture-tests.mjs`; local `--big` (no cap) | `calc-tests.capture` 1.3 MiB + `calc-tests.calls.gz` 268 KiB (the full calls), 10,866 calls | the 16 `calc/test/*.test.ts` except `oracle.test.ts` (the bank replays it) + `sheet/test/{sheet-calc,style-pool,entry}.test.ts` = 19 files, 152 tests, all passing under the recorder. Every `export function` of `calc/src` (248 sites: evaluate, parse/print, applyFn/callFn, writeValues, fromSheetCore, open-recalc, save, file-form, i18n…) and the public methods of `Engine`, `SheetCalc`, `XfPool` are wrapped in memory by a Vite plugin (`calc-tests/`; the checkout is never written); only outermost calls are kept, with canonical arguments, result or exception, receiver id and the `Math.random` values consumed. Clock frozen, `Math.random` seeded per file. Filtered: 3,186 registration calls at module load; CI keeps ≤ 200 pure calls per (test, function) by stride (41,665 dropped, all kept by `--big`) |
 | **calc-traps** | `node --max-old-space-size=8192 core/crates/uo-calc/js/capture-traps.mjs` (≈ 8 min); local `--big` (41 min) | `calc-traps.capture` 1.1 MiB, 535 functions, 54,120 calls | per function, a seeded baseline from the bank (the plain-argument case with the most arguments) and each position 0..3 replaced by 31 CORE traps (NaN, -0, ±∞, 1e21, 1e-7, 2^53+2, 17 digits, denormal, empty, lone surrogate, astral, combining, non-ASCII, Turkish İı, pt-BR/en-US text-numbers, TRUE, empty, omitted, #N/A/#DIV/0!/#VALUE!, empty/1×1/union/whole-column ranges, 2×2 and ragged arrays) in pt-BR, plus the text traps in en-US. `--big`: 98 traps (every error code, more digit counts, subnormals, white space, wildcards, regex text, dates, booleans as text, rows/blocks), positions 0..5, both locales, 24 seeded pairs per function and locale. The trap table is in the file (`@trap.*`). Calls run in a child process with a 5 s watchdog per call; a call that does not return is `timeout:5000ms`, one that kills the process (V8 fatal) `crash:<exit>`, and the child restarts at the next call |
-| **calc-order** | `node core/crates/uo-calc/js/capture-order.mjs`; local `--gen x1-big --heavy 20000` | `calc-order.capture` 74 KiB + `.side.gz` 423 KiB, 30 workbooks | the evaluation-order facet of §16 item 4: the generated workbooks (uo-xlsx `gen-workbook.mjs` group x1, read by sheet-core's dist, `fromSheetCore` → the `CalcWorkbook`, kept in the sidecar so A3 can replay before C1a exists) through `new Engine` + `recalc()`, a `calculate()`, 12 seeded `setCell` + `calculate()` edits, and a fresh full recalc of the final inputs: per run the `evaluateRec` sequence (13,970 evaluations in x1), the RAND values (1,570), `circular` sorted (13 workbooks with cycles), `internalErrors` (0), all values, and incremental vs full (equal in 6, differ in 24: volatiles and cycles — recorded, not judged). The x1 workbooks put ranges wider than the formula columns next to spills/CSE (the `fc.keys()` and `rangeMasters` sites of S7) |
+| **calc-order** | `node core/crates/uo-calc/js/capture-order.mjs`; local `--gen x1-big --ops 400 --out core/target/sheet-cap/calc-order-big.capture` (61 s) | `calc-order.capture` 172 KiB + `.side.gz` 975 KiB, 30 x1 + 40 ops workbooks (A3 added the `ops` group, the `legacy` and `opts` facets and the `full.vals` sidecar lines; section "A3 — as built") | the evaluation-order facet of §16 item 4: the generated workbooks (uo-xlsx `gen-workbook.mjs` group x1, read by sheet-core's dist, `fromSheetCore` → the `CalcWorkbook`, kept in the sidecar so A3 can replay before C1a exists) through `new Engine` + `recalc()`, a `calculate()`, 12 seeded `setCell` + `calculate()` edits, and a fresh full recalc of the final inputs: per run the `evaluateRec` sequence (13,970 evaluations in x1), the RAND values (1,570), `circular` sorted (13 workbooks with cycles), `internalErrors` (0), all values, and incremental vs full (equal in 6, differ in 24: volatiles and cycles — recorded, not judged). The x1 workbooks put ranges wider than the formula columns next to spills/CSE (the `fc.keys()` and `rangeMasters` sites of S7) |
 | **a1** (A1) | `node core/crates/uo-calc/js/capture-a1.mjs`; local `--big --out core/target/sheet-cap/a1-big.capture.gz` (19 s) | `a1.capture.gz` 521 KiB, 52,402 calls (big: 486,022) | every A1 entry point of the calc dist called directly: traps + seeded inputs in four locales (en-US, pt-BR, a de-DE host locale, an empty-group locale), clock frozen at 2025-01-15 12:00 UTC; records `<fn>#<i>` with `in` (value texts) and `out`; replayed by `tests/a1.rs` (section "A1 — as built") |
 | **a2** (A2) | `node core/crates/uo-calc/js/capture-a2.mjs`; local `--big --out core/target/sheet-cap/a2-big.capture.gz` (14 s) | `a2.capture.gz` 1.1 MiB, 52,948 records (big: 251,407) | parse (`canon` of the AST = the calc-tests recorder's JSON, or `throw:<Class>:<pos>`), six prints and the round trip of the bank's, the generated workbooks' and seeded/mutated formulas under eight option sets; `Evaluator.evalFormula` over a mock host described in `@mock` (function bodies replaced by a marker: `A4` where the TS called one); `ops.ts` over 42 trap values in two locales; `a1.ts`; `numberLiteralValue`; `applyFn` over synthetic definitions with the body's call log. Replayed by `tests/a2.rs` |
 | **store** (S0) | `node core/crates/uo-calc/js/capture-store.mjs`; local `--big --out core/target/sheet-cap/store-big.capture` (47 s) | `store.capture` 19 KiB + `store.side.gz` 146 KiB, 35 workbooks + 1,750 traps (0.2 s) | the TS adapter of the store facet (`storeOf` rule of uo-xlsx `capture-sheet.mjs`): per sheet the model cells in FILE order (`in<i>`, the test-only loader's input), `st<i>`, `fo<i>`, `rw<i>`, `cellValue` per cell (`cv<i>`), the SST texts; samples (giants only in `--big`) + x1 (`--big`: + x1-big); per-parameter traps of `numberLiteral`/`numberText`/`fileCellValue`/`errorOf`/`cellValue`. Replayed by `tests/parity.rs` (section "S0 — the store, as built") |
@@ -685,3 +812,4 @@ Listed in the plan's §16 with the evidence.
 | S0 store (port + TS adapter + parity + memory + fuzz target + benchmarks) | Opus | ≈ 42 min wall (03:08-03:50) | 0 parity rounds (the first replay was clean: CI 337 facets, local 5,161); rework found by the verifiers built in the same session, all fixed by the same agent: (1) payload lane widened after the kinds lane changed — a string id widened as a number, caught by the differential ops test as a pool reference count ≠ holders; (2) `each` on a sheet without columns indexed `columns[0]` (ops test); (3) an emptied `BTreeMap` of extras kept its root leaf, 1,776 B (M1); (4) random get 1M over budget (16.4 ms) until `Column::find` probed the direct index (3.7 ms); (5) the ops harness's full-model check made fuzz inputs take 3 s (now every 64 ops) |
 | A1 (port of values/coerce/collate entry points/criteria/dates/stats/special/libm/math-util + `a1` capture + parity + robustness + memory + benchmarks vs the TS) | Opus | ≈ 35 min wall (03:52-04:27) | 0 parity rounds: the first replay of the 52,402-call capture had only NaN-payload differences (A1-2), the big run (486,022) and the calc-tests calls (548 + 1,262) were clean; rework found by the tests and benchmarks of the same session, all fixed by the same agent: (1) `BASE_1900` constant off by one day (dates unit test); (2) a `usize` loop underflow in `sin_dd` (debug overflow, before any run); (3) Latin-1 `compareText` 2.6× slower than the TS (keys per call) → element table; (4) ASCII criterion text missed the fast path (stored as UTF-16); (5) the exponent of `numberCore` allocated (zero-allocation test); (6) 13 float → int casts routed through `cast.rs`/`js_index` for the float-casts gate |
 | A2 (port of a1/ast/parse/print/fn/ops/apply/evaluate + function table generator + `a2` capture + parity + robustness + stack probes native/wasm32 + fuzz target + memory + benchmarks vs the TS) | Opus | ≈ 1 h 26 min wall (04:28-05:54) | 0 parity rounds: the first replay of the CI capture (158,153 facets), the big run (612,438) and the calc-tests calls (1,442 + 30,186) were clean, and stayed clean after the evaluator rewrite; rework found by the tests and probes of the same session, all fixed by the same agent: (1) a recursive evaluator and printer used 464 B (paren) to 1.26 KB (chained operator) of native stack per level — a 1,000-term chain overflowed a 1 MiB thread → operator work stack + iterative printer (A2-2), parser depth counted on function nesting only; (2) the union `,` was quadratic (50k areas 44 s debug) → in-place append + one-sheet flag (A2-11); (3) clippy (collapsible ifs, `f64::min/max` → `uo_jsnum::math`, 6 float casts → `cast.rs`); (4) the bench's JSON reader rejected a cases file with a trailing byte; (5) the first fuzz run stalled once, not reproduced (see A2 robustness) |
+| A3 (engine: graph, templates, reverse index, scheduler, spills/CSE, cycles/iteration, edits, the one write path + `ops` capture group + parity replay + robustness/fuzz target + memory + benchmarks vs the TS) | Opus | ≈ 1 h 5 min wall (05:56-07:01) | 0 parity rounds (no port bug sent back by a verifier); rework found by the replay and tests of the same session, all fixed by the same agent: (1) shadowed duplicates read the store's `(col, FileCell)` as `(row, …)` — orphaned formulas were lost (ops order facet); (2) `circular` compared as numbers, the capture sorts strings (harness); (3) the taint closure only grew from new seeds, so new formulas reading old deferred cells were compared (harness); (4) under `ignoreCache` a cycle restored the store value, which an orphan had overwritten — the cached file value is now kept per formula; (5) a run whose order differs only in deferred cells was counted as a mismatch (harness); (6) the `Work::Operand` fast path converted the operand of a unary `+`, breaking `+(A1)#` (a2 replay, 2 records); (7) the load materialized one record per cell (213 MB peak on shared-1m → 42 MB, streamed batches); (8) `-0` lost by the robustness test's loader (test); (9) clippy (`f64::min`, an `x + 1 <= y`, a complex type) |

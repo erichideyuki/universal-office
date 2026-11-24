@@ -34,3 +34,10 @@ pub(crate) fn to_u32(x: f64) -> u32 {
 pub(crate) fn to_i32_small(x: f64) -> i32 {
     x as i32
 }
+
+/// An integer below 2^53 as a double (exact).
+#[allow(clippy::cast_precision_loss)]
+pub(crate) fn u53_to_f64(x: u64) -> f64 {
+    debug_assert!(x < 1 << 53);
+    x as f64
+}

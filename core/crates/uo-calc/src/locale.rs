@@ -112,6 +112,53 @@ pub enum RandomSource {
     Sequence(Vec<f64>, usize),
 }
 
+impl RandomSource {
+    /// A seeded generator (xorshift128+; a zero seed is replaced, the state must not be all zero).
+    #[must_use]
+    pub fn seeded(seed: u64) -> Self {
+        let a = seed ^ 0x9e37_79b9_7f4a_7c15;
+        let b = seed.wrapping_mul(0xbf58_476d_1ce4_e5b9) | 1;
+        Self::Seeded([a, b])
+    }
+
+    /// A recorded sequence (parity replays).
+    #[must_use]
+    pub fn sequence(values: Vec<f64>) -> Self {
+        Self::Sequence(values, 0)
+    }
+
+    /// The next value in `[0, 1)` (`Math.random()`). An exhausted sequence keeps returning 0.
+    pub fn next_f64(&mut self) -> f64 {
+        match self {
+            Self::Seeded(s) => {
+                let (mut s1, s0) = (s[0], s[1]);
+                s[0] = s0;
+                s1 ^= s1 << 23;
+                s1 ^= s1 >> 17;
+                s1 ^= s0;
+                s1 ^= s0 >> 26;
+                s[1] = s1;
+                // the top 53 bits of the sum, as V8 builds a double in [0, 1)
+                crate::cast::u53_to_f64(s[1].wrapping_add(s[0]) >> 11) / 9_007_199_254_740_992.0
+            }
+            Self::Sequence(v, i) => {
+                let x = v.get(*i).copied().unwrap_or(0.0);
+                *i += 1;
+                x
+            }
+        }
+    }
+
+    /// Values consumed so far (a sequence) or 0.
+    #[must_use]
+    pub fn consumed(&self) -> usize {
+        match self {
+            Self::Sequence(_, i) => *i,
+            Self::Seeded(_) => 0,
+        }
+    }
+}
+
 fn js(s: &str) -> JsString {
     JsString::from_str_js(s)
 }

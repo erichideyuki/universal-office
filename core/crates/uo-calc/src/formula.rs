@@ -148,6 +148,14 @@ impl FormulaTable {
         Some((id, self.by_id(id)?))
     }
 
+    /// The formula at `(row, col)`, mutable.
+    pub fn get_mut(&mut self, row: u32, col: u32) -> Option<&mut FileFormula> {
+        let i = self.slots.binary_search_by_key(&col, |&(c, _)| c).ok()?;
+        let c = self.columns.get(self.slots.get(i)?.1 as usize)?;
+        let id = *c.ids.get(c.rows.binary_search(&row).ok()?)?;
+        self.formulas.get_mut(id.0 as usize)?.as_mut()
+    }
+
     /// A formula by id.
     #[must_use]
     pub fn by_id(&self, id: FormulaId) -> Option<&FileFormula> {

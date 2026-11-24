@@ -7,9 +7,10 @@
 //! double-double libm ([`libm`]) and the math support ([`math_util`]).
 //! **Frontier A2 done**: addresses ([`a1`]), the formula tree arena ([`ast`]), the parser ([`parse`], explicit
 //! stack) and printer ([`print`]), the function registry contract ([`fnreg`], table generated from the TS), the
-//! operators ([`ops`]), argument application ([`apply`]) and the evaluator ([`eval`], `trait EvalHost`). The
-//! function bodies ([`functions`]) are A4; the engine is still the architecture skeleton (A3), its operations
-//! return [`CalcError::NotPorted`].
+//! operators ([`ops`]), argument application ([`apply`]) and the evaluator ([`eval`], `trait EvalHost`).
+//! **Frontier A3 done**: the engine ([`engine`]: graph, full and incremental recalc, spills, CSE, cycles and
+//! iteration, volatiles) over the store. The function bodies ([`functions`]) are A4: an evaluation that reaches one gets
+//! `#VALUE!` and is listed by [`engine::Engine::not_ported`].
 //!
 //! One cell store ([`store::Store`]) holds every cell of every sheet ONCE: its file representation (what the
 //! surgical save writes back) and its calc value are the same lanes. The engine ([`engine::Engine`]) owns only

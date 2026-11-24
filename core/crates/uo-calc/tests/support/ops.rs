@@ -162,6 +162,7 @@ fn model_write(m: &mut Model, pos: (u32, u32), v: &CellWrite<'_>, kind: WriteKin
                 c.v = Some(s.to_owned_js());
             }
         }
+        CellWrite::Pooled(_) => panic!("the ops harness writes texts by value"),
         CellWrite::Bool(b) => {
             c.t = Some(js("b"));
             c.v = Some(js(if *b { "1" } else { "0" }));

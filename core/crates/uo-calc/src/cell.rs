@@ -652,6 +652,14 @@ impl Store {
             self.write_lanes(sheet, row, col, c, ValueTag::None, false, 0)?;
             return Ok(true);
         }
+        if let (Some(c), CellWrite::Num(x)) = (cur, value)
+            && !c.kind.has(CellKind::HAS_EXTRA)
+        {
+            // the hot path of a recalc: a number into a cell without file details
+            let flags = (c.kind.0 & (CellKind::HAS_FORMULA | CellKind::OWNED)) | CellKind::HAS_VALUE;
+            self.put_raw(sheet, row, col, RawCell { kind: CellKind::new(ValueTag::None, flags), payload: x.to_bits(), style: c.style })?;
+            return Ok(true);
+        }
         let c = match cur {
             Some(c) => c,
             None => {
@@ -664,6 +672,14 @@ impl Store {
         };
         let (tag, has_v, payload) = match value {
             CellWrite::Num(x) => (ValueTag::None, true, x.to_bits()),
+            CellWrite::Pooled(id) => {
+                self.strings.retain(id);
+                (
+                    if kind == WriteKind::Constant { ValueTag::Inline } else { ValueTag::Str },
+                    kind != WriteKind::Constant,
+                    u64::from(id.raw()),
+                )
+            }
             CellWrite::Str(s) => {
                 let id = self.strings.intern(s)?;
                 (
@@ -678,6 +694,72 @@ impl Store {
         };
         self.write_lanes(sheet, row, col, c, tag, has_v, payload)?;
         Ok(true)
+    }
+
+    /// Marks a cell as filled by another cell's array (`CellRec.owner`), creating it with the row/column default
+    /// style when absent (the bridge's `createCell(…, xfIndexAt(…))`, `sheet-calc.ts:253`).
+    pub fn claim_owned(&mut self, sheet: SheetIx, row: u32, col: u32) -> Result<()> {
+        if self.sheet(sheet).is_none() {
+            return Err(CalcError::NoSheet(sheet.0));
+        }
+        match self.get(sheet, row, col) {
+            Some(c) if c.kind.has(CellKind::OWNED) => Ok(()),
+            Some(_) => {
+                self.set_owned(sheet, row, col, true);
+                Ok(())
+            }
+            None => {
+                let xf = self.default_style(sheet, row, col);
+                let style = if xf == 0 { 0 } else { xf.saturating_add(1) };
+                self.put_raw(sheet, row, col, RawCell { kind: CellKind::new(ValueTag::None, CellKind::OWNED), payload: 0, style })?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Deletes the calc content of a cell (the TS `SheetStore.delete` followed by the bridge's write-back of an
+    /// empty value): formula, owner and value go; the cell stays only when it has a style.
+    pub fn clear_content(&mut self, sheet: SheetIx, row: u32, col: u32) -> Result<()> {
+        let Some(c) = self.get(sheet, row, col) else { return Ok(()) };
+        if c.kind.has(CellKind::HAS_FORMULA) {
+            if let Some(sh) = self.sheets.get_mut(sheet.0 as usize) {
+                sh.formulas.remove(row, col);
+            }
+            self.set_flags(sheet, row, col, CellKind::HAS_FORMULA, false);
+        }
+        if c.kind.has(CellKind::OWNED) {
+            self.set_owned(sheet, row, col, false);
+        }
+        self.write_value(sheet, row, col, CellWrite::Empty, WriteKind::Constant)?;
+        Ok(())
+    }
+
+    /// Gives a cell a formula (created with the default style when absent): `<f>` text and attributes, no `<v>`
+    /// (the engine's `{ v: 0, f }`, `engine.ts:649`). The previous value is dropped.
+    pub fn set_formula(&mut self, sheet: SheetIx, row: u32, col: u32, f: FileFormula) -> Result<()> {
+        if self.sheet(sheet).is_none() {
+            return Err(CalcError::NoSheet(sheet.0));
+        }
+        let cur = match self.get(sheet, row, col) {
+            Some(c) => c,
+            None => {
+                let xf = self.default_style(sheet, row, col);
+                let raw =
+                    RawCell { kind: CellKind::new(ValueTag::None, 0), payload: 0, style: if xf == 0 { 0 } else { xf.saturating_add(1) } };
+                self.put_raw(sheet, row, col, raw)?;
+                raw
+            }
+        };
+        self.write_lanes(sheet, row, col, cur, ValueTag::None, false, 0)?;
+        self.sheet_mut(sheet)?.formulas.set(row, col, f);
+        self.set_flags(sheet, row, col, CellKind::HAS_FORMULA, true);
+        Ok(())
+    }
+
+    /// The formula attributes of a cell's `<f>`, for an in-place change (the engine's `setDynamicAttrs`).
+    pub fn formula_attrs_mut(&mut self, sheet: SheetIx, row: u32, col: u32) -> Option<&mut Option<Box<FormulaAttrs>>> {
+        let sh = self.sheets.get_mut(sheet.0 as usize)?;
+        sh.formulas.get_mut(row, col).map(|f| &mut f.attrs)
     }
 
     /// Replaces tag/value of an existing cell, clearing `inlineString`/`value`/`type` details of the extra.
@@ -720,6 +802,8 @@ pub enum CellWrite<'a> {
     Num(f64),
     /// Text.
     Str(JsStr<'a>),
+    /// Text already in the pool (one more reference is taken).
+    Pooled(StrId),
     /// A boolean.
     Bool(bool),
     /// An error.
