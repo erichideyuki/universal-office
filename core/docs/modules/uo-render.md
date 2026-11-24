@@ -1680,3 +1680,21 @@ For the Slides PDF interpreter (`uo-pptx/src/pdf`, not touched here): it already
 `MediaFrame`; it only ever receives still lists. If it is ever given a playback list: a `UnitGate`/`BoundsPass`/`ChartPart` `SlotBegin` must
 not save (its `SlotEnd` must not restore), the soft-layer test should require layer id 15 (shape) or 14 (chart part), and a `MediaFrame`
 draws its `poster`.
+
+## Sheet extensions (plan §7 C4) — design (2026-11-24, Sheet architecture pass)
+
+The Sheet viewport list reuses the Slides canvas-IR list (`schema/slides.uos` `SlidesList`, codec and TS painter):
+the Sheet paint (`universal-sheet.ts` `paint`/`paintRegion` and helpers; canvas calls counted 2026-11-24: `fillRect`
+58, `fillStyle` 52, `save`/`restore` 22/24, paths and `rect` 70, `clip` 13, `stroke`/`fill` 11/10, `strokeRect` 7,
+`font`/`fillText` 7/7, `setLineDash` 2, `createLinearGradient` 2, `createPattern` 1, `drawImage` 1, `translate`/
+`scale`/`rotate`/`setTransform` 11) is a subset of it, plus drawings/charts already emitted by `uo-dml-render` and
+`uo-charts`. Two items are added (frontier C4, record `uo-xlsx.md` T7):
+
+| Item | Painter behaviour (TS source) | Why not an existing item |
+|---|---|---|
+| `SheetFont` = `Cell(FontRef, italic: bool)` or `Css(sym)` | `Cell`: `ctx.font = (italic ? 'italic ' : '') + (bold ? '700 ' : '400 ') + ppem + 'px ' + stack` (`text-metrics.ts:58`); `Css`: a literal font string (the headers, `universal-sheet.ts:4076`: `600 <11 x zoom>px 'Aptos Narrow', Segoe UI, Arial`) | Slides' `Font` prints `700 <n>px` without the `400`/italic form and has no literal form; the stack is the shell's `FontResolver.cssStack` with the Sheet fallbacks (T2) |
+| `GlyphRun { text: Span, x, y, advances: Span<i32>, min_x, max_x, complex: bool, mirrored: bool }` | `drawCellText` (`text-metrics.ts:104-130`): `textAlign='left'`, one `fillText(ch, cx, y)` per non-space character at integer advances between `min_x`/`max_x`, or one whole-string `fillText` when `COMPLEX` matches; when the CTM is mirrored (RTL), the `translate(x + W, 0)`/`scale(-1, 1)` un-mirroring | one item per text piece instead of one `FillText` per glyph (≈ 8,000 per 1080p viewport); the op stream is compared after expansion |
+
+Write is unchanged; the Slides list gains only these two tags (schema hash bump, codec and painter tests extended in
+C4). The two-phase measurement (`NeedMeasures`) reuses the Slides protocol with the Sheet measurement keys
+(`uo-xlsx.md` T6).

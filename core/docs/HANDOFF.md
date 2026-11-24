@@ -57,6 +57,15 @@ bank) → 3 track A (calc, M3) → 4 C1/C2 (`uo-xlsx` reader + surgical save, `.
     passes the `Intl`-derived `ValueLocale` (+ the collator order where used) into Rust — browser behaviour equal to
     the TS; server/.NET fall back to the measured pt-BR/en-US tables. Function names stay pt-BR/en-US only.
 
+### Sheet task 1 — architecture pass (§4.0), 2026-11-24
+
+Opus pass, ≈ 25 min; results in plan §16, records `uo-calc.md` (new), `uo-xlsx.md` "Track C architecture",
+`uo-render.md` "Sheet extensions"; skeletons `core/crates/uo-calc` (new: the one cell store + calc) and `uo-xlsx`
+`book`/`grid`/`session` behind features `read`/`save`/`xls`/`grid`/`edit` (default build = the writer `grid-xlsx`
+pins, unchanged; its tests green). **Maintainer priority: performance and memory first** — store estimated at
+4.6 B/cell on giant-1m (TS measured 239 B/cell: three copies), budgets + benchmark gates per frontier (§16 item 14).
+Next frontiers: (S0 ∥ A1) → A2 → … (§16). Open: SH1–SH6.
+
 ## Update 2026-11-23 — `uo-xlsx`, the xlsx writer (track C, writing side)
 
 New crate `core/crates/uo-xlsx` (record `core/docs/modules/uo-xlsx.md`), asked by `<u-grid>` (spec 29 of

@@ -149,6 +149,11 @@ Write unchanged (twips stay its unit). 2 days.
   Excel COM), each with a CI subset and a large local run, as Write's `--gen` groups.
 - **Sheet**: model JSON (xlsx/xls), save bytes, cell display text, the viewport op stream over `paintRegion`;
   editor scripts driven in Chromium (the edit logic has no capture points today: an extraction step, §7 C5).
+  Added by the Sheet architecture pass (§16): model JSON with sorted keys (the §14 rule), a per-cell **store facet**
+  (file kind, the value text the save would write, style, formula and attributes) compared instead of the model's
+  `rows`, and an **evaluation-order facet** for the calc (cells in evaluation order per run, `circular` sorted) —
+  the TS `Map`/`Set` order sites that are behaviour are listed in `uo-calc.md` S7; `RandomSource::Sequence` and a
+  fixed `Clock` in every capture.
 - Versioned fixtures use open fonts only; installed-font groups are opt-in (as Write's `UO_WC_INSTALLED`).
 1.5 days.
 
@@ -352,3 +357,93 @@ Corrections to this plan:
    unbounded per-model cache becomes an LRU in the host's chart cache.
 
 Questions for the M4 gate: CH-1…CH-6 (`uo-charts.md`).
+
+## 16. Architecture pass results (Sheet) — 2026-11-24
+
+Opus pass for §4.0 (Sheet), with T2, R1, C1 applied and the maintainer's performance rule (performance and memory are
+first-class; internal representation may differ from the TS when the observable output is equal). Records:
+`core/docs/modules/uo-calc.md` (new crate: the one cell store S1–S7, the C1 host hook, frontiers S0 + A1–A5, parity,
+JS traps, M1–M5 with a cap per cache, performance budgets and benchmark gates, fuzz), `core/docs/modules/uo-xlsx.md`
+"Track C architecture" (T1–T16: crate placement, model, streaming reader, surgical save, `.xls`, grid model,
+viewport list, change-set undo, frontiers C1a–C5b, captures, traps, M2 soak on giant-1m, budgets, wasm split),
+`core/docs/modules/uo-render.md` "Sheet extensions" (`SheetFont`, `GlyphRun`). Type skeletons: `core/crates/uo-calc`
+(key, strings, value, store, formula, engine, locale; a layout-size test) and the `read`/`grid`/`edit` modules of
+`core/crates/uo-xlsx` behind new features (the default build, the writer pinned by `grid-xlsx`, is unchanged).
+Clippy clean native and wasm32 (`uo-calc`, `uo-xlsx`, all features).
+
+**The store in one paragraph.** One store per workbook in `uo-calc`: per sheet a column directory, per column chunks of
+256 rows, per chunk four lanes in their narrowest form (presence dense/offsets, kind byte = file type + value family +
+flags, payload `u32` (integers, string ids, SST indices) or `f64` bits, style `s+1` uniform/`u16`/`u32`); rare file
+details (non-canonical `<v>` text, raw refs, `cm`/`vm`, rich runs, out-of-order/duplicate cells) in sorted side
+tables; strings interned once (Latin-1 or UTF-16, JS code-unit semantics, reference counted); formulas' file side in a
+per-column table, their parsed side in the lazily built engine under the same id. The engine reads and writes the
+store (`&mut Store`), so there is no bridge and no copy. Estimated 4.6 B/cell on giant-1m and ≈ 14 B/cell on
+giant-200k (strings included), against **239 and 263 B/cell measured in the TS** (three copies: model 132.5 +
+component index 37 + engine 69.5 on giant-1m).
+
+Corrections to this plan (evidence in the records):
+
+1. §4.0 "a 1:1 port doubles memory": it triples. Measured on the frozen dists (Node, after GC): giant-1m 239 B/cell
+   (228 MB; RSS 969 MB after open), giant-200k 263 B/cell; the engine is lazy (`sheet-calc.ts:118`), so a TS viewer
+   holds 170 B/cell and an editor 239 (`uo-calc.md` S1).
+2. §1/§4.0 "`sheet-calc.ts`, 853 lines, the bridge": ≈ 150 of its 665 non-blank lines are the bridge (`ensure`,
+   `writeBack`, `createCell`, `removeCell`) and disappear; the `XfPool` + `styles.xml` patch (`sheet-calc.ts:556-853`)
+   moves to `uo-xlsx` save/edit and `edit`/`barText`/`copyText`/`valueText` to C5.
+3. There are two value write-back paths with different text: the product's `writeBack` + `writeScalar`
+   (`sheet-calc.ts:230-262, 461-471`: `numberLiteral` with `E+`, constant text → `inlineStr`, `null` → no `<v>`) and
+   `to-sheet-core.ts:112-145` `writeValues` (`numberText` with `E`, `null` → `'0'`), which only the calc tests use: the
+   store implements the product path; `writeValues` is a harness feature for the `calc-tests` capture.
+4. §4.0 "ordered maps wherever the TS relies on `Map` insertion order" — the sites that are behaviour: `rangeMasters`
+   (`engine.ts:205`, iterated at 669 and 818) and the formula columns' `fc.keys()` (`engine.ts:817`) decide the push
+   order of precedents, hence the evaluation order (the `RAND` sequence, cycle membership and the cached values of
+   cycles); `XfPool.formatId` takes the first `numFmts` entry with the code (`sheet-calc.ts:589`). The others
+   (`formulas`, `rev.byCol`, `changes`, CF `each`, replace-all) are order-free in their results (table in
+   `uo-calc.md` S7). §4.3 gains an **evaluation-order facet** (the sequence of evaluated cells per run).
+5. The surgical save writes the model's raw texts back (`serialize.ts:62-102`: `c.value` verbatim, raw `r`, cells
+   in model order, rows stably sorted, `serialize.ts:104-109`), so the store keeps non-canonical file texts and
+   out-of-order/duplicate cells in side tables (`CellExtra`, `FileOrder`); the lookup keeps the last duplicate, as
+   the component's index (`universal-sheet.ts:4226-4231`).
+6. The TS paints a `<c r>` at its `<row r>` (`read.ts:589-593`, `universal-sheet.ts:4229-4230`) but calculates it at
+   the ref's row (`from-sheet-core.ts:130`); one store has one position — the row element's (SH1).
+7. The TS decodes each worksheet whole and parses it into a recursive DOM (`read.ts:289`, `xml.ts:67`) and reads all
+   sheets and the whole SST at open (`universal-sheet.ts:560, 584-585`). Rust: streaming inflate + a pull reader with
+   the sheet-core grammar (new in `uo-opc`; `uo-opc` streams only deflate today and its XML is a tree), `<sheetData>`
+   straight into the store, the rest of the part kept as a small frame for the save; the active sheet first, the
+   rest by `load_step` or on demand; the SST indexed and decoded on demand. Open-recalc still loads every sheet when
+   the workbook-level tests do not decide it.
+8. §7 C3 geometry "prefix arrays": the TS sums `size × zoom` sequentially into `Float64Array`s
+   (`universal-sheet.ts:1172-1184`), so a closed-form sum over default rows is not bit-equal; checkpointed prefix
+   sums (every 256 rows, same sequential additions inside a block) are bit-equal at 8/256 B per row.
+9. §4.2/§7 C4 display list: the Sheet draws text glyph by glyph (`text-metrics.ts:104-130`, `fillText(ch, cx, y)`
+   at integer GDI advances) and builds its own font string (`text-metrics.ts:58`); the Slides list needs two items,
+   `SheetFont` and `GlyphRun` (≈ 8,000 `FillText` items per 1080p viewport otherwise). Everything else of the Sheet
+   paint is already a Slides item.
+10. §7 C5 "snapshot undo": the TS undo is a change set re-entered through the edit path
+    (`universal-sheet.ts:1953-2001`, `CellSnap` 4436) plus structure snapshots; C5 ports that (no store snapshot) with
+    a byte cap added to the 100 steps (SH5).
+11. C1 scope: besides `value-locale.ts` and `translate.ts:126`, the host supplies the clock (`engine.ts:186-189`,
+    `coerce.ts:197`, `cf-formula.ts:405`, `cond-format.ts:526`) and randomness (`engine.ts:503`); the
+    `functionNames` collator order (`translate.ts:686`) is the autocomplete UI's and stays in the shell (Rust returns
+    the catalogue unsorted). Host-default `toLocaleLowerCase()` in find/replace (`universal-sheet.ts:2867-2869`) is
+    mapped to the root case mapping (SH2).
+12. Unbounded caches not in §10: the engine's per-recalc `cache` (`engine.ts:220`, lookup indexes), the CF per-cell
+    memo (`cond-format.ts:109`), the CellFonts cache (`text-metrics.ts:34`) — caps in the records.
+13. Frontiers re-cut: a store frontier **S0** (Opus) precedes A3 and C1; A4 splits into six families (A4a math/
+    engineering 2,000 lines, A4b statistics 1,628, A4c finance/dates 1,390, A4d text/regex/filterxml 1,701, A4e
+    lookup/dynamic/database 1,632, A4f logical/info/cube 467); C1 → C1a (read) + C1b (save); C3 → C3a (text, entry,
+    geometry; Sonnet) + C3b (CF with `cf-formula.ts` 1:1; **Opus**, it evaluates formulas) + C3c (table/pivot styles,
+    borders, fills; Sonnet); C5 → C5a (extraction) + C5b (session).
+14. Performance is gated, not observed: budgets per frontier (open → first viewport list on giant-1m ≤ 250 ms
+    native / 500 ms wasm, retained ≤ 8 MiB; viewport emission ≤ 1 ms native / 2.5 ms wasm at 1080p, ≤ 48 KiB
+    crossing; full recalc ≤ 0.5× TS native / 0.8× wasm; edit latency ≤ 16 ms p95 wasm) and the rule "slower than the
+    TS or > 10% over the previous record fails the frontier unless approved" (`uo-calc.md`, `uo-xlsx.md` T13), with a
+    `sheet` suite in `tools/bench/speed/run.mjs`.
+
+Resulting order (≤ 3 agents): (S0 ∥ A1) → A2 → (A3 ∥ C1a) → (A4 families, two at a time ∥ C1b, C2, C3a) → (A5 ∥ C3b
+∥ C3c) → C4 (needs A5 for open-recalc and B4, done) → C5a → C5b. Track A is Opus throughout; C1a, C1b, C2, C3a, C3c,
+C4, C5a, C5b are Sonnet with closed scope from the records; C3b is Opus.
+
+Questions for the M3/M5 gates: SH1 (one cell position for inconsistent `<c r>`/`<row r>`), SH2 (root case mapping
+for find/replace), SH4 (the performance gates as M3/M5 criteria) in `uo-calc.md`; SH3 (calc inside `uo-sheet.wasm`
+vs a lazily loaded part if over 1.6 MB gzip), SH5 (history byte cap), SH6 (`uo-xls.wasm` separate, as SP4) in
+`uo-xlsx.md` T16.

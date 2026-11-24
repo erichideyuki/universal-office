@@ -13,7 +13,9 @@
 //! No threads, no file system, no clock: the output is a deterministic function of the calls
 //! (usable from a `cdylib` for `wasm32-unknown-unknown`).
 //!
-//! Not here: reading xlsx, formulas, charts, drawings, conditional formatting, pivots, `.xls`.
+//! Not here (yet): reading xlsx, formulas, charts, drawings, conditional formatting, pivots, `.xls`. The track C
+//! architecture (2026-11-24) adds them behind features, the writer above stays the default: `read` ([`book`]),
+//! `save`, `xls`, `grid` ([`grid`]) and `edit` ([`session`]) — record "Track C architecture".
 
 mod cell;
 mod error;
@@ -21,6 +23,13 @@ mod parts;
 mod sheet;
 mod style;
 mod writer;
+
+#[cfg(feature = "read")]
+pub mod book;
+#[cfg(feature = "grid")]
+pub mod grid;
+#[cfg(feature = "edit")]
+pub mod session;
 
 pub use cell::{DateTime, column_name, date_serial};
 pub use error::{Error, Result};

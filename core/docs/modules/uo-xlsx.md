@@ -153,3 +153,284 @@ strict XML mode, every part has its content-type override). The fuzz crate did n
 - Start/End → left/right in RTL sheets is the writer's rule, not measured in Excel's UI (the COM read-back confirms
   what is stored, not how it looks); the alternative is `general` + `readingOrder`.
 - For track C proper: the reader, the surgical save (TS `updateWorksheetXml`) and its parity, rich text, themes.
+
+## Track C architecture (2026-11-24, Opus) — reader, store, save, `.xls`, grid, viewport, editor
+
+Architecture pass for plan §4.0/§7 (record of the store and the calc: `uo-calc.md`; plan §16). Decisions applied:
+T2, R1, C1 (HANDOFF 2026-11-24) and the maintainer's PERF rule (performance and memory first-class; internal
+representation may differ from the TS when the observable output is equal). Behaviour source: the frozen TS
+(`ts-ref-092` at `b92b60fa`), paths under `sheet/packages/`, raw line numbers, sizes in non-blank lines.
+**The writer above is untouched**: everything below is behind features (`read`, `save`, `xls`, `grid`, `edit`;
+`Cargo.toml`), the default build is the writer that `grid-xlsx` pins. Skeleton: `src/book.rs` (`read`),
+`src/grid.rs` (`grid`), `src/session.rs` (`edit`).
+
+### T1. Crate placement
+
+| Piece | Where | Why |
+|---|---|---|
+| cell store, strings, formulas (file side), calc | `uo-calc` (new crate) | lowest Sheet layer; the calc must not depend on the file format; `uo-calc.md` "Why a crate" |
+| workbook model outside the cells, reader, surgical save, save-calc, XfPool | `uo-xlsx` `read`/`save` | the TS `sheet-core` + the styles half of `sheet-calc.ts` |
+| `.xls` → OOXML parts | `uo-xlsx` `xls` (lazily loaded `uo-xls.wasm`) | as `uo-pptx` `ppt`; uses `uo-opc` CFB, `uo-drawingml` odraw, `uo-charts` `biff` |
+| grid model (cell text, entry, CF incl. `cf-formula.ts` 1:1, table/pivot styles, borders/fills, metrics, geometry) and the viewport display list | `uo-xlsx` `grid` | Sheet-only (reuse rule: a module of the owning crate) |
+| drawings and charts in the grid | `uo-dml-render` (`read_drawing_elements`, `emit_shapes`, `special_image`; `uo-dml-render.md` "What Sheet calls") and `uo-charts` | already shared; `uo-xlsx` implements `uo_dml_render::PartSource` over its package |
+| editor session, change-set undo | `uo-xlsx` `edit` | as `uo-pptx` `edit` |
+| exporters csv/ods/xml2003/html/markdown/pdf (`export/`, 696) | `uo-xlsx` `export` feature, after C5 | not on the viewer path |
+| streaming inflate, XML pull reader with the sheet-core grammar | `uo-opc` (`flate::Inflater::stream_*`, `xml::pull`) | shared pieces (none exists today: `uo-opc` streams only deflate, its XML is a tree); C1a adds them |
+
+### T2. The workbook model (feature `read`, frontier C1a)
+
+- `model.ts` (300) and `styles.ts` types are ported as plain Rust structs, mechanically: every TS `?:` is an
+  `Option`, booleans the TS always sets are `bool`, string fields are `Box<str>` (attribute texts) or `JsString`
+  (cell/user text), every `Map` whose iteration is behaviour is an ordered `Vec` (`Styles.numFmts`: the XfPool's
+  first match, `sheet-calc.ts:589`), `Record` key order through `uo_jsnum::object`. The cell fields of
+  `Worksheet.rows` are NOT in the model: they are the `uo-calc` store (row attributes: `store::RowMeta`).
+- `Worksheet` keeps: merges (A1 texts + the parsed areas), cols, pane, flags, CF (`read-cf.ts`), comments, charts and
+  drawing objects (anchors + the element as a subtree of the frame's DOM), chart-sheet view, hyperlinks,
+  `sheetFormatPr`, tables, autoFilter, pivots (`read-pivot.ts`), list validations, `ignoredErrors`.
+- `Book` (session root): package, `WorkbookModel`, `Styles`, theme/colour context, per sheet the `SheetFrame` and
+  the model, the store, the lazily built engine.
+
+### T3. The reader (C1a): streaming, lazy, no DOM of the sheet
+
+The TS reads every worksheet at open (`universal-sheet.ts:584-585`) by decoding the whole part to a string and
+parsing it into a recursive DOM (`read.ts:285-305`, `xml.ts:40-140`): 969 MB RSS after giant-1m in Node.
+
+1. **Open** = zip directory, `[Content_Types]`, workbook, workbook rels, styles, theme/indexed colours, the
+   shared-string **index** (one pass that records the byte offset of each `<si>`; entries are decoded into the pool
+   on demand; the TS decodes all of them, `universal-sheet.ts:560`), and the **active sheet** (`activeTab`) — enough
+   for the first viewport.
+2. **Worksheet parse** = streaming inflate (new `uo_opc::flate::Inflater` streaming API) → pull tokenizer
+   (`uo_opc::xml::pull`) with the sheet-core grammar: closing-tag names are not checked (`xml.ts:100-104`),
+   comments/CDATA/PI skipped as `xml.ts:47-64, 106-116`, `\r\n`/`\r` → `\n` in text (`normalizeEol`), attribute
+   white-space normalization (`normalizeAttr`), entities as `decodeEntities` (`&#x…;` through `fromCodePoint`, which
+   THROWS past U+10FFFF: the open fails, as the TS), the SpreadsheetML main prefix stripped (`xml.ts:142-153`), UTF-8
+   decoded per token (equal to decoding the whole text: markup bytes are ASCII and never inside a sequence). The
+   bytes before `<sheetData>` and after `</sheetData>` are kept as the **frame** (`SheetFrame.prefix/suffix`,
+   typically < 10 KB) and parsed into a `uo_opc::xml` DOM for the model; the `<sheetData>` content goes straight into
+   the store row by row (`readRow`/`readCell` rules, `read.ts:573-621`: implicit `r`, `refToRowCol` failure →
+   position-derived ref, `t` cast, `parseInt` of `s`, `cm`/`vm` only when all digits, `<f>` attributes, inline
+   strings).
+3. **Canonical vs extra**: a cell whose `<v>` text equals the canonical print of its parsed value (`numberLiteral`
+   for numbers, the decimal of an SST index, `1`/`0`…) stores only lanes; anything else adds a `CellExtra`
+   (`uo-calc.md` S2). Rows or cells out of order or duplicated switch the sheet to `FileOrder` (save order kept; the
+   lookup keeps the LAST duplicate, as the component's index, `universal-sheet.ts:4226-4231`).
+4. **Remaining sheets**: `Book::load_step(budget)` driven by the shell (idle callbacks) or synchronously by anything
+   that needs a sheet (tab switch, cross-sheet formula, find in all sheets, save, open-recalc). The open-recalc
+   decision (`shouldRecalcOnOpen`, `open-recalc.ts:93-131`) needs every formula: a workbook that is not decided by the
+   workbook-level tests (manual / fullCalcOnLoad / forceFullCalc / not Excel / old calcId, lines 95-100) loads all
+   sheets before the first recalc, as the TS did at open.
+5. **Not parsed at open**: chart XML and drawing elements are parsed when first painted (the TS keeps chart XML raw
+   and parses on demand too, `model.ts:340-353`).
+
+### T4. Surgical save (feature `save`, frontier C1b)
+
+- Untouched sheets are not re-serialized (the TS rewrites only `dirtySheets` + the calc's `touched`,
+  `universal-sheet.ts:909-928`). A rewritten worksheet is `frame.prefix (patched) + <sheetData>… + frame.suffix
+  (patched)`: `<cols>` lives in the prefix, `<mergeCells>` in the suffix, the first `<sheetView>` in the prefix — the
+  same string surgery as `updateWorksheetXml`/`replaceMergeCells`/`updateSheetView` (`serialize.ts:138-254`), ported
+  1:1 on the frame text.
+- `<sheetData>` is generated **streaming from the store into the deflater** (64 KiB buffers, `ZipWriter::stream_*`),
+  never as one string: rows ascending (the TS `sort` is stable; `FileOrder` sheets replay the TS order), the
+  `rowXml`/`cellXml` rules (`serialize.ts:62-102`: `spans` recomputed, `s … customFormat="1"`, `ht` by `String(n)`,
+  `t`, `cm`, `vm`, `<f>` attributes in the TS order, `<is>` with `xml:space`, `t="str"` empty `<v></v>`, 365-only
+  errors as `#VALUE!`, `encodeXstring`), the value text from `CellExtra::raw_value` or the canonical print.
+- `save-calc.ts` (178: calcChain removal, `calcPr`, `metadata.xml` XLDAPR, defined names) and `calc/save.ts`
+  `prepareForSave` (formula attributes, shared children whose anchor vanished, `ca`/`aca`) run before; then the
+  XfPool patch of `styles.xml` (`sheet-calc.ts:556-853`, regex surgery ported with the same matching).
+- Other parts: copied. Parity is on decompressed bytes (as Write); the package writer may copy unchanged compressed
+  entries raw (PERF; not observable).
+
+### T5. `.xls` (feature `xls`, frontier C2)
+
+`sheet-core/src/xls/*` (4,420) → the same in-memory OOXML part bytes as the TS converter, then the normal reader.
+Sonnet, closed scope (plan §7 C2). `uo-xls.wasm` is a separate, lazily loaded instance (as `uo-ppt.wasm`).
+
+### T6. The grid model (feature `grid`, frontier C3)
+
+| TS | Rust (`uo_xlsx::grid::…`) | Notes |
+|---|---|---|
+| `grid-metrics.ts` 75, `glyph-widths.ts` 22 + `glyph-widths-data.ts` 841, `excel-metrics-data.ts` 112, `row-descent-data.ts` 60 | `metrics` | static tables (`&'static`), no cache |
+| `cell-text.ts` 190, `number-formats.ts` 81 (+ `uo-numfmt`) | `text` | `layoutCellText`: `####`, General fit, fill/skip, widths from the measurement table |
+| `entry.ts` 244, `entry-format.ts` 125, `edit-text.ts` 51, `formula-locale.ts` 35 | `entry` | typed text → value/format/formula (C1 hook for the locale) |
+| `cond-format.ts` 438, `cf-formula.ts` 443 (**ported 1:1**, its own evaluator), `cf-icons.ts` 173 | `cf` | per viewport; results memoized per cell with a cap |
+| `table-styles.ts` 242 + `table-styles-data.ts` 146, `pivot-styles.ts` 102 | `table_style` | |
+| `borders.ts` 127, `fills.ts` 96, `spill-border.ts` 11, `grid-layout.ts` 173 | `paint_rules` | border conflict per edge, pattern masks, merge index, rich lines |
+| `text-metrics.ts` 115 | `measure` | `CellFonts` → a measurement table (two-phase, below) |
+| `universal-sheet.ts`: `resolveStyle`, `fitRowHeights` (747-…), `recalcGrid` (1172-1184), `colWidth`/`rowHeight` (1142-1149), geometry helpers, `mergeAt`; `cell-format.ts` `xfIndexAt` | `geometry`, `style` | ≈ 900 lines of private methods |
+
+- **Resolved styles**: one `ResolvedXf` per cellXfs index (font face key, size, colours, fill, border ids,
+  alignment, number-format code), built once per workbook and extended when the XfPool adds an xf; a cell resolves to
+  `ResolvedXf` + table/pivot layer + CF overlay per viewport.
+- **Geometry**: the TS prefix arrays are `Float64Array`s of sequential `acc += size × zoom`
+  (`universal-sheet.ts:1172-1184`); an arithmetic shortcut over default rows is not bit-equal. `grid::Geometry`
+  stores a checkpoint every 256 entries and replays the same sequential additions inside a block: bit-equal
+  `edge(i)` for 8/256 bytes per row; `bisectLE`/`pxToIndex` (`grid-layout.ts:16-90`) binary-search the checkpoints
+  then scan one block. Built per sheet and zoom, only for the active sheet (as the TS).
+- **Row auto-fit at open** (`fitRowHeights`, `universal-sheet.ts:747-…`, walks every cell): folded column-wise over
+  the store's style lanes into per-row maxima (a uniform-style chunk applies once to its rows).
+- **Text widths** (T2): the GDI tables (`gdiGlyphFixes`) first, then the shell's measurements of the CSS font
+  (`text-metrics.ts:54-99`: `'Hg'` font box, `measureText(ch)` rounded per character, whole-string widths for
+  complex scripts); a missing entry makes the emission return `NeedMeasures` (two-phase, as Slides; the table
+  persists across frames, so steady scrolling never round-trips).
+
+### T7. The viewport display list (frontier C4)
+
+- **List format**: the Slides canvas-IR list (`schema/slides.uos` `SlidesList`, same codec, same TS painter in
+  `uo-wasm/js`) — the Sheet paint is a subset of it (`fillRect`, paths, clip, stroke, line dash, linear gradients for
+  data bars, pattern fills, `drawImage` for pictures, `save`/`restore`/`translate`/`scale` for RTL). Two new items
+  (record `uo-render.md` "Sheet extensions"):
+  - `SheetFont(FontRef + italic)`: sets `ctx.font` to the CellFont string `${italic}${400|700} ${ppem}px ${stack}`
+    (`text-metrics.ts:58`, `universal-sheet.ts:733`), the stack built by the shell's `FontResolver` (T2);
+  - `GlyphRun { text, x, y, advances, min_x, max_x, complex, mirrored }`: the painter replays `drawCellText`
+    (`text-metrics.ts:104-130`: one `fillText(ch, cx, y)` per non-space character at integer advances, one
+    whole-string `fillText` for complex scripts, the RTL un-mirroring) — one item per text piece instead of one
+    `FillText` per glyph (≈ 8,000 items per 1080p viewport otherwise). Op-stream parity is checked after expansion.
+- **Emission** follows `paint`/`paintRegion` (`universal-sheet.ts:3222-3261, 3390-…`): up to four regions (frozen
+  panes), grid lines first, three phases (fills, texts with overflow, borders + markers), merges crossing the split,
+  then drawings/charts (`paintDrawings` 3569: `uo_dml_render::emit_shapes` per anchored object, `uo_charts` for
+  charts, form controls as Sheet items), filter arrows, comment indicators, headers (`paintHeaders` 4050), selection
+  (`paintSelection` 4003; the selection comes with the request). Scrollbars and the empty-state text stay shell.
+- **Per-frame work is viewport-only**: gather the visible columns' chunks into a row-major block, resolve styles, CF
+  and tables only for those cells, emit. Scratch buffers are reused across frames (≤ 64 KiB allocated per frame after
+  warm-up). Tile caching of lists across scroll steps is evolution after M5 (measured).
+- **What crosses the wasm boundary per viewport**: in, the `ViewportRequest` (≈ 64 B); out, the encoded list (budget
+  ≤ 48 KiB at 1080p, ≤ 192 KiB at 4K) and, only when a font or zoom is new, one `NeedMeasures` round trip. No cell
+  data, no change lists (`uo_calc::engine::Changes` is a per-sheet rectangle + count). Hyperlinks: Write's scheme
+  filter (listed).
+
+### T8. Editor session and undo (feature `edit`, frontier C5)
+
+- No bridge: `Session { book: Book, history, … }`; `edit(sheet, col, row, text)` = `entry::parse`
+  (`sheet-calc.ts:144-195`) → XfPool derive → `Engine::set_cell(&mut store)` → `calculate` → formula format hint
+  (`inferFormulaFormat`) → `Changes`. Bar text, copy text, value text (`sheet-calc.ts:268-381`) are queries on the
+  store + engine.
+- **Undo = the TS change set**, not a store snapshot (`universal-sheet.ts:1900-2040`): per touched cell the edit
+  text + style + existence, restored by RE-ENTERING the text through the same `edit` path (formats and xfs follow the
+  same derivation), plus `StructSnap` for cols/rows/merges/panes/grid (`universal-sheet.ts:1968-1983, 4439-4452`).
+  100 steps (`UNDO_LIMIT`, 4431) + a byte cap (new; 64 MiB wasm32 / 256 MiB native, oldest dropped first). Plan
+  §7's "snapshot undo" is corrected: a snapshot of a 1M-cell store would cost what the change set avoids.
+- `addSheet` re-saves and reopens the package (`universal-sheet.ts:2118-2122`): kept (the store is rebuilt by the
+  reader).
+- Extraction first (C5a): the edit operations are private methods of the 4,593-line element; they are captured by
+  scripts driven in Chromium (or the fake DOM) before the port (plan §7 C5).
+
+### T9. Frontiers (track C; models per `SKILL.md`)
+
+| # | Scope | Model | Closed scope | Needs |
+|---|---|---|---|---|
+| C1a | `read`: model types, package, workbook/styles/theme/SST index, streaming worksheet → store, frame, CF/pivot/table/comments/hyperlinks/drawing-anchor/chart-data readers; `uo-opc` streaming inflate + pull reader | Sonnet | **yes** (this section + `uo-calc.md` S) | S0 |
+| C1b | `save`: frame surgery, streamed `<sheetData>`, save-calc, `prepareForSave` glue, XfPool + patch | Sonnet | **yes** | C1a, A5 (save rules) |
+| C2 | `xls`: BIFF → OOXML parts | Sonnet | **yes** | C1a |
+| C3a | `grid`: metrics, cell text, entry/entry-format/edit-text, geometry, resolved styles, row auto-fit | Sonnet | **yes** | C1a |
+| C3b | CF: `cond-format.ts` + `cf-formula.ts` (1:1) + `cf-icons.ts` | **Opus** (formula evaluation) | yes | C1a, A2 |
+| C3c | table/pivot styles, borders, fills, spill border, grid-layout helpers | Sonnet | **yes** | C3a |
+| C4 | viewport emission + `SheetFont`/`GlyphRun` (uo-render) + drawings/charts hookup + `<universal-sheet engine="rust">` read path + `uo-sheet.wasm` + viewer harness | Sonnet (Opus review of the emission order) | yes | C3*, A5, B4 (done) |
+| C5a | extraction of the edit operations into capture scripts | Sonnet | yes | C4 |
+| C5b | session, change-set undo, routing, editor harness, `uo-sheet-editor.wasm` | Sonnet; session core reviewed by Opus | yes | C5a, C1b |
+
+Order: S0 → C1a → (C1b ∥ C2 ∥ C3a) → (C3b ∥ C3c) → C4 → C5a → C5b, inside the ≤ 3-agent cap shared with track A.
+
+### T10. Parity (captures)
+
+| Capture | TS entry | Compared |
+|---|---|---|
+| Model JSON | `readWorkbook`, `readStyles`, `readTheme`, `readWorksheet` minus `rows` | canonical JSON, keys sorted (§14 rule), `Record`-order sites as facets |
+| Store facet | the sheet-core model's rows (`uo-calc.md` "Parity") | per cell |
+| Save bytes | `saveXlsx` after scripted edits | every part, decompressed, exact |
+| `.xls` | the converter's in-memory parts | every part's bytes |
+| Cell text | `layoutCellText` with its measurement log | text pieces, x, colour by bits |
+| CF | `CfEngine` results per cell over generated CF workbooks | per cell |
+| Viewport op stream | a recording context over `paint()` (frozen panes, zoom, RTL, merges, CF, tables, drawings) | canonical op stream after `GlyphRun` expansion; Chromium pixels second |
+| Editor | scripted edits + undo/redo (C5a) | save bytes + store facet after each step |
+
+Corpus: the 7 committed workbooks (`sheet/samples`) + the seeded workbook generator of plan §4.3 + generated `.xls`
+(Excel COM), open fonts only.
+
+### T11. JS traps (Sheet side; the calc's are in `uo-calc.md`)
+
+| Site | Trap | Helper |
+|---|---|---|
+| `refToRowCol` (`model.ts:531-538`): `/([A-Z]+)(\d+)/` unanchored, `parseInt` of the row | `$A$1`, `A1B2`, lowercase refs | hand matcher, `uo_jsnum::parse` |
+| `parseInt(s)`/`parseFloat(ht)` (`read.ts:575-584, 604`) | NaN printed back as `NaN` by the save | `CellExtra::raw_style`, `uo_jsnum::format` |
+| `decodeEntities` (`xml.ts:18-24`) | `fromCodePoint` throws past U+10FFFF; lone surrogates from `&#xD800;` | the pull reader's decision table |
+| `String(row.height)` in the save (`serialize.ts:96`) | shortest digits | `uo_jsnum::format` |
+| `Math.round` in geometry (`universal-sheet.ts:3417-3421`) | half toward +∞ | `uo_jsnum::math` |
+| glyph loop `for (const ch of s)` (`text-metrics.ts:115, 125`) | code points, not units | `uo_text::utf16` |
+| `toLocaleLowerCase()` of find (`universal-sheet.ts:2867-2869`) | host locale | root mapping (SH2) |
+| CF `each` / replace-all iterating `Map` insertion order (`universal-sheet.ts:4205, 2964`) | order of created rows/cells | order-insensitive (values only); declared, checked by the CF facet |
+
+### T12. Memory (M1–M5) and the M2 soak
+
+M5 caps (Sheet side):
+
+| TS cache | Rust | Cap |
+|---|---|---|
+| `rowMapCache` (`universal-sheet.ts:241`) | gone (the store is the index) | — |
+| `CellFonts.cache` (`text-metrics.ts:34`) + per-font advances | measurement table | 64 fonts × 4,096 characters, cleared on font-set change |
+| `cond-format.ts:109` `memo` (per cell, unbounded per sheet) | CF memo | 65,536 cells per sheet, LRU (viewport-driven) |
+| `cf-formula.ts:162` parse cache | `cf` | 1,024 formulas |
+| `table-styles.ts:49` (WeakMap per `Styles`) | per `Styles` | 256 specs |
+| `fills.ts:26` `tileCache` | shell | 64 tiles |
+| `chartCache` (`universal-sheet.ts:3528`) | per book | 32 models |
+| `drawings.ts:198` `parsed` | per book | 256 objects, LRU |
+| `ignoreRects` (`universal-sheet.ts:725`) | per sheet | the sheet's `ignoredErrors` |
+| SST entries | data (decoded on demand) | `uo-calc` `Limits` |
+| geometry | active sheet × zoom | 1 |
+| viewport lists | per view | 2 retained, scratch reused |
+| `History` | session | 100 steps + byte cap |
+
+**M1**: open (ok and each error), `load_step`, save, `.xls` convert, every grid query, `emit_viewport` (both phases),
+every editor operation + undo/redo — live bytes back after `clear_caches`. **M2 soak (giant-1m, plan §10):** open →
+1,000 frames of scrolling (smooth steps, page jumps, zoom changes every 100, a frozen pane toggled every 250), live
+bytes sampled every 50 frames: flat after warm-up (the measurement table stops growing), 0 B retained per frame; then
+1,000 edits (number, text, formula `=A1*2`, a spilling `=SEQUENCE(5)`, clear, paste of 10×10, undo/redo every 10),
+sampled every 50: flat except the history, which is capped; after `clear_caches` and drop, back to the initial
+value. In wasm, `memory.buffer.byteLength` stops growing after warm-up. **iOS budget**: peak wasm memory ≤ 64 MiB for
+the giant-1m viewer session, ≤ 96 MiB with the 1,000 edits. **M3**: the budgets of T13. **M4**: `Book`, `Session`,
+encoded lists, measurement tables: 10,000 × create/drop on both bindings.
+
+### T13. Performance budgets and benchmarks (PERF)
+
+Baselines measured 2026-11-24 (frozen TS in Node 24, this machine, `--expose-gc`): giant-1m read 1.05–1.39 s + cell
+index 0.11 s (+ engine 0.56 s when built), retained 228 MB, RSS 969 MB; giant-200k read 0.31 s, retained 52.6 MB,
+RSS 377 MB. The browser baselines (open to first paint, scroll frame, edit latency in Chromium) are recorded by the
+C4/C5 harness first.
+
+| Benchmark (frontier) | Budget | Fail |
+|---|---|---|
+| giant-1m open → first viewport list (C1a, C4) | ≤ 250 ms native, ≤ 500 ms wasm; peak live ≤ input + 24 MiB; retained ≤ 8 MiB | > 1.10× previous record, or slower than TS |
+| giant-200k open → first list | ≤ 60 ms native / 120 ms wasm; retained ≤ 4 MiB | same |
+| load all sheets of a generated 20-sheet workbook (C1a) | ≤ 0.3× TS read | > 1.0× TS |
+| save after one edit, giant-1m (C1b) | ≤ 400 ms native / 800 ms wasm; peak ≤ output + 16 MiB | > 1.0× TS |
+| `.xls` conversion (C2) | ≤ 0.5× TS | > 1.0× TS |
+| cell text layout, 100k cells (C3a); CF over 1M cells with a colour scale + a formula rule, per viewport (C3b) | ≤ 0.5× TS | > 1.0× TS |
+| viewport emission 1080p / 4K (C4) | ≤ 1 ms / 4 ms native, ≤ 2.5 ms / 8 ms wasm; ≤ 48 / 192 KiB | > 1.10× previous |
+| scroll frame total in Chromium (emit + decode + paint), 1080p (C4) | ≤ 8 ms p95 and ≤ the TS `paint()` | slower than TS |
+| edit latency (entry → store → list ready), giant-1m (C5) | ≤ 16 ms p95 wasm | slower than TS |
+| paste 10k cells / fill 100k / replace-all 1M / undo of each (C5) | ≤ 0.5× TS | > 1.0× TS |
+
+Harness: `tools/bench/speed/run.mjs` `sheet` suite (TS frozen dist × rust-core native/wasm, Node and Chromium),
+results in this record per frontier; a frontier does not close with a failing row unless the maintainer approves it.
+
+### T14. Security and fuzz
+
+Limits: `uo_opc::Limits` (zip bombs, part sizes), `uo_calc::store::Limits` (cells, sheets, formulas, strings),
+`book::ReadLimits` (sheets, nesting depth with an explicit stack instead of the TS recursion), CF rules, merges,
+drawing objects, history bytes. Fuzz: `xlsx_open` (bytes → open + load all + one viewport), `xlsx_sheetdata`
+(structure-aware mutation of `<sheetData>`: order, duplicates, refs, types, values, entities), `xlsx_roundtrip` (open
+→ random edits → save → reopen: store facet equal), `xls_convert`, `cf_formula`, plus `uo-calc`'s targets.
+
+### T15. Wasm split (plan §9 budgets)
+
+| Module | Contents | Budget (gzip) |
+|---|---|---|
+| `uo-sheet.wasm` | `uo-xlsx` read + grid, `uo-calc` (open-recalc needs it), `uo-numfmt`, `uo-dml-render`, `uo-charts`, the uo-render Slides+Sheet encoder | ≤ 1.6 MB |
+| `uo-sheet-editor.wasm` | the above + save + edit + exporters | ≤ 3.5 MB |
+| `uo-xls.wasm` | `.xls` → parts (lazily loaded, separate instance) | not in the viewer budget |
+
+### T16. Questions for the M5 gate (batched; SH1, SH2, SH4 in `uo-calc.md`)
+
+- SH3: `uo-sheet.wasm` holds the calc for the open-recalc rule; if it exceeds 1.6 MB gzip, load the calc lazily
+  (fetched only when the open plan is not `none` or at the first edit) or raise the budget?
+- SH5: the history byte cap (64 MiB wasm32 / 256 MiB native, oldest steps dropped) on top of the 100 steps — accept?
+- SH6: `uo-xls.wasm` as a separate lazily loaded instance (the same question as Slides' SP4) — accept?

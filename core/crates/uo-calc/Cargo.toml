@@ -1,0 +1,20 @@
+[package]
+name = "uo-calc"
+description = "Sheet cell store and calculation engine of the UniversalOffice Rust core: the one cell store shared by the workbook model and the calc (plan 4.0), values, formulas, dependency graph, recalc (port of sheet/packages/calc)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Architecture skeleton (2026-11-24): types only, no dependency yet. The port frontiers add, per the record
+# `core/docs/modules/uo-calc.md`: uo-jsnum (JS numerics, stable sort), uo-text (UTF-16, case, collation,
+# props), uo-numfmt (TEXT, file-form number text) and `regress` (decision R1, A4 text family).
+[dependencies]
+
+[dev-dependencies]
+uo-alloc = { path = "../uo-alloc", features = ["global"] }
+
+[lints]
+workspace = true
