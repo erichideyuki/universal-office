@@ -1,4 +1,4 @@
-# Rust port — handoff (state of 2026-11-23; newest update: "uo-xlsx, the xlsx writer")
+# Rust port — handoff (state of 2026-11-24; newest update: "Sheet task 0 — preconditions")
 
 Entry point for the next session that continues the Rust migration (0.10). Read this, then
 `.claude/skills/rust-port/SKILL.md` (the workflow: hybrid mode, models per role, memory gate) and the module records
@@ -6,11 +6,10 @@ in `core/docs/modules/`.
 
 ## Where things are
 
-- **Worktree** `D:\Projects\OfficeNext\.claude\worktrees\rust-core`, **branch `rust-core`**, HEAD `da31758d`
-  (2026-11-07). Workspace `core/`.
-- **Pushed once**: `origin/rust-core` is at `62b381d7` (2026-11-18; `<u-grid>`'s `grid-pdf` pins `uo-fonts` by that git
-  `rev`). Later commits exist only on this disk until the maintainer pushes again — a consumer pinning a newer `rev`
-  (the grid's `grid-xlsx` on `uo-xlsx`) needs that push.
+- **Worktree** `D:\Projects\OfficeNext\.claude\worktrees\rust-core`, **branch `rust-core`**. Workspace `core/`.
+- **Pushed**: `origin/rust-core` = `8d0d0004` (2026-11-23, the `uo-xlsx` commit; `<u-grid>`'s `grid-xlsx` and
+  `grid-pdf` pin `uo-xlsx`/`uo-opc`/`uo-fonts` by git `rev`). Commits after it exist only on this disk until the
+  maintainer pushes again. Still no CI run of `rust-core.yml`.
 - **Frozen TS reference** (behaviour source, never edit): `UO_TS_ROOT=D:/Projects/OfficeNext/.claude/worktrees/clickcompliance-docx`
   (commit `d0f45bc5`, `dist` built). Do **not** use the main checkout as TS root (its `dist` is stale, F2-20).
   Layout captures need `--accept-stale typography/font/sfnt.ts` (F7a-14) and `node --max-old-space-size=8192` past
@@ -35,6 +34,28 @@ in `core/docs/modules/`.
 | Memory benchmark `main × rust-core` | `01c72ab5` | `uo-docx-layout.md` "Benchmarks … memory" | Rust layout = **0.23–0.41×** the TS memory |
 | wasm2js fallback + wasm-opt, measured | `ba3e15b9` | `uo-bindings.md` "No-WebAssembly fallback" | works under strict CSP; 4–8× slower, 1.57 MB gzip |
 | wasm size items 1–3a (planner → Sonnet → reviewer) | `da31758d` | `size-optimization.md` §8 | raw −33.5%, gzip −4.1%, same output, same speed |
+
+## Update 2026-11-24 — Sheet task 0 (preconditions of `slides-sheet-port-plan.md` §0 for tracks A and C)
+
+The maintainer said "continue the Sheet migration, one task at a time". Order: 0 preconditions → 1 §4.0 architecture
+(one cell store for sheet-core + calc) → 2 §4.3 captures (workbook generator, `calc-traps`, `calc-tests`, the 35,299
+bank) → 3 track A (calc, M3) → 4 C1/C2 (`uo-xlsx` reader + surgical save, `.xls`) → 5 C3/C4 (grid model, viewport,
+`engine="rust"`, M5) → 6 C5 + .NET `UniversalOffice.Xlsx` (M6).
+
+- **Backup**: none needed — `origin/rust-core` = HEAD `8d0d0004`.
+- **Disk**: 25 GB free on D: (plan asks ≥ 40). Cleared the `uo-xlsx` build outputs (`core/target/xlsx/{debug,release,
+  wasm32-unknown-unknown}`, `xlsx-wasm*`, 3.6 GB) → 29 GB. `core/target` keeps ≈ 4.5 GB of old-wave scratch and
+  `w4-oracle` (PowerPoint oracle cache, keep).
+- **§13 A decisions for tracks A/C, applied with the recommended option** (revisitable at M3/M5):
+  - **T2** font policy = the TS Sheet rule (as Slides: a font installed by name is drawn by the browser; the display
+    list carries the family; GDI width tables + the shell's advance table for missing glyphs, plan §7 C3).
+  - **R1** calc regex = `regress` (ECMAScript semantics, the TS's PCRE2 → JS translation ported 1:1) with a step
+    budget and a Unicode-version check against Node 24.15.
+  - **C1** locale scope = **host hook**: the TS derives decimal/group separators, date/time order, AM/PM and the
+    currency symbol from `Intl` for ANY locale (`i18n/value-locale.ts:25-44`, `translate.ts:126`) and orders lists with
+    `Intl.Collator` (`translate.ts:686`). Dropping that would regress Spanish (UI language since 0.9.2), so the shell
+    passes the `Intl`-derived `ValueLocale` (+ the collator order where used) into Rust — browser behaviour equal to
+    the TS; server/.NET fall back to the measured pt-BR/en-US tables. Function names stay pt-BR/en-US only.
 
 ## Update 2026-11-23 — `uo-xlsx`, the xlsx writer (track C, writing side)
 
