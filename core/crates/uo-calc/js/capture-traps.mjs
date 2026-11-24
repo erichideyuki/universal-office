@@ -35,6 +35,7 @@ const { fork } = await import('node:child_process');
 const { fileURLToPath } = await import('node:url');
 const IS_CHILD = process.env.UO_TRAPS_CHILD === '1';
 const C = await import('./lib/common.mjs');
+C.freezeClock(); // frozen host clock (2025-01-15 12:00 UTC), as a1/a2/bank
 
 const a = C.args();
 const root = C.tsRoot(a);

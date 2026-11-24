@@ -26,6 +26,16 @@ export const DEFAULT_TS_ROOT = 'D:/Projects/OfficeNext/.claude/worktrees/ts-ref-
 /** "now" of every calc capture: 45658.5 = 2025-01-01 12:00 (the default of the TS testing.ts mock). */
 export const NOW_SERIAL = 45658.5;
 
+/** Freezes the host clock at 2025-01-15 12:00 UTC (as capture-a1/a2 do): year-less dates (VALUE("jan-1")) read new Date(). */
+export function freezeClock() {
+  const FIXED = Date.UTC(2025, 0, 15, 12, 0, 0);
+  const RealDate = Date;
+  globalThis.Date = class extends RealDate {
+    constructor(...x) { if (x.length === 0) super(FIXED); else super(...x); }
+    static now() { return FIXED; }
+  };
+}
+
 export function args(argv = process.argv.slice(2)) {
   const opt = (name, dflt) => {
     const i = argv.indexOf(name);

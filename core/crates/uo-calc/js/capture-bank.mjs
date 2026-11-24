@@ -21,6 +21,7 @@ const { join, dirname } = await import('node:path');
 const { gzipSync } = await import('node:zlib');
 const { CaptureWriter } = await import('../../uo-testkit/js/testkit.mjs');
 const C = await import('./lib/common.mjs');
+C.freezeClock(); // year-less dates read the host clock; same frozen instant as a1/a2
 
 const a = C.args();
 const root = C.tsRoot(a);

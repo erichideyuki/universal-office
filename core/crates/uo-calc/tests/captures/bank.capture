@@ -1,5 +1,5 @@
 # Calc bank (plan 4.3): TS runCase over the Excel oracle bank, see core/crates/uo-calc/js/capture-bank.mjs and core/docs/modules/uo-calc.md "Captures"
-@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=linux arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=fma+avx2 glibc=2.39 tunables=none flags=none
 @ts-root-commit b92b60fae4c1c612de1de3174c199052d43b9230
 @ts-root-calc clean
 @tz UTC

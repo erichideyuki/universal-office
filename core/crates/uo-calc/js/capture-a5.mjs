@@ -26,6 +26,7 @@ const { gzipSync, gunzipSync } = await import('node:zlib');
 const { pathToFileURL } = await import('node:url');
 const { Rng } = await import('../../uo-testkit/js/testkit.mjs');
 const C = await import('./lib/common.mjs');
+C.freezeClock(); // frozen host clock (2025-01-15 12:00 UTC), as a1/a2/bank
 
 const a = C.args();
 const root = C.tsRoot(a);

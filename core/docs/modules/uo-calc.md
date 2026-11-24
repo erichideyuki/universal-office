@@ -786,7 +786,7 @@ Replay of `tests/a4.rs`, unchanged harness (the family's cases turned from defer
 UCRT `pow` of the capturing Node (`…02`) and the reference the port follows (decision G1 (a) of `uo-jsnum.md`: glibc's
 non-FMA `pow`, `…03`; checked in WSL with `GLIBC_TUNABLES=glibc.cpu.hwcaps=-FMA,-AVX2`: `…03`). The exact value is
 `2^−135·(1 + 2^−52)^2.5 = 2^−135·(1 + 2.5ε + 1.875ε² + …)`, so `…03` is the correctly rounded one. `a4_big` asserts
-no mismatch and therefore fails on these 2 records until the harness (A4a's) learns platform records (open item 1).
+no mismatch and therefore failed on these 2 records. **Resolved 2026-11-24**: the captures were retaken under the reference platform (WSL, glibc; section "Captures"), the 2 records now hold `…03`, and `a4_big` has 0 mismatches.
 
 ### Robustness, memory, fuzz
 
@@ -836,8 +836,8 @@ no per-recalc cache (A4b-2).
 
 ### Open items
 
-(1) `a4_big` fails on the 2 platform records above (Windows UCRT `pow` in the capture vs the glibc reference): the
-harness (A4a) needs a rule for them — either the captures are retaken under the reference (Node in WSL with the
+(1) **Resolved 2026-11-24** (captures retaken in WSL under glibc, section "Captures"; `a4_big` has 0 mismatches, no harness rule was needed). It was: `a4_big` failed on the 2 platform records above (Windows UCRT `pow` in the capture vs the glibc reference): the
+harness (A4a) needed a rule for them — either the captures are retaken under the reference (Node in WSL with the
 tunable, as `uo-jsnum.md` prescribes for G1 (a)) or `tests/a4.rs` accepts a listed platform difference; decision for
 the orchestrator. (2) Shared-helper candidates for `shared/` (none needed by another family yet): `walk` (the
 `collectInto` stream with the `each_number` fast path for plain references — `database.ts` (A4e) would gain the same
@@ -900,8 +900,8 @@ Replay of `tests/a4.rs`, unchanged harness (the family's cases turned from defer
 0 parity rounds: the first replay had 4 mismatches, all one harness-visible defect of the port (an Excel error from
 the holidays propagated out of the whole lift instead of becoming the element's value, `NETWORKDAYS` over an array),
 and the first release run 17 more (the holidays' spread `RangeError`, A4c-4) — both fixed by the same agent before
-any verifier; the CI bank was equal from the first run. The full `a4_big` (every family) still fails on A4b's 2
-platform records (A4b open item 1), not on this family.
+any verifier; the CI bank was equal from the first run. The full `a4_big` (every family) failed on A4b's 2
+platform records (A4b open item 1, resolved 2026-11-24), not on this family.
 
 ### Robustness, memory, fuzz
 
@@ -1030,7 +1030,7 @@ tree (438–456 functions with a body in the big runs), so they mix both frontie
 (46023) where the Rust mock's frozen clock (45658.5, decision C1) gives 1/1/2025 (45658) — every difference is exactly
 365 days, the pt-BR records of the same cases (`jan-1` read as January 2001) are equal, and the CI capture has no
 en-US record. The fix belongs to the capture (freeze `Date` in `capture-bank.mjs`, or record the year), open item (7);
-`a4_big` asserts no mismatch and fails on them, as on A4b's 2 platform records.
+`a4_big` asserts no mismatch and failed on them, as on A4b's 2 platform records. **Resolved 2026-11-24**: `capture-bank.mjs` now freezes the clock (`freezeClock()` of `lib/common.mjs`, 2025-01-15 12:00 UTC) and the big bank was retaken: the 9 records hold 45658 and `a4_big` has 0 mismatches.
 
 **0 parity rounds**: the first CI replay of the family (bank and traps) was equal; the only defect found by the
 first run was a panic of the output buffer (`Buf` past its stack capacity with an empty stack part), fixed before
@@ -1097,8 +1097,7 @@ rule). (4) `tests/a3_robust.rs` `incremental_equals_full` failed in this tree on
 `FILTERXML` items with `Array.prototype.sort` on `order` numbers; Rust sorts by an integer key (stable) — equal
 because node keys are unique and attribute items of one owner keep insertion order in both. (6) The fuzz run of the
 six new seeds (stable driver, `--slow 1`) is still to do, when D: has room for the fuzz workspace's release build.
-(7) The bank capture's year (`new Date()` in `coerce.ts:197`, not frozen by `capture-bank.mjs`): the 9 en-US clock
-records of the big bank — the harness (A4a's) needs the year frozen or recorded.
+(7) **Resolved 2026-11-24**: the bank capture's year (`new Date()` in `coerce.ts:197`) was not frozen by `capture-bank.mjs`; it is now (`freezeClock()`), and the 9 en-US clock records of the big bank were retaken with 2025 — no harness rule needed.
 
 ## A4e — as built (2026-11-24, Opus)
 
@@ -1153,9 +1152,9 @@ families after A4e:
 | Group | Compared (all families) | Equal | Of which A4e (72 functions) | Deferred | Notes |
 |---|---|---|---|---|---|
 | bank CI (35,299 cases) | 35,295 | **35,295** | 6,078 compared (55 functions have cases), **6,078 equal** | **0** | the 57 legacy `@` cases compared (A5) |
-| bank big (pt-BR + en-US) | 70,590 | 70,581 + the 9 clock records (A4d open item 7) | 12,156, **12,156 equal** | **0** | |
+| bank big (pt-BR + en-US) | 70,590 | 70,590 (the 9 clock records were resolved 2026-11-24) | 12,156, **12,156 equal** | **0** | |
 | calc-traps CI (54,120 calls, release) | 54,097 | **54,097** | 8,405 compared, **8,405 equal** (debug 8,200 + 205 whole-column) | **0** | 8 random records (RANDARRAY) equal value and consumption |
-| calc-traps big (308,120) | 307,930 | 307,927 + 1 NaN payload + A4b's 2 `pow` platform records | 46,932, **46,932 equal** | **0** | 54 random records; the 1 first mismatch was OFFSET NaN (A4e-6) |
+| calc-traps big (308,120) | 307,930 | 307,929 + 1 NaN payload (A4b's 2 `pow` platform records resolved 2026-11-24) | 46,932, **46,932 equal** | **0** | 54 random records; the 1 first mismatch was OFFSET NaN (A4e-6) |
 | calc-order CI x1 (A3 replay) | values 99,616 (A4d: 82,915) | **99,616** | — | **0** (A4d: 16,701) | order equal 420/420 runs, random equal 420, `circular` 30/30, incremental = full 30/30 |
 | calc-order CI ops | values 132,021 | **132,021** | — | 0 | 560/560 runs |
 | calc-order big | values 11,035,843 (A4d: 9,751,663) | **11,035,843** | — | **0** (A4d: 1,284,180) | order equal 11,200/11,200, random 11,200, `circular` 800/800, incremental = full 800/800 |
@@ -1163,7 +1162,7 @@ families after A4e:
 **What stays deferred after A4e: nothing** in the bank, trap and calc-order replays. Outside them: the `cellInfo` host
 callback (C5) — no capture has a host `cellInfo` (CELL "format"/"color"/… answer the TS defaults when the host has
 none, which is what every capture records); the `calc-tests` Engine calls (A3 open item 2, now replayable: every body
-exists); the known capture issues (A4b's 2 `pow` records, A4d's 9 clock records). 0 parity rounds: the first CI bank
+exists); the known capture issues (A4b's 2 `pow` records and A4d's 9 clock records, both resolved 2026-11-24 by retaking the captures). 0 parity rounds: the first CI bank
 replay had 6 mismatches, all harness (A4e-10); the first big trap run 1 (A4e-6); the first A3 replay 128 values +
 2 verdicts, all the full recalc's missing stream (A4e-10).
 
@@ -1467,6 +1466,10 @@ text (`lib/common.mjs` `makeValueText`: `n<f64 bits>`, `s<JSON>`, `b1/b0`, `e<co
 | **a1** (A1) | `node core/crates/uo-calc/js/capture-a1.mjs`; local `--big --out core/target/sheet-cap/a1-big.capture.gz` (19 s) | `a1.capture.gz` 521 KiB, 52,402 calls (big: 486,022) | every A1 entry point of the calc dist called directly: traps + seeded inputs in four locales (en-US, pt-BR, a de-DE host locale, an empty-group locale), clock frozen at 2025-01-15 12:00 UTC; records `<fn>#<i>` with `in` (value texts) and `out`; replayed by `tests/a1.rs` (section "A1 — as built") |
 | **a2** (A2) | `node core/crates/uo-calc/js/capture-a2.mjs`; local `--big --out core/target/sheet-cap/a2-big.capture.gz` (14 s) | `a2.capture.gz` 1.1 MiB, 52,948 records (big: 251,407) | parse (`canon` of the AST = the calc-tests recorder's JSON, or `throw:<Class>:<pos>`), six prints and the round trip of the bank's, the generated workbooks' and seeded/mutated formulas under eight option sets; `Evaluator.evalFormula` over a mock host described in `@mock` (function bodies replaced by a marker: `A4` where the TS called one); `ops.ts` over 42 trap values in two locales; `a1.ts`; `numberLiteralValue`; `applyFn` over synthetic definitions with the body's call log. Replayed by `tests/a2.rs` |
 | **store** (S0) | `node core/crates/uo-calc/js/capture-store.mjs`; local `--big --out core/target/sheet-cap/store-big.capture` (47 s) | `store.capture` 19 KiB + `store.side.gz` 146 KiB, 35 workbooks + 1,750 traps (0.2 s) | the TS adapter of the store facet (`storeOf` rule of uo-xlsx `capture-sheet.mjs`): per sheet the model cells in FILE order (`in<i>`, the test-only loader's input), `st<i>`, `fo<i>`, `rw<i>`, `cellValue` per cell (`cv<i>`), the SST texts; samples (giants only in `--big`) + x1 (`--big`: + x1-big); per-parameter traps of `numberLiteral`/`numberText`/`fileCellValue`/`errorOf`/`cellValue`. Replayed by `tests/parity.rs` (section "S0 — the store, as built") |
+
+**Capture platform and clock (2026-11-24).** Decision G1 (a) / G10 of `uo-jsnum.md`: Node's `Math.pow` (and the other libm calls) follows the C runtime, Windows UCRT differs from glibc in ~0.08% of pairs, and the Rust port follows glibc. So every group whose path can call a `uo-jsnum` math function is captured in **WSL** (Ubuntu 24.04, glibc 2.39, Node 24.15.0 linux-x64, no `GLIBC_TUNABLES`; the capture's `@platform` line reads `os=linux … glibc=2.39`): **bank**, **calc-traps**, **calc-order** and **a1** — the committed CI captures and the local big ones (`bank-big`, `calc-traps-big`, `calc-order-big`, `a1-big`). Groups that do not reach libm keep their Windows captures (`os=win32`): **a2** and **a5** (a WSL recapture gave identical outputs for identical inputs; a5 needs the host default locale pt-BR for the `xx-YY` Intl rows, so under WSL it must run with `LC_ALL=pt_BR.UTF-8`, which reproduces the Windows file byte for byte in content), **store**, and **calc-tests** (the recorder runs vitest, and the frozen checkout has no Linux rollup binary — nothing was installed; it replays with 0 mismatches). Recipe: `wsl -d Ubuntu-24.04 -e bash script.sh` with `PATH=~/.nvm/versions/node/v24.15.0/bin:$PATH`, `--ts-root /mnt/d/Projects/OfficeNext/.claude/worktrees/ts-ref-092` and, because that worktree's `.git` file holds a Windows path, `GIT_DIR=/mnt/d/Projects/OfficeNext/.git/worktrees/ts-ref-092 GIT_WORK_TREE=<ts-ref root>` (otherwise `@ts-root-commit` is `unknown`); give big runs an explicit `--max-old-space-size`. Two runs of every committed capture are byte-identical (a5 and the `.gz` files by content). What changed against the Windows captures: only the `@platform` line (bank, calc-order, calc-traps), the libm-dependent values (a1: `bd0`/`dbinomRaw`/`dpoisRaw`/`lbeta`/`betaInc`/`stirlerr`/`xlTan`… and inputs generated with `pow`; NaN payloads), and in the big runs the 2 `WEIBULL.DIST` records (`…02` → `…03`). The **clock** is frozen in every capture: `lib/common.mjs` `freezeClock()` (`Date` fixed at 2025-01-15 12:00 UTC, `TZ=UTC`) is called by `capture-bank.mjs`, `capture-a5.mjs` and `capture-traps.mjs` (its child process runs the same script); a1/a2 freeze their own `Date`, calc-order passes `now` to the engine, the calc-tests recorder freezes it in `recorder-setup.mjs`. This retired the 2 `pow` records of A4b and the 9 en-US `VALUE("jan-1")` records of A4d (the TS read 2026 from the host clock). A traps run can record a `timeout:5000ms` on a loaded machine for a call that answers in isolation (seen once: `PMT[85]`); retake that function with `--only` and compare before accepting it.
+
+Known drift, left as it is: a fresh `capture-a2.mjs` yields 68,274 records (generated formulas 4,011 against the committed 1,530; big 276,721 against 251,407) because it reads the `calc-order` sidecar, which grew after a2 was committed; for the inputs both files share the outputs are identical (19,464 compared), so the committed a2 and the big a2 were kept.
 
 TS findings the traps recorded (kept as TS behaviour; the Rust port must reproduce or the record must declare):
 23 calls did not return within 5 s (`timeout:5000ms` in the capture, `@timeouts`): `COMBINA(n, ∞)` (the
