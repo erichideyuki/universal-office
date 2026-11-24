@@ -346,6 +346,32 @@ Order: S0 → C1a → (C1b ∥ C2 ∥ C3a) → (C3b ∥ C3c) → C4 → C5a → 
 Corpus: the 7 committed workbooks (`sheet/samples`) + the seeded workbook generator of plan §4.3 + generated `.xls`
 (Excel COM), open fonts only.
 
+### T10a. Captures (harnesses built 2026-11-24)
+
+Scripts in `core/crates/uo-xlsx/js/` (Node only; no Office, no browser window). The frozen TS runs headless: the
+real `<universal-sheet>` element on the fake DOM of the TS's own editing tests (`write/test-support/fake-dom.ts`),
+bundled from the TS sources by `harness/build-harness.mjs` (esbuild of the frozen checkout, the aliases of its
+`build:demo`; `vitest` → `harness/vitest-shim.mjs`) into `core/target/sheet-cap/harness/`. Host injection (C1):
+`TZ=UTC`, `Date` frozen at 2025-01-15 12:00 UTC, `Math.random` = a seeded xorshift32 recorded in call order.
+Captures are deterministic (two runs give identical files, checked). The calc groups (bank, calc-traps, calc-tests,
+calc-order) are in `uo-calc.md` "Captures".
+
+| Group | Command | Committed (CI) | Local run | Covers |
+|---|---|---|---|---|
+| workbook generator | `node core/crates/uo-xlsx/js/gen-workbooks.mjs --gen x1` (`--check`: committed == regenerated; `--stats`; `--heavy <rows>`) | `tests/captures/workbooks/x1/`: 30 `.xlsx`, 291 KiB; every feature in ≥ 5 workbooks | `--gen x1-big` (400 workbooks, ≤ 120 rows, ≤ 4 sheets) into `core/target/sheet-cap` | seeded (xorshift32), byte-stable; features: styles, numFmt (custom + built-in), CF (cellIs, 2/3-colour scales, data bar, icon sets, expression, top10, duplicates, containsText), merges, frozen panes, defined names (global, local, `_xlnm.Print_Area`, undefined name), tables + structured refs, cross-sheet formulas (quoted non-ASCII names), shared formulas, CSE arrays, spills + `metadata.xml` (and a `#SPILL!` blocker), volatiles, cycles (+ iterative calcPr), drawings (shape) and a bar chart, rich SST runs, inline strings, non-canonical `<v>` (`1.50`, `1E3`, ` 7`, `-0`, `Infinity`, `0x10`…), rows/cells out of order and duplicated, `<c r>` on another `<row r>` (SH1), cells/rows without `r`, errors, booleans, dates (+ date1904), hidden rows/cols, widths/heights, formula cached values (absent, stale, typed, `ca`), calcPr variants (old calcId, fullCalcOnLoad, manual, forceFullCalc, none), astral/combining/lone-surrogate entities, columns past Z. `CALC_CLASSES`/`buildCalcHeavy`: the benchmark workbooks |
+| `sheet-x1` | `node core/crates/uo-xlsx/js/capture-sheet.mjs --gen x1 --workbooks core/crates/uo-xlsx/tests/captures/workbooks/x1` | `sheet-x1.capture` 99 KiB + `.side.gz` 550 KiB (30 workbooks, 8 edit steps each) | `--gen x1-big --out core/target/sheet-cap/sheet-x1-big.capture`: 400 workbooks in 91 s, 1.4 MiB + 25 MiB sidecar (2026-11-24; no part XML unless `--parts`) | model JSON with sorted keys (`readWorkbook`, `readStyles`, theme, `readSharedStrings`, each `readWorksheet` minus rows), the store facet per sheet (component index rule: `<row r>` row, last duplicate wins) + file order + row metadata, the open-recalc plan (17 full / 4 none / 9 partial in x1), evaluation order + RAND values + `circular` + `internalErrors` of the open, engine values, the model after the open's write-back, display text per sheet (`debugCellDisplays`, the Range.Text equivalent), surgical save after a no-op (decompressed part digests + the changed parts' XML in the sidecar), and 8 seeded edit steps through the element's public API (text and formula entry in pt-BR, font, number format, borders, fill, merge, fill down/right, clear, freeze, width, hide, replaceAll, autoSum, copy/paste, undo, redo, recalculate) with the order/RAND/save/display after each |
+| `sheet-samples` | `node --max-old-space-size=8192 core/crates/uo-xlsx/js/capture-sheet.mjs --samples` | `sheet-samples.capture` 18 KiB + `.side.gz` 232 KiB (7 samples; giant-1m 7.8 s, giant-200k 1.9 s) | — | the same facets; for giant-1m/giant-200k the digests cover every cell but the sidecars keep the first 200 rows (store, display of A1:AN200) and no edit steps |
+| `--dir <folder>` | `capture-sheet.mjs --dir <folder>` | — | any folder (the `.xls` hook) | the same facets over arbitrary files |
+
+Not captured, and why: `.xls` (the generator writes `.xlsx` only; `gen-workbooks.mjs --xls-list` writes the batch for
+an Excel COM `SaveAs` FileFormat 56, whose outputs `capture-sheet.mjs --dir` captures — COM is out of this task); the
+viewport op stream (frontier C4: a recording context over `paint()` → `paintRegion`, `universal-sheet.ts:3257-3260`,
+and `renderRegionToCanvas`, 3340); fonts outside the measured GDI tables (the fake canvas measures 0, so families the
+component would measure in the browser — `mdwFromCanvas` — get the table fallback here; open fonts only in the
+committed groups); the async font loading of the element (never awaited by the capture); copy/paste through the OS
+clipboard (the script uses the element's internal clipboard); Excel's own recalculation of the generated workbooks
+(`xl-calc.ps1`, needs COM).
+
 ### T11. JS traps (Sheet side; the calc's are in `uo-calc.md`)
 
 | Site | Trap | Helper |
@@ -411,6 +437,29 @@ C4/C5 harness first.
 
 Harness: `tools/bench/speed/run.mjs` `sheet` suite (TS frozen dist × rust-core native/wasm, Node and Chromium),
 results in this record per frontier; a frontier does not close with a failing row unless the maintainer approves it.
+
+**TS baseline, sheet suite (measured 2026-11-24, the numbers to beat).** `node core/tools/bench/speed/sheet.mjs`
+(built beside `run.mjs`, which is docx-specific; TS only today, the rust-core engines join per frontier), frozen TS
+`b92b60fa`, Node 24.15, each scenario in its own `--expose-gc` process, 1 warm-up + 3 rounds, medians; retained = heap
+after GC with the result alive minus before. Results: `core/tools/bench/speed/results/sheet-ts-2026-11-24.{json,md}`;
+the calc classes are in `uo-calc.md` "TS baseline".
+
+| Scenario | Workbook | ms (median / min) | Retained MB | RSS MB after |
+|---|---|---|---|---|
+| open, sheet-core read (every part, every sheet) | giant-1m (1M cells) | **994** / 911 | 125 | 1,075 |
+| | giant-200k | **212** / 209 | 27.2 | 397 |
+| | calc-heavy-20k (129k cells, 49k formulas) | **176** / 166 | 19.3 | 334 |
+| open, the `<universal-sheet>` element (`loadXlsx`: model, index, geometry, open-recalc) | giant-1m | **1,524** / 1,475 | 686 | 1,949 |
+| | giant-200k | **394** / 343 | 150 | 610 |
+| | calc-heavy-20k | **1,330** / 1,321 | 352 | 828 |
+| save after one edit (`saveXlsx`, surgical) | giant-1m | **997** / 993 | — | 1,120 |
+| | giant-200k | **214** | — | 469 |
+| edit latency (`setActiveCellText`, engine built), calc-heavy-20k | head of a 20k chain | p50 **604**, p95 611 | — | 513 |
+| | isolated cell | p50 **1.7**, p95 4.1 | — | — |
+
+The element builds the calc engine at open on both giants (their open-recalc plan is `full`: the files do not pass
+the "saved by a recent Excel" tests of `open-recalc.ts`), which is why its retained heap (686 B/cell on giant-1m) is
+far above the 239 B/cell of S1 in `uo-calc.md` (model + index + engine only).
 
 ### T14. Security and fuzz
 

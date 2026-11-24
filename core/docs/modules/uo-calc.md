@@ -253,6 +253,47 @@ agent runs them serially or in pairs inside the ≤ 3-agent cap. C1a (`uo-xlsx`)
 Captures use `RandomSource::Sequence` and a fixed `Clock`; the generated workbooks are also recalculated by Excel
 (`xl-calc.ps1`, plan §0.2) for the agreement number (not lower than the TS's).
 
+## Captures (harnesses built 2026-11-24, plan §4.3)
+
+Scripts in `core/crates/uo-calc/js/` (Node only, no Office, no browser), capture files in the `uo-testkit` format
+(`src/capture.rs`) under `core/crates/uo-calc/tests/captures/` (committed CI subsets) or `core/target/sheet-cap/`
+(large local runs, gitignored). Every file is stamped with the frozen TS commit (`@ts-root-commit`, `@ts-root-calc
+clean|dirty`), `@tz UTC`, `@now-serial 45658.5` and the platform line; values are compared through one canonical
+text (`lib/common.mjs` `makeValueText`: `n<f64 bits>`, `s<JSON>`, `b1/b0`, `e<code>`, `a<r>x<c>[…]`, `r<areas>`,
+`_`). Random values come from a seeded xorshift32 and are recorded in call order (`RandomSource::Sequence`).
+
+| Group | Command (CI subset; local run) | Committed | Covers |
+|---|---|---|---|
+| **bank** | `node core/crates/uo-calc/js/capture-bank.mjs`; local `--locales pt-BR,en-US --out core/target/sheet-cap/bank-big.capture` | `bank.capture` 2.9 MiB + `bank.values.gz` (values over 512 units), 35,299 records, 0.9 s | `runCase(case, PT_BR)` of `testing.ts` (the TS oracle test's entry: `callFn` over `mockContext`, or parse + `Engine.recalc` for whole-formula cases) over the 27 `*.cases.json` of `sheet/packages/calc/test/oracle` (read from this worktree; `@oracle-digest` stamps them, `in` per case). Status per case: 34,477 match, **775 known** (`*.known.json`, reason digest in `why`; + 2 in `locale-pt-BR.known.json` = the 777, i18n tables replayed by calc-tests), **47 xlerr** (Excel could not answer), 0 diverge, 0 throw; the Excel answer is kept for every non-match. The local run adds every case in en-US (TS results only) |
+| **calc-tests** | `node core/crates/uo-calc/js/capture-tests.mjs`; local `--big` (no cap) | `calc-tests.capture` 1.3 MiB + `calc-tests.calls.gz` 268 KiB (the full calls), 10,866 calls | the 16 `calc/test/*.test.ts` except `oracle.test.ts` (the bank replays it) + `sheet/test/{sheet-calc,style-pool,entry}.test.ts` = 19 files, 152 tests, all passing under the recorder. Every `export function` of `calc/src` (248 sites: evaluate, parse/print, applyFn/callFn, writeValues, fromSheetCore, open-recalc, save, file-form, i18n…) and the public methods of `Engine`, `SheetCalc`, `XfPool` are wrapped in memory by a Vite plugin (`calc-tests/`; the checkout is never written); only outermost calls are kept, with canonical arguments, result or exception, receiver id and the `Math.random` values consumed. Clock frozen, `Math.random` seeded per file. Filtered: 3,186 registration calls at module load; CI keeps ≤ 200 pure calls per (test, function) by stride (41,665 dropped, all kept by `--big`) |
+| **calc-traps** | `node --max-old-space-size=8192 core/crates/uo-calc/js/capture-traps.mjs` (≈ 8 min); local `--big` (41 min) | `calc-traps.capture` 1.1 MiB, 535 functions, 54,120 calls | per function, a seeded baseline from the bank (the plain-argument case with the most arguments) and each position 0..3 replaced by 31 CORE traps (NaN, -0, ±∞, 1e21, 1e-7, 2^53+2, 17 digits, denormal, empty, lone surrogate, astral, combining, non-ASCII, Turkish İı, pt-BR/en-US text-numbers, TRUE, empty, omitted, #N/A/#DIV/0!/#VALUE!, empty/1×1/union/whole-column ranges, 2×2 and ragged arrays) in pt-BR, plus the text traps in en-US. `--big`: 98 traps (every error code, more digit counts, subnormals, white space, wildcards, regex text, dates, booleans as text, rows/blocks), positions 0..5, both locales, 24 seeded pairs per function and locale. The trap table is in the file (`@trap.*`). Calls run in a child process with a 5 s watchdog per call; a call that does not return is `timeout:5000ms`, one that kills the process (V8 fatal) `crash:<exit>`, and the child restarts at the next call |
+| **calc-order** | `node core/crates/uo-calc/js/capture-order.mjs`; local `--gen x1-big --heavy 20000` | `calc-order.capture` 74 KiB + `.side.gz` 423 KiB, 30 workbooks | the evaluation-order facet of §16 item 4: the generated workbooks (uo-xlsx `gen-workbook.mjs` group x1, read by sheet-core's dist, `fromSheetCore` → the `CalcWorkbook`, kept in the sidecar so A3 can replay before C1a exists) through `new Engine` + `recalc()`, a `calculate()`, 12 seeded `setCell` + `calculate()` edits, and a fresh full recalc of the final inputs: per run the `evaluateRec` sequence (13,970 evaluations in x1), the RAND values (1,570), `circular` sorted (13 workbooks with cycles), `internalErrors` (0), all values, and incremental vs full (equal in 6, differ in 24: volatiles and cycles — recorded, not judged). The x1 workbooks put ranges wider than the formula columns next to spills/CSE (the `fc.keys()` and `rangeMasters` sites of S7) |
+
+TS findings the traps recorded (kept as TS behaviour; the Rust port must reproduce or the record must declare):
+23 calls did not return within 5 s (`timeout:5000ms` in the capture, `@timeouts`): `COMBINA(n, ∞)` (the
+`binomial` loop runs to `k = ∞`), `BESSELJ/I/K(x, ∞ | 1e21 | 2^53+2)`, `COUPDAYSNC`/`COUPNCD` with `NaN` settlement or
+maturity and with maturity `∞ | 1e21 | 2^53+2`, `ODDFPRICE` with `-∞` issue, `FORECAST.ETS.CONFINT` with target date
+`1e21 | 2^53+2`. 27 calls threw out of `callFn` (inside the engine a `RangeError` becomes `#NUM!` and any other
+exception `#VALUE!` + `internalErrors`, `engine.ts:903-910`): `RangeError` "Invalid array length" (`SEQUENCE`,
+`EXPAND`, `TAKE`, `MUNIT`, `WRAPROWS/COLS` with `NaN`), "cannot be converted to a BigInt" (`BITRSHIFT(·, NaN)`),
+"Invalid code point" (`UNICHAR(NaN)`), "Maximum call stack size exceeded" (a whole column spread into a call:
+`TEXTJOIN`, `TEXTSPLIT`, `TEXTBEFORE/AFTER`, `WORKDAY(.INTL)`, `NETWORKDAYS(.INTL)` holidays — V8 stack dependent),
+`TypeError` (`ISEVEN/ISODD` of an empty/omitted argument: a `Symbol` reaches a string conversion; `FVSCHEDULE`/`XIRR`
+with an array literal holding text).
+
+Local runs of 2026-11-24 (`core/target/sheet-cap`, not committed): bank in pt-BR + en-US 5.6 MiB (1.2 s);
+calc-tests `--big` 52,531 calls, 6.2 MiB + 1.0 MiB calls (17 s); calc-order over x1-big (400 workbooks) +
+calc-heavy-20k: 1,049,214 evaluations, 51,024 random values, 209 workbooks with cycles, 1.0 MiB + 51 MiB sidecar
+(55 s); calc-traps `--big` 308,120 calls in 41 min, 6.6 MiB: 102 threw, 190 timed out (COUPNCD 31, BESSELK 31, COUPDAYSNC 30, BESSELJ 27, FORECAST.ETS.CONFINT 26, BESSELI 26, ODDFPRICE 6, MUNIT 6, COMBINA 3, BESSELY 2, BAHTTEXT 2), 0 crashes (with worker threads instead of child processes an earlier attempt died of a V8 fatal "invalid table size" in the worker, which aborts the whole process).
+
+What these captures cannot catch (passing = equal on what was captured): the TS's own bugs (the bank's 775 + 2 known
+divergences stay "known", and calc-traps/calc-tests record TS behaviour, not Excel's — the interesting TS≠Excel
+cases go to `xl-calc.ps1` in one batch when COM is allowed); results that depend on `Intl` outside pt-BR/en-US (C1
+hook: only the two measured tables are exercised); the `functionNames` collator order (shell); timing and memory
+(the benchmarks and M1–M5 cover them); V8-vs-Rust differences on inputs no group generates (the traps are per
+parameter, pairs only in the local run); thunk arguments in calc-tests are evaluated once at record time (a lazy
+argument with a side effect — `RAND` inside a thunk — is recorded with that call's value).
+
 ## JS semantics that are traps (helper to use)
 
 | TS construct (site) | Trap | Helper |
@@ -318,6 +359,30 @@ wasm), workbooks: `giant-1m`, `giant-200k`, and generated calc classes (seeded):
 A benchmark slower than the TS fails the frontier unless the maintainer approves it (listed in the record); a
 regression > 10% against the previous rust-core record fails (M3 rule).
 
+### TS baseline (measured 2026-11-24, the numbers to beat)
+
+`node core/tools/bench/speed/sheet.mjs` (beside `run.mjs`: the Write runner is docx-specific; the Rust engines join
+this suite per frontier), frozen TS `b92b60fa`, Node 24.15, this machine (i5-14600KF), each scenario in its own
+`--expose-gc` process, 1 warm-up + 3 rounds, medians; retained = heap after GC with the result alive minus before.
+Results: `core/tools/bench/speed/results/sheet-ts-2026-11-24.{json,md}`. Calc classes from
+`core/crates/uo-xlsx/js/lib/gen-workbook.mjs` `CALC_CLASSES` (one sheet, no cached values).
+
+| Class (calc dist: `fromSheetCore` + `new Engine`, then `recalc()`) | formulas | build ms | **recalc ms** | engine retained MB |
+|---|---|---|---|---|
+| chain-100k | 99,999 | 167 | **72.7** | 98.2 |
+| sum-ranges-100k (`SUM` of a 100-row window) | 100,000 | 308 | **199** | 124 |
+| lookup-10k×10k (VLOOKUP/MATCH/XLOOKUP over 10k rows) | 10,000 | 56 | **93.7** | 15.4 |
+| text-50k (UPPER/LEN/SUBSTITUTE/TEXT/LEFT&RIGHT) | 50,000 | 185 | **112** | 68.9 |
+| dynamic-1k (20 SORT/UNIQUE/FILTER/SEQUENCE spills over 1k rows) | 20 | 0.9 | **9.8** | 2.5 |
+| volatile-10k (RAND + dependents) | 20,000 | 52 | **18.4** | 17.7 |
+| cycles-iterate (1,000 two-cell cycles, iterate 100/0.001) | 2,000 | 7.0 | **42.0** | 2.3 |
+| shared-1m (one shared formula over 1M cells) | 1,000,000 | 2,085 | **1,390** | 738 (RSS 3.2 GB) |
+| calc-heavy-20k (mixed: chain, IF, window SUMs, lookups, text, SUMIF, spills, volatiles) | 49,205 | 198 | **677** | 89.0 |
+
+Edit latency (the element, calc-heavy-20k open, engine built): `setActiveCellText` on the head of the 20k chain
+p50 **604 ms** / p95 611 ms; on an isolated cell p50 **1.7 ms** / p95 4.1 ms (20 edits each). The open and save
+baselines of the Sheet are in `uo-xlsx.md` T13.
+
 ## Security and fuzz targets
 
 Limits (`store::Limits`): cells, sheets, formulas, formula text length, parse depth, evaluation depth (measured in
@@ -354,3 +419,4 @@ Listed in the plan's §16 with the evidence.
 | Stage | Agent | Wall time | Notes |
 |---|---|---|---|
 | Architecture pass (S, C1 hook, frontiers, budgets) | Opus | ≈ 25 min wall (00:53-01:18, shared with `uo-xlsx.md`) | TS heap measured with the frozen dists |
+| Capture harnesses (plan §4.3: bank, calc-tests, calc-traps, calc-order; Sheet captures, workbook generator, `sheet` bench suite) | Opus | ≈ 1 h 50 min wall (01:15-03:07, ≈ 1 h of it the large local runs; shared with `uo-xlsx.md` T10a/T13) | no Rust code touched; one rework: the calc-traps run hung on TS inputs that never return (COMBINA(n, ∞) and 22 more), so calls moved into a watchdogged child process (a worker thread was not enough: the big run hit a V8 fatal error, which aborts the whole process) |
