@@ -318,7 +318,7 @@ Sonnet, closed scope (plan §7 C2). `uo-xls.wasm` is a separate, lazily loaded i
 
 | # | Scope | Model | Closed scope | Needs |
 |---|---|---|---|---|
-| C1a | `read`: model types, package, workbook/styles/theme/SST index, streaming worksheet → store, frame, CF/pivot/table/comments/hyperlinks/drawing-anchor/chart-data readers; `uo-opc` streaming inflate + pull reader | Sonnet | **yes** (this section + `uo-calc.md` S) | S0 |
+| C1a (**done** 2026-11-24, section "C1a — as built") | `read`: model types, package, workbook/styles/theme/SST index, streaming worksheet → store, frame, CF/pivot/table/comments/hyperlinks/drawing-anchor/chart-data readers; `uo-opc` streaming inflate + pull reader | Sonnet | **yes** (this section + `uo-calc.md` S) | S0 |
 | C1b | `save`: frame surgery, streamed `<sheetData>`, save-calc, `prepareForSave` glue, XfPool + patch | Sonnet | **yes** | C1a, A5 (save rules) |
 | C2 | `xls`: BIFF → OOXML parts | Sonnet | **yes** | C1a |
 | C3a | `grid`: metrics, cell text, entry/entry-format/edit-text, geometry, resolved styles, row auto-fit | Sonnet | **yes** | C1a |
@@ -465,7 +465,7 @@ far above the 239 B/cell of S1 in `uo-calc.md` (model + index + engine only).
 
 Limits: `uo_opc::Limits` (zip bombs, part sizes), `uo_calc::store::Limits` (cells, sheets, formulas, strings),
 `book::ReadLimits` (sheets, nesting depth with an explicit stack instead of the TS recursion), CF rules, merges,
-drawing objects, history bytes. Fuzz: `xlsx_open` (bytes → open + load all + one viewport), `xlsx_sheetdata`
+drawing objects, history bytes. Fuzz: `xlsx_read` (built in C1a, `core/fuzz/src/xlsx_read.rs`: package bytes, or one mutated part in a minimal package → open + load all + every shared string + a viewport; the plan's `xlsx_open`), `xlsx_sheetdata`
 (structure-aware mutation of `<sheetData>`: order, duplicates, refs, types, values, entities), `xlsx_roundtrip` (open
 → random edits → save → reopen: store facet equal), `xls_convert`, `cf_formula`, plus `uo-calc`'s targets.
 
@@ -483,3 +483,126 @@ drawing objects, history bytes. Fuzz: `xlsx_open` (bytes → open + load all + o
   (fetched only when the open plan is not `none` or at the first edit) or raise the budget?
 - SH5: the history byte cap (64 MiB wasm32 / 256 MiB native, oldest steps dropped) on top of the 100 steps — accept?
 - SH6: `uo-xls.wasm` as a separate lazily loaded instance (the same question as Slides' SP4) — accept?
+
+
+---
+
+## C1a — as built (2026-11-24, Sonnet 5.5)
+
+Frontier C1a of T9: the reader (feature `read`) and its two shared pieces in `uo-opc`. The default build (no feature) is the
+writer, byte for byte as before (`grid-xlsx` pins it: the four writer files are untouched; `lib.rs` gains one `cfg`ed
+module line, `Cargo.toml` the features and an example with `required-features`). Everything below was verified against the
+frozen TS (`ts-ref-092` at `b92b60fa`) through the captures of T10a.
+
+### Code
+
+| Piece | Where | TS source |
+|---|---|---|
+| Streaming inflate | `uo-opc` `flate::Inflater` (resumable, 43 KiB of state), `Package::stream_part` → `PartStream::next_chunk` (64 KiB pieces, part cap and total counted, declared size truncates) | `fflate` `unzipSync` |
+| XML pull tokenizer | `uo-opc` `xml::pull` (`Pull::feed`, `Token`, `StartTag::attrs`, `decode_text`/`decode_attr`/`decode_cdata` to UTF-16, `is_plain`) | `sheet-core/src/xml.ts` |
+| Model types | `read/model.rs` (`Workbook`, `Styles`, `Theme`, `Worksheet`, `CondRule`, `DrawingObject`, `TableInfo`, `PivotInfo`, `XEl`…) | `model.ts`, `styles.ts`, `theme.ts` |
+| Workbook, rels, external links, dynamic-array `cm` | `read/workbook.rs` | `read.ts:59-217`, `package.ts` helpers |
+| Theme, indexed palette, `resolveColorEl`, `applyTint` (Windows integer HLS) | `read/theme.rs` | `theme.ts` |
+| Styles, dxf, fills, borders | `read/styles.rs` | `styles.ts` |
+| Shared strings: element tree from tokens (`MEl`/`MiniBuilder`), `readSharedStringEntry`, run properties table, the INDEX | `read/sst.rs` | `read.ts:21-34, 219-282` |
+| Conditional formats (classic + x14) | `read/cf.rs` | `read-cf.ts` |
+| Drawing: anchors, charts (raw XML kept), objects as `XEl`, OLE previews, form controls | `read/drawing.rs` | `drawing.ts` |
+| Worksheet minus rows: merges, cols, pane, flags, hyperlinks, comments, tables, pivots, validations, autofilter, chart-sheet view | `read/sheet.rs` | `read.ts:285-571`, `read-pivot.ts` |
+| Streaming `<sheetData>` → store | `read/stream.rs` (`read_sheet`) | `read.ts:573-635` |
+| `Book` (open, active sheet first, `load_sheet`/`load_step`/`load_all`, `resolve_sst`) | `book.rs` | `universal-sheet.ts` open path |
+| Canonical JSON of the model (feature `facet`) | `read/facet.rs` | `canon-json.mjs` |
+
+### How a worksheet is read
+
+`Package::stream_part` inflates 64 KiB at a time, `Pull` tokenizes, a `Sink` state machine (depth-tracked, no stack of
+elements) takes `<row>`/`<c>`/`<v>`/`<f>`/`<is>` and feeds `SheetLoader` directly. The bytes before `<sheetData` and after
+`</sheetData>` are collected raw (the frame); the part is never held whole and no tree of it exists. After the stream the
+frame (prefix + the original `<sheetData…/>` tag + suffix) is parsed with the DOM reader for the sheet model. A canonical
+cell (plain number, `1`/`0`, error text, shared-string index; no formula, no `<is>`, no `cm`/`vm`, `s` an integer, `r`
+absent or equal to the position) takes `SheetLoader::cell_raw` (lanes only: no `String`, no allocation); everything else
+builds a `FileCell`. `<is><t>text</t></is>` has a fast shape without an element tree; anything else under `<is>` builds the
+`MEl` tree (replaying what the fast shape had seen). `Book::open` reads package, workbook, styles, theme, the SST index
+and the active sheet; other sheets load on demand.
+
+### Decisions (declared; the observable model equals the TS on every capture)
+
+| Id | Decision |
+|---|---|
+| C1a-1 | **Lazy package**: entries inflate when read. The TS `unzipSync` inflates every entry at load, so a damaged unrelated entry fails the TS open; here it fails when that part is read. |
+| C1a-2 | **Streaming inflate = `miniz_oxide`'s `InflateState`**, not the fflate port (that port is whole-buffer). Same bytes (differential test, any piece sizes); on a damaged stream the error comes where the damage is, not before the first byte; a declared size truncates, as `inflate_raw`. |
+| C1a-3 | Texts of cells, inline strings and shared strings are UTF-16 (`JsString`): `&#xD800;` stays a lone surrogate (tested against the capture). Strings of the model read through the `uo-opc` DOM (sheet names, attributes, formulas of CF…) are UTF-8: a lone-surrogate reference there reads as U+FFFD (the existing lenient DOM's declared deviation; no capture exercises it). |
+| C1a-4 | Numbers the TS gets from `parseInt`/`parseFloat` are `f64` in the model (NaN kept, printed `{"$num":"NaN"}`); `?:` booleans the TS sets only when true are `bool`; lists it sets only when non-empty are `Vec`s. |
+| C1a-5 | Drawing objects, theme fill styles and OLE/control pictures are owned `XEl` trees (T2 said "a subtree of the frame's DOM": the frame's DOM is dropped after the model is read, which keeps the 8 MiB retention). |
+| C1a-6 | **Cells outside A1:XFD1048576 are dropped and counted** (`Book::dropped_cells`; S0-8: the store refuses them; the TS model keeps them). A `<row r>` past 1,048,576 drops its cells. |
+| C1a-7 | `load_step(budget)` loads whole sheets: the step ends after the sheet that crossed the budget. `SheetLoad::Streaming` is reserved (resuming inside a sheet needs the loader's state to outlive the borrow of the store). |
+| C1a-8 | `RowMeta.spans` goes in as the empty-string placeholder while streaming (the loader borrows the store, so the pool is out of reach) and is patched after the sheet (`patch_spans`, distinct strings interned once, both holders of a `FileOrder` sheet patched). **Proposal for uo-calc (not applied: another agent works there)**: `SheetLoader::strings(&mut self) -> &mut StrPool` or `row_with_spans(row, meta, Option<JsStr>)`; then the patch goes away. |
+| C1a-9 | The shared-string INDEX records `[start, end)` of each `<si>` in the decompressed part; the part's bytes stay in the package (`Package::find` keeps what it inflates) and entries decode on demand by pulling the slice. Retained cost: the decompressed part, not a decoded copy. |
+| C1a-10 | `SheetFrame` gains `data_name`, `data_attrs`, `has_sheet_data`, `data_self_closing`: `prefix` is the text before the `<sheetData` TAG, whose qualified name (`x:sheetData`) the save re-emits (the TS regex `<sheetData[\s/>]` of `updateWorksheetXml` does not match a prefixed tag). Trailing content after `</sheetData>` is validated by the frame's DOM parse only. |
+| C1a-11 | Limits added to `ReadLimits`: `max_shared_strings` (8 Mi native / 2 Mi wasm32; the index costs 8 B and the store's table 16 B per entry) and `max_cell_text` (4 MiB of bytes of one `<v>`, `<f>` or `<is>`; Excel holds 32,767 characters). The pull tokenizer's pending token is capped by the latter. |
+| C1a-12 | **Not ported: `chart-data.ts` (333 lines).** It is not on `readWorksheet`'s path: the TS keeps the chart XML raw (`DrawingChart.chartXml`, kept here the same way) and the chart engine parses it on first paint (T3.5). Frontier C4 calls `uo-charts`' own parser. |
+| C1a-13 | Open-recalc (`shouldRecalcOnOpen`, the `plan` facet) is not here: it needs every formula and the calc (C1b/A5). |
+
+### Parity (`cargo test -p uo-xlsx --features facet --test read_parity`)
+
+Per workbook: `read`, `wb`, `styles`, `theme`, `sst` (every entry decoded, rich runs and `rPr` included), `sheets`, and per
+worksheet `ws<i>` (the whole model minus rows, canonical JSON, sorted keys), `st<i>` (the store facet of every cell),
+`fo<i>` (file order), `rw<i>` (row attributes).
+
+| Run | Input | Result |
+|---|---|---|
+| CI (`x1_model_and_store`) | the 30 committed generated workbooks: 65 sheets, 6,510 cells | 440 facets equal, **0 mismatches** |
+| CI (`samples_model_and_store`) | 5 samples (giants skipped) | 106 equal, **0 mismatches** |
+| `UO_XLSX_BIG=1` (release, 1 s) | + `giant-1m` and `giant-200k`: 7 workbooks, 21 sheets, **1,200,304 cells** | 126 equal, **0 mismatches** |
+
+All of it passed at the first complete run (no round with the parity verifier: the harness was built beside the port; the
+corrections found afterwards were performance and limits, below). Hand-made corners that no capture reaches are
+`tests/read_hostile.rs`: `x:`-prefixed SpreadsheetML + BOM, `<c>` without `r`, CDATA in `<v>`, `_x0042_`, trimming and
+`xml:space`, `&#xD800;`, `&#13;`, the `<is>` shapes (two `<t>`, nested elements, runs), a cell past XFD, a row past 1,048,576,
+`$C$1` (no reference: the position after the previous cell), duplicates (last wins) and the file order. Not captured: `.xls`
+(C2), the open-recalc plan, the viewport.
+
+### Memory (`tests/read_memory.rs`, `uo-alloc` counting allocator)
+
+| Gate | Result |
+|---|---|
+| M1 | open + load every sheet + decode every shared string + drop: live bytes back to exact zero for the 30 x1 workbooks and 5 samples; 72 damaged packages (truncated, bit-flipped) leave nothing behind (some are refused, some open) |
+| M2 | open/drop of one workbook, 300 times: flat at tolerance 0 B |
+| M3 (release, `UO_XLSX_BIG=1`) | **giant-1m: retained 4,494,708 B = 4.49 B/cell = the store's lanes (4,485,184) + 9,524 B** (frames, model, indexes); peak above start 5.11 MB; 12.3 MB allocated in total. giant-200k: retained 2,327,815 B (11.6 B/cell, strings pool included), peak 2.66 MB. 20-sheet workbook (840k cells): retained 13.2 MB (lanes 12.7 MB), peak 13.7 MB |
+
+### Performance (native, i5-14600KF, release, medians of 5; `examples/read_bench.rs`; TS = the baseline of T13)
+
+| Benchmark (T13 row) | Budget | TS | Rust | Verdict |
+|---|---|---|---|---|
+| giant-1m: open (zip, workbook, styles, theme, SST index, active sheet streamed) → first viewport gather (45×15: 5 µs) | ≤ 250 ms native, ≤ 500 ms wasm; peak ≤ input + 24 MiB; retained ≤ 8 MiB | 994 ms | **162 ms** (158–165); peak above start 5.1 MB; retained 4.49 MB | within (6.1× faster than TS); wasm not measured |
+| giant-200k (28,000 inline strings, styles) | ≤ 60 ms native, ≤ 120 wasm; retained ≤ 4 MiB | 212 ms | **49.2 ms**; retained 2.33 MB | within (4.3×); wasm not measured |
+| 20 generated sheets × 3,000 rows × 14 cols (840k cells, numbers/shared/inline/styled, formulas), load all (`js/bench-20sheets.mjs`) | ≤ 0.3× TS | 976 ms | **242 ms = 0.25×** | within (thin margin) |
+
+Phases of `giant-1m`'s worksheet (31.7 MB inflated, 5.02 M tokens): inflate alone 15 ms, inflate + tokenize 68 ms, the rest
+(attribute parse, lanes, store fill) ≈ 90 ms. History of the numbers (the 10% rule starts here): first version 282 ms /
+101 ms; allocation-free cell references and `s`/`t` fast paths: 159 / 60 ms; `<is><t>` without an element tree: 162 / 49 ms
+(giant-200k allocated 34 MB before, now a fraction).
+
+### Security and fuzz
+
+`tests/read_hostile.rs`: 20,000 nested elements in a cell → `Limit XmlDepth` (explicit stack, no recursion anywhere); 5,000 in
+`styles.xml` → the DOM's depth limit; 5,000 `<si/>` over `max_shared_strings` → `Limit`; 300 KB and 10,000 CDATA pieces over
+`max_cell_text` → `Limit`; a 64 MiB part of spaces under a 4 MiB cap → `Limit` with a peak of 8.5 MB (the pending text token
+with its doubling; the part is never allocated); damaged XML, a bad character reference, no workbook part, junk zip → typed
+errors. `uo-opc/tests/stream_part.rs`: the `Inflater` equals `inflate_raw` for any input/output piece size (stored, fixed and
+dynamic blocks, 0 to 300 KB), truncated and garbage streams are `Corrupt`, `stream_part` equals `part`, the part cap and the
+total are enforced, a bomb stops at the cap. Fuzz target **`xlsx_read`** (`core/fuzz/src/xlsx_read.rs`): the stable fallback driver (`cargo run --release --no-default-features --features fallback --bin fallback -- --secs 170 xlsx_read`, 127 seeds: the 30 generated workbooks as packages and as single parts, the minimal package and hostile corners): **5,431,605 executions in 170 s, 0 crashes, slowest input 6.6 ms** (memory bounded by the target's own limits: 8 MiB parts, 64 Ki shared strings, 64 KiB of cell text, depth 200). No `unsafe` in the reader; Miri not applicable.
+
+### Lint and files
+
+`clippy -D warnings` (native and wasm32, `--all-targets --all-features`) clean on `uo-opc` and `uo-xlsx` (also without
+features), and on the dependents of `uo-opc`: `uo-docx`, `uo-pptx`, `uo-pdf`, `uo-fonts`, `uo-image`, `uo-drawingml`,
+`uo-charts`, `uo-dml-render`, `uo-docx-layout`, `uo-wasm`, `uo-ffi`, `uo-calc` (native); `tests/grep-bans.sh` and
+`float-casts.sh` clean; `rustfmt` on the new files. `uo-opc`'s own suite (18 unit tests and every integration binary, plus the 5 new) passes; the tests of the dependents `uo-calc`, `uo-fonts`, `uo-image`, `uo-pptx` and `uo-docx` ran in the snapshot (988 passed, 54 failed): every failure reads a fixture that the snapshot/worktree lacks (the open fonts of `shared/fonts/files` are not synced here, `site/assets/samples`, `write/…` documents), and none touches the changed code; the one numeric difference, uo-pptx `links` (943 of 945 run-URL boxes), is text measured without the open fonts. Not compared with a pristine baseline run.
+
+**Process metrics.** C1a (Sonnet 5.5, closed scope): one session, about 55 minutes of wall time, about 150 tool calls, no
+round with a verifier. Rework inside the session: (1) performance, 282 → 162 ms (cell references and attributes allocated per
+cell; found with the phase timings of `read_bench`); (2) `read_sheet` leaked a `Box::leak`ed prefix list per inline cell in
+the first draft (caught by reading it back, before M1 ran: the builder takes the prefixes per call now); (3) the first
+`rustfmt` of `lib.rs` also reformatted the writer's four files (`mod` declarations are followed): reverted with
+`git checkout`, the writer is untouched. Environment note: `uo-calc` was mid-edit by frontier A3 (a module missing), so the
+build ran in a snapshot of `HEAD` (`git archive`) with the files of `uo-opc`/`uo-xlsx`/`fuzz` copied in; nothing in `uo-calc` was touched.

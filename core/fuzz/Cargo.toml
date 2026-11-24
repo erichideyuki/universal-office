@@ -31,7 +31,7 @@ uo-jsnum = { path = "../crates/uo-jsnum" }
 # the numfmt_format target (src/numfmt.rs)
 uo-numfmt = { path = "../crates/uo-numfmt" }
 # the xlsx_write target (src/xlsx.rs)
-uo-xlsx = { path = "../crates/uo-xlsx" }
+uo-xlsx = { path = "../crates/uo-xlsx", features = ["read"] }
 # the store_ops target (src/calc.rs): the Sheet cell store
 uo-calc = { path = "../crates/uo-calc" }
 # the dml_* targets (src/drawingml.rs)
@@ -298,8 +298,24 @@ doc = false
 bench = false
 
 [[bin]]
+name = "calc_workbook"
+path = "fuzz_targets/calc_workbook.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xlsx_write"
 path = "fuzz_targets/xlsx_write.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xlsx_read"
+path = "fuzz_targets/xlsx_read.rs"
 required-features = ["libfuzzer"]
 test = false
 doc = false

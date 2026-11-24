@@ -28,6 +28,8 @@ mod writer;
 pub mod book;
 #[cfg(feature = "grid")]
 pub mod grid;
+#[cfg(feature = "read")]
+pub mod read;
 #[cfg(feature = "edit")]
 pub mod session;
 

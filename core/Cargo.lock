@@ -321,6 +321,7 @@ dependencies = [
  "uo-jsnum",
  "uo-numfmt",
  "uo-opc",
+ "uo-testkit",
 ]
 
 [[package]]

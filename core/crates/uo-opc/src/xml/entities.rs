@@ -38,7 +38,7 @@ const ENTITIES: [(&[u8], char); 5] = [(b"amp", '&'), (b"lt", '<'), (b"gt", '>'),
 
 /// The five predefined entities. Own table lookup: `&constructor;` stays literal (gate 1, G5;
 /// sheet-core and slides-core `ENTITIES[e]` leaked `Object.prototype` members).
-fn named(name: &[u8]) -> Option<char> {
+pub(crate) fn named(name: &[u8]) -> Option<char> {
     ENTITIES.iter().find(|(n, _)| *n == name).map(|&(_, c)| c)
 }
 
@@ -84,7 +84,7 @@ impl Out<'_> {
 }
 
 /// One match of the TS regex `/&(#x?[0-9a-fA-F]+|\w+);/` at `i` (which holds `&`).
-enum RefMatch {
+pub(crate) enum RefMatch {
     /// `&#x<hex>;` (lowercase x only: `&#X41;` does not match and stays literal)
     Hex(usize, usize),
     /// `&#<hexdigits>;` read with `parseInt(…, 10)`
@@ -102,7 +102,7 @@ fn run(b: &[u8], from: usize, f: impl Fn(u8) -> bool) -> usize {
 }
 
 /// Returns the match and the index after the `;`.
-fn match_ref(b: &[u8], i: usize) -> Option<(RefMatch, usize)> {
+pub(crate) fn match_ref(b: &[u8], i: usize) -> Option<(RefMatch, usize)> {
     if b.get(i + 1) == Some(&b'#') {
         let j = i + 2;
         // `x?` is greedy: try with the x first, then without (backtracking of the regex);
@@ -128,7 +128,7 @@ fn match_ref(b: &[u8], i: usize) -> Option<(RefMatch, usize)> {
 }
 
 /// `parseInt(s, 16)` on an all-hex token, saturating above U+10FFFF (`None` = not a code point).
-fn hex_value(digits: &[u8]) -> Option<u32> {
+pub(crate) fn hex_value(digits: &[u8]) -> Option<u32> {
     let mut v: u32 = 0;
     for &d in digits {
         let x = char::from(d).to_digit(16)?;
@@ -142,7 +142,7 @@ fn hex_value(digits: &[u8]) -> Option<u32> {
 
 /// `parseInt(s, 10)` on a hex-digit token: the leading decimal digits (`&#1a;` → 1); NaN when
 /// it starts with a letter (`&#a;`).
-fn dec_value(digits: &[u8]) -> Option<u32> {
+pub(crate) fn dec_value(digits: &[u8]) -> Option<u32> {
     let n = digits.iter().take_while(|c| c.is_ascii_digit()).count();
     if n == 0 {
         return None;

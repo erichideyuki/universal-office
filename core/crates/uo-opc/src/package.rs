@@ -469,6 +469,38 @@ impl Package {
         })
     }
 
+    /// Streams a part's bytes (found like [`Package::find`], read under the cap of its name, the total
+    /// counted when the stream ends) in pieces of at most 64 KiB, without keeping what is inflated: the Sheet
+    /// reader feeds a worksheet to its XML pull parser this way. Bytes the package already holds (set by the
+    /// caller, inflated before, a stored entry) come as slices of them. A deflate entry stops at its declared
+    /// size, as [`flate::inflate_raw`] does; a damaged stream fails when the damage is reached.
+    pub fn stream_part(&self, name: &str) -> Result<Option<PartStream<'_>>> {
+        let Some(i) = self.find_index(name) else { return Ok(None) };
+        let Some(part) = self.parts.get(i) else { return Ok(None) };
+        let part_cap = self.limits.part_cap(&part.name);
+        let (part_cap, cap) = self.cap_for(part, part_cap);
+        let src = match &part.content {
+            Content::Owned(v) => StreamSrc::Held(v, 0),
+            Content::Entry { entry, inflated, .. } => match inflated.get() {
+                Some(v) => StreamSrc::Held(v, 0),
+                None => {
+                    let raw = entry.compressed(&self.source);
+                    if entry.method == 0 {
+                        StreamSrc::Held(raw, 0)
+                    } else {
+                        StreamSrc::Inflate { raw, pos: 0, inf: Box::new(flate::Inflater::new()), declared: entry.size }
+                    }
+                }
+            },
+        };
+        if let StreamSrc::Held(b, _) = &src
+            && b.len() as u64 > cap
+        {
+            return Err(self.limit_error(&part.name, part_cap, cap));
+        }
+        Ok(Some(PartStream { pkg: self, part, src, cap, part_cap, produced: 0, buf: Vec::new(), finished: false }))
+    }
+
     /// Whether a save may copy the entry raw (D5): the stream is verified once and the result
     /// kept. An entry whose range overlaps another's is not (the save reads it under the
     /// limits). Verifying a never-read entry inflates it without keeping the output
@@ -757,4 +789,72 @@ fn overlapping(entries: &[ZipEntry], len: u64) -> Vec<bool> {
         }
     }
     shared
+}
+
+enum StreamSrc<'a> {
+    Held(&'a [u8], usize),
+    Inflate { raw: &'a [u8], pos: usize, inf: Box<flate::Inflater>, declared: u64 },
+}
+
+/// A part read in pieces ([`Package::stream_part`]).
+pub struct PartStream<'a> {
+    pkg: &'a Package,
+    part: &'a Part,
+    src: StreamSrc<'a>,
+    cap: u64,
+    part_cap: u64,
+    produced: u64,
+    buf: Vec<u8>,
+    finished: bool,
+}
+
+/// Size of the pieces a [`PartStream`] hands out.
+pub const STREAM_CHUNK: usize = 64 * 1024;
+
+impl PartStream<'_> {
+    /// The next piece (at most [`STREAM_CHUNK`] bytes), `None` at the end of the part.
+    pub fn next_chunk(&mut self) -> Result<Option<&[u8]>> {
+        if self.finished {
+            return Ok(None);
+        }
+        match &mut self.src {
+            StreamSrc::Held(b, pos) => {
+                let end = (*pos + STREAM_CHUNK).min(b.len());
+                let piece = b.get(*pos..end).unwrap_or(&[]);
+                *pos = end;
+                if piece.is_empty() {
+                    self.finished = true;
+                    self.pkg.count(self.part, b.len());
+                    return Ok(None);
+                }
+                Ok(Some(piece))
+            }
+            StreamSrc::Inflate { raw, pos, inf, declared } => {
+                if self.buf.len() < STREAM_CHUNK {
+                    self.buf.resize(STREAM_CHUNK, 0);
+                }
+                let mut filled = 0usize;
+                while filled < STREAM_CHUNK && !inf.is_done() && self.produced < *declared {
+                    let want = (STREAM_CHUNK - filled).min(usize::try_from(*declared - self.produced).unwrap_or(usize::MAX));
+                    let out = self.buf.get_mut(filled..filled + want).unwrap_or(&mut []);
+                    let step = inf.inflate(raw.get(*pos..).unwrap_or(&[]), out)?;
+                    *pos += step.consumed;
+                    filled += step.written;
+                    self.produced += step.written as u64;
+                    if self.produced > self.cap {
+                        return Err(self.pkg.limit_error(&self.part.name, self.part_cap, self.cap));
+                    }
+                    if step.consumed == 0 && step.written == 0 && !step.done {
+                        break;
+                    }
+                }
+                if filled == 0 {
+                    self.finished = true;
+                    self.pkg.count(self.part, usize::try_from(self.produced).unwrap_or(usize::MAX));
+                    return Ok(None);
+                }
+                Ok(self.buf.get(..filled))
+            }
+        }
+    }
 }

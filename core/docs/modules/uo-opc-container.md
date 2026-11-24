@@ -1422,3 +1422,31 @@ text_v8.rs`), their allocation in `uo-jsnum/tests/memory_gate.rs`.
 
 **Process metrics.** Stage 5 (D2 for uo-opc), simplification and algorithms (Opus 5.5): one session with uo-jsnum D2
 and uo-fonts D5, about 80 minutes and about 120 tool calls for the three; rework: none in uo-opc.
+
+
+---
+
+## Sheet C1a additions (2026-11-24): streaming inflate, part streams and the XML pull tokenizer
+
+Frontier C1a of Sheet (record `uo-xlsx.md` "C1a — as built") needs two things the crate did not have: a worksheet read in
+pieces instead of as one inflated buffer and one tree (`uo-xlsx.md` T3), and a tokenizer that takes the pieces. Both are
+additions; no existing function changed behaviour (the 18 unit tests and every integration test of the crate pass, the
+dependents lint clean; `xml/entities.rs` only made six helpers `pub(crate)`).
+
+| Piece | API | Notes |
+|---|---|---|
+| Streaming inflate | `flate::Inflater::{new, inflate(input, out) -> InflateStep, is_done}` | `miniz_oxide`'s `InflateState` in raw mode (the dependency that already deflates): 43 KiB of state, input and output in slices of any size, `Error::Corrupt` for a damaged stream or for input that ends before the stream does. The fflate port stays the whole-buffer path (`inflate_raw`) and the parity oracle; the differential test (below) shows the same bytes. |
+| Part stream | `Package::stream_part(name) -> Result<Option<PartStream>>`, `PartStream::next_chunk() -> Result<Option<&[u8]>>`, `package::STREAM_CHUNK` (64 KiB) | Found like `find` (the `CaseFold` policy), read under the cap of its name and the package total (counted once, when the stream ends: a part streamed twice counts once); bytes the package already holds (set by the caller, inflated before, a stored entry) come as slices of them; a deflate entry stops at its declared size as `inflate_raw` does; nothing is kept. |
+| XML pull tokenizer | `xml::pull::{Pull, Token, StartTag, Attrs, Flow, FeedEnd, decode_text, decode_attr, decode_cdata, is_plain}` | The grammar of `sheet-core/src/xml.ts` (the lenient sheet preset): close-tag names unchecked, comments/CDATA in content, `<?…?>`/`<!…>` skipped in the prolog, JS white space in names and between attributes, content after the root ignored, an element still open at the end an error; `ContentPi::AsElement`. `feed(piece, last, callback)` hands over complete tokens borrowed from the piece (or from the carry of a token cut by a boundary) and keeps only the unfinished token; text and attribute values come RAW and decode to UTF-16 (`&#xD800;` stays a lone surrogate, a numeric reference past U+10FFFF is `Error::Xml` `InvalidCharRef`, as the TS throws). Limits: nesting (`with_max_depth`, default 1,000, explicit counter) and the pending token (`with_max_token`, default 8 MiB: a token cut by many boundaries is searched incrementally, never rescanned). |
+
+Tests: `xml::pull::tests` (the same tokens for every piece size 1–8 over a document with BOM, prolog, comments, CDATA,
+prefixes and entities; the errors of the TS grammar; lone surrogates and the reference errors) and `tests/stream_part.rs`
+(5 tests): `Inflater` equals `inflate_raw` for n = 0, 1, 1,000, 70,000, 200,000, 300,000 at levels 0/1/6/9 and input/output
+pieces of (whole, 64 KiB), (7, 1,000), (1, 3), (4,096, 1); truncated and garbage streams are `Corrupt`; `stream_part` equals
+`part` for stored and deflated entries, an empty entry and a part already read; the part cap, the total cap and an 8 MiB
+zeros bomb under a 1 MiB cap; a damaged entry fails or differs, never panics. Memory of the new pieces is covered through
+the reader (`uo-xlsx` M1/M2: open/drop leaves exact zero, 300 iterations flat, a 64 MiB bomb under a 4 MiB cap peaks at 8.5 MB).
+Fuzz: the `xlsx_read` target drives them (mode 0 = package bytes, modes 1–3 = a mutated part inside a minimal package).
+
+Reuse: Write and Slides may use `stream_part` + `Pull` for their own large parts (the TS readers parse whole strings today);
+nothing outside Sheet does yet.

@@ -43,8 +43,11 @@ pub use numfmt::{numfmt_format, numfmt_seeds};
 mod xlsx;
 pub use xlsx::{xlsx_seeds, xlsx_write};
 
+mod xlsx_read;
+pub use xlsx_read::{xlsx_read, xlsx_read_seeds};
+
 mod calc;
-pub use calc::{calc_seeds, formula_parse, formula_seeds, store_ops};
+pub use calc::{calc_seeds, calc_workbook, calc_workbook_seeds, formula_parse, formula_seeds, store_ops};
 
 mod codec;
 pub use codec::{CODEC_LIMITS, codec_decode, codec_roundtrip, codec_seeds};
@@ -135,8 +138,10 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("jsnum_math", jsnum_math),
     ("numfmt_format", numfmt_format),
     ("xlsx_write", xlsx_write),
+    ("xlsx_read", xlsx_read),
     ("store_ops", store_ops),
     ("formula_parse", formula_parse),
+    ("calc_workbook", calc_workbook),
     ("fonts_parse", fonts_parse),
     ("fonts_sfnt_dir", fonts_sfnt_dir),
     ("fonts_cmap", fonts_cmap),

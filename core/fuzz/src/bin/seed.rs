@@ -252,6 +252,10 @@ fn main() {
     for s in uo_opc_fuzz::xlsx_seeds() {
         c.add("xlsx_write", &s);
     }
+    // uo-xlsx reader: packages and single parts (src/xlsx_read.rs)
+    for s in uo_opc_fuzz::xlsx_read_seeds(&repo.join("core/crates/uo-xlsx/tests/captures/workbooks/x1")) {
+        c.add("xlsx_read", &s);
+    }
     // uo-calc cell store: operation scripts (crates/uo-calc/tests/support/ops.rs)
     for s in uo_opc_fuzz::calc_seeds() {
         c.add("store_ops", &s);
@@ -259,6 +263,10 @@ fn main() {
     // uo-calc formulas: an option byte + formula text (crates/uo-calc, frontier A2)
     for s in uo_opc_fuzz::formula_seeds() {
         c.add("formula_parse", &s);
+    }
+    // uo-calc engine: byte-driven workbooks and edit scripts (frontier A3)
+    for s in uo_opc_fuzz::calc_workbook_seeds() {
+        c.add("calc_workbook", &s);
     }
     // uo-dml-render text layout: byte-driven bodies and hostile measure tables
     for s in uo_opc_fuzz::text_layout_seeds() {

@@ -18,12 +18,16 @@ uo-jsnum = { path = "../uo-jsnum" }
 # track C (reader, surgical save, grid, editor): the one cell store and the calc. Optional, so the writer's
 # consumers (`grid-xlsx`, pinned by git rev) build exactly what they built before.
 uo-calc = { path = "../uo-calc", optional = true }
+# feature `facet`: the digest of long strings in the canonical JSON
+uo-testkit = { path = "../uo-testkit", optional = true }
 
 # Architecture pass 2026-11-24 (record uo-xlsx.md "Track C architecture"). The default (no feature) is the
 # from-scratch writer, unchanged.
 [features]
 # workbook model + streaming reader into the uo-calc store (C1a)
 read = ["dep:uo-calc"]
+# the canonical JSON of the model (parity harnesses, tests): C1a facets
+facet = ["read", "uo-calc/facet", "dep:uo-testkit"]
 # surgical save of an opened workbook: sheetData from the store, save-calc, the XfPool styles patch (C1b)
 save = ["read"]
 # .xls (BIFF8) -> in-memory OOXML parts, the TS xls/ converter (C2); a separate lazily loaded wasm
@@ -35,6 +39,13 @@ edit = ["grid", "save"]
 
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# the C1a parity replay
+uo-testkit = { path = "../uo-testkit" }
+
+# the C1a open benchmark needs the reader
+[[example]]
+name = "read_bench"
+required-features = ["read"]
 
 [lints]
 workspace = true

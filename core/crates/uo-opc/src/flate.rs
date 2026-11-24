@@ -949,6 +949,71 @@ pub fn crc32(data: &[u8]) -> u32 {
     crc32_update(0, data)
 }
 
+// ---- streaming inflate (Sheet C1a) ----
+
+/// One step of [`Inflater::inflate`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InflateStep {
+    /// bytes taken from the input
+    pub consumed: usize,
+    /// bytes written to the output
+    pub written: usize,
+    /// the final block was decoded and every byte of it written
+    pub done: bool,
+}
+
+/// Resumable raw-DEFLATE decoder for parts that are processed as they inflate (the Sheet reader
+/// feeds a worksheet to its XML pull parser in 64 KiB pieces, never as one buffer): the input and
+/// the output are slices of any size, the state is `miniz_oxide`'s (a 32 KiB window and the
+/// decoder tables, about 43 KiB). Bytes are those of [`inflate_raw`]; on a damaged stream the
+/// failure comes when the damage is reached (the sync functions fail before returning anything),
+/// and a declared size is the caller's to apply (it truncates the output).
+pub struct Inflater {
+    state: Box<miniz_oxide::inflate::stream::InflateState>,
+    done: bool,
+}
+
+impl Default for Inflater {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Inflater {
+    /// A decoder at the start of a raw DEFLATE stream.
+    pub fn new() -> Self {
+        Inflater { state: miniz_oxide::inflate::stream::InflateState::new_boxed(miniz_oxide::DataFormat::Raw), done: false }
+    }
+
+    /// Whether the stream ended.
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
+
+    /// Decodes from `input` into `out`. Call again with the rest of the input (and a drained
+    /// output) while `done` is false; an input that ends before the stream does, with nothing left
+    /// to write, is `Error::Corrupt`.
+    pub fn inflate(&mut self, input: &[u8], out: &mut [u8]) -> Result<InflateStep> {
+        use miniz_oxide::{MZError, MZFlush, MZStatus, inflate::stream::inflate};
+        if self.done || out.is_empty() {
+            return Ok(InflateStep { consumed: 0, written: 0, done: self.done });
+        }
+        let r = inflate(&mut self.state, input, out, MZFlush::None);
+        match r.status {
+            Ok(MZStatus::StreamEnd) => self.done = true,
+            Ok(_) => {}
+            // no progress for lack of input
+            Err(MZError::Buf) => {
+                if r.bytes_written == 0 && r.bytes_consumed == 0 {
+                    return Err(Error::Corrupt("unexpected end of deflate stream"));
+                }
+            }
+            Err(_) => return Err(Error::Corrupt("invalid deflate data")),
+        }
+        Ok(InflateStep { consumed: r.bytes_consumed, written: r.bytes_written, done: self.done })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

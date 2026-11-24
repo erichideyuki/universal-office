@@ -95,3 +95,148 @@ pub fn formula_parse(data: &[u8]) {
         st.clear_pass();
     }
 }
+
+/// Seeds of `calc_workbook`: short and long byte streams (every choice reads one byte, zeros past the end).
+pub fn calc_workbook_seeds() -> Vec<Vec<u8>> {
+    let mut out = vec![vec![], vec![1, 2, 3, 4, 5, 6, 7, 8]];
+    for k in 0u8..8 {
+        out.push((0..512u32).map(|i| (i as u8).wrapping_mul(31).wrapping_add(k.wrapping_mul(17))).collect());
+    }
+    out.push((0..=255u8).cycle().take(4096).collect());
+    out
+}
+
+/// The byte stream of `calc_workbook`: one byte per choice, zeros past the end.
+struct Bytes<'a> {
+    data: &'a [u8],
+    i: usize,
+}
+
+impl Bytes<'_> {
+    fn b(&mut self) -> u8 {
+        let x = self.data.get(self.i).copied().unwrap_or(0);
+        self.i += 1;
+        x
+    }
+}
+
+fn wb_col(c: u8) -> char {
+    char::from(b'A' + c % 8)
+}
+
+fn wb_formula(b: &mut Bytes<'_>, h: u8, w: u8) -> String {
+    let r = |b: &mut Bytes<'_>| format!("{}{}", wb_col(b.b() % w), 1 + u32::from(b.b() % h));
+    let (x, y) = (r(b), r(b));
+    match b.b() % 12 {
+        0 => format!("{x}+{y}"),
+        1 => format!("{x}*{y}-1"),
+        2 => format!("{x}&\"a\""),
+        3 => format!("-{x}%"),
+        4 => format!("{x}:{y}*1"),
+        5 => format!("{x}:{y} {y}"),
+        6 => format!("_xlfn.ANCHORARRAY({x})+1"),
+        7 => "{1,2;3,4}".to_owned(),
+        8 => format!("Nm+{x}"),
+        9 => format!("S1!{x}/{y}"),
+        10 => format!("({x},{y})"),
+        _ => format!("{x}^{y}"),
+    }
+}
+
+/// Fuzz target `calc_workbook` (record `uo-calc.md` "Security and fuzz targets", frontier A3): the bytes choose a
+/// workbook (1–3 sheets of operator formulas over random cells — cycles, CSE areas, dynamic spills into each other and
+/// into merges, ANCHORARRAY, names, duplicates, iteration on/off, ignoreCache) and a script of edits; after every call
+/// the engine's and the store's invariants must hold. No panic, bounded time (cells ≤ 24 × 8 per sheet).
+pub fn calc_workbook(data: &[u8]) {
+    use uo_calc::cell::FileCell;
+    use uo_calc::engine::{CalcOptions, CellInput, Engine, EngineInput, EngineOptions, FormulaInput, NameInput};
+    use uo_calc::formula::{FormulaAttrs, FormulaType};
+    use uo_calc::store::RowMeta;
+    use uo_calc::{Clock, JsString, RandomSource, Scalar, SheetIx, Store, ValueLocale};
+    let mut b = Bytes { data, i: 0 };
+    let js = |s: &str| JsString::from_str_js(s);
+    let ns = 1 + b.b() % 3;
+    let (h, w) = (1 + b.b() % 24, 1 + b.b() % 8);
+    let mut st = Store::new();
+    for _ in 0..ns {
+        let Ok(s) = st.add_sheet() else { return };
+        let Ok(mut l) = st.load_sheet(s) else { return };
+        let n = usize::from(b.b()) % 64;
+        let mut row = None;
+        for _ in 0..n {
+            let (r, c) = (u32::from(b.b() % h), b.b() % w);
+            if row != Some(r) {
+                let _ = l.row(r, RowMeta::default());
+                row = Some(r);
+            }
+            let fc = match b.b() % 8 {
+                0..=2 => FileCell { v: Some(js(&format!("{}", b.b() % 9))), ..FileCell::default() },
+                3 => FileCell { t: Some(js("str")), v: Some(js("x")), ..FileCell::default() },
+                4 | 5 => FileCell { f: Some(js(&wb_formula(&mut b, h, w))), ..FileCell::default() },
+                6 => {
+                    let rf = format!("{}{}:{}{}", wb_col(c), r + 1, wb_col(c + b.b() % 2), r + 1 + u32::from(b.b() % 3));
+                    FileCell {
+                        f: Some(js(&wb_formula(&mut b, h, w))),
+                        fa: Some(FormulaAttrs { t: Some(FormulaType::Array), r#ref: Some(js(&rf)), ..FormulaAttrs::default() }),
+                        ..FileCell::default()
+                    }
+                }
+                _ => FileCell {
+                    f: Some(js(&wb_formula(&mut b, h, w))),
+                    fa: Some(FormulaAttrs { t: Some(FormulaType::Array), ..FormulaAttrs::default() }),
+                    cm: Some(1.0),
+                    ..FileCell::default()
+                },
+            };
+            let _ = l.cell(u32::from(c), &fc);
+        }
+        let _ = l.finish();
+    }
+    if b.b() % 3 == 0
+        && let Some(sh) = st.sheets.first_mut()
+    {
+        sh.merges.push(uo_calc::Area { sheet: SheetIx(0), r1: 1, c1: 1, r2: 2, c2: 1 });
+    }
+    let input = EngineInput {
+        sheet_names: (0..ns).map(|i| js(&format!("S{}", i + 1))).collect(),
+        names: vec![NameInput { name: js("Nm"), formula: js("S1!$A$1"), sheet: None }],
+        calc: CalcOptions { iterate: b.b() % 2 == 0, iterate_count: Some(f64::from(b.b() % 40)), iterate_delta: Some(0.01) },
+        dynamic_cm: vec![1.0],
+        ..EngineInput::default()
+    };
+    let mut o = EngineOptions::new(ValueLocale::en_us());
+    o.ignore_cache = b.b() % 4 == 0;
+    let Ok(mut e) = Engine::new(&mut st, &input, &o, None) else { return };
+    let clock = Clock { now_serial: 45658.5 };
+    let mut rnd = RandomSource::seeded(7);
+    let check = |e: &Engine, st: &Store| {
+        if let Err(m) = e.check_invariants(st) {
+            panic!("engine invariant: {m}");
+        }
+        if let Err(m) = st.check_invariants() {
+            panic!("store invariant: {m}");
+        }
+    };
+    let _ = e.recalc(&mut st, clock, &mut rnd);
+    check(&e, &st);
+    for _ in 0..usize::from(b.b() % 16) {
+        let (s, r, c) = (u32::from(b.b() % ns), u32::from(b.b() % (h + 2)), u32::from(b.b() % (w + 2)));
+        let x = match b.b() % 6 {
+            0 => None,
+            1 => Some(CellInput::Value(Scalar::Num(f64::from(b.b())))),
+            2 => Some(CellInput::Text(js("t"))),
+            3 => Some(CellInput::Formula(FormulaInput { text: js(&wb_formula(&mut b, h, w)), ..FormulaInput::default() })),
+            4 => Some(CellInput::Formula(FormulaInput {
+                text: js(&wb_formula(&mut b, h, w)),
+                array: true,
+                dynamic: true,
+                ..FormulaInput::default()
+            })),
+            _ => Some(CellInput::Formula(FormulaInput { text: js(&wb_formula(&mut b, h, w)), ca: true, ..FormulaInput::default() })),
+        };
+        let _ = e.set_cell(&mut st, SheetIx(s), r, c, x);
+        check(&e, &st);
+        let _ = e.calculate(&mut st, clock, &mut rnd);
+        check(&e, &st);
+    }
+}
