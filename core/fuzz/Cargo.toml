@@ -32,6 +32,8 @@ uo-jsnum = { path = "../crates/uo-jsnum" }
 uo-numfmt = { path = "../crates/uo-numfmt" }
 # the xlsx_write target (src/xlsx.rs)
 uo-xlsx = { path = "../crates/uo-xlsx" }
+# the store_ops target (src/calc.rs): the Sheet cell store
+uo-calc = { path = "../crates/uo-calc" }
 # the dml_* targets (src/drawingml.rs)
 uo-drawingml = { path = "../crates/uo-drawingml", features = ["legacy"] }
 # the shipped hyphenation patterns (fonts_hyphen_words)
@@ -274,6 +276,14 @@ bench = false
 [[bin]]
 name = "numfmt_format"
 path = "fuzz_targets/numfmt_format.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "store_ops"
+path = "fuzz_targets/store_ops.rs"
 required-features = ["libfuzzer"]
 test = false
 doc = false

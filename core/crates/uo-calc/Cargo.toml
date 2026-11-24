@@ -8,13 +8,31 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-# Architecture skeleton (2026-11-24): types only, no dependency yet. The port frontiers add, per the record
-# `core/docs/modules/uo-calc.md`: uo-jsnum (JS numerics, stable sort), uo-text (UTF-16, case, collation,
-# props), uo-numfmt (TEXT, file-form number text) and `regress` (decision R1, A4 text family).
+# The port frontiers add, per the record `core/docs/modules/uo-calc.md`: uo-numfmt (TEXT, file-form number text)
+# and `regress` (decision R1, A4 text family).
 [dependencies]
+# S0: Number(s)/String(n) of the <v> texts (numberLiteral, cellValue), JS white space
+uo-jsnum = { path = "../uo-jsnum" }
+# S0: errorOf's toUpperCase (full Unicode case mapping, as V8)
+uo-text = { path = "../uo-text" }
+# feature `facet`: the store facet's long-string digest
+uo-testkit = { path = "../uo-testkit", optional = true }
+
+[features]
+# the store facet (canonical JSON per cell) for parity harnesses (S0, C1a, C1b, A3)
+facet = ["dep:uo-testkit"]
 
 [dev-dependencies]
 uo-alloc = { path = "../uo-alloc", features = ["global"] }
+# the parity replay needs the facet: enabled for every `cargo test` (no flag to forget)
+uo-calc = { path = ".", features = ["facet"] }
+uo-testkit = { path = "../uo-testkit" }
+# gunzip of the capture sidecars
+uo-opc = { path = "../uo-opc" }
+
+[[bench]]
+name = "store"
+harness = false
 
 [lints]
 workspace = true

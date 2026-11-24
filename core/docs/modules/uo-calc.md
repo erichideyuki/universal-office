@@ -2,7 +2,8 @@
 
 Record of the rust-port workflow (hybrid mode, `SKILL.md` "Architecture pass (Opus), only for the big shapes").
 Status: **architecture pass done 2026-11-24 (Opus)**: data model, frontiers, captures, budgets; type skeleton in
-`core/crates/uo-calc` (clippy clean native and wasm32). Nothing of the calc is ported yet. The M3 gate (plan §11)
+`core/crates/uo-calc` (clippy clean native and wasm32). **Frontier S0 (the store) done 2026-11-24 (Opus)**: section
+"S0 — the store, as built"; the calc (A1–A5) is not ported yet. The M3 gate (plan §11)
 approves it together with the track C section of `uo-xlsx.md` ("Track C architecture").
 
 Behaviour source (frozen, never edited): `D:\Projects\OfficeNext\.claude\worktrees\ts-ref-092` at `b92b60fa` (0.9.2,
@@ -218,11 +219,95 @@ path (only calc tests and the old I/O lab call it): ported under feature `harnes
   falls back by language (`pt*` → pt-BR, else en-US — declared); the C ABI/NuGet take an explicit `ValueLocale` so a
   host can pass its own. `Clock` from the host's local time (no time-zone database in Rust).
 
+## S0 — the store, as built (2026-11-24, Opus)
+
+Code: `src/strings.rs` (JS strings, `StrPool`), `src/store.rs` (lanes, chunks, `Store` API, iteration, gather),
+`src/cell.rs` (the sheet-core cell ↔ lanes, `cellValue`, `errorOf`, `numberLiteral`, `numberText`, `fileCellValue`,
+`writeScalar`/`writeBack` as `Store::write_value`), `src/load.rs` (`SheetLoader`: file-order streaming, `FileOrder`,
+duplicates), `src/formula.rs` (`FormulaTable`), `src/facet.rs` (feature `facet`: the store facet). No `unsafe`
+(`#![forbid(unsafe_code)]`); dependencies `uo-jsnum`, `uo-text` (+ `uo-testkit` under `facet`).
+
+**API** (all 0-based; `SheetIx`): `get`/`get_key` → `RawCell {kind, payload, style}`; `set_file_cell`/`file_cell`
+(the model cell, lossless); `remove`; `write_value(CellWrite, WriteKind)` (the product write path, S5); `set_style`,
+`set_owned`, `default_style`/`style_at` (`xfIndexAt`), `set_col_styles`, `set_row_meta`; `each(area)` (row-major,
+the TS `each` order), `column_runs(col, r1, r2)` → `ColumnRun` (`fold_numbers` fast path), `gather(r1..r2 ×
+c1..c2, &mut Viewport)` (row-major block, buffers reused); SST: `set_sst_len`, `set_sst`, `resolve_sst(i, &mut dyn
+SstSource)`, `cell_value(..) -> Result<Scalar, NeedSst>`, `cell_value_decoding`; `load_sheet(sheet) -> SheetLoader`
+(`row`, `cell(FileCell)`, `cell_raw(RawCell)` — the reader's fast path for canonical cells, with
+`cell::canonical_number(text)`), `shrink_to_fit` (re-narrows lanes), `check_invariants`, `lane_bytes`.
+
+**Decisions taken in S0 (declared; internal representation per PERF, observable output equal):**
+
+| Id | Decision |
+|---|---|
+| S0-1 | The kind nibble is the `t` attribute only (`None`, `N`, `Bool`, `Err`, `Sst`, `Inline`, `Str`, `Date`, `Other`) and bit 7 is `HAS_VALUE` (`<v>` present): the skeleton's `Empty`/`TypedEmpty` tags are gone, so a typed cell without `<v>` needs no extra. |
+| S0-2 | Payloads: numbers (`None`/`N`/`Other`) `i32` narrow or `f64` bits; `Bool` 0/1; `Err` the code; `Sst` the index; `Inline` the pooled `textOf(is)`; `Str`/`Date` the pooled `<v>` (the `t="d"` serial is computed on read). An empty `<v>` text on a number cell stores NaN (raw text in the extra), so `cellValue`'s `'' → null` is a function of the lanes. |
+| S0-3 | Canonical = what needs no extra: number text `numberLiteral(Number(v))`, boolean `1`/`0`, error text exact, SST index `String(i)` (`i < 2^32`), `<is>{text}</is>` on inline cells and no `<is>` elsewhere, `s` an integer in `0..2^32-1`, `r` the A1 of the position. Everything else (raw texts as `JsString`, `s`/`cm`/`vm`/`si` as the JS number `parseInt` gave: NaN, `-0`, > 2^32 survive) lives in `CellExtra`. |
+| S0-4 | `-0` written by the engine keeps its bits in the payload (the engine value); the file text prints `"0"` (`numberLiteral`), as the TS (its engine holds `-0`, its model `"0"`; only a reload reads `+0`). |
+| S0-5 | Rich runs: `RichRun {text, rpr, props}` where `props` is a host-owned id (uo-xlsx C1a's run-property table); the store never reads it. |
+| S0-6 | `StrPool`: two arenas (Latin-1 bytes, UTF-16 units: no `unsafe` reinterpretation), 12-byte entries, its own open-addressing index (4 B per bucket, SipHash keyed by `RandomState`: ids stay deterministic — they come from the LIFO free list —, crafted collisions cannot degrade it), the empty string pinned as id 1, compaction when garbage > ½ and ≥ 4 KiB. |
+| S0-7 | Column directory = `Vec<Column>` indexed by column (24 B per column up to the last used one; a lone cell in XFD costs 393 KB) — chosen for `get` speed over a sorted directory. |
+| S0-8 | A cell outside A1:XFD1048576 is refused (`CalcError::Limit`); the TS model keeps such rows (`read.ts:574`). C1a decides drop + warning. Limits default: 64M cells, 4096 sheets, 2^24 formulas per sheet, pool 2^24 entries / 512 MiB (256 MiB wasm32). |
+| S0-9 | A decimal in an integer chunk widens the whole chunk (≤ 256 values); narrowing happens on `shrink_to_fit` (load end). The M2 soak shows the cost: a 100×100 window touched at random widens ≈ 4,000 chunks (+8.3 MB, then flat). |
+| S0-10 | Duplicate `<c>`: the LAST wins in the lookup (the facet/`storeOf` rule and `fromSheetCore` + `SheetStore.set`); earlier ones go to `FileOrder::shadowed` (owned `FileCell`). Rows/cells out of order are detected while streaming; the order so far (ascending by construction) is rebuilt from the store at the first anomaly, so canonical sheets pay nothing. |
+| S0-11 | `ymdToSerial` for `t="d"` ported inside `cell.rs` (A1 owns `dates.ts`; same arithmetic, trap-tested); `errorOf` uses `uo_text::case` (full Unicode upper case: `#dıv/0!` → `#DIV/0!` as V8). |
+| S0-12 | `OWNED` is not in the store facet (the TS model has no owner); A3's facets cover it. |
+
+**Parity** (`tests/parity.rs`, capture group **store**: `js/capture-store.mjs`, the TS adapter = `capture-sheet.mjs`'s
+`storeOf` rule + the file-order input of the test-only loader + `cellValue` per cell + per-parameter traps; committed
+`tests/captures/store.capture` 19 KiB + `store.side.gz` 146 KiB, 0.2 s):
+
+| Run | Input | Result |
+|---|---|---|
+| CI (`store_facet_ci`) | 5 samples (giants excluded) + 30 generated x1 workbooks: 84 sheets, 6,814 cells, streamed in file order (out-of-order rows/cells, duplicates, `SH1` refs, non-canonical `<v>`, lone surrogates) | `st`/`fo`/`rw`/`cv` 336 facets + traps (1,750 calls: `numberLiteral`, `numberText`, `fileCellValue`, `errorOf`, `cellValue` over 10 types × 47 texts × formula × `<is>` shapes × date1904): **0 mismatches**; cross-check against uo-xlsx `sheet-samples`/`sheet-x1` (independent adapter): 252 `st`/`fo`/`rw` + 84 `pv` (model after the open's write-back, from its sidecar lines) **0 mismatches** |
+| local (`UO_STORE_BIG=1`, `store-big.capture`, 47 s capture, 26 MB sidecar in `core/target/sheet-cap`) | + giant-1m, giant-200k, 400 x1-big workbooks: 437 workbooks, 1,290 sheets, 1,844,178 cells | 5,161 facets **0 mismatches**; cross 342 equal, 0 mismatches; 5.9 s release |
+
+**Memory** (`tests/store.rs`, `uo-alloc` counting allocator):
+
+| Item | Result |
+|---|---|
+| M1 (each op + its inverse, then `compact` + `shrink_to_fit`: live bytes exact) | 6 ops green: file cell with every extra + formula + remove; `write_value` text + clear; overwrite a string cell and restore; rich inline + remove; load a sheet + drop; gather + each + column scan. Found and fixed: an emptied `BTreeMap` keeps its root leaf (1,776 B) — dropped when the extras table empties |
+| M2(a) store soak | giant-1m + 1,000,000 random ops (400,000 in the debug CI run) on a 100×100 window spread over all chunks (40% constant text from 50,000 keys, 30% numbers half decimal, 20% clear, 10% file text cells with raw refs), sampled every 50,000: warm-up 4.49 → 12.8 MB (chunk widening, S0-9), then **flat: spread 41 KB over 1M ops (release), 14.6 KB over 400k (debug)** (tolerance 256 KiB) |
+| M3 bytes/cell (live bytes after `shrink_to_fit`) | **giant-1m 4.49 B/cell** (budget 6; estimate 4.6), **giant-200k 10.99 B/cell** with its 28,000 distinct strings (budget 16; estimate ≈ 14), chain formulas **52.4 B/formula** file side + cell (budget 200); peaks: giant-1m 4.79 MB, giant-200k 2.22 MB |
+| M5 | the pool refuses past `max_entries`/`max_bytes` (an existing string is still found), the store past `max_cells`/`max_sheets` and outside the grid, leaving no string behind; compaction keeps ids |
+
+**Robustness**: `tests/support/ops.rs` interprets bytes as store operations and checks them against a `BTreeMap`
+model of sheet-core cells (file cell, `cellValue` written straight over the model, row-major iteration, gather =
+get, column runs, `fold_numbers`) plus `check_invariants` (sorted non-empty chunks, lane lengths, `HAS_EXTRA`/
+`HAS_FORMULA` against the side tables, pool reference counts = holders) every 64 ops (≤ 1,024 ops per input). Seeded test `ops_seeded`
+(300 inputs + 4 hostile, ≈ 2 s debug) and the fuzz target **`store_ops`** (`core/fuzz/src/calc.rs`). Found while
+building it: the payload lane was widened after the kinds lane changed (a string id widened as a number: a pool
+reference leak) — fixed (widen first); `each` on a sheet with no column indexed `columns[0]` — fixed.
+Bounded local run of `store_ops` with the stable fallback driver (`cargo run --release --no-default-features --features
+fallback --bin fallback -- --secs N store_ops`, 14 seeds from `calc_seeds`): 117,099 executions in 270 s, **0 crashes**,
+slowest input 120 ms (a first version checked the whole model every 16 ops and took up to 3 s per input: the harness,
+not the store; now every 64 ops). No `unsafe` in the crate, so no Miri job.
+
+**Benchmarks** (`benches/store.rs`, native, i5-14600KF, medians):
+
+| Benchmark (S0 rows of "Performance budgets") | Median | Budget | Verdict |
+|---|---|---|---|
+| store fill giant-1m from decoded lanes (`SheetLoader::cell_raw`, row-major, 10,000 × 100) | **20.0 ms** | ≤ 40 ms | within |
+| column scan sum 1M (`column_runs` + `fold_numbers`, one column of 1,000,000 integers) | **0.38 ms** | ≤ 1 ms | within |
+| random get 1M (giant-1m, seeded positions) | **3.7 ms** | ≤ 15 ms | within |
+| viewport gather 45 × 15 | **1.6 µs** | ≤ 20 µs | within |
+| viewport gather 120 × 40 | **8.9 µs** | ≤ 120 µs | within |
+| store bytes/cell (M3 above) | 4.49 (giant-1m) / 10.99 (giant-200k) | ≤ 6 / ≤ 16 | within |
+| info: fill giant-1m through `FileCell` (the model path, one `JsString` per `<v>`) | 140 ms | — | the reader must use `cell_raw` for canonical cells |
+| info: fill giant-200k (28,000 inline strings through `FileCell`) | 11.2 ms | — | — |
+| info: column sum 1M by `get()` | 1.44 ms | — | — |
+
+The first run had random get 1M at 16.4 ms (over budget): `Column::find` binary-searched the chunk list; a direct probe
+(chunk `i` at base `i·256` when the column is filled from its top) brought it to 3.7 ms. These are the first S0 records
+(the 10% regression rule starts from them). The TS has no equivalent operation to compare (its store is the `Map` of
+`CellRec`s, S1); wasm numbers come with the `sheet` suite of `tools/bench/speed` when C1a/C4 wire the store into
+`uo-sheet.wasm`.
+
 ## Frontiers (closed scope per frontier; all Opus)
 
 | # | Scope | Delivers | Captures | Lines | Needs |
 |---|---|---|---|---|---|
-| **S0** | `key`, `strings`, `store`, `formula` (file side), `cellValue`/`fileCellValue`/`numberLiteral` | the store API: get/set/delete, kind/payload/style lanes with widening, area iteration row-major and column runs, viewport gather, string pool with refcounts and compaction, SST lazy decode hooks, extras, `FileOrder`, row meta, default style, the **store facet** (canonical JSON of every cell, below) | store facet of the TS model for every committed sample + generated workbooks (via a TS adapter that turns the sheet-core model into the facet) | ≈ 600 TS-equivalent + new | — |
+| **S0** (**done** 2026-11-24, section "S0 — the store, as built") | `key`, `strings`, `store`, `formula` (file side), `cellValue`/`fileCellValue`/`numberLiteral` | the store API: get/set/delete, kind/payload/style lanes with widening, area iteration row-major and column runs, viewport gather, string pool with refcounts and compaction, SST lazy decode hooks, extras, `FileOrder`, row meta, default style, the **store facet** (canonical JSON of every cell, below) | store facet of the TS model for every committed sample + generated workbooks (via a TS adapter that turns the sheet-core model into the facet) | ≈ 600 TS-equivalent + new | — |
 | A1 | values/coerce/collate (already in `uo-text`)/criteria/dates/stats/special/libm/math-util | as plan §5 A1 | `calc-traps` subset of these entry points, bank cases | ≈ 1,900 | — |
 | A2 | ast/parse/print/a1/evaluate/apply/ops/fn | `parse`/`print` with a depth limit and an explicit stack, `trait EvalHost` (the TS interface, `evaluate.ts:34-61`) | parse/print round trips over the bank's formulas, `calc-tests` | ≈ 1,460 | A1 |
 | A3 | engine (graph, full/incremental recalc, `NeedCell` as `Result`, spills, CSE, data tables skip, cycles/iteration, volatiles) on S0 | `Engine` over `&mut Store` | per-cell values + evaluation-order facet over generated workbooks, incremental = full, `calc-tests` | ≈ 900 | S0, A2 |
@@ -244,7 +329,7 @@ agent runs them serially or in pairs inside the ≤ 3-agent cap. C1a (`uo-xlsx`)
 | **Bank** | the 35,299 oracle cases (`calc/test/oracle/*.cases.json`, 71 files) through `evaluate` | bit-exact vs TS (777 known TS≠Excel, 47 Excel errors stay "known") |
 | **calc-traps** (seeded) | every function × parameter × trap value (plan §4.3) | bit-exact |
 | **calc-tests** | the 19 test files with `evaluate`/recalc/parse/print/`apply`/`writeValues` wrapped | bit-exact |
-| **Store facet** | sheet-core model (+ the component's index rule: last duplicate wins, row from `<row r>`) | canonical JSON per cell, keys sorted: `{r, c, kind (file t), v (the text the TS save would write), s, f, fa, cm, vm, owned}`; numbers by `uo_jsnum` `String(n)` |
+| **Store facet** | sheet-core model (+ the index rule: last duplicate wins, row from `<row r>`) | canonical JSON per cell, keys sorted: `{c, cm, f, fa, is, r, ref (only when not the canonical A1), s, t, v, vm}` (as built in S0: the model has no `owned`, S0-12); numbers by `uo_jsnum` `String(n)`; + `fo` (file order), `rw` (row attributes), `cv` (`cellValue` per cell) |
 | **Per-cell values** | `Engine` after `recalc`/`calculate`/`applyOpenRecalc` on generated workbooks | `Scalar` by bits per cell |
 | **Evaluation order** (new facet) | `evaluateRec` wrapped: the sequence of (sheet,row,col) per run, `circular` as a sorted list, `internalErrors` | exact — this is what catches the order sites of S7 |
 | **Incremental = full** | edits on generated workbooks, `calculate` vs a fresh `recalc` | per cell |
@@ -268,6 +353,7 @@ text (`lib/common.mjs` `makeValueText`: `n<f64 bits>`, `s<JSON>`, `b1/b0`, `e<co
 | **calc-tests** | `node core/crates/uo-calc/js/capture-tests.mjs`; local `--big` (no cap) | `calc-tests.capture` 1.3 MiB + `calc-tests.calls.gz` 268 KiB (the full calls), 10,866 calls | the 16 `calc/test/*.test.ts` except `oracle.test.ts` (the bank replays it) + `sheet/test/{sheet-calc,style-pool,entry}.test.ts` = 19 files, 152 tests, all passing under the recorder. Every `export function` of `calc/src` (248 sites: evaluate, parse/print, applyFn/callFn, writeValues, fromSheetCore, open-recalc, save, file-form, i18n…) and the public methods of `Engine`, `SheetCalc`, `XfPool` are wrapped in memory by a Vite plugin (`calc-tests/`; the checkout is never written); only outermost calls are kept, with canonical arguments, result or exception, receiver id and the `Math.random` values consumed. Clock frozen, `Math.random` seeded per file. Filtered: 3,186 registration calls at module load; CI keeps ≤ 200 pure calls per (test, function) by stride (41,665 dropped, all kept by `--big`) |
 | **calc-traps** | `node --max-old-space-size=8192 core/crates/uo-calc/js/capture-traps.mjs` (≈ 8 min); local `--big` (41 min) | `calc-traps.capture` 1.1 MiB, 535 functions, 54,120 calls | per function, a seeded baseline from the bank (the plain-argument case with the most arguments) and each position 0..3 replaced by 31 CORE traps (NaN, -0, ±∞, 1e21, 1e-7, 2^53+2, 17 digits, denormal, empty, lone surrogate, astral, combining, non-ASCII, Turkish İı, pt-BR/en-US text-numbers, TRUE, empty, omitted, #N/A/#DIV/0!/#VALUE!, empty/1×1/union/whole-column ranges, 2×2 and ragged arrays) in pt-BR, plus the text traps in en-US. `--big`: 98 traps (every error code, more digit counts, subnormals, white space, wildcards, regex text, dates, booleans as text, rows/blocks), positions 0..5, both locales, 24 seeded pairs per function and locale. The trap table is in the file (`@trap.*`). Calls run in a child process with a 5 s watchdog per call; a call that does not return is `timeout:5000ms`, one that kills the process (V8 fatal) `crash:<exit>`, and the child restarts at the next call |
 | **calc-order** | `node core/crates/uo-calc/js/capture-order.mjs`; local `--gen x1-big --heavy 20000` | `calc-order.capture` 74 KiB + `.side.gz` 423 KiB, 30 workbooks | the evaluation-order facet of §16 item 4: the generated workbooks (uo-xlsx `gen-workbook.mjs` group x1, read by sheet-core's dist, `fromSheetCore` → the `CalcWorkbook`, kept in the sidecar so A3 can replay before C1a exists) through `new Engine` + `recalc()`, a `calculate()`, 12 seeded `setCell` + `calculate()` edits, and a fresh full recalc of the final inputs: per run the `evaluateRec` sequence (13,970 evaluations in x1), the RAND values (1,570), `circular` sorted (13 workbooks with cycles), `internalErrors` (0), all values, and incremental vs full (equal in 6, differ in 24: volatiles and cycles — recorded, not judged). The x1 workbooks put ranges wider than the formula columns next to spills/CSE (the `fc.keys()` and `rangeMasters` sites of S7) |
+| **store** (S0) | `node core/crates/uo-calc/js/capture-store.mjs`; local `--big --out core/target/sheet-cap/store-big.capture` (47 s) | `store.capture` 19 KiB + `store.side.gz` 146 KiB, 35 workbooks + 1,750 traps (0.2 s) | the TS adapter of the store facet (`storeOf` rule of uo-xlsx `capture-sheet.mjs`): per sheet the model cells in FILE order (`in<i>`, the test-only loader's input), `st<i>`, `fo<i>`, `rw<i>`, `cellValue` per cell (`cv<i>`), the SST texts; samples (giants only in `--big`) + x1 (`--big`: + x1-big); per-parameter traps of `numberLiteral`/`numberText`/`fileCellValue`/`errorOf`/`cellValue`. Replayed by `tests/parity.rs` (section "S0 — the store, as built") |
 
 TS findings the traps recorded (kept as TS behaviour; the Rust port must reproduce or the record must declare):
 23 calls did not return within 5 s (`timeout:5000ms` in the capture, `@timeouts`): `COMBINA(n, ∞)` (the
@@ -409,6 +495,14 @@ budgets in `uo-xlsx.md`. If the viewer exceeds 1.6 MB gzip, the fallback is a la
   hosts) — accept?
 - SH4: performance gates: recalc ≤ 0.5× TS native / ≤ 0.8× wasm, everything else ≤ 1.0× TS, 10% regression rule —
   accept as the M3/M5 criteria?
+- SH7 (found in S0): a duplicate `<row r>` element. The component's paint index REPLACES the row's whole cell map with
+  the later element's (`universal-sheet.ts:4228`, `rowMap.set(r.r, cm)`), so the earlier element's cells vanish from
+  the TS paint, while the calc (`fromSheetCore` + `SheetStore.set`) and the store facet keep every position, the last
+  duplicate winning per cell. The one store follows the calc/facet rule for both — accept (the paint changes on such
+  hostile files; the generated x1 group has them)?
+- SH8 (found in S0, for C1b): a `<row>` whose last cell is deleted stays in the TS model and is saved as an empty
+  `<row r="…"/>`; the store keeps a row element only when it has attributes or had no cell at load. The surgical save
+  would drop such an emptied row element (Excel accepts both) — accept, or should C1b track "emptied row elements"?
 
 ## Plan corrections found in this pass
 
@@ -420,3 +514,4 @@ Listed in the plan's §16 with the evidence.
 |---|---|---|---|
 | Architecture pass (S, C1 hook, frontiers, budgets) | Opus | ≈ 25 min wall (00:53-01:18, shared with `uo-xlsx.md`) | TS heap measured with the frozen dists |
 | Capture harnesses (plan §4.3: bank, calc-tests, calc-traps, calc-order; Sheet captures, workbook generator, `sheet` bench suite) | Opus | ≈ 1 h 50 min wall (01:15-03:07, ≈ 1 h of it the large local runs; shared with `uo-xlsx.md` T10a/T13) | no Rust code touched; one rework: the calc-traps run hung on TS inputs that never return (COMBINA(n, ∞) and 22 more), so calls moved into a watchdogged child process (a worker thread was not enough: the big run hit a V8 fatal error, which aborts the whole process) |
+| S0 store (port + TS adapter + parity + memory + fuzz target + benchmarks) | Opus | ≈ 42 min wall (03:08-03:50) | 0 parity rounds (the first replay was clean: CI 337 facets, local 5,161); rework found by the verifiers built in the same session, all fixed by the same agent: (1) payload lane widened after the kinds lane changed — a string id widened as a number, caught by the differential ops test as a pool reference count ≠ holders; (2) `each` on a sheet without columns indexed `columns[0]` (ops test); (3) an emptied `BTreeMap` of extras kept its root leaf, 1,776 B (M1); (4) random get 1M over budget (16.4 ms) until `Column::find` probed the direct index (3.7 ms); (5) the ops harness's full-model check made fuzz inputs take 3 s (now every 64 ops) |

@@ -252,6 +252,10 @@ fn main() {
     for s in uo_opc_fuzz::xlsx_seeds() {
         c.add("xlsx_write", &s);
     }
+    // uo-calc cell store: operation scripts (crates/uo-calc/tests/support/ops.rs)
+    for s in uo_opc_fuzz::calc_seeds() {
+        c.add("store_ops", &s);
+    }
     // uo-dml-render text layout: byte-driven bodies and hostile measure tables
     for s in uo_opc_fuzz::text_layout_seeds() {
         c.add("text_layout", &s);

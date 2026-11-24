@@ -1,8 +1,8 @@
 //! Sheet cell store and calculation engine of the UniversalOffice Rust core (plan
 //! `core/docs/slides-sheet-port-plan.md` §4.0 and track A §5). Record: `core/docs/modules/uo-calc.md`.
 //!
-//! **Architecture skeleton** (2026-11-24): the types that make the later frontiers closed scope. No logic is
-//! ported yet; operations that exist only as signatures return [`CalcError::NotPorted`].
+//! **Frontier S0 done** (2026-11-24): the store ([`store`], [`cell`], [`load`], [`formula`], [`strings`]). The
+//! engine is still the architecture skeleton; its operations return [`CalcError::NotPorted`].
 //!
 //! One cell store ([`store::Store`]) holds every cell of every sheet ONCE: its file representation (what the
 //! surgical save writes back) and its calc value are the same lanes. The engine ([`engine::Engine`]) owns only
@@ -11,22 +11,29 @@
 //! component's cell index and the engine's `cells` map, `sheet-calc.ts` copying between them).
 //!
 //! Layers (bottom up): [`key`] (cell keys, areas) → [`strings`] (JS-exact compact strings, the interned pool)
-//! → [`value`] (scalars, arrays, references) → [`store`] (the column-chunked cell store) → [`formula`] (the
-//! file side of formulas) → [`engine`] (graph, recalc). [`locale`] is the C1 host hook.
+//! → [`value`] (scalars, arrays, references) → [`store`] (the column-chunked cell store; [`cell`]: the file
+//! model ↔ lanes and `cellValue`; [`load`]: file-order streaming) → [`formula`] (the file side of formulas) →
+//! [`engine`] (graph, recalc). [`locale`] is the C1 host hook. Feature `facet`: [`facet`], the parity facet.
+#![forbid(unsafe_code)]
 
+pub mod cell;
 pub mod engine;
 pub mod error;
+#[cfg(feature = "facet")]
+pub mod facet;
 pub mod formula;
 pub mod key;
+pub mod load;
 pub mod locale;
 pub mod store;
 pub mod strings;
 pub mod value;
 
+pub use cell::{CellWrite, FileCell, WriteKind};
 pub use error::{CalcError, Result};
 pub use key::{Area, CellKey, EXT_STRIDE, EXTERNAL_BASE, MAX_COL, MAX_ROW, SheetIx};
 pub use locale::{Clock, DateOrder, FormatLetters, HostHooks, R1c1Letters, RandomSource, ValueLocale};
-pub use store::Store;
+pub use store::{RawCell, Store};
 pub use strings::{JsStr, JsString, StrId, StrPool};
 pub use value::{ErrorCode, Scalar, StrRef};
 

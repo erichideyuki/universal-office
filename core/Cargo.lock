@@ -60,6 +60,11 @@ name = "uo-calc"
 version = "0.10.0-dev"
 dependencies = [
  "uo-alloc",
+ "uo-calc",
+ "uo-jsnum",
+ "uo-opc",
+ "uo-testkit",
+ "uo-text",
 ]
 
 [[package]]
