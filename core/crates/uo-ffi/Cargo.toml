@@ -14,6 +14,10 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # memory counters and the test-only buffer export exposed to the .NET tests (M4); never in the shipped library
 count = ["dep:uo-alloc", "uo-alloc/global"]
+# the Sheet exports (`src/sheet.rs`, the .NET facade UniversalOffice.Xlsx): .xlsx/.xls -> the editor session over the Rust store
+# and calc. On by default (the facade's `UoNative.targets` builds with the default features), off for a slimmer library.
+sheet = ["dep:uo-xlsx", "dep:uo-calc", "dep:uo-jsnum"]
+default = ["sheet"]
 
 # native only, as the crate (`#![cfg(not(target_arch = "wasm32"))]`): on wasm32 the crate is empty, and cargo 1.100's
 # `unused_dependencies` reported these dependencies there
@@ -30,6 +34,11 @@ uo-pdf = { path = "../uo-pdf" }
 uo-drawingml = { path = "../uo-drawingml" }
 # the Slides read path of the .NET facade (record uo-bindings.md "Slides .NET facade"): .pptx/.ppt -> deck -> PDF, save
 uo-pptx = { path = "../uo-pptx", features = ["ppt", "pdf"] }
+# the Sheet read/edit/save path of the facade (record uo-bindings.md "Sheet .NET facade"): reader, session, surgical save, `.xls`
+uo-xlsx = { path = "../uo-xlsx", optional = true, features = ["edit", "xls"] }
+uo-calc = { path = "../uo-calc", optional = true }
+# the style index of the wire (a `f64` index to `u32`)
+uo-jsnum = { path = "../uo-jsnum", optional = true }
 # `ReadError` of the deck errors (the code of a malformed or over-limit part)
 uo-dml-render = { path = "../uo-dml-render" }
 # the server font policy over the machine's fonts (`system`) and the hyphenation patterns compiled in (`hyphen-data`)

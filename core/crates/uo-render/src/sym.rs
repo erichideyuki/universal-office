@@ -35,8 +35,21 @@ impl SymbolTable {
 
     /// [`SymbolTable::intern`] of a Rust string (constants such as `"auto"` or preset names).
     pub fn intern_str(&mut self, s: &str) -> Option<Sym> {
-        let units: Vec<u16> = s.encode_utf16().collect();
-        self.intern(&units)
+        // a short string is encoded on the stack: the lookup of a known symbol allocates nothing (the Sheet viewport asks
+        // its colours and fonts by text every frame, C4b)
+        let mut buf = [0u16; 64];
+        let mut n = 0usize;
+        for u in s.encode_utf16() {
+            match buf.get_mut(n) {
+                Some(slot) => *slot = u,
+                None => {
+                    let units: Vec<u16> = s.encode_utf16().collect();
+                    return self.intern(&units);
+                }
+            }
+            n += 1;
+        }
+        self.intern(buf.get(..n).unwrap_or(&[]))
     }
 
     /// The code units of `id`; empty for an id of another table.

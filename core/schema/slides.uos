@@ -493,6 +493,8 @@ enum SItem tag "op" {
   SheetFont = "sheetFont" (SheetFontItem),
   /// Sheet: one `drawCellText` of a text piece (`GlyphRunItem`)
   GlyphRun = "glyphRun" (GlyphRunItem),
+  /// Sheet (C4b): one plain cell text as one item (`CellTextItem`)
+  CellText = "cellText" (CellTextItem),
 }
 
 /// The Sheet font (record `uo-xlsx.md` T7): with `font` the CellFont string `${italic ? 'italic ' : ''}${bold ? '700 ' : '400 '}${ppem}px ${stack}`
@@ -509,6 +511,36 @@ struct SheetFontItem {
 /// `complex` = one whole-string `fillText(text, x, y)`; otherwise one `fillText(ch, cx, y)` per non-space code point from `x` at the
 /// advances, stopping when `cx > max_x` and skipping glyphs with `cx + w < min_x`; with `mirrored` (the CTM is mirrored: RTL sheets) the
 /// piece is drawn inside `save`/`translate(x + W, 0)`/`scale(-1, 1)` at x 0 (`W` = the sum of the advances, or `width`) and `restore`.
+/// Sheet (uo-xlsx C4b): the text of a plain cell (`paintCellText` of one piece: `save; beginPath; rect; clip; [ctx.font];
+/// drawCellText; restore`) as ONE item, the bulk of a viewport (record `uo-render.md` "Sheet extensions"). The painter replays
+/// `save`, `beginPath`, `rect(x0 + 1, top + 1, max(0, cw - 1), max(0, h - 1))`, `clip`, the font (`face`/`ppem` as `SheetFont`;
+/// absent = the canvas's), `drawCellText` with `x = x0 + dx`, `y = top + dy`, `min_x = x0`, `max_x = x0 + cw` (as `GlyphRun`) and
+/// `restore`. Coordinates are fixed point: each is the integer over `2^shift` (the producer emits the item only when every value is
+/// exactly that, so the doubles the painter rebuilds are the producer's bit for bit). Its data are the next `len` values of
+/// `advances` (the arena is consumed in item order: a `GlyphRun` ends at its span's end, a `CellText` starts there): the text's
+/// UTF-16 units (`units` of them), then one advance per code point unless `complex`; `width` is the measured width of a complex
+/// piece (else the sum of the advances). `same_font`: the font of the previous `CellText` (`face`/`ppem` then absent/0). With `rel`,
+/// `x0` and `top` are relative to the previous `CellText`'s `x0 + cw` and `top` (the next cell of a row: zeros).
+struct CellTextItem {
+  shift: u32,
+  x0: i32,
+  cw: i32,
+  top: i32,
+  h: i32,
+  dx: i32,
+  dy: i32,
+  len: u32,
+  units: u32,
+  face: u32?,
+  ppem: u32,
+  same_font: bool,
+  rel: bool,
+  italic: bool,
+  complex: bool,
+  mirrored: bool,
+  width: f64?,
+}
+
 struct GlyphRunItem {
   text: Span,
   x: f64,

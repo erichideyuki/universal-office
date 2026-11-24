@@ -250,6 +250,27 @@ pub struct FormulaInput {
     pub ca: bool,
 }
 
+/// A formula's kind as the editor reads it (`FormulaRec`: `kind`, `dynamic`, `area`, `volatile`; the anchor's cell).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FormulaInfo {
+    /// The anchor's sheet.
+    pub sheet: SheetIx,
+    /// The anchor's row (0-based).
+    pub row: u32,
+    /// The anchor's column (0-based).
+    pub col: u32,
+    /// `kind === 'array'` (CSE or dynamic).
+    pub array: bool,
+    /// `kind === 'dataTable'`.
+    pub data_table: bool,
+    /// A dynamic array.
+    pub dynamic: bool,
+    /// Volatile (`ca` or a volatile function).
+    pub volatile: bool,
+    /// The CSE / spilled area.
+    pub area: Option<Area>,
+}
+
 /// An exception of a function body (`internalErrors`): the cell got `#VALUE!`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InternalError {
@@ -1124,6 +1145,29 @@ impl Engine {
         res
     }
 
+    /// The editor bridge's `writeBack` of a cell `setCell` touched whose value did not move (`sheet-calc.ts:230-262`:
+    /// every touched cell is written, `writeScalar` + `setDynamicAttrs`; the one write path here writes only
+    /// changed values, so the typed formula that evaluates to its initial 0 keeps no `<v>` without this).
+    pub fn write_back(&mut self, store: &mut Store, sheet: SheetIx, row: u32, col: u32) -> Result<()> {
+        if sheet.0 as usize >= self.g.sheets.len() || store.sheet(sheet).is_none() {
+            return Ok(());
+        }
+        let Some(raw) = store.get(sheet, row, col) else { return Ok(()) };
+        if !raw.kind.has(CellKind::HAS_FORMULA) || raw.kind.has(CellKind::HAS_VALUE) || self.g.current(sheet.0, row, col).is_none() {
+            return Ok(());
+        }
+        let clock = Clock { now_serial: 0.0 };
+        let mut rnd = RandomSource::sequence(Vec::new());
+        let _ = self.run_with(store, clock, &mut rnd, |run| run.write_back(sheet.0, row, col))?;
+        Ok(())
+    }
+
+    /// The `cm` values that mark dynamic arrays in the workbook (`Workbook.dynamicArrayCm`, read live by the TS
+    /// bridge's `setDynamicAttrs`): the save adds one when it creates `metadata.xml`.
+    pub fn set_dynamic_cms(&mut self, cms: &[f64]) {
+        self.g.dyn_cm = cms.to_vec();
+    }
+
     fn run_with(
         &mut self,
         store: &mut Store,
@@ -1159,6 +1203,47 @@ impl Engine {
                 }
             });
         }
+    }
+
+    /// What the editor needs of the anchor formula at a cell (`getFormula`: `kind`, `dynamic`, `area`, `volatile`).
+    #[must_use]
+    pub fn formula_info(&self, sheet: SheetIx, row: u32, col: u32) -> Option<FormulaInfo> {
+        self.g.current(sheet.0, row, col).map(|f| self.info_of(f))
+    }
+
+    /// [`Engine::formula_info`] of the anchor that fills a spilled/CSE cell (`getOwner`).
+    #[must_use]
+    pub fn owner_info(&self, sheet: SheetIx, row: u32, col: u32) -> Option<FormulaInfo> {
+        let o = *self.g.sheets.get(sheet.0 as usize)?.owners.get(&crate::store::ts_key(row, col))?;
+        let f = o & !NULL_VIEW;
+        self.g.recs.get(f as usize)?;
+        Some(self.info_of(f))
+    }
+
+    fn info_of(&self, f: u32) -> FormulaInfo {
+        let r = self.g.recs[f as usize];
+        FormulaInfo {
+            sheet: SheetIx(r.sheet),
+            row: r.row,
+            col: u32::from(r.col),
+            array: r.has(fl::ARRAY),
+            data_table: r.has(fl::DATATABLE),
+            dynamic: r.has(fl::DYNAMIC),
+            volatile: r.has(fl::VOLATILE),
+            area: self.g.areas.get(&f).copied(),
+        }
+    }
+
+    /// The name of the table whose area holds the cell (`tableAt(...)?.name`).
+    #[must_use]
+    pub fn table_name_at(&self, sheet: SheetIx, row: u32, col: u32) -> Option<&JsString> {
+        self.g.tables.iter().find(|t| crate::a1::area_contains(t.area, sheet, row, col)).map(|t| &t.name)
+    }
+
+    /// `sheetIndex(name)`: the sheet of a name (upper-case match).
+    #[must_use]
+    pub fn sheet_index(&self, name: JsStr<'_>) -> Option<u32> {
+        self.g.sheet_by_name.get(&upper(name)).copied()
     }
 
     /// The anchor formula at a cell (`getFormula` is not `None`).

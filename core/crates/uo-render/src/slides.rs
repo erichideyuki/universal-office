@@ -26,12 +26,12 @@ use crate::codec::slots_generated as slots;
 use crate::sym::SymbolTable;
 
 pub use crate::codec::slides_generated::{
-    Align, ArcOp, ArcToOp, Baseline, BevelEffect, Bitmap, Cap, ClrChange, CompositeOp, CtmAxis, CtmOperand, Cubic, Decoration, Derived,
-    DrawImageItem, Duotone, Edges, Effect, EllipseOp, FaceKey, FillRule, FillTextItem, FontRef, GlyphRunItem, Gradient, ImageFx, ImageSrc, Join,
-    LayerBeginItem, LayerEndItem, LayerThen, MAGIC, Mat6, Media, MediaFrameItem, MetafileRopEffect, Paint, Pair, PathOp, PatternRes,
-    PatternSrc, PxSize, Quad, RawStop, Rect4, Repeat, RoundRectOp, SCHEMA_HASH, SItem, SheetFontItem, ShadowOff, SlidesList, SlotDef, SlotKind, Span,
-    Stop, TextOutline, TextRun, TextShadow, TileDef, TileParams, ViewBox, WarpEffect, WarpFont, WarpLine, WarpPaint, WarpPaintKind,
-    WarpPattern, WarpRun, WarpStroke, WarpTile, decode_slides_list, encode_slides_list,
+    Align, ArcOp, ArcToOp, Baseline, BevelEffect, Bitmap, Cap, CellTextItem, ClrChange, CompositeOp, CtmAxis, CtmOperand, Cubic,
+    Decoration, Derived, DrawImageItem, Duotone, Edges, Effect, EllipseOp, FaceKey, FillRule, FillTextItem, FontRef, GlyphRunItem,
+    Gradient, ImageFx, ImageSrc, Join, LayerBeginItem, LayerEndItem, LayerThen, MAGIC, Mat6, Media, MediaFrameItem, MetafileRopEffect,
+    Paint, Pair, PathOp, PatternRes, PatternSrc, PxSize, Quad, RawStop, Rect4, Repeat, RoundRectOp, SCHEMA_HASH, SItem, ShadowOff,
+    SheetFontItem, SlidesList, SlotDef, SlotKind, Span, Stop, TextOutline, TextRun, TextShadow, TileDef, TileParams, ViewBox, WarpEffect,
+    WarpFont, WarpLine, WarpPaint, WarpPaintKind, WarpPattern, WarpRun, WarpStroke, WarpTile, decode_slides_list, encode_slides_list,
 };
 pub use crate::codec::slots_generated::{
     AnimFilter, PartState, Replacement, ShapeState, SlotFrame, SlotValue, decode_slot_frame, encode_slot_frame,
@@ -427,6 +427,12 @@ impl Checker<'_> {
                 span_in(&g.text, l.texts.len(), "text span")?;
                 span_in(&g.advances, l.advances.len(), "advance span")
             }
+            SItem::CellText(c) => {
+                if c.units > c.len {
+                    return Err(SlidesError::Invalid("cell text units past its span"));
+                }
+                c.face.map_or(Ok(()), |f| self.face(f))
+            }
             _ => Ok(()),
         }
     }
@@ -514,8 +520,30 @@ impl Checker<'_> {
 /// [`SlidesError::Invalid`] naming the first field that fails.
 pub fn validate(list: &SlidesList, lens: &[usize; 5]) -> Result<(), SlidesError> {
     let c = Checker { list, lens };
+    // the cursor of the `advances` arena: a `CellText` reads the values after the previous `GlyphRun`/`CellText` (C4b)
+    let mut cursor: u64 = 0;
+    let mut font_seen = false;
+    let mut cell_seen = false;
     for (i, it) in list.items.iter().enumerate() {
         c.item(i, it)?;
+        match it {
+            SItem::GlyphRun(g) => cursor = u64::from(g.advances.start) + u64::from(g.advances.len),
+            SItem::CellText(t) => {
+                cursor += u64::from(t.len);
+                if cursor > list.advances.len() as u64 {
+                    return Err(SlidesError::Invalid("cell text past the advances"));
+                }
+                if t.same_font && !font_seen {
+                    return Err(SlidesError::Invalid("cell text: the same font as no previous cell text"));
+                }
+                if t.rel && !cell_seen {
+                    return Err(SlidesError::Invalid("cell text: relative to no previous cell text"));
+                }
+                font_seen |= t.face.is_some() || t.same_font;
+                cell_seen = true;
+            }
+            _ => {}
+        }
     }
     c.stops(&list.stops)?;
     for g in &list.gradients {

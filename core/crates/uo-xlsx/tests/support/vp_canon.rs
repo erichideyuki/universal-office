@@ -93,15 +93,45 @@ fn font_text(res: &SlidesResources, f: &uo_render::slides::SheetFontItem) -> Str
     let fr = f.font.as_ref().unwrap();
     let face = &res.face_entries()[fr.face as usize];
     let fam = text(res, face.family);
-    let name = fam.split('|').next().unwrap_or("");
-    format!("{}{} {} {}", if f.italic { "italic " } else { "" }, if face.bold { "700" } else { "400" }, fr.size_px, name)
+    // the alternate name as the capture's canon keeps it (C4b): `name|alt`, the fallback `Arial` not written
+    let mut it = fam.split('|');
+    let name = it.next().unwrap_or("");
+    let shown = match it.next() {
+        Some(alt) if !alt.is_empty() && alt != "Arial" && alt != "Liberation Sans" => format!("{name}|{alt}"),
+        _ => name.to_owned(),
+    };
+    format!("{}{} {} {}", if f.italic { "italic " } else { "" }, if face.bold { "700" } else { "400" }, fr.size_px, shown)
 }
 
 /// The raw events (before the state canonicalisation).
 pub fn expand(l: &SlidesList, res: &SlidesResources) -> Vec<String> {
+    expand_skip(l, res, &[])
+}
+
+/// [`expand`] without the items of `skip` (`[start, end)` item ranges: the drawing phases, compared apart by
+/// `js/compare-drawings.mjs`, C4b).
+pub fn expand_skip(l: &SlidesList, res: &SlidesResources, skip: &[(u32, u32)]) -> Vec<String> {
     let mut ev: Vec<String> = Vec::new();
     let set = |ev: &mut Vec<String>, k: &str, v: String| ev.push(format!("S {k} {v}"));
-    for it in &l.items {
+    // the advances cursor and the last cell-text font (C4b `CellText`)
+    let mut cursor = 0usize;
+    let mut cell_font: Option<(u32, u32, bool)> = None;
+    let (mut cell_end, mut cell_top) = (0.0f64, 0.0f64);
+    for (ii, it) in l.items.iter().enumerate() {
+        match it {
+            SItem::GlyphRun(g) => cursor = (g.advances.start + g.advances.len) as usize,
+            SItem::CellText(c) => cursor += c.len as usize,
+            _ => {}
+        }
+        let ii = u32::try_from(ii).unwrap_or(u32::MAX);
+        if skip.iter().any(|&(a, b)| ii >= a && ii < b) {
+            if let SItem::CellText(c) = it
+                && let Some(face) = c.face
+            {
+                cell_font = Some((face, c.ppem, c.italic));
+            }
+            continue;
+        }
         match it {
             SItem::Save => ev.push("save".into()),
             SItem::Restore => ev.push("restore".into()),
@@ -205,6 +235,50 @@ pub fn expand(l: &SlidesList, res: &SlidesResources) -> Vec<String> {
                     glyphs(&mut ev, units, adv, g.x, g.y, g.min_x, g.max_x, g.complex);
                 }
             }
+            SItem::CellText(c) => {
+                // C4b: the calls of `save; beginPath; rect; clip; [font]; drawCellText; restore` rebuilt from the fixed point
+                let k = f64::from(2u32.pow(c.shift.min(30)));
+                let (cw, h) = (f64::from(c.cw) / k, f64::from(c.h) / k);
+                let x0 = if c.rel { cell_end + f64::from(c.x0) / k } else { f64::from(c.x0) / k };
+                let top = if c.rel { cell_top + f64::from(c.top) / k } else { f64::from(c.top) / k };
+                (cell_end, cell_top) = (x0 + cw, top);
+                let (x, y) = (x0 + f64::from(c.dx) / k, top + f64::from(c.dy) / k);
+                ev.push("save".into());
+                ev.push("beginPath".into());
+                ev.push(path_op(&PathOp::Rect(uo_render::slides::Rect4 {
+                    x: x0 + 1.0,
+                    y: top + 1.0,
+                    w: uo_jsnum::math::max(0.0, cw - 1.0),
+                    h: uo_jsnum::math::max(0.0, h - 1.0),
+                })));
+                ev.push("clip nonzero".into());
+                if let Some(face) = c.face {
+                    cell_font = Some((face, c.ppem, c.italic));
+                }
+                if let Some((face, ppem, italic)) = if c.face.is_some() || c.same_font { cell_font } else { None } {
+                    let f = uo_render::slides::SheetFontItem {
+                        font: Some(uo_render::slides::FontRef { face, size_px: f64::from(ppem) }),
+                        italic,
+                        css: None,
+                    };
+                    set(&mut ev, "font", font_text(res, &f));
+                }
+                set(&mut ev, "textAlign", "left".into());
+                let data = &l.advances[cursor - c.len as usize..cursor];
+                let units: Vec<u16> = data[..c.units as usize].iter().map(|&u| u as u16).collect();
+                let adv = &data[c.units as usize..];
+                let width = c.width.unwrap_or_else(|| adv.iter().map(|&a| f64::from(a)).sum());
+                if c.mirrored {
+                    ev.push("save".into());
+                    ev.push(format!("translate {} {}", fh(x + width), fh(0.0)));
+                    ev.push(format!("scale {} {}", fh(-1.0), fh(1.0)));
+                    glyphs(&mut ev, &units, adv, 0.0, y, f64::NEG_INFINITY, f64::INFINITY, c.complex);
+                    ev.push("restore".into());
+                } else {
+                    glyphs(&mut ev, &units, adv, x, y, x0, x0 + cw, c.complex);
+                }
+                ev.push("restore".into());
+            }
             other => panic!("item not in the Sheet subset: {other:?}"),
         }
     }
@@ -275,4 +349,9 @@ pub fn canonicalize(ev: &[String]) -> Vec<String> {
 /// The canonical lines of a list.
 pub fn canon(l: &SlidesList, res: &SlidesResources) -> Vec<String> {
     canonicalize(&expand(l, res))
+}
+
+/// [`canon`] without the drawing phases.
+pub fn canon_skip(l: &SlidesList, res: &SlidesResources, skip: &[(u32, u32)]) -> Vec<String> {
+    canonicalize(&expand_skip(l, res, skip))
 }

@@ -10,7 +10,7 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use support::vp_canon::canon;
+use support::vp_canon::canon_skip;
 use uo_testkit::{Capture, Replay};
 use uo_xlsx::book::{Book, ReadLimits};
 use uo_xlsx::grid::cf::CfClock;
@@ -48,6 +48,10 @@ fn bytes_of(key: &str) -> Option<Vec<u8>> {
         dir().join(format!("workbooks/paint1/paint1-{n}.xlsx"))
     } else if let Some(n) = key.strip_prefix("gen/cf1/") {
         dir().join(format!("workbooks/cf1/cf1-{n}.xlsx"))
+    } else if let Some(n) = key.strip_prefix("gen/dr1/") {
+        dir().join(format!("workbooks/dr1/dr1-{n}.xlsx"))
+    } else if let Some(n) = key.strip_prefix("gen/dr-big/") {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../target/sheet-cap/workbooks/dr-big/dr-big-{n}.xlsx"))
     } else if let Some(n) = key.strip_prefix("gen/x1-big/") {
         Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../target/sheet-cap/workbooks/x1-big/x1-big-{n}.xlsx"))
     } else if let Some(n) = key.strip_prefix("gen/paint-big/") {
@@ -148,14 +152,36 @@ fn activate(v: &mut Viewer, book: &mut Book, si: usize) {
 
 fn frame(v: &mut Viewer, book: &Book, p: &ViewParams) -> Vec<u8> {
     let mut out = Vec::new();
-    for _ in 0..8 {
+    for _ in 0..16 {
         match v.emit(book, p, &IdentityEnv, &mut out) {
             Ok(()) => return out,
-            Err(ViewError::NeedMeasures) => v.measure.satisfy(&Fake),
+            Err(ViewError::NeedMeasures) => {
+                v.measure.satisfy(&Fake);
+                let n = v.dml_needs();
+                support::stub_measure::answer(v, &n);
+            }
             Err(e) => panic!("{e:?}"),
         }
     }
     panic!("frame does not settle");
+}
+
+/// The camera render of the capture (`renderRegionToCanvas(i, canvas, 8, 14)`, state 4): the message and `w,h`.
+fn camera(v: &mut Viewer, book: &Book, si: usize) -> (Vec<u8>, String) {
+    let mut out = Vec::new();
+    for _ in 0..16 {
+        out.clear();
+        match v.emit_region(book, &params(si, 0), 8, 14, &IdentityEnv, &mut out) {
+            Ok((w, h)) => return (out, format!("{},{}", uo_jsnum::format::to_js_string(w), uo_jsnum::format::to_js_string(h))),
+            Err(ViewError::NeedMeasures) => {
+                v.measure.satisfy(&Fake);
+                let n = v.dml_needs();
+                support::stub_measure::answer(v, &n);
+            }
+            Err(e) => panic!("{e:?}"),
+        }
+    }
+    panic!("camera does not settle");
 }
 
 fn run(cap_path: &Path, lines_dir: Option<PathBuf>) -> (Totals, String) {
@@ -172,26 +198,33 @@ fn run(cap_path: &Path, lines_dir: Option<PathBuf>) -> (Totals, String) {
         let Some(raw) = bytes_of(&key) else { continue };
         t.workbooks += 1;
         rep.skip(&key, "open");
+        rep.skip(&key, "stacks");
         let mut book = Book::open(&raw, ReadLimits::default()).unwrap();
         book.load_all().unwrap();
         let mut viewer = Viewer::new(&book, 1, CLOCK);
+        viewer.set_rules(uo_dml_render::SlidesRules::ts_strict());
         let sheets: Vec<usize> = (0..book.workbook.sheets.len()).filter(|&i| book.workbook.sheets[i].target.is_some()).collect();
         let ts_lines = lines_dir.as_ref().and_then(|d| gunzip(&d.join(format!("{}.txt.gz", key.replace(['/', '\\'], "_")))));
         let mut all = String::new();
         for (vi, &si) in sheets.iter().enumerate() {
-            if book.sheets[si].as_ref().is_some_and(|w| w.chartsheet.is_some()) {
-                for k in 0..STATES.len() {
-                    rep.skip(&key, &format!("v{vi}@{k}"));
-                    rep.skip(&key, &format!("n{vi}@{k}"));
-                }
-                continue;
-            }
             activate(&mut viewer, &mut book, si);
-            for k in 0..STATES.len() {
-                let p = params(si, k);
-                let bytes = frame(&mut viewer, &book, &p);
+            for k in 0..=STATES.len() {
+                // state 4: the camera render (C4b), not for chart sheets
+                if k == STATES.len() && cap.get(&key, &format!("v{vi}@{k}")).is_none() {
+                    continue;
+                }
+                // the drawing phases are compared by `js/compare-drawings.mjs` (C4b)
+                rep.skip(&key, &format!("d{vi}@{k}"));
+                rep.skip(&key, &format!("dc{vi}@{k}"));
+                let bytes = if k < STATES.len() {
+                    frame(&mut viewer, &book, &params(si, k))
+                } else {
+                    let (b, wh) = camera(&mut viewer, &book, si);
+                    rep.check(&key, &format!("w{vi}@{k}"), &wh);
+                    b
+                };
                 assert!(!bytes.is_empty());
-                let lines = canon(viewer.last_list(), viewer.resources());
+                let lines = canon_skip(viewer.last_list(), viewer.resources(), viewer.drawing_spans());
                 t.streams += 1;
                 all.push_str(&format!(
                     "# {vi}@{k}

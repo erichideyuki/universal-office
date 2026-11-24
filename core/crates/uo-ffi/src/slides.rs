@@ -239,7 +239,7 @@ impl Converter {
 
 /// Runs `f` on its own thread with a large stack; a failure is recorded as the last error of the CALLING thread and
 /// its status returned.
-fn on_big_stack<T: Send>(f: impl FnOnce() -> Result<T, JobError> + Send) -> Result<T, i32> {
+pub(crate) fn on_big_stack<T: Send>(f: impl FnOnce() -> Result<T, JobError> + Send) -> Result<T, i32> {
     let worker = std::thread::scope(|s| {
         let spawned = std::thread::Builder::new()
             .name("uo-slides".into())

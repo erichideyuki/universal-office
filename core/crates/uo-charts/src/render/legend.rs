@@ -49,7 +49,7 @@ const PPT_KEY_GAP: f64 = 0.248;
 /// A legend box from its edge of the frame.
 const PPT_LEGEND_EDGE: f64 = 6.0;
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// `catNumLabel(s, i)`: the label of a numeric category.
     pub(super) fn cat_num_label(&self, r: SeriesRef, i: usize) -> String {
         let s = self.cs.groups.get(r.group as usize).and_then(|g| g.series.get(r.series as usize));

@@ -25,6 +25,9 @@ uo-drawingml = { path = "../uo-drawingml", optional = true, features = ["legacy"
 # feature `view` (C4): the Slides display list the viewport is emitted in
 uo-render = { path = "../uo-render", optional = true }
 rustc-hash = { version = "=2.1.3", optional = true }
+# feature `view` (C4b): the drawings (the shared DrawingML reader and shape emitter) and the charts of the viewport
+uo-dml-render = { path = "../uo-dml-render", optional = true }
+uo-charts = { path = "../uo-charts", optional = true }
 # feature `save` (C1b): the JS regular expressions of the text surgery (`save-calc.ts`, the XfPool patch, `updateWorksheetXml`)
 # run on the same engine uo-calc uses (the vendored `regress`, ECMAScript syntax): matching is the TS's by construction
 regress = { path = "../../vendor/regress", optional = true, default-features = false, features = ["std", "utf16", "prohibit-unsafe"] }
@@ -42,10 +45,12 @@ facet = ["read", "uo-calc/facet", "dep:uo-testkit"]
 save = ["read", "dep:uo-text", "dep:regress"]
 # .xls (BIFF8) -> in-memory OOXML parts, the TS xls/ converter (C2); a separate lazily loaded wasm
 xls = ["read", "dep:uo-drawingml"]
+# the engine of an opened workbook and the open-recalc without the save (`uo-sheet.wasm`, C4b)
+calc = ["read"]
 # grid model and the viewport display list (C3, C4)
 grid = ["read", "dep:uo-text"]
 # the viewport display list of the Sheet viewer (C4): the Slides canvas-IR list with the two Sheet items
-view = ["grid", "dep:uo-render", "dep:rustc-hash"]
+view = ["grid", "dep:uo-render", "dep:rustc-hash", "dep:uo-dml-render", "dep:uo-charts"]
 # editor session: operations, change-set undo, save (C5)
 edit = ["grid", "save"]
 
@@ -95,3 +100,13 @@ required-features = ["save"]
 [[example]]
 name = "view_bench"
 required-features = ["view"]
+
+# C4b: the viewport frames of a workbook as list messages with the drawing spans (`js/compare-drawings.mjs` replays them)
+[[example]]
+name = "view_dump"
+required-features = ["view"]
+
+# the C5b editor benchmark (one entry + dependents recalc on giant-1m, paste, fill, replace-all)
+[[example]]
+name = "edit_bench"
+required-features = ["edit"]

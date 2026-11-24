@@ -734,6 +734,23 @@ impl Store {
         Ok(())
     }
 
+    /// Strips the calc content of a cell and KEEPS the cell (the bridge's `stripContent` before an entry writes
+    /// the cell again, `sheet-calc.ts:169-172`): formula, owner and value go; style, `r` and the cell stay.
+    pub fn strip_content(&mut self, sheet: SheetIx, row: u32, col: u32) -> Result<()> {
+        let Some(c) = self.get(sheet, row, col) else { return Ok(()) };
+        if c.kind.has(CellKind::HAS_FORMULA) {
+            if let Some(sh) = self.sheets.get_mut(sheet.0 as usize) {
+                sh.formulas.remove(row, col);
+            }
+            self.set_flags(sheet, row, col, CellKind::HAS_FORMULA, false);
+        }
+        if c.kind.has(CellKind::OWNED) {
+            self.set_owned(sheet, row, col, false);
+        }
+        let cur = self.get(sheet, row, col).unwrap_or(c);
+        self.write_lanes(sheet, row, col, cur, ValueTag::None, false, 0)
+    }
+
     /// Gives a cell a formula (created with the default style when absent): `<f>` text and attributes, no `<v>`
     /// (the engine's `{ v: 0, f }`, `engine.ts:649`). The previous value is dropped.
     pub fn set_formula(&mut self, sheet: SheetIx, row: u32, col: u32, f: FileFormula) -> Result<()> {

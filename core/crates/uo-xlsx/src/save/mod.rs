@@ -14,7 +14,8 @@
 //! ```
 
 pub mod calc;
-pub mod engine;
+/// The engine of an opened workbook (moved to the crate root for the viewer's open-recalc, C4b; the path stays).
+pub use crate::engine;
 mod frame;
 mod rx;
 mod sheet_data;

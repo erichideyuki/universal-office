@@ -416,3 +416,62 @@ pub fn chart_part_bounds(
         Err(ChartError::Throws(..)) => Err(Abort),
     }
 }
+
+/// A chart of a host that is not a slide (the Sheet's anchored charts, uo-xlsx frontier C4b): `space` parsed by the host with its
+/// own [`uo_charts::host::ChartHost`], drawn in `rect` (px) at `px_per_pt` with the host's profile, without pictures (the
+/// Sheet's `paintChart` passes no image resolver). The faces of the chart carry `tag` ([`Cx::face_tag`]). The measurements
+/// join the pass's [`crate::text::NeedMeasures`] (nothing is drawn in a pass that asks); a chart that throws keeps what it drew
+/// (`Err(Abort)`, as B4-1).
+pub fn emit_host_chart(
+    cx: &mut Cx<'_>,
+    space: &uo_charts::model::ChartSpace,
+    host: &dyn uo_charts::host::ChartHost,
+    rect: Rect,
+    px_per_pt: f64,
+    profile: HostProfile,
+    tag: &'static str,
+) -> E {
+    let env = cx.env;
+    let params = EmitParams {
+        rect,
+        px_per_pt,
+        profile,
+        locale: uo_numfmt::pt_br(),
+        sel: ChartSel { bg: true, data: DataSel::All },
+        images: false,
+        rules: env.rules.charts,
+    };
+    let m = super::chart_host::TaggedMeasure { table: env.table, tag };
+    let reqs = need_measures(space, host, &params, &m);
+    if !reqs.is_empty() {
+        let mut any = false;
+        for q in reqs.iter().filter_map(|r| super::chart_host::request_of_tagged(r, tag)) {
+            cx.need(q);
+            any = true;
+        }
+        if any {
+            return Ok(());
+        }
+    }
+    if cx.has_needs() {
+        return Ok(());
+    }
+    let keep = cx.face_tag;
+    cx.face_tag = tag;
+    let mut canvas = SlidesCanvas::new(cx);
+    let r = emit_chart(space, host, &params, &m, &mut canvas);
+    canvas.finish();
+    cx.face_tag = keep;
+    match r {
+        Ok(()) => Ok(()),
+        Err(ChartError::NeedMeasures(reqs)) => {
+            let mut any = false;
+            for q in reqs.iter().filter_map(|r| super::chart_host::request_of_tagged(r, tag)) {
+                cx.need(q);
+                any = true;
+            }
+            if any || cx.has_needs() { Ok(()) } else { Err(Abort) }
+        }
+        Err(ChartError::Throws(..)) => Err(Abort),
+    }
+}

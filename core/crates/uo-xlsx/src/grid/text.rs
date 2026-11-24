@@ -494,14 +494,13 @@ pub fn layout_cell_text<M: FontMetrics + ?Sized>(input: &CellTextInput<'_>, m: &
                 }
                 return;
             }
-            let parts: Vec<FmtPart> = r
-                .parts
-                .into_iter()
-                .map(|p| match p {
-                    FmtPart::General(x) => FmtPart::Text(general_text(x, loc, None)),
-                    other => other,
-                })
-                .collect();
+            // the General parts as their text, in place (no second vector)
+            let mut parts = r.parts;
+            for p in &mut parts {
+                if let FmtPart::General(x) = *p {
+                    *p = FmtPart::Text(general_text(x, loc, None));
+                }
+            }
             fit(&parts, r.color, m, avail, full, false, avail, out);
         }
     }

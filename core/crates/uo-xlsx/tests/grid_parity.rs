@@ -218,7 +218,7 @@ fn metrics_tables() {
         .map(|l| {
             let f: Vec<&str> = l.split(' ').collect();
             match f[0] {
-                "fam" => format!("fam {} {}", f[1], measured_family(Some(&name_of(f[1]))).unwrap_or_else(|| "-".to_owned())),
+                "fam" => format!("fam {} {}", f[1], measured_family(Some(&name_of(f[1]))).unwrap_or("-")),
                 "undef" => format!(
                     "undef {} {} {}",
                     excel_row_px(None, 11.0, false),

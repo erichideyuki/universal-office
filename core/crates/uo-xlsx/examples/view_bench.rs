@@ -10,6 +10,9 @@ use uo_xlsx::grid::cf::CfClock;
 use uo_xlsx::grid::{FontDesc, IdentityEnv, Measurer, ViewportRequest};
 use uo_xlsx::view::{ViewError, ViewParams, Viewer};
 
+#[path = "../tests/support/stub_measure.rs"]
+mod stub;
+
 struct Fake;
 
 impl Measurer for Fake {
@@ -50,11 +53,15 @@ fn params(sheet: usize, sx: f64, sy: f64, zoom: f64) -> ViewParams {
 }
 
 fn frame(v: &mut Viewer, book: &Book, p: &ViewParams, out: &mut Vec<u8>) {
-    for _ in 0..8 {
+    for _ in 0..16 {
         out.clear();
         match v.emit(book, p, &IdentityEnv, out) {
             Ok(()) => return,
-            Err(ViewError::NeedMeasures) => v.measure.satisfy(&Fake),
+            Err(ViewError::NeedMeasures) => {
+                v.measure.satisfy(&Fake);
+                let n = v.dml_needs();
+                stub::answer(v, &n);
+            }
             Err(e) => panic!("{e:?}"),
         }
     }
@@ -111,8 +118,38 @@ fn main() {
                 median(&mut bytes.clone()),
                 bytes.iter().cloned().fold(0.0, uo_jsnum::math::max)
             );
+            let l = v.last_list();
+            {
+                let mut enc = uo_render::slides::SlidesEncoder::new(1);
+                let mut o2 = Vec::with_capacity(1 << 20);
+                let _ = enc.encode(l, v.resources(), &mut o2);
+                o2.clear();
+                let (_, u) = uo_alloc::measure(|| {
+                    let _ = enc.encode(l, v.resources(), &mut o2);
+                });
+                println!("    encode alone: allocated {} B", u.allocated);
+            }
+            let glyphs = l.items.iter().filter(|i| matches!(i, uo_render::slides::SItem::GlyphRun(_))).count();
+            println!(
+                "    list: {} items ({} glyph runs), {} paths, {} text units, {} advances, {} runs",
+                l.items.len(),
+                glyphs,
+                l.paths.len(),
+                l.texts.len(),
+                l.advances.len(),
+                l.runs.len()
+            );
         }
         let l = v.last_list();
+        if std::env::var_os("UO_VB_HIST").is_some() {
+            let mut h: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+            for it in &l.items {
+                let d = format!("{it:?}");
+                let k = d.split(['(', ' ', '{']).next().unwrap_or("").to_owned();
+                *h.entry(k).or_default() += 1;
+            }
+            println!("  items by kind: {h:?}");
+        }
         println!(
             "  last list: {} items, {} paths, {} texts, {} advances, {} stops",
             l.items.len(),

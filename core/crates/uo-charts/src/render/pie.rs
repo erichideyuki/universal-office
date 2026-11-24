@@ -27,7 +27,7 @@ struct Slice {
     oy: f64,
 }
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// `paintPies(outer)`.
     pub(super) fn paint_pies(&mut self, outer: Rect) -> R<()> {
         let cs = self.cs;

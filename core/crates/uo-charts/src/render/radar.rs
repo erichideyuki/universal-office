@@ -10,7 +10,7 @@ use crate::scale::{Fixed, auto_scale, frac, tick_values};
 
 const PI: f64 = std::f64::consts::PI;
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// `paintRadar(outer)`.
     pub(super) fn paint_radar(&mut self, outer: Rect) -> R<()> {
         let cs = self.cs;

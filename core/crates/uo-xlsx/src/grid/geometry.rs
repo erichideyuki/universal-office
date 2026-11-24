@@ -366,7 +366,7 @@ impl MergeIndex {
 }
 
 /// `x:y` of a merge text → the rectangle; `None` for a text the TS skips (no `:` or an invalid ref).
-fn merge_rect(range: &str) -> Option<MergeRect> {
+pub(crate) fn merge_rect(range: &str) -> Option<MergeRect> {
     let (a, b) = range.split_once(':')?;
     let b = b.split(':').next().unwrap_or(b);
     if a.is_empty() || b.is_empty() {

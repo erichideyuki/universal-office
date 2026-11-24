@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Third-party licence notices of what the Rust core ships, generated into core/licenses/.
 //
-// Five artifacts carry compiled third-party Rust code:
+// Seven artifacts carry compiled third-party Rust code:
 //   wasm    chunks/uo-write.wasm of @universal-office/write and @universal-office/document-viewer
 //           (cargo tree -p uo-wasm --features write --target wasm32-unknown-unknown)
 //   wasm-editor  chunks/uo-write-editor.wasm of @universal-office/write (the editor, engine="rust"; the session build)
@@ -10,6 +10,10 @@
 //           (cargo tree -p uo-wasm --features slides --target wasm32-unknown-unknown)
 //   wasm-slides-ppt  chunks/uo-slides-ppt.wasm, the lazily loaded .ppt converter of the two Slides packages
 //           (cargo tree -p uo-wasm --features slides-ppt --target wasm32-unknown-unknown)
+//   wasm-sheet  chunks/uo-sheet.wasm of @universal-office/sheet (the viewer, engine="rust", C4/C4b)
+//           (cargo tree -p uo-wasm --features sheet --target wasm32-unknown-unknown)
+//   wasm-sheet-calc  chunks/uo-sheet-calc.wasm, the lazily loaded viewer with the open recalc (C4b, decision SH3)
+//           (cargo tree -p uo-wasm --features sheet-calc --target wasm32-unknown-unknown)
 //   native  uo_ffi, the native library of the NuGet package UniversalOffice.Docx
 //           (cargo tree -p uo-ffi --target all)
 //
@@ -123,6 +127,8 @@ function build() {
     'wasm-editor': tree(['-p', 'uo-wasm', '--features', 'session', '--target', 'wasm32-unknown-unknown']),
     'wasm-slides': tree(['-p', 'uo-wasm', '--features', 'slides', '--target', 'wasm32-unknown-unknown']),
     'wasm-slides-ppt': tree(['-p', 'uo-wasm', '--features', 'slides-ppt', '--target', 'wasm32-unknown-unknown']),
+    'wasm-sheet': tree(['-p', 'uo-wasm', '--features', 'sheet', '--target', 'wasm32-unknown-unknown']),
+    'wasm-sheet-calc': tree(['-p', 'uo-wasm', '--features', 'sheet-calc', '--target', 'wasm32-unknown-unknown']),
     native: tree(['-p', 'uo-ffi', '--target', 'all']),
   };
   /** relative path (posix) -> Buffer */
@@ -146,8 +152,10 @@ function build() {
     put(rel, Buffer.from(lf(readFileSync(src, 'latin1')), 'latin1'));
   }
 
+  const vendorDir = path.join(CORE, 'vendor') + path.sep;
+  const isVendored = (c) => (dirOf.get(`${c.name}@${c.version}`) ?? '').startsWith(vendorDir);
   const bad = [];
-  const out = { wasm: [], native: [], 'wasm-editor': [], 'wasm-slides': [], 'wasm-slides-ppt': [] };
+  const out = { wasm: [], native: [], 'wasm-editor': [], 'wasm-slides': [], 'wasm-slides-ppt': [], 'wasm-sheet': [], 'wasm-sheet-calc': [] };
   const workspaceTexts = {
     'uo-jsnum': { files: ['LICENSE-V8', 'LICENSE-optimized-routines'], dest: 'texts/uo-jsnum', component: 'V8 and ARM optimized-routines (math of uo-jsnum, translated to Rust)', licence: 'BSD-3-Clause AND MIT' },
     'uo-opc': { files: ['LICENSE-fflate'], dest: 'texts/uo-opc', component: 'fflate 0.8.3 (inflate of uo-opc, translated to Rust)', licence: 'MIT' },
@@ -157,13 +165,14 @@ function build() {
     const entries = out[art];
     const names = new Set([...crates.values()].map((c) => c.name));
     for (const c of [...crates.values()].sort((a, b) => a.name.localeCompare(b.name))) {
-      if (c.workspace) continue;
+      // workspace crates are ours (MIT); a path crate outside crates/ is vendored third-party code (core/vendor/regress)
+      if (c.workspace && !isVendored(c)) continue;
       if (!licenceOk(c.license, allow)) { bad.push(`${c.name} ${c.version}: ${c.license}`); continue; }
       const root = dirOf.get(`${c.name}@${c.version}`);
       if (!root) throw new Error(`gen-notices: ${c.name} ${c.version} not in cargo metadata`);
       const got = copyDir(root, `texts/${c.name}-${c.version}`, (f) => LICENSE_RE.test(f));
       if (!got.length) throw new Error(`gen-notices: ${c.name} ${c.version} has no licence file at its root`);
-      entries.push({ component: c.name, version: c.version, licence: c.license, files: got });
+      entries.push({ component: c.workspace ? `${c.name} (vendored in core/vendor/${c.name})` : c.name, version: c.version, licence: c.license, files: got });
     }
     for (const [name, w] of Object.entries(workspaceTexts)) {
       if (!names.has(name)) continue;
@@ -213,13 +222,15 @@ function markdown(out) {
   const lines = [
     '# Third-party notices of the Rust core',
     '',
-    'The Rust core ships compiled in five artifacts. This file lists the third-party components in each, with the',
+    'The Rust core ships compiled in seven artifacts. This file lists the third-party components in each, with the',
     'licence expression and the licence texts kept beside it (paths relative to this file).',
     '',
     '- wasm: `chunks/uo-write.wasm` in `@universal-office/write` and `@universal-office/document-viewer` (engine="rust").',
     '- wasm-editor: `chunks/uo-write-editor.wasm` in `@universal-office/write` (the editor, engine="rust").',
     '- wasm-slides: `chunks/uo-slides.wasm` in `@universal-office/slides-viewer` and `@universal-office/slides` (engine="rust").',
     '- wasm-slides-ppt: `chunks/uo-slides-ppt.wasm` in the same two packages (the lazily loaded .ppt converter).',
+    '- wasm-sheet: `chunks/uo-sheet.wasm` in `@universal-office/sheet` (the viewer, engine="rust").',
+    '- wasm-sheet-calc: `chunks/uo-sheet-calc.wasm` in `@universal-office/sheet` (the same viewer with the recalc on open, lazily loaded).',
     '- native: `uo_ffi`, the native library inside the NuGet package `UniversalOffice.Docx`.',
     '',
     'Generated by `node core/tools/licenses/gen-notices.mjs`; do not edit by hand. The Universal Office code itself is MIT',

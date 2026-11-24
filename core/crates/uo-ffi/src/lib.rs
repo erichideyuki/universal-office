@@ -23,6 +23,8 @@
 pub mod editing;
 pub mod pipeline;
 pub mod server;
+#[cfg(feature = "sheet")]
+pub mod sheet;
 pub mod slides;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};

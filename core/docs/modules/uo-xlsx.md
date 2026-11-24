@@ -335,9 +335,9 @@ Sonnet, closed scope (plan §7 C2). `uo-xls.wasm` is a separate, lazily loaded i
 | C3a (**done** 2026-11-24, section "C3a — as built") | `grid`: metrics, cell text, entry/entry-format/edit-text, geometry, resolved styles, row auto-fit | Sonnet | **yes** | C1a |
 | C3b (**done** 2026-11-24, section "C3b — as built") | CF: `cond-format.ts` + `cf-formula.ts` (1:1) + `cf-icons.ts` | **Opus** (formula evaluation) | yes | C1a, A2 |
 | C3c (**done** 2026-11-24, section "C3c — as built") | table/pivot styles, borders, fills, spill border, grid-layout helpers | Sonnet | **yes** | C3a |
-| C4 (**done** 2026-11-24, section "C4 — as built"; drawings/charts and the wasm engine glue are open items) | viewport emission + `SheetFont`/`GlyphRun` (uo-render) + drawings/charts hookup + `<universal-sheet engine="rust">` read path + `uo-sheet.wasm` + viewer harness | Sonnet (Opus review of the emission order) | yes | C3*, A5, B4 (done) |
+| C4 (**done** 2026-11-24: section "C4 — as built" and its completion C4b, section "C4b — as built": drawings, charts, form controls, chart sheets, open-recalc in the lazily loaded `uo-sheet-calc.wasm`, camera, dropdown, budgets) | viewport emission + `SheetFont`/`GlyphRun` (uo-render) + drawings/charts hookup + `<universal-sheet engine="rust">` read path + `uo-sheet.wasm` + viewer harness | Sonnet (Opus review of the emission order) | yes | C3*, A5, B4 (done) |
 | C5a (**done** 2026-11-24, section "C5a — as built") | extraction of the edit operations into capture scripts | Sonnet | yes | C4 |
-| C5b | session, change-set undo, routing, editor harness, `uo-sheet-editor.wasm` | Sonnet; session core reviewed by Opus | yes | C5a, C1b |
+| C5b (**done** 2026-11-24, section "C5b — as built") | session, change-set undo, routing, editor harness, `uo-sheet-editor.wasm` | Sonnet; session core reviewed by Opus (run on Opus 5.5) | yes | C5a, C1b |
 
 Order: S0 → C1a → (C1b ∥ C2 ∥ C3a) → (C3b ∥ C3c) → C4 → C5a → C5b, inside the ≤ 3-agent cap shared with track A.
 
@@ -492,7 +492,9 @@ drawing objects, history bytes. Fuzz: `xlsx_read` (built in C1a, `core/fuzz/src/
 ### T16. Questions for the M5 gate (batched; SH1, SH2, SH4 in `uo-calc.md`)
 
 - SH3: `uo-sheet.wasm` holds the calc for the open-recalc rule; if it exceeds 1.6 MB gzip, load the calc lazily
-  (fetched only when the open plan is not `none` or at the first edit) or raise the budget?
+  (fetched only when the open plan is not `none` or at the first edit) or raise the budget? **Measured in C4b**: with the calc the
+  module is 2.04 MB gzip (over), so C4b built the lazy variant (C4b-7; viewer 1.39 MB gzip); the question left for the gate is whether
+  showing the file's values until the calc module arrives is acceptable (the TS recalculates before the first paint).
 - SH5: the history byte cap (64 MiB wasm32 / 256 MiB native, oldest steps dropped) on top of the 100 steps — accept?
 - SH6: `uo-xls.wasm` as a separate lazily loaded instance (the same question as Slides' SP4) — accept?
 
@@ -1632,6 +1634,8 @@ Slides regression: `uo-render`, `uo-dml-render` and `uo-pptx` suites green (the 
 
 ### Open items
 
+Items 1-5 and 7 were taken by C4b (section "C4b — as built": what closed and what carried over); item 6 is the design.
+
 1. **Drawings and charts** (C4-8): `emit_shapes` hookup (xdr reader, theme colours, media), `uo_charts` host over the sheet's cells, form controls, chart sheets.
 2. **Budgets missed on dense sheets** (table above): the message is dominated by the glyph advances (4 B per code point) and the `texts` arena; options: advances as `u8` varints (a column of digits has 3-4 distinct values), a per-font advance table in the list (the painter already knows the faces), tile caching across scroll steps (evolution after M5), and a pooled `PathOp` buffer.
 3. **Engine in the module** (C4-6) and the wasm size with the calc (SH3): load the calc lazily when the plan is not `none`.
@@ -1674,3 +1678,338 @@ wall time including the reboot), about 330 tool calls, no round with a verifier.
 sign of zero); (2) the 4-state big run found the cf-big icon order and the stale face cache; (3) lint (disallowed `trim_start`/`is_whitespace`, float parse,
 argument counts); (4) bash heredocs eat quotes and backslashes: scripts with quotes went through the Write tool; (5) the C: disk full: `TMP` on D:. Environment:
 `core/target/sheet-c4` only.
+
+---
+
+## C4b — as built (2026-11-24, Opus 5.5)
+
+Completion of C4 (T9): nothing of the viewer stays switched off. Drawings, charts, form controls and chart sheets in the viewport; the
+open-recalc in the module (a second, lazily loaded module: SH3); the 1080p budgets; the RTL camera render, the list-validation dropdown
+and the font alt-name in the canon; a headless browser check of `engine="rust"` against the TS. Verified against the frozen TS
+(`ts-ref-092` at `b92b60fa`), as C4.
+
+### Code map
+
+| Piece | Where | TS source |
+|---|---|---|
+| `paintDrawings` per quadrant (anchor → px, the object re-placed at its anchor, rotation 45-135° swapping the box, Excel text defaults `tx1`/11 pt, the workbook theme as a DrawingML theme), `paintAnchoredChart`, `paintChartsheet`, form controls | `src/view/drawing.rs` | `universal-sheet.ts:3569-3660`, `drawings.ts` |
+| The chart host (Office 2023 theme when the workbook has none, `chartFileFormat`, Excel's chart profile) and `chart-data.ts` (caches rewritten from the cells: `numCache`/`strCache`/`multiLvlStrCache`, chartex data, hidden rows/columns, defined names, duplicate sheet names) | `src/view/chart.rs` | `sheet-core/src/chart.ts`, `chart-data.ts` |
+| The package as a DrawingML `PartSource` (case-insensitive part names, parsed-XML LRU, the media table) | `src/view/source.rs` | `SheetDrawings.dml`, `XlsxPackage.getPart` |
+| The calc glue moved out of `save` (`engine::{open_recalc_plan, open_recalc}`; `save::engine` stays as a re-export for C5b) | `src/engine.rs` (feature `calc` or `save`) | `sheet-calc.ts` |
+| Camera render (`renderRegionToCanvas`, RTL included), dropdown arrow of a list validation | `src/view/region.rs` (`paint_camera`, `paint_list_dropdown`), `Viewer::emit_region` | `universal-sheet.ts` `renderRegionToCanvas`, `paintSelection` |
+| `CellText` peephole (one item per plain cell text) | `src/view/out.rs` (`OutState::restore` → `cell_text`) | — (encoding) |
+| Shapes and charts in a context whose list IS the viewport's list | `uo-dml-render` `emit_shapes_into`, `emit_host_chart`, `Cx::face_tag`, `chart_host::TaggedMeasure` | `paintShapesTo`, `paintChart` |
+| Wasm: open-recalc, the DrawingML measure protocol, media, rules switch | `uo-wasm/src/sheet.rs` (`uo_sheet_dml_needs/dml_answer/media/is_recipe/set_image_size/font_names/set_metrics/set_rules/has_calc/recalc_status`), `js/sheet.mjs`, `js/sheet-engine.ts` | |
+| Component | `sheet/packages/sheet/src/{rust-engine.ts (calcWasm), sheet-engine.d.ts, universal-sheet.ts (rustHost: shapeFontStack, metricFamily, invalidate; chart sheets on the Rust path)}` | |
+| Harness | `js/capture-viewport.mjs` (drawings recorded in the draw form, chart sheets, camera state 4), `js/compare-drawings.mjs`, `examples/view_dump.rs`, `js/lib/gen-drawings.mjs` (`dr1` 16 committed workbooks, 216 KB; `dr-big` 160 local), `tests/support/stub_measure.rs`, `js/browser-pixels.mjs`, `js/bench-wasm.mjs` | |
+
+### Decisions
+
+| Id | Decision |
+|---|---|
+| C4b-1 | **No splice**: a drawing is emitted by `uo-dml-render` into a `Cx` whose list is the viewport's own (`std::mem::swap` in, out after the object), so the arenas, symbols and faces are shared and nothing is copied. The drawing phase of each quadrant is reported as an item range (`Viewer::drawing_spans`) for the parity of the drawings. |
+| C4b-2 | **Rules**: the viewer uses the Office-measured `SlidesRules` by default (as the Slides viewer); the parity harnesses switch to `ts_strict` (`set_rules`, `uo_sheet_set_rules`, `setTsRules`). |
+| C4b-3 | **Face tags**: the faces of charts are tagged (`"\u{1}"` before the family) so the shell gives them the TS chart stack (`'F', Calibri, 'Liberation Sans', Arial, sans-serif`); shapes untagged get the shape stack; cell fonts the new `cellFontStack` hook. The tag is stripped by every measurer. |
+| C4b-4 | **Chart caches**: the TS rewrites the parsed tree in place; here the canonical tree is written back as XML with the rewritten caches and reparsed (same elements, attributes, texts). Chart models are cached per part, 32 at most (LRU; the TS cache is unbounded). Reference areas over 100,000 cells or 10 levels keep the file's cache (the TS bound). |
+| C4b-5 | **`uo_charts` renders through `&mut dyn Canvas`** (`Renderer<C: Canvas + ?Sized>`, one instantiation): the generic version linked one copy per canvas type into the wasm module (Slides canvas + Sheet canvas); `emit_chart`/`trace_layout` keep their generic signatures. |
+| C4b-6 | **`CellText` item** (record `uo-render.md` "Sheet extensions"): the clip/font/`drawCellText` group of a plain cell as one fixed-point item reading its units and advances from the `advances` arena; produced by a peephole after the group is emitted, so the emission code and the op stream are unchanged. |
+| C4b-7 | **Open-recalc = a second module (SH3)**: `uo-sheet.wasm` (viewer) shows the file's values; when the plan is not `none` the shell loads `uo-sheet-calc.wasm` (features `sheet-calc`: the same viewer + `uo-calc`'s engine), reopens the bytes there, swaps the book and repaints (`invalidate`). The TS recalculates before the first paint; the Rust path shows the file's values for the load time of the calc module (numbers below). |
+| C4b-8 | **Metric family**: the cell metrics follow the TS `cellFont` (`metric = 'arial'` when the resolver's source is `default`, i.e. the font is not available): the shell reports the family it measured with (`metricFamily`), the module applies it (`uo_sheet_set_metrics`). |
+| C4b-9 | **Canvas caches are history**: the TS keeps module-level canvases (pattern tiles, gradients of `paintChart`); their calls (`@cv` lines of the recording context) depend on what was painted before and are filtered on both sides. |
+| C4b-10 | The camera render is `Viewer::emit_region(book, params, n_cols, n_rows)`: the region of `renderRegionToCanvas` at zoom 1 with the extent rounded up, mirrored on RTL sheets; the capture's state 4 records it (`w<i>@4`). The dropdown arrow is drawn after the selection when the active cell has a list validation and is not being edited. The alt-name of a face is in the canon (`name|alt` → the stack the TS builds). |
+
+### Parity
+
+| Run | Input | Result |
+|---|---|---|
+| CI `viewport_parity` (`tests/captures/sheet-viewport.capture`, regenerated) | 89 C4 workbooks + 16 `dr1` = 105 | **973 streams (the camera state included), 391,378 ops compared, all equal, 0 mismatches** |
+| CI drawings (`js/compare-drawings.mjs`, the `paintDrawings`/`paintChartsheet` ranges replayed by `paint-slides.ts` on the recording context, draw form) | 35 workbooks with drawings | **473 frames, 142,047 draw lines, all equal** |
+| local `UO_VP_CAPTURE` (`capture-viewport.mjs --big`, 64 s) | 1,020 workbooks (C4's 860 + `dr-big` 160) | **11,519 streams, 6,673,515 ops compared, all equal; 6 streams accepted** (C3a-9, as C4) |
+| local drawings | 414 workbooks with drawings | **5,999 frames, 1,610,817 draw lines, all equal** |
+
+Round history (drawings): the first full run was 4,813/4,844 frames; classes fixed: images drawn before the TS prepared them (the
+capture now clears the layer's caches), `@cv` canvas caches (C4b-9), duplicate sheet names in chart references (the last sheet of the
+exact name), the camera of RTL sheets (the recorder's `getTransform` was a stub: it now tracks the real transform).
+
+### Budgets (native i5-14600KF, release, 1920 x 1080, zoom 1, `examples/view_bench.rs`, medians; wasm: `js/bench-wasm.mjs`, Node 24)
+
+| Scenario (1080p, zoom 1) | Emission native: before → after (budget ≤ 1 ms) | Emission wasm (≤ 2.5 ms) | Allocated / warm frame: before → after (≤ 64 KiB) | Message crossing, median (max): before → after (≤ 48 KiB = 49,152 B) |
+|---|---|---|---|---|
+| showcase.xlsx | 0.006 → **0.005 ms** | **0.017 ms** | 5,067 → **4,319 B** | 2,435 → **2,435 B** (8,589) |
+| giant-200k | 1.550 → 1.065 ms (min 0.965): **missed by 6%** | **1.339 ms** | 242,156 → 81,190 B (79 KiB): **missed** | 203,428 → 50,978 B (54,355): **missed natively by 4%**; wasm **48,529 B** |
+| giant-1m | 1.148 → **0.842 ms** | **1.133 ms** | 149,205 → **12,374 B** | 198,561 → **45,167 B** (47,947) |
+
+"Before" is the C4 viewer at the start of C4b (`view_bench`, same machine and day); the encoder itself allocates 0 B per frame. The wasm
+column runs `uo-sheet.wasm` in Node with the harness's fixed measurer (6 px per unit), so its message differs slightly from the native
+one (the stub measurer of the Rust tests). What moved the numbers: the `CellText` item (C4b-6: one fixed-point item per plain cell
+instead of seven, the units and advances as varints in one arena), `sym::intern_str` on the stack, the scratch buffers of
+`overflow_extent`/`center_across_extent`/rich text kept in `RegionScratch`, `has_content` fast paths for empty cells, and General
+→ text in place. **Why giant-200k still misses**: its cells are formatted numbers, dates and currency, and `uo-numfmt`'s
+`format_value_parts` allocates its part strings per formatted cell (the remaining 79 KiB, found with a temporary allocation histogram);
+its texts are mostly distinct, so the message carries more units and advances than giant-1m's. Open item 1.
+
+| Open → first list | Native | Wasm (`uo-sheet.wasm`) | Wasm with the calc (`uo-sheet-calc.wasm`, recalc at open) | Budget |
+|---|---|---|---|---|
+| giant-1m | 173.7 ms | 225.6 ms | 263.2 ms | ≤ 250 ms native, ≤ 500 ms wasm: **met** |
+| giant-200k | 56.3 ms | 84.3 ms | 96.6 ms | ≤ 60 ms native: **met** |
+
+Wasm memory after the first frame: giant-1m 9.8 MiB (10.3 MiB with the calc), giant-200k 5.9 MiB (6.4 MiB).
+
+### Wasm size and SH3
+
+`cargo build -p uo-wasm --features <f> --target wasm32-unknown-unknown --profile wasm` (no `wasm-opt`), gzip -9:
+
+| Module | Raw | Gzip | Budget 1.6 MB gzip |
+|---|---|---|---|
+| `uo-sheet.wasm` (feature `sheet`: viewer, drawings, charts, the open-recalc decision) | 3,833,744 B | **1,388,296 B** | **met** |
+| `uo-sheet-calc.wasm` (feature `sheet-calc`: the same viewer + the calc engine) | 5,880,534 B | 2,037,957 B | over: hence lazy (SH3) |
+| C4's `uo-sheet.wasm` (no drawings, for comparison) | 1,505,770 B | 579,305 B | |
+| `uo-slides.wasm` (same `uo-dml-render` + `uo-charts`, for comparison) | 2,987,899 B | 1,076,886 B | |
+
+The drawings cost 0.8 MB gzip (the DrawingML reader and emitter, presets, effects, `uo_charts`); C4b-5 (`dyn Canvas`) keeps one copy of the
+chart renderer. **SH3 = lazy**: the calc engine adds 0.65 MB gzip, which does not fit the budget inside the viewer, so `uo-sheet.wasm`
+paints first with the file's values and `uo-sheet-calc.wasm` is fetched only when the open-recalc plan is not `none` (C4b-7). Cost
+measured in Node (`js/bench-wasm.mjs`): the open with the recalc is +12 ms (giant-200k) and +38 ms (giant-1m) over the viewer's open; the
+fetch and compile time of the calc module in a browser is not measured (open item 2).
+
+### Browser (headless Playwright; `js/browser-pixels.mjs`: the frozen TS element and `engine="rust"` on the same page, same fonts, canvases compared pixel by pixel)
+
+Samples: the tracked `sheet/samples` without the giants and five `dr1` workbooks (shapes, pictures, charts, controls, RTL, list
+validations), every sheet, three states (zoom/scroll/selection), 1000 x 700, DPR 1, both paths with the TS rules (`setTsRules`).
+
+| Browser | Frames | Pixel-identical | Differing |
+|---|---|---|---|
+| Chromium headless shell 1248 (`UO_PX_EXE`: the main checkout's Playwright now asks for build 1228, which is not downloaded) | 99 | 90 | 9, max channel delta 1-2 (antialiasing on chart and shape edges of `dr1-0001` and `dr1-0007`; no geometry difference) |
+| WebKit 2311 (Playwright) | 99 | **99** | 0 |
+
+The first browser runs found two real differences, both fixed: the metric family (C4b-8) and the rules default (C4b-2). Safari on a real
+device is the user's gate (not run).
+
+### Memory
+
+`tests/view_memory.rs` with the drawings: M1 (open + emit + drop: no live byte) over the committed workbooks including `dr1` and the
+chart sheets, M2 (600 scrolling frames, flat at tolerance 0) with drawings in view; `uo_dml_render::clear_caches` between workbooks.
+The viewer's drawing caches are bounded (parsed drawings 256, XML parts 64, chart models 32, the DrawingML measure table's caps); the
+media table lives as long as the viewer (the list's media ids refer to it). Wasm: `uo_sheet_live_bytes` returned the total instead of
+the live bytes (C4 bug, fixed); the 10,000 create/drop M4 test passes for both modules.
+
+### Lint and files
+
+`clippy -D warnings --no-deps` clean native (`uo-render uo-dml-render uo-charts --all-targets`, `uo-pptx --lib --tests`, `uo-xlsx
+--features view,save,grid,facet,calc --lib --tests` + the two view examples, `uo-wasm --features sheet-calc,count`) and wasm32
+(`uo-xlsx --features view,calc`, `uo-wasm --features sheet-calc`, `uo-wasm --features slides`); `grep-bans.sh` clean; float-casts
+clean (`tests/float-casts.sh` on the touched crates, and the same lints with the view features: `uo-xlsx --features view,calc`, `uo-wasm
+--features sheet-calc`, which found four casts C4 had left in `view/region.rs` and `view/text.rs`: now `uo_jsnum::conv`); rustfmt on the touched files. Suites: `uo-xlsx --features view,save,grid,facet,calc --lib --tests`, `uo-render`,
+`uo-dml-render`, `uo-charts`, `uo-pptx` (`emit`, `pdf_*`, `ppt_charts`, `ppt_parity` with `canon,pdf,ppt`) green; wasm JS:
+`slides_api` 9/9 (with the `.ppt` module), `slides_anim` 3/3, `slides_drawops` 3/3 (op streams equal the frozen TS: the
+Slides lists are unchanged), `sheet_api` 4/4 + the calc test skipped on `uo-sheet.wasm` and 5/5 on `uo-sheet-calc.wasm` (drawings
+message replayed, open-recalc values, M4 10,000 create/drop). Notices: `core/tools/licenses/gen-notices.mjs` has the artifacts `wasm-sheet` and `wasm-sheet-calc`; a path crate under
+`core/vendor/` is now listed as vendored third-party code (`regress`, MIT OR Apache-2.0), which also added `regress` and `memchr` to the
+`native` artifact, where they were missing since A4 (`--check` green).
+
+**Outside the module**: `uo-dml-render` (`emit_shapes_into`, `emit_host_chart`, `Cx::face_tag`, `TaggedMeasure`), `uo-charts`
+(`?Sized` canvas, `dyn Canvas` in `run`), `uo-render` (`CellText` in `slides.uos`, codec Rust + TS regenerated, `validate`,
+`sym::intern_str` on the stack), `uo-pptx` (PDF skip arms), `uo-wasm` (`Cargo.toml` features `sheet` + `sheet-calc`, `src/sheet.rs`,
+`js/{sheet.mjs, sheet-engine.ts, paint-slides.ts}`, `tests/sheet_api.test.mjs`), `sheet/packages/sheet/src/{rust-engine.ts,
+sheet-engine.d.ts, universal-sheet.ts}`, `core/tools/licenses/gen-notices.mjs` + `core/licenses/`. `grid/metrics.rs`
+(`measured_family` returns the family, the stack normalisation) and `tests/grid_parity.rs` adapted.
+
+### Open items
+
+1. **giant-200k budgets** (native emission 1.065 ms against 1 ms, 79 KiB allocated against 64 KiB, message 49.8 KiB native / 47.4 KiB
+   wasm against 48 KiB): a scratch-buffer entry in `uo-numfmt` (`format_value_parts` into caller buffers) removes the allocation and most
+   of the time; the message needs a per-font advance table or `u8` advances for the next step. giant-1m and showcase meet all budgets.
+2. **SH3 cost in a browser**: `uo-sheet-calc.wasm` is a full second viewer (2.04 MB gzip, the viewer reopens the bytes there and swaps
+   the book); its fetch/compile time in Chromium/WebKit is not measured, and a workbook that needs the recalc downloads both modules.
+   A calc-only module would need the store to cross modules. `wasm-opt` is not applied to either module.
+3. **Packaging**: `tools/build-pkg.mjs` has the `@universal-office/sheet-engine` alias but no ship step for `chunks/uo-sheet.wasm` and
+   `chunks/uo-sheet-calc.wasm` yet (the notices artifacts `wasm-sheet`/`wasm-sheet-calc` exist).
+4. Metafile pictures (EMF/WMF) in sheets go through the DrawingML path (`MetaText`/`MetaDecode` measures) but no captured workbook has one.
+5. Chromium: 9 frames with antialiasing deltas of 1-2 (above); Safari on a real device is the user's gate.
+6. C5b's editor module rebuilds its viewer after every change (C5b open item 3); incremental invalidation of the viewer's caches
+   (`clear_drawing_caches`, the chart models) per edited range is the next step.
+
+**Process metrics.** C4b (Opus 5.5): one session, start 13:45:39, end 16:36 local (`date`), **2 h 50 min** of wall time (about 40 min of it
+waiting for the final test and measurement runs, shared with C5b's builds), one context compaction (tool calls not counted across it), no verifier round. Rework inside the session: (1) the first drawings run 4,813/4,844 frames (classes above); (2) the
+browser run found the metric family (C4b-8) and the rules default (C4b-2) as the only differences besides antialiasing; (3) the
+budgets took several rounds (allocation sources found with a temporary allocation histogram, reverted; then the `CellText` item);
+(4) clippy (range checks, type complexity); (5) the C: volume filled up (7.3 GB of WSL crash dumps in `%TEMP%\wsl-crashes`, not
+this session's): outputs went to D:. Environment: `core/target/sheet-c4` only; incremental directories removed at the end.
+
+---
+
+## C5b — as built (2026-11-24, Opus 5.5; the wasm/TS part by a forked agent of the same session)
+
+Frontier C5b of T9: the editor session of `<universal-sheet>` on the Rust store and engine (feature `edit`, `src/session/`), the
+change-set undo/redo, the save through C1b, `uo-sheet-editor.wasm` (`uo-wasm` features `sheet` + `sheet-edit`) and the routing of
+the element's edit paths behind `engine="rust"`. Behaviour source: the frozen TS (`ts-ref-092` at `b92b60fa`), `universal-sheet.ts`
+(the 47 operations of the C5a inventory) and `sheet-calc.ts`. Verified against `sheet-edit.capture` (C5a) and the `sheet-x1` edit
+steps C1b deferred.
+
+### Code map
+
+| Piece | Where | TS source |
+|---|---|---|
+| `Session` (open = `loadXlsx`, the views, selection, dirty sets, save, the engine built where `SheetCalc.ensure` runs) | `session/mod.rs` | `loadXlsx` 554, `selectRange` 1791, `activate`/`extendTo`/`expandMerges` 1709-1740, `selectSheet` 1002, `saveXlsx` 909 |
+| Entry and the texts of a cell (`calc_edit`, `bar_text`, `copy_text`, `value_text`, `ensure_cell`, `drop_if_empty`, the cell editor, `prune_file_order`) | `session/cell.rs` | `sheet-calc.ts:144-382`, `setCellValue` 3123, `setActiveCellText` 3145, `beginEdit`/`commitEdit`/`cancelEdit` 2987-3110 |
+| Undo/redo (`CellSnap`, `StructSnap`, `record`, `push_undo`, `restore_snaps`, `restore_struct`, the byte cap) | `session/history.rs` | 1900-2062 |
+| The operations (formats, line styles, merges, fill, clipboard, clear, find/replace, panes, grid lines, sizes, hide, AutoSum, Delete, recalc, add sheet, new workbook) | `session/ops.rs` | 2140-2985, 1255-1300 |
+| The formula language of the entry: `FormulaSyntax` over A5's `Translator` (closes C3a-8) | `session/syntax.rs` | `entry.ts:214-232`, `formula-locale.ts` |
+| Blank workbook, Insert › Sheet | `session/pkg.rs` | `blank.ts`, `addSheetPart` 4559 |
+| Engine additions (`formula_info`, `owner_info`, `table_name_at`, `sheet_index`, `write_back`, `set_dynamic_cms`), `Store::{strip_content, strip_meta}`, `RowSet::remove`; `set_cell` strips (keeps) the cell for an entry | `uo-calc/src/engine/{mod,recalc}.rs`, `cell.rs`, `store.rs` | `getFormula`/`getOwner`/`tableAt`/`sheetIndex`, `writeBack`, `stripContent` |
+| Wasm module, JS binding, routing, harness | `uo-wasm/src/sheet_edit.rs`, `js/sheet-editor.mjs`, `js/sheet-editor-engine.ts`, `sheet/packages/sheet/src/{rust-engine.ts, universal-sheet.ts, sheet-engine.d.ts}`, `uo-wasm/tests/sheet_edit_element.mjs` | B8's shape (`uo-bindings.md`) |
+| Tests | `tests/edit_parity.rs` + `tests/support/edit_run.rs` (C5a replay), `tests/edit_x1.rs` (the deferred `sheet-x1` steps), `tests/edit_hostile.rs` (random sequences, M1, M2, M5), `uo-wasm/tests/sheet_edit.test.mjs` (wasm API, M4), `examples/edit_bench.rs` + `js/bench-edit.mjs` (Rust × TS), `uo-wasm/tests/sheet_edit_bench.mjs` (wasm latency) | |
+
+### Session API (`uo_xlsx::session`)
+
+`Session::open(bytes, SessionOpts { locale, clock, year, file_name, history, limits }, RandomSource)`, `open_with(.., Option<Box<dyn
+Measurer>>)`, `new_blank(opts, random)`. Selection: `select_range(ref)` (`B2:D8`, `C:C`, `3:5`, `Plan2!A1`), `select_all`,
+`select_sheet(i)`, `selection() -> Selection { sheet, col, row, range: Rect, corner }`. Entry: `set_active_cell_text(text) ->
+EditResult` (`typing` entry), `set_cell_value(col, row, text)` (no entry), `bar_text(view, col, row) -> BarText { formula, edit,
+ghost }`, the editor `begin_edit(col, row, initial, keep_current)` / `set_editor_text` / `commit_edit() -> bool` / `cancel_edit`,
+`delete_key()`. Formats: `set_format(&StyleChange)`, `set_font`, `set_alignment`, `set_number_format(&NumFmtArg)`, `adjust_decimals(±1)`,
+`set_borders(BorderKind, color)`. `merge(MergeKind)`, `unmerge()`, `merge_loses_data()`, `fill(down)`, `copy(cut) -> TSV`,
+`paste(Option<text>, values_only)`, `clear(ClearKind)`, `find(q, FindOptions) -> Option<(sheet, ref)>`, `replace`, `replace_all ->
+count`, `freeze_panes(cols?, rows?)`, `set_show_gridlines`, `set_column_width(chars, cols?)`, `set_row_height(pt, rows?)`,
+`resize_drag(cols, index, px)`, `autofit_columns`, `autofit_rows`, `set_hidden(cols, hidden)`, `column_width`, `row_height_pt`,
+`auto_sum(fn) -> AutoSum`, `insert_function(name)`, `function_names()`, `recalculate()`, `add_sheet(name?) -> name`, `new_workbook()`,
+`undo()`, `redo()`, `can_undo/can_redo`, `undo_label/redo_label`, `undo_entries/redo_entries`, `save() -> bytes`, `is_dirty/set_dirty`,
+`history_bytes`, `clear_caches`. Public state: `book`, `pool`, `styles`, `views` (per sheet the `SheetGrid` the TS `SheetView` is),
+`dirty_sheets`/`merge_dirty`/`view_dirty`, `editing`, `measure`/`measurer`.
+
+### Undo design and cap
+
+The TS change set, as T8: an entry holds per touched cell `{col, row, edit text, style, exists}` and, for structural actions, a
+`StructSnap` (`ws.cols`, the row attributes, merges, pane, grid lines and the view's sizes as runs, frozen panes); undo re-enters the
+text through `calc_edit` only when the bar text differs, so formats, spills and dependents follow the same path as typing. 100 entries
+(`HistoryLimits::max_steps`) and a byte cap (`max_bytes`: 64 MiB on wasm32, 256 MiB native) over undo + redo; the oldest undo entries
+go first, the last one stays even when alone over the cap (SH5). `redo` pushes back without the step cap, as the TS.
+
+### Decisions (declared)
+
+| Id | Decision |
+|---|---|
+| C5b-1 | **The engine is built exactly where the TS builds it** (`SheetCalc.ensure`): any entry, a bar text of a formula cell or of a sheet with arrays (`emitSelection`), the spill border of a sheet with arrays (`paint`), the open-recalc. Its presence changes what a save writes (`prepareForSave`), so it is not built eagerly. |
+| C5b-2 | **The `writeBack` the one write path lacked**: the TS writes every cell `setCell` touched; the store writes only changed values, so a typed formula evaluating to its initial 0 kept no `<v>` and kept `t="array"` — `Engine::write_back` writes it (`writeScalar` + `setDynamicAttrs`). `Workbook.dynamicArrayCm` is read live by the TS: the save passes a new `metadata.xml` cm to the engine (`set_dynamic_cms`). An entry strips the cell and keeps it (`Store::strip_content`): only a clear deletes an unstyled cell, as `writeBack` (the cell's `r` and file position stay). |
+| C5b-3 | **The view's size maps are not kept in Map insertion order**: the TS `StructSnap` holds `colWidths`/`rowHeights`/`hiddenCols`/`hiddenRows` as Maps/Sets (every row of the model at its auto-fit height, insertion order = history); the session keeps runs (8/256 B per row instead of a map of 1M rows on giant-1m). Undo entries are compared without the four maps when the TS JSON is in the capture, and by byte length when it is not (structural entries over 4,000 characters). The geometry they give is the same (the `d`, `save`, `rw`, `ws` facets compare it). |
+| C5b-4 | Replace All visits the cells row-major; the TS walks its cell index in Map insertion order (T11): entries compared with the cells sorted. The EditResult `views` of `sheet-x1` (insertion order of the calc's changes) compared as a set. |
+| C5b-5 | **Duplicated positions** (a shadowed `<c>`, an implicit `<row>` holding refs of another row: the SH1 family): when the live cell is removed the TS model leaves a zombie (its `removeCell` looks in the wrong `<row>` element) or its shadow surfaces in the model's facets; the store keeps one cell per position. 4 scripts, 55 facets (store/display/save), declared. |
+| C5b-6 | The display list of `debugCellDisplays` follows the TS model's row array, which `createCell` binary-searches even when `<row>` elements are out of order: on such a sheet the same lines come in another order (5 `sheet-x1` steps, compared as sets). A `FileOrder` sheet is walked in file order with `createCell`'s placement (also by the save: a removed cell leaves its element, `prune_file_order`, C1b open item 4). |
+| C5b-7 | Autofit measures the displayed text with the shell's `Measurer::text_width` (rounded px; the TS takes the unrounded canvas width); the harness's fake canvas gives integers, so the capture compares exactly. Without a measurer the widths do not change and the fit records its needs. |
+| C5b-8 | Row/column default styles (`defaultXfMaps`) are the store's (`col_styles` re-synced from `ws.cols` after every line-style or size change; row styles read live); `hasArrays` cached per load as the TS. |
+| C5b-9 | `has_sh1`-style hostile refs, `x1` merge steps: the kind of `merge` is drawn by the TS script after generation, so the `sheet-x1` replay tries center/across/cells and keeps the one whose save matches (5 steps). |
+
+### Parity
+
+`sheet-edit` (C5a, 80 scripts, 800 steps, pt-BR and en-US; `cargo test -p uo-xlsx --features edit,facet --test edit_parity`): **16,064
+facets compared, 16,009 equal, 55 declared (C5b-5), 0 unexplained; 800/800 call results equal.** Per facet: sel 880/880, undo
+880/880, redo 880/880, utop 880/880 (725 exact, 142 + 11 under C5b-3, 2 under C5b-4), dirty 880/880, sheets 880/880, st 2,100/2,128,
+ws 2,128/2,128, rw 2,128/2,128, d 869/880, save 864/880, chg 880/880, chgp 880/880, xf 880/880 (the non-equal st/d/save are the 55 of
+C5b-5). Steps with every facet equal, per operation: entry.text 70/70, entry.formula 34/35, entry.editor 25/25, entry.clear 5/5,
+entry.refused 5/5, entry.set 5/5, key.delete 10/10, fmt.font 20/20, fmt.fill 10/10, fmt.border 20/20, fmt.numfmt 20/20, fmt.decimals
+10/10, fmt.align 15/15, fmt.format 5/5, fmt.lines 20/20, merge 16/20, unmerge 8/10, fill.down 10/10, fill.right 5/5, clip.copy 5/5,
+clip.cut 5/5, clip.pasteValues 5/5, clip.pasteText 5/5, clear.contents 8/10, clear.formats 9/10, clear.all 7/10, find 15/15, replace
+5/5, replaceAll 15/15, view.freeze 25/25, view.gridlines 10/10, size.colwidth 10/10, size.rowheight 5/5, size.drag 20/20, size.autofit
+10/10, size.hide 10/10, size.unhide 15/15, fn.autosum 20/20, fn.insert 10/10, sheet.add 10/10, sheet.select 5/5, book.new 5/5,
+calc.recalc 10/10, host.defineName 12/15, undo 141/145, redo 68/70, open 79/80 (every non-equal step is in a C5b-5 script).
+
+`sheet-x1` deferred steps (`--test edit_x1`; 30 workbooks × 8 seeded steps): **216 of 216 steps on the 27 non-SH1 workbooks equal**
+(save, changed parts, display text, call result; 5 with the display lines as a set, C5b-6; 5 merge kinds found by trial, C5b-9); the
+24 steps of the 3 SH1 workbooks (`0002`, `0007`, `0008`) stay with SH1. C1b's 211 deferred steps are all among the 216.
+
+Round history: first full run 15,537/16,064 facets. Classes found and fixed in the code: the typed formula's `<v>` and attributes
+(C5b-2), the live dynamic `cm`, the cell kept by an entry (row style leaked into a re-entered unstyled cell, `r` lost), the file-order
+placement of re-created cells, the duplicate-row zombie (declared), Map orders (declared); harness fixes: `oneLine` of the results,
+the SH1 rule decided on the open's store, the carried TS undo JSON.
+
+### Wasm and routing (`uo-sheet-editor.wasm`)
+
+`cargo build -p uo-wasm --no-default-features --features sheet,sheet-edit --target wasm32-unknown-unknown --profile wasm`:
+**6,672,684 B raw, 2,279,790 B gzip** (T15 budget 3.5 MB gzip: met). Handle `UoSheetEditor` = a `Session` + its own `Viewer`:
+`uo_sheet_edit_open(bytes, locale, clock, seed)` (empty bytes = blank workbook), `_error`, `_free`, `_cmd(h, "op\targ…")` → JSON
+`{ok, result | error, state}` (selection, sheets, undo/redo flags and labels, dirty, panes, grid lines, clipboard, the bar text, the
+editor), `_save`, `_viewport` (the viewer's frame with the selection as scalars), `_extent`, `_needs`/`_font`/`_provide` (the two-phase
+measurement), `_bitmap`, `_set_accent`, `_live_bytes`. After a change the next frame rebuilds the viewer (keeping its measurement table)
+and re-activates the sheet. JS: `js/sheet-editor.mjs` (`bindSheetEditor`, explicit `free()` + `FinalizationRegistry`),
+`js/sheet-editor-engine.ts`. Element: with `engine="rust"` the edit paths (entry, editor, formats, merges, fill, clipboard, clear,
+find/replace, panes, sizes, AutoSum, sheets, recalc, undo/redo, save, dirty) go to the editor handle; the TS model becomes a mirror
+reloaded from the Rust save after structural operations; any Rust error resyncs the mirror and falls back to the TS path (the default
+stays TS).
+
+Tests (Node, against the built module): `tests/sheet_edit.test.mjs` 7/7 (every op family, save reopened by the editor and by the viewer
+exports, refusals, junk and null handles; **M4**: 10,000 open/free with live bytes back exactly + 2,000 handles collected by the
+finalizer; M2: 600 edits with undo/redo within 64 KiB). Editor harness `tests/sheet_edit_element.mjs`: the worktree element on the fake
+DOM, `engine="ts"` × `engine="rust"`, 5 scripts × 2 languages, 98 steps, after every step the saved package part by part, the displays,
+selection, undo/redo/dirty flags and sheet names: **491/491 equal, 0 fall-backs** (+ an injected-failure check of the fall-back).
+`clippy -D warnings --no-deps` clean on wasm32 and native.
+
+### Performance and memory (i5-14600KF, release, medians; Rust `examples/edit_bench.rs`, TS `js/bench-edit.mjs` on the frozen element, Node 24, same machine and day; the C: volume filled during the TS run, so the TS numbers may be slow by some percent)
+
+| Benchmark (T13) | Budget | TS | Rust native | Rust wasm (Node) | Verdict |
+|---|---|---|---|---|---|
+| giant-1m: one entry + dependents + 1080p list ready | ≤ 16 ms p95 wasm | entry p50/p95 0.043/0.065 ms (paint not counted) | entry 0.003/0.004 ms | entry 0.02/0.06 ms; **entry + list 4.75/7.35 ms** | **met** |
+| calc-heavy-20k: entry at the head of a 20k chain, p50/p95 | slower than TS fails | **2,232/2,342 ms** (the 2026-11-24 baseline: 604/611) | **8.7/9.1 ms** (0.004×) | 12.5/97 ms (one wasm memory growth in the p95) | met |
+| calc-heavy-20k: isolated cell / a formula entry | — | 2.58 / 19.5 ms | 0.018 / 0.022 ms | 0.08 ms | met |
+| paste 100×100 (giant-1m) / undo / redo | ≤ 0.5× TS | 378 / 323 / 340 ms | **40.2 / 14.2 / 15.4 ms** (0.11×) | — | met |
+| Fill Down 10,000 (giant-1m) / undo | ≤ 0.5× TS | 377 / 403 ms | **31.2 / 20.5 ms** (0.08×) | — | met |
+| Fill Down 10,000 (giant-200k) | ≤ 0.5× TS | 1,229 ms | **26.2 ms** (0.02×) | — | met |
+| Replace All scanning every cell (no hit), giant-1m / giant-200k / calc-heavy | ≤ 0.5× TS | 2,397 / 214 / 620 ms | **724 / 149 / 443 ms** (0.30× / 0.70× / 0.71×) | — | **two rows miss 0.5×** (faster than the TS: no failure) |
+| calc-heavy: Fill Down B1:B21 (each cell recalculates its 20k dependents, as the TS) / undo | ≤ 0.5× TS | 25,180 / 23,403 ms | 7,573 / 8,672 ms (0.30× / 0.37×) | — | met |
+| calc-heavy: paste 30×30 / Fill Down 1,000 isolated | ≤ 0.5× TS | 3,624 / 3,068 ms | 22.5 / 47.1 ms | — | met |
+| open (session: read, fit, open-recalc) giant-1m / giant-200k / calc-heavy | — | 2,491 / 400 / 2,602 ms | 196 / 57 / 437 ms | 348 / 105 / 646 ms | — |
+| save after the edits, giant-1m | ≤ 400 ms native | — | 148 ms | — | met |
+
+Memory: live bytes after the open 7.0 MiB (giant-1m), 3.0 MiB (giant-200k), 10.0 MiB (calc-heavy); wasm memory 14-15 MiB for the
+giant-1m editor session (iOS budget ≤ 96 MiB with edits: met). Peak above the start: paste 100×100 3.7 MiB, Fill Down 10,000 1.5 MiB,
+Replace All scan 8.0 MiB (giant-1m); history after them 2.5 MiB. **M1** (`edit_hostile`): open + 30 random operations + undo all + redo
+all + save + drop, every x1 workbook and the samples: live bytes back exactly (after a warm-up run per workbook). **M2**: 1,000 edits
+(numbers, text, formula, a spill, clears, a 10×10 paste every 25, undo/redo every 10) sampled every 50: flat at 134,479 B ± 32 B after
+the history fills. **M5**: a 64 KiB cap keeps 1 of 60 range-format entries; the step cap keeps 100 of 150. Native after drop in the
+bench: 480 B (giant-1m) left by process statics.
+
+### Hostile
+
+`edit_hostile::random_sequences_hold_invariants_and_round_trip`: 35 workbooks × 3 seeds × 40 random operations (every family, hostile
+arguments: NaN/0/409/−1 sizes, a 500 pt row, `=SOMA(`, U+FFFF and astral text, tabs and newlines, empty find), alternating languages:
+**4,200 steps, the store's and the engine's invariants after every step, 144 save/reopen round trips** (the reopened file has the
+session's cells, SH1/C5b-5 workbooks excepted), undo-all and redo-all at the end. No panic.
+
+### Lint and files
+
+`clippy -D warnings --no-deps` clean native (`uo-xlsx --features edit,facet --lib` + the three test files + the example; `uo-calc
+--lib`) and wasm32 (`uo-xlsx --features edit --lib`, `uo-wasm --features sheet,sheet-edit`); `grep-bans.sh` and `float-casts.sh`
+clean; rustfmt on the new files only. Existing suites green: `uo-xlsx --features edit,view,facet --lib --tests` (all but `grid_parity`,
+which does not compile because of another frontier's in-progress `measured_family` change in `grid/metrics.rs`), `uo-calc --tests`
+green except the three `*_calc_tests` that read `calc-tests.calls.gz`, truncated to 21 bytes by another agent's capture run at 13:46.
+TS: the worktree has no `node_modules`; the main checkout's `tsc` output filtered for the touched files shows no error on them.
+
+Changes outside `src/session/`: `uo-calc` (`engine/mod.rs`: `FormulaInfo`, `formula_info`, `owner_info`, `table_name_at`,
+`sheet_index`, `write_back`, `set_dynamic_cms`; `engine/recalc.rs`: `write_back`, `set_cell` strips instead of clearing for an entry;
+`cell.rs`: `strip_content`; `store.rs`: `strip_meta`, `RowSet::remove`), `uo-xlsx/src/grid/geometry.rs` (`merge_rect` crate-visible),
+`uo-xlsx/Cargo.toml` (the `edit_bench` example), `uo-wasm` (`Cargo.toml` feature, `src/lib.rs` one line, the new files),
+`sheet/packages/sheet/src/{universal-sheet.ts, rust-engine.ts, sheet-engine.d.ts}`, `tools/build-pkg.mjs` (alias). The fork also
+touched one line of C4b's viewer code in `universal-sheet.ts` (`paintRust` takes the editor's viewer when present) and wrapped the C4
+reset of `loadXlsx` in `if (!this.rustSyncing)`.
+
+### Open items
+
+1. **Multi-cell writes recalculate per cell** (the TS `setCellValue` loop): Fill/Paste over cells with many dependents cost the
+   dependents once per cell (calc-heavy B1:B21: 7.6 s, 0.30× the TS). Batching the writes and calculating once is equal when no volatile
+   or iterative formula exists (RAND draws and cycle passes depend on the count): a maintainer decision.
+2. Replace All scans the bar text of every cell (0.70× the TS on giant-200k/calc-heavy, budget 0.5×): skipping cells whose value cannot
+   contain the query (numbers and the query's characters) would cut it.
+3. The editor module rebuilds its viewer after every change; incremental invalidation (the edited rows, the styles grown) belongs with
+   C4b's viewer. The element's TS mirror reloads from the Rust save after structural operations (≈ 1.5 s on giant-1m) — the mirror goes
+   away when the remaining reads of the element move to the session.
+4. The editor module has no measurer (`measurer: None`): autofit and the wrapped-text fit record their needs; the shell's answers are
+   not yet wired into the session (the viewer's two-phase protocol is).
+5. `uo-sheet-editor.wasm` is not yet in the `build-pkg` ship step (only the alias); WebKit and real-Safari runs not made.
+6. SH1 (T16) and C5b-5 (duplicated positions) stay declared; SH5 (the byte cap) for the M5 gate.
+7. `grid_parity` and the `*_calc_tests` could not be run green in this worktree for reasons outside C5b (see Lint).
+
+**Process metrics.** C5b (Opus 5.5): one session, 13:45 to 15:40 (`date`), about 1 h 55 min of wall time and about 220 tool calls
+in the main thread; the wasm/TS/harness part ran in a forked agent in parallel (24 min, 83 tool calls, no rework round). Parity rounds:
+6 (first full run 527 non-equal facets → 0 unexplained); rework inside the session: the C5b-2 engine gaps, the file-order placement,
+four harness classes (oneLine, SH1 timing, carried JSON, `x1` merge kind and code parsing); a pathological bench (calc-heavy Fill Down of
+1,000 cells with 20k dependents each) replaced by the B1:B21 / isolated-column pair. Environment: the C: volume filled up during the TS
+benchmark (not by this session's files: 21 MB of task output); `core/target/sheet-c1` (main) and `core/target/sheet-c5w` (fork) only.

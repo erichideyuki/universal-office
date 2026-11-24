@@ -9,7 +9,7 @@ use crate::emit::{Canvas, Rect, TextAlign, TextBaseline};
 use crate::layout::{TextPiece, TitleLayout};
 use crate::model::{RichPara, RichRun, TextProps};
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// `titleText()`: the paragraphs of the title; `None` = nothing to show.
     fn title_text(&self) -> Option<Vec<RichPara>> {
         let t = self.title_el()?;

@@ -80,7 +80,10 @@ slides = ["buf", "dep:uo-pptx", "dep:uo-dml-render", "dep:uo-render"]
 
 # the Sheet viewer module `uo-sheet.wasm` (frontier C4, src/sheet.rs): the workbook, the viewport display list (the Slides list
 # stream with the Sheet items), the two-phase measurement loop, hyperlink hit info and the open-recalc plan
-sheet = ["buf", "dep:uo-xlsx", "dep:uo-render", "dep:uo-calc"]
+sheet = ["buf", "dep:uo-xlsx", "dep:uo-render", "dep:uo-calc", "dep:uo-dml-render"]
+# the calc part of the Sheet viewer (C4b, question SH3): `uo-sheet-calc.wasm` = `sheet` + the engine, so the open applies the
+# open-recalc of the file; the shell loads it instead of `uo-sheet.wasm` when the plan of the workbook is not `none`
+sheet-calc = ["sheet", "uo-xlsx/calc"]
 
 # the `.ppt` converter as its own lazily loaded module `uo-slides-ppt.wasm` (src/slides_ppt.rs): bytes of a `.ppt` in,
 # the bytes of the equivalent `.pptx` out
@@ -90,6 +93,10 @@ slides-ppt = ["buf", "dep:uo-pptx", "uo-pptx/ppt"]
 # deck handle, its schema-generated codec (schema/slides_edit.uos) and the save with fonts. The editor module
 # `uo-slides-editor.wasm` is the build with `slides` + `slides-edit` (the viewer's `uo-slides.wasm` stays without it)
 slides-edit = ["slides", "uo-pptx/edit", "dep:uo-fonts", "dep:uo-codec", "dep:uo-jsnum"]
+
+# the Sheet EDITOR (frontier C5b, src/sheet_edit.rs): the editing session of <universal-sheet engine="rust"> with its own viewer.
+# The editor module `uo-sheet-editor.wasm` is the build with `sheet` + `sheet-edit` (the viewer's `uo-sheet.wasm` stays without it)
+sheet-edit = ["sheet", "uo-xlsx/edit", "dep:uo-jsnum"]
 
 # test-only exports of the Slides module (tests/slides_*.test.mjs): the memory counters and a trap; never shipped
 # (the `count` feature does both: this name is for the CI line)

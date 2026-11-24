@@ -87,11 +87,28 @@ pub fn normalize_family(name: &str) -> String {
 
 /// `measuredFamily(name)`: the measured family for the document's name (`None` = not measured).
 #[must_use]
-pub fn measured_family(name: Option<&str>) -> Option<String> {
+pub fn measured_family(name: Option<&str>) -> Option<&'static str> {
     let n = name.filter(|n| !n.is_empty())?;
-    let k = normalize_family(n);
-    let a = ALIASES.iter().find(|(from, _)| *from == k).map_or(k.as_str(), |(_, to)| *to);
-    find(ROW_PX, a).is_some().then(|| a.to_owned())
+    with_normalized(n, |k| {
+        let a = ALIASES.iter().find(|(from, _)| *from == k).map_or(k, |(_, to)| *to);
+        ROW_PX.iter().find(|(key, _)| *key == a).map(|(key, _)| *key)
+    })
+}
+
+/// [`normalize_family`] handed to `f`: an ASCII name is normalised on the stack (the viewport asks for every cell: no
+/// allocation, C4b), any other through the Unicode path.
+fn with_normalized<R>(name: &str, f: impl FnOnce(&str) -> R) -> R {
+    let t = uo_jsnum::text::trim(name);
+    let mut buf = [0u8; 64];
+    match buf.get_mut(..t.len()) {
+        Some(b) if t.is_ascii() => {
+            for (d, c) in b.iter_mut().zip(t.bytes()) {
+                *d = c.to_ascii_lowercase();
+            }
+            f(std::str::from_utf8(b).unwrap_or(""))
+        }
+        _ => f(&normalize_family(name)),
+    }
 }
 
 /// `ppemOf`: the GDI ppem for a size in pt at 96 dpi (`MulDiv` rounds).
@@ -117,8 +134,7 @@ fn row_at(s: &str, i: usize) -> Option<i32> {
 /// one, and of each line of a wrapped text (`excelRowPx`). An unmeasured family is Arial.
 #[must_use]
 pub fn excel_row_px(name: Option<&str>, size_pt: f64, bold: bool) -> i32 {
-    let fam = measured_family(name);
-    let fam = fam.as_deref().unwrap_or("arial");
+    let fam = measured_family(name).unwrap_or("arial");
     let p = ppem_of(size_pt);
     let reg = find(ROW_PX, fam).copied().unwrap_or("");
     let bt = if bold { find(ROW_PX_BOLD, fam).copied() } else { None };
@@ -143,8 +159,7 @@ pub fn excel_row_px(name: Option<&str>, size_pt: f64, bold: bool) -> i32 {
 /// measured (the caller estimates it with the canvas).
 #[must_use]
 pub fn excel_mdw(name: Option<&str>, size_pt: f64) -> Option<i32> {
-    let fam = measured_family(name);
-    let fam = fam.as_deref().unwrap_or("arial");
+    let fam = measured_family(name).unwrap_or("arial");
     let s = find(MDW, fam).or_else(|| find(MDW_CORPUS, fam)).copied()?;
     let p = ppem_of(size_pt);
     let at = |q: i32| -> i32 { usize::try_from(q - MDW_PPEM_MIN).ok().and_then(|i| s.as_bytes().get(i)).map_or(-1, |c| b62(*c)) };
@@ -247,8 +262,11 @@ const SEGOE_DESC: &[(i32, i32)] =
 /// `n·R(font) + max(0, row descent − font descent)`. `None` = a measured family without a known descent.
 #[must_use]
 pub fn row_descent_px(name: Option<&str>, size_pt: f64, bold: bool) -> Option<i32> {
+    with_normalized(name.unwrap_or(""), |fam| row_descent_of(fam, name, size_pt, bold))
+}
+
+fn row_descent_of(fam: &str, name: Option<&str>, size_pt: f64, bold: bool) -> Option<i32> {
     let p = ppem_of(size_pt);
-    let fam = normalize_family(name.unwrap_or(""));
     let xl = if fam.starts_with("aptos") {
         Some(APTOS_DESC)
     } else if fam.starts_with("segoe ui") {
@@ -271,7 +289,7 @@ pub fn row_descent_px(name: Option<&str>, size_pt: f64, bold: bool) -> Option<i3
         return Some(2);
     }
     let measured = measured_family(name);
-    let key: &str = if find(ROW_DESC, &fam).is_some() { &fam } else { measured.as_deref().unwrap_or("arial") };
+    let key: &str = if find(ROW_DESC, fam).is_some() { fam } else { measured.unwrap_or("arial") };
     let reg = find(ROW_DESC, key).copied()?;
     let s = if bold { find(ROW_DESC_BOLD, key).copied().filter(|b| !b.is_empty()).unwrap_or(reg) } else { reg };
     if p < DESC_PPEM_MIN {
@@ -298,7 +316,7 @@ mod tests {
         assert_eq!(col_width_to_px(9.140_625, 7), 64.0);
         assert_eq!(default_col_px(7, None, None), 64.0);
         assert_eq!(row_pt_to_px(15.0), 20.0);
-        assert_eq!(measured_family(Some("Helvetica")).as_deref(), Some("arial"));
+        assert_eq!(measured_family(Some("Helvetica")), Some("arial"));
         assert_eq!(measured_family(Some("No Such Font")), None);
     }
 }

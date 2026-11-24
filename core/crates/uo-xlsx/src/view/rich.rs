@@ -166,7 +166,9 @@ pub(super) fn paint_rich(g: &mut Rg<'_>, dc: &Dc, st: CellPaint, cell: RawCell) 
         lang: crate::grid::FormulaLang::PtBr,
         locale: None,
     };
-    let mut ovf = |dir: i32, need: f64| super::region::overflow_extent(&book.store, ws, grid, xs, styles, cctx, ix, c, r, dir, need);
+    let mut hs = std::mem::take(&mut g.cells.has);
+    let mut ovf =
+        |dir: i32, need: f64| super::region::overflow_extent(&book.store, ws, grid, xs, styles, cctx, ix, c, r, dir, need, &mut hs);
     let a = RichArgs {
         left: dc.left,
         top: dc.top,
@@ -179,12 +181,16 @@ pub(super) fn paint_rich(g: &mut Rg<'_>, dc: &Dc, st: CellPaint, cell: RawCell) 
         indent_px,
         merged: dc.merged,
         row_desc,
+        mirrored: g.mirrored,
     };
     paint_rich_text(&mut g.o, g.sc, &rs, &texts, &a, &mut ovf);
+    g.cells.has = hs;
     true
 }
 
 struct RichArgs {
+    /// the CTM is mirrored (a right-to-left camera render)
+    mirrored: bool,
     left: f64,
     top: f64,
     w: f64,
@@ -251,7 +257,7 @@ fn paint_rich_text(
             let r = &st[*run];
             let sw = r.m.m.width(text, f64::INFINITY);
             o.fill_style_sym(r.color);
-            draw_text(o, sc, &r.m, text, x, baseline + r.shift, f64::NEG_INFINITY, f64::INFINITY, false);
+            draw_text(o, sc, &r.m, text, x, baseline + r.shift, f64::NEG_INFINITY, f64::INFINITY, a.mirrored);
             if r.underline.is_some() || r.strike {
                 let t = max(1.0, round(f64::from(r.m.ppem) / 16.0));
                 if let Some(u) = r.underline {

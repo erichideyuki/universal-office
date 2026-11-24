@@ -10,7 +10,7 @@ use crate::emit::{Canvas, Rect, TextAlign};
 use crate::layout::AxisInfo;
 use crate::model::{BarDir, DLbl, DLblsCommon, FmtCode, GroupKind, Grouping, LayoutMode, SeriesRef, TextProps};
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// `s.cats?.[i] ?? catNumLabel(s, i)`.
     fn cat_text(&self, r: SeriesRef, i: usize) -> String {
         let s = &self.cs.groups[r.group as usize].series[r.series as usize];

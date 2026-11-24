@@ -5,7 +5,8 @@
 //   const uo = bindSheet((await WebAssembly.instantiate(bytes, {})).instance.exports);
 //   const book = uo.open(xlsxBytes);                   // throws SheetError
 //   book.activate(0, measurer);                        // loads the sheet; measurer = { advance(font, cp), width(font, text), box(font) }
-//   const bytes = book.viewport({ sheet: 0, width, height, dpr, scrollX, scrollY, zoom, selection: [1,1,1,1,1,1] }, measurer);
+//   const bytes = book.viewport({ sheet: 0, width, height, dpr, scrollX, scrollY, zoom, selection: [1,1,1,1,1,1] }, measurer, answer);
+//   // `answer(requests)` answers the drawings' requests (C4b: `uo_slides_emit`'s request objects) with an array of numbers
 //   // `bytes` is one message of the Slides list stream: decodeSlidesList(bytes, tables) then SlidesPainter.paint
 //   book.free();
 
@@ -23,6 +24,7 @@ export class SheetError extends Error {
 }
 
 const dec = new TextDecoder();
+const KERNING = ['current', 'none', 'normal'];
 const enc = new TextEncoder();
 
 export function bindSheet(w) {
@@ -32,7 +34,7 @@ export function bindSheet(w) {
   const take = (ptr) => new Buf(ptr).take();
   const dv = (d) => new DataView(d.buffer, d.byteOffset, d.byteLength);
   const arg = (bytes) => (bytes.length === 0 ? [0, 0] : [put(bytes), bytes.length]);
-  const MAX_ROUNDS = 8;
+  const MAX_ROUNDS = 16;
 
   const readFont = (data) => {
     const d = dv(data);
@@ -132,6 +134,66 @@ export function bindSheet(w) {
       if (st !== 0) throw new SheetError(st, 'provide');
     }
 
+    /** The drawings' measurement requests of the last status-12 frame (C4b; the request objects of `slides.mjs`). */
+    dmlNeeds() {
+      const b = take(w.uo_sheet_dml_needs(this.#live()));
+      const data = b.data, d = dv(data);
+      let at = 0;
+      const u8 = () => data[at++];
+      const u32 = () => { const v = d.getUint32(at, true); at += 4; return v; };
+      const f64 = () => { const v = d.getFloat64(at, true); at += 8; return v; };
+      const str = () => { const n = u32(); const s = dec.decode(data.subarray(at, at + n)); at += n; return s; };
+      const face = () => ({ family: str(), bold: u8() !== 0, italic: u8() !== 0 });
+      const key = () => { const f = face(); return { face: f, sizePx: f64(), kerning: KERNING[u8()] ?? 'current', letterSpacingPx: f64(), text: str() }; };
+      const n = u32();
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const tag = u8();
+        if (tag === 1) out.push({ kind: 'charAt1000', face: face(), ch: String.fromCodePoint(u32()) });
+        else if (tag === 2) out.push({ kind: 'kernAt1000', face: face(), text: str() });
+        else if (tag === 3) out.push({ kind: 'width', ...key() });
+        else if (tag === 4) out.push({ kind: 'metrics', ...key() });
+        else if (tag === 5) out.push({ kind: 'fontAvailable', family: str() });
+        else if (tag === 6) out.push({ kind: 'imageSize', media: u32(), part: str() });
+        else if (tag === 7) out.push({ kind: 'metaText', font: str(), text: str() });
+        else if (tag === 8) { const k = str(); const len = u32(); out.push({ kind: 'metaDecode', key: k, data: data.slice(at, at + len) }); at += len; }
+        else throw new SheetError(5, 'dml needs', `tag ${tag}`);
+      }
+      return out;
+    }
+
+    /** The answers to `dmlNeeds()` (numbers, in order). */
+    dmlAnswer(nums) {
+      const f = Float64Array.from(nums);
+      const [p, n] = arg(new Uint8Array(f.buffer));
+      const st = w.uo_sheet_dml_answer(this.#live(), p, n);
+      if (st !== 0) throw new SheetError(st, 'dml answer');
+    }
+
+    /** A picture finished decoding: its natural size (0, 0 = it failed). */
+    setImageSize(media, wpx, hpx) { w.uo_sheet_set_image_size(this.#live(), media, wpx, hpx); }
+    /** A picture of the list (`tables.media[index]`): `{ part, bytes }` or null. */
+    media(index) {
+      const b = take(w.uo_sheet_media(this.#live(), index));
+      if (b.status !== 0) return null;
+      const n = dv(b.data).getUint32(0, true);
+      return { part: dec.decode(b.data.subarray(4, 4 + n)), bytes: b.data.slice(4 + n) };
+    }
+    /** Whether bitmap `handle` is a metafile/PICT/TIFF recipe (replayed by the painter) rather than RGBA. */
+    isRecipe(handle) { return w.uo_sheet_is_recipe(this.#live(), handle) === 1; }
+    /** The rules of the drawings and charts: `true` = the frozen TS behaviour (parity harnesses), else the Office-measured ones. */
+    setTsRules(on) { w.uo_sheet_set_rules(this.#live(), on ? 1 : 0); }
+    /** The font names of the styles (what the cell fonts ask), C4b. */
+    fontNames() { const b = take(w.uo_sheet_font_names(this.#live())); return b.status === 0 && b.data.length ? dec.decode(b.data).split('\n') : []; }
+    /** The metric family of each name (`[[name, metric]]`): a family the browser lacks is measured as Arial (the TS `cellFont`). */
+    setMetrics(pairs) {
+      const [p, n] = arg(enc.encode(pairs.map(([a, b]) => `${a}\t${b}`).join('\n')));
+      const st = w.uo_sheet_set_metrics(this.#live(), p, n);
+      if (st !== 0) throw new SheetError(st, 'metrics');
+    }
+    /** 1 when the open-recalc of the calc module failed (the file's values are shown). */
+    recalcStatus() { return w.uo_sheet_recalc_status(this.#live()); }
+
     /** Makes sheet `index` the active one. */
     activate(index, m) {
       for (let i = 0; i < MAX_ROUNDS; i++) {
@@ -146,8 +208,8 @@ export function bindSheet(w) {
     setAccent(css) { const [p, n] = arg(enc.encode(css)); w.uo_sheet_set_accent(this.#live(), p, n); }
     setSpill(c1, r1, c2, r2) { w.uo_sheet_set_spill(this.#live(), c1, r1, c2, r2); }
 
-    /** One frame: the bytes of a message of the list stream. */
-    viewport(q, m) {
+    /** One frame: the bytes of a message of the list stream; `answer(requests)` answers the drawings (null: not now, throws). */
+    viewport(q, m, answer) {
       const sel = Uint32Array.from(q.selection ?? [1, 1, 1, 1, 1, 1]);
       const sp = put(new Uint8Array(sel.buffer));
       for (let i = 0; i < MAX_ROUNDS; i++) {
@@ -155,6 +217,12 @@ export function bindSheet(w) {
         if (b.status === 0) return b.data;
         if (b.status !== 12) throw new SheetError(b.status, 'viewport');
         this.#answer(m);
+        const reqs = this.dmlNeeds();
+        if (reqs.length) {
+          const nums = answer ? answer(reqs) : null;
+          if (!nums) throw new SheetError(12, 'viewport', 'drawing measurements not answered');
+          this.dmlAnswer(nums);
+        }
       }
       throw new SheetError(12, 'viewport', 'does not settle');
     }
@@ -170,6 +238,8 @@ export function bindSheet(w) {
   }
 
   return {
+    /** Whether this module holds the calc (`uo-sheet-calc.wasm`): the open applies the open-recalc of the file. */
+    hasCalc: () => (w.uo_sheet_has_calc ? w.uo_sheet_has_calc() === 1 : false),
     open(bytes, clock = { year: 2025, month: 1, day: 15, seconds: 43200 }) {
       const [p, n] = arg(bytes);
       const ptr = w.uo_sheet_open(p, n, clock.year, clock.month, clock.day, clock.seconds);

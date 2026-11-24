@@ -13,7 +13,7 @@ use crate::model::{BarDir, ChartColor, DispBlanksAs, GroupKind, Grouping, LinePr
 
 const NO_COLOR: &str = "Cannot read properties of undefined (reading 'color')";
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// `paintBars(g, ci, vi, plot)`.
     pub(super) fn paint_bars(&mut self, gi: u32, ci: &AxisInfo, vi: &AxisInfo, plot: Rect) -> R<()> {
         let cs = self.cs;

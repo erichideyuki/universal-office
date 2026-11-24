@@ -17,7 +17,7 @@ fn solid(c: &str, w: f64) -> LineProps {
     LineProps { paint: Some(Paint::Solid { color: ChartColor::new(c), alpha: None }), w: Some(w), dash: None, cap: None }
 }
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// `paintBoxes(g, ci, vi, plot)`: per category and series, quartiles (Excel's exclusive/inclusive method), median, mean
     /// (×), whiskers up to the last point within 1.5 IQR and the outside points as circles; boxes side by side like clustered
     /// bars.

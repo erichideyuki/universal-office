@@ -3,6 +3,7 @@
 
 use uo_calc::key::SheetIx;
 use uo_calc::store::{CellKind as Lane, RawCell, Store, ValueTag};
+use uo_jsnum::conv::{js_index, to_int32};
 use uo_jsnum::math::{max, round};
 use uo_render::slides::{Align, Baseline, FillRule, PathOp, SItem};
 
@@ -49,6 +50,8 @@ pub struct RegionScratch {
     units: Vec<u16>,
     ct: CellText,
     cross_drawn: Vec<(u32, u32)>,
+    /// the text of a neighbour tested for content (overflow, centre across)
+    pub(super) has: Vec<u16>,
 }
 
 /// Everything the emission reads, borrowed field by field.
@@ -72,6 +75,12 @@ pub struct Rg<'a> {
     pub env: &'a dyn FontEnv,
     pub cells: &'a mut RegionScratch,
     pub zoom: f64,
+    /// The drawings' state (frontier C4b).
+    pub dr: &'a mut super::drawing::Drawings,
+    /// The item ranges of the drawing phases of the frame (`paintDrawings` calls).
+    pub spans: &'a mut Vec<(u32, u32)>,
+    /// The CTM is mirrored (the camera render of a right-to-left sheet): every text piece is drawn unmirrored (`drawCellText`).
+    pub mirrored: bool,
 }
 
 impl Rg<'_> {
@@ -91,9 +100,7 @@ pub fn paint(g: &mut Rg<'_>, p: &ViewParams) {
     g.o.push(SItem::SetTransform(uo_render::slides::Mat6 { a: dpr, b: 0.0, c: 0.0, d: dpr, e: 0.0, f: 0.0 }));
     g.o.clear_rect(0.0, 0.0, w, h);
     if g.ws.chartsheet.is_some() {
-        // `paintChartsheet`: the white page (the chart of the anchor is a drawing: open item C4-8)
-        g.o.fill_style("#FFFFFF");
-        g.o.fill_rect(0.0, 0.0, w, h);
+        super::drawing::paint_chartsheet(g, w, h);
         return;
     }
     let (vw, vh) = (w - HEADER_W, h - HEADER_H);
@@ -115,23 +122,28 @@ pub fn paint(g: &mut Rg<'_>, p: &ViewParams) {
     if fc > 0 && fr > 0 {
         paint_region(g, p, 0.0, 0.0, fw, fh, 1, fc, 1, fr, 0.0, 0.0);
     }
-    // drawings and charts per quadrant, each clipped (`paintDrawings` goes between the clip and the restore: open item C4-8)
+    // drawings and charts per quadrant, each with its own scroll: the part of an object under the frozen pane does not scroll
     let quads = [
-        (fw, fh, vw - fw, vh - fh, true),
-        (fw, 0.0, vw - fw, fh, fr > 0),
-        (0.0, fh, fw, vh - fh, fc > 0),
-        (0.0, 0.0, fw, fh, fc > 0 && fr > 0),
+        (fw, fh, vw - fw, vh - fh, scx, scy, true),
+        (fw, 0.0, vw - fw, fh, scx, 0.0, fr > 0),
+        (0.0, fh, fw, vh - fh, 0.0, scy, fc > 0),
+        (0.0, 0.0, fw, fh, 0.0, 0.0, fc > 0 && fr > 0),
     ];
-    for (qx, qy, qw, qh, on) in quads {
+    let si = g.ix.0 as usize;
+    for (qx, qy, qw, qh, qsx, qsy, on) in quads {
         if !on || qw <= 0.0 || qh <= 0.0 {
             continue;
         }
         g.o.save();
         g.o.clip_rect(qx, qy, qw, qh);
+        super::drawing::paint_drawings(g, si, qsx, qsy, super::drawing::Rect { x: qx, y: qy, w: qw, h: qh }, 0.0);
         g.o.restore();
     }
     if !p.capture {
         paint_selection(g, p, vw, vh, fw, fh);
+    }
+    if !g.ws.list_validations.is_empty() && p.editing.is_none() {
+        paint_list_dropdown(g, p);
     }
     g.o.restore();
     paint_headers(g, p, w, h, fw, fh);
@@ -154,6 +166,75 @@ pub fn paint(g: &mut Rg<'_>, p: &ViewParams) {
         g.o.path(&ops);
         g.o.stroke();
     }
+}
+
+/// The camera render (`renderRegionToCanvas`, `universal-sheet.ts:3340-3383`): the region at zoom 1 under the mirror of a
+/// right-to-left sheet, then its drawings in the region's clip (each in the mirrored box).
+pub fn paint_camera(g: &mut Rg<'_>, p: &ViewParams, n_cols: u32, n_rows: u32) {
+    let (w, h) = (p.req.width, p.req.height);
+    let rtl = p.mirrored;
+    g.o.push(SItem::SetTransform(uo_render::slides::Mat6 {
+        a: if rtl { -1.0 } else { 1.0 },
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        e: if rtl { w } else { 0.0 },
+        f: 0.0,
+    }));
+    paint_region(g, p, 0.0, 0.0, w, h, 1, n_cols, 1, n_rows, 0.0, 0.0);
+    g.o.push(SItem::SetTransform(uo_render::slides::Mat6 { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 }));
+    g.o.save();
+    g.o.clip_rect(0.0, 0.0, w, h);
+    let si = g.ix.0 as usize;
+    super::drawing::paint_drawings(g, si, 0.0, 0.0, super::drawing::Rect { x: 0.0, y: 0.0, w, h }, if rtl { w } else { 0.0 });
+    g.o.restore();
+}
+
+/// The list-validation dropdown of the SELECTED cell (`paint()` after `paintSelection`, C4b): a button to the right of the cell,
+/// as wide as the row is high, with Excel's arrow.
+fn paint_list_dropdown(g: &mut Rg<'_>, p: &ViewParams) {
+    let [col, row, ..] = p.req.selection;
+    // `listValRanges`: each part `a[:b]`, refToRowCol of both ends (a part it cannot read makes the TS throw at load: skipped)
+    let in_val = g.ws.list_validations.iter().any(|sq| {
+        let mut it = sq.split(':');
+        let Some(a) = it.next().filter(|a| !a.is_empty()) else { return false };
+        let Some(tl) = crate::read::ref_to_row_col(a.as_bytes()) else { return false };
+        let br = match it.next() {
+            Some(b) => match crate::read::ref_to_row_col(b.as_bytes()) {
+                Some(x) => x,
+                None => return false,
+            },
+            None => tl,
+        };
+        let (c, r) = (f64::from(col), f64::from(row));
+        c >= tl.0 && c <= br.0 && r >= tl.1 && r <= br.1
+    });
+    if !in_val {
+        return;
+    }
+    let (cw, rh) = (g.xs.size_of(col), g.ys.size_of(row));
+    if !(cw > 0.0 && rh > 0.0) {
+        return;
+    }
+    let bx = index_screen_pos(g.xs, col, g.grid.frozen_cols, p.req.scroll_x) + cw;
+    let by = index_screen_pos(g.ys, row, g.grid.frozen_rows, p.req.scroll_y);
+    let size = rh;
+    g.o.fill_style("#ffffff");
+    g.o.fill_rect(bx, by, size, size);
+    g.o.stroke_style("#ACACAC");
+    g.o.line_width(1.0);
+    g.o.stroke_rect(round(bx) + 0.5, round(by) + 0.5, size - 1.0, size - 1.0);
+    g.o.fill_style("#444444");
+    let (cx2, cy2, tw) = (bx + size / 2.0, by + size / 2.0, size * 0.4);
+    g.o.begin_path();
+    let pt = |x: f64, y: f64| uo_render::slides::Pair { x, y };
+    g.o.path(&[
+        PathOp::MoveTo(pt(cx2 - tw / 2.0, cy2 - tw * 0.25)),
+        PathOp::LineTo(pt(cx2 + tw / 2.0, cy2 - tw * 0.25)),
+        PathOp::LineTo(pt(cx2, cy2 + tw * 0.35)),
+        PathOp::Close,
+    ]);
+    g.o.fill();
 }
 
 fn comment_at(ws: &Worksheet, col: u32, row: u32) -> bool {
@@ -417,7 +498,8 @@ fn phase_marks(g: &mut Rg<'_>, dc: &Dc, st: CellPaint) {
         emit_filter_arrow(&mut g.o, dc.left, dc.top, dc.w, dc.h, active, g.zoom);
     } else if let Some(cell) = g.book.store.get(g.ix, dc.drow - 1, dc.dcol - 1) {
         let xi = cell_xf_index(&g.book.store, g.ix, dc.drow - 1, dc.dcol - 1, cell);
-        if xi >= 0.0 && g.book.styles.cell_xfs.get(xi as usize).is_some_and(|x| x.pivot_button) {
+        let xfs = &g.book.styles.cell_xfs;
+        if js_index(xi, xfs.len()).and_then(|i| xfs.get(i)).is_some_and(|x| x.pivot_button) {
             emit_filter_arrow(&mut g.o, dc.left, dc.top, dc.w, dc.h, false, g.zoom);
         }
     }
@@ -438,7 +520,7 @@ fn border_pass(
     p: &ViewParams,
     show_grid: bool,
 ) {
-    let lim = (1 << 16) + max(p.req.width, p.req.height) as i32;
+    let lim = (1i32 << 16).saturating_add(to_int32(max(p.req.width, p.req.height)));
     g.cells.px.fill(g.xs, first_col, last_col + 1, sx);
     g.cells.py.fill(g.ys, first_row, last_row + 1, sy);
     let (ax, ay) = (uo_jsnum::conv::to_int32(round(sx)), uo_jsnum::conv::to_int32(round(sy)));
@@ -553,7 +635,14 @@ fn paint_cell_content(g: &mut Rg<'_>, dc: &Dc, st: CellPaint, cell: RawCell) {
     }
     let (col0, row0) = (dc.dcol - 1, dc.drow - 1);
     let xf = g.styles.xf(cell_xf_index(&g.book.store, g.ix, row0, col0, cell));
-    let cw = if xf.align == HAlign::CenterContinuous && !dc.merged { dc.w + center_across_extent(g, dc.dcol, dc.drow) } else { dc.w };
+    let cw = if xf.align == HAlign::CenterContinuous && !dc.merged {
+        let mut hs = std::mem::take(&mut g.cells.has);
+        let e = center_across_extent(g, dc.dcol, dc.drow, &mut hs);
+        g.cells.has = hs;
+        dc.w + e
+    } else {
+        dc.w
+    };
     let num_code =
         cfc.as_ref().and_then(|c| c.num_fmt()).and_then(|d| g.cf.as_ref().and_then(|(e, _)| e.dxf(d))).and_then(|d| d.code.clone());
     let view = CellView { store: &g.book.store, fonts: &g.book.styles.fonts, styles: g.styles, ctx: g.ctx() };
@@ -578,7 +667,9 @@ fn paint_cell_content(g: &mut Rg<'_>, dc: &Dc, st: CellPaint, cell: RawCell) {
     );
     let mut laid = laid;
     // "shrink to fit": the whole content (no ####, fewer decimals) in a smaller font
-    let shrink = g.book.styles.cell_xfs.get(cell_xf_index(&g.book.store, g.ix, row0, col0, cell) as usize).is_some_and(|x| x.shrink_to_fit);
+    let xfs = &g.book.styles.cell_xfs;
+    let shrink =
+        js_index(cell_xf_index(&g.book.store, g.ix, row0, col0, cell), xfs.len()).and_then(|i| xfs.get(i)).is_some_and(|x| x.shrink_to_fit);
     if shrink
         && !xf.wrap
         && xf.rotation == 0.0
@@ -689,13 +780,15 @@ fn paint_cell_content(g: &mut Rg<'_>, dc: &Dc, st: CellPaint, cell: RawCell) {
                 merged: dc.merged,
                 base_shift,
                 row_desc,
-                mirrored: false,
+                mirrored: g.mirrored,
             };
             let (c, r) = (dc.dcol, dc.drow);
             let (book, ws, grid, xs, styles, ix) = (g.book, g.ws, g.grid, g.xs, g.styles, g.ix);
             let cctx = CellCtx { date1904: book.workbook.date1904, show_zeros: !ws.show_zeros_off, lang: FormulaLang::PtBr, locale: None };
-            let mut ovf = |dir: i32, need: f64| overflow_extent(&book.store, ws, grid, xs, styles, cctx, ix, c, r, dir, need);
+            let mut hs = std::mem::take(&mut g.cells.has);
+            let mut ovf = |dir: i32, need: f64| overflow_extent(&book.store, ws, grid, xs, styles, cctx, ix, c, r, dir, need, &mut hs);
             paint_cell_text(&mut g.o, g.sc, &args, &mut ovf);
+            g.cells.has = hs;
         }
     }
     g.cells.ct = ct;
@@ -727,20 +820,37 @@ fn has_content(
     ix: SheetIx,
     col: u32,
     row: u32,
+    scratch: &mut Vec<u16>,
 ) -> bool {
     if !grid.merges.is_empty() && grid.merges.merge_at(col, row).is_some() {
         return true;
     }
     let Some(cell) = store.get(ix, row - 1, col - 1) else { return false };
     let xf = styles.xf(cell_xf_index(store, ix, row - 1, col - 1, cell));
-    let mut scratch = Vec::new();
-    match text_input(store, ix, row - 1, col - 1, cell, &xf.code16, &ctx, &mut scratch) {
+    match text_input(store, ix, row - 1, col - 1, cell, &xf.code16, &ctx, scratch) {
+        // the common cases without building the text (C4b: the overflow tests of a frame allocated per neighbour): a number
+        // in General is empty only as a hidden zero, a text without a format only when empty
+        crate::grid::CellRead::Input(inp)
+            if inp.kind == crate::grid::CellKind::Number && inp.code.is_none_or(|c| c.is_empty() || general_code(c)) =>
+        {
+            !(inp.num == 0.0 && !inp.show_zeros)
+        }
+        crate::grid::CellRead::Input(inp)
+            if inp.kind == crate::grid::CellKind::Text && inp.code.is_none_or(|c| c.is_empty() || general_code(c)) =>
+        {
+            !inp.str.is_empty()
+        }
         crate::grid::CellRead::Input(inp) => !display_text(&inp).is_empty(),
         _ => {
             let _ = ws;
             false
         }
     }
+}
+
+/// `/^general$/i` of a format code.
+fn general_code(code: &[u16]) -> bool {
+    code.len() == 7 && code.iter().zip(b"general").all(|(&u, &g)| u == u16::from(g) || u == u16::from(g.to_ascii_uppercase()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -756,6 +866,7 @@ pub(super) fn overflow_extent(
     row: u32,
     dir: i32,
     need: f64,
+    scratch: &mut Vec<u16>,
 ) -> f64 {
     let max_col = grid.max_col;
     let mut ext = 0.0;
@@ -770,7 +881,7 @@ pub(super) fn overflow_extent(
             c += i64::from(dir);
             continue;
         }
-        if has_content(store, ws, grid, styles, ctx, ix, cu, row) {
+        if has_content(store, ws, grid, styles, ctx, ix, cu, row, scratch) {
             break;
         }
         ext += xs.size_of(cu);
@@ -780,14 +891,14 @@ pub(super) fn overflow_extent(
 }
 
 /// `centerAcrossExtent`.
-fn center_across_extent(g: &Rg<'_>, col: u32, row: u32) -> f64 {
+fn center_across_extent(g: &Rg<'_>, col: u32, row: u32, scratch: &mut Vec<u16>) -> f64 {
     let max_col = g.grid.max_col;
     let mut ext = 0.0;
     let mut c = col + 1;
     let mut guard = 0;
     while c <= max_col && guard < 200 {
         let Some(cell) = g.book.store.get(g.ix, row - 1, c - 1) else { break };
-        if has_content(&g.book.store, g.ws, g.grid, g.styles, g.ctx(), g.ix, c, row) {
+        if has_content(&g.book.store, g.ws, g.grid, g.styles, g.ctx(), g.ix, c, row, scratch) {
             break;
         }
         if g.styles.xf(cell_xf_index(&g.book.store, g.ix, row - 1, c - 1, cell)).align != HAlign::CenterContinuous {

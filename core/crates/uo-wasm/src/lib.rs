@@ -24,6 +24,9 @@ pub mod sheet;
 pub mod slides_edit;
 #[cfg(feature = "slides-ppt")]
 pub mod slides_ppt;
+// the Sheet editor (frontier C5b): src/sheet_edit.rs, the editing session with its own viewer
+#[cfg(feature = "sheet-edit")]
+pub mod sheet_edit;
 
 #[cfg(feature = "render-fixture")]
 pub mod render_fixture;

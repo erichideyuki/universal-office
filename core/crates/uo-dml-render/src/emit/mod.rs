@@ -30,7 +30,7 @@ mod table;
 mod text;
 
 pub use anim::{AnimPlan, ChartPart, ChartSel, DataSel, EmitSlot, EmitSlotKind, PartStyle, ShapeAnim, SlotStates, UnitHook, UnitRef};
-pub use chart::{chart_part_bounds, emit_chart_with};
+pub use chart::{chart_part_bounds, emit_chart_with, emit_host_chart};
 pub use chart_canvas::{MAX_CHART_ITEMS, SlidesCanvas};
 pub use chart_host::{ChartCache, MAX_BOUNDS_KEYS, MAX_CHART_MODELS, SlidesHost, bounds_key, model_key, model_of};
 pub use cx::{
@@ -140,6 +140,13 @@ pub fn emit_shapes(
     caches: &mut EmitCaches,
 ) -> Result<Emission, NeedMeasures> {
     let mut cx = Cx::new(env, res, caches, view_of(p));
+    emit_shapes_into(&mut cx, shapes, p);
+    finish(cx)
+}
+
+/// [`emit_shapes`] into a context the host owns (the Sheet's drawings, uo-xlsx C4b: a context per anchored object whose list is
+/// the viewport's): the same items; the measurement questions stay in the context ([`Cx::take_needs`]).
+pub fn emit_shapes_into(cx: &mut Cx<'_>, shapes: &[Shape], p: &EmitParams) {
     // the host's canvas state (the grid leaves `textAlign`, dashes...) is reset to the defaults
     cx.save();
     cx.push(SItem::TextAlign(uo_render::slides::Align::Left));
@@ -151,9 +158,8 @@ pub fn emit_shapes(
     cx.composite(CompositeOp::SourceOver);
     cx.shadow_color("rgba(0,0,0,0)");
     cx.push(SItem::ImageSmoothing(true));
-    shape::paint_shape_list(&mut cx, shapes, &fit_of(p), p.suppress_text, p.clip_overflow, None);
+    shape::paint_shape_list(cx, shapes, &fit_of(p), p.suppress_text, p.clip_overflow, None);
     cx.restore();
-    finish(cx)
 }
 
 /// `paintSlideTo`: the background (colour, gradient, pattern or picture), the slide clip and the shapes.

@@ -35,6 +35,9 @@ pub mod view;
 pub mod read;
 #[cfg(feature = "save")]
 pub mod save;
+/// The calc engine of an opened workbook and the open-recalc (C1b; the viewer's open-recalc needs it without the save, C4b).
+#[cfg(any(feature = "save", feature = "calc"))]
+pub mod engine;
 #[cfg(feature = "xls")]
 pub mod xls;
 #[cfg(feature = "edit")]

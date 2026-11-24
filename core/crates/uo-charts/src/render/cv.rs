@@ -33,7 +33,7 @@ fn default_font() -> FontState {
     FontState { face: ChartFace { family: "".into(), bold: false, italic: false }, size_px: 10.0 }
 }
 
-pub(crate) struct Cv<'c, C: Canvas> {
+pub(crate) struct Cv<'c, C: Canvas + ?Sized> {
     pub c: &'c mut C,
     font: FontState,
     line_width: f64,
@@ -45,7 +45,7 @@ pub(crate) fn dom(message: &'static str) -> ChartError {
     ChartError::Throws(JsErrorKind::DomException, message)
 }
 
-impl<'c, C: Canvas> Cv<'c, C> {
+impl<'c, C: Canvas + ?Sized> Cv<'c, C> {
     pub fn new(c: &'c mut C) -> Cv<'c, C> {
         Cv { c, font: default_font(), line_width: 1.0, stack: Vec::new() }
     }

@@ -5,6 +5,8 @@
 #![cfg(feature = "view")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::cast_possible_truncation)]
 
+mod support;
+
 use std::path::{Path, PathBuf};
 
 use uo_alloc::{assert_flat, soak};
@@ -31,7 +33,7 @@ const CLOCK: CfClock = CfClock { year: 2025.0, month: 1.0, day: 15.0, seconds: 4
 
 fn files() -> Vec<PathBuf> {
     let mut v = Vec::new();
-    for g in ["x1", "cf1", "paint1"] {
+    for g in ["x1", "cf1", "paint1", "dr1"] {
         let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/captures/workbooks").join(g);
         let mut f: Vec<PathBuf> = std::fs::read_dir(d).unwrap().flatten().map(|e| e.path()).collect();
         f.sort();
@@ -61,11 +63,15 @@ fn params(si: usize, sx: f64, sy: f64, zoom: f64) -> ViewParams {
 }
 
 fn frame(v: &mut Viewer, book: &Book, p: &ViewParams, out: &mut Vec<u8>) {
-    for _ in 0..8 {
+    for _ in 0..16 {
         out.clear();
         match v.emit(book, p, &IdentityEnv, out) {
             Ok(()) => return,
-            Err(ViewError::NeedMeasures) => v.measure.satisfy(&Fake),
+            Err(ViewError::NeedMeasures) => {
+                v.measure.satisfy(&Fake);
+                let n = v.dml_needs();
+                support::stub_measure::answer(v, &n);
+            }
             Err(e) => panic!("{e:?}"),
         }
     }
@@ -79,7 +85,7 @@ fn run(bytes: &[u8]) -> usize {
     let mut out = Vec::new();
     let mut n = 0;
     for si in 0..book.workbook.sheets.len() {
-        if book.workbook.sheets[si].target.is_none() || book.sheets[si].as_ref().is_some_and(|w| w.chartsheet.is_some()) {
+        if book.workbook.sheets[si].target.is_none() {
             continue;
         }
         for _ in 0..8 {
@@ -98,6 +104,7 @@ fn run(bytes: &[u8]) -> usize {
     drop(book);
     uo_numfmt::clear_caches();
     uo_text::clear_caches();
+    uo_dml_render::clear_caches();
     n
 }
 

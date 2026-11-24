@@ -10,6 +10,12 @@
 //   node core/crates/uo-xlsx/js/capture-viewport.mjs --big           # local: x1-big (400) + paint-big + cf1 -> core/target/sheet-cap/viewport-big.capture
 //
 // Facets per workbook key: `v<i>@<k>` digest of the canonical lines of sheet i (view index) at state k, `n<i>@<k>` their count.
+//
+// C4b: the drawing phases (`paintDrawings` per quadrant, `paintChartsheet`) are recorded apart, each call on a fresh RECORDING
+// context of the Slides harness (`uo-pptx/js/lib/record-ctx.mjs`, the deterministic measure stub, images as hashed fake decoded
+// images), and compared by `js/compare-drawings.mjs` with the Rust list replayed by `paint-slides.ts`: `d<i>@<k>` digest of the
+// draw-form lines of the frame's drawing calls (`#call` before each), `dc<i>@<k>` their count; `stacks` the shape font stacks the
+// frozen element gave (`family|bold|italic` -> stack, JSON). Chart sheets are captured too (main stream: transform and clear).
 process.env.TZ = 'UTC';
 const { readFileSync, mkdirSync, writeFileSync, existsSync } = await import('node:fs');
 const { join } = await import('node:path');
@@ -21,7 +27,10 @@ const C = await import('./lib/common.mjs');
 const { GROUPS, groupKey, workbookFile } = await import('./lib/gen-workbook.mjs');
 const { PAINT_GROUPS, paintKey, buildPaintWorkbook } = await import('./lib/gen-paint.mjs');
 const { CF_GROUPS, cfKey, cfFile } = await import('./lib/gen-cf.mjs');
+const { DRAW_GROUPS, drawKey, buildDrawingWorkbook } = await import('./lib/gen-drawings.mjs');
 const { buildHarness } = await import('./harness/build-harness.mjs');
+const { createRecorder } = await import('../../uo-pptx/js/lib/record-ctx.mjs');
+const { form } = await import('../../uo-pptx/js/lib/opstream.mjs');
 
 const FIXED = Date.UTC(2025, 0, 15, 12, 0, 0);
 const RealDate = Date;
@@ -108,7 +117,10 @@ function styleText(s) {
 function fontText(f) {
   const m = /^(italic )?(400|700) (\d+)px (.*)$/.exec(f);
   if (!m) return f;
-  const fam = m[4].split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+  const fams = m[4].split(',').map((x) => x.trim().replace(/^['"]|['"]$/g, ''));
+  // C4b: the alternate name of the font (`altName`) is the stack's second family (`cssStack(name, [alt, ...SHEET_FALLBACKS])`;
+  // without it the second is the fallback `Arial`)
+  const fam = fams[1] && fams[1] !== 'Arial' && fams[1] !== 'Liberation Sans' ? `${fams[0]}|${fams[1]}` : fams[0];
   return `${m[1] ?? ''}${m[2]} ${m[3]} ${fam}`;
 }
 
@@ -116,14 +128,18 @@ function fontText(f) {
 function recorder() {
   const ev = [];
   let cur = [];
+  // the current transform (C4b: `drawCellText` reads `getTransform().a` to unmirror the text of a right-to-left camera render)
+  let tm = [1, 0, 0, 1, 0, 0];
+  const tms = [];
+  const mul = (n) => { const [a, b, c, d, e, f] = tm; tm = [a * n[0] + c * n[1], b * n[0] + d * n[1], a * n[2] + c * n[3], b * n[2] + d * n[3], a * n[4] + c * n[5] + e, b * n[4] + d * n[5] + f]; };
   const ctx = {
     canvas: { width: 0, height: 0 },
-    setTransform(...m) { ev.push(`setTransform ${m.map(fh).join(' ')}`); },
-    getTransform() { return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }; },
-    save() { ev.push('save'); }, restore() { ev.push('restore'); },
-    translate(x, y) { ev.push(`translate ${fh(x)} ${fh(y)}`); },
-    scale(x, y) { ev.push(`scale ${fh(x)} ${fh(y)}`); },
-    rotate(r) { ev.push(`rotate ${fh(r)}`); },
+    setTransform(...m) { ev.push(`setTransform ${m.map(fh).join(' ')}`); tm = m.slice(0, 6); },
+    getTransform() { const [a, b, c, d, e, f] = tm; return { a, b, c, d, e, f }; },
+    save() { ev.push('save'); tms.push(tm); }, restore() { ev.push('restore'); tm = tms.pop() ?? tm; },
+    translate(x, y) { ev.push(`translate ${fh(x)} ${fh(y)}`); mul([1, 0, 0, 1, x, y]); },
+    scale(x, y) { ev.push(`scale ${fh(x)} ${fh(y)}`); mul([x, 0, 0, y, 0, 0]); },
+    rotate(r) { ev.push(`rotate ${fh(r)}`); mul([Math.cos(r), Math.sin(r), -Math.sin(r), Math.cos(r), 0, 0]); },
     clearRect(x, y, ww, hh) { ev.push(`clearRect ${[x, y, ww, hh].map(fh).join(' ')}`); },
     fillRect(x, y, ww, hh) { ev.push(`fillRect ${[x, y, ww, hh].map(fh).join(' ')}`); },
     strokeRect(x, y, ww, hh) { ev.push(`strokeRect ${[x, y, ww, hh].map(fh).join(' ')}`); },
@@ -190,6 +206,33 @@ export function canon(ev) {
 }
 
 // ------------------------------------------------------------ the element
+/** Natural size of a PNG, JPEG or GIF (`ts-paint.mjs` `imageSize`); null when unknown. */
+function imageSize(b) {
+  if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50) return { w: (b[16] << 24 | b[17] << 16 | b[18] << 8 | b[19]) >>> 0, h: (b[20] << 24 | b[21] << 16 | b[22] << 8 | b[23]) >>> 0 };
+  if (b.length > 10 && b[0] === 0x47 && b[1] === 0x49) return { w: b[6] | b[7] << 8, h: b[8] | b[9] << 8 };
+  if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) { i++; continue; }
+      const mk = b[i + 1];
+      if (mk >= 0xc0 && mk <= 0xcf && mk !== 0xc4 && mk !== 0xc8 && mk !== 0xcc) return { h: b[i + 5] << 8 | b[i + 6], w: b[i + 7] << 8 | b[i + 8] };
+      i += 2 + (b[i + 2] << 8 | b[i + 3]);
+    }
+  }
+  return null;
+}
+const sha1 = (b) => createHash('sha1').update(b).digest('hex').slice(0, 12);
+
+/** A drawing call (`paintDrawings`, `paintChartsheet`) recorded on a fresh Slides recording context: its draw-form lines. */
+function recordCall(fn) {
+  const rec = createRecorder({ width: W, height: H });
+  rec.install();
+  try { fn(rec.ctx); } catch (e) { rec.root.lines.push(`#throw ${C.oneLine(e?.message ?? e)}`); } finally { rec.uninstall(); }
+  // `@cvK` lines (offscreen canvases: pattern tiles, layers) are left out: the module-level canvas caches of the frozen painter
+  // make them depend on what was painted before; each canvas still enters the stream by its content hash where it is drawn
+  return form(rec.lines, 'draw').filter((l) => !l.startsWith('@cv'));
+}
+
 const newSheet = () => {
   stubOn = false;
   const el = new M.UniversalSheetElement();
@@ -200,6 +243,8 @@ const newSheet = () => {
 };
 
 const W = 640, H = 360;
+/** The region of the camera render (C4b): columns x rows. */
+const CAM = [8, 14];
 const STATES = [
   { z: 1, sx: 0, sy: 0, dpr: 1, sel: [1, 1, 1, 1, 1, 1] },
   { z: 1.75, sx: 41.5, sy: 17.25, dpr: 2, sel: [3, 3, 2, 2, 4, 5] },
@@ -217,10 +262,30 @@ const lines = new Map();
 function viewFacets(key, bytes) {
   const el = newSheet();
   el.shouldRecalcOnOpen = () => false;
-  // drawings and charts are compared apart (open item C4-8): the quadrant clips around them stay in the stream
-  el.paintDrawings = () => {};
+  // the drawing phases go to a recorder of their own (C4b): the quadrant clips around them stay in the main stream
+  const calls = [];
+  const paintDrawings = el.paintDrawings.bind(el);
+  el.paintDrawings = (_ctx, sx, sy, view) => { calls.push(recordCall((c) => paintDrawings(c, sx, sy, view))); };
+  const paintChartsheet = el.paintChartsheet.bind(el);
+  el.paintChartsheet = (_ctx, v, ww, hh) => { calls.push(recordCall((c) => paintChartsheet(c, v, ww, hh))); };
   try { el.loadXlsx(bytes); } catch (e) { w.set(key, 'open', `err:${C.oneLine(e?.message ?? e)}`); el.remove(); return; }
   w.set(key, 'open', 'ok');
+  // pictures: decoded at once as hashed fake images (the Slides harness's `rec.image`), as the shell's decode would give them
+  const layer = el.drawingLayer;
+  if (layer) {
+    // the open already read the active sheet's objects (the fake DOM never decodes their images): read them again
+    layer.images.clear();
+    layer.parsed = new WeakMap();
+    layer.warm = function warm(ref) {
+      if (this.images.has(ref.part)) return;
+      const d = imageSize(ref.bytes) ?? { w: 96, h: 96 };
+      this.images.set(ref.part, { img: { width: d.w, height: d.h, naturalWidth: d.w, naturalHeight: d.h, __h: sha1(ref.bytes) }, ready: true });
+    };
+  }
+  // the shape font stacks the element gives (the replay of the Rust list uses the same)
+  const stacks = new Map();
+  const shapeFontStack = el.shapeFontStack;
+  el.shapeFontStack = (f, b = false, i = false) => { const st = shapeFontStack(f, b, i); stacks.set(`${f}|${b ? 1 : 0}|${i ? 1 : 0}`, st); return st; };
   const keep = el.activeSheet;
   const views = el.views ?? [];
   // the element's own canvas: sized, and its context replaced by the recorder
@@ -229,8 +294,8 @@ function viewFacets(key, bytes) {
   el.paintScrollbars = () => {};
   el.spillRangeAt = () => null;
   const all = [];
+  const drawText = [];
   views.forEach((v, i) => {
-    if (v.worksheet.chartsheet) return;
     el.selectSheet(i);
     STATES.forEach((st, k) => {
       el.zoom = st.z; el.scrollX = st.sx; el.scrollY = st.sy;
@@ -241,15 +306,38 @@ function viewFacets(key, bytes) {
       globalThis.window = dom.window;
       const rec = recorder();
       el.canvas.getContext = () => rec.ctx;
+      calls.length = 0;
       el.paint();
       const cl = canon(rec.ev);
+      const dtext = calls.map((c) => ['#call', ...c].join('\n')).join('\n');
+      w.set(key, `d${i}@${k}`, dig(dtext));
+      w.set(key, `dc${i}@${k}`, String(calls.length));
+      if (calls.length) drawText.push(`# ${i}@${k}`, dtext);
       const text = cl.join('\n');
       w.set(key, `v${i}@${k}`, dig(text));
       w.set(key, `n${i}@${k}`, String(cl.length));
       all.push(`# ${i}@${k}`, ...cl);
     });
+    // C4b: the camera render (`renderRegionToCanvas`) of the first CAM columns x rows as state 4 (a right-to-left sheet mirrored)
+    if (!v.worksheet.chartsheet) {
+      const rec = recorder();
+      calls.length = 0;
+      const cv = { width: 0, height: 0, getContext: () => rec.ctx };
+      const wh = el.renderRegionToCanvas(i, cv, CAM[0], CAM[1]);
+      const cl = canon(rec.ev);
+      w.set(key, `v${i}@4`, dig(cl.join('\n')));
+      w.set(key, `n${i}@4`, String(cl.length));
+      w.set(key, `w${i}@4`, `${wh.w},${wh.h}`);
+      const dtext = calls.map((c) => ['#call', ...c].join('\n')).join('\n');
+      w.set(key, `d${i}@4`, dig(dtext));
+      w.set(key, `dc${i}@4`, String(calls.length));
+      all.push(`# ${i}@4`, ...cl);
+      if (calls.length) drawText.push(`# ${i}@4`, dtext);
+    }
   });
   if (LINES_DIR) lines.set(key, all.join('\n'));
+  if (LINES_DIR && drawText.length) lines.set(`${key}#drawings`, drawText.join('\n'));
+  w.set(key, 'stacks', JSON.stringify([...stacks].sort((x, y) => (x[0] < y[0] ? -1 : 1))));
   el.selectSheet(keep);
   el.remove();
 }
@@ -260,12 +348,27 @@ if (!BIG) {
   for (let i = 0; i < PAINT_GROUPS.paint1.count; i++) { const key = paintKey('paint1', i); viewFacets(key, new Uint8Array(buildPaintWorkbook('paint1', i).bytes)); results.push(key); }
   for (let i = 0; i < CF_GROUPS.cf1.count; i++) { const key = cfKey('cf1', i); viewFacets(key, new Uint8Array(readFileSync(join(C.capturesDir, 'workbooks', 'cf1', cfFile('cf1', i))))); results.push(key); }
   for (const rel of C.trackedSamples()) { if (/giant/.test(rel)) continue; const key = `samples/${rel}`; viewFacets(key, C.readSample(rel)); results.push(key); }
+  // C4b: the drawing workbooks (committed, rewritten from the generator: `--check` would compare them byte for byte)
+  const drDir = join(C.capturesDir, 'workbooks', 'dr1');
+  mkdirSync(drDir, { recursive: true });
+  for (let i = 0; i < DRAW_GROUPS.dr1.count; i++) {
+    const b = buildDrawingWorkbook('dr1', i);
+    writeFileSync(join(drDir, b.name), b.bytes);
+    const key = drawKey('dr1', i); viewFacets(key, new Uint8Array(b.bytes)); results.push(key);
+  }
 } else {
   const base = join(C.bigDir, 'workbooks');
   for (let i = 0; i < GROUPS['x1-big'].count; i++) {
     const f = join(base, 'x1-big', workbookFile('x1-big', i));
     if (!existsSync(f)) continue;
     const key = groupKey('x1-big', i); viewFacets(key, new Uint8Array(readFileSync(f))); results.push(key);
+  }
+  const drBig = join(base, 'dr-big');
+  mkdirSync(drBig, { recursive: true });
+  for (let i = 0; i < DRAW_GROUPS['dr-big'].count; i++) {
+    const b = buildDrawingWorkbook('dr-big', i);
+    writeFileSync(join(drBig, b.name), b.bytes);
+    const key = drawKey('dr-big', i); viewFacets(key, new Uint8Array(b.bytes)); results.push(key);
   }
   for (const [g, n, name] of [['paint-big', PAINT_GROUPS['paint-big']?.count ?? 0, (i) => `paint-big-${String(i).padStart(4, '0')}.xlsx`], ['cf-big', CF_GROUPS['cf-big']?.count ?? 0, (i) => cfFile('cf-big', i)]]) {
     for (let i = 0; i < n; i++) {

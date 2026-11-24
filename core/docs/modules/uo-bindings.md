@@ -7164,3 +7164,166 @@ session (`uo_pptx::edit`, B8) inside the SAME wasm instance as the viewer's deck
 - **Parity under `ts_strict`**: the Node replays `tests/slides_{anim,api,drawops,edit_api,readmodel}.test.mjs` open with `{ tsStrict:
   true }`; the Chromium harnesses `tests/browser/slides_switch.mjs` and `slides_edit_switch.mjs` call `configureEngine({ tsStrict: true })`
   on the element class of the page bundle.
+
+## Sheet .NET facade (`UniversalOffice.Xlsx`, 2026-11-24, Sonnet 5.5)
+
+`UniversalOffice.Xlsx` as a C# facade over the C ABI of `uo-ffi`, the way `UniversalOffice.Pptx` is, on top of the editor `Session` of `uo-xlsx` (C5b:
+cell store, calc engine, change-set undo, surgical save, entry rules in a language). Rust: `core/crates/uo-ffi/src/sheet.rs` (feature `sheet`, on by default);
+C#: `core/dotnet/UniversalOffice.Xlsx` (+ `.Tests`, `.Smoke`); tests `core/crates/uo-ffi/tests/sheet_abi.rs`, digests
+`core/crates/uo-ffi/tests/parity/sheet-native.tsv`.
+
+**Shape of the product.** The facade is the *server* side of the Sheet: open a workbook (or an Excel 97-2003 `.xls`), list sheets, read cells (typed value,
+displayed text, formula in the workbook's language and canonical, style essentials), make the edits a server needs through Excel's own entry rules, recalculate,
+undo/redo, save without losing what the file holds, and convert `.xls` to `.xlsx`. It is deliberately NOT the read model of the old port (columns, comments,
+conditional formats, drawings...) and it has no PDF/HTML/Markdown/CSV/ODS export yet (plan section 9: no TS reference exists for a Sheet PDF).
+
+### Exports (all follow section 3: status code, per-thread last error, `UoBuf` out, sized option structs, `UoCancel`, panics caught)
+
+| Export | What |
+|---|---|
+| `uo_xlsx_open(data, len, const UoXlsxOptions*, const UoCancel*, UoWorkbook**)` | `.xlsx`, or an Excel 97-2003 `.xls` (Compound File signature) converted to the parts of a `.xlsx` first; the open-recalc of the file is applied. `UoXlsxOptions { size, flags, lang ptr/len, now_serial, year, seed }`, `XLSX_TRUSTED = 1` |
+| `uo_xlsx_new(options, UoWorkbook**)` | a blank workbook (`Planilha1` for `pt*`, `Sheet1` otherwise) |
+| `uo_xlsx_free(UoWorkbook*)`, `uo_xlsx_is_legacy(const UoWorkbook*)` | release (null is a no-op); 1/0, -1 for a null handle |
+| `uo_xlsx_info(wb, UoBuf**)` | sheets (name, state, used rows/columns, panes, gridlines, merged ranges), active sheet, date system, dirty, undo/redo availability and labels |
+| `uo_xlsx_read_range(wb, sheet, c1, r1, c2, r2, flags, cancel, UoBuf**)` | the cells that exist in a range, row-major: kind, number, text, displayed text; `READ_FORMULAS = 1` adds the formula (language and canonical), `READ_STYLES = 2` the style essentials. At most `READ_MAX_CELLS` (1,048,576) cells: more is code 5 |
+| `uo_xlsx_set_cell_text(wb, sheet, col, row, text, len, UoBuf**)` | one `typing` undo step through the entry rules of the workbook's language; Excel's refusal is `ok = 0` + message in the out buffer, not a status |
+| `uo_xlsx_set_number_format(wb, sheet, c1, r1, c2, r2, code, len)` | `NumFmtArg::Code` over the range |
+| `uo_xlsx_merge(wb, sheet, rect, kind, flags)`, `uo_xlsx_unmerge(...)`, `uo_xlsx_clear(wb, sheet, rect, kind)` | `MERGE_CENTER/ACROSS/CELLS`; `MERGE_ALLOW_DATA_LOSS = 1` (else a merge that would discard data is code 2); `CLEAR_CONTENTS/FORMATS/ALL` |
+| `uo_xlsx_add_sheet(wb, name, len, UoBuf**)` | Insert > Sheet; empty name = the default; an invalid or taken name is code 1 (the element silently numbers a taken one, the ABI refuses) |
+| `uo_xlsx_undo(wb, u8* did)`, `uo_xlsx_redo(...)`, `uo_xlsx_recalculate(wb)`, `uo_xlsx_mark_saved(wb)` | history, F9, clears the dirty flag |
+| `uo_xlsx_save(wb, cancel, UoBuf**)` | the surgical save (`Session::save`): untouched sheets' parts copied as they were, calc chain / `calcPr` / `cm` metadata / XfPool styles patched; a legacy `.xls` comes out converted |
+| `uo_xls_to_xlsx(data, len, options, UoBuf**)` | `.xls` -> `.xlsx` bytes; anything without the CFB signature is code 3 |
+
+Wire format of the buffers: little-endian, strings `u32` byte length (`0xFFFF_FFFF` = null) + UTF-8; the layouts are in the module header of `sheet.rs`
+(`info`, `range`, `edit`) and read by `core/dotnet/UniversalOffice.Xlsx/Native/SheetWire.cs`. Sheets are the worksheets with a part, 0-based; rows and columns 1-based
+(Excel); every range is validated against 16,384 x 1,048,576 (code 9).
+
+- **Language** is chosen at open (`lang`: `pt-BR`, `en-US`, ...; empty = `pt-BR`, the data-fidelity locale) and fixed for the handle: it is the language of the
+  formulas and function names typed and read back, of the decimal separator the entry parses, of the booleans and errors shown. The *display* of numbers and dates
+  (`display_text` with `CellCtx.locale = None`) is the pt-BR format locale whatever the language: the core has only that `FormatLocale` (the Sheet viewer does
+  the same). So `1234.5` in an `en-US` workbook with `#,##0.00` displays `1.234,50`.
+- **Trust.** Untrusted (the default): before anything is inflated the central directory is read and a part declaring over 256 MiB inflated, or 512 MiB in all, is code
+  5 (`check_declared_sizes`; the declared size is also the cap the inflater enforces, so a lying directory cannot exceed it); the reader's bounds are the browser
+  build's (`max_sheets` 1,024, shared strings 2^21, cell text 1 MiB); a `.xls` is converted with the same caps (`XlsLimits`). Trusted: `uo_opc` and reader defaults.
+- **Clock and seed.** `now_serial`/`year` are the host's local now (`NOW()`, a date typed without a year); the facade passes `DateTime.Now` unless `XlsxOpenOptions.Now`
+  is set; `seed` feeds `RAND*` (values differ from Excel's by nature). Both are inputs so the tests and the parity digests are deterministic.
+- **Threads.** `UoWorkbook` holds the `Session` behind a `Mutex`; any thread may call, one at a time; a panic inside a call poisons the handle (`INVALID_OPERATION` after
+  it). Every export that touches a workbook runs on its own thread of `CONVERSION_STACK_BYTES` (`slides::on_big_stack`, now `pub(crate)`: formula parsing and evaluation
+  recurse). The `Session` is not `Send` only because of the optional shell `Measurer`, which the ABI never sets: `UoWorkbook` and the open-time wrapper `Built` carry a documented
+  `unsafe impl Send/Sync`.
+- **Error codes.** Not a zip / no workbook / damaged part / `.xls` refused (encrypted, damaged) = 3; malformed XML in a part = 4; a limit of the package, the reader, the store or
+  the `.xls` converter = 5 (`UoErrorInfo.max` carries the cap when `uo_opc` gives it); an operation the state does not allow (a merge that would lose data, a poisoned handle) = 2;
+  a bad sheet/range/format length or text over 32,767 characters = 9; a null handle, a short struct, bad UTF-8, an invalid or taken sheet name = 1; cancel = 10.
+- **Cancellation.** The flag is read before the work and again before the bytes are handed over (open, save, read), and every 256 cells inside `read_range`. The reader, the
+  open-recalc and the save have no finer hook (the `uo-xlsx` API takes no flag): a long open is not interrupted, it is dropped when it returns.
+- **Reading a formula builds the engine.** `READ_FORMULAS` goes through `Session::bar_text`, which builds the calc engine on the first formula cell (C5b-1); the engine's
+  presence changes what a save writes (`prepare_for_save`: `ca`/`cm`, `fullCalcOnLoad` when not sure). A read WITHOUT formulas never builds it. The parity digests fix this
+  (read digest = with formulas, save digest = on a fresh handle).
+- **Insert Sheet empties the history.** `Session::add_sheet` rebuilds the book from its saved bytes (as the TS `addSheetPart` does), so `CanUndo` is false after `AddSheet`.
+
+### C# API (`namespace UniversalOffice.Xlsx`)
+
+```csharp
+public sealed class XlsxWorkbook : IDisposable {                    // an open workbook held by the Rust core; thread-safe, one call at a time
+    public static XlsxWorkbook Open(byte[] bytes, XlsxOpenOptions? options = null, CancellationToken ct = default);   // .xlsx or .xls
+    public static XlsxWorkbook Create(XlsxOpenOptions? options = null);
+    public bool IsLegacyXls; IReadOnlyList<XlsxSheetInfo> Sheets; int ActiveSheetIndex; bool Date1904, IsDirty, CanUndo, CanRedo; string? UndoLabel, RedoLabel;
+    public int IndexOfSheet(string name);
+    public IReadOnlyList<XlsxCell> ReadRange(int sheet, XlsxRange range, XlsxReadOptions options = None, CancellationToken ct = default);
+    public XlsxCell? GetCell(int sheet, int column, int row, XlsxReadOptions options = None);
+    public IEnumerable<XlsxCell> ReadSheet(int sheet, XlsxReadOptions options = None, CancellationToken ct = default);   // paged, 500 rows
+    public XlsxEditResult SetCellText(int sheet, int column, int row, string text);  // also (sheet, "B2", text); Accepted + Message
+    public void SetNumberFormat(int sheet, XlsxRange range, string formatCode);
+    public void Merge(int sheet, XlsxRange range, XlsxMergeKind kind = Center, bool allowDataLoss = false);  public void Unmerge(...); public void Clear(..., XlsxClearKind kind = Contents);
+    public string AddSheet(string? name = null);
+    public bool Undo(); public bool Redo(); public void Recalculate(); public void MarkSaved();
+    public byte[] Save(CancellationToken ct = default);
+}
+public static class XlsConverter { public static byte[] ToXlsx(byte[] xls, bool trusted = false); }
+public readonly record struct XlsxRange(int FirstColumn, int FirstRow, int LastColumn, int LastRow) { Cell(c, r); Parse("B2:D8"); ColumnName(n); ToString(); }
+public sealed class XlsxCell { Row, Column, Reference, Kind (Empty|Number|Text|Boolean|Error), Number, Text, Display, Value, HasFormula, IsArrayFormula, IsSpilled, Formula, CanonicalFormula, Style }
+public sealed class XlsxCellStyle { FormatIndex, NumberFormat, Bold, Italic, Underline, Strikethrough, WrapText, HorizontalAlignment, FontSize, FontName, FontColor, FillColor }
+public sealed class XlsxSheetInfo { Index, Name, State, UsedRows, UsedColumns, UsedRange, FrozenColumns, FrozenRows, ShowGridlines, MergedRanges }
+public sealed class XlsxOpenOptions { string Language = "pt-BR"; bool Trusted; DateTime? Now; ulong RandomSeed = 1; }
+```
+
+Decision N1 (static helpers + a disposable workbook object) as `PptxDeck`: the workbook is the object; the static `XlsConverter.ToXlsx` is the one-call helper (the
+counterpart of `PptConverter.ToPptx`). Exceptions are the Docx facade's (`NativeMethods.ErrorOf`) plus two in `SheetNative.Fail`: code 9 -> `ArgumentOutOfRangeException`,
+code 2 -> `InvalidOperationException` (1 -> `ArgumentException`, 3/4 -> `InvalidDataException`, 5 -> `OfficeLimitExceededException`, 10 -> `OperationCanceledException`, the
+rest `UniversalOfficeException`). The project has a `ProjectReference` to `UniversalOffice.Docx` and an `InternalsVisibleTo` from it (the Pptx pattern: the one native library
+per RID travels in the Docx package; the `UniversalOffice.Native` shared package is still the cleaner shape, now that the third facade exists, and still a move of files only).
+NuGet metadata is explicit in the csproj (`0.10.0-dev`, MIT, as the Pptx one): `core/dotnet` has no `Directory.Build.props` (the 0.9 one covers `dotnet/`).
+
+### Relation to the old C#-only port (`dotnet/src/UniversalOffice.Xlsx`, namespaces `UniversalOffice.Xlsx` / `UniversalOffice.Export`)
+
+Nothing is deleted or switched (the old project stays the 0.9 reference and what `dotnet/UniversalOffice.sln` builds). Mapping of the old public surface:
+
+| Old (0.9, pure .NET) | 0.10 facade | |
+|---|---|---|
+| `XlsxPackage.Load(bytes)` / `XlsxPackage.Empty()` | `XlsxWorkbook.Open(bytes)` / `XlsxWorkbook.Create()` | **mapped** (no package access: the workbook lives in the core; `Save()` gives the bytes) |
+| `XlsxReader.ReadWorkbook` (`Workbook`, `SheetRef`) | `Sheets` (`XlsxSheetInfo`: name, state, used extent, panes, gridlines, merges) | **mapped** (sheets only: no defined names, no calc settings) |
+| `XlsxReader.ReadWorksheet` -> `Worksheet { Rows, Cells, Cols, Panes, Hyperlinks, CondFormats, Comments, Drawings }`, `ReadSharedStrings` | `ReadRange`/`ReadSheet`/`GetCell` -> `XlsxCell` (kind, value, display text, formula, style essentials) | **mapped for cells**; column widths, row heights, hyperlinks, comments, conditional formats, drawings/charts, tables, validations **dropped** (do not cross the ABI) |
+| `XlsxSerialize.SetCellNumber/SetCellInlineText/SetCellSharedText/SetCellFormula`, `UpdateWorksheetXml`, `SerializeSheetData/Cols` | `SetCellText` (entry rules: number, date, text, formula in the language), `Save()` | **mapped, shape changed**: one typed entry instead of four setters, and the save is the surgical one (calc chain, dependents, styles) instead of a text rewrite of one sheet |
+| `A1` helpers (`A1.Col/Ref`...) | `XlsxRange.Parse/ToString/ColumnName` | **mapped** |
+| `XlsxPdf.ToPdf`, `XlsxHtml.ToHtml`, `XlsxMarkdown.ToMarkdown`, `XlsxCsv.ToCsv/ToTsv`, `XlsxOds.ToOds/BuildContentXml`, `XlsxXml2003.ToXml2003`, `SheetExportOptions`/`SheetPdfOptions` | - | **not covered**: no Rust export of Sheet exists (plan section 9, no TS reference). CSV/TSV is a loop over `ReadSheet(...).Display` for a caller who needs it now; the others wait for the Rust exporters |
+| (none) | `.xls` as input of `Open`, `XlsConverter.ToXlsx`, `IsLegacyXls`, `Undo/Redo/Recalculate`, `Merge/Unmerge/Clear/SetNumberFormat/AddSheet`, `Formula`/`CanonicalFormula` in `pt-BR`/`en-US`, `CancellationToken` | **new** |
+
+### Parity and tests
+
+| Comparison | Corpus | Result |
+|---|---|---|
+| C# facade = Rust native, byte for byte: (1) info + every cell of every sheet (value, display, formula local/canonical, style essentials) re-encoded from the parsed objects; (2) the save of the untouched workbook; (3) a scripted edit session (entries in pt-BR incl. a refused formula, number format, merge, clear, add sheet, undo, redo, recalculate, dump, save); digests in `tests/parity/sheet-native.tsv` (`UO_BLESS=1 cargo test -p uo-ffi --test sheet_abi` writes it) | 49 workbooks: the 30 `x1` generated ones, 5 samples (`sheet/samples`, not the giants), 14 `.xls` (`uo-xlsx/tests/captures/workbooks/xls`) | **147 of 147** equal |
+| native save of an untouched workbook = `Session::save` called directly | 12 `.xlsx` | equal |
+
+The digests follow the Sheet engine: a change of `uo-xlsx` read/grid/save/session or `uo-calc` that changes a cell, a text or a saved byte fails
+`the_native_digests_of_the_fixture_workbooks_are_the_committed_ones` with the count of differing digests; re-bless once the change is meant (the C# test reads the same file).
+Parity here is **C# = Rust**; the Rust side's parity against the frozen TS and Excel is that of C1a/C1b/C2/C5b (their records), not re-claimed.
+
+`sheet_abi.rs` (15 tests): contract (nulls, short structs, bad UTF-8/clock/ranges/kinds/names, text over 32,767), garbage by code and stage, cancellation (before the
+work, before the bytes, handle intact), read/edit/undo/save/re-open in two languages, merge/clear/format/add-sheet, `.xls` open + conversion + save (14 files), the digests, the
+direct-`Session` save equality, hostile input (600 truncations/bit flips/noise, a lying central directory, a 300 MiB inflation bomb, hostile formulas: 5,000-deep parentheses,
+2,000-argument sums, `A1:XFD1048576`, control characters), 4 threads on one handle + their own opens, M1, M4. C# (`dotnet test core/dotnet/UniversalOffice.Xlsx.Tests`, 16 tests):
+parity, API (read, entry rules and refusal, format/merge/clear/undo/redo/add-sheet, `.xls`, ranges, errors by class, hostile input, lying directory, cancellation, deterministic
+save), M4 (Dispose, finalizer, failures), thread soak.
+
+### Numbers
+
+Windows, i5-14600KF, tree of 2026-11-24. Rust tests are the debug build with global counters (the CI runs release); the C# side runs the release library.
+
+- **Rust ABI tests** (`cargo test -p uo-ffi --test sheet_abi`, 15 tests, 140 s debug, one at a time): all pass; the 300 MiB bomb (release-only by default, run in debug with `--ignored`) is
+  refused as code 5 in 72 s (the declared-size check does not inflate; the time is building and deflating the 300 MiB fixture). Hostile: 111 of 600 mutations opened (and were read and saved),
+  489 refused with a documented code, 0 crashes.
+- **M4 (handles)**: 10,000 x (workbook + cancel flag), every 50th workbook also read, edited and saved: 6,575,347,800 B allocated, **0 B left**. The C# side: 10,000 workbooks (every 50th edited,
+  read, saved) and 10,000 blank ones through `Dispose()`, 2,000 abandoned workbooks through the finalizer, 10,000 refused opens with cancel handles + 100 x (cancelled save, bad range,
+  refused entry): native live bytes back exactly.
+- **M1 (every export leaves nothing)**: the edit script, a cancelled save and read, two refused opens, a legacy open + dump, and `.xls` -> `.xlsx`: 10,557,809 B allocated, **0 B left**.
+- **Threads**: 4 Rust threads x 20 dumps on one handle + their own opens give the single-thread bytes; C#: 8 threads x 3 rounds x 5 x (shared read + own open/read/save), native live bytes flat
+  (153,667 B after each round).
+- **Library**: `uo_ffi.dll` (release, features `count`) 21.1 MB with Docx + Pptx + Xlsx. Third-party notices: the `native` list already carried `regress` and `memchr`
+  (`gen-notices.mjs --check` is green with the new dependency edge; nothing regenerated by this work).
+
+### Not covered (counted)
+
+1. Sheet PDF / HTML / Markdown / CSV / ODS / XML 2003 through Rust (old `XlsxPdf`, `XlsxHtml`, `XlsxMarkdown`, `XlsxCsv`, `XlsxOds`, `XlsxXml2003`): no Rust exporter and no TS reference (plan section 9).
+2. Switching the old `dotnet/src/UniversalOffice.Xlsx` project; NuGet id/version/publish (`UniversalOffice.Xlsx` still packs as `0.10.0-dev`, a pack was not exercised); the shared `UniversalOffice.Native` package.
+3. en-US number and date display: the core's only `FormatLocale` is pt-BR (data fidelity). The language affects formulas, entry parsing, booleans and errors only.
+4. The read model beyond cells: column widths, row heights (the grid's fit), hyperlinks, comments, conditional formats and their computed styles, data validations, tables, defined names, drawings and charts.
+5. Edits beyond the subset: fonts, fills, borders, alignment, clipboard (copy/paste/fill), find/replace, freeze panes, sizes/hide/unhide, AutoSum, defined names, selection and the cell editor
+   (all exist in `Session`; none has an export).
+6. Cancellation inside the reader, the open-recalc and the save (the flag is only read between phases and every 256 cells of a read).
+7. The language is fixed at open (a second language needs a second handle); `AddSheet` empties the undo history (TS parity).
+8. CI: no step in `.github/workflows/rust-core.yml` yet for `sheet_abi` (`server-pdf` already runs `cargo test -p uo-ffi --release --all-features`, which includes it), for the Xlsx `dotnet`
+   tests/smoke or for LeakSanitizer on the Xlsx facade; Linux was not run (the facade touches no `JsPath`/fonts/PDF).
+
+### Process metrics
+
+One Sonnet 5.5 agent, started 15:46:40, finished about 16:20 (about 34 min wall; the C# release build of the native library, with LTO, is about 5 min of it, the debug Rust suite 2.3 min, `dotnet test` 31 s).
+
+| Stage | Wall | Notes |
+|---|---|---|
+| Reading (SKILL, uo-bindings, Pptx facade, `uo-xlsx` C1a/C1b/C2/C5b, `Session` source) | 15:46-15:53 | the `Session` API has no read-by-range, so `sheet.rs` composes `store.each` + `text_input`/`display_text` + `bar_text` itself |
+| `sheet.rs` (23 exports) + first `cargo check` | 15:53-15:57 | one compile error (`Session` is not `Send`: the shell `Measurer`), fixed with a documented wrapper |
+| `sheet_abi.rs`, digests blessed | 15:57-16:01 | 15 tests |
+| C# facade, tests, smoke; first `dotnet test` | 16:01-16:07 | 16 of 16 on the first run, parity 147 of 147 first time |
+| Rework rounds | 3 | (1) `uo_xlsx_add_sheet` returned `Sheet5` for a taken name (the element numbers it): the ABI now validates and refuses, test found it; (2) the float-casts gate flagged `xf as u32`: `uo_jsnum::conv::to_uint32` (new optional dependency edge); (3) `D:` ran out of space during a full `cargo test -p uo-ffi` (link failed with LNK1140/1180): incremental and debug test binaries deleted, the suite re-run test by test |
+| Tool trouble | - | the Bash tool cut two heredocs that had backticks/quotes (files written with the Write tool instead) |

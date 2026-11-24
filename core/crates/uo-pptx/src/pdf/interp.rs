@@ -432,7 +432,7 @@ impl<'w> Interp<'_, 'w> {
                 }
                 SItem::MediaFrame(_) => self.count("media-frame"),
                 // Sheet items (frontier C4): never in a Slides list
-                SItem::SheetFont(_) | SItem::GlyphRun(_) => self.count("sheet-item"),
+                SItem::SheetFont(_) | SItem::GlyphRun(_) | SItem::CellText(_) => self.count("sheet-item"),
             }
         }
     }

@@ -69,7 +69,7 @@ pub(super) fn bars_along(ser: &Series, x: bool) -> impl Iterator<Item = &ErrBars
     ser.err_bars.iter().filter(move |e| e.x_dir.unwrap_or(false) == x)
 }
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// One error bar: from `o` to `lo` and `hi` (pixels along `along_x` or y), the caps across at `c`.
     fn err_stroke(&mut self, e: &ErrBars, along_x: bool, c: f64, o: f64, lo: f64, hi: f64) -> R<()> {
         let dflt = self.default_line();

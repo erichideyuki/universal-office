@@ -80,7 +80,7 @@ fn stacked_totals_len(n: f64) -> R<usize> {
     array_len(n)
 }
 
-impl<'a, C: Canvas> Renderer<'a, C> {
+impl<'a, C: Canvas + ?Sized> Renderer<'a, C> {
     // ───────────── trace ─────────────
     pub(super) fn trace_open(&mut self) -> Option<usize> {
         self.trace.as_deref_mut().map(|t| {

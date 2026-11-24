@@ -1,4 +1,4 @@
-# Rust port — handoff (state of 2026-11-24; newest update: "Sheet task 0 — preconditions")
+# Rust port — handoff (state of 2026-11-24; newest update: "Sheet port: code complete for M3/M5/M6, gates pending")
 
 Entry point for the next session that continues the Rust migration (0.10). Read this, then
 `.claude/skills/rust-port/SKILL.md` (the workflow: hybrid mode, models per role, memory gate) and the module records
@@ -34,6 +34,56 @@ in `core/docs/modules/`.
 | Memory benchmark `main × rust-core` | `01c72ab5` | `uo-docx-layout.md` "Benchmarks … memory" | Rust layout = **0.23–0.41×** the TS memory |
 | wasm2js fallback + wasm-opt, measured | `ba3e15b9` | `uo-bindings.md` "No-WebAssembly fallback" | works under strict CSP; 4–8× slower, 1.57 MB gzip |
 | wasm size items 1–3a (planner → Sonnet → reviewer) | `da31758d` | `size-optimization.md` §8 | raw −33.5%, gzip −4.1%, same output, same speed |
+
+## Update 2026-11-24 (end of day) — Sheet port: code complete for M3/M5/M6, gates pending
+
+The maintainer said "faz todas em sequência" after task 1; every frontier of plan §16 ran (≤ 3 agents, never two
+writers in the same files, commit per verified wave). Records: `uo-calc.md` (S0, A1–A5 "as built"), `uo-xlsx.md`
+(C1a–C5b "as built", T9 all done), `uo-render.md` (Sheet items `SheetFont`/`GlyphRun`/`CellText`),
+`uo-bindings.md` ("Sheet .NET facade"). Parity is 0 unexplained mismatches everywhere against the frozen TS
+(`ts-ref-092`); the declared classes are listed per record.
+
+| Frontier | Commit | Headline (native, vs the frozen TS) |
+|---|---|---|
+| S0 store, A1, A2 | `d137c2b0`, `c5c597fd`, `06244cbf` | one store per workbook; parse 0.42×, eval 0.57× |
+| A3 engine | `32913ad1` | shared-1m recalc 0.24×, 50 B/formula (TS 636); edit p95 5.7 ms (TS 1,340) |
+| C1a reader | `bc7b799f` | giant-1m open 162 ms (TS 994), 4.5 MB retained |
+| A4a, A4b | `e5b0633a`, `f68daf4a` | math 0.35×, stats 0.05× |
+| C2 `.xls`, C3a grid, C3b CF | `d727ef7b` | `.xls` 8,705 files byte-equal, 0.24×; fit 1.7 ms (TS 138); CF scroll 0.07–0.2 ms |
+| C3c table/pivot styles, borders | `3733ece0` | frame 6–14× faster, 0 B/frame |
+| A4c–A4f, A5 | `6afe09d3` | every function family; lookup 0.04×; i18n 0.1–0.23×; open-recalc 0.35× |
+| C1b save, C4 viewport, C5a edit captures | `335d0eb0` | save giant-1m 164 ms (TS 1,081); emission 8–13× faster |
+| calc captures on the reference platform | `80a19deb` | WSL Node 24.15 (G1 (a)), frozen clock: the 11 capture-only diffs gone |
+| C4b drawings/charts/budgets, C5b editor session, .NET `UniversalOffice.Xlsx` | (this wave) | see below |
+
+- **C4b**: drawings, charts (`chart-data.ts` ported), form controls, chart sheets, RTL region render, list dropdowns,
+  `CellText` item; `uo-sheet.wasm` 1.39 MB gzip + lazily loaded `uo-sheet-calc.wasm` 2.04 MB gzip (SH3: the file's
+  values paint first, the calc module reloads when open-recalc is needed — the TS recalculates before the first
+  paint: gate question). Budgets met on giant-1m (0.84 ms, 12 KB/frame, 45 KB message); giant-200k misses by 4–24 %
+  (number formatter allocates; distinct texts). Headless WebKit 99/99 pixel-identical, Chromium 90/99 (≤ 2/255 AA).
+- **C5b**: `uo_xlsx::session::Session`, 47 operations, TS change-set undo (100 steps + byte cap), save through C1b;
+  `uo-sheet-editor.wasm` 2.28 MB gzip; `engine="rust"` editing with TS fallback. `sheet-edit` 16,009/16,064 facets
+  equal + 55 declared (C5b-5, hostile duplicate cells); `sheet-x1` deferred steps 216/216 (non-SH1). giant-1m entry
+  + 1080p list p95 7.35 ms wasm (budget 16). Replace All 0.70–0.71× on two workbooks (budget 0.5×).
+- **.NET**: `uo-ffi/src/sheet.rs` (23 exports) + `core/dotnet/UniversalOffice.Xlsx` (+ Tests, Smoke): 147/147 C# ↔
+  native digests, 10,000-handle test 0 B left; the old C#-only `dotnet/src/UniversalOffice.Xlsx` untouched (mapping in
+  `uo-bindings.md`; Sheet PDF/HTML/Markdown/CSV/ODS have no Rust counterpart yet — no TS reference, plan §9).
+- **Environment learned today**: C: filled twice — 18 GB of old `%TEMP%` (cleaned with the maintainer's OK) and WSL
+  Node crash dumps (`%TEMP%\wsl-crashes`, 0.5–2.8 GB each). Agents now set `TMP`/`TEMP`/`TMPDIR` to
+  `core/target/tmp`. Node 24.15.0 is installed in WSL Ubuntu-24.04 (nvm) for G1 (a) captures.
+
+**Gate questions for the maintainer (M3/M5/M6)** — details in the records: SH1 (cell whose `<c r>` names another
+row: 3 x1 workbooks), SH2 (root case mapping in find/replace), SH3 (lazy calc module: values first), SH4 (performance
+gates as criteria; misses: text-result write path 0.54–0.65×, regex 1.0×, Replace All 0.7×, giant-200k frame
+budgets), SH5 (history byte cap), SH6 (`uo-xls.wasm` separate), SH7/SH8; C5b's multi-cell writes recalc per cell as
+the TS (calc once per operation is equal only without volatile/iterative formulas); en-US number display in the
+.NET facade (the core formats with the pt-BR locale only); push of `rust-core` (the data-grid's `grid-xlsx` uses
+`784b3031` from this disk until then).
+
+**Next (not started)**: stage-5 performance items recorded per frontier (flat instruction lists for hash-consed
+trees, text-result write path, `format_value_parts` into caller buffers, per-font advance tables); ship
+`chunks/uo-sheet*.wasm` in `tools/build-pkg.mjs`; real Safari (maintainer); fuzz runs that disk prevented
+(`xlsx_roundtrip`, A4e/A5 seeds).
 
 ## Update 2026-11-24 — Sheet task 0 (preconditions of `slides-sheet-port-plan.md` §0 for tracks A and C)
 

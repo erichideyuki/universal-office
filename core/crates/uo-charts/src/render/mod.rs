@@ -245,7 +245,7 @@ pub fn set_wrap_prefetch(on: bool) {
 }
 
 /// One painter of the chart.
-pub(crate) struct Renderer<'a, C: Canvas> {
+pub(crate) struct Renderer<'a, C: Canvas + ?Sized> {
     pub cv: Cv<'a, C>,
     pub cs: &'a ChartSpace,
     host: &'a dyn ChartHost,
@@ -271,7 +271,7 @@ pub(crate) struct Renderer<'a, C: Canvas> {
     auto_title: bool,
 }
 
-impl<'a, C: Canvas> Renderer<'a, C> {
+impl<'a, C: Canvas + ?Sized> Renderer<'a, C> {
     pub fn new(
         c: &'a mut C,
         cs: &'a ChartSpace,
@@ -1139,7 +1139,7 @@ const PPT_AXES_GAP_T: f64 = 5.25;
 /// The pie square under a corner (`tr`) legend sits this much above its plot box.
 const PPT_TR_LIFT: f64 = 6.0;
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// Title, legend and the rectangle handed to the plot under PowerPoint's insets: for pies the plot box itself, for
     /// the other families the TS-inner rectangle whose calibrated axis margins land on PowerPoint's plot.
     fn layout_ppt(&mut self, inner: Rect, pie: bool) -> (Option<TitleLayout>, Option<LegendLayout>, Rect) {
@@ -1250,13 +1250,14 @@ fn data_covers(sel: &DataSel, s: i32, c: i32) -> bool {
 }
 
 /// `new Renderer(...).paint()` over `canvas`, then the verdict: the measurement questions that got no answer win over a
-/// throw (a width counted as 0 can change the path).
-fn run<C: Canvas>(
+/// throw (a width counted as 0 can change the path). The renderer is instantiated once, over a canvas trait object: every
+/// host's canvas (the list builders, the null and bounds canvases) shares the one copy of the render code (code size, C4b).
+fn run(
     cs: &ChartSpace,
     host: &dyn ChartHost,
     p: &EmitParams<'_>,
     m: &dyn ChartMeasure,
-    canvas: &mut C,
+    canvas: &mut dyn Canvas,
     trace: Option<&mut LayoutTrace>,
 ) -> EmitResult {
     let mut r = Renderer::new(canvas, cs, host, m, p, trace);

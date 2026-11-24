@@ -1700,3 +1700,18 @@ C4). The two-phase measurement (`NeedMeasures`) reuses the Slides protocol with 
 (`uo-xlsx.md` T6).
 
 **Status (C4, 2026-11-24, built).** `SheetFont` is `SheetFontItem { font: FontRef?, italic, css: sym? }` and `GlyphRun` is `GlyphRunItem { text, x, y, advances, min_x, max_x, width, complex, mirrored }` with a new `advances: list<i32>` arena in `SlidesList` (schema hash changed; the Slides producers gained `advances: Vec::new()`). Codec (Rust + TS), `validate` (text and advance spans), the TS painter replay (`paint-slides.ts`: `paintGlyphRun` = `drawCellText`, `sheetFont`) and the PDF interpreters (arms that count/skip) are in; the op stream after `GlyphRun` expansion equals the TS `fillText` sequence on 600 CI streams / 7,520 local streams (`uo-xlsx.md` "C4 — as built"). Slides lists never contain the two items.
+
+**C4b (2026-11-24, built): a third Sheet item, `CellText`.** The 1080p message budget (≤ 48 KiB) could not be met with one
+`Save`/`BeginPath`/`AppendPath(rect)`/`Clip`/`SheetFont`/`GlyphRun`/`Restore` group per plain cell (≈ 200 KB on the dense giants). `CellTextItem
+{ shift, x0, cw, top, h, dx, dy, len, units, face?, ppem, same_font, rel, italic, complex, mirrored, width? }` is that whole group as one item
+(schema doc in `slides.uos`): coordinates are fixed point (`v / 2^shift`, emitted only when every value is exact, so the painter rebuilds the
+producer's doubles bit for bit), the text's UTF-16 units and the advances are the next `len` values of the `advances` arena (zigzag varints:
+1-2 bytes for a digit), consumed in item order (a `GlyphRun` sets the cursor to its span's end), `same_font` reuses the previous cell's font and
+`rel` makes `x0`/`top` relative to the previous cell (the next cell of a row: zeros). The producer is a peephole in `uo-xlsx`
+`view/out.rs` (`OutState::restore` folds the group it just closed); the painter (`paint-slides.ts` case `cellText`) replays exactly the
+calls of the group, so the parity canon expands it back (`tests/support/vp_canon.rs`). `validate` checks the units/advances cursor, the
+face, and that `same_font`/`rel` have a previous `CellText`. Slides producers never emit it: their lists and encodings are byte-identical
+(the new tag is appended to `SItem`; `uo-render`, `uo-dml-render`, `uo-pptx` and the Slides wasm suites are green). The PDF interpreters of
+`uo-pptx` got a skip arm. `sym::intern_str` encodes strings of ≤ 64 units on the stack (no allocation per interned font string).
+Effect (giant-1m, 1080p, native): message 198,561 B → 45,167 B median, allocations per warm frame 149,205 B → 12,374 B, emission
+1.148 ms → 0.842 ms (`uo-xlsx.md` "C4b — as built").

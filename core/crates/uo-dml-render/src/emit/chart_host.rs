@@ -336,3 +336,46 @@ pub fn bounds_key(sel_key: &str, r: &Rect, px_per_pt: f64) -> String {
     let f = |v: f64| to_fixed(v, 2).unwrap_or_default();
     format!("{sel_key}@{},{},{},{},{}", f(r.x), f(r.y), f(r.w), f(r.h), to_js_string(px_per_pt))
 }
+
+/// A face of a host whose chart faces carry a tag (`Cx::face_tag`): the family the table keys and the shell measures.
+fn tagged(face: &ChartFace, tag: &str) -> ChartFace {
+    if tag.is_empty() || face.family.is_empty() {
+        return face.clone();
+    }
+    ChartFace { family: format!("{tag}{}", face.family).into(), ..face.clone() }
+}
+
+/// [`request_of`] for a host that tags its chart faces (uo-xlsx C4b-3).
+pub fn request_of_tagged(r: &ChartMeasureReq, tag: &str) -> Option<MeasureReq> {
+    match r {
+        ChartMeasureReq::Width { face, size_px, text } => {
+            request_of(&ChartMeasureReq::Width { face: tagged(face, tag), size_px: *size_px, text: text.clone() })
+        }
+        ChartMeasureReq::FontBox { face, size_px } => request_of(&ChartMeasureReq::FontBox { face: tagged(face, tag), size_px: *size_px }),
+        ChartMeasureReq::Image { .. } => None,
+    }
+}
+
+/// [`ChartMeasure`] over the table with the faces tagged, for a chart drawn without pictures (`images: false`).
+pub struct TaggedMeasure<'a> {
+    pub table: &'a MeasureTable,
+    pub tag: &'a str,
+}
+
+impl ChartMeasure for TaggedMeasure<'_> {
+    fn width(&self, face: &ChartFace, size_px: f64, text: &str) -> Option<f64> {
+        TableMeasure { table: self.table, images: &[] }.width(&tagged(face, self.tag), size_px, text)
+    }
+
+    fn font_box(&self, face: &ChartFace, size_px: f64) -> Option<FontBox> {
+        TableMeasure { table: self.table, images: &[] }.font_box(&tagged(face, self.tag), size_px)
+    }
+
+    fn has_font_bounding_box(&self) -> bool {
+        self.table.caps.font_bounding_box
+    }
+
+    fn image(&self, _key: BlipKey) -> Option<Option<ChartImageInfo>> {
+        Some(None)
+    }
+}

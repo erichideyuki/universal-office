@@ -84,3 +84,63 @@ test('M4: 10,000 create/drop per handle', async () => {
   const after = uo.liveBytes();
   if (before) assert.ok(after - before < 1 << 20, `live ${before} -> ${after}`);
 });
+
+// C4b: the drawings and charts of a frame (`uo-dml-render`'s requests answered by the shell), the pictures of the list, the chart
+// faces tagged U+0001, and the calc module (`--features sheet-calc`: the open applies the open-recalc of the file).
+const DR1 = join(here, '../../uo-xlsx/tests/captures/workbooks/dr1');
+/** A stub of the shell's answers (`sheet-engine.ts` `#answers`), 6 px per unit. */
+const dmlAnswer = (reqs) => reqs.flatMap((r) => {
+  if (r.kind === 'charAt1000') return [500];
+  if (r.kind === 'kernAt1000') return [500 * r.text.length, 500 * r.text.length];
+  if (r.kind === 'width') return [6 * r.text.length];
+  if (r.kind === 'metrics') return [6 * r.text.length, 0, 6 * r.text.length, 8, 2, 9, 3];
+  if (r.kind === 'imageSize') return [40, 30];
+  if (r.kind === 'metaText') return [10, 9, 3];
+  if (r.kind === 'metaDecode') return [NaN, NaN];
+  return [0];
+});
+
+test('drawings and charts: requests answered, items, media, chart faces', () => {
+  let shapes = 0, charts = 0, pictures = 0;
+  for (const f of ['dr1-0000.xlsx', 'dr1-0001.xlsx', 'dr1-0004.xlsx', 'dr1-0007.xlsx']) {
+    const book = uo.open(new Uint8Array(readFileSync(join(DR1, f))));
+    const chartsBefore = charts;
+    const sheets = book.sheets();
+    const tables = newTables();
+    for (let si = 0; si < sheets.length; si++) {
+      book.activate(si, measurer);
+      let asked = 0;
+      const bytes = book.viewport({ sheet: si, width: 900, height: 600, dpr: 1, scrollX: 0, scrollY: 0, zoom: 1, selection: [1, 1, 1, 1, 1, 1] }, measurer, (reqs) => { asked += reqs.length; return dmlAnswer(reqs); });
+      const list = decodeSlidesList(bytes, tables);
+      shapes += list.items.filter((i) => i.op === 'text').length;
+      charts += list.items.filter((i) => i.op === 'chartFont').length;
+      for (const it of list.items) if (it.op === 'drawImage' && it.src.kind === 'media') pictures++;
+      if (asked) assert.ok(list.items.length > 0);
+    }
+    for (let m = 0; m < tables.media.length; m++) {
+      const md = book.media(m);
+      assert.ok(md && md.bytes.length > 8 && md.part.startsWith('xl/media/'), `media ${m}`);
+    }
+    // the chart faces carry the tag of `paintChart`'s stack
+    const chartFaces = tables.faces.filter((fc) => String(fc.family).startsWith('\u0001')).length;
+    if (charts > chartsBefore) assert.ok(chartFaces > 0, `${f}: a tagged chart face`);
+    book.free();
+  }
+  assert.ok(shapes > 5, `${shapes} text runs`);
+  assert.ok(charts > 5, `${charts} chart fonts`);
+  assert.ok(pictures > 0, `${pictures} pictures`);
+});
+
+test('the calc module applies the open-recalc (sheet-calc)', { skip: !uo.hasCalc() }, () => {
+  // x1 workbooks whose plan is not `none` open with the engine; the viewer paints their values
+  const X1 = join(here, '../../uo-xlsx/tests/captures/workbooks/x1');
+  let recalculated = 0;
+  for (let i = 0; i < 30; i++) {
+    const book = uo.open(new Uint8Array(readFileSync(join(X1, `x1-${String(i).padStart(4, '0')}.xlsx`))));
+    if (book.recalcPlan() !== 'none') { assert.equal(book.recalcStatus(), 0, `x1-${i}`); recalculated++; }
+    book.activate(0, measurer);
+    book.viewport({ sheet: 0, width: 640, height: 360, selection: [1, 1, 1, 1, 1, 1] }, measurer, dmlAnswer);
+    book.free();
+  }
+  assert.ok(recalculated > 5);
+});

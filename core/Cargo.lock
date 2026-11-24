@@ -172,16 +172,19 @@ version = "0.10.0-dev"
 dependencies = [
  "indexmap",
  "uo-alloc",
+ "uo-calc",
  "uo-dml-render",
  "uo-docx",
  "uo-docx-layout",
  "uo-drawingml",
  "uo-fonts",
+ "uo-jsnum",
  "uo-opc",
  "uo-pdf",
  "uo-pptx",
  "uo-render",
  "uo-testkit",
+ "uo-xlsx",
 ]
 
 [[package]]
@@ -337,6 +340,8 @@ dependencies = [
  "rustc-hash",
  "uo-alloc",
  "uo-calc",
+ "uo-charts",
+ "uo-dml-render",
  "uo-drawingml",
  "uo-jsnum",
  "uo-numfmt",

@@ -127,6 +127,13 @@ impl Run<'_> {
         self.g.note_row(s, r);
     }
 
+    /// The bridge's write-back of a touched formula cell whose value did not change (see `Engine::write_back`).
+    pub(crate) fn write_back(&mut self, s: u32, r: u32, c: u32) {
+        if let Some((v, _)) = self.g.view(self.store, SheetIx(s), r, c) {
+            self.store_write(s, r, c, v);
+        }
+    }
+
     /// `touch` of a dynamic anchor whose area changed (the bridge rewrites its `<f>` attributes).
     fn touch_anchor(&mut self, f: u32) {
         let r = self.g.recs[f as usize];
@@ -1010,7 +1017,12 @@ impl Run<'_> {
             self.remove_formula(f);
         }
         let owner = self.g.sheets[s as usize].owners.remove(&ts_key(row, col)).map(|o| o & !NULL_VIEW);
-        self.store.clear_content(sheet, row, col)?;
+        // an entry keeps the cell (the model's `stripContent`); only a clear deletes an unstyled cell (`writeBack`)
+        if input.is_some() {
+            self.store.strip_content(sheet, row, col)?;
+        } else {
+            self.store.clear_content(sheet, row, col)?;
+        }
         self.g.touch(s, row, col);
         match input {
             Some(CellInput::Formula(fi)) => {

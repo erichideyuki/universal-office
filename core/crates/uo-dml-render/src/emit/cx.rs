@@ -169,6 +169,9 @@ pub struct Cx<'a> {
     pub(super) pending_bounds: Vec<(String, String, Option<uo_charts::emit::Rect>)>,
     /// the hyperlinked text runs written so far ([`super::Emission::links`])
     pub links: Vec<super::RunLink>,
+    /// A prefix of every face family this context creates ([`Cx::face`]): a host that paints faces of two origins in one list
+    /// tells its painter which font stack a face takes (the Sheet's charts, uo-xlsx C4b-3); empty for Slides.
+    pub face_tag: &'static str,
 }
 
 /// The shape being emitted: what its body and text need of the animation (`anim` of `paintShape`).
@@ -230,6 +233,7 @@ impl<'a> Cx<'a> {
             stage: false,
             pending_bounds: Vec::new(),
             links: Vec::new(),
+            face_tag: "",
         }
     }
 
@@ -265,7 +269,8 @@ impl<'a> Cx<'a> {
     }
 
     pub fn face(&mut self, family: &str, bold: bool, italic: bool) -> u32 {
-        let f = self.sym(family);
+        let f =
+            if self.face_tag.is_empty() || family.is_empty() { self.sym(family) } else { self.sym(&format!("{}{family}", self.face_tag)) };
         self.res.face(f, bold, italic).unwrap_or(0)
     }
 

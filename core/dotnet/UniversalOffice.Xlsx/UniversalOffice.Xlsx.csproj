@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The .NET facade of the Rust core for Sheet (0.10, record core/docs/modules/uo-bindings.md, "Sheet .NET facade"): the NuGet
+       UniversalOffice.Xlsx over the C ABI of uo-ffi (core/crates/uo-ffi/src/sheet.rs): open .xlsx / Excel 97-2003 .xls, sheets,
+       cells (value, display text, formula in the language and canonical, style essentials), the edits a server needs, the surgical
+       save and .xls to .xlsx. It will replace the C#-only port in dotnet/src/UniversalOffice.Xlsx at the switch (not deleted yet:
+       its Read/Serialize/Export surface is mapped in the record). The native library, the SafeHandles, the error mapping and the
+       exception types are those of UniversalOffice.Docx (a dependency): the one native library per runtime travels in that
+       package, so this one packs no native files. The metadata is explicit, as in the Pptx facade (the 0.9 solution's
+       dotnet/Directory.Build.props does not cover core/dotnet; the version follows the npm version at the switch). -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>UniversalOffice.Xlsx</RootNamespace>
+    <AssemblyName>UniversalOffice.Xlsx</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <PackageId>UniversalOffice.Xlsx</PackageId>
+    <Version>0.10.0-dev</Version>
+    <Authors>Eric Kono</Authors>
+    <Copyright>Copyright (c) 2026 Eric Kono</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://universaloffice.org/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/erichideyuki/universal-office</RepositoryUrl>
+    <Description>Excel workbooks with the UniversalOffice Rust core: open .xlsx and Excel 97-2003 .xls, read cells (values, displayed text, formulas in your language, styles), edit with the entry rules of Excel (formulas, numbers, dates), recalculate, undo and redo, and save without losing what the file holds (.xls to .xlsx too). Native library per runtime (through UniversalOffice.Docx).</Description>
+    <PackageTags>xlsx;excel;spreadsheet;ooxml;xls;formulas;calc;sheet</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UniversalOffice.Docx\UniversalOffice.Docx.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the tests reach the raw native buffers (the byte-for-byte parity with the Rust side) -->
+    <InternalsVisibleTo Include="UniversalOffice.Xlsx.Tests" />
+  </ItemGroup>
+</Project>

@@ -14,10 +14,13 @@
 //! | `chrome` | `fills.ts`, `borders.ts`, `universal-sheet.ts` | fills, data bars, icons, diagonals, markers, selection colours |
 //! | `region` | `paintRegion`, `paintCell*`, `paintSelection`, `paintHeaders` | the emission order |
 
+pub mod chart;
 mod chrome;
+pub mod drawing;
 mod out;
 mod region;
 mod rich;
+pub mod source;
 mod text;
 
 use rustc_hash::FxHashMap;
@@ -94,6 +97,8 @@ pub struct Viewer {
     frame: PaintFrame,
     frame2: PaintFrame,
     cells: region::RegionScratch,
+    dr: drawing::Drawings,
+    spans: Vec<(u32, u32)>,
 }
 
 impl Viewer {
@@ -117,7 +122,53 @@ impl Viewer {
             frame: PaintFrame::new(),
             frame2: PaintFrame::new(),
             cells: region::RegionScratch::default(),
+            dr: drawing::Drawings::default(),
+            spans: Vec::new(),
         }
+    }
+
+    /// The PowerPoint-over-TS switches of the drawings and charts (default: the Office-measured rules, as the Slides viewer;
+    /// `SlidesRules::ts_strict()` for the parity replays). Drops the caches built under the previous rules.
+    pub fn set_rules(&mut self, rules: uo_dml_render::SlidesRules) {
+        if self.dr.rules != rules {
+            self.dr.clear_caches();
+            self.dr.rules = rules;
+        }
+    }
+
+    /// The measurement questions of the drawings and charts of the last frame (`uo-dml-render`'s protocol: answer them in
+    /// [`Viewer::dml_table`] and call again).
+    pub fn dml_needs(&mut self) -> Vec<uo_dml_render::text::MeasureReq> {
+        std::mem::take(&mut self.dr.pending)
+    }
+
+    /// The measurement table of the drawings and charts (the shell's answers).
+    pub fn dml_table(&mut self) -> &mut uo_dml_render::text::MeasureTable {
+        &mut self.dr.table
+    }
+
+    /// The part name and bytes of a media id of the list (`tables.media`), for the shell to decode.
+    #[must_use]
+    pub fn media(&self, id: u32) -> Option<(String, std::sync::Arc<[u8]>)> {
+        self.dr.src.borrow().media(uo_dml_render::MediaId(id)).map(|(p, b)| (p.to_owned(), std::sync::Arc::clone(b)))
+    }
+
+    /// The item ranges `[start, end)` of the drawing phases of the last frame (`paintDrawings` per quadrant, `paintChartsheet`):
+    /// the parity harness compares them apart.
+    #[must_use]
+    pub fn drawing_spans(&self) -> &[(u32, u32)] {
+        &self.spans
+    }
+
+    /// Empties the caches of the drawings (parsed objects, chart models, generated bitmaps; memory gate M1).
+    pub fn clear_drawing_caches(&mut self) {
+        self.dr.clear_caches();
+    }
+
+    /// Objects with read shapes and chart models held (M5).
+    #[must_use]
+    pub fn drawing_cache_sizes(&self) -> (usize, usize) {
+        self.dr.sizes()
     }
 
     /// The resolved styles (the MDW for the columns of the shell).
@@ -153,6 +204,10 @@ impl Viewer {
         book.load_sheet(si).map_err(|_| ViewError::NoSheet)?;
         if book.sheets.get(si).and_then(Option::as_ref).is_none() {
             return Err(ViewError::NoSheet);
+        }
+        // a chart reads the cells of any sheet (`pkgCellSource`): every sheet is loaded first, as the TS read them all at open
+        if book.sheets[si].as_ref().is_some_and(|w| !w.charts.is_empty() || !w.drawings.is_empty()) {
+            let _ = book.load_all();
         }
         let mut grid = SheetGrid::open(book, si, &self.styles);
         let show_zeros = !book.sheets[si].as_ref().is_some_and(|w| w.show_zeros_off);
@@ -198,8 +253,9 @@ impl Viewer {
             return Err(ViewError::NoSheet);
         }
         self.measure.begin_frame();
+        self.dr.pending.clear();
         self.build(book, p, env);
-        if self.measure.has_needs() {
+        if self.measure.has_needs() || !self.dr.pending.is_empty() {
             return Err(ViewError::NeedMeasures);
         }
         let before = out.len();
@@ -216,7 +272,60 @@ impl Viewer {
         &self.list
     }
 
+    /// `renderRegionToCanvas(index, canvas, nCols, nRows)`: columns `1..=n_cols` x rows `1..=n_rows` of sheet `p.req.sheet` (the active
+    /// one) at zoom 1, without headers, selection or panes, on a canvas of the region's size — what Excel draws in a linked picture
+    /// (camera) of the range. A right-to-left sheet is drawn mirrored (column A at the right; the texts unmirrored, the drawings in
+    /// the mirrored box). As the TS, the sheet's extents grow to the region for the frames that follow. Returns `(w, h)` (px) and
+    /// appends the message to `out`.
+    ///
+    /// # Errors
+    /// As [`Viewer::emit`].
+    pub fn emit_region(
+        &mut self,
+        book: &Book,
+        p: &ViewParams,
+        n_cols: u32,
+        n_rows: u32,
+        env: &dyn FontEnv,
+        out: &mut Vec<u8>,
+    ) -> Result<(f64, f64), ViewError> {
+        let si = p.req.sheet as usize;
+        let Some(act) = self.act.as_mut().filter(|a| a.si == si) else { return Err(ViewError::NoSheet) };
+        // `v.maxCol = Math.max(v.maxCol, nCols)` (kept: the TS view keeps it), then `recalcGrid` at zoom 1
+        act.grid.max_col = act.grid.max_col.max(n_cols);
+        act.grid.max_row = act.grid.max_row.max(n_rows);
+        let (xs, ys) = (act.grid.col_geometry(1.0), act.grid.row_geometry(1.0));
+        let w = uo_jsnum::math::max(1.0, uo_jsnum::math::round(xs.edge(n_cols).unwrap_or(0.0)));
+        let h = uo_jsnum::math::max(1.0, uo_jsnum::math::round(ys.edge(n_rows).unwrap_or(0.0)));
+        act.xs = xs;
+        act.ys = ys;
+        act.zoom = 1.0;
+        let rtl = book.sheets.get(si).and_then(Option::as_ref).is_some_and(|w| w.right_to_left);
+        let q = ViewParams {
+            req: ViewportRequest { width: w, height: h, dpr: 1.0, scroll_x: 0.0, scroll_y: 0.0, zoom: 1.0, ..p.req.clone() },
+            capture: true,
+            mirrored: rtl,
+            ..p.clone()
+        };
+        self.measure.begin_frame();
+        self.dr.pending.clear();
+        self.build_with(book, &q, env, Some((n_cols, n_rows)));
+        if self.measure.has_needs() || !self.dr.pending.is_empty() {
+            return Err(ViewError::NeedMeasures);
+        }
+        let before = out.len();
+        if let Err(e) = self.enc.encode(&self.list, &self.res, out) {
+            out.truncate(before);
+            return Err(ViewError::Encode(e));
+        }
+        Ok((w, h))
+    }
+
     fn build(&mut self, book: &Book, p: &ViewParams, env: &dyn FontEnv) {
+        self.build_with(book, p, env, None);
+    }
+
+    fn build_with(&mut self, book: &Book, p: &ViewParams, env: &dyn FontEnv, camera: Option<(u32, u32)>) {
         let Some(act) = self.act.as_mut() else { return };
         let zoom = p.req.zoom;
         if zoom.to_bits() != act.zoom.to_bits() {
@@ -236,6 +345,7 @@ impl Viewer {
         l.effects.clear();
         l.slots.clear();
         l.advances.clear();
+        self.spans.clear();
         self.st.reset();
         l.view = ViewBox { ox: 0.0, oy: 0.0, scale: 1.0, sw: p.req.width, sh: p.req.height };
         let Some(ws) = book.sheets.get(act.si).and_then(Option::as_ref) else { return };
@@ -259,8 +369,14 @@ impl Viewer {
             env,
             cells: &mut self.cells,
             zoom,
+            dr: &mut self.dr,
+            spans: &mut self.spans,
+            mirrored: p.mirrored,
         };
-        region::paint(&mut g, p);
+        match camera {
+            Some((nc, nr)) => region::paint_camera(&mut g, p, nc, nr),
+            None => region::paint(&mut g, p),
+        }
     }
 }
 

@@ -25,7 +25,7 @@ struct Line {
     align: String,
 }
 
-impl<C: Canvas> Renderer<'_, C> {
+impl<C: Canvas + ?Sized> Renderer<'_, C> {
     /// A shape of the chart drawing: simple geometry + rich text in the box (on top of everything).
     pub(super) fn paint_user_shape(&mut self, u: &UserShape) -> R<()> {
         let a = self.area;

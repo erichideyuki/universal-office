@@ -36,6 +36,8 @@
   <!-- the Slides facade (UniversalOffice.Pptx) reuses the native handles, the error mapping and the exceptions of this assembly -->
   <ItemGroup>
     <InternalsVisibleTo Include="UniversalOffice.Pptx" />
+    <!-- ... and the Sheet facade (UniversalOffice.Xlsx) -->
+    <InternalsVisibleTo Include="UniversalOffice.Xlsx" />
     <!-- LayoutOptions.TsStrict: the TS-capture parity tests -->
     <InternalsVisibleTo Include="UniversalOffice.Docx.Tests" />
   </ItemGroup>

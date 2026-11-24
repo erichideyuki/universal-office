@@ -49,6 +49,11 @@ export type { PaintImage, LightTables, ScratchFactory, PatternRowsOf };
 export interface SlidesEnv {
   /** the CSS font-family stack of a face (T2); default: the TS's fixed stack */
   fontStack?(family: string, bold: boolean, italic: boolean): string;
+  /**
+   * The stack of a cell font of a Sheet list (`SheetFont` items: `family` may be `name|altName`); default: `fontStack`. A Sheet list
+   * also holds the faces of its drawings (`fontStack`: shapes; a chart face carries the tag U+0001 before its family), uo-xlsx C4b.
+   */
+  cellFontStack?(family: string, bold: boolean, italic: boolean): string;
   /** the decoded picture of `tables.media[index]` (null/undefined: still decoding or unavailable: the draw is skipped) */
   media(index: number): PaintImage | null | undefined;
   /** the RGBA bytes (`w * h * 4`) of `tables.bitmaps[index]` (the wasm side holds them by handle) */
@@ -122,8 +127,13 @@ function spanOf<T>(a: readonly T[], s: Span, what: string): T[] {
 
 /** `ctx.font` for a face and a pixel size, as the TS `layoutFontStr`: `[italic ]{700|400} <size>px <stack>`. */
 function fontStr(env: SlidesEnv, face: FaceKey, sizePx: number): string {
+  return fontStrStack(env.fontStack ?? DEFAULT_FONT_STACK, face, sizePx);
+}
+
+/** [`fontStr`] with the stack function given (the cell fonts of a Sheet list, `SlidesEnv.cellFontStack`). */
+function fontStrStack(stack: (family: string, bold: boolean, italic: boolean) => string, face: FaceKey, sizePx: number): string {
   const bold = !!face.bold, italic = !!face.italic;
-  return `${italic ? 'italic ' : ''}${bold ? '700 ' : '400 '}${sizePx}px ${(env.fontStack ?? DEFAULT_FONT_STACK)(face.family, bold, italic)}`;
+  return `${italic ? 'italic ' : ''}${bold ? '700 ' : '400 '}${sizePx}px ${stack(face.family, bold, italic)}`;
 }
 
 /**
@@ -134,22 +144,27 @@ function fontStr(env: SlidesEnv, face: FaceKey, sizePx: number): string {
 function paintGlyphRun(c: CanvasRenderingContext2D, list: SlidesList, g: { text: Span; x: number; y: number; advances: Span; minX: number; maxX: number; width: number; complex?: boolean; mirrored?: boolean }): void {
   if (g.text.start + g.text.len > list.texts.length || g.advances.start + g.advances.len > list.advances.length) throw new RangeError('glyph run span out of range');
   const s = list.texts.slice(g.text.start, g.text.start + g.text.len);
+  paintGlyphRunOf(c, s, list.advances, g.advances.start, g.x, g.y, g.minX, g.maxX, g.width, !!g.complex, !!g.mirrored);
+}
+
+/** The body of `drawCellText`: `s` from `x` on the baseline `y` at the advances `adv[k0…]` (`GlyphRun`, `CellText`). */
+function paintGlyphRunOf(c: CanvasRenderingContext2D, s: string, adv: ArrayLike<number>, k0: number, x: number, y: number, minX: number, maxX: number, width: number, complex: boolean, mirrored: boolean): void {
   c.textAlign = 'left';
-  if (g.mirrored) {
+  if (mirrored) {
     c.save();
-    c.translate(g.x + g.width, 0);
+    c.translate(x + width, 0);
     c.scale(-1, 1);
-    if (g.complex) c.fillText(s, 0, g.y);
-    else { let cx = 0, k = g.advances.start; for (const ch of s) { if (ch !== ' ') c.fillText(ch, cx, g.y); cx += list.advances[k++] ?? 0; } }
+    if (complex) c.fillText(s, 0, y);
+    else { let cx = 0, k = k0; for (const ch of s) { if (ch !== ' ') c.fillText(ch, cx, y); cx += adv[k++] ?? 0; } }
     c.restore();
     return;
   }
-  if (g.complex) { c.fillText(s, g.x, g.y); return; }
-  let cx = g.x, k = g.advances.start;
+  if (complex) { c.fillText(s, x, y); return; }
+  let cx = x, k = k0;
   for (const ch of s) {
-    const w = list.advances[k++] ?? 0;
-    if (cx > g.maxX) break;
-    if (cx + w >= g.minX && ch !== ' ') c.fillText(ch, cx, g.y);
+    const w = adv[k++] ?? 0;
+    if (cx > maxX) break;
+    if (cx + w >= minX && ch !== ' ') c.fillText(ch, cx, y);
     cx += w;
   }
 }
@@ -589,6 +604,11 @@ export class SlidesPainter {
     let range: { itemDepth: number; mainSaves: number; layersAcquired: LayerInfo[]; stackLen: number; slotLen: number; pc: number } | undefined;
     const acquired: LayerInfo[] = [];
     let pc = 0;
+    // Sheet lists (C4b): the `advances` cursor (a `CellText` reads the values after the previous `GlyphRun`/`CellText`) and the font
+    // of the last `CellText` (its `sameFont`)
+    let advCursor = 0;
+    let cellFont: { face: number; ppem: number; italic: boolean } | undefined;
+    let cellEnd = 0, cellTop = 0;
 
     const skipTo = (from: number): number => {
       // the index after the closer of the bracket whose opener is at `from - 1` (depth counted over saves, restores and slots)
@@ -706,11 +726,41 @@ export class SlidesPainter {
             // Sheet lists (frontier C4): `text-metrics.ts` CellFont string, or a literal font string (the headers)
             case 'sheetFont': {
               if (it.css !== undefined) c.font = it.css;
-              else if (it.font) c.font = fontStr(this.env, at(tables.faces, it.font.face, 'face'), it.font.sizePx).replace(/^(italic )?/, it.italic ? 'italic ' : '');
+              else if (it.font) {
+                const face = at(tables.faces, it.font.face, 'face');
+                c.font = fontStrStack(this.env.cellFontStack ?? this.env.fontStack ?? DEFAULT_FONT_STACK, face, it.font.sizePx).replace(/^(italic )?/, it.italic ? 'italic ' : '');
+              }
               break;
             }
             // `drawCellText` (text-metrics.ts:104-130) of one piece; the font and `textAlign` were set by the items before it
-            case 'glyphRun': { paintGlyphRun(c, list, it); break; }
+            case 'glyphRun': { paintGlyphRun(c, list, it); advCursor = it.advances.start + it.advances.len; break; }
+            // a plain cell text in one item (C4b): `save; beginPath; rect; clip; [font]; drawCellText; restore` from the fixed point
+            case 'cellText': {
+              const k = 2 ** it.shift;
+              const cw = it.cw / k, h = it.h / k;
+              const x0 = it.rel ? cellEnd + it.x0 / k : it.x0 / k, top = it.rel ? cellTop + it.top / k : it.top / k;
+              cellEnd = x0 + cw; cellTop = top;
+              const d = list.advances, s0 = advCursor, nu = it.units;
+              if (s0 + it.len > d.length || nu > it.len) throw new RangeError('cell text span out of range');
+              advCursor += it.len;
+              if (it.face !== undefined) cellFont = { face: it.face, ppem: it.ppem, italic: !!it.italic };
+              c.save();
+              c.beginPath();
+              c.rect(x0 + 1, top + 1, Math.max(0, cw - 1), Math.max(0, h - 1));
+              c.clip();
+              if ((it.face !== undefined || it.sameFont) && cellFont) {
+                const face = at(tables.faces, cellFont.face, 'face');
+                c.font = fontStrStack(this.env.cellFontStack ?? this.env.fontStack ?? DEFAULT_FONT_STACK, face, cellFont.ppem).replace(/^(italic )?/, cellFont.italic ? 'italic ' : '');
+              }
+              let text = '';
+              for (let i = 0; i < nu; i++) text += String.fromCharCode(d[s0 + i]!);
+              const nAdv = it.len - nu;
+              let width = it.width;
+              if (width === undefined) { width = 0; for (let i = 0; i < nAdv; i++) width += d[s0 + nu + i]!; }
+              paintGlyphRunOf(c, text, d, s0 + nu, x0 + it.dx / k, top + it.dy / k, x0, x0 + cw, width, !!it.complex, !!it.mirrored);
+              c.restore();
+              break;
+            }
             case 'fillText': {
               if (it.text.start + it.text.len > list.texts.length) throw new RangeError('text span out of range');
               c.fillText(list.texts.slice(it.text.start, it.text.start + it.text.len), it.x, it.y);

@@ -38,6 +38,7 @@ import { formulaLocale } from './formula-locale.js';
 import { FormulaAutocomplete } from './formula-autocomplete.js';
 import { paintSpillBorder } from './spill-border.js';
 import type { SheetBook, SheetHost, LoadSheetOptions } from '@universal-office/sheet-engine';
+import type { SheetEditBook, SheetEditState, LoadSheetEditorOptions } from '@universal-office/sheet-editor-engine';
 import { functionNames, localFunctionName } from '@universal-office/sheet-calc';
 
 /**
@@ -590,14 +591,20 @@ export class UniversalSheetElement extends HTMLElement {
         const [name, alt] = family.split('|');
         return this.fontResolver.cssStack(name!, alt ? [alt, ...SHEET_FALLBACKS] : SHEET_FALLBACKS, variantOf(bold, italic));
       },
+      // the drawings' text (C4b): the stack of `shapeFontStack`, as the TS painter of the drawings
+      shapeFontStack: (family, bold, italic) => this.shapeFontStack(family, bold, italic),
+      // a family the browser does not have is measured as Arial (`cellFont`)
+      metricFamily: (name) => { const r = this.fontResolver.get(name); return r && r.source === 'default' ? 'arial' : name; },
       measureContext: () => (this.rustMeasure ??= document.createElement('canvas').getContext('2d')!),
+      invalidate: () => this.paint(),
     };
   }
 
   /** A viewport pelo Rust; false = o TS pinta (módulo não pronto, aba de gráfico, erro do módulo). */
   private paintRust(ctx: CanvasRenderingContext2D, v: SheetView, W: number, H: number): boolean {
-    const b = this.rustBook;
-    if (!b || b.freed || v.worksheet.chartsheet || this.engineAttr() !== 'rust') return false;
+    const b = this.rustEd() ?? this.rustBook;
+    // a chart sheet: the viewer's list draws it (C4b); the editor's frames do not yet
+    if (!b || b.freed || (v.worksheet.chartsheet && b !== this.rustBook) || this.engineAttr() !== 'rust') return false;
     try {
       const host = this.rustHost();
       if (this.rustActive !== this.sheetIndex) { b.activate(this.sheetIndex, host); this.rustActive = this.sheetIndex; }
@@ -612,12 +619,184 @@ export class UniversalSheetElement extends HTMLElement {
     } catch { this.rustActive = -1; return false; }
   }
 
+  // ───────────────────────── editor Rust (engine="rust", frente C5b) ─────────────────────────
+  // Com `engine="rust"` as EDIÇÕES vão para a sessão de `uo-sheet-editor.wasm` (o Rust guarda o modelo, o desfazer e o salvar)
+  // e a viewport passa a vir dela. O modelo TS do elemento fica como espelho: as operações de estrutura (mesclas, tamanhos,
+  // painéis, linhas de grade, abas) o recarregam dos bytes salvos pelo Rust; as de células só o marcam velho, e as leituras que
+  // dependem dele (formato da célula, exibições, estatísticas) o recarregam antes. Qualquer erro do Rust: o motor TS volta a
+  // editar a partir do último estado bom do Rust (o desfazer recomeça). O padrão continua o TS.
+  private rustEditor: SheetEditBook | null = null;
+  private rustEditOff = false;
+  private rustSyncing = false;
+  private tsStale = false;
+  private static editorSource: LoadSheetEditorOptions | undefined;
+
+  /** De onde vem o .wasm do EDITOR Rust (`uo-sheet-editor.wasm`, ao lado do módulo por padrão). */
+  static configureEditor(source: LoadSheetEditorOptions): void { UniversalSheetElement.editorSource = source; }
+
+  /** engine="rust": instancia o editor e abre nele a pasta carregada. */
+  private startRustEditor(): void {
+    if (this.engineAttr() !== 'rust' || this.rustEditOff) return;
+    this.rustMod ??= import('./rust-engine.js');
+    void this.rustMod.then(async (m) => {
+      await m.preloadSheetEditor(UniversalSheetElement.editorSource);
+      if (this.rustEditor && !this.rustEditor.freed) return;
+      const bytes = this.rustBytes;
+      if (!bytes) return;
+      this.rustEditor = m.openSheetEditor(bytes, this.calc.locale.region || this.calc.locale.lang);
+      if (this.rustEditor) { this.pushRustSelection(this.rustEditor); this.paint(); }
+    }).catch(() => { this.rustEditor = null; });
+  }
+
+  /** A sessão Rust que edita agora (null = o caminho TS). */
+  private rustEd(): SheetEditBook | null {
+    const e = this.rustEditor;
+    return e && !e.freed && !this.rustEditOff && !this.rustSyncing && this.engineAttr() === 'rust' ? e : null;
+  }
+
+  private pushRustSelection(e: SheetEditBook): void {
+    const r = this.range;
+    e.cmd('selection', this.sheetIndex, this.sel.col, this.sel.row, r.c1, r.r1, Math.min(r.c2, MAX_COLS), Math.min(r.r2, MAX_ROWS));
+  }
+
+  /** A seleção, a aba e o "alterado" da sessão Rust no elemento. */
+  private applyRustState(st: SheetEditState): void {
+    if (st.sheet !== this.sheetIndex && st.sheet < this.views.length) { this.sheetIndex = st.sheet; this.scrollX = 0; this.scrollY = 0; this.recalcGrid(); }
+    this.sel = { col: st.col, row: st.row };
+    this.range = { c1: st.range[0], r1: st.range[1], c2: st.range[2], r2: st.range[3] };
+    this.corner = { col: st.range[2], row: st.range[3] };
+    this.dirty = st.dirty;
+  }
+
+  /** Estruturas que mudam a geometria do espelho TS (rótulos do desfazer). */
+  private static readonly RUST_STRUCT = new Set(['merge', 'unmerge', 'freeze', 'gridlines', 'columnWidth', 'rowHeight', 'hide', 'unhide']);
+
+  /**
+   * Roteia uma operação para o Rust: a seleção do elemento vai antes, o estado volta depois. `undefined` = não roteada (o TS
+   * faz). `sync`: recarrega o espelho TS (estrutura); `kind`: o `us-change`.
+   */
+  private rustRoute(op: string, args: unknown[], o: { sync?: boolean; kind?: string; select?: boolean } = {}): { result: unknown; state: SheetEditState } | undefined {
+    const e = this.rustEd();
+    if (!e) return undefined;
+    try {
+      if (this.editing) this.commitEdit();
+      if (o.select !== false) this.pushRustSelection(e);
+      const r = e.cmd(op, ...(args as (string | number | boolean | undefined)[]));
+      this.applyRustState(r.state);
+      if (o.sync) this.syncTsFromRust(r.state);
+      else if (o.kind) this.tsStale = true;
+      if (o.kind) { this.cfEngines.clear(); this.changed(o.kind); }
+      this.emitSelection();
+      this.paint();
+      return r;
+    } catch (x) {
+      console.warn('universal-sheet: motor Rust de edição, volta ao TS', x);
+      this.rustFallback();
+      return undefined;
+    }
+  }
+
+  /** O Rust falhou: o TS volta a editar a partir do último estado bom da sessão Rust. */
+  private rustFallback(): void {
+    const e = this.rustEditor;
+    this.rustEditOff = true;
+    if (e && !e.freed) {
+      // a seleção é a do elemento (a que falhou ao ir para o Rust), não a última que o Rust conheceu
+      const keep = { sheet: this.sheetIndex, sel: { ...this.sel }, range: { ...this.range }, corner: { ...this.corner } };
+      try {
+        const st = e.state();
+        this.syncTsFromRust({ ...st, sheet: keep.sheet, col: keep.sel.col, row: keep.sel.row, range: [keep.range.c1, keep.range.r1, keep.range.c2, keep.range.r2] });
+        this.corner = keep.corner;
+      } catch { /* sem estado: fica o espelho TS como está */ }
+      e.free();
+    }
+    this.rustEditor = null;
+    this.tsStale = false;
+  }
+
+  /** Recarrega o espelho TS dos bytes salvos pela sessão Rust, mantendo a seleção, o zoom e o "alterado" do Rust. */
+  private syncTsFromRust(st: SheetEditState): void {
+    const e = this.rustEditor;
+    if (!e || e.freed) return;
+    const bytes = e.save();
+    const keep = { zoom: this.zoom, scrollX: this.scrollX, scrollY: this.scrollY, sheet: this.sheetIndex };
+    this.rustSyncing = true;
+    this.reloading = true;
+    try { this.loadXlsx(bytes); } finally { this.rustSyncing = false; this.reloading = false; }
+    this.zoom = keep.zoom;
+    this.applyRustState(st);
+    this.scrollX = st.sheet === keep.sheet ? keep.scrollX : 0;
+    this.scrollY = st.sheet === keep.sheet ? keep.scrollY : 0;
+    this.tsStale = false;
+    this.recalcGrid();
+  }
+
+  /** Antes de ler o espelho TS (formato, exibições, estatísticas): recarrega-o se o Rust mudou células. */
+  private ensureTsFresh(): void {
+    const e = this.rustEd();
+    if (!e || !this.tsStale) return;
+    try { this.syncTsFromRust(e.state()); } catch { this.rustFallback(); }
+  }
+
+  /** `numFmt` da API em argumento do comando `format` (`kind:`, `code:`, `id:`). */
+  private static rustNumFmt(f: NumberFormatKind | { code: string } | { id: number; code?: string }): string {
+    if (typeof f === 'string') return `kind:${f}`;
+    if ('id' in f) return f.code ? `id:${f.id}:${f.code}` : `id:${f.id}`;
+    return `code:${f.code}`;
+  }
+
+  /** `SheetFormatChange` em argumentos `chave=valor` do comando `format` do Rust. */
+  private static rustFormatArgs(change: SheetFormatChange): string[] {
+    const a: string[] = [];
+    const f = change.font;
+    if (f) {
+      for (const k of ['bold', 'italic', 'underline', 'strike'] as const) if (f[k] !== undefined) a.push(`${k}=${f[k] ? 1 : 0}`);
+      if (f.size !== undefined) a.push(`size=${f.size}`);
+      if (f.name !== undefined) a.push(`name=${f.name}`);
+      if (f.color !== undefined) a.push(`color=${f.color ?? 'null'}`);
+    }
+    if (change.fill !== undefined) a.push(`fill=${change.fill ?? 'null'}`);
+    if (change.border === null) a.push('border=null');
+    else if (change.border) {
+      for (const k of ['left', 'right', 'top', 'bottom', 'diagonal'] as const) {
+        const e = change.border[k];
+        if (e) a.push(`border.${k}=${e.style}:${e.color ?? '#000000'}`);
+      }
+    }
+    const al = change.align;
+    if (al) {
+      if (al.horizontal !== undefined) a.push(`h=${al.horizontal ?? 'null'}`);
+      if (al.vertical !== undefined) a.push(`v=${al.vertical ?? 'null'}`);
+      if (al.wrapText !== undefined) a.push(`wrap=${al.wrapText ? 1 : 0}`);
+      if (al.indent !== undefined) a.push(`indent=${al.indent}`);
+    }
+    if (change.numFmt !== undefined) a.push(`numfmt=${UniversalSheetElement.rustNumFmt(change.numFmt)}`);
+    return a;
+  }
+
+  /** Flags de Localizar/Substituir do comando Rust. */
+  private static rustFindFlags(o: FindOptions): string {
+    return `${o.allSheets ? 'a' : ''}${o.backwards ? 'b' : ''}${o.lookIn === 'values' ? 'v' : ''}${o.wholeCell ? 'w' : ''}${o.matchCase ? 'c' : ''}`;
+  }
+
+  /** O resultado de uma entrada do Rust como o `EditResult` do TS. */
+  private static rustEditResult(r: unknown): EditResult {
+    const x = r as { ok: boolean; views?: number[]; grew?: boolean; message?: string };
+    return x.ok ? { ok: true, views: new Set(x.views ?? []), grew: !!x.grew } : { ok: false, message: x.message ?? '' };
+  }
+
   loadXlsx(bytes: Uint8Array): void {
-    this.rustBytes = bytes;
-    this.rustBook?.free();
-    this.rustBook = null;
-    this.rustActive = -1;
-    this.startRust();
+    if (!this.rustSyncing) {
+      this.rustBytes = bytes;
+      this.rustBook?.free();
+      this.rustBook = null;
+      this.rustActive = -1;
+      this.startRust();
+      this.rustEditor?.free();
+      this.rustEditor = null;
+      this.tsStale = false;
+      this.startRustEditor();
+    }
     const pkg = openSpreadsheet(bytes);
     this.pkg = pkg;
     this.workbook = readWorkbook(pkg);
@@ -973,6 +1152,11 @@ export class UniversalSheetElement extends HTMLElement {
    * (cirurgia no XML original — ver sheet-core/serialize.ts).
    */
   saveXlsx(): Uint8Array {
+    const re = this.rustEd();
+    if (re) {
+      if (this.editing) this.commitEdit();
+      try { return re.save(); } catch (x) { console.warn('universal-sheet: motor Rust ao salvar, volta ao TS', x); this.rustFallback(); }
+    }
     if (!this.pkg) throw new Error('No workbook loaded');
     if (this.editing) this.commitEdit();
     // atributos/partes de cálculo (calc-io.ts) + abas que o cálculo mudou
@@ -1014,6 +1198,7 @@ export class UniversalSheetElement extends HTMLElement {
    * células) estouram o tempo do lab sem ela.
    */
   debugCellDisplays(maxCol = Infinity, maxRow = Infinity): { ref: string; display: string }[] {
+    this.ensureTsFresh();
     const v = this.view;
     if (!v) return [];
     const out: { ref: string; display: string }[] = [];
@@ -1121,6 +1306,10 @@ export class UniversalSheetElement extends HTMLElement {
   /** Texto da barra de fórmulas da célula (fórmula no idioma ou texto de edição). */
   private barText(col: number, row: number): BarText {
     if (!this.view || this.view.worksheet.chartsheet) return { formula: '', edit: '', ghost: false };
+    const re = this.rustEd();
+    if (re) {
+      try { this.pushRustSelection(re); return re.cmd('bar_text', col, row).result as BarText; } catch (x) { console.warn('universal-sheet: motor Rust de edição, volta ao TS', x); this.rustFallback(); }
+    }
     try {
       return this.calc.barText(this.sheetIndex, col, row);
     } catch (e) {
@@ -1407,6 +1596,12 @@ export class UniversalSheetElement extends HTMLElement {
     this.resizing = null;
     window.removeEventListener('mousemove', this.onResizeDragMove);
     window.removeEventListener('mouseup', this.onResizeDragEnd);
+    if (this.rustEd()) {
+      const v = this.view!;
+      const px = rs.kind === 'col' ? v.colWidths.get(rs.index) ?? v.defaultColW : v.rowHeights.get(rs.index) ?? v.defaultRowH;
+      this.resizeBefore = null;
+      if (this.rustRoute('resize_drag', [rs.kind, rs.index, px], { sync: true, kind: 'resize' })) return;
+    }
     this.commitResize(rs.kind, rs.index);
     const before = this.resizeBefore;
     this.resizeBefore = null;
@@ -1562,6 +1757,8 @@ export class UniversalSheetElement extends HTMLElement {
   disconnectedCallback(): void {
     this.rustBook?.free();
     this.rustBook = null;
+    this.rustEditor?.free();
+    this.rustEditor = null;
     UniversalSheetElement.registry.disconnect(this);
     this.colorScheme.disconnect();
     this.unsubscribeFonts?.();
@@ -1701,6 +1898,7 @@ export class UniversalSheetElement extends HTMLElement {
     if (k === 'Delete' || k === 'Backspace') {
       e.preventDefault();
       if (this.isRange()) { this.clear('contents'); return; }
+      if (this.rustRoute('delete', [], { kind: 'edit' })) return;
       const r = this.recordCells('clearContents', [{ col: this.sel.col, row: this.sel.row }], () => this.setCellValue(this.sel.col, this.sel.row, ''));
       // parte de matriz CSE: o Excel recusa com aviso
       if (!r.ok && r.message) this.dispatchEvent(new CustomEvent('us-entry-error', { detail: { message: r.message } }));
@@ -1945,6 +2143,7 @@ export class UniversalSheetElement extends HTMLElement {
    * dos números (undefined sem números).
    */
   selectionStats(): { cells: number; count: number; numericCount: number; sum?: number; average?: number; min?: number; max?: number } {
+    this.ensureTsFresh();
     const r = this.range;
     const cells = (Math.min(r.c2, MAX_COLS) - r.c1 + 1) * (Math.min(r.r2, MAX_ROWS) - r.r1 + 1);
     let count = 0, n = 0, sum = 0, min = Infinity, max = -Infinity;
@@ -1972,10 +2171,17 @@ export class UniversalSheetElement extends HTMLElement {
   private redoStack: UndoEntry[] = [];
 
   /** Rótulo da próxima ação de Desfazer/Refazer (para o tooltip), ou null. */
-  get undoLabel(): string | null { return this.undoStack[this.undoStack.length - 1]?.label ?? null; }
-  get redoLabel(): string | null { return this.redoStack[this.redoStack.length - 1]?.label ?? null; }
-  canUndo(): boolean { return this.undoStack.length > 0; }
-  canRedo(): boolean { return this.redoStack.length > 0; }
+  get undoLabel(): string | null { const st = this.rustStateOrNull(); return st ? st.undoLabel : this.undoStack[this.undoStack.length - 1]?.label ?? null; }
+  get redoLabel(): string | null { const st = this.rustStateOrNull(); return st ? st.redoLabel : this.redoStack[this.redoStack.length - 1]?.label ?? null; }
+  canUndo(): boolean { const st = this.rustStateOrNull(); return st ? st.canUndo : this.undoStack.length > 0; }
+  canRedo(): boolean { const st = this.rustStateOrNull(); return st ? st.canRedo : this.redoStack.length > 0; }
+
+  /** O estado da sessão Rust quando ela edita (null = o caminho TS). */
+  private rustStateOrNull(): SheetEditState | null {
+    const re = this.rustEd();
+    if (!re) return null;
+    try { return re.state(); } catch { this.rustFallback(); return null; }
+  }
 
   private pushUndo(label: string, before: SheetSnap[], after: SheetSnap[]): void {
     this.undoStack.push({ label, before, after, sel: { sheet: this.sheetIndex, sel: { ...this.sel }, range: { ...this.range } } });
@@ -1986,6 +2192,11 @@ export class UniversalSheetElement extends HTMLElement {
   /** Desfaz a última alteração (Ctrl+Z): conteúdo, formatação, tamanhos, mesclas, painéis… */
   undo(): boolean {
     if (this.editing) { this.cancelEdit(); return true; }
+    if (this.rustEd()) {
+      const label = this.rustStateOrNull()?.undoLabel ?? '';
+      const r = this.rustRoute('undo', [], { select: false, kind: 'undo', sync: UniversalSheetElement.RUST_STRUCT.has(label) });
+      if (r) return r.result as boolean;
+    }
     const e = this.undoStack.pop();
     if (!e) return false;
     this.restoreSnaps(e.before);
@@ -1997,6 +2208,11 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Refaz o que foi desfeito (Ctrl+Y). */
   redo(): boolean {
+    if (this.rustEd()) {
+      const label = this.rustStateOrNull()?.redoLabel ?? '';
+      const r = this.rustRoute('redo', [], { select: false, kind: 'redo', sync: UniversalSheetElement.RUST_STRUCT.has(label) });
+      if (r) return r.result as boolean;
+    }
     const e = this.redoStack.pop();
     if (!e) return false;
     if (this.editing) this.commitEdit();
@@ -2139,8 +2355,8 @@ export class UniversalSheetElement extends HTMLElement {
   private changePending: string | null = null;
 
   /** Há alterações desde a última carga (ou desde `setDirty(false)`, que o hospedeiro chama ao salvar)? */
-  isDirty(): boolean { return this.dirty; }
-  setDirty(v: boolean): void { this.dirty = v; this.syncChrome(); }
+  isDirty(): boolean { const st = this.rustStateOrNull(); return st ? st.dirty : this.dirty; }
+  setDirty(v: boolean): void { this.dirty = v; this.rustRoute('set_dirty', [v ? 1 : 0], { select: false }); this.syncChrome(); }
 
   /** Algo mudou no modelo: marca alterado e avisa (`us-change`, um por tarefa) as barras e o hospedeiro. */
   private changed(kind: string): void {
@@ -2159,6 +2375,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Pasta de trabalho em branco (Arquivo › Novo): uma aba, fonte Normal Aptos Narrow 11. */
   newWorkbook(): void {
+    if (this.rustRoute('new_workbook', [], { select: false, sync: true, kind: 'new' })) return;
     const pt = this.calc.locale.lang === 'pt-BR';
     this.fileName = undefined;
     this.loadXlsx(blankXlsx({ sheetName: pt ? 'Planilha1' : 'Sheet1' }));
@@ -2185,6 +2402,7 @@ export class UniversalSheetElement extends HTMLElement {
    * Desfazer recomeça. Devolve o nome dado.
    */
   addSheet(name?: string): string {
+    { const r = this.rustRoute('add_sheet', [name ?? ''], { sync: true, kind: 'sheet' }); if (r) return r.result as string; }
     if (!this.pkg || !this.workbook) throw new Error('No workbook loaded');
     const zoom = this.zoom;
     const pkg = XlsxPackage.load(this.saveXlsx());
@@ -2206,6 +2424,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Recalcula a pasta inteira (Fórmulas › Calcular Agora, F9). */
   recalculate(): void {
+    if (this.rustRoute('recalc', [], { kind: 'recalc' })) return;
     if (!this.workbook) return;
     try { this.calc.recalcAll(); } catch (e) { console.warn('universal-sheet: recálculo', e); }
     this.cfEngines.clear();
@@ -2230,6 +2449,7 @@ export class UniversalSheetElement extends HTMLElement {
    * intervalo → o resultado de cada coluna na célula abaixo dele.
    */
   autoSum(fn: 'SUM' | 'AVERAGE' | 'COUNT' | 'MAX' | 'MIN' = 'SUM'): void {
+    { const r = this.rustRoute('autosum', [fn], { kind: 'edit' }); if (r) { if (typeof r.result === 'string') { this.rustEd()?.cmd('cancel'); this.beginEdit(this.sel.col, this.sel.row, r.result, false); } return; } }
     const v = this.view;
     if (!v) return;
     const local = (ref: string): string => this.calc.toLocalFormula(`=${fn}(${ref})`);
@@ -2277,6 +2497,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Limpar (Página Inicial › Edição): conteúdo, formatos ou tudo da seleção. */
   clear(what: 'contents' | 'formats' | 'all' = 'contents'): void {
+    if (this.rustRoute('clear', [what], { kind: what === 'contents' ? 'clearContents' : what === 'formats' ? 'clearFormats' : 'clearAll' })) return;
     const v = this.view;
     if (!v) return;
     const r = this.clampedRange();
@@ -2305,6 +2526,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Preencher para Baixo (Ctrl+D) / à Direita (Ctrl+R): copia a 1ª linha/coluna (ou a vizinha, numa só) ajustando as fórmulas. */
   fill(dir: 'down' | 'right'): void {
+    if (this.rustRoute(dir === 'down' ? 'fill_down' : 'fill_right', [], { kind: 'fill' })) return;
     const v = this.view;
     if (!v) return;
     const r = this.clampedRange();
@@ -2350,6 +2572,7 @@ export class UniversalSheetElement extends HTMLElement {
    * que ao colar aqui leva fórmulas (ajustadas) e formatos.
    */
   copy(cut = false): string {
+    { const r = this.rustRoute(cut ? 'cut' : 'copy', []); if (r) return r.result as string; }
     const v = this.view;
     if (!v) return '';
     if (this.editing) this.commitEdit();
@@ -2380,6 +2603,7 @@ export class UniversalSheetElement extends HTMLElement {
    * tabulações viram células, cada uma como se digitada.
    */
   paste(text?: string, opts: { valuesOnly?: boolean } = {}): void {
+    if (this.rustRoute('paste', text === undefined ? [opts.valuesOnly ? 1 : 0] : [opts.valuesOnly ? 1 : 0, text], { kind: 'paste' })) return;
     const v = this.view;
     if (!v) return;
     if (this.editing) this.commitEdit();
@@ -2460,6 +2684,7 @@ export class UniversalSheetElement extends HTMLElement {
     bold: boolean; italic: boolean; underline: boolean; strike: boolean; fontName: string; fontSize: number; color?: string;
     fill?: string; horizontal?: string; vertical?: string; wrap: boolean; indent: number; numFmtCode: string; merged: boolean;
   } {
+    this.ensureTsFresh();
     const cell = this.findCell(this.sel.col, this.sel.row);
     const st = this.resolveStyle(cell, this.sel.col, this.sel.row);
     const f = st.font;
@@ -2480,6 +2705,7 @@ export class UniversalSheetElement extends HTMLElement {
    * número (um item da lista, `{ code }` ou `{ id, code }`).
    */
   setFormat(change: SheetFormatChange): void {
+    if (this.rustRoute('format', UniversalSheetElement.rustFormatArgs(change), { kind: 'format' })) return;
     const c: StyleChange = {};
     if (change.font) c.font = change.font;
     if (change.fill !== undefined) c.fill = change.fill;
@@ -2531,6 +2757,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Aumentar (+1) / Diminuir (−1) Casas Decimais, a partir do formato de cada célula. */
   adjustDecimals(delta: 1 | -1): void {
+    if (this.rustRoute('decimals', [delta > 0 ? '+1' : '-1'], { kind: 'format' })) return;
     const memo = new Map<number, number>();
     this.applyStyle('format', (xf) => {
       let out = memo.get(xf);
@@ -2550,6 +2777,7 @@ export class UniversalSheetElement extends HTMLElement {
    * (só aquela borda do intervalo), `none` (sem bordas). `color` #RRGGBB.
    */
   setBorders(kind: 'all' | 'outside' | 'thickOutside' | 'top' | 'bottom' | 'left' | 'right' | 'none', color = '#000000'): void {
+    if (this.rustRoute('border', [kind, color], { kind: 'borders' })) return;
     const r = this.clampedRange();
     const thin = { style: 'thin', color }, thick = { style: 'medium', color };
     this.applyStyle('borders', (xf, col, row) => {
@@ -2692,6 +2920,7 @@ export class UniversalSheetElement extends HTMLElement {
    * Como o Excel, só o conteúdo da célula superior esquerda fica.
    */
   merge(kind: 'center' | 'across' | 'cells' = 'center'): void {
+    if (this.rustRoute('merge', [kind], { sync: true, kind: 'merge' })) return;
     const v = this.view;
     if (!v) return;
     const r = this.clampedRange();
@@ -2724,6 +2953,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Desfazer Mesclagem das mesclas que a seleção toca. */
   unmerge(): void {
+    if (this.rustRoute('unmerge', [], { sync: true, kind: 'merge' })) return;
     const v = this.view;
     if (!v || !v.worksheet.merges?.length) return;
     const r = this.clampedRange();
@@ -2749,6 +2979,7 @@ export class UniversalSheetElement extends HTMLElement {
    * dela), como o Excel.
    */
   freezePanes(cols?: number, rows?: number): void {
+    if (this.rustRoute('freeze', [cols ?? '', rows ?? ''], { sync: true, kind: 'view' })) return;
     const v = this.view;
     if (!v || v.worksheet.chartsheet) return;
     const c = Math.max(0, Math.floor(cols ?? this.sel.col - 1));
@@ -2772,6 +3003,7 @@ export class UniversalSheetElement extends HTMLElement {
   /** Linhas de grade visíveis na aba ativa (Exibir › Linhas de Grade); gravado no arquivo. */
   get showGridlines(): boolean { return this.view?.showGridLines !== false; }
   set showGridlines(on: boolean) {
+    if (this.rustEd() && this.showGridlines !== on && this.rustRoute('gridlines', [on ? 1 : 0], { sync: true, kind: 'view' })) return;
     const v = this.view;
     if (!v || v.showGridLines === on) return;
     this.record('gridlines', [], () => {
@@ -2820,6 +3052,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Largura da Coluna (Formatar): em caracteres como o Excel mostra (ver columnWidth), nas colunas da seleção (0 oculta). */
   setColumnWidth(width: number, cols = this.selectedLines('cols')): void {
+    if (this.rustRoute('col_width', [width, cols.join(',')], { sync: true, kind: 'resize' })) return;
     const v = this.view;
     if (!v || !(width >= 0)) return;
     const w = Math.min(255, width), m = this.mdw;
@@ -2833,6 +3066,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Altura da Linha (Formatar): em pontos, nas linhas da seleção (0 oculta). */
   setRowHeight(pt: number, rows = this.selectedLines('rows')): void {
+    if (this.rustRoute('row_height', [pt, rows.join(',')], { sync: true, kind: 'resize' })) return;
     const v = this.view;
     if (!v || !(pt >= 0)) return;
     const px = Math.round(rowPtToPx(Math.min(409, pt)));
@@ -2845,6 +3079,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** AutoAjuste da Largura da Coluna nas colunas da seleção. */
   autofitColumns(cols = this.selectedLines('cols')): void {
+    if (this.rustRoute('autofit_cols', [cols.join(',')], { sync: true, kind: 'resize' })) return;
     if (!this.view) return;
     this.record('columnWidth', [], () => { for (const c of cols) this.autofitCol(c); return true; }, true);
     this.afterCells('resize');
@@ -2852,6 +3087,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** AutoAjuste da Altura da Linha: a linha volta à altura automática. */
   autofitRows(rows = this.selectedLines('rows')): void {
+    if (this.rustRoute('autofit_rows', [rows.join(',')], { sync: true, kind: 'resize' })) return;
     const v = this.view;
     if (!v) return;
     this.record('rowHeight', [], () => {
@@ -2870,6 +3106,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Ocultar/Reexibir as colunas ou linhas da seleção (Reexibir: as ocultas DENTRO dela e as vizinhas). */
   setHidden(kind: 'cols' | 'rows', hidden: boolean): void {
+    if (this.rustRoute(hidden ? 'hide' : 'unhide', [kind], { sync: true, kind: 'resize' })) return;
     const v = this.view;
     if (!v) return;
     let lines = this.selectedLines(kind);
@@ -2943,6 +3180,7 @@ export class UniversalSheetElement extends HTMLElement {
    * outras abas. Seleciona a célula achada e a devolve (null = nada).
    */
   find(query: string, opts: FindOptions = {}): { sheet: number; ref: string } | null {
+    { const r = this.rustRoute('find', [query, UniversalSheetElement.rustFindFlags(opts)]); if (r) return r.result as { sheet: number; ref: string } | null; }
     if (!query || !this.views.length) return null;
     const match = this.matcher(query, opts);
     const lookIn = opts.lookIn ?? 'formulas';
@@ -3008,6 +3246,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Substituir: troca na célula ativa (se casar) e vai para a próxima ocorrência. */
   replace(query: string, replacement: string, opts: FindOptions = {}): { sheet: number; ref: string } | null {
+    { const r = this.rustRoute('replace', [query, replacement, UniversalSheetElement.rustFindFlags(opts)], { kind: 'edit' }); if (r) return r.result as { sheet: number; ref: string } | null; }
     if (!query) return null;
     const { col, row } = this.sel;
     const cell = this.findCell(col, row);
@@ -3020,6 +3259,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Substituir Tudo: na aba ativa (ou em todas, `allSheets`); devolve quantas células mudaram. */
   replaceAll(query: string, replacement: string, opts: FindOptions = {}): number {
+    { const r = this.rustRoute('replace_all', [query, replacement, UniversalSheetElement.rustFindFlags(opts)], { kind: 'edit' }); if (r) return r.result as number; }
     if (!query) return 0;
     const sheets = opts.allSheets ? this.views.map((_, i) => i) : [this.sheetIndex];
     const match = this.matcher(query, opts);
@@ -3151,7 +3391,8 @@ export class UniversalSheetElement extends HTMLElement {
     if (!this.editor || !this.editing) return true;
     const text = this.editor.value;
     const { col, row } = this.editing;
-    const res = this.recordCells('typing', [{ col, row }], () => this.setCellValue(col, row, text));
+    const rr = this.rustEd() ? this.rustCommit(col, row, text) : undefined;
+    const res = rr ?? this.recordCells('typing', [{ col, row }], () => this.setCellValue(col, row, text));
     if (!res.ok) {
       this.showEntryError(res.message);
       this.editor?.focus();
@@ -3166,6 +3407,23 @@ export class UniversalSheetElement extends HTMLElement {
     this.emitSelection();
     this.paint();
     return true;
+  }
+
+  /** O commit do editor pela sessão Rust: a célula em edição recebe o texto como digitado (uma entrada `typing`). */
+  private rustCommit(col: number, row: number, text: string): EditResult | undefined {
+    const e = this.rustEd();
+    if (!e) return undefined;
+    try {
+      e.cmd('selection', this.sheetIndex, col, row, col, row, col, row);
+      const r = e.cmd('enter', text);
+      const res = UniversalSheetElement.rustEditResult(r.result);
+      if (res.ok) { this.applyRustState(r.state); this.tsStale = true; this.cfEngines.clear(); this.changed('edit'); }
+      return res;
+    } catch (x) {
+      console.warn('universal-sheet: motor Rust de edição, volta ao TS', x);
+      this.rustFallback();
+      return undefined;
+    }
   }
 
   /** Descarta a edição em andamento sem alterar o modelo. */
@@ -3189,6 +3447,7 @@ export class UniversalSheetElement extends HTMLElement {
    * inválida é recusada (`ok: false` com a mensagem), como o Excel.
    */
   setCellValue(col: number, row: number, text: string): EditResult {
+    { const r = this.rustRoute('set_cell', [col, row, text], { kind: 'edit' }); if (r) return UniversalSheetElement.rustEditResult(r.result); }
     const v = this.view;
     if (!v) return { ok: false, message: '' };
     const max = { c: v.maxCol, r: v.maxRow };
@@ -3211,6 +3470,7 @@ export class UniversalSheetElement extends HTMLElement {
 
   /** Disponível externamente (barra de fórmulas): commita o input externo. */
   setActiveCellText(text: string): EditResult {
+    { const r = this.rustRoute('enter', [text], { kind: 'edit' }); if (r) { const res = UniversalSheetElement.rustEditResult(r.result); if (!res.ok) this.dispatchEvent(new CustomEvent('us-entry-error', { detail: { message: res.message } })); return res; } }
     const { col, row } = this.sel;
     const res = this.recordCells('typing', [{ col, row }], () => this.setCellValue(col, row, text));
     if (!res.ok) {
@@ -3304,7 +3564,7 @@ export class UniversalSheetElement extends HTMLElement {
       return;
     }
 
-    if (this.paintRust(ctx, v, W, H)) { this.paintScrollbars(ctx, W, H); return; }
+    if (this.paintRust(ctx, v, W, H)) { if (!v.worksheet.chartsheet) this.paintScrollbars(ctx, W, H); return; }
     if (v.worksheet.chartsheet) { this.paintChartsheet(ctx, v, W, H); return; }
     this.status.textContent = rowColToRef(this.sel.col, this.sel.row);
 

@@ -696,6 +696,26 @@ impl RowSet {
         let i = self.ranges.partition_point(|&(_, b)| b < row);
         self.ranges.get(i).is_some_and(|&(a, _)| a <= row)
     }
+    /// Removes `row` (the editor's unhide).
+    pub fn remove(&mut self, row: u32) {
+        let i = self.ranges.partition_point(|&(_, b)| b < row);
+        let Some(&(a, b)) = self.ranges.get(i) else { return };
+        if a > row {
+            return;
+        }
+        match (a == row, b == row) {
+            (true, true) => {
+                self.ranges.remove(i);
+            }
+            (true, false) => self.ranges[i].0 = row + 1,
+            (false, true) => self.ranges[i].1 = row - 1,
+            (false, false) => {
+                self.ranges[i].1 = row - 1;
+                self.ranges.insert(i + 1, (row + 1, b));
+            }
+        }
+    }
+
     /// Adds `row`.
     pub fn insert(&mut self, row: u32) {
         let i = self.ranges.partition_point(|&(_, b)| b.saturating_add(1) < row);
@@ -1173,6 +1193,16 @@ impl Store {
             }
         }
         Ok(())
+    }
+
+    /// Drops the `cm`/`vm` metadata of a cell (the editor's `stripContent`, `sheet-calc.ts:450-458`).
+    pub fn strip_meta(&mut self, sheet: SheetIx, row: u32, col: u32) {
+        if self.extra(sheet, row, col).is_some_and(|e| e.cm.is_some() || e.vm.is_some()) {
+            self.edit_extra(sheet, row, col, |e| {
+                e.cm = None;
+                e.vm = None;
+            });
+        }
     }
 
     /// Edits the extra of an existing cell (created if missing; dropped when it becomes empty), keeping the

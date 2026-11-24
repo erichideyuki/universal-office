@@ -2,6 +2,7 @@
 //! `decorate`, `paintErrorMark`) emitted as `SheetFont` + `GlyphRun` items. Every arithmetic expression is the TS's,
 //! with `uo_jsnum::math` for the JS functions.
 
+use uo_jsnum::conv::to_uint32;
 use uo_jsnum::math::{abs, ceil, cos, floor, max, min, round, sin};
 use uo_render::slides::Baseline;
 
@@ -285,7 +286,7 @@ fn paint_wrapped(o: &mut Out<'_>, sc: &mut TextScratch, a: &TextArgs<'_, '_>, bo
     let max_lines = max(1.0, ceil(a.h / max(1.0, a.line_h)) + 1.0);
     let mut lines = std::mem::take(&mut sc.lines);
     lines.clear();
-    wrap_lines(&f.m, &ct.text, max(1.0, box_w - indent), (max_lines + 64.0) as usize, &mut lines);
+    wrap_lines(&f.m, &ct.text, max(1.0, box_w - indent), to_uint32(max_lines + 64.0) as usize, &mut lines);
     let line_h = a.line_h;
     let n = lines.len();
     let block_h = (n as f64 - 1.0) * line_h + f64::from(f.xl_ascent) + f64::from(f.xl_descent);
