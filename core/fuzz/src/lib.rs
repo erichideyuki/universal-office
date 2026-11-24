@@ -44,7 +44,7 @@ mod xlsx;
 pub use xlsx::{xlsx_seeds, xlsx_write};
 
 mod calc;
-pub use calc::{calc_seeds, store_ops};
+pub use calc::{calc_seeds, formula_parse, formula_seeds, store_ops};
 
 mod codec;
 pub use codec::{CODEC_LIMITS, codec_decode, codec_roundtrip, codec_seeds};
@@ -136,6 +136,7 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("numfmt_format", numfmt_format),
     ("xlsx_write", xlsx_write),
     ("store_ops", store_ops),
+    ("formula_parse", formula_parse),
     ("fonts_parse", fonts_parse),
     ("fonts_sfnt_dir", fonts_sfnt_dir),
     ("fonts_cmap", fonts_cmap),

@@ -1,8 +1,11 @@
 //! Calc values (`values.ts`): scalars, arrays, references, lambdas. Error codes are a `u8` enum (the TS
 //! interns one `CalcError` object per code, `values.ts:17-26`); strings are [`StrRef`]s, never owned heap
-//! strings per cell.
+//! strings per cell. Arrays share their data (`Arc`: the TS passes them by reference, a `LET` binding used
+//! twice does not copy) and a one-area reference is held inline (no allocation per reference).
 
-use crate::key::Area;
+use std::sync::Arc;
+
+use crate::key::{Area, SheetIx};
 use crate::strings::StrId;
 
 /// Canonical error codes in `ERROR.TYPE` order (`values.ts:44-48`; the discriminant IS the number).
@@ -51,6 +54,9 @@ pub enum StrRef {
     Pooled(StrId),
     /// Built by the evaluation; valid until the end of the pass that made it.
     Temp(u32),
+    /// A text literal of a parsed formula (`"abc"`, `{"a"}`): an index into the AST arena's strings
+    /// ([`crate::ast::Ast`]), valid as long as the arena (frontier A2: evaluating a literal copies nothing).
+    Lit(u32),
 }
 
 /// A scalar (`values.ts:51`): `Empty` is the TS `null` (empty cell / omitted argument). 16 bytes.
@@ -68,7 +74,7 @@ pub enum Scalar {
     Err(ErrorCode),
 }
 
-/// A rectangular array, row by row (`values.ts:71-87`). Owned by the evaluation.
+/// A rectangular array, row by row (`values.ts:71-87`). Cloning shares the data.
 #[derive(Clone, Debug)]
 pub struct ArrayValue {
     /// Rows.
@@ -76,14 +82,87 @@ pub struct ArrayValue {
     /// Columns.
     pub cols: u32,
     /// `rows * cols` scalars.
-    pub data: Box<[Scalar]>,
+    pub data: Arc<[Scalar]>,
 }
 
-/// A reference: one or more areas (`values.ts:65-68`).
-#[derive(Clone, Debug)]
-pub struct RefValue {
-    /// The areas, in the order of the union.
-    pub areas: Vec<Area>,
+/// A reference: one or more areas (`values.ts:65-68`). One area (the common case) is held inline.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RefValue {
+    /// One area.
+    One(Area),
+    /// A union of areas, in the order of the union (also the empty list, which no parse produces).
+    Many(Arc<RefList>),
+}
+
+/// The areas of a union and whether they all lie on one sheet (kept as the union grows, so `(A1,A1,…)` checks
+/// and appends in constant time per area instead of copying the list at each `,`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RefList {
+    areas: Vec<Area>,
+    sheet: Option<SheetIx>,
+}
+
+impl RefValue {
+    /// A reference from a list of areas (one area is held inline).
+    #[must_use]
+    pub fn from_areas(areas: Vec<Area>) -> Self {
+        if areas.len() == 1 {
+            return Self::One(areas[0]);
+        }
+        let sheet = areas.first().map(|a| a.sheet).filter(|&s| areas.iter().all(|a| a.sheet == s));
+        Self::Many(Arc::new(RefList { areas, sheet }))
+    }
+
+    /// `areas`.
+    #[must_use]
+    pub fn areas(&self) -> &[Area] {
+        match self {
+            Self::One(a) => core::slice::from_ref(a),
+            Self::Many(v) => &v.areas,
+        }
+    }
+
+    /// `single`: the area when there is exactly one.
+    #[must_use]
+    pub fn single(&self) -> Option<Area> {
+        match self {
+            Self::One(a) => Some(*a),
+            Self::Many(v) if v.areas.len() == 1 => Some(v.areas[0]),
+            Self::Many(_) => None,
+        }
+    }
+
+    /// The sheet of every area (`None` when they differ or there is none).
+    #[must_use]
+    pub fn one_sheet(&self) -> Option<SheetIx> {
+        match self {
+            Self::One(a) => Some(a.sheet),
+            Self::Many(v) => v.sheet,
+        }
+    }
+
+    /// `[...a.areas, ...b.areas]`: appends in place when this list is not shared.
+    #[must_use]
+    pub fn union(self, b: &Self) -> Self {
+        let sheet = match (self.one_sheet(), b.one_sheet()) {
+            (Some(x), Some(y)) if x == y => Some(x),
+            _ => None,
+        };
+        match self {
+            Self::One(a) => {
+                let mut areas = Vec::with_capacity(1 + b.areas().len());
+                areas.push(a);
+                areas.extend_from_slice(b.areas());
+                Self::Many(Arc::new(RefList { areas, sheet }))
+            }
+            Self::Many(mut v) => {
+                let l = Arc::make_mut(&mut v);
+                l.areas.extend_from_slice(b.areas());
+                l.sheet = sheet;
+                Self::Many(v)
+            }
+        }
+    }
 }
 
 /// Any value an expression produces (`values.ts:95`); a LAMBDA is an index into the evaluator's closures.
@@ -142,13 +221,36 @@ impl ArrayValue {
 
     /// `ArrayValue.fill(rows, cols, f)`.
     pub fn fill(rows: u32, cols: u32, mut f: impl FnMut(u32, u32) -> Scalar) -> Self {
-        let mut data = Vec::with_capacity(rows as usize * cols as usize);
-        for r in 0..rows {
-            for c in 0..cols {
-                data.push(f(r, c));
-            }
+        let n = rows as usize * cols as usize;
+        let c = cols.max(1) as usize;
+        // a `Range` mapped is `TrustedLen`: one allocation of exactly `n` scalars, filled row by row
+        let data: Arc<[Scalar]> = (0..n).map(|i| f((i / c) as u32, (i % c) as u32)).collect();
+        Self { rows, cols, data }
+    }
+
+    /// `ArrayValue.fill` whose cell function can fail (a host read that throws stops the fill, as the TS
+    /// exception leaves `fill`).
+    pub fn try_fill<E>(rows: u32, cols: u32, mut f: impl FnMut(u32, u32) -> Result<Scalar, E>) -> Result<Self, E> {
+        let n = rows as usize * cols as usize;
+        let c = cols.max(1) as usize;
+        let mut data = Vec::with_capacity(n);
+        for i in 0..n {
+            data.push(f((i / c) as u32, (i % c) as u32)?);
         }
-        Self { rows, cols, data: data.into_boxed_slice() }
+        Ok(Self { rows, cols, data: data.into() })
+    }
+
+    /// An array of `rows × cols` from its row-major data (`new ArrayValue(rows, cols, data)`).
+    #[must_use]
+    pub fn new(rows: u32, cols: u32, data: Vec<Scalar>) -> Self {
+        debug_assert_eq!(data.len(), rows as usize * cols as usize);
+        Self { rows, cols, data: data.into() }
+    }
+
+    /// The `0 × 0` array.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self { rows: 0, cols: 0, data: Arc::new([]) }
     }
 
     /// `ArrayValue.of(rows)`: ragged rows padded with `#N/A` to the widest one. The TS takes
@@ -164,7 +266,7 @@ impl ArrayValue {
                 data.push(row.get(j).copied().unwrap_or(Scalar::Err(ErrorCode::NA)));
             }
         }
-        Self { rows: r as u32, cols: c as u32, data: data.into_boxed_slice() }
+        Self { rows: r as u32, cols: c as u32, data: data.into() }
     }
 }
 

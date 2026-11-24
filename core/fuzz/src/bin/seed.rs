@@ -256,6 +256,10 @@ fn main() {
     for s in uo_opc_fuzz::calc_seeds() {
         c.add("store_ops", &s);
     }
+    // uo-calc formulas: an option byte + formula text (crates/uo-calc, frontier A2)
+    for s in uo_opc_fuzz::formula_seeds() {
+        c.add("formula_parse", &s);
+    }
     // uo-dml-render text layout: byte-driven bodies and hostile measure tables
     for s in uo_opc_fuzz::text_layout_seeds() {
         c.add("text_layout", &s);

@@ -254,6 +254,7 @@ pub fn value_text(pool: &StrPool, v: &Scalar) -> String {
             s
         }
         Scalar::Str(StrRef::Temp(i)) => format!("?temp{i}"),
+        Scalar::Str(StrRef::Lit(i)) => format!("?lit{i}"),
         Scalar::Bool(b) => (if *b { "b1" } else { "b0" }).to_owned(),
         Scalar::Err(e) => format!("e{}", crate::cell::error_text(*e)),
     }

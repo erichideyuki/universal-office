@@ -23,3 +23,14 @@ pub(crate) fn trunc_u64(x: f64) -> u64 {
 pub(crate) fn trunc_usize(x: f64) -> usize {
     x as usize
 }
+
+/// Truncation to `u32` of a non-negative integer-valued double inside the `u32` range (a row or column the caller
+/// has range-checked, a digit of a column letter).
+pub(crate) fn to_u32(x: f64) -> u32 {
+    x as u32
+}
+
+/// Truncation to `i32` of an integer-valued double inside `-2^28..2^28` (a packed reference offset).
+pub(crate) fn to_i32_small(x: f64) -> i32 {
+    x as i32
+}

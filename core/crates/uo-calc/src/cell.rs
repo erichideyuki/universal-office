@@ -196,12 +196,13 @@ pub struct FileValue {
 }
 
 /// `fileCellValue`: an engine value → `t` and `<v>` as Excel writes a formula/spill cell (`writeValues` path).
+/// `text` resolves the strings that are not in the pool (the evaluator's temporaries and formula literals).
 #[must_use]
-pub fn file_cell_value(v: &Scalar, pool: &StrPool, temp: &dyn Fn(u32) -> JsString) -> FileValue {
+pub fn file_cell_value(v: &Scalar, pool: &StrPool, text: &dyn Fn(StrRef) -> JsString) -> FileValue {
     match v {
         Scalar::Num(x) => FileValue { t: None, v: JsString::from_str_js(&number_text(*x)) },
         Scalar::Str(StrRef::Pooled(id)) => FileValue { t: Some("str"), v: pool.get(*id).to_owned_js() },
-        Scalar::Str(StrRef::Temp(i)) => FileValue { t: Some("str"), v: temp(*i) },
+        Scalar::Str(r @ (StrRef::Temp(_) | StrRef::Lit(_))) => FileValue { t: Some("str"), v: text(*r) },
         Scalar::Bool(b) => FileValue { t: Some("b"), v: JsString::from_str_js(if *b { "1" } else { "0" }) },
         Scalar::Err(e) => FileValue { t: Some("e"), v: JsString::from_str_js(error_text(*e)) },
         Scalar::Empty => FileValue { t: None, v: JsString::from_str_js("0") },

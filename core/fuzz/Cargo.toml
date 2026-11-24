@@ -290,6 +290,14 @@ doc = false
 bench = false
 
 [[bin]]
+name = "formula_parse"
+path = "fuzz_targets/formula_parse.rs"
+required-features = ["libfuzzer"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xlsx_write"
 path = "fuzz_targets/xlsx_write.rs"
 required-features = ["libfuzzer"]

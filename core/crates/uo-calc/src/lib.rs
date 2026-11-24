@@ -4,8 +4,12 @@
 //! **Frontier S0 done** (2026-11-24): the store ([`store`], [`cell`], [`load`], [`formula`], [`strings`]).
 //! **Frontier A1 done**: values and coercion ([`value`], [`coerce`]), the text order ([`collate`]), criteria
 //! ([`criteria`]), dates ([`dates`]), the statistics base ([`stats`]), special functions ([`special`]), the
-//! double-double libm ([`libm`]) and the math support ([`math_util`]). The engine is still the architecture
-//! skeleton; its operations return [`CalcError::NotPorted`].
+//! double-double libm ([`libm`]) and the math support ([`math_util`]).
+//! **Frontier A2 done**: addresses ([`a1`]), the formula tree arena ([`ast`]), the parser ([`parse`], explicit
+//! stack) and printer ([`print`]), the function registry contract ([`fnreg`], table generated from the TS), the
+//! operators ([`ops`]), argument application ([`apply`]) and the evaluator ([`eval`], `trait EvalHost`). The
+//! function bodies ([`functions`]) are A4; the engine is still the architecture skeleton (A3), its operations
+//! return [`CalcError::NotPorted`].
 //!
 //! One cell store ([`store::Store`]) holds every cell of every sheet ONCE: its file representation (what the
 //! surgical save writes back) and its calc value are the same lanes. The engine ([`engine::Engine`]) owns only
@@ -19,6 +23,9 @@
 //! [`engine`] (graph, recalc). [`locale`] is the C1 host hook. Feature `facet`: [`facet`], the parity facet.
 #![forbid(unsafe_code)]
 
+pub mod a1;
+pub mod apply;
+pub mod ast;
 mod cast;
 pub mod cell;
 pub mod coerce;
@@ -27,15 +34,22 @@ pub mod criteria;
 pub mod dates;
 pub mod engine;
 pub mod error;
+pub mod eval;
 #[cfg(feature = "facet")]
 pub mod facet;
+mod fn_table;
+pub mod fnreg;
 pub mod formula;
+pub mod functions;
 mod jstext;
 pub mod key;
 pub mod libm;
 pub mod load;
 pub mod locale;
 pub mod math_util;
+pub mod ops;
+pub mod parse;
+pub mod print;
 pub mod special;
 pub mod stats;
 pub mod store;

@@ -120,7 +120,7 @@ fn store_value(store: &Store, v: &Scalar) -> String {
         Scalar::Empty => "_".into(),
         Scalar::Num(x) => format!("n{:016x}", x.to_bits()),
         Scalar::Str(StrRef::Pooled(id)) => format!("s{}", store.strings.get(*id).to_string_lossy()),
-        Scalar::Str(StrRef::Temp(_)) => "?".into(),
+        Scalar::Str(StrRef::Temp(_) | StrRef::Lit(_)) => "?".into(),
         Scalar::Bool(b) => if *b { "b1" } else { "b0" }.into(),
         Scalar::Err(e) => format!("e{}", error_text(*e)),
     }
