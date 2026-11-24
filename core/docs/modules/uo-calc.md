@@ -3,7 +3,9 @@
 Record of the rust-port workflow (hybrid mode, `SKILL.md` "Architecture pass (Opus), only for the big shapes").
 Status: **architecture pass done 2026-11-24 (Opus)**: data model, frontiers, captures, budgets; type skeleton in
 `core/crates/uo-calc` (clippy clean native and wasm32). **Frontier S0 (the store) done 2026-11-24 (Opus)**: section
-"S0 — the store, as built"; the calc (A1–A5) is not ported yet. The M3 gate (plan §11)
+"S0 — the store, as built". **Frontier A1 (values, coercion, collation entry points, criteria, dates, stats base,
+special functions, libm, math support) done 2026-11-24 (Opus)**: section "A1 — as built"; A2–A5 are not ported yet.
+The M3 gate (plan §11)
 approves it together with the track C section of `uo-xlsx.md` ("Track C architecture").
 
 Behaviour source (frozen, never edited): `D:\Projects\OfficeNext\.claude\worktrees\ts-ref-092` at `b92b60fa` (0.9.2,
@@ -303,12 +305,91 @@ The first run had random get 1M at 16.4 ms (over budget): `Column::find` binary-
 `CellRec`s, S1); wasm numbers come with the `sheet` suite of `tools/bench/speed` when C1a/C4 wire the store into
 `uo-sheet.wasm`.
 
+## A1 — as built (2026-11-24, Opus)
+
+Code (`core/crates/uo-calc/src`): `value.rs` (+ `ScalarView`, `ArrayValue::{get, fill, of}`, `broadcast_at`,
+`lift_shape`), `coerce.rs` (`coerce.ts`), `collate.rs` (`collate.ts` + the JS-string entry points of `collation.ts`,
+whose rules stay in `uo_text::collation`), `criteria.rs`, `dates.rs`, `stats.rs`, `special.rs`
+(`special-functions.ts`), `libm.rs` (`functions/libm.ts`), `math_util.rs` (`functions/math-util.ts`), `locale.rs`
+(+ `ValueLocale::{en_us, pt_br}` = `fn.ts` `EN_US`/`PT_BR`, `Clock::current_year`), private `jstext.rs` (UTF-16 view of a
+`JsStr` without allocating, digit runs) and `cast.rs` (the named float → int conversions of the float-casts gate). No
+`unsafe`. `uo-text` is now used with its feature `collation` and gained one additive getter,
+`CollationKey::weights()` (covered by its M1 test).
+
+**API** (all pure functions; text is a borrowed `JsStr`, values a `ScalarView`, an Excel error is `Err(ErrorCode)`):
+`to_number`/`to_text`/`to_bool`/`number_to_text`/`parse_number_text`/`parse_date_time_text`/`parse_date_time_parts`/
+`compare_scalars`/`same_text_ci`; `compare_text_js`/`compare_text_ord`/`text_equals`/`collation_key`/`round15`/
+`compare_numbers`/`PreparedText` (a text compared many times); `parse_criterion(crit, locale, year, prefix) ->
+Criterion` + `Criterion::matches`, `Wildcard`, `has_wildcard`, `compare15`, `locale_error_code`; `dates::*`
+(`ymd_to_serial`, `serial_to_ymd`, `weekday`, `serial_to_hms`, `days_in_month`, `is_leap`, `split_serial`,
+`excel_date`, `max_serial`); `stats::*` (`xl_add`, `xl_sum`, `stat_num`, `mean`, `devsq`, `variance`, `skew`,
+`skew_p`, `kurt`, `sorted`, `Collect`, `zip_sparse`, `arg_number`/`arg_int`/`arg_bool`, `BIG_AREA`); `special::*`
+(every export of `special-functions.ts`); `libm::*` (every export of `libm.ts`); `math_util::*` (`fin`, `fin_flush`,
+`approx15`, `exponent_of`, `snap_add`, `decimal_round`, `excel_power`, `atp_num`, `nums`, `EachNumber`, `TRIG_LIMIT`,
+`sin_ext`/`cos_ext`/`tan_ext`).
+
+**Decisions taken in A1 (declared; observable output equal unless said):**
+
+| Id | Decision |
+|---|---|
+| A1-1 | The `RegExp`s the TS builds from the locale's separators (`numberCore`, the time pattern) are small backtracking matchers that try the alternatives in V8's order (greedy, the ES empty-iteration rule of `?`), so any separator string (empty, multi-unit, digits) gives the TS captures. They carry a step budget (2^20) and a group-nesting limit (512 groups): the only inputs that reach them are an EMPTY group separator over a long digit run (catastrophic backtracking in V8: the TS hangs) and ≥ 1,536-digit grouped numbers (a value ≥ 1e308, rejected by the TS too); Rust answers "not a number" there. The other `RegExp`s (`/ *: */g`, `split(/ +/)`, the mixed fraction, AM/PM, the criterion operator) are deterministic and hand-coded. |
+| A1-2 | NaN payloads are not compared: V8 hands out `0x7ff8000000000001` or `0x7ff8000000000000` depending on the tier that ran the code (the `uo_jsnum::conv::canonicalize_nan` convention); the replay accepts a NaN-for-NaN difference with that reason (191 CI / 1,568 big calls: results of NaN-producing arithmetic — `∞ − ∞`, `0·∞`, `log` of a negative — in the statistics, special functions and libm). |
+| A1-3 | The four series/continued fractions without an explicit TS bound (`logcf`, the small-x series of `pgamma`, `pdUpperSeries`, `pdLowerSeries`) stop at `special::LOOP_CAP` (2^26) iterations. The branch conditions of `pgamma` keep their ratios ≤ 0.8 (x < 1 for the small-x series), so for every finite input they converge in a few hundred steps and the cap never binds; it only bounds hostile inputs. |
+| A1-4 | Host values are explicit (C1): `year` (dates typed without a year; the TS `new Date().getFullYear()`) comes from `Clock::current_year()`, `date1904` is a parameter where the TS has a default. |
+| A1-5 | A criterion is data (`Criterion`, an enum of the TS closures' branches) with `matches`; its text side is prepared once (`PreparedText`: Latin-1 bytes + collation key; `Wildcard`: canonicalized tokens), and the wildcard `RegExp` (`^…$`, `i`, no `u`) is a glob over code units with the `RegExp` `Canonicalize` of each unit, which accepts exactly the texts the regular expression accepts. |
+| A1-6 | `localeErrorCode` = `canonicalError(text, locale.id)` (`i18n/translate.ts:663`) is ported here for what the TS registers: only `pt-BR` (any case) resolves to the pt-BR error names (embedded), every other id to English (`pt` alone resolves to `pt-PT`, which has no table). A5 owns the i18n tables and re-points this to them. |
+| A1-7 | The walkers that need the evaluation context (`collectNumbers`/`collectInto`, `scalarsOf`, `gridOf`, `zipCells`, `numericPairs`, `eachNumber`, `asMatrix`, `atpRaw`, `atpList`, `liftScalars`) and the `FnDef` factories (`numFn`, `atpFn`, `def`) are wired by A2/A4 (they need `FnContext` and `Value` resolution, A2's types); A1 ships their per-value rules (`Collect`, `EachNumber`, `zip_sparse`, `broadcast_at`, `lift_shape`, `atp_num`, `arg_*`), replayed through a fake context in the capture. |
+| A1-8 | `stirlerr` of a negative half-integer reads past its table in the TS and returns `undefined`; Rust returns NaN (any use is arithmetic: NaN in both). The capture records that case as NaN. |
+| A1-9 | Hot paths allocate nothing (measured, `a1_robust::memory_m1_and_zero_alloc_hot_paths`): `parse_number_text`/`to_number` of a number text (a short Latin-1 text is widened on the stack; the digits for `Number` are built in a stack buffer; a text without any digit is rejected first — every accepted form has one), `Criterion::matches` (numbers, wildcard, ASCII and Latin-1 text), `compare_text` of ASCII (a weight table) and Latin-1 text (a 256-entry table of collation elements built once from `uo_text`'s keys, streamed level by level). Non-Latin-1 text still builds `uo_text` keys per comparison (the TS caches 20,000 keys; a per-pass key cache is an A3/A4 choice). The date/time path allocates its word list. |
+| A1-10 | `sorted` = `Float64Array.prototype.sort`: numeric, `-0` before `+0`, NaN last (payload kept). `ArrayValue::of` has no `RangeError` past ~10^5 rows (already listed in "JS semantics that are traps"). S0's integer-only `ymd_to_serial` in `cell.rs` stays (same arithmetic on its domain); `dates::ymd_to_serial` is the general one (V8's `MakeDay` with its year/month range checks, `Date.UTC`'s 0–99 years, `setUTCFullYear`). |
+
+**Parity** (`tests/a1.rs`):
+
+| Group | Input | Result |
+|---|---|---|
+| **a1** (new, `js/capture-a1.mjs`, committed `tests/captures/a1.capture.gz` 521 KiB) | every A1 entry point of the frozen TS called directly (83 entry points), traps + seeded inputs, four locales (en-US, pt-BR, a de-DE host locale with NBSP group, `.` time separator, YMD order, € and German months, and `xx` with an EMPTY group, `٫` decimal, `h` time separator), clock frozen at 2025-01-15: texts from a token grammar (digits of both scripts, every separator, currencies, signs, parentheses, %, exponents, months in any case, AM/PM, lone surrogates), locale-formatted numbers and dates, 678 criteria × 59 cell values per locale (+ `prefix` in en-US/pt-BR), dates with fractional/negative/huge/NaN parts, statistics lists, `collectNumbers` through a fake context, special functions and libm over wide ranges | CI: **52,402 calls, 52,211 equal, 191 NaN-payload accepted (A1-2), 0 mismatches**; local `--big` (`core/target/sheet-cap/a1-big.capture.gz`, 10× the seeded inputs, 19 s capture): **486,022 calls, 484,454 equal, 1,568 NaN accepted, 0 mismatches** |
+| **calc-tests** (A1 calls) | the A1 entry points the TS test suite calls (`compareText`, `compareScalars`, `parseDateTimeParts`, `parseNumberText`, `numberToText`, `toBool`, `compareNumbers`, `compare15`, `ymdToSerial`, `serialToYmd`, `weekday`, `serialToHms`, `snapAdd`, `excelPower`), results re-serialized as the recorder's canonical JSON | CI **548/548 equal**; big **1,262/1,262 equal**; 5 calls not replayable (`parseCriterion` returns a closure, `wildcardRegExp` a `RegExp`: their behaviour is in the a1 group) |
+| calc-traps / bank | callFn per Excel function / `evaluate` | not replayable before A2–A4 (they enter through the evaluator); none of the 23 TS calls that never return (`COMBINA`, `BESSEL*`, `COUP*`, `ODDFPRICE`, `FORECAST.ETS.CONFINT`) hangs in A1 code — their loops are in `math.ts`, `engineering.ts`, `daycount.ts`, `financial.ts`, `ets.ts` (A4) |
+
+**Robustness** (`tests/a1_robust.rs`, seeded, ≈ 3 s debug): 20,000 random UTF-16 texts (lone surrogates, both digit
+scripts, every separator) through coercion, dates, criteria, comparisons and wildcards under random host locales
+(empty, multi-unit and digit separators; worst call group 0.34 ms), 20,000 random bit patterns through every numeric
+function (worst 7 ms), and the hostile patterns (4,000 digits with an empty group: < 0.5 s; 20,000 groups; 200
+stars over 5,000 units; a 40,000-unit date): no panic, bounded. No fuzz target is listed for A1 (the record's targets
+are formula/workbook/regex/store); the seeded tests cover the same ground in seconds.
+
+**Memory**: M1 for every allocating entry (outputs dropped, live bytes back exactly) and zero allocations on the hot
+paths (A1-9). The only caches are two lazily built static tables (Latin-1 collation elements, 14 KiB; Latin-1 `RegExp`
+canonicalization, 512 B), fixed size (M5 trivially). The TS's `numReCache`/`charCache`/`keyCache` do not exist here.
+
+**Benchmarks** (`benches/a1.rs` vs `js/bench-a1.mjs`, the frozen TS in Node 24.15 on the same inputs, i5-14600KF,
+medians of 7, ns per call):
+
+| Operation | Rust native | TS Node | Rust / TS |
+|---|---|---|---|
+| `parseNumberText` pt-BR, 100k mixed texts | 104 | 743 | 0.14 |
+| criteria `>=50` match (number cells / text cells) | 2.9 | 10.9 | 0.27 |
+| criteria `=1` match (text cells parsed as numbers) | 100 | 614 | 0.16 |
+| criteria `a*` (wildcard) | 3.1 | 12.3 | 0.25 |
+| criteria `abc` (collation equality) | 4.9 | 16.7 | 0.29 |
+| `compareText` ASCII pairs | 9.0 | 102 | 0.09 |
+| `compareText` Latin-1 (accented) pairs | 10.5 | 577 | 0.02 |
+| sort 20k ASCII words by `compareText` (per item) | 181 | 619 | 0.29 |
+| `numberToText` | 243 | 432 | 0.56 |
+| `crLog` (double-double) | 243 | 578 | 0.42 |
+| `xlExp` (x87 EXP) | 259 | 703 | 0.37 |
+
+Rework found while building: the first `compareText` of Latin-1 text went through `uo_text` keys (1,500 ns, 2.6× the
+TS, which caches keys) → the Latin-1 element table (10.5 ns); a criterion's ASCII text was prepared as UTF-16 and
+missed the fast path (259 ns) → narrow storage (4.9 ns); `numberCore` formatted its exponent with `to_string` (20 B per
+call) → stack digits. These are the first A1 records (the 10% regression rule starts from them).
+
 ## Frontiers (closed scope per frontier; all Opus)
 
 | # | Scope | Delivers | Captures | Lines | Needs |
 |---|---|---|---|---|---|
 | **S0** (**done** 2026-11-24, section "S0 — the store, as built") | `key`, `strings`, `store`, `formula` (file side), `cellValue`/`fileCellValue`/`numberLiteral` | the store API: get/set/delete, kind/payload/style lanes with widening, area iteration row-major and column runs, viewport gather, string pool with refcounts and compaction, SST lazy decode hooks, extras, `FileOrder`, row meta, default style, the **store facet** (canonical JSON of every cell, below) | store facet of the TS model for every committed sample + generated workbooks (via a TS adapter that turns the sheet-core model into the facet) | ≈ 600 TS-equivalent + new | — |
-| A1 | values/coerce/collate (already in `uo-text`)/criteria/dates/stats/special/libm/math-util | as plan §5 A1 | `calc-traps` subset of these entry points, bank cases | ≈ 1,900 | — |
+| A1 (**done** 2026-11-24, section "A1 — as built") | values/coerce/collate (already in `uo-text`)/criteria/dates/stats/special/libm/math-util | as plan §5 A1; the context walkers and `FnDef` factories go to A2/A4 (A1-7) | the new `a1` group (every A1 entry point, traps + seeded) and the A1 calls of `calc-tests`; `calc-traps`/bank enter through the evaluator (A2+) | ≈ 1,900 | — |
 | A2 | ast/parse/print/a1/evaluate/apply/ops/fn | `parse`/`print` with a depth limit and an explicit stack, `trait EvalHost` (the TS interface, `evaluate.ts:34-61`) | parse/print round trips over the bank's formulas, `calc-tests` | ≈ 1,460 | A1 |
 | A3 | engine (graph, full/incremental recalc, `NeedCell` as `Result`, spills, CSE, data tables skip, cycles/iteration, volatiles) on S0 | `Engine` over `&mut Store` | per-cell values + evaluation-order facet over generated workbooks, incremental = full, `calc-tests` | ≈ 900 | S0, A2 |
 | A4a | math, math-util, libm, complex, engineering | functions | bank + traps | 2,000 | A3 |
@@ -353,6 +434,7 @@ text (`lib/common.mjs` `makeValueText`: `n<f64 bits>`, `s<JSON>`, `b1/b0`, `e<co
 | **calc-tests** | `node core/crates/uo-calc/js/capture-tests.mjs`; local `--big` (no cap) | `calc-tests.capture` 1.3 MiB + `calc-tests.calls.gz` 268 KiB (the full calls), 10,866 calls | the 16 `calc/test/*.test.ts` except `oracle.test.ts` (the bank replays it) + `sheet/test/{sheet-calc,style-pool,entry}.test.ts` = 19 files, 152 tests, all passing under the recorder. Every `export function` of `calc/src` (248 sites: evaluate, parse/print, applyFn/callFn, writeValues, fromSheetCore, open-recalc, save, file-form, i18n…) and the public methods of `Engine`, `SheetCalc`, `XfPool` are wrapped in memory by a Vite plugin (`calc-tests/`; the checkout is never written); only outermost calls are kept, with canonical arguments, result or exception, receiver id and the `Math.random` values consumed. Clock frozen, `Math.random` seeded per file. Filtered: 3,186 registration calls at module load; CI keeps ≤ 200 pure calls per (test, function) by stride (41,665 dropped, all kept by `--big`) |
 | **calc-traps** | `node --max-old-space-size=8192 core/crates/uo-calc/js/capture-traps.mjs` (≈ 8 min); local `--big` (41 min) | `calc-traps.capture` 1.1 MiB, 535 functions, 54,120 calls | per function, a seeded baseline from the bank (the plain-argument case with the most arguments) and each position 0..3 replaced by 31 CORE traps (NaN, -0, ±∞, 1e21, 1e-7, 2^53+2, 17 digits, denormal, empty, lone surrogate, astral, combining, non-ASCII, Turkish İı, pt-BR/en-US text-numbers, TRUE, empty, omitted, #N/A/#DIV/0!/#VALUE!, empty/1×1/union/whole-column ranges, 2×2 and ragged arrays) in pt-BR, plus the text traps in en-US. `--big`: 98 traps (every error code, more digit counts, subnormals, white space, wildcards, regex text, dates, booleans as text, rows/blocks), positions 0..5, both locales, 24 seeded pairs per function and locale. The trap table is in the file (`@trap.*`). Calls run in a child process with a 5 s watchdog per call; a call that does not return is `timeout:5000ms`, one that kills the process (V8 fatal) `crash:<exit>`, and the child restarts at the next call |
 | **calc-order** | `node core/crates/uo-calc/js/capture-order.mjs`; local `--gen x1-big --heavy 20000` | `calc-order.capture` 74 KiB + `.side.gz` 423 KiB, 30 workbooks | the evaluation-order facet of §16 item 4: the generated workbooks (uo-xlsx `gen-workbook.mjs` group x1, read by sheet-core's dist, `fromSheetCore` → the `CalcWorkbook`, kept in the sidecar so A3 can replay before C1a exists) through `new Engine` + `recalc()`, a `calculate()`, 12 seeded `setCell` + `calculate()` edits, and a fresh full recalc of the final inputs: per run the `evaluateRec` sequence (13,970 evaluations in x1), the RAND values (1,570), `circular` sorted (13 workbooks with cycles), `internalErrors` (0), all values, and incremental vs full (equal in 6, differ in 24: volatiles and cycles — recorded, not judged). The x1 workbooks put ranges wider than the formula columns next to spills/CSE (the `fc.keys()` and `rangeMasters` sites of S7) |
+| **a1** (A1) | `node core/crates/uo-calc/js/capture-a1.mjs`; local `--big --out core/target/sheet-cap/a1-big.capture.gz` (19 s) | `a1.capture.gz` 521 KiB, 52,402 calls (big: 486,022) | every A1 entry point of the calc dist called directly: traps + seeded inputs in four locales (en-US, pt-BR, a de-DE host locale, an empty-group locale), clock frozen at 2025-01-15 12:00 UTC; records `<fn>#<i>` with `in` (value texts) and `out`; replayed by `tests/a1.rs` (section "A1 — as built") |
 | **store** (S0) | `node core/crates/uo-calc/js/capture-store.mjs`; local `--big --out core/target/sheet-cap/store-big.capture` (47 s) | `store.capture` 19 KiB + `store.side.gz` 146 KiB, 35 workbooks + 1,750 traps (0.2 s) | the TS adapter of the store facet (`storeOf` rule of uo-xlsx `capture-sheet.mjs`): per sheet the model cells in FILE order (`in<i>`, the test-only loader's input), `st<i>`, `fo<i>`, `rw<i>`, `cellValue` per cell (`cv<i>`), the SST texts; samples (giants only in `--big`) + x1 (`--big`: + x1-big); per-parameter traps of `numberLiteral`/`numberText`/`fileCellValue`/`errorOf`/`cellValue`. Replayed by `tests/parity.rs` (section "S0 — the store, as built") |
 
 TS findings the traps recorded (kept as TS behaviour; the Rust port must reproduce or the record must declare):
@@ -410,8 +492,8 @@ argument with a side effect — `RAND` inside a thunk — is recorded with that 
 | `volatileNames` (`engine.ts:356`) | engine map | bounded by names × sheets |
 | `rev`, `deps`, `ordered` (`engine.ts:217, 826, 607`) | engine | data of the formulas; dropped by `clear_caches` |
 | temp string arena (new) | per pass | 64 MiB wasm32 / 256 MiB native, `#VALUE!` past it (declared, hostile only) |
-| `numReCache` (`coerce.ts:97`) | `coerce` | 64 |
-| `charCache`, `keyCache` (`collation.ts:62, 125`) | `uo_text::collation` | as its record |
+| `numReCache` (`coerce.ts:97`) | none: A1's matchers take the separators directly (A1-1) | — |
+| `charCache`, `keyCache` (`collation.ts:62, 125`) | `uo_text::collation` keeps none; uo-calc has the static Latin-1 element table (14 KiB, fixed) | fixed |
 | regex `cache` (`functions/regex.ts:191`) | `functions::regex` | 256 compiled patterns, LRU |
 | `fmtLocaleCache` (`text-format.ts:26`) | per `ValueLocale` | 8 |
 | `LANG_CACHE` (`translate.ts:47`) | static tables | fixed |
@@ -515,3 +597,4 @@ Listed in the plan's §16 with the evidence.
 | Architecture pass (S, C1 hook, frontiers, budgets) | Opus | ≈ 25 min wall (00:53-01:18, shared with `uo-xlsx.md`) | TS heap measured with the frozen dists |
 | Capture harnesses (plan §4.3: bank, calc-tests, calc-traps, calc-order; Sheet captures, workbook generator, `sheet` bench suite) | Opus | ≈ 1 h 50 min wall (01:15-03:07, ≈ 1 h of it the large local runs; shared with `uo-xlsx.md` T10a/T13) | no Rust code touched; one rework: the calc-traps run hung on TS inputs that never return (COMBINA(n, ∞) and 22 more), so calls moved into a watchdogged child process (a worker thread was not enough: the big run hit a V8 fatal error, which aborts the whole process) |
 | S0 store (port + TS adapter + parity + memory + fuzz target + benchmarks) | Opus | ≈ 42 min wall (03:08-03:50) | 0 parity rounds (the first replay was clean: CI 337 facets, local 5,161); rework found by the verifiers built in the same session, all fixed by the same agent: (1) payload lane widened after the kinds lane changed — a string id widened as a number, caught by the differential ops test as a pool reference count ≠ holders; (2) `each` on a sheet without columns indexed `columns[0]` (ops test); (3) an emptied `BTreeMap` of extras kept its root leaf, 1,776 B (M1); (4) random get 1M over budget (16.4 ms) until `Column::find` probed the direct index (3.7 ms); (5) the ops harness's full-model check made fuzz inputs take 3 s (now every 64 ops) |
+| A1 (port of values/coerce/collate entry points/criteria/dates/stats/special/libm/math-util + `a1` capture + parity + robustness + memory + benchmarks vs the TS) | Opus | ≈ 35 min wall (03:52-04:27) | 0 parity rounds: the first replay of the 52,402-call capture had only NaN-payload differences (A1-2), the big run (486,022) and the calc-tests calls (548 + 1,262) were clean; rework found by the tests and benchmarks of the same session, all fixed by the same agent: (1) `BASE_1900` constant off by one day (dates unit test); (2) a `usize` loop underflow in `sin_dd` (debug overflow, before any run); (3) Latin-1 `compareText` 2.6× slower than the TS (keys per call) → element table; (4) ASCII criterion text missed the fast path (stored as UTF-16); (5) the exponent of `numberCore` allocated (zero-allocation test); (6) 13 float → int casts routed through `cast.rs`/`js_index` for the float-casts gate |

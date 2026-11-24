@@ -1,8 +1,11 @@
 //! Sheet cell store and calculation engine of the UniversalOffice Rust core (plan
 //! `core/docs/slides-sheet-port-plan.md` §4.0 and track A §5). Record: `core/docs/modules/uo-calc.md`.
 //!
-//! **Frontier S0 done** (2026-11-24): the store ([`store`], [`cell`], [`load`], [`formula`], [`strings`]). The
-//! engine is still the architecture skeleton; its operations return [`CalcError::NotPorted`].
+//! **Frontier S0 done** (2026-11-24): the store ([`store`], [`cell`], [`load`], [`formula`], [`strings`]).
+//! **Frontier A1 done**: values and coercion ([`value`], [`coerce`]), the text order ([`collate`]), criteria
+//! ([`criteria`]), dates ([`dates`]), the statistics base ([`stats`]), special functions ([`special`]), the
+//! double-double libm ([`libm`]) and the math support ([`math_util`]). The engine is still the architecture
+//! skeleton; its operations return [`CalcError::NotPorted`].
 //!
 //! One cell store ([`store::Store`]) holds every cell of every sheet ONCE: its file representation (what the
 //! surgical save writes back) and its calc value are the same lanes. The engine ([`engine::Engine`]) owns only
@@ -16,15 +19,25 @@
 //! [`engine`] (graph, recalc). [`locale`] is the C1 host hook. Feature `facet`: [`facet`], the parity facet.
 #![forbid(unsafe_code)]
 
+mod cast;
 pub mod cell;
+pub mod coerce;
+pub mod collate;
+pub mod criteria;
+pub mod dates;
 pub mod engine;
 pub mod error;
 #[cfg(feature = "facet")]
 pub mod facet;
 pub mod formula;
+mod jstext;
 pub mod key;
+pub mod libm;
 pub mod load;
 pub mod locale;
+pub mod math_util;
+pub mod special;
+pub mod stats;
 pub mod store;
 pub mod strings;
 pub mod value;
@@ -35,7 +48,7 @@ pub use key::{Area, CellKey, EXT_STRIDE, EXTERNAL_BASE, MAX_COL, MAX_ROW, SheetI
 pub use locale::{Clock, DateOrder, FormatLetters, HostHooks, R1c1Letters, RandomSource, ValueLocale};
 pub use store::{RawCell, Store};
 pub use strings::{JsStr, JsString, StrId, StrPool};
-pub use value::{ErrorCode, Scalar, StrRef};
+pub use value::{ErrorCode, Scalar, ScalarView, StrRef};
 
 #[cfg(test)]
 mod tests {

@@ -13,8 +13,8 @@ publish.workspace = true
 [dependencies]
 # S0: Number(s)/String(n) of the <v> texts (numberLiteral, cellValue), JS white space
 uo-jsnum = { path = "../uo-jsnum" }
-# S0: errorOf's toUpperCase (full Unicode case mapping, as V8)
-uo-text = { path = "../uo-text" }
+# S0: errorOf's toUpperCase (full Unicode case mapping, as V8); A1: the Excel text order (feature `collation`)
+uo-text = { path = "../uo-text", features = ["collation"] }
 # feature `facet`: the store facet's long-string digest
 uo-testkit = { path = "../uo-testkit", optional = true }
 
@@ -32,6 +32,10 @@ uo-opc = { path = "../uo-opc" }
 
 [[bench]]
 name = "store"
+harness = false
+
+[[bench]]
+name = "a1"
 harness = false
 
 [lints]

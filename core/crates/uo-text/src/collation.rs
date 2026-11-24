@@ -267,6 +267,13 @@ impl CollationKey {
         x.len().cmp(&y.len())
     }
 
+    /// The weights of the key (see [`KeyWeights`]). Lets a caller tabulate the elements of a small alphabet once
+    /// (uo-calc's allocation-free Latin-1 comparison) without a second copy of the rules.
+    #[must_use]
+    pub fn weights(&self) -> KeyWeights<'_> {
+        KeyWeights { primary: &self.p, secondary: &self.s, tertiary: &self.t, ignorables: &self.sp }
+    }
+
     /// `collationKey(text)`: a string that is equal for two texts exactly when they compare equal.
     #[must_use]
     pub fn to_key_string(&self) -> String {
@@ -274,6 +281,20 @@ impl CollationKey {
         let sp = self.sp.iter().map(|&(pos, w)| format!("{pos}:{w}")).collect::<Vec<_>>().join(",");
         format!("{}|{}|{}|{}", join(&self.p), join(&self.s), join(&self.t), sp)
     }
+}
+
+/// The weights of a [`CollationKey`]: one primary, secondary and tertiary weight per collation element, and the
+/// ignorable characters (hyphen, apostrophe) as (position, weight).
+#[derive(Debug, Clone, Copy)]
+pub struct KeyWeights<'a> {
+    /// Primary weights.
+    pub primary: &'a [f64],
+    /// Secondary weights (accents).
+    pub secondary: &'a [f64],
+    /// Tertiary weights (kana width).
+    pub tertiary: &'a [f64],
+    /// Ignorables: (position in code points, weight 1 = apostrophe, 2 = hyphen).
+    pub ignorables: &'a [(usize, u8)],
 }
 
 /// `compareText(a, b)`: the Excel order of two texts.

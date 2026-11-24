@@ -111,3 +111,112 @@ pub enum RandomSource {
     /// A recorded sequence, consumed in order (parity).
     Sequence(Vec<f64>, usize),
 }
+
+fn js(s: &str) -> JsString {
+    JsString::from_str_js(s)
+}
+
+fn js_arr<const N: usize>(v: [&str; N]) -> [JsString; N] {
+    v.map(js)
+}
+
+impl ValueLocale {
+    /// `EN_US` (`fn.ts:107-116`): the default of the TS tests and of the file.
+    #[must_use]
+    pub fn en_us() -> Self {
+        Self {
+            id: "en-US".into(),
+            decimal: js("."),
+            group: js(","),
+            true_text: js("TRUE"),
+            false_text: js("FALSE"),
+            date_order: DateOrder::Mdy,
+            date_sep: js("/"),
+            time_sep: js(":"),
+            am: js("AM"),
+            pm: js("PM"),
+            month_names: js_arr([
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
+            ]),
+            month_abbr: js_arr(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]),
+            day_names: js_arr(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]),
+            day_abbr: js_arr(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]),
+            currency: js("$"),
+            general_name: Some(js("General")),
+            format_letters: Some(FormatLetters {
+                year: js("y"),
+                month: js("m"),
+                day: js("d"),
+                hour: js("h"),
+                minute: js("m"),
+                second: js("s"),
+            }),
+            r1c1: None,
+        }
+    }
+
+    /// `PT_BR` (`fn.ts:122-131`): the Excel of the oracle (decimal `,`, `VERDADEIRO`).
+    #[must_use]
+    pub fn pt_br() -> Self {
+        Self {
+            id: "pt-BR".into(),
+            decimal: js(","),
+            group: js("."),
+            true_text: js("VERDADEIRO"),
+            false_text: js("FALSO"),
+            date_order: DateOrder::Dmy,
+            date_sep: js("/"),
+            time_sep: js(":"),
+            am: js("AM"),
+            pm: js("PM"),
+            month_names: js_arr([
+                "janeiro",
+                "fevereiro",
+                "março",
+                "abril",
+                "maio",
+                "junho",
+                "julho",
+                "agosto",
+                "setembro",
+                "outubro",
+                "novembro",
+                "dezembro",
+            ]),
+            month_abbr: js_arr(["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]),
+            day_names: js_arr(["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"]),
+            day_abbr: js_arr(["dom", "seg", "ter", "qua", "qui", "sex", "sáb"]),
+            currency: js("R$"),
+            general_name: Some(js("Geral")),
+            format_letters: Some(FormatLetters {
+                year: js("a"),
+                month: js("m"),
+                day: js("d"),
+                hour: js("h"),
+                minute: js("m"),
+                second: js("s"),
+            }),
+            r1c1: None,
+        }
+    }
+}
+
+impl Clock {
+    /// The current year of the host's local clock (`new Date().getFullYear()`, `coerce.ts:197`): what a date typed
+    /// without a year (`"1/2"`, `"13-jan"`) takes.
+    #[must_use]
+    pub fn current_year(&self) -> f64 {
+        crate::dates::year_of_serial(self.now_serial)
+    }
+}

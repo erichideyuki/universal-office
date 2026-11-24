@@ -98,3 +98,96 @@ pub enum Value {
     /// A LAMBDA (opaque outside the evaluator).
     Lambda(u32),
 }
+
+/// A scalar with its text resolved: what the A1 helpers (coercion, comparison, criteria) read. The evaluator turns a
+/// [`Scalar`] into a view by resolving its [`StrRef`] (pool or pass arena); no string is copied.
+#[derive(Clone, Copy, Debug)]
+pub enum ScalarView<'a> {
+    /// `null`.
+    Empty,
+    /// A number.
+    Num(f64),
+    /// Text.
+    Str(crate::strings::JsStr<'a>),
+    /// A boolean.
+    Bool(bool),
+    /// An error.
+    Err(ErrorCode),
+}
+
+impl ScalarView<'_> {
+    /// `v === null`.
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        matches!(self, Self::Empty)
+    }
+}
+
+/// `ERROR_TYPE` of a code (`values.ts:44-48`).
+#[must_use]
+pub const fn error_type(e: ErrorCode) -> u8 {
+    e as u8
+}
+
+impl ArrayValue {
+    /// `get(r, c)` (`?? null` outside the data).
+    #[must_use]
+    pub fn get(&self, r: u32, c: u32) -> Scalar {
+        if r >= self.rows || c >= self.cols {
+            return Scalar::Empty;
+        }
+        let i = r as usize * self.cols as usize + c as usize;
+        self.data.get(i).copied().unwrap_or(Scalar::Empty)
+    }
+
+    /// `ArrayValue.fill(rows, cols, f)`.
+    pub fn fill(rows: u32, cols: u32, mut f: impl FnMut(u32, u32) -> Scalar) -> Self {
+        let mut data = Vec::with_capacity(rows as usize * cols as usize);
+        for r in 0..rows {
+            for c in 0..cols {
+                data.push(f(r, c));
+            }
+        }
+        Self { rows, cols, data: data.into_boxed_slice() }
+    }
+
+    /// `ArrayValue.of(rows)`: ragged rows padded with `#N/A` to the widest one. The TS takes
+    /// `Math.max(...rows.map(x => x.length))`, which throws a `RangeError` past ~10^5 rows; this loop does not
+    /// (declared in the record, "JS semantics that are traps").
+    #[must_use]
+    pub fn of(rows: &[Vec<Scalar>]) -> Self {
+        let r = rows.len();
+        let c = rows.iter().map(Vec::len).max().unwrap_or(0);
+        let mut data = Vec::with_capacity(r * c);
+        for row in rows {
+            for j in 0..c {
+                data.push(row.get(j).copied().unwrap_or(Scalar::Err(ErrorCode::NA)));
+            }
+        }
+        Self { rows: r as u32, cols: c as u32, data: data.into_boxed_slice() }
+    }
+}
+
+/// `broadcastAt(a, r, c)` (`math-util.ts:306-310`): a dimension of 1 repeats, outside → `#N/A`.
+#[must_use]
+pub fn broadcast_at(a: &ArrayValue, r: u32, c: u32) -> Scalar {
+    let rr = if a.rows == 1 { 0 } else { r };
+    let cc = if a.cols == 1 { 0 } else { c };
+    if rr >= a.rows || cc >= a.cols {
+        return Scalar::Err(ErrorCode::NA);
+    }
+    a.get(rr, cc)
+}
+
+/// The result shape of `liftScalars` (`math-util.ts:316-322`): the largest rows and columns among the array
+/// arguments, `None` when every argument is a scalar (the function is called once, unlifted).
+#[must_use]
+pub fn lift_shape<'a>(arrays: impl IntoIterator<Item = &'a ArrayValue>) -> Option<(u32, u32)> {
+    let mut rows = 0;
+    let mut cols = 0;
+    for a in arrays {
+        rows = rows.max(a.rows);
+        cols = cols.max(a.cols);
+    }
+    if rows == 0 { None } else { Some((rows, cols)) }
+}

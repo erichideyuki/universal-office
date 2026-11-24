@@ -84,6 +84,7 @@ fn every_operation(s: &[u16]) -> usize {
         let key = CollationKey::new(s);
         sink += usize::from(black_box(key.compare(&key)) == std::cmp::Ordering::Equal);
         sink += black_box(key.to_key_string()).len();
+        sink += black_box(key.weights()).primary.len();
     }
     let mut out = Vec::new();
     utf16::push(&mut out, 0x1F600);
