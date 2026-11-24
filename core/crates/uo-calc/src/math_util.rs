@@ -58,6 +58,140 @@ pub fn snap_add(a: f64, b: f64) -> f64 {
     if abs(r) < pow(2.0, exponent_of(a) - 49.0) { 0.0 } else { r }
 }
 
+/// Exact powers of ten representable in a double (`10^0`..`10^22`).
+const P10: [f64; 23] =
+    [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22];
+
+/// `Number(m + 'e' + e)` for an integer `m < 2^53`: the correctly rounded value of `m·10^e`. Exact operands and one
+/// rounding when `|e| ≤ 22` (Clinger's fast path); otherwise the text is built on the stack and parsed (no
+/// allocation either way).
+#[must_use]
+pub(crate) fn num_e(m: u64, e: i32) -> f64 {
+    debug_assert!(m < 1 << 53);
+    let mf = crate::cast::u53_to_f64(m);
+    if (0..=22).contains(&e) {
+        return mf * P10[e as usize];
+    }
+    if (-22..0).contains(&e) {
+        return mf / P10[(-e) as usize];
+    }
+    let mut buf = [0u8; 48];
+    let mut n = 0;
+    let mut push = |b: u8| {
+        buf[n] = b;
+        n += 1;
+    };
+    let mut digits = [0u8; 20];
+    let mut k = 0;
+    let mut v = m;
+    loop {
+        digits[k] = b'0' + (v % 10) as u8;
+        k += 1;
+        v /= 10;
+        if v == 0 {
+            break;
+        }
+    }
+    while k > 0 {
+        k -= 1;
+        push(digits[k]);
+    }
+    push(b'e');
+    if e < 0 {
+        push(b'-');
+    }
+    let mut ue = e.unsigned_abs();
+    let mut ed = [0u8; 10];
+    let mut j = 0;
+    loop {
+        ed[j] = b'0' + (ue % 10) as u8;
+        j += 1;
+        ue /= 10;
+        if ue == 0 {
+            break;
+        }
+    }
+    while j > 0 {
+        j -= 1;
+        push(ed[j]);
+    }
+    core::str::from_utf8(&buf[..n]).map_or(f64::NAN, uo_jsnum::parse::to_number)
+}
+
+/// The 15 significant digits of `x > 0` as `x.toExponential(14)` gives them (V8's precision mode: the exact decimal
+/// expansion rounded half up): `(d, e)` with `10^14 ≤ d < 10^15` and the value `d·10^(e−14)`. Exact integer
+/// arithmetic in `u128`, for `1e-8 ≤ x < 2^128` (`None` outside, and for 0, subnormals and non-finite values: the
+/// callers fall back to the text path).
+#[must_use]
+pub(crate) fn digits15(x: f64) -> Option<(u64, i32)> {
+    if !(1e-8..3.402_823_669_209_385e38).contains(&x) {
+        return None;
+    }
+    let bits = x.to_bits();
+    let be = ((bits >> 52) & 0x7ff) as i32;
+    let m = u128::from((bits & ((1u64 << 52) - 1)) | (1u64 << 52));
+    let q = be - 1075; // x = m · 2^q
+    let mut e0 = crate::cast::trunc_i32(floor(uo_jsnum::math::log10(x)));
+    const D_LO: u128 = 100_000_000_000_000; // 10^14
+    const D_HI: u128 = 1_000_000_000_000_000; // 10^15
+    for _ in 0..3 {
+        let k = 14 - e0; // N = x · 10^k
+        let (n, up) = if k >= 0 {
+            // x < 10^15 < 2^52 here, so q < 0
+            if k > 22 || q >= 0 || -q >= 127 {
+                return None;
+            }
+            let num = m * pow10_u128(k as u32);
+            let sh = (-q) as u32;
+            let n = num >> sh;
+            let rem = num & ((1u128 << sh) - 1);
+            (n, sh > 0 && rem >= (1u128 << (sh - 1)))
+        } else {
+            let den = pow10_u128((-k) as u32);
+            let (num, den) = if q >= 0 {
+                if q >= 75 {
+                    return None;
+                }
+                (m << q as u32, den)
+            } else {
+                if -q >= 64 {
+                    return None;
+                }
+                (m, den << (-q) as u32)
+            };
+            let n = num / den;
+            let rem = num % den;
+            (n, rem * 2 >= den)
+        };
+        if n >= D_HI {
+            e0 += 1;
+            continue;
+        }
+        if n < D_LO {
+            e0 -= 1;
+            continue;
+        }
+        let d = n + u128::from(up);
+        return Some(if d >= D_HI { (D_LO as u64, e0 + 1) } else { (d as u64, e0) });
+    }
+    None
+}
+
+/// `10^k` for `k ≤ 38`.
+fn pow10_u128(k: u32) -> u128 {
+    10u128.pow(k)
+}
+
+/// `approx15` without text (no allocation): [`digits15`] and back through [`num_e`]; `None` when the exact path
+/// does not apply.
+#[must_use]
+pub(crate) fn round15_exact(x: f64) -> Option<f64> {
+    let neg = x < 0.0;
+    let (d, e) = digits15(abs(x))?;
+    let v = num_e(d, e - 14);
+    Some(if neg { -v } else { v })
+}
+
 /// Decimal rounding mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RoundMode {
@@ -91,6 +225,14 @@ pub fn decimal_round(x: f64, d: f64, mode: RoundMode) -> f64 {
     if x == 0.0 || !x.is_finite() {
         return x;
     }
+    if let Some(v) = decimal_round_exact(x, d, mode) {
+        return v;
+    }
+    decimal_round_text(x, d, mode)
+}
+
+/// [`decimal_round`] through the digit text, as the TS (the path for what [`decimal_round_exact`] does not cover).
+fn decimal_round_text(x: f64, d: f64, mode: RoundMode) -> f64 {
     let neg = x < 0.0;
     let s = uo_jsnum::format::to_exponential(abs(x), 14).unwrap_or_default(); // "d.dddddddddddddde±X"
     let ei = s.find('e').unwrap_or(s.len());
@@ -151,6 +293,35 @@ pub fn decimal_round(x: f64, d: f64, mode: RoundMode) -> f64 {
     if neg { -out } else { out }
 }
 
+/// The integer path of [`decimal_round`] (no text, no allocation): an integral `d` with `|d| ≤ 22` and a value
+/// [`digits15`] covers. Same digits, same carry, same `Number(k + 'e' + -d)`.
+fn decimal_round_exact(x: f64, d: f64, mode: RoundMode) -> Option<f64> {
+    if !(d.is_finite() && uo_jsnum::conv::is_integer(d) && abs(d) <= 22.0) {
+        return None;
+    }
+    let di = crate::cast::trunc_i32(d);
+    let neg = x < 0.0;
+    let (digits, e) = digits15(abs(x))?;
+    let keep = e + 1 + di;
+    let out = if keep >= 15 {
+        num_e(digits, e - 14)
+    } else if keep < 0 {
+        if mode == RoundMode::Up { num_e(1, -di) } else { 0.0 }
+    } else {
+        let div = 10u64.pow((15 - keep) as u32);
+        let kept = digits / div;
+        let rest = digits % div;
+        let up = match mode {
+            RoundMode::Up => rest != 0,
+            RoundMode::Half => rest >= 5 * (div / 10),
+            RoundMode::Down => false,
+        };
+        let k = kept + u64::from(up);
+        if keep == 0 && !up { 0.0 } else { num_e(k, -di) }
+    };
+    Some(if neg { -out } else { out })
+}
+
 /// `TRIG_LIMIT` = 2^27: `SIN`/`COS`/`TAN` of a larger |x| are `#NUM!`.
 pub const TRIG_LIMIT: f64 = 134_217_728.0;
 /// `cosExt`.
@@ -194,7 +365,7 @@ pub fn excel_power(x: f64, y: f64) -> Num {
     }
     if uo_jsnum::conv::is_integer(y) && abs(y) < 4_294_967_296.0 {
         // base 10: the exact power of the table (POWER(10;300) = 1E300; 10^−n = 1/10^n)
-        let pos = if x == 10.0 { uo_jsnum::parse::to_number(&format!("1e{}", crate::cast::trunc_u64(abs(y)))) } else { pow_int(x, abs(y)) };
+        let pos = if x == 10.0 { pow10_text(abs(y)) } else { pow_int(x, abs(y)) };
         return fin_flush(if y < 0.0 { 1.0 / pos } else { pos });
     }
     if x < 0.0 {
@@ -205,6 +376,14 @@ pub fn excel_power(x: f64, y: f64) -> Num {
         return fin_flush(-pow_real(-x, y));
     }
     fin_flush(pow_real(x, y))
+}
+
+/// `Number('1e' + n)` for an integer `0 ≤ n < 2^32` (beyond 308 it is `Infinity`).
+fn pow10_text(n: f64) -> f64 {
+    if n > 400.0 {
+        return f64::INFINITY;
+    }
+    num_e(1, crate::cast::trunc_i32(n))
 }
 
 /// `x^y` for a non-integer y, x > 0: `exp(y·ln x)` in doubles (Excel's x87 `EXP`, correct `ln`), except y = 0.5 (the
@@ -270,6 +449,41 @@ impl EachNumber {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The integer paths (no text) equal the text paths of the TS on random and boundary values.
+    #[test]
+    fn exact_paths_equal_text_paths() {
+        let mut st: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = || {
+            st ^= st << 13;
+            st ^= st >> 7;
+            st ^= st << 17;
+            st
+        };
+        let text15 = |x: f64| uo_jsnum::parse::to_number(&uo_jsnum::format::to_precision(x, 15).unwrap());
+        let mut xs: Vec<f64> =
+            vec![2.675, 1.005, 0.5, 1e-8, 9.999_999_999_999_995e14, 1e15, 4_503_599_627_370_496.0, 1e22, 1e37, 0.1 + 0.2, 1.0 / 3.0];
+        for _ in 0..200_000 {
+            let r = next();
+            // random bits in a range of exponents, and short decimals (the ties of half up)
+            let e = (r >> 52) % 120;
+            xs.push(f64::from_bits((r & ((1u64 << 52) - 1)) | ((1023 + e - 40) << 52)));
+            xs.push(((r % 2_000_000) as f64 - 1_000_000.0) / 1000.0);
+            xs.push(((r % 20_000_000_000_000_000) as f64) * 1e-3);
+        }
+        let modes = [RoundMode::Half, RoundMode::Up, RoundMode::Down];
+        for (k, &x) in xs.iter().enumerate() {
+            if x != 0.0
+                && x.is_finite()
+                && let Some(v) = round15_exact(x)
+            {
+                assert_eq!(v.to_bits(), text15(x).to_bits(), "round15 {x:e}");
+            }
+            let d = (k % 45) as f64 - 22.0;
+            let m = modes[k % 3];
+            assert_eq!(decimal_round(x, d, m).to_bits(), decimal_round_text(x, d, m).to_bits(), "decimal_round {x:e} {d} {m:?}");
+        }
+    }
 
     #[test]
     fn measured() {

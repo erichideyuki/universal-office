@@ -5,7 +5,8 @@
 //!
 //! The operator-only variants of the TS baseline classes (function bodies are A4): chain-100k, sum3-100k (three
 //! references per formula), text-50k (`&`), dynamic-1k (20 spills of 1,000 rows), volatile-10k (`ca` + dependents),
-//! cycles-iterate, shared-1m; per class the engine build, the full recalc (median of 5 after one warm-up), the engine's
+//! cycles-iterate, shared-1m; with the A4a bodies: sum-ranges-100k (the baseline's window `SUM`) and math-100k
+//! (ROUND/MOD/POWER/SQRT/INT/ABS/SIN); per class the engine build, the full recalc (median of 5 after one warm-up), the engine's
 //! heap and the live bytes the build added (store excluded); the edit latency on a 20k chain and on an isolated cell
 //! (p50 / p95 of 20).
 #![allow(clippy::unwrap_used)]
@@ -47,6 +48,27 @@ fn class(name: &str) -> (Vec<(u32, u32, In)>, CalcOptions) {
             for i in 0..100_000u32 {
                 v.push((i, 0, In::Num(f64::from((i * 7919) % 1000))));
                 v.push((i, 1, f(format!("A{}+A{}+A{}*2", i + 1, i + 2, i + 3))));
+            }
+        }
+        "sum-ranges-100k" => {
+            // the TS baseline class (`gen-workbook.mjs` CALC_CLASSES): SUM of a 100-row window
+            for i in 1..=100_000u32 {
+                v.push((i - 1, 0, In::Num(f64::from((i * 7919) % 1000))));
+                v.push((i - 1, 1, f(format!("SUM(A{}:A{i})", i.saturating_sub(99).max(1)))));
+            }
+        }
+        "math-100k" => {
+            // A4a: rounding, MOD, POWER, roots and trigonometry over 100,000 cells
+            for i in 1..=100_000u32 {
+                v.push((i - 1, 0, In::Num(f64::from((i * 7919) % 1000) + 0.37)));
+                let t = match i % 5 {
+                    0 => format!("ROUND(A{i}*1.2345,2)"),
+                    1 => format!("MOD(A{i},7)"),
+                    2 => format!("POWER(A{i},1.5)"),
+                    3 => format!("SQRT(A{i})+INT(A{i}/3)"),
+                    _ => format!("ABS(SIN(A{i}))"),
+                };
+                v.push((i - 1, 1, f(t)));
             }
         }
         "text-50k" => {
@@ -193,7 +215,9 @@ fn main() {
     let opts = EngineOptions::new(ValueLocale::pt_br());
     let mut rnd = RandomSource::seeded(1);
     println!("class | formulas | build ms | recalc ms | calculate ms | engine heap MB | build live MB");
-    for name in ["chain-100k", "sum3-100k", "text-50k", "dynamic-1k", "volatile-10k", "cycles-iterate", "shared-1m"] {
+    for name in
+        ["chain-100k", "sum3-100k", "sum-ranges-100k", "math-100k", "text-50k", "dynamic-1k", "volatile-10k", "cycles-iterate", "shared-1m"]
+    {
         if !want(name) {
             continue;
         }

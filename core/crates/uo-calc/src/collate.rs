@@ -266,7 +266,8 @@ pub fn round15(x: f64) -> f64 {
     if x == 0.0 || !x.is_finite() {
         return x;
     }
-    precision15(x)
+    // the exact integer path (no text, no allocation); the text path outside its range
+    crate::math_util::round15_exact(x).unwrap_or_else(|| precision15(x))
 }
 
 /// `compareNumbers(a, b)`: Excel's operators: equal when they agree to 15 significant digits

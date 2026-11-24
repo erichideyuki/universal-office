@@ -7,7 +7,9 @@ Status: **architecture pass done 2026-11-24 (Opus)**: data model, frontiers, cap
 special functions, libm, math support) done 2026-11-24 (Opus)**: section "A1 — as built". **Frontier A2 (addresses,
 the tree arena, parser, printer, registry contract, operators, apply, evaluator) done 2026-11-24 (Opus)**: section "A2 —
 as built". **Frontier A3 (the engine: graph, full/incremental recalc, spills, CSE, cycles, iteration, volatiles) done
-2026-11-24 (Opus)**: section "A3 — as built"; A4 (function bodies) and A5 are not ported yet.
+2026-11-24 (Opus)**: section "A3 — as built". **Frontier A4a (the shared function layer + the math family: math,
+complex, engineering) done 2026-11-24 (Opus)**: section "A4a — as built"; A4b–A4f (the other five families) and A5 are
+not ported yet.
 The M3 gate (plan §11)
 approves it together with the track C section of `uo-xlsx.md` ("Track C architecture").
 
@@ -596,6 +598,140 @@ B each; filled-down and retyped formulas are deduplicated) — an arena compacti
 `calc-tests` Engine calls (24 engines, 159 calls) are not replayed yet: almost all of them go through function bodies —
 A4 adds the replay together with the bodies; (3) the wasm edit-latency number (C4).
 
+## A4a — as built (2026-11-24, Opus)
+
+Two things: **the shared function layer** every family uses (so A4b–A4f run in parallel, each owning one module) and
+**the math family** (`math.ts`, `complex.ts`, `engineering.ts`; `math-util.ts` and `libm.ts` were A1's pure rules,
+their context walkers and factories are here). Plus RAND/RANDBETWEEN (`math.ts`; RANDARRAY is `dynamic.ts`, A4e),
+the A4 parity harness (bank + calc-traps through the TS `testing.ts` entry points), and `SheetLoader::strings` for the
+C1a reader.
+
+**Code** (`core/crates/uo-calc/src/functions/`):
+
+| File | Content |
+|---|---|
+| `mod.rs` | the dispatch (`body(ix)`: one slot per `FN_TABLE` row, built once from the families' lists), `ported()`, the family contract (below), the consistency test |
+| `shared/mod.rs` | `R<T> = Result<T, Stop>` (`Stop::Err` = an Excel error value, `Stop::Throw` = a host throw), `done`, outputs (`num`, `err`, `boolean`, `num_or_err`, `fin_value`, `text`, `ascii`), argument access (`arg`, `scalar`, `len`, `EMPTY`), `view`, `to_num` (`math-util`'s `num`), `to_num_d` (`tdl-util`'s), `top`, the `bodies!` macro |
+| `shared/mathu.rs` | `math-util.ts` walkers and factories: `NumSpec` + `num_fn`/`num_args` (`numFn`), `atp_fn` (`atpFn`), `Nums` (the converted numbers on the stack, ≤ 16), `Raw`/`atp_raw`/`atp_num`, `lift_scalars`, `each_number`/`each_number_ref`, `as_matrix`, `atp_list` |
+| `shared/statw.rs` | `stats.ts` walkers for A4b/A4e: `collect_numbers`, `collect_into`, `collect_into_skipping` (`skipCell`), `scalars_of`, `grid_of`, `zip_cells` (the sparse path for two big areas), `numeric_pairs` |
+| `shared/tdl.rs` | `tdl-util.ts` (used by A4c, A4d, A4e, A4f): `lift_atp` (`AtpArg::{Omitted, S, Raw}`), `atp_num`, `num`, `txt`, `int`, `scalars_of`, `existing_scalars`, `as_array`, `SPARSE_CELLS` |
+| `shared/agg.rs` | the basic `Agg`s of `statistical.ts` that `database.ts` also uses: `average`, `max`, `min`, `sum`, `product`, `count`, `var_s`, `var_p`, `stdev_s`, `stdev_p` |
+| `math/mod.rs` | `math.ts`: 79 bodies (SUM … MUNIT, ECMA.CEILING/ISO.CEILING sharing bodies, ROUNDBAHT*) |
+| `math/complex.rs` | `complex.ts`: COMPLEX + 25 IM* (format, parse, arithmetic, the measured trigonometry) |
+| `math/engineering.rs` | `engineering.ts`: 12 base conversions, 5 bit functions, CONVERT (the unit tables, prefixes, temperatures), DELTA, GESTEP, 4 ERF*, 4 BESSEL* |
+| `stats.rs`, `finance.rs`, `text.rs`, `lookup.rs`, `logical.rs` | the five other families, empty (`BODIES = &[]`) |
+
+Elsewhere in the crate: `math_util::{digits15, num_e, round15_exact}` and the integer path of `decimal_round` (A4a-7;
+`collate::round15` takes it too); `value::{MAX_ARRAY_CELLS, array_too_big}` (A4a-4, also applied to the A2
+operator broadcast and `apply_fn`'s lift); `FnContext::each_number` and `EvalHost::each_number` (default methods: no
+implementor has to change) with the engine's lane fast path (`engine/host.rs`, A4a-8) and `store::ColumnRun::
+uniform_kind`; `EvalState::set_bodies` (A4a-10); `load::SheetLoader::strings`; `Engine::new` builds its arena with
+`Ast::new()` (A4a-11).
+
+### The family contract
+
+A family is a module `functions::<family>` (file or directory) exporting one item, a list per TS file:
+`pub(super) const BODIES: &[&[(&str, FnBody)]] = &[LIST, …]` with `const LIST: &[(&str, FnBody)] = shared::bodies!
+["NAME" => function, …]`, where `NAME` is the canonical registry name and `function` is `fn(&CallArgs<'_>, &mut dyn
+FnContext) -> shared::R<Value>`. The metadata (modes, lift, volatile, min/max, prefix) is the generated `FN_TABLE` row:
+a body never re-declares it. `functions/mod.rs` already lists the six families; a family never edits it nor `shared/`
+(a helper a second family needs moves to `shared/` — owned by whoever needs it second, announced in its record). The
+test `functions::tests::family_lists_are_consistent` fails on an unknown or duplicated name. Dispatch cost: one
+`OnceLock` load + an index per call (the table is 535 × 8 B, built at the first evaluation; M1 tests warm it like the
+static collation tables).
+
+Cross-family dependencies the TS has, for the orchestrator: `lookup.ts` (A4e) → `regex.ts` `compilePcre` (A4d);
+`engine.ts` → `database.ts` `setComputedCriterion` (A3-3, wired with A4e); `datetime.ts` → `daycount.ts` (both A4c).
+Everything else the families share is in `shared/` now.
+
+### Decisions taken in A4a (declared; observable output equal unless said)
+
+| Id | Decision |
+|---|---|
+| A4a-1 | **Dispatch** = static per-family lists folded into one table indexed by `FnIx` (built once, `OnceLock`); no per-call search or allocation. |
+| A4a-2 | **Factories** are a spec + a closure (`NumSpec` + `num_fn`/`atp_fn`): the closure is monomorphized inside a plain `fn` body, so every body stays an `FnBody` pointer. The converted numbers live on the stack (`Nums`, 16 slots; the largest TS `maxArgs` of a factory is 8). `atpFn`'s positional quirk is kept: an empty optional argument with a default is appended after the present ones. |
+| A4a-3 | **Bounded loops**: the Bessel recurrences stop after 2^22 steps with `#NUM!` (answered at once when the iteration count is known to pass it) — the TS never returns for an order of ∞, 1e21 or 2^53+2 (95 calls of the big trap run) and takes seconds per cell for huge finite orders (results for orders above ≈ 2·10^6 differ by design); BESSELY/BESSELK stop as soon as the value is not finite (∞/NaN are absorbing in the upward recurrence: same result); `binomial` stops when the product is not finite (every factor is ≥ 1 after the swap: same result) — `COMBINA(n; ∞)`, a TS hang, answers `#NUM!`. |
+| A4a-4 | **Array caps**: a lift or a broadcast past 2^24 cells (the engine's `values` cap: `lift_scalars`, `lift_atp`, `apply_fn`'s lift, the evaluator's operators), MUNIT past it, and MMULT/MDETERM/MINVERSE past 2^30 multiply-adds throw a `RangeError` (`#NUM!` in the engine). The TS throws the same past 2^32 − 1 elements; between the caps it allocates gigabytes or computes for minutes. Found while preparing the fuzz run: `A1:A1048576+A1:XFD1` (1.7·10^10 cells) aborted the process in the A2 evaluator — now `#NUM!` in 8 ms. |
+| A4a-5 | **JS-object edges**: a 0-row array reaching an ATP/complex body as a scalar, and a LAMBDA as SERIESSUM's coefficients, read `#VALUE!` (the TS converts an object). Reproduced as the TS: `Object.prototype` names as CONVERT units (`constructor`, `__proto__`, `kconstructor`… are truthy entries of category `undefined`: equal names → x, else `#NUM!`); full Unicode upper case in DECIMAL/HEX2DEC/ARABIC (`HEX2DEC("ﬀ")` = 255, `ARABIC("ıv")` = 4); `BASE(NaN;2)` = "undefined"; `COMPLEX(NaN;1)` = "0,N+i" (the string surgery on "NaN"); BITRSHIFT/BITLSHIFT with a NaN shift and MUNIT(NaN) throw the TS `RangeError`; IMPRODUCT of no value throws its `TypeError`. |
+| A4a-6 | `parseComplex`'s three `RegExp`s are one deterministic scanner (every optional part is taken exactly when the regex takes it: giving one back always leaves a character the rest rejects — argued in `complex.rs`); a host decimal separator that is a `RegExp` metacharacter other than `.` is taken literally (the TS would build another pattern; only exotic C1 locales). |
+| A4a-7 | **No allocation on the scalar paths**: ROUND/ROUNDUP/ROUNDDOWN/TRUNC and the 15-digit view (`approx15`: INT, FLOOR*, CEILING*, MROUND's neighbours, `compareNumbers`) use exact `u128` arithmetic for 1e-8 ≤ \|x\| < 2^128 and an integral \|d\| ≤ 22 (V8's precision digits: the exact expansion rounded half up; back through Clinger's fast path), the text path of the TS otherwise; `POWER(10;n)` formats on the stack. Checked equal bit for bit to the text path on 600,000 values (`math_util::tests::exact_paths_equal_text_paths`). |
+| A4a-8 | **`each_number`** (`SUM`/`PRODUCT`/`SUMSQ` over a reference): a new default method of `FnContext`/`EvalHost`; the engine reads a one-column area from the store's lanes (uniform plain-number runs folded directly; formulas, owned and side-table cells through the engine's view, the `NeedCell` check kept after an error as the TS walk) instead of `for_each_cell` (whose `Store::each` allocates a cursor list and looks each cell up twice). Several columns keep the row-major walk. |
+| A4a-9 | `tdl-util.ts` (four families) and the ten basic `Agg`s (`statistical.ts`, used by `database.ts`) live in `shared/`, not in A4d/A4b. |
+| A4a-10 | **Harness**: `EvalState::set_bodies(false)` for the A2 replay (its capture stopped at the first body); the A3 replay defers a run's random cells (formulas with RAND* directly, through a shared anchor or a defined name) when a body that did not run in Rust may have shifted the random stream; the bank defers legacy formula cases with a range, table, name or spill reference (the TS rewrites them with `@`: A5). |
+| A4a-11 | **A3 bug found by the bank**: the engine's arena did not reserve `StrIx(0)` for the empty string (`Engine::default()`), so a table-less `[b]` — a LAMBDA's optional parameter — read the first interned string as its table and gave `#VALUE!` (`core-fmt-714..716`). Fixed. |
+
+### Parity
+
+The replay (`tests/a4.rs`, `tests/support/fnmock.rs`) is the TS `testing.ts` in Rust: `mockContext` (cells, the LCG
+random of the mock, `formulaAt`/`isSubtotalCell`, hidden/filtered rows, `parseRef`, JS LAMBDAs), `callFn` (`applyFn`
+with the modes, thunks, omitted positions), `runCase` (plain path, post-processing of references and legacy arrays) and
+`runFormulaCase` (the CalcWorkbook → store → `Engine.recalc`, the spill area when it spills). A case or call whose
+evaluation reaches a body not ported yet is deferred: **every family that lands is compared by the same test, no
+harness change**. NaN payloads are accepted (A1-2; none occurred). A TS call that never returned (`timeout:5000ms`) must
+return in Rust within 2 s.
+
+| Group | Compared | Equal | Of which the functions with a body | Deferred | Notes |
+|---|---|---|---|---|---|
+| bank CI (pt-BR, 35,299 cases) | 10,014 | **10,014** | 9,132 (131 functions) | 25,224 (other families) + 57 legacy `@` (A5) | the rest compared are operator/formula cases and argument errors `applyFn` answers before a body |
+| bank big (pt-BR + en-US, local) | 20,028 | **20,028** | 18,264 | 50,448 + 114 A5 | |
+| calc-traps CI (54,120 calls) | 8,969 | **8,969** | 8,969 (130 functions) | 45,141 | 17 calls with random values (RANDBETWEEN) compared value and consumption; 10 TS timeouts (BESSELJ/I/K, COMBINA) answered in ≤ 11 ms; a debug build skips the 219 whole-column calls (1M-cell fills), the release run compares them |
+| calc-traps big (308,120 calls, pairs) | 46,489 | **46,489** | 46,489 | 261,538 | 95 TS timeouts answered (≤ 17.5 ms), 112 random records |
+| calc-order CI x1 (A3 replay, unchanged harness but A4a-10) | values 69,396 (A3: 62,928) | **69,396** | — | 30,220 (A3: 36,688) | order equal 244 runs (A3: 199), random sequences equal in 274 runs (A3 deferred every run whose formulas consumed one); ops group unchanged (560 runs, 129,106 values) |
+| calc-order big | values 8,290,438 (A3: 7,601,138) | **8,290,438** | — | 2,745,405 (A3: 3,434,705) | order equal 8,205 (6,990), random equal 8,484, `circular` 775 (756) |
+| a2 / a1 / store / calc-tests groups | unchanged | 0 mismatches | | | a2 with bodies off (A4a-10) |
+
+Deferred cells of calc-order that remain need another family (most x1 formulas mix IF, lookups, text, statistics) or A5.
+
+### Robustness, memory, fuzz
+
+`tests/a4_robust.rs`: every function with a body called with seeded random argument lists (the JS number traps, texts
+shaped like complex numbers, Roman numerals, bases, units — `Object.prototype` names included —, lone surrogates,
+booleans, errors, omitted arguments, arrays, references up to a whole column), 600 calls per function in release (60
+in debug): no panic, slowest call 309 ms (FLOOR.MATH lifted over a whole column, as the TS); hostile shapes (A4a-4)
+answer `#NUM!` in ≤ 175 ms debug. **M1**: each function called over a fresh mock leaves the live bytes exactly where
+they were. **Zero allocation per evaluation**: a second full recalc of 2,000 math formulas (ROUND, MOD, POWER, SQRT,
+INT, a 10-row SUM window, LN, SIN, FLOOR, CEILING.MATH, TRUNC, ATAN2) allocates exactly what one of 2,000 operator
+formulas does (112 B: the scheduler's lists). Caches: none (the dispatch table is static data, 4,280 B).
+
+Fuzz: `formula_parse` gained nine seeds over the family (lifts, ATP rules, complex texts, `Object.prototype` units,
+hostile loops and shapes). Runs of 2026-11-24 (open A2 item: the stall of the first `formula_parse` run): **libFuzzer with a per-input timeout**
+(`-timeout=5 -rss_limit_mb=4096`, ASan, 1,200 s each; built from a scratch crate over the same `core/fuzz/src/calc.rs`,
+open item 4): `formula_parse` 1,168,185 executions, `calc_workbook` 55,125 (ASan-slow engine), **0 crashes, 0 timeouts,
+0 OOM**; the stable fallback driver 600 s each: `formula_parse` 16,918,568 executions, `calc_workbook` 3,547,483, 0
+crashes — but 11 `formula_parse` inputs took 2.7–5.0 s: hundreds of `BESSEL*(x; huge order)` calls, each running to the
+step budget. Fixed (A4a-3): a loop whose iteration count is known to pass the budget answers at once; rerun 300 s:
+15,649,534 executions, 0 crashes, slowest 418 ms (a lift over a whole column). The A2 stall did not reproduce in any of
+these runs (5 s per input would have caught it); the candidate it most resembles — an unbounded loop in a body — cannot
+happen before A4 (no body ran) and is bounded now.
+
+### Performance (PERF)
+
+`benches/a3.rs` vs `js/bench-a3.mjs` (the frozen TS engine on the same cells, Node 24.15; one process each, medians of 5
+after a warm-up; i5-14600KF). New classes: **sum-ranges-100k** (the TS baseline's window `SUM(A{i-99}:A{i})`) and
+**math-100k** (ROUND/MOD/POWER/SQRT+INT/ABS(SIN), 20,000 each).
+
+| Class | formulas | TS build ms | Rust build ms | TS recalc ms | **Rust recalc ms** | Rust / TS | Rust engine heap MB |
+|---|---|---|---|---|---|---|---|
+| **sum-ranges-100k** (`SUM` of a 100-row window) | 100,000 | 280 | 70.1 | 145.1 | **34.5** | **0.24** | 6.0 |
+| **math-100k** (ROUND, MOD, POWER, SQRT+INT, ABS(SIN)) | 100,000 | 322 | 103.4 | 121.2 | **42.9** | **0.35** | 6.0 |
+| chain-100k / sum3-100k / text-50k / dynamic-1k / volatile-10k / cycles / shared-1m (A3 classes) | — | — | — | — | 16.8 / 39.6 / 38.3 / 4.2 / 3.5 (calc. 4.2) / 1.3 / 163.8 | unchanged against the A3 record (all within ±3%) | — |
+| edit: head of a 20k chain p50 / p95 | — | — | — | — | 4.9 / 5.7 ms | A3: 4.8 / 5.7 | — |
+
+Against the record's TS baseline through the .xlsx reader (`sheet.mjs`, sum-ranges-100k recalc 199 ms) the window class is
+0.17×. **Verdict**: both new classes inside the ≤ 0.5× native budget. The window `SUM` first measured 145 ms (1.0×
+the TS: `for_each_cell` → `Store::each` allocating its cursor list and a second lookup per cell through the engine's
+view); A4a-8 brought it to 34.5 ms. A2 benchmarks after A4a: parse + print 661 ns/formula (record 687; the input set
+grew from 9,028 to 12,692 formulas with the generated workbooks), evaluate 361 ns (record 344, +5%: within the 10%
+rule; the body lookup is one branch on `EvalState` per call). These are the first A4 records.
+
+### Open items
+
+(1) `RANDARRAY` is `dynamic.ts` (A4e). (2) The cross-family TS dependencies above. (3) A debug `cargo test` skips the
+219 whole-column trap calls (compared by `--release` and the big run). (4) The libFuzzer build of `core/fuzz` does not
+link on Windows (the `uo-ffi` cdylib with coverage; `-s none` also misses `__start___sancov_cntrs`): the calc targets
+ran from a scratch crate with ASan (`-s address`) over the same `core/fuzz/src/calc.rs`. (5) `calc-tests` Engine calls
+(A3 open item 2) still wait for the families they use.
+
 ## Frontiers (closed scope per frontier; all Opus)
 
 | # | Scope | Delivers | Captures | Lines | Needs |
@@ -604,7 +740,7 @@ A4 adds the replay together with the bodies; (3) the wasm edit-latency number (C
 | A1 (**done** 2026-11-24, section "A1 — as built") | values/coerce/collate (already in `uo-text`)/criteria/dates/stats/special/libm/math-util | as plan §5 A1; the context walkers and `FnDef` factories go to A2/A4 (A1-7) | the new `a1` group (every A1 entry point, traps + seeded) and the A1 calls of `calc-tests`; `calc-traps`/bank enter through the evaluator (A2+) | ≈ 1,900 | — |
 | A2 (**done** 2026-11-24, section "A2 — as built") | ast/parse/print/a1/evaluate/apply/ops/fn | `parse`/`print` with a depth limit and an explicit stack, `trait EvalHost` (the TS interface, `evaluate.ts:34-61`); as built: no recursion through operators anywhere (A2-2), the registry table generated from the TS, bodies hooked for A4 | the new `a2` group (parse/print/round trip, evaluation over a mock workbook, ops, a1, applyFn) and the A2 calls of `calc-tests` | ≈ 1,460 | A1 |
 | A3 (**done** 2026-11-24, section "A3 — as built") | engine (graph, full/incremental recalc, `NeedCell` as `Result`, spills, CSE, data tables skip, cycles/iteration, volatiles) on S0 | `Engine` over `&mut Store` | per-cell values + evaluation-order facet over generated workbooks, incremental = full, `calc-tests` | ≈ 900 | S0, A2 |
-| A4a | math, math-util, libm, complex, engineering | functions | bank + traps | 2,000 | A3 |
+| A4a (**done** 2026-11-24, section "A4a — as built") | the shared function layer (factories, walkers of math-util/stats/tdl-util, basic aggs, dispatch per family) + math, math-util, libm, complex, engineering | functions | bank + traps (replay `tests/a4.rs`, every family) | 2,000 | A3 |
 | A4b | statistical, distributions, regression, ets | functions | bank + traps | 1,628 | A3 |
 | A4c | financial, daycount, datetime | functions | bank + traps | 1,390 | A3 |
 | A4d | text, text-format (via `uo-numfmt`), regex (`regress`, R1), filterxml (XPath subset), regional, tdl-util | functions | bank + traps (non-ASCII, surrogates) | 1,701 | A3 |
@@ -813,3 +949,4 @@ Listed in the plan's §16 with the evidence.
 | A1 (port of values/coerce/collate entry points/criteria/dates/stats/special/libm/math-util + `a1` capture + parity + robustness + memory + benchmarks vs the TS) | Opus | ≈ 35 min wall (03:52-04:27) | 0 parity rounds: the first replay of the 52,402-call capture had only NaN-payload differences (A1-2), the big run (486,022) and the calc-tests calls (548 + 1,262) were clean; rework found by the tests and benchmarks of the same session, all fixed by the same agent: (1) `BASE_1900` constant off by one day (dates unit test); (2) a `usize` loop underflow in `sin_dd` (debug overflow, before any run); (3) Latin-1 `compareText` 2.6× slower than the TS (keys per call) → element table; (4) ASCII criterion text missed the fast path (stored as UTF-16); (5) the exponent of `numberCore` allocated (zero-allocation test); (6) 13 float → int casts routed through `cast.rs`/`js_index` for the float-casts gate |
 | A2 (port of a1/ast/parse/print/fn/ops/apply/evaluate + function table generator + `a2` capture + parity + robustness + stack probes native/wasm32 + fuzz target + memory + benchmarks vs the TS) | Opus | ≈ 1 h 26 min wall (04:28-05:54) | 0 parity rounds: the first replay of the CI capture (158,153 facets), the big run (612,438) and the calc-tests calls (1,442 + 30,186) were clean, and stayed clean after the evaluator rewrite; rework found by the tests and probes of the same session, all fixed by the same agent: (1) a recursive evaluator and printer used 464 B (paren) to 1.26 KB (chained operator) of native stack per level — a 1,000-term chain overflowed a 1 MiB thread → operator work stack + iterative printer (A2-2), parser depth counted on function nesting only; (2) the union `,` was quadratic (50k areas 44 s debug) → in-place append + one-sheet flag (A2-11); (3) clippy (collapsible ifs, `f64::min/max` → `uo_jsnum::math`, 6 float casts → `cast.rs`); (4) the bench's JSON reader rejected a cases file with a trailing byte; (5) the first fuzz run stalled once, not reproduced (see A2 robustness) |
 | A3 (engine: graph, templates, reverse index, scheduler, spills/CSE, cycles/iteration, edits, the one write path + `ops` capture group + parity replay + robustness/fuzz target + memory + benchmarks vs the TS) | Opus | ≈ 1 h 5 min wall (05:56-07:01) | 0 parity rounds (no port bug sent back by a verifier); rework found by the replay and tests of the same session, all fixed by the same agent: (1) shadowed duplicates read the store's `(col, FileCell)` as `(row, …)` — orphaned formulas were lost (ops order facet); (2) `circular` compared as numbers, the capture sorts strings (harness); (3) the taint closure only grew from new seeds, so new formulas reading old deferred cells were compared (harness); (4) under `ignoreCache` a cycle restored the store value, which an orphan had overwritten — the cached file value is now kept per formula; (5) a run whose order differs only in deferred cells was counted as a mismatch (harness); (6) the `Work::Operand` fast path converted the operand of a unary `+`, breaking `+(A1)#` (a2 replay, 2 records); (7) the load materialized one record per cell (213 MB peak on shared-1m → 42 MB, streamed batches); (8) `-0` lost by the robustness test's loader (test); (9) clippy (`f64::min`, an `x + 1 <= y`, a complex type) |
+| A4a (shared function layer + math family: math/complex/engineering bodies, dispatch per family, bank + calc-traps replay harness for every family, robustness/memory/zero-alloc tests, the `each_number` lane fast path, benchmarks vs the TS, `SheetLoader::strings`, fuzz) | Opus | ≈ 1 h 30 min wall (07:10-08:40) | 0 parity rounds on the bodies (the first bank and trap replays of the math family were equal except what the harness or another frontier explained); rework found by the replays, tests and benchmarks of the same session, all fixed by the same agent: (1) the A2 replay compared against bodies now present → `EvalState::set_bodies(false)`; (2) the A3 replay compared RAND cells whose stream a non-ported body had shifted (784 values) → random cells deferred with the stream (A4a-10); (3) the dispatch table counted as a leak in A2's M1 test (4,280 B) → warmed first; (4) the bank exposed an A3 bug: the engine's arena lacked the empty string at `StrIx(0)`, breaking LAMBDA optional parameters (A4a-11); (5) legacy `@` bank cases (A5) deferred; (6) `sum-ranges-100k` at 1.0× the TS (145 ms) until `each_number` read the store lanes (34 ms, A4a-8); (7) a 1.7·10^10-cell broadcast aborted the A2 evaluator → array caps (A4a-4); (8) the CI trap replay took 23 s release (whole-column fills and 18 MB value texts) → texts built in one buffer, non-ported functions not run, whole-column traps release-only; (9) Bessel budget lowered from 2^26 to 2^22 steps (170 ms → 10 ms per hostile call); (10) clippy (excessive precision of the TS literals, approximate constants, a negated float comparison, a complex type); (11) the fuzz run found formulas of hundreds of hostile Bessel calls taking 5 s → the budget is checked before the loop |

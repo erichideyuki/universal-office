@@ -396,7 +396,8 @@ impl Engine {
     /// then every formula in FILE order (shared anchors first), the owners of CSE areas. With `sst`, every shared
     /// string the sheets use is decoded first (a read of an undecoded entry gives `""`).
     pub fn new(store: &mut Store, input: &EngineInput, opts: &EngineOptions, sst: Option<&mut dyn SstSource>) -> Result<Self> {
-        let mut e = Self::default();
+        // the arena reserves StrIx(0) for the empty string (`Ast::EMPTY`: a table-less `[col]`, a sheet-less spec)
+        let mut e = Self { ast: Ast::new(), ..Self::default() };
         let g = &mut e.g;
         g.locale = Some(opts.hooks.values.clone());
         g.date1904 = store.date1904;

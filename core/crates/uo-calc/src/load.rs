@@ -236,6 +236,13 @@ impl SheetLoader<'_> {
     pub fn finish(mut self) -> Result<()> {
         self.end_row()
     }
+
+    /// The store's string pool while the sheet streams (the loader borrows the store): the reader interns a
+    /// `<row spans>` text here and passes the id in [`RowMeta::spans`] to [`SheetLoader::row`], which takes that
+    /// reference (`StrPool::intern` gives one) — no placeholder to patch after the sheet.
+    pub fn strings(&mut self) -> &mut crate::strings::StrPool {
+        &mut self.store.strings
+    }
 }
 
 impl Drop for SheetLoader<'_> {

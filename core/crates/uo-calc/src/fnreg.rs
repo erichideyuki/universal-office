@@ -279,6 +279,23 @@ pub trait FnContext {
     fn cell(&mut self, sheet: SheetIx, row: u32, col: u32) -> Result<Scalar, Throw>;
     /// The existing cells of an area, row by row.
     fn for_each_cell(&mut self, area: Area, f: &mut dyn FnMut(Scalar, u32, u32)) -> Result<(), Throw>;
+    /// The numbers of one area row by row (`eachNumber`'s walk of a reference: `SUM`, `PRODUCT`, `SUMSQ`…): `f` gets
+    /// every number cell until the first error cell, which is returned; text, booleans and empty cells are skipped.
+    /// The walk goes on past the error (a dirty precedent still throws `NeedCell`, as the TS walk). The default goes
+    /// through [`FnContext::for_each_cell`]; the engine reads the store's column lanes directly.
+    fn each_number(&mut self, area: Area, f: &mut dyn FnMut(f64)) -> Result<Option<ErrorCode>, Throw> {
+        let mut e = None;
+        self.for_each_cell(area, &mut |v, _, _| {
+            if e.is_none() {
+                match v {
+                    Scalar::Num(n) => f(n),
+                    Scalar::Err(x) => e = Some(x),
+                    _ => {}
+                }
+            }
+        })?;
+        Ok(e)
+    }
     /// Canonical formula text of a cell (no `=`).
     fn formula_at(&mut self, sheet: SheetIx, row: u32, col: u32) -> Option<JsString>;
     /// The cell holds SUBTOTAL/AGGREGATE.

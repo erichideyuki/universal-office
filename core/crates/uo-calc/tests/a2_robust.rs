@@ -221,6 +221,8 @@ fn random_text_no_panic() {
 #[test]
 fn memory_m1_and_zero_alloc_eval() {
     assert!(uo_alloc::is_counting());
+    // the function dispatch table (A4) is built once per process, like the static collation tables
+    let _ = uo_calc::functions::body(uo_calc::fnreg::FnIx(0));
     for f in ["1+2*3", "LET(x,A1,y,x&\"ab\",y&y)", "{1,2;3,4}+A1:B2", "LAMBDA(x,x*2)(3)", "SUM(1,2)", "(A1:B2,C3)", "Tbl[@x]"] {
         uo_alloc::assert_no_leak(|| {
             let mut ast = Ast::new();

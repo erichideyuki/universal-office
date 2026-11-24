@@ -270,6 +270,18 @@ impl ArrayValue {
     }
 }
 
+/// The largest array an evaluation builds: 2^24 cells (the engine's `values` cap, record "Security"). A broadcast or
+/// a lift whose shape is larger is a `RangeError` (`#NUM!` in the engine): the TS throws `Invalid array length` past
+/// 2^32 − 1 elements and exhausts the heap well before (decision A4a-4).
+pub const MAX_ARRAY_CELLS: u64 = 1 << 24;
+
+/// `rows × cols` is over [`MAX_ARRAY_CELLS`].
+#[inline]
+#[must_use]
+pub fn array_too_big(rows: u32, cols: u32) -> bool {
+    u64::from(rows) * u64::from(cols) > MAX_ARRAY_CELLS
+}
+
 /// `broadcastAt(a, r, c)` (`math-util.ts:306-310`): a dimension of 1 repeats, outside → `#N/A`.
 #[must_use]
 pub fn broadcast_at(a: &ArrayValue, r: u32, c: u32) -> Scalar {

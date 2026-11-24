@@ -18,6 +18,16 @@ export const CLASSES = {
   'sum3-100k': () => ({
     cells: Array.from({ length: 100000 }, (_, i) => [[i, 0, { v: (i * 7919) % 1000 }], [i, 1, f(`A${i + 1}+A${i + 2}+A${i + 3}*2`)]]).flat(),
   }),
+  'sum-ranges-100k': () => ({
+    cells: Array.from({ length: 100000 }, (_, k) => { const i = k + 1; return [[k, 0, { v: (i * 7919) % 1000 }], [k, 1, f(`SUM(A${Math.max(1, i - 99)}:A${i})`)]]; }).flat(),
+  }),
+  'math-100k': () => ({
+    cells: Array.from({ length: 100000 }, (_, k) => {
+      const i = k + 1;
+      const t = [`ABS(SIN(A${i}))`, `ROUND(A${i}*1.2345,2)`, `MOD(A${i},7)`, `POWER(A${i},1.5)`, `SQRT(A${i})+INT(A${i}/3)`];
+      return [[k, 0, { v: ((i * 7919) % 1000) + 0.37 }], [k, 1, f(t[(i % 5 + 1) % 5])]];
+    }).flat(),
+  }),
   'text-50k': () => ({ cells: Array.from({ length: 50000 }, (_, i) => [[i, 0, { v: `texto ${i + 1} ção` }], [i, 1, f(`A${i + 1}&"x"&${i + 1}`)]]).flat() }),
   'dynamic-1k': () => ({
     cells: [

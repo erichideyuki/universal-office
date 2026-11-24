@@ -28,7 +28,7 @@ mod stack_common;
 
 /// Seeds of `formula_parse`: formulas of every syntax (record "A2 — as built").
 pub fn formula_seeds() -> Vec<Vec<u8>> {
-    let texts: [&str; 16] = [
+    let texts: &[&str] = &[
         "1+2*3^-4%",
         "SUM(A1:B2,Sheet1!$C$3,'My Sheet'!D4:E5)",
         "_xlfn.LET(_xlpm.x,1,_xlpm.x+A1#)",
@@ -45,6 +45,16 @@ pub fn formula_seeds() -> Vec<Vec<u8>> {
         "Sheet1:Data!A1",
         "=1+(2",
         "LET(f,LAMBDA(g,g(g)),f(f))",
+        // A4a: the math family (lifts, ATP rules, complex texts, units, hostile loops and shapes)
+        "ROUND(2.675,2)+MOD(-7,3)+POWER(-8,1/3)+CEILING.MATH(-2.5,,1)+FLOOR(1E300,3)",
+        "SUM(A:A)+SUMPRODUCT({1,2;3,4},{5,6;7,8})+SUMX2MY2(A1:A3,{1;2;3})",
+        "BESSELJ(1,1E300)+BESSELY(1E300,2^53)+BESSELI(1,2^60)+BESSELK(2,1E21)",
+        "IMSUM(\"3+4i\",\"1-2j\",A1:B2)&IMPOWER(\"-4\",0.5)&COMPLEX(1,2,\"j\")",
+        "CONVERT(1,\"kconstructor\",\"constructor\")+CONVERT(1,\"Gibyte\",\"bit\")",
+        "MMULT(MUNIT(300),MUNIT(300))+MINVERSE({1,2;3,4})+MDETERM({1,2;3,4})",
+        "DECIMAL(\"\u{fb00}\",36)+ARABIC(\"-MCMXCIV\")&ROMAN(3999,4)&BASE(255,16,10)",
+        "HEX2DEC(\"FFFFFFFFFF\")+BITLSHIFT(1,53)+GCD(A1:A3,12)+LCM(4,6)+COMBINA(10,3)+FACTDOUBLE(301)",
+        "SIN(A1:A1048576+0*A1:XFD1)+RANDBETWEEN({1,2},6)+SERIESSUM(2,1,2,{1,2,3})",
     ];
     let mut out: Vec<Vec<u8>> = Vec::new();
     for (i, t) in texts.iter().enumerate() {

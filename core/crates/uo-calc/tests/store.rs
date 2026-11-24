@@ -206,6 +206,24 @@ fn each_is_row_major_and_gather_matches() {
     }
 }
 
+/// `SheetLoader::strings`: the reader interns a row's `spans` while the sheet streams (no placeholder to patch);
+/// the loader takes the reference, duplicated rows included (file order kept).
+#[test]
+fn loader_interns_spans() {
+    let mut s = Store::new();
+    let sh = s.add_sheet().unwrap();
+    let mut l = s.load_sheet(sh).unwrap();
+    for r in [0u32, 1, 1, 3] {
+        let id = l.strings().intern(JsStr::Latin1(b"1:3")).unwrap();
+        l.row(r, RowMeta { spans: Some(id), ..RowMeta::default() }).unwrap();
+        l.cell(0, &num_cell("1")).unwrap();
+    }
+    l.finish().unwrap();
+    s.check_invariants().unwrap();
+    let id = s.strings.find(JsStr::Latin1(b"1:3")).unwrap();
+    assert!(s.strings.refs(id) >= 3);
+}
+
 #[test]
 fn limits() {
     let mut s = Store::with_limits(Limits { max_cells: 10, max_sheets: 1, max_formulas: 10 });

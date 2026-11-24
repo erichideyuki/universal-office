@@ -73,6 +73,21 @@ pub trait EvalHost {
     fn values(&mut self, area: Area) -> Result<ArrayValue, Throw>;
     /// The existing cells of an area, row by row.
     fn for_each_cell(&mut self, area: Area, f: &mut dyn FnMut(Scalar, u32, u32)) -> Result<(), Throw>;
+    /// The numbers of an area row by row until the first error ([`FnContext::each_number`]); the default goes through
+    /// [`EvalHost::for_each_cell`].
+    fn each_number(&mut self, area: Area, f: &mut dyn FnMut(f64)) -> Result<Option<ErrorCode>, Throw> {
+        let mut e = None;
+        self.for_each_cell(area, &mut |v, _, _| {
+            if e.is_none() {
+                match v {
+                    Scalar::Num(n) => f(n),
+                    Scalar::Err(x) => e = Some(x),
+                    _ => {}
+                }
+            }
+        })?;
+        Ok(e)
+    }
     /// Formula text of a cell (screen form for the UI).
     fn formula_text(&mut self, ast: &Ast, sheet: SheetIx, row: u32, col: u32) -> Option<JsString>;
     /// The cell's formula contains SUBTOTAL/AGGREGATE.
@@ -179,6 +194,8 @@ pub struct EvalState {
     /// The operator machine's work and values (stacks shared by the nested evaluations, A2-2).
     work: Vec<Work>,
     vals: Vec<Value>,
+    /// Function bodies disabled (the A2 parity harness: the capture stopped at the first body).
+    no_bodies: bool,
 }
 
 impl EvalState {
@@ -202,8 +219,22 @@ impl EvalState {
     /// Releases every buffer (`clear_caches`).
     pub fn release(&mut self) {
         let cap = self.temps.cap_bytes;
+        let no_bodies = self.no_bodies;
         *self = Self::default();
         self.temps.cap_bytes = cap;
+        self.no_bodies = no_bodies;
+    }
+
+    /// Enables or disables the function bodies (frontier A4): disabled, every function call stops with
+    /// [`Throw::NotPorted`] as before A4 — what the A2 capture recorded (its mock replaced the bodies by a marker).
+    pub fn set_bodies(&mut self, on: bool) {
+        self.no_bodies = !on;
+    }
+
+    /// The body of a function as this state dispatches it.
+    #[inline]
+    fn body(&self, ix: FnIx) -> Option<crate::fnreg::FnBody> {
+        if self.no_bodies { None } else { crate::functions::body(ix) }
     }
 
     /// The parameters of a LAMBDA value (the facet's `L<n>`; names for diagnostics).
@@ -691,6 +722,9 @@ impl Evaluator<'_> {
                 };
                 let ((xr, xc), (yr, yc)) = (dims(&x), dims(&y));
                 let (rows, cols) = (xr.max(yr), xc.max(yc));
+                if crate::value::array_too_big(rows, cols) {
+                    return Err(Throw::Range);
+                }
                 let at = |o: &Opd, r: u32, c: u32| match o {
                     Opd::A(a) => crate::value::broadcast_at(a, r, c),
                     Opd::S(v) => *v,
@@ -1069,7 +1103,7 @@ impl Evaluator<'_> {
                 }
             }
         }
-        let def = FnDef { meta, body: crate::functions::body(ix), ix };
+        let def = FnDef { meta, body: self.st.body(ix), ix };
         let opts = ApplyOptions { array_context: s.arr, omitted: (!omitted.is_empty()).then_some(&omitted[..]) };
         let mut ctx = CellCtx { ev: self, s };
         let r = apply_fn(def, &mut raw, &mut ctx, opts);
@@ -1170,7 +1204,7 @@ impl Evaluator<'_> {
                     Binding::Val(v) => v,
                 })
             }));
-            let def = FnDef { meta, body: crate::functions::body(ix), ix };
+            let def = FnDef { meta, body: self.st.body(ix), ix };
             let mut ctx = CellCtx { ev: self, s: Scope { sheet, row, col, arr: true, env: None } };
             let r = apply_fn(def, &mut raw, &mut ctx, ApplyOptions { array_context: true, omitted: None });
             self.st.give_args(raw);
@@ -1366,6 +1400,9 @@ impl FnContext for CellCtx<'_, '_> {
     }
     fn for_each_cell(&mut self, area: Area, f: &mut dyn FnMut(Scalar, u32, u32)) -> Result<(), Throw> {
         self.ev.host.for_each_cell(area, f)
+    }
+    fn each_number(&mut self, area: Area, f: &mut dyn FnMut(f64)) -> Result<Option<ErrorCode>, Throw> {
+        self.ev.host.each_number(area, f)
     }
     fn formula_at(&mut self, sheet: SheetIx, row: u32, col: u32) -> Option<JsString> {
         self.ev.host.formula_text(self.ev.ast, sheet, row, col)

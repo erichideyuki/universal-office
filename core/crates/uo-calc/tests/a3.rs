@@ -70,6 +70,49 @@ struct Book<'a> {
     engine: Engine,
     tainted: BTreeSet<Cell>,
     clock: Clock,
+    /// Cells whose formula may consume random values (RAND, RANDBETWEEN, RANDARRAY, directly, through a shared
+    /// formula's anchor or a defined name): when a run's random stream is deferred they are deferred too (A4a).
+    rand: BTreeSet<Cell>,
+}
+
+/// The cells of a workbook whose formula may consume random values (a superset).
+fn rand_cells(wb: &J) -> BTreeSet<Cell> {
+    let up = |j: Option<&J>| j.and_then(J::js).map(|x| x.as_js().to_string_lossy().to_uppercase()).unwrap_or_default();
+    let rand_names: Vec<String> = wb
+        .get("names")
+        .map(J::arr)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|n| up(n.get("formula")).contains("RAND"))
+        .map(|n| up(n.get("name")))
+        .collect();
+    let is_rand = |t: &str| t.contains("RAND") || rand_names.iter().any(|n| t.contains(n.as_str()));
+    let mut out = BTreeSet::new();
+    for (si, sh) in wb.get("sheets").unwrap().arr().iter().enumerate() {
+        let mut shared: HashMap<String, bool> = HashMap::new();
+        let cells = sh.get("cells").unwrap().arr();
+        for c in cells {
+            let a = c.arr();
+            if let Some(f) = a[2].get("f")
+                && let Some(si_) = f.get("si").and_then(J::num)
+            {
+                let t = up(f.get("text"));
+                if !t.is_empty() {
+                    shared.insert(format!("{si_}"), is_rand(&t));
+                }
+            }
+        }
+        for c in cells {
+            let a = c.arr();
+            let Some(f) = a[2].get("f") else { continue };
+            let t = up(f.get("text"));
+            let via_shared = f.get("si").and_then(J::num).is_some_and(|x| shared.get(&format!("{x}")).copied().unwrap_or(false));
+            if is_rand(&t) || via_shared {
+                out.insert((si as u32, a[0].num().unwrap() as u32, a[1].num().unwrap() as u32));
+            }
+        }
+    }
+    out
 }
 
 fn opts(ignore: bool) -> EngineOptions {
@@ -133,7 +176,8 @@ fn run_book(key: &str, rec: &uo_testkit::capture::Record, side: &BTreeMap<String
         Some("-") | None => Vec::new(),
         Some(l) => l.split(' ').map(cell_of).collect(),
     };
-    let mut b = Book { key, ops, store, engine, tainted: BTreeSet::new(), clock: Clock { now_serial: 45658.5 } };
+    let rand = rand_cells(&wb);
+    let mut b = Book { key, ops, store, engine, tainted: BTreeSet::new(), clock: Clock { now_serial: 45658.5 }, rand };
     let empty = Vec::new();
     let lines = |f: &str| side.get(f).unwrap_or(&empty).clone();
 
@@ -203,6 +247,9 @@ fn run_book(key: &str, rec: &uo_testkit::capture::Record, side: &BTreeMap<String
         let input = inp.as_ref().map(|j| match j.get("f") {
             Some(f) => {
                 let text = f.get("text").unwrap().js().unwrap();
+                if text.as_js().to_string_lossy().to_uppercase().contains("RAND") {
+                    b.rand.insert((s, r, c));
+                }
                 let array = f.get("t").and_then(J::js).is_some_and(|x| x.as_js().eq_str("array"));
                 if !array && maybe_legacy(&text.as_js().to_string_lossy()) {
                     extra.push((s, r, c));
@@ -234,8 +281,12 @@ fn run_book(key: &str, rec: &uo_testkit::capture::Record, side: &BTreeMap<String
     let mut e2 = Engine::new(&mut store2, &input2, &opts(ignore), None).unwrap();
     let ts_rnd: Vec<f64> = lines("full.rnd").iter().map(|h| hexf(h)).collect();
     e2.recalc(&mut store2, b.clock, &mut RandomSource::sequence(ts_rnd)).unwrap();
-    let mut b2 = Book { key, ops, store: store2, engine: e2, tainted: b.tainted.clone(), clock: b.clock };
-    let leg2: Vec<Cell> = legacy.clone();
+    let mut b2 = Book { key, ops, store: store2, engine: e2, tainted: b.tainted.clone(), clock: b.clock, rand: b.rand.clone() };
+    let mut leg2: Vec<Cell> = legacy.clone();
+    if !b2.engine.not_ported().is_empty() {
+        // a body that did not run in Rust may have consumed random values in the TS: the stream is deferred
+        leg2.extend(b2.rand.iter().copied());
+    }
     b2.taint(&leg2);
     compare_vals(&mut b2, "full", &lines("full.vals"), rec.get("full"), t);
     let full = calcwb::values(&b2.engine, &b2.store);
@@ -281,6 +332,11 @@ fn step(
     if !ord_ok && had_np {
         // another order: the cells two formulas write (orphaned duplicates) may end with the other's value
         extra.extend(b.engine.orphans().iter().map(|&(s, r, c)| (s.0, r, c)));
+    }
+    if had_np && !(ord_ok && rnd.consumed() == ts_rnd.len()) {
+        // a body that did not run in Rust (or ran in another order) shifted the random stream: every random cell of
+        // the run is deferred (A4a; before A4 the random functions themselves were not ported)
+        extra.extend(b.rand.iter().copied());
     }
     b.taint(&extra);
     // the order without the deferred cells (a tainted anchor's #SPILL! decides whether an edit dirties it)

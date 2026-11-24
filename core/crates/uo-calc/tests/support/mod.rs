@@ -4,6 +4,7 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 pub mod calcwb;
+pub mod fnmock;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

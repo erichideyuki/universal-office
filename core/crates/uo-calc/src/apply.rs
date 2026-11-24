@@ -133,6 +133,9 @@ pub fn apply_fn(def: FnDef<'_>, raw: &mut Vec<Arg>, ctx: &mut dyn FnContext, opt
             cols = cols.max(a.cols);
         }
     }
+    if crate::value::array_too_big(rows, cols) {
+        return Err(Throw::Range);
+    }
     let arrays: Vec<ArrayValue> = lift_idx
         .iter()
         .map(|&i| match &args[i] {

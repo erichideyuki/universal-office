@@ -9,8 +9,9 @@
 //! stack) and printer ([`print`]), the function registry contract ([`fnreg`], table generated from the TS), the
 //! operators ([`ops`]), argument application ([`apply`]) and the evaluator ([`eval`], `trait EvalHost`).
 //! **Frontier A3 done**: the engine ([`engine`]: graph, full and incremental recalc, spills, CSE, cycles and
-//! iteration, volatiles) over the store. The function bodies ([`functions`]) are A4: an evaluation that reaches one gets
-//! `#VALUE!` and is listed by [`engine::Engine::not_ported`].
+//! iteration, volatiles) over the store. The function bodies ([`functions`]) are A4, one module per family over a
+//! shared layer: **A4a done** (the math family: `math.ts`, `complex.ts`, `engineering.ts`); an evaluation that reaches
+//! a body not ported yet gets `#VALUE!` and is listed by [`engine::Engine::not_ported`].
 //!
 //! One cell store ([`store::Store`]) holds every cell of every sheet ONCE: its file representation (what the
 //! surgical save writes back) and its calc value are the same lanes. The engine ([`engine::Engine`]) owns only

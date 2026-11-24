@@ -10,7 +10,7 @@ use crate::locale::{Clock, RandomSource, ValueLocale};
 use crate::print::{PrintOptions, print_formula};
 use crate::store::{CellKind, Store};
 use crate::strings::{JsStr, JsString, StrId, StrPool};
-use crate::value::{ArrayValue, Scalar, StrRef};
+use crate::value::{ArrayValue, ErrorCode, Scalar, StrRef};
 
 /// Largest array `values()` builds (the record's array cap, 2^24 cells).
 pub(crate) const MAX_ARRAY: u64 = 1 << 24;
@@ -83,6 +83,12 @@ impl Graph {
         }
         Ok(())
     }
+}
+
+/// A number cell read straight from its lanes: a number tag and no formula, owner or side-table extra.
+#[inline]
+fn plain_number(k: CellKind) -> bool {
+    k.tag().is_number() && !k.has(CellKind::HAS_FORMULA) && !k.has(CellKind::OWNED) && !k.has(CellKind::HAS_EXTRA)
 }
 
 /// The evaluator's host: the graph and the store of one call.
@@ -198,6 +204,63 @@ impl EvalHost for Host<'_> {
             }
         });
         err.map_or(Ok(()), Err)
+    }
+    fn each_number(&mut self, area: Area, f: &mut dyn FnMut(f64)) -> Result<Option<ErrorCode>, Throw> {
+        if area.sheet.0 >= EXTERNAL_BASE || area.c1 != area.c2 {
+            // several columns: row by row through the generic walk
+            let mut e = None;
+            self.for_each_cell(area, &mut |v, _, _| {
+                if e.is_none() {
+                    match v {
+                        Scalar::Num(n) => f(n),
+                        Scalar::Err(x) => e = Some(x),
+                        _ => {}
+                    }
+                }
+            })?;
+            return Ok(e);
+        }
+        // one column: its lanes in row order (the row-major order of the area), without a second lookup per cell
+        let g = &*self.g;
+        let store = &*self.store;
+        let mut e: Option<ErrorCode> = None;
+        for run in store.column_runs(area.sheet, area.c1, area.r1, area.r2) {
+            if let Some(k) = run.uniform_kind()
+                && plain_number(k)
+                && k.has(CellKind::HAS_VALUE)
+            {
+                // plain numbers (the `cellValue` numbers: finite payloads)
+                if e.is_none() {
+                    run.fold_numbers((), |(), x| f(x));
+                }
+                continue;
+            }
+            for i in 0..run.len() {
+                let c = run.get(i);
+                if plain_number(c.kind) {
+                    if e.is_none() && c.kind.has(CellKind::HAS_VALUE) {
+                        let x = c.number();
+                        if x.is_finite() {
+                            f(x);
+                        }
+                    }
+                    continue;
+                }
+                // formulas, owned and other cells: the engine's view (a dirty formula throws `NeedCell`, also past
+                // an error, as the TS walk)
+                if let Some((v, p)) = g.view(store, area.sheet, run.row(i), area.c1) {
+                    g.check(p)?;
+                    if e.is_none() {
+                        match v {
+                            Scalar::Num(n) => f(n),
+                            Scalar::Err(x) => e = Some(x),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        Ok(e)
     }
     fn formula_text(&mut self, ast: &Ast, sheet: SheetIx, row: u32, col: u32) -> Option<JsString> {
         let f = self.g.current(sheet.0, row, col).or_else(|| {

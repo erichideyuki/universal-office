@@ -544,6 +544,8 @@ fn replay_a2(path: &Path) -> uo_testkit::Report {
     let mut mock_en = Mock::new(&meta, &mut base, ValueLocale::en_us());
     let mut mock_pt = Mock::new(&meta, &mut base, ValueLocale::pt_br());
     let mut st = EvalState::new();
+    // the capture stopped at the first function body (its mock replaced them by a marker): bodies off
+    st.set_bodies(false);
     let mut parser = FormulaParser::new();
     let mut ops_pool = StrPool::new();
     for r in cap.records() {

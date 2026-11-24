@@ -873,6 +873,14 @@ impl ColumnRun<'_> {
     pub fn get(&self, k: usize) -> RawCell {
         self.chunk.get(self.start + k)
     }
+    /// The kind every cell of the run has, when the chunk's kinds are uniform.
+    #[must_use]
+    pub fn uniform_kind(&self) -> Option<CellKind> {
+        match &self.chunk.kinds {
+            Kinds::Uniform(k) => Some(*k),
+            Kinds::PerCell(_) => None,
+        }
+    }
     /// Folds the numbers of the run in row order (cells with a number tag and a value whose payload is
     /// finite: the `cellValue` numbers), with a fast path for a uniform narrow run.
     pub fn fold_numbers<A>(&self, mut acc: A, mut f: impl FnMut(A, f64) -> A) -> A {
