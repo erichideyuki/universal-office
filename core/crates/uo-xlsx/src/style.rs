@@ -78,6 +78,10 @@ pub struct Style {
     /// number format code (`"0.00%"`, `"dd/mm/yyyy"`, `"[Red]0;[Blue]-0"`…); `None` = General
     /// (date cells then get a date format, see [`crate::CellValue::Date`])
     pub num_fmt: Option<String>,
+    /// Excel built-in number format id, written as is (the locale-dependent ones, 5-8, 14-22, 37-44, show in the
+    /// reader's regional settings: 14 = short date, 22 = short date and time); takes precedence over `num_fmt`.
+    /// An id `uo_numfmt::builtin_format` does not know is [`crate::Error::NumFmt`].
+    pub builtin_num_fmt: Option<u32>,
     pub bold: bool,
     pub italic: bool,
     /// text colour; `None` = automatic
@@ -200,9 +204,11 @@ impl StylePool {
             return Ok(id);
         }
         // validate everything before touching a pool
-        let num_fmt = match &s.num_fmt {
-            None => None,
-            Some(code) => Some(self.num_fmt_id(code)?),
+        let num_fmt = match (s.builtin_num_fmt, &s.num_fmt) {
+            (Some(id), _) if uo_numfmt::builtin_format(id).is_none() => return Err(Error::NumFmt),
+            (Some(id), _) => Some(Ok(id)),
+            (None, None) => None,
+            (None, Some(code)) => Some(self.num_fmt_id(code)?),
         };
         let font = Font { bold: s.bold, italic: s.italic, color: s.color };
         if !self.font_ids.contains_key(&font) && self.fonts.len() >= MAX_FONTS {
@@ -477,6 +483,25 @@ mod tests {
         assert_eq!(f(&mut p, ""), Err(Error::NumFmt));
         assert_eq!(f(&mut p, &"0".repeat(256)), Err(Error::NumFmt));
         assert!(f(&mut p, &"0".repeat(255)).is_ok());
+    }
+
+    #[test]
+    fn builtin_num_fmts() {
+        let mut p = StylePool::new();
+        let b = |p: &mut StylePool, id: u32| p.intern(&Style { builtin_num_fmt: Some(id), ..Style::default() });
+        let dt = b(&mut p, 22).unwrap();
+        assert_eq!(p.interned[dt.0 as usize].num_fmt, Some(22));
+        assert!(p.has_num_fmt(dt), "a date in it keeps 22 (no implied 14/22)");
+        assert!(p.num_fmts.is_empty(), "no <numFmt> entry for a built-in id");
+        let d = b(&mut p, 14).unwrap();
+        assert_eq!(p.interned[d.0 as usize].num_fmt, Some(14));
+        assert_eq!(b(&mut p, 200), Err(Error::NumFmt));
+        // the id wins over a code
+        let both = p.intern(&Style { num_fmt: Some("0.000".into()), builtin_num_fmt: Some(14), ..Style::default() }).unwrap();
+        assert_eq!(p.interned[both.0 as usize].num_fmt, Some(14));
+        assert!(p.num_fmts.is_empty());
+        // part of the style key
+        assert_ne!(both, d);
     }
 
     #[test]

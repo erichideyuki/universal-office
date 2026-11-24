@@ -67,6 +67,7 @@ fn style(inp: &mut Input<'_>) -> Style {
             let k = usize::from(inp.u8());
             if k >= codes.len() { inp.text() } else { codes[k].to_owned() }
         }),
+        builtin_num_fmt: (flags & 128 != 0).then(|| [14, 22, 2, 49][usize::from(inp.u8() % 4)]),
         bold: flags & 2 != 0,
         italic: flags & 4 != 0,
         color: (flags & 8 != 0).then(|| Rgb(inp.u32() & 0xFF_FFFF)),

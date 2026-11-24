@@ -209,6 +209,38 @@ fn dates() {
 }
 
 #[test]
+fn builtin_num_fmt_ids() {
+    let mut w = XlsxWriter::new(WorkbookOptions::default()).unwrap();
+    let short = w.add_style(&Style { builtin_num_fmt: Some(14), ..Style::default() }).unwrap();
+    let date_time = w.add_style(&Style { builtin_num_fmt: Some(22), ..Style::default() }).unwrap();
+    assert_eq!(w.add_style(&Style { builtin_num_fmt: Some(200), ..Style::default() }), Err(Error::NumFmt));
+    w.begin_sheet(sheet_opts("S")).unwrap();
+    let midnight = DateTime::date(2024, 1, 1);
+    let noon = DateTime { hour: 12, ..midnight };
+    w.append_row(
+        &RowOptions::default(),
+        &[
+            Cell::new(CellValue::Date(midnight)).with_style(date_time),
+            Cell::new(CellValue::Date(noon)).with_style(short),
+            Cell::new(CellValue::Number(1.5)).with_style(date_time),
+        ],
+    )
+    .unwrap();
+    let p = parts(&w.finish().unwrap());
+    let c = cells(&p);
+    let xml = &p["xl/styles.xml"];
+    assert!(!xml.contains("<numFmt "), "built-in ids get no <numFmts> entry");
+    assert!(xml.contains("<xf numFmtId=\"22\""), "{xml}");
+    let styles = strict(xml);
+    let xfs: Vec<_> = styles.root().first_child("cellXfs").unwrap().children_named("xf").collect();
+    let xf_of = |r: &str| xfs[c[r].1.as_deref().unwrap().parse::<usize>().unwrap()];
+    assert_eq!(xf_of("A1").attr("numFmtId"), Some("22"), "the implied 14 does not replace the id");
+    assert_eq!(xf_of("A1").attr("applyNumberFormat"), Some("1"));
+    assert_eq!(xf_of("B1").attr("numFmtId"), Some("14"), "the implied 22 does not replace the id");
+    assert_eq!(xf_of("C1").attr("numFmtId"), Some("22"));
+}
+
+#[test]
 fn hyperlinks() {
     let mut w = XlsxWriter::new(WorkbookOptions::default()).unwrap();
     w.begin_sheet(sheet_opts("S")).unwrap();

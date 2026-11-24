@@ -65,7 +65,7 @@ impl fmt::Display for Error {
             Error::OutlineLevel { level, declared } => write!(f, "outline level {level} above the declared {declared} (max 7)"),
             Error::TooManyStyles => write!(f, "more than 64,000 cell formats or 1,024 fonts"),
             Error::UnknownStyle(id) => write!(f, "unknown style id {id}"),
-            Error::NumFmt => write!(f, "number format code empty or longer than 255 characters"),
+            Error::NumFmt => write!(f, "number format code empty or longer than 255 characters, or an unknown built-in id"),
             Error::InvalidDate => write!(f, "invalid date"),
             Error::InvalidRange => write!(f, "invalid range"),
             Error::OverlappingMerge => write!(f, "merged ranges overlap"),

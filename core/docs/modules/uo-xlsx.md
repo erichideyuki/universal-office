@@ -46,7 +46,10 @@ bounded memory (10k × 40 and beyond); no threads, no file system, usable from a
   number format gets built-in 14 (or 22 with a time). Equal resolved formats share one `xf`; fonts, fills,
   borders and custom codes are pooled. A custom code equal to an INVARIANT built-in (ids 0-4, 9-13, 45-49, read from
   `uo_numfmt::builtin_format`) is written as that id; the locale-dependent built-ins (5-8, 14-22, 37-44) are never
-  chosen for a custom code (their display changes with the reader's locale).
+  chosen for a custom code (their display changes with the reader's locale). `Style::builtin_num_fmt: Option<u32>`
+  (2026-11-24, asked by the data-grid's `grid-xlsx`) writes a built-in id explicitly, as is (14 short date, 22 date
+  and time in the reader's regional settings): no `<numFmts>` entry, it wins over `num_fmt`, a date cell keeps it
+  (no implied 14/22), and an id `uo_numfmt::builtin_format` does not know is `Error::NumFmt`.
 - **Part order** in the archive: worksheets (streamed), their hyperlink relationships, shared strings, styles,
   workbook, workbook relationships, core and app properties, root relationships, `[Content_Types].xml` last (the
   sheets are not known before `finish`; Excel, LibreOffice and the TS reader do not depend on the order).
