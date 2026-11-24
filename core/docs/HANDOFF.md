@@ -54,7 +54,8 @@ writers in the same files, commit per verified wave). Records: `uo-calc.md` (S0,
 | A4c–A4f, A5 | `6afe09d3` | every function family; lookup 0.04×; i18n 0.1–0.23×; open-recalc 0.35× |
 | C1b save, C4 viewport, C5a edit captures | `335d0eb0` | save giant-1m 164 ms (TS 1,081); emission 8–13× faster |
 | calc captures on the reference platform | `80a19deb` | WSL Node 24.15 (G1 (a)), frozen clock: the 11 capture-only diffs gone |
-| C4b drawings/charts/budgets, C5b editor session, .NET `UniversalOffice.Xlsx` | (this wave) | see below |
+| C4b drawings/charts/budgets, C5b editor session, .NET `UniversalOffice.Xlsx` | `d921447e` | see below |
+| writer requests from the data-grid (`grid-xlsx`) | `784b3031`, `842f5b2d` | `Style::builtin_num_fmt`; `set_auto_filter` (sortState + `_xlnm._FilterDatabase`) |
 
 - **C4b**: drawings, charts (`chart-data.ts` ported), form controls, chart sheets, RTL region render, list dropdowns,
   `CellText` item; `uo-sheet.wasm` 1.39 MB gzip + lazily loaded `uo-sheet-calc.wasm` 2.04 MB gzip (SH3: the file's
