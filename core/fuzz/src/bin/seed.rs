@@ -256,6 +256,14 @@ fn main() {
     for s in uo_opc_fuzz::xlsx_read_seeds(&repo.join("core/crates/uo-xlsx/tests/captures/workbooks/x1")) {
         c.add("xlsx_read", &s);
     }
+    // uo-xlsx .xls converter: files, their Workbook streams, a minimal sheet (src/xls_read.rs)
+    for s in uo_opc_fuzz::xls_read_seeds(&repo.join("core/crates/uo-xlsx/tests/captures/workbooks/xls")) {
+        c.add("xls_read", &s);
+    }
+    // uo-xlsx conditional formats: CF formulas and rule tails (src/cf_eval.rs)
+    for s in uo_opc_fuzz::cf_eval_seeds() {
+        c.add("cf_eval", &s);
+    }
     // uo-calc cell store: operation scripts (crates/uo-calc/tests/support/ops.rs)
     for s in uo_opc_fuzz::calc_seeds() {
         c.add("store_ops", &s);

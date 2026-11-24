@@ -46,6 +46,12 @@ pub use xlsx::{xlsx_seeds, xlsx_write};
 mod xlsx_read;
 pub use xlsx_read::{xlsx_read, xlsx_read_seeds};
 
+mod xls_read;
+pub use xls_read::{xls_read, xls_read_seeds};
+
+mod cf_eval;
+pub use cf_eval::{cf_eval, cf_eval_seeds};
+
 mod calc;
 pub use calc::{calc_seeds, calc_workbook, calc_workbook_seeds, formula_parse, formula_seeds, store_ops};
 
@@ -139,6 +145,8 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("numfmt_format", numfmt_format),
     ("xlsx_write", xlsx_write),
     ("xlsx_read", xlsx_read),
+    ("xls_read", xls_read),
+    ("cf_eval", cf_eval),
     ("store_ops", store_ops),
     ("formula_parse", formula_parse),
     ("calc_workbook", calc_workbook),

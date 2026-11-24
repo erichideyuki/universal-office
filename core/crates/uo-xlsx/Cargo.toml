@@ -18,6 +18,10 @@ uo-jsnum = { path = "../uo-jsnum" }
 # track C (reader, surgical save, grid, editor): the one cell store and the calc. Optional, so the writer's
 # consumers (`grid-xlsx`, pinned by git rev) build exactly what they built before.
 uo-calc = { path = "../uo-calc", optional = true }
+# feature `grid`: NFKC of font names, toUpperCase/toLowerCase, the Unicode letter classes of the entry
+uo-text = { path = "../uo-text", optional = true, features = ["collation"] }
+# feature `xls` (C2): the OfficeArt records/properties/BLIP store/preset table of the Office 97-2003 drawings
+uo-drawingml = { path = "../uo-drawingml", optional = true, features = ["legacy"] }
 # feature `facet`: the digest of long strings in the canonical JSON
 uo-testkit = { path = "../uo-testkit", optional = true }
 
@@ -31,9 +35,9 @@ facet = ["read", "uo-calc/facet", "dep:uo-testkit"]
 # surgical save of an opened workbook: sheetData from the store, save-calc, the XfPool styles patch (C1b)
 save = ["read"]
 # .xls (BIFF8) -> in-memory OOXML parts, the TS xls/ converter (C2); a separate lazily loaded wasm
-xls = ["read"]
+xls = ["read", "dep:uo-drawingml"]
 # grid model and the viewport display list (C3, C4)
-grid = ["read"]
+grid = ["read", "dep:uo-text"]
 # editor session: operations, change-set undo, save (C5)
 edit = ["grid", "save"]
 
@@ -47,5 +51,24 @@ uo-testkit = { path = "../uo-testkit" }
 name = "read_bench"
 required-features = ["read"]
 
+# the C2 converter tools: `xls_dump` writes the parts of a .xls (diff against js/dump-xls-parts.mjs), `xls_bench` the T13 row
+[[example]]
+name = "xls_dump"
+required-features = ["xls"]
+
+[[example]]
+name = "xls_bench"
+required-features = ["xls"]
+
 [lints]
 workspace = true
+
+# the C3a grid benchmark needs the grid model
+[[example]]
+name = "grid_bench"
+required-features = ["grid"]
+
+# the C3b conditional-format benchmark needs the grid model
+[[example]]
+name = "cf_bench"
+required-features = ["grid"]

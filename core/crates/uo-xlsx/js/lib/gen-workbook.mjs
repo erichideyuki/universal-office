@@ -24,6 +24,11 @@ export const FEATURES = ['styles', 'numfmt', 'cf', 'merge', 'frozen', 'names', '
 export const GROUPS = {
   x1: { seedBase: 0x51000, count: 30, ci: true, rows: [4, 14], sheets: [1, 3], p: 0.35 },
   'x1-big': { seedBase: 0x52000, count: 400, ci: false, rows: [4, 120], sheets: [1, 4], p: 0.45 },
+  // C2: the `.xls` sources. Excel refuses (repairs, so `Workbooks.Open` fails with alerts off) the hostile features of the
+  // groups above, LET without `_xlpm.` parameter names, file-only errors (#SPILL!, #CALC!, #GETTING_DATA -> #N/A) and
+  // `cm` cells without metadata (volatile's RANDARRAY): this group drops them so Excel can `SaveAs` FileFormat 56.
+  xls1: { seedBase: 0x53000, count: 120, ci: false, rows: [4, 80], sheets: [1, 3], p: 0.5, noLet: true,
+    exclude: ['noncanon', 'order', 'rowmismatch', 'noref', 'unicode', 'spill', 'volatile'] },
 };
 
 export const groupKey = (name, i) => `gen/${name}/${String(i).padStart(4, '0')}`;
@@ -60,6 +65,7 @@ export function buildWorkbook(group, i) {
   const forced = FEATURES[i % FEATURES.length];
   const on = new Set(FEATURES.filter((f) => f === forced || R.chance(g.p)));
   // dependencies between features
+  for (const f of g.exclude ?? []) on.delete(f);
   if (on.has('chart')) on.add('drawing');
   if (on.has('cycle') && R.chance(0.5)) on.add('calcpr');
   const ctx = new Book(R, on, g);
@@ -195,7 +201,7 @@ class Book {
       else if (this.use('bools')) put(r, c0 + 3, { t: 'b', v: R.chance(0.5) ? '1' : '0' });
       else put(r, c0 + 3, { n: R.int(0, 9) });
     }
-    if (this.use('errors')) for (let k = 0; k < 2; k++) put(R.int(1, nRows), c0 + dataCols + 6, { t: 'e', v: R.pick(['#DIV/0!', '#N/A', '#NAME?', '#NULL!', '#NUM!', '#REF!', '#VALUE!', '#SPILL!', '#CALC!', '#GETTING_DATA']) });
+    if (this.use('errors')) for (let k = 0; k < 2; k++) put(R.int(1, nRows), c0 + dataCols + 6, { t: 'e', v: ((e) => (this.g.noLet && /SPILL|CALC|GETTING/.test(e) ? '#N/A' : e))(R.pick(['#DIV/0!', '#N/A', '#NAME?', '#NULL!', '#NUM!', '#REF!', '#VALUE!', '#SPILL!', '#CALC!', '#GETTING_DATA'])) });
     if (this.use('noncanon')) for (let k = 0; k < 4; k++) put(R.int(1, nRows), c0 + dataCols + 7, { raw: R.pick(NONCANON), t: R.pick([undefined, undefined, 'n', 'b']) });
 
     // ---------------- formulas
@@ -214,6 +220,8 @@ class Book {
       (r) => `MAX(${col(0)})-MIN(${col(0)})`, (r) => `PRODUCT(${A(0, r)},2)`, (r) => `SUMPRODUCT(${col(0)},${col(1)})`, (r) => `MOD(${A(0, r)},3)`,
       (r) => `CONCATENATE(${A(2, r)},"!")`, (r) => `TRIM(${A(2, r)})`, (r) => `VALUE("1,5")`, (r) => `${A(0, r)}^2`, (r) => `-${A(1, r)}%`,
     ];
+    // Excel needs `_xlpm.x` for LET parameters and refuses the workbook: `.xls` sources swap the template for ABS
+    if (this.g.noLet) templates.forEach((t, i) => { if (t(1).includes('LET(')) templates[i] = (r) => `ABS(${A(1, r)})`; });
     if (other && this.use('xsheet')) templates.push((r) => `${qs(other)}!${ref(0, r)}*2`, (r) => `SUM(${qs(other)}!A1:A5)`, (r) => `COUNTA(${qs(other)}!A:A)`);
     const nf = R.int(2, 6);
     const formulaCols = [];

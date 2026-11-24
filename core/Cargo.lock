@@ -318,10 +318,12 @@ version = "0.10.0-dev"
 dependencies = [
  "uo-alloc",
  "uo-calc",
+ "uo-drawingml",
  "uo-jsnum",
  "uo-numfmt",
  "uo-opc",
  "uo-testkit",
+ "uo-text",
 ]
 
 [[package]]

@@ -1,30 +1,61 @@
-//! Track C grid model and viewport (feature `grid`): geometry, cell text, conditional formats, table/pivot
-//! styles, borders/fills, the viewport display list. Architecture skeleton (2026-11-24); record
-//! `core/docs/modules/uo-xlsx.md` "Track C architecture" (C3, C4).
+//! Track C grid model (feature `grid`), frontier C3a: metrics, cell text, entry, geometry, resolved styles, the
+//! automatic row height. The conditional formats (C3b), table/pivot styles, borders, fills and `grid-layout`
+//! helpers (C3c) and the viewport display list (C4) build on it. Record `core/docs/modules/uo-xlsx.md` "Track C
+//! architecture" (T6) and "C3a — as built".
+//!
+//! | Module | TS | What |
+//! |---|---|---|
+//! | [`metrics`] | `grid-metrics.ts`, `glyph-widths.ts` (+ data), `excel-metrics-data.ts`, `row-descent-data.ts` | the tables measured in Excel: MDW, row heights, GDI glyph widths, descents |
+//! | [`text`] | `cell-text.ts` (+ `wrapLines`) | the displayed text for a width, `####`, General fit, `*x` fill |
+//! | [`cellval`] | `universal-sheet.ts` `cellTextInput`/`displayText` | a store cell as the layout reads it |
+//! | [`entry`] | `entry.ts`, `entry-format.ts`, `edit-text.ts`, `formula-locale.ts` | typed text → value/format/formula; the edit text |
+//! | [`numbar`] | `number-formats.ts` | the toolbar number formats and ± decimals |
+//! | [`measure`] | `text-metrics.ts` | cell fonts, the two-phase measurement table |
+//! | [`style`] | `resolveStyle` | one resolved xf per `cellXfs` index |
+//! | [`geometry`] | `recalcGrid`, `colWidth`/`rowHeight`, `mergeAt`, `bisectLE` | widths, heights, checkpointed edges |
+//! | [`fit`] | `fitRowHeights` | the row heights Excel computes at open |
+//! | [`layout`] | `cellLayout` | a store cell laid out for a width: xf → font → indent → text layout |
 
-/// Checkpointed prefix sums of row heights or column widths (px at the zoom), bit-equal to the TS
-/// `Float64Array` of `recalcGrid` (`universal-sheet.ts:1172-1184`): the TS adds sizes one by one, so a
-/// checkpoint every [`Geometry::STRIDE`] entries plus the same sequential additions inside the block give the
-/// same `f64` at any index, for 8 / STRIDE bytes per row instead of 8.
-#[derive(Clone, Debug, Default)]
-pub struct Geometry {
-    /// `edge(i * STRIDE)` for every block.
-    pub checkpoints: Vec<f64>,
-    /// Sizes that differ from the default (index, px), sorted; hidden = 0.
-    pub custom: Vec<(u32, f64)>,
-    /// Default size (px at the zoom).
-    pub default_size: f64,
-    /// Entries (`maxRow + 1` or `maxCol + 1`).
-    pub count: u32,
-}
+pub mod cellval;
+pub mod cf;
+#[rustfmt::skip]
+mod data;
+pub mod entry;
+pub mod fit;
+pub mod geometry;
+pub mod layout;
+pub mod measure;
+pub mod metrics;
+pub mod numbar;
+pub mod style;
+pub mod text;
 
-impl Geometry {
-    /// Entries per checkpoint.
-    pub const STRIDE: u32 = 256;
-}
+pub use cellval::{CellCtx, CellRead, display_text, file_text_input, text_input};
+pub use entry::{
+    Arity, CanonicalSyntax, EditValue, Entry, EntryContext, EntryValue, FmtCategory, FormatLookup, FormulaLang, FormulaLocale,
+    FormulaSyntax, NumFmtHint, auto_close, currency_hint, edit_text, error_text, file_prefix, fmt, format_category, infer_formula_format,
+    number_edit_text, parse_entry, should_apply_format,
+};
+pub use fit::{FitEnv, RowFit, fit_row_heights};
+pub use geometry::{DEFAULT_COL_W, DEFAULT_ROW_H, Geometry, MergeHit, MergeIndex, MergeRect, Runs, SheetGrid, worksheet};
+pub use layout::{CellView, Laid, cell_xf_index, layout_cell};
+pub use measure::{
+    CellFont, FontDesc, FontEnv, FontId, FontRequest, IdentityEnv, MAX_CHARS_PER_FONT, MAX_FONTS, MeasureTable, Measurer, NeedMeasures,
+    is_complex,
+};
+pub use metrics::{
+    GlyphFixes, col_width_to_px, default_col_px, excel_mdw, excel_row_px, gdi_glyph_fixes, has_glyph_table, measured_family,
+    normalize_family, ppem_of, row_descent_px, row_pt_to_px,
+};
+pub use numbar::{NumberFormatKind, NumberFormatSpec, adjust_decimals, number_format_for};
+pub use style::{FitFacts, HAlign, NormalFont, ResolvedXf, StyleTable, VAlign};
+pub use text::{
+    CellKind, CellText, CellTextInput, FontMetrics, MAX_CELL_CHARS, TextPiece, autofit_wrap_width_px, cell_margin_px, iso_to_serial,
+    layout_cell_text, localize_bool, localize_error, looks_like_number_pt_br, text_width, wrap_lines,
+};
 
 /// What the shell asks for one frame (`paint`, `universal-sheet.ts:3222-3261`: up to four regions with frozen
-/// panes, each `paintRegion` from `universal-sheet.ts:3390`).
+/// panes, each `paintRegion` from `universal-sheet.ts:3390`). The viewport emission is frontier C4.
 #[derive(Clone, Debug, Default)]
 pub struct ViewportRequest {
     /// Sheet.
@@ -43,15 +74,4 @@ pub struct ViewportRequest {
     pub zoom: f64,
     /// Selection (1-based active cell and range) for the selection layer.
     pub selection: [u32; 6],
-}
-
-/// Measurements the emission needs and the advance table lacks (two-phase, as Slides' `NeedMeasures`): per
-/// cell font the `'Hg'` font box and the advances of characters without a GDI width
-/// (`text-metrics.ts:54-99`), and whole-string widths for complex scripts.
-#[derive(Clone, Debug, Default)]
-pub struct NeedMeasures {
-    /// `(font css index, UTF-16 text)` pairs; a one-unit text is a character advance.
-    pub texts: Vec<(u32, Vec<u16>)>,
-    /// Fonts whose `'Hg'` box is missing.
-    pub font_boxes: Vec<u32>,
 }

@@ -1,0 +1,84 @@
+# Sheet conditional formats (frontier C3b): see core/crates/uo-xlsx/js/capture-cf.mjs
+@platform node=v24.15.0 v8=13.6.233.17-node.48 os=win32 arch=x64 cpu=Intel(R)_Core(TM)_i5-14600KF features=n/a glibc=none tunables=none flags=none
+@ts-root-commit b92b60fae4c1c612de1de3174c199052d43b9230
+@ts-root-state clean
+@tz UTC
+@clock 2025-01-15T12:00:00Z (todaySerial 45672)
+gen/x1/0000	open=ok	cf=no
+gen/x1/0001	open=ok	b0=2 2 2 15	n0=14	cf0=565:f28096d850cf5dc5617118bfc8511e1c	b1=1 2 2 9	n1=16	cf1=587:8ac352b6a5eda2847d464b109d5c56d6	cf=yes
+gen/x1/0002	open=ok	b0=1 2 3 8	n0=21	cf0=1482:fb14008febe3f2b371663face53451c0	b1=29 2 31 13	n1=36	cf1=2159:4f93848314a73cf09a23073f3c0dd0a3	b2=40 2 41 10	n2=18	cf2=1181:4b2f6115662988d9871d04518ef2a10b	b3=40 2 41 10	n3=18	cf3=1015:0dca3ab172aef1a77fad05c01a66d056	cf=yes
+gen/x1/0003	open=ok	b0=1 2 3 13	n0=24	cf0=669:48367d1a590a6ddc3460df1f94973738	cf=yes
+gen/x1/0004	open=ok	cf=no
+gen/x1/0005	open=ok	cf=no
+gen/x1/0006	open=ok	cf=no
+gen/x1/0007	open=ok	cf=no
+gen/x1/0008	open=ok	cf=no
+gen/x1/0009	open=ok	cf=no
+gen/x1/0010	open=ok	cf=no
+gen/x1/0011	open=ok	b0=30 2 32 15	n0=42	cf0=2989:26b5ce6c132fcc951e527e61bcd2e902	cf=yes
+gen/x1/0012	open=ok	cf=no
+gen/x1/0013	open=ok	b0=1 2 3 6	n0=15	cf0=1080:39d23254522475a898c4445134f3543c	cf=yes
+gen/x1/0014	open=ok	cf=no
+gen/x1/0015	open=ok	b0=35 2 37 10	n0=18	cf0=870:95ba13126f61916ced833396848cafa4	b1=25 2 25 8	n1=7	cf1=747:816d24220f7639c928b43719cc1174ed	b2=1 2 3 13	n2=36	cf2=915:3a8702ed9611ebe3d71a7874c28c20b7	cf=yes
+gen/x1/0016	open=ok	b0=1 2 3 5	n0=8	cf0=369:849e838822a138bc4d67c4e42706e164	b1=1 2 3 14	n1=39	cf1=1459:7827684090d99c7d84b6e3e03f77f8b2	cf=yes
+gen/x1/0017	open=ok	cf=no
+gen/x1/0018	open=ok	b0=1 2 1 12	n0=11	cf0=1759:25098bec5ef0bf217da96213cfa4a5f9	cf=yes
+gen/x1/0019	open=ok	b0=3 2 3 14	n0=13	cf0=517:e75b40f78fba522550e73cb7634bc90f	b1=2 2 3 10	n1=18	cf1=977:8569c6d4977a517aa28a7dfc80fd377f	cf=yes
+gen/x1/0020	open=ok	b0=2 2 3 14	n0=26	cf0=1201:1679336889a5e2192495948515e1f546	cf=yes
+gen/x1/0021	open=ok	cf=no
+gen/x1/0022	open=ok	cf=no
+gen/x1/0023	open=ok	cf=no
+gen/x1/0024	open=ok	cf=no
+gen/x1/0025	open=ok	cf=no
+gen/x1/0026	open=ok	cf=no
+gen/x1/0027	open=ok	cf=no
+gen/x1/0028	open=ok	cf=no
+gen/x1/0029	open=ok	b0=32 2 34 12	n0=33	cf0=2634:da70d9bf332b81d10dd017a5252ea4d2	b1=40 2 40 10	n1=9	cf1=979:e70cc8ebd6b55af6c1fcb60fe22b3962	b2=32 2 33 11	n2=20	cf2=881:c8bd71d69fb15cc4129ebeb02d1465f3	cf=yes
+gen/cf1/0000	open=ok	b0=1 1 1 14	n0=14	cf0=3104:62671175f615c0097aed54525540d472	cf=yes
+gen/cf1/0001	open=ok	b0=1 1 5 14	n0=61	cf0=2458:ae562beb068ef2d17cc388b97f1ee0f7	cf=yes
+gen/cf1/0002	open=ok	b0=1 1 6 12	n0=72	cf0=7791:f5c72c119f5859ac52168e406973da67	cf=yes
+gen/cf1/0003	open=ok	b0=1 1 19 15	n0=285	cf0=10800:f3169e6f5c900eb640600783df24e894	cf=yes
+gen/cf1/0004	open=ok	b0=1 1 6 15	n0=90	cf0=2437:199475ca2a379cb56d302600fa010853	cf=yes
+gen/cf1/0005	open=ok	b0=1 1 6 14	n0=78	cf0=3908:0acf1f42312b9215264425a541e547ad	cf=yes
+gen/cf1/0006	open=ok	b0=1 1 2 17	n0=34	cf0=4697:6e4ada9dd10a5568d97085d3abdf8b51	cf=yes
+gen/cf1/0007	open=ok	b0=1 1 6 13	n0=78	cf0=2926:f6580310e6aef6b4ff7bc845f5b20f8f	cf=yes
+gen/cf1/0008	open=ok	b0=1 1 4 14	n0=56	cf0=2598:72efc023d7b3c546de7168ac4723e81d	cf=yes
+gen/cf1/0009	open=ok	b0=1 1 10 49	n0=490	cf0=6103:dee4a83bd40a01f29d0733260b3b2022	cf=yes
+gen/cf1/0010	open=ok	b0=1 1 10 49	n0=490	cf0=6103:dee4a83bd40a01f29d0733260b3b2022	cf=yes
+gen/cf1/0011	open=ok	b0=1 1 4 12	n0=48	cf0=6993:f4552a31d731004adb315b938ebb14ff	cf=yes
+gen/cf1/0012	open=ok	b0=1 1 3 10	n0=30	cf0=3242:f7cb8ef19aebf815145d1431deb4efa9	cf=yes
+gen/cf1/0013	open=ok	b0=1 1 4 8	n0=32	cf0=1998:0d97e3676a2cfe3f036a160c04053e18	cf=yes
+gen/cf1/0014	open=ok	b0=1 1 3 30	n0=90	cf0=16388:f97bbb79f3b51c5becdfb84449de4f14	cf=yes
+gen/cf1/0015	open=ok	b0=1 1 3 30	n0=90	cf0=19845:6c920dbbb76d0abb77d54d5650d5478b	cf=yes
+gen/cf1/0016	open=ok	b0=3 1 3 24	n0=24	cf0=151:3de3a22c1590f8cc5702394497683585	cf=yes
+gen/cf1/0017	open=ok	b0=1 1 5 16	n0=67	cf0=2552:879fba454c591ad8a4c72bf216dc704a	cf=yes
+gen/cf1/0018	open=ok	b0=1 3 2 13	n0=22	cf0=2977:5ffa3a5615c8deb90bb5edf7a93cab24	cf=yes
+gen/cf1/0019	open=ok	b0=1 1 4 22	n0=57	cf0=2982:ab6b3b73fa3f07f7dd815f8d7931be4b	cf=yes
+gen/cf1/0020	open=ok	b0=1 3 2 19	n0=5	cf0=0:e3b0c44298fc1c149afbf4c8996fb924	b1=3 1 6 29	n1=72	cf1=3723:f541b3a98c4a22fad4b0038c10ea7f3c	cf=yes
+gen/cf1/0021	open=ok	b0=1 2 5 11	n0=44	cf0=1072:76fadb322d2760ef1b673736610afb00	cf=yes
+gen/cf1/0022	open=ok	b0=1 1 5 9	n0=41	cf0=813:a7254cdc5fe65bb13f398bd24e2e13ba	cf=yes
+gen/cf1/0023	open=ok	b0=1 2 3 13	n0=32	cf0=5186:7509c72d604dd9d152985af32d444648	cf=yes
+gen/cf1/0024	open=ok	b0=1 1 3 15	n0=33	cf0=1076:cbbca26e08143dc3855a7da9b3bcd744	cf=yes
+gen/cf1/0025	open=ok	b0=1 1 2 12	n0=23	cf0=364:f944488c29e03d62dbde9ca05db8c628	cf=yes
+gen/cf1/0026	open=ok	b0=1 1 2 15	n0=24	cf0=313:74a7fee8560fde5819b76411e378fdca	cf=yes
+gen/cf1/0027	open=ok	b0=1 2 3 21	n0=60	cf0=137:3efbd3dd70a22b3c05dfbf9ef868c639	cf=yes
+gen/cf1/0028	open=ok	b0=2 1 4 10	n0=24	cf0=0:e3b0c44298fc1c149afbf4c8996fb924	b1=1 3 4 19	n1=19	cf1=0:e3b0c44298fc1c149afbf4c8996fb924	cf=yes
+gen/cf1/0029	open=ok	b0=1 1 2 28	n0=53	cf0=4977:c326c7ef4d45a972ffd3388bf4ea7944	cf=yes
+gen/cf1/0030	open=ok	b0=3 1 3 17	n0=17	cf0=287:dd4bd2200d23f6f271f774c49ecd831a	cf=yes
+gen/cf1/0031	open=ok	b0=2 1 3 23	n0=11	cf0=0:e3b0c44298fc1c149afbf4c8996fb924	cf=yes
+gen/cf1/0032	open=ok	b0=1 1 3 21	n0=61	cf0=0:e3b0c44298fc1c149afbf4c8996fb924	cf=yes
+gen/cf1/0033	open=ok	b0=1 1 2 20	n0=26	cf0=263:e9fa6b5c6ba852f888212a0aaa90b40a	cf=yes
+gen/cf1/0034	open=ok	b0=1 2 3 10	n0=24	cf0=727:85ab6b0657bb292e098e4cde1bbed3fb	cf=yes
+gen/cf1/0035	open=ok	b0=1 1 4 10	n0=28	cf0=1318:e107f4a73a3a1c5811f7d7142eb0362a	b1=3 1 4 8	n1=15	cf1=35:747b59636a06801801ca4d946eaf57ed	cf=yes
+gen/cf1/0036	open=ok	b0=2 2 6 13	n0=50	cf0=3419:85b3c20c4771736658ff514489105a5d	b1=3 2 6 17	n1=27	cf1=746:d34536953c4d1b37cacfeda946b88214	cf=yes
+gen/cf1/0037	open=ok	b0=2 2 5 5	n0=12	cf0=0:e3b0c44298fc1c149afbf4c8996fb924	cf=yes
+gen/cf1/0038	open=ok	b0=1 1 3 3	n0=9	cf0=584:9e1449b53e3a256149cd7164c353b7dd	b1=1 2 3 11	n1=29	cf1=85:e7d1d9a4f3d49b7ecf0ee00a49853070	cf=yes
+gen/cf1/0039	open=ok	b0=4 2 4 5	n0=4	cf0=295:57662e354dc9af1056bfde817d61960d	cf=yes
+samples/demo.xlsx	open=ok	cf=no
+samples/gaps-smoke.xlsx	open=ok	cf=no
+samples/merge-smoke.xlsx	open=ok	cf=no
+samples/showcase.xlsx	open=ok	b7=1 2 5 11	n7=24	cf7=1489:3abfe0846d06178a3f98c7d62d19c036	cf=yes
+samples/smoke.xlsx	open=ok	cf=no
+formula	table=429:d760de80c80b281e526117a114e60e46	eval=100204:e57ae35a3c9b6bcb8a34b7dd16fde787
+icons	ops=101655:0d8f3d96f93d32dba2f0176155c9980d
+bars	ops=6653:a80f357f9d696dc9aef470f7c7e0afb0

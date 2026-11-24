@@ -30,6 +30,8 @@ pub mod book;
 pub mod grid;
 #[cfg(feature = "read")]
 pub mod read;
+#[cfg(feature = "xls")]
+pub mod xls;
 #[cfg(feature = "edit")]
 pub mod session;
 
